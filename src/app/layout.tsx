@@ -47,7 +47,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="tr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full bg-background font-sans text-foreground">
         {children}
-        <Toaster position="top-center" closeButton toastOptions={{ classNames: { toast: "!rounded-2xl !font-sans" } }} />
+        {/* Telefonda bildirim balonu 56px'lik üst çubuğun (menü, arama, zil) altında açılır, düğmeleri örtmez */}
+        <Toaster
+          position="top-center"
+          closeButton
+          mobileOffset={{ top: 64, left: 16, right: 16 }}
+          toastOptions={{ classNames: { toast: "!rounded-2xl !font-sans" } }}
+        />
       </body>
     </html>
   );

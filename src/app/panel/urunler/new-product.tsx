@@ -7,27 +7,67 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { fold, useQueryState } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { parseNumberTR } from "@/lib/calc/expr";
+import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { createProduct } from "@/server/actions/products";
 
-export function NewProductButton({
+import { priceText } from "./price-text";
+
+/** Reçetesi kopyalanabilecek ürün (kopyalama listesi ve aynı ad + boy denetimi için) */
+export interface ProductOption {
+  id: number;
+  name: string;
+  size: string;
+  label: string;
+  categoryId?: number;
+  active?: boolean;
+  price?: number;
+}
+
+/** Sayfa başlığındaki "Yeni ürün" düğmesi; kategori süzgeci açıksa o kategori seçili gelir */
+export function NewProductButton({ categories, products }: { categories: { id: number; name: string }[]; products: ProductOption[] }) {
+  const [open, setOpen] = useState(false);
+  const [kategori] = useQueryState<string>("kategori", "");
+  const initialCategory = categories.find((c) => String(c.id) === kategori)?.id;
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} className="pointer-coarse:h-10">
+        <Plus size={16} /> Yeni ürün
+      </Button>
+      {open ? <NewProductDialog categories={categories} products={products} initialCategory={initialCategory} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+/**
+ * Yeni ürün penceresi. Her açılışta temiz başlar (açılınca bağlanır). Enter oluşturur, Esc kapatır.
+ * Aynı ad + boyda ürün varsa daha göndermeden uyarır; kopyalanan ürünün fiyatı ve kategorisi öneri olarak gelir.
+ */
+export function NewProductDialog({
   categories,
   products,
+  onClose,
+  initialName = "",
+  initialCategory,
 }: {
   categories: { id: number; name: string }[];
-  /** Reçetesi kopyalanabilecek ürünler; kategoriye göre gruplanır */
-  products: { id: number; label: string; categoryId?: number; active?: boolean }[];
+  products: ProductOption[];
+  onClose: () => void;
+  initialName?: string;
+  initialCategory?: number;
 }) {
   const router = useRouter();
   const formId = useId();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState("");
-  const [size, setSize] = useState<"M" | "L" | "Tek">("M");
-  const [categoryId, setCategoryId] = useState<number>(categories[0]?.id ?? 0);
+  const [name, setName] = useState(initialName);
+  const [size, setSize] = useState<Size>("M");
+  const [categoryId, setCategoryId] = useState<number>(initialCategory ?? categories[0]?.id ?? 0);
+  const [categoryTouched, setCategoryTouched] = useState(initialCategory !== undefined);
   const [price, setPrice] = useState("");
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [copyFrom, setCopyFrom] = useState<string>("");
 
   // Kopyalama listesi kategori sırasıyla gruplanır; kategorisi bilinmeyenler en sona
@@ -37,87 +77,133 @@ export function NewProductButton({
     { key: "other", label: "Diğer", items: products.filter((p) => p.categoryId === undefined || !known.has(p.categoryId)) },
   ].filter((g) => g.items.length);
 
+  const duplicate = name.trim() ? products.find((p) => p.size === size && fold(p.name.trim()) === fold(name.trim())) : undefined;
+
+  function pickCopy(value: string) {
+    setCopyFrom(value);
+    const src = products.find((p) => String(p.id) === value);
+    if (!src) return;
+    if (!price.trim() && src.price !== undefined) setPrice(priceText(src.price));
+    if (!categoryTouched && src.categoryId !== undefined && known.has(src.categoryId)) setCategoryId(src.categoryId);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     const p = parseNumberTR(price);
-    if (p === null) return toast.error("Satış fiyatını girin");
+    if (p === null || p < 0) {
+      setPriceError("Geçerli bir fiyat girin (ör. 185 ya da 185,50)");
+      document.getElementById("np-price")?.focus();
+      return;
+    }
+    if (duplicate) return;
     setBusy(true);
     const res = await createProduct({ name, size, categoryId, price: p, copyFromId: copyFrom ? Number(copyFrom) : null });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Ürün oluşturuldu, şimdi reçetesini girin");
-    setOpen(false);
-    setName("");
-    setPrice("");
-    setCopyFrom("");
+    toast.success(copyFrom ? `${name.trim()} oluşturuldu, reçetesi kopyalandı` : `${name.trim()} oluşturuldu, şimdi reçetesini girin`);
+    onClose();
     router.push(`/panel/urunler/${res.data.id}`);
   }
 
   return (
-    <>
-      <Button onClick={() => setOpen(true)}>
-        <Plus size={16} /> Yeni ürün
-      </Button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Yeni ürün"
-        description="Ürünü oluşturduktan sonra reçete kartına malzemeleri eklersiniz."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Vazgeç
-            </Button>
-            <Button type="submit" form={formId} disabled={busy}>
-              {busy ? "Oluşturuluyor…" : "Oluştur ve reçeteye geç"}
-            </Button>
-          </>
-        }
-      >
-        <form id={formId} onSubmit={submit} className="space-y-4 pb-3">
-          <Field label="Ürün adı" htmlFor="np-name">
-            <Input id="np-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="ör. Caramel Biscoff Latte" data-autofocus />
-          </Field>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Boy" htmlFor="np-size">
-              <Select id="np-size" value={size} onChange={(e) => setSize(e.target.value as "M" | "L" | "Tek")}>
-                {SIZES.map((s) => (
-                  <option key={s} value={s}>
-                    {s} — {SIZE_LABELS[s]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Satış fiyatı (KDV dahil)" htmlFor="np-price">
-              <NumberInput id="np-price" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="250" required className="cell-input" />
-            </Field>
-          </div>
-          <Field label="Kategori" htmlFor="np-cat">
-            <Select id="np-cat" value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+    <Dialog
+      open
+      onClose={onClose}
+      title="Yeni ürün"
+      description="Ürünü oluşturduktan sonra reçete kartına malzemeleri eklersiniz."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Vazgeç
+          </Button>
+          <Button type="submit" form={formId} disabled={busy || !!duplicate}>
+            {busy ? "Oluşturuluyor…" : "Oluştur ve reçeteye geç"}
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={submit} className="space-y-4 pb-3" noValidate>
+        <Field
+          label="Ürün adı"
+          htmlFor="np-name"
+          error={duplicate ? `“${duplicate.name} · ${duplicate.size}” zaten var. Başka bir boy seçin ya da adı değiştirin.` : undefined}
+        >
+          <Input
+            id="np-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={120}
+            placeholder="ör. Caramel Biscoff Latte"
+            aria-invalid={duplicate ? true : undefined}
+            data-autofocus
+          />
+        </Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Boy" htmlFor="np-size">
+            <Select id="np-size" value={size} onChange={(e) => setSize(e.target.value as Size)}>
+              {SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s} — {SIZE_LABELS[s]}
                 </option>
               ))}
             </Select>
           </Field>
-          <Field label="Reçeteyi şu üründen kopyala (isteğe bağlı)" hint="Benzer bir ürünün malzemeleri hazır gelir, sonra değiştirirsiniz." htmlFor="np-copy">
-            <Select id="np-copy" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
-              <option value="">Boş reçete</option>
-              {groups.map((g) => (
-                <optgroup key={g.key} label={g.label}>
-                  {g.items.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                      {p.active === false ? " (pasif)" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </Select>
+          <Field label="Satış fiyatı (KDV dahil)" htmlFor="np-price" error={priceError} hint="Menüdeki fiyat; virgüllü yazabilirsiniz">
+            <div className="relative">
+              <NumberInput
+                id="np-price"
+                value={price}
+                onChange={(e) => {
+                  setPrice(e.target.value);
+                  setPriceError(null);
+                }}
+                placeholder="ör. 185"
+                required
+                aria-invalid={priceError ? true : undefined}
+                className="cell-input pr-7"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
+            </div>
           </Field>
-        </form>
-      </Dialog>
-    </>
+        </div>
+        <Field label="Kategori" htmlFor="np-cat">
+          <Select
+            id="np-cat"
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(Number(e.target.value));
+              setCategoryTouched(true);
+            }}
+          >
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field
+          label="Reçeteyi şu üründen kopyala (isteğe bağlı)"
+          hint="Benzer bir ürünün malzemeleri hazır gelir, sonra değiştirirsiniz. Fiyat boşsa o ürünün fiyatı yazılır."
+          htmlFor="np-copy"
+        >
+          <Select id="np-copy" value={copyFrom} onChange={(e) => pickCopy(e.target.value)}>
+            <option value="">Boş reçete</option>
+            {groups.map((g) => (
+              <optgroup key={g.key} label={g.label}>
+                {g.items.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {p.active === false ? " (pasif)" : ""}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </Select>
+        </Field>
+      </form>
+    </Dialog>
   );
 }

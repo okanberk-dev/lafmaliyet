@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
-import { RecordsStackIllustration } from "@/components/akmanos/empty-state/empty-state";
 import { cn } from "@/lib/utils";
 
+import { EmptyIllustration } from "./empty-illustration";
 import { InfoTip } from "./info-tip";
 
 export function Skeleton({ className }: { className?: string }) {
@@ -38,7 +38,7 @@ export function EmptyState({ title, description, action, icon }: { title: string
           {icon}
         </span>
       ) : (
-        <RecordsStackIllustration reduceMotion={false} />
+        <EmptyIllustration />
       )}
       <div className="flex max-w-[22rem] flex-col gap-2">
         <p className="text-lg font-semibold tracking-tight text-balance text-ink">{title}</p>

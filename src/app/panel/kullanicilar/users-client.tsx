@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, LockOpen, LogOut, Minus, Pencil, ShieldCheck, ShieldOff, UserPlus, Users } from "lucide-react";
-import { useMemo, useOptimistic, useState, useTransition, type FormEvent } from "react";
+import { Check, Eye, EyeOff, LockOpen, LogOut, Minus, Pencil, ShieldCheck, ShieldOff, UserPlus, Users } from "lucide-react";
+import { useOptimistic, useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
@@ -10,7 +10,8 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, SearchInput } from "@/components/ui/form";
+import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
+import { Field, Input } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
@@ -36,6 +37,7 @@ export type UserRow = {
 };
 
 type RoleFilter = "all" | "admin" | "staff";
+const ROLE_FILTERS: readonly RoleFilter[] = ["all", "admin", "staff"];
 
 /**
  * AkmanOS "User list": avatar + ad + soluk e-posta, rol rozeti, noktalı durum rozeti, iki adımlı doğrulama, son
@@ -44,17 +46,21 @@ type RoleFilter = "all" | "admin" | "staff";
 export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number }) {
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
-  const [query, setQuery] = useState("");
-  const [role, setRole] = useState<RoleFilter>("all");
+  // Arama ve rol adreste durur (?ara=ayse&rol=staff): yenileyince ve paylaşınca korunur
+  const [query, setQuery] = useQueryText("ara");
+  const [roleRaw, setRole] = useQueryState<RoleFilter>("rol", "all");
+  const role = ROLE_FILTERS.includes(roleRaw) ? roleRaw : "all";
   const [pending, startTransition] = useTransition();
   const [rows, setOptimistic] = useOptimistic(users, (state, p: { id: number; active: boolean }) => state.map((u) => (u.id === p.id ? { ...u, active: p.active } : u)));
   const activeCount = rows.filter((u) => u.active).length;
   const twoFactorCount = rows.filter((u) => u.active && u.twoFactor).length;
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase("tr-TR");
-    return rows.filter((u) => (role === "all" || u.role === role) && (!q || `${u.name} ${u.email}`.toLocaleLowerCase("tr-TR").includes(q)));
-  }, [rows, query, role]);
+  const visible = rows.filter((u) => (role === "all" || u.role === role) && matches(`${u.name} ${u.email} ${ROLES[u.role]}`, query));
+  const filterActive = Boolean(query.trim()) || role !== "all";
+  const clear = () => {
+    setQuery("");
+    clearQuery(["ara", "rol"]);
+  };
 
   function setActive(u: UserRow, active: boolean) {
     setConfirmOff(null);
@@ -93,14 +99,8 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
         actions={addButton}
       />
       {rows.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2 px-5 pb-4">
-          <SearchInput
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ad ya da e-posta ara"
-            aria-label="Kullanıcı ara"
-            wrapperClassName="min-w-0 flex-1 sm:max-w-xs"
-          />
+        <FilterBar active={filterActive} onClear={clear} shown={visible.length} total={rows.length} unit="kullanıcı" className="px-5 pb-4">
+          <SearchField value={query} onChange={setQuery} placeholder="Ad ya da e-posta ara" label="Kullanıcı ara" className="w-full sm:w-64" />
           <Segmented<RoleFilter>
             value={role}
             onChange={setRole}
@@ -111,106 +111,101 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
               { value: "staff", label: ROLES.staff },
             ]}
           />
-        </div>
+        </FilterBar>
       ) : null}
       {visible.length ? (
-        <TableWrap>
-          <Table>
-            <THead>
-              <tr>
-                <TH>Kullanıcı</TH>
-                <TH>Rol</TH>
-                <TH>Durum</TH>
-                <TH>İki adımlı</TH>
-                <TH>Son giriş</TH>
-                <TH>
-                  <span className="sr-only">Eylemler</span>
-                </TH>
-              </tr>
-            </THead>
-            <tbody>
-              {visible.map((u) => {
-                const me = u.id === meId;
-                return (
-                  <TR key={u.id} className={cn("cursor-pointer", !u.active && "opacity-60")} onClick={() => setEditing(u)}>
-                    <TD>
-                      <div className="flex min-w-[12rem] items-center gap-3">
-                        <Avatar name={u.name} />
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-ink">
-                            {u.name}
-                            {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
-                          </p>
-                          <p className="truncate text-[13px] text-ink-mute">{u.email}</p>
-                        </div>
-                      </div>
-                    </TD>
-                    <TD>
+        <>
+          {/* Telefonda tablo yerine kart listesi: rol, durum ve son giriş kaydırmadan görünür */}
+          <ul className="divide-y divide-line border-t border-line sm:hidden" aria-label="Kullanıcılar">
+            {visible.map((u) => {
+              const me = u.id === meId;
+              return (
+                <li key={u.id} className={cn("flex items-start gap-3 px-5 py-3.5", !u.active && "opacity-60")}>
+                  <Avatar name={u.name} />
+                  <button type="button" onClick={() => setEditing(u)} className="min-w-0 flex-1 cursor-pointer text-left" aria-label={`${u.name} kullanıcısını düzenle`}>
+                    <span className="block truncate font-medium text-ink">
+                      {u.name}
+                      {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
+                    </span>
+                    <span className="block truncate text-[13px] text-ink-mute">{u.email}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                       <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
-                    </TD>
-                    <TD>
-                      {u.locked ? (
-                        <Badge dot tone="red">
-                          Kilitli
-                        </Badge>
-                      ) : (
-                        <Badge dot tone={u.active ? "green" : "gray"}>
-                          {u.active ? "Aktif" : "Pasif"}
-                        </Badge>
-                      )}
-                    </TD>
-                    <TD>
-                      {u.twoFactor ? (
-                        <span className="inline-flex items-center gap-1 text-[13px] font-medium text-good-ink">
-                          <ShieldCheck size={15} aria-hidden /> Açık
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[13px] text-ink-mute">
-                          <ShieldOff size={15} aria-hidden /> Kapalı
-                        </span>
-                      )}
-                    </TD>
-                    <TD className="text-[13px] whitespace-nowrap text-ink-mute tabular">{u.lastLoginAt ?? "Hiç girmedi"}</TD>
-                    <TD>
-                      <div className="flex items-center justify-end gap-2">
-                        <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : undefined} onClick={(e) => e.stopPropagation()}>
-                          <Switch
-                            checked={u.active}
-                            disabled={me || pending}
-                            label={`${u.name} giriş yapabilir`}
-                            onChange={(next) => (next ? setActive(u, true) : setConfirmOff(u))}
+                      <StatusBadge user={u} />
+                      <TwoFactorMark on={u.twoFactor} />
+                    </span>
+                    <span className="mt-1.5 block text-xs text-ink-mute tabular">Son giriş: {u.lastLoginAt ?? "hiç girmedi"}</span>
+                  </button>
+                  <RowActions user={u} me={me} pending={pending} onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))} onEdit={() => setEditing(u)} />
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden sm:block">
+            <TableWrap>
+              <Table>
+                <THead>
+                  <tr>
+                    <TH>Kullanıcı</TH>
+                    <TH>Rol</TH>
+                    <TH>Durum</TH>
+                    <TH>İki adımlı</TH>
+                    <TH>Son giriş</TH>
+                    <TH>
+                      <span className="sr-only">Eylemler</span>
+                    </TH>
+                  </tr>
+                </THead>
+                <tbody>
+                  {visible.map((u) => {
+                    const me = u.id === meId;
+                    return (
+                      <TR key={u.id} className={cn("cursor-pointer", !u.active && "opacity-60")} onClick={() => setEditing(u)}>
+                        <TD>
+                          <div className="flex min-w-[12rem] items-center gap-3">
+                            <Avatar name={u.name} />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-ink">
+                                {u.name}
+                                {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
+                              </p>
+                              <p className="truncate text-[13px] text-ink-mute">{u.email}</p>
+                            </div>
+                          </div>
+                        </TD>
+                        <TD>
+                          <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                        </TD>
+                        <TD>
+                          <StatusBadge user={u} />
+                        </TD>
+                        <TD>
+                          <TwoFactorMark on={u.twoFactor} />
+                        </TD>
+                        <TD className="text-[13px] whitespace-nowrap text-ink-mute tabular">{u.lastLoginAt ?? "Hiç girmedi"}</TD>
+                        <TD>
+                          <RowActions
+                            user={u}
+                            me={me}
+                            pending={pending}
+                            onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))}
+                            onEdit={() => setEditing(u)}
                           />
-                        </span>
-                        <IconButton
-                          label={`${u.name} kullanıcısını düzenle`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditing(u);
-                          }}
-                        >
-                          <Pencil size={15} />
-                        </IconButton>
-                      </div>
-                    </TD>
-                  </TR>
-                );
-              })}
-            </tbody>
-          </Table>
-        </TableWrap>
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </TableWrap>
+          </div>
+        </>
       ) : rows.length ? (
         <EmptyState
           icon={<Users />}
           title="Eşleşen kullanıcı yok"
           description="Aramayı ya da rol süzgecini değiştirin."
           action={
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setQuery("");
-                setRole("all");
-              }}
-            >
+            <Button variant="secondary" onClick={clear}>
               Süzgeci temizle
             </Button>
           }
@@ -231,10 +226,78 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
   );
 }
 
+function StatusBadge({ user }: { user: UserRow }) {
+  return user.locked ? (
+    <Badge dot tone="red">
+      Kilitli
+    </Badge>
+  ) : (
+    <Badge dot tone={user.active ? "green" : "gray"}>
+      {user.active ? "Aktif" : "Pasif"}
+    </Badge>
+  );
+}
+
+function TwoFactorMark({ on }: { on: boolean }) {
+  return on ? (
+    <span className="inline-flex items-center gap-1 text-[13px] font-medium text-good-ink">
+      <ShieldCheck size={15} aria-hidden /> <span className="sm:hidden">İki adımlı</span> Açık
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-[13px] text-ink-mute">
+      <ShieldOff size={15} aria-hidden /> <span className="sm:hidden">İki adımlı</span> Kapalı
+    </span>
+  );
+}
+
+/** Satır sonu: giriş anahtarı (kendi hesabınızda kilitli) ve düzenle */
+function RowActions({
+  user,
+  me,
+  pending,
+  onToggle,
+  onEdit,
+}: {
+  user: UserRow;
+  me: boolean;
+  pending: boolean;
+  onToggle: (next: boolean) => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-2">
+      <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : undefined} onClick={(e) => e.stopPropagation()}>
+        <Switch checked={user.active} disabled={me || pending} label={`${user.name} giriş yapabilir`} onChange={onToggle} />
+      </span>
+      <IconButton
+        label={`${user.name} kullanıcısını düzenle`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        <Pencil size={15} />
+      </IconButton>
+    </div>
+  );
+}
+
 const ROLE_OPTIONS: { value: "staff" | "admin"; label: string; hint: string }[] = [
   { value: "staff", label: ROLES.staff, hint: "Stok sayımı + reçete defteri" },
   { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar dahil)" },
 ];
+
+type FormErrors = { name?: string; email?: string; password?: string };
+const FIELD_IDS = { name: "u-n", email: "u-e", password: "u-p" } as const;
+
+function validateUser({ name, email, password, isNew }: { name: string; email: string; password: string; isNew: boolean }): FormErrors {
+  const out: FormErrors = {};
+  if (!name.trim()) out.name = "Adı yazın";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) out.email = "Geçerli bir e-posta girin (ör. ayse@laffogato.net)";
+  if (isNew && !password) out.password = "Yeni kullanıcı için bir parola belirleyin";
+  else if (password && password.length < 8) out.password = "Parola en az 8 karakter olmalı";
+  return out;
+}
 
 function UserDialog({ user, meId, onClose }: { user: UserRow | null; meId: number; onClose: () => void }) {
   const [name, setName] = useState(user?.name ?? "");
@@ -242,6 +305,8 @@ function UserDialog({ user, meId, onClose }: { user: UserRow | null; meId: numbe
   const [role, setRole] = useState<"admin" | "staff">(user?.role ?? "staff");
   const [active, setActive] = useState(user?.active ?? true);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"2fa" | "logout" | null>(null);
   const [pending, startTransition] = useTransition();
@@ -249,6 +314,11 @@ function UserDialog({ user, meId, onClose }: { user: UserRow | null; meId: numbe
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    // Sunucu da denetler; burada eksik alan pencere kapanmadan, alanın altında gösterilir
+    const found = validateUser({ name, email, password, isNew: !user });
+    setErrors(found);
+    const first = (["name", "email", "password"] as const).find((k) => found[k]);
+    if (first) return document.getElementById(FIELD_IDS[first])?.focus();
     setBusy(true);
     const res = await saveUser({ id: user?.id ?? null, name, email, role, active, password: password || undefined });
     setBusy(false);
@@ -310,47 +380,113 @@ function UserDialog({ user, meId, onClose }: { user: UserRow | null; meId: numbe
     >
       <form id="user-form" onSubmit={submit} noValidate className="space-y-4 pb-2">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Ad" htmlFor="u-n">
-            <Input id="u-n" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
+          <Field label="Ad" htmlFor="u-n" error={errors.name}>
+            <Input
+              id="u-n"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setErrors((x) => ({ ...x, name: undefined }));
+              }}
+              autoComplete="off"
+              maxLength={80}
+              placeholder="Ayşe Yılmaz"
+              aria-invalid={errors.name ? true : undefined}
+            />
           </Field>
-          <Field label="Giriş e-postası" htmlFor="u-e">
-            <Input id="u-e" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+          <Field label="Giriş e-postası" htmlFor="u-e" error={errors.email}>
+            <Input
+              id="u-e"
+              type="email"
+              inputMode="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setErrors((x) => ({ ...x, email: undefined }));
+              }}
+              autoComplete="off"
+              placeholder="ayse@laffogato.net"
+              aria-invalid={errors.email ? true : undefined}
+            />
           </Field>
         </div>
         <fieldset>
           <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
           <div className="grid gap-2 sm:grid-cols-2">
-            {ROLE_OPTIONS.map((o) => (
-              <label
-                key={o.value}
-                className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-2xl bg-surface px-3.5 py-3 ring-1 ring-inset transition-shadow",
-                  role === o.value ? "ring-2 ring-ink/70" : "ring-line-strong hover:ring-ink/25",
-                )}
-              >
-                <input type="radio" name="u-role" value={o.value} checked={role === o.value} onChange={() => setRole(o.value)} className="mt-1 size-4 accent-ink" />
-                <span>
-                  <span className="block text-sm font-medium text-ink">{o.label}</span>
-                  <span className="block text-xs text-ink-mute">{o.hint}</span>
-                </span>
-              </label>
-            ))}
+            {ROLE_OPTIONS.map((o) => {
+              // Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder)
+              const locked = self && o.value !== "admin";
+              return (
+                <label
+                  key={o.value}
+                  className={cn(
+                    "flex items-start gap-3 rounded-2xl bg-surface px-3.5 py-3 ring-1 ring-inset transition-shadow",
+                    locked ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                    role === o.value ? "ring-2 ring-ink/70" : "ring-line-strong hover:ring-ink/25",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="u-role"
+                    value={o.value}
+                    checked={role === o.value}
+                    disabled={locked}
+                    onChange={() => setRole(o.value)}
+                    className="mt-1 size-4 accent-ink"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">{o.label}</span>
+                    <span className="block text-xs text-ink-mute">{o.hint}</span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
+          {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
         </fieldset>
         <Field
           label={user ? "Yeni parola (değiştirmek için)" : "Parola"}
-          hint={user ? "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır." : "En az 8 karakter"}
+          hint={user ? "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır." : "En az 8 karakter. Kişiye siz iletirsiniz; giriş yaptıktan sonra değiştirebilir."}
+          error={errors.password}
           htmlFor="u-p"
         >
-          <Input id="u-p" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <div className="relative">
+            <Input
+              id="u-p"
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setErrors((x) => ({ ...x, password: undefined }));
+              }}
+              aria-invalid={errors.password ? true : undefined}
+              className="pr-11"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute top-1/2 right-0.5 flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:text-ink pointer-coarse:size-10"
+              aria-label={showPassword ? "Parolayı gizle" : "Parolayı göster"}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
-        <ToggleRow
-          title="Aktif (giriş yapabilir)"
-          description={active ? "Bu hesapla giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; bilgiler saklanır."}
-          label="Aktif (giriş yapabilir)"
-          checked={active}
-          onChange={setActive}
-        />
+        {self ? (
+          <p className="rounded-2xl bg-panel px-3.5 py-3 text-xs text-ink-mute">Kendi hesabınızı pasif yapamazsınız.</p>
+        ) : (
+          <ToggleRow
+            title="Aktif (giriş yapabilir)"
+            description={active ? "Bu hesapla giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; bilgiler saklanır."}
+            label="Aktif (giriş yapabilir)"
+            checked={active}
+            onChange={setActive}
+          />
+        )}
         {security}
       </form>
       <ConfirmDialog

@@ -20,8 +20,14 @@ export function THead({ className, ...props }: ComponentProps<"thead">) {
   return <thead className={cn("text-left", className)} {...props} />;
 }
 
+/**
+ * Sabit sütunun solundaki 8px'lik TableWrap boşluğunu kapatan şerit: kayan hücreler o aralıktan görünmesin
+ * (border-collapse tablolarda hücre gölgesi çizilmediği için gölge yerine ::before).
+ */
+const STICKY_EDGE = "before:pointer-events-none before:absolute before:inset-y-0 before:-left-2 before:w-2 before:bg-panel";
+
 /** Yatay kayan geniş tablolarda ilk sütunu sabitler (opak zemin, satır üzerine gelinince aynı ton) */
-const STICKY = "sticky left-0 z-10 bg-panel group-hover:bg-[color-mix(in_oklab,var(--color-panel),white_60%)]";
+const STICKY = cn("sticky left-0 z-10 bg-panel group-hover:bg-[color-mix(in_oklab,var(--color-panel),white_60%)]", STICKY_EDGE);
 
 export function TH({ className, numeric, sticky, ...props }: ComponentProps<"th"> & { numeric?: boolean; sticky?: boolean }) {
   return (
@@ -29,7 +35,7 @@ export function TH({ className, numeric, sticky, ...props }: ComponentProps<"th"
       className={cn(
         "border-b border-line-strong px-3 pt-1 pb-3 text-sm font-semibold whitespace-nowrap text-ink",
         numeric && "text-right",
-        sticky && "sticky left-0 z-10 bg-panel",
+        sticky && cn("sticky left-0 z-10 bg-panel", STICKY_EDGE),
         className,
       )}
       {...props}

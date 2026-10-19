@@ -133,7 +133,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         excel="Genel Maliyet"
         description={DESCRIPTION}
         actions={
-          years.length <= MAX_YEAR_TABS ? (
+          // Tek yıl varsa seçim göstermeyiz (tek seçenekli sekme düğme gibi durur, bir şey yapmaz)
+          years.length < 2 ? null : years.length <= MAX_YEAR_TABS ? (
             <SegmentedLinks
               label="Yıl"
               value={String(year)}

@@ -136,7 +136,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                           tabIndex={open ? undefined : -1}
                           {...hover(ck)}
                           className={cn(
-                            "relative flex h-9 min-h-9 items-center rounded-lg px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+                            "relative flex h-9 min-h-9 items-center rounded-lg px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 pointer-coarse:h-10",
                             active ? "font-medium text-foreground" : "text-chart-muted",
                           )}
                         >

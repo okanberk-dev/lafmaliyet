@@ -216,7 +216,7 @@ export function alerts(model: Model, month: string): Alert[] {
         .slice(0, 5)
         .map((l) => l.line.posName)
         .join(", ")}${sales.unmatched.length > 5 ? "…" : ""}. Bunlara ortalama maliyet oranı uygulanıyor.`,
-      href: `/panel/satislar${ay}&filtre=eslesmeyen`,
+      href: `/panel/satislar${ay}&durum=eslesmeyen`,
     });
   }
   if (sales.lines.length && info?.posRevenue) {
@@ -268,7 +268,7 @@ export function alerts(model: Model, month: string): Alert[] {
       level: "info",
       title: `${estimates.length} hammaddenin fiyatı tahmini`,
       detail: "Faturada bulunamayan fiyatlar. Gerçek fiyatı girince bütün ürün maliyetleri güncellenir.",
-      href: "/panel/hammaddeler?filtre=tahmini",
+      href: "/panel/hammaddeler?durum=tahmini",
     });
   }
   const unused = model.ds.ingredients.filter((i) => i.active && !model.usedIn.has(i.id));
@@ -277,7 +277,7 @@ export function alerts(model: Model, month: string): Alert[] {
       level: "info",
       title: `${unused.length} hammadde hiçbir reçetede yok`,
       detail: `${unused.map((i) => i.name).slice(0, 4).join(", ")}. Hangi üründe kullanılıyorsa reçeteye ekleyin.`,
-      href: "/panel/hammaddeler?filtre=kullanilmayan",
+      href: "/panel/hammaddeler?durum=kullanilmayan",
     });
   }
   const waterUsed = model.ds.ingredients.some((i) => i.priceSource === "water" && model.usedIn.has(i.id));

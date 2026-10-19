@@ -15,12 +15,11 @@ import {
   Tractor,
   TrendingDown,
   Wallet,
-  X,
 } from "lucide-react";
 import { LayoutGroup, motion } from "motion/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Activity, useId, useMemo, useState, type ReactNode } from "react";
+import { Activity, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
@@ -30,7 +29,8 @@ import { MenuMatrix } from "@/components/charts";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, IconLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
-import { Field, NumberInput, SearchInput, Select } from "@/components/ui/form";
+import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
+import { Field, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, type PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, Signed, Stat } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
@@ -39,7 +39,7 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import { parseNumberTR } from "@/lib/calc/expr";
 import { applyScenario, type MenuClass, type ScenarioBase } from "@/lib/calc/insights";
 import { num, pct, tl } from "@/lib/format";
-import { cn, matchesSearch } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /* ───────────────────────── Ortak hareket ───────────────────────── */
 
@@ -164,15 +164,37 @@ interface Item {
 const ORDER: MenuClass[] = ["star", "plowhorse", "puzzle", "dog"];
 
 /** Sınıfın karo rengi ve ikonu (rozet tonlarıyla aynı sıra: yeşil, turuncu, mavi, kırmızı) */
-const CLASS_LOOK: Record<MenuClass, { icon: ReactNode; tile: PastelTone }> = {
-  star: { icon: <Star />, tile: 0 },
-  plowhorse: { icon: <Tractor />, tile: 1 },
-  puzzle: { icon: <Puzzle />, tile: 2 },
-  dog: { icon: <TrendingDown />, tile: 3 },
+const CLASS_LOOK: Record<MenuClass, { icon: ReactNode; tile: PastelTone; dot: string }> = {
+  star: { icon: <Star />, tile: 0, dot: "bg-good" },
+  plowhorse: { icon: <Tractor />, tile: 1, dot: "bg-brass-500" },
+  puzzle: { icon: <Puzzle />, tile: 2, dot: "bg-info" },
+  dog: { icon: <TrendingDown />, tile: 3, dot: "bg-bad" },
 };
+
+/** Adresteki Türkçe karşılıklar: ?grup=yildiz, ?sirala=toplam-kar-azalan */
+const CLASS_SLUG: Record<MenuClass, string> = { star: "yildiz", plowhorse: "beygir", puzzle: "bilmece", dog: "zayif" };
 
 type SortKey = "name" | "cls" | "qty" | "mix" | "cm" | "totalCm" | "margin" | "price";
 type SortDir = "asc" | "desc";
+
+const SORT_SLUG: Record<SortKey, string> = {
+  name: "ad",
+  cls: "grup",
+  qty: "satis",
+  mix: "pay",
+  cm: "birim-kar",
+  totalCm: "toplam-kar",
+  margin: "marj",
+  price: "fiyat",
+};
+const DEFAULT_SORT = "toplam-kar-azalan";
+
+function parseSort(v: string): { key: SortKey; dir: SortDir } {
+  const m = /^(.+)-(artan|azalan)$/.exec(v);
+  const key = m ? (Object.keys(SORT_SLUG) as SortKey[]).find((k) => SORT_SLUG[k] === m[1]) : undefined;
+  return key && m ? { key, dir: m[2] === "artan" ? "asc" : "desc" } : { key: "totalCm", dir: "desc" };
+}
+const sortSlug = (key: SortKey, dir: SortDir) => `${SORT_SLUG[key]}-${dir === "asc" ? "artan" : "azalan"}`;
 
 function compare(a: Item, b: Item, key: SortKey) {
   if (key === "name") return `${a.name} ${a.size}`.localeCompare(`${b.name} ${b.size}`, "tr");
@@ -181,6 +203,9 @@ function compare(a: Item, b: Item, key: SortKey) {
 }
 
 const PAGE_SIZE = 25;
+
+/** Ürünler tablosunun süzgeçleri (kategori ayrı: sınıfları da yeniden hesaplar) */
+const TABLE_FILTERS = ["ara", "grup", "zam", "satilmayan"];
 
 export function MenuEngineering({
   monthLabel,
@@ -197,12 +222,20 @@ export function MenuEngineering({
   classInfo: Record<MenuClass, { label: string; advice: string; tone: string }>;
   categories: { id: number; name: string }[];
 }) {
-  const [cat, setCat] = useState<number | null>(null);
-  const [cls, setCls] = useState<MenuClass | null>(null);
-  const [q, setQ] = useState("");
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "totalCm", dir: "desc" });
+  // Süzgeçler adreste: ?kategori=3&grup=yildiz&ara=latte&zam=1&satilmayan=1&sirala=satis-azalan
+  const [catParam, setCatParam] = useQueryState<string>("kategori", "");
+  const [clsParam, setClsParam] = useQueryState<string>("grup", "");
+  const [q, setQ] = useQueryText("ara");
+  const [lowPrice, setLowPrice] = useQueryState<string>("zam", "");
+  const [unsold, setUnsold] = useQueryState<string>("satilmayan", "");
+  const [sortParam, setSortParam] = useQueryState<string>("sirala", DEFAULT_SORT);
+  const cat = categories.some((c) => String(c.id) === catParam) ? Number(catParam) : null;
+  const cls = ORDER.find((k) => CLASS_SLUG[k] === clsParam) ?? null;
+  const setCls = (k: MenuClass | null) => setClsParam(k ? CLASS_SLUG[k] : "");
+  const sort = parseSort(sortParam);
   const reduce = useCalmMotion();
   const tilesId = useId();
+  const tableRef = useRef<HTMLElement>(null);
 
   // Kategori seçilince sınıflar o kategori içinde yeniden hesaplanır
   const { items, popThreshold, avgCm } = useMemo(() => {
@@ -233,16 +266,42 @@ export function MenuEngineering({
     const sum = list.reduce((a, i) => a + i.totalCm, 0);
     return { k, count: list.length, sum, share: totalCmAll > 0 ? sum / totalCmAll : null };
   });
+  const lowPriceCount = items.filter((i) => i.price < i.suggestedPrice).length;
+  const unsoldCount = items.filter((i) => i.qty === 0).length;
 
   const sign = sort.dir === "asc" ? 1 : -1;
   const shown = items
-    .filter((i) => (!cls || i.cls === cls) && matchesSearch(`${i.name} ${i.size} ${i.category}`, q))
+    .filter(
+      (i) =>
+        (!cls || i.cls === cls) &&
+        (!lowPrice || i.price < i.suggestedPrice) &&
+        (!unsold || i.qty === 0) &&
+        matches(`${i.name} ${i.size} ${i.category}`, q),
+    )
     .sort((a, b) => sign * compare(a, b, sort.key) || b.totalCm - a.totalCm);
-  const paged = usePaged(shown, PAGE_SIZE, `${cat}|${cls}|${q}|${sort.key}|${sort.dir}`);
+  const paged = usePaged(shown, PAGE_SIZE, `${cat}|${cls}|${q}|${lowPrice}|${unsold}|${sortParam}`);
+  const filtered = !!(cls || q.trim() || lowPrice || unsold);
+  const clearFilters = () => {
+    setQ("");
+    clearQuery(TABLE_FILTERS);
+  };
+
+  const shownQty = shown.reduce((a, i) => a + i.qty, 0);
+  const shownMix = shown.reduce((a, i) => a + i.mix, 0);
+  const shownCm = shown.reduce((a, i) => a + i.totalCm, 0);
 
   const toggleSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "name" || key === "cls" ? "asc" : "desc" }));
+    setSortParam(sortSlug(key, sort.key === key ? (sort.dir === "asc" ? "desc" : "asc") : key === "name" || key === "cls" ? "asc" : "desc"));
   const sortProps = (key: SortKey) => ({ active: sort.key === key ? sort.dir : null, onSort: () => toggleSort(key) });
+
+  // Karoya tıklayınca tablo ekranın altında kalıyorsa (telefonda hep) tabloya kaydırılır: süzgecin etkisi görünsün
+  const pickGroup = (k: MenuClass, active: boolean) => {
+    setCls(active ? null : k);
+    const el = tableRef.current;
+    if (!active && el && el.getBoundingClientRect().top > window.innerHeight * 0.6) {
+      el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    }
+  };
 
   const catName = cat === null ? "Bütün menü" : (categories.find((c) => c.id === cat)?.name ?? "Kategori");
 
@@ -269,7 +328,12 @@ export function MenuEngineering({
             </>
           }
           actions={
-            <Select value={cat ?? ""} onChange={(e) => setCat(e.target.value ? Number(e.target.value) : null)} className="w-auto min-w-44" aria-label="Kategori">
+            <Select
+              value={cat ?? ""}
+              onChange={(e) => setCatParam(e.target.value)}
+              className="w-auto min-w-44 pointer-coarse:h-10"
+              aria-label="Kategori (sınıflar bu kategori içinde yeniden hesaplanır)"
+            >
               <option value="">Bütün menü</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -285,12 +349,23 @@ export function MenuEngineering({
               {points.length ? (
                 <MenuMatrix points={points} popThreshold={popThreshold} avgCm={avgCm} />
               ) : (
-                <EmptyState icon={<ChartScatter />} title="Grafikte gösterilecek satış yok" description={`${catName} için bu ay satılan ürün yok.`} />
+                <EmptyState
+                  icon={<ChartScatter />}
+                  title="Grafikte gösterilecek satış yok"
+                  description={`${catName} için bu ay satılan ürün yok.`}
+                  action={
+                    cat !== null ? (
+                      <Button variant="secondary" size="sm" onClick={() => setCatParam("")}>
+                        Bütün menüye dön
+                      </Button>
+                    ) : undefined
+                  }
+                />
               )}
             </Well>
             <p className="mt-2 text-xs text-ink-mute">
-              Grafikte yalnızca bu ay satılan ürünler var; hiç satılmayanlar tabloda &quot;Zayıf&quot; ya da &quot;Bilmece&quot; olarak görünür. Tabloyu
-              süzmek için bir gruba tıklayın.
+              Grafikte yalnızca bu ay satılan ürünler var; hiç satılmayanlar tabloda &quot;Zayıf&quot; ya da &quot;Bilmece&quot; olarak görünür. Bir
+              gruba tıklayınca tablo o gruba süzülür; yeniden tıklayınca süzgeç kalkar.
             </p>
           </div>
 
@@ -304,13 +379,13 @@ export function MenuEngineering({
                     key={k}
                     type="button"
                     aria-pressed={active}
-                    title={active ? "Filtreyi kaldır" : `Tabloda yalnızca ${classInfo[k].label} ürünleri`}
-                    onClick={() => setCls(active ? null : k)}
+                    title={active ? "Süzgeci kaldır" : `Tabloda yalnızca ${classInfo[k].label} ürünleri`}
+                    onClick={() => pickGroup(k, active)}
                     initial={reduce ? false : REVEAL_FROM}
                     animate={{ opacity: 1, y: 0, transition: revealTransition(reduce, index) }}
                     whileTap={reduce ? undefined : { scale: 0.98 }}
                     transition={SPRING_PRESS}
-                    className="relative flex cursor-pointer flex-col items-start gap-3 rounded-2xl bg-surface p-3.5 text-left ring-1 ring-line ring-inset transition-shadow hover:ring-line-strong"
+                    className="relative flex min-w-0 cursor-pointer flex-col items-start gap-3 rounded-2xl bg-surface p-3.5 text-left ring-1 ring-line ring-inset transition-shadow hover:ring-line-strong"
                   >
                     {active ? (
                       <motion.span
@@ -330,10 +405,15 @@ export function MenuEngineering({
                     <span className="flex w-full flex-col gap-1">
                       <span className="text-sm font-semibold text-ink">{classInfo[k].label}</span>
                       <span className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-ink-mute tabular">
-                        <span>
+                        <span className="whitespace-nowrap">
                           <Signed value={sum}>{tl(sum)}</Signed> brüt kâr
                         </span>
-                        {share !== null ? <span title="Toplam brüt kârdaki payı">{pct(share, 0)}</span> : null}
+                        {share !== null ? (
+                          <span title="Toplam brüt kârdaki payı">
+                            <span className="sr-only">Toplam brüt kârdaki payı </span>
+                            {pct(share, 0)}
+                          </span>
+                        ) : null}
                       </span>
                       {share !== null ? (
                         // Düğme içinde yalnızca satır içi öğe olabilir: Progress'in görünümü span ile
@@ -354,33 +434,35 @@ export function MenuEngineering({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card ref={tableRef} className="scroll-mt-20 lg:scroll-mt-6">
         <CardHeader
           icon={<ListOrdered />}
           title="Ürünler"
+          description="Başlığa tıklayınca sıralanır; ürün adı ürün kartını açar."
           meta={
             <>
               <span>{catName}</span>
               <span className="text-ink-quiet">·</span>
-              <span className="tabular">{num(shown.length)} ürün</span>
-              {cls ? (
-                <button
-                  type="button"
-                  onClick={() => setCls(null)}
-                  aria-label={`${classInfo[cls].label} filtresini kaldır`}
-                  className="-my-2 ml-1 inline-flex cursor-pointer items-center py-2"
-                >
-                  <Badge tone={classInfo[cls].tone as Tone} dot>
-                    {classInfo[cls].label}
-                    <X size={12} aria-hidden="true" />
-                  </Badge>
-                </button>
-              ) : null}
+              <span>{monthLabel}</span>
             </>
           }
-          actions={<SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ürün ara…" aria-label="Ürün ara" wrapperClassName="w-full sm:w-60" />}
-          actionsClassName="max-sm:w-full"
         />
+        <FilterBar className="px-5 pb-4" active={filtered} onClear={clearFilters} shown={shown.length} total={items.length} unit="ürün">
+          <SearchField value={q} onChange={setQ} placeholder="Ürün ya da kategori ara" label="Ürün ara" className="w-full sm:w-64" />
+          {groups.map(({ k, count }) => (
+            <FilterChip key={k} active={cls === k} count={count} onToggle={() => setCls(cls === k ? null : k)}>
+              <span aria-hidden="true" className={cn("size-1.5 rounded-full", CLASS_LOOK[k].dot)} />
+              {classInfo[k].label}
+            </FilterChip>
+          ))}
+          <span aria-hidden="true" className="mx-0.5 hidden h-5 w-px bg-line-strong sm:block" />
+          <FilterChip active={!!lowPrice} count={lowPriceCount} onToggle={() => setLowPrice(lowPrice ? "" : "1")}>
+            Zam önerilen
+          </FilterChip>
+          <FilterChip active={!!unsold} count={unsoldCount} onToggle={() => setUnsold(unsold ? "" : "1")}>
+            Bu ay satılmayan
+          </FilterChip>
+        </FilterBar>
         {paged.slice.length ? (
           <TableWrap>
             <Table>
@@ -391,7 +473,7 @@ export function MenuEngineering({
                   </SortTH>
                   <SortTH {...sortProps("cls")}>Grup</SortTH>
                   <SortTH numeric {...sortProps("qty")}>
-                    Satış
+                    Satış (adet)
                   </SortTH>
                   <SortTH numeric {...sortProps("mix")}>
                     Satış payı
@@ -416,18 +498,20 @@ export function MenuEngineering({
               <tbody>
                 {paged.slice.map((i) => (
                   <TR key={i.id}>
-                    <TD sticky className="min-w-40">
+                    <TD sticky className="min-w-40 max-sm:max-w-48">
                       <Link href={`/panel/urunler/${i.id}`} className="font-medium text-ink hover:underline">
                         {i.name} · {i.size}
                       </Link>
-                      <span className="block text-xs text-ink-mute">{i.category}</span>
+                      <span className="block truncate text-xs text-ink-mute">{i.category}</span>
                     </TD>
                     <TD>
                       <Badge tone={classInfo[i.cls].tone as Tone} dot>
                         {classInfo[i.cls].label}
                       </Badge>
                     </TD>
-                    <TD numeric>{num(i.qty)}</TD>
+                    <TD numeric className={cn(i.qty === 0 && "text-ink-mute")}>
+                      {num(i.qty)}
+                    </TD>
                     <TD numeric>{pct(i.mix)}</TD>
                     <TD numeric>
                       <Signed value={i.cm}>{tl(i.cm, 2)}</Signed>
@@ -442,6 +526,7 @@ export function MenuEngineering({
                         <span className="text-bad" title="Önerilen fiyat">
                           {" "}
                           → {tl(i.suggestedPrice)}
+                          <span className="sr-only"> önerilen</span>
                         </span>
                       ) : null}
                     </TD>
@@ -455,29 +540,50 @@ export function MenuEngineering({
                   </TR>
                 ))}
               </tbody>
+              {shown.length > 1 ? (
+                <tfoot>
+                  <TFootRow>
+                    <TD sticky className="whitespace-nowrap">
+                      {filtered ? "Süzülen" : "Toplam"} · {num(shown.length)} ürün
+                    </TD>
+                    <TD />
+                    <TD numeric>{num(shownQty)}</TD>
+                    <TD numeric>{pct(shownMix)}</TD>
+                    <TD />
+                    <TD numeric>
+                      <Signed value={shownCm}>{tl(shownCm)}</Signed>
+                    </TD>
+                    <TD />
+                    <TD />
+                    <TD />
+                  </TFootRow>
+                </tfoot>
+              ) : null}
             </Table>
           </TableWrap>
         ) : (
           <EmptyState
-            title="Bu filtreye uyan ürün yok"
-            description={items.length ? "Arama sözcüğünü ya da grup filtresini değiştirin." : `${catName} içinde aktif ürün yok.`}
+            title={items.length ? "Bu süzgece uyan ürün yok" : `${catName} içinde aktif ürün yok`}
+            description={
+              items.length
+                ? "Arama sözcüğünü ya da seçili grupları değiştirin; süzgeçleri temizleyince bütün ürünler geri gelir."
+                : "Başka bir kategori seçin ya da bütün menüye dönün."
+            }
             action={
-              cls || q ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setCls(null);
-                    setQ("");
-                  }}
-                >
-                  Filtreleri temizle
+              filtered ? (
+                <Button variant="secondary" size="sm" onClick={clearFilters}>
+                  Süzgeci temizle
+                </Button>
+              ) : cat !== null ? (
+                <Button variant="secondary" size="sm" onClick={() => setCatParam("")}>
+                  Bütün menüye dön
                 </Button>
               ) : undefined
             }
           />
         )}
-        <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} className="border-t border-line" />
+        {/* Telefonda sayfa düğmeleri karta sığsın: yan boşluk ve aralık daralır */}
+        <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} className="border-t border-line max-sm:px-3 max-sm:[&>div]:gap-1" />
       </Card>
     </div>
   );
@@ -510,6 +616,12 @@ function SortTH({
 
 /** Yüzde değişim gösterimi: +%5, -%10, %0 */
 const signedPct = (v: number) => (v > 0 ? `+${pct(v / 100, 0)}` : pct(v / 100, 0));
+
+/**
+ * Senaryo alanları: Türkçe yazım kabul edilir (-30.000, 12.500,50); boş alan ve yazılmakta olan tek "-" 0 sayılır,
+ * okunamayan değer null döner ve alanda işaretlenir.
+ */
+const readTR = (v: string) => (v.trim() === "" || v.trim() === "-" ? 0 : parseNumberTR(v));
 
 /** Tutar farkı: +1.200 ₺, -800 ₺ */
 const signedTl = (v: number) => `${v > 0 ? "+" : ""}${tl(v)}`;
@@ -597,18 +709,20 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
   const [volume, setVolume] = useState(0);
   const [extra, setExtra] = useState("0");
   const [target, setTarget] = useState("50.000");
-  const extraNum = parseNumberTR(extra) ?? 0;
+  const extraParsed = readTR(extra);
+  const targetParsed = readTR(target);
+  const extraNum = extraParsed ?? 0;
   const { base: b, scenario: s } = applyScenario(base, { priceChangePct: price / 100, costChangePct: cost / 100, volumeChangePct: volume / 100, extraFixed: extraNum }, acikGun);
 
   // Başabaş için gereken ortalama zam ve satış artışı (diğerleri sabitken)
   const priceForBreakEven = base.net - base.commission - base.discountsNet > 0 ? (base.material + base.fixed) / (base.net - base.commission - base.discountsNet) - 1 : null;
   const unitContribution = base.net - base.material - base.commission - base.discountsNet;
   const volumeForBreakEven = unitContribution > 0 ? base.fixed / unitContribution - 1 : null;
-  const targetNum = parseNumberTR(target) ?? 0;
+  const targetNum = targetParsed ?? 0;
   const dailyForTarget = s.grossRatio > 0 ? (s.fixed + targetNum) / s.grossRatio / acikGun : null;
   const baseDailyForTarget = b.grossRatio > 0 ? (b.fixed + targetNum) / b.grossRatio / acikGun : null;
 
-  const dirty = price !== 0 || cost !== 0 || volume !== 0 || extra !== "0";
+  const dirty = price !== 0 || cost !== 0 || volume !== 0 || extraNum !== 0;
   const profitDiff = s.profit - b.profit;
 
   const rows: { label: string; b: number; s: number; good: "up" | "down" }[] = [
@@ -662,11 +776,35 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
             />
             <PercentSlider label="Malzeme maliyetleri" value={cost} onChange={setCost} min={-20} max={50} info="Tedarikçi zamları ya da daha ucuz tedarikçi." />
             <PercentSlider label="Satış adedi" value={volume} onChange={setVolume} min={-50} max={100} info="Daha çok / daha az müşteri." />
-            <Field label="Aylık sabit gider değişimi (₺)" hint="ör. reklamı 30.000 ₺ azaltmak için -30000" htmlFor="sc-extra">
-              <NumberInput id="sc-extra" value={extra} onChange={(e) => setExtra(e.target.value)} className="cell-input" />
+            <Field
+              label="Aylık sabit gider değişimi (₺)"
+              hint="ör. reklamı 30.000 ₺ azaltmak için -30.000, yeni personel için 25.000"
+              error={extraParsed === null ? "Sayı okunamadı. Örnek: -30.000 ya da 12.500,50" : undefined}
+              htmlFor="sc-extra"
+            >
+              <NumberInput
+                id="sc-extra"
+                value={extra}
+                onChange={(e) => setExtra(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                aria-invalid={extraParsed === null || undefined}
+                className="cell-input pointer-coarse:h-10"
+              />
             </Field>
           </Well>
         </CardContent>
+        {/* Telefonda ve tablette sonuçlar kaydırıcıların altında kalır: kart boyunca altta yapışık özet */}
+        <div className="sticky bottom-3 z-10 mx-3 mb-3 xl:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-surface px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-line-strong">
+            <span className="text-[13px] text-ink-mute">Senaryoda aylık net kâr / zarar</span>
+            <span className="flex items-baseline gap-2">
+              <Signed value={s.profit} className={cn("text-base font-semibold whitespace-nowrap", s.profit >= 0 && "text-good")}>
+                {tl(s.profit)}
+              </Signed>
+              {dirty ? <DiffPill diff={profitDiff} /> : null}
+            </span>
+          </div>
+        </div>
       </Card>
 
       <div className="flex flex-col gap-4 xl:col-span-8">
@@ -718,8 +856,19 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
               badge={dirty && dailyForTarget !== null && baseDailyForTarget !== null ? <DiffPill diff={dailyForTarget - baseDailyForTarget} lowerIsBetter /> : null}
               sub={`Şu an ${tl(baseDailyForTarget)}`}
             >
-              <Field label="Hedef aylık kâr (₺)" htmlFor="sc-target">
-                <NumberInput id="sc-target" value={target} onChange={(e) => setTarget(e.target.value)} className="cell-input" />
+              <Field
+                label="Hedef aylık kâr (₺)"
+                error={targetParsed === null ? "Sayı okunamadı. Örnek: 50.000" : undefined}
+                htmlFor="sc-target"
+              >
+                <NumberInput
+                  id="sc-target"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-invalid={targetParsed === null || undefined}
+                  className="cell-input pointer-coarse:h-10"
+                />
               </Field>
             </Stat>
           </Reveal>
@@ -727,7 +876,44 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
 
         <Card>
           <CardHeader icon={<Calculator />} title="Aylık karşılaştırma" description="Şu anki ay ile senaryo, kalem kalem." />
-          <TableWrap>
+          {/* Telefonda dört sütun sığmaz: her kalem iki satır (senaryo değeri, altında şu an ve fark) */}
+          <ul className="divide-y divide-line px-5 pb-2 sm:hidden">
+            {rows.map((r) => {
+              const d = r.s - r.b;
+              const better = r.good === "up" ? d > 0 : d < 0;
+              return (
+                <li key={r.label} className="py-2.5">
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="min-w-0 text-ink">{r.label}</span>
+                    <span className="shrink-0 font-semibold whitespace-nowrap text-ink tabular">{tl(r.s)}</span>
+                  </div>
+                  <div className="mt-0.5 flex items-baseline justify-between gap-3 text-xs text-ink-mute tabular">
+                    <span className="whitespace-nowrap">Şu an {tl(r.b)}</span>
+                    <span className={cn("whitespace-nowrap", Math.abs(d) < 1 ? "" : better ? "text-good" : "text-bad")}>
+                      {Math.abs(d) < 1 ? "fark yok" : signedTl(d)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+            <li className="py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm font-semibold text-ink">Net kâr / zarar</span>
+                <Signed value={s.profit} className="text-base font-semibold whitespace-nowrap">
+                  {tl(s.profit)}
+                </Signed>
+              </div>
+              <div className="mt-0.5 flex items-baseline justify-between gap-3 text-xs text-ink-mute tabular">
+                <span className="whitespace-nowrap">
+                  Şu an <Signed value={b.profit}>{tl(b.profit)}</Signed>
+                </span>
+                <span className={cn("whitespace-nowrap", Math.abs(profitDiff) < 1 ? "" : profitDiff > 0 ? "text-good" : "text-bad")}>
+                  {Math.abs(profitDiff) < 1 ? "fark yok" : signedTl(profitDiff)}
+                </span>
+              </div>
+            </li>
+          </ul>
+          <TableWrap className="max-sm:hidden">
             <Table>
               <THead>
                 <tr>

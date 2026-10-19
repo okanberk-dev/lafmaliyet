@@ -44,7 +44,7 @@ export function Switch({
         onChange(!checked);
       }}
       className={cn(
-        "-mx-1 inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1 text-[13px] font-medium outline-none",
+        "-mx-1 inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1 text-[13px] font-medium outline-none pointer-coarse:h-10",
         "focus-visible:ring-2 focus-visible:ring-ink/30 disabled:cursor-wait disabled:opacity-50",
         checked ? "text-ink" : "text-ink-mute",
         className,

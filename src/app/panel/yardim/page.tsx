@@ -27,14 +27,15 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { isValidElement, Suspense, type ReactNode } from "react";
 
-import { BouncyAccordionList, type BouncyAccordionItem } from "@/components/akmanos/bouncy-accordion";
 import { NAV_FOOTER, NAV_GROUPS, NAV_TREE, SECTION_TABS } from "@/components/panel/nav";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
+
+import { HelpFaq, HelpFaqFallback, type FaqGroup } from "./faq-search";
 
 export const metadata: Metadata = { title: "Yardım" };
 
@@ -350,8 +351,8 @@ const FORMULAS = [
   ["Net satış", "Satış fiyatı ÷ (1 + KDV)"],
   ["POS komisyonu", "Satış fiyatı × komisyon × kartlı satış oranı"],
   ["Birim kâr", "Net satış − ürün maliyeti − POS komisyonu"],
-  ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef ≤ %30)"],
-  ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5 ₺)"],
+  ["Maliyet oranı", "Ürün maliyeti ÷ net satış (hedef: Ayarlar › Oranlar, ör. %30)"],
+  ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
   ["Eşleşmeyen POS ürünü", "Net ciro × eşleşen ürünlerin ortalama maliyet oranı"],
   ["Başabaş günlük ciro", "Aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
@@ -365,7 +366,7 @@ function GoLinks({ links }: { links: { href: string; label: string }[] }) {
   return (
     <span className="mt-1.5 flex flex-wrap gap-x-4">
       {links.map((l) => (
-        <Link key={l.href} href={l.href} className="inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-ink hover:underline">
+        <Link key={l.href} href={l.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 gap-1 text-[13px] font-medium text-ink hover:underline">
           {l.label}
           <ArrowUpRight size={13} className="text-ink-quiet" aria-hidden="true" />
         </Link>
@@ -374,10 +375,24 @@ function GoLinks({ links }: { links: { href: string; label: string }[] }) {
   );
 }
 
-const faqItems = (items: Faq[]): BouncyAccordionItem[] =>
-  items.map((f) => ({
+/** Cevaptaki düz metin (arama için): menü yolları kenar çubuğundaki adlarıyla okunur */
+function textOf(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join(" ");
+  if (isValidElement<{ href?: string; children?: ReactNode }>(node)) {
+    if (node.type === Path && node.props.href) return pathOf(node.props.href).join(" ");
+    return textOf(node.props.children);
+  }
+  return "";
+}
+
+const FAQ: FaqGroup[] = FAQ_GROUPS.map((g) => ({
+  title: g.title,
+  items: g.items.map((f) => ({
     id: f.id,
     title: f.q,
+    text: `${textOf(f.a)} ${f.links?.map((l) => l.label).join(" ") ?? ""}`,
     icon: (
       <IconTile size="sm" tone={toneFor(f.q)}>
         <f.icon />
@@ -389,7 +404,8 @@ const faqItems = (items: Faq[]): BouncyAccordionItem[] =>
         {f.links ? <GoLinks links={f.links} /> : null}
       </>
     ),
-  }));
+  })),
+}));
 
 function ExcelValue({ value }: { value: string | undefined }) {
   return value ? <span className="text-right text-xs text-ink-mute">{value}</span> : <Badge tone="blue">yeni</Badge>;
@@ -431,23 +447,11 @@ export default function HelpPage() {
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <Card>
-            <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Sık yapılan değişiklikler ve bilinmesi gerekenler. Açmak için soruya dokunun." />
-            <CardContent className="space-y-5">
-              {FAQ_GROUPS.map((g) => (
-                <section key={g.title} aria-label={g.title}>
-                  <h3 className="mb-2 px-1 text-[13px] font-medium text-ink-mute">{g.title}</h3>
-                  <BouncyAccordionList
-                    items={faqItems(g.items)}
-                    classNames={{
-                      trigger: "min-h-[52px] gap-3 px-4 py-2.5",
-                      // Uzun sorular telefonda kısaltılmasın, alt satıra geçsin
-                      title: "text-sm font-medium text-pretty text-ink whitespace-normal!",
-                      content: "[&>div]:px-4",
-                      description: "text-sm leading-6 text-ink-soft sm:pl-10",
-                    }}
-                  />
-                </section>
-              ))}
+            <CardHeader icon={<Info />} title="Nasıl yapılır?" description="Sık yapılan değişiklikler ve bilinmesi gerekenler. Açmak için soruya dokunun ya da arayın." />
+            <CardContent>
+              <Suspense fallback={<HelpFaqFallback groups={FAQ} />}>
+                <HelpFaq groups={FAQ} />
+              </Suspense>
             </CardContent>
           </Card>
 
@@ -473,7 +477,7 @@ export default function HelpPage() {
                   </li>
                   <li>
                     <Info size={14} className="inline align-[-2px] text-ink-quiet" aria-hidden="true" />
-                    <span className="sr-only">Bilgi</span> simgesinin üzerine gelince Excel&apos;deki hücre notlarının karşılığı olan açıklama çıkar.
+                    <span className="sr-only">Bilgi</span> simgesinin üzerine gelince ya da dokununca Excel&apos;deki hücre notlarının karşılığı olan açıklama çıkar.
                   </li>
                 </ul>
               </CardContent>
@@ -513,7 +517,7 @@ export default function HelpPage() {
                         <n.icon />
                       </IconTile>
                       {n.href ? (
-                        <Link href={n.href} className="flex min-h-9 min-w-0 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
+                        <Link href={n.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-10 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
                           {n.label}
                           <ArrowUpRight size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
                         </Link>
@@ -529,7 +533,7 @@ export default function HelpPage() {
                           return (
                             <li key={c.id}>
                               <div className="flex items-center justify-between gap-3">
-                                <Link href={c.href} className="inline-flex min-h-9 items-center gap-1 text-[13px] text-ink-soft hover:text-ink hover:underline">
+                                <Link href={c.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 gap-1 text-[13px] text-ink-soft hover:text-ink hover:underline">
                                   {c.label}
                                 </Link>
                                 {tabs ? null : <ExcelValue value={excelFor(c.href)} />}
@@ -538,7 +542,7 @@ export default function HelpPage() {
                                 <ul className="ml-1 border-l border-line pl-3" aria-label={`${c.label} sekmeleri`}>
                                   {tabs.map((t) => (
                                     <li key={t.href} className="flex items-center justify-between gap-3">
-                                      <Link href={t.href} className="inline-flex min-h-9 items-center text-[13px] text-ink-mute hover:text-ink hover:underline">
+                                      <Link href={t.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 text-[13px] text-ink-mute hover:text-ink hover:underline">
                                         {t.label}
                                       </Link>
                                       <ExcelValue value={excelFor(t.href)} />
@@ -561,7 +565,7 @@ export default function HelpPage() {
                       <IconTile size="sm" tone={toneFor(account.label)}>
                         <account.icon />
                       </IconTile>
-                      <Link href={account.href} className="flex min-h-9 min-w-0 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
+                      <Link href={account.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-10 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
                         {account.label}
                         <ArrowUpRight size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
                       </Link>

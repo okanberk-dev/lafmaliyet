@@ -43,6 +43,11 @@ export function AccountAvatar({ name }: { name: string }) {
 export function PasswordForm() {
   const [state, action, pending] = useActionState<PasswordState, FormData>(changePasswordAction, {});
   const ref = useRef<HTMLFormElement>(null);
+  // Yazarken uyarı: kısa parola ve tekrarın tutmaması gönderilmeden görünsün (sunucu yine denetler)
+  const [next, setNext] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const tooShort = next.length > 0 && next.length < 8;
+  const mismatch = repeat.length > 0 && repeat !== next;
   useEffect(() => {
     if (state.ok) {
       toast.success("Parolanız değiştirildi");
@@ -50,16 +55,44 @@ export function PasswordForm() {
     }
   }, [state]);
   return (
-    <form ref={ref} action={action} className="space-y-4">
+    <form
+      ref={ref}
+      action={action}
+      onReset={() => {
+        setNext("");
+        setRepeat("");
+      }}
+      className="space-y-4"
+    >
       <Field label="Mevcut parola" htmlFor="pw-c">
         <Input id="pw-c" name="current" type="password" autoComplete="current-password" required />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Yeni parola" hint="En az 8 karakter" htmlFor="pw-n">
-          <Input id="pw-n" name="next" type="password" autoComplete="new-password" required minLength={8} />
+        <Field label="Yeni parola" hint="En az 8 karakter" error={tooShort ? `En az 8 karakter (şu an ${next.length})` : undefined} htmlFor="pw-n">
+          <Input
+            id="pw-n"
+            name="next"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={8}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            aria-invalid={tooShort || undefined}
+          />
         </Field>
-        <Field label="Yeni parola (tekrar)" htmlFor="pw-r">
-          <Input id="pw-r" name="repeat" type="password" autoComplete="new-password" required minLength={8} />
+        <Field label="Yeni parola (tekrar)" error={mismatch ? "İki parola aynı değil" : undefined} htmlFor="pw-r">
+          <Input
+            id="pw-r"
+            name="repeat"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={8}
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value)}
+            aria-invalid={mismatch || undefined}
+          />
         </Field>
       </div>
       {state.error ? (
@@ -67,7 +100,7 @@ export function PasswordForm() {
           {state.error}
         </p>
       ) : null}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending || tooShort || mismatch} className="w-full">
         {pending ? "Kaydediliyor…" : "Parolayı değiştir"}
       </Button>
     </form>

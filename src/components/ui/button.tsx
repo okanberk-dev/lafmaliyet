@@ -23,13 +23,14 @@ const variantClass: Record<Variant, string> = {
   accent: "bg-lime text-good-ink hover:brightness-95",
 };
 
+// Dokunmatik ekranda (pointer-coarse) en az 40px dokunma alanı
 const sizeClass: Record<Size, string> = {
-  xs: "h-7 px-2.5 text-xs gap-1 rounded-lg",
-  sm: "h-8 pointer-coarse:h-9 px-3 text-[13px] gap-1.5 rounded-[10px]",
-  md: "h-9 px-3.5 text-sm gap-2 rounded-xl",
+  xs: "h-7 pointer-coarse:h-9 px-2.5 text-xs gap-1 rounded-lg",
+  sm: "h-8 pointer-coarse:h-10 px-3 text-[13px] gap-1.5 rounded-[10px]",
+  md: "h-9 pointer-coarse:h-10 px-3.5 text-sm gap-2 rounded-xl",
   lg: "h-11 px-5 text-[15px] gap-2 rounded-xl",
-  icon: "size-9 rounded-xl",
-  "icon-sm": "size-8 pointer-coarse:size-9 rounded-lg",
+  icon: "size-9 pointer-coarse:size-10 rounded-xl",
+  "icon-sm": "size-8 pointer-coarse:size-10 rounded-lg",
 };
 
 export function buttonClass(variant: Variant = "primary", size: Size = "md", className?: string) {
@@ -79,10 +80,10 @@ const ICON_BUTTON_TONES = {
   danger: "text-bad hover:bg-bad-soft",
 } as const;
 
-/** AkmanOS satır eylemi sınıfı (list-table/icon-action-button): 32px, dokunmatikte 36px */
+/** AkmanOS satır eylemi sınıfı (list-table/icon-action-button): 32px, dokunmatikte 40px */
 export function iconButtonClass(tone: keyof typeof ICON_BUTTON_TONES = "default", className?: string) {
   return cn(
-    "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-surface ring-1 ring-inset ring-line transition-colors pointer-coarse:size-9",
+    "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-surface ring-1 ring-inset ring-line transition-colors pointer-coarse:size-10",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 disabled:pointer-events-none disabled:opacity-40",
     ICON_BUTTON_TONES[tone],
     className,

@@ -62,11 +62,27 @@ const ruleSchema = z.object({
   priority: z.number().int().min(0).max(1000),
 });
 
+/** Kural metni karşılaştırması (eşitlemedeki gibi büyük/küçük harf, Türkçe karakter ve noktalama duyarsız) */
+const samePattern = (a: string, b: string) => {
+  const n = (t: string) =>
+    t
+      .toLocaleLowerCase("tr-TR")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/ı/g, "i")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  return n(a) === n(b);
+};
+
 export async function saveCategoryRule(input: z.input<typeof ruleSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const { id, ...data } = ruleSchema.parse(input);
     const db = getDb();
+    const same = await db.select().from(s.parasutCategoryRules).where(eq(s.parasutCategoryRules.matchType, data.matchType));
+    const dup = same.find((r) => r.id !== id && samePattern(r.pattern, data.pattern));
+    if (dup) throw new UserError(`“${dup.pattern}” için zaten bir kural var (→ ${dup.category}); onu düzenleyin`);
     if (id) await db.update(s.parasutCategoryRules).set(data).where(eq(s.parasutCategoryRules.id, id));
     else await db.insert(s.parasutCategoryRules).values(data);
     await logActivity(me, "Paraşüt kategori kuralı", `“${data.pattern}” → ${data.category}`);

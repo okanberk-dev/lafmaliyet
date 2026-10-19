@@ -1,0 +1,256 @@
+"use client";
+
+import { AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, Info } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+
+import { SPRING_PANEL, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import { Segmented } from "@/components/ui/segmented";
+import { cn } from "@/lib/utils";
+import type { PanelNotification } from "@/server/actions/notifications";
+
+import { useLocalList } from "./local-list";
+
+/**
+ * AkmanOS "Notification Dropdown" görünümünde zil: önce zamanı gelen ödemeler, sonra son satış ayının uyarıları.
+ * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
+ * (ör. düşük kârlı ürün sayısı) yeni bildirim sayılır. Her açılışta liste arka planda tazelenir.
+ */
+const READ_KEY = "laf:bildirim:okundu";
+
+const KIND = {
+  danger: { icon: AlertTriangle, tile: "bg-red-500/15 text-red-600" },
+  warning: { icon: AlertCircle, tile: "bg-amber-500/15 text-amber-700" },
+  info: { icon: Info, tile: "bg-sky-500/15 text-sky-600" },
+} as const;
+
+type Filter = "all" | "unread";
+
+export function NotificationMenu({
+  items,
+  onOpen,
+  align = "left",
+  variant = "sidebar",
+}: {
+  /** null: yükleniyor */
+  items: PanelNotification[] | null;
+  /** Menü açılınca (listeyi tazelemek için) */
+  onOpen?: () => void;
+  align?: "left" | "right";
+  /** sidebar: kenar çubuğundaki beyaz karo; bar: mobil üst çubuktaki çerçeveli düğme */
+  variant?: "sidebar" | "bar";
+}) {
+  const reduce = useReducedMotion();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [readIds, setReadIds] = useLocalList(READ_KEY, 300);
+
+  const read = useMemo(() => new Set(readIds), [readIds]);
+  const list = useMemo(() => (items ?? []).map((n) => ({ ...n, unread: n.unread && !read.has(n.id) })), [items, read]);
+  const unread = list.filter((n) => n.unread).length;
+  const visible = filter === "unread" ? list.filter((n) => n.unread) : list;
+  const groups = [
+    { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
+    { id: "uyari", label: "Uyarılar", items: visible.filter((n) => n.group !== "odeme") },
+  ].filter((g) => g.items.length);
+
+  const markRead = (ids: string[]) => {
+    const fresh = ids.filter((id) => !read.has(id));
+    // Listede artık olmayan eski kimlikler zamanla düşer (en yeniler başta tutulur)
+    if (fresh.length) setReadIds([...fresh, ...readIds]);
+  };
+
+  const toggle = () => {
+    if (!open) onOpen?.();
+    setOpen(!open);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    const onPointer = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (t && rootRef.current && !rootRef.current.contains(t)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} data-component="notification-dropdown" className="relative inline-flex shrink-0 font-sans">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggle}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={items === null ? "Bildirimler yükleniyor" : unread > 0 ? `Bildirimler, ${unread} okunmamış` : "Bildirimler"}
+        className={cn(
+          "relative inline-flex size-11 cursor-pointer items-center justify-center text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/30",
+          variant === "sidebar" ? "rounded-2xl bg-chart-metric-bg hover:bg-chart-bg" : "rounded-lg border border-border bg-background hover:bg-chart-bg",
+        )}
+      >
+        <Bell className="size-[18px]" strokeWidth={1.75} aria-hidden />
+        <AnimatePresence>
+          {unread > 0 ? (
+            <motion.span
+              key="badge"
+              initial={reduce ? false : { scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={reduce ? undefined : { scale: 0 }}
+              transition={reduce ? { duration: 0 } : SPRING_SWAP}
+              aria-hidden="true"
+              className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-semibold text-background tabular ring-2 ring-chart-metric-bg"
+            >
+              {unread > 9 ? "9+" : unread}
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+      </button>
+
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            id={menuId}
+            role="region"
+            aria-label="Bildirimler"
+            initial={reduce ? false : { opacity: 0, scale: 0.96, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={reduce ? undefined : { opacity: 0, scale: 0.96, y: -8 }}
+            transition={reduce ? { duration: 0 } : SPRING_PANEL}
+            className={cn(
+              "absolute top-[calc(100%+0.5rem)] z-[100] flex max-h-[calc(100dvh-5rem)] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-chart-metric-bg shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-black/5",
+              align === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right",
+            )}
+          >
+            <div className="flex shrink-0 items-start justify-between gap-3 px-4 pt-4 pb-3">
+              <div className="min-w-0">
+                <p className="text-[0.95rem] font-semibold tracking-tight text-foreground">Bildirimler</p>
+                <p className="mt-0.5 text-[12px] text-chart-muted" aria-live="polite">
+                  {items === null ? "Yükleniyor…" : unread > 0 ? `${unread} okunmamış` : list.length ? "Hepsi okundu" : "Dikkat isteyen bir şey yok"}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={unread === 0}
+                onClick={() => markRead(list.map((n) => n.id))}
+                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-[12px] font-medium text-chart-muted outline-none transition-colors hover:bg-chart-bg hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/20 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent pointer-coarse:h-10"
+              >
+                <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden />
+                Tümünü okundu say
+              </button>
+            </div>
+
+            {list.length ? (
+              <div className="shrink-0 px-3 pb-2">
+                <Segmented<Filter>
+                  stretch
+                  label="Bildirim süzgeci"
+                  value={filter}
+                  onChange={setFilter}
+                  options={[
+                    { value: "all", label: "Tümü", count: list.length },
+                    { value: "unread", label: "Okunmamış", count: unread },
+                  ]}
+                />
+              </div>
+            ) : null}
+
+            <div className="notification-dropdown-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-1.5">
+              {items === null ? (
+                <div className="space-y-2 px-2.5 py-2" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="size-9 shrink-0 animate-pulse rounded-xl bg-chart-bg" />
+                      <div className="flex-1 space-y-1.5 pt-1">
+                        <div className="h-3 w-2/3 animate-pulse rounded bg-chart-bg" />
+                        <div className="h-3 w-full animate-pulse rounded bg-chart-bg" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : groups.length === 0 ? (
+                <p className="px-3 py-10 text-center text-[13px] text-chart-muted">
+                  {filter === "unread" && list.length ? "Okunmamış bildirim yok." : "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."}
+                </p>
+              ) : (
+                groups.map((g) => (
+                  <div key={g.id} role="group" aria-label={g.label}>
+                    {groups.length > 1 ? (
+                      <p className="px-2.5 pt-2 pb-1 text-[0.65rem] font-medium tracking-wide text-chart-muted uppercase">{g.label}</p>
+                    ) : null}
+                    <ul className="flex flex-col gap-0.5">
+                      {g.items.map((n) => {
+                        const k = KIND[n.kind];
+                        const Icon = n.group === "odeme" ? CalendarClock : k.icon;
+                        return (
+                          <li key={n.id}>
+                            <Link
+                              href={n.href}
+                              onClick={() => {
+                                markRead([n.id]);
+                                setOpen(false);
+                              }}
+                              className="relative flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left outline-none transition-colors hover:bg-chart-bg focus-visible:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/20"
+                            >
+                              <span className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl", k.tile)} aria-hidden="true">
+                                <Icon className="size-4" strokeWidth={1.75} />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-start justify-between gap-2">
+                                  <span className={cn("min-w-0 text-[13px] leading-5 tracking-tight text-foreground", n.unread ? "font-semibold" : "font-medium")}>{n.title}</span>
+                                  <span className={cn("shrink-0 pt-0.5 text-[11px] tabular", n.kind === "danger" ? "font-medium text-red-600" : "text-chart-muted")}>{n.timeLabel}</span>
+                                </span>
+                                <span className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-chart-muted">{n.body}</span>
+                              </span>
+                              {n.unread ? (
+                                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-foreground" role="img" aria-label="Okunmamış" />
+                              ) : (
+                                <span className="mt-2 size-1.5 shrink-0" aria-hidden="true" />
+                              )}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="grid shrink-0 grid-cols-2 gap-1.5 p-2 pt-1">
+              <Link
+                href="/panel/hatirlaticilar"
+                onClick={() => setOpen(false)}
+                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
+              >
+                Ödemeler
+              </Link>
+              <Link
+                href="/panel"
+                onClick={() => setOpen(false)}
+                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
+              >
+                Genel bakış
+              </Link>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}

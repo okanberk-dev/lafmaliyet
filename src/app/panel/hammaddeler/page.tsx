@@ -16,9 +16,7 @@ import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } f
 
 export const metadata: Metadata = { title: "Hammaddeler" };
 
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-
-export default function IngredientsPage({ searchParams }: PageProps<"/panel/hammaddeler">) {
+export default function IngredientsPage() {
   return (
     <Suspense
       fallback={
@@ -28,14 +26,13 @@ export default function IngredientsPage({ searchParams }: PageProps<"/panel/hamm
         </>
       }
     >
-      <IngredientsContent searchParams={searchParams} />
+      <IngredientsContent />
     </Suspense>
   );
 }
 
-async function IngredientsContent({ searchParams }: { searchParams: PageProps<"/panel/hammaddeler">["searchParams"] }) {
+async function IngredientsContent() {
   await requireAdmin();
-  const sp = await searchParams;
   const [model, history] = await Promise.all([
     loadModel(),
     getDb().select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
@@ -59,9 +56,7 @@ async function IngredientsContent({ searchParams }: { searchParams: PageProps<"/
     history: histBy.get(i.id) ?? [],
   }));
 
-  const filtre = first(sp.filtre);
-  // ⌘K komut paleti /panel/hammaddeler?ara=<ad> adresine gönderir
-  const ara = first(sp.ara);
+  // Süzgeçler (?ara, ?durum, ?kategori, ?sirala) istemcide adresten okunur; ⌘K paleti ?ara=<ad> ile gönderir
   const active = rows.filter((r) => r.active);
   const categories = sortCategories(rows.map((r) => r.category));
   const estimates = active.filter((r) => r.isEstimate).length;
@@ -74,7 +69,7 @@ async function IngredientsContent({ searchParams }: { searchParams: PageProps<"/
         title="Hammaddeler"
         excel="Hammaddeler"
         description="Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatı değişince bütün ürün maliyetleri kendiliğinden güncellenir, fiyat geçmişi saklanır."
-        actions={<NewIngredientButton categories={categories} />}
+        actions={<NewIngredientButton categories={categories} rows={rows} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
@@ -107,7 +102,7 @@ async function IngredientsContent({ searchParams }: { searchParams: PageProps<"/
           info="Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre)."
         />
       </div>
-      <IngredientsClient key={`${filtre ?? ""}|${ara ?? ""}`} rows={rows} categories={categories} initialFilter={filtre ?? null} initialQuery={ara ?? ""} />
+      <IngredientsClient rows={rows} categories={categories} />
     </>
   );
 }

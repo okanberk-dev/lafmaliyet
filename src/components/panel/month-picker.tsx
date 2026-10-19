@@ -7,7 +7,13 @@ import { useTransition } from "react";
 import { monthLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** ?ay=YYYY-MM parametresini değiştiren ay seçici */
+const CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
+
+const arrow =
+  "flex h-full w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:cursor-default disabled:opacity-30 pointer-coarse:w-10";
+
+/** ?ay=YYYY-MM parametresini değiştiren ay seçici (dokunmatikte 40px) */
 export function MonthPicker({ months, value, param = "ay" }: { months: string[]; value: string; param?: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -23,20 +29,31 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
   };
 
   return (
-    <div className={cn("inline-flex h-9 items-center rounded-xl bg-surface ring-1 ring-inset ring-line-strong shadow-[0_1px_1px_rgb(33_28_24/0.03)]", pending && "opacity-60")}>
+    <div
+      role="group"
+      aria-label="Ay"
+      aria-busy={pending || undefined}
+      className={cn(
+        "inline-flex h-9 items-center rounded-xl bg-surface ring-1 ring-inset ring-line-strong shadow-[0_1px_1px_rgb(33_28_24/0.03)] transition-opacity pointer-coarse:h-10",
+        pending && "opacity-60",
+      )}
+    >
       <button
         type="button"
-        className="flex h-9 w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:opacity-30"
+        className={arrow}
         disabled={idx <= 0}
         onClick={() => go(list[idx - 1])}
         aria-label="Önceki ay"
+        title={idx > 0 ? `Önceki ay: ${monthLabel(list[idx - 1])}` : undefined}
       >
         <ChevronLeft size={18} />
       </button>
       <select
         value={value}
         onChange={(e) => go(e.target.value)}
-        className="h-9 cursor-pointer border-x border-line bg-transparent px-2 text-sm font-medium text-ink focus:outline-none"
+        // Yerel ok yerine küçük bir ok: telefonda seçici + yanındaki düğme tek satıra sığsın. 16px yazı iOS'ta yakınlaştırmayı önler.
+        className="h-full cursor-pointer appearance-none border-x border-line bg-transparent bg-[length:14px] bg-[right_6px_center] bg-no-repeat pr-6 pl-2.5 text-base font-medium text-ink tabular focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-inset sm:text-sm"
+        style={{ backgroundImage: CHEVRON }}
         aria-label="Ay seçin"
       >
         {list.map((m) => (
@@ -47,10 +64,11 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
       </select>
       <button
         type="button"
-        className="flex h-9 w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:opacity-30"
+        className={arrow}
         disabled={idx >= list.length - 1}
         onClick={() => go(list[idx + 1])}
         aria-label="Sonraki ay"
+        title={idx < list.length - 1 ? `Sonraki ay: ${monthLabel(list[idx + 1])}` : undefined}
       >
         <ChevronRight size={18} />
       </button>

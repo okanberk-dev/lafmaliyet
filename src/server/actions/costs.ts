@@ -75,15 +75,22 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
     const me = await requireAdmin();
     const { id, ...data } = fixedSchema.parse(input);
     const db = getDb();
+    let savedId: number;
     if (id) {
       await db.update(s.fixedExpenses).set(data).where(eq(s.fixedExpenses.id, id));
+      savedId = id;
     } else {
       const all = await db.select({ o: s.fixedExpenses.sortOrder }).from(s.fixedExpenses);
-      await db.insert(s.fixedExpenses).values({ ...data, sortOrder: Math.max(0, ...all.map((r) => r.o)) + 1 });
+      const [row] = await db
+        .insert(s.fixedExpenses)
+        .values({ ...data, sortOrder: Math.max(0, ...all.map((r) => r.o)) + 1 })
+        .returning({ id: s.fixedExpenses.id });
+      savedId = row.id;
     }
     await logActivity(me, id ? "Sabit gider düzenlendi" : "Sabit gider eklendi", `${data.name}: ${tl(data.amount)} (${data.period})`);
     refresh();
-    return null;
+    // Kimlik döner: istemci yeni ya da düzenlenen satırı listede vurgulayabilsin
+    return { id: savedId };
   });
 }
 
@@ -112,11 +119,17 @@ export async function saveInvestment(input: z.input<typeof investmentSchema>) {
     const me = await requireAdmin();
     const { id, ...data } = investmentSchema.parse(input);
     const db = getDb();
-    if (id) await db.update(s.investments).set(data).where(eq(s.investments.id, id));
-    else await db.insert(s.investments).values(data);
+    let savedId: number;
+    if (id) {
+      await db.update(s.investments).set(data).where(eq(s.investments.id, id));
+      savedId = id;
+    } else {
+      const [row] = await db.insert(s.investments).values(data).returning({ id: s.investments.id });
+      savedId = row.id;
+    }
     await logActivity(me, "Yatırım kaydı", `${data.name}: ${tl(data.amount)}`);
     refresh();
-    return null;
+    return { id: savedId };
   });
 }
 

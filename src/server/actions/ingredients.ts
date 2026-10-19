@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, max } from "drizzle-orm";
+import { and, eq, max, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -35,6 +35,11 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
     const data = ingredientSchema.parse(input);
     const db = getDb();
     const id = await db.transaction(async (tx) => {
+      const [dup] = await tx
+        .select({ id: s.ingredients.id })
+        .from(s.ingredients)
+        .where(data.id ? and(eq(s.ingredients.name, data.name), ne(s.ingredients.id, data.id)) : eq(s.ingredients.name, data.name));
+      if (dup) throw new UserError(`“${data.name}” adında bir malzeme zaten var`);
       if (data.id) {
         const [before] = await tx.select().from(s.ingredients).where(eq(s.ingredients.id, data.id));
         if (!before) throw new UserError("Malzeme bulunamadı");
@@ -91,6 +96,21 @@ export async function updateIngredientPrice(id: number, packagePrice: number, cl
       await tx.insert(s.ingredientPrices).values({ ingredientId: id, packagePrice: price, packageSize: before.packageSize, changedBy: me.name });
     });
     await logActivity(me, "Hammadde fiyatı", `${before.name}: ${tl(before.packagePrice, 2)} → ${tl(price, 2)}`);
+    refresh();
+    return null;
+  });
+}
+
+/** Aktif/pasif: reçetede kullanılan malzeme silinemez, pasif yapılır (seçim listelerinden düşer, reçeteler bozulmaz) */
+export async function setIngredientActive(id: number, active: boolean) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const db = getDb();
+    const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, id));
+    if (!before) throw new UserError("Malzeme bulunamadı");
+    if (before.active === active) return null;
+    await db.update(s.ingredients).set({ active, updatedAt: new Date() }).where(eq(s.ingredients.id, id));
+    await logActivity(me, active ? "Hammadde aktif" : "Hammadde pasif", before.name);
     refresh();
     return null;
   });

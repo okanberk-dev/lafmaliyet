@@ -1,9 +1,9 @@
 "use client";
 
-import { Check, ClipboardCheck, ClipboardCopy, Coins, ListTodo, PackagePlus, Plus, Printer, Save, SearchX, Trash2 } from "lucide-react";
+import { Check, ClipboardCheck, ClipboardCopy, Coins, ListFilter, ListTodo, PackagePlus, Plus, Printer, Save, SearchX, Trash2, Undo2 } from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -12,13 +12,16 @@ import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/mo
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
-import { Input, NumberInput, SearchInput } from "@/components/ui/form";
+import { Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
+import { COUNT_UNITS } from "@/lib/constants";
 import { num, tl } from "@/lib/format";
-import { cn, matchesSearch } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 interface Line {
@@ -34,19 +37,31 @@ interface Line {
 
 type Filter = "all" | "empty";
 type HistoryMonth = { month: string; short: string; label: string; counted: boolean };
+type Extra = { name: string; unit: string; qty: string; unitPrice: string };
 
-/** Enter ile sıradaki sayım kutusuna geçilir (telefonda klavyenin "İleri" tuşu) */
-function focusNextCount(e: KeyboardEvent<HTMLInputElement>) {
+/** Adresteki süzgeç anahtarları (?ara=sut&durum=empty&grup=…); "Temizle" hepsini birden sıfırlar */
+const QUERY_KEYS = ["ara", "durum", "grup"];
+const BLANK_EXTRA: Extra = { name: "", unit: "ADET", qty: "", unitPrice: "" };
+/** Hiçbir alanı doldurulmamış ek satır: kayıtta zaten düşer, "kaydedilmedi" çubuğunu da açmaz */
+const isBlankExtra = (e: Extra) => !e.name.trim() && !e.qty.trim() && !e.unitPrice.trim();
+const badNumber = (v: string) => v.trim() !== "" && (parseNumberTR(v) === null || (parseNumberTR(v) ?? 0) < 0);
+
+/** Enter ile sıradaki kutuya geçilir (telefonda klavyenin "İleri" tuşu). `attr` hangi kutu dizisinde gezileceğini seçer. */
+function focusNext(e: KeyboardEvent<HTMLInputElement>, attr: string, onEnd?: () => void) {
   if (e.key !== "Enter") return;
   e.preventDefault();
-  const inputs = [...document.querySelectorAll<HTMLInputElement>("input[data-count-input]")];
+  const inputs = [...document.querySelectorAll<HTMLInputElement>(`input[${attr}]`)];
   const next = inputs[inputs.indexOf(e.currentTarget) + 1];
-  if (!next) return e.currentTarget.blur();
+  if (!next) {
+    if (onEnd) return onEnd();
+    return e.currentTarget.blur();
+  }
   next.focus({ preventScroll: true });
   next.select();
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   next.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
 }
+const focusNextCount = (e: KeyboardEvent<HTMLInputElement>) => focusNext(e, "data-count-input");
 
 // ---------------------------------------------------------------- AkmanOS hareketli parçalar
 
@@ -300,16 +315,21 @@ export function StockCountForm({
 }) {
   const reduce = useCalmMotion() ?? false;
   const all = groups.flatMap((g) => g.lines);
-  const savedExtras = initialExtras.map((e) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(e.unitPrice, 2) }));
-  const [values, setValues] = useState<Record<number, string>>(() =>
-    Object.fromEntries(all.map((l) => [l.id, l.qty === null ? "" : num(l.qty, 3)])),
-  );
+  const savedExtras: Extra[] = initialExtras.map((e) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(e.unitPrice, 2) }));
+  const savedValues = () => Object.fromEntries(all.map((l) => [l.id, l.qty === null ? "" : num(l.qty, 3)])) as Record<number, string>;
+  const [values, setValues] = useState<Record<number, string>>(savedValues);
   const [extras, setExtras] = useState(savedExtras);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [filterParam, setFilterParam] = useQueryState<Filter>("durum", "all");
+  const [groupParam, setGroup] = useQueryState<string>("grup", "");
+  const [q, setQ] = useQueryText("ara");
+  const filter: Filter = filterParam === "empty" ? "empty" : "all";
+  const group = groups.some((g) => g.name === groupParam) ? groupParam : "";
   /** "Sayılmayanlar" seçildiği andaki boş kalemler: yazmaya başlayınca satır listeden kaybolmasın */
-  const [emptyIds, setEmptyIds] = useState<Set<number>>(() => new Set());
-  const [q, setQ] = useState("");
+  const [emptyIds, setEmptyIds] = useState<Set<number>>(() => new Set(all.filter((l) => l.qty === null).map((l) => l.id)));
+  /** Yeni eklenen ek satırın ad kutusuna odaklanmak için */
+  const focusExtra = useRef<number | null>(null);
 
   const qtyOf = (id: number) => {
     const v = values[id];
@@ -323,14 +343,18 @@ export function StockCountForm({
 
   const changedLines = all.filter((l) => qtyOf(l.id) !== l.qty);
   const invalidLines = all.filter((l) => isInvalid(l.id));
-  const extrasDirty = JSON.stringify(extras) !== JSON.stringify(savedExtras);
+  const filledExtras = extras.filter((e) => !isBlankExtra(e));
+  const extrasDirty = JSON.stringify(filledExtras) !== JSON.stringify(savedExtras);
+  /** Miktarı ya da fiyatı yazılmış ama adı boş ek satır: kayıtta sessizce düşmesin */
+  const extraProblem = filledExtras.find((e) => !e.name.trim() || badNumber(e.qty) || badNumber(e.unitPrice));
   const dirty = changedLines.length > 0 || extrasDirty || invalidLines.length > 0;
   const counted = all.filter((l) => qtyOf(l.id) !== null).length;
   const remaining = all.length - counted;
   const share = all.length ? counted / all.length : 0;
   const complete = all.length > 0 && remaining === 0;
   const groupTotal = (g: { lines: Line[] }) => g.lines.reduce((a, l) => a + (qtyOf(l.id) ?? 0) * l.unitPrice, 0);
-  const extrasTotal = extras.reduce((a, e) => a + (parseNumberTR(e.qty) ?? 0) * (parseNumberTR(e.unitPrice) ?? 0), 0);
+  const extraTotal = (e: Extra) => (parseNumberTR(e.qty) ?? 0) * (parseNumberTR(e.unitPrice) ?? 0);
+  const extrasTotal = extras.reduce((a, e) => a + extraTotal(e), 0);
   const total = groups.reduce((a, g) => a + groupTotal(g), 0) + extrasTotal;
   const totalVat = groups.reduce((a, g) => a + g.lines.reduce((b, l) => b + (qtyOf(l.id) ?? 0) * l.unitPrice * (1 + l.vatRate), 0), 0) + extrasTotal * 1.01;
 
@@ -342,31 +366,72 @@ export function StockCountForm({
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // Yeni ek satır çizilince ad kutusuna odaklan
+  useEffect(() => {
+    if (focusExtra.current === null) return;
+    document.querySelector<HTMLInputElement>(`input[data-extra-name="${focusExtra.current}"]`)?.focus();
+    focusExtra.current = null;
+  }, [extras.length]);
+
   const changeFilter = (f: Filter) => {
     if (f === "empty") setEmptyIds(new Set(all.filter((l) => qtyOf(l.id) === null).map((l) => l.id)));
-    setFilter(f);
+    setFilterParam(f);
+  };
+  const filtered = filter !== "all" || group !== "" || q.trim() !== "";
+  const clearFilters = () => {
+    setQ("");
+    clearQuery(QUERY_KEYS);
   };
   const visibleGroups = groups
+    .filter((g) => !group || g.name === group)
     .map((g) => ({
       ...g,
-      visible: g.lines.filter((l) => (filter === "all" || emptyIds.has(l.id)) && matchesSearch(`${l.name} ${l.packageDesc ?? ""} ${g.name}`, q.trim())),
+      visible: g.lines.filter((l) => (filter === "all" || emptyIds.has(l.id)) && matches(`${l.name} ${l.packageDesc ?? ""} ${g.name}`, q)),
     }))
     .filter((g) => g.visible.length);
+  const shownCount = visibleGroups.reduce((a, g) => a + g.visible.length, 0);
 
   function fillFromPrev() {
+    const fill = all.filter((l) => !values[l.id]?.trim() && l.prevQty !== null);
+    if (!fill.length) return toast.message("Doldurulacak boş satır yok", { description: "Geçen ay sayılan kalemlerin hepsine bu ay miktar yazılmış." });
     setValues((v) => {
       const next = { ...v };
-      for (const l of all) if (!next[l.id]?.trim() && l.prevQty !== null) next[l.id] = num(l.prevQty, 3);
+      for (const l of fill) next[l.id] = num(l.prevQty ?? 0, 3);
       return next;
     });
-    toast.message("Boş satırlar geçen ayın sayımıyla dolduruldu");
+    toast.success(`${num(fill.length)} boş satır geçen ayın sayımıyla dolduruldu`, { description: "Kontrol edip değişenleri düzeltin, sonra kaydedin." });
   }
 
-  const updateExtra = (i: number, patch: Partial<(typeof extras)[number]>) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
+  const updateExtra = (i: number, patch: Partial<Extra>) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
+  const addExtra = () => {
+    focusExtra.current = extras.length;
+    setExtras((x) => [...x, { ...BLANK_EXTRA }]);
+  };
+  const removeExtra = (i: number) => {
+    const removed = extras[i];
+    setExtras((x) => x.filter((_, j) => j !== i));
+    if (!isBlankExtra(removed))
+      toast.message(`"${removed.name.trim() || "Adsız kalem"}" kaldırıldı`, {
+        description: "Sayımı kaydedince silinir.",
+        action: { label: "Geri al", onClick: () => setExtras((x) => [...x.slice(0, i), removed, ...x.slice(i)]) },
+      });
+  };
+
+  function discard() {
+    setValues(savedValues());
+    setExtras(savedExtras);
+    setDiscardOpen(false);
+    toast.message("Değişiklikler geri alındı");
+  }
 
   async function save() {
+    if (busy) return;
     const bad = invalidLines[0];
-    if (bad) return toast.error(`${bad.name}: geçersiz miktar`);
+    if (bad) {
+      document.getElementById(`count-${bad.id}`)?.focus();
+      return toast.error(`${bad.name}: geçersiz miktar`, { description: "Yalnızca sayı yazın; ondalık için virgül kullanın (0,5)." });
+    }
+    if (extraProblem) return toast.error(!extraProblem.name.trim() ? "Ek kalemin adını yazın" : `${extraProblem.name}: geçersiz miktar ya da fiyat`);
     setBusy(true);
     const res = await saveStockCounts(
       month,
@@ -375,30 +440,48 @@ export function StockCountForm({
     if (res.ok && isAdmin) {
       const ex = await saveStockExtras(
         month,
-        extras.filter((e) => e.name.trim()).map((e) => ({ name: e.name, unit: e.unit || "ADET", qty: parseNumberTR(e.qty) ?? 0, unitPrice: parseNumberTR(e.unitPrice) ?? 0 })),
+        filledExtras.map((e) => ({ name: e.name, unit: e.unit || "ADET", qty: parseNumberTR(e.qty) ?? 0, unitPrice: parseNumberTR(e.unitPrice) ?? 0 })),
       );
       if (!ex.ok) toast.error(ex.error);
-      // Sunucunun yazdığı biçime getir (boş adlı satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
+      // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
       else
-        setExtras((x) =>
-          x
-            .filter((e) => e.name.trim())
-            .map((e) => ({ name: e.name.trim(), unit: e.unit.trim() || "ADET", qty: num(parseNumberTR(e.qty) ?? 0, 3), unitPrice: num(parseNumberTR(e.unitPrice) ?? 0, 2) })),
+        setExtras(
+          filledExtras.map((e) => ({ name: e.name.trim(), unit: e.unit.trim() || "ADET", qty: num(parseNumberTR(e.qty) ?? 0, 3), unitPrice: num(parseNumberTR(e.unitPrice) ?? 0, 2) })),
         );
     }
     setBusy(false);
-    if (res.ok) toast.success(`${monthLabel} sayımı kaydedildi`);
+    if (res.ok) toast.success(`${monthLabel} sayımı kaydedildi`, { description: `${num(counted)} / ${num(all.length)} kalem sayıldı` });
     else toast.error(res.error);
   }
 
-  const changeLabel = changedLines.length
-    ? `${num(changedLines.length)} kalem değişti${extrasDirty ? " · ek kalemler" : ""}`
-    : extrasDirty
-      ? "Ek kalemler değişti"
-      : `${num(invalidLines.length)} geçersiz miktar`;
+  // ⌘S / Ctrl+S ile kaydet (değişiklik varken)
+  const saveRef = useRef(save);
+  useEffect(() => {
+    saveRef.current = save;
+  });
+  useEffect(() => {
+    if (!dirty) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dirty]);
+
+  // Kaydetme çubuğunun başlığı: neyin değiştiği ve varsa kaç geçersiz miktar kaldığı
+  const changeLabel = [
+    changedLines.length ? `${num(changedLines.length)} kalem değişti` : null,
+    extrasDirty ? (changedLines.length ? "ek kalemler" : "Ek kalemler değişti") : null,
+    invalidLines.length ? `${num(invalidLines.length)} geçersiz miktar` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="space-y-4 pb-28">
+    <div className="space-y-4 pb-32">
       <div className={cn("grid gap-3", isAdmin && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
         {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni */}
         <Card>
@@ -421,11 +504,11 @@ export function StockCountForm({
             </div>
             <div className="no-print flex flex-wrap gap-2">
               {hasPrev ? (
-                <Button variant="secondary" onClick={fillFromPrev}>
+                <Button variant="secondary" onClick={fillFromPrev} className="pointer-coarse:h-10" title="Bu ay boş bırakılan satırlara geçen ayın miktarını yazar">
                   <ClipboardCopy size={16} /> Geçen aydan doldur
                 </Button>
               ) : null}
-              <Button variant="secondary" onClick={() => window.print()}>
+              <Button variant="secondary" onClick={() => window.print()} className="pointer-coarse:h-10">
                 <Printer size={16} /> Yazdır
               </Button>
             </div>
@@ -461,7 +544,7 @@ export function StockCountForm({
             icon={<Coins />}
             label="Toplam stok (KDV hariç)"
             value={<Money value={total} />}
-            info={'Gelir-giderde "sonraki aya devreden mal" olur.'}
+            info={'Sayılan miktar × birim fiyat. Gelir-giderde "sonraki aya devreden mal" olur.'}
           >
             <div className="divide-y divide-line rounded-xl bg-surface px-3">
               <KeyValue label="KDV dahil" value={tl(totalVat)} />
@@ -472,29 +555,56 @@ export function StockCountForm({
         ) : null}
       </div>
 
-      {/* Telefonda başlığın altına yapışan arama ve filtre satırı */}
-      <div className="no-print sticky top-14 z-20 -mx-4 flex items-center gap-2 bg-surface/95 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-        <SearchInput wrapperClassName="min-w-0 flex-1" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kalem ara…" aria-label="Kalem ara" />
-        <Segmented<Filter>
-          label="Gösterilen kalemler"
-          className="shrink-0"
-          value={filter}
-          onChange={changeFilter}
-          options={[
-            { value: "all", label: "Tümü", count: all.length },
-            {
-              value: "empty",
-              label: (
-                <>
-                  <span className="sm:hidden">Kalan</span>
-                  <span className="hidden sm:inline">Sayılmayanlar</span>
-                </>
-              ),
-              count: remaining,
-            },
-          ]}
-        />
-      </div>
+      {/* Uzun listede arama ve süzgeç her genişlikte üstte kalır (telefonda başlığın altına yapışır) */}
+      {all.length ? (
+        <FilterBar
+          active={filtered}
+          onClear={clearFilters}
+          shown={filtered ? shownCount : undefined}
+          total={filtered ? all.length : undefined}
+          unit="kalem"
+          className="no-print sticky top-14 z-20 -mx-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10"
+        >
+          <SearchField className="max-sm:basis-full sm:flex-1 sm:basis-56" value={q} onChange={setQ} placeholder="Kalem ara" label="Sayım kalemlerinde ara" />
+          <Segmented<Filter>
+            label="Gösterilen kalemler"
+            className="shrink-0"
+            value={filter}
+            onChange={changeFilter}
+            options={[
+              { value: "all", label: "Tümü", count: all.length },
+              {
+                value: "empty",
+                label: (
+                  <>
+                    <span className="sm:hidden">Kalan</span>
+                    <span className="hidden sm:inline">Sayılmayanlar</span>
+                  </>
+                ),
+                count: remaining,
+              },
+            ]}
+          />
+          {groups.length > 1 ? (
+            <div className="relative max-sm:min-w-36 max-sm:flex-1 sm:shrink-0">
+              <ListFilter size={15} className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
+              <Select
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                aria-label="Grup"
+                className={cn("pl-8 sm:w-48 pointer-coarse:h-10", group && "font-medium ring-ink/40")}
+              >
+                <option value="">Tüm gruplar</option>
+                {groups.map((g) => (
+                  <option key={g.name} value={g.name}>
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+        </FilterBar>
+      ) : null}
 
       {visibleGroups.map((g) => {
         const groupCounted = g.lines.filter((l) => qtyOf(l.id) !== null).length;
@@ -515,7 +625,7 @@ export function StockCountForm({
                   ) : null}
                 </>
               }
-              actions={isAdmin ? <span className="text-sm font-semibold text-ink tabular">{tl(groupTotal(g))}</span> : null}
+              actions={isAdmin ? <span className="text-sm font-semibold whitespace-nowrap text-ink tabular">{tl(groupTotal(g))}</span> : null}
               className="pb-2"
             />
             <ul className="divide-y divide-line px-2 pb-2">
@@ -536,13 +646,17 @@ export function StockCountForm({
                           </span>
                         ) : null}
                       </label>
-                      {l.packageDesc ? <p className="mt-0.5 truncate text-xs text-ink-mute">{l.packageDesc}</p> : null}
+                      {l.packageDesc ? (
+                        <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
+                          {l.packageDesc}
+                        </p>
+                      ) : null}
                       {l.prevQty !== null ? (
                         <p className="mt-0.5 text-xs text-ink-mute tabular">
                           Geçen ay {num(l.prevQty, 3)} {l.countUnit}
                         </p>
                       ) : null}
-                      {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar</p> : null}
+                      {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar: yalnızca sayı (ör. 2,5)</p> : null}
                       {isAdmin ? (
                         <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
                           {tl(l.unitPrice, 2)}/{l.countUnit} · <span className="font-semibold text-ink">{v ? tl(v * l.unitPrice) : "–"}</span>
@@ -557,6 +671,7 @@ export function StockCountForm({
                         value={values[l.id] ?? ""}
                         onChange={(e) => setValues((x) => ({ ...x, [l.id]: e.target.value }))}
                         onKeyDown={focusNextCount}
+                        onFocus={(e) => e.currentTarget.select()}
                         placeholder="—"
                         aria-label={`${l.name} miktarı (${l.countUnit})`}
                         aria-invalid={invalid || undefined}
@@ -566,10 +681,10 @@ export function StockCountForm({
                     </div>
                     {isAdmin ? (
                       <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
-                        <span>
+                        <span className="whitespace-nowrap">
                           {tl(l.unitPrice, 2)}/{l.countUnit}
                         </span>
-                        <span className="w-20 font-semibold text-ink">{v ? tl(v * l.unitPrice) : "–"}</span>
+                        <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(v * l.unitPrice) : "–"}</span>
                       </div>
                     ) : null}
                   </li>
@@ -583,26 +698,41 @@ export function StockCountForm({
       {!visibleGroups.length ? (
         <Card>
           {!all.length ? (
-            <EmptyState icon={<ClipboardCheck />} title="Sayılacak kalem yok" description="Hammaddelerde sayım birimi girilmiş aktif kalem yok." />
-          ) : q.trim() ? (
             <EmptyState
-              icon={<SearchX />}
-              title="Eşleşen kalem yok"
-              description={`"${q.trim()}" için sonuç bulunamadı.`}
+              icon={<ClipboardCheck />}
+              title="Sayılacak kalem yok"
+              description={
+                isAdmin ? (
+                  <>
+                    Hammaddelerde sayım birimi girilmiş aktif kalem yok.{" "}
+                    <Link href="/panel/hammaddeler" className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                      Hammaddelere git
+                    </Link>
+                  </>
+                ) : (
+                  "Hammaddelerde sayım birimi girilmiş aktif kalem yok. Yöneticiye haber verin."
+                )
+              }
+            />
+          ) : filter === "empty" && !q.trim() && !group ? (
+            <EmptyState
+              icon={<ClipboardCheck />}
+              title="Sayılmayan kalem kalmadı"
+              description="Bütün kalemlere miktar yazıldı. Kontrol edip sayımı kaydedin."
               action={
-                <Button variant="secondary" onClick={() => setQ("")}>
-                  Aramayı temizle
+                <Button variant="secondary" onClick={() => changeFilter("all")}>
+                  Tümünü göster
                 </Button>
               }
             />
           ) : (
             <EmptyState
-              icon={<ClipboardCheck />}
-              title="Sayılmayan kalem kalmadı"
-              description="Bu filtrede gösterilecek kalem yok."
+              icon={<SearchX />}
+              title="Bu süzgece uyan kalem yok"
+              description={q.trim() ? `"${q.trim()}" için sonuç bulunamadı. Yazımı kontrol edin ya da süzgeci temizleyin.` : "Seçili grupta ya da süzgeçte gösterilecek kalem yok."}
               action={
-                <Button variant="secondary" onClick={() => changeFilter("all")}>
-                  Tümünü göster
+                <Button variant="secondary" onClick={clearFilters}>
+                  Süzgeci temizle
                 </Button>
               }
             />
@@ -615,60 +745,131 @@ export function StockCountForm({
           <CardHeader
             icon={<PackagePlus />}
             title="Listede olmayanlar"
-            description="Hammaddelerde olmayan ama stokta duran kalemler (elle fiyatlı)."
+            description="Hammaddelerde olmayan ama stokta duran kalemler (elle fiyatlı). Tutar = miktar × birim fiyat."
             meta={
               extras.length ? (
                 <span className="tabular">
-                  {num(extras.length)} kalem · {tl(extrasTotal)}
+                  {num(filledExtras.length)} kalem · {tl(extrasTotal)}
                 </span>
               ) : undefined
             }
             actions={
-              <Button variant="secondary" className="no-print" onClick={() => setExtras((x) => [...x, { name: "", unit: "ADET", qty: "", unitPrice: "" }])}>
+              <Button variant="secondary" className="no-print pointer-coarse:h-10" onClick={addExtra}>
                 <Plus size={16} /> Kalem ekle
               </Button>
             }
           />
           <CardContent>
             {extras.length ? (
-              <ul className="space-y-3 sm:space-y-2">
-                {extras.map((e, i) => (
-                  <li
-                    key={i}
-                    className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_auto]"
-                  >
-                    <Input
-                      value={e.name}
-                      onChange={(ev) => updateExtra(i, { name: ev.target.value })}
-                      placeholder="Kalem adı"
-                      aria-label="Kalem adı"
-                      className="col-span-3 sm:col-span-1"
-                    />
-                    <IconButton label="Kaldır" tone="danger" className="no-print order-1 sm:order-last" onClick={() => setExtras((x) => x.filter((_, j) => j !== i))}>
-                      <Trash2 size={16} />
-                    </IconButton>
-                    <Input value={e.unit} onChange={(ev) => updateExtra(i, { unit: ev.target.value })} placeholder="Birim" aria-label="Birim" className="order-2 sm:order-none" />
-                    <NumberInput
-                      value={e.qty}
-                      onChange={(ev) => updateExtra(i, { qty: ev.target.value })}
-                      placeholder="Miktar"
-                      aria-label="Miktar"
-                      aria-invalid={e.qty.trim() !== "" && parseNumberTR(e.qty) === null ? true : undefined}
-                      className="cell-input order-2 sm:order-none"
-                    />
-                    <NumberInput
-                      value={e.unitPrice}
-                      onChange={(ev) => updateExtra(i, { unitPrice: ev.target.value })}
-                      placeholder="Birim fiyat"
-                      aria-label="Birim fiyat"
-                      aria-invalid={e.unitPrice.trim() !== "" && parseNumberTR(e.unitPrice) === null ? true : undefined}
-                      className="cell-input order-2 sm:order-none"
-                    />
-                  </li>
-                ))}
-              </ul>
+              <>
+                {/* Sütun başlıkları (geniş ekranda); telefonda her kutunun kendi yer tutucusu var */}
+                <div
+                  aria-hidden="true"
+                  className="mb-1.5 hidden grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_6.5rem_2.25rem] gap-2 px-1 text-xs font-medium text-ink-mute sm:grid"
+                >
+                  <span>Kalem adı</span>
+                  <span>Birim</span>
+                  <span className="text-right">Miktar</span>
+                  <span className="text-right">Birim fiyat (₺)</span>
+                  <span className="text-right">Tutar</span>
+                  <span />
+                </div>
+                <datalist id="extra-units">
+                  {[...COUNT_UNITS, "PAKET", "KUTU", "ŞİŞE"].map((u) => (
+                    <option key={u} value={u} />
+                  ))}
+                </datalist>
+                <ul className="space-y-3 sm:space-y-2">
+                  {extras.map((e, i) => {
+                    const nameMissing = !e.name.trim() && !isBlankExtra(e);
+                    const onEnter = (ev: KeyboardEvent<HTMLInputElement>) => focusNext(ev, "data-extra-input", i === extras.length - 1 ? addExtra : undefined);
+                    return (
+                      <li
+                        key={i}
+                        className="grid grid-cols-12 items-center gap-2 rounded-2xl max-sm:bg-surface/60 max-sm:p-2 sm:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_6.5rem_2.25rem]"
+                      >
+                        <Input
+                          value={e.name}
+                          data-extra-input=""
+                          data-extra-name={i}
+                          enterKeyHint="next"
+                          onKeyDown={onEnter}
+                          onChange={(ev) => updateExtra(i, { name: ev.target.value })}
+                          placeholder="Kalem adı (ör. Peçete)"
+                          aria-label="Kalem adı"
+                          aria-invalid={nameMissing || undefined}
+                          maxLength={120}
+                          className="col-span-10 sm:col-span-1 pointer-coarse:h-10"
+                        />
+                        <IconButton
+                          label={`${e.name.trim() || "Bu satırı"} kaldır`}
+                          tone="danger"
+                          className="no-print order-1 col-span-2 justify-self-end sm:order-last sm:col-span-1"
+                          onClick={() => removeExtra(i)}
+                        >
+                          <Trash2 size={16} />
+                        </IconButton>
+                        <Input
+                          value={e.unit}
+                          list="extra-units"
+                          data-extra-input=""
+                          enterKeyHint="next"
+                          onKeyDown={onEnter}
+                          onChange={(ev) => updateExtra(i, { unit: ev.target.value.toLocaleUpperCase("tr-TR") })}
+                          placeholder="Birim"
+                          aria-label="Birim"
+                          maxLength={20}
+                          // Telefonda listenin oku "ADET"i kesmesin; öneriler odaklanınca yine açılır
+                          className="order-2 col-span-4 max-sm:px-2.5 max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                        />
+                        <NumberInput
+                          value={e.qty}
+                          data-extra-input=""
+                          enterKeyHint="next"
+                          onKeyDown={onEnter}
+                          onChange={(ev) => updateExtra(i, { qty: ev.target.value })}
+                          placeholder="Miktar"
+                          aria-label={`Miktar (${e.unit || "ADET"})`}
+                          aria-invalid={badNumber(e.qty) || undefined}
+                          className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                        />
+                        <NumberInput
+                          value={e.unitPrice}
+                          data-extra-input=""
+                          enterKeyHint={i === extras.length - 1 ? "done" : "next"}
+                          onKeyDown={onEnter}
+                          onChange={(ev) => updateExtra(i, { unitPrice: ev.target.value })}
+                          placeholder="Fiyat ₺"
+                          aria-label="Birim fiyat (₺, KDV hariç)"
+                          aria-invalid={badNumber(e.unitPrice) || undefined}
+                          className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                        />
+                        <p className="order-3 col-span-12 text-right text-xs text-ink-mute tabular sm:order-none sm:col-span-1 sm:text-sm sm:font-semibold sm:text-ink">
+                          <span className="sm:hidden">Tutar </span>
+                          <span className="font-semibold text-ink">{tl(extraTotal(e))}</span>
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="no-print mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <p className="min-w-0 flex-1 text-xs text-ink-mute">Son kutuda Enter yeni satır açar. Boş bırakılan satırlar kaydedilmez.</p>
+                  <Button variant="ghost" size="sm" onClick={addExtra} className="-mr-2">
+                    <Plus size={15} aria-hidden="true" /> Satır ekle
+                  </Button>
+                </div>
+              </>
             ) : (
-              <p className="text-sm text-ink-mute">Ek kalem yok.</p>
+              <EmptyState
+                icon={<PackagePlus />}
+                title="Ek kalem yok"
+                description="Hammaddelerde kaydı olmayan ama rafta duran bir şey varsa (ör. peçete, deterjan) buraya ekleyin; stok toplamına girer."
+                action={
+                  <Button variant="secondary" onClick={addExtra}>
+                    <Plus size={16} /> Kalem ekle
+                  </Button>
+                }
+              />
             )}
           </CardContent>
         </Card>
@@ -678,14 +879,40 @@ export function StockCountForm({
       <FloatingBar open={dirty}>
         <div className="min-w-0 flex-1" aria-live="polite">
           <p className="truncate text-sm font-semibold text-ink">{changeLabel}</p>
+          {/* Telefonda kısa: ay adı zaten sayfa başlığında */}
           <p className="truncate text-xs text-ink-mute">
-            {monthLabel} sayımı kaydedilmedi{isAdmin ? ` · toplam ${tl(total)}` : ""}
+            <span className="max-sm:hidden">{monthLabel} sayımı kaydedilmedi</span>
+            <span className="sm:hidden">Kaydedilmedi</span>
+            {isAdmin ? <span className="tabular"> · toplam {tl(total)}</span> : null}
           </p>
         </div>
-        <Button onClick={save} disabled={busy} size="lg">
-          <Save size={18} /> {busy ? "Kaydediliyor…" : "Sayımı kaydet"}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" onClick={() => setDiscardOpen(true)} disabled={busy} aria-label="Değişikliklerden vazgeç" className="max-sm:size-10 max-sm:px-0">
+            <Undo2 size={16} aria-hidden="true" />
+            <span className="max-sm:sr-only">Vazgeç</span>
+          </Button>
+          <Button onClick={save} disabled={busy} size="lg" title="Kaydet (⌘S / Ctrl+S)" className="max-sm:px-4">
+            <Save size={18} aria-hidden="true" />
+            {busy ? (
+              "Kaydediliyor…"
+            ) : (
+              <>
+                <span className="sm:hidden">Kaydet</span>
+                <span className="hidden sm:inline">Sayımı kaydet</span>
+              </>
+            )}
+          </Button>
+        </div>
       </FloatingBar>
+
+      <ConfirmDialog
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        onConfirm={discard}
+        title="Kaydedilmemiş değişiklikler silinsin mi?"
+        description={`${monthLabel} sayımında yazdığınız ama kaydetmediğiniz miktarlar son kayda döner. Kaydedilmiş sayım değişmez.`}
+        confirmLabel="Değişiklikleri sil"
+      />
     </div>
   );
 }

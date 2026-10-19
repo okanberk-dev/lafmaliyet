@@ -62,6 +62,20 @@ Panel `ladmin.laffogato.net` alt alan adında çalışıyor; kafenin sitesi `laf
 alan adı `lafmaliyet` projesine eklendi (`vercel domains add ladmin.laffogato.net`), sertifika otomatik çıktı.
 `/` adresi panele (giriş yapılmamışsa giriş sayfasına) yönlendirir; QR menü `ladmin.laffogato.net/menu`.
 
+Panel arama motorlarına kapalıdır: `robots.txt` her şeyi engeller, her yanıtta `X-Robots-Tag: noindex, nofollow`
+başlığı ve sayfalarda `noindex` etiketi vardır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
+yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
+
+## 6a. Kullanıcılar ve iki adımlı doğrulama
+
+- **Ayarlar › Kullanıcılar & roller:** kullanıcı ekleme (giriş e-postası ve ilk parolayı yönetici belirler), rol
+  (Yönetici / Personel), pasif yapma, kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma.
+- **Hesabım:** ad ve giriş e-postası (parolayla onay), parola değiştirme, iki adımlı doğrulama: QR kodu Google
+  Authenticator / Microsoft Authenticator / 1Password ile okutulur, 8 tek seferlik kurtarma kodu verilir. Telefon
+  kaybolursa girişte "Telefonum yanımda değil" ile kurtarma kodu kullanılır ya da bir yönetici sıfırlar.
+- Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
+  adımlı doğrulama yeniden kurulmalıdır.
+
 QR menüyü yayınlamak için panelde **Ayarlar → QR menü → Menüyü yayınla** seçeneğini açın. QR kodu tarayıcınızın
 "QR kodu oluştur" özelliğiyle ya da herhangi bir QR üreticisiyle `https://<alan adı>/menu` için oluşturabilirsiniz.
 

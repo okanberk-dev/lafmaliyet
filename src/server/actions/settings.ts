@@ -32,6 +32,34 @@ const settingsSchema = z.object({
   publicMenu: z.boolean(),
 });
 
+/** İşlem geçmişinde okunur ad ve biçim ("Satış KDV %10", "Su + buz ₺/L otomatik") */
+const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" | "water"]> = {
+  kdv: ["Satış KDV", "pct"],
+  komisyon: ["POS komisyonu", "pct"],
+  kartOrani: ["Kartlı satış oranı", "pct"],
+  hedefMaliyet: ["Hedef maliyet oranı", "pct"],
+  fire: ["Fire payı", "pct"],
+  shotTek: ["Tek shot (gr)", "num"],
+  shotCift: ["Çift shot (gr)", "num"],
+  pompa: ["Pompa (ml)", "num"],
+  potGr: ["Filtre kahve pot (gr)", "num"],
+  potMl: ["Pottan çıkan (ml)", "num"],
+  dondurmaTop: ["Dondurma topu (ml)", "num"],
+  tkGr: ["Türk kahvesi (gr)", "num"],
+  acikGun: ["Açık gün", "num"],
+  fireExcludesPackaging: ["Fire ambalaja uygulanmasın", "bool"],
+  suBirimLTOverride: ["Su + buz ₺/L", "water"],
+  publicMenu: ["QR menü yayında", "bool"],
+};
+
+function logPart(key: string, value: number | boolean | null) {
+  const [label, kind] = SETTING_LOG[key] ?? [key, "num"];
+  const n = (v: number, digits = 2) => v.toLocaleString("tr-TR", { maximumFractionDigits: digits });
+  const text =
+    value === null ? "otomatik" : typeof value === "boolean" ? (value ? "evet" : "hayır") : kind === "pct" ? `%${n(value * 100)}` : n(value, kind === "water" ? 4 : 2);
+  return `${label} ${text}`;
+}
+
 export async function saveSettings(input: Partial<z.input<typeof settingsSchema>>) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -42,7 +70,7 @@ export async function saveSettings(input: Partial<z.input<typeof settingsSchema>
       if (!(key in DEFAULT_SETTINGS) || value === undefined) continue;
       if (value === null) await db.delete(s.settings).where(eq(s.settings.key, key));
       else await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
-      changed.push(`${key}=${value}`);
+      changed.push(logPart(key, value));
     }
     await logActivity(me, "Ayarlar", changed.join(", "));
     refresh();

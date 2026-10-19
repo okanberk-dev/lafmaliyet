@@ -1,5 +1,6 @@
 import { Banknote, ShoppingBag, TrendingUp, Unlink } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
@@ -10,19 +11,12 @@ import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { CountUp, ImportCard, MatchCoverage, MonthInfoForm, SalesTable, type ProductOption, type SalesFilter, type SalesRow } from "./sales-client";
+import { CountUp, ImportCard, MatchCoverage, MonthInfoForm, SalesTable, type ProductOption, type SalesRow } from "./sales-client";
 
 export const metadata: Metadata = { title: "Satışlar" };
 
 const DESCRIPTION =
   "Patron (ModPOS) ürün satış raporu. Her POS ürünü menüdeki bir ürünle eşleştirilir; eşleştirmeler hatırlanır ve sonraki aylarda otomatik uygulanır.";
-
-/** ?filtre= değeri → tablo filtresi */
-const FILTERS = new Map<string, SalesFilter>([
-  ["eslesmeyen", "unmatched"],
-  ["eslesen", "matched"],
-  ["hizmet", "service"],
-]);
 
 export default function SalesPage({ searchParams }: PageProps<"/panel/satislar">) {
   return (
@@ -46,7 +40,6 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const month = resolveMonth(sp.ay, model);
   const sales = model.monthSales(month);
   const info = model.monthInfo.get(month);
-  const filtre = Array.isArray(sp.filtre) ? sp.filtre[0] : sp.filtre;
 
   const products: ProductOption[] = model.products.map((p) => ({
     id: p.product.id,
@@ -127,7 +120,19 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           value={<CountUp value={unmatched} kind="num" />}
           tone={unmatched ? "warn" : "good"}
           info="Reçetesi olmayan ürünlere eşleşenlerin ortalama maliyet oranı uygulanır (Excel'deki gibi)."
-          sub={`Ort. maliyet oranı ${pct(sales.avgCostRatio)}`}
+          sub={
+            <>
+              Ort. maliyet oranı {pct(sales.avgCostRatio)}
+              {unmatched ? (
+                <Link
+                  href={`/panel/satislar?ay=${month}&durum=eslesmeyen#satirlar`}
+                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                >
+                  Eşleştirmeye git →
+                </Link>
+              ) : null}
+            </>
+          }
         >
           {rows.length ? <MatchCoverage share={coverage} /> : null}
         </Stat>
@@ -163,12 +168,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
       </div>
 
       <div className="mt-4">
+        {/* Süzgeçler (?durum=eslesmeyen, ?ara, ?sirala) adreste; tablo istemcide okur, sunucuya istek gitmez */}
         <SalesTable
-          key={filtre ?? ""}
           rows={rows}
           products={products}
           month={month}
-          initialFilter={(filtre && FILTERS.get(filtre)) || "all"}
           totals={{
             qty: sales.qty,
             revenue: sales.revenue,

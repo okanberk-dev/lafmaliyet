@@ -127,13 +127,13 @@ function CodeStep({ email, onBack, onExpired, reduce }: { email?: string; onBack
       <AnimatePresence>{state.error && !state.expired ? <ErrorText reduce={reduce}>{state.error}</ErrorText> : null}</AnimatePresence>
       <SubmitButton pending={pending} idle="Doğrula ve gir" busy="Doğrulanıyor…" reduce={reduce} />
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <button type="button" onClick={onBack} className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-1 text-chart-muted hover:text-foreground">
+        <button type="button" onClick={onBack} className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg px-1 text-chart-muted hover:text-foreground">
           <ArrowLeft className="size-4" aria-hidden /> Geri
         </button>
         <button
           type="button"
           onClick={() => setMode((m) => (m === "app" ? "recovery" : "app"))}
-          className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-lg px-1 font-medium text-foreground hover:underline"
+          className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg px-1 font-medium text-foreground hover:underline"
         >
           <KeyRound className="size-4" aria-hidden />
           {mode === "app" ? "Telefonum yanımda değil" : "Uygulama kodunu kullan"}
@@ -150,6 +150,8 @@ export function LoginForm() {
   const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, {});
   const reduce = useCalmMotion() ?? false;
   const [show, setShow] = useState(false);
+  // Parola yazarken Caps Lock açıksa uyar (en sık "parola yanlış" sebebi)
+  const [caps, setCaps] = useState(false);
   // Kod adımından "Geri" denince aynı sonuç yeniden kod adımı açmasın
   const [left, setLeft] = useState<LoginState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -201,6 +203,11 @@ export function LoginForm() {
                   type="email"
                   name="email"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  inputMode="email"
+                  // Hatalı denemeden sonra e-posta dolu gelir; o zaman parola alanına odaklanılır
+                  autoFocus={!state.email}
                   required
                   defaultValue={state.email}
                   placeholder="ornek@laffogato.net"
@@ -218,6 +225,10 @@ export function LoginForm() {
                     type={show ? "text" : "password"}
                     name="password"
                     autoComplete="current-password"
+                    autoFocus={Boolean(state.email)}
+                    onKeyUp={(e) => setCaps(e.getModifierState("CapsLock"))}
+                    onBlur={() => setCaps(false)}
+                    aria-describedby={caps ? "caps-warning" : undefined}
                     required
                     placeholder="Parolanız"
                     whileFocus={reduce ? undefined : { scale: 1.01, y: -1 }}
@@ -229,7 +240,7 @@ export function LoginForm() {
                     onClick={() => setShow((v) => !v)}
                     whileTap={reduce ? undefined : { scale: 0.9 }}
                     whileHover={reduce ? undefined : { scale: 1.06 }}
-                    className="absolute top-1/2 right-1 flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-chart-muted transition-colors hover:text-foreground"
+                    className="absolute top-1/2 right-0.5 flex size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-chart-muted transition-colors hover:text-foreground"
                     aria-label={show ? "Parolayı gizle" : "Parolayı göster"}
                   >
                     <AnimatePresence mode="wait" initial={false}>
@@ -246,6 +257,11 @@ export function LoginForm() {
                     </AnimatePresence>
                   </motion.button>
                 </div>
+                {caps ? (
+                  <span id="caps-warning" role="status" className="text-xs font-medium text-warn">
+                    Caps Lock açık
+                  </span>
+                ) : null}
               </label>
             </Row>
 

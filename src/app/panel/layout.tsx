@@ -20,10 +20,17 @@ async function SidebarWithUser() {
 export default function PanelLayout({ children }: LayoutProps<"/panel">) {
   return (
     <div data-component="app-shell" className="min-h-dvh bg-background text-foreground lg:pl-[17.5rem]">
+      {/* Klavyeyle gezinenler için: menüyü atlayıp doğrudan sayfa içeriğine */}
+      <a
+        href="#icerik"
+        className="no-print sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:rounded-xl focus:bg-ink focus:px-4 focus:py-2.5 focus:text-sm focus:font-medium focus:text-white"
+      >
+        İçeriğe geç
+      </a>
       <Suspense fallback={<SidebarSkeleton />}>
         <SidebarWithUser />
       </Suspense>
-      <main className="min-w-0">
+      <main id="icerik" tabIndex={-1} className="min-w-0 outline-none">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</div>
       </main>
     </div>

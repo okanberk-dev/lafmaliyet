@@ -1,5 +1,6 @@
 import { CircleAlert, FileText, Percent, ShoppingBasket, Table2 } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -25,6 +26,15 @@ const EDGE = "shadow-[inset_-1px_0_0_var(--color-line-strong)]";
 /** Yıl toplamı sütunu: gelir-gider tablosundaki gibi hafif koyu şerit */
 const TOTAL_COL = "bg-ink/[0.03] pr-5";
 
+/** Aylık tablodan listeye inen bağlantı (?kategori=…&ay=…); liste süzgeçleri adresten okur */
+function listHref(filters: { kategori?: string; ay?: string; durum?: string }) {
+  const q = new URLSearchParams(Object.entries(filters).filter((e): e is [string, string] => Boolean(e[1])));
+  return `/panel/faturalar?${q}#fatura-listesi`;
+}
+/** Tablo hücresindeki bağlantı: düz rakam gibi görünür, üzerine gelince altı çizilir; dokunmatikte hücre yüksekliğince */
+const CELL_LINK =
+  "inline-block rounded-sm underline-offset-2 decoration-ink/30 hover:underline focus-visible:underline pointer-coarse:-my-3 pointer-coarse:py-3";
+
 /** Listedeki kategori rozetleriyle aynı anlam: yeşil mal maliyeti, mavi komisyon, gri diğer */
 function categoryDot(category: string) {
   if (GOODS_CATEGORIES.includes(category)) return "bg-good";
@@ -32,7 +42,7 @@ function categoryDot(category: string) {
   return "bg-ink-quiet";
 }
 
-export default function InvoicesPage({ searchParams }: PageProps<"/panel/faturalar">) {
+export default function InvoicesPage() {
   return (
     <Suspense
       fallback={
@@ -42,14 +52,13 @@ export default function InvoicesPage({ searchParams }: PageProps<"/panel/fatural
         </>
       }
     >
-      <InvoicesContent searchParams={searchParams} />
+      <InvoicesContent />
     </Suspense>
   );
 }
 
-async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/panel/faturalar">["searchParams"] }) {
+async function InvoicesContent() {
   await requireAdmin();
-  const sp = await searchParams;
   const model = await loadModel();
   const invoices = [...model.ds.invoices].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
@@ -65,7 +74,6 @@ async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/pan
   const commissionByMonth = summary.find((r) => r.category === COMMISSION_CATEGORY)?.byMonth ?? months.map(() => 0);
   const unpaid = invoices.filter((i) => i.unpaid);
   const lastMonth = months[months.length - 1];
-  const durum = Array.isArray(sp.durum) ? sp.durum[0] : sp.durum;
   const supplierCount = new Set(invoices.map((i) => normalizeSupplier(i.supplier))).size;
 
   return (
@@ -99,17 +107,29 @@ async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/pan
           label="Ödenmemiş"
           value={<CountUp value={unpaid.length} />}
           tone={unpaid.length ? "warn" : "good"}
-          sub={unpaid.length ? tl(unpaid.reduce((a, i) => a + i.payable, 0)) + " KDV dahil" : "Hepsi ödendi"}
+          sub={
+            unpaid.length ? (
+              <>
+                {tl(unpaid.reduce((a, i) => a + i.payable, 0))} KDV dahil
+                <Link
+                  href={listHref({ durum: "odenmedi" })}
+                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                >
+                  Listede göster →
+                </Link>
+              </>
+            ) : (
+              "Hepsi ödendi"
+            )
+          }
         />
       </div>
 
-      {/* ?durum= değişince (ör. bildirimdeki "ödenmemiş faturalar" bağlantısı bu sayfadayken) filtreler baştan kurulur */}
+      {/* Süzgeçler (?ara, ?durum=odenmedi, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
       <InvoicesClient
-        key={durum === "odenmedi" ? "odenmedi" : "tumu"}
         invoices={invoices}
         months={months}
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
-        initialUnpaid={durum === "odenmedi"}
         parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
       />
 
@@ -124,6 +144,9 @@ async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/pan
                 <span>{summary.length} kategori</span>
                 <span aria-hidden="true">·</span>
                 <span>{months.length} ay</span>
+                <span aria-hidden="true">·</span>
+                <span>Tutara tıklayınca faturalar listede açılır</span>
+                {months.length > 1 ? <span className="sm:hidden">(tabloyu yana kaydırın)</span> : null}
               </>
             ) : null
           }
@@ -138,7 +161,9 @@ async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/pan
                   </TH>
                   {months.map((m) => (
                     <TH key={m} numeric>
-                      {monthShort(m)} {m.slice(2, 4)}
+                      <Link href={listHref({ ay: m })} className={CELL_LINK} title={`${monthLabel(m)} faturalarını listede göster`}>
+                        {monthShort(m)} {m.slice(2, 4)}
+                      </Link>
                     </TH>
                   ))}
                   <TH numeric className={TOTAL_COL}>
@@ -151,15 +176,25 @@ async function InvoicesContent({ searchParams }: { searchParams: PageProps<"/pan
                   const goods = GOODS_CATEGORIES.includes(r.category);
                   return (
                     <TR key={r.category}>
-                      <TD sticky className={cn(EDGE, "pl-5 whitespace-nowrap", goods ? "font-medium" : "text-ink-soft")}>
-                        <span className="inline-flex items-center gap-2">
+                      <TD sticky className={cn(EDGE, "pl-5 max-sm:min-w-36 sm:whitespace-nowrap", goods ? "font-medium" : "text-ink-soft")}>
+                        <Link href={listHref({ kategori: r.category })} className={cn(CELL_LINK, "inline-flex items-center gap-2")}>
                           <span className={cn("size-2 shrink-0 rounded-full", categoryDot(r.category))} aria-hidden="true" />
                           {r.category}
-                        </span>
+                        </Link>
                       </TD>
                       {r.byMonth.map((v, i) => (
                         <TD key={i} numeric className={cn(!v && "text-ink-quiet")}>
-                          {v ? tl(v) : "–"}
+                          {v ? (
+                            <Link
+                              href={listHref({ kategori: r.category, ay: months[i] })}
+                              className={CELL_LINK}
+                              title={`${r.category} · ${monthLabel(months[i])} faturalarını listede göster`}
+                            >
+                              {tl(v)}
+                            </Link>
+                          ) : (
+                            "–"
+                          )}
                         </TD>
                       ))}
                       <TD numeric className={cn(TOTAL_COL, "font-medium")}>

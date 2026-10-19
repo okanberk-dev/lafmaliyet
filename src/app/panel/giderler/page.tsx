@@ -80,12 +80,11 @@ async function ExpensesContent() {
         breakEvenRef={ref ? monthLabel(ref) : null}
       />
 
+      {/* Bölüm ve genel toplamlar istemcide görünen kalemlerden hesaplanır (süzgeç ve aktif/pasif anahtarı anında yansısın) */}
       <FixedExpensesClient
         rows={model.ds.fixedExpenses.map((f) => ({ ...f, monthly: fixedMonthly(f, st) }))}
         personnel={{ total: model.personnel.total, count: model.personnel.rows.length }}
-        total={total}
         acikGun={st.acikGun}
-        sections={bySection}
       />
       <div className="mt-6">
         <InvestmentsClient rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))} total={totalInvestment} />

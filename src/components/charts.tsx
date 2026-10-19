@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { LegendPayload } from "recharts";
 import {
   Bar,
   BarChart,
@@ -21,7 +22,7 @@ import {
   ZAxis,
 } from "recharts";
 
-import { num, pct, tl } from "@/lib/format";
+import { num, pct, tl, tlUnit } from "@/lib/format";
 
 // AkmanOS renklerinden doğrulanmış kategorik sıra (dataviz/validate_palette.js, beyaz ve #f4f4f5 zemin, tüm çiftler):
 // 1 mavi #2563eb (ciro) · 2 turuncu #e8590c (gider) · 3 yeşil #16a34a (kâr). Yeşil–turuncu renk körlüğünde 6.8 ΔE:
@@ -55,6 +56,36 @@ function TipBox({ title, rows }: { title?: ReactNode; rows: { color?: string; la
       ))}
     </div>
   );
+}
+
+/** Seri lejantı: sütun serileri kare, çizgi serisi çizgi işaretiyle (renk tek başına ayırt ettirmesin) */
+function SeriesLegend({ payload }: { payload?: readonly LegendPayload[] }) {
+  if (!payload?.length) return null;
+  return (
+    <ul className="flex flex-wrap gap-x-3 gap-y-1 pb-4 text-xs text-ink">
+      {payload.map((p) => (
+        <li key={String(p.value)} className="inline-flex items-center gap-1.5">
+          {p.type === "line" ? (
+            <span aria-hidden="true" className="relative inline-block h-0.5 w-3.5 rounded-full" style={{ background: p.color }}>
+              <span className="absolute top-1/2 left-1/2 size-1.5 -translate-1/2 rounded-full" style={{ background: p.color }} />
+            </span>
+          ) : (
+            <span aria-hidden="true" className="inline-block size-2.5 rounded-[3px]" style={{ background: p.color }} />
+          )}
+          {p.value}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Eksen etiketlerinde komşu değerleri ayırt edecek kadar ondalık (₺/gr gibi küçük birimlerde 4'e kadar) */
+function tickDigits(values: number[]): number {
+  if (!values.length) return 2;
+  const max = Math.max(...values.map(Math.abs));
+  const span = Math.max(...values) - Math.min(...values) || max;
+  if (!(span > 0)) return 2;
+  return Math.min(4, Math.max(max >= 100 ? 0 : 2, Math.ceil(-Math.log10(span / 4))));
 }
 
 /** Tek serili yatay çubuk grafik (kategori marjı, gider dağılımı) */
@@ -130,14 +161,8 @@ export function TrendChart({ data }: { data: { label: string; revenue: number; e
               ) : null
             }
           />
-          <Legend
-            verticalAlign="top"
-            align="left"
-            height={30}
-            iconSize={10}
-            wrapperStyle={{ ...FONT, color: INK }}
-            formatter={(v) => <span style={{ color: INK }}>{v}</span>}
-          />
+          {/* HTML lejant: dar ekranda alt satıra sarılır, yüksekliği ölçülür; üstteki eksen etiketini örtmez */}
+          <Legend verticalAlign="top" align="left" content={({ payload }) => <SeriesLegend payload={payload} />} />
           <Bar name="Ciro (KDV hariç)" dataKey="revenue" fill={SERIES[0]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
           <Bar name="Giderler" dataKey="expenses" fill={SERIES[1]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
           <Line
@@ -228,17 +253,18 @@ export function MenuMatrix({
 
 /** Tek serili çizgi (fiyat geçmişi) */
 export function PriceLine({ data, valueLabel = "Birim maliyet" }: { data: { label: string; value: number }[]; valueLabel?: string }) {
+  const digits = tickDigits(data.map((d) => d.value));
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} stroke={GRID} />
           <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, ...FONT }} />
-          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, ...FONT }} width={64} tickFormatter={(v) => num(v, 2)} domain={["auto", "auto"]} />
+          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, ...FONT }} width={64} tickFormatter={(v) => num(v, digits)} domain={["auto", "auto"]} />
           <Tooltip
             content={({ active, payload, label }) =>
               active && payload?.length ? (
-                <TipBox title={label} rows={[{ color: SERIES[0], label: valueLabel, value: tl(payload[0].value as number, 2) }]} />
+                <TipBox title={label} rows={[{ color: SERIES[0], label: valueLabel, value: tlUnit(payload[0].value as number) }]} />
               ) : null
             }
           />

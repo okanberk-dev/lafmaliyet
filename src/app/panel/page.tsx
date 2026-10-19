@@ -3,21 +3,16 @@ import {
   CalendarClock,
   CalendarDays,
   ChartColumn,
-  ChevronRight,
-  CircleAlert,
-  CircleCheck,
+  ChartScatter,
   Coins,
   Download,
   Flame,
-  Info,
-  LayoutGrid,
   Percent,
   Receipt,
   Scale,
   Target,
   TrendingDown,
   TrendingUp,
-  TriangleAlert,
   Trophy,
   Upload,
   Wallet,
@@ -26,25 +21,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
-import { HBarChart, TrendChart } from "@/components/charts";
+import { TrendChart } from "@/components/charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
-import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
-import { Avatar, type PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, SegmentStrip, Signed, Stat } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { daysInMonth, fixedForMonth, shiftMonth } from "@/lib/calc/engine";
-import { alerts, dashboard, yearTrend, type Alert, type DashboardData } from "@/lib/calc/insights";
+import { alerts, dashboard, yearTrend, type DashboardData } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 
+import { DashboardAlerts } from "./dashboard-alerts";
+import { CategoriesPanel } from "./dashboard-categories";
 import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
@@ -94,12 +89,6 @@ function Change({ g, prevMonth, prevValue }: { g: number | null; prevMonth: stri
     </span>
   );
 }
-
-const ALERT_STYLE: Record<Alert["level"], { icon: ReactNode; tone: PastelTone }> = {
-  danger: { icon: <CircleAlert />, tone: 3 },
-  warning: { icon: <TriangleAlert />, tone: 1 },
-  info: { icon: <Info />, tone: 2 },
-};
 
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
@@ -177,8 +166,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           {
             value: "karli",
             label: "En kârlı ürünler",
+            short: "En kârlı",
             content: (
               <ProductRank
+                month={month}
                 icon={<Trophy />}
                 title="En çok kâr getiren"
                 description="Birim kâr × satış adedi"
@@ -194,8 +185,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           {
             value: "satan",
             label: "En çok satan",
+            short: "Çok satan",
             content: (
               <ProductRank
+                month={month}
                 icon={<Flame />}
                 title="En çok satan"
                 description="Satış adedine göre"
@@ -211,23 +204,34 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           {
             value: "zayif",
             label: "En az kârlı",
+            short: "Az kârlı",
             content: (
               <ProductRank
+                month={month}
                 icon={<TrendingDown />}
                 title="Satılanlar içinde en düşük marj"
                 description="Fiyatını gözden geçirin"
-                columns={[{ label: "Durum" }, { label: "Önerilen fiyat", numeric: true }, { label: "Marj", numeric: true }]}
+                columns={[{ label: "Durum" }, { label: "Fiyat", numeric: true }, { label: "Önerilen fiyat", numeric: true }, { label: "Marj", numeric: true }]}
                 rows={d.weakest.map((x) => ({
                   id: x.p.product.id,
                   name: x.p.key,
-                  cells: [<StatusBadge key="s" status={x.p.status} />, tl(x.p.suggestedPrice), <span key="v" className="font-semibold">{pct(x.p.margin)}</span>],
+                  cells: [
+                    <StatusBadge key="s" status={x.p.status} />,
+                    tl(x.p.price),
+                    <span key="o" className={cn(x.p.price < x.p.suggestedPrice && "text-bad")}>
+                      {tl(x.p.suggestedPrice)}
+                    </span>,
+                    <span key="v" className="font-semibold">
+                      {pct(x.p.margin)}
+                    </span>,
+                  ],
                 }))}
               />
             ),
           },
         ]
       : []),
-    { value: "gider", label: "En büyük giderler", content: <ExpensesTab items={d.topExpenses.slice(0, 6)} total={d.fixedStandardTotal} /> },
+    { value: "gider", label: "En büyük giderler", short: "Giderler", content: <ExpensesTab items={d.topExpenses} total={d.fixedStandardTotal} /> },
   ];
 
   return (
@@ -303,7 +307,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 sub={
                   d.actual.hasRevenue ? (
                     <>
-                      Faturaya göre: <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed>
+                      Faturaya göre:{" "}
+                      <Signed value={d.actual.profit} className="whitespace-nowrap">
+                        {tl(d.actual.profit)}
+                      </Signed>
                     </>
                   ) : null
                 }
@@ -333,7 +340,15 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 info="Bu tempoda ay sonu cirosu × son satış ayının brüt kâr oranı − aylık sabit giderler."
                 value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
                 tone={projected < 0 ? "bad" : "good"}
-                sub={d.forecast ? `Tahmini ciro ${tl(d.forecast.projectedRevenue)}` : "Ay tamamlandı"}
+                sub={
+                  d.forecast ? (
+                    <>
+                      Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span>
+                    </>
+                  ) : (
+                    "Ay tamamlandı"
+                  )
+                }
               />
             </>
           )}
@@ -342,7 +357,14 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             label="Başabaş günlük ciro"
             info="Zarar etmemek için gereken günlük ciro. Başabaş noktası: aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. KDV dahil."
             value={<CountUp value={d.breakEvenDaily} />}
-            sub={showBreakEven ? `Günlük ortalama ${tl(d.dailyAvg)} · başabaşa göre ${pct(d.breakEvenProgress, 0)}` : null}
+            sub={
+              showBreakEven ? (
+                <>
+                  Günlük ortalama <span className="whitespace-nowrap">{tl(d.dailyAvg)}</span> · başabaşa göre{" "}
+                  <span className="whitespace-nowrap">{pct(d.breakEvenProgress, 0)}</span>
+                </>
+              ) : null
+            }
           >
             {showBreakEven && d.breakEvenProgress !== null ? <Progress value={d.breakEvenProgress} tone={progressTone(d.breakEvenProgress)} /> : null}
           </Stat>
@@ -354,7 +376,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             <Suspense fallback={null}>
               <DashboardPayments />
             </Suspense>
-            <AlertsCard items={alertItems} className="flex-1" />
+            <DashboardAlerts items={alertItems} className="flex-1" />
           </div>
           <CostCard
             className="lg:col-span-5"
@@ -393,13 +415,29 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   </Well>
                 </div>
                 <div className="divide-y divide-line">
-                  <KeyValue label="Fark (alınan − reçeteye göre harcanan)" value={<span className="font-semibold">{tl(purchases - t.material)}</span>} />
                   <KeyValue
-                    label="Kâr/zarar: reçeteye göre → faturaya göre"
-                    value={
-                      <span className="font-semibold">
-                        <Signed value={t.netProfit}>{tl(t.netProfit)}</Signed> → <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed>
+                    label={
+                      <span className="inline-flex items-center gap-1.5">
+                        Fark (alınan − harcanan)
+                        <InfoTip text="Faturayla alınan mal − reçeteye göre satışlarda harcanan malzeme. Artı değer: fire, ikram, stokta bekleyen mal ya da reçetede eksik malzeme." />
                       </span>
+                    }
+                    value={<span className="font-semibold whitespace-nowrap">{tl(purchases - t.material)}</span>}
+                  />
+                  <KeyValue
+                    label="Kâr/zarar · reçeteye göre"
+                    value={
+                      <Signed value={t.netProfit} className="font-semibold whitespace-nowrap">
+                        {tl(t.netProfit)}
+                      </Signed>
+                    }
+                  />
+                  <KeyValue
+                    label="Kâr/zarar · faturaya göre"
+                    value={
+                      <Signed value={d.actual.profit} className="font-semibold whitespace-nowrap">
+                        {tl(d.actual.profit)}
+                      </Signed>
                     }
                   />
                   {d.info?.offRevenue ? (
@@ -412,8 +450,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                       }
                       value={
                         <>
-                          {tl(d.info.offRevenue)}{" "}
-                          <span className="text-xs text-ink-mute">(maliyet ≈ {tl((d.info.offRevenue / (1 + st.kdv)) * d.sales.avgCostRatio)})</span>
+                          <span className="whitespace-nowrap">{tl(d.info.offRevenue)}</span>
+                          <span className="block text-xs whitespace-nowrap text-ink-mute">maliyet ≈ {tl((d.info.offRevenue / (1 + st.kdv)) * d.sales.avgCostRatio)}</span>
                         </>
                       }
                     />
@@ -440,15 +478,22 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 <CardHeader
                   icon={<ChartColumn />}
                   title={`${year} aylık gelir-gider`}
-                  description="Gelir-gider tablosundan (faturaya göre). Kira, personel gibi aylık giderler açık gün sayısına göre bölünür."
+                  description={
+                    <span className="inline-flex items-center gap-1.5">
+                      Gelir-gider tablosundan, faturaya göre
+                      <InfoTip text="Kira, personel gibi aylık giderler açık gün sayısına göre bölünür. Ciro KDV hariçtir." />
+                    </span>
+                  }
                   actions={
-                    <ButtonLink href={`/panel/gelir-gider?yil=${year}`} variant="secondary">
-                      Tabloyu aç <ArrowRight size={16} aria-hidden="true" />
+                    <ButtonLink href={`/panel/gelir-gider?yil=${year}`} variant="secondary" size="sm">
+                      Tabloyu aç <ArrowRight size={15} aria-hidden="true" />
                     </ButtonLink>
                   }
                 />
-                <CardContent>
-                  <Well>
+                <CardContent className="space-y-3">
+                  <YearTotals months={trend} />
+                  {/* Telefonda dar iç boşluk: grafiğin lejantı tek satıra sığar, eksen etiketinin üstüne binmez */}
+                  <Well className="p-2 sm:p-4">
                     <TrendChart
                       data={trend.map((x) => ({
                         label: monthShort(x.month),
@@ -477,53 +522,6 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         <DashboardTabs label="Ayrıntı listesi" tabs={tabs} />
       </div>
     </>
-  );
-}
-
-function AlertsCard({ items, className }: { items: Alert[]; className?: string }) {
-  const important = items.filter((a) => a.level === "danger").length;
-  return (
-    <Card className={className}>
-      <CardHeader
-        icon={<TriangleAlert />}
-        title="Dikkat edilmesi gerekenler"
-        description="Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz."
-        meta={
-          items.length ? (
-            <>
-              <span className="tabular">{items.length} uyarı</span>
-              {important ? (
-                <>
-                  <span className="text-ink-quiet">·</span>
-                  <span className="font-medium text-bad tabular">{important} önemli</span>
-                </>
-              ) : null}
-            </>
-          ) : null
-        }
-      />
-      <CardContent className="pb-3">
-        <ActivityList>
-          {items.length ? (
-            items.map((a, i) => (
-              <ActivityItem
-                key={`${a.level}-${i}`}
-                wrap
-                icon={ALERT_STYLE[a.level].icon}
-                tone={ALERT_STYLE[a.level].tone}
-                title={a.title}
-                description={a.detail}
-                href={a.href}
-                dot={a.level === "danger" ? "danger" : undefined}
-                aside={a.href ? <ChevronRight size={16} className="text-ink-quiet" aria-hidden="true" /> : undefined}
-              />
-            ))
-          ) : (
-            <ActivityItem icon={<CircleCheck />} tone={0} title="Şu an dikkat gerektiren bir şey yok" description="Otomatik kontroller bu ay için bir sorun bulmadı." />
-          )}
-        </ActivityList>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -682,7 +680,7 @@ function ForecastCard({
       <CardHeader icon={<CalendarClock />} title={`${monthLabel(month)} gidişatı`} description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`} />
       <CardContent className="flex-1">
         <Well className="py-2">
-          <KeyValue label="Günlük ortalama ciro" value={<span className="font-semibold">{tl(dailyAvg)}</span>} />
+          <KeyValue label="Günlük ortalama ciro" value={<span className="font-semibold whitespace-nowrap">{tl(dailyAvg)}</span>} />
           {progress !== null ? (
             <div className="pb-2">
               <Progress value={progress} tone={progressTone(progress)} />
@@ -690,11 +688,11 @@ function ForecastCard({
             </div>
           ) : null}
           <div className="divide-y divide-line border-t border-line">
-            <KeyValue label="Bu tempoyla ay sonu ciro" value={tl(forecast.projectedRevenue)} />
+            <KeyValue label="Bu tempoyla ay sonu ciro" value={<span className="whitespace-nowrap">{tl(forecast.projectedRevenue)}</span>} />
             <KeyValue
               label="Tahmini net kâr / zarar"
               value={
-                <Signed value={forecast.projectedProfit} className="font-semibold">
+                <Signed value={forecast.projectedProfit} className="font-semibold whitespace-nowrap">
                   {tl(forecast.projectedProfit)}
                 </Signed>
               }
@@ -707,83 +705,14 @@ function ForecastCard({
 }
 
 function CategoriesTab({ d, target }: { d: DashboardData; target: number }) {
-  const cats = d.categories;
   return (
-    <>
-      <CardHeader
-        icon={<LayoutGrid />}
-        title="Kategori bazında"
-        description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
-          d.refMonth ? `Satış ağırlıklı marj ${monthLabel(d.refMonth)} satışlarına göredir.` : "Satış verisi yok."
-        }`}
-        meta={<span className="tabular">{cats.length} kategori</span>}
-      />
-      {cats.length ? (
-        <div className="grid grid-cols-1 gap-4 pb-5 xl:grid-cols-12 xl:pr-5">
-          <div className="min-w-0 xl:col-span-7">
-            <TableWrap className="pb-0">
-              <Table>
-                <THead>
-                  <tr>
-                    <TH sticky>Kategori</TH>
-                    <TH numeric>Ürün</TH>
-                    <TH numeric>Ort. kâr marjı</TH>
-                    <TH numeric>Ort. birim kâr</TH>
-                    <TH numeric>Ort. maliyet oranı</TH>
-                    <TH numeric>Satış</TH>
-                    <TH numeric>Satış ağırlıklı marj</TH>
-                  </tr>
-                </THead>
-                <tbody>
-                  {cats.map((c) => {
-                    const over = c.avgCostRatio > target + 0.1;
-                    const warn = !over && c.avgCostRatio > target;
-                    return (
-                      <TR key={c.categoryId}>
-                        <TD sticky className="py-1">
-                          <Link
-                            href={`/panel/urunler?kategori=${c.categoryId}`}
-                            className="inline-flex min-h-9 items-center gap-2.5 font-medium whitespace-nowrap text-ink hover:underline"
-                          >
-                            <Avatar name={c.name} size="sm" />
-                            {c.name}
-                          </Link>
-                        </TD>
-                        <TD numeric>{c.count}</TD>
-                        <TD numeric>{pct(c.avgMargin)}</TD>
-                        <TD numeric>{tl(c.avgUnitProfit, 2)}</TD>
-                        <TD
-                          numeric
-                          className={cn(over && "font-medium text-bad", warn && "font-medium text-warn")}
-                          title={over ? "Hedefin 10 puandan fazla üstünde" : warn ? "Hedefin üstünde" : undefined}
-                        >
-                          {pct(c.avgCostRatio)}
-                          {over ? <span className="sr-only"> (hedefin 10 puandan fazla üstünde)</span> : warn ? <span className="sr-only"> (hedefin üstünde)</span> : null}
-                        </TD>
-                        <TD numeric>{num(c.soldQty)}</TD>
-                        <TD numeric>{c.soldQty ? pct(c.weightedMargin) : "–"}</TD>
-                      </TR>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            </TableWrap>
-            <p className="mt-2 px-5 text-xs text-ink-mute">
-              Maliyet oranı hedefin ({pct(target, 0)}) üstündeyse <span className="font-medium text-warn">turuncu</span>, 10 puandan fazla
-              üstündeyse <span className="font-medium text-bad">kırmızı</span>.
-            </p>
-          </div>
-          <div className="min-w-0 px-5 xl:col-span-5 xl:px-0">
-            <Well>
-              <h3 className="mb-2 text-[13px] font-semibold text-ink">Kategoriye göre ortalama kâr marjı</h3>
-              <HBarChart data={cats.map((c) => ({ label: c.name, value: c.avgMargin }))} format="percent" valueLabel="Ort. kâr marjı" />
-            </Well>
-          </div>
-        </div>
-      ) : (
-        <EmptyState title="Kategori yok" description="Ürünlere kategori atanınca ortalamalar burada görünür." />
-      )}
-    </>
+    <CategoriesPanel
+      cats={d.categories}
+      target={target}
+      description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
+        d.refMonth ? `Satış ağırlıklı marj ${monthLabel(d.refMonth)} satışlarına göredir.` : "Satış verisi yok."
+      }`}
+    />
   );
 }
 
@@ -793,16 +722,28 @@ function ProductRank({
   description,
   columns,
   rows,
+  month,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
   columns: { label: string; numeric?: boolean }[];
   rows: { id: number; name: string; cells: ReactNode[] }[];
+  month: string;
 }) {
   return (
     <>
-      <CardHeader icon={icon} title={title} description={description} />
+      <CardHeader
+        icon={icon}
+        title={title}
+        description={description}
+        actions={
+          <ButtonLink href={`/panel/analiz?ay=${month}`} variant="secondary" size="sm">
+            <ChartScatter size={15} aria-hidden="true" />
+            Bütün ürünler
+          </ButtonLink>
+        }
+      />
       {rows.length ? (
         <TableWrap>
           <Table>
@@ -822,7 +763,7 @@ function ProductRank({
                 <TR key={r.id}>
                   <TD className="text-ink-mute tabular">{i + 1}</TD>
                   <TD className="py-1">
-                    <Link href={`/panel/urunler/${r.id}`} className="inline-flex min-h-9 items-center font-medium text-ink hover:underline">
+                    <Link href={`/panel/urunler/${r.id}`} className="inline-flex min-h-9 items-center font-medium pointer-coarse:min-h-10 text-ink hover:underline">
                       {r.name.replace("|", " · ")}
                     </Link>
                   </TD>
@@ -837,46 +778,119 @@ function ProductRank({
           </Table>
         </TableWrap>
       ) : (
-        <EmptyState title="Veri yok" description="Bu ay menüdeki ürünlerle eşleşen satış bulunamadı." />
+        <EmptyState
+          title="Veri yok"
+          description="Bu ay menüdeki ürünlerle eşleşen satış bulunamadı. Satış raporundaki ürün adları menüdekilerle eşleşiyor mu, Satışlar sayfasından bakın."
+          action={
+            <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary" size="sm">
+              Satışlara git
+            </ButtonLink>
+          }
+        />
       )}
+      {rows.length ? <CardFooter>İlk {rows.length} ürün. Bütün menünün sıralaması ve grupları Analiz &amp; senaryo sayfasında.</CardFooter> : null}
     </>
   );
 }
 
+/** Kaç gider kalemi tek tek listelensin; kalanı tek satırda toplanır */
+const TOP_EXPENSES = 6;
+
 function ExpensesTab({ items, total }: { items: { name: string; amount: number }[]; total: number }) {
+  const top = items.slice(0, TOP_EXPENSES);
+  const rest = items.slice(TOP_EXPENSES);
+  const restSum = rest.reduce((s, e) => s + e.amount, 0);
+  const share = (v: number) => (total > 0 ? pct(v / total, 0) : "–");
   return (
     <>
       <CardHeader
         icon={<Wallet />}
         title="En büyük aylık gider kalemleri"
-        description={`Aylık sabit gider toplamı ${tl(total)}`}
+        description={
+          <>
+            Aylık sabit gider toplamı <span className="font-medium whitespace-nowrap text-ink tabular">{tl(total)}</span> · yüzde: toplamdaki payı
+          </>
+        }
         actions={
-          <ButtonLink href="/panel/giderler" variant="secondary">
-            Sabit giderler <ArrowRight size={16} aria-hidden="true" />
+          <ButtonLink href="/panel/giderler" variant="secondary" size="sm">
+            Sabit giderler <ArrowRight size={15} aria-hidden="true" />
           </ButtonLink>
         }
       />
       <CardContent>
-        {items.length ? (
+        {top.length ? (
           <Well>
             <ul className="space-y-3.5">
-              {items.map((e, i) => (
+              {top.map((e, i) => (
                 <li key={`${e.name}-${i}`}>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
                     <span className="min-w-0 truncate text-ink" title={e.name}>
                       {e.name}
                     </span>
-                    <span className="shrink-0 font-semibold text-ink tabular">{tl(e.amount)}</span>
+                    <span className="shrink-0 whitespace-nowrap">
+                      <span className="font-semibold text-ink tabular">{tl(e.amount)}</span>
+                      <span className="ml-1.5 inline-block min-w-9 text-right text-xs text-ink-mute tabular">{share(e.amount)}</span>
+                    </span>
                   </div>
-                  <Meter value={e.amount / items[0].amount} index={i} />
+                  <Meter value={e.amount / top[0].amount} index={i} />
                 </li>
               ))}
             </ul>
+            {rest.length ? (
+              <p className="mt-4 flex items-baseline justify-between gap-3 border-t border-line pt-3 text-sm text-ink-mute">
+                <span className="min-w-0">Diğer {rest.length} kalem</span>
+                <span className="shrink-0 whitespace-nowrap">
+                  <span className="font-medium text-ink tabular">{tl(restSum)}</span>
+                  <span className="ml-1.5 inline-block min-w-9 text-right text-xs tabular">{share(restSum)}</span>
+                </span>
+              </p>
+            ) : null}
           </Well>
         ) : (
-          <EmptyState title="Gider kalemi yok" description="Sabit giderleri ve personeli girince en büyük kalemler burada sıralanır." />
+          <EmptyState
+            title="Gider kalemi yok"
+            description="Sabit giderleri ve personeli girince en büyük kalemler burada sıralanır."
+            action={
+              <ButtonLink href="/panel/giderler" variant="primary" size="sm">
+                Gider ekle
+              </ButtonLink>
+            }
+          />
         )}
       </CardContent>
     </>
+  );
+}
+
+/** Yıl grafiğinin üstünde: veri olan ayların toplam cirosu, gideri ve kâr/zararı */
+function YearTotals({ months }: { months: YearMonth[] }) {
+  const revenue = months.reduce((s, m) => s + m.revenueNet, 0);
+  const expenses = months.reduce((s, m) => s + m.expenses, 0);
+  const profit = months.reduce((s, m) => s + m.profit, 0);
+  const cells = [
+    { label: "Ciro (KDV hariç)", value: <span className="whitespace-nowrap">{tl(revenue)}</span> },
+    { label: "Giderler", value: <span className="whitespace-nowrap">{tl(expenses)}</span> },
+    {
+      label: "Kâr / zarar",
+      value: (
+        <Signed value={profit} className="whitespace-nowrap">
+          {tl(profit)}
+        </Signed>
+      ),
+    },
+  ];
+  return (
+    <div>
+      <p className="mb-1.5 text-xs text-ink-mute">{months.length} ayın toplamı</p>
+      {/* Telefonda üç tutar yan yana sığmaz: alt alta, etiket solda tutar sağda */}
+      <dl className="grid grid-cols-1 gap-1.5 sm:grid-cols-3 sm:gap-2">
+        {cells.map((c) => (
+          <div key={c.label} className="flex min-w-0 items-baseline justify-between gap-3 rounded-xl bg-surface px-3 py-2 sm:block">
+            <dt className="truncate text-xs text-ink-mute">{c.label}</dt>
+            <dd className="text-sm font-semibold text-ink tabular sm:mt-0.5 sm:text-base">{c.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

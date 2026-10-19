@@ -56,7 +56,7 @@ export function Pagination({
 }) {
   if (pageCount <= 1 && total === undefined) return null;
   const btn =
-    "flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-xl px-2.5 text-sm font-medium tabular transition-colors disabled:pointer-events-none disabled:opacity-40";
+    "flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-xl px-2.5 text-sm font-medium tabular transition-colors disabled:pointer-events-none disabled:opacity-40 pointer-coarse:h-10 pointer-coarse:min-w-10";
   return (
     <nav className={cn("flex flex-wrap items-center justify-between gap-3 px-5 py-4", className)} aria-label="Sayfalama">
       <p className="text-sm text-ink-mute">
@@ -70,7 +70,7 @@ export function Pagination({
           </button>
           {pagesToShow(page, pageCount).map((p, i) =>
             p === "…" ? (
-              <span key={`e${i}`} className="px-1 text-ink-quiet">
+              <span key={`e${i}`} className="px-1 text-ink-quiet max-sm:hidden">
                 …
               </span>
             ) : (
@@ -79,7 +79,8 @@ export function Pagination({
                 type="button"
                 onClick={() => onChange(p)}
                 aria-current={p === page ? "page" : undefined}
-                className={cn(btn, p === page ? "bg-ink text-white" : "bg-surface text-ink-soft ring-1 ring-line hover:text-ink")}
+                // Telefonda yalnız ‹ › kalır (solda "Sayfa 3 / 12" yazar), sayfa düğmeleri satırı taşırmaz
+                className={cn(btn, p === page ? "bg-ink text-white" : "bg-surface text-ink-soft ring-1 ring-line hover:text-ink max-sm:hidden")}
               >
                 {p}
               </button>

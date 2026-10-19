@@ -1,7 +1,7 @@
 "use server";
 
 import { alerts } from "@/lib/calc/insights";
-import { monthShort, tl } from "@/lib/format";
+import { dateTR, monthShort, tl } from "@/lib/format";
 import { daysLeftLabel } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
@@ -15,6 +15,8 @@ export interface PanelNotification {
   timeLabel: string;
   unread: boolean;
   href: string;
+  /** Zilde hangi başlığın altında durur */
+  group?: "odeme" | "uyari";
 }
 
 /**
@@ -34,22 +36,25 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
       id: `odeme-${i.ref}-${i.dueDate}`,
       kind: i.status === "overdue" ? "danger" : i.status === "today" ? "warning" : "info",
       title: `${i.title}${i.amount !== null ? ` · ${tl(i.amount)}` : ""}`,
-      body: i.status === "overdue" ? `Ödeme ${daysLeftLabel(i.daysLeft).toLocaleLowerCase("tr-TR")}.` : `Son ödeme: ${daysLeftLabel(i.daysLeft).toLocaleLowerCase("tr-TR")}.`,
+      body: [`Son ödeme ${dateTR(i.dueDate)}`, i.detail].filter(Boolean).join(" · "),
       timeLabel: daysLeftLabel(i.daysLeft),
       unread: i.status !== "soon",
       href: "/panel/hatirlaticilar",
+      group: "odeme" as const,
     }));
 
   const month = model.salesMonths[model.salesMonths.length - 1];
   const warnings: PanelNotification[] = month
-    ? alerts(model, month).map((a, i) => ({
-        id: `uyari-${i}`,
+    ? alerts(model, month).map((a) => ({
+        // Kimlik metinden türer: aynı uyarı okundu kalır, sayısı değişen uyarı yeniden okunmamış olur
+        id: `uyari-${month}-${a.title}`,
         kind: a.level,
         title: a.title,
         body: a.detail,
         timeLabel: monthShort(month),
         unread: a.level !== "info",
         href: a.href ?? "/panel",
+        group: "uyari" as const,
       }))
     : [];
   return [...payments, ...warnings];

@@ -65,7 +65,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
     { label: "Hesaplanan ciro (liste − indirim)", value: tl(c.sales.computed), strong: true },
     { label: "POS ciro raporu", value: tl(c.sales.pos), note: "Satışlar > ay bilgileri" },
     { label: "Fark", value: c.sales.diff === null ? "–" : tl(c.sales.diff), strong: true },
-    { label: "Ödenmez (sahip / personel tüketimi) – satış listesine dahil değil", value: tl(c.sales.offRevenue) },
+    { label: "Ödenmez (sahip / personel tüketimi)", value: tl(c.sales.offRevenue), note: "Satış listesine dahil değil; ciroya girmez." },
     {
       label: "Ödenmezlerin tahmini malzeme maliyeti",
       value: tl(c.sales.offRevenueCost),
@@ -129,7 +129,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
             c.hasStockComparison ? (
               "Gerçek tüketim − reçeteye göre"
             ) : (
-              <Link href={`/panel/sayim?ay=${month}`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+              <Link href={`/panel/sayim?ay=${month}`} className="-my-3 inline-block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
                 İki ayın sayımı gerekli
               </Link>
             )
@@ -188,7 +188,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                           {r.note ? <InfoTip text={r.note} className="ml-1.5" /> : null}
                         </span>
                       }
-                      value={r.value}
+                      // Uzun etiketin yanında tutar "18.815 / ₺" diye ikiye bölünmesin
+                      value={<span className="whitespace-nowrap">{r.value}</span>}
                     />
                   ))}
                 </Well>

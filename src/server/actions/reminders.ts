@@ -20,7 +20,7 @@ const reminderSchema = z.object({
   id: z.number().int().positive().nullable(),
   title: zText("Başlık", 120),
   kind: z.enum(["odeme", "vergi", "kira", "maas", "fatura", "diger"]),
-  amount: z.number().finite().min(0).nullable(),
+  amount: z.number({ message: "Tutar sayı olmalı" }).finite("Tutar sayı olmalı").min(0, "Tutar negatif olamaz").nullable(),
   dueDate: zDate,
   repeat: z.enum(["none", "weekly", "monthly", "quarterly", "yearly"]),
   remindDaysBefore: z.number().int().min(0, "Gün negatif olamaz").max(60, "En fazla 60 gün"),
@@ -124,7 +124,7 @@ export async function addPresetReminder(key: string, amount: number | null) {
     const me = await requireAdmin();
     const p = REMINDER_PRESETS.find((x) => x.key === z.string().max(40).parse(key));
     if (!p) throw new UserError("Şablon bulunamadı");
-    const amt = z.number().finite().min(0).max(1e10).nullable().parse(amount);
+    const amt = z.number({ message: "Tutar sayı olmalı" }).finite("Tutar sayı olmalı").min(0, "Tutar negatif olamaz").max(1e10, "Tutar çok büyük").nullable().parse(amount);
     const dueDate = presetFirstDate(p, todayTR());
     await getDb()
       .insert(s.reminders)
@@ -170,9 +170,10 @@ export async function addRecipient(email: string, name: string | null) {
     const me = await requireAdmin();
     const e = emailSchema.parse(email);
     const n = zOptText(80).parse(name);
-    await getDb()
-      .insert(s.notificationRecipients)
-      .values({ email: e, name: n });
+    const db = getDb();
+    const [dup] = await db.select({ id: s.notificationRecipients.id }).from(s.notificationRecipients).where(eq(s.notificationRecipients.email, e)).limit(1);
+    if (dup) throw new UserError(`${e} zaten listede`);
+    await db.insert(s.notificationRecipients).values({ email: e, name: n });
     await logActivity(me, "Bildirim adresi eklendi", e);
     refresh();
     return null;
@@ -210,8 +211,8 @@ const notifySchema = z.object({
     .nullable()
     .transform((v) => (v ? v : null))
     .refine((v) => v === null || /^(?:[^<>]+<\s*)?[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+\s*>?$/.test(v), "Gönderen biçimi: Ad <ad@laffogato.net>"),
-  invoiceDaysBefore: z.number().int().min(0).max(30),
-  invoiceTermDays: z.number().int().min(0).max(120),
+  invoiceDaysBefore: z.number().int("Tam gün girin").min(0, "Gün negatif olamaz").max(30, "En fazla 30 gün önce"),
+  invoiceTermDays: z.number().int("Tam gün girin").min(0, "Gün negatif olamaz").max(120, "Vade en fazla 120 gün"),
 });
 
 export async function saveNotificationSettings(input: z.input<typeof notifySchema>) {

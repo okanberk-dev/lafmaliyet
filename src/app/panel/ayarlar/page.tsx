@@ -94,6 +94,22 @@ function BackupCard() {
   );
 }
 
+const TZ = "Europe/Istanbul";
+/** Kafenin saatine göre gün anahtarı (YYYY-MM-DD) */
+const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
+
+/** İşlem geçmişi gün başlıkları: "Bugün", "Dün", "17 Ekim 2026 Cumartesi" */
+function dayLabeler(now: Date) {
+  const today = dayKey(now);
+  const yesterday = dayKey(new Date(now.getTime() - 86_400_000));
+  return (d: Date) => {
+    const k = dayKey(d);
+    if (k === today) return "Bugün";
+    if (k === yesterday) return "Dün";
+    return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric", weekday: "long", timeZone: TZ });
+  };
+}
+
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
@@ -103,13 +119,26 @@ async function SettingsContent() {
   ]);
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
+  const dayLabel = dayLabeler(new Date());
 
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <SettingsForm settings={model.settings} water={model.water} />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
-        <ActivityLog entries={log.map((l) => ({ id: l.id, at: dateTimeTR(l.at), userName: l.userName, action: l.action, detail: l.detail }))} />
+        <ActivityLog
+          entries={log.map((l) => ({
+            id: l.id,
+            at: dateTimeTR(l.at),
+            iso: l.at.toISOString(),
+            day: dayKey(l.at),
+            dayLabel: dayLabel(l.at),
+            time: l.at.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: TZ }),
+            userName: l.userName,
+            action: l.action,
+            detail: l.detail,
+          }))}
+        />
       </div>
       <BackupCard />
     </SettingsLayout>

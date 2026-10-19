@@ -4,23 +4,26 @@ import { Info, ListChecks, Pencil, Plus, Scale, SearchX, Trash2 } from "lucide-r
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { startTransition, useOptimistic, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_LAYOUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, Field, Input, NumberInput, SearchInput, Select, Textarea } from "@/components/ui/form";
+import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
+import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
-import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { dateTR, num, tl } from "@/lib/format";
-import { cn, matchesSearch } from "@/lib/utils";
+import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { deleteFinding, saveFinding, setFindingResolved, setPurchaseQty } from "@/server/actions/consistency";
 
 import { RATIO_BAD, RATIO_WARN, SEVERITY, severityOf } from "./severity";
@@ -145,31 +148,119 @@ function RatioBadge({ row }: { row: Row }) {
   );
 }
 
-function PurchaseCell({ month, row }: { month: string; row: Row }) {
-  const [value, setValue] = useState(row.purchased === null ? "" : num(row.purchased, 2));
+/** Satır içi alınan miktar: Enter ya da odaktan çıkınca kaydeder, Esc geri alır; silmeden önce sorar */
+function PurchaseCell({ month, row, className }: { month: string; row: Row; className?: string }) {
+  const saved = row.purchased === null ? "" : num(row.purchased, 2);
+  const [value, setValue] = useState(saved);
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const invalid = value.trim() !== "" && (parseNumberTR(value) === null || (parseNumberTR(value) ?? 0) < 0);
+
+  async function write(v: number | null) {
+    setBusy(true);
+    const res = await setPurchaseQty(month, row.ingredientId, v);
+    setBusy(false);
+    if (!res.ok) {
+      setValue(saved);
+      return toast.error(res.error);
+    }
+    if (v === null) {
+      const prev = { qty: row.purchased, note: row.note };
+      toast.success(`${row.name}: alım silindi`, {
+        action: prev.qty === null ? undefined : { label: "Geri al", onClick: () => void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note) },
+      });
+    } else toast.success(`${row.name}: ${num(v, 2)} ${row.unit} kaydedildi`);
+  }
+
   return (
-    <NumberInput
-      value={value}
-      disabled={busy}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={async () => {
-        const t = value.trim();
-        const v = t === "" ? null : parseNumberTR(t);
-        if (t !== "" && v === null) return toast.error("Geçerli bir miktar girin");
-        if (v === row.purchased) return;
-        setBusy(true);
-        const res = await setPurchaseQty(month, row.ingredientId, v);
-        setBusy(false);
-        if (!res.ok) toast.error(res.error);
-      }}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      placeholder="—"
-      aria-label={`${row.name} alınan miktar`}
-      aria-invalid={value.trim() !== "" && parseNumberTR(value) === null ? true : undefined}
-      className="cell-input w-28"
-    />
+    <>
+      <NumberInput
+        value={value}
+        disabled={busy}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={() => {
+          const t = value.trim();
+          const v = t === "" ? null : parseNumberTR(t);
+          if (t !== "" && (v === null || v < 0)) {
+            toast.error(`${row.name}: geçerli bir miktar girin`, { description: "Yalnızca sayı; ondalık için virgül (ör. 2,5)." });
+            return setValue(saved);
+          }
+          if (v === row.purchased) return;
+          // Boşaltmak satırı (ve yorumunu) siler: önce sorulur
+          if (v === null) return setConfirmClear(true);
+          void write(v);
+        }}
+        onKeyDown={(e) => {
+          // preventDefault: boşaltılınca açılan onay penceresi aynı Enter'la ("Kapat"a basılmış gibi) hemen kapanmasın
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") {
+            setValue(saved);
+            requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
+          }
+        }}
+        placeholder="—"
+        aria-label={`${row.name} alınan miktar (${row.unit})`}
+        aria-invalid={invalid || undefined}
+        className={cn("cell-input w-24", className)}
+      />
+      {/* Pencere gövdeye çizilir: tablo hücresinin sağa yaslama ve satır kaydırmama ayarları içine geçmesin */}
+      {confirmClear
+        ? createPortal(
+            <ConfirmDialog
+              open
+              onClose={() => {
+                setConfirmClear(false);
+                setValue(saved);
+              }}
+              onConfirm={() => {
+                setConfirmClear(false);
+                void write(null);
+              }}
+              title={`${row.name}: alım silinsin mi?`}
+              description={`Bu ay girilen ${saved} ${row.unit}${row.note ? " ve yorumu" : ""} silinir; malzeme "alımı girilmemiş" sayılır.`}
+              confirmLabel="Alımı sil"
+            />,
+            document.body,
+          )
+        : null}
+    </>
   );
+}
+
+type SortKey = "ad" | "oran" | "fark" | "sapma";
+type SortDir = "asc" | "desc";
+/** Boş (null) değerler yöne bakılmaksızın sona */
+const SORT_VALUE: Record<Exclude<SortKey, "ad">, (r: Row) => number | null> = {
+  // Kullanım yokken alım varsa oran sonsuz büyük sayılır (en kötü)
+  oran: (r) => r.ratio ?? (severityOf(r) === "big" ? Number.POSITIVE_INFINITY : null),
+  fark: (r) => r.diffAmount,
+  sapma: (r) => r.varianceAmount,
+};
+const SORT_LABEL: Record<SortKey, string> = { ad: "Ada göre", oran: "Orana göre", fark: "Fark tutarına göre", sapma: "Sapmaya göre" };
+/** Adresteki süzgeç anahtarları; "Temizle" bunları sıfırlar (sıralama kalır) */
+const TABLE_KEYS = ["ara", "fark", "tum"];
+
+function parseSort(v: string): { key: SortKey; dir: SortDir } | null {
+  const [k, d] = v.split("-");
+  if (!["ad", "oran", "fark", "sapma"].includes(k)) return null;
+  return { key: k as SortKey, dir: d === "asc" ? "asc" : "desc" };
+}
+
+function sortRows(rows: Row[], sort: { key: SortKey; dir: SortDir } | null): Row[] {
+  if (!sort) return rows;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  if (sort.key === "ad") return [...rows].sort((a, b) => sign * a.name.localeCompare(b.name, "tr"));
+  const get = SORT_VALUE[sort.key];
+  return [...rows].sort((a, b) => {
+    const x = get(a);
+    const y = get(b);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return sign * (x - y);
+  });
 }
 
 export function ConsistencyTable({
@@ -193,19 +284,43 @@ export function ConsistencyTable({
 }) {
   /** null = kapalı, "new" = yeni alım, Row = satırdaki alımı düzenle */
   const [dialog, setDialog] = useState<Row | "new" | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const [sev, setSev] = useState<SevFilter>("all");
-  const [q, setQ] = useState("");
+  const [allParam, setAllParam] = useQueryState<string>("tum", "0");
+  const [sevParam, setSev] = useQueryState<SevFilter>("fark", "all");
+  const [sortParam, setSortParam] = useQueryState<string>("sirala", "");
+  const [q, setQ] = useQueryText("ara");
+  const sev: SevFilter = sevParam === "fark" || sevParam === "buyuk" ? sevParam : "all";
+  const showAll = allParam === "1";
+  const sort = parseSort(sortParam);
   const withPurchase = rows.filter((r) => r.purchased !== null);
-  const base = (showAll ? rows : withPurchase.length ? withPurchase : rows).filter((r) => matchesSearch(r.name, q.trim()));
+  const scope = showAll ? rows : withPurchase.length ? withPurchase : rows;
+  const base = scope.filter((r) => matches(r.name, q));
   const isDiff = (r: Row) => {
     const s = severityOf(r);
     return s === "diff" || s === "big";
   };
   const isBig = (r: Row) => severityOf(r) === "big";
-  const visible = sev === "all" ? base : base.filter(sev === "buyuk" ? isBig : isDiff);
-  const paged = usePaged(visible, 25, `${sev}|${showAll}|${q}`);
-  const filtered = sev !== "all" || q.trim() !== "";
+  const visible = sortRows(sev === "all" ? base : base.filter(sev === "buyuk" ? isBig : isDiff), sort);
+  const paged = usePaged(visible, 25, `${sev}|${showAll}|${q}|${sortParam}`);
+  const filtered = sev !== "all" || q.trim() !== "" || showAll;
+  const missing = rows.length - withPurchase.length;
+  const visibleDiff = visible.reduce((a, r) => a + (r.diffAmount ?? 0), 0);
+
+  const clear = () => {
+    setQ("");
+    clearQuery(TABLE_KEYS);
+  };
+  const dirOf = (key: SortKey) => (sort?.key === key ? sort.dir : null);
+  // İlk tıklama: ad A→Z, rakamlar büyükten küçüğe; ikinci tıklama yönü çevirir
+  const toggleSort = (key: SortKey) => {
+    const first: SortDir = key === "ad" ? "asc" : "desc";
+    const dir = sort?.key === key ? (sort.dir === "asc" ? "desc" : "asc") : first;
+    setSortParam(`${key}-${dir}`);
+  };
+  const sortOptions: SortKey[] = hasStock ? ["fark", "oran", "sapma", "ad"] : ["fark", "oran", "ad"];
+  // Tablo ancak tüm sütunları sığınca çıkar (sayım sütunlarıyla daha geniş); daha dar ekranda kartlar, düzenle düğmesi
+  // yana kayıp gizlenmez. Sınıflar tam yazılır ki Tailwind üretsin.
+  const cardsOnly = hasStock ? "2xl:hidden" : "xl:hidden";
+  const tableOnly = hasStock ? "max-2xl:hidden" : "max-xl:hidden";
 
   return (
     <Card>
@@ -221,7 +336,7 @@ export function ConsistencyTable({
           </>
         }
         actions={
-          <Button variant="secondary" onClick={() => setDialog("new")}>
+          <Button onClick={() => setDialog("new")} className="pointer-coarse:h-10">
             <Plus size={16} /> Alım ekle
           </Button>
         }
@@ -229,16 +344,10 @@ export function ConsistencyTable({
 
       {rows.length ? (
         <>
-          <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
-            <SearchInput
-              wrapperClassName="min-w-0 flex-1 basis-56"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Malzeme ara…"
-              aria-label="Malzeme ara"
-            />
+          <FilterBar active={filtered} onClear={clear} shown={visible.length} total={rows.length} unit="malzeme" className="px-5 pb-3">
+            <SearchField className="max-sm:basis-full sm:flex-1 sm:basis-56" value={q} onChange={setQ} placeholder="Malzeme ara" label="Malzeme ara" />
             <Segmented<SevFilter>
-              label="Fark filtresi"
+              label="Fark süzgeci"
               value={sev}
               onChange={setSev}
               options={[
@@ -247,8 +356,26 @@ export function ConsistencyTable({
                 { value: "buyuk", label: SEVERITY.big.label, count: base.filter(isBig).length },
               ]}
             />
-            <Checkbox label="Alımı girilmeyenleri de göster" className="min-h-9 px-1" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
-          </div>
+            {missing && withPurchase.length ? (
+              <FilterChip active={showAll} onToggle={() => setAllParam(showAll ? "0" : "1")} count={missing}>
+                Alımı girilmeyenler
+              </FilterChip>
+            ) : null}
+            {/* Kart görünümünde tablo başlığı yok: sıralama seçimle */}
+            <Select
+              value={sort ? `${sort.key}-${sort.dir}` : ""}
+              onChange={(e) => setSortParam(e.target.value)}
+              aria-label="Sırala"
+              className={cn("w-auto pointer-coarse:h-10", cardsOnly)}
+            >
+              <option value="">Önem sırası</option>
+              {sortOptions.map((k) => (
+                <option key={k} value={`${k}-${k === "ad" ? "asc" : "desc"}`}>
+                  {SORT_LABEL[k]}
+                </option>
+              ))}
+            </Select>
+          </FilterBar>
           <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 pb-3 text-xs text-ink-mute" aria-label="Oran renkleri">
             {(["ok", "diff", "big"] as const).map((k) => (
               <li key={k} className="inline-flex items-center gap-1.5">
@@ -269,127 +396,213 @@ export function ConsistencyTable({
       ) : null}
 
       {visible.length ? (
-        <TableWrap>
-          <Table>
-            <THead>
-              <tr>
-                <TH sticky>Malzeme</TH>
-                <TH numeric>
-                  Reçeteye göre kullanım
-                  <InfoTip text="Her ürünün bu ayki satış adedi × reçetedeki miktar. Fire payı ve ödenmez siparişler hariç." className="ml-1" />
-                </TH>
-                <TH numeric>
-                  Faturayla alınan
-                  <InfoTip text="Bu ayki faturalardaki miktar (malzemenin kendi biriminde: gr, ml, adet). Tıklayıp yazabilirsiniz." className="ml-1" />
-                </TH>
-                <TH numeric>Alınan ÷ kullanılan</TH>
-                <TH numeric>
-                  Fark tutarı
-                  <InfoTip
-                    text="(Alınan − kullanılan) × birim maliyet. Pozitif = reçeteye göre fazla alınan malın parası (stokta duruyor ya da fire/ikram oldu)."
-                    className="ml-1"
-                  />
-                </TH>
-                {hasStock ? (
-                  <>
-                    <TH numeric>
-                      Gerçek tüketim
-                      <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın da sayımı girildiyse hesaplanır." className="ml-1" />
-                    </TH>
-                    <TH numeric>Sapma (₺)</TH>
-                  </>
-                ) : null}
-                <TH>Yorum / kaynak faturalar</TH>
-                <TH>
-                  <span className="sr-only">Eylemler</span>
-                </TH>
-              </tr>
-            </THead>
-            <tbody>
-              {paged.slice.map((r) => (
-                <TR key={r.ingredientId}>
-                  <TD sticky className="min-w-36 font-medium">
-                    {r.name}
-                  </TD>
-                  <TD numeric>
-                    {num(r.usage)} {r.unit}
-                  </TD>
-                  <TD numeric>
-                    <div className="flex items-center justify-end gap-1.5">
-                      {/* Kayıttan sonra (ya da pencereden eklenince) yeni değerle yeniden kurulur */}
-                      <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} />
-                      <span className="w-8 text-left text-xs text-ink-mute">{r.unit}</span>
-                    </div>
-                  </TD>
-                  <TD numeric>
+        <>
+          {/* Telefon ve tablet: her malzeme bir kart (tablo yana kaymadan okunur), genişledikçe iki sütun */}
+          <ul className={cn("grid gap-2 px-3 pb-3 md:grid-cols-2", cardsOnly)}>
+            {paged.slice.map((r) => (
+              <li key={r.ingredientId} className="rounded-2xl bg-surface p-3.5 ring-1 ring-line">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 text-sm leading-5 font-semibold break-words text-ink">{r.name}</p>
+                  <span className="shrink-0">
                     <RatioBadge row={r} />
-                  </TD>
-                  <TD
-                    numeric
-                    className={cn(r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}
-                  >
-                    {r.diffAmount === null ? "–" : tl(r.diffAmount)}
-                  </TD>
+                  </span>
+                </div>
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div>
+                    <dt className="text-xs text-ink-mute">Reçeteye göre</dt>
+                    <dd className="text-ink tabular">
+                      {num(r.usage)} {r.unit}
+                    </dd>
+                  </div>
+                  <div className="text-right">
+                    <dt className="text-xs text-ink-mute">Fark tutarı</dt>
+                    <dd className={cn("tabular", r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}>
+                      {r.diffAmount === null ? "–" : tl(r.diffAmount)}
+                    </dd>
+                  </div>
                   {hasStock ? (
                     <>
-                      <TD numeric>
-                        {r.actualUsage === null ? "–" : `${num(r.actualUsage)} ${r.unit}`}
-                        {r.opening !== null && r.closing !== null ? (
-                          <span className="block text-xs text-ink-mute">
-                            sayım {num(r.opening)} → {num(r.closing)}
-                          </span>
-                        ) : null}
-                      </TD>
-                      <TD numeric className={cn(r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
-                        {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
-                        {r.variance !== null ? (
-                          <span className="block text-xs font-normal text-ink-mute">
-                            {num(r.variance)} {r.unit}
-                          </span>
-                        ) : null}
-                      </TD>
+                      <div>
+                        <dt className="text-xs text-ink-mute">Gerçek tüketim</dt>
+                        <dd className="text-ink tabular">{r.actualUsage === null ? "–" : `${num(r.actualUsage)} ${r.unit}`}</dd>
+                      </div>
+                      <div className="text-right">
+                        <dt className="text-xs text-ink-mute">Sapma</dt>
+                        <dd className={cn("tabular", r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
+                          {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
+                        </dd>
+                      </div>
                     </>
                   ) : null}
-                  <TD className="max-w-80 min-w-48 text-xs text-ink-mute">{r.note ?? ""}</TD>
-                  <TD>
-                    <div className="flex justify-end">
-                      <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
-                        <Pencil size={15} />
-                      </IconButton>
-                    </div>
+                </dl>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="shrink-0 text-xs text-ink-mute">Alınan</span>
+                  <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} className="h-10 w-auto min-w-0 flex-1" />
+                  <span className="w-10 shrink-0 text-xs text-ink-mute">{r.unit}</span>
+                  <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)} className="size-10 pointer-coarse:size-10">
+                    <Pencil size={15} />
+                  </IconButton>
+                </div>
+                {r.note ? <p className="mt-2 line-clamp-3 text-xs leading-5 break-words text-ink-mute">{r.note}</p> : null}
+              </li>
+            ))}
+          </ul>
+
+          <TableWrap className={tableOnly}>
+            <Table>
+              <THead>
+                <tr>
+                  <TH sticky>
+                    <SortButton dir={dirOf("ad")} onClick={() => toggleSort("ad")}>
+                      Malzeme
+                    </SortButton>
+                  </TH>
+                  <TH numeric>
+                    Reçeteye göre
+                    <InfoTip
+                      text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar. Fire payı ve ödenmez siparişler hariç."
+                      className="ml-1"
+                    />
+                  </TH>
+                  <TH numeric>
+                    Faturayla alınan
+                    <InfoTip text="Bu ayki faturalardaki miktar (malzemenin kendi biriminde: gr, ml, adet). Tıklayıp yazın; Enter kaydeder, Esc geri alır." className="ml-1" />
+                  </TH>
+                  <TH numeric>
+                    <SortButton numeric dir={dirOf("oran")} onClick={() => toggleSort("oran")}>
+                      Oran
+                    </SortButton>
+                    <InfoTip text="Alınan ÷ reçeteye göre kullanılan. 1× = alınan kadar harcandı; büyüdükçe reçeteye göre fazla alım var." className="ml-1" />
+                  </TH>
+                  <TH numeric>
+                    <SortButton numeric dir={dirOf("fark")} onClick={() => toggleSort("fark")}>
+                      Fark tutarı
+                    </SortButton>
+                    <InfoTip
+                      text="(Alınan − kullanılan) × birim maliyet. Pozitif = reçeteye göre fazla alınan malın parası (stokta duruyor ya da fire/ikram oldu)."
+                      className="ml-1"
+                    />
+                  </TH>
+                  {hasStock ? (
+                    <>
+                      <TH numeric>
+                        Gerçek tüketim
+                        <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın da sayımı girildiyse hesaplanır." className="ml-1" />
+                      </TH>
+                      <TH numeric>
+                        <SortButton numeric dir={dirOf("sapma")} onClick={() => toggleSort("sapma")}>
+                          Sapma (₺)
+                        </SortButton>
+                      </TH>
+                    </>
+                  ) : null}
+                  <TH>Yorum / kaynak faturalar</TH>
+                  <TH>
+                    <span className="sr-only">Eylemler</span>
+                  </TH>
+                </tr>
+              </THead>
+              <tbody>
+                {paged.slice.map((r) => (
+                  <TR key={r.ingredientId}>
+                    <TD sticky className="min-w-36 font-medium">
+                      {r.name}
+                    </TD>
+                    <TD numeric>
+                      {num(r.usage)} {r.unit}
+                    </TD>
+                    <TD numeric>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {/* Kayıttan sonra (ya da pencereden eklenince) yeni değerle yeniden kurulur */}
+                        <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} />
+                        <span className="w-8 text-left text-xs text-ink-mute">{r.unit}</span>
+                      </div>
+                    </TD>
+                    <TD numeric>
+                      <RatioBadge row={r} />
+                    </TD>
+                    <TD
+                      numeric
+                      className={cn(r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}
+                    >
+                      {r.diffAmount === null ? "–" : tl(r.diffAmount)}
+                    </TD>
+                    {hasStock ? (
+                      <>
+                        <TD numeric>
+                          {r.actualUsage === null ? "–" : `${num(r.actualUsage)} ${r.unit}`}
+                          {r.opening !== null && r.closing !== null ? (
+                            <span className="block text-xs text-ink-mute">
+                              sayım {num(r.opening)} → {num(r.closing)}
+                            </span>
+                          ) : null}
+                        </TD>
+                        <TD numeric className={cn(r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
+                          {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
+                          {r.variance !== null ? (
+                            <span className="block text-xs font-normal text-ink-mute">
+                              {num(r.variance)} {r.unit}
+                            </span>
+                          ) : null}
+                        </TD>
+                      </>
+                    ) : null}
+                    <TD className="max-w-72 min-w-44 text-xs text-ink-mute">
+                      {/* Uzun yorum satırı uzatmasın: üç satır, tamamı ipucunda ve düzenleme penceresinde */}
+                      {r.note ? (
+                        <span className="line-clamp-3 break-words" title={r.note}>
+                          {r.note}
+                        </span>
+                      ) : null}
+                    </TD>
+                    <TD>
+                      <div className="flex justify-end">
+                        <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
+                          <Pencil size={15} />
+                        </IconButton>
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+              <tfoot>
+                <TFootRow className="bg-panel-deep/40">
+                  <TD colSpan={4}>
+                    {filtered ? (
+                      <>
+                        Gösterilen {num(visible.length)} malzemenin farkı
+                        <span className="ml-2 font-normal text-ink-mute">(tümü {tl(totalDiff)})</span>
+                      </>
+                    ) : (
+                      "Toplam fark (alınan − reçeteye göre kullanılan)"
+                    )}
                   </TD>
-                </TR>
-              ))}
-            </tbody>
-            <tfoot>
-              <TFootRow className="bg-panel-deep/40">
-                <TD colSpan={4}>Toplam fark (alınan − reçeteye göre kullanılan)</TD>
-                <TD numeric>{tl(totalDiff)}</TD>
-                {hasStock ? (
-                  <>
-                    <TD />
-                    <TD numeric>{tl(totalVariance)}</TD>
-                  </>
-                ) : null}
-                <TD colSpan={2} />
-              </TFootRow>
-            </tfoot>
-          </Table>
-        </TableWrap>
+                  <TD numeric>{tl(filtered ? visibleDiff : totalDiff)}</TD>
+                  {hasStock ? (
+                    <>
+                      <TD />
+                      <TD numeric>{tl(filtered ? visible.reduce((a, r) => a + (r.varianceAmount ?? 0), 0) : totalVariance)}</TD>
+                    </>
+                  ) : null}
+                  <TD colSpan={2} />
+                </TFootRow>
+              </tfoot>
+            </Table>
+          </TableWrap>
+          {/* Kart görünümünde toplam (tablonun alt satırının karşılığı) */}
+          <div className={cn("mx-3 mb-3 flex items-baseline justify-between gap-3 rounded-2xl bg-panel-deep/40 px-3.5 py-3 text-sm font-semibold", cardsOnly)}>
+            <span className="min-w-0">{filtered ? `Gösterilen ${num(visible.length)} malzemenin farkı` : "Toplam fark"}</span>
+            <span className="tabular">{tl(filtered ? visibleDiff : totalDiff)}</span>
+          </div>
+        </>
       ) : rows.length ? (
         <EmptyState
           icon={<SearchX />}
-          title="Bu filtrede malzeme yok"
-          description={filtered ? "Aramayı ya da fark filtresini değiştirin." : undefined}
+          title="Bu süzgece uyan malzeme yok"
+          description={q.trim() ? `"${q.trim()}" adında malzeme bulunamadı ya da fark süzgecine uymuyor.` : "Seçili fark derecesinde malzeme yok; bu iyi haber olabilir."}
           action={
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setSev("all");
-                setQ("");
-              }}
-            >
-              Filtreyi temizle
+            <Button variant="secondary" onClick={clear}>
+              Süzgeci temizle
             </Button>
           }
         />
@@ -399,9 +612,14 @@ export function ConsistencyTable({
           title="Bu ay karşılaştırılacak malzeme yok"
           description="Satış raporu yüklendiğinde ya da alım girildiğinde malzemeler burada listelenir."
           action={
-            <Button variant="secondary" onClick={() => setDialog("new")}>
-              <Plus size={16} /> Alım ekle
-            </Button>
+            <>
+              <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
+                Satış raporu yükle
+              </ButtonLink>
+              <Button onClick={() => setDialog("new")}>
+                <Plus size={16} /> Alım ekle
+              </Button>
+            </>
           }
         />
       )}
@@ -414,38 +632,82 @@ export function ConsistencyTable({
           <span className="min-w-0 flex-1">
             İpucu: Bu ayın ve geçen ayın stok sayımını girerseniz &quot;gerçek tüketim&quot; ve &quot;sapma&quot; sütunları çıkar. Sapma, reçeteye göre olması gerekenden
             fazla harcanan malın parasıdır (fire, ikram, porsiyon kaçağı).{" "}
-            <Link href={`/panel/sayim?ay=${month}`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+            <Link href={`/panel/sayim?ay=${month}`} className="-my-2.5 inline-block py-2.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
               Sayıma git
             </Link>
           </span>
         </CardFooter>
       ) : null}
 
-      {dialog ? <PurchaseDialog month={month} ingredients={ingredients} row={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} /> : null}
+      {dialog ? <PurchaseDialog month={month} ingredients={ingredients} rows={rows} row={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} /> : null}
     </Card>
   );
 }
 
-function PurchaseDialog({ month, ingredients, row, onClose }: { month: string; ingredients: IngredientOption[]; row: Row | null; onClose: () => void }) {
+function PurchaseDialog({
+  month,
+  ingredients,
+  rows,
+  row,
+  onClose,
+}: {
+  month: string;
+  ingredients: IngredientOption[];
+  rows: Row[];
+  row: Row | null;
+  onClose: () => void;
+}) {
   // Satırdan açılan malzeme elle fiyatlı listede yoksa da seçilebilsin
   const options =
     row && !ingredients.some((i) => i.id === row.ingredientId) ? [{ id: row.ingredientId, name: row.name, unit: row.unit }, ...ingredients] : ingredients;
-  const [id, setId] = useState<number>(row?.ingredientId ?? options[0]?.id ?? 0);
+  const byId = new Map(rows.map((r) => [r.ingredientId, r]));
+  const initialId = row?.ingredientId ?? options[0]?.id ?? 0;
+  const [id, setId] = useState<number>(initialId);
+  const existing = byId.get(id) ?? null;
   const [qty, setQty] = useState(row && row.purchased !== null ? num(row.purchased, 2) : "");
-  const [note, setNote] = useState(row?.note ?? "");
+  const [note, setNote] = useState(row?.note ?? (existing?.purchased !== null ? (existing?.note ?? "") : ""));
+  /** Yeni alımda, bu ay zaten girilmiş miktarın üstüne eklensin mi (faturalar parça parça gelir) */
+  const [addToExisting, setAddToExisting] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const unit = options.find((i) => i.id === id)?.unit ?? "";
-  const qtyInvalid = qty.trim() !== "" && parseNumberTR(qty) === null;
+  const parsed = parseNumberTR(qty);
+  const qtyInvalid = qty.trim() !== "" && (parsed === null || parsed < 0);
+  const already = !row && existing?.purchased != null ? existing.purchased : null;
+  const finalQty = parsed === null ? null : already !== null && addToExisting ? already + parsed : parsed;
+  const usage = existing?.usage ?? null;
+  const ratio = finalQty !== null && usage ? finalQty / usage : null;
+
+  const pick = (next: number) => {
+    setId(next);
+    // Seçilen malzemenin bu ayki yorumu silinmesin diye kutuya gelir
+    const r = byId.get(next);
+    setNote(r && r.purchased !== null ? (r.note ?? "") : "");
+  };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const v = parseNumberTR(qty);
-    if (v === null) return toast.error("Miktar girin");
+    if (finalQty === null || qtyInvalid) return toast.error("Miktar girin", { description: "Yalnızca sayı; ondalık için virgül (ör. 2,5)." });
     setBusy(true);
-    const res = await setPurchaseQty(month, id, v, note);
+    const res = await setPurchaseQty(month, id, finalQty, note);
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(row ? "Kaydedildi" : "Eklendi");
+    const name = options.find((i) => i.id === id)?.name ?? "";
+    toast.success(`${name}: ${num(finalQty, 2)} ${unit} ${row || already !== null ? "kaydedildi" : "eklendi"}`);
+    onClose();
+  }
+
+  async function remove() {
+    if (!row) return;
+    setBusy(true);
+    const res = await setPurchaseQty(month, row.ingredientId, null);
+    setBusy(false);
+    setConfirmDelete(false);
+    if (!res.ok) return toast.error(res.error);
+    const prev = { qty: row.purchased, note: row.note };
+    toast.success(`${row.name}: alım silindi`, {
+      action: prev.qty === null ? undefined : { label: "Geri al", onClick: () => void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note) },
+    });
     onClose();
   }
 
@@ -453,36 +715,91 @@ function PurchaseDialog({ month, ingredients, row, onClose }: { month: string; i
     <Dialog
       open
       onClose={onClose}
-      title={row ? "Alınan miktarı düzenle" : "Alınan miktar ekle"}
+      title={row ? `${row.name}: alınan miktar` : "Alınan miktar ekle"}
       description="Faturalardaki toplam miktarı malzemenin kendi biriminde girin (1 kg = 1.000 gr, 1 L = 1.000 ml)."
+      footerStart={
+        row && row.purchased !== null ? (
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
+            <Trash2 size={16} /> Alımı sil
+          </Button>
+        ) : undefined
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form="purchase-form" disabled={busy || !options.length}>
+          <Button type="submit" form="purchase-form" disabled={busy || !options.length || finalQty === null || qtyInvalid}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
       }
     >
       <form id="purchase-form" onSubmit={submit} className="space-y-3 pb-2">
-        <Field label="Malzeme" htmlFor="ap-i">
-          <Select id="ap-i" value={id} disabled={!!row} onChange={(e) => setId(Number(e.target.value))}>
+        <Field label="Malzeme" htmlFor="ap-i" hint={!row && !options.length ? "Elle fiyatlı aktif malzeme yok." : undefined}>
+          <Select id="ap-i" value={id} disabled={!!row} onChange={(e) => pick(Number(e.target.value))} data-autofocus={!row ? true : undefined}>
             {options.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.name}
+                {byId.get(i.id)?.purchased != null ? " · girildi" : ""}
               </option>
             ))}
           </Select>
         </Field>
-        <Field label={`Miktar (${unit})`} htmlFor="ap-q" error={qtyInvalid ? "Geçerli bir miktar girin" : undefined}>
-          <NumberInput id="ap-q" value={qty} onChange={(e) => setQty(e.target.value)} className="cell-input" aria-invalid={qtyInvalid || undefined} data-autofocus />
+        {already !== null ? (
+          <div className="rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-ink-soft">
+            Bu ay zaten <span className="font-semibold text-ink tabular">{num(already, 2)} {unit}</span> girilmiş.
+            <Checkbox
+              label="Yeni miktarı bunun üstüne ekle"
+              className="mt-1.5 flex min-h-9"
+              checked={addToExisting}
+              onChange={(e) => setAddToExisting(e.target.checked)}
+            />
+          </div>
+        ) : null}
+        <Field
+          label={`Miktar (${unit})`}
+          htmlFor="ap-q"
+          error={qtyInvalid ? "Geçerli bir miktar girin (ör. 2.000 ya da 2,5)" : undefined}
+          hint={
+            finalQty !== null ? (
+              <span className="tabular">
+                {already !== null && addToExisting ? `Kaydedilecek: ${num(finalQty, 2)} ${unit}` : null}
+                {already !== null && addToExisting && usage ? " · " : null}
+                {usage ? `Reçeteye göre kullanım ${num(usage)} ${unit}${ratio !== null ? ` → oran ${num(ratio, 2)}×` : ""}` : null}
+              </span>
+            ) : usage ? (
+              <span className="tabular">
+                Reçeteye göre kullanım: {num(usage)} {unit}
+              </span>
+            ) : undefined
+          }
+        >
+          <NumberInput
+            id="ap-q"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className="cell-input pointer-coarse:h-10"
+            aria-invalid={qtyInvalid || undefined}
+            placeholder="0"
+            data-autofocus={row ? true : undefined}
+          />
         </Field>
-        <Field label="Kaynak faturalar / yorum" htmlFor="ap-n">
-          <Input id="ap-n" value={note} onChange={(e) => setNote(e.target.value)} placeholder="ör. Kaldi 01.09 + 15.09: 2 × 12 kg" />
+        <Field label="Kaynak faturalar / yorum" htmlFor="ap-n" hint="İsteğe bağlı: hangi faturalardan geldiği, kontrol notu.">
+          <Input id="ap-n" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="ör. Kaldi 01.09 + 15.09: 2 × 12 kg" className="pointer-coarse:h-10" />
         </Field>
       </form>
+      {row ? (
+        <ConfirmDialog
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={remove}
+          pending={busy}
+          title={`${row.name}: alım silinsin mi?`}
+          description={`${monthLabelOf(month)} için girilen miktar${row.note ? " ve yorumu" : ""} silinir. Bildirimdeki "Geri al" ile hemen geri getirebilirsiniz.`}
+          confirmLabel="Alımı sil"
+        />
+      ) : null}
     </Dialog>
   );
 }
@@ -490,6 +807,8 @@ function PurchaseDialog({ month, ingredients, row, onClose }: { month: string; i
 // ---------------------------------------------------------------- Bulgular (AkmanOS todo-list görünümü)
 
 type FindingItem = { id: number; section: string; title: string; detail: string | null; resolved: boolean; createdAt: string };
+type FindingView = "acik" | "cozulen" | "tumu";
+const FINDING_KEYS = ["bulgu", "bolum", "durum"];
 
 /** AkmanOS todo-list durum ikonu: kesik çizgili halka, çözülünce dolar ve onay işareti çizilir */
 function FindingStatusIcon({ done }: { done: boolean }) {
@@ -530,16 +849,30 @@ function FindingStatusIcon({ done }: { done: boolean }) {
 
 export function Findings({ items }: { items: FindingItem[] }) {
   const reduce = useCalmMotion() ?? false;
-  const [showResolved, setShowResolved] = useState(false);
+  const [viewParam, setView] = useQueryState<FindingView>("durum", "acik");
+  const [sectionParam, setSection] = useQueryState<string>("bolum", "");
+  const [q, setQ] = useQueryText("bulgu");
   const [editing, setEditing] = useState<FindingItem | "new" | null>(null);
   // İşaretleme anında görünsün; sunucu yenilenince gerçek değer gelir, hata olursa geri döner
   const [list, setOptimistic] = useOptimistic(items, (state, change: { id: number; resolved: boolean }) =>
     state.map((i) => (i.id === change.id ? { ...i, resolved: change.resolved } : i)),
   );
-  const visible = list.filter((i) => showResolved || !i.resolved);
+  const view: FindingView = viewParam === "cozulen" || viewParam === "tumu" ? viewParam : "acik";
+  const allSections = [...new Set(list.map((i) => i.section))];
+  const section = allSections.includes(sectionParam) ? sectionParam : "";
+  const inView = (i: FindingItem) => view === "tumu" || (view === "cozulen" ? i.resolved : !i.resolved);
+  const searched = list.filter((i) => matches(`${i.title} ${i.detail ?? ""} ${i.section}`, q));
+  const visible = searched.filter((i) => inView(i) && (!section || i.section === section));
   const sections = [...new Set(visible.map((i) => i.section))];
   const resolvedCount = list.filter((i) => i.resolved).length;
+  const openCount = list.length - resolvedCount;
   const share = list.length ? resolvedCount / list.length : 0;
+  const filtered = view !== "acik" || section !== "" || q.trim() !== "";
+
+  const clear = () => {
+    setQ("");
+    clearQuery(FINDING_KEYS);
+  };
 
   const toggle = (item: FindingItem, resolved: boolean) =>
     startTransition(async () => {
@@ -549,8 +882,10 @@ export function Findings({ items }: { items: FindingItem[] }) {
         toast.error(res.error);
         return;
       }
-      // Çözülen madde listeden kaybolacaksa geri alma imkânı
-      if (resolved && !showResolved) toast.success(`"${item.title}" çözüldü`, { action: { label: "Geri al", onClick: () => toggle(item, false) } });
+      // Madde bu görünümden kaybolacaksa geri alma imkânı
+      const leaves = (resolved && view === "acik") || (!resolved && view === "cozulen");
+      const text = resolved ? `"${item.title}" çözüldü` : `"${item.title}" yeniden açıldı`;
+      if (leaves) toast.success(text, { action: { label: "Geri al", onClick: () => toggle(item, !resolved) } });
     });
 
   return (
@@ -558,10 +893,10 @@ export function Findings({ items }: { items: FindingItem[] }) {
       <CardHeader
         icon={<ListChecks />}
         title="Bulgular ve yapılacaklar"
-        description="Reçetede olmayan alımlar, fiyat ve fatura kontrolleri. Çözülen maddeyi işaretleyin."
+        description="Reçetede olmayan alımlar, fiyat ve fatura kontrolleri. Çözülen maddeyi soldaki halkayla işaretleyin; düzenlemek için maddeye dokunun."
         meta={
           <>
-            <span>Açık · {num(list.length - resolvedCount)}</span>
+            <span>Açık · {num(openCount)}</span>
             <span aria-hidden="true">·</span>
             <span className="inline-flex items-baseline gap-1">
               Çözülen ·{" "}
@@ -573,17 +908,9 @@ export function Findings({ items }: { items: FindingItem[] }) {
           </>
         }
         actions={
-          <>
-            <Checkbox
-              label={`Çözülenleri göster (${resolvedCount})`}
-              className="min-h-9 px-1"
-              checked={showResolved}
-              onChange={(e) => setShowResolved(e.target.checked)}
-            />
-            <Button variant="secondary" onClick={() => setEditing("new")}>
-              <Plus size={16} /> Bulgu ekle
-            </Button>
-          </>
+          <Button onClick={() => setEditing("new")} className="pointer-coarse:h-10">
+            <Plus size={16} /> Bulgu ekle
+          </Button>
         }
       />
       {list.length ? (
@@ -605,7 +932,37 @@ export function Findings({ items }: { items: FindingItem[] }) {
           </div>
         </div>
       ) : null}
-      <CardContent className="space-y-5">
+      {list.length ? (
+        <FilterBar active={filtered} onClear={clear} shown={visible.length} total={list.length} unit="bulgu" className="px-5 pb-4">
+          <SearchField className="max-sm:basis-full sm:flex-1 sm:basis-56" value={q} onChange={setQ} placeholder="Bulgularda ara" label="Bulgularda ara" shortcut={false} />
+          <Segmented<FindingView>
+            label="Bulgu durumu"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "acik", label: "Açık", count: searched.filter((i) => !i.resolved).length },
+              { value: "cozulen", label: "Çözülen", count: searched.filter((i) => i.resolved).length },
+              { value: "tumu", label: "Tümü", count: searched.length },
+            ]}
+          />
+          {allSections.length > 1 ? (
+            <div role="group" aria-label="Bölüm" className="-mx-5 flex min-w-0 gap-1.5 overflow-x-auto px-5 [scrollbar-width:none] max-sm:basis-[calc(100%+2.5rem)] sm:contents">
+              {allSections.map((s) => (
+                <FilterChip
+                  key={s}
+                  active={section === s}
+                  onToggle={() => setSection(section === s ? "" : s)}
+                  count={searched.filter((i) => i.section === s && inView(i)).length}
+                >
+                  {s}
+                </FilterChip>
+              ))}
+            </div>
+          ) : null}
+        </FilterBar>
+      ) : null}
+      {/* Süzgeç değişince liste yeniden kurulur: çıkan maddeler yenilerin üstünde solmasın (yalnızca işaretleme hareketlenir) */}
+      <CardContent key={`${view}|${section}|${q.trim()}`} className="space-y-5">
         {sections.map((sec) => {
           const secList = visible.filter((i) => i.section === sec);
           return (
@@ -628,22 +985,29 @@ export function Findings({ items }: { items: FindingItem[] }) {
                       <button
                         type="button"
                         onClick={() => toggle(i, !i.resolved)}
-                        className="group/toggle flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg"
+                        className="group/toggle flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg"
                         aria-label={`${i.title}: ${i.resolved ? "yeniden aç" : "çözüldü olarak işaretle"}`}
                         title={i.resolved ? "Yeniden aç" : "Çözüldü olarak işaretle"}
                       >
                         <FindingStatusIcon done={i.resolved} />
                       </button>
-                      <button type="button" className="min-w-0 flex-1 cursor-pointer rounded-lg py-1.5 text-left" onClick={() => setEditing(i)}>
-                        <span className={cn("block text-sm font-medium transition-colors", i.resolved ? "text-ink-mute line-through decoration-ink-quiet" : "text-ink")}>
+                      <button type="button" className="min-w-0 flex-1 cursor-pointer rounded-lg py-2 text-left" onClick={() => setEditing(i)}>
+                        <span
+                          className={cn("block text-sm font-medium break-words transition-colors", i.resolved ? "text-ink-mute line-through decoration-ink-quiet" : "text-ink")}
+                        >
                           {i.title}
                         </span>
                         {i.detail ? (
-                          <span className={cn("mt-0.5 block text-[13px] leading-5 whitespace-pre-line text-ink-mute", i.resolved && "opacity-70")}>{i.detail}</span>
+                          <span className={cn("mt-0.5 block text-[13px] leading-5 break-words whitespace-pre-line text-ink-mute", i.resolved && "opacity-70")}>
+                            {i.detail}
+                          </span>
                         ) : null}
-                        <span className="mt-1 block text-xs text-ink-quiet tabular">{dateTR(i.createdAt.slice(0, 10))}</span>
+                        <span className="mt-1 block text-xs text-ink-mute tabular">
+                          {dateTR(i.createdAt.slice(0, 10))}
+                          {i.resolved ? " · çözüldü" : ""}
+                        </span>
                       </button>
-                      <IconButton label={`${i.title}: düzenle`} className="mt-0.5" onClick={() => setEditing(i)}>
+                      <IconButton label={`${i.title}: düzenle`} className="mt-1" onClick={() => setEditing(i)}>
                         <Pencil size={15} />
                       </IconButton>
                     </motion.li>
@@ -654,20 +1018,53 @@ export function Findings({ items }: { items: FindingItem[] }) {
           );
         })}
         {!visible.length ? (
-          <EmptyState
-            icon={<ListChecks />}
-            title="Açık bulgu yok"
-            description={resolvedCount ? `${num(resolvedCount)} çözülmüş bulgu gizli.` : undefined}
-            action={
-              <Button variant="secondary" onClick={() => setEditing("new")}>
-                <Plus size={16} /> Bulgu ekle
-              </Button>
-            }
-          />
+          filtered && list.length ? (
+            <EmptyState
+              icon={<SearchX />}
+              title={view === "acik" && !q.trim() && !section ? "Açık bulgu yok" : "Bu süzgece uyan bulgu yok"}
+              description={
+                view === "acik" && !q.trim() && !section
+                  ? `${num(resolvedCount)} çözülmüş bulgu gizli.`
+                  : "Aramayı, bölümü ya da durumu değiştirin veya süzgeci temizleyin."
+              }
+              action={
+                <Button variant="secondary" onClick={clear}>
+                  Süzgeci temizle
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={<ListChecks />}
+              title={list.length ? "Açık bulgu yok" : "Henüz bulgu yok"}
+              description={
+                list.length
+                  ? `${num(resolvedCount)} çözülmüş bulgu gizli. Yeni bir kontrol notu eklemek için "Bulgu ekle".`
+                  : "Faturada, fiyatta ya da reçetede dikkatinizi çeken bir şeyi not edin; çözünce işaretlersiniz."
+              }
+              action={
+                <>
+                  {resolvedCount ? (
+                    <Button variant="secondary" onClick={() => setView("cozulen")}>
+                      Çözülenleri göster
+                    </Button>
+                  ) : null}
+                  <Button onClick={() => setEditing("new")}>
+                    <Plus size={16} /> Bulgu ekle
+                  </Button>
+                </>
+              }
+            />
+          )
         ) : null}
       </CardContent>
       {editing ? (
-        <FindingDialog item={editing === "new" ? null : editing} sections={[...new Set(items.map((i) => i.section))]} onClose={() => setEditing(null)} />
+        <FindingDialog
+          item={editing === "new" ? null : editing}
+          sections={allSections}
+          defaultSection={section || undefined}
+          onClose={() => setEditing(null)}
+        />
       ) : null}
     </Card>
   );
@@ -676,23 +1073,41 @@ export function Findings({ items }: { items: FindingItem[] }) {
 function FindingDialog({
   item,
   sections,
+  defaultSection,
   onClose,
 }: {
-  item: { id: number; section: string; title: string; detail: string | null } | null;
+  item: FindingItem | null;
   sections: string[];
+  /** Süzgeçte bir bölüm seçiliyse yeni bulgu oraya açılır */
+  defaultSection?: string;
   onClose: () => void;
 }) {
-  const [section, setSection] = useState(item?.section ?? sections[0] ?? "Genel");
+  const [section, setSection] = useState(item?.section ?? defaultSection ?? sections[0] ?? "Genel");
   const [title, setTitle] = useState(item?.title ?? "");
   const [detail, setDetail] = useState(item?.detail ?? "");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const canSave = title.trim() !== "" && section.trim() !== "";
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  async function submit(e?: FormEvent) {
+    e?.preventDefault();
+    if (!canSave) return toast.error(title.trim() ? "Bölüm adını yazın" : "Başlık yazın");
     setBusy(true);
     const res = await saveFinding({ id: item?.id ?? null, section, title, detail });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
+    toast.success(item ? "Bulgu kaydedildi" : `"${title.trim()}" eklendi`);
+    onClose();
+  }
+
+  async function remove() {
+    if (!item) return;
+    setBusy(true);
+    const res = await deleteFinding(item.id);
+    setBusy(false);
+    setConfirmDelete(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(`"${item.title}" silindi`);
     onClose();
   }
 
@@ -701,20 +1116,10 @@ function FindingDialog({
       open
       onClose={onClose}
       title={item ? "Bulguyu düzenle" : "Bulgu ekle"}
+      description={item ? `${dateTR(item.createdAt.slice(0, 10))} tarihinde eklendi${item.resolved ? " · çözüldü" : ""}` : "Kontrol edilecek ya da düzeltilecek bir şeyi not edin."}
       footerStart={
         item ? (
-          <Button
-            variant="ghost"
-            className="text-bad hover:bg-bad-soft hover:text-bad"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              const res = await deleteFinding(item.id);
-              setBusy(false);
-              if (!res.ok) return toast.error(res.error);
-              onClose();
-            }}
-          >
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
             <Trash2 size={16} /> Sil
           </Button>
         ) : undefined
@@ -724,28 +1129,76 @@ function FindingDialog({
           <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form="finding-form" disabled={busy}>
-            {busy ? "Kaydediliyor…" : "Kaydet"}
+          <Button type="submit" form="finding-form" disabled={busy || !canSave}>
+            {busy ? "Kaydediliyor…" : item ? "Kaydet" : "Ekle"}
           </Button>
         </>
       }
     >
       <form id="finding-form" onSubmit={submit} className="space-y-3 pb-2">
-        <Field label="Bölüm" htmlFor="fd-s">
-          <Input id="fd-s" list="finding-sections" value={section} onChange={(e) => setSection(e.target.value)} />
+        <Field label="Bölüm" htmlFor="fd-s" hint="Benzer bulgular aynı bölümde toplanır. Listeden seçin ya da yeni bir ad yazın.">
+          <Input id="fd-s" list="finding-sections" value={section} onChange={(e) => setSection(e.target.value)} maxLength={80} className="pointer-coarse:h-10" />
           <datalist id="finding-sections">
             {sections.map((s) => (
               <option key={s} value={s} />
             ))}
           </datalist>
+          {sections.length > 1 ? (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {sections.map((s) => (
+                <FilterChip key={s} active={section === s} onToggle={() => setSection(s)} className="h-8 text-xs">
+                  {s}
+                </FilterChip>
+              ))}
+            </div>
+          ) : null}
         </Field>
         <Field label="Başlık" htmlFor="fd-t">
-          <Input id="fd-t" value={title} onChange={(e) => setTitle(e.target.value)} data-autofocus={!item ? true : undefined} />
+          <Input
+            id="fd-t"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={200}
+            placeholder="ör. Liçi şurubu reçetede yok"
+            data-autofocus
+            className="pointer-coarse:h-10"
+          />
         </Field>
-        <Field label="Ayrıntı" htmlFor="fd-d">
-          <Textarea id="fd-d" value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} />
+        <Field
+          label="Ayrıntı"
+          htmlFor="fd-d"
+          hint={
+            <>
+              İsteğe bağlı.<span className="max-sm:hidden"> ⌘ Enter / Ctrl Enter ile kaydedin.</span>
+            </>
+          }
+        >
+          <Textarea
+            id="fd-d"
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            rows={3}
+            maxLength={2000}
+          />
         </Field>
       </form>
+      {item ? (
+        <ConfirmDialog
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={remove}
+          pending={busy}
+          title="Bulgu silinsin mi?"
+          description={`"${item.title}" kalıcı olarak silinir; geri alınamaz. Yalnızca kapatmak istiyorsanız silmek yerine çözüldü olarak işaretleyin.`}
+          confirmLabel="Bulguyu sil"
+        />
+      ) : null}
     </Dialog>
   );
 }

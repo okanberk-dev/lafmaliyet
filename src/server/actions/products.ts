@@ -42,6 +42,11 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
     const data = productSchema.parse(input);
     const db = getDb();
     const id = await db.transaction(async (tx) => {
+      const [dup] = await tx
+        .select({ id: s.products.id })
+        .from(s.products)
+        .where(and(eq(s.products.name, data.name), eq(s.products.size, data.size)));
+      if (dup) throw new UserError(`“${data.name} · ${data.size}” zaten var; başka bir boy seçin ya da adı değiştirin`);
       const [{ m }] = await tx.select({ m: max(s.products.sortOrder) }).from(s.products);
       const [created] = await tx
         .insert(s.products)
@@ -191,8 +196,10 @@ export async function deleteCategory(id: number) {
     const db = getDb();
     const used = await db.select({ id: s.products.id }).from(s.products).where(eq(s.products.categoryId, id)).limit(1);
     if (used.length) throw new UserError("Bu kategoride ürün var; önce ürünleri başka kategoriye taşıyın");
+    // İşlem geçmişinde numara değil ad görünsün
+    const [cat] = await db.select({ name: s.categories.name }).from(s.categories).where(eq(s.categories.id, id)).limit(1);
     await db.delete(s.categories).where(eq(s.categories.id, id));
-    await logActivity(me, "Kategori silindi", String(id));
+    await logActivity(me, "Kategori silindi", cat?.name ?? String(id));
     refresh();
     return null;
   });

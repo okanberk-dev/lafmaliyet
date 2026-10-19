@@ -16,8 +16,6 @@ export const metadata: Metadata = { title: "Ürünler & kârlılık" };
 
 const EXCEL = "Ürün Kârlılık + Reçete Kartları";
 
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-
 export default function ProductsPage({ searchParams }: PageProps<"/panel/urunler">) {
   return (
     <Suspense
@@ -84,11 +82,6 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const ml = monthLabel(month);
   const target = num(st.hedefMaliyet * 100);
 
-  const kategori = first(sp.kategori);
-  const durum = first(sp.durum);
-  // ⌘K komut paleti /panel/urunler?ara=<ad> adresine gönderir
-  const ara = first(sp.ara);
-
   return (
     <>
       <PageHeader
@@ -101,7 +94,15 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             <MonthPicker months={availableMonths(model)} value={month} />
             <NewProductButton
               categories={categories}
-              products={rows.map((r) => ({ id: r.id, label: `${r.name} · ${r.size}`, categoryId: r.categoryId, active: r.active }))}
+              products={rows.map((r) => ({
+                id: r.id,
+                name: r.name,
+                size: r.size,
+                label: `${r.name} · ${r.size}`,
+                categoryId: r.categoryId,
+                active: r.active,
+                price: r.price,
+              }))}
             />
           </>
         }
@@ -140,16 +141,9 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
         />
       </div>
-      <ProductsTable
-        key={`${kategori ?? ""}|${durum ?? ""}|${ara ?? ""}`}
-        rows={rows}
-        categories={categories}
-        monthLabel={ml}
-        target={st.hedefMaliyet}
-        initialCategory={kategori ? Number(kategori) : null}
-        initialStatus={durum ?? null}
-        initialQuery={ara ?? ""}
-      />
+      {/* Süzgeçler (?ara, ?kategori, ?durum, ?pasif, ?sira) tablonun içinde adresten okunur; ⌘K paleti ve
+          genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
+      <ProductsTable rows={rows} categories={categories} monthLabel={ml} target={st.hedefMaliyet} />
     </>
   );
 }

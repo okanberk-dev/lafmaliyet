@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 
+import { PrintButton } from "./print-button";
 import { RecipeBook, type RecipeGroup } from "./recipe-book";
 
 export const metadata: Metadata = { title: "Reçete defteri" };
@@ -17,6 +18,7 @@ export default function RecipeBookPage() {
         title="Reçete defteri"
         eyebrow="Menü"
         description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır."
+        actions={<PrintButton />}
       />
       <Suspense fallback={<RecipeBookSkeleton />}>
         <RecipeBookContent />
@@ -31,8 +33,7 @@ function RecipeBookSkeleton() {
       <div className="mb-6 space-y-2.5">
         <div className="flex gap-2">
           <Skeleton className="h-9 flex-1" />
-          <Skeleton className="h-9 w-24 sm:w-40" />
-          <Skeleton className="h-9 w-10 sm:w-24" />
+          <Skeleton className="h-9 w-28 sm:w-40" />
         </div>
         <Skeleton className="h-10 w-full max-w-xl" />
       </div>

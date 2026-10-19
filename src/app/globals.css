@@ -103,6 +103,19 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  /* Kaydırma kilitlenince (aşağıda) klasik kaydırma çubuklu sistemlerde sayfa yana kaymasın */
+  scrollbar-gutter: stable;
+}
+
+/* Açık modal pencere, mobil çekmece ya da arama paleti varken arkadaki sayfa kaymaz */
+html:has(dialog[open]:modal),
+html:has([data-scroll-lock]) {
+  overflow: hidden;
+}
+
+/* Yüzen kaydetme çubuğu açıkken sayfanın sonuna boşluk: son satırlar çubuğun altında kalmasın */
+[data-component="app-shell"]:has([data-floating-bar]) > main {
+  padding-bottom: 6rem;
 }
 
 body {

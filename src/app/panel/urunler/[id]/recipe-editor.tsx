@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -41,6 +41,7 @@ import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
+import { fold } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Field, Input, Label, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { Gauge } from "@/components/ui/gauge";
@@ -48,13 +49,16 @@ import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, Progress, Signed } from "@/components/ui/misc";
 import { Segmented, SegmentedLinks } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression, parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl, tlUnit } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
+
+import { catOrder } from "../../hammaddeler/categories";
+import { priceText } from "../price-text";
 
 interface IngredientOption {
   id: number;
@@ -107,11 +111,15 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   Diğer: Box,
 };
 
-/** Reçete satırı: yukarı/aşağı taşınınca yaylı kayar, eklenince belirir, silinince söner */
-const MotionTR = motion.create(TR);
+/**
+ * Reçete satırının geniş düzeni (kart en az 36rem): malzeme · miktar · tutar · sıra · sil. Başlık, satırlar ve
+ * toplam aynı ızgarayı kullanır, sütunlar alt alta hizalı kalır. Dar düzende (telefon) satır iki katlıdır.
+ * Satır yukarı/aşağı taşınınca yaylı kayar, eklenince belirir, silinince söner.
+ */
+const LINE_GRID = "@xl:grid-cols-[minmax(0,1fr)_9rem_6.25rem_5.25rem_2.5rem]";
 
 /** İlk/son satırdaki taşıma düğmesi: soluk, ama odaklanabilir kalır */
-const edgeClass = "aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-ink-mute";
+const edgeClass = "aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-ink-mute pointer-coarse:size-10";
 
 /** Sayfa açılışında kartların sırayla belirmesi; hareket azaltılmışsa anında görünür */
 function rise(i: number, reduce: boolean | null) {
@@ -172,7 +180,7 @@ export function RecipeEditor({
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
-  /** Miktar alanını altındaki hata/uyarı metnine bağlamak için (satır anahtarı sunucuyla eşleşmez, sıra eşleşir) */
+  /** Miktar alanının kimliği ve altındaki hata/uyarı metni için (satır anahtarı sunucuyla eşleşmez, sıra eşleşir) */
   const uid = useId();
   const ingById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
   const initialRows = useMemo<Row[]>(
@@ -183,7 +191,7 @@ export function RecipeEditor({
   const [name, setName] = useState(product.name);
   const [size, setSize] = useState(product.size);
   const [categoryId, setCategoryId] = useState(product.categoryId);
-  const [price, setPrice] = useState(num(product.price, 2));
+  const [price, setPrice] = useState(priceText(product.price));
   const [fire, setFire] = useState(product.fireOverride === null ? "" : num(product.fireOverride * 100, 2));
   const [note, setNote] = useState(product.note ?? "");
   const [active, setActive] = useState(product.active);
@@ -246,12 +254,28 @@ export function RecipeEditor({
     setRows((rs) => [...rs, { key, ingredientId: null, input: "", note: "" }]);
     setNewKey(key);
   }
+  /** Satırı çıkarır; kaydedilene kadar bildirimdeki "Geri al" ile aynı yerine döner */
+  function removeRow(key: number) {
+    const idx = rows.findIndex((r) => r.key === key);
+    if (idx < 0) return;
+    const row = rows[idx];
+    setRows((rs) => rs.filter((r) => r.key !== key));
+    const ingName = row.ingredientId ? ingById.get(row.ingredientId)?.name : null;
+    if (ingName)
+      toast(`${ingName} çıkarıldı`, {
+        description: "Kaydedince reçeteden silinir.",
+        action: {
+          label: "Geri al",
+          onClick: () => setRows((rs) => (rs.some((r) => r.key === row.key) ? rs : [...rs.slice(0, idx), row, ...rs.slice(idx)])),
+        },
+      });
+  }
 
   function reset() {
     setName(product.name);
     setSize(product.size);
     setCategoryId(product.categoryId);
-    setPrice(num(product.price, 2));
+    setPrice(priceText(product.price));
     setFire(product.fireOverride === null ? "" : num(product.fireOverride * 100, 2));
     setNote(product.note ?? "");
     setActive(product.active);
@@ -260,10 +284,12 @@ export function RecipeEditor({
   }
 
   async function save() {
+    if (saving) return;
+    if (!name.trim()) return toast.error("Ürün adını girin");
     const bad = lines.find((l) => l.error);
     if (bad) return toast.error(`Formül hatası: ${bad.error}`);
     if (lines.some((l) => !l.row.ingredientId)) return toast.error("Boş malzeme satırlarını doldurun ya da silin");
-    if (parseNumberTR(price) === null) return toast.error("Satış fiyatını girin");
+    if (parseNumberTR(price) === null) return toast.error("Satış fiyatını girin (ör. 185 ya da 185,50)");
     setSaving(true);
     const res = await saveRecipe({
       productId: product.id,
@@ -278,16 +304,33 @@ export function RecipeEditor({
       items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
     });
     setSaving(false);
-    if (res.ok) toast.success("Reçete kaydedildi");
+    if (res.ok) toast.success(`${name.trim()} kaydedildi`, { description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(priceNum, 2)}` });
     else toast.error(res.error);
   }
+
+  // ⌘S / Ctrl+S kaydeder; kaydedilmemiş değişiklik varken sayfadan çıkmadan önce tarayıcı sorar
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "s" || !(e.metaKey || e.ctrlKey) || e.altKey) return;
+      e.preventDefault();
+      if (dirty) void save();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [dirty]);
 
   async function remove() {
     setDeleting(true);
     const res = await deleteProduct(product.id);
     setDeleting(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Ürün silindi");
+    toast.success(`${product.name} · ${product.size} silindi`);
     router.push("/panel/urunler");
   }
 
@@ -298,7 +341,10 @@ export function RecipeEditor({
       list.push(i);
       m.set(i.category, list);
     }
-    return [...m.entries()].map(([cat, list]) => [cat, list.sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
+    // Gruplar Hammaddeler sayfasındaki kategori sırasıyla (Kahve, Süt… Ambalaj), içleri A → Z
+    return [...m.entries()]
+      .sort(([a], [b]) => catOrder(a) - catOrder(b) || a.localeCompare(b, "tr"))
+      .map(([cat, list]) => [cat, list.sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
   }, [ingredients]);
 
   const gaugeTone =
@@ -335,13 +381,13 @@ export function RecipeEditor({
         }
         actions={
           <>
-            <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
+            <ButtonLink href="/panel/urunler" variant="ghost" size="sm" className="pointer-coarse:h-10">
               <ArrowLeft size={16} /> Ürünler
             </ButtonLink>
-            <Button variant="secondary" onClick={() => setCopyOpen(true)}>
+            <Button variant="secondary" onClick={() => setCopyOpen(true)} className="pointer-coarse:h-10" title="Reçetesiyle birlikte yeni ürün ya da boy oluştur">
               <Copy size={16} /> Kopyala
             </Button>
-            <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-bad hover:bg-bad-soft hover:text-bad">
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10">
               <Trash2 size={16} /> Sil
             </Button>
           </>
@@ -362,19 +408,27 @@ export function RecipeEditor({
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">
-          {/* Reçete satırları */}
+          {/* Reçete satırları. Kart bir kap (container): dar alanda (telefon, kenar çubuklu masaüstü) her satır iki
+              katlı, genişte tek satır ve sütun başlıkları. Yatay kaydırma yok; miktar, tutar ve sil hep görünür. */}
           <motion.div {...rise(1, reduce)}>
-            <Card>
+            <Card className="@container">
               <CardHeader
                 icon={<ClipboardList />}
                 title="Malzemeler"
                 description={
                   <>
                     Miktar sayı ya da Ayarlar&apos;a bağlı formül olabilir (ör.{" "}
-                    <code className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs text-info ring-1 ring-line">2*ShotCift</code>).
+                    <code className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs text-info ring-1 ring-line">2*ShotCift</code>). Miktarda
+                    Enter sonraki satıra geçer.
                   </>
                 }
-                meta={lines.length ? <span className="tabular">{lines.length} malzeme</span> : null}
+                meta={
+                  lines.length ? (
+                    <span className="tabular">
+                      {lines.length} malzeme · {tl(econ.ingredientTotal, 2)}
+                    </span>
+                  ) : null
+                }
                 actions={
                   lines.length ? (
                     <Button size="sm" variant="secondary" onClick={addRow}>
@@ -384,173 +438,198 @@ export function RecipeEditor({
                 }
               />
               {lines.length ? (
-                <TableWrap>
-                  <Table>
-                    <THead>
-                      <tr>
-                        <TH className="w-8 pr-0 text-ink-mute">#</TH>
-                        <TH>Malzeme</TH>
-                        <TH>Miktar</TH>
-                        <TH numeric>
-                          <span className="inline-flex items-center gap-1">
-                            Birim fiyat
-                            <InfoTip text="Birim maliyet (KDV hariç): paket fiyatı ÷ paket içeriği. Hammaddeler sayfasından gelir." />
-                          </span>
-                        </TH>
-                        <TH numeric>Tutar</TH>
-                        <TH numeric>
-                          <span className="inline-flex items-center gap-1">
-                            {monthLabel} kullanım
-                            <InfoTip text="Miktar × bu ayın satış adedi (fire hariç). Tutarlılık kontrolünde faturayla karşılaştırılır." />
-                          </span>
-                        </TH>
-                        <TH className="w-px">
-                          <span className="sr-only">Eylemler</span>
-                        </TH>
-                      </tr>
-                    </THead>
-                    <tbody>
-                      <AnimatePresence initial={false}>
-                        {lines.map((l, idx) => (
-                          <MotionTR
+                <div className="px-2 pb-2">
+                  <div className={cn(LINE_GRID, "hidden gap-x-3 border-b border-line-strong px-3 pt-1 pb-3 text-sm font-semibold text-ink @xl:grid")}>
+                    <span>Malzeme</span>
+                    <span className="inline-flex items-center gap-1">
+                      Miktar
+                      <InfoTip text="Malzemenin birimiyle (gr, ml, adet). Formül de yazılabilir: 2*ShotCift. Virgüllü ondalık kabul edilir." />
+                    </span>
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Tutar
+                      <InfoTip text="Miktar × birim maliyet (KDV hariç). Birim maliyet Hammaddeler sayfasından gelir; altında KDV dahil tutar." />
+                    </span>
+                  </div>
+                  <ul aria-label="Reçete malzemeleri">
+                    <AnimatePresence initial={false}>
+                      {lines.map((l, idx) => {
+                        const hintId = `${uid}-q${idx}`;
+                        return (
+                          <motion.li
                             key={l.row.key}
                             layout={reduce ? false : "position"}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={rowTransition}
+                            className={cn(
+                              "grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-2 gap-y-2.5 border-b border-line-strong/70 px-3 py-3 transition-colors hover:bg-surface/60 @xl:gap-x-3",
+                              LINE_GRID,
+                            )}
                           >
-                            <TD className="w-8 pt-5 pr-0 align-top text-xs text-ink-quiet tabular">{idx + 1}</TD>
-                            <TD className="min-w-64 align-top sm:min-w-72">
-                              <div className="flex items-start gap-3">
-                                <IngredientTile ing={l.ing} />
-                                <div className="min-w-0 flex-1">
-                                  <Select
-                                    value={l.row.ingredientId ?? ""}
-                                    onChange={(e) => update(l.row.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
-                                    data-warn={!l.row.ingredientId ? "true" : undefined}
-                                    aria-label={`${idx + 1}. satır malzemesi`}
-                                    autoFocus={l.row.key === newKey}
-                                  >
-                                    <option value="">Malzeme seçin…</option>
-                                    {grouped.map(([cat, list]) => (
-                                      <optgroup key={cat} label={cat}>
-                                        {list.map((i) => (
-                                          <option key={i.id} value={i.id}>
-                                            {i.name}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    ))}
-                                  </Select>
-                                  {l.ing?.isEstimate || l.ing?.priceSource === "water" || l.isPackaging ? (
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
-                                      {l.ing?.isEstimate ? (
-                                        <Badge tone="amber" dot>
-                                          Tahmini fiyat
-                                        </Badge>
-                                      ) : null}
-                                      {l.ing?.priceSource === "water" ? (
-                                        <Badge tone="blue" title="Su faturasından hesaplanır">
-                                          Su faturası ({tl(waterPerLiter, 2)}/L)
-                                        </Badge>
-                                      ) : null}
-                                      {l.isPackaging ? <Badge tone="gray">Ambalaj</Badge> : null}
-                                    </div>
-                                  ) : null}
-                                </div>
+                            {/* Malzeme: telefonda üst katın tamamı (sil düğmesi yanında) */}
+                            <div className="col-span-3 col-start-1 row-start-1 flex min-w-0 items-start gap-3 @xl:col-span-1">
+                              {/* Orta genişlikte karo gizlenir, malzeme seçimine yer kalsın */}
+                              <IngredientTile ing={l.ing} className="@xl:hidden @3xl:inline-flex" />
+                              <div className="min-w-0 flex-1">
+                                <Select
+                                  value={l.row.ingredientId ?? ""}
+                                  onChange={(e) => update(l.row.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
+                                  data-warn={!l.row.ingredientId ? "true" : undefined}
+                                  aria-label={`${idx + 1}. satır malzemesi`}
+                                  autoFocus={l.row.key === newKey}
+                                  className="pointer-coarse:h-10"
+                                >
+                                  <option value="">Malzeme seçin…</option>
+                                  {grouped.map(([cat, list]) => (
+                                    <optgroup key={cat} label={cat}>
+                                      {list.map((i) => (
+                                        <option key={i.id} value={i.id}>
+                                          {i.name}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  ))}
+                                </Select>
+                                {l.ing ? (
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-mute">
+                                    {l.ing.isEstimate ? (
+                                      <Badge tone="amber" dot>
+                                        Tahmini fiyat
+                                      </Badge>
+                                    ) : null}
+                                    {l.ing.priceSource === "water" ? (
+                                      <Badge tone="blue" title="Su faturasından hesaplanır">
+                                        Su faturası ({tl(waterPerLiter, 2)}/L)
+                                      </Badge>
+                                    ) : null}
+                                    {l.isPackaging ? <Badge tone="gray">Ambalaj</Badge> : null}
+                                    <span className="tabular" title="Birim maliyet (KDV hariç) ve alış KDV oranı">
+                                      {tlUnit(l.unitCost)}/{l.ing.unit} · KDV {pct(l.vatRate, 0)}
+                                    </span>
+                                    {/* Dar düzende satırın KDV dahil tutarı burada (tutar sütunu yalnızca tutarı gösterir) */}
+                                    <span className="tabular @xl:hidden">KDV dahil {tl(l.totalVat, 2)}</span>
+                                    {soldQty ? (
+                                      <span className="tabular" title="Miktar × bu ayın satış adedi (fire hariç). Tutarlılık kontrolünde faturayla karşılaştırılır.">
+                                        {monthLabel}: {num(l.qty * soldQty, 0)} {l.ing.unit}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <p className="mt-1.5 text-xs text-warn">Listeden bir malzeme seçin ya da satırı silin.</p>
+                                )}
                               </div>
-                            </TD>
-                            <TD className="min-w-40 align-top">
-                              <div className="flex items-center gap-2">
+                            </div>
+
+                            {/* Miktar */}
+                            <div className="col-start-1 row-start-2 min-w-0 @xl:col-start-2 @xl:row-start-1">
+                              <div className="flex items-center gap-1.5">
                                 <Input
+                                  id={`${uid}-qty${idx}`}
                                   value={l.row.input}
                                   onChange={(e) => update(l.row.key, { input: e.target.value })}
-                                  className="cell-input w-28 text-right tabular"
-                                  aria-label={`${idx + 1}. satır miktarı`}
+                                  onKeyDown={(e) => {
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    if (idx < lines.length - 1) document.getElementById(`${uid}-qty${idx + 1}`)?.focus();
+                                    else addRow();
+                                  }}
+                                  // Formül (DondurmaTop, 2*ShotCift) sola yaslı ve eşaralıklı yazılır, tamamı görünsün
+                                  className={cn(
+                                    "cell-input w-28 text-right tabular pointer-coarse:h-10 @xl:w-auto @xl:min-w-0 @xl:flex-1",
+                                    l.expr && "px-2 text-left font-mono text-[13px] sm:text-[13px]",
+                                  )}
+                                  title={l.expr ?? undefined}
+                                  aria-label={`${idx + 1}. satır miktarı${l.ing ? ` (${l.ing.unit})` : ""}`}
                                   aria-invalid={l.error ? true : undefined}
-                                  aria-describedby={l.error || l.expr || (l.qty === 0 && l.row.ingredientId) ? `${uid}-q${idx}` : undefined}
+                                  aria-describedby={l.error || l.expr || (l.qty === 0 && l.row.ingredientId) ? hintId : undefined}
                                   data-warn={!l.error && l.qty === 0 && l.row.ingredientId ? "true" : undefined}
                                   placeholder="0"
+                                  inputMode="decimal"
                                   autoComplete="off"
                                   spellCheck={false}
                                 />
-                                <span className="text-xs text-ink-mute">{l.ing?.unit}</span>
+                                <span className="min-w-6 shrink-0 text-xs text-ink-mute @xl:w-7">{l.ing?.unit}</span>
                               </div>
                               {l.error ? (
-                                <p id={`${uid}-q${idx}`} className="mt-1 max-w-48 text-xs text-bad">
+                                <p id={hintId} className="mt-1 max-w-40 text-xs text-bad">
                                   {l.error}
                                 </p>
                               ) : l.expr ? (
-                                <p id={`${uid}-q${idx}`} className="mt-1 text-xs text-ink-mute tabular">
+                                <p id={hintId} className="mt-1 text-xs text-ink-mute tabular">
                                   = {num(l.qty, 2)} {l.ing?.unit}
                                 </p>
                               ) : l.qty === 0 && l.row.ingredientId ? (
-                                <p id={`${uid}-q${idx}`} className="mt-1 text-xs text-warn">
+                                <p id={hintId} className="mt-1 max-w-40 text-xs text-warn">
                                   Miktar girilmedi (0 sayılıyor)
                                 </p>
                               ) : null}
-                            </TD>
-                            <TD numeric className="pt-5 align-top">
-                              {l.ing ? tlUnit(l.unitCost) : "–"}
-                              {l.ing ? <div className="mt-0.5 text-xs text-ink-mute">KDV {pct(l.vatRate, 0)}</div> : null}
-                            </TD>
-                            <TD numeric className="pt-5 align-top">
-                              <span className="font-medium">{tl(l.total, 2)}</span>
-                              <div className="mt-0.5 text-xs text-ink-mute">KDV dahil {tl(l.totalVat, 2)}</div>
-                            </TD>
-                            <TD numeric className="pt-5 align-top text-ink-soft">
-                              {soldQty ? `${num(l.qty * soldQty, 0)} ${l.ing?.unit ?? ""}` : "–"}
-                            </TD>
-                            <TD className="align-top">
-                              <div className="flex justify-end gap-1.5">
-                                {/* Uçta aria-disabled (disabled değil): klavyeyle taşınan satırın düğmesi odağı kaybetmesin */}
-                                <IconButton
-                                  label="Yukarı taşı"
-                                  aria-disabled={idx === 0 || undefined}
-                                  className={edgeClass}
-                                  onClick={() => move(idx, -1)}
-                                >
-                                  <ArrowUp size={15} />
-                                </IconButton>
-                                <IconButton
-                                  label="Aşağı taşı"
-                                  aria-disabled={idx === lines.length - 1 || undefined}
-                                  className={edgeClass}
-                                  onClick={() => move(idx, 1)}
-                                >
-                                  <ArrowDown size={15} />
-                                </IconButton>
-                                <IconButton label="Satırı sil" tone="danger" onClick={() => setRows((rs) => rs.filter((r) => r.key !== l.row.key))}>
-                                  <Trash2 size={15} />
-                                </IconButton>
-                              </div>
-                            </TD>
-                          </MotionTR>
-                        ))}
-                      </AnimatePresence>
-                    </tbody>
-                    <tfoot>
-                      <TFootRow>
-                        <TD colSpan={4} className="text-right">
-                          Toplam
-                        </TD>
-                        <TD numeric>
-                          {tl(econ.ingredientTotal, 2)}
-                          <div className="mt-0.5 text-xs font-normal text-ink-mute">KDV dahil {tl(econ.totalVatIncl, 2)}</div>
-                        </TD>
-                        <TD colSpan={2} />
-                      </TFootRow>
-                    </tfoot>
-                  </Table>
-                </TableWrap>
+                            </div>
+
+                            {/* Tutar */}
+                            <div className="col-start-2 row-start-2 pt-2 text-right text-sm tabular @xl:col-start-3 @xl:row-start-1">
+                              <span className="font-medium text-ink">{tl(l.total, 2)}</span>
+                              <div className="mt-0.5 hidden text-xs whitespace-nowrap text-ink-mute @xl:block">KDV dahil {tl(l.totalVat, 2)}</div>
+                            </div>
+
+                            {/* Sıra: uçta aria-disabled (disabled değil), klavyeyle taşınan satırın düğmesi odağı kaybetmesin */}
+                            <div className="col-span-2 col-start-3 row-start-2 flex justify-end gap-1 @xl:col-span-1 @xl:col-start-4 @xl:row-start-1">
+                              <IconButton
+                                label="Yukarı taşı"
+                                aria-disabled={idx === 0 || undefined}
+                                className={edgeClass}
+                                onClick={() => move(idx, -1)}
+                              >
+                                <ArrowUp size={15} />
+                              </IconButton>
+                              <IconButton
+                                label="Aşağı taşı"
+                                aria-disabled={idx === lines.length - 1 || undefined}
+                                className={edgeClass}
+                                onClick={() => move(idx, 1)}
+                              >
+                                <ArrowDown size={15} />
+                              </IconButton>
+                            </div>
+
+                            {/* Sil: telefonda malzemenin yanında, genişte satır sonunda */}
+                            <div className="col-start-4 row-start-1 flex justify-end @xl:col-start-5">
+                              <IconButton
+                                label={`${l.ing?.name ?? "Boş"} satırını sil`}
+                                tone="danger"
+                                className="pointer-coarse:size-10"
+                                onClick={() => removeRow(l.row.key)}
+                              >
+                                <Trash2 size={15} />
+                              </IconButton>
+                            </div>
+                          </motion.li>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </ul>
+                  <button
+                    type="button"
+                    onClick={addRow}
+                    className="mx-1 mt-2 flex min-h-10 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong text-[13px] font-medium text-ink-mute transition-colors hover:border-ink/30 hover:bg-surface/60 hover:text-ink"
+                  >
+                    <Plus size={15} aria-hidden="true" /> Malzeme ekle
+                  </button>
+                  <div className={cn("mt-1 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 px-3 py-3 text-sm font-semibold text-ink", LINE_GRID)}>
+                    <span className="@xl:col-span-2 @xl:text-right">Toplam</span>
+                    <span className="text-right tabular @xl:col-start-3">
+                      {tl(econ.ingredientTotal, 2)}
+                      <span className="mt-0.5 block text-xs font-normal text-ink-mute">KDV dahil {tl(econ.totalVatIncl, 2)}</span>
+                    </span>
+                  </div>
+                </div>
               ) : (
                 <EmptyState
                   icon={<ClipboardList />}
                   title="Henüz malzeme yok"
-                  description="“Malzeme ekle” ile başlayın."
+                  description="Reçetedeki malzemeleri tek tek ekleyin; maliyet, kâr ve önerilen fiyat siz yazdıkça hesaplanır."
                   action={
-                    <Button variant="secondary" onClick={addRow}>
+                    <Button onClick={addRow}>
                       <Plus size={16} /> Malzeme ekle
                     </Button>
                   }
@@ -580,10 +659,10 @@ export function RecipeEditor({
             <Card>
               <CardHeader icon={<Tag />} title="Ürün bilgileri" />
               <CardContent className="grid gap-4 sm:grid-cols-2">
-                <Field label="Ürün adı" htmlFor="r-name">
-                  <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} />
+                <Field label="Ürün adı" htmlFor="r-name" error={name.trim() ? undefined : "Ürün adı boş olamaz"}>
+                  <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-invalid={name.trim() ? undefined : true} />
                 </Field>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 min-[420px]:grid-cols-2">
                   <Field label="Boy" htmlFor="r-size">
                     <Select id="r-size" value={size} onChange={(e) => setSize(e.target.value as typeof size)}>
                       {SIZES.map((s) => (
@@ -670,9 +749,23 @@ export function RecipeEditor({
                   label="Satış fiyatı (KDV dahil)"
                   htmlFor="r-price"
                   hint={
-                    <>
-                      Önerilen: <span className="font-medium text-ink-soft tabular">{tl(econ.suggestedPrice)}</span>
-                    </>
+                    lines.length ? (
+                      <span className="flex flex-wrap items-center gap-x-1.5">
+                        Önerilen: <span className="font-medium text-ink-soft tabular">{tl(econ.suggestedPrice)}</span>
+                        {econ.suggestedPrice > 0 && Math.abs(econ.suggestedPrice - priceNum) >= 0.5 ? (
+                          <button
+                            type="button"
+                            onClick={() => setPrice(priceText(econ.suggestedPrice))}
+                            title="Satış fiyatını önerilen fiyata ayarlar; Kaydet'e basınca geçerli olur"
+                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                          >
+                            Uygula
+                          </button>
+                        ) : null}
+                      </span>
+                    ) : (
+                      "Önerilen fiyat malzeme girilince hesaplanır"
+                    )
                   }
                 >
                   <div className="relative">
@@ -797,7 +890,7 @@ export function RecipeEditor({
                             />
                           </div>
                           <div className="py-2.5">
-                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPrice(num(trialPrice!, 2))}>
+                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPrice(priceText(trialPrice!))}>
                               Bu fiyatı uygula
                             </Button>
                           </div>
@@ -840,7 +933,7 @@ export function RecipeEditor({
           <Button variant="ghost" onClick={reset} aria-label="Geri al" title="Geri al" className="max-sm:px-2.5">
             <RotateCcw size={16} /> <span className="max-sm:hidden">Geri al</span>
           </Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving} title="Kaydet (⌘S / Ctrl+S)">
             <Save size={16} /> {saving ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </div>
@@ -852,35 +945,39 @@ export function RecipeEditor({
         onConfirm={() => void remove()}
         pending={deleting}
         title="Ürün silinsin mi?"
-        confirmLabel="Sil"
+        confirmLabel="Ürünü sil"
         description={
           <>
             <span className="mb-2 block font-semibold text-ink">
               {product.name} · {product.size}
             </span>
-            Reçetesi de silinir. Geçmiş satış satırları kalır ama eşleşmesiz görünür. Menüden kaldırmak için silmek yerine &apos;Menüde
-            aktif&apos; anahtarını kapatabilirsiniz.
+            Reçetesiyle birlikte kalıcı olarak silinir; geri alınamaz.
+            {soldQty ? ` ${monthLabel} ayında ${num(soldQty)} adet satılmış: bu satış satırları kalır ama eşleşmesiz görünür.` : " Geçmiş satış satırları kalır ama eşleşmesiz görünür."}{" "}
+            Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatın.
           </>
         }
       />
 
-      <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} />
+      <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} takenSizes={siblings.map((x) => x.size)} />
     </div>
   );
 }
 
 /** Malzemenin kategorisine göre pastel ikon karosu; boş satırda kesik çizgili yer tutucu */
-function IngredientTile({ ing }: { ing?: IngredientOption }) {
+function IngredientTile({ ing, className }: { ing?: IngredientOption; className?: string }) {
   if (!ing) {
     return (
-      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-line-strong text-ink-quiet" aria-hidden="true">
+      <span
+        className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-line-strong text-ink-quiet", className)}
+        aria-hidden="true"
+      >
         <Plus size={16} />
       </span>
     );
   }
   const Icon = ing.priceSource === "water" ? Droplets : (CATEGORY_ICON[ing.category] ?? Box);
   return (
-    <span title={ing.category} className="inline-flex shrink-0">
+    <span title={ing.category} className={cn("inline-flex shrink-0", className)}>
       <IconTile tone={toneFor(ing.category)}>
         <Icon />
       </IconTile>
@@ -888,29 +985,44 @@ function IngredientTile({ ing }: { ing?: IngredientOption }) {
   );
 }
 
+/**
+ * Reçetesiyle kopyalama. Aynı adın henüz olmayan ilk boyu seçili gelir; aynı ad + boy zaten varsa göndermeden
+ * uyarır. Enter kopyalar, Esc kapatır.
+ */
 function CopyDialog({
   open,
   onClose,
   product,
+  takenSizes,
 }: {
   open: boolean;
   onClose: () => void;
   product: { id: number; name: string; size: "M" | "L" | "Tek"; categoryId: number; price: number };
+  /** Bu adın var olan boyları */
+  takenSizes: string[];
 }) {
   const router = useRouter();
   const formId = useId();
   const [name, setName] = useState(product.name);
-  const [size, setSize] = useState<Size>(product.size === "M" ? "L" : "M");
-  const [price, setPrice] = useState(num(product.price, 2));
+  const [size, setSize] = useState<Size>(() => SIZES.find((x) => !takenSizes.includes(x)) ?? (product.size === "M" ? "L" : "M"));
+  const [price, setPrice] = useState(priceText(product.price));
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const duplicate = fold(name.trim()) === fold(product.name) && takenSizes.includes(size);
 
   async function submit() {
-    if (busy) return;
+    if (busy || duplicate) return;
+    if (!name.trim()) return document.getElementById("c-name")?.focus();
+    const p = parseNumberTR(price);
+    if (p === null || p < 0) {
+      setPriceError("Geçerli bir fiyat girin (ör. 185 ya da 185,50)");
+      return document.getElementById("c-price")?.focus();
+    }
     setBusy(true);
-    const res = await createProduct({ name, size, categoryId: product.categoryId, price: parseNumberTR(price) ?? 0, copyFromId: product.id });
+    const res = await createProduct({ name, size, categoryId: product.categoryId, price: p, copyFromId: product.id });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Kopya oluşturuldu");
+    toast.success(`${name.trim()} · ${size} oluşturuldu`, { description: "Reçetesi kopyalandı; miktarları yeni boya göre düzeltin." });
     onClose();
     router.push(`/panel/urunler/${res.data.id}`);
   }
@@ -926,7 +1038,7 @@ function CopyDialog({
           <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy}>
+          <Button type="submit" form={formId} disabled={busy || duplicate || !name.trim()}>
             <Copy size={16} /> {busy ? "Kopyalanıyor…" : "Kopyala"}
           </Button>
         </>
@@ -936,26 +1048,40 @@ function CopyDialog({
       <form
         id={formId}
         className="space-y-4 pb-2"
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <Field label="Ürün adı" htmlFor="c-name">
-          <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} />
+        <Field label="Ürün adı" htmlFor="c-name" error={name.trim() ? undefined : "Ürün adını yazın"}>
+          <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-invalid={name.trim() ? undefined : true} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Boy" htmlFor="c-size">
-            <Select id="c-size" value={size} onChange={(e) => setSize(e.target.value as Size)}>
-              {SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s} — {SIZE_LABELS[s]}
+        <div className="grid gap-3 min-[420px]:grid-cols-2">
+          <Field label="Boy" htmlFor="c-size" error={duplicate ? `${product.name} · ${size} zaten var; başka bir boy seçin` : undefined}>
+            <Select id="c-size" value={size} onChange={(e) => setSize(e.target.value as Size)} aria-invalid={duplicate || undefined}>
+              {SIZES.map((x) => (
+                <option key={x} value={x}>
+                  {x} — {SIZE_LABELS[x]}
+                  {fold(name.trim()) === fold(product.name) && takenSizes.includes(x) ? " (var)" : ""}
                 </option>
               ))}
             </Select>
           </Field>
-          <Field label="Satış fiyatı" htmlFor="c-price">
-            <NumberInput id="c-price" value={price} onChange={(e) => setPrice(e.target.value)} />
+          <Field label="Satış fiyatı (KDV dahil)" htmlFor="c-price" error={priceError}>
+            <div className="relative">
+              <NumberInput
+                id="c-price"
+                value={price}
+                onChange={(e) => {
+                  setPrice(e.target.value);
+                  setPriceError(null);
+                }}
+                aria-invalid={priceError ? true : undefined}
+                className="cell-input pr-7"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
+            </div>
           </Field>
         </div>
       </form>

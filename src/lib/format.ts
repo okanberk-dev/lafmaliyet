@@ -19,10 +19,13 @@ export function num(v: number | null | undefined, digits = 0, minDigits = 0): st
   return fmt(minDigits, digits).format(r);
 }
 
+// Tutarla ₺ arasında bölünmez boşluk: satır sarılınca "₺" tek başına alt satıra düşmez
+const NBSP = "\u00a0";
+
 /** 1.234 ₺ */
 export function tl(v: number | null | undefined, digits = 0): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "–";
-  return `${num(v, digits, digits)} ₺`;
+  return `${num(v, digits, digits)}${NBSP}₺`;
 }
 
 /** Küçük tutarlar için 2 ondalık (birim maliyet vb.) */
@@ -35,7 +38,7 @@ export function tlUnit(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "–";
   const abs = Math.abs(v);
   const digits = abs >= 10 ? 2 : abs >= 1 ? 3 : 4;
-  return `${num(v, digits, 2)} ₺`;
+  return `${num(v, digits, 2)}${NBSP}₺`;
 }
 
 /** %25,4 */

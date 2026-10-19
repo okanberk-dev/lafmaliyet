@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { startTransition, useMemo, useOptimistic, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -35,17 +35,19 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, NumberInput, SearchInput, Textarea } from "@/components/ui/form";
+import { clearQuery, FilterBar, FilterChip, keepScroll, matches, SearchField, useQueryState, useQueryText, useSettleScroll } from "@/components/ui/filters";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
-import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { normalizePosName } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { num, pct, tl } from "@/lib/format";
-import { cn, matchesSearch } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { clearMonthSales, deleteLine, importSales, parseSalesFile, saveLine, saveMonthInfo, setLineMatch } from "@/server/actions/sales";
+
 
 export interface ProductOption {
   id: number;
@@ -76,8 +78,6 @@ export interface SalesRow {
   avgPrice: number;
   menuPrice: number | null;
 }
-
-export type SalesFilter = "all" | "unmatched" | "matched" | "service";
 
 // ---------------------------------------------------------------- Sayaçlar
 
@@ -159,10 +159,20 @@ export function MonthInfoForm({
   const discNum = parseNumberTR(disc) ?? 0;
   const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
   const consistent = diff !== null && Math.abs(diff) < 1000;
+  /** Boş değil ama okunamayan tutar; 31'den büyük gün */
+  const bad = {
+    pos: pos.trim() !== "" && posNum === null,
+    disc: disc.trim() !== "" && parseNumberTR(disc) === null,
+    off: off.trim() !== "" && parseNumberTR(off) === null,
+    days: openDays.trim() !== "" && Number(openDays) > 31,
+  };
+  const invalid = bad.pos || bad.disc || bad.off || bad.days;
 
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (invalid) return toast.error(bad.days ? "Açık gün sayısı 0 ile 31 arasında olmalı" : "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
     setBusy(true);
+    keepScroll();
     const res = await saveMonthInfo({
       month,
       openDays: openDays.trim() ? Number(openDays) : null,
@@ -186,23 +196,32 @@ export function MonthInfoForm({
         description="Patron > Raporlar > Ciro ekranından. Gelir-gider tablosu bu ciroyu kullanır."
       />
       <CardContent className="flex flex-1 flex-col">
-        <form onSubmit={save} className="flex flex-1 flex-col gap-3">
+        {/* Dokunmatikte alanlar 40px (parmakla rahat seçilsin) */}
+        <form onSubmit={save} className="flex flex-1 flex-col gap-3 pointer-coarse:[&_input]:h-10">
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-            <Field label="POS ciro (KDV dahil)" tip="İndirimler düşülmüş, ödenmezler hariç" htmlFor="m-pos">
-              <NumberInput id="m-pos" value={pos} onChange={(e) => setPos(e.target.value)} className="cell-input" />
+            <Field label="POS ciro, KDV dahil (₺)" tip="İndirimler düşülmüş, ödenmezler hariç" htmlFor="m-pos" error={bad.pos ? "Sayı girin" : undefined}>
+              <NumberInput id="m-pos" value={pos} onChange={(e) => setPos(e.target.value)} placeholder="0" aria-invalid={bad.pos || undefined} className={bad.pos ? undefined : "cell-input"} />
             </Field>
-            <Field label="Açık gün sayısı" tip="Sabit giderler bu oranla bölünür" htmlFor="m-days">
-              <NumberInput id="m-days" value={openDays} onChange={(e) => setOpenDays(e.target.value.replace(/\D/g, ""))} className="cell-input" />
+            <Field label="Açık gün sayısı" tip="Sabit giderler bu oranla bölünür" htmlFor="m-days" error={bad.days ? "En fazla 31 gün" : undefined}>
+              <NumberInput
+                id="m-days"
+                value={openDays}
+                onChange={(e) => setOpenDays(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                inputMode="numeric"
+                placeholder="ör. 30"
+                aria-invalid={bad.days || undefined}
+                className={bad.days ? undefined : "cell-input"}
+              />
             </Field>
-            <Field label="Yönetici indirimleri" tip="KDV dahil (Patron > İndirim)" htmlFor="m-disc">
-              <NumberInput id="m-disc" value={disc} onChange={(e) => setDisc(e.target.value)} className="cell-input" />
+            <Field label="Yönetici indirimleri (₺)" tip="KDV dahil (Patron > İndirim)" htmlFor="m-disc" error={bad.disc ? "Sayı girin" : undefined}>
+              <NumberInput id="m-disc" value={disc} onChange={(e) => setDisc(e.target.value)} aria-invalid={bad.disc || undefined} className={bad.disc ? undefined : "cell-input"} />
             </Field>
-            <Field label="Ciro dışı (ödenmez / ikram)" tip="Malzemesi harcanan, geliri olmayan satışlar" htmlFor="m-off">
-              <NumberInput id="m-off" value={off} onChange={(e) => setOff(e.target.value)} className="cell-input" />
+            <Field label="Ödenmez / ikram (₺)" tip="Ciro dışı: malzemesi harcanan, geliri olmayan satışlar" htmlFor="m-off" error={bad.off ? "Sayı girin" : undefined}>
+              <NumberInput id="m-off" value={off} onChange={(e) => setOff(e.target.value)} aria-invalid={bad.off || undefined} className={bad.off ? undefined : "cell-input"} />
             </Field>
           </div>
           <Field label="Not" htmlFor="m-note">
-            <Textarea id="m-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="min-h-16" />
+            <Textarea id="m-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="max-h-48 min-h-16 [field-sizing:content]" />
           </Field>
           {diff !== null ? (
             <div
@@ -230,7 +249,7 @@ export function MonthInfoForm({
                 Kaydedilmemiş değişiklik var
               </span>
             ) : null}
-            <Button type="submit" variant={dirty ? "primary" : "secondary"} disabled={busy}>
+            <Button type="submit" variant={dirty ? "primary" : "secondary"} disabled={busy} className="pointer-coarse:h-10">
               {busy ? "Kaydediliyor…" : "Kaydet"}
             </Button>
           </div>
@@ -292,24 +311,41 @@ function ProductPicker({
   onPick: (v: { productId: number | null; isService: boolean }) => void;
 }) {
   const [q, setQ] = useState("");
-  const found = products.filter((p) => matchesSearch(`${p.name} ${p.size} ${p.category}`, q));
-  const list = found.slice(0, PICKER_LIMIT);
+  const found = products.filter((p) => matches(`${p.name} ${p.size} ${p.category}`, q));
+  // Arama yokken şu anki eşleşme en üstte (uzun listede aranmasın)
+  const current = !isService && currentId ? found.find((p) => p.id === currentId) : undefined;
+  const list = (current && !q.trim() ? [current, ...found.filter((p) => p !== current)] : found).slice(0, PICKER_LIMIT);
   return (
     <Dialog open onClose={onClose} title="Ürünle eşleştir" description={title} size="md">
       <div className="space-y-3 pb-2">
-        <SearchInput data-autofocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Menüde ara…" aria-label="Menüde ara" />
+        {/* Enter ilk sonucu seçer: ada göre arayıp tek tuşla eşleştirme */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (q.trim() && list[0]) onPick({ productId: list[0].id, isService: false });
+          }}
+        >
+          <SearchField value={q} onChange={setQ} placeholder="Ürün, boy ya da kategori" label="Menüde ara" shortcut={false} />
+        </form>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="secondary"
             onClick={() => onPick({ productId: null, isService: true })}
             aria-pressed={isService}
-            className={cn(isService && "text-info ring-info/30")}
+            className={cn("pointer-coarse:h-10", isService && "text-info ring-info/30")}
           >
             <Mic size={15} /> HİZMET (maliyetsiz, ör. karaoke)
             {isService ? <Check size={14} aria-hidden="true" /> : null}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onPick({ productId: null, isService: false })}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onPick({ productId: null, isService: false })}
+            disabled={!currentId && !isService}
+            className="pointer-coarse:h-10"
+            title={!currentId && !isService ? "Bu satır henüz eşleşmedi" : undefined}
+          >
             <X size={15} /> Eşleşmeyi kaldır
           </Button>
         </div>
@@ -361,9 +397,10 @@ function ProductPicker({
             </li>
           ) : null}
         </ul>
-        {found.length > PICKER_LIMIT ? (
+        {found.length > PICKER_LIMIT || (q.trim() && list.length) ? (
           <p className="text-xs text-ink-mute">
-            İlk {PICKER_LIMIT} sonuç gösteriliyor ({num(found.length)} ürün). Aramayı daraltın.
+            {found.length > PICKER_LIMIT ? `İlk ${PICKER_LIMIT} sonuç gösteriliyor (${num(found.length)} ürün). Aramayı daraltın. ` : null}
+            {q.trim() && list.length ? "Enter ilk sonucu seçer." : null}
           </p>
         ) : null}
       </div>
@@ -373,13 +410,52 @@ function ProductPicker({
 
 // ---------------------------------------------------------------- Satış tablosu
 
-function rowStatus(r: SalesRow): "service" | "matched" | "unmatched" {
+type RowStatus = "service" | "matched" | "unmatched";
+
+function rowStatus(r: SalesRow): RowStatus {
   return r.isService ? "service" : r.matched ? "matched" : "unmatched";
 }
 
-/** Satır içi eşleşme düğmesi: masaüstünde 32px, dokunmatikte 36px */
+/** Adresteki ?durum= değerleri (bildirimdeki bağlantı ?durum=eslesmeyen kullanır) */
+type StatusFilter = "tumu" | "eslesmeyen" | "eslesen" | "hizmet";
+const FILTER_STATUS: Record<Exclude<StatusFilter, "tumu">, RowStatus> = { eslesmeyen: "unmatched", eslesen: "matched", hizmet: "service" };
+/** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama ve ay korunur) */
+const FILTER_KEYS = ["ara", "durum"];
+
+type SortKey = "ad" | "adet" | "ciro" | "maliyet" | "kom" | "kar";
+const COMPARE: Record<SortKey, (a: SalesRow, b: SalesRow) => number> = {
+  ad: (a, b) => a.posName.localeCompare(b.posName, "tr"),
+  adet: (a, b) => a.qty - b.qty,
+  ciro: (a, b) => a.revenue - b.revenue,
+  maliyet: (a, b) => a.cost - b.cost,
+  kom: (a, b) => a.commission - b.commission,
+  kar: (a, b) => a.grossProfit - b.grossProfit,
+};
+/** Varsayılan: rapordaki sıra (içe aktarılan dosyadaki gibi) */
+const REPORT_ORDER = "rapor";
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: REPORT_ORDER, label: "Rapor sırası" },
+  { value: "ciro-azalan", label: "Ciro: yüksekten düşüğe" },
+  { value: "kar-azalan", label: "Brüt kâr: yüksekten düşüğe" },
+  { value: "kar-artan", label: "Brüt kâr: düşükten yükseğe" },
+  { value: "adet-azalan", label: "Adet: çoktan aza" },
+  { value: "maliyet-azalan", label: "Maliyet: yüksekten düşüğe" },
+  { value: "ad-artan", label: "Ad: A → Z" },
+];
+
+/** ?sirala=ciro-azalan -> { key: "ciro", dir: "desc" }; tanınmayan değer rapor sırası */
+function parseSort(v: string): { key: SortKey; dir: "asc" | "desc" } | null {
+  const [k, d] = v.split("-");
+  if (!(k in COMPARE)) return null;
+  return { key: k as SortKey, dir: d === "artan" ? "asc" : "desc" };
+}
+
+/**
+ * Satır içi eşleşme düğmesi: masaüstünde 32px, dokunmatikte 40px. 160px'te kesilir (tablo 1280px ekranda
+ * yatay kaymadan sığsın); uzun adda kesilen ürün adıdır, boy (· M / · L) her zaman görünür.
+ */
 const MATCH_BTN =
-  "inline-flex h-8 max-w-64 cursor-pointer items-center gap-1.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium transition-colors pointer-coarse:h-9";
+  "inline-flex h-8 max-w-40 cursor-pointer items-center gap-1.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium transition-colors pointer-coarse:h-10";
 
 const MATCH_TONE = {
   matched: "bg-surface text-ink ring-1 ring-inset ring-line-strong hover:ring-ink/25",
@@ -387,151 +463,382 @@ const MATCH_TONE = {
   service: "bg-info-soft text-info ring-1 ring-inset ring-info/20 hover:ring-info/40",
 } as const;
 
+type Totals = { qty: number; revenue: number; net: number; cost: number; commission: number; grossProfit: number; margin: number };
+type Optimistic = { kind: "match"; id: number; productId: number | null; isService: boolean; label: string | null } | { kind: "delete"; id: number };
+
+/** Tablo başlığı: kalın ad + altında küçük birim/açıklama satırı (sütunlar dar kalsın, birim görünsün) */
+function HeadLabel({ children, sub, wrap }: { children: ReactNode; sub?: string; wrap?: boolean }) {
+  return (
+    <>
+      {children}
+      {sub ? <span className={cn("block text-xs font-normal text-ink-mute", wrap && "whitespace-normal")}>{sub}</span> : null}
+    </>
+  );
+}
+
+/** Ürün adı kesilebilir, boyu kesilmez ("Ice White Choc. Mo… · M") */
+function NameSize({ name, size }: { name: string; size?: string }) {
+  return (
+    <>
+      <span className="truncate">{name}</span>
+      {size ? <span className="-ml-1 shrink-0">· {size}</span> : null}
+    </>
+  );
+}
+
 export function SalesTable({
-  rows,
+  rows: serverRows,
   products,
   month,
-  initialFilter,
   totals,
 }: {
   rows: SalesRow[];
   products: ProductOption[];
   month: string;
-  initialFilter: SalesFilter;
-  totals: { qty: number; revenue: number; net: number; cost: number; commission: number; grossProfit: number; margin: number };
+  totals: Totals;
 }) {
   const reduce = useCalmMotion();
-  const [filter, setFilter] = useState<SalesFilter>(initialFilter);
-  const [q, setQ] = useState("");
+  // Sayfadaki her eylem (eşleştirme, ay bilgisi, içe aktarma…) yenilemeyle yeni satır dizisi getirir
+  useSettleScroll(serverRows);
+  // Eşleştirme ve silme sunucu yanıtını beklemeden görünür; hata olursa satır eski haline döner
+  const [rows, applyOptimistic] = useOptimistic(serverRows, (state: SalesRow[], a: Optimistic) =>
+    a.kind === "delete"
+      ? state.filter((r) => r.id !== a.id)
+      : state.map((r) =>
+          r.id === a.id ? { ...r, productId: a.productId, isService: a.isService, matched: !!a.productId && !a.isService, productLabel: a.label } : r,
+        ),
+  );
+  const [rawFilter, setFilter] = useQueryState<string>("durum", "tumu");
+  const [q, setQ] = useQueryText("ara");
+  const [rawSort, setSort] = useQueryState<string>("sirala", REPORT_ORDER);
+  const filter: StatusFilter = rawFilter in FILTER_STATUS ? (rawFilter as StatusFilter) : "tumu";
+  const sort = parseSort(rawSort);
   const [picking, setPicking] = useState<SalesRow | null>(null);
   const [editing, setEditing] = useState<Partial<SalesRow> | null>(null);
   const [deleting, setDeleting] = useState<SalesRow | null>(null);
-  const [removing, setRemoving] = useState(false);
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
+  // Durum çiplerinin sayaçları aramaya göre (arama yazılıyken "kaç eşleşmeyen var" görünsün)
+  const searched = rows.filter((r) => matches(`${r.posName} ${r.productLabel ?? ""} ${r.note ?? ""}`, q));
   const counts = {
-    all: rows.length,
-    unmatched: rows.filter((r) => rowStatus(r) === "unmatched").length,
-    matched: rows.filter((r) => rowStatus(r) === "matched").length,
-    service: rows.filter((r) => rowStatus(r) === "service").length,
+    unmatched: searched.filter((r) => rowStatus(r) === "unmatched").length,
+    matched: searched.filter((r) => rowStatus(r) === "matched").length,
+    service: searched.filter((r) => rowStatus(r) === "service").length,
   };
-  const visible = rows.filter((r) => (filter === "all" || rowStatus(r) === filter) && matchesSearch(`${r.posName} ${r.productLabel ?? ""}`, q));
-  const paged = usePaged(visible, 25, `${month}|${filter}|${q}`);
-  const showTotals = filter === "all" && !q;
+  const totalUnmatched = rows.filter((r) => rowStatus(r) === "unmatched").length;
+  const byStatus = filter === "tumu" ? searched : searched.filter((r) => rowStatus(r) === FILTER_STATUS[filter]);
+  // Sıralama kararlı: eşit değerlerde rapor sırası korunur
+  const visible = sort ? [...byStatus].sort((a, b) => (sort.dir === "asc" ? 1 : -1) * COMPARE[sort.key](a, b)) : byStatus;
+  const paged = usePaged(visible, 25, `${month}|${filter}|${q}|${rawSort}`);
+  const anyFilter = filter !== "tumu" || Boolean(q.trim());
+  const sum = (f: (r: SalesRow) => number) => visible.reduce((a, r) => a + f(r), 0);
+  // Süzgeç yokken sunucunun ay toplamı; varsa görünen satırların toplamı
+  const shownTotals: Totals = anyFilter
+    ? (() => {
+        const net = sum((r) => r.net);
+        const grossProfit = sum((r) => r.grossProfit);
+        return {
+          qty: sum((r) => r.qty),
+          revenue: sum((r) => r.revenue),
+          net,
+          cost: sum((r) => r.cost),
+          commission: sum((r) => r.commission),
+          grossProfit,
+          margin: net ? grossProfit / net : 0,
+        };
+      })()
+    : totals;
+  const totalsLabel = anyFilter ? `Süzülen ${num(visible.length)} satır` : "Ay toplamı";
 
-  async function pick(row: SalesRow, v: { productId: number | null; isService: boolean }) {
+  const toggleFilter = (f: StatusFilter) => setFilter(filter === f ? "tumu" : f);
+  // Sayısal sütun: azalan → artan → rapor sırası; ad: A→Z → Z→A → rapor sırası
+  const toggleSort = (key: SortKey) => {
+    const first = key === "ad" ? "asc" : "desc";
+    if (!sort || sort.key !== key) return setSort(`${key}-${first === "asc" ? "artan" : "azalan"}`);
+    if (sort.dir === first) return setSort(`${key}-${first === "asc" ? "azalan" : "artan"}`);
+    setSort(REPORT_ORDER);
+  };
+  const dirOf = (key: SortKey) => (sort?.key === key ? sort.dir : null);
+  const sortValue = sort ? `${sort.key}-${sort.dir === "asc" ? "artan" : "azalan"}` : REPORT_ORDER;
+
+  const clearFilters = () => {
+    setQ("");
+    clearQuery(FILTER_KEYS);
+  };
+
+  /** Sayfa değişince listenin başına dön (alttaki sayfalamadan tıklanınca yeni sayfanın sonunda kalınmasın) */
+  const toPage = (p: number) => {
+    paged.setPage(p);
+    const el = document.getElementById("satirlar");
+    if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  };
+
+  function pick(row: SalesRow, v: { productId: number | null; isService: boolean }) {
     setPicking(null);
-    const res = await setLineMatch(row.id, v.productId, v.isService);
-    if (res.ok)
-      toast.success(v.isService ? "HİZMET olarak işaretlendi" : v.productId ? "Eşleştirildi, bu ad sonraki aylarda otomatik tanınacak" : "Eşleşme kaldırıldı");
-    else toast.error(res.error);
+    const p = v.productId ? productById.get(v.productId) : undefined;
+    keepScroll();
+    startTransition(async () => {
+      applyOptimistic({ kind: "match", id: row.id, ...v, label: p ? `${p.name} · ${p.size}` : null });
+      const res = await setLineMatch(row.id, v.productId, v.isService);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(v.isService ? "HİZMET olarak işaretlendi" : v.productId ? "Eşleştirildi" : "Eşleşme kaldırıldı", {
+        description: v.productId || v.isService ? `“${row.posName}” sonraki aylarda otomatik tanınacak.` : row.posName,
+      });
+    });
   }
 
-  async function remove() {
-    if (!deleting) return;
-    setRemoving(true);
-    const res = await deleteLine(deleting.id);
-    setRemoving(false);
-    if (!res.ok) return toast.error(res.error);
+  function remove() {
+    const target = deleting;
+    if (!target) return;
     setDeleting(null);
-    toast.success("Satır silindi");
+    keepScroll();
+    startTransition(async () => {
+      applyOptimistic({ kind: "delete", id: target.id });
+      const res = await deleteLine(target.id);
+      if (!res.ok) toast.error(res.error);
+      else toast.success("Satır silindi", { description: `${target.posName} · ${num(target.qty)} adet` });
+    });
   }
+
+  /** Eşleşme düğmesi + (varsa) tek tıkla uygulanan değnekli öneri */
+  const matchCell = (r: SalesRow) => {
+    const status = rowStatus(r);
+    const suggestion = status === "unmatched" ? suggestProduct(r.posName, products) : null;
+    const product = status === "matched" && r.productId ? productById.get(r.productId) : undefined;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setPicking(r)}
+          className={cn(MATCH_BTN, MATCH_TONE[status])}
+          title={status === "matched" && r.productLabel ? `${r.productLabel} · değiştirmek için tıklayın` : "Ürünle eşleştir"}
+        >
+          {status === "service" ? (
+            <span className="truncate">HİZMET</span>
+          ) : product ? (
+            <NameSize name={product.name} size={product.size} />
+          ) : (
+            <span className="truncate">{r.productLabel ?? "Eşleşmedi — seç"}</span>
+          )}
+          <ChevronDown size={14} className="shrink-0 opacity-60" aria-hidden="true" />
+        </button>
+        {suggestion ? (
+          <button
+            type="button"
+            className={cn(MATCH_BTN, "bg-lime/25 text-good-ink hover:bg-lime/45")}
+            onClick={() => pick(r, { productId: suggestion.id, isService: false })}
+            title={`Önerilen eşleşmeyi uygula: ${suggestion.name} · ${suggestion.size}`}
+          >
+            <Wand2 size={13} className="shrink-0" aria-hidden="true" />
+            <span className="sr-only">Önerilen eşleşmeyi uygula: </span>
+            <NameSize name={suggestion.name} size={suggestion.size} />
+          </button>
+        ) : null}
+      </>
+    );
+  };
+
+  const rowActions = (r: SalesRow, coarse?: boolean) => (
+    <>
+      <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-10" : undefined}>
+        <Pencil size={15} />
+      </IconButton>
+      <IconButton label="Sil" tone="danger" onClick={() => setDeleting(r)} className={coarse ? "pointer-coarse:size-10" : undefined}>
+        <Trash2 size={15} />
+      </IconButton>
+    </>
+  );
 
   return (
-    <Card id="satirlar" className="scroll-mt-6">
+    // Telefonda üstteki sabit çubuğun (56px) altında kalmasın
+    <Card id="satirlar" className="scroll-mt-20 lg:scroll-mt-6">
       <CardHeader
         icon={<ListChecks />}
         title="Satış satırları"
         description="Eşleşmeyen satırlara menüden ürün seçin; seçim hatırlanır ve sonraki aylarda otomatik uygulanır."
         meta={
-          <span className="inline-flex items-center gap-1.5" aria-live="polite">
-            <span>Eşleşmeyen</span>
-            <span aria-hidden="true">·</span>
-            <span className={cn("font-semibold tabular", counts.unmatched ? "text-warn" : "text-ink")}>
-              <CountUp value={counts.unmatched} kind="num" />
-            </span>
-          </span>
+          rows.length ? (
+            totalUnmatched ? (
+              <button
+                type="button"
+                onClick={() => toggleFilter("eslesmeyen")}
+                className="inline-flex cursor-pointer items-center gap-1.5 underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                aria-live="polite"
+              >
+                <span>Eşleşmeyen</span>
+                <span aria-hidden="true">·</span>
+                <span className="font-semibold text-warn tabular">
+                  <CountUp value={totalUnmatched} kind="num" />
+                </span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-good" aria-live="polite">
+                <CircleCheck size={14} aria-hidden="true" /> Tüm satırlar eşleşti
+              </span>
+            )
+          ) : null
         }
         actions={
-          <>
-            <span className="text-sm text-ink-mute tabular">{num(rows.length)} satır</span>
-            <Button variant="secondary" size="sm" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })}>
-              <Plus size={16} /> Satır ekle
-            </Button>
-          </>
+          <Button size="sm" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-10">
+            <Plus size={16} /> Satır ekle
+          </Button>
         }
       />
-      <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
-        <Segmented
-          label="Satır filtresi"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "Tümü", count: counts.all },
-            { value: "unmatched", label: "Eşleşmeyen", count: counts.unmatched },
-            { value: "matched", label: "Eşleşen", count: counts.matched },
-            { value: "service", label: "Hizmet", count: counts.service },
-          ]}
-        />
-        <SearchInput
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="POS adı ya da ürün ara…"
-          aria-label="Satırlarda ara"
-          wrapperClassName="min-w-48 flex-1 sm:max-w-80"
-        />
-      </div>
+      {rows.length ? (
+        <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={rows.length} unit="satır" className="px-5 pb-3">
+          <SearchField value={q} onChange={setQ} placeholder="POS adı, ürün ya da not ara" label="Satırlarda ara" className="w-full sm:w-72" />
+          <FilterChip active={filter === "eslesmeyen"} onToggle={() => toggleFilter("eslesmeyen")} count={counts.unmatched}>
+            Eşleşmeyen
+          </FilterChip>
+          <FilterChip active={filter === "eslesen"} onToggle={() => toggleFilter("eslesen")} count={counts.matched}>
+            Eşleşen
+          </FilterChip>
+          <FilterChip active={filter === "hizmet"} onToggle={() => toggleFilter("hizmet")} count={counts.service}>
+            Hizmet
+          </FilterChip>
+          <Select value={sortValue} onChange={(e) => setSort(e.target.value)} className="w-full md:hidden pointer-coarse:h-10" aria-label="Sıralama">
+            {SORT_OPTIONS.some((o) => o.value === sortValue) ? null : <option value={sortValue}>Sırala · özel</option>}
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                Sırala · {o.label}
+              </option>
+            ))}
+          </Select>
+        </FilterBar>
+      ) : null}
 
       {visible.length ? (
         <>
-          <TableWrap>
+          {/* Telefon: kart listesi (geniş tablo 375px'te yalnız iki sütun gösterirdi) */}
+          <ul className="divide-y divide-line-strong/70 border-t border-line md:hidden">
+            {paged.slice.map((r) => {
+              const status = rowStatus(r);
+              const priceGap = r.menuPrice && r.avgPrice ? r.avgPrice / r.menuPrice - 1 : 0;
+              return (
+                <li key={r.id} className="px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium break-words text-ink">{r.posName}</p>
+                      <p className="mt-0.5 text-[13px] text-ink-mute tabular">
+                        {num(r.qty)} adet · {tl(r.revenue)}
+                      </p>
+                      {Math.abs(priceGap) > 0.03 ? (
+                        <p className="text-xs text-warn tabular">
+                          ort. {tl(r.avgPrice)} · menüden {priceGap > 0 ? "+" : ""}
+                          {pct(priceGap, 0)}
+                        </p>
+                      ) : null}
+                      {r.note ? <p className="text-xs break-words text-ink-mute">{r.note}</p> : null}
+                    </div>
+                    <div className="shrink-0 text-right tabular">
+                      <p className={cn("font-semibold", r.grossProfit < 0 ? "text-bad" : "text-ink")}>{tl(r.grossProfit)}</p>
+                      <p className="text-xs text-ink-mute">brüt kâr · marj {pct(r.margin, 0)}</p>
+                      <p className={cn("text-xs", status === "unmatched" ? "text-warn" : "text-ink-mute")}>
+                        maliyet {tl(r.cost)}
+                        {status === "unmatched" ? " (tahmini)" : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{matchCell(r)}</div>
+                    <div className="flex shrink-0 gap-1.5">{rowActions(r, true)}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line-strong px-5 py-3 text-sm font-semibold md:hidden">
+            <span>
+              {totalsLabel}
+              <span className="block text-xs font-normal text-ink-mute tabular">
+                {num(shownTotals.qty)} adet · {tl(shownTotals.revenue)}
+              </span>
+            </span>
+            <span className="text-right tabular">
+              <span className={cn(shownTotals.grossProfit < 0 && "text-bad")}>{tl(shownTotals.grossProfit)}</span>
+              <span className="block text-xs font-normal text-ink-mute">brüt kâr · marj {pct(shownTotals.margin, 0)}</span>
+            </span>
+          </div>
+
+          <TableWrap className="max-md:hidden">
             <Table>
               <THead>
                 <tr>
-                  <TH sticky>POS ürün adı</TH>
+                  <TH sticky>
+                    <SortButton dir={dirOf("ad")} onClick={() => toggleSort("ad")}>
+                      POS ürün adı
+                    </SortButton>
+                  </TH>
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Eşleşen ürün
                       <InfoTip text="Tıklayıp menüdeki ürünü seçin. HİZMET = karaoke gibi maliyetsiz satış. Değnekli öneri, adı birebir tutan ürünü tek tıkla uygular." />
                     </span>
                   </TH>
-                  <TH numeric>Adet</TH>
                   <TH numeric>
-                    <span className="inline-flex items-center gap-1.5">
-                      Ciro (KDV dahil)
-                      <InfoTip text="Altında KDV hariç net ciro. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
-                    </span>
+                    <SortButton numeric dir={dirOf("adet")} onClick={() => toggleSort("adet")}>
+                      Adet
+                    </SortButton>
                   </TH>
                   <TH numeric>
-                    <span className="inline-flex items-center gap-1.5">
-                      Malzeme + ambalaj
-                      <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde net ciro × ortalama maliyet oranı." />
-                    </span>
+                    <HeadLabel sub="KDV dahil">
+                      <span className="inline-flex items-center gap-1.5">
+                        <InfoTip text="Altında KDV hariç net ciro. Ortalama satış fiyatı menü fiyatından %3'ten fazla saparsa uyarı görünür." />
+                        <SortButton numeric dir={dirOf("ciro")} onClick={() => toggleSort("ciro")}>
+                          Ciro
+                        </SortButton>
+                      </span>
+                    </HeadLabel>
                   </TH>
-                  <TH numeric>POS kom.</TH>
-                  <TH numeric>Brüt kâr</TH>
-                  <TH>
+                  <TH numeric>
+                    <HeadLabel sub="malzeme + ambalaj" wrap>
+                      <span className="inline-flex items-center gap-1.5">
+                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde net ciro × ortalama maliyet oranı (turuncu, tahmini)." />
+                        <SortButton numeric dir={dirOf("maliyet")} onClick={() => toggleSort("maliyet")}>
+                          Maliyet
+                        </SortButton>
+                      </span>
+                    </HeadLabel>
+                  </TH>
+                  <TH numeric title="POS (kart) komisyonu">
+                    <HeadLabel sub="POS kartı">
+                      <SortButton numeric dir={dirOf("kom")} onClick={() => toggleSort("kom")}>
+                        Kom.
+                      </SortButton>
+                    </HeadLabel>
+                  </TH>
+                  <TH numeric>
+                    <HeadLabel sub="marj">
+                      <SortButton numeric dir={dirOf("kar")} onClick={() => toggleSort("kar")}>
+                        Brüt kâr
+                      </SortButton>
+                    </HeadLabel>
+                  </TH>
+                  <TH className="w-px px-2">
                     <span className="sr-only">İşlemler</span>
                   </TH>
                 </tr>
               </THead>
               <motion.tbody
-                key={`${filter}|${paged.page}`}
+                key={`${filter}|${rawSort}|${paged.page}`}
                 initial={reduce ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={reduce ? { duration: 0 } : { duration: 0.2, ease: EASE_OUT }}
               >
                 {paged.slice.map((r) => {
                   const status = rowStatus(r);
-                  const suggestion = status === "unmatched" ? suggestProduct(r.posName, products) : null;
                   const priceGap = r.menuPrice && r.avgPrice ? r.avgPrice / r.menuPrice - 1 : 0;
                   const product = r.productId ? productById.get(r.productId) : undefined;
                   return (
                     <TR key={r.id}>
-                      <TD sticky className="min-w-36 max-w-72 sm:min-w-52">
+                      <TD sticky className="max-w-64 min-w-36 sm:min-w-40">
                         <div className="flex items-center gap-3">
+                          {/* Dar masaüstünde (1280px) ad için yer açılsın: karo yalnız geniş ekranda */}
                           <IconTile
-                            className="max-sm:hidden"
+                            className="max-[1360px]:hidden"
                             tone={status === "matched" ? toneFor(product?.category ?? r.posName) : status === "service" ? 2 : 1}
                           >
                             {status === "matched" ? <Coffee /> : status === "service" ? <Mic /> : <CircleHelp />}
@@ -546,27 +853,8 @@ export function SalesTable({
                           </div>
                         </div>
                       </TD>
-                      <TD className="min-w-48">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button type="button" onClick={() => setPicking(r)} className={cn(MATCH_BTN, MATCH_TONE[status])} title="Ürünle eşleştir">
-                            <span className="truncate">{status === "service" ? "HİZMET" : (r.productLabel ?? "Eşleşmedi — seç")}</span>
-                            <ChevronDown size={14} className="shrink-0 opacity-60" aria-hidden="true" />
-                          </button>
-                          {suggestion ? (
-                            <button
-                              type="button"
-                              className={cn(MATCH_BTN, "bg-lime/25 text-good-ink hover:bg-lime/45")}
-                              onClick={() => pick(r, { productId: suggestion.id, isService: false })}
-                              title="Önerilen eşleşmeyi uygula"
-                            >
-                              <Wand2 size={13} className="shrink-0" aria-hidden="true" />
-                              <span className="sr-only">Önerilen eşleşmeyi uygula: </span>
-                              <span className="truncate">
-                                {suggestion.name} · {suggestion.size}
-                              </span>
-                            </button>
-                          ) : null}
-                        </div>
+                      <TD className="min-w-44">
+                        <div className="flex flex-col items-start gap-1.5">{matchCell(r)}</div>
                       </TD>
                       <TD numeric>{num(r.qty)}</TD>
                       <TD numeric>
@@ -592,73 +880,72 @@ export function SalesTable({
                         <span className={cn(r.grossProfit < 0 ? "text-bad" : "font-medium")}>{tl(r.grossProfit)}</span>
                         <span className="block text-xs text-ink-mute">marj {pct(r.margin, 0)}</span>
                       </TD>
-                      <TD>
-                        <div className="flex justify-end gap-1">
-                          <IconButton label="Düzenle" onClick={() => setEditing(r)}>
-                            <Pencil size={15} />
-                          </IconButton>
-                          <IconButton label="Sil" tone="danger" disabled={removing && deleting?.id === r.id} onClick={() => setDeleting(r)}>
-                            <Trash2 size={15} />
-                          </IconButton>
-                        </div>
+                      <TD className="px-2">
+                        <div className="flex justify-end gap-1">{rowActions(r)}</div>
                       </TD>
                     </TR>
                   );
                 })}
               </motion.tbody>
-              {showTotals ? (
-                <tfoot>
-                  <TFootRow>
-                    <TD sticky>Ay toplamı</TD>
-                    <TD />
-                    <TD numeric>{num(totals.qty)}</TD>
-                    <TD numeric>
-                      {tl(totals.revenue)}
-                      <span className="block text-xs font-normal text-ink-mute">net {tl(totals.net)}</span>
-                    </TD>
-                    <TD numeric>{tl(totals.cost)}</TD>
-                    <TD numeric>{tl(totals.commission)}</TD>
-                    <TD numeric>
-                      <span className={cn(totals.grossProfit < 0 && "text-bad")}>{tl(totals.grossProfit)}</span>
-                      <span className="block text-xs font-normal text-ink-mute">marj {pct(totals.margin, 0)}</span>
-                    </TD>
-                    <TD />
-                  </TFootRow>
-                </tfoot>
-              ) : null}
+              <tfoot>
+                <TFootRow>
+                  <TD sticky>{totalsLabel}</TD>
+                  <TD />
+                  <TD numeric>{num(shownTotals.qty)}</TD>
+                  <TD numeric>
+                    {tl(shownTotals.revenue)}
+                    <span className="block text-xs font-normal text-ink-mute">net {tl(shownTotals.net)}</span>
+                  </TD>
+                  <TD numeric>{tl(shownTotals.cost)}</TD>
+                  <TD numeric>{tl(shownTotals.commission)}</TD>
+                  <TD numeric>
+                    <span className={cn(shownTotals.grossProfit < 0 && "text-bad")}>{tl(shownTotals.grossProfit)}</span>
+                    <span className="block text-xs font-normal text-ink-mute">marj {pct(shownTotals.margin, 0)}</span>
+                  </TD>
+                  <TD />
+                </TFootRow>
+              </tfoot>
             </Table>
           </TableWrap>
           <Pagination
             page={paged.page}
             pageCount={paged.pageCount}
-            onChange={paged.setPage}
+            onChange={toPage}
             total={paged.total}
             unit="satır"
-            className="border-t border-line"
+            // Telefonda 6 sayfa + oklar karta sığsın (sığmazsa alt satıra geçer, kartın dışına taşmaz)
+            className="border-t border-line max-sm:px-3 [&>div]:flex-wrap max-sm:[&>div]:gap-1"
           />
         </>
       ) : rows.length ? (
-        <EmptyState
-          icon={<ListChecks />}
-          title="Bu filtrede satır yok"
-          description={q ? `“${q}” için sonuç bulunamadı.` : undefined}
-          action={
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setFilter("all");
-                setQ("");
-              }}
-            >
-              Filtreyi temizle
-            </Button>
-          }
-        />
+        <div className="border-t border-line">
+          <EmptyState
+            icon={<ListChecks />}
+            title={filter === "eslesmeyen" && !q.trim() ? "Eşleşmeyen satır kalmadı" : "Bu süzgece uyan satır yok"}
+            description={
+              q.trim()
+                ? `“${q.trim()}” için sonuç bulunamadı. Aramayı kısaltın ya da süzgeci temizleyin.`
+                : filter === "eslesmeyen"
+                  ? "Bu aydaki bütün satırlar bir ürüne ya da HİZMET'e bağlı; maliyetler tahmin değil, reçeteden."
+                  : "Seçili durumda satır yok."
+            }
+            action={
+              <Button variant="secondary" onClick={clearFilters}>
+                Süzgeci temizle
+              </Button>
+            }
+          />
+        </div>
       ) : (
         <EmptyState
           icon={<Upload />}
           title="Bu ay için satış raporu yok"
-          description="Patron > Raporlar > Satış ekranındaki ürün listesini yukarıdaki İçe aktar bölümüne dosya olarak bırakın ya da yapıştırın."
+          description="Patron > Raporlar > Satış ekranındaki ürün listesini yukarıdaki İçe aktar bölümüne dosya olarak bırakın ya da yapıştırın. Tek tek eklemek için “Satır ekle”."
+          action={
+            <Button variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })}>
+              <Plus size={16} /> Satır ekle
+            </Button>
+          }
         />
       )}
 
@@ -676,17 +963,15 @@ export function SalesTable({
       {editing ? <LineDialog line={editing} month={month} onClose={() => setEditing(null)} /> : null}
       <ConfirmDialog
         open={!!deleting}
-        onClose={() => {
-          if (!removing) setDeleting(null);
-        }}
+        onClose={() => setDeleting(null)}
         onConfirm={remove}
-        pending={removing}
         title="Satır silinsin mi?"
+        confirmLabel="Satırı sil"
         description={
           deleting ? (
             <>
               <span className="font-medium text-ink">{deleting.posName}</span> ({num(deleting.qty)} adet · {tl(deleting.revenue)}) bu aydan silinir.
-              Eşleştirme hafızası silinmez.
+              Eşleştirme hafızası silinmez; bu ad bir sonraki raporda yine tanınır.
             </>
           ) : null
         }
@@ -695,20 +980,32 @@ export function SalesTable({
   );
 }
 
+/** Boş değil ama sayı olarak okunamayan değer */
+const badNumber = (t: string) => t.trim() !== "" && parseNumberTR(t) === null;
+
 function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: string; onClose: () => void }) {
   const [posName, setPosName] = useState(line.posName ?? "");
   const [qty, setQty] = useState(num(line.qty ?? 1, 2));
-  const [revenue, setRevenue] = useState(num(line.revenue ?? 0, 2));
+  const [revenue, setRevenue] = useState(line.revenue ? num(line.revenue, 2, 2) : "");
   const [note, setNote] = useState(line.note ?? "");
   const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false);
+  const qtyNum = parseNumberTR(qty);
+  const revNum = parseNumberTR(revenue) ?? 0;
+  const bad = { qty: badNumber(qty) || (tried && !qty.trim()), revenue: badNumber(revenue) };
+  const nameMissing = tried && !posName.trim();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    setTried(true);
+    if (!posName.trim()) return toast.error("POS ürün adını girin");
+    if (qtyNum === null || bad.revenue) return toast.error("Adet ve ciroyu kontrol edin");
     setBusy(true);
-    const res = await saveLine({ id: line.id ?? null, month, posName, qty: parseNumberTR(qty) ?? 0, revenue: parseNumberTR(revenue) ?? 0, note });
+    keepScroll();
+    const res = await saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Kaydedildi");
+    toast.success(line.id ? "Satır güncellendi" : "Satır eklendi", { description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}` });
     onClose();
   }
 
@@ -717,30 +1014,37 @@ function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: 
       open
       onClose={onClose}
       title={line.id ? "Satırı düzenle" : "Satır ekle"}
+      description={line.id ? undefined : "Rapora girmemiş bir satışı elle ekleyin. Ad daha önce eşleştirildiyse ürün otomatik bağlanır."}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} className="pointer-coarse:h-10">
             Vazgeç
           </Button>
-          <Button type="submit" form="sales-line-form" disabled={busy}>
+          <Button type="submit" form="sales-line-form" disabled={busy} className="pointer-coarse:h-10">
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
       }
     >
-      <form id="sales-line-form" onSubmit={submit} className="space-y-3 pb-2">
-        <Field label="POS ürün adı" htmlFor="l-name">
-          <Input data-autofocus id="l-name" value={posName} onChange={(e) => setPosName(e.target.value)} />
+      {/* Enter kaydeder, Esc kapatır; dokunmatikte alanlar 40px */}
+      <form id="sales-line-form" onSubmit={submit} noValidate className="space-y-4 pb-2 pointer-coarse:[&_input]:h-10">
+        <Field label="POS ürün adı" htmlFor="l-name" hint="Patron'daki adıyla, ör. ICED AMERICANO MEDİUM" error={nameMissing ? "Ad girin" : undefined}>
+          <Input data-autofocus id="l-name" value={posName} onChange={(e) => setPosName(e.target.value)} aria-invalid={nameMissing || undefined} autoComplete="off" />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Adet" htmlFor="l-qty">
-            <NumberInput id="l-qty" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <Field label="Adet" htmlFor="l-qty" error={bad.qty ? "Sayı girin" : undefined}>
+            <NumberInput id="l-qty" value={qty} onChange={(e) => setQty(e.target.value)} onFocus={(e) => e.currentTarget.select()} aria-invalid={bad.qty || undefined} />
           </Field>
-          <Field label="Ciro (KDV dahil)" htmlFor="l-rev">
-            <NumberInput id="l-rev" value={revenue} onChange={(e) => setRevenue(e.target.value)} />
+          <Field
+            label="Ciro, KDV dahil (₺)"
+            htmlFor="l-rev"
+            error={bad.revenue ? "Sayı girin (ör. 1.250,50)" : undefined}
+            hint={qtyNum && revNum ? `Ortalama ${tl(revNum / qtyNum, 2)} / adet` : undefined}
+          >
+            <NumberInput id="l-rev" value={revenue} onChange={(e) => setRevenue(e.target.value)} placeholder="0,00" aria-invalid={bad.revenue || undefined} />
           </Field>
         </div>
-        <Field label="Not" htmlFor="l-note">
+        <Field label="Not" htmlFor="l-note" hint="İsteğe bağlı, satırın altında görünür">
           <Input id="l-note" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </form>
@@ -880,9 +1184,10 @@ export function ImportCard({
     return { ...r, status: m?.isService ? "service" : p ? "matched" : "new", label: m?.isService ? "HİZMET" : p ? `${p.name} · ${p.size}` : null };
   });
   const totals = preview.reduce((a, r) => ({ qty: a.qty + r.qty, revenue: a.revenue + r.revenue }), { qty: 0, revenue: 0 });
-  // initial sunucuda ve istemcide aynı kalmalı (useReducedMotion sunucuda null döner); azaltılmış harekette süre 0
+  // Sunucu HTML'i ve hidrasyon sırasında useCalmMotion true döner: kart ilk boyamada görünür gelir,
+  // yalnızca sonradan değişen görünüm (dosya ↔ yapıştır ↔ önizleme) yumuşakça belirir
   const fade = {
-    initial: { opacity: 0, y: 6 },
+    initial: reduce ? (false as const) : { opacity: 0, y: 6 },
     animate: { opacity: 1, y: 0 },
     transition: reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT },
   };
@@ -906,6 +1211,7 @@ export function ImportCard({
 
   async function submit() {
     setBusy(true);
+    keepScroll();
     const res = await importSales({ month, lines: rows, mode });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
@@ -916,6 +1222,7 @@ export function ImportCard({
 
   async function clearMonth() {
     setClearing(true);
+    keepScroll();
     const res = await clearMonthSales(month);
     setClearing(false);
     setConfirmClear(false);
@@ -968,10 +1275,13 @@ export function ImportCard({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-ink-mute">
                     Her satırda ürün adı, adet, ciro.{" "}
-                    <kbd className="rounded-md bg-surface px-1.5 py-0.5 text-[11px] text-ink-soft ring-1 ring-line-strong">Ctrl/⌘ + Enter</kbd> ile
-                    okuyun.
+                    {/* Klavye kısayolu dokunmatikte anlamsız */}
+                    <span className="pointer-coarse:hidden">
+                      <kbd className="rounded-md bg-surface px-1.5 py-0.5 text-[11px] text-ink-soft ring-1 ring-line-strong">Ctrl/⌘ + Enter</kbd> ile
+                      okuyun.
+                    </span>
                   </p>
-                  <Button variant="secondary" onClick={readPasted} disabled={!text.trim()}>
+                  <Button variant="secondary" onClick={readPasted} disabled={!text.trim()} className="pointer-coarse:h-10">
                     <ClipboardPaste size={16} /> Yapıştırılanı oku
                   </Button>
                 </div>
@@ -981,7 +1291,7 @@ export function ImportCard({
           {hasLines ? (
             <CardFooter className="mt-auto">
               <span>Bu ayda {num(lineCount)} satır var. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.</span>
-              <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => setConfirmClear(true)}>
+              <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10" onClick={() => setConfirmClear(true)}>
                 <Eraser size={15} /> Ayı temizle
               </Button>
             </CardFooter>
@@ -994,7 +1304,7 @@ export function ImportCard({
             title="İçe aktar · önizleme"
             description={`${num(rows.length)} satır okundu. Kontrol edip ${label} ayına yükleyin.`}
             actions={
-              <Button variant="ghost" size="sm" onClick={() => setRows([])} disabled={busy}>
+              <Button variant="ghost" size="sm" onClick={() => setRows([])} disabled={busy} className="pointer-coarse:h-10">
                 <RotateCcw size={15} /> Baştan başla
               </Button>
             }
@@ -1065,7 +1375,7 @@ export function ImportCard({
               ) : (
                 <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
               )}
-              <Button onClick={submit} disabled={busy}>
+              <Button onClick={submit} disabled={busy} className="pointer-coarse:h-10">
                 {busy ? "Yükleniyor…" : `${num(rows.length)} satırı yükle`}
               </Button>
             </div>
