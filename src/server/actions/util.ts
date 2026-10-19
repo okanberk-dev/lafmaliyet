@@ -1,0 +1,41 @@
+import "server-only";
+
+import { unstable_rethrow } from "next/navigation";
+import { z } from "zod";
+
+export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; error: string };
+
+/** Eylemi çalıştırır; yönlendirme hatalarını geçirir, diğer hataları kullanıcıya uygun mesaja çevirir. */
+export async function attempt<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (e) {
+    unstable_rethrow(e);
+    if (e instanceof z.ZodError) {
+      return { ok: false, error: e.issues[0]?.message ?? "Geçersiz veri" };
+    }
+    if (e instanceof UserError) return { ok: false, error: e.message };
+    const code = (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23505") return { ok: false, error: "Bu kayıt zaten var (aynı isim kullanılıyor)" };
+    if (code === "23503") return { ok: false, error: "Bu kayıt başka yerlerde kullanıldığı için silinemez" };
+    console.error(e);
+    return { ok: false, error: "İşlem tamamlanamadı. Lütfen tekrar deneyin." };
+  }
+}
+
+/** Kullanıcıya olduğu gibi gösterilecek hata */
+export class UserError extends Error {}
+
+export const zMoney = z.number({ message: "Sayı girin" }).finite("Geçersiz sayı");
+export const zRate = z.number({ message: "Oran girin" }).min(0, "Oran negatif olamaz").max(1, "Oran %100'den büyük olamaz");
+export const zMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Geçersiz ay");
+export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Geçersiz tarih");
+export const zText = (label: string, max = 200) =>
+  z.string({ message: `${label} gerekli` }).trim().min(1, `${label} gerekli`).max(max, `${label} çok uzun`);
+export const zOptText = (max = 1000) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((v) => (v ? v : null));

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+
+  /* L'Affogato kahve paleti */
+  --color-coffee-50: #faf6f1;
+  --color-coffee-100: #f2e8dc;
+  --color-coffee-200: #e4d0b9;
+  --color-coffee-300: #cfae8a;
+  --color-coffee-400: #b78a60;
+  --color-coffee-500: #9c6c45;
+  --color-coffee-600: #7f5435;
+  --color-coffee-700: #64412a;
+  --color-coffee-800: #4a3020;
+  --color-coffee-900: #33211a;
+  --color-coffee-950: #1e130e;
+
+  --color-crema: #c8873e;
+  --color-paper: #fbf8f4;
+}
+
+:root {
+  --background: var(--color-paper);
+  --foreground: #2a1f1a;
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Izgara hücreleri geniş tablolarla taşmasın; tablo kendi içinde kaysın */
+.grid > * {
+  min-width: 0;
+}
+
+/* Rakamlar hizalı dursun */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Yatay kaydırılabilir tablolar için ince kaydırma çubuğu */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-coffee-200) transparent;
+}
+
+/* Excel'deki "mavi = sizin girdiğiniz değer" geleneği */
+.cell-input {
+  color: #1d4ed8;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
