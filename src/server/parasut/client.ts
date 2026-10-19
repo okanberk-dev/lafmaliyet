@@ -6,7 +6,7 @@ import { getDb, schema as s } from "@/server/db";
 
 import { readParasutConfig, type ParasutConfig } from "./config";
 import type { ListResponse, ShowResponse } from "./jsonapi";
-import { open, seal } from "./secret-box";
+import { open, seal } from "@/server/secret-box";
 
 /**
  * Paraşüt API v4 istemcisi (https://apidocs.parasut.com).

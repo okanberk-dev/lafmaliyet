@@ -1,12 +1,12 @@
 "use server";
 
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { hashPassword } from "@/server/auth/password";
-import { requireAdmin } from "@/server/auth/dal";
+import { requireAdmin, startSession } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -70,6 +70,11 @@ export async function saveUser(input: z.input<typeof userSchema>) {
     const me = await requireAdmin();
     const data = userSchema.parse(input);
     const db = getDb();
+    const [{ dup }] = await db
+      .select({ dup: count() })
+      .from(s.users)
+      .where(data.id ? and(eq(s.users.email, data.email), ne(s.users.id, data.id)) : eq(s.users.email, data.email));
+    if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
     if (data.id) {
       if (data.id === me.id && (data.role !== "admin" || !data.active)) throw new UserError("Kendi yönetici yetkinizi kaldıramazsınız");
       if (data.role !== "admin" || !data.active) {
@@ -79,21 +84,79 @@ export async function saveUser(input: z.input<typeof userSchema>) {
           .where(and(eq(s.users.role, "admin"), eq(s.users.active, true), ne(s.users.id, data.id)));
         if (n === 0) throw new UserError("En az bir aktif yönetici kalmalı");
       }
-      await db
+      const [before] = await db.select().from(s.users).where(eq(s.users.id, data.id)).limit(1);
+      if (!before) throw new UserError("Kullanıcı bulunamadı");
+      // Parola, rol ya da erişim değişince o kullanıcının açık oturumları kapanır
+      const revoke = Boolean(data.password) || before.role !== data.role || before.active !== data.active;
+      const [after] = await db
         .update(s.users)
         .set({
           name: data.name,
           email: data.email,
           role: data.role,
           active: data.active,
-          ...(data.password ? { passwordHash: await hashPassword(data.password) } : {}),
+          ...(data.password ? { passwordHash: await hashPassword(data.password), failedLogins: 0, lockedUntil: null } : {}),
+          ...(revoke ? { sessionVersion: sql`${s.users.sessionVersion} + 1` } : {}),
         })
-        .where(eq(s.users.id, data.id));
+        .where(eq(s.users.id, data.id))
+        .returning();
+      // Kendi parolasını buradan değiştiren yönetici bu cihazda oturumda kalır
+      if (after && after.id === me.id) await startSession(after);
     } else {
       if (!data.password) throw new UserError("Yeni kullanıcı için parola belirleyin");
       await db.insert(s.users).values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash: await hashPassword(data.password) });
     }
     await logActivity(me, data.id ? "Kullanıcı güncellendi" : "Kullanıcı eklendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
+    refresh();
+    return null;
+  });
+}
+
+/** Telefonunu kaybeden kullanıcının iki adımlı doğrulamasını kapatır (yeniden kendisi kurar); oturumları kapanır */
+export async function resetUserTwoFactor(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const userId = z.number().int().positive().parse(id);
+    const db = getDb();
+    const [u] = await db
+      .update(s.users)
+      .set({ totpEnabled: false, totpSecret: null, totpLastStep: null, recoveryCodes: null, sessionVersion: sql`${s.users.sessionVersion} + 1` })
+      .where(eq(s.users.id, userId))
+      .returning();
+    if (!u) throw new UserError("Kullanıcı bulunamadı");
+    if (u.id === me.id) await startSession(u);
+    await logActivity(me, "İki adımlı doğrulama sıfırlandı", u.email);
+    refresh();
+    return null;
+  });
+}
+
+/** Hatalı denemeler yüzünden kilitlenen hesabı açar */
+export async function unlockUser(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const userId = z.number().int().positive().parse(id);
+    const [u] = await getDb().update(s.users).set({ failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, userId)).returning({ email: s.users.email });
+    if (!u) throw new UserError("Kullanıcı bulunamadı");
+    await logActivity(me, "Hesap kilidi açıldı", u.email);
+    refresh();
+    return null;
+  });
+}
+
+/** Kullanıcının bütün cihazlardaki oturumlarını kapatır */
+export async function signOutUserEverywhere(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const userId = z.number().int().positive().parse(id);
+    if (userId === me.id) throw new UserError("Kendi oturumlarınız için Hesabım'daki parola değişikliğini kullanın");
+    const [u] = await getDb()
+      .update(s.users)
+      .set({ sessionVersion: sql`${s.users.sessionVersion} + 1` })
+      .where(eq(s.users.id, userId))
+      .returning({ email: s.users.email });
+    if (!u) throw new UserError("Kullanıcı bulunamadı");
+    await logActivity(me, "Oturumlar kapatıldı", u.email);
     refresh();
     return null;
   });

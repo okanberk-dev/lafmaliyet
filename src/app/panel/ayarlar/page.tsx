@@ -1,4 +1,4 @@
-import { asc, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import { Download, HardDriveDownload } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
@@ -14,7 +14,7 @@ import { getDb, schema as s } from "@/server/db";
 
 import { SettingsNav } from "./section-nav";
 import { SECTION_SCROLL_MARGIN, SETTINGS_SECTIONS } from "./sections";
-import { ActivityLog, CategoriesEditor, SettingsForm, UsersEditor } from "./settings-client";
+import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
 
 export const metadata: Metadata = { title: "Ayarlar" };
 
@@ -95,14 +95,10 @@ function BackupCard() {
 }
 
 async function SettingsContent() {
-  const me = await requireAdmin();
+  await requireAdmin();
   const db = getDb();
-  const [model, users, log] = await Promise.all([
+  const [model, log] = await Promise.all([
     loadModel(),
-    db
-      .select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active, lastLoginAt: s.users.lastLoginAt })
-      .from(s.users)
-      .orderBy(asc(s.users.id)),
     db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
   ]);
   const productCount = new Map<number, number>();
@@ -111,7 +107,6 @@ async function SettingsContent() {
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <SettingsForm settings={model.settings} water={model.water} />
-      <UsersEditor users={users.map((u) => ({ ...u, lastLoginAt: u.lastLoginAt ? dateTimeTR(u.lastLoginAt) : null }))} meId={me.id} />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
         <ActivityLog entries={log.map((l) => ({ id: l.id, at: dateTimeTR(l.at), userName: l.userName, action: l.action, detail: l.detail }))} />

@@ -24,6 +24,17 @@ export const users = pgTable("users", {
   active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** İki adımlı doğrulama anahtarı (AES-GCM ile şifreli); kurulum onaylanana kadar totpEnabled false kalır */
+  totpSecret: text("totp_secret"),
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
+  /** Son kabul edilen TOTP zaman adımı (aynı kod iki kez kullanılamaz) */
+  totpLastStep: integer("totp_last_step"),
+  /** Kullanılmamış kurtarma kodlarının sha256 özetleri */
+  recoveryCodes: jsonb("recovery_codes").$type<string[]>(),
+  failedLogins: integer("failed_logins").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  /** Parola, iki adımlı doğrulama ya da yetki değişince artar; eski oturumlar geçersiz olur */
+  sessionVersion: integer("session_version").notNull().default(1),
 });
 
 // ---------------------------------------------------------------- Ayarlar (anahtar → değer)

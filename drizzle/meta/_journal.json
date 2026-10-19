@@ -36,6 +36,13 @@
       "when": 1792432166683,
       "tag": "0004_parasut_odeme",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792433922233,
+      "tag": "0005_iki_adimli_dogrulama",
+      "breakpoints": true
     }
   ]
 }

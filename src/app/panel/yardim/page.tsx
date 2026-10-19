@@ -257,11 +257,13 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Personele hesap açmak",
         a: (
           <>
-            <Path href="/panel/ayarlar" /> › Kullanıcılar › Kullanıcı ekle, rol: Personel. Personel yalnızca stok sayımını ve reçete defterini görür.
+            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını ve ilk parolayı siz belirlersiniz, rol: Personel. Personel yalnızca stok
+            sayımını ve reçete defterini görür. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google Authenticator vb.)
+            açabilir.
           </>
         ),
         icon: UserPlus,
-        links: [{ href: "/panel/ayarlar#kullanicilar", label: "Kullanıcılar" }],
+        links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }, { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" }],
       },
     ],
   },

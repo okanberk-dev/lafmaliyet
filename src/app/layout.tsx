@@ -25,7 +25,14 @@ export const metadata: Metadata = {
   },
   description: "L'Affogato maliyet, kârlılık ve stok yönetim paneli",
   applicationName: "L'Affogato Yönetim",
-  robots: { index: false, follow: false },
+  // Panel arama motorlarına kapalı (ayrıca robots.txt ve X-Robots-Tag başlığı)
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false, noimageindex: true, "max-snippet": 0, "max-image-preview": "none", "max-video-preview": 0 },
+  },
+  formatDetection: { telephone: false, email: false, address: false },
 };
 
 export const viewport: Viewport = {

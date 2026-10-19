@@ -12,6 +12,12 @@ export async function proxy(request: NextRequest) {
   const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
 
   if (pathname.startsWith("/giris")) {
+    // Sunucu oturumu geçersiz buldu (parola değişti, hesap pasif, oturumlar kapatıldı): çerez silinir
+    if (request.nextUrl.searchParams.get("oturum") === "bitti") {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     if (session) return NextResponse.redirect(new URL(session.role === "admin" ? "/panel" : "/panel/sayim", request.url));
     return NextResponse.next();
   }

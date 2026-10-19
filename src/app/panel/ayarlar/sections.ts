@@ -1,4 +1,4 @@
-import { Droplets, HardDriveDownload, History, Percent, QrCode, Ruler, Tags, Users, type LucideIcon } from "lucide-react";
+import { Droplets, HardDriveDownload, History, Percent, QrCode, Ruler, Tags, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -9,7 +9,6 @@ export const SETTINGS_SECTIONS = [
   { id: "olculer", label: "Reçete ölçüleri", icon: Ruler },
   { id: "su", label: "Su + buz", icon: Droplets },
   { id: "qr-menu", label: "QR menü", icon: QrCode },
-  { id: "kullanicilar", label: "Kullanıcılar", icon: Users },
   { id: "kategoriler", label: "Kategoriler", icon: Tags },
   { id: "gecmis", label: "İşlem geçmişi", icon: History },
   { id: "yedek", label: "Yedek", icon: HardDriveDownload },
