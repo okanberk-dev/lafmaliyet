@@ -1,21 +1,15 @@
-import Link from "next/link";
-
-import { LogoMark } from "@/components/brand";
+import { LafMark } from "@/components/brand";
+import { ButtonLink } from "@/components/ui/button";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
-      <LogoMark className="h-12 w-12" />
-      <h1 className="font-display text-3xl font-semibold text-coffee-950">Sayfa bulunamadı</h1>
-      <p className="max-w-sm text-coffee-600">Aradığınız sayfa taşınmış ya da hiç var olmamış olabilir.</p>
-      <div className="flex gap-3">
-        <Link href="/" className="rounded-lg border border-coffee-200 px-4 py-2 text-sm font-medium text-coffee-900 hover:bg-coffee-50">
-          Ana sayfa
-        </Link>
-        <Link href="/panel" className="rounded-lg bg-coffee-800 px-4 py-2 text-sm font-medium text-white hover:bg-coffee-900">
-          Panel
-        </Link>
-      </div>
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-canvas px-6 text-center">
+      <LafMark tone="green" className="h-14 w-auto" />
+      <h1 className="font-display text-3xl font-bold tracking-tight text-ink">Sayfa bulunamadı</h1>
+      <p className="max-w-sm text-ink-mute">Aradığınız sayfa taşınmış ya da hiç var olmamış olabilir.</p>
+      <ButtonLink href="/panel" variant="primary">
+        Panele dön
+      </ButtonLink>
     </div>
   );
 }

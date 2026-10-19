@@ -55,15 +55,12 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 
 Sonra `https://<proje>.vercel.app/giris` adresinden giriş yapın. Sağlık kontrolü: `/api/health`.
 
-## 6. Alan adı (laffogato.net)
+## 6. Alan adı (ladmin.laffogato.net)
 
-İki seçenek var:
-
-- **Bütün site bu uygulama olsun:** Vercel → Settings → Domains → `laffogato.net` ve `www.laffogato.net` ekleyin.
-  Alan adı sağlayıcınızda Vercel'in gösterdiği DNS kayıtlarını girin (genelde apex için `A 76.76.21.21`, `www` için
-  `CNAME cname.vercel-dns.com`). Ana sayfa `/`, QR menü `/menu`, yönetim `/panel` olur.
-- **Mevcut siteniz kalsın:** `panel.laffogato.net` gibi bir alt alan adı ekleyin (`CNAME cname.vercel-dns.com`).
-  QR menü için `panel.laffogato.net/menu` adresini kullanın ya da ana sitenizden bu adrese bağlantı verin.
+Panel `ladmin.laffogato.net` alt alan adında çalışıyor; kafenin sitesi `laffogato.net` / `www.laffogato.net` ayrı
+`laffogato` projesinde kalıyor. `laffogato.net`'in ad sunucuları Vercel'de olduğu için ek DNS kaydı gerekmedi:
+alan adı `lafmaliyet` projesine eklendi (`vercel domains add ladmin.laffogato.net`), sertifika otomatik çıktı.
+`/` adresi panele (giriş yapılmamışsa giriş sayfasına) yönlendirir; QR menü `ladmin.laffogato.net/menu`.
 
 QR menüyü yayınlamak için panelde **Ayarlar → QR menü → Menüyü yayınla** seçeneğini açın. QR kodu tarayıcınızın
 "QR kodu oluştur" özelliğiyle ya da herhangi bir QR üreticisiyle `https://<alan adı>/menu` için oluşturabilirsiniz.

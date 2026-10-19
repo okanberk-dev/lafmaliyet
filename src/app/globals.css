@@ -1,30 +1,108 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+/* ─────────────────────────────────────────────────────────────
+   L'Affogato yönetim paneli: tasarım dili (docs/TASARIM.md)
 
-  /* L'Affogato kahve paleti */
-  --color-coffee-50: #faf6f1;
-  --color-coffee-100: #f2e8dc;
-  --color-coffee-200: #e4d0b9;
-  --color-coffee-300: #cfae8a;
-  --color-coffee-400: #b78a60;
-  --color-coffee-500: #9c6c45;
-  --color-coffee-600: #7f5435;
-  --color-coffee-700: #64412a;
-  --color-coffee-800: #4a3020;
-  --color-coffee-900: #33211a;
-  --color-coffee-950: #1e130e;
+   Görünüm AkmanOS kütüphanesinin açık temasından (akmanos.com, GFA Studio):
+   beyaz zemin, zinc-100 kartlar (#f4f4f5), beyaz kontroller, #171717 mürekkep,
+   #71717a ikincil metin, Geist yazı tipi, siyah etkin durumlar, yaylı hareketler.
+   Bileşenlerin kendisi src/components/akmanos/ altında. Marka laffogato.net'ten:
+   L'Af logosu ve ev yeşili (yalnızca logo ve olumlu değerler).
+   ───────────────────────────────────────────────────────────── */
 
-  --color-crema: #c8873e;
-  --color-paper: #fbf8f4;
+/* AkmanOS belirteçleri (Copy markdown'daki "Global CSS"; yalnızca açık tema) */
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #171717;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --chart-bg: #f4f4f5;
+  --chart-metric-bg: #ffffff;
+  --chart-card-bg: #f4f4f5;
+  --chart-muted: #71717a;
 }
 
-:root {
-  --background: var(--color-paper);
-  --foreground: #2a1f1a;
-  color-scheme: light;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-chart-bg: var(--chart-bg);
+  --color-chart-metric-bg: var(--chart-metric-bg);
+  --color-chart-card-bg: var(--chart-card-bg);
+  --color-chart-muted: var(--chart-muted);
+  --color-streak-flame: var(--streak-flame);
+  --color-streak-flame-inner: var(--streak-flame-inner);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Panelin anlamsal adları: sayfalar bunları kullanır, değerler AkmanOS'un açık temasıdır */
+@theme {
+  /* Zeminler */
+  --color-canvas: #ffffff; /* sayfanın arkası */
+  --color-surface: #ffffff; /* kontroller, kuyular, menüler (AkmanOS chart-metric-bg) */
+  --color-panel: #f4f4f5; /* kart / panel zemini (AkmanOS chart-card-bg) */
+  --color-panel-deep: #e4e4e7; /* panel içinde iz, vurgulu şerit */
+  --color-cream: #fafafa;
+
+  /* Mürekkep */
+  --color-ink: #171717;
+  --color-ink-soft: #3f3f46;
+  --color-ink-mute: #71717a;
+  --color-ink-quiet: #a1a1aa; /* yalnızca ikon ve çizgi */
+  --color-line: rgb(0 0 0 / 0.07);
+  --color-line-strong: #e4e4e7;
+
+  /* Marka yeşili: L'Af logosu, olumlu kâr */
+  --color-brand-50: #eef5f1;
+  --color-brand-100: #daece2;
+  --color-brand-200: #b9d9c8;
+  --color-brand-300: #8cc0a6;
+  --color-brand-400: #4f9c7d;
+  --color-brand-500: #16a34a;
+  --color-brand-600: #15803d;
+  --color-brand-700: #166534;
+  --color-brand-800: #14532d;
+  --color-brand-900: #0c3b2d;
+
+  /* Turuncu (eski adı brass): uyarı tonu, ikinci seri (AkmanOS #f97316) */
+  --color-brass-50: #fff7ed;
+  --color-brass-100: #ffedd5;
+  --color-brass-200: #fed7aa;
+  --color-brass-300: #fdba74;
+  --color-brass-500: #e8590c;
+  --color-brass-700: #c2410c;
+  --color-brass-800: #9a3412;
+  --color-brass-900: #431407;
+
+  /* Mor (eski adı bordo): pastel karolar için (AkmanOS #a855f7) */
+  --color-bordo-50: #faf5ff;
+  --color-bordo-600: #9333ea;
+  --color-bordo-800: #6b21a8;
+
+  /* Durum (AkmanOS büyüme rozetleri: limon #c0f21e / #1f3a08, kırmızı red-50 / red-600) */
+  --color-good: #3f6212;
+  --color-good-soft: #ecfccb;
+  --color-good-ink: #1f3a08;
+  --color-lime: #c0f21e;
+  --color-warn: #c2410c;
+  --color-warn-soft: #fff7ed;
+  --color-bad: #dc2626;
+  --color-bad-soft: #fef2f2;
+  --color-info: #2563eb;
+  --color-info-soft: #eff6ff;
+
+
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-lift: 0 4px 14px rgb(0 0 0 / 0.08);
+  --shadow-float: 0 12px 40px rgb(0 0 0 / 0.14);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -33,6 +111,31 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+::selection {
+  background: #c0f21e66;
+  color: #171717;
+}
+
+/*
+ * Kayan kapların içindeki mutlak konumlu öğeler (ör. ekran okuyucu metni .sr-only) kapın dışına,
+ * sayfanın köküne göre konumlanıp telefonda yatay kaydırma açmasın. Base katmanında: fixed/absolute
+ * gibi bir konum sınıfı varsa o kazanır.
+ */
+@layer base {
+  .overflow-x-auto,
+  .overflow-auto,
+  .overflow-y-auto {
+    position: relative;
+  }
 }
 
 /* Izgara hücreleri geniş tablolarla taşmasın; tablo kendi içinde kaysın */
@@ -48,12 +151,104 @@ body {
 /* Yatay kaydırılabilir tablolar için ince kaydırma çubuğu */
 .scroll-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-coffee-200) transparent;
+  scrollbar-color: var(--border) transparent;
 }
 
 /* Excel'deki "mavi = sizin girdiğiniz değer" geleneği */
 .cell-input {
-  color: #1d4ed8;
+  color: var(--color-info);
+}
+
+/* Odak halkası: AkmanOS'taki gibi mürekkep %30 */
+:where(a, button, [role="button"], summary):focus-visible {
+  outline: 2px solid rgb(23 23 23 / 0.3);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+/* ── AkmanOS bileşen kapsamları (Copy markdown "Global CSS"ünden, kullanılan bileşenler) ── */
+[data-component="sidebar"],
+[data-component="profile-dropdown"],
+[data-component="command-palette"],
+[data-component="notification-dropdown"],
+[data-component="switch-workspace"],
+[data-component="liquid-metal-avatar"],
+[data-component="gauge"],
+[data-component="statistic-cards"],
+[data-component="recent-activity"],
+[data-component="empty-state"],
+[data-component="user-list-table"],
+[data-component="product-list-table"],
+[data-component="list-table-bulk-bar"],
+[data-component="range-slider"],
+[data-component="bouncy-accordion"],
+[data-component="bounce-sidebar"],
+[data-component="streak"],
+[data-component="animated-text"],
+[data-component="login-card"],
+[data-component="capacity-allocation-card"],
+[data-component="agent-limits-card"],
+[data-component="system-status-page"],
+[data-component="todo-list"],
+[data-component="pinned-item-list"] {
+  --chart-muted: #71717a;
+  color: var(--foreground);
+}
+
+[data-component="recent-activity"] {
+  --activity-link: #007aff;
+  --chart-card-bg: #f2f2f7;
+  --chart-muted: #8e8e93;
+  --foreground: #1c1c1e;
+}
+
+[data-component="streak"] {
+  --streak-flame: #ea580c;
+  --streak-flame-inner: #fbbf24;
+}
+
+[data-component="gauge"] {
+  --gauge-gradient-start: #171717;
+  --gauge-gradient-end: #a1a1aa;
+  --gauge-track: #e4e4e7;
+}
+
+[data-component="gauge"] .gauge-bar-track {
+  stroke: var(--gauge-track);
+}
+
+[data-component="gauge"] .gauge-bar-fill {
+  transition: stroke 0.25s ease;
+}
+
+[data-component="sidebar"] .sidebar-nav-scroll,
+[data-component="notification-dropdown"] .notification-dropdown-scroll,
+[data-component="command-palette"] .command-palette-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-component="streak"] .streak-flame-live {
+    animation: streak-flame-dance 2.4s ease-in-out infinite;
+    transform-origin: center bottom;
+  }
+}
+
+@keyframes streak-flame-dance {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.08) rotate(-5deg);
+  }
+  50% {
+    transform: scale(1.04) rotate(4deg);
+  }
+  75% {
+    transform: scale(1.1) rotate(-3deg);
+  }
 }
 
 @media print {
@@ -64,3 +259,5 @@ body {
     background: white;
   }
 }
+
+

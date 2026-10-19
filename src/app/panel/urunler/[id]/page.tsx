@@ -1,9 +1,11 @@
+import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { PageSkeleton } from "@/components/ui/misc";
+import { ButtonLink } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/misc";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
@@ -14,16 +16,58 @@ export const metadata: Metadata = { title: "Reçete kartı" };
 
 export default function RecipePage({ params, searchParams }: PageProps<"/panel/urunler/[id]">) {
   return (
-    <Suspense
-      fallback={
-        <>
-          <PageHeader title="Reçete kartı" excel="Reçete Kartları" />
-          <PageSkeleton rows={8} />
-        </>
-      }
-    >
+    <Suspense fallback={<RecipeSkeleton />}>
       <RecipeContent params={params} searchParams={searchParams} />
     </Suspense>
+  );
+}
+
+/** Yüklenirken reçete kartının iki sütunlu iskeleti (telefonda özet üstte); geri bağlantısı hemen kullanılabilir */
+function RecipeSkeleton() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Menü"
+        excel="Reçete Kartları"
+        title="Reçete kartı"
+        actions={
+          <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
+            <ArrowLeft size={16} /> Ürünler
+          </ButtonLink>
+        }
+      />
+      <div
+        className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]"
+        aria-busy="true"
+        aria-label="Yükleniyor"
+      >
+        <div className="min-w-0 space-y-4">
+          <div className="space-y-2.5 rounded-3xl bg-panel p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <Skeleton className="size-9 rounded-lg bg-surface" />
+              <Skeleton className="h-9 w-56 bg-surface" />
+            </div>
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="size-9 shrink-0 bg-surface" />
+                <Skeleton className="h-11 flex-1 bg-surface/70" />
+              </div>
+            ))}
+          </div>
+          <Skeleton className="h-56 rounded-3xl" />
+        </div>
+        <div className="order-first space-y-3 rounded-3xl bg-panel p-5 lg:order-none">
+          <Skeleton className="h-10 w-44 bg-surface" />
+          <Skeleton className="h-52 rounded-2xl bg-surface" />
+          <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3">
+            <Skeleton className="h-9 bg-surface" />
+            <Skeleton className="h-9 bg-surface" />
+          </div>
+          <Skeleton className="h-10 bg-surface" />
+          <Skeleton className="h-32 bg-surface/70" />
+        </div>
+      </div>
+    </>
   );
 }
 

@@ -1,24 +1,29 @@
+import { Coffee, ShoppingBag, Target, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
-import { monthLabel, num, pct, tl } from "@/lib/format";
+import { monthLabel, num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 
 import { NewProductButton } from "./new-product";
-import { ProductsTable, type ProductRow } from "./products-table";
+import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products-table";
 
 export const metadata: Metadata = { title: "Ürünler & kârlılık" };
+
+const EXCEL = "Ürün Kârlılık + Reçete Kartları";
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default function ProductsPage({ searchParams }: PageProps<"/panel/urunler">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Ürünler & kârlılık" excel="Ürün Kârlılık" />
+          <PageHeader title="Ürünler & kârlılık" eyebrow="Menü" excel={EXCEL} />
           <PageSkeleton rows={10} />
         </>
       }
@@ -70,52 +75,80 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const soldRows = active.filter((r) => r.soldQty > 0);
   const totalProfit = soldRows.reduce((a, r) => a + r.monthProfit, 0);
   const totalNet = soldRows.reduce((a, r) => a + r.monthNet, 0);
+  const count = (s: ProductRow["status"]) => active.filter((r) => r.status === s).length;
+  const good = count("İyi");
+  const warn = count("Dikkat");
+  const low = count("Düşük kâr");
+  const noRecipe = count("Reçete yok");
+  const categories = model.categories.map((c) => ({ id: c.id, name: c.name }));
+  const ml = monthLabel(month);
+  const target = num(st.hedefMaliyet * 100);
 
-  const kategori = Array.isArray(sp.kategori) ? sp.kategori[0] : sp.kategori;
-  const durum = Array.isArray(sp.durum) ? sp.durum[0] : sp.durum;
+  const kategori = first(sp.kategori);
+  const durum = first(sp.durum);
+  // ⌘K komut paleti /panel/urunler?ara=<ad> adresine gönderir
+  const ara = first(sp.ara);
 
   return (
     <>
       <PageHeader
+        eyebrow="Menü"
         title="Ürünler & kârlılık"
-        excel="Ürün Kârlılık + Reçete Kartları"
+        excel={EXCEL}
         description="Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat. Ürün adına tıklayınca reçete kartı açılır."
         actions={
           <>
             <MonthPicker months={availableMonths(model)} value={month} />
-            <NewProductButton categories={model.categories.map((c) => ({ id: c.id, name: c.name }))} products={rows.map((r) => ({ id: r.id, label: `${r.name} · ${r.size}` }))} />
+            <NewProductButton
+              categories={categories}
+              products={rows.map((r) => ({ id: r.id, label: `${r.name} · ${r.size}`, categoryId: r.categoryId, active: r.active }))}
+            />
           </>
         }
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Menüdeki ürün" value={num(active.length)} sub={`${model.categories.length} kategori`} />
+        <Stat icon={<Coffee />} label="Menüdeki ürün" value={<CountUp value={active.length} />} sub={`${num(model.categories.length)} kategori`} />
         <Stat
-          label="İyi / Dikkat / Düşük kâr"
-          value={
-            <span>
-              <span className="text-emerald-700">{active.filter((r) => r.status === "İyi").length}</span>
-              <span className="text-coffee-300"> / </span>
-              <span className="text-amber-700">{active.filter((r) => r.status === "Dikkat").length}</span>
-              <span className="text-coffee-300"> / </span>
-              <span className="text-rose-700">{active.filter((r) => r.status === "Düşük kâr").length}</span>
-            </span>
-          }
-          sub={`Hedef maliyet oranı %${num(st.hedefMaliyet * 100)}`}
+          icon={<Target />}
+          label="Hedefin dışında"
+          value={<CountUp value={warn + low} />}
+          tone={low ? "bad" : warn ? "warn" : "good"}
+          info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası.`}
+          sub={`Hedef maliyet oranı %${target}`}
+        >
+          <StatusShare
+            parts={[
+              { status: "İyi", count: good },
+              { status: "Dikkat", count: warn },
+              { status: "Düşük kâr", count: low },
+              { status: "Reçete yok", count: noRecipe },
+            ]}
+          />
+        </Stat>
+        <Stat
+          icon={<ShoppingBag />}
+          label={`${ml} satılan çeşit`}
+          value={<CountUp value={soldRows.length} />}
+          sub={`${num(soldRows.reduce((a, r) => a + r.soldQty, 0))} adet`}
         />
-        <Stat label={`${monthLabel(month)} satılan çeşit`} value={num(soldRows.length)} sub={`${num(soldRows.reduce((a, r) => a + r.soldQty, 0))} adet`} />
         <Stat
-          label={`${monthLabel(month)} brüt kâr (eşleşen ürünler)`}
-          value={tl(totalProfit)}
+          icon={<TrendingUp />}
+          label={`${ml} brüt kâr`}
+          value={<CountUp value={totalProfit} suffix=" ₺" />}
+          tone={totalProfit < 0 ? "bad" : "default"}
+          info="Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir."
           sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
         />
       </div>
       <ProductsTable
+        key={`${kategori ?? ""}|${durum ?? ""}|${ara ?? ""}`}
         rows={rows}
-        categories={model.categories.map((c) => ({ id: c.id, name: c.name }))}
-        monthLabel={monthLabel(month)}
+        categories={categories}
+        monthLabel={ml}
         target={st.hedefMaliyet}
         initialCategory={kategori ? Number(kategori) : null}
         initialStatus={durum ?? null}
+        initialQuery={ara ?? ""}
       />
     </>
   );

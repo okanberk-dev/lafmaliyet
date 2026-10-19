@@ -8,6 +8,7 @@ import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { ignoreParasutBill } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
 import { attempt, zDate, zOptText, zText } from "./util";
@@ -24,6 +25,8 @@ const invoiceSchema = z.object({
   payable: z.number().finite(),
   unpaid: z.boolean(),
   note: zOptText(1000),
+  /** Vade; gönderilmezse değişmez */
+  dueDate: zDate.nullable().optional(),
 });
 
 export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
@@ -42,7 +45,9 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
 export async function deleteInvoice(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const [d] = await getDb().delete(s.invoices).where(eq(s.invoices.id, id)).returning();
+    const [d] = await getDb().delete(s.invoices).where(eq(s.invoices.id, z.number().int().positive().parse(id))).returning();
+    // Paraşüt'ten gelen fatura silinince sonraki eşitlemede geri gelmesin
+    if (d?.externalId) await ignoreParasutBill(d.externalId);
     if (d) await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`);
     refresh();
     return null;

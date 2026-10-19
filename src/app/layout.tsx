@@ -1,43 +1,46 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Inter } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+// AkmanOS'un yazı tipleri: Geist Sans ve Geist Mono
+const geistSans = Geist({
+  variable: "--font-geist-sans",
   subsets: ["latin", "latin-ext"],
   display: "swap",
 });
 
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
   subsets: ["latin", "latin-ext"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://laffogato.net"),
+  metadataBase: new URL("https://ladmin.laffogato.net"),
   title: {
-    default: "L'Affogato",
+    default: "L'Affogato Yönetim",
     template: "%s · L'Affogato",
   },
-  description: "L'Affogato kafe — menü ve yönetim paneli",
-  applicationName: "L'Affogato",
+  description: "L'Affogato maliyet, kârlılık ve stok yönetim paneli",
+  applicationName: "L'Affogato Yönetim",
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#33211a",
+  themeColor: "#ffffff",
+  colorScheme: "light",
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="tr" className={`${inter.variable} ${fraunces.variable} h-full`}>
-      <body className="min-h-full">
+    <html lang="tr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full bg-background font-sans text-foreground">
         {children}
-        <Toaster position="top-center" richColors closeButton />
+        <Toaster position="top-center" closeButton toastOptions={{ classNames: { toast: "!rounded-2xl !font-sans" } }} />
       </body>
     </html>
   );

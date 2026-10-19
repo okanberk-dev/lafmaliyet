@@ -168,9 +168,23 @@ export const invoices = pgTable(
     payable: doublePrecision("payable").notNull().default(0),
     unpaid: boolean("unpaid").notNull().default(false),
     note: text("note"),
+    /** Faturanın nereden geldiği: elle, Excel aktarımı ya da Paraşüt eşitlemesi */
+    source: text("source", { enum: ["manual", "excel", "parasut"] }).notNull().default("manual"),
+    /** Kaydı ilk kim açtı; Paraşüt'e bağlanınca source "parasut" olur ama origin değişmez (iptalde silinip silinmeyeceğine bakılır) */
+    origin: text("origin", { enum: ["manual", "excel", "parasut"] }).notNull().default("manual"),
+    /** Paraşüt'teki gider faturası (purchase_bill) kimliği */
+    externalId: text("external_id"),
+    vat: doublePrecision("vat").notNull().default(0),
+    /** Vade (son ödeme) tarihi, YYYY-MM-DD; ödenmemiş faturalar hatırlatıcıya düşer */
+    dueDate: text("due_date"),
+    /** Paraşüt'ün son bildirdiği "ödenmedi" değeri; panelde elle değiştirilmişse ayırt etmek için */
+    parasutUnpaid: boolean("parasut_unpaid"),
+    /** Kalan borç (TL, KDV dahil); kısmen ödenmiş faturada hatırlatıcı bunu gösterir */
+    outstanding: doublePrecision("outstanding"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("invoices_date_idx").on(t.date)],
+  (t) => [index("invoices_date_idx").on(t.date), uniqueIndex("invoices_external_id_uq").on(t.externalId)],
 );
 
 // ---------------------------------------------------------------- Personel & giderler
@@ -277,4 +291,125 @@ export const activityLog = pgTable(
     detail: text("detail"),
   },
   (t) => [index("activity_log_at_idx").on(t.at)],
+);
+
+// ---------------------------------------------------------------- Paraşüt entegrasyonu
+/** Entegrasyon durumu: şifrelenmiş erişim belirteci, eşitleme imleci (anahtar → değer) */
+export const integrationState = pgTable("integration_state", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: updatedAt(),
+});
+
+/** Her eşitleme çalışmasının kaydı */
+export const parasutSyncRuns = pgTable(
+  "parasut_sync_runs",
+  {
+    id: serial("id").primaryKey(),
+    trigger: text("trigger", { enum: ["cron", "manual"] }).notNull(),
+    status: text("status", { enum: ["running", "ok", "error"] }).notNull().default("running"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    fetched: integer("fetched").notNull().default(0),
+    created: integer("created").notNull().default(0),
+    updated: integer("updated").notNull().default(0),
+    removed: integer("removed").notNull().default(0),
+    message: text("message"),
+  },
+  (t) => [index("parasut_sync_runs_started_idx").on(t.startedAt)],
+);
+
+/** Paraşüt faturasının kalemleri (purchase_bill_details); hammaddeye bağlanınca alınan miktar ve fiyat buradan hesaplanır */
+export const parasutBillLines = pgTable(
+  "parasut_bill_lines",
+  {
+    id: serial("id").primaryKey(),
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    productKey: text("product_key").notNull(),
+    productName: text("product_name").notNull(),
+    description: text("description"),
+    quantity: doublePrecision("quantity").notNull().default(0),
+    unit: text("unit"),
+    unitPrice: doublePrecision("unit_price").notNull().default(0),
+    discount: doublePrecision("discount").notNull().default(0),
+    vatRate: doublePrecision("vat_rate").notNull().default(0),
+    netTotal: doublePrecision("net_total").notNull().default(0),
+  },
+  (t) => [uniqueIndex("parasut_bill_lines_external_uq").on(t.externalId), index("parasut_bill_lines_product_idx").on(t.productKey)],
+);
+
+/** Paraşüt ürünü → hammadde eşleştirmesi. factor: Paraşüt'teki 1 birim kaç hammadde birimi (ör. 1 koli = 12000 ml) */
+export const parasutProductLinks = pgTable("parasut_product_links", {
+  id: serial("id").primaryKey(),
+  productKey: text("product_key").notNull().unique(),
+  productName: text("product_name").notNull(),
+  ingredientId: integer("ingredient_id")
+    .notNull()
+    .references(() => ingredients.id, { onDelete: "cascade" }),
+  factor: doublePrecision("factor").notNull().default(1),
+  /** Yeni faturadaki birim fiyat hammaddenin paket fiyatını güncellesin mi */
+  updatePrice: boolean("update_price").notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** Paraşüt faturasına panel kategorisi verme kuralları (ilk eşleşen kazanır, öncelik küçükten büyüğe) */
+export const parasutCategoryRules = pgTable("parasut_category_rules", {
+  id: serial("id").primaryKey(),
+  matchType: text("match_type", { enum: ["supplier", "parasut_category", "keyword"] }).notNull(),
+  pattern: text("pattern").notNull(),
+  category: text("category").notNull(),
+  priority: integer("priority").notNull().default(100),
+  createdAt: createdAt(),
+});
+
+// ---------------------------------------------------------------- Hatırlatıcılar ve bildirimler
+/**
+ * Ödeme ve beyan hatırlatıcıları. dueDate her zaman sıradaki (bekleyen) tarihtir; tekrar eden bir hatırlatıcı
+ * "ödendi" işaretlenince anchorDate'in gününe göre bir sonraki döneme ilerler.
+ */
+export const reminders = pgTable(
+  "reminders",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    kind: text("kind", { enum: ["odeme", "vergi", "kira", "maas", "fatura", "diger"] }).notNull().default("odeme"),
+    amount: doublePrecision("amount"),
+    dueDate: text("due_date").notNull(),
+    anchorDate: text("anchor_date").notNull(),
+    repeat: text("repeat", { enum: ["none", "weekly", "monthly", "quarterly", "yearly"] }).notNull().default("none"),
+    remindDaysBefore: integer("remind_days_before").notNull().default(3),
+    note: text("note"),
+    active: boolean("active").notNull().default(true),
+    lastDoneAt: timestamp("last_done_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("reminders_due_idx").on(t.dueDate)],
+);
+
+/** Hatırlatma e-postalarının gideceği adresler */
+export const notificationRecipients = pgTable("notification_recipients", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  active: boolean("active").notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** Gönderilen bildirimler; key aynı hatırlatmanın iki kez gitmesini önler (ör. "reminder:4:2026-10-28:before") */
+export const notificationLog = pgTable(
+  "notification_log",
+  {
+    id: serial("id").primaryKey(),
+    key: text("key").notNull(),
+    channel: text("channel").notNull().default("email"),
+    subject: text("subject"),
+    recipients: text("recipients"),
+    ok: boolean("ok").notNull().default(true),
+    error: text("error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("notification_log_key_uq").on(t.key), index("notification_log_sent_idx").on(t.sentAt)],
 );

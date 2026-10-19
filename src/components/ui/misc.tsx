@@ -1,10 +1,12 @@
-import { Info } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { RecordsStackIllustration } from "@/components/akmanos/empty-state/empty-state";
 import { cn } from "@/lib/utils";
 
+import { InfoTip } from "./info-tip";
+
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-coffee-100/70", className)} />;
+  return <div className={cn("animate-pulse rounded-xl bg-panel", className)} />;
 }
 
 export function PageSkeleton({ rows = 6 }: { rows?: number }) {
@@ -12,46 +14,69 @@ export function PageSkeleton({ rows = 6 }: { rows?: number }) {
     <div className="space-y-4" aria-busy="true" aria-label="Yükleniyor">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-24" />
+          <Skeleton key={i} className="h-[108px] rounded-2xl" />
         ))}
       </div>
-      <div className="space-y-2 rounded-2xl border border-coffee-100 bg-white p-5">
+      <div className="space-y-2.5 rounded-3xl bg-panel p-5">
         {Array.from({ length: rows }, (_, i) => (
-          <Skeleton key={i} className="h-8" />
+          <div key={i} className="h-9 animate-pulse rounded-xl bg-surface/70" />
         ))}
       </div>
     </div>
   );
 }
 
+/**
+ * AkmanOS "Empty State": yüzen kayıt kartı yığını, başlık, açıklama, eylem.
+ * (src/components/akmanos/empty-state; buradaki sürüm eylemi ReactNode olarak alır.)
+ */
 export function EmptyState({ title, description, action, icon }: { title: string; description?: ReactNode; action?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
-      {icon ? <div className="mb-1 text-coffee-300">{icon}</div> : null}
-      <p className="font-medium text-coffee-900">{title}</p>
-      {description ? <p className="max-w-md text-sm text-coffee-600">{description}</p> : null}
-      {action ? <div className="mt-3">{action}</div> : null}
+    <div data-component="empty-state" role="status" className="mx-auto flex w-full max-w-md flex-col items-center gap-5 px-4 py-10 text-center">
+      {icon ? (
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-surface text-ink-mute shadow-[0_0_0_1px_rgb(0_0_0/0.08)] [&>svg]:size-6">
+          {icon}
+        </span>
+      ) : (
+        <RecordsStackIllustration reduceMotion={false} />
+      )}
+      <div className="flex max-w-[22rem] flex-col gap-2">
+        <p className="text-lg font-semibold tracking-tight text-balance text-ink">{title}</p>
+        {description ? <p className="text-sm leading-relaxed text-pretty text-ink-mute">{description}</p> : null}
+      </div>
+      {action ? <div className="flex flex-wrap justify-center gap-2">{action}</div> : null}
     </div>
   );
 }
 
-/** Excel'deki hücre notlarının karşılığı: üzerine gelince açıklama */
-export function InfoTip({ text, className }: { text: ReactNode; className?: string }) {
+export { InfoTip } from "./info-tip";
+
+const STAT_TONE = {
+  default: "text-ink",
+  good: "text-good",
+  bad: "text-bad",
+  warn: "text-warn",
+} as const;
+
+/** AkmanOS büyüme rozeti: olumlu limon, olumsuz kırmızı, nötr gri */
+export function GrowthPill({ value, children }: { value: number; children?: ReactNode }) {
+  const neutral = Math.abs(value) < 0.0005;
   return (
-    <span className={cn("group relative inline-flex align-middle", className)}>
-      <span tabIndex={0} aria-label="Açıklama" className="cursor-help text-coffee-300 outline-none hover:text-coffee-500 focus:text-coffee-500">
-        <Info size={14} />
-      </span>
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden w-64 max-w-[80vw] -translate-x-1/2 rounded-lg bg-coffee-950 px-3 py-2 text-left text-xs leading-relaxed font-normal tracking-normal whitespace-normal text-coffee-50 normal-case shadow-lg group-hover:block group-focus-within:block"
-      >
-        {text}
-      </span>
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular",
+        neutral ? "bg-surface text-ink-mute" : value > 0 ? "bg-lime text-good-ink" : "bg-bad-soft text-bad",
+      )}
+    >
+      {children}
     </span>
   );
 }
 
+/**
+ * AkmanOS "Statistic Cards" karosu: kenarlıklı beyaz ikon kutusu, etiket, büyük rakam, (isteğe bağlı) büyüme rozeti.
+ * `children` verilirse rakamın altına (ör. ilerleme çubuğu) eklenir.
+ */
 export function Stat({
   label,
   value,
@@ -60,46 +85,134 @@ export function Stat({
   icon,
   info,
   className,
+  children,
+  badge,
+  suffix,
 }: {
   label: ReactNode;
   value: ReactNode;
   sub?: ReactNode;
-  tone?: "default" | "good" | "bad" | "warn";
+  tone?: keyof typeof STAT_TONE;
   icon?: ReactNode;
   info?: ReactNode;
   className?: string;
+  children?: ReactNode;
+  /** Rakamın yanındaki küçük rozet (GrowthPill ya da Badge) */
+  badge?: ReactNode;
+  /** Rakamdan sonra küçük birim/ek, ör. "adet" */
+  suffix?: ReactNode;
 }) {
-  const valueTone = {
-    default: "text-coffee-950",
-    good: "text-emerald-700",
-    bad: "text-rose-700",
-    warn: "text-amber-700",
-  }[tone];
   return (
-    <div className={cn("rounded-2xl border border-coffee-100 bg-white p-4", className)}>
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[13px] font-medium text-coffee-600">
-          {label}
-          {info ? <InfoTip text={info} /> : null}
+    <div data-component="statistic-cards" className={cn("flex flex-col gap-3 rounded-2xl bg-panel p-3.5", className)}>
+      {icon ? (
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong bg-surface text-ink [&>svg]:size-[18px] [&>svg]:stroke-[1.75]">
+          {icon}
+        </span>
+      ) : null}
+      <div className="flex flex-col gap-1">
+        <p className="flex min-w-0 items-start gap-1.5 text-sm leading-5 text-pretty text-ink-mute">
+          <span className="min-w-0">{label}</span>
+          {info ? <InfoTip text={info} className="mt-0.5" /> : null}
         </p>
-        {icon ? <span className="text-coffee-300">{icon}</span> : null}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className={cn("text-xl font-semibold tracking-tight tabular sm:text-2xl", STAT_TONE[tone])}>{value}</span>
+          {suffix ? <span className="text-sm text-ink-mute">{suffix}</span> : null}
+          {badge}
+        </div>
+        {sub ? <div className="text-xs leading-5 text-ink-mute">{sub}</div> : null}
       </div>
-      <p className={cn("mt-1.5 text-2xl font-semibold tracking-tight", valueTone)}>{value}</p>
-      {sub ? <div className="mt-1 text-xs text-coffee-500">{sub}</div> : null}
+      {children ? <div>{children}</div> : null}
     </div>
   );
 }
 
-export function Progress({ value, tone = "coffee", className }: { value: number; tone?: "coffee" | "green" | "amber" | "red"; className?: string }) {
-  const color = { coffee: "bg-coffee-600", green: "bg-emerald-500", amber: "bg-amber-500", red: "bg-rose-500" }[tone];
+export function Progress({
+  value,
+  tone = "ink",
+  className,
+}: {
+  value: number;
+  tone?: "coffee" | "green" | "amber" | "red" | "ink";
+  className?: string;
+}) {
+  const color = { coffee: "bg-brass-500", green: "bg-good", amber: "bg-brass-500", red: "bg-bad", ink: "bg-ink" }[tone];
   return (
-    <div className={cn("h-2 w-full overflow-hidden rounded-full bg-coffee-100", className)}>
-      <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} />
+    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-panel-deep", className)}>
+      <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} />
     </div>
   );
 }
 
 /** Negatif değerleri kırmızı gösteren tutar */
 export function Signed({ value, children, className }: { value: number | null | undefined; children: ReactNode; className?: string }) {
-  return <span className={cn("tabular", value !== null && value !== undefined && value < 0 && "text-rose-700", className)}>{children}</span>;
+  return <span className={cn("tabular", className, value !== null && value !== undefined && value < 0 && "text-bad")}>{children}</span>;
+}
+
+/** Bölüm başlığı (kart dışı, sayfa içi gruplama) */
+export function SectionTitle({ children, actions, className }: { children: ReactNode; actions?: ReactNode; className?: string }) {
+  return (
+    <div className={cn("mb-3 flex items-end justify-between gap-3", className)}>
+      <h2 className="text-lg font-semibold tracking-tight text-ink">{children}</h2>
+      {actions}
+    </div>
+  );
+}
+
+/** Anahtar-değer satırı (özet listeleri için) */
+export function KeyValue({ label, value, className, strong }: { label: ReactNode; value: ReactNode; className?: string; strong?: boolean }) {
+  return (
+    <div className={cn("flex items-baseline justify-between gap-4 py-2 text-sm", strong && "font-semibold", className)}>
+      <span className={strong ? "text-ink" : "text-ink-mute"}>{label}</span>
+      <span className="text-right text-ink tabular">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * AkmanOS "System Status Page" çubuk şeridi: her parça bir dönem (ör. yılın 12 ayı).
+ * Renk tek başına anlam taşımaz: her parçanın `label`'ı ipucu ve ekran okuyucu metnidir.
+ */
+export function SegmentStrip({
+  segments,
+  className,
+  activeKey,
+  showLabels,
+}: {
+  /** `short` alt etiket (ör. "Eyl"), `label` ipucu ve ekran okuyucu metni */
+  segments: { key: string; tone: "good" | "bad" | "warn" | "empty"; label: string; short?: string }[];
+  className?: string;
+  /** Vurgulanan dönem (seçili ay) */
+  activeKey?: string;
+  /** Çubukların altına kısa etiketleri yaz */
+  showLabels?: boolean;
+}) {
+  const color = { good: "bg-[#22c55e]", bad: "bg-[#ef4444]", warn: "bg-[#eab308]", empty: "bg-panel-deep" };
+  return (
+    <div data-component="system-status-page" className={className}>
+      <ul className="flex h-8 gap-[3px]">
+        {segments.map((s) => (
+          <li
+            key={s.key}
+            title={s.label}
+            className={cn(
+              "flex-1 rounded-[3px] transition-opacity hover:opacity-75",
+              color[s.tone],
+              activeKey === s.key && "ring-2 ring-ink ring-offset-2 ring-offset-panel",
+            )}
+          >
+            <span className="sr-only">{s.label}</span>
+          </li>
+        ))}
+      </ul>
+      {showLabels ? (
+        <div className="mt-1.5 flex gap-[3px]" aria-hidden="true">
+          {segments.map((s) => (
+            <span key={s.key} className={cn("flex-1 truncate text-center text-[10px] text-ink-mute", activeKey === s.key && "font-semibold text-ink")}>
+              {s.short ?? ""}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }

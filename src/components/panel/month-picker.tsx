@@ -23,10 +23,10 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
   };
 
   return (
-    <div className={cn("inline-flex items-center rounded-lg border border-coffee-200 bg-white shadow-sm", pending && "opacity-60")}>
+    <div className={cn("inline-flex h-9 items-center rounded-xl bg-surface ring-1 ring-inset ring-line-strong shadow-[0_1px_1px_rgb(33_28_24/0.03)]", pending && "opacity-60")}>
       <button
         type="button"
-        className="flex h-10 w-9 items-center justify-center text-coffee-500 hover:text-coffee-900 disabled:opacity-30"
+        className="flex h-9 w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:opacity-30"
         disabled={idx <= 0}
         onClick={() => go(list[idx - 1])}
         aria-label="Önceki ay"
@@ -36,7 +36,7 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
       <select
         value={value}
         onChange={(e) => go(e.target.value)}
-        className="h-10 border-x border-coffee-100 bg-transparent px-2 text-sm font-medium text-coffee-900 focus:outline-none"
+        className="h-9 cursor-pointer border-x border-line bg-transparent px-2 text-sm font-medium text-ink focus:outline-none"
         aria-label="Ay seçin"
       >
         {list.map((m) => (
@@ -47,7 +47,7 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
       </select>
       <button
         type="button"
-        className="flex h-10 w-9 items-center justify-center text-coffee-500 hover:text-coffee-900 disabled:opacity-30"
+        className="flex h-9 w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:opacity-30"
         disabled={idx >= list.length - 1}
         onClick={() => go(list[idx + 1])}
         aria-label="Sonraki ay"

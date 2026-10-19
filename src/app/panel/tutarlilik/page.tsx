@@ -1,30 +1,38 @@
 import { desc } from "drizzle-orm";
-import { AlertTriangle, CheckCircle2, CircleAlert, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, ClipboardList, Info, Receipt, Scale, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { PageSkeleton } from "@/components/ui/misc";
-import { alerts, consistency } from "@/lib/calc/insights";
-import { monthLabel, tl } from "@/lib/format";
+import { SectionTabs } from "@/components/panel/section-tabs";
+import { ActivityItem, ActivityList } from "@/components/ui/activity";
+import { ButtonLink } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
+import type { PastelTone } from "@/components/ui/icon-tile";
+import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
+import { alerts, consistency, type Alert } from "@/lib/calc/insights";
+import { monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { ConsistencyTable, Findings } from "./consistency-client";
+import { ConsistencyTable, CountUp, Findings, SeverityBar } from "./consistency-client";
+import { severityOf } from "./severity";
 
 export const metadata: Metadata = { title: "Tutarlılık kontrolü" };
+
+const TITLE = "Tutarlılık kontrolü";
+const EXCEL = "Tutarlılık Kontrolü";
 
 export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tutarlilik">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Tutarlılık kontrolü" excel="Tutarlılık Kontrolü" />
+          <PageHeader eyebrow="Stok" title={TITLE} excel={EXCEL} tabs={<SectionTabs section="stok" current="/panel/tutarlilik" />} />
           <PageSkeleton rows={12} />
         </>
       }
@@ -34,6 +42,13 @@ export default function ConsistencyPage({ searchParams }: PageProps<"/panel/tuta
   );
 }
 
+/** Otomatik kontrol düzeyi → AkmanOS recent-activity kuyusu (0 yeşil · 1 turuncu · 2 mavi · 3 kırmızı) */
+const ALERT_STYLE: Record<Alert["level"], { icon: typeof Info; tone: PastelTone; label: string; dot?: "danger" }> = {
+  danger: { icon: CircleAlert, tone: 3, label: "Önemli", dot: "danger" },
+  warning: { icon: AlertTriangle, tone: 1, label: "Uyarı" },
+  info: { icon: Info, tone: 2, label: "Bilgi" },
+};
+
 async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/panel/tutarlilik">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
@@ -42,6 +57,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const c = consistency(model, month);
   const autos = alerts(model, month);
   const st = model.settings;
+  const ml = monthLabel(month);
 
   const salesRows: { label: string; value: string; note?: string; strong?: boolean }[] = [
     { label: "Ürün listesi toplamı (indirim öncesi)", value: tl(c.sales.listTotal), note: "Satışlar sayfasındaki POS ürünleri" },
@@ -56,108 +72,187 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
       note: "Tutar ÷ (1 + KDV) × ortalama maliyet oranı. Bu maliyet Panel'deki kâra dahil değildir.",
     },
   ];
+  const salesDiffPct = num((Math.abs(c.sales.diff ?? 0) / (c.sales.pos || 1)) * 100, 1);
+  const salesMessage = c.sales.ok
+    ? `Tutarlı (fark %${salesDiffPct})`
+    : c.sales.pos === null
+      ? "POS ciro raporu girilmemiş"
+      : "Kontrol edin: fark 1.000 ₺'den büyük";
 
   const ingredientOptions = model.ds.ingredients
     .filter((i) => i.active && i.priceSource === "manual")
     .map((i) => ({ id: i.id, name: i.name, unit: i.unit }))
     .sort((a, b) => a.name.localeCompare(b.name, "tr"));
 
+  const severities = c.rows.map((r) => severityOf({ usage: r.usage, purchased: r.purchased, ratio: r.ratio }));
+  const bigCount = severities.filter((x) => x === "big").length;
+  const diffCount = severities.filter((x) => x === "big" || x === "diff").length;
+  const purchasedCount = c.rows.filter((r) => r.purchased !== null).length;
+
   return (
     <>
       <PageHeader
-        title="Tutarlılık kontrolü"
-        excel="Tutarlılık Kontrolü"
-        description="POS satışları ↔ faturalar ↔ reçeteler karşılaştırması: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?"
+        eyebrow="Stok"
+        title={TITLE}
+        excel={EXCEL}
+        description="POS satışları ↔ faturalar ↔ reçeteler: hangi malzeme reçeteden fazla alınıyor, hangi alım hiçbir reçetede yok, satışlar POS cirosuyla tutuyor mu?"
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
+        tabs={<SectionTabs section="stok" current="/panel/tutarlilik" />}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="1) Satış kaynakları tutuyor mu?" description={`${monthLabel(month)} · POS ürün listesi ile POS ciro raporu`} />
-          <CardContent className="space-y-2 text-sm">
-            {c.sales.hasLines ? (
-              <>
-                {salesRows.map((r) => (
-                  <div key={r.label} className={cn("flex items-baseline justify-between gap-4", r.strong && "font-semibold")}>
-                    <span className="text-coffee-800">
-                      {r.label}
-                      {r.note ? <span className="block text-xs font-normal text-coffee-500">{r.note}</span> : null}
-                    </span>
-                    <span className="shrink-0 tabular">{r.value}</span>
-                  </div>
-                ))}
-                <div className={cn("mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium", c.sales.ok ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900")}>
-                  {c.sales.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                  {c.sales.ok
-                    ? `Tutarlı (fark %${((Math.abs(c.sales.diff ?? 0) / (c.sales.pos || 1)) * 100).toLocaleString("tr-TR", { maximumFractionDigits: 1 })})`
-                    : c.sales.pos === null
-                      ? "POS ciro raporu girilmemiş"
-                      : "Kontrol edin: fark 1.000 ₺'den büyük"}
-                </div>
-              </>
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat
+          icon={<AlertTriangle />}
+          label="Büyük fark"
+          value={<CountUp value={bigCount} />}
+          suffix={purchasedCount ? "malzeme" : undefined}
+          tone={!purchasedCount ? "default" : bigCount ? "bad" : diffCount ? "warn" : "good"}
+          info="Büyük fark: alınan miktar reçeteye göre kullanımın 1,5 katından fazla ya da ay içinde hiç kullanılmadığı hâlde alım var. Fark var: 1,15 katından fazla."
+          sub={purchasedCount ? `${num(diffCount)} malzemede fark var · ${num(purchasedCount)} alım girildi` : "Bu ay alım girilmemiş"}
+        >
+          {purchasedCount ? <SeverityBar big={bigCount} diff={diffCount - bigCount} ok={purchasedCount - diffCount} /> : null}
+        </Stat>
+        <Stat
+          icon={<Scale />}
+          label="Fatura farkı"
+          value={<CountUp value={c.totalDiff} kind="tl" />}
+          info="Reçete ↔ fatura: (alınan − reçeteye göre kullanılan) × birim maliyet, tüm malzemelerin toplamı. Pozitif = reçeteye göre fazla alınan malın parası."
+          sub="Alınan − reçeteye göre kullanılan"
+        />
+        <Stat
+          icon={<ClipboardList />}
+          label="Sayım sapması"
+          value={c.hasStockComparison ? <CountUp value={c.totalVariance} kind="tl" /> : "–"}
+          tone={c.hasStockComparison && c.totalVariance > 0 ? "bad" : "default"}
+          info="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) ile reçeteye göre kullanımın farkı × birim maliyet. Pozitif = fire, ikram, porsiyon kaçağı."
+          sub={
+            c.hasStockComparison ? (
+              "Gerçek tüketim − reçeteye göre"
             ) : (
-              <p className="text-coffee-600">
-                Bu ay için satış raporu yok.{" "}
-                <Link href={`/panel/satislar?ay=${month}`} className="font-medium underline">
-                  Satışlar sayfasından yükleyin
-                </Link>
-                .
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader title="Otomatik kontroller" description="Sistem her sayfa açılışında veriyi tarar" />
-          <CardContent className="space-y-2">
-            {autos.length ? (
-              autos.map((a, i) => {
-                const Icon = a.level === "danger" ? CircleAlert : a.level === "warning" ? AlertTriangle : Info;
-                return (
-                  <Link key={i} href={a.href ?? "#"} className="flex gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-coffee-50">
-                    <Icon size={16} className={cn("mt-0.5 shrink-0", a.level === "danger" ? "text-rose-600" : a.level === "warning" ? "text-amber-600" : "text-sky-600")} />
-                    <span>
-                      <span className="font-medium">{a.title}</span>
-                      <span className="block text-xs text-coffee-600">{a.detail}</span>
-                    </span>
-                  </Link>
-                );
-              })
-            ) : (
-              <p className="flex items-center gap-2 text-sm text-emerald-700">
-                <CheckCircle2 size={16} /> Her şey yolunda görünüyor.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+              <Link href={`/panel/sayim?ay=${month}`} className="font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                İki ayın sayımı gerekli
+              </Link>
+            )
+          }
+        />
+        <Stat
+          icon={<Receipt />}
+          label="Satış ↔ POS"
+          value={!c.sales.hasLines ? "Rapor yok" : c.sales.ok ? "Tutarlı" : c.sales.pos === null ? "POS yok" : <CountUp value={c.sales.diff ?? 0} kind="tl" />}
+          tone={!c.sales.hasLines ? "default" : c.sales.ok ? "good" : "warn"}
+          sub={!c.sales.hasLines ? "Bu ay satış raporu yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
+        />
       </div>
 
-      <div className="mt-6">
-        <ConsistencyTable
-          month={month}
-          monthLabel={monthLabel(month)}
-          rows={c.rows.map((r) => ({
-            ingredientId: r.ingredient.id,
-            name: r.ingredient.name,
-            unit: r.ingredient.unit,
-            unitCost: r.unitCost,
-            usage: r.usage,
-            purchased: r.purchased,
-            ratio: r.ratio,
-            diffAmount: r.diffAmount,
-            opening: r.opening,
-            closing: r.closing,
-            actualUsage: r.actualUsage,
-            variance: r.variance,
-            varianceAmount: r.varianceAmount,
-            note: r.note,
-          }))}
-          totalDiff={c.totalDiff}
-          totalVariance={c.totalVariance}
-          hasStock={c.hasStockComparison}
-          ingredients={ingredientOptions}
-          fire={st.fire}
-        />
+      <ConsistencyTable
+        key={month}
+        month={month}
+        monthLabel={ml}
+        rows={c.rows.map((r) => ({
+          ingredientId: r.ingredient.id,
+          name: r.ingredient.name,
+          unit: r.ingredient.unit,
+          unitCost: r.unitCost,
+          usage: r.usage,
+          purchased: r.purchased,
+          ratio: r.ratio,
+          diffAmount: r.diffAmount,
+          opening: r.opening,
+          closing: r.closing,
+          actualUsage: r.actualUsage,
+          variance: r.variance,
+          varianceAmount: r.varianceAmount,
+          note: r.note,
+        }))}
+        totalDiff={c.totalDiff}
+        totalVariance={c.totalVariance}
+        hasStock={c.hasStockComparison}
+        ingredients={ingredientOptions}
+        fire={st.fire}
+      />
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader icon={<Receipt />} title="Satış kaynakları tutuyor mu?" description={`${ml} · POS ürün listesi ile POS ciro raporu`} />
+          <CardContent>
+            {c.sales.hasLines ? (
+              <>
+                <Well className="divide-y divide-line py-1">
+                  {salesRows.map((r) => (
+                    <KeyValue
+                      key={r.label}
+                      strong={r.strong}
+                      label={
+                        <span>
+                          {r.label}
+                          {r.note ? <InfoTip text={r.note} className="ml-1.5" /> : null}
+                        </span>
+                      }
+                      value={r.value}
+                    />
+                  ))}
+                </Well>
+                <p
+                  className={cn(
+                    "mt-3 flex items-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-medium",
+                    c.sales.ok ? "bg-good-soft text-good" : "bg-warn-soft text-warn",
+                  )}
+                >
+                  {c.sales.ok ? <CheckCircle2 size={16} className="shrink-0" /> : <AlertTriangle size={16} className="shrink-0" />}
+                  {salesMessage}
+                </p>
+              </>
+            ) : (
+              <Well>
+                <EmptyState
+                  icon={<Receipt />}
+                  title="Bu ay için satış raporu yok"
+                  description="POS ürün listesi yüklenince ciro karşılaştırması burada çıkar."
+                  action={
+                    <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
+                      Satışlar sayfasından yükleyin
+                    </ButtonLink>
+                  }
+                />
+              </Well>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
+            icon={<ShieldCheck />}
+            title="Otomatik kontroller"
+            description="Sistem her sayfa açılışında veriyi tarar"
+            meta={autos.length ? <span className="tabular">{num(autos.length)} uyarı</span> : undefined}
+          />
+          <CardContent>
+            {autos.length ? (
+              <ActivityList className="-mt-2">
+                {autos.map((a, i) => {
+                  const { icon: Icon, tone, label, dot } = ALERT_STYLE[a.level];
+                  return (
+                    <ActivityItem
+                      key={i}
+                      wrap
+                      icon={<Icon />}
+                      tone={tone}
+                      dot={dot}
+                      href={a.href}
+                      aside={label}
+                      title={a.title}
+                      description={a.detail}
+                    />
+                  );
+                })}
+              </ActivityList>
+            ) : (
+              <p className="flex items-center gap-2 rounded-2xl bg-good-soft px-3.5 py-2.5 text-sm font-medium text-good">
+                <CheckCircle2 size={16} className="shrink-0" /> Her şey yolunda görünüyor.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="mt-6">

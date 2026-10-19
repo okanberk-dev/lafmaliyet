@@ -23,13 +23,15 @@ import {
 
 import { num, pct, tl } from "@/lib/format";
 
-// Doğrulanmış kategorik palet (dataviz/validate_palette.js, açık zemin #ffffff, tüm çiftler):
-// 1 karamel #b8682a · 2 mavi #2a78d6 · 3 su yeşili #1baf7a (3:1 altı → görünür etiket / tablo ile)
-export const SERIES = ["#b8682a", "#2a78d6", "#1baf7a"] as const;
-const GRID = "#ece6df";
-const AXIS = "#d9cfc4";
-const MUTED = "#8a7a70";
-const INK = "#2a1f1a";
+// AkmanOS renklerinden doğrulanmış kategorik sıra (dataviz/validate_palette.js, beyaz ve #f4f4f5 zemin, tüm çiftler):
+// 1 mavi #2563eb (ciro) · 2 turuncu #e8590c (gider) · 3 yeşil #16a34a (kâr). Yeşil–turuncu renk körlüğünde 6.8 ΔE:
+// bu yüzden seriler ayrıca işaret türüyle (sütun / çizgi), lejant ve ipucuyla ayrılır.
+export const SERIES = ["#2563eb", "#e8590c", "#16a34a"] as const;
+const GRID = "#e4e4e7";
+const AXIS = "#d4d4d8";
+const MUTED = "#a1a1aa";
+const INK = "#171717";
+const FONT = { fontSize: 12, fontFamily: "var(--font-geist-sans), sans-serif" };
 
 const compact = (v: number) => {
   const a = Math.abs(v);
@@ -40,15 +42,15 @@ const compact = (v: number) => {
 
 function TipBox({ title, rows }: { title?: ReactNode; rows: { color?: string; label: ReactNode; value: ReactNode }[] }) {
   return (
-    <div className="min-w-40 rounded-lg border border-coffee-100 bg-white px-3 py-2 text-xs shadow-lg">
-      {title ? <p className="mb-1 text-coffee-600">{title}</p> : null}
+    <div className="min-w-44 rounded-xl bg-surface px-3 py-2.5 text-xs shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
+      {title ? <p className="mb-1.5 font-medium text-ink-mute">{title}</p> : null}
       {rows.map((r, i) => (
         <div key={i} className="flex items-center justify-between gap-4 py-0.5">
-          <span className="flex items-center gap-1.5 text-coffee-600">
-            {r.color ? <span className="inline-block h-0.5 w-3 rounded" style={{ background: r.color }} /> : null}
+          <span className="flex items-center gap-1.5 text-ink-mute">
+            {r.color ? <span className="inline-block size-2 rounded-full" style={{ background: r.color }} /> : null}
             {r.label}
           </span>
-          <span className="font-semibold text-coffee-950 tabular">{r.value}</span>
+          <span className="font-semibold text-ink tabular">{r.value}</span>
         </div>
       ))}
     </div>
@@ -81,10 +83,10 @@ export function HBarChart({
             width={130}
             tickLine={false}
             axisLine={{ stroke: AXIS }}
-            tick={{ fill: INK, fontSize: 12 }}
+            tick={{ fill: INK, ...FONT }}
           />
           <Tooltip
-            cursor={{ fill: "rgba(184,104,42,0.06)" }}
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
             content={({ active, payload }) =>
               active && payload?.length ? (
                 <TipBox
@@ -94,8 +96,8 @@ export function HBarChart({
               ) : null
             }
           />
-          <Bar dataKey="value" fill={SERIES[0]} barSize={18} radius={[0, 4, 4, 0]} isAnimationActive={false}>
-            <LabelList dataKey="value" position="right" formatter={(v) => fmt(Number(v))} style={{ fill: INK, fontSize: 12 }} />
+          <Bar dataKey="value" fill={SERIES[0]} barSize={18} radius={[0, 6, 6, 0]} isAnimationActive={false}>
+            <LabelList dataKey="value" position="right" formatter={(v) => fmt(Number(v))} style={{ fill: INK, ...FONT, fontWeight: 500 }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -110,11 +112,11 @@ export function TrendChart({ data }: { data: { label: string; revenue: number; e
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 10, right: 12, bottom: 0, left: 0 }} barGap={2} barCategoryGap="28%">
           <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, fontSize: 12 }} />
-          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, fontSize: 12 }} tickFormatter={compact} width={56} />
+          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, ...FONT }} />
+          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, ...FONT }} tickFormatter={compact} width={56} />
           <ReferenceLine y={0} stroke={AXIS} />
           <Tooltip
-            cursor={{ fill: "rgba(42,31,26,0.04)" }}
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
             content={({ active, payload, label }) =>
               active && payload?.length ? (
                 <TipBox
@@ -133,11 +135,11 @@ export function TrendChart({ data }: { data: { label: string; revenue: number; e
             align="left"
             height={30}
             iconSize={10}
-            wrapperStyle={{ fontSize: 12, color: INK }}
+            wrapperStyle={{ ...FONT, color: INK }}
             formatter={(v) => <span style={{ color: INK }}>{v}</span>}
           />
-          <Bar name="Ciro (KDV hariç)" dataKey="revenue" fill={SERIES[0]} barSize={16} radius={[4, 4, 0, 0]} isAnimationActive={false} />
-          <Bar name="Giderler" dataKey="expenses" fill={SERIES[1]} barSize={16} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <Bar name="Ciro (KDV hariç)" dataKey="revenue" fill={SERIES[0]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
+          <Bar name="Giderler" dataKey="expenses" fill={SERIES[1]} barSize={16} radius={[6, 6, 0, 0]} isAnimationActive={false} />
           <Line
             name="Kâr / zarar"
             type="monotone"
@@ -173,16 +175,16 @@ export function MenuMatrix({
       <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 16, right: 20, bottom: 28, left: 8 }}>
           <CartesianGrid stroke={GRID} />
-          <ReferenceArea x1={popThreshold} x2={maxMix} y1={avgCm} y2={maxCm} fill="#1baf7a" fillOpacity={0.05} label={{ value: "Yıldız", position: "insideTopRight", fill: MUTED, fontSize: 12 }} />
-          <ReferenceArea x1={popThreshold} x2={maxMix} y1={minCm} y2={avgCm} fill="#b8682a" fillOpacity={0.05} label={{ value: "Beygir", position: "insideBottomRight", fill: MUTED, fontSize: 12 }} />
-          <ReferenceArea x1={0} x2={popThreshold} y1={avgCm} y2={maxCm} fill="#2a78d6" fillOpacity={0.04} label={{ value: "Bilmece", position: "insideTopLeft", fill: MUTED, fontSize: 12 }} />
-          <ReferenceArea x1={0} x2={popThreshold} y1={minCm} y2={avgCm} fill="#8a7a70" fillOpacity={0.05} label={{ value: "Zayıf", position: "insideBottomLeft", fill: MUTED, fontSize: 12 }} />
+          <ReferenceArea x1={popThreshold} x2={maxMix} y1={avgCm} y2={maxCm} fill={SERIES[0]} fillOpacity={0.06} label={{ value: "Yıldız", position: "insideTopRight", fill: MUTED, fontSize: 12 }} />
+          <ReferenceArea x1={popThreshold} x2={maxMix} y1={minCm} y2={avgCm} fill={SERIES[1]} fillOpacity={0.06} label={{ value: "Beygir", position: "insideBottomRight", fill: MUTED, fontSize: 12 }} />
+          <ReferenceArea x1={0} x2={popThreshold} y1={avgCm} y2={maxCm} fill={SERIES[2]} fillOpacity={0.05} label={{ value: "Bilmece", position: "insideTopLeft", fill: MUTED, fontSize: 12 }} />
+          <ReferenceArea x1={0} x2={popThreshold} y1={minCm} y2={avgCm} fill="#71717a" fillOpacity={0.06} label={{ value: "Zayıf", position: "insideBottomLeft", fill: MUTED, fontSize: 12 }} />
           <XAxis
             type="number"
             dataKey="mix"
             domain={[0, maxMix]}
             tickFormatter={(v) => pct(v, 0)}
-            tick={{ fill: MUTED, fontSize: 12 }}
+            tick={{ fill: MUTED, ...FONT }}
             tickLine={false}
             axisLine={{ stroke: AXIS }}
             label={{ value: "Satış payı (adet)", position: "insideBottom", offset: -16, fill: MUTED, fontSize: 12 }}
@@ -192,7 +194,7 @@ export function MenuMatrix({
             dataKey="cm"
             domain={[minCm, maxCm]}
             tickFormatter={(v) => `${num(v, 0)} ₺`}
-            tick={{ fill: MUTED, fontSize: 12 }}
+            tick={{ fill: MUTED, ...FONT }}
             tickLine={false}
             axisLine={false}
             width={64}
@@ -231,8 +233,8 @@ export function PriceLine({ data, valueLabel = "Birim maliyet" }: { data: { labe
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, fontSize: 12 }} />
-          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, fontSize: 12 }} width={64} tickFormatter={(v) => num(v, 2)} domain={["auto", "auto"]} />
+          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: AXIS }} tick={{ fill: MUTED, ...FONT }} />
+          <YAxis tickLine={false} axisLine={false} tick={{ fill: MUTED, ...FONT }} width={64} tickFormatter={(v) => num(v, 2)} domain={["auto", "auto"]} />
           <Tooltip
             content={({ active, payload, label }) =>
               active && payload?.length ? (

@@ -174,3 +174,25 @@ Reçete × Satış ──► Tutarlılık Kontrolü ◄── Eylül alımları
 - Stok seviyesi düşünce sipariş hatırlatması (sayım + reçete tüketimi ile tahmin).
 - Gün sonu kasa raporu (nakit / kart / yemek kartı) ve kart oranının her ay gerçek değerle güncellenmesi.
 - Birden fazla şube (Tuzla dışında) için şube alanı.
+
+---
+
+## Ek istek: arayüzü yenileme ve ladmin.laffogato.net (19 Eki 2026)
+
+**İstek:** laffogato deposundan logo ve gerekenleri al; paneli sadeleştirip geliştir, daha güzel görünsün;
+akmanos.com'daki UI bileşenlerinden en iyilerini kullan; panel `ladmin.laffogato.net`'te olsun. Sonradan eklenen:
+"daha farklı, basit, açık tonlarda; sitedeki library bileşenlerini gelişmiş görünecek şekilde kullan".
+
+**Görevler ve sonuç**
+
+1. Marka varlıkları: `RiosenBeq/laffogato` deposundan L'Af vektörleri (`laf-letters.svg`, `laf-bean.svg` →
+   `src/components/laf-paths.ts`), uygulama ikonu (`src/app/icon.png`, `apple-icon.png`, `favicon.ico`), kelime logosu.
+2. AkmanOS taraması: sitenin 65 bileşen/bloğu `https://akmanos.com/api/markdown/<id>` dışa aktarımından incelendi;
+   panelde işe yarayanlar `src/components/akmanos/` altına olduğu gibi alındı (App Shell, Sidebar, Command Palette,
+   Notification/Profile Dropdown, Liquid Metal Avatar, Statistic Cards, Gauge, Recent Activity, Empty State, List
+   Table, System Status, Range Slider, Bouncy Accordion, Bounce Sidebar, Login Card …).
+3. Tasarım dili: AkmanOS açık teması (beyaz + `#f4f4f5`, `#171717`, Geist) — `docs/TASARIM.md`.
+4. Kabuk: AkmanOS App Shell; menü 15 ekrandan 7 üst öğeye indi, ⌘K arama, uyarı zili, profil menüsü.
+5. Sayfalar iki geçişte yenilendi (sayfa grubu başına bir ajan + bağımsız inceleme/düzeltme ajanı); her ekranın
+   özellikleri git'teki ilk sürümle karşılaştırıldı.
+6. Alan adı: `ladmin.laffogato.net` → `lafmaliyet` projesi (laffogato.net'e dokunulmadı).

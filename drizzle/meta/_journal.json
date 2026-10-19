@@ -8,6 +8,34 @@
       "when": 1792413340966,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792421206189,
+      "tag": "0001_parasut",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792429458168,
+      "tag": "0002_hatirlatici",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792431609482,
+      "tag": "0003_fatura_kaynagi",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792432166683,
+      "tag": "0004_parasut_odeme",
+      "breakpoints": true
     }
   ]
 }

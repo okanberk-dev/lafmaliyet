@@ -1,27 +1,40 @@
 import { asc } from "drizzle-orm";
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { SectionTabs } from "@/components/panel/section-tabs";
+import { InfoTip, PageSkeleton } from "@/components/ui/misc";
 import { fixedMonthly } from "@/lib/calc/engine";
 import { referenceSalesMonth } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
-import { tl } from "@/lib/format";
+import { monthLabel } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { FixedExpensesClient, InvestmentsClient } from "./expenses-client";
+import { FixedExpensesClient, FixedSummary, InvestmentsClient, type SectionTotal } from "./expenses-client";
 
 export const metadata: Metadata = { title: "Sabit giderler" };
+
+function Header({ description }: { description?: ReactNode }) {
+  return (
+    <PageHeader
+      eyebrow="Para"
+      title="Sabit giderler"
+      excel="Sabit Giderler"
+      description={description}
+      tabs={<SectionTabs section="giderler" current="/panel/giderler" />}
+    />
+  );
+}
 
 export default function ExpensesPage() {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Sabit giderler" excel="Sabit Giderler" />
+          <Header />
           <PageSkeleton rows={10} />
         </>
       }
@@ -35,8 +48,9 @@ async function ExpensesContent() {
   await requireAdmin();
   const [model, investments] = await Promise.all([loadModel(), getDb().select().from(s.investments).orderBy(asc(s.investments.id))]);
   const st = model.settings;
-  const bySection = FIXED_SECTIONS.map((sec) => ({
-    ...sec,
+  const bySection: SectionTotal[] = FIXED_SECTIONS.map((sec) => ({
+    key: sec.key,
+    label: sec.label,
     total: model.activeFixed.filter((f) => f.section === sec.key).reduce((a, f) => a + fixedMonthly(f, st), 0) + (sec.key === "personel" ? model.personnel.total : 0),
   }));
   const ref = referenceSalesMonth(model, model.salesMonths[model.salesMonths.length - 1] ?? "");
@@ -44,26 +58,34 @@ async function ExpensesContent() {
   const grossRatio = refSales && refSales.revenue ? refSales.grossProfit / refSales.revenue : 0;
   const breakEvenDaily = grossRatio > 0 ? model.fixedStandardTotal / grossRatio / st.acikGun : null;
   const totalInvestment = investments.reduce((a, i) => a + i.amount, 0);
+  const total = model.fixedStandardTotal;
 
   return (
     <>
-      <PageHeader
-        title="Sabit giderler"
-        excel="Sabit Giderler"
-        description="Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir; Gelir-gider tablosunda açık gün oranıyla bölünür."
+      <Header
+        description={
+          <>
+            Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir.{" "}
+            <InfoTip text="Gelir-gider tablosunda bu tutarlar ayın açık gün oranıyla bölünür." />
+          </>
+        }
       />
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Aylık sabit gider" value={tl(model.fixedStandardTotal)} sub={`${st.acikGun} açık gün varsayımıyla`} />
-        {bySection.map((b) => (
-          <Stat key={b.key} label={b.label} value={tl(b.total)} sub={model.fixedStandardTotal ? `%${Math.round((b.total / model.fixedStandardTotal) * 100)}` : null} />
-        ))}
-      </div>
+
+      <FixedSummary
+        total={total}
+        acikGun={st.acikGun}
+        sections={bySection}
+        personnelCount={model.personnel.rows.length}
+        breakEvenDaily={breakEvenDaily}
+        breakEvenRef={ref ? monthLabel(ref) : null}
+      />
+
       <FixedExpensesClient
         rows={model.ds.fixedExpenses.map((f) => ({ ...f, monthly: fixedMonthly(f, st) }))}
         personnel={{ total: model.personnel.total, count: model.personnel.rows.length }}
-        total={model.fixedStandardTotal}
+        total={total}
         acikGun={st.acikGun}
-        breakEvenDaily={breakEvenDaily}
+        sections={bySection}
       />
       <div className="mt-6">
         <InvestmentsClient rows={investments.map((i) => ({ id: i.id, name: i.name, amount: i.amount, date: i.date, note: i.note }))} total={totalInvestment} />

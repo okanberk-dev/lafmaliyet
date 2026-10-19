@@ -75,10 +75,12 @@ export async function runSeed({ reset = false } = {}) {
         await tx.execute(
           sql.raw(
             `TRUNCATE ${SERIAL_TABLES.filter((t) => t !== "users")
-              .concat(["settings", "months", "pos_mappings"])
+              .concat(["settings", "months", "pos_mappings", "notification_log", "parasut_sync_runs"])
               .join(", ")} RESTART IDENTITY CASCADE`,
           ),
         );
+        // Paraşüt imleci, fiyat tarihleri ve kişi önbelleği eski kimliklere bağlı; baştan okunsun
+        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%'`));
       }
 
       await tx.insert(s.settings).values(
@@ -115,7 +117,7 @@ export async function runSeed({ reset = false } = {}) {
         .insert(s.posMappings)
         .values([...mappings].map(([posName, m]) => ({ posName, ...m })));
 
-      await tx.insert(s.invoices).values(ds.invoices);
+      await tx.insert(s.invoices).values(ds.invoices.map((i) => ({ ...i, source: "excel" as const, origin: "excel" as const })));
       await tx.insert(s.staff).values(ds.staff.map((x, i) => ({ ...x, sortOrder: i + 1 })));
       await tx.insert(s.fixedExpenses).values(ds.fixedExpenses);
       await tx.insert(s.investments).values(raw.investments.map((x) => ({ ...x, date: "2026-07" })));

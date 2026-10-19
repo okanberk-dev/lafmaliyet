@@ -129,6 +129,12 @@ export interface Invoice {
   payable: number;
   unpaid: boolean;
   note: string | null;
+  /** Nereden geldi (hesaplarda kullanılmaz) */
+  source?: "manual" | "excel" | "parasut";
+  /** Paraşüt gider faturası kimliği */
+  externalId?: string | null;
+  /** Vade (son ödeme) tarihi */
+  dueDate?: string | null;
 }
 
 export interface Staff {

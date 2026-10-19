@@ -1,13 +1,20 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
+import { CalendarRange, RotateCcw } from "lucide-react";
+import { motion } from "motion/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Card } from "@/components/ui/card";
+import { useCalmMotion } from "@/components/ui/motion";
+import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
+import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { Select } from "@/components/ui/form";
-import { InfoTip } from "@/components/ui/misc";
+import { InfoTip, SegmentStrip } from "@/components/ui/misc";
+import { Segmented } from "@/components/ui/segmented";
+import { TableWrap, TD, TH } from "@/components/ui/table";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { MONTH_NAMES } from "@/lib/constants";
@@ -21,6 +28,25 @@ export interface GridSection {
   rows: { def: PnlRowDef; cells: PnlCell[]; total: number | null }[];
 }
 
+/** Yıl şeridinin bir ayı (sayfa hesaplar, tablo gösterir) */
+export interface StripMonth {
+  key: string;
+  tone: "good" | "bad" | "warn" | "empty";
+  label: string;
+  /** Çubuğun altındaki kısa ad, ör. "Eyl" */
+  short: string;
+}
+
+/**
+ * Sunucu sayfasının özet rakamları için AkmanOS sayacı (charts/animated-number).
+ * Biçim işlevi sunucudan istemciye geçemediği için adıyla verilir.
+ */
+export function CountUp({ value, format = "tl" }: { value: number | null; format?: "tl" | "pct" }) {
+  if (value === null) return <>{format === "pct" ? pct(null) : tl(null)}</>;
+  return <AnimatedNumber value={value} format={format === "pct" ? (v) => pct(v) : (v) => tl(v)} className="tabular" />;
+}
+
+/** Çok yıl olduğunda sekmeler yerine açılır liste */
 export function YearPicker({ year, years }: { year: number; years: number[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -47,12 +73,28 @@ function fmt(v: number | null, format?: string) {
   return tl(v);
 }
 
+/**
+ * Sabit ilk sütun: paylaşılan TH/TD `sticky` (opak panel zemini, satır üzerine gelince aynı ton) +
+ * genişlik ve sağında ince çizgi. Telefonda dar, geniş ekranda tam ad sığar.
+ */
+const STICKY = "w-44 min-w-44 pl-5 pr-3 shadow-[inset_-1px_0_0_var(--color-line-strong)] sm:w-72 sm:min-w-72";
+/** Yıl toplamı sütunu */
+const YEAR_COL = "bg-ink/[0.03] pr-5 pl-3 text-right whitespace-nowrap tabular";
+/**
+ * Hücre çizgileri hücrede (border-separate): sabit sütun kayarken çizgisini korur.
+ * Üzerine gelme tonu paylaşılan TR ile aynı (surface/60); sabit hücre TD sticky ile eşleşir.
+ */
+const ROW = "group transition-colors hover:bg-surface/60 [&>td]:border-t [&>td]:border-line";
+/** Değer hücrelerinin ortak dolgusu (paylaşılan TD'nin 12px'i bu sık ızgarada fazla) */
+const CELL = "px-1.5 py-1";
+
 function EditableCell({
   value,
   computed,
   overridden,
   kind,
   format,
+  label,
   onSave,
 }: {
   value: number | null;
@@ -60,21 +102,35 @@ function EditableCell({
   overridden: boolean;
   kind: string;
   format?: string;
+  /** Ekran okuyucu için "Satır · Ay" */
+  label: string;
   onSave: (v: number | null) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Düzenlemeye başlarken gösterilen metin: değişmeden çıkılırsa kaydedilmez (2 ondalığa yuvarlanmış değer üzerine yazılmasın) */
+  const startText = useRef("");
+  /** Esc ile vazgeçildi: ardından gelebilecek blur kaydetmesin */
+  const cancelled = useRef(false);
+  /** Klavyeyle (Enter/Esc) bitince odak hücre düğmesine dönsün */
+  const refocus = useRef(false);
+  const negative = value !== null && value < 0;
+  const invalid = text.trim() !== "" && parseNumberTR(text.trim()) === null;
 
   if (editing) {
     return (
       <input
         autoFocus
         inputMode="decimal"
+        autoComplete="off"
+        aria-label={label}
+        aria-invalid={invalid || undefined}
         value={text}
         disabled={busy}
         onChange={(e) => setText(e.target.value)}
         onBlur={async () => {
+          if (cancelled.current) return;
           const t = text.trim();
           const v = t === "" ? null : parseNumberTR(t);
           if (t !== "" && v === null) {
@@ -82,57 +138,97 @@ function EditableCell({
             setEditing(false);
             return;
           }
-          if (v === value || (v === null && !overridden && kind !== "manual")) {
+          if (t === startText.current.trim() || v === value || (v === null && !overridden && kind !== "manual")) {
             setEditing(false);
             return;
           }
           setBusy(true);
-          await onSave(v);
-          setBusy(false);
-          setEditing(false);
+          try {
+            await onSave(v);
+          } finally {
+            setBusy(false);
+            setEditing(false);
+          }
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") setEditing(false);
+          if (e.key === "Enter") {
+            refocus.current = true;
+            (e.target as HTMLInputElement).blur();
+          }
+          if (e.key === "Escape") {
+            cancelled.current = true;
+            refocus.current = true;
+            setEditing(false);
+          }
         }}
-        className="h-7 w-full min-w-24 rounded border border-crema bg-white px-1.5 text-right text-xs tabular outline-none ring-2 ring-crema/25"
+        className={cn(
+          // Form kontrolleriyle aynı dil: beyaz, ince halka, odakta mürekkep halkası; telefonda 16px (iOS yakınlaştırmasın)
+          "h-8 w-full min-w-24 rounded-lg border-0 bg-surface px-2 text-right text-base tabular ring-2 ring-ink/20 outline-none pointer-coarse:h-9 sm:text-sm",
+          "aria-invalid:bg-bad-soft aria-invalid:text-bad aria-invalid:ring-bad/50 disabled:opacity-60",
+          // .cell-input katmansız: geçersizken kırmızı metnin önüne geçmesin
+          !invalid && "cell-input",
+        )}
       />
     );
   }
   return (
     <button
       type="button"
+      ref={(el) => {
+        if (el && refocus.current) {
+          refocus.current = false;
+          el.focus();
+        }
+      }}
       onClick={() => {
-        setText(value === null ? "" : format === "days" ? String(value) : num(value, 2));
+        const initial = value === null ? "" : format === "days" ? String(value) : num(value, 2);
+        startText.current = initial;
+        cancelled.current = false;
+        refocus.current = false;
+        setText(initial);
         setEditing(true);
       }}
       title={overridden && computed !== null ? `Elle girildi. Hesaplanan: ${fmt(computed, format)}` : "Değer girmek için tıklayın"}
+      aria-label={`${label}: ${fmt(value, format)}. Değiştirmek için tıklayın`}
       className={cn(
-        "group relative w-full rounded px-1.5 py-1 text-right tabular hover:bg-sky-50 hover:ring-1 hover:ring-sky-200",
-        overridden || kind === "manual" ? "cell-input" : "",
-        overridden && kind === "auto" && "bg-sky-50/60 font-medium",
-        value !== null && value < 0 && "text-rose-700",
+        "relative flex h-8 w-full min-w-24 cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-9",
+        "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
+        // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
+        (overridden || kind === "manual") && !negative && "cell-input",
+        overridden && kind === "auto" && "bg-info-soft font-medium hover:bg-info-soft",
+        negative && "text-bad",
+        value === null && "text-ink-quiet",
       )}
     >
       {fmt(value, format)}
-      {overridden && kind === "auto" ? <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-sky-500" /> : null}
+      {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
     </button>
   );
 }
 
 export function PnlGrid({
+  year,
   months,
   activeMonths,
   sections,
   openDays,
+  strip,
+  latestMonth,
 }: {
+  year: number;
   months: string[];
   activeMonths: string[];
   sections: GridSection[];
   openDays: (number | null)[];
+  strip: StripMonth[];
+  /** Verisi olan son ay: şeritte çerçevelenir */
+  latestMonth?: string;
 }) {
+  const reduce = useCalmMotion();
   const [showAll, setShowAll] = useState(activeMonths.length === 0);
   const visibleIdx = months.map((m, i) => ({ m, i })).filter(({ m }) => showAll || activeMonths.includes(m));
+  const profitable = strip.filter((s) => s.tone === "good").length;
+  const losing = strip.filter((s) => s.tone === "bad").length;
 
   async function save(month: string, key: string, v: number | null) {
     const res =
@@ -146,107 +242,201 @@ export function PnlGrid({
 
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-coffee-100 px-4 py-3 text-sm">
-        <div className="flex items-center gap-4 text-xs text-coffee-600">
-          <span className="flex items-center gap-1.5">
-            <span className="cell-input font-semibold">123</span> elle girilen / girilebilen
+      <CardHeader
+        icon={<CalendarRange />}
+        title={`${year} gelir-gider tablosu`}
+        description="KDV hariç. Hücreye tıklayıp değer girin; Enter kaydeder, Esc vazgeçer."
+        actions={
+          <Segmented<"active" | "all">
+            label="Gösterilen aylar"
+            value={showAll ? "all" : "active"}
+            onChange={(v) => setShowAll(v === "all")}
+            options={[
+              { value: "active", label: "Aktif aylar", count: activeMonths.length },
+              { value: "all", label: "12 ay" },
+            ]}
+          />
+        }
+      />
+
+      <CardContent className="pb-4">
+        <Well className="p-3 sm:p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+            <p className="text-[13px] font-medium text-ink">
+              Aylara göre kâr / zarar
+              <span className="ml-2 font-normal text-ink-mute tabular">
+                <AnimatedNumber value={profitable} format={(v) => num(v)} /> kârlı · <AnimatedNumber value={losing} format={(v) => num(v)} /> zararlı ay
+              </span>
+            </p>
+            <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-mute">
+              <LegendItem tone="good">Kâr</LegendItem>
+              <LegendItem tone="bad">Zarar</LegendItem>
+              <LegendItem tone="warn">Ciro girilmedi</LegendItem>
+              <LegendItem tone="empty">Veri yok</LegendItem>
+            </ul>
+          </div>
+          <motion.div
+            initial={reduce ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: EASE_OUT }}
+          >
+            {/* Şerit beyaz kuyuda: son ayın çerçeve boşluğu da beyaz olsun (bileşen panel zeminine göre çizer) */}
+            <SegmentStrip segments={strip} activeKey={latestMonth} showLabels className="[&_li]:ring-offset-surface" />
+          </motion.div>
+        </Well>
+      </CardContent>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-5 pb-3 text-[13px] text-ink-mute">
+        <span className="flex items-center gap-1.5">
+          <span className="cell-input inline-flex h-6 items-center rounded-md bg-surface px-1.5 font-semibold tabular ring-1 ring-line ring-inset">123</span>
+          elle girilen / girilebilen
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="relative inline-flex h-6 w-9 items-center rounded-md bg-info-soft ring-1 ring-line ring-inset">
+            <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" />
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-sky-500" /> hesaplananın üzerine yazılmış (boş bırakıp Enter = otomatiğe dön)
-          </span>
-        </div>
-        <label className="flex items-center gap-2 text-coffee-700">
-          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} className="accent-coffee-800" />
-          12 ayın tamamını göster
-        </label>
+          hesaplananın üzerine yazılmış
+          <InfoTip text="İçini silip Enter'a basınca hücre hesaplanan değere döner." />
+        </span>
       </div>
-      <div className="scroll-thin overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+
+      <TableWrap className="px-0 pb-0">
+        <table className="w-full border-separate border-spacing-0 text-sm">
           <thead>
-            <tr className="bg-coffee-950 text-coffee-50">
-              <th className="sticky left-0 z-10 min-w-72 bg-coffee-950 px-3 py-2.5 text-left font-semibold">KALEM</th>
+            <tr>
+              <TH sticky className={STICKY}>
+                Kalem
+              </TH>
               {visibleIdx.map(({ m, i }) => (
-                <th key={m} className="min-w-28 px-2 py-2.5 text-right font-semibold">
-                  {MONTH_NAMES[i].toLocaleUpperCase("tr-TR")}
-                </th>
+                <TH key={m} numeric className="min-w-28 px-1.5">
+                  <span className="px-2">{MONTH_NAMES[i]}</span>
+                </TH>
               ))}
-              <th className="min-w-32 bg-coffee-900 px-2 py-2.5 text-right font-semibold">{months[0].slice(0, 4)} YILI</th>
+              <TH numeric className={cn(YEAR_COL, "min-w-32 text-ink")}>
+                {year} yılı
+              </TH>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-coffee-100 bg-coffee-50">
-              <td className="sticky left-0 z-[1] bg-coffee-50 px-3 py-1.5 font-semibold text-coffee-900">
-                AÇIK GÜN SAYISI <InfoTip text="O ay işletmenin açık olduğu gün. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır." />
-              </td>
+            <tr className={cn(ROW, "[&>td]:border-t-0")}>
+              <TD sticky className={cn(STICKY, "py-1.5 font-medium")}>
+                <span className="flex items-center gap-1.5">
+                  Açık gün sayısı
+                  <InfoTip text="O ay işletmenin açık olduğu gün. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır." />
+                </span>
+              </TD>
               {visibleIdx.map(({ m, i }) => (
-                <td key={m} className="px-1 py-0.5">
-                  <EditableCell value={openDays[i]} computed={null} overridden={openDays[i] !== null} kind="manual" format="days" onSave={(v) => save(m, "openDays", v)} />
+                <td key={m} className={CELL}>
+                  <EditableCell
+                    value={openDays[i]}
+                    computed={null}
+                    overridden={openDays[i] !== null}
+                    kind="manual"
+                    format="days"
+                    label={`Açık gün sayısı · ${MONTH_NAMES[i]}`}
+                    onSave={(v) => save(m, "openDays", v)}
+                  />
                 </td>
               ))}
-              <td className="bg-coffee-100/50 px-2 text-right font-semibold tabular">{num(openDays.reduce<number>((a, v) => a + (v ?? 0), 0))}</td>
+              <td className={cn(YEAR_COL, "font-semibold text-ink")}>{num(openDays.reduce<number>((a, v) => a + (v ?? 0), 0))}</td>
             </tr>
             {sections.map((sec) => (
-              <SectionRows key={sec.key} sec={sec} months={months} visibleIdx={visibleIdx} onSave={save} />
+              <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} onSave={save} />
             ))}
           </tbody>
         </table>
-      </div>
-      <div className="flex items-center gap-2 border-t border-coffee-100 px-4 py-2.5 text-xs text-coffee-500">
-        <RotateCcw size={12} /> Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Faturadan gelen mal alışlarını değiştirmek için Faturalar sayfasını kullanın.
-      </div>
+      </TableWrap>
+
+      <CardFooter className="justify-start gap-2">
+        <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
+        <span>
+          Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Faturadan gelen mal alışlarını değiştirmek için{" "}
+          <Link href="/panel/faturalar" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
+            Faturalar
+          </Link>{" "}
+          sayfasını kullanın.
+        </span>
+      </CardFooter>
     </Card>
+  );
+}
+
+/**
+ * Şerit açıklaması. Örnek kare, şeridin kendisiyle (SegmentStrip) çizilir:
+ * renkler paylaşılan bileşende tanımlı, burada tekrar yazılmaz.
+ */
+function LegendItem({ tone, children }: { tone: StripMonth["tone"]; children: string }) {
+  return (
+    <li className="flex items-center gap-1.5">
+      <div aria-hidden="true" className="flex">
+        <SegmentStrip segments={[{ key: tone, tone, label: children }]} className="w-2.5 [&_ul]:h-2.5" />
+      </div>
+      {children}
+    </li>
   );
 }
 
 function SectionRows({
   sec,
-  months,
   visibleIdx,
   onSave,
 }: {
   sec: GridSection;
-  months: string[];
   visibleIdx: { m: string; i: number }[];
   onSave: (month: string, key: string, v: number | null) => Promise<void>;
 }) {
   return (
     <>
-      <tr className="border-y border-coffee-200 bg-coffee-100/70">
-        <td className="sticky left-0 z-[1] bg-coffee-100 px-3 py-1.5 text-[11px] font-bold tracking-wider text-coffee-800" colSpan={1}>
+      <tr>
+        <TD sticky className={cn(STICKY, "pt-6 pb-2 text-[13px] font-semibold text-ink-soft")}>
           {sec.label}
-        </td>
-        <td colSpan={visibleIdx.length + 1} className="bg-coffee-100/70" />
+        </TD>
+        <td colSpan={visibleIdx.length + 1} className="pt-6 pb-2" />
       </tr>
-      {sec.rows.map(({ def, cells, total }) => (
-        <tr key={`${sec.key}-${def.key}`} className={cn("border-b border-coffee-50 hover:bg-coffee-50/40", def.strong && "bg-coffee-50/60 font-semibold")}>
-          <td className={cn("sticky left-0 z-[1] px-3 py-1 text-coffee-900", def.strong ? "bg-coffee-50 font-semibold" : "bg-white")}>
-            <span className="flex items-center gap-1.5">
-              {def.label}
-              {def.hint ? <InfoTip text={def.hint} /> : null}
-            </span>
-          </td>
-          {visibleIdx.map(({ m, i }) => {
-            const c = cells[i];
-            return (
-              <td key={m} className="px-1 py-0.5 text-right">
-                {def.editable ? (
-                  <EditableCell value={c.value} computed={c.computed} overridden={c.overridden} kind={def.kind} format={def.format} onSave={(v) => onSave(m, def.key, v)} />
-                ) : (
-                  <span className={cn("block px-1.5 py-1 tabular", c.value !== null && c.value < 0 && "text-rose-700", c.value === null && "text-coffee-300")}>
-                    {fmt(c.value, def.format)}
-                  </span>
-                )}
-              </td>
-            );
-          })}
-          <td className={cn("bg-coffee-50/70 px-2 text-right tabular", total !== null && total < 0 && "text-rose-700", def.strong && "font-semibold")}>
-            {fmt(total, def.format)}
-          </td>
-        </tr>
-      ))}
-      <tr className="h-2">
-        <td colSpan={months.length + 2} />
-      </tr>
+      {sec.rows.map(({ def, cells, total }) => {
+        const isProfit = def.key === "profit" || def.key === "ratio:profit";
+        const tone = (v: number | null) => (v !== null && v < 0 ? "text-bad" : isProfit && v !== null && v > 0 ? "text-good" : null);
+        return (
+          <tr key={`${sec.key}-${def.key}`} className={cn(ROW, def.strong && "font-semibold [&>td]:border-line-strong")}>
+            <TD sticky className={cn(STICKY, "py-1.5", def.strong ? "text-ink" : "text-ink-soft")}>
+              <span className="flex items-center gap-1.5">
+                {def.label}
+                {def.hint ? <InfoTip text={def.hint} /> : null}
+              </span>
+            </TD>
+            {visibleIdx.map(({ m, i }) => {
+              const c = cells[i];
+              return (
+                <td key={m} className={cn(CELL, "text-right")}>
+                  {def.editable ? (
+                    <EditableCell
+                      value={c.value}
+                      computed={c.computed}
+                      overridden={c.overridden}
+                      kind={def.kind}
+                      format={def.format}
+                      label={`${def.label} · ${MONTH_NAMES[i]}`}
+                      onSave={(v) => onSave(m, def.key, v)}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "block px-2 py-1 whitespace-nowrap tabular",
+                        def.strong ? "text-ink" : "text-ink-mute",
+                        tone(c.value),
+                        c.value === null && "text-ink-quiet",
+                      )}
+                    >
+                      {fmt(c.value, def.format)}
+                    </span>
+                  )}
+                </td>
+              );
+            })}
+            <td className={cn(YEAR_COL, def.strong ? "font-semibold text-ink" : "text-ink-soft", tone(total))}>{fmt(total, def.format)}</td>
+          </tr>
+        );
+      })}
     </>
   );
 }

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // AkmanOS kütüphanesinden olduğu gibi alınan kaynak (src/components/akmanos/README.md)
+    "src/components/akmanos/**",
   ]),
 ]);
 

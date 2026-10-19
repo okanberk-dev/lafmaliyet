@@ -115,6 +115,9 @@ export async function loadDataset(): Promise<Dataset> {
       payable: i.payable,
       unpaid: i.unpaid,
       note: i.note,
+      source: i.source,
+      externalId: i.externalId,
+      dueDate: i.dueDate,
     })),
     staff: staff.map((x) => ({ id: x.id, name: x.name, netSalary: x.netSalary, extras: x.extras, active: x.active })),
     fixedExpenses: fixedExpenses.map((f) => ({

@@ -1,80 +1,107 @@
-import { AlertTriangle, ArrowRight, CircleAlert, Info, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  CalendarDays,
+  ChartColumn,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Coins,
+  Download,
+  Flame,
+  Info,
+  LayoutGrid,
+  Percent,
+  Receipt,
+  Scale,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+  Trophy,
+  Upload,
+  Wallet,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { HBarChart, TrendChart } from "@/components/charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
-import { StatusBadge } from "@/components/ui/badge";
+import { ActivityItem, ActivityList } from "@/components/ui/activity";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { InfoTip, PageSkeleton, Progress, Signed, Stat } from "@/components/ui/misc";
+import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
+import { Gauge } from "@/components/ui/gauge";
+import { Avatar, type PastelTone } from "@/components/ui/icon-tile";
+import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, SegmentStrip, Signed, Stat } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { daysInMonth, fixedForMonth } from "@/lib/calc/engine";
-import { alerts, dashboard, yearTrend, type Alert } from "@/lib/calc/insights";
+import { daysInMonth, fixedForMonth, shiftMonth } from "@/lib/calc/engine";
+import { alerts, dashboard, yearTrend, type Alert, type DashboardData } from "@/lib/calc/insights";
 import { FIXED_SECTIONS } from "@/lib/constants";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 
-export const metadata: Metadata = { title: "Panel" };
+import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
+import { CountUp } from "./dashboard-number";
+import { DashboardPayments } from "./dashboard-payments";
+import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
+
+export const metadata: Metadata = { title: "Genel bakış" };
 
 export default function DashboardPage({ searchParams }: PageProps<"/panel">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Panel" description="Yükleniyor…" />
+          <PageHeader eyebrow="Genel" title="Genel bakış" excel="Panel" description="Yükleniyor…" />
           <PageSkeleton />
         </>
       }
     >
-      <Dashboard searchParams={searchParams} />
+      <DashboardContent searchParams={searchParams} />
     </Suspense>
   );
 }
 
-const ALERT_ICON = { danger: CircleAlert, warning: AlertTriangle, info: Info };
-const ALERT_TONE = {
-  danger: "border-rose-200 bg-rose-50/60 text-rose-900",
-  warning: "border-amber-200 bg-amber-50/60 text-amber-900",
-  info: "border-sky-200 bg-sky-50/50 text-sky-900",
-};
+type Theoretical = NonNullable<DashboardData["theoretical"]>;
+type Forecast = NonNullable<DashboardData["forecast"]>;
+type YearMonth = ReturnType<typeof yearTrend>[number];
 
-function AlertList({ items }: { items: Alert[] }) {
-  if (!items.length) return null;
+/** Başabaşa göre ilerleme: ≥ %100 yeşil, %85 üstü turuncu, altı kırmızı */
+const progressTone = (p: number) => (p >= 1 ? "green" : p > 0.85 ? "amber" : "red");
+
+/** Önceki aya göre değişim oranı; karşılaştırılacak değer yoksa ya da 0 ise null */
+function growthOf(cur: number | null | undefined, before: number | null | undefined): number | null {
+  if (cur === null || cur === undefined || before === null || before === undefined) return null;
+  if (!Number.isFinite(cur) || !Number.isFinite(before) || before === 0) return null;
+  return (cur - before) / Math.abs(before);
+}
+
+/** AkmanOS büyüme rozeti: önceki aya göre % değişim (olumlu limon, olumsuz kırmızı, nötr gri) */
+function Change({ g, prevMonth, prevValue }: { g: number | null; prevMonth: string; prevValue: number | null | undefined }) {
+  if (g === null) return null;
   return (
-    <Card>
-      <CardHeader title="Dikkat edilmesi gerekenler" description="Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz." />
-      <CardContent className="grid gap-2 sm:grid-cols-2">
-        {items.map((a, i) => {
-          const Icon = ALERT_ICON[a.level];
-          const body = (
-            <div className={cn("flex h-full gap-3 rounded-xl border px-3 py-2.5", ALERT_TONE[a.level], a.href && "transition hover:brightness-[0.98]")}>
-              <Icon size={18} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">{a.title}</p>
-                <p className="mt-0.5 text-xs opacity-80">{a.detail}</p>
-              </div>
-              {a.href ? <ArrowRight size={16} className="mt-0.5 ml-auto shrink-0 opacity-50" /> : null}
-            </div>
-          );
-          return a.href ? (
-            <Link key={i} href={a.href}>
-              {body}
-            </Link>
-          ) : (
-            <div key={i}>{body}</div>
-          );
-        })}
-      </CardContent>
-    </Card>
+    <span className="inline-flex" title={`${monthLabel(prevMonth)}: ${tl(prevValue)}`}>
+      <GrowthPill value={g}>
+        {g >= 0.0005 ? "+" : ""}
+        {pct(g, Math.abs(g) >= 1 ? 0 : 1)}
+        <span className="sr-only"> ({monthLabel(prevMonth)} ayına göre)</span>
+      </GrowthPill>
+    </span>
   );
 }
 
-async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
+const ALERT_STYLE: Record<Alert["level"], { icon: ReactNode; tone: PastelTone }> = {
+  danger: { icon: <CircleAlert />, tone: 3 },
+  warning: { icon: <TriangleAlert />, tone: 1 },
+  info: { icon: <Info />, tone: 2 },
+};
+
+async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
   const model = await loadModel();
@@ -83,7 +110,8 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
   const d = dashboard(model, month);
   const alertItems = alerts(model, month);
   const year = Number(month.slice(0, 4));
-  const trend = yearTrend(model, year).filter((t) => t.active);
+  const yearMonths = yearTrend(model, year);
+  const trend = yearMonths.filter((x) => x.active);
   const st = model.settings;
 
   // En son (eksik) ayın gidişatı: Excel'deki "Ekim tahmini"
@@ -91,11 +119,13 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
     .filter((m) => m.openDays && m.posRevenue)
     .sort((a, b) => a.month.localeCompare(b.month))
     .at(-1);
-  const current = latest && latest.month !== month ? dashboard(model, latest.month) : d;
+  const forecastMonth = latest && latest.month !== month ? latest.month : month;
+  const current = forecastMonth !== month ? dashboard(model, forecastMonth) : d;
   const forecast = current.forecast;
 
   const t = d.theoretical;
   const pm = model.pnlMonth(month);
+  const purchases = model.goodsPurchases(month);
   const sectionItems = (key: string) =>
     model.activeFixed
       .filter((f) => f.section === key)
@@ -106,7 +136,7 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
       .map((x) => x.name)
       .join(", ");
 
-  const waterfall = t
+  const waterfall: FlowRow[] = t
     ? [
         { label: "Satışlar (net ciro)", value: t.netSales, sub: "Ürün satışları ÷ (1 + KDV)", sign: 1 },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
@@ -115,16 +145,96 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
         ...FIXED_SECTIONS.map((s) => ({
           label: s.label,
           value: -t.fixed[s.key],
-          sub: s.key === "personel" ? `Maaş + SGK, ${sectionItems(s.key)}` : sectionItems(s.key),
+          sub: s.key === "personel" ? ["Maaş + SGK", sectionItems(s.key)].filter(Boolean).join(", ") : sectionItems(s.key),
           sign: -1,
         })),
       ]
     : [];
 
+  const showBreakEven = !!d.dailyAvg && d.breakEvenProgress !== null;
+  const showForecast = !!t && !!forecast;
+  const projected = d.forecast?.projectedProfit ?? 0;
+
+  // Önceki ayla karşılaştırma (aynı metrik, aynı hesap). Eksik (devam eden) ayın toplamları tam bir ayla
+  // kıyaslanmaz; günlük ortalama her durumda kıyaslanabilir.
+  const prevMonth = shiftMonth(month, -1);
+  const prev = dashboard(model, prevMonth);
+  const pt = prev.theoretical;
+  const fullMonths = !d.forecast && !prev.forecast;
+  const g = {
+    netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
+    gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
+    net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
+    pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
+    daily: growthOf(d.dailyAvg, prev.dailyAvg),
+  };
+  const changeNote = (x: number | null) => (x !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.` : "");
+
+  const tabs: DashboardTab[] = [
+    { value: "kategori", label: "Kategoriler", content: <CategoriesTab d={d} target={st.hedefMaliyet} /> },
+    ...(d.hasSales
+      ? [
+          {
+            value: "karli",
+            label: "En kârlı ürünler",
+            content: (
+              <ProductRank
+                icon={<Trophy />}
+                title="En çok kâr getiren"
+                description="Birim kâr × satış adedi"
+                columns={[{ label: "Satış", numeric: true }, { label: "Toplam kâr", numeric: true }]}
+                rows={d.topProducts.map((x) => ({
+                  id: x.p.product.id,
+                  name: x.p.key,
+                  cells: [`${num(x.qty)} adet`, <span key="v" className="font-semibold">{tl(x.profit)}</span>],
+                }))}
+              />
+            ),
+          },
+          {
+            value: "satan",
+            label: "En çok satan",
+            content: (
+              <ProductRank
+                icon={<Flame />}
+                title="En çok satan"
+                description="Satış adedine göre"
+                columns={[{ label: "Marj", numeric: true }, { label: "Satış", numeric: true }]}
+                rows={d.bestSellers.map((x) => ({
+                  id: x.p.product.id,
+                  name: x.p.key,
+                  cells: [pct(x.p.margin), <span key="v" className="font-semibold">{`${num(x.qty)} adet`}</span>],
+                }))}
+              />
+            ),
+          },
+          {
+            value: "zayif",
+            label: "En az kârlı",
+            content: (
+              <ProductRank
+                icon={<TrendingDown />}
+                title="Satılanlar içinde en düşük marj"
+                description="Fiyatını gözden geçirin"
+                columns={[{ label: "Durum" }, { label: "Önerilen fiyat", numeric: true }, { label: "Marj", numeric: true }]}
+                rows={d.weakest.map((x) => ({
+                  id: x.p.product.id,
+                  name: x.p.key,
+                  cells: [<StatusBadge key="s" status={x.p.status} />, tl(x.p.suggestedPrice), <span key="v" className="font-semibold">{pct(x.p.margin)}</span>],
+                }))}
+              />
+            ),
+          },
+        ]
+      : []),
+    { value: "gider", label: "En büyük giderler", content: <ExpensesTab items={d.topExpenses.slice(0, 6)} total={d.fixedStandardTotal} /> },
+  ];
+
   return (
     <>
       <PageHeader
-        title="Panel"
+        eyebrow="Genel"
+        title="Genel bakış"
         excel="Panel"
         description={
           <>
@@ -136,21 +246,22 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
         actions={
           <>
             <MonthPicker months={months} value={month} />
-            <ButtonLink href={`/api/export?ay=${month}`} variant="outline" prefetch={false}>
+            <ButtonLink href={`/api/export?ay=${month}`} variant="secondary" prefetch={false}>
+              <Download size={16} aria-hidden="true" />
               Excel&apos;e aktar
             </ButtonLink>
           </>
         }
       />
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {!d.hasSales ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-900">
-            <div className="flex items-start gap-3">
-              <Upload size={20} className="mt-0.5 shrink-0" />
-              <div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-warn-soft px-5 py-4 text-warn">
+            <div className="flex min-w-0 items-start gap-3">
+              <Upload size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
                 <p className="font-semibold">{monthLabel(month)} ürün satışları henüz yüklenmedi</p>
-                <p className="text-sm opacity-80">
+                <p className="mt-0.5 text-sm">
                   Reçeteye göre kâr hesabı için Patron&apos;dan ürün satış raporunu yükleyin. Aşağıdaki kâr oranı{" "}
                   {d.refMonth ? monthLabel(d.refMonth) : "son ay"} satışlarından alınıyor.
                 </p>
@@ -162,222 +273,459 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
           </div>
         ) : null}
 
-        {/* KPI satırı */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* 1. Metrikler (AkmanOS statistic-cards: rakam sayılır, yanında önceki aya göre rozet) */}
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {t ? (
             <>
               <Stat
+                icon={<Receipt />}
                 label="Net satış"
-                info="Patron (ModPOS) ürün satışları ÷ (1 + KDV). Kasanıza kalan gerçek gelir."
-                value={tl(t.netSales)}
+                info={`Patron (ModPOS) ürün satışları ÷ (1 + KDV). Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
+                value={<CountUp value={t.netSales} />}
+                badge={<Change g={g.netSales} prevMonth={prevMonth} prevValue={pt?.netSales} />}
                 sub={`${tl(d.sales.revenue)} KDV dahil`}
               />
               <Stat
+                icon={<Coins />}
                 label="Brüt kâr"
-                info="Net satış − malzeme/ambalaj − POS komisyonu. Kira ve personel öncesi kâr."
-                value={tl(t.grossProfit)}
+                info={`Net satış − malzeme/ambalaj − POS komisyonu. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
+                value={<CountUp value={t.grossProfit} />}
+                badge={<Change g={g.gross} prevMonth={prevMonth} prevValue={pt?.grossProfit} />}
                 sub={`Marj ${pct(t.grossProfit / t.netSales)} · kira ve personel öncesi`}
               />
               <Stat
+                icon={t.netProfit < 0 ? <TrendingDown /> : <TrendingUp />}
                 label="Net kâr / zarar"
-                info="Brüt kâr − indirimler − sabit giderler (reçeteye göre). Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır."
-                value={tl(t.netProfit)}
+                info={`Brüt kâr − indirimler − sabit giderler (reçeteye göre). Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır.${changeNote(g.net)}`}
+                value={<CountUp value={t.netProfit} />}
+                badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
                 tone={t.netProfit < 0 ? "bad" : "good"}
-                icon={t.netProfit < 0 ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
-                sub={d.actual.hasRevenue ? <>Faturaya göre: <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed></> : null}
+                sub={
+                  d.actual.hasRevenue ? (
+                    <>
+                      Faturaya göre: <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed>
+                    </>
+                  ) : null
+                }
               />
             </>
           ) : (
             <>
-              <Stat label="POS cirosu (KDV dahil)" value={tl(d.info?.posRevenue ?? null)} sub={d.info?.openDays ? `${d.info.openDays} günde` : null} />
-              <Stat label="Günlük ortalama ciro" value={tl(d.dailyAvg)} sub="KDV dahil" />
               <Stat
+                icon={<Receipt />}
+                label="POS cirosu (KDV dahil)"
+                info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
+                value={<CountUp value={d.info?.posRevenue ?? null} />}
+                badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
+                sub={d.info?.openDays ? `${d.info.openDays} günde` : null}
+              />
+              <Stat
+                icon={<CalendarDays />}
+                label="Günlük ortalama ciro"
+                info={g.daily !== null ? changeNote(g.daily).trim() : undefined}
+                value={<CountUp value={d.dailyAvg} />}
+                badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={prev.dailyAvg} />}
+                sub="KDV dahil"
+              />
+              <Stat
+                icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
                 label="Ay sonu tahmini kâr/zarar"
-                value={tl(d.forecast?.projectedProfit ?? null)}
-                tone={(d.forecast?.projectedProfit ?? 0) < 0 ? "bad" : "good"}
-                sub={d.forecast ? `Tahmini ciro ${tl(d.forecast.projectedRevenue)}` : "Ay tamamlandı"}
                 info="Bu tempoda ay sonu cirosu × son satış ayının brüt kâr oranı − aylık sabit giderler."
+                value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
+                tone={projected < 0 ? "bad" : "good"}
+                sub={d.forecast ? `Tahmini ciro ${tl(d.forecast.projectedRevenue)}` : "Ay tamamlandı"}
               />
             </>
           )}
           <Stat
-            label="Zarar etmemek için günlük ciro"
-            info="Başabaş noktası: aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. KDV dahil."
-            value={tl(d.breakEvenDaily)}
-            sub={
-              d.dailyAvg && d.breakEvenProgress !== null ? (
-                <div className="space-y-1.5">
-                  <span>
-                    Günlük ortalama {tl(d.dailyAvg)} · başabaşa göre {pct(d.breakEvenProgress, 0)}
-                  </span>
-                  <Progress value={d.breakEvenProgress} tone={d.breakEvenProgress >= 1 ? "green" : d.breakEvenProgress > 0.85 ? "amber" : "red"} />
-                </div>
-              ) : null
-            }
+            icon={<Target />}
+            label="Başabaş günlük ciro"
+            info="Zarar etmemek için gereken günlük ciro. Başabaş noktası: aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. KDV dahil."
+            value={<CountUp value={d.breakEvenDaily} />}
+            sub={showBreakEven ? `Günlük ortalama ${tl(d.dailyAvg)} · başabaşa göre ${pct(d.breakEvenProgress, 0)}` : null}
+          >
+            {showBreakEven && d.breakEvenProgress !== null ? <Progress value={d.breakEvenProgress} tone={progressTone(d.breakEvenProgress)} /> : null}
+          </Stat>
+        </div>
+
+        {/* 2. Uyarılar + maliyet göstergesi */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div className="flex min-w-0 flex-col gap-4 lg:col-span-7">
+            <Suspense fallback={null}>
+              <DashboardPayments />
+            </Suspense>
+            <AlertsCard items={alertItems} className="flex-1" />
+          </div>
+          <CostCard
+            className="lg:col-span-5"
+            recipeRatio={d.recipeCostRatio}
+            invoiceRatio={d.invoiceCostRatio}
+            target={st.hedefMaliyet}
+            lowCount={d.lowProfitCount}
+            attentionCount={d.attentionCount}
+            year={year}
+            month={month}
+            months={yearMonths}
           />
         </div>
 
-        <AlertList items={alertItems} />
-
+        {/* 3. Para nereye gitti + reçete/fatura karşılaştırması */}
         {t ? (
-          <div className="grid gap-6 xl:grid-cols-12">
-            <Card className="xl:col-span-7">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <WaterfallCard month={month} t={t} rows={waterfall} />
+            <Card>
               <CardHeader
-                title={`${monthLabel(month)}: para nereye gitti?`}
-                description="KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır."
+                icon={<Scale />}
+                title="Reçeteye göre mi, faturaya göre mi?"
+                description="Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
               />
-              <CardContent className="space-y-3">
-                {waterfall.map((w) => {
-                  const share = Math.abs(w.value) / t.netSales;
-                  return (
-                    <div key={w.label}>
-                      <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="font-medium text-coffee-900">
-                          {w.sign < 0 ? "– " : ""}
-                          {w.label}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular text-coffee-950">
-                          {tl(Math.abs(w.value))} <span className="ml-1 text-xs font-normal text-coffee-500">{pct(share, 0)}</span>
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-3">
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-coffee-50">
-                          <div
-                            className={cn("h-full rounded-full", w.sign > 0 ? "bg-[#1baf7a]" : "bg-[#b8682a]")}
-                            style={{ width: `${Math.min(100, share * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                      {w.sub ? <p className="mt-0.5 truncate text-xs text-coffee-500">{w.sub}</p> : null}
-                    </div>
-                  );
-                })}
-                <div className="mt-2 flex items-baseline justify-between rounded-xl bg-coffee-50 px-4 py-3">
-                  <span className="text-sm font-semibold text-coffee-900">{monthLabel(month)} net kâr / zarar</span>
-                  <Signed value={t.netProfit} className="text-lg font-semibold">
-                    {tl(t.netProfit)}
-                  </Signed>
+              <CardContent className="@container flex flex-1 flex-col gap-4">
+                <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
+                  <Well className="p-3.5">
+                    <p className="text-xs font-medium text-ink-mute">Reçeteye göre maliyet</p>
+                    <p className="mt-1 text-xl font-semibold tracking-tight whitespace-nowrap text-ink tabular">{tl(t.material)}</p>
+                    <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.recipeCostRatio)}</p>
+                  </Well>
+                  <Well className="p-3.5">
+                    <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
+                    <p className="mt-1 text-xl font-semibold tracking-tight whitespace-nowrap text-ink tabular">{tl(purchases)}</p>
+                    <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.invoiceCostRatio)}</p>
+                  </Well>
                 </div>
-                <p className="text-xs text-coffee-500">Vergi ve tek seferlik yatırımlar hariç.</p>
+                <div className="divide-y divide-line">
+                  <KeyValue label="Fark (alınan − reçeteye göre harcanan)" value={<span className="font-semibold">{tl(purchases - t.material)}</span>} />
+                  <KeyValue
+                    label="Kâr/zarar: reçeteye göre → faturaya göre"
+                    value={
+                      <span className="font-semibold">
+                        <Signed value={t.netProfit}>{tl(t.netProfit)}</Signed> → <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed>
+                      </span>
+                    }
+                  />
+                  {d.info?.offRevenue ? (
+                    <KeyValue
+                      label={
+                        <span className="inline-flex items-center gap-1.5">
+                          Ödenmez / ikram
+                          <InfoTip text="Ciro dışı satışlar: malzemesi harcanıyor ama geliri yok. Tahmini maliyet = tutar ÷ (1+KDV) × ortalama maliyet oranı." />
+                        </span>
+                      }
+                      value={
+                        <>
+                          {tl(d.info.offRevenue)}{" "}
+                          <span className="text-xs text-ink-mute">(maliyet ≈ {tl((d.info.offRevenue / (1 + st.kdv)) * d.sales.avgCostRatio)})</span>
+                        </>
+                      }
+                    />
+                  ) : null}
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <ButtonLink href={`/panel/tutarlilik?ay=${month}`} variant="secondary">
+                    Tutarlılık kontrolü
+                  </ButtonLink>
+                  <ButtonLink href={`/panel/sayim?ay=${month}`} variant="ghost">
+                    Stok sayımı gir
+                  </ButtonLink>
+                </div>
               </CardContent>
             </Card>
-
-            <div className="grid gap-6 md:grid-cols-2 xl:col-span-5 xl:grid-cols-1 xl:content-start">
-              <Card>
-                <CardHeader
-                  title="Reçeteye göre mi, faturaya göre mi?"
-                  description="Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
-                />
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-coffee-50 p-3">
-                      <p className="text-xs font-medium text-coffee-600">Reçeteye göre maliyet</p>
-                      <p className="mt-1 text-xl font-semibold whitespace-nowrap">{tl(t.material)}</p>
-                      <p className="text-xs text-coffee-500">Maliyet oranı {pct(d.recipeCostRatio)}</p>
-                    </div>
-                    <div className="rounded-xl bg-coffee-50 p-3">
-                      <p className="text-xs font-medium text-coffee-600">Faturaya göre alım</p>
-                      <p className="mt-1 text-xl font-semibold whitespace-nowrap">{tl(model.goodsPurchases(month))}</p>
-                      <p className="text-xs text-coffee-500">Maliyet oranı {pct(d.invoiceCostRatio)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-coffee-700">Fark (alınan − reçeteye göre harcanan)</span>
-                    <span className="font-semibold tabular">{tl(model.goodsPurchases(month) - t.material)}</span>
-                  </div>
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="text-coffee-700">Kâr/zarar: reçeteye göre → faturaya göre</span>
-                    <span className="font-semibold tabular">
-                      <Signed value={t.netProfit}>{tl(t.netProfit)}</Signed> → <Signed value={d.actual.profit}>{tl(d.actual.profit)}</Signed>
-                    </span>
-                  </div>
-                  {d.info?.offRevenue ? (
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-coffee-700">
-                        Ödenmez / ikram <InfoTip text="Ciro dışı satışlar: malzemesi harcanıyor ama geliri yok. Tahmini maliyet = tutar ÷ (1+KDV) × ortalama maliyet oranı." />
-                      </span>
-                      <span className="tabular">
-                        {tl(d.info.offRevenue)} <span className="text-xs text-coffee-500">(maliyet ≈ {tl((d.info.offRevenue / (1 + st.kdv)) * d.sales.avgCostRatio)})</span>
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
-                    <ButtonLink href={`/panel/tutarlilik?ay=${month}`} size="sm">
-                      Tutarlılık kontrolü
-                    </ButtonLink>
-                    <ButtonLink href={`/panel/sayim?ay=${month}`} size="sm" variant="ghost">
-                      Stok sayımı gir
-                    </ButtonLink>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {forecast ? (
-                <Card>
-                  <CardHeader
-                    title={`${monthLabel(forecast === d.forecast ? month : latest!.month)} gidişatı`}
-                    description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`}
-                  />
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-coffee-700">Günlük ortalama ciro</span>
-                      <span className="font-semibold tabular">{tl(current.dailyAvg)}</span>
-                    </div>
-                    {current.breakEvenProgress !== null ? (
-                      <Progress value={current.breakEvenProgress} tone={current.breakEvenProgress >= 1 ? "green" : current.breakEvenProgress > 0.85 ? "amber" : "red"} />
-                    ) : null}
-                    <div className="flex justify-between">
-                      <span className="text-coffee-700">Bu tempoyla ay sonu ciro</span>
-                      <span className="tabular">{tl(forecast.projectedRevenue)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-coffee-700">Tahmini net kâr / zarar</span>
-                      <Signed value={forecast.projectedProfit} className="font-semibold">
-                        {tl(forecast.projectedProfit)}
-                      </Signed>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-            </div>
           </div>
         ) : null}
 
-        {trend.length ? (
-          <Card>
-            <CardHeader
-              title={`${year} aylık gelir-gider`}
-              description="Gelir-gider tablosundan (faturaya göre). Kira, personel gibi aylık giderler açık gün sayısına göre bölünür."
-              actions={
-                <ButtonLink href={`/panel/gelir-gider?yil=${year}`} size="sm" variant="ghost">
-                  Tabloyu aç <ArrowRight size={14} />
-                </ButtonLink>
-              }
-            />
-            <CardContent>
-              <TrendChart
-                data={trend.map((x) => ({
-                  label: monthShort(x.month),
-                  revenue: Math.round(x.revenueNet),
-                  expenses: Math.round(x.expenses),
-                  profit: Math.round(x.profit),
-                }))}
+        {/* 4. Yıl grafiği + ay gidişatı */}
+        {trend.length || showForecast ? (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+            {trend.length ? (
+              <Card className={showForecast ? "xl:col-span-8" : "xl:col-span-12"}>
+                <CardHeader
+                  icon={<ChartColumn />}
+                  title={`${year} aylık gelir-gider`}
+                  description="Gelir-gider tablosundan (faturaya göre). Kira, personel gibi aylık giderler açık gün sayısına göre bölünür."
+                  actions={
+                    <ButtonLink href={`/panel/gelir-gider?yil=${year}`} variant="secondary">
+                      Tabloyu aç <ArrowRight size={16} aria-hidden="true" />
+                    </ButtonLink>
+                  }
+                />
+                <CardContent>
+                  <Well>
+                    <TrendChart
+                      data={trend.map((x) => ({
+                        label: monthShort(x.month),
+                        revenue: Math.round(x.revenueNet),
+                        expenses: Math.round(x.expenses),
+                        profit: Math.round(x.profit),
+                      }))}
+                    />
+                  </Well>
+                </CardContent>
+              </Card>
+            ) : null}
+            {showForecast && forecast ? (
+              <ForecastCard
+                className={trend.length ? "xl:col-span-4" : "xl:col-span-12"}
+                month={forecastMonth}
+                forecast={forecast}
+                dailyAvg={current.dailyAvg}
+                progress={current.breakEvenProgress}
               />
-            </CardContent>
-          </Card>
+            ) : null}
+          </div>
         ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-12">
-          <Card className="xl:col-span-7">
-            <CardHeader
-              title="Kategori bazında"
-              description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). Satış ağırlıklı marj ${d.refMonth ? monthLabel(d.refMonth) : ""} satışlarına göredir.`}
+        {/* 5. Ayrıntı listeleri tek kartta */}
+        <DashboardTabs label="Ayrıntı listesi" tabs={tabs} />
+      </div>
+    </>
+  );
+}
+
+function AlertsCard({ items, className }: { items: Alert[]; className?: string }) {
+  const important = items.filter((a) => a.level === "danger").length;
+  return (
+    <Card className={className}>
+      <CardHeader
+        icon={<TriangleAlert />}
+        title="Dikkat edilmesi gerekenler"
+        description="Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz."
+        meta={
+          items.length ? (
+            <>
+              <span className="tabular">{items.length} uyarı</span>
+              {important ? (
+                <>
+                  <span className="text-ink-quiet">·</span>
+                  <span className="font-medium text-bad tabular">{important} önemli</span>
+                </>
+              ) : null}
+            </>
+          ) : null
+        }
+      />
+      <CardContent className="pb-3">
+        <ActivityList>
+          {items.length ? (
+            items.map((a, i) => (
+              <ActivityItem
+                key={`${a.level}-${i}`}
+                wrap
+                icon={ALERT_STYLE[a.level].icon}
+                tone={ALERT_STYLE[a.level].tone}
+                title={a.title}
+                description={a.detail}
+                href={a.href}
+                dot={a.level === "danger" ? "danger" : undefined}
+                aside={a.href ? <ChevronRight size={16} className="text-ink-quiet" aria-hidden="true" /> : undefined}
+              />
+            ))
+          ) : (
+            <ActivityItem icon={<CircleCheck />} tone={0} title="Şu an dikkat gerektiren bir şey yok" description="Otomatik kontroller bu ay için bir sorun bulmadı." />
+          )}
+        </ActivityList>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostCard({
+  className,
+  recipeRatio,
+  invoiceRatio,
+  target,
+  lowCount,
+  attentionCount,
+  year,
+  month,
+  months,
+}: {
+  className?: string;
+  recipeRatio: number | null;
+  invoiceRatio: number | null;
+  target: number;
+  lowCount: number;
+  attentionCount: number;
+  year: number;
+  month: string;
+  months: YearMonth[];
+}) {
+  const gaugeTone = recipeRatio === null ? "brand" : recipeRatio > target + 0.1 ? "bad" : recipeRatio > target ? "warn" : "brand";
+  const segTone = (m: YearMonth): "good" | "bad" | "empty" => (!m.active ? "empty" : m.profit < 0 ? "bad" : "good");
+  const profitMonths = months.filter((m) => segTone(m) === "good").length;
+  const lossMonths = months.filter((m) => segTone(m) === "bad").length;
+  return (
+    <Card className={className}>
+      <CardHeader icon={<Percent />} title="Maliyet hedefi" description={`Malzeme maliyeti ÷ net satış · hedef ${pct(target, 0)}`} />
+      <CardContent className="space-y-5">
+        <Well className="pt-5">
+          {recipeRatio !== null ? (
+            <Gauge value={recipeRatio} target={target} display={pct(recipeRatio)} label="Reçeteye göre maliyet oranı" tone={gaugeTone} />
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-mute">Satış raporu yüklenince bu ayın maliyet oranı burada görünür.</p>
+          )}
+          <div className="mt-4 grid grid-cols-2 divide-x divide-line border-t border-line pt-3 text-center">
+            <div>
+              <p className="text-xs text-ink-mute">Hedef</p>
+              <p className="text-sm font-semibold text-ink tabular">{pct(target, 0)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-mute">Faturaya göre</p>
+              <p className="text-sm font-semibold text-ink tabular">{pct(invoiceRatio)}</p>
+            </div>
+          </div>
+        </Well>
+
+        <div>
+          <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+            Fiyat kontrolü
+            <InfoTip text={`Hedef maliyet oranı %${num(target * 100)}. Önerilen fiyat maliyetin hedef orana denk geldiği, 5 ₺'ye yuvarlanmış fiyattır.`} />
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <CountLink href="/panel/urunler?durum=Düşük kâr" value={lowCount} label="ürün “Düşük kâr”" tone="bad" />
+            <CountLink href="/panel/urunler?durum=Dikkat" value={attentionCount} label="ürün “Dikkat”" tone="warn" />
+          </div>
+        </div>
+
+        <div className="border-t border-line pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+              {year} kâr / zarar
+              <InfoTip text="Her ay Gelir-gider tablosundaki (faturaya göre) kâr ya da zarar. Gri: o ay için veri yok. Çerçeveli parça seçili ay." />
+            </h3>
+            <p className="flex items-center gap-1.5">
+              <Badge tone="green" className="tabular">
+                {profitMonths} ay kâr
+              </Badge>
+              <Badge tone="red" className="tabular">
+                {lossMonths} ay zarar
+              </Badge>
+            </p>
+          </div>
+          <SegmentStrip
+            className="mt-3"
+            activeKey={month}
+            showLabels
+            segments={months.map((m) => ({
+              key: m.month,
+              tone: segTone(m),
+              short: monthShort(m.month),
+              // Renk tek başına anlam taşımasın: ipucu ve ekran okuyucu metni kâr/zarar ve seçili ayı da söyler
+              label: `${monthLabel(m.month)}: ${m.active ? `${m.profit < 0 ? "zarar" : "kâr"} ${tl(Math.abs(m.profit))}` : "veri yok"}${
+                m.month === month ? " (seçili ay)" : ""
+              }`,
+            }))}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CountLink({ href, value, label, tone }: { href: string; value: number; label: string; tone: "bad" | "warn" }) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center justify-between gap-2 rounded-2xl bg-surface px-3.5 py-3 ring-1 ring-line transition-shadow outline-none hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/30"
+    >
+      <span className="min-w-0">
+        <span className={cn("block text-2xl leading-7 font-semibold tracking-tight tabular", value ? (tone === "bad" ? "text-bad" : "text-warn") : "text-ink")}>
+          {value}
+        </span>
+        <span className="text-xs text-ink-mute">{label}</span>
+      </span>
+      <ArrowRight size={16} className="shrink-0 text-ink-quiet transition-colors group-hover:text-ink" aria-hidden="true" />
+    </Link>
+  );
+}
+
+function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows: FlowRow[] }) {
+  const loss = t.netProfit < 0;
+  return (
+    <Card>
+      <CardHeader icon={<Wallet />} title={`${monthLabel(month)}: para nereye gitti?`} description="KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır." />
+      <CardContent className="flex flex-1 flex-col gap-3">
+        <MoneyFlow rows={rows} netSales={t.netSales} netProfit={t.netProfit} />
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-panel-deep px-4 py-3">
+          <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
+            <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-[3px]", loss ? "bg-bad" : "bg-lime")} />
+            {monthLabel(month)} net kâr / zarar
+          </span>
+          <span className="flex items-baseline gap-1.5">
+            <Signed value={t.netProfit} className={cn("text-lg font-semibold tracking-tight", !loss && "text-good")}>
+              {tl(t.netProfit)}
+            </Signed>
+            <span className="text-xs text-ink-mute tabular" title="Net satışa oranı">
+              {pct(t.netSales ? t.netProfit / t.netSales : null, 0)}
+            </span>
+          </span>
+        </div>
+        <p className="text-xs text-ink-mute">Vergi ve tek seferlik yatırımlar hariç.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ForecastCard({
+  className,
+  month,
+  forecast,
+  dailyAvg,
+  progress,
+}: {
+  className?: string;
+  month: string;
+  forecast: Forecast;
+  dailyAvg: number | null;
+  progress: number | null;
+}) {
+  return (
+    <Card className={className}>
+      <CardHeader icon={<CalendarClock />} title={`${monthLabel(month)} gidişatı`} description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`} />
+      <CardContent className="flex-1">
+        <Well className="py-2">
+          <KeyValue label="Günlük ortalama ciro" value={<span className="font-semibold">{tl(dailyAvg)}</span>} />
+          {progress !== null ? (
+            <div className="pb-2">
+              <Progress value={progress} tone={progressTone(progress)} />
+              <p className="mt-1 text-xs text-ink-mute tabular">Başabaşa göre {pct(progress, 0)}</p>
+            </div>
+          ) : null}
+          <div className="divide-y divide-line border-t border-line">
+            <KeyValue label="Bu tempoyla ay sonu ciro" value={tl(forecast.projectedRevenue)} />
+            <KeyValue
+              label="Tahmini net kâr / zarar"
+              value={
+                <Signed value={forecast.projectedProfit} className="font-semibold">
+                  {tl(forecast.projectedProfit)}
+                </Signed>
+              }
             />
-            <TableWrap>
+          </div>
+        </Well>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoriesTab({ d, target }: { d: DashboardData; target: number }) {
+  const cats = d.categories;
+  return (
+    <>
+      <CardHeader
+        icon={<LayoutGrid />}
+        title="Kategori bazında"
+        description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
+          d.refMonth ? `Satış ağırlıklı marj ${monthLabel(d.refMonth)} satışlarına göredir.` : "Satış verisi yok."
+        }`}
+        meta={<span className="tabular">{cats.length} kategori</span>}
+      />
+      {cats.length ? (
+        <div className="grid grid-cols-1 gap-4 pb-5 xl:grid-cols-12 xl:pr-5">
+          <div className="min-w-0 xl:col-span-7">
+            <TableWrap className="pb-0">
               <Table>
                 <THead>
                   <tr>
-                    <TH>Kategori</TH>
+                    <TH sticky>Kategori</TH>
                     <TH numeric>Ürün</TH>
                     <TH numeric>Ort. kâr marjı</TH>
                     <TH numeric>Ort. birim kâr</TH>
@@ -387,138 +735,148 @@ async function Dashboard({ searchParams }: { searchParams: PageProps<"/panel">["
                   </tr>
                 </THead>
                 <tbody>
-                  {d.categories.map((c) => (
-                    <TR key={c.categoryId}>
-                      <TD>
-                        <Link href={`/panel/urunler?kategori=${c.categoryId}`} className="font-medium hover:underline">
-                          {c.name}
-                        </Link>
-                      </TD>
-                      <TD numeric>{c.count}</TD>
-                      <TD numeric>{pct(c.avgMargin)}</TD>
-                      <TD numeric>{tl(c.avgUnitProfit, 2)}</TD>
-                      <TD numeric className={cn(c.avgCostRatio > st.hedefMaliyet + 0.1 && "text-rose-700", c.avgCostRatio > st.hedefMaliyet && c.avgCostRatio <= st.hedefMaliyet + 0.1 && "text-amber-700")}>
-                        {pct(c.avgCostRatio)}
-                      </TD>
-                      <TD numeric>{num(c.soldQty)}</TD>
-                      <TD numeric>{c.soldQty ? pct(c.weightedMargin) : "–"}</TD>
-                    </TR>
-                  ))}
+                  {cats.map((c) => {
+                    const over = c.avgCostRatio > target + 0.1;
+                    const warn = !over && c.avgCostRatio > target;
+                    return (
+                      <TR key={c.categoryId}>
+                        <TD sticky className="py-1">
+                          <Link
+                            href={`/panel/urunler?kategori=${c.categoryId}`}
+                            className="inline-flex min-h-9 items-center gap-2.5 font-medium whitespace-nowrap text-ink hover:underline"
+                          >
+                            <Avatar name={c.name} size="sm" />
+                            {c.name}
+                          </Link>
+                        </TD>
+                        <TD numeric>{c.count}</TD>
+                        <TD numeric>{pct(c.avgMargin)}</TD>
+                        <TD numeric>{tl(c.avgUnitProfit, 2)}</TD>
+                        <TD
+                          numeric
+                          className={cn(over && "font-medium text-bad", warn && "font-medium text-warn")}
+                          title={over ? "Hedefin 10 puandan fazla üstünde" : warn ? "Hedefin üstünde" : undefined}
+                        >
+                          {pct(c.avgCostRatio)}
+                          {over ? <span className="sr-only"> (hedefin 10 puandan fazla üstünde)</span> : warn ? <span className="sr-only"> (hedefin üstünde)</span> : null}
+                        </TD>
+                        <TD numeric>{num(c.soldQty)}</TD>
+                        <TD numeric>{c.soldQty ? pct(c.weightedMargin) : "–"}</TD>
+                      </TR>
+                    );
+                  })}
                 </tbody>
               </Table>
             </TableWrap>
-          </Card>
-          <Card className="xl:col-span-5">
-            <CardHeader title="Kategoriye göre ortalama kâr marjı" />
-            <CardContent>
-              <HBarChart
-                data={d.categories.map((c) => ({ label: c.name, value: c.avgMargin }))}
-                format="percent"
-                valueLabel="Ort. kâr marjı"
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        {d.hasSales ? (
-          <div className="grid gap-6 lg:grid-cols-3">
-            <ProductList
-              title="En çok kâr getiren"
-              description="Birim kâr × satış adedi"
-              rows={d.topProducts.map((x) => ({ id: x.p.product.id, name: x.p.key, value: tl(x.profit), sub: `${num(x.qty)} adet` }))}
-            />
-            <ProductList
-              title="En çok satan"
-              description="Adet"
-              rows={d.bestSellers.map((x) => ({ id: x.p.product.id, name: x.p.key, value: `${num(x.qty)} adet`, sub: `marj ${pct(x.p.margin)}` }))}
-            />
-            <ProductList
-              title="Satılanlar içinde en düşük marj"
-              description="Fiyatını gözden geçirin"
-              rows={d.weakest.map((x) => ({
-                id: x.p.product.id,
-                name: x.p.key,
-                value: pct(x.p.margin),
-                sub: `önerilen ${tl(x.p.suggestedPrice)}`,
-                status: x.p.status,
-              }))}
-            />
+            <p className="mt-2 px-5 text-xs text-ink-mute">
+              Maliyet oranı hedefin ({pct(target, 0)}) üstündeyse <span className="font-medium text-warn">turuncu</span>, 10 puandan fazla
+              üstündeyse <span className="font-medium text-bad">kırmızı</span>.
+            </p>
           </div>
-        ) : null}
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader
-              title="Fiyat kontrolü"
-              description={`Hedef maliyet oranı %${num(st.hedefMaliyet * 100)}. Önerilen fiyat maliyetin hedef orana denk geldiği, 5 ₺'ye yuvarlanmış fiyattır.`}
-            />
-            <CardContent className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl font-semibold text-rose-700">{d.lowProfitCount}</span>
-                <span className="text-sm text-coffee-700">ürün &quot;Düşük kâr&quot;</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-3xl font-semibold text-amber-700">{d.attentionCount}</span>
-                <span className="text-sm text-coffee-700">ürün &quot;Dikkat&quot;</span>
-              </div>
-              <ButtonLink href="/panel/urunler?durum=Düşük kâr" size="sm" className="ml-auto">
-                Ürünleri gör <ArrowRight size={14} />
-              </ButtonLink>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader title="En büyük aylık gider kalemleri" description={`Aylık sabit gider toplamı ${tl(d.fixedStandardTotal)}`} />
-            <CardContent className="space-y-2">
-              {d.topExpenses.slice(0, 6).map((e) => (
-                <div key={e.name} className="flex items-center gap-3 text-sm">
-                  <span className="w-44 shrink-0 truncate text-coffee-800">{e.name}</span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-coffee-50">
-                    <div className="h-full rounded-full bg-[#b8682a]" style={{ width: `${(e.amount / d.topExpenses[0].amount) * 100}%` }} />
-                  </div>
-                  <span className="w-24 shrink-0 text-right font-medium tabular">{tl(e.amount)}</span>
-                </div>
-              ))}
-              <div className="pt-1">
-                <ButtonLink href="/panel/giderler" size="sm" variant="ghost">
-                  Sabit giderler <ArrowRight size={14} />
-                </ButtonLink>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="min-w-0 px-5 xl:col-span-5 xl:px-0">
+            <Well>
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Kategoriye göre ortalama kâr marjı</h3>
+              <HBarChart data={cats.map((c) => ({ label: c.name, value: c.avgMargin }))} format="percent" valueLabel="Ort. kâr marjı" />
+            </Well>
+          </div>
         </div>
-      </div>
+      ) : (
+        <EmptyState title="Kategori yok" description="Ürünlere kategori atanınca ortalamalar burada görünür." />
+      )}
     </>
   );
 }
 
-function ProductList({
+function ProductRank({
+  icon,
   title,
   description,
+  columns,
   rows,
 }: {
+  icon: ReactNode;
   title: string;
   description: string;
-  rows: { id: number; name: string; value: string; sub: string; status?: Parameters<typeof StatusBadge>[0]["status"] }[];
+  columns: { label: string; numeric?: boolean }[];
+  rows: { id: number; name: string; cells: ReactNode[] }[];
 }) {
   return (
-    <Card>
-      <CardHeader title={title} description={description} />
-      <ul className="divide-y divide-coffee-50">
-        {rows.map((r, i) => (
-          <li key={r.id}>
-            <Link href={`/panel/urunler/${r.id}`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-coffee-50/60">
-              <span className="w-5 text-xs font-semibold text-coffee-400">{i + 1}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-coffee-950">{r.name.replace("|", " · ")}</span>
-                <span className="text-xs text-coffee-500">{r.sub}</span>
-              </span>
-              {r.status ? <StatusBadge status={r.status} /> : null}
-              <span className="text-sm font-semibold tabular">{r.value}</span>
-            </Link>
-          </li>
-        ))}
-        {!rows.length ? <li className="px-5 py-4 text-sm text-coffee-500">Veri yok</li> : null}
-      </ul>
-    </Card>
+    <>
+      <CardHeader icon={icon} title={title} description={description} />
+      {rows.length ? (
+        <TableWrap>
+          <Table>
+            <THead>
+              <tr>
+                <TH className="w-10">#</TH>
+                <TH>Ürün</TH>
+                {columns.map((c) => (
+                  <TH key={c.label} numeric={c.numeric}>
+                    {c.label}
+                  </TH>
+                ))}
+              </tr>
+            </THead>
+            <tbody>
+              {rows.map((r, i) => (
+                <TR key={r.id}>
+                  <TD className="text-ink-mute tabular">{i + 1}</TD>
+                  <TD className="py-1">
+                    <Link href={`/panel/urunler/${r.id}`} className="inline-flex min-h-9 items-center font-medium text-ink hover:underline">
+                      {r.name.replace("|", " · ")}
+                    </Link>
+                  </TD>
+                  {r.cells.map((cell, j) => (
+                    <TD key={j} numeric={columns[j]?.numeric}>
+                      {cell}
+                    </TD>
+                  ))}
+                </TR>
+              ))}
+            </tbody>
+          </Table>
+        </TableWrap>
+      ) : (
+        <EmptyState title="Veri yok" description="Bu ay menüdeki ürünlerle eşleşen satış bulunamadı." />
+      )}
+    </>
+  );
+}
+
+function ExpensesTab({ items, total }: { items: { name: string; amount: number }[]; total: number }) {
+  return (
+    <>
+      <CardHeader
+        icon={<Wallet />}
+        title="En büyük aylık gider kalemleri"
+        description={`Aylık sabit gider toplamı ${tl(total)}`}
+        actions={
+          <ButtonLink href="/panel/giderler" variant="secondary">
+            Sabit giderler <ArrowRight size={16} aria-hidden="true" />
+          </ButtonLink>
+        }
+      />
+      <CardContent>
+        {items.length ? (
+          <Well>
+            <ul className="space-y-3.5">
+              {items.map((e, i) => (
+                <li key={`${e.name}-${i}`}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-ink" title={e.name}>
+                      {e.name}
+                    </span>
+                    <span className="shrink-0 font-semibold text-ink tabular">{tl(e.amount)}</span>
+                  </div>
+                  <Meter value={e.amount / items[0].amount} index={i} />
+                </li>
+              ))}
+            </ul>
+          </Well>
+        ) : (
+          <EmptyState title="Gider kalemi yok" description="Sabit giderleri ve personeli girince en büyük kalemler burada sıralanır." />
+        )}
+      </CardContent>
+    </>
   );
 }

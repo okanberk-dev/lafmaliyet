@@ -1,0 +1,17 @@
+import { NextResponse, type NextRequest } from "next/server";
+
+import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import { isParasutConfigured } from "@/server/parasut/config";
+import { syncParasut } from "@/server/parasut/sync";
+
+// Her sabah 07:30 (04:30 UTC; vercel.json → crons): Paraşüt'ten gider faturaları. 50 sn'de kalan sayfalar
+// bir sonraki çalışmada kaldığı yerden sürer.
+export const maxDuration = 60;
+
+export async function GET(request: NextRequest) {
+  const denied = await rejectUnlessCron(request);
+  if (denied) return denied;
+  if (!isParasutConfigured()) return NextResponse.json({ status: "skipped", reason: "Paraşüt bağlantısı tanımlı değil" });
+  const result = await syncParasut("cron", { deadlineMs: 45_000 });
+  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+}

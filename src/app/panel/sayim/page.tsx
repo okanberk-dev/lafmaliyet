@@ -3,9 +3,10 @@ import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { shiftMonth } from "@/lib/calc/engine";
-import { monthLabel } from "@/lib/format";
+import { monthLabel, monthShort } from "@/lib/format";
 import { requireUser } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 
@@ -18,7 +19,8 @@ export default function StockPage({ searchParams }: PageProps<"/panel/sayim">) {
     <Suspense
       fallback={
         <>
-          <PageHeader title="Stok sayımı" excel="Sayım" />
+          {/* Rol henüz bilinmediği için sekmeler yalnızca içerik yüklenince (yöneticiye) çizilir */}
+          <PageHeader title="Stok sayımı" eyebrow="Stok" excel="Sayım" />
           <PageSkeleton rows={12} />
         </>
       }
@@ -39,19 +41,29 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const prev = model.stockSheet(shiftMonth(month, -1));
   const isAdmin = user.role === "admin";
   const prevQty = new Map(prev.groups.flatMap((g) => g.lines.filter((l) => l.qty !== null).map((l) => [l.ingredient.id, l.qty as number])));
+  const ml = monthLabel(month);
+  // Sayım düzeni: seçili ay dahil son 6 ayın hangilerinde sayım girilmiş
+  const history = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((m) => ({
+    month: m,
+    short: monthShort(m),
+    label: monthLabel(m),
+    counted: model.stockSheet(m).hasData,
+  }));
 
   return (
     <>
       <PageHeader
+        eyebrow="Stok"
         title="Stok sayımı"
         excel="Sayım"
-        description={`${monthLabel(month)} ay sonu sayımı. Ayın son günü kapanıştan sonra sayın; miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM). Yarım = 0,5.`}
+        description={`${ml} ay sonu sayımı: ayın son günü kapanıştan sonra sayın. Miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM); yarım = 0,5.`}
         actions={<MonthPicker months={[...new Set([...availableMonths(model), month])].sort()} value={month} />}
+        tabs={isAdmin ? <SectionTabs section="stok" current="/panel/sayim" /> : undefined}
       />
       <StockCountForm
         key={month}
         month={month}
-        monthLabel={monthLabel(month)}
+        monthLabel={ml}
         isAdmin={isAdmin}
         groups={sheet.groups.map((g) => ({
           name: g.name,
@@ -68,6 +80,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         }))}
         extras={isAdmin ? sheet.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: e.unitPrice })) : []}
         hasPrev={prev.hasData}
+        history={history}
+        prevTotal={isAdmin && prev.hasData ? prev.total : null}
       />
     </>
   );

@@ -1,12 +1,13 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { monthLabel, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { MANAGED_QTY_NOTE } from "@/server/parasut/constants";
 
 import { logActivity } from "./log";
 import { attempt, zMonth, zOptText, zText } from "./util";
@@ -27,7 +28,11 @@ export async function setPurchaseQty(month: string, ingredientId: number, qty: n
         .values({ month: m, ingredientId, qty: v, note: n })
         .onConflictDoUpdate({
           target: [s.purchaseQuantities.month, s.purchaseQuantities.ingredientId],
-          set: note === undefined ? { qty: v } : { qty: v, note: n },
+          // Elle düzeltilen satır Paraşüt eşitlemesine ait olmaktan çıkar (notu değişir), eşitleme üzerine yazmaz
+          set:
+            note === undefined
+              ? { qty: v, note: sql`case when ${s.purchaseQuantities.note} = ${MANAGED_QTY_NOTE} then null else ${s.purchaseQuantities.note} end` }
+              : { qty: v, note: n },
         });
     }
     await logActivity(me, "Alınan miktar", `${monthLabel(m)} · #${ingredientId}: ${qty === null ? "silindi" : num(qty)}`);

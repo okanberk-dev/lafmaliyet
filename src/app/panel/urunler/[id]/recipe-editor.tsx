@@ -1,25 +1,59 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
-import Link from "next/link";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Box,
+  CakeSlice,
+  Calculator,
+  Cherry,
+  ClipboardList,
+  Coffee,
+  Cookie,
+  Copy,
+  CupSoda,
+  Droplet,
+  Droplets,
+  IceCreamCone,
+  Milk,
+  Package,
+  Plus,
+  RotateCcw,
+  Save,
+  Tag,
+  Trash2,
+  Wheat,
+  type LucideIcon,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useCalmMotion } from "@/components/ui/motion";
+import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import { RangeSlider } from "@/components/akmanos/range-slider";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
-import { InfoTip, Signed } from "@/components/ui/misc";
-import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import { FloatingBar } from "@/components/ui/floating-bar";
+import { Field, Input, Label, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { Gauge } from "@/components/ui/gauge";
+import { IconTile, toneFor } from "@/components/ui/icon-tile";
+import { EmptyState, GrowthPill, InfoTip, KeyValue, Progress, Signed } from "@/components/ui/misc";
+import { Segmented, SegmentedLinks } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression, parseNumberTR } from "@/lib/calc/expr";
-import type { Settings } from "@/lib/calc/types";
+import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl, tlUnit } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
 
 interface IngredientOption {
@@ -58,6 +92,51 @@ function resolveQty(input: string, settings: Settings): { qty: number; expr: str
   }
 }
 
+/** Hammadde kategorisinin ikonu (Hammaddeler sayfasındaki kategoriler) */
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  Kahve: Coffee,
+  Süt: Milk,
+  "Sos & Şurup": Droplet,
+  Püre: Cherry,
+  Toz: Wheat,
+  Dondurma: IceCreamCone,
+  Tatlı: CakeSlice,
+  Atıştırmalık: Cookie,
+  "Şişe İçecek": CupSoda,
+  [PACKAGING_CATEGORY]: Package,
+  Diğer: Box,
+};
+
+/** Reçete satırı: yukarı/aşağı taşınınca yaylı kayar, eklenince belirir, silinince söner */
+const MotionTR = motion.create(TR);
+
+/** İlk/son satırdaki taşıma düğmesi: soluk, ama odaklanabilir kalır */
+const edgeClass = "aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-ink-mute";
+
+/** Sayfa açılışında kartların sırayla belirmesi; hareket azaltılmışsa anında görünür */
+function rise(i: number, reduce: boolean | null) {
+  return {
+    initial: reduce ? (false as const) : { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0 },
+    transition: reduce ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT, delay: i * 0.06 },
+  };
+}
+
+/** Fiyat simülatörünün kaydırıcı aralığı: şimdiki ve önerilen fiyatın çevresi, 5 ₺'ye yuvarlı */
+function sliderRange(price: number, suggested: number, trial: number | null) {
+  const hi = Math.max(price, suggested, 1);
+  const lo = Math.min(price > 0 ? price : hi, suggested > 0 ? suggested : hi);
+  let min = Math.max(0, Math.floor((lo * 0.6) / 5) * 5);
+  let max = Math.max(min + 5, Math.ceil((hi * 1.5) / 5) * 5);
+  if (trial !== null && trial >= 0) {
+    min = Math.min(min, Math.floor(trial));
+    max = Math.max(max, Math.ceil(trial));
+  }
+  return { min, max };
+}
+
+type SideTab = "dokum" | "dene" | "satis";
+
 export function RecipeEditor({
   product,
   items,
@@ -92,6 +171,9 @@ export function RecipeEditor({
   waterPerLiter: number;
 }) {
   const router = useRouter();
+  const reduce = useCalmMotion();
+  /** Miktar alanını altındaki hata/uyarı metnine bağlamak için (satır anahtarı sunucuyla eşleşmez, sıra eşleşir) */
+  const uid = useId();
   const ingById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
   const initialRows = useMemo<Row[]>(
     () => items.map((it) => ({ key: keySeq++, ingredientId: it.ingredientId, input: toInput(it.qty, it.qtyExpr), note: it.note ?? "" })),
@@ -110,7 +192,11 @@ export function RecipeEditor({
   const [saving, setSaving] = useState(false);
   const [trial, setTrial] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<SideTab>("dokum");
+  /** Yeni eklenen satırın malzeme seçimi odak alsın */
+  const [newKey, setNewKey] = useState<number | null>(null);
 
   const priceNum = parseNumberTR(price) ?? 0;
   const fireNum = fire.trim() === "" ? null : (parseNumberTR(fire) ?? 0) / 100;
@@ -155,6 +241,11 @@ export function RecipeEditor({
       [copy[idx], copy[j]] = [copy[j], copy[idx]];
       return copy;
     });
+  function addRow() {
+    const key = keySeq++;
+    setRows((rs) => [...rs, { key, ingredientId: null, input: "", note: "" }]);
+    setNewKey(key);
+  }
 
   function reset() {
     setName(product.name);
@@ -191,6 +282,15 @@ export function RecipeEditor({
     else toast.error(res.error);
   }
 
+  async function remove() {
+    setDeleting(true);
+    const res = await deleteProduct(product.id);
+    setDeleting(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success("Ürün silindi");
+    router.push("/panel/urunler");
+  }
+
   const grouped = useMemo(() => {
     const m = new Map<string, IngredientOption[]>();
     for (const i of ingredients) {
@@ -201,402 +301,590 @@ export function RecipeEditor({
     return [...m.entries()].map(([cat, list]) => [cat, list.sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
   }, [ingredients]);
 
-  const statusTone = econ.costRatio <= settings.hedefMaliyet ? "text-emerald-700" : econ.costRatio <= settings.hedefMaliyet + 0.1 ? "text-amber-700" : "text-rose-700";
+  const gaugeTone =
+    econ.costRatio <= settings.hedefMaliyet ? "brand" : econ.costRatio <= settings.hedefMaliyet + 0.1 ? "warn" : "bad";
+  const trialDiff = trialEcon ? trialEcon.unitProfit - econ.unitProfit : 0;
+  const plus = (v: number) => (v >= 0 ? "+" : "");
+  const maxSold = Math.max(1, ...history.map((h) => h.qty));
+  const categoryName = categories.find((c) => c.id === product.categoryId)?.name;
+  const range = sliderRange(priceNum, econ.suggestedPrice, trialPrice);
+
+  const sideTabs: { value: SideTab; label: string }[] = [
+    { value: "dokum", label: "Döküm" },
+    { value: "dene", label: "Fiyat dene" },
+    ...(history.length ? [{ value: "satis" as const, label: "Satışlar" }] : []),
+  ];
+
+  const rowTransition = reduce ? { duration: 0 } : { layout: SPRING_SWAP, default: { duration: 0.18, ease: EASE_OUT } };
 
   return (
-    <>
-      <div className="mb-3">
-        <Link href="/panel/urunler" className="inline-flex items-center gap-1 text-sm text-coffee-600 hover:text-coffee-900">
-          <ArrowLeft size={16} /> Kârlılık listesine dön
-        </Link>
-      </div>
+    <div className="pb-28">
       <PageHeader
-        title={`${product.name} – ${SIZE_LABELS[product.size]}`}
+        eyebrow="Menü"
         excel="Reçete Kartları"
+        title={`${product.name} – ${SIZE_LABELS[product.size]}`}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            {categories.find((c) => c.id === product.categoryId)?.name}
-            <StatusBadge status={econ.status} />
+            {categoryName}
+            {/* Geniş ekranda durum, sağdaki özet kartının başında */}
+            <span className="inline-flex lg:hidden">
+              <StatusBadge status={econ.status} />
+            </span>
             {!product.active ? <Badge tone="gray">Pasif</Badge> : null}
-            {siblings.length > 1 ? (
-              <span className="flex items-center gap-1">
-                Boylar:
-                {siblings.map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/panel/urunler/${s.id}`}
-                    className={cn(
-                      "rounded-md px-2 py-0.5 text-xs font-semibold",
-                      s.id === product.id ? "bg-coffee-800 text-white" : "bg-coffee-100 text-coffee-800 hover:bg-coffee-200",
-                    )}
-                  >
-                    {s.size}
-                  </Link>
-                ))}
-              </span>
-            ) : null}
           </span>
         }
         actions={
           <>
-            <Button variant="outline" onClick={() => setCopyOpen(true)}>
+            <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
+              <ArrowLeft size={16} /> Ürünler
+            </ButtonLink>
+            <Button variant="secondary" onClick={() => setCopyOpen(true)}>
               <Copy size={16} /> Kopyala
             </Button>
-            <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-rose-700 hover:bg-rose-50">
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-bad hover:bg-bad-soft hover:text-bad">
               <Trash2 size={16} /> Sil
             </Button>
           </>
         }
+        tabs={
+          siblings.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-[13px] text-ink-mute">Boylar</span>
+              <SegmentedLinks
+                label="Boylar"
+                value={String(product.id)}
+                options={siblings.map((s) => ({ value: String(s.id), label: s.size, href: `/panel/urunler/${s.id}` }))}
+              />
+            </div>
+          ) : undefined
+        }
       />
 
-      <div className="grid gap-6 xl:grid-cols-12">
-        <div className="space-y-6 xl:col-span-8">
-          <Card>
-            <CardHeader
-              title="Malzemeler"
-              description={
-                <>
-                  Miktar sayı ya da Ayarlar&apos;a bağlı formül olabilir (ör. <code className="rounded bg-coffee-50 px-1">2*ShotCift</code>). Ayar değişince bu
-                  reçete de güncellenir.
-                </>
-              }
-              actions={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setRows((rs) => [...rs, { key: keySeq++, ingredientId: null, input: "", note: "" }])}
-                >
-                  <Plus size={14} /> Malzeme ekle
-                </Button>
-              }
-            />
-            <TableWrap>
-              <Table>
-                <THead>
-                  <tr>
-                    <TH className="w-8">#</TH>
-                    <TH>Malzeme</TH>
-                    <TH>Miktar</TH>
-                    <TH numeric>
-                      Fiyat <InfoTip text="Birim maliyet (KDV hariç): paket fiyatı ÷ paket içeriği. Hammaddeler sayfasından gelir." className="ml-1" />
-                    </TH>
-                    <TH numeric>KDV</TH>
-                    <TH numeric>Toplam</TH>
-                    <TH numeric>KDV dahil</TH>
-                    <TH numeric>
-                      {monthLabel} kullanım <InfoTip text="Miktar × bu ayın satış adedi (fire hariç). Tutarlılık kontrolünde faturayla karşılaştırılır." className="ml-1" />
-                    </TH>
-                    <TH className="w-24" />
-                  </tr>
-                </THead>
-                <tbody>
-                  {lines.map((l, idx) => (
-                    <TR key={l.row.key}>
-                      <TD className="text-coffee-400">{idx + 1}</TD>
-                      <TD className="min-w-56">
-                        <Select
-                          value={l.row.ingredientId ?? ""}
-                          onChange={(e) => update(l.row.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
-                          className={cn("h-9", !l.row.ingredientId && "border-amber-300 bg-amber-50")}
-                          aria-label="Malzeme"
-                        >
-                          <option value="">Malzeme seçin…</option>
-                          {grouped.map(([cat, list]) => (
-                            <optgroup key={cat} label={cat}>
-                              {list.map((i) => (
-                                <option key={i.id} value={i.id}>
-                                  {i.name}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </Select>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {l.ing?.isEstimate ? <Badge tone="amber">Tahmini fiyat</Badge> : null}
-                          {l.ing?.priceSource === "water" ? (
-                            <Badge tone="blue" title="Su faturasından hesaplanır">
-                              Su faturası ({tl(waterPerLiter, 2)}/L)
-                            </Badge>
-                          ) : null}
-                          {l.isPackaging ? <Badge tone="gray">Ambalaj</Badge> : null}
-                        </div>
-                      </TD>
-                      <TD className="min-w-40">
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={l.row.input}
-                            onChange={(e) => update(l.row.key, { input: e.target.value })}
-                            className={cn(
-                              "cell-input h-9 w-28 text-right tabular",
-                              l.error && "border-rose-400 bg-rose-50",
-                              !l.error && l.qty === 0 && l.row.ingredientId && "border-amber-300 bg-amber-50",
-                            )}
-                            aria-label="Miktar"
-                            placeholder="0"
-                          />
-                          <span className="text-xs text-coffee-500">{l.ing?.unit}</span>
-                        </div>
-                        {l.error ? (
-                          <p className="mt-1 text-xs text-rose-700">{l.error}</p>
-                        ) : l.expr ? (
-                          <p className="mt-1 text-xs text-coffee-500">= {num(l.qty, 2)} {l.ing?.unit}</p>
-                        ) : l.qty === 0 && l.row.ingredientId ? (
-                          <p className="mt-1 text-xs text-amber-700">Miktar girilmedi (0 sayılıyor)</p>
-                        ) : null}
-                      </TD>
-                      <TD numeric>{l.ing ? tlUnit(l.unitCost) : "–"}</TD>
-                      <TD numeric>{l.ing ? pct(l.vatRate, 0) : "–"}</TD>
-                      <TD numeric className="font-medium">{tl(l.total, 2)}</TD>
-                      <TD numeric className="text-coffee-600">{tl(l.totalVat, 2)}</TD>
-                      <TD numeric className="text-coffee-600">
-                        {soldQty ? `${num(l.qty * soldQty, 0)} ${l.ing?.unit ?? ""}` : "–"}
-                      </TD>
-                      <TD>
-                        <div className="flex justify-end gap-0.5">
-                          <button type="button" className="rounded p-1 text-coffee-400 hover:bg-coffee-50 hover:text-coffee-800" onClick={() => move(idx, -1)} aria-label="Yukarı taşı">
-                            <ArrowUp size={14} />
-                          </button>
-                          <button type="button" className="rounded p-1 text-coffee-400 hover:bg-coffee-50 hover:text-coffee-800" onClick={() => move(idx, 1)} aria-label="Aşağı taşı">
-                            <ArrowDown size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded p-1 text-coffee-400 hover:bg-rose-50 hover:text-rose-700"
-                            onClick={() => setRows((rs) => rs.filter((r) => r.key !== l.row.key))}
-                            aria-label="Satırı sil"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </TD>
-                    </TR>
-                  ))}
-                  {!lines.length ? (
-                    <tr>
-                      <td colSpan={9} className="px-4 py-8 text-center text-sm text-coffee-500">
-                        Henüz malzeme yok. &quot;Malzeme ekle&quot; ile başlayın.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-coffee-100 bg-coffee-50/60 font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-right text-sm">
-                      TOPLAM
-                    </td>
-                    <td className="px-3 py-2 text-right tabular">{tl(econ.ingredientTotal, 2)}</td>
-                    <td className="px-3 py-2 text-right tabular text-coffee-600">{tl(econ.totalVatIncl, 2)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              </Table>
-            </TableWrap>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-coffee-100 px-5 py-3 text-xs text-coffee-500">
-              <span>Formülde kullanılabilecek ayarlar:</span>
-              {RECIPE_PARAMS.map((p) => (
-                <span key={p.name} className="whitespace-nowrap">
-                  <code className="rounded bg-coffee-50 px-1 text-coffee-800">{p.name}</code> {p.label} ({num(Number(settings[p.key]), 0)} {p.unit})
-                </span>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Ürün bilgileri" />
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Field label="Ürün adı" htmlFor="r-name">
-                <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Boy" htmlFor="r-size">
-                  <Select id="r-size" value={size} onChange={(e) => setSize(e.target.value as typeof size)}>
-                    {SIZES.map((s) => (
-                      <option key={s} value={s}>
-                        {s} — {SIZE_LABELS[s]}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Kategori" htmlFor="r-cat">
-                  <Select id="r-cat" value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-              <Field label="Not" className="sm:col-span-2" htmlFor="r-note" hint="Reçete varsayımları, bardak boyu vb.">
-                <Textarea id="r-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
-              </Field>
-              <div className="flex flex-wrap gap-6 sm:col-span-2">
-                <Checkbox label="Menüde aktif" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                <Checkbox label="QR menüde göster" checked={showOnMenu} onChange={(e) => setShowOnMenu(e.target.checked)} />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6 xl:col-span-4">
-          <Card className="xl:sticky xl:top-6">
-            <CardHeader title="Maliyet ve kâr" description="Değiştirdikçe anında hesaplanır" />
-            <CardContent className="space-y-2.5 text-sm">
-              <Line label="Malzeme toplamı" value={tl(econ.ingredientTotal, 2)} />
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-coffee-700">
-                  Zayi / fire oranı{" "}
-                  <InfoTip text={`Bu ürüne özel fire oranı. Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`} />
-                </span>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-coffee-400">%</span>
-                  <NumberInput
-                    value={fire}
-                    onChange={(e) => setFire(e.target.value)}
-                    placeholder={num(settings.fire * 100, 1)}
-                    className="cell-input h-8 w-20"
-                    aria-label="Fire oranı"
-                  />
-                </div>
-              </div>
-              <Line label={`Fire payı (${pct(econ.fireRate)})`} value={tl(econ.fire, 2)} />
-              <Line label="Ürün maliyeti" value={tl(econ.cost, 2)} strong />
-              <hr className="border-coffee-100" />
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-coffee-900">Satış fiyatı (KDV dahil)</span>
-                <NumberInput value={price} onChange={(e) => setPrice(e.target.value)} className="cell-input h-9 w-28 font-semibold" aria-label="Satış fiyatı" />
-              </div>
-              <Line label={`Satış fiyatı (KDV hariç, %${num(settings.kdv * 100)})`} value={tl(econ.net, 2)} />
-              <Line label={`Kart komisyonu (%${num(settings.komisyon * 100, 1)} × %${num(settings.kartOrani * 100, 1)})`} value={tl(econ.commission, 2)} />
-              <div className="flex items-baseline justify-between rounded-xl bg-coffee-50 px-3 py-2.5">
-                <span className="font-semibold text-coffee-900">1 adet kâr</span>
-                <Signed value={econ.unitProfit} className="text-lg font-semibold">
-                  {tl(econ.unitProfit, 2)}
-                </Signed>
-              </div>
-              <Line label="Kâr marjı" value={pct(econ.margin)} />
-              <div className="flex justify-between">
-                <span className="text-coffee-700">Maliyet oranı (hedef ≤ %{num(settings.hedefMaliyet * 100)})</span>
-                <span className={cn("font-semibold tabular", statusTone)}>{pct(econ.costRatio)}</span>
-              </div>
-              <Line label="Önerilen fiyat" value={tl(econ.suggestedPrice)} />
-              <hr className="border-coffee-100" />
-              <Line label={`${monthLabel} satılan adet`} value={num(soldQty)} />
-              <Line label={`${monthLabel} bu üründen kalan kâr`} value={tl(econ.unitProfit * soldQty)} strong />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader title="Fiyat simülatörü" description="Kaydetmeden farklı fiyatları deneyin" />
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex flex-wrap gap-2">
-                {[5, 10, 20].map((d) => (
-                  <Button key={d} size="xs" variant="secondary" onClick={() => setTrial(num(priceNum + d, 2))}>
-                    +{d} ₺
-                  </Button>
-                ))}
-                <Button size="xs" variant="secondary" onClick={() => setTrial(num(econ.suggestedPrice, 2))}>
-                  Önerilen
-                </Button>
-              </div>
-              <Field label="Deneme fiyatı (KDV dahil)" htmlFor="trial">
-                <NumberInput id="trial" value={trial} onChange={(e) => setTrial(e.target.value)} placeholder={num(priceNum, 2)} />
-              </Field>
-              {trialEcon ? (
-                <div className="space-y-1.5 rounded-xl bg-coffee-50 p-3">
-                  <Line label="1 adet kâr" value={`${tl(trialEcon.unitProfit, 2)} (${trialEcon.unitProfit >= econ.unitProfit ? "+" : ""}${tl(trialEcon.unitProfit - econ.unitProfit, 2)})`} />
-                  <Line label="Kâr marjı" value={pct(trialEcon.margin)} />
-                  <Line label="Maliyet oranı" value={pct(trialEcon.costRatio)} />
-                  <Line
-                    label={`Aynı satışla aylık fark`}
-                    value={`${trialEcon.unitProfit >= econ.unitProfit ? "+" : ""}${tl((trialEcon.unitProfit - econ.unitProfit) * soldQty)}`}
-                    strong
-                  />
-                  <div className="pt-1">
-                    <Button size="xs" variant="outline" onClick={() => setPrice(num(trialPrice!, 2))}>
-                      Bu fiyatı uygula
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          {history.length ? (
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 space-y-4">
+          {/* Reçete satırları */}
+          <motion.div {...rise(1, reduce)}>
             <Card>
-              <CardHeader title="Aylık satış" />
-              <CardContent className="space-y-1.5 text-sm">
-                {history.map((h) => (
-                  <Line key={h.month} label={h.label} value={`${num(h.qty)} adet`} />
-                ))}
+              <CardHeader
+                icon={<ClipboardList />}
+                title="Malzemeler"
+                description={
+                  <>
+                    Miktar sayı ya da Ayarlar&apos;a bağlı formül olabilir (ör.{" "}
+                    <code className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs text-info ring-1 ring-line">2*ShotCift</code>).
+                  </>
+                }
+                meta={lines.length ? <span className="tabular">{lines.length} malzeme</span> : null}
+                actions={
+                  lines.length ? (
+                    <Button size="sm" variant="secondary" onClick={addRow}>
+                      <Plus size={15} /> Malzeme ekle
+                    </Button>
+                  ) : null
+                }
+              />
+              {lines.length ? (
+                <TableWrap>
+                  <Table>
+                    <THead>
+                      <tr>
+                        <TH className="w-8 pr-0 text-ink-mute">#</TH>
+                        <TH>Malzeme</TH>
+                        <TH>Miktar</TH>
+                        <TH numeric>
+                          <span className="inline-flex items-center gap-1">
+                            Birim fiyat
+                            <InfoTip text="Birim maliyet (KDV hariç): paket fiyatı ÷ paket içeriği. Hammaddeler sayfasından gelir." />
+                          </span>
+                        </TH>
+                        <TH numeric>Tutar</TH>
+                        <TH numeric>
+                          <span className="inline-flex items-center gap-1">
+                            {monthLabel} kullanım
+                            <InfoTip text="Miktar × bu ayın satış adedi (fire hariç). Tutarlılık kontrolünde faturayla karşılaştırılır." />
+                          </span>
+                        </TH>
+                        <TH className="w-px">
+                          <span className="sr-only">Eylemler</span>
+                        </TH>
+                      </tr>
+                    </THead>
+                    <tbody>
+                      <AnimatePresence initial={false}>
+                        {lines.map((l, idx) => (
+                          <MotionTR
+                            key={l.row.key}
+                            layout={reduce ? false : "position"}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={rowTransition}
+                          >
+                            <TD className="w-8 pt-5 pr-0 align-top text-xs text-ink-quiet tabular">{idx + 1}</TD>
+                            <TD className="min-w-64 align-top sm:min-w-72">
+                              <div className="flex items-start gap-3">
+                                <IngredientTile ing={l.ing} />
+                                <div className="min-w-0 flex-1">
+                                  <Select
+                                    value={l.row.ingredientId ?? ""}
+                                    onChange={(e) => update(l.row.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
+                                    data-warn={!l.row.ingredientId ? "true" : undefined}
+                                    aria-label={`${idx + 1}. satır malzemesi`}
+                                    autoFocus={l.row.key === newKey}
+                                  >
+                                    <option value="">Malzeme seçin…</option>
+                                    {grouped.map(([cat, list]) => (
+                                      <optgroup key={cat} label={cat}>
+                                        {list.map((i) => (
+                                          <option key={i.id} value={i.id}>
+                                            {i.name}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    ))}
+                                  </Select>
+                                  {l.ing?.isEstimate || l.ing?.priceSource === "water" || l.isPackaging ? (
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                      {l.ing?.isEstimate ? (
+                                        <Badge tone="amber" dot>
+                                          Tahmini fiyat
+                                        </Badge>
+                                      ) : null}
+                                      {l.ing?.priceSource === "water" ? (
+                                        <Badge tone="blue" title="Su faturasından hesaplanır">
+                                          Su faturası ({tl(waterPerLiter, 2)}/L)
+                                        </Badge>
+                                      ) : null}
+                                      {l.isPackaging ? <Badge tone="gray">Ambalaj</Badge> : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </TD>
+                            <TD className="min-w-40 align-top">
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={l.row.input}
+                                  onChange={(e) => update(l.row.key, { input: e.target.value })}
+                                  className="cell-input w-28 text-right tabular"
+                                  aria-label={`${idx + 1}. satır miktarı`}
+                                  aria-invalid={l.error ? true : undefined}
+                                  aria-describedby={l.error || l.expr || (l.qty === 0 && l.row.ingredientId) ? `${uid}-q${idx}` : undefined}
+                                  data-warn={!l.error && l.qty === 0 && l.row.ingredientId ? "true" : undefined}
+                                  placeholder="0"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                                <span className="text-xs text-ink-mute">{l.ing?.unit}</span>
+                              </div>
+                              {l.error ? (
+                                <p id={`${uid}-q${idx}`} className="mt-1 max-w-48 text-xs text-bad">
+                                  {l.error}
+                                </p>
+                              ) : l.expr ? (
+                                <p id={`${uid}-q${idx}`} className="mt-1 text-xs text-ink-mute tabular">
+                                  = {num(l.qty, 2)} {l.ing?.unit}
+                                </p>
+                              ) : l.qty === 0 && l.row.ingredientId ? (
+                                <p id={`${uid}-q${idx}`} className="mt-1 text-xs text-warn">
+                                  Miktar girilmedi (0 sayılıyor)
+                                </p>
+                              ) : null}
+                            </TD>
+                            <TD numeric className="pt-5 align-top">
+                              {l.ing ? tlUnit(l.unitCost) : "–"}
+                              {l.ing ? <div className="mt-0.5 text-xs text-ink-mute">KDV {pct(l.vatRate, 0)}</div> : null}
+                            </TD>
+                            <TD numeric className="pt-5 align-top">
+                              <span className="font-medium">{tl(l.total, 2)}</span>
+                              <div className="mt-0.5 text-xs text-ink-mute">KDV dahil {tl(l.totalVat, 2)}</div>
+                            </TD>
+                            <TD numeric className="pt-5 align-top text-ink-soft">
+                              {soldQty ? `${num(l.qty * soldQty, 0)} ${l.ing?.unit ?? ""}` : "–"}
+                            </TD>
+                            <TD className="align-top">
+                              <div className="flex justify-end gap-1.5">
+                                {/* Uçta aria-disabled (disabled değil): klavyeyle taşınan satırın düğmesi odağı kaybetmesin */}
+                                <IconButton
+                                  label="Yukarı taşı"
+                                  aria-disabled={idx === 0 || undefined}
+                                  className={edgeClass}
+                                  onClick={() => move(idx, -1)}
+                                >
+                                  <ArrowUp size={15} />
+                                </IconButton>
+                                <IconButton
+                                  label="Aşağı taşı"
+                                  aria-disabled={idx === lines.length - 1 || undefined}
+                                  className={edgeClass}
+                                  onClick={() => move(idx, 1)}
+                                >
+                                  <ArrowDown size={15} />
+                                </IconButton>
+                                <IconButton label="Satırı sil" tone="danger" onClick={() => setRows((rs) => rs.filter((r) => r.key !== l.row.key))}>
+                                  <Trash2 size={15} />
+                                </IconButton>
+                              </div>
+                            </TD>
+                          </MotionTR>
+                        ))}
+                      </AnimatePresence>
+                    </tbody>
+                    <tfoot>
+                      <TFootRow>
+                        <TD colSpan={4} className="text-right">
+                          Toplam
+                        </TD>
+                        <TD numeric>
+                          {tl(econ.ingredientTotal, 2)}
+                          <div className="mt-0.5 text-xs font-normal text-ink-mute">KDV dahil {tl(econ.totalVatIncl, 2)}</div>
+                        </TD>
+                        <TD colSpan={2} />
+                      </TFootRow>
+                    </tfoot>
+                  </Table>
+                </TableWrap>
+              ) : (
+                <EmptyState
+                  icon={<ClipboardList />}
+                  title="Henüz malzeme yok"
+                  description="“Malzeme ekle” ile başlayın."
+                  action={
+                    <Button variant="secondary" onClick={addRow}>
+                      <Plus size={16} /> Malzeme ekle
+                    </Button>
+                  }
+                />
+              )}
+              <CardFooter className="flex-col items-start justify-start gap-2.5 py-4">
+                <p className="flex items-center gap-1.5 font-medium text-ink-soft">
+                  Formülde kullanılabilecek ayarlar
+                  <InfoTip text="Değerler Ayarlar sayfasından gelir. Ayar değişince bu reçete de güncellenir. Örnek: 2*ShotCift, ShotTek+5." />
+                </p>
+                <ul className="flex flex-wrap gap-1.5" aria-label="Formül adları">
+                  {RECIPE_PARAMS.map((p) => (
+                    <li key={p.name} className="inline-flex items-center gap-1.5 rounded-full bg-surface py-1 pr-2.5 pl-1 text-xs ring-1 ring-line">
+                      <code className="rounded-full bg-info-soft px-2 py-0.5 font-mono text-[11px] font-semibold text-info">{p.name}</code>
+                      <span className="text-ink-mute">
+                        {p.label} · <span className="font-medium text-ink tabular">{num(Number(settings[p.key]), 0)}</span> {p.unit}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardFooter>
+            </Card>
+          </motion.div>
+
+          {/* Ürün bilgileri */}
+          <motion.div {...rise(2, reduce)}>
+            <Card>
+              <CardHeader icon={<Tag />} title="Ürün bilgileri" />
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <Field label="Ürün adı" htmlFor="r-name">
+                  <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Boy" htmlFor="r-size">
+                    <Select id="r-size" value={size} onChange={(e) => setSize(e.target.value as typeof size)}>
+                      {SIZES.map((s) => (
+                        <option key={s} value={s}>
+                          {s} — {SIZE_LABELS[s]}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Kategori" htmlFor="r-cat">
+                    <Select id="r-cat" value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+                <Field label="Not" className="sm:col-span-2" htmlFor="r-note" hint="Reçete varsayımları, bardak boyu vb.">
+                  <Textarea id="r-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+                </Field>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 sm:col-span-2">
+                  <Switch checked={active} onChange={setActive} label="Menüde aktif" showText onText="Menüde aktif" offText="Menüde pasif" />
+                  <Switch
+                    checked={showOnMenu}
+                    onChange={setShowOnMenu}
+                    label="QR menüde göster"
+                    showText
+                    onText="QR menüde görünür"
+                    offText="QR menüde gizli"
+                  />
+                </div>
               </CardContent>
             </Card>
-          ) : null}
+          </motion.div>
         </div>
+
+        {/* Özet: maliyet, fiyat, kâr. Telefonda en üstte (ekranın asıl cevabı), geniş ekranda sağda.
+            Yalnızca yeterince uzun ekranda sabit: kart (~1000px, "Fiyat dene" açıkken) ekrandan uzunsa
+            alt kısmı ("Bu fiyatı uygula") sayfa sonuna kadar görünmez kalırdı. */}
+        <motion.aside
+          {...rise(0, reduce)}
+          className="order-first min-w-0 lg:top-6 lg:order-none lg:[@media(min-height:64rem)]:sticky"
+        >
+          <Card>
+            <CardHeader
+              icon={<Calculator />}
+              title="Maliyet ve kâr"
+              description="Değiştirdikçe anında hesaplanır"
+              actions={
+                <span className="hidden lg:inline-flex">
+                  <StatusBadge status={econ.status} />
+                </span>
+              }
+            />
+            <CardContent className="space-y-4">
+              <Well className="pt-5 pb-3">
+                <Gauge
+                  value={econ.costRatio}
+                  target={settings.hedefMaliyet}
+                  display={<AnimatedNumber value={econ.costRatio} format={(v) => pct(v)} />}
+                  label={`Maliyet oranı · hedef ≤ %${num(settings.hedefMaliyet * 100)}`}
+                  tone={gaugeTone}
+                />
+                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-3">
+                  <div>
+                    <p className="text-xs text-ink-mute">1 adet kâr</p>
+                    <Signed value={econ.unitProfit} className="block text-xl font-semibold tracking-tight">
+                      <AnimatedNumber value={econ.unitProfit} format={(v) => tl(v, 2)} />
+                    </Signed>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-ink-mute">Kâr marjı</p>
+                    <Signed value={econ.margin} className="block text-xl font-semibold tracking-tight text-ink">
+                      <AnimatedNumber value={econ.margin} format={(v) => pct(v)} />
+                    </Signed>
+                  </div>
+                </div>
+              </Well>
+
+              <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-start gap-3">
+                <Field
+                  label="Satış fiyatı (KDV dahil)"
+                  htmlFor="r-price"
+                  hint={
+                    <>
+                      Önerilen: <span className="font-medium text-ink-soft tabular">{tl(econ.suggestedPrice)}</span>
+                    </>
+                  }
+                >
+                  <div className="relative">
+                    <NumberInput id="r-price" value={price} onChange={(e) => setPrice(e.target.value)} className="cell-input pr-7 font-semibold" />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
+                  </div>
+                </Field>
+                <Field
+                  label="Zayi / fire"
+                  tip={`Bu ürüne özel fire oranı. Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`}
+                  htmlFor="r-fire"
+                >
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-mute">%</span>
+                    <NumberInput
+                      id="r-fire"
+                      value={fire}
+                      onChange={(e) => setFire(e.target.value)}
+                      placeholder={num(settings.fire * 100, 1)}
+                      className="cell-input pl-7"
+                    />
+                  </div>
+                </Field>
+              </div>
+
+              <Segmented label="Özet görünümü" value={sideTab} onChange={setSideTab} options={sideTabs} stretch />
+
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={sideTab}
+                  initial={reduce ? false : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: EASE_OUT }}
+                >
+                  {sideTab === "dokum" ? (
+                    <div className="divide-y divide-line">
+                      <KeyValue label="Malzeme toplamı" value={tl(econ.ingredientTotal, 2)} />
+                      <KeyValue label={`Fire payı (${pct(econ.fireRate)})`} value={tl(econ.fire, 2)} />
+                      <KeyValue label="Ürün maliyeti" value={tl(econ.cost, 2)} strong />
+                      <KeyValue label={`Satış fiyatı (KDV hariç, %${num(settings.kdv * 100)})`} value={tl(econ.net, 2)} />
+                      <KeyValue
+                        label={`Kart komisyonu (%${num(settings.komisyon * 100, 1)} × %${num(settings.kartOrani * 100, 1)})`}
+                        value={tl(econ.commission, 2)}
+                      />
+                      <KeyValue label={`${monthLabel} satılan adet`} value={num(soldQty)} />
+                      <KeyValue
+                        label={`${monthLabel} bu üründen kalan kâr`}
+                        value={<Signed value={econ.unitProfit * soldQty}>{tl(econ.unitProfit * soldQty)}</Signed>}
+                        strong
+                      />
+                    </div>
+                  ) : null}
+
+                  {sideTab === "dene" ? (
+                    <div className="space-y-3">
+                      <p className="text-[13px] text-ink-mute">Kaydetmeden farklı fiyatları deneyin.</p>
+                      <Well className="space-y-3 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <Label htmlFor="trial">Deneme fiyatı (KDV dahil)</Label>
+                          <div className="relative w-28 shrink-0">
+                            <NumberInput
+                              id="trial"
+                              value={trial}
+                              onChange={(e) => setTrial(e.target.value)}
+                              placeholder={num(priceNum, 2)}
+                              className="pr-7 font-semibold"
+                            />
+                            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
+                          </div>
+                        </div>
+                        <RangeSlider
+                          value={trialPrice ?? priceNum}
+                          onValueChange={(v) => setTrial(num(v, 2))}
+                          min={range.min}
+                          max={range.max}
+                          step={1}
+                          showTicks={false}
+                          aria-label="Deneme fiyatı"
+                          formatValueText={(v) => tl(v, 2)}
+                        />
+                        <div className="flex justify-between text-[11px] text-ink-mute tabular" aria-hidden="true">
+                          <span>{tl(range.min)}</span>
+                          <span>{tl(range.max)}</span>
+                        </div>
+                      </Well>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[5, 10, 20].map((d) => (
+                          <Button key={d} size="sm" variant="secondary" className="flex-1 px-2" onClick={() => setTrial(num(priceNum + d, 2))}>
+                            +{d} ₺
+                          </Button>
+                        ))}
+                        <Button size="sm" variant="secondary" className="flex-1 px-2" onClick={() => setTrial(num(econ.suggestedPrice, 2))}>
+                          Önerilen
+                        </Button>
+                      </div>
+                      {trialEcon ? (
+                        <Well className="py-1">
+                          <div className="divide-y divide-line">
+                            <KeyValue
+                              label="1 adet kâr"
+                              value={
+                                <span className="inline-flex items-center gap-2">
+                                  <Signed value={trialEcon.unitProfit}>{tl(trialEcon.unitProfit, 2)}</Signed>
+                                  <GrowthPill value={trialDiff}>
+                                    {plus(trialDiff)}
+                                    {tl(trialDiff, 2)}
+                                  </GrowthPill>
+                                </span>
+                              }
+                            />
+                            <KeyValue label="Kâr marjı" value={pct(trialEcon.margin)} />
+                            <KeyValue label="Maliyet oranı" value={pct(trialEcon.costRatio)} />
+                            <KeyValue
+                              label="Aynı satışla aylık fark"
+                              value={
+                                <Signed value={trialDiff} className={trialDiff > 0 ? "text-good" : undefined}>
+                                  {plus(trialDiff)}
+                                  {tl(trialDiff * soldQty)}
+                                </Signed>
+                              }
+                              strong
+                            />
+                          </div>
+                          <div className="py-2.5">
+                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPrice(num(trialPrice!, 2))}>
+                              Bu fiyatı uygula
+                            </Button>
+                          </div>
+                        </Well>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {sideTab === "satis" && history.length ? (
+                    <ul className="divide-y divide-line" aria-label="Aylık satış">
+                      {history.map((h, i) => (
+                        <motion.li
+                          key={h.month}
+                          initial={reduce ? false : { opacity: 0, x: -4 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.25, ease: EASE_OUT, delay: Math.min(i, 12) * 0.03 }}
+                          className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-3 py-2 text-sm"
+                        >
+                          <span className="truncate text-ink-mute">{h.label}</span>
+                          <Progress value={h.qty / maxSold} />
+                          <span className="text-right text-ink tabular">{num(h.qty)} adet</span>
+                        </motion.li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </motion.div>
+              </AnimatePresence>
+            </CardContent>
+          </Card>
+        </motion.aside>
       </div>
 
-      {/* Kaydet çubuğu */}
-      <div
-        className={cn(
-          "no-print fixed inset-x-0 bottom-0 z-20 border-t border-coffee-200 bg-white/95 backdrop-blur transition-transform lg:left-64",
-          dirty ? "translate-y-0" : "translate-y-full",
-        )}
-      >
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <p className="text-sm text-coffee-700">Kaydedilmemiş değişiklikler var</p>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={reset}>
-              <RotateCcw size={16} /> Geri al
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              <Save size={16} /> {saving ? "Kaydediliyor…" : "Kaydet"}
-            </Button>
-          </div>
+      {/* Kaydet çubuğu: değişiklik olunca altta yüzen kapsül */}
+      <FloatingBar open={dirty} className="max-w-lg flex-nowrap justify-between py-2 pr-2 pl-4">
+        <p className="flex min-w-0 items-center gap-2 text-[13px] leading-tight font-medium text-ink-soft">
+          <span className="size-2 shrink-0 rounded-full bg-warn" aria-hidden="true" />
+          Kaydedilmemiş değişiklikler
+        </p>
+        <div className="flex shrink-0 gap-1.5">
+          <Button variant="ghost" onClick={reset} aria-label="Geri al" title="Geri al" className="max-sm:px-2.5">
+            <RotateCcw size={16} /> <span className="max-sm:hidden">Geri al</span>
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            <Save size={16} /> {saving ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
         </div>
-      </div>
+      </FloatingBar>
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
+        pending={deleting}
         title="Ürün silinsin mi?"
-        description="Reçetesi de silinir. Geçmiş satış satırları kalır ama eşleşmesiz görünür. Menüden kaldırmak için silmek yerine 'Menüde aktif' işaretini kaldırabilirsiniz."
-        footer={
+        confirmLabel="Sil"
+        description={
           <>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              Vazgeç
-            </Button>
-            <Button
-              variant="danger"
-              onClick={async () => {
-                const res = await deleteProduct(product.id);
-                if (!res.ok) return toast.error(res.error);
-                toast.success("Ürün silindi");
-                router.push("/panel/urunler");
-              }}
-            >
-              Sil
-            </Button>
+            <span className="mb-2 block font-semibold text-ink">
+              {product.name} · {product.size}
+            </span>
+            Reçetesi de silinir. Geçmiş satış satırları kalır ama eşleşmesiz görünür. Menüden kaldırmak için silmek yerine &apos;Menüde
+            aktif&apos; anahtarını kapatabilirsiniz.
           </>
         }
-      >
-        <p className="text-sm">
-          <strong>
-            {product.name} · {product.size}
-          </strong>
-        </p>
-      </Dialog>
+      />
 
       <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} />
-    </>
+    </div>
   );
 }
 
-function Line({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+/** Malzemenin kategorisine göre pastel ikon karosu; boş satırda kesik çizgili yer tutucu */
+function IngredientTile({ ing }: { ing?: IngredientOption }) {
+  if (!ing) {
+    return (
+      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-line-strong text-ink-quiet" aria-hidden="true">
+        <Plus size={16} />
+      </span>
+    );
+  }
+  const Icon = ing.priceSource === "water" ? Droplets : (CATEGORY_ICON[ing.category] ?? Box);
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-coffee-700">{label}</span>
-      <span className={cn("tabular", strong ? "font-semibold text-coffee-950" : "text-coffee-900")}>{value}</span>
-    </div>
+    <span title={ing.category} className="inline-flex shrink-0">
+      <IconTile tone={toneFor(ing.category)}>
+        <Icon />
+      </IconTile>
+    </span>
   );
 }
 
@@ -610,19 +898,55 @@ function CopyDialog({
   product: { id: number; name: string; size: "M" | "L" | "Tek"; categoryId: number; price: number };
 }) {
   const router = useRouter();
+  const formId = useId();
   const [name, setName] = useState(product.name);
-  const [size, setSize] = useState<"M" | "L" | "Tek">(product.size === "M" ? "L" : "M");
+  const [size, setSize] = useState<Size>(product.size === "M" ? "L" : "M");
   const [price, setPrice] = useState(num(product.price, 2));
   const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    const res = await createProduct({ name, size, categoryId: product.categoryId, price: parseNumberTR(price) ?? 0, copyFromId: product.id });
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success("Kopya oluşturuldu");
+    onClose();
+    router.push(`/panel/urunler/${res.data.id}`);
+  }
+
   return (
-    <Dialog open={open} onClose={onClose} title="Ürünü kopyala" description="Reçetesiyle birlikte yeni bir ürün ya da boy oluşturur.">
-      <div className="space-y-4">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Ürünü kopyala"
+      description="Reçetesiyle birlikte yeni bir ürün ya da boy oluşturur."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Vazgeç
+          </Button>
+          <Button type="submit" form={formId} disabled={busy}>
+            <Copy size={16} /> {busy ? "Kopyalanıyor…" : "Kopyala"}
+          </Button>
+        </>
+      }
+    >
+      {/* Enter ile de kopyalanır */}
+      <form
+        id={formId}
+        className="space-y-4 pb-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
         <Field label="Ürün adı" htmlFor="c-name">
           <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Boy" htmlFor="c-size">
-            <Select id="c-size" value={size} onChange={(e) => setSize(e.target.value as "M" | "L" | "Tek")}>
+            <Select id="c-size" value={size} onChange={(e) => setSize(e.target.value as Size)}>
               {SIZES.map((s) => (
                 <option key={s} value={s}>
                   {s} — {SIZE_LABELS[s]}
@@ -634,26 +958,7 @@ function CopyDialog({
             <NumberInput id="c-price" value={price} onChange={(e) => setPrice(e.target.value)} />
           </Field>
         </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Vazgeç
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              const res = await createProduct({ name, size, categoryId: product.categoryId, price: parseNumberTR(price) ?? 0, copyFromId: product.id });
-              setBusy(false);
-              if (!res.ok) return toast.error(res.error);
-              toast.success("Kopya oluşturuldu");
-              onClose();
-              router.push(`/panel/urunler/${res.data.id}`);
-            }}
-          >
-            Kopyala
-          </Button>
-        </div>
-      </div>
+      </form>
     </Dialog>
   );
 }

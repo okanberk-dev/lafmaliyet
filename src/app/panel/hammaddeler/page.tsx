@@ -1,24 +1,29 @@
 import { asc } from "drizzle-orm";
+import { Droplets, Package, TriangleAlert, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { Badge } from "@/components/ui/badge";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
-import { num, tl } from "@/lib/format";
+import { num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { IngredientsClient, type IngredientRow } from "./ingredients-client";
+import { sortCategories } from "./categories";
+import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } from "./ingredients-client";
 
 export const metadata: Metadata = { title: "Hammaddeler" };
+
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 export default function IngredientsPage({ searchParams }: PageProps<"/panel/hammaddeler">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader title="Hammaddeler" excel="Hammaddeler" />
+          <PageHeader title="Hammaddeler" eyebrow="Menü" excel="Hammaddeler" />
           <PageSkeleton rows={10} />
         </>
       }
@@ -54,28 +59,55 @@ async function IngredientsContent({ searchParams }: { searchParams: PageProps<"/
     history: histBy.get(i.id) ?? [],
   }));
 
-  const filtre = Array.isArray(sp.filtre) ? sp.filtre[0] : sp.filtre;
+  const filtre = first(sp.filtre);
+  // ⌘K komut paleti /panel/hammaddeler?ara=<ad> adresine gönderir
+  const ara = first(sp.ara);
   const active = rows.filter((r) => r.active);
+  const categories = sortCategories(rows.map((r) => r.category));
+  const estimates = active.filter((r) => r.isEstimate).length;
+  const unused = active.filter((r) => !r.usedIn.length).length;
 
   return (
     <>
       <PageHeader
+        eyebrow="Menü"
         title="Hammaddeler"
         excel="Hammaddeler"
-        description="Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatını değiştirdiğinizde bütün ürün maliyetleri kendiliğinden güncellenir ve fiyat geçmişi saklanır."
+        description="Faturalardan gelen paket fiyatları (KDV hariç, iskonto düşülmüş). Paket fiyatı değişince bütün ürün maliyetleri kendiliğinden güncellenir, fiyat geçmişi saklanır."
+        actions={<NewIngredientButton categories={categories} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Hammadde" value={num(active.length)} sub={`${new Set(active.map((r) => r.category)).size} kategori`} />
-        <Stat label="Tahmini fiyat" value={num(active.filter((r) => r.isEstimate).length)} tone={active.some((r) => r.isEstimate) ? "warn" : "good"} sub="Faturada bulunamayanlar" />
-        <Stat label="Hiçbir reçetede yok" value={num(active.filter((r) => !r.usedIn.length).length)} sub="Reçeteye eklenmesi gerekebilir" />
         <Stat
+          icon={<Package />}
+          label="Hammadde"
+          value={<CountUp value={active.length} />}
+          sub={`${num(new Set(active.map((r) => r.category)).size)} kategori`}
+        />
+        <Stat
+          icon={<TriangleAlert />}
+          label="Tahmini fiyat"
+          value={<CountUp value={estimates} />}
+          tone={estimates ? "warn" : "good"}
+          badge={
+            active.length ? (
+              <Badge tone={estimates ? "amber" : "green"} title="Aktif malzemeler içindeki payı">
+                {pct(estimates / active.length, 0)}
+              </Badge>
+            ) : null
+          }
+          sub="Faturada bulunamayanlar"
+        />
+        <Stat icon={<Unlink />} label="Hiçbir reçetede yok" value={<CountUp value={unused} />} sub="Reçeteye eklenmesi gerekebilir" />
+        <Stat
+          icon={<Droplets />}
           label="Su + buz birim maliyeti"
-          value={`${tl(model.water.perLiter, 2)}/L`}
+          value={<CountUp value={model.water.perLiter} digits={2} suffix=" ₺" />}
+          suffix="/L"
           sub={model.water.month ? `${model.water.month} su faturasından` : model.settings.suBirimLTOverride !== null ? "Ayarlar'dan elle" : "Su faturası girilmedi"}
           info="Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre)."
         />
       </div>
-      <IngredientsClient rows={rows} initialFilter={filtre ?? null} />
+      <IngredientsClient key={`${filtre ?? ""}|${ara ?? ""}`} rows={rows} categories={categories} initialFilter={filtre ?? null} initialQuery={ara ?? ""} />
     </>
   );
 }

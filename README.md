@@ -5,7 +5,10 @@ karşılık geliyor. Hesaplama motoru Excel formüllerini birebir uyguluyor ve b
 olmayan birkaç araç da eklendi: ay bazlı çalışma, POS eşleştirme hafızası, fiyat geçmişi, uyarılar, menü
 mühendisliği, senaryo simülatörü, Excel'e aktarım ve QR menü.
 
-- **Frontend:** Next.js 16 (App Router, Cache Components), React 19, Tailwind CSS 4, Recharts
+- **Adres:** https://ladmin.laffogato.net (kafenin sitesi laffogato.net ayrı projede kalır)
+- **Frontend:** Next.js 16 (App Router, Cache Components), React 19, Tailwind CSS 4, Recharts, Motion
+- **Arayüz:** [AkmanOS](https://akmanos.com) bileşen kütüphanesinin açık teması (`src/components/akmanos/`), L'Af logosu
+  laffogato deposundan. Tasarım kuralları [docs/TASARIM.md](docs/TASARIM.md)
 - **Backend:** Next.js Server Actions + Route Handlers (Vercel Functions), Postgres (Neon), Drizzle ORM
 - **Oturum:** imzalı JWT çerezi (jose) ve scrypt parola özeti. Roller: yönetici ve personel
 
@@ -16,22 +19,25 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 
 | Ekran | Adres | Excel karşılığı |
 |-------|-------|-----------------|
-| Panel | `/panel` | Panel |
-| Ürünler & kârlılık, reçete kartı | `/panel/urunler`, `/panel/urunler/[id]` | Ürün Kârlılık, Reçete Kartları |
+| Genel bakış | `/panel` | Panel |
+| Ürünler, reçete kartı | `/panel/urunler`, `/panel/urunler/[id]` | Ürün Kârlılık, Reçete Kartları |
 | Hammaddeler | `/panel/hammaddeler` | Hammaddeler |
 | Reçete defteri (barista) | `/panel/receteler` | — |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar | `/panel/faturalar` | Faturalar |
 | Gelir-gider | `/panel/gelir-gider` | Genel Maliyet |
-| Sabit giderler | `/panel/giderler` | Sabit Giderler |
-| Personel | `/panel/personel` | Personel |
-| Stok sayımı | `/panel/sayim` | Sayım |
-| Tutarlılık | `/panel/tutarlilik` | Tutarlılık Kontrolü |
+| Giderler & personel (iki sekme) | `/panel/giderler`, `/panel/personel` | Sabit Giderler, Personel |
+| Stok sayımı, tutarlılık (iki sekme) | `/panel/sayim`, `/panel/tutarlilik` | Sayım, Tutarlılık Kontrolü |
 | Analiz & senaryo | `/panel/analiz` | — (yeni) |
 | Ayarlar, kullanıcılar, işlem geçmişi | `/panel/ayarlar` | Ayarlar |
 | Yardım | `/panel/yardim` | Nasıl Kullanılır |
-| Herkese açık ana sayfa ve QR menü | `/`, `/menu` | — (yeni) |
+| Giriş, QR menü (`/` panele yönlendirir) | `/giris`, `/menu` | — (yeni) |
 | Excel'e aktar / sağlık / menü JSON | `/api/export`, `/api/health`, `/api/menu` | — |
+
+Menü kenar çubuğunda yedi öğeye toplandı: Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) · Satış & gider
+(Satışlar, Faturalar, Gelir-gider, Giderler & personel) · Stok (Stok sayımı, Tutarlılık) · Analiz & senaryo ·
+Ayarlar · Yardım. ⌘K (Ctrl+K) ile ekran, ürün ve hammadde aranır; zil son ayın uyarılarını gösterir; profil menüsünde
+Hesabım ve çıkış var.
 
 Personel rolü yalnızca **Stok sayımı**, **Reçete defteri** ve **Hesabım** ekranlarını görür. Maliyet, maaş ve kâr
 bilgileri personele gösterilmez.
@@ -81,7 +87,7 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 ```
 src/
   app/                 sayfalar (panel/*, giris, menu) ve API uçları (api/*)
-  components/          arayüz bileşenleri (ui/*, panel/*, grafikler)
+  components/          arayüz bileşenleri: ui/* (paylaşılan), panel/* (kabuk), akmanos/* (AkmanOS kaynağı), grafikler
   lib/calc/            hesaplama motoru: Excel formüllerinin saf TypeScript karşılığı
     engine.ts          hammadde → reçete → ürün → satış → gelir-gider → stok
     insights.ts        panel, uyarılar, tutarlılık, menü mühendisliği, senaryo
