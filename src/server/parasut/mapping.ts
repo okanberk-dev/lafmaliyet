@@ -33,6 +33,8 @@ export interface BillDraft {
   supplier: string;
   /** Paraşüt kişi/kurum kimliği; tedarikçi "included"da gelmezse adı ayrıca okunur */
   supplierId: string | null;
+  /** Ad gerçekten Paraşüt kişi kaydından mı geldi (açıklamadan tahmin değil) */
+  supplierResolved: boolean;
   supplierTaxNo: string | null;
   description: string | null;
   invoiceNo: string | null;
@@ -165,6 +167,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
     date: (str(a.issue_date) ?? "").slice(0, 10),
     dueDate: str(a.due_date)?.slice(0, 10) ?? null,
     supplier: str((supplier?.attributes as Record<string, unknown> | undefined)?.name) ?? str(a.description) ?? "Paraşüt tedarikçisi",
+    supplierResolved: Boolean(str((supplier?.attributes as Record<string, unknown> | undefined)?.name)),
     supplierId: (() => {
       const r = bill.relationships?.supplier?.data;
       return r && !Array.isArray(r) ? r.id : null;
@@ -210,13 +213,13 @@ export interface CategoryRule {
 const CATEGORY_HINTS: [RegExp, string][] = [
   [/\b(komisyon|yemek karti|platform)/, "Komisyon"],
   [/\b(reklam|tabela|baski|matbaa|sosyal medya|afis|brosur)/, "Reklam & Tabela"],
-  [/\b(kira|aidat|avm|ortak alan)/, "Kira & AVM"],
+  [/\b(kira(?!z)\w*|aidat\w*|avm|ortak alan)/, "Kira & AVM"],
   [/\b(yazilim|pos|abonelik|internet|bilisim|telekom|lisans)\b/, "Yazılım & POS"],
   [/\b(demirbas|makine|ekipman|mobilya|tadilat|kurulus)/, "Kuruluş & Demirbaş"],
   [/\b(hizmet|danisman|muhasebe|temizlik|lojistik|kargo|bakim|ilaclama)/, "Hizmet"],
   [/\b(ambalaj|bardak|kapak|pipet|pecete|poset|karton)/, "Ambalaj"],
-  [/\b(tatli|pasta|kek|cheesecake|hazir|dondurma|tiramisu)\b/, "Tatlı & Hazır Ürün"],
-  [/\b(gida|hammadde|icecek|kahve|sut|surup|meyve|sos|espresso)\b/, "Hammadde & İçecek"],
+  [/\b(tatli\w*|pasta\w*|kek(ler|i|leri)?\b|cheesecake|hazir\w*|tiramisu|kurabiye\w*|brownie)/, "Tatlı & Hazır Ürün"],
+  [/\b(gida\w*|hammadde\w*|icecek\w*|kahve\w*|sut\w*|surub\w*|surup\w*|meyve\w*|sos(u|lu|lar|lari)?\b|espresso\w*|cikolata\w*|vanilya\w*|krema\w*|seker\w*|dondurma\w*)/, "Hammadde & İçecek"],
 ];
 
 /**

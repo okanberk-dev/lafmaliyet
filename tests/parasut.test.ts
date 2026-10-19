@@ -180,3 +180,14 @@ test("kategori ipuçları kelime içinden eşleşmez", () => {
   assert.equal(pick("Ekim kira", "Metropol İstanbul AVM"), "Kira & AVM");
   assert.equal(pick("Ekim komisyon", "Metropol Kart"), "Komisyon");
 });
+
+test("Türkçe ekli yiyecek adları ve kiraz/kira ayrımı", () => {
+  const pick = (description: string) => pickCategory({ supplier: "Yeni Firma", description, parasutCategory: null, lines: [] }, [], new Map(), INVOICE_CATEGORIES).category;
+  assert.equal(pick("Kiraz Püresi 1 kg"), "Diğer");
+  assert.equal(pick("Mağaza kirası Ekim"), "Kira & AVM");
+  assert.equal(pick("Türk Kahvesi 1 kg"), "Hammadde & İçecek");
+  assert.equal(pick("Çikolata Sosu"), "Hammadde & İçecek");
+  assert.equal(pick("Vanilya Şurubu"), "Hammadde & İçecek");
+  assert.equal(pick("Kekler"), "Tatlı & Hazır Ürün");
+  assert.equal(pick("Vanilyalı Dondurması"), "Hammadde & İçecek");
+});

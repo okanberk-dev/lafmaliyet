@@ -29,6 +29,8 @@ const LOOKBACK_DAYS = 75;
 const DEADLINE_MS = 45_000;
 /** Okumanın payı; kalan süre yazmaya ve doğrulamaya kalır */
 const FETCH_SHARE = 0.6;
+/** Tedarikçi adlarını /contacts ile okumanın bırakıldığı an (sürenin payı) */
+const CONTACTS_SHARE = 0.75;
 /** Bir çalışmada tek tek yeniden okunacak en fazla fatura (listede görünmeyenler + pencere dışı ödenmemişler) */
 const RECHECK_LIMIT = 8;
 /**
@@ -41,7 +43,7 @@ type SyncOk = { ok: true; summary: string; runId: number; fetched: number; creat
 type SyncErr = { ok: false; error: string; runId: number | null };
 
 interface Resume {
-  /** Kalınan sayfa (yeniden okunur; çakışma zararsız, kayıtlar kimlikle eşleşir) */
+  /** Sonraki çalışmanın okuyacağı ilk sayfa (yazılmış son sayfanın bir sonrası) */
   page: number;
   windowStart: string;
   include: string;
@@ -90,8 +92,11 @@ function supplierAliases(names: string[]) {
   };
 }
 
+type ContactCache = Record<string, { name: string; taxNo: string | null }>;
+
 type Existing = ExistingInvoice & {
   unpaid: boolean;
+  syncedAt: Date | null;
   dueDate: string | null;
   origin: "manual" | "excel" | "parasut";
   source: "manual" | "excel" | "parasut";
@@ -105,6 +110,8 @@ interface Ctx {
   history: Map<string, string>;
   alias: (name: string) => string;
   ignored: Set<string>;
+  /** Bu çalışmada yazılmış Paraşüt kimlikleri (sayfalar kayarsa aynı fatura iki kez gelebilir) */
+  applied: Set<string>;
   touchedMonths: Set<string>;
   counts: { created: number; updated: number; removed: number };
 }
@@ -117,23 +124,28 @@ async function retire(match: Existing, reason: string, ctx: Ctx) {
   ctx.touchedMonths.add(match.date.slice(0, 7));
   if (match.origin === "parasut") {
     await db.delete(s.invoices).where(eq(s.invoices.id, match.id));
+    const i = ctx.existing.indexOf(match);
+    if (i >= 0) ctx.existing.splice(i, 1);
     ctx.counts.removed++;
   } else {
     // Elle/Excel'le girilmiş kayıt silinmez: bağı çözülür ve not düşülür
+    const note = `${match.note ? `${match.note} · ` : ""}Paraşüt'te ${reason} — kontrol edin`;
+    const syncedAt = new Date();
     await db
       .update(s.invoices)
-      .set({ externalId: null, source: match.origin, syncedAt: new Date(), parasutUnpaid: null, note: `${match.note ? `${match.note} · ` : ""}Paraşüt'te ${reason} — kontrol edin` })
+      .set({ externalId: null, source: match.origin, syncedAt, parasutUnpaid: null, note })
       .where(eq(s.invoices.id, match.id));
     await db.delete(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, match.id));
+    Object.assign(match, { externalId: null, source: match.origin, parasutUnpaid: null, note, syncedAt });
     ctx.counts.updated++;
   }
-  match.externalId = null;
 }
 
 /** Tek bir Paraşüt faturasını panele yazar (yeni / güncelle / kaldır) */
 async function applyDraft(d: BillDraft, ctx: Ctx) {
   const db = getDb();
-  if (ctx.ignored.has(d.externalId)) return;
+  if (ctx.ignored.has(d.externalId) || ctx.applied.has(d.externalId)) return;
+  ctx.applied.add(d.externalId);
   const match = findExisting(d, ctx.existing) as Existing | null;
   const verdict = shouldImport(d);
   if (!verdict.ok) {
@@ -159,14 +171,28 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     // o zamandan beri aynıysa paneldeki kalır; Paraşüt değiştiyse Paraşüt'ünki gelir. İlk bağlanmada Paraşüt'ünki
     // alınır (Excel kayıtlarında ödeme durumu tutulmamıştı). Paraşüt'te vade yoksa paneldeki vade korunur.
     const localOverride = match.source === "parasut" && match.parasutUnpaid !== null && match.unpaid !== match.parasutUnpaid && d.unpaid === match.parasutUnpaid;
-    const supplierFix = match.supplier === PLACEHOLDER_SUPPLIER && d.supplier !== PLACEHOLDER_SUPPLIER ? { supplier: ctx.alias(d.supplier) } : {};
+    // Yer tutucu ad, yalnızca gerçek tedarikçi adı okunabildiyse düzeltilir (açıklamayla değil)
+    const supplierFix = match.supplier === PLACEHOLDER_SUPPLIER && d.supplierResolved ? { supplier: ctx.alias(d.supplier) } : {};
+    const unpaid = localOverride ? match.unpaid : d.unpaid;
+    const dueDate = d.dueDate ?? match.dueDate;
     await db
       .update(s.invoices)
-      .set({ ...common, ...supplierFix, unpaid: localOverride ? match.unpaid : d.unpaid, dueDate: d.dueDate ?? match.dueDate })
+      .set({ ...common, ...supplierFix, unpaid, dueDate })
       .where(eq(s.invoices.id, match.id));
     invoiceId = match.id;
     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
-    Object.assign(match, { externalId: d.externalId, source: "parasut", date: d.date, payable: d.payable, parasutUnpaid: d.unpaid });
+    Object.assign(match, {
+      ...supplierFix,
+      externalId: d.externalId,
+      invoiceNo: d.invoiceNo,
+      source: "parasut",
+      date: d.date,
+      payable: d.payable,
+      unpaid,
+      dueDate,
+      parasutUnpaid: d.unpaid,
+      syncedAt: common.syncedAt,
+    });
     ctx.counts.updated++;
   } else {
     const supplier = ctx.alias(d.supplier);
@@ -192,6 +218,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       source: "parasut",
       note: null,
       parasutUnpaid: d.unpaid,
+      syncedAt: common.syncedAt,
     });
     ctx.counts.created++;
   }
@@ -234,10 +261,13 @@ export async function syncParasut(
 
     const today = todayTR();
     const cursor = await getState<{ lastIssueDate?: string }>(CURSOR_KEY);
-    const resume = opts.from ? null : await getState<Resume>(RESUME_KEY);
+    const storedResume = await getState<Resume>(RESUME_KEY);
+    // Elle verilen başlangıç tarihi yeni bir tur başlatır; daha geriden süren yarım tur varsa ona dokunulmaz
+    const resume = opts.from ? null : storedResume;
     const anchor = cursor?.lastIssueDate && cursor.lastIssueDate < today ? cursor.lastIssueDate : today;
     const windowStart = opts.from ?? resume?.windowStart ?? (cursor?.lastIssueDate ? addDays(anchor, -LOOKBACK_DAYS) : (cfg.syncFrom ?? `${today.slice(0, 4)}-01-01`));
-    const startPage = resume ? Math.max(1, resume.page - 1) : 1;
+    const startPage = resume ? Math.max(1, resume.page) : 1;
+    const keepStoredResume = Boolean(opts.from && storedResume && storedResume.windowStart < windowStart);
 
     const client = new ParasutClient(cfg);
     client.setDeadline(started + deadline);
@@ -270,6 +300,8 @@ export async function syncParasut(
       }
       reachedEnd = true;
     };
+    // Okuma payı dolduktan sonra yeni istek başlamaz (son istek en çok REQUEST_TIMEOUT kadar sürer)
+    client.setDeadline(fetchUntil + 15_000);
     for (let i = Math.max(0, INCLUDES.indexOf(include)); ; i++) {
       try {
         await fetchPages();
@@ -288,7 +320,9 @@ export async function syncParasut(
         throw e;
       }
     }
-    if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, started, deadline);
+    client.setDeadline(started + deadline);
+    const contacts = (await getState<ContactCache>(CONTACTS_KEY)) ?? {};
+    if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
     const [existingRows, rules, ignoredList] = await Promise.all([
@@ -306,21 +340,25 @@ export async function syncParasut(
           source: s.invoices.source,
           note: s.invoices.note,
           parasutUnpaid: s.invoices.parasutUnpaid,
+          syncedAt: s.invoices.syncedAt,
           category: s.invoices.category,
         })
         .from(s.invoices),
       loadRules(),
       getState<string[]>(IGNORE_KEY),
     ]);
-    // Tedarikçi geçmişi ve kısa adlar, kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir
-    const history = supplierHistory(existingRows.filter((i) => i.origin !== "parasut" || i.category !== "Diğer"));
-    const alias = supplierAliases(existingRows.filter((i) => i.origin !== "parasut").map((i) => i.supplier));
+    // Tedarikçi geçmişi ve kısa adlar, kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir; eşitlemenin
+    // kendi tahminleri geçmişe katılmaz (yanlış bir tahmin kendini çoğaltmasın)
+    const own = existingRows.filter((i) => i.origin !== "parasut");
+    const history = supplierHistory(own);
+    const alias = supplierAliases(own.map((i) => i.supplier));
     const ctx: Ctx = {
       existing: existingRows as Existing[],
       rules,
       history,
       alias,
       ignored: new Set(ignoredList ?? []),
+      applied: new Set(),
       touchedMonths: new Set(),
       counts: { created: 0, updated: 0, removed: 0 },
     };
@@ -345,21 +383,37 @@ export async function syncParasut(
 
     // ---- tam turdan sonra: listede görünmeyen (Paraşüt'te silinmiş/iptal) ve pencere dışında kalmış ödenmemiş
     // faturalar tek tek yeniden okunur (sınırlı sayıda; kalanı sonraki günlere)
+    // Yarım turun devamında ilk sayfalar bu çalışmada okunmadığı için "görünmeyen" denetimi yapılmaz. En uzun
+    // süredir denetlenmeyenler önce gelir; her gün başka faturalara sıra gelir. Tek bir faturanın hatası eşitlemeyi
+    // bozmaz (kaydedilir, sonraki faturaya geçilir).
     let rechecked = 0;
     if (reachedEnd && !partial) {
-      const unseen = ctx.existing.filter((e) => e.source === "parasut" && e.externalId && e.date >= windowStart && !seen.has(e.externalId));
-      const oldOpen = ctx.existing
-        .filter((e) => e.source === "parasut" && e.externalId && e.unpaid && e.date < windowStart)
-        .sort((a, b) => a.date.localeCompare(b.date));
+      const bySync = (a: Existing, b: Existing) => (a.syncedAt?.getTime() ?? 0) - (b.syncedAt?.getTime() ?? 0);
+      const unseen = resume
+        ? []
+        : ctx.existing.filter((e) => e.source === "parasut" && e.externalId && e.date >= windowStart && !seen.has(e.externalId)).sort(bySync);
+      const oldOpen = ctx.existing.filter((e) => e.source === "parasut" && e.externalId && e.unpaid && e.date < windowStart).sort(bySync);
       for (const e of [...unseen, ...oldOpen].slice(0, RECHECK_LIMIT)) {
         if (overBudget()) break;
+        const externalId = e.externalId!;
         try {
-          const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(e.externalId!)}`, { include });
-          await applyDraft(billToDraft(res.data, (res as ShowResponse).included), ctx);
+          // Tek fatura okumasında belgelenmiş include'lar istenir; tedarikçi adı önbellekten gelir
+          const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(externalId)}`, { include: INCLUDES[1] });
+          const d = billToDraft(res.data, (res as ShowResponse).included);
+          applyContacts([d], contacts);
+          await applyDraft(d, ctx);
         } catch (err) {
-          if (err instanceof ParasutError && err.status === 404) await retire(e, "silinmiş", ctx);
-          else if (err instanceof ParasutDeadlineError) break;
-          else throw err;
+          if (err instanceof ParasutDeadlineError) break;
+          if (err instanceof ParasutAuthError) {
+            console.error("Paraşüt yeniden denetim: oturum", err);
+            break;
+          }
+          try {
+            if (err instanceof ParasutError && err.status === 404) await retire(e, "silinmiş", ctx);
+            else console.error("Paraşüt yeniden denetim", externalId, err);
+          } catch (inner) {
+            console.error("Paraşüt yeniden denetim", externalId, inner);
+          }
         }
         rechecked++;
       }
@@ -367,9 +421,14 @@ export async function syncParasut(
 
     if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
     if (partial && !reachedEnd) {
-      await setState(RESUME_KEY, { page: Math.max(processedUntilPage, startPage), windowStart, include, maxDate } satisfies Resume);
+      // Hiç sayfa yazılamadıysa kalınan yer değişmez
+      if (!keepStoredResume && processedUntilPage >= startPage) {
+        await setState(RESUME_KEY, { page: processedUntilPage + 1, windowStart, include, maxDate } satisfies Resume);
+      } else if (!keepStoredResume && !resume) {
+        await setState(RESUME_KEY, { page: startPage, windowStart, include, maxDate } satisfies Resume);
+      }
     } else {
-      await db.delete(s.integrationState).where(eq(s.integrationState.key, RESUME_KEY));
+      if (!keepStoredResume) await db.delete(s.integrationState).where(eq(s.integrationState.key, RESUME_KEY));
       if (maxDate && maxDate >= (cursor?.lastIssueDate ?? "")) await setState(CURSOR_KEY, { lastIssueDate: maxDate, at: new Date().toISOString() });
     }
     if (Date.now() - started < deadline - 15_000) await countPendingEInvoices(client).catch(() => null);
@@ -391,31 +450,38 @@ export async function syncParasut(
   }
 }
 
-/** Tedarikçi "included"da gelmediyse adları /contacts/{id} ile okunur (önbellekli) */
-async function fillSupplierNames(client: ParasutClient, drafts: BillDraft[], started: number, deadline: number) {
-  const cache = (await getState<Record<string, { name: string; taxNo: string | null }>>(CONTACTS_KEY)) ?? {};
-  const missing = [...new Set(drafts.filter((d) => d.supplierId && !cache[d.supplierId]).map((d) => d.supplierId!))];
-  for (const id of missing) {
-    if (Date.now() - started > deadline * FETCH_SHARE) break;
-    try {
-      const res = await client.show<{ name?: string; tax_number?: string }>(`contacts/${encodeURIComponent(id)}`);
-      cache[id] = { name: res.data.attributes.name?.trim() || PLACEHOLDER_SUPPLIER, taxNo: res.data.attributes.tax_number ?? null };
-    } catch (e) {
-      if (e instanceof ParasutDeadlineError) break;
-      // okunamazsa açıklamayla devam
-    }
-  }
-  await setState(CONTACTS_KEY, cache);
+/** Önbellekteki tedarikçi adlarını taslaklara yazar; ad henüz okunamadıysa yer tutucu kalır (sonraki eşitlemede düzelir) */
+function applyContacts(drafts: BillDraft[], cache: ContactCache) {
   for (const d of drafts) {
-    const c = d.supplierId ? cache[d.supplierId] : undefined;
-    if (c) {
+    if (d.supplierResolved || !d.supplierId) continue;
+    const c = cache[d.supplierId];
+    if (c && c.name !== PLACEHOLDER_SUPPLIER) {
       d.supplier = c.name;
       d.supplierTaxNo = c.taxNo;
-    } else if (d.supplierId) {
-      // Ad henüz okunamadı: yer tutucuyla yazılır, sonraki eşitlemede düzeltilir
+      d.supplierResolved = true;
+    } else {
       d.supplier = PLACEHOLDER_SUPPLIER;
     }
   }
+}
+
+/** Tedarikçi "included"da gelmediyse adları /contacts/{id} ile okunur (önbellekli; `until` anına kadar) */
+async function fillSupplierNames(client: ParasutClient, drafts: BillDraft[], cache: ContactCache, until: number) {
+  const missing = [...new Set(drafts.filter((d) => !d.supplierResolved && d.supplierId && !cache[d.supplierId]).map((d) => d.supplierId!))];
+  let added = 0;
+  for (const id of missing) {
+    if (Date.now() > until) break;
+    try {
+      const res = await client.show<{ name?: string; tax_number?: string }>(`contacts/${encodeURIComponent(id)}`);
+      cache[id] = { name: res.data.attributes.name?.trim() || PLACEHOLDER_SUPPLIER, taxNo: res.data.attributes.tax_number ?? null };
+      added++;
+    } catch (e) {
+      if (e instanceof ParasutDeadlineError || e instanceof ParasutAuthError) break;
+      // okunamazsa yer tutucuyla devam
+    }
+  }
+  if (added) await setState(CONTACTS_KEY, cache);
+  applyContacts(drafts, cache);
 }
 
 /**
