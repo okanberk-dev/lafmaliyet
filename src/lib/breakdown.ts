@@ -14,6 +14,13 @@ export interface BreakdownRow {
   amount: number;
   /** Kaleme dokununca gidilecek sayfa (ör. o ayın o tedarikçi faturaları) */
   href?: string;
+  /**
+   * Tutar yerine yazılacak değer: oran, tarih, durum ("Başarılı"), "12 / 80" gibi. Verilince kalem tutarı 0 olsa
+   * da görünür (bilgi satırı); tutar yine sıralama ve pay için kullanılır.
+   */
+  display?: string;
+  /** Değerin rengi (ör. hata kırmızı, iyi yeşil) */
+  tone?: "bad" | "warn" | "good";
 }
 
 /** Kalemleri başlık altında toplayan bölüm (ör. "Personel giderleri") */
@@ -25,6 +32,9 @@ export interface BreakdownGroup {
   rows: BreakdownRow[];
   /** Toplama girmeyen bölüm (ör. kafe dışı faturalar): payı yok, ara toplamı ayrı, en sonda */
   apart?: boolean;
+  /** Ara toplam yerine yazılacak değer (ör. oran); `noSubtotal` ile hiç yazılmaz (toplanamayan bilgi satırları) */
+  display?: string;
+  noSubtotal?: boolean;
 }
 
 export interface PreparedRow extends BreakdownRow {
@@ -64,7 +74,8 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 export function prepareBreakdown(groups: BreakdownGroup[], opts: { total?: number; order?: "amount" | "given" } = {}): PreparedBreakdown {
   const byAmount = opts.order !== "given";
   const live = groups
-    .map((g) => ({ ...g, rows: g.rows.filter((r) => Number.isFinite(r.amount) && !isZero(r.amount)) }))
+    // Yazılı değeri olan bilgi satırı (oran, durum, tarih) tutarı 0 olsa da kalır
+    .map((g) => ({ ...g, rows: g.rows.filter((r) => r.display !== undefined || (Number.isFinite(r.amount) && !isZero(r.amount))) }))
     .filter((g) => g.rows.length)
     .map((g) => ({ ...g, subtotal: sum(g.rows.map((r) => r.amount)) }));
   const base = sum(live.filter((g) => !g.apart).map((g) => g.subtotal));

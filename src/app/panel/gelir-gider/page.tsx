@@ -12,7 +12,7 @@ import { monthLabel, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 
-import { yearBreakdowns } from "./breakdowns";
+import { pnlRowLabel, revenueBreakdown, yearBreakdowns } from "./breakdowns";
 import { CountUp, PnlGrid, YearPicker, type GridSection, type StripMonth } from "./pnl-grid";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
@@ -33,15 +33,6 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const NO_TOTAL = new Set(["stock:opening", "stock:closing"]);
-
-/** Excel'den gelen büyük harfli satır adlarını cümle düzenine çevirir; kısaltmalar büyük kalır */
-const ACRONYMS = ["POS", "SGK", "KDV", "AVM"];
-function sentenceCase(s: string): string {
-  let out = s.toLocaleLowerCase("tr-TR");
-  // Kısaltmalar önce: ad bir kısaltmayla başlasa da ("KDV …") doğru kalır
-  for (const a of ACRONYMS) out = out.replace(new RegExp(`(^|[^\\p{L}])${a.toLocaleLowerCase("tr-TR")}(?![\\p{L}])`, "gu"), `$1${a}`);
-  return out.charAt(0).toLocaleUpperCase("tr-TR") + out.slice(1);
-}
 
 const MAX_YEAR_TABS = 5;
 
@@ -104,11 +95,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       return [`fixed:${f.id}`, parts.length ? parts.join(" · ") : undefined];
     }),
   );
-  const rowLabel = (def: PnlRowDef): string => {
-    if (def.key.startsWith("purchase:")) return def.key.slice("purchase:".length);
-    if (def.key.startsWith("commission:") && def.key !== "commission:pos") return `${def.key.slice("commission:".length)} komisyonu`;
-    return fixedNames.get(def.key) ?? sentenceCase(def.label);
-  };
+  const rowLabel = (def: PnlRowDef): string => pnlRowLabel(def, fixedNames);
 
   const sections: GridSection[] = [];
   for (const def of defs) {
@@ -147,7 +134,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const cogs = calcs.reduce((a, c) => a + c.cogs, 0);
   const cogsRatio = revenueNet ? cogs / revenueNet : null;
   // Kartların dökümü (karta dokununca): tablonun yıl toplamlarından, sunucuda
-  const breakdown = yearBreakdowns(sections, calcs);
+  const breakdown = { ...yearBreakdowns(sections, calcs), revenue: revenueBreakdown(calcs, activeMonths) };
 
   return (
     <>
@@ -170,7 +157,17 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         }
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={<Banknote />} label={`${year} ciro (KDV hariç)`} value={<CountUp value={revenueNet} />} sub={`${activeMonths.length} aktif ay`} />
+        <StatBreakdown
+          title={`${year} cirosu`}
+          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür. Aya dokununca Satışlar'da o ay açılır.`}
+          groups={breakdown.revenue}
+          total={revenueNet}
+          totalLabel="Ciro (KDV hariç)"
+          order="given"
+          empty="Bu yıl ciro girilmedi."
+        >
+          <Stat icon={<Banknote />} label={`${year} ciro (KDV hariç)`} value={<CountUp value={revenueNet} />} sub={`${activeMonths.length} aktif ay`} />
+        </StatBreakdown>
         <StatBreakdown
           title={`${year} giderleri`}
           description="Yılın giderleri bölüm bölüm, kalem kalem (KDV hariç). Pay, yılın bütün giderleri içinde."

@@ -16,8 +16,10 @@ import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
 import { guessLinkFactor, suggestIngredient } from "@/lib/product-match";
@@ -37,6 +39,8 @@ import {
   ignoreProduct,
   unignoreProduct,
 } from "@/server/actions/parasut";
+
+import { connectionBreakdown, linkedBreakdown, LINKS_ID, runsBreakdown } from "./breakdowns";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
 const MATCH_LABEL: Record<MatchType, string> = { supplier: "Tedarikçi adı", parasut_category: "Paraşüt kategorisi", keyword: "Açıklama / kalemde geçen" };
@@ -114,6 +118,7 @@ export function ParasutClient({
   cursor,
   pendingEInvoices,
   stats,
+  invoiceGroups = [],
   runs,
   rules,
   links,
@@ -132,6 +137,8 @@ export function ParasutClient({
   /** Son eşitlemede Paraşüt'te içeri alınmamış gelen e-faturalar (`ingested`: panele doğrudan alındılar) */
   pendingEInvoices: { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | null;
   stats: { invoices: number; lastSyncedAt: string | null; fromEInvoices?: number; needsReview?: number };
+  /** "Paraşüt'ten gelen fatura" kartının dökümü: türüne göre, ay ay (sunucuda kurulur, breakdowns.ts) */
+  invoiceGroups?: BreakdownGroup[];
   runs: Run[];
   rules: Rule[];
   links: LinkRow[];
@@ -155,6 +162,10 @@ export function ParasutClient({
   const [from, setFrom] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const lastRun = runs[0];
+  // Kartların dökümü (karta dokununca açılan pencere): sayfanın zaten aldığı verilerden, breakdowns.ts
+  const connectionGroups = connectionBreakdown({ configured, env, cronSet, syncFrom, cursor, lastOk: runs.find((r) => r.status === "ok") ?? null });
+  const linkGroups = linkedBreakdown(links, ingredients, unlinkedTotal, ignored.length);
+  const runGroups = runsBreakdown(runs, { lastSyncedAt: stats.lastSyncedAt, lineReads, pendingEInvoices });
 
   // E-fatura kalemlerini beklemeden oku: her çağrı ~45 sn çalışır, sıradakiler bitene kadar sürdürülür
   const readLines = () =>
@@ -228,53 +239,91 @@ export function ParasutClient({
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Stat
-          compact
-          icon={<PlugZap />}
-          label="Bağlantı"
-          value={configured ? "Tanımlı" : "Kurulmadı"}
-          tone={configured ? "good" : "warn"}
-          sub={configured ? `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
-        />
-        <Stat
-          compact
-          icon={<CheckCircle2 />}
-          label="Paraşüt'ten gelen fatura"
-          value={num(stats.invoices)}
-          suffix="adet"
-          info="Paraşüt'e bağlı bütün faturalar: gelen e-faturalar (içeri alınmamış olanlar dahil), içeri alınmış gider faturaları ve Paraşüt'teki karşılığıyla eşleşen Excel kayıtları."
-          sub={
-            stats.lastSyncedAt ? (
-              <>
-                Son: {dateTimeTR(stats.lastSyncedAt)}
-                {stats.needsReview ? (
-                  <a href="/panel/faturalar?durum=kontrol" className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11">
-                    {num(stats.needsReview)} kontrol bekliyor →
-                  </a>
-                ) : null}
-              </>
-            ) : (
-              "Henüz eşitlenmedi"
-            )
-          }
-        />
-        <Stat
-          compact
-          icon={<Link2 />}
-          label="Bağlı ürün"
-          info="Hammaddeye bağlanan Paraşüt ürünleri. Bağlı ürünlerin alınan miktarı Tutarlılık'a, son birim fiyatı hammaddeye yazılır."
-          value={num(links.length)}
-          sub={unlinkedTotal ? `${num(unlinkedTotal)} ürün bağlanmayı bekliyor` : "Bekleyen yok"}
-          tone={unlinkedTotal ? "warn" : "default"}
-        />
-        <Stat
-          compact
-          icon={lastRun?.status === "error" ? <XCircle /> : <CircleDashed />}
-          label="Son eşitleme"
-          value={lastRun ? (lastRun.status === "ok" ? "Başarılı" : lastRun.status === "error" ? "Hata" : "Sürüyor") : "–"}
-          tone={lastRun?.status === "error" ? "bad" : "default"}
-          sub={lastRun ? dateTimeTR(lastRun.startedAt) : "Henüz çalışmadı"}
-        />
+        <StatBreakdown
+          title="Bağlantı"
+          description="Paraşüt bağlantısının ayarları ve eşitlemenin zamanı. Değerler Vercel'de saklanır; burada yalnız tanımlı olup olmadıkları görünür."
+          groups={connectionGroups}
+          order="given"
+          shares={false}
+          hideTotal
+        >
+          <Stat
+            compact
+            icon={<PlugZap />}
+            label="Bağlantı"
+            value={configured ? "Tanımlı" : "Kurulmadı"}
+            tone={configured ? "good" : "warn"}
+            sub={configured ? `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Paraşüt'ten gelen fatura"
+          description="Paraşüt'e bağlı bütün faturalar türüne göre, ay ay (faturanın tarihiyle). Aya dokununca o ayın Paraşüt faturaları Faturalar'da açılır."
+          groups={invoiceGroups}
+          total={stats.invoices}
+          unit="count"
+          order="given"
+          empty="Henüz Paraşüt'ten fatura gelmedi."
+        >
+          <Stat
+            compact
+            icon={<CheckCircle2 />}
+            label="Paraşüt'ten gelen fatura"
+            value={num(stats.invoices)}
+            suffix="adet"
+            info="Paraşüt'e bağlı bütün faturalar: gelen e-faturalar (içeri alınmamış olanlar dahil), içeri alınmış gider faturaları ve Paraşüt'teki karşılığıyla eşleşen Excel kayıtları."
+            sub={
+              stats.lastSyncedAt ? (
+                <>
+                  Son: {dateTimeTR(stats.lastSyncedAt)}
+                  {stats.needsReview ? (
+                    <a href="/panel/faturalar?durum=kontrol" className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11">
+                      {num(stats.needsReview)} kontrol bekliyor →
+                    </a>
+                  ) : null}
+                </>
+              ) : (
+                "Henüz eşitlenmedi"
+              )
+            }
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Bağlı ürün"
+          description="Hammaddeye bağlanan Paraşüt ürünleri, hammadde kategorisine göre; bir hammaddeye birden çok ürün (ör. farklı paketler) bağlanabilir. Hammaddeye dokununca bağlı ürünleri listede açılır."
+          groups={linkGroups}
+          total={links.length}
+          unit="count"
+          empty="Henüz hammaddeye bağlı ürün yok."
+        >
+          <Stat
+            compact
+            icon={<Link2 />}
+            label="Bağlı ürün"
+            info="Hammaddeye bağlanan Paraşüt ürünleri. Bağlı ürünlerin alınan miktarı Tutarlılık'a, son birim fiyatı hammaddeye yazılır."
+            value={num(links.length)}
+            sub={unlinkedTotal ? `${num(unlinkedTotal)} ürün bağlanmayı bekliyor` : "Bekleyen yok"}
+            tone={unlinkedTotal ? "warn" : "default"}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Son eşitleme"
+          description="Otomatik (her sabah) ve elle yapılan son eşitlemeler, en yenisi üstte; altında eşitlemenin bıraktığı durum."
+          groups={runGroups}
+          order="given"
+          shares={false}
+          hideTotal
+          empty="Henüz eşitleme yok."
+        >
+          <Stat
+            compact
+            icon={lastRun?.status === "error" ? <XCircle /> : <CircleDashed />}
+            label="Son eşitleme"
+            value={lastRun ? (lastRun.status === "ok" ? "Başarılı" : lastRun.status === "error" ? "Hata" : "Sürüyor") : "–"}
+            tone={lastRun?.status === "error" ? "bad" : "default"}
+            sub={lastRun ? dateTimeTR(lastRun.startedAt) : "Henüz çalışmadı"}
+          />
+        </StatBreakdown>
       </div>
 
       {pendingEInvoices && pendingEInvoices.count > 0 ? (
@@ -627,7 +676,8 @@ function ProductLinks({
   };
 
   return (
-    <Card className="mt-4">
+    // Kart dökümündeki bağlantı (?durum=…&ara=…#urun-baglantilari) buraya kayar; telefonda üstteki sabit çubuğun altında kalmasın
+    <Card id={LINKS_ID} className="mt-4 scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
       <CardHeader
         icon={<Link2 />}
         title="Ürün → hammadde bağlantıları"

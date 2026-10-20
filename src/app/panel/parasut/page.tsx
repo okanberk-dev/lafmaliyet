@@ -10,11 +10,17 @@ import { getDb, schema as s } from "@/server/db";
 import { isParasutConfigured, parasutEnvStatus } from "@/server/parasut/config";
 import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
+import { invoiceBreakdown, invoiceStats, type InvoiceMix } from "./breakdowns";
 import { ParasutClient as ParasutScreen } from "./parasut-client";
 
 export const metadata: Metadata = { title: "Paraşüt entegrasyonu" };
 // Elle eşitleme bu sayfanın sunucu eylemiyle çalışır
 export const maxDuration = 60;
+
+/** Faturanın ayı (tarih YYYY-MM-DD metin) ve Paraşüt'teki karşılığı: gider faturası, gelen e-fatura (0/1) */
+const invoiceMonth = sql<string>`substr(${s.invoices.date}, 1, 7)`;
+const hasBill = sql<number>`(${s.invoices.externalId} is not null)::int`.mapWith(Number);
+const hasEInvoice = sql<number>`(${s.invoices.eInvoiceId} is not null)::int`.mapWith(Number);
 
 export default function ParasutPage() {
   return (
@@ -34,7 +40,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, [stats], cursorRow, pendingRow, [lineReads], ignored] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -64,10 +70,20 @@ async function ParasutContent() {
       .from(s.ingredients)
       .orderBy(asc(s.ingredients.name)),
     unlinkedProducts(40),
+    // Paraşüt'e bağlı faturalar ay ve tür kırılımıyla: kartın sayısı da dökümü de bu satırlardan (breakdowns.ts)
     db
-      .select({ n: count(), last: max(s.invoices.syncedAt), review: sql<number>`count(*) filter (where ${s.invoices.needsReview})`.mapWith(Number) })
+      .select({
+        month: invoiceMonth,
+        origin: s.invoices.origin,
+        bill: hasBill,
+        eInvoice: hasEInvoice,
+        n: count(),
+        last: max(s.invoices.syncedAt),
+        review: sql<number>`count(*) filter (where ${s.invoices.needsReview})`.mapWith(Number),
+      })
       .from(s.invoices)
-      .where(eq(s.invoices.source, "parasut")),
+      .where(eq(s.invoices.source, "parasut"))
+      .groupBy(invoiceMonth, s.invoices.origin, hasBill, hasEInvoice),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.cursor")).limit(1),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.pendingEInvoices")).limit(1),
     // E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri UBL belgesinden okunur
@@ -80,6 +96,15 @@ async function ParasutContent() {
       .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId))),
     ignoredProducts(),
   ]);
+  const invoiceMix: InvoiceMix[] = invoiceRows.map((r) => ({
+    month: r.month,
+    origin: r.origin,
+    bill: Boolean(r.bill),
+    eInvoice: Boolean(r.eInvoice),
+    n: r.n,
+    review: r.review,
+    last: r.last ? new Date(r.last).toISOString() : null,
+  }));
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
 
   return (
@@ -90,7 +115,8 @@ async function ParasutContent() {
       syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}
       cursor={(cursorRow[0]?.value as { lastIssueDate?: string } | undefined)?.lastIssueDate ?? null}
       pendingEInvoices={pending ?? null}
-      stats={{ invoices: stats?.n ?? 0, lastSyncedAt: stats?.last ? new Date(stats.last).toISOString() : null, needsReview: stats?.review ?? 0 }}
+      stats={invoiceStats(invoiceMix)}
+      invoiceGroups={invoiceBreakdown(invoiceMix)}
       runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
       rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
       links={links}

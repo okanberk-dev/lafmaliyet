@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
@@ -16,8 +17,10 @@ import { getDb, schema as s } from "@/server/db";
 
 import { waterSource } from "../ayarlar/water-text";
 
+import { ingredientBreakdowns, waterBreakdown } from "./breakdowns";
 import { sortCategories } from "./categories";
 import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } from "./ingredients-client";
+import { ListAnchor } from "./list-anchor";
 
 export const metadata: Metadata = { title: "Hammaddeler" };
 
@@ -89,6 +92,11 @@ async function IngredientsContent() {
   const categories = sortCategories(rows.map((r) => r.category));
   const estimates = active.filter((r) => r.isEstimate).length;
   const unused = active.filter((r) => !r.usedIn.length).length;
+  // Kartların dökümü (karta dokununca açılan pencere): yüklenen satırlardan ve modelin su hesabından
+  const breakdown = ingredientBreakdowns(rows);
+  const waterDokum = waterBreakdown(model.water, rows, model.water.month ? model.ingredientUsage(model.water.month) : new Map<number, number>());
+  const categoryCount = new Set(active.map((r) => r.category)).size;
+  const estimateShare = active.length ? pct(estimates / active.length, 0) : null;
 
   return (
     <>
@@ -100,38 +108,78 @@ async function IngredientsContent() {
         actions={<NewIngredientButton categories={categories} rows={rows} />}
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={<Package />}
-          label="Hammadde"
-          value={<CountUp value={active.length} />}
-          sub={`${num(new Set(active.map((r) => r.category)).size)} kategori`}
-        />
-        <Stat
-          icon={<TriangleAlert />}
-          label="Tahmini değer"
-          value={<CountUp value={estimates} />}
-          tone={estimates ? "warn" : "good"}
-          badge={
-            active.length ? (
-              <Badge tone={estimates ? "amber" : "green"} title="Aktif malzemeler içindeki payı">
-                {pct(estimates / active.length, 0)}
-              </Badge>
-            ) : null
-          }
-          sub="Varsayımı doğrulanmalı (notuna bakın)"
-        />
-        <Stat icon={<Unlink />} label="Hiçbir reçetede yok" value={<CountUp value={unused} />} sub="Reçeteye eklenmesi gerekebilir" />
-        <Stat
-          icon={<Droplets />}
-          label="Su + buz birim maliyeti"
-          value={<CountUp value={model.water.perLiter} digits={4} suffix=" ₺" />}
-          suffix="/L"
-          tone={model.water.reason === "no-usage" ? "warn" : "default"}
-          sub={<span title={waterSource(model.water)}>{waterSource(model.water, true)}</span>}
-          info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre); ürün satış listesi olan en son ayın faturası kullanılır.`}
-        />
+        <StatBreakdown
+          title="Hammaddeler"
+          description={`Aktif malzemeler, kategori kategori (${num(categoryCount)} kategori). Pasif malzemeler sayıya girmez, en altta ayrı. Kategoriye dokununca liste o kategoriye süzülür.`}
+          groups={breakdown.all}
+          total={active.length}
+          unit="count"
+          empty="Henüz aktif malzeme yok."
+        >
+          <Stat icon={<Package />} label="Hammadde" value={<CountUp value={active.length} />} sub={`${num(categoryCount)} kategori`} />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Tahmini değerler"
+          description={`Faturada bulunamayan, varsayımla girilmiş paket fiyatları (aktif malzemeler, KDV hariç); altında neyin doğrulanacağı yazar.${
+            estimateShare ? ` Rozetteki oran: ${num(estimates)} ÷ ${num(active.length)} aktif malzeme = ${estimateShare}.` : ""
+          } Malzemeye dokununca listede açılır.`}
+          groups={breakdown.estimates}
+          total={estimates}
+          unit="count"
+          shares={false}
+          empty="Tahmini değer yok; bütün fiyatlar faturadan."
+        >
+          <Stat
+            icon={<TriangleAlert />}
+            label="Tahmini değer"
+            value={<CountUp value={estimates} />}
+            tone={estimates ? "warn" : "good"}
+            badge={
+              estimateShare ? (
+                <Badge tone={estimates ? "amber" : "green"} title="Aktif malzemeler içindeki payı">
+                  {estimateShare}
+                </Badge>
+              ) : null
+            }
+            sub="Varsayımı doğrulanmalı (notuna bakın)"
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Hiçbir reçetede olmayanlar"
+          description="Aktif olup hiçbir ürün kartının reçetesinde geçmeyen malzemeler (paket fiyatı KDV hariç). Maliyetleri hiçbir ürüne yansımaz: kullanılıyorsa reçeteye ekleyin, kullanılmıyorsa pasife alın. Malzemeye dokununca listede açılır."
+          groups={breakdown.unused}
+          total={unused}
+          unit="count"
+          shares={false}
+          empty="Bütün aktif malzemeler en az bir reçetede."
+        >
+          <Stat icon={<Unlink />} label="Hiçbir reçetede yok" value={<CountUp value={unused} />} sub="Reçeteye eklenmesi gerekebilir" />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Su + buz birim maliyeti"
+          description={waterDokum.description}
+          groups={waterDokum.groups}
+          order="given"
+          shares={false}
+          totalLabel={waterDokum.totalLabel}
+          totalDisplay={waterDokum.totalDisplay}
+          hideTotal={waterDokum.hideTotal}
+        >
+          <Stat
+            icon={<Droplets />}
+            label="Su + buz birim maliyeti"
+            value={<CountUp value={model.water.perLiter} digits={4} suffix=" ₺" />}
+            suffix="/L"
+            tone={model.water.reason === "no-usage" ? "warn" : "default"}
+            sub={<span title={waterSource(model.water)}>{waterSource(model.water, true)}</span>}
+            info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre); ürün satış listesi olan en son ayın faturası kullanılır.`}
+          />
+        </StatBreakdown>
       </div>
-      <IngredientsClient rows={rows} categories={categories} />
+      {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
+      <ListAnchor>
+        <IngredientsClient rows={rows} categories={categories} />
+      </ListAnchor>
     </>
   );
 }

@@ -35,13 +35,16 @@ import { IconTile, type PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, GrowthPill, InfoTip, Signed, Stat } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
+import type { BreakdownRow } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { applyScenario, type MenuClass, type ScenarioBase } from "@/lib/calc/insights";
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { productHref } from "../urunler/logic";
+import { breakEvenGroups, breakEvenNeedGroups, breakEvenNeeds, profitGroups, targetDaily, targetGroups } from "./breakdowns";
 import { CARD_SORTS, DEFAULT_SORT, flipSign, normalizeSign, parseSort, selectionAfterSign, sortSlug, type SortDir, type SortKey } from "./logic";
 
 /* ───────────────────────── Ortak hareket ───────────────────────── */
@@ -775,7 +778,21 @@ function DiffPill({ diff, lowerIsBetter }: { diff: number; lowerIsBetter?: boole
   );
 }
 
-export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: ScenarioBase; acikGun: number; monthLabel: string }) {
+export function ScenarioSimulator({
+  base,
+  acikGun,
+  month,
+  monthLabel,
+  fixedItems,
+}: {
+  base: ScenarioBase;
+  acikGun: number;
+  /** Seçili ay (YYYY-MM): döküm satırlarının bağlantıları bu ayı taşır */
+  month: string;
+  monthLabel: string;
+  /** Sabit giderlerin kalemleri (standart ay tutarı, sunucuda kurulur): net kâr dökümünde */
+  fixedItems: BreakdownRow[];
+}) {
   const [price, setPrice] = useState(0);
   const [cost, setCost] = useState(0);
   const [volume, setVolume] = useState(0);
@@ -786,16 +803,17 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
   const extraNum = extraParsed ?? 0;
   const { base: b, scenario: s } = applyScenario(base, { priceChangePct: price / 100, costChangePct: cost / 100, volumeChangePct: volume / 100, extraFixed: extraNum }, acikGun);
 
-  // Başabaş için gereken ortalama zam ve satış artışı (diğerleri sabitken)
-  const priceForBreakEven = base.net - base.commission - base.discountsNet > 0 ? (base.material + base.fixed) / (base.net - base.commission - base.discountsNet) - 1 : null;
-  const unitContribution = base.net - base.material - base.commission - base.discountsNet;
-  const volumeForBreakEven = unitContribution > 0 ? base.fixed / unitContribution - 1 : null;
+  // Başabaş için gereken ortalama zam ve satış artışı (diğerleri sabitken); hesap dökümle ortak (breakdowns.ts)
+  const { price: priceForBreakEven, volume: volumeForBreakEven } = breakEvenNeeds(base);
   const targetNum = targetParsed ?? 0;
-  const dailyForTarget = s.grossRatio > 0 ? (s.fixed + targetNum) / s.grossRatio / acikGun : null;
-  const baseDailyForTarget = b.grossRatio > 0 ? (b.fixed + targetNum) / b.grossRatio / acikGun : null;
+  const dailyForTarget = targetDaily(s, targetNum, acikGun);
+  const baseDailyForTarget = targetDaily(b, targetNum, acikGun);
 
   const dirty = price !== 0 || cost !== 0 || volume !== 0 || extraNum !== 0;
   const profitDiff = s.profit - b.profit;
+  // Kartların dökümü: kaydırıcılar değişince yeniden kurulur, pencere kartın o anki rakamını gösterir
+  const sides = { b, s, dirty, extraFixed: extraNum };
+  const scope = dirty ? " Senaryodaki değerlerle; alt satırda şu anki değer." : "";
 
   const rows: { label: string; b: number; s: number; good: "up" | "down" }[] = [
     { label: "Ciro (KDV dahil)", b: b.revenue, s: s.revenue, good: "up" },
@@ -900,69 +918,119 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
       </Card>
 
       <div className="flex flex-col gap-4 xl:col-span-8">
+        {/* Kartlara dokununca rakamın dökümü açılır (senaryonun o anki değerleriyle) */}
         <div className="grid gap-3 sm:grid-cols-2">
           <Reveal index={0}>
-            <Stat
+            <StatBreakdown
               className="h-full"
-              icon={<Wallet />}
-              label="Aylık net kâr / zarar"
-              value={<CountUp value={s.profit} />}
-              tone={s.profit < 0 ? "bad" : "good"}
-              badge={dirty ? <DiffPill diff={profitDiff} /> : null}
-              sub={
-                <>
-                  Şu an <Signed value={b.profit}>{tl(b.profit)}</Signed>
-                </>
-              }
-            />
+              title={dirty ? "Senaryoda aylık net kâr / zarar" : "Aylık net kâr / zarar"}
+              description={`${monthLabel} satış karmasıyla: brüt kâr − indirimler − sabit giderler (KDV hariç). Sabit giderler standart ay tutarıdır.${scope}`}
+              groups={profitGroups({ ...sides, fixedItems, month })}
+              total={s.profit}
+              totalLabel={dirty ? "Senaryoda net kâr / zarar" : "Net kâr / zarar"}
+              order="given"
+              shares={false}
+              empty="Bu ay için satış ya da gider yok."
+            >
+              <Stat
+                className="h-full"
+                icon={<Wallet />}
+                label="Aylık net kâr / zarar"
+                value={<CountUp value={s.profit} />}
+                tone={s.profit < 0 ? "bad" : "good"}
+                badge={dirty ? <DiffPill diff={profitDiff} /> : null}
+                sub={
+                  <>
+                    Şu an <Signed value={b.profit}>{tl(b.profit)}</Signed>
+                  </>
+                }
+              />
+            </StatBreakdown>
           </Reveal>
           <Reveal index={1}>
-            <Stat
+            <StatBreakdown
               className="h-full"
-              icon={<Scale />}
-              label="Başabaş günlük ciro"
-              info={`Sabit giderleri karşılamak için gereken günlük ciro, ${acikGun} açık güne göre.`}
-              value={<CountUp value={s.breakEvenDaily} />}
-              badge={dirty && s.breakEvenDaily !== null && b.breakEvenDaily !== null ? <DiffPill diff={s.breakEvenDaily - b.breakEvenDaily} lowerIsBetter /> : null}
-              sub={`Şu an ${tl(b.breakEvenDaily)}`}
-            />
+              title="Başabaş günlük ciro"
+              description={`Sabit giderler ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil; indirimler bu hesaba girmez.${scope}`}
+              groups={breakEvenGroups({ ...sides, acikGun })}
+              total={s.breakEvenDaily ?? 0}
+              totalLabel="Başabaş günlük ciro"
+              totalDisplay={tl(s.breakEvenDaily)}
+              order="given"
+              shares={false}
+            >
+              <Stat
+                className="h-full"
+                icon={<Scale />}
+                label="Başabaş günlük ciro"
+                info={`Sabit giderleri karşılamak için gereken günlük ciro, ${acikGun} açık güne göre.`}
+                value={<CountUp value={s.breakEvenDaily} />}
+                badge={dirty && s.breakEvenDaily !== null && b.breakEvenDaily !== null ? <DiffPill diff={s.breakEvenDaily - b.breakEvenDaily} lowerIsBetter /> : null}
+                sub={`Şu an ${tl(b.breakEvenDaily)}`}
+              />
+            </StatBreakdown>
           </Reveal>
           <Reveal index={2}>
-            <Stat
+            <StatBreakdown
               className="h-full"
-              icon={<ShieldCheck />}
-              label="Zarar etmemek için"
-              info="Diğer her şey sabitken, tek başına gereken ortalama zam ya da satış artışı (şu anki aya göre)."
-              value={priceForBreakEven !== null ? pct(priceForBreakEven, 1) : "–"}
-              suffix={priceForBreakEven !== null ? "ortalama zam" : undefined}
-              sub={volumeForBreakEven !== null ? `ya da ${pct(volumeForBreakEven, 0)} daha fazla satış` : undefined}
-            />
+              title="Zarar etmemek için"
+              description={`${monthLabel} rakamlarıyla, diğer her şey sabitken tek başına gereken ortalama zam ya da satış artışı. Kaydırıcılar bu kartı değiştirmez.`}
+              groups={breakEvenNeedGroups(b)}
+              order="given"
+              shares={false}
+              hideTotal
+            >
+              <Stat
+                className="h-full"
+                icon={<ShieldCheck />}
+                label="Zarar etmemek için"
+                info="Diğer her şey sabitken, tek başına gereken ortalama zam ya da satış artışı (şu anki aya göre)."
+                value={priceForBreakEven !== null ? pct(priceForBreakEven, 1) : "–"}
+                suffix={priceForBreakEven !== null ? "ortalama zam" : undefined}
+                sub={volumeForBreakEven !== null ? `ya da ${pct(volumeForBreakEven, 0)} daha fazla satış` : undefined}
+              />
+            </StatBreakdown>
           </Reveal>
           <Reveal index={3}>
-            <Stat
+            <StatBreakdown
               className="h-full"
-              icon={<Target />}
-              label="Hedef kâr için günlük ciro"
-              info="Senaryodaki brüt kâr oranıyla sabit giderleri ve hedef kârı karşılayan günlük ciro."
-              value={<CountUp value={dailyForTarget} />}
-              badge={dirty && dailyForTarget !== null && baseDailyForTarget !== null ? <DiffPill diff={dailyForTarget - baseDailyForTarget} lowerIsBetter /> : null}
-              sub={`Şu an ${tl(baseDailyForTarget)}`}
+              title="Hedef kâr için günlük ciro"
+              description={`(Sabit giderler + hedef kâr) ÷ brüt kâr oranı ÷ ${num(acikGun)} açık gün. Ciro KDV dahil.${scope}`}
+              groups={targetGroups({ ...sides, acikGun, target: targetNum, targetValid: targetParsed !== null })}
+              total={dailyForTarget ?? 0}
+              totalLabel="Hedef kâr için günlük ciro"
+              totalDisplay={tl(dailyForTarget)}
+              order="given"
+              shares={false}
             >
-              <Field
-                label="Hedef aylık kâr (₺)"
-                error={targetParsed === null ? "Sayı okunamadı. Örnek: 50.000" : undefined}
-                htmlFor="sc-target"
+              <Stat
+                className="h-full"
+                icon={<Target />}
+                label="Hedef kâr için günlük ciro"
+                info="Senaryodaki brüt kâr oranıyla sabit giderleri ve hedef kârı karşılayan günlük ciro."
+                value={<CountUp value={dailyForTarget} />}
+                badge={dirty && dailyForTarget !== null && baseDailyForTarget !== null ? <DiffPill diff={dailyForTarget - baseDailyForTarget} lowerIsBetter /> : null}
+                sub={`Şu an ${tl(baseDailyForTarget)}`}
               >
-                <NumberInput
-                  id="sc-target"
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  aria-invalid={targetParsed === null || undefined}
-                  className="cell-input"
-                />
-              </Field>
-            </Stat>
+                {/* Alan döküm düğmesinin üstünde (konumlu): dokununca pencere değil alan açılır */}
+                <div className="relative">
+                  <Field
+                    label="Hedef aylık kâr (₺)"
+                    error={targetParsed === null ? "Sayı okunamadı. Örnek: 50.000" : undefined}
+                    htmlFor="sc-target"
+                  >
+                    <NumberInput
+                      id="sc-target"
+                      value={target}
+                      onChange={(e) => setTarget(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      aria-invalid={targetParsed === null || undefined}
+                      className="cell-input"
+                    />
+                  </Field>
+                </div>
+              </Stat>
+            </StatBreakdown>
           </Reveal>
         </div>
 

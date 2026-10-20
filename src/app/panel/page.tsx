@@ -29,6 +29,7 @@ import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, SegmentStrip, Signed, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
 import {
@@ -52,6 +53,18 @@ import { loadUpcoming } from "@/server/notify/digest";
 import { isParasutConfigured } from "@/server/parasut/config";
 
 import { DashboardAlerts } from "./dashboard-alerts";
+import {
+  actualProfitBreakdown,
+  breakEvenBreakdown,
+  dailyAvgBreakdown,
+  forecastBreakdown,
+  grossProfitBreakdown,
+  netProfitBreakdown,
+  netSalesBreakdown,
+  posRevenueBreakdown,
+  withComparison,
+  type CardBreakdown,
+} from "./dashboard-breakdowns";
 import { CategoriesPanel } from "./dashboard-categories";
 import { DashboardChecklist } from "./dashboard-checklist";
 import { differs, FixedReconcile, fixedBreakdownText } from "./dashboard-fixed";
@@ -327,97 +340,109 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {t ? (
             <>
-              <Stat
-                compact
-                icon={<Receipt />}
-                label="Net satış"
-                info={`Patron (ModPOS) ürün satışları ÷ (1 + KDV). Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
-                value={<CountUp value={t.netSales} />}
-                badge={<Change g={g.netSales} prevMonth={prevMonth} prevValue={pt?.netSales} />}
-                sub={`${tl(d.sales.revenue)} KDV dahil`}
-              />
-              <Stat
-                compact
-                icon={<Coins />}
-                label="Brüt kâr"
-                info={`Net satış − malzeme/ambalaj − POS komisyonu. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
-                value={<CountUp value={t.grossProfit} />}
-                badge={<Change g={g.gross} prevMonth={prevMonth} prevValue={pt?.grossProfit} />}
-                sub={`Marj ${pct(t.grossProfit / t.netSales)} · kira ve personel öncesi`}
-              />
-              <Stat
-                compact
-                icon={t.netProfit < 0 ? <TrendingDown /> : <TrendingUp />}
-                label="Net kâr / zarar"
-                info={netTip}
-                value={<CountUp value={t.netProfit} />}
-                badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
-                tone={t.netProfit < 0 ? "bad" : "good"}
-                sub={
-                  <>
-                    {differs(t.netProfit, t.netProfitStandard) ? (
-                      <span className="flex flex-wrap items-center gap-x-1.5">
-                        Excel temeli:
-                        <Signed value={t.netProfitStandard} className="whitespace-nowrap">
-                          {tl(t.netProfitStandard)}
-                        </Signed>
-                        <InfoTip text={fixedBreakdownText(fm)} />
-                      </span>
-                    ) : null}
-                    {d.actual.hasRevenue ? (
-                      <span className="block">
-                        Faturaya göre:{" "}
-                        <Signed value={d.actual.profit} className="whitespace-nowrap">
-                          {tl(d.actual.profit)}
-                        </Signed>
-                      </span>
-                    ) : null}
-                  </>
-                }
-              />
+              <StatBreakdown {...withComparison(netSalesBreakdown(model, d), { month: prevMonth, value: pt?.netSales, growth: g.netSales })}>
+                <Stat
+                  compact
+                  icon={<Receipt />}
+                  label="Net satış"
+                  info={`Patron (ModPOS) ürün satışları ÷ (1 + KDV). Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
+                  value={<CountUp value={t.netSales} />}
+                  badge={<Change g={g.netSales} prevMonth={prevMonth} prevValue={pt?.netSales} />}
+                  sub={`${tl(d.sales.revenue)} KDV dahil`}
+                />
+              </StatBreakdown>
+              <StatBreakdown {...withComparison(grossProfitBreakdown(model, d), { month: prevMonth, value: pt?.grossProfit, growth: g.gross })}>
+                <Stat
+                  compact
+                  icon={<Coins />}
+                  label="Brüt kâr"
+                  info={`Net satış − malzeme/ambalaj − POS komisyonu. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
+                  value={<CountUp value={t.grossProfit} />}
+                  badge={<Change g={g.gross} prevMonth={prevMonth} prevValue={pt?.grossProfit} />}
+                  sub={`Marj ${pct(t.grossProfit / t.netSales)} · kira ve personel öncesi`}
+                />
+              </StatBreakdown>
+              <StatBreakdown {...withComparison(netProfitBreakdown(model, d), { month: prevMonth, value: pt?.netProfit, growth: g.net })}>
+                <Stat
+                  compact
+                  icon={t.netProfit < 0 ? <TrendingDown /> : <TrendingUp />}
+                  label="Net kâr / zarar"
+                  info={netTip}
+                  value={<CountUp value={t.netProfit} />}
+                  badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
+                  tone={t.netProfit < 0 ? "bad" : "good"}
+                  sub={
+                    <>
+                      {differs(t.netProfit, t.netProfitStandard) ? (
+                        <span className="flex flex-wrap items-center gap-x-1.5">
+                          Excel temeli:
+                          <Signed value={t.netProfitStandard} className="whitespace-nowrap">
+                            {tl(t.netProfitStandard)}
+                          </Signed>
+                          <InfoTip text={fixedBreakdownText(fm)} />
+                        </span>
+                      ) : null}
+                      {d.actual.hasRevenue ? (
+                        <span className="block">
+                          Faturaya göre:{" "}
+                          <Signed value={d.actual.profit} className="whitespace-nowrap">
+                            {tl(d.actual.profit)}
+                          </Signed>
+                        </span>
+                      ) : null}
+                    </>
+                  }
+                />
+              </StatBreakdown>
             </>
           ) : (
             <>
-              <Stat
-                compact
-                icon={<Receipt />}
-                label="POS cirosu (KDV dahil)"
-                info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
-                value={<CountUp value={d.info?.posRevenue ?? null} />}
-                badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
-                sub={d.info?.openDays ? `${d.info.openDays} günde` : null}
-              />
-              <Stat
-                compact
-                icon={<CalendarDays />}
-                label="Günlük ortalama ciro"
-                info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
-                value={<CountUp value={d.dailyAvg} />}
-                badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={daily.previous} basis={dailyBasis} />}
-                sub="KDV dahil"
-              />
-              <ThirdStat d={d} projected={projected} />
+              <StatBreakdown {...withComparison(posRevenueBreakdown(model, d), { month: prevMonth, value: prev.info?.posRevenue, growth: g.pos })}>
+                <Stat
+                  compact
+                  icon={<Receipt />}
+                  label="POS cirosu (KDV dahil)"
+                  info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
+                  value={<CountUp value={d.info?.posRevenue ?? null} />}
+                  badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
+                  sub={d.info?.openDays ? `${d.info.openDays} günde` : null}
+                />
+              </StatBreakdown>
+              <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: daily.previous, growth: g.daily, basis: dailyBasis })}>
+                <Stat
+                  compact
+                  icon={<CalendarDays />}
+                  label="Günlük ortalama ciro"
+                  info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
+                  value={<CountUp value={d.dailyAvg} />}
+                  badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={daily.previous} basis={dailyBasis} />}
+                  sub="KDV dahil"
+                />
+              </StatBreakdown>
+              <ThirdStat d={d} projected={projected} breakdown={d.monthState === "closed" ? actualProfitBreakdown(model, d) : forecastBreakdown(d)} />
             </>
           )}
-          <Stat
-            compact
-            icon={<Target />}
-            label="Başabaş günlük ciro"
-            info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)} ÷ ${
-              d.refMonth ? `${monthLabel(d.refMonth)} ` : ""
-            }brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
-            value={<CountUp value={d.breakEvenDaily} />}
-            sub={
-              showBreakEven ? (
-                <>
-                  Günlük ortalama <span className="whitespace-nowrap">{tl(d.dailyAvg)}</span> · başabaşa göre{" "}
-                  <span className="whitespace-nowrap">{pct(d.breakEvenProgress, 0)}</span>
-                </>
-              ) : null
-            }
-          >
-            {showBreakEven && d.breakEvenProgress !== null ? <Progress value={d.breakEvenProgress} tone={progressTone(d.breakEvenProgress)} /> : null}
-          </Stat>
+          <StatBreakdown {...breakEvenBreakdown(model, d)}>
+            <Stat
+              compact
+              icon={<Target />}
+              label="Başabaş günlük ciro"
+              info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)} ÷ ${
+                d.refMonth ? `${monthLabel(d.refMonth)} ` : ""
+              }brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
+              value={<CountUp value={d.breakEvenDaily} />}
+              sub={
+                showBreakEven ? (
+                  <>
+                    Günlük ortalama <span className="whitespace-nowrap">{tl(d.dailyAvg)}</span> · başabaşa göre{" "}
+                    <span className="whitespace-nowrap">{pct(d.breakEvenProgress, 0)}</span>
+                  </>
+                ) : null
+              }
+            >
+              {showBreakEven && d.breakEvenProgress !== null ? <Progress value={d.breakEvenProgress} tone={progressTone(d.breakEvenProgress)} /> : null}
+            </Stat>
+          </StatBreakdown>
         </div>
 
         {/* 2. Uyarılar + maliyet göstergesi. Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~750 px
@@ -589,53 +614,58 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
 
 /**
  * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini (Excel B19), bitmiş ayda
- * Gelir-gider'deki gerçek (faturaya göre) sonuç; tahmin yalnızca süren ay için yapılır.
+ * Gelir-gider'deki gerçek (faturaya göre) sonuç; tahmin yalnızca süren ay için yapılır. Dökümü sayfa kurar
+ * (bitmiş ayda Gelir-gider satırları, süren ayda tahminin girdileri).
  */
-function ThirdStat({ d, projected }: { d: DashboardData; projected: number }) {
+function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: number; breakdown: CardBreakdown }) {
   if (d.monthState === "closed") {
     const has = d.actual.hasRevenue || d.actual.expenses > 0;
     return (
-      <Stat
-        compact
-        icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
-        label="Kâr / zarar (faturaya göre)"
-        info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satış raporu yüklenince reçeteye göre kâr da hesaplanır."
-        value={<CountUp value={has ? d.actual.profit : null} />}
-        tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
-        sub={
-          // Dokunmatikte satır yüksekliğini büyütmeden görünmez kenarla 44px dokunma alanı
-          <Link
-            href={`/panel/gelir-gider?yil=${d.month.slice(0, 4)}`}
-            className="relative hover:text-ink hover:underline pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:content-['']"
-          >
-            Gelir-gider tablosundan
-          </Link>
-        }
-      />
+      <StatBreakdown {...breakdown}>
+        <Stat
+          compact
+          icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
+          label="Kâr / zarar (faturaya göre)"
+          info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satış raporu yüklenince reçeteye göre kâr da hesaplanır."
+          value={<CountUp value={has ? d.actual.profit : null} />}
+          tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
+          sub={
+            // Dokunmatikte satır yüksekliğini büyütmeden görünmez kenarla 44px dokunma alanı
+            <Link
+              href={`/panel/gelir-gider?yil=${d.month.slice(0, 4)}`}
+              className="relative hover:text-ink hover:underline pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:content-['']"
+            >
+              Gelir-gider tablosundan
+            </Link>
+          }
+        />
+      </StatBreakdown>
     );
   }
   return (
-    <Stat
-      compact
-      icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
-      label="Ay sonu tahmini kâr/zarar"
-      info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
-        d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
-      }brüt kâr oranı − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
-      value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
-      tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
-      sub={
-        d.forecast ? (
-          <>
-            Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span> · {d.forecast.daysElapsed} / {d.forecast.dim} gün
-          </>
-        ) : d.monthState === "future" ? (
-          "Ay başlamadı"
-        ) : (
-          "Açık gün ve POS cirosu girilince hesaplanır"
-        )
-      }
-    />
+    <StatBreakdown {...breakdown}>
+      <Stat
+        compact
+        icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
+        label="Ay sonu tahmini kâr/zarar"
+        info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+          d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
+        }brüt kâr oranı − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
+        tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
+        sub={
+          d.forecast ? (
+            <>
+              Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span> · {d.forecast.daysElapsed} / {d.forecast.dim} gün
+            </>
+          ) : d.monthState === "future" ? (
+            "Ay başlamadı"
+          ) : (
+            "Açık gün ve POS cirosu girilince hesaplanır"
+          )
+        }
+      />
+    </StatBreakdown>
   );
 }
 

@@ -386,7 +386,8 @@ export function ConsistencyTable({
   const tableOnly = hasStock ? "max-2xl:hidden" : "max-xl:hidden";
 
   return (
-    <Card>
+    // Özet kartlarının dökümünden gelen bağlantı (?ara=…#malzeme-tablosu) tabloya kayar
+    <Card id="malzeme-tablosu" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
       <CardHeader
         icon={<Scale />}
         title={`Reçete ↔ fatura: ${monthLabel}`}

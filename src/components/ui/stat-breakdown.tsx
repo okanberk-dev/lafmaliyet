@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { prepareBreakdown, shareLabel, type BreakdownGroup, type PreparedGroup, type PreparedRow } from "@/lib/breakdown";
-import { money, num, tl } from "@/lib/format";
+import { money, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { Button } from "./button";
@@ -33,6 +33,9 @@ export function StatBreakdown({
   order,
   shares = true,
   exact = false,
+  unit = "money",
+  totalDisplay,
+  hideTotal = false,
   empty = "Bu dönemde kalem yok.",
   className,
 }: {
@@ -51,13 +54,20 @@ export function StatBreakdown({
   shares?: boolean;
   /** Kalemler kuruşlu (girilen harcamalar); değilse tam lira */
   exact?: boolean;
+  /** Kalemlerin birimi: para (varsayılan), adet ya da oran (0,31 → %31) */
+  unit?: "money" | "count" | "pct";
+  /** Toplam satırı yerine yazılacak değer; `hideTotal` ile toplam satırı hiç yok (toplanamayan bilgi dökümü) */
+  totalDisplay?: string;
+  hideTotal?: boolean;
   empty?: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const close = () => setOpen(false);
-  const amount = (v: number) => (exact ? money(v) : tl(v));
+  const amount = (v: number) => (unit === "count" ? num(v) : unit === "pct" ? pct(v, 1) : exact ? money(v) : tl(v));
+  const toneClass = (tone: PreparedRow["tone"], v: number) =>
+    tone === "bad" ? "text-bad" : tone === "warn" ? "text-warn" : tone === "good" ? "text-good" : v < 0 && unit !== "pct" ? "text-bad" : undefined;
   const prepared = open ? prepareBreakdown(groups, { total, order }) : null;
 
   const row = (r: PreparedRow) => {
@@ -73,7 +83,7 @@ export function StatBreakdown({
           ) : null}
         </span>
         <span className="shrink-0 text-right">
-          <span className={cn("block text-sm text-ink tabular", r.amount < 0 && "text-bad")}>{amount(r.amount)}</span>
+          <span className={cn("block text-sm text-ink tabular", toneClass(r.tone, r.amount))}>{r.display ?? amount(r.amount)}</span>
           {shares && r.share !== null ? <span className="block text-xs text-ink-mute tabular">{shareLabel(r.share)}</span> : null}
         </span>
       </>
@@ -102,12 +112,15 @@ export function StatBreakdown({
           <div className="flex items-baseline justify-between gap-3 border-b border-line-strong py-2">
             <h3 className="min-w-0 text-sm font-semibold break-words text-ink">
               {g.label}
-              {g.apart ? <span className="ml-1.5 text-xs font-normal text-ink-mute">· toplama girmez</span> : null}
+              {/* Ara toplamı olan ayrı bölüm (ör. kafe dışı) toplama girmediğini söyler; bilgi bölümünde (karşılaştırma) gereksiz */}
+              {g.apart && !g.noSubtotal ? <span className="ml-1.5 text-xs font-normal text-ink-mute">· toplama girmez</span> : null}
             </h3>
-            <p className="shrink-0 text-right text-sm font-semibold text-ink tabular">
-              <span className={cn(g.subtotal < 0 && "text-bad")}>{amount(g.subtotal)}</span>
-              {shares && g.share !== null ? <span className="ml-1.5 text-xs font-normal text-ink-mute">{shareLabel(g.share)}</span> : null}
-            </p>
+            {g.noSubtotal ? null : (
+              <p className="shrink-0 text-right text-sm font-semibold text-ink tabular">
+                <span className={cn(toneClass(undefined, g.subtotal))}>{g.display ?? amount(g.subtotal)}</span>
+                {shares && g.share !== null ? <span className="ml-1.5 text-xs font-normal text-ink-mute">{shareLabel(g.share)}</span> : null}
+              </p>
+            )}
           </div>
         ) : null}
         {g.note ? <p className="pt-2 text-xs text-pretty text-ink-mute">{g.note}</p> : null}
@@ -166,10 +179,12 @@ export function StatBreakdown({
         {prepared && prepared.groups.length ? (
           <div className="space-y-3 pb-1">
             {prepared.groups.filter((g) => !g.apart).map(group)}
-            <p className="flex items-baseline justify-between gap-3 rounded-2xl bg-ink/[0.05] px-3 py-2.5 text-sm font-semibold text-ink">
-              <span className="min-w-0 break-words">{totalLabel}</span>
-              <span className={cn("shrink-0 tabular", prepared.total < 0 && "text-bad")}>{amount(prepared.total)}</span>
-            </p>
+            {hideTotal ? null : (
+              <p className="flex items-baseline justify-between gap-3 rounded-2xl bg-ink/[0.05] px-3 py-2.5 text-sm font-semibold text-ink">
+                <span className="min-w-0 break-words">{totalLabel}</span>
+                <span className={cn("shrink-0 tabular", toneClass(undefined, prepared.total))}>{totalDisplay ?? amount(prepared.total)}</span>
+              </p>
+            )}
             {prepared.groups.filter((g) => g.apart).map(group)}
           </div>
         ) : (

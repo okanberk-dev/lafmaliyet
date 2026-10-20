@@ -5,11 +5,13 @@ import { Suspense } from "react";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { monthLabel, num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 
+import { productBreakdowns } from "./breakdowns";
 import { menuAverages } from "./logic";
 import { NewProductButton } from "./new-product";
 import { PriceImpactPanel } from "./price-impact-panel";
@@ -88,6 +90,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const target = num(st.hedefMaliyet * 100);
   // Excel Ürün Kârlılık satır 134: menünün basit ortalaması (her ürün bir oy)
   const avg = menuAverages(active);
+  // Kartlara dokununca açılan dökümler: aynı satırlardan, kartla aynı ay ve sayılar
+  const bd = productBreakdowns(rows, categories, month, st.hedefMaliyet);
 
   return (
     <>
@@ -122,38 +126,83 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         }
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={<Coffee />} label="Menüdeki ürün" value={<CountUp value={active.length} />} sub={`${num(model.categories.length)} kategori`} />
-        <Stat
-          icon={<Target />}
-          label="Hedefin dışında"
-          value={<CountUp value={warn + low} />}
-          tone={low ? "bad" : warn ? "warn" : "good"}
-          info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası. Menü ortalaması: maliyet oranı ${pct(avg.costRatio)}, kâr marjı ${pct(avg.margin)} (Excel'deki ORTALAMA satırı, her ürün bir oy).`}
-          sub={`Hedef %${target} · menü ort. ${pct(avg.costRatio)}`}
+        <StatBreakdown
+          title="Menüdeki ürünler"
+          description={`Menüde (aktif) olan ürünler, kategori kategori; her boy ayrı sayılır (${bd.menuSizes}). Kategoriye dokununca liste o kategoriyle açılır.`}
+          groups={bd.menu}
+          total={active.length}
+          totalLabel="Menüdeki ürün"
+          unit="count"
+          empty="Menüde ürün yok."
         >
-          <StatusShare
-            parts={[
-              { status: "İyi", count: good },
-              { status: "Dikkat", count: warn },
-              { status: "Düşük kâr", count: low },
-              { status: "Reçete yok", count: noRecipe },
-            ]}
+          <Stat icon={<Coffee />} label="Menüdeki ürün" value={<CountUp value={active.length} />} sub={`${num(model.categories.length)} kategori`} />
+        </StatBreakdown>
+        <StatBreakdown
+          title="Hedefin dışındaki ürünler"
+          description="Maliyet oranı (malzeme maliyeti ÷ net satış) hedefin üstünde kalan menü ürünleri, en yüksek oran önce. Ürüne dokununca reçete kartı açılır."
+          groups={bd.offTarget}
+          total={warn + low}
+          totalLabel="Hedefin dışında"
+          unit="count"
+          order="given"
+          shares={false}
+        >
+          <Stat
+            icon={<Target />}
+            label="Hedefin dışında"
+            value={<CountUp value={warn + low} />}
+            tone={low ? "bad" : warn ? "warn" : "good"}
+            info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası. Menü ortalaması: maliyet oranı ${pct(avg.costRatio)}, kâr marjı ${pct(avg.margin)} (Excel'deki ORTALAMA satırı, her ürün bir oy).`}
+            sub={`Hedef %${target} · menü ort. ${pct(avg.costRatio)}`}
+          >
+            <StatusShare
+              parts={[
+                { status: "İyi", count: good },
+                { status: "Dikkat", count: warn },
+                { status: "Düşük kâr", count: low },
+                { status: "Reçete yok", count: noRecipe },
+              ]}
+            />
+          </Stat>
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${ml} satılan çeşit`}
+          description={`${ml} satış raporunda bir menü ürünüyle eşleşen satırlar, kategori kategori; her ürün ve boy bir çeşit, yanında satılan adet. Eşleşmeyen satış satırları sayılmaz. Ürüne dokununca reçete kartı açılır.`}
+          groups={bd.sold}
+          total={soldRows.length}
+          totalLabel="Satılan çeşit"
+          totalDisplay={bd.soldTotal}
+          unit="count"
+          order="given"
+          shares={false}
+          empty="Bu ay satış raporunda eşleşen ürün yok."
+        >
+          <Stat
+            icon={<ShoppingBag />}
+            label={`${ml} satılan çeşit`}
+            value={<CountUp value={soldRows.length} />}
+            sub={`${num(soldRows.reduce((a, r) => a + r.soldQty, 0))} adet`}
           />
-        </Stat>
-        <Stat
-          icon={<ShoppingBag />}
-          label={`${ml} satılan çeşit`}
-          value={<CountUp value={soldRows.length} />}
-          sub={`${num(soldRows.reduce((a, r) => a + r.soldQty, 0))} adet`}
-        />
-        <Stat
-          icon={<TrendingUp />}
-          label={`${ml} brüt kâr`}
-          value={<CountUp value={totalProfit} suffix=" ₺" />}
-          tone={totalProfit < 0 ? "bad" : "default"}
-          info={`Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
-          sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
-        />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${ml} brüt kâr`}
+          description="Eşleşen ürünlerin birim kârı × satılan adet, kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır."
+          groups={bd.profit}
+          total={totalProfit}
+          totalLabel="Brüt kâr"
+          order="given"
+          shares={!bd.profitHasLoss}
+          empty="Bu ay satış raporunda eşleşen ürün yok."
+        >
+          <Stat
+            icon={<TrendingUp />}
+            label={`${ml} brüt kâr`}
+            value={<CountUp value={totalProfit} suffix=" ₺" />}
+            tone={totalProfit < 0 ? "bad" : "default"}
+            info={`Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
+            sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
+          />
+        </StatBreakdown>
       </div>
       {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K

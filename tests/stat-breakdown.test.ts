@@ -209,3 +209,25 @@ test("Faturalar: tedarikçi notu ayrı tedarikçi sayılmaz; satır listede süz
   assert.equal(rows[0].href, "/panel/faturalar?kategori=Hammadde+%26+%C4%B0%C3%A7ecek&ay=2026-10&ara=Kaldi#fatura-listesi");
   assert.deepEqual(b.unpaid[0].rows.map((r) => [r.label, r.amount]), [["Kaldi", 60]]);
 });
+
+test("prepareBreakdown: yazılı değeri olan bilgi satırı tutarı 0 olsa da kalır", () => {
+  const p = prepareBreakdown(
+    [
+      {
+        key: "durum",
+        noSubtotal: true,
+        rows: [
+          { key: "bag", label: "Bağlantı", amount: 0, display: "Tanımlı", tone: "good" },
+          { key: "bos", label: "Boş", amount: 0 },
+          { key: "son", label: "Son eşitleme", amount: 0, display: "20.10.2026 14:41" },
+        ],
+      },
+    ],
+    { order: "given" },
+  );
+  assert.deepEqual(
+    p.groups[0].rows.map((r) => r.display),
+    ["Tanımlı", "20.10.2026 14:41"],
+  );
+  assert.equal(p.groups[0].noSubtotal, true);
+});

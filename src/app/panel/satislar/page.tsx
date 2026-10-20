@@ -6,11 +6,13 @@ import { Suspense } from "react";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
+import { salesBreakdowns } from "./breakdowns";
 import { CountUp, ImportCard, MatchCoverage, MonthInfoForm, SalesTable, type ProductOption, type SalesRow } from "./sales-client";
 
 export const metadata: Metadata = { title: "Satışlar" };
@@ -83,6 +85,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   // Bir ürüne ya da HİZMET'e bağlanmış satırların ciro payı (kalanın maliyeti tahmini)
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
+  // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
+  const breakdown = salesBreakdowns(sales, model.settings, month);
+  const label = monthLabel(month);
 
   return (
     <>
@@ -95,57 +100,103 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={<Banknote />}
-          label="Ciro (KDV dahil)"
-          value={<CountUp value={sales.revenue} />}
-          sub={`Net ${tl(sales.net)} · POS komisyonu ${tl(sales.commission)}`}
-        />
-        <Stat
-          icon={<TrendingUp />}
-          label="Brüt kâr"
-          value={<CountUp value={sales.grossProfit} />}
-          tone={sales.grossProfit < 0 ? "bad" : "default"}
-          badge={<GrowthPill value={sales.margin}>Marj {pct(sales.margin)}</GrowthPill>}
-          sub={
-            <>
-              Kira ve personel öncesi
-              <span className="block">
-                Malzeme + ambalaj {tl(sales.cost)}
-                {sales.net ? ` · maliyet oranı ${pct(sales.cost / sales.net)}` : null}
-              </span>
-            </>
-          }
-        />
-        <Stat
-          icon={<ShoppingBag />}
-          label="Satılan ürün"
-          value={<CountUp value={sales.qty} kind="num" />}
-          suffix="adet"
-          sub={`${num(rows.length)} POS kalemi`}
-        />
-        <Stat
-          icon={<Unlink />}
-          label="Eşleşmeyen ürün"
-          value={<CountUp value={unmatched} kind="num" />}
-          tone={unmatched ? "warn" : "good"}
-          info="Reçetesi olmayan ürünlere eşleşenlerin ortalama maliyet oranı uygulanır (Excel'deki gibi)."
-          sub={
-            <>
-              Ort. maliyet oranı {pct(sales.avgCostRatio)}
-              {unmatched ? (
-                <Link
-                  href={`/panel/satislar?ay=${month}&durum=eslesmeyen#satirlar`}
-                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
-                >
-                  Eşleştirmeye git →
-                </Link>
-              ) : null}
-            </>
-          }
+        <StatBreakdown
+          title={`${label} cirosu`}
+          description="Satış raporundaki ciro (KDV dahil), kategori kategori, ürün ürün. Eşleşmeyen ve HİZMET satırları ayrı bölümde; kaleme dokununca tabloda açılır."
+          groups={breakdown.revenue}
+          total={sales.revenue}
+          totalLabel="Ciro (KDV dahil)"
+          empty="Bu ay satış yok."
         >
-          {rows.length ? <MatchCoverage share={coverage} /> : null}
-        </Stat>
+          <Stat
+            icon={<Banknote />}
+            label="Ciro (KDV dahil)"
+            value={<CountUp value={sales.revenue} />}
+            sub={`Net ${tl(sales.net)} · POS komisyonu ${tl(sales.commission)}`}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${label} brüt kâr`}
+          description={`Net ciro − malzeme + ambalaj − POS komisyonu (KDV hariç, kira ve personel öncesi).${
+            sales.net ? ` Marj ${pct(sales.margin)} (brüt kâr ÷ net ciro), maliyet oranı ${pct(sales.cost / sales.net)}.` : ""
+          }`}
+          groups={breakdown.grossProfit}
+          total={sales.grossProfit}
+          totalLabel="Brüt kâr"
+          order="given"
+          shares={false}
+          empty="Bu ay satış yok."
+        >
+          <Stat
+            icon={<TrendingUp />}
+            label="Brüt kâr"
+            value={<CountUp value={sales.grossProfit} />}
+            tone={sales.grossProfit < 0 ? "bad" : "default"}
+            badge={<GrowthPill value={sales.margin}>Marj {pct(sales.margin)}</GrowthPill>}
+            sub={
+              <>
+                Kira ve personel öncesi
+                <span className="block">
+                  Malzeme + ambalaj {tl(sales.cost)}
+                  {sales.net ? ` · maliyet oranı ${pct(sales.cost / sales.net)}` : null}
+                </span>
+              </>
+            }
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${label} satılan ürün`}
+          description={`${num(rows.length)} POS kalemi, kategori kategori, ürün ürün (adet). HİZMET satırları da sayılır; kaleme dokununca tabloda açılır.`}
+          groups={breakdown.qty}
+          total={sales.qty}
+          totalLabel="Satılan ürün"
+          unit="count"
+          empty="Bu ay satış yok."
+        >
+          <Stat
+            icon={<ShoppingBag />}
+            label="Satılan ürün"
+            value={<CountUp value={sales.qty} kind="num" />}
+            suffix="adet"
+            sub={`${num(rows.length)} POS kalemi`}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${label} eşleşmeyen ürünler`}
+          description="Menüdeki bir ürüne ya da HİZMET'e bağlanmamış POS kalemleri. Maliyetleri, eşleşenlerin ortalama maliyet oranıyla tahmin edilir."
+          groups={breakdown.unmatched}
+          total={unmatched}
+          totalLabel="Eşleşmeyen ürün"
+          totalDisplay={`${num(unmatched)} kalem`}
+          order="given"
+          shares={false}
+          unit="count"
+          empty="Bu ay satış yok."
+        >
+          <Stat
+            icon={<Unlink />}
+            label="Eşleşmeyen ürün"
+            value={<CountUp value={unmatched} kind="num" />}
+            tone={unmatched ? "warn" : "good"}
+            info="Reçetesi olmayan ürünlere eşleşenlerin ortalama maliyet oranı uygulanır (Excel'deki gibi)."
+            sub={
+              <>
+                Ort. maliyet oranı {pct(sales.avgCostRatio)}
+                {unmatched ? (
+                  // Kartın döküm düğmesinin üstünde kalır (konumlu): dokununca doğrudan tabloya iner
+                  <Link
+                    href={`/panel/satislar?ay=${month}&durum=eslesmeyen#satirlar`}
+                    className="relative flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                  >
+                    Eşleştirmeye git →
+                  </Link>
+                ) : null}
+              </>
+            }
+          >
+            {rows.length ? <MatchCoverage share={coverage} /> : null}
+          </Stat>
+        </StatBreakdown>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-12">

@@ -39,6 +39,7 @@ import { FloatingBar } from "@/components/ui/floating-bar";
 import { Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COUNT_UNITS } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
@@ -46,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
+import { stockBreakdown } from "./breakdowns";
 import { activeGroupIndex, extraKey, groupProgress, listTopScroll, liveTotals, nextEmptyIndex, type CountLineValue, type GroupProgress } from "./logic";
 
 export interface FormLine extends CountLineValue {
@@ -580,6 +582,14 @@ export function StockCountForm({
     extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
   );
   const groupLive = new Map(live.groups.map((g) => [g.name, g]));
+  // Toplam stok kartının dökümü: formdaki miktarlarla, kartla aynı kural (yalnızca yönetici fiyat görür)
+  const stockGroups = isAdmin
+    ? stockBreakdown(
+        groups,
+        (l) => qtyOf(byId.get(l.id)!),
+        extras.map((e) => ({ name: e.name, unit: e.unit, qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
+      )
+    : [];
   const unpricedExtras = isAdmin ? filledExtras.filter((e) => (parseNumberTR(e.qty) ?? 0) > 0 && !((parseNumberTR(e.unitPrice) ?? 0) > 0)) : [];
   const showExcelVat = isAdmin && Math.abs(live.totalVatExcel - live.totalVat) >= 1;
   /** Personel kayıtlı fiyatlı satırı silemez, adını / birimini değiştiremez (fiyat o ada bağlı) */
@@ -964,66 +974,79 @@ export function StockCountForm({
         </Card>
 
         {isAdmin ? (
-          <Stat
-            icon={<Coins />}
-            label="Toplam stok (KDV hariç)"
-            value={<Money value={live.total} />}
-            info={'Sayılan miktar × birim fiyat (KDV hariç). Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.'}
+          <StatBreakdown
+            title={`${monthLabel} stoğu`}
+            description={`Ay sonu stoğu (KDV hariç): sayılan miktar × birim fiyat, grup grup. Formda yazılıp henüz kaydedilmemiş miktarlar da dahil.${
+              closingOverride !== null ? ` Gelir-giderde bu ayın stoğu elle ${tl(closingOverride)} girildi; kâr-zarar o tutarı kullanır.` : ""
+            }`}
+            groups={stockGroups}
+            total={live.total}
+            totalLabel="Toplam stok (KDV hariç)"
+            empty="Bu ay sayılan kalem yok."
+            // Yazdırılan sayım kağıdında "Döküm ›" ipucu çıkmasın
+            className="print:[&>span]:hidden"
           >
-            <div className="divide-y divide-line rounded-xl bg-surface px-3">
-              <KeyValue
-                label={
-                  <span>
-                    KDV dahil
-                    <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
-                  </span>
-                }
-                value={tl(live.totalVat)}
-              />
-              {showExcelVat ? (
+            <Stat
+              icon={<Coins />}
+              label="Toplam stok (KDV hariç)"
+              value={<Money value={live.total} />}
+              info={'Sayılan miktar × birim fiyat (KDV hariç). Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.'}
+            >
+              <div className="divide-y divide-line rounded-xl bg-surface px-3">
                 <KeyValue
                   label={
                     <span>
-                      KDV dahil (Excel usulü)
-                      <InfoTip
-                        className="ml-1.5"
-                        text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
-                      />
+                      KDV dahil
+                      <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
                     </span>
                   }
-                  value={tl(live.totalVatExcel)}
+                  value={tl(live.totalVat)}
                 />
-              ) : null}
-              {extras.length ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
-              {prevTotal !== null ? (
-                <KeyValue
-                  label={
-                    <span>
-                      Açılış ({prevMonthLabel} devri)
-                      {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
-                    </span>
-                  }
-                  value={tl(prevTotal.value)}
-                />
-              ) : null}
-            </div>
-            {closingOverride !== null ? (
-              <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
-                <p className="flex items-start gap-1.5 font-medium">
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
-                  </span>
-                </p>
-                <Link
-                  href={`/panel/gelir-gider?ay=${month}`}
-                  className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
-                >
-                  Gelir-giderde aç
-                </Link>
+                {showExcelVat ? (
+                  <KeyValue
+                    label={
+                      <span>
+                        KDV dahil (Excel usulü)
+                        <InfoTip
+                          className="ml-1.5"
+                          text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
+                        />
+                      </span>
+                    }
+                    value={tl(live.totalVatExcel)}
+                  />
+                ) : null}
+                {extras.length ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
+                {prevTotal !== null ? (
+                  <KeyValue
+                    label={
+                      <span>
+                        Açılış ({prevMonthLabel} devri)
+                        {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
+                      </span>
+                    }
+                    value={tl(prevTotal.value)}
+                  />
+                ) : null}
               </div>
-            ) : null}
-          </Stat>
+              {closingOverride !== null ? (
+                <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
+                  <p className="flex items-start gap-1.5 font-medium">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <span>
+                      Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
+                    </span>
+                  </p>
+                  <Link
+                    href={`/panel/gelir-gider?yil=${month.slice(0, 4)}&ay=${month}`}
+                    className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+                  >
+                    Gelir-giderde aç
+                  </Link>
+                </div>
+              ) : null}
+            </Stat>
+          </StatBreakdown>
         ) : null}
       </div>
 

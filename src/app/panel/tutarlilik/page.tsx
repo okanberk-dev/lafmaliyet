@@ -12,6 +12,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import type { PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { alerts, consistency, type Alert } from "@/lib/calc/insights";
 import { monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
+import { consistencyBreakdowns, hasNegative } from "./breakdowns";
 import { ConsistencyTable, CountUp, Findings, SeverityBar } from "./consistency-client";
 import { severityOf } from "./severity";
 
@@ -88,6 +90,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const bigCount = severities.filter((x) => x === "big").length;
   const diffCount = severities.filter((x) => x === "big" || x === "diff").length;
   const purchasedCount = c.rows.filter((r) => r.purchased !== null).length;
+  // Kartlara dokununca açılan döküm: malzeme malzeme, kartın rakamını tutar (breakdowns.ts)
+  const bd = consistencyBreakdowns(c, month);
 
   return (
     <>
@@ -101,64 +105,109 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={<AlertTriangle />}
-          label="Büyük fark"
-          value={<CountUp value={bigCount} />}
-          suffix={purchasedCount ? "malzeme" : undefined}
-          tone={!purchasedCount ? "default" : bigCount ? "bad" : diffCount ? "warn" : "good"}
-          info="Büyük fark: alınan miktar reçeteye göre kullanımın 1,5 katından fazla ya da ay içinde hiç kullanılmadığı hâlde alım var. Fark var: 1,15 katından fazla."
-          sub={purchasedCount ? `${num(diffCount)} malzemede fark var · ${num(purchasedCount)} alım girildi` : "Bu ay alım girilmemiş"}
+        <StatBreakdown
+          title={`${ml} büyük fark`}
+          description="Alımı girilen malzemelerde alınan ÷ reçeteye göre kullanım. Büyük fark: 1,5 katından fazla ya da hiç kullanılmadığı hâlde alım var. Malzemeye dokununca tabloda açılır."
+          groups={bd.severity}
+          total={bigCount}
+          totalLabel="Büyük fark"
+          unit="count"
+          order="given"
+          shares={false}
+          empty="Bu ay alım miktarı girilmemiş; karşılaştırılacak malzeme yok."
         >
-          {purchasedCount ? <SeverityBar big={bigCount} diff={diffCount - bigCount} ok={purchasedCount - diffCount} /> : null}
-        </Stat>
-        <Stat
-          icon={<Scale />}
-          label="Fatura farkı"
-          value={<CountUp value={c.totalDiff} kind="tl" />}
-          info="Reçete ↔ fatura: (alınan − reçeteye göre kullanılan) × birim maliyet, tüm malzemelerin toplamı. Pozitif = reçeteye göre fazla alınan malın parası."
-          sub="Alınan − reçeteye göre kullanılan"
-        />
-        <Stat
-          icon={<ClipboardList />}
-          label="Sayım sapması"
-          value={c.hasStockComparison ? <CountUp value={c.totalVariance} kind="tl" /> : "–"}
-          tone={c.hasStockComparison && c.totalVariance > 0 ? "bad" : "default"}
-          info="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) ile reçeteye göre kullanımın farkı × birim maliyet. Yalnızca iki ayı sayılan ve bu ayın alımı girilen malzemeler toplanır; alım girilmeyen 0 sayılmaz. Pozitif = fire, ikram, porsiyon kaçağı."
-          sub={
-            <>
-              {c.hasStockComparison ? (
-                "Gerçek tüketim − reçeteye göre"
-              ) : c.hasCounts ? (
-                "İki ayın sayımı var; alım miktarı gerekli"
-              ) : (
-                <Link href={`/panel/sayim?ay=${month}`} className="-my-3.5 inline-block py-3.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
-                  İki ayın sayımı gerekli
-                </Link>
-              )}
-              {c.needsPurchaseCount ? (
-                <Link
-                  href={`/panel/tutarlilik?ay=${month}&eksik=1`}
-                  className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink"
-                >
-                  {num(c.needsPurchaseCount)} malzemede alım girilmeli
-                </Link>
-              ) : null}
-              {c.unreciped.count ? (
-                <span className="block">
-                  Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
-                </span>
-              ) : null}
-            </>
-          }
-        />
-        <Stat
-          icon={<Receipt />}
-          label="Satış ↔ POS"
-          value={!c.sales.hasLines ? "Rapor yok" : c.sales.ok ? "Tutarlı" : c.sales.pos === null ? "POS yok" : <CountUp value={c.sales.diff ?? 0} kind="tl" />}
-          tone={!c.sales.hasLines ? "default" : c.sales.ok ? "good" : "warn"}
-          sub={!c.sales.hasLines ? "Bu ay satış raporu yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
-        />
+          <Stat
+            icon={<AlertTriangle />}
+            label="Büyük fark"
+            value={<CountUp value={bigCount} />}
+            suffix={purchasedCount ? "malzeme" : undefined}
+            tone={!purchasedCount ? "default" : bigCount ? "bad" : diffCount ? "warn" : "good"}
+            info="Büyük fark: alınan miktar reçeteye göre kullanımın 1,5 katından fazla ya da ay içinde hiç kullanılmadığı hâlde alım var. Fark var: 1,15 katından fazla."
+            sub={purchasedCount ? `${num(diffCount)} malzemede fark var · ${num(purchasedCount)} alım girildi` : "Bu ay alım girilmemiş"}
+          >
+            {purchasedCount ? <SeverityBar big={bigCount} diff={diffCount - bigCount} ok={purchasedCount - diffCount} /> : null}
+          </Stat>
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${ml} fatura farkı`}
+          description="Alımı girilen malzemeler: (alınan − reçeteye göre kullanılan) × birim maliyet (KDV hariç). Artı = reçeteye göre fazla alınan malın parası, eksi = stoktan harcanan."
+          groups={bd.diff}
+          total={c.totalDiff}
+          totalLabel="Fatura farkı"
+          shares={!hasNegative(bd.diff)}
+          empty="Bu ay alım miktarı girilmemiş."
+        >
+          <Stat
+            icon={<Scale />}
+            label="Fatura farkı"
+            value={<CountUp value={c.totalDiff} kind="tl" />}
+            info="Reçete ↔ fatura: (alınan − reçeteye göre kullanılan) × birim maliyet, tüm malzemelerin toplamı. Pozitif = reçeteye göre fazla alınan malın parası."
+            sub="Alınan − reçeteye göre kullanılan"
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${ml} sayım sapması`}
+          description="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) − reçeteye göre kullanım, × birim maliyet (KDV hariç). Yalnızca iki ayı sayılan ve bu ayın alımı girilen malzemeler toplanır."
+          groups={bd.variance}
+          total={c.hasStockComparison ? c.totalVariance : 0}
+          totalDisplay={c.hasStockComparison ? undefined : "–"}
+          totalLabel="Sayım sapması"
+          shares={!hasNegative(bd.variance)}
+          empty="İki ayın sayımı yok: sapma için geçen ayın ve bu ayın sayımı gerekli."
+        >
+          <Stat
+            icon={<ClipboardList />}
+            label="Sayım sapması"
+            value={c.hasStockComparison ? <CountUp value={c.totalVariance} kind="tl" /> : "–"}
+            tone={c.hasStockComparison && c.totalVariance > 0 ? "bad" : "default"}
+            info="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) ile reçeteye göre kullanımın farkı × birim maliyet. Yalnızca iki ayı sayılan ve bu ayın alımı girilen malzemeler toplanır; alım girilmeyen 0 sayılmaz. Pozitif = fire, ikram, porsiyon kaçağı."
+            sub={
+              <>
+                {c.hasStockComparison ? (
+                  "Gerçek tüketim − reçeteye göre"
+                ) : c.hasCounts ? (
+                  "İki ayın sayımı var; alım miktarı gerekli"
+                ) : (
+                  <Link href={`/panel/sayim?ay=${month}`} className="-my-3.5 inline-block py-3.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                    İki ayın sayımı gerekli
+                  </Link>
+                )}
+                {c.needsPurchaseCount ? (
+                  <Link
+                    href={`/panel/tutarlilik?ay=${month}&eksik=1`}
+                    className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink"
+                  >
+                    {num(c.needsPurchaseCount)} malzemede alım girilmeli
+                  </Link>
+                ) : null}
+                {c.unreciped.count ? (
+                  <span className="block">
+                    Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
+                  </span>
+                ) : null}
+              </>
+            }
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${ml} satış ↔ POS`}
+          description={`Ürün listesi − yönetici indirimleri − POS ciro raporu (KDV dahil). Fark 1.000 ₺'den küçükse tutarlı sayılır${c.sales.ok ? `; bu ay fark %${salesDiffPct}` : ""}.`}
+          groups={bd.sales}
+          total={c.sales.diff ?? 0}
+          totalDisplay={c.sales.diff === null ? "–" : undefined}
+          totalLabel="Fark (hesaplanan − POS)"
+          order="given"
+          shares={false}
+          empty="Bu ay satış raporu yok; POS ürün listesi yüklenince karşılaştırma çıkar."
+        >
+          <Stat
+            icon={<Receipt />}
+            label="Satış ↔ POS"
+            value={!c.sales.hasLines ? "Rapor yok" : c.sales.ok ? "Tutarlı" : c.sales.pos === null ? "POS yok" : <CountUp value={c.sales.diff ?? 0} kind="tl" />}
+            tone={!c.sales.hasLines ? "default" : c.sales.ok ? "good" : "warn"}
+            sub={!c.sales.hasLines ? "Bu ay satış raporu yok" : c.sales.ok ? `Fark %${salesDiffPct}` : c.sales.pos === null ? "POS ciro raporu girilmemiş" : "Fark 1.000 ₺'den büyük"}
+          />
+        </StatBreakdown>
       </div>
 
       <ConsistencyTable

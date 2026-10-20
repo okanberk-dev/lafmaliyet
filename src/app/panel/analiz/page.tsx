@@ -13,6 +13,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 
 import { AnalysisTabs, MenuEngineering, ScenarioSimulator } from "./analysis-client";
+import { scenarioFixedItems } from "./breakdowns";
 
 export const metadata: Metadata = { title: "Analiz & senaryo" };
 
@@ -95,7 +96,15 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
           categories={model.categories.map((c) => ({ id: c.id, name: c.name }))}
         />
       }
-      scenario={<ScenarioSimulator base={scenarioBase(model, month)} acikGun={model.settings.acikGun} monthLabel={monthLabel(month)} />}
+      scenario={
+        <ScenarioSimulator
+          base={scenarioBase(model, month)}
+          acikGun={model.settings.acikGun}
+          month={month}
+          monthLabel={monthLabel(month)}
+          fixedItems={scenarioFixedItems(model, month)}
+        />
+      }
     />
   );
 }
