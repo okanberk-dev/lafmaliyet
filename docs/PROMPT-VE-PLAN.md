@@ -224,6 +224,12 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
     sekmelerinde taşır. Gelir-Gider sekmesindeki "<yıl> YILI" sütunu ekrandakiyle aynı kuralla hesaplanır (stok
     devirleri toplanmaz; oranlar = yıllık toplam ÷ yıllık KDV hariç ciro). Satış listesi olmayan ayda Satış
     sekmesinin TOPLAM satırı ve hiç verisi olmayan ayda "faturaya göre kâr" boş kalır (0 yazılmaz).
+21. **Zayi (fire) oranı ürün bazındadır.** Göç 0012 ürünlere kategori oranlarını yazdı: kahveler, Frappe ve Ekstralar
+    %5, Tatlılar %20, Çay ve Ice Tea %40, Smoothie, Frozen ve Soğuk içecekler %10, Sıcak içecekler ve matcha %8,
+    sandviçler %15, paketli atıştırmalık %3, şişe içecek %2. Ayarlar'daki genel oran yalnız zayi oranı boş ürünlere
+    uygulanır (Excel'de G16 boşsa olduğu gibi). Kopyalanmadan açılan yeni ürün, kategorisindeki ürünlerin en sık
+    kullandığı oranı alır (eşitlikte en son eklenenin; kategoride ürün yoksa boş, yani genel oran); kopyalanan ürün
+    kaynağınkini alır. Ayrı kategori ayarı yoktur, oran ürün kartından değişir (`categoryFireDefault`).
 
 ## 6. Excel → Web karşılık tablosu
 

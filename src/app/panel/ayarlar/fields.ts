@@ -27,7 +27,7 @@ export const RATE_FIELDS: FieldDef[] = [
   { key: "komisyon", label: "Banka / POS komisyon oranı", hint: "Sadece kartlı satışlara uygulanır", kind: "pct", sane: true },
   { key: "kartOrani", label: "Kartlı satış oranı", hint: "Kredi kartı + yemek kartı ÷ ciro (Patron Eylül: %85,6)", kind: "pct" },
   { key: "hedefMaliyet", label: "Hedef maliyet oranı (food cost)", hint: "Kafeler için ideal %25–35", kind: "pct", sane: true, positive: true },
-  { key: "fire", label: "Fire / kayıp payı", hint: "Dökülen süt, atılan kahve, bozulan tatlı", kind: "pct" },
+  { key: "fire", label: "Fire / kayıp payı", hint: "Dökülen süt, atılan kahve; yalnız ürün kartında zayi oranı boş ürünlere uygulanır", kind: "pct" },
 ];
 
 export const MEASURE_FIELDS: FieldDef[] = [

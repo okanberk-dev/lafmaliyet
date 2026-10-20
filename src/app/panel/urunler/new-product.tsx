@@ -14,7 +14,7 @@ import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { createProduct } from "@/server/actions/products";
 
-import { copiedSummary, productHref } from "./logic";
+import { categoryFireDefault, copiedSummary, firePct, newProductFireHint, productHref } from "./logic";
 import { priceText } from "./price-text";
 
 /** Reçetesi kopyalanabilecek ürün (kopyalama listesi ve aynı ad + boy denetimi için) */
@@ -26,6 +26,8 @@ export interface ProductOption {
   categoryId?: number;
   active?: boolean;
   price?: number;
+  /** Ürüne özel zayi oranı (boş = genel oran); yeni ürünün kategoriden alacağı oranı göstermek için */
+  fireOverride?: number | null;
 }
 
 /** Sayfa başlığındaki "Yeni ürün" düğmesi; kategori süzgeci açıksa o kategori seçili gelir */
@@ -81,6 +83,8 @@ export function NewProductDialog({
   ].filter((g) => g.items.length);
 
   const duplicate = name.trim() ? products.find((p) => p.size === size && fold(p.name.trim()) === fold(name.trim())) : undefined;
+  // Kopyasız yeni ürünün zayi oranı: kategorideki en sık oran (sunucu da aynı kuralla yazar)
+  const categoryFire = categoryFireDefault(products.filter((p) => p.categoryId === categoryId));
 
   function pickCopy(value: string) {
     setCopyFrom(value);
@@ -105,7 +109,11 @@ export function NewProductDialog({
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
     if (copyFrom) toast.success(`${name.trim()} oluşturuldu`, { description: copiedSummary(res.data) });
-    else toast.success(`${name.trim()} oluşturuldu, şimdi reçetesini girin`);
+    else
+      toast.success(
+        `${name.trim()} oluşturuldu, şimdi reçetesini girin`,
+        res.data.fireOverride !== null ? { description: `Zayi oranı ${firePct(res.data.fireOverride)} yazıldı (bu kategorideki ürünlerin çoğunda böyle).` } : undefined,
+      );
     onClose();
     router.push(productHref(res.data.id, /^\d{4}-\d{2}$/.test(ay) ? ay : null));
   }
@@ -172,7 +180,7 @@ export function NewProductDialog({
             </div>
           </Field>
         </div>
-        <Field label="Kategori" htmlFor="np-cat">
+        <Field label="Kategori" htmlFor="np-cat" hint={copyFrom ? undefined : newProductFireHint(categoryFire)}>
           <Select
             id="np-cat"
             value={categoryId}

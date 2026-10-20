@@ -115,6 +115,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
                 categoryId: r.categoryId,
                 active: r.active,
                 price: r.price,
+                fireOverride: r.fireOverridden ? r.fireRate : null,
               }))}
             />
           </>

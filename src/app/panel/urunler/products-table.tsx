@@ -1116,6 +1116,7 @@ export function ProductsTable({
             categoryId: r.categoryId,
             active: r.active,
             price: r.price,
+            fireOverride: r.fireOverridden ? r.fireRate : null,
           }))}
           initialName={creating}
           initialCategory={category ?? undefined}

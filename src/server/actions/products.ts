@@ -4,6 +4,7 @@ import { and, eq, inArray, max, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { categoryFireDefault } from "@/app/panel/urunler/logic";
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import type { PriceAck } from "@/lib/calc/price-impact";
@@ -79,20 +80,24 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
         .where(and(eq(s.products.name, data.name), eq(s.products.size, data.size)));
       if (dup) throw new UserError(`“${data.name} · ${data.size}” zaten var; başka bir boy seçin ya da adı değiştirin`);
       // Kopyalamada kaynağın ürüne özel fire oranı ve notu da gelir (Excel'de kart bloğu kopyalanınca G16 ve
-      // notlar da taşınır). QR menü görünürlüğü ve aktiflik varsayılanda kalır.
-      let copied: { fireOverride: number | null; note: string | null } = { fireOverride: null, note: null };
+      // notlar da taşınır). QR menü görünürlüğü ve aktiflik varsayılanda kalır. Kopyasız yeni ürün, kategorisindeki
+      // ürünlerin en sık kullandığı zayi oranını alır (categoryFireDefault); ürün kartından değiştirilir.
+      let initial: { fireOverride: number | null; note: string | null };
       if (copyFromId) {
         const [src] = await tx
           .select({ fireOverride: s.products.fireOverride, note: s.products.note })
           .from(s.products)
           .where(eq(s.products.id, copyFromId));
         if (!src) throw new UserError("Kopyalanacak ürün bulunamadı; sayfayı yenileyip tekrar deneyin");
-        copied = src;
+        initial = src;
+      } else {
+        const peers = await tx.select({ id: s.products.id, fireOverride: s.products.fireOverride }).from(s.products).where(eq(s.products.categoryId, data.categoryId));
+        initial = { fireOverride: categoryFireDefault(peers), note: null };
       }
       const [{ m }] = await tx.select({ m: max(s.products.sortOrder) }).from(s.products);
       const [created] = await tx
         .insert(s.products)
-        .values({ ...data, ...copied, sortOrder: (m ?? 0) + 1 })
+        .values({ ...data, ...initial, sortOrder: (m ?? 0) + 1 })
         .returning({ id: s.products.id });
       let lines = 0;
       if (copyFromId) {
@@ -111,11 +116,11 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
           );
         }
       }
-      return { id: created.id, lines, fireOverride: copied.fireOverride, noteCopied: !!copied.note };
+      return { id: created.id, lines, fireOverride: initial.fireOverride, noteCopied: !!initial.note };
     });
     await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
-    /** Kopyalamada neyin geldiği: bildirimde söylenir (fire ve not sessizce taşınmasın) */
+    /** Kopyalamada neyin geldiği, kopyasızda kategoriden gelen zayi oranı: bildirimde söylenir (sessizce taşınmasın) */
     return result;
   });
 }

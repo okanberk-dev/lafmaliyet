@@ -8,12 +8,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  categoryFireDefault,
   compareBy,
   copiedSummary,
   copyDescription,
   fireText,
   listHref,
   menuAverages,
+  newProductFireHint,
   parseFireInput,
   productHref,
   qtyText,
@@ -263,4 +265,28 @@ test("Kopyalama: fire ve not taşındığı önceden ve sonradan söylenir", () 
   assert.equal(copiedSummary({ lines: 4, fireOverride: 0.08, noteCopied: true }), "4 malzeme, özel fire %8 ve not kopyalandı.");
   assert.equal(copiedSummary({ lines: 2, fireOverride: null, noteCopied: false }), "2 malzeme kopyalandı.");
   assert.equal(copiedSummary({ lines: 0, fireOverride: null, noteCopied: true }), "Boş reçete ve not kopyalandı.");
+});
+
+test("Yeni ürünün zayi oranı: kategorideki en sık oran; eşitlikte en yeni ürününki, boş oran da sayılır", () => {
+  // Sıcak İçecekler (göç 0012): 8 ürün %8, Çay M ve L %40 → yeni ürün %8
+  const hot = [...Array.from({ length: 8 }, (_, i) => ({ id: 70 + i, fireOverride: 0.08 })), { id: 90, fireOverride: 0.4 }, { id: 91, fireOverride: 0.4 }];
+  assert.equal(categoryFireDefault(hot), 0.08);
+  // Eşitlik: en son eklenen ürünün oranı (sıra karışık gelse de)
+  const tie = [
+    { id: 5, fireOverride: 0.15 },
+    { id: 9, fireOverride: 0.03 },
+    { id: 7, fireOverride: 0.15 },
+    { id: 3, fireOverride: 0.03 },
+  ];
+  assert.equal(categoryFireDefault(tie), 0.03);
+  assert.equal(categoryFireDefault(tie.reverse()), 0.03);
+  // Kategorinin çoğu genel oranda (boş) → boş kalır; tek özel ürün (Çay %40) yeni ürüne geçmez
+  assert.equal(categoryFireDefault([{ id: 1, fireOverride: null }, { id: 2 }, { id: 3, fireOverride: 0.4 }]), null);
+  // Kategoride ürün yok → genel oran
+  assert.equal(categoryFireDefault([]), null);
+  // Kayan nokta farkı aynı oran sayılır
+  assert.equal(categoryFireDefault([{ id: 1, fireOverride: 0.07 }, { id: 2, fireOverride: 0.1 * 0.7 }, { id: 3, fireOverride: 0.2 }]), 0.1 * 0.7);
+  assert.equal(newProductFireHint(0.2), "Zayi oranı %20 olur (bu kategorideki ürünlerin çoğunda böyle); ürün kartından değiştirebilirsiniz.");
+  assert.equal(newProductFireHint(0.075), "Zayi oranı %7,5 olur (bu kategorideki ürünlerin çoğunda böyle); ürün kartından değiştirebilirsiniz.");
+  assert.equal(newProductFireHint(null), "Zayi oranı Ayarlar'daki genel oran olur; ürün kartından değiştirebilirsiniz.");
 });

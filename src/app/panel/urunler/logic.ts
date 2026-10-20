@@ -106,6 +106,35 @@ export function sameRate(a: number | null, b: number | null): boolean {
   return Math.abs(a - b) < 1e-9;
 }
 
+/**
+ * Kopyalanmadan açılan yeni ürünün zayi oranı: aynı kategorideki ürünlerde en sık kullanılan oran. Boş oran
+ * (Ayarlar'daki genel oran) da bir seçenek sayılır; eşitlikte en son eklenen ürünün oranı kazanır. Kategoride ürün
+ * yoksa boş döner (genel oran). Ayrı bir kategori ayarı yok: oran ürün kartından değişir.
+ */
+export function categoryFireDefault(peers: { id: number; fireOverride?: number | null }[]): number | null {
+  const groups = new Map<string, { rate: number | null; count: number; newest: number }>();
+  for (const p of peers) {
+    const rate = p.fireOverride ?? null;
+    const key = rate === null ? "genel" : rate.toFixed(6);
+    const g = groups.get(key);
+    if (!g) groups.set(key, { rate, count: 1, newest: p.id });
+    else {
+      g.count++;
+      if (p.id > g.newest) Object.assign(g, { rate, newest: p.id });
+    }
+  }
+  let best: { rate: number | null; count: number; newest: number } | null = null;
+  for (const g of groups.values()) if (!best || g.count > best.count || (g.count === best.count && g.newest > best.newest)) best = g;
+  return best?.rate ?? null;
+}
+
+/** Yeni ürün penceresinde kategorinin altında: kopyasız açılan ürünün alacağı zayi oranı */
+export function newProductFireHint(rate: number | null): string {
+  return rate === null
+    ? "Zayi oranı Ayarlar'daki genel oran olur; ürün kartından değiştirebilirsiniz."
+    : `Zayi oranı ${firePct(rate)} olur (bu kategorideki ürünlerin çoğunda böyle); ürün kartından değiştirebilirsiniz.`;
+}
+
 // ---------------------------------------------------------------- Kaydedilmemiş değişiklik
 
 export interface RecipeLineState {
