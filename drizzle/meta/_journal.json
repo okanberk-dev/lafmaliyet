@@ -85,6 +85,13 @@
       "when": 1792497474374,
       "tag": "0011_aylik_harcamalar",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792499186243,
+      "tag": "0012_zayi_oranlari",
+      "breakpoints": true
     }
   ]
 }
