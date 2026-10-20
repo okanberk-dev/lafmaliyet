@@ -1,14 +1,15 @@
 "use server";
 
 import { and, count, eq, ne, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { z } from "zod";
 
 import { hashPassword, verifyPassword } from "@/server/auth/password";
-import { clearPending, endSession, requireUser, startPending, startSession } from "@/server/auth/dal";
-import { PENDING_COOKIE, verifyPending } from "@/server/auth/session";
+import { clearPending, endSession, readDevice, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
+import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
+import { PENDING_COOKIE, verifyPending, type DeviceToken } from "@/server/auth/session";
 import {
   consumeRecoveryCode,
   formatSecret,
@@ -18,6 +19,7 @@ import {
   otpauthUri,
   verifyTotp,
 } from "@/server/auth/totp";
+import { expireUserTokens } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
 import { open, seal } from "@/server/secret-box";
 
@@ -27,6 +29,26 @@ import { attempt, UserError, zText } from "./util";
 /** Bu kadar hatalı denemeden sonra hesap kısa süre kilitlenir (parola ve kod adımı birlikte sayılır) */
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
+const LOCK_MS = LOCK_MINUTES * 60_000;
+
+/*
+ * Kaba kuvvete karşı üç katman (bellektekiler sunucusuz örnek başına sayılır, ilk savunmadır):
+ * - Aynı IP'den 15 dakikada en fazla 20 hatalı deneme. Başarılı giriş sayılmaz: kafedeki ortak IP kapanmasın.
+ * - Hesap kilidi (veritabanı): 5 hatada 15 dakika. Bilinen cihaza (bu tarayıcıdan daha önce girilmiş) uygulanmaz;
+ *   e-postayı bilen biri 5 yanlış parolayla sahibini panelden kapatamasın.
+ * - Bilinen cihazın kendi payı: cihaz + kişi başına 10 hatada 15 dakika. Bunu yalnızca o cihaz tüketebilir.
+ */
+const loginIp = createLimiter({ limit: 20, windowMs: LOCK_MS });
+const deviceLock = createLockout({ max: MAX_FAILED * 2, lockMs: LOCK_MS });
+/** Kayıtsız / pasif e-posta da 5. hatada aynı kilit mesajını alır: girişten hesap var mı yok mu anlaşılmasın */
+const ghostLock = createLockout({ max: MAX_FAILED, lockMs: LOCK_MS });
+/** Kayıtsız e-postada da bir parola özeti denenir (işlemci yükü kayıtlı hesapla aynı olsun) */
+let ghostHash: Promise<string> | undefined;
+
+const WRONG = "E-posta ya da parola hatalı";
+const TOO_MANY = `Çok fazla deneme yapıldı. ${LOCK_MINUTES} dakika sonra yeniden deneyin.`;
+/** Başarısız giriş yanıtı en erken bu sürede döner: özet, sorgu ve sayaç yazımı süreden okunmasın */
+const FAIL_MS = 900;
 
 export type LoginState = { error?: string; email?: string; step?: "password" | "totp" };
 
@@ -44,13 +66,24 @@ function safeNext(next: string | undefined, role: "admin" | "staff") {
 
 const slow = () => new Promise((r) => setTimeout(r, 600));
 
+async function padTo(started: number) {
+  const left = FAIL_MS - (Date.now() - started);
+  if (left > 0) await new Promise((r) => setTimeout(r, left));
+}
+
+/** Veritabanındaki kilit sürüyorsa bitişi */
+const activeLock = (u: { lockedUntil: Date | null }) => (u.lockedUntil && u.lockedUntil > new Date() ? u.lockedUntil : null);
+
+/** Bu tarayıcı kişi için bilinen cihazsa cihazın hata payı anahtarı, değilse null */
+const knownDeviceKey = (userId: number, device: DeviceToken | null) => (device?.ids.includes(userId) ? `${userId}:${device.did}` : null);
+
 function lockedMessage(until: Date) {
   const min = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
   return `Çok fazla hatalı deneme. ${min} dakika sonra yeniden deneyin.`;
 }
 
-/** Hatalı denemeyi sayar; sınır aşılırsa hesabı kilitler. Kilitlendiyse true. */
-async function registerFailure(userId: number) {
+/** Hatalı denemeyi sayar; sınır aşılırsa hesabı kilitler. Kilitlendiyse kilidin bitişi, yoksa null. */
+async function registerFailure(userId: number): Promise<Date | null> {
   const [row] = await getDb()
     .update(s.users)
     // Tek UPDATE: eşzamanlı denemeler sırayla sayılır. Kilitlenince sayaç sıfırlanır; kilit bitince yeniden 5 hak.
@@ -60,7 +93,7 @@ async function registerFailure(userId: number) {
     })
     .where(eq(s.users.id, userId))
     .returning({ failedLogins: s.users.failedLogins, lockedUntil: s.users.lockedUntil });
-  return Boolean(row?.lockedUntil && row.lockedUntil > new Date());
+  return row ? activeLock(row) : null;
 }
 
 async function completeLogin(user: typeof s.users.$inferSelect, next: string | undefined, extra: Partial<typeof s.users.$inferInsert> = {}) {
@@ -68,11 +101,14 @@ async function completeLogin(user: typeof s.users.$inferSelect, next: string | u
     .update(s.users)
     .set({ lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null, ...extra })
     .where(eq(s.users.id, user.id));
+  const did = await rememberDevice(user.id);
+  deviceLock.clear(`${user.id}:${did}`);
   await startSession(user);
   redirect(safeNext(next, user.role));
 }
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
+  const started = Date.now();
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -96,16 +132,35 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     }
   }
 
+  // Her başarısız yanıt aynı sürede ve aynı sözlerle döner: kayıtlı / kayıtsız e-posta ayırt edilemesin
+  const fail = async (error: string): Promise<LoginState> => {
+    await padTo(started);
+    return { error, email };
+  };
+  const deviceKey = user?.active ? knownDeviceKey(user.id, await readDevice()) : null;
+  const ip = clientIp(await headers());
+  if (!deviceKey && loginIp.blocked(ip)) return fail(TOO_MANY);
+
+  // Kayıtsız ya da pasif: parola yine bir özetle denenir, kilit bellekte tutulur (kayıtlı hesapla aynı kural)
   if (!user || !user.active) {
-    await slow();
-    return { error: "E-posta ya da parola hatalı", email };
+    const until = ghostLock.lockedUntil(email);
+    if (until) return fail(lockedMessage(until));
+    await verifyPassword(password, await (ghostHash ??= hashPassword("yok")));
+    loginIp.hit(ip);
+    const locked = ghostLock.fail(email);
+    return fail(locked ? lockedMessage(locked) : WRONG);
   }
-  if (user.lockedUntil && user.lockedUntil > new Date()) return { error: lockedMessage(user.lockedUntil), email };
+  const until = deviceKey ? deviceLock.lockedUntil(deviceKey) : activeLock(user);
+  if (until) return fail(lockedMessage(until));
 
   if (!(await verifyPassword(password, user.passwordHash))) {
-    const locked = await registerFailure(user.id);
-    await slow();
-    return { error: locked ? lockedMessage(new Date(Date.now() + LOCK_MINUTES * 60_000)) : "E-posta ya da parola hatalı", email };
+    let locked: Date | null;
+    if (deviceKey) locked = deviceLock.fail(deviceKey);
+    else {
+      loginIp.hit(ip);
+      locked = await registerFailure(user.id);
+    }
+    return fail(locked ? lockedMessage(locked) : WRONG);
   }
 
   if (user.totpEnabled && user.totpSecret) {
@@ -131,9 +186,11 @@ export async function verifyLoginCodeAction(_prev: TotpState, formData: FormData
     await clearPending();
     return { error: "Oturum açılamadı, yeniden giriş yapın.", expired: true };
   }
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
+  const deviceKey = knownDeviceKey(user.id, await readDevice());
+  const until = deviceKey ? deviceLock.lockedUntil(deviceKey) : activeLock(user);
+  if (until) {
     await clearPending();
-    return { error: lockedMessage(user.lockedUntil), expired: true };
+    return { error: lockedMessage(until), expired: true };
   }
 
   const secret = open(user.totpSecret, "totp");
@@ -149,11 +206,11 @@ export async function verifyLoginCodeAction(_prev: TotpState, formData: FormData
     return {};
   }
 
-  const locked = await registerFailure(user.id);
+  const locked = deviceKey ? deviceLock.fail(deviceKey) : await registerFailure(user.id);
   await slow();
   if (locked) {
     await clearPending();
-    return { error: lockedMessage(new Date(Date.now() + LOCK_MINUTES * 60_000)), expired: true };
+    return { error: lockedMessage(locked), expired: true };
   }
   return { error: "Kod geçersiz ya da süresi geçmiş. Uygulamadaki güncel kodu girin." };
 }
@@ -192,6 +249,8 @@ export async function changePasswordAction(_prev: PasswordState, formData: FormD
   const [u] = await db.select().from(s.users).where(eq(s.users.id, me.id)).limit(1);
   if (!u || !(await verifyPassword(current, u.passwordHash))) return { error: "Mevcut parola hatalı" };
   await db.update(s.users).set({ passwordHash: await hashPassword(next) }).where(eq(s.users.id, me.id));
+  // Bekleyen sıfırlama / davet bağlantıları eski parolayla birlikte geçersiz olur
+  await expireUserTokens(me.id);
   await rotateSessions(me.id);
   await logActivity(me, "Parola değiştirildi", me.email);
   return { ok: true };
@@ -217,6 +276,8 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
     if (n > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
     await db.update(s.users).set({ name: data.name, email: data.email }).where(eq(s.users.id, me.id));
+    // Eski adrese gönderilmiş sıfırlama bağlantısı artık parola belirleyemez
+    if (data.email !== u.email) await expireUserTokens(me.id);
     // Ad oturum çerezinde de duruyor
     const [fresh] = await db.select().from(s.users).where(eq(s.users.id, me.id)).limit(1);
     if (fresh) await startSession(fresh);

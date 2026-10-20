@@ -101,7 +101,9 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
   return (
     <>
       <Header actions={<MonthPicker months={months} value={month} />} />
+      {/* Ay değişince form baştan kurulur: tarih yeni ayın tarihi olur (yalnız ?ay= değişince istemci durumu korunurdu) */}
       <MonthlyExpenses
+        key={month}
         month={month}
         isCurrent={month === model.currentMonth}
         categories={categories}

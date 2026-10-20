@@ -7,11 +7,12 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { monthOfDate, normalizeSupplier } from "@/lib/calc/engine";
 import { unpaidSummary } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
-import { monthLabel, monthShort, tl } from "@/lib/format";
+import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
@@ -19,10 +20,11 @@ import { getDb, schema as s } from "@/server/db";
 import { listInvoiceDocuments } from "@/server/documents";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
+import { invoiceBreakdowns } from "./breakdowns";
 import { DeletedBills } from "./deleted-bills";
 import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
-import { MonthStats } from "./month-stats";
+import { MonthStatCards } from "./month-stat-cards";
 import { ReviewNotice } from "./review-notice";
 import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
 
@@ -36,8 +38,8 @@ const EDGE = "shadow-[inset_-1px_0_0_var(--color-line-strong)]";
 /** Yıl toplamı sütunu: gelir-gider tablosundaki gibi hafif koyu şerit */
 const TOTAL_COL = "bg-ink/[0.03] pr-5";
 
-/** Aylık tablodan listeye inen bağlantı (?kategori=…&ay=…); liste süzgeçleri adresten okur */
-function listHref(filters: { kategori?: string; ay?: string; durum?: string }) {
+/** Aylık tablodan ve kart dökümlerinden listeye inen bağlantı (?kategori=…&ay=…&ara=…); liste süzgeçleri adresten okur */
+function listHref(filters: { kategori?: string; ay?: string; durum?: string; ara?: string }) {
   const q = new URLSearchParams(Object.entries(filters).filter((e): e is [string, string] => Boolean(e[1])));
   return `/panel/faturalar?${q}#fatura-listesi`;
 }
@@ -103,51 +105,74 @@ async function InvoicesContent() {
   const supplierCount = new Set(invoices.map((i) => normalizeSupplier(i.supplier))).size;
   // Eşitlemenin kategorisini tahminle yazdığı, onay bekleyen faturalar
   const reviewCount = invoices.filter((i) => i.needsReview).length;
+  // Kartların dökümü (karta dokununca): kategori kategori, kategoride tedarikçi tedarikçi; ay kartları ay ay
+  const breakdown = invoiceBreakdowns(invoices, months, listHref);
+  // Fatura kategorisi → bağlı Aylık harcamalar kategorisi (pencere bu faturanın gelir-giderde nerede sayıldığını söyler)
+  const expenseLinks = Object.fromEntries((model.ds.expenseCategories ?? []).filter((c) => c.invoiceCategory).map((c) => [c.invoiceCategory!, c.name]));
 
   return (
     <>
       <PageHeader eyebrow="Para" title="Faturalar" excel="Faturalar" description={DESCRIPTION} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          icon={<FileText />}
-          label="Toplam fatura"
-          value={<CountUp value={invoices.length} />}
-          sub={`${supplierCount} tedarikçi`}
-          info="Tedarikçi adının sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” ile “Kaldi” aynı tedarikçidir."
-        />
-        <MonthStats
+        <StatBreakdown
+          title="Bütün faturalar"
+          description={`${num(invoices.length)} fatura, kategori kategori (KDV hariç, iskonto düşülmüş). Kafe dışı faturalar toplama girmez. Kategoriye dokununca liste süzülür.`}
+          groups={breakdown.all}
+          empty="Henüz fatura yok."
+        >
+          <Stat
+            icon={<FileText />}
+            label="Toplam fatura"
+            value={<CountUp value={invoices.length} />}
+            sub={`${supplierCount} tedarikçi`}
+            info="Tedarikçi adının sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” ile “Kaldi” aynı tedarikçidir."
+          />
+        </StatBreakdown>
+        <MonthStatCards
           months={months}
           goodsByMonth={goodsByMonth}
           commissionByMonth={commissionByMonth}
           goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}.`}
+          goods={breakdown.goods}
+          commission={breakdown.commission}
         />
-        <Stat
-          icon={<CircleAlert />}
-          label="Ödenmemiş"
-          value={<CountUp value={unpaid.count} />}
-          tone={unpaid.count ? "warn" : "good"}
-          info={
-            unpaid.partialCount
-              ? `Kalan borç, KDV dahil. ${unpaid.partialCount} fatura kısmen ödendi: onlarda Paraşüt'ün bildirdiği kalan tutar sayılır (faturaların tamamı ${tl(unpaid.payableTotal)}). Hatırlatıcılar da aynı tutarı kullanır.`
-              : "Kalan borç, KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır; Hatırlatıcılar da aynı tutarı kullanır."
-          }
-          sub={
-            unpaid.count ? (
-              <>
-                {tl(unpaid.total)} kalan borç
-                <Link
-                  href={listHref({ durum: "odenmedi" })}
-                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
-                >
-                  Listede göster →
-                </Link>
-              </>
-            ) : (
-              "Hepsi ödendi"
-            )
-          }
-        />
+        <StatBreakdown
+          title="Ödenmemiş faturalar"
+          description="Kalan borç (KDV dahil), kategori kategori, tedarikçi tedarikçi. Tedarikçiye dokununca ödenmemiş faturaları listede açılır."
+          groups={breakdown.unpaid}
+          total={unpaid.total}
+          totalLabel="Kalan borç"
+          empty="Ödenmemiş fatura yok."
+        >
+          <Stat
+            icon={<CircleAlert />}
+            label="Ödenmemiş"
+            value={<CountUp value={unpaid.count} />}
+            tone={unpaid.count ? "warn" : "good"}
+            info={
+              unpaid.partialCount
+                ? `Kalan borç, KDV dahil. ${unpaid.partialCount} fatura kısmen ödendi: onlarda Paraşüt'ün bildirdiği kalan tutar sayılır (faturaların tamamı ${tl(unpaid.payableTotal)}). Hatırlatıcılar da aynı tutarı kullanır.`
+                : "Kalan borç, KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır; Hatırlatıcılar da aynı tutarı kullanır."
+            }
+            sub={
+              unpaid.count ? (
+                <>
+                  {tl(unpaid.total)} kalan borç
+                  {/* Kartın döküm düğmesinin üstünde kalır (konumlu): dokununca doğrudan listeye iner */}
+                  <Link
+                    href={listHref({ durum: "odenmedi" })}
+                    className="relative flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                  >
+                    Listede göster →
+                  </Link>
+                </>
+              ) : (
+                "Hepsi ödendi"
+              )
+            }
+          />
+        </StatBreakdown>
       </div>
 
       <ReviewNotice count={reviewCount} />
@@ -160,6 +185,7 @@ async function InvoicesContent() {
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
         parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
         ignoredCount={ignored.length}
+        expenseLinks={expenseLinks}
       />
 
       <Card className="mt-6">

@@ -53,7 +53,10 @@ export interface MonthTaskFacts {
   dim: number;
   sales: { lines: number; unmatched: number; summaryRows: number; refMonth: string | null };
   info: { openDays: number | null; posRevenue: number | null };
-  /** review: kategorisi tahminle yazılmış, henüz onaylanmamış faturalar (Paraşüt eşitlemesi) */
+  /**
+   * count: kafenin faturaları (kafe dışı hariç). review: kontrol bekleyen, henüz onaylanmamış faturalar (Paraşüt
+   * eşitlemesi: kategori tahmini, tevkifat, e-faturaya göre değişen tutar); kafe dışı dahil, count'un alt kümesi değil
+   */
   invoices: { count: number; goods: number; review?: number };
   water: { bill: number | null; usedInRecipes: boolean; perLiter: number; costMonth: string | null; reason: WaterCost["reason"] };
   stock: { lines: number; total: number };
@@ -117,7 +120,8 @@ export function monthTaskFacts(
     expenses: (() => {
       const xs = model.expenseAmounts(month);
       return {
-        missing: xs.filter((x) => model.expenseExpected(x.cat, month) && !x.entries).map((x) => x.cat.name),
+        // Bağlı fatura kategorisinden faturası gelen ay girilmiş sayılır (Aylık harcamalar uyarısıyla aynı kural)
+        missing: xs.filter((x) => model.expenseExpected(x.cat, month) && !x.entries && !x.invoices).map((x) => x.cat.name),
         entered: xs.filter((x) => x.total).length,
         total: xs.reduce((a, x) => a + x.total, 0),
       };
@@ -234,7 +238,8 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         key: "fatura",
         title: "Faturalar",
         status: "todo",
-        detail: `${num(f.invoices.count)} fatura · ${num(f.invoices.review)} tanesinin kategorisi tahminle yazıldı; doğruysa tek dokunuşla onaylayın.${sync}`,
+        // İki sayı ayrı kümelerden (kafe dışı faturalar da kontrol bekleyebilir): "N fatura · M tanesinin" denmez
+        detail: `${num(f.invoices.review)} fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.${f.invoices.count ? ` Bu ay ${num(f.invoices.count)} kafe faturası var.` : ""}${sync}`,
         href: `/panel/faturalar?ay=${m}&durum=kontrol`,
         action: "Kontrol et",
       });

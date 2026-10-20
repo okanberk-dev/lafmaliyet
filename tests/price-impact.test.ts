@@ -119,6 +119,31 @@ test("zam: uyarılacak ürün önce gelir; 'şimdilik böyle kalsın' maliyet ar
   assert.equal(isAcknowledged(latte, null), false);
 });
 
+test("zam: 'zammın payı' uygulanınca öneri yeni fiyattan yeniden artmaz; geri alınca ya da maliyet artınca uyarı döner", () => {
+  const latteId = ds.products.find((p) => p.name === "Latte" && p.size === "M")!.id;
+  const impactAt = (price: number, prices: Record<number, number> = { [milk.id]: 60 }) => {
+    const m = createModel(withPrices(prices, (p) => (p.id === latteId ? { ...p, price } : p)));
+    return productImpacts(m, ingredientChanges(m.ds.ingredients, history, SINCE)).find((i) => i.productId === latteId)!;
+  };
+  const first = impactAt(80);
+  assert.equal(first.basis, "keep");
+  // Fiyat zam penceresinde: öneri yeni fiyattan yine artar (85 → 90 → …); uygulanan öneri kaydı bunu kapatır
+  const applied = impactAt(first.suggestedPrice);
+  assert.equal(applied.needsPrice, true);
+  assert.ok(applied.suggestedPrice > first.suggestedPrice);
+  const ack = { [latteId]: { cost: first.costAfter, at: "2026-10-16", price: first.suggestedPrice } };
+  assert.equal(isAcknowledged(applied, ack), true);
+  // Fiyatı elle daha da artırmak uyarıyı açmaz; Geri al (eski fiyat) açar
+  assert.equal(isAcknowledged(impactAt(first.suggestedPrice + 5), ack), true);
+  assert.equal(isAcknowledged(impactAt(80), ack), false);
+  // Yeni zam: maliyet kayıttakinden artınca yeniden uyarılır
+  const again = impactAt(first.suggestedPrice, { [milk.id]: 70 });
+  assert.ok(again.costAfter > first.costAfter * 1.005);
+  assert.equal(isAcknowledged(again, ack), false);
+  // "Böyle kalsın" (fiyatsız kayıt) fiyattan bağımsız
+  assert.equal(isAcknowledged(impactAt(80), { [latteId]: { cost: first.costAfter, at: "2026-10-16" } }), true);
+});
+
 test("zam özeti: en çok üç hammadde, kalanı sayıyla", () => {
   const c = (name: string, pct: number) => ({ name, pct });
   assert.equal(changesSummary([c("Süt", 0.157), c("Espresso", 0.06)]), "Süt +%16, Espresso +%6");

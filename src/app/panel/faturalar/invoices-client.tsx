@@ -76,6 +76,8 @@ const PILL_TONE: Partial<Record<Tone, string>> = {
 };
 /** Alt sayfadaki kategori listesinin renk noktası (rozetle aynı anlam) */
 const CATEGORY_DOT: Partial<Record<Tone, string>> = { green: "bg-good", blue: "bg-info", gray: "bg-ink-quiet", violet: "bg-bordo-600" };
+/** Renklerin anlamı (tablo başlığındaki bilgi ve telefondaki kategori sayfası); categoryTone ile aynı sıra */
+const CATEGORY_LEGEND = `Yeşil: mal maliyeti, gelir-giderde tedarikçi bazında. Mavi: komisyon giderleri. Gri: Aylık harcamalar'da bir kategoriye bağlıysa gelir-giderde orada sayılır, değilse sabit giderlerden izlenir. Bordo: kafe dışı (${SEPARATE_CATEGORIES.join(", ")}), kafenin toplamlarına girmez.`;
 const CHEVRON =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
@@ -158,6 +160,7 @@ export function InvoicesClient({
   suppliers,
   parasutCompanyId,
   ignoredCount = 0,
+  expenseLinks,
 }: {
   invoices: InvoiceRow[];
   /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
@@ -168,6 +171,8 @@ export function InvoicesClient({
   suppliers: string[];
   /** Silinip yok sayılan Paraşüt faturası sayısı (silme onayında geri alma yolunu söylemek için) */
   ignoredCount?: number;
+  /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (pencerenin kategori ipucu; verilmezse ipucu iki olasılığı da söyler) */
+  expenseLinks?: Record<string, string>;
 }) {
   const reduce = useCalmMotion();
   useSettleScroll(invoices);
@@ -967,7 +972,7 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Kategori
-                      <InfoTip text="Excel'deki açılır liste gibi satırdan değiştirin. Yeşil: mal maliyeti, gelir-giderde tedarikçi bazında. Mavi: komisyon giderleri. Gri: gelir-gider tablosuna girmez, sabit giderlerden izlenir. Paraşüt eşitlemesi kategoriyi korur." />
+                      <InfoTip text={`Excel'deki açılır liste gibi satırdan değiştirin. ${CATEGORY_LEGEND} Paraşüt eşitlemesi kategoriyi korur.`} />
                     </span>
                   </TH>
                   <TH numeric>
@@ -1319,9 +1324,7 @@ export function InvoicesClient({
                 ),
               }))}
             />
-            <p className="text-xs leading-5 text-ink-mute">
-              Yeşil: mal maliyeti, gelir-giderde tedarikçi bazında. Mavi: komisyon giderleri. Gri: gelir-gider tablosuna girmez, sabit giderlerden izlenir.
-            </p>
+            <p className="text-xs leading-5 text-ink-mute">{CATEGORY_LEGEND}</p>
           </div>
         ) : null}
       </Dialog>
@@ -1337,6 +1340,7 @@ export function InvoicesClient({
           parasutCompanyId={parasutCompanyId ?? null}
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
           onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
+          expenseLinks={expenseLinks}
         />
       ) : null}
       {/* Fatura penceresinden açılınca onun üstünde durur (sonra açılan modal en üstte) */}

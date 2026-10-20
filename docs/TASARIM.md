@@ -44,10 +44,11 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
 
 ## 3. Kabuk (AkmanOS "App Shell" + "Sidebar")
 
-- Solda 17.5rem zinc-100 kenar çubuğu: L'Af karosu + ad + **bildirim zili** (son ayın uyarıları), geniş **⌘K
-  arama** (AkmanOS Command Palette: ekranlar, ürünler, hammaddeler), beyaz kapta ikon karolu menü (yaylı açılan alt
-  listeler, fareyi izleyen tek vurgu), altta **profil menüsü** (sıvı metal avatar; Hesabım, Ayarlar, Yardım,
-  laffogato.net, QR menü önizleme, Çıkış).
+- Solda 17.5rem zinc-100 kenar çubuğu: L'Af karosu + ad + **bildirim zili** (Ödemeler · Faturalar · Uyarılar
+  başlıkları, altta Ödemeler ve Genel bakış düğmeleri; `notifications.tsx`), geniş **⌘K arama** (AkmanOS Command
+  Palette: ekranlar, ürünler, hammaddeler), beyaz kapta ikon karolu menü (yaylı açılan alt listeler, fareyi izleyen
+  tek vurgu), altta **profil menüsü** (sıvı metal avatar; Hesabım, Ayarlar, Yardım, laffogato.net, QR menü önizleme,
+  Çıkış).
 - İçerik beyaz zeminde, `max-w-[1400px]`.
 - **Telefon ve tablet kabuğu (lg altı, `bottom-nav.tsx`, `sidebar.tsx`):** üstte 56px yapışkan çubuk (L'Af karosu →
   ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü** (yönetici: Genel bakış · Satışlar ·
@@ -64,8 +65,11 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
 - Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
   etiketlerini kapatır.
 - Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) ·
-  Satış & gider (Satışlar, Faturalar, Gelir-gider, Giderler & personel) · Stok (Stok sayımı, Tutarlılık) ·
-  Analiz & senaryo · Ayarlar · Yardım. Personel yalnızca Reçete defteri ve Stok sayımı'nı görür.
+  Satış & gider (Satışlar, Faturalar, Gelir-gider, Giderler & personel, Ödemeler & hatırlatıcılar) · Stok (Stok sayımı,
+  Tutarlılık) · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım.
+  Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
+  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Personel yalnızca Reçete defteri ve Stok sayımı'nı
+  görür.
 
 ## 4. Bileşenler
 
@@ -78,6 +82,7 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `SectionTabs({ section, current })`, `Segmented`, `SegmentedLinks` | sidebar vurgusu | Beyaz seçili parça yaylı kayar (`layoutId`). |
 | `Card`, `CardHeader({ icon, title, description, meta, actions })`, `CardContent`, `CardFooter`, `Well` | chart-card / list-table başlığı | `rounded-3xl bg-panel`; başlıkta kenarlıklı beyaz ikon kutusu. |
 | `Stat({ icon, label, value, sub, tone, info, badge, children })`, `GrowthPill` | statistic-cards, growth-badge | `rounded-2xl bg-panel p-3.5`, kenarlıklı ikon kutusu, 24px rakam, limon/kırmızı rozet. |
+| `StatBreakdown({ title, description, groups, total, empty, children })` (`ui/stat-breakdown.tsx`) | — | Stat kartını görünümünü değiştirmeden tıklanır yapar (sağ üstte "Döküm ›"); dokununca o rakamın dökümü `Dialog`'da açılır (satırlar büyükten küçüğe, pay %, toplam satırı; kafe dışı ayrı grup). Faturalar, Aylık harcamalar ve Gelir-gider kartlarında; veri sunucuda `src/lib/breakdown.ts` ile hazırlanır. |
 | `TableWrap`, `Table`, `TH`, `TR`, `TD`, `TFootRow`, `SortButton` | user-list-table / product-list-table | Kalın 14px başlık, ⇅ sıralama, ince satır çizgisi. |
 | `Pagination`, `usePaged` | list-table/pagination | "Sayfa 1 / 6", koyu etkin sayfa. |
 | `IconButton({ label, tone })` | list-table/icon-action-button | Satır eylemleri: göz, kalem, kırmızı çöp. |
@@ -93,7 +98,7 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `@/components/akmanos/range-slider` | range-slider | Senaryo ve fiyat simülatöründe kaydırıcılar. |
 | `@/components/akmanos/bouncy-accordion` | bouncy-accordion | Yardım sayfasında SSS. |
 | `@/components/akmanos/bounce-sidebar` (`BounceSidebarNav`) | bounce-sidebar | Uzun ayar sayfalarında bölüm gezinmesi. |
-| `@/components/akmanos/streak` | streak | Stok sayımı düzeni (sayım yapılan aylar). |
+| `@/components/akmanos/streak` | streak | Şu an kullanılmıyor (sayım yapılan aylar için ayrılmış desen). |
 | `@/components/akmanos/capacity-allocation-card`, `agent-limits-card` | bölümlü kullanım çubuğu | Gider dağılımı gibi parçalı toplamlar için desen. |
 | `charts.tsx` | — | Recharts; serileri `SERIES[i]` ile, grafikler `Well` içinde. |
 

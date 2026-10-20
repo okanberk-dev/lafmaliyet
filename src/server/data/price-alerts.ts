@@ -45,6 +45,7 @@ export async function loadPriceAlerts(model: Model, days = PRICE_ALERT_DAYS): Pr
     since,
   );
   const ack = (ackRow?.value ?? null) as PriceAck | null;
-  const impacts = productImpacts(model, changes).map((i) => ({ ...i, acknowledged: isAcknowledged(i, ack) }));
+  // ackPrice: öneri uygulanarak kapandıysa panel "önerilen fiyat uygulandı" yazar ("fiyat korunuyor" değil)
+  const impacts = productImpacts(model, changes).map((i) => ({ ...i, acknowledged: isAcknowledged(i, ack), ackPrice: ack?.[String(i.productId)]?.price ?? null }));
   return { since, changes, impacts, actionable: impacts.filter((i) => i.needsPrice && !i.acknowledged) };
 }

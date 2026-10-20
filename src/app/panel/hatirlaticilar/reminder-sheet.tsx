@@ -649,8 +649,8 @@ export function DueDateSheet({ item, onClose }: { item: { sourceId: number; titl
           });
         }}
       >
-        <Field label="Son ödeme günü" hint="Vadesi olmayan faturalarda vade, fatura tarihinden ayarlardaki gün kadar sonra sayılır.">
-          <Input data-autofocus type="date" value={date} onChange={(e) => setDate(e.target.value)} className={BIG} />
+        <Field label="Son ödeme günü" htmlFor={`${formId}-date`} hint="Vadesi olmayan faturalarda vade, fatura tarihinden ayarlardaki gün kadar sonra sayılır.">
+          <Input id={`${formId}-date`} data-autofocus type="date" value={date} onChange={(e) => setDate(e.target.value)} className={BIG} />
         </Field>
       </form>
     </Sheet>

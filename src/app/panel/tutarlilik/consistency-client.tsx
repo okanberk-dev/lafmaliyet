@@ -25,6 +25,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteFinding, saveFinding, setFindingResolved, setPurchaseQty } from "@/server/actions/consistency";
+import { MANAGED_QTY_NOTE } from "@/server/parasut/constants";
 
 
 import { RATIO_BAD, RATIO_GUIDE, RATIO_WARN, scopeTotals, SEVERITY, severityOf, tableScope, type StockCheck } from "./severity";
@@ -185,7 +186,8 @@ function UnrecipedBadge({ row }: { row: Row }) {
 
 /** Satır içi alınan miktar: Enter ya da odaktan çıkınca kaydeder, Esc geri alır; silmeden önce sorar */
 function PurchaseCell({ month, row, className, id }: { month: string; row: Row; className?: string; id?: string }) {
-  const saved = row.purchased === null ? "" : num(row.purchased, 2);
+  // 3 ondalık: Paraşüt miktarı 1/1000'e yuvarlı saklanır, kutuda olduğu gibi görünür (2'ye yuvarlanınca odaktan çıkmak yazardı)
+  const saved = row.purchased === null ? "" : num(row.purchased, 3);
   const [value, setValue] = useState(saved);
   const [busy, setBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -202,7 +204,20 @@ function PurchaseCell({ month, row, className, id }: { month: string; row: Row; 
     if (v === null) {
       const prev = { qty: row.purchased, note: row.note };
       toast.success(`${row.name}: alım silindi`, {
-        action: prev.qty === null ? undefined : { label: "Geri al", onClick: () => void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note) },
+        action:
+          prev.qty === null
+            ? undefined
+            : {
+                label: "Geri al",
+                onClick: () => {
+                  const qty = prev.qty!;
+                  void setPurchaseQty(month, row.ingredientId, qty, prev.note).then((r) => {
+                    if (!r.ok) return void toast.error(r.error);
+                    setValue(num(qty, 3));
+                    toast.success(`${row.name}: alım geri alındı`);
+                  });
+                },
+              },
       });
     } else toast.success(`${row.name}: ${num(v, 2)} ${row.unit} kaydedildi`);
   }
@@ -218,6 +233,8 @@ function PurchaseCell({ month, row, className, id }: { month: string; row: Row; 
         onFocus={(e) => e.currentTarget.select()}
         onBlur={() => {
           const t = value.trim();
+          // Değiştirilmediyse yazılmaz: yuvarlanmış değer kaydedilip satır Paraşüt eşitlemesinden kopmasın (Esc de buraya düşer)
+          if (t === saved) return;
           const v = t === "" ? null : parseNumberTR(t);
           if (t !== "" && (v === null || v < 0)) {
             toast.error(`${row.name}: geçerli bir miktar girin`, { description: "Yalnızca sayı; ondalık için virgül (ör. 2,5)." });
@@ -771,6 +788,12 @@ export function ConsistencyTable({
   );
 }
 
+/**
+ * Paraşüt eşitlemesinin işaret notu kutuya gelmez: dialogdan kaydedilen satır elle düzeltilmiş sayılır, eşitleme üzerine
+ * yazmaz (docs/PARASUT.md §5). Silinen satırı geri alma ise notu olduğu gibi geri yazar (satır yine eşitlemeye ait olur).
+ */
+const editableNote = (n: string | null | undefined) => (n && n !== MANAGED_QTY_NOTE ? n : "");
+
 function PurchaseDialog({
   month,
   ingredients,
@@ -791,8 +814,8 @@ function PurchaseDialog({
   const initialId = row?.ingredientId ?? options[0]?.id ?? 0;
   const [id, setId] = useState<number>(initialId);
   const existing = byId.get(id) ?? null;
-  const [qty, setQty] = useState(row && row.purchased !== null ? num(row.purchased, 2) : "");
-  const [note, setNote] = useState(row?.note ?? (existing?.purchased !== null ? (existing?.note ?? "") : ""));
+  const [qty, setQty] = useState(row && row.purchased !== null ? num(row.purchased, 3) : "");
+  const [note, setNote] = useState(editableNote(row ? row.note : existing?.purchased != null ? existing.note : null));
   /** Yeni alımda, bu ay zaten girilmiş miktarın üstüne eklensin mi (faturalar parça parça gelir) */
   const [addToExisting, setAddToExisting] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -804,12 +827,15 @@ function PurchaseDialog({
   const finalQty = parsed === null ? null : already !== null && addToExisting ? already + parsed : parsed;
   const usage = existing?.usage ?? null;
   const ratio = finalQty !== null && usage ? finalQty / usage : null;
+  /** Bu ayki miktar Paraşüt eşitlemesinden: kaydedince elle girilmiş sayılır */
+  const current = row ?? existing;
+  const managed = current?.purchased != null && current.note === MANAGED_QTY_NOTE;
 
   const pick = (next: number) => {
     setId(next);
     // Seçilen malzemenin bu ayki yorumu silinmesin diye kutuya gelir
     const r = byId.get(next);
-    setNote(r && r.purchased !== null ? (r.note ?? "") : "");
+    setNote(r && r.purchased !== null ? editableNote(r.note) : "");
   };
 
   async function submit(e: FormEvent) {
@@ -840,7 +866,16 @@ function PurchaseDialog({
     if (!res.ok) return toast.error(res.error);
     const prev = { qty: row.purchased, note: row.note };
     toast.success(`${row.name}: alım silindi`, {
-      action: prev.qty === null ? undefined : { label: "Geri al", onClick: () => void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note) },
+      action:
+        prev.qty === null
+          ? undefined
+          : {
+              label: "Geri al",
+              onClick: () =>
+                void setPurchaseQty(month, row.ingredientId, prev.qty, prev.note).then((r) =>
+                  r.ok ? toast.success(`${row.name}: alım geri alındı`) : toast.error(r.error),
+                ),
+            },
     });
     onClose();
   }
@@ -915,7 +950,15 @@ function PurchaseDialog({
             data-autofocus={row ? true : undefined}
           />
         </Field>
-        <Field label="Kaynak faturalar / yorum" htmlFor="ap-n" hint="İsteğe bağlı: hangi faturalardan geldiği, kontrol notu.">
+        <Field
+          label="Kaynak faturalar / yorum"
+          htmlFor="ap-n"
+          hint={
+            managed
+              ? "Bu ayki miktar Paraşüt faturalarından geliyor; burada kaydederseniz elle girilmiş sayılır ve sonraki faturalar üzerine yazmaz."
+              : "İsteğe bağlı: hangi faturalardan geldiği, kontrol notu."
+          }
+        >
           {/* Uzun fatura notu tek satırda kesiliyordu: çok satırlı kutu, yazdıkça uzar. Not tek satırlık metin: Enter kaydeder */}
           <Textarea
             id="ap-n"

@@ -43,7 +43,7 @@ export async function loadUpcoming(today = todayTR()) {
 }
 
 export type DigestResult =
-  | { status: "sent"; count: number; recipients: number; invoices?: number }
+  | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean }
   | { status: "skipped"; reason: string }
   | { status: "error"; error: string };
 
@@ -54,9 +54,10 @@ const FIRST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Sabah e-postasının Paraşüt bölümü: son Paraşüt bölümlü e-postadan bu yana eşitlemenin açtığı faturalar,
- * kontrol bekleyenlerin sayısı ve (henüz bildirilmediyse) başarısız son eşitleme.
+ * kontrol bekleyenlerin sayısı ve (henüz bildirilmediyse) başarısız son eşitleme. `sinceKey` son Paraşüt bölümlü
+ * gönderimin anıdır (hiç yoksa ""): aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir.
  */
-export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; failedRunKey: string | null }> {
+export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; failedRunKey: string | null; sinceKey: string }> {
   const db = getDb();
   const [lastSent] = await db
     .select({ at: s.notificationLog.sentAt })
@@ -92,7 +93,9 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       failedRunKey = key;
     }
   }
-  return { invoices: { items: rows, reviewCount: n, syncError }, failedRunKey };
+  // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
+  // (sabah işi + elle) aynı anahtarı paylaşmazdı
+  return { invoices: { items: rows, reviewCount: n, syncError }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
 }
 
 /** Zam bölümünün anahtarı: her gönderimde yeni satır; yalnız son zam e-postasından sonraki zamlar yeni sayılır */
@@ -135,7 +138,7 @@ export async function runReminderDigest(trigger: "cron" | "manual"): Promise<Dig
   const sent = due.length ? await db.select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, due.map((d) => d.key))) : [];
   const sentKeys = new Set(sent.map((r) => r.key));
   const fresh = due.filter((d) => !sentKeys.has(d.key));
-  const { invoices, failedRunKey } = await loadDigestInvoices();
+  const { invoices, failedRunKey, sinceKey } = await loadDigestInvoices();
   const prices = await loadDigestPrices().catch((e) => {
     console.error("Sabah e-postası zam bölümü", e);
     return null;
@@ -154,9 +157,11 @@ export async function runReminderDigest(trigger: "cron" | "manual"): Promise<Dig
 
   const { subject, html, text } = renderDigest(fresh, today, invoiceNews || invoices.reviewCount ? invoices : null, prices);
   const to = recipients.map((r) => r.email);
+  // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
+  // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
   const keySeed = [
     ...fresh.map((f) => f.key),
-    `inv:${invoices.items.length}:${invoices.items[0]?.date ?? ""}`,
+    `inv:${sinceKey}:${invoices.items.length}:${invoices.items[0]?.date ?? ""}`,
     failedRunKey ?? "",
     prices ? `zam:${prices.changes.map((c) => `${c.name}:${c.after}`).join(",")}` : "",
   ].join("|");
@@ -176,7 +181,7 @@ export async function runReminderDigest(trigger: "cron" | "manual"): Promise<Dig
   ];
   if (logRows.length) await db.insert(s.notificationLog).values(logRows).onConflictDoNothing();
   await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres`);
-  return { status: "sent", count: fresh.length, recipients: to.length, invoices: invoices.items.length };
+  return { status: "sent", count: fresh.length, recipients: to.length, invoices: invoices.items.length, prices: prices?.changes.length ?? 0, syncError: Boolean(invoices.syncError) };
 }
 
 /** Son gönderimler (ekrandaki günlük) */

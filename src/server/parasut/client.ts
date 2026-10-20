@@ -249,7 +249,8 @@ export class ParasutClient {
     const res = await this.send(path, {}, { accept: "*/*", nullOn: [404] });
     if (!res) return null;
     const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > maxBytes) throw new ParasutError(`Paraşüt'ün verdiği dosya çok büyük (${Math.round(declared / 1048576)} MB).`, 0);
+    // 413: belgeye özgü kalıcı hata (yeniden denenmez; geçici sayılsaydı okuma sırasını tıkardı)
+    if (declared > maxBytes) throw new ParasutError(`Paraşüt'ün verdiği dosya çok büyük (${Math.round(declared / 1048576)} MB).`, 413);
     let bytes: Buffer;
     try {
       bytes = Buffer.from(await res.arrayBuffer());
@@ -257,7 +258,7 @@ export class ParasutClient {
       const name = (e as Error)?.name;
       throw new ParasutError(name === "TimeoutError" || name === "AbortError" ? `Paraşüt dosyayı ${REQUEST_TIMEOUT_MS / 1000} saniyede göndermedi (${path.split("/")[0]}).` : "Paraşüt dosyası okunamadı.", 0);
     }
-    if (bytes.length > maxBytes) throw new ParasutError("Paraşüt'ün verdiği dosya çok büyük.", 0);
+    if (bytes.length > maxBytes) throw new ParasutError("Paraşüt'ün verdiği dosya çok büyük.", 413);
     return { bytes, contentType: res.headers.get("content-type") ?? "" };
   }
 

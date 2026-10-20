@@ -701,7 +701,7 @@ function CostCard({
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
               {year} kâr / zarar
-              <InfoTip text="Her ay Gelir-gider tablosundaki (faturaya göre) kâr ya da zarar. Gri: o ay için veri yok. Çerçeveli parça seçili ay." />
+              <InfoTip text="Her ay Gelir-gider tablosundaki (faturaya göre) kâr ya da zarar. Gri: o ay için POS cirosu girilmedi ya da veri yok; ciro girilmeden kâr/zarar sayılmaz. Çerçeveli parça seçili ay." />
             </h3>
             <p className="flex items-center gap-1.5">
               <Badge tone="green" className="tabular">
@@ -721,7 +721,7 @@ function CostCard({
               tone: segTone(m),
               short: monthShort(m.month),
               // Renk tek başına anlam taşımasın: ipucu ve ekran okuyucu metni kâr/zarar ve seçili ayı da söyler
-              label: `${monthLabel(m.month)}: ${m.active ? `${m.profit < 0 ? "zarar" : "kâr"} ${tl(Math.abs(m.profit))}` : "veri yok"}${
+              label: `${monthLabel(m.month)}: ${m.active ? `${m.profit < 0 ? "zarar" : "kâr"} ${tl(Math.abs(m.profit))}` : m.missingRevenue ? "ciro girilmedi" : "veri yok"}${
                 m.month === month ? " (seçili ay)" : ""
               }`,
             }))}

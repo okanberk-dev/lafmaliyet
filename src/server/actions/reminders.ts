@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -18,9 +18,11 @@ import {
   type ReminderRepeat,
   type UpcomingItem,
 } from "@/lib/reminders";
+import { reminderUnchanged } from "@/lib/recent-paid";
 import { requireAdmin } from "@/server/auth/dal";
+import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
-import { loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
+import { loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
@@ -74,7 +76,10 @@ export async function deleteReminder(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const [d] = await getDb().delete(s.reminders).where(eq(s.reminders.id, zId.parse(id))).returning();
-    if (d) await logActivity(me, "Hatırlatıcı silindi", d.title);
+    if (d) {
+      await forgetPaid("reminder", [d.id]);
+      await logActivity(me, "Hatırlatıcı silindi", d.title);
+    }
     refresh();
     return null;
   });
@@ -122,6 +127,7 @@ export async function markReminderDone(id: number, through?: string) {
       .update(s.reminders)
       .set(next ? { dueDate: next, lastDoneAt: new Date() } : { active: false, lastDoneAt: new Date() })
       .where(eq(s.reminders.id, rid));
+    await rememberPaid([{ kind: "reminder", id: rid, title: r.title, amount: r.amount, dueDate: r.dueDate, prev: snapshot(r), next }]);
     await logActivity(me, "Ödeme yapıldı", `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}`);
     refresh();
     // prev: "Geri al" düğmesi kaydı bu hâline döndürür (restoreReminder)
@@ -168,7 +174,64 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
       if (extra) await tx.delete(s.reminders).where(eq(s.reminders.id, extra));
       return r.title;
     });
+    // "Ödendi"nin geri alınması Son ödenenler kaydını siler; ödemeden sonraki "Ertele"nin geri alınması ise
+    // hatırlatıcıyı ödendikten sonraki hâline döndürür, o kayıt geri alınabilir kalır
+    await forgetChangedReminder({ id: rid, dueDate: snap.dueDate, anchorDate: snap.anchorDate, active: snap.active });
     await logActivity(me, "Hatırlatıcı geri alındı", `${title} · ${dateTR(snap.dueDate)}`);
+    refresh();
+    return null;
+  });
+}
+
+/**
+ * Ödemeler › Son ödenenler: 30 gün içinde "Ödendi" işaretlenen faturayı ödenmemişe, hatırlatıcıyı ödenmeden önceki
+ * tarihine döndürür. Hatırlatıcı o zamandan beri değiştiyse (yeniden ödendi, ertelendi, düzenlendi) eski hâl yazılmaz.
+ */
+export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const k = z.enum(["invoice", "reminder"]).parse(kind);
+    const rid = zId.parse(id);
+    const entry = (await loadRecentPaid()).find((e) => e.kind === k && e.id === rid);
+    // Hata dönen durumlarda da liste yenilenir: geri alınamayan satır ekranda kalmasın (liveRecentPaid gizler)
+    if (!entry) {
+      refresh();
+      throw new UserError("Bu ödeme artık listede yok (geri alınmış ya da 30 günü geçmiş olabilir)");
+    }
+    const db = getDb();
+    if (k === "invoice") {
+      const [row] = await db.update(s.invoices).set({ unpaid: true }).where(eq(s.invoices.id, rid)).returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
+      await forgetPaid("invoice", [rid]);
+      if (!row) {
+        refresh();
+        throw new UserError("Fatura bulunamadı (silinmiş olabilir)");
+      }
+      await logActivity(me, "Fatura ödenmedi işaretlendi", `${row.supplier} ${tl(row.payable, 2)} · son ödenenlerden geri alındı`);
+    } else {
+      const [cur] = await db.select().from(s.reminders).where(eq(s.reminders.id, rid)).limit(1);
+      if (!cur) {
+        await forgetPaid("reminder", [rid]);
+        refresh();
+        throw new UserError("Hatırlatıcı bulunamadı (silinmiş olabilir)");
+      }
+      const prev = entry.prev;
+      if (!prev || !reminderUnchanged(entry, cur)) {
+        refresh();
+        throw new UserError("Hatırlatıcı ödendikten sonra değişti (yeniden ödendi, ertelendi ya da düzenlendi); tarihini düzenleyerek düzeltin");
+      }
+      // Yalnız okunan hâl hâlâ duruyorsa yazılır (okuma ile yazma arasında başka sekmeden ödenmiş / ertelenmiş olabilir)
+      const [done] = await db
+        .update(s.reminders)
+        .set({ dueDate: prev.dueDate, anchorDate: prev.anchorDate, active: prev.active, lastDoneAt: prev.lastDoneAt ? new Date(prev.lastDoneAt) : null })
+        .where(and(eq(s.reminders.id, rid), eq(s.reminders.dueDate, cur.dueDate), eq(s.reminders.anchorDate, cur.anchorDate), eq(s.reminders.active, cur.active)))
+        .returning({ id: s.reminders.id });
+      if (!done) {
+        refresh();
+        throw new UserError("Hatırlatıcı bu arada değişti; sayfa yenilendi, yeniden deneyin");
+      }
+      await forgetPaid("reminder", [rid]);
+      await logActivity(me, "Hatırlatıcı geri alındı", `${cur.title} · ${dateTR(prev.dueDate)} · son ödenenlerden`);
+    }
     refresh();
     return null;
   });
@@ -363,27 +426,34 @@ export async function sendTestNotification() {
 }
 
 /**
- * E-posta önizlemesi: bugün gidecek hatırlatmanın HTML'i (gönderilmez, günlüğe yazılmaz). Bugün haber verilecek
- * ödeme yoksa örnek bir satırla gösterilir.
+ * E-posta önizlemesi: bugün gidecek sabah e-postasının HTML'i (gönderilmez, günlüğe yazılmaz). Gerçek gönderim gibi
+ * Paraşüt bölümü (yeni faturalar, kontrol bekleyenler, eşitleme hatası) ve yeni zamlar da girer; ödeme, yeni fatura
+ * ya da zam yoksa örnek bir ödeme satırıyla gösterilir.
  */
 export async function previewDigest() {
   return attempt(async () => {
     await requireAdmin();
     const { today, items } = await loadUpcoming();
     const due = dueNotifications(items);
-    const sent = due.length
-      ? await getDb()
-          .select({ key: s.notificationLog.key })
-          .from(s.notificationLog)
-          .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
-      : [];
-    const sample: UpcomingItem = {
+    // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz
+    const [sent, { invoices }, prices] = await Promise.all([
+      due.length
+        ? getDb()
+            .select({ key: s.notificationLog.key })
+            .from(s.notificationLog)
+            .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
+        : [],
+      loadDigestInvoices(),
+      loadDigestPrices().catch(() => null),
+    ]);
+    const invoiceNews = invoices.items.length > 0 || Boolean(invoices.syncError);
+    const example: UpcomingItem = {
       ref: "preview:0",
       source: "reminder",
       sourceId: 0,
       kind: "kira",
       title: "Örnek: Kira",
-      detail: "Bugün haber verilecek ödeme yok; e-posta böyle görünür",
+      detail: "Bugün haber verilecek ödeme, yeni fatura ya da zam yok; e-posta böyle görünür",
       amount: 25000,
       dueDate: today,
       daysLeft: 0,
@@ -391,9 +461,20 @@ export async function previewDigest() {
       remindDaysBefore: 3,
       repeat: "monthly",
     };
-    const rows = due.length ? due : [{ item: sample, stage: "due" as const }];
-    const { subject, html } = renderDigest(rows, today);
-    return { subject, html, count: due.length, alreadySent: sent.length, sample: due.length === 0 };
+    // Gerçek gönderim de yalnız bunlardan biri varsa gider; hiçbiri yoksa örnek satırla gösterilir
+    const sample = !due.length && !invoiceNews && !prices;
+    const rows = sample ? [{ item: example, stage: "due" as const }] : due;
+    const { subject, html } = renderDigest(rows, today, invoiceNews || invoices.reviewCount ? invoices : null, prices);
+    return {
+      subject,
+      html,
+      count: due.length,
+      alreadySent: sent.length,
+      invoices: invoices.items.length,
+      prices: prices?.changes.length ?? 0,
+      syncError: Boolean(invoices.syncError),
+      sample,
+    };
   });
 }
 

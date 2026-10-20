@@ -209,7 +209,9 @@ export type NotifyStage = "before" | "due" | "overdue";
 
 /**
  * Bugün e-postayla haber verilmesi gerekenler. Her aşama (önceden / gününde / gecikti) bir kez gider;
- * `key` bildirim günlüğünde tekil anahtardır. Gecikmiş olanlar ilk 14 gün içinde bir kez hatırlatılır.
+ * `key` bildirim günlüğünde tekil anahtardır (`kaynak:kimlik:vade:aşama`). Gecikmiş olanlar ilk 14 gün içinde bir
+ * kez hatırlatılır. Anahtar ref'ten değil kaynak + kimlikten kurulur: geciken dönemin yanındaki öngörülen dönem
+ * (`reminder:4@2026-11-01`), geciken ödenince gerçek kayda (`reminder:4`) döner ve aynı e-posta ikinci kez gitmez.
  */
 export function dueNotifications(items: UpcomingItem[]): { item: UpcomingItem; stage: NotifyStage; key: string }[] {
   const out: { item: UpcomingItem; stage: NotifyStage; key: string }[] = [];
@@ -218,9 +220,17 @@ export function dueNotifications(items: UpcomingItem[]): { item: UpcomingItem; s
     if (item.daysLeft < 0 && item.daysLeft >= -14) stage = "overdue";
     else if (item.daysLeft === 0) stage = "due";
     else if (item.daysLeft > 0 && item.daysLeft <= item.remindDaysBefore) stage = "before";
-    if (stage) out.push({ item, stage, key: `${item.ref}:${item.dueDate}:${stage}` });
+    if (stage) out.push({ item, stage, key: `${item.source}:${item.sourceId}:${item.dueDate}:${stage}` });
   }
   return out;
+}
+
+/**
+ * Sabah e-postasında ne olduğu, tek satır ("2 hatırlatma · 4 yeni fatura · 1 zam"): "şimdi gönder" bildirimi ve
+ * önizleme açıklaması. Hiçbir bölüm yoksa boş döner.
+ */
+export function digestSummary({ count = 0, invoices = 0, prices = 0, syncError = false }: { count?: number; invoices?: number; prices?: number; syncError?: boolean }): string {
+  return [count ? `${count} hatırlatma` : "", invoices ? `${invoices} yeni fatura` : "", prices ? `${prices} zam` : "", syncError ? "Paraşüt eşitleme hatası" : ""].filter(Boolean).join(" · ");
 }
 
 export function daysLeftLabel(daysLeft: number): string {

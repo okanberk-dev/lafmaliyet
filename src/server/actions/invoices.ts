@@ -7,7 +7,9 @@ import { z } from "zod";
 import { DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, tl } from "@/lib/format";
+import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { requireAdmin } from "@/server/auth/dal";
+import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
 
@@ -32,6 +34,22 @@ const invoiceSchema = z.object({
   /** Vade; gönderilmezse değişmez */
   dueDate: zDate.nullable().optional(),
 });
+
+/**
+ * Kafe içi ↔ kafe dışı (karaoke box, Alp Koç) geçen faturalardan kalemi okunmuş olanların aylarında alınan miktar
+ * (ve bağlı fiyat) yeniden hesaplanır: applyProductLinks kafe dışı kalemleri saymaz, eşitleme de yalnız kategorisi
+ * değişen faturanın ayına dönmez. Silme ve geri almadaki gibi.
+ */
+async function recomputeSeparateMoves(moves: { id: number; date: string; from: string; to: string }[]) {
+  const crossed = moves.filter((m) => crossesSeparate(m.from, m.to));
+  if (!crossed.length) return;
+  const withLines = await getDb()
+    .selectDistinct({ id: s.parasutBillLines.invoiceId })
+    .from(s.parasutBillLines)
+    .where(inArray(s.parasutBillLines.invoiceId, crossed.map((m) => m.id)));
+  const months = separateMoveMonths(crossed, new Set(withLines.map((r) => r.id)));
+  if (months.length) await applyProductLinks(months);
+}
 
 /**
  * Faturayı ekler ya da günceller. Paraşüt'e bağlı faturada tarih, fatura no ve tutarlar yazılmaz: eşitleme onları
@@ -61,6 +79,11 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     } else {
       await db.update(s.invoices).set({ ...data, needsReview: false }).where(eq(s.invoices.id, id));
     }
+    // Pencereden "Ödendi" yapılan fatura da Ödemeler › Son ödenenler'den geri alınabilir
+    if (cur.unpaid && !data.unpaid) await rememberPaid([{ kind: "invoice", id, title: data.supplier, amount: cur.payable, dueDate: data.dueDate ?? cur.dueDate ?? cur.date }]);
+    else if (!cur.unpaid && data.unpaid) await forgetPaid("invoice", [id]);
+    // Kalem yalnız Paraşüt'e bağlı faturada olur (bağı çözülünce silinir); tarihi kilitli, kalemler kayıtlı ayda
+    if (isParasutLinked(cur)) await recomputeSeparateMoves([{ id, date: cur.date, from: cur.category, to: data.category }]);
     const net = isParasutLinked(cur) ? cur.amount - cur.discount : data.amount - data.discount;
     await logActivity(me, "Fatura düzenlendi", `${dateTR(isParasutLinked(cur) ? cur.date : data.date)} ${data.supplier}: ${tl(net, 2)} (KDV hariç)`);
     refresh();
@@ -89,7 +112,7 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
     const wanted = new Map(list.map((c) => [c.id, c.category]));
     const db = getDb();
     const rows = await db
-      .select({ id: s.invoices.id, category: s.invoices.category, supplier: s.invoices.supplier })
+      .select({ id: s.invoices.id, category: s.invoices.category, supplier: s.invoices.supplier, date: s.invoices.date })
       .from(s.invoices)
       .where(inArray(s.invoices.id, [...wanted.keys()]));
     if (!rows.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
@@ -109,6 +132,8 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
           ? `${splitSupplier(changed[0].supplier).base}: ${changed[0].category} → ${wanted.get(changed[0].id)}`
           : `${changed.length} fatura → ${targets.length === 1 ? targets[0] : "önceki kategorileri"}`;
       await logActivity(me, "Fatura kategorisi değişti", detail);
+      // Karaoke box / Alp Koç'a giren ya da çıkan faturanın kalemleri o ayın alınan miktarından düşer / eklenir ("Geri al" da)
+      await recomputeSeparateMoves(changed.map((r) => ({ id: r.id, date: r.date, from: r.category, to: wanted.get(r.id)! })));
       refresh();
     }
     // Kategorisi zaten doğru olan seçilmiş faturalar da kontrol edilmiş sayılır
@@ -162,11 +187,16 @@ export async function setInvoicePaid(id: number | number[], paid: boolean) {
   return attempt(async () => {
     const me = await requireAdmin();
     const ids = z.array(zId).min(1, "Fatura seçin").max(1000).parse(Array.isArray(id) ? id : [id]);
-    const rows = await getDb()
+    const db = getDb();
+    // Yalnız durumu gerçekten değişenler "son ödenenler"e yazılır (zaten ödenmiş fatura geri alınacaklara girmesin)
+    const wasUnpaid = new Set((await db.select({ id: s.invoices.id }).from(s.invoices).where(and(inArray(s.invoices.id, ids), eq(s.invoices.unpaid, true)))).map((r) => r.id));
+    const rows = await db
       .update(s.invoices)
       .set({ unpaid: !z.boolean().parse(paid) })
       .where(inArray(s.invoices.id, ids))
-      .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
+      .returning({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable, date: s.invoices.date, dueDate: s.invoices.dueDate });
+    if (paid) await rememberPaid(rows.filter((r) => wasUnpaid.has(r.id)).map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date })));
+    else await forgetPaid("invoice", rows.map((r) => r.id));
     if (rows.length === 1) await logActivity(me, paid ? "Fatura ödendi" : "Fatura ödenmedi işaretlendi", `${rows[0].supplier} ${tl(rows[0].payable, 2)}`);
     else if (rows.length > 1)
       await logActivity(me, paid ? "Faturalar ödendi" : "Faturalar ödenmedi işaretlendi", `${rows.length} fatura · ${tl(rows.reduce((a, r) => a + r.payable, 0), 2)}`);
@@ -307,6 +337,8 @@ export async function deleteInvoice(id: number) {
     const { d } = result;
     // Kalemleri hammaddeye bağlıysa o ayın alınan miktarı silinen fatura olmadan yeniden hesaplanır
     if (result.lines) await applyProductLinks([d.date.slice(0, 7)]);
+    // Silinen fatura Ödemeler › Son ödenenler'de kalmasın ("Geri al" bulamayacağı bir satır olurdu)
+    await forgetPaid("invoice", [invoiceId]);
     await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`.trim());
     refresh();
     return {

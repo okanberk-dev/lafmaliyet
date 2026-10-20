@@ -2,7 +2,6 @@ import { eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
@@ -14,7 +13,7 @@ import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
 import { counterLine, defaultCountMonth } from "./logic";
-import { StockCountForm, type FormGroup } from "./stock-form";
+import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
 
@@ -98,7 +97,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         title="Stok sayımı"
         excel="Sayım"
         description={`${ml} ay sonu sayımı: ayın son günü kapanıştan sonra sayın. Miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM); yarım = 0,5.`}
-        actions={<MonthPicker months={[...new Set([...availableMonths(model), model.currentMonth, month])].sort()} value={month} />}
+        // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur)
+        actions={<CountMonthPicker months={[...new Set([...availableMonths(model), model.currentMonth, month])].sort()} value={month} />}
         tabs={isAdmin ? <SectionTabs section="stok" current="/panel/sayim" /> : undefined}
       />
       <StockCountForm

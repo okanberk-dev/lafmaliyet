@@ -166,6 +166,68 @@ html[data-keyboard="open"] .mobile-nav {
   }
 }
 
+/* ── Gezinme bekleme işareti (useLinkStatus: sidebar-nav.tsx, bottom-nav.tsx) ──────────────────
+   Tıklanan bağlantının ekranı önceden yüklenmemişse sunucudan gelene dek: kenar çubuğunda dönen küçük halka,
+   alt menüde ikonun arkasında yanıp sönen hap. Hızlı geçişte hiç görünmez (100ms sonra belirir); yeri hep
+   ayrılı, belirince satır kaymaz. Tıklama almaz. */
+.nav-pending {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 9999px;
+  border: 2px solid var(--border);
+  border-top-color: var(--foreground);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-pending-pill {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.nav-pending[data-pending] {
+  animation:
+    nav-pending-in 0.15s ease-out 0.1s forwards,
+    nav-pending-spin 0.7s linear infinite;
+}
+
+.nav-pending-pill[data-pending] {
+  animation:
+    nav-pending-in 0.15s ease-out 0.1s forwards,
+    nav-pending-pulse 1.1s ease-in-out 0.25s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Dönmeden: halka yerine dolu nokta, hap yanıp sönmeden belirir */
+  .nav-pending[data-pending] {
+    background: var(--foreground);
+    border-color: var(--foreground);
+    scale: 0.5;
+    animation: nav-pending-in 0.15s ease-out 0.1s forwards;
+  }
+  .nav-pending-pill[data-pending] {
+    animation: nav-pending-in 0.15s ease-out 0.1s forwards;
+  }
+}
+
+@keyframes nav-pending-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes nav-pending-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes nav-pending-pulse {
+  50% {
+    background-color: var(--border);
+  }
+}
+
 /* Açık modal pencere, mobil çekmece ya da arama paleti varken arkadaki sayfa kaymaz */
 html:has(dialog[open]:modal),
 html:has([data-scroll-lock]) {

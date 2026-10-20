@@ -31,13 +31,31 @@ function sameWord(a: string, b: string): boolean {
 }
 
 /** Boyut ve sayı sözcükleri (ürün adının çekirdeğine girmez) */
-const MEASURE = new Set(["kg", "kilo", "gram", "gr", "g", "litre", "lt", "l", "ml", "cl", "adet", "ad", "li", "lu", "dilim", "x", "pcs", "pc", "tv"]);
+const MEASURE = new Set(["kg", "kilo", "gram", "gr", "g", "litre", "lt", "l", "ml", "cl", "oz", "cc", "adet", "ad", "li", "lu", "dilim", "x", "pcs", "pc", "tv"]);
 
 /** Ürün adının boyut ve sayı içermeyen çekirdeği (aynı ürün başka tedarikçiden ya da başka faturadan gelince) */
 export function nameCore(text: string): string {
   return words(text)
     .filter((w) => !/\d/.test(w) && w.length > 1 && !MEASURE.has(w))
     .join(" ");
+}
+
+/**
+ * Bardak/kapak boyutu ("8oz", "14-16oz", "350cc"). Çekirdeği aynı iki üründe farklıysa ayrı üründür: "KARTON BARDAK 8OZ"
+ * bağlıyken "KARTON BARDAK 14OZ" aynı hammaddeye önerilmez.
+ */
+export function cupSize(text: string): string | null {
+  const cup = /(\d+(?:\s*-\s*\d+)?)\s*(oz|cc)(?![a-z])/.exec(text.toLocaleLowerCase("tr-TR").replace(/ı/g, "i"));
+  return cup ? cup[1].replace(/\s+/g, "") + cup[2] : null;
+}
+
+/**
+ * Paketin tamamı: tek ürünün boyutu (gr/ml'ye çevrilmiş) ve paketteki sayı. "SÜT 1 L" ile "Süt 1000 ml" aynı pakettir;
+ * "SÜT 5 LT" ya da "330ML X24" ile "PET1LX12" aynı ürünün başka paketidir (hammadde aynı, çarpan farklı).
+ */
+export function packKey(text: string): string {
+  const { size, count } = parsePack(text);
+  return `${size ? `${size.amount}${size.dim}` : "-"}×${count ?? "-"}`;
 }
 
 export interface MatchIngredient {
@@ -56,15 +74,26 @@ export type IngredientSuggestion = { ingredientId: number; factor: number | null
 
 /**
  * Hammadde önerisi:
- * 1. Aynı adlı (boyut ve sayılar hariç) bir ürün zaten bağlıysa o hammadde ve çarpan;
+ * 1. Aynı adlı (boyut ve sayılar hariç) bir ürün zaten bağlıysa o hammadde. İkisinde de bardak boyutu yazıyorsa o da
+ *    aynı olmalı (8oz bardak bağlıyken 14oz bardak ona önerilmez). Çarpan yalnız paket de aynıysa (boyut ve sayı)
+ *    alınır; "SÜT 1 LT" bağlıyken "SÜT 5 LT" aynı hammaddeyi alır ama çarpanı null kalır, guessLinkFactor() addan bulur;
  * 2. hammadde adının anlamlı sözcüklerinin hepsi ürün adında geçiyorsa (ek almış hâlleri dahil) en çok sözcüğü
  *    tutan, eşitlikte adı uzun olan.
  */
 export function suggestIngredient(productName: string, ingredients: MatchIngredient[], links: MatchLink[] = []): IngredientSuggestion | null {
   const core = nameCore(productName);
   if (core) {
-    const same = links.find((l) => nameCore(l.productName) === core && ingredients.some((i) => i.id === l.ingredientId));
-    if (same) return { ingredientId: same.ingredientId, factor: same.factor, reason: "link" };
+    const cup = cupSize(productName);
+    const sameCup = (name: string) => {
+      const other = cupSize(name);
+      return !cup || !other || other === cup;
+    };
+    const same = links.filter((l) => nameCore(l.productName) === core && sameCup(l.productName) && ingredients.some((i) => i.id === l.ingredientId));
+    // Aynı paket bağlıysa o (çarpanıyla); yoksa ilk bağlantının hammaddesi, çarpansız (eski paketin çarpanı yanlış olur)
+    const pack = packKey(productName);
+    const exact = same.find((l) => packKey(l.productName) === pack);
+    if (exact) return { ingredientId: exact.ingredientId, factor: exact.factor, reason: "link" };
+    if (same.length) return { ingredientId: same[0].ingredientId, factor: null, reason: "link" };
   }
   const product = words(productName);
   let best: { ing: MatchIngredient; score: number } | null = null;

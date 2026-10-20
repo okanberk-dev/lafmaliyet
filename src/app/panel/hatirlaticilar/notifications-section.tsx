@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/icon-tile";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR } from "@/lib/format";
+import { digestSummary } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { addRecipient, deleteRecipient, previewDigest, runDigestNow, saveNotificationSettings, sendTestNotification, setRecipientActive } from "@/server/actions/reminders";
 import type { NotifySettings } from "@/server/notify/settings";
@@ -50,7 +51,7 @@ function dedupeLog(log: LogRow[]): LogRow[] {
 }
 
 /**
- * E-posta bildirimleri: kapalıyken tek satırlık özet (açık/kapalı, Resend durumu, adres sayısı); açınca adresler,
+ * E-posta bildirimleri: kapalıyken tek satırlık özet (açık/kapalı, Resend yoksa uyarı, adres sayısı); açınca adresler,
  * gönderim ayarları, deneme, e-posta önizlemesi ve son gönderimler.
  */
 export function NotificationsSection({ email, settings, recipients, log, className }: { email: EmailStatus; settings: NotifySettings; recipients: Recipient[]; log: LogRow[]; className?: string }) {
@@ -61,7 +62,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
   const [daysBefore, setDaysBefore] = useState(String(settings.invoiceDaysBefore));
   const [term, setTerm] = useState(String(settings.invoiceTermDays));
   const [removing, setRemoving] = useState<Recipient | null>(null);
-  const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; sample: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; sample: boolean } | null>(null);
   const addrRef = useRef<HTMLInputElement>(null);
   const settingsForm = useId();
   const [enabled, setEnabled] = useOptimistic(settings.emailEnabled);
@@ -79,17 +80,25 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
   const missing = [!email.configured && "RESEND_API_KEY", !email.cron && "CRON_SECRET"].filter(Boolean) as string[];
   const ready = enabled && email.configured && activeRecipients > 0;
 
-  const save = (patch: Partial<NotifySettings> = {}) =>
+  /** Anahtar yalnız açık/kapalıyı yazar (kayıtlı ayarlarla); "Gönderim ayarları"ndaki kaydedilmemiş taslak Kaydet'i bekler */
+  const toggle = (on: boolean) =>
     start(async () => {
-      if (patch.emailEnabled !== undefined) setEnabled(patch.emailEnabled);
+      setEnabled(on);
+      const r = await saveNotificationSettings({ emailEnabled: on, from: settings.from, invoiceDaysBefore: settings.invoiceDaysBefore, invoiceTermDays: settings.invoiceTermDays });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(on ? "Hatırlatma e-postaları açıldı" : "Hatırlatma e-postaları kapatıldı");
+    });
+
+  const save = () =>
+    start(async () => {
       const r = await saveNotificationSettings({
-        emailEnabled: patch.emailEnabled ?? settings.emailEnabled,
+        emailEnabled: settings.emailEnabled,
         from: from.trim() || null,
         invoiceDaysBefore: Math.round(daysN ?? settings.invoiceDaysBefore),
         invoiceTermDays: Math.round(termN ?? settings.invoiceTermDays),
       });
       if (!r.ok) return void toast.error(r.error);
-      toast.success(patch.emailEnabled === undefined ? "Bildirim ayarları kaydedildi" : patch.emailEnabled ? "Hatırlatma e-postaları açıldı" : "Hatırlatma e-postaları kapatıldı");
+      toast.success("Bildirim ayarları kaydedildi");
     });
 
   const openPreview = () =>
@@ -121,9 +130,12 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
           <span className="min-w-0 flex-1">
             <span className="block text-base leading-6 font-semibold tracking-tight text-ink">E-posta bildirimleri</span>
             <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              <Badge tone={email.configured ? "green" : "red"} dot>
-                {email.configured ? "Resend bağlı" : "Resend bağlı değil"}
-              </Badge>
+              {/* Bağlıyken yazılmaz (bilinen durum); yalnız anahtar yoksa uyarır */}
+              {email.configured ? null : (
+                <Badge tone="red" dot>
+                  Resend bağlı değil
+                </Badge>
+              )}
               <Badge tone={delivery.tone} dot>
                 {delivery.text}
               </Badge>
@@ -140,7 +152,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
                 Zamanı gelen ödemeler her sabah tek e-postada gider · {email.from}
               </p>
             </div>
-            <Switch checked={enabled} showText onText="Açık" offText="Kapalı" label="Hatırlatma e-postaları" disabled={pending} className="pointer-coarse:h-11" onChange={(v) => save({ emailEnabled: v })} />
+            <Switch checked={enabled} showText onText="Açık" offText="Kapalı" label="Hatırlatma e-postaları" disabled={pending} className="pointer-coarse:h-11" onChange={toggle} />
           </div>
 
           {missing.length ? (
@@ -161,11 +173,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
                 ) : null}
               </div>
             </div>
-          ) : (
-            <p className="flex items-center gap-2 px-1 text-[13px] text-ink-mute">
-              <span className="size-1.5 rounded-full bg-good" aria-hidden="true" /> Resend bağlı; otomatik gönderim her sabah 08:00.
-            </p>
-          )}
+          ) : null}
 
           <div>
             <p className="mb-1.5 px-1 text-[13px] font-medium text-ink-soft">Bildirim adresleri</p>
@@ -257,18 +265,23 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
               }}
             >
               <div className="mt-1 grid gap-3 @lg:grid-cols-2">
-                <Field label="Gönderen" className="@lg:col-span-2" hint={`Boş bırakılırsa: ${email.defaultFrom}`}>
-                  <Input value={from} onChange={(e) => setFrom(e.target.value)} placeholder={email.defaultFrom} className={BIG} />
+                <Field label="Gönderen" htmlFor={`${settingsForm}-from`} className="@lg:col-span-2" hint={`Boş bırakılırsa: ${email.defaultFrom}`}>
+                  <Input id={`${settingsForm}-from`} value={from} onChange={(e) => setFrom(e.target.value)} placeholder={email.defaultFrom} className={BIG} />
                 </Field>
-                <Field label="Fatura vadesinden kaç gün önce" tip="Ödenmemiş faturalar için ilk hatırlatma." error={daysError}>
+                <Field label="Fatura vadesinden kaç gün önce" htmlFor={`${settingsForm}-days`} tip="Ödenmemiş faturalar için ilk hatırlatma." error={daysError}>
                   <div className="relative">
-                    <NumberInput inputMode="numeric" value={daysBefore} onChange={(e) => setDaysBefore(e.target.value)} aria-invalid={Boolean(daysError) || undefined} className={cn("pr-10", BIG)} />
+                    <NumberInput id={`${settingsForm}-days`} inputMode="numeric" value={daysBefore} onChange={(e) => setDaysBefore(e.target.value)} aria-invalid={Boolean(daysError) || undefined} className={cn("pr-10", BIG)} />
                     <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-ink-mute">gün</span>
                   </div>
                 </Field>
-                <Field label="Vadesiz faturada vade" tip="Vade tarihi girilmemiş ödenmemiş faturalar, fatura tarihinden bu kadar gün sonra vadeli sayılır." error={termError}>
+                <Field
+                  label="Vadesiz faturada vade"
+                  htmlFor={`${settingsForm}-term`}
+                  tip="Vade tarihi girilmemiş ödenmemiş faturalar, fatura tarihinden bu kadar gün sonra vadeli sayılır."
+                  error={termError}
+                >
                   <div className="relative">
-                    <NumberInput inputMode="numeric" value={term} onChange={(e) => setTerm(e.target.value)} aria-invalid={Boolean(termError) || undefined} className={cn("pr-10", BIG)} />
+                    <NumberInput id={`${settingsForm}-term`} inputMode="numeric" value={term} onChange={(e) => setTerm(e.target.value)} aria-invalid={Boolean(termError) || undefined} className={cn("pr-10", BIG)} />
                     <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-ink-mute">gün</span>
                   </div>
                 </Field>
@@ -321,7 +334,8 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
                   start(async () => {
                     const r = await runDigestNow();
                     if (!r.ok) return void toast.error(r.error);
-                    if (r.data.status === "sent") toast.success(`${r.data.count} hatırlatma ${r.data.recipients} adrese gönderildi`);
+                    // Yalnız fatura, zam ya da eşitleme hatası için giden e-posta "0 hatırlatma" yazmasın
+                    if (r.data.status === "sent") toast.success(`Sabah e-postası ${r.data.recipients} adrese gönderildi`, { description: digestSummary(r.data) || undefined });
                     else if (r.data.status === "skipped") toast.message(r.data.reason);
                   })
                 }
@@ -389,8 +403,8 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
           title="E-posta önizlemesi"
           description={
             preview.sample
-              ? "Bugün haber verilecek ödeme yok; örnek bir satırla gösteriliyor."
-              : `Bugün ${preview.count} hatırlatma${preview.alreadySent ? `, ${preview.alreadySent} tanesi zaten gönderildi` : ""}. Gönderilmez, yalnızca görünüm.`
+              ? "Bugün haber verilecek ödeme, yeni fatura ya da zam yok; örnek bir satırla gösteriliyor."
+              : `Bugün: ${digestSummary(preview)}.${preview.alreadySent ? ` ${preview.alreadySent} hatırlatma zaten gönderildi.` : ""} Gönderilmez, yalnızca görünüm.`
           }
           bodyClassName="px-0 sm:px-0 pb-0"
           footer={

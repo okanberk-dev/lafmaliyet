@@ -14,5 +14,6 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
   if (!isParasutConfigured()) return NextResponse.json({ status: "skipped", reason: "Paraşüt bağlantısı tanımlı değil" });
   const result = await syncParasut("cron", { deadlineMs: 45_000 });
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  // Başka bir eşitleme sürerken başlamayan çalışma hata değildir (Vercel cron günlüğünde başarısız görünmesin)
+  return NextResponse.json(result, { status: result.ok || ("busy" in result && result.busy) ? 200 : 500 });
 }

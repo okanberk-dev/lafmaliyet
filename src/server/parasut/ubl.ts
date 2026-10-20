@@ -486,3 +486,23 @@ export function ublLinesToDrafts(inv: UblInvoice, eInvoiceId: string, fallbackSu
 export function ublLinesMatchTotal(inv: UblInvoice): boolean {
   return inv.linesMatch;
 }
+
+/**
+ * Tevkifatlı e-faturanın KDV hariç tutarı belgeden. Paraşüt'ün e-fatura listesi tedarikçiye ödenecek tutarı
+ * (tevkifat düşülmüş) verir; "ödenecek − KDV" maliyeti tevkifat kadar eksik çıkarır. Kayıttaki tutar listeden
+ * geldiyse (tutar − iskonto ≈ belgedeki ödenecek − KDV) yalnız tevkifat geri eklenir: ÖİV/ÖTV maliyette kalır (gider
+ * faturası yolundaki net − KDV gibi). Tevkifat yoksa, tutar elle değiştirilmişse ya da zaten doğruysa null.
+ * `vat`: kayıttaki KDV belgedekinden farklıysa yazılacak KDV; `was`: düzeltmeden önceki KDV hariç tutar.
+ */
+export function withholdingCorrection(
+  row: { amount: number; discount: number; vat: number },
+  inv: Pick<UblInvoice, "typeCode" | "payable" | "vat" | "withholding">,
+): { amount: number; vat: number | null; was: number } | null {
+  if (!(inv.withholding > 0)) return null;
+  const sign = isRefund(inv.typeCode) ? -1 : 1;
+  const was = row.amount - row.discount;
+  if (Math.abs(was - sign * (inv.payable - inv.vat)) > 1) return null;
+  const cost = sign * (inv.payable + inv.withholding - inv.vat);
+  if (Math.abs(was - cost) <= 1) return null;
+  return { amount: round2(cost + row.discount), vat: inv.vat > 0 && Math.abs(row.vat - sign * inv.vat) > 1 ? sign * inv.vat : null, was };
+}

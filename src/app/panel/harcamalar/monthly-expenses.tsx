@@ -13,6 +13,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { PANEL_FIXED_GROUPS } from "@/lib/constants";
@@ -26,6 +27,8 @@ import {
   saveExpenseCategory,
   saveExpenseEntry,
 } from "@/server/actions/expenses";
+
+import { expenseBreakdowns, missingCategories } from "./summary";
 
 type Section = "mal" | "personel" | "faturalar" | "kira" | "genel";
 type Group = "kira" | "personel" | "reklam" | "diger";
@@ -135,13 +138,15 @@ export function MonthlyExpenses({
   const ads = categories.filter((c) => c.panelGroup === "reklam").reduce((a, c) => a + c.monthTotal, 0);
   const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
   const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
-  const missing = active.filter((c) => c.expected && !c.monthEntries);
+  const missing = missingCategories(categories);
   const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
+  const breakdown = expenseBreakdowns(month, categories, entries, invoices);
 
   const save = (d: EntryDraft, done: () => void) => {
     const amount = parseNumberTR(d.amount);
     if (!d.categoryId) return void toast.error("Kategori seçin");
     if (amount === null || !amount) return void toast.error("Tutarı yazın (ör. 12.500)");
+    if (!d.date) return void toast.error("Tarih seçin");
     if (!d.date.startsWith(month) && !d.id) toast.message(`Tarih ${monthLabel(d.date.slice(0, 7))} ayında; o ayın harcamalarına yazılır`);
     start(async () => {
       const r = await saveExpenseEntry({
@@ -164,7 +169,17 @@ export function MonthlyExpenses({
       const r = await deleteExpenseEntry(e.id);
       if (!r.ok) return void toast.error(r.error);
       setEditing(null);
-      toast.success(`Silindi: ${tl(e.amount, 2)}`, { action: { label: "Geri al", onClick: () => void restoreExpenseEntry(r.data) } });
+      toast.success(`Silindi: ${tl(e.amount, 2)}`, {
+        action: {
+          label: "Geri al",
+          onClick: () =>
+            start(async () => {
+              const x = await restoreExpenseEntry(r.data);
+              if (!x.ok) return void toast.error(x.error);
+              toast.success(`Geri alındı: ${tl(e.amount, 2)}`);
+            }),
+        },
+      });
     });
 
   const onSubmit = (e: FormEvent) => {
@@ -174,18 +189,55 @@ export function MonthlyExpenses({
 
   return (
     <>
+      {/* Kartlara dokununca rakamın dökümü açılır (kategori ya da kayıt kayıt) */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat
-          compact
-          icon={<Wallet />}
-          label={`${monthLabel(month)} toplamı`}
-          value={tl(total)}
-          sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
-          info="Bu sayfadaki bütün kategoriler: girilen harcamalar ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında sayılır."
-        />
-        <Stat compact icon={<Megaphone />} label="Reklam & influencer" value={tl(ads)} sub="“Para nereye gitti”de Reklam grubunda" />
-        <Stat compact icon={<ReceiptText />} label="Fatura dışı" value={tl(offInvoice)} sub="Bu sayfada girilenler" />
-        <Stat compact icon={<Tags />} label="Faturadan" value={tl(fromInvoices)} sub={fromInvoices ? "Bağlı fatura kategorilerinden" : "Bağlı fatura yok"} />
+        <StatBreakdown
+          title={`${monthLabel(month)} harcamaları`}
+          description="Kategori kategori: girilen harcamalar ve bağlı faturalar (KDV hariç)."
+          groups={breakdown.total}
+          total={total}
+          exact
+          empty="Bu ay harcama yok."
+        >
+          <Stat
+            compact
+            icon={<Wallet />}
+            label={`${monthLabel(month)} toplamı`}
+            value={tl(total)}
+            sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
+            info="Bu sayfadaki bütün kategoriler: girilen harcamalar ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında sayılır."
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`Reklam & influencer · ${monthLabel(month)}`}
+          description="Reklam grubundaki kategoriler, kayıt kayıt. Faturaya dokununca Faturalar'da açılır."
+          groups={breakdown.ads}
+          total={ads}
+          exact
+          empty="Bu ay reklam harcaması yok."
+        >
+          <Stat compact icon={<Megaphone />} label="Reklam & influencer" value={tl(ads)} sub="“Para nereye gitti”de Reklam grubunda" />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`Fatura dışı · ${monthLabel(month)}`}
+          description="Bu sayfada girilen harcamalar, kategori kategori."
+          groups={breakdown.offInvoice}
+          total={offInvoice}
+          exact
+          empty="Bu ay girilmiş harcama yok."
+        >
+          <Stat compact icon={<ReceiptText />} label="Fatura dışı" value={tl(offInvoice)} sub="Bu sayfada girilenler" />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`Faturadan · ${monthLabel(month)}`}
+          description="Kategorilere bağlı fatura kategorilerinden (KDV hariç, iskonto düşülmüş). Faturaya dokununca Faturalar'da açılır."
+          groups={breakdown.fromInvoices}
+          total={fromInvoices}
+          exact
+          empty="Bu ay bağlı kategorilerden fatura yok."
+        >
+          <Stat compact icon={<Tags />} label="Faturadan" value={tl(fromInvoices)} sub={fromInvoices ? "Bağlı fatura kategorilerinden" : "Bağlı fatura yok"} />
+        </StatBreakdown>
       </div>
 
       {missing.length ? (
@@ -219,7 +271,7 @@ export function MonthlyExpenses({
                   </Select>
                 </Field>
                 <Field label="Tutar (₺)" htmlFor="x-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
-                  <NumberInput id="x-amt" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} placeholder="0" enterKeyHint="done" />
+                  <NumberInput id="x-amt" inputMode="text" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} placeholder="0" enterKeyHint="done" />
                 </Field>
                 <Field label="Tarih" htmlFor="x-date">
                   <Input id="x-date" type="date" value={draft.date} onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))} />
@@ -326,7 +378,10 @@ export function MonthlyExpenses({
                         {invs.map((i) => (
                           <li key={`inv-${i.id}`} className="flex items-start justify-between gap-3 py-2">
                             <span className="min-w-0">
-                              <Link href={`/panel/faturalar?ay=${month}&ara=${encodeURIComponent(i.supplier)}`} className="block text-sm break-words text-ink hover:underline">
+                              <Link
+                                href={`/panel/faturalar?ay=${month}&ara=${encodeURIComponent(i.supplier)}#fatura-listesi`}
+                                className="block text-sm break-words text-ink hover:underline pointer-coarse:flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+                              >
                                 {i.supplier}
                               </Link>
                               <span className="block text-xs text-ink-mute">
@@ -518,8 +573,8 @@ function EntryDialog({
               ))}
           </Select>
         </Field>
-        <Field label="Tutar (₺)" htmlFor="e-amt">
-          <NumberInput id="e-amt" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} />
+        <Field label="Tutar (₺)" htmlFor="e-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
+          <NumberInput id="e-amt" inputMode="text" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} />
         </Field>
         <Field label="Tarih" htmlFor="e-date">
           <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} />
@@ -650,20 +705,32 @@ function CategoryDialog({
           <button type="submit" hidden />
         </form>
       </Dialog>
+      {/* Harcaması olan kategori silinemez: onay penceresi silmek yerine pasif yapmayı sunar (sunucu da reddeder) */}
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title={`${category?.name ?? ""} silinsin mi?`}
+        title={category?.entryCount ? `${category.name} silinemiyor` : `${category?.name ?? ""} silinsin mi?`}
         description={
           category?.entryCount
-            ? `Bu kategoride ${category.entryCount} harcama var; silinemez. Geçmiş ayları korumak için pasif yapın.`
+            ? `Bu kategoride ${num(category.entryCount)} harcama var; silinemez. ${category.active ? "Bunun yerine pasif yapabilirsiniz: geçmiş aylar korunur, kategori yeni harcamalarda listelenmez." : "Kategori zaten pasif; geçmiş aylar korunur."}`
             : "Kategori silinir. Harcaması yok, hiçbir ay değişmez."
         }
-        confirmLabel="Sil"
+        tone={category?.entryCount ? "primary" : "danger"}
+        confirmLabel={category?.entryCount ? (category.active ? "Pasif yap" : "Tamam") : "Sil"}
         pending={pending}
         onConfirm={() =>
           start(async () => {
             if (!category) return;
+            if (category.entryCount) {
+              if (!category.active) return void setConfirmDelete(false);
+              // Formda kaydedilmemiş değişiklikler yazılmaz: kategori kayıtlı haliyle pasif olur
+              const { id, name, section, panelGroup, invoiceCategory, monthly } = category;
+              const p = await saveExpenseCategory({ id, name, section, panelGroup, invoiceCategory, monthly, active: false });
+              if (!p.ok) return void toast.error(p.error);
+              toast.success(`${name} pasif yapıldı`);
+              setConfirmDelete(false);
+              return void onSaved(null);
+            }
             const r = await deleteExpenseCategory(category.id);
             if (!r.ok) return void toast.error(r.error);
             toast.success(`${category.name} silindi`);

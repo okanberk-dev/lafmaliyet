@@ -562,7 +562,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     lines.push({
       k: "Net kâr / zarar (standart sabit giderle – Excel Panel temeli)",
       v: t.netProfitStandard,
-      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: açık gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}.`,
+      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: açık gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}.`,
     });
   }
   // Hiç verisi olmayan ayda (ay bilgisi, fatura, Gelir-gider girişi, sayım yok) 0 yazılmaz: "veri yok" ile "kâr 0" karışmasın

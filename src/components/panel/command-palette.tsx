@@ -260,12 +260,13 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
 
   return (
     <>
+      {/* Kapanırken perde ve pencere dokunuş almaz: solarken arkadaki kenar çubuğuna ilk tıklama boşa gitmesin */}
       <motion.div
         data-scroll-lock
         aria-hidden="true"
         initial={reduce ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
-        exit={reduce ? undefined : { opacity: 0 }}
+        exit={reduce ? undefined : { opacity: 0, pointerEvents: "none" }}
         transition={reduce ? { duration: 0 } : SPRING_PANEL}
         className="fixed inset-0 z-[60] bg-foreground/15"
         onClick={onClose}
@@ -280,7 +281,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
           onKeyDown={onKeyDown}
           initial={reduce ? false : { opacity: 0, y: 8, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={reduce ? undefined : { opacity: 0, y: 6, scale: 0.98 }}
+          exit={reduce ? undefined : { opacity: 0, y: 6, scale: 0.98, pointerEvents: "none" }}
           transition={transition}
           className="pointer-events-auto flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-chart-card-bg shadow-[0_24px_80px_rgba(0,0,0,0.12)] ring-1 ring-border sm:max-h-[min(38rem,76dvh)]"
         >
@@ -370,8 +371,9 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                       aria-selected={on}
                       data-active={on}
                       onClick={() => go(e)}
-                      onMouseMove={() => {
-                        if (!on) setActive(i);
+                      // Yalnız fare seçimi taşır: dokunuşun öncesindeki öykünme olayı satırı değiştirmez
+                      onPointerMove={(ev) => {
+                        if (ev.pointerType === "mouse" && !on) setActive(i);
                       }}
                       className={cn(
                         "flex min-h-12 cursor-pointer items-center gap-3 rounded-xl px-2 py-1.5 transition-colors",

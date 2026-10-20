@@ -5,6 +5,7 @@ import {
   addMonthsAnchored,
   advancePast,
   daysBetween,
+  digestSummary,
   dueNotifications,
   nextOccurrence,
   presetAnchor,
@@ -107,8 +108,30 @@ test("geciken tekrarlı hatırlatıcının sonraki dönemi de görünür", () =>
       ["reminder:3@2026-11-28", "2026-11-28", 4, "soon"],
     ],
   );
-  // Sonraki dönem için "yaklaşıyor" e-postası, ayrı anahtarla
-  assert.deepEqual(dueNotifications(items).map((n) => n.key), ["reminder:3@2026-11-28:2026-11-28:before"]);
+  // Sonraki dönem için "yaklaşıyor" e-postası; anahtar ref'ten değil kaynak + kimlik + vadeden, geciken dönemden ayrı
+  assert.deepEqual(dueNotifications(items).map((n) => n.key), ["reminder:3:2026-11-28:before"]);
+});
+
+test("geciken dönem ödenince öngörülen dönemin e-postası ikinci kez gitmez", () => {
+  // 29.10: Ekim kirası ödenmedi, Kasım dönemi öngörülen satır olarak "yaklaşıyor" e-postasını alır
+  const before = upcomingItems([{ ...base, id: 4, dueDate: "2026-10-01", anchorDate: "2026-10-01" }], [], "2026-10-29");
+  const sentKeys = dueNotifications(before).map((n) => n.key);
+  assert.deepEqual(sentKeys, ["reminder:4:2026-11-01:before"]);
+  assert.equal(before.find((i) => i.projected)?.ref, "reminder:4@2026-11-01");
+  // 30.10 Ekim "Ödendi" → hatırlatıcı 01.11'e ilerler; 31.10'daki gerçek satır aynı anahtarı üretir (günlükte var)
+  const after = upcomingItems([{ ...base, id: 4, dueDate: "2026-11-01", anchorDate: "2026-10-01" }], [], "2026-10-31");
+  assert.deepEqual(dueNotifications(after).map((n) => n.key), sentKeys);
+  // Fatura anahtarı eski biçimle aynı kalır (günlükteki kayıtlar eşleşmeye devam eder)
+  const inv = upcomingItems([], [{ id: 23, supplier: "Kaldi", invoiceNo: null, date: "2026-09-20", dueDate: "2026-10-31", payable: 100, outstanding: null }], "2026-10-31");
+  assert.deepEqual(dueNotifications(inv).map((n) => n.key), ["invoice:23:2026-10-31:due"]);
+});
+
+test("sabah e-postası özeti: yalnız gidenler yazılır", () => {
+  assert.equal(digestSummary({ count: 2, invoices: 4, prices: 1 }), "2 hatırlatma · 4 yeni fatura · 1 zam");
+  assert.equal(digestSummary({ count: 0, invoices: 4 }), "4 yeni fatura");
+  assert.equal(digestSummary({ count: 0, invoices: 0, prices: 3 }), "3 zam");
+  assert.equal(digestSummary({ count: 1, syncError: true }), "1 hatırlatma · Paraşüt eşitleme hatası");
+  assert.equal(digestSummary({ count: 0, invoices: 0, prices: 0, syncError: false }), "");
 });
 
 test("uzun hatırlatma süresi 45 günlük pencereye takılmaz; ödendi ilerletmesi", () => {

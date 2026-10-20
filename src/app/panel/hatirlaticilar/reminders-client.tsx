@@ -13,6 +13,7 @@ import { Fab } from "@/components/ui/fab";
 import { EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { dateTR, money, num } from "@/lib/format";
+import type { RecentPaid } from "@/lib/recent-paid";
 import {
   inSummaryRange,
   laterReminderItems,
@@ -38,6 +39,7 @@ import { CalendarView, ForecastRow } from "./calendar-view";
 import { useFabBlocked } from "./fab-clear";
 import { NotificationsSection, type EmailStatus, type LogRow, type Recipient } from "./notifications-section";
 import { itemKey, PaymentCard, sourceOf, usePaymentActions, type MenuAction } from "./payment-ui";
+import { RecentPaidList } from "./recent-paid";
 import { DueDateSheet, ReminderSheet, type FixedRow, type Reminder } from "./reminder-sheet";
 import { Sheet } from "./sheet";
 
@@ -59,6 +61,7 @@ const RANGE_LABEL: Record<SummaryRange, string> = { gecikmis: "Gecikmiş", hafta
 const GROUP_DOT: Record<TimelineGroup, string> = { overdue: "bg-bad", today: "bg-brass-500", week: "bg-brass-300", month: "bg-ink-quiet", later: "bg-ink-quiet/50" };
 
 const NO_ITEMS: UpcomingItem[] = [];
+const NO_RECENT: RecentPaid[] = [];
 
 type ItemHide = { key: string } | { reminderId: number };
 type ReminderPatch = { type: "active"; id: number; active: boolean } | { type: "remove"; id: number };
@@ -74,6 +77,7 @@ export function RemindersClient({
   email,
   settings,
   invoiceSource,
+  recentPaid = NO_RECENT,
 }: {
   today: string;
   items: UpcomingItem[];
@@ -86,6 +90,8 @@ export function RemindersClient({
   email: EmailStatus;
   settings: NotifySettings;
   invoiceSource: Record<number, string>;
+  /** Son 30 günde "Ödendi" işaretlenenler (geri alınabilir) */
+  recentPaid?: RecentPaid[];
 }) {
   const [sourceRaw, setSource] = useQueryState<Source>("kaynak", "tumu");
   const source = oneOf(sourceRaw, SOURCES, "tumu");
@@ -372,11 +378,12 @@ export function RemindersClient({
                   );
                 })}
                 <p className="px-1 text-xs leading-5 text-ink-mute">
-                  Gecikenler ve önümüzdeki {UPCOMING_HORIZON_DAYS} gün; daha ilerisi takvimde. “Ödendi” 8 saniye içinde geri alınabilir
+                  Gecikenler ve önümüzdeki {UPCOMING_HORIZON_DAYS} gün; daha ilerisi takvimde. “Ödendi” bildirimden hemen, sonra da aşağıdaki “Son ödenenler”den geri alınabilir
                   <span className="sm:hidden">; kartı sağa kaydırmak da “Ödendi” demektir</span>.
                 </p>
               </div>
             )}
+            {recentPaid.length ? <RecentPaidList items={recentPaid} /> : null}
           </CardContent>
         </Card>
 

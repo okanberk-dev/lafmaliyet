@@ -17,7 +17,7 @@ import type { SearchEntry } from "@/server/data/search";
 
 import { BottomNav, BottomNavSkeleton } from "./bottom-nav";
 import { PanelSearch, SearchTrigger } from "./command-palette";
-import { mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
+import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 
@@ -137,7 +137,7 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       )}
     >
       <header className="flex shrink-0 items-center gap-2.5 px-1">
-        <Link href={home} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-foreground/20" aria-label="L'Affogato, ana sayfa">
+        <Link href={home} className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-foreground/20" aria-label="L'Affogato, ana sayfa">
           <LafTile className="size-8 rounded-lg" />
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate text-base font-semibold tracking-tight text-foreground">L&apos;Affogato</span>
@@ -254,7 +254,8 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       {/* Masaüstü kenar çubuğu */}
       <div className="no-print fixed inset-y-0 left-0 z-30 hidden w-[17.5rem] border-r border-border lg:block">{panel(false)}</div>
 
-      {/* Mobil çekmece */}
+      {/* Mobil çekmece. Kapanırken (perde solarken, çekmece kayarken) dokunuş almaz: arkadaki sayfaya ve alt menüye
+          ilk dokunuş perdeye gidip boşa gitmesin. Kapanırken yeniden açılırsa dokunuşlar geri gelir. */}
       <AnimatePresence>
         {mobileOpen ? (
           <>
@@ -264,22 +265,24 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
               tabIndex={-1}
               data-scroll-lock
               initial={reduce ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={reduce ? undefined : { opacity: 0 }}
+              animate={{ opacity: 1, pointerEvents: "auto" }}
+              exit={reduce ? undefined : { opacity: 0, pointerEvents: "none" }}
               transition={reduce ? { duration: 0 } : SPRING_PANEL}
               className="fixed inset-0 z-40 bg-foreground/20 lg:hidden"
               onClick={closeDrawer}
             />
             <motion.div
               ref={drawerRef}
-              // Çekmecedeki bir bağlantıya dokununca (bulunulan sayfa dahil) çekmece hemen kapanır
+              // Başka bir ekranın bağlantısı: çekmece geçiş bitene dek açık kalır (dokunulan satırda bekleme halkası),
+              // adres değişince kendiliğinden kapanır (mobileOpen); kapanma gezinmeyi kesmez. Bulunulan ekranın
+              // bağlantısında adres değişmeyeceği için hemen kapanır.
               onClickCapture={(e) => {
                 const link = (e.target as Element).closest("a[href]");
-                if (link && !link.getAttribute("target")) setOpenFor(null);
+                if (link && !link.getAttribute("target") && isSamePage(link.getAttribute("href"), pathname)) setOpenFor(null);
               }}
               initial={reduce ? false : { x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={reduce ? undefined : { x: "-100%" }}
+              animate={{ x: 0, pointerEvents: "auto" }}
+              exit={reduce ? undefined : { x: "-100%", pointerEvents: "none" }}
               transition={reduce ? { duration: 0 } : SPRING_PANEL}
               className="fixed inset-y-0 left-0 z-50 flex w-[min(calc(100%-3rem),20rem)] shadow-[0_12px_40px_rgba(0,0,0,0.18)] lg:hidden"
               role="dialog"

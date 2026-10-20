@@ -5,6 +5,8 @@ import {
   useId,
   useRef,
   useState,
+  type FocusEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -35,6 +37,18 @@ import {
   useProfileMenuInlineAlign,
   type ProfileMenuInlineAlign,
 } from "./profile-menu-align";
+
+/**
+ * Vurgu yalnız fare ile ve klavye odağıyla (:focus-visible) değişir: dokunuşta ve tıklamanın verdiği odakta DOM
+ * değişmez. Yoksa tıklanan satırın vurgusu mousedown ile odak arasında silinip yeniden çizilir, tarayıcı ilk
+ * tıklamayı düşürür; iOS da ilk dokunuşu "üstüne gelme" sayar (kenar menüsüyle aynı düzeltme).
+ */
+const mouseOnly = (fn: () => void) => (e: PointerEvent) => {
+  if (e.pointerType === "mouse") fn();
+};
+const focusVisibleOnly = (fn: () => void) => (e: FocusEvent) => {
+  if (e.currentTarget.matches(":focus-visible")) fn();
+};
 
 export type ProfileDropdownItem = {
   id: string;
@@ -332,9 +346,9 @@ export function ProfileDropdown({
                       ? { duration: 0 }
                       : { ...SPRING_SWAP, delay: 0.12 }
                   }
-                  onPointerEnter={() => setHoveredKey("sign-out")}
-                  onPointerLeave={() => setHoveredKey(null)}
-                  onFocus={() => setHoveredKey("sign-out")}
+                  onPointerEnter={mouseOnly(() => setHoveredKey("sign-out"))}
+                  onPointerLeave={mouseOnly(() => setHoveredKey(null))}
+                  onFocus={focusVisibleOnly(() => setHoveredKey("sign-out"))}
                   onBlur={() => setHoveredKey(null)}
                   onClick={() => {
                     onSignOut?.();
@@ -352,7 +366,8 @@ export function ProfileDropdown({
                       transition={
                         reduceMotion ? { duration: 0 } : SPRING_SWAP
                       }
-                      className="absolute inset-0 rounded-xl bg-red-50 dark:bg-red-500/15"
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-xl bg-red-50 dark:bg-red-500/15"
                     />
                   ) : null}
                   <LogOut
@@ -419,9 +434,9 @@ function MenuRow({
           ? { duration: 0 }
           : { ...SPRING_SWAP, delay: 0.04 + index * 0.045 }
       }
-      onPointerEnter={() => onHover(rowKey)}
-      onPointerLeave={() => onHover(null)}
-      onFocus={() => onHover(rowKey)}
+      onPointerEnter={mouseOnly(() => onHover(rowKey))}
+      onPointerLeave={mouseOnly(() => onHover(null))}
+      onFocus={focusVisibleOnly(() => onHover(rowKey))}
       onBlur={() => onHover(null)}
       onClick={onSelect}
       className={cn(
@@ -433,7 +448,8 @@ function MenuRow({
         <motion.span
           layoutId="profile-dropdown-highlight"
           transition={reduceMotion ? { duration: 0 } : SPRING_SWAP}
-          className="absolute inset-0 rounded-xl bg-chart-bg"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-xl bg-chart-bg"
         />
       ) : null}
       <span className="relative z-10 flex size-4 shrink-0 items-center justify-center text-chart-muted">

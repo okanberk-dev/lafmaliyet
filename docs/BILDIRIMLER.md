@@ -17,6 +17,22 @@ Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlatic
 
 Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür.
 
+## Son ödenenler (geri alma)
+
+"Ödendi" bildirimindeki **Geri al** 8 saniye durur. Kaçırılırsa ya da yanlışlık sonradan fark edilirse, listenin
+altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır:
+
+- Son **30 günde** "Ödendi" işaretlenen fatura ve hatırlatıcılar, en yeni önce, en çok 30 kayıt. Liste, Ödemeler
+  ekranından, Faturalar'da tek tek / toplu "Ödendi"den ve fatura penceresinde ödenmedi → ödendi kaydedilince dolar.
+- **Fatura** için Geri al, faturayı yeniden "ödenmedi" yapar; ödeme listesine ve sabah e-postasına döner.
+- **Hatırlatıcı** için Geri al, ödenmeden önceki hâline döndürür (tarih, tekrar günü, açık/kapalı, son ödeme):
+  tekrar eden kira 01.11'den 01.10'a geri gelir, kapanan tek seferlik yeniden açılır.
+- Hatırlatıcı ödendikten sonra değiştiyse (yeniden ödendi, ertelendi, kapatıldı, tarihi düzenlendi) eski hâl yazılmaz;
+  satır listede görünmez. Silinen hatırlatıcı ve sonradan "ödenmedi" yapılan fatura da görünmez. Ödemeden sonraki bir
+  ertelemenin bildirimden geri alınması kaydı yeniden geçerli kılar.
+- Kayıt ayrı tablo değil, `integration_state` tablosunda `payments.recent` anahtarıdır; yazılamazsa asıl işlem
+  (ödendi) yine yapılır, yalnız geri alma listesi eksik kalır.
+
 ## E-posta
 
 Her sabah 08:00–09:00 arasında (Vercel Cron, `/api/cron/gunluk`; Hobby planında saat esnek) tek bir **sabah
@@ -46,15 +62,29 @@ görünür (ör. Ekim KDV gecikti, Kasım KDV 4 gün kaldı); sonraki dönemde "
 Kapatılıp yeniden açılan tekrarlı hatırlatıcı bugünden sonraki ilk döneme geçer.
 
 Aynı hatırlatmanın ikinci kez gitmemesi `notification_log` tablosundaki tekil anahtarla sağlanır
-(`reminder:4:2026-10-28:before`). Gönderim başarısız olursa anahtar yazılmaz, ertesi sabah yeniden denenir; hata
-ekrandaki "Son gönderimler"de görünür.
+(`kaynak:kimlik:vade:aşama`, ör. `reminder:4:2026-10-28:before`, `invoice:23:2026-10-31:due`). Geciken dönemin
+yanında görünen sonraki dönem de aynı anahtarı kullanır: Ekim kirası gecikmişken Kasım için "yaklaşıyor" gittiyse,
+Ekim ödenip Kasım gerçek döneme dönünce aynı e-posta ikinci kez gitmez. Gönderim başarısız olursa anahtar yazılmaz,
+ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür.
 
-Ekrandan:
+Resend'e her e-posta içerikten türeyen bir tekil anahtarla (`Idempotency-Key`) gider: aynı iletinin yeniden denemesi
+ve sabah işiyle elle gönderimin çakışması tek e-posta olur. Paraşüt bölümünün anahtarı son Paraşüt bölümlü gönderimin
+anını da içerir; aynı gün ikinci kez "şimdi gönder" denince (aynı sayıda yeni fatura gelse de) anahtar değişir.
 
+Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet):
+
+- özet satırında açık/kapalı, adres sayısı ve gönderim durumu ("her sabah 08:00", "elle gönderim", "gönderim
+  bekliyor"). Resend bağlıyken ayrıca bir şey yazılmaz; `RESEND_API_KEY` yoksa kırmızı **Resend bağlı değil**
+  rozeti ve açınca anahtarın nereye girileceği görünür (`CRON_SECRET` yoksa da);
+- e-postaları açma / kapatma anahtarı: yalnız açık/kapalıyı kaydeder, "Gönderim ayarları"nda yazılıp
+  kaydedilmemiş değerlere dokunmaz;
 - bildirim adresi ekleme, kapatma, silme;
+- **E-postayı önizle** (gönderilmez): bugün gidecek sabah e-postasının kendisi, Paraşüt ve zam bölümleriyle;
+  ödeme, yeni fatura ya da zam yoksa örnek bir ödeme satırıyla;
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere);
-- **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez);
-- gönderen adresi ve gün ayarları.
+- **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
+  yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";
+- gönderen adresi ve gün ayarları (Gönderim ayarları › Kaydet).
 
 ## Resend kurulumu
 

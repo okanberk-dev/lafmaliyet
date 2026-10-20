@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, CircleDashed, FileText, Link2, ListFilter, Package, Pencil, PlugZap, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, CircleDashed, FileText, Link2, ListFilter, Package, PackageX, Pencil, PlugZap, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useId, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -21,6 +21,8 @@ import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
 import { guessLinkFactor, suggestIngredient } from "@/lib/product-match";
+import type { IgnoredProduct } from "@/lib/product-ignore";
+import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
   deleteCategoryRule,
@@ -32,6 +34,8 @@ import {
   saveProductLink,
   saveProductLinks,
   testParasutConnection,
+  ignoreProduct,
+  unignoreProduct,
 } from "@/server/actions/parasut";
 
 type MatchType = "supplier" | "parasut_category" | "keyword";
@@ -116,6 +120,7 @@ export function ParasutClient({
   ingredients,
   unlinked,
   unlinkedTotal,
+  ignored = [],
   lineReads,
   categories,
 }: {
@@ -134,6 +139,8 @@ export function ParasutClient({
   unlinked: Unlinked[];
   /** Bağlanmayı bekleyen ürünlerin tamamı (listede ilk 40'ı) */
   unlinkedTotal: number;
+  /** "Hammadde değil" denen ürünler (en yeni önce) */
+  ignored?: IgnoredProduct[];
   /** E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri okunan / sırada */
   lineReads: { read: number; pending: number };
   categories: readonly string[];
@@ -346,9 +353,11 @@ export function ParasutClient({
             >
               <Field
                 label="Yeniden eşitleme başlangıcı"
+                htmlFor="psync-from"
                 tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar, vade ve ödeme durumu güncellenir."
               >
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+                {/* Bugün Türkiye saatiyle (UTC gece 00–03 arasında bugünü seçtirmezdi) */}
+                <Input id="psync-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={todayTR()} />
               </Field>
               <Button type="submit" variant="secondary" disabled={!configured || busy || !from} title={configured ? undefined : NOT_CONFIGURED}>
                 <RefreshCw size={16} className={cn(syncing && from && "animate-spin")} /> Tarihten eşitle
@@ -400,6 +409,7 @@ export function ParasutClient({
         links={links}
         unlinked={unlinked}
         unlinkedTotal={unlinkedTotal}
+        ignored={ignored}
         ingredients={ingredients}
         lineReads={lineReads}
         onReadLines={readLines}
@@ -483,6 +493,7 @@ function ProductLinks({
   links,
   unlinked,
   unlinkedTotal,
+  ignored,
   ingredients,
   lineReads,
   onReadLines,
@@ -493,6 +504,7 @@ function ProductLinks({
   links: LinkRow[];
   unlinked: Unlinked[];
   unlinkedTotal: number;
+  ignored: IgnoredProduct[];
   ingredients: Ingredient[];
   lineReads: { read: number; pending: number };
   onReadLines: () => void;
@@ -519,6 +531,8 @@ function ProductLinks({
 
   // İyimser görünüm: bağlanan kalem listeden hemen düşer, silinen bağlantı hemen kalkar
   const [waiting, hideUnlinked] = useOptimistic(unlinked, (state, key: string) => state.filter((u) => u.productKey !== key));
+  const [notIngredients, unhideIgnored] = useOptimistic(ignored, (state, key: string) => state.filter((e) => e.productKey !== key));
+  const ignoredShown = view === "bagli" ? [] : notIngredients.filter((e) => matches(e.productName, q));
   const [linked, patchLinks] = useOptimistic(links, (state, p: LinkPatch) =>
     p.type === "remove" ? state.filter((l) => l.id !== p.id) : state.map((l) => (l.id === p.id ? { ...l, ...p.patch } : l)),
   );
@@ -549,6 +563,25 @@ function ProductLinks({
     });
   };
 
+  // Kargo, hizmet bedeli, ekipman gibi kalemler: bekleyenlerden çıkar (zil sayısına da girmez), geri alınabilir
+  const ignore = (u: Unlinked) =>
+    start(async () => {
+      hideUnlinked(u.productKey);
+      const r = await ignoreProduct({ productKey: u.productKey, productName: u.productName });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(`${u.productName}: hammadde değil`, {
+        description: "Bekleyenlerden çıktı; listenin altındaki “Hammadde değil” bölümünden geri alınabilir.",
+        action: { label: "Geri al", onClick: () => void unignoreProduct(u.productKey).then((x) => (x.ok ? undefined : toast.error(x.error))) },
+      });
+    });
+  const unignore = (e: IgnoredProduct) =>
+    start(async () => {
+      unhideIgnored(e.productKey);
+      const r = await unignoreProduct(e.productKey);
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(`${e.productName} yeniden bağlanmayı bekleyenlerde`);
+    });
+
   // Hazır olanlar: hammaddesi seçilmiş (elle ya da öneriyle) ve çarpanı belli bekleyenler; tek seferde bağlanır
   const [bulkOpen, setBulkOpen] = useState(false);
   /** Toplu bağlamada çıkarılan ürünler (pencere her açılışta hepsi seçili başlar) */
@@ -564,6 +597,7 @@ function ProductLinks({
         const sug = suggestIngredient(u.productName, ingredients, linked);
         const ing = sug ? byId.get(sug.ingredientId) : undefined;
         if (!sug || !ing) return [];
+        // Bağlantının çarpanı yalnız aynı pakette gelir (suggestIngredient); başka pakette ("SÜT 5 LT") addan tahmin edilir
         const f = sug.factor ?? parseNumberTR(guessLinkFactor({ name: u.productName, unit: u.unit }, ing.unit) ?? "");
         return f && f > 0 ? [{ u, ing, factor: f, updatePrice: true }] : [];
   });
@@ -633,7 +667,7 @@ function ProductLinks({
         </div>
       ) : null}
 
-      {total === 0 ? (
+      {total + notIngredients.length === 0 ? (
         <CardContent>
           <EmptyState
             title="Henüz bağlanacak kalem yok"
@@ -658,7 +692,7 @@ function ProductLinks({
             </FilterBar>
           </div>
 
-          {waitingShown.length + linkedShown.length === 0 ? (
+          {waitingShown.length + linkedShown.length + ignoredShown.length === 0 ? (
             <CardContent>
               <EmptyState
                 title="Bu süzgece uyan ürün yok"
@@ -677,7 +711,7 @@ function ProductLinks({
               <p className="mb-2 flex items-center gap-1.5 text-[0.65rem] font-medium tracking-wide text-ink-mute uppercase">
                 <Wand2 size={12} aria-hidden="true" /> Bağlanmayı bekleyenler · {waitingShown.length}
                 {unlinkedTotal > waiting.length ? ` / ${num(unlinkedTotal)}` : ""}
-                <InfoTip text="En sık geçen 40 ürün gösterilir; bağladıkça sıradakiler gelir. Yalnız mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) ve Diğer kategorisindeki faturaların kalemleri listelenir; komisyon, kira, demirbaş ve hizmet faturaları gelmez. Hammadde olmayan kalemleri (kargo, hizmet) bağlamanız gerekmez." />
+                <InfoTip text="En sık geçen 40 ürün gösterilir; bağladıkça sıradakiler gelir. Yalnız mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) ve Diğer kategorisindeki faturaların kalemleri listelenir; komisyon, kira, demirbaş ve hizmet faturaları gelmez. Hammadde olmayan kalemleri (kargo, hizmet, ekipman) bağlamayın: “Hammadde değil” deyin, listeden ve zildeki sayıdan çıkar." />
                 {proposals.length ? (
                   <Button
                     size="sm"
@@ -741,7 +775,12 @@ function ProductLinks({
                               className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-left text-xs text-info hover:underline pointer-coarse:min-h-11"
                             >
                               <Sparkles size={12} aria-hidden="true" className="shrink-0" /> Öneri: {suggested.name}
-                              {suggestion.reason === "link" ? ` (aynı ürün bağlı, × ${num(suggestion.factor ?? 1, 3)})` : ""}
+                              {/* Çarpan yalnız aynı paket bağlıysa gelir; başka paketse (1 L bağlı, 5 L geldi) addan tahmin edilir */}
+                              {suggestion.reason === "link"
+                                ? suggestion.factor
+                                  ? ` (aynı ürün bağlı, × ${num(suggestion.factor, 3)})`
+                                  : " (aynı ürün başka paketle bağlı, çarpanı kontrol edin)"
+                                : ""}
                             </button>
                           ) : null}
                         </div>
@@ -757,7 +796,8 @@ function ProductLinks({
                           <span className="w-8 shrink-0">{ing ? (UNIT_LABEL[ing.unit] ?? ing.unit) : "…"}</span>
                           <InfoTip text={FACTOR_TIP} />
                         </label>
-                        <div className="flex items-center justify-between gap-2 lg:contents">
+                        {/* Telefonda düğmeler sığmazsa anahtarın altına iner */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 lg:contents">
                           <Switch
                             checked={d.updatePrice}
                             label={`${u.productName} için fiyatı güncelle`}
@@ -766,9 +806,21 @@ function ProductLinks({
                             offText="Fiyat elle"
                             onChange={(v) => set(u.productKey, { updatePrice: v })}
                           />
-                          <Button type="submit" size="sm" disabled={pending || !d.ingredientId}>
-                            <Link2 size={14} /> Bağla
-                          </Button>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() => ignore(u)}
+                              title="Kargo, hizmet bedeli, ekipman gibi hammadde olmayan kalem: bekleyenlerden çıkar"
+                              aria-label={`${u.productName}: hammadde değil, bekleyenlerden çıkar`}
+                            >
+                              <PackageX size={14} /> Hammadde değil
+                            </Button>
+                            <Button type="submit" size="sm" disabled={pending || !d.ingredientId}>
+                              <Link2 size={14} /> Bağla
+                            </Button>
+                          </div>
                         </div>
                       </form>
                     </li>
@@ -776,6 +828,36 @@ function ProductLinks({
                 })}
               </ul>
             </div>
+          ) : null}
+
+          {ignoredShown.length ? (
+            // Aramada eşleşen varsa açık gelir (Faturalar'daki "Hammaddeye bağla" buraya düşebilir)
+            <details className="group/ig mx-5 mb-4 rounded-2xl bg-surface" open={q.trim() ? true : undefined}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-2xl px-3.5 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+                <PackageX size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ink">Hammadde değil · {num(ignoredShown.length)}</span>
+                  <span className="block text-xs text-ink-mute">Bekleyenlerden çıkarılan kalemler (kargo, hizmet, ekipman). Faturadaki tutarları değişmez.</span>
+                </span>
+                <ChevronDown size={16} className="shrink-0 text-ink-quiet transition-transform group-open/ig:rotate-180" aria-hidden="true" />
+              </summary>
+              <ul className="divide-y divide-ink/[0.06] px-3.5 pb-1.5">
+                {ignoredShown.map((e) => (
+                  <li key={e.productKey} className="flex items-center justify-between gap-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium break-words text-ink">{e.productName}</p>
+                      <p className="mt-0.5 text-xs text-ink-mute">
+                        {dateTimeTR(e.at)}
+                        {e.by ? ` · ${e.by}` : ""}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="secondary" className="shrink-0" disabled={pending} onClick={() => unignore(e)} aria-label={`${e.productName}: bekleyenlere geri al`}>
+                      <RotateCcw size={14} /> Geri al
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
 
           {linkedShown.length ? (

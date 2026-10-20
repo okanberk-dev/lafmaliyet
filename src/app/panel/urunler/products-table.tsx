@@ -147,12 +147,15 @@ const sizeLabel = (s: string) => SIZE_LABELS[s as Size] ?? s;
 // Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir; ürün notu da aranır ("varsayıldı")
 const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category} ${r.note ?? ""}`;
 
-/** Maliyet oranının hedefe göre rengi (Durum rozetiyle aynı eşikler); reçetesiz üründe renk yok */
-const ratioClass = (r: Pick<ProductRow, "costRatio" | "status">, target: number) =>
-  r.status === "Reçete yok" ? "text-ink-quiet" : r.costRatio > target + 0.1 ? "text-bad" : r.costRatio > target ? "text-warn" : "text-good";
+/** Oran anlamsız: reçete yok (%0 ve ~%97) ya da fiyat girilmemiş (0 ₺; oran %0 görünür ama ürün zararına satılır) */
+const noRatio = (r: Pick<ProductRow, "status" | "price">) => r.status === "Reçete yok" || r.price <= 0;
 
-/** Reçetesiz üründe maliyet oranı ve marj anlamsız (%0 ve ~%97): tire gösterilir */
-const ratioText = (r: Pick<ProductRow, "status">, v: number) => (r.status === "Reçete yok" ? "–" : pct(v));
+/** Maliyet oranının hedefe göre rengi (Durum rozetiyle aynı eşikler); oranı anlamsız üründe renk yok */
+const ratioClass = (r: Pick<ProductRow, "costRatio" | "status" | "price">, target: number) =>
+  noRatio(r) ? "text-ink-quiet" : r.costRatio > target + 0.1 ? "text-bad" : r.costRatio > target ? "text-warn" : "text-good";
+
+/** Oranı anlamsız üründe maliyet oranı ve marj yerine tire */
+const ratioText = (r: Pick<ProductRow, "status" | "price">, v: number) => (noRatio(r) ? "–" : pct(v));
 
 /** Telefonda tablo başlığı yerine sıralama seçimi */
 const MOBILE_SORTS: { value: string; label: string }[] = [

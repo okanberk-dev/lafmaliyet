@@ -189,6 +189,31 @@ export function pathMatches(pathname: string, href: string, match: string[] = []
 }
 
 /**
+ * Kenar çubuğundaki tek vurgunun yeri: fare (yoksa klavye odağı) bir öğenin üstündeyse o öğe, değilse etkin sayfa.
+ * `pointed` yalnız fareyle ve klavyeyle dolar; fareyle tıklamanın odağı ve dokunmatik "üstüne gelme" saymaz
+ * (sidebar-nav.tsx): tıklama sırasında vurgu yer değiştirmez.
+ */
+export function navLit(key: string, active: boolean, pointed: string | null): boolean {
+  return pointed === null ? active : pointed === key;
+}
+
+/**
+ * Başka bir bölüme gidilince önceki etkin grubun açıklığı sabitlenir: kendiliğinden kapanıp alttaki satırları
+ * yukarı kaydırmaz (tıklanan öğe imlecin altından kaçmaz). Kullanıcının açtığı ya da kapattığı grup olduğu gibi kalır.
+ */
+export function keepGroupOpen(toggled: Record<string, boolean>, previous: string | null | undefined): Record<string, boolean> {
+  if (!previous || previous in toggled) return toggled;
+  return { ...toggled, [previous]: true };
+}
+
+/** Bağlantı bulunulan ekranı mı açıyor (adres değişmeyecek): çekmece o zaman hemen kapanır, yoksa geçiş bitince */
+export function isSamePage(href: string | null | undefined, pathname: string): boolean {
+  if (href == null) return false;
+  const trim = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
+  return trim(href.split(/[?#]/)[0] || pathname) === trim(pathname);
+}
+
+/**
  * Telefon ve tabletteki alt menü (lg altında). Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey orada).
  * Personel: yalnız erişebildiği üç ekran. `badge: "overdue"` öğesinde gecikmiş ödeme sayısı görünür.
  */

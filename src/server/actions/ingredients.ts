@@ -20,6 +20,8 @@ const ingredientSchema = z.object({
   packageDesc: zOptText(160),
   packagePrice: z.number().finite().min(0, "Fiyat negatif olamaz"),
   packageSize: z.number().finite().positive("Paket içeriği 0'dan büyük olmalı"),
+  /** Pencerenin gördüğü paket fiyatı ve içeriği: gelen değer bununla aynıysa alan değiştirilmemiştir, kayıttaki kalır */
+  base: z.object({ packagePrice: z.number(), packageSize: z.number() }).nullish(),
   unit: z.enum(["gr", "ml", "adet", "dilim"]),
   vatRate: z.number().min(0).max(1),
   note: zOptText(1000),
@@ -45,6 +47,8 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
     }
     const db = getDb();
     const warnings: string[] = [];
+    /** Kaydedilen paket fiyatı ve içeriği (günlük için) */
+    const saved = { packagePrice: data.packagePrice, packageSize: data.packageSize };
     const id = await db.transaction(async (tx) => {
       const [dup] = await tx
         .select({ id: s.ingredients.id })
@@ -54,8 +58,13 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       if (data.id) {
         const [before] = await tx.select().from(s.ingredients).where(eq(s.ingredients.id, data.id));
         if (!before) throw new UserError("Malzeme bulunamadı");
-        const { id: _omit, ...rest } = data;
+        const { id: _omit, base, ...rest } = data;
         void _omit;
+        // Pencere açıkken fiyat başka yerden değiştiyse (satırdaki fiyat kutusu, Paraşüt eşitlemesi) dokunulmamış alan
+        // eski değeri geri yazmaz, sahte fiyat geçmişi kaydı açılmaz
+        if (base && rest.packagePrice === base.packagePrice) rest.packagePrice = before.packagePrice;
+        if (base && rest.packageSize === base.packageSize) rest.packageSize = before.packageSize;
+        Object.assign(saved, { packagePrice: rest.packagePrice, packageSize: rest.packageSize });
         if (before.countUnit !== data.countUnit || before.unit !== data.unit) {
           const [{ n }] = await tx.select({ n: count() }).from(s.stockCounts).where(eq(s.stockCounts.ingredientId, data.id));
           if (n > 0) {
@@ -69,19 +78,20 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
           }
         }
         await tx.update(s.ingredients).set({ ...rest, updatedAt: new Date() }).where(eq(s.ingredients.id, data.id));
-        if (before.packagePrice !== data.packagePrice || before.packageSize !== data.packageSize) {
+        if (before.packagePrice !== rest.packagePrice || before.packageSize !== rest.packageSize) {
           await tx.insert(s.ingredientPrices).values({
             ingredientId: data.id,
-            packagePrice: data.packagePrice,
-            packageSize: data.packageSize,
+            packagePrice: rest.packagePrice,
+            packageSize: rest.packageSize,
             changedBy: me.name,
           });
         }
         return data.id;
       }
       const [{ m }] = await tx.select({ m: max(s.ingredients.sortOrder) }).from(s.ingredients);
-      const { id: _omit, ...rest } = data;
+      const { id: _omit, base: _base, ...rest } = data;
       void _omit;
+      void _base;
       const [created] = await tx
         .insert(s.ingredients)
         .values({ ...rest, sortOrder: (m ?? 0) + 1 })
@@ -95,7 +105,7 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       });
       return created.id;
     });
-    await logActivity(me, data.id ? "Hammadde güncellendi" : "Yeni hammadde", `${data.name}: ${tl(data.packagePrice, 2)} / ${data.packageSize} ${data.unit}`);
+    await logActivity(me, data.id ? "Hammadde güncellendi" : "Yeni hammadde", `${data.name}: ${tl(saved.packagePrice, 2)} / ${saved.packageSize} ${data.unit}`);
     refresh();
     // warning: sayım birimi değiştiyse eski sayımların durumu (istemci bilgi olarak gösterir), yoksa null
     return { id, warning: warnings[0] ?? null };

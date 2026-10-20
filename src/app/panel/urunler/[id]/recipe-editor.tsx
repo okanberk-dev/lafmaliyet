@@ -481,8 +481,10 @@ export function RecipeEditor({
   }, [ingredients]);
 
   const noRecipe = econ.status === "Reçete yok";
+  // Fiyatı 0 olan reçeteli ürün: oran %0 çıkar ama zararına satılır (durum "Düşük kâr"); gösterge yeşil olmasın
+  const noPrice = !noRecipe && !(econ.net > 0);
   const gaugeTone =
-    econ.costRatio <= settings.hedefMaliyet ? "brand" : econ.costRatio <= settings.hedefMaliyet + 0.1 ? "warn" : "bad";
+    noPrice ? "bad" : econ.costRatio <= settings.hedefMaliyet ? "brand" : econ.costRatio <= settings.hedefMaliyet + 0.1 ? "warn" : "bad";
   const trialDiff = trialEcon ? trialEcon.unitProfit - econ.unitProfit : 0;
   const plus = (v: number) => (v >= 0 ? "+" : "");
   const maxSold = Math.max(1, ...history.map((h) => h.qty));
@@ -1004,8 +1006,14 @@ export function RecipeEditor({
                 <Gauge
                   value={noRecipe ? 0 : econ.costRatio}
                   target={settings.hedefMaliyet}
-                  display={noRecipe ? <span className="text-ink-quiet">–</span> : <AnimatedNumber value={econ.costRatio} format={(v) => pct(v)} />}
-                  label={noRecipe ? "Maliyet oranı · malzeme ekleyince hesaplanır" : `Maliyet oranı · hedef ≤ %${num(settings.hedefMaliyet * 100)}`}
+                  display={noRecipe || noPrice ? <span className="text-ink-quiet">–</span> : <AnimatedNumber value={econ.costRatio} format={(v) => pct(v)} />}
+                  label={
+                    noRecipe
+                      ? "Maliyet oranı · malzeme ekleyince hesaplanır"
+                      : noPrice
+                        ? "Maliyet oranı · satış fiyatı girilince hesaplanır"
+                        : `Maliyet oranı · hedef ≤ %${num(settings.hedefMaliyet * 100)}`
+                  }
                   tone={gaugeTone}
                 />
                 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-3">
@@ -1329,7 +1337,10 @@ export function RecipeEditor({
         }
       />
 
-      <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} month={month} takenSizes={siblings.map((x) => x.size)} dirty={dirty} />
+      {/* Yalnız açıkken çizilir: kart kayıttan sonra baştan kurulmaz, alanlar her açılışta son kaydedilen ad ve fiyatla başlasın */}
+      {copyOpen ? (
+        <CopyDialog open onClose={() => setCopyOpen(false)} product={product} month={month} takenSizes={siblings.map((x) => x.size)} dirty={dirty} />
+      ) : null}
     </div>
   );
 }

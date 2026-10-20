@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deflateRawSync } from "node:zlib";
 
-import { extractUblXml, parseUbl, paymentPlan, ublLinesMatchTotal, ublLinesToDrafts } from "../src/server/parasut/ubl";
+import { extractUblXml, parseUbl, paymentPlan, ublLinesMatchTotal, ublLinesToDrafts, withholdingCorrection } from "../src/server/parasut/ubl";
 
 /** Paraşüt'ün signed_ubl yanıtı gibi tek dosyalı ZIP */
 function zip(name: string, content: string, method: 0 | 8 = 8): Buffer {
@@ -245,6 +245,38 @@ test("UBL: tevkifatlı faturada KDV hariç tutar, KDV ve tevkifat ayrı okunur",
   assert.equal(inv.withholding, 1800);
   assert.equal(inv.payable, 34200);
   assert.equal(inv.linesMatch, true);
+});
+
+test("tevkifatlı e-faturada yalnız tevkifat geri eklenir; ÖİV/ÖTV maliyette kalır", () => {
+  const tevkifat = { typeCode: "TEVKIFAT", payable: 34200, vat: 6000, withholding: 1800 };
+  // Liste "ödenecek − KDV" = 28.200 verdi; belge 30.000 der
+  assert.deepEqual(withholdingCorrection({ amount: 28200, discount: 0, vat: 6000 }, tevkifat), { amount: 30000, vat: null, was: 28200 });
+  const parsed = parseUbl(
+    ubl({
+      type: "TEVKIFAT",
+      lines: line({ id: "1", name: "REKLAM BEDELİ", qty: "1", unit: "C62", price: "30000", ext: "30000", pct: "20" }),
+      taxExclusive: "30000",
+      payable: "34200",
+      vat: "6000",
+      withholding: "1800",
+    }),
+  );
+  assert.equal(withholdingCorrection({ amount: 28200, discount: 0, vat: 6000 }, parsed)?.amount, 30000);
+  // Tevkifatlı ve ÖİV'li: maliyet = KDV hariç + ÖİV (1.000 + 100), ödenecek 1.000 + 100 + 220 − 44 = 1.276
+  assert.deepEqual(withholdingCorrection({ amount: 1056, discount: 0, vat: 220 }, { typeCode: "TEVKIFAT", payable: 1276, vat: 220, withholding: 44 }), {
+    amount: 1100,
+    vat: null,
+    was: 1056,
+  });
+  // Tevkifatsız ÖİV'li internet faturası (KDV hariç 1.000, ÖİV 100, KDV 220, ödenecek 1.320): liste tutarı 1.100 doğru,
+  // dokunulmaz (belgedeki KDV hariç 1.000'e indirilmez)
+  assert.equal(withholdingCorrection({ amount: 1100, discount: 0, vat: 220 }, { typeCode: "SATIS", payable: 1320, vat: 220, withholding: 0 }), null);
+  // Elle değiştirilmiş tutar ya da zaten düzeltilmiş kayıt
+  assert.equal(withholdingCorrection({ amount: 29000, discount: 0, vat: 6000 }, tevkifat), null);
+  assert.equal(withholdingCorrection({ amount: 30000, discount: 0, vat: 6000 }, tevkifat), null);
+  // İade (eksi tutarlar) ve iskonto alanı korunur; KDV farklıysa belgedeki yazılır
+  assert.deepEqual(withholdingCorrection({ amount: -28200, discount: 0, vat: -5000 }, { ...tevkifat, typeCode: "IADE" }), { amount: -30000, vat: -6000, was: -28200 });
+  assert.deepEqual(withholdingCorrection({ amount: 28300, discount: 100, vat: 6000 }, tevkifat), { amount: 30100, vat: null, was: 28200 });
 });
 
 /** Ödeme bilgisi denemeleri için en küçük fatura: yalnız tarih, notlar ve verilen ödeme blokları */

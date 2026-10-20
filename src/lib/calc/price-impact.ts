@@ -175,12 +175,17 @@ export function productImpacts(model: Model, changes: IngredientChange[], minPct
   return out.sort((a, b) => Number(b.needsPrice) - Number(a.needsPrice) || b.ratioAfter - b.ratioBefore - (a.ratioAfter - a.ratioBefore));
 }
 
-/** "Şimdilik böyle kalsın" denen ürün: o anki maliyet; maliyet bundan da artarsa yeniden uyarılır */
-export type PriceAck = Record<string, { cost: number; at: string }>;
+/**
+ * Uyarısı kapanan ürün: o anki maliyet; maliyet bundan da artarsa yeniden uyarılır. "Şimdilik böyle kalsın"da
+ * yalnız maliyet; "zammın payı" önerisi uygulanınca `price` da (öneri o fiyattan yeniden artardı: 85 → 90 → …).
+ */
+export type PriceAck = Record<string, { cost: number; at: string; price?: number }>;
 
-export function isAcknowledged(impact: Pick<ProductImpact, "productId" | "costAfter">, ack: PriceAck | null | undefined): boolean {
+export function isAcknowledged(impact: Pick<ProductImpact, "productId" | "costAfter" | "price">, ack: PriceAck | null | undefined): boolean {
   const a = ack?.[String(impact.productId)];
-  return Boolean(a && impact.costAfter <= a.cost * 1.005);
+  if (!a || impact.costAfter > a.cost * 1.005) return false;
+  // Önerilen fiyatla kapandıysa fiyat onun altına inince (Geri al, elle düşürme) uyarı geri gelir
+  return a.price == null || impact.price >= a.price - 0.005;
 }
 
 /** Uyarı metni için kısa özet: "Süt +%8, Espresso +%6" (en çok 3, kalanı "+N") */

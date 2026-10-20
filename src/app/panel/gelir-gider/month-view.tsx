@@ -314,6 +314,15 @@ export function MonthView({
                           <span className={cn("shrink-0 text-right text-[15px] text-ink-mute tabular", c.value === null && "text-ink-quiet")}>{fmt(c.value, def.format)}</span>
                           <ChevronRight size={16} className="-mr-1 shrink-0 text-ink-quiet" aria-hidden="true" />
                         </Link>
+                      ) : def.key.startsWith("expense:") ? (
+                        // Aylık harcama satırı Aylık harcamalar'dan gelir: dokununca o ayın harcamaları açılır (tutar orada girilir)
+                        <Link href={`/panel/harcamalar?ay=${month}`} className={cn(ROW, "cursor-pointer")} aria-label={`${def.label}: ${fmt(c.value, def.format)}, harcamaları göster`}>
+                          {label}
+                          <span className={cn("shrink-0 text-right text-[15px] text-ink-mute tabular", c.value === null && "text-ink-quiet", c.value !== null && c.value < 0 && "text-bad")}>
+                            {fmt(c.value, def.format)}
+                          </span>
+                          <ChevronRight size={16} className="-mr-1 shrink-0 text-ink-quiet" aria-hidden="true" />
+                        </Link>
                       ) : (
                         <div className={ROW}>
                           {label}

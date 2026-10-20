@@ -2,12 +2,15 @@ import "server-only";
 
 import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
-import { dateTR } from "@/lib/format";
+import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { dateTR, money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
-import { ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
-import { extractUblXml, parseUbl, paymentPlan, ublLinesToDrafts, type UblInvoice } from "./ubl";
+import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
+import { afterTransientFailure, orderLineReads, type UblRetries } from "./line-queue";
+import { recategorizeFromLines } from "./mapping";
+import { extractUblXml, parseUbl, paymentPlan, ublLinesToDrafts, withholdingCorrection, type UblInvoice } from "./ubl";
 
 /**
  * E-fatura kalemleri. İçeri alınmamış (Paraşüt'te gider faturası olmayan) e-faturalardan açılan kayıtların ve
@@ -40,12 +43,18 @@ export interface LineReadStats {
 /** Kalemi okunacak kayıtlar: e-faturaya bağlı, kendi kalemleri olan gider faturası olmayan, henüz okunmamış */
 const pendingWhere = () => and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId), isNull(s.invoices.ublReadAt));
 
+/** Belgesi geçici bir hatayla alınamayan faturaların deneme sayısı (line-queue.ts) */
+const RETRY_KEY = "parasut.ublRetries";
+
 export async function pendingLineReads(): Promise<number> {
   const [{ n }] = await getDb().select({ n: count() }).from(s.invoices).where(pendingWhere());
   return n;
 }
 
-/** Bir sonraki denemede düzelebilecek hata (Paraşüt yavaş, oturum, hız sınırı): fatura işaretlenmez */
+/**
+ * Bir sonraki denemede düzelebilecek hata (Paraşüt yavaş, oturum, hız sınırı): fatura işaretlenmez, UBL_MAX_TRIES
+ * denemeye kadar sonraki turlarda yeniden denenir
+ */
 function transient(e: unknown): boolean {
   if (e instanceof ParasutError) return e.status === 0 || e.status === 401 || e.status === 403 || e.status === 429 || e.status >= 500;
   return false;
@@ -57,9 +66,9 @@ function appendNote(note: string | null, add: string): string {
 }
 
 /**
- * Sıradaki faturaların (en yeni önce) UBL kalemlerini okur ve yazar. `until` (epoch ms) geçilince bırakır; kalanı
- * sonraki eşitleme sürdürür. Belgedeki ödeme tarihi boş vadeye yazılır; e-faturadan açılan kayıt vadesi gelmemişse
- * "ödenmedi" olur (paymentPlan).
+ * Sıradaki faturaların (en yeni önce; geçici hatayla alınamamış olanlar sonda) UBL kalemlerini okur ve yazar. `until`
+ * (epoch ms) geçilince bırakır; kalanı sonraki eşitleme sürdürür. Belgedeki ödeme tarihi boş vadeye yazılır;
+ * e-faturadan açılan kayıt vadesi gelmemişse "ödenmedi" olur (paymentPlan).
  */
 export async function readEInvoiceLines(client: ParasutClient, opts: { until: number; limit?: number }): Promise<LineReadStats> {
   const db = getDb();
@@ -79,13 +88,22 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       discount: s.invoices.discount,
       vat: s.invoices.vat,
       note: s.invoices.note,
+      category: s.invoices.category,
+      needsReview: s.invoices.needsReview,
     })
     .from(s.invoices)
     .where(pendingWhere())
     .orderBy(desc(s.invoices.date), desc(s.invoices.id))
     .limit(opts.limit ?? 500);
+  const [retryRow] = rows.length ? await db.select().from(s.integrationState).where(eq(s.integrationState.key, RETRY_KEY)).limit(1) : [];
+  const stored = (retryRow?.value as UblRetries | undefined) ?? {};
+  // Sıradan çıkmış (okunmuş, silinmiş) faturaların sayısı tutulmaz
+  const retries: UblRetries = Object.fromEntries(rows.filter((r) => stored[r.id]).map((r) => [r.id, stored[r.id]]));
+  let retriesDirty = Object.keys(retries).length !== Object.keys(stored).length;
+  const rules = rows.length ? await db.select().from(s.parasutCategoryRules) : [];
 
-  for (const row of rows) {
+  let streak = 0;
+  for (const row of orderLineReads(rows, retries)) {
     if (Date.now() > opts.until) break;
     let inv: UblInvoice | null = null;
     try {
@@ -96,9 +114,26 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       if (e instanceof ParasutDeadlineError) break;
       if (transient(e)) {
         stats.stoppedBy = (e as Error).message;
-        break;
+        // Tek bir belgenin kalıcı hatası (ör. hep 500) sıradakileri bekletmesin: fatura bu turda atlanır ve sonraki
+        // turlarda sona alınır; art arda iki hata ya da oturum hatası Paraşüt'ün kendisinde sorun demek, bırakılır
+        const auth = e instanceof ParasutAuthError || (e as ParasutError).status === 401;
+        const next = afterTransientFailure(retries[row.id] ?? 0, streak, auth);
+        if (next !== "give-up") {
+          if (!auth) {
+            retries[row.id] = (retries[row.id] ?? 0) + 1;
+            retriesDirty = true;
+          }
+          if (next === "stop") break;
+          streak++;
+          continue;
+        }
       }
       console.error("E-fatura kalemleri", row.eInvoiceId, e);
+    }
+    streak = 0;
+    if (retries[row.id]) {
+      delete retries[row.id];
+      retriesDirty = true;
     }
 
     if (!inv) {
@@ -120,24 +155,27 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       note = appendNote(note, `vade e-faturadan: ${dateTR(plan.dueDate)}`);
       stats.unpaid++;
     }
-    // Tutar e-fatura listesinden geldiyse ("ödenecek − KDV") belgedeki KDV hariç toplamla düzeltilir: tevkifatlı
-    // faturada liste tedarikçiye ödenecek tutarı verir, maliyet eksik kalır. Elle değiştirilmiş tutara dokunulmaz.
-    const sign = inv.typeCode === "IADE" ? -1 : 1;
-    const fromList = Math.abs(row.amount - row.discount - sign * (inv.payable - inv.vat)) <= 1;
-    if (fromList && inv.taxExclusive > 0) {
-      const cost = sign * inv.taxExclusive;
-      if (Math.abs(row.amount - row.discount - cost) > 1) {
-        patch.amount = Math.round((cost + row.discount) * 100) / 100;
-        if (inv.vat > 0 && Math.abs(row.vat - sign * inv.vat) > 1) patch.vat = sign * inv.vat;
-        const was = (row.amount - row.discount).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
-        note = appendNote(
-          (note ?? "").replace(" · tevkifatlı: tutarı kontrol edin", "").replace("tevkifatlı: tutarı kontrol edin", "") || null,
-          inv.withholding ? `tevkifatlı: KDV hariç tutar e-fatura belgesinden (önce ${was} ₺)` : `KDV hariç tutar e-fatura belgesinden düzeltildi (önce ${was} ₺)`,
-        );
-        stats.corrected++;
-      }
+    // Tutar e-fatura listesinden geldiyse ("ödenecek − KDV") tevkifat geri eklenir: tevkifatlı faturada liste
+    // tedarikçiye ödenecek tutarı verir, maliyet eksik kalır. ÖİV/ÖTV maliyette kalır; elle değiştirilmiş tutara
+    // dokunulmaz (withholdingCorrection).
+    const fix = withholdingCorrection(row, inv);
+    if (fix) {
+      patch.amount = fix.amount;
+      if (fix.vat !== null) patch.vat = fix.vat;
+      note = appendNote(
+        (note ?? "").replace(" · tevkifatlı: tutarı kontrol edin", "").replace("tevkifatlı: tutarı kontrol edin", "") || null,
+        `tevkifatlı: KDV hariç tutar e-fatura belgesinden (önce ${money(fix.was)})`,
+      );
+      stats.corrected++;
     }
     if (!inv.linesMatch) note = appendNote(note, "kalemlerin toplamı faturayı tutmuyor; kalem fiyatlarını kontrol edin");
+    // Kalemsiz açılıp "eşleşme yok" kalan kayıt: kategori kalem adlarıyla (kural, ipucu) yeniden denenir; kayıt
+    // kontrol bekleyen kalır
+    const recat = recategorizeFromLines({ ...row, note }, drafts, rules, INVOICE_CATEGORIES);
+    if (recat) {
+      if (recat.category !== row.category) patch.category = recat.category;
+      note = recat.note;
+    }
     if (note !== row.note) patch.note = note;
 
     await db.transaction(async (tx) => {
@@ -152,6 +190,12 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
     months.add(row.date.slice(0, 7));
     stats.read++;
     stats.lines += drafts.length;
+  }
+  if (retriesDirty) {
+    await db
+      .insert(s.integrationState)
+      .values({ key: RETRY_KEY, value: retries })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value: retries, updatedAt: new Date() } });
   }
   stats.months = [...months];
   stats.remaining = await pendingLineReads();

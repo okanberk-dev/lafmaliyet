@@ -22,12 +22,14 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_PRESS, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
+import { MonthPicker } from "@/components/panel/month-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -444,6 +446,47 @@ function Money({ value }: { value: number }) {
   );
 }
 
+// ---------------------------------------------------------------- Başlıktaki ay seçici
+
+/** Ay seçicinin geçiş isteği (detail: gidilecek adres); kaydedilmemiş sayımı olan form iptal edip önce sorar */
+const MONTH_LEAVE = "sayim:ay";
+
+/**
+ * Başlıktaki ay seçici: istemci içi geçiş yapar (beforeunload çalışmaz) ve form ay değişince baştan kurulur. Geçişten
+ * önce MONTH_LEAVE olayı yayılır; kaydedilmemiş sayım varken form iptal eder, düğmenin / seçicinin kendi geçişi durur.
+ */
+export function CountMonthPicker({ months, value }: { months: string[]; value: string }) {
+  const list = months.includes(value) ? months : [...months, value].sort();
+  const idx = list.indexOf(value);
+  /** Form geçişi durdurduysa true (adres MonthPicker'ınki gibi: diğer parametreler korunur) */
+  const stopped = (to: string | undefined) => {
+    if (!to || to === value) return false;
+    const sp = new URLSearchParams(window.location.search);
+    sp.set("ay", to);
+    return !window.dispatchEvent(new CustomEvent(MONTH_LEAVE, { cancelable: true, detail: `${window.location.pathname}?${sp.toString()}` }));
+  };
+  return (
+    <div
+      className="contents"
+      // Yakalama aşaması MonthPicker'ın onClick / onChange'inden önce çalışır; ilk düğme önceki, son düğme sonraki ay
+      onClickCapture={(e) => {
+        const btn = e.target instanceof Element ? e.target.closest("button") : null;
+        if (!btn || btn.disabled) return;
+        const buttons = e.currentTarget.querySelectorAll("button");
+        const to = btn === buttons[0] ? list[idx - 1] : btn === buttons[buttons.length - 1] ? list[idx + 1] : undefined;
+        if (stopped(to)) e.stopPropagation();
+      }}
+      onChangeCapture={(e) => {
+        if (!(e.target instanceof HTMLSelectElement) || !stopped(e.target.value)) return;
+        e.stopPropagation();
+        e.target.value = value; // seçici açık ayda kalsın
+      }}
+    >
+      <MonthPicker months={months} value={value} />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Sayım formu
 
 export function StockCountForm({
@@ -549,6 +592,34 @@ export function StockCountForm({
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  // beforeunload istemci içi geçişi kapsamaz: başlıktaki ay seçici ve panel içi bağlantılar (menü) önce sorar
+  const router = useRouter();
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dirty) return;
+    const onMonth = (e: Event) => {
+      e.preventDefault();
+      setLeaveHref((e as CustomEvent<string>).detail);
+    };
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
+      // Kilitli geçmiş ayları (aria-disabled) kendi onClick'i durdurur
+      if (!a || a.target === "_blank" || a.hasAttribute("download") || a.getAttribute("aria-disabled") === "true") return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveHref(url.pathname + url.search + url.hash);
+    };
+    window.addEventListener(MONTH_LEAVE, onMonth);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener(MONTH_LEAVE, onMonth);
+      document.removeEventListener("click", onClick, true);
+    };
   }, [dirty]);
 
   // Yeni ek satır çizilince ad kutusuna odaklan
@@ -1557,6 +1628,18 @@ export function StockCountForm({
         title="Kaydedilmemiş değişiklikler silinsin mi?"
         description={`${monthLabel} sayımında yazdığınız ama kaydetmediğiniz miktarlar son kayda döner. Kaydedilmiş sayım değişmez.`}
         confirmLabel="Değişiklikleri sil"
+      />
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        title="Kaydedilmemiş sayım var"
+        confirmLabel="Kaydetmeden geç"
+        description={`${monthLabel} sayımında yazdığınız miktarlar henüz kaydedilmedi; başka aya ya da sayfaya geçerseniz kaybolur. Kalmak için Vazgeç'e basıp Kaydet'i kullanın.`}
       />
     </div>
   );

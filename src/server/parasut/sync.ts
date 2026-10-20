@@ -1,8 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, sql } from "drizzle-orm";
 
-import { GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
+import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
@@ -13,7 +15,19 @@ import { readParasutConfig } from "./config";
 import type { ListResponse, ShowResponse } from "./jsonapi";
 import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
 import { readEInvoiceLines, type LineReadStats } from "./lines";
-import { billToDraft, findExisting, pickCategory, shouldImport, supplierHistory, supplierKey, type BillDraft, type ExistingInvoice } from "./mapping";
+import {
+  billToDraft,
+  eInvoiceDeleted,
+  feedsSupplierHistory,
+  findByEInvoiceNo,
+  findExisting,
+  pickCategory,
+  shouldImport,
+  supplierHistory,
+  supplierKey,
+  type BillDraft,
+  type ExistingInvoice,
+} from "./mapping";
 
 const CURSOR_KEY = "parasut.cursor";
 const PRICE_KEY = "parasut.prices";
@@ -36,6 +50,15 @@ const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
 const LOOKBACK_DAYS = 75;
 /** Okuma + yazma toplam süresi (Vercel işlevi 60 sn) */
 const DEADLINE_MS = 45_000;
+/** Aynı anda tek eşitleme: başlangıç denetimi bu danışma kilidi altında (client.ts TOKEN_LOCK = 7_340_211) */
+const SYNC_LOCK = 7_340_212;
+/**
+ * Bundan eski "sürüyor" kaydı yarıda kesilmiş sayılır (işlev en çok 60 sn çalışır); daha yenisi süren bir
+ * eşitlemedir
+ */
+const STALE_RUN_MS = 120_000;
+/** Başka bir eşitleme sürerken verilen yanıt (cron işleri ve "Şimdi eşitle" bunu gösterir) */
+export const SYNC_BUSY = "Paraşüt eşitlemesi zaten sürüyor; bir iki dakika sonra yeniden deneyin.";
 /** Okumanın payı; kalan süre yazmaya ve doğrulamaya kalır */
 const FETCH_SHARE = 0.6;
 /** Tedarikçi adlarını /contacts ile okumanın bırakıldığı an (sürenin payı) */
@@ -51,7 +74,8 @@ const INCLUDES = ["supplier,category,details,details.product,active_e_document",
 const SHOW_INCLUDE = "category,details,details.product";
 
 type SyncOk = { ok: true; summary: string; runId: number; fetched: number; created: number; updated: number; removed: number; partial: boolean };
-type SyncErr = { ok: false; error: string; runId: number | null };
+/** `busy`: başka bir eşitleme sürdüğü için başlamadı (hata sayılmaz) */
+type SyncErr = { ok: false; error: string; runId: number | null; busy?: true };
 
 interface Resume {
   /** Sonraki çalışmanın okuyacağı ilk sayfa (yazılmış son sayfanın bir sonrası) */
@@ -122,6 +146,11 @@ interface Ctx {
   history: Map<string, string>;
   alias: (name: string) => string;
   ignored: Set<string>;
+  /**
+   * Kalemleri e-fatura belgesinden (UBL) okunmuş kayıtlar: fatura sonradan Paraşüt'te içeri alınınca kalemleri gider
+   * faturasınınkiyle değiştirilmez
+   */
+  ublLines: Set<number>;
   /** Bu çalışmada yazılmış Paraşüt kimlikleri (sayfalar kayarsa aynı fatura iki kez gelebilir) */
   applied: Set<string>;
   touchedMonths: Set<string>;
@@ -179,6 +208,9 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   const byExt = ctx.existing.find((e) => e.externalId === d.externalId) ?? null;
   const byEDoc = !byExt && eInvoiceId ? (ctx.existing.find((e) => e.eInvoiceId === eInvoiceId && !e.externalId) ?? null) : null;
   const match = (byExt ?? byEDoc ?? findExisting(d, ctx.existing)) as Existing | null;
+  // Paneldeki e-fatura kaydı silinmiş (ei:<kimlik> yok sayılıyor): Paraşüt'te içeri alınınca gider faturası olarak da
+  // geri gelmez; var olan bir kayda denk gelirse o kayıt yine bağlanır/güncellenir
+  if (!match && eInvoiceDeleted(d, ctx.ignored)) return;
   // e-fatura kimliği başka bir kayıtta duruyorsa (benzersiz) bu kayda yazılmaz
   const eInvoiceFree = eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === eInvoiceId && e !== match) ? eInvoiceId : null;
   const verdict = shouldImport(d);
@@ -274,12 +306,25 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     ctx.counts.created++;
   }
   ctx.touchedMonths.add(d.date.slice(0, 7));
+  // Kalemleri e-fatura belgesinden (UBL) okunmuş kayıt: fatura sonradan Paraşüt'te içeri alınınca kalemler korunur;
+  // gider faturasının kalemleriyle değişseydi ürün anahtarları (e:… → p:…) değişir, hammadde bağlantıları düşerdi
+  if (ctx.ublLines.has(invoiceId)) return;
   // Kalemler her seferinde baştan yazılır (aynı kalem başka bir satıra bağlı kalmışsa o da silinir)
   await db.delete(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, invoiceId));
   if (d.lines.length) {
     await db.delete(s.parasutBillLines).where(inArray(s.parasutBillLines.externalId, d.lines.map((l) => l.externalId)));
     await db.insert(s.parasutBillLines).values(d.lines.map((l) => ({ ...l, invoiceId })));
   }
+}
+
+/** Şu an süren bir eşitleme var mı ("Kalemleri şimdi oku" aynı kalemleri eşitlemeyle birlikte yazmasın) */
+export async function parasutSyncRunning(): Promise<boolean> {
+  const [run] = await getDb()
+    .select({ id: s.parasutSyncRuns.id })
+    .from(s.parasutSyncRuns)
+    .where(and(eq(s.parasutSyncRuns.status, "running"), gte(s.parasutSyncRuns.startedAt, new Date(Date.now() - STALE_RUN_MS))))
+    .limit(1);
+  return Boolean(run);
 }
 
 /**
@@ -302,13 +347,22 @@ export async function syncParasut(
   let runId: number | null = null;
   try {
     const cfg = readParasutConfig();
-    // Önceki bir çalışma işlev süresi dolduğu için yarıda kesildiyse "sürüyor" kalmasın
-    await db
-      .update(s.parasutSyncRuns)
-      .set({ status: "error", finishedAt: new Date(), message: "Yarıda kesildi (işlev süresi doldu)" })
-      .where(and(eq(s.parasutSyncRuns.status, "running"), lt(s.parasutSyncRuns.startedAt, new Date(started - 120_000))));
-    const [run] = await db.insert(s.parasutSyncRuns).values({ trigger }).returning({ id: s.parasutSyncRuns.id });
-    runId = run.id;
+    // Önceki bir çalışma işlev süresi dolduğu için yarıda kesildiyse "sürüyor" kalmasın. Sabah işi, e-posta işinin
+    // yeniden denemesi ve "Şimdi eşitle" aynı anda çalışıp aynı faturaları yazmaya kalkmasın: denetim ve kayıt kilit
+    // altında (oturum kilidi havuzlu bağlantıda güvenilmez, işlem kilidi işlem bitince bırakılır)
+    const id = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${SYNC_LOCK})`);
+      await tx
+        .update(s.parasutSyncRuns)
+        .set({ status: "error", finishedAt: new Date(), message: "Yarıda kesildi (işlev süresi doldu)" })
+        .where(and(eq(s.parasutSyncRuns.status, "running"), lt(s.parasutSyncRuns.startedAt, new Date(started - STALE_RUN_MS))));
+      const [busy] = await tx.select({ id: s.parasutSyncRuns.id }).from(s.parasutSyncRuns).where(eq(s.parasutSyncRuns.status, "running")).limit(1);
+      if (busy) return null;
+      const [run] = await tx.insert(s.parasutSyncRuns).values({ trigger }).returning({ id: s.parasutSyncRuns.id });
+      return run.id;
+    });
+    if (id === null) return { ok: false, error: SYNC_BUSY, runId: null, busy: true };
+    runId = id;
 
     const today = todayTR();
     const cursor = await getState<{ lastIssueDate?: string }>(CURSOR_KEY);
@@ -376,7 +430,7 @@ export async function syncParasut(
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
-    const [existingRows, rules, ignoredList, dueSeen] = await Promise.all([
+    const [existingRows, rules, ignoredList, dueSeen, ublRows] = await Promise.all([
       db
         .select({
           id: s.invoices.id,
@@ -394,16 +448,22 @@ export async function syncParasut(
           parasutUnpaid: s.invoices.parasutUnpaid,
           syncedAt: s.invoices.syncedAt,
           category: s.invoices.category,
+          needsReview: s.invoices.needsReview,
         })
         .from(s.invoices),
       loadRules(),
       getState<string[]>(IGNORE_KEY),
       getState<Record<string, string | null>>(DUE_KEY),
+      db
+        .selectDistinct({ id: s.parasutBillLines.invoiceId })
+        .from(s.parasutBillLines)
+        .where(like(s.parasutBillLines.externalId, "ubl:%")),
     ]);
-    // Tedarikçi geçmişi ve kısa adlar, kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir; eşitlemenin
-    // kendi tahminleri geçmişe katılmaz (yanlış bir tahmin kendini çoğaltmasın)
+    // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
+    // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
+    // kontrol bekleyen tahminler katılmaz (yanlış bir tahmin kendini çoğaltmasın)
     const own = existingRows.filter((i) => i.origin !== "parasut");
-    const history = supplierHistory(own);
+    const history = supplierHistory(existingRows.filter(feedsSupplierHistory));
     const alias = supplierAliases(own.map((i) => i.supplier));
     const ctx: Ctx = {
       existing: existingRows as Existing[],
@@ -411,6 +471,7 @@ export async function syncParasut(
       history,
       alias,
       ignored: new Set(ignoredList ?? []),
+      ublLines: new Set(ublRows.map((r) => r.id)),
       applied: new Set(),
       touchedMonths: new Set(),
       counts: { created: 0, updated: 0, removed: 0 },
@@ -652,6 +713,10 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   if (!match && d.importedBillId) match = ctx.existing.find((e) => e.externalId === d.importedBillId) ?? null;
 
   if (!verdict.ok) {
+    // Gider faturasına bağlı kayıt (içeri alınmış ya da Paraşüt'e elle girilmiş) gider faturasını izler: e-faturanın
+    // arşivlenmesi (elle girdikten sonra olağan temizlik) ya da reddi kayda dokunmaz; Paraşüt'te gider faturası iptal
+    // edilirse o eşitleme kaldırır
+    if (match?.externalId) return "skipped";
     if (match && match.eInvoiceId === d.eInvoiceId) {
       ctx.touchedMonths.add(match.date.slice(0, 7));
       if (match.origin === "parasut" && !match.externalId) {
@@ -681,6 +746,16 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     // Excel'den ya da elle girilmiş aynı fatura; gider faturasına bağlı ya da başka e-faturaya bağlı olanlar aday değil
     const candidates = ctx.existing.filter((e) => !e.eInvoiceId && !e.externalId);
     match = findExisting({ externalId: key, invoiceNo: d.invoiceNo, date: d.date, payable: d.payable, supplier: d.supplier }, candidates) as Existing | null;
+  }
+  if (!match) {
+    // Paraşüt'e "içeri al" yerine elle girilmiş gider faturası (aynı tam e-fatura numarası; aynı çalışmada gider
+    // faturaları önce yazılır): yalnız e-fatura bağı kurulur, tutarları ve kalemleri gider faturası taşır
+    const bill = findByEInvoiceNo(d, ctx.existing.filter((e) => e.externalId && !e.eInvoiceId));
+    if (bill) {
+      await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, bill.id));
+      bill.eInvoiceId = d.eInvoiceId;
+      return "linked";
+    }
   }
 
   const now = new Date();
@@ -851,15 +926,35 @@ export async function applyProductLinks(months?: string[]) {
   return { quantities, prices };
 }
 
-/**
- * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları ve "Diğer". Komisyon, kira,
- * demirbaş, yazılım, reklam ve hizmet faturalarının kalemleri listeyi doldurmasın.
- */
-export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Diğer"];
+// Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri (mal alışları ve "Diğer") tek yerde tanımlı:
+// fatura penceresinin "Hammaddeye bağla" bağlantısı da aynı listeye bakar (src/lib/invoice-linking.ts)
+export { LINKABLE_CATEGORIES };
+
+/** "Hammadde değil" denen ürünler (kargo, hizmet, ekipman): bekleyenler listesine ve zil sayısına girmez */
+export const PRODUCT_IGNORE_KEY = "parasut.productIgnore";
+
+export async function ignoredProducts(): Promise<IgnoredProduct[]> {
+  return parseIgnored(await getState(PRODUCT_IGNORE_KEY));
+}
+
+/** Listeyi kilitleyip değiştirir (iki sekmede aynı anda işaretlenince biri diğerini ezmesin); önceki listeyi döner */
+export async function updateIgnoredProducts(change: (list: IgnoredProduct[]) => IgnoredProduct[]): Promise<IgnoredProduct[]> {
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, PRODUCT_IGNORE_KEY)).for("update").limit(1);
+    const before = parseIgnored(row?.value);
+    const value = change(before);
+    await tx
+      .insert(s.integrationState)
+      .values({ key: PRODUCT_IGNORE_KEY, value })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value, updatedAt: new Date() } });
+    return before;
+  });
+}
 
 /** Hammaddeye bağlanmayı bekleyen ürün sayısı (zil ve ana sayfa için; listeyle aynı süzgeç) */
 export async function countUnlinkedProducts(): Promise<number> {
   const db = getDb();
+  const ignored = (await ignoredProducts()).map((i) => i.productKey);
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${s.parasutBillLines.productKey})`.mapWith(Number) })
     .from(s.parasutBillLines)
@@ -868,6 +963,7 @@ export async function countUnlinkedProducts(): Promise<number> {
       and(
         inArray(s.invoices.category, LINKABLE_CATEGORIES),
         notInArray(s.parasutBillLines.productKey, db.select({ k: s.parasutProductLinks.productKey }).from(s.parasutProductLinks)),
+        ignored.length ? notInArray(s.parasutBillLines.productKey, ignored) : undefined,
       ),
     );
   return row?.n ?? 0;
@@ -876,7 +972,7 @@ export async function countUnlinkedProducts(): Promise<number> {
 /** Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı */
 export async function unlinkedProducts(limit = 40) {
   const db = getDb();
-  const [lines, links] = await Promise.all([
+  const [lines, links, ignored] = await Promise.all([
     db
       .select({ productKey: s.parasutBillLines.productKey, productName: s.parasutBillLines.productName, unit: s.parasutBillLines.unit, quantity: s.parasutBillLines.quantity, netTotal: s.parasutBillLines.netTotal, date: s.invoices.date, supplier: s.invoices.supplier })
       .from(s.parasutBillLines)
@@ -884,8 +980,10 @@ export async function unlinkedProducts(limit = 40) {
       .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES)))
       .orderBy(desc(s.invoices.date)),
     db.select({ productKey: s.parasutProductLinks.productKey }).from(s.parasutProductLinks),
+    ignoredProducts(),
   ]);
-  const linked = new Set(links.map((l) => l.productKey));
+  // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz
+  const linked = new Set([...links.map((l) => l.productKey), ...ignored.map((i) => i.productKey)]);
   const agg = new Map<string, { productKey: string; productName: string; unit: string | null; count: number; lastDate: string; lastUnitPrice: number; supplier: string }>();
   const unitPrice = (l: (typeof lines)[number]) => (l.quantity > 0 && l.netTotal > 0 ? l.netTotal / l.quantity : 0);
   for (const l of lines) {

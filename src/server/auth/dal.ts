@@ -1,12 +1,28 @@
 import "server-only";
 
+import { randomBytes } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getDb, schema as s } from "@/server/db";
 
-import { PENDING_COOKIE, PENDING_MINUTES, SESSION_COOKIE, SESSION_DAYS, signPending, signSession, verifySession } from "./session";
+import {
+  addDeviceUser,
+  DEVICE_COOKIE,
+  DEVICE_DAYS,
+  PENDING_COOKIE,
+  PENDING_MINUTES,
+  SESSION_COOKIE,
+  SESSION_DAYS,
+  signDevice,
+  signPending,
+  signSession,
+  verifyDevice,
+  verifySession,
+  type DeviceToken,
+} from "./session";
 
 export interface CurrentUser {
   id: number;
@@ -80,4 +96,24 @@ export async function startPending(user: { id: number; sessionVersion: number },
 
 export async function clearPending() {
   (await cookies()).set(PENDING_COOKIE, "", { path: "/giris", maxAge: 0 });
+}
+
+/** Bu tarayıcının bilinen cihaz kaydı (imzalı çerez); yoksa ya da geçersizse null */
+export async function readDevice(): Promise<DeviceToken | null> {
+  return verifyDevice((await cookies()).get(DEVICE_COOKIE)?.value);
+}
+
+/** Başarılı girişten sonra bu tarayıcı o kullanıcı için bilinen cihaz olur; cihazın kimliğini döndürür */
+export async function rememberDevice(userId: number): Promise<string> {
+  const jar = await cookies();
+  const prev = await verifyDevice(jar.get(DEVICE_COOKIE)?.value);
+  const did = prev?.did ?? randomBytes(12).toString("base64url");
+  jar.set(DEVICE_COOKIE, await signDevice({ did, ids: addDeviceUser(prev?.ids ?? [], userId) }), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/giris",
+    maxAge: DEVICE_DAYS * 24 * 60 * 60,
+  });
+  return did;
 }

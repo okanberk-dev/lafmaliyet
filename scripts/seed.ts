@@ -77,12 +77,13 @@ export async function runSeed({ reset = false } = {}) {
         await tx.execute(
           sql.raw(
             `TRUNCATE ${SERIAL_TABLES.filter((t) => t !== "users")
-              .concat(["settings", "months", "pos_mappings", "notification_log", "parasut_sync_runs"])
+              .concat(["settings", "months", "pos_mappings", "notification_log", "parasut_sync_runs", "expense_entries"])
               .join(", ")} RESTART IDENTITY CASCADE`,
           ),
         );
-        // Paraşüt imleci, fiyat tarihleri ve kişi önbelleği eski kimliklere bağlı; baştan okunsun
-        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%'`));
+        // Paraşüt imleci, fiyat tarihleri ve kişi önbelleği eski kimliklere bağlı; baştan okunsun. Son ödenenler de
+        // fatura kimliklerine bağlı: kimlikler baştan sayınca "Geri al" başka bir faturayı ödenmedi yapardı
+        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%' OR key = 'payments.recent'`));
       }
 
       await tx.insert(s.settings).values(

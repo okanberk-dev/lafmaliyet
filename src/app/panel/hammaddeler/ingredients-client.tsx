@@ -1002,6 +1002,21 @@ function IngredientDialog({
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
+  // Pencere açıkken fiyat başka yerden değişebilir (satırdaki fiyat kutusu ada/kaleme basınca blur'la kaydeder, Paraşüt
+  // eşitlemesi): dokunulmamış alan güncel değeri alır. Kayıtta da dokunulmamış alan `base` ile gider, sunucu kayıttaki
+  // güncel değeri bırakır; yoksa "Kaydet" eski fiyatı geri yazar ve sahte bir fiyat geçmişi kaydı açar
+  const live = row ? (rows.find((r) => r.id === row.id) ?? row) : null;
+  const [base, setBase] = useState(live ? { packagePrice: live.packagePrice, packageSize: live.packageSize } : null);
+  if (live && base && (live.packagePrice !== base.packagePrice || live.packageSize !== base.packageSize)) {
+    setBase({ packagePrice: live.packagePrice, packageSize: live.packageSize });
+    setF((x) => ({
+      ...x,
+      packagePrice: x.packagePrice === priceText(base.packagePrice) ? priceText(live.packagePrice) : x.packagePrice,
+      packageSize: x.packageSize === num(base.packageSize, 3) ? num(live.packageSize, 3) : x.packageSize,
+    }));
+  }
+  const priceUntouched = base !== null && f.packagePrice === priceText(base.packagePrice);
+  const sizeUntouched = base !== null && f.packageSize === num(base.packageSize, 3);
   const water = f.priceSource === "water";
   const price = parseNumberTR(f.packagePrice);
   const size = parseNumberTR(f.packageSize);
@@ -1081,8 +1096,10 @@ function IngredientDialog({
       category: f.category,
       supplier: f.supplier,
       packageDesc: f.packageDesc,
-      packagePrice: price ?? 0,
-      packageSize: size ?? 0,
+      // Dokunulmamış alan kayıttaki değerle gider (2 haneye yuvarlanmaz, geçmişe sahte kayıt düşmez)
+      packagePrice: base && priceUntouched ? base.packagePrice : (price ?? 0),
+      packageSize: base && sizeUntouched ? base.packageSize : (size ?? 0),
+      base,
       unit: f.unit,
       vatRate: vat ?? 0,
       note: f.note,

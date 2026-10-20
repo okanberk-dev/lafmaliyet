@@ -185,7 +185,7 @@ export function CategoriesPanel({
               name="Bütün menü"
               info={
                 menu && menu.count !== totalCount
-                  ? `Ortalamalar reçetesi olan ${num(menu.count)} ürünün basit ortalaması (Excel Ürün Kârlılık, ORTALAMA satırı); reçetesi olmayan ${num(totalCount - menu.count)} ürün katılmaz.`
+                  ? `Ortalamalar reçetesi olan ${num(menu.count)} ürünün basit ortalaması (Excel Ürün Kârlılık, ORTALAMA satırı); reçetesi olmayan ${num(totalCount - menu.count)} ürün kategori satırlarının ortalamalarına da katılmaz.`
                   : undefined
               }
               count={totalCount}
@@ -256,7 +256,7 @@ export function CategoriesPanel({
                     <span className="inline-flex items-center gap-1.5">
                       Bütün menü
                       {menu && menu.count !== totalCount ? (
-                        <InfoTip text={`Ortalamalar reçetesi olan ${num(menu.count)} ürünün basit ortalaması (Excel Ürün Kârlılık, ORTALAMA satırı); reçetesi olmayan ${num(totalCount - menu.count)} ürün katılmaz.`} />
+                        <InfoTip text={`Ortalamalar reçetesi olan ${num(menu.count)} ürünün basit ortalaması (Excel Ürün Kârlılık, ORTALAMA satırı); reçetesi olmayan ${num(totalCount - menu.count)} ürün kategori satırlarının ortalamalarına da katılmaz.`} />
                       ) : null}
                     </span>
                   </TD>

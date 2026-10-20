@@ -8,7 +8,7 @@ import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { isParasutConfigured, parasutEnvStatus } from "@/server/parasut/config";
-import { unlinkedProducts } from "@/server/parasut/sync";
+import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
 import { ParasutClient as ParasutScreen } from "./parasut-client";
 
@@ -34,7 +34,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, [stats], cursorRow, pendingRow, [lineReads]] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, [stats], cursorRow, pendingRow, [lineReads], ignored] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -78,6 +78,7 @@ async function ParasutContent() {
       })
       .from(s.invoices)
       .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId))),
+    ignoredProducts(),
   ]);
   const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
 
@@ -96,6 +97,7 @@ async function ParasutContent() {
       ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
       unlinked={unlinked.items}
       unlinkedTotal={unlinked.total}
+      ignored={ignored}
       lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
       categories={INVOICE_CATEGORIES}
     />

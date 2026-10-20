@@ -192,7 +192,7 @@ export function usePaymentActions(hide: (key: string) => void) {
         const r = await setInvoicePaid(item.sourceId, true);
         if (!r.ok) return void toast.error(r.error);
         toast.success(`${item.title} ödendi`, {
-          description: "Fatura ödendi olarak işaretlendi.",
+          description: "Fatura ödendi olarak işaretlendi. Sonra da Ödemeler › Son ödenenler'den geri alınabilir.",
           duration: 8000,
           action: undo(() => setInvoicePaid(item.sourceId, false), "Fatura yeniden ödenmedi"),
         });
@@ -201,7 +201,7 @@ export function usePaymentActions(hide: (key: string) => void) {
         if (!r.ok) return void toast.error(r.error);
         const { next, prev } = r.data;
         toast.success(`${item.title} ödendi`, {
-          description: next ? `Sıradaki tarih ${dateTR(next)}.` : "Tek seferlikti; hatırlatıcı kapandı.",
+          description: `${next ? `Sıradaki tarih ${dateTR(next)}.` : "Tek seferlikti; hatırlatıcı kapandı."} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
           duration: 8000,
           action: undo(() => restoreReminder(item.sourceId, prev)),
         });

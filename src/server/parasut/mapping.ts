@@ -243,7 +243,7 @@ const CATEGORY_HINTS: [RegExp, string][] = [
  * komisyon platformları → Paraşüt kategori adı ve açıklamadaki ipuçları → "Diğer".
  */
 export function pickCategory(
-  d: Pick<BillDraft, "supplier" | "description" | "parasutCategory" | "lines">,
+  d: Pick<BillDraft, "supplier" | "description" | "parasutCategory"> & { lines: Pick<LineDraft, "productName">[] },
   rules: CategoryRule[],
   history: Map<string, string>,
   allowed: readonly string[],
@@ -272,6 +272,32 @@ export function pickCategory(
   for (const [re, cat] of CATEGORY_HINTS) if (re.test(hintText) && allowed.includes(cat)) return { category: cat, reason: "Paraşüt kategorisi / kalem adları" };
   return { category: allowed.includes("Diğer") ? "Diğer" : allowed[allowed.length - 1], reason: "eşleşme yok" };
 }
+
+const NO_MATCH_NOTE = "kategori: eşleşme yok";
+
+/**
+ * E-faturadan kalemsiz açılıp "eşleşme yok" kalan kaydın kategorisi, belge okununca kalem adlarıyla yeniden denenir
+ * (anahtar kelime kuralları ve ipuçları; tedarikçi geçmişi açılışta zaten denendi). Yalnız eşitlemenin açtığı, hâlâ
+ * kontrol bekleyen kayıtta: kullanıcının değiştirdiği ya da onayladığı kategoriye dokunulmaz. Yeni eşleşme yoksa null.
+ */
+export function recategorizeFromLines(
+  row: { origin: string; needsReview: boolean; supplier: string; category: string; note: string | null },
+  lines: Pick<LineDraft, "productName">[],
+  rules: CategoryRule[],
+  allowed: readonly string[],
+): { category: string; note: string } | null {
+  if (row.origin !== "parasut" || !row.needsReview || !lines.length || !row.note?.includes(NO_MATCH_NOTE)) return null;
+  const pick = pickCategory({ supplier: row.supplier, description: null, parasutCategory: null, lines }, rules, new Map(), allowed);
+  if (pick.reason === "eşleşme yok") return null;
+  return { category: pick.category, note: row.note.replace(NO_MATCH_NOTE, `kategori: ${pick.reason}`) };
+}
+
+/**
+ * Tedarikçi geçmişine katılan fatura: kaydı eşitleme açmadıysa (Excel, elle) ya da eşitlemenin açtığı kayıt kontrol
+ * edilmişse (onaylanmış, kategorisi elle değiştirilmiş ya da kurala, geçmişe dayanan). Kontrol bekleyen tahminler
+ * katılmaz: yanlış bir tahmin kendini çoğaltmasın.
+ */
+export const feedsSupplierHistory = (i: { origin: string; needsReview: boolean }) => i.origin !== "parasut" || !i.needsReview;
 
 /** En sık kategori (tedarikçi geçmişi) */
 export function supplierHistory(invoices: { supplier: string; category: string }[]): Map<string, string> {
@@ -311,21 +337,36 @@ export function sameSupplier(a: string, b: string): boolean {
 const dayDiff = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
 
 /**
- * Elle ya da Excel'den girilmiş aynı faturayı bulur (çift sayımı önlemek için): önce Paraşüt kimliği; sonra aynı
- * tedarikçi + fatura numarası (tarih ±31 gün; farklı firmalar aynı e-fatura önekini kullanabilir); sonra aynı
- * tedarikçi + aynı tarih + aynı tutar (±1 ₺).
+ * Tam e-fatura/e-arşiv numarası (3 harf/rakam + 13 rakam) tek başına güçlü bir kimliktir; tedarikçi adı farklı
+ * yazılmış olabilir (Yemek Sepeti ~ YEMEKSEPETİ ELEKTRONİK). Ortak önek riskine karşı ±31 gün ve aynı tarih ya da
+ * tutar (±1 ₺) da bakılır; tedarikçi adına bakılmaz.
+ */
+export function findByEInvoiceNo<T extends ExistingInvoice>(d: Pick<BillDraft, "invoiceNo" | "date" | "payable">, existing: T[]): T | null {
+  const no = invNo(d.invoiceNo);
+  if (!/^[A-Z0-9]{3}\d{13}$/.test(no)) return null;
+  return existing.find((e) => invNo(e.invoiceNo) === no && dayDiff(e.date, d.date) <= 31 && (e.date === d.date || Math.abs(Math.abs(e.payable) - Math.abs(d.payable)) <= 1)) ?? null;
+}
+
+/**
+ * Gider faturasının e-belgesi panelde silinmiş (yok sayılan, `ei:<kimlik>`) bir e-fatura mı: e-fatura Paraşüt'te
+ * sonradan içeri alınınca silinen kayıt gider faturası olarak geri gelmesin.
+ */
+export function eInvoiceDeleted(d: Pick<BillDraft, "eDocument">, ignored: ReadonlySet<string>): boolean {
+  return d.eDocument?.type === "e_invoices" && ignored.has(`ei:${d.eDocument.id}`);
+}
+
+/**
+ * Elle ya da Excel'den girilmiş aynı faturayı bulur (çift sayımı önlemek için): önce Paraşüt kimliği; sonra tam
+ * e-fatura numarası (findByEInvoiceNo); sonra aynı tedarikçi + fatura numarası (tarih ±31 gün; farklı firmalar aynı
+ * e-fatura önekini kullanabilir); sonra aynı tedarikçi + aynı tarih + aynı tutar (±1 ₺).
  */
 export function findExisting(d: Pick<BillDraft, "externalId" | "invoiceNo" | "date" | "payable" | "supplier">, existing: ExistingInvoice[]): ExistingInvoice | null {
   const byExt = existing.find((e) => e.externalId === d.externalId);
   if (byExt) return byExt;
   const unlinked = existing.filter((e) => !e.externalId);
   const no = invNo(d.invoiceNo);
-  // Tam e-fatura/e-arşiv numarası (3 harf/rakam + 13 rakam) tek başına güçlü bir kimliktir; tedarikçi adı Excel'de
-  // farklı yazılmış olabilir (Yemek Sepeti ~ YEMEKSEPETİ ELEKTRONİK). Ortak önek riskine karşı tarih ve tutar da bakılır.
-  if (/^[A-Z0-9]{3}\d{13}$/.test(no)) {
-    const strong = unlinked.find((e) => invNo(e.invoiceNo) === no && dayDiff(e.date, d.date) <= 31 && (e.date === d.date || Math.abs(Math.abs(e.payable) - Math.abs(d.payable)) <= 1));
-    if (strong) return strong;
-  }
+  const strong = findByEInvoiceNo(d, unlinked);
+  if (strong) return strong;
   const free = unlinked.filter((e) => sameSupplier(e.supplier, d.supplier));
   if (no.length >= 6) {
     const byNo = free.find((e) => invNo(e.invoiceNo) === no && dayDiff(e.date, d.date) <= 31);

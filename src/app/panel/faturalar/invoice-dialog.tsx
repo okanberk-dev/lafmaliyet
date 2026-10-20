@@ -54,11 +54,18 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
   };
 }
 
-/** Kategorinin gelir-giderde nereye gittiği (pencere ve toplu değiştirme ipucu) */
-export function categoryEffect(category: string) {
+/**
+ * Kategorinin gelir-giderde nereye gittiği (pencere ve toplu değiştirme ipucu). `links`: fatura kategorisi → bağlı
+ * Aylık harcamalar kategorisinin adı; bağlı kategorinin faturaları orada gelir-gidere girer. Liste verilmediyse
+ * iki olasılık da söylenir (yanlışlıkla "eklenmez" deyip giderin elle ikinci kez girilmesine yol açmasın).
+ */
+export function categoryEffect(category: string, links?: Record<string, string>) {
   if (GOODS_CATEGORIES.includes(category)) return "Mal maliyeti sayılır: gelir-gider tablosunda tedarikçi bazında görünür.";
   if (category === COMMISSION_CATEGORY) return "Komisyon giderlerine eklenir.";
   if (SEPARATE_CATEGORIES.includes(category)) return `Kafe dışı (${category}): kafenin fatura toplamına, gelir-giderine ve mal maliyetine girmez.`;
+  const linked = links?.[category];
+  if (linked) return `Gelir-giderde Aylık harcamalar'daki “${linked}” kategorisinde sayılır (KDV hariç); tutarı orada ayrıca girmeyin.`;
+  if (!links) return "Aylık harcamalar'da bir kategoriye bağlıysa gelir-giderde orada sayılır; değilse gelir-gider tablosuna eklenmez (sabit giderlerden izlenir).";
   return "Gelir-gider tablosuna eklenmez (sabit giderlerden izlenir).";
 }
 
@@ -71,6 +78,7 @@ export function InvoiceDialog({
   parasutCompanyId,
   documents = [],
   onOpenDocuments,
+  expenseLinks,
 }: {
   invoice: InvoiceRow | null;
   suppliers: string[];
@@ -83,6 +91,8 @@ export function InvoiceDialog({
   documents?: DocumentMeta[];
   /** Belge sayfasını açar (kayıtlı faturada) */
   onOpenDocuments?: () => void;
+  /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (kategori ipucu için; bkz. categoryEffect) */
+  expenseLinks?: Record<string, string>;
 }) {
   const [f, setF] = useState(() => blankForm(invoice));
   const [busy, setBusy] = useState(false);
@@ -328,7 +338,7 @@ export function InvoiceDialog({
           }
           htmlFor="f-cat"
           className="sm:col-span-2"
-          hint={invoice?.needsReview ? `Eşitlemede tahminle yazıldı; kaydedince onaylanır. ${categoryEffect(f.category)}` : categoryEffect(f.category)}
+          hint={`${invoice?.needsReview ? "Eşitlemede tahminle yazıldı; kaydedince onaylanır. " : ""}${categoryEffect(f.category, expenseLinks)}`}
         >
           <Select
             id="f-cat"
@@ -446,7 +456,7 @@ export function InvoiceDialog({
           </fieldset>
         )}
 
-        {invoice && (invoice.eInvoiceId || invoice.externalId) ? <InvoiceLines invoiceId={invoice.id} invoiceNet={invoice.amount - invoice.discount} /> : null}
+        {invoice && (invoice.eInvoiceId || invoice.externalId) ? <InvoiceLines invoiceId={invoice.id} invoiceNet={invoice.amount - invoice.discount} category={invoice.category} /> : null}
 
         <Field label="Ödeme durumu">
           <Segmented<"paid" | "unpaid">

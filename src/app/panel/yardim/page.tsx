@@ -21,6 +21,7 @@ import {
   Table2,
   Tag,
   UserPlus,
+  Undo2,
   UserRound,
   Wallet,
   type LucideIcon,
@@ -29,44 +30,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { isValidElement, Suspense, type ReactNode } from "react";
 
-import { NAV_FOOTER, NAV_GROUPS, NAV_TREE, SECTION_TABS } from "@/components/panel/nav";
+import { NAV_FOOTER, NAV_TREE } from "@/components/panel/nav";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 
 import { HelpFaq, HelpFaqFallback, type FaqGroup } from "./faq-search";
+import { excelFor, pathOf, tabsOf } from "./nav-paths";
 import { RoutineSteps } from "./routine-steps";
 
 export const metadata: Metadata = { title: "Yardım" };
 
-// ---------------------------------------------------------------- Menü yolları (kabuktaki adlarla)
-
-/** Bir ekranın kenar çubuğundaki yolu, ör. "/panel/satislar" → ["Satış & gider", "Satışlar"] */
-function pathOf(href: string): string[] {
-  for (const n of NAV_TREE) {
-    if (n.href === href) return [n.label];
-    const c = n.children?.find((ch) => ch.href === href);
-    if (c) return [n.label, c.label];
-  }
-  return [];
-}
-
-const NAV_ITEMS = [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER];
-
-/** Ekranın Excel karşılığı; sekmeli ekranlarda ("Sabit Giderler + Personel") her sekmenin kendi sayfası */
-function excelFor(href: string): string | undefined {
-  for (const tabs of Object.values(SECTION_TABS)) {
-    const i = tabs.findIndex((t) => t.href === href);
-    if (i < 0) continue;
-    const parts = NAV_ITEMS.find((n) => n.href === tabs[0].href)?.excel?.split(" + ");
-    if (parts && parts.length === tabs.length) return parts[i];
-  }
-  return NAV_ITEMS.find((n) => n.href === href)?.excel;
-}
-
-/** Aynı menü öğesinin altındaki sekmeler (Giderler & personel → Sabit giderler, Personel) */
-const tabsOf = (href: string) => Object.values(SECTION_TABS).find((tabs) => tabs[0].href === href);
+// ---------------------------------------------------------------- Menü yolları (kabuktaki adlarla, nav-paths.ts)
 
 /** "Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) · …" */
 const MENU_LAYOUT = NAV_TREE.map((n) => (n.children ? `${n.label} (${n.children.map((c) => c.label).join(", ")})` : n.label)).join(" · ");
@@ -101,8 +77,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Satış raporunu yükleyin",
     body: (
       <>
-        Patron › Raporlar › Satış ekranından ürün listesini (ad, adet, ciro) kopyalayıp <Path href="/panel/satislar" /> ekranında Satış raporu yükle ile yapıştırın ya da dosyayı seçin.
-        Daha önce eşleştirilen ürünler otomatik tanınır; eşleşmeyen satırları bir kez eşleştirin.
+        Patron › Raporlar › Satış ekranından ürün listesini (ad, adet, ciro) kopyalayıp <Path href="/panel/satislar" /> ekranındaki İçe aktar kartında Yapıştır&apos;ı seçip
+        yapıştırın ya da Dosya ile dosyayı seçin. Daha önce eşleştirilen ürünler otomatik tanınır; eşleşmeyen satırları bir kez eşleştirin.
       </>
     ),
     href: "/panel/satislar",
@@ -120,14 +96,16 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     icon: CalendarCheck,
   },
   {
-    title: "Faturaları girin",
+    title: "Faturaları gözden geçirin",
     body: (
       <>
-        Paraşüt&apos;teki alış faturalarını <Path href="/panel/faturalar" /> ekranına ekleyin. Fiyatı değişen malzemenin paket fiyatını <Path href="/panel/hammaddeler" /> ekranında
-        güncelleyin; bütün ürün maliyetleri kendiliğinden değişir.
+        Paraşüt&apos;e gelen e-faturalar ve gider faturaları her sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden gelir; elle girmeyin. Kategorisi tahminle
+        yazılanları Kontrol bekleyen süzgecinde onaylayın. Yeni gelen ürünü <Path href="/panel/parasut" /> ekranında bir kez hammaddeye bağlayın (çarpan, &quot;Fiyatı
+        güncelle&quot;): alınan miktar ve paket fiyatı sonraki faturalardan güncellenir, ürün maliyetleri kendiliğinden değişir. Yalnızca Paraşüt&apos;te olmayan
+        faturaları (kâğıt, e-Arşiv) Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin.
       </>
     ),
-    href: "/panel/faturalar",
+    href: "/panel/faturalar?durum=kontrol",
     icon: FileText,
   },
   {
@@ -135,7 +113,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Su faturasını <Path href="/panel/gelir-gider" /> tablosundaki SU GİDERİ satırına KDV hariç yazın: su + buzun litre maliyeti buradan reçetelere dağıtılır, reçeteye göre
-        kârda sabit gider olarak ikinci kez sayılmaz. Reklam, influencer gibi her ay farklı olan giderleri ve fatura dışı harcamaları (nakit alım, bakım)
+        kârda sabit gider olarak ikinci kez sayılmaz. Reklam, influencer gibi her ay farklı olan giderleri ve fatura dışı harcamaları (nakit alım, bakım){" "}
         <Path href="/panel/harcamalar" /> ekranına girin: kategori ekleyebilirsiniz, her kategori Gelir-gider&apos;de kendi satırında sayılır; sabit giderdeki
         &quot;Instagram reklamı&quot; gibi kalemleri oradan tek dokunuşla aylık girişe çevirirsiniz. Elektrik gibi sabit görünen ama değişen kalemlerin gerçek tutarını hücrenin
         üzerine yazabilirsiniz.
@@ -221,13 +199,35 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Yeni fatura geldi",
         a: (
           <>
-            <Path href="/panel/hammaddeler" /> ekranında o malzemenin paket fiyatını değiştirin (fiyat geçmişi saklanır), <Path href="/panel/faturalar" /> ekranına faturayı ekleyin.
+            Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
+            eşitle. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
+            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
+            Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
+            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
           </>
         ),
         icon: FileText,
         links: [
+          { href: "/panel/faturalar?durum=kontrol", label: "Kontrol bekleyen faturalar" },
+          { href: "/panel/parasut?durum=bekleyen", label: "Bağlanmayı bekleyen ürünler" },
           { href: "/panel/hammaddeler", label: "Hammaddeler" },
+        ],
+      },
+      {
+        id: "kafe-disi",
+        q: "Karaoke box ve Alp Koç faturaları",
+        a: (
+          <>
+            Aynı Paraşüt hesabına gelen karaoke box faturaları ve ortak Alp Koç&apos;un aldıkları (kola ile Damla suyun geldiği Pruva faturaları) kafe dışıdır: kategorisi
+            Karaoke box ya da Alp Koç olan fatura kafenin fatura toplamına, gelir-giderine, mal maliyetine ve hammaddelerin alınan miktarına girmez;{" "}
+            <Path href="/panel/faturalar" /> ekranının aylık özetinde Toplam&apos;ın altında ayrı satırda görünür. Yanlış tarafta duran bir faturanın kategorisini
+            değiştirin; bir tedarikçinin faturaları hep aynı kategoriye gidecekse <Path href="/panel/parasut" /> › Kategori kuralları&apos;na tedarikçi kuralı ekleyin.
+          </>
+        ),
+        icon: Receipt,
+        links: [
           { href: "/panel/faturalar", label: "Faturalar" },
+          { href: "/panel/parasut", label: "Kategori kuralları" },
         ],
       },
       {
@@ -244,7 +244,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
     ],
   },
   {
-    title: "Gider ve ekip",
+    title: "Gider, ödeme ve ekip",
     items: [
       {
         id: "maas",
@@ -264,12 +264,40 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ],
       },
       {
+        id: "harcama",
+        q: "Nakit alım, bakım, reklam ya da influencer ödemesi",
+        a: (
+          <>
+            <Path href="/panel/harcamalar" /> ekranında ayı seçip Harcama ekle kartını doldurun: kategori, tutar (KDV ayrılmaz), tarih, açıklama ve ödeme şekli. Her
+            kategori Gelir-gider&apos;de kendi satırında ve Genel bakış&apos;taki &quot;Para nereye gitti?&quot; kartında sayılır; ＋ Yeni kategori ile kategori
+            açabilirsiniz. Faturası Paraşüt&apos;ten gelen gideri buraya ayrıca yazmayın, iki kez sayılır. Tutarı aydan aya değişen sabit gideri (ör. Instagram reklamı)
+            aynı ekranda aylık girişe çevirin.
+          </>
+        ),
+        icon: Wallet,
+        links: [{ href: "/panel/harcamalar", label: "Aylık harcamalar" }],
+      },
+      {
+        id: "odendi-geri-al",
+        q: "Yanlışlıkla “Ödendi” dedim",
+        a: (
+          <>
+            Hemen çıkan bildirimdeki Geri al&apos;a dokunun (birkaç saniye durur). Kaçırdıysanız <Path href="/panel/hatirlaticilar" /> ekranında yaklaşan ödemelerin altındaki Son
+            ödenenler&apos;i açın: son 30 günde ödendi denen faturalar ve hatırlatıcılar orada; Geri al ile fatura ödenmemişe, hatırlatıcı önceki tarihine döner.
+            Faturalar&apos;da ödendi işaretlenen fatura da bu listeye girer.
+          </>
+        ),
+        icon: Undo2,
+        links: [{ href: "/panel/hatirlaticilar#son-odenenler", label: "Son ödenenler" }],
+      },
+      {
         id: "hesap",
         q: "Personele hesap açmak",
         a: (
           <>
-            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını ve ilk parolayı siz belirlersiniz, rol: Personel. Personel yalnızca stok
-            sayımını ve reçete defterini görür. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google Authenticator vb.)
+            <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
+            gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
+            yalnızca stok sayımını ve reçete defterini görür. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google Authenticator vb.)
             açabilir.
           </>
         ),
@@ -364,8 +392,11 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Bildirim zili",
         a: (
           <>
-            Sol üstte L&apos;Affogato adının yanındaki zil, son ayın uyarılarını (<Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot;) listeler. Bir uyarıya
-            dokununca ilgili ekran açılır; &quot;Genel bakışta gör&quot; bütün listeyi gösterir.
+            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri üç başlıkta toplar: <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
+            (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
+            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı ve son
+            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Bir bildirime dokununca ilgili ekran açılır; alttaki
+            &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
           </>
         ),
         icon: Bell,

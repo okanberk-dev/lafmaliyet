@@ -84,13 +84,16 @@ ile) geri alınır.
 Yeni gelen faturanın panel kategorisi sırasıyla:
 
 1. **Kategori kuralları** (ekrandan: tedarikçi adı / Paraşüt kategorisi / açıklamada geçen kelime → kategori),
-2. aynı tedarikçinin önceki faturalarında en sık kullanılan kategori,
+2. aynı tedarikçinin önceki faturalarında en sık kullanılan kategori (eşitlemenin açıp henüz kontrol edilmemiş
+   faturaları sayılmaz; onaylanan ya da kategorisi değiştirilen sayılır),
 3. komisyon platformları (Trendyol, Yemek Sepeti, Pluxee, Multinet, Edenred, Set Kart, Metropol …) → Komisyon,
 4. Paraşüt kategori adı ve kalem adlarındaki ipuçları (ambalaj, kira, yazılım, reklam …),
 5. Diğer.
 
 Seçimin nedeni faturanın notuna yazılır ("Paraşüt'ten alındı · kategori: …"). Faturalar ekranından değiştirilen
-kategori sonraki eşitlemelerde korunur.
+kategori sonraki eşitlemelerde korunur. E-faturadan açılan kaydın kalem adları ancak belge okununca bilinir: "eşleşme
+yok" kalan ve hâlâ kontrol bekleyen kaydın kategorisi kalemler okununca kurallar ve ipuçlarıyla yeniden denenir
+(kayıt kontrol bekleyen kalır).
 
 ## 5. Kalemler, alınan miktar ve fiyat
 
@@ -104,10 +107,14 @@ Kalemler iki yerden gelir ve aynı tabloda (`parasut_bill_lines`) durur:
   iskonto kalemlere oranla dağıtılır. Canlı veride 82 gelen e-faturanın 82'sinde kalemlerin toplamı faturayı
   kuruşu kuruşuna tuttu (20 Eki 2026). Her eşitleme kalan süre kadar faturanın kalemlerini okur (en yeni önce);
   beklemeden okumak için Paraşüt sayfasında **Kalemleri şimdi oku**. Okunan fatura `invoices.ubl_read_at` ile
-  işaretlenir; e-fatura değişirse yeniden okunur. Ödeme tarihi için bkz. 6.
+  işaretlenir; e-fatura değişirse yeniden okunur. Belgesi geçici bir hatayla (Paraşüt 5xx, zaman aşımı) alınamayan
+  fatura o turda atlanır ve sonraki okumalarda sıranın sonuna alınır (tek bir bozuk belge ötekileri bekletmez); 5
+  denemede alınamazsa okunamadı sayılır (`parasut.ublRetries`). Ödeme tarihi için bkz. 6.
 - **Tevkifatlı e-fatura:** Paraşüt'ün listesi tedarikçiye ödenecek tutarı (`net_total`, tevkifat düşülmüş) ve tam
   KDV'yi verir; "ödenecek − KDV" maliyeti eksik çıkarır (ör. 34.200 − 6.000 = 28.200, doğrusu 30.000). Belge
-  okununca KDV hariç tutar belgeden yazılır, notta eski tutar görünür. Elle değiştirilmiş tutara dokunulmaz.
+  okununca tevkifat geri eklenir (ödenecek + tevkifat − KDV), notta eski tutar görünür. ÖİV/ÖTV (telekom, içecek)
+  gider faturası yolundaki gibi maliyette kalır; tevkifatsız faturanın tutarına dokunulmaz. Elle değiştirilmiş tutara
+  dokunulmaz.
 - **İçeri alınmış gider faturaları:** Paraşüt'teki kalemler (`purchase_bill_details`).
 
 Kalemler Faturalar'da faturayı açınca **Kalemler** bölümünde görünür (`GET /api/faturalar/{id}/kalemler`):
@@ -124,10 +131,15 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
 - "Fiyatı güncelle" açıksa, en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç) hammaddenin paket fiyatı
   olur, paket boyu çarpan olur ve fiyat geçmişine "Paraşüt" olarak yazılır (değişim %0,5'ten küçükse yazılmaz).
   Bedava gelen kalem (%100 iskonto) miktara girer, fiyata girmez.
-- **Öneriler** (`src/lib/product-match.ts`): aynı adlı (boyut hariç) ürün daha önce bağlandıysa o hammadde ve çarpan;
-  yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
+- **Öneriler** (`src/lib/product-match.ts`): aynı adlı (boyut hariç) ürün daha önce bağlandıysa o hammadde; çarpanı
+  yalnız paket de aynıysa (boy ve adet) alınır, değilse addan yeniden tahmin edilir ("SÜT 1 LT" bağlıyken "SÜT 5 LT").
+  Bardak ve kapak boyu (oz, cc) farklıysa ayrı üründür, önceki bağlantı önerilmez (8oz bağlıyken 14oz bardak). Bağlı
+  benzeri yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
   tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
+- Hammadde olmayan kalemler (kargo, nakliye, hizmet bedeli, klişe, pompa, ekipman) bağlanmaz: **Hammadde değil**
+  denince bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki "Hammadde değil" bölümünden **Geri al** ile
+  bekleyenlere döner. Faturadaki tutarı değişmez. Liste `integration_state`'te (`parasut.productIgnore`) durur.
 - Bağlanmayı bekleyen ürün sayısı zilde görünür.
 
 Böylece Tutarlılık'ta **alınan** (faturalardan) ile **satışa göre kullanılan** (satılan adet × reçete) karşılaştırılır;
@@ -174,10 +186,16 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
 - **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
   fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı
   aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur. Fatura sonradan Paraşüt'te
-  içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman ödeme durumu da gelir
-  ve kalemler Paraşüt'ün gider faturasından okunur.
-- Panelde silinen e-fatura kaydı `ei:<kimlik>` anahtarıyla yok sayılanlara eklenir, geri gelmez (Faturalar › Silinen
-  Paraşüt faturaları'ndan geri alınır).
+  içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman ödeme durumu da gelir.
+  Kalemleri e-fatura belgesinden okunmuşsa korunur (ürün anahtarları değişmez, hammadde bağlantıları düşmez),
+  okunmamışsa Paraşüt'ün gider faturasından okunur.
+- Muhasebeci e-faturayı "içeri al" yerine Paraşüt'e **elle gider faturası** olarak girerse (bağ yok) gider faturası
+  önce yazılır; e-fatura aynı tam fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) o kayda bağlanır, ikinci
+  kayıt açılmaz. Gider faturasına bağlı kaydın tutarı ve kalemleri gider faturasından gelir; e-faturanın sonradan
+  arşivlenmesi ya da reddi bu kayda dokunmaz.
+- Panelde silinen e-fatura kaydı `ei:<kimlik>` anahtarıyla yok sayılanlara eklenir, geri gelmez; e-fatura sonradan
+  Paraşüt'te içeri alınsa da gider faturası olarak yeniden açılmaz (panelde aynı fatura başka bir kayıtta duruyorsa o
+  kayıt bağlanır). Faturalar › Silinen Paraşüt faturaları'ndan geri alınır.
 - e-Arşiv ve kâğıt faturalar API'de yoktur: Paraşüt'e elle girilirse gider faturası olarak gelir ya da panelde elle
   eklenip fotoğrafı/PDF'i yüklenir.
 
@@ -216,6 +234,9 @@ kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › B
   sürdürür).
 - **Tarihten eşitle:** seçilen tarihten bugüne yeniden okur (geçmişi doldurmak için).
 - **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler; mevcut faturalar çoğalmaz.
+- Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da
+  e-posta işinin yeniden denemesi başlamaz, "Paraşüt eşitlemesi zaten sürüyor" yanıtı döner. İki dakikadan eski
+  "sürüyor" kaydı yarıda kesilmiş sayılır.
 - Günlük işler (Vercel Cron, `Authorization: Bearer $CRON_SECRET`; Hobby planında her iş kendi saatinin bir
   saatlik penceresinde çalışır): `GET /api/cron/parasut` 07:00–08:00 (04:30 UTC) Paraşüt'ü eşitler;
   `GET /api/cron/gunluk` 08:00–09:00 (05:00 UTC) sabah e-postasını gönderir. Paraşüt işi o sabah başarıyla

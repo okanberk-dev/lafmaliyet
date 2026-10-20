@@ -100,20 +100,23 @@ function UsersLinkCard() {
   );
 }
 
-/** Yedek: panelin bütün sekmeleri ve bütün ayların ham kayıtları tek Excel dosyasında (/api/export, yalnızca yönetici) */
+/**
+ * Yedek: panelin sekmeleri ve bütün ayların ham kayıtları tek Excel dosyasında (/api/export, yalnızca yönetici). Dosyada
+ * olmayanlar (aylık harcamaların tek tek kayıtları, hatırlatıcılar, Paraşüt bağlantıları) açıkça yazılır: "bütün veri" denmez.
+ */
 function BackupCard() {
   return (
     <SectionCard
       id="yedek"
       icon={<HardDriveDownload />}
       title="Yedek"
-      summary="Bütün veri tek Excel dosyasında"
+      summary="Panel sekmeleri ve ham kayıtlar tek Excel dosyasında"
       description={
         <>
-          Panelin bütün sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar,
-          personel, sabit giderler, ayarlar) ve bütün ayların ham kayıtları tek Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl
-          Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
-          <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir." />
+          Panelin sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar, aylık
+          alımlar, personel, sabit giderler, ayarlar) ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları tek
+          Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
+          <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir. Aylık harcamalar'ın tek tek kayıtları (tarih, açıklama, ödeme şekli) dosyada yok, Gelir-Gider'de ay toplamı olarak görünür; hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları da dosyaya girmez. Dosya okunabilir bir kopyadır, panele geri yüklenmez; veritabanı ayrıca kendiliğinden yedeklenir." />
         </>
       }
       actionsClassName="max-sm:w-full"

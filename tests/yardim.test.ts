@@ -1,0 +1,74 @@
+// Yardım: menü yolları ve Excel karşılıkları kenar çubuğu ağacından (src/app/panel/yardim/nav-paths.ts); sayfadaki
+// her ekran yolu çözülür, her bağlantı var olan bir ekrana gider.
+// Çalıştırma: npx tsx --test tests/yardim.test.ts
+
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import { excelFor, pathOf, tabsOf } from "../src/app/panel/yardim/nav-paths";
+import { NAV_TREE, SECTION_TABS } from "../src/components/panel/nav";
+
+const PAGE = readFileSync(join(process.cwd(), "src/app/panel/yardim/page.tsx"), "utf8");
+
+test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
+  assert.deepEqual(pathOf("/panel"), ["Genel bakış"]);
+  assert.deepEqual(pathOf("/panel/satislar"), ["Satış & gider", "Satışlar"]);
+  assert.deepEqual(pathOf("/panel/giderler"), ["Satış & gider", "Giderler & personel"]);
+  assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Satış & gider", "Ödemeler & hatırlatıcılar"]);
+  assert.deepEqual(pathOf("/panel/tutarlilik"), ["Stok", "Tutarlılık"]);
+  assert.deepEqual(pathOf("/panel/parasut"), ["Ayarlar", "Paraşüt entegrasyonu"]);
+  assert.deepEqual(pathOf("/panel/yok"), []);
+});
+
+test("menüde ayrı öğesi olmayan sekme, menü öğesinin altında (Aylık harcamalar boş çıkmaz)", () => {
+  assert.deepEqual(pathOf("/panel/harcamalar"), ["Satış & gider", "Giderler & personel", "Aylık harcamalar"]);
+  assert.deepEqual(pathOf("/panel/personel"), ["Satış & gider", "Giderler & personel", "Personel"]);
+  for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) assert.ok(pathOf(t.href).length >= 2, t.href);
+});
+
+test("Excel karşılığı sekme adından: sekme eklenince ötekiler kaymaz, yeni sekme 'yeni'", () => {
+  assert.equal(excelFor("/panel/giderler"), "Sabit Giderler");
+  assert.equal(excelFor("/panel/harcamalar"), undefined);
+  assert.equal(excelFor("/panel/personel"), "Personel");
+  assert.equal(excelFor("/panel/sayim"), "Sayım");
+  assert.equal(excelFor("/panel/tutarlilik"), "Tutarlılık Kontrolü");
+  assert.equal(excelFor("/panel"), "Panel");
+  assert.equal(excelFor("/panel/faturalar"), "Faturalar");
+  assert.equal(excelFor("/panel/hatirlaticilar"), undefined);
+  assert.deepEqual(
+    tabsOf("/panel/giderler")?.map((t) => t.label),
+    ["Sabit giderler", "Aylık harcamalar", "Personel"],
+  );
+  assert.equal(tabsOf("/panel/harcamalar"), undefined);
+});
+
+test("sayfadaki her <Path> kenar çubuğunda bulunan bir ekran", () => {
+  const hrefs = [...PAGE.matchAll(/<Path href="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.length > 10);
+  for (const h of new Set(hrefs)) assert.ok(pathOf(h).length, `${h} menüde yok`);
+});
+
+test("<Path>'ten önce satır sonu varsa boşluk yazılı (JSX satır sonunu siler, ad metne yapışmaz)", () => {
+  const lines = PAGE.split("\n");
+  lines.forEach((line, i) => {
+    if (!/^\s*<Path /.test(line) || i === 0) return;
+    const prev = lines[i - 1].trimEnd();
+    // Önceki satır bir etiketle bitiyorsa (<>, </strong> …) ya da açık boşlukla bitiyorsa sorun yok
+    assert.ok(prev.endsWith(">") || prev.endsWith('{" "}'), `satır ${i + 1}: önceki satır metinle bitiyor`);
+  });
+});
+
+test("adımlardaki ve sık sorulanlardaki bağlantılar var olan ekranlara gider", () => {
+  const hrefs = [...PAGE.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.length > 10);
+  for (const h of new Set(hrefs)) {
+    const path = h.replace(/[?#].*$/, "");
+    assert.ok(existsSync(join(process.cwd(), "src/app", path, "page.tsx")), `${h} ekranı yok`);
+  }
+  // Kenar çubuğu ağacındaki her ekran da var
+  for (const n of NAV_TREE) for (const href of [n.href, ...(n.children ?? []).map((c) => c.href)].filter(Boolean) as string[]) {
+    assert.ok(existsSync(join(process.cwd(), "src/app", href, "page.tsx")), href);
+  }
+});

@@ -131,8 +131,9 @@ export function NotificationMenu({
             role="region"
             aria-label="Bildirimler"
             initial={reduce ? false : { opacity: 0, scale: 0.96, y: -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={reduce ? undefined : { opacity: 0, scale: 0.96, y: -8 }}
+            // Kapanırken dokunuş almaz: solan liste altındaki kenar çubuğu öğesine giden ilk tıklamayı yutmasın
+            animate={{ opacity: 1, scale: 1, y: 0, pointerEvents: "auto" }}
+            exit={reduce ? undefined : { opacity: 0, scale: 0.96, y: -8, pointerEvents: "none" }}
             transition={reduce ? { duration: 0 } : SPRING_PANEL}
             className={cn(
               "absolute top-[calc(100%+0.5rem)] z-[100] flex max-h-[calc(100dvh-5rem-var(--mobile-nav-h,0px))] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-chart-metric-bg shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-black/5",

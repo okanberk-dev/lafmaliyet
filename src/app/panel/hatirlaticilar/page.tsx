@@ -4,7 +4,9 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { liveRecentPaid } from "@/lib/recent-paid";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadRecentPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
 import { DEFAULT_FROM, isEmailConfigured, resolveFrom } from "@/server/notify/resend";
@@ -31,7 +33,7 @@ export default function RemindersPage() {
 async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
-  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixed, unpaid] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixed, unpaid, recentPaid] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
@@ -42,7 +44,11 @@ async function RemindersContent() {
       .orderBy(asc(s.fixedExpenses.sortOrder)),
     // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
     db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
+    loadRecentPaid(),
   ]);
+  // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura)
+  // gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
+  const undoable = liveRecentPaid(recentPaid, reminders, unpaid.map((i) => i.id));
 
   return (
     <RemindersClient
@@ -54,6 +60,7 @@ async function RemindersContent() {
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
+      recentPaid={undoable}
       email={{
         configured: isEmailConfigured(),
         cron: Boolean(process.env.CRON_SECRET),

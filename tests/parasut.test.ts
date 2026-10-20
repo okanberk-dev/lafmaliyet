@@ -3,7 +3,18 @@ import { test } from "node:test";
 
 import { INVOICE_CATEGORIES } from "../src/lib/constants";
 import type { Resource } from "../src/server/parasut/jsonapi";
-import { billToDraft, findExisting, pickCategory, shouldImport, supplierHistory, supplierKey } from "../src/server/parasut/mapping";
+import {
+  billToDraft,
+  eInvoiceDeleted,
+  feedsSupplierHistory,
+  findByEInvoiceNo,
+  findExisting,
+  pickCategory,
+  recategorizeFromLines,
+  shouldImport,
+  supplierHistory,
+  supplierKey,
+} from "../src/server/parasut/mapping";
 
 /** Paraşüt API v4 purchase_bills yanıtı biçiminde örnek (JSON:API; ondalıklar metin) */
 const bill: Resource = {
@@ -190,4 +201,70 @@ test("Türkçe ekli yiyecek adları ve kiraz/kira ayrımı", () => {
   assert.equal(pick("Vanilya Şurubu"), "Hammadde & İçecek");
   assert.equal(pick("Kekler"), "Tatlı & Hazır Ürün");
   assert.equal(pick("Vanilyalı Dondurması"), "Hammadde & İçecek");
+});
+
+test("e-fatura Paraşüt'e elle girilmiş gider faturasına tam numarayla bağlanır (tedarikçi adına bakılmaz)", () => {
+  // Gider faturası aynı çalışmada önce yazılır: kaydı Paraşüt kimliğiyle durur, e-faturası yok
+  const billRow = { id: 21, externalId: "456", invoiceNo: "ABC2026000000123", supplier: "Sütaş", date: "2026-10-14", payable: 1320 };
+  const e = { invoiceNo: "ABC-2026-000000123", date: "2026-10-14", payable: 1320.4 };
+  assert.equal(findByEInvoiceNo(e, [billRow])?.id, 21);
+  // Elle girilirken tarih bir gün kaymış ama tutar aynı: yine aynı fatura
+  assert.equal(findByEInvoiceNo({ ...e, date: "2026-10-15" }, [billRow])?.id, 21);
+  // Aynı numara ama başka tarih ve tutar (ortak önekli başka firma), ya da ±31 günden uzak: bağlanmaz
+  assert.equal(findByEInvoiceNo({ ...e, date: "2026-10-20", payable: 5000 }, [billRow]), null);
+  assert.equal(findByEInvoiceNo({ ...e, date: "2026-12-01" }, [billRow]), null);
+  // Tam e-fatura numarası değilse (kısa, serbest numara) bu yolla bağlanmaz
+  assert.equal(findByEInvoiceNo({ ...e, invoiceNo: "SUT2026000123" }, [{ ...billRow, invoiceNo: "SUT2026000123" }]), null);
+  // findExisting yalnız bağsız kayıtlara bakar; bu kayıt Paraşüt'e bağlı olduğu için orada aday değil
+  assert.equal(findExisting({ ...e, externalId: "ei:1", supplier: "Sütaş" }, [billRow]), null);
+});
+
+test("panelde silinen e-fatura içeri alınınca gider faturası olarak geri gelmez", () => {
+  const d = billToDraft({ ...bill, relationships: { ...bill.relationships, active_e_document: { data: { id: "123", type: "e_invoices" } } } }, included);
+  assert.deepEqual(d.eDocument, { type: "e_invoices", id: "123" });
+  assert.equal(eInvoiceDeleted(d, new Set(["ei:123"])), true);
+  assert.equal(eInvoiceDeleted(d, new Set(["ei:999", "123"])), false);
+  // e-arşiv ya da e-belgesiz gider faturası
+  assert.equal(eInvoiceDeleted({ eDocument: { type: "e_archives", id: "123" } }, new Set(["ei:123"])), false);
+  assert.equal(eInvoiceDeleted(billToDraft(bill, included), new Set(["ei:123"])), false);
+});
+
+test("tedarikçi geçmişi: Excel/elle kayıtlar ve kontrol edilmiş Paraşüt kayıtları, kontrol bekleyen tahminler değil", () => {
+  const rows = [
+    { supplier: "Yeni Ambalaj Ltd.", category: "Ambalaj", origin: "parasut", needsReview: false },
+    { supplier: "Yeni Ambalaj Ltd.", category: "Diğer", origin: "parasut", needsReview: true },
+    { supplier: "Yeni Ambalaj Ltd.", category: "Diğer", origin: "parasut", needsReview: true },
+    { supplier: "Sütaş", category: "Hammadde & İçecek", origin: "excel", needsReview: false },
+    { supplier: "Sütaş", category: "Hammadde & İçecek", origin: "manual", needsReview: true },
+  ];
+  const history = supplierHistory(rows.filter(feedsSupplierHistory));
+  assert.equal(history.get(supplierKey("Yeni Ambalaj")), "Ambalaj");
+  assert.equal(history.get(supplierKey("Sütaş")), "Hammadde & İçecek");
+  const d = { supplier: "YENİ AMBALAJ LTD. ŞTİ.", description: null, parasutCategory: null, lines: [] };
+  assert.deepEqual(pickCategory(d, [], history, INVOICE_CATEGORIES), { category: "Ambalaj", reason: "tedarikçinin önceki faturaları" });
+});
+
+test("e-faturadan kalemsiz açılan kaydın kategorisi kalemler okununca yeniden denenir", () => {
+  const row = {
+    origin: "parasut",
+    needsReview: true,
+    supplier: "Yeni Firma Gıda",
+    category: "Diğer",
+    note: "Paraşüt e-faturası (içeri alınmadan) · kategori: eşleşme yok · vade e-faturadan: 13.11.2026",
+  };
+  const lines = [{ productName: "ESPRESSO ÇEKİRDEK 1 KG" }, { productName: "SÜT 1 L" }];
+  assert.deepEqual(recategorizeFromLines(row, lines, [], INVOICE_CATEGORIES), {
+    category: "Hammadde & İçecek",
+    note: "Paraşüt e-faturası (içeri alınmadan) · kategori: Paraşüt kategorisi / kalem adları · vade e-faturadan: 13.11.2026",
+  });
+  // Kalem adında geçen anahtar kelime kuralı ipucundan önce gelir
+  const rule = { matchType: "keyword" as const, pattern: "karton bardak", category: "Ambalaj", priority: 1 };
+  assert.equal(recategorizeFromLines(row, [{ productName: "KARTON BARDAK 8 OZ" }], [rule], INVOICE_CATEGORIES)?.category, "Ambalaj");
+  // Kalem adlarından da bir şey çıkmazsa, kalem yoksa, kayıt onaylanmışsa/kategorisi değiştirilmişse, Excel kaydıysa
+  // ya da kategori zaten bir nedene dayanıyorsa dokunulmaz
+  assert.equal(recategorizeFromLines(row, [{ productName: "XYZ-42" }], [], INVOICE_CATEGORIES), null);
+  assert.equal(recategorizeFromLines(row, [], [], INVOICE_CATEGORIES), null);
+  assert.equal(recategorizeFromLines({ ...row, needsReview: false }, lines, [], INVOICE_CATEGORIES), null);
+  assert.equal(recategorizeFromLines({ ...row, origin: "excel" }, lines, [], INVOICE_CATEGORIES), null);
+  assert.equal(recategorizeFromLines({ ...row, note: "Paraşüt e-faturası (içeri alınmadan) · kategori: Paraşüt kategorisi / kalem adları" }, lines, [], INVOICE_CATEGORIES), null);
 });

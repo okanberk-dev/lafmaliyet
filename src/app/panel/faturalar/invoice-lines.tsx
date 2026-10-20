@@ -4,7 +4,9 @@ import { ChevronDown, Link2, ListOrdered, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { num, tl2 } from "@/lib/format";
+import { isLinkableCategory } from "@/lib/invoice-linking";
 import { ingredientPriceOf, linesTotal, netUnitPrice, type InvoiceLinesResponse } from "@/lib/invoice-lines";
 import { cn } from "@/lib/utils";
 
@@ -16,9 +18,11 @@ type State = { status: "loading" } | { status: "error"; message: string } | { st
 /**
  * Fatura penceresindeki "Kalemler": e-fatura belgesinden (ya da Paraşüt gider faturasından) okunan ürünler, miktar,
  * net birim fiyat, KDV; hammaddeye bağlı olanın bu faturadaki fiyatı. Bağlı olmayan ürün Paraşüt sayfasında
- * bağlanır (bir kez bağlamak yeter, sonraki faturalar kendiliğinden işlenir).
+ * bağlanır (bir kez bağlamak yeter, sonraki faturalar kendiliğinden işlenir). Paraşüt'ün bekleyen listesi yalnız mal
+ * ve "Diğer" faturalarının kalemlerini gösterir: öbür kategorilerde "Hammaddeye bağla" boş listeye götürürdü, çıkmaz.
+ * `category` faturanın kayıtlı kategorisidir (liste de kayıtlı kategoriye göre süzülür; formda seçilen değil).
  */
-export function InvoiceLines({ invoiceId, invoiceNet }: { invoiceId: number; invoiceNet: number }) {
+export function InvoiceLines({ invoiceId, invoiceNet, category }: { invoiceId: number; invoiceNet: number; category: string }) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
 
@@ -43,6 +47,8 @@ export function InvoiceLines({ invoiceId, invoiceNet }: { invoiceId: number; inv
   const shown = open ? lines : lines.slice(0, FIRST);
   const sum = linesTotal(lines, invoiceNet);
   const linked = lines.filter((l) => l.ingredient).length;
+  const linkable = isLinkableCategory(category);
+  const separate = SEPARATE_CATEGORIES.includes(category);
 
   return (
     <section className="rounded-2xl bg-panel p-4 sm:col-span-2" aria-labelledby={`lines-${invoiceId}`}>
@@ -58,6 +64,13 @@ export function InvoiceLines({ invoiceId, invoiceNet }: { invoiceId: number; inv
           </p>
         ) : null}
       </div>
+      {state.status === "ok" && lines.length && (separate || !linkable) ? (
+        <p className="mt-1 text-xs text-pretty text-ink-mute">
+          {separate
+            ? `Kafe dışı fatura (${category}): kalemleri hammaddelerin alınan miktarına ve fiyatına girmez.`
+            : "Bu kategorideki kalemler hammaddeye bağlama listesine girmez. Mal alışıysa kategoriyi değiştirip kaydedin."}
+        </p>
+      ) : null}
 
       {state.status === "loading" ? (
         <p className="mt-2 animate-pulse text-xs text-ink-mute">Kalemler yükleniyor…</p>
@@ -99,14 +112,14 @@ export function InvoiceLines({ invoiceId, invoiceNet }: { invoiceId: number; inv
                       </Link>
                       {price ? <span className="tabular text-ink-mute"> · bu faturada {tl2(price.value)}/{price.per}</span> : null}
                     </p>
-                  ) : (
+                  ) : linkable ? (
                     <Link
                       href={`/panel/parasut?ara=${encodeURIComponent(l.productName)}&durum=bekleyen`}
                       className="mt-1 inline-flex items-center gap-1 text-xs text-info hover:underline pointer-coarse:min-h-11"
                     >
                       <Link2 size={12} aria-hidden="true" /> Hammaddeye bağla
                     </Link>
-                  )}
+                  ) : null}
                 </li>
               );
             })}

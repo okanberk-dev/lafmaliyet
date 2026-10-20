@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
   // Yalnız geliştirmede: Next göstergesi sol altta telefonun alt menüsündeki "Genel bakış"ı örtüyordu. Sol üstte
   // yalnızca üst çubuktaki L'Af karosuyla (ana sayfa bağlantısı, alt menüde de var) çakışır.
   devIndicators: { position: "top-left" },
+  // Satış raporu Server Action ile yüklenir (en fazla 4 MB, src/app/panel/satislar/sales-logic.ts); varsayılan 1 MB
+  // yerine dosya + form payı. Vercel 4,5 MB üstünü zaten reddeder.
+  experimental: { serverActions: { bodySizeLimit: "4.5mb" } },
   turbopack: {
     rules: {
       "*.css": {

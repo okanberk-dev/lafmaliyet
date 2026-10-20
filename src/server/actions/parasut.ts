@@ -5,12 +5,13 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { addIgnored, removeIgnored } from "@/lib/product-ignore";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { readEInvoiceLines } from "@/server/parasut/lines";
-import { applyProductLinks, PARASUT_STATE_KEYS, syncParasut } from "@/server/parasut/sync";
+import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
@@ -51,6 +52,8 @@ export async function readParasutLines() {
   return attempt(async () => {
     const me = await requireAdmin();
     ensureConfigured();
+    // Eşitleme de aynı kalemleri ve alım miktarlarını yazar: ikisi aynı anda çalışmasın
+    if (await parasutSyncRunning()) throw new UserError("Paraşüt eşitlemesi sürüyor; bitince yeniden deneyin.");
     const started = Date.now();
     const client = new ParasutClient();
     // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
@@ -172,6 +175,40 @@ export async function saveProductLinks(input: z.input<typeof linkSchema>[]) {
     await logActivity(me, "Paraşüt ürünleri topluca bağlandı", `${items.length} ürün: ${items.slice(0, 5).map((i) => i.productName).join(", ")}${items.length > 5 ? "…" : ""}`);
     refresh();
     return { ...res, linked: items.length };
+  });
+}
+
+const ignoreSchema = z.object({
+  // Anahtar olduğu gibi saklanır (kırpılmaz): bekleyenler listesi aynı anahtarla eşleşir
+  productKey: z.string().min(1, "Ürün gerekli").max(600),
+  productName: zText("Ürün adı", 300),
+});
+
+/**
+ * Bekleyen bir ürünü "hammadde değil" diye işaretler (kargo, hizmet bedeli, ekipman, pompa…): bekleyenler
+ * listesinden ve zildeki sayıdan çıkar. Faturadaki tutarına dokunulmaz; geri alınınca listeye döner.
+ */
+export async function ignoreProduct(input: z.input<typeof ignoreSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = ignoreSchema.parse(input);
+    await updateIgnoredProducts((list) => addIgnored(list, { ...data, at: new Date().toISOString(), by: me.name }));
+    await logActivity(me, "Paraşüt ürünü hammadde değil işaretlendi", data.productName);
+    refresh();
+    return null;
+  });
+}
+
+/** "Hammadde değil" işaretini kaldırır; ürün bağlanmayı bekleyenlere döner */
+export async function unignoreProduct(productKey: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const key = z.string().min(1).max(600).parse(productKey);
+    const before = await updateIgnoredProducts((list) => removeIgnored(list, key));
+    const name = before.find((e) => e.productKey === key)?.productName;
+    if (name) await logActivity(me, "Paraşüt ürünü yeniden bekleyenlere alındı", name);
+    refresh();
+    return null;
   });
 }
 

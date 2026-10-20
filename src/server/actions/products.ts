@@ -18,17 +18,45 @@ import { attempt, UserError, zMoney, zOptText, zText } from "./util";
 
 const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
 
-export async function updateProductPrice(id: number, price: number) {
+/**
+ * `ackAlert`: zam uyarısındaki "zammın payı" önerisi uygulandı. Öneri o anki fiyattan hesaplandığı için yeni
+ * fiyattan yeniden artardı (85 → 90 → …); bu maliyet ve fiyatta uyarı kapanır. Fiyat geri alınır ya da düşürülürse,
+ * maliyet daha da artarsa uyarı geri gelir (isAcknowledged).
+ */
+export async function updateProductPrice(id: number, price: number, ackAlert = false) {
   return attempt(async () => {
     const me = await requireAdmin();
     const p = zMoney.min(0, "Fiyat negatif olamaz").parse(price);
+    const ack = z.boolean().parse(ackAlert);
     const db = getDb();
     const [before] = await db.select().from(s.products).where(eq(s.products.id, id));
     if (!before) throw new UserError("Ürün bulunamadı");
     await db.update(s.products).set({ price: p, updatedAt: new Date() }).where(eq(s.products.id, id));
-    await logActivity(me, "Satış fiyatı", `${before.name} ${before.size}: ${tl(before.price)} → ${tl(p)}`);
+    if (ack) {
+      // Maliyet fiyata bağlı değil: güncellemeden sonra okunması fark etmez
+      const cost = (await loadModel()).products.find((x) => x.product.id === id)?.cost;
+      if (cost !== undefined) {
+        await updatePriceAck((a) => {
+          a[String(id)] = { cost, at: new Date().toISOString(), price: p };
+        });
+      }
+    }
+    await logActivity(me, "Satış fiyatı", `${before.name} ${before.size}: ${tl(before.price)} → ${tl(p)}${ack ? " (zam önerisi)" : ""}`);
     refresh();
     return null;
+  });
+}
+
+/** Zam uyarısı onaylarını satır kilidiyle günceller (aynı anda iki onay birbirini silmesin) */
+async function updatePriceAck(change: (ack: PriceAck) => void) {
+  await getDb().transaction(async (tx) => {
+    const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, PRICE_ACK_KEY)).for("update");
+    const ack: PriceAck = { ...((row?.value as PriceAck | undefined) ?? {}) };
+    change(ack);
+    await tx
+      .insert(s.integrationState)
+      .values({ key: PRICE_ACK_KEY, value: ack })
+      .onConflictDoUpdate({ target: s.integrationState.key, set: { value: ack, updatedAt: new Date() } });
   });
 }
 
@@ -40,19 +68,12 @@ export async function acknowledgePriceAlert(productId: number, undo = false) {
   return attempt(async () => {
     const me = await requireAdmin();
     const id = z.number().int().positive().parse(productId);
-    const db = getDb();
     const model = await loadModel();
     const p = model.products.find((x) => x.product.id === id);
     if (!p) throw new UserError("Ürün bulunamadı");
-    await db.transaction(async (tx) => {
-      const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, PRICE_ACK_KEY)).for("update");
-      const ack: PriceAck = { ...((row?.value as PriceAck | undefined) ?? {}) };
+    await updatePriceAck((ack) => {
       if (undo) delete ack[String(id)];
       else ack[String(id)] = { cost: p.cost, at: new Date().toISOString() };
-      await tx
-        .insert(s.integrationState)
-        .values({ key: PRICE_ACK_KEY, value: ack })
-        .onConflictDoUpdate({ target: s.integrationState.key, set: { value: ack, updatedAt: new Date() } });
     });
     await logActivity(me, undo ? "Zam uyarısı geri açıldı" : "Zam uyarısı: fiyat korunuyor", `${p.product.name} ${p.product.size} · ${tl(p.price)}`);
     refresh();

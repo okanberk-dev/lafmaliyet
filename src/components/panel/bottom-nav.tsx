@@ -1,7 +1,7 @@
 "use client";
 
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { useEffect, type Ref } from "react";
 
 import { Icon } from "@/components/akmanos/icons/icon";
@@ -112,6 +112,15 @@ function useViewportState() {
 }
 
 /**
+ * Dokunulan öğenin bekleme işareti (useLinkStatus): ekran önceden yüklenmemişse ikonun arkasında hap belirip yanıp
+ * söner, ekran gelince etkin hap oraya kayar. Hızlı geçişte hiç görünmez (globals.css, .nav-pending-pill).
+ */
+function PendingPill() {
+  const { pending } = useLinkStatus();
+  return <span aria-hidden="true" data-pending={pending || undefined} className="nav-pending-pill absolute inset-0 rounded-full bg-chart-bg" />;
+}
+
+/**
  * Telefon ve tabletin alt menüsü (lg altında): 64px + güvenli alan, her öğe hücrenin tamamı kadar dokunma alanı.
  * Etkin öğenin ikonunun arkasında zinc-100 hap yaylı kayar (kenar çubuğundaki vurgu gibi). Yönetici için son öğe
  * "Menü": çekmeceyi açar. "Ödemeler" öğesinde gecikmiş ödeme sayısı kırmızı rozetle görünür.
@@ -151,11 +160,14 @@ export function BottomNav({
             const body = (
               <>
                 <span className="relative flex h-8 w-14 items-center justify-center">
+                  {item.href ? <PendingPill /> : null}
                   {on ? (
+                    // Tıklama almaz: hap bir hücreden ötekine kayarken üstünden geçtiği öğeye dokunuş yutulmaz
                     <motion.span
                       layoutId="mobile-nav-pill"
+                      aria-hidden="true"
                       transition={reduce ? { duration: 0 } : SPRING_SWAP}
-                      className="absolute inset-0 rounded-full bg-chart-bg"
+                      className="pointer-events-none absolute inset-0 rounded-full bg-chart-bg"
                     />
                   ) : null}
                   <span className="relative z-10">

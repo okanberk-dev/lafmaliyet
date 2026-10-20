@@ -7,7 +7,7 @@ import {
   type PanelFixedGroup,
 } from "../constants";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type Model, type ProductCalc, type StockSheet } from "./engine";
-import { monthLabel } from "../format";
+import { monthLabel, num } from "../format";
 import { isSummaryRow } from "./pos-paste";
 import type { FixedSection, Ingredient } from "./types";
 
@@ -75,20 +75,26 @@ export function latestSalesMonth(model: Model): string | null {
   return model.salesMonths.filter((m) => m <= cur).at(-1) ?? model.salesMonths.at(-1) ?? null;
 }
 
+/**
+ * Kategori satırları. Ortalamalar ve satış ağırlıklı marj reçetesi olan ürünlerden ("Bütün menü" satırı,
+ * urunler/logic.ts menuAverages ile aynı kural): reçetesiz ürünün maliyeti 0, marjı ~%98 sayılıp ortalamayı
+ * olduğundan iyi göstermesin. Ürün ve satış adedi bütün etkin ürünlerden. Excel'de reçetesiz ürün yok, sonuç aynı.
+ */
 export function categoryStats(model: Model, month: string | null): CategoryStat[] {
   const sold = month ? model.soldByProduct(month) : new Map<number, number>();
   return model.categories.map((c) => {
     const ps = model.products.filter((p) => p.product.categoryId === c.id && p.product.active);
+    const rp = ps.filter((p) => p.status !== "Reçete yok");
     const soldQty = sum(ps.map((p) => sold.get(p.product.id) ?? 0));
-    const revenueNet = sum(ps.map((p) => p.net * (sold.get(p.product.id) ?? 0)));
-    const profit = sum(ps.map((p) => p.unitProfit * (sold.get(p.product.id) ?? 0)));
+    const revenueNet = sum(rp.map((p) => p.net * (sold.get(p.product.id) ?? 0)));
+    const profit = sum(rp.map((p) => p.unitProfit * (sold.get(p.product.id) ?? 0)));
     return {
       categoryId: c.id,
       name: c.name,
       count: ps.length,
-      avgMargin: safeDiv(sum(ps.map((p) => p.margin)), ps.length),
-      avgUnitProfit: safeDiv(sum(ps.map((p) => p.unitProfit)), ps.length),
-      avgCostRatio: safeDiv(sum(ps.map((p) => p.costRatio)), ps.length),
+      avgMargin: safeDiv(sum(rp.map((p) => p.margin)), rp.length),
+      avgUnitProfit: safeDiv(sum(rp.map((p) => p.unitProfit)), rp.length),
+      avgCostRatio: safeDiv(sum(rp.map((p) => p.costRatio)), rp.length),
       soldQty,
       revenueNet,
       profit,
@@ -147,7 +153,7 @@ export interface FixedFlowLine {
   hint: string;
   /** Bu ayın tutarı (pozitif = gider) */
   amount: number;
-  /** Excel'deki standart aylık tutar (extras için 0) */
+  /** Excel'deki standart aylık tutar (extras için 0; aylık harcamalar dahil değil) */
   standard: number;
   /** En büyük kalemlerin adları */
   items: string[];
@@ -176,10 +182,12 @@ export interface FixedMonthBreakdown {
   manual: number;
   /** overrides + manual: "bu aya özel giderler" */
   extras: number;
+  /** Aylık harcamalar (Harcamalar sayfası + bağlı fatura kategorisi): Excel'de yok, `standard`a girmez */
+  expenses: number;
   /** Reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderden çıkarılan SU GİDERİ */
   waterExcluded: number;
   waterInRecipes: boolean;
-  /** standard + proration + overrides + manual */
+  /** standard + proration + overrides + manual + expenses */
   total: number;
   /** Gelir-gider bölümlerine göre (SU GİDERİ düşülmüş) */
   sections: Record<FixedSection, number>;
@@ -277,8 +285,12 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
   const residual = manual - sum(manualRows.map((r) => r.amount));
   if (nonZero(residual)) manualRows.push({ key: "manual:other", label: "Diğer Gelir-gider satırları", section: "genel", amount: residual });
 
-  const standard = sum(lines.map((l) => l.standard));
-  const proration = sum(lines.map((l) => l.computed - l.standard));
+  // Standart = Excel SabitGiderToplam (model.fixedStandardTotalFor, "Excel temeli"); aylık harcamalar ayrı bileşen
+  const isExpense = (l: FixedLine) => l.key.startsWith("expense:");
+  const base = lines.filter((l) => !isExpense(l));
+  const standard = sum(base.map((l) => l.standard));
+  const proration = sum(base.map((l) => l.computed - l.standard));
+  const expenses = sum(lines.filter(isExpense).map((l) => l.value));
   const overrideRows = lines.filter((l) => l.overridden && nonZero(l.value - l.computed)).map((l) => ({ ...l, delta: l.value - l.computed }));
   const overrides = sum(overrideRows.map((l) => l.delta));
 
@@ -297,7 +309,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
       label: g.label,
       hint: g.hint,
       amount: sum(ls.map((l) => l.value)),
-      standard: sum(ls.map((l) => l.standard)),
+      standard: sum(ls.filter((l) => !isExpense(l)).map((l) => l.standard)),
       items: itemNames(ls),
       overridden: ls.some((l) => l.overridden),
     };
@@ -325,6 +337,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     overrides,
     manual,
     extras: overrides + manual,
+    expenses,
     waterExcluded,
     waterInRecipes,
     total: lineValues + manual,
@@ -482,9 +495,11 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const withProfit = model.activeProducts
     .map((p) => ({ p, qty: sold.get(p.product.id) ?? 0, profit: p.unitProfit * (sold.get(p.product.id) ?? 0) }))
     .filter((x) => x.qty > 0);
-  const topProducts = [...withProfit].sort((a, b) => b.profit - a.profit).slice(0, 5);
+  // Reçetesiz ürünün kârı ~cirosu kadar görünür: kâr ve marj sıralamasına girmez (adet sıralamasına girer)
+  const ranked = withProfit.filter((x) => x.p.status !== "Reçete yok");
+  const topProducts = [...ranked].sort((a, b) => b.profit - a.profit).slice(0, 5);
   const bestSellers = [...withProfit].sort((a, b) => b.qty - a.qty).slice(0, 5);
-  const weakest = [...withProfit].sort((a, b) => a.p.margin - b.p.margin).slice(0, 5);
+  const weakest = [...ranked].sort((a, b) => a.p.margin - b.p.margin).slice(0, 5);
 
   const topExpenses = [
     { name: "Personel (maaş + SGK)", amount: model.personnelFor(month).total },
@@ -549,17 +564,24 @@ export function dailyChange(cur: DashboardData, prev: DashboardData) {
   return { growth: (p.current - p.previous) / Math.abs(p.previous), ...p };
 }
 
-/** Yıl içindeki aylık ciro / gider / kâr (grafik) */
+/**
+ * Yıl içindeki aylık ciro / gider / kâr (grafik). POS cirosu girilmemiş ay kâr/zarar sayılmaz: sayımdan sonraki
+ * ayda devreden stok, ciro gelmeden mal maliyeti olur; süren ayın faturaları da öyle (Gelir-gider tablosu aynen kalır).
+ */
 export function yearTrend(model: Model, year: number) {
   return Array.from({ length: 12 }, (_, i) => {
     const month = `${year}-${String(i + 1).padStart(2, "0")}`;
     const pm = model.pnlMonth(month);
+    const noRevenue = pm.revenue === null;
     return {
       month,
       revenueNet: pm.revenueNet ?? 0,
       expenses: pm.expenses,
-      profit: pm.revenue === null && pm.expenses === 0 ? 0 : pm.profit,
-      active: pm.revenue !== null || pm.expenses > 0,
+      profit: noRevenue ? 0 : pm.profit,
+      /** POS cirosu girilmiş: kâr/zarar şeridine, yıl toplamına ve grafiğe girer */
+      active: !noRevenue,
+      /** Gider var (fatura, önceki ayın sayım devri) ama ciro girilmedi */
+      missingRevenue: noRevenue && pm.expenses > 0,
     };
   });
 }
@@ -600,6 +622,12 @@ export function unpaidSummary(invoices: InvoiceBalance[]) {
 // Uyarılar
 // ============================================================================
 
+/** Uyarı metnindeki ad listesi: ilk `max` ad, kalanı sayıyla ("A, B, C ve 3 ürün daha") */
+export function nameList(names: string[], max: number, noun: string): string {
+  const head = names.slice(0, max).join(", ");
+  return names.length > max ? `${head} ve ${num(names.length - max)} ${noun} daha` : head;
+}
+
 export function alerts(model: Model, month: string): Alert[] {
   const out: Alert[] = [];
   const sales = model.monthSales(month);
@@ -623,10 +651,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "warning",
       title: `${unmatched.length} POS ürününün reçetesi yok`,
-      detail: `${unmatched
-        .slice(0, 5)
-        .map((l) => l.line.posName)
-        .join(", ")}${unmatched.length > 5 ? "…" : ""}. Bunlara ortalama maliyet oranı uygulanıyor.`,
+      detail: `${nameList(unmatched.map((l) => l.line.posName), 5, "ürün")}. Bunlara ortalama maliyet oranı uygulanıyor.`,
       href: `/panel/satislar${ay}&durum=eslesmeyen`,
     });
   }
@@ -655,7 +680,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "warning",
       title: `${noRecipe.length} ürünün reçetesi boş`,
-      detail: noRecipe.map((p) => p.key).slice(0, 5).join(", "),
+      detail: nameList(noRecipe.map((p) => p.key), 5, "ürün"),
       href: "/panel/urunler?durum=Reçete yok",
     });
   }
@@ -666,10 +691,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "info",
       title: `${zeroQty.length} reçete satırında miktar eksik`,
-      detail: zeroQty
-        .slice(0, 4)
-        .map(({ p, l }) => `${p.key}: ${l.ingredient?.name}`)
-        .join(", "),
+      detail: nameList(zeroQty.map(({ p, l }) => `${p.key}: ${l.ingredient?.name}`), 4, "satır"),
       href: `/panel/urunler/${zeroQty[0].p.product.id}?ay=${month}`,
     });
   }
@@ -687,7 +709,7 @@ export function alerts(model: Model, month: string): Alert[] {
     out.push({
       level: "info",
       title: `${unused.length} hammadde hiçbir reçetede yok`,
-      detail: `${unused.map((i) => i.name).slice(0, 4).join(", ")}. Hangi üründe kullanılıyorsa reçeteye ekleyin.`,
+      detail: `${nameList(unused.map((i) => i.name), 4, "hammadde")}. Hangi üründe kullanılıyorsa reçeteye ekleyin.`,
       href: "/panel/hammaddeler?durum=kullanilmayan",
     });
   }

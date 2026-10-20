@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { salesFileProblem } from "@/app/panel/satislar/sales-logic";
 import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow, posMatchKey, samePosName } from "@/lib/calc/pos-paste";
 import { monthLabel, num, tl } from "@/lib/format";
@@ -329,7 +330,8 @@ export async function parseSalesFile(formData: FormData) {
     await requireAdmin();
     const file = formData.get("file");
     if (!(file instanceof File) || !file.size) throw new UserError("Dosya seçin");
-    if (file.size > 5 * 1024 * 1024) throw new UserError("Dosya 5 MB'tan büyük olamaz");
+    const tooBig = salesFileProblem(file.size);
+    if (tooBig) throw new UserError(tooBig);
     const name = file.name.toLowerCase();
     let table: unknown[][] = [];
     if (name.endsWith(".xlsx")) {

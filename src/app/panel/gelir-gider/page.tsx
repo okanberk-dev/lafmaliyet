@@ -5,12 +5,14 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
+import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 
+import { yearBreakdowns } from "./breakdowns";
 import { CountUp, PnlGrid, YearPicker, type GridSection, type StripMonth } from "./pnl-grid";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
@@ -142,7 +144,10 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     if (c.revenue === null) return { key: m, short, tone: "warn", label: `${name}${last}: ciro girilmedi · giderler ${tl(c.expenses)}` };
     return { key: m, short, tone: c.profit < 0 ? "bad" : "good", label: `${name}${last}: ${c.profit < 0 ? "zarar" : "kâr"} ${tl(c.profit)}` };
   });
-  const cogsRatio = revenueNet ? calcs.reduce((a, c) => a + c.cogs, 0) / revenueNet : null;
+  const cogs = calcs.reduce((a, c) => a + c.cogs, 0);
+  const cogsRatio = revenueNet ? cogs / revenueNet : null;
+  // Kartların dökümü (karta dokununca): tablonun yıl toplamlarından, sunucuda
+  const breakdown = yearBreakdowns(sections, calcs);
 
   return (
     <>
@@ -166,26 +171,55 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       />
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={<Banknote />} label={`${year} ciro (KDV hariç)`} value={<CountUp value={revenueNet} />} sub={`${activeMonths.length} aktif ay`} />
-        <Stat
-          icon={<Wallet />}
-          label={`${year} giderler`}
-          value={<CountUp value={expenses} />}
-          sub={revenueNet ? `Cironun ${pct(expenses / revenueNet, 0)}` : null}
-        />
-        <Stat
-          icon={<PiggyBank />}
-          label={`${year} kâr / zarar`}
-          value={<CountUp value={profit} />}
-          tone={profit < 0 ? "bad" : "good"}
-          sub={revenueNet ? `Kâr oranı ${pct(profit / revenueNet)}` : null}
-        />
-        <Stat
-          icon={<Percent />}
-          label="Mal maliyeti oranı"
-          value={<CountUp value={cogsRatio} format="pct" />}
-          sub="Stok sayımı girilirse devir düşülür"
-          info="Ay içinde satılan mal maliyeti = önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)."
-        />
+        <StatBreakdown
+          title={`${year} giderleri`}
+          description="Yılın giderleri bölüm bölüm, kalem kalem (KDV hariç). Pay, yılın bütün giderleri içinde."
+          groups={breakdown.expenses}
+          total={expenses}
+          totalLabel="Giderler toplamı"
+          empty="Bu yıl gider yok."
+        >
+          <Stat
+            icon={<Wallet />}
+            label={`${year} giderler`}
+            value={<CountUp value={expenses} />}
+            sub={revenueNet ? `Cironun ${pct(expenses / revenueNet, 0)}` : null}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${year} kâr / zarar`}
+          description="Ciro (KDV hariç) − giderler, bölüm bölüm. Ayrıntısı Giderler kartında."
+          groups={breakdown.profit}
+          total={profit}
+          totalLabel="Kâr / zarar"
+          order="given"
+          shares={false}
+          empty="Bu yıl ciro ya da gider yok."
+        >
+          <Stat
+            icon={<PiggyBank />}
+            label={`${year} kâr / zarar`}
+            value={<CountUp value={profit} />}
+            tone={profit < 0 ? "bad" : "good"}
+            sub={revenueNet ? `Kâr oranı ${pct(profit / revenueNet)}` : null}
+          />
+        </StatBreakdown>
+        <StatBreakdown
+          title={`${year} satılan mal maliyeti`}
+          description={`Mal alışları (tedarikçi tedarikçi) ve stok devri, yıl toplamı (KDV hariç).${cogsRatio !== null ? ` Ciroya oranı ${pct(cogsRatio)}.` : ""}`}
+          groups={breakdown.cogs}
+          total={cogs}
+          totalLabel="Satılan mal maliyeti"
+          empty="Bu yıl mal alışı yok."
+        >
+          <Stat
+            icon={<Percent />}
+            label="Mal maliyeti oranı"
+            value={<CountUp value={cogsRatio} format="pct" />}
+            sub="Stok sayımı girilirse devir düşülür"
+            info="Ay içinde satılan mal maliyeti = önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)."
+          />
+        </StatBreakdown>
       </div>
       {/* Yıl değişince tablo yeniden kurulur: "Aktif aylar / 12 ay" seçimi o yılın verisine göre baştan belirlenir */}
       <PnlGrid

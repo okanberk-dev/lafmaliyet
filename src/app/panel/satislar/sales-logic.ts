@@ -219,3 +219,20 @@ export function collectSuggestions<R extends { id: number; posName: string; matc
   }
   return out;
 }
+
+// ---------------------------------------------------------------- Dosya yükleme
+
+/**
+ * Satış raporu dosyasının üst sınırı. Dosya Server Action ile gider: next.config'teki serverActions.bodySizeLimit
+ * (4,5 MB; varsayılan 1 MB) ve Vercel'in 4,5 MB istek sınırı içinde form payı kalsın. İstemci göndermeden, sunucu
+ * okumadan bakar; sınırı aşan istek sunucuya hiç gitmez (yoksa eylem 413 ile düşer, alan "Okunuyor…"da kalırdı).
+ */
+export const SALES_FILE_MAX_MB = 4;
+export const SALES_FILE_MAX_BYTES = SALES_FILE_MAX_MB * 1024 * 1024;
+
+/** Dosya gönderilemezse nedeni (boş ya da sınırı aşıyor), gönderilebilirse null */
+export function salesFileProblem(size: number): string | null {
+  if (!size) return "Dosya boş";
+  if (size > SALES_FILE_MAX_BYTES) return `Dosya ${SALES_FILE_MAX_MB} MB'tan büyük olamaz. Satırları kopyalayıp “Yapıştır” ile de ekleyebilirsiniz.`;
+  return null;
+}

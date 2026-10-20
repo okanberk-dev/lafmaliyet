@@ -191,7 +191,8 @@ export async function convertFixedToMonthly(fixedId: number, fromMonth: string) 
       }
       if (overrides.length) await tx.delete(s.pnlEntries).where(and(eq(s.pnlEntries.rowKey, key), gte(s.pnlEntries.month, month)));
       let estimated = false;
-      if (!moved.some((o) => o.month === month) && planned) {
+      // Başlangıç ayına elle yazılmış her tutar (0 dahil: "bu ay reklam yok") gerçektir; tahmin yalnız boş ayda yazılır
+      if (!overrides.some((o) => o.month === month) && planned) {
         await tx.insert(s.expenseEntries).values({ date: `${month}-01`, categoryId: cat!.id, description: "Sabit giderdeki tutar (tahmini): gerçeğini yazın", amount: planned, createdBy: me.name });
         estimated = true;
       }

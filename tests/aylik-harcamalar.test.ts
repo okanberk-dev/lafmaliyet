@@ -79,6 +79,32 @@ test("harcamalar: Para nereye gitti'de reklam grubunda, artık 'bu aya özel' ol
   assert.equal(after.lines.some((l) => l.key === "expense:2"), false);
 });
 
+test("harcamalar: standarda (Excel temeli) karışmaz; sabit gider kutusunda ve net kâr ipucunda ayrı satır", async () => {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { createElement } = await import("react");
+  const { FixedReconcile, fixedBreakdownText } = await import("../src/app/panel/dashboard-fixed");
+  const { dashboard } = await import("../src/lib/calc/insights");
+  const model = withExpenses();
+  const d = dashboard(model, M);
+  const f = d.fixedMonth;
+  const t = d.theoretical!;
+  const ads = f.lines.find((l) => l.key === "expense:3")?.value ?? 0;
+  // Standart = Excel SabitGiderToplam (Eylül tam ay: açık gün etkisi yok); harcamalar ayrı bileşen
+  assert.ok(Math.abs(f.standard - d.fixedStandardTotal) < 1e-6, "standart = Excel temeli");
+  assert.ok(Math.abs(f.standard - fixedCostsForMonth(createModel(base), M).standard) < 1e-6);
+  assert.ok(Math.abs(f.expenses - 65_000 - ads) < 1e-6);
+  assert.ok(Math.abs(f.standard + f.proration + f.overrides + f.manual + f.expenses - f.total) < 1e-6);
+  assert.ok(Math.abs(t.netProfitStandard - t.netProfit - f.expenses) < 1e-6, "Excel temeli ile net kâr farkı = harcamalar");
+  assert.ok(Math.abs(f.flow.find((x) => x.key === "reklam")!.standard - fixedCostsForMonth(createModel(base), M).flow.find((x) => x.key === "reklam")!.standard) < 1e-6);
+  const html = renderToStaticMarkup(createElement(FixedReconcile, { f })).replace(/ /g, " ");
+  assert.match(html, /Aylık harcamalar/);
+  assert.match(html, /Influencer/);
+  assert.ok(!/standart aylık tutarlarla düşüldü/.test(html), "fark varken tek satırlık 'aynı temel' notu çıkmaz");
+  assert.match(fixedBreakdownText(f).replace(/ /g, " "), /aylık harcamalar \+/);
+  // Harcama yoksa bileşen 0, kutu eskisi gibi
+  assert.equal(fixedCostsForMonth(createModel(base), M).expenses, 0);
+});
+
 test("harcamalar: her ay girilecek kategori girilmediyse Bu ayın işleri hatırlatır", () => {
   const model = withExpenses();
   const facts = (m: string, state: "running" | "closed") => monthTaskFacts(model, m, state, null, { payments: null, parasut: null });

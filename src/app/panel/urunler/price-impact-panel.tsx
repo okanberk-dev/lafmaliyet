@@ -15,7 +15,8 @@ import { acknowledgePriceAlert, updateProductPrice } from "@/server/actions/prod
 
 import { productHref } from "./logic";
 
-export type ImpactRow = ProductImpact & { acknowledged: boolean };
+/** ackPrice: uyarı önerilen fiyat uygulanarak kapandıysa o fiyat (PriceAck.price; yükleyici verirse) */
+export type ImpactRow = ProductImpact & { acknowledged: boolean; ackPrice?: number | null };
 
 /** Birim maliyet okunur birimle: ₺/gr → ₺/kg, ₺/ml → ₺/L */
 function perUnit(v: number, unit: string): string {
@@ -44,7 +45,9 @@ export function PriceImpactPanel({ changes, impacts, target, month }: { changes:
   const setPrice = (i: ImpactRow) => {
     setBusyId(i.productId);
     start(async () => {
-      const r = await updateProductPrice(i.productId, i.suggestedPrice);
+      // Zammın payı fiyattan hesaplanır: uygulanınca bu maliyette uyarı kapanır (yoksa öneri yeni fiyattan yeniden
+      // artardı). Geri al eski fiyatı yazar; fiyat önerinin altına inince uyarı kendiliğinden geri gelir
+      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep");
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
       toast.success(`${i.name} ${i.size}: ${tl(i.price)} → ${tl(i.suggestedPrice)}`, {
@@ -171,7 +174,7 @@ function ImpactItem({
               {i.statusBefore} → {i.statusAfter}
             </Badge>
           ) : null}
-          {i.acknowledged ? <Badge tone="gray">fiyat korunuyor</Badge> : null}
+          {i.acknowledged ? <Badge tone="gray">{i.ackPrice != null ? "önerilen fiyat uygulandı" : "fiyat korunuyor"}</Badge> : null}
         </p>
         <p className="mt-0.5 text-xs text-ink-mute">
           <span className="tabular">

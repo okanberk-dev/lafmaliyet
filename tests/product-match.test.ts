@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { guessLinkFactor, nameCore, parsePack, suggestIngredient } from "../src/lib/product-match";
+import { cupSize, guessLinkFactor, nameCore, packKey, parsePack, suggestIngredient } from "../src/lib/product-match";
 
 test("paket bilgisi: gerçek e-fatura kalem adlarından", () => {
   const cases: [string, PackLike][] = [
@@ -72,4 +72,61 @@ test("hammadde önerisi: aynı adlı bağlı ürün, sonra ad eşleşmesi (ek al
   const links = [{ productName: "ESPRESSO BLEND 1 KG", ingredientId: 3, factor: 1000 }];
   assert.deepEqual(suggestIngredient("Espresso Blend 1kg", ings, links), { ingredientId: 3, factor: 1000, reason: "link" });
   assert.equal(nameCore("ESPRESSO BLEND 1 KG"), nameCore("Espresso Blend 1kg"));
+});
+
+test("hammadde önerisi: boyutu farklı aynı adlı ürün önceki bağlantıyı almaz (8oz ≠ 14oz)", () => {
+  const ings = [
+    { id: 1, name: "Karton bardak 8oz", unit: "adet" },
+    { id: 2, name: "Karton bardak 14oz", unit: "adet" },
+    { id: 3, name: "Kapak 8-12oz", unit: "adet" },
+    { id: 4, name: "Kapak 14-16oz", unit: "adet" },
+  ];
+  const links = [
+    { productName: "KARTON BARDAK 8OZ DW LAF", ingredientId: 1, factor: 1 },
+    { productName: "PLASTİK KAPAK 8-12OZ BEYAZ EMZİK", ingredientId: 3, factor: 1 },
+    { productName: "DAMLA SODA 200ML X24", ingredientId: 1, factor: 24 },
+  ];
+  assert.deepEqual(suggestIngredient("KARTON BARDAK 14OZ DW LAF", ings, links), { ingredientId: 2, factor: null, reason: "name" });
+  assert.deepEqual(suggestIngredient("PLASTİK KAPAK 14-16OZ BEYAZ EMZİK", ings, links), { ingredientId: 4, factor: null, reason: "name" });
+  // Boyutu aynıysa (yazımı farklı) ya da birinde boyut yoksa bağlantı yine önerilir
+  assert.deepEqual(suggestIngredient("Karton Bardak 8 oz DW LAF", ings, links), { ingredientId: 1, factor: 1, reason: "link" });
+  assert.deepEqual(suggestIngredient("DAMLA SODA 200 ML 1X24", ings, links), { ingredientId: 1, factor: 24, reason: "link" });
+  assert.deepEqual(suggestIngredient("KARTON BARDAK DW LAF", ings, links), { ingredientId: 1, factor: 1, reason: "link" });
+  assert.equal(cupSize("PLASTİK BARDAK 350CC KALIN LAF"), "350cc");
+  assert.equal(cupSize("PLASTİK KAPAK 14 - 16 OZ"), "14-16oz");
+  assert.equal(cupSize("SÜT 1 L"), null);
+});
+
+test("hammadde önerisi: aynı ürünün başka paketi hammaddeyi alır, çarpanı addan tahmin edilir (1 L ≠ 5 L, x24 ≠ x12)", () => {
+  const ings = [
+    { id: 1, name: "Süt", unit: "ml" },
+    { id: 2, name: "Kola", unit: "adet" },
+  ];
+  const links = [
+    { productName: "SÜT 1 LT", ingredientId: 1, factor: 1000 },
+    { productName: "COCA COLA 330ML X24", ingredientId: 2, factor: 24 },
+  ];
+  assert.equal(packKey("SÜT 1 L"), packKey("Süt 1000 ml"));
+  assert.notEqual(packKey("SÜT 5 LT"), packKey("SÜT 1 LT"));
+  assert.notEqual(packKey("COCA COLA PET1LX12"), packKey("COCA COLA 330ML X24"));
+  // Boyut ya da sayı farklı: hammadde bağlantıdan, çarpan null (eski paketin çarpanı alınmaz)
+  assert.deepEqual(suggestIngredient("SÜT 5 LT", ings, links), { ingredientId: 1, factor: null, reason: "link" });
+  assert.deepEqual(suggestIngredient("COCA COLA PET1LX12", ings, links), { ingredientId: 2, factor: null, reason: "link" });
+  assert.deepEqual(suggestIngredient("SÜT", ings, links), { ingredientId: 1, factor: null, reason: "link" });
+  // Paket aynıysa (yazımı farklı) çarpan da alınır
+  assert.deepEqual(suggestIngredient("Süt 1000 ml", ings, links), { ingredientId: 1, factor: 1000, reason: "link" });
+  assert.deepEqual(suggestIngredient("COCA COLA 330 ML 1X24", ings, links), { ingredientId: 2, factor: 24, reason: "link" });
+  // Aynı adla birden çok paket bağlıysa aynı paketinki seçilir
+  const both = [...links, { productName: "SÜT 5 LT", ingredientId: 1, factor: 5000 }];
+  assert.deepEqual(suggestIngredient("Süt 5 L", ings, both), { ingredientId: 1, factor: 5000, reason: "link" });
+
+  // "Hazır olanları bağla" ile satırdaki öneri düğmesinin hesabı: öneri çarpanı yoksa addan tahmin
+  const factorFor = (product: { name: string; unit: string | null }) => {
+    const sug = suggestIngredient(product.name, ings, links);
+    const ing = ings.find((i) => i.id === sug?.ingredientId);
+    return sug && ing ? (sug.factor ?? Number(guessLinkFactor(product, ing.unit)?.replace(",", "."))) : null;
+  };
+  assert.equal(factorFor({ name: "SÜT 5 LT", unit: "Adet" }), 5000);
+  assert.equal(factorFor({ name: "COCA COLA PET1LX12", unit: "Koli" }), 12);
+  assert.equal(factorFor({ name: "SÜT 1 LT", unit: "Adet" }), 1000);
 });

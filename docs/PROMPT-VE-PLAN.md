@@ -235,22 +235,27 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
 
 | Excel sayfası | Web karşılığı | İyileştirme |
 |---------------|---------------|-------------|
-| Panel | `/panel` | Her ay için çalışır. Reçeteye göre (teorik) ve faturaya göre (gerçekleşen) kâr yan yana. Excel'deki Kira / Personel / Reklam / Diğer satırları; ay sonu tahmini yalnızca süren ay için. "Bu ayın işleri" kartı (satış raporu, ay bilgileri, faturalar, su faturası, sayım, ödemeler) eksik veriyi ve sıradaki işi gösterir (`src/app/panel/dashboard-tasks.tsx`). Otomatik uyarılar |
+| Panel | `/panel` | Her ay için çalışır. Reçeteye göre (teorik) ve faturaya göre (gerçekleşen) kâr yan yana. Excel'deki Kira / Personel / Reklam / Diğer satırları; ay sonu tahmini yalnızca süren ay için. "Bu ayın işleri" kartı (satış raporu, ay bilgileri, faturalar, aylık harcamalar, su faturası, sayım, ödemeler) eksik veriyi ve sıradaki işi gösterir (`src/app/panel/dashboard-tasks.tsx`). Otomatik uyarılar |
 | Ürün Kârlılık | `/panel/urunler` | Arama, filtre, sıralama, satır içinde fiyat düzenleme |
 | Reçete Kartları | `/panel/urunler/[id]` | Canlı maliyet hesabı, fiyat simülatörü, ayara bağlı miktar formülleri |
 | Satış Raporu | `/panel/satislar` | Patron'dan yapıştır/yükle; toplam ve başlık satırları atlanır. POS adı eşleştirmeleri hatırlanır (büyük/küçük harf ve I/İ farkı yok sayılır) |
 | Hammaddeler | `/panel/hammaddeler` | Fiyat geçmişi, hangi reçetelerde kullanıldığı, tahmini fiyat işareti |
-| Faturalar | `/panel/faturalar` | Filtre, ödenmedi takibi, kategori × ay özeti |
+| Faturalar | `/panel/faturalar` | Paraşüt'ten her sabah otomatik gelir (bkz. `docs/PARASUT.md`); kategorisi tahminle yazılanlar "Kontrol bekleyen"de onaylanır. Filtre, ödenmedi takibi, kategori × ay özeti, fatura fotoğrafı / PDF'i. Karaoke box ve Alp Koç faturaları kafe dışı: toplama, gelir-gidere ve mal maliyetine girmez |
 | Genel Maliyet | `/panel/gelir-gider` | Ayların tamamı otomatik hesaplanır. Her hücre elle düzeltilebilir (mavi) |
 | Sayım | `/panel/sayim` | Telefondan sayım. Personel rolü sadece burayı ve reçeteleri görür |
 | Tutarlılık Kontrolü | `/panel/tutarlilik` | Stok sayımı ve alım miktarı varsa gerçek tüketim hesaplanır; reçetesiz tüketim listelenir. Bulgular listesi kapatılabilir |
 | Personel | `/panel/personel` | Maaş değişikliği "hangi aydan itibaren" (önceki aylar korunur), Durdur ile ayrılış ayı, maaş geçmişi |
 | Sabit Giderler | `/panel/giderler` | Aylık, günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir. Tutar geçmişi, "hangi aydan itibaren", Durdur ile bitiş ayı |
-| Ayarlar | `/panel/ayarlar` | Kullanıcı yönetimi, QR menü yayını, Excel'e aktarım |
+| Ayarlar | `/panel/ayarlar` | QR menü yayını, Excel'e aktarım, işlem geçmişi; Kullanıcılar ekranına giriş kartı |
 | Nasıl Kullanılır | `/panel/yardim` | — |
 | — (yeni) | `/panel/receteler` | Baristalar için maliyetsiz reçete defteri (personel rolü görebilir, yazdırılabilir) |
 | — (yeni) | `/panel/analiz` | Menü mühendisliği matrisi ve senaryo simülatörü |
 | — (yeni) | `/menu` | Herkese açık QR menü (Ayarlar'dan açılır) |
+| — (yeni) | `/panel/harcamalar` | Aylık harcamalar (Giderler & personel sekmesi): reklam, influencer ve fatura dışı (nakit alım, bakım) giderler kategori kategori; Gelir-gider'de kendi satırında, Genel bakış'ta "Para nereye gitti?"de sayılır. Fatura kategorisi bağlanabilir, değişen sabit gider aylık girişe çevrilir |
+| — (yeni) | `/panel/hatirlaticilar` | Ödemeler & hatırlatıcılar: kira, vergi, SGK, maaş ve ödenmemiş faturalar; takvim, sabah e-postası; "Ödendi" 30 gün boyunca Son ödenenler'den geri alınır (bkz. `docs/BILDIRIMLER.md`) |
+| — (yeni) | `/panel/parasut` | Paraşüt entegrasyonu: gelen e-faturalar ve gider faturaları her sabah (ya da "Şimdi eşitle" ile), e-fatura kalemleri, ürün → hammadde bağlantıları (alınan miktar ve fiyat), kategori kuralları (bkz. `docs/PARASUT.md`) |
+| — (yeni) | `/panel/kullanicilar` | Kullanıcılar & roller: kullanıcı ekleme (parola ya da 72 saatlik davet bağlantısı), rol, kilit, iki adımlı doğrulamayı sıfırlama |
+| — (yeni) | `/panel/hesap` | Hesabım: ad, giriş e-postası, parola, iki adımlı doğrulama |
 
 ## 7. Doğrulama
 
@@ -272,7 +277,6 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
 ## 8. Geliştirme önerileri (ileride)
 
 - Patron (ModPOS) API'si varsa satışların günlük otomatik çekilmesi.
-- Paraşüt API'si ile faturaların otomatik gelmesi (şu an elle giriliyor).
 - Stok seviyesi düşünce sipariş hatırlatması (sayım + reçete tüketimi ile tahmin).
 - Gün sonu kasa raporu (nakit / kart / yemek kartı) ve kart oranının her ay gerçek değerle güncellenmesi.
 - Birden fazla şube (Tuzla dışında) için şube alanı.

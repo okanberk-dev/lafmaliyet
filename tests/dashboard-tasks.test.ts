@@ -286,3 +286,27 @@ test("Net kâr ipucu: düzeltilen hücreler ve bu aya özel satırlar kutudaki a
   assert.match(tip, /bu aya özel giderler \(Gelir-gider\) \+5\.000 ₺/);
   assert.ok(!tip.includes("+11.800"), tip);
 });
+
+test("Faturalar: kontrol bekleyenler (kafe dışı dahil) kafe faturası sayısının alt kümesi gibi yazılmaz", () => {
+  const f = {
+    month: "2026-09",
+    state: "closed",
+    dim: 30,
+    sales: { lines: 120, unmatched: 0, summaryRows: 0, refMonth: "2026-09" },
+    info: { openDays: 30, posRevenue: 1000 },
+    // 1 kafe faturası; kontrol bekleyen 3'ü karaoke box (sayıya girmez)
+    invoices: { count: 1, goods: 1, review: 3 },
+    water: { bill: null, usedInRecipes: false, perLiter: 0, costMonth: null, reason: "no-bill" },
+    stock: { lines: 1, total: 1 },
+    payments: null,
+    parasut: null,
+  } satisfies MonthTaskFacts;
+  const t = monthTasks(f).find((x) => x.key === "fatura")!;
+  assert.equal(t.status, "todo");
+  assert.equal(t.href, "/panel/faturalar?ay=2026-09&durum=kontrol");
+  assert.ok(!t.detail.includes("tanesinin"), t.detail);
+  assert.match(t.detail, /^3 fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın\. Bu ay 1 kafe faturası var\.$/);
+  // Kafe faturası yoksa "0 fatura" denmez
+  const none = monthTasks({ ...f, invoices: { count: 0, goods: 0, review: 2 } }).find((x) => x.key === "fatura")!;
+  assert.equal(none.detail, "2 fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.");
+});

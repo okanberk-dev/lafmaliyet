@@ -168,7 +168,9 @@ export function priceProduct(
     margin,
     costRatio,
     suggestedPrice,
-    status: statusFor(cost, costRatio, st.hedefMaliyet),
+    // Reçeteli ürünün fiyatı 0 (fiyatı sonra girilecek, editörde boş alan): oran 0 ("İyi") değil, zararına satış.
+    // Excel'de #SAYI/0! olurdu; golden veride fiyatı 0 ürün yok, sonuç aynı
+    status: cost > 0 && !(net > 0) ? "Düşük kâr" : statusFor(cost, costRatio, st.hedefMaliyet),
   };
 }
 

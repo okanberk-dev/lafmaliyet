@@ -77,6 +77,8 @@ import {
   openDaysProblem,
   previewMatches,
   replaceConfirm,
+  SALES_FILE_MAX_MB,
+  salesFileProblem,
   suggestProduct,
   type MappingLite,
   type MarginScale,
@@ -1431,7 +1433,7 @@ function DropZone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }
         <span className="flex flex-wrap items-center justify-center gap-1.5 text-xs text-ink-mute">
           <Badge tone="gray">.xlsx</Badge>
           <Badge tone="gray">.csv</Badge>
-          <span>· en fazla 5 MB</span>
+          <span>· en fazla {SALES_FILE_MAX_MB} MB</span>
         </span>
       </label>
     </motion.div>
@@ -1499,13 +1501,22 @@ export function ImportCard({
   }
 
   async function onFile(f: File) {
+    // Sınırı aşan dosya gönderilmez: sunucu isteği okumadan reddeder, yanıt toast'a hiç ulaşmazdı
+    const problem = salesFileProblem(f.size);
+    if (problem) return toast.error(problem);
     const fd = new FormData();
     fd.set("file", f);
     setBusy(true);
-    const res = await parseSalesFile(fd);
-    setBusy(false);
-    if (!res.ok) return toast.error(res.error);
-    accept(res.data, "file");
+    try {
+      const res = await parseSalesFile(fd);
+      if (!res.ok) return toast.error(res.error);
+      accept(res.data, "file");
+    } catch {
+      // Bağlantı koptu ya da istek reddedildi: alan "Okunuyor…"da kalmasın, kişi nedenini görsün
+      toast.error("Dosya gönderilemedi. Bağlantıyı kontrol edip yeniden deneyin.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function readPasted() {

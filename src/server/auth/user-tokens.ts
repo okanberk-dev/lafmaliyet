@@ -84,6 +84,18 @@ export async function consumeTokenAndSetPassword(tokenId: number, userId: number
   });
 }
 
+/**
+ * Kişinin kullanılmamış davet / sıfırlama bağlantılarının süresini hemen bitirir: parolasını kendisi değiştirdiyse ya
+ * da giriş e-postası değiştiyse, WhatsApp'ta ya da eski posta kutusunda duran bağlantı artık parola belirleyemez.
+ */
+export async function expireUserTokens(userId: number): Promise<void> {
+  const now = new Date();
+  await getDb()
+    .update(s.userTokens)
+    .set({ expiresAt: now })
+    .where(and(eq(s.userTokens.userId, userId), isNull(s.userTokens.usedAt), gt(s.userTokens.expiresAt, now)));
+}
+
 /** Kişiye son `minutes` dakikada oluşturulan sıfırlama bağlantısı sayısı ("Parolamı unuttum" sınırı) */
 export async function recentResetCount(userId: number, minutes: number): Promise<number> {
   const [row] = await getDb()

@@ -19,25 +19,28 @@ export function fixedBreakdownText(f: FixedMonthBreakdown): string {
   // Kutudaki satırlarla aynı adlar: düzeltilen hücreler ve yalnızca bu aya yazılan satırlar ayrı
   if (differs(f.overrides, 0)) parts.push(`Gelir-gider'de düzeltilen tutarlar ${signedTl(f.overrides)}`);
   if (differs(f.manual, 0)) parts.push(`bu aya özel giderler (Gelir-gider) ${signedTl(f.manual)}`);
+  // Harcamalar Excel'de yok: standarda değil, ayrı satıra (yoksa "Excel temeli" ile standart çelişir)
+  if (differs(f.expenses, 0)) parts.push(`aylık harcamalar ${signedTl(f.expenses)}`);
   return `${parts.join(" · ")} = bu ay düşülen ${tl(f.total)}. Excel Panel'i her ay standart tutarı düşer; "Excel temeli" o hesaptır.`;
 }
 
 /**
  * Bu ay düşülen sabit giderin kaynağı, ayrı satırlarda: standart aylık tutar (Excel SabitGiderToplam),
- * açık gün etkisi, Gelir-gider'de düzeltilen hücreler ve bu aya özel satırlar. Standarttan fark yoksa
+ * açık gün etkisi, Gelir-gider'de düzeltilen hücreler, bu aya özel satırlar ve aylık harcamalar. Standarttan fark yoksa
  * tek satırlık not; SU GİDERİ reçetelere dağıtıldıysa ikinci kez düşülmediği yazılır.
  */
 export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
   const proration = differs(f.proration, 0);
   const overrides = differs(f.overrides, 0);
   const manual = differs(f.manual, 0);
+  const expenses = differs(f.expenses, 0);
   const water = f.waterExcluded > 0;
   const names = (xs: { label: string }[]) =>
     xs
       .slice(0, 3)
       .map((x) => x.label)
       .join(", ") + (xs.length > 3 ? "…" : "");
-  if (!proration && !overrides && !manual) {
+  if (!proration && !overrides && !manual && !expenses) {
     return (
       <p className="text-xs leading-5 text-ink-mute">
         Sabit giderler bu ay standart aylık tutarlarla düşüldü ({tl(f.standard)}, Excel Panel ile aynı temel).
@@ -59,7 +62,7 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
     <Well className="px-4 py-2">
       <h3 className="flex items-center gap-1.5 pt-1 text-[13px] font-semibold text-ink">
         Bu ay düşülen sabit gider
-        <InfoTip text="Excel Panel'i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. Panel o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür, Gelir-gider'de elle düzeltilen hücreler ve yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) eklenir. Fark aşağıda ayrı satırlarda." />
+        <InfoTip text="Excel Panel'i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. Panel o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür, Gelir-gider'de elle düzeltilen hücreler, yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) ve Harcamalar sayfasındaki aylık harcamalar eklenir. Fark aşağıda ayrı satırlarda." />
       </h3>
       <div className="divide-y divide-line">
         <div className="flex items-baseline justify-between gap-4 py-1.5 text-[13px]">
@@ -69,6 +72,7 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
         {proration ? row(`Açık gün etkisi (${f.openDays} / ${f.dim} gün)`, f.proration) : null}
         {overrides ? row("Gelir-gider'de düzeltilen tutarlar", f.overrides, names(f.overrideRows)) : null}
         {manual ? row("Bu aya özel giderler (Gelir-gider)", f.manual, names(f.manualRows)) : null}
+        {expenses ? row("Aylık harcamalar", f.expenses, names(f.lines.filter((l) => l.key.startsWith("expense:") && differs(l.value, 0)))) : null}
         {row("Bu ay düşülen", f.total, undefined, true)}
       </div>
       {water ? (

@@ -59,10 +59,12 @@ function useScrollTrack(ref: RefObject<HTMLElement | null>, value: string): CSSP
 function Highlight({ id }: { id: string }) {
   const reduce = useReducedMotion();
   return (
+    // Tıklama almaz: seçenekten seçeneğe kayarken üstünden geçtiği seçeneğe giden tıklamayı yutmasın
     <motion.span
       layoutId={id}
+      aria-hidden="true"
       transition={reduce ? { duration: 0 } : SPRING_SWAP}
-      className="absolute inset-0 rounded-[10px] bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_rgb(0_0_0/0.04)]"
+      className="pointer-events-none absolute inset-0 rounded-[10px] bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_rgb(0_0_0/0.04)]"
     />
   );
 }

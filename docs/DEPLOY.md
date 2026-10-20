@@ -40,8 +40,17 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `ADMIN_EMAIL` | İlk yönetici hesabının e-postası |
 | `ADMIN_PASSWORD` | İlk yönetici parolası (en az 8 karakter; ilk girişten sonra **Hesabım** sayfasından değiştirin) |
 | `ADMIN_NAME` | Görünecek ad (ör. Okan) |
+| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz, Paraşüt ekranı "CRON_SECRET eksik" der |
+| `RESEND_API_KEY` | (isteğe bağlı) E-posta gönderimi: sabah e-postası, davet ve parola sıfırlama. Ayrıntı [BILDIRIMLER.md](BILDIRIMLER.md) |
+| `EMAIL_FROM` | (isteğe bağlı) Gönderen, ör. `L'Affogato Panel <bildirim@laffogato.net>`; panelden de değiştirilir |
+| `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
 
-`DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir.
+`DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
+[PARASUT.md](PARASUT.md) § 1.
+
+İki günlük iş `vercel.json`'da tanımlı (Vercel Cron, Türkiye saatiyle): `/api/cron/parasut` 07:00–08:00 arasında
+Paraşüt'ü eşitler, `/api/cron/gunluk` 08:00–09:00 arasında sabah e-postasını gönderir. Vercel → Settings → Cron Jobs
+ekranında görünür, **Run** ile elle çalıştırılır.
 
 ## 5. Deploy
 
@@ -83,6 +92,9 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 - Kullanıcıyı düzenle › **Güvenlik:** parola sıfırlama bağlantısı (24 saat, kişinin mevcut parolası bağlantı
   kullanılana kadar çalışır), kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma. Ayrıca pasif
   yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme.
+- **Giriş kilidi:** 5 hatalı denemede hesap 15 dakika kilitlenir. Daha önce bu hesapla giriş yapılmış tarayıcı bu
+  kilide takılmaz (başkası adresinizi bilip hesabı kilitleyerek sizi dışarıda bırakamasın); o tarayıcının kendi 10
+  deneme hakkı vardır. Bir IP adresinden 15 dakikada en çok 20 hatalı deneme yapılabilir.
 - **Giriş sayfası › Parolamı unuttum:** e-posta istenir, yanıt her durumda aynıdır ("kayıtlıysa bağlantı
   gönderildi"). Resend kuruluysa 2 saatlik sıfırlama bağlantısı gider; kurulu değilse kişiye yöneticisine
   başvurması söylenir. Sınırlar: aynı IP'den 15 dakikada 10, aynı e-postaya saatte 3 istek, kişi başına saatte en
@@ -109,11 +121,20 @@ QR menüyü yayınlamak için panelde **Ayarlar → QR menü → Menüyü yayın
 
 - Kodda değişiklik yapıp Git'e gönderdiğinizde Vercel yeniden deploy eder. Şema değiştiyse `npm run db:generate`
   ile migration üretip onu da gönderin; build sırasında otomatik uygulanır.
-- Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) var. Ayrıca panelde
-  **Ayarlar → Tüm veriyi Excel'e aktar** ile istediğiniz an .xlsx yedeği alabilirsiniz.
-- Veriyi Excel'in ilk hâline döndürmek için (dikkat: kullanıcılar dışındaki her şey silinir), yerel makineden
-  production veritabanı adresiyle şunu çalıştırın:
+- Veri yedeği: asıl yedek Neon'un otomatik nokta-zaman geri yüklemesidir (point-in-time restore). Panelde
+  **Ayarlar → Yedek → Tüm veriyi Excel'e aktar** ile istediğiniz an okunabilir bir .xlsx kopyası alınır: panel
+  sekmeleri ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları. Aylık harcamaların tek
+  tek kayıtları (yalnız Gelir-Gider'de ay toplamı), hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları dosyada
+  yoktur; dosya panele geri yüklenmez.
+- Veriyi Excel'in ilk hâline döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
 
 ```bash
 DATABASE_URL="<neon bağlantı adresi>" npm run db:reset
 ```
+
+  Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
+  düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt
+  eşitleme geçmişi, imleci ve ürün bağlantıları, Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip Excel
+  verisi yeniden yüklenir. **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir),
+  hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları. Sonraki eşitleme Paraşüt
+  faturalarını baştan alır.

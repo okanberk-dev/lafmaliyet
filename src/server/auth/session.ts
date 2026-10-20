@@ -68,3 +68,40 @@ export async function verifyPending(token: string | undefined): Promise<{ sub: s
     return null;
   }
 }
+
+/**
+ * Bilinen cihaz: bu tarayıcıdan başarıyla giriş yapmış kullanıcılar. Hesap kilidi bu cihazı dışarıda bırakmaz;
+ * e-postayı bilen biri 5 yanlış parolayla sahibini panelden kapatamasın. Oturum değildir, yalnızca /giris'e gider ve
+ * çıkışta silinmez. `did` cihazın kendi hata payının anahtarı (ortak tablette biri kişinin diğer cihazlarını kilitleyemesin).
+ */
+export const DEVICE_COOKIE = "laf_cihaz";
+export const DEVICE_DAYS = 365;
+/** Ortak tablet / kasa bilgisayarı: en son giren bu kadar kişi hatırlanır */
+export const DEVICE_MAX_USERS = 10;
+
+export type DeviceToken = { did: string; ids: number[] };
+
+/** Kullanıcıyı listenin başına alır (tekrar yok, en fazla DEVICE_MAX_USERS) */
+export function addDeviceUser(ids: readonly number[], id: number): number[] {
+  return [id, ...ids.filter((x) => x !== id)].slice(0, DEVICE_MAX_USERS);
+}
+
+export async function signDevice(device: DeviceToken) {
+  return new SignJWT({ did: device.did, ids: device.ids, typ: "device" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${DEVICE_DAYS}d`)
+    .sign(secretKey());
+}
+
+export async function verifyDevice(token: string | undefined): Promise<DeviceToken | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
+    if (payload.typ !== "device" || typeof payload.did !== "string" || !payload.did || !Array.isArray(payload.ids)) return null;
+    const ids = payload.ids.filter((x): x is number => Number.isInteger(x) && x > 0).slice(0, DEVICE_MAX_USERS);
+    return { did: payload.did, ids };
+  } catch {
+    return null;
+  }
+}
