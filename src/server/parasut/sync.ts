@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
 
-import { GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
+import { GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
@@ -777,7 +777,8 @@ export async function applyProductLinks(months?: string[]) {
     })
     .from(s.parasutBillLines)
     .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
-    .where(inArray(s.parasutBillLines.productKey, links.map((l) => l.productKey)));
+    // Kafe dışı faturalar (karaoke box, Alp Koç) kafenin alınan miktarına ve fiyatına girmez (aynı ürün kafeye de gelse)
+    .where(and(inArray(s.parasutBillLines.productKey, links.map((l) => l.productKey)), notInArray(s.invoices.category, SEPARATE_CATEGORIES)));
 
   const wanted = months ? new Set(months) : null;
   const qty = new Map<string, number>(); // month|ingredientId → miktar

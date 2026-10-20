@@ -190,12 +190,17 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
 - Paraşüt'te belgesi olmayan faturaya (elle girilmiş, Excel'den gelmiş) panelden **PDF ya da fotoğraf** eklenir
   (`POST` aynı adres, form alanı `dosya`, en çok 4 MB; tür içerikten denetlenir; fotoğraflar telefonda küçültülür).
 
-## 6a-1. Kafe dışı faturalar (karaoke box)
+## 6a-1. Kafe dışı faturalar (karaoke box, Alp Koç)
 
 Aynı Paraşüt hesabına karaoke box'ların (MaviBahçe AVM, Opera Gayrimenkul) faturaları da gelir. Bunlar
 **Karaoke box** kategorisindedir (`SEPARATE_CATEGORIES`): kafenin fatura toplamına, gelir-giderine, mal maliyetine,
 Bu ayın işleri'ndeki fatura sayısına ve ürün bağlamaya girmez; Faturalar'ın aylık özetinde Toplam'ın altında ayrı
 satırda görünür. "Opera Gayrimenkul" tedarikçi kuralı yeni faturaları kendiliğinden bu kategoriye koyar.
+
+Kolayı ortak Alp Koç alır: kola ile Damla suyun birlikte geldiği Pruva faturaları **Alp Koç** kategorisindedir (aynı
+kurallarla kafe dışı); Uludağ (Erbak) suları kafenindir. Yeni Pruva faturası tedarikçinin önceki faturalarına bakılarak
+bu kategoriye düşer; kafe için gelen (kolasız) bir Pruva faturası olursa kategorisi elle değiştirilir. Kafe dışı
+faturaların kalemleri, ürün kafeye de gelse, hammaddenin alınan miktarına ve fiyatına girmez (`applyProductLinks`).
 
 ## 6b. Kontrol bekleyen faturalar
 

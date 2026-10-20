@@ -93,7 +93,7 @@ async function InvoicesContent() {
     category: c,
     byMonth: months.map((m) => invoices.filter((i) => i.category === c && monthOfDate(i.date) === m).reduce((a, i) => a + net(i), 0)),
   })).filter((r) => r.byMonth.some((v) => v));
-  // Kafe dışı (karaoke box) faturalar toplama girmez, tablonun altında ayrı satırda
+  // Kafe dışı (karaoke box, Alp Koç) faturalar toplama girmez, tablonun altında ayrı satırda
   const summary = allSummary.filter((r) => !SEPARATE_CATEGORIES.includes(r.category));
   const separate = allSummary.filter((r) => SEPARATE_CATEGORIES.includes(r.category));
   const totalByMonth = months.map((_, idx) => summary.reduce((a, r) => a + r.byMonth[idx], 0));
@@ -330,7 +330,7 @@ async function InvoicesContent() {
                       <Link href={listHref({ kategori: r.category })} className={cn(CELL_LINK, "inline-flex items-center gap-2")}>
                         <span className={cn("size-2 shrink-0 rounded-full", categoryDot(r.category))} aria-hidden="true" />
                         {r.category}
-                        <InfoTip text="Kafe dışı (karaoke box, ayrı AVM): Toplam'a, gelir-gidere ve mal maliyetine girmez." />
+                        <InfoTip text={`Kafe dışı (${r.category === "Karaoke box" ? "karaoke box, ayrı AVM" : `${r.category} hesabına`}): Toplam'a, gelir-gidere ve mal maliyetine girmez.`} />
                       </Link>
                     </TD>
                     {r.byMonth.map((v, i) => (

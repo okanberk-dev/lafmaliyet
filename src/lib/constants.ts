@@ -79,14 +79,16 @@ export const INVOICE_CATEGORIES = [
   "Hizmet",
   "Komisyon",
   "Karaoke box",
+  "Alp Koç",
   "Diğer",
 ];
 
 /**
- * Kafe dışı (ayrı işletme) fatura kategorileri: aynı Paraşüt hesabına gelen karaoke box faturaları (MaviBahçe AVM).
- * Kafenin fatura toplamlarına, gelir-giderine, mal maliyetine ve ürün bağlamaya girmez; Faturalar'da ayrı satırda.
+ * Kafe dışı (ayrı hesap) fatura kategorileri: aynı Paraşüt hesabına gelen karaoke box faturaları (MaviBahçe AVM) ve
+ * ortak Alp Koç'un hesabına alınanlar (kola ile Damla suyun birlikte geldiği Pruva faturaları). Kafenin fatura
+ * toplamlarına, gelir-giderine, mal maliyetine ve ürün bağlamaya girmez; Faturalar'da ayrı satırda.
  */
-export const SEPARATE_CATEGORIES = ["Karaoke box"];
+export const SEPARATE_CATEGORIES = ["Karaoke box", "Alp Koç"];
 
 /** Mal maliyeti sayılan fatura kategorileri (Genel Maliyet > Mal alışları) */
 export const GOODS_CATEGORIES = ["Hammadde & İçecek", "Tatlı & Hazır Ürün", "Ambalaj"];

@@ -1045,7 +1045,7 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   const hasRows = invoices.length > 0;
   const rowOf = new Map<string, number>();
   const byCat = new Map<string, number[]>();
-  // Kafe dışı (karaoke box) kategoriler TOPLAM'a girmez: TOPLAM ve mal maliyetinden sonra ayrı satırda
+  // Kafe dışı (karaoke box, Alp Koç) kategoriler TOPLAM'a girmez: TOPLAM ve mal maliyetinden sonra ayrı satırda
   const cafeCats = cats.filter((c) => !SEPARATE_CATEGORIES.includes(c));
   const separateCats = cats.filter((c) => SEPARATE_CATEGORIES.includes(c));
   const addCategoryRow = (cat: string, label: string) => {

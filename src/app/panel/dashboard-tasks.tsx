@@ -92,7 +92,7 @@ export function monthTaskFacts(
   const info = model.monthInfo.get(month);
   const pm = model.pnlMonth(month);
   const sheet = model.stockSheet(month);
-  // Kafe dışı (karaoke box) faturalar kafenin sayısına girmez; kontrol bekleyenler hepsinden
+  // Kafe dışı (karaoke box, Alp Koç) faturalar kafenin sayısına girmez; kontrol bekleyenler hepsinden
   const monthInvoices = model.ds.invoices.filter((i) => i.date.startsWith(month));
   const invoices = monthInvoices.filter((i) => !SEPARATE_CATEGORIES.includes(i.category));
   const bill = pm.cells.get("manual:su")?.value ?? null;

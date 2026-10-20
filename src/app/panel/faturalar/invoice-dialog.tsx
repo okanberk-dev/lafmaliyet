@@ -58,7 +58,7 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
 export function categoryEffect(category: string) {
   if (GOODS_CATEGORIES.includes(category)) return "Mal maliyeti sayılır: gelir-gider tablosunda tedarikçi bazında görünür.";
   if (category === COMMISSION_CATEGORY) return "Komisyon giderlerine eklenir.";
-  if (SEPARATE_CATEGORIES.includes(category)) return "Kafe dışı (karaoke box): kafenin fatura toplamına, gelir-giderine ve mal maliyetine girmez.";
+  if (SEPARATE_CATEGORIES.includes(category)) return `Kafe dışı (${category}): kafenin fatura toplamına, gelir-giderine ve mal maliyetine girmez.`;
   return "Gelir-gider tablosuna eklenmez (sabit giderlerden izlenir).";
 }
 
