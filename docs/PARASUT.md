@@ -190,6 +190,13 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
 - Paraşüt'te belgesi olmayan faturaya (elle girilmiş, Excel'den gelmiş) panelden **PDF ya da fotoğraf** eklenir
   (`POST` aynı adres, form alanı `dosya`, en çok 4 MB; tür içerikten denetlenir; fotoğraflar telefonda küçültülür).
 
+## 6a-1. Kafe dışı faturalar (karaoke box)
+
+Aynı Paraşüt hesabına karaoke box'ların (MaviBahçe AVM, Opera Gayrimenkul) faturaları da gelir. Bunlar
+**Karaoke box** kategorisindedir (`SEPARATE_CATEGORIES`): kafenin fatura toplamına, gelir-giderine, mal maliyetine,
+Bu ayın işleri'ndeki fatura sayısına ve ürün bağlamaya girmez; Faturalar'ın aylık özetinde Toplam'ın altında ayrı
+satırda görünür. "Opera Gayrimenkul" tedarikçi kuralı yeni faturaları kendiliğinden bu kategoriye koyar.
+
 ## 6b. Kontrol bekleyen faturalar
 
 Eşitlemenin açtığı yeni faturanın kategorisi kurala, tedarikçinin geçmişine ya da komisyon platformu listesine

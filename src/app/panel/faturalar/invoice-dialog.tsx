@@ -15,7 +15,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { useIsPhone } from "@/components/ui/use-media";
 import { normalizeSupplier } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,7 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
 export function categoryEffect(category: string) {
   if (GOODS_CATEGORIES.includes(category)) return "Mal maliyeti sayılır: gelir-gider tablosunda tedarikçi bazında görünür.";
   if (category === COMMISSION_CATEGORY) return "Komisyon giderlerine eklenir.";
+  if (SEPARATE_CATEGORIES.includes(category)) return "Kafe dışı (karaoke box): kafenin fatura toplamına, gelir-giderine ve mal maliyetine girmez.";
   return "Gelir-gider tablosuna eklenmez (sabit giderlerden izlenir).";
 }
 

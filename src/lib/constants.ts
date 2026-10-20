@@ -78,8 +78,15 @@ export const INVOICE_CATEGORIES = [
   "Reklam & Tabela",
   "Hizmet",
   "Komisyon",
+  "Karaoke box",
   "Diğer",
 ];
+
+/**
+ * Kafe dışı (ayrı işletme) fatura kategorileri: aynı Paraşüt hesabına gelen karaoke box faturaları (MaviBahçe AVM).
+ * Kafenin fatura toplamlarına, gelir-giderine, mal maliyetine ve ürün bağlamaya girmez; Faturalar'da ayrı satırda.
+ */
+export const SEPARATE_CATEGORIES = ["Karaoke box"];
 
 /** Mal maliyeti sayılan fatura kategorileri (Genel Maliyet > Mal alışları) */
 export const GOODS_CATEGORIES = ["Hammadde & İçecek", "Tatlı & Hazır Ürün", "Ambalaj"];

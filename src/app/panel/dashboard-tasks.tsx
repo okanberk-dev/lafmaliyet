@@ -5,6 +5,7 @@
 import type { Model, WaterCost } from "@/lib/calc/engine";
 import type { MonthState } from "@/lib/calc/insights";
 import { isSummaryRow } from "@/lib/calc/pos-paste";
+import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
 
@@ -89,7 +90,9 @@ export function monthTaskFacts(
   const info = model.monthInfo.get(month);
   const pm = model.pnlMonth(month);
   const sheet = model.stockSheet(month);
-  const invoices = model.ds.invoices.filter((i) => i.date.startsWith(month));
+  // Kafe dışı (karaoke box) faturalar kafenin sayısına girmez; kontrol bekleyenler hepsinden
+  const monthInvoices = model.ds.invoices.filter((i) => i.date.startsWith(month));
+  const invoices = monthInvoices.filter((i) => !SEPARATE_CATEGORIES.includes(i.category));
   const bill = pm.cells.get("manual:su")?.value ?? null;
   const usedInRecipes = model.ds.ingredients.some((i) => i.priceSource === "water" && model.usedIn.has(i.id));
   return {
@@ -103,7 +106,7 @@ export function monthTaskFacts(
       refMonth,
     },
     info: { openDays: info?.openDays ?? null, posRevenue: info?.posRevenue ?? null },
-    invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: invoices.filter((i) => i.needsReview).length },
+    invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: monthInvoices.filter((i) => i.needsReview).length },
     water: { bill, usedInRecipes, perLiter: model.water.perLiter, costMonth: model.water.month, reason: model.water.reason },
     stock: {
       lines: sheet.groups.reduce((n, g) => n + g.lines.filter((l) => l.qty !== null).length, 0) + sheet.extras.length,

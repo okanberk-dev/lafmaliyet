@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { isPartiallyPaid } from "@/lib/calc/insights";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { confirmInvoices, deleteInvoice, restoreInvoice, setInvoiceCategory, setInvoicePaid, unignoreParasutBill } from "@/server/actions/invoices";
@@ -63,6 +63,7 @@ export function CountUp({ value, format = "num" }: { value: number; format?: "nu
 function categoryTone(category: string): Tone {
   if (GOODS_CATEGORIES.includes(category)) return "green";
   if (category === COMMISSION_CATEGORY) return "blue";
+  if (SEPARATE_CATEGORIES.includes(category)) return "violet";
   return "gray";
 }
 
@@ -71,9 +72,10 @@ const PILL_TONE: Partial<Record<Tone, string>> = {
   green: "bg-lime/25 text-good-ink",
   blue: "bg-info-soft text-info",
   gray: "bg-ink/[0.06] text-ink-soft ring-1 ring-inset ring-line-strong",
+  violet: "bg-bordo-50 text-bordo-800",
 };
 /** Alt sayfadaki kategori listesinin renk noktası (rozetle aynı anlam) */
-const CATEGORY_DOT: Partial<Record<Tone, string>> = { green: "bg-good", blue: "bg-info", gray: "bg-ink-quiet" };
+const CATEGORY_DOT: Partial<Record<Tone, string>> = { green: "bg-good", blue: "bg-info", gray: "bg-ink-quiet", violet: "bg-bordo-600" };
 const CHEVRON =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 

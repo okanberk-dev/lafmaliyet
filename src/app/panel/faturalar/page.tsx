@@ -10,7 +10,7 @@ import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { monthOfDate, normalizeSupplier } from "@/lib/calc/engine";
 import { unpaidSummary } from "@/lib/calc/insights";
-import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { monthLabel, monthShort, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
@@ -49,6 +49,7 @@ const CELL_LINK =
 function categoryDot(category: string) {
   if (GOODS_CATEGORIES.includes(category)) return "bg-good";
   if (category === COMMISSION_CATEGORY) return "bg-info";
+  if (SEPARATE_CATEGORIES.includes(category)) return "bg-bordo-600";
   return "bg-ink-quiet";
 }
 
@@ -88,10 +89,13 @@ async function InvoicesContent() {
   const net = (i: { amount: number; discount: number }) => i.amount - i.discount;
   const total = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-  const summary = INVOICE_CATEGORIES.map((c) => ({
+  const allSummary = INVOICE_CATEGORIES.map((c) => ({
     category: c,
     byMonth: months.map((m) => invoices.filter((i) => i.category === c && monthOfDate(i.date) === m).reduce((a, i) => a + net(i), 0)),
   })).filter((r) => r.byMonth.some((v) => v));
+  // Kafe dışı (karaoke box) faturalar toplama girmez, tablonun altında ayrı satırda
+  const summary = allSummary.filter((r) => !SEPARATE_CATEGORIES.includes(r.category));
+  const separate = allSummary.filter((r) => SEPARATE_CATEGORIES.includes(r.category));
   const totalByMonth = months.map((_, idx) => summary.reduce((a, r) => a + r.byMonth[idx], 0));
   const goodsByMonth = months.map((m) => model.goodsPurchases(m));
   const commissionByMonth = summary.find((r) => r.category === COMMISSION_CATEGORY)?.byMonth ?? months.map(() => 0);
@@ -208,6 +212,19 @@ async function InvoicesContent() {
                         </Link>
                       </li>
                     ))}
+                    {separate
+                      .filter((r) => r.byMonth[idx])
+                      .map((r) => (
+                        <li key={r.category}>
+                          <Link href={listHref({ kategori: r.category, ay: m })} className="flex min-h-11 items-center gap-2.5 px-4 py-2 text-sm">
+                            <span className={cn("size-2 shrink-0 rounded-full", categoryDot(r.category))} aria-hidden="true" />
+                            <span className="min-w-0 flex-1 break-words text-ink-soft">
+                              {r.category} <span className="text-xs text-ink-mute">· kafe dışı, toplama girmez</span>
+                            </span>
+                            <span className="text-ink-soft tabular">{tl(r.byMonth[idx])}</span>
+                          </Link>
+                        </li>
+                      ))}
                     <li>
                       <Link href={listHref({ ay: m })} className="flex min-h-11 items-center justify-between gap-2 px-4 py-2 text-[13px] font-medium text-info">
                         {monthLabel(m)} faturalarını listede göster <span aria-hidden="true">→</span>
@@ -307,6 +324,25 @@ async function InvoicesContent() {
                     {tl(total(goodsByMonth))}
                   </TD>
                 </TFootRow>
+                {separate.map((r) => (
+                  <TFootRow key={r.category} className="border-line">
+                    <TD sticky className={cn(EDGE, "pl-5 font-normal text-ink-soft")}>
+                      <Link href={listHref({ kategori: r.category })} className={cn(CELL_LINK, "inline-flex items-center gap-2")}>
+                        <span className={cn("size-2 shrink-0 rounded-full", categoryDot(r.category))} aria-hidden="true" />
+                        {r.category}
+                        <InfoTip text="Kafe dışı (karaoke box, ayrı AVM): Toplam'a, gelir-gidere ve mal maliyetine girmez." />
+                      </Link>
+                    </TD>
+                    {r.byMonth.map((v, i) => (
+                      <TD key={i} numeric className={cn("font-normal", v ? "text-ink-soft" : "text-ink-quiet")}>
+                        {v ? tl(v) : "–"}
+                      </TD>
+                    ))}
+                    <TD numeric className={cn(TOTAL_COL, "font-normal text-ink-soft")}>
+                      {tl(total(r.byMonth))}
+                    </TD>
+                  </TFootRow>
+                ))}
               </tfoot>
             </Table>
           </TableWrap>

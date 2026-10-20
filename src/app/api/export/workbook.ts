@@ -11,7 +11,7 @@ import ExcelJS from "exceljs";
 import { fixedMonthly, inRange, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
 import { consistency, dashboard, forecastMonthOf, openBalance, stockVatSummary } from "../../../lib/calc/insights";
 import type { FixedPeriod, MonthRange } from "../../../lib/calc/types";
-import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES } from "../../../lib/constants";
+import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
 
 // ---------------------------------------------------------------------------- Biçimler
@@ -1045,13 +1045,16 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   const hasRows = invoices.length > 0;
   const rowOf = new Map<string, number>();
   const byCat = new Map<string, number[]>();
-  for (const cat of cats) {
+  // Kafe dışı (karaoke box) kategoriler TOPLAM'a girmez: TOPLAM ve mal maliyetinden sonra ayrı satırda
+  const cafeCats = cats.filter((c) => !SEPARATE_CATEGORIES.includes(c));
+  const separateCats = cats.filter((c) => SEPARATE_CATEGORIES.includes(c));
+  const addCategoryRow = (cat: string, label: string) => {
     const r = al.rowCount + 1;
     rowOf.set(cat, r);
     const vals = months.map((m) => sum(invoices.filter((i) => i.category === cat && monthOfDate(i.date) === m).map(net)));
     byCat.set(cat, vals);
-    al.addRow({
-      c: cat,
+    return al.addRow({
+      c: label,
       ...Object.fromEntries(
         months.map((m, j) => [
           m,
@@ -1060,10 +1063,11 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       ),
       t: months.length ? { formula: `SUM(B${r}:${mCol(months.length - 1)}${r})`, result: round2(sum(vals)) } : 0,
     });
-  }
+  };
+  for (const cat of cafeCats) addCategoryRow(cat, cat);
   const firstCatRow = 2;
   const lastCatRow = al.rowCount;
-  const colTotal = (j: number) => sum(cats.map((cat) => byCat.get(cat)![j]));
+  const colTotal = (j: number) => sum(cafeCats.map((cat) => byCat.get(cat)![j]));
   const tr = al.addRow({
     c: "TOPLAM",
     ...Object.fromEntries(months.map((m, j) => [m, { formula: `SUM(${mCol(j)}${firstCatRow}:${mCol(j)}${lastCatRow})`, result: round2(colTotal(j)) }])),
@@ -1083,6 +1087,10 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   months.forEach((m, j) => {
     if (Math.abs(model.goodsPurchases(m) - goodsVal(j)) >= 0.01) gr.getCell(m).note = `Panel bu ay ${tl(model.goodsPurchases(m))} hesaplıyor.`;
   });
+  for (const cat of separateCats) {
+    const row = addCategoryRow(cat, `${cat} (kafe dışı, TOPLAM'a girmez)`);
+    row.font = { italic: true, color: { argb: "FF6B21A8" } };
+  }
 }
 
 // ---------------------------------------------------------------------------- Personel + Sabit Giderler
