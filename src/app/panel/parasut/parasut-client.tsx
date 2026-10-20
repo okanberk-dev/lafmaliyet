@@ -309,8 +309,9 @@ export function ParasutClient({
         )
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-7">
+      {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, "Yeniden eşitleme" formu sıkışırdı */}
+      <div className="grid gap-4 xl:grid-cols-12">
+        <Card className="xl:col-span-7">
           <CardHeader icon={<PlugZap />} title="Kurulum" description="Bir kez yapılır. Değerler Vercel'de saklanır, panelde gösterilmez." />
           <CardContent className="space-y-4">
             <ol className="space-y-3 text-sm text-ink-soft">
@@ -369,7 +370,7 @@ export function ParasutClient({
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-5">
+        <Card className="xl:col-span-5">
           <CardHeader icon={<RefreshCw />} title="Eşitleme geçmişi" description="Otomatik (her sabah) ve elle yapılan son 8 eşitleme." />
           <CardContent className="flex-1">
             {runs.length === 0 ? (
@@ -1213,7 +1214,7 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
       <CardContent className="space-y-3">
         <form
           id={formId}
-          className={cn("grid gap-2 rounded-2xl sm:grid-cols-2 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,14rem)_auto] lg:items-start", editingId !== null && "bg-surface p-3 ring-1 ring-ink/20")}
+          className={cn("grid gap-2 rounded-2xl sm:grid-cols-2 xl:grid-cols-[12rem_minmax(0,1fr)_minmax(0,14rem)_auto] xl:items-start", editingId !== null && "bg-surface p-3 ring-1 ring-ink/20")}
           onSubmit={(e) => {
             e.preventDefault();
             if (!pattern.trim() || duplicate) return;
@@ -1232,7 +1233,7 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
           }}
         >
           {editingRule ? (
-            <p className="flex flex-wrap items-center gap-x-1.5 text-[13px] font-medium text-ink sm:col-span-2 lg:col-span-4">
+            <p className="flex flex-wrap items-center gap-x-1.5 text-[13px] font-medium text-ink sm:col-span-2 xl:col-span-4">
               <Pencil size={14} aria-hidden="true" /> <span className="min-w-0 break-words">“{editingRule.pattern}” kuralını düzenliyorsunuz</span>
               <span className="font-normal text-ink-mute">· Enter kaydeder, Esc vazgeçer</span>
             </p>
@@ -1273,13 +1274,13 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
               ))}
             </Select>
           </Field>
-          <div className="flex gap-2 sm:col-span-2 lg:col-span-1 lg:pt-[1.625rem]">
+          <div className="flex gap-2 sm:col-span-2 xl:col-span-1 xl:pt-[1.625rem]">
             {editingId !== null ? (
               <Button variant="ghost" onClick={reset}>
                 <X size={16} /> Vazgeç
               </Button>
             ) : null}
-            <Button type="submit" disabled={pending || !pattern.trim() || Boolean(duplicate)} className="max-lg:flex-1">
+            <Button type="submit" disabled={pending || !pattern.trim() || Boolean(duplicate)} className="max-xl:flex-1">
               {editingId !== null ? (
                 "Kaydet"
               ) : (

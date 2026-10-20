@@ -657,7 +657,7 @@ export function RecipeEditor({
                           >
                             {/* Malzeme: dar düzende üst katın tamamı (sil düğmesi yanında). Dar ızgara üç sütun: miktar ·
                                 tutar · sil; malzeme ilk ikisini, tutar son ikisini kaplar (seçim kutusu tutar kadar geniş) */}
-                            <div className="col-span-2 col-start-1 row-start-1 flex min-w-0 items-start gap-3 @xl:col-span-1">
+                            <div className="col-span-2 col-start-1 row-start-1 flex min-w-0 items-start gap-3 @xl:col-span-1 @xl:col-start-1">
                               {/* Orta genişlikte karo gizlenir, malzeme seçimine yer kalsın */}
                               <IngredientTile ing={l.ing} className="max-[380px]:hidden @xl:hidden @3xl:inline-flex" />
                               <div className="min-w-0 flex-1">
@@ -847,7 +847,7 @@ export function RecipeEditor({
                                 satırın tam genişliğinde, "Not" düğmesinin hemen altında; genişte malzeme sütununda,
                                 seçim kutusunun altında (karo görünürken onunla hizalı) */}
                             {l.row.note || noteOpen.has(l.row.key) ? (
-                              <div className="col-span-3 col-start-1 row-start-4 min-w-0 @xl:col-span-1 @xl:row-start-2 @3xl:pl-12">
+                              <div className="col-span-3 col-start-1 row-start-4 min-w-0 @xl:col-span-1 @xl:col-start-1 @xl:row-start-2 @3xl:pl-12">
                                 <div className="relative">
                                   <StickyNote size={13} className="pointer-events-none absolute top-3 left-2.5 text-ink-quiet sm:top-2.5" aria-hidden="true" />
                                   {/* Not uzunsa alan yazıyla birlikte uzar (tek satırda kesilmesin); telefonda 16px yazı */}

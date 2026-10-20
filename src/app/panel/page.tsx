@@ -420,14 +420,15 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           </Stat>
         </div>
 
-        {/* 2. Uyarılar + maliyet göstergesi */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div className="flex min-w-0 flex-col gap-4 lg:col-span-7">
+        {/* 2. Uyarılar + maliyet göstergesi. Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~750 px
+            kalır, 5/12'lik maliyet kartı 270 px'e iner ve "ürün “Düşük kâr”" kutuları sözcük sözcük kırılırdı */}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
             {upcoming ? <DashboardPayments items={upcoming} /> : null}
             <DashboardAlerts items={alertItems} className="flex-1" />
           </div>
           <CostCard
-            className="lg:col-span-5"
+            className="xl:col-span-5"
             recipeRatio={d.recipeCostRatio}
             invoiceRatio={d.invoiceCostRatio}
             target={st.hedefMaliyet}

@@ -150,7 +150,9 @@ function FlowLine({
         <span className="ml-1.5 inline-block min-w-9 text-xs text-ink-mute tabular">{pct(share, 0)}</span>
       </span>
       {sub ? (
-        <span className="col-span-2 col-start-2 mt-0.5 block min-w-0 text-xs text-ink-mute sm:col-span-1 sm:truncate" title={sub}>
+        // Yalnız bitiş sütunu değişir: "sm:col-span-1" grid-column'ı baştan yazıp col-start-2'yi silerdi, açıklama
+        // renk karesinin sütununa düşer, o sütun açıklama kadar genişler ve ad ile tutar sıkışırdı
+        <span className="col-start-2 col-end-4 mt-0.5 block min-w-0 text-xs text-ink-mute sm:col-end-3 sm:truncate" title={sub}>
           {sub}
         </span>
       ) : null}
