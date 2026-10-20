@@ -67,7 +67,15 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
   const [rows, [{ n }], [lastRun]] = await Promise.all([
     db
-      .select({ supplier: s.invoices.supplier, date: s.invoices.date, payable: s.invoices.payable, category: s.invoices.category, needsReview: s.invoices.needsReview })
+      .select({
+        supplier: s.invoices.supplier,
+        date: s.invoices.date,
+        payable: s.invoices.payable,
+        category: s.invoices.category,
+        needsReview: s.invoices.needsReview,
+        unpaid: s.invoices.unpaid,
+        dueDate: s.invoices.dueDate,
+      })
       .from(s.invoices)
       .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, since)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id)),

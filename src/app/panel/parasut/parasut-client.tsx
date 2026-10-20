@@ -145,6 +145,7 @@ export function ParasutClient({
       let done = 0;
       let lineCount = 0;
       let corrected = 0;
+      let unpaid = 0;
       for (let round = 0; round < 12; round++) {
         const r = await readParasutLines();
         if (!r.ok) {
@@ -155,6 +156,7 @@ export function ParasutClient({
         done += step;
         lineCount += r.data.lines;
         corrected += r.data.corrected;
+        unpaid += r.data.unpaid;
         setReadProgress({ done, left: r.data.remaining });
         if (!r.data.remaining || !step) {
           if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
@@ -163,7 +165,10 @@ export function ParasutClient({
         toast.loading(`E-fatura kalemleri okunuyor… ${num(done)} fatura okundu, ${num(r.data.remaining)} kaldı`, { id: t });
       }
       setReadProgress(null);
-      toast.success(`${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}`, { id: t });
+      toast.success(
+        `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}${unpaid ? ` · ${num(unpaid)} vadesi gelmemiş fatura Ödemeler'e eklendi` : ""}`,
+        { id: t },
+      );
     });
 
   const sync = (since: string | null) =>

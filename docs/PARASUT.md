@@ -104,7 +104,7 @@ Kalemler iki yerden gelir ve aynı tabloda (`parasut_bill_lines`) durur:
   iskonto kalemlere oranla dağıtılır. Canlı veride 82 gelen e-faturanın 82'sinde kalemlerin toplamı faturayı
   kuruşu kuruşuna tuttu (20 Eki 2026). Her eşitleme kalan süre kadar faturanın kalemlerini okur (en yeni önce);
   beklemeden okumak için Paraşüt sayfasında **Kalemleri şimdi oku**. Okunan fatura `invoices.ubl_read_at` ile
-  işaretlenir; e-fatura değişirse yeniden okunur. Belgedeki vade, boş vadeye yazılır.
+  işaretlenir; e-fatura değişirse yeniden okunur. Ödeme tarihi için bkz. 6.
 - **Tevkifatlı e-fatura:** Paraşüt'ün listesi tedarikçiye ödenecek tutarı (`net_total`, tevkifat düşülmüş) ve tam
   KDV'yi verir; "ödenecek − KDV" maliyeti eksik çıkarır (ör. 34.200 − 6.000 = 28.200, doğrusu 30.000). Belge
   okununca KDV hariç tutar belgeden yazılır, notta eski tutar görünür. Elle değiştirilmiş tutara dokunulmaz.
@@ -163,8 +163,14 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   `total_vat` KDV. KDV hariç tutar = `net_total − total_vat` (e-fatura listesinde iskonto ayrıca gelmez). İade
   faturası eksi, tevkifatlı fatura "kontrol bekleyen" yazılır (tutarı belge okununca düzelir, bkz. 5).
 - Kalemler `signed_ubl` belgesinden okunur (bkz. 5). `ubl`, `xml`, `html` uçları yoktur (404).
-- Ödeme bilgisi e-faturada yoktur: yeni kayıt **ödendi** varsayılır (her sabah onlarca ödenmemiş fatura
-  hatırlatılmasın); ödenmeyenler Faturalar'da "ödenmedi" işaretlenir.
+- **Ödeme (vade, valör) tarihi** belge okununca yazılır (`ubl.ts` → `readPayment`): sırayla ödeme alanı
+  (`PaymentMeans/PaymentDueDate`), ödeme koşulları (`PaymentTerms/PaymentDueDate`), notlar ("Vade Tarihi: 26.10.2026",
+  "Son Ödeme Tarihi", "Valör", "Vade Günü: 15", "30 gün vade"). Fatura gününden önceki ya da 400 günden uzak tarih
+  yazım hatası sayılır. Ödeme şekli `PaymentMeansCode`'dan (10 nakit, 48 kart, 42 havale…), "Peşin" notu ya da vade =
+  fatura günü peşin sayılır. E-faturadan açılan kayıt: vadesi gelmemişse **ödenmedi** olur, vadesiyle Ödemeler &
+  hatırlatıcılar'a ve sabah e-postasına düşer (notta "vade e-faturadan"); peşin, vadesiz ya da vadesi geçmiş fatura
+  **ödendi** varsayılır (ödendiği bilinmez; eski faturalar için hatırlatma yağmuru olmasın). Excel/elle girilmiş
+  kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
 - **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
   fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı
   aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur. Fatura sonradan Paraşüt'te

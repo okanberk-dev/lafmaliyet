@@ -48,7 +48,14 @@ export interface UblInvoice {
   supplierName: string | null;
   /** VKN ya da TCKN */
   supplierTaxId: string | null;
+  /** Ödeme (vade, valör) tarihi; bkz. readPayment */
   dueDate: string | null;
+  /** Vade nereden okundu: ödeme alanı, ödeme koşulları ya da fatura notu */
+  dueSource: "payment-means" | "payment-terms" | "note" | null;
+  /** Ödeme şekli (PaymentMeansCode): nakit, kart, havale/EFT; belirtilmemişse null */
+  paymentMeans: "nakit" | "kart" | "havale" | null;
+  /** Peşin (teslimde ödenen) fatura: "Ödeme Tipi: Peşin", "Vade Günü: 0" ya da vade = fatura günü */
+  cashOnDelivery: boolean;
   /** Fatura altı iskonto (artırımlar düşülmüş) */
   invoiceDiscount: number;
   /** KDV hariç toplam (maliyet) */
@@ -121,7 +128,7 @@ function readEntry(data: Buffer, e: { method: number; size: number; offset: numb
 const decode = (b: Buffer) => b.toString("utf8").replace(/^﻿/, "");
 
 // ------------------------------------------------------------------ UBL
-const ARRAYS = new Set(["InvoiceLine", "TaxSubtotal", "AllowanceCharge", "PartyIdentification", "PaymentMeans", "Note", "Description"]);
+const ARRAYS = new Set(["InvoiceLine", "TaxSubtotal", "AllowanceCharge", "PartyIdentification", "PaymentMeans", "PaymentTerms", "Note", "Description", "InstructionNote"]);
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -209,18 +216,92 @@ function partyTaxId(party: Node | undefined): string | null {
   return (ids.find((i) => i.scheme === "VKN") ?? ids.find((i) => i.scheme === "TCKN"))?.id ?? null;
 }
 
+// ------------------------------------------------------------------ ödeme (vade / valör)
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const validIso = (v: string | null | undefined): v is string => Boolean(v && ISO.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().startsWith(v));
+const addDaysIso = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const daysBetweenIso = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+/** En uzun akla yatkın vade (bundan uzun "vade" yazım hatası sayılır) */
+const MAX_TERM_DAYS = 400;
+
+/** PaymentMeansCode (UN/ECE 4461) → ödeme şekli */
+function meansOf(code: string | null): UblInvoice["paymentMeans"] {
+  if (!code) return null;
+  const c = code.trim().toUpperCase();
+  if (c === "10") return "nakit";
+  if (["48", "54", "55"].includes(c)) return "kart";
+  if (["20", "30", "31", "42", "49", "58", "59"].includes(c)) return "havale";
+  return null;
+}
+
+/** "26.10.2026", "26/10/2026", "2026-10-26" → ISO; geçersizse null */
+function dateFromText(d: string): string | null {
+  const m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(d) ?? null;
+  const iso = m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : d;
+  return validIso(iso) ? iso : null;
+}
+
+/**
+ * Faturanın ödeme (vade, valör) tarihi ve şekli. Sırayla: ödeme alanı (PaymentMeans/PaymentDueDate), ödeme
+ * koşulları (PaymentTerms/PaymentDueDate), notlar ("Vade Tarihi: 26.10.2026", "Son Ödeme Tarihi", "Valör",
+ * "Vade Günü: 15", "30 gün vade"). Fatura gününden önceki ya da 400 günden uzak tarih yazım hatası sayılır.
+ * Peşin: notta "Peşin" geçer ya da vade fatura günüdür.
+ */
+export function readPayment(inv: Node, issueDate: string | null): Pick<UblInvoice, "dueDate" | "dueSource" | "paymentMeans" | "cashOnDelivery"> {
+  const sane = (d: string | null): d is string => Boolean(d && validIso(d) && (!issueDate || (d >= issueDate && daysBetweenIso(issueDate, d) <= MAX_TERM_DAYS)));
+  const means = list(inv.PaymentMeans);
+  const terms = list(inv.PaymentTerms);
+  const notes = [...texts(inv.Note), ...terms.flatMap((t) => texts(t.Note)), ...means.flatMap((m) => texts(m.InstructionNote))].map((n) => n.toLocaleLowerCase("tr-TR"));
+
+  let dueDate: string | null = null;
+  let dueSource: UblInvoice["dueSource"] = null;
+  const fromMeans = means.map((m) => text(m.PaymentDueDate)?.slice(0, 10) ?? null).find(sane);
+  const fromTerms = terms.map((t) => text(t.PaymentDueDate)?.slice(0, 10) ?? null).find(sane);
+  if (fromMeans) [dueDate, dueSource] = [fromMeans, "payment-means"];
+  else if (fromTerms) [dueDate, dueSource] = [fromTerms, "payment-terms"];
+  else {
+    for (const n of notes) {
+      const dated = /(?:vade|son ödeme|ödeme|valör)(?:\s*tarihi)?\s*[:=]?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/.exec(n);
+      const d = dated ? dateFromText(dated[1]) : null;
+      if (sane(d)) {
+        [dueDate, dueSource] = [d, "note"];
+        break;
+      }
+      const days = /vade\s*(?:günü|gün sayısı|süresi)?\s*[:=]\s*(\d{1,3})\b/.exec(n) ?? /\b(\d{1,3})\s*gün(?:lük)?\s*vade/.exec(n);
+      if (days && issueDate) {
+        const d2 = addDaysIso(issueDate, Number(days[1]));
+        if (sane(d2)) {
+          [dueDate, dueSource] = [d2, "note"];
+          break;
+        }
+      }
+    }
+  }
+  const paymentMeans = means.map((m) => meansOf(text(m.PaymentMeansCode))).find(Boolean) ?? null;
+  const cashNote = notes.some((n) => /(?:ödeme\s*(?:tipi|şekli)[^:]*:\s*)peşin|\bpeşin\b/.test(n));
+  const cashOnDelivery = cashNote || Boolean(dueDate && issueDate && dueDate === issueDate);
+  return { dueDate, dueSource, paymentMeans, cashOnDelivery };
+}
+
+/**
+ * E-faturadan açılan kaydın ödeme durumu: vadesi fatura gününden sonra ve henüz gelmemişse "ödenmedi" (vadesi
+ * hatırlatıcılara düşer); peşin, vadesiz ya da vadesi geçmişse "ödendi" (ödendiği bilinmez, eski faturalar için
+ * hatırlatma yağmuru olmasın). Kullanıcı Faturalar'da değiştirebilir.
+ */
+export function paymentPlan(p: Pick<UblInvoice, "dueDate" | "cashOnDelivery">, issueDate: string, today: string): { dueDate: string | null; unpaid: boolean } {
+  if (!p.dueDate) return { dueDate: null, unpaid: false };
+  if (p.cashOnDelivery || p.dueDate <= issueDate) return { dueDate: p.dueDate, unpaid: false };
+  return { dueDate: p.dueDate, unpaid: p.dueDate >= today };
+}
+
 /** UBL-TR fatura XML'ini okur */
 export function parseUbl(xml: string): UblInvoice {
   const doc = parser.parse(xml) as Node;
   const inv = obj(doc.Invoice);
   if (!inv) throw new Error("UBL belgesinde fatura yok");
   const supplier = obj(path(inv, "AccountingSupplierParty", "Party"));
-  const due =
-    list(inv.PaymentMeans)
-      .map((m) => text(m.PaymentDueDate))
-      .find(Boolean) ??
-    text(path(inv, "PaymentTerms", "PaymentDueDate")) ??
-    null;
+  const issueDate = text(inv.IssueDate)?.slice(0, 10) ?? null;
+  const payment = readPayment(inv, issueDate);
 
   type RawLine = Omit<UblLine, "discount" | "lineTotal"> & { gross: number; ext: number; allowance: number; taxable: number | null };
   const raw: RawLine[] = list(inv.InvoiceLine).map((l, i) => {
@@ -270,13 +351,13 @@ export function parseUbl(xml: string): UblInvoice {
   return {
     invoiceNo: text(inv.ID),
     uuid: text(inv.UUID),
-    issueDate: text(inv.IssueDate)?.slice(0, 10) ?? null,
+    issueDate,
     typeCode: text(inv.InvoiceTypeCode)?.toUpperCase() ?? null,
     profileId: text(inv.ProfileID),
     currency: text(inv.DocumentCurrencyCode)?.toUpperCase() ?? null,
     supplierName: partyName(supplier),
     supplierTaxId: partyTaxId(supplier),
-    dueDate: due?.slice(0, 10) ?? null,
+    ...payment,
     invoiceDiscount,
     taxExclusive,
     // Tevkifatlı faturada TaxTotal/TaxAmount bazen tevkifat düşülmüş yazılır; KDV alt toplamı esas alınır

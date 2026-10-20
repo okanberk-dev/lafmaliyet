@@ -2,10 +2,12 @@ import "server-only";
 
 import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
+import { dateTR } from "@/lib/format";
+import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
 import { ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
-import { extractUblXml, parseUbl, ublLinesToDrafts, type UblInvoice } from "./ubl";
+import { extractUblXml, parseUbl, paymentPlan, ublLinesToDrafts, type UblInvoice } from "./ubl";
 
 /**
  * E-fatura kalemleri. İçeri alınmamış (Paraşüt'te gider faturası olmayan) e-faturalardan açılan kayıtların ve
@@ -25,6 +27,8 @@ export interface LineReadStats {
   failed: number;
   /** KDV hariç tutarı belgeden düzeltilen fatura (tevkifatlı) */
   corrected: number;
+  /** Vadesi gelmediği için "ödenmedi" yapılan fatura */
+  unpaid: number;
   /** Sırada kalan */
   remaining: number;
   /** Kalemi değişen aylar (alınan miktarlar yeniden hesaplanır) */
@@ -54,11 +58,13 @@ function appendNote(note: string | null, add: string): string {
 
 /**
  * Sıradaki faturaların (en yeni önce) UBL kalemlerini okur ve yazar. `until` (epoch ms) geçilince bırakır; kalanı
- * sonraki eşitleme sürdürür. Belgedeki vade boş vadeye yazılır.
+ * sonraki eşitleme sürdürür. Belgedeki ödeme tarihi boş vadeye yazılır; e-faturadan açılan kayıt vadesi gelmemişse
+ * "ödenmedi" olur (paymentPlan).
  */
 export async function readEInvoiceLines(client: ParasutClient, opts: { until: number; limit?: number }): Promise<LineReadStats> {
   const db = getDb();
-  const stats: LineReadStats = { read: 0, lines: 0, failed: 0, corrected: 0, remaining: 0, months: [], stoppedBy: null };
+  const stats: LineReadStats = { read: 0, lines: 0, failed: 0, corrected: 0, unpaid: 0, remaining: 0, months: [], stoppedBy: null };
+  const today = todayTR();
   const months = new Set<string>();
   const rows = await db
     .select({
@@ -67,6 +73,8 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       supplier: s.invoices.supplier,
       date: s.invoices.date,
       dueDate: s.invoices.dueDate,
+      unpaid: s.invoices.unpaid,
+      origin: s.invoices.origin,
       amount: s.invoices.amount,
       discount: s.invoices.discount,
       vat: s.invoices.vat,
@@ -101,7 +109,17 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
 
     const drafts = ublLinesToDrafts(inv, row.eInvoiceId!, row.supplier);
     const patch: Partial<typeof s.invoices.$inferInsert> = { ublReadAt: new Date() };
-    if (!row.dueDate && inv.dueDate && inv.dueDate >= row.date) patch.dueDate = inv.dueDate;
+    let note = row.note;
+    // Ödeme (vade, valör) tarihi: boş vadeye yazılır. E-faturadan açılan kayıt (Excel/elle değil, vadesine henüz
+    // dokunulmamış) vadesi gelmemişse "ödenmedi" olur ve Ödemeler & hatırlatıcılar'a düşer; peşin ve vadesi geçmiş
+    // faturalar ödendi sayılır.
+    const plan = paymentPlan(inv, row.date, today);
+    if (!row.dueDate && plan.dueDate) patch.dueDate = plan.dueDate;
+    if (row.origin === "parasut" && !row.dueDate && !row.unpaid && plan.unpaid && plan.dueDate) {
+      patch.unpaid = true;
+      note = appendNote(note, `vade e-faturadan: ${dateTR(plan.dueDate)}`);
+      stats.unpaid++;
+    }
     // Tutar e-fatura listesinden geldiyse ("ödenecek − KDV") belgedeki KDV hariç toplamla düzeltilir: tevkifatlı
     // faturada liste tedarikçiye ödenecek tutarı verir, maliyet eksik kalır. Elle değiştirilmiş tutara dokunulmaz.
     const sign = inv.typeCode === "IADE" ? -1 : 1;
@@ -112,14 +130,15 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
         patch.amount = Math.round((cost + row.discount) * 100) / 100;
         if (inv.vat > 0 && Math.abs(row.vat - sign * inv.vat) > 1) patch.vat = sign * inv.vat;
         const was = (row.amount - row.discount).toLocaleString("tr-TR", { maximumFractionDigits: 2 });
-        patch.note = appendNote(
-          (row.note ?? "").replace(" · tevkifatlı: tutarı kontrol edin", "").replace("tevkifatlı: tutarı kontrol edin", "") || null,
+        note = appendNote(
+          (note ?? "").replace(" · tevkifatlı: tutarı kontrol edin", "").replace("tevkifatlı: tutarı kontrol edin", "") || null,
           inv.withholding ? `tevkifatlı: KDV hariç tutar e-fatura belgesinden (önce ${was} ₺)` : `KDV hariç tutar e-fatura belgesinden düzeltildi (önce ${was} ₺)`,
         );
         stats.corrected++;
       }
     }
-    if (!inv.linesMatch) patch.note = appendNote((patch.note as string | undefined) ?? row.note, "kalemlerin toplamı faturayı tutmuyor; kalem fiyatlarını kontrol edin");
+    if (!inv.linesMatch) note = appendNote(note, "kalemlerin toplamı faturayı tutmuyor; kalem fiyatlarını kontrol edin");
+    if (note !== row.note) patch.note = note;
 
     await db.transaction(async (tx) => {
       await tx.delete(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, row.id));

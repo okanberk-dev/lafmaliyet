@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deflateRawSync } from "node:zlib";
 
-import { extractUblXml, parseUbl, ublLinesMatchTotal, ublLinesToDrafts } from "../src/server/parasut/ubl";
+import { extractUblXml, parseUbl, paymentPlan, ublLinesMatchTotal, ublLinesToDrafts } from "../src/server/parasut/ubl";
 
 /** Paraşüt'ün signed_ubl yanıtı gibi tek dosyalı ZIP */
 function zip(name: string, content: string, method: 0 | 8 = 8): Buffer {
@@ -245,4 +245,47 @@ test("UBL: tevkifatlı faturada KDV hariç tutar, KDV ve tevkifat ayrı okunur",
   assert.equal(inv.withholding, 1800);
   assert.equal(inv.payable, 34200);
   assert.equal(inv.linesMatch, true);
+});
+
+/** Ödeme bilgisi denemeleri için en küçük fatura: yalnız tarih, notlar ve verilen ödeme blokları */
+const payDoc = (opts: { issue?: string; notes?: string[]; means?: string; terms?: string }) => `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>X1</cbc:ID><cbc:IssueDate>${opts.issue ?? "2026-10-14"}</cbc:IssueDate><cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
+  ${(opts.notes ?? []).map((n) => `<cbc:Note>${n}</cbc:Note>`).join("")}
+  ${opts.means ?? ""}${opts.terms ?? ""}
+  <cac:LegalMonetaryTotal><cbc:TaxExclusiveAmount currencyID="TRY">0</cbc:TaxExclusiveAmount></cac:LegalMonetaryTotal>
+</Invoice>`;
+
+test("UBL ödeme: vade ödeme alanından, koşullardan ya da nottan; ödeme şekli ve peşin", () => {
+  // Ödeme alanı (Sütaş gibi): havale, 15 gün vade
+  const sutas = parseUbl(payDoc({ means: "<cac:PaymentMeans><cbc:PaymentMeansCode>42</cbc:PaymentMeansCode><cbc:PaymentDueDate>2026-10-29</cbc:PaymentDueDate></cac:PaymentMeans>" }));
+  assert.deepEqual([sutas.dueDate, sutas.dueSource, sutas.paymentMeans, sutas.cashOnDelivery], ["2026-10-29", "payment-means", "havale", false]);
+  // Ödeme koşulları + "Ödeme Tipi: Peşin" (Erbak): vade fatura günü, peşin
+  const erbak = parseUbl(payDoc({ issue: "2026-09-26", notes: ["Vade Günü: 0", "Ödeme Tipi: Peşin"], terms: "<cac:PaymentTerms><cbc:Note /><cbc:PaymentDueDate>2026-09-26</cbc:PaymentDueDate></cac:PaymentTerms>" }));
+  assert.deepEqual([erbak.dueDate, erbak.dueSource, erbak.cashOnDelivery], ["2026-09-26", "payment-terms", true]);
+  // Not: tarihli ("Son Ödeme Tarihi: 05.11.2026") ve gün sayılı ("30 gün vade", "VADE: 45")
+  assert.deepEqual([parseUbl(payDoc({ notes: ["Sevk Tarihi: 14-10-2026", "SON ÖDEME TARİHİ: 05.11.2026"] })).dueDate], ["2026-11-05"]);
+  assert.equal(parseUbl(payDoc({ notes: ["Ödeme: 30 gün vade"] })).dueDate, "2026-11-13");
+  assert.equal(parseUbl(payDoc({ notes: ["VADE: 45"] })).dueDate, "2026-11-28");
+  assert.equal(parseUbl(payDoc({ notes: ["Valör Tarihi: 2026-10-24"] })).dueSource, "note");
+  // Fatura gününden önceki ya da yıldan uzun "vade" yazım hatası sayılır; sonraki geçerli kaynağa bakılır
+  const bad = parseUbl(
+    payDoc({
+      means: "<cac:PaymentMeans><cbc:PaymentMeansCode>10</cbc:PaymentMeansCode><cbc:PaymentDueDate>2026-01-01</cbc:PaymentDueDate></cac:PaymentMeans>",
+      terms: "<cac:PaymentTerms><cbc:PaymentDueDate>2031-01-01</cbc:PaymentDueDate></cac:PaymentTerms>",
+      notes: ["Vade Tarihi: 21.10.2026"],
+    }),
+  );
+  assert.deepEqual([bad.dueDate, bad.dueSource, bad.paymentMeans], ["2026-10-21", "note", "nakit"]);
+  // Hiç vade yok
+  assert.deepEqual([parseUbl(payDoc({})).dueDate, parseUbl(payDoc({})).cashOnDelivery], [null, false]);
+});
+
+test("UBL ödeme planı: vadesi gelmemiş ödenmedi, peşin ve vadesi geçmiş ödendi", () => {
+  const today = "2026-10-20";
+  assert.deepEqual(paymentPlan({ dueDate: "2026-10-29", cashOnDelivery: false }, "2026-10-14", today), { dueDate: "2026-10-29", unpaid: true });
+  assert.deepEqual(paymentPlan({ dueDate: "2026-10-20", cashOnDelivery: false }, "2026-10-05", today), { dueDate: "2026-10-20", unpaid: true });
+  assert.deepEqual(paymentPlan({ dueDate: "2026-10-04", cashOnDelivery: false }, "2026-09-19", today), { dueDate: "2026-10-04", unpaid: false });
+  assert.deepEqual(paymentPlan({ dueDate: "2026-10-14", cashOnDelivery: true }, "2026-10-14", today), { dueDate: "2026-10-14", unpaid: false });
+  assert.deepEqual(paymentPlan({ dueDate: "2026-10-30", cashOnDelivery: true }, "2026-10-14", today), { dueDate: "2026-10-30", unpaid: false });
+  assert.deepEqual(paymentPlan({ dueDate: null, cashOnDelivery: false }, "2026-10-14", today), { dueDate: null, unpaid: false });
 });

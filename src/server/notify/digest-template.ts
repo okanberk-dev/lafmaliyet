@@ -20,7 +20,8 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica
 
 /** Sabah e-postasının Paraşüt bölümü: son e-postadan bu yana gelen faturalar, kontrol bekleyenler, eşitleme hatası */
 export interface DigestInvoices {
-  items: { supplier: string; date: string; payable: number; category: string; needsReview: boolean }[];
+  /** unpaid + dueDate: e-faturadaki vadesi gelmemiş (Ödemeler'e düşen) fatura */
+  items: { supplier: string; date: string; payable: number; category: string; needsReview: boolean; unpaid?: boolean; dueDate?: string | null }[];
   /** Kontrol bekleyen (kategorisi tahminle yazılmış) bütün faturalar */
   reviewCount: number;
   /** Son eşitleme başarısızsa mesajı */
@@ -135,7 +136,7 @@ export function renderDigest(rows: { item: UpcomingItem; stage: NotifyStage }[],
   const invoiceRow = (i: DigestInvoices["items"][number]) => `<tr>
   <td style="padding:10px 0;vertical-align:top;font-family:${FONT}">
     <div style="font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(i.supplier)}</div>
-    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(dateTR(i.date))} · ${esc(i.category)}${i.needsReview ? ' · <span style="color:#c2410c;font-weight:600">kontrol edin</span>' : ""}</div>
+    <div style="font-size:13px;line-height:18px;color:#71717a;margin-top:2px">${esc(dateTR(i.date))} · ${esc(i.category)}${i.unpaid && i.dueDate ? ` · <span style="color:#c2410c;font-weight:600">vade ${esc(dateTR(i.dueDate))}</span>` : ""}${i.needsReview ? ' · <span style="color:#c2410c;font-weight:600">kontrol edin</span>' : ""}</div>
   </td>
   <td align="right" style="padding:10px 0 10px 12px;vertical-align:top;white-space:nowrap;font-family:${FONT};font-size:15px;line-height:20px;font-weight:600;color:#171717">${esc(money(i.payable))}</td>
 </tr>`;
@@ -256,7 +257,7 @@ export function renderDigest(rows: { item: UpcomingItem; stage: NotifyStage }[],
     ]),
     ...(inv?.syncError ? ["", `Paraşüt eşitlemesi başarısız: ${inv.syncError}`] : []),
     ...(inv?.items.length
-      ? ["", `Paraşüt'ten gelen yeni faturalar (${inv.items.length}) · ${money(invoiceTotal)}`, ...inv.items.slice(0, MAX_INVOICE_ROWS).map((i) => `- ${i.supplier} · ${dateTR(i.date)} · ${i.category} · ${money(i.payable)}${i.needsReview ? " · kontrol edin" : ""}`), ...(inv.items.length > MAX_INVOICE_ROWS ? [`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`] : [])]
+      ? ["", `Paraşüt'ten gelen yeni faturalar (${inv.items.length}) · ${money(invoiceTotal)}`, ...inv.items.slice(0, MAX_INVOICE_ROWS).map((i) => `- ${i.supplier} · ${dateTR(i.date)} · ${i.category} · ${money(i.payable)}${i.unpaid && i.dueDate ? ` · vade ${dateTR(i.dueDate)}` : ""}${i.needsReview ? " · kontrol edin" : ""}`), ...(inv.items.length > MAX_INVOICE_ROWS ? [`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`] : [])]
       : []),
     ...(inv?.reviewCount ? ["", `${inv.reviewCount} fatura kontrol bekliyor: ${APP_URL}/panel/faturalar?durum=kontrol`] : []),
     ...(zam

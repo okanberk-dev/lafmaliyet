@@ -528,6 +528,7 @@ export async function syncParasut(
       rechecked ? `${rechecked} yeniden denetlendi` : "",
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
+      lineStats?.unpaid ? `${lineStats.unpaid} vadesi gelmemiş fatura "ödenmedi" yazıldı` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
