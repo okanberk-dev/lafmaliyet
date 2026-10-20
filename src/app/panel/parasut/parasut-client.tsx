@@ -75,6 +75,17 @@ interface Ingredient {
   name: string;
   unit: string;
   category: string;
+  /** Paket açıklaması ("Ballı cevizli Marlenka, 8 dilim"): benzer adlı ürünleri ayırt etmek için */
+  packageDesc?: string | null;
+  /** Bugünkü birim maliyet (₺/gr, ₺/ml, ₺/adet) */
+  unitCost?: number;
+}
+
+/** Birim maliyet okunur birimle: ₺/gr → ₺/kg, ₺/ml → ₺/L */
+function unitPriceText(v: number, unit: string): string {
+  if (unit === "gr") return `${tl2(v * 1000)}/kg`;
+  if (unit === "ml") return `${tl2(v * 1000)}/L`;
+  return `${tl2(v)}/${UNIT_LABEL[unit] ?? unit}`;
 }
 interface Unlinked {
   productKey: string;
@@ -540,6 +551,8 @@ function ProductLinks({
 
   // Hazır olanlar: hammaddesi seçilmiş (elle ya da öneriyle) ve çarpanı belli bekleyenler; tek seferde bağlanır
   const [bulkOpen, setBulkOpen] = useState(false);
+  /** Toplu bağlamada çıkarılan ürünler (pencere her açılışta hepsi seçili başlar) */
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
   // En çok 40 ürün × hammadde listesi: her çizimde hesaplanabilir
   const proposals = waitingShown.flatMap((u) => {
         const d = draft[u.productKey];
@@ -554,11 +567,13 @@ function ProductLinks({
         const f = sug.factor ?? parseNumberTR(guessLinkFactor({ name: u.productName, unit: u.unit }, ing.unit) ?? "");
         return f && f > 0 ? [{ u, ing, factor: f, updatePrice: true }] : [];
   });
+  const chosen = proposals.filter((p) => !skipped.has(p.u.productKey));
   const linkAll = () =>
     start(async () => {
-      for (const p of proposals) hideUnlinked(p.u.productKey);
+      if (!chosen.length) return;
+      for (const p of chosen) hideUnlinked(p.u.productKey);
       const r = await saveProductLinks(
-        proposals.map((p) => ({ productKey: p.u.productKey, productName: p.u.productName, ingredientId: p.ing.id, factor: p.factor, updatePrice: p.updatePrice })),
+        chosen.map((p) => ({ productKey: p.u.productKey, productName: p.u.productName, ingredientId: p.ing.id, factor: p.factor, updatePrice: p.updatePrice })),
       );
       if (!r.ok) return void toast.error(r.error);
       setBulkOpen(false);
@@ -664,7 +679,16 @@ function ProductLinks({
                 {unlinkedTotal > waiting.length ? ` / ${num(unlinkedTotal)}` : ""}
                 <InfoTip text="En sık geçen 40 ürün gösterilir; bağladıkça sıradakiler gelir. Yalnız mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) ve Diğer kategorisindeki faturaların kalemleri listelenir; komisyon, kira, demirbaş ve hizmet faturaları gelmez. Hammadde olmayan kalemleri (kargo, hizmet) bağlamanız gerekmez." />
                 {proposals.length ? (
-                  <Button size="sm" variant="secondary" className="ml-auto normal-case tracking-normal" disabled={pending} onClick={() => setBulkOpen(true)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="ml-auto normal-case tracking-normal"
+                    disabled={pending}
+                    onClick={() => {
+                      setSkipped(new Set());
+                      setBulkOpen(true);
+                    }}
+                  >
                     <Sparkles size={14} /> Hazır olanları bağla ({num(proposals.length)})
                   </Button>
                 ) : null}
@@ -917,36 +941,68 @@ function ProductLinks({
       <Dialog
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
-        title={`${num(proposals.length)} ürün bağlansın mı?`}
+        title={`${num(proposals.length)} ürün için bağlantı önerisi`}
         size="md"
         footer={
           <>
             <Button variant="ghost" onClick={() => setBulkOpen(false)} disabled={pending} data-autofocus className="max-sm:bg-panel">
               Vazgeç
             </Button>
-            <Button onClick={linkAll} disabled={pending || !proposals.length}>
-              {pending ? "Bekleyin…" : `${num(proposals.length)} ürünü bağla`}
+            <Button onClick={linkAll} disabled={pending || !chosen.length}>
+              {pending ? "Bekleyin…" : `${num(chosen.length)} ürünü bağla`}
             </Button>
           </>
         }
       >
         <p className="text-sm text-pretty text-ink-mute">
-          Önerilen ya da sizin seçtiğiniz hammadde ve çarpanla bağlanır; alınan miktarlar ve fiyatlar faturalardan hesaplanır. Yanlış olanı sonradan düzenleyebilir ya da
-          silebilirsiniz.
+          Önerilen ya da sizin seçtiğiniz hammadde ve çarpanla bağlanır; alınan miktarlar ve fiyatlar faturalardan hesaplanır. Emin olmadığınızın işaretini kaldırın;
+          fiyatı bugünkünden çok farklı çıkan (turuncu) öneride çarpanı ya da hammaddeyi kontrol edin. Bağlantıyı sonradan düzenleyebilir ya da silebilirsiniz.
         </p>
         <ul className="mt-3 max-h-[50dvh] divide-y divide-ink/[0.06] overflow-y-auto rounded-2xl bg-surface px-3">
-          {proposals.map((p) => (
-            <li key={p.u.productKey} className="py-2.5 text-sm">
-              <p className="font-medium break-words text-ink">{p.u.productName}</p>
-              <p className="mt-0.5 text-xs text-ink-mute">
-                → <span className="font-medium text-ink-soft">{p.ing.name}</span> · 1 {p.u.unit ?? "birim"} ={" "}
-                <span className="tabular">
-                  {num(p.factor, 3)} {UNIT_LABEL[p.ing.unit] ?? p.ing.unit}
-                </span>
-                {p.updatePrice ? " · fiyat güncellenir" : " · fiyat elle"}
-              </p>
-            </li>
-          ))}
+          {proposals.map((p) => {
+            const checked = !skipped.has(p.u.productKey);
+            const newUnit = p.u.lastUnitPrice > 0 ? p.u.lastUnitPrice / p.factor : 0;
+            const nowUnit = p.ing.unitCost ?? 0;
+            const ratio = newUnit && nowUnit ? newUnit / nowUnit : null;
+            const odd = ratio !== null && (ratio > 1.5 || ratio < 0.67);
+            return (
+              <li key={p.u.productKey} className="py-2.5 text-sm">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-4 shrink-0 accent-ink pointer-coarse:size-5"
+                    checked={checked}
+                    onChange={() =>
+                      setSkipped((cur) => {
+                        const next = new Set(cur);
+                        if (next.has(p.u.productKey)) next.delete(p.u.productKey);
+                        else next.add(p.u.productKey);
+                        return next;
+                      })
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className={cn("block font-medium break-words", checked ? "text-ink" : "text-ink-mute line-through")}>{p.u.productName}</span>
+                    <span className="mt-0.5 block text-xs text-ink-mute">
+                      → <span className="font-medium text-ink-soft">{p.ing.name}</span>
+                      {p.ing.packageDesc ? ` (${p.ing.packageDesc})` : ""} · 1 {p.u.unit ?? "birim"} ={" "}
+                      <span className="tabular">
+                        {num(p.factor, 3)} {UNIT_LABEL[p.ing.unit] ?? p.ing.unit}
+                      </span>
+                      {p.updatePrice ? " · fiyat güncellenir" : " · fiyat elle"}
+                    </span>
+                    {newUnit ? (
+                      <span className={cn("mt-0.5 block text-xs tabular", odd ? "font-medium text-warn" : "text-ink-mute")}>
+                        Son fatura {unitPriceText(newUnit, p.ing.unit)}
+                        {nowUnit ? ` · şimdi ${unitPriceText(nowUnit, p.ing.unit)}` : ""}
+                        {odd ? " · çok farklı, kontrol edin" : ""}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
         </ul>
       </Dialog>
     </Card>

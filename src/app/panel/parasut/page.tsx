@@ -51,7 +51,18 @@ async function ParasutContent() {
       .from(s.parasutProductLinks)
       .innerJoin(s.ingredients, eq(s.ingredients.id, s.parasutProductLinks.ingredientId))
       .orderBy(asc(s.parasutProductLinks.productName)),
-    db.select({ id: s.ingredients.id, name: s.ingredients.name, unit: s.ingredients.unit, category: s.ingredients.category }).from(s.ingredients).orderBy(asc(s.ingredients.name)),
+    db
+      .select({
+        id: s.ingredients.id,
+        name: s.ingredients.name,
+        unit: s.ingredients.unit,
+        category: s.ingredients.category,
+        packageDesc: s.ingredients.packageDesc,
+        packagePrice: s.ingredients.packagePrice,
+        packageSize: s.ingredients.packageSize,
+      })
+      .from(s.ingredients)
+      .orderBy(asc(s.ingredients.name)),
     unlinkedProducts(40),
     db
       .select({ n: count(), last: max(s.invoices.syncedAt), review: sql<number>`count(*) filter (where ${s.invoices.needsReview})`.mapWith(Number) })
@@ -82,7 +93,7 @@ async function ParasutContent() {
       runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
       rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
       links={links}
-      ingredients={ingredients}
+      ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
       unlinked={unlinked.items}
       unlinkedTotal={unlinked.total}
       lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
