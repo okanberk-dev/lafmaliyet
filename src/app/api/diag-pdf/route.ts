@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/server/auth/dal";
 import { ParasutClient } from "@/server/parasut/client";
 import { readParasutConfig } from "@/server/parasut/config";
 
-import { extractUblXml, parseUbl, ublLineScale, ublLinesMatchTotal, ublLinesToDrafts } from "./ubl";
+import { extractUblXml, parseUbl, ublLinesMatchTotal, ublLinesToDrafts } from "./ubl";
 
 // GEÇİCİ teşhis: gelen e-faturaların UBL kalemleri doğru okunuyor mu (yalnız okur, hiçbir şey yazmaz). Yalnız yönetici.
 type Res = { id: string; attributes?: Record<string, unknown> };
@@ -71,9 +71,10 @@ export async function GET(request: Request) {
         .map((m) => m[1])
         .filter((b) => !/\p{L}{2,}/u.test(/<cbc:Name>([\s\S]*?)<\/cbc:Name>/.exec(b)?.[1] ?? "x"))
         .map((b) => b.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160));
-      const k = Math.round(ublLineScale(inv) * 10000) / 10000;
+      const k = `${Math.round(inv.lineScale * 10000) / 10000} ${inv.lineMode}${inv.withholding ? ` · tevkifat ${inv.withholding} · KDV ${inv.vat}` : ""}`;
       const match = ublLinesMatchTotal(inv);
-      if (match && Math.abs(Math.abs(sum) - Math.abs(expected)) <= 1) ok++;
+      // Maliyet = belgedeki KDV hariç toplam (tevkifatlıda e-fatura listesindeki "ödenecek − KDV" değil)
+      if (match && Math.abs(Math.abs(sum) - inv.taxExclusive) <= 1) ok++;
       else bad++;
       out.push(
         `<tr><td>${esc(a.issue_date)}</td><td>${esc(String(a.contact_name ?? "").slice(0, 28))}</td><td>${esc(inv.typeCode)} ${esc(inv.profileId)}</td><td>${bytes.length} B ${esc(ct.split(";")[0])}</td>` +

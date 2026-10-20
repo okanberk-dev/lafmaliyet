@@ -4,8 +4,9 @@
  * (`application/zip`, tek .xml) verir; /ubl, /xml, /html uçları yok (404).
  *
  * Tutarlar (UBL-TR 1.2): kalemde LineExtensionAmount = miktar × birim fiyat − kalem iskontoları + kalem artırımları,
- * KDV hariç. Fatura altı iskonto (belge düzeyi AllowanceCharge) kalemlere net tutarlarına oranla dağıtılır (bkz.
- * ublLineScale); iade faturasında miktar ve tutar eksi yazılır (alınan miktardan düşsün). Saf modül; tests/ubl.test.ts.
+ * KDV hariç; bazı sağlayıcılar brüt yazar, hangi alanın net olduğu faturanın toplamından anlaşılır (chooseLineMode).
+ * Fatura altı iskonto (belge düzeyi AllowanceCharge) kalemlere net tutarlarına oranla dağıtılır; iade faturasında
+ * miktar ve tutar eksi yazılır (alınan miktardan düşsün). Saf modül; tests/ubl.test.ts.
  */
 import { inflateRawSync } from "node:zlib";
 
@@ -30,13 +31,20 @@ export interface UblLine {
   /** UN/ECE birim kodu (C62, KGM, LTR…) */
   unitCode: string | null;
   unitPrice: number;
-  /** Kalem iskontoları (artırımlar düşülmüş) */
+  /** Brüt (miktar × birim fiyat) − net: kalem iskontoları, artırımlar düşülmüş (fatura altı pay hariç) */
   discount: number;
-  /** KDV hariç, kalem iskontosu sonrası */
+  /** KDV hariç, kalem iskontosu sonrası (fatura altı iskonto dağıtılmadan); bkz. lineMode */
   lineTotal: number;
   /** Yüzde (ör. 10) */
   vatRate: number;
 }
+
+/**
+ * Kalemin net tutarı belgede nereden okundu. UBL-TR'de LineExtensionAmount iskonto sonrası nettir ("ext"); bazı
+ * sağlayıcılar brüt yazıp kalem iskontosunu yalnız AllowanceCharge'da verir ("ext-allowance": Erbak, Sütaş); kimi
+ * sağlayıcıda yalnız KDV matrahı tutar ("taxable"). Faturanın KDV hariç toplamını hangisi tutturuyorsa o seçilir.
+ */
+export type UblLineMode = "ext" | "ext-allowance" | "taxable";
 
 export interface UblInvoice {
   invoiceNo: string | null;
@@ -51,9 +59,19 @@ export interface UblInvoice {
   dueDate: string | null;
   /** Fatura altı iskonto (artırımlar düşülmüş) */
   invoiceDiscount: number;
+  /** KDV hariç toplam (maliyet) */
   taxExclusive: number;
+  /** KDV (tevkifat düşülmeden) */
+  vat: number;
+  /** KDV tevkifatı (alıcının ödediği kısım) */
+  withholding: number;
   payable: number;
   lines: UblLine[];
+  lineMode: UblLineMode;
+  /** Fatura altı iskontonun kalemlere dağıtım oranı (1 = dağıtılacak bir şey yok) */
+  lineScale: number;
+  /** Kalemler (dağıtımdan sonra) faturanın KDV hariç toplamını tutuyor mu */
+  linesMatch: boolean;
 }
 
 // ------------------------------------------------------------------ ZIP
@@ -167,16 +185,24 @@ function discountOf(charges: unknown): number {
   return total;
 }
 
-/** KDV oranı: KDV (0015) alt toplamı, yoksa ilk alt toplam */
-function vatRateOf(taxTotal: unknown): number {
+/** KDV (0015) alt toplamı, yoksa ilk alt toplam */
+function vatSubtotal(taxTotal: unknown): Node | undefined {
   const subs = list(path(obj(taxTotal), "TaxSubtotal"));
-  const vat = subs.find((t) => text(path(t, "TaxCategory", "TaxScheme", "TaxTypeCode")) === "0015") ?? subs[0];
+  return subs.find((t) => text(path(t, "TaxCategory", "TaxScheme", "TaxTypeCode")) === "0015") ?? subs[0];
+}
+
+/** KDV oranı (yüzde) */
+function vatRateOf(taxTotal: unknown): number {
+  const vat = vatSubtotal(taxTotal);
   if (!vat) return 0;
   const pct = text(vat.Percent);
   if (pct !== null) return amount(vat.Percent);
   const base = amount(vat.TaxableAmount);
   return base ? round2((amount(vat.TaxAmount) / base) * 100) : 0;
 }
+
+/** Boş etiket notları ("Aciklama: ", "Ozelkod: 0") kalem açıklamasına yazılmaz */
+const meaningful = (n: string) => !/^[^:]{1,40}:\s*[0-]?$/.test(n.trim());
 
 function partyName(party: Node | undefined): string | null {
   const name = text(path(party, "PartyName", "Name"));
@@ -204,14 +230,16 @@ export function parseUbl(xml: string): UblInvoice {
     text(path(inv, "PaymentTerms", "PaymentDueDate")) ??
     null;
 
-  const lines: UblLine[] = list(inv.InvoiceLine).map((l, i) => {
+  type RawLine = Omit<UblLine, "discount" | "lineTotal"> & { gross: number; ext: number; allowance: number; taxable: number | null };
+  const raw: RawLine[] = list(inv.InvoiceLine).map((l, i) => {
     const item = obj(l.Item);
     const quantity = amount(l.InvoicedQuantity);
     const unitPrice = amount(path(l, "Price", "PriceAmount"));
-    const discount = discountOf(l.AllowanceCharge);
-    const lineExt = text(l.LineExtensionAmount) !== null ? amount(l.LineExtensionAmount) : quantity * unitPrice - discount;
+    const allowance = discountOf(l.AllowanceCharge);
+    const ext = text(l.LineExtensionAmount) !== null ? amount(l.LineExtensionAmount) : quantity * unitPrice - allowance;
+    const vatSub = vatSubtotal(l.TaxTotal);
     const descriptions = texts(item?.Description);
-    const notes = texts(l.Note);
+    const notes = texts(l.Note).filter(meaningful);
     // Bazı sağlayıcılar ada ürün kodunu yazar ("21012940"); okunur bir açıklama varsa ad odur, kod anahtarda kalır
     const rawName = text(item?.Name);
     const name =
@@ -229,13 +257,24 @@ export function parseUbl(xml: string): UblInvoice {
       quantity,
       unitCode: attr(l.InvoicedQuantity, "unitCode"),
       unitPrice,
-      discount: round2(discount),
-      lineTotal: round2(lineExt),
       vatRate: vatRateOf(l.TaxTotal),
+      gross: quantity * unitPrice,
+      ext,
+      allowance,
+      taxable: vatSub && text(vatSub.TaxableAmount) !== null ? amount(vatSub.TaxableAmount) : null,
     };
   });
 
   const totals = obj(inv.LegalMonetaryTotal);
+  const taxExclusive = amount(totals?.TaxExclusiveAmount);
+  const invoiceDiscount = round2(discountOf(inv.AllowanceCharge));
+  const { mode, scale, match } = chooseLineMode(raw, taxExclusive, invoiceDiscount);
+  const lines: UblLine[] = raw.map(({ gross, ext, allowance, taxable, ...l }) => {
+    const net = mode === "ext" ? ext : mode === "ext-allowance" ? ext - allowance : (taxable ?? ext);
+    return { ...l, discount: round2(Math.max(0, Math.abs(gross) - Math.abs(net))), lineTotal: round2(net) };
+  });
+
+  const vatSub = vatSubtotal(inv.TaxTotal);
   return {
     invoiceNo: text(inv.ID),
     uuid: text(inv.UUID),
@@ -246,12 +285,47 @@ export function parseUbl(xml: string): UblInvoice {
     supplierName: partyName(supplier),
     supplierTaxId: partyTaxId(supplier),
     dueDate: due?.slice(0, 10) ?? null,
-    invoiceDiscount: round2(discountOf(inv.AllowanceCharge)),
-    taxExclusive: amount(totals?.TaxExclusiveAmount),
+    invoiceDiscount,
+    taxExclusive,
+    // Tevkifatlı faturada TaxTotal/TaxAmount bazen tevkifat düşülmüş yazılır; KDV alt toplamı esas alınır
+    vat: vatSub ? amount(vatSub.TaxAmount) : amount(path(inv, "TaxTotal", "TaxAmount")),
+    withholding: list(inv.WithholdingTaxTotal).reduce((t, w) => t + amount(w.TaxAmount), 0),
     payable: amount(totals?.PayableAmount),
     lines,
+    lineMode: mode,
+    lineScale: scale,
+    linesMatch: match,
   };
 }
+
+/**
+ * Kalem netinin hangi alandan okunacağını ve fatura altı iskontonun dağıtım oranını seçer: önce doğrudan (iskonto
+ * dağıtmadan) toplamı tutan yorum, sonra fatura altı iskonto düşülünce tutan; hiçbiri tutmazsa LineExtensionAmount.
+ * Sıra önemli: ISPAŞ gibi net yazan sağlayıcıda kalem iskontosunu bir daha düşmek yanlış olur.
+ */
+function chooseLineMode(
+  lines: { ext: number; allowance: number; taxable: number | null }[],
+  taxExclusive: number,
+  invoiceDiscount: number,
+): { mode: UblLineMode; scale: number; match: boolean } {
+  const modes: UblLineMode[] = ["ext", "ext-allowance", "taxable"];
+  const sumOf = (m: UblLineMode) =>
+    lines.reduce((t, l) => t + (m === "ext" ? l.ext : m === "ext-allowance" ? l.ext - l.allowance : (l.taxable ?? Number.NaN)), 0);
+  if (!lines.length) return { mode: "ext", scale: 1, match: true };
+  if (!(taxExclusive > 0)) return { mode: "ext", scale: invoiceDiscount > 0 ? ublScale(sumOf("ext"), invoiceDiscount) : 1, match: true };
+  const tol = Math.max(1, Math.abs(taxExclusive) * 0.002);
+  const close = (x: number) => Number.isFinite(x) && Math.abs(x - taxExclusive) <= tol;
+  for (const m of modes) if (close(sumOf(m))) return { mode: m, scale: 1, match: true };
+  if (invoiceDiscount) {
+    for (const m of modes) {
+      const sum = sumOf(m);
+      if (close(sum - invoiceDiscount)) return { mode: m, scale: ublScale(sum, invoiceDiscount), match: true };
+    }
+  }
+  return { mode: "ext", scale: 1, match: false };
+}
+
+const ublScale = (sum: number, invoiceDiscount: number) => (sum > 0 && sum > invoiceDiscount ? (sum - invoiceDiscount) / sum : 1);
 
 /** UN/ECE birim kodları → panelde okunan birim (bilinmeyen kod olduğu gibi kalır) */
 const UNIT_NAMES: Record<string, string> = {
@@ -286,11 +360,15 @@ const UNIT_NAMES: Record<string, string> = {
   MON: "Ay",
   KWH: "kWh",
   MTQ: "m³",
+  NPL: "Koli",
+  PCE: "Adet",
 };
 
 export function unitName(code: string | null): string | null {
   if (!code) return null;
-  return UNIT_NAMES[code.toUpperCase()] ?? code;
+  const c = code.toUpperCase();
+  // Ambalaj kodları (UN/ECE Rec. 21) "X" önekiyle de gelir: XBX = kutu
+  return UNIT_NAMES[c] ?? (c.length === 3 && c.startsWith("X") ? UNIT_NAMES[c.slice(1)] : undefined) ?? code;
 }
 
 /** İade faturası mı (kalemler alınan miktardan düşer) */
@@ -300,27 +378,11 @@ const isRefund = (typeCode: string | null) => typeCode === "IADE";
  * UBL kalemlerini panel kalemlerine çevirir. Ürün anahtarı tedarikçinin vergi numarası + satıcı ürün kodu (yoksa ad):
  * aynı tedarikçinin aynı ürünü her faturada aynı anahtarla gelir, hammaddeye bir kez bağlamak yeter.
  */
-/**
- * Fatura altı iskonto/artırımın kalemlere dağıtım oranı. UBL'de TaxExclusiveAmount = Σ kalem − fatura altı iskonto
- * + fatura altı artırım; iskonto kalemlere tutarlarına oranla dağıtılır (birim maliyet doğru çıksın). Bazı
- * sağlayıcılar kalem iskontolarının toplamını fatura altında da yazar ama ayrıca düşmez (Sütaş): kalemlerin toplamı
- * KDV hariç tutarı zaten tutuyorsa oran 1'dir. Fark fatura altı iskontoyla açıklanmıyorsa kalemlere dokunulmaz
- * (ublLinesMatchTotal tutmadığını söyler).
- */
-export function ublLineScale(inv: Pick<UblInvoice, "lines" | "invoiceDiscount" | "taxExclusive">): number {
-  const sum = inv.lines.reduce((s, l) => s + l.lineTotal, 0);
-  if (sum <= 0 || !inv.invoiceDiscount) return 1;
-  const tol = Math.max(0.05, Math.abs(sum) * 0.0005);
-  if (inv.taxExclusive > 0 && Math.abs(inv.taxExclusive - sum) <= tol) return 1;
-  if (inv.taxExclusive > 0 && Math.abs(sum - inv.invoiceDiscount - inv.taxExclusive) > Math.max(1, inv.taxExclusive * 0.005)) return 1;
-  return sum > inv.invoiceDiscount ? (sum - inv.invoiceDiscount) / sum : 1;
-}
-
 export function ublLinesToDrafts(inv: UblInvoice, eInvoiceId: string, fallbackSupplier: string): LineDraft[] {
   const sign = isRefund(inv.typeCode) ? -1 : 1;
   const seller = inv.supplierTaxId ?? fallbackSupplier;
   const lines = inv.lines.filter((l) => l.quantity !== 0 || l.lineTotal !== 0);
-  const k = ublLineScale({ ...inv, lines });
+  const k = inv.lineScale;
   // Satıcı kodu ancak kalemleri ayırıyorsa kullanılır (bazı sağlayıcılar her kaleme aynı kodu yazar)
   const namesByCode = new Map<string, Set<string>>();
   for (const l of lines) if (l.sellerCode) namesByCode.set(l.sellerCode, (namesByCode.get(l.sellerCode) ?? new Set()).add(l.name.toLocaleLowerCase("tr-TR")));
@@ -347,9 +409,7 @@ export function ublLinesToDrafts(inv: UblInvoice, eInvoiceId: string, fallbackSu
   });
 }
 
-/** Dağıtımdan sonra kalemlerin toplamı faturanın KDV hariç tutarını tutuyor mu (tutmuyorsa kalemler yine yazılır) */
+/** Kalemler (dağıtımdan sonra) faturanın KDV hariç toplamını tutuyor mu (tutmuyorsa kalemler yine yazılır) */
 export function ublLinesMatchTotal(inv: UblInvoice): boolean {
-  if (!inv.taxExclusive) return true;
-  const sum = inv.lines.reduce((s, l) => s + l.lineTotal, 0) * ublLineScale(inv);
-  return Math.abs(sum - inv.taxExclusive) <= Math.max(1, Math.abs(inv.taxExclusive) * 0.005);
+  return inv.linesMatch;
 }
