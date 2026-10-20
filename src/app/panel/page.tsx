@@ -440,9 +440,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           />
         </div>
 
-        {/* 3. Para nereye gitti + reçete/fatura karşılaştırması */}
+        {/* 3. Para nereye gitti + reçete/fatura karşılaştırması (yan yana xl'de: 1024'te kartlar 330 px'e iner) */}
         {t ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <WaterfallCard month={month} t={t} rows={waterfall} />
             <Card>
               <CardHeader
