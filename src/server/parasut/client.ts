@@ -277,7 +277,8 @@ export class ParasutClient {
       // /me okunamazsa yalnızca fatura isteğiyle devam
     }
     try {
-      const res = await step("Fatura listesi", () => this.get<ListResponse>("purchase_bills", { "page[size]": 1, "page[number]": 1 }));
+      // Eşitlemenin ilk isteğiyle aynı sıralama: Paraşüt sırasız listede çok yavaş yanıt verebiliyor
+      const res = await step("Fatura listesi", () => this.get<ListResponse>("purchase_bills", { sort: "-issue_date", "page[size]": 1, "page[number]": 1 }));
       return { total: res.meta?.total_count ?? null, company, ms: Date.now() - t0 };
     } catch (e) {
       if (e instanceof ParasutError && (e.status === 404 || e.status === 403) && companies.length) {
