@@ -135,8 +135,10 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Su faturasını <Path href="/panel/gelir-gider" /> tablosundaki SU GİDERİ satırına KDV hariç yazın: su + buzun litre maliyeti buradan reçetelere dağıtılır, reçeteye göre
-        kârda sabit gider olarak ikinci kez sayılmaz. Doğalgaz, bakım-tamir gibi ay ay değişen giderleri ilgili hücreye girin; elektrik gibi sabit görünen ama değişen kalemlerin
-        gerçek tutarını da hücrenin üzerine yazabilirsiniz.
+        kârda sabit gider olarak ikinci kez sayılmaz. Reklam, influencer gibi her ay farklı olan giderleri ve fatura dışı harcamaları (nakit alım, bakım)
+        <Path href="/panel/harcamalar" /> ekranına girin: kategori ekleyebilirsiniz, her kategori Gelir-gider&apos;de kendi satırında sayılır; sabit giderdeki
+        &quot;Instagram reklamı&quot; gibi kalemleri oradan tek dokunuşla aylık girişe çevirirsiniz. Elektrik gibi sabit görünen ama değişen kalemlerin gerçek tutarını hücrenin
+        üzerine yazabilirsiniz.
       </>
     ),
     href: "/panel/gelir-gider",

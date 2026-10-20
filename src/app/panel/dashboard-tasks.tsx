@@ -16,7 +16,7 @@ import type { UpcomingItem } from "@/lib/reminders";
  * - later: henüz zamanı değil (devam eden ya da başlamamış ay)
  */
 export type TaskStatus = "done" | "todo" | "warn" | "later";
-export type TaskKey = "satis" | "gun" | "fatura" | "su" | "sayim" | "odeme";
+export type TaskKey = "satis" | "gun" | "fatura" | "harcama" | "su" | "sayim" | "odeme";
 
 export interface MonthTask {
   key: TaskKey;
@@ -61,6 +61,8 @@ export interface MonthTaskFacts {
   payments: PaymentFacts | null;
   /** null: Paraşüt bağlı değil */
   parasut: ParasutFacts | null;
+  /** Aylık harcamalar: her ay girilmesi gereken ama girilmemiş kategoriler; girilen kategori sayısı ve toplam */
+  expenses?: { missing: string[]; entered: number; total: number };
 }
 
 /** Ödemeler & hatırlatıcılar listesinden (loadUpcoming) ve ödenmemiş faturalardan özet */
@@ -112,6 +114,14 @@ export function monthTaskFacts(
       lines: sheet.groups.reduce((n, g) => n + g.lines.filter((l) => l.qty !== null).length, 0) + sheet.extras.length,
       total: sheet.total,
     },
+    expenses: (() => {
+      const xs = model.expenseAmounts(month);
+      return {
+        missing: xs.filter((x) => x.cat.active && x.cat.monthly && !x.entries).map((x) => x.cat.name),
+        entered: xs.filter((x) => x.total).length,
+        total: xs.reduce((a, x) => a + x.total, 0),
+      };
+    })(),
     ...extra,
   };
 }
@@ -250,6 +260,24 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         href,
         action: "Fatura ekle",
       });
+    }
+  }
+
+  // 3b. Aylık harcamalar (reklam, influencer, fatura dışı): yalnız kategori tanımlıysa
+  if (f.expenses && (f.expenses.missing.length || f.expenses.entered) && !notStarted) {
+    const e = f.expenses;
+    const href = `/panel/harcamalar?ay=${m}`;
+    if (e.missing.length) {
+      out.push({
+        key: "harcama",
+        title: "Aylık harcamalar",
+        status: later(f.state) ? "later" : "todo",
+        detail: `${e.missing.join(", ")} ${label} için girilmedi${e.entered ? ` · girilen ${tl(e.total)}` : ""}. Girilmezse o ayın gideri eksik görünür.`,
+        href,
+        action: "Harcama gir",
+      });
+    } else {
+      out.push({ key: "harcama", title: "Aylık harcamalar", status: "done", detail: `${num(e.entered)} kategori · ${tl(e.total)}.`, href, action: "Harcamaları aç" });
     }
   }
 

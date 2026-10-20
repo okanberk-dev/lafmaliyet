@@ -4,12 +4,14 @@ import {
   GOODS_CATEGORIES,
   MANUAL_PNL_ROWS,
   PACKAGING_CATEGORY,
+  SEPARATE_CATEGORIES,
 } from "../constants";
 import { evaluateExpression } from "./expr";
 import type {
   Category,
   CountUnit,
   Dataset,
+  ExpenseCategory,
   FixedExpense,
   FixedExpenseVersion,
   FixedPeriod,
@@ -1018,6 +1020,28 @@ export function createModel(ds: Dataset) {
     );
   }
 
+  // --- Aylık harcamalar (reklam, influencer, fatura dışı) -------------------------
+  const expenseCats: ExpenseCategory[] = [...(ds.expenseCategories ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const expenseByMonth = new Map<string, Map<number, number>>();
+  for (const e of ds.expenseEntries ?? []) {
+    const m = monthOfDate(e.date);
+    const byCat = expenseByMonth.get(m) ?? new Map<number, number>();
+    byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
+    expenseByMonth.set(m, byCat);
+  }
+  /** Fatura kategorisi harcamaya bağlanabilir mi: mal, komisyon ve kafe dışı faturalar zaten ayrı sayılır */
+  const invoiceCategoryMappable = (c: string | null): c is string =>
+    Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!);
+  /** Kategorilerin aydaki tutarı: girilen harcamalar + bağlı fatura kategorisindeki faturalar (KDV hariç, iskonto düşülmüş) */
+  function expenseAmounts(month: string): { cat: ExpenseCategory; entries: number; invoices: number; total: number }[] {
+    const invs = invoicesByMonth.get(month) ?? [];
+    return expenseCats.map((cat) => {
+      const entries = expenseByMonth.get(month)?.get(cat.id) ?? 0;
+      const invoices = invoiceCategoryMappable(cat.invoiceCategory) ? sum(invs.filter((i) => i.category === cat.invoiceCategory).map(invoiceNet)) : 0;
+      return { cat, entries, invoices, total: entries + invoices };
+    });
+  }
+
   // --- Genel Maliyet (aylık gelir-gider) --------------------------------------
   function closingStock(month: string): { value: number; computed: number; overridden: boolean } {
     const computed = stockSheet(month).total;
@@ -1065,6 +1089,13 @@ export function createModel(ds: Dataset) {
       purchases += v;
     }
     purchases += manual("manual:diger_mal");
+    // Aylık harcamalar: mal kategorileri mal alımına (devir hesabından önce), ötekiler aşağıda bölümlerine
+    const exp = expenseAmounts(month).filter((x) => x.total || x.cat.active);
+    for (const x of exp) {
+      if (x.cat.section !== "mal") continue;
+      cells.set(`expense:${x.cat.id}`, { value: x.total, computed: x.total, overridden: false });
+      purchases += x.total;
+    }
 
     // Devirler
     const prevClosing = closingStock(shiftMonth(month, -1)).value;
@@ -1102,6 +1133,11 @@ export function createModel(ds: Dataset) {
     for (const row of MANUAL_PNL_ROWS) {
       if (row.section === "mal") continue;
       sections[row.section] += manual(row.key);
+    }
+    for (const x of exp) {
+      if (x.cat.section === "mal") continue;
+      cells.set(`expense:${x.cat.id}`, { value: x.total, computed: x.total, overridden: false });
+      sections[x.cat.section] += x.total;
     }
 
     // Komisyonlar
@@ -1174,13 +1210,26 @@ export function createModel(ds: Dataset) {
     const suppliers = new Set<string>();
     const commSuppliers = new Set<string>();
     const fixedKeysWithValue = new Set<string>();
+    const expenseKeysWithValue = new Set<string>();
     for (const pm of monthsCalc) {
       for (const [k, c] of pm.cells) {
         if (k.startsWith("purchase:")) suppliers.add(k);
         if (k.startsWith("commission:") && k !== "commission:pos") commSuppliers.add(k);
         if (k.startsWith("fixed:") && c.overridden) fixedKeysWithValue.add(k);
+        if (k.startsWith("expense:") && c.value) expenseKeysWithValue.add(k);
       }
     }
+    // Aylık harcama kategorileri: etkin olanlar ve bu aylarda tutarı olan pasifler
+    const expenseRows = (section: string) =>
+      expenseCats
+        .filter((c) => c.section === section && (c.active || expenseKeysWithValue.has(`expense:${c.id}`)))
+        .map((c) => ({
+          key: `expense:${c.id}`,
+          label: c.name.toLocaleUpperCase("tr-TR"),
+          kind: "auto" as const,
+          editable: false,
+          hint: `Giderler › Aylık harcamalar'dan${invoiceCategoryMappable(c.invoiceCategory) ? ` + Faturalar'daki "${c.invoiceCategory}" faturaları (KDV hariç)` : ""}. Tutarı orada girin.`,
+        }));
     const rows: PnlRowDef[] = [];
     const sec = (section: string) => (r: Omit<PnlRowDef, "section">) => rows.push({ ...r, section });
 
@@ -1190,6 +1239,7 @@ export function createModel(ds: Dataset) {
       const name = k.slice("purchase:".length);
       mal({ key: k, label: name.toLocaleUpperCase("tr-TR"), sub: supplierProducts(name), kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (KDV hariç, iskonto düşülmüş)." });
     }
+    for (const r of expenseRows("mal")) mal(r);
     for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === "mal")) mal({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
     mal({ key: "total:mal", label: "AYLIK MAL ALIMI TOPLAMI", kind: "total", editable: false, strong: true });
 
@@ -1224,6 +1274,7 @@ export function createModel(ds: Dataset) {
           add({ key: k, fixedId: Number(k.slice(6)), label: `SİLİNMİŞ GİDER (#${k.slice(6)})`, kind: "auto", editable: true, hint: "Bu sabit gider silinmiş; elle girilen tutarı korunuyor. Boşaltırsanız satır kaybolur." });
         }
       }
+      for (const r of expenseRows(key)) add(r);
       for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === key)) add({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
       add({ key: `total:${key}`, label: sectionLabels[key], kind: "total", editable: false, strong: true });
     }
@@ -1348,5 +1399,8 @@ export function createModel(ds: Dataset) {
     pnlMonth,
     pnlRowDefs,
     pnlValue,
+    /** Aylık harcama kategorileri (sıralı) ve bir aydaki tutarları */
+    expenseCategories: expenseCats,
+    expenseAmounts,
   };
 }

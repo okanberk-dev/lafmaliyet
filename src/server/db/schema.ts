@@ -333,6 +333,46 @@ export const investments = pgTable("investments", {
   note: text("note"),
 });
 
+// ---------------------------------------------------------------- Aylık harcamalar
+/**
+ * Aylık harcama kategorileri: her ay farklı tutarla girilen (reklam, influencer) ve fatura dışı (nakit alım,
+ * bakım) giderler. Kategori Gelir-gider'de kendi satırında, seçilen bölümde (mal = mal maliyeti); Genel bakış'ta
+ * "Para nereye gitti" grubunda sayılır.
+ */
+export const expenseCategories = pgTable("expense_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  section: text("section", { enum: ["mal", "personel", "faturalar", "kira", "genel"] }).notNull().default("genel"),
+  panelGroup: text("panel_group", { enum: ["kira", "personel", "reklam", "diger"] }).notNull().default("diger"),
+  /** Bu fatura kategorisindeki faturalar da bu satırda sayılır (ör. "Reklam & Tabela"); boşsa yalnız girilenler */
+  invoiceCategory: text("invoice_category"),
+  /** Her ay girilmesi beklenir: girilmediyse Genel bakış › Bu ayın işleri hatırlatır */
+  monthly: boolean("monthly").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+/** Aylık harcama kayıtları: ödenen tutar gider sayılır (KDV ayrılmaz) */
+export const expenseEntries = pgTable(
+  "expense_entries",
+  {
+    id: serial("id").primaryKey(),
+    date: text("date").notNull(), // YYYY-MM-DD
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => expenseCategories.id, { onDelete: "restrict" }),
+    description: text("description"),
+    amount: doublePrecision("amount").notNull(),
+    paymentMethod: text("payment_method", { enum: ["nakit", "kart", "havale", "diger"] }),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("expense_entries_date_idx").on(t.date), index("expense_entries_category_idx").on(t.categoryId)],
+);
+
 /** Gelir-Gider tablosunda elle girilen ya da üzerine yazılan hücreler */
 export const pnlEntries = pgTable(
   "pnl_entries",

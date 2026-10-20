@@ -37,6 +37,8 @@ export async function loadDataset(): Promise<Dataset> {
     stockCounts,
     stockExtras,
     purchaseQuantities,
+    expenseCategories,
+    expenseEntries,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -54,6 +56,8 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.stockCounts),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
+    db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
+    db.select().from(s.expenseEntries).orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -177,6 +181,25 @@ export async function loadDataset(): Promise<Dataset> {
       ingredientId: p.ingredientId,
       qty: p.qty,
       note: p.note,
+    })),
+    expenseCategories: expenseCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      section: c.section,
+      panelGroup: c.panelGroup,
+      invoiceCategory: c.invoiceCategory,
+      monthly: c.monthly,
+      active: c.active,
+      sortOrder: c.sortOrder,
+    })),
+    expenseEntries: expenseEntries.map((e) => ({
+      id: e.id,
+      date: e.date,
+      categoryId: e.categoryId,
+      description: e.description,
+      amount: e.amount,
+      paymentMethod: e.paymentMethod,
+      note: e.note,
     })),
   };
 }

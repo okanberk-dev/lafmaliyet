@@ -219,6 +219,12 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
       group: panelGroupOf(fe),
       standard: fixedMonthly(fe, st),
     })),
+    // Aylık harcamalar (reklam, influencer, fatura dışı): o ay girilen tutar, kategorinin grubunda; mal kategorileri
+    // mal maliyetindedir, burada sayılmaz
+    ...model
+      .expenseAmounts(month)
+      .filter((x) => x.cat.section !== "mal" && (x.total || x.cat.active))
+      .map((x) => ({ key: `expense:${x.cat.id}`, label: x.cat.name, section: x.cat.section as FixedSection, group: x.cat.panelGroup, standard: x.total })),
   ];
   // Aralık dışındaki (bitmiş / başlamamış / silinmiş) kalemin o aya elle girilmiş tutarı da sayılır
   const byId = new Map(model.ds.fixedExpenses.map((fe) => [`fixed:${fe.id}`, fe]));

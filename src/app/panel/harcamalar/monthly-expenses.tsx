@@ -1,0 +1,675 @@
+"use client";
+
+import { ArrowRightLeft, CalendarClock, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
+import Link from "next/link";
+import { useState, useTransition, type FormEvent } from "react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { EmptyState, InfoTip, Stat } from "@/components/ui/misc";
+import { Segmented } from "@/components/ui/segmented";
+import { Switch } from "@/components/ui/switch";
+import { parseNumberTR } from "@/lib/calc/expr";
+import { PANEL_FIXED_GROUPS } from "@/lib/constants";
+import { dateTR, monthLabel, num, tl } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import {
+  convertFixedToMonthly,
+  deleteExpenseCategory,
+  deleteExpenseEntry,
+  restoreExpenseEntry,
+  saveExpenseCategory,
+  saveExpenseEntry,
+} from "@/server/actions/expenses";
+
+type Section = "mal" | "personel" | "faturalar" | "kira" | "genel";
+type Group = "kira" | "personel" | "reklam" | "diger";
+type Method = "nakit" | "kart" | "havale" | "diger";
+
+export interface CategoryRow {
+  id: number;
+  name: string;
+  section: Section;
+  panelGroup: Group;
+  invoiceCategory: string | null;
+  monthly: boolean;
+  active: boolean;
+  /** Bütün aylardaki kayıt sayısı (silinebilir mi) */
+  entryCount: number;
+  monthEntries: number;
+  monthInvoices: number;
+  monthTotal: number;
+  prevTotal: number;
+}
+export interface EntryRow {
+  id: number;
+  date: string;
+  categoryId: number;
+  description: string | null;
+  amount: number;
+  paymentMethod: Method | null;
+  note: string | null;
+}
+export interface InvoiceItem {
+  id: number;
+  date: string;
+  supplier: string;
+  net: number;
+  categoryId: number;
+  invoiceCategory: string;
+}
+export interface FixedCandidate {
+  id: number;
+  name: string;
+  section: string;
+  group: Group;
+  amount: number;
+}
+
+const SECTION_LABEL: Record<Section, string> = {
+  mal: "Mal maliyeti (nakit / market alımı)",
+  personel: "Personel giderleri",
+  faturalar: "Fatura giderleri (elektrik, su…)",
+  kira: "Kira giderleri",
+  genel: "İşletme genel giderleri",
+};
+const SECTION_SHORT: Record<Section, string> = { mal: "Mal maliyeti", personel: "Personel", faturalar: "Faturalar", kira: "Kira", genel: "Genel gider" };
+const GROUP_LABEL: Record<Group, string> = Object.fromEntries(PANEL_FIXED_GROUPS.map((g) => [g.key, g.label])) as Record<Group, string>;
+const METHODS: { value: Method; label: string }[] = [
+  { value: "nakit", label: "Nakit" },
+  { value: "kart", label: "Kart" },
+  { value: "havale", label: "Havale/EFT" },
+  { value: "diger", label: "Diğer" },
+];
+const METHOD_LABEL = Object.fromEntries(METHODS.map((m) => [m.value, m.label])) as Record<Method, string>;
+
+/** Yerel saatle bugün (YYYY-AA-GG) */
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const moneyText = (v: number) => (v ? num(v, 2).replace(/,00$/, "") : "");
+
+type EntryDraft = { id: number | null; date: string; categoryId: string; description: string; amount: string; paymentMethod: Method | null; note: string };
+
+/**
+ * Aylık harcamalar: hızlı ekleme, ayın harcamaları (kategori kategori; bağlı faturalar dahil), kategoriler ve
+ * her ay aynı sayılan sabit giderleri aylık girişe çevirme.
+ */
+export function MonthlyExpenses({
+  month,
+  isCurrent,
+  categories,
+  entries,
+  invoices,
+  fixed,
+  invoiceCategories,
+}: {
+  month: string;
+  isCurrent: boolean;
+  categories: CategoryRow[];
+  entries: EntryRow[];
+  invoices: InvoiceItem[];
+  fixed: FixedCandidate[];
+  invoiceCategories: string[];
+}) {
+  const [pending, start] = useTransition();
+  const defaultDate = isCurrent ? localToday() : `${month}-01`;
+  const active = categories.filter((c) => c.active);
+  const blank = (categoryId = ""): EntryDraft => ({ id: null, date: defaultDate, categoryId, description: "", amount: "", paymentMethod: null, note: "" });
+  const [draft, setDraft] = useState<EntryDraft>(() => blank(active[0] ? String(active[0].id) : ""));
+  const [editing, setEditing] = useState<EntryDraft | null>(null);
+  const [catEdit, setCatEdit] = useState<CategoryRow | "new" | null>(null);
+  const [converting, setConverting] = useState<FixedCandidate | null>(null);
+  const [showAllFixed, setShowAllFixed] = useState(false);
+
+  const total = categories.reduce((a, c) => a + c.monthTotal, 0);
+  const prevTotal = categories.reduce((a, c) => a + c.prevTotal, 0);
+  const ads = categories.filter((c) => c.panelGroup === "reklam").reduce((a, c) => a + c.monthTotal, 0);
+  const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
+  const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
+  const missing = active.filter((c) => c.monthly && !c.monthEntries);
+  const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
+
+  const save = (d: EntryDraft, done: () => void) => {
+    const amount = parseNumberTR(d.amount);
+    if (!d.categoryId) return void toast.error("Kategori seçin");
+    if (amount === null || !amount) return void toast.error("Tutarı yazın (ör. 12.500)");
+    if (!d.date.startsWith(month) && !d.id) toast.message(`Tarih ${monthLabel(d.date.slice(0, 7))} ayında; o ayın harcamalarına yazılır`);
+    start(async () => {
+      const r = await saveExpenseEntry({
+        id: d.id,
+        date: d.date,
+        categoryId: Number(d.categoryId),
+        description: d.description,
+        amount,
+        paymentMethod: d.paymentMethod,
+        note: d.note,
+      });
+      if (!r.ok) return void toast.error(r.error);
+      const cat = categories.find((c) => c.id === Number(d.categoryId));
+      toast.success(`${d.id ? "Düzeltildi" : "Eklendi"}: ${cat?.name ?? "harcama"} · ${tl(amount, 2)}`);
+      done();
+    });
+  };
+  const remove = (e: EntryRow) =>
+    start(async () => {
+      const r = await deleteExpenseEntry(e.id);
+      if (!r.ok) return void toast.error(r.error);
+      setEditing(null);
+      toast.success(`Silindi: ${tl(e.amount, 2)}`, { action: { label: "Geri al", onClick: () => void restoreExpenseEntry(r.data) } });
+    });
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    save(draft, () => setDraft((d) => ({ ...blank(d.categoryId), date: d.date, paymentMethod: d.paymentMethod })));
+  };
+
+  return (
+    <>
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat
+          compact
+          icon={<Wallet />}
+          label={`${monthLabel(month)} toplamı`}
+          value={tl(total)}
+          sub={prevTotal ? `Geçen ay ${tl(prevTotal)}` : "Geçen ay kayıt yok"}
+          info="Bu sayfadaki bütün kategoriler: girilen harcamalar ve kategoriye bağlı faturalar (KDV hariç). Gelir-gider'de her kategori kendi satırında sayılır."
+        />
+        <Stat compact icon={<Megaphone />} label="Reklam & influencer" value={tl(ads)} sub="“Para nereye gitti”de Reklam grubunda" />
+        <Stat compact icon={<ReceiptText />} label="Fatura dışı" value={tl(offInvoice)} sub="Bu sayfada girilenler" />
+        <Stat compact icon={<Tags />} label="Faturadan" value={tl(fromInvoices)} sub={fromInvoices ? "Bağlı fatura kategorilerinden" : "Bağlı fatura yok"} />
+      </div>
+
+      {missing.length ? (
+        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+          <CalendarClock size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0">
+            <span className="font-semibold">{missing.map((c) => c.name).join(", ")}</span> {monthLabel(month)} için henüz girilmedi. Her ay girilecek kategoriler; girilmezse
+            o ayın gideri eksik görünür.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-12">
+        <Card className="lg:col-span-5">
+          <CardHeader icon={<Plus />} title="Harcama ekle" description="Reklam, influencer ödemesi, nakit alım, bakım… Fatura Paraşüt'ten geliyorsa buraya ayrıca yazmayın." />
+          <CardContent>
+            {active.length ? (
+              <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
+                <Field label="Kategori" htmlFor="x-cat" className="sm:col-span-2">
+                  <Select
+                    id="x-cat"
+                    value={draft.categoryId}
+                    onChange={(e) => (e.target.value === "__new" ? setCatEdit("new") : setDraft((d) => ({ ...d, categoryId: e.target.value })))}
+                  >
+                    {active.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    <option value="__new">＋ Yeni kategori…</option>
+                  </Select>
+                </Field>
+                <Field label="Tutar (₺)" htmlFor="x-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
+                  <NumberInput id="x-amt" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} placeholder="0" enterKeyHint="done" />
+                </Field>
+                <Field label="Tarih" htmlFor="x-date">
+                  <Input id="x-date" type="date" value={draft.date} onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))} />
+                </Field>
+                <Field label="Açıklama" htmlFor="x-desc" className="sm:col-span-2">
+                  <Input
+                    id="x-desc"
+                    value={draft.description}
+                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                    placeholder="ör. @kahvesever story, Instagram kampanyası"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field label="Ödeme" className="sm:col-span-2">
+                  <Segmented<Method | "">
+                    label="Ödeme şekli"
+                    stretch
+                    value={draft.paymentMethod ?? ""}
+                    onChange={(v) => setDraft((d) => ({ ...d, paymentMethod: v === d.paymentMethod ? null : (v as Method) || null }))}
+                    options={METHODS}
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Button type="submit" disabled={pending} className="w-full sm:w-auto">
+                    <Plus size={16} /> {pending ? "Kaydediliyor…" : "Ekle"}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <EmptyState
+                title="Önce bir kategori ekleyin"
+                description="ör. Reklam, Influencer, Nakit malzeme alımı"
+                action={
+                  <Button onClick={() => setCatEdit("new")}>
+                    <Plus size={16} /> Kategori ekle
+                  </Button>
+                }
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-7">
+          <CardHeader
+            icon={<ReceiptText />}
+            title={`${monthLabel(month)} harcamaları`}
+            description="Kategori kategori. Faturadan gelenler Faturalar'da düzeltilir; buradakiler kalemin üstüne dokunarak."
+            meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
+          />
+          <CardContent className="space-y-3">
+            {categories.filter((c) => c.monthTotal || (c.active && c.monthly)).length === 0 ? (
+              <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
+            ) : (
+              categories
+                .filter((c) => c.monthTotal || (c.active && c.monthly))
+                .map((c) => {
+                  const rows = entries.filter((e) => e.categoryId === c.id);
+                  const invs = invoices.filter((i) => i.categoryId === c.id);
+                  return (
+                    <section key={c.id} className="rounded-2xl bg-surface px-3 py-2.5" aria-label={c.name}>
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                        <h3 className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink">
+                          {c.name}
+                          <Badge tone={c.panelGroup === "reklam" ? "violet" : c.section === "mal" ? "green" : "gray"}>
+                            {c.panelGroup === "reklam" ? "Reklam" : SECTION_SHORT[c.section]}
+                          </Badge>
+                          {c.monthly ? <Badge tone="gray">her ay</Badge> : null}
+                        </h3>
+                        <p className="text-sm text-ink tabular">
+                          <span className="font-semibold">{tl(c.monthTotal)}</span>
+                          {c.prevTotal ? <span className="ml-1.5 text-xs text-ink-mute">geçen ay {tl(c.prevTotal)}</span> : null}
+                        </p>
+                      </div>
+                      <ul className="mt-1.5 divide-y divide-ink/[0.06]">
+                        {rows.map((e) => (
+                          <li key={e.id}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditing({
+                                  id: e.id,
+                                  date: e.date,
+                                  categoryId: String(e.categoryId),
+                                  description: e.description ?? "",
+                                  amount: moneyText(e.amount),
+                                  paymentMethod: e.paymentMethod,
+                                  note: e.note ?? "",
+                                })
+                              }
+                              className="flex w-full cursor-pointer items-start justify-between gap-3 py-2 text-left hover:bg-ink/[0.02] pointer-coarse:min-h-11"
+                            >
+                              <span className="min-w-0">
+                                <span className="block text-sm break-words text-ink">{e.description || "Harcama"}</span>
+                                <span className="block text-xs text-ink-mute">
+                                  {dateTR(e.date)}
+                                  {e.paymentMethod ? ` · ${METHOD_LABEL[e.paymentMethod]}` : ""}
+                                  {e.note ? ` · ${e.note}` : ""}
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-sm text-ink tabular">{tl(e.amount, 2)}</span>
+                            </button>
+                          </li>
+                        ))}
+                        {invs.map((i) => (
+                          <li key={`inv-${i.id}`} className="flex items-start justify-between gap-3 py-2">
+                            <span className="min-w-0">
+                              <Link href={`/panel/faturalar?ay=${month}&ara=${encodeURIComponent(i.supplier)}`} className="block text-sm break-words text-ink hover:underline">
+                                {i.supplier}
+                              </Link>
+                              <span className="block text-xs text-ink-mute">
+                                {dateTR(i.date)} · faturadan ({i.invoiceCategory}, KDV hariç)
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-sm text-ink-soft tabular">{tl(i.net, 2)}</span>
+                          </li>
+                        ))}
+                        {!rows.length && !invs.length ? <li className="py-2 text-xs text-warn">Bu ay girilmedi</li> : null}
+                      </ul>
+                    </section>
+                  );
+                })
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {shownFixed.length || fixed.length ? (
+        <Card className="mt-4">
+          <CardHeader
+            icon={<ArrowRightLeft />}
+            title="Her ay aynı tutarla sayılan giderler"
+            description="Sabit giderlerdeki bu kalemler her ay aynı tutarla sayılıyor. Tutarı aydan aya değişiyorsa aylık girişe çevirin: sabit kalem geçen ay biter (geçmiş aylar aynı kalır), bundan sonra tutarı bu sayfada girersiniz."
+          />
+          <CardContent>
+            <ul className="divide-y divide-ink/[0.06] rounded-2xl bg-surface px-3">
+              {shownFixed.map((f) => (
+                <li key={f.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium break-words text-ink">{f.name}</span>
+                    <span className="block text-xs text-ink-mute">
+                      {GROUP_LABEL[f.group]} · ayda {tl(f.amount)}
+                    </span>
+                  </span>
+                  <Button size="sm" variant="secondary" disabled={pending} onClick={() => setConverting(f)}>
+                    <ArrowRightLeft size={14} /> Aylık girişe çevir
+                  </Button>
+                </li>
+              ))}
+              {!shownFixed.length ? <li className="py-2.5 text-sm text-ink-mute">Reklam grubunda sabit gider yok.</li> : null}
+            </ul>
+            {fixed.length > fixed.filter((f) => f.group === "reklam").length ? (
+              <button type="button" onClick={() => setShowAllFixed((v) => !v)} className="mt-2 cursor-pointer text-xs font-medium text-ink-soft hover:text-ink pointer-coarse:min-h-11">
+                {showAllFixed ? "Yalnız reklam giderlerini göster" : `Diğer sabit giderleri de göster (${num(fixed.length - fixed.filter((f) => f.group === "reklam").length)})`}
+              </button>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card className="mt-4">
+        <CardHeader
+          icon={<Tags />}
+          title="Kategoriler"
+          description="Her kategori Gelir-gider'de kendi satırında, seçtiğiniz bölümde sayılır. İsterseniz Faturalar'daki bir kategorinin faturaları da buraya eklenir (ör. Reklam & Tabela)."
+          meta={
+            <Button size="sm" variant="secondary" onClick={() => setCatEdit("new")}>
+              <Plus size={14} /> Kategori ekle
+            </Button>
+          }
+        />
+        <CardContent>
+          <ul className="divide-y divide-ink/[0.06] rounded-2xl bg-surface px-3">
+            {categories.map((c) => (
+              <li key={c.id} className={cn("flex flex-wrap items-center justify-between gap-2 py-2.5", !c.active && "opacity-60")}>
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
+                    {c.name}
+                    {c.monthly ? <Badge tone="gray">her ay</Badge> : null}
+                    {!c.active ? <Badge tone="gray">pasif</Badge> : null}
+                  </span>
+                  <span className="block text-xs text-ink-mute">
+                    {SECTION_LABEL[c.section]} · {GROUP_LABEL[c.panelGroup]}
+                    {c.invoiceCategory ? ` · + “${c.invoiceCategory}” faturaları` : ""}
+                  </span>
+                </span>
+                <IconButton label={`${c.name} kategorisini düzenle`} onClick={() => setCatEdit(c)}>
+                  <Pencil size={15} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      {editing ? (
+        <EntryDialog
+          draft={editing}
+          categories={categories}
+          pending={pending}
+          onChange={setEditing}
+          onClose={() => setEditing(null)}
+          onSave={() => save(editing, () => setEditing(null))}
+          onDelete={() => {
+            const e = entries.find((x) => x.id === editing.id);
+            if (e) remove(e);
+          }}
+        />
+      ) : null}
+      {catEdit ? (
+        <CategoryDialog
+          category={catEdit === "new" ? null : catEdit}
+          invoiceCategories={invoiceCategories}
+          usedInvoiceCategories={categories.filter((c) => c.invoiceCategory && (catEdit === "new" || c.id !== catEdit.id)).map((c) => c.invoiceCategory!)}
+          onClose={() => setCatEdit(null)}
+          onSaved={(id) => {
+            setCatEdit(null);
+            if (id) setDraft((d) => ({ ...d, categoryId: String(id) }));
+          }}
+        />
+      ) : null}
+      <ConfirmDialog
+        open={converting !== null}
+        onClose={() => setConverting(null)}
+        tone="primary"
+        confirmLabel="Aylık girişe çevir"
+        title={converting ? `${converting.name} aylık girilsin mi?` : ""}
+        description={
+          converting
+            ? `${monthLabel(month)}'dan itibaren ${converting.name} sabit giderlerde sayılmaz; tutarı her ay bu sayfada girersiniz ("her ay" kategorisi, girilmezse hatırlatılır). Geçmiş aylar aynı kalır. ${monthLabel(month)} için şimdilik sabit tutar (${tl(converting.amount)}) tahmini harcama olarak yazılır; gerçeğini girince düzeltin. Gelir-gider'de bu aylara elle yazılmış tutarlar buraya taşınır.`
+            : undefined
+        }
+        pending={pending}
+        onConfirm={() => {
+          const f = converting;
+          if (!f) return;
+          start(async () => {
+            const r = await convertFixedToMonthly(f.id, month);
+            if (!r.ok) return void toast.error(r.error);
+            setConverting(null);
+            toast.success(`${f.name} artık aylık giriliyor${r.data.moved ? ` · ${r.data.moved} ayın tutarı taşındı` : ""}${r.data.estimated ? " · bu ay için tahmini tutar yazıldı" : ""}`);
+          });
+        }}
+      />
+    </>
+  );
+}
+
+function EntryDialog({
+  draft,
+  categories,
+  pending,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  draft: EntryDraft;
+  categories: CategoryRow[];
+  pending: boolean;
+  onChange: (d: EntryDraft) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  const set = (p: Partial<EntryDraft>) => onChange({ ...draft, ...p });
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Harcamayı düzenle"
+      footerStart={
+        <Button variant="ghost" className="text-bad" disabled={pending} onClick={onDelete}>
+          <Trash2 size={15} /> Sil
+        </Button>
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Vazgeç
+          </Button>
+          <Button onClick={onSave} disabled={pending}>
+            {pending ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
+          <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+            {categories
+              .filter((c) => c.active || String(c.id) === draft.categoryId)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </Select>
+        </Field>
+        <Field label="Tutar (₺)" htmlFor="e-amt">
+          <NumberInput id="e-amt" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} />
+        </Field>
+        <Field label="Tarih" htmlFor="e-date">
+          <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} />
+        </Field>
+        <Field label="Açıklama" htmlFor="e-desc" className="sm:col-span-2">
+          <Input id="e-desc" value={draft.description} onChange={(e) => set({ description: e.target.value })} autoComplete="off" />
+        </Field>
+        <Field label="Ödeme" className="sm:col-span-2">
+          <Segmented<Method | "">
+            label="Ödeme şekli"
+            stretch
+            value={draft.paymentMethod ?? ""}
+            onChange={(v) => set({ paymentMethod: v === draft.paymentMethod ? null : (v as Method) || null })}
+            options={METHODS}
+          />
+        </Field>
+        <Field label="Not" htmlFor="e-note" className="sm:col-span-2">
+          <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
+        </Field>
+      </div>
+    </Dialog>
+  );
+}
+
+function CategoryDialog({
+  category,
+  invoiceCategories,
+  usedInvoiceCategories,
+  onClose,
+  onSaved,
+}: {
+  category: CategoryRow | null;
+  invoiceCategories: string[];
+  usedInvoiceCategories: string[];
+  onClose: () => void;
+  onSaved: (id: number | null) => void;
+}) {
+  const [pending, start] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [f, setF] = useState({
+    name: category?.name ?? "",
+    section: category?.section ?? ("genel" as Section),
+    panelGroup: category?.panelGroup ?? ("diger" as Group),
+    invoiceCategory: category?.invoiceCategory ?? "",
+    monthly: category?.monthly ?? false,
+    active: category?.active ?? true,
+  });
+  const submit = () =>
+    start(async () => {
+      const r = await saveExpenseCategory({ id: category?.id ?? null, ...f, invoiceCategory: f.invoiceCategory || null });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(category ? `${f.name} kaydedildi` : `${f.name} eklendi`);
+      onSaved(category ? null : r.data.id);
+    });
+  return (
+    <>
+      <Dialog
+        open
+        onClose={onClose}
+        title={category ? "Kategoriyi düzenle" : "Yeni harcama kategorisi"}
+        footerStart={
+          category ? (
+            <Button variant="ghost" className="text-bad" disabled={pending} onClick={() => setConfirmDelete(true)}>
+              <Trash2 size={15} /> Sil
+            </Button>
+          ) : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Vazgeç
+            </Button>
+            <Button onClick={submit} disabled={pending || !f.name.trim()}>
+              {pending ? "Kaydediliyor…" : "Kaydet"}
+            </Button>
+          </>
+        }
+      >
+        <form
+          className="grid gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <Field label="Ad" htmlFor="c-name">
+            <Input id="c-name" value={f.name} onChange={(e) => setF((x) => ({ ...x, name: e.target.value }))} placeholder="ör. Influencer, Google reklamı, Nakit alım" data-autofocus />
+          </Field>
+          <Field label="Gelir-gider'de nerede sayılsın" htmlFor="c-sec" tip="Mal maliyeti seçilirse ayın mal alımına eklenir (faturasız market/pazar alımları için); ötekiler gider bölümlerinde.">
+            <Select id="c-sec" value={f.section} onChange={(e) => setF((x) => ({ ...x, section: e.target.value as Section }))}>
+              {(Object.keys(SECTION_LABEL) as Section[]).map((k) => (
+                <option key={k} value={k}>
+                  {SECTION_LABEL[k]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Genel bakış grubu" htmlFor="c-grp" tip="“Para nereye gitti?” bölümünde hangi grupta görünsün.">
+            <Select id="c-grp" value={f.panelGroup} onChange={(e) => setF((x) => ({ ...x, panelGroup: e.target.value as Group }))}>
+              {PANEL_FIXED_GROUPS.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field
+            label="Faturalar'dan da say"
+            htmlFor="c-inv"
+            tip="Seçilen kategorideki faturalar (Paraşüt'ten gelen ya da elle girilen, KDV hariç) bu satıra eklenir. Aynı gideri burada ayrıca girmeyin; iki kez sayılır."
+            hint={f.invoiceCategory ? `"${f.invoiceCategory}" faturaları bu kategoriye eklenir; aynısını elle girmeyin.` : "Yalnız bu sayfada girilenler sayılır."}
+          >
+            <Select id="c-inv" value={f.invoiceCategory} onChange={(e) => setF((x) => ({ ...x, invoiceCategory: e.target.value }))}>
+              <option value="">Hayır</option>
+              {invoiceCategories.map((c) => (
+                <option key={c} value={c} disabled={usedInvoiceCategories.includes(c)}>
+                  {c}
+                  {usedInvoiceCategories.includes(c) ? " (başka kategoride)" : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Switch checked={f.monthly} onChange={(v) => setF((x) => ({ ...x, monthly: v }))} label="Her ay girilsin" showText onText="Her ay girilir" offText="Arada bir" />
+            <InfoTip text="Her ay girilecek kategori o ay boş kalırsa bu sayfada ve Genel bakış › Bu ayın işleri'nde hatırlatılır." />
+            {category ? <Switch checked={f.active} onChange={(v) => setF((x) => ({ ...x, active: v }))} label="Kategori etkin" showText onText="Etkin" offText="Pasif" /> : null}
+          </div>
+          <button type="submit" hidden />
+        </form>
+      </Dialog>
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title={`${category?.name ?? ""} silinsin mi?`}
+        description={
+          category?.entryCount
+            ? `Bu kategoride ${category.entryCount} harcama var; silinemez. Geçmiş ayları korumak için pasif yapın.`
+            : "Kategori silinir. Harcaması yok, hiçbir ay değişmez."
+        }
+        confirmLabel="Sil"
+        pending={pending}
+        onConfirm={() =>
+          start(async () => {
+            if (!category) return;
+            const r = await deleteExpenseCategory(category.id);
+            if (!r.ok) return void toast.error(r.error);
+            toast.success(`${category.name} silindi`);
+            setConfirmDelete(false);
+            onSaved(null);
+          })
+        }
+      />
+    </>
+  );
+}

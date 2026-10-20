@@ -226,6 +226,37 @@ export interface PurchaseQty {
   note: string | null;
 }
 
+/** Aylık harcamanın Gelir-gider bölümü: mal (mal maliyeti) ya da sabit gider bölümlerinden biri */
+export type ExpenseSection = FixedSection | "mal";
+/** Genel bakış "Para nereye gitti" grubu (constants.ts PanelFixedGroup ile aynı) */
+export type ExpensePanelGroup = "kira" | "personel" | "reklam" | "diger";
+export type PaymentMethod = "nakit" | "kart" | "havale" | "diger";
+
+/** Aylık harcama kategorisi (reklam, influencer, nakit alım…) */
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  section: ExpenseSection;
+  panelGroup: ExpensePanelGroup;
+  /** Bu fatura kategorisindeki faturalar da bu satırda sayılır; null: yalnız girilen harcamalar */
+  invoiceCategory: string | null;
+  /** Her ay girilmesi beklenir */
+  monthly: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
+/** Aylık harcama kaydı: ödenen tutar gider sayılır (KDV ayrılmaz) */
+export interface ExpenseEntry {
+  id: number;
+  date: string;
+  categoryId: number;
+  description: string | null;
+  amount: number;
+  paymentMethod: PaymentMethod | null;
+  note: string | null;
+}
+
 export interface Dataset {
   settings: Settings;
   ingredients: Ingredient[];
@@ -245,6 +276,9 @@ export interface Dataset {
   stockCounts: StockCount[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
+  /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
+  expenseCategories?: ExpenseCategory[];
+  expenseEntries?: ExpenseEntry[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
 }

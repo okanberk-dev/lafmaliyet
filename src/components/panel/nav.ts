@@ -65,8 +65,8 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: Wallet,
         excel: "Sabit Giderler + Personel",
         roles: ["admin"],
-        match: ["/panel/personel"],
-        keywords: "kira fatura maaş sgk yatırım",
+        match: ["/panel/personel", "/panel/harcamalar"],
+        keywords: "kira fatura maaş sgk yatırım reklam influencer harcama nakit fatura dışı aylık gider",
       },
     ],
   },
@@ -100,6 +100,7 @@ export const NAV_FOOTER: NavItem[] = [
 export const SECTION_TABS = {
   giderler: [
     { href: "/panel/giderler", label: "Sabit giderler" },
+    { href: "/panel/harcamalar", label: "Aylık harcamalar" },
     { href: "/panel/personel", label: "Personel" },
   ],
   stok: [
@@ -145,7 +146,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
-      { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel"] },
+      { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
     ],
   },
@@ -244,6 +245,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/urunler": "Ürünler",
   "/panel/giderler": "Sabit giderler",
   "/panel/personel": "Personel",
+  "/panel/harcamalar": "Harcamalar",
   "/panel/hatirlaticilar": "Ödemeler",
   "/panel/sayim": "Stok sayımı",
   "/panel/tutarlilik": "Tutarlılık",
