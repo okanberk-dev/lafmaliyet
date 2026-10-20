@@ -77,6 +77,19 @@ export function parasutErrorText(status: number, body: string): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Zaman aşımı ve ağ hatalarını Türkçe, hangi isteğin takıldığını söyleyen bir ParasutError'a çevirir */
+async function fetchParasut(label: string, url: string | URL, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (e) {
+    const name = (e as Error)?.name;
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new ParasutError(`Paraşüt ${REQUEST_TIMEOUT_MS / 1000} saniye içinde yanıt vermedi (${label}). Paraşüt şu an yavaş olabilir; biraz sonra yeniden deneyin.`, 0);
+    }
+    throw new ParasutError(`Paraşüt'e bağlanılamadı (${label}): ${(e as Error)?.message ?? e}`, 0);
+  }
+}
+
 export class ParasutClient {
   private lastCall = 0;
   private token: StoredToken | null = null;
@@ -124,11 +137,10 @@ export class ParasutClient {
   }
 
   private async requestToken(params: Record<string, string>, db: Exec = getDb()): Promise<StoredToken> {
-    const res = await fetch(`${this.cfg.baseUrl}/oauth/token`, {
+    const res = await fetchParasut(params.grant_type === "refresh_token" ? "oturum yenileme" : "giriş", `${this.cfg.baseUrl}/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, redirect_uri: "urn:ietf:wg:oauth:2.0:oob", ...params }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const body = await res.text();
     if (!res.ok) throw new ParasutAuthError(parasutErrorText(res.status === 400 ? 401 : res.status, body), res.status, body);
@@ -167,8 +179,8 @@ export class ParasutClient {
           this.token = await this.requestToken({ grant_type: "refresh_token", refresh_token: refresh }, tx);
           return this.token.access;
         } catch (e) {
-          // yenileme reddedildiyse (invalid_grant) parolayla yeniden giriş; ağ hatasında tekrar deneme yapılmaz
-          if (!(e instanceof ParasutAuthError)) throw e;
+          // Yenileme reddedildiyse ya da yanıt gelmediyse parolayla yeniden giriş yapılır
+          if (!(e instanceof ParasutError)) throw e;
         }
       }
       this.token = await this.requestToken({ grant_type: "password", username: this.cfg.username, password: this.cfg.password }, tx);
@@ -193,9 +205,8 @@ export class ParasutClient {
       this.ensureTime();
       await this.throttle();
       const token = await this.accessToken();
-      const res = await fetch(url, {
+      const res = await fetchParasut(path.split("/")[0] || path, url, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (res.ok) return (await res.json()) as T;
       const body = await res.text();
@@ -236,8 +247,24 @@ export class ParasutClient {
    * Bağlantı testi: belirteç alınır, kullanıcının eriştiği firmalar (/v4/me) okunur ve tanımlı firmanın bir sayfa
    * gider faturası istenir. Firma numarası yanlışsa erişilebilen firmalar hata mesajında listelenir.
    */
-  async ping(): Promise<{ total: number | null; company: string | null }> {
-    await this.accessToken(true);
+  /**
+   * Bağlantı denemesi: eşitlemeyle aynı yoldan (kayıtlı oturum varsa yeniden giriş yapmadan) firmayı ve bir faturayı
+   * okur. Hata olursa hangi adımda takıldığı söylenir.
+   */
+  async ping(): Promise<{ total: number | null; company: string | null; ms: number }> {
+    const t0 = Date.now();
+    const step = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+      try {
+        return await fn();
+      } catch (e) {
+        if (e instanceof ParasutError) {
+          e.message = `${e.message}`.includes(label) ? e.message : `${label}: ${e.message}`;
+          throw e;
+        }
+        throw e;
+      }
+    };
+    await step("Giriş", () => this.accessToken());
     let company: string | null = null;
     let companies: { id: string; name: string }[] = [];
     try {
@@ -250,8 +277,8 @@ export class ParasutClient {
       // /me okunamazsa yalnızca fatura isteğiyle devam
     }
     try {
-      const res = await this.get<ListResponse>("purchase_bills", { "page[size]": 1, "page[number]": 1 });
-      return { total: res.meta?.total_count ?? null, company };
+      const res = await step("Fatura listesi", () => this.get<ListResponse>("purchase_bills", { "page[size]": 1, "page[number]": 1 }));
+      return { total: res.meta?.total_count ?? null, company, ms: Date.now() - t0 };
     } catch (e) {
       if (e instanceof ParasutError && (e.status === 404 || e.status === 403) && companies.length) {
         throw new ParasutError(`${e.message} Bu kullanıcının eriştiği firmalar: ${companies.map((c) => `${c.name} (${c.id})`).join(", ")}`, e.status, e.body);
