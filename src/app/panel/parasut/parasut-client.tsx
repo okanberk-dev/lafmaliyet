@@ -282,7 +282,7 @@ export function ParasutClient({
               <p className="mt-0.5 break-words text-info/90">
                 Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez: tutar, KDV, kalemler ve e-fatura PDF&apos;i buradan gelir. İçeri alırsanız fatura yeniden
                 açılmaz, aynı kayda bağlanır; o zaman ödeme durumu da gelir.{" "}
-                <a href="/panel/faturalar?kaynak=parasut" className="font-medium underline-offset-2 hover:underline">
+                <a href="/panel/faturalar?kaynak=parasut" className="font-medium underline-offset-2 hover:underline pointer-coarse:py-3">
                   Faturalarda göster →
                 </a>
               </p>
@@ -308,7 +308,7 @@ export function ParasutClient({
           <CardContent className="space-y-4">
             <ol className="space-y-3 text-sm text-ink-soft">
               <Step n={1} done={env.slice(0, 2).every((e) => e.set)}>
-                Paraşüt&apos;ün geliştirici portalı yok: <a className="font-medium text-ink underline" href="mailto:destek@parasut.com">destek@parasut.com</a> adresine
+                Paraşüt&apos;ün geliştirici portalı yok: <a className="font-medium text-ink underline pointer-coarse:py-3.5" href="mailto:destek@parasut.com">destek@parasut.com</a> adresine
                 yazıp API erişimi isteyin. Size bir <code className="rounded bg-surface px-1">client_id</code> ve{" "}
                 <code className="rounded bg-surface px-1">client_secret</code> verilir.
               </Step>

@@ -94,7 +94,7 @@ export function InvoiceLines({ invoiceId, invoiceNet }: { invoiceId: number; inv
                   {l.ingredient ? (
                     <p className="mt-1 text-xs text-ink-soft">
                       <Link2 size={12} className="mr-1 inline align-[-2px] text-good" aria-hidden="true" />
-                      <Link href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredient.name)}`} className="font-medium text-ink hover:underline pointer-coarse:py-2">
+                      <Link href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredient.name)}`} className="font-medium text-ink hover:underline pointer-coarse:py-3.5">
                         {l.ingredient.name}
                       </Link>
                       {price ? <span className="tabular text-ink-mute"> · bu faturada {tl2(price.value)}/{price.per}</span> : null}

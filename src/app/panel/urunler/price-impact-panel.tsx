@@ -162,7 +162,8 @@ function ImpactItem({
     <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Link href={productHref(i.productId, month)} className="text-sm font-semibold break-words text-ink hover:underline">
+          {/* Dokunmatikte 44px dokunma alanı: görünmez dikey dolgu, satırın yerleşimi değişmez */}
+          <Link href={productHref(i.productId, month)} className="text-sm font-semibold break-words text-ink hover:underline pointer-coarse:-my-3 pointer-coarse:py-3">
             {i.name} · {i.size}
           </Link>
           {i.statusAfter !== i.statusBefore ? (
