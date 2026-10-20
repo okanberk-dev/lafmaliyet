@@ -7,8 +7,13 @@ import "server-only";
  */
 export const DEFAULT_FROM = "L'Affogato Panel <bildirim@laffogato.net>";
 
+/** Anahtar Vercel'e küçük harfle de girilmiş olabilir (resend_api_key); ikisi de kabul edilir */
+function resendApiKey(): string | undefined {
+  return process.env.RESEND_API_KEY?.trim() || process.env.resend_api_key?.trim() || undefined;
+}
+
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY?.trim());
+  return Boolean(resendApiKey());
 }
 
 export function resolveFrom(panelFrom?: string | null): string {
@@ -43,7 +48,7 @@ export function resendErrorText(status: number, body: string): string {
 }
 
 export async function sendEmail(msg: { from: string; to: string[]; subject: string; html: string; text: string; idempotencyKey?: string }): Promise<SendResult> {
-  const key = process.env.RESEND_API_KEY?.trim();
+  const key = resendApiKey();
   if (!key) return { ok: false, error: "RESEND_API_KEY tanımlı değil; e-posta gönderilemiyor." };
   if (!msg.to.length) return { ok: false, error: "Bildirim adresi yok." };
   // Yeniden denemeler aynı Idempotency-Key ile gider; Resend aynı iletiyi ikinci kez göndermez
