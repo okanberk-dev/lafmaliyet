@@ -19,9 +19,21 @@ Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür.
 
 ## E-posta
 
-Her sabah 08:00'de (Vercel Cron, `/api/cron/gunluk`) tek bir özet e-posta, **bildirim adreslerine** gider. Paraşüt
-eşitlemesi yarım saat önce ayrı bir işte çalışır; yeni ödenmemiş faturalar aynı sabahın iletisine girer. Her ödeme
-için en fazla üç kez haber verilir:
+Her sabah 08:00–09:00 arasında (Vercel Cron, `/api/cron/gunluk`; Hobby planında saat esnek) tek bir **sabah
+e-postası**, bildirim adreslerine gider. İçinde:
+
+- zamanı gelen ödemeler (aşağıdaki aşamalarla);
+- **Paraşüt'ten gelen yeni faturalar** (son sabah e-postasından bu yana eşitlemenin açtıkları: tedarikçi, tarih,
+  kategori, tutar; en çok 10 tanesi listelenir);
+- **kontrol bekleyen** fatura sayısı (kategorisi tahminle yazılmış), bağlantısıyla;
+- son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
+- **hammadde zamları**: son zam bölümlü e-postadan bu yana fiyatı %5'ten fazla artan hammaddeler (eski → yeni
+  ₺/kg, ₺/L, ₺/adet) ve fiyatı hedef maliyet oranının altında kalan ürünler, önerilen fiyatlarıyla (en çok 6);
+  bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a).
+
+Ödeme, yeni fatura, eşitleme hatası ya da yeni zam yoksa e-posta gitmez. Paraşüt eşitlemesi bir saat önce ayrı bir işte
+çalışır; o sabah başarısız olduysa e-posta işi önce bir kez daha eşitler. Her ödeme için en fazla üç kez haber
+verilir:
 
 | Aşama | Ne zaman |
 |-------|----------|

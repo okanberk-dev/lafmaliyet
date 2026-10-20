@@ -40,11 +40,13 @@ import {
   yearTrend,
   type DashboardData,
 } from "@/lib/calc/insights";
+import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming } from "@/server/notify/digest";
 import { isParasutConfigured } from "@/server/parasut/config";
@@ -144,7 +146,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const d = dashboard(model, month);
   // "Bu ayın işleri" kartı eşleşmeyen POS ürünlerini ve ödenmemiş faturaları zaten gösterir: uyarılarda tekrarlanmaz
   // (bildirimlerde alerts() olduğu gibi kalır)
-  const alertItems = alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href));
+  // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür)
+  const priceAlerts = await loadPriceAlerts(model).catch(() => null);
+  const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable) : null;
+  const alertItems = [...(zam ? [zam] : []), ...alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href))];
   const year = Number(month.slice(0, 4));
   const yearMonths = yearTrend(model, year);
   const trend = yearMonths.filter((x) => x.active);

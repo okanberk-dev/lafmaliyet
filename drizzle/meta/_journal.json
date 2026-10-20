@@ -64,6 +64,20 @@
       "when": 1792471982893,
       "tag": "0008_kullanici_davet",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792488787915,
+      "tag": "0009_fatura_belgeleri",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792493007551,
+      "tag": "0010_e_fatura_kalemleri",
+      "breakpoints": true
     }
   ]
 }

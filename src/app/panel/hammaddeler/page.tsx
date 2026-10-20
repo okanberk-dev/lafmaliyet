@@ -7,9 +7,11 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { latestSalesMonth } from "@/lib/calc/insights";
+import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { priceWindowStart } from "@/server/data/price-alerts";
 import { getDb, schema as s } from "@/server/db";
 
 import { waterSource } from "../ayarlar/water-text";
@@ -59,6 +61,15 @@ async function IngredientsContent() {
   const countsBy = tally(model.ds.stockCounts.map((c) => c.ingredientId));
   const purchasesBy = tally(model.ds.purchaseQuantities.map((p) => p.ingredientId));
   const linksBy = new Map(links.map((l) => [l.id, l.n]));
+  // Son 30 günün fiyat değişimleri (zam uyarısıyla aynı hesap: pencereden önceki son fiyata göre)
+  const since = priceWindowStart();
+  const recent = new Map(
+    ingredientChanges(
+      model.ds.ingredients,
+      history.map((h) => ({ ...h, changedAt: h.changedAt.toISOString() })),
+      since,
+    ).map((c) => [c.ingredientId, { pct: c.pct, at: c.changedAt }]),
+  );
 
   const rows: IngredientRow[] = model.ds.ingredients.map((i) => ({
     ...i,
@@ -70,6 +81,7 @@ async function IngredientsContent() {
     monthUsage: usage.get(i.id) ?? 0,
     history: histBy.get(i.id) ?? [],
     deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0 },
+    recentChange: recent.get(i.id) ?? null,
   }));
 
   // Süzgeçler (?ara, ?durum, ?kategori, ?sirala) istemcide adresten okunur; ⌘K paleti ?ara=<ad> ile gönderir

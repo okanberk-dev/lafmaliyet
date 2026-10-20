@@ -25,10 +25,12 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  TrendingUp,
   Wheat,
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
@@ -174,6 +176,7 @@ export function RecipeEditor({
   history,
   siblings,
   water,
+  priceImpact = null,
 }: {
   product: {
     id: number;
@@ -199,6 +202,18 @@ export function RecipeEditor({
   siblings: { id: number; size: string }[];
   /** Su + buz litre maliyeti ve nereden geldiği (water.reason metni) */
   water: { perLiter: number; costed: boolean; text: string; short: string };
+  /** Son 30 günün hammadde zamları bu ürünün maliyetini artırdıysa (price-impact.ts) */
+  priceImpact?: {
+    costBefore: number;
+    costAfter: number;
+    ratioBefore: number;
+    ratioAfter: number;
+    suggestedPrice: number;
+    basis: "target" | "keep";
+    needsPrice: boolean;
+    acknowledged: boolean;
+    drivers: { name: string; pct: number }[];
+  } | null;
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
@@ -540,6 +555,40 @@ export function RecipeEditor({
           ) : undefined
         }
       />
+
+      {priceImpact ? (
+        <div
+          role="status"
+          className={cn(
+            "mb-4 flex items-start gap-3 rounded-2xl px-4 py-3 text-sm",
+            priceImpact.needsPrice && !priceImpact.acknowledged ? "bg-warn-soft text-warn" : "bg-info-soft text-info",
+          )}
+        >
+          <TrendingUp size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 break-words">
+            <span className="font-semibold">Hammadde zammı:</span> son 30 günde{" "}
+            {priceImpact.drivers
+              .slice(0, 3)
+              .map((d) => `${d.name} +${pct(d.pct, 0)}`)
+              .join(", ")}
+            ; maliyet <span className="tabular">{tl(priceImpact.costBefore, 2)} → {tl(priceImpact.costAfter, 2)}</span>, maliyet oranı{" "}
+            <span className="tabular">
+              {pct(priceImpact.ratioBefore, 0)} → {pct(priceImpact.ratioAfter, 0)}
+            </span>
+            .{" "}
+            {priceImpact.needsPrice
+              ? priceImpact.acknowledged
+                ? "Fiyatı korumayı seçtiniz."
+                : priceImpact.basis === "keep"
+                  ? `Zammın payı kadar önerilen fiyat ${tl(priceImpact.suggestedPrice)} (eski maliyet oranını korur); fiyat alanından değiştirebilirsiniz.`
+                  : `Hedef maliyet oranı için önerilen fiyat ${tl(priceImpact.suggestedPrice)}; fiyat alanından değiştirebilirsiniz.`
+              : "Maliyet oranı hâlâ hedefte."}{" "}
+            <Link href="/panel/urunler#zamlar" className="font-medium underline-offset-2 hover:underline">
+              Bütün zamlar →
+            </Link>
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-4">

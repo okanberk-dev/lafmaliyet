@@ -1,10 +1,12 @@
 "use client";
 
-import { Lock, Trash2 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { FileText, Lock, Paperclip, Trash2, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { startTransition, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
@@ -14,11 +16,17 @@ import { useIsPhone } from "@/components/ui/use-media";
 import { normalizeSupplier } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
+import { formatBytes } from "@/lib/documents";
 import { dateTR, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { saveInvoice } from "@/server/actions/invoices";
+import type { DocumentMeta } from "@/server/documents";
 
-import { guessVat, isParasutLinked, parasutBillUrl, supplierMatchKey, VAT_RATES, type InvoiceRow, type SupplierDefault } from "./rules";
+import { canHaveDocument, documentKind, documentSummary, isParasutDocument, uploadPlan } from "./document-rules";
+import { DocumentPicker, UploadStatus, useDocumentUpload } from "./document-sheet";
+import { prepareDocument, uploadDocument, type UploadResult } from "./document-upload";
+import { InvoiceLines } from "./invoice-lines";
+import { guessVat, isEInvoiceOnly, isParasutLinked, parasutBillUrl, supplierMatchKey, VAT_RATES, type InvoiceRow, type SupplierDefault } from "./rules";
 
 /** Boş değil ama sayı olarak okunamayan tutar */
 const badNumber = (t: string) => t.trim() !== "" && parseNumberTR(t) === null;
@@ -60,6 +68,8 @@ export function InvoiceDialog({
   onClose,
   onDelete,
   parasutCompanyId,
+  documents = [],
+  onOpenDocuments,
 }: {
   invoice: InvoiceRow | null;
   suppliers: string[];
@@ -68,9 +78,20 @@ export function InvoiceDialog({
   onClose: () => void;
   onDelete: (invoice: InvoiceRow) => void;
   parasutCompanyId: string | null;
+  /** Faturanın saklanan belgeleri (yeni faturada boş) */
+  documents?: DocumentMeta[];
+  /** Belge sayfasını açar (kayıtlı faturada) */
+  onOpenDocuments?: () => void;
 }) {
   const [f, setF] = useState(() => blankForm(invoice));
   const [busy, setBusy] = useState(false);
+  const [busyText, setBusyText] = useState<string | null>(null);
+  const router = useRouter();
+  // Belge: kayıtlı faturada hemen yüklenir; yeni faturada seçilen dosya hazırlanıp kayıttan sonra yüklenir
+  const up = useDocumentUpload();
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [addedDocs, setAddedDocs] = useState<DocumentMeta[]>([]);
+  const docs = useMemo(() => [...addedDocs.filter((d) => !documents.some((x) => x.id === d.id)), ...documents], [addedDocs, documents]);
   const [tried, setTried] = useState(false);
   /** Kullanıcı kategoriyi / KDV oranını elle seçtiyse tedarikçi önerisi onu ezmez */
   const [touched, setTouched] = useState({ category: false, vat: false });
@@ -143,6 +164,7 @@ export function InvoiceDialog({
     setBusy(true);
     keepScroll();
     let res: Awaited<ReturnType<typeof saveInvoice>>;
+    let uploaded: UploadResult | null = null;
     try {
       res = await saveInvoice({
         id: invoice?.id ?? null,
@@ -159,13 +181,26 @@ export function InvoiceDialog({
         note: f.note,
         dueDate: f.dueDate || null,
       });
+      if (res.ok && !invoice && attachment) {
+        setBusyText("Belge yükleniyor…");
+        uploaded = await uploadDocument(res.data.id, attachment);
+      }
     } finally {
       setBusy(false);
+      setBusyText(null);
     }
     if (!res.ok) return toast.error(res.error);
     const shown = locked && invoice ? invoice.payable : payableToSave;
+    const withDoc = uploaded?.ok ? " · belge eklendi" : "";
     if (res.data.message) toast.warning("Fatura kaydedildi", { description: res.data.message, duration: 8000 });
-    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}` });
+    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withDoc}` });
+    if (uploaded) {
+      // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
+      keepScroll();
+      startTransition(() => router.refresh());
+      if (!uploaded.ok) toast.error("Belge yüklenemedi", { description: `${uploaded.error} Fatura kaydedildi; listeden açıp belgeyi yeniden ekleyin.`, duration: 10000 });
+    }
+    setAttachment(null);
     if (!again) return onClose();
     // Art arda giriş: tarih ve kategori kalır, diğer alanlar boşalır, imleç tedarikçiye döner
     const next = blankForm(null, { date: f.date, category: f.category });
@@ -223,7 +258,7 @@ export function InvoiceDialog({
           {invoice ? null : (
             <Button
               variant="secondary"
-              disabled={busy}
+              disabled={busy || up.busy}
               onClick={() => save(true)}
               title="Kaydeder ve yeni fatura için formu boşaltır"
               className="max-sm:min-h-12 max-sm:px-3 max-sm:text-sm"
@@ -233,8 +268,8 @@ export function InvoiceDialog({
               <span className="max-sm:hidden">Kaydet, yenisini ekle</span>
             </Button>
           )}
-          <Button type="submit" form="invoice-form" disabled={busy} className={SHEET_BTN}>
-            {busy ? "Kaydediliyor…" : "Kaydet"}
+          <Button type="submit" form="invoice-form" disabled={busy || up.busy} className={SHEET_BTN}>
+            {busy ? (busyText ?? "Kaydediliyor…") : "Kaydet"}
           </Button>
         </>
       }
@@ -277,7 +312,23 @@ export function InvoiceDialog({
           <Input id="f-date" type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} aria-invalid={dateMissing || undefined} disabled={locked} />
         </Field>
         {phone ? null : descAndNo}
-        <Field label="Kategori" htmlFor="f-cat" className="sm:col-span-2" hint={categoryEffect(f.category)}>
+        <Field
+          label={
+            invoice?.needsReview ? (
+              <span className="inline-flex items-center gap-1.5">
+                Kategori
+                <Badge tone="amber" dot>
+                  Kontrol
+                </Badge>
+              </span>
+            ) : (
+              "Kategori"
+            )
+          }
+          htmlFor="f-cat"
+          className="sm:col-span-2"
+          hint={invoice?.needsReview ? `Eşitlemede tahminle yazıldı; kaydedince onaylanır. ${categoryEffect(f.category)}` : categoryEffect(f.category)}
+        >
           <Select
             id="f-cat"
             value={f.category}
@@ -291,6 +342,35 @@ export function InvoiceDialog({
             ))}
           </Select>
         </Field>
+
+        <DocumentField
+          invoice={invoice}
+          docs={docs}
+          attachment={attachment}
+          phase={up.phase}
+          busy={up.busy || busy}
+          onOpen={onOpenDocuments}
+          onRemove={() => {
+            setAttachment(null);
+            up.setPhase({ kind: "idle" });
+          }}
+          onPick={async (file) => {
+            if (invoice) {
+              const doc = await up.upload(invoice.id, file);
+              if (!doc) return;
+              setAddedDocs((a) => [doc, ...a]);
+              toast.success("Belge eklendi", { description: `${documentKind(doc.mime) === "pdf" ? "PDF" : "Fotoğraf"} · ${formatBytes(doc.size)}` });
+              keepScroll();
+              startTransition(() => router.refresh());
+              return;
+            }
+            up.setPhase(uploadPlan(file).action === "compress" ? { kind: "preparing" } : { kind: "idle" });
+            const prepared = await prepareDocument(file);
+            if (!prepared.ok) return up.setPhase({ kind: "error", message: prepared.error });
+            up.setPhase({ kind: "idle" });
+            setAttachment(prepared.file);
+          }}
+        />
 
         {locked && invoice ? (
           <LockedAmounts invoice={invoice} href={parasutHref} />
@@ -365,6 +445,8 @@ export function InvoiceDialog({
           </fieldset>
         )}
 
+        {invoice && (invoice.eInvoiceId || invoice.externalId) ? <InvoiceLines invoiceId={invoice.id} invoiceNet={invoice.amount - invoice.discount} /> : null}
+
         <Field label="Ödeme durumu">
           <Segmented<"paid" | "unpaid">
             label="Ödeme durumu"
@@ -412,6 +494,67 @@ export function InvoiceDialog({
   );
 }
 
+/**
+ * Formdaki "Belge" alanı. Belgesi olan (Paraşüt e-fatura PDF'i ya da yüklenmiş dosya) kayıtlı faturada "Belgeyi
+ * aç"; belgesi yoksa (elle ya da Excel'le girilmiş) kâğıt faturanın fotoğrafı buradan hemen eklenir. Yeni faturada
+ * seçilen dosya hazırlanır (fotoğraf küçültülür) ve "Kaydet"ten sonra yüklenir.
+ */
+function DocumentField({
+  invoice,
+  docs,
+  attachment,
+  phase,
+  busy,
+  onOpen,
+  onPick,
+  onRemove,
+}: {
+  invoice: InvoiceRow | null;
+  docs: DocumentMeta[];
+  attachment: File | null;
+  phase: Parameters<typeof UploadStatus>[0]["phase"];
+  busy: boolean;
+  onOpen?: () => void;
+  onPick: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const has = invoice ? canHaveDocument(invoice, docs.length) : false;
+  const summary = invoice ? documentSummary(invoice, docs) : null;
+  const title = attachment ? attachment.name : summary ? summary.title : "Belge yok";
+  const hint = attachment
+    ? `${formatBytes(attachment.size)} · kaydedince yüklenir`
+    : summary
+      ? summary.hint
+      : "Kâğıt faturanın fotoğrafını çekin ya da PDF'ini ekleyin; kaydedince yüklenir.";
+  return (
+    <Field label="Belge" className="sm:col-span-2">
+      <div className="rounded-2xl bg-panel p-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-surface text-ink" aria-hidden="true">
+            {invoice && isParasutDocument(invoice) ? <FileText size={16} /> : <Paperclip size={16} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-ink">{title}</p>
+            <p className="text-xs text-pretty text-ink-mute">{hint}</p>
+          </div>
+          {has && onOpen ? (
+            <Button variant="secondary" onClick={onOpen} aria-haspopup="dialog" className="text-ink max-sm:min-h-11">
+              Belgeyi aç
+            </Button>
+          ) : null}
+          {attachment ? (
+            <IconButton label="Belgeyi çıkar" onClick={onRemove} disabled={busy}>
+              <X size={15} />
+            </IconButton>
+          ) : null}
+        </div>
+        {!has && !attachment ? <DocumentPicker className="mt-3" onPick={onPick} disabled={busy} /> : null}
+        <UploadStatus phase={phase} className="mt-2" />
+      </div>
+    </Field>
+  );
+}
+
 /** Paraşüt faturasının tutarları: salt okunur özet + nerede düzeltileceği */
 function LockedAmounts({ invoice, href }: { invoice: InvoiceRow; href: string | null }) {
   const net = invoice.amount - invoice.discount;
@@ -426,20 +569,26 @@ function LockedAmounts({ invoice, href }: { invoice: InvoiceRow; href: string | 
     <div className="rounded-2xl bg-panel p-4 sm:col-span-2">
       <p className="flex items-start gap-2 text-[13px] text-ink-soft">
         <Lock size={14} className="mt-0.5 shrink-0 text-ink-mute" aria-hidden="true" />
-        <span>
-          Tutar, tarih ve fatura no Paraşüt&apos;ten gelir; burada değiştirilse sonraki eşitlemede geri dönerdi. Değiştirmek için Paraşüt&apos;te düzeltin
-          {href ? (
-            <>
-              {" "}
-              (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-ink underline-offset-2 hover:underline">
-                Paraşüt&apos;te aç ↗
-              </a>
-              )
-            </>
-          ) : null}
-          .
-        </span>
+        {isEInvoiceOnly(invoice) ? (
+          <span>
+            Tutar, tarih ve fatura no Paraşüt&apos;e gelen e-faturadan alınır; burada değiştirilse sonraki eşitlemede geri dönerdi. E-faturanın PDF&apos;i yukarıdaki “Belge”den açılır.
+          </span>
+        ) : (
+          <span>
+            Tutar, tarih ve fatura no Paraşüt&apos;ten gelir; burada değiştirilse sonraki eşitlemede geri dönerdi. Değiştirmek için Paraşüt&apos;te düzeltin
+            {href ? (
+              <>
+                {" "}
+                (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-ink underline-offset-2 hover:underline">
+                  Paraşüt&apos;te aç ↗
+                </a>
+                )
+              </>
+            ) : null}
+            .
+          </span>
+        )}
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
         {rows.map(([k, v], idx) => (

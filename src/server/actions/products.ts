@@ -6,8 +6,10 @@ import { z } from "zod";
 
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
+import type { PriceAck } from "@/lib/calc/price-impact";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadSettings } from "@/server/data/dataset";
+import { loadModel, loadSettings } from "@/server/data/dataset";
+import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -24,6 +26,34 @@ export async function updateProductPrice(id: number, price: number) {
     if (!before) throw new UserError("Ürün bulunamadı");
     await db.update(s.products).set({ price: p, updatedAt: new Date() }).where(eq(s.products.id, id));
     await logActivity(me, "Satış fiyatı", `${before.name} ${before.size}: ${tl(before.price)} → ${tl(p)}`);
+    refresh();
+    return null;
+  });
+}
+
+/**
+ * Zam uyarısında "şimdilik böyle kalsın": ürünün bugünkü maliyeti saklanır, uyarı kalkar; maliyet bundan da
+ * artarsa (yeni zam) yeniden uyarılır. `undo` saklananı siler (uyarı geri gelir).
+ */
+export async function acknowledgePriceAlert(productId: number, undo = false) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const id = z.number().int().positive().parse(productId);
+    const db = getDb();
+    const model = await loadModel();
+    const p = model.products.find((x) => x.product.id === id);
+    if (!p) throw new UserError("Ürün bulunamadı");
+    await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, PRICE_ACK_KEY)).for("update");
+      const ack: PriceAck = { ...((row?.value as PriceAck | undefined) ?? {}) };
+      if (undo) delete ack[String(id)];
+      else ack[String(id)] = { cost: p.cost, at: new Date().toISOString() };
+      await tx
+        .insert(s.integrationState)
+        .values({ key: PRICE_ACK_KEY, value: ack })
+        .onConflictDoUpdate({ target: s.integrationState.key, set: { value: ack, updatedAt: new Date() } });
+    });
+    await logActivity(me, undo ? "Zam uyarısı geri açıldı" : "Zam uyarısı: fiyat korunuyor", `${p.product.name} ${p.product.size} · ${tl(p.price)}`);
     refresh();
     return null;
   });

@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
 
-import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
@@ -11,6 +11,8 @@ import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } f
 import { MANAGED_QTY_NOTE } from "./constants";
 import { readParasutConfig } from "./config";
 import type { ListResponse, ShowResponse } from "./jsonapi";
+import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
+import { readEInvoiceLines, type LineReadStats } from "./lines";
 import { billToDraft, findExisting, pickCategory, shouldImport, supplierHistory, supplierKey, type BillDraft, type ExistingInvoice } from "./mapping";
 
 const CURSOR_KEY = "parasut.cursor";
@@ -18,6 +20,8 @@ const PRICE_KEY = "parasut.prices";
 const RESUME_KEY = "parasut.resume";
 const CONTACTS_KEY = "parasut.contacts";
 const PENDING_KEY = "parasut.pendingEInvoices";
+/** Gelen e-faturaların imleci (son e-fatura tarihi); gider faturalarınınkinden ayrı */
+const E_CURSOR_KEY = "parasut.eInvoiceCursor";
 /**
  * Ödenmemiş Paraşüt faturalarının Paraşüt'teki son vadesi (dış kimlik → vade): panelde ertelenen vade, Paraşüt'teki
  * vade değişmedikçe eşitlemede ezilmesin (syncedDueDate)
@@ -26,7 +30,7 @@ const DUE_KEY = "parasut.dueDates";
 /** Panelde silinen Paraşüt faturaları (bir sonraki eşitlemede geri gelmesin) */
 export const IGNORE_KEY = "parasut.ignore";
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler */
-export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY];
+export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY];
 const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
 /** Önceki eşitlemeden sonra değişmiş olabilecek faturalar için geriye bakış */
 const LOOKBACK_DAYS = 75;
@@ -42,7 +46,9 @@ const RECHECK_LIMIT = 8;
  * "supplier" belgelenen include listesinde yok ama çalışıyor (topluluk istemcileri); reddedilirse
  * tedarikçisiz, o da olmazsa ürünsüz istenir. Tedarikçi adı gelmeyen faturalar için /contacts/{id} okunur.
  */
-const INCLUDES = ["supplier,category,details,details.product", "category,details,details.product", "category,details"];
+const INCLUDES = ["supplier,category,details,details.product,active_e_document", "supplier,category,details,details.product", "category,details,details.product", "category,details"];
+/** Tek fatura okumasında (yeniden denetim) belgelenmiş include'lar */
+const SHOW_INCLUDE = "category,details,details.product";
 
 type SyncOk = { ok: true; summary: string; runId: number; fetched: number; created: number; updated: number; removed: number; partial: boolean };
 type SyncErr = { ok: false; error: string; runId: number | null };
@@ -100,6 +106,7 @@ function supplierAliases(names: string[]) {
 type ContactCache = Record<string, { name: string; taxNo: string | null }>;
 
 type Existing = ExistingInvoice & {
+  eInvoiceId: string | null;
   unpaid: boolean;
   syncedAt: Date | null;
   dueDate: string | null;
@@ -167,7 +174,13 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   const db = getDb();
   if (ctx.ignored.has(d.externalId) || ctx.applied.has(d.externalId)) return;
   ctx.applied.add(d.externalId);
-  const match = findExisting(d, ctx.existing) as Existing | null;
+  // Aynı fatura e-fatura eşitlemesiyle (içeri alınmadan) zaten açılmış olabilir: e-belge kimliği önce bakılır
+  const eInvoiceId = d.eDocument?.type === "e_invoices" ? d.eDocument.id : null;
+  const byExt = ctx.existing.find((e) => e.externalId === d.externalId) ?? null;
+  const byEDoc = !byExt && eInvoiceId ? (ctx.existing.find((e) => e.eInvoiceId === eInvoiceId && !e.externalId) ?? null) : null;
+  const match = (byExt ?? byEDoc ?? findExisting(d, ctx.existing)) as Existing | null;
+  // e-fatura kimliği başka bir kayıtta duruyorsa (benzersiz) bu kayda yazılmaz
+  const eInvoiceFree = eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === eInvoiceId && e !== match) ? eInvoiceId : null;
   const verdict = shouldImport(d);
   if (!verdict.ok) {
     if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx);
@@ -185,6 +198,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     externalId: d.externalId,
     source: "parasut" as const,
     syncedAt: new Date(),
+    ...(eInvoiceFree ? { eInvoiceId: eInvoiceFree } : {}),
   };
   let invoiceId: number;
   if (match) {
@@ -206,6 +220,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
     Object.assign(match, {
       ...supplierFix,
+      ...(eInvoiceFree ? { eInvoiceId: eInvoiceFree } : {}),
       externalId: d.externalId,
       invoiceNo: d.invoiceNo,
       source: "parasut",
@@ -226,11 +241,22 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
         : pickCategory({ ...d, supplier }, ctx.rules, ctx.history, INVOICE_CATEGORIES);
     const [row] = await db
       .insert(s.invoices)
-      .values({ ...common, unpaid: d.unpaid, dueDate: d.dueDate, origin: "parasut", supplier, category, description: d.description, note: `Paraşüt'ten alındı · kategori: ${reason}` })
+      .values({
+        ...common,
+        unpaid: d.unpaid,
+        dueDate: d.dueDate,
+        origin: "parasut",
+        supplier,
+        category,
+        description: d.description,
+        needsReview: categoryNeedsReview(reason),
+        note: `Paraşüt'ten alındı · kategori: ${reason}`,
+      })
       .returning({ id: s.invoices.id });
     invoiceId = row.id;
     ctx.existing.push({
       id: row.id,
+      eInvoiceId: eInvoiceFree,
       externalId: d.externalId,
       invoiceNo: d.invoiceNo,
       supplier,
@@ -355,6 +381,7 @@ export async function syncParasut(
         .select({
           id: s.invoices.id,
           externalId: s.invoices.externalId,
+          eInvoiceId: s.invoices.eInvoiceId,
           invoiceNo: s.invoices.invoiceNo,
           supplier: s.invoices.supplier,
           date: s.invoices.date,
@@ -426,7 +453,7 @@ export async function syncParasut(
         const externalId = e.externalId!;
         try {
           // Tek fatura okumasında belgelenmiş include'lar istenir; tedarikçi adı önbellekten gelir
-          const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(externalId)}`, { include: INCLUDES[1] });
+          const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(externalId)}`, { include: SHOW_INCLUDE });
           const d = billToDraft(res.data, (res as ShowResponse).included);
           applyContacts([d], contacts);
           await applyDraft(d, ctx);
@@ -447,6 +474,36 @@ export async function syncParasut(
       }
     }
 
+    // ---- gelen e-faturalar: Paraşüt'te "içeri al" yapılmamış olanlar da gider olarak gelir
+    let eStats: EInvoiceStats | null = null;
+    let eError: string | null = null;
+    if (Date.now() - started < deadline - 10_000) {
+      const eCursor = await getState<{ lastIssueDate?: string }>(E_CURSOR_KEY);
+      const eAnchor = eCursor?.lastIssueDate && eCursor.lastIssueDate < today ? eCursor.lastIssueDate : today;
+      const eWindowStart = opts.from ?? (eCursor?.lastIssueDate ? addDays(eAnchor, -LOOKBACK_DAYS) : (cfg.syncFrom ?? `${today.slice(0, 4)}-01-01`));
+      try {
+        eStats = await syncEInvoices(client, ctx, { windowStart: eWindowStart, until: started + deadline - 6_000, today });
+        if (eStats.complete && eStats.maxDate && eStats.maxDate >= (eCursor?.lastIssueDate ?? "")) await setState(E_CURSOR_KEY, { lastIssueDate: eStats.maxDate, at: new Date().toISOString() });
+        await setState(PENDING_KEY, { count: eStats.notImported, total: Math.round(eStats.notImportedTotal * 100) / 100, ingested: true, at: new Date().toISOString() });
+      } catch (err) {
+        if (!(err instanceof ParasutDeadlineError)) {
+          eError = err instanceof Error ? err.message : String(err);
+          console.error("Paraşüt e-fatura eşitlemesi", err);
+        }
+      }
+    }
+
+    // ---- e-fatura kalemleri (UBL): ürün, miktar, birim fiyat; süre kaldıkça en yeni faturadan başlayarak
+    let lineStats: LineReadStats | null = null;
+    if (Date.now() - started < deadline - 8_000) {
+      try {
+        lineStats = await readEInvoiceLines(client, { until: started + deadline - 4_000 });
+        for (const m of lineStats.months) ctx.touchedMonths.add(m);
+      } catch (err) {
+        if (!(err instanceof ParasutDeadlineError)) console.error("Paraşüt e-fatura kalemleri", err);
+      }
+    }
+
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
     if (partial && !reachedEnd) {
@@ -460,11 +517,22 @@ export async function syncParasut(
       if (!keepStoredResume) await db.delete(s.integrationState).where(eq(s.integrationState.key, RESUME_KEY));
       if (maxDate && maxDate >= (cursor?.lastIssueDate ?? "")) await setState(CURSOR_KEY, { lastIssueDate: maxDate, at: new Date().toISOString() });
     }
-    if (Date.now() - started < deadline - 15_000) await countPendingEInvoices(client).catch(() => null);
 
     const { created, updated, removed } = ctx.counts;
-    const fetched = drafts.length;
-    const summary = `${fetched} fatura okundu · ${created} yeni · ${updated} güncellendi${removed ? ` · ${removed} kaldırıldı` : ""}${rechecked ? ` · ${rechecked} yeniden denetlendi` : ""}${partial ? " · süre doldu, kalanı sonraki eşitlemede sürecek" : ""}`;
+    const fetched = drafts.length + (eStats?.fetched ?? 0);
+    const parts = [
+      `${drafts.length} gider faturası${eStats ? ` · ${eStats.fetched} e-fatura` : ""} okundu`,
+      `${created} yeni`,
+      `${updated} güncellendi`,
+      removed ? `${removed} kaldırıldı` : "",
+      rechecked ? `${rechecked} yeniden denetlendi` : "",
+      lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
+      lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
+      lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
+      partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
+      eError ? `e-faturalar okunamadı: ${eError}` : "",
+    ].filter(Boolean);
+    const summary = parts.join(" · ");
     await db
       .update(s.parasutSyncRuns)
       .set({ status: "ok", finishedAt: new Date(), fetched, created, updated, removed, message: summary })
@@ -513,43 +581,173 @@ async function fillSupplierNames(client: ParasutClient, drafts: BillDraft[], cac
   applyContacts(drafts, cache);
 }
 
+interface EInvoiceStats {
+  /** Okunan gelen e-fatura */
+  fetched: number;
+  /** Paraşüt'te içeri alınmamış, panele doğrudan alınan */
+  notImported: number;
+  notImportedTotal: number;
+  maxDate: string;
+  /** Pencerenin başına kadar okundu mu (imleç yalnız o zaman ilerler) */
+  complete: boolean;
+}
+
 /**
- * Paraşüt'e gelen ama "içeri al" yapılmadığı için henüz gider faturası olmayan e-faturalar (yaklaşık).
- * GET /e_invoices belgelenmemiş ama çalışıyor; gelen (inbound), reddedilmemiş ve faturaya bağlanmamış, son 60
- * günün kayıtları sayılır. En yeniler önce istenir (sıralama reddedilirse varsayılan sırayla son iki sayfa).
+ * Gelen e-faturaları okur (yalnız tarihe göre sıralı istek; süzgeç desteklenmiyor) ve panele yazar. Pencere
+ * gider faturalarınınkinden bağımsızdır; kayıt kayıt yazılır, süre dolarsa kalanı sonraki çalışmada.
  */
-async function countPendingEInvoices(client: ParasutClient) {
-  type EAttr = { direction?: string; archived?: boolean; issue_date?: string; contact_name?: string; response_type?: string };
-  const since = addDays(todayTR(), -60);
-  let pages: ListResponse<EAttr>[] = [];
-  try {
-    const first = await client.get<ListResponse<EAttr>>("e_invoices", { include: "invoice", sort: "-issue_date", "page[size]": 25, "page[number]": 1 });
-    pages = [first];
-    if ((first.meta?.total_pages ?? 1) > 1) pages.push(await client.get<ListResponse<EAttr>>("e_invoices", { include: "invoice", sort: "-issue_date", "page[size]": 25, "page[number]": 2 }));
-  } catch (e) {
-    if (!(e instanceof ParasutError) || (e.status !== 400 && e.status !== 422)) throw e;
-    const first = await client.get<ListResponse<EAttr>>("e_invoices", { include: "invoice", "page[size]": 25, "page[number]": 1 });
-    const total = first.meta?.total_pages ?? 1;
-    pages = [first];
-    for (const p of [total, total - 1].filter((p) => p > 1)) pages.push(await client.get<ListResponse<EAttr>>("e_invoices", { include: "invoice", "page[size]": 25, "page[number]": p }));
-  }
-  const seen = new Set<string>();
-  const pending: { from: string | null; date: string | null }[] = [];
-  for (const page of pages) {
-    for (const e of page.data) {
-      if (seen.has(e.id)) continue;
-      seen.add(e.id);
-      const a = e.attributes;
-      const inv = e.relationships?.invoice?.data;
-      const open = inv === null || (Array.isArray(inv) && !inv.length);
-      const answered = a.response_type === "rejected" || a.response_type === "refunded";
-      if (a.direction === "inbound" && !a.archived && open && !answered && (!a.issue_date || a.issue_date.slice(0, 10) >= since)) {
-        pending.push({ from: a.contact_name ?? null, date: a.issue_date ?? null });
+async function syncEInvoices(client: ParasutClient, ctx: Ctx, opts: { windowStart: string; until: number; today: string }): Promise<EInvoiceStats> {
+  const stats: EInvoiceStats = { fetched: 0, notImported: 0, notImportedTotal: 0, maxDate: "", complete: false };
+  for await (const page of client.pages<EInvoiceAttrs>("e_invoices", { include: "invoice", sort: "-issue_date" }, 60)) {
+    let older = false;
+    for (const r of page.data) {
+      const d = eInvoiceToDraft(r);
+      if (d.date && d.date < opts.windowStart) {
+        older = true;
+        continue;
       }
+      if (!d.inbound) continue;
+      stats.fetched++;
+      const ok = shouldImportEInvoice(d).ok;
+      if (ok && !d.importedBillId) {
+        stats.notImported++;
+        stats.notImportedTotal += d.payable;
+      }
+      if (ok && d.date <= opts.today && d.date > stats.maxDate) stats.maxDate = d.date;
+      await applyEInvoice(d, ctx);
     }
+    const total = page.meta?.total_pages;
+    if (older || !page.data.length || (total !== undefined && page.page >= total)) {
+      stats.complete = true;
+      break;
+    }
+    if (Date.now() > opts.until) break;
   }
-  await setState(PENDING_KEY, { count: pending.length, sample: pending.slice(0, 5), at: new Date().toISOString() });
-  return pending.length;
+  return stats;
+}
+
+/** Notun sonuna ek (aynı ek iki kez yazılmaz) */
+function appendNote(note: string | null, add: string): string {
+  if (note?.includes(add)) return note;
+  return note ? `${note} · ${add}` : add;
+}
+
+/**
+ * Tek bir gelen e-faturayı panele yazar:
+ * - içeri alınmışsa tutarları gider faturası taşır; burada yalnız belge için e-fatura bağı kurulur;
+ * - panelde aynı fatura (e-fatura kimliği ya da Excel/elle girilmiş aynı numara, tarih, tutar) varsa ona bağlanır;
+ *   Excel kaydının tutarı e-faturadakiyle aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kontrol istenir;
+ * - yoksa yeni kayıt açılır (kategori kurallardan / tedarikçinin geçmişinden; ödeme durumu e-faturada olmadığından
+ *   "ödendi" varsayılır, kontrol listesinde değiştirilebilir);
+ * - reddedilen/arşivlenen e-faturanın yalnız ondan açılmış kaydı kaldırılır.
+ */
+async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "linked" | "updated" | "removed" | "skipped"> {
+  const db = getDb();
+  const key = `ei:${d.eInvoiceId}`;
+  if (ctx.ignored.has(key) || ctx.applied.has(key)) return "skipped";
+  ctx.applied.add(key);
+  const verdict = shouldImportEInvoice(d);
+  let match: Existing | null = ctx.existing.find((e) => e.eInvoiceId === d.eInvoiceId) ?? null;
+  if (!match && d.importedBillId) match = ctx.existing.find((e) => e.externalId === d.importedBillId) ?? null;
+
+  if (!verdict.ok) {
+    if (match && match.eInvoiceId === d.eInvoiceId) {
+      ctx.touchedMonths.add(match.date.slice(0, 7));
+      if (match.origin === "parasut" && !match.externalId) {
+        await db.delete(s.invoices).where(eq(s.invoices.id, match.id));
+        ctx.existing.splice(ctx.existing.indexOf(match), 1);
+        ctx.counts.removed++;
+        return "removed";
+      }
+      const note = appendNote(match.note, `Paraşüt'te e-fatura ${verdict.reason} — kontrol edin`);
+      await db.update(s.invoices).set({ eInvoiceId: null, eInvoiceUuid: null, note, needsReview: true }).where(eq(s.invoices.id, match.id));
+      Object.assign(match, { eInvoiceId: null, note });
+      ctx.counts.updated++;
+    }
+    return "skipped";
+  }
+
+  if (d.importedBillId) {
+    if (match && !match.eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === d.eInvoiceId)) {
+      await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, match.id));
+      match.eInvoiceId = d.eInvoiceId;
+      return "linked";
+    }
+    return "skipped";
+  }
+
+  if (!match) {
+    // Excel'den ya da elle girilmiş aynı fatura; gider faturasına bağlı ya da başka e-faturaya bağlı olanlar aday değil
+    const candidates = ctx.existing.filter((e) => !e.eInvoiceId && !e.externalId);
+    match = findExisting({ externalId: key, invoiceNo: d.invoiceNo, date: d.date, payable: d.payable, supplier: d.supplier }, candidates) as Existing | null;
+  }
+
+  const now = new Date();
+  const values = { date: d.date, invoiceNo: d.invoiceNo, amount: d.amount, discount: 0, vat: d.vat, payable: d.payable };
+  if (match) {
+    const firstLink = match.eInvoiceId !== d.eInvoiceId;
+    const fromThis = match.origin === "parasut" && !match.externalId;
+    const differs = Math.abs(match.payable - d.payable) > 1 || match.date !== d.date;
+    if (!firstLink && !(fromThis && differs)) return "skipped";
+    const set: Partial<typeof s.invoices.$inferInsert> = { eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid, source: "parasut", syncedAt: now };
+    if (fromThis) Object.assign(set, values);
+    // E-fatura değişti: kalemler ve belgedeki tutar sıradaki okumada yenilenir
+    if (fromThis && differs) set.ublReadAt = null;
+    else if (differs) {
+      // Excel/elle kayıt ilk kez bağlanıyor ve tutarı farklı: e-faturadaki geçerli, kontrol istenir
+      Object.assign(set, values, { needsReview: true, note: appendNote(match.note, `tutar e-faturaya göre güncellendi (önce ${match.payable.toLocaleString("tr-TR")} ₺)`) });
+    }
+    await db.update(s.invoices).set(set).where(eq(s.invoices.id, match.id));
+    if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
+    ctx.touchedMonths.add(d.date.slice(0, 7));
+    Object.assign(match, { eInvoiceId: d.eInvoiceId, source: "parasut", syncedAt: now, ...(set.date ? { date: d.date, payable: d.payable, invoiceNo: d.invoiceNo } : {}), ...(set.note ? { note: set.note } : {}) });
+    ctx.counts.updated++;
+    return firstLink ? "linked" : "updated";
+  }
+
+  const supplier = ctx.alias(d.supplier);
+  const { category, reason } = pickCategory(
+    { supplier, description: null, parasutCategory: null, lines: [] },
+    ctx.rules,
+    supplier === PLACEHOLDER_SUPPLIER ? new Map() : ctx.history,
+    INVOICE_CATEGORIES,
+  );
+  const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}${d.refund ? " · iade faturası" : ""}`;
+  const [row] = await db
+    .insert(s.invoices)
+    .values({
+      ...values,
+      supplier,
+      category,
+      unpaid: false,
+      source: "parasut",
+      origin: "parasut",
+      eInvoiceId: d.eInvoiceId,
+      eInvoiceUuid: d.uuid,
+      syncedAt: now,
+      needsReview: categoryNeedsReview(reason) || d.withholding,
+      note,
+    })
+    .returning({ id: s.invoices.id });
+  ctx.existing.push({
+    id: row.id,
+    eInvoiceId: d.eInvoiceId,
+    externalId: null,
+    invoiceNo: d.invoiceNo,
+    supplier,
+    date: d.date,
+    payable: d.payable,
+    unpaid: false,
+    dueDate: null,
+    origin: "parasut",
+    source: "parasut",
+    note,
+    parasutUnpaid: null,
+    syncedAt: now,
+  });
+  ctx.touchedMonths.add(d.date.slice(0, 7));
+  ctx.counts.created++;
+  return "created";
 }
 
 /**
@@ -651,7 +849,29 @@ export async function applyProductLinks(months?: string[]) {
   return { quantities, prices };
 }
 
-/** Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce) */
+/**
+ * Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri: mal alışları ve "Diğer". Komisyon, kira,
+ * demirbaş, yazılım, reklam ve hizmet faturalarının kalemleri listeyi doldurmasın.
+ */
+export const LINKABLE_CATEGORIES = [...GOODS_CATEGORIES, "Diğer"];
+
+/** Hammaddeye bağlanmayı bekleyen ürün sayısı (zil ve ana sayfa için; listeyle aynı süzgeç) */
+export async function countUnlinkedProducts(): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .select({ n: sql<number>`count(distinct ${s.parasutBillLines.productKey})`.mapWith(Number) })
+    .from(s.parasutBillLines)
+    .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
+    .where(
+      and(
+        inArray(s.invoices.category, LINKABLE_CATEGORIES),
+        notInArray(s.parasutBillLines.productKey, db.select({ k: s.parasutProductLinks.productKey }).from(s.parasutProductLinks)),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/** Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı */
 export async function unlinkedProducts(limit = 40) {
   const db = getDb();
   const [lines, links] = await Promise.all([
@@ -659,26 +879,31 @@ export async function unlinkedProducts(limit = 40) {
       .select({ productKey: s.parasutBillLines.productKey, productName: s.parasutBillLines.productName, unit: s.parasutBillLines.unit, quantity: s.parasutBillLines.quantity, netTotal: s.parasutBillLines.netTotal, date: s.invoices.date, supplier: s.invoices.supplier })
       .from(s.parasutBillLines)
       .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
-      .where(isNotNull(s.parasutBillLines.productKey))
+      .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES)))
       .orderBy(desc(s.invoices.date)),
     db.select({ productKey: s.parasutProductLinks.productKey }).from(s.parasutProductLinks),
   ]);
   const linked = new Set(links.map((l) => l.productKey));
   const agg = new Map<string, { productKey: string; productName: string; unit: string | null; count: number; lastDate: string; lastUnitPrice: number; supplier: string }>();
+  const unitPrice = (l: (typeof lines)[number]) => (l.quantity > 0 && l.netTotal > 0 ? l.netTotal / l.quantity : 0);
   for (const l of lines) {
     if (linked.has(l.productKey)) continue;
     const a = agg.get(l.productKey);
-    if (a) a.count++;
-    else
+    if (a) {
+      a.count++;
+      // Son fatura bedava (iskonto %100) kalemse fiyat bir önceki ücretli kalemden
+      if (!a.lastUnitPrice) a.lastUnitPrice = unitPrice(l);
+    } else
       agg.set(l.productKey, {
         productKey: l.productKey,
         productName: l.productName,
         unit: l.unit,
         count: 1,
         lastDate: l.date,
-        lastUnitPrice: l.quantity > 0 ? l.netTotal / l.quantity : 0,
+        lastUnitPrice: unitPrice(l),
         supplier: l.supplier,
       });
   }
-  return [...agg.values()].sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate)).slice(0, limit);
+  const all = [...agg.values()].sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate));
+  return { items: all.slice(0, limit), total: all.length };
 }

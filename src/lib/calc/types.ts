@@ -137,6 +137,10 @@ export interface Invoice {
   dueDate?: string | null;
   /** Kalan borç (Paraşüt kısmi ödeme; yoksa ödenmemişse ödenecek tutarın tamamı) */
   outstanding?: number | null;
+  /** Paraşüt'teki gelen e-fatura kimliği (içeri alınmamış e-faturalar da buradan gelir; belge PDF'i için) */
+  eInvoiceId?: string | null;
+  /** Eşitlemenin kategorisini tahmin ettiği, kullanıcının henüz onaylamadığı fatura */
+  needsReview?: boolean;
 }
 
 /**

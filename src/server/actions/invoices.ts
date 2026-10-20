@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -56,9 +56,10 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       kept = lockedChanges(cur, data);
       // Kilitli alanlar atılır; kalanlar (kategori, tedarikçi adı, açıklama, not, vade, ödeme durumu) yazılır
       const free = { supplier: data.supplier, description: data.description, category: data.category, unpaid: data.unpaid, note: data.note, dueDate: data.dueDate };
-      await db.update(s.invoices).set(free).where(eq(s.invoices.id, id));
+      // Kaydetmek faturayı kontrol edilmiş sayar
+      await db.update(s.invoices).set({ ...free, needsReview: false }).where(eq(s.invoices.id, id));
     } else {
-      await db.update(s.invoices).set(data).where(eq(s.invoices.id, id));
+      await db.update(s.invoices).set({ ...data, needsReview: false }).where(eq(s.invoices.id, id));
     }
     const net = isParasutLinked(cur) ? cur.amount - cur.discount : data.amount - data.discount;
     await logActivity(me, "Fatura düzenlendi", `${dateTR(isParasutLinked(cur) ? cur.date : data.date)} ${data.supplier}: ${tl(net, 2)} (KDV hariç)`);
@@ -100,7 +101,7 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
         byCategory.set(c, [...(byCategory.get(c) ?? []), r.id]);
       }
       await db.transaction(async (tx) => {
-        for (const [category, ids] of byCategory) await tx.update(s.invoices).set({ category }).where(inArray(s.invoices.id, ids));
+        for (const [category, ids] of byCategory) await tx.update(s.invoices).set({ category, needsReview: false }).where(inArray(s.invoices.id, ids));
       });
       const targets = [...byCategory.keys()];
       const detail =
@@ -110,11 +111,49 @@ export async function setInvoiceCategory(changes: z.input<typeof categoryChanges
       await logActivity(me, "Fatura kategorisi değişti", detail);
       refresh();
     }
+    // Kategorisi zaten doğru olan seçilmiş faturalar da kontrol edilmiş sayılır
+    const same = rows.filter((r) => wanted.get(r.id) === r.category).map((r) => r.id);
+    if (same.length) {
+      await db.update(s.invoices).set({ needsReview: false }).where(and(inArray(s.invoices.id, same), eq(s.invoices.needsReview, true)));
+      if (!changed.length) refresh();
+    }
     return {
       previous: changed.map((r) => ({ id: r.id, category: r.category })),
       changed: changed.length,
       missing: wanted.size - rows.length,
     };
+  });
+}
+
+/**
+ * Eşitlemenin kategorisini tahmin ettiği faturaları "kontrol edildi" yapar (Onayla / Hepsini onayla). `undo`
+ * verilirse aynı faturalar yeniden kontrol bekleyene döner (bildirimdeki "Geri al").
+ */
+export async function confirmInvoices(ids: number[], undo = false) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const list = z.array(zId).min(1, "Fatura seçin").max(1000).parse(ids);
+    const rows = await getDb()
+      .update(s.invoices)
+      .set({ needsReview: z.boolean().parse(undo) })
+      .where(and(inArray(s.invoices.id, list), eq(s.invoices.needsReview, !undo)))
+      .returning({ id: s.invoices.id, supplier: s.invoices.supplier });
+    if (rows.length && !undo) await logActivity(me, "Faturalar onaylandı", rows.length === 1 ? splitSupplier(rows[0].supplier).base : `${rows.length} fatura`);
+    refresh();
+    return { changed: rows.length, ids: rows.map((r) => r.id) };
+  });
+}
+
+/** Panelden yüklenmiş bir belgeyi siler (Paraşüt'ten gelen PDF'in kopyası da silinebilir; gerekirse yeniden indirilir) */
+export async function deleteInvoiceDocument(documentId: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const id = zId.parse(documentId);
+    const [row] = await getDb().delete(s.invoiceDocuments).where(eq(s.invoiceDocuments.id, id)).returning({ fileName: s.invoiceDocuments.fileName, source: s.invoiceDocuments.source });
+    if (!row) throw new UserError("Belge bulunamadı; silinmiş olabilir.");
+    await logActivity(me, "Fatura belgesi silindi", row.fileName);
+    refresh();
+    return { source: row.source };
   });
 }
 
@@ -161,7 +200,14 @@ function snapshotOf(r: InvoiceRow) {
     dueDate: r.dueDate,
     parasutUnpaid: r.parasutUnpaid,
     outstanding: r.outstanding,
+    eInvoiceId: r.eInvoiceId,
+    eInvoiceUuid: r.eInvoiceUuid,
   };
+}
+
+/** Eşitlemenin tanıdığı Paraşüt anahtarı: gider faturası kimliği ya da (içeri alınmamış) "ei:" + e-fatura kimliği */
+function parasutKeyOf(r: { externalId: string | null; eInvoiceId?: string | null }): string | null {
+  return r.externalId ?? (r.eInvoiceId ? `ei:${r.eInvoiceId}` : null);
 }
 
 // Geri alınan kayıt veritabanındaki satırın kopyasıdır: Paraşüt'ten gelen uzun açıklama / tedarikçi adı
@@ -184,6 +230,8 @@ const snapshotSchema = z.object({
   dueDate: zDate.nullable(),
   parasutUnpaid: z.boolean().nullable(),
   outstanding: z.number().finite().nullable(),
+  eInvoiceId: z.string().max(64).nullable().optional(),
+  eInvoiceUuid: z.string().max(64).nullable().optional(),
 });
 type Snapshot = z.infer<typeof snapshotSchema>;
 type DeletedEntry = {
@@ -239,12 +287,13 @@ export async function deleteInvoice(id: number) {
       const lines = await tx.select().from(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, invoiceId));
       const [d] = await tx.delete(s.invoices).where(eq(s.invoices.id, invoiceId)).returning();
       if (!d) return null;
-      if (d.externalId) {
+      const key = parasutKeyOf(d);
+      if (key) {
         const ignore = (await readStateForUpdate<string[]>(tx, IGNORE_KEY)) ?? [];
-        if (!ignore.includes(d.externalId)) await writeState(tx, IGNORE_KEY, [...ignore, d.externalId].slice(-2000));
-        const deleted = ((await readStateForUpdate<DeletedEntry[]>(tx, DELETED_BILLS_KEY)) ?? []).filter((e) => e.externalId !== d.externalId);
+        if (!ignore.includes(key)) await writeState(tx, IGNORE_KEY, [...ignore, key].slice(-2000));
+        const deleted = ((await readStateForUpdate<DeletedEntry[]>(tx, DELETED_BILLS_KEY)) ?? []).filter((e) => e.externalId !== key);
         const entry: DeletedEntry = {
-          externalId: d.externalId,
+          externalId: key,
           deletedAt: new Date().toISOString(),
           deletedBy: me.name,
           row: snapshotOf(d),
@@ -261,9 +310,9 @@ export async function deleteInvoice(id: number) {
     await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`.trim());
     refresh();
     return {
-      externalId: d.externalId,
+      externalId: parasutKeyOf(d),
       /** Elle/Excel faturası için geri alma kopyası; Paraşüt faturası sunucuda saklanır */
-      snapshot: d.externalId ? null : snapshotOf(d),
+      snapshot: parasutKeyOf(d) ? null : snapshotOf(d),
       quantitiesRecomputed: result.lines > 0,
     };
   });
@@ -274,7 +323,7 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const row = snapshotSchema.parse(snapshot);
-    if (row.externalId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
+    if (row.externalId || row.eInvoiceId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
     const [r] = await getDb().insert(s.invoices).values(row).returning({ id: s.invoices.id });
     await logActivity(me, "Silinen fatura geri alındı", `${dateTR(row.date)} ${row.supplier} ${row.invoiceNo ?? ""}`.trim());
     refresh();
@@ -299,7 +348,11 @@ export async function unignoreParasutBill(externalId: string) {
       await writeState(tx, IGNORE_KEY, ignore.filter((x) => x !== ext));
       if (entry) await writeState(tx, DELETED_BILLS_KEY, deleted.filter((e) => e.externalId !== ext));
       if (!entry) return { status: "unignored" as const, entry: null, lines: 0 };
-      const [existing] = await tx.select({ id: s.invoices.id }).from(s.invoices).where(eq(s.invoices.externalId, ext)).limit(1);
+      const [existing] = await tx
+        .select({ id: s.invoices.id })
+        .from(s.invoices)
+        .where(ext.startsWith("ei:") ? eq(s.invoices.eInvoiceId, ext.slice(3)) : eq(s.invoices.externalId, ext))
+        .limit(1);
       if (existing) return { status: "exists" as const, entry, lines: 0 };
       const row = snapshotSchema.parse(entry.row);
       const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });

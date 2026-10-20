@@ -195,8 +195,15 @@ export class ParasutClient {
     this.lastCall = Date.now();
   }
 
-  /** GET {base}/v4/{company}/{path}?query — JSON:API yanıtı. `root: true` firmasız uç noktalar için (/v4/me) */
-  async get<T>(path: string, query: Record<string, string | number | undefined> = {}, { root = false }: { root?: boolean } = {}): Promise<T> {
+  /**
+   * GET {base}/v4/{company}/{path}?query. Oturum düşmüşse bir kez yenilenir, 429/5xx'te geri çekilerek yeniden
+   * denenir. 204 (ör. PDF hazırlanıyor) ve `nullOn` durumlarında null döner.
+   */
+  private async send(
+    path: string,
+    query: Record<string, string | number | undefined>,
+    { root = false, accept = "application/json", nullOn = [] }: { root?: boolean; accept?: string; nullOn?: number[] } = {},
+  ): Promise<Response | null> {
     const prefix = root ? `${this.cfg.baseUrl}/v4/` : `${this.cfg.baseUrl}/v4/${encodeURIComponent(this.cfg.companyId)}/`;
     const url = new URL(`${prefix}${path.replace(/^\//, "")}`);
     for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
@@ -206,11 +213,10 @@ export class ParasutClient {
       await this.throttle();
       const token = await this.accessToken();
       const res = await fetchParasut(path.split("/")[0] || path, url, {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        headers: { Authorization: `Bearer ${token}`, Accept: accept },
       });
-      // 204: içerik yok (ör. PDF henüz hazırlanıyor); çağıran null'ı ele alır
-      if (res.status === 204) return null as T;
-      if (res.ok) return (await res.json()) as T;
+      if (res.status === 204 || nullOn.includes(res.status)) return null;
+      if (res.ok) return res;
       const body = await res.text();
       if (res.status === 401 && !refreshed) {
         refreshed = true;
@@ -226,6 +232,33 @@ export class ParasutClient {
       }
       throw new ParasutError(parasutErrorText(res.status, body), res.status, body);
     }
+  }
+
+  /** GET {base}/v4/{company}/{path}?query — JSON:API yanıtı. `root: true` firmasız uç noktalar için (/v4/me) */
+  async get<T>(path: string, query: Record<string, string | number | undefined> = {}, { root = false }: { root?: boolean } = {}): Promise<T> {
+    // 204: içerik yok (ör. PDF henüz hazırlanıyor); çağıran null'ı ele alır
+    const res = await this.send(path, query, { root });
+    return (res ? await res.json() : null) as T;
+  }
+
+  /**
+   * JSON olmayan uçlar (ör. `e_invoices/{id}/signed_ubl` ZIP verir). Kayıt yoksa (404) ya da içerik hazır değilse
+   * (204) null; `maxBytes`tan büyük dosya reddedilir.
+   */
+  async getBytes(path: string, maxBytes = 15 * 1024 * 1024): Promise<{ bytes: Buffer; contentType: string } | null> {
+    const res = await this.send(path, {}, { accept: "*/*", nullOn: [404] });
+    if (!res) return null;
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    if (declared > maxBytes) throw new ParasutError(`Paraşüt'ün verdiği dosya çok büyük (${Math.round(declared / 1048576)} MB).`, 0);
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(await res.arrayBuffer());
+    } catch (e) {
+      const name = (e as Error)?.name;
+      throw new ParasutError(name === "TimeoutError" || name === "AbortError" ? `Paraşüt dosyayı ${REQUEST_TIMEOUT_MS / 1000} saniyede göndermedi (${path.split("/")[0]}).` : "Paraşüt dosyası okunamadı.", 0);
+    }
+    if (bytes.length > maxBytes) throw new ParasutError("Paraşüt'ün verdiği dosya çok büyük.", 0);
+    return { bytes, contentType: res.headers.get("content-type") ?? "" };
   }
 
   /**

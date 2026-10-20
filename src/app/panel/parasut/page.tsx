@@ -1,4 +1,4 @@
-import { asc, count, desc, eq, max } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -34,7 +34,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, [stats], cursorRow, pendingRow] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, [stats], cursorRow, pendingRow, [lineReads]] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -53,11 +53,22 @@ async function ParasutContent() {
       .orderBy(asc(s.parasutProductLinks.productName)),
     db.select({ id: s.ingredients.id, name: s.ingredients.name, unit: s.ingredients.unit, category: s.ingredients.category }).from(s.ingredients).orderBy(asc(s.ingredients.name)),
     unlinkedProducts(40),
-    db.select({ n: count(), last: max(s.invoices.syncedAt) }).from(s.invoices).where(eq(s.invoices.source, "parasut")),
+    db
+      .select({ n: count(), last: max(s.invoices.syncedAt), review: sql<number>`count(*) filter (where ${s.invoices.needsReview})`.mapWith(Number) })
+      .from(s.invoices)
+      .where(eq(s.invoices.source, "parasut")),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.cursor")).limit(1),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.pendingEInvoices")).limit(1),
+    // E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri UBL belgesinden okunur
+    db
+      .select({
+        read: sql<number>`count(*) filter (where ${s.invoices.ublReadAt} is not null)`.mapWith(Number),
+        pending: sql<number>`count(*) filter (where ${s.invoices.ublReadAt} is null)`.mapWith(Number),
+      })
+      .from(s.invoices)
+      .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId))),
   ]);
-  const pending = pendingRow[0]?.value as { count: number; sample: { from: string | null; date: string | null }[]; at: string } | undefined;
+  const pending = pendingRow[0]?.value as { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | undefined;
 
   return (
     <ParasutScreen
@@ -67,12 +78,14 @@ async function ParasutContent() {
       syncFrom={process.env.PARASUT_SYNC_FROM?.trim() || null}
       cursor={(cursorRow[0]?.value as { lastIssueDate?: string } | undefined)?.lastIssueDate ?? null}
       pendingEInvoices={pending ?? null}
-      stats={{ invoices: stats?.n ?? 0, lastSyncedAt: stats?.last ? new Date(stats.last).toISOString() : null }}
+      stats={{ invoices: stats?.n ?? 0, lastSyncedAt: stats?.last ? new Date(stats.last).toISOString() : null, needsReview: stats?.review ?? 0 }}
       runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
       rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
       links={links}
       ingredients={ingredients}
-      unlinked={unlinked}
+      unlinked={unlinked.items}
+      unlinkedTotal={unlinked.total}
+      lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
       categories={INVOICE_CATEGORIES}
     />
   );

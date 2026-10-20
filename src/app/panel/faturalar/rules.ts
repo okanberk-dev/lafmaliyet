@@ -53,6 +53,55 @@ export function parasutBillUrl(companyId: string, externalId: string): string {
   return `https://uygulama.parasut.com/${encodeURIComponent(companyId)}/fis-faturalar/${encodeURIComponent(externalId)}`;
 }
 
+/** Paraşüt'te içeri alınmamış gelen e-faturadan gelen kayıt (gider faturası yok; "Paraşüt'te aç" çıkmaz) */
+export function isEInvoiceOnly(i: { eInvoiceId?: string | null; externalId?: string | null }): boolean {
+  return Boolean(i.eInvoiceId) && !i.externalId;
+}
+
+// ---------------------------------------------------------------- Durum süzgeci (?durum=)
+
+/**
+ * Adresteki ?durum= değerleri. "kontrol": eşitlemenin kategorisini tahminle yazdığı, sahibinin onayını bekleyen
+ * faturalar (needsReview). Bildirimlerdeki bağlantılar ?durum=odenmedi kullanır.
+ */
+export type InvoiceStatus = "tumu" | "kontrol" | "odenmedi" | "odendi";
+const STATUSES: readonly InvoiceStatus[] = ["tumu", "kontrol", "odenmedi", "odendi"];
+
+/** Elle yazılmış ya da eskimiş değer "tumu" olur: bozuk bağlantı listeyi boşaltmasın */
+export function parseStatus(raw: string | null | undefined): InvoiceStatus {
+  return STATUSES.includes(raw as InvoiceStatus) ? (raw as InvoiceStatus) : "tumu";
+}
+
+type StatusFields = { unpaid: boolean; needsReview?: boolean | null };
+
+export function matchesStatus(i: StatusFields, status: InvoiceStatus): boolean {
+  if (status === "kontrol") return Boolean(i.needsReview);
+  if (status === "odenmedi") return i.unpaid;
+  if (status === "odendi") return !i.unpaid;
+  return true;
+}
+
+/** Durum çiplerinin sayaçları; liste durum dışındaki süzgeçlerden (ay, kategori, arama) geçmiş olmalı */
+export function statusCounts(list: StatusFields[]) {
+  let review = 0;
+  let unpaid = 0;
+  for (const i of list) {
+    if (i.needsReview) review++;
+    if (i.unpaid) unpaid++;
+  }
+  return { all: list.length, review, unpaid, paid: list.length - unpaid };
+}
+
+/** Onay bildirimi: tek faturada tedarikçi ve kategori, çoğunda sayı */
+export function confirmToast(rows: { supplier: string; category: string }[]): { title: string; description: string } {
+  if (rows.length === 1) return { title: "Kategori onaylandı", description: `${splitSupplier(rows[0].supplier).base} · ${rows[0].category}` };
+  const categories = new Set(rows.map((r) => r.category));
+  return {
+    title: `${rows.length} faturanın kategorisi onaylandı`,
+    description: categories.size === 1 ? [...categories][0] : `${categories.size} kategori`,
+  };
+}
+
 // ---------------------------------------------------------------- Tedarikçi, not, tahmin
 
 /**

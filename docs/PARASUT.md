@@ -1,7 +1,9 @@
 # Paraşüt entegrasyonu
 
-Panel, Paraşüt'teki **gider faturalarını** (purchase bills) her sabah 07:30'da kendisi alır ve hesaplara katar:
-Faturalar, Gelir-gider (mal alışları, komisyonlar), Genel bakış, Tutarlılık (alınan miktar) ve hammadde fiyatları.
+Panel, Paraşüt'e **gelen e-faturaları** (Paraşüt'te "içeri al" yapılmamış olanlar dahil) ve **gider faturalarını**
+(purchase bills) her sabah 07:00–08:00 arasında kendisi alır ve hesaplara katar: Faturalar, Gelir-gider (mal
+alışları, komisyonlar), Genel bakış, Tutarlılık (alınan miktar) ve hammadde fiyatları. Her faturanın e-fatura PDF'i
+panelde açılır ve indirilir.
 Ekran: **Ayarlar › Paraşüt entegrasyonu** (`/panel/parasut`).
 
 ## 1. Kurulum (bir kez)
@@ -92,7 +94,27 @@ kategori sonraki eşitlemelerde korunur.
 
 ## 5. Kalemler, alınan miktar ve fiyat
 
-Detaylı faturaların kalemleri (`purchase_bill_details`) saklanır. Ekrandaki **Ürün → hammadde bağlantıları**:
+Kalemler iki yerden gelir ve aynı tabloda (`parasut_bill_lines`) durur:
+
+- **Gelen e-faturalar** (içeri alınmamış olanlar ve e-faturaya bağlanan Excel kayıtları): kalemler e-faturanın imzalı
+  UBL belgesinden okunur (`GET /v4/{firma}/e_invoices/{id}/signed_ubl` → tek XML'li ZIP; `ubl.ts`, `lines.ts`).
+  Ürün adı, satıcı ürün kodu, miktar ve birim (UN/ECE kodu: C62 = Adet, NPL = Koli, KGM = kg…), birim fiyat,
+  iskonto, KDV oranı ve KDV hariç net tutar yazılır. Bazı sağlayıcılar kalem tutarını brüt yazıp iskontoyu ayrıca
+  verir (Erbak, Sütaş); hangi alanın net olduğu faturanın KDV hariç toplamını tutturan yorumla seçilir, fatura altı
+  iskonto kalemlere oranla dağıtılır. Canlı veride 82 gelen e-faturanın 82'sinde kalemlerin toplamı faturayı
+  kuruşu kuruşuna tuttu (20 Eki 2026). Her eşitleme kalan süre kadar faturanın kalemlerini okur (en yeni önce);
+  beklemeden okumak için Paraşüt sayfasında **Kalemleri şimdi oku**. Okunan fatura `invoices.ubl_read_at` ile
+  işaretlenir; e-fatura değişirse yeniden okunur. Belgedeki vade, boş vadeye yazılır.
+- **Tevkifatlı e-fatura:** Paraşüt'ün listesi tedarikçiye ödenecek tutarı (`net_total`, tevkifat düşülmüş) ve tam
+  KDV'yi verir; "ödenecek − KDV" maliyeti eksik çıkarır (ör. 34.200 − 6.000 = 28.200, doğrusu 30.000). Belge
+  okununca KDV hariç tutar belgeden yazılır, notta eski tutar görünür. Elle değiştirilmiş tutara dokunulmaz.
+- **İçeri alınmış gider faturaları:** Paraşüt'teki kalemler (`purchase_bill_details`).
+
+Kalemler Faturalar'da faturayı açınca **Kalemler** bölümünde görünür (`GET /api/faturalar/{id}/kalemler`):
+miktar, net birim fiyat, KDV, bağlı hammadde ve bu faturadaki fiyatı (₺/kg, ₺/L, ₺/adet).
+
+Ekrandaki **Ürün → hammadde bağlantıları** (yalnız mal alışı ve "Diğer" kategorisindeki faturaların kalemleri
+listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları gelmez):
 
 - Paraşüt ürününü (ya da açıklamasını) bir hammaddeye bağlayın ve **çarpanı** yazın: Paraşüt'teki 1 birim kaç
   hammadde birimi? (ör. "Süt 1 L" → süt hammaddesi ml ise `1000`; "Koli 12×1 L" → `12000`).
@@ -101,23 +123,87 @@ Detaylı faturaların kalemleri (`purchase_bill_details`) saklanır. Ekrandaki *
   Tutarlılık'ta böyle bir satır elle düzeltilirse notu silinir ve artık eşitlemeye ait olmaz.
 - "Fiyatı güncelle" açıksa, en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç) hammaddenin paket fiyatı
   olur, paket boyu çarpan olur ve fiyat geçmişine "Paraşüt" olarak yazılır (değişim %0,5'ten küçükse yazılmaz).
+  Bedava gelen kalem (%100 iskonto) miktara girer, fiyata girmez.
+- **Öneriler** (`src/lib/product-match.ts`): aynı adlı (boyut hariç) ürün daha önce bağlandıysa o hammadde ve çarpan;
+  yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
+  tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9.
+  **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
+- Bağlanmayı bekleyen ürün sayısı zilde görünür.
 
-## 6. Gelen e-faturalar
+Böylece Tutarlılık'ta **alınan** (faturalardan) ile **satışa göre kullanılan** (satılan adet × reçete) karşılaştırılır;
+iki ayın stok sayımı girilince gerçek tüketim (devir + alınan − devreden) ve sapma hesaplanır.
 
-Paraşüt'e e-Fatura ağından gelen faturalar **kendiliğinden gider faturası olmaz**: Paraşüt'te
-*Giderler → Gelen e-Faturalar* ekranından **içeri al** (tek tek ya da toplu, en fazla 100) yapılmaları gerekir.
-API'de bunu yapan bir uç nokta yok. Panel, belgelenmemiş `GET /e_invoices` listesinden içeri alınmayı bekleyenleri
-yaklaşık sayar ve Paraşüt ekranında uyarı gösterir. e-Arşiv ve kâğıt faturalar Paraşüt'e elle (hızlı/detaylı fiş)
-girildikten sonra gelir.
+### 5a. Zam uyarısı
+
+Hammadde fiyatı her değiştiğinde fiyat geçmişine yazılır (elle, Excel, Paraşüt faturası). Son 30 günde fiyatı
+%5'ten fazla artan hammaddeler ve bu yüzden maliyeti %1'den fazla artan ürünler hesaplanır (`price-impact.ts`):
+eski maliyet, zamlanan hammaddenin pencereden önceki fiyatıyla aynı reçeteden bulunur. Zamdan sonra maliyet oranı
+hedefin üstündeki ürüne fiyat önerilir; öneri şu ikisinin küçüğüdür (5 ₺'ye yukarı): hedef oranı tutturan fiyat
+(⌈maliyet ÷ hedef × (1 + KDV); 5⌉) ve zamdan önceki oranı koruyan fiyat (fiyat × yeni maliyet ÷ eski maliyet).
+Zamdan önce hedefte olan ürüne hedef fiyat yeter; zaten hedefin üstünde olana (hazır alınan tatlı gibi) yalnız
+zammın payı önerilir. Fiyatı öneriden düşük ürün uyarı olur:
+
+- Genel bakış › Dikkat edilmesi gerekenler ve zil: "Hammadde zammı: N ürünün fiyatı hedefin altında kaldı";
+- sabah e-postası: yalnız son zam e-postasından sonraki yeni zamlar (her sabah yinelenmez);
+- Ürünler › **Hammadde zamları** (`#zamlar`): eski → yeni maliyet, maliyet oranı, birim kâr; **Fiyatı X ₺ yap**
+  ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır);
+- ürün kartında not, Hammaddeler'de "↑ %16" rozeti.
+
+## 6. Gelen e-faturalar ("içeri al" gerekmez)
+
+Paraşüt'e e-Fatura ağından gelen faturalar Paraşüt'te *Giderler → Gelen e-Faturalar* ekranında bekler; Paraşüt'te
+**içeri al** yapılınca gider faturası olurlar. Panel bunu **beklemez**: belgelenmemiş `GET /v4/{firma}/e_invoices`
+listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak yazar (`src/server/parasut/einvoice.ts`,
+`sync.ts` → `syncEInvoices`). Canlı denemeyle doğrulandı (20 Eki 2026):
+
+- Liste yalnız `sort=-issue_date` ile çalışır (süzgeç ve başka sıralamalar 400 döner, sırasız istek yanıt vermez);
+  sayfa başına 25 kayıt. Gelen (`direction=inbound`) faturalar alınır; giden, reddedilen, arşivlenen ve döviz olanlar
+  alınmaz.
+- `external_id` fatura numarası, `issue_date` tarih, `contact_name` tedarikçi, `net_total` KDV dahil ödenecek,
+  `total_vat` KDV. KDV hariç tutar = `net_total − total_vat` (e-fatura listesinde iskonto ayrıca gelmez). İade
+  faturası eksi, tevkifatlı fatura "kontrol bekleyen" yazılır (tutarı belge okununca düzelir, bkz. 5).
+- Kalemler `signed_ubl` belgesinden okunur (bkz. 5). `ubl`, `xml`, `html` uçları yoktur (404).
+- Ödeme bilgisi e-faturada yoktur: yeni kayıt **ödendi** varsayılır (her sabah onlarca ödenmemiş fatura
+  hatırlatılmasın); ödenmeyenler Faturalar'da "ödenmedi" işaretlenir.
+- **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
+  fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı
+  aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur. Fatura sonradan Paraşüt'te
+  içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman ödeme durumu da gelir
+  ve kalemler Paraşüt'ün gider faturasından okunur.
+- Panelde silinen e-fatura kaydı `ei:<kimlik>` anahtarıyla yok sayılanlara eklenir, geri gelmez (Faturalar › Silinen
+  Paraşüt faturaları'ndan geri alınır).
+- e-Arşiv ve kâğıt faturalar API'de yoktur: Paraşüt'e elle girilirse gider faturası olarak gelir ya da panelde elle
+  eklenip fotoğrafı/PDF'i yüklenir.
+
+## 6a. Belgeler (PDF önizleme ve indirme)
+
+- Paraşüt'ten gelen her faturada **Belge**: `GET /api/faturalar/{id}/belge` (yalnız yönetici). E-faturadan gelen
+  kayıtta `GET /v4/{firma}/e_invoices/{id}/pdf` 1 saatlik bir indirme adresi döner (Paraşüt hazırlarken 204);
+  gider faturasında `active_e_document` e-faturası, yoksa Paraşüt'teki `photo` görseli kullanılır. PDF ilk açılışta
+  indirilir ve `invoice_documents` tablosunda saklanır; sonraki açılışlar anında gelir. `?indir=1` indirir.
+- Paraşüt'te belgesi olmayan faturaya (elle girilmiş, Excel'den gelmiş) panelden **PDF ya da fotoğraf** eklenir
+  (`POST` aynı adres, form alanı `dosya`, en çok 4 MB; tür içerikten denetlenir; fotoğraflar telefonda küçültülür).
+
+## 6b. Kontrol bekleyen faturalar
+
+Eşitlemenin açtığı yeni faturanın kategorisi kurala, tedarikçinin geçmişine ya da komisyon platformu listesine
+dayanmıyorsa (ipucu ya da "Diğer") fatura **kontrol bekleyen** olur (`invoices.needs_review`). Faturalar'da
+"Kontrol bekleyen" süzgeci, satırda tek dokunuşla **Onayla**, toplu onay; kategori değiştirmek ya da faturayı
+kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › Bu ayın işleri'nde görünür.
 
 ## 7. Elle çalıştırma ve sıfırlama
 
 - **Şimdi eşitle:** otomatik pencereyle hemen çalıştırır.
+- **Kalemleri şimdi oku:** sıradaki e-faturaların kalemlerini beklemeden okur (her çağrı ~45 sn; ekran bitene kadar
+  sürdürür).
 - **Tarihten eşitle:** seçilen tarihten bugüne yeniden okur (geçmişi doldurmak için).
 - **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler; mevcut faturalar çoğalmaz.
-- Günlük işler (Vercel Cron, `Authorization: Bearer $CRON_SECRET`): `GET /api/cron/parasut` 07:30'da (04:30 UTC)
-  Paraşüt'ü eşitler; `GET /api/cron/gunluk` 08:00'de (05:00 UTC) hatırlatma e-postasını gönderir. Ayrı işler
-  olduğu için yavaş bir eşitleme e-postayı geciktirmez.
+- Günlük işler (Vercel Cron, `Authorization: Bearer $CRON_SECRET`; Hobby planında her iş kendi saatinin bir
+  saatlik penceresinde çalışır): `GET /api/cron/parasut` 07:00–08:00 (04:30 UTC) Paraşüt'ü eşitler;
+  `GET /api/cron/gunluk` 08:00–09:00 (05:00 UTC) sabah e-postasını gönderir. Paraşüt işi o sabah başarıyla
+  çalışmadıysa e-posta işi önce bir kez daha eşitler; böylece e-postaya o sabahın faturaları girer.
+- Vercel → lafmaliyet → Settings → Cron Jobs ekranında iki iş görünür; **Run** ile elle çalıştırılabilir,
+  **View Logs** son çalışmaları gösterir.
 
 ## 8. Açık noktalar
 

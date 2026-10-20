@@ -63,6 +63,8 @@ export interface IngredientRow extends Ingredient {
   history: { at: string; price: number; size: number; by: string | null; note: string | null }[];
   /** Silmeyi engelleyen geçmiş kayıt sayıları */
   deps: IngredientDeps;
+  /** Son 30 günde %5'ten fazla fiyat değişimi (zam uyarısıyla aynı hesap); yoksa null */
+  recentChange?: { pct: number; at: string } | null;
 }
 
 type Filter = "all" | "tahmini" | "kullanilmayan" | "pasif";
@@ -283,6 +285,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           {r.isEstimate ? (
             <Badge tone="amber" dot title={r.note ?? "Faturada bulunamayan, tahmini değer"}>
               Tahmini
+            </Badge>
+          ) : null}
+          {r.recentChange ? (
+            <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(r.recentChange.at.slice(0, 10))})`}>
+              {r.recentChange.pct > 0 ? "↑" : "↓"} {pct(Math.abs(r.recentChange.pct), 0)}
             </Badge>
           ) : null}
           {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}

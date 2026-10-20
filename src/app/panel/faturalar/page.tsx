@@ -16,17 +16,20 @@ import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
+import { listInvoiceDocuments } from "@/server/documents";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
 import { DeletedBills } from "./deleted-bills";
+import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
 import { MonthStats } from "./month-stats";
+import { ReviewNotice } from "./review-notice";
 import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
 
 const DESCRIPTION =
-  "Paraşüt'teki alış faturaları. Mal alımları (hammadde, tatlı, ambalaj) gelir-gider tablosuna tedarikçi bazında, komisyon faturaları komisyon giderlerine otomatik gider.";
+  "Paraşüt'e gelen e-faturalar her sabah kendiliğinden gelir, Paraşüt'te “içeri al” gerekmez; elle eklediğiniz faturalar da burada. Mal alımları (hammadde, tatlı, ambalaj) gelir-gider tablosuna tedarikçi bazında, komisyon faturaları komisyon giderlerine otomatik gider.";
 
 /** Sabit kategori sütununun sağındaki ince çizgi (kayarken içerikten ayrılsın) */
 const EDGE = "shadow-[inset_-1px_0_0_var(--color-line-strong)]";
@@ -67,12 +70,14 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state] = await Promise.all([
+  const [model, state, docs] = await Promise.all([
     loadModel(),
     db
       .select()
       .from(s.integrationState)
       .where(inArray(s.integrationState.key, [IGNORE_KEY, DELETED_BILLS_KEY])),
+    // Yalnız belge bilgileri (ad, tür, boyut); dosyanın kendisi açılınca /api/faturalar/{id}/belge'den gelir
+    listInvoiceDocuments(),
   ]);
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
   const invoices: InvoiceRow[] = model.ds.invoices
@@ -92,6 +97,8 @@ async function InvoicesContent() {
   const commissionByMonth = summary.find((r) => r.category === COMMISSION_CATEGORY)?.byMonth ?? months.map(() => 0);
   const unpaid = unpaidSummary(invoices);
   const supplierCount = new Set(invoices.map((i) => normalizeSupplier(i.supplier))).size;
+  // Eşitlemenin kategorisini tahminle yazdığı, onay bekleyen faturalar
+  const reviewCount = invoices.filter((i) => i.needsReview).length;
 
   return (
     <>
@@ -139,9 +146,12 @@ async function InvoicesContent() {
         />
       </div>
 
-      {/* Süzgeçler (?ara, ?durum=odenmedi, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
+      <ReviewNotice count={reviewCount} />
+
+      {/* Süzgeçler (?ara, ?durum=odenmedi|kontrol, ?kategori, ?ay, ?sirala) adreste; istemci okur, sunucuya istek gitmez */}
       <InvoicesClient
         invoices={invoices}
+        documents={groupDocuments(docs)}
         months={months}
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
         parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
@@ -306,8 +316,8 @@ async function InvoicesContent() {
       </Card>
 
       {ignored.length ? <DeletedBills bills={ignored} /> : null}
-      {/* Telefon: sayfanın sonu yüzen "Fatura ekle" düğmesinin altında kalmasın */}
-      <div aria-hidden="true" className="h-16 lg:hidden" />
+      {/* Telefon: sayfanın sonu yüzen "Fatura ekle" düğmesinin altında kalmasın (tablette düğme başlıkta) */}
+      <div aria-hidden="true" className="h-16 sm:hidden" />
     </>
   );
 }

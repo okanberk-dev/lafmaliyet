@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadPriceAlerts } from "@/server/data/price-alerts";
 
 import { waterSource } from "../../ayarlar/water-text";
 import { RecipeEditor } from "./recipe-editor";
@@ -87,6 +88,7 @@ async function RecipeContent({
   if (!product) notFound();
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
+  const impact = (await loadPriceAlerts(model).catch(() => null))?.impacts.find((i) => i.productId === product.id) ?? null;
 
   const history = model.salesMonths.map((m) => ({ month: m, label: monthLabel(m), qty: model.soldByProduct(m).get(product.id) ?? 0 }));
   const siblings = model.products
@@ -143,6 +145,21 @@ async function RecipeContent({
         text: waterSource(model.water),
         short: waterSource(model.water, true),
       }}
+      priceImpact={
+        impact
+          ? {
+              costBefore: impact.costBefore,
+              costAfter: impact.costAfter,
+              ratioBefore: impact.ratioBefore,
+              ratioAfter: impact.ratioAfter,
+              suggestedPrice: impact.suggestedPrice,
+              basis: impact.basis,
+              needsPrice: impact.needsPrice,
+              acknowledged: impact.acknowledged,
+              drivers: impact.drivers.map((d) => ({ name: d.name, pct: d.pct })),
+            }
+          : null
+      }
     />
   );
 }

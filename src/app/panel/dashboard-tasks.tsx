@@ -52,7 +52,8 @@ export interface MonthTaskFacts {
   dim: number;
   sales: { lines: number; unmatched: number; summaryRows: number; refMonth: string | null };
   info: { openDays: number | null; posRevenue: number | null };
-  invoices: { count: number; goods: number };
+  /** review: kategorisi tahminle yazılmış, henüz onaylanmamış faturalar (Paraşüt eşitlemesi) */
+  invoices: { count: number; goods: number; review?: number };
   water: { bill: number | null; usedInRecipes: boolean; perLiter: number; costMonth: string | null; reason: WaterCost["reason"] };
   stock: { lines: number; total: number };
   /** null: ödeme listesi okunamadı */
@@ -102,7 +103,7 @@ export function monthTaskFacts(
       refMonth,
     },
     info: { openDays: info?.openDays ?? null, posRevenue: info?.posRevenue ?? null },
-    invoices: { count: invoices.length, goods: model.goodsPurchases(month) },
+    invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: invoices.filter((i) => i.needsReview).length },
     water: { bill, usedInRecipes, perLiter: model.water.perLiter, costMonth: model.water.month, reason: model.water.reason },
     stock: {
       lines: sheet.groups.reduce((n, g) => n + g.lines.filter((l) => l.qty !== null).length, 0) + sheet.extras.length,
@@ -214,6 +215,15 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         detail: `Son Paraşüt eşitlemesi hata verdi${p.lastRunAt ? ` (${dateTimeTR(p.lastRunAt)})` : ""}; yeni faturalar gelmemiş olabilir.${f.invoices.count ? ` Bu ay ${num(f.invoices.count)} fatura var.` : ""}`,
         href: "/panel/parasut",
         action: "Paraşüt'e bak",
+      });
+    } else if (f.invoices.review) {
+      out.push({
+        key: "fatura",
+        title: "Faturalar",
+        status: "todo",
+        detail: `${num(f.invoices.count)} fatura · ${num(f.invoices.review)} tanesinin kategorisi tahminle yazıldı; doğruysa tek dokunuşla onaylayın.${sync}`,
+        href: `/panel/faturalar?ay=${m}&durum=kontrol`,
+        action: "Kontrol et",
       });
     } else if (f.invoices.count) {
       out.push({

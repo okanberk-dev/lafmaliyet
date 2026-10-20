@@ -15,8 +15,11 @@ function fmt(min: number, max: number) {
 
 export function num(v: number | null | undefined, digits = 0, minDigits = 0): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "–";
-  const r = Object.is(Math.round(v * 10 ** digits) / 10 ** digits, -0) ? 0 : v;
-  return fmt(minDigits, digits).format(r);
+  // En az ondalık en çoktan büyük verilirse Intl hata fırlatır (sayfa çöker); "en çok" olan büyüğü sayılır
+  const max = Math.max(digits, minDigits);
+  const min = Math.min(digits, minDigits);
+  const r = Object.is(Math.round(v * 10 ** max) / 10 ** max, -0) ? 0 : v;
+  return fmt(min, max).format(r);
 }
 
 // Tutarla ₺ arasında bölünmez boşluk: satır sarılınca "₺" tek başına alt satıra düşmez

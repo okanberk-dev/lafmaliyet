@@ -4,8 +4,9 @@ import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 
-// Her sabah 07:30 (04:30 UTC; vercel.json → crons): Paraşüt'ten gider faturaları. 50 sn'de kalan sayfalar
-// bir sonraki çalışmada kaldığı yerden sürer.
+// Her sabah 07:00–08:00 (04:30 UTC; vercel.json → crons; Hobby planında saat bir saatlik pencerede esnek):
+// Paraşüt'ten gider faturaları ve gelen e-faturalar (Paraşüt'te "içeri al" yapılmamışlar dahil). 45 sn'de kalan
+// sayfalar bir sonraki çalışmada kaldığı yerden sürer; sabah e-postası işi bu çalışma başarısızsa bir kez daha dener.
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {

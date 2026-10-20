@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, CircleDashed, Link2, ListFilter, Package, Pencil, PlugZap, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
+import { CheckCircle2, CircleDashed, FileText, Link2, ListFilter, Package, Pencil, PlugZap, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useId, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, fold, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
@@ -18,15 +19,18 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { dateTimeTR, dateTR, num, tl2 } from "@/lib/format";
+import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
+import { guessLinkFactor, suggestIngredient } from "@/lib/product-match";
 import { cn } from "@/lib/utils";
 import {
   deleteCategoryRule,
   deleteProductLink,
   disconnectParasut,
+  readParasutLines,
   runParasutSync,
   saveCategoryRule,
   saveProductLink,
+  saveProductLinks,
   testParasutConnection,
 } from "@/server/actions/parasut";
 
@@ -100,6 +104,8 @@ export function ParasutClient({
   links,
   ingredients,
   unlinked,
+  unlinkedTotal,
+  lineReads,
   categories,
 }: {
   configured: boolean;
@@ -107,23 +113,58 @@ export function ParasutClient({
   cronSet: boolean;
   syncFrom: string | null;
   cursor: string | null;
-  pendingEInvoices: { count: number; sample: { from: string | null; date: string | null }[]; at: string } | null;
-  stats: { invoices: number; lastSyncedAt: string | null };
+  /** Son eşitlemede Paraşüt'te içeri alınmamış gelen e-faturalar (`ingested`: panele doğrudan alındılar) */
+  pendingEInvoices: { count: number; total?: number; ingested?: boolean; sample?: { from: string | null; date: string | null }[]; at: string } | null;
+  stats: { invoices: number; lastSyncedAt: string | null; fromEInvoices?: number; needsReview?: number };
   runs: Run[];
   rules: Rule[];
   links: LinkRow[];
   ingredients: Ingredient[];
   unlinked: Unlinked[];
+  /** Bağlanmayı bekleyen ürünlerin tamamı (listede ilk 40'ı) */
+  unlinkedTotal: number;
+  /** E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri okunan / sırada */
+  lineReads: { read: number; pending: number };
   categories: readonly string[];
 }) {
   // Her eylemin kendi bekleme durumu: "Bağlantıyı dene" sürerken eşitleme düğmesi dönmez
   const [testing, startTest] = useTransition();
   const [syncing, startSync] = useTransition();
   const [resetting, startReset] = useTransition();
-  const busy = testing || syncing || resetting;
+  const [reading, startRead] = useTransition();
+  const [readProgress, setReadProgress] = useState<{ done: number; left: number } | null>(null);
+  const busy = testing || syncing || resetting || reading;
   const [from, setFrom] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const lastRun = runs[0];
+
+  // E-fatura kalemlerini beklemeden oku: her çağrı ~45 sn çalışır, sıradakiler bitene kadar sürdürülür
+  const readLines = () =>
+    startRead(async () => {
+      const t = toast.loading("E-fatura kalemleri okunuyor…");
+      let done = 0;
+      let lineCount = 0;
+      let corrected = 0;
+      for (let round = 0; round < 12; round++) {
+        const r = await readParasutLines();
+        if (!r.ok) {
+          setReadProgress(null);
+          return void toast.error(r.error, { id: t });
+        }
+        const step = r.data.read + r.data.failed;
+        done += step;
+        lineCount += r.data.lines;
+        corrected += r.data.corrected;
+        setReadProgress({ done, left: r.data.remaining });
+        if (!r.data.remaining || !step) {
+          if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
+          break;
+        }
+        toast.loading(`E-fatura kalemleri okunuyor… ${num(done)} fatura okundu, ${num(r.data.remaining)} kaldı`, { id: t });
+      }
+      setReadProgress(null);
+      toast.success(`${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}`, { id: t });
+    });
 
   const sync = (since: string | null) =>
     startSync(async () => {
@@ -138,7 +179,7 @@ export function ParasutClient({
       <PageHeader
         eyebrow="Ayarlar"
         title="Paraşüt entegrasyonu"
-        description="Paraşüt'teki gider faturaları her sabah panele alınır: tutar, KDV, vade ve ödeme durumu; kalemler hammaddeye bağlanınca alınan miktar ve fiyat da güncellenir."
+        description="Paraşüt'e gelen e-faturalar (içeri alınmasa da) ve gider faturaları her sabah panele alınır: tutar, KDV, kalemler ve e-fatura PDF'i; içeri alınmış gider faturalarında ödeme durumu da gelir."
         actions={
           <>
             <Button
@@ -170,17 +211,38 @@ export function ParasutClient({
           label="Bağlantı"
           value={configured ? "Tanımlı" : "Kurulmadı"}
           tone={configured ? "good" : "warn"}
-          sub={configured ? `Her sabah 08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
+          sub={configured ? `Her sabah 07:00–08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
         />
-        <Stat compact icon={<CheckCircle2 />} label="Paraşüt'ten gelen fatura" value={num(stats.invoices)} suffix="adet" sub={stats.lastSyncedAt ? `Son: ${dateTimeTR(stats.lastSyncedAt)}` : "Henüz eşitlenmedi"} />
+        <Stat
+          compact
+          icon={<CheckCircle2 />}
+          label="Paraşüt'ten gelen fatura"
+          value={num(stats.invoices)}
+          suffix="adet"
+          info="Paraşüt'e bağlı bütün faturalar: gelen e-faturalar (içeri alınmamış olanlar dahil), içeri alınmış gider faturaları ve Paraşüt'teki karşılığıyla eşleşen Excel kayıtları."
+          sub={
+            stats.lastSyncedAt ? (
+              <>
+                Son: {dateTimeTR(stats.lastSyncedAt)}
+                {stats.needsReview ? (
+                  <a href="/panel/faturalar?durum=kontrol" className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11">
+                    {num(stats.needsReview)} kontrol bekliyor →
+                  </a>
+                ) : null}
+              </>
+            ) : (
+              "Henüz eşitlenmedi"
+            )
+          }
+        />
         <Stat
           compact
           icon={<Link2 />}
           label="Bağlı ürün"
           info="Hammaddeye bağlanan Paraşüt ürünleri. Bağlı ürünlerin alınan miktarı Tutarlılık'a, son birim fiyatı hammaddeye yazılır."
           value={num(links.length)}
-          sub={unlinked.length ? `${num(unlinked.length)} ürün bağlanmayı bekliyor` : "Bekleyen yok"}
-          tone={unlinked.length ? "warn" : "default"}
+          sub={unlinkedTotal ? `${num(unlinkedTotal)} ürün bağlanmayı bekliyor` : "Bekleyen yok"}
+          tone={unlinkedTotal ? "warn" : "default"}
         />
         <Stat
           compact
@@ -193,16 +255,35 @@ export function ParasutClient({
       </div>
 
       {pendingEInvoices && pendingEInvoices.count > 0 ? (
-        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          <CircleDashed size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">Paraşüt&apos;te içeri alınmayı bekleyen yaklaşık {num(pendingEInvoices.count)} gelen e-fatura var</p>
-            <p className="mt-0.5 break-words text-warn/90">
-              Gelen e-faturalar Paraşüt&apos;te <em>Giderler → Gelen e-Faturalar</em> ekranından &quot;içeri al&quot; yapılınca gider faturası olur ve ancak o zaman panele gelir.
-              {pendingEInvoices.sample.length ? ` Örnek: ${pendingEInvoices.sample.map((p) => [p.from, p.date ? dateTR(p.date) : null].filter(Boolean).join(" ")).join(", ")}.` : ""}
-            </p>
+        pendingEInvoices.ingested ? (
+          <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+            <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                Paraşüt&apos;te içeri alınmamış {num(pendingEInvoices.count)} gelen e-fatura panele doğrudan alındı
+                {pendingEInvoices.total ? ` (toplam ${tl(pendingEInvoices.total)})` : ""}
+              </p>
+              <p className="mt-0.5 break-words text-info/90">
+                Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez: tutar, KDV, kalemler ve e-fatura PDF&apos;i buradan gelir. İçeri alırsanız fatura yeniden
+                açılmaz, aynı kayda bağlanır; o zaman ödeme durumu da gelir.{" "}
+                <a href="/panel/faturalar?kaynak=parasut" className="font-medium underline-offset-2 hover:underline">
+                  Faturalarda göster →
+                </a>
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+            <CircleDashed size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Paraşüt&apos;te içeri alınmamış yaklaşık {num(pendingEInvoices.count)} gelen e-fatura var</p>
+              <p className="mt-0.5 break-words text-warn/90">
+                Bir sonraki eşitlemede panele doğrudan alınacaklar; Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez.
+                {pendingEInvoices.sample?.length ? ` Örnek: ${pendingEInvoices.sample.map((p) => [p.from, p.date ? dateTR(p.date) : null].filter(Boolean).join(" ")).join(", ")}.` : ""}
+              </p>
+            </div>
+          </div>
+        )
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-12">
@@ -272,7 +353,7 @@ export function ParasutClient({
                 title="Henüz eşitleme yok"
                 description={
                   configured
-                    ? "Her sabah 08:00'de kendiliğinden çalışır; beklemeden “Şimdi eşitle” ile de başlatabilirsiniz."
+                    ? "Her sabah 07:00–08:00 arasında kendiliğinden çalışır (gelen e-faturalar ve gider faturaları); beklemeden “Şimdi eşitle” ile de başlatabilirsiniz."
                     : "Kurulum tamamlanınca her sabah kendiliğinden çalışır ve sonuçları burada görünür."
                 }
               />
@@ -299,7 +380,17 @@ export function ParasutClient({
         </Card>
       </div>
 
-      <ProductLinks links={links} unlinked={unlinked} ingredients={ingredients} />
+      <ProductLinks
+        links={links}
+        unlinked={unlinked}
+        unlinkedTotal={unlinkedTotal}
+        ingredients={ingredients}
+        lineReads={lineReads}
+        onReadLines={readLines}
+        reading={reading}
+        readProgress={readProgress}
+        canRead={configured && !busy}
+      />
       <CategoryRules rules={rules} categories={categories} />
 
       <ConfirmDialog
@@ -347,30 +438,6 @@ const LINK_SORTS = ["urun", "-urun", "hammadde", "-hammadde"] as const;
 type Draft = { ingredientId: string; factor: string; updatePrice: boolean; factorTouched?: boolean };
 type LinkPatch = { type: "remove"; id: number } | { type: "update"; id: number; patch: Partial<LinkRow> };
 
-/** Ürün adında hammaddenin anlamlı sözcüklerinin hepsi geçiyorsa öneri (en uzun ad kazanır) */
-function suggestIngredient(productName: string, ingredients: Ingredient[]): Ingredient | null {
-  const p = fold(productName);
-  let best: Ingredient | null = null;
-  for (const i of ingredients) {
-    const words = fold(i.name.replace(/\(.*?\)/g, " "))
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length >= 3);
-    if (words.length && words.every((w) => p.includes(w)) && (!best || i.name.length > best.name.length)) best = i;
-  }
-  return best;
-}
-
-/** Faturadaki birimle hammadde birimi arasında bilinen çarpan (kg → gr, L → ml) */
-function guessFactor(productUnit: string | null, ingredientUnit: string): string | null {
-  const u = fold(productUnit ?? "").replace(/[^a-z]/g, "");
-  if (ingredientUnit === "gr" && ["kg", "kilo", "kilogram"].includes(u)) return "1000";
-  if (ingredientUnit === "ml" && ["l", "lt", "litre", "liter"].includes(u)) return "1000";
-  if (ingredientUnit === "gr" && ["g", "gr", "gram"].includes(u)) return "1";
-  if (ingredientUnit === "ml" && ["ml", "mililitre"].includes(u)) return "1";
-  if (ingredientUnit === "adet" && ["adet", "ad", "tane"].includes(u)) return "1";
-  return null;
-}
-
 /** Kategoriye göre gruplanmış hammadde seçenekleri */
 function IngredientOptions({ ingredients }: { ingredients: Ingredient[] }) {
   const groups = useMemo(() => {
@@ -396,7 +463,27 @@ function IngredientOptions({ ingredients }: { ingredients: Ingredient[] }) {
 const FACTOR_TIP =
   "Faturadaki 1 birimin kaç hammadde birimi ettiği. Ör. 1 kg = 1000 gr, 1 L = 1000 ml, 1 koli = 12 adet. Alınan miktar bu çarpanla hesaplanır, birim fiyat da buna bölünür.";
 
-function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unlinked: Unlinked[]; ingredients: Ingredient[] }) {
+function ProductLinks({
+  links,
+  unlinked,
+  unlinkedTotal,
+  ingredients,
+  lineReads,
+  onReadLines,
+  reading,
+  readProgress,
+  canRead,
+}: {
+  links: LinkRow[];
+  unlinked: Unlinked[];
+  unlinkedTotal: number;
+  ingredients: Ingredient[];
+  lineReads: { read: number; pending: number };
+  onReadLines: () => void;
+  reading: boolean;
+  readProgress: { done: number; left: number } | null;
+  canRead: boolean;
+}) {
   const [pending, start] = useTransition();
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [removing, setRemoving] = useState<LinkRow | null>(null);
@@ -446,6 +533,33 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
     });
   };
 
+  // Hazır olanlar: hammaddesi seçilmiş (elle ya da öneriyle) ve çarpanı belli bekleyenler; tek seferde bağlanır
+  const [bulkOpen, setBulkOpen] = useState(false);
+  // En çok 40 ürün × hammadde listesi: her çizimde hesaplanabilir
+  const proposals = waitingShown.flatMap((u) => {
+        const d = draft[u.productKey];
+        if (d?.ingredientId) {
+          const ing = byId.get(Number(d.ingredientId));
+          const f = parseNumberTR(d.factor);
+          return ing && f && f > 0 ? [{ u, ing, factor: f, updatePrice: d.updatePrice }] : [];
+        }
+        const sug = suggestIngredient(u.productName, ingredients, linked);
+        const ing = sug ? byId.get(sug.ingredientId) : undefined;
+        if (!sug || !ing) return [];
+        const f = sug.factor ?? parseNumberTR(guessLinkFactor({ name: u.productName, unit: u.unit }, ing.unit) ?? "");
+        return f && f > 0 ? [{ u, ing, factor: f, updatePrice: true }] : [];
+  });
+  const linkAll = () =>
+    start(async () => {
+      for (const p of proposals) hideUnlinked(p.u.productKey);
+      const r = await saveProductLinks(
+        proposals.map((p) => ({ productKey: p.u.productKey, productName: p.u.productName, ingredientId: p.ing.id, factor: p.factor, updatePrice: p.updatePrice })),
+      );
+      if (!r.ok) return void toast.error(r.error);
+      setBulkOpen(false);
+      toast.success(`${num(r.data.linked)} ürün bağlandı · ${num(r.data.quantities)} aylık miktar, ${num(r.data.prices)} fiyat güncellendi`);
+    });
+
   const update = (l: LinkRow, patch: { ingredientId: number; factor: number; updatePrice: boolean }, done?: () => void) => {
     const ing = byId.get(patch.ingredientId);
     start(async () => {
@@ -462,7 +576,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
       <CardHeader
         icon={<Link2 />}
         title="Ürün → hammadde bağlantıları"
-        description="Faturadaki bir kalemi hammaddeye bağlayın; o kalemden gelen miktar Tutarlılık'taki “alınan” sütununa, son birim fiyat da hammaddenin paket fiyatına yazılır."
+        description="Faturadaki bir kalemi (e-fatura belgesinden ya da gider faturasından) hammaddeye bağlayın; o üründen gelen miktar Tutarlılık'taki “alınan” sütununa, son birim fiyat da hammaddenin paket fiyatına yazılır. Bir kez bağlamak yeter: sonraki faturalar kendiliğinden işlenir."
         meta={
           <>
             <span>Bağlı</span>
@@ -478,6 +592,26 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
           </>
         }
       />
+
+      {lineReads.read + lineReads.pending > 0 ? (
+        <div className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-surface px-3.5 py-2.5 text-sm" role="status">
+          <FileText size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+          <p className="min-w-0 flex-1 break-words text-ink-soft">
+            <span className="font-medium text-ink">E-fatura kalemleri:</span>{" "}
+            {readProgress
+              ? `${num(readProgress.done)} fatura okundu, ${num(readProgress.left)} kaldı…`
+              : `${num(lineReads.read)} / ${num(lineReads.read + lineReads.pending)} faturanın kalemleri okundu`}
+            {!readProgress && lineReads.pending ? (
+              <span className="text-ink-mute"> · {num(lineReads.pending)} sırada; her eşitleme kalan süre kadarını okur</span>
+            ) : null}
+          </p>
+          {lineReads.pending || reading ? (
+            <Button size="sm" variant="secondary" disabled={!canRead} onClick={onReadLines}>
+              <RefreshCw size={14} className={cn(reading && "animate-spin")} /> {reading ? "Okunuyor…" : "Kalemleri şimdi oku"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {total === 0 ? (
         <CardContent>
@@ -522,16 +656,24 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
             <div className="px-5 pb-4">
               <p className="mb-2 flex items-center gap-1.5 text-[0.65rem] font-medium tracking-wide text-ink-mute uppercase">
                 <Wand2 size={12} aria-hidden="true" /> Bağlanmayı bekleyenler · {waitingShown.length}
-                <InfoTip text="En sık geçen 40 kalem gösterilir; bağladıkça sıradakiler gelir. Hammadde olmayan kalemleri (kargo, hizmet) bağlamanız gerekmez." />
+                {unlinkedTotal > waiting.length ? ` / ${num(unlinkedTotal)}` : ""}
+                <InfoTip text="En sık geçen 40 ürün gösterilir; bağladıkça sıradakiler gelir. Yalnız mal alışı (Hammadde & İçecek, Tatlı & Hazır Ürün, Ambalaj) ve Diğer kategorisindeki faturaların kalemleri listelenir; komisyon, kira, demirbaş ve hizmet faturaları gelmez. Hammadde olmayan kalemleri (kargo, hizmet) bağlamanız gerekmez." />
+                {proposals.length ? (
+                  <Button size="sm" variant="secondary" className="ml-auto normal-case tracking-normal" disabled={pending} onClick={() => setBulkOpen(true)}>
+                    <Sparkles size={14} /> Hazır olanları bağla ({num(proposals.length)})
+                  </Button>
+                ) : null}
               </p>
               <ul className="space-y-2">
                 {waitingShown.map((u) => {
                   const d = get(u.productKey);
                   const ing = byId.get(Number(d.ingredientId));
-                  const suggestion = d.ingredientId ? null : suggestIngredient(u.productName, ingredients);
-                  const choose = (id: string) => {
+                  const suggestion = d.ingredientId ? null : suggestIngredient(u.productName, ingredients, linked);
+                  const suggested = suggestion ? byId.get(suggestion.ingredientId) : undefined;
+                  // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz
+                  const choose = (id: string, known?: number | null) => {
                     const next = byId.get(Number(id));
-                    const guess = next && !d.factorTouched ? guessFactor(u.unit, next.unit) : null;
+                    const guess = known ? num(known, 3).replace(/\./g, "") : next && !d.factorTouched ? guessLinkFactor({ name: u.productName, unit: u.unit }, next.unit) : null;
                     set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : {}) });
                   };
                   return (
@@ -563,13 +705,14 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             <option value="">Hammadde seçin…</option>
                             <IngredientOptions ingredients={ingredients} />
                           </Select>
-                          {suggestion ? (
+                          {suggestion && suggested ? (
                             <button
                               type="button"
-                              onClick={() => choose(String(suggestion.id))}
-                              className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-info hover:underline pointer-coarse:min-h-11"
+                              onClick={() => choose(String(suggestion.ingredientId), suggestion.factor)}
+                              className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-left text-xs text-info hover:underline pointer-coarse:min-h-11"
                             >
-                              <Sparkles size={12} aria-hidden="true" /> Öneri: {suggestion.name}
+                              <Sparkles size={12} aria-hidden="true" className="shrink-0" /> Öneri: {suggested.name}
+                              {suggestion.reason === "link" ? ` (aynı ürün bağlı, × ${num(suggestion.factor ?? 1, 3)})` : ""}
                             </button>
                           ) : null}
                         </div>
@@ -629,7 +772,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                               >
                                 {l.ingredientName}
                               </Link>{" "}
-                              · <span className="tabular">× {num(l.factor, 0, 3)}</span> {UNIT_LABEL[l.unit] ?? l.unit}
+                              · <span className="tabular">× {num(l.factor, 3)}</span> {UNIT_LABEL[l.unit] ?? l.unit}
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-1.5">
@@ -710,7 +853,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             </Link>
                           </TD>
                           <TD numeric>
-                            × {num(l.factor, 0, 3)} <span className="text-ink-mute">{UNIT_LABEL[l.unit] ?? l.unit}</span>
+                            × {num(l.factor, 3)} <span className="text-ink-mute">{UNIT_LABEL[l.unit] ?? l.unit}</span>
                           </TD>
                           <TD>
                             <Switch
@@ -766,6 +909,41 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
           });
         }}
       />
+      <Dialog
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        title={`${num(proposals.length)} ürün bağlansın mı?`}
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setBulkOpen(false)} disabled={pending} data-autofocus className="max-sm:bg-panel">
+              Vazgeç
+            </Button>
+            <Button onClick={linkAll} disabled={pending || !proposals.length}>
+              {pending ? "Bekleyin…" : `${num(proposals.length)} ürünü bağla`}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-pretty text-ink-mute">
+          Önerilen ya da sizin seçtiğiniz hammadde ve çarpanla bağlanır; alınan miktarlar ve fiyatlar faturalardan hesaplanır. Yanlış olanı sonradan düzenleyebilir ya da
+          silebilirsiniz.
+        </p>
+        <ul className="mt-3 max-h-[50dvh] divide-y divide-ink/[0.06] overflow-y-auto rounded-2xl bg-surface px-3">
+          {proposals.map((p) => (
+            <li key={p.u.productKey} className="py-2.5 text-sm">
+              <p className="font-medium break-words text-ink">{p.u.productName}</p>
+              <p className="mt-0.5 text-xs text-ink-mute">
+                → <span className="font-medium text-ink-soft">{p.ing.name}</span> · 1 {p.u.unit ?? "birim"} ={" "}
+                <span className="tabular">
+                  {num(p.factor, 3)} {UNIT_LABEL[p.ing.unit] ?? p.ing.unit}
+                </span>
+                {p.updatePrice ? " · fiyat güncellenir" : " · fiyat elle"}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
     </Card>
   );
 }
@@ -788,7 +966,7 @@ function LinkEditor({
 }) {
   const id = useId();
   const [ingredientId, setIngredientId] = useState(String(link.ingredientId));
-  const [factor, setFactor] = useState(num(link.factor, 0, 3));
+  const [factor, setFactor] = useState(num(link.factor, 3));
   const [updatePrice, setUpdatePrice] = useState(link.updatePrice);
   const f = parseNumberTR(factor);
   const invalid = !ingredientId || !f || f <= 0;

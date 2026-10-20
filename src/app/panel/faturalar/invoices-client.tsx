@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleCheck, FileText, Pencil, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, CircleCheck, FileText, Paperclip, Pencil, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
 import { startTransition, useEffect, useMemo, useOptimistic, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
@@ -28,10 +28,28 @@ import { isPartiallyPaid } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { deleteInvoice, restoreInvoice, setInvoiceCategory, setInvoicePaid, unignoreParasutBill } from "@/server/actions/invoices";
+import { confirmInvoices, deleteInvoice, restoreInvoice, setInvoiceCategory, setInvoicePaid, unignoreParasutBill } from "@/server/actions/invoices";
+import type { DocumentMeta } from "@/server/documents";
 
+import { canHaveDocument, isParasutDocument } from "./document-rules";
+import { DocumentSheet } from "./document-sheet";
 import { InvoiceDialog } from "./invoice-dialog";
-import { isEstimate, isParasutLinked, notePreview, sameSupplierOthers, splitSupplier, supplierDefaults, visibleNote, type InvoiceRow } from "./rules";
+import {
+  confirmToast,
+  isEInvoiceOnly,
+  isEstimate,
+  isParasutLinked,
+  matchesStatus,
+  notePreview,
+  parseStatus,
+  sameSupplierOthers,
+  splitSupplier,
+  statusCounts,
+  supplierDefaults,
+  visibleNote,
+  type InvoiceRow,
+  type InvoiceStatus,
+} from "./rules";
 
 /**
  * Sunucu sayfasının özet rakamları için AkmanOS sayacı (charts/animated-number).
@@ -67,8 +85,9 @@ const UNDO_MS = 10000;
 /** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama süzgeç sayılmaz, korunur) */
 const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
 
-/** Adresteki ?durum= değerleri (bildirimdeki bağlantı ?durum=odenmedi kullanır) */
-type Status = "tumu" | "odenmedi" | "odendi";
+/** Belgesi olmayan fatura için sabit boş liste (her çizimde yeni dizi olmasın) */
+const NO_DOCS: DocumentMeta[] = [];
+
 type SortKey = "tarih" | "tedarikci" | "net" | "odenecek";
 type Sort = { key: SortKey; dir: "asc" | "desc" };
 /** Varsayılan sıra sunucudaki gibi: yeniden eskiye (aynı günde son eklenen üstte) */
@@ -110,7 +129,10 @@ function haystack(i: InvoiceRow) {
 type Optimistic =
   | { kind: "paid"; ids: number[]; paid: boolean }
   | { kind: "delete"; id: number }
-  | { kind: "category"; changes: { id: number; category: string }[] };
+  /** Kategori değişince fatura kontrol edilmiş sayılır (sunucu da needsReview'u kaldırır); `review` geri almada yeniden işaretlenenler */
+  | { kind: "category"; changes: { id: number; category: string }[]; review?: number[] }
+  /** Onayla (needsReview false) ya da "Geri al" (true) */
+  | { kind: "review"; ids: number[]; needsReview: boolean };
 
 function applyChange(state: InvoiceRow[], a: Optimistic): InvoiceRow[] {
   if (a.kind === "delete") return state.filter((i) => i.id !== a.id);
@@ -118,18 +140,26 @@ function applyChange(state: InvoiceRow[], a: Optimistic): InvoiceRow[] {
     const ids = new Set(a.ids);
     return state.map((i) => (ids.has(i.id) ? { ...i, unpaid: !a.paid } : i));
   }
+  if (a.kind === "review") {
+    const ids = new Set(a.ids);
+    return state.map((i) => (ids.has(i.id) ? { ...i, needsReview: a.needsReview } : i));
+  }
   const next = new Map(a.changes.map((c) => [c.id, c.category]));
-  return state.map((i) => (next.has(i.id) ? { ...i, category: next.get(i.id)! } : i));
+  const review = new Set(a.review ?? []);
+  return state.map((i) => (next.has(i.id) || review.has(i.id) ? { ...i, category: next.get(i.id) ?? i.category, needsReview: review.has(i.id) } : i));
 }
 
 export function InvoicesClient({
   invoices,
+  documents = {},
   months,
   suppliers,
   parasutCompanyId,
   ignoredCount = 0,
 }: {
   invoices: InvoiceRow[];
+  /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
+  documents?: Record<number, DocumentMeta[]>;
   /** Paraşüt firma numarası; varsa Paraşüt'ten gelen faturada "Paraşüt'te aç" bağlantısı çıkar */
   parasutCompanyId?: string | null;
   months: string[];
@@ -151,13 +181,13 @@ export function InvoicesClient({
   const [q, setQ] = useQueryText("ara");
   const [rawMonth, setMonth] = useQueryState<string>("ay", "");
   const [rawCategory, setCategory] = useQueryState<string>("kategori", "");
-  const [rawStatus, setStatus] = useQueryState<Status>("durum", "tumu");
+  const [rawStatus, setStatus] = useQueryState<InvoiceStatus>("durum", "tumu");
   const [rawSource, setSource] = useQueryState<string>("kaynak", "");
   const [rawSort, setSort] = useQueryState<string>("sirala", DEFAULT_SORT);
   // Adresten gelen değerler doğrulanır: elle yazılmış ya da eskimiş bağlantı listeyi boşaltmasın
   const month = months.includes(rawMonth) ? rawMonth : "";
   const category = rawCategory === GOODS_FILTER || INVOICE_CATEGORIES.includes(rawCategory) ? rawCategory : "";
-  const status: Status = rawStatus === "odenmedi" || rawStatus === "odendi" ? rawStatus : "tumu";
+  const status = parseStatus(rawStatus);
   const source = rawSource === "parasut" ? "parasut" : "";
   const sort = parseSort(rawSort);
   const [editing, setEditing] = useState<InvoiceRow | "new" | null>(null);
@@ -169,7 +199,10 @@ export function InvoicesClient({
   const [selectMode, setSelectMode] = useState(false);
   /** Telefon: kategorisi alt sayfada değiştirilen fatura */
   const [catFor, setCatFor] = useState<number | null>(null);
+  /** Belgesi açılan fatura (satırdan, karttan ya da fatura penceresinden) */
+  const [docFor, setDocFor] = useState<number | null>(null);
   const defaults = useMemo(() => supplierDefaults(invoices), [invoices]);
+  const docsOf = (id: number) => documents[id] ?? NO_DOCS;
 
   const parasutCount = list.filter((i) => i.source === "parasut").length;
   // Durum dışındaki filtreler: durum çiplerinin sayaçları bunlara göre
@@ -180,8 +213,12 @@ export function InvoicesClient({
       (!source || i.source === "parasut") &&
       matches(haystack(i), q),
   );
-  const filteredUnpaid = filtered.filter((i) => i.unpaid).length;
-  const byStatus = status === "odenmedi" ? filtered.filter((i) => i.unpaid) : status === "odendi" ? filtered.filter((i) => !i.unpaid) : filtered;
+  const counts = statusCounts(filtered);
+  const filteredUnpaid = counts.unpaid;
+  const byStatus = filtered.filter((i) => matchesStatus(i, status));
+  /** "Kontrol bekleyen" çipi: bekleyen varsa en başta; süzgeç açıkken sayı 0'a inse de (kapatılabilsin) */
+  const showReviewChip = counts.review > 0 || status === "kontrol";
+  const totalReview = list.filter((i) => i.needsReview).length;
   // Sıralama kararlı: eşit değerlerde sunucunun tarih sırası korunur
   const visible = [...byStatus].sort((a, b) => (sort.dir === "asc" ? 1 : -1) * COMPARE[sort.key](a, b));
   const sum = (f: (i: InvoiceRow) => number) => visible.reduce((a, i) => a + f(i), 0);
@@ -246,7 +283,9 @@ export function InvoicesClient({
   // Telefon: arama kutusunun altında kalan, tek dokunuşla kaldırılan süzgeç çipleri (alt sayfadaki seçimlerin özeti)
   const sortValue = `${sort.key}-${sort.dir === "asc" ? "artan" : "azalan"}`;
   const chips: ActiveFilter[] = [];
-  if (status !== "tumu") chips.push({ key: "durum", label: status === "odenmedi" ? "Ödenmemiş" : "Ödendi", onRemove: () => setStatus("tumu") });
+  if (status !== "tumu") {
+    chips.push({ key: "durum", label: status === "kontrol" ? "Kontrol bekleyen" : status === "odenmedi" ? "Ödenmemiş" : "Ödendi", onRemove: () => setStatus("tumu") });
+  }
   if (category) chips.push({ key: "kategori", label: category === GOODS_FILTER ? "Mal alımları" : category, onRemove: () => setCategory("") });
   if (month) chips.push({ key: "ay", label: monthLabel(month), onRemove: () => setMonth("") });
   if (source) chips.push({ key: "kaynak", label: "Paraşüt'ten", onRemove: () => setSource("") });
@@ -254,6 +293,7 @@ export function InvoicesClient({
     chips.push({ key: "sirala", label: SORT_OPTIONS.find((o) => o.value === sortValue)?.label ?? "Özel sıra", onRemove: () => setSort(DEFAULT_SORT) });
   }
   const catRow = catFor === null ? null : (list.find((i) => i.id === catFor) ?? null);
+  const docRow = docFor === null ? null : (list.find((i) => i.id === docFor) ?? null);
   /** Telefonda seçim kutuları görünür: "Seç" kipi açıkken ya da seçim varken */
   const picking = selectMode || selectedIds.length > 0;
 
@@ -289,21 +329,41 @@ export function InvoicesClient({
     });
   }
 
-  /** Kategori değişikliği (satır içi, toplu, geri alma, "aynı tedarikçinin diğerlerine") */
-  function changeCategory(changes: { id: number; category: string }[], opts: { undo?: boolean; from?: InvoiceRow } = {}) {
+  /**
+   * Kategori değişikliği (satır içi, toplu, geri alma, "aynı tedarikçinin diğerlerine"). Kategorisi tahminle
+   * yazılmış fatura bununla onaylanmış olur; "Geri al" kategoriyle birlikte "Kontrol" işaretini de geri koyar.
+   */
+  function changeCategory(changes: { id: number; category: string }[], opts: { undo?: boolean; from?: InvoiceRow; reReview?: number[] } = {}) {
     if (!changes.length) return;
     keepScroll();
     // "Hepsine uygula" önerisi değişiklikten önceki listeye göre (aynı tedarikçinin farklı kategorideki diğerleri)
     const others = opts.from ? sameSupplierOthers(list, opts.from, changes[0].category) : [];
+    const ids = new Set(changes.map((c) => c.id));
+    const wasReview = list.filter((i) => ids.has(i.id) && i.needsReview).map((i) => i.id);
+    const reReview = opts.reReview ?? [];
     startTransition(async () => {
-      applyOptimistic({ kind: "category", changes });
+      applyOptimistic({ kind: "category", changes, review: reReview });
       const res = await setInvoiceCategory(changes);
       if (!res.ok) return void toast.error(res.error);
+      if (reReview.length) {
+        const back = await confirmInvoices(reReview, true);
+        if (!back.ok) toast.error(back.error);
+      }
       const { previous, missing } = res.data;
       if (missing) toast.warning(`${missing} fatura bulunamadı (silinmiş olabilir)`);
       if (opts.undo) return void toast.success("Kategori geri alındı");
-      if (!previous.length) return;
-      const undo = { label: "Geri al", onClick: () => changeCategory(previous, { undo: true }) };
+      if (!previous.length) {
+        // Kategori zaten buydu: değişiklik yok ama tahmin onaylandı
+        if (!wasReview.length) return;
+        const confirmed = list.filter((i) => wasReview.includes(i.id));
+        const t = confirmToast(confirmed);
+        return void toast.success(t.title, {
+          description: t.description,
+          action: { label: "Geri al", onClick: () => confirmRows(confirmed.map((i) => ({ ...i, needsReview: false })), { undo: true }) },
+          duration: UNDO_MS,
+        });
+      }
+      const undo = { label: "Geri al", onClick: () => changeCategory(previous, { undo: true, reReview: wasReview }) };
       const target = changes[0].category;
       if (opts.from) {
         const base = splitSupplier(opts.from.supplier).base;
@@ -323,6 +383,36 @@ export function InvoicesClient({
           duration: UNDO_MS,
         });
       }
+    });
+  }
+
+  /**
+   * Eşitlemenin tahmin ettiği kategoriyi onaylar (✓ Onayla, seçilenler, Hepsini onayla). Satır hemen "Kontrol"
+   * işaretini kaybeder; bildirimdeki "Geri al" aynı faturaları yeniden kontrol bekleyene döndürür.
+   */
+  function confirmRows(targets: InvoiceRow[], opts: { undo?: boolean } = {}) {
+    const undo = Boolean(opts.undo);
+    const rows = targets.filter((i) => Boolean(i.needsReview) !== undo);
+    const ids = rows.map((i) => i.id);
+    if (!ids.length) return;
+    keepScroll();
+    startTransition(async () => {
+      applyOptimistic({ kind: "review", ids, needsReview: undo });
+      const res = await confirmInvoices(ids, undo);
+      if (!res.ok) return void toast.error(res.error);
+      const done = rows.filter((i) => res.data.ids.includes(i.id));
+      if (undo) {
+        if (done.length) toast.success(done.length === 1 ? "Yeniden kontrol bekliyor" : `${done.length} fatura yeniden kontrol bekliyor`);
+        return;
+      }
+      // Başka bir oturumda onaylanmışsa değişen yok
+      if (!done.length) return void toast.info("Bu faturalar zaten onaylanmış");
+      const t = confirmToast(done);
+      toast.success(t.title, {
+        description: t.description,
+        action: { label: "Geri al", onClick: () => confirmRows(done.map((i) => ({ ...i, needsReview: false })), { undo: true }) },
+        duration: UNDO_MS,
+      });
     });
   }
 
@@ -412,6 +502,11 @@ export function InvoicesClient({
             Paraşüt
           </Badge>
         ) : null}
+        {isEInvoiceOnly(i) ? (
+          <Badge tone="gray" title="Paraşüt'e gelen e-faturadan doğrudan alındı (Paraşüt'te “içeri al” yapılmadı); PDF'i belge simgesinden açılır">
+            e-fatura
+          </Badge>
+        ) : null}
         {note ? (
           <Badge tone={/tahmin/i.test(note) ? "amber" : "gray"} dot={/tahmin/i.test(note)} title={`Tedarikçi adındaki not. Gelir-giderde “${base}” altında toplanır.`}>
             {note}
@@ -441,6 +536,30 @@ export function InvoicesClient({
     );
   };
 
+  const reviewBadge = (i: InvoiceRow) =>
+    i.needsReview ? (
+      <Badge tone="amber" dot title="Kategori eşitlemede tahminle yazıldı: doğruysa onaylayın, değilse kategoriyi değiştirin (değiştirmek de onaylar)">
+        Kontrol
+      </Badge>
+    ) : null;
+
+  /** Satırın belge düğmesi: Paraşüt'e bağlıysa PDF simgesi, yalnız yüklenen dosya varsa ataş */
+  const docButton = (i: InvoiceRow, className?: string) =>
+    canHaveDocument(i, docsOf(i.id).length) ? (
+      <IconButton
+        label="Belgeyi aç"
+        aria-haspopup="dialog"
+        onClick={(e) => {
+          // Masaüstünde satıra tıklamak düzenleme penceresini açar
+          e.stopPropagation();
+          setDocFor(i.id);
+        }}
+        className={className}
+      >
+        {isParasutDocument(i) ? <FileText size={15} /> : <Paperclip size={15} />}
+      </IconButton>
+    ) : null;
+
   const categoryPicker = (i: InvoiceRow) => (
     <CategorySelect
       value={i.category}
@@ -462,6 +581,21 @@ export function InvoicesClient({
   );
 
   const selectedUnpaid = selected.filter((i) => i.unpaid);
+  const selectedReview = selected.filter((i) => i.needsReview);
+  /** "Kontrol bekleyen" süzgecinde seçim yokken alttaki çubuk "Hepsini onayla"yı gösterir */
+  const reviewBar = status === "kontrol" && visible.length > 0 && selected.length === 0;
+  const barOpen = selected.length > 0 || reviewBar;
+  const allSelected = selected.length > 0 && selected.length === visible.length;
+  const confirmLabel =
+    status === "kontrol" && allSelected
+      ? `Hepsini onayla (${num(selectedReview.length)})`
+      : selectedReview.length === selected.length
+        ? "Onayla"
+        : `Onayla (${num(selectedReview.length)})`;
+  const confirmSelected = () => {
+    confirmRows(selected);
+    clearSelection();
+  };
 
   return (
     // Özet kartlarındaki ve aylık tablodaki bağlantılar buraya iner; telefonda sabit üst çubuğun altında kalmasın
@@ -471,7 +605,9 @@ export function InvoicesClient({
         title="Fatura listesi"
         description={
           <>
-            <span className="lg:hidden">Karta dokunun: düzenlenir; sağdaki anahtar ödendi durumunu değiştirir. Birden çok faturayı “Seç” ile seçip toplu değiştirebilirsiniz.</span>
+            <span className="lg:hidden">
+              Karta dokunun: düzenlenir; sağdaki anahtar ödendi durumunu değiştirir, belge simgesi faturanın PDF&apos;ini açar. Birden çok faturayı “Seç” ile seçip toplu değiştirebilirsiniz.
+            </span>
             <span className="max-lg:hidden">Satıra tıklayınca düzenlenir. Kategori satırdan değişir; birden çok faturayı seçip toplu değiştirebilirsiniz.</span>
           </>
         }
@@ -492,11 +628,27 @@ export function InvoicesClient({
                 </button>
               </>
             ) : null}
+            {totalReview ? (
+              // Telefonda satıra sığmaz; orada listenin üstündeki uyarı ve süzgeç aynı işi görür
+              <>
+                <span aria-hidden="true" className="max-sm:hidden">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatus(status === "kontrol" ? "tumu" : "kontrol")}
+                  className="inline-flex cursor-pointer items-center gap-1 text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11 max-sm:hidden"
+                >
+                  <AnimatedNumber value={totalReview} format={(v) => num(v)} className="font-semibold tabular" /> kontrol bekliyor
+                </button>
+              </>
+            ) : null}
           </>
         }
         actions={
-          // Telefonda aynı düğme başparmağın altında yüzer (aşağıda)
-          <Button onClick={() => setEditing("new")} className="pointer-coarse:h-11 max-lg:hidden">
+          // Telefonda aynı düğme başparmağın altında yüzer (aşağıda). Tablette başlıkta: yüzen düğme ilk kartın
+          // ödendi anahtarını örtüyordu (kartlar tam genişlikte, anahtar sağ kenarda)
+          <Button onClick={() => setEditing("new")} className="pointer-coarse:h-11 max-sm:hidden">
             <Plus size={16} /> Fatura ekle
           </Button>
         }
@@ -558,12 +710,26 @@ export function InvoicesClient({
         }
       >
         <div className={cn("space-y-4 pb-2", BIG_FIELDS)}>
-          <ChoiceList<Status>
-            label="Ödeme durumu"
+          <ChoiceList<InvoiceStatus>
+            label="Durum"
             value={status}
             onChange={setStatus}
             options={[
               { value: "tumu", label: "Tümü", count: filtered.length },
+              ...(showReviewChip
+                ? [
+                    {
+                      value: "kontrol" as const,
+                      label: (
+                        <span className="flex items-center gap-2.5">
+                          <span className="size-2 shrink-0 rounded-full bg-brass-500" aria-hidden="true" />
+                          Kontrol bekleyen
+                        </span>
+                      ),
+                      count: counts.review,
+                    },
+                  ]
+                : []),
               { value: "odenmedi", label: "Ödenmemiş", count: filteredUnpaid },
               { value: "odendi", label: "Ödendi", count: filtered.length - filteredUnpaid },
             ]}
@@ -612,6 +778,12 @@ export function InvoicesClient({
 
       <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={list.length} unit="fatura" className="px-5 pb-4 max-lg:hidden">
         <SearchField value={q} onChange={setQ} placeholder="Tedarikçi, fatura no, tutar, not" label="Fatura ara" className="w-full lg:w-72" />
+        {showReviewChip ? (
+          <FilterChip active={status === "kontrol"} onToggle={() => setStatus(status === "kontrol" ? "tumu" : "kontrol")} count={counts.review}>
+            {status === "kontrol" ? null : <span className="size-1.5 rounded-full bg-brass-500" aria-hidden="true" />}
+            Kontrol bekleyen
+          </FilterChip>
+        ) : null}
         <FilterChip active={status === "odenmedi"} onToggle={() => setStatus(status === "odenmedi" ? "tumu" : "odenmedi")} count={filteredUnpaid}>
           Ödenmemiş
         </FilterChip>
@@ -676,22 +848,26 @@ export function InvoicesClient({
               </button>
             </span>
           </div>
-          {/* Telefon: kart listesi. Tedarikçi, tarih, tutar, kategori hapı ve ödendi anahtarı; karta dokunmak düzenler */}
+          {/* Telefon: kart listesi. Tedarikçi, tarih, tutar, rozetler ve belge, kategori hapı ve ödendi anahtarı. Kartın
+              üst bölümü tek düğme; görünmez katmanı (before) bütün kartı kaplar, kartın içindeki öteki denetimler (seçim
+              kutusu, belge, kategori, Onayla, anahtar) bu katmanın üstünde durur (relative z-10). */}
           <ul className="divide-y divide-line-strong/70 border-t border-line lg:hidden">
             {paged.slice.map((i) => {
               const { base, note } = splitSupplier(i.supplier);
               const net = netOf(i);
               const isSel = selectedIds.includes(i.id);
               const vat = i.payable - net;
+              const doc = docButton(i, "relative size-9 before:absolute before:-inset-1 before:content-[''] pointer-coarse:size-9");
+              const badges = note || i.source === "parasut" || isEstimate(i) || i.needsReview;
               return (
-                <li key={i.id} className={cn("px-4 pt-3 pb-3.5 transition-colors", isSel && "bg-surface/70")}>
+                <li key={i.id} className={cn("relative px-4 pt-3 pb-3.5 transition-colors", isSel && "bg-surface/70")}>
                   <div className="flex items-start gap-2">
-                    {picking ? checkbox(i, "-ml-1.5 -mt-1 size-11 pointer-coarse:size-11") : null}
+                    {picking ? checkbox(i, "z-10 -ml-1.5 -mt-1 size-11 pointer-coarse:size-11") : null}
                     <button
                       type="button"
                       onClick={() => (picking ? toggle(i.id) : setEditing(i))}
                       aria-pressed={picking ? isSel : undefined}
-                      className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-xl text-left"
+                      className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-xl text-left outline-none before:absolute before:inset-0 before:content-[''] focus-visible:before:ring-2 focus-visible:before:ring-ink/30 focus-visible:before:ring-inset"
                     >
                       {picking ? null : <Avatar name={base} className="mt-0.5" />}
                       <span className="min-w-0 flex-1">
@@ -701,7 +877,6 @@ export function InvoicesClient({
                           {i.description ? ` · ${i.description}` : ""}
                         </span>
                         {i.invoiceNo ? <span className="mt-0.5 block text-xs break-all text-ink-quiet">No {i.invoiceNo}</span> : null}
-                        {note || i.source === "parasut" || isEstimate(i) ? <span className="mt-1 flex flex-wrap gap-1">{sourceBadges(i, note, base)}</span> : null}
                       </span>
                       <span className="shrink-0 text-right tabular">
                         <span className="block text-[15px] leading-5 font-semibold text-ink">{tl(net, 2)}</span>
@@ -710,10 +885,23 @@ export function InvoicesClient({
                       </span>
                     </button>
                   </div>
+                  {badges || doc ? (
+                    // Rozetler ve belge düğmesi (tutarın altında, sağda)
+                    <div className={cn("mt-1 flex items-center gap-2", picking ? "pl-10" : "pl-12")}>
+                      <span className="flex min-w-0 flex-1 flex-wrap gap-1">
+                        {sourceBadges(i, note, base)}
+                        {reviewBadge(i)}
+                      </span>
+                      {doc ? <span className="relative z-10 -my-1 shrink-0">{doc}</span> : null}
+                    </div>
+                  ) : null}
                   {noteLine(i, picking ? "pl-10" : "pl-12")}
-                  <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
-                    {/* Telefonda yerel seçici yerine alt sayfa: 48px satırlar, rozet 13px kalır (iOS yakınlaştırmaz) */}
-                    <CategoryPill value={i.category} label={`${base}, ${dateTR(i.date)}: kategori ${i.category}. Değiştir`} onClick={() => setCatFor(i.id)} />
+                  <div className="relative z-10 mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      {/* Telefonda yerel seçici yerine alt sayfa: 48px satırlar, rozet 13px kalır (iOS yakınlaştırmaz) */}
+                      <CategoryPill value={i.category} label={`${base}, ${dateTR(i.date)}: kategori ${i.category}. Değiştir`} onClick={() => setCatFor(i.id)} />
+                      {i.needsReview ? <ConfirmPill onClick={() => confirmRows([i])} label={`${base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} /> : null}
+                    </span>
                     <span className="ml-auto flex flex-col items-end">
                       <Switch
                         checked={!i.unpaid}
@@ -844,6 +1032,8 @@ export function InvoicesClient({
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium break-words text-ink">{base}</span>
                               {sourceBadges(i, note, base)}
+                              {/* Eylem sütununda değil: tablo 1280px'te sığsın (ad sütunu sarılır, genişlemez) */}
+                              {docButton(i, "-my-1 size-7 text-ink-soft pointer-coarse:size-11")}
                             </div>
                             {second ? <p className="mt-0.5 text-[13px] break-words text-ink-mute">{second}</p> : null}
                             {noteLine(i)}
@@ -854,7 +1044,20 @@ export function InvoicesClient({
                         {dateTR(i.date)}
                         {i.unpaid && i.dueDate ? <span className="block text-xs text-warn">Vade {dateTR(i.dueDate)}</span> : null}
                       </TD>
-                      <TD>{categoryPicker(i)}</TD>
+                      <TD>
+                        {i.needsReview ? (
+                          // Tahmin edilen kategori: altında "Kontrol" ve tek tıkla onay (sütun genişlemesin diye alt satırda)
+                          <div className="flex flex-col items-start gap-1">
+                            {categoryPicker(i)}
+                            <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              {reviewBadge(i)}
+                              <ConfirmPill size="sm" onClick={() => confirmRows([i])} label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori ${i.category} doğru, onayla`} />
+                            </span>
+                          </div>
+                        ) : (
+                          categoryPicker(i)
+                        )}
+                      </TD>
                       <TD numeric>
                         <span className="font-semibold">{tl(net, 2)}</span>
                         {/* Kısa tutulur (sütun dar kalsın, tablo 1280px'te sığsın); iskontodan önceki tutar ipucunda */}
@@ -923,7 +1126,29 @@ export function InvoicesClient({
         </>
       ) : (
         <div className="border-t border-line">
-          {list.length ? (
+          {status === "kontrol" && !counts.review ? (
+            <EmptyState
+              icon={<CheckCheck />}
+              title="Kontrol bekleyen fatura kalmadı"
+              description={
+                totalReview
+                  ? "Bu süzgeçte bekleyen yok; ay, kategori ya da aramayı temizleyince diğerleri görünür."
+                  : "Eşitlemenin tahminle yazdığı bütün kategoriler onaylandı. Yeni faturalar her sabah gelir; kategorisi tahmin edilenler yeniden burada toplanır."
+              }
+              action={
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!totalReview) return setStatus("tumu");
+                    setQ("");
+                    clearQuery(["ay", "kategori", "kaynak"]);
+                  }}
+                >
+                  {totalReview ? "Süzgeci temizle" : "Tüm faturaları göster"}
+                </Button>
+              }
+            />
+          ) : list.length ? (
             <EmptyState
               title="Bu süzgece uyan fatura yok"
               description={
@@ -956,83 +1181,131 @@ export function InvoicesClient({
         </div>
       )}
 
-      {/* Toplu işlem çubuğu: seçim varken altta yüzer */}
-      <FloatingBar open={selected.length > 0}>
-        <p className="min-w-0 text-sm text-ink" aria-live="polite">
-          <span className="font-semibold tabular">{selected.length}</span> fatura seçildi
-          <span className="text-ink-mute tabular"> · net {tl(selected.reduce((a, i) => a + netOf(i), 0), 2)}</span>
-          {selected.length < visible.length && pageAll ? (
-            <button
-              type="button"
-              onClick={() => selectIds(visible.map((i) => i.id), true)}
-              className="ml-2 cursor-pointer font-medium text-info underline-offset-2 hover:underline pointer-coarse:min-h-11"
-            >
-              Süzülen {visible.length} faturanın tümünü seç
-            </button>
-          ) : null}
-        </p>
-        {/* Telefonda tek satır: seçim kutusu kalan genişliği alır */}
-        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
-          <Select defaultValue="" onChange={bulkCategory} aria-label="Seçilenlerin kategorisini değiştir" className="min-w-0 flex-1 font-medium text-ink sm:w-auto sm:min-w-44 sm:flex-none">
-            <option value="" disabled>
-              Kategori ata…
-            </option>
-            {INVOICE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-          {selectedUnpaid.length ? (
-            <Button
-              variant="secondary"
-              title={selectedUnpaid.length === selected.length ? undefined : `Seçilenlerden ödenmemiş ${selectedUnpaid.length} faturayı ödendi yapar`}
-              onClick={() => {
-                setPaid(selected, true);
-                clearSelection();
-              }}
-            >
-              <CircleCheck size={16} /> {selectedUnpaid.length === selected.length ? "Ödendi yap" : `Ödendi yap (${selectedUnpaid.length})`}
+      {/* Toplu işlem çubuğu: seçim varken altta yüzer. "Kontrol bekleyen" süzgecinde seçim yokken kuyruğun tamamını
+          onaylatır ("Hepsini onayla"). */}
+      <FloatingBar open={barOpen}>
+        {selected.length ? (
+          <>
+            <p className="min-w-0 flex-1 text-sm text-ink sm:flex-none" aria-live="polite">
+              <span className="font-semibold tabular">{selected.length}</span> fatura seçildi
+              <span className="text-ink-mute tabular"> · net {tl(selected.reduce((a, i) => a + netOf(i), 0), 2)}</span>
+              {selected.length < visible.length && pageAll ? (
+                <button
+                  type="button"
+                  onClick={() => selectIds(visible.map((i) => i.id), true)}
+                  className="ml-2 cursor-pointer font-medium text-info underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                >
+                  Süzülen {visible.length} faturanın tümünü seç
+                </button>
+              ) : null}
+            </p>
+            {/* Telefonda Onayla sayının yanında (alt satırda kategori seçimine yer kalsın), masaüstünde düğmelerin başında */}
+            {selectedReview.length ? (
+              <Button onClick={confirmSelected} className="sm:hidden">
+                <Check size={16} aria-hidden="true" /> {confirmLabel}
+              </Button>
+            ) : null}
+            {/* Telefonda tek satır: seçim kutusu kalan genişliği alır */}
+            <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+              {selectedReview.length ? (
+                <Button onClick={confirmSelected} className="max-sm:hidden">
+                  <Check size={16} aria-hidden="true" /> {confirmLabel}
+                </Button>
+              ) : null}
+              <Select defaultValue="" onChange={bulkCategory} aria-label="Seçilenlerin kategorisini değiştir" className="min-w-0 flex-1 font-medium text-ink sm:w-auto sm:min-w-44 sm:flex-none">
+                <option value="" disabled>
+                  Kategori ata…
+                </option>
+                {INVOICE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+              {selectedUnpaid.length ? (
+                <Button
+                  variant="secondary"
+                  title={selectedUnpaid.length === selected.length ? undefined : `Seçilenlerden ödenmemiş ${selectedUnpaid.length} faturayı ödendi yapar`}
+                  onClick={() => {
+                    setPaid(selected, true);
+                    clearSelection();
+                  }}
+                >
+                  <CircleCheck size={16} /> {selectedUnpaid.length === selected.length ? "Ödendi yap" : `Ödendi yap (${selectedUnpaid.length})`}
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setPaid(selected, false);
+                    clearSelection();
+                  }}
+                >
+                  Ödenmedi yap
+                </Button>
+              )}
+              <IconButton label="Seçimi kaldır (Esc)" onClick={clearSelection}>
+                <X size={15} />
+              </IconButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="min-w-0 flex-1 text-sm text-ink" aria-live="polite">
+              <span className="font-semibold tabular">{num(visible.length)}</span> fatura kontrol bekliyor
+              <span className="text-ink-mute max-sm:hidden"> · kategoriler tahminle yazıldı</span>
+            </p>
+            <Button onClick={() => confirmRows(visible)} className="max-sm:w-full max-sm:min-h-11">
+              <CheckCheck size={16} aria-hidden="true" /> Hepsini onayla ({num(visible.length)})
             </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setPaid(selected, false);
-                clearSelection();
-              }}
-            >
-              Ödenmedi yap
-            </Button>
-          )}
-          <IconButton label="Seçimi kaldır (Esc)" onClick={clearSelection}>
-            <X size={15} />
-          </IconButton>
-        </div>
+          </>
+        )}
       </FloatingBar>
 
-      {/* Telefon ve tablet: "Fatura ekle" başparmağın altında, alt gezinme çubuğunun üstünde (seçim çubuğu açıkken
-          gizli). Aşağı kaydırırken kaybolur: kartlardaki ödendi anahtarını ve aylık listedeki tutarları örtmez. */}
-      {selected.length === 0 ? (
-        <Fab onClick={() => setEditing("new")} className="h-12 pr-5 pl-4">
+      {/* Telefon: "Fatura ekle" başparmağın altında, alt gezinme çubuğunun üstünde (alttaki çubuk açıkken gizli).
+          Aşağı kaydırırken kaybolur. Tablette (sm ve üstü) düğme kartın başlığında: tam genişlikteki kartlarda yüzen
+          düğme ilk kartın ödendi anahtarını örtüyordu. */}
+      {barOpen ? null : (
+        <Fab onClick={() => setEditing("new")} className="h-12 pr-5 pl-4 sm:hidden">
           <Plus size={18} aria-hidden="true" /> Fatura ekle
         </Fab>
-      ) : null}
+      )}
 
       <Dialog
         open={catRow !== null}
         onClose={() => setCatFor(null)}
         title="Kategori"
         description={catRow ? `${splitSupplier(catRow.supplier).base} · ${dateTR(catRow.date)} · ${tl(netOf(catRow), 2)}` : undefined}
+        footer={
+          catRow?.needsReview ? (
+            <Button
+              className={SHEET_BTN}
+              onClick={() => {
+                setCatFor(null);
+                confirmRows([catRow]);
+              }}
+            >
+              <Check size={16} aria-hidden="true" /> {catRow.category} doğru, onayla
+            </Button>
+          ) : undefined
+        }
       >
         {catRow ? (
           <div className="space-y-3 pb-2">
+            {catRow.needsReview ? (
+              <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brass-500" aria-hidden="true" />
+                Kategori eşitlemede tahminle yazıldı. Doğruysa onaylayın; değilse doğrusunu seçin (seçmek de onaylar).
+              </p>
+            ) : null}
             <ChoiceList
               label="Faturanın kategorisi"
               value={catRow.category}
               onChange={(c) => {
                 setCatFor(null);
                 if (c !== catRow.category) changeCategory([{ id: catRow.id, category: c }], { from: catRow });
+                // Tahmin edilen kategoriye yeniden dokunmak "doğru" demektir
+                else if (catRow.needsReview) confirmRows([catRow]);
               }}
               options={INVOICE_CATEGORIES.map((c) => ({
                 value: c,
@@ -1060,8 +1333,12 @@ export function InvoicesClient({
           onClose={() => setEditing(null)}
           onDelete={(i) => setDeleting(i)}
           parasutCompanyId={parasutCompanyId ?? null}
+          documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
+          onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
         />
       ) : null}
+      {/* Fatura penceresinden açılınca onun üstünde durur (sonra açılan modal en üstte) */}
+      {docRow ? <DocumentSheet key={`belge-${docRow.id}`} invoice={docRow} documents={docsOf(docRow.id)} onClose={() => setDocFor(null)} /> : null}
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}
@@ -1100,6 +1377,31 @@ function CategorySelect({ value, onChange, label }: { value: string; onChange: (
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * Tahmin edilen kategoriyi tek dokunuşla onaylar. Telefonda (md) kategori hapı boyunda, 36px görünür / 44px dokunma
+ * alanı; tabloda (sm) rozet boyunda, dokunmatikte 44px.
+ */
+function ConfirmPill({ onClick, label, size = "md" }: { onClick: () => void; label: string; size?: "sm" | "md" }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title="Kategori doğru: onayla"
+      className={cn(
+        "relative inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-surface font-medium text-ink ring-1 ring-ink/20 transition-shadow ring-inset hover:ring-ink/45 focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:outline-none",
+        size === "md" ? "h-9 pr-3 pl-2.5 text-[13px] before:absolute before:-inset-1 before:content-['']" : "h-6 pr-2 pl-1.5 text-[11px] pointer-coarse:h-11 pointer-coarse:px-3",
+      )}
+    >
+      <Check size={size === "md" ? 14 : 12} aria-hidden="true" />
+      Onayla
+    </button>
   );
 }
 

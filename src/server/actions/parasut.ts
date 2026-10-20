@@ -9,6 +9,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
+import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, PARASUT_STATE_KEYS, syncParasut } from "@/server/parasut/sync";
 
 import { logActivity } from "./log";
@@ -39,6 +40,33 @@ export async function runParasutSync(from: string | null) {
     if (!r.ok) throw new UserError(r.error);
     refresh();
     return { summary: r.summary, partial: r.partial };
+  });
+}
+
+/**
+ * E-fatura kalemlerini beklemeden okur (eşitleme her seferinde kalan süre kadarını okur; ilk kurulumda 80 küsur
+ * fatura birkaç sabah sürerdi). Bir çağrı ~45 saniye çalışır; ekran `remaining` bitene kadar yeniden çağırır.
+ */
+export async function readParasutLines() {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    ensureConfigured();
+    const started = Date.now();
+    const client = new ParasutClient();
+    // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
+    client.setDeadline(started + 58_000);
+    const r = await readEInvoiceLines(client, { until: started + 45_000 });
+    if (r.months.length) await applyProductLinks(r.months);
+    if (!r.read && !r.failed && r.stoppedBy) throw new UserError(r.stoppedBy);
+    if (r.read || r.failed) {
+      await logActivity(
+        me,
+        "E-fatura kalemleri okundu",
+        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
+      );
+    }
+    refresh();
+    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy };
   });
 }
 
@@ -123,6 +151,27 @@ export async function saveProductLink(input: z.input<typeof linkSchema>) {
     await logActivity(me, "Paraşüt ürünü bağlandı", `${data.productName} → ${ing?.name ?? data.ingredientId} (×${data.factor})`);
     refresh();
     return res;
+  });
+}
+
+/** Önerilen bağlantıları topluca kaydeder (Paraşüt sayfasında "Önerilenleri bağla"); hesap bir kez yapılır */
+export async function saveProductLinks(input: z.input<typeof linkSchema>[]) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const items = z.array(linkSchema).min(1, "Bağlanacak ürün yok").max(200).parse(input);
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      for (const data of items) {
+        await tx
+          .insert(s.parasutProductLinks)
+          .values(data)
+          .onConflictDoUpdate({ target: s.parasutProductLinks.productKey, set: { ingredientId: data.ingredientId, factor: data.factor, updatePrice: data.updatePrice, productName: data.productName } });
+      }
+    });
+    const res = await applyProductLinks();
+    await logActivity(me, "Paraşüt ürünleri topluca bağlandı", `${items.length} ürün: ${items.slice(0, 5).map((i) => i.productName).join(", ")}${items.length > 5 ? "…" : ""}`);
+    refresh();
+    return { ...res, linked: items.length };
   });
 }
 

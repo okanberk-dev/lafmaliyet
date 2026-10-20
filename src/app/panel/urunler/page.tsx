@@ -8,9 +8,11 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { monthLabel, num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadPriceAlerts } from "@/server/data/price-alerts";
 
 import { menuAverages } from "./logic";
 import { NewProductButton } from "./new-product";
+import { PriceImpactPanel } from "./price-impact-panel";
 import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products-table";
 
 export const metadata: Metadata = { title: "Ürünler & kârlılık" };
@@ -37,6 +39,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const sp = await searchParams;
   const model = await loadModel();
   const month = resolveMonth(sp.ay, model);
+  // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
+  const prices = await loadPriceAlerts(model).catch(() => null);
   const sold = model.soldByProduct(month);
   const st = model.settings;
 
@@ -150,6 +154,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
         />
       </div>
+      {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
       <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} />

@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN "ubl_read_at" timestamp with time zone;

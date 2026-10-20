@@ -51,6 +51,8 @@ export interface BillDraft {
   parasutCategory: string | null;
   updatedAt: string | null;
   lines: LineDraft[];
+  /** Paraşüt'teki e-belge bağı (`active_e_document`): e-fatura PDF'i buradan alınır; e-fatura eşitlemesi aynı kaydı tanır */
+  eDocument: { type: string; id: string } | null;
 }
 
 /** Komisyon faturası kesen platformlar (Excel aktarımındaki listeyle aynı) */
@@ -77,6 +79,16 @@ export function supplierKey(name: string): string {
 
 export function productKeyFor(productId: string | null, name: string): string {
   return productId ? `p:${productId}` : `d:${norm(name)}`;
+}
+
+/**
+ * E-fatura (UBL) kaleminin ürün anahtarı: tedarikçinin vergi numarası (yoksa sadeleştirilmiş adı) + satıcının ürün
+ * kodu, kod yoksa sadeleştirilmiş ürün adı. Aynı tedarikçinin aynı ürünü her faturada aynı anahtarla gelir.
+ */
+export function eInvoiceProductKey(seller: string, sellerCode: string | null, name: string): string {
+  const who = /^\d{10,11}$/.test(seller.trim()) ? seller.trim() : supplierKey(seller) || "x";
+  const code = sellerCode?.trim().toLocaleUpperCase("tr-TR");
+  return code ? `e:${who}:#${code}` : `e:${who}:${norm(name) || name.trim().toLocaleLowerCase("tr-TR")}`;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -173,6 +185,10 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
       return r && !Array.isArray(r) ? r.id : null;
     })(),
     supplierTaxNo: str((supplier?.attributes as Record<string, unknown> | undefined)?.tax_number),
+    eDocument: (() => {
+      const r = bill.relationships?.active_e_document?.data;
+      return r && !Array.isArray(r) ? { type: r.type, id: r.id } : null;
+    })(),
     description: str(a.description),
     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
@@ -299,7 +315,7 @@ const dayDiff = (a: string, b: string) => Math.abs(Date.parse(`${a}T00:00:00Z`) 
  * tedarikçi + fatura numarası (tarih ±31 gün; farklı firmalar aynı e-fatura önekini kullanabilir); sonra aynı
  * tedarikçi + aynı tarih + aynı tutar (±1 ₺).
  */
-export function findExisting(d: BillDraft, existing: ExistingInvoice[]): ExistingInvoice | null {
+export function findExisting(d: Pick<BillDraft, "externalId" | "invoiceNo" | "date" | "payable" | "supplier">, existing: ExistingInvoice[]): ExistingInvoice | null {
   const byExt = existing.find((e) => e.externalId === d.externalId);
   if (byExt) return byExt;
   const unlinked = existing.filter((e) => !e.externalId);

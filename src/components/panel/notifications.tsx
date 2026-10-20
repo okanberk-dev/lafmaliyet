@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, FileText, Info } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -13,7 +13,8 @@ import type { PanelNotification } from "@/server/actions/notifications";
 import { useLocalList } from "./local-list";
 
 /**
- * AkmanOS "Notification Dropdown" görünümünde zil: önce zamanı gelen ödemeler, sonra son satış ayının uyarıları.
+ * AkmanOS "Notification Dropdown" görünümünde zil: önce zamanı gelen ödemeler, sonra faturalar (Paraşüt'ten yeni
+ * gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları.
  * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
  * (ör. düşük kârlı ürün sayısı) yeni bildirim sayılır. Her açılışta liste arka planda tazelenir.
  */
@@ -55,7 +56,8 @@ export function NotificationMenu({
   const visible = filter === "unread" ? list.filter((n) => n.unread) : list;
   const groups = [
     { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
-    { id: "uyari", label: "Uyarılar", items: visible.filter((n) => n.group !== "odeme") },
+    { id: "fatura", label: "Faturalar", items: visible.filter((n) => n.group === "fatura") },
+    { id: "uyari", label: "Uyarılar", items: visible.filter((n) => n.group !== "odeme" && n.group !== "fatura") },
   ].filter((g) => g.items.length);
 
   const markRead = (ids: string[]) => {
@@ -196,7 +198,7 @@ export function NotificationMenu({
                     <ul className="flex flex-col gap-0.5">
                       {g.items.map((n) => {
                         const k = KIND[n.kind];
-                        const Icon = n.group === "odeme" ? CalendarClock : k.icon;
+                        const Icon = n.group === "odeme" ? CalendarClock : n.group === "fatura" && n.kind !== "danger" ? FileText : k.icon;
                         return (
                           <li key={n.id}>
                             <Link

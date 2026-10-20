@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   doublePrecision,
   index,
   integer,
@@ -12,6 +13,8 @@ import {
 } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+/** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
 
 // ---------------------------------------------------------------- Kullanıcılar
@@ -216,9 +219,49 @@ export const invoices = pgTable(
     /** Kalan borç (TL, KDV dahil); kısmen ödenmiş faturada hatırlatıcı bunu gösterir */
     outstanding: doublePrecision("outstanding"),
     syncedAt: timestamp("synced_at", { withTimezone: true }),
+    /**
+     * Paraşüt'teki gelen e-fatura (e_invoices) kimliği. "İçeri al" yapılmamış e-faturalar da panele bundan gelir;
+     * sonradan içeri alınırsa gider faturası (externalId) aynı kayda bağlanır, kopya açılmaz.
+     */
+    eInvoiceId: text("e_invoice_id"),
+    /** E-faturanın ETTN'si (GİB) */
+    eInvoiceUuid: text("e_invoice_uuid"),
+    /** Eşitlemenin kategorisini tahmin ettiği yeni fatura; kullanıcı onaylayınca ya da değiştirince kalkar */
+    needsReview: boolean("needs_review").notNull().default(false),
+    /**
+     * E-faturanın UBL belgesindeki kalemlerin okunduğu an (belge okunamadıysa da yazılır, her eşitlemede yeniden
+     * denenmesin). Boşsa sıradaki eşitleme okur; e-fatura değişirse yeniden boşaltılır.
+     */
+    ublReadAt: timestamp("ubl_read_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("invoices_date_idx").on(t.date), uniqueIndex("invoices_external_id_uq").on(t.externalId)],
+  (t) => [
+    index("invoices_date_idx").on(t.date),
+    uniqueIndex("invoices_external_id_uq").on(t.externalId),
+    uniqueIndex("invoices_e_invoice_id_uq").on(t.eInvoiceId),
+  ],
+);
+
+/**
+ * Fatura belgeleri: Paraşüt'ten alınan e-fatura PDF'i (önbellek; bir kez indirilir) ya da panelden yüklenen
+ * PDF / fotoğraf. Dosya veritabanında durur, yalnız yöneticiye sunulur.
+ */
+export const invoiceDocuments = pgTable(
+  "invoice_documents",
+  {
+    id: serial("id").primaryKey(),
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    source: text("source", { enum: ["parasut", "upload"] }).notNull(),
+    fileName: text("file_name").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    uploadedBy: text("uploaded_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("invoice_documents_invoice_idx").on(t.invoiceId)],
 );
 
 // ---------------------------------------------------------------- Personel & giderler
