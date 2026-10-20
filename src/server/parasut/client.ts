@@ -208,6 +208,8 @@ export class ParasutClient {
       const res = await fetchParasut(path.split("/")[0] || path, url, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
+      // 204: içerik yok (ör. PDF henüz hazırlanıyor); çağıran null'ı ele alır
+      if (res.status === 204) return null as T;
       if (res.ok) return (await res.json()) as T;
       const body = await res.text();
       if (res.status === 401 && !refreshed) {
@@ -243,10 +245,6 @@ export class ParasutClient {
     return this.get<ShowResponse<A>>(path, query);
   }
 
-  /**
-   * Bağlantı testi: belirteç alınır, kullanıcının eriştiği firmalar (/v4/me) okunur ve tanımlı firmanın bir sayfa
-   * gider faturası istenir. Firma numarası yanlışsa erişilebilen firmalar hata mesajında listelenir.
-   */
   /**
    * Bağlantı denemesi: eşitlemeyle aynı yoldan (kayıtlı oturum varsa yeniden giriş yapmadan) firmayı ve bir faturayı
    * okur. Hata olursa hangi adımda takıldığı söylenir.
