@@ -4,7 +4,7 @@
 
 import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, posMatchKey } from "@/lib/calc/pos-paste";
-import { monthLabel, pct } from "@/lib/format";
+import { monthLabel, num, pct } from "@/lib/format";
 
 // ---------------------------------------------------------------- Açık gün
 
@@ -152,6 +152,21 @@ export function previewMatches<R extends { posName: string }>(rows: R[], mapping
     const status: PreviewStatus = m?.isService ? "service" : p ? "matched" : "new";
     return { ...r, status, label: m?.isService ? "HİZMET" : p ? `${p.name} · ${p.size}` : null };
   });
+}
+
+/**
+ * "Yenisiyle değiştir" kipinde yüklemeden önce sorulacak onay: ayın mevcut satırları silinir. Eklemede ya da boş
+ * ayda soru yok (null). Tek dokunuşla 125 satırın gitmesin diye telefonda da masaüstünde de sorulur.
+ */
+export function replaceConfirm(o: { mode: "replace" | "append"; lineCount: number; newCount: number; label: string }) {
+  if (o.mode !== "replace" || o.lineCount <= 0) return null;
+  return {
+    title: `${o.label}: ${num(o.lineCount)} satır değiştirilsin mi?`,
+    description:
+      `Bu aydaki ${num(o.lineCount)} satış satırı silinir, yerine okunan ${num(o.newCount)} satır yüklenir. Satırlarda elle yapılan ` +
+      "düzeltmeler ve notlar da gider; eşleştirme hafızası ve ay bilgileri (POS ciro, açık gün) kalır. Eklemek için “Koru, üstüne ekle”yi seçin.",
+    confirmLabel: `${num(o.lineCount)} satırı değiştir`,
+  };
 }
 
 // ---------------------------------------------------------------- Eşleştirme önerisi

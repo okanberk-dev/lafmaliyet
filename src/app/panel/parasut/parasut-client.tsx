@@ -41,11 +41,6 @@ const MATCH_HELP: Record<MatchType, { placeholder: string; hint: string }> = {
 const UNIT_LABEL: Record<string, string> = { gr: "gr", ml: "ml", adet: "adet", dilim: "dilim" };
 const NOT_CONFIGURED = "Önce kurulumdaki ortam değişkenlerini tanımlayın";
 
-/** Telefonda dokunma alanı 40px */
-const TOUCH_ICON = "pointer-coarse:size-10";
-const TOUCH_BTN = "pointer-coarse:h-10";
-const TOUCH_INPUT = "pointer-coarse:h-10";
-
 interface Run {
   id: number;
   trigger: "cron" | "manual";
@@ -150,7 +145,7 @@ export function ParasutClient({
               variant="secondary"
               disabled={!configured || busy}
               title={configured ? undefined : NOT_CONFIGURED}
-              className={TOUCH_BTN}
+             
               onClick={() =>
                 startTest(async () => {
                   const r = await testParasutConnection();
@@ -161,7 +156,7 @@ export function ParasutClient({
             >
               <ShieldCheck size={16} /> {testing ? "Deneniyor…" : "Bağlantıyı dene"}
             </Button>
-            <Button disabled={!configured || busy} title={configured ? undefined : NOT_CONFIGURED} onClick={() => sync(from || null)} className={cn("max-sm:order-first", TOUCH_BTN)}>
+            <Button disabled={!configured || busy} title={configured ? undefined : NOT_CONFIGURED} onClick={() => sync(from || null)} className="max-sm:order-first">
               <RefreshCw size={16} className={cn(syncing && "animate-spin")} /> {syncing ? "Eşitleniyor…" : "Şimdi eşitle"}
             </Button>
           </>
@@ -170,14 +165,16 @@ export function ParasutClient({
 
       <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat
+          compact
           icon={<PlugZap />}
           label="Bağlantı"
           value={configured ? "Tanımlı" : "Kurulmadı"}
           tone={configured ? "good" : "warn"}
           sub={configured ? `Her sabah 08:00${cronSet ? "" : " · CRON_SECRET eksik"}` : "Aşağıdaki kurulum adımlarını izleyin"}
         />
-        <Stat icon={<CheckCircle2 />} label="Paraşüt'ten gelen fatura" value={num(stats.invoices)} suffix="adet" sub={stats.lastSyncedAt ? `Son: ${dateTimeTR(stats.lastSyncedAt)}` : "Henüz eşitlenmedi"} />
+        <Stat compact icon={<CheckCircle2 />} label="Paraşüt'ten gelen fatura" value={num(stats.invoices)} suffix="adet" sub={stats.lastSyncedAt ? `Son: ${dateTimeTR(stats.lastSyncedAt)}` : "Henüz eşitlenmedi"} />
         <Stat
+          compact
           icon={<Link2 />}
           label="Bağlı ürün"
           info="Hammaddeye bağlanan Paraşüt ürünleri. Bağlı ürünlerin alınan miktarı Tutarlılık'a, son birim fiyatı hammaddeye yazılır."
@@ -186,6 +183,7 @@ export function ParasutClient({
           tone={unlinked.length ? "warn" : "default"}
         />
         <Stat
+          compact
           icon={lastRun?.status === "error" ? <XCircle /> : <CircleDashed />}
           label="Son eşitleme"
           value={lastRun ? (lastRun.status === "ok" ? "Başarılı" : lastRun.status === "error" ? "Hata" : "Sürüyor") : "–"}
@@ -253,12 +251,12 @@ export function ParasutClient({
                 label="Yeniden eşitleme başlangıcı"
                 tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar, vade ve ödeme durumu güncellenir."
               >
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={new Date().toISOString().slice(0, 10)} className={TOUCH_INPUT} />
+                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
               </Field>
-              <Button type="submit" variant="secondary" disabled={!configured || busy || !from} title={configured ? undefined : NOT_CONFIGURED} className={TOUCH_BTN}>
+              <Button type="submit" variant="secondary" disabled={!configured || busy || !from} title={configured ? undefined : NOT_CONFIGURED}>
                 <RefreshCw size={16} className={cn(syncing && from && "animate-spin")} /> Tarihten eşitle
               </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setConfirmReset(true)} className={TOUCH_BTN}>
+              <Button variant="ghost" disabled={busy} onClick={() => setConfirmReset(true)}>
                 <Unplug size={16} /> Oturumu sıfırla
               </Button>
             </form>
@@ -512,7 +510,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                 title="Bu süzgece uyan ürün yok"
                 description={q.trim() ? `“${q.trim()}” için sonuç bulunamadı.` : view === "bekleyen" ? "Bağlanmayı bekleyen ürün kalmadı." : "Henüz bağlı ürün yok."}
                 action={
-                  <Button variant="secondary" onClick={clear} className={TOUCH_BTN}>
+                  <Button variant="secondary" onClick={clear}>
                     Süzgeci temizle
                   </Button>
                 }
@@ -550,17 +548,18 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             <Package />
                           </IconTile>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-ink" title={u.productName}>
+                            {/* Telefonda uzun ürün ve tedarikçi adı alt satıra geçer: son birim fiyat kesilmez */}
+                            <p className="text-sm font-semibold break-words text-ink lg:truncate" title={u.productName}>
                               {u.productName}
                             </p>
-                            <p className="truncate text-xs text-ink-mute" title={u.supplier}>
+                            <p className="text-xs break-words text-ink-mute lg:truncate" title={u.supplier}>
                               {u.supplier} · {num(u.count)} kalem · son {dateTR(u.lastDate)} · <span className="tabular">{tl2(u.lastUnitPrice)}</span>
                               {u.unit ? ` / ${u.unit}` : ""}
                             </p>
                           </div>
                         </div>
                         <div className="min-w-0">
-                          <Select value={d.ingredientId} onChange={(e) => choose(e.target.value)} aria-label={`${u.productName} için hammadde`} className={TOUCH_INPUT}>
+                          <Select value={d.ingredientId} onChange={(e) => choose(e.target.value)} aria-label={`${u.productName} için hammadde`}>
                             <option value="">Hammadde seçin…</option>
                             <IngredientOptions ingredients={ingredients} />
                           </Select>
@@ -568,7 +567,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             <button
                               type="button"
                               onClick={() => choose(String(suggestion.id))}
-                              className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-info hover:underline pointer-coarse:min-h-10"
+                              className="mt-1 inline-flex min-h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-info hover:underline pointer-coarse:min-h-11"
                             >
                               <Sparkles size={12} aria-hidden="true" /> Öneri: {suggestion.name}
                             </button>
@@ -581,7 +580,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             onChange={(e) => set(u.productKey, { factor: e.target.value, factorTouched: true })}
                             aria-label={`${u.productName} çarpanı`}
                             aria-invalid={!(parseNumberTR(d.factor) ?? 0) || undefined}
-                            className={cn("min-w-0", TOUCH_INPUT)}
+                            className="min-w-0"
                           />
                           <span className="w-8 shrink-0">{ing ? (UNIT_LABEL[ing.unit] ?? ing.unit) : "…"}</span>
                           <InfoTip text={FACTOR_TIP} />
@@ -595,7 +594,7 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             offText="Fiyat elle"
                             onChange={(v) => set(u.productKey, { updatePrice: v })}
                           />
-                          <Button type="submit" size="sm" disabled={pending || !d.ingredientId} className={TOUCH_BTN}>
+                          <Button type="submit" size="sm" disabled={pending || !d.ingredientId}>
                             <Link2 size={14} /> Bağla
                           </Button>
                         </div>
@@ -623,17 +622,21 @@ function ProductLinks({ links, unlinked, ingredients }: { links: LinkRow[]; unli
                             <p className="text-sm font-semibold break-words text-ink">{l.productName}</p>
                             <p className="mt-0.5 text-xs text-ink-mute">
                               →{" "}
-                              <Link href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredientName)}`} className="font-medium text-ink-soft hover:underline">
+                              {/* Dokunmatikte satırı büyütmeden dokunma alanı (dolgu konumlandırılmamış: alttaki anahtarın üstüne binmez) */}
+                              <Link
+                                href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredientName)}`}
+                                className="font-medium text-ink-soft hover:underline pointer-coarse:py-2.5"
+                              >
                                 {l.ingredientName}
                               </Link>{" "}
                               · <span className="tabular">× {num(l.factor, 0, 3)}</span> {UNIT_LABEL[l.unit] ?? l.unit}
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-1.5">
-                            <IconButton label={`${l.productName} bağlantısını düzenle`} onClick={() => setEditing(l.id)} className={TOUCH_ICON}>
+                            <IconButton label={`${l.productName} bağlantısını düzenle`} onClick={() => setEditing(l.id)}>
                               <Pencil size={15} />
                             </IconButton>
-                            <IconButton label={`${l.productName} bağlantısını sil`} tone="danger" onClick={() => setRemoving(l)} className={TOUCH_ICON}>
+                            <IconButton label={`${l.productName} bağlantısını sil`} tone="danger" onClick={() => setRemoving(l)}>
                               <Trash2 size={15} />
                             </IconButton>
                           </div>
@@ -806,19 +809,19 @@ function LinkEditor({
     >
       <p className="min-w-0 text-sm font-semibold break-words text-ink md:self-center">{link.productName}</p>
       <Field label="Hammadde" htmlFor={`${id}-ing`}>
-        <Select id={`${id}-ing`} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)} className={TOUCH_INPUT} autoFocus>
+        <Select id={`${id}-ing`} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)} autoFocus>
           <IngredientOptions ingredients={ingredients} />
         </Select>
       </Field>
       <Field label={`Çarpan (${ing ? (UNIT_LABEL[ing.unit] ?? ing.unit) : "birim"})`} htmlFor={`${id}-factor`} error={factor && invalid && ingredientId ? "Sıfırdan büyük olmalı" : undefined}>
-        <NumberInput id={`${id}-factor`} value={factor} onChange={(e) => setFactor(e.target.value)} aria-invalid={(Boolean(ingredientId) && invalid) || undefined} className={TOUCH_INPUT} />
+        <NumberInput id={`${id}-factor`} value={factor} onChange={(e) => setFactor(e.target.value)} aria-invalid={(Boolean(ingredientId) && invalid) || undefined} />
       </Field>
       <Switch checked={updatePrice} showText onText="Fiyat güncellenir" offText="Fiyat elle" label="Fiyatı güncelle" onChange={setUpdatePrice} className="md:mb-0.5" />
       <div className="flex justify-end gap-1.5 md:mb-0.5">
-        <Button variant="ghost" size="sm" onClick={onCancel} className={TOUCH_BTN}>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
           Vazgeç
         </Button>
-        <Button type="submit" size="sm" disabled={pending || invalid} className={TOUCH_BTN}>
+        <Button type="submit" size="sm" disabled={pending || invalid}>
           Kaydet
         </Button>
       </div>
@@ -914,7 +917,7 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
             </p>
           ) : null}
           <Field label="Eşleşme" htmlFor={`${formId}-type`}>
-            <Select id={`${formId}-type`} value={matchType} onChange={(e) => setMatchType(e.target.value as MatchType)} className={TOUCH_INPUT}>
+            <Select id={`${formId}-type`} value={matchType} onChange={(e) => setMatchType(e.target.value as MatchType)}>
               {(Object.keys(MATCH_LABEL) as MatchType[]).map((k) => (
                 <option key={k} value={k}>
                   {MATCH_LABEL[k]}
@@ -936,12 +939,12 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
               placeholder={MATCH_HELP[matchType].placeholder}
               maxLength={120}
               aria-invalid={Boolean(duplicate) || undefined}
-              className={TOUCH_INPUT}
+             
               required
             />
           </Field>
           <Field label="Panel kategorisi" htmlFor={`${formId}-cat`}>
-            <Select id={`${formId}-cat`} value={category} onChange={(e) => setCategory(e.target.value)} className={TOUCH_INPUT}>
+            <Select id={`${formId}-cat`} value={category} onChange={(e) => setCategory(e.target.value)}>
               {categories.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -951,11 +954,11 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
           </Field>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-1 lg:pt-[1.625rem]">
             {editingId !== null ? (
-              <Button variant="ghost" onClick={reset} className={TOUCH_BTN}>
+              <Button variant="ghost" onClick={reset}>
                 <X size={16} /> Vazgeç
               </Button>
             ) : null}
-            <Button type="submit" disabled={pending || !pattern.trim() || Boolean(duplicate)} className={cn("max-lg:flex-1", TOUCH_BTN)}>
+            <Button type="submit" disabled={pending || !pattern.trim() || Boolean(duplicate)} className="max-lg:flex-1">
               {editingId !== null ? (
                 "Kaydet"
               ) : (
@@ -985,7 +988,7 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
         ) : filtered.length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-mute">
             <span>Bu süzgece uyan kural yok.</span>
-            <Button variant="secondary" size="sm" onClick={clear} className={TOUCH_BTN}>
+            <Button variant="secondary" size="sm" onClick={clear}>
               Süzgeci temizle
             </Button>
           </div>
@@ -1010,10 +1013,10 @@ function CategoryRules({ rules, categories }: { rules: Rule[]; categories: reado
                     <Badge tone="blue">{r.category}</Badge>
                   </div>
                   <div className="flex gap-1.5">
-                    <IconButton label={`“${r.pattern}” kuralını düzenle`} onClick={() => edit(r)} className={TOUCH_ICON}>
+                    <IconButton label={`“${r.pattern}” kuralını düzenle`} onClick={() => edit(r)}>
                       <Pencil size={15} />
                     </IconButton>
-                    <IconButton label={`“${r.pattern}” kuralını sil`} tone="danger" disabled={pending} onClick={() => setRemoving(r)} className={TOUCH_ICON}>
+                    <IconButton label={`“${r.pattern}” kuralını sil`} tone="danger" disabled={pending} onClick={() => setRemoving(r)}>
                       <Trash2 size={15} />
                     </IconButton>
                   </div>

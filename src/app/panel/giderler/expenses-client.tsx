@@ -46,7 +46,7 @@ import {
   type EffectText,
   type MonthChoice,
 } from "./history-text";
-import { Disclosure, MonthChoiceField, RangeBadge, ResumeDialog, StopDialog, HistoryList } from "./history-ui";
+import { Disclosure, HistoryList, MonthChoiceField, RangeBadge, ResumeDialog, StopDialog } from "./history-ui";
 
 /** Sunucu eyleminin sonucu (server/actions/util ActionResult ile aynı biçim) */
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -111,11 +111,6 @@ function sortRows<T>(list: T[], sort: string, keys: Record<string, (x: T) => str
     return desc ? -c : c;
   });
 }
-
-/** Telefonda satır eylemleri ve anahtarlar en az 40px dokunma alanı */
-const TOUCH = "pointer-coarse:size-10";
-/** Pencere düğmeleri için aynısı (yükseklik) */
-const TOUCH_BTN = "pointer-coarse:h-10";
 
 /** Az önce eklenen / düzenlenen satırın kısa süreli vurgusu (TR'nin renk geçişiyle söner) */
 const FLASH = "bg-lime/20 hover:bg-lime/25";
@@ -530,30 +525,30 @@ export function FixedExpensesClient({
   );
 
   const addButton = (
-    <Button size="sm" onClick={() => setEditing("new")} className={TOUCH_BTN}>
+    <Button size="sm" onClick={() => setEditing("new")}>
       <Plus size={16} /> Gider ekle
     </Button>
   );
 
   /** Satır eylemleri: düzenle, durdur / durdurmayı kaldır, (izin varsa) sil */
-  const rowActions = (r: FixedRow, touch?: boolean) => (
+  const rowActions = (r: FixedRow) => (
     <div className="flex justify-end gap-1.5">
-      <IconButton label={`${r.name}: düzenle`} onClick={() => setEditing(r)} className={touch ? TOUCH : undefined}>
+      <IconButton label={`${r.name}: düzenle`} onClick={() => setEditing(r)}>
         <Pencil size={15} />
       </IconButton>
       {r.status === "active" ? (
         r.endMonth ? (
-          <IconButton label={`${r.name}: durdurmayı kaldır (devam ettir)`} onClick={() => void unstop(r)} disabled={pending} className={touch ? TOUCH : undefined}>
+          <IconButton label={`${r.name}: durdurmayı kaldır (devam ettir)`} onClick={() => void unstop(r)} disabled={pending}>
             <CirclePlay size={15} />
           </IconButton>
         ) : (
-          <IconButton label={`${r.name}: durdur`} onClick={() => setStopping(r)} className={touch ? TOUCH : undefined}>
+          <IconButton label={`${r.name}: durdur`} onClick={() => setStopping(r)}>
             <CirclePause size={15} />
           </IconButton>
         )
       ) : null}
       {!r.deleteBlocker ? (
-        <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)} className={touch ? TOUCH : undefined}>
+        <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)}>
           <Trash2 size={15} />
         </IconButton>
       ) : null}
@@ -586,7 +581,7 @@ export function FixedExpensesClient({
             className="max-sm:hidden"
             options={[{ value: "tumu", label: "Tümü" }, ...FIXED_SECTIONS.map((s) => ({ value: s.key, label: SECTION_SHORT[s.key], count: sectionCount(s.key) }))]}
           />
-          <Select value={bolum} onChange={(e) => setBolum(e.target.value as Bolum)} aria-label="Bölüm" className="w-auto flex-1 sm:hidden pointer-coarse:h-10">
+          <Select value={bolum} onChange={(e) => setBolum(e.target.value as Bolum)} aria-label="Bölüm" className="w-auto flex-1 sm:hidden">
             <option value="tumu">Tüm bölümler</option>
             {FIXED_SECTIONS.map((s) => (
               <option key={s.key} value={s.key}>
@@ -604,7 +599,7 @@ export function FixedExpensesClient({
           description="Aramayı kısaltın ya da bölüm seçimini kaldırın. Biten kalemler aşağıdaki Geçmiş bölümünde."
           action={
             <>
-              <Button size="sm" variant="secondary" onClick={clearFilters} className={TOUCH_BTN}>
+              <Button size="sm" variant="secondary" onClick={clearFilters}>
                 Süzgeci temizle
               </Button>
               {addButton}
@@ -613,8 +608,11 @@ export function FixedExpensesClient({
         />
       ) : (
         <>
-          {/* Masaüstü / tablet: tablo */}
-          <TableWrap className="max-sm:hidden">
+          {/*
+            Geniş ekran: tablo. xl altında kartlar: tablo 870px, 768px tablette ve kenar çubuğu açılan 1024px'te sığmıyor;
+            Durum ve düzenle / durdur düğmeleri yana kayıp gizleniyordu.
+          */}
+          <TableWrap className="max-xl:hidden">
             <Table>
               <THead>
                 <tr>
@@ -732,8 +730,8 @@ export function FixedExpensesClient({
             </Table>
           </TableWrap>
 
-          {/* Telefon: aynı bilgiler kart listesi olarak; yatay kaydırma yok, aylık tutar her satırda görünür */}
-          <div className="sm:hidden">
+          {/* Telefon ve tablet: aynı bilgiler kart listesi olarak; yatay kaydırma yok, aylık tutar her satırda görünür */}
+          <div className="xl:hidden">
             {groups.map((g) => (
               <section key={g.key} aria-label={g.label} className="border-t border-line first:border-t-0">
                 <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-1.5">
@@ -768,7 +766,7 @@ export function FixedExpensesClient({
                       acikGun={acikGun}
                       currentMonth={currentMonth}
                       onEdit={() => setEditing(r)}
-                      actions={rowActions(r, true)}
+                      actions={rowActions(r)}
                     />
                   ))}
                 </ul>
@@ -792,7 +790,7 @@ export function FixedExpensesClient({
               ? [ended.length ? `${ended.length} biten kalem` : "", changes.length ? `${changes.length} tutar değişikliği` : ""].filter(Boolean).join(" · ")
               : "Henüz yok: durdurulan kalemler ve tutar değişiklikleri burada görünür"
           }
-          headClassName="pointer-coarse:min-h-10"
+          headClassName="pointer-coarse:min-h-11"
         >
           <div className="space-y-5 pt-3 pb-1">
             {ended.length ? (
@@ -812,11 +810,11 @@ export function FixedExpensesClient({
                         </span>
                       </button>
                       <span className="flex items-center gap-1.5">
-                        <Button size="xs" variant="secondary" onClick={() => setResuming(r)} className="pointer-coarse:h-9">
+                        <Button size="xs" variant="secondary" onClick={() => setResuming(r)}>
                           <CirclePlay size={14} /> Devam ettir
                         </Button>
                         {!r.deleteBlocker ? (
-                          <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)} className={TOUCH}>
+                          <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)}>
                             <Trash2 size={15} />
                           </IconButton>
                         ) : null}
@@ -840,7 +838,7 @@ export function FixedExpensesClient({
                           <span className="font-semibold text-ink tabular">{periodAmount(h.period, h.amount)}</span> (önce {periodAmount(prev.period, prev.amount)})
                         </span>
                       </span>
-                      <Button size="xs" variant="ghost" onClick={() => askUndo(r, h.versionId!)} className="pointer-coarse:h-9">
+                      <Button size="xs" variant="ghost" onClick={() => askUndo(r, h.versionId!)}>
                         <Undo2 size={14} /> Geri al
                       </Button>
                     </li>
@@ -1118,6 +1116,34 @@ function FixedDialog({
   }
 
   const sectionChanged = !!row && f.section !== row.section;
+  /** Durdur / devam ettir / sil (düzenlemede) ya da "N gider eklendi" sayacı (eklemede) */
+  const secondary =
+    row ? (
+      <>
+        {row.status === "ended" ? (
+          <Button variant="ghost" onClick={() => onResume(row)} disabled={busy}>
+            <CirclePlay size={16} /> Devam ettir
+          </Button>
+        ) : row.status === "active" && row.endMonth ? (
+          <Button variant="ghost" onClick={() => onUnstop(row)} disabled={busy}>
+            <CirclePlay size={16} /> Durdurmayı kaldır
+          </Button>
+        ) : row.status === "active" ? (
+          <Button variant="ghost" onClick={() => onStop(row)} disabled={busy}>
+            <CirclePause size={16} /> Durdur
+          </Button>
+        ) : null}
+        {!row.deleteBlocker ? (
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => onDelete(row)} disabled={busy}>
+            <Trash2 size={16} /> Sil
+          </Button>
+        ) : null}
+      </>
+    ) : added ? (
+      <span className="text-[13px] text-ink-mute tabular" aria-live="polite">
+        {added} gider eklendi
+      </span>
+    ) : null;
   const activeIdx = row ? row.history.indexOf(entryAt(row.history, row.valueMonth).entry ?? row.history[0]) : 0;
 
   return (
@@ -1126,48 +1152,23 @@ function FixedDialog({
       onClose={onClose}
       title={row ? "Gideri düzenle" : "Sabit gider ekle"}
       description={row ? undefined : "Günlük, haftalık ya da yıllık tutar yazabilirsiniz; aylık karşılığı otomatik hesaplanır."}
-      footerStart={
-        row ? (
-          <>
-            {row.status === "ended" ? (
-              <Button variant="ghost" onClick={() => onResume(row)} disabled={busy} className={TOUCH_BTN}>
-                <CirclePlay size={16} /> Devam ettir
-              </Button>
-            ) : row.status === "active" && row.endMonth ? (
-              <Button variant="ghost" onClick={() => onUnstop(row)} disabled={busy} className={TOUCH_BTN}>
-                <CirclePlay size={16} /> Durdurmayı kaldır
-              </Button>
-            ) : row.status === "active" ? (
-              <Button variant="ghost" onClick={() => onStop(row)} disabled={busy} className={TOUCH_BTN}>
-                <CirclePause size={16} /> Durdur
-              </Button>
-            ) : null}
-            {!row.deleteBlocker ? (
-              <Button variant="ghost" className={cn("text-bad hover:bg-bad-soft hover:text-bad", TOUCH_BTN)} onClick={() => onDelete(row)} disabled={busy}>
-                <Trash2 size={16} /> Sil
-              </Button>
-            ) : null}
-          </>
-        ) : added ? (
-          <span className="text-[13px] text-ink-mute tabular" aria-live="polite">
-            {added} gider eklendi
-          </span>
-        ) : null
-      }
+      footerStart={secondary}
+      footerStartOnPhone="body"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} className={TOUCH_BTN}>
+          {/* Telefonda yeni giderde üç düğme sığmaz: kapatmak için sağ üstteki × ya da aşağı çekmek yeter */}
+          <Button variant="ghost" onClick={onClose} className={cn(!row && "max-sm:hidden")}>
             {added ? "Kapat" : "Vazgeç"}
           </Button>
           {/* type="button": Enter her zaman asıl "Kaydet"i çalıştırsın */}
           {!row ? (
-            <Button variant="secondary" onClick={() => void save(true)} disabled={busy} className={TOUCH_BTN}>
+            <Button variant="secondary" onClick={() => void save(true)} disabled={busy}>
               {/* Telefonda üç düğme tek satıra sığsın */}
               <span className="sm:hidden">Kaydet ve yeni</span>
               <span className="max-sm:hidden">Kaydet, yenisini ekle</span>
             </Button>
           ) : null}
-          <Button type="submit" form={formId} disabled={busy} className={TOUCH_BTN}>
+          <Button type="submit" form={formId} disabled={busy}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
@@ -1191,6 +1192,8 @@ function FixedDialog({
             placeholder="ör. Elektrik, Muhasebeci"
             aria-invalid={nameError ? true : undefined}
             maxLength={120}
+            data-autofocus={row ? undefined : true}
+            enterKeyHint="next"
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1200,7 +1203,7 @@ function FixedDialog({
             htmlFor="fx-s"
             hint={sectionChanged ? "Bütün aylarda bu bölümde görünür (kâr değişmez)." : undefined}
           >
-            <Select id="fx-s" value={f.section} onChange={(e) => setF({ ...f, section: e.target.value as FixedSection })}>
+            <Select id="fx-s" value={f.section} onChange={(e) => setF({ ...f, section: e.target.value as FixedSection })} >
               {FIXED_SECTIONS.map((s) => (
                 <option key={s.key} value={s.key}>
                   {s.label}
@@ -1235,9 +1238,10 @@ function FixedDialog({
             id="fx-a"
             value={f.amount}
             onChange={(e) => setF({ ...f, amount: e.target.value })}
+            onFocus={(e) => e.currentTarget.select()}
             placeholder="0,00"
             aria-invalid={amountError ? true : undefined}
-            className="cell-input"
+            className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
           />
         </Field>
 
@@ -1263,9 +1267,9 @@ function FixedDialog({
           <Disclosure
             title="Geçmiş"
             summary={`${rangeText(row)} · ${row.history.length > 1 ? `${row.history.length - 1} tutar değişikliği` : "tutar değişikliği yok"}`}
-            className="rounded-2xl bg-panel px-3.5 py-3"
+            tile
           >
-            <div className="space-y-2.5 pt-3">
+            <div className="space-y-2.5 pt-0.5">
               <HistoryList
                 rows={row.history.map((h) => ({ fromMonth: h.fromMonth, versionId: h.versionId, label: periodAmount(h.period, h.amount) }))}
                 startMonth={row.startMonth}
@@ -1325,7 +1329,7 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
   );
 
   const addButton = (
-    <Button size="sm" variant="secondary" onClick={() => setEditing("new")} className={TOUCH_BTN}>
+    <Button size="sm" variant="secondary" onClick={() => setEditing("new")}>
       <Plus size={16} /> Yatırım ekle
     </Button>
   );
@@ -1424,10 +1428,10 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <span className="font-semibold text-ink tabular">{tl(r.amount)}</span>
                     <div className="flex gap-1.5">
-                      <IconButton label={`${r.name}: düzenle`} onClick={() => setEditing(r)} className={TOUCH}>
+                      <IconButton label={`${r.name}: düzenle`} onClick={() => setEditing(r)}>
                         <Pencil size={15} />
                       </IconButton>
-                      <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)} className={TOUCH}>
+                      <IconButton label={`${r.name}: sil`} tone="danger" onClick={() => setDeleting(r)}>
                         <Trash2 size={15} />
                       </IconButton>
                     </div>
@@ -1498,6 +1502,12 @@ function InvestmentDialog({
   const amountError = parsed === null || parsed < 0 ? "Geçerli bir tutar yazın, ör. 12.500" : null;
   const nameError = tried && !name.trim() ? "Yatırımın adını yazın" : null;
 
+  const deleteButton = row ? (
+    <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => onDelete(row)} disabled={busy}>
+      <Trash2 size={16} /> Sil
+    </Button>
+  ) : null;
+
   async function save() {
     setTried(true);
     if (!name.trim()) return nameRef.current?.focus();
@@ -1516,19 +1526,14 @@ function InvestmentDialog({
       open
       onClose={onClose}
       title={row ? "Yatırımı düzenle" : "Yatırım ekle"}
-      footerStart={
-        row ? (
-          <Button variant="ghost" className={cn("text-bad hover:bg-bad-soft hover:text-bad", TOUCH_BTN)} onClick={() => onDelete(row)} disabled={busy}>
-            <Trash2 size={16} /> Sil
-          </Button>
-        ) : null
-      }
+      footerStart={row ? deleteButton : null}
+      footerStartOnPhone="body"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} className={TOUCH_BTN}>
+          <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy} className={TOUCH_BTN}>
+          <Button type="submit" form={formId} disabled={busy}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
@@ -1552,6 +1557,7 @@ function InvestmentDialog({
             placeholder="ör. Kahve makinesi, tabela"
             aria-invalid={nameError ? true : undefined}
             maxLength={160}
+            data-autofocus={row ? undefined : true}
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1561,6 +1567,7 @@ function InvestmentDialog({
               id="iv-a"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
               placeholder="0,00"
               aria-invalid={amountError ? true : undefined}
               className="cell-input"

@@ -10,14 +10,16 @@ import { cn } from "@/lib/utils";
 /**
  * Excel'deki hücre notlarının karşılığı: üzerine gelince ya da klavyeyle odaklanınca açıklama; dokunmatikte
  * dokununca açılır, başka yere dokununca, kaydırınca ya da Esc ile kapanır. Balon gövdeye (portal) çizilir;
- * tabloların kaydırma kabı onu kesmez. Üstte yer yoksa alta açılır, ekran kenarından taşmaz.
+ * tabloların kaydırma kabı onu kesmez. Üstte yer yoksa alta açılır, ekran kenarından taşmaz. Açık bir modal
+ * pencerenin (Dialog, telefonda alttan açılan sayfa) içindeyse balon o pencereye çizilir: üst katmandaki pencerenin
+ * arkasında kalmaz.
  */
 export function InfoTip({ text, className }: { text: ReactNode; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const pointer = useRef<string>("");
   const id = useId();
   const reduce = useReducedMotion();
-  const [pos, setPos] = useState<{ x: number; y: number; below: boolean } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; below: boolean; host: HTMLElement } | null>(null);
 
   const show = () => {
     const r = ref.current?.getBoundingClientRect();
@@ -25,7 +27,8 @@ export function InfoTip({ text, className }: { text: ReactNode; className?: stri
     const below = r.top < 120;
     // Balon en fazla 16rem; dar ekranda kenarlardan 12px içeride kalsın
     const half = Math.min(128, window.innerWidth * 0.4) + 12;
-    setPos({ x: Math.min(Math.max(r.left + r.width / 2, half), window.innerWidth - half), y: below ? r.bottom + 8 : r.top - 8, below });
+    const host = ref.current?.closest<HTMLElement>("dialog[open]") ?? document.body;
+    setPos({ x: Math.min(Math.max(r.left + r.width / 2, half), window.innerWidth - half), y: below ? r.bottom + 8 : r.top - 8, below, host });
   };
   const hide = () => setPos(null);
 
@@ -79,8 +82,8 @@ export function InfoTip({ text, className }: { text: ReactNode; className?: stri
             else show();
           }
         }}
-        // Görünen ikon 14px; dokunma alanı görünmez bir kenarla farede 30px'e, dokunmatikte 38px'e çıkar
-        className="relative cursor-help rounded-full text-ink-quiet outline-none after:absolute after:-inset-2 after:content-[''] hover:text-ink-mute focus-visible:text-ink-mute focus-visible:ring-2 focus-visible:ring-ink/30 pointer-coarse:after:-inset-3"
+        // Görünen ikon 14px; dokunma alanı görünmez bir kenarla farede 30px'e, dokunmatikte 44px'e çıkar
+        className="relative cursor-help rounded-full text-ink-quiet outline-none after:absolute after:-inset-2 after:content-[''] hover:text-ink-mute focus-visible:text-ink-mute focus-visible:ring-2 focus-visible:ring-ink/30 pointer-coarse:after:-inset-[15px]"
       >
         <Info size={14} />
       </span>
@@ -105,7 +108,7 @@ export function InfoTip({ text, className }: { text: ReactNode; className?: stri
                 </motion.span>
               ) : null}
             </AnimatePresence>,
-            document.body,
+            pos.host,
           )
         : null}
     </span>

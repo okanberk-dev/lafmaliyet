@@ -48,11 +48,12 @@ async function Account() {
       <Card>
         <div className="flex flex-col items-center px-5 pt-8 pb-6 text-center">
           <AccountAvatar name={user.name} />
-          <p className="mt-4 max-w-full truncate text-lg leading-7 font-semibold tracking-tight text-ink">
+          {/* Uzun ad ve e-posta telefonda kesilmez, alt satıra geçer */}
+          <p className="mt-4 max-w-full text-lg leading-7 font-semibold tracking-tight text-balance break-words text-ink">
             <span className="sr-only">Ad: </span>
             {user.name}
           </p>
-          <p className="max-w-full truncate text-sm text-ink-mute">
+          <p className="max-w-full text-sm break-all text-ink-mute">
             <span className="sr-only">E-posta: </span>
             {user.email}
           </p>

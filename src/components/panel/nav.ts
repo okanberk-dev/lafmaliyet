@@ -10,6 +10,7 @@ import {
   FileText,
   HelpCircle,
   LayoutDashboard,
+  LayoutGrid,
   Package,
   Receipt,
   Settings,
@@ -184,4 +185,82 @@ export function navTreeFor(role: "admin" | "staff"): NavNode[] {
 export function pathMatches(pathname: string, href: string, match: string[] = []) {
   if (href === "/panel") return pathname === "/panel";
   return [href, ...match].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
+ * Telefon ve tabletteki alt menü (lg altında). Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey orada).
+ * Personel: yalnız erişebildiği üç ekran. `badge: "overdue"` öğesinde gecikmiş ödeme sayısı görünür.
+ */
+export interface BottomNavItem {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  /** Yoksa öğe bağlantı değil, çekmeceyi açan düğmedir */
+  href?: string;
+  match?: string[];
+  badge?: "overdue";
+}
+
+export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
+  admin: [
+    { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel" },
+    { id: "satislar", label: "Satışlar", icon: Receipt, href: "/panel/satislar" },
+    { id: "faturalar", label: "Faturalar", icon: FileText, href: "/panel/faturalar" },
+    { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
+    { id: "menu", label: "Menü", icon: LayoutGrid },
+  ],
+  staff: [
+    { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
+    { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
+    { id: "hesap", label: "Hesabım", icon: UserRound, href: "/panel/hesap" },
+  ],
+};
+
+/**
+ * Alt menüde etkin öğe: çekmece açıksa "Menü"; değilse adresle eşleşen öğe; hiçbiri eşleşmiyorsa (Ürünler,
+ * Ayarlar gibi çekmecedeki bir ekran) "Menü". Menü öğesi olmayan listede eşleşme yoksa null.
+ */
+export function bottomNavActive(items: BottomNavItem[], pathname: string, menuOpen = false): string | null {
+  const menu = items.find((i) => !i.href);
+  if (menuOpen && menu) return menu.id;
+  const hit = items.find((i) => i.href && pathMatches(pathname, i.href, i.match));
+  return hit?.id ?? menu?.id ?? null;
+}
+
+/** Alt menüdeki "Ödemeler" rozeti: zildeki ödeme bildirimlerinden gecikmiş olanlar */
+export function overdueCount(items: { group?: string; kind: string }[] | null | undefined): number {
+  return (items ?? []).filter((n) => n.group === "odeme" && n.kind === "danger").length;
+}
+
+/** Rozette gösterilecek metin (9'dan fazlası "9+") */
+export function badgeText(n: number): string | null {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n > 9 ? "9+" : String(Math.floor(n));
+}
+
+/** Telefonun üst çubuğundaki kısa başlıklar; listede olmayan ekran menüdeki adını alır */
+const SHORT_TITLES: Record<string, string> = {
+  "/panel": "Genel bakış",
+  "/panel/urunler": "Ürünler",
+  "/panel/giderler": "Sabit giderler",
+  "/panel/personel": "Personel",
+  "/panel/hatirlaticilar": "Ödemeler",
+  "/panel/sayim": "Stok sayımı",
+  "/panel/tutarlilik": "Tutarlılık",
+  "/panel/kullanicilar": "Kullanıcılar",
+  "/panel/parasut": "Paraşüt",
+};
+
+/** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */
+export function mobileTitleFor(pathname: string): string {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  const known = new Map<string, string>();
+  for (const item of [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER]) known.set(item.href, item.label);
+  for (const [href, label] of Object.entries(SHORT_TITLES)) known.set(href, label);
+  let best: { href: string; label: string } | null = null;
+  for (const [href, label] of known) {
+    const hit = href === "/panel" ? path === "/panel" : path === href || path.startsWith(`${href}/`);
+    if (hit && (!best || href.length > best.href.length)) best = { href, label };
+  }
+  return best?.label ?? "L'Affogato";
 }

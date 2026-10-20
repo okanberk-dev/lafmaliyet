@@ -1,15 +1,27 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { dateTR, tl } from "@/lib/format";
-import { advancePast, nextOccurrence, presetAnchor, presetFirstDate, REMINDER_PRESETS, todayTR, type ReminderRepeat } from "@/lib/reminders";
+import {
+  addDays,
+  advancePast,
+  dueNotifications,
+  endOfMonthAnchor,
+  isLastDayOfMonth,
+  nextOccurrence,
+  postponeDate,
+  postponePlan,
+  todayTR,
+  type ReminderRepeat,
+  type UpcomingItem,
+} from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
-import { runReminderDigest, sendTestEmail } from "@/server/notify/digest";
-import { saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
+import { loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
+import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zOptText, zText } from "./util";
@@ -26,21 +38,31 @@ const reminderSchema = z.object({
   remindDaysBefore: z.number().int().min(0, "Gün negatif olamaz").max(60, "En fazla 60 gün"),
   note: zOptText(500),
   active: z.boolean(),
+  /** Ayın son günü seçiliyse tekrarlar her ayın son gününe kayar (SGK gibi); verilmezse eski davranış */
+  endOfMonth: z.boolean().optional(),
 });
 
 export async function saveReminder(input: z.input<typeof reminderSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { id, ...data } = reminderSchema.parse(input);
+    const { id, endOfMonth, ...data } = reminderSchema.parse(input);
     const db = getDb();
+    const eom = Boolean(endOfMonth) && isLastDayOfMonth(data.dueDate) && (data.repeat === "monthly" || data.repeat === "quarterly");
+    const fresh = eom ? endOfMonthAnchor(data.dueDate) : data.dueDate;
     if (id) {
       const [prev] = await db.select().from(s.reminders).where(eq(s.reminders.id, id)).limit(1);
       if (!prev) throw new UserError("Hatırlatıcı bulunamadı");
       // Tarih elle değişirse tekrarların günü de yeni tarihe bağlanır
-      const anchorDate = prev.dueDate !== data.dueDate ? data.dueDate : prev.anchorDate;
+      let anchorDate = prev.dueDate !== data.dueDate ? fresh : prev.anchorDate;
+      // Aynı tarihte "ayın son günü" açıldı ya da kapandı
+      if (prev.dueDate === data.dueDate && endOfMonth !== undefined) {
+        const wasEom = Number(prev.anchorDate.slice(8, 10)) >= 31;
+        if (eom && !wasEom) anchorDate = fresh;
+        if (!endOfMonth && wasEom) anchorDate = data.dueDate;
+      }
       await db.update(s.reminders).set({ ...data, anchorDate }).where(eq(s.reminders.id, id));
     } else {
-      await db.insert(s.reminders).values({ ...data, anchorDate: data.dueDate });
+      await db.insert(s.reminders).values({ ...data, anchorDate: fresh });
     }
     await logActivity(me, id ? "Hatırlatıcı düzenlendi" : "Hatırlatıcı eklendi", `${data.title} · ${dateTR(data.dueDate)}`);
     refresh();
@@ -102,7 +124,129 @@ export async function markReminderDone(id: number, through?: string) {
       .where(eq(s.reminders.id, rid));
     await logActivity(me, "Ödeme yapıldı", `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}`);
     refresh();
-    return { next };
+    // prev: "Geri al" düğmesi kaydı bu hâline döndürür (restoreReminder)
+    return { next, prev: snapshot(r) };
+  });
+}
+
+type ReminderDbRow = typeof s.reminders.$inferSelect;
+
+function snapshot(r: ReminderDbRow) {
+  return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null };
+}
+
+const snapshotSchema = z.object({
+  dueDate: zDate,
+  anchorDate: zDate,
+  active: z.boolean(),
+  lastDoneAt: z
+    .string()
+    .max(40)
+    .nullable()
+    .refine((v) => v === null || !Number.isNaN(new Date(v).getTime()), "Geçersiz tarih"),
+});
+
+/**
+ * Geri al: "Ödendi" ya da "Ertele"den önceki hâl geri yazılır. Ertelemede tekrar eden hatırlatıcı için açılan tek
+ * seferlik kayıt (removeId) silinir.
+ */
+export async function restoreReminder(id: number, prev: z.input<typeof snapshotSchema>, removeId?: number | null) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const rid = zId.parse(id);
+    const snap = snapshotSchema.parse(prev);
+    const extra = removeId === undefined || removeId === null ? null : zId.parse(removeId);
+    if (extra === rid) throw new UserError("Geçersiz geri alma");
+    const db = getDb();
+    const title = await db.transaction(async (tx) => {
+      const [r] = await tx
+        .update(s.reminders)
+        .set({ dueDate: snap.dueDate, anchorDate: snap.anchorDate, active: snap.active, lastDoneAt: snap.lastDoneAt ? new Date(snap.lastDoneAt) : null })
+        .where(eq(s.reminders.id, rid))
+        .returning({ title: s.reminders.title });
+      if (!r) throw new UserError("Hatırlatıcı bulunamadı");
+      if (extra) await tx.delete(s.reminders).where(eq(s.reminders.id, extra));
+      return r.title;
+    });
+    await logActivity(me, "Hatırlatıcı geri alındı", `${title} · ${dateTR(snap.dueDate)}`);
+    refresh();
+    return null;
+  });
+}
+
+const zPostpone = z.enum(["week", "month"]);
+
+/**
+ * Ertele (+1 hafta / +1 ay). Tek seferlik hatırlatıcının tarihi kayar. Tekrar edende seri bozulmasın diye bu dönem
+ * ertelenen tarihte tek seferlik bir hatırlatıcıya taşınır, seri sıradaki döneme geçer (Kira 1 Kas → 8 Kas tek
+ * sefer; aylık kira 1 Ara'dan devam eder).
+ */
+export async function postponeReminder(id: number, by: "week" | "month") {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const rid = zId.parse(id);
+    const step = zPostpone.parse(by);
+    const db = getDb();
+    const [r] = await db.select().from(s.reminders).where(eq(s.reminders.id, rid)).limit(1);
+    if (!r) throw new UserError("Hatırlatıcı bulunamadı");
+    if (!r.active) throw new UserError("Kapalı hatırlatıcı ertelenemez");
+    // Gecikmiş dönem bugünden ertelenir; tekrar edenin yeni tarihi sıradaki dönemin üstüne binemez
+    const repeat = r.repeat as ReminderRepeat;
+    const { target, next, conflict } = postponePlan({ dueDate: r.dueDate, repeat, anchorDate: r.anchorDate }, step, todayTR());
+    if (conflict && next) {
+      throw new UserError(`Sıradaki dönem ${dateTR(next)} tarihinde; ${step === "month" ? "1 ay" : "1 hafta"} ertelemek aynı ödemeyi iki kez gösterirdi. Daha kısa erteleyin ya da tarihi düzenleyin.`);
+    }
+    const prev = snapshot(r);
+    let createdId: number | null = null;
+    if (!next) {
+      await db.update(s.reminders).set({ dueDate: target, anchorDate: target }).where(eq(s.reminders.id, rid));
+    } else {
+      createdId = await db.transaction(async (tx) => {
+        const [c] = await tx
+          .insert(s.reminders)
+          .values({
+            title: r.title,
+            kind: r.kind,
+            amount: r.amount,
+            dueDate: target,
+            anchorDate: target,
+            repeat: "none",
+            remindDaysBefore: r.remindDaysBefore,
+            note: `Ertelendi · asıl tarih ${dateTR(r.dueDate)}${r.note && !r.note.startsWith("Ertelendi") ? ` · ${r.note}` : ""}`.slice(0, 500),
+          })
+          .returning({ id: s.reminders.id });
+        await tx.update(s.reminders).set({ dueDate: next }).where(eq(s.reminders.id, rid));
+        return c.id;
+      });
+    }
+    await logActivity(me, "Hatırlatıcı ertelendi", `${r.title} · ${dateTR(r.dueDate)} → ${dateTR(target)}${next ? ` · seri ${dateTR(next)} tarihinden sürer` : ""}`);
+    refresh();
+    return { dueDate: target, next, createdId, prev };
+  });
+}
+
+/** Ödenmemiş faturanın vadesini ertele; vadesizse tahmini vadeden (fatura tarihi + ayardaki gün) ileri alınır */
+export async function postponeInvoice(id: number, by: "week" | "month") {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const iid = zId.parse(id);
+    const step = zPostpone.parse(by);
+    const db = getDb();
+    const [inv] = await db
+      .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, dueDate: s.invoices.dueDate, unpaid: s.invoices.unpaid })
+      .from(s.invoices)
+      .where(eq(s.invoices.id, iid))
+      .limit(1);
+    if (!inv) throw new UserError("Fatura bulunamadı");
+    if (!inv.unpaid) throw new UserError("Bu fatura ödenmiş görünüyor");
+    const settings = await loadNotifySettings();
+    const current = inv.dueDate ?? addDays(inv.date, settings.invoiceTermDays);
+    // Gecikmiş vade bugünden ertelenir (eski vadeden sayılsa yine geçmişte kalırdı)
+    const target = postponeDate(current, step, todayTR());
+    await db.update(s.invoices).set({ dueDate: target }).where(eq(s.invoices.id, iid));
+    await logActivity(me, "Fatura vadesi ertelendi", `${inv.supplier} · ${dateTR(current)} → ${dateTR(target)}`);
+    refresh();
+    return { dueDate: target, prev: inv.dueDate };
   });
 }
 
@@ -115,23 +259,6 @@ export async function setInvoiceDueDate(id: number, dueDate: string | null) {
     if (d) await logActivity(me, "Fatura vadesi", `${d.supplier} · ${parsed ? dateTR(parsed) : "vade kaldırıldı"}`);
     refresh();
     return null;
-  });
-}
-
-/** Hazır şablondan (KDV, muhtasar, SGK, geçici vergi, maaş) hatırlatıcı */
-export async function addPresetReminder(key: string, amount: number | null) {
-  return attempt(async () => {
-    const me = await requireAdmin();
-    const p = REMINDER_PRESETS.find((x) => x.key === z.string().max(40).parse(key));
-    if (!p) throw new UserError("Şablon bulunamadı");
-    const amt = z.number({ message: "Tutar sayı olmalı" }).finite("Tutar sayı olmalı").min(0, "Tutar negatif olamaz").max(1e10, "Tutar çok büyük").nullable().parse(amount);
-    const dueDate = presetFirstDate(p, todayTR());
-    await getDb()
-      .insert(s.reminders)
-      .values({ title: p.title, kind: p.kind, amount: amt && amt > 0 ? amt : null, dueDate, anchorDate: presetAnchor(p, dueDate), repeat: p.repeat, remindDaysBefore: p.remindDaysBefore, note: p.note });
-    await logActivity(me, "Hatırlatıcı eklendi", `${p.title} · ${dateTR(dueDate)}`);
-    refresh();
-    return { dueDate };
   });
 }
 
@@ -232,6 +359,41 @@ export async function sendTestNotification() {
     const r = await sendTestEmail();
     if (!r.ok) throw new UserError(r.error);
     return { recipients: r.recipients };
+  });
+}
+
+/**
+ * E-posta önizlemesi: bugün gidecek hatırlatmanın HTML'i (gönderilmez, günlüğe yazılmaz). Bugün haber verilecek
+ * ödeme yoksa örnek bir satırla gösterilir.
+ */
+export async function previewDigest() {
+  return attempt(async () => {
+    await requireAdmin();
+    const { today, items } = await loadUpcoming();
+    const due = dueNotifications(items);
+    const sent = due.length
+      ? await getDb()
+          .select({ key: s.notificationLog.key })
+          .from(s.notificationLog)
+          .where(inArray(s.notificationLog.key, due.map((d) => d.key)))
+      : [];
+    const sample: UpcomingItem = {
+      ref: "preview:0",
+      source: "reminder",
+      sourceId: 0,
+      kind: "kira",
+      title: "Örnek: Kira",
+      detail: "Bugün haber verilecek ödeme yok; e-posta böyle görünür",
+      amount: 25000,
+      dueDate: today,
+      daysLeft: 0,
+      status: "today",
+      remindDaysBefore: 3,
+      repeat: "monthly",
+    };
+    const rows = due.length ? due : [{ item: sample, stage: "due" as const }];
+    const { subject, html } = renderDigest(rows, today);
+    return { subject, html, count: due.length, alreadySent: sent.length, sample: due.length === 0 };
   });
 }
 

@@ -133,7 +133,7 @@ export function NotificationMenu({
             exit={reduce ? undefined : { opacity: 0, scale: 0.96, y: -8 }}
             transition={reduce ? { duration: 0 } : SPRING_PANEL}
             className={cn(
-              "absolute top-[calc(100%+0.5rem)] z-[100] flex max-h-[calc(100dvh-5rem)] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-chart-metric-bg shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-black/5",
+              "absolute top-[calc(100%+0.5rem)] z-[100] flex max-h-[calc(100dvh-5rem-var(--mobile-nav-h,0px))] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-chart-metric-bg shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-black/5",
               align === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right",
             )}
           >
@@ -148,7 +148,7 @@ export function NotificationMenu({
                 type="button"
                 disabled={unread === 0}
                 onClick={() => markRead(list.map((n) => n.id))}
-                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-[12px] font-medium text-chart-muted outline-none transition-colors hover:bg-chart-bg hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/20 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent pointer-coarse:h-10"
+                className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-2.5 text-[12px] font-medium text-chart-muted outline-none transition-colors hover:bg-chart-bg hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/20 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent pointer-coarse:h-11"
               >
                 <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden />
                 Tümünü okundu say
@@ -236,14 +236,14 @@ export function NotificationMenu({
               <Link
                 href="/panel/hatirlaticilar"
                 onClick={() => setOpen(false)}
-                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
+                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold pointer-coarse:h-11 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
               >
                 Ödemeler
               </Link>
               <Link
                 href="/panel"
                 onClick={() => setOpen(false)}
-                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
+                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold pointer-coarse:h-11 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
               >
                 Genel bakış
               </Link>

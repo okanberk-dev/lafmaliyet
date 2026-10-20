@@ -132,22 +132,16 @@ function FlowLine({
   as?: "div" | "li";
 }) {
   return (
+    // Telefonda alt satır (kalemler) tutarın altına da uzanır: ad ve açıklama dar sütuna sıkışmaz
     <Tag className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 text-sm">
       <span aria-hidden="true" className={cn("mt-[5px] size-2.5 shrink-0 rounded-[3px]", swatch)} />
-      <span className="min-w-0">
-        {/* Bilgi simgesi ve "düzeltildi" işareti son sözcükle birlikte satıra sarılır (ayrı satıra düşmez) */}
-        <span className="block font-medium text-ink">
-          {label}
-          {info ? <InfoTip text={info} className="ml-1.5" /> : null}
-          {edited ? (
-            <span className="ml-1.5 text-[11px] font-normal whitespace-nowrap text-info" title="Gelir-gider tablosunda bu aya elle yazılmış tutar var">
-              düzeltildi
-            </span>
-          ) : null}
-        </span>
-        {sub ? (
-          <span className="mt-0.5 block text-xs text-ink-mute sm:truncate" title={sub}>
-            {sub}
+      {/* Bilgi simgesi ve "düzeltildi" işareti son sözcükle birlikte satıra sarılır (ayrı satıra düşmez) */}
+      <span className="block min-w-0 font-medium text-ink">
+        {label}
+        {info ? <InfoTip text={info} className="ml-1.5" /> : null}
+        {edited ? (
+          <span className="ml-1.5 text-[11px] font-normal whitespace-nowrap text-info" title="Gelir-gider tablosunda bu aya elle yazılmış tutar var">
+            düzeltildi
           </span>
         ) : null}
       </span>
@@ -155,6 +149,11 @@ function FlowLine({
         <span className="font-semibold text-ink tabular">{tl(amount)}</span>
         <span className="ml-1.5 inline-block min-w-9 text-xs text-ink-mute tabular">{pct(share, 0)}</span>
       </span>
+      {sub ? (
+        <span className="col-span-2 col-start-2 mt-0.5 block min-w-0 text-xs text-ink-mute sm:col-span-1 sm:truncate" title={sub}>
+          {sub}
+        </span>
+      ) : null}
     </Tag>
   );
 }

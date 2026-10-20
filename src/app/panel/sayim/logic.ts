@@ -186,6 +186,65 @@ export function planStaffExtras(
   return { ok: true, plan };
 }
 
+// ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş satır
+
+export interface GroupProgress {
+  name: string;
+  /** Miktarı yazılmış (ya da kayıtlı) sayılabilir kalem */
+  counted: number;
+  /** Bugünkü sayım listesindeki kalem (arşiv satırları hariç) */
+  total: number;
+  done: boolean;
+}
+
+/** Her grubun ilerlemesi (grup çipleri ve kart başlığı aynı sayıyı gösterir); arşiv satırları sayılmaz */
+export function groupProgress<L extends { archived: boolean }>(groups: { name: string; lines: L[] }[], isCounted: (line: L) => boolean): GroupProgress[] {
+  return groups.map((g) => {
+    const live = g.lines.filter((l) => !l.archived);
+    const counted = live.filter(isCounted).length;
+    return { name: g.name, counted, total: live.length, done: live.length > 0 && counted === live.length };
+  });
+}
+
+/**
+ * Kaydırma izleyici: ekrandaki grup kartlarının üst kenarları (`tops`, sayfa sırasıyla) ve yapışık çubuğun alt
+ * çizgisi (`line`) verilir; çizgiyi geçmiş son grup etkindir, hiçbiri geçmediyse ilki. Sayfanın sonuna gelindiyse
+ * (`atEnd`) son grup: kısa son grup hiçbir zaman çizgiye ulaşamazdı. Grup yoksa -1.
+ */
+export function activeGroupIndex(tops: number[], line: number, atEnd = false): number {
+  if (!tops.length) return -1;
+  if (atEnd) return tops.length - 1;
+  let active = 0;
+  for (let i = 0; i < tops.length; i++) if (tops[i] <= line) active = i;
+  return active;
+}
+
+/**
+ * "Sıradaki boş kalem": `start` sırasından (dahil) başlayıp ilk boş satırı bulur, listenin sonuna gelince baştan
+ * devam eder. Boş satır yoksa -1. `start` liste dışındaysa başa / sona sarılır.
+ */
+export function nextEmptyIndex(empty: boolean[], start: number): number {
+  const n = empty.length;
+  if (!n) return -1;
+  const s = ((Math.trunc(start) % n) + n) % n;
+  for (let k = 0; k < n; k++) {
+    const i = (s + k) % n;
+    if (empty[i]) return i;
+  }
+  return -1;
+}
+
+/**
+ * Süzgeç değişince (grup, "Kalan", arama) liste kısalır, tarayıcı kaydırmayı sayfanın sonuna sıkıştırır ve süzülen
+ * satırlar ekranın üstünde kalır. Araç çubuğunun yapışmadan önceki yeri (`naturalTop`, sayfa başından) ekranın
+ * üstünü geçtiyse çubuğun yapıştığı yere (`stickyTop`, üst çubuğun altı) gelecek kaydırma konumu döner: çubuk yerinde,
+ * hemen altında listenin başı. Çubuk zaten yerindeyse ya da aşağıdaysa null (kaydırılmaz).
+ */
+export function listTopScroll(naturalTop: number, stickyTop: number, scrollY: number): number | null {
+  const target = Math.max(0, Math.round(naturalTop - stickyTop));
+  return scrollY > target + 1 ? target : null;
+}
+
 // ---------------------------------------------------------------- Kim saydı, ne zaman
 
 /** "Sayan: Ayşe, Mehmet · son kayıt 01.10.2026 09:12" (kimse yoksa null) */

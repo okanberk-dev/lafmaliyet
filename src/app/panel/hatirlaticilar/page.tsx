@@ -19,7 +19,7 @@ export default function RemindersPage() {
       fallback={
         <>
           <PageHeader eyebrow="Satış & gider" title="Ödemeler & hatırlatıcılar" />
-          <PageSkeleton rows={8} />
+          <PageSkeleton rows={6} />
         </>
       }
     >
@@ -31,7 +31,7 @@ export default function RemindersPage() {
 async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
-  const [{ today, settings, reminders, items }, recipients, log, fixed] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixed, unpaid] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
@@ -40,16 +40,20 @@ async function RemindersContent() {
       .from(s.fixedExpenses)
       .where(eq(s.fixedExpenses.active, true))
       .orderBy(asc(s.fixedExpenses.sortOrder)),
+    // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
+    db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
   ]);
 
   return (
     <RemindersClient
       today={today}
       items={items}
+      laterInvoices={laterInvoices}
       reminders={reminders.map((r) => ({ ...r, lastDoneAt: r.lastDoneAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
       recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
+      invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
       email={{
         configured: isEmailConfigured(),
         cron: Boolean(process.env.CRON_SECRET),

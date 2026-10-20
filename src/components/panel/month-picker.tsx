@@ -11,9 +11,9 @@ const CHEVRON =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 const arrow =
-  "flex h-full w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:cursor-default disabled:opacity-30 pointer-coarse:w-10";
+  "flex h-full w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:cursor-default disabled:opacity-30 pointer-coarse:w-11";
 
-/** ?ay=YYYY-MM parametresini değiştiren ay seçici (dokunmatikte 40px) */
+/** ?ay=YYYY-MM parametresini değiştiren ay seçici (dokunmatikte 44px yüksekliğinde, oklar 44px) */
 export function MonthPicker({ months, value, param = "ay" }: { months: string[]; value: string; param?: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -34,7 +34,7 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
       aria-label="Ay"
       aria-busy={pending || undefined}
       className={cn(
-        "inline-flex h-9 items-center rounded-xl bg-surface ring-1 ring-inset ring-line-strong shadow-[0_1px_1px_rgb(33_28_24/0.03)] transition-opacity pointer-coarse:h-10",
+        "inline-flex h-9 items-center rounded-xl bg-surface ring-1 ring-inset ring-line-strong shadow-[0_1px_1px_rgb(33_28_24/0.03)] transition-opacity pointer-coarse:h-11",
         pending && "opacity-60",
       )}
     >

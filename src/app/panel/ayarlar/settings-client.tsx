@@ -33,7 +33,7 @@ import { toast } from "sonner";
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
+import { CardContent, Well } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { clearQuery, FilterBar, fold, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
@@ -52,8 +52,12 @@ import { saveSettings } from "@/server/actions/settings";
 
 import { ALL_FIELDS, isClean, MEASURE_FIELDS, parseField, problemOf, RATE_FIELDS, shown, textsOf, toText, waterText, type FieldDef, type NumericKey } from "./fields";
 import { changed, impactModel, settingsImpact, type Change, type ImpactData, type SettingsImpact } from "./impact";
-import { SECTION_SCROLL_MARGIN } from "./sections";
+import { revealSettingsField, SectionCard } from "./section-card";
+import { categoriesSummary, logSummary, measuresSummary, ratesSummary, waterSummary } from "./summaries";
 import { waterSource } from "./water-text";
+
+/** Alanın bulunduğu bölüm (telefonda kapalı bölümdeki hatalı alana gitmek için) */
+const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ? "oranlar" : "olculer");
 
 
 // ---------------------------------------------------------------- Hesap ayarları
@@ -135,7 +139,7 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
     for (const f of changedFields) {
       const err = problem(f);
       if (err) {
-        document.getElementById(`s-${f.key}`)?.focus();
+        revealSettingsField(sectionOf(f.key), `s-${f.key}`);
         return void toast.error(`${f.label}: ${err}`);
       }
       out[f.key] = parseField(vals[f.key], f.kind);
@@ -145,7 +149,7 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
     if (waterChanged) {
       // Boş = otomatik; yazılmış ama okunamayan değer sessizce "otomatik"e dönmesin
       if (waterInvalid) {
-        document.getElementById("s-water")?.focus();
+        revealSettingsField("su", "s-water");
         return void toast.error("Elle birim maliyet: geçerli bir sayı girin ya da boş bırakın");
       }
       out.suBirimLTOverride = waterValue;
@@ -205,6 +209,8 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
         <div className="relative">
           <NumberInput
             id={`s-${f.key}`}
+            // Gün sayısı tam sayı: telefonda ondalık ayırıcısız rakam tuş takımı
+            inputMode={f.kind === "int" ? "numeric" : "decimal"}
             value={vals[f.key]}
             onChange={(e) => setVals((x) => ({ ...x, [f.key]: e.target.value }))}
             onKeyDown={(e) => {
@@ -229,15 +235,18 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
   };
 
   const summary = impact ? impactSummary(impact) : null;
+  const dirtyIn = (fields: FieldDef[]) => fields.some((f) => changedFields.includes(f));
 
   return (
     <form id="settings-form" onSubmit={save} data-dirty={dirty || undefined} className="space-y-4">
-      <Card id="oranlar" className={SECTION_SCROLL_MARGIN}>
-        <CardHeader
-          icon={<Percent />}
-          title="Oranlar"
-          description="Menü fiyatları KDV dahil; maliyetler KDV hariç (alışta ödenen KDV indirilebildiği için). Önerilen fiyat hedef maliyet oranına göre hesaplanır. Yüzdeleri sayı olarak yazın: %10 için 10."
-        />
+      <SectionCard
+        id="oranlar"
+        icon={<Percent />}
+        title="Oranlar"
+        description="Menü fiyatları KDV dahil; maliyetler KDV hariç (alışta ödenen KDV indirilebildiği için). Önerilen fiyat hedef maliyet oranına göre hesaplanır. Yüzdeleri sayı olarak yazın: %10 için 10."
+        summary={ratesSummary(settings)}
+        dirty={dirtyIn(RATE_FIELDS) || fireEx !== settings.fireExcludesPackaging}
+      >
         <CardContent className="space-y-4">
           <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3">{RATE_FIELDS.map(field)}</div>
           <ToggleRow
@@ -251,20 +260,28 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
             onChange={setFireEx}
           />
         </CardContent>
-      </Card>
+      </SectionCard>
 
-      <Card id="olculer" className={SECTION_SCROLL_MARGIN}>
-        <CardHeader
-          icon={<Ruler />}
-          title="Reçete ölçüleri"
-          description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …) ve ayda açık gün sayısı. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir. Varsayım işaretli değerleri ölçüp yazın."
-        />
+      <SectionCard
+        id="olculer"
+        icon={<Ruler />}
+        title="Reçete ölçüleri"
+        description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …) ve ayda açık gün sayısı. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir. Varsayım işaretli değerleri ölçüp yazın."
+        summary={measuresSummary(settings)}
+        dirty={dirtyIn(MEASURE_FIELDS)}
+      >
         <CardContent className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4">{MEASURE_FIELDS.map(field)}</CardContent>
-      </Card>
+      </SectionCard>
 
       <div className="grid gap-4 @3xl:grid-cols-2">
-        <Card id="su" className={SECTION_SCROLL_MARGIN}>
-          <CardHeader icon={<Droplets />} title="Su + buz birim maliyeti" description="Reçetelerdeki su ve buzun litre maliyeti." />
+        <SectionCard
+          id="su"
+          icon={<Droplets />}
+          title="Su + buz birim maliyeti"
+          description="Reçetelerdeki su ve buzun litre maliyeti."
+          summary={waterSummary(water)}
+          dirty={waterChanged}
+        >
           <CardContent className="space-y-4">
             <Well className="ring-1 ring-line">
               <p className="flex items-center gap-1.5 text-[13px] text-ink-mute">
@@ -294,24 +311,27 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
               />
             </Field>
           </CardContent>
-        </Card>
+        </SectionCard>
 
-        <Card id="qr-menu" className={SECTION_SCROLL_MARGIN}>
-          <CardHeader
-            icon={<QrCode />}
-            title="QR menü"
-            description="laffogato.net/menu"
-            meta={
-              <Badge dot tone={settings.publicMenu ? "green" : "gray"}>
-                {settings.publicMenu ? "Yayında" : "Yayında değil"}
-              </Badge>
-            }
-            actions={
-              <ButtonLink href="/menu?onizleme=1" variant="secondary" target="_blank" prefetch={false}>
-                <ExternalLink size={16} /> Önizle
-              </ButtonLink>
-            }
-          />
+        <SectionCard
+          id="qr-menu"
+          icon={<QrCode />}
+          title="QR menü"
+          description="laffogato.net/menu"
+          summary={settings.publicMenu ? "Yayında · laffogato.net/menu" : "Yayında değil"}
+          dirty={publicMenu !== settings.publicMenu}
+          meta={
+            <Badge dot tone={settings.publicMenu ? "green" : "gray"}>
+              {settings.publicMenu ? "Yayında" : "Yayında değil"}
+            </Badge>
+          }
+          actionsClassName="max-sm:w-full"
+          actions={
+            <ButtonLink href="/menu?onizleme=1" variant="secondary" target="_blank" prefetch={false} className="max-sm:w-full">
+              <ExternalLink size={16} /> Önizle
+            </ButtonLink>
+          }
+        >
           <CardContent className="space-y-4">
             <p className="text-[13px] leading-5 text-ink-mute">
               Ürün adları, boyları ve satış fiyatları herkese açık bir menü sayfasında yayınlanır. Maliyet ve kâr bilgisi asla gösterilmez. Ürün kartında &quot;QR menüde göster&quot; ile
@@ -327,7 +347,7 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
               onChange={setPublicMenu}
             />
           </CardContent>
-        </Card>
+        </SectionCard>
       </div>
 
       <FloatingBar open={dirty} className="max-w-3xl gap-y-2">
@@ -580,23 +600,26 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
   }
 
   return (
-    <Card id="kategoriler" className={SECTION_SCROLL_MARGIN}>
-      <CardHeader
-        icon={<Tags />}
-        title="Ürün kategorileri"
-        description="Sıra; ürün listesi, panel ve QR menüde kullanılır. Adı yazıp Enter'a basınca kaydedilir."
-        meta={<span className="tabular">{rows.length} kategori</span>}
-        actions={
-          <>
-            <Button variant="secondary" onClick={add}>
-              <Plus size={16} /> Ekle
-            </Button>
-            <Button variant={dirty ? "primary" : "secondary"} disabled={busy || !dirty} onClick={save}>
-              <Save size={16} /> {busy ? "Kaydediliyor…" : "Kaydet"}
-            </Button>
-          </>
-        }
-      />
+    <SectionCard
+      id="kategoriler"
+      icon={<Tags />}
+      title="Ürün kategorileri"
+      description="Sıra; ürün listesi, panel ve QR menüde kullanılır. Adı yazıp Enter'a basınca kaydedilir."
+      summary={categoriesSummary(categories)}
+      dirty={dirty}
+      meta={<span className="tabular">{rows.length} kategori</span>}
+      actionsClassName="max-sm:w-full max-sm:[&>*]:flex-1"
+      actions={
+        <>
+          <Button variant="secondary" onClick={add}>
+            <Plus size={16} /> Ekle
+          </Button>
+          <Button variant={dirty ? "primary" : "secondary"} disabled={busy || !dirty} onClick={save}>
+            <Save size={16} /> {busy ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
+        </>
+      }
+    >
       <CardContent>
         {rows.length ? (
           <ol className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
@@ -678,7 +701,7 @@ export function CategoriesEditor({ categories }: { categories: Category[] }) {
         description="Kategori kalıcı olarak silinir; geri alınamaz. Kategoride ürün olmadığı için hiçbir ürün etkilenmez."
         confirmLabel="Kategoriyi sil"
       />
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -758,12 +781,13 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
   }
 
   return (
-    <Card id="gecmis" className={SECTION_SCROLL_MARGIN}>
-      <CardHeader
-        icon={<History />}
-        title="İşlem geçmişi"
-        description="Kim, ne zaman, neyi değiştirdi. Son 60 işlem listelenir; arama ve süzgeçler bunların içinde çalışır."
-      />
+    <SectionCard
+      id="gecmis"
+      icon={<History />}
+      title="İşlem geçmişi"
+      description="Kim, ne zaman, neyi değiştirdi. Son 60 işlem listelenir; arama ve süzgeçler bunların içinde çalışır."
+      summary={logSummary(entries)}
+    >
       {entries.length ? (
         <>
           <FilterBar active={filterActive} onClear={clear} shown={shown.length} total={entries.length} unit="işlem" className="px-5 pb-3">
@@ -771,7 +795,8 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
             {kinds.length > 1 || people.length > 1 ? (
               <div className="flex w-full min-w-0 gap-2 @md:w-auto">
                 {kinds.length > 1 ? (
-                  <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="İşlem türü" className="min-w-0 flex-1 @md:w-auto pointer-coarse:h-10">
+                  // Telefonda tür adları kişi adından uzun ("Bütün işlemler"): genişlik 3'e 2 paylaşılır, metin oka binmez
+                  <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="İşlem türü" className="min-w-0 flex-[3_1_0%] @md:w-auto">
                     <option value="">Bütün işlemler</option>
                     {kinds.map((k) => (
                       <option key={k.kind} value={k.kind}>
@@ -781,7 +806,7 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
                   </Select>
                 ) : null}
                 {people.length > 1 ? (
-                  <Select value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Kişi" className="min-w-0 flex-1 @md:w-auto pointer-coarse:h-10">
+                  <Select value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Kişi" className="min-w-0 flex-[2_1_0%] @md:w-auto">
                     <option value="">Herkes</option>
                     {people.map((p) => (
                       <option key={p} value={p}>
@@ -841,6 +866,6 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
       ) : (
         <EmptyState icon={<History />} title="Henüz işlem yok" description="Ayar, fiyat ya da reçete değiştikçe burada listelenir." />
       )}
-    </Card>
+    </SectionCard>
   );
 }

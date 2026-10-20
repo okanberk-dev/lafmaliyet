@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNotNull, lt } from "drizzle-orm";
 
 import { INVOICE_CATEGORIES } from "@/lib/constants";
-import { addDays, todayTR } from "@/lib/reminders";
+import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
 
@@ -18,6 +18,11 @@ const PRICE_KEY = "parasut.prices";
 const RESUME_KEY = "parasut.resume";
 const CONTACTS_KEY = "parasut.contacts";
 const PENDING_KEY = "parasut.pendingEInvoices";
+/**
+ * Ödenmemiş Paraşüt faturalarının Paraşüt'teki son vadesi (dış kimlik → vade): panelde ertelenen vade, Paraşüt'teki
+ * vade değişmedikçe eşitlemede ezilmesin (syncedDueDate)
+ */
+const DUE_KEY = "parasut.dueDates";
 /** Panelde silinen Paraşüt faturaları (bir sonraki eşitlemede geri gelmesin) */
 export const IGNORE_KEY = "parasut.ignore";
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler */
@@ -114,6 +119,21 @@ interface Ctx {
   applied: Set<string>;
   touchedMonths: Set<string>;
   counts: { created: number; updated: number; removed: number };
+  /** Paraşüt'ün son gönderdiği vadeler (DUE_KEY); `dueDirty` değiştiyse çalışma sonunda yazılır */
+  dueSeen: Record<string, string | null>;
+  dueDirty: boolean;
+}
+
+/** Ödenmemiş faturanın Paraşüt'teki vadesini kaydeder; ödenmiş ya da kaldırılmış faturanın kaydı silinir */
+function rememberDue(ctx: Ctx, externalId: string, dueDate: string | null, unpaid: boolean) {
+  if (unpaid) {
+    if (ctx.dueSeen[externalId] === dueDate) return;
+    ctx.dueSeen[externalId] = dueDate;
+  } else {
+    if (!Object.hasOwn(ctx.dueSeen, externalId)) return;
+    delete ctx.dueSeen[externalId];
+  }
+  ctx.dueDirty = true;
 }
 
 const loadRules = () => getDb().select().from(s.parasutCategoryRules);
@@ -122,6 +142,7 @@ const loadRules = () => getDb().select().from(s.parasutCategoryRules);
 async function retire(match: Existing, reason: string, ctx: Ctx) {
   const db = getDb();
   ctx.touchedMonths.add(match.date.slice(0, 7));
+  if (match.externalId) rememberDue(ctx, match.externalId, null, false);
   if (match.origin === "parasut") {
     await db.delete(s.invoices).where(eq(s.invoices.id, match.id));
     const i = ctx.existing.indexOf(match);
@@ -169,12 +190,14 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   if (match) {
     // Kategori ve tedarikçi adı panelde kalır. "Ödendi/ödenmedi" panelde elle değiştirilmişse ve Paraşüt'teki değer
     // o zamandan beri aynıysa paneldeki kalır; Paraşüt değiştiyse Paraşüt'ünki gelir. İlk bağlanmada Paraşüt'ünki
-    // alınır (Excel kayıtlarında ödeme durumu tutulmamıştı). Paraşüt'te vade yoksa paneldeki vade korunur.
+    // alınır (Excel kayıtlarında ödeme durumu tutulmamıştı). Vade de aynı kuralla: panelde ertelenen vade, Paraşüt'teki
+    // vade o zamandan beri aynıysa korunur; Paraşüt'te vade yoksa paneldeki vade kalır.
     const localOverride = match.source === "parasut" && match.parasutUnpaid !== null && match.unpaid !== match.parasutUnpaid && d.unpaid === match.parasutUnpaid;
     // Yer tutucu ad, yalnızca gerçek tedarikçi adı okunabildiyse düzeltilir (açıklamayla değil)
     const supplierFix = match.supplier === PLACEHOLDER_SUPPLIER && d.supplierResolved ? { supplier: ctx.alias(d.supplier) } : {};
     const unpaid = localOverride ? match.unpaid : d.unpaid;
-    const dueDate = d.dueDate ?? match.dueDate;
+    const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
+    const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
     await db
       .update(s.invoices)
       .set({ ...common, ...supplierFix, unpaid, dueDate })
@@ -193,6 +216,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       parasutUnpaid: d.unpaid,
       syncedAt: common.syncedAt,
     });
+    rememberDue(ctx, d.externalId, d.dueDate, unpaid);
     ctx.counts.updated++;
   } else {
     const supplier = ctx.alias(d.supplier);
@@ -220,6 +244,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       parasutUnpaid: d.unpaid,
       syncedAt: common.syncedAt,
     });
+    rememberDue(ctx, d.externalId, d.dueDate, d.unpaid);
     ctx.counts.created++;
   }
   ctx.touchedMonths.add(d.date.slice(0, 7));
@@ -325,7 +350,7 @@ export async function syncParasut(
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
-    const [existingRows, rules, ignoredList] = await Promise.all([
+    const [existingRows, rules, ignoredList, dueSeen] = await Promise.all([
       db
         .select({
           id: s.invoices.id,
@@ -346,6 +371,7 @@ export async function syncParasut(
         .from(s.invoices),
       loadRules(),
       getState<string[]>(IGNORE_KEY),
+      getState<Record<string, string | null>>(DUE_KEY),
     ]);
     // Tedarikçi geçmişi ve kısa adlar, kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir; eşitlemenin
     // kendi tahminleri geçmişe katılmaz (yanlış bir tahmin kendini çoğaltmasın)
@@ -361,6 +387,8 @@ export async function syncParasut(
       applied: new Set(),
       touchedMonths: new Set(),
       counts: { created: 0, updated: 0, removed: 0 },
+      dueSeen: { ...(dueSeen ?? {}) },
+      dueDirty: false,
     };
 
     let maxDate = resume?.maxDate ?? "";
@@ -419,6 +447,7 @@ export async function syncParasut(
       }
     }
 
+    if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
     if (partial && !reachedEnd) {
       // Hiç sayfa yazılamadıysa kalınan yer değişmez

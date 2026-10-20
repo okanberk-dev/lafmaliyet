@@ -16,7 +16,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { Field, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip, SegmentStrip } from "@/components/ui/misc";
+import { ActiveFilters, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
 import { Segmented } from "@/components/ui/segmented";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { TableWrap, TD, TH } from "@/components/ui/table";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -25,7 +27,19 @@ import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { setMonthField, setMonthNote, setPnlCell } from "@/server/actions/pnl";
 
-import { CELL_NOTE_MAX, cleanNote, enterProblem, MONTH_NOTE_MAX, noteSaveEffect, noteSaveMessage, openDaysError } from "./cell-rules";
+import {
+  CELL_NOTE_MAX,
+  cleanNote,
+  defaultMonth,
+  enterProblem,
+  MONTH_NOTE_MAX,
+  noteSaveEffect,
+  noteSaveMessage,
+  openDaysError,
+  type CellEditPlan,
+  type CellField,
+} from "./cell-rules";
+import { MonthView } from "./month-view";
 
 export interface GridSection {
   key: string;
@@ -282,7 +296,7 @@ function EditableCell({
           }}
           className={cn(
             // Form kontrolleriyle aynı dil: beyaz, ince halka, odakta mürekkep halkası; telefonda 16px (iOS yakınlaştırmasın)
-            "h-8 w-full rounded-lg border-0 bg-surface px-2 text-right text-base tabular ring-2 ring-ink/20 outline-none pointer-coarse:h-10 sm:text-sm",
+            "h-8 w-full rounded-lg border-0 bg-surface px-2 text-right text-base tabular ring-2 ring-ink/20 outline-none pointer-coarse:h-11 sm:text-sm sm:pointer-coarse:text-base",
             CELL_MIN,
             onNote && "pl-8 pointer-coarse:pl-9",
             "aria-invalid:bg-bad-soft aria-invalid:text-bad aria-invalid:ring-bad/50 disabled:opacity-60",
@@ -326,7 +340,7 @@ function EditableCell({
       title={note ? `Not: ${note}\n\n${help}` : `${help}${onNote ? " · Not için Shift+F2" : ""}`}
       aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}. Değiştirmek için tıklayın`}
       className={cn(
-        "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-10",
+        "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-11",
         CELL_MIN,
         "hover:bg-surface hover:ring-line-strong focus-visible:ring-2 focus-visible:ring-ink/25",
         // .cell-input katmansız bir kural olduğu için negatifte kırmızının önüne geçmesin
@@ -394,7 +408,7 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
         target.note ? (
           <Button
             variant="ghost"
-            className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10"
+            className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11"
             disabled={busy}
             onClick={() => {
               const keep = parseNumberTR(target.amountText.trim());
@@ -408,10 +422,10 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-10">
+          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-11">
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy || !!amountError} className="pointer-coarse:h-10">
+          <Button type="submit" form={formId} disabled={busy || !!amountError} className="pointer-coarse:h-11">
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
@@ -447,7 +461,7 @@ function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () =
         <Field label="Not" htmlFor={`${formId}-n`} hint={`${note.trim().length} / ${CELL_NOTE_MAX}`}>
           <Textarea
             id={`${formId}-n`}
-            data-autofocus
+            data-autofocus="always"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
@@ -500,17 +514,17 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
       description="Ayın durumu, ör. “1-16 Ekim, ay bitince güncelleyin”. Satışlar sayfasında da görünür."
       footerStart={
         note ? (
-          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10" disabled={busy} onClick={() => void run(null)}>
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" disabled={busy} onClick={() => void run(null)}>
             Notu sil
           </Button>
         ) : null
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-10">
+          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-11">
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy} className="pointer-coarse:h-10">
+          <Button type="submit" form={formId} disabled={busy} className="pointer-coarse:h-11">
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
@@ -526,7 +540,7 @@ function MonthNoteDialog({ month, note, onClose }: { month: string; note: string
         }}
       >
         <Field label="Not" htmlFor={`${formId}-n`} hint={`${text.trim().length} / ${MONTH_NOTE_MAX}`}>
-          <Textarea id={`${formId}-n`} data-autofocus value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={MONTH_NOTE_MAX} />
+          <Textarea id={`${formId}-n`} data-autofocus="always" value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={MONTH_NOTE_MAX} />
         </Field>
       </form>
     </Dialog>
@@ -577,6 +591,11 @@ export function PnlGrid({
   const [onlyEditable, setOnlyEditable] = useQueryState<Flag>("girilebilir", "");
   const [onlyOverridden, setOnlyOverridden] = useQueryState<Flag>("yazilan", "");
   const [hideEmpty, setHideEmpty] = useQueryState<Flag>("dolu", "");
+  /** Telefon: tek ay görünümünün ayı (?ay=YYYY-AA) ve süzgeç sayfası */
+  const [rawMonth, setPhoneMonth] = useQueryState<string>("ay", "");
+  const phoneMonth = defaultMonth(months, rawMonth, currentMonth, latestMonth);
+  const phoneIdx = [{ m: phoneMonth, i: months.indexOf(phoneMonth) }];
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const visibleIdx = months
     .map((m, i) => ({ m, i }))
@@ -589,26 +608,32 @@ export function PnlGrid({
   const losing = strip.filter((s) => s.tone === "bad").length;
   const latestIdx = latestMonth ? months.indexOf(latestMonth) : -1;
 
-  // Satır süzgeçleri yalnızca görünen aylara bakar ("boş" = görünen aylarda değer yok)
-  const isOverridden = (r: GridRow) => r.def.kind === "auto" && visibleIdx.some(({ i }) => r.cells[i].overridden);
-  const isEmpty = (r: GridRow) => visibleIdx.every(({ i }) => !r.cells[i].value);
-  const rowMatches = (sec: GridSection, r: GridRow) =>
-    (bolum === "tumu" || sec.key === bolum) &&
-    matches(`${r.def.label} ${sec.label}`, q) &&
-    (!onlyEditable || r.def.editable) &&
-    (!onlyOverridden || isOverridden(r)) &&
-    (!hideEmpty || !isEmpty(r));
-  const shownSections = sections.map((sec) => ({ ...sec, rows: sec.rows.filter((r) => rowMatches(sec, r)) })).filter((sec) => sec.rows.length > 0);
-  // Açık gün satırı bölümsüz, her zaman girilebilir; "üzerine yazılan" süzgecinde yer almaz
-  const showOpenDays =
-    bolum === "tumu" &&
-    matches(OPEN_DAYS_LABEL, q) &&
-    !onlyOverridden &&
-    (!hideEmpty || visibleIdx.some(({ i }) => openDays[i] !== null && openDays[i] !== 0));
+  // Satır süzgeçleri yalnızca görünen aylara bakar ("boş" = görünen aylarda değer yok). Izgara görünen aylarla,
+  // telefondaki tek ay görünümü yalnızca seçili ayla süzülür.
+  const filterFor = (idx: { m: string; i: number }[]) => {
+    const isOverridden = (r: GridRow) => r.def.kind === "auto" && idx.some(({ i }) => r.cells[i].overridden);
+    const isEmpty = (r: GridRow) => idx.every(({ i }) => !r.cells[i].value);
+    const rowMatches = (sec: GridSection, r: GridRow) =>
+      (bolum === "tumu" || sec.key === bolum) &&
+      matches(`${r.def.label} ${sec.label}`, q) &&
+      (!onlyEditable || r.def.editable) &&
+      (!onlyOverridden || isOverridden(r)) &&
+      (!hideEmpty || !isEmpty(r));
+    const shownSections = sections.map((sec) => ({ ...sec, rows: sec.rows.filter((r) => rowMatches(sec, r)) })).filter((sec) => sec.rows.length > 0);
+    // Açık gün satırı bölümsüz, her zaman girilebilir; "üzerine yazılan" süzgecinde yer almaz
+    const showOpenDays =
+      bolum === "tumu" &&
+      matches(OPEN_DAYS_LABEL, q) &&
+      !onlyOverridden &&
+      (!hideEmpty || idx.some(({ i }) => openDays[i] !== null && openDays[i] !== 0));
+    const shownRows = shownSections.reduce((a, s) => a + s.rows.length, 0) + (showOpenDays ? 1 : 0);
+    return { shownSections, showOpenDays, shownRows, isOverridden };
+  };
+  const { shownSections, showOpenDays, shownRows, isOverridden } = filterFor(visibleIdx);
+  const phone = filterFor(phoneIdx);
 
   const allRows = sections.flatMap((s) => s.rows);
   const totalRows = allRows.length + 1;
-  const shownRows = shownSections.reduce((a, s) => a + s.rows.length, 0) + (showOpenDays ? 1 : 0);
   const overriddenCount = allRows.filter(isOverridden).length;
   const editableCount = allRows.filter((r) => r.def.editable).length + 1;
   const filtered = q.trim() !== "" || bolum !== "tumu" || onlyEditable === "1" || onlyOverridden === "1" || hideEmpty === "1";
@@ -616,6 +641,23 @@ export function PnlGrid({
     setQ("");
     clearQuery(FILTER_KEYS);
   };
+  const chips: ActiveFilter[] = [];
+  if (bolum !== "tumu") chips.push({ key: "bolum", label: sections.find((s) => s.key === bolum)?.label ?? bolum, onRemove: () => setBolum("tumu") });
+  if (onlyEditable) chips.push({ key: "girilebilir", label: "Girilebilir", onRemove: () => setOnlyEditable("") });
+  if (onlyOverridden) chips.push({ key: "yazilan", label: "Üzerine yazılan", onRemove: () => setOnlyOverridden("") });
+  if (hideEmpty) chips.push({ key: "dolu", label: "Boşlar gizli", onRemove: () => setHideEmpty("") });
+
+  /** Telefondaki hücre sayfasının kaydı; hata metni döner */
+  async function savePlan(month: string, field: CellField, rowKey: string, plan: Extract<CellEditPlan, { action: "save" | "clear" }>): Promise<string | null> {
+    const amount = plan.action === "clear" ? null : plan.amount;
+    const res =
+      field === "revenue"
+        ? await setMonthField(month, "posRevenue", amount)
+        : field === "openDays"
+          ? await setMonthField(month, "openDays", amount)
+          : await setPnlCell(month, rowKey, amount, plan.action === "save" ? plan.note : undefined);
+    return res.ok ? null : res.error;
+  }
 
   async function save(month: string, key: string, v: number | null, hadNote?: boolean): Promise<void> {
     const res =
@@ -653,7 +695,14 @@ export function PnlGrid({
       <CardHeader
         icon={<CalendarRange />}
         title={`${year} gelir-gider tablosu`}
-        description="KDV hariç. Hücreye tıklayın ya da seçip rakam yazın; Enter kaydedip alttaki hücreye geçer, Esc vazgeçer."
+        description={
+          <>
+            <span className="md:hidden">KDV hariç. Ayı seçin; tutar girmek için kaleme dokunun.</span>
+            <span className="max-md:hidden">KDV hariç. Hücreye tıklayın ya da seçip rakam yazın; Enter kaydedip alttaki hücreye geçer, Esc vazgeçer.</span>
+          </>
+        }
+        // Telefonda tek ay görünümü var; ay seçimi aşağıda
+        actionsClassName="max-md:hidden"
         actions={
           <Segmented<MonthView>
             label="Gösterilen aylar"
@@ -689,16 +738,105 @@ export function PnlGrid({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.32, ease: EASE_OUT }}
           >
-            {/* Şerit beyaz kuyuda: son ayın çerçeve boşluğu da beyaz olsun (bileşen panel zeminine göre çizer) */}
-            <SegmentStrip segments={strip} activeKey={latestMonth} showLabels className="[&_li]:ring-offset-surface" />
+            {/* Şerit beyaz kuyuda: çerçevenin boşluğu da beyaz olsun (bileşen panel zeminine göre çizer). md'den itibaren
+                verisi olan son ay çerçeveli; telefonda aşağıdaki tek ay görünümünün ayı çerçeveli ve aya dokununca o ay açılır. */}
+            <SegmentStrip segments={strip} activeKey={latestMonth} showLabels className="[&_li]:ring-offset-surface max-md:hidden" />
+            <div className="relative md:hidden">
+              {/* Ekran okuyucu ayları üzerine konan düğmelerden okur */}
+              <div aria-hidden="true">
+                <SegmentStrip segments={strip} activeKey={phoneMonth} showLabels className="[&_li]:ring-offset-surface" />
+              </div>
+              <div role="group" aria-label="Ay seçin" className="absolute inset-0 flex">
+                {strip.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setPhoneMonth(s.key)}
+                    aria-pressed={s.key === phoneMonth}
+                    aria-label={`${s.label}. Bu ayı göster`}
+                    className="min-w-0 flex-1 cursor-pointer rounded-md focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none"
+                  />
+                ))}
+              </div>
+            </div>
           </motion.div>
         </Well>
       </CardContent>
 
-      <div className="space-y-3 px-5 pb-3">
+      {/* Telefon: arama + "Süzgeç" düğmesi; seçimler alt sayfada */}
+      <div role="search" className="space-y-2.5 px-4 pb-3 md:hidden">
+        <div className="flex items-center gap-2">
+          <SearchField value={q} onChange={setQ} placeholder="Kalem ara" label="Kalem ara (tedarikçi, gider adı)" shortcut={false} className="flex-1 [&_input]:h-11" />
+          <FilterButton count={chips.length} onClick={() => setSheetOpen(true)} />
+        </div>
+        <ActiveFilters items={chips} />
+        {filtered ? (
+          <p className="text-[13px] text-ink-mute tabular" aria-live="polite">
+            <span className="font-semibold text-ink">{phone.shownRows}</span> / {totalRows} kalem
+          </p>
+        ) : null}
+      </div>
+      <Dialog
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        title="Süzgeç"
+        description={`${monthLabel(phoneMonth)}: ${phone.shownRows} / ${totalRows} kalem`}
+        footer={
+          <>
+            <Button variant="ghost" className={SHEET_BTN} disabled={!filtered} onClick={clearFilters}>
+              Temizle
+            </Button>
+            <Button className={SHEET_BTN} onClick={() => setSheetOpen(false)}>
+              {phone.shownRows ? `${phone.shownRows} kalemi göster` : "Kapat"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 pb-2 max-sm:[&_select]:h-12">
+          <Field label="Bölüm" htmlFor="pnl-m-bolum">
+            <Select id="pnl-m-bolum" value={bolum} onChange={(e) => setBolum(e.target.value)}>
+              <option value="tumu">Tüm bölümler</option>
+              {sections.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label} ({s.rows.length})
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <ToggleRow
+            title="Yalnız girilebilenler"
+            description={`${editableCount} kalem elle girilebilir ya da üzerine yazılabilir`}
+            checked={onlyEditable === "1"}
+            onChange={(on) => setOnlyEditable(on ? "1" : "")}
+            label="Yalnız girilebilen kalemler"
+            onText="Açık"
+            offText="Kapalı"
+          />
+          <ToggleRow
+            title="Yalnız üzerine yazılanlar"
+            description="Hesaplanan değerin yerine elle tutar girilmiş kalemler"
+            checked={onlyOverridden === "1"}
+            onChange={(on) => setOnlyOverridden(on ? "1" : "")}
+            label="Yalnız üzerine yazılan kalemler"
+            onText="Açık"
+            offText="Kapalı"
+          />
+          <ToggleRow
+            title="Boşları gizle"
+            description="Bu ayda değeri olmayan kalemler görünmez"
+            checked={hideEmpty === "1"}
+            onChange={(on) => setHideEmpty(on ? "1" : "")}
+            label="Boş kalemleri gizle"
+            onText="Açık"
+            offText="Kapalı"
+          />
+        </div>
+      </Dialog>
+
+      <div className="space-y-3 px-5 pb-3 max-md:hidden">
         <FilterBar active={filtered} onClear={clearFilters} shown={shownRows} total={totalRows} unit="kalem">
           <SearchField value={q} onChange={setQ} placeholder="Kalem ara" label="Kalem ara (tedarikçi, gider adı)" className="w-full sm:w-64" />
-          <Select value={bolum} onChange={(e) => setBolum(e.target.value)} aria-label="Bölüm" className="w-auto max-sm:flex-1 pointer-coarse:h-10">
+          <Select value={bolum} onChange={(e) => setBolum(e.target.value)} aria-label="Bölüm" className="w-auto max-sm:flex-1 pointer-coarse:h-11">
             <option value="tumu">Tüm bölümler</option>
             {sections.map((s) => (
               <option key={s.key} value={s.key}>
@@ -739,20 +877,39 @@ export function PnlGrid({
         </div>
       </div>
 
+      <MonthView
+        year={year}
+        months={months}
+        month={phoneMonth}
+        onMonth={setPhoneMonth}
+        activeMonths={activeMonths}
+        sections={sections}
+        shownSections={phone.shownSections}
+        showOpenDays={phone.showOpenDays}
+        openDays={openDays}
+        dims={dims}
+        monthNotes={monthNotes}
+        currentMonth={currentMonth}
+        onMonthNote={setMonthNoteFor}
+        onSave={savePlan}
+      />
+
       {shownRows === 0 ? (
-        <EmptyState
-          title="Bu süzgece uyan kalem yok"
-          description="Aramayı kısaltın ya da seçili bölümü ve süzgeçleri kaldırın."
-          action={
-            <Button size="sm" variant="secondary" onClick={clearFilters}>
-              Süzgeci temizle
-            </Button>
-          }
-        />
+        <div className="max-md:hidden">
+          <EmptyState
+            title="Bu süzgece uyan kalem yok"
+            description="Aramayı kısaltın ya da seçili bölümü ve süzgeçleri kaldırın."
+            action={
+              <Button size="sm" variant="secondary" onClick={clearFilters}>
+                Süzgeci temizle
+              </Button>
+            }
+          />
+        </div>
       ) : (
         // Tablo kendi içinde kayar: başlık satırı ve kalem sütunu kaydırırken yerinde kalır. `isolate`: sabit
         // hücrelerin z sırası tablonun içinde kalır, telefondaki üst çubuğun (z-30) üzerine çıkmaz.
-        <TableWrap className="isolate max-h-[calc(100dvh-7rem)] overflow-y-auto px-0 pb-0">
+        <TableWrap className="isolate max-h-[calc(100dvh-7rem)] overflow-y-auto px-0 pb-0 max-md:hidden">
           <table className="w-full border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
@@ -821,7 +978,7 @@ export function PnlGrid({
       {noteTarget ? <CellNoteDialog key={`${noteTarget.month}-${noteTarget.rowKey}`} target={noteTarget} onClose={() => setNoteTarget(null)} /> : null}
       {monthNoteFor !== null ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} onClose={() => setMonthNoteFor(null)} /> : null}
 
-      <CardFooter className="justify-start gap-2">
+      <CardFooter className="justify-start gap-2 max-md:hidden">
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
         <span>
           Bir hücreyi hesaplanan değere döndürmek için içini silip Enter&apos;a basın. Faturadan gelen mal alışlarını değiştirmek için{" "}

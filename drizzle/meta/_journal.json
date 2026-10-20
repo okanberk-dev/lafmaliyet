@@ -57,6 +57,13 @@
       "when": 1792452444661,
       "tag": "0007_veri_duzeltme",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792471982893,
+      "tag": "0008_kullanici_davet",
+      "breakpoints": true
     }
   ]
 }

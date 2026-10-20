@@ -7,18 +7,18 @@ import { InfoTip } from "./info-tip";
 
 /** Beyaz, rounded-xl kontrol; gri panelde de beyaz sayfada da ince halkayla ayrılır */
 const control =
-  "w-full rounded-xl border-0 bg-surface px-3 text-base text-ink ring-1 ring-inset ring-line-strong sm:text-sm " +
+  "w-full rounded-xl border-0 bg-surface px-3 text-base text-ink ring-1 ring-inset ring-line-strong sm:text-sm pointer-coarse:text-base " +
   "placeholder:text-ink-quiet focus:ring-2 focus:ring-ink/25 focus:outline-none " +
   "aria-invalid:bg-bad-soft aria-invalid:ring-bad/50 data-[warn=true]:bg-warn-soft data-[warn=true]:ring-warn/40 " +
   "disabled:cursor-not-allowed disabled:bg-panel disabled:text-ink-quiet";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
-  return <input className={cn(control, "h-9 pointer-coarse:h-10", className)} {...props} />;
+  return <input className={cn(control, "h-9 pointer-coarse:h-11", className)} {...props} />;
 }
 
 /** Türkçe ondalık girişi (1.234,56) için metin tabanlı sayı alanı */
 export function NumberInput({ className, ...props }: ComponentProps<"input">) {
-  return <input inputMode="decimal" autoComplete="off" className={cn(control, "h-9 text-right tabular pointer-coarse:h-10", className)} {...props} />;
+  return <input inputMode="decimal" autoComplete="off" className={cn(control, "h-9 text-right tabular pointer-coarse:h-11", className)} {...props} />;
 }
 
 /** Büyüteç ikonlu arama kutusu (araç çubukları için) */
@@ -26,7 +26,7 @@ export function SearchInput({ className, wrapperClassName, ...props }: Component
   return (
     <div className={cn("relative", wrapperClassName)}>
       <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
-      <input type="search" className={cn(control, "h-9 pl-9 pointer-coarse:h-10", className)} {...props} />
+      <input type="search" className={cn(control, "h-9 pl-9 pointer-coarse:h-11", className)} {...props} />
     </div>
   );
 }
@@ -38,7 +38,7 @@ export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
 export function Select({ className, children, ...props }: ComponentProps<"select">) {
   return (
     <select
-      className={cn(control, "h-9 cursor-pointer appearance-none bg-[length:16px] bg-[right_10px_center] bg-no-repeat pr-8 pointer-coarse:h-10", className)}
+      className={cn(control, "h-9 cursor-pointer appearance-none bg-[length:16px] bg-[right_10px_center] bg-no-repeat pr-8 pointer-coarse:h-11", className)}
       style={{
         backgroundImage:
           "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
@@ -86,7 +86,7 @@ export function Field({
 
 export function Checkbox({ label, className, ...props }: ComponentProps<"input"> & { label: ReactNode }) {
   return (
-    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-sm text-ink select-none pointer-coarse:min-h-10", className)}>
+    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-sm text-ink select-none pointer-coarse:min-h-11", className)}>
       <input type="checkbox" className="size-4 cursor-pointer rounded accent-ink pointer-coarse:size-5" {...props} />
       {label}
     </label>

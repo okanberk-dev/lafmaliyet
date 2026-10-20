@@ -16,7 +16,10 @@ async function SidebarWithUser() {
   return <Sidebar user={{ name: user.name, email: user.email, role: user.role }} index={index} />;
 }
 
-/** AkmanOS "App Shell": solda 17.5rem zinc-100 kenar çubuğu, sağda beyaz içerik */
+/**
+ * AkmanOS "App Shell": solda 17.5rem zinc-100 kenar çubuğu, sağda beyaz içerik. Telefon ve tablette (lg altı) üstte
+ * yapışkan çubuk, altta alt menü; içeriğin altında alt menü kadar boşluk bırakılır (globals.css, --mobile-nav-space).
+ */
 export default function PanelLayout({ children }: LayoutProps<"/panel">) {
   return (
     <div data-component="app-shell" className="min-h-dvh bg-background text-foreground lg:pl-[17.5rem]">

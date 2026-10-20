@@ -108,7 +108,7 @@ export function HelpFaqFallback({ groups }: { groups: FaqGroup[] }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-80">
           <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
-          <div className="h-9 w-full rounded-xl bg-surface ring-1 ring-line-strong ring-inset pointer-coarse:h-10" aria-hidden="true" />
+          <div className="h-9 w-full rounded-xl bg-surface ring-1 ring-line-strong ring-inset pointer-coarse:h-11" aria-hidden="true" />
         </div>
         <p className="ml-auto text-[13px] whitespace-nowrap text-ink-mute tabular">{total(groups)} soru</p>
       </div>

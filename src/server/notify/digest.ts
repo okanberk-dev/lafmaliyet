@@ -4,15 +4,15 @@ import { createHash } from "node:crypto";
 
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import { dateTR, tl } from "@/lib/format";
-import { daysLeftLabel, dueNotifications, todayTR, upcomingItems, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
+import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
 
+import { renderDigest } from "./digest-template";
 import { isEmailConfigured, resolveFrom, sendEmail } from "./resend";
 import { loadNotifySettings } from "./settings";
 
-export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
+export { APP_URL, renderDigest } from "./digest-template";
 
 /** Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler */
 export async function loadUpcoming(today = todayTR()) {
@@ -33,69 +33,11 @@ export async function loadUpcoming(today = todayTR()) {
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
   ]);
-  const items = upcomingItems(reminders, invoices, today, {
-    invoiceDaysBefore: settings.invoiceDaysBefore,
-    invoiceTermDays: settings.invoiceTermDays,
-  });
-  return { today, settings, reminders, items };
-}
-
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-const STAGE: Record<NotifyStage, { label: string; bg: string; fg: string }> = {
-  overdue: { label: "Gecikti", bg: "#fef2f2", fg: "#dc2626" },
-  due: { label: "Bugün", bg: "#fff7ed", fg: "#c2410c" },
-  before: { label: "Yaklaşıyor", bg: "#f4f4f5", fg: "#3f3f46" },
-};
-
-/** AkmanOS açık temasında, satır içi stilli basit e-posta */
-export function renderDigest(rows: { item: UpcomingItem; stage: NotifyStage }[], today: string) {
-  const counts = { overdue: 0, due: 0, before: 0 };
-  for (const r of rows) counts[r.stage]++;
-  const parts = [counts.overdue ? `${counts.overdue} gecikmiş` : null, counts.due ? `${counts.due} bugün` : null, counts.before ? `${counts.before} yaklaşan` : null].filter(Boolean);
-  const subject = `Ödeme hatırlatması: ${parts.join(", ")}`;
-  const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
-  const link = `${APP_URL}/panel/hatirlaticilar`;
-
-  const tr = rows
-    .map(({ item, stage }) => {
-      const st = STAGE[stage];
-      return `<tr>
-  <td style="padding:12px 0;border-bottom:1px solid #e4e4e7;vertical-align:top">
-    <div style="font-size:15px;font-weight:600;color:#171717">${esc(item.title)}</div>
-    <div style="font-size:13px;color:#71717a;margin-top:2px">${esc(dateTR(item.dueDate))} · ${esc(daysLeftLabel(item.daysLeft))}${item.detail ? ` · ${esc(item.detail)}` : ""}</div>
-  </td>
-  <td style="padding:12px 0 12px 12px;border-bottom:1px solid #e4e4e7;text-align:right;vertical-align:top;white-space:nowrap">
-    <div style="font-size:15px;font-weight:600;color:#171717">${item.amount !== null ? esc(tl(item.amount)) : "–"}</div>
-    <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:${st.bg};color:${st.fg}">${st.label}</span>
-  </td>
-</tr>`;
-    })
-    .join("\n");
-
-  const html = `<!doctype html><html lang="tr"><body style="margin:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Helvetica,Arial,sans-serif">
-<div style="max-width:560px;margin:0 auto;padding:24px 16px">
-  <div style="background:#ffffff;border-radius:24px;padding:24px">
-    <div style="font-size:13px;color:#71717a">L'Affogato · ${esc(dateTR(today))}</div>
-    <h1 style="margin:6px 0 4px;font-size:20px;letter-spacing:-0.01em;color:#171717">${esc(subject)}</h1>
-    <p style="margin:0 0 12px;font-size:14px;color:#71717a">Toplam ${esc(tl(total))}. Ödediklerinizi panelde "Ödendi" olarak işaretleyin.</p>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">${tr}</table>
-    <a href="${link}" style="display:inline-block;margin-top:20px;background:#171717;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 18px;border-radius:12px">Hatırlatıcıları aç</a>
-  </div>
-  <p style="font-size:12px;color:#a1a1aa;text-align:center;margin-top:16px">Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar sayfasından değiştirebilirsiniz.</p>
-</div></body></html>`;
-
-  const text = [
-    `L'Affogato · ${dateTR(today)}`,
-    subject,
-    `Toplam ${tl(total)}`,
-    "",
-    ...rows.map(({ item, stage }) => `- ${item.title} · ${dateTR(item.dueDate)} (${daysLeftLabel(item.daysLeft)}) · ${item.amount !== null ? tl(item.amount) : "–"} · ${STAGE[stage].label}`),
-    "",
-    link,
-  ].join("\n");
-
-  return { subject, html, text };
+  const opts = { invoiceDaysBefore: settings.invoiceDaysBefore, invoiceTermDays: settings.invoiceTermDays };
+  const items = upcomingItems(reminders, invoices, today, opts);
+  // Takvim için: vadesi listenin ufkundan sonra olan faturalar (listede ve e-postada yer almaz)
+  const laterInvoices: UpcomingItem[] = laterInvoiceItems(invoices, today, opts);
+  return { today, settings, reminders, items, laterInvoices };
 }
 
 export type DigestResult =

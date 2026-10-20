@@ -180,6 +180,21 @@ export function menuAverages(rows: AverageRow[]): { count: number; costRatio: nu
   };
 }
 
+// ---------------------------------------------------------------- Durum süzgeci
+
+/** Durum çiplerinin sırası (en iyiden en kötüye, sonda reçetesiz) */
+export const STATUS_CHIPS: ProductStatus[] = ["İyi", "Dikkat", "Düşük kâr", "Reçete yok"];
+
+/**
+ * Gösterilen durum çipleri. "Reçete yok" yalnızca menüde reçetesi olmayan bir ürün varken (ya da seçiliyken)
+ * görünür. Süzgeçlere (boy, kategori, arama) bakılmaz, sayısı 0 olsa da durur: telefondaki süzgeç penceresinde
+ * "Large"a dokununca çip kaybolup satırlar kaymasın, sonraki dokunuş hedeflenen yere gelsin.
+ */
+export function statusChips(rows: { status: ProductStatus }[], selected: readonly ProductStatus[]): ProductStatus[] {
+  const noRecipe = selected.includes("Reçete yok") || rows.some((r) => r.status === "Reçete yok");
+  return STATUS_CHIPS.filter((s) => s !== "Reçete yok" || noRecipe);
+}
+
 // ---------------------------------------------------------------- Ay bağlantısı
 
 /** Ürün listesinin son adres sorgusu (oturum boyunca, yalnızca bu tarayıcıda): karttaki "← Ürünler" süzgeçlere döner */

@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowDown,
   Check,
   ClipboardCheck,
   ClipboardCopy,
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -31,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
+import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Input, NumberInput, Select } from "@/components/ui/form";
 import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
@@ -43,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
-import { extraKey, liveTotals, type CountLineValue } from "./logic";
+import { activeGroupIndex, extraKey, groupProgress, listTopScroll, liveTotals, nextEmptyIndex, type CountLineValue, type GroupProgress } from "./logic";
 
 export interface FormLine extends CountLineValue {
   name: string;
@@ -331,6 +332,107 @@ function CountHistory({ history, current, currentCounted, locked }: { history: H
   );
 }
 
+/** Hareket azaltılmışsa kaydırma anında */
+function scrollBehavior(): ScrollBehavior {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
+/** Yapışık araç çubuğunun, yapıştığında sayfanın üstünden alt kenarı (px): grup başlığı bunun altına kaydırılır */
+function stuckBottom(bar: HTMLElement | null): number {
+  if (!bar) return 0;
+  const top = Number.parseFloat(getComputedStyle(bar).top) || 0;
+  return top + bar.offsetHeight;
+}
+
+/**
+ * Süzgeç değişince listenin başına döner: araç çubuğu yapışmadan önceki yerini (önündeki kartın altı + boşluk)
+ * geçtiyse sayfa, çubuk üst çubuğun altında ve hemen altında ilk süzülen satır olacak şekilde kaydırılır.
+ */
+function scrollToListTop(toolbar: HTMLElement | null) {
+  const prev = toolbar?.previousElementSibling;
+  if (!toolbar || !prev) return;
+  const style = getComputedStyle(toolbar);
+  // Aradaki boşluk space-y'nin önceki kartın alt kenar payı; dikey paylar birleştiği için büyüğü
+  const gap = Math.max(Number.parseFloat(getComputedStyle(prev).marginBottom) || 0, Number.parseFloat(style.marginTop) || 0);
+  const natural = prev.getBoundingClientRect().bottom + window.scrollY + gap;
+  const y = listTopScroll(natural, Number.parseFloat(style.top) || 0, window.scrollY);
+  if (y !== null) window.scrollTo({ top: y, behavior: "instant" });
+}
+
+/** Grup kartının başlığını yapışık çubuğun hemen altına getirir */
+function scrollToGroupCard(name: string, toolbar: HTMLElement | null) {
+  const card = document.querySelector<HTMLElement>(`[data-count-group="${CSS.escape(name)}"]`);
+  if (!card) return;
+  const y = card.getBoundingClientRect().top + window.scrollY - stuckBottom(toolbar) - 8;
+  window.scrollTo({ top: Math.max(0, y), behavior: scrollBehavior() });
+}
+
+/**
+ * Grup çipleri (telefonda sayımın haritası): her grup bir çip, adı ve sayılan / toplam; bitince onay. Dokununca o
+ * grubun başına kayar (grup süzgeci açıksa o gruba geçer). Kaydırdıkça ekrandaki grubun çipi koyulaşır ve şeritte
+ * görünür tutulur. Şerit kendi içinde yana kayar, sayfa yatay kaymaz.
+ */
+function GroupChips({
+  items,
+  active,
+  onPick,
+  rowRef,
+  lead,
+  className,
+}: {
+  items: GroupProgress[];
+  active: string | null;
+  onPick: (name: string) => void;
+  rowRef: RefObject<HTMLDivElement | null>;
+  /** Şeridin başındaki çip (telefonda "Kalan" süzgeci) */
+  lead?: ReactNode;
+  className?: string;
+}) {
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || !active) return;
+    const chip = row.querySelector<HTMLElement>(`[data-chip="${CSS.escape(active)}"]`);
+    if (!chip) return;
+    const left = chip.offsetLeft;
+    const right = left + chip.offsetWidth;
+    if (left < row.scrollLeft + 16 || right > row.scrollLeft + row.clientWidth - 16) row.scrollTo({ left: Math.max(0, left - 16), behavior: scrollBehavior() });
+  }, [active, rowRef]);
+  return (
+    <nav aria-label="Gruplara git" className={cn("-mx-4 mt-2 sm:-mx-6 lg:-mx-10", className)}>
+      <div
+        ref={rowRef}
+        className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain px-4 [scrollbar-width:none] sm:px-6 lg:px-10 [&::-webkit-scrollbar]:hidden"
+      >
+        {lead}
+        {lead && items.length ? <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-line-strong sm:hidden" /> : null}
+        {items.map((g) => {
+          const on = g.name === active;
+          return (
+            <button
+              key={g.name}
+              type="button"
+              data-chip={g.name}
+              aria-current={on ? "true" : undefined}
+              onClick={() => onPick(g.name)}
+              className={cn(
+                "inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap ring-1 transition-colors ring-inset pointer-coarse:h-11",
+                on ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
+              )}
+            >
+              {g.done ? <Check size={14} strokeWidth={2.5} className={on ? "text-lime" : "text-good"} aria-hidden="true" /> : null}
+              <span>{g.name}</span>
+              <span className={cn("tabular", on ? "text-white/70" : "text-ink-quiet")}>
+                {num(g.counted)}/{num(g.total)}
+              </span>
+              <span className="sr-only">{g.done ? " tamam" : " sayıldı"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 function Money({ value }: { value: number }) {
   return (
     <>
@@ -473,6 +575,95 @@ export function StockCountForm({
     }))
     .filter((g) => g.visible.length);
   const shownCount = visibleGroups.reduce((a, g) => a + g.visible.length, 0);
+  /** Klavyede "Bitti" tuşu çıksın diye listedeki son yazılabilir kutu */
+  const lastInputId = visibleGroups.flatMap((g) => g.visible.filter((l) => !l.archived)).at(-1)?.id ?? null;
+
+  // ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş kalem
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const chipRowRef = useRef<HTMLDivElement>(null);
+  const progress = groupProgress(groups, (l) => qtyOf(l) !== null);
+  const visibleNames = new Set(visibleGroups.map((g) => g.name));
+  // Grup süzgeci açıkken bütün gruplar (dokununca o gruba geçilir), değilse ekrandaki gruplar (dokununca kaydırılır)
+  const chipItems = group ? progress : progress.filter((p) => visibleNames.has(p.name));
+  const visibleKey = visibleGroups.map((g) => g.name).join("|");
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  /** Süzgeç başka gruba geçirilince yeni liste çizildikten sonra başına kaydırılacak grup */
+  const pendingJump = useRef<string | null>(null);
+
+  // Kaydırdıkça hangi grubun ekranda olduğu (çip vurgusu); ölçüm kare başına bir kez
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const cards = [...document.querySelectorAll<HTMLElement>("[data-count-group]")];
+      const line = stuckBottom(toolbarRef.current) + 24;
+      const atEnd = window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
+      const i = activeGroupIndex(
+        cards.map((c) => c.getBoundingClientRect().top),
+        line,
+        atEnd,
+      );
+      setActiveGroup(i < 0 ? null : (cards[i].dataset.countGroup ?? null));
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [visibleKey]);
+
+  // Süzgeç (grup, "Kalan", arama, Temizle) değişince liste kısalır, tarayıcı sayfanın sonuna sıkışır: listenin başına
+  // dön (boyamadan önce, sayfanın sonu bir an bile görünmesin). Çipten başka gruba geçişte aşağıdaki etki o grubun
+  // başına kaydırır.
+  const filterKey = `${filter}|${group}|${q}`;
+  const lastFilterKey = useRef(filterKey);
+  useLayoutEffect(() => {
+    if (lastFilterKey.current === filterKey) return;
+    lastFilterKey.current = filterKey;
+    if (pendingJump.current && pendingJump.current === group) return;
+    scrollToListTop(toolbarRef.current);
+  }, [filterKey, group]);
+
+  useEffect(() => {
+    if (!pendingJump.current || pendingJump.current !== group) return;
+    pendingJump.current = null;
+    scrollToGroupCard(group, toolbarRef.current);
+  }, [group]);
+
+  const pickGroup = (name: string) => {
+    if (group && group !== name) {
+      pendingJump.current = name;
+      return setGroup(name);
+    }
+    scrollToGroupCard(name, toolbarRef.current);
+  };
+
+  /**
+   * Sıradaki sayılmamış kalem: odaktaki kutudan sonra, odak yoksa ekranda görünen ilk satırdan başlayarak ilk boş
+   * kutu; sona gelince baştan. Kutuya odaklanır (telefonda klavye açılır) ve ekranın ortasına getirir.
+   */
+  function goNextEmpty() {
+    const inputs = [...document.querySelectorAll<HTMLInputElement>("input[data-count-input]")];
+    if (!inputs.length) return;
+    const focused = inputs.indexOf(document.activeElement as HTMLInputElement);
+    const line = stuckBottom(toolbarRef.current);
+    const start = focused >= 0 ? focused + 1 : Math.max(0, inputs.findIndex((el) => el.getBoundingClientRect().top >= line));
+    const i = nextEmptyIndex(
+      inputs.map((el) => el.value.trim() === ""),
+      start,
+    );
+    if (i < 0) return toast.message("Boş kalem kalmadı", { description: "Gösterilen bütün kalemlere miktar yazıldı." });
+    const el = inputs[i];
+    el.focus({ preventScroll: true });
+    el.select();
+    el.scrollIntoView({ block: "center", behavior: scrollBehavior() });
+  }
 
   /** Geçen ayın ek kalemleri (ad, birim, fiyat; miktar kontrol için geçen ayınki) */
   const carriedExtras = () => prevExtras.map((e) => toExtra(e, isAdmin));
@@ -621,6 +812,7 @@ export function StockCountForm({
   const extraCell = isAdmin ? "col-span-4" : "col-span-6";
 
   return (
+    // Altta yüzen sayım / kaydetme çubuğu var: son satırlar onun altında kalmasın (alt menünün payını kabuk verir)
     <div className="space-y-4 pb-32">
       <div className={cn("grid gap-3", isAdmin && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
         {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni */}
@@ -653,13 +845,12 @@ export function StockCountForm({
                 <Button
                   variant="secondary"
                   onClick={fillFromPrev}
-                  className="pointer-coarse:h-10"
                   title={`Bu ay boş bırakılan satırlara ${prevMonthLabel} miktarını yazar${prevExtras.length ? "; ek kalemler boşsa onları da getirir" : ""}. Kaydetmeden hiçbir şey değişmez.`}
                 >
                   <ClipboardCopy size={16} /> Geçen aydan doldur
                 </Button>
               ) : null}
-              <Button variant="secondary" onClick={() => window.print()} className="pointer-coarse:h-10">
+              <Button variant="secondary" onClick={() => window.print()}>
                 <Printer size={16} /> Yazdır
               </Button>
             </div>
@@ -765,55 +956,103 @@ export function StockCountForm({
         ) : null}
       </div>
 
-      {/* Uzun listede arama ve süzgeç her genişlikte üstte kalır (telefonda başlığın altına yapışır) */}
+      {/* Uzun listede arama, süzgeç ve grup çipleri her genişlikte üstte kalır (telefonda başlığın altına yapışır) */}
       {all.length ? (
-        <FilterBar
-          active={filtered}
-          onClear={clearFilters}
-          shown={filtered ? shownCount : undefined}
-          total={filtered ? all.length : undefined}
-          unit="kalem"
-          className="no-print sticky top-14 z-20 -mx-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10"
+        <div
+          ref={toolbarRef}
+          className="no-print sticky top-(--mobile-top-h) z-20 -mx-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10"
         >
-          <SearchField className="max-sm:basis-full sm:flex-1 sm:basis-56" value={q} onChange={setQ} placeholder="Kalem ara" label="Sayım kalemlerinde ara" />
-          <Segmented<Filter>
-            label="Gösterilen kalemler"
-            className="shrink-0"
-            value={filter}
-            onChange={changeFilter}
-            options={[
-              { value: "all", label: "Tümü", count: all.length },
-              {
-                value: "empty",
-                label: (
-                  <>
-                    <span className="sm:hidden">Kalan</span>
-                    <span className="hidden sm:inline">Sayılmayanlar</span>
-                  </>
-                ),
-                count: remaining,
-              },
-            ]}
-          />
-          {groups.length > 1 ? (
-            <div className="relative max-sm:min-w-36 max-sm:flex-1 sm:shrink-0">
-              <ListFilter size={15} className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
-              <Select
-                value={group}
-                onChange={(e) => setGroup(e.target.value)}
-                aria-label="Grup"
-                className={cn("pl-8 sm:w-48 pointer-coarse:h-10", group && "font-medium ring-ink/40")}
+          {/* Telefonda süzgeç açıkken "12 / 72 kalem" kendi satırına iner: arama kutusu daralıp yazısı kesilmesin */}
+          <FilterBar
+            active={filtered}
+            onClear={clearFilters}
+            shown={filtered ? shownCount : undefined}
+            total={filtered ? all.length : undefined}
+            unit="kalem"
+            className="max-sm:[&>p]:w-full"
+          >
+            <SearchField className="flex-1 basis-28 sm:basis-56" value={q} onChange={setQ} placeholder="Kalem ara" label="Sayım kalemlerinde ara" />
+            {/* Telefonda bu seçim aşağıdaki şeridin başında "Kalan" çipi olur: arama kutusuna yer kalsın */}
+            <Segmented<Filter>
+              label="Gösterilen kalemler"
+              className="shrink-0 max-sm:hidden"
+              value={filter}
+              onChange={changeFilter}
+              options={[
+                { value: "all", label: "Tümü", count: all.length },
+                {
+                  value: "empty",
+                  label: (
+                    <>
+                      <span className="sm:hidden">Kalan</span>
+                      <span className="hidden sm:inline">Sayılmayanlar</span>
+                    </>
+                  ),
+                  count: remaining,
+                },
+              ]}
+            />
+            {groups.length > 1 ? (
+              <>
+                {/* Telefonda grup süzgeci tek ikon: yerel seçim listesi ikonun üstünde, görünmez; süzgeç açıkken koyu */}
+                <div
+                  className={cn(
+                    "relative flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset sm:hidden",
+                    group ? "bg-ink text-white ring-ink" : "bg-surface text-ink-mute ring-line-strong",
+                  )}
+                >
+                  <ListFilter size={18} aria-hidden="true" />
+                  <select
+                    value={group}
+                    onChange={(e) => setGroup(e.target.value)}
+                    aria-label={group ? `Grup süzgeci: ${group}` : "Grup süzgeci"}
+                    className="absolute inset-0 cursor-pointer appearance-none rounded-xl text-base opacity-0"
+                  >
+                    <option value="">Tüm gruplar</option>
+                    {groups.map((g) => (
+                      <option key={g.name} value={g.name}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="relative shrink-0 max-sm:hidden">
+                  <ListFilter size={15} className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-ink-quiet" aria-hidden="true" />
+                  <Select
+                    value={group}
+                    onChange={(e) => setGroup(e.target.value)}
+                    aria-label="Grup"
+                    className={cn("pl-8 sm:w-48", group && "font-medium ring-ink/40")}
+                  >
+                    <option value="">Tüm gruplar</option>
+                    {groups.map((g) => (
+                      <option key={g.name} value={g.name}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </>
+            ) : null}
+          </FilterBar>
+          <GroupChips
+            items={chipItems.length > 1 ? chipItems : []}
+            active={activeGroup}
+            onPick={pickGroup}
+            rowRef={chipRowRef}
+            className={chipItems.length > 1 ? undefined : "sm:hidden"}
+            lead={
+              <FilterChip
+                active={filter === "empty"}
+                onToggle={() => changeFilter(filter === "empty" ? "all" : "empty")}
+                count={remaining}
+                className="sm:hidden"
               >
-                <option value="">Tüm gruplar</option>
-                {groups.map((g) => (
-                  <option key={g.name} value={g.name}>
-                    {g.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
-        </FilterBar>
+                Kalan
+              </FilterChip>
+            }
+          />
+        </div>
       ) : null}
 
       {visibleGroups.map((g) => {
@@ -822,7 +1061,7 @@ export function StockCountForm({
         const groupDone = groupCountable.length > 0 && groupCounted === groupCountable.length;
         const gt = groupLive.get(g.name);
         return (
-          <Card key={g.name} className="break-inside-avoid">
+          <Card key={g.name} className="break-inside-avoid" data-count-group={g.name}>
             <CardHeader
               title={g.name}
               meta={
@@ -912,7 +1151,14 @@ export function StockCountForm({
                 const inputId = `count-${l.id}`;
                 const nowUnit = l.unitNow ?? l.countUnit;
                 return (
-                  <li key={l.id} className="flex items-center gap-2.5 px-2 py-2.5 sm:gap-3 sm:px-3">
+                  <li
+                    key={l.id}
+                    // Telefonda satırın herhangi bir yerine dokunmak kutuya odaklanır (ad etiketinin yanı sıra)
+                    onClick={(e) => {
+                      if (!(e.target as HTMLElement).closest("input, button, a, label")) document.getElementById(inputId)?.focus();
+                    }}
+                    className="flex items-center gap-2.5 px-2 py-2.5 max-sm:min-h-16 sm:gap-3 sm:px-3"
+                  >
                     <LineStatus status={invalid ? "invalid" : v !== null ? "counted" : "empty"} />
                     <div className="min-w-0 flex-1">
                       <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm leading-5 font-medium text-ink">
@@ -944,20 +1190,26 @@ export function StockCountForm({
                       {moneyMobile}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <NumberInput
-                        id={inputId}
-                        data-count-input=""
-                        enterKeyHint="next"
-                        value={values[l.id] ?? ""}
-                        onChange={(e) => setValues((x) => ({ ...x, [l.id]: e.target.value }))}
-                        onKeyDown={focusNextCount}
-                        onFocus={(e) => e.currentTarget.select()}
-                        placeholder="—"
-                        aria-label={`${l.name} miktarı (${unit})`}
-                        aria-invalid={invalid || undefined}
-                        className="cell-input h-11 w-[5.5rem] sm:h-10 sm:w-24"
-                      />
-                      <span className="w-11 text-xs font-medium text-ink-mute">{unit}</span>
+                      {/* Telefonda büyük kutu, birim kutunun içinde sağda (ad için yer kalsın); genişte birim yanında */}
+                      <div className="relative">
+                        <NumberInput
+                          id={inputId}
+                          data-count-input=""
+                          enterKeyHint={l.id === lastInputId ? "done" : "next"}
+                          value={values[l.id] ?? ""}
+                          onChange={(e) => setValues((x) => ({ ...x, [l.id]: e.target.value }))}
+                          onKeyDown={focusNextCount}
+                          onFocus={(e) => e.currentTarget.select()}
+                          placeholder="—"
+                          aria-label={`${l.name} miktarı (${unit})`}
+                          aria-invalid={invalid || undefined}
+                          className="cell-input h-12 w-[7.75rem] pr-14 text-lg font-semibold pointer-coarse:h-12 sm:h-10 sm:w-24 sm:pr-3 sm:text-sm sm:font-normal sm:pointer-coarse:h-11"
+                        />
+                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-ink-mute sm:hidden" aria-hidden="true">
+                          {unit}
+                        </span>
+                      </div>
+                      <span className="w-11 text-xs font-medium text-ink-mute max-sm:hidden">{unit}</span>
                     </div>
                     {money}
                   </li>
@@ -1040,11 +1292,11 @@ export function StockCountForm({
             extras.length ? (
               <>
                 {canCarryExtras ? (
-                  <Button variant="ghost" className="no-print pointer-coarse:h-10" onClick={carryExtras}>
+                  <Button variant="ghost" className="no-print" onClick={carryExtras}>
                     <History size={16} /> Geçen ayınkileri getir
                   </Button>
                 ) : null}
-                <Button variant="secondary" className="no-print pointer-coarse:h-10" onClick={addExtra}>
+                <Button variant="secondary" className="no-print" onClick={addExtra}>
                   <Plus size={16} /> Kalem ekle
                 </Button>
               </>
@@ -1098,7 +1350,7 @@ export function StockCountForm({
                           aria-label="Kalem adı"
                           aria-invalid={nameMissing || undefined}
                           maxLength={120}
-                          className="col-span-10 sm:col-span-1 pointer-coarse:h-10"
+                          className="col-span-10 sm:col-span-1"
                         />
                       )}
                       {locked ? (
@@ -1128,7 +1380,7 @@ export function StockCountForm({
                           maxLength={20}
                           // Telefonda listenin oku "ADET"i kesmesin; öneriler odaklanınca yine açılır
                           className={cn(
-                            "order-2 max-sm:px-2.5 max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:order-none sm:col-span-1 pointer-coarse:h-10",
+                            "order-2 max-sm:px-2.5 max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:order-none sm:col-span-1",
                             extraCell,
                           )}
                         />
@@ -1144,7 +1396,7 @@ export function StockCountForm({
                         placeholder="Miktar"
                         aria-label={`${e.name.trim() || "Ek kalem"} miktarı (${e.unit || "ADET"})`}
                         aria-invalid={badNumber(e.qty) || undefined}
-                        className={cn("cell-input order-2 sm:order-none sm:col-span-1 pointer-coarse:h-10", extraCell)}
+                        className={cn("cell-input order-2 sm:order-none sm:col-span-1", extraCell)}
                       />
                       {isAdmin ? (
                         <>
@@ -1157,7 +1409,7 @@ export function StockCountForm({
                             placeholder="Fiyat ₺"
                             aria-label={`${e.name.trim() || "Ek kalem"} birim fiyatı (₺, KDV hariç)`}
                             aria-invalid={badNumber(e.unitPrice) || undefined}
-                            className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                            className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1"
                           />
                           <p className="order-3 col-span-12 text-right text-xs text-ink-mute tabular sm:order-none sm:col-span-1 sm:text-sm sm:font-semibold sm:text-ink">
                             <span className="sm:hidden">Tutar </span>
@@ -1215,7 +1467,8 @@ export function StockCountForm({
       </Card>
 
       {/* Kaydetme kapsülü: değişiklik varken alttan yaylı hareketle gelir */}
-      <FloatingBar open={dirty}>
+      {/* Masaüstü: kaydetme kapsülü değişiklik varken alttan gelir. Telefonda yerine aşağıdaki sayım çubuğu. */}
+      <FloatingBar open={dirty} className="max-lg:hidden">
         <div className="min-w-0 flex-1" aria-live="polite">
           <p className="truncate text-sm font-semibold text-ink">{changeLabel}</p>
           {/* Telefonda kısa: ay adı zaten sayfa başlığında */}
@@ -1243,6 +1496,59 @@ export function StockCountForm({
           </Button>
         </div>
       </FloatingBar>
+
+      {/*
+        Telefon ve tablet: alt menünün (--mobile-nav-h, güvenli alan dahil) üstünde hep duran ilerleme + kaydet
+        çubuğu. Ekran klavyesi açıkken gizlenir: yazarken listeye yer kalsın; "Bitti" ile klavye kapanınca döner.
+      */}
+      {countable.length || dirty ? (
+        <div className="no-print pointer-events-none fixed inset-x-0 bottom-[calc(var(--mobile-nav-h,0px)+0.5rem)] z-30 flex justify-center pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] in-data-[keyboard=open]:hidden lg:hidden">
+          <div
+            role="region"
+            aria-label="Sayım ilerlemesi ve kaydetme"
+            className="pointer-events-auto flex w-full max-w-2xl items-center gap-2 rounded-2xl bg-surface py-2 pr-2 pl-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-line-strong"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="flex items-baseline gap-1 text-sm font-semibold text-ink tabular">
+                <span className={cn(complete && "text-good")}>{num(counted)}</span>
+                <span className="font-medium text-ink-mute">/ {num(countable.length)}</span>
+                <span className="truncate text-xs font-medium text-ink-mute">{complete ? "tamam" : "sayıldı"}</span>
+              </p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-panel-deep" aria-hidden="true">
+                <div
+                  className={cn("h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none", complete ? "bg-good" : "bg-ink")}
+                  style={{ width: `${share * 100}%` }}
+                />
+              </div>
+              <p className={cn("mt-1 truncate text-xs", invalidLines.length ? "font-medium text-bad" : dirty ? "font-medium text-info" : "text-ink-mute")}>
+                {dirty ? changeLabel || "Kaydedilmedi" : counted ? "Kayıtlı" : "Miktarları yazıp kaydedin"}
+              </p>
+            </div>
+            {remaining > 0 ? (
+              // İkon tek başına "indir" gibi okunuyordu: altında kısa yazı (erişilebilir ad görünen yazıyla başlar)
+              <button
+                type="button"
+                onClick={goNextEmpty}
+                aria-label="Sıradaki sayılmamış kaleme git"
+                title="Sıradaki sayılmamış kaleme git"
+                className="flex h-11 shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl bg-surface px-2 text-ink-soft ring-1 ring-line ring-inset transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none"
+              >
+                <ArrowDown size={16} aria-hidden="true" />
+                <span className="text-[11px] leading-none font-medium">Sıradaki</span>
+              </button>
+            ) : null}
+            {dirty ? (
+              <IconButton label="Değişikliklerden vazgeç" onClick={() => setDiscardOpen(true)} disabled={busy} className="size-11">
+                <Undo2 size={18} />
+              </IconButton>
+            ) : null}
+            <Button onClick={save} disabled={busy || !dirty} className="h-11 px-4">
+              <Save size={17} aria-hidden="true" />
+              {busy ? "Kaydediliyor…" : "Kaydet"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={discardOpen}

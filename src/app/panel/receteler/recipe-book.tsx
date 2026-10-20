@@ -133,18 +133,25 @@ export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit
 
   return (
     <div>
-      {/* Barda telefonla kullanılır: arama ve kategori kaydırırken üstte kalır */}
+      {/* Barda telefonla kullanılır: arama ve kategori kaydırırken üstte kalır (telefon ve tablette kabuğun üst
+          çubuğunun altında: --mobile-top-h, lg ve üstünde 0) */}
       <div
         ref={barRef}
-        className="no-print sticky top-14 z-20 -mx-4 mb-6 space-y-2.5 border-b border-line bg-background/90 px-4 pt-2 pb-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10 lg:pt-3"
+        className="no-print sticky top-(--mobile-top-h) z-20 -mx-4 mb-6 space-y-2.5 border-b border-line bg-background/90 px-4 pt-2 pb-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10 lg:pt-3"
       >
         {/* Yazdır düğmesi sayfa başlığında: telefonda arama kutusuna yer kalsın */}
         <div className="flex items-center gap-2">
-          <SearchField className="flex-1" value={q} onChange={setQ} placeholder="Ürün, malzeme" label="Reçetelerde ürün ya da malzeme ara" />
+          <SearchField
+            className="flex-1 max-sm:[&_input]:h-11"
+            value={q}
+            onChange={setQ}
+            placeholder="Ürün, malzeme"
+            label="Reçetelerde ürün ya da malzeme ara"
+          />
           {/* Etiketin içindeki anahtar: yazıya dokunmak da açıp kapatır */}
           <label
             title="Bardak, kapak, pipet gibi ambalaj satırlarını göster"
-            className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-surface pr-3 pl-2 text-[13px] font-medium text-ink-mute ring-1 ring-line-strong select-none ring-inset pointer-coarse:h-10"
+            className="inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-surface pr-3 pl-2 text-[13px] font-medium text-ink-mute ring-1 ring-line-strong select-none ring-inset max-sm:h-11 pointer-coarse:h-11"
           >
             <Switch checked={showPack} onChange={(v) => setPack(v ? "1" : "0")} label="Ambalajı göster" onText="Ambalaj görünüyor" offText="Ambalaj gizli" />
             <span className={cn("hidden sm:inline", showPack && "text-ink")}>Ambalajı göster</span>
@@ -152,11 +159,12 @@ export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit
           </label>
         </div>
         <FilterBar active={filtered} onClear={clear} shown={filtered ? shown : undefined} total={filtered ? total : undefined} unit="ürün">
-          {/* Telefon ve tablette tek satırda yana kayar (yapışkan çubuk alçak kalır), geniş ekranda alt satıra sarar */}
+          {/* Telefon ve tablette tek satırda yana kayar (yapışkan çubuk alçak kalır; sağ kenar solarak devamı olduğunu
+              gösterir), geniş ekranda alt satıra sarar */}
           <div
             role="group"
             aria-label="Kategori"
-            className="-mx-4 flex min-w-0 basis-[calc(100%+2rem)] gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] sm:-mx-6 sm:basis-[calc(100%+3rem)] sm:px-6 lg:mx-0 lg:flex-1 lg:basis-auto lg:flex-wrap lg:overflow-visible lg:px-0"
+            className="-mx-4 flex min-w-0 basis-[calc(100%+2rem)] gap-1.5 overflow-x-auto overscroll-x-contain px-4 [scrollbar-width:none] max-lg:[mask-image:linear-gradient(to_right,#000_calc(100%-2rem),transparent)] sm:-mx-6 sm:basis-[calc(100%+3rem)] sm:px-6 lg:mx-0 lg:flex-1 lg:basis-auto lg:flex-wrap lg:overflow-visible lg:px-0 [&_button]:pointer-coarse:h-11"
           >
             <FilterChip active={activeCat === ALL} onToggle={() => pickCat(ALL)} count={matchedTotal}>
               Tümü
@@ -256,17 +264,18 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
 
   return (
     <Card className="break-inside-avoid">
-      <div className="flex min-h-[3.25rem] items-center justify-between gap-3 px-5 pt-4 pb-2.5">
-        <h3 className="min-w-0 text-base leading-6 font-semibold tracking-tight break-words text-ink">{product.name}</h3>
+      <div className="flex min-h-[3.25rem] items-center justify-between gap-3 px-4 pt-4 pb-2.5 sm:px-5">
+        <h3 className="min-w-0 text-[17px] leading-6 font-semibold tracking-tight break-words text-ink sm:text-base">{product.name}</h3>
         {canEdit ? (
-          <IconLink href={`/panel/urunler/${product.variants[0].id}`} label={`${product.name} reçetesini düzenle`} className="no-print">
+          <IconLink href={`/panel/urunler/${product.variants[0].id}`} label={`${product.name} reçetesini düzenle`} className="no-print pointer-coarse:size-11">
             <Pencil size={15} />
           </IconLink>
         ) : null}
       </div>
-      <div className="px-3 pb-3">
+      <div className="px-2 pb-2 sm:px-3 sm:pb-3">
         <Well className="px-1 py-1 ring-1 ring-line">
-          <table className="w-full border-collapse text-sm">
+          {/* Telefonda (barda, kolda) bir boy büyük: 15px yazı, satırlar 44px */}
+          <table className="w-full border-collapse text-[15px] sm:text-sm">
             <thead>
               <tr>
                 <th scope="col" className="border-b border-line-strong px-3 py-2 text-left text-[13px] font-semibold text-ink-soft">
@@ -286,9 +295,9 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
                   const hit = highlight && matches(r.name, query);
                   return (
                     <tr key={r.key} className={cn("border-b border-line last:border-0", hit && "bg-lime/20")}>
-                      <td className={cn("px-3 py-2 align-top break-words", pack ? "text-ink-mute" : "text-ink", hit && "font-medium text-ink")}>{r.name}</td>
+                      <td className={cn("px-3 py-2.5 align-top break-words sm:py-2", pack ? "text-ink-mute" : "text-ink", hit && "font-medium text-ink")}>{r.name}</td>
                       {r.cells.map((c, i) => (
-                        <td key={i} className="px-3 py-2 text-right align-top font-semibold whitespace-nowrap tabular">
+                        <td key={i} className="px-3 py-2.5 text-right align-top font-semibold whitespace-nowrap tabular sm:py-2">
                           {c === null ? (
                             <span className="font-normal text-ink-quiet">
                               <span aria-hidden="true">–</span>
@@ -321,7 +330,7 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
         </Well>
       </div>
       {notes.length ? (
-        <div className="space-y-1 px-5 pb-4 text-[13px] leading-5 break-words text-ink-mute">
+        <div className="space-y-1 px-4 pb-4 text-sm leading-5 break-words text-ink-mute sm:px-5 sm:text-[13px]">
           {notes.map((n) => (
             <p key={n.text}>
               {n.label ? <span className="font-medium text-ink-soft">{n.label}: </span> : null}

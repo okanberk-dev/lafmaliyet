@@ -58,7 +58,8 @@ export function TFootRow({ className, ...props }: ComponentProps<"tr">) {
 
 /**
  * Sıralanabilir başlık düğmesi (AkmanOS "User ↑ · Email ⇅"). Bir TH'nin içine konur.
- * `dir` yalnızca etkin sütunda verilir; diğerlerinde soluk ⇅ görünür.
+ * `dir` yalnızca etkin sütunda verilir; diğerlerinde soluk ⇅ görünür. Dokunmatikte (tablet) görünmez bir kenarla
+ * 44px yüksekliğinde dokunma alanı; başlık satırının yüksekliği değişmez.
  */
 export function SortButton({
   children,
@@ -77,7 +78,8 @@ export function SortButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1 font-semibold hover:text-ink",
+        "relative -mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1 font-semibold hover:text-ink",
+        "pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-3 pointer-coarse:after:content-['']",
         "text-ink",
         numeric && "flex-row-reverse",
       )}

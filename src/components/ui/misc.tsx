@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -51,6 +51,28 @@ export function EmptyState({ title, description, action, icon }: { title: string
 
 export { InfoTip } from "./info-tip";
 
+/**
+ * Noktayla ayrılan satır içi bilgiler ("8 gün kaldı · Hatırlatıcı"). Satır sarılınca nokta satır sonunda asılı
+ * kalmaz: her öğenin önündeki nokta satır başına düşerse kabın solunda kırpılır. Boş (null) öğeler atlanır.
+ */
+export function DotList({ children, className, itemClassName }: { children: ReactNode; className?: string; itemClassName?: string }) {
+  const items = Children.toArray(children);
+  return (
+    <span className={cn("flex min-w-0 overflow-hidden", className)}>
+      <span className="-ml-4 flex min-w-0 flex-wrap items-center gap-y-1">
+        {items.map((item, i) => (
+          <span key={i} className={cn("inline-flex min-w-0 items-center", itemClassName)}>
+            <span aria-hidden="true" className="w-4 shrink-0 text-center text-ink-quiet">
+              ·
+            </span>
+            {item}
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 const STAT_TONE = {
   default: "text-ink",
   good: "text-good",
@@ -75,7 +97,8 @@ export function GrowthPill({ value, children }: { value: number; children?: Reac
 
 /**
  * AkmanOS "Statistic Cards" karosu: kenarlıklı beyaz ikon kutusu, etiket, büyük rakam, (isteğe bağlı) büyüme rozeti.
- * `children` verilirse rakamın altına (ör. ilerleme çubuğu) eklenir.
+ * `children` verilirse rakamın altına (ör. ilerleme çubuğu) eklenir. `compact`: telefonda (sm altı) iki sütunlu
+ * karo ızgaraları için daha sıkı iç boşluk.
  */
 export function Stat({
   label,
@@ -88,6 +111,7 @@ export function Stat({
   children,
   badge,
   suffix,
+  compact,
 }: {
   label: ReactNode;
   value: ReactNode;
@@ -101,9 +125,11 @@ export function Stat({
   badge?: ReactNode;
   /** Rakamdan sonra küçük birim/ek, ör. "adet" */
   suffix?: ReactNode;
+  /** Telefonda sıkı karo (iki sütunlu ızgaralar) */
+  compact?: boolean;
 }) {
   return (
-    <div data-component="statistic-cards" className={cn("flex flex-col gap-3 rounded-2xl bg-panel p-3.5", className)}>
+    <div data-component="statistic-cards" className={cn("flex flex-col gap-3 rounded-2xl bg-panel p-3.5", compact && "max-sm:gap-2 max-sm:p-3", className)}>
       {icon ? (
         <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line-strong bg-surface text-ink [&>svg]:size-[18px] [&>svg]:stroke-[1.75]">
           {icon}

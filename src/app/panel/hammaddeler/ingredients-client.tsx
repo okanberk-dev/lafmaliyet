@@ -38,7 +38,7 @@ import { clearQuery, FilterBar, FilterChip, fold, markUrlWritten, matches, Searc
 import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
-import { Pagination, usePaged } from "@/components/ui/pagination";
+import { Pagination, useUrlPaged } from "@/components/ui/pagination";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { countUnitsFor } from "@/lib/calc/engine";
 import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc/expr";
@@ -48,6 +48,8 @@ import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
 
+import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection } from "../urunler/filter-sheet";
+import { filterSummary } from "../urunler/filter-text";
 import { priceText } from "../urunler/price-text";
 
 import { catOrder } from "./categories";
@@ -68,6 +70,8 @@ type SortKey = "name" | "packagePrice" | "unitCost" | "usedIn" | "monthUsage";
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
 
 const PAGE_SIZE = 25;
+/** Görünüm çiplerinin adları (telefon süzgeç özeti de kullanır) */
+const FILTER_LABELS: Record<Filter, string> = { all: "Tümü", tahmini: "Tahmini", kullanilmayan: "Reçetede yok", pasif: "Pasif" };
 const FILTERS: Filter[] = ["all", "tahmini", "kullanilmayan", "pasif"];
 const SORT_KEYS: SortKey[] = ["name", "packagePrice", "unitCost", "usedIn", "monthUsage"];
 
@@ -134,6 +138,20 @@ export function CountUp({ value, digits = 0, suffix = "" }: { value: number; dig
 /** Görünen listedeki fiyat alanları, ekrandaki sırayla (tablo ya da telefon kartları; gizli kopya ve su satırları atlanır) */
 function visiblePriceInputs(): HTMLInputElement[] {
   return [...document.querySelectorAll<HTMLInputElement>("input[data-price-input]")].filter((el) => el.offsetParent !== null);
+}
+
+/**
+ * "Listede göster": liste kartının başını ekrana getirir (telefonda liste, "Yeni hammadde" düğmesinin ~700px altında;
+ * yalnızca adresi değiştirmek görünür bir şey yapmazdı). Next önceki sayfaların gizli kopyalarını tuttuğu için görünen
+ * kart seçilir; süzülmüş liste çizildikten sonra kaydırılır.
+ */
+function showList() {
+  requestAnimationFrame(() => {
+    const card = [...document.querySelectorAll<HTMLElement>("[data-ingredient-list]")].find((el) => el.offsetParent !== null);
+    if (!card) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.scrollIntoView({ block: "start", behavior: reduce ? "instant" : "smooth" });
+  });
 }
 
 /** Excel'deki gibi: Enter ya da ↓ alttaki satırın fiyatına, ↑ üsttekine geçer (geçerken bu satır kaydedilir) */
@@ -226,7 +244,8 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
           }
         }}
         aria-label={`${row.name} paket fiyatı (₺, KDV hariç, ${num(row.packageSize)} ${row.unit})`}
-        className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-10"
+        // Telefon kartında 44px dokunma alanı ve 16px yazı (iOS alanı büyütmesin)
+        className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-11 max-sm:h-11 max-sm:font-semibold"
       />
       <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-mute" aria-hidden="true">
         ₺
@@ -242,13 +261,25 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
 function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () => void; compact?: boolean }) {
   const showNote = Boolean(r.note) && (r.isEstimate || !r.usedIn.length);
   return (
-    <button type="button" className={cn("group/name flex min-w-0 gap-3 text-left", compact ? "items-start" : "items-center")} onClick={onOpen}>
-      <IconTile tone={toneFor(r.category)} className={compact ? undefined : "hidden sm:inline-flex"}>
+    // Telefon kartında düğme kartın tamamını kaplar (after:inset-0): karta dokunmak düzenleme penceresini açar;
+    // fiyat alanı ve satır düğmeleri üstte (z-10) kalır
+    <button
+      type="button"
+      data-card-link={compact ? "" : undefined}
+      className={cn(
+        "group/name flex min-w-0 cursor-pointer gap-3 text-left",
+        compact ? "items-start after:absolute after:inset-0 after:rounded-xl" : "items-center",
+      )}
+      onClick={onOpen}
+    >
+      <IconTile tone={toneFor(r.category)} className={compact ? "max-[380px]:hidden" : "hidden sm:inline-flex"}>
         {createElement(CATEGORY_ICON[r.category] ?? Box)}
       </IconTile>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute")}>{r.name}</span>
+          <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute", compact && "text-[15px] leading-6")}>
+            {r.name}
+          </span>
           {r.isEstimate ? (
             <Badge tone="amber" dot title={r.note ?? "Faturada bulunamayan, tahmini değer"}>
               Tahmini
@@ -257,7 +288,8 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
         </span>
-        <span className="block truncate text-[13px] leading-5 text-ink-mute" title={showNote ? undefined : (r.note ?? undefined)}>
+        {/* Telefonda kesilmez, sarılır (uzun tedarikçi adı) */}
+        <span className={cn("block text-[13px] leading-5 text-ink-mute", compact ? "text-pretty" : "truncate")} title={showNote ? undefined : (r.note ?? undefined)}>
           {r.category}
           {r.supplier ? ` · ${r.supplier}` : ""}
         </span>
@@ -284,6 +316,8 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
   const [creating, setCreating] = useState<string | null>(null);
   // Satırlar yalnızca kullanıcı sayfa ya da sıra değiştirince yumuşakça belirir (ilk çizimde değil)
   const [interacted, setInteracted] = useState(false);
+  // Telefonda süzgeçler alttan açılan pencerede
+  const [sheet, setSheet] = useState(false);
 
   const chosen: Filter = FILTERS.includes(filtre as Filter) ? (filtre as Filter) : "all";
   const category = categories.includes(kategori) ? kategori : "";
@@ -327,7 +361,8 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
     return list.sort((a, b) => (sort.key === "name" ? byName(a, b) * d : (sortValue(a, sort.key) - sortValue(b, sort.key)) * d || byName(a, b)));
   }, [base, filter, sort]);
 
-  const paged = usePaged(visible, PAGE_SIZE, `${q}|${category}|${filter}|${sira}`);
+  // Sayfa adreste (?sayfa=3): yenileyince ve paylaşılan bağlantıda aynı sayfa açılır
+  const paged = useUrlPaged(visible, PAGE_SIZE, `${q}|${category}|${filter}|${sira}`);
 
   // Görünen malzemelerin son ay reçeteye göre tüketim tutarı (miktar × birim maliyet, KDV hariç)
   const usageCost = useMemo(() => visible.reduce((a, r) => a + r.monthUsage * r.unitCost, 0), [visible]);
@@ -348,6 +383,9 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
   };
   // Çipler tek seçimlidir: etkin çipe yeniden basmak "Tümü"ne döner
   const pick = (f: Filter) => setFiltre(chosen === f ? "all" : f);
+  // Telefondaki "Süzgeç" düğmesinin rozeti ve özeti (arama kutusu ayrı, hep görünür)
+  const summary = filterSummary([chosen !== "all" && FILTER_LABELS[chosen], category]);
+  const clearSheet = () => clearQuery(["durum", "kategori"]);
 
   const exportCsv = () => {
     const header = [
@@ -394,11 +432,20 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
   };
 
   return (
-    <Card>
+    <Card data-ingredient-list="" className="scroll-mt-[calc(var(--mobile-top-h)+0.75rem)] lg:scroll-mt-4">
       <CardHeader
         icon={<Package />}
         title="Hammadde listesi"
-        description="Fatura gelince paket fiyatını yazın: Enter kaydeder ve alt satıra geçer. Tahmini işaretini, varsayımı doğrulayınca kaldırın."
+        // Telefonda CSV, Süzgeç penceresinde
+        actionsClassName="max-sm:hidden"
+        // Dokunmatikte rakam klavyesinde Enter olmayabilir (iOS): alandan çıkmak da kaydeder
+        description={
+          <>
+            <span className="pointer-coarse:hidden">Fatura gelince paket fiyatını yazın: Enter kaydeder ve alt satıra geçer.</span>
+            <span className="hidden pointer-coarse:inline">Fatura gelince paket fiyatını yazın; alandan çıkınca kaydedilir. Malzemeye dokununca düzenleme penceresi açılır.</span>{" "}
+            Tahmini işaretini, varsayımı doğrulayınca kaldırın.
+          </>
+        }
         meta={
           <>
             <span>Aktif</span>
@@ -419,7 +466,6 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         actions={
           <Button
             variant="secondary"
-            className="pointer-coarse:h-10"
             onClick={exportCsv}
             disabled={!visible.length}
             aria-label="Görünen listeyi CSV indir"
@@ -439,7 +485,20 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         total={filter === "pasif" ? inactiveCount : activeCount}
         unit={filter === "pasif" ? "pasif malzeme" : "malzeme"}
       >
-        <SearchField value={q} onChange={setQ} placeholder="Ad, tedarikçi ya da paket ara" label="Malzeme ara" className="w-full sm:w-72" />
+        {/* Telefonda arama ve Süzgeç düğmesi tek satırı doldurur (sayaç alt satıra iner); genişte satırın öğeleri */}
+        <div className="flex basis-full gap-2 sm:contents">
+          <SearchField
+            value={q}
+            onChange={setQ}
+            placeholder="Malzeme ara"
+            label="Malzeme adı, tedarikçi, paket ya da not ara"
+            className="min-w-0 flex-1 sm:w-72 sm:flex-none max-sm:[&_input]:h-11"
+          />
+          <FilterSheetButton className="sm:hidden" count={summary.count} onClick={() => setSheet(true)} />
+        </div>
+        <FilterSummaryLine className="basis-full sm:hidden" text={summary.text} onClick={() => setSheet(true)} />
+        {/* Geniş ekranda süzgeçler satırda; telefonda pencerede (aşağıda) */}
+        <div className="contents max-sm:hidden">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Görünüm">
           <FilterChip active={chosen === "tahmini"} onToggle={() => pick("tahmini")} count={counts.tahmini}>
             <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
@@ -457,7 +516,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         <Select
           value={category}
           onChange={(e) => setKategori(e.target.value)}
-          className={cn("w-full sm:w-auto sm:min-w-48 pointer-coarse:h-10", category && "ring-ink/40")}
+          className={cn("w-full sm:w-auto sm:min-w-48", category && "ring-ink/40")}
           aria-label="Kategori"
         >
           <option value="">Tüm kategoriler</option>
@@ -467,23 +526,78 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             </option>
           ))}
         </Select>
-        <Select
-          value={sortParam(sort)}
-          onChange={(e) => {
-            setInteracted(true);
-            setSira(e.target.value);
-          }}
-          className="w-full sm:hidden pointer-coarse:h-10"
-          aria-label="Sıralama"
-        >
-          {MOBILE_SORTS.some((o) => o.value === sortParam(sort)) ? null : <option value={sortParam(sort)}>Tablodaki sıra</option>}
-          {MOBILE_SORTS.map((o) => (
-            <option key={o.value} value={o.value}>
-              Sırala: {o.label}
-            </option>
-          ))}
-        </Select>
+        </div>
       </FilterBar>
+
+      <FilterSheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        onClear={clearSheet}
+        canClear={summary.count > 0}
+        shown={visible.length}
+        unit={filter === "pasif" ? "pasif malzeme" : "malzeme"}
+      >
+        <SheetSection title="Görünüm">
+          {/* İki sütunlu ızgara, sayı sağda: kategori değişip sayılar değişince çipler yer değiştirmez */}
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Görünüm">
+            <FilterChip active={chosen === "all"} onToggle={() => setFiltre("all")} count={counts.all} className={SHEET_CHIP}>
+              Tümü
+            </FilterChip>
+            <FilterChip active={chosen === "tahmini"} onToggle={() => pick("tahmini")} count={counts.tahmini} className={SHEET_CHIP}>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span className={cn("size-2 shrink-0 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
+                Tahmini
+              </span>
+            </FilterChip>
+            <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan} className={SHEET_CHIP}>
+              Reçetede yok
+            </FilterChip>
+            {inactiveCount || chosen === "pasif" ? (
+              <FilterChip active={chosen === "pasif"} onToggle={() => pick("pasif")} count={counts.pasif} className={SHEET_CHIP}>
+                Pasif
+              </FilterChip>
+            ) : null}
+          </div>
+        </SheetSection>
+        <SheetSection title="Kategori">
+          <Select
+            value={category}
+            onChange={(e) => setKategori(e.target.value)}
+            className={cn("h-11 pointer-coarse:h-11", category && "ring-ink/40")}
+            aria-label="Kategori"
+          >
+            <option value="">Tüm kategoriler</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c} ({categoryCounts.get(c) ?? 0})
+              </option>
+            ))}
+          </Select>
+        </SheetSection>
+        <SheetSection title="Sırala">
+          <Select
+            value={sortParam(sort)}
+            onChange={(e) => {
+              setInteracted(true);
+              setSira(e.target.value);
+            }}
+            className={cn("h-11 pointer-coarse:h-11", sort && "ring-ink/40")}
+            aria-label="Sıralama"
+          >
+            {MOBILE_SORTS.some((o) => o.value === sortParam(sort)) ? null : <option value={sortParam(sort)}>Tablodaki sıra</option>}
+            {MOBILE_SORTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </SheetSection>
+        <SheetSection title="Dışa aktar">
+          <Button variant="secondary" className="h-11 w-full pointer-coarse:h-11" onClick={exportCsv} disabled={!visible.length}>
+            <Download size={16} /> Görünen listeyi CSV indir
+          </Button>
+        </SheetSection>
+      </FilterSheet>
 
       {onlyInactiveMatch ? (
         <p className="mx-5 mb-3 rounded-xl bg-info-soft px-3.5 py-2 text-[13px] text-info" role="status">
@@ -492,7 +606,8 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       ) : null}
 
       {visible.length ? (
-        <>
+        // data-page-top: sayfa değişince buraya, yeni sayfanın ilk malzemesine kaydırılır (paylaşılan Pagination)
+        <div data-page-top="">
           {/* Geniş ekran: tablo (ilk sütun yatay kaydırmada sabit) */}
           <TableWrap className="max-sm:hidden">
             {/* Sütun arası 16px (dış kenarlar 12px, kart başlığıyla hizalı), başlıklar sarılabilir: 1400px'lik ekranda
@@ -604,7 +719,8 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             </Table>
           </TableWrap>
 
-          {/* Telefon: her malzeme bir kart; paket fiyatı yine yerinde değişir */}
+          {/* Telefon: her malzeme bir kart. Karta dokunmak düzenleme penceresini açar, paket fiyatı yine yerinde
+              değişir (Enter alttaki kartın fiyatına geçer) */}
           <motion.ul
             key={`m|${paged.page}|${sira}`}
             initial={reduce || !interacted ? false : { opacity: 0 }}
@@ -614,30 +730,36 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             aria-label="Malzemeler"
           >
             {paged.slice.map((r) => (
-              <li key={r.id} className={cn("rounded-xl px-3 py-3.5", r.isEstimate && ESTIMATE_ROW)}>
+              <li
+                key={r.id}
+                className={cn(
+                  "relative rounded-xl px-3 py-3.5 transition-colors has-[[data-card-link]:active]:bg-surface/70 has-[[data-card-link]:hover]:bg-surface/50",
+                  r.isEstimate && ESTIMATE_ROW,
+                )}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <IngredientName r={r} onOpen={() => setEditing(r)} compact />
-                  <PackagePriceCell key={`${r.id}:${r.packagePrice}`} row={r} className="shrink-0" />
+                  <PackagePriceCell key={`${r.id}:${r.packagePrice}`} row={r} className="z-10 shrink-0" />
                 </div>
-                <p className="mt-2 text-[13px] text-ink-soft">
+                <p className="mt-2 text-[13px] text-pretty text-ink-soft">
                   {r.packageDesc ? `${r.packageDesc} · ` : ""}
-                  <span className="tabular">
+                  <span className="whitespace-nowrap tabular">
                     {num(r.packageSize)} {r.unit}
                   </span>
                 </p>
                 <div className="mt-1.5 flex items-end justify-between gap-3">
                   <p className="min-w-0 text-[13px] text-ink-mute tabular">
-                    <span className="font-medium text-ink">{tlUnit(r.unitCost)}</span>/{r.unit} · KDV {pct(r.vatRate, 0)}
+                    <span className="text-[15px] font-semibold text-ink">{tlUnit(r.unitCost)}</span>/{r.unit} · KDV {pct(r.vatRate, 0)}
                     <span className="block">
                       {num(r.usedIn.length)} reçete{r.monthUsage ? ` · son ay ${num(r.monthUsage)} ${r.unit}` : ""}
                     </span>
                   </p>
-                  <div className="flex shrink-0 gap-1.5">
-                    <IconButton label={`${r.name}: düzenle`} className="pointer-coarse:size-10" onClick={() => setEditing(r)}>
-                      <Pencil size={15} />
+                  <div className="relative z-10 flex shrink-0 gap-1.5">
+                    <IconButton label={`${r.name}: düzenle`} className="size-11 pointer-coarse:size-11" onClick={() => setEditing(r)}>
+                      <Pencil size={16} />
                     </IconButton>
-                    <IconButton label={`${r.name}: sil`} tone="danger" className="pointer-coarse:size-10" onClick={() => setDeleting(r)}>
-                      <Trash2 size={15} />
+                    <IconButton label={`${r.name}: sil`} tone="danger" className="size-11 pointer-coarse:size-11" onClick={() => setDeleting(r)}>
+                      <Trash2 size={16} />
                     </IconButton>
                   </div>
                 </div>
@@ -651,15 +773,14 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             </span>
           </p>
 
-          {/* Dokunmatikte sayfa düğmeleri 40px (paylaşılan bileşen 36px) */}
           <Pagination
             page={paged.page}
             pageCount={paged.pageCount}
             onChange={onPage}
             unit="malzeme"
-            className="border-t border-line pointer-coarse:[&_button]:h-10 pointer-coarse:[&_button]:min-w-10"
+            className="border-t border-line"
           />
-        </>
+        </div>
       ) : (
         <div className="flex min-h-80 items-center justify-center">
           {rows.length ? (
@@ -738,7 +859,7 @@ export function NewIngredientButton({ categories, rows }: { categories: string[]
   const [kategori] = useQueryState<string>("kategori", "");
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="pointer-coarse:h-10">
+      <Button onClick={() => setOpen(true)}>
         <Plus size={16} /> Yeni hammadde
       </Button>
       {open ? (
@@ -980,6 +1101,7 @@ function IngredientDialog({
               for (const k of ["durum", "kategori"]) url.searchParams.delete(k);
               window.history.replaceState(null, "", url);
               markUrlWritten();
+              showList();
             },
           },
     });
@@ -1064,13 +1186,13 @@ function IngredientDialog({
           <Field label="Paket açıklaması" htmlFor="i-pack" hint="Faturadaki ürün adı, ör. Espresso Blend 1 kg">
             <Input id="i-pack" value={f.packageDesc} onChange={(e) => set({ packageDesc: e.target.value })} maxLength={160} />
           </Field>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {/* Telefonda tek sütun */}
+          <div className="grid gap-3 sm:grid-cols-3">
             <Field
               label="Paket fiyatı"
               htmlFor="i-price"
               hint={water ? "Su faturasından hesaplanır" : "KDV hariç, iskonto düşülmüş"}
               error={show("price")}
-              className="col-span-2 sm:col-span-1"
             >
               <div className="relative">
                 <NumberInput
@@ -1289,7 +1411,7 @@ function IngredientDialog({
                     <Link
                       key={u.id}
                       href={`/panel/urunler/${u.id}`}
-                      className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-10"
+                      className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11"
                     >
                       {u.label}
                     </Link>

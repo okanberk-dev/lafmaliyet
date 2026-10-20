@@ -5,7 +5,10 @@ import type { ReactNode } from "react";
 import { Button } from "./button";
 import { Dialog } from "./dialog";
 
-/** Geri alınamaz eylemler için onay penceresi (sil, temizle) */
+/**
+ * Geri alınamaz eylemler için onay penceresi (sil, temizle). Telefonda Dialog gibi alttan açılır; iki düğme
+ * satırı eşit paylaşır, onay sağda (başparmağın altında).
+ */
 export function ConfirmDialog({
   open,
   onClose,
@@ -33,7 +36,7 @@ export function ConfirmDialog({
       size="sm"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={pending} data-autofocus>
+          <Button variant="ghost" onClick={onClose} disabled={pending} data-autofocus className="max-sm:bg-panel">
             Vazgeç
           </Button>
           <Button variant={tone} onClick={onConfirm} disabled={pending}>

@@ -26,6 +26,7 @@ import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteFinding, saveFinding, setFindingResolved, setPurchaseQty } from "@/server/actions/consistency";
 
+
 import { RATIO_BAD, RATIO_GUIDE, RATIO_WARN, scopeTotals, SEVERITY, severityOf, tableScope, type StockCheck } from "./severity";
 
 interface Row {
@@ -183,7 +184,7 @@ function UnrecipedBadge({ row }: { row: Row }) {
 }
 
 /** Satır içi alınan miktar: Enter ya da odaktan çıkınca kaydeder, Esc geri alır; silmeden önce sorar */
-function PurchaseCell({ month, row, className }: { month: string; row: Row; className?: string }) {
+function PurchaseCell({ month, row, className, id }: { month: string; row: Row; className?: string; id?: string }) {
   const saved = row.purchased === null ? "" : num(row.purchased, 2);
   const [value, setValue] = useState(saved);
   const [busy, setBusy] = useState(false);
@@ -209,8 +210,10 @@ function PurchaseCell({ month, row, className }: { month: string; row: Row; clas
   return (
     <>
       <NumberInput
+        id={id}
         value={value}
         disabled={busy}
+        enterKeyHint="done"
         onChange={(e) => setValue(e.target.value)}
         onFocus={(e) => e.currentTarget.select()}
         onBlur={() => {
@@ -379,7 +382,7 @@ export function ConsistencyTable({
           </>
         }
         actions={
-          <Button onClick={() => setDialog("new")} className="pointer-coarse:h-10">
+          <Button onClick={() => setDialog("new")}>
             <Plus size={16} /> Alım ekle
           </Button>
         }
@@ -414,7 +417,7 @@ export function ConsistencyTable({
               value={sort ? `${sort.key}-${sort.dir}` : ""}
               onChange={(e) => setSortParam(e.target.value)}
               aria-label="Sırala"
-              className={cn("w-auto pointer-coarse:h-10", cardsOnly)}
+              className={cn("w-auto", cardsOnly)}
             >
               <option value="">Önem sırası</option>
               {sortOptions.map((k) => (
@@ -451,263 +454,285 @@ export function ConsistencyTable({
         </>
       ) : null}
 
-      {visible.length ? (
-        <>
-          {/* Telefon ve tablet: her malzeme bir kart (tablo yana kaymadan okunur), genişledikçe iki sütun */}
-          <ul className={cn("grid gap-2 px-3 pb-3 md:grid-cols-2", cardsOnly)}>
-            {paged.slice.map((r) => (
-              <li key={r.ingredientId} className="rounded-2xl bg-surface p-3.5 ring-1 ring-line">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm leading-5 font-semibold break-words text-ink">{r.name}</p>
-                    <UnrecipedBadge row={r} />
-                  </div>
-                  <span className="shrink-0">
-                    <RatioBadge row={r} />
-                  </span>
-                </div>
-                <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                  <div>
-                    <dt className="text-xs text-ink-mute">Reçeteye göre</dt>
-                    <dd className="text-ink tabular">
-                      {num(r.usage)} {r.unit}
-                    </dd>
-                  </div>
-                  <div className="text-right">
-                    <dt className="text-xs text-ink-mute">Fark tutarı</dt>
-                    <dd className={cn("tabular", r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}>
-                      {r.diffAmount === null ? "–" : tl(r.diffAmount)}
-                    </dd>
-                  </div>
-                  {hasStock ? (
-                    <>
-                      <div>
-                        <dt className="text-xs text-ink-mute">Gerçek tüketim</dt>
-                        <dd className="text-ink tabular">
-                          <ActualUsage row={r} compact />
-                          {r.opening !== null && r.closing !== null ? (
-                            <span className="block text-xs text-ink-mute">
-                              sayım {num(r.opening)} → {num(r.closing)}
-                            </span>
-                          ) : null}
-                        </dd>
-                      </div>
-                      <div className="text-right">
-                        <dt className="text-xs text-ink-mute">Sapma</dt>
-                        <dd className={cn("tabular", r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
-                          {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
-                        </dd>
-                      </div>
-                    </>
-                  ) : null}
-                </dl>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="shrink-0 text-xs text-ink-mute">Alınan</span>
-                  <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} className="h-10 w-auto min-w-0 flex-1" />
-                  <span className="w-10 shrink-0 text-xs text-ink-mute">{r.unit}</span>
-                  <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)} className="size-10 pointer-coarse:size-10">
-                    <Pencil size={15} />
-                  </IconButton>
-                </div>
-                {r.note ? <p className="mt-2 line-clamp-3 text-xs leading-5 break-words text-ink-mute">{r.note}</p> : null}
-              </li>
-            ))}
-          </ul>
-
-          <TableWrap className={tableOnly}>
-            <Table>
-              <THead>
-                <tr>
-                  <TH sticky>
-                    <SortButton dir={dirOf("ad")} onClick={() => toggleSort("ad")}>
-                      Malzeme
-                    </SortButton>
-                  </TH>
-                  <TH numeric>
-                    Reçeteye göre
-                    <InfoTip
-                      text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar. Fire payı ve ödenmez siparişler hariç."
-                      className="ml-1"
-                    />
-                  </TH>
-                  <TH numeric>
-                    Faturayla alınan
-                    <InfoTip text="Bu ayki faturalardaki miktar (malzemenin kendi biriminde: gr, ml, adet). Tıklayıp yazın; Enter kaydeder, Esc geri alır." className="ml-1" />
-                  </TH>
-                  <TH numeric>
-                    <SortButton numeric dir={dirOf("oran")} onClick={() => toggleSort("oran")}>
-                      Oran
-                    </SortButton>
-                    <InfoTip text={`Alınan ÷ reçeteye göre kullanılan. 1× = alınan kadar harcandı; büyüdükçe reçeteye göre fazla alım var. ${RATIO_GUIDE.below1}`} className="ml-1" />
-                  </TH>
-                  <TH numeric>
-                    <SortButton numeric dir={dirOf("fark")} onClick={() => toggleSort("fark")}>
-                      Fark tutarı
-                    </SortButton>
-                    <InfoTip
-                      text="(Alınan − kullanılan) × birim maliyet. Pozitif = reçeteye göre fazla alınan malın parası (stokta duruyor ya da fire/ikram oldu)."
-                      className="ml-1"
-                    />
-                  </TH>
-                  {hasStock ? (
-                    <>
-                      <TH numeric>
-                        Gerçek tüketim
-                        <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın sayımı ve bu ayın alım miktarı girildiyse hesaplanır; hiç alınmadıysa alıma 0 yazın." className="ml-1" />
-                      </TH>
-                      <TH numeric>
-                        <SortButton numeric dir={dirOf("sapma")} onClick={() => toggleSort("sapma")}>
-                          Sapma (₺)
-                        </SortButton>
-                        <InfoTip
-                          text="(Gerçek tüketim − reçeteye göre kullanım) × birim maliyet. Pozitif = fire, ikram, porsiyon kaçağı; reçetede olmayan malzemede tüketimin tamamı."
-                          className="ml-1"
-                        />
-                      </TH>
-                    </>
-                  ) : null}
-                  <TH>Yorum / kaynak faturalar</TH>
-                  <TH>
-                    <span className="sr-only">Eylemler</span>
-                  </TH>
-                </tr>
-              </THead>
-              <tbody>
-                {paged.slice.map((r) => (
-                  <TR key={r.ingredientId}>
-                    <TD sticky className="min-w-36 font-medium">
-                      {r.name}
+      {/* Sayfa değişince buraya kaydırılır (Pagination): yeni sayfanın ilk malzemesi üst çubuğun hemen altında */}
+      <div data-page-top>
+        {visible.length ? (
+          <>
+            {/*
+              Telefon ve tablet: her malzeme sıkı bir kart (tablo yana kaymadan okunur), genişledikçe iki sütun. Ad ve oran
+              üstte, rakamlar iki kısa satırda, altta büyük "alınan" kutusu ve düzenle düğmesi (44 px).
+            */}
+            <ul className={cn("grid gap-2 px-3 pb-3 md:grid-cols-2", cardsOnly)}>
+              {paged.slice.map((r) => (
+                <li key={r.ingredientId} className="rounded-2xl bg-surface px-3 pt-2.5 pb-3 ring-1 ring-line sm:p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm leading-5 font-semibold break-words text-ink">{r.name}</p>
                       {isUnreciped(r) ? (
                         <span className="mt-0.5 block">
                           <UnrecipedBadge row={r} />
                         </span>
                       ) : null}
-                    </TD>
-                    <TD numeric>
-                      {num(r.usage)} {r.unit}
-                    </TD>
-                    <TD numeric>
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Kayıttan sonra (ya da pencereden eklenince) yeni değerle yeniden kurulur */}
-                        <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} />
-                        <span className="w-8 text-left text-xs text-ink-mute">{r.unit}</span>
-                      </div>
-                    </TD>
-                    <TD numeric>
+                    </div>
+                    <span className="shrink-0">
                       <RatioBadge row={r} />
-                    </TD>
-                    <TD
-                      numeric
-                      className={cn(r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}
-                    >
-                      {r.diffAmount === null ? "–" : tl(r.diffAmount)}
-                    </TD>
+                    </span>
+                  </div>
+                  {/* Etiket ve değer aynı satırda: kart kısa kalır, sayfada daha çok malzeme görünür */}
+                  <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[13px] leading-5">
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                      <dt className="text-xs text-ink-mute">Reçeteye göre</dt>
+                      <dd className="text-ink tabular">
+                        {num(r.usage)} {r.unit}
+                      </dd>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right">
+                      <dt className="text-xs text-ink-mute">Fark</dt>
+                      <dd className={cn("tabular", r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}>
+                        {r.diffAmount === null ? "–" : tl(r.diffAmount)}
+                      </dd>
+                    </div>
                     {hasStock ? (
                       <>
-                        <TD numeric>
-                          <ActualUsage row={r} />
-                          {r.opening !== null && r.closing !== null ? (
-                            <span className="block text-xs text-ink-mute">
-                              sayım {num(r.opening)} → {num(r.closing)}
-                            </span>
-                          ) : null}
-                        </TD>
-                        <TD numeric className={cn(r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
-                          {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
-                          {r.variance !== null ? (
-                            <span className="block text-xs font-normal text-ink-mute">
-                              {num(r.variance)} {r.unit}
-                            </span>
-                          ) : null}
-                        </TD>
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                          <dt className="text-xs text-ink-mute">Gerçek tüketim</dt>
+                          <dd className="text-ink tabular">
+                            <ActualUsage row={r} compact />
+                          </dd>
+                        </div>
+                        <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right">
+                          <dt className="text-xs text-ink-mute">Sapma</dt>
+                          <dd className={cn("tabular", r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
+                            {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
+                          </dd>
+                        </div>
+                        {r.opening !== null && r.closing !== null ? (
+                          <div className="col-span-2">
+                            <dt className="sr-only">Sayım</dt>
+                            <dd className="text-xs text-ink-mute tabular">
+                              Sayım {num(r.opening)} → {num(r.closing)} {r.unit}
+                            </dd>
+                          </div>
+                        ) : null}
                       </>
                     ) : null}
-                    <TD className="max-w-72 min-w-44 text-xs text-ink-mute">
-                      {/* Uzun yorum satırı uzatmasın: üç satır, tamamı ipucunda ve düzenleme penceresinde */}
-                      {r.note ? (
-                        <span className="line-clamp-3 break-words" title={r.note}>
-                          {r.note}
-                        </span>
-                      ) : null}
-                    </TD>
-                    <TD>
-                      <div className="flex justify-end">
-                        <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
-                          <Pencil size={15} />
-                        </IconButton>
-                      </div>
-                    </TD>
-                  </TR>
-                ))}
-              </tbody>
-              <tfoot>
-                <TFootRow className="bg-panel-deep/40">
-                  <TD colSpan={4}>
-                    {filtered ? (
-                      <>
-                        Gösterilen {num(visible.length)} malzemenin farkı
-                        <span className="ml-2 font-normal text-ink-mute">(tümü {tl(totalDiff)})</span>
-                      </>
-                    ) : (
-                      "Toplam fark (alınan − reçeteye göre kullanılan)"
-                    )}
-                  </TD>
-                  <TD numeric>{tl(filtered ? visibleDiff : totalDiff)}</TD>
-                  {hasStock ? (
-                    <>
-                      <TD />
-                      <TD numeric>{tl(filtered ? visibleTotals.variance : totalVariance)}</TD>
-                    </>
-                  ) : null}
-                  <TD colSpan={2} />
-                </TFootRow>
-              </tfoot>
-            </Table>
-          </TableWrap>
-          {/* Kart görünümünde toplam (tablonun alt satırının karşılığı) */}
-          <div className={cn("mx-3 mb-3 space-y-1.5 rounded-2xl bg-panel-deep/40 px-3.5 py-3 text-sm font-semibold", cardsOnly)}>
-            <p className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0">{filtered ? `Gösterilen ${num(visible.length)} malzemenin farkı` : "Toplam fark"}</span>
-              <span className="tabular">{tl(filtered ? visibleDiff : totalDiff)}</span>
-            </p>
-            {hasComparison ? (
-              <p className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0">{filtered ? "Gösterilenlerin sapması" : "Toplam sapma"}</span>
-                <span className="tabular">{tl(filtered ? visibleTotals.variance : totalVariance)}</span>
-              </p>
-            ) : null}
-          </div>
-        </>
-      ) : rows.length ? (
-        <EmptyState
-          icon={<SearchX />}
-          title="Bu süzgece uyan malzeme yok"
-          description={q.trim() ? `"${q.trim()}" adında malzeme bulunamadı ya da fark süzgecine uymuyor.` : "Seçili fark derecesinde malzeme yok; bu iyi haber olabilir."}
-          action={
-            <Button variant="secondary" onClick={clear}>
-              Süzgeci temizle
-            </Button>
-          }
-        />
-      ) : (
-        <EmptyState
-          icon={<Scale />}
-          title="Bu ay karşılaştırılacak malzeme yok"
-          description="Satış raporu yüklendiğinde ya da alım girildiğinde malzemeler burada listelenir."
-          action={
-            <>
-              <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
-                Satış raporu yükle
-              </ButtonLink>
-              <Button onClick={() => setDialog("new")}>
-                <Plus size={16} /> Alım ekle
-              </Button>
-            </>
-          }
-        />
-      )}
+                  </dl>
+                  <div className="mt-2 flex items-center gap-2">
+                    <label htmlFor={`purchase-${r.ingredientId}`} className="shrink-0 text-xs text-ink-mute">
+                      Alınan
+                    </label>
+                    <PurchaseCell
+                      key={`${r.ingredientId}:${r.purchased ?? ""}`}
+                      id={`purchase-${r.ingredientId}`}
+                      month={month}
+                      row={r}
+                      className="h-11 w-auto min-w-0 flex-1"
+                    />
+                    <span className="w-9 shrink-0 text-xs text-ink-mute">{r.unit}</span>
+                    <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)} className="size-11">
+                      <Pencil size={16} />
+                    </IconButton>
+                  </div>
+                  {r.note ? <p className="mt-1.5 line-clamp-2 text-xs leading-5 break-words text-ink-mute">{r.note}</p> : null}
+                </li>
+              ))}
+            </ul>
 
-      {visible.length ? <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} total={paged.total} unit="malzeme" className="border-t border-line" /> : null}
+            <TableWrap className={tableOnly}>
+              <Table>
+                <THead>
+                  <tr>
+                    <TH sticky>
+                      <SortButton dir={dirOf("ad")} onClick={() => toggleSort("ad")}>
+                        Malzeme
+                      </SortButton>
+                    </TH>
+                    <TH numeric>
+                      Reçeteye göre
+                      <InfoTip
+                        text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar. Fire payı ve ödenmez siparişler hariç."
+                        className="ml-1"
+                      />
+                    </TH>
+                    <TH numeric>
+                      Faturayla alınan
+                      <InfoTip text="Bu ayki faturalardaki miktar (malzemenin kendi biriminde: gr, ml, adet). Tıklayıp yazın; Enter kaydeder, Esc geri alır." className="ml-1" />
+                    </TH>
+                    <TH numeric>
+                      <SortButton numeric dir={dirOf("oran")} onClick={() => toggleSort("oran")}>
+                        Oran
+                      </SortButton>
+                      <InfoTip text={`Alınan ÷ reçeteye göre kullanılan. 1× = alınan kadar harcandı; büyüdükçe reçeteye göre fazla alım var. ${RATIO_GUIDE.below1}`} className="ml-1" />
+                    </TH>
+                    <TH numeric>
+                      <SortButton numeric dir={dirOf("fark")} onClick={() => toggleSort("fark")}>
+                        Fark tutarı
+                      </SortButton>
+                      <InfoTip
+                        text="(Alınan − kullanılan) × birim maliyet. Pozitif = reçeteye göre fazla alınan malın parası (stokta duruyor ya da fire/ikram oldu)."
+                        className="ml-1"
+                      />
+                    </TH>
+                    {hasStock ? (
+                      <>
+                        <TH numeric>
+                          Gerçek tüketim
+                          <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın sayımı ve bu ayın alım miktarı girildiyse hesaplanır; hiç alınmadıysa alıma 0 yazın." className="ml-1" />
+                        </TH>
+                        <TH numeric>
+                          <SortButton numeric dir={dirOf("sapma")} onClick={() => toggleSort("sapma")}>
+                            Sapma (₺)
+                          </SortButton>
+                          <InfoTip
+                            text="(Gerçek tüketim − reçeteye göre kullanım) × birim maliyet. Pozitif = fire, ikram, porsiyon kaçağı; reçetede olmayan malzemede tüketimin tamamı."
+                            className="ml-1"
+                          />
+                        </TH>
+                      </>
+                    ) : null}
+                    <TH>Yorum / kaynak faturalar</TH>
+                    <TH>
+                      <span className="sr-only">Eylemler</span>
+                    </TH>
+                  </tr>
+                </THead>
+                <tbody>
+                  {paged.slice.map((r) => (
+                    <TR key={r.ingredientId}>
+                      <TD sticky className="min-w-36 font-medium">
+                        {r.name}
+                        {isUnreciped(r) ? (
+                          <span className="mt-0.5 block">
+                            <UnrecipedBadge row={r} />
+                          </span>
+                        ) : null}
+                      </TD>
+                      <TD numeric>
+                        {num(r.usage)} {r.unit}
+                      </TD>
+                      <TD numeric>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Kayıttan sonra (ya da pencereden eklenince) yeni değerle yeniden kurulur */}
+                          <PurchaseCell key={`${r.ingredientId}:${r.purchased ?? ""}`} month={month} row={r} />
+                          <span className="w-8 text-left text-xs text-ink-mute">{r.unit}</span>
+                        </div>
+                      </TD>
+                      <TD numeric>
+                        <RatioBadge row={r} />
+                      </TD>
+                      <TD
+                        numeric
+                        className={cn(r.diffAmount !== null && r.diffAmount < 0 && "text-info", r.diffAmount !== null && r.diffAmount > 2000 && "font-semibold text-bad")}
+                      >
+                        {r.diffAmount === null ? "–" : tl(r.diffAmount)}
+                      </TD>
+                      {hasStock ? (
+                        <>
+                          <TD numeric>
+                            <ActualUsage row={r} />
+                            {r.opening !== null && r.closing !== null ? (
+                              <span className="block text-xs text-ink-mute">
+                                sayım {num(r.opening)} → {num(r.closing)}
+                              </span>
+                            ) : null}
+                          </TD>
+                          <TD numeric className={cn(r.varianceAmount !== null && r.varianceAmount > 0 && "font-semibold text-bad")}>
+                            {r.varianceAmount === null ? "–" : tl(r.varianceAmount)}
+                            {r.variance !== null ? (
+                              <span className="block text-xs font-normal text-ink-mute">
+                                {num(r.variance)} {r.unit}
+                              </span>
+                            ) : null}
+                          </TD>
+                        </>
+                      ) : null}
+                      <TD className="max-w-72 min-w-44 text-xs text-ink-mute">
+                        {/* Uzun yorum satırı uzatmasın: üç satır, tamamı ipucunda ve düzenleme penceresinde */}
+                        {r.note ? (
+                          <span className="line-clamp-3 break-words" title={r.note}>
+                            {r.note}
+                          </span>
+                        ) : null}
+                      </TD>
+                      <TD>
+                        <div className="flex justify-end">
+                          <IconButton label={`${r.name}: alımı ve yorumu düzenle`} onClick={() => setDialog(r)}>
+                            <Pencil size={15} />
+                          </IconButton>
+                        </div>
+                      </TD>
+                    </TR>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <TFootRow className="bg-panel-deep/40">
+                    <TD colSpan={4}>
+                      {filtered ? (
+                        <>
+                          Gösterilen {num(visible.length)} malzemenin farkı
+                          <span className="ml-2 font-normal text-ink-mute">(tümü {tl(totalDiff)})</span>
+                        </>
+                      ) : (
+                        "Toplam fark (alınan − reçeteye göre kullanılan)"
+                      )}
+                    </TD>
+                    <TD numeric>{tl(filtered ? visibleDiff : totalDiff)}</TD>
+                    {hasStock ? (
+                      <>
+                        <TD />
+                        <TD numeric>{tl(filtered ? visibleTotals.variance : totalVariance)}</TD>
+                      </>
+                    ) : null}
+                    <TD colSpan={2} />
+                  </TFootRow>
+                </tfoot>
+              </Table>
+            </TableWrap>
+            {/* Kart görünümünde toplam (tablonun alt satırının karşılığı) */}
+            <div className={cn("mx-3 mb-3 space-y-1.5 rounded-2xl bg-panel-deep/40 px-3.5 py-3 text-sm font-semibold", cardsOnly)}>
+              <p className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">{filtered ? `Gösterilen ${num(visible.length)} malzemenin farkı` : "Toplam fark"}</span>
+                <span className="tabular">{tl(filtered ? visibleDiff : totalDiff)}</span>
+              </p>
+              {hasComparison ? (
+                <p className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0">{filtered ? "Gösterilenlerin sapması" : "Toplam sapma"}</span>
+                  <span className="tabular">{tl(filtered ? visibleTotals.variance : totalVariance)}</span>
+                </p>
+              ) : null}
+            </div>
+          </>
+        ) : rows.length ? (
+          <EmptyState
+            icon={<SearchX />}
+            title="Bu süzgece uyan malzeme yok"
+            description={q.trim() ? `"${q.trim()}" adında malzeme bulunamadı ya da fark süzgecine uymuyor.` : "Seçili fark derecesinde malzeme yok; bu iyi haber olabilir."}
+            action={
+              <Button variant="secondary" onClick={clear}>
+                Süzgeci temizle
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={<Scale />}
+            title="Bu ay karşılaştırılacak malzeme yok"
+            description="Satış raporu yüklendiğinde ya da alım girildiğinde malzemeler burada listelenir."
+            action={
+              <>
+                <ButtonLink href={`/panel/satislar?ay=${month}`} variant="secondary">
+                  Satış raporu yükle
+                </ButtonLink>
+                <Button onClick={() => setDialog("new")}>
+                  <Plus size={16} /> Alım ekle
+                </Button>
+              </>
+            }
+          />
+        )}
+
+        {visible.length ? <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} total={paged.total} unit="malzeme" className="border-t border-line" /> : null}
+      </div>
 
       {hasStock && !hasComparison ? (
         <CardFooter className="justify-start gap-2 text-xs">
@@ -719,7 +744,7 @@ export function ConsistencyTable({
               <button
                 type="button"
                 onClick={() => setNeedParam("1")}
-                className="-my-2.5 ml-1 inline-block cursor-pointer py-2.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+                className="-my-3.5 ml-1 inline-block cursor-pointer py-3.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
               >
                 Alımı eksik {num(needsPurchase.length)} malzemeyi göster
               </button>
@@ -734,7 +759,7 @@ export function ConsistencyTable({
           <span className="min-w-0 flex-1">
             İpucu: Bu ayın ve geçen ayın stok sayımını girerseniz &quot;gerçek tüketim&quot; ve &quot;sapma&quot; sütunları çıkar. Sapma, reçeteye göre olması gerekenden
             fazla harcanan malın parasıdır (fire, ikram, porsiyon kaçağı).{" "}
-            <Link href={`/panel/sayim?ay=${month}`} className="-my-2.5 inline-block py-2.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+            <Link href={`/panel/sayim?ay=${month}`} className="-my-3.5 inline-block py-3.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
               Sayıma git
             </Link>
           </span>
@@ -799,6 +824,13 @@ function PurchaseDialog({
     onClose();
   }
 
+  const removeButton =
+    row && row.purchased !== null ? (
+      <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
+        <Trash2 size={16} /> Alımı sil
+      </Button>
+    ) : null;
+
   async function remove() {
     if (!row) return;
     setBusy(true);
@@ -819,13 +851,8 @@ function PurchaseDialog({
       onClose={onClose}
       title={row ? `${row.name}: alınan miktar` : "Alınan miktar ekle"}
       description="Faturalardaki toplam miktarı malzemenin kendi biriminde girin (1 kg = 1.000 gr, 1 L = 1.000 ml)."
-      footerStart={
-        row && row.purchased !== null ? (
-          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
-            <Trash2 size={16} /> Alımı sil
-          </Button>
-        ) : undefined
-      }
+      footerStart={removeButton}
+      footerStartOnPhone="body"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -881,14 +908,31 @@ function PurchaseDialog({
             id="ap-q"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
-            className="cell-input pointer-coarse:h-10"
+            className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
             aria-invalid={qtyInvalid || undefined}
             placeholder="0"
+            enterKeyHint="next"
             data-autofocus={row ? true : undefined}
           />
         </Field>
         <Field label="Kaynak faturalar / yorum" htmlFor="ap-n" hint="İsteğe bağlı: hangi faturalardan geldiği, kontrol notu.">
-          <Input id="ap-n" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="ör. Kaldi 01.09 + 15.09: 2 × 12 kg" className="pointer-coarse:h-10" />
+          {/* Uzun fatura notu tek satırda kesiliyordu: çok satırlı kutu, yazdıkça uzar. Not tek satırlık metin: Enter kaydeder */}
+          <Textarea
+            id="ap-n"
+            value={note}
+            onChange={(e) => setNote(e.target.value.replace(/\s*\n\s*/g, " "))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            enterKeyHint="done"
+            rows={2}
+            maxLength={300}
+            placeholder="ör. Kaldi 01.09 + 15.09: 2 × 12 kg"
+            className="min-h-9 field-sizing-content pointer-coarse:min-h-11"
+          />
         </Field>
       </form>
       {row ? (
@@ -1010,7 +1054,7 @@ export function Findings({ items }: { items: FindingItem[] }) {
           </>
         }
         actions={
-          <Button onClick={() => setEditing("new")} className="pointer-coarse:h-10">
+          <Button onClick={() => setEditing("new")}>
             <Plus size={16} /> Bulgu ekle
           </Button>
         }
@@ -1087,7 +1131,7 @@ export function Findings({ items }: { items: FindingItem[] }) {
                       <button
                         type="button"
                         onClick={() => toggle(i, !i.resolved)}
-                        className="group/toggle flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg"
+                        className="group/toggle flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg pointer-coarse:size-11"
                         aria-label={`${i.title}: ${i.resolved ? "yeniden aç" : "çözüldü olarak işaretle"}`}
                         title={i.resolved ? "Yeniden aç" : "Çözüldü olarak işaretle"}
                       >
@@ -1172,6 +1216,9 @@ export function Findings({ items }: { items: FindingItem[] }) {
   );
 }
 
+/** Dokunmatik ekran mı (pencere yalnızca istemcide, bir dokunuşla açıldığı için çizimde okunabilir) */
+const coarsePointer = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+
 function FindingDialog({
   item,
   sections,
@@ -1202,6 +1249,12 @@ function FindingDialog({
     onClose();
   }
 
+  const deleteButton = item ? (
+    <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
+      <Trash2 size={16} /> Sil
+    </Button>
+  ) : null;
+
   async function remove() {
     if (!item) return;
     setBusy(true);
@@ -1219,13 +1272,8 @@ function FindingDialog({
       onClose={onClose}
       title={item ? "Bulguyu düzenle" : "Bulgu ekle"}
       description={item ? `${dateTR(item.createdAt.slice(0, 10))} tarihinde eklendi${item.resolved ? " · çözüldü" : ""}` : "Kontrol edilecek ya da düzeltilecek bir şeyi not edin."}
-      footerStart={
-        item ? (
-          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" disabled={busy} onClick={() => setConfirmDelete(true)}>
-            <Trash2 size={16} /> Sil
-          </Button>
-        ) : undefined
-      }
+      footerStart={deleteButton}
+      footerStartOnPhone="body"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -1239,7 +1287,7 @@ function FindingDialog({
     >
       <form id="finding-form" onSubmit={submit} className="space-y-3 pb-2">
         <Field label="Bölüm" htmlFor="fd-s" hint="Benzer bulgular aynı bölümde toplanır. Listeden seçin ya da yeni bir ad yazın.">
-          <Input id="fd-s" list="finding-sections" value={section} onChange={(e) => setSection(e.target.value)} maxLength={80} className="pointer-coarse:h-10" />
+          <Input id="fd-s" list="finding-sections" value={section} onChange={(e) => setSection(e.target.value)} maxLength={80} />
           <datalist id="finding-sections">
             {sections.map((s) => (
               <option key={s} value={s} />
@@ -1262,8 +1310,8 @@ function FindingDialog({
             onChange={(e) => setTitle(e.target.value)}
             maxLength={200}
             placeholder="ör. Liçi şurubu reçetede yok"
-            data-autofocus
-            className="pointer-coarse:h-10"
+            // Dokunmatik ekranda düzenlerken klavye kendiliğinden açılmasın; yeni bulguda ve masaüstünde başlığa odaklanılır
+            data-autofocus={!item || !coarsePointer() ? true : undefined}
           />
         </Field>
         <Field

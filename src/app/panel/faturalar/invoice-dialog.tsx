@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
 import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Segmented } from "@/components/ui/segmented";
+import { useIsPhone } from "@/components/ui/use-media";
 import { normalizeSupplier } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
@@ -106,6 +108,19 @@ export function InvoiceDialog({
   /** Yeni faturada tedarikçi önerisi yoksa dönülecek değerler (pencere açılırken / "yenisini ekle"de kalanlar) */
   const [start, setStart] = useState(() => ({ category: f.category, vatRate: f.vatRate }));
 
+  // Telefonda açıklama ve fatura no formun sonunda (az kullanılır); masaüstünde tarihin yanında
+  const phone = useIsPhone();
+  const descAndNo = (
+    <>
+      <Field label="Açıklama" htmlFor="f-desc">
+        <Input id="f-desc" value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder="ör. Eylül kira, tatlı, süt" />
+      </Field>
+      <Field label="Fatura no" htmlFor="f-no" hint={locked ? "Paraşüt'ten gelir" : undefined}>
+        <Input id="f-no" value={f.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} autoComplete="off" disabled={locked} />
+      </Field>
+    </>
+  );
+
   function onSupplier(value: string) {
     if (invoice) return set({ supplier: value });
     // Elle seçilmemişse kategori ve KDV tedarikçinin son faturasından; tanınmayan ada geçilince öneri geri alınır
@@ -168,6 +183,7 @@ export function InvoiceDialog({
   }
 
   return (
+    // Telefonda alttan açılan tam boy sayfa: tek sütun, 48px alanlar, Kaydet başparmağın altında
     <Dialog
       open
       onClose={onClose}
@@ -183,11 +199,16 @@ export function InvoiceDialog({
       footerStart={
         invoice ? (
           <>
-            <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => onDelete(invoice)}>
+            <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad max-sm:min-h-12 max-sm:px-3" onClick={() => onDelete(invoice)}>
               <Trash2 size={16} /> Sil
             </Button>
             {parasutHref ? (
-              <a href={parasutHref} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-ink-mute hover:text-ink hover:underline">
+              <a
+                href={parasutHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center text-sm font-medium text-ink-mute hover:text-ink hover:underline max-sm:min-h-12 max-sm:px-1"
+              >
                 Paraşüt&apos;te aç ↗
               </a>
             ) : null}
@@ -196,28 +217,36 @@ export function InvoiceDialog({
       }
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} className="pointer-coarse:h-10">
+          <Button variant="ghost" onClick={onClose} className={cn(SHEET_BTN, !invoice && "max-sm:flex-none! max-sm:px-3")}>
             {added ? "Kapat" : "Vazgeç"}
           </Button>
           {invoice ? null : (
-            <Button variant="secondary" disabled={busy} onClick={() => save(true)} title="Kaydeder ve yeni fatura için formu boşaltır" className="pointer-coarse:h-10">
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => save(true)}
+              title="Kaydeder ve yeni fatura için formu boşaltır"
+              className="max-sm:min-h-12 max-sm:px-3 max-sm:text-sm"
+            >
               {/* Telefonda üç düğme tek satıra sığsın */}
               <span className="sm:hidden">Kaydet + yeni</span>
               <span className="max-sm:hidden">Kaydet, yenisini ekle</span>
             </Button>
           )}
-          <Button type="submit" form="invoice-form" disabled={busy} className="pointer-coarse:h-10">
+          <Button type="submit" form="invoice-form" disabled={busy} className={SHEET_BTN}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
       }
     >
       {/* Enter ile kaydedilir (not alanında Ctrl/⌘ + Enter) */}
+      {/* Telefonda tek sütun ve 48px alanlar; sıra: tedarikçi, tarih, kategori, tutarlar, ödeme, vade, sonra açıklama
+          ve fatura no. Sıra CSS ile değil DOM'da değişir: klavyenin "sonraki" oku ekrandaki sırayı izler. */}
       <form
         id="invoice-form"
         onSubmit={onSubmit}
         noValidate
-        className="grid gap-x-3 gap-y-4 pb-2 sm:grid-cols-2 pointer-coarse:[&_input]:h-10 pointer-coarse:[&_select]:h-10"
+        className={cn("grid gap-x-3 gap-y-4 pb-2 sm:grid-cols-2", BIG_FIELDS)}
       >
         <Field
           label="Tedarikçi"
@@ -235,6 +264,7 @@ export function InvoiceDialog({
             aria-invalid={supplierMissing || undefined}
             autoComplete="off"
             placeholder="ör. Sütaş"
+            enterKeyHint="next"
             data-autofocus={invoice ? undefined : true}
           />
           <datalist id="supplier-list">
@@ -246,12 +276,7 @@ export function InvoiceDialog({
         <Field label="Tarih" htmlFor="f-date" error={dateMissing ? "Tarih seçin" : undefined} hint={locked ? "Paraşüt'ten gelir" : undefined}>
           <Input id="f-date" type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} aria-invalid={dateMissing || undefined} disabled={locked} />
         </Field>
-        <Field label="Açıklama" htmlFor="f-desc">
-          <Input id="f-desc" value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder="ör. Eylül kira, tatlı, süt" />
-        </Field>
-        <Field label="Fatura no" htmlFor="f-no" hint={locked ? "Paraşüt'ten gelir" : undefined}>
-          <Input id="f-no" value={f.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} autoComplete="off" disabled={locked} />
-        </Field>
+        {phone ? null : descAndNo}
         <Field label="Kategori" htmlFor="f-cat" className="sm:col-span-2" hint={categoryEffect(f.category)}>
           <Select
             id="f-cat"
@@ -324,6 +349,7 @@ export function InvoiceDialog({
                   }}
                   className="shrink-0 sm:w-20"
                   aria-label="KDV oranı"
+                  title="KDV oranı"
                 >
                   {VAT_RATES.map((v) => (
                     <option key={v} value={v}>
@@ -331,7 +357,7 @@ export function InvoiceDialog({
                     </option>
                   ))}
                 </Select>
-                <Button variant="secondary" onClick={() => set({ payable: num(withVat, 2, 2) })} title="Net tutar + seçilen KDV" className="pointer-coarse:h-10">
+                <Button variant="secondary" onClick={() => set({ payable: num(withVat, 2, 2) })} title="Net tutar + seçilen KDV" className="max-sm:min-h-12">
                   Hesapla
                 </Button>
               </div>
@@ -343,6 +369,7 @@ export function InvoiceDialog({
           <Segmented<"paid" | "unpaid">
             label="Ödeme durumu"
             stretch
+            className="max-sm:[&_button]:h-11"
             value={f.unpaid ? "unpaid" : "paid"}
             onChange={(v) => set({ unpaid: v === "unpaid" })}
             options={[
@@ -364,6 +391,7 @@ export function InvoiceDialog({
         >
           <Input id="f-due" type="date" value={f.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
         </Field>
+        {phone ? descAndNo : null}
         <Field label="Not" className="sm:col-span-2" htmlFor="f-note" hint="Listede tedarikçinin altında görünür. “tahmin” ya da “varsayım” geçerse fatura tahmini işaretlenir.">
           <Textarea
             id="f-note"
@@ -376,7 +404,7 @@ export function InvoiceDialog({
               }
             }}
             rows={2}
-            className="[field-sizing:content] max-h-40"
+            className="max-h-40 [field-sizing:content]"
           />
         </Field>
       </form>

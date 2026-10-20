@@ -42,6 +42,7 @@ import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { productHref } from "../urunler/logic";
+import { CARD_SORTS, DEFAULT_SORT, flipSign, normalizeSign, parseSort, selectionAfterSign, sortSlug, type SortDir, type SortKey } from "./logic";
 
 /* ───────────────────────── Ortak hareket ───────────────────────── */
 
@@ -113,18 +114,20 @@ export function AnalysisTabs({ menu, scenario }: { menu: ReactNode; scenario: Re
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Telefonda iki sekme satırı eşit paylaşır, adlar kısalır (yana kaymadan sığsın) */}
       <Segmented
         label="Analiz aracı"
         value={view}
         onChange={change}
-        className="self-start"
+        className="self-start max-sm:flex max-sm:w-full max-sm:[&>button]:flex-1 max-sm:[&>button]:justify-center"
         options={[
           {
             value: "menu",
             label: (
               <>
                 <ChartScatter size={15} aria-hidden="true" />
-                Menü mühendisliği
+                <span className="sm:hidden">Menü analizi</span>
+                <span className="max-sm:hidden">Menü mühendisliği</span>
               </>
             ),
           },
@@ -133,7 +136,8 @@ export function AnalysisTabs({ menu, scenario }: { menu: ReactNode; scenario: Re
             label: (
               <>
                 <SlidersHorizontal size={15} aria-hidden="true" />
-                Senaryo simülatörü
+                <span className="sm:hidden">Senaryo</span>
+                <span className="max-sm:hidden">Senaryo simülatörü</span>
               </>
             ),
           },
@@ -175,28 +179,6 @@ const CLASS_LOOK: Record<MenuClass, { icon: ReactNode; tile: PastelTone; dot: st
 
 /** Adresteki Türkçe karşılıklar: ?grup=yildiz, ?sirala=toplam-kar-azalan */
 const CLASS_SLUG: Record<MenuClass, string> = { star: "yildiz", plowhorse: "beygir", puzzle: "bilmece", dog: "zayif" };
-
-type SortKey = "name" | "cls" | "qty" | "mix" | "cm" | "totalCm" | "margin" | "price";
-type SortDir = "asc" | "desc";
-
-const SORT_SLUG: Record<SortKey, string> = {
-  name: "ad",
-  cls: "grup",
-  qty: "satis",
-  mix: "pay",
-  cm: "birim-kar",
-  totalCm: "toplam-kar",
-  margin: "marj",
-  price: "fiyat",
-};
-const DEFAULT_SORT = "toplam-kar-azalan";
-
-function parseSort(v: string): { key: SortKey; dir: SortDir } {
-  const m = /^(.+)-(artan|azalan)$/.exec(v);
-  const key = m ? (Object.keys(SORT_SLUG) as SortKey[]).find((k) => SORT_SLUG[k] === m[1]) : undefined;
-  return key && m ? { key, dir: m[2] === "artan" ? "asc" : "desc" } : { key: "totalCm", dir: "desc" };
-}
-const sortSlug = (key: SortKey, dir: SortDir) => `${SORT_SLUG[key]}-${dir === "asc" ? "artan" : "azalan"}`;
 
 function compare(a: Item, b: Item, key: SortKey) {
   if (key === "name") return `${a.name} ${a.size}`.localeCompare(`${b.name} ${b.size}`, "tr");
@@ -332,11 +314,12 @@ export function MenuEngineering({
               </span>
             </>
           }
+          actionsClassName="max-sm:w-full"
           actions={
             <Select
               value={cat ?? ""}
               onChange={(e) => setCatParam(e.target.value)}
-              className="w-auto min-w-44 pointer-coarse:h-10"
+              className="w-auto min-w-44 max-sm:w-full"
               aria-label="Kategori (sınıflar bu kategori içinde yeniden hesaplanır)"
             >
               <option value="">Bütün menü</option>
@@ -467,149 +450,233 @@ export function MenuEngineering({
           <FilterChip active={!!unsold} count={unsoldCount} onToggle={() => setUnsold(unsold ? "" : "1")}>
             Bu ay satılmayan
           </FilterChip>
+          {/* Kart görünümünde (xl altı) tablo başlığı yok: sıralama seçimle, başlıkların iki yönü de var */}
+          <Select value={sortSlug(sort.key, sort.dir)} onChange={(e) => setSortParam(e.target.value)} aria-label="Sırala" className="w-full sm:w-auto xl:hidden">
+            {CARD_SORTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
         </FilterBar>
-        {paged.slice.length ? (
-          <TableWrap>
-            <Table>
-              <THead>
-                <tr>
-                  <SortTH sticky {...sortProps("name")}>
-                    Ürün
-                  </SortTH>
-                  <SortTH {...sortProps("cls")}>Grup</SortTH>
-                  <SortTH numeric {...sortProps("qty")}>
-                    Satış (adet)
-                  </SortTH>
-                  <SortTH numeric {...sortProps("mix")}>
-                    Satış payı
-                  </SortTH>
-                  <SortTH numeric {...sortProps("cm")}>
-                    Birim kâr
-                  </SortTH>
-                  <SortTH numeric {...sortProps("totalCm")}>
-                    Toplam brüt kâr
-                  </SortTH>
-                  <SortTH numeric {...sortProps("margin")}>
-                    Marj
-                  </SortTH>
-                  <SortTH numeric {...sortProps("price")}>
-                    Fiyat (→ önerilen)
-                  </SortTH>
-                  <TH>
-                    <span className="sr-only">Eylem</span>
-                  </TH>
-                </tr>
-              </THead>
-              <tbody>
+        {/* Sayfa değişince buraya kaydırılır (Pagination): yeni sayfanın ilk ürünü üst çubuğun hemen altında */}
+        <div data-page-top>
+          {paged.slice.length ? (
+            <>
+              {/*
+                Telefon ve tablet: her ürün bir kart; satır kartı ürün kartını açar. Tablo xl ve üstünde: kenar çubuğu lg'de
+                açılınca içerik 768px'teki kadar bile geniş kalmıyor (Marj, Fiyat ve göz düğmesi yana kayıp gizlenirdi).
+              */}
+              <ul className="divide-y divide-line border-t border-line xl:hidden">
                 {paged.slice.map((i) => (
-                  <TR key={i.id}>
-                    <TD sticky className="min-w-40 max-sm:max-w-48">
-                      <Link href={productHref(i.id, month)} className="font-medium text-ink hover:underline">
-                        {i.name} · {i.size}
-                      </Link>
-                      <span className="block truncate text-xs text-ink-mute">{i.category}</span>
-                    </TD>
-                    <TD>
-                      <Badge tone={classInfo[i.cls].tone as Tone} dot>
-                        {classInfo[i.cls].label}
-                      </Badge>
-                    </TD>
-                    <TD numeric className={cn(i.qty === 0 && "text-ink-mute")}>
-                      {num(i.qty)}
-                    </TD>
-                    <TD numeric>{pct(i.mix)}</TD>
-                    <TD numeric>
-                      <Signed value={i.cm}>{tl(i.cm, 2)}</Signed>
-                    </TD>
-                    <TD numeric className="font-semibold">
-                      <Signed value={i.totalCm}>{tl(i.totalCm)}</Signed>
-                    </TD>
-                    <TD numeric>{pct(i.margin)}</TD>
-                    <TD numeric>
-                      {tl(i.price)}
-                      {i.price < i.suggestedPrice ? (
-                        <span className="text-bad" title="Önerilen fiyat">
-                          {" "}
-                          → {tl(i.suggestedPrice)}
-                          <span className="sr-only"> önerilen</span>
+                  <li key={i.id}>
+                    <Link href={productHref(i.id, month)} className="flex min-h-16 items-start gap-3 px-5 py-3 active:bg-surface/60">
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium break-words text-ink">
+                          {i.name} · {i.size}
                         </span>
-                      ) : null}
-                    </TD>
-                    <TD className="w-0">
-                      <div className="flex justify-end">
-                        <IconLink href={productHref(i.id, month)} label={`${i.name} · ${i.size} ürün kartını aç`}>
-                          <Eye size={15} aria-hidden="true" />
-                        </IconLink>
-                      </div>
-                    </TD>
-                  </TR>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-mute">
+                          <Badge tone={classInfo[i.cls].tone as Tone} dot>
+                            {classInfo[i.cls].label}
+                          </Badge>
+                          <span className="min-w-0 break-words">{i.category}</span>
+                        </span>
+                        <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-mute tabular">
+                          <span className={cn(i.qty === 0 && "text-ink-quiet")}>
+                            {num(i.qty)} adet · {pct(i.mix)}
+                          </span>
+                          <span>
+                            Birim <Signed value={i.cm}>{tl(i.cm, 2)}</Signed>
+                          </span>
+                          <span>Marj {pct(i.margin)}</span>
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block font-semibold text-ink tabular">
+                          <Signed value={i.totalCm}>{tl(i.totalCm)}</Signed>
+                        </span>
+                        <span className="block text-xs text-ink-mute">brüt kâr</span>
+                        <span className="mt-1 block text-xs text-ink-soft tabular">
+                          <span className="text-ink-mute">Fiyat </span>
+                          {tl(i.price)}
+                          {i.price < i.suggestedPrice ? (
+                            <span className="block text-bad" title="Önerilen fiyat">
+                              → {tl(i.suggestedPrice)}
+                              <span className="sr-only"> önerilen</span>
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
                 ))}
-              </tbody>
-              {shown.length > 1 ? (
-                <tfoot>
-                  <TFootRow>
-                    <TD sticky className="whitespace-nowrap">
+                {shown.length > 1 ? (
+                  <li className="flex flex-wrap items-baseline justify-between gap-x-3 px-5 py-3.5 text-sm font-semibold text-ink">
+                    <span>
                       {filtered ? "Süzülen" : "Toplam"} · {num(shown.length)} ürün
-                    </TD>
-                    <TD />
-                    <TD numeric>{num(shownQty)}</TD>
-                    <TD numeric>{pct(shownMix)}</TD>
-                    <TD />
-                    <TD numeric>
+                    </span>
+                    <span className="tabular">
                       <Signed value={shownCm}>{tl(shownCm)}</Signed>
-                    </TD>
-                    <TD />
-                    <TD />
-                    <TD />
-                  </TFootRow>
-                </tfoot>
-              ) : null}
-            </Table>
-          </TableWrap>
-        ) : (
-          <EmptyState
-            title={items.length ? "Bu süzgece uyan ürün yok" : `${catName} içinde aktif ürün yok`}
-            description={
-              items.length
-                ? "Arama sözcüğünü ya da seçili grupları değiştirin; süzgeçleri temizleyince bütün ürünler geri gelir."
-                : "Başka bir kategori seçin ya da bütün menüye dönün."
-            }
-            action={
-              filtered ? (
-                <Button variant="secondary" size="sm" onClick={clearFilters}>
-                  Süzgeci temizle
-                </Button>
-              ) : cat !== null ? (
-                <Button variant="secondary" size="sm" onClick={() => setCatParam("")}>
-                  Bütün menüye dön
-                </Button>
-              ) : undefined
-            }
-          />
-        )}
-        {/* Telefonda sayfa düğmeleri karta sığsın: yan boşluk ve aralık daralır */}
-        <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} className="border-t border-line max-sm:px-3 max-sm:[&>div]:gap-1" />
+                    </span>
+                    <span className="w-full text-xs font-normal text-ink-mute tabular">
+                      {num(shownQty)} adet · satış payı {pct(shownMix)}
+                    </span>
+                  </li>
+                ) : null}
+              </ul>
+              <TableWrap className="max-xl:hidden">
+                <Table>
+                  <THead>
+                    <tr>
+                      <SortTH sticky {...sortProps("name")}>
+                        Ürün
+                      </SortTH>
+                      <SortTH {...sortProps("cls")}>Grup</SortTH>
+                      <SortTH numeric wrap {...sortProps("qty")}>
+                        Satış (adet)
+                      </SortTH>
+                      <SortTH numeric wrap {...sortProps("mix")}>
+                        Satış payı
+                      </SortTH>
+                      <SortTH numeric wrap {...sortProps("cm")}>
+                        Birim kâr
+                      </SortTH>
+                      <SortTH numeric wrap {...sortProps("totalCm")}>
+                        Toplam brüt kâr
+                      </SortTH>
+                      <SortTH numeric {...sortProps("margin")}>
+                        Marj
+                      </SortTH>
+                      <SortTH numeric wrap {...sortProps("price")}>
+                        Fiyat (→ önerilen)
+                      </SortTH>
+                      <TH className="align-bottom">
+                        <span className="sr-only">Eylem</span>
+                      </TH>
+                    </tr>
+                  </THead>
+                  <tbody>
+                    {paged.slice.map((i) => (
+                      <TR key={i.id}>
+                        <TD sticky className="min-w-40 max-sm:max-w-48">
+                          <Link href={productHref(i.id, month)} className="font-medium text-ink hover:underline">
+                            {i.name} · {i.size}
+                          </Link>
+                          <span className="block truncate text-xs text-ink-mute">{i.category}</span>
+                        </TD>
+                        <TD>
+                          <Badge tone={classInfo[i.cls].tone as Tone} dot>
+                            {classInfo[i.cls].label}
+                          </Badge>
+                        </TD>
+                        <TD numeric className={cn(i.qty === 0 && "text-ink-mute")}>
+                          {num(i.qty)}
+                        </TD>
+                        <TD numeric>{pct(i.mix)}</TD>
+                        <TD numeric>
+                          <Signed value={i.cm}>{tl(i.cm, 2)}</Signed>
+                        </TD>
+                        <TD numeric className="font-semibold">
+                          <Signed value={i.totalCm}>{tl(i.totalCm)}</Signed>
+                        </TD>
+                        <TD numeric>{pct(i.margin)}</TD>
+                        <TD numeric>
+                          {tl(i.price)}
+                          {/* Önerilen fiyat alt satırda: sütun dar kalır, tablo xl'de yana kaymadan sığar */}
+                          {i.price < i.suggestedPrice ? (
+                            <span className="block text-xs text-bad" title="Önerilen fiyat">
+                              → {tl(i.suggestedPrice)}
+                              <span className="sr-only"> önerilen</span>
+                            </span>
+                          ) : null}
+                        </TD>
+                        <TD className="w-0">
+                          <div className="flex justify-end">
+                            <IconLink href={productHref(i.id, month)} label={`${i.name} · ${i.size} ürün kartını aç`}>
+                              <Eye size={15} aria-hidden="true" />
+                            </IconLink>
+                          </div>
+                        </TD>
+                      </TR>
+                    ))}
+                  </tbody>
+                  {shown.length > 1 ? (
+                    <tfoot>
+                      <TFootRow>
+                        <TD sticky className="whitespace-nowrap">
+                          {filtered ? "Süzülen" : "Toplam"} · {num(shown.length)} ürün
+                        </TD>
+                        <TD />
+                        <TD numeric>{num(shownQty)}</TD>
+                        <TD numeric>{pct(shownMix)}</TD>
+                        <TD />
+                        <TD numeric>
+                          <Signed value={shownCm}>{tl(shownCm)}</Signed>
+                        </TD>
+                        <TD />
+                        <TD />
+                        <TD />
+                      </TFootRow>
+                    </tfoot>
+                  ) : null}
+                </Table>
+              </TableWrap>
+            </>
+          ) : (
+            <EmptyState
+              title={items.length ? "Bu süzgece uyan ürün yok" : `${catName} içinde aktif ürün yok`}
+              description={
+                items.length
+                  ? "Arama sözcüğünü ya da seçili grupları değiştirin; süzgeçleri temizleyince bütün ürünler geri gelir."
+                  : "Başka bir kategori seçin ya da bütün menüye dönün."
+              }
+              action={
+                filtered ? (
+                  <Button variant="secondary" size="sm" onClick={clearFilters}>
+                    Süzgeci temizle
+                  </Button>
+                ) : cat !== null ? (
+                  <Button variant="secondary" size="sm" onClick={() => setCatParam("")}>
+                    Bütün menüye dön
+                  </Button>
+                ) : undefined
+              }
+            />
+          )}
+          {/* Telefonda sayfa düğmeleri karta sığsın: yan boşluk ve aralık daralır */}
+          <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} className="border-t border-line max-sm:px-3 max-sm:[&>div]:gap-1" />
+        </div>
       </Card>
     </div>
   );
 }
 
-/** Sıralanabilir tablo başlığı: etkin sütunda yön oku ve aria-sort */
+/**
+ * Sıralanabilir tablo başlığı: etkin sütunda yön oku ve aria-sort. Başlıklar alta hizalı; `wrap` uzun başlığı iki
+ * satıra sarar (tablo 1280px ekranda yana kaymadan sığsın).
+ */
 function SortTH({
   children,
   numeric,
   sticky,
+  wrap,
   active,
   onSort,
 }: {
   children: ReactNode;
   numeric?: boolean;
   sticky?: boolean;
+  wrap?: boolean;
   active: SortDir | null;
   onSort: () => void;
 }) {
   return (
-    <TH numeric={numeric} sticky={sticky} aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : undefined}>
+    <TH
+      numeric={numeric}
+      sticky={sticky}
+      className={cn("align-bottom", wrap && "leading-5 whitespace-normal")}
+      aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : undefined}
+    >
       <SortButton numeric={numeric} dir={active} onClick={onSort}>
         {children}
       </SortButton>
@@ -783,23 +850,43 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
             <PercentSlider label="Satış adedi" value={volume} onChange={setVolume} min={-50} max={100} info="Daha çok / daha az müşteri." />
             <Field
               label="Aylık sabit gider değişimi (₺)"
-              hint="ör. reklamı 30.000 ₺ azaltmak için -30.000, yeni personel için 25.000"
+              hint="ör. reklamı 30.000 ₺ azaltmak için -30.000 (± düğmesi eksi yapar), yeni personel için 25.000"
               error={extraParsed === null ? "Sayı okunamadı. Örnek: -30.000 ya da 12.500,50" : undefined}
               htmlFor="sc-extra"
             >
-              <NumberInput
-                id="sc-extra"
-                value={extra}
-                onChange={(e) => setExtra(e.target.value)}
-                onFocus={(e) => e.currentTarget.select()}
-                aria-invalid={extraParsed === null || undefined}
-                className="cell-input pointer-coarse:h-10"
-              />
+              {/*
+                iPhone'un sayı klavyesinde eksi tuşu yok: ± düğmesi işareti çevirir. Düğme odağı almaz; yazarken
+                basılınca klavye kapanmaz, imleç sonda kalır. Odaklanınca eksi işareti seçime girmez (üstüne yazılmaz);
+                imleç yine de başa düşüp "5000-" yazılırsa eksi başa alınır.
+              */}
+              <div className="flex gap-2">
+                <NumberInput
+                  id="sc-extra"
+                  value={extra}
+                  onChange={(e) => setExtra(normalizeSign(e.target.value))}
+                  onFocus={(e) => e.currentTarget.setSelectionRange(...selectionAfterSign(e.currentTarget.value))}
+                  aria-invalid={extraParsed === null || undefined}
+                  className="cell-input min-w-0 flex-1"
+                />
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="Artı / eksi: işareti çevir"
+                  title="Artı / eksi"
+                  aria-controls="sc-extra"
+                  onPointerDown={(e) => e.preventDefault()}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setExtra(flipSign(extra))}
+                  className="text-base font-semibold text-ink"
+                >
+                  ±
+                </Button>
+              </div>
             </Field>
           </Well>
         </CardContent>
         {/* Telefonda ve tablette sonuçlar kaydırıcıların altında kalır: kart boyunca altta yapışık özet */}
-        <div className="sticky bottom-3 z-10 mx-3 mb-3 xl:hidden">
+        <div className="sticky bottom-[calc(var(--mobile-nav-h,0px)+0.75rem)] z-10 mx-3 mb-3 xl:hidden">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-surface px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.14)] ring-1 ring-line-strong">
             <span className="text-[13px] text-ink-mute">Senaryoda aylık net kâr / zarar</span>
             <span className="flex items-baseline gap-2">
@@ -872,7 +959,7 @@ export function ScenarioSimulator({ base, acikGun, monthLabel }: { base: Scenari
                   onChange={(e) => setTarget(e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   aria-invalid={targetParsed === null || undefined}
-                  className="cell-input pointer-coarse:h-10"
+                  className="cell-input"
                 />
               </Field>
             </Stat>

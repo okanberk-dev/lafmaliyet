@@ -36,6 +36,7 @@ import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 
 import { HelpFaq, HelpFaqFallback, type FaqGroup } from "./faq-search";
+import { RoutineSteps } from "./routine-steps";
 
 export const metadata: Metadata = { title: "Yardım" };
 
@@ -412,7 +413,7 @@ function GoLinks({ links }: { links: { href: string; label: string }[] }) {
   return (
     <span className="mt-1.5 flex flex-wrap gap-x-4">
       {links.map((l) => (
-        <Link key={l.href} href={l.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 gap-1 text-[13px] font-medium text-ink hover:underline">
+        <Link key={l.href} href={l.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 gap-1 text-[13px] font-medium text-ink hover:underline">
           {l.label}
           <ArrowUpRight size={13} className="text-ink-quiet" aria-hidden="true" />
         </Link>
@@ -481,22 +482,18 @@ export default function HelpPage() {
             }
           />
           <CardContent>
-            <ol className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-              {ROUTINE.map((r, i) => (
-                <li key={r.title}>
-                  <Link href={r.href} className="group flex h-full flex-col gap-2 rounded-2xl bg-surface p-4 ring-1 ring-line transition-shadow hover:shadow-lift">
-                    <span className="flex items-center gap-3">
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-white tabular">{i + 1}</span>
-                      <span className="min-w-0 flex-1 font-semibold text-ink group-hover:underline">{r.title}</span>
-                      <IconTile size="sm" tone={toneFor(r.href)}>
-                        <r.icon />
-                      </IconTile>
-                    </span>
-                    <span className="text-[13px] leading-5 text-ink-mute">{r.body}</span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
+            <RoutineSteps
+              steps={ROUTINE.map((r) => ({
+                title: r.title,
+                href: r.href,
+                body: r.body,
+                icon: (
+                  <IconTile size="sm" tone={toneFor(r.href)}>
+                    <r.icon />
+                  </IconTile>
+                ),
+              }))}
+            />
           </CardContent>
         </Card>
 
@@ -572,7 +569,7 @@ export default function HelpPage() {
                         <n.icon />
                       </IconTile>
                       {n.href ? (
-                        <Link href={n.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-10 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
+                        <Link href={n.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-11 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
                           {n.label}
                           <ArrowUpRight size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
                         </Link>
@@ -588,7 +585,7 @@ export default function HelpPage() {
                           return (
                             <li key={c.id}>
                               <div className="flex items-center justify-between gap-3">
-                                <Link href={c.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 gap-1 text-[13px] text-ink-soft hover:text-ink hover:underline">
+                                <Link href={c.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 gap-1 text-[13px] text-ink-soft hover:text-ink hover:underline">
                                   {c.label}
                                 </Link>
                                 {tabs ? null : <ExcelValue value={excelFor(c.href)} />}
@@ -597,7 +594,7 @@ export default function HelpPage() {
                                 <ul className="ml-1 border-l border-line pl-3" aria-label={`${c.label} sekmeleri`}>
                                   {tabs.map((t) => (
                                     <li key={t.href} className="flex items-center justify-between gap-3">
-                                      <Link href={t.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-10 text-[13px] text-ink-mute hover:text-ink hover:underline">
+                                      <Link href={t.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 text-[13px] text-ink-mute hover:text-ink hover:underline">
                                         {t.label}
                                       </Link>
                                       <ExcelValue value={excelFor(t.href)} />
@@ -620,7 +617,7 @@ export default function HelpPage() {
                       <IconTile size="sm" tone={toneFor(account.label)}>
                         <account.icon />
                       </IconTile>
-                      <Link href={account.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-10 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
+                      <Link href={account.href} className="flex min-h-9 min-w-0 pointer-coarse:min-h-11 flex-1 items-center gap-1 text-sm font-medium text-ink hover:underline">
                         {account.label}
                         <ArrowUpRight size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
                       </Link>

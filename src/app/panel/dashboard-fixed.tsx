@@ -50,7 +50,7 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
     <div className={cn("flex items-baseline justify-between gap-4 py-1.5 text-[13px]", strong && "font-semibold")}>
       <span className="min-w-0">
         <span className={strong ? "text-ink" : "text-ink-mute"}>{label}</span>
-        {sub ? <span className="block truncate text-xs text-ink-quiet" title={sub}>{sub}</span> : null}
+        {sub ? <span className="block text-xs text-pretty text-ink-quiet sm:truncate" title={sub}>{sub}</span> : null}
       </span>
       <span className="text-right whitespace-nowrap text-ink tabular">{strong ? tl(value) : signedTl(value)}</span>
     </div>

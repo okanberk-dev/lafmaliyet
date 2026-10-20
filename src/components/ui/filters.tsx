@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils";
 
 import { markUrlWritten } from "./keep-scroll";
+import { initialQueryText, markQueryTextWritten, syncQueryText, typeQueryText } from "./query-text";
 
 /**
  * Süzgeç araçları. Durum adres çubuğunda tutulur (?ara=sut&durum=odenmedi): sayfa yenilenince ve bağlantı
@@ -39,18 +40,23 @@ export function useQueryState<T extends string = string>(key: string, fallback: 
   return [value, set];
 }
 
-/** Arama metni: yazarken hemen süzülür, adrese 250 ms sonra yazılır (imleç kaymaz, yazılan geri ezilmez) */
+/**
+ * Arama metni: yazarken hemen süzülür, adrese 250 ms sonra yazılır (imleç kaymaz, yazılan geri ezilmez).
+ *
+ * Adres dışarıdan değişirse (geri tuşu, "Temizle", başka sayfadan dönüş) kutu da güncellenir. Kendi yazdığımız
+ * değerin adrese yansıması kutuyu ezmez (o sırada kullanıcı yazmayı sürdürüyor olabilir); bu yansıma bir kez
+ * tüketilir. Next 16 (cacheComponents) önceki sayfayı gizli tutar: ürün kartı açıkken gizli liste kartın adresini
+ * görür (arama yok, kutu boşalır), "← Ürünler" ile dönünce ?ara=mocha yeniden okunur ve kutu dolar.
+ * Eşitleme kuralları query-text.ts'te (saf fonksiyonlar, testli).
+ */
 export function useQueryText(key = "ara"): [string, (value: string) => void] {
   const params = useSearchParams();
   const fromUrl = params.get(key) ?? "";
-  const [text, setText] = useState(fromUrl);
-  const [seen, setSeen] = useState(fromUrl);
-  const [written, setWritten] = useState<string | null>(null);
-  // Adres dışarıdan değişirse (geri tuşu, "Temizle") kutu da güncellenir; kendi yazdığımız değer kutuyu ezmez
-  if (fromUrl !== seen) {
-    setSeen(fromUrl);
-    if (fromUrl !== written) setText(fromUrl);
-  }
+  const [state, setState] = useState(() => initialQueryText(fromUrl));
+  const synced = syncQueryText(state, fromUrl);
+  // Çizim sırasında durum güncellemesi (React'in önerdiği "önceki değeri izle" kalıbı): adres değiştiyse hemen
+  if (synced !== state) setState(synced);
+  const text = synced.text;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -60,11 +66,15 @@ export function useQueryText(key = "ara"): [string, (value: string) => void] {
   );
   const set = useCallback(
     (v: string) => {
-      setText(v);
+      setState((s) => typeQueryText(s, v));
       if (timer.current) clearTimeout(timer.current);
+      const path = window.location.pathname;
       timer.current = setTimeout(() => {
+        // Bu arada başka sayfaya geçildiyse o sayfanın adresine yazılmaz
+        if (window.location.pathname !== path) return;
         const w = v.trim() ? v : "";
-        setWritten(w);
+        if ((new URL(window.location.href).searchParams.get(key) ?? "") === w) return;
+        setState((s) => markQueryTextWritten(s, w));
         writeParam(key, w, "");
       }, 250);
     },
@@ -108,6 +118,7 @@ export function SearchField({
   placeholder = "Ara",
   label,
   className,
+  inputClassName,
   shortcut = true,
 }: {
   value: string;
@@ -116,6 +127,8 @@ export function SearchField({
   /** Ekran okuyucu etiketi (yoksa placeholder) */
   label?: string;
   className?: string;
+  /** Alanın kendisine ek sınıf (ör. yükseklik) */
+  inputClassName?: string;
   /** "/" kısayolu (sayfada tek arama kutusu varken) */
   shortcut?: boolean;
 }) {
@@ -154,10 +167,11 @@ export function SearchField({
         autoComplete="off"
         spellCheck={false}
         className={cn(
-          "h-9 w-full rounded-xl bg-surface pr-10 pl-9 sm:pr-16 text-base text-ink ring-1 ring-line-strong outline-none ring-inset placeholder:text-ink-quiet focus:ring-2 focus:ring-ink/60 sm:text-sm pointer-coarse:h-10 [&::-webkit-search-cancel-button]:hidden",
+          "h-9 w-full rounded-xl bg-surface pr-10 pl-9 sm:pr-16 text-base text-ink ring-1 ring-line-strong outline-none ring-inset placeholder:text-ink-quiet focus:ring-2 focus:ring-ink/60 sm:text-sm pointer-coarse:h-11 pointer-coarse:pr-11 pointer-coarse:text-base [&::-webkit-search-cancel-button]:hidden",
+          inputClassName,
         )}
       />
-      <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-1">
+      <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-1 pointer-coarse:right-0">
         {value ? (
           <button
             type="button"
@@ -165,7 +179,8 @@ export function SearchField({
               onChange("");
               ref.current?.focus();
             }}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-ink-quiet hover:bg-ink/[0.05] hover:text-ink"
+            // Dokunmatikte alanın yüksekliği kadar (44px) dokunma alanı
+            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-ink-quiet hover:bg-ink/[0.05] hover:text-ink pointer-coarse:size-11 pointer-coarse:rounded-xl"
             aria-label="Aramayı temizle"
           >
             <X size={14} />
@@ -201,7 +216,7 @@ export function FilterChip({
       aria-pressed={active}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap ring-1 transition-colors ring-inset pointer-coarse:h-10",
+        "inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap ring-1 transition-colors ring-inset pointer-coarse:h-11",
         active ? "bg-ink text-white ring-ink" : "bg-surface text-ink-soft ring-line-strong hover:text-ink hover:ring-ink/30",
         className,
       )}
@@ -241,7 +256,7 @@ export function FilterBar({
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[13px] font-medium text-ink-mute hover:bg-ink/[0.05] hover:text-ink pointer-coarse:h-10"
+          className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-full px-2.5 text-[13px] font-medium text-ink-mute hover:bg-ink/[0.05] hover:text-ink pointer-coarse:h-11"
         >
           <X size={14} aria-hidden /> Temizle
         </button>

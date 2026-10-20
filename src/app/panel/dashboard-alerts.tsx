@@ -48,7 +48,8 @@ export function DashboardAlerts({ items, className }: { items: Alert[]; classNam
       <CardHeader
         icon={<TriangleAlert />}
         title="Dikkat edilmesi gerekenler"
-        description="Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz."
+        // Telefonda kart kısa kalsın: satırlardaki ok zaten bağlantı olduğunu söylüyor
+        description={<span className="max-sm:hidden">Sistem verileri otomatik kontrol eder; tıklayınca ilgili sayfaya gidersiniz.</span>}
         meta={
           items.length ? (
             <>
@@ -98,7 +99,7 @@ export function DashboardAlerts({ items, className }: { items: Alert[]; classNam
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}
-            className="mt-1 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-[13px] font-medium text-ink-mute transition-colors hover:bg-ink/[0.05] hover:text-ink pointer-coarse:h-10"
+            className="mt-1 inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-[13px] font-medium text-ink-mute transition-colors hover:bg-ink/[0.05] hover:text-ink pointer-coarse:h-11"
           >
             <ChevronDown size={15} aria-hidden="true" className={cn("transition-transform", open && "rotate-180")} />
             {open ? "Daha az göster" : `${hidden} uyarı daha göster`}

@@ -1,11 +1,10 @@
 import { desc } from "drizzle-orm";
-import { Download, HardDriveDownload } from "lucide-react";
+import { ChevronRight, Download, HardDriveDownload, Users } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { buttonClass } from "@/components/ui/button";
-import { Card, CardHeader } from "@/components/ui/card";
+import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -13,8 +12,9 @@ import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
 import { impactData } from "./impact";
+import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
-import { SECTION_SCROLL_MARGIN, SETTINGS_SECTIONS } from "./sections";
+import { SETTINGS_SECTIONS } from "./sections";
 import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
 
 export const metadata: Metadata = { title: "Ayarlar" };
@@ -36,7 +36,8 @@ export default function SettingsPage() {
 }
 
 /**
- * Geniş ekranda solda bölüm gezinmesi, sağda kartlar; daha dar ekranda gezinme üstte şerit olur.
+ * Geniş ekranda solda bölüm gezinmesi, sağda kartlar; tablette gezinme üstte şerit olur; telefonda şerit yok,
+ * bölümler akordeon (section-card.tsx).
  * Kaydedilmemiş değişiklik varken (form `data-dirty`) alttaki yüzen kaydet çubuğu son kartı örtmesin diye boşluk bırakılır.
  */
 function SettingsLayout({ nav, children }: { nav: ReactNode; children: ReactNode }) {
@@ -53,7 +54,7 @@ function SettingsSkeleton() {
     <SettingsLayout
       nav={
         <>
-          <div className="mb-4 flex gap-1 overflow-hidden xl:hidden">
+          <div className="mb-4 flex gap-1 overflow-hidden max-sm:hidden xl:hidden">
             {Array.from({ length: 5 }, (_, i) => (
               <Skeleton key={i} className="h-10 w-28 shrink-0" />
             ))}
@@ -66,40 +67,63 @@ function SettingsSkeleton() {
         </>
       }
     >
+      {/* Telefonda bölümler kapalı akordeon satırları olarak gelir: iskelet de o yükseklikte */}
       <div className="space-y-4" aria-busy="true" aria-label="Yükleniyor">
-        <Skeleton className="h-64 rounded-3xl" />
-        <Skeleton className="h-72 rounded-3xl" />
-        <Skeleton className="h-56 rounded-3xl" />
-        <Skeleton className="h-72 rounded-3xl" />
+        <Skeleton className="h-28 rounded-3xl max-sm:h-20" />
+        {["h-64", "h-72", "h-56", "h-72"].map((h, i) => (
+          <Skeleton key={i} className={`${h} rounded-3xl max-sm:h-20`} />
+        ))}
       </div>
     </SettingsLayout>
+  );
+}
+
+/**
+ * Kullanıcı yönetimi ayrı sayfada; Ayarlar'da en üstte görünür bir giriş kartı (sahibi orada arıyor). Telefonda
+ * öteki bölümlerle aynı satır, dokununca doğrudan Kullanıcılar ekranı açılır.
+ */
+function UsersLinkCard() {
+  return (
+    <SectionCard
+      id="kullanicilar"
+      href="/panel/kullanicilar"
+      icon={<Users />}
+      title="Kullanıcılar & roller"
+      summary="Kullanıcı ekle, parola, iki adımlı doğrulama"
+      description="Kullanıcı ekle, parola, iki adımlı doğrulama. Giriş e-postasını ve parolayı siz belirleyin ya da davet bağlantısı gönderin."
+      actions={
+        <ButtonLink href="/panel/kullanicilar" variant="primary">
+          Kullanıcıları yönet <ChevronRight size={16} />
+        </ButtonLink>
+      }
+    />
   );
 }
 
 /** Yedek: panelin bütün sekmeleri ve bütün ayların ham kayıtları tek Excel dosyasında (/api/export, yalnızca yönetici) */
 function BackupCard() {
   return (
-    <Card id="yedek" className={SECTION_SCROLL_MARGIN}>
-      <CardHeader
-        icon={<HardDriveDownload />}
-        title="Yedek"
-        description={
-          <>
-            Panelin bütün sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar,
-            personel, sabit giderler, ayarlar) ve bütün ayların ham kayıtları tek Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl
-            Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
-            <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir." />
-          </>
-        }
-        actionsClassName="max-sm:w-full"
-        actions={
-          // Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin)
-          <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
-            <Download size={16} /> Tüm veriyi Excel&apos;e aktar
-          </a>
-        }
-      />
-    </Card>
+    <SectionCard
+      id="yedek"
+      icon={<HardDriveDownload />}
+      title="Yedek"
+      summary="Bütün veri tek Excel dosyasında"
+      description={
+        <>
+          Panelin bütün sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar,
+          personel, sabit giderler, ayarlar) ve bütün ayların ham kayıtları tek Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl
+          Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
+          <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir." />
+        </>
+      }
+      actionsClassName="max-sm:w-full"
+      actions={
+        // Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin)
+        <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+          <Download size={16} /> Tüm veriyi Excel&apos;e aktar
+        </a>
+      }
+    />
   );
 }
 
@@ -132,6 +156,7 @@ async function SettingsContent() {
 
   return (
     <SettingsLayout nav={<SettingsNav />}>
+      <UsersLinkCard />
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />

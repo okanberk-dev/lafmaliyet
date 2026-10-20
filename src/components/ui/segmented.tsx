@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 const track =
   "inline-flex max-w-full items-center gap-0.5 overflow-x-auto overscroll-x-contain rounded-xl bg-panel p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 const item =
-  "relative inline-flex h-8 pointer-coarse:h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20";
+  "relative inline-flex h-8 pointer-coarse:h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] px-3 text-[13px] font-medium whitespace-nowrap outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20";
 
 const FADE = "1.5rem";
 

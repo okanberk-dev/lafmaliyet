@@ -270,7 +270,8 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
         className="fixed inset-0 z-[60] bg-foreground/15"
         onClick={onClose}
       />
-      <div className="pointer-events-none fixed inset-0 z-[61] flex items-start justify-center p-3 sm:px-4 sm:pt-[12vh]">
+      {/* Telefonda görünür alan kadar yüksek (--vvh, bottom-nav.tsx): iOS'ta ekran klavyesi sonuçları örtmez */}
+      <div className="pointer-events-none fixed inset-0 z-[61] flex items-start justify-center p-3 max-sm:bottom-auto max-sm:h-[var(--vvh,100dvh)] sm:px-4 sm:pt-[12dvh]">
         <motion.div
           data-component="command-palette"
           role="dialog"
@@ -313,7 +314,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                   setActive(0);
                 }}
                 aria-label="Aramayı temizle"
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-chart-muted transition-colors hover:bg-chart-metric-bg hover:text-foreground pointer-coarse:size-10"
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-chart-muted transition-colors hover:bg-chart-metric-bg hover:text-foreground pointer-coarse:size-11"
               >
                 <X className="size-4" strokeWidth={1.75} aria-hidden />
               </button>
@@ -322,7 +323,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
             <button
               type="button"
               onClick={onClose}
-              className="hidden h-10 shrink-0 cursor-pointer items-center rounded-lg px-2.5 text-sm font-medium text-foreground hover:bg-chart-metric-bg max-sm:inline-flex pointer-coarse:inline-flex"
+              className="hidden h-10 shrink-0 cursor-pointer items-center rounded-lg px-2.5 text-sm font-medium text-foreground hover:bg-chart-metric-bg max-sm:inline-flex pointer-coarse:inline-flex pointer-coarse:h-11"
             >
               Kapat
             </button>
@@ -339,7 +340,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                   aria-pressed={on}
                   onClick={() => pickCategory(g.id)}
                   className={cn(
-                    "inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-sm:px-2 pointer-coarse:h-10",
+                    "inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-sm:px-2 pointer-coarse:h-11",
                     on ? "bg-chart-metric-bg text-foreground ring-1 ring-border" : "text-chart-muted hover:bg-chart-metric-bg hover:text-foreground",
                   )}
                 >
@@ -396,7 +397,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                   <button
                     type="button"
                     onClick={() => pickCategory(s.group!)}
-                    className="mt-0.5 flex h-9 w-full cursor-pointer items-center rounded-xl px-2 text-left text-xs font-medium text-chart-muted hover:bg-chart-metric-bg/60 hover:text-foreground pointer-coarse:h-10"
+                    className="mt-0.5 flex h-9 w-full cursor-pointer items-center rounded-xl px-2 text-left text-xs font-medium text-chart-muted hover:bg-chart-metric-bg/60 hover:text-foreground pointer-coarse:h-11"
                   >
                     +{s.more} sonuç daha · yalnız {s.label.toLocaleLowerCase("tr-TR")}
                   </button>
@@ -411,7 +412,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                   {category ? "Başka bir kategoride olabilir." : "Yazımı kontrol edin; Türkçe karakter gerekmez (sut = süt)."}
                 </p>
                 {category ? (
-                  <button type="button" onClick={() => pickCategory(null)} className="mt-3 inline-flex h-9 cursor-pointer items-center rounded-xl bg-chart-metric-bg px-3 text-[13px] font-medium text-foreground ring-1 ring-border hover:bg-chart-bg">
+                  <button type="button" onClick={() => pickCategory(null)} className="mt-3 inline-flex h-9 cursor-pointer items-center rounded-xl bg-chart-metric-bg px-3 text-[13px] font-medium text-foreground ring-1 ring-border hover:bg-chart-bg pointer-coarse:h-11">
                     Tüm kategorilerde ara
                   </button>
                 ) : null}

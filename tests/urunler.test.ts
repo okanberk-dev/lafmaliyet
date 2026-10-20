@@ -20,6 +20,8 @@ import {
   recipeSignature,
   resolveQty,
   sameRate,
+  STATUS_CHIPS,
+  statusChips,
   type SortableRow,
 } from "../src/app/panel/urunler/logic";
 import { createModel, priceProduct } from "../src/lib/calc/engine";
@@ -227,6 +229,19 @@ test("Sıralama: durum (en kötüsü büyük), kategori A → Z (Türkçe), fire
     "eşitlikte menü sırası korunur (kararlı)",
   );
   assert.ok(compareBy("name", row({ name: "Latte", size: "L" }), row({ name: "Latte", size: "M" })) < 0);
+});
+
+// ---------------------------------------------------------------- Durum çipleri
+
+test("Durum çipleri süzgeçle kaybolmaz: 'Reçete yok' menüde reçetesiz ürün varken (sayısı 0 olsa da) durur", () => {
+  const menu = [{ status: "İyi" as const }, { status: "Dikkat" as const }, { status: "Reçete yok" as const }];
+  assert.deepEqual(statusChips(menu, []), STATUS_CHIPS);
+  // "Large" seçilince reçetesiz ürün süzülse de çip yerinde kalır (pencerede satırlar kaymasın)
+  assert.deepEqual(statusChips(menu, ["İyi"]), ["İyi", "Dikkat", "Düşük kâr", "Reçete yok"]);
+  const allRecipes = [{ status: "İyi" as const }, { status: "Düşük kâr" as const }];
+  assert.deepEqual(statusChips(allRecipes, []), ["İyi", "Dikkat", "Düşük kâr"], "reçetesiz ürün yoksa çip hiç yok");
+  assert.deepEqual(statusChips(allRecipes, ["Reçete yok"]), STATUS_CHIPS, "adresten seçiliyse kaldırılabilsin diye görünür");
+  assert.deepEqual(statusChips([], []), ["İyi", "Dikkat", "Düşük kâr"]);
 });
 
 // ---------------------------------------------------------------- Bağlantılar ve kopyalama metinleri

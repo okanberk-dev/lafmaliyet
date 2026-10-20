@@ -64,9 +64,6 @@ const invalidAmount = (text: string) => {
 /** "30.000 ₺ net" ya da "30.000 ₺ net + 2.000 ₺ ek" */
 const salaryLabel = (net: number, extras: number) => `${tl(net)} net${extras ? ` + ${tl(extras)} ek` : ""}`;
 
-/** Telefonda dokunma alanı en az 40px */
-const TOUCH = "pointer-coarse:h-10";
-const TOUCH_ICON = "pointer-coarse:size-10";
 /** Uzun sütun başlıkları iki satıra sarılır, alta hizalanır: tablo 1400px ekranda yatay kaydırmasız sığar */
 const WRAP_HEAD = "align-bottom leading-5 whitespace-normal";
 /** Az önce kaydedilen satırın kısa süreli vurgusu */
@@ -276,30 +273,30 @@ export function StaffEditor({
 
   const rateSummary = `İşçi ${pct(rates.isciSgk, 2)} + ${pct(rates.isciIssizlik, 2)} · İşveren ${pct(rates.isverenSgk, 2)} + ${pct(rates.isverenIssizlik, 2)}`;
   const addButton = (
-    <Button size="sm" onClick={() => setEditing("new")} className={TOUCH}>
+    <Button size="sm" onClick={() => setEditing("new")}>
       <Plus size={16} /> Personel ekle
     </Button>
   );
 
   /** Satır eylemleri: düzenle, durdur / durdurmayı kaldır, (izin varsa) sil */
-  const rowActions = (x: StaffRow, touch?: boolean) => (
+  const rowActions = (x: StaffRow) => (
     <div className="flex justify-end gap-1.5">
-      <IconButton label={`${x.name}: düzenle`} onClick={() => setEditing(x)} className={touch ? TOUCH_ICON : undefined}>
+      <IconButton label={`${x.name}: düzenle`} onClick={() => setEditing(x)}>
         <Pencil size={15} />
       </IconButton>
       {x.status === "active" ? (
         x.endMonth ? (
-          <IconButton label={`${x.name}: durdurmayı kaldır (devam ettir)`} onClick={() => void unstop(x)} disabled={pending} className={touch ? TOUCH_ICON : undefined}>
+          <IconButton label={`${x.name}: durdurmayı kaldır (devam ettir)`} onClick={() => void unstop(x)} disabled={pending}>
             <CirclePlay size={15} />
           </IconButton>
         ) : (
-          <IconButton label={`${x.name}: durdur (ayrıldı)`} onClick={() => setStopping(x)} className={touch ? TOUCH_ICON : undefined}>
+          <IconButton label={`${x.name}: durdur (ayrıldı)`} onClick={() => setStopping(x)}>
             <CirclePause size={15} />
           </IconButton>
         )
       ) : null}
       {!x.deleteBlocker ? (
-        <IconButton label={`${x.name}: sil`} tone="danger" onClick={() => setDeleting(x)} className={touch ? TOUCH_ICON : undefined}>
+        <IconButton label={`${x.name}: sil`} tone="danger" onClick={() => setDeleting(x)}>
           <Trash2 size={15} />
         </IconButton>
       ) : null}
@@ -395,15 +392,18 @@ export function StaffEditor({
             title="Bu aramaya uyan personel yok"
             description="Aramayı kısaltın. Ayrılan personel aşağıdaki Geçmiş bölümünde."
             action={
-              <Button size="sm" variant="secondary" onClick={() => setQ("")} className={TOUCH}>
+              <Button size="sm" variant="secondary" onClick={() => setQ("")}>
                 Aramayı temizle
               </Button>
             }
           />
         ) : (
           <>
-            {/* Masaüstü / tablet: tablo (ilk sütun yatay kaydırmada sabit) */}
-            <TableWrap className="max-sm:hidden">
+            {/*
+              Geniş ekran: tablo (ilk sütun yatay kaydırmada sabit). xl altında kartlar: tablo 852px, 768px tablette ve
+              kenar çubuğu açılan 1024px'te sığmıyor; Durum ve düzenle / durdur düğmeleri yana kayıp gizleniyordu.
+            */}
+            <TableWrap className="max-xl:hidden">
               <Table>
                 <THead>
                   <tr>
@@ -510,13 +510,13 @@ export function StaffEditor({
               </Table>
             </TableWrap>
 
-            {/* Telefon: her kişi bir kart; maaş ve maliyet, altta durum ve eylemler */}
-            <ul className="divide-y divide-line border-t border-line sm:hidden">
+            {/* Telefon ve tablet: her kişi bir kart; tablodaki bütün değerler, altta durum ve eylemler */}
+            <ul className="divide-y divide-line border-t border-line xl:hidden">
               {visible.map((x) => {
                 const c = costOf(x);
                 return (
                   <li key={x.id} className={cn("space-y-2 px-5 py-4 transition-colors", x.id === flash && FLASH)}>
-                    <button type="button" onClick={() => setEditing(x)} className={cn("flex w-full cursor-pointer items-start gap-2.5 text-left", !x.inRangeNow && "opacity-60")}>
+                    <button type="button" onClick={() => setEditing(x)} className={cn("flex min-h-11 w-full cursor-pointer items-start gap-2.5 text-left", !x.inRangeNow && "opacity-60")}>
                       <Avatar name={x.name || "Personel"} />
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium break-words text-ink">{x.name}</span>
@@ -528,15 +528,25 @@ export function StaffEditor({
                         <span className="block text-xs text-ink-mute">işveren maliyeti</span>
                       </span>
                     </button>
-                    <dl className={cn("grid grid-cols-2 gap-x-3 gap-y-1 pl-[42px] text-[13px]", !x.inRangeNow && "opacity-60")}>
+                    <dl className={cn("grid grid-cols-2 gap-x-3 gap-y-1 pl-[42px] text-[13px] sm:max-w-md", !x.inRangeNow && "opacity-60")}>
                       <dt className="text-ink-mute">Tahmini brüt</dt>
                       <dd className="text-right text-ink tabular">{tl(c.gross)}</dd>
+                      <dt className="text-ink-mute">İşçi kesintileri</dt>
+                      <dd className="text-right text-ink tabular">{tl(c.deductions)}</dd>
                       <dt className="text-ink-mute">İşveren SGK + işsizlik</dt>
-                      <dd className="text-right text-ink tabular">{tl(c.employerSgk + c.employerUnemployment)}</dd>
+                      <dd className="text-right text-ink tabular">
+                        {tl(c.employerSgk + c.employerUnemployment)}
+                        {/* Tablodaki gibi altında ikisi ayrı: SGK + işsizlik */}
+                        <span className="block text-xs text-ink-mute">
+                          <span className="sr-only">SGK </span>
+                          {tl(c.employerSgk)} + <span className="sr-only">işsizlik </span>
+                          {tl(c.employerUnemployment)}
+                        </span>
+                      </dd>
                     </dl>
                     <div className="flex items-center justify-between gap-2 pl-[42px]">
                       <RangeBadge status={x.status} range={x} currentMonth={currentMonth} />
-                      {rowActions(x, true)}
+                      {rowActions(x)}
                     </div>
                   </li>
                 );
@@ -558,7 +568,7 @@ export function StaffEditor({
                 ? [ended.length ? `${ended.length} ayrılan` : "", changes.length ? `${changes.length} maaş değişikliği` : ""].filter(Boolean).join(" · ")
                 : "Henüz yok: ayrılan personel ve maaş değişiklikleri burada görünür"
             }
-            headClassName="pointer-coarse:min-h-10"
+            headClassName="pointer-coarse:min-h-11"
           >
             <div className="space-y-5 pt-3 pb-1">
               {ended.length ? (
@@ -574,11 +584,11 @@ export function StaffEditor({
                           </span>
                         </button>
                         <span className="flex items-center gap-1.5">
-                          <Button size="xs" variant="secondary" onClick={() => setResuming(x)} className="pointer-coarse:h-9">
+                          <Button size="xs" variant="secondary" onClick={() => setResuming(x)}>
                             <CirclePlay size={14} /> Devam ettir
                           </Button>
                           {!x.deleteBlocker ? (
-                            <IconButton label={`${x.name}: sil`} tone="danger" onClick={() => setDeleting(x)} className={TOUCH_ICON}>
+                            <IconButton label={`${x.name}: sil`} tone="danger" onClick={() => setDeleting(x)}>
                               <Trash2 size={15} />
                             </IconButton>
                           ) : null}
@@ -602,7 +612,7 @@ export function StaffEditor({
                             {salaryLabel(prev.netSalary, prev.extras)})
                           </span>
                         </span>
-                        <Button size="xs" variant="ghost" onClick={() => askUndo(x, h.versionId!)} className="pointer-coarse:h-9">
+                        <Button size="xs" variant="ghost" onClick={() => askUndo(x, h.versionId!)}>
                           <Undo2 size={14} /> Geri al
                         </Button>
                       </li>
@@ -665,7 +675,7 @@ export function StaffEditor({
                   if (!ratesBusy && ratesDirty) void saveRates();
                 }}
               >
-                <Well className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <Well className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {RATE_FIELDS.map((fd) => {
                     const v = check.values[fd.key];
                     const err = check.errors[fd.key];
@@ -690,7 +700,7 @@ export function StaffEditor({
                           onChange={(e) => setR({ ...r, [fd.key]: e.target.value })}
                           aria-invalid={err ? true : undefined}
                           data-warn={warn ? true : undefined}
-                          className={cn("cell-input", TOUCH)}
+                          className="cell-input"
                         />
                       </Field>
                     );
@@ -708,11 +718,11 @@ export function StaffEditor({
                 </p>
                 <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                   {ratesDirty ? (
-                    <Button variant="ghost" onClick={discardRates} disabled={ratesBusy} className={TOUCH}>
+                    <Button variant="ghost" onClick={discardRates} disabled={ratesBusy}>
                       <RotateCcw size={16} /> Vazgeç
                     </Button>
                   ) : null}
-                  <Button type="submit" disabled={ratesBusy || !ratesDirty} className={TOUCH}>
+                  <Button type="submit" disabled={ratesBusy || !ratesDirty} className="max-sm:flex-1">
                     <Save size={16} /> {ratesBusy ? "Kaydediliyor…" : "Oranları kaydet"}
                   </Button>
                 </div>
@@ -919,6 +929,30 @@ function StaffDialog({
 
   const activeIdx = row ? row.history.indexOf(entryAt(row.history, row.valueMonth).entry ?? row.history[0]) : 0;
   const diff = before ? cost.total - before.total : 0;
+  /** Durdur / devam ettir / sil: masaüstünde altbilgide, telefonda formun sonunda */
+  const secondary =
+    row ? (
+      <>
+        {row.status === "ended" ? (
+          <Button variant="ghost" onClick={() => onResume(row)} disabled={busy}>
+            <CirclePlay size={16} /> Devam ettir
+          </Button>
+        ) : row.status === "active" && row.endMonth ? (
+          <Button variant="ghost" onClick={() => onUnstop(row)} disabled={busy}>
+            <CirclePlay size={16} /> Durdurmayı kaldır
+          </Button>
+        ) : row.status === "active" ? (
+          <Button variant="ghost" onClick={() => onStop(row)} disabled={busy}>
+            <CirclePause size={16} /> Durdur
+          </Button>
+        ) : null}
+        {!row.deleteBlocker ? (
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => onDelete(row)} disabled={busy}>
+            <Trash2 size={16} /> Sil
+          </Button>
+        ) : null}
+      </>
+    ) : null;
 
   return (
     <Dialog
@@ -926,36 +960,14 @@ function StaffDialog({
       onClose={onClose}
       title={row ? "Personeli düzenle" : "Personel ekle"}
       description={row ? undefined : "Net maaşı yazın; brüt ve işveren maliyeti hemen hesaplanır."}
-      footerStart={
-        row ? (
-          <>
-            {row.status === "ended" ? (
-              <Button variant="ghost" onClick={() => onResume(row)} disabled={busy} className={TOUCH}>
-                <CirclePlay size={16} /> Devam ettir
-              </Button>
-            ) : row.status === "active" && row.endMonth ? (
-              <Button variant="ghost" onClick={() => onUnstop(row)} disabled={busy} className={TOUCH}>
-                <CirclePlay size={16} /> Durdurmayı kaldır
-              </Button>
-            ) : row.status === "active" ? (
-              <Button variant="ghost" onClick={() => onStop(row)} disabled={busy} className={TOUCH}>
-                <CirclePause size={16} /> Durdur
-              </Button>
-            ) : null}
-            {!row.deleteBlocker ? (
-              <Button variant="ghost" className={cn("text-bad hover:bg-bad-soft hover:text-bad", TOUCH)} onClick={() => onDelete(row)} disabled={busy}>
-                <Trash2 size={16} /> Sil
-              </Button>
-            ) : null}
-          </>
-        ) : null
-      }
+      footerStart={secondary}
+      footerStartOnPhone="body"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} className={TOUCH}>
+          <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy} className={TOUCH}>
+          <Button type="submit" form={formId} disabled={busy}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
@@ -979,31 +991,62 @@ function StaffDialog({
             placeholder="ör. Ayşe Yılmaz"
             aria-invalid={nameError ? true : undefined}
             maxLength={80}
+            autoComplete="off"
+            enterKeyHint="next"
+            data-autofocus={row ? undefined : true}
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Net maaş (₺)" htmlFor="st-net" error={netError}>
-            <NumberInput ref={netRef} id="st-net" value={net} onChange={(e) => setNet(e.target.value)} placeholder="0" aria-invalid={netError ? true : undefined} className="cell-input" />
+            <NumberInput
+              ref={netRef}
+              id="st-net"
+              value={net}
+              onChange={(e) => setNet(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              enterKeyHint="next"
+              placeholder="0"
+              aria-invalid={netError ? true : undefined}
+              className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
+            />
           </Field>
           <Field label="Yemek / yol / prim (₺)" htmlFor="st-ext" error={extError} tip="Varsa yemek kartı, yol parası, prim gibi aylık ek ödemeler.">
-            <NumberInput id="st-ext" value={ext} onChange={(e) => setExt(e.target.value)} placeholder="0" aria-invalid={extError ? true : undefined} className="cell-input" />
+            <NumberInput
+              id="st-ext"
+              value={ext}
+              onChange={(e) => setExt(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder="0"
+              aria-invalid={extError ? true : undefined}
+              className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
+            />
           </Field>
         </div>
         {row && !changed ? <p className="-mt-1 text-xs text-ink-mute">{monthLabel(row.valueMonth)} maaşı. Değiştirirseniz hangi aydan itibaren geçerli olacağı sorulur.</p> : null}
 
-        {/* Canlı hesap: yazdıkça brüt ve işveren maliyeti */}
-        <Well className="grid grid-cols-3 gap-3 p-3 text-[13px]">
-          <div className="min-w-0">
+        {/* Canlı hesap: yazdıkça brüt, kesintiler ve işveren maliyeti (tablodaki bütün tutarlar) */}
+        {/* Telefonda alt alta satırlar (etiket solda, tutar sağda), genişte iki sütun */}
+        <Well className="grid grid-cols-1 gap-3 p-3 text-[13px] max-sm:gap-0 max-sm:divide-y max-sm:divide-line max-sm:py-1 sm:grid-cols-2">
+          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
             <p className="text-ink-mute">Tahmini brüt</p>
             <p className="font-semibold text-ink tabular">{tl(cost.gross)}</p>
           </div>
-          <div className="min-w-0">
-            <p className="text-ink-mute">İşveren SGK + işsizlik</p>
-            <p className="font-semibold text-ink tabular">{tl(cost.employerSgk + cost.employerUnemployment)}</p>
+          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+            <p className="text-ink-mute">İşçi kesintileri</p>
+            <p className="font-semibold text-ink tabular">{tl(cost.deductions)}</p>
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
+            <p className="text-ink-mute">İşveren SGK + işsizlik</p>
+            <p className="font-semibold text-ink tabular max-sm:text-right">
+              {tl(cost.employerSgk + cost.employerUnemployment)}
+              <span className="block text-xs font-normal text-ink-mute">
+                SGK {tl(cost.employerSgk)} + işsizlik {tl(cost.employerUnemployment)}
+              </span>
+            </p>
+          </div>
+          <div className="min-w-0 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-3 max-sm:py-2">
             <p className="text-ink-mute">İşveren maliyeti</p>
-            <p className="font-semibold text-ink tabular">
+            <p className="font-semibold text-ink tabular max-sm:text-right">
               {tl(cost.total)}
               {changed && Math.abs(diff) >= 1 ? (
                 <span className={cn("ml-1 block text-xs font-medium sm:inline", diff > 0 ? "text-bad" : "text-good")}>
@@ -1033,9 +1076,9 @@ function StaffDialog({
           <Disclosure
             title="Geçmiş"
             summary={`${rangeText(row)} · ${row.history.length > 1 ? `${row.history.length - 1} maaş değişikliği` : "maaş değişikliği yok"}`}
-            className="rounded-2xl bg-panel px-3.5 py-3"
+            tile
           >
-            <div className="space-y-2.5 pt-3">
+            <div className="space-y-2.5 pt-0.5">
               <HistoryList
                 rows={row.history.map((h) => ({ fromMonth: h.fromMonth, versionId: h.versionId, label: salaryLabel(h.netSalary, h.extras) }))}
                 startMonth={row.startMonth}

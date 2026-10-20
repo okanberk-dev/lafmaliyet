@@ -1,12 +1,15 @@
 "use server";
 
-import { and, count, eq, ne, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { hashPassword } from "@/server/auth/password";
 import { requireAdmin, startSession } from "@/server/auth/dal";
+import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
+import { issueUserToken } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -159,6 +162,13 @@ export async function saveUser(input: z.input<typeof userSchema>) {
         })
         .where(eq(s.users.id, data.id))
         .returning();
+      // Parolayı yönetici belirlediyse bekleyen davet / sıfırlama bağlantıları artık çalışmaz
+      if (data.password) {
+        await db
+          .update(s.userTokens)
+          .set({ expiresAt: new Date() })
+          .where(and(eq(s.userTokens.userId, data.id), isNull(s.userTokens.usedAt), gt(s.userTokens.expiresAt, new Date())));
+      }
       // Kendi parolasını buradan değiştiren yönetici bu cihazda oturumda kalır
       if (after && after.id === me.id) await startSession(after);
     } else {
@@ -166,6 +176,79 @@ export async function saveUser(input: z.input<typeof userSchema>) {
       await db.insert(s.users).values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash: await hashPassword(data.password) });
     }
     await logActivity(me, data.id ? "Kullanıcı güncellendi" : "Kullanıcı eklendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
+    refresh();
+    return null;
+  });
+}
+
+const createSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("password"),
+    name: zText("Ad", 80),
+    email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
+    role: z.enum(["admin", "staff"]),
+    active: z.boolean(),
+    password: z.string().min(8, "Parola en az 8 karakter olmalı").max(200, "Parola çok uzun"),
+  }),
+  z.object({
+    mode: z.literal("invite"),
+    name: zText("Ad", 80),
+    email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
+    role: z.enum(["admin", "staff"]),
+    active: z.literal(true, { message: "Davet edilen kullanıcı aktif olmalı" }),
+  }),
+]);
+
+/**
+ * Yeni kullanıcı: parolayı yönetici belirler ("password") ya da kişi tek kullanımlık davet bağlantısından kendisi
+ * belirler ("invite", 72 saat; o zamana kadar parola alanında hiçbir parolayla eşleşmeyen işaret durur).
+ * Dönen veri "Giriş bilgileri" penceresini doldurur; parola geri gönderilmez (pencere zaten biliyor).
+ */
+export async function createUser(input: z.input<typeof createSchema>) {
+  return attempt(async (): Promise<AccessInfo> => {
+    const me = await requireAdmin();
+    const data = createSchema.parse(input);
+    const db = getDb();
+    const [{ dup }] = await db.select({ dup: count() }).from(s.users).where(eq(s.users.email, data.email));
+    if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
+    const passwordHash = data.mode === "password" ? await hashPassword(data.password) : INVITE_PASSWORD_HASH;
+    const [u] = await db
+      .insert(s.users)
+      .values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash })
+      .returning({ id: s.users.id, name: s.users.name, email: s.users.email });
+    await logActivity(
+      me,
+      data.mode === "invite" ? "Kullanıcı davet edildi" : "Kullanıcı eklendi",
+      `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`,
+    );
+    refresh();
+    if (data.mode === "password") return { kind: "password", userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris` };
+    const { raw, expiresAt } = await issueUserToken(u.id, "invite", TOKEN_HOURS.invite);
+    return linkAccessInfo(appUrl(), u, "invite", raw, expiresAt);
+  });
+}
+
+/**
+ * Kullanıcıyı kalıcı olarak siler (yanlış e-postayla eklenen ya da daveti hiç kabul edilmeyen kişi için).
+ * İşlem geçmişindeki satırları adıyla durur. Kendinizi ve son aktif yöneticiyi silemezsiniz.
+ */
+export async function deleteUser(id: number) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const userId = z.number().int().positive().parse(id);
+    if (userId === me.id) throw new UserError("Kendi hesabınızı silemezsiniz");
+    const db = getDb();
+    const [u] = await db.select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active }).from(s.users).where(eq(s.users.id, userId)).limit(1);
+    if (!u) throw new UserError("Kullanıcı bulunamadı");
+    if (u.role === "admin" && u.active) {
+      const [{ n }] = await db
+        .select({ n: count() })
+        .from(s.users)
+        .where(and(eq(s.users.role, "admin"), eq(s.users.active, true), ne(s.users.id, userId)));
+      if (n === 0) throw new UserError("En az bir aktif yönetici kalmalı");
+    }
+    await db.delete(s.users).where(eq(s.users.id, userId));
+    await logActivity(me, "Kullanıcı silindi", `${u.name} (${u.email})`);
     refresh();
     return null;
   });

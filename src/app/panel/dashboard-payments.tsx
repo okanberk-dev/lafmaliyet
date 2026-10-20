@@ -1,53 +1,80 @@
-import { BellRing, CalendarClock, FileText, Landmark, Receipt, Users, Wallet, type LucideIcon } from "lucide-react";
+"use client";
 
-import { ActivityItem, ActivityList } from "@/components/ui/activity";
+import { BellRing } from "lucide-react";
+import Link from "next/link";
+import { useOptimistic } from "react";
+
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { PastelTone } from "@/components/ui/icon-tile";
-import { dateTR, tl } from "@/lib/format";
-import { daysLeftLabel, type ReminderKind, type UpcomingItem } from "@/lib/reminders";
+import { DotList } from "@/components/ui/misc";
+import { money } from "@/lib/format";
+import { CATEGORY_LABEL, daysLeftLabel, type UpcomingItem } from "@/lib/reminders";
+import { cn } from "@/lib/utils";
 
-const ICON: Record<ReminderKind, LucideIcon> = { odeme: Wallet, vergi: Landmark, kira: Receipt, maas: Users, fatura: FileText, diger: CalendarClock };
+import { CategoryWell, categoryOf, DateTile, itemKey, PaidButton, URGENCY, urgencyOf, usePaymentActions } from "./hatirlaticilar/payment-ui";
 
 /**
  * Genel bakış: gecikmiş ve 7 gün içindeki ödemeler (Ödemeler & hatırlatıcılar'dan; liste sayfada bir kez
- * okunur, "Bu ayın işleri" de aynısını kullanır). Yoksa hiç görünmez; sayfa sakin kalsın.
+ * okunur, "Bu ayın işleri" de aynısını kullanır). Takvim yaprağı, aciliyet rengi ve tek dokunuşla "Ödendi"
+ * (8 saniye geri alınabilir). Yoksa hiç görünmez; sayfa sakin kalsın.
  */
 export function DashboardPayments({ items, className }: { items: UpcomingItem[]; className?: string }) {
-  const near = items.filter((i) => i.status !== "later").slice(0, 4);
+  const [visible, hide] = useOptimistic(items, (state, key: string) => state.filter((i) => itemKey(i) !== key));
+  const { busy, pay } = usePaymentActions(hide);
+  const nearAll = visible.filter((i) => i.status !== "later");
+  const near = nearAll.slice(0, 4);
   if (!near.length) return null;
-  const overdue = near.filter((i) => i.status === "overdue").length;
+  const overdue = nearAll.filter((i) => i.status === "overdue");
+  const total = nearAll.reduce((a, i) => a + (i.amount ?? 0), 0);
+
   return (
     <Card className={className}>
       <CardHeader
         icon={<BellRing />}
         title="Yaklaşan ödemeler"
-        description={overdue ? `${overdue} ödeme gecikti` : "Önümüzdeki 7 gün"}
+        description={overdue.length ? `${overdue.length} ödeme gecikti · toplam ${money(total)}` : `Önümüzdeki 7 gün · ${money(total)}`}
         actions={
-          <ButtonLink href="/panel/hatirlaticilar" variant="secondary" size="sm">
-            Tümü
+          <ButtonLink href="/panel/hatirlaticilar" variant="secondary" size="sm" className="pointer-coarse:h-11">
+            Tümü{nearAll.length > near.length ? ` (${nearAll.length})` : ""}
           </ButtonLink>
         }
       />
-      <CardContent>
-        <ActivityList>
+      <CardContent className="px-3 sm:px-5">
+        <ul className="space-y-2">
           {near.map((i) => {
-            const Icon = ICON[i.kind];
-            const tone: PastelTone = i.status === "overdue" ? 3 : i.status === "today" ? 1 : 2;
+            const u = URGENCY[urgencyOf(i.daysLeft)];
+            const category = categoryOf(i);
+            const amount = i.amount !== null ? money(i.amount) : null;
+            const paid = <PaidButton compact onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title} ödendi`} />;
             return (
-              <ActivityItem
-                key={i.ref}
-                href="/panel/hatirlaticilar"
-                icon={<Icon />}
-                tone={tone}
-                title={i.title}
-                description={`${dateTR(i.dueDate)} · ${daysLeftLabel(i.daysLeft)}${i.detail ? ` · ${i.detail}` : ""}`}
-                aside={i.amount !== null ? tl(i.amount) : undefined}
-                dot={i.status === "overdue" ? "danger" : i.status === "today" ? true : undefined}
-              />
+              // Telefonda başlık tüm genişliği kullanır; tutar ve "Ödendi" alt satırda (başparmak hizasında)
+              <li key={itemKey(i)} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+                <DateTile date={i.dueDate} daysLeft={i.daysLeft} />
+                <Link href="/panel/hatirlaticilar" className="min-w-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ink/30">
+                  <span className="block text-[15px] leading-5 font-semibold tracking-[-0.01em] text-pretty break-words text-ink">{i.title}</span>
+                  <DotList className="mt-1 text-[13px] leading-5">
+                    <span className={cn("inline-flex items-center gap-1.5 font-medium", u.text)}>
+                      <span className={cn("size-1.5 rounded-full", u.dot)} aria-hidden="true" />
+                      {daysLeftLabel(i.daysLeft)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-ink-mute">
+                      <CategoryWell category={category} size="xs" />
+                      {i.source === "invoice" ? "Fatura" : CATEGORY_LABEL[category]}
+                    </span>
+                  </DotList>
+                </Link>
+                <div className="hidden flex-col items-end gap-2 sm:flex">
+                  <span className="text-[15px] leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount ?? <span className="text-ink-quiet">–</span>}</span>
+                  {paid}
+                </div>
+                <div className="col-span-2 flex items-center gap-2 sm:hidden">
+                  {amount ? <span className="shrink-0 pr-1 text-base leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount}</span> : null}
+                  <PaidButton onClick={() => pay(i)} disabled={busy(itemKey(i))} label={`${i.title} ödendi`} className="min-w-0 flex-1" />
+                </div>
+              </li>
             );
           })}
-        </ActivityList>
+        </ul>
       </CardContent>
     </Card>
   );

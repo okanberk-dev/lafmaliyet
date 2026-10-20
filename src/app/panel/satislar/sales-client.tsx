@@ -39,6 +39,7 @@ import { clearQuery, FilterBar, FilterChip, keepScroll, matches, SearchField, us
 import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
@@ -75,6 +76,7 @@ import {
   openDaysHint,
   openDaysProblem,
   previewMatches,
+  replaceConfirm,
   suggestProduct,
   type MappingLite,
   type MarginScale,
@@ -170,7 +172,7 @@ function AllMonthButton({ dim, onPick }: { dim: number; onPick: () => void }) {
     <button
       type="button"
       onClick={onPick}
-      className="cursor-pointer font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink pointer-coarse:min-h-8"
+      className="cursor-pointer font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink pointer-coarse:min-h-11"
     >
       Tüm ay ({dim})
     </button>
@@ -249,9 +251,9 @@ export function MonthInfoForm({
         description="Patron > Raporlar > Ciro ekranından. Gelir-gider tablosu bu ciroyu kullanır."
       />
       <CardContent className="flex flex-1 flex-col">
-        {/* Dokunmatikte alanlar 40px (parmakla rahat seçilsin) */}
-        <form onSubmit={save} className="flex flex-1 flex-col gap-3 pointer-coarse:[&_input]:h-10">
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+        {/* Telefonda tek sütun ve 48px alanlar */}
+        <form onSubmit={save} className={cn("flex flex-1 flex-col gap-3", BIG_FIELDS)}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="POS ciro, KDV dahil (₺)" tip="İndirimler düşülmüş, ödenmezler hariç" htmlFor="m-pos" error={bad.pos ? "Sayı girin" : undefined}>
               <NumberInput id="m-pos" value={pos} onChange={(e) => setPos(e.target.value)} placeholder="0" aria-invalid={bad.pos || undefined} className={bad.pos ? undefined : "cell-input"} />
             </Field>
@@ -320,14 +322,14 @@ export function MonthInfoForm({
               </p>
             </div>
           ) : null}
-          <div className="mt-auto flex items-center justify-end gap-3 pt-1">
+          <div className="mt-auto flex flex-wrap items-center justify-end gap-3 pt-1">
             {dirty ? (
               <span className="inline-flex items-center gap-1.5 text-xs text-ink-mute">
                 <span className="size-1.5 rounded-full bg-warn" aria-hidden="true" />
                 Kaydedilmemiş değişiklik var
               </span>
             ) : null}
-            <Button type="submit" variant={dirty ? "primary" : "secondary"} disabled={busy} className="pointer-coarse:h-10">
+            <Button type="submit" variant={dirty ? "primary" : "secondary"} disabled={busy} className="max-sm:min-h-12 max-sm:w-full">
               {busy ? "Kaydediliyor…" : "Kaydet"}
             </Button>
           </div>
@@ -379,7 +381,7 @@ function ProductPicker({
             variant="secondary"
             onClick={() => onPick({ productId: null, isService: true })}
             aria-pressed={isService}
-            className={cn("pointer-coarse:h-10", isService && "text-info ring-info/30")}
+            className={cn("pointer-coarse:h-11", isService && "text-info ring-info/30")}
           >
             <Mic size={15} /> HİZMET (maliyetsiz, ör. karaoke)
             {isService ? <Check size={14} aria-hidden="true" /> : null}
@@ -389,7 +391,7 @@ function ProductPicker({
             variant="ghost"
             onClick={() => onPick({ productId: null, isService: false })}
             disabled={!currentId && !isService}
-            className="pointer-coarse:h-10"
+            className="pointer-coarse:h-11"
             title={!currentId && !isService ? "Bu satır henüz eşleşmedi" : undefined}
           >
             <X size={15} /> Eşleşmeyi kaldır
@@ -465,6 +467,7 @@ function rowStatus(r: SalesRow): RowStatus {
 /** Adresteki ?durum= değerleri (bildirimdeki bağlantı ?durum=eslesmeyen kullanır) */
 type StatusFilter = "tumu" | "eslesmeyen" | "eslesen" | "hizmet";
 const FILTER_STATUS: Record<Exclude<StatusFilter, "tumu">, RowStatus> = { eslesmeyen: "unmatched", eslesen: "matched", hizmet: "service" };
+const FILTER_LABEL: Record<Exclude<StatusFilter, "tumu">, string> = { eslesmeyen: "Eşleşmeyen", eslesen: "Eşleşen", hizmet: "Hizmet" };
 /** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama ve ay korunur) */
 const FILTER_KEYS = ["ara", "durum"];
 
@@ -504,7 +507,9 @@ function parseSort(v: string): { key: SortKey; dir: "asc" | "desc" } | null {
  * yatay kaymadan sığsın); uzun adda kesilen ürün adıdır, boy (· M / · L) her zaman görünür.
  */
 const MATCH_BTN =
-  "inline-flex h-8 max-w-40 cursor-pointer items-center gap-1.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium transition-colors pointer-coarse:h-10";
+  "inline-flex h-8 max-w-40 cursor-pointer items-center gap-1.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium transition-colors pointer-coarse:h-11 " +
+  // Telefondaki kartta tam genişliğe kadar uzar, uzun ad alt satıra geçer (kesilmez)
+  "max-md:h-auto max-md:min-h-11 max-md:max-w-full max-md:py-2";
 
 const MATCH_TONE = {
   matched: "bg-surface text-ink ring-1 ring-inset ring-line-strong hover:ring-ink/25",
@@ -525,11 +530,11 @@ function HeadLabel({ children, sub, wrap }: { children: ReactNode; sub?: string;
   );
 }
 
-/** Ürün adı kesilebilir, boyu kesilmez ("Ice White Choc. Mo… · M") */
+/** Ürün adı kesilebilir, boyu kesilmez ("Ice White Choc. Mo… · M"); telefondaki kartta ad alt satıra geçer */
 function NameSize({ name, size }: { name: string; size?: string }) {
   return (
     <>
-      <span className="truncate">{name}</span>
+      <span className="truncate max-md:whitespace-normal max-md:break-words">{name}</span>
       {size ? <span className="-ml-1 shrink-0">· {size}</span> : null}
     </>
   );
@@ -648,6 +653,13 @@ export function SalesTable({
     setQ("");
     clearQuery(FILTER_KEYS);
   };
+  // Telefon: etkin süzgeçler çip olarak, seçimler alt sayfada
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const chips: ActiveFilter[] = [];
+  if (filter !== "tumu") chips.push({ key: "durum", label: FILTER_LABEL[filter], onRemove: () => setFilter("tumu") });
+  if (sortValue !== REPORT_ORDER) {
+    chips.push({ key: "sirala", label: SORT_OPTIONS.find((o) => o.value === sortValue)?.label ?? "Özel sıra", onRemove: () => setSort(REPORT_ORDER) });
+  }
 
   /** Sayfa değişince listenin başına dön (alttaki sayfalamadan tıklanınca yeni sayfanın sonunda kalınmasın) */
   const toPage = (p: number) => {
@@ -747,18 +759,18 @@ export function SalesTable({
 
   const rowActions = (r: SalesRow, coarse?: boolean) => (
     <>
-      <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-10" : undefined}>
+      <IconButton label="Düzenle" onClick={() => setEditing(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
         <Pencil size={15} />
       </IconButton>
-      <IconButton label="Sil" tone="danger" onClick={() => setDeleting(r)} className={coarse ? "pointer-coarse:size-10" : undefined}>
+      <IconButton label="Sil" tone="danger" onClick={() => setDeleting(r)} className={coarse ? "pointer-coarse:size-11" : undefined}>
         <Trash2 size={15} />
       </IconButton>
     </>
   );
 
   return (
-    // Telefonda üstteki sabit çubuğun (56px) altında kalmasın
-    <Card id="satirlar" className="scroll-mt-20 lg:scroll-mt-6">
+    // Telefonda üstteki sabit çubuğun (--mobile-top-h) altında kalmasın
+    <Card id="satirlar" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
       <CardHeader
         icon={<ListChecks />}
         title="Satış satırları"
@@ -769,7 +781,7 @@ export function SalesTable({
               <button
                 type="button"
                 onClick={() => toggleFilter("eslesmeyen")}
-                className="inline-flex cursor-pointer items-center gap-1.5 underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                className="inline-flex cursor-pointer items-center gap-1.5 underline-offset-2 hover:underline pointer-coarse:min-h-11"
                 aria-live="polite"
               >
                 <span>Eşleşmeyen</span>
@@ -788,12 +800,12 @@ export function SalesTable({
         actions={
           <>
             {suggestions.length ? (
-              <Button size="sm" variant="accent" onClick={() => setBulkOpen(true)} className="pointer-coarse:h-10">
+              <Button size="sm" variant="accent" onClick={() => setBulkOpen(true)} className="pointer-coarse:h-11">
                 <Wand2 size={15} /> {num(suggestions.length)} öneriyi uygula
               </Button>
             ) : null}
             {/* Asıl yol içe aktarma; elle satır ikincil eylem */}
-            <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-10">
+            <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-11">
               <Plus size={16} /> Satır ekle
             </Button>
           </>
@@ -809,7 +821,7 @@ export function SalesTable({
             <ul className="mt-1.5 flex flex-wrap gap-2">
               {summaryRows.map((r) => (
                 <li key={r.id}>
-                  <Button size="sm" variant="secondary" onClick={() => setDeleting(r)} className="text-bad pointer-coarse:h-10">
+                  <Button size="sm" variant="secondary" onClick={() => setDeleting(r)} className="text-bad pointer-coarse:h-11">
                     <Trash2 size={14} /> {r.posName} · {tl(r.revenue)}
                   </Button>
                 </li>
@@ -819,7 +831,74 @@ export function SalesTable({
         </div>
       ) : null}
       {rows.length ? (
-        <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={rows.length} unit="satır" className="px-5 pb-3">
+        // Telefon: arama + "Süzgeç" düğmesi (durum ve sıralama alt sayfada)
+        <div role="search" className="space-y-2.5 px-4 pb-3 md:hidden">
+          <div className="flex items-center gap-2">
+            <SearchField value={q} onChange={setQ} placeholder="Satır ara" label="Satırlarda ara: POS adı, ürün ya da not" shortcut={false} className="flex-1 [&_input]:h-11" />
+            <FilterButton count={chips.length} onClick={() => setSheetOpen(true)} />
+          </div>
+          <ActiveFilters items={chips} />
+          <p className="text-[13px] text-ink-mute tabular" aria-live="polite">
+            {anyFilter ? (
+              <>
+                <span className="font-semibold text-ink">{num(visible.length)}</span> / {num(rows.length)} satır
+              </>
+            ) : (
+              `${num(rows.length)} satır`
+            )}
+          </p>
+        </div>
+      ) : null}
+      <Dialog
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        title="Süzgeç ve sıralama"
+        description={`${num(visible.length)} / ${num(rows.length)} satır gösteriliyor`}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              className={SHEET_BTN}
+              disabled={!chips.length && !q.trim()}
+              onClick={() => {
+                setQ("");
+                clearQuery([...FILTER_KEYS, "sirala"]);
+              }}
+            >
+              Temizle
+            </Button>
+            <Button className={SHEET_BTN} onClick={() => setSheetOpen(false)}>
+              {visible.length ? `${num(visible.length)} satırı göster` : "Kapat"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 pb-2 max-sm:[&_select]:h-12">
+          <ChoiceList<StatusFilter>
+            label="Eşleşme durumu"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "tumu", label: "Tümü", count: searched.length },
+              { value: "eslesmeyen", label: "Eşleşmeyen", count: counts.unmatched },
+              { value: "eslesen", label: "Eşleşen", count: counts.matched },
+              { value: "hizmet", label: "Hizmet", count: counts.service },
+            ]}
+          />
+          <Field label="Sıralama" htmlFor="s-m-sort">
+            <Select id="s-m-sort" value={sortValue} onChange={(e) => setSort(e.target.value)}>
+              {SORT_OPTIONS.some((o) => o.value === sortValue) ? null : <option value={sortValue}>Özel</option>}
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </Dialog>
+      {rows.length ? (
+        <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={rows.length} unit="satır" className="px-5 pb-3 max-md:hidden">
           <SearchField value={q} onChange={setQ} placeholder="POS adı, ürün ya da not ara" label="Satırlarda ara" className="w-full sm:w-72" />
           <FilterChip active={filter === "eslesmeyen"} onToggle={() => toggleFilter("eslesmeyen")} count={counts.unmatched}>
             Eşleşmeyen
@@ -830,14 +909,6 @@ export function SalesTable({
           <FilterChip active={filter === "hizmet"} onToggle={() => toggleFilter("hizmet")} count={counts.service}>
             Hizmet
           </FilterChip>
-          <Select value={sortValue} onChange={(e) => setSort(e.target.value)} className="w-full md:hidden pointer-coarse:h-10" aria-label="Sıralama">
-            {SORT_OPTIONS.some((o) => o.value === sortValue) ? null : <option value={sortValue}>Sırala · özel</option>}
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                Sırala · {o.label}
-              </option>
-            ))}
-          </Select>
         </FilterBar>
       ) : null}
 
@@ -1218,17 +1289,17 @@ function LineDialog({
       description={line.id ? undefined : "Rapora girmemiş bir satışı elle ekleyin. Ad daha önce eşleştirildiyse ürün otomatik bağlanır."}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} className="pointer-coarse:h-10">
+          <Button variant="ghost" onClick={onClose} className={SHEET_BTN}>
             Vazgeç
           </Button>
-          <Button type="submit" form="sales-line-form" disabled={busy} className="pointer-coarse:h-10">
+          <Button type="submit" form="sales-line-form" disabled={busy} className={SHEET_BTN}>
             {busy ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </>
       }
     >
       {/* Enter kaydeder, Esc kapatır; dokunmatikte alanlar 40px */}
-      <form id="sales-line-form" onSubmit={submit} noValidate className="space-y-4 pb-2 pointer-coarse:[&_input]:h-10">
+      <form id="sales-line-form" onSubmit={submit} noValidate className={cn("space-y-4 pb-2", BIG_FIELDS)}>
         <Field
           label="POS ürün adı"
           htmlFor="l-name"
@@ -1244,7 +1315,7 @@ function LineDialog({
           error={nameMissing ? "Ad girin" : isTotal ? "Bu bir toplam satırı; ürün satırı olarak eklenmez" : undefined}
         >
           <Input
-            data-autofocus
+            data-autofocus="always"
             id="l-name"
             value={posName}
             onChange={(e) => setPosName(e.target.value)}
@@ -1252,7 +1323,7 @@ function LineDialog({
             autoComplete="off"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
           <Field label="Adet" htmlFor="l-qty" error={bad.qty ? "Sayı girin" : undefined}>
             <NumberInput id="l-qty" value={qty} onChange={(e) => setQty(e.target.value)} onFocus={(e) => e.currentTarget.select()} aria-invalid={bad.qty || undefined} />
           </Field>
@@ -1309,7 +1380,7 @@ function DropZone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }
         onDrop={onDrop}
         aria-busy={busy || undefined}
         className={cn(
-          "flex min-h-48 flex-1 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-surface px-6 py-8 text-center",
+          "flex min-h-48 flex-1 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-surface px-6 py-8 text-center max-sm:min-h-40",
           "transition-[border-color,box-shadow] duration-200 has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ink/30",
           dragging ? "border-ink/40 shadow-[0_12px_40px_rgba(0,0,0,0.10)]" : "border-line-strong hover:border-ink/20",
           busy && "pointer-events-none",
@@ -1345,7 +1416,13 @@ function DropZone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }
               "Bırakın, dosya okunsun"
             ) : (
               <>
-                Dosyayı buraya bırakın ya da <span className="underline decoration-ink/30 underline-offset-2">seçin</span>
+                {/* Dokunmatikte sürükle-bırak yok: doğrudan "Dosya seçin" */}
+                <span className="pointer-coarse:hidden">
+                  Dosyayı buraya bırakın ya da <span className="underline decoration-ink/30 underline-offset-2">seçin</span>
+                </span>
+                <span className="pointer-fine:hidden">
+                  Rapor dosyasını <span className="underline decoration-ink/30 underline-offset-2">seçin</span>
+                </span>
               </>
             )}
           </span>
@@ -1390,6 +1467,8 @@ export function ImportCard({
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [withInfo, setWithInfo] = useState(false);
+  /** "Yenisiyle değiştir": ayın satırları silinmeden önce sorulur */
+  const [confirmingReplace, setConfirmingReplace] = useState(false);
 
   const rows = useMemo(() => parsed?.rows ?? [], [parsed]);
   const preview = useMemo(() => previewMatches(rows, mappings, products), [rows, mappings, products]);
@@ -1446,11 +1525,14 @@ export function ImportCard({
     setParsed(null);
   }
 
+  const replaceAsk = hasLines ? replaceConfirm({ mode, lineCount, newCount: rows.length, label }) : null;
+
   async function submit() {
     setBusy(true);
     keepScroll();
     const res = await importSales({ month, lines: rows, mode });
     setBusy(false);
+    setConfirmingReplace(false);
     if (!res.ok) return toast.error(res.error);
     const d = res.data;
     const left = d.count - d.matched;
@@ -1524,8 +1606,10 @@ export function ImportCard({
                   rows={7}
                   autoFocus
                   aria-label="Satış listesini yapıştırın"
-                  placeholder={"L'AFFOGATO LARGE\t265\t79.500\nICED AMERICANO MEDİUM\t172\t29.770\n…"}
-                  className="min-h-44 flex-1 font-mono text-base sm:text-xs"
+                  // Satırlar sarılmaz (bir rapor satırı ekranda tek satır, yana kayar); örnek 375px'e sığar
+                  placeholder={"LATTE MEDIUM\t265\t79.500\nICED AMERICANO\t172\t29.770\n…"}
+                  wrap="off"
+                  className="min-h-44 flex-1 overflow-x-auto font-mono text-base whitespace-pre [tab-size:4] sm:text-xs"
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-ink-mute">
@@ -1536,7 +1620,7 @@ export function ImportCard({
                       okuyun.
                     </span>
                   </p>
-                  <Button variant="primary" onClick={readPasted} disabled={!text.trim()} className="pointer-coarse:h-10">
+                  <Button variant="primary" onClick={readPasted} disabled={!text.trim()} className="max-sm:min-h-12 max-sm:w-full">
                     <ClipboardPaste size={16} /> Yapıştırılanı oku
                   </Button>
                 </div>
@@ -1550,7 +1634,7 @@ export function ImportCard({
                   ? `Bu ayda ${num(lineCount)} satır var. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
                   : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
               </span>
-              <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10" onClick={() => setConfirmClear(true)}>
+              <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" onClick={() => setConfirmClear(true)}>
                 <Eraser size={15} /> Ayı temizle
               </Button>
             </CardFooter>
@@ -1563,7 +1647,7 @@ export function ImportCard({
             title="İçe aktar · önizleme"
             description={`${num(rows.length)} satır ${parsed.source === "file" ? "dosyadan" : "yapıştırılandan"} okundu. Kontrol edip ${label} ayına yükleyin.`}
             actions={
-              <Button variant="ghost" size="sm" onClick={restart} disabled={busy} className="pointer-coarse:h-10">
+              <Button variant="ghost" size="sm" onClick={restart} disabled={busy} className="pointer-coarse:h-11">
                 <RotateCcw size={15} /> Baştan başla
               </Button>
             }
@@ -1595,7 +1679,7 @@ export function ImportCard({
                 </p>
                 {parsed.skippedRows.length ? (
                   <details className="mt-1.5 pl-6">
-                    <summary className="cursor-pointer font-medium underline-offset-2 hover:underline pointer-coarse:min-h-8">Atlanan satırları göster</summary>
+                    <summary className="cursor-pointer font-medium underline-offset-2 hover:underline pointer-coarse:min-h-11">Atlanan satırları göster</summary>
                     <ul className="mt-1 space-y-0.5 text-ink-soft">
                       {parsed.skippedRows.map((r) => (
                         <li key={r.line} className="break-words">
@@ -1615,12 +1699,36 @@ export function ImportCard({
                   <span className="font-semibold">“{rows[i].posName}” toplam satırı olabilir:</span> cirosu ({tl(rows[i].revenue)}) diğer satırların
                   toplamına eşit. Ürün değilse çıkarın, yoksa ay cirosu iki kat görünür.
                 </p>
-                <Button size="sm" variant="secondary" onClick={() => dropRow(i)} className="pointer-coarse:h-10">
+                <Button size="sm" variant="secondary" onClick={() => dropRow(i)} className="pointer-coarse:h-11">
                   <X size={14} /> Listeden çıkar
                 </Button>
               </div>
             ))}
-            <div className="scroll-thin max-h-72 overflow-auto rounded-2xl bg-surface px-1 ring-1 ring-line-strong">
+            {/* Telefon: liste (tablo 375px'te yana kayardı); sm'den itibaren tablo */}
+            <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong sm:hidden">
+              {preview.map((r, i) => (
+                <li key={`${i}|${r.posName}`} className={cn("flex items-start gap-2 py-2 pr-1.5 pl-3", suspects.has(i) && "bg-warn-soft/60")}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium break-words text-ink">{r.posName}</p>
+                    <p className="text-[13px] text-ink-mute tabular">
+                      {num(r.qty, 2)} adet · {tl(r.revenue, 2)}
+                    </p>
+                    {r.status === "new" ? (
+                      <p className="text-xs text-warn">Yükledikten sonra eşleştirin</p>
+                    ) : (
+                      <p className={cn("flex items-center gap-1 text-xs break-words", r.status === "service" ? "text-info" : "text-good")}>
+                        {r.status === "service" ? <Mic size={12} className="shrink-0" aria-hidden="true" /> : <Check size={12} className="shrink-0" aria-hidden="true" />}
+                        {r.label}
+                      </p>
+                    )}
+                  </div>
+                  <IconButton label={`${r.posName} satırını listeden çıkar`} onClick={() => dropRow(i)} disabled={busy}>
+                    <X size={15} />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+            <div className="scroll-thin max-h-72 overflow-auto rounded-2xl bg-surface px-1 ring-1 ring-line-strong max-sm:hidden">
               <Table>
                 <THead className="sticky top-0 z-10 bg-surface [&_th]:pt-3">
                   <tr>
@@ -1679,13 +1787,29 @@ export function ImportCard({
               ) : (
                 <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
               )}
-              <Button onClick={submit} disabled={busy || !rows.length} className="pointer-coarse:h-10">
+              <Button
+                onClick={() => (replaceAsk ? setConfirmingReplace(true) : void submit())}
+                disabled={busy || !rows.length}
+                className="max-sm:min-h-12 max-sm:w-full"
+              >
                 {busy ? "Yükleniyor…" : `${num(rows.length)} satırı yükle`}
               </Button>
             </div>
           </CardContent>
         </motion.div>
       )}
+
+      <ConfirmDialog
+        open={confirmingReplace && replaceAsk !== null}
+        onClose={() => {
+          if (!busy) setConfirmingReplace(false);
+        }}
+        onConfirm={() => void submit()}
+        pending={busy}
+        title={replaceAsk?.title}
+        description={replaceAsk?.description}
+        confirmLabel={replaceAsk?.confirmLabel}
+      />
 
       <Dialog
         open={confirmClear}

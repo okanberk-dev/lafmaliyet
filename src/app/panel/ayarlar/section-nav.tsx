@@ -1,6 +1,5 @@
 "use client";
 
-
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -14,8 +13,8 @@ const isSection = (id: string): id is SettingsSectionId => IDS.includes(id);
 
 /**
  * Ayar bölümleri arasında gezinme. Geniş ekranda (xl) solda yapışkan AkmanOS "Bounce Sidebar": seçili
- * bölümün yanına nokta yaylı bir kavisle zıplar. Daha dar ekranda içeriğin üstünde yapışkan, yatay kayan
- * bölümlü şerit. Görünen bölüm IntersectionObserver ile izlenir; tıklanınca bölüme yumuşakça kayılır ve
+ * bölümün yanına nokta yaylı bir kavisle zıplar. Tablette içeriğin üstünde yapışkan, yatay kayan bölümlü şerit.
+ * Telefonda şerit yok: bölümler kendi başlıklarıyla açılıp kapanan akordeon (section-card.tsx). Görünen bölüm IntersectionObserver ile izlenir; tıklanınca bölüme yumuşakça kayılır ve
  * kayma sürerken ara bölümler vurguyu oynatmasın diye izleme kısa süre bekletilir.
  *
  * Parça (fragment) döndürür: geniş ekranda ızgaranın ilk sütunu `aside`, şerit o boyutta gizlidir.
@@ -27,12 +26,8 @@ export function SettingsNav() {
   const lockToken = useRef(0);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  // Başka ekrandan #bölüm bağlantısıyla gelinince (Yardım › "Reçete ölçüleri"): kartlar Suspense'ten sonra
-  // geldiği için Next'in kendi çapa kaydırması onları bulamaz; bölüm hazır olunca oraya kaydır
-  useEffect(() => {
-    const id = window.location.hash.slice(1);
-    if (isSection(id)) document.getElementById(id)?.scrollIntoView({ block: "start" });
-  }, []);
+  // Başka ekrandan ya da yer iminden #bölüm ile gelince bölüme kaydırmayı bölüm kartı yapar (section-card.tsx,
+  // pin-scroll.ts): kartlar Suspense'ten sonra gelir, telefonda bölüm önce açılmalıdır
 
   // Görünen bölümü izle: üst çubuğun hemen altından ekranın ortasına kadarki bantta kalan ilk bölüm etkin
   useEffect(() => {
@@ -109,7 +104,7 @@ export function SettingsNav() {
       <div
         ref={rowRef}
         onClickCapture={onClickCapture}
-        className="no-print sticky top-14 z-20 -mx-4 mb-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10 xl:hidden"
+        className="no-print sticky top-(--mobile-top-h) z-20 -mx-4 mb-4 border-b border-line bg-background/90 px-4 py-2 backdrop-blur-md max-sm:hidden sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10 xl:hidden"
       >
         <SegmentedLinks
           label="Ayar bölümleri"

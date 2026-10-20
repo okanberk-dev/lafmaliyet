@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { isEmailConfigured } from "@/server/notify/resend";
+
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
@@ -19,7 +21,7 @@ export default function LoginPage() {
       <div className="relative w-full max-w-[400px]">
         {/* Adres (?next, ?oturum) okunana kadar kartın yeri tutulur; sayfa boş görünmesin */}
         <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[372px] w-full animate-pulse rounded-3xl bg-chart-card-bg sm:h-[380px]" />}>
-          <LoginForm />
+          <LoginForm emailConfigured={isEmailConfigured()} />
         </Suspense>
       </div>
     </div>

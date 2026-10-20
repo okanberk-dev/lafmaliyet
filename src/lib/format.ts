@@ -28,6 +28,15 @@ export function tl(v: number | null | undefined, digits = 0): string {
   return `${num(v, digits, digits)}${NBSP}₺`;
 }
 
+/**
+ * Ödeme tutarı ve toplamları: küsuratlıysa iki ondalık (12.500,50 ₺), değilse tam (12.500 ₺). Kartta kuruşlu
+ * gösterilen tutarların toplamı da kuruşlu yazılır (özet 12.501 ₺ yerine 12.500,50 ₺).
+ */
+export function money(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "–";
+  return tl(v, Number.isInteger(Math.round(v * 100) / 100) ? 0 : 2);
+}
+
 /** Küçük tutarlar için 2 ondalık (birim maliyet vb.) */
 export function tl2(v: number | null | undefined): string {
   return tl(v, 2);

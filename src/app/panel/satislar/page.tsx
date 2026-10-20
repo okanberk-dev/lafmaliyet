@@ -136,7 +136,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
               {unmatched ? (
                 <Link
                   href={`/panel/satislar?ay=${month}&durum=eslesmeyen#satirlar`}
-                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
                 >
                   Eşleştirmeye git →
                 </Link>

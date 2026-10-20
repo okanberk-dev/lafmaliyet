@@ -21,8 +21,13 @@ import { cn } from "@/lib/utils";
 
 import { monthsBetween, resumePlan, resumeText, stopText, type EffectText, type MonthChoice } from "./history-text";
 
-/** Telefonda en az 40px dokunma alanı */
-const TOUCH_BTN = "pointer-coarse:h-10";
+/**
+ * Telefonda her seçenek parmakla rahat seçilen bir karo: beyaz zemin, ince halka, seçiliyken mürekkep çerçeve.
+ * Masaüstünde düz radyo satırı olarak kalır. "Başka bir ay" karosunun tamamı (ay listesi ve boş sağ yanı dahil)
+ * seçeneği seçer: dokunuşta (onPointerDown) seçilir, liste yine açılır.
+ */
+const OPTION_TILE =
+  "max-sm:min-h-12 max-sm:rounded-xl max-sm:bg-surface max-sm:px-3 max-sm:py-2.5 max-sm:ring-1 max-sm:ring-inset max-sm:ring-line-strong max-sm:has-[input[type=radio]:checked]:ring-2 max-sm:has-[input[type=radio]:checked]:ring-ink";
 
 /** Ay seçim listesinin bir seçeneği: "Ekim 2026 (bu ay)", "Eylül 2026 (geçmiş)" */
 function monthOption(m: string, currentMonth: string) {
@@ -47,7 +52,7 @@ export function MonthSelect({
   // Seçili değer listede yoksa (ör. çok eski bir bitiş ayı) yine de seçenek olarak görünsün
   const list = months.includes(value) ? months : [...months, value].sort();
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className={cn("w-auto min-w-44", className)}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className={cn("w-auto min-w-44 max-sm:h-11 max-sm:w-full", className)}>
       {list.map((m) => (
         <option key={m} value={m}>
           {monthOption(m, currentMonth)}
@@ -79,15 +84,19 @@ function Radio({
   onSelect,
   children,
   hint,
+  bare,
 }: {
   name: string;
   checked: boolean;
   onSelect: () => void;
   children: ReactNode;
   hint?: ReactNode;
+  /** Karo görünümü dıştaki kapta (ay seçimli seçenek): burada yalnızca radyo ve metin */
+  bare?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2.5 text-sm text-ink pointer-coarse:min-h-10">
+    // Karo telefonda 48px (OPTION_TILE); dokunmatik tablette ve karo içindeki yalın seçenekte 44px
+    <label className={cn("flex cursor-pointer items-start gap-2.5 text-sm text-ink", bare ? "pointer-coarse:min-h-11" : cn("sm:pointer-coarse:min-h-11", OPTION_TILE))}>
       <input type="radio" name={name} checked={checked} onChange={onSelect} className="mt-0.5 size-4 shrink-0 cursor-pointer accent-ink pointer-coarse:size-5" />
       <span className="min-w-0">
         <span className="block">{children}</span>
@@ -136,8 +145,11 @@ export function MonthChoiceField({
         <Radio name={id} checked={value.mode === "current"} onSelect={() => onChange({ ...value, mode: "current" })}>
           Bu ay · {monthLabel(currentMonth)}
         </Radio>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <Radio name={id} checked={value.mode === "month"} onSelect={() => onChange({ ...value, mode: "month" })}>
+        <div
+          className={cn("flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2", OPTION_TILE)}
+          onPointerDown={() => value.mode !== "month" && onChange({ ...value, mode: "month" })}
+        >
+          <Radio bare name={id} checked={value.mode === "month"} onSelect={() => onChange({ ...value, mode: "month" })}>
             Başka bir ay
           </Radio>
           <MonthSelect
@@ -159,7 +171,7 @@ export function MonthChoiceField({
         <button
           type="button"
           onClick={() => setAdvanced(true)}
-          className="inline-flex cursor-pointer items-center gap-1 rounded-md text-xs font-medium text-ink-mute hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none pointer-coarse:min-h-9"
+          className="inline-flex cursor-pointer items-center gap-1 rounded-md text-xs font-medium text-ink-mute hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none pointer-coarse:min-h-11"
         >
           Gelişmiş <ChevronDown size={13} aria-hidden="true" />
         </button>
@@ -169,7 +181,10 @@ export function MonthChoiceField({
   );
 }
 
-/** Açılır bölüm (Geçmiş, Gelişmiş): başlık + kısa özet, tıklayınca yaylı açılır; kapalıyken içerik odaklanamaz */
+/**
+ * Açılır bölüm (Geçmiş, Gelişmiş): başlık + kısa özet, tıklayınca yaylı açılır; kapalıyken içerik odaklanamaz.
+ * `tile`: gri karo (pencerelerdeki Geçmiş); karonun tamamı düğmedir, kenar boşluğuna dokunmak da açar.
+ */
 export function Disclosure({
   title,
   summary,
@@ -177,6 +192,7 @@ export function Disclosure({
   defaultOpen = false,
   className,
   headClassName,
+  tile,
 }: {
   title: ReactNode;
   summary?: ReactNode;
@@ -184,12 +200,13 @@ export function Disclosure({
   defaultOpen?: boolean;
   className?: string;
   headClassName?: string;
+  tile?: boolean;
 }) {
   const reduce = useCalmMotion();
   const id = useId();
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className={className}>
+    <div className={cn(tile && "rounded-2xl bg-panel", className)}>
       <button
         type="button"
         aria-expanded={open}
@@ -197,6 +214,7 @@ export function Disclosure({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl text-left focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none",
+          tile && "min-h-11 rounded-2xl px-3.5 py-3",
           headClassName,
         )}
       >
@@ -222,7 +240,8 @@ export function Disclosure({
         className="grid"
         inert={!open}
       >
-        <div className="min-h-0 overflow-hidden">{children}</div>
+        {/* Karo boşluğu içteki kapta: kapalıyken 0 yükseklikli satırdan taşmasın */}
+        <div className="min-h-0 overflow-hidden">{tile ? <div className="px-3.5 pb-3">{children}</div> : children}</div>
       </motion.div>
     </div>
   );
@@ -298,7 +317,7 @@ export function HistoryList({
             <span className="font-semibold text-ink tabular">{h.label}</span>
             {i === activeIndex ? <Badge tone="green">Şu an</Badge> : null}
             {h.versionId !== null && onUndo ? (
-              <Button size="xs" variant="ghost" onClick={() => onUndo(h)} disabled={disabled} className="pointer-coarse:h-9">
+              <Button size="xs" variant="ghost" onClick={() => onUndo(h)} disabled={disabled}>
                 Geri al
               </Button>
             ) : null}
@@ -365,10 +384,10 @@ export function StopDialog({
       description={what === "personel" ? "Ayrılan personel silinmez; seçtiğiniz aydan sonra maaş hesabına girmez." : "Kalem silinmez; seçtiğiniz aydan sonra hesaba girmez, geçmiş aylarda kalır."}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy} className={TOUCH_BTN}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Vazgeç
           </Button>
-          <Button onClick={() => void confirm()} disabled={busy || !!plan.error} className={TOUCH_BTN}>
+          <Button onClick={() => void confirm()} disabled={busy || !!plan.error}>
             {busy ? "Kaydediliyor…" : "Durdur"}
           </Button>
         </>
@@ -386,8 +405,8 @@ export function StopDialog({
             <Radio name={id} checked={kind === "previous"} onSelect={() => setKind("previous")} hint={`Bu aydan itibaren girmez`}>
               Geçen ay · {monthLabel(previous)}
             </Radio>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <Radio name={id} checked={kind === "month"} onSelect={() => setKind("month")}>
+            <div className={cn("flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-2", OPTION_TILE)} onPointerDown={() => setKind("month")}>
+              <Radio bare name={id} checked={kind === "month"} onSelect={() => setKind("month")}>
                 Başka bir ay
               </Radio>
               <MonthSelect
@@ -455,10 +474,10 @@ export function ResumeDialog({
       description={`Son ay ${monthLabel(endMonth)} olarak kayıtlı.`}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={busy} className={TOUCH_BTN}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Vazgeç
           </Button>
-          <Button onClick={() => void confirm()} disabled={busy} className={TOUCH_BTN}>
+          <Button onClick={() => void confirm()} disabled={busy}>
             {busy ? "Kaydediliyor…" : "Devam ettir"}
           </Button>
         </>

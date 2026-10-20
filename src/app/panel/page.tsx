@@ -263,7 +263,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 icon={<TrendingDown />}
                 title="Satılanlar içinde en düşük marj"
                 description="Fiyatını gözden geçirin"
-                columns={[{ label: "Durum" }, { label: "Fiyat", numeric: true }, { label: "Önerilen fiyat", numeric: true }, { label: "Marj", numeric: true }]}
+                columns={[{ label: "Durum", bare: true }, { label: "Fiyat", numeric: true }, { label: "Önerilen fiyat", numeric: true }, { label: "Marj", numeric: true }]}
                 rows={d.weakest.map((x) => ({
                   id: x.p.product.id,
                   name: x.p.key,
@@ -304,9 +304,11 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           <>
             <MonthPicker months={months} value={month} />
             {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
-            <a href={`/api/export?ay=${month}`} download className={buttonClass("secondary")}>
+            {/* Telefonda kısa ad: ay seçici ile aynı satıra sığar */}
+            <a href={`/api/export?ay=${month}`} download className={buttonClass("secondary")} aria-label={`${monthLabel(month)} Excel'e aktar`}>
               <Download size={16} aria-hidden="true" />
-              Excel&apos;e aktar
+              <span className="max-[420px]:hidden">Excel&apos;e aktar</span>
+              <span className="min-[421px]:hidden">Excel</span>
             </a>
           </>
         }
@@ -321,6 +323,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           {t ? (
             <>
               <Stat
+                compact
                 icon={<Receipt />}
                 label="Net satış"
                 info={`Patron (ModPOS) ürün satışları ÷ (1 + KDV). Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
@@ -329,6 +332,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 sub={`${tl(d.sales.revenue)} KDV dahil`}
               />
               <Stat
+                compact
                 icon={<Coins />}
                 label="Brüt kâr"
                 info={`Net satış − malzeme/ambalaj − POS komisyonu. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
@@ -337,6 +341,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 sub={`Marj ${pct(t.grossProfit / t.netSales)} · kira ve personel öncesi`}
               />
               <Stat
+                compact
                 icon={t.netProfit < 0 ? <TrendingDown /> : <TrendingUp />}
                 label="Net kâr / zarar"
                 info={netTip}
@@ -369,6 +374,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           ) : (
             <>
               <Stat
+                compact
                 icon={<Receipt />}
                 label="POS cirosu (KDV dahil)"
                 info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
@@ -377,6 +383,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 sub={d.info?.openDays ? `${d.info.openDays} günde` : null}
               />
               <Stat
+                compact
                 icon={<CalendarDays />}
                 label="Günlük ortalama ciro"
                 info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
@@ -388,6 +395,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             </>
           )}
           <Stat
+            compact
             icon={<Target />}
             label="Başabaş günlük ciro"
             info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)} ÷ ${
@@ -437,18 +445,26 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 description="Aradaki fark fire, ikram, stokta bekleyen mal ya da reçetede eksik malzemeyi gösterir."
               />
               <CardContent className="@container flex flex-1 flex-col gap-4">
-                <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
-                  <Well className="p-3.5">
+                {/* Telefonda da yan yana (iki tutar birlikte okunur); çok dar ekranda alt alta */}
+                <div className="grid grid-cols-1 gap-2.5 @[18rem]:grid-cols-2 sm:gap-3">
+                  <Well className="p-3 sm:p-3.5">
                     <p className="text-xs font-medium text-ink-mute">Reçeteye göre maliyet</p>
-                    <p className="mt-1 text-xl font-semibold tracking-tight whitespace-nowrap text-ink tabular">{tl(t.material)}</p>
+                    <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(t.material)}</p>
                     <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.recipeCostRatio)}</p>
                   </Well>
-                  <Well className="p-3.5">
+                  <Well className="p-3 sm:p-3.5">
                     <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
-                    <p className="mt-1 text-xl font-semibold tracking-tight whitespace-nowrap text-ink tabular">{tl(purchases)}</p>
-                    <p className="flex items-center gap-1.5 text-xs text-ink-mute">
-                      Maliyet oranı {pct(d.invoiceCostRatio)}
-                      <InfoTip text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış. Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır." />
+                    <p className="mt-1 text-lg font-semibold tracking-tight whitespace-nowrap text-ink tabular sm:text-xl">{tl(purchases)}</p>
+                    <p className="text-xs text-ink-mute">
+                      {/* ⓘ oranla birlikte kırılır: dar kutuda tek başına alt satıra düşmez */}
+                      Maliyet oranı{" "}
+                      <span className="whitespace-nowrap">
+                        {pct(d.invoiceCostRatio)}
+                        <InfoTip
+                          className="ml-1.5 align-middle"
+                          text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış. Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
+                        />
+                      </span>
                     </p>
                   </Well>
                 </div>
@@ -574,13 +590,18 @@ function ThirdStat({ d, projected }: { d: DashboardData; projected: number }) {
     const has = d.actual.hasRevenue || d.actual.expenses > 0;
     return (
       <Stat
+        compact
         icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
         label="Kâr / zarar (faturaya göre)"
         info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satış raporu yüklenince reçeteye göre kâr da hesaplanır."
         value={<CountUp value={has ? d.actual.profit : null} />}
         tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
         sub={
-          <Link href={`/panel/gelir-gider?yil=${d.month.slice(0, 4)}`} className="hover:text-ink hover:underline">
+          // Dokunmatikte satır yüksekliğini büyütmeden görünmez kenarla 44px dokunma alanı
+          <Link
+            href={`/panel/gelir-gider?yil=${d.month.slice(0, 4)}`}
+            className="relative hover:text-ink hover:underline pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3.5 pointer-coarse:after:content-['']"
+          >
             Gelir-gider tablosundan
           </Link>
         }
@@ -589,6 +610,7 @@ function ThirdStat({ d, projected }: { d: DashboardData; projected: number }) {
   }
   return (
     <Stat
+      compact
       icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
       label="Ay sonu tahmini kâr/zarar"
       info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
@@ -884,7 +906,8 @@ function ProductRank({
   icon: ReactNode;
   title: string;
   description: string;
-  columns: { label: string; numeric?: boolean }[];
+  /** `bare`: telefon listesinde etiketsiz (rozet kendini anlatır) */
+  columns: { label: string; numeric?: boolean; bare?: boolean }[];
   rows: { id: number; name: string; cells: ReactNode[] }[];
   month: string;
 }) {
@@ -902,38 +925,77 @@ function ProductRank({
         }
       />
       {rows.length ? (
-        <TableWrap>
-          <Table>
-            <THead>
-              <tr>
-                <TH className="w-10">#</TH>
-                <TH>Ürün</TH>
-                {columns.map((c) => (
-                  <TH key={c.label} numeric={c.numeric}>
-                    {c.label}
-                  </TH>
-                ))}
-              </tr>
-            </THead>
-            <tbody>
-              {rows.map((r, i) => (
-                <TR key={r.id}>
-                  <TD className="text-ink-mute tabular">{i + 1}</TD>
-                  <TD className="py-1">
-                    <Link href={productHref(r.id, month)} className="inline-flex min-h-9 items-center font-medium pointer-coarse:min-h-10 text-ink hover:underline">
-                      {r.name.replace("|", " · ")}
-                    </Link>
-                  </TD>
-                  {r.cells.map((cell, j) => (
-                    <TD key={j} numeric={columns[j]?.numeric}>
-                      {cell}
-                    </TD>
+        <>
+          {/* Telefon: sıra + ürün adı + asıl değer (son sütun) bir satırda, diğer sütunlar altında etiketleriyle.
+              Asıl değerin adı listenin üstünde bir kez görünür (tablo başlığı gibi); ekran okuyucu her satırda okur. */}
+          <div className="mx-4 flex items-end justify-between gap-3 border-b border-line pb-1.5 text-xs font-medium text-ink-mute sm:hidden" aria-hidden="true">
+            <span className="pl-8">Ürün</span>
+            <span>{columns[columns.length - 1]?.label}</span>
+          </div>
+          <ol className="divide-y divide-line px-4 pb-2 sm:hidden" aria-label={title}>
+            {rows.map((r, i) => {
+              const last = r.cells.length - 1;
+              return (
+                <li key={r.id} className="flex gap-3 py-2.5">
+                  <span className="w-5 shrink-0 pt-2.5 text-right text-[13px] text-ink-mute tabular">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link href={productHref(r.id, month)} className="flex min-h-11 min-w-0 items-center text-[15px] font-medium text-pretty text-ink hover:underline">
+                        {r.name.replace("|", " · ")}
+                      </Link>
+                      <span className="shrink-0 pt-2 text-right text-[15px] whitespace-nowrap text-ink tabular">
+                        <span className="sr-only">{columns[last]?.label}: </span>
+                        {r.cells[last]}
+                      </span>
+                    </div>
+                    {last > 0 ? (
+                      <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+                        {r.cells.slice(0, last).map((cell, j) => (
+                          <div key={columns[j]?.label ?? j} className="flex items-center gap-1.5">
+                            <dt className={columns[j]?.bare ? "sr-only" : "text-ink-mute"}>{columns[j]?.label}</dt>
+                            <dd className="text-ink tabular">{cell}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <TableWrap className="max-sm:hidden">
+            <Table>
+              <THead>
+                <tr>
+                  <TH className="w-10">#</TH>
+                  <TH>Ürün</TH>
+                  {columns.map((c) => (
+                    <TH key={c.label} numeric={c.numeric}>
+                      {c.label}
+                    </TH>
                   ))}
-                </TR>
-              ))}
-            </tbody>
-          </Table>
-        </TableWrap>
+                </tr>
+              </THead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <TR key={r.id}>
+                    <TD className="text-ink-mute tabular">{i + 1}</TD>
+                    <TD className="py-1">
+                      <Link href={productHref(r.id, month)} className="inline-flex min-h-9 items-center font-medium pointer-coarse:min-h-11 text-ink hover:underline">
+                        {r.name.replace("|", " · ")}
+                      </Link>
+                    </TD>
+                    {r.cells.map((cell, j) => (
+                      <TD key={j} numeric={columns[j]?.numeric}>
+                        {cell}
+                      </TD>
+                    ))}
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </TableWrap>
+        </>
       ) : (
         <EmptyState
           title="Veri yok"
@@ -982,7 +1044,8 @@ function ExpensesTab({ month, items, total }: { month: string; items: { name: st
               {top.map((e, i) => (
                 <li key={`${e.name}-${i}`}>
                   <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate text-ink" title={e.name}>
+                    {/* Telefonda uzun kalem adı alt satıra geçer (kısaltılmaz) */}
+                    <span className="min-w-0 text-pretty break-words text-ink sm:truncate" title={e.name}>
                       {e.name}
                     </span>
                     <span className="shrink-0 whitespace-nowrap">

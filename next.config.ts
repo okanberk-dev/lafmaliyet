@@ -18,6 +18,9 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // Yalnız geliştirmede: Next göstergesi sol altta telefonun alt menüsündeki "Genel bakış"ı örtüyordu. Sol üstte
+  // yalnızca üst çubuktaki L'Af karosuyla (ana sayfa bağlantısı, alt menüde de var) çakışır.
+  devIndicators: { position: "top-left" },
   turbopack: {
     rules: {
       "*.css": {

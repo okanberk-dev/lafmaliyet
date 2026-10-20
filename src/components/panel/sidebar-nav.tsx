@@ -105,13 +105,14 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
               const parentActive = activeParent === item.id;
               return (
                 <li key={item.id} className="flex flex-col">
-                  <div className="relative flex h-11 min-h-11 w-full items-center rounded-xl pr-2.5 pl-2" {...hover(key)}>
+                  <div className="relative flex h-11 min-h-11 w-full items-stretch rounded-xl" {...hover(key)}>
                     {lit(key, parentActive && !open) ? highlight("rounded-xl") : null}
+                    {/* Düğme satırın tamamını kaplar (44px): üst ve alt kenara dokunmak da grubu açar */}
                     <button
                       type="button"
                       onClick={() => setToggled((t) => ({ ...t, [item.id]: !open }))}
                       aria-expanded={open}
-                      className="relative z-10 flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+                      className="relative z-10 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-xl pr-2.5 pl-2 text-left text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
                     >
                       {tile(item.icon)}
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -136,7 +137,7 @@ export function SidebarNav({ items, pathname, label = "Sayfalar" }: { items: Nav
                           tabIndex={open ? undefined : -1}
                           {...hover(ck)}
                           className={cn(
-                            "relative flex h-9 min-h-9 items-center rounded-lg px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 pointer-coarse:h-10",
+                            "relative flex h-9 min-h-9 items-center rounded-lg px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 pointer-coarse:h-11",
                             active ? "font-medium text-foreground" : "text-chart-muted",
                           )}
                         >

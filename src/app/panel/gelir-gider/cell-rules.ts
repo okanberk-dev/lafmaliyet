@@ -79,3 +79,116 @@ export function noteSaveMessage(o: {
   const text = parts.join(", ");
   return text.charAt(0).toLocaleUpperCase("tr-TR") + text.slice(1);
 }
+
+// ---------------------------------------------------------------- Telefon: tek hücre düzenleme sayfası
+
+/** Düzenlenen hücrenin türü: gelir-gider hücresi (not alabilir), ayın cirosu ya da açık gün sayısı (ay bilgisi) */
+export type CellField = "pnl" | "revenue" | "openDays";
+
+export interface CellEditInput {
+  field: CellField;
+  kind: NoteSaveKind;
+  overridden: boolean;
+  /** Hücrede gösterilen değer */
+  value: number | null;
+  computed: number | null;
+  prevNote: string | null;
+  amountText: string;
+  /** Not alanı (yalnızca "pnl"; diğerlerinde yok sayılır) */
+  noteText: string;
+  validate?: (v: number | null) => string | null;
+}
+
+export type CellEditPlan =
+  | { action: "error"; message: string }
+  | { action: "none" }
+  | { action: "clear"; message: string }
+  | { action: "save"; amount: number; note: string | null | undefined; freeze: boolean; message: string };
+
+const same = (a: number | null, b: number | null) => a !== null && b !== null && Math.abs(a - b) < 0.005;
+
+/**
+ * Telefondaki hücre sayfasında "Kaydet"in ne yapacağı (tablodaki hücre ve not penceresiyle aynı kurallar):
+ * - "error": sayı okunamadı ya da sınır aşıldı (sayfa açık kalır, yazılan korunur)
+ * - "none": değişiklik yok (2 ondalığa yuvarlanmış değer yeniden yazılmaz)
+ * - "clear": tutar boş → hücre hesaplanana döner / boşalır; not da silinir
+ * - "save": tutar (ve değiştiyse not) yazılır. `note: undefined` var olan notu korur. Hesaplanan bir hücreye yalnızca
+ *   not eklenirse tutar elle girilmiş sayılır (`freeze`).
+ */
+export function planCellEdit(o: CellEditInput): CellEditPlan {
+  const t = o.amountText.trim();
+  const amount = t === "" ? null : parseNumberTR(t);
+  if (t !== "" && amount === null) return { action: "error", message: "Geçerli bir sayı girin, ör. 1.250,50" };
+  const problem = o.validate?.(amount) ?? null;
+  if (problem) return { action: "error", message: problem };
+
+  if (o.field !== "pnl") {
+    const what = o.field === "revenue" ? "Aylık ciro" : "Açık gün";
+    if (amount === null) return o.value === null ? { action: "none" } : { action: "clear", message: `${what} boşaltıldı` };
+    if (same(amount, o.value)) return { action: "none" };
+    const shown = o.field === "revenue" ? tl(amount, Number.isInteger(amount) ? 0 : 2) : `${amount} gün`;
+    return { action: "save", amount, note: undefined, freeze: false, message: `${what} ${shown} oldu` };
+  }
+
+  const note = cleanNote(o.noteText);
+  const noteChanged = note !== (o.prevNote ?? null);
+  /** Hücrenin kayıtlı bir girişi var mı (elle tutar ya da not) */
+  const stored = o.overridden || (o.kind === "manual" && o.value !== null) || o.prevNote !== null;
+
+  if (amount === null) {
+    if (!stored) return note ? { action: "error", message: "Not, bir tutarla birlikte saklanır. Tutar yazın." } : { action: "none" };
+    const base = o.kind === "auto" ? "Hücre hesaplanan değere döndü" : "Hücre boşaltıldı";
+    return { action: "clear", message: o.prevNote ? `${base}; not silindi` : base };
+  }
+  if (same(amount, o.value) && !noteChanged) return { action: "none" };
+  const freeze = noteSaveEffect({ kind: o.kind, overridden: o.overridden, amount, computed: o.computed }) === "freeze" && noteChanged;
+  return {
+    action: "save",
+    amount,
+    note: noteChanged ? note : undefined,
+    freeze,
+    message: noteSaveMessage({ prevValue: o.value, amount, prevNote: o.prevNote, note: noteChanged ? note : (o.prevNote ?? null), freeze }),
+  };
+}
+
+/**
+ * "Temizle"nin bildirimindeki "Geri al": temizlemeden önce kayıtlı olan tutar (ve not) aynen geri yazılır. Hesaplanan
+ * hücrede bu, önceki elle girilmiş tutarı yeniden üzerine yazmaktır. Kayıtlı bir giriş yoksa (temizlenecek bir şey
+ * yoktu) null.
+ */
+export function planCellRestore(
+  before: Pick<CellEditInput, "field" | "kind" | "overridden" | "value" | "prevNote">,
+): Extract<CellEditPlan, { action: "save" }> | null {
+  if (before.value === null) return null;
+  if (before.field !== "pnl") {
+    const what = before.field === "revenue" ? "Aylık ciro" : "Açık gün";
+    return { action: "save", amount: before.value, note: undefined, freeze: false, message: `${what} geri alındı` };
+  }
+  const stored = before.overridden || before.kind === "manual" || before.prevNote !== null;
+  if (!stored) return null;
+  return { action: "save", amount: before.value, note: before.prevNote ?? undefined, freeze: false, message: "Hücre geri alındı" };
+}
+
+/** Telefondaki ay seçiminin varsayılanı: adresteki ay, yoksa bu ay, yoksa verisi olan son ay, yoksa yılın ilk ayı */
+export function defaultMonth(months: string[], fromUrl: string, currentMonth: string, latestMonth?: string): string {
+  if (months.includes(fromUrl)) return fromUrl;
+  if (months.includes(currentMonth)) return currentMonth;
+  if (latestMonth && months.includes(latestMonth)) return latestMonth;
+  return months[0];
+}
+
+/** Bir önceki / sonraki ay (yıl sınırını geçer): "2026-01", -1 → "2025-12" */
+export function shiftMonth(month: string, step: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = y * 12 + (m - 1) + step;
+  return `${Math.floor(d / 12)}-${String((d % 12) + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Bölümün toplam satırı (telefonda bölüm başlığının sağında gösterilir, listede tekrarlanmaz): bölümü kapatan kalın
+ * "total:" satırı. Kâr / zarar ve oran bölümlerinde yok (onların kalın satırı bir toplam değil, sonuç).
+ */
+export function sectionTotalKey(rows: { def: { key: string; strong?: boolean } }[]): string | null {
+  const last = rows[rows.length - 1];
+  return last && last.def.strong && last.def.key.startsWith("total:") ? last.def.key : null;
+}

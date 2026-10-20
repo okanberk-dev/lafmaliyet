@@ -35,7 +35,7 @@ export function NewProductButton({ categories, products }: { categories: { id: n
   const initialCategory = categories.find((c) => String(c.id) === kategori)?.id;
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="pointer-coarse:h-10">
+      <Button onClick={() => setOpen(true)}>
         <Plus size={16} /> Yeni ürün
       </Button>
       {open ? <NewProductDialog categories={categories} products={products} initialCategory={initialCategory} onClose={() => setOpen(false)} /> : null}
@@ -141,7 +141,7 @@ export function NewProductDialog({
             maxLength={120}
             placeholder="ör. Caramel Biscoff Latte"
             aria-invalid={duplicate ? true : undefined}
-            data-autofocus
+            data-autofocus="always"
           />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">

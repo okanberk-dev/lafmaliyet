@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { beginTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
@@ -59,7 +60,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
                 Kurtarma kodunuz azaldı. Yeni kodlar oluşturun ve güvenli bir yere kaydedin.
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 max-sm:[&>*]:flex-1">
               <Button variant="secondary" onClick={() => setAskPassword("regenerate")}>
                 <KeyRound size={16} /> Yeni kurtarma kodları
               </Button>
@@ -155,12 +156,14 @@ function SetupDialog({ setup, onClose, onDone }: { setup: Setup; onClose: () => 
           <div className="min-w-0 space-y-2 text-sm">
             <p className="text-ink-soft">QR okutamıyorsanız uygulamada &ldquo;anahtarı elle gir&rdquo;i seçip bu anahtarı yazın:</p>
             <CopyField value={setup.secret} label="Anahtar" />
-            <a href={setup.uri} className="inline-block text-[13px] font-medium text-ink underline-offset-2 hover:underline sm:hidden">
+            <a href={setup.uri} className="inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline-offset-2 hover:underline sm:hidden">
               Bu telefondaki uygulamada aç
             </a>
           </div>
         </div>
         <Field label="Uygulamadaki kod" htmlFor="totp-code" error={error}>
+          {/* Telefonda kendiliğinden odaklanmaz: klavye QR'ı, anahtarı ve "uygulamada aç" bağlantısını örtmesin (kod
+              doğrulama uygulamasından dönünce yazılır); geniş ekranda pencere açılınca bu alana odaklanılır */}
           <Input
             id="totp-code"
             data-autofocus
@@ -233,9 +236,15 @@ function PasswordDialog({ mode, onClose, onDone }: { mode: "disable" | "regenera
   );
 }
 
+/**
+ * Kodlar bir kez gösterilir. İndirilmeden ya da kopyalanmadan kapatılmak istenirse (telefonda arka plana yanlışlıkla
+ * dokunma, sayfayı aşağı çekme, Esc ya da Kapat) önce sorulur: kodlar sessizce kaybolmaz.
+ */
 function RecoveryCodesDialog({ codes, onClose }: { codes: string[]; onClose: () => void }) {
   const text = `L'Affogato Panel kurtarma kodları\n(her kod bir kez kullanılır)\n\n${codes.join("\n")}\n`;
   const [saved, setSaved] = useState(false);
+  const [askClose, setAskClose] = useState(false);
+  const requestClose = () => (saved ? onClose() : setAskClose(true));
 
   function download() {
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
@@ -246,33 +255,48 @@ function RecoveryCodesDialog({ codes, onClose }: { codes: string[]; onClose: () 
   }
 
   return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="Kurtarma kodlarınız"
-      description="Telefonunuz yanınızda değilken girişte bu kodlardan birini kullanabilirsiniz. Her kod bir kez çalışır ve bir daha gösterilmez."
-      footer={
-        <Button onClick={onClose} variant={saved ? "primary" : "secondary"}>
-          {saved ? "Kaydettim, kapat" : "Kapat"}
-        </Button>
-      }
-    >
-      <div className="space-y-4 pb-2">
-        <ul className="grid grid-cols-2 gap-2 rounded-3xl bg-panel p-4 font-mono text-sm tracking-wide text-ink">
-          {codes.map((c) => (
-            <li key={c} className="rounded-xl bg-surface px-3 py-2 text-center select-all">
-              {c}
-            </li>
-          ))}
-        </ul>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={download}>
-            <Download size={16} /> İndir (.txt)
+    <>
+      <Dialog
+        open
+        onClose={requestClose}
+        title="Kurtarma kodlarınız"
+        description="Telefonunuz yanınızda değilken girişte bu kodlardan birini kullanabilirsiniz. Her kod bir kez çalışır ve bir daha gösterilmez."
+        footer={
+          <Button onClick={requestClose} variant={saved ? "primary" : "secondary"}>
+            {saved ? "Kaydettim, kapat" : "Kapat"}
           </Button>
-          <CopyButton value={codes.join("\n")} label="Kopyala" onCopied={() => setSaved(true)} />
+        }
+      >
+        <div className="space-y-4 pb-2">
+          <ul className="grid grid-cols-2 gap-2 rounded-3xl bg-panel p-4 font-mono text-sm tracking-wide text-ink">
+            {codes.map((c) => (
+              <li key={c} className="rounded-xl bg-surface px-3 py-2 text-center select-all">
+                {c}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-2 max-sm:[&>*]:flex-1">
+            <Button variant="secondary" onClick={download}>
+              <Download size={16} /> İndir (.txt)
+            </Button>
+            <CopyButton value={codes.join("\n")} label="Kopyala" onCopied={() => setSaved(true)} />
+          </div>
         </div>
-      </div>
-    </Dialog>
+      </Dialog>
+      {/* Onay penceresi ana pencerenin içinde değil yanında: React içteki <dialog>'un close/cancel olayını dıştakine de
+          iletir; içteki kapanınca dıştaki soruyu yeniden açmaya çalışırdı */}
+      <ConfirmDialog
+        open={askClose}
+        onClose={() => setAskClose(false)}
+        onConfirm={() => {
+          setAskClose(false);
+          onClose();
+        }}
+        title="Kodlar kaydedilmedi"
+        description="Kurtarma kodları bir daha gösterilmez. Kapatırsanız yeni kodları ancak parolanızla yeniden oluşturabilirsiniz."
+        confirmLabel="Yine de kapat"
+      />
+    </>
   );
 }
 
@@ -315,7 +339,7 @@ function CopyField({ value, label }: { value: string; label: string }) {
             toast.error("Kopyalanamadı; elle seçip kopyalayın");
           }
         }}
-        className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-ink/[0.05] hover:text-ink"
+        className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:bg-ink/[0.05] hover:text-ink pointer-coarse:size-11"
         aria-label={done ? "Kopyalandı" : `${label} kopyala`}
       >
         {done ? <Check size={15} /> : <Copy size={15} />}

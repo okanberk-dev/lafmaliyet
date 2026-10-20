@@ -48,7 +48,21 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   arama** (AkmanOS Command Palette: ekranlar, ürünler, hammaddeler), beyaz kapta ikon karolu menü (yaylı açılan alt
   listeler, fareyi izleyen tek vurgu), altta **profil menüsü** (sıvı metal avatar; Hesabım, Ayarlar, Yardım,
   laffogato.net, QR menü önizleme, Çıkış).
-- İçerik beyaz zeminde, `max-w-[1400px]`. Mobilde üst çubuk + yaylı çekmece.
+- İçerik beyaz zeminde, `max-w-[1400px]`.
+- **Telefon ve tablet kabuğu (lg altı, `bottom-nav.tsx`, `sidebar.tsx`):** üstte 56px yapışkan çubuk (L'Af karosu →
+  ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü** (yönetici: Genel bakış · Satışlar ·
+  Faturalar · Ödemeler (gecikmiş sayısı rozeti) · Menü; personel: Sayım · Reçeteler · Hesabım). "Menü" kenar çubuğunun
+  içeriğini yaylı çekmecede açar (odak çekmecede döner, Esc kapatır). Ekran klavyesi açıkken alt menü gizlenir.
+- Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve
+  klavye açıkken 0): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
+  içeriğin altındaki boşluk (klavyeyle değişmez); `--mobile-top-h` üst çubuk (56px, lg ve üstünde 0): yapışkan araç
+  çubukları `sticky top-(--mobile-top-h)`; `--vvh` görünür alanın yüksekliği, `--keyboard-inset` iOS'ta klavyenin
+  düzenin altından örttüğü pay; `html[data-keyboard="open"]` klavye açık.
+- Bildirimler (`TopLayerToaster`, `toast-layout.ts`) üst katmanda: telefonda alt menünün üstünde ("Geri al"
+  başparmakta, dokunmatikte 44px); açık bir pencere varken pencerenin içinde ve ekranın üst kenarında (pencerenin
+  başlığını örtmez, dokunulabilir); tablette üst çubuğun altında.
+- Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
+  etiketlerini kapatır.
 - Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) ·
   Satış & gider (Satışlar, Faturalar, Gelir-gider, Giderler & personel) · Stok (Stok sayımı, Tutarlılık) ·
   Analiz & senaryo · Ayarlar · Yardım. Personel yalnızca Reçete defteri ve Stok sayımı'nı görür.
@@ -73,7 +87,9 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `Gauge({ value, target, label, display, tone })` | gauge | Siyahtan griye çubuklar, açılışta dolar; hedef turuncu işaret. |
 | `SegmentStrip({ segments })` | system-status-page | 12 aylık kâr/zarar şeridi. |
 | `EmptyState({ title, description, action, icon })` | empty-state | Süzülen kayıt kartı yığını. |
-| `Dialog` | — | `rounded-3xl`, gölge `0 12px 40px rgba(0,0,0,.14)`. |
+| `Dialog` | — | `rounded-3xl`, gölge `0 12px 40px rgba(0,0,0,.14)`. Telefonda (sm altı) alttan açılan sayfa: tutamaçtan aşağı çekince kapanır, altbilgi düğmeleri 48px ve satırı eşit paylaşır; `footerStartOnPhone="body"` ikincil eylemleri (Sil, Durdur) formun sonuna alır. Dokunmatikte alan kendiliğinden odaklanmaz (`data-autofocus="always"` hariç). |
+| `Fab` (`ui/fab.tsx`) | — | Telefon ve tabletin yüzen ekleme düğmesi: alt menünün üstünde, aşağı kaydırırken ve klavye açıkken gizlenir. |
+| `FloatingBar` | — | Kaydedilmemiş değişiklik çubuğu; açıkken sayfanın sonuna çubuk kadar boşluk eklenir. |
 | `@/components/akmanos/range-slider` | range-slider | Senaryo ve fiyat simülatöründe kaydırıcılar. |
 | `@/components/akmanos/bouncy-accordion` | bouncy-accordion | Yardım sayfasında SSS. |
 | `@/components/akmanos/bounce-sidebar` (`BounceSidebarNav`) | bounce-sidebar | Uzun ayar sayfalarında bölüm gezinmesi. |
@@ -91,7 +107,20 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 4. **Hareket ölçülü**: yaylı vurgu, açılış dolması, sırayla belirme; `prefers-reduced-motion`'a uyulur.
 5. **Erişilebilirlik**: ikon düğmelerinde `label`, alanlarda etiket, görünür odak (`ring-ink/30`).
 
-## 6. Kodlama kuralları (Next.js 16)
+## 6. Telefon desenleri
+
+- **Dokunma alanı en az 44px** (`pointer-coarse:`): `Button`, `IconButton`, `Input`/`Select`, `SearchField`,
+  `FilterChip`, `InfoTip` (görünmez kenarla) bunu kendisi verir; sayfalar `pointer-coarse:h-10`/`size-10` geçmez.
+- **Listeler:** sm (ya da tablo genişse md/lg) altında tablo yerine kart; kart her değeri tablo kadar gösterir.
+  Sayfa değişince liste başı ekrana gelir (`Pagination`, `[data-page-top]`).
+- **Süzgeçler:** arama + "Süzgeç" düğmesi + etkin süzgeç çipleri; seçimler alttan açılan sayfada (Ürünler,
+  Hammaddeler: `urunler/filter-sheet.tsx`; Faturalar, Satışlar, Gelir-gider: `ui/mobile-filters.tsx`).
+- **Gelir-gider** telefonda tek ay görünümü (ay seçici yapışkan), hücre düzenleme alttan açılan sayfada.
+- Yazı alanları telefonda en az 16px (iOS yakınlaştırmasın); eksi değer girilebilecek alanlarda `inputMode="text"`
+  (iOS ondalık klavyesinde eksi yok), gün sayısı gibi tam sayılarda `inputMode="numeric"`.
+- Masaüstü yardım metni ("tıklayın", "Enter kaydeder") telefonda dokunmaya göre yazılır.
+
+## 7. Kodlama kuralları (Next.js 16)
 
 - `cacheComponents` açık: veritabanı, çerez ya da `searchParams` okuyan her şey `<Suspense>` içinde; sayfa bileşeni
   senkron, içerik `async function …Content()` içinde.

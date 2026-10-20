@@ -37,6 +37,27 @@ export const users = pgTable("users", {
   sessionVersion: integer("session_version").notNull().default(1),
 });
 
+/**
+ * Tek kullanımlık bağlantılar: davet (kişi ilk parolasını kendisi belirler) ve parola sıfırlama. Ham anahtar
+ * yalnızca bir kez gösterilir; burada sha256 özeti durur. `attempts`: bu bağlantıyla yapılan parola denemesi sayısı.
+ */
+export const userTokens = pgTable(
+  "user_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["invite", "reset"] }).notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("user_tokens_hash_uq").on(t.tokenHash), index("user_tokens_user_idx").on(t.userId, t.kind)],
+);
+
 // ---------------------------------------------------------------- Ayarlar (anahtar → değer)
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),

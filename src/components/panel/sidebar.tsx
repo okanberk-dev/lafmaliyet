@@ -10,12 +10,14 @@ import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { ROLES } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import { loadPanelNotifications, type PanelNotification } from "@/server/actions/notifications";
 import type { SearchEntry } from "@/server/data/search";
 
+import { BottomNav, BottomNavSkeleton } from "./bottom-nav";
 import { PanelSearch, SearchTrigger } from "./command-palette";
-import { NAV_FOOTER, NAV_GROUPS, navTreeFor, type NavItem } from "./nav";
+import { mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
 import { NotificationMenu } from "./notifications";
 import { SidebarNav } from "./sidebar-nav";
 
@@ -24,10 +26,15 @@ type User = { name: string; email: string; role: "admin" | "staff" };
 const iconButton =
   "flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-background text-foreground outline-none transition-colors hover:bg-chart-bg focus-visible:ring-2 focus-visible:ring-foreground/30";
 
+/** Zil listesi en çok bu kadar sürede bir, sekme yeniden görünür olunca tazelenir (PWA arka plandan dönünce) */
+const ALERTS_STALE_MS = 60_000;
+
 /**
  * AkmanOS "App Shell" + "Sidebar" blokları: zinc-100 kenar çubuğu; logo ve zil, geniş ⌘K araması,
- * beyaz kapta ikon karolu menü, altta profil menüsü. İçerik sağda beyaz zeminde. Mobilde üst çubuk (menü, logo,
- * arama, zil) ve yaylı açılan çekmece. Arama paleti tek örnektir; kenar çubuğu, çekmece ve üst çubuk aynı paleti açar.
+ * beyaz kapta ikon karolu menü, altta profil menüsü. İçerik sağda beyaz zeminde.
+ * Telefon ve tablette (lg altı): üstte 56px yapışkan çubuk (logo, sayfa başlığı, arama, zil), altta alt menü
+ * (bottom-nav.tsx) ve "Menü"yle açılan yaylı çekmece. Arama paleti tek örnektir; kenar çubuğu, çekmece ve üst çubuk
+ * aynı paleti açar.
  */
 export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[] }) {
   const pathname = usePathname();
@@ -38,15 +45,21 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   const mobileOpen = openFor === pathname;
   const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const navMenuRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
+  // Çekmeceyi açan düğme (alt menüdeki "Menü" ya da personelin üst çubuktaki düğmesi): kapanınca odak ona döner
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const isAdmin = user.role === "admin";
-  const home = isAdmin ? "/panel" : "/panel/receteler";
+  // Personelin ana sayfası alt menünün ilk öğesi ve girişteki açılış sayfasıyla aynı: Stok sayımı
+  const home = isAdmin ? "/panel" : "/panel/sayim";
 
   // Uyarılar kabuk açılınca yüklenir, zil her açıldığında arka planda tazelenir; masaüstü ve mobil zil aynı listeyi gösterir
   const [alerts, setAlerts] = useState<PanelNotification[] | null>(null);
+  const fetchedAt = useRef(0);
   const refreshAlerts = useCallback(() => {
+    fetchedAt.current = Date.now();
     loadPanelNotifications()
       .then(setAlerts)
       .catch(() => setAlerts((a) => a ?? []));
@@ -54,15 +67,32 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   useEffect(() => {
     if (!isAdmin) return;
     let alive = true;
+    fetchedAt.current = Date.now();
     loadPanelNotifications()
       .then((n) => alive && setAlerts(n))
       .catch(() => alive && setAlerts([]));
+    // Telefonda panel çoğunlukla arka plandan geri açılır: görünür olunca (en çok dakikada bir) tazelenir
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - fetchedAt.current > ALERTS_STALE_MS) refreshAlerts();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isAdmin]);
+  }, [isAdmin, refreshAlerts]);
+
+  // Ödemeler ekranında ödenen kayıtlar alt menüdeki rozete yansısın: o ekrandan çıkınca liste tazelenir
+  const prevPath = useRef(pathname);
+  useEffect(() => {
+    const prev = prevPath.current;
+    prevPath.current = pathname;
+    if (isAdmin && prev !== pathname && prev.startsWith("/panel/hatirlaticilar")) refreshAlerts();
+  }, [pathname, isAdmin, refreshAlerts]);
+  const overdue = overdueCount(alerts);
 
   const tree = navTreeFor(user.role);
+  const title = mobileTitleFor(pathname);
   const allowed = (i: NavItem) => i.roles.includes(user.role);
   const pages = [...NAV_GROUPS.flatMap((g) => g.items.filter(allowed)), ...NAV_FOOTER.filter(allowed)];
 
@@ -80,9 +110,15 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
     ...(isAdmin ? [{ id: "qr", label: "QR menü önizleme", icon: <QrCode className="size-4" strokeWidth={1.75} />, onSelect: () => window.open("/menu?onizleme=1", "_blank", "noopener") }] : []),
   ];
 
+  const openDrawer = () => {
+    openerRef.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    setOpenFor(pathname);
+  };
+
   const closeDrawer = useCallback(() => {
     setOpenFor(null);
-    menuButtonRef.current?.focus({ preventScroll: true });
+    const back = openerRef.current?.isConnected ? openerRef.current : (navMenuRef.current ?? menuButtonRef.current);
+    back?.focus({ preventScroll: true });
   }, []);
 
   const openSearch = () => {
@@ -93,7 +129,13 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
 
   /** Kenar çubuğunun içeriği: masaüstünde sabit, mobilde çekmecenin içinde */
   const panel = (drawer: boolean) => (
-    <aside data-component="sidebar" className="flex h-full min-h-0 w-full flex-col gap-5 bg-chart-card-bg p-4 sm:p-5">
+    <aside
+      data-component="sidebar"
+      className={cn(
+        "flex h-full min-h-0 w-full flex-col gap-5 bg-chart-card-bg p-4 sm:p-5",
+        drawer && "pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]",
+      )}
+    >
       <header className="flex shrink-0 items-center gap-2.5 px-1">
         <Link href={home} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-foreground/20" aria-label="L'Affogato, ana sayfa">
           <LafTile className="size-8 rounded-lg" />
@@ -142,13 +184,35 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
     </aside>
   );
 
-  // Çekmece açıkken: Esc kapatır (içinde açık profil menüsü varsa önce o kapanır), odak kapatma düğmesine gider
+  // Çekmece açıkken: Esc kapatır (içinde açık profil menüsü varsa önce o kapanır), odak kapatma düğmesine gider;
+  // Tab odağı çekmecenin içinde döndürür (arkadaki sayfaya kaçmaz)
   useEffect(() => {
     if (!mobileOpen) return;
     closeButtonRef.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
+      const drawer = drawerRef.current;
+      if (e.key === "Tab" && drawer) {
+        const focusables = [...drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+          (el) => el.tabIndex >= 0 && el.getClientRects().length > 0,
+        );
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (!drawer.contains(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if (e.key !== "Escape") return;
-      if (drawerRef.current?.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')) return;
+      if (drawer?.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')) return;
       closeDrawer();
     };
     document.addEventListener("keydown", onKey);
@@ -157,29 +221,34 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
 
   return (
     <>
-      {/* Mobil üst çubuk */}
-      <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/90 px-4 backdrop-blur-md lg:hidden">
-        <button
-          ref={menuButtonRef}
-          type="button"
-          onClick={() => setOpenFor(pathname)}
-          className={iconButton}
-          aria-label="Menüyü aç"
-          aria-expanded={mobileOpen}
-          aria-haspopup="dialog"
+      {/* Telefon ve tablet üst çubuğu: logo (ana sayfa), sayfa başlığı, arama ve zil (personelde menü düğmesi) */}
+      <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-1.5 border-b border-border bg-background/90 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] backdrop-blur-md lg:hidden">
+        <Link
+          href={home}
+          className="flex size-11 shrink-0 items-center justify-center rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+          aria-label="L'Affogato, ana sayfa"
         >
-          <Menu className="size-4" strokeWidth={1.75} aria-hidden />
-        </button>
-        <Link href={home} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-1 outline-none focus-visible:ring-2 focus-visible:ring-foreground/20" aria-label="L'Affogato, ana sayfa">
           <LafTile className="size-8 rounded-lg" />
-          <span className="truncate text-sm font-semibold tracking-tight text-foreground">L&apos;Affogato</span>
         </Link>
+        <p className="min-w-0 flex-1 truncate pl-0.5 text-[15px] leading-5 font-semibold tracking-tight text-foreground">{title}</p>
         {isAdmin ? (
           <>
             <SearchTrigger compact onClick={openSearch} />
             <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" />
           </>
-        ) : null}
+        ) : (
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={openDrawer}
+            className={iconButton}
+            aria-label="Menüyü aç"
+            aria-expanded={mobileOpen}
+            aria-haspopup="dialog"
+          >
+            <Menu className="size-4" strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
       </header>
 
       {/* Masaüstü kenar çubuğu */}
@@ -203,6 +272,11 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
             />
             <motion.div
               ref={drawerRef}
+              // Çekmecedeki bir bağlantıya dokununca (bulunulan sayfa dahil) çekmece hemen kapanır
+              onClickCapture={(e) => {
+                const link = (e.target as Element).closest("a[href]");
+                if (link && !link.getAttribute("target")) setOpenFor(null);
+              }}
               initial={reduce ? false : { x: "-100%" }}
               animate={{ x: 0 }}
               exit={reduce ? undefined : { x: "-100%" }}
@@ -218,6 +292,8 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
         ) : null}
       </AnimatePresence>
 
+      <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
+
       {isAdmin ? <PanelSearch pages={pages} index={index} open={searchOpen} onOpenChange={setSearchOpen} hideTrigger /> : null}
     </>
   );
@@ -228,6 +304,7 @@ export function SidebarSkeleton() {
     <>
       <header className="sticky top-0 z-30 h-14 border-b border-border bg-background lg:hidden" />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[17.5rem] border-r border-border bg-chart-card-bg lg:block" />
+      <BottomNavSkeleton />
     </>
   );
 }

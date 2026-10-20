@@ -170,6 +170,15 @@ test("Ödemeler: geciken sorun, yaklaşan yapılacak, yoksa ödenmemiş faturala
   assert.equal(byKey(tasksFor(model, "2026-09", { payments: null })).odeme.status, "later", "liste okunamadıysa yanlış 'tamam' denmez");
 });
 
+test("Ödemeler: kuruşlu toplamlar kartlardaki gibi kuruşlu yazılır (11.516,77 ₺, 11.517 ₺ değil)", () => {
+  const p: PaymentFacts = { ...NO_PAYMENTS, overdue: 1, overdueTotal: 11516.77, soon: 1, soonTotal: 2500 };
+  assert.match(byKey(tasksFor(model, "2026-09", { payments: p })).odeme.detail, /11\.516,77\u00a0₺/);
+  const soon = byKey(tasksFor(model, "2026-09", { payments: { ...p, overdue: 0, overdueTotal: 0, soonTotal: 1250.5 } })).odeme;
+  assert.match(soon.detail, /1\.250,50\u00a0₺/);
+  const calm = byKey(tasksFor(model, "2026-09", { payments: { ...NO_PAYMENTS, unpaidInvoices: 1, unpaidTotal: 14017 } })).odeme;
+  assert.match(calm.detail, /kalan 14\.017\u00a0₺/, "tam tutar ondalıksız kalır");
+});
+
 test("Paraşüt: son eşitleme yazılır, hata verdiyse faturalar sorun olur", () => {
   const ok = byKey(tasksFor(model, "2026-09", { parasut: { lastStatus: "ok", lastRunAt: "2026-10-20T08:00:00Z", lastOkAt: "2026-10-20T08:01:00Z", message: null } })).fatura;
   assert.equal(ok.status, "done");

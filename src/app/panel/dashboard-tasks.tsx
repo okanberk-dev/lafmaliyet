@@ -5,7 +5,7 @@
 import type { Model, WaterCost } from "@/lib/calc/engine";
 import type { MonthState } from "@/lib/calc/insights";
 import { isSummaryRow } from "@/lib/calc/pos-paste";
-import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
+import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
 
 /**
@@ -304,19 +304,19 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         key: "odeme",
         title,
         status: "warn",
-        detail: `${num(p.overdue)} ödeme gecikti (${tl(p.overdueTotal)}). Ödendiyse işaretleyin.${p.soon ? ` Yaklaşan: ${num(p.soon)}.` : ""}`,
+        detail: `${num(p.overdue)} ödeme gecikti (${money(p.overdueTotal)}). Ödendiyse işaretleyin.${p.soon ? ` Yaklaşan: ${num(p.soon)}.` : ""}`,
         href,
         action: "Ödemelere bak",
       });
     } else if (p.soon) {
-      out.push({ key: "odeme", title, status: "todo", detail: `Yaklaşan ${num(p.soon)} ödeme (${tl(p.soonTotal)}); geciken yok.`, href, action: "Ödemelere bak" });
+      out.push({ key: "odeme", title, status: "todo", detail: `Yaklaşan ${num(p.soon)} ödeme (${money(p.soonTotal)}); geciken yok.`, href, action: "Ödemelere bak" });
     } else {
       out.push({
         key: "odeme",
         title,
         status: "done",
         detail: p.unpaidInvoices
-          ? `Geciken ya da yaklaşan ödeme yok · ${num(p.unpaidInvoices)} fatura ödenmemiş, kalan ${tl(p.unpaidTotal)}.`
+          ? `Geciken ya da yaklaşan ödeme yok · ${num(p.unpaidInvoices)} fatura ödenmemiş, kalan ${money(p.unpaidTotal)}.`
           : "Geciken ya da yaklaşan ödeme yok.",
         href: p.unpaidInvoices ? "/panel/faturalar?durum=odenmedi" : href,
         action: p.unpaidInvoices ? "Ödenmemiş faturalar" : "Ödemeler",
@@ -348,5 +348,37 @@ export function taskSummary(tasks: MonthTask[]) {
     total: tasks.length,
     allDone: open === 0,
     next,
+  };
+}
+
+/** Satırın hangi görünümde çizildiği: yalnızca telefonda, yalnızca geniş ekranda ya da ikisinde */
+export type ChecklistView = "phone" | "wide" | "all";
+
+export type ChecklistRow = { task: MonthTask; next: boolean; compact: boolean; view: ChecklistView };
+
+/**
+ * Telefonda "Bu ayın işleri" kısa görünür: sıradaki iş (tek birincil eylem) tam kart olarak en üstte, diğer işler
+ * tek satır (ad + durum rozeti); açıklamaları "Ayrıntıları göster" ile açılır. Geniş ekranda bütün kartlar
+ * açıklamalarıyla, listedeki sırasıyla görünür.
+ * Sıradaki iş listenin başında değilse iki kez yer alır: başta yalnızca telefonda ("phone"), kendi yerinde yalnızca
+ * geniş ekranda ("wide"). Böylece DOM sırası (ekran okuyucu, klavye odağı) her iki görünümde de görünen sırayla
+ * aynıdır; CSS ile yeniden sıralama yapılmaz. Gizli kopya display: none olduğu için okunmaz, odak almaz.
+ * `waiting`: tek satıra inen açık (yapılacak / sorunlu) iş sayısı, düğmede söylenir.
+ */
+export function phoneChecklist(tasks: MonthTask[]) {
+  const { next } = taskSummary(tasks);
+  // Sıradaki iş zaten ilkse kopya gerekmez
+  const lead = next !== null && tasks[0]?.key !== next.key;
+  const rows: ChecklistRow[] = tasks.map((task) => {
+    const isNext = task.key === next?.key;
+    return { task, next: isNext, compact: !isNext, view: isNext && lead ? "wide" : "all" };
+  });
+  if (lead && next) rows.unshift({ task: next, next: true, compact: false, view: "phone" });
+  const compact = rows.filter((r) => r.compact);
+  return {
+    rows,
+    /** Telefonda tek satıra inen iş var mı (ayrıntı düğmesi yalnızca o zaman gösterilir) */
+    toggle: compact.length > 0,
+    waiting: compact.filter((r) => r.task.status === "todo" || r.task.status === "warn").length,
   };
 }

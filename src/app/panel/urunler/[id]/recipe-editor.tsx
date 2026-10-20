@@ -21,6 +21,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Sigma,
   StickyNote,
   Tag,
   Trash2,
@@ -122,13 +123,19 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
 
 /**
  * Reçete satırının geniş düzeni (kart en az 36rem): malzeme · miktar · tutar · sıra · sil. Başlık, satırlar ve
- * toplam aynı ızgarayı kullanır, sütunlar alt alta hizalı kalır. Dar düzende (telefon) satır iki katlıdır.
+ * toplam aynı ızgarayı kullanır, sütunlar alt alta hizalı kalır. Dar düzende (telefon) satır üç katlıdır:
+ * malzeme + sil, büyük miktar alanı + tutar, sıra / not / formül düğmeleri (hepsi 44px); satır notu varsa altta
+ * tam genişlikte.
  * Satır yukarı/aşağı taşınınca yaylı kayar, eklenince belirir, silinince söner.
  */
 const LINE_GRID = "@xl:grid-cols-[minmax(0,1fr)_9rem_6.25rem_5.25rem_2.5rem]";
 
 /** İlk/son satırdaki taşıma düğmesi: soluk, ama odaklanabilir kalır */
-const edgeClass = "aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-ink-mute pointer-coarse:size-10";
+const edgeClass = "aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:text-ink-mute pointer-coarse:size-11";
+
+/** Dar düzenin satır altı düğmesi (Not, Formül): 44px yükseklik, metinli */
+const rowToolClass =
+  "inline-flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-[13px] font-medium text-ink-mute ring-1 ring-line ring-inset hover:bg-surface hover:text-ink sm:h-9 pointer-coarse:h-11";
 
 /** Sayfa açılışında kartların sırayla belirmesi; hareket azaltılmışsa anında görünür */
 function rise(i: number, reduce: boolean | null) {
@@ -236,6 +243,11 @@ export function RecipeEditor({
   const [newKey, setNewKey] = useState<number | null>(null);
   /** Notu boşken "Not" düğmesiyle açılmış satırlar */
   const [noteOpen, setNoteOpen] = useState<ReadonlySet<number>>(() => new Set());
+  /**
+   * Telefonda miktar alanı rakam klavyesiyle açılır; formül (2*ShotCift) yazmak için harfli klavye gerekir.
+   * Formüllü satırlar kendiliğinden, "Formül" düğmesine basılan satırlar da harfli klavyeyle açılır.
+   */
+  const [textKeys, setTextKeys] = useState<ReadonlySet<number>>(() => new Set());
 
   const priceNum = parseNumberTR(price) ?? 0;
   const fireInput = parseFireInput(fire);
@@ -317,6 +329,23 @@ export function RecipeEditor({
     setShowOnMenu(product.showOnMenu);
     setRows(initialRows);
     setNoteOpen(new Set());
+    setTextKeys(new Set());
+  }
+
+  /**
+   * "Formül": satırın miktar alanını harfli klavyeyle yeniden odaklar. Klavye türü odakta değişmez: inputMode
+   * çizimi beklemeden alana yazılır, alan bırakılıp yeniden odaklanır. Hepsi dokunuşun içinde, eşzamanlı (iOS
+   * klavyeyi yalnızca kullanıcı hareketi içindeki focus() ile açar). Eski sayı seçili gelir: yazılan formül onun
+   * yerine geçer ("2*ShotCift150" olmaz).
+   */
+  function formulaKeyboard(key: number, idx: number) {
+    setTextKeys((s) => new Set(s).add(key));
+    const el = document.getElementById(`${uid}-qty${idx}`) as HTMLInputElement | null;
+    if (!el) return;
+    el.inputMode = "text";
+    el.blur();
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
   }
 
   async function save() {
@@ -474,7 +503,14 @@ export function RecipeEditor({
         actions={
           <>
             {/* Telefonda yalnızca ikonlar: geri, ay ve kopyala tek satıra sığsın */}
-            <ButtonLink href={listHref(null, month)} onClick={backToList} variant="ghost" size="sm" className="pointer-coarse:h-10 max-sm:px-2.5">
+            <ButtonLink
+              href={listHref(null, month)}
+              onClick={backToList}
+              variant="ghost"
+              size="sm"
+              aria-label="Ürünler listesine dön"
+              className="pointer-coarse:h-11 max-sm:size-11 max-sm:px-0"
+            >
               <ArrowLeft size={16} aria-hidden="true" /> <span className="max-sm:sr-only">Ürünler</span>
             </ButtonLink>
             {/* Kartın "satılan adet" ve "kalan kâr" satırları bu ayın; listeden gelen ay seçili */}
@@ -482,7 +518,8 @@ export function RecipeEditor({
             <Button
               variant="secondary"
               onClick={() => setCopyOpen(true)}
-              className="pointer-coarse:h-10 max-sm:px-2.5"
+              aria-label="Kopyala"
+              className="pointer-coarse:h-11 max-sm:size-11 max-sm:px-0"
               title="Reçetesi, fire oranı ve notuyla birlikte yeni ürün ya da boy oluştur"
             >
               <Copy size={16} aria-hidden="true" /> <span className="max-sm:sr-only">Kopyala</span>
@@ -495,6 +532,7 @@ export function RecipeEditor({
               <span className="text-[13px] text-ink-mute">Boylar</span>
               <SegmentedLinks
                 label="Boylar"
+                className="[&_a]:min-w-11 [&_a]:justify-center"
                 value={String(product.id)}
                 options={siblings.map((s) => ({ value: String(s.id), label: s.size, href: productHref(s.id, month) }))}
               />
@@ -515,8 +553,10 @@ export function RecipeEditor({
                 description={
                   <>
                     Miktar sayı ya da Ayarlar&apos;a bağlı formül olabilir (ör.{" "}
-                    <code className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs text-info ring-1 ring-line">2*ShotCift</code>). Miktarda
-                    Enter sonraki satıra geçer.
+                    <code className="rounded-md bg-surface px-1.5 py-0.5 font-mono text-xs text-info ring-1 ring-line">2*ShotCift</code>).{" "}
+                    {/* Telefonun rakam klavyesinde harf ve Enter yok: dar düzende satırdaki "Formül" düğmesi harfli klavyeyi açar */}
+                    <span className="pointer-coarse:hidden @xl:pointer-coarse:inline">Miktarda Enter sonraki satıra geçer.</span>
+                    <span className="hidden pointer-coarse:inline @xl:pointer-coarse:hidden">Harf ve * için satırdaki “Formül” düğmesine dokunun.</span>
                   </>
                 }
                 meta={
@@ -528,7 +568,7 @@ export function RecipeEditor({
                 }
                 actions={
                   lines.length ? (
-                    <Button size="sm" variant="secondary" onClick={addRow}>
+                    <Button size="sm" variant="secondary" onClick={addRow} className="pointer-coarse:h-11">
                       <Plus size={15} /> Malzeme ekle
                     </Button>
                   ) : null
@@ -560,14 +600,15 @@ export function RecipeEditor({
                             exit={{ opacity: 0 }}
                             transition={rowTransition}
                             className={cn(
-                              "grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-2 gap-y-2.5 border-b border-line-strong/70 px-3 py-3 transition-colors hover:bg-surface/60 @xl:gap-x-3",
+                              "grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-x-3 gap-y-2.5 border-b border-line-strong/70 px-3 py-3.5 transition-colors hover:bg-surface/60 @xl:py-3",
                               LINE_GRID,
                             )}
                           >
-                            {/* Malzeme: telefonda üst katın tamamı (sil düğmesi yanında) */}
-                            <div className="col-span-3 col-start-1 row-start-1 flex min-w-0 items-start gap-3 @xl:col-span-1">
+                            {/* Malzeme: dar düzende üst katın tamamı (sil düğmesi yanında). Dar ızgara üç sütun: miktar ·
+                                tutar · sil; malzeme ilk ikisini, tutar son ikisini kaplar (seçim kutusu tutar kadar geniş) */}
+                            <div className="col-span-2 col-start-1 row-start-1 flex min-w-0 items-start gap-3 @xl:col-span-1">
                               {/* Orta genişlikte karo gizlenir, malzeme seçimine yer kalsın */}
-                              <IngredientTile ing={l.ing} className="@xl:hidden @3xl:inline-flex" />
+                              <IngredientTile ing={l.ing} className="max-[380px]:hidden @xl:hidden @3xl:inline-flex" />
                               <div className="min-w-0 flex-1">
                                 <Select
                                   value={l.row.ingredientId ?? ""}
@@ -575,7 +616,7 @@ export function RecipeEditor({
                                   data-warn={!l.row.ingredientId ? "true" : undefined}
                                   aria-label={`${idx + 1}. satır malzemesi`}
                                   autoFocus={l.row.key === newKey}
-                                  className="pointer-coarse:h-10"
+                                  className="h-11 font-medium pointer-coarse:h-11 sm:h-9 sm:font-normal @xl:pointer-coarse:h-11"
                                 >
                                   <option value="">Malzeme seçin…</option>
                                   {grouped.map(([cat, list]) => (
@@ -613,18 +654,17 @@ export function RecipeEditor({
                                     <span className="tabular" title="Birim maliyet (KDV hariç) ve alış KDV oranı">
                                       {tlUnit(l.unitCost)}/{l.ing.unit} · KDV {pct(l.vatRate, 0)}
                                     </span>
-                                    {/* Dar düzende satırın KDV dahil tutarı burada (tutar sütunu yalnızca tutarı gösterir) */}
-                                    <span className="tabular @xl:hidden">KDV dahil {tl(l.totalVat, 2)}</span>
                                     {soldQty ? (
                                       <span className="tabular" title="Miktar × bu ayın satış adedi (fire hariç). Tutarlılık kontrolünde faturayla karşılaştırılır.">
                                         {monthLabel}: {num(l.qty * soldQty, 0)} {l.ing.unit}
                                       </span>
                                     ) : null}
+                                    {/* Geniş düzende "Not" burada; dar düzende satırın altındaki düğmelerde */}
                                     {!l.row.note && !noteOpen.has(l.row.key) ? (
                                       <button
                                         type="button"
                                         onClick={() => setNoteOpen((s) => new Set(s).add(l.row.key))}
-                                        className="inline-flex cursor-pointer items-center gap-1 rounded-md text-ink-mute hover:text-ink hover:underline pointer-coarse:-my-2 pointer-coarse:py-2"
+                                        className="hidden cursor-pointer items-center gap-1 rounded-md text-ink-mute hover:text-ink hover:underline pointer-coarse:-my-2 pointer-coarse:py-2 @xl:inline-flex"
                                         title="Bu satıra not ekle (ör. yalnızca sıcak servis)"
                                       >
                                         <StickyNote size={12} aria-hidden="true" /> Not
@@ -634,37 +674,12 @@ export function RecipeEditor({
                                 ) : (
                                   <p className="mt-1.5 text-xs text-warn">Listeden bir malzeme seçin ya da satırı silin.</p>
                                 )}
-                                {/* Satır notu (Excel'deki hücre notu): varsa hep görünür, yoksa "Not" ile açılır */}
-                                {l.row.note || noteOpen.has(l.row.key) ? (
-                                  <div className="relative mt-2">
-                                    <StickyNote size={13} className="pointer-events-none absolute top-2.5 left-2.5 text-ink-quiet" aria-hidden="true" />
-                                    {/* Not uzunsa alan yazıyla birlikte uzar (tek satırda kesilmesin) */}
-                                    <Textarea
-                                      rows={1}
-                                      value={l.row.note}
-                                      onChange={(e) => update(l.row.key, { note: e.target.value })}
-                                      onBlur={() => {
-                                        if (l.row.note.trim()) return;
-                                        setNoteOpen((s) => {
-                                          const n = new Set(s);
-                                          n.delete(l.row.key);
-                                          return n;
-                                        });
-                                      }}
-                                      autoFocus={!l.row.note && noteOpen.has(l.row.key)}
-                                      maxLength={300}
-                                      placeholder="Satır notu (ör. yalnızca sıcak serviste)"
-                                      aria-label={`${idx + 1}. satır notu`}
-                                      className="field-sizing-content min-h-8 resize-none py-1.5 pl-8 text-[13px] leading-5 sm:text-[13px]"
-                                    />
-                                  </div>
-                                ) : null}
                               </div>
                             </div>
 
-                            {/* Miktar */}
+                            {/* Miktar: dar düzende büyük alan (48px, 18px yazı), genişte sütunda */}
                             <div className="col-start-1 row-start-2 min-w-0 @xl:col-start-2 @xl:row-start-1">
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-2 @xl:gap-1.5">
                                 <Input
                                   id={`${uid}-qty${idx}`}
                                   value={l.row.input}
@@ -677,8 +692,8 @@ export function RecipeEditor({
                                   }}
                                   // Formül (DondurmaTop, 2*ShotCift) sola yaslı ve eşaralıklı yazılır, tamamı görünsün
                                   className={cn(
-                                    "cell-input w-28 text-right tabular pointer-coarse:h-10 @xl:w-auto @xl:min-w-0 @xl:flex-1",
-                                    l.expr && "px-2 text-left font-mono text-[13px] sm:text-[13px]",
+                                    "cell-input h-12 min-w-0 flex-1 text-right text-lg font-semibold tabular pointer-coarse:h-12 pointer-coarse:text-lg sm:text-sm @xl:h-9 @xl:font-normal @xl:pointer-coarse:h-11 @xl:pointer-coarse:text-base",
+                                    l.expr && "px-3 text-left font-mono text-base sm:text-[13px] @xl:px-2 pointer-coarse:text-base",
                                   )}
                                   title={l.expr ?? undefined}
                                   aria-label={`${idx + 1}. satır miktarı${l.ing ? ` (${l.ing.unit})` : ""}`}
@@ -686,14 +701,17 @@ export function RecipeEditor({
                                   aria-describedby={l.error || l.expr || l.echo || (l.qty === 0 && l.row.ingredientId) ? hintId : undefined}
                                   data-warn={!l.error && l.qty === 0 && l.row.ingredientId ? "true" : undefined}
                                   placeholder="0"
-                                  inputMode="decimal"
+                                  // Rakam klavyesi; formülde (ya da "Formül" düğmesinden sonra) harfli klavye
+                                  inputMode={l.expr || textKeys.has(l.row.key) ? "text" : "decimal"}
+                                  enterKeyHint={idx < lines.length - 1 ? "next" : "done"}
                                   autoComplete="off"
                                   spellCheck={false}
                                 />
-                                <span className="min-w-6 shrink-0 text-xs text-ink-mute @xl:w-7">{l.ing?.unit}</span>
+                                {/* Birim sabit genişlikte (gr, ml, adet, dilim): miktar alanları satırdan satıra aynı genişlikte */}
+                                <span className="w-9 shrink-0 text-sm text-ink-mute @xl:w-7 @xl:min-w-6 @xl:text-xs">{l.ing?.unit}</span>
                               </div>
                               {l.error ? (
-                                <p id={hintId} className="mt-1 max-w-40 text-xs text-bad">
+                                <p id={hintId} className="mt-1 text-xs text-bad @xl:max-w-40">
                                   {l.error}
                                 </p>
                               ) : l.expr ? (
@@ -706,24 +724,27 @@ export function RecipeEditor({
                                   = {l.echo} {l.ing?.unit}
                                 </p>
                               ) : l.qty === 0 && l.row.ingredientId ? (
-                                <p id={hintId} className="mt-1 max-w-40 text-xs text-warn">
+                                <p id={hintId} className="mt-1 text-xs text-warn @xl:max-w-40">
                                   Miktar girilmedi (0 sayılıyor)
                                 </p>
                               ) : null}
                             </div>
 
-                            {/* Tutar */}
-                            <div className="col-start-2 row-start-2 pt-2 text-right text-sm tabular @xl:col-start-3 @xl:row-start-1">
-                              <span className="font-medium text-ink">{tl(l.total, 2)}</span>
-                              <div className="mt-0.5 hidden text-xs whitespace-nowrap text-ink-mute @xl:block">KDV dahil {tl(l.totalVat, 2)}</div>
+                            {/* Tutar (KDV hariç), altında KDV dahil. Dar düzende en az "KDV dahil 999,99 ₺" genişliğinde:
+                                tutarın basamak sayısı miktar alanının genişliğini satırdan satıra değiştirmez. (En az
+                                genişlik içteki satırda: globals.css ızgara öğelerine min-width: 0 verir.) */}
+                            <div className="col-span-2 col-start-2 row-start-2 pt-1.5 text-right text-sm tabular @xl:col-span-1 @xl:col-start-3 @xl:row-start-1 @xl:pt-2">
+                              <span className="text-base font-semibold text-ink @xl:text-sm @xl:font-medium">{tl(l.total, 2)}</span>
+                              <div className="mt-0.5 min-w-[6.75rem] text-xs whitespace-nowrap text-ink-mute @xl:min-w-0">KDV dahil {tl(l.totalVat, 2)}</div>
                             </div>
 
-                            {/* Sıra: uçta aria-disabled (disabled değil), klavyeyle taşınan satırın düğmesi odağı kaybetmesin */}
-                            <div className="col-span-2 col-start-3 row-start-2 flex justify-end gap-1 @xl:col-span-1 @xl:col-start-4 @xl:row-start-1">
+                            {/* Sıra (ve dar düzende Not / Formül): uçta aria-disabled (disabled değil), klavyeyle taşınan
+                                satırın düğmesi odağı kaybetmesin */}
+                            <div className="col-span-3 col-start-1 row-start-3 flex flex-wrap items-center gap-1.5 @xl:col-span-1 @xl:col-start-4 @xl:row-start-1 @xl:flex-nowrap @xl:justify-end @xl:gap-1">
                               <IconButton
                                 label="Yukarı taşı"
                                 aria-disabled={idx === 0 || undefined}
-                                className={edgeClass}
+                                className={cn(edgeClass, "max-sm:size-11")}
                                 onClick={() => move(idx, -1)}
                               >
                                 <ArrowUp size={15} />
@@ -731,24 +752,75 @@ export function RecipeEditor({
                               <IconButton
                                 label="Aşağı taşı"
                                 aria-disabled={idx === lines.length - 1 || undefined}
-                                className={edgeClass}
+                                className={cn(edgeClass, "max-sm:size-11")}
                                 onClick={() => move(idx, 1)}
                               >
                                 <ArrowDown size={15} />
                               </IconButton>
+                              {l.ing && !l.row.note && !noteOpen.has(l.row.key) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setNoteOpen((s) => new Set(s).add(l.row.key))}
+                                  className={cn(rowToolClass, "@xl:hidden")}
+                                  title="Bu satıra not ekle (ör. yalnızca sıcak servis)"
+                                >
+                                  <StickyNote size={14} aria-hidden="true" /> Not
+                                </button>
+                              ) : null}
+                              {/* Yalnızca dokunmatikte: rakam klavyesinde harf ve * yok */}
+                              {!l.expr && !textKeys.has(l.row.key) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => formulaKeyboard(l.row.key, idx)}
+                                  className={cn(rowToolClass, "hidden pointer-coarse:inline-flex @xl:pointer-coarse:hidden")}
+                                  title="Miktara formül yazın (ör. 2*ShotCift): harfli klavye açılır"
+                                >
+                                  <Sigma size={14} aria-hidden="true" /> Formül
+                                </button>
+                              ) : null}
                             </div>
 
-                            {/* Sil: telefonda malzemenin yanında, genişte satır sonunda */}
-                            <div className="col-start-4 row-start-1 flex justify-end @xl:col-start-5">
+                            {/* Sil: dar düzende malzemenin yanında, genişte satır sonunda */}
+                            <div className="col-start-3 row-start-1 flex justify-end @xl:col-start-5">
                               <IconButton
                                 label={`${l.ing?.name ?? "Boş"} satırını sil`}
                                 tone="danger"
-                                className="pointer-coarse:size-10"
+                                className="pointer-coarse:size-11 max-sm:size-11"
                                 onClick={() => removeRow(l.row.key)}
                               >
                                 <Trash2 size={15} />
                               </IconButton>
                             </div>
+
+                            {/* Satır notu (Excel'deki hücre notu): varsa hep görünür, yoksa "Not" ile açılır. Dar düzende
+                                satırın tam genişliğinde, "Not" düğmesinin hemen altında; genişte malzeme sütununda,
+                                seçim kutusunun altında (karo görünürken onunla hizalı) */}
+                            {l.row.note || noteOpen.has(l.row.key) ? (
+                              <div className="col-span-3 col-start-1 row-start-4 min-w-0 @xl:col-span-1 @xl:row-start-2 @3xl:pl-12">
+                                <div className="relative">
+                                  <StickyNote size={13} className="pointer-events-none absolute top-3 left-2.5 text-ink-quiet sm:top-2.5" aria-hidden="true" />
+                                  {/* Not uzunsa alan yazıyla birlikte uzar (tek satırda kesilmesin); telefonda 16px yazı */}
+                                  <Textarea
+                                    rows={1}
+                                    value={l.row.note}
+                                    onChange={(e) => update(l.row.key, { note: e.target.value })}
+                                    onBlur={() => {
+                                      if (l.row.note.trim()) return;
+                                      setNoteOpen((s) => {
+                                        const n = new Set(s);
+                                        n.delete(l.row.key);
+                                        return n;
+                                      });
+                                    }}
+                                    autoFocus={!l.row.note && noteOpen.has(l.row.key)}
+                                    maxLength={300}
+                                    placeholder="Satır notu (ör. yalnızca sıcak serviste)"
+                                    aria-label={`${idx + 1}. satır notu`}
+                                    className="field-sizing-content min-h-11 resize-none py-2.5 pl-8 leading-5 sm:min-h-8 sm:py-1.5 sm:text-[13px] pointer-coarse:text-base"
+                                  />
+                                </div>
+                              </div>
+                            ) : null}
                           </motion.li>
                         );
                       })}
@@ -757,7 +829,7 @@ export function RecipeEditor({
                   <button
                     type="button"
                     onClick={addRow}
-                    className="mx-1 mt-2 flex min-h-10 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong text-[13px] font-medium text-ink-mute transition-colors hover:border-ink/30 hover:bg-surface/60 hover:text-ink"
+                    className="mx-1 mt-2 flex min-h-11 w-[calc(100%-0.5rem)] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong text-[13px] font-medium text-ink-mute transition-colors hover:border-ink/30 hover:bg-surface/60 hover:text-ink"
                   >
                     <Plus size={15} aria-hidden="true" /> Malzeme ekle
                   </button>
@@ -808,7 +880,7 @@ export function RecipeEditor({
                 <Field label="Ürün adı" htmlFor="r-name" error={name.trim() ? undefined : "Ürün adı boş olamaz"}>
                   <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-invalid={name.trim() ? undefined : true} />
                 </Field>
-                <div className="grid gap-3 min-[420px]:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Boy" htmlFor="r-size">
                     <Select id="r-size" value={size} onChange={(e) => setSize(e.target.value as typeof size)}>
                       {SIZES.map((s) => (
@@ -911,7 +983,8 @@ export function RecipeEditor({
                 </div>
               </Well>
 
-              <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-start gap-3">
+              {/* Telefonda alt alta (tek sütun form), genişte fiyat + dar fire sütunu */}
+              <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_6.5rem]">
                 <Field
                   label="Satış fiyatı (KDV dahil)"
                   htmlFor="r-price"
@@ -924,7 +997,7 @@ export function RecipeEditor({
                             type="button"
                             onClick={() => setPrice(priceText(econ.suggestedPrice))}
                             title="Satış fiyatını önerilen fiyata ayarlar; Kaydet'e basınca geçerli olur"
-                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3.5 pointer-coarse:px-1 pointer-coarse:py-3.5"
                           >
                             Uygula
                           </button>
@@ -936,7 +1009,12 @@ export function RecipeEditor({
                   }
                 >
                   <div className="relative">
-                    <NumberInput id="r-price" value={price} onChange={(e) => setPrice(e.target.value)} className="cell-input pr-7 font-semibold" />
+                    <NumberInput
+                      id="r-price"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      className="cell-input h-12 pr-8 text-lg font-semibold pointer-coarse:h-12 pointer-coarse:text-lg sm:h-9 sm:text-sm sm:pointer-coarse:h-11 sm:pointer-coarse:text-base"
+                    />
                     <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
                   </div>
                 </Field>
@@ -955,7 +1033,7 @@ export function RecipeEditor({
                       aria-invalid={fireInput.error ? true : undefined}
                       data-warn={fireInput.warning ? "true" : undefined}
                       aria-describedby={fire.trim() ? "r-fire-hint" : undefined}
-                      className="cell-input pl-7"
+                      className="cell-input h-11 pl-7 pointer-coarse:h-11 sm:h-9 sm:pointer-coarse:h-11"
                     />
                   </div>
                 </Field>
@@ -963,7 +1041,7 @@ export function RecipeEditor({
                 {fire.trim() ? (
                   <p
                     id="r-fire-hint"
-                    className={cn("col-span-2 -mt-1 text-xs", fireInput.error ? "text-bad" : fireInput.warning ? "text-warn" : "text-ink-mute")}
+                    className={cn("-mt-1 text-xs sm:col-span-2", fireInput.error ? "text-bad" : fireInput.warning ? "text-warn" : "text-ink-mute")}
                     role={fireInput.error || fireInput.warning ? "alert" : undefined}
                   >
                     {fireInput.error ? (
@@ -975,7 +1053,7 @@ export function RecipeEditor({
                           <button
                             type="button"
                             onClick={() => setFire(fireInput.suggestion!)}
-                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3.5 pointer-coarse:px-1 pointer-coarse:py-3.5"
                           >
                             %{fireInput.suggestion} yap
                           </button>
@@ -987,7 +1065,7 @@ export function RecipeEditor({
                         <button
                           type="button"
                           onClick={() => setFire("")}
-                          className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                          className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3.5 pointer-coarse:px-1 pointer-coarse:py-3.5"
                         >
                           Genel orana dön
                         </button>
@@ -1037,7 +1115,7 @@ export function RecipeEditor({
                               value={trial}
                               onChange={(e) => setTrial(e.target.value)}
                               placeholder={num(priceNum, 2)}
-                              className="pr-7 font-semibold"
+                              className="pr-7 font-semibold pointer-coarse:h-11"
                             />
                             <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">₺</span>
                           </div>
@@ -1059,11 +1137,11 @@ export function RecipeEditor({
                       </Well>
                       <div className="flex flex-wrap gap-1.5">
                         {[5, 10, 20].map((d) => (
-                          <Button key={d} size="sm" variant="secondary" className="flex-1 px-2" onClick={() => setTrial(num(priceNum + d, 2))}>
+                          <Button key={d} size="sm" variant="secondary" className="flex-1 px-2 pointer-coarse:h-11" onClick={() => setTrial(num(priceNum + d, 2))}>
                             +{d} ₺
                           </Button>
                         ))}
-                        <Button size="sm" variant="secondary" className="flex-1 px-2" onClick={() => setTrial(num(econ.suggestedPrice, 2))}>
+                        <Button size="sm" variant="secondary" className="flex-1 px-2 pointer-coarse:h-11" onClick={() => setTrial(num(econ.suggestedPrice, 2))}>
                           Önerilen
                         </Button>
                       </div>
@@ -1096,7 +1174,7 @@ export function RecipeEditor({
                             />
                           </div>
                           <div className="py-2.5">
-                            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPrice(priceText(trialPrice!))}>
+                            <Button size="sm" variant="secondary" className="w-full pointer-coarse:h-11" onClick={() => setPrice(priceText(trialPrice!))}>
                               Bu fiyatı uygula
                             </Button>
                           </div>
@@ -1130,18 +1208,40 @@ export function RecipeEditor({
         </motion.aside>
       </div>
 
-      {/* Kaydet çubuğu: değişiklik olunca altta yüzen kapsül */}
-      <FloatingBar open={dirty} className="max-w-lg flex-nowrap justify-between py-2 pr-2 pl-4">
-        <p className="flex min-w-0 items-center gap-2 text-[13px] leading-tight font-medium text-ink-soft">
-          <span className="size-2 shrink-0 rounded-full bg-warn" aria-hidden="true" />
-          Kaydedilmemiş değişiklikler
-        </p>
+      {/* Kaydet çubuğu: değişiklik olunca altta yüzen kapsül (telefonda alt menünün üstünde). Kaydedilmemiş
+          maliyet ve kâr da burada: telefonda miktarı değiştirirken üstteki özet kartı ekranın dışında kalır. */}
+      <FloatingBar open={dirty} className="max-w-lg flex-nowrap justify-between gap-2 py-2 pr-2 pl-4">
+        <div className="min-w-0" aria-live="polite">
+          <p className="flex items-center gap-2 text-[13px] leading-tight font-medium text-ink-soft">
+            <span className="size-2 shrink-0 rounded-full bg-warn" aria-hidden="true" />
+            <span className="max-[400px]:hidden">Kaydedilmemiş değişiklikler</span>
+            <span className="min-[401px]:hidden">Kaydedilmedi</span>
+          </p>
+          <p className="mt-0.5 text-xs leading-4 text-ink-mute tabular">
+            {noRecipe ? (
+              "Malzeme ekleyince hesaplanır"
+            ) : (
+              <>
+                Maliyet{" "}
+                <span className={cn("font-semibold", gaugeTone === "bad" ? "text-bad" : gaugeTone === "warn" ? "text-warn" : "text-ink")}>
+                  {pct(econ.costRatio)}
+                </span>{" "}
+                · kâr{" "}
+                <Signed value={econ.unitProfit} className="font-semibold text-ink">
+                  {tl(econ.unitProfit, 2)}
+                </Signed>
+              </>
+            )}
+          </p>
+        </div>
+        {/* Telefonda düğmeler ikonsuz, yalnız yazı: "Geri al" ikon olarak anlaşılmıyordu; iki yazılı düğme ikonlu
+            Kaydet + yuvarlak ok kadar yer kaplar, soldaki maliyet satırı 375px'te de tek satırda kalır */}
         <div className="flex shrink-0 gap-1.5">
-          <Button variant="ghost" onClick={reset} aria-label="Geri al" title="Geri al" className="max-sm:px-2.5">
-            <RotateCcw size={16} /> <span className="max-sm:hidden">Geri al</span>
+          <Button variant="ghost" onClick={reset} title="Kaydedilmemiş değişiklikleri geri al" className="h-11 pointer-coarse:h-11 max-sm:px-3 sm:h-9">
+            <RotateCcw size={16} className="max-sm:hidden" aria-hidden="true" /> Geri al
           </Button>
-          <Button onClick={save} disabled={saving} title="Kaydet (⌘S / Ctrl+S)">
-            <Save size={16} /> {saving ? "Kaydediliyor…" : "Kaydet"}
+          <Button onClick={save} disabled={saving} title="Kaydet (⌘S / Ctrl+S)" className="h-11 px-4 pointer-coarse:h-11 sm:h-9">
+            <Save size={16} className="max-sm:hidden" aria-hidden="true" /> {saving ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </div>
       </FloatingBar>

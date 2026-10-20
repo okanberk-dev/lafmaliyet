@@ -105,6 +105,65 @@ html {
   -webkit-tap-highlight-color: transparent;
   /* Kaydırma kilitlenince (aşağıda) klasik kaydırma çubuklu sistemlerde sayfa yana kaymasın */
   scrollbar-gutter: stable;
+  /* Telefonda yana çekince sayfa esneyip geri sayfaya dönme hareketi tetiklenmesin; dikey yenileme kalır */
+  overscroll-behavior-x: none;
+}
+
+/* ── Telefon kabuğu: alt menü (src/components/panel/bottom-nav.tsx) ───────────────────────────
+   --mobile-nav-h     alt menünün kapladığı yükseklik (64px + güvenli alan); lg ve üstünde ve ekran klavyesi
+                      açıkken 0. Sayfalardaki yapışkan/yüzen alt öğeler bunun üstünde durur:
+                      bottom-[calc(var(--mobile-nav-h)+0.75rem)] ya da bottom-(--mobile-nav-h).
+   --mobile-nav-space içeriğin altına bırakılan boşluk (klavye açılınca değişmez, sayfa zıplamaz).
+   --mobile-top-h     telefon ve tabletteki yapışkan üst çubuğun yüksekliği (56px; lg ve üstünde 0). Sayfalardaki
+                      yapışkan araç çubukları bunun altında durur: sticky top-(--mobile-top-h).
+   Değerler yalnızca panel kabuğunun içinde dolu; giriş ve QR menü sayfalarında 0. */
+:root {
+  --mobile-nav-h: 0px;
+  --mobile-nav-space: 0px;
+  --mobile-top-h: 0px;
+}
+
+[data-component="app-shell"] {
+  --mobile-nav-space: calc(4rem + env(safe-area-inset-bottom, 0px));
+  --mobile-nav-h: var(--mobile-nav-space);
+  --mobile-top-h: 3.5rem;
+}
+
+@media (width >= 64rem) {
+  [data-component="app-shell"] {
+    --mobile-nav-space: 0px;
+    --mobile-top-h: 0px;
+  }
+}
+
+html[data-keyboard="open"] [data-component="app-shell"] {
+  --mobile-nav-h: 0px;
+}
+
+[data-component="app-shell"] > main {
+  padding-bottom: var(--mobile-nav-space);
+}
+
+/* Ekran klavyesi açıkken alt menü aşağı kayıp gizlenir (yazı alanına yer kalsın) */
+.mobile-nav {
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0s;
+}
+
+html[data-keyboard="open"] .mobile-nav {
+  transform: translateY(100%);
+  visibility: hidden;
+  transition:
+    transform 0.18s ease-in,
+    visibility 0s linear 0.18s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav,
+  html[data-keyboard="open"] .mobile-nav {
+    transition: none;
+  }
 }
 
 /* Açık modal pencere, mobil çekmece ya da arama paleti varken arkadaki sayfa kaymaz */
@@ -113,9 +172,68 @@ html:has([data-scroll-lock]) {
   overflow: hidden;
 }
 
-/* Yüzen kaydetme çubuğu açıkken sayfanın sonuna boşluk: son satırlar çubuğun altında kalmasın */
+/* Yüzen kaydetme çubuğu açıkken sayfanın sonuna boşluk: son satırlar çubuğun (ve alt menünün) altında kalmasın.
+   Çubuğun gerçek yüksekliği (telefonda iki satıra sarılabilir) --floating-bar-h olarak yazılır (ui/floating-bar). */
 [data-component="app-shell"]:has([data-floating-bar]) > main {
-  padding-bottom: 6rem;
+  padding-bottom: calc(var(--floating-bar-h, 4.5rem) + 1.5rem + var(--mobile-nav-space));
+}
+
+/* Yüzen çubuk telefonda alt menünün üstünde, klavye açıkken klavyenin hemen üstünde, masaüstünde altta.
+   iOS'ta ekran klavyesi düzeni küçültmez, düzenin altını örter: örtülen pay (--keyboard-inset, bottom-nav.tsx)
+   kadar yukarı çıkılır. Android'de düzen küçülür, pay 0. */
+.floating-bar {
+  padding-bottom: max(
+    1rem,
+    env(safe-area-inset-bottom, 0px),
+    calc(var(--mobile-nav-h) + 0.75rem),
+    calc(var(--keyboard-inset, 0px) + 0.75rem)
+  );
+}
+
+/* ── Telefonda alttan açılan pencere (Dialog, ConfirmDialog: src/components/ui/dialog.tsx) ── */
+@media (width < 40rem) and (prefers-reduced-motion: no-preference) {
+  dialog[data-sheet][open] {
+    animation: sheet-in 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  dialog[data-sheet][open]::backdrop {
+    animation: sheet-backdrop-in 0.24s ease-out;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes sheet-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Base katmanında: sayfadaki sınıflar (ör. touch-none, text-sm) her zaman kazanır */
+@layer base {
+  /* Dokunmatikte çift dokunma yakınlaştırması beklemesin (dokunma anında tepki) */
+  :where(a, button, input, select, textarea, label, summary, [role="button"], [role="tab"], [role="radio"], [role="switch"]) {
+    touch-action: manipulation;
+  }
+
+  /* Yazı alanlarının halkası kendi sınıfında (focus:ring); sınıfı olmayan alanlar da klavyede belli olsun */
+  :where(input, select, textarea):focus-visible {
+    outline: 2px solid rgb(23 23 23 / 0.3);
+    outline-offset: 1px;
+  }
+
+  /* Dokunmatik ekranda yazı alanları en az 16px: iOS odaklanınca sayfayı yakınlaştırmaz.
+     Boyut sınıfı olmayan alanlar için; paylaşılan alanlar (ui/form) bunu kendi sınıfıyla verir. */
+  @media (pointer: coarse) {
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+    select,
+    textarea {
+      font-size: max(16px, 1rem);
+    }
+  }
 }
 
 body {
@@ -126,11 +244,34 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-code,
-kbd,
-samp,
-pre {
-  font-family: var(--font-mono), ui-monospace, monospace;
+/* Base katmanında: bir öğeye verilen font-sans gibi sınıflar kazanır (ör. mesaj önizlemesi <pre class="font-sans">) */
+@layer base {
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+}
+
+/* ── Bildirim balonları (sonner, components/ui/toaster.tsx) ──────────────────────────────────
+   Dokunmatikte "Geri al" gibi eylem düğmesi 44px, kapatma düğmesinin dokunma alanı 44px. */
+@media (pointer: coarse) {
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+    height: 44px;
+    padding-inline: 16px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
+    width: 24px;
+    height: 24px;
+  }
+  [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button]::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
 }
 
 ::selection {
@@ -151,9 +292,12 @@ pre {
   }
 }
 
-/* Izgara hücreleri geniş tablolarla taşmasın; tablo kendi içinde kaysın */
-.grid > * {
-  min-width: 0;
+/* Izgara hücreleri geniş tablolarla taşmasın; tablo kendi içinde kaysın. Base katmanında: bir hücreye verilen
+   min-w-* sınıfı kazanır */
+@layer base {
+  .grid > * {
+    min-width: 0;
+  }
 }
 
 /* Rakamlar hizalı dursun */

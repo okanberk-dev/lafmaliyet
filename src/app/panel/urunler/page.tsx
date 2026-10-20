@@ -91,7 +91,13 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         eyebrow="Menü"
         title="Ürünler & kârlılık"
         excel={EXCEL}
-        description="Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat. Ürün adına tıklayınca reçete kartı açılır."
+        description={
+          <>
+            Her ürün ve boy için satış fiyatı, maliyet, birim kâr, kâr marjı ve önerilen fiyat.{" "}
+            <span className="pointer-coarse:hidden">Ürün adına tıklayınca reçete kartı açılır.</span>
+            <span className="hidden pointer-coarse:inline">Ürüne dokununca reçete kartı açılır.</span>
+          </>
+        }
         actions={
           <>
             <MonthPicker months={availableMonths(model)} value={month} />

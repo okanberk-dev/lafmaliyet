@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Eye, EyeOff, LockOpen, LogOut, Minus, Pencil, ShieldCheck, ShieldOff, UserPlus, Users } from "lucide-react";
-import { useOptimistic, useState, useTransition, type FormEvent } from "react";
+import { Check, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
+import { useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
@@ -13,7 +13,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { Field, Input } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
-import { EmptyState } from "@/components/ui/misc";
+import { DotList, EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
@@ -21,9 +21,18 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { ROLES } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { resetUserTwoFactor, saveUser, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
+import { createAccessLink } from "@/server/actions/invites";
+import { createUser, deleteUser, resetUserTwoFactor, saveUser, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
+
+import { generatePassword, linkReason, relinkText, type AccessInfo } from "./access";
+import { AccessSheet } from "./access-sheet";
+import { CloseGuardFooter } from "./close-guard";
+import { PasswordField } from "./password-field";
 
 const count = (v: number) => num(Math.round(v), 0);
+
+/** Telefonda 44px dokunma alanı (paylaşılan düğmeler dokunmatikte 40px) */
+const TAP = "h-11 pointer-coarse:h-11";
 
 export type UserRow = {
   id: number;
@@ -34,6 +43,10 @@ export type UserRow = {
   lastLoginAt: string | null;
   twoFactor: boolean;
   locked: boolean;
+  /** Davetle eklendi, parolasını henüz belirlemedi ("expired": geçerli bağlantısı yok) */
+  invite: "none" | "pending" | "expired";
+  /** Kullanılmamış, süresi geçmemiş davet ya da sıfırlama bağlantısı ("20.10.2026 14:30"a kadar) */
+  liveLink: { kind: "invite" | "reset"; until: string } | null;
 };
 
 type RoleFilter = "all" | "admin" | "staff";
@@ -42,18 +55,25 @@ const ROLE_FILTERS: readonly RoleFilter[] = ["all", "admin", "staff"];
 /**
  * AkmanOS "User list": avatar + ad + soluk e-posta, rol rozeti, noktalı durum rozeti, iki adımlı doğrulama, son
  * giriş; satır sonunda aktif/pasif anahtarı ve düzenle. Arama ve rol süzgeci üstte. Pasif yapmak onay ister.
+ * Kullanıcı eklenince (ya da davet / sıfırlama bağlantısı oluşunca) "Giriş bilgileri" penceresi açılır.
  */
-export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number }) {
+export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users: UserRow[]; meId: number; emailConfigured: boolean; loginUrl: string }) {
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
+  const [access, setAccess] = useState<AccessInfo | null>(null);
   const [confirmOff, setConfirmOff] = useState<UserRow | null>(null);
+  const [linkBusy, setLinkBusy] = useState<number | null>(null);
+  // Geçerli bağlantısı olana yeni bağlantı eskisini geçersiz kılar: önce sorulur
+  const [confirmLink, setConfirmLink] = useState<{ user: UserRow; keepEditor: boolean } | null>(null);
   // Arama ve rol adreste durur (?ara=ayse&rol=staff): yenileyince ve paylaşınca korunur
   const [query, setQuery] = useQueryText("ara");
   const [roleRaw, setRole] = useQueryState<RoleFilter>("rol", "all");
   const role = ROLE_FILTERS.includes(roleRaw) ? roleRaw : "all";
   const [pending, startTransition] = useTransition();
   const [rows, setOptimistic] = useOptimistic(users, (state, p: { id: number; active: boolean }) => state.map((u) => (u.id === p.id ? { ...u, active: p.active } : u)));
-  const activeCount = rows.filter((u) => u.active).length;
+  // Davet bekleyen henüz giriş yapamaz: "Aktif" sayılmaz, ayrıca "Davet bekleyen" diye sayılır
+  const activeCount = rows.filter((u) => u.active && u.invite === "none").length;
   const twoFactorCount = rows.filter((u) => u.active && u.twoFactor).length;
+  const invitedCount = rows.filter((u) => u.active && u.invite !== "none").length;
 
   const visible = rows.filter((u) => (role === "all" || u.role === role) && matches(`${u.name} ${u.email} ${ROLES[u.role]}`, query));
   const filterActive = Boolean(query.trim()) || role !== "all";
@@ -72,8 +92,28 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
     });
   }
 
+  /**
+   * Davet bekleyene yeni davet, diğerlerine parola sıfırlama bağlantısı; ardından "Giriş bilgileri". Düzenleme
+   * penceresinde kaydedilmemiş değişiklik varsa pencere kapanmaz (bilgiler penceresi üstünde açılır, kapanınca
+   * düzenlemeye dönülür).
+   */
+  async function createLink(u: UserRow, keepEditor = false) {
+    setConfirmLink(null);
+    setLinkBusy(u.id);
+    const res = await createAccessLink(u.id);
+    setLinkBusy(null);
+    if (!res.ok) return void toast.error(res.error);
+    if (!keepEditor) setEditing(null);
+    setAccess({ ...res.data, reason: linkReason(res.data.kind === "invite" ? "invite" : "reset", u.liveLink !== null) });
+  }
+  /** Geçerli bir davet ya da sıfırlama bağlantısı varsa yenisi onu hemen geçersiz kılar: önce sorulur */
+  function newLink(u: UserRow, keepEditor = false) {
+    if (u.liveLink) setConfirmLink({ user: u, keepEditor });
+    else void createLink(u, keepEditor);
+  }
+
   const addButton = (
-    <Button onClick={() => setEditing("new")}>
+    <Button onClick={() => setEditing("new")} className={cn(TAP, "max-sm:w-full sm:pointer-fine:h-9")}>
       <UserPlus size={16} /> Kullanıcı ekle
     </Button>
   );
@@ -83,20 +123,27 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
       <CardHeader
         icon={<Users />}
         title="Kullanıcılar"
-        description="E-posta ve parolayı siz belirlersiniz; kişi giriş yaptıktan sonra Hesabım'dan parolasını değiştirip iki adımlı doğrulamayı açabilir."
+        description="Kullanıcı ekle: ad, giriş e-postası ve rol; parolayı siz belirleyin ya da davet bağlantısı gönderin. Giriş bilgilerini WhatsApp'tan ya da e-postayla iletirsiniz."
         meta={
-          <>
-            <span>Aktif</span>
-            <AnimatedNumber value={activeCount} format={count} className="font-semibold text-ink tabular" />
-            <span className="text-ink-quiet">/</span>
-            <span className="tabular">{rows.length} kullanıcı</span>
-            <span className="text-ink-quiet">·</span>
+          <DotList className="w-full" itemClassName="whitespace-nowrap">
+            <span className="inline-flex items-center gap-x-1.5">
+              <span>Aktif</span>
+              <AnimatedNumber value={activeCount} format={count} className="font-semibold text-ink tabular" />
+              <span className="text-ink-quiet">/</span>
+              <span className="tabular">{rows.length} kullanıcı</span>
+            </span>
             <span>
               İki adımlı <span className="font-semibold text-ink tabular">{twoFactorCount}</span>
             </span>
-          </>
+            {invitedCount ? (
+              <span>
+                Davet bekleyen <span className="font-semibold text-ink tabular">{invitedCount}</span>
+              </span>
+            ) : null}
+          </DotList>
         }
         actions={addButton}
+        actionsClassName="max-sm:w-full"
       />
       {rows.length > 1 ? (
         <FilterBar active={filterActive} onClear={clear} shown={visible.length} total={rows.length} unit="kullanıcı" className="px-5 pb-4">
@@ -115,27 +162,34 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
       ) : null}
       {visible.length ? (
         <>
-          {/* Telefonda tablo yerine kart listesi: rol, durum ve son giriş kaydırmadan görünür */}
+          {/* Telefonda tablo yerine kart listesi: rol, durum ve son giriş kaydırmadan görünür; uzun ad ve e-posta satır kırar */}
           <ul className="divide-y divide-line border-t border-line sm:hidden" aria-label="Kullanıcılar">
             {visible.map((u) => {
               const me = u.id === meId;
               return (
-                <li key={u.id} className={cn("flex items-start gap-3 px-5 py-3.5", !u.active && "opacity-60")}>
-                  <Avatar name={u.name} />
-                  <button type="button" onClick={() => setEditing(u)} className="min-w-0 flex-1 cursor-pointer text-left" aria-label={`${u.name} kullanıcısını düzenle`}>
-                    <span className="block truncate font-medium text-ink">
-                      {u.name}
-                      {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
-                    </span>
-                    <span className="block truncate text-[13px] text-ink-mute">{u.email}</span>
-                    <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-                      <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
-                      <StatusBadge user={u} />
-                      <TwoFactorMark on={u.twoFactor} />
-                    </span>
-                    <span className="mt-1.5 block text-xs text-ink-mute tabular">Son giriş: {u.lastLoginAt ?? "hiç girmedi"}</span>
-                  </button>
-                  <RowActions user={u} me={me} pending={pending} onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))} onEdit={() => setEditing(u)} />
+                <li key={u.id} className={cn("px-5 py-3.5", !u.active && "opacity-60")}>
+                  <div className="flex items-start gap-3">
+                    <Avatar name={u.name} />
+                    <button type="button" onClick={() => setEditing(u)} className="min-w-0 flex-1 cursor-pointer text-left" aria-label={`${u.name} kullanıcısını düzenle`}>
+                      <span className="block font-medium break-words text-ink">
+                        {u.name}
+                        {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
+                      </span>
+                      <span className="block text-[13px] wrap-anywhere text-ink-mute">{u.email}</span>
+                      <span className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                        <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
+                        <StatusBadge user={u} />
+                        {u.invite === "none" ? <TwoFactorMark on={u.twoFactor} /> : null}
+                      </span>
+                      <span className="mt-1.5 block text-xs text-ink-mute tabular">{lastLoginText(u)}</span>
+                    </button>
+                    <RowActions user={u} me={me} pending={pending} onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))} onEdit={() => setEditing(u)} />
+                  </div>
+                  {u.invite !== "none" && u.active ? (
+                    <Button variant="secondary" className={cn(TAP, "mt-3 w-full")} disabled={linkBusy === u.id} onClick={() => newLink(u)}>
+                      <Send size={15} /> {linkBusy === u.id ? "Oluşturuluyor…" : u.invite === "expired" ? "Yeni davet bağlantısı oluştur" : "Yeni davet bağlantısı (eskisi iptal)"}
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}
@@ -148,7 +202,8 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
                     <TH>Kullanıcı</TH>
                     <TH>Rol</TH>
                     <TH>Durum</TH>
-                    <TH>İki adımlı</TH>
+                    {/* Tablette (sm–lg) ayrı sütun yerine durumun altında: tablo 768px'te yana kaymasın */}
+                    <TH className="hidden lg:table-cell">İki adımlı</TH>
                     <TH>Son giriş</TH>
                     <TH>
                       <span className="sr-only">Eylemler</span>
@@ -164,11 +219,11 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
                           <div className="flex min-w-[12rem] items-center gap-3">
                             <Avatar name={u.name} />
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-ink">
+                              <p className="font-medium break-words text-ink">
                                 {u.name}
                                 {me ? <span className="ml-1.5 text-xs font-normal text-ink-mute">(siz)</span> : null}
                               </p>
-                              <p className="truncate text-[13px] text-ink-mute">{u.email}</p>
+                              <p className="text-[13px] wrap-anywhere text-ink-mute">{u.email}</p>
                             </div>
                           </div>
                         </TD>
@@ -176,17 +231,26 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
                           <Badge tone={u.role === "admin" ? "solid" : "gray"}>{ROLES[u.role]}</Badge>
                         </TD>
                         <TD>
-                          <StatusBadge user={u} />
+                          <div className="flex flex-col items-start gap-1.5">
+                            <StatusBadge user={u} />
+                            {u.invite === "none" ? (
+                              <span className="lg:hidden">
+                                <TwoFactorMark on={u.twoFactor} labelled />
+                              </span>
+                            ) : null}
+                          </div>
                         </TD>
-                        <TD>
-                          <TwoFactorMark on={u.twoFactor} />
+                        <TD className="hidden lg:table-cell">
+                          {u.invite === "none" ? <TwoFactorMark on={u.twoFactor} /> : <span className="text-[13px] text-ink-quiet">—</span>}
                         </TD>
-                        <TD className="text-[13px] whitespace-nowrap text-ink-mute tabular">{u.lastLoginAt ?? "Hiç girmedi"}</TD>
+                        <TD className="text-[13px] whitespace-nowrap text-ink-mute tabular">{lastLoginText(u, true)}</TD>
                         <TD>
                           <RowActions
                             user={u}
                             me={me}
                             pending={pending}
+                            linkBusy={linkBusy === u.id}
+                            onLink={u.invite !== "none" && u.active ? () => newLink(u) : undefined}
                             onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))}
                             onEdit={() => setEditing(u)}
                           />
@@ -213,7 +277,30 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
       ) : (
         <EmptyState icon={<Users />} title="Kullanıcı yok" action={addButton} />
       )}
-      {editing ? <UserDialog user={editing === "new" ? null : editing} meId={meId} onClose={() => setEditing(null)} /> : null}
+      {editing === "new" ? (
+        <NewUserDialog
+          onClose={() => setEditing(null)}
+          onCreated={(info) => {
+            setEditing(null);
+            setAccess(info);
+          }}
+        />
+      ) : editing ? (
+        <UserDialog
+          // Bağlantı oluşunca sayfa yenilenir: pencere kişinin güncel durumunu (geçerli bağlantı) görsün
+          user={rows.find((u) => u.id === editing.id) ?? editing}
+          meId={meId}
+          loginUrl={loginUrl}
+          linkBusy={linkBusy === editing.id}
+          onLink={(dirty) => newLink(rows.find((u) => u.id === editing.id) ?? editing, dirty)}
+          onAccess={(info) => {
+            setEditing(null);
+            setAccess(info);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
+      {access ? <AccessSheet info={access} emailConfigured={emailConfigured} onClose={() => setAccess(null)} /> : null}
       <ConfirmDialog
         open={confirmOff !== null}
         onClose={() => setConfirmOff(null)}
@@ -222,59 +309,115 @@ export function UsersEditor({ users, meId }: { users: UserRow[]; meId: number })
         description="Bu kullanıcı bir daha giriş yapamaz, açık oturumları kapanır. Bilgileri silinmez; istediğiniz zaman yeniden aktif yapabilirsiniz."
         confirmLabel="Pasif yap"
       />
+      <ConfirmDialog
+        open={confirmLink !== null}
+        onClose={() => setConfirmLink(null)}
+        onConfirm={() => confirmLink && void createLink(confirmLink.user, confirmLink.keepEditor)}
+        title={confirmLink ? relinkText(confirmLink.user).title : ""}
+        description={confirmLink ? relinkText(confirmLink.user).description : undefined}
+        confirmLabel="Yeni bağlantı oluştur"
+        tone="primary"
+      />
     </Card>
   );
 }
 
+function lastLoginText(u: UserRow, short = false) {
+  if (u.invite === "pending") return short ? "Davet bekliyor" : "Daveti henüz kabul etmedi";
+  if (u.invite === "expired") return short ? "Davet süresi doldu" : "Davet bağlantısının süresi doldu";
+  return short ? (u.lastLoginAt ?? "Hiç girmedi") : `Son giriş: ${u.lastLoginAt ?? "hiç girmedi"}`;
+}
+
 function StatusBadge({ user }: { user: UserRow }) {
-  return user.locked ? (
-    <Badge dot tone="red">
-      Kilitli
-    </Badge>
-  ) : (
+  if (user.locked)
+    return (
+      <Badge dot tone="red">
+        Kilitli
+      </Badge>
+    );
+  if (user.active && user.invite === "pending")
+    return (
+      <Badge dot tone="amber">
+        Davet bekliyor
+      </Badge>
+    );
+  if (user.active && user.invite === "expired")
+    return (
+      <Badge dot tone="red">
+        Davet süresi doldu
+      </Badge>
+    );
+  return (
     <Badge dot tone={user.active ? "green" : "gray"}>
       {user.active ? "Aktif" : "Pasif"}
     </Badge>
   );
 }
 
-function TwoFactorMark({ on }: { on: boolean }) {
+/** labelled: "İki adımlı" her genişlikte yazar (ayrı sütun başlığı olmadığında) */
+function TwoFactorMark({ on, labelled = false }: { on: boolean; labelled?: boolean }) {
+  const label = <span className={labelled ? undefined : "sm:hidden"}>İki adımlı</span>;
   return on ? (
-    <span className="inline-flex items-center gap-1 text-[13px] font-medium text-good-ink">
-      <ShieldCheck size={15} aria-hidden /> <span className="sm:hidden">İki adımlı</span> Açık
+    <span className="inline-flex items-center gap-1 text-[13px] font-medium whitespace-nowrap text-good-ink">
+      <ShieldCheck size={15} aria-hidden /> {label} Açık
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 text-[13px] text-ink-mute">
-      <ShieldOff size={15} aria-hidden /> <span className="sm:hidden">İki adımlı</span> Kapalı
+    <span className="inline-flex items-center gap-1 text-[13px] whitespace-nowrap text-ink-mute">
+      <ShieldOff size={15} aria-hidden /> {label} Kapalı
     </span>
   );
 }
 
-/** Satır sonu: giriş anahtarı (kendi hesabınızda kilitli) ve düzenle */
+/** Satır sonu: giriş anahtarı (kendi hesabınızda kilitli), davet bağlantısı (geniş ekranda) ve düzenle */
 function RowActions({
   user,
   me,
   pending,
+  linkBusy,
+  onLink,
   onToggle,
   onEdit,
 }: {
   user: UserRow;
   me: boolean;
   pending: boolean;
+  linkBusy?: boolean;
+  onLink?: () => void;
   onToggle: (next: boolean) => void;
   onEdit: () => void;
 }) {
   return (
     <div className="flex shrink-0 items-center justify-end gap-2">
       <span title={me ? "Kendi hesabınızı pasif yapamazsınız" : undefined} onClick={(e) => e.stopPropagation()}>
-        <Switch checked={user.active} disabled={me || pending} label={`${user.name} giriş yapabilir`} onChange={onToggle} />
+        <Switch
+          checked={user.active}
+          disabled={me || pending}
+          // Davetli parolasını belirleyene kadar giriş yapamaz; anahtar yalnızca hesabın açık olduğunu söyler
+          label={user.invite === "none" ? `${user.name} giriş yapabilir` : `${user.name} hesabı aktif`}
+          onChange={onToggle}
+          className="pointer-coarse:h-11"
+        />
       </span>
+      {onLink ? (
+        <IconButton
+          label={`${user.name} için davet bağlantısını yeniden oluştur`}
+          disabled={linkBusy}
+          onClick={(e) => {
+            e.stopPropagation();
+            onLink();
+          }}
+          className="pointer-coarse:size-11"
+        >
+          <Send size={15} />
+        </IconButton>
+      ) : null}
       <IconButton
         label={`${user.name} kullanıcısını düzenle`}
         onClick={(e) => {
           e.stopPropagation();
           onEdit();
         }}
+        className="pointer-coarse:size-11"
       >
         <Pencil size={15} />
       </IconButton>
@@ -282,226 +425,536 @@ function RowActions({
   );
 }
 
+// ---------------------------------------------------------------- Ortak form parçaları
+
 const ROLE_OPTIONS: { value: "staff" | "admin"; label: string; hint: string }[] = [
   { value: "staff", label: ROLES.staff, hint: "Stok sayımı + reçete defteri" },
   { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar dahil)" },
 ];
 
-type FormErrors = { name?: string; email?: string; password?: string };
-const FIELD_IDS = { name: "u-n", email: "u-e", password: "u-p" } as const;
+/** Büyük, dokunması kolay seçenek kartları (radyo grubu) */
+function ChoiceCards<T extends string>({
+  name,
+  value,
+  onChange,
+  options,
+  disabled,
+  columns = true,
+}: {
+  name: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string; hint: string; icon?: ReactNode }[];
+  disabled?: (v: T) => boolean;
+  columns?: boolean;
+}) {
+  return (
+    <div className={cn("grid gap-2", columns && "sm:grid-cols-2")}>
+      {options.map((o) => {
+        const locked = disabled?.(o.value) ?? false;
+        const on = value === o.value;
+        return (
+          <label
+            key={o.value}
+            className={cn(
+              "flex min-h-14 items-start gap-3 rounded-2xl bg-surface px-3.5 py-3 ring-1 ring-inset transition-shadow",
+              locked ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+              on ? "ring-2 ring-ink/70" : "ring-line-strong hover:ring-ink/25",
+            )}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={o.value}
+              checked={on}
+              disabled={locked}
+              onChange={() => onChange(o.value)}
+              className="mt-0.5 size-5 shrink-0 accent-ink"
+            />
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                {o.icon ? <span className="text-ink-mute [&>svg]:size-4">{o.icon}</span> : null}
+                {o.label}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-ink-mute">{o.hint}</span>
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
-function validateUser({ name, email, password, isNew }: { name: string; email: string; password: string; isNew: boolean }): FormErrors {
+function StepLegend({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <legend className="mb-2 flex items-center gap-2 text-[13px] font-medium text-ink-soft">
+      <span className="flex size-5 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-white tabular" aria-hidden>
+        {n}
+      </span>
+      {children}
+    </legend>
+  );
+}
+
+type FormErrors = { name?: string; email?: string; password?: string };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateUser({ name, email, password, needPassword }: { name: string; email: string; password: string; needPassword: boolean }): FormErrors {
   const out: FormErrors = {};
   if (!name.trim()) out.name = "Adı yazın";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) out.email = "Geçerli bir e-posta girin (ör. ayse@laffogato.net)";
-  if (isNew && !password) out.password = "Yeni kullanıcı için bir parola belirleyin";
-  else if (password && password.length < 8) out.password = "Parola en az 8 karakter olmalı";
+  if (!EMAIL_RE.test(email.trim())) out.email = "Geçerli bir e-posta girin (ör. ayse@laffogato.net)";
+  if (needPassword && !password) out.password = "Bir parola yazın ya da “Güçlü parola oluştur”a basın";
+  else if (password && password.length < 8) out.password = `Parola en az 8 karakter olmalı (şu an ${password.length})`;
   return out;
 }
 
-function UserDialog({ user, meId, onClose }: { user: UserRow | null; meId: number; onClose: () => void }) {
-  const [name, setName] = useState(user?.name ?? "");
-  const [email, setEmail] = useState(user?.email ?? "");
-  const [role, setRole] = useState<"admin" | "staff">(user?.role ?? "staff");
-  const [active, setActive] = useState(user?.active ?? true);
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+function focusFirst(found: FormErrors, ids: Record<keyof FormErrors, string>) {
+  const first = (["name", "email", "password"] as const).find((k) => found[k]);
+  if (first) document.getElementById(ids[first])?.focus();
+  return Boolean(first);
+}
+
+function NameEmailFields({
+  ids,
+  name,
+  email,
+  errors,
+  onName,
+  onEmail,
+}: {
+  ids: { name: string; email: string };
+  name: string;
+  email: string;
+  errors: FormErrors;
+  onName: (v: string) => void;
+  onEmail: (v: string) => void;
+}) {
+  return (
+    <div className="grid gap-4">
+      <Field label="Ad" htmlFor={ids.name} error={errors.name}>
+        <Input
+          id={ids.name}
+          value={name}
+          onChange={(e) => onName(e.target.value)}
+          autoComplete="off"
+          autoCapitalize="words"
+          maxLength={80}
+          placeholder="Ayşe Yılmaz"
+          aria-invalid={errors.name ? true : undefined}
+          className={TAP}
+        />
+      </Field>
+      <Field label="Giriş e-postası" htmlFor={ids.email} error={errors.email} hint={errors.email ? undefined : "Kişi panele bu adresle girer."}>
+        <Input
+          id={ids.email}
+          type="email"
+          inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={email}
+          onChange={(e) => onEmail(e.target.value)}
+          autoComplete="off"
+          placeholder="ayse@laffogato.net"
+          aria-invalid={errors.email ? true : undefined}
+          className={TAP}
+        />
+      </Field>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Kullanıcı ekle
+
+type Mode = "password" | "invite";
+const NEW_IDS = { name: "nu-n", email: "nu-e", password: "nu-p" } as const;
+
+/**
+ * Kullanıcı ekle (telefon önce, tek sütun): 1 Kişi (ad, giriş e-postası) · 2 Rol · 3 Parola: "Parolayı ben
+ * belirleyeyim" (hazır güçlü parola, göster/gizle, kopyala) ya da "Davet bağlantısı gönder" (72 saat).
+ */
+function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (info: AccessInfo) => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"admin" | "staff">("staff");
+  const [mode, setMode] = useState<Mode>("password");
+  // Pencere açılınca hazır, okunur güçlü parola: yönetici olduğu gibi kullanabilir ya da değiştirebilir
+  const [password, setPassword] = useState(() => generatePassword());
+  const [active, setActive] = useState(true);
   const [errors, setErrors] = useState<FormErrors>({});
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<"2fa" | "logout" | null>(null);
-  const [pending, startTransition] = useTransition();
-  const self = user?.id === meId;
+  // Yazılmış formu arka plana dokunma, aşağı çekme ya da Vazgeç sessizce silmesin
+  const [askDiscard, setAskDiscard] = useState(false);
+  const dirty = Boolean(name.trim() || email.trim());
+  const requestClose = () => {
+    if (busy) return;
+    if (dirty) setAskDiscard(true);
+    else onClose();
+  };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    // Sunucu da denetler; burada eksik alan pencere kapanmadan, alanın altında gösterilir
-    const found = validateUser({ name, email, password, isNew: !user });
+    const found = validateUser({ name, email, password: mode === "password" ? password : "", needPassword: mode === "password" });
     setErrors(found);
-    const first = (["name", "email", "password"] as const).find((k) => found[k]);
-    if (first) return document.getElementById(FIELD_IDS[first])?.focus();
+    if (focusFirst(found, NEW_IDS)) return;
     setBusy(true);
-    const res = await saveUser({ id: user?.id ?? null, name, email, role, active, password: password || undefined });
+    const res = await createUser(mode === "password" ? { mode, name, email, role, active, password } : { mode, name, email, role, active: true });
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
-    toast.success(user ? "Kullanıcı kaydedildi" : `${name.trim()} eklendi; giriş bilgilerini kendisine iletin`);
-    onClose();
+    if (!res.ok) {
+      if (/e-posta/i.test(res.error)) {
+        setErrors({ email: res.error });
+        document.getElementById(NEW_IDS.email)?.focus();
+      } else toast.error(res.error);
+      return;
+    }
+    // "… eklendi" bilgisi açılan "Giriş bilgileri" penceresinde yazar (ayrı bildirim pencerenin başlığını örtmesin)
+    onCreated(mode === "password" ? { ...res.data, password, reason: "new" } : { ...res.data, reason: "new" });
   }
-
-  function run(kind: "2fa" | "logout" | "unlock") {
-    if (!user) return;
-    setConfirm(null);
-    startTransition(async () => {
-      const res = kind === "2fa" ? await resetUserTwoFactor(user.id) : kind === "logout" ? await signOutUserEverywhere(user.id) : await unlockUser(user.id);
-      if (!res.ok) return void toast.error(res.error);
-      toast.success(kind === "2fa" ? "İki adımlı doğrulama kapatıldı" : kind === "logout" ? "Oturumları kapatıldı" : "Hesap kilidi açıldı");
-      onClose();
-    });
-  }
-
-  const security = user && (user.twoFactor || user.locked || !self) ? (
-    <div className="space-y-2 rounded-2xl bg-panel p-3">
-      <p className="px-1 text-[13px] font-medium text-ink-soft">Güvenlik</p>
-      <div className="flex flex-wrap gap-2">
-        {user.locked ? (
-          <Button variant="secondary" size="sm" disabled={pending} onClick={() => run("unlock")}>
-            <LockOpen size={15} /> Kilidi aç
-          </Button>
-        ) : null}
-        {user.twoFactor ? (
-          <Button variant="secondary" size="sm" disabled={pending} onClick={() => setConfirm("2fa")}>
-            <ShieldOff size={15} /> İki adımlıyı sıfırla
-          </Button>
-        ) : null}
-        {!self ? (
-          <Button variant="secondary" size="sm" disabled={pending} onClick={() => setConfirm("logout")}>
-            <LogOut size={15} /> Tüm oturumlarını kapat
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  ) : null;
 
   return (
     <Dialog
       open
-      onClose={onClose}
-      title={user ? "Kullanıcıyı düzenle" : "Kullanıcı ekle"}
-      description={user ? undefined : "Giriş e-postasını ve ilk parolayı siz belirleyin; kişi sonra Hesabım'dan değiştirebilir."}
+      onClose={requestClose}
+      title="Kullanıcı ekle"
+      description="Kişi, rol ve parola: üç adım."
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Vazgeç
-          </Button>
-          <Button type="submit" form="user-form" disabled={busy}>
-            {busy ? "Kaydediliyor…" : user ? "Kaydet" : "Ekle"}
-          </Button>
-        </>
+        askDiscard ? (
+          <CloseGuardFooter
+            title="Form kapatılsın mı?"
+            description="Yazdığınız ad ve e-posta silinir; kullanıcı eklenmez."
+            confirmLabel="Kapat ve sil"
+            onStay={() => setAskDiscard(false)}
+            onLeave={onClose}
+          />
+        ) : (
+          <>
+            <Button variant="ghost" onClick={requestClose} className="max-sm:h-11">
+              Vazgeç
+            </Button>
+            <Button type="submit" form="new-user-form" disabled={busy} className="max-sm:h-11 max-sm:flex-1">
+              {busy ? "Ekleniyor…" : mode === "password" ? "Kullanıcıyı ekle" : "Ekle ve bağlantı oluştur"}
+            </Button>
+          </>
+        )
       }
     >
-      <form id="user-form" onSubmit={submit} noValidate className="space-y-4 pb-2">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Ad" htmlFor="u-n" error={errors.name}>
-            <Input
-              id="u-n"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                setErrors((x) => ({ ...x, name: undefined }));
-              }}
-              autoComplete="off"
-              maxLength={80}
-              placeholder="Ayşe Yılmaz"
-              aria-invalid={errors.name ? true : undefined}
-            />
-          </Field>
-          <Field label="Giriş e-postası" htmlFor="u-e" error={errors.email}>
-            <Input
-              id="u-e"
-              type="email"
-              inputMode="email"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setErrors((x) => ({ ...x, email: undefined }));
-              }}
-              autoComplete="off"
-              placeholder="ayse@laffogato.net"
-              aria-invalid={errors.email ? true : undefined}
-            />
-          </Field>
-        </div>
+      <form id="new-user-form" onSubmit={submit} noValidate className="space-y-5 pb-2">
         <fieldset>
-          <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {ROLE_OPTIONS.map((o) => {
-              // Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder)
-              const locked = self && o.value !== "admin";
-              return (
-                <label
-                  key={o.value}
-                  className={cn(
-                    "flex items-start gap-3 rounded-2xl bg-surface px-3.5 py-3 ring-1 ring-inset transition-shadow",
-                    locked ? "cursor-not-allowed opacity-50" : "cursor-pointer",
-                    role === o.value ? "ring-2 ring-ink/70" : "ring-line-strong hover:ring-ink/25",
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="u-role"
-                    value={o.value}
-                    checked={role === o.value}
-                    disabled={locked}
-                    onChange={() => setRole(o.value)}
-                    className="mt-1 size-4 accent-ink"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium text-ink">{o.label}</span>
-                    <span className="block text-xs text-ink-mute">{o.hint}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
+          <StepLegend n={1}>Kişi</StepLegend>
+          <NameEmailFields
+            ids={NEW_IDS}
+            name={name}
+            email={email}
+            errors={errors}
+            onName={(v) => {
+              setName(v);
+              setErrors((x) => ({ ...x, name: undefined }));
+            }}
+            onEmail={(v) => {
+              setEmail(v);
+              setErrors((x) => ({ ...x, email: undefined }));
+            }}
+          />
         </fieldset>
-        <Field
-          label={user ? "Yeni parola (değiştirmek için)" : "Parola"}
-          hint={user ? "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır." : "En az 8 karakter. Kişiye siz iletirsiniz; giriş yaptıktan sonra değiştirebilir."}
-          error={errors.password}
-          htmlFor="u-p"
-        >
-          <div className="relative">
-            <Input
-              id="u-p"
-              type={showPassword ? "text" : "password"}
-              autoComplete="new-password"
+        <fieldset>
+          <StepLegend n={2}>Rol</StepLegend>
+          <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
+        </fieldset>
+        <fieldset className="space-y-3">
+          <StepLegend n={3}>Parola</StepLegend>
+          <ChoiceCards<Mode>
+            name="nu-mode"
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              setErrors((x) => ({ ...x, password: undefined }));
+            }}
+            columns={false}
+            options={[
+              {
+                value: "password",
+                label: "Parolayı ben belirleyeyim",
+                hint: "Parolayı siz iletirsiniz (WhatsApp, e-posta); kişi sonra Hesabım'dan değiştirebilir.",
+                icon: <KeyRound />,
+              },
+              {
+                value: "invite",
+                label: "Davet bağlantısı gönder",
+                hint: "Kişi tek kullanımlık bağlantıdan (72 saat geçerli) parolasını kendisi belirler.",
+                icon: <Send />,
+              },
+            ]}
+          />
+          {mode === "password" ? (
+            <PasswordField
+              id={NEW_IDS.password}
+              label="Parola"
+              hint="En az 8 karakter. Hazır gelen güçlü parolayı kullanabilir ya da kendiniz yazabilirsiniz."
+              error={errors.password}
               value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
+              initiallyVisible
+              onChange={(v) => {
+                setPassword(v);
                 setErrors((x) => ({ ...x, password: undefined }));
               }}
-              aria-invalid={errors.password ? true : undefined}
-              className="pr-11"
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute top-1/2 right-0.5 flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-ink-mute hover:text-ink pointer-coarse:size-10"
-              aria-label={showPassword ? "Parolayı gizle" : "Parolayı göster"}
-              aria-pressed={showPassword}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-        </Field>
-        {self ? (
-          <p className="rounded-2xl bg-panel px-3.5 py-3 text-xs text-ink-mute">Kendi hesabınızı pasif yapamazsınız.</p>
-        ) : (
+          ) : (
+            <p className="rounded-2xl bg-panel px-3.5 py-3 text-[13px] leading-5 text-ink-soft">
+              Eklediğinizde bağlantı oluşur; sonraki ekrandan kopyalayıp WhatsApp&apos;tan ya da e-postayla iletirsiniz. Kişi parolasını belirleyene kadar
+              listede <span className="font-medium text-ink">Davet bekliyor</span> yazar.
+            </p>
+          )}
+        </fieldset>
+        {mode === "password" ? (
           <ToggleRow
             title="Aktif (giriş yapabilir)"
-            description={active ? "Bu hesapla giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; bilgiler saklanır."}
+            description={active ? "Bu hesapla hemen giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; sonra aktif yapabilirsiniz."}
             label="Aktif (giriş yapabilir)"
             checked={active}
             onChange={setActive}
           />
-        )}
-        {security}
+        ) : null}
       </form>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------- Kullanıcıyı düzenle
+
+const EDIT_IDS = { name: "u-n", email: "u-e", password: "u-p" } as const;
+type Confirm = "2fa" | "logout" | "delete";
+
+function UserDialog({
+  user,
+  meId,
+  loginUrl,
+  linkBusy,
+  onLink,
+  onAccess,
+  onClose,
+}: {
+  user: UserRow;
+  meId: number;
+  loginUrl: string;
+  linkBusy: boolean;
+  /** dirty: kaydedilmemiş değişiklik var (pencere açık kalsın) */
+  onLink: (dirty: boolean) => void;
+  onAccess: (info: AccessInfo) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState<"admin" | "staff">(user.role);
+  const [active, setActive] = useState(user.active);
+  const [password, setPassword] = useState("");
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [pending, startTransition] = useTransition();
+  const self = user.id === meId;
+  const invited = user.invite !== "none";
+  const dirty = name !== user.name || email !== user.email || role !== user.role || active !== user.active || password !== "";
+  // Kaydedilmemiş değişikliği arka plana dokunma, aşağı çekme, Esc ya da Vazgeç sessizce silmesin
+  const [askDiscard, setAskDiscard] = useState(false);
+  const requestClose = () => {
+    if (busy) return;
+    if (dirty) setAskDiscard(true);
+    else onClose();
+  };
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    // Sunucu da denetler; burada eksik alan pencere kapanmadan, alanın altında gösterilir
+    const found = validateUser({ name, email, password, needPassword: false });
+    setErrors(found);
+    if (focusFirst(found, EDIT_IDS)) return;
+    setBusy(true);
+    const res = await saveUser({ id: user.id, name, email, role, active, password: password || undefined });
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
+    // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
+    if (password && !self) onAccess({ kind: "password", reason: invited ? "set" : "changed", userId: user.id, name: name.trim(), email: email.trim().toLowerCase(), loginUrl, password });
+    else {
+      toast.success("Kullanıcı kaydedildi");
+      onClose();
+    }
+  }
+
+  function run(kind: Confirm | "unlock") {
+    setConfirm(null);
+    startTransition(async () => {
+      const res =
+        kind === "2fa"
+          ? await resetUserTwoFactor(user.id)
+          : kind === "logout"
+            ? await signOutUserEverywhere(user.id)
+            : kind === "delete"
+              ? await deleteUser(user.id)
+              : await unlockUser(user.id);
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(
+        { "2fa": "İki adımlı doğrulama kapatıldı", logout: "Oturumları kapatıldı", unlock: "Hesap kilidi açıldı", delete: `${user.name} silindi` }[kind],
+      );
+      onClose();
+    });
+  }
+
+  const secBtn = cn(TAP, "w-full justify-start sm:w-auto sm:pointer-fine:h-8");
+  const security = (
+    <div className="space-y-2 rounded-2xl bg-panel p-3">
+      <p className="px-1 text-[13px] font-medium text-ink-soft">Güvenlik</p>
+      <div className="grid gap-2 sm:flex sm:flex-wrap">
+        {!self && user.active ? (
+          <Button variant="secondary" size="sm" className={secBtn} disabled={pending || linkBusy} onClick={() => onLink(dirty)}>
+            {user.invite !== "none" ? <Send size={15} /> : <KeyRound size={15} />}
+            {linkBusy ? "Oluşturuluyor…" : user.invite !== "none" ? "Davet bağlantısını yeniden oluştur" : "Parola sıfırlama bağlantısı"}
+          </Button>
+        ) : null}
+        {user.locked ? (
+          <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => run("unlock")}>
+            <LockOpen size={15} /> Kilidi aç
+          </Button>
+        ) : null}
+        {user.twoFactor ? (
+          <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => setConfirm("2fa")}>
+            <ShieldOff size={15} /> İki adımlıyı sıfırla
+          </Button>
+        ) : null}
+        {/* Davet bekleyenin hiç oturumu olmadı */}
+        {!self && !invited ? (
+          <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => setConfirm("logout")}>
+            <LogOut size={15} /> Tüm oturumlarını kapat
+          </Button>
+        ) : null}
+      </div>
+      {!self && user.active && user.invite === "none" ? (
+        <p className="px-1 text-xs leading-5 text-ink-mute">
+          Sıfırlama bağlantısıyla kişi yeni parolasını kendisi belirler (24 saat, tek kullanımlık); mevcut parolası o zamana kadar çalışır.
+          {user.liveLink ? ` Geçerli bir bağlantı var (son geçerlilik ${user.liveLink.until}); yenisi onu iptal eder.` : ""}
+        </p>
+      ) : null}
+      {!self && user.active && user.invite === "pending" && user.liveLink ? (
+        <p className="px-1 text-xs leading-5 text-ink-mute">Gönderilen davet bağlantısı {user.liveLink.until} tarihine kadar geçerli; yenisi onu iptal eder.</p>
+      ) : null}
+    </div>
+  );
+
+  const confirmText: Record<Confirm, { title: string; description: string; label: string }> = {
+    "2fa": {
+      title: "İki adımlı doğrulama sıfırlansın mı?",
+      description: "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir.",
+      label: "Sıfırla",
+    },
+    logout: { title: "Bütün oturumları kapatılsın mı?", description: "Kullanıcı bütün cihazlarda çıkış yapar ve yeniden giriş yapması gerekir.", label: "Oturumları kapat" },
+    delete: {
+      title: `${user.name} silinsin mi?`,
+      description: "Hesap kalıcı olarak silinir, geri alınamaz; işlem geçmişindeki kayıtları durur. Yalnızca girişini durdurmak istiyorsanız Pasif yapın.",
+      label: "Kalıcı olarak sil",
+    },
+  };
+
+  return (
+    <>
+      <Dialog
+        open
+        onClose={requestClose}
+        title="Kullanıcıyı düzenle"
+        footerStart={
+          !self && !askDiscard ? (
+            <Button variant="ghost" className={cn(TAP, "text-bad hover:bg-bad-soft hover:text-bad sm:pointer-fine:h-9")} disabled={pending} onClick={() => setConfirm("delete")}>
+              <Trash2 size={15} /> Sil
+            </Button>
+          ) : undefined
+        }
+        footer={
+          askDiscard ? (
+            <CloseGuardFooter
+              title="Değişiklikler kaydedilmedi."
+              description="Kapatırsanız yazdıklarınız silinir; kullanıcı olduğu gibi kalır."
+              confirmLabel="Kaydetmeden kapat"
+              onStay={() => setAskDiscard(false)}
+              onLeave={onClose}
+            />
+          ) : (
+            <>
+              <Button variant="ghost" onClick={requestClose} className="max-sm:h-11">
+                Vazgeç
+              </Button>
+              <Button type="submit" form="user-form" disabled={busy} className="max-sm:h-11">
+                {busy ? "Kaydediliyor…" : "Kaydet"}
+              </Button>
+            </>
+          )
+        }
+      >
+        <form id="user-form" onSubmit={submit} noValidate className="space-y-4 pb-2">
+          <NameEmailFields
+            ids={EDIT_IDS}
+            name={name}
+            email={email}
+            errors={errors}
+            onName={(v) => {
+              setName(v);
+              setErrors((x) => ({ ...x, name: undefined }));
+            }}
+            onEmail={(v) => {
+              setEmail(v);
+              setErrors((x) => ({ ...x, email: undefined }));
+            }}
+          />
+          <fieldset>
+            <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
+            {/* Kendi yönetici yetkinizi kaldıramazsınız (sunucu da reddeder) */}
+            <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => self && v !== "admin"} />
+            {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
+          </fieldset>
+          <PasswordField
+            id={EDIT_IDS.password}
+            label={user.invite !== "none" ? "Parola (davet yerine siz belirleyin)" : "Yeni parola (değiştirmek için)"}
+            hint={
+              user.invite !== "none"
+                ? "Boş bırakırsanız kişi davet bağlantısıyla belirler. Yazarsanız davet bağlantısı geçersiz olur."
+                : "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır."
+            }
+            error={errors.password}
+            value={password}
+            onChange={(v) => {
+              setPassword(v);
+              setErrors((x) => ({ ...x, password: undefined }));
+            }}
+          />
+          {self ? (
+            <p className="rounded-2xl bg-panel px-3.5 py-3 text-xs text-ink-mute">Kendi hesabınızı pasif yapamazsınız.</p>
+          ) : (
+            <ToggleRow
+              title={invited ? "Aktif" : "Aktif (giriş yapabilir)"}
+              description={
+                !active
+                  ? "Pasif hesapla giriş yapılamaz; bilgiler saklanır."
+                  : invited
+                    ? "Henüz giriş yapamaz: kişi davet bağlantısından parolasını belirleyince girebilir."
+                    : "Bu hesapla giriş yapılabilir."
+              }
+              label={invited ? "Aktif" : "Aktif (giriş yapabilir)"}
+              checked={active}
+              onChange={setActive}
+            />
+          )}
+          {user.twoFactor || user.locked || !self ? security : null}
+        </form>
+      </Dialog>
+      {/* Onay penceresi düzenleme penceresinin içinde değil yanında: React içteki <dialog>'un close/cancel olayını
+          dıştakine de iletir; içteki kapanınca düzenleme penceresi de kapanırdı */}
       <ConfirmDialog
         open={confirm !== null}
         onClose={() => setConfirm(null)}
         onConfirm={() => confirm && run(confirm)}
-        title={confirm === "2fa" ? "İki adımlı doğrulama sıfırlansın mı?" : "Bütün oturumları kapatılsın mı?"}
-        description={
-          confirm === "2fa"
-            ? "Telefonunu kaybeden kullanıcı için. Girişte yalnızca parola istenir; kişi Hesabım'dan yeniden kurabilir."
-            : "Kullanıcı bütün cihazlarda çıkış yapar ve yeniden giriş yapması gerekir."
-        }
-        confirmLabel={confirm === "2fa" ? "Sıfırla" : "Oturumları kapat"}
+        title={confirm ? confirmText[confirm].title : ""}
+        description={confirm ? confirmText[confirm].description : undefined}
+        confirmLabel={confirm ? confirmText[confirm].label : undefined}
       />
-    </Dialog>
+    </>
   );
 }
 

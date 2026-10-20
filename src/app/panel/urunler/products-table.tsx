@@ -35,7 +35,7 @@ import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState,
 import { NumberInput, Select } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, Signed } from "@/components/ui/misc";
-import { Pagination, usePaged } from "@/components/ui/pagination";
+import { Pagination, useUrlPaged } from "@/components/ui/pagination";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import type { ProductStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -45,7 +45,9 @@ import { num, pct, tl } from "@/lib/format";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
 
-import { compareBy, LIST_QUERY_KEY, menuAverages, productHref } from "./logic";
+import { compareBy, LIST_QUERY_KEY, menuAverages, productHref, STATUS_CHIPS, statusChips } from "./logic";
+import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection, SheetToggle } from "./filter-sheet";
+import { filterSummary } from "./filter-text";
 import { NewProductDialog } from "./new-product";
 import { priceText } from "./price-text";
 
@@ -86,7 +88,7 @@ type SortKey = NumKey | TextKey;
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
 const TEXT_KEYS: TextKey[] = ["name", "status", "category", "fireRate"];
 
-const STATUSES: ProductStatus[] = ["İyi", "Dikkat", "Düşük kâr", "Reçete yok"];
+const STATUSES = STATUS_CHIPS;
 const SORT_KEYS: SortKey[] = [
   ...TEXT_KEYS,
   "price",
@@ -279,7 +281,8 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-10"
+        // Telefon kartında 44px dokunma alanı ve 16px yazı (iOS alanı büyütmesin)
+        className="cell-input bg-surface/70 pr-6 pl-2 ring-line hover:bg-surface hover:ring-line-strong focus:bg-surface pointer-coarse:h-11 max-sm:h-11 max-sm:font-semibold"
       />
       <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-ink-mute" aria-hidden="true">
         ₺
@@ -306,16 +309,27 @@ function ProductName({ r, compact, month }: { r: ProductRow; compact?: boolean; 
   const href = productHref(r.id, month);
   return (
     <div className={cn("flex min-w-0 gap-3", compact ? "items-start" : "items-center")}>
-      {/* Tabloda karo yalnızca geniş ekranda: 1400px'te ad sütunu yer kazanır, satırlar sarılmaz */}
-      <Link href={href} tabIndex={-1} aria-hidden="true" className={cn("shrink-0", compact ? undefined : "hidden 2xl:inline-flex")}>
+      {/* Tabloda karo yalnızca geniş ekranda: 1400px'te ad sütunu yer kazanır, satırlar sarılmaz. Telefon kartında
+          da yok: ad ve rozetler fiyat alanının yanında tek satıra sığsın. */}
+      <Link href={href} tabIndex={-1} aria-hidden="true" className="hidden shrink-0 2xl:inline-flex">
         <IconTile tone={toneFor(r.category)}>{createElement(categoryIcon(r.category))}</IconTile>
       </Link>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <Link href={href} className={cn("font-semibold break-words hover:underline", r.active ? "text-ink" : "text-ink-mute")}>
+          {/* Telefon kartında bağlantı kartın tamamını kaplar (after:inset-0): karta dokunmak reçete kartını açar;
+              fiyat alanı, ⓘ ve "Reçeteyi girin" üstte (z-10) kalır */}
+          <Link
+            href={href}
+            data-card-link={compact ? "" : undefined}
+            className={cn(
+              "font-semibold break-words hover:underline",
+              r.active ? "text-ink" : "text-ink-mute",
+              compact && "text-[15px] leading-6 after:absolute after:inset-0 after:rounded-2xl",
+            )}
+          >
             {r.name}
           </Link>
-          {r.note ? <InfoTip text={r.note} /> : null}
+          {r.note ? <InfoTip text={r.note} className={compact ? "relative z-10" : undefined} /> : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
           {r.hasEstimate && !compact ? (
             <Badge tone="amber" dot title="Reçetesinde faturada bulunamayan, tahmini fiyatlı malzeme var">
@@ -379,6 +393,8 @@ export function ProductsTable({
   }, [search]);
   const [details, setDetails] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
+  // Telefonda süzgeçler alttan açılan pencerede
+  const [sheet, setSheet] = useState(false);
   // Satırlar yalnızca kullanıcı sayfa ya da sıra değiştirince yumuşakça belirir (ilk çizimde değil)
   const [interacted, setInteracted] = useState(false);
 
@@ -411,6 +427,9 @@ export function ProductsTable({
     [rows, q, category, size, includeInactive],
   );
 
+  // Çipler süzgeçle kaybolmaz (sayı 0 olabilir): telefondaki pencerede satırlar kaymasın
+  const chips = useMemo(() => statusChips(rows, statuses), [rows, statuses]);
+
   const statusCounts = useMemo(() => {
     const m = new Map<ProductStatus, number>();
     for (const r of base) m.set(r.status, (m.get(r.status) ?? 0) + 1);
@@ -440,7 +459,7 @@ export function ProductsTable({
     return list;
   }, [base, statuses, sort]);
 
-  const paged = usePaged(filtered, pageSize, `${q}|${category}|${size}|${durum}|${includeInactive}|${sira}|${pageSize}`);
+  const paged = useUrlPaged(filtered, pageSize, `${q}|${category}|${size}|${durum}|${includeInactive}|${sira}|${pageSize}`);
 
   // Görünen ürünlerin bu ayki toplamları ve Excel'in "ORTALAMA" satırı (tablonun alt satırı ve telefon özeti)
   const totals = useMemo(
@@ -493,6 +512,14 @@ export function ProductsTable({
     setQ("");
     clearQuery(["ara", "kategori", "boy", "durum", "pasif"]);
   };
+  // Telefondaki "Süzgeç" düğmesinin rozeti ve özeti (arama kutusu ayrı, hep görünür)
+  const summary = filterSummary([
+    ...statuses,
+    categories.find((c) => c.id === category)?.name,
+    size ? SIZE_LABELS[size] : null,
+    showInactive && "Pasifler dahil",
+  ]);
+  const clearSheet = () => clearQuery(["kategori", "boy", "durum", "pasif"]);
 
   const exportCsv = () => {
     const header = [
@@ -553,7 +580,13 @@ export function ProductsTable({
       <CardHeader
         icon={<Coffee />}
         title="Ürün listesi"
-        description="Satış fiyatına tıklayıp değiştirin; Enter kaydeder, Esc vazgeçer. Ürün adı reçete kartını bu ayla açar."
+        // Dokunmatikte Enter/Esc yok (rakam klavyesi), kart ya da ad dokununca açılır
+        description={
+          <>
+            <span className="pointer-coarse:hidden">Satış fiyatına tıklayıp değiştirin; Enter kaydeder, Esc vazgeçer. Ürün adı reçete kartını bu ayla açar.</span>
+            <span className="hidden pointer-coarse:inline">Satış fiyatına dokunup değiştirin; alandan çıkınca kaydedilir. Ürüne dokununca reçete kartı bu ayla açılır.</span>
+          </>
+        }
         meta={
           <>
             <span>Aktif</span>
@@ -571,11 +604,13 @@ export function ProductsTable({
             <span className="ml-2">{num(categories.length)} kategori</span>
           </>
         }
+        // Telefonda bu iki düğme Süzgeç penceresinin "Görünüm" bölümünde
+        actionsClassName="max-sm:hidden"
         actions={
           <>
             <Button
               variant="secondary"
-              className={cn("pointer-coarse:h-10", details && "text-ink ring-ink/30")}
+              className={cn(details && "text-ink ring-ink/30")}
               aria-pressed={details}
               onClick={() => setDetails((d) => !d)}
               title="Net satış, POS komisyonu, toplam maliyet, net ciro ve fire"
@@ -585,7 +620,6 @@ export function ProductsTable({
             </Button>
             <Button
               variant="secondary"
-              className="pointer-coarse:h-10"
               onClick={exportCsv}
               disabled={!filtered.length}
               aria-label="Görünen listeyi CSV indir"
@@ -606,9 +640,22 @@ export function ProductsTable({
         total={includeInactive ? rows.length : activeCount}
         unit="ürün"
       >
-        <SearchField value={q} onChange={setQ} placeholder="Ürün, boy ya da kategori ara" label="Ürün ara" className="w-full sm:w-64" />
+        {/* Telefonda arama ve Süzgeç düğmesi tek satırı doldurur (sayaç alt satıra iner); genişte satırın öğeleri */}
+        <div className="flex basis-full gap-2 sm:contents">
+          <SearchField
+            value={q}
+            onChange={setQ}
+            placeholder="Ürün ara"
+            label="Ürün, boy, kategori ya da not ara"
+            className="min-w-0 flex-1 sm:w-64 sm:flex-none max-sm:[&_input]:h-11"
+          />
+          <FilterSheetButton className="sm:hidden" count={summary.count} onClick={() => setSheet(true)} />
+        </div>
+        <FilterSummaryLine className="basis-full sm:hidden" text={summary.text} onClick={() => setSheet(true)} />
+        {/* Geniş ekranda süzgeçler satırda; telefonda pencerede (aşağıda) */}
+        <div className="contents max-sm:hidden">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Durum">
-          {STATUSES.filter((s) => s !== "Reçete yok" || statuses.includes(s) || statusCounts.get(s)).map((s) => (
+          {chips.map((s) => (
             <FilterChip key={s} active={statuses.includes(s)} onToggle={() => toggleStatus(s)} count={statusCounts.get(s) ?? 0}>
               <span className={cn("size-1.5 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-white/70")} aria-hidden="true" />
               {s}
@@ -619,7 +666,7 @@ export function ProductsTable({
           value={category ?? ""}
           onChange={(e) => setKategori(e.target.value)}
           // Telefonda kategori ve boy yan yana (iki seçim alt alta yer kaplamasın)
-          className={cn("w-[calc(58%-0.25rem)] sm:w-auto sm:min-w-48 pointer-coarse:h-10", category !== null && "ring-ink/40")}
+          className={cn("w-[calc(58%-0.25rem)] sm:w-auto sm:min-w-48", category !== null && "ring-ink/40")}
           aria-label="Kategori"
         >
           <option value="">Tüm kategoriler</option>
@@ -632,7 +679,7 @@ export function ProductsTable({
         <Select
           value={size ?? ""}
           onChange={(e) => setBoy(e.target.value)}
-          className={cn("w-[calc(42%-0.25rem)] sm:w-auto pointer-coarse:h-10", size !== null && "ring-ink/40")}
+          className={cn("w-[calc(42%-0.25rem)] sm:w-auto", size !== null && "ring-ink/40")}
           aria-label="Boy"
         >
           <option value="">Tüm boylar</option>
@@ -647,23 +694,110 @@ export function ProductsTable({
             Pasifleri de göster
           </FilterChip>
         ) : null}
-        <Select
-          value={sortParam(sort)}
-          onChange={(e) => {
-            setInteracted(true);
-            setSira(e.target.value);
-          }}
-          className="w-full sm:hidden pointer-coarse:h-10"
-          aria-label="Sıralama"
-        >
-          {MOBILE_SORTS.some((o) => o.value === sortParam(sort)) ? null : <option value={sortParam(sort)}>Tablodaki sıra</option>}
-          {MOBILE_SORTS.map((o) => (
-            <option key={o.value} value={o.value}>
-              Sırala: {o.label}
-            </option>
-          ))}
-        </Select>
+        </div>
       </FilterBar>
+
+      <FilterSheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        onClear={clearSheet}
+        canClear={summary.count > 0}
+        shown={filtered.length}
+        unit="ürün"
+      >
+        {/* Pencerede çipler iki sütunlu ızgarada, sayı sağda: sayılar değişince (ör. "Large" seçilince) satırlar
+            kaymaz, art arda dokunuşlar hedeflenen çipe gelir */}
+        <SheetSection title="Durum" aside={`Hedef ≤ %${num(target * 100)}`}>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Durum">
+            {chips.map((s) => (
+              <FilterChip
+                key={s}
+                active={statuses.includes(s)}
+                onToggle={() => toggleStatus(s)}
+                count={statusCounts.get(s) ?? 0}
+                className={SHEET_CHIP}
+              >
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[s], statuses.includes(s) && "ring-1 ring-white/70")} aria-hidden="true" />
+                  {s}
+                </span>
+              </FilterChip>
+            ))}
+          </div>
+        </SheetSection>
+        <SheetSection title="Kategori">
+          <Select
+            value={category ?? ""}
+            onChange={(e) => setKategori(e.target.value)}
+            className={cn("h-11 pointer-coarse:h-11", category !== null && "ring-ink/40")}
+            aria-label="Kategori"
+          >
+            <option value="">Tüm kategoriler</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({categoryCounts.get(c.id) ?? 0})
+              </option>
+            ))}
+          </Select>
+        </SheetSection>
+        <SheetSection title="Boy">
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Boy">
+            <FilterChip active={size === null} onToggle={() => setBoy("")} className={SHEET_CHIP}>
+              Tüm boylar
+            </FilterChip>
+            {SIZES.map((x) => (
+              <FilterChip
+                key={x}
+                active={size === x}
+                onToggle={() => setBoy(size === x ? "" : x)}
+                count={sizeCounts.get(x) ?? 0}
+                className={SHEET_CHIP}
+              >
+                {SIZE_LABELS[x]}
+              </FilterChip>
+            ))}
+          </div>
+        </SheetSection>
+        {inactiveCount ? (
+          <SheetToggle
+            title="Pasif ürünleri de göster"
+            description={`${num(inactiveCount)} ürün menüde pasif`}
+            checked={showInactive}
+            onChange={(v) => setPasif(v ? "1" : "")}
+            label="Pasif ürünleri de göster"
+          />
+        ) : null}
+        <SheetSection title="Sırala">
+          <Select
+            value={sortParam(sort)}
+            onChange={(e) => {
+              setInteracted(true);
+              setSira(e.target.value);
+            }}
+            className={cn("h-11 pointer-coarse:h-11", sort && "ring-ink/40")}
+            aria-label="Sıralama"
+          >
+            {MOBILE_SORTS.some((o) => o.value === sortParam(sort)) ? null : <option value={sortParam(sort)}>Tablodaki sıra</option>}
+            {MOBILE_SORTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </SheetSection>
+        <SheetSection title="Görünüm">
+          <SheetToggle
+            title="Tüm ölçüler"
+            description="Kartlarda net satış, POS komisyonu, toplam maliyet, net ciro ve fire de görünür"
+            checked={details}
+            onChange={setDetails}
+            label="Tüm ölçüleri göster"
+          />
+          <Button variant="secondary" className="h-11 w-full pointer-coarse:h-11" onClick={exportCsv} disabled={!filtered.length}>
+            <Download size={16} /> Görünen listeyi CSV indir
+          </Button>
+        </SheetSection>
+      </FilterSheet>
 
       {onlyInactiveMatch ? (
         <p className="mx-5 mb-3 rounded-xl bg-info-soft px-3.5 py-2 text-[13px] text-info" role="status">
@@ -672,7 +806,9 @@ export function ProductsTable({
       ) : null}
 
       {filtered.length ? (
-        <>
+        // data-page-top: sayfa değişince (telefonda uzun kart listesinin altındaki "Sonraki sayfa") buraya, yeni
+        // sayfanın ilk ürününe kaydırılır (paylaşılan Pagination); kartın başlığı ve süzgeçleri değil
+        <div data-page-top="">
           {/* Geniş ekran: tablo (ilk sütun yatay kaydırmada sabit) */}
           <TableWrap className="max-sm:hidden">
             {/* Sütun arası 16px (ilk ve son sütunun dış kenarı 12px, kart başlığıyla hizalı); başlıklar iki satıra
@@ -809,7 +945,8 @@ export function ProductsTable({
             </Table>
           </TableWrap>
 
-          {/* Telefon: her ürün bir kart; fiyat yine yerinde değişir */}
+          {/* Telefon: her ürün bir kart. Karta dokunmak reçete kartını açar, fiyat yine yerinde değişir. Önce
+              maliyet oranı ve durum (ekranın asıl sorusu), sonra kâr ve maliyet; geri kalanlar küçük satırda. */}
           <motion.ul
             key={`m|${paged.page}|${sira}`}
             initial={reduce || !interacted ? false : { opacity: 0 }}
@@ -819,18 +956,23 @@ export function ProductsTable({
             aria-label="Ürünler"
           >
             {paged.slice.map((r) => (
-              <li key={r.id} className="px-3 py-3.5">
+              <li
+                key={r.id}
+                className="relative rounded-2xl px-3 py-3.5 transition-colors has-[[data-card-link]:active]:bg-surface/70 has-[[data-card-link]:hover]:bg-surface/50"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <ProductName r={r} compact month={month} />
-                  <PriceCell key={`${r.id}:${r.price}`} row={r} className="shrink-0" />
+                  <PriceCell key={`${r.id}:${r.price}`} row={r} className="z-10 shrink-0" />
                 </div>
                 <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2">
-                  <Metric label="Maliyet">{tl(r.cost, 2)}</Metric>
-                  <Metric label="Birim kâr">
+                  <Metric label="Maliyet oranı" className={cn("text-base font-semibold", ratioClass(r, target))}>
+                    {ratioText(r, r.costRatio)}
+                  </Metric>
+                  <Metric label="Birim kâr" className="text-base font-semibold">
                     {r.status === "Reçete yok" ? <span className="text-ink-quiet">–</span> : <Signed value={r.unitProfit}>{tl(r.unitProfit, 2)}</Signed>}
                   </Metric>
-                  <Metric label="Maliyet oranı" className={ratioClass(r, target)}>
-                    {ratioText(r, r.costRatio)}
+                  <Metric label="Maliyet" className="text-base">
+                    {tl(r.cost, 2)}
                   </Metric>
                   <Metric label="Kâr marjı">{ratioText(r, r.margin)}</Metric>
                   <Metric label="Önerilen" className={r.price < r.suggestedPrice ? "font-semibold" : "text-ink-soft"}>
@@ -864,7 +1006,7 @@ export function ProductsTable({
                 {!r.lineCount ? (
                   <Link
                     href={productHref(r.id, month)}
-                    className="mt-2.5 inline-flex min-h-10 items-center gap-1.5 text-[13px] font-medium text-info hover:underline"
+                    className="relative z-10 mt-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-info hover:underline"
                   >
                     <FilePlus2 size={15} aria-hidden="true" /> Reçeteyi girin
                   </Link>
@@ -889,14 +1031,14 @@ export function ProductsTable({
             </p>
           </div>
 
-          {/* Sayfalama ve sayfa boyu; dokunmatikte sayfa düğmeleri 40px (paylaşılan bileşen 36px) */}
+          {/* Sayfalama ve sayfa boyu (sayfa ?sayfa=2 ile adreste) */}
           <div className="flex flex-wrap items-center justify-between gap-x-3 border-t border-line pr-5">
             <Pagination
               page={paged.page}
               pageCount={paged.pageCount}
               onChange={onPage}
               unit="ürün"
-              className="min-w-0 flex-1 pointer-coarse:[&_button]:h-10 pointer-coarse:[&_button]:min-w-10"
+              className="min-w-0 flex-1"
             />
             <label className="ml-auto inline-flex items-center gap-2 py-3 pl-5 text-[13px] text-ink-mute">
               Sayfada
@@ -906,7 +1048,7 @@ export function ProductsTable({
                   setInteracted(true);
                   setGoster(e.target.value);
                 }}
-                className="w-24 pointer-coarse:h-10"
+                className="w-24 pointer-coarse:h-11"
                 aria-label="Sayfada gösterilen ürün sayısı"
               >
                 {PAGE_SIZES.map((p) => (
@@ -917,7 +1059,7 @@ export function ProductsTable({
               </Select>
             </label>
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex min-h-80 items-center justify-center">
           {rows.length ? (

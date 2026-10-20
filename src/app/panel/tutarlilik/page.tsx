@@ -132,14 +132,14 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
               ) : c.hasCounts ? (
                 "İki ayın sayımı var; alım miktarı gerekli"
               ) : (
-                <Link href={`/panel/sayim?ay=${month}`} className="-my-3 inline-block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                <Link href={`/panel/sayim?ay=${month}`} className="-my-3.5 inline-block py-3.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
                   İki ayın sayımı gerekli
                 </Link>
               )}
               {c.needsPurchaseCount ? (
                 <Link
                   href={`/panel/tutarlilik?ay=${month}&eksik=1`}
-                  className="-my-1 block py-1 font-medium text-warn underline underline-offset-2 hover:text-ink"
+                  className="-my-3 block py-3 font-medium text-warn underline underline-offset-2 hover:text-ink"
                 >
                   {num(c.needsPurchaseCount)} malzemede alım girilmeli
                 </Link>

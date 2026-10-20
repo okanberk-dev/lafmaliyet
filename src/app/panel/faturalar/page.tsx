@@ -1,5 +1,5 @@
 import { inArray } from "drizzle-orm";
-import { CircleAlert, FileText, Table2 } from "lucide-react";
+import { ChevronDown, CircleAlert, FileText, Table2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -127,7 +127,7 @@ async function InvoicesContent() {
                 {tl(unpaid.total)} kalan borç
                 <Link
                   href={listHref({ durum: "odenmedi" })}
-                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-10"
+                  className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-11"
                 >
                   Listede göster →
                 </Link>
@@ -160,14 +160,61 @@ async function InvoicesContent() {
                 <span aria-hidden="true">·</span>
                 <span>{months.length} ay</span>
                 <span aria-hidden="true">·</span>
-                <span>Tutara tıklayınca faturalar listede açılır</span>
-                {months.length > 1 ? <span className="sm:hidden">(tabloyu yana kaydırın)</span> : null}
+                <span className="sm:hidden">Aya dokunun; kategoriye dokununca faturalar listede açılır</span>
+                <span className="max-sm:hidden">Tutara tıklayınca faturalar listede açılır</span>
               </>
             ) : null
           }
         />
         {months.length ? (
-          <TableWrap className="px-0">
+          // Telefon: ay ay liste (tablo yana kayardı); en yeni ay açık. sm'den itibaren tablo.
+          <div className="space-y-2 px-4 pb-4 sm:hidden">
+            {[...months.keys()].reverse().map((idx, n) => {
+              const m = months[idx];
+              const rows = summary.filter((r) => r.byMonth[idx]);
+              return (
+                <details key={m} open={n === 0} className="group rounded-2xl bg-surface ring-1 ring-line">
+                  <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 py-2.5 [&::-webkit-details-marker]:hidden">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-medium text-ink">{monthLabel(m)}</span>
+                      <span className="block text-xs text-ink-mute tabular">Mal maliyeti {tl(goodsByMonth[idx])}</span>
+                    </span>
+                    <span className="text-[15px] font-semibold text-ink tabular">{tl(totalByMonth[idx])}</span>
+                    <ChevronDown size={16} className="shrink-0 text-ink-mute transition-transform group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <ul className="divide-y divide-line border-t border-line">
+                    {rows.map((r) => (
+                      <li key={r.category}>
+                        <Link
+                          href={listHref({ kategori: r.category, ay: m })}
+                          className="flex min-h-11 items-center gap-2.5 px-4 py-2 text-sm"
+                          title={`${r.category} · ${monthLabel(m)} faturalarını listede göster`}
+                        >
+                          <span className={cn("size-2 shrink-0 rounded-full", categoryDot(r.category))} aria-hidden="true" />
+                          <span className={cn("min-w-0 flex-1 break-words", GOODS_CATEGORIES.includes(r.category) ? "font-medium text-ink" : "text-ink-soft")}>
+                            {r.category}
+                          </span>
+                          <span className="text-ink tabular">{tl(r.byMonth[idx])}</span>
+                        </Link>
+                      </li>
+                    ))}
+                    <li>
+                      <Link href={listHref({ ay: m })} className="flex min-h-11 items-center justify-between gap-2 px-4 py-2 text-[13px] font-medium text-info">
+                        {monthLabel(m)} faturalarını listede göster <span aria-hidden="true">→</span>
+                      </Link>
+                    </li>
+                  </ul>
+                </details>
+              );
+            })}
+            <p className="flex items-center justify-between gap-2 px-1 pt-1 text-[13px] text-ink-mute tabular">
+              <span>{months.length} ay toplamı</span>
+              <span className="font-semibold text-ink">{tl(total(totalByMonth))}</span>
+            </p>
+          </div>
+        ) : null}
+        {months.length ? (
+          <TableWrap className="px-0 max-sm:hidden">
             <Table>
               <THead>
                 <tr>
@@ -259,6 +306,8 @@ async function InvoicesContent() {
       </Card>
 
       {ignored.length ? <DeletedBills bills={ignored} /> : null}
+      {/* Telefon: sayfanın sonu yüzen "Fatura ekle" düğmesinin altında kalmasın */}
+      <div aria-hidden="true" className="h-16 lg:hidden" />
     </>
   );
 }
