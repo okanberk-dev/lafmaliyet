@@ -29,6 +29,24 @@ export async function GET(request: Request) {
   const listRes = await fetch(`${base}/e_invoices?sort=-issue_date&page[size]=25&page[number]=${pageNo}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(15000) });
   const rows = ((await listRes.json()) as { data?: Res[] }).data?.filter((e) => e.attributes?.direction === "inbound") ?? [];
 
+  // ?ham=<tedarikçi adından parça>: o tedarikçinin ilk e-faturasının UBL'si (imza, ekler ve alıcı bilgisi çıkarılmış)
+  const raw = sp.get("ham");
+  if (raw) {
+    const e = rows.find((r) => String(r.attributes?.contact_name ?? "").toLocaleLowerCase("tr-TR").includes(raw.toLocaleLowerCase("tr-TR")));
+    if (!e) return new Response("bulunamadı", { status: 404 });
+    const r = await fetch(`${base}/e_invoices/${e.id}/signed_ubl`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    const xml = extractUblXml(Buffer.from(await r.arrayBuffer()))
+      .replace(/<ext:UBLExtensions>[\s\S]*?<\/ext:UBLExtensions>/g, "[imza]")
+      .replace(/<cac:Signature>[\s\S]*?<\/cac:Signature>/g, "[imza]")
+      .replace(/<cac:AdditionalDocumentReference>[\s\S]*?<\/cac:AdditionalDocumentReference>/g, "[ek]")
+      .replace(/<cac:AccountingCustomerParty>[\s\S]*?<\/cac:AccountingCustomerParty>/g, "[alıcı]")
+      .replace(/<cac:(PostalAddress|Contact|PartyTaxScheme)>[\s\S]*?<\/cac:\1>/g, "")
+      .replace(/\n\s*\n/g, "\n");
+    const a = e.attributes ?? {};
+    const headInfo = `e-fatura: net_total=${a.net_total} total_vat=${a.total_vat} tip=${a.invoice_type_code}\n\n`;
+    return new Response(`<!doctype html><meta charset="utf-8"><title>UBL ham</title><pre style="white-space:pre-wrap;font:11px monospace">${esc(headInfo + xml.slice(0, 30000))}</pre>`, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  }
+
   const out: string[] = [];
   const units = new Map<string, number>();
   let ok = 0;
