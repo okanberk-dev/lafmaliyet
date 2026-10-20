@@ -1372,7 +1372,8 @@ export function InvestmentsClient({ rows, total }: { rows: Investment[]; total: 
                     className={cn("cursor-pointer", r.id === flash && FLASH)}
                     onClick={() => setEditing(r)}
                   >
-                    <TD className="font-medium">{r.name}</TD>
+                    {/* Uzun not sütunu adı sıkıştırmasın (1024'te ad üç satıra iniyordu) */}
+                    <TD className="min-w-52 font-medium">{r.name}</TD>
                     <TD className="whitespace-nowrap text-ink-soft" title={r.date ?? undefined}>
                       {periodText(r.date)}
                     </TD>

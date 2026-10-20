@@ -959,7 +959,8 @@ function ProductLinks({
                               {l.productName}
                             </span>
                           </TD>
-                          <TD>
+                          {/* Hammadde adı sözcük sözcük kırılmasın (1024'te sütun daralıyordu) */}
+                          <TD className="min-w-44">
                             <Link href={`/panel/hammaddeler?ara=${encodeURIComponent(l.ingredientName)}`} className="hover:underline">
                               {l.ingredientName}
                             </Link>
