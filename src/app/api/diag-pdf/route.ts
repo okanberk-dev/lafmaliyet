@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/server/auth/dal";
 import { ParasutClient } from "@/server/parasut/client";
 import { readParasutConfig } from "@/server/parasut/config";
 
-import { extractUblXml, parseUbl, ublLinesMatchTotal, ublLinesToDrafts } from "./ubl";
+import { extractUblXml, parseUbl, ublLineScale, ublLinesMatchTotal, ublLinesToDrafts } from "./ubl";
 
 // GEÇİCİ teşhis: gelen e-faturaların UBL kalemleri doğru okunuyor mu (yalnız okur, hiçbir şey yazmaz). Yalnız yönetici.
 type Res = { id: string; attributes?: Record<string, unknown> };
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const me = await getCurrentUser();
   if (!me || me.role !== "admin") return Response.json({ error: "Yalnız yönetici" }, { status: 403 });
   const sp = new URL(request.url).searchParams;
-  const want = Math.min(20, Number(sp.get("n") ?? 8));
+  const want = Math.min(25, Number(sp.get("n") ?? 25));
   const pageNo = Number(sp.get("s") ?? 1);
   const cfg = readParasutConfig();
   const client = new ParasutClient(cfg);
@@ -48,16 +48,22 @@ export async function GET(request: Request) {
       const drafts = ublLinesToDrafts(inv, e.id, String(a.contact_name ?? ""));
       for (const l of inv.lines) units.set(l.unitCode ?? "-", (units.get(l.unitCode ?? "-") ?? 0) + 1);
       const sum = Math.round(drafts.reduce((s, l) => s + l.netTotal, 0) * 100) / 100;
+      // Adı harf içermeyen kalemlerin Item bloğu (düz metin)
+      const coded = [...xml.matchAll(/<cac:Item>([\s\S]*?)<\/cac:Item>/g)]
+        .map((m) => m[1])
+        .filter((b) => !/\p{L}{2,}/u.test(/<cbc:Name>([\s\S]*?)<\/cbc:Name>/.exec(b)?.[1] ?? "x"))
+        .map((b) => b.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160));
+      const k = Math.round(ublLineScale(inv) * 10000) / 10000;
       const match = ublLinesMatchTotal(inv);
       if (match && Math.abs(Math.abs(sum) - Math.abs(expected)) <= 1) ok++;
       else bad++;
       out.push(
         `<tr><td>${esc(a.issue_date)}</td><td>${esc(String(a.contact_name ?? "").slice(0, 28))}</td><td>${esc(inv.typeCode)} ${esc(inv.profileId)}</td><td>${bytes.length} B ${esc(ct.split(";")[0])}</td>` +
-          `<td>${inv.lines.length}</td><td>${esc(inv.taxExclusive)} / e-fatura ${esc(expected)} / kalem ${esc(sum)} ${match ? "✓" : "✗"}</td><td>${esc(inv.dueDate ?? "-")} · VKN ${inv.supplierTaxId ? "var" : "yok"} · iskonto ${esc(inv.invoiceDiscount)}</td>` +
+          `<td>${inv.lines.length}</td><td>${esc(inv.taxExclusive)} / e-fatura ${esc(expected)} / kalem ${esc(sum)} ${match ? "✓" : "✗"}</td><td>${esc(inv.dueDate ?? "-")} · VKN ${inv.supplierTaxId ? "var" : "yok"} · iskonto ${esc(inv.invoiceDiscount)} · k ${k}${coded.length ? `<br>KOD ADLI: ${coded.map(esc).join(" ¦ ")}` : ""}</td>` +
           `<td>${drafts
-            .slice(0, 5)
+            .slice(0, 3)
             .map((l) => `${esc(l.productName.slice(0, 40))} | ${esc(l.quantity)} ${esc(l.unit)} × ${esc(l.unitPrice)} − ${esc(l.discount)} = ${esc(l.netTotal)} | %${esc(l.vatRate)} | ${esc(l.productKey.replace(/^e:\d+:/, "e:VKN:").slice(0, 36))}`)
-            .join("<br>")}${drafts.length > 5 ? `<br>… +${drafts.length - 5}` : ""}</td></tr>`,
+            .join("<br>")}${drafts.length > 3 ? `<br>… +${drafts.length - 3}` : ""}</td></tr>`,
       );
     } catch (err) {
       bad++;
