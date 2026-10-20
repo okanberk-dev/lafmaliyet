@@ -1,101 +1,71 @@
 import { connection } from "next/server";
-import { getDocumentProxy } from "unpdf";
 
 import { getCurrentUser } from "@/server/auth/dal";
 import { ParasutClient } from "@/server/parasut/client";
 import { readParasutConfig } from "@/server/parasut/config";
 
-// GEÇİCİ teşhis: e-fatura UBL uçları ve PDF metin düzeni (satırlar, x konumları). Yalnız yönetici.
-type Res = { id: string; attributes?: Record<string, unknown>; relationships?: Record<string, { data?: unknown }> };
+import { extractUblXml, parseUbl, ublLinesMatchTotal, ublLinesToDrafts } from "./ubl";
+
+// GEÇİCİ teşhis: gelen e-faturaların UBL kalemleri doğru okunuyor mu (yalnız okur, hiçbir şey yazmaz). Yalnız yönetici.
+type Res = { id: string; attributes?: Record<string, unknown> };
 
 export const maxDuration = 60;
+
+const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 export async function GET(request: Request) {
   await connection();
   const me = await getCurrentUser();
   if (!me || me.role !== "admin") return Response.json({ error: "Yalnız yönetici" }, { status: 403 });
-  const want = Number(new URL(request.url).searchParams.get("n") ?? 4);
+  const sp = new URL(request.url).searchParams;
+  const want = Math.min(20, Number(sp.get("n") ?? 8));
+  const pageNo = Number(sp.get("s") ?? 1);
   const cfg = readParasutConfig();
   const client = new ParasutClient(cfg);
   const token: string = await (client as unknown as { accessToken: () => Promise<string> }).accessToken();
   const base = `${cfg.baseUrl}/v4/${cfg.companyId}`;
-  const api = async (path: string) => {
-    try {
-      const r = await fetch(path.startsWith("http") ? path : `${base}/${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(12000) });
-      const ct = r.headers.get("content-type") ?? "";
-      const body = r.status === 204 ? "" : await r.text();
-      return { status: r.status, ct, body };
-    } catch (e) {
-      return { status: 0, ct: "", body: `HATA ${(e as Error).name}` };
-    }
-  };
-  const strip = (s: string) => s.replace(/https?:\/\/\S+/g, "[adres]").replace(/[?&][a-z_]+=\S+/gi, "");
+  const started = Date.now();
 
-  const list = await api("e_invoices?include=invoice&sort=-issue_date&page[size]=25&page[number]=1");
-  const rows = ((JSON.parse(list.body || "{}") as { data?: Res[] }).data ?? []).filter((e) => e.attributes?.direction === "inbound");
-  const out: Record<string, unknown> = { listStatus: list.status, inbound: rows.length };
+  const listRes = await fetch(`${base}/e_invoices?sort=-issue_date&page[size]=25&page[number]=${pageNo}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(15000) });
+  const rows = ((await listRes.json()) as { data?: Res[] }).data?.filter((e) => e.attributes?.direction === "inbound") ?? [];
 
-  // UBL için olası uçlar
-  const first = rows[0];
-  if (first) {
-    const probes: Record<string, unknown> = {};
-    for (const p of [`e_invoices/${first.id}/ubl`, `e_invoices/${first.id}/xml`, `e_invoices/${first.id}/signed_ubl`, `e_invoices/${first.id}/html`, `e_invoices/${first.id}?include=details`]) {
-      const r = await api(p);
-      probes[p.replace(first.id, "{id}")] = { status: r.status, ct: r.ct, xml: r.body.trimStart().startsWith("<?xml") || r.body.includes("<Invoice"), lines: (r.body.match(/InvoiceLine/g) ?? []).length, head: strip(r.body.slice(0, 120)) };
-    }
-    const signed = String(first.attributes?.signed_ubl_url ?? "");
-    if (signed) {
-      let path = signed;
-      try {
-        path = new URL(signed).pathname;
-      } catch {}
-      for (const [label, url] of [
-        ["api+path", `${cfg.baseUrl}${path}`],
-        ["api/v4+path", `${cfg.baseUrl}/v4${path}`],
-      ] as const) {
-        const r = await api(url);
-        probes[label] = { status: r.status, ct: r.ct, xml: r.body.includes("<Invoice") || r.body.includes("InvoiceLine"), lines: (r.body.match(/InvoiceLine/g) ?? []).length };
-      }
-      probes.signedPathShape = path.replace(/\d+/g, "9");
-    }
-    out.ubl = probes;
-  }
-
-  // PDF metin düzeni: farklı tedarikçilerden `want` fatura
-  const seen = new Set<string>();
-  const pdfs: unknown[] = [];
+  const out: string[] = [];
+  const units = new Map<string, number>();
+  let ok = 0;
+  let bad = 0;
   for (const e of rows) {
-    if (pdfs.length >= want) break;
-    const sup = String(e.attributes?.contact_name ?? "");
-    if (seen.has(sup)) continue;
-    seen.add(sup);
-    const link = await api(`e_invoices/${e.id}/pdf`);
-    let url = "";
+    if (out.length >= want || Date.now() - started > 45_000) break;
+    const a = e.attributes ?? {};
+    const expected = Math.round((Number(a.net_total ?? 0) - Number(a.total_vat ?? 0)) * 100) / 100;
     try {
-      url = (JSON.parse(link.body) as { data?: { attributes?: { url?: string } } }).data?.attributes?.url ?? "";
-    } catch {}
-    if (!url) {
-      pdfs.push({ supplier: sup, error: `pdf ${link.status}` });
-      continue;
+      await new Promise((r) => setTimeout(r, 1100));
+      const r = await fetch(`${base}/e_invoices/${e.id}/signed_ubl`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+      const ct = r.headers.get("content-type") ?? "";
+      const bytes = Buffer.from(await r.arrayBuffer());
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${ct}`);
+      const xml = extractUblXml(bytes);
+      const inv = parseUbl(xml);
+      const drafts = ublLinesToDrafts(inv, e.id, String(a.contact_name ?? ""));
+      for (const l of inv.lines) units.set(l.unitCode ?? "-", (units.get(l.unitCode ?? "-") ?? 0) + 1);
+      const sum = Math.round(drafts.reduce((s, l) => s + l.netTotal, 0) * 100) / 100;
+      const match = ublLinesMatchTotal(inv);
+      if (match && Math.abs(Math.abs(sum) - Math.abs(expected)) <= 1) ok++;
+      else bad++;
+      out.push(
+        `<tr><td>${esc(a.issue_date)}</td><td>${esc(String(a.contact_name ?? "").slice(0, 28))}</td><td>${esc(inv.typeCode)} ${esc(inv.profileId)}</td><td>${bytes.length} B ${esc(ct.split(";")[0])}</td>` +
+          `<td>${inv.lines.length}</td><td>${esc(inv.taxExclusive)} / e-fatura ${esc(expected)} / kalem ${esc(sum)} ${match ? "✓" : "✗"}</td><td>${esc(inv.dueDate ?? "-")} · VKN ${inv.supplierTaxId ? "var" : "yok"} · iskonto ${esc(inv.invoiceDiscount)}</td>` +
+          `<td>${drafts
+            .slice(0, 5)
+            .map((l) => `${esc(l.productName.slice(0, 40))} | ${esc(l.quantity)} ${esc(l.unit)} × ${esc(l.unitPrice)} − ${esc(l.discount)} = ${esc(l.netTotal)} | %${esc(l.vatRate)} | ${esc(l.productKey.replace(/^e:\d+:/, "e:VKN:").slice(0, 36))}`)
+            .join("<br>")}${drafts.length > 5 ? `<br>… +${drafts.length - 5}` : ""}</td></tr>`,
+      );
+    } catch (err) {
+      bad++;
+      out.push(`<tr><td>${esc(a.issue_date)}</td><td>${esc(String(a.contact_name ?? "").slice(0, 28))}</td><td colspan="6">HATA: ${esc((err as Error).message)}</td></tr>`);
     }
-    const bytes = new Uint8Array(await (await fetch(url, { signal: AbortSignal.timeout(20000) })).arrayBuffer());
-    const doc = await getDocumentProxy(bytes);
-    const lines: string[] = [];
-    for (let p = 1; p <= Math.min(doc.numPages, 2); p++) {
-      const page = await doc.getPage(p);
-      const tc = await page.getTextContent();
-      const items = (tc.items as { str: string; transform: number[]; width: number }[]).filter((i) => i.str.trim());
-      const byY = new Map<number, { x: number; s: string }[]>();
-      for (const it of items) {
-        const y = Math.round(it.transform[5] / 2) * 2;
-        byY.set(y, [...(byY.get(y) ?? []), { x: Math.round(it.transform[4]), s: it.str.trim() }]);
-      }
-      for (const [y, cells] of [...byY.entries()].sort((a, b) => b[0] - a[0])) {
-        lines.push(`p${p} y${y}: ${cells.sort((a, b) => a.x - b.x).map((c) => `${c.x}:${strip(c.s)}`).join(" | ")}`);
-      }
-    }
-    pdfs.push({ supplier: sup, net: e.attributes?.net_total, vat: e.attributes?.total_vat, pages: doc.numPages, lines: lines.slice(0, 120) });
   }
-  out.pdfs = pdfs;
-  return Response.json(out);
+  const html = `<!doctype html><meta charset="utf-8"><title>UBL teshis</title><style>body{font:12px system-ui;margin:12px}td{border:1px solid #ccc;padding:3px;vertical-align:top}</style>
+<p>Gelen: ${rows.length} · okunan: ${out.length} · tutan: ${ok} · tutmayan/hata: ${bad} · birimler: ${esc([...units].map(([k, v]) => `${k}=${v}`).join(", "))} · ${Date.now() - started} ms</p>
+<table><tr><td>Tarih</td><td>Tedarikçi</td><td>Tür</td><td>Dosya</td><td>Kalem</td><td>KDV hariç</td><td>Vade/VKN</td><td>Örnek kalemler</td></tr>${out.join("")}</table>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
