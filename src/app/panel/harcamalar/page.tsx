@@ -72,6 +72,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
     invoiceCategory: cat.invoiceCategory,
     monthly: cat.monthly,
     active: cat.active,
+    expected: model.expenseExpected(cat, month),
     entryCount: usage.get(cat.id) ?? 0,
     monthEntries: entries,
     monthInvoices: invoices,

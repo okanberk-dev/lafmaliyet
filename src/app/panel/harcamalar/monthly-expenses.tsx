@@ -39,6 +39,8 @@ export interface CategoryRow {
   invoiceCategory: string | null;
   monthly: boolean;
   active: boolean;
+  /** Bu ay girilmesi bekleniyor mu ("her ay" ve ilk kaydından sonraki aylar) */
+  expected: boolean;
   /** Bütün aylardaki kayıt sayısı (silinebilir mi) */
   entryCount: number;
   monthEntries: number;
@@ -133,7 +135,7 @@ export function MonthlyExpenses({
   const ads = categories.filter((c) => c.panelGroup === "reklam").reduce((a, c) => a + c.monthTotal, 0);
   const offInvoice = categories.reduce((a, c) => a + c.monthEntries, 0);
   const fromInvoices = categories.reduce((a, c) => a + c.monthInvoices, 0);
-  const missing = active.filter((c) => c.monthly && !c.monthEntries);
+  const missing = active.filter((c) => c.expected && !c.monthEntries);
   const shownFixed = showAllFixed ? fixed : fixed.filter((f) => f.group === "reklam");
 
   const save = (d: EntryDraft, done: () => void) => {
@@ -268,11 +270,11 @@ export function MonthlyExpenses({
             meta={<span className="font-semibold text-ink tabular">{tl(total)}</span>}
           />
           <CardContent className="space-y-3">
-            {categories.filter((c) => c.monthTotal || (c.active && c.monthly)).length === 0 ? (
+            {categories.filter((c) => c.monthTotal || c.expected).length === 0 ? (
               <EmptyState title="Bu ay harcama yok" description="Soldan ekledikçe burada kategori kategori listelenir." />
             ) : (
               categories
-                .filter((c) => c.monthTotal || (c.active && c.monthly))
+                .filter((c) => c.monthTotal || c.expected)
                 .map((c) => {
                   const rows = entries.filter((e) => e.categoryId === c.id);
                   const invs = invoices.filter((i) => i.categoryId === c.id);

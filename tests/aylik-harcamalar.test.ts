@@ -85,11 +85,18 @@ test("harcamalar: her ay girilecek kategori girilmediyse Bu ayın işleri hatır
   // Eylül: girildi
   const sep = monthTasks(facts(M, "closed")).find((t) => t.key === "harcama")!;
   assert.equal(sep.status, "done");
-  // Ağustos (kapanmış): Influencer girilmedi → yapılacak
-  const aug = monthTasks(facts("2026-08", "closed")).find((t) => t.key === "harcama")!;
-  assert.equal(aug.status, "todo");
-  assert.match(aug.detail, /Influencer/);
-  assert.equal(aug.href, "/panel/harcamalar?ay=2026-08");
+  // Ekim (süren ay, ilk kayıttan sonra) kaydı var; Ağustos ilk kayıttan (Eylül) önce: hatırlatılmaz
+  const aug = monthTasks(facts("2026-08", "closed")).find((t) => t.key === "harcama");
+  assert.ok(!aug || (aug.status === "done" && !/Influencer/.test(aug.detail)), "ilk kayıttan önceki ay hatırlatılmaz");
+  // Ekim'in kaydını silince Ekim için hatırlatılır (süren ay: "sonra")
+  const noOct = createModel({ ...base, expenseCategories: CATS, expenseEntries: ENTRIES.filter((e) => !e.date.startsWith("2026-10")) });
+  const oct = monthTasks(monthTaskFacts(noOct, "2026-10", "running", null, { payments: null, parasut: null })).find((t) => t.key === "harcama")!;
+  assert.equal(oct.status, "later");
+  assert.match(oct.detail, /Influencer/);
+  assert.equal(oct.href, "/panel/harcamalar?ay=2026-10");
+  // Kapanmış ayda eksikse yapılacak
+  const closed = monthTasks(monthTaskFacts(noOct, "2026-10", "closed", null, { payments: null, parasut: null })).find((t) => t.key === "harcama")!;
+  assert.equal(closed.status, "todo");
   // Kategori yoksa görev hiç çıkmaz
   const plain = createModel(base);
   assert.equal(monthTasks(monthTaskFacts(plain, M, "closed", null, { payments: null, parasut: null })).some((t) => t.key === "harcama"), false);

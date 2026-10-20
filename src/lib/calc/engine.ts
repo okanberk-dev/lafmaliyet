@@ -1029,6 +1029,15 @@ export function createModel(ds: Dataset) {
     byCat.set(e.categoryId, (byCat.get(e.categoryId) ?? 0) + e.amount);
     expenseByMonth.set(m, byCat);
   }
+  /** Kategorinin ilk kaydının ayı: "her ay girilir" hatırlatması bundan önceki aylar için yapılmaz */
+  const expenseFirstMonth = new Map<number, string>();
+  for (const e of ds.expenseEntries ?? []) {
+    const m = monthOfDate(e.date);
+    const cur = expenseFirstMonth.get(e.categoryId);
+    if (!cur || m < cur) expenseFirstMonth.set(e.categoryId, m);
+  }
+  /** Her ay girilecek kategori bu ay için bekleniyor mu: ilk kaydından (kaydı yoksa bu aydan) itibaren */
+  const expenseExpected = (cat: ExpenseCategory, month: string) => cat.active && cat.monthly && month >= (expenseFirstMonth.get(cat.id) ?? ds.currentMonth ?? currentMonthTR());
   /** Fatura kategorisi harcamaya bağlanabilir mi: mal, komisyon ve kafe dışı faturalar zaten ayrı sayılır */
   const invoiceCategoryMappable = (c: string | null): c is string =>
     Boolean(c) && !GOODS_CATEGORIES.includes(c!) && c !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(c!);
@@ -1402,5 +1411,6 @@ export function createModel(ds: Dataset) {
     /** Aylık harcama kategorileri (sıralı) ve bir aydaki tutarları */
     expenseCategories: expenseCats,
     expenseAmounts,
+    expenseExpected,
   };
 }

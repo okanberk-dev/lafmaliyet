@@ -117,7 +117,7 @@ export function monthTaskFacts(
     expenses: (() => {
       const xs = model.expenseAmounts(month);
       return {
-        missing: xs.filter((x) => x.cat.active && x.cat.monthly && !x.entries).map((x) => x.cat.name),
+        missing: xs.filter((x) => model.expenseExpected(x.cat, month) && !x.entries).map((x) => x.cat.name),
         entered: xs.filter((x) => x.total).length,
         total: xs.reduce((a, x) => a + x.total, 0),
       };
