@@ -17,18 +17,22 @@ export async function GET() {
   const base = `${cfg.baseUrl}/v4/${cfg.companyId}`;
   const raw = async (path: string) => {
     const t0 = Date.now();
-    const r = await fetch(`${base}/${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(25000) });
-    const text = r.status === 204 ? "" : await r.text();
-    let json: unknown = null;
     try {
-      json = text ? JSON.parse(text) : null;
-    } catch {}
-    return { status: r.status, ms: Date.now() - t0, json, text: json ? undefined : text.slice(0, 200) };
+      const r = await fetch(`${base}/${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, signal: AbortSignal.timeout(12000) });
+      const text = r.status === 204 ? "" : await r.text();
+      let json: unknown = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {}
+      return { status: r.status, ms: Date.now() - t0, json, text: json ? undefined : text.slice(0, 200) };
+    } catch (e) {
+      return { status: 0, ms: Date.now() - t0, json: null, text: `HATA ${(e as Error).name}` };
+    }
   };
   const out: Record<string, unknown> = {};
 
   // Süzgeç denemeleri ve toplam sayılar
-  for (const q of ["e_invoices?page[size]=1", "e_invoices?filter[direction]=inbound&page[size]=1", "e_invoices?sort=-issue_date&page[size]=1"]) {
+  for (const q of ["e_invoices?sort=-issue_date&page[size]=1", "e_invoices?sort=-issue_date&filter[direction]=inbound&page[size]=1", "e_invoices?sort=-created_at&page[size]=1"]) {
     const r = await raw(q);
     out[q] = { status: r.status, ms: r.ms, meta: (r.json as { meta?: unknown })?.meta ?? null, err: r.text };
   }
