@@ -32,7 +32,7 @@ const settingsSchema = z.object({
   publicMenu: z.boolean(),
 });
 
-/** İşlem geçmişinde okunur ad ve biçim ("Satış KDV %10", "Su + buz ₺/L otomatik") */
+/** İşlem geçmişinde okunur ad ve biçim ("Satış KDV: %10 → %20", "Su + buz ₺/L: otomatik → 0,05") */
 const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" | "water"]> = {
   kdv: ["Satış KDV", "pct"],
   komisyon: ["POS komisyonu", "pct"],
@@ -52,29 +52,60 @@ const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" |
   publicMenu: ["QR menü yayında", "bool"],
 };
 
-function logPart(key: string, value: number | boolean | null) {
-  const [label, kind] = SETTING_LOG[key] ?? [key, "num"];
+function logValue(key: string, value: unknown) {
+  const kind = SETTING_LOG[key]?.[1] ?? "num";
   const n = (v: number, digits = 2) => v.toLocaleString("tr-TR", { maximumFractionDigits: digits });
-  const text =
-    value === null ? "otomatik" : typeof value === "boolean" ? (value ? "evet" : "hayır") : kind === "pct" ? `%${n(value * 100)}` : n(value, kind === "water" ? 4 : 2);
-  return `${label} ${text}`;
+  if (value === null || value === undefined) return "otomatik";
+  if (typeof value === "boolean") return value ? "evet" : "hayır";
+  if (typeof value !== "number") return String(value);
+  return kind === "pct" ? `%${n(value * 100, 4)}` : n(value, kind === "water" ? 4 : 2);
 }
 
+/** Aynı değer yeniden gönderilince kayıt ve işlem geçmişi satırı oluşmaz */
+function sameValue(a: unknown, b: unknown) {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) < 1e-12;
+  return (a ?? null) === (b ?? null);
+}
+
+/**
+ * "%10" yerine "0,1" yazılınca oran binde bire düşer (Excel'deki % biçimli hücrede de 0,1 → %0,1). Satış KDV'si,
+ * POS komisyonu ve hedef maliyet oranı için %0,5'in altı (0 hariç) gerçekçi değil: kayıt reddedilir.
+ */
+const PCT_SANITY = ["kdv", "komisyon", "hedefMaliyet"] as const;
+
+/**
+ * Yalnızca gönderilen ve kayıtlı değerden farklı ayarları yazar; işlem geçmişine "Etiket: eski → yeni" olarak
+ * düşer. Dönüşteki `changes` aynı metinlerdir (istemci bildirimde gösterir).
+ */
 export async function saveSettings(input: Partial<z.input<typeof settingsSchema>>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = settingsSchema.partial().parse(input);
-    const db = getDb();
-    const changed: string[] = [];
-    for (const [key, value] of Object.entries(data)) {
-      if (!(key in DEFAULT_SETTINGS) || value === undefined) continue;
-      if (value === null) await db.delete(s.settings).where(eq(s.settings.key, key));
-      else await db.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
-      changed.push(logPart(key, value));
+    for (const key of PCT_SANITY) {
+      const v = data[key];
+      if (v !== undefined && v > 0 && v < 0.005) {
+        throw new UserError(`${SETTING_LOG[key][0]} ${logValue(key, v)} olamaz; yüzde olarak yazın (ör. %10 için 10)`);
+      }
     }
-    await logActivity(me, "Ayarlar", changed.join(", "));
-    refresh();
-    return null;
+    const db = getDb();
+    const changes = await db.transaction(async (tx) => {
+      const rows = await tx.select().from(s.settings);
+      const prev: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+      for (const r of rows) if (r.key in DEFAULT_SETTINGS) prev[r.key] = r.value;
+      const out: string[] = [];
+      for (const [key, value] of Object.entries(data)) {
+        if (!(key in DEFAULT_SETTINGS) || value === undefined || sameValue(prev[key], value)) continue;
+        if (value === null) await tx.delete(s.settings).where(eq(s.settings.key, key));
+        else await tx.insert(s.settings).values({ key, value }).onConflictDoUpdate({ target: s.settings.key, set: { value, updatedAt: new Date() } });
+        out.push(`${SETTING_LOG[key]?.[0] ?? key}: ${logValue(key, prev[key])} → ${logValue(key, value)}`);
+      }
+      return out;
+    });
+    if (changes.length) {
+      await logActivity(me, "Ayarlar", changes.join(", "));
+      refresh();
+    }
+    return { changes };
   });
 }
 

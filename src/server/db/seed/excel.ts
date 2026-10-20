@@ -88,6 +88,30 @@ export interface ExcelData {
   findings: { section: string; title: string; detail: string; resolved: boolean }[];
 }
 
+/**
+ * Excel'de ödeme durumu açıklamaya yazılmıştı ("Kaldi (Gider listesi, ödenmedi)"). Durum ayrı alanda (unpaid)
+ * tutulduğu için açıklamadan atılır; yoksa fatura ödenince "ödenmedi" yazısı yeşil "Ödendi" rozetiyle çelişir.
+ */
+export function cleanInvoiceDescription(d: string | null): string | null {
+  if (!d) return d;
+  const out = d.replace(/,\s*öden(?:me)?di\s*$/iu, "").trim();
+  return out || null;
+}
+
+/**
+ * Tek seferlik yatırımların dönemi. Excel yalnızca XND için tarih veriyor (Temmuz 2026); diğerleri fatura tarihlerinden:
+ * Aria 07.07.2026, reklam (Beyza Karaman) 17.09.2026. Tabela/baskı Temmuz–Eylül arasındaki üç faturanın toplamı,
+ * klişe bedelinin faturası yok: dönem boş bırakılır.
+ */
+export function investmentSeed(x: { name: string; amount: number; note: string | null }): { name: string; amount: number; date: string | null; note: string | null } {
+  if (x.name.startsWith("Dekorasyon & ekipman") || x.name.includes("(Aria)")) return { ...x, date: "2026-07" };
+  if (x.name.startsWith("Reklam (Beyza Karaman)")) return { ...x, date: "2026-09" };
+  if (x.name.startsWith("Tabela, baskı")) {
+    return { ...x, date: null, note: x.note === "~15.300 ₺ + KDV" ? "~15.300 ₺ + KDV · Temmuz–Eylül 2026 faturaları (Murat Şeimen, Tuzla Baskı)" : x.note };
+  }
+  return { ...x, date: null };
+}
+
 export function excelToDataset(data: ExcelData): Dataset {
   const ingredients = data.ingredients.map((i, idx) => ({
     id: idx + 1,
@@ -168,8 +192,10 @@ export function excelToDataset(data: ExcelData): Dataset {
     recipeItems,
     months: data.months.map((m) => ({ ...m })),
     salesLines,
-    invoices: data.invoices.map((inv, idx) => ({ id: idx + 1, ...inv })),
-    staff: data.staff.map((s, idx) => ({ id: idx + 1, ...s, active: true })),
+    invoices: data.invoices.map((inv, idx) => ({ id: idx + 1, ...inv, description: cleanInvoiceDescription(inv.description) })),
+    // Excel'deki personel ve sabit giderler bütün aylarda geçerli (başlangıç / bitiş ayı yok, tutar değişikliği yok)
+    staff: data.staff.map((s, idx) => ({ id: idx + 1, ...s, active: true, startMonth: null, endMonth: null })),
+    staffVersions: [],
     fixedExpenses: data.fixedExpenses.map((f, idx) => ({
       id: idx + 1,
       name: f.name,
@@ -178,8 +204,11 @@ export function excelToDataset(data: ExcelData): Dataset {
       amount: f.amount,
       note: f.note,
       active: true,
+      startMonth: null,
+      endMonth: null,
       sortOrder: f.sortOrder,
     })),
+    fixedExpenseVersions: [],
     pnlEntries: [],
     stockCounts: [],
     stockExtras: [],

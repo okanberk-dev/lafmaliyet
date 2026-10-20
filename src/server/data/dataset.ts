@@ -2,7 +2,8 @@ import "server-only";
 
 import { asc } from "drizzle-orm";
 
-import { createModel } from "@/lib/calc/engine";
+import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
+import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { getDb, schema as s } from "@/server/db";
@@ -29,7 +30,9 @@ export async function loadDataset(): Promise<Dataset> {
     salesLines,
     invoices,
     staff,
+    staffVersions,
     fixedExpenses,
+    fixedExpenseVersions,
     pnlEntries,
     stockCounts,
     stockExtras,
@@ -44,15 +47,21 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.salesLines).orderBy(asc(s.salesLines.sortOrder), asc(s.salesLines.id)),
     db.select().from(s.invoices).orderBy(asc(s.invoices.date), asc(s.invoices.id)),
     db.select().from(s.staff).orderBy(asc(s.staff.sortOrder), asc(s.staff.id)),
+    db.select().from(s.staffVersions).orderBy(asc(s.staffVersions.staffId), asc(s.staffVersions.fromMonth)),
     db.select().from(s.fixedExpenses).orderBy(asc(s.fixedExpenses.sortOrder), asc(s.fixedExpenses.id)),
+    db.select().from(s.fixedExpenseVersions).orderBy(asc(s.fixedExpenseVersions.fixedExpenseId), asc(s.fixedExpenseVersions.fromMonth)),
     db.select().from(s.pnlEntries),
     db.select().from(s.stockCounts),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
   ]);
 
+  // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
+  const currentMonth = currentMonthTR();
+
   return {
     settings,
+    currentMonth,
     ingredients: ingredients.map((i) => ({
       id: i.id,
       name: i.name,
@@ -118,8 +127,20 @@ export async function loadDataset(): Promise<Dataset> {
       source: i.source,
       externalId: i.externalId,
       dueDate: i.dueDate,
+      outstanding: i.outstanding,
     })),
-    staff: staff.map((x) => ({ id: x.id, name: x.name, netSalary: x.netSalary, extras: x.extras, active: x.active })),
+    // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).
+    // active sütuna değil aralığa göre hesaplanır: ay değişince kendiliğinden doğru olur.
+    staff: staff.map((x) => ({
+      id: x.id,
+      name: x.name,
+      netSalary: x.netSalary,
+      extras: x.extras,
+      active: activeFromRange(x.endMonth, currentMonth),
+      startMonth: x.startMonth,
+      endMonth: x.endMonth,
+    })),
+    staffVersions: staffVersions.map((v) => ({ id: v.id, staffId: v.staffId, fromMonth: v.fromMonth, netSalary: v.netSalary, extras: v.extras })),
     fixedExpenses: fixedExpenses.map((f) => ({
       id: f.id,
       name: f.name,
@@ -127,11 +148,20 @@ export async function loadDataset(): Promise<Dataset> {
       period: f.period,
       amount: f.amount,
       note: f.note,
-      active: f.active,
+      active: activeFromRange(f.endMonth, currentMonth),
+      startMonth: f.startMonth,
+      endMonth: f.endMonth,
       sortOrder: f.sortOrder,
     })),
-    pnlEntries: pnlEntries.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount })),
-    stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty })),
+    fixedExpenseVersions: fixedExpenseVersions.map((v) => ({
+      id: v.id,
+      fixedExpenseId: v.fixedExpenseId,
+      fromMonth: v.fromMonth,
+      period: v.period,
+      amount: v.amount,
+    })),
+    pnlEntries: pnlEntries.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
+    stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
     stockExtras: stockExtras.map((e) => ({
       id: e.id,
       month: e.month,
@@ -153,15 +183,14 @@ export async function loadModel() {
   return createModel(await loadDataset());
 }
 
-/** URL'deki ?ay= değerini doğrular; yoksa satış verisi olan son ayı döner. */
+/**
+ * URL'deki ?ay= değerini doğrular; yoksa satış verisi olan son ayı döner (bu aydan sonraki aylar, ör. ileri tarihli
+ * deneme verisi, varsayılan olmaz). Kural: defaultMonthOf (src/lib/calc/insights.ts, tests/insights-month.test.ts).
+ */
 export function resolveMonth(param: string | string[] | undefined, model: ReturnType<typeof createModel>): string {
   const v = Array.isArray(param) ? param[0] : param;
   if (v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v)) return v;
-  if (model.salesMonths.length) return model.salesMonths[model.salesMonths.length - 1];
-  const months = [...model.monthInfo.keys()].sort();
-  if (months.length) return months[months.length - 1];
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return defaultMonthOf(model.salesMonths, [...model.monthInfo.keys()], model.ds.currentMonth ?? currentMonthTR());
 }
 
 /** Ay seçicide gösterilecek aylar (veri olan aylar + bir sonraki ay) */

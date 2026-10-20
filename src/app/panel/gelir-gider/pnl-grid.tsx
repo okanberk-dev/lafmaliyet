@@ -1,10 +1,10 @@
 "use client";
 
-import { CalendarRange, RotateCcw } from "lucide-react";
+import { CalendarRange, MessageSquareText, RotateCcw, TriangleAlert } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -12,17 +12,20 @@ import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
-import { Select } from "@/components/ui/form";
+import { Field, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip, SegmentStrip } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { TableWrap, TD, TH } from "@/components/ui/table";
 import type { PnlCell, PnlRowDef } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { MONTH_NAMES } from "@/lib/constants";
-import { num, pct, tl } from "@/lib/format";
+import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { setMonthField, setPnlCell } from "@/server/actions/pnl";
+import { setMonthField, setMonthNote, setPnlCell } from "@/server/actions/pnl";
+
+import { CELL_NOTE_MAX, cleanNote, enterProblem, MONTH_NOTE_MAX, noteSaveEffect, noteSaveMessage, openDaysError } from "./cell-rules";
 
 export interface GridSection {
   key: string;
@@ -99,6 +102,22 @@ const ROW = "group transition-colors hover:bg-surface/60 [&>td]:border-t [&>td]:
 /** Değer hücrelerinin ortak dolgusu (paylaşılan TD'nin 12px'i bu sık ızgarada fazla) */
 const CELL = "px-1.5 py-1";
 
+/** Not penceresine giden hücre bilgisi */
+export interface NoteTarget {
+  month: string;
+  rowKey: string;
+  /** "Kira · Eylül 2026" */
+  title: string;
+  kind: "auto" | "manual";
+  /** Düzenlemede yazılmış (ya da hücredeki) tutar metni */
+  amountText: string;
+  /** Hücrede kayıtlı (gösterilen) tutar: kaydedince neyin değiştiği söylenir */
+  value: number | null;
+  computed: number | null;
+  overridden: boolean;
+  note: string | null;
+}
+
 function EditableCell({
   value,
   computed,
@@ -107,7 +126,12 @@ function EditableCell({
   format,
   label,
   col,
+  note,
+  outOfRange,
+  suffix,
+  validate,
   onSave,
+  onNote,
 }: {
   value: number | null;
   computed: number | null;
@@ -118,23 +142,35 @@ function EditableCell({
   label: string;
   /** Sütun (ay): Enter'dan sonra odak aynı sütunda alttaki hücreye geçer */
   col: string;
+  /** Hücre notu (Excel'deki hücre açıklaması) */
+  note?: string | null;
+  /** Sabit gider bu ay geçerlilik aralığının dışında: soluk ve kesik çizgili (yazılırsa yine de sayılır) */
+  outOfRange?: boolean;
+  /** Değerin yanında soluk ek, ör. açık günde "/31" */
+  suffix?: string;
+  /** Kaydetmeden önce denetim; hata metni dönerse kaydedilmez */
+  validate?: (v: number | null) => string | null;
   onSave: (v: number | null) => Promise<void>;
+  /** Not penceresini açar (verilmezse hücreye not eklenemez: ciro ve açık gün ay bilgisidir) */
+  onNote?: (amountText: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   /** Düzenlemeye başlarken gösterilen metin: değişmeden çıkılırsa kaydedilmez (2 ondalığa yuvarlanmış değer üzerine yazılmasın) */
   const startText = useRef("");
-  /** Esc ile vazgeçildi: ardından gelebilecek blur kaydetmesin */
+  /** Esc ile vazgeçildi ya da not penceresi açıldı: ardından gelen blur kaydetmesin */
   const cancelled = useRef(false);
   /** Klavyeyle bitince odak nereye: Esc hücrenin kendisine, Enter (Excel'deki gibi) alttaki hücreye */
   const refocus = useRef<"self" | "next" | null>(null);
   const negative = value !== null && value < 0;
   const invalid = text.trim() !== "" && parseNumberTR(text.trim()) === null;
+  const valueText = () => (value === null ? "" : format === "days" ? String(value) : num(value, 2));
+  const muted = outOfRange && !overridden;
 
   /** Düzenlemeyi başlatır; `typed` verilirse (hücre seçiliyken rakama basıldı) kutu o karakterle açılır */
   function begin(typed?: string) {
-    const initial = value === null ? "" : format === "days" ? String(value) : num(value, 2);
+    const initial = valueText();
     startText.current = initial;
     cancelled.current = false;
     refocus.current = null;
@@ -142,69 +178,126 @@ function EditableCell({
     setEditing(true);
   }
 
+  /** Not penceresi: düzenlenen tutar metniyle açılır (Excel'de Shift+F2) */
+  function openNote(amountText: string) {
+    if (!onNote) return;
+    cancelled.current = true;
+    setEditing(false);
+    onNote(amountText);
+  }
+
+  const noteKeys = (e: React.KeyboardEvent, amountText: string) => {
+    if (onNote && ((e.key === "F2" && e.shiftKey) || (e.altKey && e.code === "KeyN"))) {
+      e.preventDefault();
+      openNote(amountText);
+      return true;
+    }
+    return false;
+  };
+
   if (editing) {
     return (
-      <input
-        autoFocus
-        inputMode="decimal"
-        autoComplete="off"
-        aria-label={label}
-        aria-invalid={invalid || undefined}
-        value={text}
-        disabled={busy}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={async () => {
-          if (cancelled.current) return;
-          const t = text.trim();
-          const v = t === "" ? null : parseNumberTR(t);
-          if (t !== "" && v === null) {
-            toast.error("Geçerli bir sayı girin");
-            setEditing(false);
-            return;
-          }
-          if (t === startText.current.trim() || v === value || (v === null && !overridden && kind !== "manual")) {
-            setEditing(false);
-            return;
-          }
-          setBusy(true);
-          try {
-            await onSave(v);
-          } finally {
-            setBusy(false);
-            setEditing(false);
-          }
-        }}
-        onFocus={(e) => {
-          // Değerle açıldıysa tümü seçili (yazınca yerine geçer); rakamla açıldıysa imleç sona
-          const el = e.currentTarget;
-          if (text === startText.current) el.select();
-          else el.setSelectionRange(el.value.length, el.value.length);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            refocus.current = "next";
-            (e.target as HTMLInputElement).blur();
-          }
-          if (e.key === "Escape") {
-            // Açık bir pencere yokken Esc yalnızca bu hücreden vazgeçer
-            e.preventDefault();
-            cancelled.current = true;
-            refocus.current = "self";
-            setEditing(false);
-          }
-        }}
-        className={cn(
-          // Form kontrolleriyle aynı dil: beyaz, ince halka, odakta mürekkep halkası; telefonda 16px (iOS yakınlaştırmasın)
-          "h-8 w-full rounded-lg border-0 bg-surface px-2 text-right text-base tabular ring-2 ring-ink/20 outline-none pointer-coarse:h-10 sm:text-sm",
-          CELL_MIN,
-          "aria-invalid:bg-bad-soft aria-invalid:text-bad aria-invalid:ring-bad/50 disabled:opacity-60",
-          // .cell-input katmansız: geçersizken kırmızı metnin önüne geçmesin
-          !invalid && "cell-input",
-        )}
-      />
+      <div className="relative">
+        {onNote ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            // Odak kutuda kalsın: tıklama blur ile kaydetmeyi tetiklemesin
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => openNote(text)}
+            aria-label={note ? "Notu düzenle (Shift+F2)" : "Not ekle (Shift+F2)"}
+            title={note ? `Not: ${note}` : "Not ekle (Shift+F2)"}
+            className={cn(
+              "absolute top-1/2 left-1 z-10 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md hover:bg-panel pointer-coarse:size-8",
+              note ? "text-warn" : "text-ink-quiet hover:text-ink",
+            )}
+          >
+            <MessageSquareText size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+        <input
+          autoFocus
+          inputMode="decimal"
+          autoComplete="off"
+          aria-label={label}
+          aria-invalid={invalid || undefined}
+          value={text}
+          disabled={busy}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={async () => {
+            if (cancelled.current) return;
+            const t = text.trim();
+            const v = t === "" ? null : parseNumberTR(t);
+            if (t !== "" && v === null) {
+              toast.error("Geçerli bir sayı girin; değişiklik kaydedilmedi");
+              setEditing(false);
+              return;
+            }
+            if (t === startText.current.trim() || v === value || (v === null && !overridden && kind !== "manual")) {
+              setEditing(false);
+              return;
+            }
+            const problem = validate?.(v) ?? null;
+            if (problem) {
+              toast.error(`${problem}; değişiklik kaydedilmedi`);
+              setEditing(false);
+              return;
+            }
+            setBusy(true);
+            try {
+              await onSave(v);
+            } finally {
+              setBusy(false);
+              setEditing(false);
+            }
+          }}
+          onFocus={(e) => {
+            // Değerle açıldıysa tümü seçili (yazınca yerine geçer); rakamla açıldıysa imleç sona
+            const el = e.currentTarget;
+            if (text === startText.current) el.select();
+            else el.setSelectionRange(el.value.length, el.value.length);
+          }}
+          onKeyDown={(e) => {
+            if (noteKeys(e, text)) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              const input = e.target as HTMLInputElement;
+              // Excel gibi: kabul edilmeyen değerde hücrede kalınır, yazılan kaybolmaz (düzeltin ya da Esc)
+              const problem = text.trim() === startText.current.trim() ? null : enterProblem(text, validate);
+              if (problem) {
+                toast.error(problem, { id: "pnl-cell-error" });
+                input.select();
+                return;
+              }
+              refocus.current = "next";
+              input.blur();
+            }
+            if (e.key === "Escape") {
+              // Açık bir pencere yokken Esc yalnızca bu hücreden vazgeçer
+              e.preventDefault();
+              cancelled.current = true;
+              refocus.current = "self";
+              setEditing(false);
+            }
+          }}
+          className={cn(
+            // Form kontrolleriyle aynı dil: beyaz, ince halka, odakta mürekkep halkası; telefonda 16px (iOS yakınlaştırmasın)
+            "h-8 w-full rounded-lg border-0 bg-surface px-2 text-right text-base tabular ring-2 ring-ink/20 outline-none pointer-coarse:h-10 sm:text-sm",
+            CELL_MIN,
+            onNote && "pl-8 pointer-coarse:pl-9",
+            "aria-invalid:bg-bad-soft aria-invalid:text-bad aria-invalid:ring-bad/50 disabled:opacity-60",
+            // .cell-input katmansız: geçersizken kırmızı metnin önüne geçmesin
+            !invalid && "cell-input",
+          )}
+        />
+      </div>
     );
   }
+  const help = muted
+    ? "Bu kalem bu ay hesaba girmiyor (başlamadı ya da bitti). Tutar yazarsanız yine de sayılır."
+    : overridden && computed !== null
+      ? `Elle girildi. Hesaplanan: ${fmt(computed, format)}`
+      : "Değer girmek için tıklayın ya da rakam yazın";
   return (
     <button
       type="button"
@@ -223,14 +316,15 @@ function EditableCell({
       }}
       onClick={() => begin()}
       onKeyDown={(e) => {
+        if (noteKeys(e, valueText())) return;
         // Excel gibi: hücre seçiliyken rakam yazmak düzenlemeyi o rakamla başlatır
         if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[\d,.-]$/.test(e.key)) {
           e.preventDefault();
           begin(e.key);
         }
       }}
-      title={overridden && computed !== null ? `Elle girildi. Hesaplanan: ${fmt(computed, format)}` : "Değer girmek için tıklayın ya da rakam yazın"}
-      aria-label={`${label}: ${fmt(value, format)}. Değiştirmek için tıklayın`}
+      title={note ? `Not: ${note}\n\n${help}` : `${help}${onNote ? " · Not için Shift+F2" : ""}`}
+      aria-label={`${label}: ${fmt(value, format)}${suffix ?? ""}${note ? `. Not: ${note}` : ""}. Değiştirmek için tıklayın`}
       className={cn(
         "relative flex h-8 w-full cursor-text items-center justify-end rounded-lg bg-surface/80 px-2 tabular ring-1 ring-line ring-inset transition-[background-color,box-shadow] pointer-coarse:h-10",
         CELL_MIN,
@@ -240,11 +334,202 @@ function EditableCell({
         overridden && kind === "auto" && "bg-info-soft font-medium hover:bg-info-soft",
         negative && "text-bad",
         value === null && "text-ink-quiet",
+        muted && "bg-transparent ring-0 outline-1 -outline-offset-1 outline-line-strong outline-dashed hover:bg-surface/60",
       )}
     >
       {fmt(value, format)}
+      {suffix ? <span className="ml-0.5 text-xs font-normal text-ink-quiet">{suffix}</span> : null}
+      {note ? (
+        // Excel'deki not üçgeni: sol üst köşede
+        <span className="absolute top-0 left-0 size-0 rounded-tl-lg border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" aria-hidden="true" />
+      ) : null}
       {overridden && kind === "auto" ? <span className="absolute top-1 right-1 size-1.5 rounded-full bg-info" aria-hidden="true" /> : null}
     </button>
+  );
+}
+
+/**
+ * Hücre notu penceresi: tutar ve not birlikte kaydedilir (not, elle girilen tutarın açıklamasıdır).
+ * Kaydetmenin etkisi açıkça yazılır: tutar boşsa hücre hesaplanana döner ve not silinir; hesaplanan bir
+ * hücreye yalnızca not eklenirse o tutar elle girilmiş sayılır.
+ */
+function CellNoteDialog({ target, onClose }: { target: NoteTarget; onClose: () => void }) {
+  const formId = useId();
+  const [amountText, setAmountText] = useState(target.amountText);
+  const [note, setNote] = useState(target.note ?? "");
+  const [busy, setBusy] = useState(false);
+  const t = amountText.trim();
+  const amount = t === "" ? null : parseNumberTR(t);
+  const amountError = t !== "" && amount === null ? "Geçerli bir sayı yazın, ör. 1.250,50" : null;
+  const effect = noteSaveEffect({ kind: target.kind, overridden: target.overridden, amount, computed: target.computed });
+
+  async function run(nextAmount: number | null, nextNote: string | null | undefined, done: string) {
+    setBusy(true);
+    const res = await setPnlCell(target.month, target.rowKey, nextAmount, nextNote);
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(done);
+    onClose();
+  }
+
+  function save() {
+    if (amountError) return;
+    const n = cleanNote(note);
+    if (amount === null) {
+      // Kayıt silinir: not tutarsız saklanamaz
+      if (!target.overridden && target.kind === "auto") return onClose();
+      return void run(null, undefined, target.kind === "auto" ? "Hücre hesaplanan değere döndü; not silindi" : "Hücre boşaltıldı; not silindi");
+    }
+    void run(amount, n, noteSaveMessage({ prevValue: target.value, amount, prevNote: target.note, note: n, freeze: effect === "freeze" }));
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title={target.title}
+      description="Elle girilen tutarın açıklaması: ör. makine servisi, kırılan ekipman, bordro farkı."
+      footerStart={
+        target.note ? (
+          <Button
+            variant="ghost"
+            className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10"
+            disabled={busy}
+            onClick={() => {
+              const keep = parseNumberTR(target.amountText.trim());
+              if (keep === null) return void run(null, undefined, "Not silindi");
+              void run(keep, null, "Not silindi");
+            }}
+          >
+            Notu sil
+          </Button>
+        ) : null
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-10">
+            Vazgeç
+          </Button>
+          <Button type="submit" form={formId} disabled={busy || !!amountError} className="pointer-coarse:h-10">
+            {busy ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="space-y-3 pb-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <Field
+          label="Tutar (₺, KDV hariç)"
+          htmlFor={`${formId}-a`}
+          error={amountError}
+          hint={
+            target.kind === "auto" && target.computed !== null
+              ? `Hesaplanan: ${tl(target.computed, 2)}. Boş bırakırsanız hesaplanan değere döner.`
+              : "Boş bırakırsanız hücre boşalır."
+          }
+        >
+          <NumberInput
+            id={`${formId}-a`}
+            value={amountText}
+            onChange={(e) => setAmountText(e.target.value)}
+            aria-invalid={amountError ? true : undefined}
+            className="cell-input"
+          />
+        </Field>
+        <Field label="Not" htmlFor={`${formId}-n`} hint={`${note.trim().length} / ${CELL_NOTE_MAX}`}>
+          <Textarea
+            id={`${formId}-n`}
+            data-autofocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            maxLength={CELL_NOTE_MAX}
+            placeholder="Ör. Ekim kombi servisi 4.500 ₺"
+          />
+        </Field>
+        {effect === "clear" && (target.overridden || target.kind === "manual") ? (
+          <Warn>Tutar boş: kayıt silinir{target.note || note.trim() ? ", not da gider" : ""}.</Warn>
+        ) : effect === "clear" && cleanNote(note) ? (
+          <Warn>Not, bir tutarla birlikte saklanır. Tutar yazın.</Warn>
+        ) : effect === "freeze" && cleanNote(note) ? (
+          <Warn>Not kaydedilince bu tutar elle girilmiş sayılır: hesaplanan değer sonradan değişse de {tl(amount, 2)} kalır.</Warn>
+        ) : null}
+      </form>
+    </Dialog>
+  );
+}
+
+function Warn({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-1.5 text-xs leading-5 font-medium text-warn" aria-live="polite">
+      <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+/** Ay notu penceresi (Satışlar sayfasındaki ay notuyla aynı alan) */
+function MonthNoteDialog({ month, note, onClose }: { month: string; note: string | null; onClose: () => void }) {
+  const formId = useId();
+  const [text, setText] = useState(note ?? "");
+  const [busy, setBusy] = useState(false);
+
+  async function run(next: string | null) {
+    setBusy(true);
+    const res = await setMonthNote(month, next);
+    setBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(next ? "Ay notu kaydedildi" : "Ay notu silindi");
+    onClose();
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title={`${monthLabel(month)} notu`}
+      description="Ayın durumu, ör. “1-16 Ekim, ay bitince güncelleyin”. Satışlar sayfasında da görünür."
+      footerStart={
+        note ? (
+          <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10" disabled={busy} onClick={() => void run(null)}>
+            Notu sil
+          </Button>
+        ) : null
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy} className="pointer-coarse:h-10">
+            Vazgeç
+          </Button>
+          <Button type="submit" form={formId} disabled={busy} className="pointer-coarse:h-10">
+            {busy ? "Kaydediliyor…" : "Kaydet"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="pb-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(cleanNote(text));
+        }}
+      >
+        <Field label="Not" htmlFor={`${formId}-n`} hint={`${text.trim().length} / ${MONTH_NOTE_MAX}`}>
+          <Textarea id={`${formId}-n`} data-autofocus value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={MONTH_NOTE_MAX} />
+        </Field>
+      </form>
+    </Dialog>
   );
 }
 
@@ -262,6 +547,9 @@ export function PnlGrid({
   activeMonths,
   sections,
   openDays,
+  dims,
+  monthNotes,
+  currentMonth,
   strip,
   latestMonth,
 }: {
@@ -270,11 +558,19 @@ export function PnlGrid({
   activeMonths: string[];
   sections: GridSection[];
   openDays: (number | null)[];
+  /** Her ayın gün sayısı: açık gün en fazla bu kadar */
+  dims: number[];
+  /** Ay notları (Satışlar'daki ay bilgisiyle aynı alan) */
+  monthNotes: (string | null)[];
+  /** "Bu ay" (YYYY-MM): başlıkta işaretlenir */
+  currentMonth: string;
   strip: StripMonth[];
   /** Verisi olan son ay: şeritte çerçevelenir */
   latestMonth?: string;
 }) {
   const reduce = useCalmMotion();
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
+  const [monthNoteFor, setMonthNoteFor] = useState<number | null>(null);
   const [view, setView] = useQueryState<MonthView>("aylar", activeMonths.length ? "aktif" : "12");
   const [q, setQ] = useQueryText("ara");
   const [bolum, setBolum] = useQueryState<string>("bolum", "tumu");
@@ -321,15 +617,36 @@ export function PnlGrid({
     clearQuery(FILTER_KEYS);
   };
 
-  async function save(month: string, key: string, v: number | null) {
+  async function save(month: string, key: string, v: number | null, hadNote?: boolean): Promise<void> {
     const res =
       key === "revenue"
         ? await setMonthField(month, "posRevenue", v)
         : key === "openDays"
           ? await setMonthField(month, "openDays", v)
           : await setPnlCell(month, key, v);
-    if (!res.ok) toast.error(res.error);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    // Boşaltılan hücrenin notu da silinir: sessizce kaybolmasın
+    if (v === null && hadNote) toast("Hücre boşaltıldı; notu da silindi");
   }
+
+  /** Not penceresi: satır ve ay bilgisiyle */
+  function openNote(month: string, i: number, def: PnlRowDef, c: PnlCell, amountText: string) {
+    setNoteTarget({
+      month,
+      rowKey: def.key,
+      title: `${def.label} · ${MONTH_NAMES[i]} ${year}`,
+      kind: def.kind === "manual" ? "manual" : "auto",
+      amountText,
+      value: c.value,
+      computed: c.computed,
+      overridden: c.overridden,
+      note: c.note ?? null,
+    });
+  }
+  const notedCount = sections.reduce((a, sec) => a + sec.rows.reduce((b, r) => b + r.cells.filter((c) => c.note).length, 0), 0);
 
   return (
     <Card>
@@ -412,6 +729,13 @@ export function PnlGrid({
             hesaplananın üzerine yazılmış
             <InfoTip text="İçini silip Enter'a basınca hücre hesaplanan değere döner." />
           </span>
+          <span className="flex items-center gap-1.5">
+            <span className="relative inline-flex h-6 w-9 items-center rounded-md bg-surface ring-1 ring-line ring-inset">
+              <span className="absolute top-0 left-0 size-0 rounded-tl-md border-t-[7px] border-r-[7px] border-t-warn border-r-transparent" />
+            </span>
+            notlu hücre{notedCount ? ` (${notedCount})` : ""}
+            <InfoTip text="Hücreyi düzenlerken soldaki not simgesine basın (klavyede Shift+F2). Ay notu için ay adına tıklayın." />
+          </span>
         </div>
       </div>
 
@@ -437,7 +761,20 @@ export function PnlGrid({
                 </TH>
                 {visibleIdx.map(({ m, i }) => (
                   <TH key={m} numeric className={cn(HEAD, "min-w-24 px-1.5 sm:min-w-28")}>
-                    <span className="px-2">{MONTH_NAMES[i]}</span>
+                    {/* Ay adı ay notunu açar; not varsa yanında ⓘ ile okunur */}
+                    <span className="inline-flex items-center justify-end gap-1 px-1">
+                      {monthNotes[i] ? <InfoTip text={monthNotes[i]} /> : null}
+                      <button
+                        type="button"
+                        onClick={() => setMonthNoteFor(i)}
+                        title={monthNotes[i] ? `${MONTH_NAMES[i]} notunu düzenle` : `${MONTH_NAMES[i]} için not ekle`}
+                        aria-label={`${MONTH_NAMES[i]} ${year} ay notu${monthNotes[i] ? `: ${monthNotes[i]}` : " ekle"}`}
+                        className="cursor-pointer rounded-md px-1 underline decoration-transparent decoration-dotted underline-offset-4 hover:decoration-ink-quiet focus-visible:ring-2 focus-visible:ring-ink/25 focus-visible:outline-none"
+                      >
+                        {MONTH_NAMES[i]}
+                      </button>
+                    </span>
+                    {m === currentMonth ? <span className="block px-2 text-[11px] font-normal text-ink-mute">bu ay</span> : null}
                   </TH>
                 ))}
                 <TH numeric className={cn(YEAR_COL, HEAD_YEAR, "min-w-28 text-ink sm:min-w-32")}>
@@ -451,7 +788,7 @@ export function PnlGrid({
                   <TD sticky className={cn(STICKY, "py-1.5 font-medium")}>
                     <span className="flex items-center gap-1.5">
                       {OPEN_DAYS_LABEL}
-                      <InfoTip text="O ay işletmenin açık olduğu gün. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır." />
+                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır." />
                     </span>
                   </TD>
                   {visibleIdx.map(({ m, i }) => (
@@ -462,8 +799,10 @@ export function PnlGrid({
                         overridden={openDays[i] !== null}
                         kind="manual"
                         format="days"
-                        label={`${OPEN_DAYS_LABEL} · ${MONTH_NAMES[i]}`}
+                        label={`${OPEN_DAYS_LABEL} · ${MONTH_NAMES[i]} (en fazla ${dims[i]})`}
                         col={m}
+                        suffix={`/${dims[i]}`}
+                        validate={(v) => openDaysError(m, v)}
                         onSave={(v) => save(m, "openDays", v)}
                       />
                     </td>
@@ -472,12 +811,15 @@ export function PnlGrid({
                 </tr>
               ) : null}
               {shownSections.map((sec) => (
-                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} onSave={save} />
+                <SectionRows key={sec.key} sec={sec} visibleIdx={visibleIdx} onSave={save} onNote={openNote} />
               ))}
             </tbody>
           </table>
         </TableWrap>
       )}
+
+      {noteTarget ? <CellNoteDialog key={`${noteTarget.month}-${noteTarget.rowKey}`} target={noteTarget} onClose={() => setNoteTarget(null)} /> : null}
+      {monthNoteFor !== null ? <MonthNoteDialog month={months[monthNoteFor]} note={monthNotes[monthNoteFor]} onClose={() => setMonthNoteFor(null)} /> : null}
 
       <CardFooter className="justify-start gap-2">
         <RotateCcw size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
@@ -512,10 +854,12 @@ function SectionRows({
   sec,
   visibleIdx,
   onSave,
+  onNote,
 }: {
   sec: GridSection;
   visibleIdx: { m: string; i: number }[];
-  onSave: (month: string, key: string, v: number | null) => Promise<void>;
+  onSave: (month: string, key: string, v: number | null, hadNote?: boolean) => Promise<unknown>;
+  onNote: (month: string, i: number, def: PnlRowDef, c: PnlCell, amountText: string) => void;
 }) {
   return (
     <>
@@ -534,7 +878,10 @@ function SectionRows({
           <tr key={`${sec.key}-${def.key}`} className={cn(ROW, def.strong && "font-semibold [&>td]:border-line-strong")}>
             <TD sticky className={cn(STICKY, "py-1.5", def.strong ? "text-ink" : "text-ink-soft")}>
               <span className="flex items-center gap-1.5">
-                <span className="min-w-0">{def.label}</span>
+                <span className="min-w-0">
+                  {def.label}
+                  {def.sub ? <span className="block text-xs leading-4 font-normal text-ink-mute max-sm:line-clamp-2">{def.sub}</span> : null}
+                </span>
                 {def.hint ? <InfoTip text={def.hint} className="shrink-0" /> : null}
               </span>
             </TD>
@@ -551,7 +898,13 @@ function SectionRows({
                       format={def.format}
                       label={`${def.label} · ${MONTH_NAMES[i]}`}
                       col={m}
-                      onSave={(v) => onSave(m, def.key, v)}
+                      note={c.note}
+                      outOfRange={c.outOfRange}
+                      onSave={async (v) => {
+                        await onSave(m, def.key, v, !!c.note);
+                      }}
+                      // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
+                      onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}
                     />
                   ) : (
                     <span

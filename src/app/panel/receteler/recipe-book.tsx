@@ -238,7 +238,18 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
   const shown = rows
     .map((r) => ({ ...r, cells: r.cells.map((c) => (c && (showPack || !c.packaging) ? c : null)) }))
     .filter((r) => r.cells.some(Boolean));
-  const notes = product.variants.filter((v) => v.note);
+  // Boyların aynı notu tek kez yazılır ("M = solo, L = doppio" iki boyda da aynı); farklıysa boy adıyla
+  const notes = useMemo(() => {
+    const byText = new Map<string, Size[]>();
+    for (const v of product.variants) {
+      const t = v.note?.trim();
+      if (t) byText.set(t, [...(byText.get(t) ?? []), v.size]);
+    }
+    return [...byText.entries()].map(([text, sizes]) => ({
+      text,
+      label: multi && sizes.length < product.variants.length ? sizes.map((x) => SIZE_LABELS[x]).join(", ") : null,
+    }));
+  }, [product.variants, multi]);
   // Malzeme adıyla arandıysa (ürün adı uymuyorsa) eşleşen satır vurgulanır: "hangi üründe süt var?"
   const highlight = query.trim() !== "" && !matches(product.name, query);
   const hiddenPack = showPack ? 0 : rows.filter((r) => r.cells.every((c) => !c || c.packaging)).length;
@@ -290,7 +301,7 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
                             </span>
                           ) : (
                             <span className={c.packaging ? "font-medium text-ink-mute" : "text-ink"}>
-                              {num(c.qty, 1)} {c.unit}
+                              {num(c.qty, 3)} {c.unit}
                             </span>
                           )}
                         </td>
@@ -311,10 +322,10 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
       </div>
       {notes.length ? (
         <div className="space-y-1 px-5 pb-4 text-[13px] leading-5 break-words text-ink-mute">
-          {notes.map((v) => (
-            <p key={v.id}>
-              {multi ? <span className="font-medium text-ink-soft">{SIZE_LABELS[v.size]}: </span> : null}
-              {v.note}
+          {notes.map((n) => (
+            <p key={n.text}>
+              {n.label ? <span className="font-medium text-ink-soft">{n.label}: </span> : null}
+              {n.text}
             </p>
           ))}
         </div>

@@ -5,9 +5,9 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
-import { yearMonths, type PnlRowDef } from "@/lib/calc/engine";
+import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { MONTH_NAMES } from "@/lib/constants";
-import { pct, tl } from "@/lib/format";
+import { monthLabel, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 
@@ -63,7 +63,10 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const sp = await searchParams;
   const model = await loadModel();
   const known = [...model.monthInfo.keys(), ...model.ds.invoices.map((i) => i.date.slice(0, 7))].sort();
-  const latestYear = known.length ? Number(known[known.length - 1].slice(0, 4)) : new Date().getFullYear();
+  const knownYears = new Set(known.map((k) => Number(k.slice(0, 4))));
+  // Varsayılan yıl: bu yıl (verisi varsa); yoksa verisi olan son yıl. İleri tarihli tek bir kayıt tabloyu boş bir yıla atmasın.
+  const thisYear = Number(model.currentMonth.slice(0, 4));
+  const latestYear = knownYears.has(thisYear) ? thisYear : known.length ? Number(known[known.length - 1].slice(0, 4)) : thisYear;
   const yilParam = Array.isArray(sp.yil) ? sp.yil[0] : sp.yil;
   const year = yilParam && /^\d{4}$/.test(yilParam) ? Number(yilParam) : latestYear;
   const months = yearMonths(year);
@@ -86,6 +89,19 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
 
   // Satır adları: tedarikçi ve sabit gider adları girildiği gibi, diğerleri cümle düzeninde
   const fixedNames = new Map(model.ds.fixedExpenses.map((f) => [`fixed:${f.id}`, f.name]));
+  // Sabit gider satırının alt yazısı: yıl içinde başlayan ya da biten kalem hangi aylarda sayıldığını söylesin
+  const yearStart = months[0];
+  const yearEnd = months[months.length - 1];
+  const fixedSub = new Map<string, string | undefined>(
+    model.fixedList.map((f) => {
+      const parts: string[] = [];
+      if (f.startMonth && f.startMonth > yearStart && f.startMonth <= yearEnd && (!model.firstDataMonth || f.startMonth > model.firstDataMonth)) {
+        parts.push(`${monthLabel(f.startMonth)} itibarıyla`);
+      }
+      if (f.endMonth && f.endMonth >= yearStart && f.endMonth < yearEnd) parts.push(`son ay ${monthLabel(f.endMonth)}`);
+      return [`fixed:${f.id}`, parts.length ? parts.join(" · ") : undefined];
+    }),
+  );
   const rowLabel = (def: PnlRowDef): string => {
     if (def.key.startsWith("purchase:")) return def.key.slice("purchase:".length);
     if (def.key.startsWith("commission:") && def.key !== "commission:pos") return `${def.key.slice("commission:".length)} komisyonu`;
@@ -100,13 +116,16 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       sections.push(sec);
     }
     sec.rows.push({
-      def: { ...def, label: rowLabel(def) },
+      def: { ...def, label: rowLabel(def), sub: def.sub ?? fixedSub.get(def.key) },
       cells: calcs.map((c) => model.pnlValue(c, def.key)),
       total: totalOf(def.key),
     });
   }
 
   const openDays = calcs.map((c) => c.info?.openDays ?? null);
+  // Ay sütunu başlığındaki not (Satışlar'daki ay notuyla aynı alan) ve ayın gün sayısı (açık gün sınırı)
+  const monthNotes = calcs.map((c) => c.info?.note ?? null);
+  const dims = months.map(daysInMonth);
   const activeMonths = months.filter((_, i) => calcs[i].revenue !== null || calcs[i].expenses !== 0 || openDays[i] !== null);
   const revenueNet = calcs.reduce((a, c) => a + (c.revenueNet ?? 0), 0);
   const expenses = calcs.reduce((a, c) => a + c.expenses, 0);
@@ -176,6 +195,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         activeMonths={activeMonths}
         sections={sections}
         openDays={openDays}
+        dims={dims}
+        monthNotes={monthNotes}
+        currentMonth={model.currentMonth}
         strip={strip}
         latestMonth={latestMonth}
       />

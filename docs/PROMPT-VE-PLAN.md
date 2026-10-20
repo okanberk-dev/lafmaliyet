@@ -137,21 +137,109 @@ Reçete × Satış ──► Tutarlılık Kontrolü ◄── Eylül alımları
 14. **Panel'in kategori marjı ağırlıksız ortalama** (AVERAGEIF). Az satan ürünler de çok satanlar kadar
     ağırlık taşıyor. Uygulama buna ek olarak satış ağırlıklı marjı da gösteriyor.
 
+### 5.1 Panelin bilerek Excel'den ayrıldığı yerler (genel bakış, satışlar, tutarlılık, sayım, faturalar)
+
+Excel'in Eylül sonuçları değişmez (11 parite testi geçiyor). Aşağıdakiler yalnızca Excel'in kapsamadığı ya da
+yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insights.ts`, `expr.ts` ve `pos-paste.ts`'te.
+
+1. **Net kâr / zarar (reçeteye göre) o ayın sabit giderleriyle hesaplanır.** Excel Panel!B13 her ay standart
+   `SabitGiderToplam`'ı düşer. Panel Gelir-gider tablosundaki o ayın tutarlarını kullanır: açık gün oranı (ör.
+   Temmuz 23/31 gün), o ay elle düzeltilen hücreler ve yalnızca o aya girilen satırlar (doğalgaz, ciro kirası,
+   harici…). Böylece eksik açık aylar ve gerçek faturalar doğru yansır, "faturaya göre" kârla aynı temel kullanılır.
+   Eylül'de (30/30 gün, düzeltme yok) iki yol aynı sonucu verir (−98.307 ₺). Fark ekranda ayrı satırlar olarak
+   verilir: standart sabit gider, açık gün etkisi, bu aya özel giderler (düzeltmeler + elle satırlar). Excel
+   temelindeki değer de ayrıca hesaplanır (`netProfitStandard`). Açık gün sayısı girilmemiş ayda standart tutar
+   kullanılır. Başabaş günlük ciro ve ay sonu tahmini Excel'deki gibi standart tutarla kalır (o ayda geçerli
+   kalemler ve tutarlarla).
+2. **SU GİDERİ iki kez sayılmaz.** Excel su faturasını reçetelerdeki su + buz litre maliyetine dağıtır; Sabit
+   Giderler'de su satırı yoktur. Panelde su faturası Gelir-gider'in Faturalar bölümündedir. Reçetelerde su maliyeti
+   varken (su faturasından ya da Ayarlar'daki elle birim maliyetten) reçeteye göre net kârda sabit gider olarak
+   tekrar düşülmez. Faturaya göre kârda (Gelir-gider) bir kez, gider olarak sayılır.
+3. **"Para nereye gitti?" Excel Panel'in satırlarıyla:** Kira, Personel (maaş + SGK, part-time, yemek), Reklam
+   (Instagram, influencer), Diğer sabit giderler (Panel B9–B12). Grup, gider adından ve Gelir-gider bölümünden
+   bulunur: muhasebeci ve Opera ortak gideri Diğer'dedir. Gelir-gider tablosu kendi dört bölümünü korur. O aya özel
+   elle satırlar ayrı bir "Bu aya özel giderler" satırında görünür.
+4. **Ay sonu tahmini yalnızca devam eden ay için** (Türkiye saatine göre bu ay). Excel'de yalnızca Ekim için B19
+   vardı; panel ise açık gün sayısı ayın gün sayısından az olan her ayı (ör. 23 gün açık Temmuz) süren ay sayıyordu.
+   Bitmiş ayda tahmin yerine faturaya göre kâr/zarar gösterilir. Devam eden ayda açık gün sayısı "geçen gün"
+   olarak da kullanılır (Excel: ÷ 16 × 31).
+5. **Günlük ortalama rozeti aynı temelde karşılaştırır.** Gösterilen günlük ortalama Excel B17 gibidir (satış
+   listesi varsa liste toplamı ÷ açık gün). Önceki aya göre % rozeti iki ayda da POS cirosu ÷ açık gün ile
+   hesaplanır; temeller karışırsa rozet gösterilmez. Kategori tablosunun satış adetleri başka bir aydan geliyorsa
+   o ay belirtilir.
+6. **Yüzde alanlarında yazılan sayı yüzde puanıdır:** "10", "%10" ve "10%" hepsi %10'dur. "0,1" %0,1 demektir.
+   Excel'in otomatik yüzde girişi (0,1 → %10) uygulanmaz, çünkü %0,5 fire ya da %0,79 komisyon gibi gerçek küçük
+   oranlar var ve alanlar değeri puan olarak gösteriyor (`parsePercentInput`).
+7. **Satış listesi yapıştırılırken ya da yüklenirken TOPLAM, GENEL TOPLAM, ARA TOPLAM ve başlık satırları ürün
+   sayılmaz;** kaç satırın neden atlandığı söylenir. Cirosu diğer satırların toplamına eşit olan, adı farklı bir
+   satır silinmez, şüpheli diye işaretlenir. Daha önce yüklenmiş bir TOPLAM satırı varsa genel bakışta kırmızı
+   uyarı çıkar.
+8. **Hatırlanan POS eşleştirmesi büyük/küçük harf ve I / İ / ı / i farkını yok sayar** ("Caramel Latte Medium" =
+   "CARAMEL LATTE MEDİUM"). Diğer Türkçe harfler korunur. Anahtar iki tarafa da uygulandığı için eski kayıtlar
+   taşınmadan eşleşir (`posMatchKey`).
+9. **Tutarlılık Kontrolü'nde stok sapması yalnızca alım miktarı girilmiş satırlarda hesaplanır.** Girilmemiş alım
+   0 sayılınca sapma yanlış, hatta eksi çıkıyordu. Bu satırlar "alım girilmeli" diye işaretlenir (bu ay alınmadıysa
+   0 girilir). İki ayı da sayılmış ama hiçbir reçetede olmayan hammaddeler (ör. Callei waffle sos) "reçetesiz
+   tüketim" olarak listelenir. Toplam sapma tablonun varsayılan görünümüyle aynı satırları toplar. Excel'de stok
+   karşılaştırması yoktur.
+10. **Sayımın KDV dahil toplamı her malzemenin kendi Alış KDV'siyle hesaplanır.** Excel Sayım grup başına tek oran
+    kullanır (ambalaj %20, diğerleri %1). Tek fark Yenilebilir bardak: Hammaddeler'de %10, Excel'in ambalaj
+    grubunda %20; faturasından kontrol edilmeli. Grup bazında KDV dahil tutar ve Excel oranından ayrılan malzemeler
+    ayrıca verilir (`stockVatSummary`). Kâr/zarar KDV hariç tutarla hesaplandığı için etkilenmez.
+11. **Ödenmemiş fatura toplamı kalan borçtur:** Paraşüt'ten kısmen ödenmiş gelen faturada kalan tutar, yoksa
+    Ödenecek'in tamamı (Hatırlatıcılar ile aynı kural, `openBalance`). Kalan tutar çekirdek veride
+    `Invoice.outstanding` olarak gelir; Genel bakış, Faturalar, Hatırlatıcılar ve Excel'e aktar aynı rakamı gösterir.
+12. **Su + buz birim maliyeti:** Excel sabit Eylül faturasını kullanır; panel SU GİDERİ girilmiş ve ürün satış
+    listesi olan en son ayı kullanır (litre satışlardan bulunur). Elle fiyatlanan buz litreye katılmaz. Fatura
+    girilmiş ama o ayın satış listesi yoksa "SU GİDERİ girilmedi" denmez; ekranlar ve genel bakış uyarısı litrenin
+    neden hesaplanamadığını söyler (`water.reason`, `waterSource`).
+13. **Kâr marjı renk ölçeği:** Excel J10:J134 tüm satırları kapsar (HİZMET/karaoke en yeşil); panel ölçeği yalnızca
+    reçeteli ürüne bağlı ve net cirosu > 0 satırlardan kurar, HİZMET ve tahmini maliyetli (eşleşmeyen) satırlar
+    renksiz. Renk ve "en düşük / en yüksek" etiketi ekrandaki duyarlıkla (%78,5) karşılaştırılır: aynı görünen iki
+    marj zıt renk almaz; ayın bütün satırları aynı oranı gösteriyorsa ölçek kurulmaz.
+14. **Tutar değişikliği "şu aydan itibaren" geçerlidir** (Sabit giderler, Personel). Excel'de her ay sütunu kendi
+    tutarını taşır; panelde kayıt sürümlüdür: "Hangi aydan itibaren?" (varsayılan bu ay) önceki ayları değiştirmez,
+    Gelişmiş › Tüm aylar yanlış girilmiş tutarı düzeltir. "Pasif" yerine Durdur ile son ay verilir. Kapanmış bir
+    ayın hesabına girmiş kalem silinmez. SGK oranları Excel'deki gibi sürümsüzdür: oran değişince geçmiş ayların
+    SGK'sı da yeniden hesaplanır (ekranda yazar).
+15. **Ekim tahmini Excel B19'dan biraz farklıdır** (−3.624 ₺ ve −4.836 ₺): formül aynı (POS ÷ 16 × 31 × Eylül brüt
+    kâr oranı − SabitGiderToplam), fark veriden gelir. Excel B18 Satış Raporu C6 = 292.957 ₺ kullanır; panel Ekim
+    POS cirosunu Genel Maliyet M68 = 293.909 ₺ ile tohumlar (bkz. §5 madde 3).
+16. **Varsayılan ay:** adreste ?ay= yoksa ekranlar bu aya kadarki son satış ayını açar; ileri tarihli tek bir kayıt
+    (deneme, yanlış yazılmış ay) varsayılanı geleceğe taşımaz (`defaultMonthOf`). Kâr oranı için yakın satış ayı
+    aranırken de önce önceki, sonra sonraki aylara bakılır.
+17. **Satış dosyasında sütun düzeni başlıktan okunur:** "Ürün | Kategori | Adet | Birim fiyat | Tutar" gibi bir
+    başlık varsa ciro Tutar sütunundan alınır (birim fiyat ciro sanılmaz). Başlık yoksa ya da satır başlığa
+    uymuyorsa eski kural: ad sonrası ilk iki sayı adet ve ciro. "Toplam Kahve Paketi" gibi "Toplam" ile başlayan
+    gerçek ürün adı özet satırı sayılmaz.
+18. **Sayım:** personel listede olmayan kalemleri yazabilir, fiyatını yönetici girer. "Geçen aydan doldur" ek
+    kalemleri de taşır. 0 alım miktarı "bu ay alınmadı" demektir ve sayım sapmasını açar. Ayın ilk 10 gününde
+    Sayım ekranı, sayımı girilmemişse geçen ayı açar. Yalnızca sayım silen bir kayıt boş ay satırı bırakmaz;
+    işlem geçmişi silinen sayımları da yazar.
+19. **Ayarlar ve Hammaddeler:** ayar değişikliği kaydetmeden önce etkisiyle (ürün maliyet oranları, başabaş)
+    önizlenir, kayıttan sonra 15 saniye "Geri al" sunulur; işlem geçmişi yalnızca değişen anahtarları yazar
+    ("Etiket: eski → yeni"). Satır içinde fiyatı değişen hammaddenin "Tahmini" işareti kendiliğinden kalkmaz;
+    bildirimdeki düğmeyle ya da düzenleme penceresinden kaldırılır.
+20. **Excel'e aktar** Excel çalışma kitabının sekme sırasını izler ve her ayın ham kayıtlarını gri yedek
+    sekmelerinde taşır. Gelir-Gider sekmesindeki "<yıl> YILI" sütunu ekrandakiyle aynı kuralla hesaplanır (stok
+    devirleri toplanmaz; oranlar = yıllık toplam ÷ yıllık KDV hariç ciro). Satış listesi olmayan ayda Satış
+    sekmesinin TOPLAM satırı ve hiç verisi olmayan ayda "faturaya göre kâr" boş kalır (0 yazılmaz).
+
 ## 6. Excel → Web karşılık tablosu
 
 | Excel sayfası | Web karşılığı | İyileştirme |
 |---------------|---------------|-------------|
-| Panel | `/panel` | Her ay için çalışır. Reçeteye göre (teorik) ve faturaya göre (gerçekleşen) kâr yan yana. Otomatik uyarılar |
+| Panel | `/panel` | Her ay için çalışır. Reçeteye göre (teorik) ve faturaya göre (gerçekleşen) kâr yan yana. Excel'deki Kira / Personel / Reklam / Diğer satırları; ay sonu tahmini yalnızca süren ay için. "Bu ayın işleri" kartı (satış raporu, ay bilgileri, faturalar, su faturası, sayım, ödemeler) eksik veriyi ve sıradaki işi gösterir (`src/app/panel/dashboard-tasks.tsx`). Otomatik uyarılar |
 | Ürün Kârlılık | `/panel/urunler` | Arama, filtre, sıralama, satır içinde fiyat düzenleme |
 | Reçete Kartları | `/panel/urunler/[id]` | Canlı maliyet hesabı, fiyat simülatörü, ayara bağlı miktar formülleri |
-| Satış Raporu | `/panel/satislar` | Patron'dan yapıştır/yükle. POS adı eşleştirmeleri hatırlanır |
+| Satış Raporu | `/panel/satislar` | Patron'dan yapıştır/yükle; toplam ve başlık satırları atlanır. POS adı eşleştirmeleri hatırlanır (büyük/küçük harf ve I/İ farkı yok sayılır) |
 | Hammaddeler | `/panel/hammaddeler` | Fiyat geçmişi, hangi reçetelerde kullanıldığı, tahmini fiyat işareti |
 | Faturalar | `/panel/faturalar` | Filtre, ödenmedi takibi, kategori × ay özeti |
 | Genel Maliyet | `/panel/gelir-gider` | Ayların tamamı otomatik hesaplanır. Her hücre elle düzeltilebilir (mavi) |
 | Sayım | `/panel/sayim` | Telefondan sayım. Personel rolü sadece burayı ve reçeteleri görür |
-| Tutarlılık Kontrolü | `/panel/tutarlilik` | Stok sayımı varsa gerçek tüketim hesaplanır. Bulgular listesi kapatılabilir |
-| Personel | `/panel/personel` | — |
-| Sabit Giderler | `/panel/giderler` | Aylık, günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir |
+| Tutarlılık Kontrolü | `/panel/tutarlilik` | Stok sayımı ve alım miktarı varsa gerçek tüketim hesaplanır; reçetesiz tüketim listelenir. Bulgular listesi kapatılabilir |
+| Personel | `/panel/personel` | Maaş değişikliği "hangi aydan itibaren" (önceki aylar korunur), Durdur ile ayrılış ayı, maaş geçmişi |
+| Sabit Giderler | `/panel/giderler` | Aylık, günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir. Tutar geçmişi, "hangi aydan itibaren", Durdur ile bitiş ayı |
 | Ayarlar | `/panel/ayarlar` | Kullanıcı yönetimi, QR menü yayını, Excel'e aktarım |
 | Nasıl Kullanılır | `/panel/yardim` | — |
 | — (yeni) | `/panel/receteler` | Baristalar için maliyetsiz reçete defteri (personel rolü görebilir, yazdırılabilir) |
@@ -160,8 +248,16 @@ Reçete × Satış ──► Tutarlılık Kontrolü ◄── Eylül alımları
 
 ## 7. Doğrulama
 
-- `npm test`: 11 test, hepsi geçiyor. 129 ürün kartı, 125 satış satırı, Panel, Temmuz–Ekim gelir-gider, personel,
-  sabit giderler, tutarlılık ve fatura özetleri Excel ile birebir aynı.
+- `npm test` (`tests/*.test.ts`): `tests/calc.test.ts`'teki 11 Excel parite testi geçiyor: 129 ürün kartı, 125 satış
+  satırı, Panel, Temmuz–Ekim gelir-gider, personel, sabit giderler, tutarlılık ve fatura özetleri Excel ile birebir
+  aynı. Ekran kuralları da aynı klasörde sınanır: geçmiş aylar (`history`, `giderler-history`), SGK oranları
+  (`personel-rates`), Gelir-gider girişleri (`gelir-gider-cells`), satışlar, sayım-tutarlılık, faturalar, ürünler,
+  ayarların etkisi, genel bakış işleri ve Excel'e aktar.
+- `tests/insights.test.ts` ve `tests/parse.test.ts` (§5.1'deki sapmalar): Excel Panel'in Kira / Personel / Reklam /
+  Diğer satırları (golden.panel), açık gün ≠ ayın günü, Gelir-gider düzeltmesi ve o aya özel satır, SU GİDERİ'nin
+  bir kez sayılması, ay sonu tahmininin yalnızca süren ayda yapılması, günlük ortalama rozetinin temeli, tutarlılık
+  sapması ve reçetesiz tüketim, sayım KDV'si, fatura kalan borcu, yüzde alanı, satış listesi yapıştırma / dosya
+  okuma ve POS eşleştirme anahtarı.
 - Tarayıcıda uçtan uca denendi: giriş ve çıkış, reçete düzenleme ve kaydetme, satır içinde fiyat değiştirme, satış
   eşleştirme, stok sayımının gelir-gider tablosuna yansıması, personel rolünün kısıtlanması, Excel'e aktarım, QR menü.
   Masaüstü, tablet ve telefon (375 px) genişliklerinde hiçbir sayfa yatay taşmıyor.

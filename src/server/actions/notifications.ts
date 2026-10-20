@@ -1,6 +1,6 @@
 "use server";
 
-import { alerts } from "@/lib/calc/insights";
+import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { dateTR, monthShort, tl } from "@/lib/format";
 import { daysLeftLabel } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
@@ -43,7 +43,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
       group: "odeme" as const,
     }));
 
-  const month = model.salesMonths[model.salesMonths.length - 1];
+  const month = latestSalesMonth(model);
   const warnings: PanelNotification[] = month
     ? alerts(model, month).map((a) => ({
         // Kimlik metinden türer: aynı uyarı okundu kalır, sayısı değişen uyarı yeniden okunmamış olur

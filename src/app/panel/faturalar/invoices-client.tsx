@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, CircleCheck, FileText, Pencil, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
-import { startTransition, useOptimistic, useRef, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useMemo, useOptimistic, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -12,21 +12,21 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, keepScroll, matches, SearchField, useQueryState, useQueryText, useSettleScroll } from "@/components/ui/filters";
-import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { FloatingBar } from "@/components/ui/floating-bar";
+import { Select } from "@/components/ui/form";
 import { Avatar } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
-import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
-import { normalizeSupplier } from "@/lib/calc/engine";
-import { parseNumberTR } from "@/lib/calc/expr";
-import type { Invoice } from "@/lib/calc/types";
+import { isPartiallyPaid } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { deleteInvoice, saveInvoice, setInvoicePaid } from "@/server/actions/invoices";
+import { deleteInvoice, restoreInvoice, setInvoiceCategory, setInvoicePaid, unignoreParasutBill } from "@/server/actions/invoices";
+
+import { InvoiceDialog } from "./invoice-dialog";
+import { isEstimate, isParasutLinked, notePreview, sameSupplierOthers, splitSupplier, supplierDefaults, visibleNote, type InvoiceRow } from "./rules";
 
 /**
  * Sunucu sayfasının özet rakamları için AkmanOS sayacı (charts/animated-number).
@@ -43,27 +43,22 @@ function categoryTone(category: string): Tone {
   return "gray";
 }
 
+/** Badge tonlarıyla aynı renkler; satır içi kategori seçimi rozet gibi görünür */
+const PILL_TONE: Partial<Record<Tone, string>> = {
+  green: "bg-lime/25 text-good-ink",
+  blue: "bg-info-soft text-info",
+  gray: "bg-ink/[0.06] text-ink-soft ring-1 ring-inset ring-line-strong",
+};
+const CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
+
 /** "Mal alımları" hızlı filtresi: mal maliyeti sayılan üç kategori (adreste ?kategori=mal) */
 const GOODS_FILTER = "mal";
 const PAGE_SIZE = 25;
+/** "Geri al"lı bildirimlerin süresi (silme, ödendi, kategori): okuyup karar verecek kadar */
+const UNDO_MS = 10000;
 /** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama süzgeç sayılmaz, korunur) */
 const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
-
-/**
- * Tedarikçi adını gelir-giderdeki gruplamayla aynı biçimde böler:
- * "Kaldi (ödenmedi)" -> { base: "Kaldi", note: "ödenmedi" }
- */
-function splitSupplier(supplier: string) {
-  const base = normalizeSupplier(supplier);
-  if (!base) return { base: supplier, note: "" };
-  const note = supplier
-    .trim()
-    .slice(base.length)
-    .trim()
-    .replace(/^\(\s*/, "")
-    .replace(/\s*\)$/, "");
-  return { base, note };
-}
 
 /** Adresteki ?durum= değerleri (bildirimdeki bağlantı ?durum=odenmedi kullanır) */
 type Status = "tumu" | "odenmedi" | "odendi";
@@ -72,9 +67,9 @@ type Sort = { key: SortKey; dir: "asc" | "desc" };
 /** Varsayılan sıra sunucudaki gibi: yeniden eskiye (aynı günde son eklenen üstte) */
 const DEFAULT_SORT = "tarih-azalan";
 
-const netOf = (i: Invoice) => i.amount - i.discount;
+const netOf = (i: InvoiceRow) => i.amount - i.discount;
 
-const COMPARE: Record<SortKey, (a: Invoice, b: Invoice) => number> = {
+const COMPARE: Record<SortKey, (a: InvoiceRow, b: InvoiceRow) => number> = {
   tarih: (a, b) => a.date.localeCompare(b.date),
   tedarikci: (a, b) => splitSupplier(a.supplier).base.localeCompare(splitSupplier(b.supplier).base, "tr"),
   net: (a, b) => netOf(a) - netOf(b),
@@ -101,30 +96,44 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Aramada tedarikçi, açıklama, fatura no, not, kategori, tarih ve tutarlar taranır ("7.410" da bulur) */
-function haystack(i: Invoice) {
+function haystack(i: InvoiceRow) {
   return [i.supplier, i.description, i.invoiceNo, i.note, i.category, dateTR(i.date), num(netOf(i), 2), num(i.payable, 2)].filter(Boolean).join(" ");
 }
 
-type Optimistic = { kind: "paid"; id: number; paid: boolean } | { kind: "delete"; id: number };
+type Optimistic =
+  | { kind: "paid"; ids: number[]; paid: boolean }
+  | { kind: "delete"; id: number }
+  | { kind: "category"; changes: { id: number; category: string }[] };
+
+function applyChange(state: InvoiceRow[], a: Optimistic): InvoiceRow[] {
+  if (a.kind === "delete") return state.filter((i) => i.id !== a.id);
+  if (a.kind === "paid") {
+    const ids = new Set(a.ids);
+    return state.map((i) => (ids.has(i.id) ? { ...i, unpaid: !a.paid } : i));
+  }
+  const next = new Map(a.changes.map((c) => [c.id, c.category]));
+  return state.map((i) => (next.has(i.id) ? { ...i, category: next.get(i.id)! } : i));
+}
 
 export function InvoicesClient({
   invoices,
   months,
   suppliers,
   parasutCompanyId,
+  ignoredCount = 0,
 }: {
-  invoices: Invoice[];
+  invoices: InvoiceRow[];
   /** Paraşüt firma numarası; varsa Paraşüt'ten gelen faturada "Paraşüt'te aç" bağlantısı çıkar */
   parasutCompanyId?: string | null;
   months: string[];
   suppliers: string[];
+  /** Silinip yok sayılan Paraşüt faturası sayısı (silme onayında geri alma yolunu söylemek için) */
+  ignoredCount?: number;
 }) {
   const reduce = useCalmMotion();
   useSettleScroll(invoices);
-  // Ödendi işareti ve silme sunucu yanıtını beklemeden görünür; hata olursa liste eski haline döner
-  const [list, applyOptimistic] = useOptimistic(invoices, (state: Invoice[], a: Optimistic) =>
-    a.kind === "delete" ? state.filter((i) => i.id !== a.id) : state.map((i) => (i.id === a.id ? { ...i, unpaid: !a.paid } : i)),
-  );
+  // Ödendi işareti, kategori ve silme sunucu yanıtını beklemeden görünür; hata olursa liste eski haline döner
+  const [list, applyOptimistic] = useOptimistic(invoices, applyChange);
   const [q, setQ] = useQueryText("ara");
   const [rawMonth, setMonth] = useQueryState<string>("ay", "");
   const [rawCategory, setCategory] = useQueryState<string>("kategori", "");
@@ -137,10 +146,11 @@ export function InvoicesClient({
   const status: Status = rawStatus === "odenmedi" || rawStatus === "odendi" ? rawStatus : "tumu";
   const source = rawSource === "parasut" ? "parasut" : "";
   const sort = parseSort(rawSort);
-  const [editing, setEditing] = useState<Invoice | "new" | null>(null);
-  const [deleting, setDeleting] = useState<Invoice | null>(null);
+  const [editing, setEditing] = useState<InvoiceRow | "new" | null>(null);
+  const [deleting, setDeleting] = useState<InvoiceRow | null>(null);
   /** Az önce ödendi işaretlenen fatura: yeni "Ödendi" rozeti yaylı belirir */
   const [popId, setPopId] = useState<number | null>(null);
+  const defaults = useMemo(() => supplierDefaults(invoices), [invoices]);
 
   const parasutCount = list.filter((i) => i.source === "parasut").length;
   // Durum dışındaki filtreler: durum çiplerinin sayaçları bunlara göre
@@ -155,12 +165,53 @@ export function InvoicesClient({
   const byStatus = status === "odenmedi" ? filtered.filter((i) => i.unpaid) : status === "odendi" ? filtered.filter((i) => !i.unpaid) : filtered;
   // Sıralama kararlı: eşit değerlerde sunucunun tarih sırası korunur
   const visible = [...byStatus].sort((a, b) => (sort.dir === "asc" ? 1 : -1) * COMPARE[sort.key](a, b));
-  const sum = (f: (i: Invoice) => number) => visible.reduce((a, i) => a + f(i), 0);
+  const sum = (f: (i: InvoiceRow) => number) => visible.reduce((a, i) => a + f(i), 0);
   const viewKey = `${month}|${category}|${status}|${source}|${sort.key}|${sort.dir}`;
   const paged = usePaged(visible, PAGE_SIZE, `${q}|${viewKey}`);
   const anyFilter = Boolean(q.trim() || month || category || status !== "tumu" || source);
   const totalUnpaid = list.filter((i) => i.unpaid).length;
   const totalDiscount = sum((i) => i.discount);
+
+  // Seçim süzgece bağlıdır: süzgeç ya da arama değişince boşalır, gizli satırlara toplu işlem uygulanmaz
+  const selKey = `${q.trim()}|${month}|${category}|${status}|${source}`;
+  const [selection, setSelection] = useState<{ key: string; ids: Set<number> }>({ key: selKey, ids: new Set() });
+  const visibleIds = new Set(visible.map((i) => i.id));
+  const selectedIds = selection.key === selKey ? [...selection.ids].filter((id) => visibleIds.has(id)) : [];
+  const selected = visible.filter((i) => selectedIds.includes(i.id));
+  const pageIds = paged.slice.map((i) => i.id);
+  const pageAll = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+  const pageSome = !pageAll && pageIds.some((id) => selectedIds.includes(id));
+  const clearSelection = () => setSelection({ key: selKey, ids: new Set() });
+  const toggle = (id: number) =>
+    setSelection(() => {
+      const ids = new Set(selectedIds);
+      if (ids.has(id)) ids.delete(id);
+      else ids.add(id);
+      return { key: selKey, ids };
+    });
+  const selectIds = (ids: number[], on: boolean) =>
+    setSelection(() => {
+      const next = new Set(selectedIds);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return { key: selKey, ids: next };
+    });
+
+  // Esc seçimi kaldırır (açık pencere yokken)
+  const hasSelection = selectedIds.length > 0;
+  useEffect(() => {
+    if (!hasSelection) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
+      const t = e.target as HTMLElement | null;
+      if (t && ["INPUT", "TEXTAREA"].includes(t.tagName) && (t as HTMLInputElement).type !== "checkbox") return;
+      setSelection((s) => ({ key: s.key, ids: new Set() }));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasSelection]);
 
   const toggleSort = (key: SortKey) => {
     const dir = sort.key === key ? (sort.dir === "asc" ? "azalan" : "artan") : key === "tedarikci" ? "artan" : "azalan";
@@ -180,25 +231,78 @@ export function InvoicesClient({
     if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
   };
 
-  function setPaid(i: Invoice, paid: boolean) {
-    if (paid) setPopId(i.id);
+  /** Ödendi / ödenmedi (tek fatura ya da seçilenler); bildirimdeki "Geri al" tersini yapar */
+  function setPaid(targets: InvoiceRow[], paid: boolean, opts: { undo?: boolean } = {}) {
+    const ids = targets.filter((i) => i.unpaid === paid).map((i) => i.id);
+    if (!ids.length) return;
+    if (paid && ids.length === 1) setPopId(ids[0]);
     keepScroll();
     startTransition(async () => {
-      applyOptimistic({ kind: "paid", id: i.id, paid });
-      const res = await setInvoicePaid(i.id, paid);
+      applyOptimistic({ kind: "paid", ids, paid });
+      const res = await setInvoicePaid(ids.length === 1 ? ids[0] : ids, paid);
       if (!res.ok) {
         setPopId(null);
         toast.error(res.error);
         return;
       }
-      const name = splitSupplier(i.supplier).base;
-      if (paid)
-        toast.success("Ödendi olarak işaretlendi", {
-          description: `${name} · ${tl(i.payable, 2)}`,
-          action: { label: "Geri al", onClick: () => setPaid(i, false) },
-        });
-      else toast.success("Yeniden ödenmedi olarak işaretlendi", { description: name });
+      if (opts.undo) return void toast.success(paid ? "Yeniden ödendi olarak işaretlendi" : "Yeniden ödenmedi olarak işaretlendi");
+      const changed = targets.filter((i) => ids.includes(i.id));
+      const description =
+        changed.length === 1
+          ? `${splitSupplier(changed[0].supplier).base} · ${tl(changed[0].payable, 2)}`
+          : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`;
+      toast.success(paid ? "Ödendi olarak işaretlendi" : "Ödenmedi olarak işaretlendi", {
+        description,
+        action: { label: "Geri al", onClick: () => setPaid(changed.map((i) => ({ ...i, unpaid: !paid })), !paid, { undo: true }) },
+        // Silme bildirimleriyle aynı süre: "Geri al" birkaç saniyede kaybolmasın
+        duration: UNDO_MS,
+      });
     });
+  }
+
+  /** Kategori değişikliği (satır içi, toplu, geri alma, "aynı tedarikçinin diğerlerine") */
+  function changeCategory(changes: { id: number; category: string }[], opts: { undo?: boolean; from?: InvoiceRow } = {}) {
+    if (!changes.length) return;
+    keepScroll();
+    // "Hepsine uygula" önerisi değişiklikten önceki listeye göre (aynı tedarikçinin farklı kategorideki diğerleri)
+    const others = opts.from ? sameSupplierOthers(list, opts.from, changes[0].category) : [];
+    startTransition(async () => {
+      applyOptimistic({ kind: "category", changes });
+      const res = await setInvoiceCategory(changes);
+      if (!res.ok) return void toast.error(res.error);
+      const { previous, missing } = res.data;
+      if (missing) toast.warning(`${missing} fatura bulunamadı (silinmiş olabilir)`);
+      if (opts.undo) return void toast.success("Kategori geri alındı");
+      if (!previous.length) return;
+      const undo = { label: "Geri al", onClick: () => changeCategory(previous, { undo: true }) };
+      const target = changes[0].category;
+      if (opts.from) {
+        const base = splitSupplier(opts.from.supplier).base;
+        toast.success(`Kategori: ${target}`, {
+          description: others.length
+            ? `${base} · önceki ${previous[0].category}. Bu tedarikçinin ${others.length} faturası daha başka kategoride.`
+            : `${base} · önceki ${previous[0].category}`,
+          action: undo,
+          duration: UNDO_MS,
+          ...(others.length
+            ? { cancel: { label: `${others.length} faturaya da uygula`, onClick: () => changeCategory(others.map((id) => ({ id, category: target }))) } }
+            : {}),
+        });
+      } else {
+        toast.success(previous.length === 1 ? `1 faturanın kategorisi “${target}” oldu` : `${previous.length} faturanın kategorisi “${target}” oldu`, {
+          action: undo,
+          duration: UNDO_MS,
+        });
+      }
+    });
+  }
+
+  function bulkCategory(e: ChangeEvent<HTMLSelectElement>) {
+    const c = e.target.value;
+    e.target.value = "";
+    if (!c) return;
+    changeCategory(selected.map((i) => ({ id: i.id, category: c })));
+    clearSelection();
   }
 
   function confirmDelete() {
@@ -211,27 +315,51 @@ export function InvoicesClient({
     startTransition(async () => {
       applyOptimistic({ kind: "delete", id: target.id });
       const res = await deleteInvoice(target.id);
-      if (!res.ok) toast.error(res.error);
-      else toast.success("Fatura silindi", { description: `${splitSupplier(target.supplier).base} · ${dateTR(target.date)}` });
+      if (!res.ok) return void toast.error(res.error);
+      const { externalId, snapshot, quantitiesRecomputed } = res.data;
+      const restore = async () => {
+        keepScroll();
+        const r = externalId ? await unignoreParasutBill(externalId) : snapshot ? await restoreInvoice(snapshot) : null;
+        if (!r) return;
+        if (!r.ok) return void toast.error(r.error);
+        toast.success("Fatura geri alındı", { description: "message" in r.data ? r.data.message : `${splitSupplier(target.supplier).base} · ${dateTR(target.date)}` });
+      };
+      toast.success("Fatura silindi", {
+        description: [
+          `${splitSupplier(target.supplier).base} · ${dateTR(target.date)}`,
+          quantitiesRecomputed ? "O ayın Paraşüt'ten gelen alınan miktarları yeniden hesaplandı." : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        action: { label: "Geri al", onClick: () => void restore() },
+        duration: UNDO_MS,
+      });
     });
   }
 
-  /** "Ödenmedi" rozeti: tıklayınca ödendi işaretlenir; ödenmişte yaylı beliren "Ödendi" */
-  const statusBadge = (i: Invoice) =>
+  /** "Ödenmedi" rozeti: tıklayınca ödendi işaretlenir; ödenmişte yaylı beliren "Ödendi". Kısmi ödemede kalan yazar. */
+  const statusBadge = (i: InvoiceRow) =>
     i.unpaid ? (
-      <motion.button
-        type="button"
-        onClick={() => setPaid(i, true)}
-        whileTap={reduce ? undefined : { scale: 0.94 }}
-        transition={SPRING_PRESS}
-        title="Ödendi olarak işaretle"
-        aria-label={`${i.supplier}: ödenmedi. Ödendi olarak işaretle`}
-        className="group/pay -my-1 inline-flex min-h-8 cursor-pointer items-center rounded-full pointer-coarse:min-h-10"
-      >
-        <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
-          Ödenmedi
-        </Badge>
-      </motion.button>
+      <span className="inline-flex flex-col items-start gap-0.5">
+        <motion.button
+          type="button"
+          onClick={() => setPaid([i], true)}
+          whileTap={reduce ? undefined : { scale: 0.94 }}
+          transition={SPRING_PRESS}
+          title="Ödendi olarak işaretle"
+          aria-label={`${i.supplier}: ödenmedi. Ödendi olarak işaretle`}
+          className="group/pay -my-1 inline-flex min-h-8 cursor-pointer items-center rounded-full pointer-coarse:min-h-10"
+        >
+          <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
+            Ödenmedi
+          </Badge>
+        </motion.button>
+        {isPartiallyPaid(i) ? (
+          <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; Paraşüt'e göre kısmen ödendi`}>
+            Kalan {tl(i.outstanding, 2)}
+          </span>
+        ) : null}
+      </span>
     ) : (
       <motion.span
         className="inline-flex"
@@ -246,20 +374,65 @@ export function InvoicesClient({
       </motion.span>
     );
 
-  const sourceBadges = (i: Invoice, note: string, base: string) => (
-    <>
-      {i.source === "parasut" ? (
-        <Badge tone="blue" title="Paraşüt'ten otomatik alındı">
-          Paraşüt
-        </Badge>
-      ) : null}
-      {note ? (
-        <Badge tone={/tahmin/i.test(note) ? "amber" : "gray"} dot={/tahmin/i.test(note)} title={`Tedarikçi adındaki not. Gelir-giderde “${base}” altında toplanır.`}>
-          {note}
-        </Badge>
-      ) : null}
-    </>
+  const sourceBadges = (i: InvoiceRow, note: string, base: string) => {
+    const estimate = isEstimate(i) && !/tahmin/i.test(note);
+    return (
+      <>
+        {i.source === "parasut" ? (
+          <Badge tone="blue" title="Paraşüt'ten otomatik alındı; tutar ve tarih Paraşüt'ten gelir">
+            Paraşüt
+          </Badge>
+        ) : null}
+        {note ? (
+          <Badge tone={/tahmin/i.test(note) ? "amber" : "gray"} dot={/tahmin/i.test(note)} title={`Tedarikçi adındaki not. Gelir-giderde “${base}” altında toplanır.`}>
+            {note}
+          </Badge>
+        ) : null}
+        {estimate ? (
+          <Badge tone="amber" dot title="Notta tahmin / varsayım var (Excel'de sarı satır): tutarı faturayla karşılaştırın">
+            tahmini
+          </Badge>
+        ) : null}
+      </>
+    );
+  };
+
+  /** Faturanın notu (Excel hücre notu, elle not); Paraşüt'ün otomatik notu gösterilmez */
+  const noteLine = (i: InvoiceRow, className?: string) => {
+    const n = visibleNote(i.note);
+    if (!n) return null;
+    return (
+      <p className={cn("mt-1 flex items-start gap-1.5 text-xs text-ink-mute", className)} title={n}>
+        <StickyNote size={12} className="mt-0.5 shrink-0 text-ink-quiet" aria-hidden="true" />
+        <span className="line-clamp-2 break-words">
+          <span className="sr-only">Not: </span>
+          {notePreview(n)}
+        </span>
+      </p>
+    );
+  };
+
+  const categoryPicker = (i: InvoiceRow) => (
+    <CategorySelect
+      value={i.category}
+      label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)}: kategori`}
+      onChange={(c) => changeCategory([{ id: i.id, category: c }], { from: i })}
+    />
   );
+
+  const checkbox = (i: InvoiceRow, className?: string) => (
+    <label className={cn("relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-ink/[0.04] pointer-coarse:size-10", className)}>
+      <input
+        type="checkbox"
+        checked={selectedIds.includes(i.id)}
+        onChange={() => toggle(i.id)}
+        aria-label={`${splitSupplier(i.supplier).base}, ${dateTR(i.date)} faturasını seç`}
+        className="size-4 cursor-pointer rounded accent-ink pointer-coarse:size-5"
+      />
+    </label>
+  );
+
+  const selectedUnpaid = selected.filter((i) => i.unpaid);
 
   return (
     // Özet kartlarındaki ve aylık tablodaki bağlantılar buraya iner; telefonda sabit üst çubuğun altında kalmasın
@@ -267,7 +440,7 @@ export function InvoicesClient({
       <CardHeader
         icon={<FileText />}
         title="Fatura listesi"
-        description="Satıra tıklayınca düzenlenir. “Ödenmedi” rozetine tıklamak faturayı ödendi yapar."
+        description="Satıra tıklayınca düzenlenir. Kategori satırdan değişir; birden çok faturayı seçip toplu değiştirebilirsiniz."
         meta={
           <>
             <span>
@@ -295,7 +468,7 @@ export function InvoicesClient({
       />
 
       <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={list.length} unit="fatura" className="px-5 pb-4">
-        <SearchField value={q} onChange={setQ} placeholder="Tedarikçi, fatura no, tutar" label="Fatura ara" className="w-full lg:w-72" />
+        <SearchField value={q} onChange={setQ} placeholder="Tedarikçi, fatura no, tutar, not" label="Fatura ara" className="w-full lg:w-72" />
         <FilterChip active={status === "odenmedi"} onToggle={() => setStatus(status === "odenmedi" ? "tumu" : "odenmedi")} count={filteredUnpaid}>
           Ödenmemiş
         </FilterChip>
@@ -312,7 +485,7 @@ export function InvoicesClient({
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className={cn("min-w-0 sm:w-44 pointer-coarse:h-10", category && "ring-ink/40")}
-            aria-label="Kategori"
+            aria-label="Kategori süzgeci"
           >
             <option value="">Tüm kategoriler</option>
             <option value={GOODS_FILTER}>Mal alımları (mal maliyeti)</option>
@@ -320,12 +493,7 @@ export function InvoicesClient({
               <option key={c}>{c}</option>
             ))}
           </Select>
-          <Select
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className={cn("min-w-0 sm:w-36 pointer-coarse:h-10", month && "ring-ink/40")}
-            aria-label="Ay"
-          >
+          <Select value={month} onChange={(e) => setMonth(e.target.value)} className={cn("min-w-0 sm:w-36 pointer-coarse:h-10", month && "ring-ink/40")} aria-label="Ay">
             <option value="">Tüm aylar</option>
             {[...months].reverse().map((m) => (
               <option key={m} value={m}>
@@ -350,13 +518,25 @@ export function InvoicesClient({
 
       {visible.length ? (
         <>
+          {/* Telefon: masaüstündeki başlık kutusunun karşılığı (sayfadakilerin hepsini seç) */}
+          <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-1 text-xs text-ink-mute md:hidden">
+            <span>{num(pageIds.length)} fatura bu sayfada</span>
+            <button
+              type="button"
+              onClick={() => selectIds(pageIds, !pageAll)}
+              className="min-h-10 cursor-pointer font-medium text-info underline-offset-2 hover:underline"
+            >
+              {pageAll ? "Seçimi kaldır" : "Sayfadakileri seç"}
+            </button>
+          </div>
           {/* Telefon: kart listesi (tablo 375px'e sığmaz, tutarlar görünmez kalırdı) */}
           <ul className="divide-y divide-line-strong/70 border-t border-line md:hidden">
             {paged.slice.map((i) => {
               const { base, note } = splitSupplier(i.supplier);
               const net = netOf(i);
+              const isSel = selectedIds.includes(i.id);
               return (
-                <li key={i.id} className="px-4 py-3">
+                <li key={i.id} className={cn("px-4 py-3 transition-colors", isSel && "bg-surface/70")}>
                   <button type="button" onClick={() => setEditing(i)} className="flex w-full cursor-pointer items-start gap-3 text-left">
                     <Avatar name={base} />
                     <span className="min-w-0 flex-1">
@@ -376,10 +556,13 @@ export function InvoicesClient({
                       <span className="block text-xs text-ink-mute">öd. {tl(i.payable, 2)}</span>
                     </span>
                   </button>
-                  <div className="mt-2 flex items-center gap-2 pl-12">
+                  {noteLine(i, "pl-12")}
+                  <div className="mt-2 flex items-center gap-2">
+                    {/* Seçim kutusu avatar sütununda durur */}
+                    <span className="flex w-10 shrink-0 justify-center">{checkbox(i)}</span>
                     <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                       {statusBadge(i)}
-                      <Badge tone={categoryTone(i.category)}>{i.category}</Badge>
+                      {categoryPicker(i)}
                     </span>
                     <span className="ml-auto flex shrink-0 items-center gap-1.5">
                       <IconButton label="Düzenle" onClick={() => setEditing(i)} className="pointer-coarse:size-10">
@@ -408,11 +591,23 @@ export function InvoicesClient({
               <THead>
                 <tr>
                   <TH sticky>
-                    <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-2">
+                      <label className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-ink/[0.04]" title="Bu sayfadakileri seç">
+                        <input
+                          type="checkbox"
+                          checked={pageAll}
+                          ref={(el) => {
+                            if (el) el.indeterminate = pageSome;
+                          }}
+                          onChange={() => selectIds(pageIds, !pageAll)}
+                          aria-label={pageAll ? "Bu sayfadaki seçimleri kaldır" : "Bu sayfadaki faturaları seç"}
+                          className="size-4 cursor-pointer rounded accent-ink"
+                        />
+                      </label>
                       <SortButton dir={dirOf("tedarikci")} onClick={() => toggleSort("tedarikci")}>
                         Tedarikçi
                       </SortButton>
-                      <InfoTip text="Adın sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” gelir-giderde “Kaldi” altında toplanır. “tahmini” notu turuncu işaretlenir." />
+                      <InfoTip text="Adın sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” gelir-giderde “Kaldi” altında toplanır. Not ya da adında “tahmin” / “varsayım” geçen fatura turuncu “tahmini” işaretlenir. Soldaki kutuyla seçip toplu değiştirin." />
                     </span>
                   </TH>
                   <TH>
@@ -423,7 +618,7 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Kategori
-                      <InfoTip text="Yeşil: mal maliyeti, gelir-giderde tedarikçi bazında. Mavi: komisyon giderleri. Gri: gelir-gider tablosuna girmez, sabit giderlerden izlenir." />
+                      <InfoTip text="Excel'deki açılır liste gibi satırdan değiştirin. Yeşil: mal maliyeti, gelir-giderde tedarikçi bazında. Mavi: komisyon giderleri. Gri: gelir-gider tablosuna girmez, sabit giderlerden izlenir. Paraşüt eşitlemesi kategoriyi korur." />
                     </span>
                   </TH>
                   <TH numeric>
@@ -444,7 +639,7 @@ export function InvoicesClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       Durum
-                      <InfoTip text="“Ödenmedi” rozetine tıklayınca fatura ödendi olarak işaretlenir; bildirimdeki “Geri al” ile geri alınır." />
+                      <InfoTip text="“Ödenmedi” rozetine tıklayınca fatura ödendi olarak işaretlenir; bildirimdeki “Geri al” ile geri alınır. Kısmen ödenmiş Paraşüt faturasında kalan tutar altında yazar." />
                     </span>
                   </TH>
                   <TH className="w-px px-2">
@@ -462,17 +657,37 @@ export function InvoicesClient({
                   const { base, note } = splitSupplier(i.supplier);
                   const net = netOf(i);
                   const second = [i.description, i.invoiceNo ? `No ${i.invoiceNo}` : null].filter(Boolean).join(" · ");
+                  const isSel = selectedIds.includes(i.id);
                   return (
-                    <TR key={i.id} className="cursor-pointer" onClick={() => setEditing(i)}>
-                      <TD sticky className="min-w-48 max-w-80">
+                    <TR key={i.id} className={cn("cursor-pointer", isSel && "bg-surface/70")} onClick={() => setEditing(i)} aria-selected={isSel || undefined}>
+                      <TD sticky className="min-w-56 max-w-96">
                         <div className="flex items-center gap-3">
-                          <Avatar name={base} />
+                          {/* Avatar, satırın üzerine gelince / klavyeyle / seçim varken seçim kutusuna döner (dokunmatikte hep kutu) */}
+                          <span onClick={(e) => e.stopPropagation()} className="relative flex size-9 shrink-0 items-center justify-center">
+                            <span
+                              className={cn(
+                                "flex transition-opacity duration-150",
+                                hasSelection ? "opacity-0" : "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0",
+                              )}
+                            >
+                              <Avatar name={base} />
+                            </span>
+                            <span
+                              className={cn(
+                                "absolute inset-0 flex items-center justify-center transition-opacity duration-150",
+                                hasSelection ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+                              )}
+                            >
+                              {checkbox(i)}
+                            </span>
+                          </span>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-medium break-words text-ink">{base}</span>
                               {sourceBadges(i, note, base)}
                             </div>
                             {second ? <p className="mt-0.5 text-[13px] break-words text-ink-mute">{second}</p> : null}
+                            {noteLine(i)}
                           </div>
                         </div>
                       </TD>
@@ -480,9 +695,7 @@ export function InvoicesClient({
                         {dateTR(i.date)}
                         {i.unpaid && i.dueDate ? <span className="block text-xs text-warn">Vade {dateTR(i.dueDate)}</span> : null}
                       </TD>
-                      <TD>
-                        <Badge tone={categoryTone(i.category)}>{i.category}</Badge>
-                      </TD>
+                      <TD>{categoryPicker(i)}</TD>
                       <TD numeric>
                         <span className="font-semibold">{tl(net, 2)}</span>
                         {/* Kısa tutulur (sütun dar kalsın, tablo 1280px'te sığsın); iskontodan önceki tutar ipucunda */}
@@ -502,7 +715,7 @@ export function InvoicesClient({
                       <TD onClick={(e) => e.stopPropagation()} className="cursor-default px-2">
                         <div className="flex justify-end gap-1">
                           {i.unpaid ? (
-                            <IconButton label="Ödendi olarak işaretle" onClick={() => setPaid(i, true)}>
+                            <IconButton label="Ödendi olarak işaretle" onClick={() => setPaid([i], true)}>
                               <Check size={15} />
                             </IconButton>
                           ) : null}
@@ -520,9 +733,7 @@ export function InvoicesClient({
               </motion.tbody>
               <tfoot>
                 <TFootRow>
-                  <TD colSpan={3}>
-                    {anyFilter ? `Süzülen ${num(visible.length)} fatura toplamı` : `${num(visible.length)} fatura toplamı`}
-                  </TD>
+                  <TD colSpan={3}>{anyFilter ? `Süzülen ${num(visible.length)} fatura toplamı` : `${num(visible.length)} fatura toplamı`}</TD>
                   {/* Satırlarla aynı hassasiyet (kuruşlu); tek faturada toplam satırdakiyle birebir aynı görünsün */}
                   <TD numeric>
                     {tl(sum(netOf), 2)}
@@ -586,11 +797,67 @@ export function InvoicesClient({
         </div>
       )}
 
+      {/* Toplu işlem çubuğu: seçim varken altta yüzer */}
+      <FloatingBar open={selected.length > 0}>
+        <p className="min-w-0 text-sm text-ink" aria-live="polite">
+          <span className="font-semibold tabular">{selected.length}</span> fatura seçildi
+          <span className="text-ink-mute tabular"> · net {tl(selected.reduce((a, i) => a + netOf(i), 0), 2)}</span>
+          {selected.length < visible.length && pageAll ? (
+            <button
+              type="button"
+              onClick={() => selectIds(visible.map((i) => i.id), true)}
+              className="ml-2 cursor-pointer font-medium text-info underline-offset-2 hover:underline pointer-coarse:min-h-10"
+            >
+              Süzülen {visible.length} faturanın tümünü seç
+            </button>
+          ) : null}
+        </p>
+        {/* Telefonda tek satır: seçim kutusu kalan genişliği alır */}
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <Select defaultValue="" onChange={bulkCategory} aria-label="Seçilenlerin kategorisini değiştir" className="min-w-0 flex-1 font-medium text-ink sm:w-auto sm:min-w-44 sm:flex-none">
+            <option value="" disabled>
+              Kategori ata…
+            </option>
+            {INVOICE_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+          {selectedUnpaid.length ? (
+            <Button
+              variant="secondary"
+              title={selectedUnpaid.length === selected.length ? undefined : `Seçilenlerden ödenmemiş ${selectedUnpaid.length} faturayı ödendi yapar`}
+              onClick={() => {
+                setPaid(selected, true);
+                clearSelection();
+              }}
+            >
+              <CircleCheck size={16} /> {selectedUnpaid.length === selected.length ? "Ödendi yap" : `Ödendi yap (${selectedUnpaid.length})`}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setPaid(selected, false);
+                clearSelection();
+              }}
+            >
+              Ödenmedi yap
+            </Button>
+          )}
+          <IconButton label="Seçimi kaldır (Esc)" onClick={clearSelection}>
+            <X size={15} />
+          </IconButton>
+        </div>
+      </FloatingBar>
+
       {editing ? (
         <InvoiceDialog
           key={editing === "new" ? "new" : editing.id}
           invoice={editing === "new" ? null : editing}
           suppliers={suppliers}
+          defaults={defaults}
           onClose={() => setEditing(null)}
           onDelete={(i) => setDeleting(i)}
           parasutCompanyId={parasutCompanyId ?? null}
@@ -602,18 +869,50 @@ export function InvoicesClient({
         onConfirm={confirmDelete}
         title="Fatura silinsin mi?"
         confirmLabel="Faturayı sil"
-        description={deleting ? <DeleteSummary invoice={deleting} /> : null}
+        description={deleting ? <DeleteSummary invoice={deleting} ignoredCount={ignoredCount} /> : null}
       />
     </Card>
   );
 }
 
+/** Satır içi kategori seçimi: rozet görünümlü yerel <select> (telefonda sistem seçicisi açılır) */
+function CategorySelect({ value, onChange, label }: { value: string; onChange: (category: string) => void; label: string }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value !== value) onChange(e.target.value);
+      }}
+      // Satıra tıklamak pencereyi açar; seçimin kendisi açmasın
+      onClick={(e) => e.stopPropagation()}
+      aria-label={label}
+      title="Kategoriyi değiştir"
+      className={cn(
+        // field-sizing: seçili kategorinin genişliği (en uzun seçeneğinki değil)
+        "h-7 max-w-full cursor-pointer appearance-none truncate rounded-full border-0 bg-no-repeat py-0 pr-6 pl-2.5 text-[11px] leading-4 font-medium outline-none [field-sizing:content]",
+        "transition-shadow hover:ring-1 hover:ring-ink/25 focus-visible:ring-2 focus-visible:ring-ink/30 pointer-coarse:h-9",
+        PILL_TONE[categoryTone(value)],
+      )}
+      style={{ backgroundImage: CHEVRON, backgroundPosition: "right 8px center", backgroundSize: "12px" }}
+    >
+      {INVOICE_CATEGORIES.map((c) => (
+        <option key={c} value={c}>
+          {c}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /** Onay penceresindeki özet (ConfirmDialog açıklamayı <p> içine koyar; burada yalnızca satır içi öğeler) */
-function DeleteSummary({ invoice }: { invoice: Invoice }) {
+function DeleteSummary({ invoice, ignoredCount }: { invoice: InvoiceRow; ignoredCount: number }) {
+  const linked = isParasutLinked(invoice);
   return (
     <>
-      Bu işlem geri alınamaz. Gelir-gider tablosu yeniden hesaplanır.
-      {invoice.source === "parasut" ? " Paraşüt'ten gelen fatura sonraki eşitlemede geri gelmez." : ""}
+      Gelir-gider tablosu yeniden hesaplanır. Bildirimdeki “Geri al” ile hemen geri alabilirsiniz.
+      {linked
+        ? ` Paraşüt'ten gelen fatura sonraki eşitlemelerde geri gelmez; sonradan sayfanın altındaki “Silinen Paraşüt faturaları”ndan${ignoredCount ? ` (şu an ${ignoredCount})` : ""} geri alınabilir.`
+        : ""}
       <span className="mt-3 flex items-center gap-3 rounded-2xl bg-panel p-3">
         <Avatar name={splitSupplier(invoice.supplier).base} />
         <span className="min-w-0">
@@ -625,324 +924,5 @@ function DeleteSummary({ invoice }: { invoice: Invoice }) {
         </span>
       </span>
     </>
-  );
-}
-
-/** Boş değil ama sayı olarak okunamayan tutar */
-const badNumber = (t: string) => t.trim() !== "" && parseNumberTR(t) === null;
-
-/** Yerel saatle bugün (YYYY-AA-GG); toISOString UTC verir, gece 03:00'e kadar dünü gösterirdi */
-function localToday() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-const VAT_RATES = ["1", "10", "20"];
-
-/** Kayıtlı faturanın KDV oranına en yakın seçenek (Hesapla düğmesi aynı oranla başlasın) */
-function guessVat(invoice: Invoice | null) {
-  if (!invoice) return "1";
-  const net = netOf(invoice);
-  if (net <= 0 || invoice.payable <= net) return "1";
-  const rate = (invoice.payable / net - 1) * 100;
-  return VAT_RATES.reduce((best, r) => (Math.abs(Number(r) - rate) < Math.abs(Number(best) - rate) ? r : best));
-}
-
-function blankForm(invoice: Invoice | null, keep?: { date: string; category: string }) {
-  return {
-    date: invoice?.date ?? keep?.date ?? localToday(),
-    supplier: invoice?.supplier ?? "",
-    description: invoice?.description ?? "",
-    invoiceNo: invoice?.invoiceNo ?? "",
-    category: invoice?.category ?? keep?.category ?? "Hammadde & İçecek",
-    amount: invoice ? num(invoice.amount, 2, 2) : "",
-    discount: invoice?.discount ? num(invoice.discount, 2, 2) : "0",
-    payable: invoice ? num(invoice.payable, 2, 2) : "",
-    vatRate: guessVat(invoice),
-    unpaid: invoice?.unpaid ?? false,
-    note: invoice?.note ?? "",
-    dueDate: invoice?.dueDate ?? "",
-  };
-}
-
-function InvoiceDialog({
-  invoice,
-  suppliers,
-  onClose,
-  onDelete,
-  parasutCompanyId,
-}: {
-  invoice: Invoice | null;
-  suppliers: string[];
-  onClose: () => void;
-  onDelete: (invoice: Invoice) => void;
-  parasutCompanyId: string | null;
-}) {
-  const [f, setF] = useState(() => blankForm(invoice));
-  const [busy, setBusy] = useState(false);
-  const [tried, setTried] = useState(false);
-  /** Bu pencerede art arda eklenen fatura sayısı ("Kaydet, yenisini ekle") */
-  const [added, setAdded] = useState(0);
-  const supplierRef = useRef<HTMLInputElement>(null);
-  const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
-  const amount = parseNumberTR(f.amount) ?? 0;
-  const discount = parseNumberTR(f.discount) ?? 0;
-  const net = amount - discount;
-  const payable = parseNumberTR(f.payable);
-  const bad = { amount: badNumber(f.amount), discount: badNumber(f.discount), payable: badNumber(f.payable) };
-  const supplierMissing = tried && !f.supplier.trim();
-  const dateMissing = tried && !f.date;
-  const groupedAs = normalizeSupplier(f.supplier);
-  const supplierHint = groupedAs && groupedAs !== f.supplier.trim() ? `Gelir-giderde “${groupedAs}” altında toplanır; parantezdeki not sayılmaz.` : undefined;
-  const withVat = net * (1 + Number(f.vatRate) / 100);
-
-  async function save(again: boolean) {
-    setTried(true);
-    if (!f.supplier.trim()) {
-      supplierRef.current?.focus();
-      return toast.error("Tedarikçi girin");
-    }
-    if (!f.date) return toast.error("Fatura tarihini seçin");
-    if (bad.amount || bad.discount || bad.payable) return toast.error("Tutarları kontrol edin");
-    setBusy(true);
-    keepScroll();
-    let res: Awaited<ReturnType<typeof saveInvoice>>;
-    try {
-      res = await saveInvoice({
-        id: invoice?.id ?? null,
-        date: f.date,
-        supplier: f.supplier,
-        description: f.description,
-        invoiceNo: f.invoiceNo,
-        category: f.category,
-        amount,
-        discount,
-        payable: payable ?? net,
-        unpaid: f.unpaid,
-        note: f.note,
-        dueDate: f.dueDate || null,
-      });
-    } finally {
-      setBusy(false);
-    }
-    if (!res.ok) return toast.error(res.error);
-    toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(payable ?? net, 2)}` });
-    if (!again) return onClose();
-    // Art arda giriş: tarih ve kategori kalır, diğer alanlar boşalır, imleç tedarikçiye döner
-    setF(blankForm(null, { date: f.date, category: f.category }));
-    setTried(false);
-    setAdded((n) => n + 1);
-    requestAnimationFrame(() => supplierRef.current?.focus());
-  }
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    void save(false);
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      size="lg"
-      title={invoice ? "Faturayı düzenle" : "Fatura ekle"}
-      description={
-        added
-          ? `${added} fatura eklendi. Sıradakini girin ya da pencereyi kapatın.`
-          : "Tutarlar faturadaki gibi: mal/hizmet tutarı, iskonto ve KDV dahil ödenecek tutar."
-      }
-      footerStart={
-        invoice ? (
-          <>
-            <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={() => onDelete(invoice)}>
-              <Trash2 size={16} /> Sil
-            </Button>
-            {invoice.externalId && parasutCompanyId ? (
-              <a
-                href={`https://uygulama.parasut.com/${encodeURIComponent(parasutCompanyId)}/fis-faturalar/${encodeURIComponent(invoice.externalId)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-medium text-ink-mute hover:text-ink hover:underline"
-              >
-                Paraşüt&apos;te aç ↗
-              </a>
-            ) : null}
-          </>
-        ) : null
-      }
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose} className="pointer-coarse:h-10">
-            {added ? "Kapat" : "Vazgeç"}
-          </Button>
-          {invoice ? null : (
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => save(true)}
-              title="Kaydeder ve yeni fatura için formu boşaltır"
-              className="pointer-coarse:h-10"
-            >
-              {/* Telefonda üç düğme tek satıra sığsın */}
-              <span className="sm:hidden">Kaydet + yeni</span>
-              <span className="max-sm:hidden">Kaydet, yenisini ekle</span>
-            </Button>
-          )}
-          <Button type="submit" form="invoice-form" disabled={busy} className="pointer-coarse:h-10">
-            {busy ? "Kaydediliyor…" : "Kaydet"}
-          </Button>
-        </>
-      }
-    >
-      {/* Enter ile kaydedilir (not alanında Ctrl/⌘ + Enter) */}
-      <form
-        id="invoice-form"
-        onSubmit={onSubmit}
-        noValidate
-        className="grid gap-x-3 gap-y-4 pb-2 sm:grid-cols-2 pointer-coarse:[&_input]:h-10 pointer-coarse:[&_select]:h-10"
-      >
-        <Field
-          label="Tedarikçi"
-          htmlFor="f-sup"
-          tip="Aynı tedarikçi adını kullanın; gelir-giderde birlikte toplanır. Listeden seçebilirsiniz."
-          hint={supplierHint}
-          error={supplierMissing ? "Tedarikçi girin" : undefined}
-        >
-          <Input
-            ref={supplierRef}
-            id="f-sup"
-            list="supplier-list"
-            value={f.supplier}
-            onChange={(e) => set({ supplier: e.target.value })}
-            aria-invalid={supplierMissing || undefined}
-            autoComplete="off"
-            placeholder="ör. Sütaş"
-            data-autofocus={invoice ? undefined : true}
-          />
-          <datalist id="supplier-list">
-            {suppliers.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </Field>
-        <Field label="Tarih" htmlFor="f-date" error={dateMissing ? "Tarih seçin" : undefined}>
-          <Input id="f-date" type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} aria-invalid={dateMissing || undefined} />
-        </Field>
-        <Field label="Açıklama" htmlFor="f-desc">
-          <Input id="f-desc" value={f.description} onChange={(e) => set({ description: e.target.value })} placeholder="ör. Eylül kira, tatlı, süt" />
-        </Field>
-        <Field label="Fatura no" htmlFor="f-no">
-          <Input id="f-no" value={f.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} autoComplete="off" />
-        </Field>
-        <Field
-          label="Kategori"
-          htmlFor="f-cat"
-          className="sm:col-span-2"
-          hint={
-            GOODS_CATEGORIES.includes(f.category)
-              ? "Mal maliyeti sayılır: gelir-gider tablosunda tedarikçi bazında görünür."
-              : f.category === COMMISSION_CATEGORY
-                ? "Komisyon giderlerine eklenir."
-                : "Gelir-gider tablosuna eklenmez (sabit giderlerden izlenir)."
-          }
-        >
-          <Select id="f-cat" value={f.category} onChange={(e) => set({ category: e.target.value })}>
-            {INVOICE_CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </Select>
-        </Field>
-
-        <fieldset className="grid gap-x-3 gap-y-4 rounded-2xl bg-panel p-4 sm:col-span-2 sm:grid-cols-2">
-          <legend className="sr-only">Tutarlar</legend>
-          <Field label="Mal / hizmet tutarı (₺)" htmlFor="f-amt" tip="KDV hariç, iskontodan önceki tutar" error={bad.amount ? "Geçerli bir sayı girin (ör. 1.250,50)" : undefined}>
-            <NumberInput
-              id="f-amt"
-              value={f.amount}
-              onChange={(e) => set({ amount: e.target.value })}
-              placeholder="0,00"
-              aria-invalid={bad.amount || undefined}
-              className={bad.amount ? undefined : "cell-input"}
-            />
-          </Field>
-          <Field label="İskonto (₺)" htmlFor="f-disc" error={bad.discount ? "Geçerli bir sayı girin" : undefined}>
-            <NumberInput
-              id="f-disc"
-              value={f.discount}
-              onChange={(e) => set({ discount: e.target.value })}
-              onFocus={(e) => e.currentTarget.select()}
-              aria-invalid={bad.discount || undefined}
-              className={bad.discount ? undefined : "cell-input"}
-            />
-          </Field>
-          <Field
-            label="Ödenecek, KDV dahil (₺)"
-            htmlFor="f-pay"
-            className="sm:col-span-2"
-            error={bad.payable ? "Geçerli bir sayı girin" : undefined}
-            hint={
-              payable !== null
-                ? `Net ${tl(net, 2)} · KDV ${tl(payable - net, 2)}`
-                : net
-                  ? `Boş kalırsa net ${tl(net, 2)} yazılır · %${f.vatRate} KDV ile ${tl(withVat, 2)}`
-                  : "Faturadaki genel toplam. “Hesapla” net tutara seçili KDV'yi ekler."
-            }
-          >
-            {/* Telefonda tutar tam satır (38.602,20 gibi değerler kesilmesin), KDV oranı ve Hesapla altında */}
-            <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex">
-              <NumberInput
-                id="f-pay"
-                value={f.payable}
-                onChange={(e) => set({ payable: e.target.value })}
-                placeholder={num(net, 2, 2)}
-                aria-invalid={bad.payable || undefined}
-                className={cn("col-span-2 min-w-0 sm:flex-1", !bad.payable && "cell-input")}
-              />
-              <Select value={f.vatRate} onChange={(e) => set({ vatRate: e.target.value })} className="shrink-0 sm:w-20" aria-label="KDV oranı">
-                {VAT_RATES.map((v) => (
-                  <option key={v} value={v}>
-                    %{v}
-                  </option>
-                ))}
-              </Select>
-              <Button variant="secondary" onClick={() => set({ payable: num(withVat, 2, 2) })} title="Net tutar + seçilen KDV" className="pointer-coarse:h-10">
-                Hesapla
-              </Button>
-            </div>
-          </Field>
-        </fieldset>
-
-        <Field label="Ödeme durumu">
-          <Segmented<"paid" | "unpaid">
-            label="Ödeme durumu"
-            stretch
-            value={f.unpaid ? "unpaid" : "paid"}
-            onChange={(v) => set({ unpaid: v === "unpaid" })}
-            options={[
-              { value: "paid", label: "Ödendi" },
-              { value: "unpaid", label: "Ödenmedi" },
-            ]}
-          />
-        </Field>
-        <Field label="Vade (son ödeme günü)" htmlFor="f-due" hint={f.unpaid ? "Ödenmemişse Ödemeler & hatırlatıcılar'a düşer" : "İsteğe bağlı"}>
-          <Input id="f-due" type="date" value={f.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
-        </Field>
-        <Field label="Not" className="sm:col-span-2" htmlFor="f-note">
-          <Textarea
-            id="f-note"
-            value={f.note}
-            onChange={(e) => set({ note: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                void save(false);
-              }
-            }}
-            rows={2}
-            className="[field-sizing:content] max-h-40"
-          />
-        </Field>
-      </form>
-    </Dialog>
   );
 }

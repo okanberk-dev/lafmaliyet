@@ -21,7 +21,8 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { createElement, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -39,11 +40,12 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import type { ProductStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Size } from "@/lib/calc/types";
-import { SIZE_LABELS } from "@/lib/constants";
+import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
 
+import { compareBy, LIST_QUERY_KEY, menuAverages, productHref } from "./logic";
 import { NewProductDialog } from "./new-product";
 import { priceText } from "./price-text";
 
@@ -78,12 +80,15 @@ type NumKey = keyof Pick<
   ProductRow,
   "price" | "cost" | "unitProfit" | "margin" | "costRatio" | "suggestedPrice" | "soldQty" | "monthProfit" | "net" | "commission" | "totalCost" | "monthNet"
 >;
-type SortKey = NumKey | "name";
+/** Sayısal olmayan sıralamalar: ad, durum (en kötüsü önce), kategori (A → Z), fire */
+type TextKey = "name" | "status" | "category" | "fireRate";
+type SortKey = NumKey | TextKey;
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
+const TEXT_KEYS: TextKey[] = ["name", "status", "category", "fireRate"];
 
 const STATUSES: ProductStatus[] = ["İyi", "Dikkat", "Düşük kâr", "Reçete yok"];
 const SORT_KEYS: SortKey[] = [
-  "name",
+  ...TEXT_KEYS,
   "price",
   "cost",
   "unitProfit",
@@ -114,7 +119,12 @@ const STATUS_DOT: Record<ProductStatus, string> = {
   "Reçete yok": "bg-ink-quiet",
 };
 
-const PAGE_SIZE = 25;
+/** Sayfa boyu seçenekleri (?goster=100 / ?goster=tumu); Excel'deki gibi bütün menü tek sayfada da görülebilir */
+const PAGE_SIZES = [
+  { value: "", label: "50", size: 50 },
+  { value: "100", label: "100", size: 100 },
+  { value: "tumu", label: "Tümü", size: Number.POSITIVE_INFINITY },
+] as const;
 
 /** Kategori adından ikon: aynı kategori her yerde aynı ikon ve tonda */
 function categoryIcon(category: string): LucideIcon {
@@ -132,11 +142,15 @@ function categoryIcon(category: string): LucideIcon {
 
 const sizeLabel = (s: string) => SIZE_LABELS[s as Size] ?? s;
 
-// Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir
-const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category}`;
+// Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir; ürün notu da aranır ("varsayıldı")
+const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category} ${r.note ?? ""}`;
 
-/** Maliyet oranının hedefe göre rengi (Durum rozetiyle aynı eşikler) */
-const ratioClass = (ratio: number, target: number) => (ratio > target + 0.1 ? "text-bad" : ratio > target ? "text-warn" : "text-good");
+/** Maliyet oranının hedefe göre rengi (Durum rozetiyle aynı eşikler); reçetesiz üründe renk yok */
+const ratioClass = (r: Pick<ProductRow, "costRatio" | "status">, target: number) =>
+  r.status === "Reçete yok" ? "text-ink-quiet" : r.costRatio > target + 0.1 ? "text-bad" : r.costRatio > target ? "text-warn" : "text-good";
+
+/** Reçetesiz üründe maliyet oranı ve marj anlamsız (%0 ve ~%97): tire gösterilir */
+const ratioText = (r: Pick<ProductRow, "status">, v: number) => (r.status === "Reçete yok" ? "–" : pct(v));
 
 /** Telefonda tablo başlığı yerine sıralama seçimi */
 const MOBILE_SORTS: { value: string; label: string }[] = [
@@ -145,10 +159,13 @@ const MOBILE_SORTS: { value: string; label: string }[] = [
   { value: "unitProfit.desc", label: "Birim kâr (yüksekten)" },
   { value: "unitProfit.asc", label: "Birim kâr (düşükten)" },
   { value: "costRatio.desc", label: "Maliyet oranı (yüksekten)" },
+  { value: "status.desc", label: "Durum (en kötüsü önce)" },
+  { value: "category.asc", label: "Kategori (A → Z)" },
   { value: "margin.desc", label: "Kâr marjı (yüksekten)" },
   { value: "price.desc", label: "Satış fiyatı (yüksekten)" },
   { value: "soldQty.desc", label: "Satış adedi (çoktan)" },
   { value: "monthProfit.desc", label: "Aylık brüt kâr (yüksekten)" },
+  { value: "fireRate.desc", label: "Zayi / fire (yüksekten)" },
 ];
 
 /** Türkçe Excel'in açtığı CSV: noktalı virgül ayraç, UTF-8 BOM, virgüllü ondalık */
@@ -281,17 +298,24 @@ function Metric({ label, children, className }: { label: ReactNode; children: Re
   );
 }
 
-/** Ürün adı hücresi (tablo ve telefon kartı); telefonda durum rozetleri adın altında */
-function ProductName({ r, compact }: { r: ProductRow; compact?: boolean }) {
+/**
+ * Ürün adı hücresi (tablo ve telefon kartı); telefonda durum rozetleri adın altında. Ad, seçili ayla reçete
+ * kartını açar. Ürün notu (Excel'deki hücre notu) adın yanında ⓘ: bağlantının dışında, tıklamak kartı açmaz.
+ */
+function ProductName({ r, compact, month }: { r: ProductRow; compact?: boolean; month: string }) {
+  const href = productHref(r.id, month);
   return (
-    <Link href={`/panel/urunler/${r.id}`} className={cn("group/name flex min-w-0 gap-3", compact ? "items-start" : "items-center")}>
+    <div className={cn("flex min-w-0 gap-3", compact ? "items-start" : "items-center")}>
       {/* Tabloda karo yalnızca geniş ekranda: 1400px'te ad sütunu yer kazanır, satırlar sarılmaz */}
-      <IconTile tone={toneFor(r.category)} className={compact ? undefined : "hidden 2xl:inline-flex"}>
-        {createElement(categoryIcon(r.category))}
-      </IconTile>
+      <Link href={href} tabIndex={-1} aria-hidden="true" className={cn("shrink-0", compact ? undefined : "hidden 2xl:inline-flex")}>
+        <IconTile tone={toneFor(r.category)}>{createElement(categoryIcon(r.category))}</IconTile>
+      </Link>
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute")}>{r.name}</span>
+          <Link href={href} className={cn("font-semibold break-words hover:underline", r.active ? "text-ink" : "text-ink-mute")}>
+            {r.name}
+          </Link>
+          {r.note ? <InfoTip text={r.note} /> : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
           {r.hasEstimate && !compact ? (
             <Badge tone="amber" dot title="Reçetesinde faturada bulunamayan, tahmini fiyatlı malzeme var">
@@ -314,38 +338,57 @@ function ProductName({ r, compact }: { r: ProductRow; compact?: boolean }) {
           </span>
         ) : null}
       </span>
-    </Link>
+    </div>
   );
 }
 
 export function ProductsTable({
   rows,
   categories,
+  month,
   monthLabel,
   target,
 }: {
   rows: ProductRow[];
   categories: { id: number; name: string }[];
+  /** Seçili ay (YYYY-MM): kart bağlantıları aynı ayı açar */
+  month: string;
   monthLabel: string;
   target: number;
 }) {
   const reduce = useCalmMotion();
-  // Süzgeçler adreste: ?ara=latte&kategori=3&durum=Dikkat,Düşük kâr&pasif=1&sirala=unitProfit.desc
+  // Süzgeçler adreste: ?ara=latte&kategori=3&boy=L&durum=Dikkat,Düşük kâr&pasif=1&sirala=unitProfit.desc&goster=tumu
   // (genel bakıştaki ve ⌘K paletindeki bağlantılar aynı adları kullanır)
   const [q, setQ] = useQueryText("ara");
   const [kategori, setKategori] = useQueryState<string>("kategori", "");
+  const [boy, setBoy] = useQueryState<string>("boy", "");
   const [durum, setDurum] = useQueryState<string>("durum", "");
   const [pasif, setPasif] = useQueryState<string>("pasif", "");
   const [sira, setSira] = useQueryState<string>("sirala", "");
+  const [goster, setGoster] = useQueryState<string>("goster", "");
+  const pageSize = (PAGE_SIZES.find((p) => p.value === goster) ?? PAGE_SIZES[0]).size;
+
+  // Karttaki "← Ürünler" bu süzgeçlere dönsün: listenin adres sorgusu oturumda saklanır (yalnızca bu tarayıcıda)
+  const search = useSearchParams().toString();
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(LIST_QUERY_KEY, search);
+    } catch {
+      // gizli pencere ya da engellenmiş depolama: kart düz bağlantıyla döner
+    }
+  }, [search]);
   const [details, setDetails] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   // Satırlar yalnızca kullanıcı sayfa ya da sıra değiştirince yumuşakça belirir (ilk çizimde değil)
   const [interacted, setInteracted] = useState(false);
 
   const category = categories.some((c) => String(c.id) === kategori) ? Number(kategori) : null;
+  const size = SIZES.includes(boy as Size) ? (boy as Size) : null;
   const statuses = useMemo(() => durum.split(",").filter((s): s is ProductStatus => STATUSES.includes(s as ProductStatus)), [durum]);
   const showInactive = pasif === "1";
   const sort = useMemo(() => parseSort(sira), [sira]);
+  // Sade görünümde gizli bir sütuna göre sıralanınca o sütun da görünür (sıra açıklamasız kalmasın)
+  const col = (k: SortKey) => details || sort?.key === k;
 
   const activeCount = rows.filter((r) => r.active).length;
   const inactiveCount = rows.length - activeCount;
@@ -358,8 +401,14 @@ export function ProductsTable({
   // Durum dışındaki süzgeçler; durum sayaçları bunun üzerinden sayılır
   const base = useMemo(
     () =>
-      rows.filter((r) => (includeInactive || r.active) && (category === null || r.categoryId === category) && matches(searchText(r), q)),
-    [rows, q, category, includeInactive],
+      rows.filter(
+        (r) =>
+          (includeInactive || r.active) &&
+          (category === null || r.categoryId === category) &&
+          (size === null || r.size === size) &&
+          matches(searchText(r), q),
+      ),
+    [rows, q, category, size, includeInactive],
   );
 
   const statusCounts = useMemo(() => {
@@ -374,33 +423,40 @@ export function ProductsTable({
     return m;
   }, [rows, includeInactive]);
 
+  const sizeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) if ((includeInactive || r.active) && (category === null || r.categoryId === category)) m.set(r.size, (m.get(r.size) ?? 0) + 1);
+    return m;
+  }, [rows, includeInactive, category]);
+
   const filtered = useMemo(() => {
     let list = statuses.length ? base.filter((r) => statuses.includes(r.status)) : base;
     if (sort) {
       const d = sort.dir === "asc" ? 1 : -1;
-      list = [...list].sort((a, b) =>
-        sort.key === "name" ? (a.name.localeCompare(b.name, "tr") || a.size.localeCompare(b.size, "tr")) * d : (a[sort.key] - b[sort.key]) * d,
-      );
+      const key = sort.key;
+      // Sıralama kararlı: eşitlikte menü sırası korunur
+      list = [...list].sort((a, b) => (TEXT_KEYS.includes(key as TextKey) ? compareBy(key as TextKey, a, b) : a[key as NumKey] - b[key as NumKey]) * d);
     }
     return list;
   }, [base, statuses, sort]);
 
-  const paged = usePaged(filtered, PAGE_SIZE, `${q}|${category}|${durum}|${includeInactive}|${sira}`);
+  const paged = usePaged(filtered, pageSize, `${q}|${category}|${size}|${durum}|${includeInactive}|${sira}|${pageSize}`);
 
-  // Görünen ürünlerin bu ayki toplamları (tablonun alt satırı ve telefon özeti)
+  // Görünen ürünlerin bu ayki toplamları ve Excel'in "ORTALAMA" satırı (tablonun alt satırı ve telefon özeti)
   const totals = useMemo(
     () => ({
       qty: filtered.reduce((a, r) => a + r.soldQty, 0),
       profit: filtered.reduce((a, r) => a + r.monthProfit, 0),
       net: filtered.reduce((a, r) => a + r.monthNet, 0),
+      avg: menuAverages(filtered),
     }),
     [filtered],
   );
 
-  // Sayısal sütunda ilk tık büyükten küçüğe, adda A→Z; üçüncü tık sıralamayı kaldırır
+  // Sayısal sütunda ve durumda ilk tık büyükten küçüğe, ad ve kategoride A→Z; üçüncü tık sıralamayı kaldırır
   const toggleSort = (key: SortKey) => {
     setInteracted(true);
-    const firstDir = key === "name" ? "asc" : "desc";
+    const firstDir = key === "name" || key === "category" ? "asc" : "desc";
     const next: Sort = sort?.key !== key ? { key, dir: firstDir } : sort.dir === firstDir ? { key, dir: firstDir === "asc" ? "desc" : "asc" } : null;
     setSira(sortParam(next));
   };
@@ -411,7 +467,16 @@ export function ProductsTable({
     setDurum(next.join(","));
   };
 
-  const head = (key: NumKey, label: string, info?: string, sub?: string) => (
+  /** Başlığın altındaki küçük ikinci sıralama (ör. "Maliyet oranı" altında "durum") */
+  const subSort = (key: TextKey, label: string, numeric?: boolean) => (
+    <span className="block text-xs leading-4 [&_button]:font-normal [&_button]:text-ink-mute [&_button]:hover:text-ink">
+      <SortButton numeric={numeric} dir={dirOf(key)} onClick={() => toggleSort(key)}>
+        {label}
+      </SortButton>
+    </span>
+  );
+
+  const head = (key: SortKey, label: string, info?: string, sub?: ReactNode) => (
     <TH numeric>
       <span className="inline-flex items-center gap-1.5">
         <SortButton numeric dir={dirOf(key)} onClick={() => toggleSort(key)}>
@@ -419,14 +484,14 @@ export function ProductsTable({
         </SortButton>
         {info ? <InfoTip text={info} /> : null}
       </span>
-      {sub ? <span className="block text-xs leading-4 font-normal text-ink-mute">{sub}</span> : null}
+      {typeof sub === "string" ? <span className="block text-xs leading-4 font-normal text-ink-mute">{sub}</span> : sub}
     </TH>
   );
 
-  const anyFilter = q.trim() !== "" || category !== null || statuses.length > 0 || showInactive;
+  const anyFilter = q.trim() !== "" || category !== null || size !== null || statuses.length > 0 || showInactive;
   const clearFilters = () => {
     setQ("");
-    clearQuery(["ara", "kategori", "durum", "pasif"]);
+    clearQuery(["ara", "kategori", "boy", "durum", "pasif"]);
   };
 
   const exportCsv = () => {
@@ -449,6 +514,7 @@ export function ProductsTable({
       `${monthLabel} brüt kâr`,
       `${monthLabel} net ciro`,
       "Fire (%)",
+      "Not",
       "Tahmini malzeme",
     ];
     const lines = filtered.map((r) => [
@@ -470,6 +536,7 @@ export function ProductsTable({
       num(r.monthProfit, 2),
       num(r.monthNet, 2),
       num(r.fireRate * 100, 1) + (r.fireOverridden ? " (özel)" : ""),
+      r.note ?? "",
       r.hasEstimate ? "Evet" : "",
     ]);
     downloadCsv(`urunler-${slugify(monthLabel)}.csv`, [header, ...lines]);
@@ -486,7 +553,7 @@ export function ProductsTable({
       <CardHeader
         icon={<Coffee />}
         title="Ürün listesi"
-        description="Satış fiyatına tıklayıp değiştirin; Enter kaydeder, Esc vazgeçer. Ürün adı reçete kartını açar."
+        description="Satış fiyatına tıklayıp değiştirin; Enter kaydeder, Esc vazgeçer. Ürün adı reçete kartını bu ayla açar."
         meta={
           <>
             <span>Aktif</span>
@@ -551,13 +618,27 @@ export function ProductsTable({
         <Select
           value={category ?? ""}
           onChange={(e) => setKategori(e.target.value)}
-          className={cn("w-full sm:w-auto sm:min-w-48 pointer-coarse:h-10", category !== null && "ring-ink/40")}
+          // Telefonda kategori ve boy yan yana (iki seçim alt alta yer kaplamasın)
+          className={cn("w-[calc(58%-0.25rem)] sm:w-auto sm:min-w-48 pointer-coarse:h-10", category !== null && "ring-ink/40")}
           aria-label="Kategori"
         >
           <option value="">Tüm kategoriler</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name} ({categoryCounts.get(c.id) ?? 0})
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={size ?? ""}
+          onChange={(e) => setBoy(e.target.value)}
+          className={cn("w-[calc(42%-0.25rem)] sm:w-auto pointer-coarse:h-10", size !== null && "ring-ink/40")}
+          aria-label="Boy"
+        >
+          <option value="">Tüm boylar</option>
+          {SIZES.map((x) => (
+            <option key={x} value={x}>
+              {SIZE_LABELS[x]} ({sizeCounts.get(x) ?? 0})
             </option>
           ))}
         </Select>
@@ -603,25 +684,27 @@ export function ProductsTable({
                     <SortButton dir={dirOf("name")} onClick={() => toggleSort("name")}>
                       Ürün
                     </SortButton>
+                    {/* Hücredeki ikinci satır "boy · kategori": kategoriye göre de sıralanır */}
+                    {subSort("category", "kategori")}
                   </TH>
                   {head("price", "Satış fiyatı", "KDV dahil menü fiyatı. Üzerine tıklayıp değiştirebilirsiniz; Enter ile kaydedilir.")}
-                  {details ? head("net", "Net satış", "Satış fiyatı ÷ (1 + KDV). Devlete ödenecek KDV çıktıktan sonra kasanıza kalan.") : null}
-                  {details ? head("commission", "POS kom.", "Satış fiyatı × banka komisyonu × kartlı satış oranı. Nakitte komisyon yoktur.") : null}
+                  {col("net") ? head("net", "Net satış", "Satış fiyatı ÷ (1 + KDV). Devlete ödenecek KDV çıktıktan sonra kasanıza kalan.") : null}
+                  {col("commission") ? head("commission", "POS kom.", "Satış fiyatı × banka komisyonu × kartlı satış oranı. Nakitte komisyon yoktur.") : null}
                   {head("cost", "Maliyet", "Reçete kartındaki malzeme + ambalaj + fire payı (KDV hariç).")}
-                  {details ? head("totalCost", "Toplam maliyet", "Malzeme + ambalaj + POS komisyonu.") : null}
+                  {col("totalCost") ? head("totalCost", "Toplam maliyet", "Malzeme + ambalaj + POS komisyonu.") : null}
                   {head("unitProfit", "Birim kâr", "Net satış − toplam maliyet. Bir adet satınca kira/personel öncesi elinize kalan.")}
                   {head(
                     "costRatio",
                     "Maliyet oranı",
-                    `Malzeme maliyeti ÷ net satış (food cost). Hedef ≤ %${num(target * 100)}. Altındaki durum: İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası, Reçete yok = reçete kartı boş.`,
-                    "ve durum",
+                    `Malzeme maliyeti ÷ net satış (food cost). Hedef ≤ %${num(target * 100)}. Altındaki durum: İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası, Reçete yok = reçete kartı boş. "durum"a tıklayınca en kötüsü önce sıralanır.`,
+                    subSort("status", "ve durum", true),
                   )}
                   {head("margin", "Kâr marjı", "Birim kâr ÷ net satış.")}
                   {head("suggestedPrice", "Önerilen fiyat", "Maliyetin hedef orana denk geldiği KDV dahil fiyat, 5 ₺'ye yuvarlanmış. Ok işareti: fiyatınız bunun altında.")}
                   {head("soldQty", "Adet", "Satış raporundan bu ürünle eşleşen adet.", monthLabel)}
                   {head("monthProfit", "Brüt kâr", "Birim kâr × satış adedi.", monthLabel)}
-                  {details ? head("monthNet", "Net ciro", "Net satış × satış adedi.", monthLabel) : null}
-                  {details ? <TH numeric>Fire</TH> : null}
+                  {col("monthNet") ? head("monthNet", "Net ciro", "Net satış × satış adedi.", monthLabel) : null}
+                  {col("fireRate") ? head("fireRate", "Fire", "Zayi / fire oranı. (özel) = reçete kartında bu ürüne özel oran; yoksa Ayarlar'daki genel oran.") : null}
                   <TH className="w-px">
                     <span className="sr-only">Eylemler</span>
                   </TH>
@@ -638,27 +721,27 @@ export function ProductsTable({
                   return (
                     <TR key={r.id}>
                       <TD sticky className="max-w-[15rem] min-w-48">
-                        <ProductName r={r} />
+                        <ProductName r={r} month={month} />
                       </TD>
                       <TD numeric>
                         <PriceCell key={`${r.id}:${r.price}`} row={r} />
                       </TD>
-                      {details ? <TD numeric>{tl(r.net, 2)}</TD> : null}
-                      {details ? <TD numeric>{tl(r.commission, 2)}</TD> : null}
+                      {col("net") ? <TD numeric>{tl(r.net, 2)}</TD> : null}
+                      {col("commission") ? <TD numeric>{tl(r.commission, 2)}</TD> : null}
                       <TD numeric>{tl(r.cost, 2)}</TD>
-                      {details ? <TD numeric>{tl(r.totalCost, 2)}</TD> : null}
+                      {col("totalCost") ? <TD numeric>{tl(r.totalCost, 2)}</TD> : null}
                       <TD numeric className="font-medium">
-                        <Signed value={r.unitProfit}>{tl(r.unitProfit, 2)}</Signed>
+                        {r.status === "Reçete yok" ? <span className="text-ink-quiet">–</span> : <Signed value={r.unitProfit}>{tl(r.unitProfit, 2)}</Signed>}
                       </TD>
                       {/* Durum maliyet oranından gelir: ikisi aynı hücrede, tablo dar ekranda da sığsın */}
                       <TD numeric>
-                        <span className={cn("font-medium", ratioClass(r.costRatio, target))}>{pct(r.costRatio)}</span>
+                        <span className={cn("font-medium", ratioClass(r, target))}>{ratioText(r, r.costRatio)}</span>
                         <span className="mt-1 flex justify-end">
                           <StatusBadge status={r.status} />
                         </span>
                       </TD>
                       <TD numeric className="text-ink-soft">
-                        {pct(r.margin)}
+                        {ratioText(r, r.margin)}
                       </TD>
                       <TD numeric>
                         <span
@@ -676,16 +759,16 @@ export function ProductsTable({
                       </TD>
                       <TD numeric>{r.soldQty ? num(r.soldQty) : <span className="text-ink-quiet">0</span>}</TD>
                       <TD numeric>{r.soldQty ? <Signed value={r.monthProfit}>{tl(r.monthProfit)}</Signed> : <span className="text-ink-quiet">–</span>}</TD>
-                      {details ? <TD numeric>{r.soldQty ? tl(r.monthNet) : <span className="text-ink-quiet">–</span>}</TD> : null}
-                      {details ? (
+                      {col("monthNet") ? <TD numeric>{r.soldQty ? tl(r.monthNet) : <span className="text-ink-quiet">–</span>}</TD> : null}
+                      {col("fireRate") ? (
                         <TD numeric>
-                          {pct(r.fireRate, 0)}
+                          {pct(r.fireRate, 1)}
                           {r.fireOverridden ? <span className="ml-1 text-xs text-ink-mute">(özel)</span> : null}
                         </TD>
                       ) : null}
                       <TD>
                         <div className="flex justify-end">
-                          <IconLink href={`/panel/urunler/${r.id}`} label={r.lineCount ? "Reçete kartını aç" : "Reçeteyi girin"}>
+                          <IconLink href={productHref(r.id, month)} label={r.lineCount ? "Reçete kartını aç" : "Reçeteyi girin"}>
                             {r.lineCount ? <FileText size={15} /> : <FilePlus2 size={15} />}
                           </IconLink>
                         </div>
@@ -699,13 +782,28 @@ export function ProductsTable({
                   <TD sticky className="font-semibold whitespace-nowrap">
                     Görünen {num(filtered.length)} ürün
                   </TD>
-                  <TD colSpan={details ? 9 : 6} />
+                  <TD colSpan={3 + Number(col("net")) + Number(col("commission")) + Number(col("totalCost"))} />
+                  {/* Excel Ürün Kârlılık satır 134 "ORTALAMA": basit ortalama, her ürün bir oy */}
+                  <TD numeric>
+                    <span className="inline-flex items-center gap-1">
+                      <InfoTip
+                        text={`Görünen ürünlerin basit ortalaması (Excel Ürün Kârlılık, TOPLAM / ORTALAMA satırı). Reçetesi olmayan ürün katılmaz${
+                          totals.avg.count !== filtered.length ? ` (${num(filtered.length - totals.avg.count)} ürün dışarıda)` : ""
+                        }. Satışa göre ağırlıklı marj üstteki brüt kâr kartında.`}
+                      />
+                      <span className="text-xs font-normal text-ink-mute">ort.</span> {pct(totals.avg.costRatio)}
+                    </span>
+                  </TD>
+                  <TD numeric>
+                    <span className="text-xs font-normal text-ink-mute">ort.</span> {pct(totals.avg.margin)}
+                  </TD>
+                  <TD />
                   <TD numeric>{num(totals.qty)} adet</TD>
                   <TD numeric>
                     <Signed value={totals.profit}>{tl(totals.profit)}</Signed>
                   </TD>
-                  {details ? <TD numeric>{tl(totals.net)}</TD> : null}
-                  <TD colSpan={details ? 2 : 1} />
+                  {col("monthNet") ? <TD numeric>{tl(totals.net)}</TD> : null}
+                  <TD colSpan={1 + Number(col("fireRate"))} />
                 </TFootRow>
               </tfoot>
             </Table>
@@ -723,18 +821,18 @@ export function ProductsTable({
             {paged.slice.map((r) => (
               <li key={r.id} className="px-3 py-3.5">
                 <div className="flex items-start justify-between gap-3">
-                  <ProductName r={r} compact />
+                  <ProductName r={r} compact month={month} />
                   <PriceCell key={`${r.id}:${r.price}`} row={r} className="shrink-0" />
                 </div>
                 <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2">
                   <Metric label="Maliyet">{tl(r.cost, 2)}</Metric>
                   <Metric label="Birim kâr">
-                    <Signed value={r.unitProfit}>{tl(r.unitProfit, 2)}</Signed>
+                    {r.status === "Reçete yok" ? <span className="text-ink-quiet">–</span> : <Signed value={r.unitProfit}>{tl(r.unitProfit, 2)}</Signed>}
                   </Metric>
-                  <Metric label="Maliyet oranı" className={ratioClass(r.costRatio, target)}>
-                    {pct(r.costRatio)}
+                  <Metric label="Maliyet oranı" className={ratioClass(r, target)}>
+                    {ratioText(r, r.costRatio)}
                   </Metric>
-                  <Metric label="Kâr marjı">{pct(r.margin)}</Metric>
+                  <Metric label="Kâr marjı">{ratioText(r, r.margin)}</Metric>
                   <Metric label="Önerilen" className={r.price < r.suggestedPrice ? "font-semibold" : "text-ink-soft"}>
                     {r.price < r.suggestedPrice ? (
                       <>
@@ -752,22 +850,20 @@ export function ProductsTable({
                       </Signed>
                     ) : null}
                   </Metric>
-                  {details ? (
-                    <>
-                      <Metric label="Net satış">{tl(r.net, 2)}</Metric>
-                      <Metric label="POS kom.">{tl(r.commission, 2)}</Metric>
-                      <Metric label="Toplam maliyet">{tl(r.totalCost, 2)}</Metric>
-                      <Metric label="Net ciro">{r.soldQty ? tl(r.monthNet) : "–"}</Metric>
-                      <Metric label="Fire">
-                        {pct(r.fireRate, 0)}
-                        {r.fireOverridden ? <span className="ml-1 text-xs font-normal text-ink-mute">(özel)</span> : null}
-                      </Metric>
-                    </>
+                  {col("net") ? <Metric label="Net satış">{tl(r.net, 2)}</Metric> : null}
+                  {col("commission") ? <Metric label="POS kom.">{tl(r.commission, 2)}</Metric> : null}
+                  {col("totalCost") ? <Metric label="Toplam maliyet">{tl(r.totalCost, 2)}</Metric> : null}
+                  {col("monthNet") ? <Metric label="Net ciro">{r.soldQty ? tl(r.monthNet) : "–"}</Metric> : null}
+                  {col("fireRate") ? (
+                    <Metric label="Fire">
+                      {pct(r.fireRate, 1)}
+                      {r.fireOverridden ? <span className="ml-1 text-xs font-normal text-ink-mute">(özel)</span> : null}
+                    </Metric>
                   ) : null}
                 </dl>
                 {!r.lineCount ? (
                   <Link
-                    href={`/panel/urunler/${r.id}`}
+                    href={productHref(r.id, month)}
                     className="mt-2.5 inline-flex min-h-10 items-center gap-1.5 text-[13px] font-medium text-info hover:underline"
                   >
                     <FilePlus2 size={15} aria-hidden="true" /> Reçeteyi girin
@@ -776,25 +872,51 @@ export function ProductsTable({
               </li>
             ))}
           </motion.ul>
-          <p className="mx-5 mb-1 flex flex-wrap justify-between gap-x-3 border-t border-line-strong pt-3 text-[13px] text-ink-mute sm:hidden">
-            <span>Görünen {num(filtered.length)} ürün</span>
-            <span className="tabular">
-              {monthLabel}: {num(totals.qty)} adet ·{" "}
-              <Signed value={totals.profit} className="font-semibold text-ink">
-                {tl(totals.profit)}
-              </Signed>{" "}
-              brüt kâr
-            </span>
-          </p>
+          <div className="mx-5 mb-1 space-y-0.5 border-t border-line-strong pt-3 text-[13px] text-ink-mute sm:hidden">
+            <p className="flex flex-wrap justify-between gap-x-3">
+              <span>Görünen {num(filtered.length)} ürün</span>
+              <span className="tabular">
+                {monthLabel}: {num(totals.qty)} adet ·{" "}
+                <Signed value={totals.profit} className="font-semibold text-ink">
+                  {tl(totals.profit)}
+                </Signed>{" "}
+                brüt kâr
+              </span>
+            </p>
+            <p className="tabular">
+              Ortalama maliyet oranı <span className="font-medium text-ink">{pct(totals.avg.costRatio)}</span> · kâr marjı{" "}
+              <span className="font-medium text-ink">{pct(totals.avg.margin)}</span>
+            </p>
+          </div>
 
-          {/* Dokunmatikte sayfa düğmeleri 40px (paylaşılan bileşen 36px) */}
-          <Pagination
-            page={paged.page}
-            pageCount={paged.pageCount}
-            onChange={onPage}
-            unit="ürün"
-            className="border-t border-line pointer-coarse:[&_button]:h-10 pointer-coarse:[&_button]:min-w-10"
-          />
+          {/* Sayfalama ve sayfa boyu; dokunmatikte sayfa düğmeleri 40px (paylaşılan bileşen 36px) */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 border-t border-line pr-5">
+            <Pagination
+              page={paged.page}
+              pageCount={paged.pageCount}
+              onChange={onPage}
+              unit="ürün"
+              className="min-w-0 flex-1 pointer-coarse:[&_button]:h-10 pointer-coarse:[&_button]:min-w-10"
+            />
+            <label className="ml-auto inline-flex items-center gap-2 py-3 pl-5 text-[13px] text-ink-mute">
+              Sayfada
+              <Select
+                value={goster}
+                onChange={(e) => {
+                  setInteracted(true);
+                  setGoster(e.target.value);
+                }}
+                className="w-24 pointer-coarse:h-10"
+                aria-label="Sayfada gösterilen ürün sayısı"
+              >
+                {PAGE_SIZES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
         </>
       ) : (
         <div className="flex min-h-80 items-center justify-center">

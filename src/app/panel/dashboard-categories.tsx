@@ -7,7 +7,7 @@ import { useState } from "react";
 import { HBarChart } from "@/components/charts";
 import { CardHeader, Well } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/icon-tile";
-import { EmptyState } from "@/components/ui/misc";
+import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import type { CategoryStat } from "@/lib/calc/insights";
@@ -16,6 +16,9 @@ import { cn } from "@/lib/utils";
 
 type SortKey = "name" | "count" | "avgMargin" | "avgUnitProfit" | "avgCostRatio" | "soldQty" | "weightedMargin";
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
+
+/** Satış adedine bağlı sütunlar (ayın satış listesinden) */
+const SALES_COLUMNS = new Set<SortKey>(["soldQty", "weightedMargin"]);
 
 const COLUMNS: { key: Exclude<SortKey, "name">; label: string }[] = [
   { key: "count", label: "Ürün" },
@@ -29,8 +32,23 @@ const COLUMNS: { key: Exclude<SortKey, "name">; label: string }[] = [
 /**
  * Genel bakış · Kategoriler sekmesi: sıralanabilir tablo (ilk tıklamada büyükten küçüğe, adda A→Z;
  * üçüncü tıklama menü sırasına döner) ya da kategori marjı grafiği. Altta menünün toplamı.
+ * `salesMonth`: satış adetleri seçili aydan değil başka bir aydan geliyorsa o ayın kısa adı ("Eyl 2026");
+ * satış sütunlarının başlığına eklenir, rakamın hangi aya ait olduğu sessizce kaybolmaz.
  */
-export function CategoriesPanel({ cats, target, description }: { cats: CategoryStat[]; target: number; description: string }) {
+export function CategoriesPanel({
+  cats,
+  target,
+  description,
+  salesMonth,
+  menu,
+}: {
+  cats: CategoryStat[];
+  target: number;
+  description: string;
+  salesMonth?: string | null;
+  /** "Bütün menü" ortalamaları (reçeteli ürünlerin basit ortalaması, Excel Ürün Kârlılık satır 134) */
+  menu?: { count: number; margin: number | null; costRatio: number | null; unitProfit: number | null };
+}) {
   const [sort, setSort] = useState<Sort>(null);
   const [view, setView] = useState<"tablo" | "grafik">("tablo");
 
@@ -115,6 +133,7 @@ export function CategoriesPanel({ cats, target, description }: { cats: CategoryS
                     <TH key={c.key} numeric aria-sort={ariaSort(c.key)}>
                       <SortButton numeric dir={dirOf(c.key)} onClick={() => toggle(c.key)}>
                         {c.label}
+                        {salesMonth && SALES_COLUMNS.has(c.key) ? <span className="font-normal text-ink-mute"> · {salesMonth}</span> : null}
                       </SortButton>
                     </TH>
                   ))}
@@ -154,17 +173,18 @@ export function CategoriesPanel({ cats, target, description }: { cats: CategoryS
               </tbody>
               <tfoot>
                 <TFootRow>
-                  <TD sticky>Bütün menü</TD>
+                  <TD sticky>
+                    <span className="inline-flex items-center gap-1.5">
+                      Bütün menü
+                      {menu && menu.count !== totalCount ? (
+                        <InfoTip text={`Ortalamalar reçetesi olan ${num(menu.count)} ürünün basit ortalaması (Excel Ürün Kârlılık, ORTALAMA satırı); reçetesi olmayan ${num(totalCount - menu.count)} ürün katılmaz.`} />
+                      ) : null}
+                    </span>
+                  </TD>
                   <TD numeric>{num(totalCount)}</TD>
-                  <TD numeric className="font-normal text-ink-mute">
-                    –
-                  </TD>
-                  <TD numeric className="font-normal text-ink-mute">
-                    –
-                  </TD>
-                  <TD numeric className="font-normal text-ink-mute">
-                    –
-                  </TD>
+                  <TD numeric className={cn(menu?.margin == null && "font-normal text-ink-mute")}>{menu?.margin != null ? pct(menu.margin) : "–"}</TD>
+                  <TD numeric className={cn(menu?.unitProfit == null && "font-normal text-ink-mute")}>{menu?.unitProfit != null ? tl(menu.unitProfit, 2) : "–"}</TD>
+                  <TD numeric className={cn(menu?.costRatio == null && "font-normal text-ink-mute")}>{menu?.costRatio != null ? pct(menu.costRatio) : "–"}</TD>
                   <TD numeric>{num(totalQty)}</TD>
                   <TD numeric>{totalRevenue ? pct(totalProfit / totalRevenue) : "–"}</TD>
                 </TFootRow>

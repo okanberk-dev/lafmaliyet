@@ -158,7 +158,9 @@ export const salesLines = pgTable(
 
 /** POS ürün adı → menü ürünü eşleştirme hafızası (her ay yeniden eşleştirmemek için) */
 export const posMappings = pgTable("pos_mappings", {
-  posName: text("pos_name").primaryKey(), // normalize edilmiş (büyük harf, tek boşluk)
+  // Eşleştirme anahtarı: posMatchKey (tr büyük harf, tek boşluk, İ→I, ’‘`´→'). Eski kayıtlar normalizePosName ile
+  // yazıldı; createPosMappingIndex iki tarafa da posMatchKey uyguladığı için taşıma gerekmez (src/lib/calc/pos-paste.ts).
+  posName: text("pos_name").primaryKey(),
   productId: integer("product_id").references(() => products.id, { onDelete: "cascade" }),
   isService: boolean("is_service").notNull().default(false),
   updatedAt: updatedAt(),
@@ -199,14 +201,36 @@ export const invoices = pgTable(
 );
 
 // ---------------------------------------------------------------- Personel & giderler
+// Geçmiş aylar korunur: netSalary/extras ve period/amount ilk sürümden ÖNCEKİ değerlerdir (taban);
+// sonraki değişiklikler *_versions tablolarında "şu aydan itibaren" satırı olarak durur.
+// startMonth / endMonth (YYYY-MM, boş = sınırsız) kalemin hangi aylarda hesaba girdiğini belirler.
+// active yalnızca geriye dönük uyumluluk içindir: active = endMonth boş ya da endMonth >= bu ay.
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   netSalary: doublePrecision("net_salary").notNull().default(0),
   extras: doublePrecision("extras").notNull().default(0),
   active: boolean("active").notNull().default(true),
+  startMonth: text("start_month"),
+  endMonth: text("end_month"),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+/** Personel maaş değişiklikleri: fromMonth ayından itibaren geçerli net maaş ve ek ödemeler */
+export const staffVersions = pgTable(
+  "staff_versions",
+  {
+    id: serial("id").primaryKey(),
+    staffId: integer("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    fromMonth: text("from_month").notNull(),
+    netSalary: doublePrecision("net_salary").notNull().default(0),
+    extras: doublePrecision("extras").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("staff_versions_staff_month_uq").on(t.staffId, t.fromMonth)],
+);
 
 export const fixedExpenses = pgTable("fixed_expenses", {
   id: serial("id").primaryKey(),
@@ -216,8 +240,26 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   amount: doublePrecision("amount").notNull().default(0),
   note: text("note"),
   active: boolean("active").notNull().default(true),
+  startMonth: text("start_month"),
+  endMonth: text("end_month"),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+/** Sabit gider tutar değişiklikleri: fromMonth ayından itibaren geçerli dönem ve tutar */
+export const fixedExpenseVersions = pgTable(
+  "fixed_expense_versions",
+  {
+    id: serial("id").primaryKey(),
+    fixedExpenseId: integer("fixed_expense_id")
+      .notNull()
+      .references(() => fixedExpenses.id, { onDelete: "cascade" }),
+    fromMonth: text("from_month").notNull(),
+    period: text("period", { enum: ["aylik", "gunluk", "haftalik", "yillik"] }).notNull().default("aylik"),
+    amount: doublePrecision("amount").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("fixed_expense_versions_item_month_uq").on(t.fixedExpenseId, t.fromMonth)],
+);
 
 export const investments = pgTable("investments", {
   id: serial("id").primaryKey(),
@@ -235,6 +277,7 @@ export const pnlEntries = pgTable(
     month: text("month").notNull(),
     rowKey: text("row_key").notNull(),
     amount: doublePrecision("amount").notNull(),
+    /** Hücre notu (ör. "makine servisi"); Excel'deki hücre açıklamasının karşılığı */
     note: text("note"),
     updatedAt: updatedAt(),
   },
@@ -251,6 +294,8 @@ export const stockCounts = pgTable(
       .notNull()
       .references(() => ingredients.id, { onDelete: "cascade" }),
     qty: doublePrecision("qty").notNull(),
+    /** Sayıldığı andaki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1); sayım birimi sonradan değişse de eski değer korunur */
+    factor: doublePrecision("factor"),
     countedBy: text("counted_by"),
     updatedAt: updatedAt(),
   },

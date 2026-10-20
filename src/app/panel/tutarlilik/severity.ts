@@ -29,3 +29,40 @@ export const SEVERITY: Record<Exclude<Severity, "none">, { label: string; range:
   diff: { label: "Fark var", range: "1,15–1,5×", hint: "stok veya fire olabilir", tone: "amber", bar: "bg-warn" },
   big: { label: "Büyük fark", range: "> 1,5×", hint: "reçete, fire ya da ikram kontrol edilmeli", tone: "red", bar: "bg-bad" },
 };
+
+/** Oranı okumak için Excel'in E14 notundaki rehber (lejant ve ipuçlarında aynı cümleler) */
+export const RATIO_GUIDE = {
+  below1: "1×'in altı = alınandan fazla kullanıldı; önceki ayın stoğundan harcanmış.",
+  bottles: "Büyük şişeli sos, püre ve şuruplar birkaç ay yettiği için tek aylık oranları yüksek çıkabilir.",
+  fastMovers: "Asıl bakılacaklar hızlı tükenenler: espresso, süt, dondurma, tatlılar, şişe su.",
+};
+
+/** Tablo satırının stok karşılaştırması (insights.consistency ile aynı adlar) */
+export type StockCheck = "complete" | "needsPurchase" | "noCount";
+
+export interface ScopeRow {
+  purchased: number | null;
+  stock: StockCheck;
+  varianceAmount: number | null;
+  diffAmount: number | null;
+}
+
+/**
+ * Tablonun varsayılan kapsamı: alımı girilen ya da iki ayı sayılan malzemeler (karşılaştırılacak bir şeyi olanlar).
+ * Hiçbiri yoksa bütün satırlar. `hidden` = yalnızca reçete kullanımı olan, "Alımı girilmeyenler" ile açılan satırlar.
+ * Sapma toplamı yalnızca stok karşılaştırması tamam olan satırlardan gelir; bu yüzden varsayılan alt toplam
+ * sayfadaki "Sayım sapması" ile aynıdır.
+ */
+export function tableScope<T extends ScopeRow>(rows: T[], showAll: boolean): { scope: T[]; focus: T[]; hidden: number } {
+  const focus = rows.filter((r) => r.purchased !== null || r.stock !== "noCount");
+  const scope = showAll || !focus.length ? rows : focus;
+  return { scope, focus, hidden: rows.length - focus.length };
+}
+
+/** Görünen satırların fark ve sapma toplamı (boş değerler 0) */
+export function scopeTotals(rows: ScopeRow[]): { diff: number; variance: number } {
+  return {
+    diff: rows.reduce((a, r) => a + (r.diffAmount ?? 0), 0),
+    variance: rows.reduce((a, r) => a + (r.stock === "complete" ? (r.varianceAmount ?? 0) : 0), 0),
+  };
+}

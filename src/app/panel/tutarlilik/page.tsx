@@ -124,15 +124,32 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           label="Sayım sapması"
           value={c.hasStockComparison ? <CountUp value={c.totalVariance} kind="tl" /> : "–"}
           tone={c.hasStockComparison && c.totalVariance > 0 ? "bad" : "default"}
-          info="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) ile reçeteye göre kullanımın farkı × birim maliyet. Pozitif = fire, ikram, porsiyon kaçağı."
+          info="Gerçek tüketim (geçen ay sayımı + alınan − bu ay sayımı) ile reçeteye göre kullanımın farkı × birim maliyet. Yalnızca iki ayı sayılan ve bu ayın alımı girilen malzemeler toplanır; alım girilmeyen 0 sayılmaz. Pozitif = fire, ikram, porsiyon kaçağı."
           sub={
-            c.hasStockComparison ? (
-              "Gerçek tüketim − reçeteye göre"
-            ) : (
-              <Link href={`/panel/sayim?ay=${month}`} className="-my-3 inline-block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
-                İki ayın sayımı gerekli
-              </Link>
-            )
+            <>
+              {c.hasStockComparison ? (
+                "Gerçek tüketim − reçeteye göre"
+              ) : c.hasCounts ? (
+                "İki ayın sayımı var; alım miktarı gerekli"
+              ) : (
+                <Link href={`/panel/sayim?ay=${month}`} className="-my-3 inline-block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                  İki ayın sayımı gerekli
+                </Link>
+              )}
+              {c.needsPurchaseCount ? (
+                <Link
+                  href={`/panel/tutarlilik?ay=${month}&eksik=1`}
+                  className="-my-1 block py-1 font-medium text-warn underline underline-offset-2 hover:text-ink"
+                >
+                  {num(c.needsPurchaseCount)} malzemede alım girilmeli
+                </Link>
+              ) : null}
+              {c.unreciped.count ? (
+                <span className="block">
+                  Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
+                </span>
+              ) : null}
+            </>
           }
         />
         <Stat
@@ -162,11 +179,15 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           actualUsage: r.actualUsage,
           variance: r.variance,
           varianceAmount: r.varianceAmount,
+          stockDrop: r.stockDrop,
+          stock: r.stock,
+          inRecipe: r.inRecipe,
           note: r.note,
         }))}
         totalDiff={c.totalDiff}
         totalVariance={c.totalVariance}
-        hasStock={c.hasStockComparison}
+        hasStock={c.hasCounts}
+        hasComparison={c.hasStockComparison}
         ingredients={ingredientOptions}
         fire={st.fire}
       />

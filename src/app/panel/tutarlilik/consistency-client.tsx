@@ -26,7 +26,7 @@ import { dateTR, monthLabel as monthLabelOf, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteFinding, saveFinding, setFindingResolved, setPurchaseQty } from "@/server/actions/consistency";
 
-import { RATIO_BAD, RATIO_WARN, SEVERITY, severityOf } from "./severity";
+import { RATIO_BAD, RATIO_GUIDE, RATIO_WARN, scopeTotals, SEVERITY, severityOf, tableScope, type StockCheck } from "./severity";
 
 interface Row {
   ingredientId: number;
@@ -42,8 +42,17 @@ interface Row {
   actualUsage: number | null;
   variance: number | null;
   varianceAmount: number | null;
+  /** Devir − devreden (iki sayım varsa), alım bilinmeden stoktaki düşüş */
+  stockDrop: number | null;
+  /** complete: sapma hesaplandı · needsPurchase: iki sayım var, alım eksik · noCount: sayım eksik */
+  stock: StockCheck;
+  /** Hammadde bir reçetede var mı */
+  inRecipe: boolean;
   note: string | null;
 }
+
+/** Reçetede olmayan ama stoktan düşen (ya da alınıp tükenen) hammadde */
+const isUnreciped = (r: Row) => !r.inRecipe && r.stockDrop !== null && r.stockDrop + (r.purchased ?? 0) > 0;
 
 type IngredientOption = { id: number; name: string; unit: string };
 type SevFilter = "all" | "fark" | "buyuk";
@@ -141,9 +150,34 @@ function RatioBadge({ row }: { row: Row }) {
     );
   }
   const s = SEVERITY[row.ratio > RATIO_BAD ? "big" : row.ratio >= RATIO_WARN ? "diff" : "ok"];
+  // 1×'in altı da tutarlıdır: alınandan fazlası önceki ayın stoğundan harcandı
+  const title = row.ratio < 1 ? `${s.label} · ${RATIO_GUIDE.below1}` : s.label;
   return (
-    <Badge tone={s.tone} dot className="tabular" title={s.label}>
-      {num(row.ratio, 2)}×<span className="sr-only">, {s.label}</span>
+    <Badge tone={s.tone} dot className="tabular" title={title}>
+      {num(row.ratio, 2)}×<span className="sr-only">, {title}</span>
+    </Badge>
+  );
+}
+
+/** Gerçek tüketim hücresi: hesaplandıysa değer, iki sayım var ama alım eksikse ne yapılacağı */
+function ActualUsage({ row, compact }: { row: Row; compact?: boolean }) {
+  if (row.stock === "needsPurchase")
+    return (
+      <span className={cn("inline-flex flex-col gap-0.5", compact ? "items-start" : "items-end")}>
+        <Badge tone="amber" dot title="İki ayın sayımı var; gerçek tüketim için bu ayın alım miktarı gerekli">
+          Alım girilmeli
+        </Badge>
+        <span className="text-xs text-ink-mute">alınmadıysa 0 yazın</span>
+      </span>
+    );
+  return <>{row.actualUsage === null ? "–" : `${num(row.actualUsage)} ${row.unit}`}</>;
+}
+
+function UnrecipedBadge({ row }: { row: Row }) {
+  if (!isUnreciped(row)) return null;
+  return (
+    <Badge tone="violet" title="Hiçbir reçetede yok ama stoktan düştü: satışa yansımayan tüketim (ikram, personel, fire ya da eksik reçete)">
+      Reçetesiz tüketim
     </Badge>
   );
 }
@@ -242,7 +276,7 @@ const SORT_VALUE: Record<Exclude<SortKey, "ad">, (r: Row) => number | null> = {
 };
 const SORT_LABEL: Record<SortKey, string> = { ad: "Ada göre", oran: "Orana göre", fark: "Fark tutarına göre", sapma: "Sapmaya göre" };
 /** Adresteki süzgeç anahtarları; "Temizle" bunları sıfırlar (sıralama kalır) */
-const TABLE_KEYS = ["ara", "fark", "tum"];
+const TABLE_KEYS = ["ara", "fark", "tum", "eksik"];
 
 function parseSort(v: string): { key: SortKey; dir: SortDir } | null {
   const [k, d] = v.split("-");
@@ -270,6 +304,7 @@ export function ConsistencyTable({
   totalDiff,
   totalVariance,
   hasStock,
+  hasComparison,
   ingredients,
   fire,
 }: {
@@ -278,13 +313,17 @@ export function ConsistencyTable({
   rows: Row[];
   totalDiff: number;
   totalVariance: number;
+  /** En az bir malzemenin iki ayı da sayıldı: sayım sütunları çıkar */
   hasStock: boolean;
+  /** En az bir satırda sapma hesaplandı (iki sayım + alım) */
+  hasComparison: boolean;
   ingredients: IngredientOption[];
   fire: number;
 }) {
   /** null = kapalı, "new" = yeni alım, Row = satırdaki alımı düzenle */
   const [dialog, setDialog] = useState<Row | "new" | null>(null);
   const [allParam, setAllParam] = useQueryState<string>("tum", "0");
+  const [needParam, setNeedParam] = useQueryState<string>("eksik", "0");
   const [sevParam, setSev] = useQueryState<SevFilter>("fark", "all");
   const [sortParam, setSortParam] = useQueryState<string>("sirala", "");
   const [q, setQ] = useQueryText("ara");
@@ -292,7 +331,11 @@ export function ConsistencyTable({
   const showAll = allParam === "1";
   const sort = parseSort(sortParam);
   const withPurchase = rows.filter((r) => r.purchased !== null);
-  const scope = showAll ? rows : withPurchase.length ? withPurchase : rows;
+  const needsPurchase = rows.filter((r) => r.stock === "needsPurchase");
+  const onlyNeeds = needParam === "1" && needsPurchase.length > 0;
+  // Varsayılan: alımı girilen ya da iki ayı sayılan malzemeler; "Alımı girilmeyenler" yalnızca reçete kullanımı olanları da açar
+  const { scope: baseScope, hidden: missing } = tableScope(rows, showAll);
+  const scope = onlyNeeds ? needsPurchase : baseScope;
   const base = scope.filter((r) => matches(r.name, q));
   const isDiff = (r: Row) => {
     const s = severityOf(r);
@@ -300,10 +343,10 @@ export function ConsistencyTable({
   };
   const isBig = (r: Row) => severityOf(r) === "big";
   const visible = sortRows(sev === "all" ? base : base.filter(sev === "buyuk" ? isBig : isDiff), sort);
-  const paged = usePaged(visible, 25, `${sev}|${showAll}|${q}|${sortParam}`);
-  const filtered = sev !== "all" || q.trim() !== "" || showAll;
-  const missing = rows.length - withPurchase.length;
-  const visibleDiff = visible.reduce((a, r) => a + (r.diffAmount ?? 0), 0);
+  const paged = usePaged(visible, 25, `${sev}|${showAll}|${onlyNeeds}|${q}|${sortParam}`);
+  const filtered = sev !== "all" || q.trim() !== "" || showAll || onlyNeeds;
+  const visibleTotals = scopeTotals(visible);
+  const visibleDiff = visibleTotals.diff;
 
   const clear = () => {
     setQ("");
@@ -356,7 +399,12 @@ export function ConsistencyTable({
                 { value: "buyuk", label: SEVERITY.big.label, count: base.filter(isBig).length },
               ]}
             />
-            {missing && withPurchase.length ? (
+            {needsPurchase.length ? (
+              <FilterChip active={onlyNeeds} onToggle={() => setNeedParam(onlyNeeds ? "0" : "1")} count={needsPurchase.length}>
+                Alım girilmeli
+              </FilterChip>
+            ) : null}
+            {missing && missing < rows.length && !onlyNeeds ? (
               <FilterChip active={showAll} onToggle={() => setAllParam(showAll ? "0" : "1")} count={missing}>
                 Alımı girilmeyenler
               </FilterChip>
@@ -384,12 +432,20 @@ export function ConsistencyTable({
                 </Badge>
                 <span>
                   {SEVERITY[k].hint}
+                  {k === "ok" ? " (1×'in altı: önceki ay stoğundan kullanıldı)" : ""}
                   {k === "diff" ? ` (genel fire payı %${num(fire * 100, 0)})` : ""}
                 </span>
               </li>
             ))}
             <li className="inline-flex">
-              <InfoTip text="Büyük şişeli sos ve püreler birkaç ay yettiği için tek aylık oranları yüksek çıkabilir." />
+              <InfoTip
+                text={
+                  <>
+                    {RATIO_GUIDE.below1} {RATIO_GUIDE.bottles}
+                    <span className="mt-1.5 block font-medium">{RATIO_GUIDE.fastMovers}</span>
+                  </>
+                }
+              />
             </li>
           </ul>
         </>
@@ -402,7 +458,10 @@ export function ConsistencyTable({
             {paged.slice.map((r) => (
               <li key={r.ingredientId} className="rounded-2xl bg-surface p-3.5 ring-1 ring-line">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 text-sm leading-5 font-semibold break-words text-ink">{r.name}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm leading-5 font-semibold break-words text-ink">{r.name}</p>
+                    <UnrecipedBadge row={r} />
+                  </div>
                   <span className="shrink-0">
                     <RatioBadge row={r} />
                   </span>
@@ -424,7 +483,14 @@ export function ConsistencyTable({
                     <>
                       <div>
                         <dt className="text-xs text-ink-mute">Gerçek tüketim</dt>
-                        <dd className="text-ink tabular">{r.actualUsage === null ? "–" : `${num(r.actualUsage)} ${r.unit}`}</dd>
+                        <dd className="text-ink tabular">
+                          <ActualUsage row={r} compact />
+                          {r.opening !== null && r.closing !== null ? (
+                            <span className="block text-xs text-ink-mute">
+                              sayım {num(r.opening)} → {num(r.closing)}
+                            </span>
+                          ) : null}
+                        </dd>
                       </div>
                       <div className="text-right">
                         <dt className="text-xs text-ink-mute">Sapma</dt>
@@ -472,7 +538,7 @@ export function ConsistencyTable({
                     <SortButton numeric dir={dirOf("oran")} onClick={() => toggleSort("oran")}>
                       Oran
                     </SortButton>
-                    <InfoTip text="Alınan ÷ reçeteye göre kullanılan. 1× = alınan kadar harcandı; büyüdükçe reçeteye göre fazla alım var." className="ml-1" />
+                    <InfoTip text={`Alınan ÷ reçeteye göre kullanılan. 1× = alınan kadar harcandı; büyüdükçe reçeteye göre fazla alım var. ${RATIO_GUIDE.below1}`} className="ml-1" />
                   </TH>
                   <TH numeric>
                     <SortButton numeric dir={dirOf("fark")} onClick={() => toggleSort("fark")}>
@@ -487,12 +553,16 @@ export function ConsistencyTable({
                     <>
                       <TH numeric>
                         Gerçek tüketim
-                        <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın da sayımı girildiyse hesaplanır." className="ml-1" />
+                        <InfoTip text="Geçen ay sayımı + alınan − bu ay sayımı. İki ayın sayımı ve bu ayın alım miktarı girildiyse hesaplanır; hiç alınmadıysa alıma 0 yazın." className="ml-1" />
                       </TH>
                       <TH numeric>
                         <SortButton numeric dir={dirOf("sapma")} onClick={() => toggleSort("sapma")}>
                           Sapma (₺)
                         </SortButton>
+                        <InfoTip
+                          text="(Gerçek tüketim − reçeteye göre kullanım) × birim maliyet. Pozitif = fire, ikram, porsiyon kaçağı; reçetede olmayan malzemede tüketimin tamamı."
+                          className="ml-1"
+                        />
                       </TH>
                     </>
                   ) : null}
@@ -507,6 +577,11 @@ export function ConsistencyTable({
                   <TR key={r.ingredientId}>
                     <TD sticky className="min-w-36 font-medium">
                       {r.name}
+                      {isUnreciped(r) ? (
+                        <span className="mt-0.5 block">
+                          <UnrecipedBadge row={r} />
+                        </span>
+                      ) : null}
                     </TD>
                     <TD numeric>
                       {num(r.usage)} {r.unit}
@@ -530,7 +605,7 @@ export function ConsistencyTable({
                     {hasStock ? (
                       <>
                         <TD numeric>
-                          {r.actualUsage === null ? "–" : `${num(r.actualUsage)} ${r.unit}`}
+                          <ActualUsage row={r} />
                           {r.opening !== null && r.closing !== null ? (
                             <span className="block text-xs text-ink-mute">
                               sayım {num(r.opening)} → {num(r.closing)}
@@ -581,7 +656,7 @@ export function ConsistencyTable({
                   {hasStock ? (
                     <>
                       <TD />
-                      <TD numeric>{tl(filtered ? visible.reduce((a, r) => a + (r.varianceAmount ?? 0), 0) : totalVariance)}</TD>
+                      <TD numeric>{tl(filtered ? visibleTotals.variance : totalVariance)}</TD>
                     </>
                   ) : null}
                   <TD colSpan={2} />
@@ -590,9 +665,17 @@ export function ConsistencyTable({
             </Table>
           </TableWrap>
           {/* Kart görünümünde toplam (tablonun alt satırının karşılığı) */}
-          <div className={cn("mx-3 mb-3 flex items-baseline justify-between gap-3 rounded-2xl bg-panel-deep/40 px-3.5 py-3 text-sm font-semibold", cardsOnly)}>
-            <span className="min-w-0">{filtered ? `Gösterilen ${num(visible.length)} malzemenin farkı` : "Toplam fark"}</span>
-            <span className="tabular">{tl(filtered ? visibleDiff : totalDiff)}</span>
+          <div className={cn("mx-3 mb-3 space-y-1.5 rounded-2xl bg-panel-deep/40 px-3.5 py-3 text-sm font-semibold", cardsOnly)}>
+            <p className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0">{filtered ? `Gösterilen ${num(visible.length)} malzemenin farkı` : "Toplam fark"}</span>
+              <span className="tabular">{tl(filtered ? visibleDiff : totalDiff)}</span>
+            </p>
+            {hasComparison ? (
+              <p className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">{filtered ? "Gösterilenlerin sapması" : "Toplam sapma"}</span>
+                <span className="tabular">{tl(filtered ? visibleTotals.variance : totalVariance)}</span>
+              </p>
+            ) : null}
           </div>
         </>
       ) : rows.length ? (
@@ -625,6 +708,25 @@ export function ConsistencyTable({
       )}
 
       {visible.length ? <Pagination page={paged.page} pageCount={paged.pageCount} onChange={paged.setPage} total={paged.total} unit="malzeme" className="border-t border-line" /> : null}
+
+      {hasStock && !hasComparison ? (
+        <CardFooter className="justify-start gap-2 text-xs">
+          <Info size={14} className="shrink-0 text-ink-quiet" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            İki ayın sayımı var ama alım miktarı girilmemiş: sapma, &quot;Faturayla alınan&quot; girilen satırlarda hesaplanır. Bu ay hiç alınmayan malzemeye 0
+            yazın.
+            {needsPurchase.length && !onlyNeeds ? (
+              <button
+                type="button"
+                onClick={() => setNeedParam("1")}
+                className="-my-2.5 ml-1 inline-block cursor-pointer py-2.5 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+              >
+                Alımı eksik {num(needsPurchase.length)} malzemeyi göster
+              </button>
+            ) : null}
+          </span>
+        </CardFooter>
+      ) : null}
 
       {!hasStock ? (
         <CardFooter className="justify-start gap-2 text-xs">

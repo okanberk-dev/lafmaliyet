@@ -8,16 +8,22 @@ import {
 import { evaluateExpression } from "./expr";
 import type {
   Category,
+  CountUnit,
   Dataset,
   FixedExpense,
+  FixedExpenseVersion,
+  FixedPeriod,
   FixedSection,
   Ingredient,
   Month,
+  MonthRange,
   Product,
   RecipeItem,
   SalesLine,
   Settings,
   Staff,
+  StaffVersion,
+  Unit,
 } from "./types";
 
 // ============================================================================
@@ -39,6 +45,13 @@ export function shiftMonth(month: string, delta: number): string {
 
 export const monthOfDate = (date: string) => date.slice(0, 7);
 
+/** Türkiye saatine göre bu ay, "YYYY-MM" (sunucu UTC'de çalışsa da ay başında doğru ay döner) */
+export function currentMonthTR(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul", year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(now)
+    .slice(0, 7);
+}
+
 export function yearMonths(year: number): string[] {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 }
@@ -59,7 +72,10 @@ export function normalizeSupplier(s: string): string {
   return s.replace(/\s*\(.*\)\s*$/, "").trim();
 }
 
-/** POS ürün adlarını eşleştirme için normalleştirir */
+/**
+ * Eski eşleştirme anahtarı (tr büyük harf, tek boşluk). Yalnızca eski kayıtlarla uyumluluk için duruyor: satış ekranları
+ * ve eylemleri posMatchKey / createPosMappingIndex kullanır (src/lib/calc/pos-paste.ts), o da bu anahtarı tanır.
+ */
 export function normalizePosName(s: string): string {
   return s.trim().replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
 }
@@ -160,6 +176,145 @@ export function priceForMargin(cost: number, targetCostRatio: number, st: Settin
 }
 
 // ============================================================================
+// Geçerlilik aralığı ve "şu aydan itibaren" sürümler (personel, sabit giderler)
+// ============================================================================
+//
+// Excel'de Genel Maliyet'in her ay sütunu kendi sabit tutarını taşır (J40 =(160000)*J$2/31); kira
+// değişince geçmiş aylar değişmez. Panelde aynı sonucu iki şey verir:
+//  - startMonth / endMonth: kalem yalnızca bu aralıktaki aylarda hesaba girer (null = sınırsız)
+//  - sürümler: tutar "X ayından itibaren" değişir; ilk sürümden önceki aylarda taban değer geçerlidir.
+
+/** Kalem bu ayda hesaba giriyor mu? Aralık hiç verilmemişse (eski biçim veri) `active` bakılır. */
+export function inRange(item: MonthRange & { active?: boolean }, month: string): boolean {
+  if (item.startMonth === undefined && item.endMonth === undefined) return item.active !== false;
+  return (!item.startMonth || item.startMonth <= month) && (!item.endMonth || item.endMonth >= month);
+}
+
+/** Veritabanındaki active sütununun karşılığı: bitiş ayı yok ya da bu aydan sonra */
+export function activeFromRange(endMonth: string | null | undefined, currentMonth: string): boolean {
+  return !endMonth || endMonth >= currentMonth;
+}
+
+/** Sürümleri kaleme göre gruplar, her grubu fromMonth'a göre sıralar */
+function groupVersions<V extends { fromMonth: string }>(versions: V[] | undefined, keyOf: (v: V) => number): Map<number, V[]> {
+  const out = new Map<number, V[]>();
+  for (const v of versions ?? []) {
+    const list = out.get(keyOf(v)) ?? [];
+    list.push(v);
+    out.set(keyOf(v), list);
+  }
+  for (const list of out.values()) list.sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));
+  return out;
+}
+
+/** Ayda geçerli sürüm: fromMonth ≤ ay olan en son sürüm (yoksa undefined = taban değer) */
+function versionAt<V extends { fromMonth: string }>(versions: V[] | undefined, month: string): V | undefined {
+  let found: V | undefined;
+  for (const v of versions ?? []) {
+    if (v.fromMonth <= month && (!found || v.fromMonth >= found.fromMonth)) found = v;
+  }
+  return found;
+}
+
+/** Sabit giderin o aydaki dönemi ve tutarı (sürüm varsa sürümden, yoksa tabandan) */
+export function fixedAt(fe: FixedExpense, versions: FixedExpenseVersion[] | undefined, month: string): FixedExpense {
+  const v = versionAt(versions?.filter((x) => x.fixedExpenseId === fe.id), month);
+  return v ? { ...fe, period: v.period, amount: v.amount } : fe;
+}
+
+/** Personelin o aydaki net maaşı ve ek ödemeleri (sürüm varsa sürümden, yoksa tabandan) */
+export function staffAt(s: Staff, versions: StaffVersion[] | undefined, month: string): Staff {
+  const v = versionAt(versions?.filter((x) => x.staffId === s.id), month);
+  return v ? { ...s, netSalary: v.netSalary, extras: v.extras } : s;
+}
+
+/** Tutar geçmişi, eskiden yeniye. İlk satır tabandır (fromMonth = kalemin başlangıç ayı ya da null = baştan beri). */
+export interface FixedHistoryEntry {
+  fromMonth: string | null;
+  /** Silinebilir sürüm kimliği (taban satırında null) */
+  versionId: number | null;
+  period: FixedPeriod;
+  amount: number;
+}
+
+export interface StaffHistoryEntry {
+  fromMonth: string | null;
+  versionId: number | null;
+  netSalary: number;
+  extras: number;
+}
+
+export function fixedHistory(fe: FixedExpense, versions: FixedExpenseVersion[] | undefined): FixedHistoryEntry[] {
+  const own = (versions ?? []).filter((v) => v.fixedExpenseId === fe.id).sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));
+  return [
+    { fromMonth: fe.startMonth ?? null, versionId: null, period: fe.period, amount: fe.amount },
+    ...own.map((v) => ({ fromMonth: v.fromMonth, versionId: v.id, period: v.period, amount: v.amount })),
+  ];
+}
+
+export function staffHistory(s: Staff, versions: StaffVersion[] | undefined): StaffHistoryEntry[] {
+  const own = (versions ?? []).filter((v) => v.staffId === s.id).sort((a, b) => a.fromMonth.localeCompare(b.fromMonth));
+  return [
+    { fromMonth: s.startMonth ?? null, versionId: null, netSalary: s.netSalary, extras: s.extras },
+    ...own.map((v) => ({ fromMonth: v.fromMonth, versionId: v.id, netSalary: v.netSalary, extras: v.extras })),
+  ];
+}
+
+/**
+ * Bir tutar değişikliğinin nasıl kaydedileceği (sunucu eylemleri kullanır; saf olduğu için test edilir).
+ * - effectiveFrom "all": taban yeniden yazılır, bütün sürümler silinir (yanlış girilmiş tutarı düzeltmek)
+ * - effectiveFrom ayı: o aydaki geçerli değer zaten aynıysa hiçbir şey; o aydan önce kalemin geçerli olduğu
+ *   verili bir ay yoksa (ve öncesinde sürüm yoksa) taban değişir; aksi halde o aya sürüm yazılır. Yeni değer
+ *   bir önceki ayın değerine eşitse o aydaki sürüm gereksizdir ve silinir.
+ */
+export type VersionPlan =
+  | { action: "none" }
+  | { action: "base"; clearVersions: boolean }
+  | { action: "upsert"; fromMonth: string }
+  | { action: "delete"; fromMonth: string };
+
+export function planVersionChange<T>(opts: {
+  base: T;
+  versions: (T & { fromMonth: string })[];
+  next: T;
+  effectiveFrom: string;
+  startMonth: string | null;
+  /** Hesabı olan ilk ay (bundan önceki aylar boş sayılır) */
+  firstDataMonth: string | null;
+  equal: (a: T, b: T) => boolean;
+}): VersionPlan {
+  const { base, versions, next, effectiveFrom: from, startMonth, firstDataMonth, equal } = opts;
+  if (from === "all") {
+    return equal(base, next) && !versions.length ? { action: "none" } : { action: "base", clearVersions: versions.length > 0 };
+  }
+  const at = versionAt(versions, from) ?? base;
+  if (equal(at, next)) return { action: "none" };
+  const earliest = startMonth && firstDataMonth ? (startMonth > firstDataMonth ? startMonth : firstDataMonth) : (startMonth ?? firstDataMonth);
+  if (!versions.some((v) => v.fromMonth <= from) && (!earliest || from <= earliest)) return { action: "base", clearVersions: false };
+  const prev = versionAt(
+    versions.filter((v) => v.fromMonth < from),
+    from,
+  ) ?? base;
+  return equal(prev, next) ? { action: "delete", fromMonth: from } : { action: "upsert", fromMonth: from };
+}
+
+/** Listelerde gösterilecek ay: bu ay; kalem bitmişse son ayı, henüz başlamadıysa ilk ayı */
+export function valueMonthFor(item: MonthRange, currentMonth: string): string {
+  if (item.endMonth && item.endMonth < currentMonth) return item.endMonth;
+  if (item.startMonth && item.startMonth > currentMonth) return item.startMonth;
+  return currentMonth;
+}
+
+/** Kalemin bu aya göre durumu */
+export type RangeStatus = "active" | "ended" | "upcoming";
+export function rangeStatus(item: MonthRange & { active?: boolean }, currentMonth: string): RangeStatus {
+  if (item.startMonth === undefined && item.endMonth === undefined) return item.active === false ? "ended" : "active";
+  if (item.endMonth && item.endMonth < currentMonth) return "ended";
+  if (item.startMonth && item.startMonth > currentMonth) return "upcoming";
+  return "active";
+}
+
+// ============================================================================
 // Personel
 // ============================================================================
 
@@ -187,8 +342,15 @@ export function staffCost(s: Staff, st: Settings): StaffCost {
   };
 }
 
-export function personnelSummary(staff: Staff[], st: Settings) {
-  const rows = staff.filter((s) => s.active).map((s) => staffCost(s, st));
+export type PersonnelSummary = ReturnType<typeof personnelSummary>;
+
+/**
+ * Personel toplamları. `month` verilirse o ayda aralığı tutan personel o ayın maaşıyla (sürümler) sayılır;
+ * verilmezse (eski kullanım) yalnızca active bakılır ve taban değerler kullanılır.
+ */
+export function personnelSummary(staff: Staff[], st: Settings, month?: string, versions?: StaffVersion[]) {
+  const list = month === undefined ? staff.filter((s) => s.active) : staff.filter((s) => inRange(s, month)).map((s) => staffAt(s, versions, month));
+  const rows = list.map((s) => staffCost(s, st));
   return {
     rows,
     net: sum(rows.map((r) => r.staff.netSalary)),
@@ -206,7 +368,7 @@ export function personnelSummary(staff: Staff[], st: Settings) {
 // ============================================================================
 
 /** Standart bir ay için aylık karşılık (Sabit Giderler sayfası) */
-export function fixedMonthly(fe: FixedExpense, st: Settings): number {
+export function fixedMonthly(fe: Pick<FixedExpense, "period" | "amount">, st: Settings): number {
   switch (fe.period) {
     case "gunluk":
       return fe.amount * st.acikGun;
@@ -220,9 +382,38 @@ export function fixedMonthly(fe: FixedExpense, st: Settings): number {
 }
 
 /** Belirli bir ay için tutar: açık gün ÷ ayın gün sayısı oranıyla (Genel Maliyet sayfası) */
-export function fixedForMonth(fe: FixedExpense, st: Settings, openDays: number, dim: number): number {
+export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: Settings, openDays: number, dim: number): number {
   if (fe.period === "gunluk") return fe.amount * openDays;
   return (fixedMonthly(fe, st) * openDays) / dim;
+}
+
+// ============================================================================
+// Sayım birimi
+// ============================================================================
+
+export function countFactor(countUnit: string | null): number {
+  return countUnit === "KG" || countUnit === "LT" ? 1000 : 1;
+}
+
+/** Malzeme birimine uyan sayım birimleri (ilki önerilen). gr → KG, ml → LT, adet → ADET, dilim → DİLİM ya da ADET. */
+export function countUnitsFor(unit: Unit): CountUnit[] {
+  switch (unit) {
+    case "gr":
+      return ["KG"];
+    case "ml":
+      return ["LT"];
+    case "adet":
+      return ["ADET"];
+    case "dilim":
+      return ["DİLİM", "ADET"];
+  }
+}
+
+/** Kaydedilmiş çarpandan sayım birimi adı (eski sayımı hangi birimle girildiyse onunla göstermek için) */
+export function countUnitForFactor(ing: Pick<Ingredient, "unit" | "countUnit">, factor: number): string {
+  if (ing.countUnit && countFactor(ing.countUnit) === factor) return ing.countUnit;
+  if (factor === 1000) return ing.unit === "ml" ? "LT" : "KG";
+  return ing.unit === "dilim" ? "DİLİM" : "ADET";
 }
 
 // ============================================================================
@@ -285,6 +476,13 @@ export interface PnlCell {
   value: number | null;
   computed: number | null;
   overridden: boolean;
+  /** Elle girilen hücrenin notu (pnl_entries.note) */
+  note?: string | null;
+  /**
+   * Sabit gider satırında: kalem bu ayda geçerlilik aralığının dışında (başlamadı ya da bitti).
+   * Elle girilmiş tutar varsa yine de sayılır (overridden = true).
+   */
+  outOfRange?: boolean;
 }
 
 export interface PnlRowDef {
@@ -295,6 +493,10 @@ export interface PnlRowDef {
   /** Kullanıcı bu hücreyi değiştirebilir mi? (auto satırlar üzerine yazılabilir) */
   editable: boolean;
   hint?: string;
+  /** Satır adının altında soluk alt yazı (ör. tedarikçinin sattığı ürünler: "kahve, süt") */
+  sub?: string;
+  /** fixed:<id> satırlarında sabit gider kimliği (silinmiş kalemde kimlik var, kalem yok) */
+  fixedId?: number;
   /** Formatlama: para mı oran mı gün mü */
   format?: "money" | "percent" | "days";
   strong?: boolean;
@@ -321,10 +523,20 @@ export interface PnlMonthCalc {
 export interface StockLine {
   ingredient: Ingredient;
   qty: number | null;
+  /** Birim çarpanı: kayıtlı sayımda sayıldığı andaki, sayılmamış satırda bugünkü sayım birimininki */
   factor: number;
+  /** Miktarın birimi (KG, LT, ADET, DİLİM); eski sayımda sayıldığı andaki birim */
+  countUnit: string;
   unitPrice: number;
   amount: number;
   amountVatIncl: number;
+  /**
+   * Malzeme artık sayım listesinde değil (pasif ya da "Sayılmaz") ama bu ay için kayıtlı sayımı var.
+   * Satır geçmiş ayın değerini korumak için gösterilir; formda salt okunur olmalı.
+   */
+  archived: boolean;
+  /** Kayıtlı sayımın birimi bugünkü sayım biriminden farklı (değer eski birimle hesaplanır) */
+  unitChanged: boolean;
 }
 
 export interface StockSheet {
@@ -339,8 +551,50 @@ export interface StockSheet {
 
 export type Model = ReturnType<typeof createModel>;
 
-export function countFactor(countUnit: string | null): number {
-  return countUnit === "KG" || countUnit === "LT" ? 1000 : 1;
+/**
+ * Su + buz litre maliyeti ve neden o değer çıktığı (ekranlar doğru mesajı gösterebilsin):
+ * - "override": Ayarlar'da elle girildi
+ * - "ok": `month` ayının SU GİDERİ ÷ o ayın satışlarına göre su + buz litresi
+ * - "no-bill": hiçbir ayda SU GİDERİ girilmedi
+ * - "no-usage": SU GİDERİ girildi (`latestBillMonth`) ama o ay(lar)ın ürün satış listesi yok; litre hesaplanamadı
+ * reason "ok" iken latestBillMonth ≠ month ise daha yeni ayın faturası satış listesi olmadığı için atlandı.
+ */
+export interface WaterCost {
+  perLiter: number;
+  month: string | null;
+  bill: number;
+  liters: number;
+  reason: "override" | "ok" | "no-bill" | "no-usage";
+  /** SU GİDERİ girilmiş en son ay (satış listesi olsun olmasın) */
+  latestBillMonth: string | null;
+}
+
+/** Sabit gider listesi satırı: tutar ve dönem bu aya (ya da kalemin son/ilk ayına) göre */
+export interface FixedItemView extends FixedExpense {
+  /** İlk sürümden önceki (taban) değerler */
+  base: { period: FixedPeriod; amount: number };
+  /** Tutar geçmişi, eskiden yeniye (ilk satır taban) */
+  history: FixedHistoryEntry[];
+  /** Bu ayki (bitmişse son ayki, başlamadıysa ilk ayki) aylık karşılık */
+  monthly: number;
+  /** Bu ay hesaba giriyor mu */
+  inRangeNow: boolean;
+  status: RangeStatus;
+  /** amount / period hangi ayın değeri */
+  valueMonth: string;
+  /** Bu aydan sonra başlayacak ilk değişiklik (ör. Kasım'dan itibaren zam) */
+  nextChange: FixedHistoryEntry | null;
+}
+
+/** Personel listesi satırı: maaş bu aya (ya da kişinin son/ilk ayına) göre */
+export interface StaffView extends Staff {
+  base: { netSalary: number; extras: number };
+  history: StaffHistoryEntry[];
+  cost: StaffCost;
+  inRangeNow: boolean;
+  status: RangeStatus;
+  valueMonth: string;
+  nextChange: StaffHistoryEntry | null;
 }
 
 export function createModel(ds: Dataset) {
@@ -355,11 +609,19 @@ export function createModel(ds: Dataset) {
     itemsByProduct.set(it.productId, list);
   }
   const monthInfo = new Map(ds.months.map((m) => [m.month, m]));
+  /** "Bu ay": listelerde gösterilen güncel tutar ve aktiflik buna göre */
+  const currentMonth = ds.currentMonth ?? currentMonthTR();
   const pnlByMonth = new Map<string, Map<string, number>>();
+  const pnlNotes = new Map<string, Map<string, string>>();
   for (const e of ds.pnlEntries) {
     const m = pnlByMonth.get(e.month) ?? new Map<string, number>();
     m.set(e.rowKey, e.amount);
     pnlByMonth.set(e.month, m);
+    if (e.note) {
+      const n = pnlNotes.get(e.month) ?? new Map<string, string>();
+      n.set(e.rowKey, e.note);
+      pnlNotes.set(e.month, n);
+    }
   }
   const linesByMonth = new Map<string, SalesLine[]>();
   for (const l of ds.salesLines) {
@@ -420,25 +682,28 @@ export function createModel(ds: Dataset) {
   }
 
   // --- Su + buz birim maliyeti (Ayarlar!B17) -----------------------------------
+  // Excel her zaman Eylül SU GİDERİ ÷ Eylül su + buz litresini kullanır. Panel SU GİDERİ girilmiş ve
+  // satış listesinden (reçeteye göre) su kullanımı çıkan en son ayı alır; Excel verisinde ikisi aynı sonucu verir.
   const waterIngredients = ds.ingredients.filter((i) => i.priceSource === "water");
-  function computeWater(): { perLiter: number; month: string | null; bill: number; liters: number } {
+  function computeWater(): WaterCost {
     if (st.suBirimLTOverride !== null && st.suBirimLTOverride !== undefined) {
-      return { perLiter: st.suBirimLTOverride, month: null, bill: 0, liters: 0 };
+      return { perLiter: st.suBirimLTOverride, month: null, bill: 0, liters: 0, reason: "override", latestBillMonth: null };
     }
     const candidates = [...pnlByMonth.entries()]
       .filter(([, rows]) => (rows.get("manual:su") ?? 0) > 0)
       .map(([m]) => m)
       .sort()
       .reverse();
+    const latestBillMonth = candidates[0] ?? null;
     for (const m of candidates) {
       const usage = ingredientUsage(m);
       const liters = sum(waterIngredients.map((i) => usage.get(i.id) ?? 0)) / 1000;
       if (liters > 0) {
         const bill = pnlByMonth.get(m)!.get("manual:su")!;
-        return { perLiter: bill / liters, month: m, bill, liters };
+        return { perLiter: bill / liters, month: m, bill, liters, reason: "ok", latestBillMonth };
       }
     }
-    return { perLiter: 0, month: null, bill: 0, liters: 0 };
+    return { perLiter: 0, month: null, bill: 0, liters: 0, reason: latestBillMonth ? "no-usage" : "no-bill", latestBillMonth };
   }
   const water = computeWater();
 
@@ -559,15 +824,96 @@ export function createModel(ds: Dataset) {
   const salesMonths = [...linesByMonth.keys()].sort();
 
   // --- Personel ve sabit giderler ------------------------------------------------
-  const personnel = personnelSummary(ds.staff, st);
-  const activeFixed = ds.fixedExpenses.filter((f) => f.active).sort((a, b) => a.sortOrder - b.sortOrder);
-  const fixedStandardTotal = personnel.total + sum(activeFixed.map((f) => fixedMonthly(f, st)));
+  // Her ay kendi aralığı ve sürümüyle hesaplanır; böylece bir zam ya da yeni kalem geçmiş ayları değiştirmez.
+  const fixedVersions = groupVersions(ds.fixedExpenseVersions, (v) => v.fixedExpenseId);
+  const staffVersions = groupVersions(ds.staffVersions, (v) => v.staffId);
+  const allFixed = [...ds.fixedExpenses].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  const fixedById = new Map(allFixed.map((f) => [f.id, f]));
+
+  /** Sabit giderin o aydaki dönemi ve tutarı */
+  function fixedAtMonth(fe: FixedExpense, month: string): FixedExpense {
+    const v = versionAt(fixedVersions.get(fe.id), month);
+    return v ? { ...fe, period: v.period, amount: v.amount } : fe;
+  }
+  /** Personelin o aydaki maaşı */
+  function staffAtMonth(x: Staff, month: string): Staff {
+    const v = versionAt(staffVersions.get(x.id), month);
+    return v ? { ...x, netSalary: v.netSalary, extras: v.extras } : x;
+  }
+
+  const fixedInMonthCache = new Map<string, FixedExpense[]>();
+  /** O ayda hesaba giren sabit giderler, o ayın tutarıyla (sıralı) */
+  function fixedInMonth(month: string): FixedExpense[] {
+    let list = fixedInMonthCache.get(month);
+    if (!list) {
+      list = allFixed.filter((f) => inRange(f, month)).map((f) => fixedAtMonth(f, month));
+      fixedInMonthCache.set(month, list);
+    }
+    return list;
+  }
+
+  const personnelCache = new Map<string, PersonnelSummary>();
+  /** O ayda çalışan personel, o ayın maaşıyla */
+  function personnelFor(month: string): PersonnelSummary {
+    let p = personnelCache.get(month);
+    if (!p) {
+      p = personnelSummary(ds.staff, st, month, ds.staffVersions);
+      personnelCache.set(month, p);
+    }
+    return p;
+  }
+
+  /** Standart bir ayın sabit gider toplamı (personel dahil), o ayın kalemleri ve tutarlarıyla */
+  function fixedStandardTotalFor(month: string): number {
+    return personnelFor(month).total + sum(fixedInMonth(month).map((f) => fixedMonthly(f, st)));
+  }
+
+  // Bugünkü değerler (listeler, başabaş, tahmin): bu ayın kalemleri ve tutarları
+  const personnel = personnelFor(currentMonth);
+  const activeFixed = fixedInMonth(currentMonth);
+  const fixedStandardTotal = fixedStandardTotalFor(currentMonth);
+
+  /** Sabit gider listesi: bütün kalemler (bitmiş ve başlamamış dahil), bugünkü tutar + geçmiş */
+  const fixedList: FixedItemView[] = allFixed.map((f) => {
+    const valueMonth = valueMonthFor(f, currentMonth);
+    const cur = fixedAtMonth(f, valueMonth);
+    const history = fixedHistory(f, fixedVersions.get(f.id));
+    return {
+      ...cur,
+      active: f.startMonth === undefined && f.endMonth === undefined ? f.active : activeFromRange(f.endMonth, currentMonth),
+      base: { period: f.period, amount: f.amount },
+      history,
+      monthly: fixedMonthly(cur, st),
+      inRangeNow: inRange(f, currentMonth),
+      status: rangeStatus(f, currentMonth),
+      valueMonth,
+      nextChange: history.find((h) => h.versionId !== null && h.fromMonth! > valueMonth) ?? null,
+    };
+  });
+
+  /** Personel listesi: herkes (ayrılmış ve başlamamış dahil), bugünkü maaş + geçmiş */
+  const staffList: StaffView[] = ds.staff.map((x) => {
+    const valueMonth = valueMonthFor(x, currentMonth);
+    const cur = staffAtMonth(x, valueMonth);
+    const history = staffHistory(x, staffVersions.get(x.id));
+    return {
+      ...cur,
+      active: x.startMonth === undefined && x.endMonth === undefined ? x.active : activeFromRange(x.endMonth, currentMonth),
+      base: { netSalary: x.netSalary, extras: x.extras },
+      history,
+      cost: staffCost(cur, st),
+      inRangeNow: inRange(x, currentMonth),
+      status: rangeStatus(x, currentMonth),
+      valueMonth,
+      nextChange: history.find((h) => h.versionId !== null && h.fromMonth! > valueMonth) ?? null,
+    };
+  });
 
   // --- Stok sayımı -------------------------------------------------------------
-  const countsByMonth = new Map<string, Map<number, number>>();
+  const countsByMonth = new Map<string, Map<number, { qty: number; factor: number | null }>>();
   for (const c of ds.stockCounts) {
-    const m = countsByMonth.get(c.month) ?? new Map<number, number>();
-    m.set(c.ingredientId, c.qty);
+    const m = countsByMonth.get(c.month) ?? new Map<number, { qty: number; factor: number | null }>();
+    m.set(c.ingredientId, { qty: c.qty, factor: c.factor ?? null });
     countsByMonth.set(c.month, m);
   }
   const extrasByMonth = new Map<string, typeof ds.stockExtras>();
@@ -576,24 +922,55 @@ export function createModel(ds: Dataset) {
     list.push(e);
     extrasByMonth.set(e.month, list);
   }
-  const countable = ds.ingredients
-    .filter((i) => i.countUnit && i.active)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const bySortOrder = (a: Ingredient, b: Ingredient) => a.sortOrder - b.sortOrder || a.id - b.id;
+  /** Bugünkü sayım listesi: aktif ve sayım birimi olan malzemeler */
+  const countable = ds.ingredients.filter((i) => i.countUnit && i.active).sort(bySortOrder);
+  const countableIds = new Set(countable.map((i) => i.id));
+
+  /**
+   * Kayıtlı sayımın malzemenin kendi birimindeki miktarı (ör. 2,5 KG → 2500 gr), sayıldığı andaki çarpanla.
+   * Sayım yoksa null.
+   */
+  function countInBaseUnit(month: string, ingredientId: number): number | null {
+    const c = countsByMonth.get(month)?.get(ingredientId);
+    if (!c) return null;
+    const ing = ingById.get(ingredientId);
+    return c.qty * (c.factor ?? countFactor(ing?.countUnit ?? null));
+  }
 
   const stockCache = new Map<string, StockSheet>();
   function stockSheet(month: string): StockSheet {
     let s = stockCache.get(month);
     if (s) return s;
-    const counts = countsByMonth.get(month) ?? new Map<number, number>();
+    const counts = countsByMonth.get(month) ?? new Map<number, { qty: number; factor: number | null }>();
+    // Bugünkü liste + o ay sayılmış ama sonradan pasif / "Sayılmaz" yapılmış malzemeler (geçmiş ay değeri korunur)
+    const archivedIngs = [...counts.keys()]
+      .filter((id) => !countableIds.has(id))
+      .map((id) => ingById.get(id))
+      .filter((i): i is Ingredient => !!i);
+    const lines = [...countable, ...archivedIngs].sort(bySortOrder);
     const groupMap = new Map<string, StockLine[]>();
-    for (const ing of countable) {
-      const factor = countFactor(ing.countUnit);
+    for (const ing of lines) {
+      const c = counts.get(ing.id);
+      const currentFactor = countFactor(ing.countUnit);
+      const factor = c?.factor ?? currentFactor;
       const unitPrice = (unitCost.get(ing.id) ?? 0) * factor;
-      const qty = counts.has(ing.id) ? counts.get(ing.id)! : null;
+      const qty = c ? c.qty : null;
       const amount = (qty ?? 0) * unitPrice;
+      const archived = !countableIds.has(ing.id);
       const g = ing.countGroup ?? "DİĞER";
       const list = groupMap.get(g) ?? [];
-      list.push({ ingredient: ing, qty, factor, unitPrice, amount, amountVatIncl: amount * (1 + ing.vatRate) });
+      list.push({
+        ingredient: ing,
+        qty,
+        factor,
+        countUnit: countUnitForFactor(ing, factor),
+        unitPrice,
+        amount,
+        amountVatIncl: amount * (1 + ing.vatRate),
+        archived,
+        unitChanged: !!c && !archived && factor !== currentFactor,
+      });
       groupMap.set(g, list);
     }
     const groups = [...groupMap.entries()].map(([name, lines]) => ({
@@ -654,19 +1031,24 @@ export function createModel(ds: Dataset) {
     if (pm) return pm;
     const info = monthInfo.get(month);
     const overrides = pnlByMonth.get(month) ?? new Map<string, number>();
+    const notes = pnlNotes.get(month);
+    const noteOf = (key: string) => notes?.get(key) ?? null;
     const dim = daysInMonth(month);
     const openDays = info?.openDays ?? 0;
     const ratio = openDays / dim;
     const cells = new Map<string, PnlCell>();
     const auto = (key: string, computed: number) => {
       const ov = overrides.get(key);
-      const cell = ov !== undefined ? { value: ov, computed, overridden: true } : { value: computed, computed, overridden: false };
+      const cell: PnlCell =
+        ov !== undefined
+          ? { value: ov, computed, overridden: true, note: noteOf(key) }
+          : { value: computed, computed, overridden: false, note: null };
       cells.set(key, cell);
       return cell.value as number;
     };
     const manual = (key: string) => {
       const v = overrides.get(key) ?? 0;
-      cells.set(key, { value: overrides.has(key) ? v : null, computed: null, overridden: overrides.has(key) });
+      cells.set(key, { value: overrides.has(key) ? v : null, computed: null, overridden: overrides.has(key), note: noteOf(key) });
       return v;
     };
 
@@ -689,16 +1071,33 @@ export function createModel(ds: Dataset) {
     const opening = auto("stock:opening", prevClosing);
     cells.set("stock:purchased", { value: purchases, computed: purchases, overridden: false });
     const cl = closingStock(month);
-    cells.set("stock:closing", { value: cl.value, computed: cl.computed, overridden: cl.overridden });
+    cells.set("stock:closing", { value: cl.value, computed: cl.computed, overridden: cl.overridden, note: cl.overridden ? noteOf("stock:closing") : null });
     const closing = cl.value;
     const cogs = opening + purchases - closing;
 
     // Personel, faturalar, kira, genel
     const sections: Record<FixedSection | "komisyon", number> = { personel: 0, faturalar: 0, kira: 0, genel: 0, komisyon: 0 };
-    sections.personel += auto("personnel:net", personnel.net * ratio);
-    sections.personel += auto("personnel:employer", (personnel.total - personnel.net) * ratio);
-    for (const fe of activeFixed) {
-      sections[fe.section] += auto(`fixed:${fe.id}`, fixedForMonth(fe, st, openDays, dim));
+    // Personel: o ay çalışanlar, o ayın maaşıyla (elle girilen bordro tutarı her zaman geçerli)
+    const pers = personnelFor(month);
+    sections.personel += auto("personnel:net", pers.net * ratio);
+    sections.personel += auto("personnel:employer", (pers.total - pers.net) * ratio);
+    // Sabit giderler: aralıktaki kalemler o ayın tutarıyla. Aralık dışındaki (ya da silinmiş) kalemin
+    // elle girilmiş tutarı yine de sayılır; böylece dondurulmuş geçmiş ay kaybolmaz.
+    for (const fe of allFixed) {
+      const key = `fixed:${fe.id}`;
+      if (inRange(fe, month)) {
+        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim));
+      } else {
+        const ov = overrides.get(key);
+        cells.set(key, { value: ov ?? null, computed: null, overridden: ov !== undefined, note: ov !== undefined ? noteOf(key) : null, outOfRange: true });
+        if (ov !== undefined) sections[fe.section] += ov;
+      }
+    }
+    for (const [key, ov] of overrides) {
+      if (!key.startsWith("fixed:") || cells.has(key)) continue;
+      // Kalemi silinmiş eski bir elle giriş: İşletme genel giderlerinde sayılır
+      cells.set(key, { value: ov, computed: null, overridden: true, note: noteOf(key), outOfRange: true });
+      sections.genel += ov;
     }
     for (const row of MANUAL_PNL_ROWS) {
       if (row.section === "mal") continue;
@@ -741,23 +1140,55 @@ export function createModel(ds: Dataset) {
     return pm;
   }
 
+  /** Verisi olan ilk ay (ay bilgisi, fatura, satış, sayım ya da elle giriş); daha önceki aylar boş sayılır */
+  const firstDataMonth =
+    [
+      ...ds.months.map((m) => m.month),
+      ...ds.invoices.map((i) => monthOfDate(i.date)),
+      ...salesMonths,
+      ...ds.stockCounts.map((c) => c.month),
+      ...pnlByMonth.keys(),
+    ].sort()[0] ?? null;
+
+  /** Tedarikçinin sattığı ürünler (Hammaddeler'deki tedarikçi adından): Excel'deki "SÜTAŞ (süt)" açıklaması */
+  const firstWord = (x: string) => x.trim().split(/\s+/)[0]?.toLocaleLowerCase("tr-TR") ?? "";
+  function supplierProducts(supplier: string): string | undefined {
+    const key = firstWord(supplier);
+    if (!key) return undefined;
+    const cats: string[] = [];
+    const others: string[] = [];
+    for (const i of ds.ingredients) {
+      if (!i.active || !i.supplier) continue;
+      if (!i.supplier.split("/").some((part) => firstWord(normalizeSupplier(part)) === key)) continue;
+      if (i.category === "Diğer") {
+        if (!others.includes(i.name)) others.push(i.name);
+      } else if (!cats.includes(i.category)) cats.push(i.category);
+    }
+    const parts = [...cats, ...others.slice(0, 2)].map((x) => x.toLocaleLowerCase("tr-TR"));
+    return parts.length ? parts.slice(0, 4).join(", ") : undefined;
+  }
+
   /** Genel Maliyet yıllık tablo satır tanımları (aylardan bağımsız sabit sıra) */
   function pnlRowDefs(months: string[]): PnlRowDef[] {
     const monthsCalc = months.map(pnlMonth);
-    const supplierTotals = new Map<string, number>();
+    const suppliers = new Set<string>();
     const commSuppliers = new Set<string>();
+    const fixedKeysWithValue = new Set<string>();
     for (const pm of monthsCalc) {
       for (const [k, c] of pm.cells) {
-        if (k.startsWith("purchase:")) supplierTotals.set(k, (supplierTotals.get(k) ?? 0) + (c.value ?? 0));
+        if (k.startsWith("purchase:")) suppliers.add(k);
         if (k.startsWith("commission:") && k !== "commission:pos") commSuppliers.add(k);
+        if (k.startsWith("fixed:") && c.overridden) fixedKeysWithValue.add(k);
       }
     }
     const rows: PnlRowDef[] = [];
     const sec = (section: string) => (r: Omit<PnlRowDef, "section">) => rows.push({ ...r, section });
 
+    // Tedarikçiler alfabetik ve sabit sırada (tutar değiştikçe satırlar yer değiştirmez)
     const mal = sec("mal");
-    for (const [k] of [...supplierTotals.entries()].sort((a, b) => b[1] - a[1])) {
-      mal({ key: k, label: k.slice("purchase:".length).toLocaleUpperCase("tr-TR"), kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (KDV hariç, iskonto düşülmüş)." });
+    for (const k of [...suppliers].sort((a, b) => a.localeCompare(b, "tr-TR"))) {
+      const name = k.slice("purchase:".length);
+      mal({ key: k, label: name.toLocaleUpperCase("tr-TR"), sub: supplierProducts(name), kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (KDV hariç, iskonto düşülmüş)." });
     }
     for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === "mal")) mal({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
     mal({ key: "total:mal", label: "AYLIK MAL ALIMI TOPLAMI", kind: "total", editable: false, strong: true });
@@ -780,8 +1211,18 @@ export function createModel(ds: Dataset) {
         add({ key: "personnel:net", label: "PERSONEL MAAŞ (net)", kind: "auto", editable: true, hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı)." });
         add({ key: "personnel:employer", label: "PERSONEL SGK + İŞSİZLİK (işveren)", kind: "auto", editable: true, hint: "Personel sayfasındaki tahmini işveren maliyeti − net maaş. Bordrodaki gerçek tutarı yazabilirsiniz." });
       }
-      for (const fe of activeFixed.filter((f) => f.section === key)) {
-        add({ key: `fixed:${fe.id}`, label: fe.name.toLocaleUpperCase("tr-TR"), kind: "auto", editable: true, hint: fe.note ?? undefined });
+      // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
+      for (const fe of allFixed.filter((f) => f.section === key)) {
+        const shown =
+          fixedKeysWithValue.has(`fixed:${fe.id}`) ||
+          months.some((m) => (!firstDataMonth || m >= firstDataMonth) && inRange(fe, m));
+        if (!shown) continue;
+        add({ key: `fixed:${fe.id}`, fixedId: fe.id, label: fe.name.toLocaleUpperCase("tr-TR"), kind: "auto", editable: true, hint: fe.note ?? undefined });
+      }
+      if (key === "genel") {
+        for (const k of [...fixedKeysWithValue].filter((k) => !fixedById.has(Number(k.slice(6)))).sort()) {
+          add({ key: k, fixedId: Number(k.slice(6)), label: `SİLİNMİŞ GİDER (#${k.slice(6)})`, kind: "auto", editable: true, hint: "Bu sabit gider silinmiş; elle girilen tutarı korunuyor. Boşaltırsanız satır kaybolur." });
+        }
       }
       for (const r of MANUAL_PNL_ROWS.filter((r) => r.section === key)) add({ key: r.key, label: r.label, kind: "manual", editable: true, hint: r.hint });
       add({ key: `total:${key}`, label: sectionLabels[key], kind: "total", editable: false, strong: true });
@@ -878,10 +1319,29 @@ export function createModel(ds: Dataset) {
     monthSales,
     soldByProduct,
     ingredientUsage,
+    /** "Bu ay" (YYYY-MM, Türkiye saati) */
+    currentMonth,
+    /** Verisi olan ilk ay */
+    firstDataMonth,
+    /** Bu ayın personel toplamı (listeler); belirli bir ay için personnelFor(ay) */
     personnel,
+    personnelFor,
+    /** Bu ay hesaba giren sabit giderler, bu ayın tutarıyla; belirli bir ay için fixedInMonth(ay) */
     activeFixed,
+    fixedInMonth,
+    /** Sabit giderin o aydaki dönemi ve tutarı: fixedAtMonth(kalem, "2026-11") */
+    fixedAtMonth,
+    /** Personelin o aydaki maaşı: staffAtMonth(kişi, "2026-11") */
+    staffAtMonth,
+    /** Bütün sabit giderler (bitmiş / başlamamış dahil), bugünkü tutar + geçmiş */
+    fixedList,
+    /** Bütün personel (ayrılmış / başlamamış dahil), bugünkü maaş + geçmiş */
+    staffList,
+    /** Bu ayın standart sabit gider toplamı; belirli bir ay için fixedStandardTotalFor(ay) */
     fixedStandardTotal,
+    fixedStandardTotalFor,
     stockSheet,
+    countInBaseUnit,
     closingStock,
     invoicesByMonth,
     goodsPurchases,

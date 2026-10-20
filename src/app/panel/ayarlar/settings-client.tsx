@@ -27,11 +27,11 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
-import { Badge } from "@/components/ui/badge";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -39,103 +39,106 @@ import { clearQuery, FilterBar, fold, matches, SearchField, useQueryState, useQu
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { type PastelTone } from "@/components/ui/icon-tile";
-import { EmptyState } from "@/components/ui/misc";
+import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import type { WaterCost } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings } from "@/lib/calc/types";
-import { monthLabel, num, tl } from "@/lib/format";
+import { monthLabel, num, pct, tl } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { deleteCategory, saveCategories } from "@/server/actions/products";
 import { saveSettings } from "@/server/actions/settings";
 
+import { ALL_FIELDS, isClean, MEASURE_FIELDS, parseField, problemOf, RATE_FIELDS, shown, textsOf, toText, waterText, type FieldDef, type NumericKey } from "./fields";
+import { changed, impactModel, settingsImpact, type Change, type ImpactData, type SettingsImpact } from "./impact";
 import { SECTION_SCROLL_MARGIN } from "./sections";
+import { waterSource } from "./water-text";
 
 
 // ---------------------------------------------------------------- Hesap ayarları
 
-type FieldDef = { key: keyof Settings; label: string; hint: string; kind: "pct" | "num" | "int" };
-
-const RATE_FIELDS: FieldDef[] = [
-  { key: "kdv", label: "Satış KDV oranı", hint: "Kafe satışlarında %10", kind: "pct" },
-  { key: "komisyon", label: "Banka / POS komisyon oranı", hint: "Sadece kartlı satışlara uygulanır", kind: "pct" },
-  { key: "kartOrani", label: "Kartlı satış oranı", hint: "Kredi kartı + yemek kartı ÷ ciro (Patron Eylül: %85,6)", kind: "pct" },
-  { key: "hedefMaliyet", label: "Hedef maliyet oranı (food cost)", hint: "Kafeler için ideal %25–35", kind: "pct" },
-  { key: "fire", label: "Fire / kayıp payı", hint: "Dökülen süt, atılan kahve, bozulan tatlı", kind: "pct" },
-];
-
-const MEASURE_FIELDS: FieldDef[] = [
-  { key: "shotTek", label: "Tek shot kahve (gr)", hint: "Solo espresso, formülde ShotTek", kind: "num" },
-  { key: "shotCift", label: "Çift shot kahve (gr)", hint: "Formülde ShotCift", kind: "num" },
-  { key: "pompa", label: "1 pompa şurup (ml)", hint: "Formülde Pompa", kind: "num" },
-  { key: "dondurmaTop", label: "1 top dondurma (ml)", hint: "Formülde DondurmaTop", kind: "num" },
-  { key: "tkGr", label: "Türk kahvesi 1 fincan (gr)", hint: "Formülde TKGr", kind: "num" },
-  { key: "potGr", label: "Filtre kahve tam pot (gr)", hint: "Formülde PotGr", kind: "num" },
-  { key: "potMl", label: "Tam pottan çıkan (ml)", hint: "Varsayım: 1.800 ml. Makinenizin değerini yazın.", kind: "num" },
-  { key: "acikGun", label: "Ayda kaç gün açıksınız", hint: "Başabaş ve günlük giderler için", kind: "int" },
-];
-
-const ALL_FIELDS = [...RATE_FIELDS, ...MEASURE_FIELDS];
-
-const toText = (v: number, kind: FieldDef["kind"]) => (kind === "pct" ? num(v * 100, 2) : num(v, kind === "int" ? 0 : 2));
-const toValue = (v: number, kind: FieldDef["kind"]) => (kind === "pct" ? v / 100 : kind === "int" ? Math.round(v) : v);
-const textsOf = (settings: Settings) => Object.fromEntries(ALL_FIELDS.map((f) => [f.key, toText(Number(settings[f.key]), f.kind)]));
-const waterText = (v: number | null) => (v === null ? "" : num(v, 4));
-/** Yüzde alanında "%10" ya da "10%" yazılırsa da 10 okunur (parseNumberTR "%"yi kendisi 100'e bölerdi) */
-const parseField = (text: string, kind: FieldDef["kind"]) => parseNumberTR(kind === "pct" ? text.replace(/%/g, "") : text);
-
-/**
- * Alan kayıtlı değerden farklı mı? Biçim farkı ("10" / "10,00") ve ekranda yuvarlanan ondalıklar
- * değişiklik sayılmaz; kayıttan sonra yazılan değer kayıtlı değere eşitse de temiz sayılır.
- */
-function isClean(text: string, baseText: string, current: number | null, kind: FieldDef["kind"] = "num") {
-  if (text.trim() === baseText.trim()) return true;
-  const v = parseField(text, kind);
-  if (v === null) return text.trim() === "" && current === null;
-  const b = parseField(baseText, kind);
-  if (b !== null && Math.abs(v - b) < 1e-9) return true;
-  return current !== null && Math.abs(toValue(v, kind) - current) < 1e-9;
-}
-
-type Water = { perLiter: number; month: string | null; bill: number; liters: number };
+type Out = Partial<Record<keyof Settings, number | boolean | null>>;
+type SettingsInput = Parameters<typeof saveSettings>[0];
 
 /**
  * Oranlar, reçete ölçüleri, su maliyeti ve QR menü tek bir kayıtla saklanır (saveSettings).
- * Değişiklik olunca altta yüzen kaydet çubuğu açılır; bir alandayken Enter da kaydeder.
+ * Değişiklik olunca altta yüzen çubuk açılır: kaydetmeden önce etkisi (durumu değişen ürünler, maliyet oranı,
+ * brüt kâr, başabaş) orada görünür. Yalnızca değişen alanlar gönderilir; kayıttan sonra bildirimdeki "Geri al"
+ * önceki değerleri olduğu gibi geri yazar. Bir alandayken Enter da kaydeder.
  */
-export function SettingsForm({ settings, water }: { settings: Settings; water: Water }) {
-  const [vals, setVals] = useState<Record<string, string>>(() => textsOf(settings));
+export function SettingsForm({ settings, water, data }: { settings: Settings; water: WaterCost; data: ImpactData }) {
+  const [vals, setVals] = useState<Record<NumericKey, string>>(() => textsOf(settings));
   const [fireEx, setFireEx] = useState(settings.fireExcludesPackaging);
   const [publicMenu, setPublicMenu] = useState(settings.publicMenu);
   const [waterOv, setWaterOv] = useState(waterText(settings.suBirimLTOverride));
   const [busy, setBusy] = useState(false);
+  const [details, setDetails] = useState(false);
+  // Kayıt, geri alma ya da başka bir sekmedeki değişiklikten sonra sunucudan yeni ayarlar gelir: el değmemiş alanlar
+  // yeni değeri alır, yazılmakta olanlar korunur
+  const [synced, setSynced] = useState(settings);
+  if (synced !== settings) {
+    const old = synced;
+    setSynced(settings);
+    setVals((v) => {
+      const next = { ...v };
+      for (const f of ALL_FIELDS) {
+        if (isClean(v[f.key], toText(Number(old[f.key]), f.kind), Number(old[f.key]), f.kind)) next[f.key] = toText(Number(settings[f.key]), f.kind);
+      }
+      return next;
+    });
+    if (fireEx === old.fireExcludesPackaging) setFireEx(settings.fireExcludesPackaging);
+    if (publicMenu === old.publicMenu) setPublicMenu(settings.publicMenu);
+    if (isClean(waterOv, waterText(old.suBirimLTOverride), old.suBirimLTOverride)) setWaterOv(waterText(settings.suBirimLTOverride));
+  }
 
   const base = textsOf(settings);
   const changedFields = ALL_FIELDS.filter((f) => !isClean(vals[f.key], base[f.key], Number(settings[f.key]), f.kind));
   const waterChanged = !isClean(waterOv, waterText(settings.suBirimLTOverride), settings.suBirimLTOverride);
   const dirty = changedFields.length > 0 || fireEx !== settings.fireExcludesPackaging || publicMenu !== settings.publicMenu || waterChanged;
-  // Okunamayan alan anında işaretlensin (kaydetmeyi beklemeden)
-  const invalid = (f: FieldDef) => vals[f.key].trim() === "" || parseField(vals[f.key], f.kind) === null;
-  const waterInvalid = waterOv.trim() !== "" && parseNumberTR(waterOv) === null;
+  // Okunamayan ya da sınır dışı alan anında işaretlensin (kaydetmeyi beklemeden)
+  const problem = (f: FieldDef) => problemOf(f, vals[f.key]);
+  const waterValue = waterOv.trim() === "" ? null : parseNumberTR(waterOv);
+  const waterInvalid = waterOv.trim() !== "" && (waterValue === null || waterValue < 0);
+
+  // Önizleme: kaydedilmemiş (geçerli) değerlerle hesaplama motoru tarayıcıda yeniden çalışır
+  const draft: Settings = { ...settings, fireExcludesPackaging: fireEx };
+  for (const f of changedFields) {
+    const v = parseField(vals[f.key], f.kind);
+    if (v !== null && !problem(f)) draft[f.key] = v;
+  }
+  if (waterChanged && !waterInvalid) draft.suBirimLTOverride = waterValue;
+  const draftKey = JSON.stringify(draft);
+  const deferredKey = useDeferredValue(draftKey);
+  const baseModel = useMemo(() => impactModel(data), [data]);
+  const impact = useMemo(() => {
+    const next = JSON.parse(deferredKey) as Settings;
+    const calcKeys = (st: Settings) => JSON.stringify({ ...st, publicMenu: false });
+    if (calcKeys(next) === calcKeys(data.settings)) return null;
+    return settingsImpact(baseModel, impactModel(data, next));
+  }, [deferredKey, baseModel, data]);
+  const invalidCount = changedFields.filter((f) => problem(f)).length + (waterChanged && waterInvalid ? 1 : 0);
 
   function reset() {
     setVals(textsOf(settings));
     setFireEx(settings.fireExcludesPackaging);
     setPublicMenu(settings.publicMenu);
     setWaterOv(waterText(settings.suBirimLTOverride));
+    setDetails(false);
   }
 
-  /** Yalnızca değişen alanlar gönderilir: işlem geçmişinde neyin değiştiği okunur */
+  /** Yalnızca değişen alanlar gönderilir: dokunulmayan oranlar ekrandaki yuvarlanmış metinden yeniden yazılmaz */
   async function save(e?: FormEvent) {
     e?.preventDefault();
     if (!dirty) return void toast("Değişiklik yok", { description: "Kaydedilecek yeni bir değer girilmedi." });
-    const out: Record<string, number | boolean | null> = {};
+    const out: Out = {};
     for (const f of changedFields) {
-      const v = parseField(vals[f.key], f.kind);
-      if (v === null) {
+      const err = problem(f);
+      if (err) {
         document.getElementById(`s-${f.key}`)?.focus();
-        return void toast.error(`${f.label}: geçerli bir sayı girin`);
+        return void toast.error(`${f.label}: ${err}`);
       }
-      out[f.key] = toValue(v, f.kind);
+      out[f.key] = parseField(vals[f.key], f.kind);
     }
     if (fireEx !== settings.fireExcludesPackaging) out.fireExcludesPackaging = fireEx;
     if (publicMenu !== settings.publicMenu) out.publicMenu = publicMenu;
@@ -145,38 +148,87 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
         document.getElementById("s-water")?.focus();
         return void toast.error("Elle birim maliyet: geçerli bir sayı girin ya da boş bırakın");
       }
-      out.suBirimLTOverride = waterOv.trim() === "" ? null : parseNumberTR(waterOv);
+      out.suBirimLTOverride = waterValue;
     }
+    // Geri al için kayıtlı (yuvarlanmamış) önceki değerler
+    const previous: Out = {};
+    for (const k of Object.keys(out) as (keyof Settings)[]) previous[k] = settings[k];
     setBusy(true);
-    const res = await saveSettings(out);
+    const res = await saveSettings(out as SettingsInput);
     setBusy(false);
-    if (res.ok) toast.success("Ayarlar kaydedildi; bütün hesaplar güncellendi");
-    else toast.error(res.error);
+    if (!res.ok) return void toast.error(res.error);
+    setDetails(false);
+    if (!res.data.changes.length) return void toast("Değişiklik yok", { description: "Değerler zaten kayıtlıydı." });
+    toast.success("Ayarlar kaydedildi; bütün hesaplar güncellendi", {
+      description: res.data.changes.join(" · "),
+      duration: 15_000,
+      action: {
+        label: "Geri al",
+        onClick: async () => {
+          const back = await saveSettings(previous as SettingsInput);
+          if (back.ok) toast.success("Önceki değerler geri yüklendi", { description: back.data.changes.join(" · ") || undefined });
+          else toast.error(back.error);
+        },
+      },
+    });
   }
 
-  const field = (f: FieldDef) => (
-    <Field
-      key={f.key}
-      label={`${f.label}${f.kind === "pct" ? " (%)" : ""}`}
-      hint={f.hint}
-      error={invalid(f) ? "Bir sayı girin (ondalık için virgül: 2,5)" : undefined}
-      htmlFor={`s-${f.key}`}
-    >
-      <NumberInput
-        id={`s-${f.key}`}
-        value={vals[f.key]}
-        onChange={(e) => setVals((v) => ({ ...v, [f.key]: e.target.value }))}
-        aria-invalid={invalid(f) || undefined}
-        className="cell-input"
-      />
-    </Field>
-  );
+  const field = (f: FieldDef) => {
+    const err = problem(f);
+    const changed = changedFields.includes(f);
+    const v = parseField(vals[f.key], f.kind);
+    return (
+      <Field
+        key={f.key}
+        label={`${f.label}${f.kind === "pct" ? " (%)" : ""}`}
+        tip={f.formula ? `Reçete formüllerinde ${f.formula} adıyla kullanılır; değiştirince ${f.formula} geçen bütün reçeteler güncellenir.` : undefined}
+        hint={
+          changed && v !== null ? (
+            <span className="text-warn">
+              Yeni: <strong className="font-semibold tabular">{shown(v, f)}</strong> · kayıtlı {shown(Number(settings[f.key]), f)}
+            </span>
+          ) : f.assumption ? (
+            // Excel'deki sarı "VARSAYIM" hücresi
+            <span className="inline-flex flex-wrap items-center gap-1.5">
+              <Badge tone="amber" dot title="Excel'de sarı işaretli varsayım: gerçek değeri ölçüp yazın">
+                Varsayım
+              </Badge>
+              {f.hint.replace(/^Varsayım:\s*/, "")}
+            </span>
+          ) : (
+            f.hint
+          )
+        }
+        error={err ?? undefined}
+        htmlFor={`s-${f.key}`}
+      >
+        <div className="relative">
+          <NumberInput
+            id={`s-${f.key}`}
+            value={vals[f.key]}
+            onChange={(e) => setVals((x) => ({ ...x, [f.key]: e.target.value }))}
+            onKeyDown={(e) => {
+              // Esc alanı kayıtlı değere döndürür
+              if (e.key === "Escape" && changed) {
+                e.preventDefault();
+                setVals((x) => ({ ...x, [f.key]: base[f.key] }));
+              }
+            }}
+            aria-invalid={err ? true : undefined}
+            data-warn={(changed && !err) || undefined}
+            className={cn("cell-input", f.kind === "pct" && "pr-7")}
+          />
+          {f.kind === "pct" ? (
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute" aria-hidden="true">
+              %
+            </span>
+          ) : null}
+        </div>
+      </Field>
+    );
+  };
 
-  const waterSource = water.month
-    ? `${monthLabel(water.month)} su faturası ${tl(water.bill)} ÷ ${num(water.liters, 0)} L`
-    : settings.suBirimLTOverride !== null
-      ? "Elle girildi"
-      : "Gelir-gider tablosunda SU GİDERİ girilmedi";
+  const summary = impact ? impactSummary(impact) : null;
 
   return (
     <form id="settings-form" onSubmit={save} data-dirty={dirty || undefined} className="space-y-4">
@@ -184,7 +236,7 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
         <CardHeader
           icon={<Percent />}
           title="Oranlar"
-          description="Menü fiyatları KDV dahil; maliyetler KDV hariç (alışta ödenen KDV indirilebildiği için). Önerilen fiyat hedef maliyet oranına göre hesaplanır."
+          description="Menü fiyatları KDV dahil; maliyetler KDV hariç (alışta ödenen KDV indirilebildiği için). Önerilen fiyat hedef maliyet oranına göre hesaplanır. Yüzdeleri sayı olarak yazın: %10 için 10."
         />
         <CardContent className="space-y-4">
           <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3">{RATE_FIELDS.map(field)}</div>
@@ -205,7 +257,7 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
         <CardHeader
           icon={<Ruler />}
           title="Reçete ölçüleri"
-          description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …) ve ayda açık gün sayısı. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir."
+          description="Reçetelerde formülle bağlı miktarlar (ShotTek, Pompa …) ve ayda açık gün sayısı. Değiştirince bağlı bütün reçeteler ve hesaplar güncellenir. Varsayım işaretli değerleri ölçüp yazın."
         />
         <CardContent className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4">{MEASURE_FIELDS.map(field)}</CardContent>
       </Card>
@@ -215,16 +267,19 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
           <CardHeader icon={<Droplets />} title="Su + buz birim maliyeti" description="Reçetelerdeki su ve buzun litre maliyeti." />
           <CardContent className="space-y-4">
             <Well className="ring-1 ring-line">
-              <p className="text-[13px] text-ink-mute">Şu an</p>
+              <p className="flex items-center gap-1.5 text-[13px] text-ink-mute">
+                Şu an
+                <InfoTip text="Gelir-gider tablosunda SU GİDERİ girilmiş ve ürün satış listesi olan en son ayın faturası ÷ o ay reçetelere göre harcanan su + buz litresi. Excel her zaman Eylül'ü kullanır." />
+              </p>
               <p className="mt-0.5 text-2xl font-semibold tracking-tight text-ink tabular">
                 {tl(water.perLiter, 4)}
                 <span className="ml-0.5 text-sm font-medium text-ink-mute">/L</span>
               </p>
-              <p className="mt-1 text-xs text-ink-mute">{waterSource}</p>
+              <p className={cn("mt-1 text-xs", water.reason === "no-usage" ? "text-warn" : "text-ink-mute")}>{waterSource(water)}</p>
             </Well>
             <Field
               label="Elle birim maliyet (₺/L)"
-              hint="Boş bırakırsanız su faturasından otomatik hesaplanır"
+              hint={waterChanged && !waterInvalid ? <span className="text-warn">{waterValue === null ? "Kaydedince faturadan otomatik hesaplanır" : `Yeni: ${tl(waterValue, 4)} /L`}</span> : "Boş bırakırsanız su faturasından otomatik hesaplanır"}
               error={waterInvalid ? "Bir sayı girin ya da boş bırakın" : undefined}
               htmlFor="s-water"
             >
@@ -234,6 +289,7 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
                 onChange={(e) => setWaterOv(e.target.value)}
                 placeholder="otomatik"
                 aria-invalid={waterInvalid || undefined}
+                data-warn={(waterChanged && !waterInvalid) || undefined}
                 className="cell-input"
               />
             </Field>
@@ -274,21 +330,32 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
         </Card>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-panel px-4 py-3">
-        <p className="text-[13px] text-ink-mute">Kaydettiğinizde bütün hesaplar (reçete maliyetleri, kârlılık, gelir-gider) güncellenir.</p>
-        <Button type="submit" variant={dirty ? "primary" : "secondary"} disabled={busy}>
-          <Save size={16} /> {busy ? "Kaydediliyor…" : "Kaydet"}
-        </Button>
-      </div>
-
-      <FloatingBar open={dirty}>
-        <p className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-ink-mute" aria-live="polite">
+      <FloatingBar open={dirty} className="max-w-3xl gap-y-2">
+        {impact && details ? <ImpactDetails impact={impact} invalidCount={invalidCount} /> : null}
+        <div className="flex min-w-0 flex-1 basis-56 items-center gap-2 text-[13px] text-ink-mute" aria-live="polite">
           <span className="size-2 shrink-0 rounded-full bg-warn" aria-hidden="true" />
-          {/* Telefonda iki düğmenin yanında tek satıra sığsın */}
-          <span className="sm:hidden">Kaydedilmedi</span>
-          <span className="max-sm:hidden">Kaydedilmemiş değişiklikler var</span>
-        </p>
-        <div className="flex gap-2">
+          <span className="min-w-0">
+            <span className="font-medium text-ink-soft">Kaydedilmedi</span>
+            {invalidCount ? (
+              <span className="text-bad max-sm:block">
+                <span className="max-sm:hidden"> · </span>
+                {num(invalidCount)} alan hatalı
+              </span>
+            ) : null}
+            {summary ? (
+              <span className="max-sm:block">
+                <span className="max-sm:hidden"> · </span>
+                {summary}
+              </span>
+            ) : null}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
+          {impact ? (
+            <Button variant="secondary" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
+              <Activity size={16} /> {details ? "Etkiyi gizle" : "Etkisi"}
+            </Button>
+          ) : null}
           <Button variant="ghost" onClick={reset} disabled={busy}>
             <Undo2 size={16} /> Geri al
           </Button>
@@ -298,6 +365,115 @@ export function SettingsForm({ settings, water }: { settings: Settings; water: W
         </div>
       </FloatingBar>
     </form>
+  );
+}
+
+/** Çubuktaki tek satırlık özet: "3 ürünün durumu değişir · ort. maliyet %27,4 → %28,1" */
+function impactSummary(i: SettingsImpact): string {
+  if (!i.any) return "hesaplara etkisi yok";
+  const parts: string[] = [];
+  if (i.statusChanges.length) parts.push(`${num(i.statusChanges.length)} ürünün durumu değişir`);
+  else if (i.costChanged) parts.push(`${num(i.costChanged)} ürünün maliyeti değişir`);
+  if (changed(i.avgCostRatio)) parts.push(`ort. maliyet ${pct(i.avgCostRatio.before)} → ${pct(i.avgCostRatio.after)}`);
+  else if (changed(i.breakEvenDaily, 0.5)) parts.push(`başabaş ${tl(i.breakEvenDaily.before)} → ${tl(i.breakEvenDaily.after)} /gün`);
+  else if (!parts.length && i.suggestedChanged) parts.push(`${num(i.suggestedChanged)} ürünün önerilen fiyatı değişir`);
+  return parts.join(" · ") || "hesaplar değişir";
+}
+
+function Delta({ c, format, goodWhenUp }: { c: Change; format: (v: number) => string; goodWhenUp?: boolean }) {
+  const up = c.after > c.before;
+  // Ekranda aynı görünen fark (kuruş altı) "değişmez" sayılır
+  if (format(c.before) === format(c.after))
+    return (
+      <span className="tabular whitespace-nowrap text-ink-mute">
+        {format(c.before)} <span className="text-ink-quiet">· değişmez</span>
+      </span>
+    );
+  const tone = up === Boolean(goodWhenUp) ? "text-good" : "text-bad";
+  return (
+    <span className="tabular whitespace-nowrap">
+      <span className="text-ink-mute">{format(c.before)}</span>
+      <span className="px-1 text-ink-quiet" aria-hidden="true">
+        →
+      </span>
+      <span className="sr-only"> yeni değer </span>
+      <span className={cn("font-semibold", tone)}>{format(c.after)}</span>
+    </span>
+  );
+}
+
+const STATUS_CHIPS = 6;
+
+/** Kaydetmeden önceki etki: ürün durumları, maliyet oranı, son ay brüt kâr, başabaş, sabit gider, su */
+function ImpactDetails({ impact: i, invalidCount }: { impact: SettingsImpact; invalidCount: number }) {
+  const rows: { label: string; tip?: string; value: ReactNode }[] = [
+    {
+      label: "Durumu değişen ürün",
+      value: (
+        <span className="tabular">
+          <strong className="font-semibold text-ink">{num(i.statusChanges.length)}</strong> / {num(i.products)}
+        </span>
+      ),
+    },
+    { label: "Maliyeti değişen ürün", value: num(i.costChanged) },
+    { label: "Önerilen fiyatı değişen ürün", value: num(i.suggestedChanged) },
+    {
+      label: "Ortalama maliyet oranı",
+      tip: "Aktif, reçeteli ürünlerin maliyet ÷ KDV hariç fiyat ortalaması (Ürün Kârlılık).",
+      value: <Delta c={i.avgCostRatio} format={(v) => pct(v)} />,
+    },
+  ];
+  if (i.grossProfit && i.month)
+    rows.push({
+      label: `${monthLabel(i.month)} brüt kâr`,
+      tip: "O ayın ürün satış listesine göre: KDV hariç ciro − reçete maliyeti − POS komisyonu.",
+      value: <Delta c={i.grossProfit} format={(v) => tl(v)} goodWhenUp />,
+    });
+  if (i.breakEvenDaily)
+    rows.push({
+      label: "Başabaş günlük ciro (bu ay)",
+      tip: "Bu ayın standart sabit giderini karşılamak için gereken günlük KDV dahil ciro (son satış ayının brüt kâr oranıyla).",
+      value: <Delta c={i.breakEvenDaily} format={(v) => tl(v)} />,
+    });
+  if (changed(i.fixedStandard, 0.5))
+    rows.push({ label: "Aylık standart sabit gider", tip: "Günlük tanımlı giderler açık gün sayısıyla çarpılır.", value: <Delta c={i.fixedStandard} format={(v) => tl(v)} /> });
+  if (changed(i.waterPerLiter)) rows.push({ label: "Su + buz ₺/L", value: <Delta c={i.waterPerLiter} format={(v) => tl(v, 4)} /> });
+
+  return (
+    <div className="max-h-[45vh] w-full min-w-0 basis-full overflow-x-hidden overflow-y-auto border-b border-line pr-2 pb-3 scroll-thin" role="region" aria-label="Değişikliğin etkisi">
+      <p className="text-sm font-semibold text-ink">Kaydetmeden önce etkisi</p>
+      <p className="text-xs text-ink-mute">
+        Kaydedince bütün ekranlara (ürün kârlılığı, panel, gelir-gider) yansır.
+        {invalidCount ? ` Hatalı ${num(invalidCount)} alan hesaba katılmadı.` : ""}
+      </p>
+      <dl className="mt-2 grid gap-x-6 sm:grid-cols-2">
+        {rows.map((r) => (
+          <div key={r.label} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-line/70 py-1.5 text-[13px]">
+            <dt className="flex min-w-0 items-center gap-1.5 text-ink-mute">
+              {r.label}
+              {r.tip ? <InfoTip text={r.tip} /> : null}
+            </dt>
+            <dd className="shrink-0 text-right text-ink">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {i.statusChanges.length ? (
+        <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Durumu değişen ürünler">
+          {i.statusChanges.slice(0, STATUS_CHIPS).map((c) => (
+            <li key={c.id} className="inline-flex items-center gap-1.5 rounded-full bg-panel py-1 pr-1.5 pl-2.5 text-xs text-ink-soft" title={`Maliyet oranı ${pct(c.costRatioBefore)} → ${pct(c.costRatioAfter)}`}>
+              <span className="font-medium text-ink">{c.label}</span>
+              <StatusBadge status={c.before} />
+              <span aria-hidden="true">→</span>
+              <span className="sr-only">yeni durum</span>
+              <StatusBadge status={c.after} />
+            </li>
+          ))}
+          {i.statusChanges.length > STATUS_CHIPS ? (
+            <li className="inline-flex items-center px-1 text-xs text-ink-mute">+{num(i.statusChanges.length - STATUS_CHIPS)} ürün daha</li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   Box,
   Cake,
   Cherry,
+  ChevronDown,
   Cookie,
   Download,
   Droplet,
@@ -39,22 +40,27 @@ import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
-import { parseNumberTR } from "@/lib/calc/expr";
-import type { Ingredient } from "@/lib/calc/types";
-import { COUNT_GROUPS, COUNT_UNITS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
+import { countUnitsFor } from "@/lib/calc/engine";
+import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc/expr";
+import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
+import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { deleteIngredient, saveIngredient, setIngredientActive, updateIngredientPrice } from "@/server/actions/ingredients";
+import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
 
 import { priceText } from "../urunler/price-text";
 
 import { catOrder } from "./categories";
+import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup, type IngredientDeps } from "./form-helpers";
 
 export interface IngredientRow extends Ingredient {
   unitCost: number;
   usedIn: { id: number; label: string }[];
   monthUsage: number;
-  history: { at: string; price: number; size: number; by: string | null }[];
+  /** Fiyat geçmişi, eskiden yeniye; note: kaynak ("Excel'den aktarıldı", Paraşüt fatura numarası) */
+  history: { at: string; price: number; size: number; by: string | null; note: string | null }[];
+  /** Silmeyi engelleyen geçmiş kayıt sayıları */
+  deps: IngredientDeps;
 }
 
 type Filter = "all" | "tahmini" | "kullanilmayan" | "pasif";
@@ -96,7 +102,8 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   Ambalaj: Package,
 };
 
-const searchText = (r: IngredientRow) => `${r.name} ${r.supplier ?? ""} ${r.packageDesc ?? ""} ${r.category}`;
+/** Arama: ad, tedarikçi, paket, kategori ve Kaynak / not (ör. "varsayım" yazınca doğrulanacaklar çıkar) */
+const searchText = (r: IngredientRow) => `${r.name} ${r.supplier ?? ""} ${r.packageDesc ?? ""} ${r.category} ${r.note ?? ""}`;
 
 const sortValue = (r: IngredientRow, key: Exclude<SortKey, "name">) => (key === "usedIn" ? r.usedIn.length : r[key]);
 
@@ -124,7 +131,25 @@ export function CountUp({ value, digits = 0, suffix = "" }: { value: number; dig
   return <AnimatedNumber value={value} format={(v) => `${num(v, digits, digits)}${suffix}`} />;
 }
 
-/** Satır içinde paket fiyatı: Enter ya da alandan çıkmak kaydeder, Esc vazgeçer. Birim (₺) hep görünür. */
+/** Görünen listedeki fiyat alanları, ekrandaki sırayla (tablo ya da telefon kartları; gizli kopya ve su satırları atlanır) */
+function visiblePriceInputs(): HTMLInputElement[] {
+  return [...document.querySelectorAll<HTMLInputElement>("input[data-price-input]")].filter((el) => el.offsetParent !== null);
+}
+
+/** Excel'deki gibi: Enter ya da ↓ alttaki satırın fiyatına, ↑ üsttekine geçer (geçerken bu satır kaydedilir) */
+function focusSibling(from: HTMLInputElement, step: 1 | -1): boolean {
+  const list = visiblePriceInputs();
+  const next = list[list.indexOf(from) + step];
+  if (!next) return false;
+  next.focus();
+  return true;
+}
+
+/**
+ * Satır içinde paket fiyatı: Enter kaydeder ve alttaki satıra geçer, ↑/↓ satırlar arasında gezer, alandan çıkmak da
+ * kaydeder, Esc vazgeçer. Birim (₺) hep görünür. "Tahmini" malzemede işaret kendiliğinden kalkmaz (varsayım paket
+ * içeriği ya da ürün eşleştirmesiyle ilgili olabilir): bildirimdeki düğmeyle kaldırılır.
+ */
 function PackagePriceCell({ row, className }: { row: IngredientRow; className?: string }) {
   const [value, setValue] = useState(priceText(row.packagePrice));
   const [last, setLast] = useState(row.packagePrice);
@@ -145,11 +170,12 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
     const v = parseNumberTR(value);
     if (v === null || v < 0) {
       setValue(priceText(last));
-      return toast.error("Geçerli bir fiyat girin (ör. 1.022 ya da 49,50)");
+      return toast.error(`${row.name}: geçerli bir fiyat girin (ör. 1.022 ya da 49,50)`);
     }
     if (Math.abs(v - last) < 0.0001) return setValue(priceText(v));
     setSaving(true);
-    const res = await updateIngredientPrice(row.id, v);
+    const keepEstimate = row.isEstimate;
+    const res = await updateIngredientPrice(row.id, v, !keepEstimate);
     setSaving(false);
     if (!res.ok) {
       setValue(priceText(last));
@@ -157,8 +183,22 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
     }
     setLast(v);
     setValue(priceText(v));
+    const used = row.usedIn.length ? `${num(row.usedIn.length)} ürünün maliyeti güncellendi.` : "Hiçbir reçetede kullanılmıyor.";
     toast.success(`${row.name}: ${tl(last, 2)} → ${tl(v, 2)}`, {
-      description: row.usedIn.length ? `${num(row.usedIn.length)} ürünün maliyeti güncellendi.` : "Hiçbir reçetede kullanılmıyor.",
+      id: `price-${row.id}`,
+      description: keepEstimate ? `${used} Tahmini işareti duruyor; varsayım doğrulandıysa kaldırın.` : used,
+      duration: keepEstimate ? 10_000 : undefined,
+      action: keepEstimate
+        ? {
+            label: "Tahmini işaretini kaldır",
+            onClick: async () => {
+              const r = await setIngredientEstimate(row.id, false);
+              toast.dismiss(`price-${row.id}`);
+              if (r.ok) toast.success(`${row.name}: Tahmini işareti kaldırıldı`);
+              else toast.error(r.error);
+            },
+          }
+        : undefined,
     });
   }
   return (
@@ -166,15 +206,23 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
       <NumberInput
         value={value}
         disabled={saving}
+        data-price-input=""
+        enterKeyHint="next"
         onChange={(e) => setValue(e.target.value)}
         onFocus={(e) => e.currentTarget.select()}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const el = e.currentTarget;
+            // Son satırda Enter yalnızca kaydeder
+            if (!focusSibling(el, e.key === "ArrowUp" ? -1 : 1)) el.blur();
+          }
           if (e.key === "Escape") {
             cancelled.current = true;
             setValue(priceText(last));
-            (e.target as HTMLInputElement).blur();
+            e.currentTarget.blur();
           }
         }}
         aria-label={`${row.name} paket fiyatı (₺, KDV hariç, ${num(row.packageSize)} ${row.unit})`}
@@ -187,8 +235,12 @@ function PackagePriceCell({ row, className }: { row: IngredientRow; className?: 
   );
 }
 
-/** Malzeme adı, rozetler ve kategori · tedarikçi (tablo ve telefon kartı) */
+/**
+ * Malzeme adı, rozetler ve kategori · tedarikçi (tablo ve telefon kartı). Excel'deki "Kaynak / Not" sütunu: tahmini
+ * ya da reçetede olmayan malzemede not görünür (ne doğrulanacağını söyler), ötekilerde üzerine gelince okunur.
+ */
 function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () => void; compact?: boolean }) {
+  const showNote = Boolean(r.note) && (r.isEstimate || !r.usedIn.length);
   return (
     <button type="button" className={cn("group/name flex min-w-0 gap-3 text-left", compact ? "items-start" : "items-center")} onClick={onOpen}>
       <IconTile tone={toneFor(r.category)} className={compact ? undefined : "hidden sm:inline-flex"}>
@@ -198,17 +250,22 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute")}>{r.name}</span>
           {r.isEstimate ? (
-            <Badge tone="amber" dot title="Faturada bulunamayan, tahmini değer">
+            <Badge tone="amber" dot title={r.note ?? "Faturada bulunamayan, tahmini değer"}>
               Tahmini
             </Badge>
           ) : null}
           {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
         </span>
-        <span className="block truncate text-[13px] leading-5 text-ink-mute">
+        <span className="block truncate text-[13px] leading-5 text-ink-mute" title={showNote ? undefined : (r.note ?? undefined)}>
           {r.category}
           {r.supplier ? ` · ${r.supplier}` : ""}
         </span>
+        {showNote ? (
+          <span className={cn("mt-0.5 line-clamp-2 text-xs leading-4", r.isEstimate ? "text-warn" : "text-ink-mute")} title={r.note!}>
+            {r.note}
+          </span>
+        ) : null}
       </span>
     </button>
   );
@@ -308,6 +365,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       "Son ay kullanım",
       "Tahmini",
       "Aktif",
+      "Kaynak / not",
     ];
     const lines = visible.map((r) => [
       r.name,
@@ -324,6 +382,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       num(r.monthUsage, 2),
       r.isEstimate ? "Evet" : "",
       r.active ? "Evet" : "Hayır",
+      r.note ?? "",
     ]);
     downloadCsv("hammaddeler.csv", [header, ...lines]);
     toast.success(`${num(visible.length)} malzeme CSV olarak indirildi`);
@@ -339,7 +398,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
       <CardHeader
         icon={<Package />}
         title="Hammadde listesi"
-        description="Yeni fatura gelince yalnızca paket fiyatını değiştirin; Enter kaydeder, Esc vazgeçer. Gerçek fiyatı yazınca Tahmini işareti kalkar."
+        description="Fatura gelince paket fiyatını yazın: Enter kaydeder ve alt satıra geçer. Tahmini işaretini, varsayımı doğrulayınca kaldırın."
         meta={
           <>
             <span>Aktif</span>
@@ -384,7 +443,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
         <div className="flex flex-wrap gap-2" role="group" aria-label="Görünüm">
           <FilterChip active={chosen === "tahmini"} onToggle={() => pick("tahmini")} count={counts.tahmini}>
             <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
-            Tahmini fiyat
+            Tahmini
           </FilterChip>
           <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan}>
             Reçetede yok
@@ -452,7 +511,7 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                       <SortButton numeric dir={dirOf("packagePrice")} onClick={() => toggleSort("packagePrice")}>
                         Paket fiyatı
                       </SortButton>
-                      <InfoTip text="KDV hariç, iskonto düşülmüş. Yeni fatura geldiğinde sadece bunu değiştirin; Enter ile kaydedilir." />
+                      <InfoTip text="KDV hariç, iskonto düşülmüş. Yeni fatura geldiğinde sadece bunu değiştirin: Enter kaydeder ve alttaki satırın fiyatına geçer, ↑/↓ satırlar arasında gezer, Esc vazgeçer." />
                     </span>
                   </TH>
                   <TH numeric>
@@ -695,27 +754,45 @@ export function NewIngredientButton({ categories, rows }: { categories: string[]
   );
 }
 
+const PASSIVE_EFFECT =
+  "Reçeteler ve ürün maliyetleri aynı kalır, geçmiş sayımlar ve alımlar korunur. Malzeme yeni reçete seçimlerinde ve yeni sayımlarda görünmez; Pasif listesinden yeniden açabilirsiniz.";
+
 /**
- * Silme onayı. Reçetede kullanılan malzeme silinemez (sunucu da reddeder): onun yerine "Pasif yap" önerilir;
- * pasif malzeme seçim listelerinden düşer, mevcut reçeteler bozulmaz.
+ * Silme onayı. Reçetede kullanılan ya da sayımı, alım miktarı, Paraşüt eşleştirmesi olan malzeme silinemez (sunucu da
+ * reddeder; silmek geçmiş ayların stok değerini değiştirirdi): onun yerine "Pasif yap" önerilir.
  */
 function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const used = row.usedIn.length > 0;
+  const history = historyText(row.deps);
+  const blocked = used || history !== null;
+
+  async function makePassive() {
+    const res = await setIngredientActive(row.id, false);
+    if (!res.ok) return void toast.error(res.error);
+    toast.success(`${row.name} pasif yapıldı`, { description: PASSIVE_EFFECT });
+  }
 
   async function confirm() {
-    if (used && !row.active) return onClose();
+    if (blocked && !row.active) return onClose();
     setBusy(true);
-    const res = used ? await setIngredientActive(row.id, false) : await deleteIngredient(row.id);
+    if (blocked) {
+      await makePassive();
+      setBusy(false);
+      return onClose();
+    }
+    const res = await deleteIngredient(row.id);
     setBusy(false);
-    if (!res.ok) return toast.error(res.error);
-    toast.success(used ? `${row.name} pasif yapıldı` : `${row.name} silindi`, {
-      description: used ? "Reçetelerde kalır, yeni seçimlerde görünmez. Pasif listesinden yeniden açabilirsiniz." : undefined,
-    });
+    if (!res.ok) {
+      // Sayfa açıkken başka yerde sayım ya da alım girildiyse sunucu reddeder: pasif yapmak tek tıkta
+      toast.error(res.error, row.active ? { action: { label: "Pasif yap", onClick: () => void makePassive() } } : undefined);
+      return onClose();
+    }
+    toast.success(`${row.name} silindi`);
     onClose();
   }
 
-  if (used)
+  if (blocked)
     return (
       <ConfirmDialog
         open
@@ -728,11 +805,11 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
         description={
           <>
             <span className="mb-3 block rounded-2xl bg-warn-soft px-3.5 py-2.5 text-warn">
-              Bu malzeme {num(row.usedIn.length)} üründe kullanılıyor. Silmek için önce o reçetelerden çıkarın.
+              {used ? `Bu malzeme ${num(row.usedIn.length)} üründe kullanılıyor; silmek için önce o reçetelerden çıkarın.` : null}
+              {used && history ? " " : null}
+              {history ? `${used ? "Ayrıca" : "Bu malzemenin"} ${history} kaydı var; silinirse geçmiş ayların stok ve tutarlılık değerleri değişir.` : null}
             </span>
-            {row.active
-              ? "Bunun yerine pasif yapabilirsiniz: reçeteler ve maliyetler aynı kalır, malzeme yeni seçimlerde görünmez."
-              : "Malzeme zaten pasif; reçetelerde kalmaya devam eder."}
+            {row.active ? `Bunun yerine pasif yapabilirsiniz. ${PASSIVE_EFFECT}` : "Malzeme zaten pasif; reçetelerde ve geçmiş kayıtlarda kalmaya devam eder."}
           </>
         }
       />
@@ -745,7 +822,7 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
       pending={busy}
       confirmLabel="Kalıcı olarak sil"
       title={`${row.name} silinsin mi?`}
-      description="Hiçbir reçetede kullanılmıyor. Fiyat geçmişiyle birlikte silinir; bu işlem geri alınamaz."
+      description="Hiçbir reçetede, sayımda ya da alım kaydında yok. Fiyat geçmişiyle birlikte silinir; bu işlem geri alınamaz."
     />
   );
 }
@@ -760,7 +837,7 @@ function IngredientDialog({
   initialCategory,
 }: {
   row: IngredientRow | null;
-  /** Aynı ad denetimi için bütün malzemeler */
+  /** Aynı ad denetimi, kategori/tedarikçi önerileri için bütün malzemeler */
   rows: IngredientRow[];
   onClose: () => void;
   onDelete?: () => void;
@@ -769,50 +846,103 @@ function IngredientDialog({
   initialCategory?: string;
 }) {
   const formId = useId();
-  const [f, setF] = useState({
-    name: row?.name ?? initialName,
-    category: row?.category ?? initialCategory ?? "Diğer",
-    supplier: row?.supplier ?? "",
-    packageDesc: row?.packageDesc ?? "",
-    packagePrice: row ? priceText(row.packagePrice) : "",
-    packageSize: num(row?.packageSize ?? 1000, 3),
-    unit: row?.unit ?? "gr",
-    vatRate: num((row?.vatRate ?? 0.01) * 100, 2),
-    note: row?.note ?? "",
-    isEstimate: row?.isEstimate ?? false,
-    priceSource: row?.priceSource ?? "manual",
-    countUnit: row?.countUnit ?? "",
-    countGroup: row?.countGroup ?? "",
-    active: row?.active ?? true,
+  const [f, setF] = useState(() => {
+    const category = row?.category ?? initialCategory ?? "Diğer";
+    // Yeni malzeme: Excel'deki gibi sayım listesine girer (birime uyan sayım birimi, kategorinin rafı, rafın KDV'si)
+    const countGroup = row ? (row.countGroup ?? "") : groupForCategory(rows, category);
+    return {
+      name: row?.name ?? initialName,
+      category,
+      supplier: row?.supplier ?? "",
+      packageDesc: row?.packageDesc ?? "",
+      packagePrice: row ? priceText(row.packagePrice) : "",
+      packageSize: num(row?.packageSize ?? 1000, 3),
+      unit: (row?.unit ?? "gr") as Unit,
+      vatRate: formatPercentInput(row?.vatRate ?? vatForGroup(countGroup)),
+      note: row?.note ?? "",
+      isEstimate: row?.isEstimate ?? false,
+      priceSource: row?.priceSource ?? "manual",
+      countUnit: (row ? (row.countUnit ?? "") : countUnitsFor("gr")[0]) as CountUnit | "",
+      countGroup,
+      active: row?.active ?? true,
+    };
   });
+  // Yeni malzemede kullanıcının elle değiştirdiği alanlara öneri yazılmaz
+  const [touched, setTouched] = useState<{ vat?: boolean; countGroup?: boolean; countUnit?: boolean }>({});
+  const [unitNote, setUnitNote] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
   const water = f.priceSource === "water";
   const price = parseNumberTR(f.packagePrice);
   const size = parseNumberTR(f.packageSize);
-  const vat = parseNumberTR(f.vatRate);
+  // Yüzde puanı: "20", "%20", "20%" → 0,2 (parsePercentInput zaten 100'e böler)
+  const vat = parsePercentInput(f.vatRate);
   const allCats = [...new Set([...INGREDIENT_CATEGORIES, ...categories])];
+  const suppliers = [...new Set(rows.map((r) => r.supplier?.trim()).filter((x): x is string => Boolean(x)))].sort((a, b) => a.localeCompare(b, "tr"));
+  const allowedCount = countUnitsFor(f.unit);
   const bulk = row?.unit === "gr" ? { unit: "kg", scale: 1000 } : row?.unit === "ml" ? { unit: "L", scale: 1000 } : { unit: row?.unit ?? "", scale: 1 };
+
+  const catNear = nearMatch(f.category, allCats);
+  const catNew = f.category.trim() !== "" && !catNear && !allCats.includes(f.category.trim());
+  const supNear = nearMatch(f.supplier, suppliers);
 
   const duplicate = f.name.trim() ? rows.find((r) => r.id !== row?.id && fold(r.name.trim()) === fold(f.name.trim())) : undefined;
   const errors = {
     name: !f.name.trim() ? "Malzeme adını yazın" : duplicate ? `“${duplicate.name}” zaten var${duplicate.active ? "" : " (pasif)"}` : null,
+    category: !f.category.trim() ? "Kategori yazın ya da listeden seçin" : null,
     price: !water && (price === null || price < 0) ? "Geçerli bir fiyat girin (ör. 1.022 ya da 49,50)" : null,
     size: size === null || size <= 0 ? "Paket içeriği 0'dan büyük olmalı" : null,
-    vat: vat === null || vat < 0 || vat > 100 ? "0 ile 100 arasında bir oran girin" : null,
+    vat: vat === null || vat < 0 || vat > 1 ? "0 ile 100 arasında bir oran girin (ör. 20)" : null,
+    countUnit: f.countUnit && !allowedCount.includes(f.countUnit) ? `“${f.unit}” birimli malzeme ${allowedCount.join(" ya da ")} olarak sayılır` : null,
   };
   const invalid = Object.values(errors).some(Boolean);
-  // Hatalar ilk "Ekle/Kaydet" denemesinden sonra görünür; aynı ad uyarısı ise yazarken hemen çıkar (boş alan baştan kırmızı olmasın)
-  const show = (k: keyof typeof errors) => ((tried || (k === "name" && duplicate)) && errors[k]) || undefined;
+  // Hatalar ilk "Ekle/Kaydet" denemesinden sonra görünür; aynı ad ve uyumsuz sayım birimi ise hemen çıkar
+  const show = (k: keyof typeof errors) => ((tried || (k === "name" && duplicate) || k === "countUnit") && errors[k]) || undefined;
+
+  // Birim ya da sayım birimi değişince eski sayımların ne olacağı (kaydetmeden önce söylenir)
+  const unitChanged = row !== null && (f.unit !== row.unit || (f.countUnit || null) !== row.countUnit);
+  const countWarning =
+    row && unitChanged && row.deps.counts
+      ? !f.countUnit
+        ? `Bu malzemenin ${num(row.deps.counts)} sayım kaydı var. Kaydedince sayım listesinden çıkar; eski sayımlar korunur ve geçmiş aylarda girildikleri birimle (${row.countUnit ?? "eski birim"}) görünür.`
+        : `Bu malzemenin ${num(row.deps.counts)} sayım kaydı var. Eski sayımlar girildikleri birimle (${row.countUnit ?? "eski birim"}) değerlenmeye devam eder; yeni sayımları ${f.countUnit} olarak girin.`
+      : null;
+  const recipeWarning =
+    row && f.unit !== row.unit && row.usedIn.length
+      ? `${num(row.usedIn.length)} reçetede miktarlar “${row.unit}” olarak yazıldı; birimi “${f.unit}” yaparsanız o reçetelerin miktarlarını kontrol edin.`
+      : null;
+
+  function setUnit(unit: Unit) {
+    const allowed = countUnitsFor(unit);
+    const patch: Partial<typeof f> = { unit };
+    if (!row && !touched.countUnit) patch.countUnit = allowed[0];
+    else if (f.countUnit && !allowed.includes(f.countUnit)) {
+      patch.countUnit = allowed[0];
+      setUnitNote(`Sayım birimi ${allowed[0]} oldu: “${unit}” birimli malzeme ${allowed.join(" ya da ")} olarak sayılır.`);
+    } else setUnitNote(null);
+    set(patch);
+  }
+
+  function setCategory(category: string) {
+    const patch: Partial<typeof f> = { category };
+    // Yeni malzemede kategori seçilince rafı ve KDV'si önerilir (elle değiştirilmedikçe)
+    if (!row && allCats.includes(category)) {
+      const group = touched.countGroup ? f.countGroup : groupForCategory(rows, category);
+      if (!touched.countGroup) patch.countGroup = group;
+      if (!touched.vat) patch.vatRate = formatPercentInput(vatForGroup(group));
+    }
+    set(patch);
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
     setTried(true);
     if (invalid) {
-      const first = (["name", "price", "size", "vat"] as const).find((k) => errors[k]);
-      const id = { name: "i-name", price: "i-price", size: "i-size", vat: "i-vat" }[first!];
+      const first = (["name", "category", "price", "size", "vat", "countUnit"] as const).find((k) => errors[k]);
+      const id = { name: "i-name", category: "i-cat", price: "i-price", size: "i-size", vat: "i-vat", countUnit: "i-cu" }[first!];
       document.getElementById(id)?.focus();
       return;
     }
@@ -825,12 +955,12 @@ function IngredientDialog({
       packageDesc: f.packageDesc,
       packagePrice: price ?? 0,
       packageSize: size ?? 0,
-      unit: f.unit as "gr",
-      vatRate: (vat ?? 0) / 100,
+      unit: f.unit,
+      vatRate: vat ?? 0,
       note: f.note,
       isEstimate: f.isEstimate,
       priceSource: f.priceSource as "manual",
-      countUnit: (f.countUnit || null) as "KG" | null,
+      countUnit: f.countUnit || null,
       countGroup: f.countGroup || null,
       active: f.active,
     });
@@ -853,8 +983,12 @@ function IngredientDialog({
             },
           },
     });
+    if (res.data.warning) toast.warning("Sayım birimi değişti", { description: res.data.warning, duration: 12_000 });
     onClose();
   }
+
+  const sourceLabel = water ? "Su faturasından" : "Fatura / elle";
+  const advancedSummary = [f.countGroup || "Sayım grubu yok", sourceLabel, f.active ? "Aktif" : "Pasif"].join(" · ");
 
   return (
     <Dialog
@@ -862,7 +996,7 @@ function IngredientDialog({
       onClose={onClose}
       size={row ? "xl" : "lg"}
       title={row ? row.name : "Yeni hammadde"}
-      description={row ? `${row.category} · ${row.usedIn.length} üründe kullanılıyor` : "Eklediğiniz malzeme reçete kartlarındaki listede çıkar."}
+      description={row ? `${row.category} · ${row.usedIn.length} üründe kullanılıyor` : "Eklediğiniz malzeme reçete kartlarındaki listede ve sayım listesinde çıkar."}
       footerStart={
         row && onDelete ? (
           <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={onDelete}>
@@ -875,7 +1009,7 @@ function IngredientDialog({
           <Button variant="ghost" onClick={onClose}>
             Vazgeç
           </Button>
-          <Button type="submit" form={formId} disabled={busy || (tried && invalid) || !!duplicate}>
+          <Button type="submit" form={formId} disabled={busy || (tried && invalid) || !!duplicate || !!errors.countUnit}>
             {busy ? "Kaydediliyor…" : row ? "Kaydet" : "Ekle"}
           </Button>
         </>
@@ -896,19 +1030,39 @@ function IngredientDialog({
             />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Kategori" htmlFor="i-cat">
-              <Select id="i-cat" value={f.category} onChange={(e) => set({ category: e.target.value })}>
+            <Field
+              label="Kategori"
+              htmlFor="i-cat"
+              tip="Listeden seçin ya da yeni bir kategori adı yazın; yeni ad kaydedince listeye eklenir."
+              error={show("category")}
+              hint={catNear ? <NearHint value={catNear} onUse={() => setCategory(catNear)} /> : catNew ? `Yeni kategori: “${f.category.trim()}” oluşturulur` : undefined}
+            >
+              <Input
+                id="i-cat"
+                list={`${formId}-cats`}
+                value={f.category}
+                onChange={(e) => setCategory(e.target.value)}
+                maxLength={60}
+                autoComplete="off"
+                aria-invalid={show("category") ? true : undefined}
+              />
+              <datalist id={`${formId}-cats`}>
                 {allCats.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c} />
                 ))}
-              </Select>
+              </datalist>
             </Field>
-            <Field label="Tedarikçi" htmlFor="i-sup">
-              <Input id="i-sup" value={f.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="ör. Sütaş" />
+            <Field label="Tedarikçi" htmlFor="i-sup" hint={supNear ? <NearHint value={supNear} onUse={() => set({ supplier: supNear })} /> : undefined}>
+              <Input id="i-sup" list={`${formId}-sups`} value={f.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="ör. Sütaş" autoComplete="off" maxLength={120} />
+              <datalist id={`${formId}-sups`}>
+                {suppliers.map((x) => (
+                  <option key={x} value={x} />
+                ))}
+              </datalist>
             </Field>
           </div>
           <Field label="Paket açıklaması" htmlFor="i-pack" hint="Faturadaki ürün adı, ör. Espresso Blend 1 kg">
-            <Input id="i-pack" value={f.packageDesc} onChange={(e) => set({ packageDesc: e.target.value })} />
+            <Input id="i-pack" value={f.packageDesc} onChange={(e) => set({ packageDesc: e.target.value })} maxLength={160} />
           </Field>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field
@@ -944,14 +1098,19 @@ function IngredientDialog({
                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-mute">{f.unit}</span>
               </div>
             </Field>
-            <Field label="Birim" htmlFor="i-unit">
-              <Select id="i-unit" value={f.unit} onChange={(e) => set({ unit: e.target.value as "gr" })}>
+            <Field label="Birim" htmlFor="i-unit" hint={unitNote ? <span className="text-warn">{unitNote}</span> : undefined}>
+              <Select id="i-unit" value={f.unit} onChange={(e) => setUnit(e.target.value as Unit)}>
                 {UNITS.map((u) => (
                   <option key={u}>{u}</option>
                 ))}
               </Select>
             </Field>
           </div>
+          {recipeWarning ? (
+            <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
+              {recipeWarning}
+            </p>
+          ) : null}
           <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-panel px-3.5 py-2.5 text-sm text-ink-mute" aria-live="polite">
             <span>
               Birim maliyet<span className="max-sm:hidden"> (reçetelerin kullandığı)</span>
@@ -964,49 +1123,111 @@ function IngredientDialog({
             </span>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Alış KDV oranı" htmlFor="i-vat" hint="Gıda %1, ambalaj %20" error={show("vat")}>
+            <Field
+              label="Alış KDV oranı"
+              htmlFor="i-vat"
+              hint={vat !== null && !errors.vat ? `Gıda %1, ambalaj %20 · okunan: %${formatPercentInput(vat)}` : "Gıda %1, ambalaj %20"}
+              error={show("vat")}
+            >
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ink-mute">%</span>
                 <NumberInput
                   id="i-vat"
                   value={f.vatRate}
-                  onChange={(e) => set({ vatRate: e.target.value })}
+                  onChange={(e) => {
+                    setTouched((t) => ({ ...t, vat: true }));
+                    set({ vatRate: e.target.value });
+                  }}
                   aria-invalid={show("vat") ? true : undefined}
                   className="pl-7"
                 />
               </div>
             </Field>
-            <Field label="Fiyat kaynağı" htmlFor="i-src">
-              <Select id="i-src" value={f.priceSource} onChange={(e) => set({ priceSource: e.target.value as "manual" })}>
-                <option value="manual">Fatura / elle</option>
-                <option value="water">Su faturasından (su, buz)</option>
-              </Select>
-            </Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Sayım birimi" htmlFor="i-cu" hint="Boş = sayım listesinde yok">
-              <Select id="i-cu" value={f.countUnit} onChange={(e) => set({ countUnit: e.target.value })}>
+            <Field label="Sayım birimi" htmlFor="i-cu" hint={countUnitHint(f.countUnit, f.unit)} error={show("countUnit")}>
+              <Select
+                id="i-cu"
+                value={f.countUnit}
+                onChange={(e) => {
+                  setTouched((t) => ({ ...t, countUnit: true }));
+                  setUnitNote(null);
+                  set({ countUnit: e.target.value as CountUnit | "" });
+                }}
+                aria-invalid={show("countUnit") ? true : undefined}
+              >
                 <option value="">Sayılmaz</option>
-                {COUNT_UNITS.map((u) => (
-                  <option key={u}>{u}</option>
+                {allowedCount.map((u, i) => (
+                  <option key={u} value={u}>
+                    {u}
+                    {allowedCount.length > 1 && i === 0 ? " (önerilen)" : ""}
+                  </option>
                 ))}
-              </Select>
-            </Field>
-            <Field label="Sayım grubu" htmlFor="i-cg" hint="Sayım sayfasında hangi rafta">
-              <Select id="i-cg" value={f.countGroup} onChange={(e) => set({ countGroup: e.target.value })}>
-                <option value="">—</option>
-                {COUNT_GROUPS.map((g) => (
-                  <option key={g}>{g}</option>
-                ))}
+                {f.countUnit && !allowedCount.includes(f.countUnit) ? <option value={f.countUnit}>{f.countUnit} (birimle uyumsuz)</option> : null}
               </Select>
             </Field>
           </div>
-          <Field label="Kaynak / not" htmlFor="i-note">
-            <Textarea id="i-note" value={f.note} onChange={(e) => set({ note: e.target.value })} rows={3} />
+          {countWarning ? (
+            <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
+              {countWarning}
+            </p>
+          ) : null}
+          <Field
+            label="Kaynak / not"
+            htmlFor="i-note"
+            hint={f.isEstimate ? "Neyin varsayım olduğunu ve neyin doğrulanacağını yazın; listede malzemenin altında görünür." : "Fiyatın nereden geldiği (fatura, tarih)."}
+          >
+            <Textarea id="i-note" value={f.note} onChange={(e) => set({ note: e.target.value })} rows={3} maxLength={1000} />
           </Field>
-          <div className="flex flex-wrap gap-x-5 gap-y-1">
-            <Checkbox label="Tahmini fiyat (faturada yok)" className="min-h-10" checked={f.isEstimate} onChange={(e) => set({ isEstimate: e.target.checked })} />
-            <Checkbox label="Aktif (reçetelerde seçilebilir)" className="min-h-10" checked={f.active} onChange={(e) => set({ active: e.target.checked })} />
+          <Checkbox
+            label="Tahmini (faturada yok ya da varsayım içeriyor)"
+            className="min-h-10"
+            checked={f.isEstimate}
+            onChange={(e) => set({ isEstimate: e.target.checked })}
+          />
+
+          {/* Nadiren değişenler: sayım rafı, fiyat kaynağı, aktiflik */}
+          <div className="rounded-2xl ring-1 ring-line">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-2.5 text-left text-sm outline-none hover:bg-panel focus-visible:ring-2 focus-visible:ring-ink/30"
+              aria-expanded={advanced}
+              aria-controls={`${formId}-adv`}
+              onClick={() => setAdvanced((a) => !a)}
+            >
+              <span className="min-w-0">
+                <span className="font-medium text-ink">Gelişmiş</span>
+                <span className="block truncate text-xs text-ink-mute">{advancedSummary}</span>
+              </span>
+              <ChevronDown size={16} className={cn("shrink-0 text-ink-mute transition-transform", advanced && "rotate-180")} aria-hidden="true" />
+            </button>
+            {advanced ? (
+              <div id={`${formId}-adv`} className="space-y-3 border-t border-line px-3.5 pt-3 pb-3.5">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Sayım grubu" htmlFor="i-cg" hint="Sayım sayfasında hangi rafta">
+                    <Select
+                      id="i-cg"
+                      value={f.countGroup}
+                      onChange={(e) => {
+                        setTouched((t) => ({ ...t, countGroup: true }));
+                        set({ countGroup: e.target.value });
+                      }}
+                    >
+                      <option value="">—</option>
+                      {COUNT_GROUPS.map((g) => (
+                        <option key={g}>{g}</option>
+                      ))}
+                      {f.countGroup && !COUNT_GROUPS.includes(f.countGroup) ? <option>{f.countGroup}</option> : null}
+                    </Select>
+                  </Field>
+                  <Field label="Fiyat kaynağı" htmlFor="i-src" hint={water ? "Litre maliyeti Gelir-gider'deki SU GİDERİ'nden" : undefined}>
+                    <Select id="i-src" value={f.priceSource} onChange={(e) => set({ priceSource: e.target.value as "manual" })}>
+                      <option value="manual">Fatura / elle</option>
+                      <option value="water">Su faturasından (su, buz)</option>
+                    </Select>
+                  </Field>
+                </div>
+                <Checkbox label="Aktif (reçetelerde ve sayımda seçilebilir)" className="min-h-10" checked={f.active} onChange={(e) => set({ active: e.target.checked })} />
+              </div>
+            ) : null}
           </div>
         </form>
         {row ? (
@@ -1025,17 +1246,38 @@ function IngredientDialog({
                   valueLabel={`1 ${bulk.unit} maliyeti`}
                   data={row.history.map((h) => ({ label: dateTR(h.at.slice(0, 10)), value: h.size ? (h.price / h.size) * bulk.scale : 0 }))}
                 />
-                <ul className="mt-3 max-h-36 divide-y divide-line overflow-y-auto rounded-xl bg-surface px-3 text-xs text-ink-soft scroll-thin">
-                  {[...row.history].reverse().map((h, i) => (
-                    <li key={i} className="flex justify-between gap-2 py-1.5">
-                      <span>
-                        {dateTR(h.at.slice(0, 10))} · {h.by ?? "–"}
-                      </span>
-                      <span className="tabular">
-                        {tl(h.price, 2)} / {num(h.size)} {row.unit}
-                      </span>
-                    </li>
-                  ))}
+                <ul className="mt-3 max-h-48 divide-y divide-line overflow-y-auto rounded-xl bg-surface px-3 text-xs text-ink-soft scroll-thin">
+                  {row.history
+                    .map((h, i, all) => {
+                      const prev = all[i - 1];
+                      const unitNow = h.size ? h.price / h.size : 0;
+                      const unitPrev = prev?.size ? prev.price / prev.size : 0;
+                      return { h, change: unitPrev ? unitNow / unitPrev - 1 : null, key: `${h.at}-${i}` };
+                    })
+                    .reverse()
+                    .map(({ h, change, key }) => (
+                      <li key={key} className="py-1.5">
+                        <div className="flex justify-between gap-2">
+                          <span>
+                            {dateTR(h.at.slice(0, 10))} · {h.by ?? "–"}
+                          </span>
+                          <span className="tabular">
+                            {tl(h.price, 2)} / {num(h.size)} {row.unit}
+                            {change !== null && Math.abs(change) >= 0.0005 ? (
+                              <span className={cn("ml-1.5 font-medium", change > 0 ? "text-bad" : "text-good")} title="Birim maliyetin bir önceki kayda göre değişimi">
+                                {change > 0 ? "+" : "−"}
+                                {pct(Math.abs(change))}
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                        {h.note ? (
+                          <p className="truncate text-ink-mute" title={h.note}>
+                            {h.note}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
                 </ul>
               </Well>
             ) : null}
@@ -1061,5 +1303,17 @@ function IngredientDialog({
         ) : null}
       </div>
     </Dialog>
+  );
+}
+
+/** "Listede “Kaldi” olarak geçiyor · Onu kullan": yazım farkıyla ikinci bir kayıt açılmasın */
+function NearHint({ value, onUse }: { value: string; onUse: () => void }) {
+  return (
+    <span className="text-warn">
+      Listede “{value}” olarak geçiyor ·{" "}
+      <button type="button" className="font-medium underline underline-offset-2 hover:text-ink" onClick={onUse}>
+        Onu kullan
+      </button>
+    </span>
   );
 }

@@ -1,4 +1,5 @@
-import { CircleAlert, FileText, Percent, ShoppingBasket, Table2 } from "lucide-react";
+import { inArray } from "drizzle-orm";
+import { CircleAlert, FileText, Table2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -8,13 +9,19 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { monthOfDate, normalizeSupplier } from "@/lib/calc/engine";
+import { unpaidSummary } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES } from "@/lib/constants";
 import { monthLabel, monthShort, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { getDb, schema as s } from "@/server/db";
+import { IGNORE_KEY } from "@/server/parasut/sync";
 
+import { DeletedBills } from "./deleted-bills";
 import { CountUp, InvoicesClient } from "./invoices-client";
+import { MonthStats } from "./month-stats";
+import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
 
@@ -59,8 +66,19 @@ export default function InvoicesPage() {
 
 async function InvoicesContent() {
   await requireAdmin();
-  const model = await loadModel();
-  const invoices = [...model.ds.invoices].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const db = getDb();
+  const [model, state] = await Promise.all([
+    loadModel(),
+    db
+      .select()
+      .from(s.integrationState)
+      .where(inArray(s.integrationState.key, [IGNORE_KEY, DELETED_BILLS_KEY])),
+  ]);
+  // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
+  const invoices: InvoiceRow[] = model.ds.invoices
+    .map((i) => ({ ...i, outstanding: i.outstanding ?? null }))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const ignored = ignoredBills(state.find((r) => r.key === IGNORE_KEY)?.value, state.find((r) => r.key === DELETED_BILLS_KEY)?.value);
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
   const net = (i: { amount: number; discount: number }) => i.amount - i.discount;
   const total = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -72,8 +90,7 @@ async function InvoicesContent() {
   const totalByMonth = months.map((_, idx) => summary.reduce((a, r) => a + r.byMonth[idx], 0));
   const goodsByMonth = months.map((m) => model.goodsPurchases(m));
   const commissionByMonth = summary.find((r) => r.category === COMMISSION_CATEGORY)?.byMonth ?? months.map(() => 0);
-  const unpaid = invoices.filter((i) => i.unpaid);
-  const lastMonth = months[months.length - 1];
+  const unpaid = unpaidSummary(invoices);
   const supplierCount = new Set(invoices.map((i) => normalizeSupplier(i.supplier))).size;
 
   return (
@@ -88,29 +105,26 @@ async function InvoicesContent() {
           sub={`${supplierCount} tedarikçi`}
           info="Tedarikçi adının sonundaki parantezli not ayrı tedarikçi sayılmaz: “Kaldi (ödenmedi)” ile “Kaldi” aynı tedarikçidir."
         />
-        <Stat
-          icon={<ShoppingBasket />}
-          label={lastMonth ? `${monthLabel(lastMonth)} mal alımı` : "Mal alımı"}
-          value={<CountUp value={lastMonth ? model.goodsPurchases(lastMonth) : 0} format="tl" />}
-          sub={`Toplam ${tl(total(goodsByMonth))} · ${months.length} ay`}
-          info={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}.`}
-        />
-        <Stat
-          icon={<Percent />}
-          label={lastMonth ? `${monthLabel(lastMonth)} komisyon` : "Komisyon"}
-          value={<CountUp value={commissionByMonth[commissionByMonth.length - 1] ?? 0} format="tl" />}
-          sub={`Toplam ${tl(total(commissionByMonth))} · ${months.length} ay`}
-          info="Komisyon kategorisindeki faturalar (KDV hariç). Gelir-gider tablosunda komisyon giderlerine eklenir."
+        <MonthStats
+          months={months}
+          goodsByMonth={goodsByMonth}
+          commissionByMonth={commissionByMonth}
+          goodsInfo={`KDV hariç, iskonto düşülmüş. Mal maliyeti = ${GOODS_CATEGORIES.join(" + ")}.`}
         />
         <Stat
           icon={<CircleAlert />}
           label="Ödenmemiş"
-          value={<CountUp value={unpaid.length} />}
-          tone={unpaid.length ? "warn" : "good"}
+          value={<CountUp value={unpaid.count} />}
+          tone={unpaid.count ? "warn" : "good"}
+          info={
+            unpaid.partialCount
+              ? `Kalan borç, KDV dahil. ${unpaid.partialCount} fatura kısmen ödendi: onlarda Paraşüt'ün bildirdiği kalan tutar sayılır (faturaların tamamı ${tl(unpaid.payableTotal)}). Hatırlatıcılar da aynı tutarı kullanır.`
+              : "Kalan borç, KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır; Hatırlatıcılar da aynı tutarı kullanır."
+          }
           sub={
-            unpaid.length ? (
+            unpaid.count ? (
               <>
-                {tl(unpaid.reduce((a, i) => a + i.payable, 0))} KDV dahil
+                {tl(unpaid.total)} kalan borç
                 <Link
                   href={listHref({ durum: "odenmedi" })}
                   className="flex w-fit items-center font-medium text-warn underline-offset-2 hover:underline pointer-coarse:min-h-10"
@@ -131,6 +145,7 @@ async function InvoicesContent() {
         months={months}
         suppliers={[...new Set(invoices.map((i) => i.supplier))].sort((a, b) => a.localeCompare(b, "tr"))}
         parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
+        ignoredCount={ignored.length}
       />
 
       <Card className="mt-6">
@@ -242,6 +257,8 @@ async function InvoicesContent() {
           <EmptyState title="Henüz fatura yok" description="Fatura ekledikçe aylık özet burada oluşur." />
         )}
       </Card>
+
+      {ignored.length ? <DeletedBills bills={ignored} /> : null}
     </>
   );
 }

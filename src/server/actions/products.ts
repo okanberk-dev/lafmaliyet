@@ -40,20 +40,34 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
   return attempt(async () => {
     const me = await requireAdmin();
     const data = productSchema.parse(input);
+    const copyFromId = z.number().int().positive().nullish().parse(input.copyFromId) ?? null;
     const db = getDb();
-    const id = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [dup] = await tx
         .select({ id: s.products.id })
         .from(s.products)
         .where(and(eq(s.products.name, data.name), eq(s.products.size, data.size)));
       if (dup) throw new UserError(`“${data.name} · ${data.size}” zaten var; başka bir boy seçin ya da adı değiştirin`);
+      // Kopyalamada kaynağın ürüne özel fire oranı ve notu da gelir (Excel'de kart bloğu kopyalanınca G16 ve
+      // notlar da taşınır). QR menü görünürlüğü ve aktiflik varsayılanda kalır.
+      let copied: { fireOverride: number | null; note: string | null } = { fireOverride: null, note: null };
+      if (copyFromId) {
+        const [src] = await tx
+          .select({ fireOverride: s.products.fireOverride, note: s.products.note })
+          .from(s.products)
+          .where(eq(s.products.id, copyFromId));
+        if (!src) throw new UserError("Kopyalanacak ürün bulunamadı; sayfayı yenileyip tekrar deneyin");
+        copied = src;
+      }
       const [{ m }] = await tx.select({ m: max(s.products.sortOrder) }).from(s.products);
       const [created] = await tx
         .insert(s.products)
-        .values({ ...data, sortOrder: (m ?? 0) + 1 })
+        .values({ ...data, ...copied, sortOrder: (m ?? 0) + 1 })
         .returning({ id: s.products.id });
-      if (input.copyFromId) {
-        const items = await tx.select().from(s.recipeItems).where(eq(s.recipeItems.productId, input.copyFromId));
+      let lines = 0;
+      if (copyFromId) {
+        const items = await tx.select().from(s.recipeItems).where(eq(s.recipeItems.productId, copyFromId));
+        lines = items.length;
         if (items.length) {
           await tx.insert(s.recipeItems).values(
             items.map((it) => ({
@@ -67,11 +81,12 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
           );
         }
       }
-      return created.id;
+      return { id: created.id, lines, fireOverride: copied.fireOverride, noteCopied: !!copied.note };
     });
-    await logActivity(me, "Yeni ürün", `${data.name} ${data.size}`);
+    await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
-    return { id };
+    /** Kopyalamada neyin geldiği: bildirimde söylenir (fire ve not sessizce taşınmasın) */
+    return result;
   });
 }
 

@@ -104,13 +104,57 @@ export const FIXED_PERIODS: { key: FixedPeriod; label: string; hint: string }[] 
 export const MANUAL_PNL_ROWS: { key: string; section: FixedSection | "mal"; label: string; hint?: string }[] = [
   { key: "manual:diger_mal", section: "mal", label: "DİĞER (market / nakit alımlar)", hint: "Faturasız, nakit veya marketten alınan malzemeler." },
   { key: "manual:personel_extra", section: "personel", label: "PERSONEL EXTRA (prim, mesai)" },
-  { key: "manual:su", section: "faturalar", label: "SU GİDERİ", hint: "Su faturasını (KDV hariç) yazın. Su + buzun litre maliyeti buradan otomatik hesaplanır." },
+  { key: "manual:su", section: "faturalar", label: "SU GİDERİ", hint: "Su faturasını (KDV hariç) yazın. Su + buzun litre maliyeti buradan otomatik hesaplanır; bunun için o ayın ürün satış listesi de yüklenmiş olmalı (litre satışlardan bulunur)." },
   { key: "manual:dogalgaz", section: "faturalar", label: "DOĞALGAZ" },
   { key: "manual:ciro_kirasi", section: "kira", label: "CİRO KİRASI" },
   { key: "manual:sigorta", section: "genel", label: "İŞYERİ SİGORTASI" },
   { key: "manual:harici", section: "genel", label: "HARİCİ GİDERLER (bakım, tamir, temizlik, kırtasiye)" },
   { key: "manual:diger", section: "genel", label: "DİĞER" },
 ];
+
+/** Excel Panel'in "Para nereye gitti?" bloğundaki sabit gider grupları (B9–B12) */
+export type PanelFixedGroup = "kira" | "personel" | "reklam" | "diger";
+
+export const PANEL_FIXED_GROUPS: { key: PanelFixedGroup; label: string; hint: string }[] = [
+  { key: "kira", label: "Kira", hint: "Sabit Giderler'deki kira satırı. Ortak gider / aidat Diğer'de sayılır (Excel Panel B9)." },
+  {
+    key: "personel",
+    label: "Personel (maaş + SGK, part-time, yemek)",
+    hint: "Personel sayfasındaki işveren maliyeti + part-time + personel yemeği. Muhasebeci Diğer'de sayılır (Excel Panel B10).",
+  },
+  { key: "reklam", label: "Reklam (Instagram, influencer)", hint: "Reklam, Instagram, influencer gibi tanıtım giderleri (Excel Panel B11)." },
+  { key: "diger", label: "Diğer sabit giderler", hint: "Elektrik, muhasebe, güvenlik, yazılım, ortak gider… (Excel Panel B12)." },
+];
+
+/**
+ * Sabit gider adından Panel grubunu bulmak için anahtar kelimeler. Ad Türkçe küçük harfe çevrilip
+ * aksanları atılarak aranır ("İlaçlama" → "ilaclama", "Müşavir" → "musavir").
+ */
+export const PANEL_GROUP_KEYWORDS = {
+  reklam: /reklam|instagram|influencer|sosyal medya|tanitim|sponsor|tiktok|facebook|google ads|meta ads/,
+  /** Personel bölümünde olup Excel Panel'de "Diğer" sayılanlar (dışarıdan hizmet) */
+  notPersonel: /muhasebe|musavir|avukat|hukuk|danisman/,
+  kira: /kira/,
+  /** Kira bölümünde olup kira sayılmayanlar */
+  notKira: /ortak gider|aidat|avans/,
+};
+
+/**
+ * Excel Sayım sayfasındaki grup KDV oranı (M sütunu): ambalaj %20, diğer bütün gruplar ve listede olmayanlar %1.
+ * Panel her malzemenin kendi Alış KDV'sini kullanır; bu tablo yalnızca karşılaştırma içindir.
+ */
+export const COUNT_GROUP_VAT: Record<string, number> = { "AMBALAJ MALZEMELERİ": 0.2 };
+export const COUNT_GROUP_VAT_DEFAULT = 0.01;
+
+/** Satış listesinde ürün sayılmaması gereken satırlar (toplam / başlık) */
+// "Genel / ara / alt toplam …" her zaman özet; yalın "Toplam" yalnızca ardından tutar sözcükleri geliyorsa
+// ("Toplam KDV dahil", "Toplam tutar"): "Toplam Kahve Paketi" gibi gerçek bir ürün adı özet sayılmaz.
+export const SALES_SUMMARY_PATTERNS = [
+  /^(genel|ara|alt)\s*toplam(lar|i)?(\s.*)?$/,
+  /^toplam(lar|i)?\s*[:=]?(\s*(kdv|dahil|haric|tutar|tutari|ciro|cirosu|satis|satislar|adet|tl|try|net|brut|genel|[\d.,]+|₺))*$/,
+  /^(grand\s+|sub\s*)?totals?$/,
+];
+export const SALES_HEADER_NAMES = ["urun", "urun adi", "urunler", "urun ismi", "stok adi", "stok", "ad", "adi", "isim", "product", "product name", "item", "kalem"];
 
 export const MONTH_NAMES = [
   "Ocak",

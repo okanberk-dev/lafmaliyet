@@ -1,4 +1,4 @@
-import { asc } from "drizzle-orm";
+import { asc, count } from "drizzle-orm";
 import { Droplets, Package, TriangleAlert, Unlink } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
@@ -6,10 +6,13 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
+import { latestSalesMonth } from "@/lib/calc/insights";
 import { num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
+
+import { waterSource } from "../ayarlar/water-text";
 
 import { sortCategories } from "./categories";
 import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } from "./ingredients-client";
@@ -33,17 +36,29 @@ export default function IngredientsPage() {
 
 async function IngredientsContent() {
   await requireAdmin();
-  const [model, history] = await Promise.all([
+  const db = getDb();
+  const [model, history, links] = await Promise.all([
     loadModel(),
-    getDb().select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
+    db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
+    db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
   ]);
-  const usage = model.salesMonths.length ? model.ingredientUsage(model.salesMonths[model.salesMonths.length - 1]) : new Map<number, number>();
-  const histBy = new Map<number, { at: string; price: number; size: number; by: string | null }[]>();
+  const usageMonth = latestSalesMonth(model);
+  const usage = usageMonth ? model.ingredientUsage(usageMonth) : new Map<number, number>();
+  const histBy = new Map<number, IngredientRow["history"]>();
   for (const h of history) {
     const list = histBy.get(h.ingredientId) ?? [];
-    list.push({ at: h.changedAt.toISOString(), price: h.packagePrice, size: h.packageSize, by: h.changedBy });
+    list.push({ at: h.changedAt.toISOString(), price: h.packagePrice, size: h.packageSize, by: h.changedBy, note: h.note });
     histBy.set(h.ingredientId, list);
   }
+  // Silmeyi engelleyen geçmiş: sayım, alım miktarı, Paraşüt eşleştirmesi (silinirse geçmiş ayların stok değeri değişir)
+  const tally = (ids: number[]) => {
+    const m = new Map<number, number>();
+    for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
+    return m;
+  };
+  const countsBy = tally(model.ds.stockCounts.map((c) => c.ingredientId));
+  const purchasesBy = tally(model.ds.purchaseQuantities.map((p) => p.ingredientId));
+  const linksBy = new Map(links.map((l) => [l.id, l.n]));
 
   const rows: IngredientRow[] = model.ds.ingredients.map((i) => ({
     ...i,
@@ -54,6 +69,7 @@ async function IngredientsContent() {
     }),
     monthUsage: usage.get(i.id) ?? 0,
     history: histBy.get(i.id) ?? [],
+    deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0 },
   }));
 
   // Süzgeçler (?ara, ?durum, ?kategori, ?sirala) istemcide adresten okunur; ⌘K paleti ?ara=<ad> ile gönderir
@@ -80,7 +96,7 @@ async function IngredientsContent() {
         />
         <Stat
           icon={<TriangleAlert />}
-          label="Tahmini fiyat"
+          label="Tahmini değer"
           value={<CountUp value={estimates} />}
           tone={estimates ? "warn" : "good"}
           badge={
@@ -90,16 +106,17 @@ async function IngredientsContent() {
               </Badge>
             ) : null
           }
-          sub="Faturada bulunamayanlar"
+          sub="Varsayımı doğrulanmalı (notuna bakın)"
         />
         <Stat icon={<Unlink />} label="Hiçbir reçetede yok" value={<CountUp value={unused} />} sub="Reçeteye eklenmesi gerekebilir" />
         <Stat
           icon={<Droplets />}
           label="Su + buz birim maliyeti"
-          value={<CountUp value={model.water.perLiter} digits={2} suffix=" ₺" />}
+          value={<CountUp value={model.water.perLiter} digits={4} suffix=" ₺" />}
           suffix="/L"
-          sub={model.water.month ? `${model.water.month} su faturasından` : model.settings.suBirimLTOverride !== null ? "Ayarlar'dan elle" : "Su faturası girilmedi"}
-          info="Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre)."
+          tone={model.water.reason === "no-usage" ? "warn" : "default"}
+          sub={<span title={waterSource(model.water)}>{waterSource(model.water, true)}</span>}
+          info={`${waterSource(model.water)}. Hesap: Gelir-gider tablosundaki SU GİDERİ ÷ reçetelere göre o ay harcanan su + buz (litre); ürün satış listesi olan en son ayın faturası kullanılır.`}
         />
       </div>
       <IngredientsClient rows={rows} categories={categories} />

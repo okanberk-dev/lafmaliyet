@@ -41,6 +41,8 @@ import { applyScenario, type MenuClass, type ScenarioBase } from "@/lib/calc/ins
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { productHref } from "../urunler/logic";
+
 /* ───────────────────────── Ortak hareket ───────────────────────── */
 
 const fmtTl = (v: number) => tl(v);
@@ -208,6 +210,7 @@ const PAGE_SIZE = 25;
 const TABLE_FILTERS = ["ara", "grup", "zam", "satilmayan"];
 
 export function MenuEngineering({
+  month,
   monthLabel,
   items: allItems,
   popThreshold: allThreshold,
@@ -215,6 +218,8 @@ export function MenuEngineering({
   classInfo,
   categories,
 }: {
+  /** Seçili ay (YYYY-MM): ürün kartı bağlantısı bu ayı taşır */
+  month: string;
   monthLabel: string;
   items: Item[];
   popThreshold: number;
@@ -499,7 +504,7 @@ export function MenuEngineering({
                 {paged.slice.map((i) => (
                   <TR key={i.id}>
                     <TD sticky className="min-w-40 max-sm:max-w-48">
-                      <Link href={`/panel/urunler/${i.id}`} className="font-medium text-ink hover:underline">
+                      <Link href={productHref(i.id, month)} className="font-medium text-ink hover:underline">
                         {i.name} · {i.size}
                       </Link>
                       <span className="block truncate text-xs text-ink-mute">{i.category}</span>
@@ -532,7 +537,7 @@ export function MenuEngineering({
                     </TD>
                     <TD className="w-0">
                       <div className="flex justify-end">
-                        <IconLink href={`/panel/urunler/${i.id}`} label={`${i.name} · ${i.size} ürün kartını aç`}>
+                        <IconLink href={productHref(i.id, month)} label={`${i.name} · ${i.size} ürün kartını aç`}>
                           <Eye size={15} aria-hidden="true" />
                         </IconLink>
                       </div>

@@ -14,6 +14,7 @@ import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { createProduct } from "@/server/actions/products";
 
+import { copiedSummary, productHref } from "./logic";
 import { priceText } from "./price-text";
 
 /** Reçetesi kopyalanabilecek ürün (kopyalama listesi ve aynı ad + boy denetimi için) */
@@ -69,6 +70,8 @@ export function NewProductDialog({
   const [price, setPrice] = useState("");
   const [priceError, setPriceError] = useState<string | null>(null);
   const [copyFrom, setCopyFrom] = useState<string>("");
+  // Listede seçili ay yeni ürünün kartına da taşınır
+  const [ay] = useQueryState<string>("ay", "");
 
   // Kopyalama listesi kategori sırasıyla gruplanır; kategorisi bilinmeyenler en sona
   const known = new Set(categories.map((c) => c.id));
@@ -101,9 +104,10 @@ export function NewProductDialog({
     const res = await createProduct({ name, size, categoryId, price: p, copyFromId: copyFrom ? Number(copyFrom) : null });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(copyFrom ? `${name.trim()} oluşturuldu, reçetesi kopyalandı` : `${name.trim()} oluşturuldu, şimdi reçetesini girin`);
+    if (copyFrom) toast.success(`${name.trim()} oluşturuldu`, { description: copiedSummary(res.data) });
+    else toast.success(`${name.trim()} oluşturuldu, şimdi reçetesini girin`);
     onClose();
-    router.push(`/panel/urunler/${res.data.id}`);
+    router.push(productHref(res.data.id, /^\d{4}-\d{2}$/.test(ay) ? ay : null));
   }
 
   return (
@@ -186,7 +190,7 @@ export function NewProductDialog({
         </Field>
         <Field
           label="Reçeteyi şu üründen kopyala (isteğe bağlı)"
-          hint="Benzer bir ürünün malzemeleri hazır gelir, sonra değiştirirsiniz. Fiyat boşsa o ürünün fiyatı yazılır."
+          hint="Benzer bir ürünün malzemeleri, özel fire oranı ve notu hazır gelir; sonra değiştirirsiniz. Fiyat boşsa o ürünün fiyatı yazılır."
           htmlFor="np-copy"
         >
           <Select id="np-copy" value={copyFrom} onChange={(e) => pickCopy(e.target.value)}>

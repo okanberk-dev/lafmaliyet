@@ -21,6 +21,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  StickyNote,
   Tag,
   Trash2,
   Wheat,
@@ -28,13 +29,14 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type MouseEvent } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { RangeSlider } from "@/components/akmanos/range-slider";
+import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
@@ -50,7 +52,7 @@ import { EmptyState, GrowthPill, InfoTip, KeyValue, Progress, Signed } from "@/c
 import { Segmented, SegmentedLinks } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { priceProduct } from "@/lib/calc/engine";
-import { evaluateExpression, parseNumberTR } from "@/lib/calc/expr";
+import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl, tlUnit } from "@/lib/format";
@@ -58,6 +60,20 @@ import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
 
 import { catOrder } from "../../hammaddeler/categories";
+import {
+  copiedSummary,
+  copyDescription,
+  firePct,
+  fireText,
+  LIST_QUERY_KEY,
+  listHref,
+  parseFireInput,
+  productHref,
+  qtyText,
+  recipeSignature,
+  resolveQty,
+  sameRate,
+} from "../logic";
 import { priceText } from "../price-text";
 
 interface IngredientOption {
@@ -80,19 +96,12 @@ interface Row {
 
 let keySeq = 1;
 
-function toInput(qty: number, expr: string | null) {
-  return expr ?? num(qty, 4);
-}
-
-function resolveQty(input: string, settings: Settings): { qty: number; expr: string | null; error: string | null } {
-  const raw = input.trim();
-  if (!raw) return { qty: 0, expr: null, error: null };
-  const n = parseNumberTR(raw);
-  if (n !== null && !/[a-zçğıöşü]/i.test(raw)) return { qty: n, expr: null, error: null };
+/** Listeye dönüş: listenin son süzgeçleri (oturumda saklanır) + kartta seçili ay */
+function readListQuery(): string | null {
   try {
-    return { qty: evaluateExpression(raw, settings), expr: raw.replace(/^=/, ""), error: null };
-  } catch (e) {
-    return { qty: 0, expr: raw, error: e instanceof Error ? e.message : "Geçersiz formül" };
+    return window.sessionStorage.getItem(LIST_QUERY_KEY);
+  } catch {
+    return null;
   }
 }
 
@@ -152,10 +161,12 @@ export function RecipeEditor({
   ingredients,
   settings,
   soldQty,
+  month,
+  months,
   monthLabel,
   history,
   siblings,
-  waterPerLiter,
+  water,
 }: {
   product: {
     id: number;
@@ -173,26 +184,44 @@ export function RecipeEditor({
   ingredients: IngredientOption[];
   settings: Settings;
   soldQty: number;
+  /** Kartın gösterdiği ay (listeden ?ay ile gelir) ve ay seçicideki aylar */
+  month: string;
+  months: string[];
   monthLabel: string;
   history: { month: string; label: string; qty: number }[];
   siblings: { id: number; size: string }[];
-  waterPerLiter: number;
+  /** Su + buz litre maliyeti ve nereden geldiği (water.reason metni) */
+  water: { perLiter: number; costed: boolean; text: string; short: string };
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
   /** Miktar alanının kimliği ve altındaki hata/uyarı metni için (satır anahtarı sunucuyla eşleşmez, sıra eşleşir) */
   const uid = useId();
   const ingById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
+  // Kayıtlı satırların anahtarı sıradan gelir (-1, -2…; yeni satırlar artı): ay değişince ya da kayıttan sonra sunucu
+  // aynı reçeteyi yeniden gönderdiğinde "Geri al" satırları baştan çizdirmez
   const initialRows = useMemo<Row[]>(
-    () => items.map((it) => ({ key: keySeq++, ingredientId: it.ingredientId, input: toInput(it.qty, it.qtyExpr), note: it.note ?? "" })),
+    () => items.map((it, i) => ({ key: -(i + 1), ingredientId: it.ingredientId, input: qtyText(it.qty, it.qtyExpr), note: it.note ?? "" })),
     [items],
+  );
+  // Kayıtlı reçetenin imzası, alandaki metinle aynı çözümleyiciden geçerek: "=ShotCift" / "ShotCift", "0.5" / "0,5"
+  // kayıttan sonra "kaydedilmemiş" görünmez
+  const savedSig = useMemo(
+    () =>
+      recipeSignature(
+        items.map((it) => {
+          const q = resolveQty(qtyText(it.qty, it.qtyExpr), settings);
+          return { ingredientId: it.ingredientId, qty: q.qty, expr: q.expr, note: it.note };
+        }),
+      ),
+    [items, settings],
   );
 
   const [name, setName] = useState(product.name);
   const [size, setSize] = useState(product.size);
   const [categoryId, setCategoryId] = useState(product.categoryId);
   const [price, setPrice] = useState(priceText(product.price));
-  const [fire, setFire] = useState(product.fireOverride === null ? "" : num(product.fireOverride * 100, 2));
+  const [fire, setFire] = useState(fireText(product.fireOverride));
   const [note, setNote] = useState(product.note ?? "");
   const [active, setActive] = useState(product.active);
   const [showOnMenu, setShowOnMenu] = useState(product.showOnMenu);
@@ -205,9 +234,13 @@ export function RecipeEditor({
   const [sideTab, setSideTab] = useState<SideTab>("dokum");
   /** Yeni eklenen satırın malzeme seçimi odak alsın */
   const [newKey, setNewKey] = useState<number | null>(null);
+  /** Notu boşken "Not" düğmesiyle açılmış satırlar */
+  const [noteOpen, setNoteOpen] = useState<ReadonlySet<number>>(() => new Set());
 
   const priceNum = parseNumberTR(price) ?? 0;
-  const fireNum = fire.trim() === "" ? null : (parseNumberTR(fire) ?? 0) / 100;
+  const fireInput = parseFireInput(fire);
+  // Okunamayan fire metni önizlemede genel oranla hesaplanır; kayıt hata gösterip durur (sessizce %0 olmaz)
+  const fireNum = fireInput.error ? null : fireInput.rate;
 
   const lines = rows.map((r) => {
     const ing = r.ingredientId ? ingById.get(r.ingredientId) : undefined;
@@ -228,17 +261,19 @@ export function RecipeEditor({
   const trialPrice = parseNumberTR(trial);
   const trialEcon = trialPrice !== null ? priceProduct({ price: trialPrice, fireOverride: fireNum }, lines, settings) : null;
 
+  // Kaydedilecek değerler karşılaştırılır (yazılan metin değil): baştaki/sondaki boşluk, "0.5" ↔ "0,5" ve
+  // "=ShotCift" ↔ "ShotCift" değişiklik sayılmaz
   const dirty =
-    name !== product.name ||
+    name.trim() !== product.name ||
     size !== product.size ||
     categoryId !== product.categoryId ||
     Math.abs(priceNum - product.price) > 0.001 ||
-    fireNum !== product.fireOverride ||
-    note !== (product.note ?? "") ||
+    !!fireInput.error ||
+    !sameRate(fireInput.rate, product.fireOverride) ||
+    note.trim() !== (product.note ?? "") ||
     active !== product.active ||
     showOnMenu !== product.showOnMenu ||
-    JSON.stringify(rows.map((r) => [r.ingredientId, r.input, r.note])) !==
-      JSON.stringify(initialRows.map((r) => [r.ingredientId, r.input, r.note]));
+    recipeSignature(lines.map((l) => ({ ingredientId: l.row.ingredientId, qty: l.qty, expr: l.expr, note: l.row.note }))) !== savedSig;
 
   const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const move = (idx: number, d: -1 | 1) =>
@@ -276,20 +311,35 @@ export function RecipeEditor({
     setSize(product.size);
     setCategoryId(product.categoryId);
     setPrice(priceText(product.price));
-    setFire(product.fireOverride === null ? "" : num(product.fireOverride * 100, 2));
+    setFire(fireText(product.fireOverride));
     setNote(product.note ?? "");
     setActive(product.active);
     setShowOnMenu(product.showOnMenu);
     setRows(initialRows);
+    setNoteOpen(new Set());
   }
 
   async function save() {
     if (saving) return;
     if (!name.trim()) return toast.error("Ürün adını girin");
-    const bad = lines.find((l) => l.error);
-    if (bad) return toast.error(`Formül hatası: ${bad.error}`);
+    const badIdx = lines.findIndex((l) => l.error);
+    if (badIdx >= 0) {
+      const bad = lines[badIdx];
+      document.getElementById(`${uid}-qty${badIdx}`)?.focus();
+      return toast.error(`${badIdx + 1}. satır${bad.ing ? ` (${bad.ing.name})` : ""}: ${bad.error}`);
+    }
     if (lines.some((l) => !l.row.ingredientId)) return toast.error("Boş malzeme satırlarını doldurun ya da silin");
-    if (parseNumberTR(price) === null) return toast.error("Satış fiyatını girin (ör. 185 ya da 185,50)");
+    if (parseNumberTR(price) === null || priceNum < 0) {
+      document.getElementById("r-price")?.focus();
+      return toast.error("Satış fiyatını girin (ör. 185 ya da 185,50)");
+    }
+    if (fireInput.error) {
+      document.getElementById("r-fire")?.focus();
+      return toast.error(`Zayi / fire: ${fireInput.error}`);
+    }
+    // Kayıttan sonra alanlar kaydedilen biçime getirilir ("0.125" → "0,125", "=ShotCift" → "ShotCift"),
+    // ama yalnızca kayıt sürerken değiştirilmemişse
+    const sent = { name, note, price, fire, rows: new Map(lines.map((l) => [l.row.key, { input: l.row.input, note: l.row.note, to: qtyText(l.qty, l.expr) }])) };
     setSaving(true);
     const res = await saveRecipe({
       productId: product.id,
@@ -297,15 +347,29 @@ export function RecipeEditor({
       size,
       categoryId,
       price: priceNum,
-      fireOverride: fireNum,
+      fireOverride: fireInput.rate,
       note,
       active,
       showOnMenu,
       items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
     });
     setSaving(false);
-    if (res.ok) toast.success(`${name.trim()} kaydedildi`, { description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(priceNum, 2)}` });
-    else toast.error(res.error);
+    if (!res.ok) return toast.error(res.error);
+    setName((v) => (v === sent.name ? v.trim() : v));
+    setNote((v) => (v === sent.note ? v.trim() : v));
+    setPrice((v) => (v === sent.price ? priceText(priceNum) : v));
+    setFire((v) => (v === sent.fire ? fireText(fireInput.rate) : v));
+    setRows((rs) =>
+      rs.map((r) => {
+        const s = sent.rows.get(r.key);
+        return s && s.input === r.input && s.note === r.note ? { ...r, input: s.to, note: r.note.trim() } : r;
+      }),
+    );
+    toast.success(`${name.trim()} kaydedildi`, {
+      description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(priceNum, 2)}${
+        fireInput.rate !== null ? ` · özel fire ${firePct(fireInput.rate)}` : ""
+      }`,
+    });
   }
 
   // ⌘S / Ctrl+S kaydeder; kaydedilmemiş değişiklik varken sayfadan çıkmadan önce tarayıcı sorar
@@ -324,6 +388,23 @@ export function RecipeEditor({
     window.addEventListener("beforeunload", onLeave);
     return () => window.removeEventListener("beforeunload", onLeave);
   }, [dirty]);
+  // beforeunload yalnızca yenileme / sekme kapatmayı kapsar: panel içi bağlantıda (← Ürünler, boylar, menü) önce sorulur
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dirty) return;
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaveHref(url.pathname + url.search + url.hash);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [dirty]);
 
   async function remove() {
     setDeleting(true);
@@ -331,7 +412,15 @@ export function RecipeEditor({
     setDeleting(false);
     if (!res.ok) return toast.error(res.error);
     toast.success(`${product.name} · ${product.size} silindi`);
-    router.push("/panel/urunler");
+    router.push(listHref(readListQuery(), month));
+  }
+
+  /** "← Ürünler": listenin son süzgeçlerine döner (yoksa düz bağlantı, kartın ayıyla) */
+  function backToList(e: MouseEvent<HTMLAnchorElement>) {
+    const saved = readListQuery();
+    if (saved === null || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    router.push(listHref(saved, month));
   }
 
   const grouped = useMemo(() => {
@@ -347,11 +436,14 @@ export function RecipeEditor({
       .map(([cat, list]) => [cat, list.sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
   }, [ingredients]);
 
+  const noRecipe = econ.status === "Reçete yok";
   const gaugeTone =
     econ.costRatio <= settings.hedefMaliyet ? "brand" : econ.costRatio <= settings.hedefMaliyet + 0.1 ? "warn" : "bad";
   const trialDiff = trialEcon ? trialEcon.unitProfit - econ.unitProfit : 0;
   const plus = (v: number) => (v >= 0 ? "+" : "");
   const maxSold = Math.max(1, ...history.map((h) => h.qty));
+  const totalSold = history.reduce((a, h) => a + h.qty, 0);
+  const soldMonths = history.filter((h) => h.qty > 0).length;
   const categoryName = categories.find((c) => c.id === product.categoryId)?.name;
   const range = sliderRange(priceNum, econ.suggestedPrice, trialPrice);
 
@@ -381,14 +473,19 @@ export function RecipeEditor({
         }
         actions={
           <>
-            <ButtonLink href="/panel/urunler" variant="ghost" size="sm" className="pointer-coarse:h-10">
-              <ArrowLeft size={16} /> Ürünler
+            {/* Telefonda yalnızca ikonlar: geri, ay ve kopyala tek satıra sığsın */}
+            <ButtonLink href={listHref(null, month)} onClick={backToList} variant="ghost" size="sm" className="pointer-coarse:h-10 max-sm:px-2.5">
+              <ArrowLeft size={16} aria-hidden="true" /> <span className="max-sm:sr-only">Ürünler</span>
             </ButtonLink>
-            <Button variant="secondary" onClick={() => setCopyOpen(true)} className="pointer-coarse:h-10" title="Reçetesiyle birlikte yeni ürün ya da boy oluştur">
-              <Copy size={16} /> Kopyala
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10">
-              <Trash2 size={16} /> Sil
+            {/* Kartın "satılan adet" ve "kalan kâr" satırları bu ayın; listeden gelen ay seçili */}
+            {months.length > 1 ? <MonthPicker months={months} value={month} /> : null}
+            <Button
+              variant="secondary"
+              onClick={() => setCopyOpen(true)}
+              className="pointer-coarse:h-10 max-sm:px-2.5"
+              title="Reçetesi, fire oranı ve notuyla birlikte yeni ürün ya da boy oluştur"
+            >
+              <Copy size={16} aria-hidden="true" /> <span className="max-sm:sr-only">Kopyala</span>
             </Button>
           </>
         }
@@ -399,7 +496,7 @@ export function RecipeEditor({
               <SegmentedLinks
                 label="Boylar"
                 value={String(product.id)}
-                options={siblings.map((s) => ({ value: String(s.id), label: s.size, href: `/panel/urunler/${s.id}` }))}
+                options={siblings.map((s) => ({ value: String(s.id), label: s.size, href: productHref(s.id, month) }))}
               />
             </div>
           ) : undefined
@@ -443,7 +540,7 @@ export function RecipeEditor({
                     <span>Malzeme</span>
                     <span className="inline-flex items-center gap-1">
                       Miktar
-                      <InfoTip text="Malzemenin birimiyle (gr, ml, adet). Formül de yazılabilir: 2*ShotCift. Virgüllü ondalık kabul edilir." />
+                      <InfoTip text="Malzemenin birimiyle (gr, ml, adet). Formül de yazılabilir: 2*ShotCift ya da =ShotCift. Ondalık için virgül (0,125) ya da nokta (0.125) yazılır; noktalı sayının nasıl okunduğu alanın altında görünür." />
                     </span>
                     <span className="inline-flex items-center justify-end gap-1">
                       Tutar
@@ -499,9 +596,18 @@ export function RecipeEditor({
                                       </Badge>
                                     ) : null}
                                     {l.ing.priceSource === "water" ? (
-                                      <Badge tone="blue" title="Su faturasından hesaplanır">
-                                        Su faturası ({tl(waterPerLiter, 2)}/L)
-                                      </Badge>
+                                      water.costed ? (
+                                        <Badge tone="blue" title={water.text}>
+                                          Su faturası ({tl(water.perLiter, 2)}/L)
+                                        </Badge>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1">
+                                          <Badge tone="amber" dot>
+                                            {water.short}
+                                          </Badge>
+                                          <InfoTip text={`${water.text}.`} />
+                                        </span>
+                                      )
                                     ) : null}
                                     {l.isPackaging ? <Badge tone="gray">Ambalaj</Badge> : null}
                                     <span className="tabular" title="Birim maliyet (KDV hariç) ve alış KDV oranı">
@@ -514,10 +620,45 @@ export function RecipeEditor({
                                         {monthLabel}: {num(l.qty * soldQty, 0)} {l.ing.unit}
                                       </span>
                                     ) : null}
+                                    {!l.row.note && !noteOpen.has(l.row.key) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setNoteOpen((s) => new Set(s).add(l.row.key))}
+                                        className="inline-flex cursor-pointer items-center gap-1 rounded-md text-ink-mute hover:text-ink hover:underline pointer-coarse:-my-2 pointer-coarse:py-2"
+                                        title="Bu satıra not ekle (ör. yalnızca sıcak servis)"
+                                      >
+                                        <StickyNote size={12} aria-hidden="true" /> Not
+                                      </button>
+                                    ) : null}
                                   </div>
                                 ) : (
                                   <p className="mt-1.5 text-xs text-warn">Listeden bir malzeme seçin ya da satırı silin.</p>
                                 )}
+                                {/* Satır notu (Excel'deki hücre notu): varsa hep görünür, yoksa "Not" ile açılır */}
+                                {l.row.note || noteOpen.has(l.row.key) ? (
+                                  <div className="relative mt-2">
+                                    <StickyNote size={13} className="pointer-events-none absolute top-2.5 left-2.5 text-ink-quiet" aria-hidden="true" />
+                                    {/* Not uzunsa alan yazıyla birlikte uzar (tek satırda kesilmesin) */}
+                                    <Textarea
+                                      rows={1}
+                                      value={l.row.note}
+                                      onChange={(e) => update(l.row.key, { note: e.target.value })}
+                                      onBlur={() => {
+                                        if (l.row.note.trim()) return;
+                                        setNoteOpen((s) => {
+                                          const n = new Set(s);
+                                          n.delete(l.row.key);
+                                          return n;
+                                        });
+                                      }}
+                                      autoFocus={!l.row.note && noteOpen.has(l.row.key)}
+                                      maxLength={300}
+                                      placeholder="Satır notu (ör. yalnızca sıcak serviste)"
+                                      aria-label={`${idx + 1}. satır notu`}
+                                      className="field-sizing-content min-h-8 resize-none py-1.5 pl-8 text-[13px] leading-5 sm:text-[13px]"
+                                    />
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
 
@@ -542,7 +683,7 @@ export function RecipeEditor({
                                   title={l.expr ?? undefined}
                                   aria-label={`${idx + 1}. satır miktarı${l.ing ? ` (${l.ing.unit})` : ""}`}
                                   aria-invalid={l.error ? true : undefined}
-                                  aria-describedby={l.error || l.expr || (l.qty === 0 && l.row.ingredientId) ? hintId : undefined}
+                                  aria-describedby={l.error || l.expr || l.echo || (l.qty === 0 && l.row.ingredientId) ? hintId : undefined}
                                   data-warn={!l.error && l.qty === 0 && l.row.ingredientId ? "true" : undefined}
                                   placeholder="0"
                                   inputMode="decimal"
@@ -558,6 +699,11 @@ export function RecipeEditor({
                               ) : l.expr ? (
                                 <p id={hintId} className="mt-1 text-xs text-ink-mute tabular">
                                   = {num(l.qty, 2)} {l.ing?.unit}
+                                </p>
+                              ) : l.echo ? (
+                                // Nokta ondalık mı bin ayıracı mı: nasıl okunduğu görünsün ("0.125" → 0,125; "1.250" → 1250)
+                                <p id={hintId} className="mt-1 text-xs text-ink-mute tabular" title="Noktalı sayının okunuşu. Ondalık için virgül yazabilirsiniz (0,125).">
+                                  = {l.echo} {l.ing?.unit}
                                 </p>
                               ) : l.qty === 0 && l.row.ingredientId ? (
                                 <p id={hintId} className="mt-1 max-w-40 text-xs text-warn">
@@ -682,8 +828,13 @@ export function RecipeEditor({
                     </Select>
                   </Field>
                 </div>
-                <Field label="Not" className="sm:col-span-2" htmlFor="r-note" hint="Reçete varsayımları, bardak boyu vb.">
-                  <Textarea id="r-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+                <Field
+                  label="Not"
+                  className="sm:col-span-2"
+                  htmlFor="r-note"
+                  hint="Reçete varsayımları, bardak boyu vb. Ürün listesinde adın yanında ⓘ olarak, reçete defterinde kartın altında görünür."
+                >
+                  <Textarea id="r-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={1000} />
                 </Field>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 sm:col-span-2">
                   <Switch checked={active} onChange={setActive} label="Menüde aktif" showText onText="Menüde aktif" offText="Menüde pasif" />
@@ -697,6 +848,13 @@ export function RecipeEditor({
                   />
                 </div>
               </CardContent>
+              {/* Kalıcı silme nadir ve geri alınamaz: başlıkta değil, ürün bilgilerinin sonunda */}
+              <CardFooter className="flex-wrap justify-between gap-2 py-3">
+                <p className="text-[13px] text-ink-mute">Menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatın.</p>
+                <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} className="text-bad hover:bg-bad-soft hover:text-bad">
+                  <Trash2 size={15} /> Ürünü sil
+                </Button>
+              </CardFooter>
             </Card>
           </motion.div>
         </div>
@@ -721,25 +879,34 @@ export function RecipeEditor({
             />
             <CardContent className="space-y-4">
               <Well className="pt-5 pb-3">
+                {/* Reçetesiz üründe oranlar anlamsız (malzeme maliyeti 0): listedeki gibi "–" */}
                 <Gauge
-                  value={econ.costRatio}
+                  value={noRecipe ? 0 : econ.costRatio}
                   target={settings.hedefMaliyet}
-                  display={<AnimatedNumber value={econ.costRatio} format={(v) => pct(v)} />}
-                  label={`Maliyet oranı · hedef ≤ %${num(settings.hedefMaliyet * 100)}`}
+                  display={noRecipe ? <span className="text-ink-quiet">–</span> : <AnimatedNumber value={econ.costRatio} format={(v) => pct(v)} />}
+                  label={noRecipe ? "Maliyet oranı · malzeme ekleyince hesaplanır" : `Maliyet oranı · hedef ≤ %${num(settings.hedefMaliyet * 100)}`}
                   tone={gaugeTone}
                 />
                 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-3">
                   <div>
                     <p className="text-xs text-ink-mute">1 adet kâr</p>
-                    <Signed value={econ.unitProfit} className="block text-xl font-semibold tracking-tight">
-                      <AnimatedNumber value={econ.unitProfit} format={(v) => tl(v, 2)} />
-                    </Signed>
+                    {noRecipe ? (
+                      <span className="block text-xl font-semibold tracking-tight text-ink-quiet">–</span>
+                    ) : (
+                      <Signed value={econ.unitProfit} className="block text-xl font-semibold tracking-tight">
+                        <AnimatedNumber value={econ.unitProfit} format={(v) => tl(v, 2)} />
+                      </Signed>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-ink-mute">Kâr marjı</p>
-                    <Signed value={econ.margin} className="block text-xl font-semibold tracking-tight text-ink">
-                      <AnimatedNumber value={econ.margin} format={(v) => pct(v)} />
-                    </Signed>
+                    {noRecipe ? (
+                      <span className="block text-xl font-semibold tracking-tight text-ink-quiet">–</span>
+                    ) : (
+                      <Signed value={econ.margin} className="block text-xl font-semibold tracking-tight text-ink">
+                        <AnimatedNumber value={econ.margin} format={(v) => pct(v)} />
+                      </Signed>
+                    )}
                   </div>
                 </div>
               </Well>
@@ -775,7 +942,7 @@ export function RecipeEditor({
                 </Field>
                 <Field
                   label="Zayi / fire"
-                  tip={`Bu ürüne özel fire oranı. Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`}
+                  tip={`Bu ürüne özel fire oranı, yüzde olarak: 8 ya da %8 yazın (%8 olur). Boş bırakılırsa Ayarlar'daki genel oran (%${num(settings.fire * 100, 1)}) kullanılır.${settings.fireExcludesPackaging ? " Ambalaj fireye dahil edilmiyor." : ""}`}
                   htmlFor="r-fire"
                 >
                   <div className="relative">
@@ -785,10 +952,49 @@ export function RecipeEditor({
                       value={fire}
                       onChange={(e) => setFire(e.target.value)}
                       placeholder={num(settings.fire * 100, 1)}
+                      aria-invalid={fireInput.error ? true : undefined}
+                      data-warn={fireInput.warning ? "true" : undefined}
+                      aria-describedby={fire.trim() ? "r-fire-hint" : undefined}
                       className="cell-input pl-7"
                     />
                   </div>
                 </Field>
+                {/* Fire alanının okunuşu: dar sütuna sığmadığı için iki sütunun altında */}
+                {fire.trim() ? (
+                  <p
+                    id="r-fire-hint"
+                    className={cn("col-span-2 -mt-1 text-xs", fireInput.error ? "text-bad" : fireInput.warning ? "text-warn" : "text-ink-mute")}
+                    role={fireInput.error || fireInput.warning ? "alert" : undefined}
+                  >
+                    {fireInput.error ? (
+                      <>Zayi / fire: {fireInput.error}</>
+                    ) : fireInput.warning ? (
+                      <>
+                        Zayi / fire {fireInput.warning}{" "}
+                        {fireInput.suggestion ? (
+                          <button
+                            type="button"
+                            onClick={() => setFire(fireInput.suggestion!)}
+                            className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                          >
+                            %{fireInput.suggestion} yap
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        Bu ürüne özel fire {firePct(fireInput.rate ?? 0)} (genel oran {firePct(settings.fire)}).{" "}
+                        <button
+                          type="button"
+                          onClick={() => setFire("")}
+                          className="cursor-pointer font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:px-1 pointer-coarse:py-3"
+                        >
+                          Genel orana dön
+                        </button>
+                      </>
+                    )}
+                  </p>
+                ) : null}
               </div>
 
               <Segmented label="Özet görünümü" value={sideTab} onChange={setSideTab} options={sideTabs} stretch />
@@ -803,7 +1009,7 @@ export function RecipeEditor({
                   {sideTab === "dokum" ? (
                     <div className="divide-y divide-line">
                       <KeyValue label="Malzeme toplamı" value={tl(econ.ingredientTotal, 2)} />
-                      <KeyValue label={`Fire payı (${pct(econ.fireRate)})`} value={tl(econ.fire, 2)} />
+                      <KeyValue label={`Fire payı (${firePct(econ.fireRate)}${econ.fireOverridden ? ", bu ürüne özel" : ""})`} value={tl(econ.fire, 2)} />
                       <KeyValue label="Ürün maliyeti" value={tl(econ.cost, 2)} strong />
                       <KeyValue label={`Satış fiyatı (KDV hariç, %${num(settings.kdv * 100)})`} value={tl(econ.net, 2)} />
                       <KeyValue
@@ -908,8 +1114,9 @@ export function RecipeEditor({
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ duration: 0.25, ease: EASE_OUT, delay: Math.min(i, 12) * 0.03 }}
                           className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-3 py-2 text-sm"
+                          aria-current={h.month === month ? "true" : undefined}
                         >
-                          <span className="truncate text-ink-mute">{h.label}</span>
+                          <span className={cn("truncate", h.month === month ? "font-semibold text-ink" : "text-ink-mute")}>{h.label}</span>
                           <Progress value={h.qty / maxSold} />
                           <span className="text-right text-ink tabular">{num(h.qty)} adet</span>
                         </motion.li>
@@ -940,6 +1147,19 @@ export function RecipeEditor({
       </FloatingBar>
 
       <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        onConfirm={() => {
+          const href = leaveHref;
+          setLeaveHref(null);
+          if (href) router.push(href);
+        }}
+        title="Kaydedilmemiş değişiklikler var"
+        confirmLabel="Kaydetmeden çık"
+        description="Bu karttaki değişiklikler henüz kaydedilmedi; çıkarsanız kaybolur. Kalmak için Vazgeç'e basıp alttaki Kaydet'i kullanın."
+      />
+
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void remove()}
@@ -952,13 +1172,15 @@ export function RecipeEditor({
               {product.name} · {product.size}
             </span>
             Reçetesiyle birlikte kalıcı olarak silinir; geri alınamaz.
-            {soldQty ? ` ${monthLabel} ayında ${num(soldQty)} adet satılmış: bu satış satırları kalır ama eşleşmesiz görünür.` : " Geçmiş satış satırları kalır ama eşleşmesiz görünür."}{" "}
-            Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatın.
+            {totalSold
+              ? ` Satış raporlarında ${num(soldMonths)} ayda toplam ${num(totalSold)} adet satışı var: bu satırlar kalır ama eşleşmesiz görünür ve POS eşleştirmesi de silinir.`
+              : " Bu ürünün satış kaydı yok."}{" "}
+            Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatıp kaydedin.
           </>
         }
       />
 
-      <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} takenSizes={siblings.map((x) => x.size)} />
+      <CopyDialog open={copyOpen} onClose={() => setCopyOpen(false)} product={product} month={month} takenSizes={siblings.map((x) => x.size)} dirty={dirty} />
     </div>
   );
 }
@@ -993,13 +1215,18 @@ function CopyDialog({
   open,
   onClose,
   product,
+  month,
   takenSizes,
+  dirty,
 }: {
   open: boolean;
   onClose: () => void;
-  product: { id: number; name: string; size: "M" | "L" | "Tek"; categoryId: number; price: number };
+  product: { id: number; name: string; size: "M" | "L" | "Tek"; categoryId: number; price: number; fireOverride: number | null; note: string | null };
+  month: string;
   /** Bu adın var olan boyları */
   takenSizes: string[];
+  /** Kartta kaydedilmemiş değişiklik var: kopyaya kayıtlı hâli geçer (açıkça söylenir) */
+  dirty: boolean;
 }) {
   const router = useRouter();
   const formId = useId();
@@ -1022,9 +1249,9 @@ function CopyDialog({
     const res = await createProduct({ name, size, categoryId: product.categoryId, price: p, copyFromId: product.id });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(`${name.trim()} · ${size} oluşturuldu`, { description: "Reçetesi kopyalandı; miktarları yeni boya göre düzeltin." });
+    toast.success(`${name.trim()} · ${size} oluşturuldu`, { description: `${copiedSummary(res.data)} Miktarları yeni boya göre düzeltin.` });
     onClose();
-    router.push(`/panel/urunler/${res.data.id}`);
+    router.push(productHref(res.data.id, month));
   }
 
   return (
@@ -1032,7 +1259,7 @@ function CopyDialog({
       open={open}
       onClose={onClose}
       title="Ürünü kopyala"
-      description="Reçetesiyle birlikte yeni bir ürün ya da boy oluşturur."
+      description={copyDescription(product)}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -1054,6 +1281,12 @@ function CopyDialog({
           void submit();
         }}
       >
+        {dirty ? (
+          <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs leading-5 text-warn" role="status">
+            Kartta kaydedilmemiş değişiklikler var. Kopyaya son kaydedilen reçete, fire ve not geçer; değişikliklerin de geçmesi için önce
+            Vazgeç&apos;e basıp kaydedin.
+          </p>
+        ) : null}
         <Field label="Ürün adı" htmlFor="c-name" error={name.trim() ? undefined : "Ürün adını yazın"}>
           <Input id="c-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-invalid={name.trim() ? undefined : true} />
         </Field>

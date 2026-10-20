@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { useCalmMotion } from "@/components/ui/motion";
 import { SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Well } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,10 @@ export interface FlowRow {
   value: number;
   sub: string;
   sign: number;
+  /** Satırın ne içerdiği (Excel Panel karşılığı); bilgi simgesinde açılır */
+  info?: string;
+  /** Satırda Gelir-gider'de elle düzeltilmiş tutar var */
+  edited?: boolean;
 }
 
 /**
@@ -90,7 +95,17 @@ export function MoneyFlow({ rows, netSales, netProfit }: { rows: FlowRow[]; netS
 
       <ul className="space-y-3">
         {costs.map((r) => (
-          <FlowLine key={r.label} as="li" label={`– ${r.label}`} amount={Math.abs(r.value)} share={share(r.value)} sub={r.sub} swatch={r.shade} />
+          <FlowLine
+            key={r.label}
+            as="li"
+            label={`– ${r.label}`}
+            amount={Math.abs(r.value)}
+            share={share(r.value)}
+            sub={r.sub}
+            swatch={r.shade}
+            info={r.info}
+            edited={r.edited}
+          />
         ))}
       </ul>
     </Well>
@@ -103,6 +118,8 @@ function FlowLine({
   share,
   sub,
   swatch,
+  info,
+  edited,
   as: Tag = "div",
 }: {
   label: string;
@@ -110,13 +127,24 @@ function FlowLine({
   share: number;
   sub: string;
   swatch: string;
+  info?: string;
+  edited?: boolean;
   as?: "div" | "li";
 }) {
   return (
     <Tag className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 text-sm">
       <span aria-hidden="true" className={cn("mt-[5px] size-2.5 shrink-0 rounded-[3px]", swatch)} />
       <span className="min-w-0">
-        <span className="block font-medium text-ink">{label}</span>
+        {/* Bilgi simgesi ve "düzeltildi" işareti son sözcükle birlikte satıra sarılır (ayrı satıra düşmez) */}
+        <span className="block font-medium text-ink">
+          {label}
+          {info ? <InfoTip text={info} className="ml-1.5" /> : null}
+          {edited ? (
+            <span className="ml-1.5 text-[11px] font-normal whitespace-nowrap text-info" title="Gelir-gider tablosunda bu aya elle yazılmış tutar var">
+              düzeltildi
+            </span>
+          ) : null}
+        </span>
         {sub ? (
           <span className="mt-0.5 block text-xs text-ink-mute sm:truncate" title={sub}>
             {sub}

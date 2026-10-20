@@ -5,17 +5,15 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { PastelTone } from "@/components/ui/icon-tile";
 import { dateTR, tl } from "@/lib/format";
-import { daysLeftLabel, type ReminderKind } from "@/lib/reminders";
-import { loadUpcoming } from "@/server/notify/digest";
+import { daysLeftLabel, type ReminderKind, type UpcomingItem } from "@/lib/reminders";
 
 const ICON: Record<ReminderKind, LucideIcon> = { odeme: Wallet, vergi: Landmark, kira: Receipt, maas: Users, fatura: FileText, diger: CalendarClock };
 
 /**
- * Genel bakış: gecikmiş ve 7 gün içindeki ödemeler (Ödemeler & hatırlatıcılar'dan). Yoksa hiç görünmez;
- * sayfa sakin kalsın.
+ * Genel bakış: gecikmiş ve 7 gün içindeki ödemeler (Ödemeler & hatırlatıcılar'dan; liste sayfada bir kez
+ * okunur, "Bu ayın işleri" de aynısını kullanır). Yoksa hiç görünmez; sayfa sakin kalsın.
  */
-export async function DashboardPayments({ className }: { className?: string }) {
-  const { items } = await loadUpcoming();
+export function DashboardPayments({ items, className }: { items: UpcomingItem[]; className?: string }) {
   const near = items.filter((i) => i.status !== "later").slice(0, 4);
   if (!near.length) return null;
   const overdue = near.filter((i) => i.status === "overdue").length;

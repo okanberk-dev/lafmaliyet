@@ -71,6 +71,12 @@ Arşivlenmiş faturalar (Paraşüt'te yalnızca listeden gizlenmiş) geçerli gi
 Yeni tedarikçi adları paneldeki kısa adlarla eşlenir ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş." → "Sütaş"), böylece gelir-gider
 tablosundaki tedarikçi satırları dağılmaz.
 
+Paraşüt'e bağlı faturada tarih, fatura no, tutar, iskonto ve ödenecek panelde salt okunurdur (saveInvoice da
+yazmaz); kategori, tedarikçi adı, açıklama, not, vade ve ödeme durumu düzenlenir. Kısmen ödenmiş faturada Paraşüt'ün
+bildirdiği kalan borç (`outstanding`) gösterilir ve toplamlara o girer. Panelde silinen Paraşüt faturaları bir
+sonraki eşitlemede geri gelmez; Faturalar › Silinen Paraşüt faturaları'ndan (ya da silme bildirimindeki "Geri al"
+ile) geri alınır.
+
 ## 4. Kategori
 
 Yeni gelen faturanın panel kategorisi sırasıyla:

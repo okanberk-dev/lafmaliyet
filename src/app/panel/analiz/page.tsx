@@ -72,6 +72,7 @@ function AnalysisReady({ model, month }: { model: Awaited<ReturnType<typeof load
     <AnalysisTabs
       menu={
         <MenuEngineering
+          month={month}
           monthLabel={monthLabel(month)}
           items={me.items.map((x) => ({
             id: x.p.product.id,

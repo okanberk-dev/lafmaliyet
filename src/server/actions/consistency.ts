@@ -10,22 +10,28 @@ import { getDb, schema as s } from "@/server/db";
 import { MANAGED_QTY_NOTE } from "@/server/parasut/constants";
 
 import { logActivity } from "./log";
-import { attempt, zMonth, zOptText, zText } from "./util";
+import { attempt, UserError, zMonth, zOptText, zText } from "./util";
 
-/** Ay içinde faturayla alınan miktar (malzemenin kendi biriminde: gr, ml, adet) */
+/**
+ * Ay içinde faturayla alınan miktar (malzemenin kendi biriminde: gr, ml, adet). 0 geçerlidir: "bu ay hiç alınmadı"
+ * demektir ve iki ayı sayılan malzemede sayım sapmasının hesaplanmasını sağlar (boş = bilinmiyor, sapma çıkmaz).
+ */
 export async function setPurchaseQty(month: string, ingredientId: number, qty: number | null, note?: string | null) {
   return attempt(async () => {
     const me = await requireAdmin();
     const m = zMonth.parse(month);
+    const id = z.number().int().positive("Malzeme seçin").parse(ingredientId);
     const db = getDb();
+    const [ing] = await db.select({ name: s.ingredients.name, unit: s.ingredients.unit }).from(s.ingredients).where(eq(s.ingredients.id, id));
+    if (!ing) throw new UserError("Malzeme bulunamadı (sayfayı yenileyin)");
     if (qty === null) {
-      await db.delete(s.purchaseQuantities).where(and(eq(s.purchaseQuantities.month, m), eq(s.purchaseQuantities.ingredientId, ingredientId)));
+      await db.delete(s.purchaseQuantities).where(and(eq(s.purchaseQuantities.month, m), eq(s.purchaseQuantities.ingredientId, id)));
     } else {
       const v = z.number().finite().min(0).parse(qty);
       const n = zOptText(300).parse(note);
       await db
         .insert(s.purchaseQuantities)
-        .values({ month: m, ingredientId, qty: v, note: n })
+        .values({ month: m, ingredientId: id, qty: v, note: n })
         .onConflictDoUpdate({
           target: [s.purchaseQuantities.month, s.purchaseQuantities.ingredientId],
           // Elle düzeltilen satır Paraşüt eşitlemesine ait olmaktan çıkar (notu değişir), eşitleme üzerine yazmaz
@@ -35,7 +41,7 @@ export async function setPurchaseQty(month: string, ingredientId: number, qty: n
               : { qty: v, note: n },
         });
     }
-    await logActivity(me, "Alınan miktar", `${monthLabel(m)} · #${ingredientId}: ${qty === null ? "silindi" : num(qty)}`);
+    await logActivity(me, "Alınan miktar", `${monthLabel(m)} · ${ing.name}: ${qty === null ? "silindi" : `${num(qty, 2)} ${ing.unit}`}`);
     refresh();
     return null;
   });

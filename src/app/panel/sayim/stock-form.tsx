@@ -1,6 +1,24 @@
 "use client";
 
-import { Check, ClipboardCheck, ClipboardCopy, Coins, ListFilter, ListTodo, PackagePlus, Plus, Printer, Save, SearchX, Trash2, Undo2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ClipboardCheck,
+  ClipboardCopy,
+  Coins,
+  History,
+  ListFilter,
+  ListTodo,
+  Lock,
+  PackagePlus,
+  Plus,
+  Printer,
+  Save,
+  SearchX,
+  Trash2,
+  Undo2,
+  UserRound,
+} from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -20,31 +38,65 @@ import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COUNT_UNITS } from "@/lib/constants";
-import { num, tl } from "@/lib/format";
+import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
-interface Line {
-  id: number;
+import { saveStaffStockExtras } from "./actions";
+import { extraKey, liveTotals, type CountLineValue } from "./logic";
+
+export interface FormLine extends CountLineValue {
   name: string;
   packageDesc: string | null;
+  /** Kayıtlı sayımın birimi (sayılmamış satırda bugünkü sayım birimi) */
   countUnit: string;
-  qty: number | null;
+  /** Bugünkü sayım birimi; null = Hammaddeler'de "Sayılmaz" */
+  unitNow: string | null;
+  /** Arşiv satırının nedeni: malzeme pasif ya da "Sayılmaz" yapıldı */
+  archivedReason: "pasif" | "sayilmaz" | null;
+  /** Kayıtlı sayım bugünkü sayım biriminden farklı bir birimle girildi */
+  unitChanged: boolean;
   prevQty: number | null;
-  unitPrice: number;
-  vatRate: number;
+  /** Geçen ayki sayımın birimi */
+  prevUnit: string | null;
 }
 
+export interface FormGroup {
+  name: string;
+  /** Excel Sayım'daki grubun tek KDV oranı (ambalaj %20, diğerleri %1) */
+  excelRate: number;
+  /** Alış KDV'si grup oranından farklı malzemeler (yalnızca yönetici) */
+  mismatches: { name: string; vatRate: number }[];
+  lines: FormLine[];
+}
+
+type ExtraProp = { name: string; unit: string; qty: number; unitPrice: number; priced: boolean };
 type Filter = "all" | "empty";
 type HistoryMonth = { month: string; short: string; label: string; counted: boolean };
-type Extra = { name: string; unit: string; qty: string; unitPrice: string };
+/** Formdaki ek kalem: metin kutularının değeri; `priced` = kayıtlı fiyatı var (personel fiyatı görmez) */
+type Extra = { name: string; unit: string; qty: string; unitPrice: string; priced: boolean };
 
 /** Adresteki süzgeç anahtarları (?ara=sut&durum=empty&grup=…); "Temizle" hepsini birden sıfırlar */
 const QUERY_KEYS = ["ara", "durum", "grup"];
-const BLANK_EXTRA: Extra = { name: "", unit: "ADET", qty: "", unitPrice: "" };
+const BLANK_EXTRA: Extra = { name: "", unit: "ADET", qty: "", unitPrice: "", priced: false };
 /** Hiçbir alanı doldurulmamış ek satır: kayıtta zaten düşer, "kaydedilmedi" çubuğunu da açmaz */
 const isBlankExtra = (e: Extra) => !e.name.trim() && !e.qty.trim() && !e.unitPrice.trim();
 const badNumber = (v: string) => v.trim() !== "" && (parseNumberTR(v) === null || (parseNumberTR(v) ?? 0) < 0);
+/** Kayıtlı hâliyle karşılaştırma imzası (fiyat bilgisi `priced` hariç) */
+const extraSig = (list: Extra[]) => JSON.stringify(list.map((e) => [e.name, e.unit, e.qty, e.unitPrice]));
+const toExtra = (e: ExtraProp, isAdmin: boolean): Extra => ({
+  name: e.name,
+  unit: e.unit,
+  qty: num(e.qty, 3),
+  unitPrice: isAdmin ? num(e.unitPrice, 2) : "",
+  priced: e.priced,
+});
+/** Ayın son günü (Excel Sayım B6 = SERİAY(ay; 0)) */
+function monthEnd(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
+}
 
 /** Enter ile sıradaki kutuya geçilir (telefonda klavyenin "İleri" tuşu). `attr` hangi kutu dizisinde gezileceğini seçer. */
 function focusNext(e: KeyboardEvent<HTMLInputElement>, attr: string, onEnd?: () => void) {
@@ -295,27 +347,42 @@ function Money({ value }: { value: number }) {
 export function StockCountForm({
   month,
   monthLabel,
+  prevMonthLabel,
   isAdmin,
   groups,
   extras: initialExtras,
+  prevExtras,
   hasPrev,
   history,
   prevTotal,
+  closingOverride,
+  counter,
 }: {
   month: string;
   monthLabel: string;
+  prevMonthLabel: string;
   isAdmin: boolean;
-  groups: { name: string; lines: Line[] }[];
-  extras: { name: string; unit: string; qty: number; unitPrice: number }[];
+  groups: FormGroup[];
+  extras: ExtraProp[];
+  /** Geçen ayın "listede olmayanlar"ı: yeni ay boşken tek dokunuşla getirilir */
+  prevExtras: ExtraProp[];
   hasPrev: boolean;
   /** Seçili ay dahil son 6 ayın sayım durumu */
   history: HistoryMonth[];
-  /** Geçen ayın stok toplamı (yalnızca yönetici, sayım varsa) */
-  prevTotal: number | null;
+  /** Bu ayın açılış stoğu = geçen ayın devreden malı (yalnızca yönetici); Gelir-giderde elle girildiyse o */
+  prevTotal: { value: number; overridden: boolean } | null;
+  /** Gelir-giderde bu ayın stoğu elle girildiyse o tutar (kâr-zarar sayımı değil bunu kullanır) */
+  closingOverride: number | null;
+  /** "Sayan: … · son kayıt …" */
+  counter: string | null;
 }) {
   const reduce = useCalmMotion() ?? false;
   const all = groups.flatMap((g) => g.lines);
-  const savedExtras: Extra[] = initialExtras.map((e) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(e.unitPrice, 2) }));
+  /** Bugünkü sayım listesindeki kalemler (ilerleme bunlarla); arşiv satırları salt okunur */
+  const countable = all.filter((l) => !l.archived);
+  const archivedCount = all.length - countable.length;
+  const savedExtras: Extra[] = initialExtras.map((e) => toExtra(e, isAdmin));
+  const savedKeys = new Set(savedExtras.map((e) => extraKey(e.name, e.unit)));
   const savedValues = () => Object.fromEntries(all.map((l) => [l.id, l.qty === null ? "" : num(l.qty, 3)])) as Record<number, string>;
   const [values, setValues] = useState<Record<number, string>>(savedValues);
   const [extras, setExtras] = useState(savedExtras);
@@ -327,36 +394,52 @@ export function StockCountForm({
   const filter: Filter = filterParam === "empty" ? "empty" : "all";
   const group = groups.some((g) => g.name === groupParam) ? groupParam : "";
   /** "Sayılmayanlar" seçildiği andaki boş kalemler: yazmaya başlayınca satır listeden kaybolmasın */
-  const [emptyIds, setEmptyIds] = useState<Set<number>>(() => new Set(all.filter((l) => l.qty === null).map((l) => l.id)));
+  const [emptyIds, setEmptyIds] = useState<Set<number>>(() => new Set(countable.filter((l) => l.qty === null).map((l) => l.id)));
   /** Yeni eklenen ek satırın ad kutusuna odaklanmak için */
   const focusExtra = useRef<number | null>(null);
 
-  const qtyOf = (id: number) => {
-    const v = values[id];
+  const qtyOf = (l: FormLine) => {
+    if (l.archived) return l.qty;
+    const v = values[l.id];
     return v === undefined || v.trim() === "" ? null : parseNumberTR(v);
   };
-  const isInvalid = (id: number) => {
-    if (!values[id]?.trim()) return false;
-    const v = qtyOf(id);
+  const isInvalid = (l: FormLine) => {
+    if (l.archived || !values[l.id]?.trim()) return false;
+    const v = qtyOf(l);
     return v === null || v < 0;
   };
+  /** Kayıtlı miktar değişmedikçe sayıldığı birim, yeni ya da değişen miktar bugünkü sayım birimi (sunucu kuralı) */
+  const unitOf = (l: FormLine) => (l.archived || (l.qty !== null && qtyOf(l) === l.qty) ? l.countUnit : (l.unitNow ?? l.countUnit));
 
-  const changedLines = all.filter((l) => qtyOf(l.id) !== l.qty);
-  const invalidLines = all.filter((l) => isInvalid(l.id));
+  const changedLines = countable.filter((l) => qtyOf(l) !== l.qty);
+  const invalidLines = countable.filter((l) => isInvalid(l));
   const filledExtras = extras.filter((e) => !isBlankExtra(e));
-  const extrasDirty = JSON.stringify(filledExtras) !== JSON.stringify(savedExtras);
+  const extrasDirty = extraSig(filledExtras) !== extraSig(savedExtras);
   /** Miktarı ya da fiyatı yazılmış ama adı boş ek satır: kayıtta sessizce düşmesin */
   const extraProblem = filledExtras.find((e) => !e.name.trim() || badNumber(e.qty) || badNumber(e.unitPrice));
-  const dirty = changedLines.length > 0 || extrasDirty || invalidLines.length > 0;
-  const counted = all.filter((l) => qtyOf(l.id) !== null).length;
-  const remaining = all.length - counted;
-  const share = all.length ? counted / all.length : 0;
-  const complete = all.length > 0 && remaining === 0;
-  const groupTotal = (g: { lines: Line[] }) => g.lines.reduce((a, l) => a + (qtyOf(l.id) ?? 0) * l.unitPrice, 0);
+  /** Kayıt başarılı, sunucudan yenilenmiş veri bekleniyor: bu arada kaydetme çubuğu tekrar görünmesin */
+  const [syncingFor, setSyncingFor] = useState<FormGroup[] | null>(null);
+  const syncing = syncingFor === groups;
+  const dirty = !syncing && (changedLines.length > 0 || extrasDirty || invalidLines.length > 0);
+  /** Kayıtlı miktarı silinen satırlar: kaydedince o ayın sayımından çıkar (çubukta ayrıca söylenir) */
+  const clearedLines = changedLines.filter((l) => qtyOf(l) === null);
+  const counted = countable.filter((l) => qtyOf(l) !== null).length;
+  const remaining = countable.length - counted;
+  const share = countable.length ? counted / countable.length : 0;
+  const complete = countable.length > 0 && remaining === 0;
   const extraTotal = (e: Extra) => (parseNumberTR(e.qty) ?? 0) * (parseNumberTR(e.unitPrice) ?? 0);
-  const extrasTotal = extras.reduce((a, e) => a + extraTotal(e), 0);
-  const total = groups.reduce((a, g) => a + groupTotal(g), 0) + extrasTotal;
-  const totalVat = groups.reduce((a, g) => a + g.lines.reduce((b, l) => b + (qtyOf(l.id) ?? 0) * l.unitPrice * (1 + l.vatRate), 0), 0) + extrasTotal * 1.01;
+  const byId = new Map(all.map((l) => [l.id, l]));
+  const live = liveTotals(
+    groups,
+    (l) => qtyOf(byId.get(l.id)!),
+    extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
+  );
+  const groupLive = new Map(live.groups.map((g) => [g.name, g]));
+  const unpricedExtras = isAdmin ? filledExtras.filter((e) => (parseNumberTR(e.qty) ?? 0) > 0 && !((parseNumberTR(e.unitPrice) ?? 0) > 0)) : [];
+  const showExcelVat = isAdmin && Math.abs(live.totalVatExcel - live.totalVat) >= 1;
+  /** Personel kayıtlı fiyatlı satırı silemez, adını / birimini değiştiremez (fiyat o ada bağlı) */
+  const lockedExtra = (e: Extra) => !isAdmin && e.priced && savedKeys.has(extraKey(e.name, e.unit));
+  const canCarryExtras = prevExtras.length > 0 && filledExtras.length === 0;
 
   // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun
   useEffect(() => {
@@ -374,7 +457,7 @@ export function StockCountForm({
   }, [extras.length]);
 
   const changeFilter = (f: Filter) => {
-    if (f === "empty") setEmptyIds(new Set(all.filter((l) => qtyOf(l.id) === null).map((l) => l.id)));
+    if (f === "empty") setEmptyIds(new Set(countable.filter((l) => qtyOf(l) === null).map((l) => l.id)));
     setFilterParam(f);
   };
   const filtered = filter !== "all" || group !== "" || q.trim() !== "";
@@ -391,15 +474,40 @@ export function StockCountForm({
     .filter((g) => g.visible.length);
   const shownCount = visibleGroups.reduce((a, g) => a + g.visible.length, 0);
 
-  function fillFromPrev() {
-    const fill = all.filter((l) => !values[l.id]?.trim() && l.prevQty !== null);
-    if (!fill.length) return toast.message("Doldurulacak boş satır yok", { description: "Geçen ay sayılan kalemlerin hepsine bu ay miktar yazılmış." });
-    setValues((v) => {
-      const next = { ...v };
-      for (const l of fill) next[l.id] = num(l.prevQty ?? 0, 3);
-      return next;
+  /** Geçen ayın ek kalemleri (ad, birim, fiyat; miktar kontrol için geçen ayınki) */
+  const carriedExtras = () => prevExtras.map((e) => toExtra(e, isAdmin));
+
+  function carryExtras() {
+    if (!canCarryExtras) return;
+    setExtras(carriedExtras());
+    toast.success(`${num(prevExtras.length)} ek kalem ${prevMonthLabel} sayımından getirildi`, {
+      description: "Miktarlar geçen ayınki; rafta kalanı yazıp kaydedin.",
     });
-    toast.success(`${num(fill.length)} boş satır geçen ayın sayımıyla dolduruldu`, { description: "Kontrol edip değişenleri düzeltin, sonra kaydedin." });
+  }
+
+  function fillFromPrev() {
+    const empty = countable.filter((l) => !values[l.id]?.trim() && l.prevQty !== null);
+    // Sayım birimi değişen kalem eski miktarla doldurulmaz (2 KG → 2 ADET olmasın)
+    const fill = empty.filter((l) => (l.prevUnit ?? l.countUnit) === (l.unitNow ?? l.countUnit));
+    const skipped = empty.length - fill.length;
+    const extrasToo = canCarryExtras;
+    if (!fill.length && !extrasToo)
+      return toast.message("Doldurulacak boş satır yok", {
+        description: skipped
+          ? `${num(skipped)} kalemin sayım birimi değiştiği için geçen ayın miktarı kullanılamadı; elle yazın.`
+          : "Geçen ay sayılan kalemlerin hepsine bu ay miktar yazılmış.",
+      });
+    if (fill.length)
+      setValues((v) => {
+        const next = { ...v };
+        for (const l of fill) next[l.id] = num(l.prevQty ?? 0, 3);
+        return next;
+      });
+    if (extrasToo) setExtras(carriedExtras());
+    const parts = [fill.length ? `${num(fill.length)} boş satır` : null, extrasToo ? `${num(prevExtras.length)} ek kalem` : null].filter(Boolean).join(" ve ");
+    toast.success(`${parts} geçen ayın sayımıyla dolduruldu`, {
+      description: `Kontrol edip değişenleri düzeltin, sonra kaydedin.${skipped ? ` Sayım birimi değişen ${num(skipped)} kalem atlandı.` : ""}`,
+    });
   }
 
   const updateExtra = (i: number, patch: Partial<Extra>) => setExtras((x) => x.map((y, j) => (j === i ? { ...y, ...patch } : y)));
@@ -433,25 +541,52 @@ export function StockCountForm({
     }
     if (extraProblem) return toast.error(!extraProblem.name.trim() ? "Ek kalemin adını yazın" : `${extraProblem.name}: geçersiz miktar ya da fiyat`);
     setBusy(true);
-    const res = await saveStockCounts(
-      month,
-      changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l.id) })),
-    );
-    if (res.ok && isAdmin) {
-      const ex = await saveStockExtras(
+    const lineCount = changedLines.length;
+    if (lineCount) {
+      const res = await saveStockCounts(
         month,
-        filledExtras.map((e) => ({ name: e.name, unit: e.unit || "ADET", qty: parseNumberTR(e.qty) ?? 0, unitPrice: parseNumberTR(e.unitPrice) ?? 0 })),
+        changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l) })),
       );
-      if (!ex.ok) toast.error(ex.error);
-      // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
-      else
-        setExtras(
-          filledExtras.map((e) => ({ name: e.name.trim(), unit: e.unit.trim() || "ADET", qty: num(parseNumberTR(e.qty) ?? 0, 3), unitPrice: num(parseNumberTR(e.unitPrice) ?? 0, 2) })),
+      if (!res.ok) {
+        setBusy(false);
+        return toast.error(res.error);
+      }
+    }
+    if (extrasDirty) {
+      const clean = filledExtras.map((e) => ({ name: e.name.trim(), unit: e.unit.trim().toLocaleUpperCase("tr-TR") || "ADET", qty: parseNumberTR(e.qty) ?? 0 }));
+      const partial = lineCount ? "Kalemlerin sayımı kaydedildi; ek kalemler kaydedilemedi." : undefined;
+      if (isAdmin) {
+        const prices = filledExtras.map((e) => parseNumberTR(e.unitPrice) ?? 0);
+        const ex = await saveStockExtras(
+          month,
+          clean.map((e, i) => ({ ...e, unitPrice: prices[i] })),
         );
+        if (!ex.ok) {
+          setBusy(false);
+          return toast.error(ex.error, { description: partial });
+        }
+        // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
+        setExtras(clean.map((e, i) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(prices[i], 2), priced: prices[i] > 0 })));
+      } else {
+        const ex = await saveStaffStockExtras(month, clean);
+        if (!ex.ok) {
+          setBusy(false);
+          return toast.error(ex.error, { description: partial });
+        }
+        setExtras(ex.data.map((e) => toExtra({ ...e, unitPrice: 0 }, false)));
+      }
     }
     setBusy(false);
-    if (res.ok) toast.success(`${monthLabel} sayımı kaydedildi`, { description: `${num(counted)} / ${num(all.length)} kalem sayıldı` });
-    else toast.error(res.error);
+    setSyncingFor(groups);
+    toast.success(`${monthLabel} sayımı kaydedildi`, {
+      description: [
+        `${num(counted)} / ${num(countable.length)} kalem sayıldı`,
+        clearedLines.length ? `${num(clearedLines.length)} sayım silindi` : null,
+        extrasDirty ? `${num(filledExtras.length)} ek kalem` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    });
   }
 
   // ⌘S / Ctrl+S ile kaydet (değişiklik varken)
@@ -473,12 +608,17 @@ export function StockCountForm({
 
   // Kaydetme çubuğunun başlığı: neyin değiştiği ve varsa kaç geçersiz miktar kaldığı
   const changeLabel = [
-    changedLines.length ? `${num(changedLines.length)} kalem değişti` : null,
+    changedLines.length > clearedLines.length ? `${num(changedLines.length - clearedLines.length)} kalem değişti` : null,
+    clearedLines.length ? `${num(clearedLines.length)} sayım silinecek` : null,
     extrasDirty ? (changedLines.length ? "ek kalemler" : "Ek kalemler değişti") : null,
     invalidLines.length ? `${num(invalidLines.length)} geçersiz miktar` : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  // Ek kalem tablosu: yönetici fiyat ve tutarı da görür
+  const extraGrid = isAdmin ? "sm:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_6.5rem_2.25rem]" : "sm:grid-cols-[minmax(0,1fr)_6rem_7rem_2.25rem]";
+  const extraCell = isAdmin ? "col-span-4" : "col-span-6";
 
   return (
     <div className="space-y-4 pb-32">
@@ -494,17 +634,28 @@ export function StockCountForm({
                   <span className={cn("inline-flex", complete && "text-good")}>
                     <CountRoll value={counted} />
                   </span>
-                  <span className="text-lg font-medium text-ink-mute tabular">/ {num(all.length)}</span>
+                  <span className="text-lg font-medium text-ink-mute tabular">/ {num(countable.length)}</span>
                   <span className="text-sm font-medium text-ink-mute">sayıldı</span>
                 </p>
                 <p className="sr-only" aria-live="polite">
-                  {num(counted)} / {num(all.length)} kalem sayıldı
+                  {num(counted)} / {num(countable.length)} kalem sayıldı
                 </p>
+                {archivedCount ? (
+                  // "Tümü" süzgeci arşiv satırlarını da sayar; fark burada açıklanır
+                  <p className="mt-0.5 text-xs text-ink-mute">
+                    + {num(archivedCount)} arşiv kalemi (pasif ya da Sayılmaz; bu ay sayılmış, salt okunur)
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="no-print flex flex-wrap gap-2">
               {hasPrev ? (
-                <Button variant="secondary" onClick={fillFromPrev} className="pointer-coarse:h-10" title="Bu ay boş bırakılan satırlara geçen ayın miktarını yazar">
+                <Button
+                  variant="secondary"
+                  onClick={fillFromPrev}
+                  className="pointer-coarse:h-10"
+                  title={`Bu ay boş bırakılan satırlara ${prevMonthLabel} miktarını yazar${prevExtras.length ? "; ek kalemler boşsa onları da getirir" : ""}. Kaydetmeden hiçbir şey değişmez.`}
+                >
                   <ClipboardCopy size={16} /> Geçen aydan doldur
                 </Button>
               ) : null}
@@ -519,7 +670,7 @@ export function StockCountForm({
               role="progressbar"
               aria-label="Sayım ilerlemesi"
               aria-valuemin={0}
-              aria-valuemax={all.length}
+              aria-valuemax={countable.length}
               aria-valuenow={counted}
             >
               <motion.div
@@ -531,26 +682,85 @@ export function StockCountForm({
             </div>
             <div className="mt-2 flex items-center justify-between gap-3 text-xs text-ink-mute">
               <span className={cn(complete && "font-medium text-good")}>
-                {remaining ? `${num(remaining)} kalem kaldı` : all.length ? "Tüm kalemler sayıldı" : "Sayılacak kalem yok"}
+                {remaining ? `${num(remaining)} kalem kaldı` : countable.length ? "Tüm kalemler sayıldı" : "Sayılacak kalem yok"}
               </span>
-              {all.length ? <span className="font-medium text-ink tabular">%{num(share * 100)}</span> : null}
+              {countable.length ? <span className="font-medium text-ink tabular">%{num(share * 100)}</span> : null}
             </div>
+            {/* Excel Sayım başlığı: SAYIM YAPANIN AD SOYAD + TARİH (ay sonu). Ekranda son kayıt, çıktıda doldurulacak satır. */}
+            {counter ? (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-mute">
+                <UserRound size={13} className="shrink-0 text-ink-quiet" aria-hidden="true" />
+                <span className="min-w-0">{counter}</span>
+              </p>
+            ) : null}
+            <p className="mt-2 hidden text-xs text-ink print:block">
+              Sayım tarihi: {monthEnd(month)} (ay sonu){counter ? "" : " · Sayım yapan: ________________________"}
+            </p>
           </div>
-          <CountHistory history={history} current={month} currentCounted={counted > 0 || extras.some((e) => e.name.trim() !== "")} locked={dirty} />
+          {/* Kayıtlı duruma göre: yazılıp henüz kaydedilmemiş sayım bu ayı "sayıldı" göstermez */}
+          <CountHistory history={history} current={month} currentCounted={all.some((l) => l.qty !== null) || savedExtras.length > 0} locked={dirty} />
         </Card>
 
         {isAdmin ? (
           <Stat
             icon={<Coins />}
             label="Toplam stok (KDV hariç)"
-            value={<Money value={total} />}
-            info={'Sayılan miktar × birim fiyat. Gelir-giderde "sonraki aya devreden mal" olur.'}
+            value={<Money value={live.total} />}
+            info={'Sayılan miktar × birim fiyat (KDV hariç). Gelir-giderde bu ayın "sonraki aya devreden mal"ı olur; orada elle tutar girildiyse o geçer.'}
           >
             <div className="divide-y divide-line rounded-xl bg-surface px-3">
-              <KeyValue label="KDV dahil" value={tl(totalVat)} />
-              {extras.length ? <KeyValue label="Listede olmayanlar" value={tl(extrasTotal)} /> : null}
-              {prevTotal !== null ? <KeyValue label="Geçen ay" value={tl(prevTotal)} /> : null}
+              <KeyValue
+                label={
+                  <span>
+                    KDV dahil
+                    <InfoTip className="ml-1.5" text="Her malzemenin Hammaddeler'deki Alış KDV'siyle; ek kalemler %1. Kâr-zarar KDV hariç tutarı kullanır." />
+                  </span>
+                }
+                value={tl(live.totalVat)}
+              />
+              {showExcelVat ? (
+                <KeyValue
+                  label={
+                    <span>
+                      KDV dahil (Excel usulü)
+                      <InfoTip
+                        className="ml-1.5"
+                        text="Excel Sayım grup başına tek KDV oranı kullanır: ambalaj %20, diğer gruplar %1. Fark, Alış KDV'si grup oranından ayrılan malzemelerden gelir (grup başlığındaki ipucu)."
+                      />
+                    </span>
+                  }
+                  value={tl(live.totalVatExcel)}
+                />
+              ) : null}
+              {extras.length ? <KeyValue label="Listede olmayanlar" value={tl(live.extrasTotal)} /> : null}
+              {prevTotal !== null ? (
+                <KeyValue
+                  label={
+                    <span>
+                      Açılış ({prevMonthLabel} devri)
+                      {prevTotal.overridden ? <InfoTip className="ml-1.5" text={`${prevMonthLabel} stoğu Gelir-giderde elle girildi; açılış o tutardır.`} /> : null}
+                    </span>
+                  }
+                  value={tl(prevTotal.value)}
+                />
+              ) : null}
             </div>
+            {closingOverride !== null ? (
+              <div className="mt-2 rounded-xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn">
+                <p className="flex items-start gap-1.5 font-medium">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Gelir-giderde {monthLabel} stoğu elle {tl(closingOverride)} girildi; kâr-zarar bu sayımı ({tl(live.total)}) değil o tutarı kullanır.
+                  </span>
+                </p>
+                <Link
+                  href={`/panel/gelir-gider?ay=${month}`}
+                  className="no-print -my-1 mt-1 ml-5 inline-block py-1 font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+                >
+                  Gelir-giderde aç
+                </Link>
+              </div>
+            ) : null}
           </Stat>
         ) : null}
       </div>
@@ -607,8 +817,10 @@ export function StockCountForm({
       ) : null}
 
       {visibleGroups.map((g) => {
-        const groupCounted = g.lines.filter((l) => qtyOf(l.id) !== null).length;
-        const groupDone = groupCounted === g.lines.length;
+        const groupCountable = g.lines.filter((l) => !l.archived);
+        const groupCounted = groupCountable.filter((l) => qtyOf(l) !== null).length;
+        const groupDone = groupCountable.length > 0 && groupCounted === groupCountable.length;
+        const gt = groupLive.get(g.name);
         return (
           <Card key={g.name} className="break-inside-avoid">
             <CardHeader
@@ -616,7 +828,7 @@ export function StockCountForm({
               meta={
                 <>
                   <span className="tabular">
-                    {num(groupCounted)} / {num(g.lines.length)} sayıldı
+                    {num(groupCounted)} / {num(groupCountable.length)} sayıldı
                   </span>
                   {groupDone ? (
                     <Badge tone="green" dot className="ml-1">
@@ -625,15 +837,80 @@ export function StockCountForm({
                   ) : null}
                 </>
               }
-              actions={isAdmin ? <span className="text-sm font-semibold whitespace-nowrap text-ink tabular">{tl(groupTotal(g))}</span> : null}
+              actions={
+                isAdmin && gt ? (
+                  <div className="text-right">
+                    <span className="block text-sm font-semibold whitespace-nowrap text-ink tabular">{tl(gt.total)}</span>
+                    <span className="flex items-center justify-end gap-1 text-xs whitespace-nowrap text-ink-mute tabular">
+                      KDV dahil {tl(gt.totalVat)}
+                      {g.mismatches.length ? (
+                        <InfoTip
+                          text={`Excel Sayım bu grupta tek KDV oranı kullanır (${pct(g.excelRate, 0)}); panel her malzemenin Hammaddeler'deki Alış KDV'sini kullanır. Farklı olan: ${g.mismatches
+                            .map((m) => `${m.name} ${pct(m.vatRate, 0)}`)
+                            .join(", ")}. Faturasını kontrol edin, gerekirse Hammaddeler'de düzeltin. Excel usulü KDV dahil: ${tl(gt.totalVatExcel)}.`}
+                        />
+                      ) : null}
+                    </span>
+                  </div>
+                ) : null
+              }
               className="pb-2"
             />
             <ul className="divide-y divide-line px-2 pb-2">
               {g.visible.map((l) => {
-                const v = qtyOf(l.id);
-                const invalid = isInvalid(l.id);
+                const v = qtyOf(l);
+                const unit = unitOf(l);
+                const price = l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
+                const money = isAdmin ? (
+                  <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
+                    <span className="whitespace-nowrap">
+                      {tl(price, 2)}/{unit}
+                    </span>
+                    <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(v * price) : "–"}</span>
+                  </div>
+                ) : null;
+                const moneyMobile = isAdmin ? (
+                  <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
+                    {tl(price, 2)}/{unit} · <span className="font-semibold text-ink">{v ? tl(v * price) : "–"}</span>
+                  </p>
+                ) : null;
+                if (l.archived) {
+                  const why = l.archivedReason === "pasif" ? "pasif" : "“Sayılmaz”";
+                  return (
+                    <li key={l.id} className="flex items-center gap-2.5 px-2 py-2.5 sm:gap-3 sm:px-3">
+                      <Lock size={16} className="mt-0.5 shrink-0 text-ink-quiet" aria-hidden="true" />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-center gap-1.5 text-sm leading-5 font-medium text-ink-soft">
+                          <span className="min-w-0 break-words">{l.name}</span>
+                          <Badge tone="gray">{l.archivedReason === "pasif" ? "Pasif" : "Sayılmaz"}</Badge>
+                          <InfoTip
+                            text={`Hammaddeler'de ${why} yapıldı. ${monthLabel} için kayıtlı ${num(l.qty, 3)} ${l.countUnit} sayımı korunur ve stok toplamına girer; burada değiştirilemez. Düzeltmek için malzemeyi Hammaddeler'de yeniden sayılır yapın.`}
+                          />
+                        </p>
+                        {l.packageDesc ? (
+                          <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
+                            {l.packageDesc}
+                          </p>
+                        ) : null}
+                        {moneyMobile}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="w-[5.5rem] pr-3 text-right text-sm font-medium text-ink-soft tabular sm:w-24">
+                          {num(l.qty, 3)}
+                          <span className="sr-only"> {l.countUnit} (salt okunur)</span>
+                        </span>
+                        <span className="w-11 text-xs font-medium text-ink-mute" aria-hidden="true">
+                          {l.countUnit}
+                        </span>
+                      </div>
+                      {money}
+                    </li>
+                  );
+                }
+                const invalid = isInvalid(l);
                 const changed = v !== l.qty;
                 const inputId = `count-${l.id}`;
+                const nowUnit = l.unitNow ?? l.countUnit;
                 return (
                   <li key={l.id} className="flex items-center gap-2.5 px-2 py-2.5 sm:gap-3 sm:px-3">
                     <LineStatus status={invalid ? "invalid" : v !== null ? "counted" : "empty"} />
@@ -653,15 +930,18 @@ export function StockCountForm({
                       ) : null}
                       {l.prevQty !== null ? (
                         <p className="mt-0.5 text-xs text-ink-mute tabular">
-                          Geçen ay {num(l.prevQty, 3)} {l.countUnit}
+                          Geçen ay {num(l.prevQty, 3)} {l.prevUnit ?? l.countUnit}
+                        </p>
+                      ) : null}
+                      {l.unitChanged ? (
+                        <p className="mt-0.5 text-xs font-medium text-warn">
+                          {changed
+                            ? `Yeni miktar ${nowUnit} ile kaydedilir.`
+                            : `Bu ay ${l.countUnit} ile sayıldı; sayım birimi artık ${nowUnit}. Değiştirirseniz ${nowUnit} ile kaydedilir.`}
                         </p>
                       ) : null}
                       {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar: yalnızca sayı (ör. 2,5)</p> : null}
-                      {isAdmin ? (
-                        <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
-                          {tl(l.unitPrice, 2)}/{l.countUnit} · <span className="font-semibold text-ink">{v ? tl(v * l.unitPrice) : "–"}</span>
-                        </p>
-                      ) : null}
+                      {moneyMobile}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <NumberInput
@@ -673,20 +953,13 @@ export function StockCountForm({
                         onKeyDown={focusNextCount}
                         onFocus={(e) => e.currentTarget.select()}
                         placeholder="—"
-                        aria-label={`${l.name} miktarı (${l.countUnit})`}
+                        aria-label={`${l.name} miktarı (${unit})`}
                         aria-invalid={invalid || undefined}
                         className="cell-input h-11 w-[5.5rem] sm:h-10 sm:w-24"
                       />
-                      <span className="w-11 text-xs font-medium text-ink-mute">{l.countUnit}</span>
+                      <span className="w-11 text-xs font-medium text-ink-mute">{unit}</span>
                     </div>
-                    {isAdmin ? (
-                      <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
-                        <span className="whitespace-nowrap">
-                          {tl(l.unitPrice, 2)}/{l.countUnit}
-                        </span>
-                        <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(v * l.unitPrice) : "–"}</span>
-                      </div>
-                    ) : null}
+                    {money}
                   </li>
                 );
               })}
@@ -740,54 +1013,80 @@ export function StockCountForm({
         </Card>
       ) : null}
 
-      {isAdmin ? (
-        <Card className="break-inside-avoid">
-          <CardHeader
-            icon={<PackagePlus />}
-            title="Listede olmayanlar"
-            description="Hammaddelerde olmayan ama stokta duran kalemler (elle fiyatlı). Tutar = miktar × birim fiyat."
-            meta={
-              extras.length ? (
-                <span className="tabular">
-                  {num(filledExtras.length)} kalem · {tl(extrasTotal)}
-                </span>
-              ) : undefined
-            }
-            actions={
-              <Button variant="secondary" className="no-print pointer-coarse:h-10" onClick={addExtra}>
-                <Plus size={16} /> Kalem ekle
-              </Button>
-            }
-          />
-          <CardContent>
-            {extras.length ? (
+      <Card className="break-inside-avoid">
+        <CardHeader
+          icon={<PackagePlus />}
+          title="Listede olmayanlar"
+          description={
+            isAdmin
+              ? "Hammaddelerde olmayan ama stokta duran kalemler (elle fiyatlı). Tutar = miktar × birim fiyat."
+              : "Hammaddelerde olmayan ama rafta duran kalemler. Adını ve miktarını yazın; fiyatını yönetici girer."
+          }
+          meta={
+            filledExtras.length ? (
               <>
-                {/* Sütun başlıkları (geniş ekranda); telefonda her kutunun kendi yer tutucusu var */}
-                <div
-                  aria-hidden="true"
-                  className="mb-1.5 hidden grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_6.5rem_2.25rem] gap-2 px-1 text-xs font-medium text-ink-mute sm:grid"
-                >
-                  <span>Kalem adı</span>
-                  <span>Birim</span>
-                  <span className="text-right">Miktar</span>
-                  <span className="text-right">Birim fiyat (₺)</span>
-                  <span className="text-right">Tutar</span>
-                  <span />
-                </div>
-                <datalist id="extra-units">
-                  {[...COUNT_UNITS, "PAKET", "KUTU", "ŞİŞE"].map((u) => (
-                    <option key={u} value={u} />
-                  ))}
-                </datalist>
-                <ul className="space-y-3 sm:space-y-2">
-                  {extras.map((e, i) => {
-                    const nameMissing = !e.name.trim() && !isBlankExtra(e);
-                    const onEnter = (ev: KeyboardEvent<HTMLInputElement>) => focusNext(ev, "data-extra-input", i === extras.length - 1 ? addExtra : undefined);
-                    return (
-                      <li
-                        key={i}
-                        className="grid grid-cols-12 items-center gap-2 rounded-2xl max-sm:bg-surface/60 max-sm:p-2 sm:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_6.5rem_2.25rem]"
-                      >
+                <span className="tabular">
+                  {num(filledExtras.length)} kalem{isAdmin ? ` · ${tl(live.extrasTotal)}` : ""}
+                </span>
+                {unpricedExtras.length ? (
+                  <Badge tone="amber" dot className="ml-1">
+                    {num(unpricedExtras.length)} kalemin fiyatı yok
+                  </Badge>
+                ) : null}
+              </>
+            ) : undefined
+          }
+          actions={
+            extras.length ? (
+              <>
+                {canCarryExtras ? (
+                  <Button variant="ghost" className="no-print pointer-coarse:h-10" onClick={carryExtras}>
+                    <History size={16} /> Geçen ayınkileri getir
+                  </Button>
+                ) : null}
+                <Button variant="secondary" className="no-print pointer-coarse:h-10" onClick={addExtra}>
+                  <Plus size={16} /> Kalem ekle
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
+        <CardContent>
+          {extras.length ? (
+            <>
+              {/* Sütun başlıkları (geniş ekranda); telefonda her kutunun kendi yer tutucusu var */}
+              <div aria-hidden="true" className={cn("mb-1.5 hidden gap-2 px-1 text-xs font-medium text-ink-mute sm:grid", extraGrid)}>
+                <span>Kalem adı</span>
+                <span>Birim</span>
+                <span className="text-right">Miktar</span>
+                {isAdmin ? (
+                  <>
+                    <span className="text-right">Birim fiyat (₺)</span>
+                    <span className="text-right">Tutar</span>
+                  </>
+                ) : null}
+                <span />
+              </div>
+              <datalist id="extra-units">
+                {[...COUNT_UNITS, "PAKET", "KUTU", "ŞİŞE"].map((u) => (
+                  <option key={u} value={u} />
+                ))}
+              </datalist>
+              <ul className="space-y-3 sm:space-y-2">
+                {extras.map((e, i) => {
+                  const nameMissing = !e.name.trim() && !isBlankExtra(e);
+                  const locked = lockedExtra(e);
+                  const last = i === extras.length - 1;
+                  const onEnter = (ev: KeyboardEvent<HTMLInputElement>) => focusNext(ev, "data-extra-input", last ? addExtra : undefined);
+                  const unpriced = isAdmin && (parseNumberTR(e.qty) ?? 0) > 0 && !((parseNumberTR(e.unitPrice) ?? 0) > 0);
+                  return (
+                    <li key={i} className={cn("grid grid-cols-12 items-center gap-2 rounded-2xl max-sm:bg-surface/60 max-sm:p-2", extraGrid)}>
+                      {locked ? (
+                        <p className="col-span-10 flex min-h-10 items-center gap-1.5 px-1 text-sm font-medium text-ink sm:col-span-1">
+                          <span className="min-w-0 break-words">{e.name}</span>
+                          <InfoTip text="Fiyatı yönetici tarafından girilmiş kalem: adını ve birimini yalnızca yönetici değiştirir. Rafta kalmadıysa miktarını 0 yazın." />
+                        </p>
+                      ) : (
                         <Input
                           value={e.name}
                           data-extra-input=""
@@ -801,6 +1100,10 @@ export function StockCountForm({
                           maxLength={120}
                           className="col-span-10 sm:col-span-1 pointer-coarse:h-10"
                         />
+                      )}
+                      {locked ? (
+                        <span className="order-1 col-span-2 sm:order-last sm:col-span-1" aria-hidden="true" />
+                      ) : (
                         <IconButton
                           label={`${e.name.trim() || "Bu satırı"} kaldır`}
                           tone="danger"
@@ -809,6 +1112,10 @@ export function StockCountForm({
                         >
                           <Trash2 size={16} />
                         </IconButton>
+                      )}
+                      {locked ? (
+                        <span className={cn("order-2 flex min-h-10 items-center px-1 text-sm text-ink-mute sm:order-none sm:col-span-1", extraCell)}>{e.unit}</span>
+                      ) : (
                         <Input
                           value={e.unit}
                           list="extra-units"
@@ -820,60 +1127,92 @@ export function StockCountForm({
                           aria-label="Birim"
                           maxLength={20}
                           // Telefonda listenin oku "ADET"i kesmesin; öneriler odaklanınca yine açılır
-                          className="order-2 col-span-4 max-sm:px-2.5 max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                          className={cn(
+                            "order-2 max-sm:px-2.5 max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:order-none sm:col-span-1 pointer-coarse:h-10",
+                            extraCell,
+                          )}
                         />
-                        <NumberInput
-                          value={e.qty}
-                          data-extra-input=""
-                          enterKeyHint="next"
-                          onKeyDown={onEnter}
-                          onChange={(ev) => updateExtra(i, { qty: ev.target.value })}
-                          placeholder="Miktar"
-                          aria-label={`Miktar (${e.unit || "ADET"})`}
-                          aria-invalid={badNumber(e.qty) || undefined}
-                          className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
-                        />
-                        <NumberInput
-                          value={e.unitPrice}
-                          data-extra-input=""
-                          enterKeyHint={i === extras.length - 1 ? "done" : "next"}
-                          onKeyDown={onEnter}
-                          onChange={(ev) => updateExtra(i, { unitPrice: ev.target.value })}
-                          placeholder="Fiyat ₺"
-                          aria-label="Birim fiyat (₺, KDV hariç)"
-                          aria-invalid={badNumber(e.unitPrice) || undefined}
-                          className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
-                        />
-                        <p className="order-3 col-span-12 text-right text-xs text-ink-mute tabular sm:order-none sm:col-span-1 sm:text-sm sm:font-semibold sm:text-ink">
-                          <span className="sm:hidden">Tutar </span>
-                          <span className="font-semibold text-ink">{tl(extraTotal(e))}</span>
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <div className="no-print mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                  <p className="min-w-0 flex-1 text-xs text-ink-mute">Son kutuda Enter yeni satır açar. Boş bırakılan satırlar kaydedilmez.</p>
-                  <Button variant="ghost" size="sm" onClick={addExtra} className="-mr-2">
-                    <Plus size={15} aria-hidden="true" /> Satır ekle
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <EmptyState
-                icon={<PackagePlus />}
-                title="Ek kalem yok"
-                description="Hammaddelerde kaydı olmayan ama rafta duran bir şey varsa (ör. peçete, deterjan) buraya ekleyin; stok toplamına girer."
-                action={
+                      )}
+                      <NumberInput
+                        value={e.qty}
+                        data-extra-input=""
+                        data-extra-name={locked ? i : undefined}
+                        enterKeyHint={!isAdmin && last ? "done" : "next"}
+                        onKeyDown={onEnter}
+                        onFocus={(ev) => ev.currentTarget.select()}
+                        onChange={(ev) => updateExtra(i, { qty: ev.target.value })}
+                        placeholder="Miktar"
+                        aria-label={`${e.name.trim() || "Ek kalem"} miktarı (${e.unit || "ADET"})`}
+                        aria-invalid={badNumber(e.qty) || undefined}
+                        className={cn("cell-input order-2 sm:order-none sm:col-span-1 pointer-coarse:h-10", extraCell)}
+                      />
+                      {isAdmin ? (
+                        <>
+                          <NumberInput
+                            value={e.unitPrice}
+                            data-extra-input=""
+                            enterKeyHint={last ? "done" : "next"}
+                            onKeyDown={onEnter}
+                            onChange={(ev) => updateExtra(i, { unitPrice: ev.target.value })}
+                            placeholder="Fiyat ₺"
+                            aria-label={`${e.name.trim() || "Ek kalem"} birim fiyatı (₺, KDV hariç)`}
+                            aria-invalid={badNumber(e.unitPrice) || undefined}
+                            className="cell-input order-2 col-span-4 sm:order-none sm:col-span-1 pointer-coarse:h-10"
+                          />
+                          <p className="order-3 col-span-12 text-right text-xs text-ink-mute tabular sm:order-none sm:col-span-1 sm:text-sm sm:font-semibold sm:text-ink">
+                            <span className="sm:hidden">Tutar </span>
+                            {unpriced ? (
+                              <span className="font-medium text-warn" title="Birim fiyatı girilmedi: stok toplamına 0 ₺ girer">
+                                fiyat yok
+                              </span>
+                            ) : (
+                              <span className="font-semibold text-ink">{tl(extraTotal(e))}</span>
+                            )}
+                          </p>
+                        </>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="no-print mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <p className="min-w-0 flex-1 text-xs text-ink-mute">
+                  Son kutuda Enter yeni satır açar. Boş bırakılan satırlar kaydedilmez.
+                  {isAdmin ? "" : " Rafta kalmayan kalemin miktarını 0 yazın."}
+                </p>
+                <Button variant="ghost" size="sm" onClick={addExtra} className="-mr-2">
+                  <Plus size={15} aria-hidden="true" /> Satır ekle
+                </Button>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              icon={<PackagePlus />}
+              title="Ek kalem yok"
+              description={
+                prevExtras.length
+                  ? `${prevMonthLabel} sayımında ${num(prevExtras.length)} ek kalem vardı (${prevExtras
+                      .slice(0, 3)
+                      .map((e) => e.name)
+                      .join(", ")}${prevExtras.length > 3 ? "…" : ""}). Getirip bu ayın miktarını yazın.`
+                  : "Hammaddelerde kaydı olmayan ama rafta duran bir şey varsa (ör. peçete, deterjan) buraya ekleyin; stok toplamına girer."
+              }
+              action={
+                <>
+                  {prevExtras.length ? (
+                    <Button onClick={carryExtras}>
+                      <History size={16} /> Geçen ayınkileri getir
+                    </Button>
+                  ) : null}
                   <Button variant="secondary" onClick={addExtra}>
                     <Plus size={16} /> Kalem ekle
                   </Button>
-                }
-              />
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
+                </>
+              }
+            />
+          )}
+        </CardContent>
+      </Card>
 
       {/* Kaydetme kapsülü: değişiklik varken alttan yaylı hareketle gelir */}
       <FloatingBar open={dirty}>
@@ -883,7 +1222,7 @@ export function StockCountForm({
           <p className="truncate text-xs text-ink-mute">
             <span className="max-sm:hidden">{monthLabel} sayımı kaydedilmedi</span>
             <span className="sm:hidden">Kaydedilmedi</span>
-            {isAdmin ? <span className="tabular"> · toplam {tl(total)}</span> : null}
+            {isAdmin ? <span className="tabular"> · toplam {tl(live.total)}</span> : null}
           </p>
         </div>
         <div className="flex items-center gap-1.5">

@@ -88,7 +88,9 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Ay sonu stok sayımı",
     body: (
       <>
-        Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir.
+        Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
+        personel listede olmayan kalemleri de yazabilir, fiyatını yönetici girer. &quot;Geçen aydan doldur&quot; ek kalemleri de taşır. Ayın ilk 10 gününde ekran, sayımı
+        girilmemişse geçen ayı açar. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
       </>
     ),
     href: "/panel/sayim",
@@ -109,7 +111,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Ay bilgilerini girin",
     body: (
       <>
-        <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın.
+        <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın. Devam eden ayda
+        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır.
       </>
     ),
     href: "/panel/satislar",
@@ -130,8 +133,9 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     title: "Değişken giderleri yazın",
     body: (
       <>
-        Su faturası, doğalgaz, bakım-tamir gibi ay ay değişen giderleri <Path href="/panel/gelir-gider" /> tablosundaki ilgili hücreye girin. Elektrik gibi sabit görünen ama değişen
-        kalemlerin gerçek tutarını da hücrenin üzerine yazabilirsiniz.
+        Su faturasını <Path href="/panel/gelir-gider" /> tablosundaki SU GİDERİ satırına KDV hariç yazın: su + buzun litre maliyeti buradan reçetelere dağıtılır, reçeteye göre
+        kârda sabit gider olarak ikinci kez sayılmaz. Doğalgaz, bakım-tamir gibi ay ay değişen giderleri ilgili hücreye girin; elektrik gibi sabit görünen ama değişen kalemlerin
+        gerçek tutarını da hücrenin üzerine yazabilirsiniz.
       </>
     ),
     href: "/panel/gelir-gider",
@@ -244,7 +248,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Maaş / kira değişti",
         a: (
           <>
-            <Path href="/panel/giderler" /> ekranında: Personel sekmesinde net maaşı, Sabit giderler sekmesinde kirayı değiştirin.
+            <Path href="/panel/giderler" /> ekranında: Personel sekmesinde net maaşı, Sabit giderler sekmesinde kirayı değiştirin. Kaydederken &quot;Hangi aydan
+            itibaren?&quot; sorusunda ayı seçin (varsayılan bu ay); önceki aylar eski tutarla kalır. Yanlış girilmiş bir tutarı bütün aylarda düzeltmek için Gelişmiş ›
+            Tüm aylar. Biten bir gider ya da ayrılan personel için Durdur ile son ayı verin (eski &quot;Pasif&quot; yerine); geçmiş aylar etkilenmez. Silme yalnızca hiçbir
+            kapanmış ayın hesabına girmemiş kayıtta açıktır.
           </>
         ),
         icon: Wallet,
@@ -293,6 +300,32 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           </>
         ),
         icon: Scale,
+      },
+      {
+        id: "excel-fark",
+        q: "Net kâr Excel'deki Panel'den neden farklı olabilir?",
+        a: (
+          <>
+            Excel Panel&apos;i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. <Path href="/panel" /> o ayın <Path href="/panel/gelir-gider" /> tutarlarını
+            kullanır: kalemler açık gün oranıyla bölünür, elle düzeltilen hücreler ve yalnızca o aya yazılan giderler (doğalgaz, ciro kirası, harici…) eklenir. Fark varsa net
+            kârın altında &quot;Excel temeli&quot; ayrıca yazar; &quot;Para nereye gitti?&quot; kartındaki &quot;Bu ay düşülen sabit gider&quot; kutusu farkı satır satır gösterir.
+            SU GİDERİ reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderde ikinci kez düşülmez.
+          </>
+        ),
+        icon: Sigma,
+        links: [{ href: "/panel", label: "Genel bakış" }],
+      },
+      {
+        id: "tahmin",
+        q: "Ay sonu tahmini ne zaman çıkar?",
+        a: (
+          <>
+            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı − standart aylık sabit gider (Excel&apos;deki &quot;Ekim
+            tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre kâr/zarar) görünür.
+          </>
+        ),
+        icon: CalendarCheck,
+        links: [{ href: "/panel/satislar", label: "Açık gün ve POS cirosu" }],
       },
     ],
   },
@@ -355,8 +388,21 @@ const FORMULAS = [
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
   ["Eşleşmeyen POS ürünü", "Net ciro × eşleşen ürünlerin ortalama maliyet oranı"],
-  ["Başabaş günlük ciro", "Aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
+  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu"],
+  [
+    "Net kâr / zarar (reçeteye göre)",
+    "Brüt kâr − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: açık gün oranı + bu aya özel giderler). Excel temeli: standart aylık sabit gider",
+  ],
+  ["Kâr / zarar (faturaya göre)", "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu)"],
+  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış"],
+  ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün"],
+  ["Başabaş günlük ciro", "Standart aylık sabit gider ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
+  [
+    "Ay sonu tahmini (yalnızca devam eden ay)",
+    "POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı − standart aylık sabit gider",
+  ],
   ["Aylık sabit gider (gelir-gider)", "Aylık tutar × açık gün ÷ ayın gün sayısı (günlük giderler × açık gün)"],
+  ["Su + buz litre maliyeti", "SU GİDERİ ÷ satışlara göre su + buz litresi (fatura girilmiş ve satış listesi olan son ay)"],
   ["Satılan malın maliyeti", "Önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)"],
 ];
 
@@ -424,7 +470,16 @@ export default function HelpPage() {
       />
       <div className="space-y-4">
         <Card>
-          <CardHeader icon={<CalendarCheck />} title="Her ay ne yapmalı?" description="Bu altı adımı her ay sonunda yaptığınızda bütün raporlar doğru olur." />
+          <CardHeader
+            icon={<CalendarCheck />}
+            title="Her ay ne yapmalı?"
+            description={
+              <>
+                Bu altı adımı her ay sonunda yaptığınızda bütün raporlar doğru olur. Hangilerinin yapıldığını <Link href="/panel" className="font-medium text-ink hover:underline">Genel bakış</Link>
+                &apos;taki &quot;Bu ayın işleri&quot; kartı ay ay gösterir.
+              </>
+            }
+          />
           <CardContent>
             <ol className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
               {ROUTINE.map((r, i) => (
@@ -487,7 +542,7 @@ export default function HelpPage() {
               <CardHeader
                 icon={<Sigma />}
                 title="Formüller"
-                description="Hesaplama motoru Excel'deki formüllerin birebir karşılığıdır ve otomatik testlerle Excel'e karşı doğrulanır."
+                description="Hesaplama motoru Excel'deki formüllerin karşılığıdır ve otomatik testlerle Excel'in Eylül rakamlarına karşı doğrulanır. Bilerek yapılan farklar (ör. net kârda o ayın sabit giderleri) Nasıl yapılır? listesinde."
               />
               <CardContent>
                 <Well className="px-4 py-0 ring-1 ring-line">

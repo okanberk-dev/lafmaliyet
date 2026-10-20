@@ -4,14 +4,15 @@ import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { ButtonLink } from "@/components/ui/button";
+import { buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/misc";
+import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
+import { impactData } from "./impact";
 import { SettingsNav } from "./section-nav";
 import { SECTION_SCROLL_MARGIN, SETTINGS_SECTIONS } from "./sections";
 import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
@@ -25,7 +26,7 @@ export default function SettingsPage() {
         title="Ayarlar"
         eyebrow="Sistem"
         excel="Ayarlar"
-        description="Buradaki değerleri değiştirdiğinizde bütün hesaplar (reçete maliyetleri, kârlılık, gelir-gider) otomatik güncellenir."
+        description="Bir değeri değiştirince etkisi altta hemen görünür (durumu değişen ürünler, maliyet oranı, başabaş); Kaydet'e basınca bütün hesaplar güncellenir."
       />
       <Suspense fallback={<SettingsSkeleton />}>
         <SettingsContent />
@@ -75,19 +76,27 @@ function SettingsSkeleton() {
   );
 }
 
-/** Yedek: bütün veriyi Excel dosyası olarak indirir (/api/export, yalnızca yönetici) */
+/** Yedek: panelin bütün sekmeleri ve bütün ayların ham kayıtları tek Excel dosyasında (/api/export, yalnızca yönetici) */
 function BackupCard() {
   return (
     <Card id="yedek" className={SECTION_SCROLL_MARGIN}>
       <CardHeader
         icon={<HardDriveDownload />}
         title="Yedek"
-        description="Özet, ürün kârlılığı, reçete kartları, hammaddeler, faturalar, sabit giderler, personel ve ayarlar tek bir Excel dosyasına iner."
+        description={
+          <>
+            Panelin bütün sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar,
+            personel, sabit giderler, ayarlar) ve bütün ayların ham kayıtları tek Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl
+            Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
+            <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir." />
+          </>
+        }
         actionsClassName="max-sm:w-full"
         actions={
-          <ButtonLink href="/api/export" prefetch={false} variant="secondary" className="max-sm:w-full">
+          // Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin)
+          <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
             <Download size={16} /> Tüm veriyi Excel&apos;e aktar
-          </ButtonLink>
+          </a>
         }
       />
     </Card>
@@ -123,7 +132,7 @@ async function SettingsContent() {
 
   return (
     <SettingsLayout nav={<SettingsNav />}>
-      <SettingsForm settings={model.settings} water={model.water} />
+      <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
         <ActivityLog

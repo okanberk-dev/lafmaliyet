@@ -1,9 +1,10 @@
 "use server";
 
-import { and, eq, max, ne } from "drizzle-orm";
+import { and, count, eq, max, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { countFactor, countUnitsFor } from "@/lib/calc/engine";
 import { tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
@@ -29,11 +30,21 @@ const ingredientSchema = z.object({
   active: z.boolean(),
 });
 
+/**
+ * Hammaddeyi kaydeder. Sayım birimi malzeme birimine uymalı (gr → KG, ml → LT, adet → ADET, dilim → DİLİM ya da ADET);
+ * yoksa stok değeri 1000 kat yanlış çıkar. Sayım birimi (ya da malzeme birimi) değişirse eski sayımlar kendi
+ * birimleriyle kalır; dönüşte `warning` bunu kullanıcıya söylemek içindir.
+ */
 export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = ingredientSchema.parse(input);
+    if (data.countUnit && !countUnitsFor(data.unit).includes(data.countUnit)) {
+      const allowed = countUnitsFor(data.unit);
+      throw new UserError(`“${data.unit}” birimli malzeme ${allowed.join(" ya da ")} olarak sayılır (seçilen: ${data.countUnit})`);
+    }
     const db = getDb();
+    const warnings: string[] = [];
     const id = await db.transaction(async (tx) => {
       const [dup] = await tx
         .select({ id: s.ingredients.id })
@@ -45,6 +56,18 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
         if (!before) throw new UserError("Malzeme bulunamadı");
         const { id: _omit, ...rest } = data;
         void _omit;
+        if (before.countUnit !== data.countUnit || before.unit !== data.unit) {
+          const [{ n }] = await tx.select({ n: count() }).from(s.stockCounts).where(eq(s.stockCounts.ingredientId, data.id));
+          if (n > 0) {
+            warnings.push(
+              !data.countUnit
+                ? `${n} eski sayım kaydı geçmiş aylarda ${before.countUnit ?? "eski birimiyle"} olarak kalır; malzeme bundan sonra sayım listesinde görünmez.`
+                : countFactor(before.countUnit) !== countFactor(data.countUnit) || before.unit !== data.unit
+                  ? `${n} eski sayım kaydı sayıldığı birimle (${before.countUnit ?? "eski birim"}) değerlenmeye devam eder; yeni sayımları ${data.countUnit} olarak girin.`
+                  : `Sayım birimi ${data.countUnit} oldu; ${n} eski sayım kaydının değeri değişmez.`,
+            );
+          }
+        }
         await tx.update(s.ingredients).set({ ...rest, updatedAt: new Date() }).where(eq(s.ingredients.id, data.id));
         if (before.packagePrice !== data.packagePrice || before.packageSize !== data.packageSize) {
           await tx.insert(s.ingredientPrices).values({
@@ -74,11 +97,16 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
     });
     await logActivity(me, data.id ? "Hammadde güncellendi" : "Yeni hammadde", `${data.name}: ${tl(data.packagePrice, 2)} / ${data.packageSize} ${data.unit}`);
     refresh();
-    return { id };
+    // warning: sayım birimi değiştiyse eski sayımların durumu (istemci bilgi olarak gösterir), yoksa null
+    return { id, warning: warnings[0] ?? null };
   });
 }
 
-/** Tablodan hızlı paket fiyatı güncelleme (yeni fatura geldiğinde) */
+/**
+ * Tablodan hızlı paket fiyatı güncelleme (yeni fatura geldiğinde). clearEstimate=false: "Tahmini" işareti kalır
+ * (varsayım fiyatla değil paket içeriği ya da ürün eşleştirmesiyle ilgili olabilir; kullanıcı ayrıca kaldırır).
+ * Dönüş: malzemenin kayıttan sonraki Tahmini durumu.
+ */
 export async function updateIngredientPrice(id: number, packagePrice: number, clearEstimate = true) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -87,7 +115,7 @@ export async function updateIngredientPrice(id: number, packagePrice: number, cl
     const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, id));
     if (!before) throw new UserError("Malzeme bulunamadı");
     if (before.priceSource === "water") throw new UserError("Su ve buz fiyatı su faturasından hesaplanır");
-    if (Math.abs(before.packagePrice - price) < 0.0001) return null;
+    if (Math.abs(before.packagePrice - price) < 0.0001) return { isEstimate: before.isEstimate };
     await db.transaction(async (tx) => {
       await tx
         .update(s.ingredients)
@@ -96,6 +124,23 @@ export async function updateIngredientPrice(id: number, packagePrice: number, cl
       await tx.insert(s.ingredientPrices).values({ ingredientId: id, packagePrice: price, packageSize: before.packageSize, changedBy: me.name });
     });
     await logActivity(me, "Hammadde fiyatı", `${before.name}: ${tl(before.packagePrice, 2)} → ${tl(price, 2)}`);
+    refresh();
+    return { isEstimate: clearEstimate ? false : before.isEstimate };
+  });
+}
+
+/** "Tahmini" işaretini koyar ya da kaldırır (fiyat değişmeden; ör. varsayım doğrulandı) */
+export async function setIngredientEstimate(id: number, isEstimate: boolean) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const iid = z.number().int().positive().parse(id);
+    const flag = z.boolean().parse(isEstimate);
+    const db = getDb();
+    const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, iid));
+    if (!before) throw new UserError("Malzeme bulunamadı");
+    if (before.isEstimate === flag) return null;
+    await db.update(s.ingredients).set({ isEstimate: flag, updatedAt: new Date() }).where(eq(s.ingredients.id, iid));
+    await logActivity(me, flag ? "Hammadde tahmini işaretlendi" : "Hammadde tahmini işareti kaldırıldı", before.name);
     refresh();
     return null;
   });
@@ -116,13 +161,31 @@ export async function setIngredientActive(id: number, active: boolean) {
   });
 }
 
+/**
+ * Hammaddeyi siler. Reçetede kullanılan, sayımı, alım miktarı ya da Paraşüt eşleştirmesi olan malzeme silinmez
+ * (silmek bu geçmişi de silerdi ve geçmiş ayların stok değeri değişirdi): pasif yapılmalı.
+ */
 export async function deleteIngredient(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
+    const iid = z.number().int().positive().parse(id);
     const db = getDb();
-    const used = await db.select({ id: s.recipeItems.id }).from(s.recipeItems).where(eq(s.recipeItems.ingredientId, id)).limit(1);
+    const used = await db.select({ id: s.recipeItems.id }).from(s.recipeItems).where(eq(s.recipeItems.ingredientId, iid)).limit(1);
     if (used.length) throw new UserError("Bu malzeme reçetelerde kullanılıyor. Önce reçetelerden çıkarın ya da pasif yapın.");
-    const [d] = await db.delete(s.ingredients).where(eq(s.ingredients.id, id)).returning();
+    const [[counts], [purchases], [links]] = await Promise.all([
+      db.select({ n: count() }).from(s.stockCounts).where(eq(s.stockCounts.ingredientId, iid)),
+      db.select({ n: count() }).from(s.purchaseQuantities).where(eq(s.purchaseQuantities.ingredientId, iid)),
+      db.select({ n: count() }).from(s.parasutProductLinks).where(eq(s.parasutProductLinks.ingredientId, iid)),
+    ]);
+    const history = [
+      counts.n ? `${counts.n} sayım` : "",
+      purchases.n ? `${purchases.n} alım miktarı` : "",
+      links.n ? `${links.n} Paraşüt eşleştirmesi` : "",
+    ].filter(Boolean);
+    if (history.length) {
+      throw new UserError(`Bu malzemenin ${history.join(", ")} kaydı var; silinirse geçmiş ayların stok ve tutarlılık değerleri değişir. Pasif yapın.`);
+    }
+    const [d] = await db.delete(s.ingredients).where(eq(s.ingredients.id, iid)).returning();
     if (d) await logActivity(me, "Hammadde silindi", d.name);
     refresh();
     return null;

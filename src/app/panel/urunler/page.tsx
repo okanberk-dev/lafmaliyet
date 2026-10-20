@@ -9,6 +9,7 @@ import { monthLabel, num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 
+import { menuAverages } from "./logic";
 import { NewProductButton } from "./new-product";
 import { CountUp, ProductsTable, StatusShare, type ProductRow } from "./products-table";
 
@@ -81,6 +82,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const categories = model.categories.map((c) => ({ id: c.id, name: c.name }));
   const ml = monthLabel(month);
   const target = num(st.hedefMaliyet * 100);
+  // Excel Ürün Kârlılık satır 134: menünün basit ortalaması (her ürün bir oy)
+  const avg = menuAverages(active);
 
   return (
     <>
@@ -114,8 +117,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           label="Hedefin dışında"
           value={<CountUp value={warn + low} />}
           tone={low ? "bad" : warn ? "warn" : "good"}
-          info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası.`}
-          sub={`Hedef maliyet oranı %${target}`}
+          info={`Hedef maliyet oranı %${target}. İyi = hedefin altında, Dikkat = hedefin 10 puan üstüne kadar, Düşük kâr = daha fazlası. Menü ortalaması: maliyet oranı ${pct(avg.costRatio)}, kâr marjı ${pct(avg.margin)} (Excel'deki ORTALAMA satırı, her ürün bir oy).`}
+          sub={`Hedef %${target} · menü ort. ${pct(avg.costRatio)}`}
         >
           <StatusShare
             parts={[
@@ -137,13 +140,13 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           label={`${ml} brüt kâr`}
           value={<CountUp value={totalProfit} suffix=" ₺" />}
           tone={totalProfit < 0 ? "bad" : "default"}
-          info="Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir."
+          info={`Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
           sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
         />
       </div>
-      {/* Süzgeçler (?ara, ?kategori, ?durum, ?pasif, ?sira) tablonun içinde adresten okunur; ⌘K paleti ve
-          genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
-      <ProductsTable rows={rows} categories={categories} monthLabel={ml} target={st.hedefMaliyet} />
+      {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
+          paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
+      <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} />
     </>
   );
 }

@@ -8,8 +8,9 @@ import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadModel, resolveMonth } from "@/server/data/dataset";
+import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 
+import { waterSource } from "../../ayarlar/water-text";
 import { RecipeEditor } from "./recipe-editor";
 
 export const metadata: Metadata = { title: "Reçete kartı" };
@@ -107,7 +108,9 @@ async function RecipeContent({
 
   return (
     <RecipeEditor
-      key={`${product.id}-${pc.lines.length}-${product.price}`}
+      // Yalnızca ürün değişince baştan kurulur: kayıttan sonra sayfa yeniden çizilmez (sekme, deneme fiyatı korunur);
+      // editör alanları kaydedilen biçime kendisi getirir
+      key={product.id}
       product={{
         id: product.id,
         name: product.name,
@@ -129,10 +132,17 @@ async function RecipeContent({
       ingredients={ingredients}
       settings={model.settings}
       soldQty={model.soldByProduct(month).get(product.id) ?? 0}
+      month={month}
+      months={availableMonths(model)}
       monthLabel={monthLabel(month)}
       history={history}
       siblings={siblings}
-      waterPerLiter={model.water.perLiter}
+      water={{
+        perLiter: model.water.perLiter,
+        costed: model.water.reason === "ok" || model.water.reason === "override",
+        text: waterSource(model.water),
+        short: waterSource(model.water, true),
+      }}
     />
   );
 }

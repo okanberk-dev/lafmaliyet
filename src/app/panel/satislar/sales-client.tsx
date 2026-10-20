@@ -36,17 +36,49 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { clearQuery, FilterBar, FilterChip, keepScroll, matches, SearchField, useQueryState, useQueryText, useSettleScroll } from "@/components/ui/filters";
-import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
+import { Checkbox, Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Segmented } from "@/components/ui/segmented";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
-import { normalizePosName } from "@/lib/calc/engine";
+import { daysInMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
+import {
+  createPosMappingIndex,
+  describeSkipped,
+  isSummaryRow,
+  parsePastedSales,
+  suspectTotalRows,
+  type SalesParseResult,
+} from "@/lib/calc/pos-paste";
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { clearMonthSales, deleteLine, importSales, parseSalesFile, saveLine, saveMonthInfo, setLineMatch } from "@/server/actions/sales";
+import {
+  applyLineMatches,
+  clearMonthSales,
+  deleteLine,
+  importSales,
+  parseSalesFile,
+  saveLine,
+  saveMonthInfo,
+  setLineMatch,
+} from "@/server/actions/sales";
+
+import {
+  collectSuggestions,
+  inMarginScale,
+  marginColor,
+  marginLevelLabel,
+  marginScale,
+  monthPhase,
+  openDaysHint,
+  openDaysProblem,
+  previewMatches,
+  suggestProduct,
+  type MappingLite,
+  type MarginScale,
+} from "./sales-logic";
 
 
 export interface ProductOption {
@@ -132,17 +164,33 @@ export function MatchCoverage({ share }: { share: number }) {
 
 // ---------------------------------------------------------------- Ay bilgisi
 
+/** Açık gün alanının "Tüm ay (30)" tek tık düzeltmesi */
+function AllMonthButton({ dim, onPick }: { dim: number; onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="cursor-pointer font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink pointer-coarse:min-h-8"
+    >
+      Tüm ay ({dim})
+    </button>
+  );
+}
+
 export function MonthInfoForm({
   month,
   label,
   info,
   listTotal,
+  currentMonth,
   className,
 }: {
   month: string;
   label: string;
   info: { openDays: number | null; posRevenue: number | null; discounts: number; offRevenue: number; note: string | null };
   listTotal: number;
+  /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
+  currentMonth: string;
   className?: string;
 }) {
   const [openDays, setOpenDays] = useState(info.openDays === null ? "" : String(info.openDays));
@@ -159,18 +207,21 @@ export function MonthInfoForm({
   const discNum = parseNumberTR(disc) ?? 0;
   const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
   const consistent = diff !== null && Math.abs(diff) < 1000;
-  /** Boş değil ama okunamayan tutar; 31'den büyük gün */
+  const dim = daysInMonth(month);
+  const phase = monthPhase(month, currentMonth);
+  const daysError = openDaysProblem(openDays, month);
+  /** Boş değil ama okunamayan tutar; ayın gün sayısından büyük açık gün */
   const bad = {
     pos: pos.trim() !== "" && posNum === null,
     disc: disc.trim() !== "" && parseNumberTR(disc) === null,
     off: off.trim() !== "" && parseNumberTR(off) === null,
-    days: openDays.trim() !== "" && Number(openDays) > 31,
+    days: daysError !== null,
   };
   const invalid = bad.pos || bad.disc || bad.off || bad.days;
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (invalid) return toast.error(bad.days ? "Açık gün sayısı 0 ile 31 arasında olmalı" : "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
+    if (invalid) return toast.error(daysError ?? "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
     setBusy(true);
     keepScroll();
     const res = await saveMonthInfo({
@@ -184,7 +235,9 @@ export function MonthInfoForm({
     setBusy(false);
     if (res.ok) {
       setSaved(snapshot);
-      toast.success("Ay bilgileri kaydedildi");
+      toast.success(res.data.removed ? "Ay bilgileri boşaltıldı" : "Ay bilgileri kaydedildi", {
+        description: res.data.removed ? `${label} için kayıtlı bilgi kalmadı.` : undefined,
+      });
     } else toast.error(res.error);
   }
 
@@ -202,13 +255,38 @@ export function MonthInfoForm({
             <Field label="POS ciro, KDV dahil (₺)" tip="İndirimler düşülmüş, ödenmezler hariç" htmlFor="m-pos" error={bad.pos ? "Sayı girin" : undefined}>
               <NumberInput id="m-pos" value={pos} onChange={(e) => setPos(e.target.value)} placeholder="0" aria-invalid={bad.pos || undefined} className={bad.pos ? undefined : "cell-input"} />
             </Field>
-            <Field label="Açık gün sayısı" tip="Sabit giderler bu oranla bölünür" htmlFor="m-days" error={bad.days ? "En fazla 31 gün" : undefined}>
+            <Field
+              label="Açık gün sayısı"
+              tip={
+                <>
+                  Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür (Excel Genel Maliyet, 2. satır). Devam eden ayda bu sayı
+                  &quot;bugüne kadar geçen gün&quot; olarak da kullanılır: Genel bakış&apos;taki ay sonu tahmini POS cirosu ÷ açık gün × ayın
+                  gün sayısıdır. Ay bitince gerçek açık gün sayısını yazın; kapanmış aylarda tahmin yapılmaz.
+                </>
+              }
+              htmlFor="m-days"
+              // Hata çıktığında da "Tüm ay" tek tık düzeltmesi görünür kalır (ör. Eylül'e 31 yazıldı)
+              error={
+                daysError ? (
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span>{daysError}</span>
+                    {phase !== "running" ? <AllMonthButton dim={dim} onPick={() => setOpenDays(String(dim))} /> : null}
+                  </span>
+                ) : undefined
+              }
+              hint={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span>{openDaysHint(openDays, month, currentMonth)}</span>
+                  {phase !== "running" && openDays.trim() !== String(dim) ? <AllMonthButton dim={dim} onPick={() => setOpenDays(String(dim))} /> : null}
+                </span>
+              }
+            >
               <NumberInput
                 id="m-days"
                 value={openDays}
                 onChange={(e) => setOpenDays(e.target.value.replace(/\D/g, "").slice(0, 2))}
                 inputMode="numeric"
-                placeholder="ör. 30"
+                placeholder={phase === "running" ? "bugüne kadar" : `ör. ${dim}`}
                 aria-invalid={bad.days || undefined}
                 className={bad.days ? undefined : "cell-input"}
               />
@@ -257,38 +335,6 @@ export function MonthInfoForm({
       </CardContent>
     </Card>
   );
-}
-
-// ---------------------------------------------------------------- Eşleştirme önerisi
-
-const SIZE_WORDS: Record<string, string> = { LARGE: "L", L: "L", MEDIUM: "M", M: "M", SMALL: "M" };
-
-function tokens(s: string): string[] {
-  return normalizePosName(s)
-    .replace(/İ/g, "I")
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^A-Z0-9 ]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((t) => (t === "ICED" ? "ICE" : t === "CAFFE" || t === "CAFE" ? "" : t === "CH" ? "CHOC" : t))
-    .filter(Boolean);
-}
-
-/** Yalnızca kelimeleri birebir aynı (boy hariç) ürünü önerir; benzer ama farklı ürünlerde yanlış eşleşmeyi önler. */
-export function suggestProduct(posName: string, products: ProductOption[]): ProductOption | null {
-  const toks = tokens(posName);
-  let size: string | null = null;
-  const last = toks[toks.length - 1];
-  if (last && SIZE_WORDS[last]) {
-    size = SIZE_WORDS[last];
-    toks.pop();
-  }
-  if (!toks.length) return null;
-  const key = [...new Set(toks)].sort().join(" ");
-  const candidates = products.filter((p) => p.active && [...new Set(tokens(p.name))].sort().join(" ") === key);
-  if (!candidates.length) return null;
-  return candidates.find((p) => p.size === (size ?? "Tek")) ?? (candidates.length === 1 && !size ? candidates[0] : null);
 }
 
 // ---------------------------------------------------------------- Ürün seçici
@@ -422,7 +468,7 @@ const FILTER_STATUS: Record<Exclude<StatusFilter, "tumu">, RowStatus> = { eslesm
 /** "Temizle" düğmesinin sıfırladığı adres anahtarları (sıralama ve ay korunur) */
 const FILTER_KEYS = ["ara", "durum"];
 
-type SortKey = "ad" | "adet" | "ciro" | "maliyet" | "kom" | "kar";
+type SortKey = "ad" | "adet" | "ciro" | "maliyet" | "kom" | "kar" | "marj";
 const COMPARE: Record<SortKey, (a: SalesRow, b: SalesRow) => number> = {
   ad: (a, b) => a.posName.localeCompare(b.posName, "tr"),
   adet: (a, b) => a.qty - b.qty,
@@ -430,6 +476,7 @@ const COMPARE: Record<SortKey, (a: SalesRow, b: SalesRow) => number> = {
   maliyet: (a, b) => a.cost - b.cost,
   kom: (a, b) => a.commission - b.commission,
   kar: (a, b) => a.grossProfit - b.grossProfit,
+  marj: (a, b) => a.margin - b.margin,
 };
 /** Varsayılan: rapordaki sıra (içe aktarılan dosyadaki gibi) */
 const REPORT_ORDER = "rapor";
@@ -438,6 +485,8 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "ciro-azalan", label: "Ciro: yüksekten düşüğe" },
   { value: "kar-azalan", label: "Brüt kâr: yüksekten düşüğe" },
   { value: "kar-artan", label: "Brüt kâr: düşükten yükseğe" },
+  { value: "marj-artan", label: "Marj: düşükten yükseğe" },
+  { value: "marj-azalan", label: "Marj: yüksekten düşüğe" },
   { value: "adet-azalan", label: "Adet: çoktan aza" },
   { value: "maliyet-azalan", label: "Maliyet: yüksekten düşüğe" },
   { value: "ad-artan", label: "Ad: A → Z" },
@@ -486,14 +535,42 @@ function NameSize({ name, size }: { name: string; size?: string }) {
   );
 }
 
+/**
+ * Kâr marjı (Excel Satış Raporu J sütunu, 0,0%) ve üç renkli ölçek: ayın en düşük marjı kırmızı, ortancası
+ * sarı, en yükseği yeşil. Ölçeğe yalnızca reçeteli ürüne bağlı satırlar girer; HİZMET ve eşleşmeyen
+ * (maliyeti tahmini) satırlar renksiz gösterilir.
+ */
+function MarginPill({ row, scale }: { row: SalesRow; scale: MarginScale | null }) {
+  const colored = scale && inMarginScale(row);
+  const level = colored ? marginLevelLabel(row.margin, scale) : null;
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-lg px-1.5 text-[13px] font-medium tabular",
+        colored ? "text-ink" : "text-ink-mute",
+        !colored && "ring-1 ring-inset ring-line-strong",
+        row.grossProfit < 0 && "text-bad",
+      )}
+      style={colored ? { backgroundColor: marginColor(row.margin, scale) } : undefined}
+      title={row.isService ? "HİZMET: maliyetsiz" : !row.matched ? "Maliyet tahmini (ortalama oran); ölçeğe girmez" : (level ?? undefined)}
+    >
+      {pct(row.margin, 1)}
+      {level ? <span className="sr-only"> · {level}</span> : null}
+    </span>
+  );
+}
+
 export function SalesTable({
   rows: serverRows,
   products,
+  mappings,
   month,
   totals,
 }: {
   rows: SalesRow[];
   products: ProductOption[];
+  /** POS adı hafızası (Satır ekle penceresinde "otomatik bağlanacak" ipucu için) */
+  mappings: MappingLite[];
   month: string;
   totals: Totals;
 }) {
@@ -516,7 +593,13 @@ export function SalesTable({
   const [picking, setPicking] = useState<SalesRow | null>(null);
   const [editing, setEditing] = useState<Partial<SalesRow> | null>(null);
   const [deleting, setDeleting] = useState<SalesRow | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const scale = useMemo(() => marginScale(serverRows.filter(inMarginScale).map((r) => r.margin)), [serverRows]);
+  const suggestions = useMemo(() => collectSuggestions(rows, products), [rows, products]);
+  /** Rapora yanlışlıkla girmiş toplam satırları ("TOPLAM 2.543 441.955"): ciroyu iki kez sayar */
+  const summaryRows = rows.filter((r) => isSummaryRow(r.posName));
 
   // Durum çiplerinin sayaçları aramaya göre (arama yazılıyken "kaç eşleşmeyen var" görünsün)
   const searched = rows.filter((r) => matches(`${r.posName} ${r.productLabel ?? ""} ${r.note ?? ""}`, q));
@@ -584,8 +667,12 @@ export function SalesTable({
         toast.error(res.error);
         return;
       }
+      const others = res.data.others ? ` Aynı adlı ${num(res.data.others)} satır daha bağlandı.` : "";
       toast.success(v.isService ? "HİZMET olarak işaretlendi" : v.productId ? "Eşleştirildi" : "Eşleşme kaldırıldı", {
-        description: v.productId || v.isService ? `“${row.posName}” sonraki aylarda otomatik tanınacak.` : row.posName,
+        description:
+          v.productId || v.isService
+            ? `“${row.posName}” sonraki aylarda otomatik tanınacak.${others}`
+            : `“${row.posName}” hafızadan da silindi; sonraki raporlarda eşleşmemiş gelir.`,
       });
     });
   }
@@ -600,6 +687,23 @@ export function SalesTable({
       const res = await deleteLine(target.id);
       if (!res.ok) toast.error(res.error);
       else toast.success("Satır silindi", { description: `${target.posName} · ${num(target.qty)} adet` });
+    });
+  }
+
+  async function applySuggestions() {
+    setBulkBusy(true);
+    keepScroll();
+    const res = await applyLineMatches(
+      month,
+      suggestions.map((x) => ({ lineId: x.row.id, productId: x.product.id })),
+    );
+    setBulkBusy(false);
+    setBulkOpen(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(`${num(res.data.applied)} öneri uygulandı`, {
+      description: res.data.skipped
+        ? `${num(res.data.skipped)} satır bu arada değişmiş, atlandı.`
+        : "Bu adlar sonraki aylarda otomatik tanınacak.",
     });
   }
 
@@ -682,11 +786,38 @@ export function SalesTable({
           ) : null
         }
         actions={
-          <Button size="sm" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-10">
-            <Plus size={16} /> Satır ekle
-          </Button>
+          <>
+            {suggestions.length ? (
+              <Button size="sm" variant="accent" onClick={() => setBulkOpen(true)} className="pointer-coarse:h-10">
+                <Wand2 size={15} /> {num(suggestions.length)} öneriyi uygula
+              </Button>
+            ) : null}
+            {/* Asıl yol içe aktarma; elle satır ikincil eylem */}
+            <Button size="sm" variant="secondary" onClick={() => setEditing({ posName: "", qty: 1, revenue: 0 })} className="pointer-coarse:h-10">
+              <Plus size={16} /> Satır ekle
+            </Button>
+          </>
         }
       />
+      {summaryRows.length ? (
+        <div className="mx-5 mb-3 flex items-start gap-2.5 rounded-2xl bg-bad-soft px-3 py-2.5 text-[13px] leading-5 text-bad" role="alert">
+          <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p>
+              <span className="font-semibold">Listede toplam satırı var:</span> ürün gibi sayıldığı için ay cirosu ve kâr iki kat görünür. Silin.
+            </p>
+            <ul className="mt-1.5 flex flex-wrap gap-2">
+              {summaryRows.map((r) => (
+                <li key={r.id}>
+                  <Button size="sm" variant="secondary" onClick={() => setDeleting(r)} className="text-bad pointer-coarse:h-10">
+                    <Trash2 size={14} /> {r.posName} · {tl(r.revenue)}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
       {rows.length ? (
         <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={rows.length} unit="satır" className="px-5 pb-3">
           <SearchField value={q} onChange={setQ} placeholder="POS adı, ürün ya da not ara" label="Satırlarda ara" className="w-full sm:w-72" />
@@ -735,7 +866,9 @@ export function SalesTable({
                     </div>
                     <div className="shrink-0 text-right tabular">
                       <p className={cn("font-semibold", r.grossProfit < 0 ? "text-bad" : "text-ink")}>{tl(r.grossProfit)}</p>
-                      <p className="text-xs text-ink-mute">brüt kâr · marj {pct(r.margin, 0)}</p>
+                      <p className="mt-0.5 flex items-center justify-end gap-1.5 text-xs text-ink-mute">
+                        brüt kâr <MarginPill row={r} scale={scale} />
+                      </p>
                       <p className={cn("text-xs", status === "unmatched" ? "text-warn" : "text-ink-mute")}>
                         maliyet {tl(r.cost)}
                         {status === "unmatched" ? " (tahmini)" : ""}
@@ -759,7 +892,7 @@ export function SalesTable({
             </span>
             <span className="text-right tabular">
               <span className={cn(shownTotals.grossProfit < 0 && "text-bad")}>{tl(shownTotals.grossProfit)}</span>
-              <span className="block text-xs font-normal text-ink-mute">brüt kâr · marj {pct(shownTotals.margin, 0)}</span>
+              <span className="block text-xs font-normal text-ink-mute">brüt kâr · marj {pct(shownTotals.margin, 1)}</span>
             </span>
           </div>
 
@@ -811,10 +944,18 @@ export function SalesTable({
                     </HeadLabel>
                   </TH>
                   <TH numeric>
-                    <HeadLabel sub="marj">
-                      <SortButton numeric dir={dirOf("kar")} onClick={() => toggleSort("kar")}>
-                        Brüt kâr
-                      </SortButton>
+                    <SortButton numeric dir={dirOf("kar")} onClick={() => toggleSort("kar")}>
+                      Brüt kâr
+                    </SortButton>
+                  </TH>
+                  <TH numeric>
+                    <HeadLabel sub="kâr ÷ net">
+                      <span className="inline-flex items-center gap-1.5">
+                        <InfoTip text="Excel'deki 'Kâr marjı %' sütunu ve renk ölçeği: bu ayın en düşük marjı kırmızı, ortancası sarı, en yükseği yeşil. Ölçeğe reçeteli ürünler girer; HİZMET ve eşleşmeyen (maliyeti tahmini) satırlar renksizdir." />
+                        <SortButton numeric dir={dirOf("marj")} onClick={() => toggleSort("marj")}>
+                          Marj
+                        </SortButton>
+                      </span>
                     </HeadLabel>
                   </TH>
                   <TH className="w-px px-2">
@@ -836,9 +977,9 @@ export function SalesTable({
                     <TR key={r.id}>
                       <TD sticky className="max-w-64 min-w-36 sm:min-w-40">
                         <div className="flex items-center gap-3">
-                          {/* Dar masaüstünde (1280px) ad için yer açılsın: karo yalnız geniş ekranda */}
+                          {/* Dar masaüstünde (1280–1536px) ad için yer açılsın: karo yalnız geniş ekranda */}
                           <IconTile
-                            className="max-[1360px]:hidden"
+                            className="max-2xl:hidden"
                             tone={status === "matched" ? toneFor(product?.category ?? r.posName) : status === "service" ? 2 : 1}
                           >
                             {status === "matched" ? <Coffee /> : status === "service" ? <Mic /> : <CircleHelp />}
@@ -878,7 +1019,9 @@ export function SalesTable({
                       <TD numeric>{tl(r.commission)}</TD>
                       <TD numeric>
                         <span className={cn(r.grossProfit < 0 ? "text-bad" : "font-medium")}>{tl(r.grossProfit)}</span>
-                        <span className="block text-xs text-ink-mute">marj {pct(r.margin, 0)}</span>
+                      </TD>
+                      <TD numeric>
+                        <MarginPill row={r} scale={scale} />
                       </TD>
                       <TD className="px-2">
                         <div className="flex justify-end gap-1">{rowActions(r)}</div>
@@ -900,8 +1043,8 @@ export function SalesTable({
                   <TD numeric>{tl(shownTotals.commission)}</TD>
                   <TD numeric>
                     <span className={cn(shownTotals.grossProfit < 0 && "text-bad")}>{tl(shownTotals.grossProfit)}</span>
-                    <span className="block text-xs font-normal text-ink-mute">marj {pct(shownTotals.margin, 0)}</span>
                   </TD>
+                  <TD numeric>{pct(shownTotals.margin, 1)}</TD>
                   <TD />
                 </TFootRow>
               </tfoot>
@@ -960,7 +1103,44 @@ export function SalesTable({
           onPick={(v) => pick(picking, v)}
         />
       ) : null}
-      {editing ? <LineDialog line={editing} month={month} onClose={() => setEditing(null)} /> : null}
+      {editing ? <LineDialog line={editing} month={month} mappings={mappings} products={products} onClose={() => setEditing(null)} /> : null}
+      <Dialog
+        open={bulkOpen}
+        onClose={() => {
+          if (!bulkBusy) setBulkOpen(false);
+        }}
+        title={`${num(suggestions.length)} öneri uygulansın mı?`}
+        description="Adı menüdeki ürünle birebir tutan satırlar bağlanır ve hafızaya yazılır. Yanlış olanı sonra tıklayıp değiştirebilirsiniz."
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setBulkOpen(false)} disabled={bulkBusy} data-autofocus>
+              Vazgeç
+            </Button>
+            <Button onClick={applySuggestions} disabled={bulkBusy || !suggestions.length}>
+              {bulkBusy ? "Uygulanıyor…" : `${num(suggestions.length)} eşleşmeyi uygula`}
+            </Button>
+          </>
+        }
+      >
+        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto rounded-2xl bg-surface text-sm ring-1 ring-line-strong">
+          {suggestions.map(({ row, product }) => (
+            <li key={row.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2">
+              <span className="min-w-0 font-medium break-words text-ink">{row.posName}</span>
+              <span className="text-ink-quiet" aria-hidden="true">
+                →
+              </span>
+              <span className="sr-only">ile</span>
+              <span className="text-ink-soft">
+                {product.name} · {product.size}
+              </span>
+              <span className="ml-auto text-xs text-ink-mute tabular">
+                {num(row.qty)} adet · {tl(row.revenue)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
@@ -983,8 +1163,21 @@ export function SalesTable({
 /** Boş değil ama sayı olarak okunamayan değer */
 const badNumber = (t: string) => t.trim() !== "" && parseNumberTR(t) === null;
 
-function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: string; onClose: () => void }) {
+function LineDialog({
+  line,
+  month,
+  mappings,
+  products,
+  onClose,
+}: {
+  line: Partial<SalesRow>;
+  month: string;
+  mappings: MappingLite[];
+  products: ProductOption[];
+  onClose: () => void;
+}) {
   const [posName, setPosName] = useState(line.posName ?? "");
+  const index = useMemo(() => createPosMappingIndex(mappings), [mappings]);
   const [qty, setQty] = useState(num(line.qty ?? 1, 2));
   const [revenue, setRevenue] = useState(line.revenue ? num(line.revenue, 2, 2) : "");
   const [note, setNote] = useState(line.note ?? "");
@@ -994,18 +1187,26 @@ function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: 
   const revNum = parseNumberTR(revenue) ?? 0;
   const bad = { qty: badNumber(qty) || (tried && !qty.trim()), revenue: badNumber(revenue) };
   const nameMissing = tried && !posName.trim();
+  const isTotal = posName.trim() !== "" && isSummaryRow(posName);
+  // Yeni satırda ya da eşleşmemiş satırın adı düzeltilirken hafızadaki eşleşme otomatik bağlanır
+  const willLink = !line.matched && !line.isService && posName.trim() ? index.get(posName) : undefined;
+  const linkProduct = willLink?.productId ? products.find((p) => p.id === willLink.productId) : undefined;
+  const linkLabel = willLink?.isService ? "HİZMET" : linkProduct ? `${linkProduct.name} · ${linkProduct.size}` : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setTried(true);
     if (!posName.trim()) return toast.error("POS ürün adını girin");
+    if (isTotal) return toast.error("Toplam satırı ürün satırı olarak eklenmez (ciro iki kez sayılır)");
     if (qtyNum === null || bad.revenue) return toast.error("Adet ve ciroyu kontrol edin");
     setBusy(true);
     keepScroll();
     const res = await saveLine({ id: line.id ?? null, month, posName, qty: qtyNum, revenue: revNum, note });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(line.id ? "Satır güncellendi" : "Satır eklendi", { description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}` });
+    toast.success(line.id ? "Satır güncellendi" : "Satır eklendi", {
+      description: `${posName.trim()} · ${num(qtyNum)} adet · ${tl(revNum, 2)}${res.data.linked && linkLabel ? ` · ${linkLabel} ile eşleşti` : ""}`,
+    });
     onClose();
   }
 
@@ -1028,8 +1229,28 @@ function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: 
     >
       {/* Enter kaydeder, Esc kapatır; dokunmatikte alanlar 40px */}
       <form id="sales-line-form" onSubmit={submit} noValidate className="space-y-4 pb-2 pointer-coarse:[&_input]:h-10">
-        <Field label="POS ürün adı" htmlFor="l-name" hint="Patron'daki adıyla, ör. ICED AMERICANO MEDİUM" error={nameMissing ? "Ad girin" : undefined}>
-          <Input data-autofocus id="l-name" value={posName} onChange={(e) => setPosName(e.target.value)} aria-invalid={nameMissing || undefined} autoComplete="off" />
+        <Field
+          label="POS ürün adı"
+          htmlFor="l-name"
+          hint={
+            linkLabel ? (
+              <span className="inline-flex items-center gap-1 text-good">
+                <Check size={12} aria-hidden="true" /> Hafızada: {linkLabel} ile otomatik eşleşir
+              </span>
+            ) : (
+              "Patron'daki adıyla, ör. ICED AMERICANO MEDİUM (büyük/küçük harf fark etmez)"
+            )
+          }
+          error={nameMissing ? "Ad girin" : isTotal ? "Bu bir toplam satırı; ürün satırı olarak eklenmez" : undefined}
+        >
+          <Input
+            data-autofocus
+            id="l-name"
+            value={posName}
+            onChange={(e) => setPosName(e.target.value)}
+            aria-invalid={nameMissing || isTotal || undefined}
+            autoComplete="off"
+          />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Adet" htmlFor="l-qty" error={bad.qty ? "Sayı girin" : undefined}>
@@ -1055,23 +1276,13 @@ function LineDialog({ line, month, onClose }: { line: Partial<SalesRow>; month: 
 // ---------------------------------------------------------------- İçe aktarma
 
 type ParsedLine = { posName: string; qty: number; revenue: number };
+type Parsed = Pick<SalesParseResult, "skipped" | "skippedRows"> & { rows: ParsedLine[]; source: "file" | "paste" };
 
-function parsePasted(text: string): ParsedLine[] {
-  const out: ParsedLine[] = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const parts = line.includes("\t") ? line.split("\t") : line.includes(";") ? line.split(";") : line.split(/\s{2,}|,(?=\s*\d)/);
-    const cells = parts.map((p) => p.trim()).filter(Boolean);
-    if (cells.length < 3) continue;
-    const nums = cells.slice(1).map((c) => parseNumberTR(c));
-    const qty = nums[0];
-    const revenue = nums[1];
-    if (qty === null || qty === undefined || revenue === null || revenue === undefined) continue;
-    out.push({ posName: cells[0], qty, revenue });
-  }
-  return out;
-}
+const SKIP_REASON: Record<SalesParseResult["skippedRows"][number]["reason"], string> = {
+  summary: "toplam satırı",
+  header: "başlık",
+  invalid: "adet / ciro okunamadı",
+};
 
 /** AkmanOS yüzeyi gibi bırakma alanı: beyaz, kesik çizgili; dosya üstüne gelince yayla hafifçe büyür */
 function DropZone({ busy, onFile }: { busy: boolean; onFile: (f: File) => void }) {
@@ -1156,34 +1367,41 @@ export function ImportCard({
   lineCount,
   mappings,
   products,
+  hasInfo,
   className,
 }: {
   month: string;
   /** Hedef ayın adı, ör. "Eylül 2026" (önizleme açıkken ay değiştirilirse hedef görünür kalsın) */
   label: string;
   lineCount: number;
-  mappings: { posName: string; productId: number | null; isService: boolean }[];
+  mappings: MappingLite[];
   products: ProductOption[];
+  /** Ayda ciro / açık gün / not gibi bilgi var mı ("Ayı temizle" penceresinde seçenek olarak) */
+  hasInfo: boolean;
   className?: string;
 }) {
   const reduce = useCalmMotion();
   const hasLines = lineCount > 0;
   const [source, setSource] = useState<"file" | "paste">("file");
   const [text, setText] = useState("");
-  const [rows, setRows] = useState<ParsedLine[]>([]);
+  const [parsed, setParsed] = useState<Parsed | null>(null);
   const [mode, setMode] = useState<"replace" | "append">("replace");
   const [busy, setBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const map = useMemo(() => new Map(mappings.map((m) => [m.posName, m])), [mappings]);
-  const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const [withInfo, setWithInfo] = useState(false);
 
-  const preview = rows.map((r) => {
-    const m = map.get(normalizePosName(r.posName));
-    const p = m?.productId ? productById.get(m.productId) : undefined;
-    return { ...r, status: m?.isService ? "service" : p ? "matched" : "new", label: m?.isService ? "HİZMET" : p ? `${p.name} · ${p.size}` : null };
-  });
+  const rows = useMemo(() => parsed?.rows ?? [], [parsed]);
+  const preview = useMemo(() => previewMatches(rows, mappings, products), [rows, mappings, products]);
+  // Adı "TOPLAM" olmayan ama cirosu diğerlerinin toplamına eşit satır: otomatik atlanmaz, sorulur
+  const suspects = useMemo(() => new Set(suspectTotalRows(rows)), [rows]);
   const totals = preview.reduce((a, r) => ({ qty: a.qty + r.qty, revenue: a.revenue + r.revenue }), { qty: 0, revenue: 0 });
+  const skippedText = parsed ? describeSkipped(parsed.skipped) : null;
+  const counts = {
+    matched: preview.filter((p) => p.status === "matched").length,
+    service: preview.filter((p) => p.status === "service").length,
+    fresh: preview.filter((p) => p.status === "new").length,
+  };
   // Sunucu HTML'i ve hidrasyon sırasında useCalmMotion true döner: kart ilk boyamada görünür gelir,
   // yalnızca sonradan değişen görünüm (dosya ↔ yapıştır ↔ önizleme) yumuşakça belirir
   const fade = {
@@ -1192,6 +1410,15 @@ export function ImportCard({
     transition: reduce ? { duration: 0 } : { duration: 0.24, ease: EASE_OUT },
   };
 
+  /** Okunan listeyi önizlemeye alır; atlanan satırları sessizce yutmaz, sayısını söyler */
+  function accept(res: SalesParseResult, from: "file" | "paste") {
+    setParsed({ rows: res.rows, skipped: res.skipped, skippedRows: res.skippedRows, source: from });
+    const why = describeSkipped(res.skipped);
+    toast.success(`${num(res.rows.length)} satır okundu`, {
+      description: [why, res.suspectTotals.length ? "Toplam satırı olabilecek bir satır var; önizlemede kontrol edin." : null].filter(Boolean).join(" · ") || undefined,
+    });
+  }
+
   async function onFile(f: File) {
     const fd = new FormData();
     fd.set("file", f);
@@ -1199,14 +1426,24 @@ export function ImportCard({
     const res = await parseSalesFile(fd);
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    setRows(res.data);
-    toast.success(`${res.data.length} satır okundu`);
+    accept(res.data, "file");
   }
 
   function readPasted() {
-    const r = parsePasted(text);
-    if (!r.length) return toast.error("Satır okunamadı. Her satırda ürün adı, adet ve ciro olmalı.");
-    setRows(r);
+    const r = parsePastedSales(text);
+    if (!r.rows.length) {
+      const why = describeSkipped(r.skipped);
+      return toast.error("Satır okunamadı. Her satırda ürün adı, adet ve ciro olmalı.", { description: why ?? undefined });
+    }
+    accept(r, "paste");
+  }
+
+  function dropRow(i: number) {
+    setParsed((p) => (p ? { ...p, rows: p.rows.filter((_, j) => j !== i) } : p));
+  }
+
+  function restart() {
+    setParsed(null);
   }
 
   async function submit() {
@@ -1215,24 +1452,42 @@ export function ImportCard({
     const res = await importSales({ month, lines: rows, mode });
     setBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(`${res.data.count} satır yüklendi, ${res.data.matched} tanesi otomatik eşleşti`);
-    setRows([]);
+    const d = res.data;
+    const left = d.count - d.matched;
+    toast.success(`${num(d.count)} satır ${label} ayına yüklendi`, {
+      description: [
+        `${num(d.matched)} tanesi hafızadan eşleşti${left ? `, ${num(left)} satırı aşağıdan eşleştirin` : ""}.`,
+        d.replaced ? `Önceki ${num(d.replaced)} satır değiştirildi.` : null,
+        skippedText,
+        d.skippedSummary ? `${num(d.skippedSummary)} toplam satırı atlandı.` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
+    setParsed(null);
     setText("");
   }
 
   async function clearMonth() {
     setClearing(true);
     keepScroll();
-    const res = await clearMonthSales(month);
+    const res = await clearMonthSales(month, { withInfo });
     setClearing(false);
     setConfirmClear(false);
-    if (res.ok) toast.success("Satırlar silindi");
-    else toast.error(res.error);
+    setWithInfo(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(`${num(res.data.deleted)} satır silindi`, {
+      description: res.data.monthRemoved
+        ? `${label} artık tamamen boş.`
+        : withInfo
+          ? "Ay bilgileri de silindi."
+          : "Ay bilgileri (ciro, açık gün) duruyor.",
+    });
   }
 
   return (
     <Card className={className}>
-      {!rows.length ? (
+      {!parsed ? (
         <motion.div key="pick" {...fade} className="flex flex-1 flex-col">
           <CardHeader
             icon={<Upload />}
@@ -1274,23 +1529,27 @@ export function ImportCard({
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-ink-mute">
-                    Her satırda ürün adı, adet, ciro.{" "}
+                    Her satırda ürün adı, adet, ciro. Başlık ve TOPLAM satırları otomatik atlanır.{" "}
                     {/* Klavye kısayolu dokunmatikte anlamsız */}
                     <span className="pointer-coarse:hidden">
                       <kbd className="rounded-md bg-surface px-1.5 py-0.5 text-[11px] text-ink-soft ring-1 ring-line-strong">Ctrl/⌘ + Enter</kbd> ile
                       okuyun.
                     </span>
                   </p>
-                  <Button variant="secondary" onClick={readPasted} disabled={!text.trim()} className="pointer-coarse:h-10">
+                  <Button variant="primary" onClick={readPasted} disabled={!text.trim()} className="pointer-coarse:h-10">
                     <ClipboardPaste size={16} /> Yapıştırılanı oku
                   </Button>
                 </div>
               </motion.div>
             )}
           </CardContent>
-          {hasLines ? (
+          {hasLines || hasInfo ? (
             <CardFooter className="mt-auto">
-              <span>Bu ayda {num(lineCount)} satır var. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.</span>
+              <span>
+                {hasLines
+                  ? `Bu ayda ${num(lineCount)} satır var. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
+                  : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
+              </span>
               <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-10" onClick={() => setConfirmClear(true)}>
                 <Eraser size={15} /> Ayı temizle
               </Button>
@@ -1302,9 +1561,9 @@ export function ImportCard({
           <CardHeader
             icon={<Upload />}
             title="İçe aktar · önizleme"
-            description={`${num(rows.length)} satır okundu. Kontrol edip ${label} ayına yükleyin.`}
+            description={`${num(rows.length)} satır ${parsed.source === "file" ? "dosyadan" : "yapıştırılandan"} okundu. Kontrol edip ${label} ayına yükleyin.`}
             actions={
-              <Button variant="ghost" size="sm" onClick={() => setRows([])} disabled={busy} className="pointer-coarse:h-10">
+              <Button variant="ghost" size="sm" onClick={restart} disabled={busy} className="pointer-coarse:h-10">
                 <RotateCcw size={15} /> Baştan başla
               </Button>
             }
@@ -1312,18 +1571,55 @@ export function ImportCard({
           <CardContent className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="green" dot>
-                {preview.filter((p) => p.status === "matched").length} eşleşti
+                {counts.matched} eşleşti
               </Badge>
-              <Badge tone="blue" dot>
-                {preview.filter((p) => p.status === "service").length} hizmet
-              </Badge>
+              {counts.service ? (
+                <Badge tone="blue" dot>
+                  {counts.service} hizmet
+                </Badge>
+              ) : null}
               <Badge tone="amber" dot>
-                {preview.filter((p) => p.status === "new").length} yeni ad
+                {counts.fresh} yeni ad
               </Badge>
               <span className="text-[13px] text-ink-mute tabular">
                 Toplam {num(totals.qty)} adet · {tl(totals.revenue)}
               </span>
             </div>
+            {skippedText ? (
+              <div className="rounded-2xl bg-info-soft px-3 py-2.5 text-xs leading-5 text-info" role="status">
+                <p className="flex items-start gap-2">
+                  <CircleCheck size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    <span className="font-semibold">{skippedText}.</span> Bunlar ürün sayılmaz; ay cirosu iki kez sayılmasın diye yüklenmez.
+                  </span>
+                </p>
+                {parsed.skippedRows.length ? (
+                  <details className="mt-1.5 pl-6">
+                    <summary className="cursor-pointer font-medium underline-offset-2 hover:underline pointer-coarse:min-h-8">Atlanan satırları göster</summary>
+                    <ul className="mt-1 space-y-0.5 text-ink-soft">
+                      {parsed.skippedRows.map((r) => (
+                        <li key={r.line} className="break-words">
+                          <span className="text-ink-mute tabular">{r.line}. satır</span> · {SKIP_REASON[r.reason]} ·{" "}
+                          <span className="font-mono text-[11px]">{r.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
+            ) : null}
+            {[...suspects].map((i) => (
+              <div key={`s${i}`} className="flex flex-wrap items-start gap-2.5 rounded-2xl bg-warn-soft px-3 py-2.5 text-xs leading-5 text-warn" role="alert">
+                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p className="min-w-0 flex-1">
+                  <span className="font-semibold">“{rows[i].posName}” toplam satırı olabilir:</span> cirosu ({tl(rows[i].revenue)}) diğer satırların
+                  toplamına eşit. Ürün değilse çıkarın, yoksa ay cirosu iki kat görünür.
+                </p>
+                <Button size="sm" variant="secondary" onClick={() => dropRow(i)} className="pointer-coarse:h-10">
+                  <X size={14} /> Listeden çıkar
+                </Button>
+              </div>
+            ))}
             <div className="scroll-thin max-h-72 overflow-auto rounded-2xl bg-surface px-1 ring-1 ring-line-strong">
               <Table>
                 <THead className="sticky top-0 z-10 bg-surface [&_th]:pt-3">
@@ -1332,14 +1628,17 @@ export function ImportCard({
                     <TH numeric>Adet</TH>
                     <TH numeric>Ciro</TH>
                     <TH>Eşleşme</TH>
+                    <TH className="w-px px-1">
+                      <span className="sr-only">Çıkar</span>
+                    </TH>
                   </tr>
                 </THead>
                 <tbody>
                   {preview.map((r, i) => (
-                    <TR key={i} className="hover:bg-panel/60">
+                    <TR key={`${i}|${r.posName}`} className={cn("hover:bg-panel/60", suspects.has(i) && "bg-warn-soft/60")}>
                       <TD className="min-w-40">{r.posName}</TD>
-                      <TD numeric>{num(r.qty)}</TD>
-                      <TD numeric>{tl(r.revenue)}</TD>
+                      <TD numeric>{num(r.qty, 2)}</TD>
+                      <TD numeric>{tl(r.revenue, 2)}</TD>
                       <TD className="min-w-40">
                         {r.status === "new" ? (
                           <span className="text-xs text-warn">Yükledikten sonra eşleştirin</span>
@@ -1352,6 +1651,11 @@ export function ImportCard({
                             <Check size={12} aria-hidden="true" /> {r.label}
                           </span>
                         )}
+                      </TD>
+                      <TD className="px-1">
+                        <IconButton label={`${r.posName} satırını listeden çıkar`} onClick={() => dropRow(i)} disabled={busy}>
+                          <X size={14} />
+                        </IconButton>
                       </TD>
                     </TR>
                   ))}
@@ -1375,7 +1679,7 @@ export function ImportCard({
               ) : (
                 <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
               )}
-              <Button onClick={submit} disabled={busy} className="pointer-coarse:h-10">
+              <Button onClick={submit} disabled={busy || !rows.length} className="pointer-coarse:h-10">
                 {busy ? "Yükleniyor…" : `${num(rows.length)} satırı yükle`}
               </Button>
             </div>
@@ -1383,21 +1687,45 @@ export function ImportCard({
         </motion.div>
       )}
 
-      <ConfirmDialog
+      <Dialog
         open={confirmClear}
         onClose={() => {
           if (!clearing) setConfirmClear(false);
         }}
-        onConfirm={clearMonth}
-        pending={clearing}
-        title="Bu ayın satış satırları silinsin mi?"
-        description={
+        title={`${label} temizlensin mi?`}
+        size="sm"
+        footer={
           <>
-            <span className="font-medium text-ink">{num(lineCount)} satır silinecek.</span> Ay bilgileri (ciro, açık gün) kalır. Eşleştirme hafızası
-            silinmez.
+            <Button variant="ghost" onClick={() => setConfirmClear(false)} disabled={clearing} data-autofocus>
+              Vazgeç
+            </Button>
+            <Button variant="danger" onClick={clearMonth} disabled={clearing || (!hasLines && !withInfo)}>
+              {clearing ? "Siliniyor…" : hasLines ? `${num(lineCount)} satırı${withInfo ? " ve bilgileri" : ""} sil` : "Ay bilgilerini sil"}
+            </Button>
           </>
         }
-      />
+      >
+        <div className="space-y-3 pb-2 text-sm text-ink-mute">
+          <p>
+            {hasLines ? (
+              <>
+                <span className="font-medium text-ink">{num(lineCount)} satış satırı silinecek.</span> Eşleştirme hafızası ve Gelir-gider girişleri
+                silinmez.
+              </>
+            ) : (
+              "Bu ayda satış satırı yok."
+            )}
+          </p>
+          {hasInfo ? (
+            <Checkbox
+              label="Ay bilgilerini de sil (POS ciro, açık gün, indirim, ödenmez, not)"
+              checked={withInfo}
+              onChange={(e) => setWithInfo(e.target.checked)}
+              disabled={clearing}
+            />
+          ) : null}
+        </div>
+      </Dialog>
     </Card>
   );
 }

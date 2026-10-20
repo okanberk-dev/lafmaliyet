@@ -1,3 +1,4 @@
+import { desc, eq } from "drizzle-orm";
 import {
   ArrowRight,
   CalendarClock,
@@ -14,7 +15,6 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
-  Upload,
   Wallet,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -25,25 +25,40 @@ import { TrendChart } from "@/components/charts";
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
-import { ButtonLink } from "@/components/ui/button";
+import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
 import { Gauge } from "@/components/ui/gauge";
 import { EmptyState, GrowthPill, InfoTip, KeyValue, PageSkeleton, Progress, SegmentStrip, Signed, Stat } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
-import { daysInMonth, fixedForMonth, shiftMonth } from "@/lib/calc/engine";
-import { alerts, dashboard, yearTrend, type DashboardData } from "@/lib/calc/insights";
-import { FIXED_SECTIONS } from "@/lib/constants";
+import { shiftMonth, type ProductStatus } from "@/lib/calc/engine";
+import {
+  alerts,
+  dailyChange,
+  dashboard,
+  forecastMonthOf,
+  unpaidSummary,
+  yearTrend,
+  type DashboardData,
+} from "@/lib/calc/insights";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
+import type { UpcomingItem } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { getDb, schema as s } from "@/server/db";
+import { loadUpcoming } from "@/server/notify/digest";
+import { isParasutConfigured } from "@/server/parasut/config";
 
 import { DashboardAlerts } from "./dashboard-alerts";
 import { CategoriesPanel } from "./dashboard-categories";
+import { DashboardChecklist } from "./dashboard-checklist";
+import { differs, FixedReconcile, fixedBreakdownText } from "./dashboard-fixed";
 import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
+import { monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { menuAverages, productHref } from "./urunler/logic";
 
 export const metadata: Metadata = { title: "Genel bakış" };
 
@@ -77,10 +92,10 @@ function growthOf(cur: number | null | undefined, before: number | null | undefi
 }
 
 /** AkmanOS büyüme rozeti: önceki aya göre % değişim (olumlu limon, olumsuz kırmızı, nötr gri) */
-function Change({ g, prevMonth, prevValue }: { g: number | null; prevMonth: string; prevValue: number | null | undefined }) {
+function Change({ g, prevMonth, prevValue, basis }: { g: number | null; prevMonth: string; prevValue: number | null | undefined; basis?: string }) {
   if (g === null) return null;
   return (
-    <span className="inline-flex" title={`${monthLabel(prevMonth)}: ${tl(prevValue)}`}>
+    <span className="inline-flex" title={`${monthLabel(prevMonth)}: ${tl(prevValue)}${basis ? ` (${basis})` : ""}`}>
       <GrowthPill value={g}>
         {g >= 0.0005 ? "+" : ""}
         {pct(g, Math.abs(g) >= 1 ? 0 : 1)}
@@ -90,52 +105,74 @@ function Change({ g, prevMonth, prevValue }: { g: number | null; prevMonth: stri
   );
 }
 
+/** Ödemeler & hatırlatıcılar listesi; okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu söyler) */
+async function loadPayments(): Promise<UpcomingItem[] | null> {
+  try {
+    return (await loadUpcoming()).items;
+  } catch {
+    return null;
+  }
+}
+
+/** Paraşüt bağlıysa son eşitleme; bağlı değilse null */
+async function loadParasut(): Promise<ParasutFacts | null> {
+  if (!isParasutConfigured()) return null;
+  try {
+    const db = getDb();
+    const runs = s.parasutSyncRuns;
+    const [[last], [ok]] = await Promise.all([
+      db.select({ status: runs.status, startedAt: runs.startedAt, message: runs.message }).from(runs).orderBy(desc(runs.startedAt)).limit(1),
+      db.select({ startedAt: runs.startedAt, finishedAt: runs.finishedAt }).from(runs).where(eq(runs.status, "ok")).orderBy(desc(runs.startedAt)).limit(1),
+    ]);
+    return {
+      lastStatus: last?.status ?? null,
+      lastRunAt: last?.startedAt.toISOString() ?? null,
+      lastOkAt: ok ? (ok.finishedAt ?? ok.startedAt).toISOString() : null,
+      message: last?.message ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function DashboardContent({ searchParams }: { searchParams: PageProps<"/panel">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const model = await loadModel();
+  const [model, upcoming, parasut] = await Promise.all([loadModel(), loadPayments(), loadParasut()]);
   const month = resolveMonth(sp.ay, model);
   const months = availableMonths(model);
   const d = dashboard(model, month);
-  const alertItems = alerts(model, month);
+  // "Bu ayın işleri" kartı eşleşmeyen POS ürünlerini ve ödenmemiş faturaları zaten gösterir: uyarılarda tekrarlanmaz
+  // (bildirimlerde alerts() olduğu gibi kalır)
+  const alertItems = alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href));
   const year = Number(month.slice(0, 4));
   const yearMonths = yearTrend(model, year);
   const trend = yearMonths.filter((x) => x.active);
   const st = model.settings;
 
-  // En son (eksik) ayın gidişatı: Excel'deki "Ekim tahmini"
-  const latest = [...model.monthInfo.values()]
-    .filter((m) => m.openDays && m.posRevenue)
-    .sort((a, b) => a.month.localeCompare(b.month))
-    .at(-1);
-  const forecastMonth = latest && latest.month !== month ? latest.month : month;
-  const current = forecastMonth !== month ? dashboard(model, forecastMonth) : d;
-  const forecast = current.forecast;
+  // Süren ayın gidişatı (Excel "Ekim tahmini", Panel B19): yalnızca bugünün ayı için, bitmiş aylar için asla
+  const forecastMonth = forecastMonthOf(model);
+  const current = forecastMonth && forecastMonth !== month ? dashboard(model, forecastMonth) : d;
+  const forecast = forecastMonth ? current.forecast : null;
 
   const t = d.theoretical;
-  const pm = model.pnlMonth(month);
   const purchases = model.goodsPurchases(month);
-  const sectionItems = (key: string) =>
-    model.activeFixed
-      .filter((f) => f.section === key)
-      .map((f) => ({ name: f.name, v: fixedForMonth(f, st, pm.openDays, daysInMonth(month)) }))
-      .filter((x) => x.v > 0)
-      .sort((a, b) => b.v - a.v)
-      .slice(0, 3)
-      .map((x) => x.name)
-      .join(", ");
 
+  // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler
   const waterfall: FlowRow[] = t
     ? [
         { label: "Satışlar (net ciro)", value: t.netSales, sub: "Ürün satışları ÷ (1 + KDV)", sign: 1 },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
         { label: "Malzeme + ambalaj", value: -t.material, sub: "Satılan her ürün × reçete maliyeti", sign: -1 },
         { label: "Kart / POS komisyonu", value: -t.commission, sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(st.kartOrani * 100, 1)}`, sign: -1 },
-        ...FIXED_SECTIONS.map((s) => ({
-          label: s.label,
-          value: -t.fixed[s.key],
-          sub: s.key === "personel" ? ["Maaş + SGK", sectionItems(s.key)].filter(Boolean).join(", ") : sectionItems(s.key),
+        ...t.fixedFlow.map((l) => ({
+          label: l.label,
+          value: -l.amount,
+          // Tek kalem grubun adıyla aynıysa ("Kira") alt satır tekrar etmesin
+          sub: l.items.length === 1 && l.items[0] === l.label ? "" : l.items.join(", "),
           sign: -1,
+          info: l.hint,
+          edited: l.overridden,
         })),
       ]
     : [];
@@ -144,23 +181,38 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const showForecast = !!t && !!forecast;
   const projected = d.forecast?.projectedProfit ?? 0;
 
-  // Önceki ayla karşılaştırma (aynı metrik, aynı hesap). Eksik (devam eden) ayın toplamları tam bir ayla
-  // kıyaslanmaz; günlük ortalama her durumda kıyaslanabilir.
+  // Önceki ayla karşılaştırma (aynı metrik, aynı hesap). Süren ayın toplamları tam bir ayla kıyaslanmaz;
+  // günlük ortalama iki ayda da aynı temelde (POS ÷ açık gün ya da liste ÷ açık gün) kıyaslanır.
   const prevMonth = shiftMonth(month, -1);
   const prev = dashboard(model, prevMonth);
   const pt = prev.theoretical;
-  const fullMonths = !d.forecast && !prev.forecast;
+  const fullMonths = d.monthState === "closed";
+  const daily = dailyChange(d, prev);
   const g = {
     netSales: t && pt && fullMonths ? growthOf(t.netSales, pt.netSales) : null,
     gross: t && pt && fullMonths ? growthOf(t.grossProfit, pt.grossProfit) : null,
     net: t && pt && fullMonths ? growthOf(t.netProfit, pt.netProfit) : null,
     pos: fullMonths ? growthOf(d.info?.posRevenue, prev.info?.posRevenue) : null,
-    daily: growthOf(d.dailyAvg, prev.dailyAvg),
+    daily: daily.growth,
   };
   const changeNote = (x: number | null) => (x !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre değişim.` : "");
+  const dailyBasis = daily.basis === "pos" ? "POS cirosu ÷ açık gün" : daily.basis === "list" ? "satış listesi ÷ açık gün" : undefined;
+
+  // Bu ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım, ödemeler
+  const tasks = monthTasks(
+    monthTaskFacts(model, month, d.monthState, d.refMonth, {
+      payments: upcoming ? paymentFacts(upcoming, unpaidSummary(model.ds.invoices)) : null,
+      parasut,
+    }),
+  );
+
+  const fm = d.fixedMonth;
+  const netTip = t
+    ? `Brüt kâr − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (açık gün oranı + bu aya özel giderler), reçeteye göre. Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır.${changeNote(g.net)}`
+    : "";
 
   const tabs: DashboardTab[] = [
-    { value: "kategori", label: "Kategoriler", content: <CategoriesTab d={d} target={st.hedefMaliyet} /> },
+    { value: "kategori", label: "Kategoriler", content: <CategoriesTab d={d} target={st.hedefMaliyet} menu={menuAverageRow(model.products.filter((p) => p.product.active))} /> },
     ...(d.hasSales
       ? [
           {
@@ -231,7 +283,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           },
         ]
       : []),
-    { value: "gider", label: "En büyük giderler", short: "Giderler", content: <ExpensesTab items={d.topExpenses} total={d.fixedStandardTotal} /> },
+    { value: "gider", label: "En büyük giderler", short: "Giderler", content: <ExpensesTab month={month} items={d.topExpenses} total={d.fixedStandardTotal} /> },
   ];
 
   return (
@@ -243,6 +295,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         description={
           <>
             {monthLabel(month)}
+            {d.monthState === "running" ? " · devam ediyor" : d.monthState === "future" ? " · başlamadı" : ""}
             {d.info?.openDays ? ` · ${d.info.openDays} açık gün` : ""}
             {d.hasSales ? ` · ${num(d.sales.qty)} ürün satıldı` : ""}
           </>
@@ -250,32 +303,18 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         actions={
           <>
             <MonthPicker months={months} value={month} />
-            <ButtonLink href={`/api/export?ay=${month}`} variant="secondary" prefetch={false}>
+            {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi rotayı iki kez istemesin) */}
+            <a href={`/api/export?ay=${month}`} download className={buttonClass("secondary")}>
               <Download size={16} aria-hidden="true" />
               Excel&apos;e aktar
-            </ButtonLink>
+            </a>
           </>
         }
       />
 
       <div className="space-y-4">
-        {!d.hasSales ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-warn-soft px-5 py-4 text-warn">
-            <div className="flex min-w-0 items-start gap-3">
-              <Upload size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <div className="min-w-0">
-                <p className="font-semibold">{monthLabel(month)} ürün satışları henüz yüklenmedi</p>
-                <p className="mt-0.5 text-sm">
-                  Reçeteye göre kâr hesabı için Patron&apos;dan ürün satış raporunu yükleyin. Aşağıdaki kâr oranı{" "}
-                  {d.refMonth ? monthLabel(d.refMonth) : "son ay"} satışlarından alınıyor.
-                </p>
-              </div>
-            </div>
-            <ButtonLink href={`/panel/satislar?ay=${month}`} variant="primary">
-              Satış raporu yükle
-            </ButtonLink>
-          </div>
-        ) : null}
+        {/* 0. Bu ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
+        <DashboardChecklist month={month} state={d.monthState} tasks={tasks} />
 
         {/* 1. Metrikler (AkmanOS statistic-cards: rakam sayılır, yanında önceki aya göre rozet) */}
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -300,19 +339,30 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               <Stat
                 icon={t.netProfit < 0 ? <TrendingDown /> : <TrendingUp />}
                 label="Net kâr / zarar"
-                info={`Brüt kâr − indirimler − sabit giderler (reçeteye göre). Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır.${changeNote(g.net)}`}
+                info={netTip}
                 value={<CountUp value={t.netProfit} />}
                 badge={<Change g={g.net} prevMonth={prevMonth} prevValue={pt?.netProfit} />}
                 tone={t.netProfit < 0 ? "bad" : "good"}
                 sub={
-                  d.actual.hasRevenue ? (
-                    <>
-                      Faturaya göre:{" "}
-                      <Signed value={d.actual.profit} className="whitespace-nowrap">
-                        {tl(d.actual.profit)}
-                      </Signed>
-                    </>
-                  ) : null
+                  <>
+                    {differs(t.netProfit, t.netProfitStandard) ? (
+                      <span className="flex flex-wrap items-center gap-x-1.5">
+                        Excel temeli:
+                        <Signed value={t.netProfitStandard} className="whitespace-nowrap">
+                          {tl(t.netProfitStandard)}
+                        </Signed>
+                        <InfoTip text={fixedBreakdownText(fm)} />
+                      </span>
+                    ) : null}
+                    {d.actual.hasRevenue ? (
+                      <span className="block">
+                        Faturaya göre:{" "}
+                        <Signed value={d.actual.profit} className="whitespace-nowrap">
+                          {tl(d.actual.profit)}
+                        </Signed>
+                      </span>
+                    ) : null}
+                  </>
                 }
               />
             </>
@@ -329,33 +379,20 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               <Stat
                 icon={<CalendarDays />}
                 label="Günlük ortalama ciro"
-                info={g.daily !== null ? changeNote(g.daily).trim() : undefined}
+                info={`POS cirosu ÷ açık gün (KDV dahil).${g.daily !== null ? ` Rozet: ${monthLabel(prevMonth)} ayına göre, iki ayda da ${dailyBasis}.` : ""}`}
                 value={<CountUp value={d.dailyAvg} />}
-                badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={prev.dailyAvg} />}
+                badge={<Change g={g.daily} prevMonth={prevMonth} prevValue={daily.previous} basis={dailyBasis} />}
                 sub="KDV dahil"
               />
-              <Stat
-                icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
-                label="Ay sonu tahmini kâr/zarar"
-                info="Bu tempoda ay sonu cirosu × son satış ayının brüt kâr oranı − aylık sabit giderler."
-                value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
-                tone={projected < 0 ? "bad" : "good"}
-                sub={
-                  d.forecast ? (
-                    <>
-                      Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span>
-                    </>
-                  ) : (
-                    "Ay tamamlandı"
-                  )
-                }
-              />
+              <ThirdStat d={d} projected={projected} />
             </>
           )}
           <Stat
             icon={<Target />}
             label="Başabaş günlük ciro"
-            info="Zarar etmemek için gereken günlük ciro. Başabaş noktası: aylık sabit giderler ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün. KDV dahil."
+            info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)} ÷ ${
+              d.refMonth ? `${monthLabel(d.refMonth)} ` : ""
+            }brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
             value={<CountUp value={d.breakEvenDaily} />}
             sub={
               showBreakEven ? (
@@ -373,9 +410,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         {/* 2. Uyarılar + maliyet göstergesi */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="flex min-w-0 flex-col gap-4 lg:col-span-7">
-            <Suspense fallback={null}>
-              <DashboardPayments />
-            </Suspense>
+            {upcoming ? <DashboardPayments items={upcoming} /> : null}
             <DashboardAlerts items={alertItems} className="flex-1" />
           </div>
           <CostCard
@@ -411,7 +446,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   <Well className="p-3.5">
                     <p className="text-xs font-medium text-ink-mute">Faturaya göre alım</p>
                     <p className="mt-1 text-xl font-semibold tracking-tight whitespace-nowrap text-ink tabular">{tl(purchases)}</p>
-                    <p className="text-xs text-ink-mute">Maliyet oranı {pct(d.invoiceCostRatio)}</p>
+                    <p className="flex items-center gap-1.5 text-xs text-ink-mute">
+                      Maliyet oranı {pct(d.invoiceCostRatio)}
+                      <InfoTip text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış. Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır." />
+                    </p>
                   </Well>
                 </div>
                 <div className="divide-y divide-line">
@@ -506,13 +544,15 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                 </CardContent>
               </Card>
             ) : null}
-            {showForecast && forecast ? (
+            {showForecast && forecast && forecastMonth ? (
               <ForecastCard
                 className={trend.length ? "xl:col-span-4" : "xl:col-span-12"}
                 month={forecastMonth}
                 forecast={forecast}
                 dailyAvg={current.dailyAvg}
                 progress={current.breakEvenProgress}
+                grossRatio={current.grossRatio}
+                fixedStandard={current.fixedStandardTotal}
               />
             ) : null}
           </div>
@@ -524,6 +564,53 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
     </>
   );
 }
+
+/**
+ * Satış listesi olmayan ayın üçüncü rakamı: süren ayda ay sonu tahmini (Excel B19), bitmiş ayda
+ * Gelir-gider'deki gerçek (faturaya göre) sonuç; tahmin yalnızca süren ay için yapılır.
+ */
+function ThirdStat({ d, projected }: { d: DashboardData; projected: number }) {
+  if (d.monthState === "closed") {
+    const has = d.actual.hasRevenue || d.actual.expenses > 0;
+    return (
+      <Stat
+        icon={d.actual.profit < 0 ? <TrendingDown /> : <TrendingUp />}
+        label="Kâr / zarar (faturaya göre)"
+        info="Ay bitti; tahmin yerine gerçekleşen sonuç: Gelir-gider tablosunda KDV hariç ciro − satılan malın maliyeti − giderler. Ürün satış raporu yüklenince reçeteye göre kâr da hesaplanır."
+        value={<CountUp value={has ? d.actual.profit : null} />}
+        tone={!has ? "default" : d.actual.profit < 0 ? "bad" : "good"}
+        sub={
+          <Link href={`/panel/gelir-gider?yil=${d.month.slice(0, 4)}`} className="hover:text-ink hover:underline">
+            Gelir-gider tablosundan
+          </Link>
+        }
+      />
+    );
+  }
+  return (
+    <Stat
+      icon={projected < 0 ? <TrendingDown /> : <TrendingUp />}
+      label="Ay sonu tahmini kâr/zarar"
+      info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+        d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
+      }brüt kâr oranı − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+      value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
+      tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
+      sub={
+        d.forecast ? (
+          <>
+            Tahmini ciro <span className="whitespace-nowrap">{tl(d.forecast.projectedRevenue)}</span> · {d.forecast.daysElapsed} / {d.forecast.dim} gün
+          </>
+        ) : d.monthState === "future" ? (
+          "Ay başlamadı"
+        ) : (
+          "Açık gün ve POS cirosu girilince hesaplanır"
+        )
+      }
+    />
+  );
+}
+
 
 function CostCard({
   className,
@@ -637,24 +724,49 @@ function CountLink({ href, value, label, tone }: { href: string; value: number; 
 
 function WaterfallCard({ month, t, rows }: { month: string; t: Theoretical; rows: FlowRow[] }) {
   const loss = t.netProfit < 0;
+  const f = t.fixedBreakdown;
+  const showStandard = differs(t.netProfit, t.netProfitStandard);
   return (
     <Card>
-      <CardHeader icon={<Wallet />} title={`${monthLabel(month)}: para nereye gitti?`} description="KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır." />
+      <CardHeader
+        icon={<Wallet />}
+        title={`${monthLabel(month)}: para nereye gitti?`}
+        description={
+          <>
+            KDV hariç. Malzeme maliyeti reçetelere göre hesaplanır.
+            <InfoTip
+              className="ml-1.5"
+              text="Sabit giderler Excel Panel'deki gibi 4 grupta: Kira (yalnızca kira satırı), Personel (maaş + SGK, part-time, yemek), Reklam (Instagram, influencer) ve Diğer (elektrik, muhasebe, güvenlik, yazılım, ortak gider…). Tutarlar o ayın Gelir-gider değerleridir. Gelir-gider tablosu kendi bölümlerini (Personel giderleri, Faturalar, Kira, İşletme genel giderleri) kullanır; toplam aynıdır."
+            />
+          </>
+        }
+      />
       <CardContent className="flex flex-1 flex-col gap-3">
         <MoneyFlow rows={rows} netSales={t.netSales} netProfit={t.netProfit} />
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-panel-deep px-4 py-3">
-          <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
-            <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-[3px]", loss ? "bg-bad" : "bg-lime")} />
-            {monthLabel(month)} net kâr / zarar
-          </span>
-          <span className="flex items-baseline gap-1.5">
-            <Signed value={t.netProfit} className={cn("text-lg font-semibold tracking-tight", !loss && "text-good")}>
-              {tl(t.netProfit)}
-            </Signed>
-            <span className="text-xs text-ink-mute tabular" title="Net satışa oranı">
-              {pct(t.netSales ? t.netProfit / t.netSales : null, 0)}
+        <FixedReconcile f={f} />
+        <div className="rounded-2xl bg-panel-deep px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span className="flex min-w-0 items-center gap-2.5 text-sm font-semibold text-ink">
+              <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-[3px]", loss ? "bg-bad" : "bg-lime")} />
+              {monthLabel(month)} net kâr / zarar
             </span>
-          </span>
+            <span className="flex items-baseline gap-1.5">
+              <Signed value={t.netProfit} className={cn("text-lg font-semibold tracking-tight", !loss && "text-good")}>
+                {tl(t.netProfit)}
+              </Signed>
+              <span className="text-xs text-ink-mute tabular" title="Net satışa oranı">
+                {pct(t.netSales ? t.netProfit / t.netSales : null, 0)}
+              </span>
+            </span>
+          </div>
+          {showStandard ? (
+            <p className="mt-1 flex flex-wrap items-center justify-between gap-x-3 text-xs text-ink-mute">
+              <span>Excel temeli (standart aylık sabit gider)</span>
+              <Signed value={t.netProfitStandard} className="font-medium whitespace-nowrap">
+                {tl(t.netProfitStandard)}
+              </Signed>
+            </p>
+          ) : null}
         </div>
         <p className="text-xs text-ink-mute">Vergi ve tek seferlik yatırımlar hariç.</p>
       </CardContent>
@@ -668,16 +780,33 @@ function ForecastCard({
   forecast,
   dailyAvg,
   progress,
+  grossRatio,
+  fixedStandard,
 }: {
   className?: string;
   month: string;
   forecast: Forecast;
   dailyAvg: number | null;
   progress: number | null;
+  grossRatio: number;
+  fixedStandard: number;
 }) {
   return (
     <Card className={className}>
-      <CardHeader icon={<CalendarClock />} title={`${monthLabel(month)} gidişatı`} description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`} />
+      <CardHeader
+        icon={<CalendarClock />}
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            {monthLabel(month)} gidişatı
+            <InfoTip
+              text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
+                forecast.refMonth ? `${monthLabel(forecast.refMonth)} ` : "son satış ayının "
+              }brüt kâr oranı − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
+            />
+          </span>
+        }
+        description={`${forecast.daysElapsed} / ${forecast.dim} gün geçti`}
+      />
       <CardContent className="flex-1">
         <Well className="py-2">
           <KeyValue label="Günlük ortalama ciro" value={<span className="font-semibold whitespace-nowrap">{tl(dailyAvg)}</span>} />
@@ -690,9 +819,15 @@ function ForecastCard({
           <div className="divide-y divide-line border-t border-line">
             <KeyValue label="Bu tempoyla ay sonu ciro" value={<span className="whitespace-nowrap">{tl(forecast.projectedRevenue)}</span>} />
             <KeyValue
+              label={forecast.refMonth ? `Brüt kâr oranı · ${monthLabel(forecast.refMonth)}` : "Brüt kâr oranı"}
+              value={<span className="whitespace-nowrap">{pct(grossRatio)}</span>}
+            />
+            <KeyValue label="Standart aylık sabit gider" value={<span className="whitespace-nowrap">{tl(fixedStandard)}</span>} />
+            <KeyValue
               label="Tahmini net kâr / zarar"
+              strong
               value={
-                <Signed value={forecast.projectedProfit} className="font-semibold whitespace-nowrap">
+                <Signed value={forecast.projectedProfit} className="whitespace-nowrap">
                   {tl(forecast.projectedProfit)}
                 </Signed>
               }
@@ -704,13 +839,35 @@ function ForecastCard({
   );
 }
 
-function CategoriesTab({ d, target }: { d: DashboardData; target: number }) {
+/**
+ * "Bütün menü" alt satırının ortalamaları: Excel Ürün Kârlılık satır 134 (K134 / L134) gibi basit ortalama,
+ * reçetesi olmayan ürün katılmaz (Ürünler listesinin alt satırıyla aynı kural: menuAverages).
+ */
+function menuAverageRow(products: { status: ProductStatus; costRatio: number; margin: number; unitProfit: number }[]) {
+  const avg = menuAverages(products);
+  const reciped = products.filter((p) => p.status !== "Reçete yok");
+  return {
+    count: avg.count,
+    margin: avg.margin,
+    costRatio: avg.costRatio,
+    unitProfit: reciped.length ? reciped.reduce((a, p) => a + p.unitProfit, 0) / reciped.length : null,
+  };
+}
+
+function CategoriesTab({ d, target, menu }: { d: DashboardData; target: number; menu: ReturnType<typeof menuAverageRow> }) {
+  const other = d.categoryMonthIsOther && d.categoryMonth;
   return (
     <CategoriesPanel
       cats={d.categories}
       target={target}
+      menu={menu}
+      salesMonth={other ? `${monthShort(d.categoryMonth!)} ${d.categoryMonth!.slice(0, 4)}` : null}
       description={`Ort. değerler menüdeki ürünlerin basit ortalamasıdır (Excel'deki gibi). ${
-        d.refMonth ? `Satış ağırlıklı marj ${monthLabel(d.refMonth)} satışlarına göredir.` : "Satış verisi yok."
+        !d.categoryMonth
+          ? "Satış verisi yok."
+          : other
+            ? `${monthLabel(d.month)} ürün satış raporu yok; satış adedi ve satış ağırlıklı marj ${monthLabel(d.categoryMonth)} satışlarından.`
+            : `Satış adedi ve satış ağırlıklı marj ${monthLabel(d.categoryMonth)} satışlarına göredir.`
       }`}
     />
   );
@@ -763,7 +920,7 @@ function ProductRank({
                 <TR key={r.id}>
                   <TD className="text-ink-mute tabular">{i + 1}</TD>
                   <TD className="py-1">
-                    <Link href={`/panel/urunler/${r.id}`} className="inline-flex min-h-9 items-center font-medium pointer-coarse:min-h-10 text-ink hover:underline">
+                    <Link href={productHref(r.id, month)} className="inline-flex min-h-9 items-center font-medium pointer-coarse:min-h-10 text-ink hover:underline">
                       {r.name.replace("|", " · ")}
                     </Link>
                   </TD>
@@ -796,7 +953,7 @@ function ProductRank({
 /** Kaç gider kalemi tek tek listelensin; kalanı tek satırda toplanır */
 const TOP_EXPENSES = 6;
 
-function ExpensesTab({ items, total }: { items: { name: string; amount: number }[]; total: number }) {
+function ExpensesTab({ month, items, total }: { month: string; items: { name: string; amount: number }[]; total: number }) {
   const top = items.slice(0, TOP_EXPENSES);
   const rest = items.slice(TOP_EXPENSES);
   const restSum = rest.reduce((s, e) => s + e.amount, 0);
@@ -808,7 +965,8 @@ function ExpensesTab({ items, total }: { items: { name: string; amount: number }
         title="En büyük aylık gider kalemleri"
         description={
           <>
-            Aylık sabit gider toplamı <span className="font-medium whitespace-nowrap text-ink tabular">{tl(total)}</span> · yüzde: toplamdaki payı
+            {monthLabel(month)} standart aylık sabit gider <span className="font-medium whitespace-nowrap text-ink tabular">{tl(total)}</span> · yüzde: toplamdaki
+            payı
           </>
         }
         actions={

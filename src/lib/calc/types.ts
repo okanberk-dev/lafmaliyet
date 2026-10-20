@@ -135,37 +135,75 @@ export interface Invoice {
   externalId?: string | null;
   /** Vade (son ödeme) tarihi */
   dueDate?: string | null;
+  /** Kalan borç (Paraşüt kısmi ödeme; yoksa ödenmemişse ödenecek tutarın tamamı) */
+  outstanding?: number | null;
 }
 
-export interface Staff {
+/**
+ * Bir kalemin hangi aylarda hesaba girdiği (YYYY-MM, null = sınırsız).
+ * İkisi de hiç verilmemişse (undefined, eski biçim veri) yalnızca `active` bakılır.
+ */
+export interface MonthRange {
+  startMonth?: string | null;
+  endMonth?: string | null;
+}
+
+export interface Staff extends MonthRange {
   id: number;
   name: string;
+  /** Taban değer: ilk maaş değişikliğinden (StaffVersion) önceki aylarda geçerli */
   netSalary: number;
   extras: number;
+  /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
 }
 
-export interface FixedExpense {
+/** "fromMonth ayından itibaren" geçerli maaş (bir sonraki sürüme kadar) */
+export interface StaffVersion {
+  id: number;
+  staffId: number;
+  fromMonth: string;
+  netSalary: number;
+  extras: number;
+}
+
+export interface FixedExpense extends MonthRange {
   id: number;
   name: string;
   section: FixedSection;
+  /** Taban değerler: ilk tutar değişikliğinden (FixedExpenseVersion) önceki aylarda geçerli */
   period: FixedPeriod;
   amount: number;
   note: string | null;
+  /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
   sortOrder: number;
+}
+
+/** "fromMonth ayından itibaren" geçerli dönem ve tutar (bir sonraki sürüme kadar) */
+export interface FixedExpenseVersion {
+  id: number;
+  fixedExpenseId: number;
+  fromMonth: string;
+  period: FixedPeriod;
+  amount: number;
 }
 
 export interface PnlEntry {
   month: string;
   rowKey: string;
   amount: number;
+  /** Hücre notu (Excel'deki hücre açıklaması) */
+  note?: string | null;
 }
 
 export interface StockCount {
   month: string;
   ingredientId: number;
+  /** Sayım birimindeki miktar (ör. 2,5 KG) */
   qty: number;
+  /** Sayıldığı andaki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1). Yoksa malzemenin bugünkü sayım birimi kullanılır. */
+  factor?: number | null;
 }
 
 export interface StockExtra {
@@ -194,9 +232,15 @@ export interface Dataset {
   salesLines: SalesLine[];
   invoices: Invoice[];
   staff: Staff[];
+  /** Maaş değişiklikleri (yoksa her ay taban değer) */
+  staffVersions?: StaffVersion[];
   fixedExpenses: FixedExpense[];
+  /** Sabit gider tutar değişiklikleri (yoksa her ay taban değer) */
+  fixedExpenseVersions?: FixedExpenseVersion[];
   pnlEntries: PnlEntry[];
   stockCounts: StockCount[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
+  /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
+  currentMonth?: string;
 }

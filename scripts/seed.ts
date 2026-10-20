@@ -13,7 +13,7 @@ import { normalizePosName } from "../src/lib/calc/engine";
 import { hashPassword } from "../src/server/auth/password";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
-import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
 
 const SERIAL_TABLES = [
   "categories",
@@ -24,7 +24,9 @@ const SERIAL_TABLES = [
   "sales_lines",
   "invoices",
   "staff",
+  "staff_versions",
   "fixed_expenses",
+  "fixed_expense_versions",
   "investments",
   "pnl_entries",
   "stock_counts",
@@ -120,7 +122,7 @@ export async function runSeed({ reset = false } = {}) {
       await tx.insert(s.invoices).values(ds.invoices.map((i) => ({ ...i, source: "excel" as const, origin: "excel" as const })));
       await tx.insert(s.staff).values(ds.staff.map((x, i) => ({ ...x, sortOrder: i + 1 })));
       await tx.insert(s.fixedExpenses).values(ds.fixedExpenses);
-      await tx.insert(s.investments).values(raw.investments.map((x) => ({ ...x, date: "2026-07" })));
+      await tx.insert(s.investments).values(raw.investments.map(investmentSeed));
       await tx.insert(s.purchaseQuantities).values(ds.purchaseQuantities);
       await tx.insert(s.findings).values(
         raw.findings.map((f) => ({ ...f, resolvedAt: f.resolved ? new Date("2026-10-16T12:00:00+03:00") : null })),

@@ -70,6 +70,16 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
     menuPrice: l.product?.price ?? null,
   }));
   const unmatched = sales.unmatched.length;
+  const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
+  const infoValues = {
+    openDays: info?.openDays ?? null,
+    posRevenue: info?.posRevenue ?? null,
+    discounts: info?.discounts ?? 0,
+    offRevenue: info?.offRevenue ?? 0,
+    note: info?.note ?? null,
+  };
+  const hasInfo =
+    infoValues.openDays !== null || infoValues.posRevenue !== null || !!infoValues.discounts || !!infoValues.offRevenue || !!infoValues.note;
   // Bir ürüne ya da HİZMET'e bağlanmış satırların ciro payı (kalanın maliyeti tahmini)
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
@@ -144,26 +154,19 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           month={month}
           label={monthLabel(month)}
           lineCount={rows.length}
-          mappings={mappings.map((m) => ({
-            posName: m.posName,
-            productId: m.productId,
-            isService: m.isService,
-          }))}
+          mappings={mappingList}
           products={products}
+          hasInfo={hasInfo}
         />
         <MonthInfoForm
-          key={month}
+          // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider) form yeni değerlerle açılsın
+          key={`${month}|${JSON.stringify(infoValues)}`}
           className="xl:col-span-5"
           month={month}
           label={monthLabel(month)}
-          info={{
-            openDays: info?.openDays ?? null,
-            posRevenue: info?.posRevenue ?? null,
-            discounts: info?.discounts ?? 0,
-            offRevenue: info?.offRevenue ?? 0,
-            note: info?.note ?? null,
-          }}
+          info={infoValues}
           listTotal={sales.revenue}
+          currentMonth={model.currentMonth}
         />
       </div>
 
@@ -172,6 +175,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
         <SalesTable
           rows={rows}
           products={products}
+          mappings={mappingList}
           month={month}
           totals={{
             qty: sales.qty,

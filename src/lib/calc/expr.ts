@@ -119,11 +119,36 @@ export function parseNumberTR(raw: string | number | null | undefined): number |
     s = s.replace(/\./g, "").replace(",", ".");
   } else if ((s.match(/\./g) || []).length > 1) {
     s = s.replace(/\./g, "");
-  } else if (/^-?\d{1,3}\.\d{3}$/.test(s)) {
-    // "1.022" Türkçede bin ayıracıdır
+  } else if (/^-?[1-9]\d{0,2}\.\d{3}$/.test(s)) {
+    // "1.022" Türkçede bin ayıracıdır; "0.125" ise ondalıktır (bin ayıracı 0 ile başlamaz)
     s = s.replace(".", "");
   }
   const v = Number(s);
   if (!Number.isFinite(v)) return null;
   return pct ? v / 100 : v;
+}
+
+/**
+ * Yüzde alanları için: yazılan değer her zaman **yüzde puanı**dır ve oran (0–1) olarak döner.
+ * Paneldeki yüzde alanları değeri puan olarak gösterir ("KDV oranı (%)" alanında 10 yazar), bu yüzden:
+ *
+ * - "10", "10,5", "85.6" → %10, %10,5, %85,6 (0,1 / 0,105 / 0,856)
+ * - "%10", "10%", "% 10" → yine %10: "%" işareti ikinci kez 100'e böldürmez
+ * - "0,1" → %0,1 (0,001). Excel'in "otomatik yüzde girişi" 1'den küçük sayıyı ×100 yapar (0,1 → %10);
+ *   panel bunu yapmaz, çünkü %0,5 fire ya da %0,79 komisyon gibi gerçek küçük oranlar var ve alan
+ *   zaten puan gösteriyor. Alan altındaki "= %0,1" yankısı yanlış yazımı görünür kılar.
+ *
+ * Boş ya da okunamayan metin için null döner.
+ */
+export function parsePercentInput(raw: string | number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const points = typeof raw === "number" ? (Number.isFinite(raw) ? raw : null) : parseNumberTR(raw.replace(/%/g, ""));
+  return points === null ? null : points / 100;
+}
+
+/** Oranı (0,856) yüzde alanına yazılacak metne çevirir ("85,6"); parsePercentInput'un tersi. */
+export function formatPercentInput(rate: number | null | undefined, maxDecimals = 2): string {
+  if (rate === null || rate === undefined || !Number.isFinite(rate)) return "";
+  const points = Math.round(rate * 100 * 10 ** maxDecimals) / 10 ** maxDecimals;
+  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: maxDecimals, useGrouping: false }).format(Object.is(points, -0) ? 0 : points);
 }
