@@ -15,14 +15,14 @@ import {
   normalizeIban,
   normalizeTaxNumber,
   PAYMENT_METHOD_VALUES,
+  isHiddenSupplier,
   PLACEHOLDER_SUPPLIER_NAME,
-  supplierSlug,
   taxNumberCheck,
   type SupplierInfo,
 } from "@/app/panel/tedarikciler/logic";
 import { dateTR, money, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadSupplierLedger, supplierSlugOf } from "@/server/data/suppliers";
+import { loadSupplierLedger, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
@@ -72,9 +72,14 @@ function cleanCard(input: CardInput) {
   return { ...data, name, iban, taxNumber: taxNumber || null };
 }
 
-/** Ad çakışmasının sözü: ad listeden kaldırılmış bir tedarikçideyse nereden geri getirileceği de söylenir */
-function conflictMessage(conflict: { name: string; owner: string }, all: { name: string; hiddenOn: string | null }[]) {
-  const hidden = all.some((c) => c.name === conflict.owner && c.hiddenOn);
+/**
+ * Ad çakışmasının sözü: ad listede görünmeyen (listeden kaldırılmış) bir tedarikçideyse nereden geri getirileceği de
+ * söylenir. Gizli mi, listeyle aynı kuralla bakılır (kaldırılmış ama yeni faturasıyla dönmüş olabilir).
+ */
+async function conflictMessage(conflict: { name: string; owner: string }) {
+  const { groups } = await loadSupplierLedger();
+  const owner = groups.find((g) => g.card?.name === conflict.owner);
+  const hidden = Boolean(owner && isHiddenSupplier(owner.card, owner.summary));
   return `“${conflict.name}” zaten “${conflict.owner}” tedarikçisinde kayıtlı; bir ad iki tedarikçide olamaz.${
     hidden ? " O tedarikçi listeden kaldırılmış: Tedarikçiler listesinin altındaki “Listeden kaldırılanlar”dan geri getirip düzenleyin." : " Önce oradan çıkarın."
   }`;
@@ -96,15 +101,13 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     const id = zId.nullable().parse(input.id);
     const data = cleanCard(input);
     const db = getDb();
-    const all = await db
-      .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, iban: s.suppliers.iban, hiddenOn: s.suppliers.hiddenOn })
-      .from(s.suppliers);
+    const all = await db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, iban: s.suppliers.iban }).from(s.suppliers);
     const cur = id ? all.find((c) => c.id === id) : null;
     if (id && !cur) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
     const renamed = cur && supplierMatchKey(cur.name) !== supplierMatchKey(data.name) && (await hasInvoicesNamed(supplierMatchKey(cur.name))) ? cur.name : null;
     const aliases = cleanAliases(data.name, data.aliases, renamed);
     const conflict = nameConflict({ id, name: data.name, aliases }, all);
-    if (conflict) throw new UserError(conflictMessage(conflict, all));
+    if (conflict) throw new UserError(await conflictMessage(conflict));
     const values = { ...data, aliases, key: supplierMatchKey(data.name), updatedAt: new Date() };
     let savedId: number;
     if (cur) {
@@ -180,12 +183,14 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
       return { mode: "deleted" as const, snapshot };
     }
     if (g.summary.openCount) {
+      // Yalnız ödenmemiş iade (eksi) kaldıysa borç değil, düşülecek iade
       throw new UserError(
-        `${g.name}: ${num(g.summary.openCount)} ödenmemiş faturası var (${money(g.summary.open)}). Borcu olan tedarikçi listeden kaldırılamaz; faturaları ödendi yapın ya da yanlışsa Faturalar'dan silin.`,
+        g.summary.open > 0
+          ? `${g.name}: ${num(g.summary.openCount)} ödenmemiş faturası var (${money(g.summary.open)}). Borcu olan tedarikçi listeden kaldırılamaz; faturaları ödendi yapın ya da yanlışsa Faturalar'dan silin.`
+          : `${g.name}: ${num(g.summary.openCount)} ödenmemiş iade faturası var (${money(Math.abs(g.summary.open))}). Düşüldüyse Ödendi yapın; yanlışsa Faturalar'dan silin.`,
       );
     }
     let id: number;
-    let created = false;
     if (g.card) {
       await db.update(s.suppliers).set({ hiddenOn: today, updatedAt: new Date() }).where(eq(s.suppliers.id, g.card.id));
       id = g.card.id;
@@ -193,15 +198,14 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
       // Kartsız tedarikçinin bütün adları aynı anahtarda: kart yalnız adla açılır, faturaları ona düşer
       const [row] = await db.insert(s.suppliers).values({ name: g.name, key: g.key, aliases: [], hiddenOn: today }).returning({ id: s.suppliers.id });
       id = row.id;
-      created = true;
     }
     await logActivity(me, "Tedarikçi listeden kaldırıldı", `${g.name} · ${num(g.invoices.length)} faturası Faturalar'da duruyor`);
     refresh();
-    return { mode: "hidden" as const, cardId: id, created };
+    return { mode: "hidden" as const, cardId: id };
   });
 }
 
-/** Kaldırırken açılan kartta kullanıcının yazdığı bir bilgi var mı (yoksa geri alınca kart da silinir) */
+/** Kartta adından başka bir bilgi var mı (yoksa listeye geri alınınca kart da silinir) */
 const hasInfo = (r: typeof s.suppliers.$inferSelect) =>
   (r.aliases ?? []).length > 0 ||
   r.paidOnDelivery ||
@@ -209,21 +213,23 @@ const hasInfo = (r: typeof s.suppliers.$inferSelect) =>
   [r.legalName, r.taxNumber, r.taxOffice, r.iban, r.bankName, r.accountHolder, r.contactName, r.phone, r.email, r.address, r.paymentMethod, r.note].some(Boolean);
 
 /**
- * Listeden kaldırılan tedarikçiyi listeye geri getirir. `created`: kart kaldırırken (yalnız adla) açıldıysa ve bu arada
- * bilgi yazılmadıysa silinir; tedarikçi eskisi gibi faturalarından görünür.
+ * Listeden kaldırılan tedarikçiyi listeye geri getirir. Kartta adından başka bilgi yoksa (kaldırırken yalnız adla
+ * açılmış ya da hiç doldurulmamış) kart silinir: tedarikçi eskisi gibi faturalarından görünür, adı başka bir karta
+ * diğer ad olarak verilebilir. Bilgisi olan kartın yalnız işareti kalkar.
  */
-export async function unhideSupplier(input: { cardId: number; created?: boolean }) {
+export async function unhideSupplier(input: { cardId: number }) {
   return attempt(async () => {
     const me = await requireAdmin();
     const id = zId.parse(input.cardId);
     const db = getDb();
     const [row] = await db.select().from(s.suppliers).where(eq(s.suppliers.id, id)).limit(1);
     if (!row) throw new UserError("Tedarikçi bulunamadı; sayfayı yenileyin.");
-    if (input.created === true && !hasInfo(row)) await db.delete(s.suppliers).where(eq(s.suppliers.id, id));
+    const drop = !hasInfo(row);
+    if (drop) await db.delete(s.suppliers).where(eq(s.suppliers.id, id));
     else await db.update(s.suppliers).set({ hiddenOn: null, updatedAt: new Date() }).where(eq(s.suppliers.id, id));
     await logActivity(me, "Tedarikçi listeye geri alındı", row.name);
     refresh();
-    return { slug: (await supplierSlugOf(id)) ?? supplierSlug(row.key) };
+    return { slug: drop ? await supplierSlugOfKey(row.key) : await supplierSlugOf(id) };
   });
 }
 
@@ -248,8 +254,9 @@ export async function restoreSupplier(snapshot: CardInput) {
 
 /**
  * "Geçmiş faturaları al": tedarikçinin Paraşüt'teki bütün gider faturaları, tarih sınırı olmadan (syncSupplierHistory).
- * Paraşüt'te vergi nosuyla bulunan kişinin adı tedarikçinin adlarından değilse kartın diğer adlarına eklenir:
- * faturaları bu sayfada toplanır. O ad başka bir tedarikçide kayıtlıysa eklenmez, söylenir.
+ * Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
+ * adlarından değilse kartın diğer adlarına eklenir: faturaları bu sayfada toplanır. O ad başka bir tedarikçide
+ * kayıtlıysa eklenmez, söylenir.
  */
 export async function importSupplierHistory(input: z.input<typeof targetSchema>) {
   return attempt(async () => {
@@ -284,7 +291,7 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema>)
     } else elsewhere.push(...fresh);
     await logActivity(me, "Tedarikçinin geçmiş faturaları alındı", [r.summary, added.length ? `diğer adlara eklendi: ${added.join(", ")}` : null].filter(Boolean).join(" · "));
     refresh();
-    return { fetched: r.fetched, created: r.created, updated: r.updated, oldest: r.oldest, partial: r.partial, added, elsewhere };
+    return { fetched: r.fetched, created: r.created, updated: r.updated, removed: r.removed, oldest: r.oldest, partial: r.partial, resumed: r.resumed, added, elsewhere };
   });
 }
 
@@ -326,7 +333,8 @@ export async function supplierInfoFromParasut(names: string[]) {
           }
         }
         if (r.externalId) {
-          const bill = await client.show(`purchase_bills/${encodeURIComponent(r.externalId)}`);
+          // İlişkinin kimliği yalnız include edilince gelir (docs/parasut-api-spec.md)
+          const bill = await client.show(`purchase_bills/${encodeURIComponent(r.externalId)}`, { include: "supplier" });
           const rel = bill.data.relationships?.supplier?.data;
           const contactId = rel && !Array.isArray(rel) ? rel.id : null;
           if (contactId) {
@@ -349,7 +357,7 @@ export async function supplierInfoFromParasut(names: string[]) {
     }
     const info = mergeInfo(...parts);
     const found = INFO_FIELDS.filter((k) => info[k]);
-    if (!found.length) throw new UserError(unreachable && !parts.length ? unreachable : "Faturada okunabilen cari bilgisi bulunamadı; bilgileri elle girin.");
+    if (!found.length) throw new UserError(unreachable && !parts.length ? unreachable : "Faturada okunabilen tedarikçi bilgisi bulunamadı; bilgileri elle girin.");
     return { info, found, source };
   });
 }

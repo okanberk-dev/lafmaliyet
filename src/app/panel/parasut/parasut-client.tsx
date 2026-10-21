@@ -53,9 +53,12 @@ const MATCH_HELP: Record<MatchType, { placeholder: string; hint: string }> = {
 const UNIT_LABEL: Record<string, string> = { gr: "gr", ml: "ml", adet: "adet", dilim: "dilim" };
 const NOT_CONFIGURED = "Önce kurulumdaki ortam değişkenlerini tanımlayın";
 
+/** Eşitleme kaydının kaynağı (listede) */
+const TRIGGER_LABEL: Record<Run["trigger"], string> = { cron: "otomatik", manual: "elle", history: "tedarikçi geçmişi" };
+
 interface Run {
   id: number;
-  trigger: "cron" | "manual";
+  trigger: "cron" | "manual" | "history";
   status: "running" | "ok" | "error";
   startedAt: string;
   finishedAt: string | null;
@@ -161,9 +164,11 @@ export function ParasutClient({
   const busy = testing || syncing || resetting || reading;
   const [from, setFrom] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
-  const lastRun = runs[0];
+  // Tedarikçi sayfasındaki "Geçmiş faturaları al" listede görünür ama son eşitleme sayılmaz
+  const syncRuns = runs.filter((r) => r.trigger !== "history");
+  const lastRun = syncRuns[0];
   // Kartların dökümü (karta dokununca açılan pencere): sayfanın zaten aldığı verilerden, breakdowns.ts
-  const connectionGroups = connectionBreakdown({ configured, env, cronSet, syncFrom, cursor, lastOk: runs.find((r) => r.status === "ok") ?? null });
+  const connectionGroups = connectionBreakdown({ configured, env, cronSet, syncFrom, cursor, lastOk: syncRuns.find((r) => r.status === "ok") ?? null });
   const linkGroups = linkedBreakdown(links, ingredients, unlinkedTotal, ignored.length);
   const runGroups = runsBreakdown(runs, { lastSyncedAt: stats.lastSyncedAt, lineReads, pendingEInvoices });
 
@@ -442,7 +447,7 @@ export function ParasutClient({
                           {r.status === "ok" ? "Başarılı" : r.status === "error" ? "Hata" : "Sürüyor"}
                         </Badge>
                         <span className="tabular">{dateTimeTR(r.startedAt)}</span>
-                        <span>· {r.trigger === "cron" ? "otomatik" : "elle"}</span>
+                        <span>· {TRIGGER_LABEL[r.trigger]}</span>
                       </span>
                     </span>
                   </li>

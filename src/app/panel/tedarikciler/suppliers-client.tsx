@@ -330,7 +330,7 @@ export function SuppliersClient({
                   <TH>
                     <span className="inline-flex items-center gap-1.5">
                       En yakın vade
-                      <InfoTip text={`Ödenmemiş faturaların en erken vadesi. * işaretli: faturada vade yok, fatura tarihi + vade günü (tedarikçinin kartında yoksa ${defaultTermDays} gün).`} />
+                      <InfoTip text={`Ödenmemiş faturaların en erken vadesi. * işaretli: faturada vade yok, fatura tarihi + vade günü (tedarikçinin bilgilerinde yoksa ${defaultTermDays} gün).`} />
                     </span>
                   </TH>
                   <TH className="w-px px-2">

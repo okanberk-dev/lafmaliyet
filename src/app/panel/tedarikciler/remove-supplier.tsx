@@ -34,12 +34,14 @@ export function RemoveSupplierDialog({ target, onClose, onDone }: { target: Remo
   const { name } = target;
 
   if (target.openCount) {
+    // Yalnız ödenmemiş iade (eksi) kaldıysa borç değil, düşülecek iade
+    const refund = target.open <= 0;
     return (
       <Dialog
         open
         onClose={onClose}
         size="sm"
-        title="Önce borç kapanmalı"
+        title={refund ? "Önce iade kapanmalı" : "Önce borç kapanmalı"}
         footer={
           <Button onClick={onClose} data-autofocus>
             Tamam
@@ -47,8 +49,16 @@ export function RemoveSupplierDialog({ target, onClose, onDone }: { target: Remo
         }
       >
         <p className="text-sm leading-6 text-ink-mute">
-          {name}: {num(target.openCount)} ödenmemiş fatura ({money(target.open)}). Borcu olan tedarikçi silinemez: faturaları ödendiyse Ödendi yapın, yanlış geldiyse
-          Faturalar&apos;dan silin.
+          {refund ? (
+            <>
+              {name}: {num(target.openCount)} ödenmemiş iade faturası ({money(Math.abs(target.open))}). Düşüldüyse Ödendi yapın, yanlış geldiyse Faturalar&apos;dan silin.
+            </>
+          ) : (
+            <>
+              {name}: {num(target.openCount)} ödenmemiş fatura ({money(target.open)}). Borcu olan tedarikçi silinemez: faturaları ödendiyse Ödendi yapın, yanlış geldiyse
+              Faturalar&apos;dan silin.
+            </>
+          )}
         </p>
       </Dialog>
     );
@@ -67,7 +77,7 @@ export function RemoveSupplierDialog({ target, onClose, onDone }: { target: Remo
     const res = r.data;
     const undo = async () => {
       keepScroll();
-      const back = res.mode === "deleted" ? await restoreSupplier(res.snapshot) : await unhideSupplier({ cardId: res.cardId, created: res.created });
+      const back = res.mode === "deleted" ? await restoreSupplier(res.snapshot) : await unhideSupplier({ cardId: res.cardId });
       if (!back.ok) return void toast.error(back.error);
       toast.success(res.mode === "deleted" ? "Tedarikçi geri alındı" : "Tedarikçi listeye geri alındı", { description: name });
       if (back.data.slug) router.push(supplierHref(back.data.slug));

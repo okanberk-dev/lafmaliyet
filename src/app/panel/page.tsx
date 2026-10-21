@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import {
   ArrowRight,
   CalendarClock,
@@ -136,8 +136,14 @@ async function loadParasut(): Promise<ParasutFacts | null> {
     const db = getDb();
     const runs = s.parasutSyncRuns;
     const [[last], [ok]] = await Promise.all([
-      db.select({ status: runs.status, startedAt: runs.startedAt, message: runs.message }).from(runs).orderBy(desc(runs.startedAt)).limit(1),
-      db.select({ startedAt: runs.startedAt, finishedAt: runs.finishedAt }).from(runs).where(eq(runs.status, "ok")).orderBy(desc(runs.startedAt)).limit(1),
+      // Tedarikçi geçmişi (tek tedarikçi, elle) eşitleme sayılmaz
+      db.select({ status: runs.status, startedAt: runs.startedAt, message: runs.message }).from(runs).where(ne(runs.trigger, "history")).orderBy(desc(runs.startedAt)).limit(1),
+      db
+        .select({ startedAt: runs.startedAt, finishedAt: runs.finishedAt })
+        .from(runs)
+        .where(and(eq(runs.status, "ok"), ne(runs.trigger, "history")))
+        .orderBy(desc(runs.startedAt))
+        .limit(1),
     ]);
     return {
       lastStatus: last?.status ?? null,

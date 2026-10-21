@@ -43,17 +43,20 @@ Her sabahki eşitleme bu yılın başından (ya da `PARASUT_SYNC_FROM`'dan) bu y
 faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHistory`, `src/server/parasut/sync.ts`):
 
 - Tedarikçinin Paraşüt'teki kişisi bulunur: paneldeki Paraşüt faturalarından; yoksa bilgilerindeki vergi nosuyla;
-  o da yoksa adıyla (aynı adlı kişiler, yoksa benzer adlı tek kişi; birden çok benzer varsa hiçbiri). Bulunamazsa
-  vergi nosunu yazıp yeniden denemeniz söylenir.
+  o da yoksa adıyla (aynı adlı tedarikçi kişileri, yoksa benzer adlı tek kişi; birden çok benzer varsa hiçbiri).
+  Bulunamazsa vergi nosunu yazıp yeniden denemeniz söylenir (eşitleme kaydı açılmaz).
 - Gider faturaları kişiye göre süzülerek (`filter[supplier_id]`), eskiden yeniye okunur ve eşitlemenin kuralıyla
-  yazılır: paneldeki fatura çoğalmaz (Excel'den gelen de eşleşir), panelde silinen gelmez, ödeme takibinden
-  (`payments.since`) eski fatura Paraşüt'teki ödeme durumuyla gelir. Listede görünmeyen fatura kaldırılmaz; sabah
-  eşitlemesinin imleci değişmez. Gelen e-fatura kutusu tedarikçiye göre süzülemediği için okunmaz.
+  yazılır: paneldeki fatura çoğalmaz (Excel'den gelen de eşleşir), panelde silinen gelmez, Paraşüt'te iptal edilmiş
+  olan (sabah eşitlemesindeki gibi) kaldırılır ve bildirimde söylenir, ödeme takibinden (`payments.since`) eski fatura
+  Paraşüt'teki ödeme durumuyla gelir. Listede görünmeyen fatura kaldırılmaz; sabah eşitlemesinin imleci değişmez.
+  Gelen e-fatura kutusu tedarikçiye göre süzülemediği için okunmaz.
+- Çalışma Paraşüt sayfasının eşitleme geçmişinde "tedarikçi geçmişi" diye görünür; son eşitleme, zil, ana sayfa,
+  sabah e-postası ve günlük işin yeniden denemesi bunu eşitleme saymaz.
 - Paraşüt süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir şey yazılmaz.
 - Süre dolarsa (yaklaşık 30 sn okuma) okunanlar yazılır, kalınan sayfa saklanır (`parasut.supplierHistory`); düğmeye
   yeniden basınca oradan sürer.
-- Vergi nosuyla bulunan kişinin Paraşüt'teki adı tedarikçinin adlarından değilse diğer adlara eklenir (başka bir
-  tedarikçide kayıtlıysa eklenmez, söylenir).
+- Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
+  adlarından değilse diğer adlara eklenir (başka bir tedarikçide kayıtlıysa eklenmez, söylenir).
 - Eski faturalar kendi aylarına gider olarak yazılır (aylık hesaplar o aylar için de dolar). Çalışma, Paraşüt
   sayfasındaki eşitleme geçmişinde ve işlem geçmişinde görünür.
 
@@ -63,11 +66,12 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 
 - **Faturası yoksa** kartı silinir. Bildirimdeki **Geri al** geri getirir.
 - **Faturası varsa** faturalar silinmez (gider ve aylık hesapların kaynağı): tedarikçi **listeden kaldırılır**,
-  bilgileri saklanır (`suppliers.hidden_on`; kartı yoksa yalnız adıyla bir kart açılır, geri alınınca silinir).
-  Kaldırıldığı günden sonraki tarihli faturası gelirse listeye kendiliğinden döner (`isHiddenSupplier`).
+  bilgileri saklanır (`suppliers.hidden_on`; kartı yoksa yalnız adıyla bir kart açılır). Listeye geri alınınca
+  kartta adından başka bilgi yoksa kart silinir, tedarikçi eskisi gibi faturalarından görünür. Kaldırıldığı günden
+  sonraki tarihli faturası gelirse listeye kendiliğinden döner (`isHiddenSupplier`).
 - **Ödenmemiş faturası varsa** silinemez: borç listeden gizlenmesin. Pencere nedenini söyler; faturaları ödendi
-  yapın ya da yanlış geldiyse Faturalar'dan silin. (Geçmişten ödenmemiş bir fatura gelirse kaldırılmış tedarikçi de
-  listeye döner.)
+  yapın ya da yanlış geldiyse Faturalar'dan silin (yalnız ödenmemiş iade kaldıysa "Önce iade kapanmalı").
+  Geçmişten ödenmemiş bir fatura gelirse kaldırılmış tedarikçi de listeye döner.
 - Listeden kaldırılanın sayfası açılabilir; üstteki şeritten **Listeye geri al**.
 - Paraşüt'ün adı okunamayan faturaları ("Paraşüt tedarikçisi") silinmez; sonraki eşitlemede tedarikçilerine geçer.
 

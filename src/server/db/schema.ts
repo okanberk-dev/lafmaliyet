@@ -531,7 +531,8 @@ export const parasutSyncRuns = pgTable(
   "parasut_sync_runs",
   {
     id: serial("id").primaryKey(),
-    trigger: text("trigger", { enum: ["cron", "manual"] }).notNull(),
+    /** "history": tedarikçi sayfasındaki "Geçmiş faturaları al" (günlük eşitlemenin sağlığına sayılmaz) */
+    trigger: text("trigger", { enum: ["cron", "manual", "history"] }).notNull(),
     status: text("status", { enum: ["running", "ok", "error"] }).notNull().default("running"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
