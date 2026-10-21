@@ -119,30 +119,28 @@ async function reserveAttempt(userId: number): Promise<Reservation> {
 
 /**
  * reserveAttempt'in saydığı denemeyi geri verir (parola doğru, kod adımına geçiliyor). Sayaç bir azalır, sıfırlanmaz:
- * parolayı bilen biri kod denemelerinin sayacını silemesin. Bu deneme kilidi başlattıysa kilit kalkar, sayaç 4'te kalır.
+ * parolayı bilen biri kod denemelerinin sayacını silemesin. Satırın o anki hâline bakılır (bellekteki kilidin
+ * refund()'u gibi): sayaç sıfır ve kilit sürüyorsa kilit bu denemeden sonra (bu ya da eşzamanlı bir denemeyle)
+ * başlamıştır; kilit kalkar, sayaç 4'te kalır. Kilitliyken yeni deneme sayılmadığı için bu kilit başkası olamaz.
  */
-async function refundAttempt(userId: number, r: { locked: Date | null }) {
-  const db = getDb();
-  if (r.locked) {
-    await db
-      .update(s.users)
-      .set({ failedLogins: MAX_FAILED - 1, lockedUntil: null })
-      .where(and(eq(s.users.id, userId), eq(s.users.failedLogins, 0), sql`${s.users.lockedUntil} > now()`));
-  } else {
-    await db
-      .update(s.users)
-      .set({ failedLogins: sql`greatest(${s.users.failedLogins} - 1, 0)` })
-      .where(eq(s.users.id, userId));
-  }
+async function refundAttempt(userId: number) {
+  const locked = sql`${s.users.failedLogins} = 0 AND ${s.users.lockedUntil} > now()`;
+  await getDb()
+    .update(s.users)
+    .set({
+      failedLogins: sql`CASE WHEN ${s.users.failedLogins} > 0 THEN ${s.users.failedLogins} - 1 WHEN ${locked} THEN ${sql.raw(String(MAX_FAILED - 1))} ELSE 0 END`,
+      lockedUntil: sql`CASE WHEN ${locked} THEN NULL ELSE ${s.users.lockedUntil} END`,
+    })
+    .where(eq(s.users.id, userId));
 }
 
 /** Denemeyi doğrulamadan önce sayar: bilinen cihazda cihazın payından (bellek), değilse hesabın kilidinden */
 const charge = (userId: number, deviceKey: string | null): Promise<Reservation> | Reservation => (deviceKey ? deviceLock.attempt(deviceKey) : reserveAttempt(userId));
 
 /** charge()'ın saydığı denemeyi geri verir */
-async function refund(userId: number, deviceKey: string | null, r: { locked: Date | null }) {
+async function refund(userId: number, deviceKey: string | null) {
   if (deviceKey) deviceLock.refund(deviceKey);
-  else await refundAttempt(userId, r);
+  else await refundAttempt(userId);
 }
 
 /** Hesap kilidi başladı: işlem geçmişine yazılır (sahibi kimin denediğini görsün) */
@@ -220,7 +218,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   if (!deviceKey) loginIp.undo(ip);
 
   if (user.totpEnabled && user.totpSecret) {
-    await refund(user.id, deviceKey, r);
+    await refund(user.id, deviceKey);
     await startPending(user, next ?? "");
     return { step: "totp", email };
   }

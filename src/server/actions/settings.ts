@@ -129,7 +129,8 @@ const userSchema = z.object({
 
 /**
  * Kullanıcıyı günceller (ya da parolayla ekler). Kendi hesabınızın parolası ve e-postası burada değişmez, Hesabım'da
- * mevcut parolayla değişir: açık kalmış bir yönetici oturumu sahibinin hesabını ele geçiremesin. Başkasına parola
+ * mevcut parolayla değişir: Hesabım'daki parola onayı buradan atlanamasın. (Yönetici bütün kullanıcıları yönetir;
+ * açık kalmış bir yönetici oturumu yeni bir yönetici açıp onunla her şeyi değiştirebilir.) Başkasına parola
  * verildiyse "Giriş bilgileri"nin e-posta düğmesi için mühürlü kopya döner (accessMailHandle).
  */
 export async function saveUser(input: z.input<typeof userSchema>) {

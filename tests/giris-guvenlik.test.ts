@@ -13,6 +13,7 @@ import {
   addDeviceUser,
   DEVICE_MAX_USERS,
   isKnownDevice,
+  LEGACY_DEVICE_UNTIL,
   signDevice,
   signPending,
   signSession,
@@ -96,9 +97,12 @@ test("bilinen cihaz çerezi: imzalı, oturum ya da iki adım çerezi yerine geç
   const session = await signSession({ sub: "4", name: "Okan", role: "admin", sv: 1 });
   assert.equal(await verifyDevice(session), null);
   assert.equal(await verifyDevice(await signPending({ sub: "4", sv: 1, next: "" })), null);
-  // Önceki sürümün çerezi ({did, ids}): cihaz kimliği kalır, kişiler yeniden girince eklenir
-  const legacy = await new SignJWT({ did: "eski", ids: [4, 7], typ: "device" }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().sign(DEV_KEY);
-  assert.deepEqual(await verifyDevice(legacy), { did: "eski", users: [] });
+  // Önceki sürümün çerezi ({did, ids}): kişiler yalnız geçiş süresince tanınır, cihaz kimliği kalır
+  const legacy = await verifyDevice(await new SignJWT({ did: "eski", ids: [4, 7], typ: "device" }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().sign(DEV_KEY));
+  assert.deepEqual(legacy, { did: "eski", users: [], legacyIds: [4, 7] });
+  assert.equal(isKnownDevice(legacy, { id: 4, sessionVersion: 9 }, LEGACY_DEVICE_UNTIL - 1), true, "geçiş süresinde tanınır");
+  assert.equal(isKnownDevice(legacy, { id: 4, sessionVersion: 9 }, LEGACY_DEVICE_UNTIL), false, "geçiş bitince tanınmaz");
+  assert.equal(isKnownDevice(legacy, { id: 5, sessionVersion: 1 }, LEGACY_DEVICE_UNTIL - 1), false);
 });
 
 test("sınırlayıcı: önce say, başarıda geri ver (eşzamanlı denemeler sınırı aşamaz, ortak IP başarılarla dolmaz)", () => {

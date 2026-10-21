@@ -102,7 +102,15 @@ export const DEVICE_DAYS = 365;
 export const DEVICE_MAX_USERS = 10;
 
 export type DeviceUser = { id: number; sv: number };
-export type DeviceToken = { did: string; users: DeviceUser[] };
+/** `legacyIds`: önceki biçimin (oturum sürümsüz) kişileri; yalnız LEGACY_DEVICE_UNTIL'e kadar tanınır */
+export type DeviceToken = { did: string; users: DeviceUser[]; legacyIds?: number[] };
+
+/**
+ * Önceki biçimdeki cihaz çerezinin kişileri bu ana kadar tanınır: yayından sonra herkesin tarayıcısı bir anda
+ * "bilinmeyen" olup hesap kilidine açık kalmasın. Oturumlar en çok 30 gün sürdüğü için o zamana kadar herkes en az bir
+ * kez girer; giriş çerezi yeni biçimde (oturum sürümüyle) yazar.
+ */
+export const LEGACY_DEVICE_UNTIL = Date.parse("2026-11-25T00:00:00+03:00");
 
 /** Kullanıcıyı (güncel oturum sürümüyle) listenin başına alır (tekrar yok, en fazla DEVICE_MAX_USERS) */
 export function addDeviceUser(users: readonly DeviceUser[], user: DeviceUser): DeviceUser[] {
@@ -110,8 +118,10 @@ export function addDeviceUser(users: readonly DeviceUser[], user: DeviceUser): D
 }
 
 /** Bu cihaz kişi için bilinen mi: kişi listede ve oturum sürümü değişmemiş */
-export function isKnownDevice(device: DeviceToken | null, user: { id: number; sessionVersion: number }): boolean {
-  return Boolean(device?.users.some((u) => u.id === user.id && u.sv === user.sessionVersion));
+export function isKnownDevice(device: DeviceToken | null, user: { id: number; sessionVersion: number }, now = Date.now()): boolean {
+  if (!device) return false;
+  if (device.users.some((u) => u.id === user.id && u.sv === user.sessionVersion)) return true;
+  return now < LEGACY_DEVICE_UNTIL && Boolean(device.legacyIds?.includes(user.id));
 }
 
 export async function signDevice(device: DeviceToken) {
@@ -127,9 +137,13 @@ export async function verifyDevice(token: string | undefined): Promise<DeviceTok
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ["HS256"] });
     if (payload.typ !== "device" || typeof payload.did !== "string" || !payload.did) return null;
-    // Eski biçim (`ids`, oturum sürümsüz) kişileri tanıtmaz: cihazın kimliği kalır, kişiler yeniden girince eklenir
-    const raw = Array.isArray(payload.u) ? (payload.u as unknown[]) : [];
-    const users = raw
+    // Eski biçim (`ids`, oturum sürümsüz): kişiler yalnız geçiş süresince tanınır (LEGACY_DEVICE_UNTIL), cihazın
+    // kimliği kalır; kişi yeniden girince yeni biçimde yazılır
+    if (!Array.isArray(payload.u)) {
+      const legacyIds = Array.isArray(payload.ids) ? payload.ids.filter((x): x is number => Number.isInteger(x) && x > 0).slice(0, DEVICE_MAX_USERS) : [];
+      return { did: payload.did, users: [], legacyIds };
+    }
+    const users = (payload.u as unknown[])
       .filter((x): x is [number, number] => Array.isArray(x) && Number.isInteger(x[0]) && x[0] > 0 && Number.isInteger(x[1]) && x[1] > 0)
       .slice(0, DEVICE_MAX_USERS)
       .map(([id, sv]) => ({ id, sv }));

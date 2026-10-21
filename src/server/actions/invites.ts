@@ -39,8 +39,7 @@ export async function createAccessLink(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const userId = zId.parse(id);
-    // Kendi parolanız Hesabım'da (mevcut parolayla) değişir: açık kalmış bir yönetici oturumu kendine bağlantı alıp
-    // sahibinin parolasını ele geçiremesin
+    // Kendi parolanız Hesabım'da (mevcut parolayla) değişir: kendine alınan bağlantı o parola onayını atlatmasın
     if (userId === me.id) throw new UserError("Kendi parolanızı Hesabım'dan değiştirin");
     const [u] = await getDb()
       .select({ id: s.users.id, name: s.users.name, email: s.users.email, active: s.users.active, passwordHash: s.users.passwordHash })

@@ -101,15 +101,19 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 - Kullanıcıyı düzenle › **Güvenlik:** parola sıfırlama bağlantısı (24 saat, kişinin mevcut parolası bağlantı
   kullanılana kadar çalışır), kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma. Ayrıca pasif
   yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme. **Kendi satırınızda** e-posta, parola, iki adımlı
-  sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (açık kalmış bir yönetici
-  oturumu sahibinin hesabını ele geçiremesin).
+  sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (oradaki parola onayı
+  buradan atlanamasın). Yöneticiler bütün kullanıcıları yönetir: açık kalmış bir yönetici oturumu yeni bir yönetici
+  açıp onunla her şeyi değiştirebilir. Ortak cihazda işiniz bitince çıkış yapın; unuttuysanız başka bir cihazdan
+  Hesabım › Oturumlar › Diğer cihazlardaki oturumları kapat.
 - **Giriş kilidi:** 5 hatalı denemede hesap 15 dakika kilitlenir (parola ve iki adımlı kod birlikte sayılır).
   Her deneme doğrulanmadan **önce** sayılır: aynı anda gönderilen yüzlerce istek de 5'i aşamaz. Kilit işlem
   geçmişine "Hesap kilitlendi" diye yazılır. Daha önce bu hesapla giriş yapılmış tarayıcı bu kilide takılmaz
   (başkası adresinizi bilip hesabı kilitleyerek sizi dışarıda bırakamasın); o tarayıcının kendi 10 deneme hakkı
   vardır. Bu "bilinen cihaz" kaydı kişinin oturum sürümüne bağlıdır: parola değişince, iki adımlı açılıp kapanınca
-  ya da oturumlar kapatılınca öteki tarayıcılar için geçmez, bir sonraki başarılı girişte yeniden tanınır. Bir IP
-  adresinden 15 dakikada en çok 20 deneme yapılabilir (başarılı giriş sayılmaz).
+  ya da oturumlar kapatılınca öteki tarayıcılar için geçmez, bir sonraki başarılı girişte yeniden tanınır. Önceki
+  sürümün cihaz kaydı (oturum sürümsüz) 25 Kasım 2026'ya kadar tanınır (`LEGACY_DEVICE_UNTIL`): o zamana kadar herkes
+  en az bir kez girer (oturum en çok 30 gün) ve kayıt yeni biçimde yazılır. Bir IP adresinden 15 dakikada en çok 20
+  deneme yapılabilir (başarılı giriş sayılmaz).
 - **Çerezler:** üretimde `__Host-laf_session` (oturum, 30 gün), `__Host-laf_2fa` (kod adımı, 10 dakika) ve
   `__Host-laf_cihaz` (bilinen cihaz, 1 yıl): `__Host-` öneki sayesinde laffogato.net ya da başka bir alt alan adı bu
   çerezleri yerine koyamaz. Önceki sürümün öneksiz çerezleri (`laf_session`…) bir süre okunur, yenisi yazılınca
