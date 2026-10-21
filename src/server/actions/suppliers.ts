@@ -15,6 +15,7 @@ import {
   normalizeIban,
   normalizeTaxNumber,
   PAYMENT_METHOD_VALUES,
+  PLACEHOLDER_SUPPLIER_NAME,
   taxNumberCheck,
   type SupplierInfo,
 } from "@/app/panel/tedarikciler/logic";
@@ -63,6 +64,9 @@ function cleanCard(input: CardInput) {
   const tax = taxNumberCheck(taxNumber);
   if (tax && "error" in tax) throw new UserError(tax.error);
   const name = data.name.replace(/\s+/g, " ").trim();
+  if (supplierMatchKey(name) === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) {
+    throw new UserError(`“${PLACEHOLDER_SUPPLIER_NAME}” Paraşüt'ün adı okunamayan faturalara verdiği geçici ad; tedarikçinin gerçek adını yazın.`);
+  }
   return { ...data, name, iban, taxNumber: taxNumber || null };
 }
 
@@ -214,7 +218,7 @@ export async function supplierInfoFromParasut(names: string[]) {
           break;
         }
         // Belgesi alınamayan fatura (Paraşüt 5xx, bozuk belge) atlanır, bir öncekine bakılır
-        if (e instanceof ParasutError) unreachable = e.message;
+        if (e instanceof ParasutError && (e.status === 0 || e.status === 429 || e.status >= 500)) unreachable = e.message;
         console.error("Faturadan cari bilgisi", r.id, e);
       }
       if (parts.length) break;

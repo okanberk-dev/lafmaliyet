@@ -286,7 +286,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
         ? pickCategory({ ...d, supplier }, ctx.rules, new Map(), INVOICE_CATEGORIES)
         : pickCategory({ ...d, supplier }, ctx.rules, ctx.history, INVOICE_CATEGORIES);
     const pay = newInvoicePayment(
-      { payable: d.payable, date: d.date, parasutUnpaid: d.unpaid, commission: category === COMMISSION_CATEGORY },
+      // Komisyon yalnız kategori güvenilirse (kural, geçmiş, platform listesi) ödendi sayılır; ipucu tahmini sayılmaz
+      { payable: d.payable, date: d.date, parasutUnpaid: d.unpaid, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
       ctx.paidOnDelivery(supplier),
       ctx.paymentsSince,
     );
@@ -819,7 +820,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}${d.refund ? " · iade faturası" : ""}`;
   // E-faturada ödeme bilgisi yok (parasutUnpaid null)
   const pay = newInvoicePayment(
-    { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY },
+    { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
     ctx.paidOnDelivery(supplier),
     ctx.paymentsSince,
   );

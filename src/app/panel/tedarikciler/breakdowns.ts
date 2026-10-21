@@ -89,7 +89,8 @@ export function supplierBreakdowns(invoices: readonly BreakdownInvoice[], opts: 
     overdue: [
       {
         key: "geciken",
-        rows: open.filter((i) => daysBetween(opts.today, dueOf(i, opts.termDays).date) < 0).map(invoiceRow),
+        // Kartla aynı: yalnız borç (ödenmedi duran iade gecikmiş sayılmaz)
+        rows: open.filter((i) => openBalance(i) > 0 && daysBetween(opts.today, dueOf(i, opts.termDays).date) < 0).map(invoiceRow),
       },
     ],
     year: [{ key: "yil", rows: [...months].sort((a, b) => b[0].localeCompare(a[0])).map(([m, x]) => ({ key: m, label: monthLabel(m), sub: count(x.n), amount: x.amount })) }],

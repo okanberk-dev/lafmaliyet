@@ -52,9 +52,11 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 
 - Paraşüt'ten gelen her yeni fatura (gider faturası ve içeri alınmamış e-fatura) **ödenmedi** gelir; ödendiğini siz
   işaretlersiniz. İade (eksi) faturası borç sayılmaz (ödeme talebinde düşülebilir, aşağıda).
-- **Komisyon faturası** (kategorisi Komisyon: Trendyol, Yemek Sepeti, yemek kartları) ödendi gelir (fatura günü):
-  ödenmez, platformun hakedişinden düşülür; kalan borcu şişirmez.
-- Eşitleme var olan faturanın ödeme durumunu hiç değiştirmez. Paraşüt'ün bildirdiği yalnız ipucu olarak saklanır
+- **Komisyon faturası** (kategorisi kesin olarak Komisyon: kural, tedarikçinin geçmişi ya da platform listesi —
+  Trendyol, Yemek Sepeti, yemek kartları) ödendi gelir (fatura günü): ödenmez, platformun hakedişinden düşülür; kalan
+  borcu şişirmez. Kategori yalnız tahminse ödenmedi gelir.
+- Eşitleme var olan faturanın ödeme durumunu değiştirmez (tek istisna: adı okunamadan "Paraşüt tedarikçisi" diye
+  açılan fatura, adı okununca peşin çalışılan tedarikçinin kartına düşerse ödendi olur). Paraşüt'ün bildirdiği yalnız ipucu olarak saklanır
   (`invoices.parasut_unpaid`, ekranda *Paraşüt'te ödendi*). Paraşüt faturayı kapatınca panelde ödenmedi duran kısmen
   ödenmiş faturanın bilinen kalanı korunur (tamamına dönmez).
 - **Peşin çalışılan tedarikçi:** kartında **Faturaları ödendi gelsin** işaretliyse yeni faturası ödendi gelir (fatura

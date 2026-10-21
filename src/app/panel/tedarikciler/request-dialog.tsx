@@ -23,6 +23,8 @@ export interface RequestInvoice {
   amount: number;
   dueDate: string | null;
   paymentRequestedAt: string | null;
+  /** İade: ödenmedi duruyor (kalan borçtan düşülüyor), pencerede seçili gelir */
+  open?: boolean;
 }
 
 /**
@@ -59,13 +61,17 @@ export function RequestDialog({
   onMark: (ids: number[]) => void;
   onEditCard: () => void;
 }) {
-  const [ids, setIds] = useState<ReadonlySet<number>>(() => new Set(selected.length ? selected : invoices.map((i) => i.id)));
+  const [ids, setIds] = useState<ReadonlySet<number>>(
+    () => new Set([...(selected.length ? selected : invoices.map((i) => i.id)), ...credits.filter((c) => c.open).map((c) => c.id)]),
+  );
   const [note, setNote] = useState("");
   const { copied, copy } = useCopied();
   const chosen = invoices.filter((i) => ids.has(i.id));
   const chosenCredits = credits.filter((i) => ids.has(i.id));
   const total = [...chosen, ...chosenCredits].reduce((a, i) => a + i.amount, 0);
   const toLine = (i: RequestInvoice) => ({ date: i.date, invoiceNo: i.invoiceNo, amount: i.amount, dueDate: i.dueDate });
+  // İadeler faturaları karşılıyorsa ödenecek bir şey yok: tutar ve gönderme kapanır
+  const payable = chosen.length > 0 && total > 0.005;
   const lines = chosen.map(toLine);
   const text = paymentRequestText({ payer, name, card, lines: [...lines, ...chosenCredits.map(toLine)], note });
   const subject = `Ödeme talebi: ${card?.legalName?.trim() || name} · ${money(total)}`;
@@ -157,7 +163,7 @@ export function RequestDialog({
             <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">İade faturaları</legend>
             <p className="mb-2 flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
               <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span>Bu tedarikçinin son 90 günde iade faturası var. Daha önce düşülmediyse seçin: tutardan ve metinden düşülür.</span>
+              <span>Bu tedarikçinin iade faturası var. Ödenmedi duranlar seçili gelir; ötekiler daha önce düşülmediyse seçin: tutardan ve metinden düşülür.</span>
             </p>
             <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line-strong">
               {credits.map((i) => (
@@ -174,6 +180,13 @@ export function RequestDialog({
               ))}
             </ul>
           </fieldset>
+        ) : null}
+
+        {chosen.length && !payable ? (
+          <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info" role="status">
+            <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>Seçilen iadeler faturaları karşılıyor; ödenecek tutar yok. İadeyi ya da faturaları değiştirin.</span>
+          </p>
         ) : null}
 
         {!card?.iban ? (
@@ -199,7 +212,7 @@ export function RequestDialog({
             mono
             className="sm:col-span-2"
           />
-          <CopyField label="Tutar" value={chosen.length ? money(total) : null} copyValue={amountForBank(total)} copied={copied === "tutar"} onCopy={() => copy("tutar", amountForBank(total), "Tutar kopyalandı")} />
+          <CopyField label="Tutar" value={payable ? money(total) : null} copyValue={amountForBank(total)} copied={copied === "tutar"} onCopy={() => copy("tutar", amountForBank(total), "Tutar kopyalandı")} />
           <CopyField label="Açıklama" value={lines.length ? transferNote(lines) : null} copyValue={transferNote(lines)} copied={copied === "aciklama"} onCopy={() => copy("aciklama", transferNote(lines), "Açıklama kopyalandı")} />
         </div>
 
@@ -218,22 +231,22 @@ export function RequestDialog({
           </p>
           <pre className="max-h-56 overflow-y-auto rounded-2xl bg-panel p-3.5 font-sans text-[13px] leading-5 whitespace-pre-wrap text-ink">{text}</pre>
           <div className="mt-2.5 flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => copy("metin", text, "Ödeme talebi kopyalandı")} disabled={!chosen.length} className="text-ink max-sm:min-h-11 max-sm:flex-1">
+            <Button variant="secondary" onClick={() => copy("metin", text, "Ödeme talebi kopyalandı")} disabled={!payable} className="text-ink max-sm:min-h-11 max-sm:flex-1">
               {copied === "metin" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />} Metni kopyala
             </Button>
             <a
               href={whatsappShareHref(text)}
               target="_blank"
               rel="noopener noreferrer"
-              aria-disabled={!chosen.length || undefined}
-              className={cn(buttonClass("secondary", "md", "text-ink max-sm:min-h-11 max-sm:flex-1"), !chosen.length && "pointer-events-none opacity-45")}
+              aria-disabled={!payable || undefined}
+              className={cn(buttonClass("secondary", "md", "text-ink max-sm:min-h-11 max-sm:flex-1"), !payable && "pointer-events-none opacity-45")}
             >
               <MessageCircle size={16} aria-hidden="true" /> WhatsApp
             </a>
             <a
               href={emailDraftHref(subject, text)}
-              aria-disabled={!chosen.length || undefined}
-              className={cn(buttonClass("secondary", "md", "text-ink max-sm:min-h-11 max-sm:flex-1"), !chosen.length && "pointer-events-none opacity-45")}
+              aria-disabled={!payable || undefined}
+              className={cn(buttonClass("secondary", "md", "text-ink max-sm:min-h-11 max-sm:flex-1"), !payable && "pointer-events-none opacity-45")}
             >
               <Mail size={16} aria-hidden="true" /> E-posta
             </a>

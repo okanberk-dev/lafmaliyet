@@ -333,7 +333,11 @@ export async function setInvoicePayment(ids: number[], change: z.input<typeof pa
     if (c.status === "paid" && c.date && c.date > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const { rows, previous, missing } = await applyPayment(list, c, list.length > 1 || z.boolean().optional().parse(opts.onlyOpen) ? "open" : "all");
     if (missing === list.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
-    if (!rows.length) throw new UserError("Seçilen faturalar zaten ödenmiş; değişiklik yapılmadı.");
+    if (!rows.length) {
+      // Başka bir oturumda ödenmiş: ekran yenilenir, satır güncel hâliyle görünür
+      refresh();
+      throw new UserError("Seçilen faturalar zaten ödenmiş; değişiklik yapılmadı.");
+    }
     await logPayment(me, c, rows);
     refresh();
     return { changed: rows.length, previous, missing };
@@ -347,11 +351,10 @@ export async function restoreInvoicePayment(states: z.input<typeof paymentStateS
     const list = z.array(paymentStateSchema).min(1, "Geri alınacak değişiklik yok").max(1000).parse(states);
     const db = getDb();
     const current = await db
-      .select({ id: s.invoices.id, unpaid: s.invoices.unpaid, paymentRequestedAt: s.invoices.paymentRequestedAt })
+      .select({ id: s.invoices.id, unpaid: s.invoices.unpaid })
       .from(s.invoices)
       .where(inArray(s.invoices.id, list.map((x) => x.id)));
     const wasUnpaid = new Set(current.filter((r) => r.unpaid).map((r) => r.id));
-    const requested = new Map(current.map((r) => [r.id, r.paymentRequestedAt]));
     const rows = await db.transaction(async (tx) => {
       const out: { id: number; supplier: string; payable: number; date: string; dueDate: string | null }[] = [];
       for (const { id, ...state } of list) {
@@ -367,10 +370,11 @@ export async function restoreInvoicePayment(states: z.input<typeof paymentStateS
     // Son ödenenler de geri döner: yeniden ödenmemiş olan düşer, yeniden ödenmiş olan (ödenmediyken) yazılır
     const unpaidNow = new Set(list.filter((x) => x.unpaid).map((x) => x.id));
     await forgetPaid("invoice", rows.filter((r) => unpaidNow.has(r.id)).map((r) => r.id));
+    // Geri alınan değişiklikten önceki talep günü bilinmez (şimdiki, geri alınan değişikliğinki): boş yazılır
     await rememberPaid(
       rows
         .filter((r) => !unpaidNow.has(r.id) && wasUnpaid.has(r.id))
-        .map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date, requestedAt: requested.get(r.id) ?? null })),
+        .map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date, requestedAt: null })),
     );
     if (rows.length) await logActivity(me, "Ödeme durumu geri alındı", rows.length === 1 ? `${rows[0].supplier} ${tl(rows[0].payable, 2)}` : `${rows.length} fatura`);
     refresh();

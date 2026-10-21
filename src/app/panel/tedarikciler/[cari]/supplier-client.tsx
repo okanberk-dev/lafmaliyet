@@ -153,6 +153,9 @@ export function SupplierClient({
   }
   const chosen = visible.filter((r) => selected.has(r.id));
   const chosenUnpaid = chosen.filter((r) => r.unpaid);
+  /** Ödeme talebine girebilecek (borç, iade değil) faturalar */
+  const chosenDebts = chosenUnpaid.filter((r) => openBalance(r) > 0);
+  const hasDebt = unpaid.some((r) => openBalance(r) > 0);
   const pageIds = paged.slice.map((r) => r.id);
   const pageAll = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const toggle = (id: number) =>
@@ -322,7 +325,7 @@ export function SupplierClient({
             <ButtonLink href="/panel/tedarikciler" variant="ghost" size="sm">
               <ArrowLeft size={16} /> Tedarikçiler
             </ButtonLink>
-            {unpaid.length ? (
+            {hasDebt ? (
               <Button variant="secondary" size="sm" onClick={() => setRequestFor([])} className="text-ink">
                 <Send size={15} aria-hidden="true" /> Ödeme talebi
               </Button>
@@ -544,8 +547,8 @@ export function SupplierClient({
           <span className="text-ink-mute tabular"> · {money(chosen.reduce((a, r) => a + (r.unpaid ? openBalance(r) : r.payable), 0))}</span>
         </p>
         <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-          {chosenUnpaid.length ? (
-            <Button variant="secondary" onClick={() => setRequestFor(chosenUnpaid.map((r) => r.id))} className="text-ink max-sm:flex-1">
+          {chosenDebts.length ? (
+            <Button variant="secondary" onClick={() => setRequestFor(chosenDebts.map((r) => r.id))} className="text-ink max-sm:flex-1">
               <Send size={16} aria-hidden="true" /> Ödeme talebi
             </Button>
           ) : null}
@@ -589,10 +592,11 @@ export function SupplierClient({
             .filter((r) => openBalance(r) > 0)
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: openBalance(r), dueDate: r.dueDate, paymentRequestedAt: r.paymentRequestedAt }))
             .sort((a, b) => a.date.localeCompare(b.date))}
-          // Son 90 günün iade faturaları: hangisinin düşüldüğü bilinmez, seçilirse tutardan düşülür
+          // İade faturaları: ödenmedi duranlar (kalan borçtan zaten düşülür) seçili gelir; son 90 günün ödendi
+          // görünenlerinin düşülüp düşülmediği bilinmez, seçilirse düşülür
           credits={list
-            .filter((r) => r.payable < 0 && daysBetween(r.date, today) <= CREDIT_DAYS)
-            .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: r.payable, dueDate: null, paymentRequestedAt: null }))
+            .filter((r) => r.payable < 0 && (r.unpaid || daysBetween(r.date, today) <= CREDIT_DAYS))
+            .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: r.payable, dueDate: null, paymentRequestedAt: null, open: r.unpaid }))
             .sort((a, b) => a.date.localeCompare(b.date))}
           selected={requestFor}
           termDays={termDays}

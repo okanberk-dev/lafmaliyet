@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
-import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { loadPaymentsSince } from "@/server/data/suppliers";
@@ -10,6 +10,7 @@ import { getDb, schema as s } from "@/server/db";
 
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
 import { afterTransientFailure, orderLineReads, type UblRetries } from "./line-queue";
+import { categoryNeedsReview } from "./einvoice";
 import { recategorizeFromLines } from "./mapping";
 import { extractUblXml, parseUbl, ublLinesToDrafts, withholdingCorrection, type UblInvoice } from "./ubl";
 
@@ -84,6 +85,7 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       dueDate: s.invoices.dueDate,
       unpaid: s.invoices.unpaid,
       paidAt: s.invoices.paidAt,
+      paymentRequestedAt: s.invoices.paymentRequestedAt,
       parasutUnpaid: s.invoices.parasutUnpaid,
       origin: s.invoices.origin,
       amount: s.invoices.amount,
@@ -186,6 +188,12 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
     if (recat) {
       if (recat.category !== row.category) patch.category = recat.category;
       note = recat.note;
+      // Kalemlerden güvenilir kuralla komisyon çıktı: komisyon hakedişten düşülür, eşitlemedeki gibi ödendi gelir
+      const commission = recat.category === COMMISSION_CATEGORY && !categoryNeedsReview(recat.reason);
+      if (commission && row.date >= since && (row.unpaid || patch.unpaid) && !row.paidAt && !row.paymentRequestedAt) {
+        patch.unpaid = false;
+        patch.paidAt = row.date;
+      }
     }
     if (note !== row.note) patch.note = note;
 

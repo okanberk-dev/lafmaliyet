@@ -37,6 +37,7 @@ import {
   parseSupplierFilter,
   parseSupplierSort,
   paymentRequestText,
+  PLACEHOLDER_SUPPLIER_NAME,
   payState,
   phoneE164,
   summarize,
@@ -411,7 +412,8 @@ test("eşitleme: yeni fatura ödenmedi gelir; iade, komisyon, peşin çalışıl
 test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var olan faturanınkini değiştirmez", () => {
   const sync = readFileSync(join(root, "src/server/parasut/sync.ts"), "utf8");
   // İki yeni fatura yolu da aynı kural: Paraşüt'ün bilgisi (e-faturada yok), komisyon kategorisi, peşin kartı, başlangıç
-  assert.equal(sync.match(/commission: category === COMMISSION_CATEGORY \},\s*ctx\.paidOnDelivery\(supplier\),\s*ctx\.paymentsSince/g)?.length, 2);
+  // Komisyon yalnız kategori güvenilirse (ipucu tahmini değil)
+  assert.equal(sync.match(/commission: category === COMMISSION_CATEGORY && !categoryNeedsReview\(reason\) \},\s*ctx\.paidOnDelivery\(supplier\),\s*ctx\.paymentsSince/g)?.length, 2);
   assert.match(sync, /parasutUnpaid: d\.unpaid, commission:/, "gider faturası");
   assert.match(sync, /parasutUnpaid: null, commission:/, "e-fatura");
   // Var olan faturada yalnız Paraşüt'ün ipucu (parasutUnpaid) yazılır, "ödenmedi" yazılmaz; Paraşüt faturayı kapatınca
@@ -427,9 +429,20 @@ test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var
   assert.doesNotMatch(common, /\bunpaid:/);
   assert.doesNotMatch(sync, /unpaid: false,\s*source: "parasut"/, "e-fatura kaydı sabit 'ödendi' açılmaz");
   const lines = readFileSync(join(root, "src/server/parasut/lines.ts"), "utf8");
-  // Belge okunurken ödeme durumu yalnız geçmişten "ödendi" açılmış, Paraşüt'te ödeme kaydı olmayan e-faturada değişir
-  assert.equal(lines.match(/patch\.unpaid = /g)?.length, 1);
+  // Belge okunurken ödeme durumu iki durumda değişir: geçmişten "ödendi" açılmış, Paraşüt'te ödeme kaydı olmayan
+  // e-faturanın vadesi gelmemişse ödenmedi olur; kalemlerden güvenilir kuralla komisyon çıkarsa ödendi olur
+  assert.equal(lines.match(/patch\.unpaid = /g)?.length, 2);
+  assert.match(lines, /const commission = recat\.category === COMMISSION_CATEGORY && !categoryNeedsReview\(recat\.reason\);/);
   assert.match(lines, /row\.parasutUnpaid === null &&\s*row\.date < since &&\s*!row\.unpaid &&\s*!row\.paidAt/);
+});
+
+test("kart: Paraşüt'ün geçici adı ('Paraşüt tedarikçisi') diğer ad olamaz", () => {
+  assert.deepEqual(cleanAliases("Sütaş", ["Paraşüt tedarikçisi", "SÜTAŞ A.Ş."]), ["SÜTAŞ A.Ş."]);
+  assert.equal(PLACEHOLDER_SUPPLIER_NAME, "Paraşüt tedarikçisi");
+  const sync = readFileSync(join(root, "src/server/parasut/sync.ts"), "utf8");
+  const einvoice = readFileSync(join(root, "src/server/parasut/einvoice.ts"), "utf8");
+  assert.match(sync, /const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";/, "eşitlemenin geçici adıyla aynı");
+  assert.match(einvoice, /PLACEHOLDER_E_SUPPLIER = "Paraşüt tedarikçisi";/);
 });
 
 test("ödeme talebi: seçilen iade tutardan düşülür, ayrı listelenir, havale açıklamasına girmez", () => {

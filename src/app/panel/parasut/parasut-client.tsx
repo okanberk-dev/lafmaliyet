@@ -402,7 +402,7 @@ export function ParasutClient({
               <Field
                 label="Yeniden eşitleme başlangıcı"
                 htmlFor="psync-from"
-                tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar ve vade güncellenir. Ödeme durumu değişmez: Paraşüt'teki ödeme yalnız “Paraşüt'te ödendi” ipucu olur."
+                tip="Seçtiğiniz tarihten bugüne kadarki gider faturaları yeniden okunur. Mevcut faturalar çoğalmaz; tutar ve vade güncellenir. Ödeme durumu değişmez: Paraşüt'teki ödeme yalnız “Paraşüt'te ödendi” ipucu olur (adı okunamadan açılan fatura peşin çalışılan tedarikçiye düşerse ödendi olur)."
               >
                 {/* Bugün Türkiye saatiyle (UTC gece 00–03 arasında bugünü seçtirmezdi) */}
                 <Input id="psync-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} max={todayTR()} />

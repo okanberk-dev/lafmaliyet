@@ -256,6 +256,7 @@ test("e-faturadan kalemsiz açılan kaydın kategorisi kalemler okununca yeniden
   assert.deepEqual(recategorizeFromLines(row, lines, [], INVOICE_CATEGORIES), {
     category: "Hammadde & İçecek",
     note: "Paraşüt e-faturası (içeri alınmadan) · kategori: Paraşüt kategorisi / kalem adları · vade e-faturadan: 13.11.2026",
+    reason: "Paraşüt kategorisi / kalem adları",
   });
   // Kalem adında geçen anahtar kelime kuralı ipucundan önce gelir
   const rule = { matchType: "keyword" as const, pattern: "karton bardak", category: "Ambalaj", priority: 1 };

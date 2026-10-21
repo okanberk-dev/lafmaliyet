@@ -25,6 +25,7 @@ import {
   normalizeIban,
   PAYMENT_METHODS,
   phoneE164,
+  PLACEHOLDER_SUPPLIER_NAME,
   taxNumberCheck,
   whatsappHref,
   type PaymentMethod,
@@ -165,7 +166,9 @@ export function SupplierCardDialog({
       const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
       // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
       // (faturalar karta düşer, sayfa boş kalmaz)
-      const fromPage = card ? [] : names.filter((n) => supplierMatchKey(n) !== supplierMatchKey(f.name) && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
+      const fromPage = card
+        ? []
+        : names.filter((n) => n !== PLACEHOLDER_SUPPLIER_NAME && supplierMatchKey(n) !== supplierMatchKey(f.name) && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
       const r = await saveSupplier({
         id: card?.id ?? null,
         name: f.name,

@@ -112,9 +112,15 @@ export function nameConflict(
  * Kaydedilecek diğer adlar: boşluklar sadeleşir, kartın kendi adıyla ve birbiriyle aynı anahtarı taşıyanlar düşer.
  * Ad değiştiyse eski ad (faturaları hâlâ o adla durur) diğer adlara eklenir: faturalar kartta kalır.
  */
+/**
+ * Paraşüt'ün tedarikçi adını okuyamadığı faturalara yazılan geçici ad (sync.ts, einvoice.ts). Bir kartın adı ya da
+ * diğer adı olamaz: olsa adı okunamayan her fatura o karta düşerdi.
+ */
+export const PLACEHOLDER_SUPPLIER_NAME = "Paraşüt tedarikçisi";
+
 export function cleanAliases(name: string, aliases: readonly string[], previousName?: string | null): string[] {
   const own = supplierMatchKey(name);
-  const seen = new Set<string>([own]);
+  const seen = new Set<string>([own, supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)]);
   const out: string[] = [];
   const list = previousName && supplierMatchKey(previousName) !== own ? [previousName, ...aliases] : aliases;
   for (const raw of list) {

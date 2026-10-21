@@ -61,14 +61,14 @@ export async function loadPaidOnDelivery(): Promise<PaidOnDelivery> {
   };
 }
 
-/** Ödeme takibinin başladığı gün (integration_state); db:reset silmez */
+/** Ödeme takibinin başladığı gün (integration_state); db:reset siler, sonraki eşitleme yeniden belirler */
 const PAYMENTS_SINCE_KEY = "payments.since";
 /** İlk eşitlemede takip bu kadar gün geriden başlar: son ayın ödenmemiş olabilecek faturaları da takibe girer */
 const PAYMENTS_LOOKBACK_DAYS = 30;
 
 /**
  * Ödeme takibinin başlangıcı (YYYY-MM-DD). Paraşüt'ten bu günden eski bir fatura yeni gelirse (geçmişi yeniden alırken:
- * Excel'i yeniden yükleme, Tarihten eşitle) "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır
+ * Tarihten eşitle) "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır
  * (newInvoicePayment). İlk çağrıda bugünden PAYMENTS_LOOKBACK_DAYS gün önce olarak kaydedilir.
  */
 export async function loadPaymentsSince(): Promise<string> {

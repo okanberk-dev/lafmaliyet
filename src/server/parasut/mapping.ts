@@ -346,11 +346,11 @@ export function recategorizeFromLines(
   lines: Pick<LineDraft, "productName">[],
   rules: CategoryRule[],
   allowed: readonly string[],
-): { category: string; note: string } | null {
+): { category: string; note: string; reason: string } | null {
   if (row.origin !== "parasut" || !row.needsReview || !lines.length || !row.note?.includes(NO_MATCH_NOTE)) return null;
   const pick = pickCategory({ supplier: row.supplier, description: null, parasutCategory: null, lines }, rules, new Map(), allowed);
   if (pick.reason === "eşleşme yok") return null;
-  return { category: pick.category, note: row.note.replace(NO_MATCH_NOTE, `kategori: ${pick.reason}`) };
+  return { category: pick.category, note: row.note.replace(NO_MATCH_NOTE, `kategori: ${pick.reason}`), reason: pick.reason };
 }
 
 /**
