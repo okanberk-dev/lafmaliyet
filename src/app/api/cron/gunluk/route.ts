@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, ne } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getDb, schema as s } from "@/server/db";
@@ -26,7 +26,8 @@ async function syncedToday(): Promise<boolean> {
   const [run] = await getDb()
     .select({ id: s.parasutSyncRuns.id })
     .from(s.parasutSyncRuns)
-    .where(and(eq(s.parasutSyncRuns.status, "ok"), gte(s.parasutSyncRuns.startedAt, start)))
+    // Tedarikçi geçmişi (tek tedarikçi) günün eşitlemesi sayılmaz
+    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history"), gte(s.parasutSyncRuns.startedAt, start)))
     .orderBy(desc(s.parasutSyncRuns.startedAt))
     .limit(1);
   return Boolean(run);

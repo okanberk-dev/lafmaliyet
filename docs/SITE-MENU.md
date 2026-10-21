@@ -52,7 +52,7 @@ her boy ayrı satırdır. Bağlantı panelin `products` satırında durur:
 | `site_menu_slot` | Bu satır sitedeki hangi fiyat: `M` = `priceMinor` (tek boyda tek fiyat), `L` = `priceMinorL` |
 
 İkisi birlikte boş ya da dolu; `(site_menu_id, site_menu_slot)` benzersiz (bir fiyata bir satır). Migration
-`drizzle/0017_site_menu_baglantisi.sql`; var olan ürünler bağlı değil başlar. Yuva panelin boyundan bağımsızdır:
+`drizzle/0018_site_menu_baglantisi.sql`; var olan ürünler bağlı değil başlar. Yuva panelin boyundan bağımsızdır:
 panelde yalnız L boyu olan "Esp. Macchiato" sitedeki tek fiyata (`M` yuvası) bağlanır.
 
 **Öneriler** (`src/lib/site-menu/names.ts`): önce aynı ad (büyük/küçük harf, ı/İ, aksan ve noktalama sayılmaz: "Çay" =
@@ -132,7 +132,7 @@ bağlantısı kaldırıldı", "Site bağlantısı koptu"); bağlama ve kaldırma
    en az 32 karakter) ve `LAFFOGATO_URL`'i (boşsa `https://laffogato.net`) kullanır. Kurulu değilse `docs/KARAOKE.md`
    › Kurulum. Sitede `PANEL_URL` (boşsa `https://ladmin.laffogato.net`) pingin gideceği adrestir.
 2. Sitenin menü uçları yayında olmalı (laffogato `src/app/api/panel/menu/route.ts`, `src/lib/panel/menu-ping.ts`).
-3. Panel yayınlanınca migration (`0017_site_menu_baglantisi`) build öncesinde kendiliğinden uygulanır.
+3. Panel yayınlanınca migration (`0018_site_menu_baglantisi`) build öncesinde kendiliğinden uygulanır.
 4. **Ürünler › Site menüsü** → **Siteyle eşitle**: sitenin listesi gelir, öneriler görünür. Önerileri gözden geçirip
    **Önerileri bağla**; kalanları satırdaki **Bağla** ile ya da ürün kartından bağlayın. "Yalnız sitede" sekmesi
    panelde bağlısı olmayan kalemleri gösterir (panelde yoksa Yeni ürün ile açıp bağlayın).

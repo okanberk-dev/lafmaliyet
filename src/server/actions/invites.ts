@@ -7,8 +7,9 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { ACCESS_REASONS, accessEmail, linkAccessInfo, type AccessInfo, type AccessKind } from "@/app/panel/kullanicilar/access";
+import { openAccessMailHandle } from "@/server/auth/access-handle";
 import { requireAdmin } from "@/server/auth/dal";
-import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clientIp, createLimiter } from "@/server/auth/rate-limit";
 import { appUrl, isPendingInvite, TOKEN_HOURS, tokenStatus, type TokenKind, type TokenStatus } from "@/server/auth/tokens";
 import { consumeTokenAndSetPassword, countTokenAttempt, issueUserToken, loadToken, recentResetCount } from "@/server/auth/user-tokens";
@@ -38,6 +39,8 @@ export async function createAccessLink(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const userId = zId.parse(id);
+    // Kendi parolanız Hesabım'da (mevcut parolayla) değişir: kendine alınan bağlantı o parola onayını atlatmasın
+    if (userId === me.id) throw new UserError("Kendi parolanızı Hesabım'dan değiştirin");
     const [u] = await getDb()
       .select({ id: s.users.id, name: s.users.name, email: s.users.email, active: s.users.active, passwordHash: s.users.passwordHash })
       .from(s.users)
@@ -56,15 +59,16 @@ export async function createAccessLink(id: number) {
 const emailSchema = z.object({
   userId: zId,
   kind: z.enum(["password", "invite", "reset"]),
-  /** "password": yöneticinin belirlediği parola; "invite"/"reset": bağlantının ham anahtarı */
-  secret: z.string().min(1).max(200),
+  /** "password": kaydederken dönen mühürlü kopya (accessMailHandle); "invite"/"reset": bağlantının ham anahtarı */
+  secret: z.string().min(1).max(2000),
   /** Yeni kullanıcı mı, davetliye ya da var olan kişiye parola mı, yenilenen bağlantı mı (e-postanın metni) */
   reason: z.enum(ACCESS_REASONS).optional(),
 });
 
 /**
- * Yönetici: "Giriş bilgileri"ni kişinin giriş e-postasına gönderir (Resend). Gönderilen parola ya da bağlantı
- * sunucuda doğrulanır: parola kişinin kayıtlı parolasıyla, bağlantı kişinin geçerli bağlantısıyla eşleşmelidir.
+ * Yönetici: "Giriş bilgileri"ni kişinin giriş e-postasına gönderir (Resend). Parola yerine kaydederken dönen mühürlü
+ * kopya gelir (15 dakika; eylem parola tahmini için kullanılamasın); içindeki parola hâlâ kişinin parolası olmalı.
+ * Bağlantı kişinin geçerli bağlantısıyla eşleşmelidir.
  */
 export async function emailAccess(input: z.input<typeof emailSchema>) {
   return attempt(async () => {
@@ -79,8 +83,10 @@ export async function emailAccess(input: z.input<typeof emailSchema>) {
     if (!u) throw new UserError("Kullanıcı bulunamadı");
     let info: AccessInfo;
     if (data.kind === "password") {
-      if (!(await verifyPassword(data.secret, u.passwordHash))) throw new UserError("Parola artık bu kullanıcının parolası değil; yeniden belirleyin");
-      info = { kind: "password", reason: data.reason, userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris`, password: data.secret };
+      const password = openAccessMailHandle(data.secret, u.id);
+      if (!password) throw new UserError("Parolanın e-postayla gönderilme süresi (15 dakika) doldu; kopyalayıp iletin ya da yeniden belirleyin");
+      if (!(await verifyPassword(password, u.passwordHash))) throw new UserError("Parola artık bu kullanıcının parolası değil; yeniden belirleyin");
+      info = { kind: "password", reason: data.reason, userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris`, password };
     } else {
       const found = await loadToken(data.secret);
       if (!found || found.token.userId !== u.id || found.token.kind !== data.kind || tokenStatus(found.token, found.user) !== "ok") {
@@ -110,8 +116,6 @@ export type SetPasswordState = {
   done?: boolean;
 };
 
-const MIN_PASSWORD = 8;
-
 /**
  * /davet: bağlantıdaki anahtarla yeni parolayı yazar, bağlantıyı kullanılmış sayar, kişinin oturum sürümünü artırır.
  * Oturum AÇMAZ (aynı tarayıcıdaki diğer sekmeler aynı çerezi paylaşır); kişi ardından /giris'ten girer.
@@ -127,10 +131,9 @@ export async function setPasswordWithToken(_prev: SetPasswordState, formData: Fo
   const status = tokenStatus({ ...found.token, attempts: attempts - 1 }, found.user);
   if (status !== "ok") return { status };
 
-  if (password.length < MIN_PASSWORD) return { error: `Parola en az ${MIN_PASSWORD} karakter olmalı` };
-  if (password.length > 200) return { error: "Parola çok uzun" };
+  const problem = passwordProblem(password, found.user.email);
+  if (problem) return { error: problem };
   if (password !== repeat) return { error: "İki parola aynı değil" };
-  if (password.trim().toLowerCase() === found.user.email.toLowerCase()) return { error: "Parola e-posta adresinizle aynı olamaz" };
 
   const ok = await consumeTokenAndSetPassword(found.token.id, found.user.id, await hashPassword(password));
   if (!ok) return { status: "used" };

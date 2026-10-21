@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AuthShell } from "@/app/giris/auth-shell";
 import { formatExpiry } from "@/app/panel/kullanicilar/access";
 import { tokenStatus } from "@/server/auth/tokens";
 import { loadToken } from "@/server/auth/user-tokens";
@@ -22,17 +23,11 @@ export const metadata: Metadata = {
 
 export default function InvitePage({ searchParams }: PageProps<"/davet">) {
   return (
-    <div className="relative flex min-h-dvh items-start justify-center bg-background px-4 pt-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:items-center sm:py-12">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgb(0_0_0/0.06)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]"
-      />
-      <div className="relative w-full max-w-[420px]">
-        <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[460px] w-full animate-pulse rounded-3xl bg-chart-card-bg" />}>
-          <InviteContent searchParams={searchParams} />
-        </Suspense>
-      </div>
-    </div>
+    <AuthShell>
+      <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[460px] w-full animate-pulse rounded-2xl bg-white/15" />}>
+        <InviteContent searchParams={searchParams} />
+      </Suspense>
+    </AuthShell>
   );
 }
 

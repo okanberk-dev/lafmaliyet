@@ -15,11 +15,13 @@ import { isParasutConfigured } from "@/server/parasut/config";
 import { sameSupplier } from "@/server/parasut/mapping";
 
 import { supplierBreakdowns } from "../breakdowns";
-import { aliasCandidates } from "../logic";
+import { aliasCandidates, isHiddenSupplier } from "../logic";
 import { CountUp } from "../suppliers-client";
 import { SupplierClient } from "./supplier-client";
 
 export const metadata: Metadata = { title: "Tedarikçi" };
+/** "Geçmiş faturaları al" Paraşüt'ü yarım dakikaya kadar okur (eşitlemeyle aynı süre) */
+export const maxDuration = 60;
 
 /** Dökümdeki faturaya dokununca: sayfa o faturanın sekmesini ve sayfasını açıp satırına kaydırır (SupplierClient) */
 const rowHref = (id: number) => `?fatura=${id}`;
@@ -116,6 +118,8 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
       defaultTermDays={defaultTermDays}
       suggestions={aliasCandidates(g, groups, sameSupplier)}
       canFill={isParasutConfigured() && g.invoices.some((i) => i.eInvoiceId || i.externalId)}
+      canImport={isParasutConfigured()}
+      hidden={isHiddenSupplier(g.card, g.summary)}
       stats={stats}
     />
   );

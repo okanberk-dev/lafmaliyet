@@ -25,6 +25,7 @@ import {
   groupSuppliers,
   ibanProblem,
   ibansInText,
+  isHiddenSupplier,
   isValidTckn,
   isValidVkn,
   mailtoHref,
@@ -82,6 +83,7 @@ function card(p: Partial<SupplierCard> & { id: number; name: string }): Supplier
     paymentMethod: null,
     paidOnDelivery: false,
     note: null,
+    hiddenOn: null,
     ...p,
   };
 }
@@ -371,7 +373,7 @@ test("ödeme talebi: alıcı (hesap sahibi > unvan > ad), IBAN, banka, tutar, ha
     ].join("\n"),
   );
   // Kartı yoksa ad yazılır ve IBAN'ın eksik olduğu söylenir; hesap sahibi unvandan önce gelir
-  assert.match(nbsp(paymentRequestText({ name: "Kaldi", card: null, lines: [] })), /Alıcı: Kaldi\nIBAN: \(kartta yok\)\nTutar: 0 ₺/);
+  assert.match(nbsp(paymentRequestText({ name: "Kaldi", card: null, lines: [] })), /Alıcı: Kaldi\nIBAN: \(girilmemiş\)\nTutar: 0 ₺/);
   assert.match(
     paymentRequestText({ name: "X", card: { legalName: "X LTD", iban: null, bankName: "Akbank", accountHolder: "Ayşe Yılmaz", taxNumber: null }, lines: [] }),
     /Alıcı: Ayşe Yılmaz[\s\S]*Banka: Akbank/,
@@ -594,4 +596,16 @@ test("sayfalar: her özet kartı dökümüyle; menüde Satış & gider altında,
   assert.equal(canOpen("staff", "/panel/tedarikciler"), false);
   assert.equal(canOpen("staff", "/panel/tedarikciler/sutas"), false);
   assert.ok(!navTreeFor("staff").some((n) => n.href === "/panel/tedarikciler" || n.children?.some((c) => c.href === "/panel/tedarikciler")));
+});
+
+test("isHiddenSupplier: listeden kaldırılan borçsuz tedarikçi gizli; borç ya da sonraki tarihli fatura geri getirir", () => {
+  const hidden = { hiddenOn: "2026-10-10" };
+  assert.equal(isHiddenSupplier(null, { openCount: 0, lastInvoice: null }), false);
+  assert.equal(isHiddenSupplier({ hiddenOn: null }, { openCount: 0, lastInvoice: "2026-09-01" }), false);
+  assert.equal(isHiddenSupplier(hidden, { openCount: 0, lastInvoice: "2026-09-01" }), true);
+  // Kaldırıldığı gün tarihli fatura (o gün zaten görülmüştü) geri getirmez; ertesi günün faturası getirir
+  assert.equal(isHiddenSupplier(hidden, { openCount: 0, lastInvoice: "2026-10-10" }), true);
+  assert.equal(isHiddenSupplier(hidden, { openCount: 0, lastInvoice: "2026-10-11" }), false);
+  // Geçmişten gelen ödenmemiş fatura da geri getirir: borç listeden gizlenmez
+  assert.equal(isHiddenSupplier(hidden, { openCount: 1, lastInvoice: "2025-03-01" }), false);
 });

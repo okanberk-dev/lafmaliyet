@@ -6,14 +6,13 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { keepScroll } from "@/components/ui/filters";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { cn } from "@/lib/utils";
-import { deleteSupplier, restoreSupplier, saveSupplier, supplierInfoFromParasut } from "@/server/actions/suppliers";
+import { saveSupplier, supplierInfoFromParasut } from "@/server/actions/suppliers";
 
 import { supplierMatchKey } from "../faturalar/rules";
 import {
@@ -57,10 +56,11 @@ function blankForm(card: SupplierCard | null, name: string) {
 type Form = ReturnType<typeof blankForm>;
 
 /**
- * Cari kartı penceresi (yeni ya da düzenleme): unvan, vergi no ve dairesi, IBAN, iletişim, vade, ödeme şekli, peşin
- * çalışma, faturalarda geçen diğer adlar ve not. "Faturadan doldur" tedarikçinin en yeni Paraşüt faturasından
+ * Tedarikçi penceresi (yeni ya da düzenleme): ad, unvan, vergi no ve dairesi, IBAN, iletişim, vade, ödeme şekli, peşin
+ * çalışma, faturalarda geçen diğer adlar ve not; bunlar tedarikçinin kartında (suppliers) saklanır. Faturası olup
+ * kartı olmayan tedarikçide ilk kayıt kartı açar. "Faturadan doldur" tedarikçinin en yeni Paraşüt faturasından
  * okunan bilgileri yalnız boş alanlara yazar. Kaydedince `onSaved` yeni adres parçasıyla çağrılır (ad değiştiyse
- * sayfa oraya geçer).
+ * sayfa oraya geçer). `onDelete` verilirse altta "Tedarikçiyi sil" çıkar (RemoveSupplierDialog).
  */
 export function SupplierCardDialog({
   card,
@@ -71,8 +71,7 @@ export function SupplierCardDialog({
   canFill = false,
   onClose,
   onSaved,
-  onDeleted,
-  onRestored,
+  onDelete,
 }: {
   card: SupplierCard | null;
   /** Kartsız tedarikçinin faturalardaki adı (yeni kartın adı olur) */
@@ -87,9 +86,8 @@ export function SupplierCardDialog({
   canFill?: boolean;
   onClose: () => void;
   onSaved?: (r: { id: number; slug: string | null }) => void;
-  onDeleted?: () => void;
-  /** Silme bildirimindeki "Geri al" kartı geri getirince (kartın adres parçasıyla) */
-  onRestored?: (slug: string | null) => void;
+  /** Tedarikçiyi sil (pencere kapanır, silme penceresi açılır) */
+  onDelete?: () => void;
 }) {
   const [f, setF] = useState<Form>(() => blankForm(card, name));
   const [aliases, setAliases] = useState<string[]>(() => card?.aliases ?? []);
@@ -98,7 +96,6 @@ export function SupplierCardDialog({
   const [filling, setFilling] = useState(false);
   const [filled, setFilled] = useState<ReadonlySet<string>>(() => new Set());
   const [tried, setTried] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
 
@@ -125,7 +122,7 @@ export function SupplierCardDialog({
     const a = raw.replace(/\s+/g, " ").trim();
     if (!a) return;
     const k = supplierMatchKey(a);
-    if (k === ownKey) return void toast.info("Bu, kartın kendi adı");
+    if (k === ownKey) return void toast.info("Bu, tedarikçinin kendi adı");
     if (aliases.some((x) => supplierMatchKey(x) === k)) return void toast.info("Bu ad zaten listede");
     setAliases((xs) => [...xs, a]);
     setAliasInput("");
@@ -189,8 +186,8 @@ export function SupplierCardDialog({
         note: f.note,
       });
       if (!r.ok) return void toast.error(r.error);
-      toast.success(card ? "Tedarikçi kartı kaydedildi" : "Tedarikçi kartı açıldı", {
-        description: r.data.renamedAlias ? `“${r.data.renamedAlias}” adıyla gelen faturalar kartta kalsın diye diğer adlara eklendi.` : f.name.trim(),
+      toast.success(card || names.length ? "Tedarikçi kaydedildi" : "Tedarikçi eklendi", {
+        description: r.data.renamedAlias ? `“${r.data.renamedAlias}” adıyla gelen faturalar bu tedarikçide kalsın diye diğer adlara eklendi.` : f.name.trim(),
       });
       onSaved?.({ id: r.data.id, slug: r.data.slug });
       onClose();
@@ -204,48 +201,23 @@ export function SupplierCardDialog({
     void save();
   }
 
-  async function confirmDelete() {
-    if (!card) return;
-    setDeleting(false);
-    setBusy(true);
-    keepScroll();
-    const r = await deleteSupplier(card.id);
-    setBusy(false);
-    if (!r.ok) return void toast.error(r.error);
-    onDeleted?.();
-    onClose();
-    const snapshot = r.data.snapshot;
-    toast.success("Tedarikçi kartı silindi", {
-      description: `${card.name} · faturaları yerinde, tedarikçi kartsız görünür`,
-      action: {
-        label: "Geri al",
-        onClick: async () => {
-          keepScroll();
-          const back = await restoreSupplier(snapshot);
-          if (!back.ok) return void toast.error(back.error);
-          toast.success("Kart geri alındı", { description: card.name });
-          onRestored?.(back.data.slug);
-        },
-      },
-      duration: 10000,
-    });
-  }
-
   return (
     <>
       <Dialog
         open
         onClose={() => (busy ? undefined : onClose())}
         size="lg"
-        title={card ? "Cari kartı" : "Yeni cari kartı"}
+        title={card || names.length ? "Tedarikçiyi düzenle" : "Yeni tedarikçi"}
         description={
-          card ? "Ödeme ve iletişim için tedarikçinin bilgileri. Faturalar adla eşleşir; diğer adlar da bu karta sayılır." : "Unvan, vergi no, IBAN ve iletişim. Yalnız ad zorunlu; gerisini sonra da ekleyebilirsiniz."
+          card || names.length
+            ? "Ödeme ve iletişim için tedarikçinin bilgileri. Faturalar adla eşleşir; diğer adlarla gelen faturalar da bu tedarikçiye sayılır."
+            : "Ad, unvan, vergi no, IBAN ve iletişim. Yalnız ad zorunlu; gerisini sonra da ekleyebilirsiniz."
         }
         footerStartOnPhone="body"
         footerStart={
-          card ? (
-            <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad max-sm:min-h-12 max-sm:px-3" onClick={() => setDeleting(true)} disabled={busy}>
-              <Trash2 size={16} /> Kartı sil
+          onDelete ? (
+            <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad max-sm:min-h-12 max-sm:px-3" onClick={onDelete} disabled={busy}>
+              <Trash2 size={16} /> Tedarikçiyi sil
             </Button>
           ) : null
         }
@@ -426,7 +398,7 @@ export function SupplierCardDialog({
           <fieldset>
             <legend className="mb-1 text-[13px] font-semibold text-ink">Faturalarda geçen diğer adlar</legend>
             <p className="mb-2.5 text-xs leading-5 text-ink-mute">
-              Aynı firma faturalarda farklı yazılıyorsa (“YEMEK SEPETİ ELEKTRONİK…” ile “Yemek Sepeti”) ekleyin: o adla gelen faturalar da bu kartta toplanır.
+              Aynı firma faturalarda farklı yazılıyorsa (“YEMEK SEPETİ ELEKTRONİK…” ile “Yemek Sepeti”) ekleyin: o adla gelen faturalar da bu tedarikçide toplanır.
             </p>
             {aliases.length ? (
               <ul className="mb-2.5 flex flex-wrap gap-2" aria-label="Diğer adlar">
@@ -467,7 +439,7 @@ export function SupplierCardDialog({
             </div>
             {freeSuggestions.length ? (
               <div className="mt-2.5">
-                <p className="mb-1.5 text-xs text-ink-mute">Aynı firma olabilir (kartsız):</p>
+                <p className="mb-1.5 text-xs text-ink-mute">Aynı firma olabilir:</p>
                 <ul className="flex flex-wrap gap-2">
                   {freeSuggestions.map((sug) => (
                     <li key={sug}>
@@ -500,14 +472,6 @@ export function SupplierCardDialog({
           ) : null}
         </form>
       </Dialog>
-      <ConfirmDialog
-        open={deleting}
-        onClose={() => setDeleting(false)}
-        onConfirm={confirmDelete}
-        title="Cari kartı silinsin mi?"
-        confirmLabel="Kartı sil"
-        description={card ? `${card.name}: unvan, IBAN ve iletişim bilgileri silinir. Faturalar ve ödeme durumları yerinde kalır; bildirimdeki “Geri al” ile kartı geri getirebilirsiniz.` : null}
-      />
     </>
   );
 }

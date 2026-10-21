@@ -13,26 +13,20 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { beginTotpSetup, confirmTotpSetup, disableTotp, regenerateRecoveryCodes } from "@/server/actions/auth";
 
+import { ConfirmPasswordDialog } from "./confirm-password";
+
 type Setup = { qr: string; secret: string; uri: string };
 
 /**
  * İki adımlı doğrulama (isteğe bağlı): açıkken girişte parolanın ardından telefondaki uygulamanın 6 haneli kodu
- * istenir. Kurulum: QR'ı okut → kodu gir → kurtarma kodlarını sakla.
+ * istenir. Kurulum: parola → QR'ı okut → kodu gir → kurtarma kodlarını sakla. Açmak, kapatmak ve yeni kurtarma kodu
+ * parola ister: açık kalmış bir oturumla başkası kendi telefonunu bağlayamasın.
  */
 export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; recoveryLeft: number }) {
   const router = useRouter();
   const [setup, setSetup] = useState<Setup | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
-  const [askPassword, setAskPassword] = useState<"disable" | "regenerate" | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function start() {
-    startTransition(async () => {
-      const res = await beginTotpSetup();
-      if (!res.ok) return void toast.error(res.error);
-      setSetup(res.data);
-    });
-  }
+  const [askPassword, setAskPassword] = useState<"enable" | "disable" | "regenerate" | null>(null);
 
   return (
     <>
@@ -82,8 +76,8 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
                 <span className="tabular font-semibold text-ink">3.</span> Uygulamadaki kodu girin, kurtarma kodlarını saklayın.
               </li>
             </ol>
-            <Button onClick={start} disabled={pending} className="w-full sm:w-auto">
-              <Smartphone size={16} /> {pending ? "Hazırlanıyor…" : "İki adımlı doğrulamayı aç"}
+            <Button onClick={() => setAskPassword("enable")} className="w-full sm:w-auto">
+              <Smartphone size={16} /> İki adımlı doğrulamayı aç
             </Button>
           </>
         )}
@@ -100,14 +94,50 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
           }}
         />
       ) : null}
-      {askPassword ? (
-        <PasswordDialog
-          mode={askPassword}
+      {askPassword === "enable" ? (
+        <ConfirmPasswordDialog
+          title="İki adımlı doğrulamayı aç"
+          description="Onaylamak için parolanızı girin; ardından QR kodu gösterilir."
+          confirmLabel="Devam"
           onClose={() => setAskPassword(null)}
-          onDone={(c) => {
+          onConfirm={async (password) => {
+            const res = await beginTotpSetup(password);
+            if (!res.ok) return res.error;
             setAskPassword(null);
-            if (c) setCodes(c);
+            setSetup(res.data);
+            return null;
+          }}
+        />
+      ) : askPassword === "disable" ? (
+        <ConfirmPasswordDialog
+          title="İki adımlı doğrulama kapatılsın mı?"
+          description="Girişte yalnızca parola istenir. Diğer cihazlardaki oturumlar kapanır."
+          confirmLabel="Kapat"
+          danger
+          onClose={() => setAskPassword(null)}
+          onConfirm={async (password) => {
+            const res = await disableTotp(password);
+            if (!res.ok) return res.error;
+            toast.success("İki adımlı doğrulama kapatıldı");
+            setAskPassword(null);
             router.refresh();
+            return null;
+          }}
+        />
+      ) : askPassword === "regenerate" ? (
+        <ConfirmPasswordDialog
+          title="Yeni kurtarma kodları"
+          description="Eski kodların hepsi geçersiz olur. Onaylamak için parolanızı girin."
+          confirmLabel="Oluştur"
+          onClose={() => setAskPassword(null)}
+          onConfirm={async (password) => {
+            const res = await regenerateRecoveryCodes(password);
+            if (!res.ok) return res.error;
+            toast.success("Yeni kurtarma kodları oluşturuldu");
+            setAskPassword(null);
+            setCodes(res.data.codes);
+            router.refresh();
+            return null;
           }}
         />
       ) : null}
@@ -176,60 +206,6 @@ function SetupDialog({ setup, onClose, onDone }: { setup: Setup; onClose: () => 
             aria-invalid={error ? true : undefined}
             className="text-center font-mono text-lg tracking-[0.3em]"
           />
-        </Field>
-      </form>
-    </Dialog>
-  );
-}
-
-function PasswordDialog({ mode, onClose, onDone }: { mode: "disable" | "regenerate"; onClose: () => void; onDone: (codes?: string[]) => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      if (mode === "disable") {
-        const res = await disableTotp(password);
-        if (!res.ok) return setError(res.error);
-        toast.success("İki adımlı doğrulama kapatıldı");
-        onDone();
-      } else {
-        const res = await regenerateRecoveryCodes(password);
-        if (!res.ok) return setError(res.error);
-        toast.success("Yeni kurtarma kodları oluşturuldu");
-        onDone(res.data.codes);
-      }
-    });
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      size="sm"
-      title={mode === "disable" ? "İki adımlı doğrulama kapatılsın mı?" : "Yeni kurtarma kodları"}
-      description={
-        mode === "disable"
-          ? "Girişte yalnızca parola istenir. Diğer cihazlardaki oturumlar kapanır."
-          : "Eski kodların hepsi geçersiz olur. Onaylamak için parolanızı girin."
-      }
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Vazgeç
-          </Button>
-          <Button type="submit" form="totp-password" variant={mode === "disable" ? "danger" : "primary"} disabled={pending || !password}>
-            {pending ? "Bekleyin…" : mode === "disable" ? "Kapat" : "Oluştur"}
-          </Button>
-        </>
-      }
-    >
-      <form id="totp-password" onSubmit={submit} className="pb-2">
-        <Field label="Parolanız" htmlFor="totp-pw" error={error}>
-          <Input id="totp-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} />
         </Field>
       </form>
     </Dialog>

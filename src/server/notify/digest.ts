@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { and, asc, count, desc, eq, gt, inArray, like } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
 
 import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
@@ -87,7 +87,8 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
       .where(and(eq(s.invoices.origin, "parasut"), gt(s.invoices.createdAt, since)))
       .orderBy(desc(s.invoices.date), desc(s.invoices.id)),
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
-    db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
+    // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
+    db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
   ]);
   let syncError: string | null = null;
   let failedRunKey: string | null = null;

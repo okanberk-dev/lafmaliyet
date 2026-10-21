@@ -20,6 +20,7 @@ import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { ROLES } from "@/lib/constants";
 import { num } from "@/lib/format";
+import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { cn } from "@/lib/utils";
 import { createAccessLink } from "@/server/actions/invites";
 import { createUser, deleteUser, resetUserTwoFactor, saveUser, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
@@ -504,7 +505,8 @@ function validateUser({ name, email, password, needPassword }: { name: string; e
   if (!name.trim()) out.name = "Adı yazın";
   if (!EMAIL_RE.test(email.trim())) out.email = "Geçerli bir e-posta girin (ör. ayse@laffogato.net)";
   if (needPassword && !password) out.password = "Bir parola yazın ya da “Güçlü parola oluştur”a basın";
-  else if (password && password.length < 8) out.password = `Parola en az 8 karakter olmalı (şu an ${password.length})`;
+  else if (password && password.length < PASSWORD_MIN) out.password = `Parola en az ${PASSWORD_MIN} karakter olmalı (şu an ${password.length})`;
+  else if (password) out.password = passwordProblem(password, email) ?? undefined;
   return out;
 }
 
@@ -521,6 +523,7 @@ function NameEmailFields({
   errors,
   onName,
   onEmail,
+  emailLocked = false,
 }: {
   ids: { name: string; email: string };
   name: string;
@@ -528,6 +531,8 @@ function NameEmailFields({
   errors: FormErrors;
   onName: (v: string) => void;
   onEmail: (v: string) => void;
+  /** Kendi hesabınız: giriş e-postası Hesabım'da (parolayla) değişir */
+  emailLocked?: boolean;
 }) {
   return (
     <div className="grid gap-4">
@@ -544,9 +549,15 @@ function NameEmailFields({
           className={TAP}
         />
       </Field>
-      <Field label="Giriş e-postası" htmlFor={ids.email} error={errors.email} hint={errors.email ? undefined : "Kişi panele bu adresle girer."}>
+      <Field
+        label="Giriş e-postası"
+        htmlFor={ids.email}
+        error={errors.email}
+        hint={errors.email ? undefined : emailLocked ? "Kendi e-postanızı ve parolanızı Hesabım'dan (mevcut parolanızla) değiştirin." : "Kişi panele bu adresle girer."}
+      >
         <Input
           id={ids.email}
+          readOnly={emailLocked}
           type="email"
           inputMode="email"
           autoCapitalize="none"
@@ -557,7 +568,7 @@ function NameEmailFields({
           autoComplete="off"
           placeholder="ayse@laffogato.net"
           aria-invalid={errors.email ? true : undefined}
-          className={TAP}
+          className={cn(TAP, emailLocked && "bg-panel text-ink-mute")}
         />
       </Field>
     </div>
@@ -774,7 +785,9 @@ function UserDialog({
     if (!res.ok) return toast.error(res.error);
     // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
     // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
-    if (password && !self) onAccess({ kind: "password", reason: invited ? "set" : "changed", userId: user.id, name: name.trim(), email: email.trim().toLowerCase(), loginUrl, password });
+    if (password && !self) {
+      onAccess({ kind: "password", reason: invited ? "set" : "changed", userId: user.id, name: name.trim(), email: email.trim().toLowerCase(), loginUrl, password, handle: res.data?.handle ?? undefined });
+    }
     else {
       toast.success("Kullanıcı kaydedildi");
       onClose();
@@ -816,7 +829,8 @@ function UserDialog({
             <LockOpen size={15} /> Kilidi aç
           </Button>
         ) : null}
-        {user.twoFactor ? (
+        {/* Kendi iki adımlınız Hesabım'da parolayla kapanır */}
+        {user.twoFactor && !self ? (
           <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => setConfirm("2fa")}>
             <ShieldOff size={15} /> İki adımlıyı sıfırla
           </Button>
@@ -902,6 +916,7 @@ function UserDialog({
               setEmail(v);
               setErrors((x) => ({ ...x, email: undefined }));
             }}
+            emailLocked={self}
           />
           <fieldset>
             <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Rol</legend>
@@ -909,21 +924,23 @@ function UserDialog({
             <ChoiceCards name="u-role" value={role} onChange={setRole} options={ROLE_OPTIONS} disabled={(v) => self && v !== "admin"} />
             {self ? <p className="mt-1.5 text-xs text-ink-mute">Kendi yönetici yetkinizi kaldıramazsınız; başka bir yönetici değiştirebilir.</p> : null}
           </fieldset>
-          <PasswordField
-            id={EDIT_IDS.password}
-            label={user.invite !== "none" ? "Parola (davet yerine siz belirleyin)" : "Yeni parola (değiştirmek için)"}
-            hint={
-              user.invite !== "none"
-                ? "Boş bırakırsanız kişi davet bağlantısıyla belirler. Yazarsanız davet bağlantısı geçersiz olur."
-                : "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır."
-            }
-            error={errors.password}
-            value={password}
-            onChange={(v) => {
-              setPassword(v);
-              setErrors((x) => ({ ...x, password: undefined }));
-            }}
-          />
+          {self ? null : (
+            <PasswordField
+              id={EDIT_IDS.password}
+              label={user.invite !== "none" ? "Parola (davet yerine siz belirleyin)" : "Yeni parola (değiştirmek için)"}
+              hint={
+                user.invite !== "none"
+                  ? "Boş bırakırsanız kişi davet bağlantısıyla belirler. Yazarsanız davet bağlantısı geçersiz olur."
+                  : "Boş bırakırsanız parola değişmez. Değişirse kişinin açık oturumları kapanır."
+              }
+              error={errors.password}
+              value={password}
+              onChange={(v) => {
+                setPassword(v);
+                setErrors((x) => ({ ...x, password: undefined }));
+              }}
+            />
+          )}
           {self ? (
             <p className="rounded-2xl bg-panel px-3.5 py-3 text-xs text-ink-mute">Kendi hesabınızı pasif yapamazsınız.</p>
           ) : (
@@ -941,7 +958,7 @@ function UserDialog({
               onChange={setActive}
             />
           )}
-          {user.twoFactor || user.locked || !self ? security : null}
+          {user.locked || !self ? security : null}
         </form>
       </Dialog>
       {/* Onay penceresi düzenleme penceresinin içinde değil yanında: React içteki <dialog>'un close/cancel olayını

@@ -52,8 +52,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
+/**
+ * İstek panelin kendi sayfasından mı (Origin = Host). Yol işleyicileri sunucu eylemlerinin köken denetimini almaz;
+ * SameSite=Lax çerez laffogato.net ve alt alan adlarından gelen isteklerde de gider (aynı site). Tarayıcı POST'ta
+ * Origin'i her zaman yollar.
+ */
+function sameOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).host === request.headers.get("host");
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   await connection();
+  if (!sameOrigin(request)) return Response.json({ error: "Geçersiz istek" }, { status: 403 });
   const me = await admin();
   if (!me) return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
   const invoiceId = invoiceIdOf((await params).id);

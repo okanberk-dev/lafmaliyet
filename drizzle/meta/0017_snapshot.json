@@ -1,5 +1,5 @@
 {
-  "id": "05c0a8a6-aeb2-4cbf-9322-13cb1efb3187",
+  "id": "0eb5ff17-00a5-412c-bddc-20edc0515aae",
   "prevId": "976457e6-df9f-4ee5-8809-2c20fe6bdb20",
   "version": "7",
   "dialect": "postgresql",
@@ -2324,18 +2324,6 @@
           "notNull": true,
           "default": 0
         },
-        "site_menu_id": {
-          "name": "site_menu_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "site_menu_slot": {
-          "name": "site_menu_slot",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -2365,27 +2353,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "products_site_menu_uq": {
-          "name": "products_site_menu_uq",
-          "columns": [
-            {
-              "expression": "site_menu_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site_menu_slot",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -2406,16 +2373,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "products_site_menu_slot_ck": {
-          "name": "products_site_menu_slot_ck",
-          "value": "\"products\".\"site_menu_slot\" is null or \"products\".\"site_menu_slot\" in ('M', 'L')"
-        },
-        "products_site_menu_pair_ck": {
-          "name": "products_site_menu_pair_ck",
-          "value": "(\"products\".\"site_menu_id\" is null) = (\"products\".\"site_menu_slot\" is null)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.purchase_quantities": {
@@ -3611,6 +3569,12 @@
         },
         "note": {
           "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hidden_on": {
+          "name": "hidden_on",
           "type": "text",
           "primaryKey": false,
           "notNull": false

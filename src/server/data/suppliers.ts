@@ -28,6 +28,7 @@ export function toCard(r: SupplierRow): SupplierCard {
     paymentMethod: (r.paymentMethod as PaymentMethod | null) ?? null,
     paidOnDelivery: r.paidOnDelivery,
     note: r.note,
+    hiddenOn: r.hiddenOn,
   };
 }
 
@@ -117,14 +118,22 @@ export type LedgerRow = Awaited<ReturnType<typeof loadLedgerInvoices>>[number];
  * ve fatura adlarının anahtarlarından (assignSlugs). Kart kaydedilince sayfa yeni adrese geçer.
  */
 export async function supplierSlugOf(cardId: number): Promise<string | null> {
+  return (await slugGroups()).find((g) => g.card?.id === cardId)?.slug ?? null;
+}
+
+/** Kartsız tedarikçinin (faturalardaki adın anahtarı) adres parçası; listedeki atamayla aynı */
+export async function supplierSlugOfKey(key: string): Promise<string | null> {
+  return (await slugGroups()).find((g) => !g.card && g.key === key)?.slug ?? null;
+}
+
+async function slugGroups() {
   const [cards, names] = await Promise.all([loadSupplierCards(), getDb().selectDistinct({ supplier: s.invoices.supplier }).from(s.invoices)]);
   // Yalnız adlar gerekir: tutar ve tarih atamaya katılmaz
-  const groups = groupSuppliers(
+  return groupSuppliers(
     names.map((n) => ({ supplier: n.supplier, date: "", payable: 0, unpaid: false })),
     cards,
     { today: todayTR(), termDays: 0 },
   );
-  return groups.find((g) => g.card?.id === cardId)?.slug ?? null;
 }
 
 /**

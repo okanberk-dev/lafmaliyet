@@ -6,7 +6,8 @@ import { z } from "zod";
 
 import { linkAccessInfo, type AccessInfo } from "@/app/panel/kullanicilar/access";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
-import { hashPassword } from "@/server/auth/password";
+import { accessMailHandle } from "@/server/auth/access-handle";
+import { hashPassword, passwordProblem } from "@/server/auth/password";
 import { requireAdmin, startSession } from "@/server/auth/dal";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
 import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
@@ -123,14 +124,23 @@ const userSchema = z.object({
   password: z
     .string()
     .optional()
-    .transform((v) => (v ? v : undefined))
-    .refine((v) => v === undefined || v.length >= 8, "Parola en az 8 karakter olmalı"),
+    .transform((v) => (v ? v : undefined)),
 });
 
+/**
+ * Kullanıcıyı günceller (ya da parolayla ekler). Kendi hesabınızın parolası ve e-postası burada değişmez, Hesabım'da
+ * mevcut parolayla değişir: Hesabım'daki parola onayı buradan atlanamasın. (Yönetici bütün kullanıcıları yönetir;
+ * açık kalmış bir yönetici oturumu yeni bir yönetici açıp onunla her şeyi değiştirebilir.) Başkasına parola
+ * verildiyse "Giriş bilgileri"nin e-posta düğmesi için mühürlü kopya döner (accessMailHandle).
+ */
 export async function saveUser(input: z.input<typeof userSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const data = userSchema.parse(input);
+    if (data.password) {
+      const problem = passwordProblem(data.password, data.email);
+      if (problem) throw new UserError(problem);
+    }
     const db = getDb();
     const [{ dup }] = await db
       .select({ dup: count() })
@@ -148,6 +158,7 @@ export async function saveUser(input: z.input<typeof userSchema>) {
       }
       const [before] = await db.select().from(s.users).where(eq(s.users.id, data.id)).limit(1);
       if (!before) throw new UserError("Kullanıcı bulunamadı");
+      if (data.id === me.id && (data.password || data.email !== before.email)) throw new UserError("Kendi parolanızı ve e-postanızı Hesabım'dan değiştirin");
       // Parola, rol ya da erişim değişince o kullanıcının açık oturumları kapanır
       const revoke = Boolean(data.password) || before.role !== data.role || before.active !== data.active;
       const [after] = await db
@@ -166,15 +177,20 @@ export async function saveUser(input: z.input<typeof userSchema>) {
       // değiştiyse (bağlantı eski ya da yanlış yazılmış adrese gitmiş olabilir) ya da hesap pasif yapıldıysa (yeniden
       // aktif yapılınca eski bağlantı canlanmasın)
       if (data.password || before.email !== data.email || (before.active && !data.active)) await expireUserTokens(data.id);
-      // Kendi parolasını buradan değiştiren yönetici bu cihazda oturumda kalır
+      // Kendi adını buradan değiştiren yönetici bu cihazda oturumda kalır (ad oturum çerezinde de duruyor)
       if (after && after.id === me.id) await startSession(after);
-    } else {
-      if (!data.password) throw new UserError("Yeni kullanıcı için parola belirleyin");
-      await db.insert(s.users).values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash: await hashPassword(data.password) });
+      await logActivity(me, "Kullanıcı güncellendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
+      refresh();
+      return { handle: data.password ? accessMailHandle(data.id, data.password) : null };
     }
-    await logActivity(me, data.id ? "Kullanıcı güncellendi" : "Kullanıcı eklendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
+    if (!data.password) throw new UserError("Yeni kullanıcı için parola belirleyin");
+    const [u] = await db
+      .insert(s.users)
+      .values({ name: data.name, email: data.email, role: data.role, active: data.active, passwordHash: await hashPassword(data.password) })
+      .returning({ id: s.users.id });
+    await logActivity(me, "Kullanıcı eklendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
     refresh();
-    return null;
+    return { handle: accessMailHandle(u.id, data.password) };
   });
 }
 
@@ -185,7 +201,7 @@ const createSchema = z.discriminatedUnion("mode", [
     email: z.string().trim().toLowerCase().email("Geçerli bir e-posta girin"),
     role: z.enum(["admin", "staff"]),
     active: z.boolean(),
-    password: z.string().min(8, "Parola en az 8 karakter olmalı").max(200, "Parola çok uzun"),
+    password: z.string().max(200, "Parola en fazla 200 karakter olabilir"),
   }),
   z.object({
     mode: z.literal("invite"),
@@ -205,6 +221,10 @@ export async function createUser(input: z.input<typeof createSchema>) {
   return attempt(async (): Promise<AccessInfo> => {
     const me = await requireAdmin();
     const data = createSchema.parse(input);
+    if (data.mode === "password") {
+      const problem = passwordProblem(data.password, data.email);
+      if (problem) throw new UserError(problem);
+    }
     const db = getDb();
     const [{ dup }] = await db.select({ dup: count() }).from(s.users).where(eq(s.users.email, data.email));
     if (dup > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
@@ -219,7 +239,7 @@ export async function createUser(input: z.input<typeof createSchema>) {
       `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`,
     );
     refresh();
-    if (data.mode === "password") return { kind: "password", userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris` };
+    if (data.mode === "password") return { kind: "password", userId: u.id, name: u.name, email: u.email, loginUrl: `${appUrl()}/giris`, handle: accessMailHandle(u.id, data.password) };
     const { raw, expiresAt } = await issueUserToken(u.id, "invite", TOKEN_HOURS.invite);
     return linkAccessInfo(appUrl(), u, "invite", raw, expiresAt);
   });
@@ -251,11 +271,15 @@ export async function deleteUser(id: number) {
   });
 }
 
-/** Telefonunu kaybeden kullanıcının iki adımlı doğrulamasını kapatır (yeniden kendisi kurar); oturumları kapanır */
+/**
+ * Telefonunu kaybeden kullanıcının iki adımlı doğrulamasını kapatır (yeniden kendisi kurar); oturumları kapanır.
+ * Kendi iki adımlınız Hesabım'da parolayla kapanır.
+ */
 export async function resetUserTwoFactor(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const userId = z.number().int().positive().parse(id);
+    if (userId === me.id) throw new UserError("Kendi iki adımlı doğrulamanızı Hesabım'dan (parolanızla) kapatın");
     const db = getDb();
     const [u] = await db
       .update(s.users)
@@ -263,7 +287,6 @@ export async function resetUserTwoFactor(id: number) {
       .where(eq(s.users.id, userId))
       .returning();
     if (!u) throw new UserError("Kullanıcı bulunamadı");
-    if (u.id === me.id) await startSession(u);
     await logActivity(me, "İki adımlı doğrulama sıfırlandı", u.email);
     refresh();
     return null;

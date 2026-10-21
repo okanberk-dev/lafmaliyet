@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 
 /**
  * İki adımlı doğrulama: RFC 6238 TOTP (30 saniye, 6 hane, HMAC-SHA1). Google Authenticator, Microsoft
@@ -107,14 +107,37 @@ export function normalizeRecoveryCode(code: string): string {
   return code.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-export function hashRecoveryCode(code: string): string {
+/** Eski biçim (v1): herkes için aynı önekli SHA-256. Yalnız okunur; yeni kodlar v2 yazılır. */
+export function hashRecoveryCodeV1(code: string): string {
   return createHash("sha256").update(`laf-recovery:${normalizeRecoveryCode(code)}`).digest("hex");
 }
 
-/** Kod listede varsa listeden çıkarılmış hâlini döndürür (tek kullanımlık) */
-export function consumeRecoveryCode(hashes: string[], code: string): string[] | null {
+/**
+ * Kurtarma kodunun saklanan özeti (v2): kişiye özel tuzlu scrypt. Veritabanı sızsa bile kodlar tek tek denenerek
+ * bulunamaz (v1'de bütün kod uzayı bir ekran kartıyla saatler içinde taranabilirdi). AUTH_SECRET'a bağlı değildir:
+ * anahtar değişse de kodlar geçer.
+ */
+export async function hashRecoveryCode(userId: number, code: string): Promise<string> {
+  const key = await new Promise<Buffer>((resolve, reject) =>
+    scryptCb(normalizeRecoveryCode(code), `laf-recovery:${userId}`, 32, { N: 16384, r: 8, p: 1 }, (err, k) => (err ? reject(err) : resolve(k))),
+  );
+  return `v2$${key.toString("hex")}`;
+}
+
+/**
+ * Kod listede varsa listeden çıkarılmış hâlini döndürür (tek kullanımlık). Eski (v1) ve yeni (v2) özetler birlikte
+ * okunur: kodlar yenilenene kadar eski kodlar da geçer.
+ */
+export async function consumeRecoveryCode(userId: number, hashes: string[], code: string): Promise<string[] | null> {
   if (normalizeRecoveryCode(code).length !== 10) return null;
-  const h = hashRecoveryCode(code);
-  const i = hashes.indexOf(h);
+  const v2 = hashes.some((h) => h.startsWith("v2$")) ? await hashRecoveryCode(userId, code) : null;
+  const v1 = hashRecoveryCodeV1(code);
+  const i = hashes.findIndex((h) => safeEqual(h, h.startsWith("v2$") ? (v2 ?? "") : v1));
   return i < 0 ? null : [...hashes.slice(0, i), ...hashes.slice(i + 1)];
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }

@@ -10,6 +10,7 @@ import { AvatarFallback, LiquidMetalAvatar } from "@/components/akmanos/liquid-m
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
+import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { changePasswordAction, updateProfile, type PasswordState } from "@/server/actions/auth";
 
 const initialsOf = (name: string) =>
@@ -46,7 +47,9 @@ export function PasswordForm() {
   // Yazarken uyarı: kısa parola ve tekrarın tutmaması gönderilmeden görünsün (sunucu yine denetler)
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
-  const tooShort = next.length > 0 && next.length < 8;
+  const tooShort = next.length > 0 && next.length < PASSWORD_MIN;
+  // Kolay tahmin edilen parola da yazarken söylenir (e-postayla ilgili kuralı sunucu ekler)
+  const weak = !tooShort && next.length > 0 ? passwordProblem(next) : null;
   const mismatch = repeat.length > 0 && repeat !== next;
   useEffect(() => {
     if (state.ok) {
@@ -68,7 +71,7 @@ export function PasswordForm() {
         <Input id="pw-c" name="current" type="password" autoComplete="current-password" required />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Yeni parola" hint="En az 8 karakter" error={tooShort ? `En az 8 karakter (şu an ${next.length})` : undefined} htmlFor="pw-n">
+        <Field label="Yeni parola" hint="En az 8 karakter" error={tooShort ? `En az ${PASSWORD_MIN} karakter (şu an ${next.length})` : (weak ?? undefined)} htmlFor="pw-n">
           <Input
             id="pw-n"
             name="next"
@@ -78,7 +81,7 @@ export function PasswordForm() {
             minLength={8}
             value={next}
             onChange={(e) => setNext(e.target.value)}
-            aria-invalid={tooShort || undefined}
+            aria-invalid={tooShort || Boolean(weak) || undefined}
           />
         </Field>
         <Field label="Yeni parola (tekrar)" error={mismatch ? "İki parola aynı değil" : undefined} htmlFor="pw-r">
@@ -100,7 +103,7 @@ export function PasswordForm() {
           {state.error}
         </p>
       ) : null}
-      <Button type="submit" disabled={pending || tooShort || mismatch} className="w-full">
+      <Button type="submit" disabled={pending || tooShort || Boolean(weak) || mismatch} className="w-full">
         {pending ? "Kaydediliyor…" : "Parolayı değiştir"}
       </Button>
     </form>

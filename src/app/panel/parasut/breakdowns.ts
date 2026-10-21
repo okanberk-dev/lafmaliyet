@@ -214,7 +214,7 @@ export function connectionBreakdown(x: {
   syncFrom: string | null;
   cursor: string | null;
   /** En son başarılı eşitleme (geçmişteki son 8 içinde) */
-  lastOk: { startedAt: string; trigger: "cron" | "manual" } | null;
+  lastOk: { startedAt: string; trigger: "cron" | "manual" | "history" } | null;
 }): BreakdownGroup[] {
   const vars = [...x.env, { name: "CRON_SECRET", set: x.cronSet }];
   const auto: Pick<BreakdownRow, "display" | "tone" | "sub"> = !x.configured
@@ -276,7 +276,7 @@ export function connectionBreakdown(x: {
 /** Eşitleme geçmişinden bir satır (sayfadaki `Run` bunu karşılar) */
 export interface SyncRun {
   id: number;
-  trigger: "cron" | "manual";
+  trigger: "cron" | "manual" | "history";
   status: "running" | "ok" | "error";
   startedAt: string;
   finishedAt: string | null;
@@ -322,7 +322,7 @@ export function runsBreakdown(
       display: parts([ok ? `${num(ok)} başarılı` : null, failed ? `${num(failed)} hata` : null]) ?? "–",
       rows: runs.map((r) => ({
         key: `run:${r.id}`,
-        label: parts([dateTimeTR(r.startedAt), r.trigger === "cron" ? "otomatik" : "elle", runDuration(r)]) ?? "–",
+        label: parts([dateTimeTR(r.startedAt), r.trigger === "cron" ? "otomatik" : r.trigger === "history" ? "tedarikçi geçmişi" : "elle", runDuration(r)]) ?? "–",
         sub: clip(r.message) ?? (r.status === "running" ? "Sürüyor…" : undefined),
         amount: 0,
         ...STATUS[r.status],

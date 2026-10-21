@@ -238,6 +238,9 @@ kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › B
 - **Kalemleri şimdi oku:** sıradaki e-faturaların kalemlerini beklemeden okur (her çağrı ~45 sn; ekran bitene kadar
   sürdürür).
 - **Tarihten eşitle:** seçilen tarihten bugüne yeniden okur (geçmişi doldurmak için).
+- Tek bir tedarikçinin bütün geçmişi için tedarikçi sayfasındaki **Geçmiş faturaları al** ([TEDARIKCILER.md](TEDARIKCILER.md#geçmiş-faturalar)):
+  kişiye göre süzülür, listede görünmeyeni kaldırmaz (Paraşüt'te iptal edileni kaldırır), imleci değiştirmez;
+  eşitleme geçmişinde "tedarikçi geçmişi" diye görünür, son eşitleme sayılmaz.
 - **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler; mevcut faturalar çoğalmaz.
 - Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da
   e-posta işinin yeniden denemesi başlamaz, "Paraşüt eşitlemesi zaten sürüyor" yanıtı döner. İki dakikadan eski

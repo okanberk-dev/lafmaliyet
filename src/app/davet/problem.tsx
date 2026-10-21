@@ -1,6 +1,7 @@
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 
+import { authButton } from "@/app/giris/auth-ui";
 import type { TokenStatus } from "@/server/auth/tokens";
 
 export type ProblemStatus = Exclude<TokenStatus, "ok"> | "invalid";
@@ -33,17 +34,14 @@ export function TokenProblem({ status }: { status: ProblemStatus }) {
   const t = TEXT[status];
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-3 rounded-2xl bg-chart-metric-bg px-4 py-3.5">
-        <CircleAlert className="mt-0.5 size-5 shrink-0 text-warn" aria-hidden />
+      <div className="flex items-start gap-3 rounded-lg bg-[#fdf3f2] px-4 py-3.5">
+        <CircleAlert className="mt-0.5 size-5 shrink-0 text-[#c82014]" aria-hidden />
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-foreground">{t.title}</h2>
-          <p className="mt-1 text-sm leading-6 text-chart-muted">{t.body}</p>
+          <h2 className="text-base font-bold text-black/90">{t.title}</h2>
+          <p className="mt-1 text-[15px] leading-6 text-black/70">{t.body}</p>
         </div>
       </div>
-      <Link
-        href="/giris"
-        className="flex h-12 w-full items-center justify-center rounded-xl bg-foreground text-[15px] font-semibold text-background focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:ring-offset-2 focus-visible:outline-none"
-      >
+      <Link href="/giris" className={`${authButton} w-full sm:ml-auto sm:w-auto`}>
         Giriş sayfasına git
       </Link>
     </div>

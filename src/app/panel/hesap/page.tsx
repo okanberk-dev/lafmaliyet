@@ -12,6 +12,7 @@ import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
 import { AccountAvatar, PasswordForm, ProfileForm } from "./password-form";
+import { SessionsCard } from "./sessions";
 import { TwoFactorCard } from "./two-factor";
 
 export const metadata: Metadata = { title: "Hesabım" };
@@ -70,13 +71,20 @@ async function Account() {
         </div>
       </Card>
       <Card>
-        <CardHeader icon={<KeyRound />} title="Parola değiştir" description="En az 8 karakter. Değişince diğer cihazlardaki oturumlar kapanır." />
+        <CardHeader
+          icon={<KeyRound />}
+          title="Parola değiştir"
+          description="En az 8 karakter; kolay tahmin edilen parolalar (12345678, kafenin adı, e-postanız) kabul edilmez. Değişince diğer cihazlardaki oturumlar kapanır."
+        />
         <CardContent>
           <PasswordForm />
         </CardContent>
       </Card>
       <Card>
         <TwoFactorCard enabled={Boolean(security?.totpEnabled)} recoveryLeft={security?.recoveryCodes?.length ?? 0} />
+      </Card>
+      <Card>
+        <SessionsCard />
       </Card>
     </div>
   );

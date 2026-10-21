@@ -1,13 +1,16 @@
-# Tedarikçiler (cari kartları ve ödeme takibi)
+# Tedarikçiler (bilgiler ve ödeme takibi)
 
-Ekran: **Satış & gider › Tedarikçiler** (`/panel/tedarikciler`, yalnız yönetici). Her tedarikçinin cari bilgileri
-(unvan, vergi no, IBAN, iletişim, vade), faturaları ve kalan borcu tek yerde durur. Faturalar Paraşüt'ten her sabah
+Ekran: **Satış & gider › Tedarikçiler** (`/panel/tedarikciler`, yalnız yönetici). Her tedarikçinin bilgileri
+(unvan, vergi no, IBAN, iletişim, vade), faturaları ve kalan borcu tek yerde durur. Bilgiler veritabanında
+tedarikçinin **kartında** (`suppliers`, muhasebedeki "cari kart") saklanır; ekranda "kart" sözü geçmez. Faturalar Paraşüt'ten her sabah
 kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz işaretlersiniz.**
 
 ## Liste
 
-- Faturası olan her tedarikçi listede görünür, cari kartı açılmamış olsa da. Kart yalnız bilgi girilince açılır
-  (**Tedarikçi ekle** ya da tedarikçi sayfasında **Cari kartı ekle**).
+- Faturası olan her tedarikçi listede görünür, bilgileri girilmemiş olsa da. Kart yalnız bilgi girilince açılır
+  (**Tedarikçi ekle** ya da tedarikçi sayfasında **Düzenle**).
+- Listeden kaldırılan tedarikçiler listenin altındaki **Listeden kaldırılanlar (N)**'de durur; oradan sayfası
+  açılır ya da **Listeye geri al** ile geri gelir (aşağıda *Silme*).
 - Özet kartları: **Kalan borç**, **Vadesi geçen**, **7 gün içinde** (vadesi gelecek), **Bu ay ödenen** (ödeme günü bu
   ayda). Karta dokununca tedarikçi tedarikçi döküm açılır.
 - Satırda: son fatura, ödenmemiş fatura sayısı, kalan borç, en yakın vade, IBAN (dokununca kopyalanır). Rozetler:
@@ -19,9 +22,10 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 
 ## Tedarikçi sayfası (`/panel/tedarikciler/<ad>`)
 
-- **Cari kartı:** IBAN (kopyala), **Ara** / **WhatsApp** / **E-posta**, unvan, vergi no ve dairesi, yetkili, adres,
-  vade, ödeme şekli, faturalarda geçen diğer adlar, not. Eksik önemli bilgi (IBAN, vergi no, telefon / e-posta)
-  kartın altında yazar.
+- Üstte **Düzenle** (bilgiler, ad, diğer adlar) ve **Sil** (aşağıda *Silme*).
+- **Tedarikçi bilgileri:** IBAN (kopyala), **Ara** / **WhatsApp** / **E-posta**, unvan, vergi no ve dairesi, yetkili,
+  adres, vade, ödeme şekli, faturalarda geçen diğer adlar, not. Eksik önemli bilgi (IBAN, vergi no, telefon /
+  e-posta) altta yazar.
 - Özet kartları: **Kalan borç**, **Vadesi geçen**, **bu yılın alımları** (ay ay), **Son ödeme** (son 12 ödeme günü).
 - **Faturalar:** Ödenmemiş / Tümü / Ödendi. Her faturada vade (yoksa tahmini vade), durum, belge (PDF) ve
   Faturalar'da açma. Durum hapına dokununca ödeme penceresi açılır; ✓ tek dokunuşla bugün ödendi yapar (kartın
@@ -30,6 +34,46 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
   talep edildi yalnız ödenmemiş faturalara yazılır; zaten ödenmiş faturanın ödeme günü değişmez.
 - Her değişiklikten sonra bildirimdeki **Geri al** 10 saniye durur; ödendi işaretlenen fatura ayrıca 30 gün boyunca
   Ödemeler & hatırlatıcılar › Son ödenenler'den geri alınır ([BILDIRIMLER.md](BILDIRIMLER.md)).
+- **Geçmiş faturaları al** (Paraşüt bağlıysa, Faturalar bölümünün başında): tedarikçinin Paraşüt'teki bütün gider
+  faturaları tarih sınırı olmadan gelir (aşağıda *Geçmiş faturalar*).
+
+## Geçmiş faturalar
+
+Her sabahki eşitleme bu yılın başından (ya da `PARASUT_SYNC_FROM`'dan) bu yana gelen faturaları alır. **Geçmiş
+faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHistory`, `src/server/parasut/sync.ts`):
+
+- Tedarikçinin Paraşüt'teki kişisi bulunur: paneldeki Paraşüt faturalarından; yoksa bilgilerindeki vergi nosuyla;
+  o da yoksa adıyla (aynı adlı tedarikçi kişileri, yoksa benzer adlı tek kişi; birden çok benzer varsa hiçbiri).
+  Bulunamazsa vergi nosunu yazıp yeniden denemeniz söylenir (eşitleme kaydı açılmaz).
+- Gider faturaları kişiye göre süzülerek (`filter[supplier_id]`), eskiden yeniye okunur ve eşitlemenin kuralıyla
+  yazılır: paneldeki fatura çoğalmaz (Excel'den gelen de eşleşir), panelde silinen gelmez, Paraşüt'te iptal edilmiş
+  olan (sabah eşitlemesindeki gibi) kaldırılır ve bildirimde söylenir, ödeme takibinden (`payments.since`) eski fatura
+  Paraşüt'teki ödeme durumuyla gelir. Listede görünmeyen fatura kaldırılmaz; sabah eşitlemesinin imleci değişmez.
+  Gelen e-fatura kutusu tedarikçiye göre süzülemediği için okunmaz.
+- Çalışma Paraşüt sayfasının eşitleme geçmişinde "tedarikçi geçmişi" diye görünür; son eşitleme, zil, ana sayfa,
+  sabah e-postası ve günlük işin yeniden denemesi bunu eşitleme saymaz.
+- Paraşüt süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir şey yazılmaz.
+- Süre dolarsa (yaklaşık 30 sn okuma) okunanlar yazılır, kalınan sayfa saklanır (`parasut.supplierHistory`); düğmeye
+  yeniden basınca oradan sürer.
+- Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
+  adlarından değilse diğer adlara eklenir (başka bir tedarikçide kayıtlıysa eklenmez, söylenir).
+- Eski faturalar kendi aylarına gider olarak yazılır (aylık hesaplar o aylar için de dolar). Çalışma, Paraşüt
+  sayfasındaki eşitleme geçmişinde ve işlem geçmişinde görünür.
+
+## Silme
+
+**Sil** (tedarikçi sayfasının üstünde ve Düzenle penceresinin altında):
+
+- **Faturası yoksa** kartı silinir. Bildirimdeki **Geri al** geri getirir.
+- **Faturası varsa** faturalar silinmez (gider ve aylık hesapların kaynağı): tedarikçi **listeden kaldırılır**,
+  bilgileri saklanır (`suppliers.hidden_on`; kartı yoksa yalnız adıyla bir kart açılır). Listeye geri alınınca
+  kartta adından başka bilgi yoksa kart silinir, tedarikçi eskisi gibi faturalarından görünür. Kaldırıldığı günden
+  sonraki tarihli faturası gelirse listeye kendiliğinden döner (`isHiddenSupplier`).
+- **Ödenmemiş faturası varsa** silinemez: borç listeden gizlenmesin. Pencere nedenini söyler; faturaları ödendi
+  yapın ya da yanlış geldiyse Faturalar'dan silin (yalnız ödenmemiş iade kaldıysa "Önce iade kapanmalı").
+  Geçmişten ödenmemiş bir fatura gelirse kaldırılmış tedarikçi de listeye döner.
+- Listeden kaldırılanın sayfası açılabilir; üstteki şeritten **Listeye geri al**.
+- Paraşüt'ün adı okunamayan faturaları ("Paraşüt tedarikçisi") silinmez; sonraki eşitlemede tedarikçilerine geçer.
 
 ## Ödeme durumu
 
@@ -104,9 +148,9 @@ Cuma gününe kadar
 - **İade faturaları:** tedarikçinin son 90 gündeki iade (eksi) faturaları pencerede ayrıca, uyarıyla listelenir.
   Hangisinin daha önce düşüldüğü bilinmediği için seçili gelmez; seçilen iade tutardan düşülür, metinde "Düşülen
   iadeler" altında yazar, havale açıklamasına girmez.
-- Kartta IBAN yoksa metinde "kartta yok" yazar ve pencerede uyarı çıkar.
+- IBAN girilmemişse metinde "IBAN: (girilmemiş)" yazar ve pencerede uyarı çıkar.
 
-## Cari kartı
+## Bilgiler (Düzenle penceresi)
 
 - **Kimlik:** faturalardaki ad (zorunlu), ticari unvan, VKN / TCKN (10 ya da 11 hane olmalı; kontrol hanesi
   tutmazsa uyarı çıkar, yine kaydedilir), vergi dairesi.
@@ -123,8 +167,8 @@ Cuma gününe kadar
   `PayeeFinancialAccount`, notlardaki IBAN), gider faturasında Paraşüt'teki kişi kartından (`contacts`). Yalnız boş
   alanlar doldurulur, dolanlar işaretlenir; kaydetmeden önce kontrol edin.
 - Kartın adı değişince eski ad, faturaları varsa diğer adlara eklenir (faturalar karttan düşmez); sayfa yeni adrese
-  geçer. Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki ad da diğer adlara girer. Kart silinince faturalar silinmez, tedarikçi kartsız görünür; silme bildirimindeki **Geri al** kartı geri
-  getirir.
+  geçer. Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki ad da diğer adlara girer.
+  Silme için yukarıda *Silme*.
 - `npm run db:reset` kartları silmez; faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir.
 
 ## Eşleşme
