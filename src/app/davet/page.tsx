@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function InvitePage({ searchParams }: PageProps<"/davet">) {
   return (
     <AuthShell>
-      <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[460px] w-full animate-pulse rounded-3xl bg-chart-card-bg" />}>
+      <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[460px] w-full animate-pulse rounded-2xl bg-white/15" />}>
         <InviteContent searchParams={searchParams} />
       </Suspense>
     </AuthShell>

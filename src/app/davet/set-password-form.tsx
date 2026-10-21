@@ -7,14 +7,15 @@ import { useActionState, useEffect, useState } from "react";
 
 import { setPasswordWithToken, type SetPasswordState } from "@/server/actions/invites";
 
+import { AuthError, authButton, authInput } from "@/app/giris/auth-ui";
+
 import { rememberLoginEmail } from "./keys";
 import { TokenProblem } from "./problem";
 
 const MIN = 8;
 
-// 16px yazı: iOS alana odaklanınca sayfayı yakınlaştırmaz; 48px yükseklik
-const input =
-  "h-12 w-full rounded-xl bg-chart-metric-bg px-3 text-base text-foreground outline-none placeholder:text-chart-muted transition-colors focus:ring-2 focus:ring-foreground/15 aria-invalid:bg-red-50 aria-invalid:ring-1 aria-invalid:ring-red-300";
+// Giriş ekranıyla aynı çerçeveli alan (16px yazı: iOS alana odaklanınca sayfayı yakınlaştırmaz)
+const input = authInput;
 
 /**
  * Yeni parola + tekrarı (en az 8, göster/gizle). Kaydedilince kısa bir onay gösterilir ve giriş sayfasına
@@ -41,15 +42,15 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
   if (state.done) {
     return (
       <div className="flex flex-col gap-4" role="status">
-        <div className="flex items-start gap-3 rounded-2xl bg-chart-metric-bg px-4 py-3.5">
-          <CircleCheck className="mt-0.5 size-5 shrink-0 text-good" aria-hidden />
+        <div className="flex items-start gap-3 rounded-lg bg-[#d4e9e2] px-4 py-3.5 text-[#1e3932]">
+          <CircleCheck className="mt-0.5 size-5 shrink-0" aria-hidden />
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground">Parolanız kaydedildi</h2>
-            <p className="mt-1 text-sm leading-6 text-chart-muted">Giriş sayfasına geçiliyor. Yeni parolanız ve bu e-postayla giriş yapın:</p>
-            <p className="mt-1 text-sm font-medium wrap-anywhere text-foreground">{email}</p>
+            <h2 className="text-base font-bold">Parolanız kaydedildi</h2>
+            <p className="mt-1 text-[15px] leading-6">Giriş sayfasına geçiliyor. Yeni parolanız ve bu e-postayla giriş yapın:</p>
+            <p className="mt-1 text-[15px] font-semibold wrap-anywhere">{email}</p>
           </div>
         </div>
-        <Link href="/giris?parola=yeni" replace className="flex h-12 w-full items-center justify-center rounded-xl bg-foreground text-[15px] font-semibold text-background">
+        <Link href="/giris?parola=yeni" replace className={`${authButton} w-full`}>
           Giriş sayfasına git
         </Link>
       </div>
@@ -61,19 +62,19 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
       <input type="hidden" name="t" value={token} />
       {/* Parola yöneticisi doğru hesaba kaydetsin */}
       <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
-      <dl className="divide-y divide-chart-card-bg rounded-2xl bg-chart-metric-bg px-4 py-1 text-sm">
+      <dl className="divide-y divide-black/10 rounded-lg bg-black/[0.03] px-4 py-1 text-[15px]">
         <div className="py-2.5">
-          <dt className="text-xs text-chart-muted">Ad</dt>
-          <dd className="mt-0.5 font-medium break-words text-foreground">{name}</dd>
+          <dt className="text-xs text-black/60">Ad</dt>
+          <dd className="mt-0.5 font-semibold break-words text-black/90">{name}</dd>
         </div>
         <div className="py-2.5">
-          <dt className="text-xs text-chart-muted">Giriş e-postası</dt>
-          <dd className="mt-0.5 font-medium wrap-anywhere text-foreground">{email}</dd>
+          <dt className="text-xs text-black/60">Giriş e-postası</dt>
+          <dd className="mt-0.5 font-semibold wrap-anywhere text-black/90">{email}</dd>
         </div>
       </dl>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="sp-new" className="text-sm text-chart-muted">
+        <label htmlFor="sp-new" className="text-sm font-semibold text-black/70">
           {kind === "invite" ? "Parolanız" : "Yeni parola"}
         </label>
         <div className="relative">
@@ -98,20 +99,20 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
           <button
             type="button"
             onClick={() => setShow((v) => !v)}
-            className="absolute top-1/2 right-1 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-chart-muted hover:text-foreground"
+            className="absolute top-1/2 right-1 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-black/60 hover:bg-black/[0.04] hover:text-black"
             aria-label={show ? "Parolaları gizle" : "Parolaları göster"}
             aria-pressed={show}
           >
             {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
           </button>
         </div>
-        <span id="pw-hint" className={`text-xs ${short ? "text-red-600" : "text-chart-muted"}`}>
+        <span id="pw-hint" className={`text-sm ${short ? "font-semibold text-[#c82014]" : "text-black/60"}`}>
           {short ? `En az ${MIN} karakter (şu an ${password.length})` : `En az ${MIN} karakter. Başka yerde kullanmadığınız bir parola seçin.`}
         </span>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor="sp-repeat" className="text-sm text-chart-muted">
+        <label htmlFor="sp-repeat" className="text-sm font-semibold text-black/70">
           Parola (tekrar)
         </label>
         <input
@@ -131,27 +132,25 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
           className={input}
         />
         {mismatch ? (
-          <span id="pw-repeat" className="text-xs text-red-600">
+          <span id="pw-repeat" className="text-sm font-semibold text-[#c82014]">
             İki parola aynı değil
           </span>
         ) : null}
       </div>
 
       {state.error ? (
-        <p role="alert" className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
-          {state.error}
-        </p>
+        <AuthError>{state.error}</AuthError>
       ) : null}
 
       <button
         type="submit"
         disabled={pending || short || mismatch || !password || !repeat}
-        className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-foreground text-[15px] font-semibold text-background disabled:cursor-not-allowed disabled:opacity-50"
+        className={`${authButton} w-full`}
       >
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
         {pending ? "Kaydediliyor…" : "Parolayı kaydet"}
       </button>
-      <p className="text-center text-xs leading-5 text-chart-muted">
+      <p className="text-center text-sm leading-5 text-black/60">
         Bağlantı tek kullanımlık · son geçerlilik {until}
       </p>
     </form>

@@ -15,7 +15,7 @@ export default function LoginPage() {
   return (
     <AuthShell>
       {/* Adres (?next, ?oturum) okunana kadar kartın yeri tutulur; sayfa boş görünmesin */}
-      <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[388px] w-full animate-pulse rounded-3xl bg-chart-card-bg" />}>
+      <Suspense fallback={<div aria-busy="true" aria-label="Yükleniyor" className="h-[388px] w-full animate-pulse rounded-2xl bg-white/15" />}>
         <LoginForm emailConfigured={isEmailConfigured()} />
       </Suspense>
     </AuthShell>
