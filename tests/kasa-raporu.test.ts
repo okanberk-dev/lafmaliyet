@@ -41,6 +41,7 @@ const day: CashReportFields = {
   countedCash: 3_430,
   handedOver: 3_000,
   bankPos: 8_150,
+  offRevenue: null,
   note: "Bir müşteri bozuk para eksik verdi",
 };
 

@@ -753,6 +753,8 @@ export const cashReports = pgTable(
     handedOver: doublePrecision("handed_over").notNull().default(0),
     /** Banka POS cihazının gün sonu toplamı (ModPOS'taki kartla karşılaştırılır) */
     bankPos: doublePrecision("bank_pos"),
+    /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez; panelde kayıtlı ikramla karşılaştırılır) */
+    offRevenue: doublePrecision("off_revenue"),
     note: text("note"),
     cashDiff: doublePrecision("cash_diff").notNull().default(0),
     submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
@@ -766,4 +768,36 @@ export const cashReports = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("cash_reports_date_uq").on(t.date)],
+);
+
+// ---------------------------------------------------------------- Zayi ve ikram
+/**
+ * Personelin gün içinde girdiği zayi (atılan, dökülen, bozulan) ve ikram (ödenmez: müşteriye, personele, tadım)
+ * kayıtları. Ya bir menü ürünü (adet; malzemesi reçeteden) ya da bir hammadde (sayım ya da kendi biriminde; factor ile
+ * malzemenin kendi birimine) olur; ad kayıt anında saklanır (ürün sonra silinse de okunur). Tutarlılık ekranı bunları
+ * satıştan ayrı tüketim olarak gösterir, kasa raporu günün özetini taşır. Ayrıntı: docs/ZAYI-IKRAM.md.
+ */
+export const wasteEntries = pgTable(
+  "waste_entries",
+  {
+    id: serial("id").primaryKey(),
+    /** İş günü (YYYY-MM-DD, Türkiye) */
+    date: text("date").notNull(),
+    kind: text("kind", { enum: ["zayi", "ikram"] }).notNull(),
+    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    ingredientId: integer("ingredient_id").references(() => ingredients.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    qty: doublePrecision("qty").notNull(),
+    /** "adet" (ürün) ya da hammaddenin girildiği birim (KG, LT, ADET, DİLİM, gr, ml…) */
+    unit: text("unit").notNull(),
+    /** qty × factor = hammaddenin kendi birimi (KG → gr: 1000); ürün için 1 */
+    factor: doublePrecision("factor").notNull().default(1),
+    reason: text("reason"),
+    note: text("note"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("waste_entries_date_idx").on(t.date)],
 );

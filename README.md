@@ -7,7 +7,9 @@ senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'
 ([docs/PARASUT.md](docs/PARASUT.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla
-onayladığı akış ve herkesin kendi hatırlatıcıları.
+onayladığı akış, herkesin kendi hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu
+([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) ve stok farkını açıklayan zayi / ikram kaydı
+([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)).
 
 - **Adres:** https://ladmin.laffogato.net (kafenin sitesi laffogato.net ayrı projede kalır)
 - **Frontend:** Next.js 16 (App Router, Cache Components), React 19, Tailwind CSS 4, Recharts, Motion
@@ -34,6 +36,8 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Reçete onayları (önce / sonra farkı, maliyet etkisi, onayla ya da gerekçeyle reddet) | `/panel/onaylar` | — (yeni) |
 | Karaoke: oda sayacı, yeni rezervasyon zili, süre dolunca alarm; yöneticiye ay özeti ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
 | Hatırlatıcılarım (herkesin kendi hatırlatıcıları; saatinde uyarı, tekrar, erteleme) | `/panel/hatirlaticilarim` | — (yeni) |
+| Kasa raporu: her akşam Z raporu ve kasa, eksik / fazla, e-posta ve WhatsApp; yöneticiye günden güne ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) | `/panel/kasa` | — (yeni) |
+| Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
 | Gelir-gider | `/panel/gelir-gider` | Genel Maliyet |
@@ -52,17 +56,17 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Açık sekmenin canlı verisi (ETag / 304) ve laffogato.net'in karaoke pingi | `/api/canli`, `/api/karaoke/ping` | — |
 
 Menü kenar çubuğunda dokuz öğeye toplandı: Genel bakış · Karaoke · Menü (Ürünler, Hammaddeler, Reçete defteri,
-Reçete onayları) · Satış & gider (Satışlar, Faturalar, Gelir-gider, Giderler & personel, Ödemeler & hatırlatıcılar) ·
-Stok (Stok sayımı, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
+Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Gelir-gider, Giderler & personel, Ödemeler &
+hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
 Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Satışlar · Faturalar · Ödemeler · Menü çubuğu var. ⌘K
 (Ctrl+K) ile ekran, ürün ve hammadde aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
 eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini, kişisel
 hatırlatıcıları ve uyarıları (hammadde zammı, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
 var.
 
-Personel rolü yalnızca **Karaoke**, **Reçete defteri** (değişiklik önerir; yönetici onaylayınca uygulanır), **Stok
-sayımı**, **Hatırlatıcılarım** ve **Hesabım** ekranlarını görür; telefonda altta Karaoke · Reçeteler · Sayım ·
-Hatırlatıcı · Hesabım çubuğu var. Personelin zili yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu gösterir.
+Personel rolü yalnızca **Karaoke**, **Kasa raporu**, **Zayi & ikram**, **Reçete defteri** (değişiklik önerir;
+yönetici onaylayınca uygulanır), **Stok sayımı** (yalnız bu ay ve geçen ay), **Hatırlatıcılarım** ve **Hesabım**
+ekranlarını görür; telefonda altta Karaoke · Kasa · Zayi · Sayım · Reçeteler çubuğu var. Personelin zili yalnız kendi hatırlatıcılarını, önerilerinin sonucunu ve akşam bekleyen kasa raporunu gösterir.
 Maliyet, maaş, kâr ve karaoke tutarları personele gösterilmez. Hangi rolün hangi ekranı açtığı tek yerde:
 `src/lib/roles.ts` (proxy, giriş sonrası yönlendirme ve menü bunu kullanır).
 

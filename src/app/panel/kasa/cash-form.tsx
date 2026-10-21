@@ -19,7 +19,7 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 import { copyText } from "../kullanicilar/password-field";
 import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
 
-type MoneyKey = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos";
+type MoneyKey = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "offRevenue";
 type Key = MoneyKey | "zNo" | "receipts" | "cashOutNote" | "note";
 type Values = Record<Key, string>;
 
@@ -37,6 +37,7 @@ const LABELS: Record<MoneyKey, string> = {
   countedCash: "Sayılan nakit",
   handedOver: "Teslim edilen",
   bankPos: "Banka POS",
+  offRevenue: "Ödenmez / ikram",
 };
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
@@ -58,6 +59,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
       countedCash: input(report.countedCash),
       handedOver: report.handedOver ? input(report.handedOver) : "",
       bankPos: input(report.bankPos),
+      offRevenue: input(report.offRevenue),
       note: report.note ?? "",
     };
   }
@@ -76,6 +78,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
     countedCash: "",
     handedOver: "",
     bankPos: "",
+    offRevenue: "",
     note: "",
   };
 }
@@ -116,6 +119,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     countedCash: a.countedCash ?? 0,
     handedOver: a.handedOver ?? 0,
     bankPos: a.bankPos,
+    offRevenue: a.offRevenue,
     note: v.note.trim() || null,
   };
   if (fields.handedOver > fields.countedCash) errors.handedOver = "Teslim edilen, sayılan nakitten fazla olamaz";
@@ -306,6 +310,7 @@ export function CashForm({
             {field("mealCard", "Yemek kartı", { hint: "Multinet, Pluxee, Edenred, Setcard…" })}
             {field("online", "Online", { hint: "Yemeksepeti, Getir, Trendyol…" })}
             {field("other", "Diğer", { hint: "havale, cari, ikram…" })}
+            {field("offRevenue", "Ödenmez / ikram", { hint: "Z raporunda ciro dışı (isteğe bağlı)" })}
             <Field label="Fiş sayısı" htmlFor="k-receipts" hint="isteğe bağlı">
               <Input id="k-receipts" inputMode="numeric" value={values.receipts} onChange={set("receipts")} maxLength={6} autoComplete="off" />
             </Field>

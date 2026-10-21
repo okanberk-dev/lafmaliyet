@@ -39,6 +39,7 @@ export async function loadDataset(): Promise<Dataset> {
     purchaseQuantities,
     expenseCategories,
     expenseEntries,
+    wasteEntries,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -58,6 +59,16 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
     db.select().from(s.expenseEntries).orderBy(asc(s.expenseEntries.date), asc(s.expenseEntries.id)),
+    db
+      .select({
+        date: s.wasteEntries.date,
+        kind: s.wasteEntries.kind,
+        productId: s.wasteEntries.productId,
+        ingredientId: s.wasteEntries.ingredientId,
+        qty: s.wasteEntries.qty,
+        factor: s.wasteEntries.factor,
+      })
+      .from(s.wasteEntries),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -192,6 +203,7 @@ export async function loadDataset(): Promise<Dataset> {
       active: c.active,
       sortOrder: c.sortOrder,
     })),
+    wasteEntries,
     expenseEntries: expenseEntries.map((e) => ({
       id: e.id,
       date: e.date,

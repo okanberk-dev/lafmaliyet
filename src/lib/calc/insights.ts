@@ -788,6 +788,12 @@ export interface ConsistencyRow {
   /** Hammadde herhangi bir reçetede var mı (yoksa tüketimi "reçetesiz tüketim"dir) */
   inRecipe: boolean;
   note: string | null;
+  /** Personelin kaydettiği zayi ve ikramın bu malzemeden tükettiği (malzemenin kendi biriminde) */
+  zayi: number;
+  ikram: number;
+  /** Sapmanın kayıtlı zayi ve ikramla açıklanamayan kısmı (porsiyon kaçağı, kayda geçmeyen fire); sapma yoksa null */
+  unexplained: number | null;
+  unexplainedAmount: number | null;
 }
 
 export function consistency(model: Model, month: string) {
@@ -802,6 +808,7 @@ export function consistency(model: Model, month: string) {
   const offRevenue = info?.offRevenue ?? 0;
 
   const usage = model.ingredientUsage(month);
+  const recorded = model.recordedUsage(month);
   const purchases = new Map(
     model.ds.purchaseQuantities.filter((p) => p.month === month).map((p) => [p.ingredientId, p]),
   );
@@ -811,7 +818,7 @@ export function consistency(model: Model, month: string) {
   // İki ay da sayılan hammaddeler de listelenir: reçetesi olmayan ama stoktan düşen mal görünür olsun
   const countedBoth = [...countedIn(month)].filter((id) => prevCounted.has(id));
 
-  const ids = new Set<number>([...usage.keys(), ...purchases.keys(), ...countedBoth]);
+  const ids = new Set<number>([...usage.keys(), ...purchases.keys(), ...countedBoth, ...recorded.keys()]);
   const rows: ConsistencyRow[] = [];
   for (const id of ids) {
     const ingredient = model.ingById.get(id);
@@ -829,6 +836,8 @@ export function consistency(model: Model, month: string) {
     // Alım girilmeden "gerçek tüketim" hesaplanmaz: eksik alım 0 sayılırsa sapma yanlış (hatta eksi) çıkar
     const actualUsage = stock === "complete" ? opening! + purchased! - closing! : null;
     const variance = actualUsage !== null ? actualUsage - u : null;
+    const rec = recorded.get(id) ?? { zayi: 0, ikram: 0 };
+    const unexplained = variance !== null ? variance - rec.zayi - rec.ikram : null;
     rows.push({
       ingredient,
       unitCost,
@@ -845,6 +854,10 @@ export function consistency(model: Model, month: string) {
       stock,
       inRecipe: model.usedIn.has(id),
       note: p?.note ?? null,
+      zayi: rec.zayi,
+      ikram: rec.ikram,
+      unexplained,
+      unexplainedAmount: unexplained !== null ? unexplained * unitCost : null,
     });
   }
   const weight = (r: ConsistencyRow) => Math.abs(r.diffAmount ?? (r.usage * r.unitCost || (r.stockDrop ?? 0) * r.unitCost));
@@ -873,6 +886,11 @@ export function consistency(model: Model, month: string) {
     totalDiff: sum(rows.map((r) => r.diffAmount ?? 0)),
     /** Yalnızca alımı girilmiş ve iki ayı sayılmış satırlar (tablonun varsayılan görünümüyle aynı satırlar) */
     totalVariance: sum(complete.map((r) => r.varianceAmount ?? 0)),
+    /** Aynı satırlarda kayıtlı zayi ve ikramın maliyeti ve sapmanın açıklanamayan kısmı */
+    totalRecorded: sum(complete.map((r) => (r.zayi + r.ikram) * r.unitCost)),
+    totalUnexplained: sum(complete.map((r) => r.unexplainedAmount ?? 0)),
+    /** Ayın bütün zayi ve ikram kayıtları: adet, malzeme maliyeti, ikramın menü fiyatıyla değeri */
+    waste: model.wasteSummary(month),
     hasStockComparison: complete.length > 0,
     /** En az bir hammaddenin iki ayı da sayılmış */
     hasCounts: rows.some((r) => r.stock !== "noCount"),

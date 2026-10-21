@@ -27,7 +27,15 @@ export interface CashReportFields {
   handedOver: number;
   /** Banka POS cihazının gün sonu toplamı; girilmediyse kart karşılaştırılmaz */
   bankPos: number | null;
+  /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez); girilmediyse null */
+  offRevenue: number | null;
   note: string | null;
+}
+
+/** Günün zayi ve ikram özeti (src/lib/waste.ts summarize): "2× Latte M, Süt 1 LT" */
+export interface DayWaste {
+  zayi: string | null;
+  ikram: string | null;
 }
 
 /** Bu kadarın altındaki fark (bozuk para) "tutuyor" sayılır */
@@ -127,12 +135,13 @@ export function paymentLines(f: CashReportFields): { label: string; amount: numb
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
  * türleriyle tutmaması öne çıkarılır.
  */
-export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number }): string {
+export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null }): string {
   const c = computeCash(f);
   const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${meta.by}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const z = ["*Z raporu (ModPOS)*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
+  if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
   const mark = c.kind === "short" ? "🔴" : c.kind === "over" ? "🟠" : "✅";
   const kasa = [
@@ -152,7 +161,8 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
           "*Kart*",
           `Banka POS gün sonu: ${money(f.bankPos)} ${Math.abs(c.cardDiff) < CASH_TOLERANCE ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}`}`,
         ];
-  const blocks = [head, z, kasa, kart, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
+  const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
+  const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
   return blocks.map((b) => b.join("\n")).join("\n\n");
 }
 

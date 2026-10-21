@@ -187,6 +187,7 @@ export function MonthInfoForm({
   info,
   listTotal,
   currentMonth,
+  recordedIkram,
   className,
 }: {
   month: string;
@@ -195,6 +196,8 @@ export function MonthInfoForm({
   listTotal: number;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
+  /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
+  recordedIkram?: { count: number; menuValue: number };
   className?: string;
 }) {
   const [openDays, setOpenDays] = useState(info.openDays === null ? "" : String(info.openDays));
@@ -298,7 +301,24 @@ export function MonthInfoForm({
             <Field label="Yönetici indirimleri (₺)" tip="KDV dahil (Patron > İndirim)" htmlFor="m-disc" error={bad.disc ? "Sayı girin" : undefined}>
               <NumberInput id="m-disc" value={disc} onChange={(e) => setDisc(e.target.value)} aria-invalid={bad.disc || undefined} className={bad.disc ? undefined : "cell-input"} />
             </Field>
-            <Field label="Ödenmez / ikram (₺)" tip="Ciro dışı: malzemesi harcanan, geliri olmayan satışlar" htmlFor="m-off" error={bad.off ? "Sayı girin" : undefined}>
+            <Field
+              label="Ödenmez / ikram (₺)"
+              tip="Ciro dışı: malzemesi harcanan, geliri olmayan satışlar"
+              htmlFor="m-off"
+              error={bad.off ? "Sayı girin" : undefined}
+              hint={
+                recordedIkram?.count ? (
+                  <>
+                    Panelde kayıtlı ikram: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
+                    {Math.abs((parseNumberTR(off) ?? 0) - recordedIkram.menuValue) >= 1 ? (
+                      <button type="button" className="cursor-pointer font-medium text-ink-soft underline underline-offset-2 hover:text-ink" onClick={() => setOff(num(recordedIkram.menuValue, 2))}>
+                        Bunu yaz
+                      </button>
+                    ) : null}
+                  </>
+                ) : undefined
+              }
+            >
               <NumberInput id="m-off" value={off} onChange={(e) => setOff(e.target.value)} aria-invalid={bad.off || undefined} className={bad.off ? undefined : "cell-input"} />
             </Field>
           </div>

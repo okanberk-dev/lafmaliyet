@@ -26,6 +26,7 @@ import type {
   Staff,
   StaffVersion,
   Unit,
+  WasteEntry,
 } from "./types";
 
 // ============================================================================
@@ -685,6 +686,38 @@ export function createModel(ds: Dataset) {
     return u;
   }
 
+  // --- Zayi ve ikram (personelin kaydı) -----------------------------------------
+  const wasteByMonth = new Map<string, WasteEntry[]>();
+  for (const w of ds.wasteEntries ?? []) {
+    const m = w.date.slice(0, 7);
+    wasteByMonth.set(m, [...(wasteByMonth.get(m) ?? []), w]);
+  }
+  /**
+   * Kayıtlı zayi ve ikramın malzeme tüketimi (malzemenin kendi biriminde): ürün reçetesinden (fire payı olmadan),
+   * hammadde doğrudan. Satış raporu yalnız ödenen satışları taşır; bunlar ona eklenmez, ayrı gösterilir.
+   */
+  const recordedCache = new Map<string, Map<number, { zayi: number; ikram: number }>>();
+  function recordedUsage(month: string): Map<number, { zayi: number; ikram: number }> {
+    let u = recordedCache.get(month);
+    if (!u) {
+      u = new Map();
+      const add = (id: number, kind: WasteEntry["kind"], amount: number) => {
+        const cur = u!.get(id) ?? { zayi: 0, ikram: 0 };
+        cur[kind] += amount;
+        u!.set(id, cur);
+      };
+      for (const w of wasteByMonth.get(month) ?? []) {
+        if (w.productId !== null && productById.has(w.productId)) {
+          for (const it of itemsByProduct.get(w.productId) ?? []) add(it.ingredientId, w.kind, evalQty(it).qty * w.qty);
+        } else if (w.ingredientId !== null && ingById.has(w.ingredientId)) {
+          add(w.ingredientId, w.kind, w.qty * w.factor);
+        }
+      }
+      recordedCache.set(month, u);
+    }
+    return u;
+  }
+
   // --- Su + buz birim maliyeti (Ayarlar!B17) -----------------------------------
   // Excel her zaman Eylül SU GİDERİ ÷ Eylül su + buz litresini kullanır. Panel SU GİDERİ girilmiş ve
   // satış listesinden (reçeteye göre) su kullanımı çıkan en son ayı alır; Excel verisinde ikisi aynı sonucu verir.
@@ -765,6 +798,23 @@ export function createModel(ds: Dataset) {
     const list = usedIn.get(it.ingredientId) ?? [];
     if (!list.includes(it.productId)) list.push(it.productId);
     usedIn.set(it.ingredientId, list);
+  }
+
+  /**
+   * Ayın zayi ve ikram özeti: malzeme maliyeti (KDV hariç; ürün reçetesinin malzeme toplamı, fire payı olmadan;
+   * hammadde birim maliyetiyle) ve ikramın menü fiyatıyla değeri (KDV dahil; ModPOS'un ödenmez tutarıyla
+   * karşılaştırılır). Malzeme maliyeti zaten sayım farkının içindedir: gelir-gidere ayrıca gider yazılmaz.
+   */
+  function wasteSummary(month: string) {
+    const out = { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0 } };
+    for (const w of wasteByMonth.get(month) ?? []) {
+      const product = w.productId !== null ? productById.get(w.productId) : undefined;
+      const cost = product ? computeProduct(product).ingredientTotal * w.qty : w.ingredientId !== null ? (unitCost.get(w.ingredientId) ?? 0) * w.qty * w.factor : 0;
+      out[w.kind].count += 1;
+      out[w.kind].cost += cost;
+      if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
+    }
+    return out;
   }
 
   // --- Aylık satış analizi (Satış Raporu) ------------------------------------
@@ -1381,6 +1431,8 @@ export function createModel(ds: Dataset) {
     monthSales,
     soldByProduct,
     ingredientUsage,
+    recordedUsage,
+    wasteSummary,
     /** "Bu ay" (YYYY-MM, Türkiye saati) */
     currentMonth,
     /** Verisi olan ilk ay */

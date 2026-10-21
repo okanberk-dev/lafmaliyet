@@ -8,10 +8,10 @@ import type { Role } from "./constants";
 
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, fiyat, kâr, maaş ve ayar ekranları yok; reçete
- * defterinde değişiklik önerir (yönetici onaylar), karaoke sayacını, gün sonu kasa raporunu ve kendi
- * hatırlatıcılarını kullanır.
+ * defterinde değişiklik önerir (yönetici onaylar), karaoke sayacını, gün sonu kasa raporunu, zayi / ikram kaydını
+ * ve kendi hatırlatıcılarını kullanır.
  */
-export const STAFF_PATHS = ["/panel/karaoke", "/panel/kasa", "/panel/receteler", "/panel/hatirlaticilarim", "/panel/sayim", "/panel/hesap"] as const;
+export const STAFF_PATHS = ["/panel/karaoke", "/panel/kasa", "/panel/zayi", "/panel/receteler", "/panel/hatirlaticilarim", "/panel/sayim", "/panel/hesap"] as const;
 
 /** Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran */
 export const STAFF_HOME = "/panel/sayim";

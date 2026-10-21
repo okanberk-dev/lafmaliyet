@@ -1,4 +1,4 @@
-import { ArrowLeft, ReceiptText } from "lucide-react";
+import { ArrowLeft, Gift, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -13,6 +13,7 @@ import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { requireUser } from "@/server/auth/dal";
 import { cashReportsBetween, getCashReport, loadCashSettings, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import { dayWaste } from "@/server/data/waste";
 import { isEmailConfigured } from "@/server/notify/resend";
 
 import { CashForm } from "./cash-form";
@@ -77,15 +78,45 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const showForm = !admin || isDay(gun);
 
   const settings = await loadCashSettings();
-  const [report, carry, recent] = await Promise.all([
+  const [report, carry, recent, waste] = await Promise.all([
     showForm ? getCashReport(date) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
+    showForm ? dayWaste(date) : Promise.resolve(null),
   ]);
-  const whatsapp = report ? (() => {
-    const text = whatsappText(report, { by: report.submittedByName, revision: report.revision });
-    return { text, link: whatsappLink(text, settings.whatsapp) };
-  })() : null;
+  const whatsapp = report
+    ? (() => {
+        const text = whatsappText(report, { by: report.submittedByName, revision: report.revision, waste });
+        return { text, link: whatsappLink(text, settings.whatsapp) };
+      })()
+    : null;
+  // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
+  const wasteCard = waste ? (
+    <Card>
+      <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Rapora, e-postaya ve WhatsApp metnine eklenir" />
+      <div className="space-y-2 px-5 pb-5 text-sm">
+        {waste.ikram || waste.zayi ? (
+          <>
+            {waste.ikram ? (
+              <p className="break-words">
+                <span className="font-medium text-ink">İkram:</span> <span className="text-ink-soft">{waste.ikram}</span>
+              </p>
+            ) : null}
+            {waste.zayi ? (
+              <p className="break-words">
+                <span className="font-medium text-ink">Zayi:</span> <span className="text-ink-soft">{waste.zayi}</span>
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-ink-mute">Bu gün zayi ya da ikram girilmedi. Ödenmeden verilen ya da atılan bir şey olduysa kasa raporundan önce girin.</p>
+        )}
+        <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+          <Gift size={14} /> Zayi / ikram ekle
+        </ButtonLink>
+      </div>
+    </Card>
+  ) : null;
   const form = showForm ? (
     <CashForm
       key={`${date}:${report?.revision ?? 0}`}
@@ -119,6 +150,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       <div className="space-y-4">
         {dayChips}
         {form}
+        {wasteCard}
         <Card>
           <CardHeader icon={<ReceiptText />} title="Son 7 gün" description="Gönderilen raporlar" />
           <ul className="divide-y divide-line border-t border-line">
@@ -154,6 +186,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         <>
           {dayChips}
           {form}
+          {wasteCard}
         </>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">

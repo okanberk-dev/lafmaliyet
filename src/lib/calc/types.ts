@@ -257,6 +257,19 @@ export interface ExpenseEntry {
   note: string | null;
 }
 
+/**
+ * Personelin girdiği zayi ya da ikram (src/server/db/schema.ts wasteEntries): menü ürünü (malzemesi reçeteden) ya da
+ * hammadde (qty × factor = malzemenin kendi birimi).
+ */
+export interface WasteEntry {
+  date: string;
+  kind: "zayi" | "ikram";
+  productId: number | null;
+  ingredientId: number | null;
+  qty: number;
+  factor: number;
+}
+
 export interface Dataset {
   settings: Settings;
   ingredients: Ingredient[];
@@ -279,6 +292,8 @@ export interface Dataset {
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
   expenseCategories?: ExpenseCategory[];
   expenseEntries?: ExpenseEntry[];
+  /** Zayi ve ikram kayıtları (yoksa boş) */
+  wasteEntries?: WasteEntry[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
 }

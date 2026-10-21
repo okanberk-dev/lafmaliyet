@@ -8,6 +8,7 @@ import { businessDate, computeCash, diffText, parseEmails, staffCanReport, waPho
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { cashReportsBetween, getCashReport, loadCashSettings, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
+import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
 import { renderCashReport } from "@/server/notify/cash-report-template";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
@@ -37,6 +38,7 @@ const reportSchema = z.object({
   countedCash: zAmount,
   handedOver: zAmount,
   bankPos: zAmount.nullable(),
+  offRevenue: zAmount.nullable(),
   note: zOptText(1000),
   /** Formun açıldığı andaki sürüm (0: yeni): arada başkası gönderdiyse üzerine yazılmaz */
   revision: z.number().int().min(0),
@@ -55,7 +57,8 @@ async function emailReport(reportId: number): Promise<CashEmailOutcome> {
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
   } else {
     const dto = toCashDTO(row);
-    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt });
+    const waste = await dayWaste(row.date);
+    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt, waste, ikramValue: waste.ikramValue || null });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: settings.recipients, ...msg, idempotencyKey: `cash-${row.date}-r${row.revision}` });
     outcome = res.ok ? { status: "sent", error: null, to: settings.recipients.length } : { status: "failed", error: res.error, to: 0 };
@@ -105,7 +108,7 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     await logActivity(me, saved.revision > 1 ? "Kasa raporu güncellendi" : "Kasa raporu", `${longDateTR(data.date)}: ${diffText(c.cashDiff)}`);
     refresh();
     const settings = await loadCashSettings();
-    const text = whatsappText(fields, { by: me.name, revision: saved.revision });
+    const text = whatsappText(fields, { by: me.name, revision: saved.revision, waste: await dayWaste(data.date) });
     return { id: saved.id, revision: saved.revision, cashDiff: c.cashDiff, email, whatsapp: { text, link: whatsappLink(text, settings.whatsapp) } };
   });
 }
@@ -184,6 +187,7 @@ export async function sendCashTestEmail() {
       countedCash: 2_880,
       handedOver: 2_400,
       bankPos: 7_000,
+      offRevenue: null,
       note: "Örnek rapor",
     };
     const msg = renderCashReport(sample, { by: last?.submittedByName ?? "Örnek", revision: 1, submittedAt: new Date() });
@@ -203,7 +207,7 @@ export async function cashReportWhatsapp(date: string) {
     const r = await getCashReport(d);
     if (!r) throw new UserError("Bu günün raporu yok");
     const settings = await loadCashSettings();
-    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision });
+    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste: await dayWaste(d) });
     return { text, link: whatsappLink(text, settings.whatsapp) };
   });
 }

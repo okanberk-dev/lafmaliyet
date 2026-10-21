@@ -185,6 +185,13 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
                     Reçetesiz tüketim: {num(c.unreciped.count)} malzeme · {tl(c.unreciped.amount)}
                   </span>
                 ) : null}
+                {c.waste.zayi.count + c.waste.ikram.count ? (
+                  <Link href={`/panel/zayi?ay=${month}`} className="-my-3 block py-3 font-medium text-ink-soft underline underline-offset-2 hover:text-ink">
+                    {c.hasStockComparison
+                      ? `Kayıtlı zayi + ikram ${tl(c.totalRecorded)} · açıklanamayan ${tl(c.totalUnexplained)}`
+                      : `Kayıtlı zayi ${num(c.waste.zayi.count)} · ikram ${num(c.waste.ikram.count)}`}
+                  </Link>
+                ) : null}
               </>
             }
           />
@@ -232,6 +239,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           stock: r.stock,
           inRecipe: r.inRecipe,
           note: r.note,
+          recorded: r.zayi + r.ikram,
+          unexplainedAmount: r.unexplainedAmount,
         }))}
         totalDiff={c.totalDiff}
         totalVariance={c.totalVariance}

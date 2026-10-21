@@ -218,6 +218,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           info={infoValues}
           listTotal={sales.revenue}
           currentMonth={model.currentMonth}
+          recordedIkram={model.wasteSummary(month).ikram}
         />
       </div>
 

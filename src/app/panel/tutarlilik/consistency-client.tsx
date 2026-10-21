@@ -51,6 +51,10 @@ interface Row {
   /** Hammadde bir reçetede var mı */
   inRecipe: boolean;
   note: string | null;
+  /** Personelin kaydettiği zayi + ikramın bu malzemeden tükettiği (malzemenin biriminde) */
+  recorded: number;
+  /** Sapmanın kayıtlı zayi / ikramla açıklanamayan kısmı × birim maliyet */
+  unexplainedAmount: number | null;
 }
 
 /** Reçetede olmayan ama stoktan düşen (ya da alınıp tükenen) hammadde */
@@ -659,6 +663,11 @@ export function ConsistencyTable({
                             {r.variance !== null ? (
                               <span className="block text-xs font-normal text-ink-mute">
                                 {num(r.variance)} {r.unit}
+                              </span>
+                            ) : null}
+                            {r.recorded && r.unexplainedAmount !== null ? (
+                              <span className="block text-xs font-normal text-ink-mute" title="Personelin kaydettiği zayi ve ikram düşülünce kalan sapma">
+                                zayi + ikram {num(r.recorded)} {r.unit} · kalan {tl(r.unexplainedAmount)}
                               </span>
                             ) : null}
                           </TD>

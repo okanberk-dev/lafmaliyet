@@ -20,22 +20,22 @@ test("yönetici alt menüsü: Genel bakış, Satışlar, Faturalar, Ödemeler, M
   assert.equal(BOTTOM_NAV.admin.find((i) => i.id === "odemeler")?.badge, "overdue");
 });
 
-test("personel alt menüsü erişebildiği ekranların hepsi; Hesabım profil menüsünde (src/lib/roles.ts STAFF_PATHS)", () => {
+test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran (src/lib/roles.ts STAFF_PATHS)", () => {
   assert.deepEqual(
     BOTTOM_NAV.staff.map((i) => [i.label, i.href]),
     [
       ["Karaoke", "/panel/karaoke"],
       ["Kasa", "/panel/kasa"],
-      ["Reçeteler", "/panel/receteler"],
+      ["Zayi", "/panel/zayi"],
       ["Sayım", "/panel/sayim"],
-      ["Hatırlatıcı", "/panel/hatirlaticilarim"],
+      ["Reçeteler", "/panel/receteler"],
     ],
   );
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
+  // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü)
   assert.deepEqual(
-    [...BOTTOM_NAV.staff.map((i) => i.href)].sort(),
-    STAFF_PATHS.filter((p) => p !== "/panel/hesap").sort(),
-    "alt menüde personelin her ekranı var",
+    STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
+    ["/panel/hatirlaticilarim", "/panel/hesap"],
   );
 });
 
@@ -70,7 +70,8 @@ test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", 
   assert.equal(bottomNavActive(staff, "/panel/hesap"), null);
   assert.equal(bottomNavActive(staff, "/panel/kasa"), "kasa");
   assert.equal(bottomNavActive(staff, "/panel/karaoke"), "karaoke");
-  assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), "hatirlaticilarim");
+  assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), null);
+  assert.equal(bottomNavActive(staff, "/panel/zayi"), "zayi");
   assert.equal(bottomNavActive(staff, "/panel/tutarlilik"), null);
   assert.equal(bottomNavActive(staff, "/panel/sayim", true), "sayim");
 });

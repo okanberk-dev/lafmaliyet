@@ -70,6 +70,7 @@ export function toCashDTO(r: Row): CashReportDTO {
     countedCash: r.countedCash,
     handedOver: r.handedOver,
     bankPos: r.bankPos,
+    offRevenue: r.offRevenue,
     note: r.note,
     revision: r.revision,
     cashDiff: r.cashDiff,

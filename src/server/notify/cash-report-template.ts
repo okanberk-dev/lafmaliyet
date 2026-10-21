@@ -4,7 +4,7 @@
  * kart bölümleri, en altta "Panelde aç". Metin sürümü WhatsApp metninin yıldızsız hâli.
  */
 
-import { CASH_TOLERANCE, computeCash, paymentLines, reportSubject, whatsappText, type CashReportFields } from "@/lib/cash-report";
+import { CASH_TOLERANCE, computeCash, paymentLines, reportSubject, whatsappText, type CashReportFields, type DayWaste } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 
@@ -26,6 +26,11 @@ function row(label: string, value: string, opts: { strong?: boolean; color?: str
 </tr>`;
 }
 
+/** Uzun metin satırı (kalem listesi): sarılır, sağa yaslanmaz */
+function textRow(label: string, text: string) {
+  return `<tr><td colspan="2" style="padding:7px 0;font-family:${FONT};font-size:14px;line-height:20px;color:#171717"><span style="color:#3f3f46">${esc(label)}:</span> ${esc(text)}</td></tr>`;
+}
+
 function section(title: string, rows: string, warning?: string | null) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:20px">
   <tr><td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(title)}</td></tr>
@@ -37,7 +42,10 @@ function section(title: string, rows: string, warning?: string | null) {
   }`;
 }
 
-export function renderCashReport(f: CashReportFields, meta: { by: string; revision: number; submittedAt: Date }) {
+export function renderCashReport(
+  f: CashReportFields,
+  meta: { by: string; revision: number; submittedAt: Date; waste?: DayWaste | null; /** Panelde kayıtlı ikramın menü fiyatıyla değeri */ ikramValue?: number | null },
+) {
   const c = computeCash(f);
   const tone = TONE[c.kind];
   const subject = reportSubject(f, meta.revision);
@@ -53,7 +61,20 @@ export function renderCashReport(f: CashReportFields, meta: { by: string; revisi
       ? `Banka POS gün sonu ModPOS'taki karttan ${money(Math.abs(c.cardDiff))} ${c.cardDiff > 0 ? "fazla" : "az"}.`
       : null;
 
-  const zRows = [row("Toplam satış", money(f.zTotal), { strong: true }), ...paymentLines(f).map((p) => row(p.label, money(p.amount)))].join("\n");
+  const zRows = [
+    row("Toplam satış", money(f.zTotal), { strong: true }),
+    ...paymentLines(f).map((p) => row(p.label, money(p.amount))),
+    ...(f.offRevenue ? [row("Ödenmez / ikram (ciro dışı)", money(f.offRevenue))] : []),
+    ...(meta.ikramValue ? [row("Panelde kayıtlı ikram", money(meta.ikramValue), { sub: "menü fiyatıyla" })] : []),
+  ].join("\n");
+  const ikramWarning =
+    f.offRevenue !== null && meta.ikramValue != null && Math.abs(f.offRevenue - meta.ikramValue) >= CASH_TOLERANCE
+      ? `ModPOS'un ödenmez tutarı panelde kayıtlı ikramdan ${money(Math.abs(f.offRevenue - meta.ikramValue))} ${f.offRevenue > meta.ikramValue ? "fazla" : "az"}: kaydı eksik ikram olabilir.`
+      : null;
+  const wasteRows = [
+    ...(meta.waste?.ikram ? [textRow("İkram", meta.waste.ikram)] : []),
+    ...(meta.waste?.zayi ? [textRow("Zayi", meta.waste.zayi)] : []),
+  ].join("\n");
   const cashRows = [
     row("Açılış (dünden devir)", money(f.openingCash)),
     row("+ Nakit satış", money(f.cash)),
@@ -103,9 +124,10 @@ export function renderCashReport(f: CashReportFields, meta: { by: string; revisi
       <div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${tone.fg}">${esc(headline)}</div>
       <div style="font-size:13px;line-height:18px;color:#3f3f46;margin-top:2px">Olması gereken ${esc(money(c.expectedCash))} · sayılan ${esc(money(f.countedCash))}</div>
     </td></tr></table>
-    ${section("Z raporu (ModPOS)", zRows, paymentsWarning)}
+    ${section("Z raporu (ModPOS)", zRows, paymentsWarning ?? ikramWarning)}
     ${section("Kasa (nakit)", cashRows)}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
+    ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
     ${f.note ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px"><tr><td style="background:#f4f4f5;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46"><strong>Not:</strong> ${esc(f.note)}</td></tr></table>` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
       <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">

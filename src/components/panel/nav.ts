@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Coffee,
   FileText,
+  Gift,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
@@ -95,6 +96,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         match: ["/panel/tutarlilik"],
         keywords: "envanter tutarlılık fark",
       },
+      { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
     ],
   },
 ];
@@ -176,6 +178,7 @@ export const NAV_TREE: NavNode[] = [
     roles: ["admin", "staff"],
     children: [
       { id: "sayim", label: "Stok sayımı", href: "/panel/sayim", roles: ["admin", "staff"] },
+      { id: "zayi", label: "Zayi & ikram", href: "/panel/zayi", roles: ["admin", "staff"] },
       { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
     ],
   },
@@ -256,13 +259,13 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
     { id: "menu", label: "Menü", icon: LayoutGrid },
   ],
-  // Hesabım profil menüsünde (alt menü beş öğe)
+  // Günün işleri (alt menü beş öğe); Hatırlatıcılarım çekmece menüde ve zilde, Hesabım profil menüsünde
   staff: [
     { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },
     { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
-    { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
+    { id: "zayi", label: "Zayi", icon: Gift, href: "/panel/zayi" },
     { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
-    { id: "hatirlaticilarim", label: "Hatırlatıcı", icon: AlarmClock, href: "/panel/hatirlaticilarim" },
+    { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
   ],
 };
 
