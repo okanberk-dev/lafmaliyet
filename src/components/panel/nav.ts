@@ -12,6 +12,7 @@ import {
   Coffee,
   FileText,
   Gift,
+  Globe,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
@@ -55,6 +56,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Menü",
     items: [
       { href: "/panel/urunler", label: "Ürünler", icon: Coffee, excel: "Ürün Kârlılık + Reçete Kartları", roles: ["admin"], keywords: "reçete kartı fiyat marj kârlılık" },
+      // Ürünler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
+      {
+        href: "/panel/urunler/site",
+        label: "Site menüsü",
+        icon: Globe,
+        roles: ["admin"],
+        keywords: "laffogato.net site menü eşleştirme bağlantı bağla fiyat satışta tükendi eşitle",
+      },
       { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
       { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
       { href: "/panel/onaylar", label: "Reçete onayları", icon: ClipboardCheck, roles: ["admin"], keywords: "onay bekleyen reçete değişikliği personel önerisi" },
@@ -304,6 +313,7 @@ export function badgeText(n: number): string | null {
 const SHORT_TITLES: Record<string, string> = {
   "/panel": "Genel bakış",
   "/panel/urunler": "Ürünler",
+  "/panel/urunler/site": "Site menüsü",
   "/panel/giderler": "Sabit giderler",
   "/panel/personel": "Personel",
   "/panel/harcamalar": "Harcamalar",

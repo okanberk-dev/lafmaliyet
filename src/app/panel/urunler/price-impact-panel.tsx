@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { IngredientChange, ProductImpact } from "@/lib/calc/price-impact";
 import { dateTR, num, pct, tl, tl2 } from "@/lib/format";
+import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
 import { cn } from "@/lib/utils";
 import { acknowledgePriceAlert, updateProductPrice } from "@/server/actions/products";
 
@@ -50,8 +51,16 @@ export function PriceImpactPanel({ changes, impacts, target, month }: { changes:
       const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep");
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
-      toast.success(`${i.name} ${i.size}: ${tl(i.price)} → ${tl(i.suggestedPrice)}`, {
-        action: { label: "Geri al", onClick: () => void updateProductPrice(i.productId, i.price) },
+      // Siteye bağlı üründe fiyat laffogato.net'te de değişti: elle yapılacak iki iş hatırlatılır
+      toast.success(`${i.name} ${i.size}: ${tl(i.price)} → ${tl(r.data.price)}`, {
+        ...(r.data.site ? { description: PRICE_PUSH_REMINDER, duration: 12_000 } : {}),
+        action: {
+          label: "Geri al",
+          onClick: () =>
+            void updateProductPrice(i.productId, i.price).then((u) => {
+              if (!u.ok) toast.error(u.error);
+            }),
+        },
       });
     });
   };

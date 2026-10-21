@@ -86,6 +86,9 @@ export async function runSeed({ reset = false } = {}) {
         // takibinin başlangıcı da silinir: faturalar (ödeme işaretleriyle) yeniden yüklenince sonraki eşitleme yeniden
         // belirler; eski tarih kalsa o günden bu yana bütün Paraşüt faturaları "ödenmedi" geri gelirdi
         await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%' OR key IN ('payments.recent', 'payments.since')`));
+        // laffogato.net menü durumu da ürün kimliklerine bağlı (kopuk / kaldırılan bağlantılar); ürünler bağlantısız
+        // yeniden yüklenir, sonraki eşitleme durumu baştan yazar (docs/SITE-MENU.md)
+        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'menu_sync'`));
       }
 
       await tx.insert(s.settings).values(

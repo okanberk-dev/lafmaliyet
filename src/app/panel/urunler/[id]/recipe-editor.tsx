@@ -59,6 +59,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl, tlUnit } from "@/lib/format";
+import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
 import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
 
@@ -78,6 +79,7 @@ import {
   sameRate,
 } from "../logic";
 import { priceText } from "../price-text";
+import { SiteMenuCard, type ProductSiteInfo } from "./site-menu-card";
 
 interface IngredientOption {
   id: number;
@@ -177,6 +179,7 @@ export function RecipeEditor({
   siblings,
   water,
   priceImpact = null,
+  site = null,
 }: {
   product: {
     id: number;
@@ -214,6 +217,8 @@ export function RecipeEditor({
     acknowledged: boolean;
     drivers: { name: string; pct: number }[];
   } | null;
+  /** laffogato.net menü bağlantısı (docs/SITE-MENU.md); yoksa kart gösterilmez */
+  site?: ProductSiteInfo | null;
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
@@ -383,7 +388,15 @@ export function RecipeEditor({
     }
     // Kayıttan sonra alanlar kaydedilen biçime getirilir ("0.125" → "0,125", "=ShotCift" → "ShotCift"),
     // ama yalnızca kayıt sürerken değiştirilmemişse
-    const sent = { name, note, price, fire, rows: new Map(lines.map((l) => [l.row.key, { input: l.row.input, note: l.row.note, to: qtyText(l.qty, l.expr) }])) };
+    const sent = {
+      name,
+      note,
+      price,
+      fire,
+      active,
+      showOnMenu,
+      rows: new Map(lines.map((l) => [l.row.key, { input: l.row.input, note: l.row.note, to: qtyText(l.qty, l.expr) }])),
+    };
     setSaving(true);
     const res = await saveRecipe({
       productId: product.id,
@@ -399,21 +412,47 @@ export function RecipeEditor({
     });
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
+    // Siteye bağlı üründe yazılan değerler sitenin yanıtından: fiyat kuruşa yuvarlı, "Tükendi" QR menüden kaldırır
+    const saved = res.data;
     setName((v) => (v === sent.name ? v.trim() : v));
     setNote((v) => (v === sent.note ? v.trim() : v));
-    setPrice((v) => (v === sent.price ? priceText(priceNum) : v));
+    setPrice((v) => (v === sent.price ? priceText(saved.price) : v));
     setFire((v) => (v === sent.fire ? fireText(fireInput.rate) : v));
+    setActive((v) => (v === sent.active ? saved.active : v));
+    setShowOnMenu((v) => (v === sent.showOnMenu ? saved.showOnMenu : v));
     setRows((rs) =>
       rs.map((r) => {
         const s = sent.rows.get(r.key);
         return s && s.input === r.input && s.note === r.note ? { ...r, input: s.to, note: r.note.trim() } : r;
       }),
     );
+    // Sitenin kuralıyla kendiliğinden değişen anahtarlar söylenir (Tükendi QR menüyü kapatır, Satışta ikisini açar)
+    const forced = [
+      saved.showOnMenu !== sent.showOnMenu ? `QR menüde göster de ${saved.showOnMenu ? "açıldı" : "kapandı"}` : null,
+      saved.active !== sent.active ? `Menüde aktif de ${saved.active ? "açıldı" : "kapandı"}` : null,
+    ].filter(Boolean);
+    const siteNote = saved.site
+      ? [
+          saved.site.price ? PRICE_PUSH_REMINDER : null,
+          saved.site.visibility ? `Sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"} oldu.` : null,
+          forced.length ? `${forced.join(", ")} (sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"}; iki yer aynı kalsın diye).` : null,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : null;
     toast.success(`${name.trim()} kaydedildi`, {
-      description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(priceNum, 2)}${
+      description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(saved.price, 2)}${
         fireInput.rate !== null ? ` · özel fire ${firePct(fireInput.rate)}` : ""
-      }`,
+      }${siteNote ? `. ${siteNote}` : ""}`,
+      ...(siteNote ? { duration: 12_000 } : {}),
     });
+  }
+
+  /** Siteye bağlanınca ürün sitenin fiyatını ve menü durumunu aldı: alanlar ona getirilir (kart kaydedilmişti) */
+  function adopt(values: { price: number; active: boolean; showOnMenu: boolean }) {
+    setPrice(priceText(values.price));
+    setActive(values.active);
+    setShowOnMenu(values.showOnMenu);
   }
 
   // ⌘S / Ctrl+S kaydeder; kaydedilmemiş değişiklik varken sayfadan çıkmadan önce tarayıcı sorar
@@ -980,6 +1019,18 @@ export function RecipeEditor({
               </CardFooter>
             </Card>
           </motion.div>
+
+          {/* laffogato.net menüsü: bağlıysa fiyat ve menü durumu kaydedilince önce siteye gider */}
+          {site && (site.configured || site.link) ? (
+            <motion.div {...rise(3, reduce)}>
+              <SiteMenuCard
+                product={{ id: product.id, name: product.name, size: product.size, price: product.price, active: product.active, showOnMenu: product.showOnMenu }}
+                site={site}
+                dirty={dirty}
+                onAdopted={adopt}
+              />
+            </motion.div>
+          ) : null}
         </div>
 
         {/* Özet: maliyet, fiyat, kâr. Telefonda en üstte (ekranın asıl cevabı), geniş ekranda sağda.
@@ -1333,6 +1384,7 @@ export function RecipeEditor({
               ? ` Satış raporlarında ${num(soldMonths)} ayda toplam ${num(totalSold)} adet satışı var: bu satırlar kalır ama eşleşmesiz görünür ve POS eşleştirmesi de silinir.`
               : " Bu ürünün satış kaydı yok."}{" "}
             Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatıp kaydedin.
+            {site?.link ? ` Site bağlantısı da kalkar; laffogato.net'teki ${site.item?.name ?? "kalem"} silinmez.` : null}
           </>
         }
       />

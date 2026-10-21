@@ -120,6 +120,13 @@
       "when": 1792606654847,
       "tag": "0016_tedarikciler",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792621679613,
+      "tag": "0017_site_menu_baglantisi",
+      "breakpoints": true
     }
   ]
 }

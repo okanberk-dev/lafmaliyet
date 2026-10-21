@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   customType,
   doublePrecision,
   index,
@@ -129,9 +130,23 @@ export const products = pgTable(
     active: boolean("active").notNull().default(true),
     showOnMenu: boolean("show_on_menu").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * laffogato.net menüsündeki kalemin kimliği (mnu-0011); bağlı değilse boş. Bağlı üründe satış fiyatı ve menü
+     * durumunun doğru kaynağı sitedir: panel değişikliği önce siteye yazar, sitedeki değişiklik çekilir.
+     * Ayrıntı: docs/SITE-MENU.md.
+     */
+    siteMenuId: text("site_menu_id"),
+    /** Bu satır sitedeki hangi fiyat: M = priceMinor (tek boyda tek fiyat), L = priceMinorL */
+    siteMenuSlot: text("site_menu_slot", { enum: ["M", "L"] }),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("products_name_size_uq").on(t.name, t.size)],
+  (t) => [
+    uniqueIndex("products_name_size_uq").on(t.name, t.size),
+    // Bir site kaleminin bir fiyatına en çok bir panel satırı bağlanır (boş olanlar birbirini engellemez)
+    uniqueIndex("products_site_menu_uq").on(t.siteMenuId, t.siteMenuSlot),
+    check("products_site_menu_slot_ck", sql`${t.siteMenuSlot} is null or ${t.siteMenuSlot} in ('M', 'L')`),
+    check("products_site_menu_pair_ck", sql`(${t.siteMenuId} is null) = (${t.siteMenuSlot} is null)`),
+  ],
 );
 
 export const recipeItems = pgTable(

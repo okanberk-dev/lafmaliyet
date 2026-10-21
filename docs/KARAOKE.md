@@ -60,6 +60,7 @@ GET /api/panel/karaoke  ◀─────────────────�
    (Settings → Environment Variables, Production; "Sensitive" işaretleyin) ve iki projeyi de yeniden yayımlayın
    (Deployments → son yayın → ⋯ → Redeploy). Sıra önemli değil: iki tarafta da tanımlanana kadar bağlantı kapalı
    kalır, bir şey bozulmaz.
+   Aynı anahtar menü bağlantısını da açar (bağlı ürünün fiyatı ve Satışta / Tükendi durumu, [SITE-MENU.md](SITE-MENU.md)).
 3. İsteğe bağlı: `LAFFOGATO_URL` (boşsa `https://laffogato.net`); sitede `PANEL_URL` (boşsa
    `https://ladmin.laffogato.net`). Bildirim anahtarları (VAPID) ilk kullanımda üretilip veritabanında şifreli
    saklanır; isterseniz `VAPID_PUBLIC_KEY` ve `VAPID_PRIVATE_KEY` ile sabitlenir.
@@ -139,6 +140,7 @@ dene** seçilen hoparlörden çalmalı.
 |-------|-------|
 | `src/app/api/karaoke/ping/route.ts` | Sitenin pingi: imza, 202, arka planda eşitleme |
 | `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim |
+| `src/server/site-link.ts` | Menü bağlantısıyla ortak: anahtar, sitenin adresi, imzalı istek (8 sn; [SITE-MENU.md](SITE-MENU.md)) |
 | `src/server/karaoke/board.ts` | Oturumlar, sürüm sayacı (ETag), ekran verisi |
 | `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma, bitirme, geri açma, elle eşitleme |
 | `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, kişisel hatırlatmalar; ETag / 304) |

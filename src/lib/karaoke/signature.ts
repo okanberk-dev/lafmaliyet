@@ -43,6 +43,22 @@ export function signedHeaders(secret: string, method: string, url: URL, body = "
   return { [TIMESTAMP_HEADER]: String(timestamp), [SIGNATURE_HEADER]: `v1=${sign(secret, { timestamp, method, url, body })}` };
 }
 
+/**
+ * Panelin siteye attığı imzalı isteğin yöntemi, başlıkları ve gövdesi (karaoke ve menü bağlantısı aynı yardımcıyı
+ * kullanır, src/server/site-link.ts). GET gövdesizdir (boş gövdenin özeti imzalanır); gövdeli istek JSON'dur ve
+ * imzalanan metin gönderilen metnin kendisidir.
+ */
+export function signedRequest(
+  secret: string,
+  method: "GET" | "POST",
+  url: URL,
+  body = "",
+  now = Date.now(),
+): { method: "GET" | "POST"; headers: Record<string, string>; body?: string } {
+  if (method === "GET") return { method, headers: signedHeaders(secret, method, url, "", now) };
+  return { method, headers: { ...signedHeaders(secret, method, url, body, now), "content-type": "application/json" }, body };
+}
+
 export function verifySignature(
   secret: string,
   input: { method: string; url: URL; body: string; timestamp: string | null; signature: string | null; now?: number },
