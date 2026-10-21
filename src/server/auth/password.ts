@@ -29,3 +29,6 @@ export async function verifyPassword(password: string, stored: string): Promise<
   });
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
+
+// Yeni parolanın kuralı istemciyle ortak (alanın altında da gösterilir)
+export { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";

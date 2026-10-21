@@ -91,19 +91,37 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   bağlantı. **Kopyala** hepsini tek Türkçe mesaj yapar, **WhatsApp'ta paylaş** `wa.me` ile açar, **E-postayla gönder**
   Resend ile hoş geldin e-postası yollar (gönderen: Ödemeler & hatırlatıcılar › Gönderim ayarları → `EMAIL_FROM` →
   varsayılan). `RESEND_API_KEY` yoksa e-posta düğmesi kapalıdır, kopyala ve WhatsApp çalışır. Parola ve bağlantı bu
-  pencereden sonra bir daha gösterilmez.
+  pencereden sonra bir daha gösterilmez. Parola e-postası 15 dakika içinde gönderilebilir: düğme parolayı değil
+  kaydederken verilen mühürlü kopyayı yollar (`src/server/auth/access-handle.ts`; eylem parola tahmini için
+  kullanılamasın).
+- **Parola kuralı** (her yerde aynı: Hesabım, kullanıcı ekleme / düzenleme, davet ve sıfırlama;
+  `src/lib/password-rules.ts`): en az 8 karakter; yaygın parolalar (`12345678`, `parola123`, `qwerty…`), kafenin adı
+  (`laffogato`), e-posta adresi ve düz diziler kabul edilmez. Yazarken alanın altında söylenir. Var olan parolalar
+  etkilenmez.
 - Kullanıcıyı düzenle › **Güvenlik:** parola sıfırlama bağlantısı (24 saat, kişinin mevcut parolası bağlantı
   kullanılana kadar çalışır), kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma. Ayrıca pasif
-  yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme.
-- **Giriş kilidi:** 5 hatalı denemede hesap 15 dakika kilitlenir. Daha önce bu hesapla giriş yapılmış tarayıcı bu
-  kilide takılmaz (başkası adresinizi bilip hesabı kilitleyerek sizi dışarıda bırakamasın); o tarayıcının kendi 10
-  deneme hakkı vardır. Bir IP adresinden 15 dakikada en çok 20 hatalı deneme yapılabilir.
+  yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme. **Kendi satırınızda** e-posta, parola, iki adımlı
+  sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (açık kalmış bir yönetici
+  oturumu sahibinin hesabını ele geçiremesin).
+- **Giriş kilidi:** 5 hatalı denemede hesap 15 dakika kilitlenir (parola ve iki adımlı kod birlikte sayılır).
+  Her deneme doğrulanmadan **önce** sayılır: aynı anda gönderilen yüzlerce istek de 5'i aşamaz. Kilit işlem
+  geçmişine "Hesap kilitlendi" diye yazılır. Daha önce bu hesapla giriş yapılmış tarayıcı bu kilide takılmaz
+  (başkası adresinizi bilip hesabı kilitleyerek sizi dışarıda bırakamasın); o tarayıcının kendi 10 deneme hakkı
+  vardır. Bu "bilinen cihaz" kaydı kişinin oturum sürümüne bağlıdır: parola değişince, iki adımlı açılıp kapanınca
+  ya da oturumlar kapatılınca öteki tarayıcılar için geçmez, bir sonraki başarılı girişte yeniden tanınır. Bir IP
+  adresinden 15 dakikada en çok 20 deneme yapılabilir (başarılı giriş sayılmaz).
+- **Çerezler:** üretimde `__Host-laf_session` (oturum, 30 gün), `__Host-laf_2fa` (kod adımı, 10 dakika) ve
+  `__Host-laf_cihaz` (bilinen cihaz, 1 yıl): `__Host-` öneki sayesinde laffogato.net ya da başka bir alt alan adı bu
+  çerezleri yerine koyamaz. Önceki sürümün öneksiz çerezleri (`laf_session`…) bir süre okunur, yenisi yazılınca
+  silinir; kimsenin oturumu düşmez.
+- **Fatura belgesi yükleme** (`POST /api/faturalar/<id>/belge`) yalnız panelin kendi sayfasından gelen isteği kabul
+  eder (Origin = Host).
 - **Giriş sayfası › Parolamı unuttum:** e-posta istenir, yanıt her durumda aynıdır ("kayıtlıysa bağlantı
   gönderildi"). Resend kuruluysa 2 saatlik sıfırlama bağlantısı gider; kurulu değilse kişiye yöneticisine
   başvurması söylenir. Sınırlar: aynı IP'den 15 dakikada 10, aynı e-postaya saatte 3 istek, kişi başına saatte en
   fazla 3 bağlantı.
 - **/davet** sayfası herkese açıktır (oturum gerektirmez, oturum açmaz): ad ve e-postayı gösterir, yeni parola +
-  tekrarı (en az 8) ister, kaydedince bağlantıyı kullanılmış sayar, kişinin açık oturumlarını kapatır ve
+  tekrarı (parola kuralıyla) ister, kaydedince bağlantıyı kullanılmış sayar, kişinin açık oturumlarını kapatır ve
   "Parolanız kaydedildi" mesajıyla `/giris`'e geçer. Sayfayı açmak bağlantıyı tüketmez (WhatsApp önizlemesi de
   açar); bir bağlantıyla en fazla 10 deneme yapılır.
 - Bağlantılar `user_tokens` tablosunda durur: yalnızca anahtarın sha256 özeti, son geçerlilik, kullanım anı ve deneme
@@ -111,9 +129,14 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   Bir kişinin aynı anda tek geçerli bağlantısı olur; 30 günden eski satırlar kendiliğinden silinir. Tablo
   `drizzle/0008_kullanici_davet.sql` ile gelir (deploy'da `npm run build` öncesi migration çalışır).
 - `APP_URL` bağlantılardaki adrestir (yoksa `https://ladmin.laffogato.net`); önizleme ortamında kendi adresini yazın.
-- **Hesabım:** ad ve giriş e-postası (parolayla onay), parola değiştirme, iki adımlı doğrulama: QR kodu Google
-  Authenticator / Microsoft Authenticator / 1Password ile okutulur, 8 tek seferlik kurtarma kodu verilir. Telefon
-  kaybolursa girişte "Telefonum yanımda değil" ile kurtarma kodu kullanılır ya da bir yönetici sıfırlar.
+- **Hesabım:** ad ve giriş e-postası (parolayla onay), parola değiştirme, iki adımlı doğrulama (açmak, kapatmak ve
+  yeni kurtarma kodu parola ister): QR kodu Google Authenticator / Microsoft Authenticator / 1Password ile okutulur,
+  8 tek seferlik kurtarma kodu verilir. Telefon kaybolursa girişte "Telefonum yanımda değil" ile kurtarma kodu
+  kullanılır ya da bir yönetici sıfırlar. **Oturumlar › Diğer cihazlardaki oturumları kapat** (parolayla): kasa
+  bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
+  onayları kişi başına 15 dakikada 5 hatayla sınırlıdır; hatalar işlem geçmişine yazılır.
+- Kurtarma kodları kişiye özel tuzlu, yavaş bir özetle (scrypt) saklanır; veritabanı sızsa bile kodlar denenerek
+  bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
   adımlı doğrulama yeniden kurulmalıdır.
 

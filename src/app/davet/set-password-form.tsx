@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 
+import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
 import { setPasswordWithToken, type SetPasswordState } from "@/server/actions/invites";
 
 import { AuthError, authButton, authInput } from "@/app/giris/auth-ui";
@@ -12,7 +13,7 @@ import { AuthError, authButton, authInput } from "@/app/giris/auth-ui";
 import { rememberLoginEmail } from "./keys";
 import { TokenProblem } from "./problem";
 
-const MIN = 8;
+const MIN = PASSWORD_MIN;
 
 // Giriş ekranıyla aynı çerçeveli alan (16px yazı: iOS alana odaklanınca sayfayı yakınlaştırmaz)
 const input = authInput;
@@ -28,6 +29,8 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
   const [show, setShow] = useState(false);
   const router = useRouter();
   const short = password.length > 0 && password.length < MIN;
+  // Kolay tahmin edilen parola da yazarken söylenir (e-postayla ilgili kuralı sunucu ekler)
+  const weak = !short && password.length > 0 ? passwordProblem(password) : null;
   const mismatch = repeat.length > 0 && repeat !== password;
 
   useEffect(() => {
@@ -92,7 +95,7 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
             autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            aria-invalid={short ? true : undefined}
+            aria-invalid={short || weak ? true : undefined}
             aria-describedby="pw-hint"
             className={`${input} pr-12`}
           />
@@ -106,8 +109,8 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
             {show ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
           </button>
         </div>
-        <span id="pw-hint" className={`text-sm ${short ? "font-semibold text-[#c82014]" : "text-black/60"}`}>
-          {short ? `En az ${MIN} karakter (şu an ${password.length})` : `En az ${MIN} karakter. Başka yerde kullanmadığınız bir parola seçin.`}
+        <span id="pw-hint" className={`text-sm ${short || weak ? "font-semibold text-[#c82014]" : "text-black/60"}`}>
+          {short ? `En az ${MIN} karakter (şu an ${password.length})` : (weak ?? `En az ${MIN} karakter. Başka yerde kullanmadığınız bir parola seçin.`)}
         </span>
       </div>
 
@@ -144,7 +147,7 @@ export function SetPasswordForm({ token, name, email, kind, until }: { token: st
 
       <button
         type="submit"
-        disabled={pending || short || mismatch || !password || !repeat}
+        disabled={pending || short || Boolean(weak) || mismatch || !password || !repeat}
         className={`${authButton} w-full`}
       >
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}

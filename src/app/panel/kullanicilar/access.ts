@@ -25,6 +25,8 @@ export interface AccessInfo {
   loginUrl: string;
   /** Yalnızca "password": yöneticinin belirlediği parola (sunucu geri göndermez, pencere bellekte tutar) */
   password?: string;
+  /** Yalnızca "password": e-posta düğmesinin geri yolladığı mühürlü kopya (15 dakika; sunucu parolayı bundan okur) */
+  handle?: string;
   /** "invite" / "reset": tek kullanımlık bağlantı ve ham anahtarı (e-posta düğmesi anahtarı geri yollar) */
   link?: string;
   token?: string;

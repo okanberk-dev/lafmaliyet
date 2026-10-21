@@ -7,6 +7,7 @@ import {
   consumeRecoveryCode,
   generateRecoveryCodes,
   hashRecoveryCode,
+  hashRecoveryCodeV1,
   otpauthUri,
   totpCode,
   verifyTotp,
@@ -41,17 +42,26 @@ test("doğrulama: ±1 adım, tekrar kullanım reddi, biçim", () => {
   assert.equal(verifyTotp(RFC_SECRET, "abcdef", null, now), null);
 });
 
-test("kurtarma kodları tek kullanımlık", () => {
+test("kurtarma kodları tek kullanımlık", async () => {
   const codes = generateRecoveryCodes();
   assert.equal(codes.length, 8);
   assert.equal(new Set(codes).size, 8);
   for (const c of codes) assert.match(c, /^[a-z2-9]{5}-[a-z2-9]{5}$/);
-  const hashes = codes.map(hashRecoveryCode);
-  const left = consumeRecoveryCode(hashes, codes[3].toUpperCase().replace("-", " "));
+  const hashes = await Promise.all(codes.map((c) => hashRecoveryCode(7, c)));
+  for (const h of hashes) assert.match(h, /^v2\$[0-9a-f]{64}$/);
+  const left = await consumeRecoveryCode(7, hashes, codes[3].toUpperCase().replace("-", " "));
   assert.ok(left);
   assert.equal(left.length, 7);
-  assert.equal(consumeRecoveryCode(left, codes[3]), null);
-  assert.equal(consumeRecoveryCode(hashes, "kisa"), null);
+  assert.equal(await consumeRecoveryCode(7, left, codes[3]), null);
+  assert.equal(await consumeRecoveryCode(7, hashes, "kisa"), null);
+});
+
+test("kurtarma kodları: özet kişiye özel; eski (v1) özetli kodlar da geçer", async () => {
+  const [code] = generateRecoveryCodes(1);
+  assert.notEqual(await hashRecoveryCode(1, code), await hashRecoveryCode(2, code), "aynı kod iki kişide farklı özet");
+  assert.equal(await consumeRecoveryCode(2, [await hashRecoveryCode(1, code)], code), null, "başkasının özeti tutmaz");
+  const legacy = [hashRecoveryCodeV1(code), await hashRecoveryCode(5, generateRecoveryCodes(1)[0])];
+  assert.deepEqual(await consumeRecoveryCode(5, legacy, code), [legacy[1]]);
 });
 
 test("otpauth adresi", () => {

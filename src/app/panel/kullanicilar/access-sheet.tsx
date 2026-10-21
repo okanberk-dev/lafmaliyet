@@ -67,7 +67,7 @@ export function AccessSheet({ info, emailConfigured, onClose }: { info: AccessIn
   const [kept, setKept] = useState(false);
   const [asking, setAsking] = useState(false);
   const message = credentialsText(info);
-  const secret = info.kind === "password" ? info.password : info.token;
+  const secret = info.kind === "password" ? info.handle : info.token;
   const { title, description } = accessSheetText(info);
   const what = info.kind === "password" ? "Parola" : "Bağlantı";
 
