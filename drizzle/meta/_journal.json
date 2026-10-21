@@ -127,6 +127,13 @@
       "when": 1792617484933,
       "tag": "0017_tedarikci_listeden_kaldir",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792624440610,
+      "tag": "0018_site_menu_baglantisi",
+      "breakpoints": true
     }
   ]
 }

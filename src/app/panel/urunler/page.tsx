@@ -1,15 +1,20 @@
-import { Coffee, ShoppingBag, Target, TrendingUp } from "lucide-react";
+import { Coffee, Globe, ShoppingBag, Target, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
+import { after } from "next/server";
 import { Suspense } from "react";
 
 import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
+import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { monthLabel, num, pct } from "@/lib/format";
+import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { syncSiteMenu } from "@/server/site-menu/sync";
+import { loadSiteLinks } from "@/server/site-menu/view";
 
 import { productBreakdowns } from "./breakdowns";
 import { menuAverages } from "./logic";
@@ -38,16 +43,28 @@ export default function ProductsPage({ searchParams }: PageProps<"/panel/urunler
 
 async function ProductsContent({ searchParams }: { searchParams: PageProps<"/panel/urunler">["searchParams"] }) {
   await requireAdmin();
+  // laffogato.net menüsü: ping kaçtıysa diye site en çok beş dakikada bir sorulur; sayfa beklemez, değişen fiyat
+  // ve menü durumu sonraki açılışta görünür (docs/SITE-MENU.md)
+  after(async () => {
+    try {
+      await syncSiteMenu("page");
+    } catch (e) {
+      console.error("[menu] sayfa eşitlemesi", e);
+    }
+  });
   const sp = await searchParams;
-  const model = await loadModel();
+  const [model, site] = await Promise.all([loadModel(), loadSiteLinks()]);
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
   const prices = await loadPriceAlerts(model).catch(() => null);
   const sold = model.soldByProduct(month);
   const st = model.settings;
+  const linkOf = new Map(site.links.map((l) => [l.productId, l]));
+  const siteItems = site.snapshot.at ? site.snapshot.items : null;
 
   const rows: ProductRow[] = model.products.map((p) => {
     const qty = sold.get(p.product.id) ?? 0;
+    const link = linkOf.get(p.product.id) ?? null;
     return {
       id: p.product.id,
       name: p.product.name,
@@ -73,8 +90,11 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
       monthNet: p.net * qty,
       lineCount: p.lines.length,
       hasEstimate: p.lines.some((l) => l.ingredient?.isEstimate),
+      // Bağlantı kapalıysa (anahtar yok) işaret yok; bağlı kalmış ürün yine gösterilir
+      site: site.configured || link ? { ...siteMarker(link, siteItems), ref: link ? `${link.siteMenuId} ${link.slot}` : null } : null,
     };
   });
+  const siteProblems = rows.filter((r) => r.site?.kind === "broken" || r.site?.kind === "missing").length;
 
   const active = rows.filter((r) => r.active);
   const soldRows = active.filter((r) => r.soldQty > 0);
@@ -109,6 +129,22 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         actions={
           <>
             <MonthPicker months={availableMonths(model)} value={month} />
+            <ButtonLink
+              href="/panel/urunler/site"
+              variant="secondary"
+              title={
+                !site.configured
+                  ? "laffogato.net menü bağlantısı kurulmamış"
+                  : siteProblems
+                    ? `${num(siteProblems)} ürünün site bağlantısında sorun var`
+                    : site.state.lastError
+                      ? `Son eşitleme hatası: ${site.state.lastError}`
+                      : "Ürünleri laffogato.net menüsündeki kalemlere bağlayın; fiyat ve menü durumu iki yerde aynı kalır"
+              }
+            >
+              <Globe size={16} aria-hidden="true" /> Site menüsü
+              {site.configured && (siteProblems || site.state.lastError) ? <span className="size-2 rounded-full bg-bad" aria-label="sorun var" /> : null}
+            </ButtonLink>
             <NewProductButton
               categories={categories}
               products={rows.map((r) => ({
@@ -207,7 +243,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
       {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
-      <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} />
+      <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} />
     </>
   );
 }

@@ -6,6 +6,7 @@ import {
   Coffee,
   CupSoda,
   FileText,
+  Globe,
   Info,
   LayoutList,
   Package,
@@ -150,11 +151,26 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> ekranında satış fiyatı hücresini değiştirip Enter&apos;a basın ya da ürün kartında fiyatı değiştirin. Kartta fiyat simülatörü ile önce
-            deneyebilirsiniz.
+            deneyebilirsiniz. Ürün laffogato.net menüsüne bağlıysa (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin
+            tarihini güncelleyin, kasadaki (ModPOS) fiyatı da elle değiştirin.
           </>
         ),
         icon: Tag,
         links: [{ href: "/panel/urunler", label: "Ürünler" }],
+      },
+      {
+        id: "site-menusu",
+        q: "Site menüsüyle bağlantı (fiyat ve Tükendi)",
+        a: (
+          <>
+            Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
+            “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde göster”i değiştirince önce siteye yazılır, site ulaşılamazsa
+            kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
+            ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır.
+          </>
+        ),
+        icon: Globe,
+        links: [{ href: "/panel/urunler/site", label: "Site menüsü" }],
       },
       {
         id: "recete",

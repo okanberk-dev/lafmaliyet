@@ -1,15 +1,19 @@
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { monthLabel } from "@/lib/format";
+import { suggestLinks } from "@/lib/site-menu/names";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { syncSiteMenu } from "@/server/site-menu/sync";
+import { loadSiteLinks } from "@/server/site-menu/view";
 
 import { waterSource } from "../../ayarlar/water-text";
 import { RecipeEditor } from "./recipe-editor";
@@ -81,11 +85,21 @@ async function RecipeContent({
   searchParams: PageProps<"/panel/urunler/[id]">["searchParams"];
 }) {
   await requireAdmin();
+  // laffogato.net menüsü en çok beş dakikada bir (Ürünler sayfasıyla aynı kural; sayfa beklemez)
+  after(async () => {
+    try {
+      await syncSiteMenu("page");
+    } catch (e) {
+      console.error("[menu] sayfa eşitlemesi", e);
+    }
+  });
   const { id } = await params;
   const sp = await searchParams;
-  const model = await loadModel();
+  const [model, siteLinks] = await Promise.all([loadModel(), loadSiteLinks()]);
   const product = model.productById.get(Number(id));
   if (!product) notFound();
+  const link = siteLinks.links.find((l) => l.productId === product.id) ?? null;
+  const siteItems = siteLinks.snapshot.at ? siteLinks.snapshot.items : [];
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
   const impact = (await loadPriceAlerts(model).catch(() => null))?.impacts.find((i) => i.productId === product.id) ?? null;
@@ -144,6 +158,18 @@ async function RecipeContent({
         costed: model.water.reason === "ok" || model.water.reason === "override",
         text: waterSource(model.water),
         short: waterSource(model.water, true),
+      }}
+      site={{
+        configured: siteLinks.configured,
+        link: link ? { siteMenuId: link.siteMenuId, slot: link.slot } : null,
+        item: link ? (siteItems.find((i) => i.id === link.siteMenuId) ?? null) : null,
+        snapshotAt: siteLinks.snapshot.at,
+        lastError: siteLinks.state.lastError,
+        // Bağlı değilse ada göre öneri (yalnız gösterilir; bağlamak yöneticinin)
+        suggestion:
+          !link && siteLinks.configured
+            ? (suggestLinks([{ id: product.id, name: product.name, size: product.size, price: product.price }], siteItems, siteLinks.links)[0] ?? null)
+            : null,
       }}
       priceImpact={
         impact

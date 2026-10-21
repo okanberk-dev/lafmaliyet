@@ -8,11 +8,13 @@ import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
+import { syncSiteMenu } from "@/server/site-menu/sync";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
 // Paraşüt'ten gelen yeni faturalar). Paraşüt eşitlemesi bir saat önce ayrı bir işte çalışır (/api/cron/parasut);
 // o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
-// kişisel hatırlatıcıların sabah bildirimi ve karaoke rezervasyonlarının günlük yedek eşitlemesi (ping kaçtıysa).
+// kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
+// Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa).
 export const maxDuration = 60;
 
 /** Bugün (İstanbul) başarılı bir eşitleme var mı */
@@ -43,13 +45,14 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     sync = { ok: false, error: (e as Error).message };
   }
-  // Kişisel hatırlatıcı bildirimi ve karaoke eşitlemesi sabah e-postasını bekletmez, bozamaz
+  // Kişisel hatırlatıcı bildirimi, karaoke ve menü eşitlemesi sabah e-postasını bekletmez, bozamaz
   const extras = async () => {
-    const [reminders, karaoke] = await Promise.all([
+    const [reminders, karaoke, menu] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       syncKaraoke("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
+      syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
     ]);
-    return { reminders, karaoke: karaoke.status };
+    return { reminders, karaoke: karaoke.status, menu: menu.status };
   };
   try {
     const result = await runReminderDigest("cron");

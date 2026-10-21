@@ -3,23 +3,20 @@ import "server-only";
 import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { detectEvent, eventMessage, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
-import { signedHeaders } from "@/lib/karaoke/signature";
 import { parseSiteResponse, type SiteSnapshot } from "@/lib/karaoke/site";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
+import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
 
 import { bumpKaraokeVersion } from "./board";
 
+// Anahtar, adres ve imzalı istek menü bağlantısıyla ortak (src/server/site-link.ts)
+export { siteUrl };
+
 /** Paylaşılan anahtar (iki projede aynı, en az 32 karakter); yoksa bağlantı kapalı */
 export function karaokeSecret(): string | null {
-  const v = process.env.KARAOKE_SYNC_SECRET?.trim();
-  return v && v.length >= 32 ? v : null;
-}
-
-/** Sitenin adresi (rezervasyonlar buradan çekilir) */
-export function siteUrl(): string {
-  return (process.env.LAFFOGATO_URL?.trim() || "https://laffogato.net").replace(/\/+$/, "");
+  return siteLinkSecret();
 }
 
 const STATE_KEY = "karaoke_sync";
@@ -95,7 +92,7 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
   const tryAt = new Date().toISOString();
   let snapshot: SiteSnapshot;
   try {
-    const res = await fetch(url, { headers: signedHeaders(secret, "GET", url), signal: AbortSignal.timeout(8000), cache: "no-store" });
+    const res = await signedSiteFetch(secret, url);
     if (!res.ok) throw new Error(explain(res.status));
     snapshot = parseSiteResponse(await res.json());
   } catch (e) {

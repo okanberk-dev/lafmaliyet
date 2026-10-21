@@ -11,6 +11,9 @@ import {
   FilePlus2,
   FileText,
   GlassWater,
+  GlobeCheck,
+  GlobeOff,
+  GlobeX,
   IceCreamCone,
   Leaf,
   Plus,
@@ -42,6 +45,8 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
+import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
+import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
 
@@ -76,6 +81,8 @@ export interface ProductRow {
   monthNet: number;
   lineCount: number;
   hasEstimate: boolean;
+  /** laffogato.net menü bağlantısı (bağlantı kapalıysa ve ürün bağlı değilse null); ref: "mnu-0007 M" */
+  site?: (SiteMarker & { ref: string | null }) | null;
 }
 
 type NumKey = keyof Pick<
@@ -144,8 +151,40 @@ function categoryIcon(category: string): LucideIcon {
 
 const sizeLabel = (s: string) => SIZE_LABELS[s as Size] ?? s;
 
-// Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir; ürün notu da aranır ("varsayıldı")
-const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category} ${r.note ?? ""}`;
+// Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir; ürün notu ("varsayıldı") ve site işareti
+// ("sitede", "bağlı değil") da aranır
+const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category} ${r.note ?? ""} ${r.site?.text ?? ""}`;
+
+/** Site işaretinin rengi ve ikonu: bağlı bilgi mavisi, sorunlu kırmızı / turuncu, bağlı değil soluk */
+const SITE_MARK: Record<SiteMarker["kind"], { icon: LucideIcon; tone: string; badge: "blue" | "gray" | "red" | "amber" }> = {
+  linked: { icon: GlobeCheck, tone: "text-info", badge: "blue" },
+  pending: { icon: GlobeCheck, tone: "text-info", badge: "blue" },
+  broken: { icon: GlobeX, tone: "text-bad", badge: "red" },
+  missing: { icon: GlobeX, tone: "text-warn", badge: "amber" },
+  none: { icon: GlobeOff, tone: "text-ink-quiet", badge: "gray" },
+};
+
+/**
+ * laffogato.net menüsü işareti ("Sitede", "Bağlı değil", "Bağlantı kopuk", "Sitede yok"). Tabloda adın yanında küçük
+ * ikon (metni ipucunda ve ekran okuyucuda; satır yüksekliği değişmesin), sorunluysa metinli rozet; telefon kartında
+ * rozet.
+ */
+function SiteMark({ site, compact }: { site: NonNullable<ProductRow["site"]>; compact?: boolean }) {
+  const mark = SITE_MARK[site.kind];
+  if (compact || site.kind === "broken" || site.kind === "missing") {
+    return (
+      <Badge tone={mark.badge} dot={site.kind !== "none"} title={site.title}>
+        {site.text}
+      </Badge>
+    );
+  }
+  return (
+    <span className={cn("inline-flex shrink-0", mark.tone)} title={site.title}>
+      {createElement(mark.icon, { size: 14, "aria-hidden": true })}
+      <span className="sr-only">{site.text}</span>
+    </span>
+  );
+}
 
 /** Oran anlamsız: reçete yok (%0 ve ~%97) ya da fiyat girilmemiş (0 ₺; oran %0 görünür ama ürün zararına satılır) */
 const noRatio = (r: Pick<ProductRow, "status" | "price">) => r.status === "Reçete yok" || r.price <= 0;
@@ -258,9 +297,11 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
     const res = await updateProductPrice(row.id, v);
     setSaving(false);
     if (res.ok) {
-      setLast(v);
-      setValue(priceText(v));
-      toast.success(`${row.name} ${row.size}: ${tl(last, 2)} → ${tl(v, 2)}`);
+      // Siteye bağlı üründe yazılan fiyat sitenin kuruşudur
+      const written = res.data.price;
+      setLast(written);
+      setValue(priceText(written));
+      toast.success(`${row.name} ${row.size}: ${tl(last, 2)} → ${tl(written, 2)}`, res.data.site ? { description: PRICE_PUSH_REMINDER, duration: 12_000 } : undefined);
     } else {
       toast.error(res.error);
       setValue(priceText(last));
@@ -333,6 +374,7 @@ function ProductName({ r, compact, month }: { r: ProductRow; compact?: boolean; 
             {r.name}
           </Link>
           {r.note ? <InfoTip text={r.note} className={compact ? "relative z-10" : undefined} /> : null}
+          {r.site && !compact ? <SiteMark site={r.site} /> : null}
           {!r.active ? <Badge tone="gray">Pasif</Badge> : null}
           {r.hasEstimate && !compact ? (
             <Badge tone="amber" dot title="Reçetesinde faturada bulunamayan, tahmini fiyatlı malzeme var">
@@ -352,6 +394,7 @@ function ProductName({ r, compact, month }: { r: ProductRow; compact?: boolean; 
                 Tahmini maliyet
               </Badge>
             ) : null}
+            {r.site ? <SiteMark site={r.site} compact /> : null}
           </span>
         ) : null}
       </span>
@@ -365,6 +408,7 @@ export function ProductsTable({
   month,
   monthLabel,
   target,
+  siteConfigured = false,
 }: {
   rows: ProductRow[];
   categories: { id: number; name: string }[];
@@ -372,6 +416,8 @@ export function ProductsTable({
   month: string;
   monthLabel: string;
   target: number;
+  /** laffogato.net menü bağlantısı açık: "Sitede" ürünlerin fiyatı sitede de değişir */
+  siteConfigured?: boolean;
 }) {
   const reduce = useCalmMotion();
   // Süzgeçler adreste: ?ara=latte&kategori=3&boy=L&durum=Dikkat,Düşük kâr&pasif=1&sirala=unitProfit.desc&goster=tumu
@@ -546,6 +592,7 @@ export function ProductsTable({
       "Fire (%)",
       "Not",
       "Tahmini malzeme",
+      "Site menüsü",
     ];
     const lines = filtered.map((r) => [
       r.name,
@@ -568,6 +615,7 @@ export function ProductsTable({
       num(r.fireRate * 100, 1) + (r.fireOverridden ? " (özel)" : ""),
       r.note ?? "",
       r.hasEstimate ? "Evet" : "",
+      r.site?.ref ? `${r.site.ref}${r.site.kind === "linked" || r.site.kind === "pending" ? "" : ` (${r.site.text})`}` : "",
     ]);
     downloadCsv(`urunler-${slugify(monthLabel)}.csv`, [header, ...lines]);
     toast.success(`${num(filtered.length)} ürün CSV olarak indirildi`);
@@ -588,6 +636,12 @@ export function ProductsTable({
           <>
             <span className="pointer-coarse:hidden">Satış fiyatına tıklayıp değiştirin; Enter kaydeder, Esc vazgeçer. Ürün adı reçete kartını bu ayla açar.</span>
             <span className="hidden pointer-coarse:inline">Satış fiyatına dokunup değiştirin; alandan çıkınca kaydedilir. Ürüne dokununca reçete kartı bu ayla açılır.</span>
+            {siteConfigured ? (
+              <>
+                {" "}
+                Adın yanındaki küre: laffogato.net menüsüne bağlı (üzerine gelince sitedeki kalem ve fiyat); bağlı ürünün fiyatı sitede de değişir.
+              </>
+            ) : null}
           </>
         }
         meta={
