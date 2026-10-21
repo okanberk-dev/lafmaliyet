@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CircleCheck, Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CircleCheck, Eye, EyeOff, KeyRound, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
@@ -30,7 +30,14 @@ function Row({ children }: { children: ReactNode }) {
 
 // Telefonda 16px yazı: iOS alana odaklanınca sayfayı yakınlaştırmaz
 const input =
-  "h-11 w-full rounded-xl bg-chart-metric-bg px-3 text-base text-foreground sm:text-sm outline-none placeholder:text-chart-muted transition-colors focus:bg-chart-bg focus:ring-2 focus:ring-foreground/10";
+  "h-11 w-full rounded-xl bg-chart-metric-bg px-3 text-base text-foreground sm:text-sm outline-none placeholder:text-chart-muted ring-1 ring-black/[0.06] ring-inset transition-[background-color,box-shadow] focus:bg-chart-bg focus:ring-2 focus:ring-foreground/15 pointer-coarse:h-12";
+/** Solunda simge olan alan */
+const withIcon = `${input} pl-10`;
+
+/** Alanın solundaki simge (tıklamayı alana bırakır) */
+function FieldIcon({ children }: { children: ReactNode }) {
+  return <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-chart-muted [&_svg]:size-4">{children}</span>;
+}
 
 function SubmitButton({ pending, idle, busy, reduce }: { pending: boolean; idle: string; busy: string; reduce: boolean }) {
   return (
@@ -252,7 +259,7 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
   return (
     <motion.div
       data-component="login-card"
-      className="w-full max-w-[400px] rounded-3xl bg-chart-card-bg p-5 sm:p-6"
+      className="w-full max-w-[400px] rounded-3xl bg-chart-card-bg p-5 shadow-[0_24px_60px_-28px_rgb(12_59_45/0.45)] ring-1 ring-black/[0.05] sm:p-6 lg:shadow-[0_24px_60px_-32px_rgb(0_0_0/0.25)]"
       initial={reduce ? false : { opacity: 0, y: 20, scale: 0.94 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={reduce ? { duration: 0 } : SPRING_SWAP}
@@ -294,29 +301,35 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
             <Row>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm text-chart-muted">E-posta</span>
-                <motion.input
-                  ref={emailRef}
-                  type="email"
-                  name="email"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  inputMode="email"
-                  // Hatalı denemeden sonra e-posta dolu gelir; o zaman parola alanına odaklanılır
-                  autoFocus={!state.email}
-                  required
-                  defaultValue={state.email}
-                  placeholder="ornek@laffogato.net"
-                  whileFocus={reduce ? undefined : { scale: 1.01, y: -1 }}
-                  transition={SPRING_PRESS}
-                  className={input}
-                />
+                <span className="relative">
+                  <FieldIcon>
+                    <Mail />
+                  </FieldIcon>
+                  <motion.input
+                    ref={emailRef}
+                    type="email"
+                    name="email"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    inputMode="email"
+                    // Hatalı denemeden sonra e-posta dolu gelir; o zaman parola alanına odaklanılır
+                    autoFocus={!state.email}
+                    required
+                    defaultValue={state.email}
+                    placeholder="ornek@laffogato.net"
+                    className={withIcon}
+                  />
+                </span>
               </label>
             </Row>
             <Row>
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm text-chart-muted">Parola</span>
                 <div className="relative">
+                  <FieldIcon>
+                    <LockKeyhole />
+                  </FieldIcon>
                   <motion.input
                     ref={passwordRef}
                     type={show ? "text" : "password"}
@@ -328,9 +341,7 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
                     aria-describedby={caps ? "caps-warning" : undefined}
                     required
                     placeholder="Parolanız"
-                    whileFocus={reduce ? undefined : { scale: 1.01, y: -1 }}
-                    transition={SPRING_PRESS}
-                    className={`${input} pr-11`}
+                    className={`${withIcon} pr-11`}
                   />
                   <motion.button
                     type="button"
@@ -382,14 +393,6 @@ export function LoginForm({ emailConfigured = true }: { emailConfigured?: boolea
           </form>
         )}
 
-        <Row>
-          <p className="text-center text-sm text-chart-muted">
-            Kafenin sitesi:{" "}
-            <a href="https://laffogato.net" className="-my-3 inline-flex min-h-11 items-center px-1 font-medium text-foreground hover:underline">
-              laffogato.net
-            </a>
-          </p>
-        </Row>
       </motion.div>
     </motion.div>
   );
