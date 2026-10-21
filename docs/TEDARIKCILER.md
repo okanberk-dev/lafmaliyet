@@ -51,17 +51,20 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 ### Paraşüt eşitlemesi ödeme durumuna dokunmaz
 
 - Paraşüt'ten gelen her yeni fatura (gider faturası ve içeri alınmamış e-fatura) **ödenmedi** gelir; ödendiğini siz
-  işaretlersiniz. İade (eksi) faturası borç sayılmaz.
+  işaretlersiniz. İade (eksi) faturası borç sayılmaz (ödeme talebinde düşülebilir, aşağıda).
+- **Komisyon faturası** (kategorisi Komisyon: Trendyol, Yemek Sepeti, yemek kartları) ödendi gelir (fatura günü):
+  ödenmez, platformun hakedişinden düşülür; kalan borcu şişirmez.
 - Eşitleme var olan faturanın ödeme durumunu hiç değiştirmez. Paraşüt'ün bildirdiği yalnız ipucu olarak saklanır
-  (`invoices.parasut_unpaid`, ekranda *Paraşüt'te ödendi*).
+  (`invoices.parasut_unpaid`, ekranda *Paraşüt'te ödendi*). Paraşüt faturayı kapatınca panelde ödenmedi duran kısmen
+  ödenmiş faturanın bilinen kalanı korunur (tamamına dönmez).
 - **Peşin çalışılan tedarikçi:** kartında **Faturaları ödendi gelsin** işaretliyse yeni faturası ödendi gelir (fatura
   günü, kartın ödeme şekliyle). Peşin tedarikçide IBAN eksik sayılmaz.
 - Bu özellikten önce gelmiş faturaların durumu olduğu gibi kalır.
 - **Geçmiş faturalar:** ödeme takibi ilk eşitlemeden 30 gün öncesinden başlar (`integration_state` ›
-  `payments.since`; `db:reset` silmez). Bundan eski bir fatura yeni gelirse (Excel'i yeniden yükleyince, Tarihten
-  eşitle'yle) yüzlerce eski fatura "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır: gider faturasında
-  Paraşüt'ün ödeme kaydı, e-faturada (ödeme bilgisi yok) ödendi; belgedeki vadesi henüz gelmemiş e-fatura ödenmedi
-  olur.
+  `payments.since`). Bundan eski bir fatura yeni gelirse (Tarihten eşitle'yle geçmişi doldururken) yüzlerce eski fatura
+  "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır: gider faturasında Paraşüt'ün ödeme kaydı, e-faturada
+  (ödeme bilgisi yok) ödendi; belgedeki vadesi henüz gelmemiş e-fatura ödenmedi olur. `npm run db:reset` faturaları
+  (ödeme işaretleriyle) yeniden yüklediği için başlangıcı da siler; sonraki eşitleme yeniden belirler.
 
 ## Vade
 
@@ -81,7 +84,7 @@ IBAN: TR07 0006 2000 0629 8765 4321 01
 Banka: Garanti BBVA
 Vergi no: 7810030530
 Tutar: 12.450,50 ₺
-Açıklama: SUT2026000123, SUT2026000098 nolu faturalar
+Açıklama: SUT2026000098, SUT2026000123 nolu faturalar
 
 Faturalar (2):
 • 25.08.2026 · SUT2026000098 · 4.000 ₺
@@ -95,7 +98,10 @@ Cuma gününe kadar
   yazarsınız). Alıcı hesap sahibi, yoksa unvan, yoksa faturadaki addır. İsteğe bağlı not metnin sonuna eklenir.
 - Bankanın havale ekranı için IBAN, tutar (`12450,50`) ve açıklama ayrı ayrı kopyalanır.
 - **Talep edildi işaretle (N)** seçilen faturaları *talep edildi* yapar (daha önce talep edilenlerin günü korunur).
-  Ödeyince **Ödendi** işaretlenir.
+  Ödeyince **Ödendi** işaretlenir; ödeme talebi kapanır.
+- **İade faturaları:** tedarikçinin son 90 gündeki iade (eksi) faturaları pencerede ayrıca, uyarıyla listelenir.
+  Hangisinin daha önce düşüldüğü bilinmediği için seçili gelmez; seçilen iade tutardan düşülür, metinde "Düşülen
+  iadeler" altında yazar, havale açıklamasına girmez.
 - Kartta IBAN yoksa metinde "kartta yok" yazar ve pencerede uyarı çıkar.
 
 ## Cari kartı
@@ -103,7 +109,8 @@ Cuma gününe kadar
 - **Kimlik:** faturalardaki ad (zorunlu), ticari unvan, VKN / TCKN (10 ya da 11 hane olmalı; kontrol hanesi
   tutmazsa uyarı çıkar, yine kaydedilir), vergi dairesi.
 - **Banka:** IBAN (TR + 24 hane, kontrol hanesi denetlenir; banka adı IBAN'dan bulunur ve boşsa yazılır), banka,
-  hesap sahibi.
+  hesap sahibi. Kayıtlı IBAN değiştirilirken teyit uyarısı çıkar (sahte "IBAN'ımız değişti" bildirimi yaygın bir
+  dolandırıcılıktır; tedarikçiyi bildiğiniz numaradan arayın); değişiklik eski ve yeni IBAN'la işlem geçmişine yazılır.
 - **İletişim:** yetkili, telefon (cep telefonuysa WhatsApp düğmesi çıkar), e-posta, adres.
 - **Ödeme:** vade (gün, 0–365), genelde nasıl ödenir (ödendi penceresinde önce bu seçili gelir), *Faturaları ödendi
   gelsin* (peşin).
@@ -114,9 +121,9 @@ Cuma gününe kadar
   `PayeeFinancialAccount`, notlardaki IBAN), gider faturasında Paraşüt'teki kişi kartından (`contacts`). Yalnız boş
   alanlar doldurulur, dolanlar işaretlenir; kaydetmeden önce kontrol edin.
 - Kartın adı değişince eski ad, faturaları varsa diğer adlara eklenir (faturalar karttan düşmez); sayfa yeni adrese
-  geçer. Kart silinince faturalar silinmez, tedarikçi kartsız görünür; silme bildirimindeki **Geri al** kartı geri
+  geçer. Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki ad da diğer adlara girer. Kart silinince faturalar silinmez, tedarikçi kartsız görünür; silme bildirimindeki **Geri al** kartı geri
   getirir.
-- `npm run db:reset` kartları silmez.
+- `npm run db:reset` kartları silmez; faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir.
 
 ## Eşleşme
 

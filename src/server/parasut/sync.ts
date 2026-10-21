@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, sql } from "drizzle-orm";
 
-import { INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
@@ -140,6 +140,9 @@ type Existing = ExistingInvoice & {
   source: "manual" | "excel" | "parasut";
   note: string | null;
   parasutUnpaid: boolean | null;
+  outstanding: number | null;
+  paidAt: string | null;
+  paymentRequestedAt: string | null;
 };
 
 interface Ctx {
@@ -245,11 +248,18 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     // Paraşüt'teki vade o zamandan beri aynıysa korunur; Paraşüt'te vade yoksa paneldeki vade kalır.
     // Yer tutucu ad, yalnızca gerçek tedarikçi adı okunabildiyse düzeltilir (açıklamayla değil)
     const supplierFix = match.supplier === PLACEHOLDER_SUPPLIER && d.supplierResolved ? { supplier: ctx.alias(d.supplier) } : {};
+    // Paraşüt borcu kapattı ama panelde hâlâ ödenmedi: bilinen kalan tutar korunur (Paraşüt'ün 0'ı yazılsa kalan borç
+    // faturanın tamamına dönerdi)
+    const keepOutstanding = match.unpaid && !d.unpaid;
+    // Yer tutucu adla açılmış fatura gerçek adıyla peşin çalışılan tedarikçinin kartına düştü: yeni faturadaki kural
+    const card =
+      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier) : null;
+    const settle = card ? { unpaid: false, paidAt: match.date, paidVia: card.paymentMethod } : {};
     const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
     await db
       .update(s.invoices)
-      .set({ ...common, ...supplierFix, dueDate })
+      .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate })
       .where(eq(s.invoices.id, match.id));
     invoiceId = match.id;
     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
@@ -264,6 +274,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       dueDate,
       parasutUnpaid: d.unpaid,
       syncedAt: common.syncedAt,
+      ...(keepOutstanding ? {} : { outstanding: d.outstanding }),
+      ...(card ? { unpaid: false, paidAt: match.date } : {}),
     });
     rememberDue(ctx, d.externalId, d.dueDate, match.unpaid);
     ctx.counts.updated++;
@@ -273,7 +285,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       supplier === PLACEHOLDER_SUPPLIER
         ? pickCategory({ ...d, supplier }, ctx.rules, new Map(), INVOICE_CATEGORIES)
         : pickCategory({ ...d, supplier }, ctx.rules, ctx.history, INVOICE_CATEGORIES);
-    const pay = newInvoicePayment({ payable: d.payable, date: d.date, parasutUnpaid: d.unpaid }, ctx.paidOnDelivery(supplier), ctx.paymentsSince);
+    const pay = newInvoicePayment(
+      { payable: d.payable, date: d.date, parasutUnpaid: d.unpaid, commission: category === COMMISSION_CATEGORY },
+      ctx.paidOnDelivery(supplier),
+      ctx.paymentsSince,
+    );
     const [row] = await db
       .insert(s.invoices)
       .values({
@@ -303,6 +319,9 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       source: "parasut",
       note: null,
       parasutUnpaid: d.unpaid,
+      outstanding: d.outstanding,
+      paidAt: pay.paidAt,
+      paymentRequestedAt: null,
       syncedAt: common.syncedAt,
     });
     rememberDue(ctx, d.externalId, d.dueDate, pay.unpaid);
@@ -449,6 +468,9 @@ export async function syncParasut(
           source: s.invoices.source,
           note: s.invoices.note,
           parasutUnpaid: s.invoices.parasutUnpaid,
+          outstanding: s.invoices.outstanding,
+          paidAt: s.invoices.paidAt,
+          paymentRequestedAt: s.invoices.paymentRequestedAt,
           syncedAt: s.invoices.syncedAt,
           category: s.invoices.category,
           needsReview: s.invoices.needsReview,
@@ -796,7 +818,11 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   );
   const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}${d.refund ? " · iade faturası" : ""}`;
   // E-faturada ödeme bilgisi yok (parasutUnpaid null)
-  const pay = newInvoicePayment({ payable: d.payable, date: d.date, parasutUnpaid: null }, ctx.paidOnDelivery(supplier), ctx.paymentsSince);
+  const pay = newInvoicePayment(
+    { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY },
+    ctx.paidOnDelivery(supplier),
+    ctx.paymentsSince,
+  );
   const [row] = await db
     .insert(s.invoices)
     .values({
@@ -827,6 +853,9 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     source: "parasut",
     note,
     parasutUnpaid: null,
+    outstanding: null,
+    paidAt: pay.paidAt,
+    paymentRequestedAt: null,
     syncedAt: now,
   });
   ctx.touchedMonths.add(d.date.slice(0, 7));

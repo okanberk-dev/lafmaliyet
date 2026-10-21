@@ -26,6 +26,8 @@ export interface RecentPaid {
   prev?: ReminderSnapshot;
   /** Hatırlatıcı: ödendikten sonraki sıradaki tarih (tek seferlikte null, hatırlatıcı kapanır) */
   next?: string | null;
+  /** Fatura: ödenmeden önceki ödeme talebi günü (geri alınca "talep edildi" geri gelir) */
+  requestedAt?: string | null;
 }
 
 /** Hatırlatıcının şimdiki hâli (geri alınabilir mi diye bakılan alanlar) */

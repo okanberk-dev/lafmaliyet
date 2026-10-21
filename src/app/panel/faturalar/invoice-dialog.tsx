@@ -198,8 +198,9 @@ export function InvoiceDialog({
         unpaid: f.unpaid,
         note: f.note,
         dueDate: f.dueDate || null,
-        // Boş ödeme günü: yeni faturada fatura günü; kayıtlı faturada bilinmiyor (ödendiye geçerken pencere bugünü yazar)
-        paidAt: f.unpaid ? null : f.paidAt || (invoice ? null : f.date),
+        // Boş ödeme günü: yeni faturada fatura günü (ileri tarihli faturada bugün); kayıtlı faturada bilinmiyor (ödendiye
+        // geçerken pencere bugünü yazar)
+        paidAt: f.unpaid ? null : f.paidAt || (invoice ? null : f.date > localToday() ? localToday() : f.date),
       });
       if (res.ok && !invoice && attachment) {
         setBusyText("Belge yükleniyor…");
@@ -314,7 +315,8 @@ export function InvoiceDialog({
                 {cariHref ? (
                   <>
                     {supplierHint ? " " : null}
-                    <Link href={cariHref} className="font-medium text-info underline-offset-2 hover:underline">
+                    {/* Önce pencere kapanır: gizlenen Faturalar sayfasında açık kalan pencere yeni sayfayı kilitlerdi */}
+                    <Link href={cariHref} onClick={onClose} className="font-medium text-info underline-offset-2 hover:underline">
                       Cari kartı ve ödemeleri →
                     </Link>
                   </>

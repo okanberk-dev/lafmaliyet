@@ -243,7 +243,7 @@ test("liste: süzgeç ve sıra adresten doğrulanır; borç, vade, son fatura ve
   assert.equal(parseSupplierFilter("bozuk"), "tumu");
   assert.equal(parseSupplierSort("vade"), "vade");
   assert.equal(parseSupplierSort(null), "borc");
-  const base = { count: 1, invoiced: 0, year: 0, openCount: 0, open: 0, requestedCount: 0, requested: 0, overdueCount: 0, overdue: 0, soonCount: 0, soon: 0, nextDue: null, lastInvoice: null, lastPaid: null };
+  const base = { count: 1, invoiced: 0, year: 0, openCount: 0, open: 0, requestedCount: 0, requested: 0, overdueCount: 0, overdue: 0, soonCount: 0, soon: 0, nextDue: null, nextSoonDue: null, lastInvoice: null, lastPaid: null };
   const rows = [
     { name: "Çay Evi", hasCard: true, missing: [], summary: { ...base, open: 500, openCount: 1, nextDue: { date: "2026-11-01", estimated: false }, lastInvoice: "2026-10-01" } },
     { name: "Ayşe", hasCard: true, missing: ["iban" as const], summary: { ...base, open: 500, openCount: 1, overdue: 500, overdueCount: 1, nextDue: { date: "2026-10-01", estimated: false }, lastInvoice: "2026-09-01" } },
@@ -389,9 +389,9 @@ test("diğer ad önerisi: aynı firmanın farklı yazılmış kartsız adları (
   assert.deepEqual(aliasCandidates({ key: "x", name: "Yemek Sepeti A.Ş.", names: [] }, groups, sameSupplier), ["YEMEK SEPETİ ELEKTRONİK İLETİŞİM A.Ş."]);
 });
 
-test("eşitleme: yeni fatura ödenmedi gelir; iade, peşin çalışılan tedarikçininki ve takipten eskiler değil", () => {
+test("eşitleme: yeni fatura ödenmedi gelir; iade, komisyon, peşin çalışılan tedarikçininki ve takipten eskiler değil", () => {
   const since = "2026-09-21";
-  const d = { payable: 1200, date: "2026-10-14", parasutUnpaid: false };
+  const d = { payable: 1200, date: "2026-10-14", parasutUnpaid: false, commission: false };
   assert.deepEqual(newInvoicePayment(d, null, since), { unpaid: true, paidAt: null, paidVia: null }, "Paraşüt'te ödendi olsa da ödenmedi gelir");
   assert.deepEqual(newInvoicePayment({ ...d, parasutUnpaid: null }, null, since), { unpaid: true, paidAt: null, paidVia: null }, "e-fatura");
   assert.deepEqual(newInvoicePayment({ ...d, payable: -300 }, null, since), { unpaid: false, paidAt: null, paidVia: null }, "iade faturası borç değildir");
@@ -403,14 +403,25 @@ test("eşitleme: yeni fatura ödenmedi gelir; iade, peşin çalışılan tedarik
   assert.deepEqual(newInvoicePayment({ ...old, parasutUnpaid: true }, null, since), { unpaid: true, paidAt: null, paidVia: null });
   assert.deepEqual(newInvoicePayment({ ...old, parasutUnpaid: null }, null, since), { unpaid: false, paidAt: null, paidVia: null });
   assert.deepEqual(newInvoicePayment({ ...d, date: since }, null, since).unpaid, true, "başlangıç günü takipte");
+  // Komisyon hakedişten düşülür: ödendi gelir (fatura günü), peşin kartından önce
+  assert.deepEqual(newInvoicePayment({ ...d, commission: true }, null, since), { unpaid: false, paidAt: "2026-10-14", paidVia: null });
+  assert.deepEqual(newInvoicePayment({ ...d, commission: true }, { paymentMethod: "kart" }, since).paidVia, null);
 });
 
 test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var olan faturanınkini değiştirmez", () => {
   const sync = readFileSync(join(root, "src/server/parasut/sync.ts"), "utf8");
-  assert.match(sync, /newInvoicePayment\(\{ payable: d\.payable, date: d\.date, parasutUnpaid: d\.unpaid \}, ctx\.paidOnDelivery\(supplier\), ctx\.paymentsSince\)/, "gider faturası");
-  assert.match(sync, /newInvoicePayment\(\{ payable: d\.payable, date: d\.date, parasutUnpaid: null \}, ctx\.paidOnDelivery\(supplier\), ctx\.paymentsSince\)/, "e-fatura");
-  // Var olan faturada yalnız Paraşüt'ün ipucu (parasutUnpaid) yazılır, "ödenmedi" yazılmaz
-  assert.match(sync, /\.set\(\{ \.\.\.common, \.\.\.supplierFix, dueDate \}\)/);
+  // İki yeni fatura yolu da aynı kural: Paraşüt'ün bilgisi (e-faturada yok), komisyon kategorisi, peşin kartı, başlangıç
+  assert.equal(sync.match(/commission: category === COMMISSION_CATEGORY \},\s*ctx\.paidOnDelivery\(supplier\),\s*ctx\.paymentsSince/g)?.length, 2);
+  assert.match(sync, /parasutUnpaid: d\.unpaid, commission:/, "gider faturası");
+  assert.match(sync, /parasutUnpaid: null, commission:/, "e-fatura");
+  // Var olan faturada yalnız Paraşüt'ün ipucu (parasutUnpaid) yazılır, "ödenmedi" yazılmaz; Paraşüt faturayı kapatınca
+  // panelde ödenmedi duranın bilinen kalanı korunur; yer tutucu adla açılmış fatura peşin kartına düşerse ödendi olur
+  assert.match(sync, /\.set\(\{ \.\.\.common, \.\.\.\(keepOutstanding \? \{ outstanding: match\.outstanding \} : \{\}\), \.\.\.supplierFix, \.\.\.settle, dueDate \}\)/);
+  assert.match(sync, /const keepOutstanding = match\.unpaid && !d\.unpaid;/);
+  assert.match(sync, /supplierFix\.supplier && match\.origin === "parasut" && match\.unpaid && !match\.paidAt && !match\.paymentRequestedAt \? ctx\.paidOnDelivery\(supplierFix\.supplier\)/);
+  // Excel'i yeniden yükleme ödeme takibinin başlangıcını da siler (eski tarih kalsa faturalar "ödenmedi" yığılırdı)
+  const seed = readFileSync(join(root, "scripts/seed.ts"), "utf8");
+  assert.match(seed, /key IN \('payments\.recent', 'payments\.since'\)/);
   const common = sync.slice(sync.indexOf("const common = {"), sync.indexOf("let invoiceId: number;"));
   assert.match(common, /parasutUnpaid: d\.unpaid/);
   assert.doesNotMatch(common, /\bunpaid:/);
@@ -419,6 +430,32 @@ test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var
   // Belge okunurken ödeme durumu yalnız geçmişten "ödendi" açılmış, Paraşüt'te ödeme kaydı olmayan e-faturada değişir
   assert.equal(lines.match(/patch\.unpaid = /g)?.length, 1);
   assert.match(lines, /row\.parasutUnpaid === null &&\s*row\.date < since &&\s*!row\.unpaid &&\s*!row\.paidAt/);
+});
+
+test("ödeme talebi: seçilen iade tutardan düşülür, ayrı listelenir, havale açıklamasına girmez", () => {
+  const text = (
+    paymentRequestText({
+      name: "Sütaş",
+      card: { legalName: "SÜTAŞ A.Ş.", iban: null, bankName: null, accountHolder: null, taxNumber: null },
+      lines: [
+        { date: "2026-09-19", invoiceNo: "SUT1", amount: 8450.5, dueDate: "2026-10-19" },
+        { date: "2026-10-02", invoiceNo: "IAD7", amount: -1200, dueDate: null },
+      ],
+    })
+  ).replace(/\u00a0/g, " ");
+  assert.match(text, /Tutar: 7\.250,50 ₺ \(faturalar 8\.450,50 ₺ − iade 1\.200 ₺\)/);
+  assert.match(text, /Açıklama: SUT1 nolu fatura\n/);
+  assert.match(text, /Faturalar \(1\):\n• 19\.09\.2026 · SUT1/);
+  assert.match(text, /Düşülen iadeler \(1\):\n• 02\.10\.2026 · IAD7 · −1\.200 ₺/);
+});
+
+test("özet: '7 gün içinde'nin ilk vadesi gecikmişleri saymaz; ödenmedi duran iade vadeye ve gecikmeye girmez", () => {
+  const open = (date: string, payable: number, dueDate: string) => ({ supplier: "A", date, payable, unpaid: true, dueDate, paymentRequestedAt: null, paidAt: null, outstanding: null });
+  const s = summarize([open("2026-09-01", 500, "2026-10-20"), open("2026-10-01", 300, "2026-10-22"), open("2026-10-05", -200, "2026-10-10")], { today: TODAY, termDays: 30 });
+  assert.equal(s.nextDue?.date, "2026-10-20", "en erken vade gecikmiş olabilir");
+  assert.equal(s.nextSoonDue, "2026-10-22", "pencerede ilk gelen");
+  assert.deepEqual([s.overdueCount, s.overdue, s.soonCount, s.soon], [1, 500, 1, 300], "iade gecikmiş sayılmaz");
+  assert.equal(s.open, 600, "iade kalan borçtan düşer");
 });
 
 test("Ödemeler: vadesiz faturanın tahmini vadesi tedarikçinin kartındaki vade gününden, yoksa genel ayardan", () => {

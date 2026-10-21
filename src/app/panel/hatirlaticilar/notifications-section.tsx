@@ -277,7 +277,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
                 <Field
                   label="Vadesiz faturada vade"
                   htmlFor={`${settingsForm}-term`}
-                  tip="Vade tarihi girilmemiş ödenmemiş faturalar, fatura tarihinden bu kadar gün sonra vadeli sayılır."
+                  tip="Vade tarihi girilmemiş ödenmemiş faturalar, fatura tarihinden bu kadar gün sonra vadeli sayılır. Tedarikçinin cari kartında vade günü yazılıysa onun faturalarında o geçer."
                   error={termError}
                 >
                   <div className="relative">

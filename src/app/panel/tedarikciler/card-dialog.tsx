@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileSearch, Plus, Trash2, X } from "lucide-react";
+import { Check, FileSearch, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -104,6 +104,8 @@ export function SupplierCardDialog({
   // Alan denetimleri: hata kaydı durdurur, uyarı (VKN kontrol hanesi) yalnız söyler
   const ibanError = f.iban.trim() ? ibanProblem(f.iban) : null;
   const bank = !ibanError && f.iban.trim() ? bankFromIban(f.iban) : null;
+  // Kayıtlı IBAN değişiyor: teyit uyarısı (sahte "IBAN'ımız değişti" bildirimi sık kullanılan bir dolandırıcılık)
+  const ibanChanged = Boolean(card?.iban) && !ibanError && f.iban.trim() !== "" && normalizeIban(f.iban) !== card?.iban;
   const tax = taxNumberCheck(f.taxNumber);
   const taxError = tax && "error" in tax ? tax.error : null;
   const taxWarning = tax && "warning" in tax ? tax.warning : null;
@@ -160,10 +162,14 @@ export function SupplierCardDialog({
     setBusy(true);
     keepScroll();
     try {
+      const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
+      // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
+      // (faturalar karta düşer, sayfa boş kalmaz)
+      const fromPage = card ? [] : names.filter((n) => supplierMatchKey(n) !== supplierMatchKey(f.name) && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
       const r = await saveSupplier({
         id: card?.id ?? null,
         name: f.name,
-        aliases: aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases,
+        aliases: [...typed, ...fromPage],
         legalName: f.legalName,
         taxNumber: f.taxNumber,
         taxOffice: f.taxOffice,
@@ -255,7 +261,7 @@ export function SupplierCardDialog({
           {canFill ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-3.5 py-3">
               <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-soft">
-                Unvan, vergi no, adres ve IBAN tedarikçinin en yeni e-faturasından okunabilir; yalnız boş alanlar dolar.
+                Unvan, vergi no, adres ve IBAN tedarikçinin en yeni Paraşüt faturasından (e-fatura belgesi ya da Paraşüt&apos;teki kişi kartı) okunabilir; yalnız boş alanlar dolar.
               </p>
               <Button variant="secondary" onClick={fill} disabled={filling || busy} className="text-ink max-sm:min-h-11">
                 <FileSearch size={16} aria-hidden="true" /> {filling ? "Fatura okunuyor…" : "Faturadan doldur"}
@@ -318,7 +324,11 @@ export function SupplierCardDialog({
               <Input
                 id="s-iban"
                 value={f.iban}
-                onChange={(e) => set({ iban: e.target.value })}
+                onChange={(e) => {
+                  // Banka adı eski IBAN'dan geldiyse (elle yazılmadıysa) yeni IBAN'ın bankasına geçer
+                  const auto = !f.bankName.trim() || f.bankName.trim() === (bankFromIban(f.iban) ?? "");
+                  set({ iban: e.target.value, ...(auto ? { bankName: bankFromIban(e.target.value) ?? "" } : {}) });
+                }}
                 onBlur={() => !ibanError && f.iban.trim() && set({ iban: formatIban(f.iban) })}
                 autoComplete="off"
                 autoCapitalize="characters"
@@ -328,6 +338,15 @@ export function SupplierCardDialog({
                 className="font-mono tracking-wide"
               />
             </Field>
+            {ibanChanged ? (
+              <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn sm:col-span-2" role="status">
+                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>
+                  IBAN değişiyor. Yeni IBAN&apos;ı tedarikçiyi bildiğiniz numaradan arayarak teyit edin: e-postayla ya da mesajla gelen “IBAN&apos;ımız değişti”
+                  bildirimi sık kullanılan bir dolandırıcılık yoludur. Değişiklik işlem geçmişine yazılır.
+                </span>
+              </p>
+            ) : null}
             <Field label="Banka" htmlFor="s-bank" hint={filledHint("bankName") ?? (bank && !f.bankName.trim() ? `Boş kalırsa “${bank}” yazılır` : undefined)}>
               <Input id="s-bank" value={f.bankName} onChange={(e) => set({ bankName: e.target.value })} autoComplete="off" placeholder={bank ?? undefined} />
             </Field>
@@ -392,7 +411,7 @@ export function SupplierCardDialog({
             <ToggleRow
               className="sm:col-span-2"
               title="Faturaları ödendi gelsin"
-              description="Peşin, kartla otomatik ya da hakedişten kesilerek ödenen tedarikçi (komisyon, abonelik): Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir. Eski faturalara dokunulmaz."
+              description="Peşin ya da kartla otomatik ödenen tedarikçi (abonelik vb.): Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir. Eski faturalara dokunulmaz. Komisyon faturaları bu ayar olmadan da ödendi gelir (hakedişten düşülür)."
               checked={f.paidOnDelivery}
               onChange={(on) => set({ paidOnDelivery: on })}
               label="Bu tedarikçinin yeni faturaları ödendi gelsin"
@@ -473,7 +492,7 @@ export function SupplierCardDialog({
               <Badge tone="blue">
                 <Check size={11} aria-hidden="true" /> Faturadan
               </Badge>
-              {filled.size} alan e-faturadan dolduruldu; kaydetmeden önce kontrol edin.
+              {filled.size} alan faturadan dolduruldu; kaydetmeden önce kontrol edin.
             </p>
           ) : null}
         </form>

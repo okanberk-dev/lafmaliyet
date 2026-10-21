@@ -285,11 +285,12 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/tedarikciler" /> ekranında her tedarikçi faturalarından kendiliğinden listelenir: kalan borç, vadesi geçen ve en yakın vade. Tedarikçiye
-            dokunup Cari kartı&apos;na unvanı, vergi no ve dairesini, IBAN&apos;ı (kontrol hanesi denetlenir), telefon ve e-postayı, vade gününü yazın; Faturadan doldur bunları
-            en yeni e-faturasından okur. Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup Ödendi&apos;yi seçin (ödeme günü ve şekliyle),
-            birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale açıklamasını hazır metin yapar; kopyalayın ya
-            da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep edildi” olur. Peşin, kartla otomatik ödediğiniz ya da hakedişten düşülen (Trendyol,
-            Yemek Sepeti komisyonu) tedarikçinin kartında Faturaları ödendi gelsin&apos;i açın: yeni faturaları ödendi gelir.
+            dokunup Cari kartı&apos;na unvanı, vergi no ve dairesini, IBAN&apos;ı (kontrol hanesi denetlenir), telefon ve e-postayı, vade gününü yazın; Faturadan doldur unvan,
+            vergi no, adres, iletişim ve IBAN&apos;ı en yeni Paraşüt faturasından okur. Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup
+            Ödendi&apos;yi seçin (ödeme günü ve şekliyle), birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale
+            açıklamasını hazır metin yapar (son iade faturaları seçilirse düşülür); kopyalayın ya da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep
+            edildi” olur. Komisyon faturaları (Trendyol, Yemek Sepeti, yemek kartları) hakedişten düşüldüğü için ödendi gelir; peşin ya da kartla otomatik ödediğiniz
+            tedarikçinin kartında Faturaları ödendi gelsin&apos;i açın. IBAN değişikliğini tedarikçiyi arayarak teyit edin.
           </>
         ),
         icon: Wallet,

@@ -138,6 +138,7 @@ DATABASE_URL="<neon bağlantı adresi>" npm run db:reset
   Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
   düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt
   eşitleme geçmişi, imleci ve ürün bağlantıları, Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip Excel
-  verisi yeniden yüklenir. **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir),
-  hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları. Sonraki eşitleme Paraşüt
-  faturalarını baştan alır.
+  verisi yeniden yüklenir. Faturaların ödendi / talep edildi işaretleri de gider; ödeme takibinin başlangıcı
+  sıfırlanır. **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir), hatırlatıcılar,
+  bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları. Sonraki eşitleme
+  Paraşüt faturalarını baştan alır: son 30 günün faturaları "ödenmedi", daha eskileri Paraşüt'teki durumuyla gelir.

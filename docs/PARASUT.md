@@ -56,8 +56,9 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
 - **Ödeme ve vade:** `due_date` → vade. Ödendi / ödenmedi'yi **siz işaretlersiniz** (Tedarikçiler ya da Faturalar,
   [TEDARIKCILER.md](TEDARIKCILER.md)): Paraşüt'ten gelen her yeni fatura "ödenmedi" gelir, eşitleme var olan
   faturanın ödeme durumuna dokunmaz; `remaining` / `payment_status` yalnız ipucu olarak saklanır (`parasut_unpaid`,
-  ekranda "Paraşüt'te ödendi"). Kartında "Faturaları ödendi gelsin" işaretli (peşin) tedarikçinin faturası ödendi
-  gelir; takip başlamadan önceki tarihli fatura geçmişi yeniden alırken Paraşüt'teki durumuyla gelir. Ödenmemiş
+  ekranda "Paraşüt'te ödendi"). Komisyon faturası (hakedişten düşülür) ve kartında "Faturaları ödendi gelsin" işaretli
+  (peşin) tedarikçinin faturası ödendi gelir; takip başlamadan önceki tarihli fatura geçmişi yeniden alırken
+  Paraşüt'teki durumuyla gelir. Ödenmemiş
   faturalar **Ödemeler & hatırlatıcılar**'a ve hatırlatma e-postasına düşer.
 
 ## 3. Çift sayım olmaz

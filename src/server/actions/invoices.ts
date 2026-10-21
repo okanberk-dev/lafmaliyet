@@ -99,7 +99,8 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       await db.update(s.invoices).set({ ...data, ...payment, needsReview: false }).where(eq(s.invoices.id, id));
     }
     // Pencereden "Ödendi" yapılan fatura da Ödemeler › Son ödenenler'den geri alınabilir
-    if (cur.unpaid && !data.unpaid) await rememberPaid([{ kind: "invoice", id, title: data.supplier, amount: cur.payable, dueDate: data.dueDate ?? cur.dueDate ?? cur.date }]);
+    if (cur.unpaid && !data.unpaid)
+      await rememberPaid([{ kind: "invoice", id, title: data.supplier, amount: cur.payable, dueDate: data.dueDate ?? cur.dueDate ?? cur.date, requestedAt: cur.paymentRequestedAt }]);
     else if (!cur.unpaid && data.unpaid) await forgetPaid("invoice", [id]);
     // Kalem yalnız Paraşüt'e bağlı faturada olur (bağı çözülünce silinir); tarihi kilitli, kalemler kayıtlı ayda
     if (isParasutLinked(cur)) await recomputeSeparateMoves([{ id, date: cur.date, from: cur.category, to: data.category }]);
@@ -270,9 +271,15 @@ async function applyPayment(ids: number[], change: PaymentChange, scope: Payment
     .where(inArray(s.invoices.id, targets.map((r) => r.id)))
     .returning({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable, date: s.invoices.date, dueDate: s.invoices.dueDate });
   const wasUnpaid = new Set(targets.filter((r) => r.unpaid).map((r) => r.id));
+  const requested = new Map(targets.map((r) => [r.id, r.paymentRequestedAt]));
   if (paid) {
-    // Yalnız durumu gerçekten değişenler "son ödenenler"e yazılır (zaten ödenmiş fatura geri alınacaklara girmesin)
-    await rememberPaid(rows.filter((r) => wasUnpaid.has(r.id)).map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date })));
+    // Yalnız durumu gerçekten değişenler "son ödenenler"e yazılır (zaten ödenmiş fatura geri alınacaklara girmesin);
+    // ödeme talebi günü de saklanır: oradan geri alınınca "talep edildi" geri gelir
+    await rememberPaid(
+      rows
+        .filter((r) => wasUnpaid.has(r.id))
+        .map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date, requestedAt: requested.get(r.id) ?? null })),
+    );
   } else {
     await forgetPaid("invoice", rows.map((r) => r.id));
   }
@@ -313,17 +320,18 @@ export async function setInvoicePaid(id: number | number[], paid: boolean) {
 }
 
 /**
- * Tedarikçiler'den ödeme durumu: ödendi (gün ve ödeme şekliyle), ödemesi talep edildi ya da ödenmedi. Tek faturada
- * ödenmiş faturanın ödeme günü de düzeltilir; birden çok faturada ödendi / talep edildi yalnız ödenmemişlere yazılır.
- * Önceki durumlar "Geri al" için döner.
+ * Tedarikçiler'den ödeme durumu: ödendi (gün ve ödeme şekliyle), ödemesi talep edildi ya da ödenmedi. Ödeme
+ * penceresinde tek faturanın ödeme günü de düzeltilir; birden çok faturada ve `onlyOpen` ile (✓ Ödendi, ödeme talebi,
+ * "Ödendi yap": ekranda ödenmemiş görünen faturalar) ödendi / talep edildi yalnız ödenmemişlere yazılır, başka bir
+ * oturumda ödenmiş faturanın ödeme günü ezilmez. Önceki durumlar "Geri al" için döner.
  */
-export async function setInvoicePayment(ids: number[], change: z.input<typeof paymentChangeSchema>) {
+export async function setInvoicePayment(ids: number[], change: z.input<typeof paymentChangeSchema>, opts: { onlyOpen?: boolean } = {}) {
   return attempt(async () => {
     const me = await requireAdmin();
     const list = zIds.parse(ids);
     const c = paymentChangeSchema.parse(change);
     if (c.status === "paid" && c.date && c.date > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
-    const { rows, previous, missing } = await applyPayment(list, c, list.length > 1 ? "open" : "all");
+    const { rows, previous, missing } = await applyPayment(list, c, list.length > 1 || z.boolean().optional().parse(opts.onlyOpen) ? "open" : "all");
     if (missing === list.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
     if (!rows.length) throw new UserError("Seçilen faturalar zaten ödenmiş; değişiklik yapılmadı.");
     await logPayment(me, c, rows);
@@ -336,10 +344,14 @@ export async function setInvoicePayment(ids: number[], change: z.input<typeof pa
 export async function restoreInvoicePayment(states: z.input<typeof paymentStateSchema>[]) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const list = z.array(paymentStateSchema).min(1).max(1000).parse(states);
+    const list = z.array(paymentStateSchema).min(1, "Geri alınacak değişiklik yok").max(1000).parse(states);
     const db = getDb();
-    const current = await db.select({ id: s.invoices.id, unpaid: s.invoices.unpaid }).from(s.invoices).where(inArray(s.invoices.id, list.map((x) => x.id)));
+    const current = await db
+      .select({ id: s.invoices.id, unpaid: s.invoices.unpaid, paymentRequestedAt: s.invoices.paymentRequestedAt })
+      .from(s.invoices)
+      .where(inArray(s.invoices.id, list.map((x) => x.id)));
     const wasUnpaid = new Set(current.filter((r) => r.unpaid).map((r) => r.id));
+    const requested = new Map(current.map((r) => [r.id, r.paymentRequestedAt]));
     const rows = await db.transaction(async (tx) => {
       const out: { id: number; supplier: string; payable: number; date: string; dueDate: string | null }[] = [];
       for (const { id, ...state } of list) {
@@ -355,7 +367,11 @@ export async function restoreInvoicePayment(states: z.input<typeof paymentStateS
     // Son ödenenler de geri döner: yeniden ödenmemiş olan düşer, yeniden ödenmiş olan (ödenmediyken) yazılır
     const unpaidNow = new Set(list.filter((x) => x.unpaid).map((x) => x.id));
     await forgetPaid("invoice", rows.filter((r) => unpaidNow.has(r.id)).map((r) => r.id));
-    await rememberPaid(rows.filter((r) => !unpaidNow.has(r.id) && wasUnpaid.has(r.id)).map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date })));
+    await rememberPaid(
+      rows
+        .filter((r) => !unpaidNow.has(r.id) && wasUnpaid.has(r.id))
+        .map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date, requestedAt: requested.get(r.id) ?? null })),
+    );
     if (rows.length) await logActivity(me, "Ödeme durumu geri alındı", rows.length === 1 ? `${rows[0].supplier} ${tl(rows[0].payable, 2)}` : `${rows.length} fatura`);
     refresh();
     return { changed: rows.length };

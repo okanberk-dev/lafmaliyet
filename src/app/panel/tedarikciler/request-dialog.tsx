@@ -28,12 +28,15 @@ export interface RequestInvoice {
 /**
  * Ödeme talebi: faturalar seçilir, alıcı (unvan / hesap sahibi), IBAN, tutar ve havale açıklamasıyla hazır metin
  * kopyalanır, WhatsApp'ta ya da e-postayla gönderilir (ödemeyi yapacak kişiye ya da bankanın havale ekranına).
- * "Talep edildi işaretle" seçilen faturaları talep edildi yapar; ödenince Ödendi işaretlenir.
+ * "Talep edildi işaretle" seçilen faturaları talep edildi yapar; ödenince Ödendi işaretlenir. Tedarikçinin son iade
+ * faturaları (`credits`, eksi tutar) ayrıca listelenir: hangisinin daha önce düşüldüğü bilinmediğinden seçili gelmez;
+ * seçilen iade tutardan ve metinden düşülür.
  */
 export function RequestDialog({
   name,
   card,
   invoices,
+  credits = [],
   selected,
   termDays,
   payer,
@@ -45,6 +48,8 @@ export function RequestDialog({
   card: SupplierCard | null;
   /** Tedarikçinin ödenmemiş faturaları (eskiden yeniye) */
   invoices: RequestInvoice[];
+  /** Ödemeden düşülebilecek son iade faturaları (tutar eksi) */
+  credits?: RequestInvoice[];
   /** Açılışta seçili olanlar; boşsa hepsi */
   selected: number[];
   termDays: number;
@@ -58,9 +63,11 @@ export function RequestDialog({
   const [note, setNote] = useState("");
   const { copied, copy } = useCopied();
   const chosen = invoices.filter((i) => ids.has(i.id));
-  const total = chosen.reduce((a, i) => a + i.amount, 0);
-  const lines = chosen.map((i) => ({ date: i.date, invoiceNo: i.invoiceNo, amount: i.amount, dueDate: i.dueDate }));
-  const text = paymentRequestText({ payer, name, card, lines, note });
+  const chosenCredits = credits.filter((i) => ids.has(i.id));
+  const total = [...chosen, ...chosenCredits].reduce((a, i) => a + i.amount, 0);
+  const toLine = (i: RequestInvoice) => ({ date: i.date, invoiceNo: i.invoiceNo, amount: i.amount, dueDate: i.dueDate });
+  const lines = chosen.map(toLine);
+  const text = paymentRequestText({ payer, name, card, lines: [...lines, ...chosenCredits.map(toLine)], note });
   const subject = `Ödeme talebi: ${card?.legalName?.trim() || name} · ${money(total)}`;
   const toMark = chosen.filter((i) => !i.paymentRequestedAt).map((i) => i.id);
   const toggle = (id: number) =>
@@ -103,10 +110,14 @@ export function RequestDialog({
             <span>Faturalar</span>
             <button
               type="button"
-              onClick={() => setIds(ids.size === invoices.length ? new Set() : new Set(invoices.map((i) => i.id)))}
+              onClick={() => {
+                // İade seçimi olduğu gibi kalır
+                const kept = chosenCredits.map((i) => i.id);
+                setIds(new Set(chosen.length === invoices.length ? kept : [...invoices.map((i) => i.id), ...kept]));
+              }}
               className="cursor-pointer font-medium text-info underline-offset-2 hover:underline pointer-coarse:min-h-11"
             >
-              {ids.size === invoices.length ? "Hiçbirini seçme" : "Hepsini seç"}
+              {chosen.length === invoices.length ? "Hiçbirini seçme" : "Hepsini seç"}
             </button>
           </legend>
           <ul className="max-h-64 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong">
@@ -133,10 +144,37 @@ export function RequestDialog({
             })}
           </ul>
           <p className="mt-2 flex items-center justify-between gap-2 px-1 text-[13px] text-ink-mute tabular" aria-live="polite">
-            <span>{chosen.length ? `${num(chosen.length)} fatura seçildi` : "Fatura seçilmedi"}</span>
+            <span>
+              {chosen.length ? `${num(chosen.length)} fatura seçildi` : "Fatura seçilmedi"}
+              {chosenCredits.length ? ` · ${num(chosenCredits.length)} iade düşüldü` : ""}
+            </span>
             <span className="font-semibold text-ink">{money(total)}</span>
           </p>
         </fieldset>
+
+        {credits.length ? (
+          <fieldset>
+            <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">İade faturaları</legend>
+            <p className="mb-2 flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
+              <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>Bu tedarikçinin son 90 günde iade faturası var. Daha önce düşülmediyse seçin: tutardan ve metinden düşülür.</span>
+            </p>
+            <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line-strong">
+              {credits.map((i) => (
+                <li key={i.id}>
+                  <label className="flex min-h-12 cursor-pointer items-center gap-3 px-3.5 py-2">
+                    <input type="checkbox" checked={ids.has(i.id)} onChange={() => toggle(i.id)} className="size-4 shrink-0 cursor-pointer rounded accent-ink pointer-coarse:size-5" />
+                    <span className="min-w-0 flex-1 text-sm text-ink tabular">
+                      {dateTR(i.date)}
+                      {i.invoiceNo ? <span className="text-ink-mute"> · {i.invoiceNo}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-sm font-medium text-good tabular">−{money(-i.amount)}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        ) : null}
 
         {!card?.iban ? (
           <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">

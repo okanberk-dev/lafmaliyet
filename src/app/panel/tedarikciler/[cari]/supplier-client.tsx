@@ -18,6 +18,7 @@ import { PRODUCT_NAME } from "@/components/akmanos/lib/brand";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { openBalance, isPartiallyPaid } from "@/lib/calc/insights";
 import { dateTR, money, num } from "@/lib/format";
+import { daysBetween } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { restoreInvoicePayment, setInvoicePayment, type InvoicePaymentState } from "@/server/actions/invoices";
 import type { LedgerRow } from "@/server/data/suppliers";
@@ -51,6 +52,10 @@ import { RequestDialog } from "../request-dialog";
 const PAGE_SIZE = 25;
 /** "Geri al"lı bildirimlerin süresi (Faturalar'daki gibi) */
 const UNDO_MS = 10000;
+/** Ödeme talebinde düşülebilecek iade faturalarının yaşı (gün) */
+const CREDIT_DAYS = 90;
+/** Dökümden açılan faturanın satırı kısa süre bu renkle vurgulanır */
+const FLASH = "bg-info-soft/60";
 
 type Row = LedgerRow;
 type Status = "odenmedi" | "tumu" | "odendi";
@@ -109,6 +114,35 @@ export function SupplierClient({
   const visible = list.filter((r) => (status === "odenmedi" ? r.unpaid : status === "odendi" ? !r.unpaid : true));
   const paged = usePaged(visible, PAGE_SIZE, status);
   const parasutPaid = unpaid.filter(paidInParasut);
+
+  // Özet kartı dökümünden gelen fatura (?fatura=<kimlik>): bulunduğu sekmeye ve sayfaya geçilir, görünen satırına
+  // (telefonda kart, masaüstünde tablo satırı) kaydırılıp kısa süre vurgulanır
+  const [focusRaw, setFocus] = useQueryState<string>("fatura", "");
+  const focusId = Number.parseInt(focusRaw, 10) || null;
+  useEffect(() => {
+    if (!focusId) return;
+    const row = list.find((r) => r.id === focusId);
+    if (!row) {
+      setFocus("");
+      return;
+    }
+    const index = visible.findIndex((r) => r.id === focusId);
+    if (index < 0) {
+      setStatus(row.unpaid ? "odenmedi" : "odendi");
+      return;
+    }
+    const page = Math.floor(index / PAGE_SIZE) + 1;
+    if (page !== paged.page) {
+      paged.setPage(page);
+      return;
+    }
+    const el = [...document.querySelectorAll<HTMLElement>(`[data-fatura="${focusId}"]`)].find((e) => e.offsetParent !== null);
+    setFocus("");
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.add(FLASH);
+    window.setTimeout(() => el.classList.remove(FLASH), 2500);
+  }, [focusId, list, visible, paged, setFocus, setStatus]);
   const termDays = supplier.termDays;
 
   // Süzgeç değişince seçim boşalır (gizli satıra toplu işlem uygulanmasın)
@@ -143,20 +177,22 @@ export function SupplierClient({
   }, [hasSelection]);
 
   /**
-   * Ödeme durumunu yazar; bildirimdeki "Geri al" önceki hâli geri yazar. Birden çok faturada ödendi / talep edildi
-   * yalnız ödenmemişlere yazılır (zaten ödenmiş faturanın ödeme günü bozulmasın; sunucu da aynı kuralı uygular).
+   * Ödeme durumunu yazar; bildirimdeki "Geri al" önceki hâli geri yazar. Birden çok faturada ve `onlyOpen` ile (✓,
+   * ödeme talebi, "Ödendi yap": ekranda ödenmemiş görünen faturalar) ödendi / talep edildi yalnız ödenmemişlere
+   * yazılır: zaten ödenmiş faturanın ödeme günü bozulmaz. Sunucu da aynı kuralı uygular (başka bir oturumda ödenmişse).
    */
-  function setPayment(selection: Row[], choice: PaymentChoice) {
-    const rows = selection.length > 1 && choice.status !== "unpaid" ? selection.filter((r) => r.unpaid) : selection;
+  function setPayment(selection: Row[], choice: PaymentChoice, opts: { onlyOpen?: boolean } = {}) {
+    const onlyOpen = opts.onlyOpen || selection.length > 1;
+    const rows = onlyOpen && choice.status !== "unpaid" ? selection.filter((r) => r.unpaid) : selection;
     const ids = rows.map((r) => r.id);
     if (!ids.length) return void toast.info("Seçilen faturalar zaten ödenmiş; değişiklik yapılmadı.");
     keepScroll();
     const patch = patchFor(choice);
     startTransition(async () => {
       apply({ patches: ids.map((id) => [id, patch]) });
-      const r = await setInvoicePayment(ids, choice);
+      const r = await setInvoicePayment(ids, choice, { onlyOpen });
       if (!r.ok) return void toast.error(r.error);
-      const total = rows.reduce((a, x) => a + openBalance(x), 0);
+      const total = rows.reduce((a, x) => a + (x.unpaid ? openBalance(x) : x.payable), 0);
       const what = rows.length === 1 ? `${dateTR(rows[0].date)}${rows[0].invoiceNo ? ` · ${rows[0].invoiceNo}` : ""}` : `${num(rows.length)} fatura`;
       const title =
         choice.status === "paid"
@@ -184,7 +220,7 @@ export function SupplierClient({
     });
   }
 
-  const quickPaid = (rows: Row[]) => setPayment(rows, { status: "paid", date: today, via: card?.paymentMethod ?? null });
+  const quickPaid = (rows: Row[]) => setPayment(rows, { status: "paid", date: today, via: card?.paymentMethod ?? null }, { onlyOpen: true });
 
   const docRow = docFor === null ? null : (list.find((r) => r.id === docFor) ?? null);
   const docsOf = (id: number) => documents[id] ?? [];
@@ -359,7 +395,7 @@ export function SupplierClient({
                 Paraşüt&apos;te {num(parasutPaid.length)} faturanın ödemesi kayıtlı ({money(parasutPaid.reduce((a, r) => a + openBalance(r), 0))}); panelde ödenmedi duruyor.
                 Ödediyseniz işaretleyin.
               </span>
-              <Button size="sm" variant="secondary" className="text-ink" onClick={() => setPayment(parasutPaid, { status: "paid", date: null, via: null })}>
+              <Button size="sm" variant="secondary" className="text-ink" onClick={() => setPayment(parasutPaid, { status: "paid", date: null, via: null }, { onlyOpen: true })}>
                 <CircleCheck size={15} aria-hidden="true" /> Ödendi yap ({num(parasutPaid.length)})
               </Button>
             </div>
@@ -372,7 +408,7 @@ export function SupplierClient({
                 {paged.slice.map((r) => {
                   const isSel = selected.has(r.id);
                   return (
-                    <li key={r.id} id={`fatura-${r.id}`} className={cn("scroll-mt-[calc(var(--mobile-top-h)+1rem)] px-4 pt-3 pb-3 transition-colors target:bg-info-soft/60", isSel && "bg-surface/70")}>
+                    <li key={r.id} data-fatura={r.id} className={cn("px-4 pt-3 pb-3 transition-colors", isSel && "bg-surface/70")}>
                       <div className="flex items-start gap-2">
                         {checkbox(r, "-mt-1 -ml-1.5 size-11")}
                         <div className="min-w-0 flex-1">
@@ -426,7 +462,7 @@ export function SupplierClient({
                   </THead>
                   <tbody>
                     {paged.slice.map((r) => (
-                      <TR key={r.id} id={`fatura-${r.id}`} className={cn("target:bg-info-soft/60", selected.has(r.id) && "bg-surface/70")}>
+                      <TR key={r.id} data-fatura={r.id} className={cn(selected.has(r.id) && "bg-surface/70")}>
                         <TD className="w-px pr-0">{checkbox(r)}</TD>
                         <TD className="min-w-56">
                           <p className="font-medium text-ink tabular">
@@ -472,7 +508,13 @@ export function SupplierClient({
                 <EmptyState
                   icon={<CircleCheck />}
                   title={status === "odenmedi" ? "Ödenmemiş fatura yok" : "Ödenmiş fatura yok"}
-                  description={status === "odenmedi" ? "Bu tedarikçinin bütün faturaları ödendi. Yeni fatura Paraşüt'ten gelince burada ödenmedi olarak görünür." : "Henüz ödendi işaretlenen fatura yok."}
+                  description={
+                    status === "odenmedi"
+                      ? card?.paidOnDelivery
+                        ? "Bu tedarikçinin bütün faturaları ödendi. Kartta “Faturaları ödendi gelsin” açık: yeni faturaları da ödendi gelir."
+                        : "Bu tedarikçinin bütün faturaları ödendi. Yeni fatura Paraşüt'ten gelince burada ödenmedi olarak görünür."
+                      : "Henüz ödendi işaretlenen fatura yok."
+                  }
                   action={
                     <Button variant="secondary" onClick={() => setStatus("tumu")}>
                       Bütün faturaları göster
@@ -482,7 +524,7 @@ export function SupplierClient({
               ) : (
                 <EmptyState
                   title="Henüz fatura yok"
-                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
+                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer. Faturalar adla eşleşir: Paraşüt'te başka adla (ör. tam unvanla) gelirse cari kartında “Faturalarda geçen diğer adlar”a ekleyin. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
                   action={
                     <ButtonLink href="/panel/faturalar" variant="secondary">
                       Faturalar
@@ -544,7 +586,13 @@ export function SupplierClient({
           name={supplier.name}
           card={card}
           invoices={unpaid
+            .filter((r) => openBalance(r) > 0)
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: openBalance(r), dueDate: r.dueDate, paymentRequestedAt: r.paymentRequestedAt }))
+            .sort((a, b) => a.date.localeCompare(b.date))}
+          // Son 90 günün iade faturaları: hangisinin düşüldüğü bilinmez, seçilirse tutardan düşülür
+          credits={list
+            .filter((r) => r.payable < 0 && daysBetween(r.date, today) <= CREDIT_DAYS)
+            .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: r.payable, dueDate: null, paymentRequestedAt: null }))
             .sort((a, b) => a.date.localeCompare(b.date))}
           selected={requestFor}
           termDays={termDays}
@@ -559,6 +607,7 @@ export function SupplierClient({
             setPayment(
               list.filter((r) => ids.includes(r.id)),
               { status: "requested", date: today },
+              { onlyOpen: true },
             );
           }}
         />

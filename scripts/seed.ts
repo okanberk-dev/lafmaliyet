@@ -82,8 +82,10 @@ export async function runSeed({ reset = false } = {}) {
           ),
         );
         // Paraşüt imleci, fiyat tarihleri ve kişi önbelleği eski kimliklere bağlı; baştan okunsun. Son ödenenler de
-        // fatura kimliklerine bağlı: kimlikler baştan sayınca "Geri al" başka bir faturayı ödenmedi yapardı
-        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%' OR key = 'payments.recent'`));
+        // fatura kimliklerine bağlı: kimlikler baştan sayınca "Geri al" başka bir faturayı ödenmedi yapardı. Ödeme
+        // takibinin başlangıcı da silinir: faturalar (ödeme işaretleriyle) yeniden yüklenince sonraki eşitleme yeniden
+        // belirler; eski tarih kalsa o günden bu yana bütün Paraşüt faturaları "ödenmedi" geri gelirdi
+        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key LIKE 'parasut.%' OR key IN ('payments.recent', 'payments.since')`));
       }
 
       await tx.insert(s.settings).values(

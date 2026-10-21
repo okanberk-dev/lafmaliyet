@@ -246,17 +246,20 @@ export interface NewInvoicePayment {
 
 /**
  * Eşitlemenin açtığı yeni faturanın ödeme durumu. Ödendiğini kullanıcı işaretler: fatura "ödenmedi" gelir (Paraşüt'ün
- * bildirdiği yalnız ipucu olarak parasutUnpaid'e yazılır). Peşin çalışılan tedarikçinin (`onDelivery`, kartta
- * "Faturaları ödendi gelsin") faturası ödendi gelir: fatura günü, kartın ödeme şekliyle. İade (eksi) faturası ödenmez.
- * Takip başlamadan (`since`) önceki fatura geçmişi yeniden alırken gelir: Paraşüt'ün bildirdiği durumla açılır
- * (`parasutUnpaid`; e-faturada bilgi yok, null: ödendi), yoksa eski faturalar "ödenmedi" yığılırdı.
+ * bildirdiği yalnız ipucu olarak parasutUnpaid'e yazılır). İade (eksi) faturası ödenmez. Komisyon faturası
+ * (`commission`: Trendyol, Yemek Sepeti, yemek kartları) ödenmez, platformun hakedişinden düşülür: ödendi gelir
+ * (fatura günü). Peşin çalışılan tedarikçinin (`onDelivery`, kartta "Faturaları ödendi gelsin") faturası da ödendi
+ * gelir: fatura günü, kartın ödeme şekliyle. Takip başlamadan (`since`) önceki fatura geçmişi yeniden alırken gelir:
+ * Paraşüt'ün bildirdiği durumla açılır (`parasutUnpaid`; e-faturada bilgi yok, null: ödendi), yoksa eski faturalar
+ * "ödenmedi" yığılırdı.
  */
 export function newInvoicePayment(
-  d: { payable: number; date: string; parasutUnpaid: boolean | null },
+  d: { payable: number; date: string; parasutUnpaid: boolean | null; commission: boolean },
   onDelivery: { paymentMethod: NewInvoicePayment["paidVia"] } | null,
   since: string,
 ): NewInvoicePayment {
   if (d.payable <= 0) return { unpaid: false, paidAt: null, paidVia: null };
+  if (d.commission) return { unpaid: false, paidAt: d.date, paidVia: null };
   if (onDelivery) return { unpaid: false, paidAt: d.date, paidVia: onDelivery.paymentMethod };
   if (d.date < since) return { unpaid: d.parasutUnpaid ?? false, paidAt: null, paidVia: null };
   return { unpaid: true, paidAt: null, paidVia: null };

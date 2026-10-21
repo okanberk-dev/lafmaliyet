@@ -58,7 +58,8 @@ export function PaymentDialog({
   const [status, setStatus] = useState<PayState>(initial ?? "paid");
   // Ödenmiş faturada kayıtlı gün (yoksa boş: bilinmiyor); ödenmemişte bugün
   const [paidAt, setPaidAt] = useState(one && !one.unpaid ? (one.paidAt ?? "") : today);
-  const [via, setVia] = useState<PaymentMethod | "">(one?.paidVia ?? defaultMethod ?? "");
+  // Ödenmiş faturada yalnız kayıtlı şekli (bilinmiyorsa boş): kartın varsayılanı kaydedilmiş gibi görünmesin
+  const [via, setVia] = useState<PaymentMethod | "">(one && !one.unpaid ? (one.paidVia ?? "") : (one?.paidVia ?? defaultMethod ?? ""));
   const [requestedAt, setRequestedAt] = useState(one?.paymentRequestedAt ?? today);
   const total = targets.reduce((a, t) => a + t.amount, 0);
   // Ödeme günü ileri bir tarih olamaz (bugün Türkiye saatine göre; saat farkı için bir gün pay)

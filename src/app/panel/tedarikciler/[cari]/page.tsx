@@ -21,8 +21,8 @@ import { SupplierClient } from "./supplier-client";
 
 export const metadata: Metadata = { title: "Tedarikçi" };
 
-/** Fatura satırının adresi (dökümdeki kalem oraya iner) */
-const rowHref = (id: number) => `#fatura-${id}`;
+/** Dökümdeki faturaya dokununca: sayfa o faturanın sekmesini ve sayfasını açıp satırına kaydırır (SupplierClient) */
+const rowHref = (id: number) => `?fatura=${id}`;
 
 export default function SupplierPage({ params }: PageProps<"/panel/tedarikciler/[cari]">) {
   return (

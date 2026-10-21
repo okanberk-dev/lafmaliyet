@@ -25,8 +25,10 @@ Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür.
 altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odenenler`) geri alınır:
 
 - Son **30 günde** "Ödendi" işaretlenen fatura ve hatırlatıcılar, en yeni önce, en çok 30 kayıt. Liste, Ödemeler
-  ekranından, Faturalar'da tek tek / toplu "Ödendi"den ve fatura penceresinde ödenmedi → ödendi kaydedilince dolar.
-- **Fatura** için Geri al, faturayı yeniden "ödenmedi" yapar; ödeme listesine ve sabah e-postasına döner.
+  ekranından, Faturalar'da tek tek / toplu "Ödendi"den, fatura penceresinde ödenmedi → ödendi kaydedilince ve
+  Tedarikçiler'deki ödeme penceresi, ✓ ve toplu işlemle dolar.
+- **Fatura** için Geri al, faturayı yeniden "ödenmedi" yapar (ödemesi talep edilmişse "talep edildi"); ödeme
+  listesine ve sabah e-postasına döner.
 - **Hatırlatıcı** için Geri al, ödenmeden önceki hâline döndürür (tarih, tekrar günü, açık/kapalı, son ödeme):
   tekrar eden kira 01.11'den 01.10'a geri gelir, kapanan tek seferlik yeniden açılır.
 - Hatırlatıcı ödendikten sonra değiştiyse (yeniden ödendi, ertelendi, kapatıldı, tarihi düzenlendi) eski hâl yazılmaz;

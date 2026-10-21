@@ -67,10 +67,8 @@ async function SuppliersContent() {
   const requested = sum((r) => r.summary.requested);
   const paidTotal = paid.reduce((a, p) => a + p.amount, 0);
   const paidCount = paid.reduce((a, p) => a + p.count, 0);
-  // "7 gün içinde" kartında en yakın vadeli tedarikçi (gecikmişler hariç)
-  const nextSoon = rows
-    .filter((r) => r.summary.soonCount && r.summary.nextDue && r.summary.nextDue.date >= today)
-    .sort((a, b) => a.summary.nextDue!.date.localeCompare(b.summary.nextDue!.date))[0];
+  // "7 gün içinde" kartında pencerede vadesi ilk gelen tedarikçi (gecikmişler hariç)
+  const nextSoon = rows.filter((r) => r.summary.nextSoonDue).sort((a, b) => a.summary.nextSoonDue!.localeCompare(b.summary.nextSoonDue!))[0];
 
   return (
     <>
@@ -96,7 +94,7 @@ async function SuppliersContent() {
             label="7 gün içinde"
             value={<CountUp value={soon} />}
             info={SOON_TEXT}
-            sub={soonCount ? `${num(soonCount)} fatura${nextSoon?.summary.nextDue ? ` · ilki ${nextSoon.name} ${dateTR(nextSoon.summary.nextDue.date)}` : ""}` : "Yakın vade yok"}
+            sub={soonCount ? `${num(soonCount)} fatura${nextSoon?.summary.nextSoonDue ? ` · ilki ${nextSoon.name} ${dateTR(nextSoon.summary.nextSoonDue)}` : ""}` : "Yakın vade yok"}
           />
         </StatBreakdown>
         <StatBreakdown

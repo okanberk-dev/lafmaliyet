@@ -191,6 +191,8 @@ export function usePaymentActions(hide: (key: string) => void) {
       if (item.source === "invoice") {
         const r = await setInvoicePaid(item.sourceId, true);
         if (!r.ok) return void toast.error(r.error);
+        // Başka bir yerde zaten ödenmiş (liste eskiydi): geri alınacak bir şey yok
+        if (!r.data.previous.length) return void toast.info(`${item.title} zaten ödenmiş görünüyor`);
         toast.success(`${item.title} ödendi`, {
           description: "Fatura ödendi olarak işaretlendi. Sonra da Ödemeler › Son ödenenler'den geri alınabilir.",
           duration: 8000,

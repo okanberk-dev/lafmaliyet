@@ -202,6 +202,8 @@ export interface SupplierSummary {
   soon: number;
   /** Ödenmemişlerin en erken vadesi (gecikmiş olabilir) */
   nextDue: Due | null;
+  /** "7 gün içinde"kilerin en erken vadesi (gecikmişler hariç) */
+  nextSoonDue: string | null;
   lastInvoice: string | null;
   lastPaid: string | null;
 }
@@ -221,6 +223,7 @@ export function summarize(invoices: readonly LedgerInvoice[], opts: { today: str
     soonCount: 0,
     soon: 0,
     nextDue: null,
+    nextSoonDue: null,
     lastInvoice: null,
     lastPaid: null,
   };
@@ -240,6 +243,8 @@ export function summarize(invoices: readonly LedgerInvoice[], opts: { today: str
       s.requestedCount++;
       s.requested += balance;
     }
+    // Vade yalnız borçta: ödenmemiş duran iade (eksi) faturası vadeye ve gecikmeye girmez
+    if (balance <= 0) continue;
     const due = dueOf(i, opts.termDays);
     const left = daysBetween(opts.today, due.date);
     if (left < 0) {
@@ -248,6 +253,7 @@ export function summarize(invoices: readonly LedgerInvoice[], opts: { today: str
     } else if (left <= SOON_DAYS) {
       s.soonCount++;
       s.soon += balance;
+      if (!s.nextSoonDue || due.date < s.nextSoonDue) s.nextSoonDue = due.date;
     }
     if (!s.nextDue || due.date < s.nextDue.date) s.nextDue = due;
   }
@@ -739,27 +745,36 @@ export function paymentRequestText(opts: {
   payer?: string;
   name: string;
   card: Pick<SupplierCard, "legalName" | "iban" | "bankName" | "accountHolder" | "taxNumber"> | null;
+  /** Ödenecek faturalar; eksi tutarlılar ödemeden düşülen iade faturaları */
   lines: readonly RequestLine[];
   note?: string | null;
 }): string {
   const { card, lines } = opts;
+  const debts = lines.filter((l) => l.amount > 0);
+  const credits = lines.filter((l) => l.amount < 0);
   const total = round2(lines.reduce((a, l) => a + l.amount, 0));
   const recipient = card?.accountHolder?.trim() || card?.legalName?.trim() || opts.name;
   const bank = card?.bankName?.trim() || bankFromIban(card?.iban);
+  const credit = round2(credits.reduce((a, l) => a - l.amount, 0));
   const out = [
     opts.payer ? `Ödeme talebi · ${opts.payer}` : "Ödeme talebi",
     `Alıcı: ${recipient}`,
     card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (kartta yok)",
     bank ? `Banka: ${bank}` : null,
     card?.taxNumber ? `Vergi no: ${normalizeTaxNumber(card.taxNumber)}` : null,
-    `Tutar: ${money(total)}`,
-    lines.length ? `Açıklama: ${transferNote(lines)}` : null,
+    `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
+    debts.length ? `Açıklama: ${transferNote(debts)}` : null,
   ].filter((x): x is string => Boolean(x));
-  if (lines.length) {
-    out.push("", `Faturalar (${lines.length}):`);
-    for (const l of [...lines].sort((a, b) => a.date.localeCompare(b.date))) {
+  const byDate = (list: readonly RequestLine[]) => [...list].sort((a, b) => a.date.localeCompare(b.date));
+  if (debts.length) {
+    out.push("", `Faturalar (${debts.length}):`);
+    for (const l of byDate(debts)) {
       out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · ${money(l.amount)}${l.dueDate ? ` · vade ${dateTR(l.dueDate)}` : ""}`);
     }
+  }
+  if (credits.length) {
+    out.push("", `Düşülen iadeler (${credits.length}):`);
+    for (const l of byDate(credits)) out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · −${money(-l.amount)}`);
   }
   const note = opts.note?.trim();
   if (note) out.push("", note);

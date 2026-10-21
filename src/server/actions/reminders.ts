@@ -203,7 +203,7 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
     if (k === "invoice") {
       const [row] = await db
         .update(s.invoices)
-        .set({ unpaid: true, paidAt: null, paidVia: null })
+        .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null })
         .where(eq(s.invoices.id, rid))
         .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
       await forgetPaid("invoice", [rid]);

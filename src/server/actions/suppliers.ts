@@ -7,6 +7,7 @@ import { z } from "zod";
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import {
   cleanAliases,
+  formatIban,
   ibanProblem,
   INFO_FIELDS,
   mergeInfo,
@@ -21,7 +22,7 @@ import { dateTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { supplierSlugOf } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
-import { ParasutAuthError, ParasutClient, ParasutDeadlineError } from "@/server/parasut/client";
+import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { contactInfo } from "@/server/parasut/mapping";
 import { extractUblXml, parseUbl } from "@/server/parasut/ubl";
@@ -81,7 +82,7 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     const id = zId.nullable().parse(input.id);
     const data = cleanCard(input);
     const db = getDb();
-    const all = await db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
+    const all = await db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, iban: s.suppliers.iban }).from(s.suppliers);
     const cur = id ? all.find((c) => c.id === id) : null;
     if (id && !cur) throw new UserError("Tedarikçi kartı bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
     const renamed = cur && supplierMatchKey(cur.name) !== supplierMatchKey(data.name) && (await hasInvoicesNamed(supplierMatchKey(cur.name))) ? cur.name : null;
@@ -98,6 +99,10 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
       savedId = row.id;
     }
     await logActivity(me, cur ? "Tedarikçi kartı düzenlendi" : "Tedarikçi kartı eklendi", [data.name, aliases.length ? `diğer adlar: ${aliases.join(", ")}` : null].filter(Boolean).join(" · "));
+    // IBAN değişikliği ayrıca yazılır (eski ve yeni): sahte "IBAN'ımız değişti" e-postası en sık ödeme dolandırıcılığı
+    if (cur && (cur.iban ?? null) !== (data.iban ?? null)) {
+      await logActivity(me, "Tedarikçi IBAN'ı değişti", `${data.name}: ${cur.iban ? formatIban(cur.iban) : "yok"} → ${data.iban ? formatIban(data.iban) : "silindi"}`);
+    }
     refresh();
     return { id: savedId, slug: await supplierSlugOf(savedId), renamedAlias: renamed && aliases.includes(renamed) ? renamed : null };
   });
@@ -180,6 +185,8 @@ export async function supplierInfoFromParasut(names: string[]) {
     client.setDeadline(Date.now() + 40_000);
     const parts: Partial<SupplierInfo>[] = [];
     let source: string | null = null;
+    // Paraşüt'e ulaşılamadıysa "bilgi yok" denmez: kullanıcı sonra yeniden dener
+    let unreachable: string | null = null;
     for (const r of mine) {
       const label = r.invoiceNo ?? `${dateTR(r.date)} tarihli fatura`;
       try {
@@ -202,15 +209,19 @@ export async function supplierInfoFromParasut(names: string[]) {
         }
       } catch (e) {
         if (e instanceof ParasutAuthError) throw new UserError(e.message);
-        if (e instanceof ParasutDeadlineError) break;
+        if (e instanceof ParasutDeadlineError) {
+          unreachable = "Paraşüt zamanında yanıt vermedi; biraz sonra yeniden deneyin.";
+          break;
+        }
         // Belgesi alınamayan fatura (Paraşüt 5xx, bozuk belge) atlanır, bir öncekine bakılır
+        if (e instanceof ParasutError) unreachable = e.message;
         console.error("Faturadan cari bilgisi", r.id, e);
       }
       if (parts.length) break;
     }
     const info = mergeInfo(...parts);
     const found = INFO_FIELDS.filter((k) => info[k]);
-    if (!found.length) throw new UserError("Faturada okunabilen cari bilgisi bulunamadı; bilgileri elle girin.");
+    if (!found.length) throw new UserError(unreachable && !parts.length ? unreachable : "Faturada okunabilen cari bilgisi bulunamadı; bilgileri elle girin.");
     return { info, found, source };
   });
 }

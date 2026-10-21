@@ -415,5 +415,5 @@ const FILTER_EMPTY: Record<SupplierFilter, string> = {
   tumu: "Arama ya da süzgeç bütün tedarikçileri dışarıda bıraktı.",
   borclu: "Ödenmemiş faturası olan tedarikçi yok.",
   geciken: "Vadesi geçmiş ödeme yok.",
-  eksik: "Bütün tedarikçilerin IBAN, vergi no ve iletişim bilgisi girilmiş.",
+  eksik: "Borcu olan ya da kartı açılmış tedarikçilerde eksik bilgi yok.",
 };
