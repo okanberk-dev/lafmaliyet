@@ -257,3 +257,63 @@ export function counterLine(rows: { by: string | null; last: Date | string | nul
   const who = names.length ? `${names.length > 1 ? "Sayanlar" : "Sayan"}: ${names.join(", ")} · ` : "";
   return `${who}son kayıt ${dateTimeTR(last)}`;
 }
+
+// ---------------------------------------------------------------- Sayım kutusu: yazım, olağan dışı değer, birleştirme
+
+/**
+ * Sayım kutusundaki sayı. KG ve LT'de tek nokta ondalıktır ("1.500" = 1,5 KG): telefonların ondalık klavyesi çoğu
+ * zaman yalnız nokta verir, tartıdan okunan değer de öyle yazılır. ADET ve DİLİM'de Türkçe yazım geçerli (1.500 = bin
+ * beş yüz adet). Okunamazsa null.
+ */
+export function parseCount(raw: string, unit: string, parse: (s: string) => number | null): number | null {
+  const s = raw.trim().replace(/\s/g, "");
+  if (!s) return null;
+  if ((unit === "KG" || unit === "LT") && /^\d+\.\d+$/.test(s)) return Number(s);
+  return parse(s);
+}
+
+/** Kutunun yazımı: binlik ayırıcısız, ondalık virgüllü ("1500", "1,5"); kutudan yeniden okununca aynı sayı */
+export function countText(qty: number | null): string {
+  if (qty === null) return "";
+  return String(Math.round(qty * 1000) / 1000).replace(".", ",");
+}
+
+/**
+ * Geçen aya göre olağan dışı miktar (yazım hatası olabilir, ör. 1,5 yerine 15): en az beş katı ve 2 birimden fazla
+ * artış ya da beşte birinin altına düşüş. Sıfır (bitti) ve geçen ay sayılmayan kalem uyarılmaz.
+ */
+export function unusualCount(qty: number | null, prev: number | null): "high" | "low" | null {
+  if (qty === null || prev === null || prev <= 0 || qty <= 0) return null;
+  if (qty >= prev * 5 && qty - prev > 2) return "high";
+  if (qty * 5 <= prev && prev >= 1) return "low";
+  return null;
+}
+
+/**
+ * Sunucudan yeni sayım gelince (başkası kaydetti, sayfa yenilendi) kutuları birleştirir: kişinin dokunmadığı satır
+ * yeni değeri alır; ikisinin de değiştirdiği satırda kişinin yazdığı kalır ve "çakışma" olarak döner (kaydederse
+ * başkasınınkinin yerine geçeceğini bilsin).
+ */
+export function mergeCounts(
+  values: Record<number, string>,
+  before: Map<number, number | null>,
+  after: Map<number, number | null>,
+  read: (id: number, raw: string) => number | null,
+): { values: Record<number, string>; conflicts: number[] } {
+  const next = { ...values };
+  const conflicts: number[] = [];
+  for (const [id, now] of after) {
+    const was = before.get(id) ?? null;
+    if (was === now) continue;
+    const mine = read(id, values[id] ?? "");
+    if (mine === was) next[id] = countText(now);
+    else if (mine !== now) conflicts.push(id);
+  }
+  return { values: next, conflicts };
+}
+
+/** Personelin sayım girebildiği aylar: bu ay ve geçen ay (kapanmış eski ayın kâr-zararı sessizce değişmesin) */
+export function staffCountMonths(now: Date = new Date()): string[] {
+  const month = todayTR(now).slice(0, 7);
+  return [month, shiftMonth(month, -1)];
+}

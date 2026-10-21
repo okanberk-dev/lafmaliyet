@@ -10,7 +10,7 @@ import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
-import { planStaffExtras } from "./logic";
+import { planStaffExtras, staffCountMonths } from "./logic";
 
 /**
  * "Listede olmayanlar" kaydı, personel için (yönetici `saveStockExtras` ile fiyatıyla birlikte kaydeder).
@@ -22,6 +22,9 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
+    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
+      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir; daha eski bir ay için yöneticiye yazın");
+    }
     const data = z
       .array(z.object({ name: zText("Kalem adı", 120), unit: zText("Birim", 20), qty: z.number().finite().min(0, "Miktar negatif olamaz") }))
       .max(100)

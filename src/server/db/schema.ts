@@ -695,8 +695,8 @@ export const karaokeSessions = pgTable(
 // ---------------------------------------------------------------- Anlık bildirim (Web Push)
 /**
  * Tarayıcı bildirim abonelikleri (cihaz başına bir satır). Gönderim yalnız aktif kullanıcıya ve aboneliği alırken
- * geçerli olan oturum sürümüyle yapılır: parola, rol ya da erişim değişince eski cihazlara bildirim gitmez. Bildirime
- * veri konmaz; cihaz ayrıntıyı oturumuyla ister (/api/push/son).
+ * geçerli olan oturum sürümüyle yapılır: parola, rol ya da erişim değişince eski cihazlara bildirim gitmez. Bildirimin
+ * içeriği (başlık, kısa metin) uçtan uca şifreli gider (RFC 8291); tutar ya da kişisel veri konmaz.
  */
 export const pushSubscriptions = pgTable(
   "push_subscriptions",
@@ -721,4 +721,49 @@ export const pushSubscriptions = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("push_subscriptions_endpoint_uq").on(t.endpoint), index("push_subscriptions_user_idx").on(t.userId)],
+);
+
+// ---------------------------------------------------------------- Gün sonu kasa raporu
+/**
+ * Personelin her akşam ModPOS'un Z raporuna ve kasaya bakıp girdiği gün sonu raporu (iş günü başına bir satır; yeniden
+ * gönderilince güncellenir, revision artar). Tutarlar TL. Olması gereken nakit = açılış + nakit satış − gün içinde
+ * çıkan; kasa farkı = sayılan − olması gereken (eksi: eksik, artı: fazla). Hesap src/lib/cash-report.ts'te; farkı
+ * liste ve özet için ayrıca saklanır. Ayrıntı: docs/KASA-RAPORU.md.
+ */
+export const cashReports = pgTable(
+  "cash_reports",
+  {
+    id: serial("id").primaryKey(),
+    /** İş günü (YYYY-MM-DD, Türkiye); gece yarısından sonra kapanan gün bir önceki güne yazılır */
+    date: text("date").notNull(),
+    zNo: text("z_no"),
+    receipts: integer("receipts"),
+    /** Z raporundaki toplam satış ve ödeme türleri */
+    zTotal: doublePrecision("z_total").notNull().default(0),
+    cash: doublePrecision("cash").notNull().default(0),
+    card: doublePrecision("card").notNull().default(0),
+    mealCard: doublePrecision("meal_card").notNull().default(0),
+    online: doublePrecision("online").notNull().default(0),
+    other: doublePrecision("other").notNull().default(0),
+    /** Kasa: açılış (dünden devir), gün içinde çıkan (harcama, teslim), akşam sayılan, sayımdan sonra teslim edilen */
+    openingCash: doublePrecision("opening_cash").notNull().default(0),
+    cashOut: doublePrecision("cash_out").notNull().default(0),
+    cashOutNote: text("cash_out_note"),
+    countedCash: doublePrecision("counted_cash").notNull().default(0),
+    handedOver: doublePrecision("handed_over").notNull().default(0),
+    /** Banka POS cihazının gün sonu toplamı (ModPOS'taki kartla karşılaştırılır) */
+    bankPos: doublePrecision("bank_pos"),
+    note: text("note"),
+    cashDiff: doublePrecision("cash_diff").notNull().default(0),
+    submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
+    submittedByName: text("submitted_by_name").notNull(),
+    revision: integer("revision").notNull().default(1),
+    /** Son gönderimin e-postası: gitti, gitmedi (hata metniyle) ya da kapalı */
+    emailStatus: text("email_status", { enum: ["sent", "failed", "off"] }),
+    emailError: text("email_error"),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("cash_reports_date_uq").on(t.date)],
 );

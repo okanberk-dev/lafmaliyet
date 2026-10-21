@@ -23,7 +23,7 @@ import {
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -48,7 +48,20 @@ import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
 import { stockBreakdown } from "./breakdowns";
-import { activeGroupIndex, extraKey, groupProgress, listTopScroll, liveTotals, nextEmptyIndex, type CountLineValue, type GroupProgress } from "./logic";
+import {
+  activeGroupIndex,
+  countText,
+  extraKey,
+  groupProgress,
+  listTopScroll,
+  liveTotals,
+  mergeCounts,
+  nextEmptyIndex,
+  parseCount,
+  unusualCount,
+  type CountLineValue,
+  type GroupProgress,
+} from "./logic";
 
 export interface FormLine extends CountLineValue {
   name: string;
@@ -194,6 +207,26 @@ function ProgressIcon({ complete }: { complete: boolean }) {
  * Satırın durumu (AkmanOS todo-list ikonu): boş = kesik halka, sayıldı = yeşil onay, geçersiz = kırmızı çarpı.
  * Yüzlerce satırda hafif kalsın diye çizgi CSS geçişiyle çizilir; hareket azaltılınca geçiş kapanır.
  */
+const noopSubscribe = () => () => {};
+
+function readDraft(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function parseDraft(json: string): Record<string, string> {
+  try {
+    const v = JSON.parse(json) as unknown;
+    if (!v || typeof v !== "object") return {};
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && /^\d+$/.test(e[0])));
+  } catch {
+    return {};
+  }
+}
+
 function LineStatus({ status }: { status: "empty" | "counted" | "invalid" }) {
   const stroke = "transition-[stroke-dashoffset,opacity] duration-200 ease-out motion-reduce:transition-none";
   return (
@@ -530,8 +563,25 @@ export function StockCountForm({
   const archivedCount = all.length - countable.length;
   const savedExtras: Extra[] = initialExtras.map((e) => toExtra(e, isAdmin));
   const savedKeys = new Set(savedExtras.map((e) => extraKey(e.name, e.unit)));
-  const savedValues = () => Object.fromEntries(all.map((l) => [l.id, l.qty === null ? "" : num(l.qty, 3)])) as Record<number, string>;
+  // Binlik ayırıcısız ("1500", "1,5"): KG/LT kutusunda nokta ondalık okunur, kayıtlı değer yanlış okunmasın
+  const savedValues = () => Object.fromEntries(all.map((l) => [l.id, countText(l.qty)])) as Record<number, string>;
   const [values, setValues] = useState<Record<number, string>>(savedValues);
+  /** Bu kişi yazarken başkasının da kaydettiği satırlar (kaydederse onunkinin yerine geçer) */
+  const [conflicts, setConflicts] = useState<Set<number>>(() => new Set());
+  /** "Geçen aydan doldur"la gelen, henüz dokunulmamış satırlar: sayılmış sayılmaz, kontrol edilmeli */
+  const [prefilled, setPrefilled] = useState<Set<number>>(() => new Set());
+  /** Kaydetmeden önce sorulacaklar (kontrol edilmemiş doldurma, geçen aya göre çok farklı miktar) */
+  const [saveCheck, setSaveCheck] = useState<{ prefilled: number; unusual: string[] } | null>(null);
+  // Sunucudan yeni sayım gelince (kendi kaydımız, başkasının kaydı, yenileme) dokunulmayan satırlar yeni değeri alır
+  const [syncedGroups, setSyncedGroups] = useState(groups);
+  if (syncedGroups !== groups) {
+    const lineMap = (gs: FormGroup[]) => new Map(gs.flatMap((g) => g.lines.map((l) => [l.id, l.qty] as const)));
+    const units = new Map(all.map((l) => [l.id, l.unitNow ?? l.countUnit]));
+    const merged = mergeCounts(values, lineMap(syncedGroups), lineMap(groups), (id, raw) => parseCount(raw, units.get(id) ?? "", parseNumberTR));
+    setSyncedGroups(groups);
+    setValues(merged.values);
+    setConflicts(new Set(merged.conflicts));
+  }
   const [extras, setExtras] = useState(savedExtras);
   const [busy, setBusy] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -548,7 +598,15 @@ export function StockCountForm({
   const qtyOf = (l: FormLine) => {
     if (l.archived) return l.qty;
     const v = values[l.id];
-    return v === undefined || v.trim() === "" ? null : parseNumberTR(v);
+    return v === undefined || v.trim() === "" ? null : parseCount(v, l.unitNow ?? l.countUnit, parseNumberTR);
+  };
+  /** Geçen ayın miktarı aynı birimdeyse (karşılaştırma için) */
+  const prevComparable = (l: FormLine) => (l.prevQty !== null && (l.prevUnit ?? l.countUnit) === (l.unitNow ?? l.countUnit) ? l.prevQty : null);
+  const unusualOf = (l: FormLine) => (l.archived || qtyOf(l) === l.qty ? null : unusualCount(qtyOf(l), prevComparable(l)));
+  const setLine = (id: number, value: string) => {
+    setValues((x) => ({ ...x, [id]: value }));
+    if (prefilled.has(id)) setPrefilled((x) => new Set([...x].filter((y) => y !== id)));
+    if (conflicts.has(id)) setConflicts((x) => new Set([...x].filter((y) => y !== id)));
   };
   const isInvalid = (l: FormLine) => {
     if (l.archived || !values[l.id]?.trim()) return false;
@@ -570,7 +628,7 @@ export function StockCountForm({
   const dirty = !syncing && (changedLines.length > 0 || extrasDirty || invalidLines.length > 0);
   /** Kayıtlı miktarı silinen satırlar: kaydedince o ayın sayımından çıkar (çubukta ayrıca söylenir) */
   const clearedLines = changedLines.filter((l) => qtyOf(l) === null);
-  const counted = countable.filter((l) => qtyOf(l) !== null).length;
+  const counted = countable.filter((l) => qtyOf(l) !== null && !prefilled.has(l.id)).length;
   const remaining = countable.length - counted;
   const share = countable.length ? counted / countable.length : 0;
   const complete = countable.length > 0 && remaining === 0;
@@ -595,6 +653,36 @@ export function StockCountForm({
   /** Personel kayıtlı fiyatlı satırı silemez, adını / birimini değiştiremez (fiyat o ada bağlı) */
   const lockedExtra = (e: Extra) => !isAdmin && e.priced && savedKeys.has(extraKey(e.name, e.unit));
   const canCarryExtras = prevExtras.length > 0 && filledExtras.length === 0;
+
+  // Kaydedilmemiş sayım bu cihazda taslak olarak durur: sekme kapanır, ağ gider ya da telefon arka plandaki sekmeyi
+  // atarsa yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklenmesi önerilir. Kayıt ya da "Vazgeç" taslağı siler.
+  const draftKey = `laf:sayim-taslak:${month}`;
+  const draftJson = dirty ? JSON.stringify(Object.fromEntries(changedLines.map((l) => [l.id, values[l.id] ?? ""]))) : "";
+  useEffect(() => {
+    if (!draftJson) return;
+    try {
+      window.localStorage.setItem(draftKey, draftJson);
+    } catch {
+      // Gizli pencere ya da dolu depolama: taslaksız devam
+    }
+  }, [draftJson, draftKey]);
+  const [draftGone, setDraftGone] = useState(false);
+  const storedDraft = useSyncExternalStore(noopSubscribe, () => readDraft(draftKey), () => null);
+  const draftEntries =
+    storedDraft && !dirty && !draftGone
+      ? Object.entries(parseDraft(storedDraft)).filter(([id, raw]) => {
+          const l = byId.get(Number(id));
+          return l && !l.archived && (values[l.id] ?? "") !== raw;
+        })
+      : [];
+  const forgetDraft = () => {
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // yok sayılır
+    }
+    setDraftGone(true);
+  };
 
   // Kaydedilmemiş sayımla sayfa kapatılır ya da yenilenirse tarayıcı sorsun
   useEffect(() => {
@@ -662,7 +750,7 @@ export function StockCountForm({
   // ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş kalem
   const toolbarRef = useRef<HTMLDivElement>(null);
   const chipRowRef = useRef<HTMLDivElement>(null);
-  const progress = groupProgress(groups, (l) => qtyOf(l) !== null);
+  const progress = groupProgress(groups, (l) => qtyOf(l) !== null && !prefilled.has(l.id));
   const visibleNames = new Set(visibleGroups.map((g) => g.name));
   // Grup süzgeci açıkken bütün gruplar (dokununca o gruba geçilir), değilse ekrandaki gruplar (dokununca kaydırılır)
   const chipItems = group ? progress : progress.filter((p) => visibleNames.has(p.name));
@@ -736,7 +824,7 @@ export function StockCountForm({
     const line = stuckBottom(toolbarRef.current);
     const start = focused >= 0 ? focused + 1 : Math.max(0, inputs.findIndex((el) => el.getBoundingClientRect().top >= line));
     const i = nextEmptyIndex(
-      inputs.map((el) => el.value.trim() === ""),
+      inputs.map((el) => el.value.trim() === "" || el.dataset.prefilled === "1"),
       start,
     );
     if (i < 0) return toast.message("Boş kalem kalmadı", { description: "Gösterilen bütün kalemlere miktar yazıldı." });
@@ -769,16 +857,18 @@ export function StockCountForm({
           ? `${num(skipped)} kalemin sayım birimi değiştiği için geçen ayın miktarı kullanılamadı; elle yazın.`
           : "Geçen ay sayılan kalemlerin hepsine bu ay miktar yazılmış.",
       });
-    if (fill.length)
+    if (fill.length) {
       setValues((v) => {
         const next = { ...v };
-        for (const l of fill) next[l.id] = num(l.prevQty ?? 0, 3);
+        for (const l of fill) next[l.id] = countText(l.prevQty ?? 0);
         return next;
       });
+      setPrefilled((x) => new Set([...x, ...fill.map((l) => l.id)]));
+    }
     if (extrasToo) setExtras(carriedExtras());
     const parts = [fill.length ? `${num(fill.length)} boş satır` : null, extrasToo ? `${num(prevExtras.length)} ek kalem` : null].filter(Boolean).join(" ve ");
     toast.success(`${parts} geçen ayın sayımıyla dolduruldu`, {
-      description: `Kontrol edip değişenleri düzeltin, sonra kaydedin.${skipped ? ` Sayım birimi değişen ${num(skipped)} kalem atlandı.` : ""}`,
+      description: `Doldurulan satırlar sayılmış sayılmaz: rafa bakıp düzeltin ya da “Doğru”ya basın. “Sıradaki” onlarda da durur.${skipped ? ` Sayım birimi değişen ${num(skipped)} kalem atlandı.` : ""}`,
     });
   }
 
@@ -798,13 +888,16 @@ export function StockCountForm({
   };
 
   function discard() {
+    forgetDraft();
     setValues(savedValues());
+    setPrefilled(new Set());
+    setConflicts(new Set());
     setExtras(savedExtras);
     setDiscardOpen(false);
     toast.message("Değişiklikler geri alındı");
   }
 
-  async function save() {
+  async function save(confirmed = false) {
     if (busy) return;
     const bad = invalidLines[0];
     if (bad) {
@@ -812,17 +905,34 @@ export function StockCountForm({
       return toast.error(`${bad.name}: geçersiz miktar`, { description: "Yalnızca sayı yazın; ondalık için virgül kullanın (0,5)." });
     }
     if (extraProblem) return toast.error(!extraProblem.name.trim() ? "Ek kalemin adını yazın" : `${extraProblem.name}: geçersiz miktar ya da fiyat`);
+    // Kontrol edilmemiş doldurma ya da geçen aya göre çok farklı miktar (yazım hatası olabilir): önce sor
+    const unchecked = changedLines.filter((l) => prefilled.has(l.id)).length;
+    const unusual = changedLines.filter((l) => unusualOf(l)).map((l) => `${l.name} ${countText(qtyOf(l))} ${l.unitNow ?? l.countUnit}`);
+    if (!confirmed && (unchecked || unusual.length)) return setSaveCheck({ prefilled: unchecked, unusual });
+    setSaveCheck(null);
     setBusy(true);
+    try {
+      await persist();
+    } catch {
+      // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar ekranda (ve taslakta) duruyor
+      toast.error("Kaydedilemedi: bağlantı yok gibi", {
+        description: "Yazdıklarınız bu cihazda duruyor. Bağlantı gelince yeniden deneyin.",
+        duration: 15_000,
+        action: { label: "Tekrar dene", onClick: () => void saveRef.current(true) },
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persist() {
     const lineCount = changedLines.length;
     if (lineCount) {
       const res = await saveStockCounts(
         month,
-        changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l) })),
+        changedLines.map((l) => ({ ingredientId: l.id, qty: qtyOf(l), base: l.qty })),
       );
-      if (!res.ok) {
-        setBusy(false);
-        return toast.error(res.error);
-      }
+      if (!res.ok) return void toast.error(res.error, { duration: 12_000 });
     }
     if (extrasDirty) {
       const clean = filledExtras.map((e) => ({ name: e.name.trim(), unit: e.unit.trim().toLocaleUpperCase("tr-TR") || "ADET", qty: parseNumberTR(e.qty) ?? 0 }));
@@ -833,22 +943,18 @@ export function StockCountForm({
           month,
           clean.map((e, i) => ({ ...e, unitPrice: prices[i] })),
         );
-        if (!ex.ok) {
-          setBusy(false);
-          return toast.error(ex.error, { description: partial });
-        }
+        if (!ex.ok) return void toast.error(ex.error, { description: partial });
         // Sunucunun yazdığı biçime getir (boş satır düşer, "2,0" → "2"): kayıttan sonra çubuk açık kalmasın
         setExtras(clean.map((e, i) => ({ name: e.name, unit: e.unit, qty: num(e.qty, 3), unitPrice: num(prices[i], 2), priced: prices[i] > 0 })));
       } else {
         const ex = await saveStaffStockExtras(month, clean);
-        if (!ex.ok) {
-          setBusy(false);
-          return toast.error(ex.error, { description: partial });
-        }
+        if (!ex.ok) return void toast.error(ex.error, { description: partial });
         setExtras(ex.data.map((e) => toExtra({ ...e, unitPrice: 0 }, false)));
       }
     }
-    setBusy(false);
+    setPrefilled(new Set());
+    setConflicts(new Set());
+    forgetDraft();
     setSyncingFor(groups);
     toast.success(`${monthLabel} sayımı kaydedildi`, {
       description: [
@@ -895,6 +1001,25 @@ export function StockCountForm({
   return (
     // Altta yüzen sayım / kaydetme çubuğu var: son satırlar onun altında kalmasın (alt menünün payını kabuk verir)
     <div className="space-y-4 pb-32">
+      {draftEntries.length ? (
+        <div role="status" className="no-print flex flex-wrap items-center gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+          <span className="min-w-0 flex-1">
+            Bu cihazda kaydedilmemiş {num(draftEntries.length)} kalemlik {monthLabel} sayımı var (sayfa kapanmış ya da bağlantı gitmiş olabilir).
+          </span>
+          <Button
+            size="sm"
+            onClick={() => {
+              setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
+              toast.success("Taslak geri yüklendi", { description: "Kontrol edip kaydedin." });
+            }}
+          >
+            Geri yükle
+          </Button>
+          <Button size="sm" variant="ghost" onClick={forgetDraft}>
+            Sil
+          </Button>
+        </div>
+      ) : null}
       <div className={cn("grid gap-3", isAdmin && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
         {/* İlerleme: AkmanOS todo-list başlığı + ince çubuk + sayım düzeni */}
         <Card>
@@ -1244,6 +1369,12 @@ export function StockCountForm({
                 const changed = v !== l.qty;
                 const inputId = `count-${l.id}`;
                 const nowUnit = l.unitNow ?? l.countUnit;
+                const raw = values[l.id] ?? "";
+                const isPrefilled = prefilled.has(l.id);
+                const unusual = invalid ? null : unusualOf(l);
+                const prev = prevComparable(l);
+                // "1.500" gibi noktalı yazımın nasıl okunduğu
+                const echo = !invalid && v !== null && raw.includes(".") ? `= ${countText(v)} ${nowUnit}` : null;
                 return (
                   <li
                     key={l.id}
@@ -1253,7 +1384,7 @@ export function StockCountForm({
                     }}
                     className="flex items-center gap-2.5 px-2 py-2.5 max-sm:min-h-16 sm:gap-3 sm:px-3"
                   >
-                    <LineStatus status={invalid ? "invalid" : v !== null ? "counted" : "empty"} />
+                    <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
                     <div className="min-w-0 flex-1">
                       <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm leading-5 font-medium text-ink">
                         <span className="min-w-0 break-words">{l.name}</span>
@@ -1281,6 +1412,29 @@ export function StockCountForm({
                         </p>
                       ) : null}
                       {invalid ? <p className="mt-0.5 text-xs font-medium text-bad">Geçersiz miktar: yalnızca sayı (ör. 2,5)</p> : null}
+                      {echo ? <p className="mt-0.5 text-xs font-medium text-ink-soft tabular">{echo}</p> : null}
+                      {unusual && prev !== null ? (
+                        <p className="mt-0.5 text-xs font-medium text-warn">
+                          Geçen ay {num(prev, 3)} {nowUnit}: {unusual === "high" ? "beş katından fazla" : "beşte birinden az"}, doğru mu?
+                        </p>
+                      ) : null}
+                      {conflicts.has(l.id) ? (
+                        <p className="mt-0.5 text-xs font-medium text-warn">
+                          Başkası bu arada {l.qty === null ? "sayımı sildi" : `${countText(l.qty)} ${l.countUnit} kaydetti`}; sizinki kaydedilirse onun yerine geçer.
+                        </p>
+                      ) : null}
+                      {isPrefilled ? (
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-warn">
+                          Geçen aydan dolduruldu: rafa bakıp düzeltin
+                          <button
+                            type="button"
+                            className="cursor-pointer rounded-md px-1.5 py-0.5 text-ink-soft underline underline-offset-2 hover:text-ink pointer-coarse:py-2"
+                            onClick={() => setPrefilled((x) => new Set([...x].filter((y) => y !== l.id)))}
+                          >
+                            Doğru
+                          </button>
+                        </p>
+                      ) : null}
                       {moneyMobile}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1290,8 +1444,9 @@ export function StockCountForm({
                           id={inputId}
                           data-count-input=""
                           enterKeyHint={l.id === lastInputId ? "done" : "next"}
-                          value={values[l.id] ?? ""}
-                          onChange={(e) => setValues((x) => ({ ...x, [l.id]: e.target.value }))}
+                          data-prefilled={isPrefilled ? "1" : undefined}
+                          value={raw}
+                          onChange={(e) => setLine(l.id, e.target.value)}
                           onKeyDown={focusNextCount}
                           onFocus={(e) => e.currentTarget.select()}
                           placeholder="—"
@@ -1577,7 +1732,7 @@ export function StockCountForm({
             <Undo2 size={16} aria-hidden="true" />
             <span className="max-sm:sr-only">Vazgeç</span>
           </Button>
-          <Button onClick={save} disabled={busy} size="lg" title="Kaydet (⌘S / Ctrl+S)" className="max-sm:px-4">
+          <Button onClick={() => void save()} disabled={busy} size="lg" title="Kaydet (⌘S / Ctrl+S)" className="max-sm:px-4">
             <Save size={18} aria-hidden="true" />
             {busy ? (
               "Kaydediliyor…"
@@ -1636,7 +1791,7 @@ export function StockCountForm({
                 <Undo2 size={18} />
               </IconButton>
             ) : null}
-            <Button onClick={save} disabled={busy || !dirty} className="h-11 px-4">
+            <Button onClick={() => void save()} disabled={busy || !dirty} className="h-11 px-4">
               <Save size={17} aria-hidden="true" />
               {busy ? "Kaydediliyor…" : "Kaydet"}
             </Button>
@@ -1644,6 +1799,23 @@ export function StockCountForm({
         </div>
       ) : null}
 
+      <ConfirmDialog
+        open={saveCheck !== null}
+        onClose={() => setSaveCheck(null)}
+        onConfirm={() => void save(true)}
+        tone="primary"
+        title="Kaydetmeden önce kontrol edin"
+        description={[
+          saveCheck?.prefilled ? `${num(saveCheck.prefilled)} kalem geçen ayın miktarıyla dolu ve kontrol edilmedi.` : null,
+          saveCheck?.unusual.length
+            ? `Geçen aya göre çok farklı: ${saveCheck.unusual.slice(0, 3).join(", ")}${saveCheck.unusual.length > 3 ? ` ve ${num(saveCheck.unusual.length - 3)} kalem daha` : ""} (yazım hatası olabilir).`
+            : null,
+          "Yine de kaydedilsin mi?",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        confirmLabel="Yine de kaydet"
+      />
       <ConfirmDialog
         open={discardOpen}
         onClose={() => setDiscardOpen(false)}

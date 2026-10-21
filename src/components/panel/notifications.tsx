@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
+import { AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -37,8 +37,8 @@ const FOOTER_LINKS: Record<Role, { href: string; label: string }[]> = {
     { href: "/panel", label: "Genel bakış" },
   ],
   staff: [
+    { href: "/panel/kasa", label: "Kasa raporu" },
     { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım" },
-    { href: "/panel/receteler", label: "Reçete defteri" },
   ],
 };
 
@@ -74,6 +74,7 @@ export function NotificationMenu({
   const groups = [
     { id: "hatirlatici", label: "Hatırlatıcılarım", items: visible.filter((n) => n.group === "hatirlatici") },
     { id: "onay", label: role === "admin" ? "Onaylar" : "Önerilerim", items: visible.filter((n) => n.group === "onay") },
+    { id: "kasa", label: "Kasa", items: visible.filter((n) => n.group === "kasa") },
     { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
     { id: "fatura", label: "Faturalar", items: visible.filter((n) => n.group === "fatura") },
     { id: "uyari", label: "Uyarılar", items: visible.filter((n) => !n.group || n.group === "uyari") },
@@ -229,6 +230,8 @@ export function NotificationMenu({
                               ? AlarmClock
                               : n.group === "onay"
                                 ? ClipboardCheck
+                                : n.group === "kasa"
+                                  ? Banknote
                                 : n.group === "fatura" && n.kind !== "danger"
                                   ? FileText
                                   : k.icon;

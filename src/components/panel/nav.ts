@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  Banknote,
   BarChart3,
   BellRing,
   Boxes,
@@ -61,6 +62,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Günlük",
     items: [
       { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda" },
+      { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
@@ -138,6 +140,8 @@ export interface NavNode {
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
+  // Personelde üst düzeyde; yönetici Satış & gider altında görür (aynı ekran)
+  { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
   {
     id: "menu",
     label: "Menü",
@@ -156,6 +160,8 @@ export const NAV_TREE: NavNode[] = [
     icon: Wallet,
     roles: ["admin"],
     children: [
+      // Ekran personele de açık; personel bu grubu görmez, kendi üst düzey "Kasa raporu" öğesinden girer
+      { id: "kasa-raporlari", label: "Kasa raporları", href: "/panel/kasa", roles: ["admin", "staff"] },
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
@@ -250,12 +256,13 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
     { id: "menu", label: "Menü", icon: LayoutGrid },
   ],
+  // Hesabım profil menüsünde (alt menü beş öğe)
   staff: [
     { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },
+    { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
     { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
     { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
     { id: "hatirlaticilarim", label: "Hatırlatıcı", icon: AlarmClock, href: "/panel/hatirlaticilarim" },
-    { id: "hesap", label: "Hesabım", icon: UserRound, href: "/panel/hesap" },
   ],
 };
 

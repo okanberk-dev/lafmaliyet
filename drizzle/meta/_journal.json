@@ -99,6 +99,13 @@
       "when": 1792568790331,
       "tag": "0013_personel_yetkileri_karaoke",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792573892394,
+      "tag": "0014_kasa_raporu",
+      "breakpoints": true
     }
   ]
 }

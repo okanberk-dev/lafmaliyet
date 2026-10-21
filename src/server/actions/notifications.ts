@@ -4,12 +4,14 @@ import { and, count, desc, eq, gt } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
+import { businessDate, diffKind, diffText } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { dateTR, monthShort, tl } from "@/lib/format";
 import { REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
-import { daysLeftLabel } from "@/lib/reminders";
+import { addDays, daysLeftLabel, longDateTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
+import { cashReportsBetween } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
@@ -27,7 +29,62 @@ export interface PanelNotification {
   unread: boolean;
   href: string;
   /** Zilde hangi başlığın altında durur */
-  group?: "hatirlatici" | "onay" | "odeme" | "fatura" | "uyari";
+  group?: "hatirlatici" | "onay" | "kasa" | "odeme" | "fatura" | "uyari";
+}
+
+/**
+ * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma; yöneticiye dünün
+ * raporu girilmediyse ve son raporda kasa farkı varsa (eksik kırmızı, fazla turuncu).
+ */
+async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
+  const now = new Date();
+  const day = businessDate(now);
+  const reports = await cashReportsBetween(addDays(day, -6), day);
+  if (user.role !== "admin") {
+    const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
+    if ((hour >= 5 && hour < 20) || reports.some((r) => r.date === day)) return [];
+    return [
+      {
+        id: `kasa-bekliyor-${day}`,
+        kind: "warning",
+        title: "Bugünün kasa raporu bekliyor",
+        body: "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
+        timeLabel: "Bugün",
+        unread: true,
+        href: "/panel/kasa",
+        group: "kasa",
+      },
+    ];
+  }
+  const out: PanelNotification[] = [];
+  const yesterday = addDays(day, -1);
+  if (!reports.some((r) => r.date === yesterday)) {
+    out.push({
+      id: `kasa-yok-${yesterday}`,
+      kind: "warning",
+      title: "Dünkü kasa raporu girilmedi",
+      body: longDateTR(yesterday),
+      timeLabel: "Dün",
+      unread: true,
+      href: `/panel/kasa?gun=${yesterday}`,
+      group: "kasa",
+    });
+  }
+  const last = reports[0];
+  if (last && diffKind(last.cashDiff) !== "even") {
+    out.push({
+      // Rapor güncellenince yeniden okunmamış olur
+      id: `kasa-fark-${last.date}-r${last.revision}`,
+      kind: last.cashDiff < 0 ? "danger" : "warning",
+      title: `Kasa: ${diffText(last.cashDiff)}`,
+      body: [longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
+      timeLabel: dateTR(last.date),
+      unread: true,
+      href: `/panel/kasa?gun=${last.date}`,
+      group: "kasa",
+    });
+  }
+  return out;
 }
 
 /** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */
@@ -157,8 +214,12 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
-  const [mine, recipes] = await Promise.all([reminderNotifications(user).catch(() => []), recipeNotifications(user).catch(() => [])]);
-  if (user.role !== "admin") return [...mine, ...recipes];
+  const [mine, recipes, cash] = await Promise.all([
+    reminderNotifications(user).catch(() => []),
+    recipeNotifications(user).catch(() => []),
+    cashNotifications(user).catch(() => []),
+  ]);
+  if (user.role !== "admin") return [...cash, ...mine, ...recipes];
   const [model, upcoming, invoices] = await Promise.all([loadModel(), loadUpcoming().catch(() => null), invoiceNotifications().catch(() => [])]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -208,5 +269,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...mine, ...recipes, ...payments, ...invoices, ...priceNote, ...warnings];
+  return [...mine, ...recipes, ...cash, ...payments, ...invoices, ...priceNote, ...warnings];
 }

@@ -20,19 +20,23 @@ test("yönetici alt menüsü: Genel bakış, Satışlar, Faturalar, Ödemeler, M
   assert.equal(BOTTOM_NAV.admin.find((i) => i.id === "odemeler")?.badge, "overdue");
 });
 
-test("personel alt menüsü erişebildiği beş ekranın hepsi (src/lib/roles.ts STAFF_PATHS)", () => {
+test("personel alt menüsü erişebildiği ekranların hepsi; Hesabım profil menüsünde (src/lib/roles.ts STAFF_PATHS)", () => {
   assert.deepEqual(
     BOTTOM_NAV.staff.map((i) => [i.label, i.href]),
     [
       ["Karaoke", "/panel/karaoke"],
+      ["Kasa", "/panel/kasa"],
       ["Reçeteler", "/panel/receteler"],
       ["Sayım", "/panel/sayim"],
       ["Hatırlatıcı", "/panel/hatirlaticilarim"],
-      ["Hesabım", "/panel/hesap"],
     ],
   );
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
-  assert.deepEqual([...BOTTOM_NAV.staff.map((i) => i.href)].sort(), [...STAFF_PATHS].sort(), "alt menüde personelin her ekranı var");
+  assert.deepEqual(
+    [...BOTTOM_NAV.staff.map((i) => i.href)].sort(),
+    STAFF_PATHS.filter((p) => p !== "/panel/hesap").sort(),
+    "alt menüde personelin her ekranı var",
+  );
 });
 
 test("her alt menü bağlantısı kenar çubuğunda da var (çekmecede kaybolan ekran yok)", () => {
@@ -63,7 +67,8 @@ test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", 
   const staff = BOTTOM_NAV.staff;
   assert.equal(bottomNavActive(staff, "/panel/sayim"), "sayim");
   assert.equal(bottomNavActive(staff, "/panel/receteler"), "receteler");
-  assert.equal(bottomNavActive(staff, "/panel/hesap"), "hesap");
+  assert.equal(bottomNavActive(staff, "/panel/hesap"), null);
+  assert.equal(bottomNavActive(staff, "/panel/kasa"), "kasa");
   assert.equal(bottomNavActive(staff, "/panel/karaoke"), "karaoke");
   assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), "hatirlaticilarim");
   assert.equal(bottomNavActive(staff, "/panel/tutarlilik"), null);

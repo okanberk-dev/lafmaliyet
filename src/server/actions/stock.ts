@@ -4,6 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { staffCountMonths } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
@@ -13,16 +14,28 @@ import { logActivity } from "./log";
 import { attempt, UserError, zMonth, zText } from "./util";
 
 /**
- * Sayım sonuçlarını kaydeder. Personel de kullanabilir. qty = null olan satırlar silinir.
+ * Sayım sonuçlarını kaydeder. Personel de kullanabilir (yalnız bu ay ve geçen ay). qty = null olan satırlar silinir.
  * Her sayımla o anki birim çarpanı (KG/LT = 1000, ADET/DİLİM = 1) saklanır: malzemenin sayım birimi sonradan
  * değişse ya da malzeme pasif yapılsa da geçmiş ayın stok değeri değişmez.
+ *
+ * `base`: kişinin formu açtığında gördüğü kayıtlı miktar. Arada başkası o satırı kaydettiyse (iki kişi aynı anda
+ * sayıyor) üzerine yazılmaz, hata döner ve sayfa yenilenir; kişi yeni değeri görüp isterse yeniden kaydeder.
  */
-export async function saveStockCounts(month: string, entries: { ingredientId: number; qty: number | null }[]) {
+export async function saveStockCounts(month: string, entries: { ingredientId: number; qty: number | null; base?: number | null }[]) {
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
+    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
+      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir; daha eski bir ay için yöneticiye yazın");
+    }
     const data = z
-      .array(z.object({ ingredientId: z.number().int().positive(), qty: z.number().finite().min(0, "Miktar negatif olamaz").nullable() }))
+      .array(
+        z.object({
+          ingredientId: z.number().int().positive(),
+          qty: z.number().finite().min(0, "Miktar negatif olamaz").nullable(),
+          base: z.number().finite().nullable().optional(),
+        }),
+      )
       .max(1000)
       .parse(entries);
     const db = getDb();
@@ -30,6 +43,34 @@ export async function saveStockCounts(month: string, entries: { ingredientId: nu
     // Ay satırı yalnızca gerçekten sayım yazılınca açılır: yalnızca silen bir kayıt boş ay bırakmasın
     if (filled.length) await db.insert(s.months).values({ month: m }).onConflictDoNothing();
     const removed = await db.transaction(async (tx) => {
+      const checked = data.filter((e) => e.base !== undefined);
+      if (checked.length) {
+        const current = new Map(
+          (
+            await tx
+              .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty })
+              .from(s.stockCounts)
+              .where(and(eq(s.stockCounts.month, m), inArray(s.stockCounts.ingredientId, checked.map((e) => e.ingredientId))))
+          ).map((r) => [r.id, r.qty]),
+        );
+        const stale = checked.filter((e) => {
+          const now = current.get(e.ingredientId) ?? null;
+          return now !== e.base && now !== e.qty;
+        });
+        if (stale.length) {
+          const names = (
+            await tx
+              .select({ name: s.ingredients.name })
+              .from(s.ingredients)
+              .where(inArray(s.ingredients.id, stale.map((e) => e.ingredientId)))
+          ).map((r) => r.name);
+          // Form yeni değerleri alsın: dokunulmayan satırlar güncellenir, çakışanlar işaretlenir
+          refresh();
+          throw new UserError(
+            `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` ve ${names.length - 3} kalem daha` : ""} bu arada başkası tarafından kaydedildi; hiçbir şey kaydedilmedi. İşaretli satırları kontrol edip yeniden kaydedin.`,
+          );
+        }
+      }
       const clear = data.filter((e) => e.qty === null).map((e) => e.ingredientId);
       const deleted = clear.length
         ? (
