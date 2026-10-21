@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Coffee, CornerDownLeft, LayoutGrid, Package, Search, X, type LucideIcon } from "lucide-react";
+import { Clock, Coffee, CornerDownLeft, LayoutGrid, Package, Search, Truck, X, type LucideIcon } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -15,19 +15,23 @@ import { useLocalList } from "./local-list";
 import type { NavItem } from "./nav";
 
 /**
- * AkmanOS "Command Palette" görünümünde panel araması: ⌘K / Ctrl+K ile her yerden açılır; ekranlar, ürünler ve
- * hammaddeler. Arama Türkçe harf ve aksan duyarsızdır ("sut" → "Süt"), ekranların anahtar sözcüklerine de bakar
- * ("kira" → Giderler). Ok tuşları gezinir, Enter açar, Esc kapatır; rakam tuşları aramaya yazılır.
- * Son açılan beş kayıt bu tarayıcıda hatırlanır.
+ * AkmanOS "Command Palette" görünümünde panel araması: ⌘K / Ctrl+K ile her yerden açılır; ekranlar, ürünler,
+ * hammaddeler ve tedarikçiler (unvan ve vergi no da aranır). Arama Türkçe harf ve aksan duyarsızdır ("sut" → "Süt"),
+ * ekranların anahtar sözcüklerine de bakar ("kira" → Giderler). Ok tuşları gezinir, Enter açar, Esc kapatır; rakam
+ * tuşları aramaya yazılır. Son açılan beş kayıt bu tarayıcıda hatırlanır.
  */
 
-type Group = "ekran" | "urun" | "hammadde";
+type Group = "ekran" | "urun" | "hammadde" | "tedarikci";
 
 const GROUPS: { id: Group; label: string; icon: LucideIcon }[] = [
   { id: "ekran", label: "Ekranlar", icon: LayoutGrid },
   { id: "urun", label: "Ürünler", icon: Coffee },
   { id: "hammadde", label: "Hammaddeler", icon: Package },
+  { id: "tedarikci", label: "Tedarikçiler", icon: Truck },
 ];
+
+const GROUP_OF: Record<SearchEntry["kind"], Group> = { product: "urun", ingredient: "hammadde", supplier: "tedarikci" };
+const ICON_OF: Record<SearchEntry["kind"], LucideIcon> = { product: Coffee, ingredient: Package, supplier: Truck };
 
 interface Entry {
   id: string;
@@ -80,14 +84,13 @@ function buildEntries(pages: NavItem[], index: SearchEntry[]): Entry[] {
     });
   }
   for (const e of index) {
-    const group: Group = e.kind === "product" ? "urun" : "hammadde";
     push({
       id: `${e.kind}:${e.href}`,
-      group,
+      group: GROUP_OF[e.kind],
       title: e.label,
       subtitle: e.hint,
       href: e.href,
-      icon: group === "urun" ? Coffee : Package,
+      icon: ICON_OF[e.kind],
       t: fold(e.label),
       hay: fold(`${e.label} ${e.hint}`),
     });
@@ -165,7 +168,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
     const q = fold(query).trim().replace(/\s+/g, " ");
     const words = q ? q.split(" ") : [];
     const hits = words.length ? entries.filter((e) => words.every((w) => e.hay.includes(w))) : entries;
-    const counts: Record<Group, number> = { ekran: 0, urun: 0, hammadde: 0 };
+    const counts: Record<Group, number> = { ekran: 0, urun: 0, hammadde: 0, tedarikci: 0 };
     for (const e of hits) counts[e.group]++;
     const pool = category ? hits.filter((e) => e.group === category) : hits;
 
@@ -304,7 +307,7 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
                 setQuery(e.target.value);
                 setActive(0);
               }}
-              placeholder="Ekran, ürün, hammadde ara"
+              placeholder="Ekran, ürün, hammadde, tedarikçi ara"
               className="h-14 min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-chart-muted focus:outline-none sm:h-12 sm:text-sm [&::-webkit-search-cancel-button]:hidden"
             />
             {query ? (

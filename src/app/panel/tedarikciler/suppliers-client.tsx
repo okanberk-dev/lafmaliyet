@@ -1,0 +1,419 @@
+"use client";
+
+import { ChevronRight, Copy, Plus, Truck } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { Badge } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { Fab } from "@/components/ui/fab";
+import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
+import { Field, Select } from "@/components/ui/form";
+import { Avatar } from "@/components/ui/icon-tile";
+import { EmptyState, InfoTip } from "@/components/ui/misc";
+import { ActiveFilters, BIG_FIELDS, ChoiceList, FilterButton, SHEET_BTN, type ActiveFilter } from "@/components/ui/mobile-filters";
+import { Pagination, usePaged } from "@/components/ui/pagination";
+import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
+import { dateTR, money, num, tl } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+import { useCopied } from "../kullanicilar/password-field";
+import { SupplierCardDialog } from "./card-dialog";
+import {
+  compareSuppliers,
+  dueTone,
+  dueWhen,
+  matchesSupplierFilter,
+  MISSING_LABEL,
+  parseSupplierFilter,
+  parseSupplierSort,
+  supplierHaystack,
+  supplierHref,
+  SUPPLIER_SORTS,
+  type SupplierFilter,
+  type SupplierListRow,
+  type SupplierSort,
+} from "./logic";
+
+const PAGE_SIZE = 25;
+const FILTER_KEYS = ["ara", "durum", "sirala"];
+
+/** Sunucu sayfasının özet rakamları (sayaç); biçim işlevi sunucudan geçemediği için adıyla */
+export function CountUp({ value, format = "tl" }: { value: number; format?: "tl" | "num" }) {
+  return (
+    <>
+      <span className="sr-only">{format === "tl" ? tl(value) : num(value)}</span>
+      <span aria-hidden="true">
+        <AnimatedNumber value={value} format={format === "tl" ? (v) => tl(v) : (v) => num(v)} className="tabular" />
+      </span>
+    </>
+  );
+}
+
+/** Ödenmemişlerin en yakın vadesi: "3 gün gecikti" kırmızı, SOON_DAYS içi turuncu */
+function DueLine({ row, today, className }: { row: SupplierListRow; today: string; className?: string }) {
+  const due = row.summary.nextDue;
+  if (!due) return <span className={cn("text-ink-quiet", className)}>–</span>;
+  return (
+    <span className={cn("tabular", DUE_TONE[dueTone(due.date, today)], className)} title={due.estimated ? "Faturada vade yok: fatura tarihi + vade günü (tahmini)" : undefined}>
+      {dateTR(due.date)}
+      {due.estimated ? "*" : ""} · {dueWhen(due.date, today)}
+    </span>
+  );
+}
+
+const DUE_TONE = { bad: "text-bad", warn: "text-warn", ok: "text-ink-soft" } as const;
+
+/**
+ * Tedarikçi listesi: arama (ad, unvan, vergi no, IBAN, telefon), süzgeç (borcu olanlar, vadesi geçen, bilgisi
+ * eksik) ve sıra adreste. Satıra dokununca tedarikçinin sayfası açılır; IBAN satırdan kopyalanır. Telefonda kart,
+ * masaüstünde tablo.
+ */
+export function SuppliersClient({ rows, today, defaultTermDays }: { rows: SupplierListRow[]; today: string; defaultTermDays: number }) {
+  const router = useRouter();
+  const [q, setQ] = useQueryText("ara");
+  const [rawFilter, setFilter] = useQueryState<string>("durum", "tumu");
+  const [rawSort, setSort] = useQueryState<string>("sirala", "borc");
+  const filter = parseSupplierFilter(rawFilter);
+  const sort = parseSupplierSort(rawSort);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const { copied, copy } = useCopied();
+
+  const searched = rows.filter((r) => matches(supplierHaystack(r), q));
+  const counts = {
+    all: searched.length,
+    borclu: searched.filter((r) => matchesSupplierFilter(r, "borclu")).length,
+    geciken: searched.filter((r) => matchesSupplierFilter(r, "geciken")).length,
+    eksik: searched.filter((r) => matchesSupplierFilter(r, "eksik")).length,
+  };
+  const visible = searched.filter((r) => matchesSupplierFilter(r, filter)).sort(compareSuppliers(sort));
+  const paged = usePaged(visible, PAGE_SIZE, `${q}|${filter}|${sort}`);
+  const anyFilter = Boolean(q.trim() || filter !== "tumu");
+  const open = visible.reduce((a, r) => a + r.summary.open, 0);
+  const toggle = (f: SupplierFilter) => setFilter(filter === f ? "tumu" : f);
+  const clearFilters = () => {
+    setQ("");
+    clearQuery(["ara", "durum"]);
+  };
+
+  const chips: ActiveFilter[] = [];
+  if (filter !== "tumu") chips.push({ key: "durum", label: FILTER_LABEL[filter], onRemove: () => setFilter("tumu") });
+  if (sort !== "borc") chips.push({ key: "sirala", label: SUPPLIER_SORTS.find((s) => s.value === sort)!.label, onRemove: () => setSort("borc") });
+
+  const ibanButton = (r: SupplierListRow, className?: string) =>
+    r.iban ? (
+      <IconButton
+        label={copied === r.key ? "IBAN kopyalandı" : `${r.name} IBAN'ını kopyala`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void copy(r.key, r.iban!, `IBAN kopyalandı · ${r.name}`);
+        }}
+        className={cn("relative z-10", className)}
+      >
+        <Copy size={15} />
+      </IconButton>
+    ) : null;
+
+  // Eksik bilgi yalnız borcu olan tedarikçide işaretlenir (ödemek için IBAN gerekir); bütün eksikler "Bilgisi eksik"
+  // süzgecinde
+  const badges = (r: SupplierListRow) => (
+    <>
+      {r.paidOnDelivery ? (
+        <Badge tone="green" title="Yeni faturaları ödendi gelir (peşin / otomatik ödeme)">
+          Peşin
+        </Badge>
+      ) : null}
+      {r.summary.openCount && r.missing.includes("iban") ? (
+        <Badge tone="amber" dot title={r.hasCard ? "Kartta IBAN yok: ödeme talebinde ve kopyalarken gerekir" : "Cari kartı yok: IBAN'ı tedarikçinin sayfasından ekleyin"}>
+          {MISSING_LABEL.iban}
+        </Badge>
+      ) : null}
+      {r.summary.requestedCount ? (
+        <Badge tone="blue" title="Ödemesi talep edilmiş, henüz ödenmemiş faturalar">
+          {num(r.summary.requestedCount)} talep edildi
+        </Badge>
+      ) : null}
+      {r.parasutPaid ? (
+        <Badge tone="violet" title="Paraşüt'te ödenmiş görünüyor, panelde ödenmedi: tedarikçinin sayfasından ödendi işaretleyin">
+          {num(r.parasutPaid)} Paraşüt&apos;te ödendi
+        </Badge>
+      ) : null}
+    </>
+  );
+
+  return (
+    <Card id="tedarikci-listesi" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
+      <CardHeader
+        icon={<Truck />}
+        title="Tedarikçi listesi"
+        description={
+          <>
+            <span className="lg:hidden">Tedarikçiye dokunun: cari kartı, faturaları ve ödeme durumu açılır. Kopyala simgesi IBAN&apos;ı panoya alır.</span>
+            <span className="max-lg:hidden">Satıra tıklayınca tedarikçinin sayfası açılır: cari kartı, faturaları ve ödeme durumu. Kopyala simgesi IBAN&apos;ı panoya alır.</span>
+          </>
+        }
+        meta={
+          <>
+            <span>
+              <AnimatedNumber value={rows.length} format={(v) => num(v)} className="font-semibold text-ink tabular" /> tedarikçi
+            </span>
+            {counts.geciken ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <button type="button" onClick={() => toggle("geciken")} className="inline-flex cursor-pointer items-center gap-1 text-bad underline-offset-2 hover:underline pointer-coarse:min-h-11">
+                  <span className="font-semibold tabular">{num(counts.geciken)}</span> vadesi geçen
+                </button>
+              </>
+            ) : null}
+          </>
+        }
+        actions={
+          <Button onClick={() => setAdding(true)} className="pointer-coarse:h-11 max-sm:hidden">
+            <Plus size={16} /> Tedarikçi ekle
+          </Button>
+        }
+      />
+
+      {/* Telefon: arama + "Süzgeç"; seçimler alt sayfada */}
+      <div role="search" className="space-y-2.5 px-4 pb-3 lg:hidden">
+        <div className="flex items-center gap-2">
+          <SearchField value={q} onChange={setQ} placeholder="Tedarikçi ara" label="Tedarikçi ara: ad, unvan, vergi no, IBAN, telefon" shortcut={false} className="flex-1 [&_input]:h-11" />
+          <FilterButton count={chips.length} onClick={() => setSheetOpen(true)} />
+        </div>
+        <ActiveFilters items={chips} />
+        <p className="flex min-h-6 items-center justify-between gap-2 text-[13px] text-ink-mute tabular" aria-live="polite">
+          <span>{anyFilter ? `${num(visible.length)} / ${num(rows.length)} tedarikçi` : `${num(rows.length)} tedarikçi`}</span>
+          {open ? (
+            <span>
+              borç <span className="font-semibold text-ink">{money(open)}</span>
+            </span>
+          ) : null}
+        </p>
+      </div>
+      <Dialog
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        title="Süzgeç ve sıralama"
+        description={`${num(visible.length)} / ${num(rows.length)} tedarikçi gösteriliyor`}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              className={SHEET_BTN}
+              disabled={!chips.length && !q.trim()}
+              onClick={() => {
+                setQ("");
+                clearQuery(FILTER_KEYS);
+              }}
+            >
+              Temizle
+            </Button>
+            <Button className={SHEET_BTN} onClick={() => setSheetOpen(false)}>
+              {visible.length ? `${num(visible.length)} tedarikçiyi göster` : "Kapat"}
+            </Button>
+          </>
+        }
+      >
+        <div className={cn("space-y-4 pb-2", BIG_FIELDS)}>
+          <ChoiceList<SupplierFilter>
+            label="Göster"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "tumu", label: "Tümü", count: counts.all },
+              { value: "borclu", label: "Borcu olanlar", count: counts.borclu },
+              { value: "geciken", label: "Vadesi geçen", count: counts.geciken },
+              { value: "eksik", label: "Bilgisi eksik", count: counts.eksik },
+            ]}
+          />
+          <Field label="Sıralama" htmlFor="t-sort">
+            <Select id="t-sort" value={sort} onChange={(e) => setSort(e.target.value as SupplierSort)}>
+              {SUPPLIER_SORTS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      </Dialog>
+
+      <FilterBar active={anyFilter} onClear={clearFilters} shown={visible.length} total={rows.length} unit="tedarikçi" className="px-5 pb-4 max-lg:hidden">
+        <SearchField value={q} onChange={setQ} placeholder="Ad, unvan, vergi no, IBAN" label="Tedarikçi ara: ad, unvan, vergi no, IBAN, telefon" className="w-full lg:w-72" />
+        <FilterChip active={filter === "borclu"} onToggle={() => toggle("borclu")} count={counts.borclu}>
+          Borcu olanlar
+        </FilterChip>
+        <FilterChip active={filter === "geciken"} onToggle={() => toggle("geciken")} count={counts.geciken}>
+          {filter === "geciken" ? null : <span className="size-1.5 rounded-full bg-bad" aria-hidden="true" />}
+          Vadesi geçen
+        </FilterChip>
+        <FilterChip active={filter === "eksik"} onToggle={() => toggle("eksik")} count={counts.eksik}>
+          Bilgisi eksik
+        </FilterChip>
+        <Select value={sort} onChange={(e) => setSort(e.target.value as SupplierSort)} className={cn("min-w-0 sm:w-60 pointer-coarse:h-11", sort !== "borc" && "ring-ink/40")} aria-label="Sıralama">
+          {SUPPLIER_SORTS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      </FilterBar>
+
+      {visible.length ? (
+        <>
+          {/* Telefon ve tablet: kart listesi; kartın tamamı bağlantı, IBAN kopyalama üstte */}
+          <ul className="divide-y divide-line-strong/70 border-t border-line lg:hidden">
+            {paged.slice.map((r) => (
+              <li key={r.key} className="relative px-4 pt-3 pb-3.5">
+                <div className="flex items-start gap-3">
+                  <Avatar name={r.name} className="mt-0.5" />
+                  <Link
+                    href={supplierHref(r.slug)}
+                    className="min-w-0 flex-1 rounded-xl outline-none before:absolute before:inset-0 before:content-[''] focus-visible:before:ring-2 focus-visible:before:ring-ink/30 focus-visible:before:ring-inset"
+                  >
+                    <span className="block text-[15px] leading-5 font-medium break-words text-ink">{r.name}</span>
+                    {r.legalName ? <span className="mt-0.5 block text-[13px] break-words text-ink-mute">{r.legalName}</span> : null}
+                    {r.summary.openCount ? <DueLine row={r} today={today} className="mt-0.5 block text-[13px]" /> : null}
+                    <span className="mt-0.5 block text-[13px] text-ink-mute tabular">
+                      {r.summary.lastInvoice ? `Son fatura ${dateTR(r.summary.lastInvoice)}` : "Faturası yok"}
+                      {r.summary.openCount ? ` · ${num(r.summary.openCount)} ödenmemiş` : ""}
+                    </span>
+                  </Link>
+                  <span className={cn("shrink-0 text-right text-[15px] leading-5 font-semibold tabular", r.summary.open ? "text-ink" : "text-sm font-normal text-ink-quiet")}>
+                    {r.summary.open ? money(r.summary.open) : "Borç yok"}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center gap-2 pl-12">
+                  <span className="flex min-w-0 flex-1 flex-wrap gap-1">{badges(r)}</span>
+                  {ibanButton(r, "-my-1 size-9 pointer-coarse:size-11")}
+                  <ChevronRight size={16} className="shrink-0 text-ink-quiet" aria-hidden="true" />
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <TableWrap className="max-lg:hidden">
+            <Table>
+              <THead>
+                <tr>
+                  <TH>Tedarikçi</TH>
+                  <TH>Son fatura</TH>
+                  <TH numeric>Ödenmemiş</TH>
+                  <TH numeric>
+                    <span className="inline-flex items-center gap-1.5">
+                      <InfoTip text="KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır." />
+                      Kalan borç
+                    </span>
+                  </TH>
+                  <TH>
+                    <span className="inline-flex items-center gap-1.5">
+                      En yakın vade
+                      <InfoTip text={`Ödenmemiş faturaların en erken vadesi. * işaretli: faturada vade yok, fatura tarihi + vade günü (tedarikçinin kartında yoksa ${defaultTermDays} gün).`} />
+                    </span>
+                  </TH>
+                  <TH className="w-px px-2">
+                    <span className="sr-only">Eylemler</span>
+                  </TH>
+                </tr>
+              </THead>
+              <tbody>
+                {paged.slice.map((r) => (
+                  <TR key={r.key} className="relative cursor-pointer" onClick={() => router.push(supplierHref(r.slug))}>
+                    <TD className="min-w-64 max-w-[28rem]">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={r.name} />
+                        <div className="min-w-0">
+                          <Link href={supplierHref(r.slug)} onClick={(e) => e.stopPropagation()} className="font-medium break-words text-ink underline-offset-2 hover:underline">
+                            {r.name}
+                          </Link>
+                          {r.legalName ? <p className="text-[13px] break-words text-ink-mute">{r.legalName}</p> : null}
+                          <div className="mt-1 flex flex-wrap gap-1 empty:hidden">{badges(r)}</div>
+                        </div>
+                      </div>
+                    </TD>
+                    <TD className="whitespace-nowrap text-ink-soft tabular">{r.summary.lastInvoice ? dateTR(r.summary.lastInvoice) : "–"}</TD>
+                    <TD numeric className={cn(!r.summary.openCount && "text-ink-quiet")}>
+                      {r.summary.openCount ? num(r.summary.openCount) : "–"}
+                    </TD>
+                    <TD numeric className="font-semibold">
+                      {r.summary.open ? money(r.summary.open) : <span className="font-normal text-ink-quiet">–</span>}
+                      {r.summary.overdue ? <span className="block text-xs font-normal text-bad">{money(r.summary.overdue)} gecikmiş</span> : null}
+                    </TD>
+                    <TD className="whitespace-nowrap">{r.summary.openCount ? <DueLine row={r} today={today} /> : <span className="text-ink-quiet">–</span>}</TD>
+                    <TD className="px-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex justify-end gap-1">{ibanButton(r)}</div>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </TableWrap>
+          <Pagination
+            page={paged.page}
+            pageCount={paged.pageCount}
+            onChange={paged.setPage}
+            total={paged.pageCount > 1 ? paged.total : undefined}
+            unit="tedarikçi"
+            className="border-t border-line max-sm:px-3 [&>div]:flex-wrap max-sm:[&>div]:gap-1"
+          />
+        </>
+      ) : (
+        <div className="border-t border-line">
+          {rows.length ? (
+            <EmptyState
+              title="Bu süzgece uyan tedarikçi yok"
+              description={q.trim() ? `“${q.trim()}” için sonuç bulunamadı. Aramayı kısaltın ya da süzgeci temizleyin.` : FILTER_EMPTY[filter]}
+              action={
+                <Button variant="secondary" onClick={clearFilters}>
+                  Süzgeci temizle
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              title="Henüz tedarikçi yok"
+              description="Faturalar geldikçe tedarikçiler burada kendiliğinden listelenir. Faturası henüz gelmemiş bir tedarikçinin bilgilerini şimdiden girebilirsiniz."
+              action={
+                <Button onClick={() => setAdding(true)}>
+                  <Plus size={16} /> Tedarikçi ekle
+                </Button>
+              }
+            />
+          )}
+        </div>
+      )}
+
+      <Fab onClick={() => setAdding(true)} className="h-12 pr-5 pl-4 sm:hidden">
+        <Plus size={18} aria-hidden="true" /> Tedarikçi ekle
+      </Fab>
+      {/* Telefon: listenin sonu yüzen düğmenin altında kalmasın */}
+      <div aria-hidden="true" className="h-16 sm:hidden" />
+
+      {adding ? (
+        <SupplierCardDialog
+          card={null}
+          defaultTermDays={defaultTermDays}
+          onClose={() => setAdding(false)}
+          onSaved={(r) => {
+            if (r.slug) router.push(supplierHref(r.slug));
+          }}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+const FILTER_LABEL: Record<SupplierFilter, string> = { tumu: "Tümü", borclu: "Borcu olanlar", geciken: "Vadesi geçen", eksik: "Bilgisi eksik" };
+
+const FILTER_EMPTY: Record<SupplierFilter, string> = {
+  tumu: "Arama ya da süzgeç bütün tedarikçileri dışarıda bıraktı.",
+  borclu: "Ödenmemiş faturası olan tedarikçi yok.",
+  geciken: "Vadesi geçmiş ödeme yok.",
+  eksik: "Bütün tedarikçilerin IBAN, vergi no ve iletişim bilgisi girilmiş.",
+};

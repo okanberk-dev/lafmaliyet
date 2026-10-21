@@ -145,6 +145,8 @@ export async function loadDataset(): Promise<Dataset> {
       outstanding: i.outstanding,
       eInvoiceId: i.eInvoiceId,
       needsReview: i.needsReview,
+      paidAt: i.paidAt,
+      paymentRequestedAt: i.paymentRequestedAt,
     })),
     // netSalary / extras ve period / amount taban değerlerdir (ilk sürümden önceki aylar).
     // active sütuna değil aralığa göre hesaplanır: ay değişince kendiliğinden doğru olur.

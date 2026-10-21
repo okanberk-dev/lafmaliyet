@@ -4,7 +4,8 @@
 karşılık geliyor. Hesaplama motoru Excel formüllerini birebir uyguluyor ve bunu otomatik testler kanıtlıyor. Excel'de
 olmayan araçlar da eklendi: ay bazlı çalışma, POS eşleştirme hafızası, fiyat geçmişi, uyarılar, menü mühendisliği,
 senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'ten her sabah otomatik fatura eşitlemesi
-([docs/PARASUT.md](docs/PARASUT.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
+([docs/PARASUT.md](docs/PARASUT.md)), tedarikçilerin cari kartları, borç ve ödeme takibi, ödeme talebi
+([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla
 onayladığı akış, herkesin kendi hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu
@@ -40,6 +41,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
+| Tedarikçiler: cari kartı (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` | — (yeni) |
 | Gelir-gider | `/panel/gelir-gider` | Genel Maliyet |
 | Giderler & personel (üç sekme: Sabit giderler, Aylık harcamalar, Personel) | `/panel/giderler`, `/panel/harcamalar`, `/panel/personel` | Sabit Giderler, — (yeni), Personel |
 | Ödemeler & hatırlatıcılar (Son ödenenler: 30 gün içinde geri alma) | `/panel/hatirlaticilar` | — (yeni) |
@@ -56,10 +58,10 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Açık sekmenin canlı verisi (ETag / 304) ve laffogato.net'in karaoke pingi | `/api/canli`, `/api/karaoke/ping` | — |
 
 Menü kenar çubuğunda dokuz öğeye toplandı: Genel bakış · Karaoke · Menü (Ürünler, Hammaddeler, Reçete defteri,
-Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Gelir-gider, Giderler & personel, Ödemeler &
-hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
+Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider, Giderler & personel,
+Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
 Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Satışlar · Faturalar · Ödemeler · Menü çubuğu var. ⌘K
-(Ctrl+K) ile ekran, ürün ve hammadde aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
+(Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
 eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini, kişisel
 hatırlatıcıları ve uyarıları (hammadde zammı, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
 var.
@@ -108,7 +110,7 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 | `npm run db:generate` | Şema değişince yeni migration üretir (`drizzle/`) |
 | `npm run db:migrate` | Migration'ları uygular |
 | `npm run db:seed` | Veritabanı boşsa Excel verisini yükler |
-| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri, hammaddeleri, satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, bildirim günlüğünü siler. **Silmedikleri:** kullanıcılar, aylık harcamalar (kategoriler ve kayıtlar), hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları; kalan harcama kayıtları gelir-gideri Excel'den ayırır |
+| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri, hammaddeleri, satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, bildirim günlüğünü siler. **Silmedikleri:** kullanıcılar, aylık harcamalar (kategoriler ve kayıtlar), hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları; kalan harcama kayıtları gelir-gideri Excel'den ayırır |
 | `npm run excel:extract -- "<excel yolu>"` | Excel'den `excel-data.json` ve `tests/golden.json` dosyalarını yeniden üretir (Python 3 + openpyxl gerekir) |
 
 ## Klasör yapısı

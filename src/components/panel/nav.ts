@@ -19,6 +19,7 @@ import {
   Package,
   Receipt,
   Settings,
+  Truck,
   UserRound,
   Users,
   Wallet,
@@ -72,6 +73,13 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/panel/satislar", label: "Satışlar", icon: Receipt, excel: "Satış Raporu", roles: ["admin"], keywords: "pos rapor içe aktar" },
       { href: "/panel/faturalar", label: "Faturalar", icon: FileText, excel: "Faturalar", roles: ["admin"], keywords: "alış tedarikçi gider" },
+      {
+        href: "/panel/tedarikciler",
+        label: "Tedarikçiler",
+        icon: Truck,
+        roles: ["admin"],
+        keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
+      },
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar" },
       {
         href: "/panel/giderler",
@@ -166,6 +174,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "kasa-raporlari", label: "Kasa raporları", href: "/panel/kasa", roles: ["admin", "staff"] },
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
+      { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
       { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },

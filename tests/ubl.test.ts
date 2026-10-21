@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deflateRawSync } from "node:zlib";
 
-import { extractUblXml, parseUbl, paymentPlan, ublLinesMatchTotal, ublLinesToDrafts, withholdingCorrection } from "../src/server/parasut/ubl";
+import { extractUblXml, parseUbl, ublLinesMatchTotal, ublLinesToDrafts, withholdingCorrection } from "../src/server/parasut/ubl";
 
 /** Paraşüt'ün signed_ubl yanıtı gibi tek dosyalı ZIP */
 function zip(name: string, content: string, method: 0 | 8 = 8): Buffer {
@@ -310,14 +310,4 @@ test("UBL ödeme: vade ödeme alanından, koşullardan ya da nottan; ödeme şek
   assert.deepEqual([bad.dueDate, bad.dueSource, bad.paymentMeans], ["2026-10-21", "note", "nakit"]);
   // Hiç vade yok
   assert.deepEqual([parseUbl(payDoc({})).dueDate, parseUbl(payDoc({})).cashOnDelivery], [null, false]);
-});
-
-test("UBL ödeme planı: vadesi gelmemiş ödenmedi, peşin ve vadesi geçmiş ödendi", () => {
-  const today = "2026-10-20";
-  assert.deepEqual(paymentPlan({ dueDate: "2026-10-29", cashOnDelivery: false }, "2026-10-14", today), { dueDate: "2026-10-29", unpaid: true });
-  assert.deepEqual(paymentPlan({ dueDate: "2026-10-20", cashOnDelivery: false }, "2026-10-05", today), { dueDate: "2026-10-20", unpaid: true });
-  assert.deepEqual(paymentPlan({ dueDate: "2026-10-04", cashOnDelivery: false }, "2026-09-19", today), { dueDate: "2026-10-04", unpaid: false });
-  assert.deepEqual(paymentPlan({ dueDate: "2026-10-14", cashOnDelivery: true }, "2026-10-14", today), { dueDate: "2026-10-14", unpaid: false });
-  assert.deepEqual(paymentPlan({ dueDate: "2026-10-30", cashOnDelivery: true }, "2026-10-14", today), { dueDate: "2026-10-30", unpaid: false });
-  assert.deepEqual(paymentPlan({ dueDate: null, cashOnDelivery: false }, "2026-10-14", today), { dueDate: null, unpaid: false });
 });

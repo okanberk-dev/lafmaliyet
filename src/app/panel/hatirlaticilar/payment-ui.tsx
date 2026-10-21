@@ -35,7 +35,7 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { setInvoicePaid } from "@/server/actions/invoices";
+import { restoreInvoicePayment, setInvoicePaid } from "@/server/actions/invoices";
 import { markReminderDone, postponeInvoice, postponeReminder, restoreReminder, setInvoiceDueDate } from "@/server/actions/reminders";
 
 import { itemKey } from "./calendar-entries";
@@ -194,7 +194,8 @@ export function usePaymentActions(hide: (key: string) => void) {
         toast.success(`${item.title} ödendi`, {
           description: "Fatura ödendi olarak işaretlendi. Sonra da Ödemeler › Son ödenenler'den geri alınabilir.",
           duration: 8000,
-          action: undo(() => setInvoicePaid(item.sourceId, false), "Fatura yeniden ödenmedi"),
+          // Önceki hâli olduğu gibi döner (ödeme talebi dahil)
+          action: undo(() => restoreInvoicePayment(r.data.previous), "Fatura yeniden ödenmedi"),
         });
       } else {
         const r = await markReminderDone(item.sourceId, item.projected ? item.dueDate : undefined);

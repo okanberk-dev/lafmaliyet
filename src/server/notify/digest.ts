@@ -8,6 +8,7 @@ import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type Upcom
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
 import { renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
@@ -16,10 +17,13 @@ import { loadNotifySettings } from "./settings";
 
 export { APP_URL, renderDigest } from "./digest-template";
 
-/** Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler */
+/**
+ * Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler. Vadesiz faturanın tahmini vadesi tedarikçinin
+ * cari kartındaki vade gününden (Tedarikçiler), yoksa genel ayardan.
+ */
 export async function loadUpcoming(today = todayTR()) {
   const db = getDb();
-  const [settings, reminders, invoices] = await Promise.all([
+  const [settings, reminders, rows, termDays] = await Promise.all([
     loadNotifySettings(),
     db.select().from(s.reminders).orderBy(asc(s.reminders.dueDate)),
     db
@@ -34,7 +38,9 @@ export async function loadUpcoming(today = todayTR()) {
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
+    loadTermDays(),
   ]);
+  const invoices = rows.map((i) => ({ ...i, termDays: i.dueDate ? null : termDays(i.supplier) }));
   const opts = { invoiceDaysBefore: settings.invoiceDaysBefore, invoiceTermDays: settings.invoiceTermDays };
   const items = upcomingItems(reminders, invoices, today, opts);
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar (listede ve e-postada yer almaz)

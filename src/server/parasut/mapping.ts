@@ -204,6 +204,64 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
   };
 }
 
+// ---------------------------------------------------------------- Tedarikçinin kişi kartı (contacts)
+
+/**
+ * Paraşüt'teki kişi kartı (contacts: name, tax_number, tax_office, address, district, city, phone, email, iban) →
+ * cari bilgileri. Tedarikçiler › Faturadan doldur, e-fatura belgesinde olmayan alanları buradan tamamlar.
+ */
+export function contactInfo(a: Record<string, unknown>): {
+  legalName: string | null;
+  taxNumber: string | null;
+  taxOffice: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  iban: string | null;
+  bankName: string | null;
+} {
+  const place = [str(a.postal_code), [str(a.district), str(a.city)].filter(Boolean).join("/")].filter(Boolean).join(" ");
+  const country = str(a.country);
+  const foreign = country && !/^t[üu]rk[iı]ye$|^turkey$|^tr$/i.test(country) ? country : null;
+  return {
+    legalName: str(a.name),
+    taxNumber: str(a.tax_number),
+    taxOffice: str(a.tax_office),
+    address: [str(a.address), place, foreign].filter(Boolean).join(", ") || null,
+    phone: str(a.phone),
+    email: str(a.email),
+    iban: str(a.iban),
+    bankName: null,
+  };
+}
+
+// ---------------------------------------------------------------- Ödeme durumu (docs/TEDARIKCILER.md)
+
+/** Panelin ödeme alanları (yeni açılan faturada) */
+export interface NewInvoicePayment {
+  unpaid: boolean;
+  paidAt: string | null;
+  paidVia: "havale" | "nakit" | "kart" | "cek" | "diger" | null;
+}
+
+/**
+ * Eşitlemenin açtığı yeni faturanın ödeme durumu. Ödendiğini kullanıcı işaretler: fatura "ödenmedi" gelir (Paraşüt'ün
+ * bildirdiği yalnız ipucu olarak parasutUnpaid'e yazılır). Peşin çalışılan tedarikçinin (`onDelivery`, kartta
+ * "Faturaları ödendi gelsin") faturası ödendi gelir: fatura günü, kartın ödeme şekliyle. İade (eksi) faturası ödenmez.
+ * Takip başlamadan (`since`) önceki fatura geçmişi yeniden alırken gelir: Paraşüt'ün bildirdiği durumla açılır
+ * (`parasutUnpaid`; e-faturada bilgi yok, null: ödendi), yoksa eski faturalar "ödenmedi" yığılırdı.
+ */
+export function newInvoicePayment(
+  d: { payable: number; date: string; parasutUnpaid: boolean | null },
+  onDelivery: { paymentMethod: NewInvoicePayment["paidVia"] } | null,
+  since: string,
+): NewInvoicePayment {
+  if (d.payable <= 0) return { unpaid: false, paidAt: null, paidVia: null };
+  if (onDelivery) return { unpaid: false, paidAt: d.date, paidVia: onDelivery.paymentMethod };
+  if (d.date < since) return { unpaid: d.parasutUnpaid ?? false, paidAt: null, paidVia: null };
+  return { unpaid: true, paidAt: null, paidVia: null };
+}
+
 /**
  * Bu fatura panele alınmalı mı. İptal ve tekrarlayan şablonlar alınmaz; arşivlenmiş fatura (Paraşüt'te yalnızca
  * listeden gizlenmiş) geçerli bir giderdir ve alınır.

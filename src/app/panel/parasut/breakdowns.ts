@@ -66,7 +66,7 @@ const KINDS: Record<InvoiceKind, { label: string; note: string }> = {
   },
   bill: {
     label: "Gider faturası",
-    note: "Paraşüt'te içeri alınmış ya da Paraşüt'e elle girilmiş gider faturaları; ödeme durumu da gelir.",
+    note: "Paraşüt'te içeri alınmış ya da Paraşüt'e elle girilmiş gider faturaları.",
   },
   matched: {
     label: "Panel kaydı, Paraşüt'e bağlandı",

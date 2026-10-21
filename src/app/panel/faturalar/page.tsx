@@ -16,17 +16,19 @@ import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { loadSupplierCards } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { listInvoiceDocuments } from "@/server/documents";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
+import { groupSuppliers } from "../tedarikciler/logic";
 import { invoiceBreakdowns } from "./breakdowns";
 import { DeletedBills } from "./deleted-bills";
 import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
 import { MonthStatCards } from "./month-stat-cards";
 import { ReviewNotice } from "./review-notice";
-import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
+import { DELETED_BILLS_KEY, ignoredBills, supplierMatchKey, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
 
@@ -73,7 +75,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs] = await Promise.all([
+  const [model, state, docs, cards] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -81,6 +83,7 @@ async function InvoicesContent() {
       .where(inArray(s.integrationState.key, [IGNORE_KEY, DELETED_BILLS_KEY])),
     // Yalnız belge bilgileri (ad, tür, boyut); dosyanın kendisi açılınca /api/faturalar/{id}/belge'den gelir
     listInvoiceDocuments(),
+    loadSupplierCards(),
   ]);
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
   const invoices: InvoiceRow[] = model.ds.invoices
@@ -109,6 +112,10 @@ async function InvoicesContent() {
   const breakdown = invoiceBreakdowns(invoices, months, listHref);
   // Fatura kategorisi → bağlı Aylık harcamalar kategorisi (pencere bu faturanın gelir-giderde nerede sayıldığını söyler)
   const expenseLinks = Object.fromEntries((model.ds.expenseCategories ?? []).filter((c) => c.invoiceCategory).map((c) => [c.invoiceCategory!, c.name]));
+  // Tedarikçi adı anahtarı → Tedarikçiler'deki sayfası (pencerede "Cari kartı ve ödemeleri" bağlantısı); tarih ve tutar gerekmez
+  const supplierSlugs = Object.fromEntries(
+    groupSuppliers(invoices, cards, { today: "", termDays: 0 }).flatMap((g) => g.names.map((n) => [supplierMatchKey(n), g.slug] as const)),
+  );
 
   return (
     <>
@@ -186,6 +193,7 @@ async function InvoicesContent() {
         parasutCompanyId={process.env.PARASUT_COMPANY_ID?.trim() || null}
         ignoredCount={ignored.length}
         expenseLinks={expenseLinks}
+        supplierSlugs={supplierSlugs}
       />
 
       <Card className="mt-6">

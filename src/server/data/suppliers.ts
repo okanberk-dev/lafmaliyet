@@ -1,0 +1,139 @@
+import "server-only";
+
+import { asc, desc, eq } from "drizzle-orm";
+
+import { cardFor, cardIndex, groupSuppliers, type PaymentMethod, type SupplierCard } from "@/app/panel/tedarikciler/logic";
+import { addDays, todayTR } from "@/lib/reminders";
+import { getDb, schema as s } from "@/server/db";
+import { loadNotifySettings } from "@/server/notify/settings";
+
+type SupplierRow = typeof s.suppliers.$inferSelect;
+
+export function toCard(r: SupplierRow): SupplierCard {
+  return {
+    id: r.id,
+    name: r.name,
+    aliases: Array.isArray(r.aliases) ? r.aliases.filter((a): a is string => typeof a === "string") : [],
+    legalName: r.legalName,
+    taxNumber: r.taxNumber,
+    taxOffice: r.taxOffice,
+    iban: r.iban,
+    bankName: r.bankName,
+    accountHolder: r.accountHolder,
+    contactName: r.contactName,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    paymentTermDays: r.paymentTermDays,
+    paymentMethod: (r.paymentMethod as PaymentMethod | null) ?? null,
+    paidOnDelivery: r.paidOnDelivery,
+    note: r.note,
+  };
+}
+
+export async function loadSupplierCards(): Promise<SupplierCard[]> {
+  const rows = await getDb().select().from(s.suppliers).orderBy(asc(s.suppliers.name));
+  return rows.map(toCard);
+}
+
+/** Tedarikçi adı → kartındaki vade günü (yoksa null): Ödemeler'in ve ertelemenin tahmini vadesi */
+export async function loadTermDays(): Promise<(supplier: string) => number | null> {
+  const cards = await getDb().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, paymentTermDays: s.suppliers.paymentTermDays }).from(s.suppliers);
+  const index = cardIndex(cards);
+  return (supplier) => cardFor(index, supplier)?.paymentTermDays ?? null;
+}
+
+/** Tedarikçi adı → kartı peşin çalışılansa ("Faturaları ödendi gelsin") kartın ödeme şekli, değilse null */
+export type PaidOnDelivery = (supplier: string) => { paymentMethod: PaymentMethod | null } | null;
+
+/**
+ * Peşin çalışılan tedarikçiler: Paraşüt'ten gelen yeni faturaları ödendi açılır (fatura günü, kartın ödeme şekliyle;
+ * newInvoicePayment). Ad bütün kartlarla eşlenir: başka bir kartın adı peşin karta düşmesin.
+ */
+export async function loadPaidOnDelivery(): Promise<PaidOnDelivery> {
+  const cards = await getDb()
+    .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, paidOnDelivery: s.suppliers.paidOnDelivery, paymentMethod: s.suppliers.paymentMethod })
+    .from(s.suppliers);
+  const index = cardIndex(cards);
+  return (supplier) => {
+    const c = cardFor(index, supplier);
+    return c?.paidOnDelivery ? { paymentMethod: c.paymentMethod } : null;
+  };
+}
+
+/** Ödeme takibinin başladığı gün (integration_state); db:reset silmez */
+const PAYMENTS_SINCE_KEY = "payments.since";
+/** İlk eşitlemede takip bu kadar gün geriden başlar: son ayın ödenmemiş olabilecek faturaları da takibe girer */
+const PAYMENTS_LOOKBACK_DAYS = 30;
+
+/**
+ * Ödeme takibinin başlangıcı (YYYY-MM-DD). Paraşüt'ten bu günden eski bir fatura yeni gelirse (geçmişi yeniden alırken:
+ * Excel'i yeniden yükleme, Tarihten eşitle) "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır
+ * (newInvoicePayment). İlk çağrıda bugünden PAYMENTS_LOOKBACK_DAYS gün önce olarak kaydedilir.
+ */
+export async function loadPaymentsSince(): Promise<string> {
+  const db = getDb();
+  const [row] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, PAYMENTS_SINCE_KEY)).limit(1);
+  if (typeof row?.value === "string") return row.value;
+  const since = addDays(todayTR(), -PAYMENTS_LOOKBACK_DAYS);
+  await db.insert(s.integrationState).values({ key: PAYMENTS_SINCE_KEY, value: since }).onConflictDoNothing();
+  return since;
+}
+
+/** Tedarikçiler ekranının fatura alanları (kalemler ve belge hariç) */
+const LEDGER_COLUMNS = {
+  id: s.invoices.id,
+  date: s.invoices.date,
+  supplier: s.invoices.supplier,
+  description: s.invoices.description,
+  invoiceNo: s.invoices.invoiceNo,
+  category: s.invoices.category,
+  amount: s.invoices.amount,
+  discount: s.invoices.discount,
+  payable: s.invoices.payable,
+  unpaid: s.invoices.unpaid,
+  note: s.invoices.note,
+  outstanding: s.invoices.outstanding,
+  dueDate: s.invoices.dueDate,
+  paidAt: s.invoices.paidAt,
+  paidVia: s.invoices.paidVia,
+  paymentRequestedAt: s.invoices.paymentRequestedAt,
+  parasutUnpaid: s.invoices.parasutUnpaid,
+  source: s.invoices.source,
+  origin: s.invoices.origin,
+  externalId: s.invoices.externalId,
+  eInvoiceId: s.invoices.eInvoiceId,
+  needsReview: s.invoices.needsReview,
+};
+
+export async function loadLedgerInvoices() {
+  return getDb().select(LEDGER_COLUMNS).from(s.invoices).orderBy(desc(s.invoices.date), desc(s.invoices.id));
+}
+
+export type LedgerRow = Awaited<ReturnType<typeof loadLedgerInvoices>>[number];
+
+/**
+ * Kartın adres parçası (/panel/tedarikciler/<parça>): listedeki ve tedarikçi sayfasındaki atamayla aynı, bütün kart
+ * ve fatura adlarının anahtarlarından (assignSlugs). Kart kaydedilince sayfa yeni adrese geçer.
+ */
+export async function supplierSlugOf(cardId: number): Promise<string | null> {
+  const [cards, names] = await Promise.all([loadSupplierCards(), getDb().selectDistinct({ supplier: s.invoices.supplier }).from(s.invoices)]);
+  // Yalnız adlar gerekir: tutar ve tarih atamaya katılmaz
+  const groups = groupSuppliers(
+    names.map((n) => ({ supplier: n.supplier, date: "", payable: 0, unpaid: false })),
+    cards,
+    { today: todayTR(), termDays: 0 },
+  );
+  return groups.find((g) => g.card?.id === cardId)?.slug ?? null;
+}
+
+/**
+ * Tedarikçiler ekranının verisi: kartlar, faturalar tedarikçi tedarikçi (src/app/panel/tedarikciler/logic.ts) ve genel
+ * vade günü. Bugün Türkiye saatine göre.
+ */
+export async function loadSupplierLedger() {
+  const [cards, invoices, notify] = await Promise.all([loadSupplierCards(), loadLedgerInvoices(), loadNotifySettings()]);
+  const today = todayTR();
+  const groups = groupSuppliers(invoices, cards, { today, termDays: notify.invoiceTermDays });
+  return { today, termDays: notify.invoiceTermDays, groups };
+}

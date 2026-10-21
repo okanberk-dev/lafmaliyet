@@ -28,7 +28,16 @@ import { isPartiallyPaid } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { confirmInvoices, deleteInvoice, restoreInvoice, setInvoiceCategory, setInvoicePaid, unignoreParasutBill } from "@/server/actions/invoices";
+import {
+  confirmInvoices,
+  deleteInvoice,
+  restoreInvoice,
+  restoreInvoicePayment,
+  setInvoiceCategory,
+  setInvoicePaid,
+  unignoreParasutBill,
+  type InvoicePaymentState,
+} from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
 import { canHaveDocument, isParasutDocument } from "./document-rules";
@@ -46,6 +55,7 @@ import {
   splitSupplier,
   statusCounts,
   supplierDefaults,
+  supplierMatchKey,
   visibleNote,
   type InvoiceRow,
   type InvoiceStatus,
@@ -161,6 +171,7 @@ export function InvoicesClient({
   parasutCompanyId,
   ignoredCount = 0,
   expenseLinks,
+  supplierSlugs,
 }: {
   invoices: InvoiceRow[];
   /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
@@ -173,6 +184,8 @@ export function InvoicesClient({
   ignoredCount?: number;
   /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (pencerenin kategori ipucu; verilmezse ipucu iki olasılığı da söyler) */
   expenseLinks?: Record<string, string>;
+  /** Tedarikçi adı anahtarı → Tedarikçiler'deki sayfasının adres parçası (pencerede cari kartı bağlantısı) */
+  supplierSlugs?: Record<string, string>;
 }) {
   const reduce = useCalmMotion();
   useSettleScroll(invoices);
@@ -307,8 +320,11 @@ export function InvoicesClient({
   /** Sayfa değişince listenin başına dönülür (ui/pagination: liste başı ekranın üstündeyse kaydırır) */
   const toPage = (p: number) => paged.setPage(p);
 
-  /** Ödendi / ödenmedi (tek fatura ya da seçilenler); bildirimdeki "Geri al" tersini yapar */
-  function setPaid(targets: InvoiceRow[], paid: boolean, opts: { undo?: boolean } = {}) {
+  /**
+   * Ödendi / ödenmedi (tek fatura ya da seçilenler). Bildirimdeki "Geri al" faturaların önceki ödeme alanlarını
+   * olduğu gibi geri yazar (ödeme günü, şekli, talep günü; undoPaid).
+   */
+  function setPaid(targets: InvoiceRow[], paid: boolean) {
     const ids = targets.filter((i) => i.unpaid === paid).map((i) => i.id);
     if (!ids.length) return;
     if (paid && ids.length === 1) setPopId(ids[0]);
@@ -321,7 +337,6 @@ export function InvoicesClient({
         toast.error(res.error);
         return;
       }
-      if (opts.undo) return void toast.success(paid ? "Yeniden ödendi olarak işaretlendi" : "Yeniden ödenmedi olarak işaretlendi");
       const changed = targets.filter((i) => ids.includes(i.id));
       const description =
         changed.length === 1
@@ -329,10 +344,21 @@ export function InvoicesClient({
           : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`;
       toast.success(paid ? "Ödendi olarak işaretlendi" : "Ödenmedi olarak işaretlendi", {
         description,
-        action: { label: "Geri al", onClick: () => setPaid(changed.map((i) => ({ ...i, unpaid: !paid })), !paid, { undo: true }) },
+        action: { label: "Geri al", onClick: () => undoPaid(res.data.previous, !paid) },
         // Silme bildirimleriyle aynı süre: "Geri al" birkaç saniyede kaybolmasın
         duration: UNDO_MS,
       });
+    });
+  }
+
+  function undoPaid(previous: InvoicePaymentState[], paid: boolean) {
+    if (!previous.length) return;
+    keepScroll();
+    startTransition(async () => {
+      applyOptimistic({ kind: "paid", ids: previous.map((p) => p.id), paid });
+      const res = await restoreInvoicePayment(previous);
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(paid ? "Yeniden ödendi olarak işaretlendi" : "Yeniden ödenmedi olarak işaretlendi");
     });
   }
 
@@ -476,9 +502,15 @@ export function InvoicesClient({
           aria-label={`${i.supplier}: ödenmedi. Ödendi olarak işaretle`}
           className="group/pay -my-1 inline-flex min-h-8 cursor-pointer items-center rounded-full pointer-coarse:min-h-11"
         >
-          <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
-            Ödenmedi
-          </Badge>
+          {i.paymentRequestedAt ? (
+            <Badge tone="blue" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-info/30" title={`Ödemesi ${dateTR(i.paymentRequestedAt)} tarihinde talep edildi (Tedarikçiler)`}>
+              Talep edildi
+            </Badge>
+          ) : (
+            <Badge tone="red" dot className="transition-shadow group-hover/pay:ring-1 group-hover/pay:ring-bad/30">
+              Ödenmedi
+            </Badge>
+          )}
         </motion.button>
         {isPartiallyPaid(i) ? (
           <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; Paraşüt'e göre kısmen ödendi`}>
@@ -1341,6 +1373,10 @@ export function InvoicesClient({
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
           onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
           expenseLinks={expenseLinks}
+          supplierHref={(name) => {
+            const slug = supplierSlugs?.[supplierMatchKey(name)];
+            return slug ? `/panel/tedarikciler/${slug}` : null;
+          }}
         />
       ) : null}
       {/* Fatura penceresinden açılınca onun üstünde durur (sonra açılan modal en üstte) */}

@@ -65,11 +65,11 @@ export async function readParasutLines() {
       await logActivity(
         me,
         "E-fatura kalemleri okundu",
-        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.unpaid ? ` · ${r.unpaid} vadesi gelmemiş fatura ödenmedi yazıldı` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
+        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
       );
     }
     refresh();
-    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, unpaid: r.unpaid, remaining: r.remaining, stoppedBy: r.stoppedBy };
+    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy };
   });
 }
 

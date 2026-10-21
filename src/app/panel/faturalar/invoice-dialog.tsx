@@ -1,6 +1,7 @@
 "use client";
 
 import { FileText, Lock, Paperclip, Trash2, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -51,6 +52,8 @@ function blankForm(invoice: InvoiceRow | null, keep?: { date: string; category: 
     unpaid: invoice?.unpaid ?? false,
     note: invoice?.note ?? "",
     dueDate: invoice?.dueDate ?? "",
+    /** Ödeme günü (ödendi faturada); boşsa yeni faturada fatura günü, ödenmemişten geçerken bugün yazılır */
+    paidAt: invoice?.paidAt ?? "",
   };
 }
 
@@ -79,6 +82,7 @@ export function InvoiceDialog({
   documents = [],
   onOpenDocuments,
   expenseLinks,
+  supplierHref,
 }: {
   invoice: InvoiceRow | null;
   suppliers: string[];
@@ -93,6 +97,8 @@ export function InvoiceDialog({
   onOpenDocuments?: () => void;
   /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (kategori ipucu için; bkz. categoryEffect) */
   expenseLinks?: Record<string, string>;
+  /** Tedarikçinin Tedarikçiler'deki sayfası (cari bilgileri ve ödeme takibi); kayıtlı faturada bağlantı olur */
+  supplierHref?: (supplier: string) => string | null;
 }) {
   const [f, setF] = useState(() => blankForm(invoice));
   const [busy, setBusy] = useState(false);
@@ -127,6 +133,7 @@ export function InvoiceDialog({
   const groupedAs = normalizeSupplier(f.supplier);
   const known = invoice ? undefined : defaults.get(supplierMatchKey(f.supplier));
 
+  const cariHref = invoice && supplierHref ? supplierHref(invoice.supplier) : null;
   const supplierHint = [
     groupedAs && groupedAs !== f.supplier.trim() ? `Gelir-giderde “${groupedAs}” altında toplanır; parantezdeki not sayılmaz.` : null,
     known && known.category === f.category
@@ -191,6 +198,8 @@ export function InvoiceDialog({
         unpaid: f.unpaid,
         note: f.note,
         dueDate: f.dueDate || null,
+        // Boş ödeme günü: yeni faturada fatura günü; kayıtlı faturada bilinmiyor (ödendiye geçerken pencere bugünü yazar)
+        paidAt: f.unpaid ? null : f.paidAt || (invoice ? null : f.date),
       });
       if (res.ok && !invoice && attachment) {
         setBusyText("Belge yükleniyor…");
@@ -298,7 +307,21 @@ export function InvoiceDialog({
           label="Tedarikçi"
           htmlFor="f-sup"
           tip="Aynı tedarikçi adını kullanın; gelir-giderde birlikte toplanır. Listeden seçince son faturasındaki kategori ve KDV önerilir."
-          hint={supplierHint || undefined}
+          hint={
+            supplierHint || cariHref ? (
+              <>
+                {supplierHint}
+                {cariHref ? (
+                  <>
+                    {supplierHint ? " " : null}
+                    <Link href={cariHref} className="font-medium text-info underline-offset-2 hover:underline">
+                      Cari kartı ve ödemeleri →
+                    </Link>
+                  </>
+                ) : null}
+              </>
+            ) : undefined
+          }
           error={supplierMissing ? "Tedarikçi girin" : undefined}
         >
           <Input
@@ -464,7 +487,7 @@ export function InvoiceDialog({
             stretch
             className="max-sm:[&_button]:h-11"
             value={f.unpaid ? "unpaid" : "paid"}
-            onChange={(v) => set({ unpaid: v === "unpaid" })}
+            onChange={(v) => set(v === "unpaid" ? { unpaid: true } : { unpaid: false, paidAt: f.paidAt || (invoice?.unpaid ? localToday() : "") })}
             options={[
               { value: "paid", label: "Ödendi" },
               { value: "unpaid", label: "Ödenmedi" },
@@ -484,6 +507,11 @@ export function InvoiceDialog({
         >
           <Input id="f-due" type="date" value={f.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
         </Field>
+        {f.unpaid ? null : (
+          <Field label="Ödeme günü" htmlFor="f-paid" hint={invoice ? (f.paidAt ? undefined : "Bilinmiyorsa boş bırakın") : "Boş kalırsa fatura günü yazılır"}>
+            <Input id="f-paid" type="date" value={f.paidAt} max={localToday()} onChange={(e) => set({ paidAt: e.target.value })} />
+          </Field>
+        )}
         {phone ? descAndNo : null}
         <Field label="Not" className="sm:col-span-2" htmlFor="f-note" hint="Listede tedarikçinin altında görünür. “tahmin” ya da “varsayım” geçerse fatura tahmini işaretlenir.">
           <Textarea

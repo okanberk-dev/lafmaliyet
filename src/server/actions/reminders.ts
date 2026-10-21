@@ -21,6 +21,7 @@ import {
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
+import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
@@ -200,7 +201,11 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
     }
     const db = getDb();
     if (k === "invoice") {
-      const [row] = await db.update(s.invoices).set({ unpaid: true }).where(eq(s.invoices.id, rid)).returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
+      const [row] = await db
+        .update(s.invoices)
+        .set({ unpaid: true, paidAt: null, paidVia: null })
+        .where(eq(s.invoices.id, rid))
+        .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
       await forgetPaid("invoice", [rid]);
       if (!row) {
         refresh();
@@ -288,7 +293,10 @@ export async function postponeReminder(id: number, by: "week" | "month") {
   });
 }
 
-/** Ödenmemiş faturanın vadesini ertele; vadesizse tahmini vadeden (fatura tarihi + ayardaki gün) ileri alınır */
+/**
+ * Ödenmemiş faturanın vadesini ertele; vadesizse tahmini vadeden (fatura tarihi + tedarikçinin kartındaki ya da
+ * ayardaki vade günü) ileri alınır
+ */
 export async function postponeInvoice(id: number, by: "week" | "month") {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -302,8 +310,8 @@ export async function postponeInvoice(id: number, by: "week" | "month") {
       .limit(1);
     if (!inv) throw new UserError("Fatura bulunamadı");
     if (!inv.unpaid) throw new UserError("Bu fatura ödenmiş görünüyor");
-    const settings = await loadNotifySettings();
-    const current = inv.dueDate ?? addDays(inv.date, settings.invoiceTermDays);
+    const [settings, termDays] = await Promise.all([loadNotifySettings(), loadTermDays()]);
+    const current = inv.dueDate ?? addDays(inv.date, termDays(inv.supplier) ?? settings.invoiceTermDays);
     // Gecikmiş vade bugünden ertelenir (eski vadeden sayılsa yine geçmişte kalırdı)
     const target = postponeDate(current, step, todayTR());
     await db.update(s.invoices).set({ dueDate: target }).where(eq(s.invoices.id, iid));

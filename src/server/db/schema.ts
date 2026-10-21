@@ -215,7 +215,10 @@ export const invoices = pgTable(
     vat: doublePrecision("vat").notNull().default(0),
     /** Vade (son ödeme) tarihi, YYYY-MM-DD; ödenmemiş faturalar hatırlatıcıya düşer */
     dueDate: text("due_date"),
-    /** Paraşüt'ün son bildirdiği "ödenmedi" değeri; panelde elle değiştirilmişse ayırt etmek için */
+    /**
+     * Paraşüt'ün son bildirdiği "ödenmedi" değeri (gider faturasında; e-faturada boş). Paneldeki ödeme durumunu
+     * kullanıcı işaretler; bu yalnız ipucudur (Tedarikçiler'de "Paraşüt'te ödendi")
+     */
     parasutUnpaid: boolean("parasut_unpaid"),
     /** Kalan borç (TL, KDV dahil); kısmen ödenmiş faturada hatırlatıcı bunu gösterir */
     outstanding: doublePrecision("outstanding"),
@@ -234,6 +237,15 @@ export const invoices = pgTable(
      * denenmesin). Boşsa sıradaki eşitleme okur; e-fatura değişirse yeniden boşaltılır.
      */
     ublReadAt: timestamp("ubl_read_at", { withTimezone: true }),
+    /**
+     * Ödeme günü (YYYY-MM-DD): "Ödendi" işaretlenirken girilen (varsayılan o gün). "Ödenmedi"ye dönünce boşalır;
+     * bu sütundan önce ödenmiş faturalarda boştur.
+     */
+    paidAt: text("paid_at"),
+    /** Ödeme şekli (Tedarikçiler'deki ödeme penceresinden; boş = belirtilmedi) */
+    paidVia: text("paid_via", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
+    /** Ödemesi istendiği / ödeme talebi verildiği gün (YYYY-MM-DD): ödenmemiş faturada "Talep edildi" */
+    paymentRequestedAt: text("payment_requested_at"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -241,6 +253,52 @@ export const invoices = pgTable(
     uniqueIndex("invoices_external_id_uq").on(t.externalId),
     uniqueIndex("invoices_e_invoice_id_uq").on(t.eInvoiceId),
   ],
+);
+
+// ---------------------------------------------------------------- Tedarikçiler (cari kartları)
+/**
+ * Tedarikçinin cari kartı: ticari unvan, vergi numarası ve dairesi, banka (IBAN), iletişim, vade. Faturalar karta
+ * yabancı anahtarla bağlanmaz, tedarikçi adıyla eşleşir (büyük/küçük harf, boşluk ve parantezli not sayılmaz;
+ * src/app/panel/tedarikciler/logic.ts): `key` kartın adının anahtarı, `aliases` faturalarda geçen başka adlar. Kartı olmayan
+ * tedarikçi de faturalarından Tedarikçiler ekranında görünür; kart yalnız bilgi girilince açılır.
+ * Ayrıntı: docs/TEDARIKCILER.md.
+ */
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: serial("id").primaryKey(),
+    /** Faturalardaki (kısa) ad, ör. "Sütaş" */
+    name: text("name").notNull(),
+    /** Adın eşleşme anahtarı (supplierMatchKey): iki kart aynı adı taşıyamaz */
+    key: text("key").notNull(),
+    /** Aynı tedarikçinin faturalarda geçen başka adları ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş."); onların faturaları da bu karttadır */
+    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    /** Ticari unvan (faturadaki tam ad) */
+    legalName: text("legal_name"),
+    /** VKN (10 hane) ya da TCKN (11 hane) */
+    taxNumber: text("tax_number"),
+    taxOffice: text("tax_office"),
+    /** Boşluksuz, büyük harf (TR + 24 hane); ekranda dörderli gösterilir */
+    iban: text("iban"),
+    bankName: text("bank_name"),
+    /** Hesap sahibi (unvandan farklıysa, ör. şahıs şirketinde kişinin adı) */
+    accountHolder: text("account_holder"),
+    /** Yetkili / satış temsilcisi */
+    contactName: text("contact_name"),
+    phone: text("phone"),
+    email: text("email"),
+    address: text("address"),
+    /** Vade (gün): vadesi yazılmamış faturanın tahmini vadesi fatura tarihi + bu gün (boşsa Ödemeler'deki genel ayar) */
+    paymentTermDays: integer("payment_term_days"),
+    /** Genelde nasıl ödenir: ödeme penceresinde önce bu seçili gelir */
+    paymentMethod: text("payment_method", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
+    /** Peşin çalışılır: Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir */
+    paidOnDelivery: boolean("paid_on_delivery").notNull().default(false),
+    note: text("note"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("suppliers_key_uq").on(t.key)],
 );
 
 /**

@@ -141,6 +141,10 @@ export interface Invoice {
   eInvoiceId?: string | null;
   /** Eşitlemenin kategorisini tahmin ettiği, kullanıcının henüz onaylamadığı fatura */
   needsReview?: boolean;
+  /** Ödeme günü (ödendi işaretlenirken girilen; hesaplarda kullanılmaz) */
+  paidAt?: string | null;
+  /** Ödemesi istendiği gün: ödenmemiş faturada "Talep edildi" (hesaplarda kullanılmaz) */
+  paymentRequestedAt?: string | null;
 }
 
 /**

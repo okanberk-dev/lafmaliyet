@@ -12,6 +12,8 @@ import { inflateRawSync } from "node:zlib";
 
 import { XMLParser } from "fast-xml-parser";
 
+import { ibansInText, mergeInfo, type SupplierInfo } from "@/app/panel/tedarikciler/logic";
+
 import { eInvoiceProductKey, type LineDraft } from "./mapping";
 
 export interface UblLine {
@@ -48,6 +50,8 @@ export interface UblInvoice {
   supplierName: string | null;
   /** VKN ya da TCKN */
   supplierTaxId: string | null;
+  /** Satıcının cari bilgileri (unvan, vergi dairesi, adres, telefon, e-posta, IBAN); Tedarikçiler › Faturadan doldur */
+  supplierInfo: SupplierInfo;
   /** Ödeme (vade, valör) tarihi; bkz. readPayment */
   dueDate: string | null;
   /** Vade nereden okundu: ödeme alanı, ödeme koşulları ya da fatura notu */
@@ -216,6 +220,49 @@ function partyTaxId(party: Node | undefined): string | null {
   return (ids.find((i) => i.scheme === "VKN") ?? ids.find((i) => i.scheme === "TCKN"))?.id ?? null;
 }
 
+/** "Atatürk Cad. No: 12, 16700 Karacabey/Bursa"; ülke Türkiye ise yazılmaz */
+function partyAddress(party: Node | undefined): string | null {
+  const a = obj(party?.PostalAddress);
+  if (!a) return null;
+  const street = [text(a.StreetName), text(a.BuildingName), text(a.BuildingNumber) ? `No: ${text(a.BuildingNumber)}` : null, text(a.Room) ? `D: ${text(a.Room)}` : null]
+    .filter(Boolean)
+    .join(" ");
+  const district = text(a.CitySubdivisionName);
+  const city = text(a.CityName);
+  const place = [text(a.PostalZone), [district, city].filter(Boolean).join("/")].filter(Boolean).join(" ");
+  const country = text(path(a, "Country", "Name"));
+  const foreign = country && !/^t[üu]rk[iı]ye$|^turkey$/i.test(country) ? country : null;
+  return [street, place, foreign].filter(Boolean).join(", ") || null;
+}
+
+/**
+ * Satıcının cari bilgileri: unvan, VKN/TCKN, vergi dairesi (PartyTaxScheme), adres, telefon ve e-posta (Contact),
+ * IBAN (ödeme alanındaki hesap, yoksa notlarda geçen "IBAN: TR…") ve banka (hesabın bankası, yoksa IBAN'daki kod).
+ */
+function partyInfo(inv: Node, party: Node | undefined): SupplierInfo {
+  const contact = obj(party?.Contact);
+  const accounts = list(inv.PaymentMeans)
+    .map((m) => obj(m.PayeeFinancialAccount))
+    .filter((a): a is Node => Boolean(a));
+  const account = accounts.find((a) => /^TR/i.test(text(a.ID)?.replace(/\s/g, "") ?? "")) ?? accounts[0];
+  const bank = text(path(account, "FinancialInstitutionBranch", "FinancialInstitution", "Name"));
+  const notes = [...texts(inv.Note), ...list(inv.PaymentMeans).flatMap((m) => [...texts(m.InstructionNote), text(path(m, "PayeeFinancialAccount", "PaymentNote")) ?? ""])].join("\n");
+  return mergeInfo(
+    {
+      legalName: partyName(party),
+      taxNumber: partyTaxId(party),
+      taxOffice: text(path(party, "PartyTaxScheme", "TaxScheme", "Name")),
+      address: partyAddress(party),
+      phone: text(contact?.Telephone),
+      email: text(contact?.ElectronicMail),
+      iban: text(account?.ID),
+      bankName: bank,
+    },
+    // Ödeme alanında hesap yoksa (ya da geçersizse) notlardaki ilk geçerli IBAN
+    { iban: ibansInText(notes)[0] ?? null },
+  );
+}
+
 // ------------------------------------------------------------------ ödeme (vade / valör)
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const validIso = (v: string | null | undefined): v is string => Boolean(v && ISO.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().startsWith(v));
@@ -283,17 +330,6 @@ export function readPayment(inv: Node, issueDate: string | null): Pick<UblInvoic
   return { dueDate, dueSource, paymentMeans, cashOnDelivery };
 }
 
-/**
- * E-faturadan açılan kaydın ödeme durumu: vadesi fatura gününden sonra ve henüz gelmemişse "ödenmedi" (vadesi
- * hatırlatıcılara düşer); peşin, vadesiz ya da vadesi geçmişse "ödendi" (ödendiği bilinmez, eski faturalar için
- * hatırlatma yağmuru olmasın). Kullanıcı Faturalar'da değiştirebilir.
- */
-export function paymentPlan(p: Pick<UblInvoice, "dueDate" | "cashOnDelivery">, issueDate: string, today: string): { dueDate: string | null; unpaid: boolean } {
-  if (!p.dueDate) return { dueDate: null, unpaid: false };
-  if (p.cashOnDelivery || p.dueDate <= issueDate) return { dueDate: p.dueDate, unpaid: false };
-  return { dueDate: p.dueDate, unpaid: p.dueDate >= today };
-}
-
 /** UBL-TR fatura XML'ini okur */
 export function parseUbl(xml: string): UblInvoice {
   const doc = parser.parse(xml) as Node;
@@ -357,6 +393,7 @@ export function parseUbl(xml: string): UblInvoice {
     currency: text(inv.DocumentCurrencyCode)?.toUpperCase() ?? null,
     supplierName: partyName(supplier),
     supplierTaxId: partyTaxId(supplier),
+    supplierInfo: partyInfo(inv, supplier),
     ...payment,
     invoiceDiscount,
     taxExclusive,

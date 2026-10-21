@@ -202,7 +202,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
-            eşitle. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
+            eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
             bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
             <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
@@ -280,13 +280,29 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/harcamalar", label: "Aylık harcamalar" }],
       },
       {
+        id: "tedarikci",
+        q: "Tedarikçinin bilgileri ve ödemesi",
+        a: (
+          <>
+            <Path href="/panel/tedarikciler" /> ekranında her tedarikçi faturalarından kendiliğinden listelenir: kalan borç, vadesi geçen ve en yakın vade. Tedarikçiye
+            dokunup Cari kartı&apos;na unvanı, vergi no ve dairesini, IBAN&apos;ı (kontrol hanesi denetlenir), telefon ve e-postayı, vade gününü yazın; Faturadan doldur bunları
+            en yeni e-faturasından okur. Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup Ödendi&apos;yi seçin (ödeme günü ve şekliyle),
+            birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale açıklamasını hazır metin yapar; kopyalayın ya
+            da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep edildi” olur. Peşin, kartla otomatik ödediğiniz ya da hakedişten düşülen (Trendyol,
+            Yemek Sepeti komisyonu) tedarikçinin kartında Faturaları ödendi gelsin&apos;i açın: yeni faturaları ödendi gelir.
+          </>
+        ),
+        icon: Wallet,
+        links: [{ href: "/panel/tedarikciler", label: "Tedarikçiler" }],
+      },
+      {
         id: "odendi-geri-al",
         q: "Yanlışlıkla “Ödendi” dedim",
         a: (
           <>
             Hemen çıkan bildirimdeki Geri al&apos;a dokunun (birkaç saniye durur). Kaçırdıysanız <Path href="/panel/hatirlaticilar" /> ekranında yaklaşan ödemelerin altındaki Son
             ödenenler&apos;i açın: son 30 günde ödendi denen faturalar ve hatırlatıcılar orada; Geri al ile fatura ödenmemişe, hatırlatıcı önceki tarihine döner.
-            Faturalar&apos;da ödendi işaretlenen fatura da bu listeye girer.
+            Faturalar&apos;da ve Tedarikçiler&apos;de ödendi işaretlenen fatura da bu listeye girer.
           </>
         ),
         icon: Undo2,

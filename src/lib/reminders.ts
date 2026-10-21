@@ -45,6 +45,8 @@ export interface UnpaidInvoiceRow {
   payable: number;
   /** Kalan borç; kısmen ödenmişse payable yerine bu gösterilir */
   outstanding?: number | null;
+  /** Tedarikçinin cari kartındaki vade (gün): vadesiz faturada genel ayarın yerine geçer */
+  termDays?: number | null;
 }
 
 export type UpcomingStatus = "overdue" | "today" | "soon" | "later";
@@ -124,7 +126,8 @@ export function statusFor(daysLeft: number, remindDaysBefore: number): UpcomingS
 
 /**
  * Yaklaşan ve gecikmiş ödemeler: etkin hatırlatıcılar + vadesi olan ödenmemiş faturalar.
- * Vadesiz ödenmemiş faturalar fatura tarihinden `invoiceTermDays` sonra vadeli sayılır.
+ * Vadesiz ödenmemiş faturalar fatura tarihinden tedarikçinin vade günü (`termDays`), yoksa `invoiceTermDays` sonra
+ * vadeli sayılır.
  */
 export function upcomingItems(
   reminders: ReminderRow[],
@@ -170,9 +173,13 @@ export function upcomingItems(
 
 const byDueThenTitle = (a: UpcomingItem, b: UpcomingItem) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "tr");
 
-/** Ödenmemiş faturanın ödeme satırı; vadesizse fatura tarihinden `invoiceTermDays` sonrası tahmini vadedir */
+/**
+ * Ödenmemiş faturanın ödeme satırı; vadesizse fatura tarihinden sonraki tahmini vade: tedarikçinin kartındaki vade
+ * günü (`termDays`), yoksa `invoiceTermDays`
+ */
 function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: number, invoiceTermDays: number): UpcomingItem {
-  const due = inv.dueDate ?? addDays(inv.date, invoiceTermDays);
+  const term = inv.termDays ?? invoiceTermDays;
+  const due = inv.dueDate ?? addDays(inv.date, term);
   const daysLeft = daysBetween(today, due);
   return {
     ref: `invoice:${inv.id}`,
@@ -180,7 +187,7 @@ function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: nu
     sourceId: inv.id,
     kind: "fatura",
     title: inv.supplier,
-    detail: [inv.invoiceNo ? `Fatura ${inv.invoiceNo}` : "Ödenmemiş fatura", inv.dueDate ? null : `vade tahmini (${invoiceTermDays} gün)`].filter(Boolean).join(" · "),
+    detail: [inv.invoiceNo ? `Fatura ${inv.invoiceNo}` : "Ödenmemiş fatura", inv.dueDate ? null : `vade tahmini (${term} gün)`].filter(Boolean).join(" · "),
     amount: inv.outstanding !== null && inv.outstanding !== undefined && inv.outstanding > 0 ? inv.outstanding : inv.payable,
     dueDate: due,
     daysLeft,

@@ -174,7 +174,6 @@ export function ParasutClient({
       let done = 0;
       let lineCount = 0;
       let corrected = 0;
-      let unpaid = 0;
       for (let round = 0; round < 12; round++) {
         const r = await readParasutLines();
         if (!r.ok) {
@@ -185,7 +184,6 @@ export function ParasutClient({
         done += step;
         lineCount += r.data.lines;
         corrected += r.data.corrected;
-        unpaid += r.data.unpaid;
         setReadProgress({ done, left: r.data.remaining });
         if (!r.data.remaining || !step) {
           if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
@@ -195,7 +193,7 @@ export function ParasutClient({
       }
       setReadProgress(null);
       toast.success(
-        `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}${unpaid ? ` · ${num(unpaid)} vadesi gelmemiş fatura Ödemeler'e eklendi` : ""}`,
+        `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}`,
         { id: t },
       );
     });
@@ -213,7 +211,7 @@ export function ParasutClient({
       <PageHeader
         eyebrow="Ayarlar"
         title="Paraşüt entegrasyonu"
-        description="Paraşüt'e gelen e-faturalar (içeri alınmasa da) ve gider faturaları her sabah panele alınır: tutar, KDV, kalemler ve e-fatura PDF'i; içeri alınmış gider faturalarında ödeme durumu da gelir."
+        description="Paraşüt'e gelen e-faturalar (içeri alınmasa da) ve gider faturaları her sabah panele alınır: tutar, KDV, kalemler ve e-fatura PDF'i. Yeni fatura “ödenmedi” gelir; ödendiğini Tedarikçiler ya da Faturalar ekranında siz işaretlersiniz."
         actions={
           <>
             <Button
@@ -337,7 +335,7 @@ export function ParasutClient({
               </p>
               <p className="mt-0.5 break-words text-info/90">
                 Paraşüt&apos;te &quot;içeri al&quot; yapmanız gerekmez: tutar, KDV, kalemler ve e-fatura PDF&apos;i buradan gelir. İçeri alırsanız fatura yeniden
-                açılmaz, aynı kayda bağlanır; o zaman ödeme durumu da gelir.{" "}
+                açılmaz, aynı kayda bağlanır.{" "}
                 <a href="/panel/faturalar?kaynak=parasut" className="font-medium underline-offset-2 hover:underline pointer-coarse:py-3">
                   Faturalarda göster →
                 </a>

@@ -53,7 +53,11 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   tutar = maliyet + iskonto, iskonto = iskontolar yazılır. Tutmazsa net'in KDV hariç geldiği durum ve "kalan = net"
   denenir. Fatura altı iskonto kalemlere oranla dağıtılır. Döviz faturaları `exchange_rate` ile TL'ye çevrilir,
   iade faturaları eksi yazılır, iptal/arşivlenmiş ve tekrarlayan şablonlar alınmaz.
-- **Ödeme ve vade:** `remaining` / `payment_status` → faturanın ödenmedi işareti; `due_date` → vade. Ödenmemiş
+- **Ödeme ve vade:** `due_date` → vade. Ödendi / ödenmedi'yi **siz işaretlersiniz** (Tedarikçiler ya da Faturalar,
+  [TEDARIKCILER.md](TEDARIKCILER.md)): Paraşüt'ten gelen her yeni fatura "ödenmedi" gelir, eşitleme var olan
+  faturanın ödeme durumuna dokunmaz; `remaining` / `payment_status` yalnız ipucu olarak saklanır (`parasut_unpaid`,
+  ekranda "Paraşüt'te ödendi"). Kartında "Faturaları ödendi gelsin" işaretli (peşin) tedarikçinin faturası ödendi
+  gelir; takip başlamadan önceki tarihli fatura geçmişi yeniden alırken Paraşüt'teki durumuyla gelir. Ödenmemiş
   faturalar **Ödemeler & hatırlatıcılar**'a ve hatırlatma e-postasına düşer.
 
 ## 3. Çift sayım olmaz
@@ -64,9 +68,8 @@ Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, 
 2. fatura numarası (harf/rakam dışı karakterler yok sayılarak),
 3. aynı tarih + aynı tutar (±1 ₺) + aynı tedarikçi.
 
-Bağlanan kaydın **kategorisi ve tedarikçi adı korunur**; tutar, KDV ve tarih Paraşüt'ten gelir. Panelde
-**"ödendi"** işaretlenen fatura, Paraşüt'te ödeme kaydı yoksa da ödendi kalır; Paraşüt'te vade yoksa paneldeki vade
-korunur. Fatura numarası eşleşmesi yalnızca **aynı tedarikçide** ve ±31 gün içinde geçerlidir (farklı firmalar aynı
+Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tutar, KDV ve tarih Paraşüt'ten gelir.
+Paraşüt'te vade yoksa paneldeki vade korunur. Fatura numarası eşleşmesi yalnızca **aynı tedarikçide** ve ±31 gün içinde geçerlidir (farklı firmalar aynı
 e-fatura önekini kullanabilir). Paraşüt'te **iptal edilen** fatura, panelde Paraşüt'ten açılmışsa kaldırılır;
 elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol edin" düşülür.
 Arşivlenmiş faturalar (Paraşüt'te yalnızca listeden gizlenmiş) geçerli gider olarak alınır.
@@ -179,14 +182,15 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   (`PaymentMeans/PaymentDueDate`), ödeme koşulları (`PaymentTerms/PaymentDueDate`), notlar ("Vade Tarihi: 26.10.2026",
   "Son Ödeme Tarihi", "Valör", "Vade Günü: 15", "30 gün vade"). Fatura gününden önceki ya da 400 günden uzak tarih
   yazım hatası sayılır. Ödeme şekli `PaymentMeansCode`'dan (10 nakit, 48 kart, 42 havale…), "Peşin" notu ya da vade =
-  fatura günü peşin sayılır. E-faturadan açılan kayıt: vadesi gelmemişse **ödenmedi** olur, vadesiyle Ödemeler &
-  hatırlatıcılar'a ve sabah e-postasına düşer (notta "vade e-faturadan"); peşin, vadesiz ya da vadesi geçmiş fatura
-  **ödendi** varsayılır (ödendiği bilinmez; eski faturalar için hatırlatma yağmuru olmasın). Excel/elle girilmiş
-  kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
+  fatura günü peşin sayılır. E-faturada ödeme bilgisi yoktur: e-faturadan açılan kayıt **ödenmedi** gelir ve
+  belgedeki vadesiyle Ödemeler & hatırlatıcılar'a düşer; ödendiğini siz işaretlersiniz. Takip başlamadan önceki tarihli
+  e-fatura (geçmişi yeniden alırken) ödendi açılır, belgedeki vadesi henüz gelmemişse ödenmedi olur (notta "vade
+  e-faturadan"). Excel/elle girilmiş kaydın ödeme durumuna dokunulmaz, yalnız boş vadesi doldurulur.
 - **Çift sayım olmaz:** e-fatura önce kendi kimliğiyle (`invoices.e_invoice_id`), sonra Excel'den/elle girilmiş aynı
   fatura numarasıyla (±31 gün, aynı tarih ya da tutar ±1 ₺) eşleşir; eşleşen kayda bağlanır. Excel kaydının tutarı
   aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kayıt "kontrol bekleyen" olur. Fatura sonradan Paraşüt'te
-  içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman ödeme durumu da gelir.
+  içeri alınırsa gider faturası (`active_e_document` bağıyla) **aynı kayda** bağlanır; o zaman Paraşüt'teki ödeme
+  kaydı da ipucu olarak gelir.
   Kalemleri e-fatura belgesinden okunmuşsa korunur (ürün anahtarları değişmez, hammadde bağlantıları düşmez),
   okunmamışsa Paraşüt'ün gider faturasından okunur.
 - Muhasebeci e-faturayı "içeri al" yerine Paraşüt'e **elle gider faturası** olarak girerse (bağ yok) gider faturası

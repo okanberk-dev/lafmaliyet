@@ -7,6 +7,7 @@ import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
+import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
@@ -21,6 +22,7 @@ import {
   feedsSupplierHistory,
   findByEInvoiceNo,
   findExisting,
+  newInvoicePayment,
   pickCategory,
   shouldImport,
   supplierHistory,
@@ -158,6 +160,10 @@ interface Ctx {
   /** Paraşüt'ün son gönderdiği vadeler (DUE_KEY); `dueDirty` değiştiyse çalışma sonunda yazılır */
   dueSeen: Record<string, string | null>;
   dueDirty: boolean;
+  /** Peşin çalışılan tedarikçinin kartı (yeni faturası ödendi gelir); ötekilerin yeni faturası ödenmedi gelir */
+  paidOnDelivery: PaidOnDelivery;
+  /** Ödeme takibinin başlangıcı: bundan eski yeni fatura (geçmişi yeniden alırken) Paraşüt'teki durumuyla gelir */
+  paymentsSince: string;
 }
 
 /** Ödenmemiş faturanın Paraşüt'teki vadesini kaydeder; ödenmiş ya da kaldırılmış faturanın kaydı silinir */
@@ -234,19 +240,16 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   };
   let invoiceId: number;
   if (match) {
-    // Kategori ve tedarikçi adı panelde kalır. "Ödendi/ödenmedi" panelde elle değiştirilmişse ve Paraşüt'teki değer
-    // o zamandan beri aynıysa paneldeki kalır; Paraşüt değiştiyse Paraşüt'ünki gelir. İlk bağlanmada Paraşüt'ünki
-    // alınır (Excel kayıtlarında ödeme durumu tutulmamıştı). Vade de aynı kuralla: panelde ertelenen vade, Paraşüt'teki
-    // vade o zamandan beri aynıysa korunur; Paraşüt'te vade yoksa paneldeki vade kalır.
-    const localOverride = match.source === "parasut" && match.parasutUnpaid !== null && match.unpaid !== match.parasutUnpaid && d.unpaid === match.parasutUnpaid;
+    // Kategori, tedarikçi adı ve "ödendi/ödenmedi" panelde kalır: ödeme durumunu kullanıcı işaretler, Paraşüt'ünki
+    // yalnız ipucu olarak yazılır (parasutUnpaid; Tedarikçiler'de "Paraşüt'te ödendi"). Vade: panelde ertelenen vade,
+    // Paraşüt'teki vade o zamandan beri aynıysa korunur; Paraşüt'te vade yoksa paneldeki vade kalır.
     // Yer tutucu ad, yalnızca gerçek tedarikçi adı okunabildiyse düzeltilir (açıklamayla değil)
     const supplierFix = match.supplier === PLACEHOLDER_SUPPLIER && d.supplierResolved ? { supplier: ctx.alias(d.supplier) } : {};
-    const unpaid = localOverride ? match.unpaid : d.unpaid;
     const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
     await db
       .update(s.invoices)
-      .set({ ...common, ...supplierFix, unpaid, dueDate })
+      .set({ ...common, ...supplierFix, dueDate })
       .where(eq(s.invoices.id, match.id));
     invoiceId = match.id;
     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
@@ -258,12 +261,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       source: "parasut",
       date: d.date,
       payable: d.payable,
-      unpaid,
       dueDate,
       parasutUnpaid: d.unpaid,
       syncedAt: common.syncedAt,
     });
-    rememberDue(ctx, d.externalId, d.dueDate, unpaid);
+    rememberDue(ctx, d.externalId, d.dueDate, match.unpaid);
     ctx.counts.updated++;
   } else {
     const supplier = ctx.alias(d.supplier);
@@ -271,11 +273,12 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       supplier === PLACEHOLDER_SUPPLIER
         ? pickCategory({ ...d, supplier }, ctx.rules, new Map(), INVOICE_CATEGORIES)
         : pickCategory({ ...d, supplier }, ctx.rules, ctx.history, INVOICE_CATEGORIES);
+    const pay = newInvoicePayment({ payable: d.payable, date: d.date, parasutUnpaid: d.unpaid }, ctx.paidOnDelivery(supplier), ctx.paymentsSince);
     const [row] = await db
       .insert(s.invoices)
       .values({
         ...common,
-        unpaid: d.unpaid,
+        ...pay,
         dueDate: d.dueDate,
         origin: "parasut",
         supplier,
@@ -294,7 +297,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       supplier,
       date: d.date,
       payable: d.payable,
-      unpaid: d.unpaid,
+      unpaid: pay.unpaid,
       dueDate: d.dueDate,
       origin: "parasut",
       source: "parasut",
@@ -302,7 +305,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       parasutUnpaid: d.unpaid,
       syncedAt: common.syncedAt,
     });
-    rememberDue(ctx, d.externalId, d.dueDate, d.unpaid);
+    rememberDue(ctx, d.externalId, d.dueDate, pay.unpaid);
     ctx.counts.created++;
   }
   ctx.touchedMonths.add(d.date.slice(0, 7));
@@ -430,7 +433,7 @@ export async function syncParasut(
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
-    const [existingRows, rules, ignoredList, dueSeen, ublRows] = await Promise.all([
+    const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince] = await Promise.all([
       db
         .select({
           id: s.invoices.id,
@@ -458,6 +461,8 @@ export async function syncParasut(
         .selectDistinct({ id: s.parasutBillLines.invoiceId })
         .from(s.parasutBillLines)
         .where(like(s.parasutBillLines.externalId, "ubl:%")),
+      loadPaidOnDelivery(),
+      loadPaymentsSince(),
     ]);
     // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
     // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
@@ -477,6 +482,8 @@ export async function syncParasut(
       counts: { created: 0, updated: 0, removed: 0 },
       dueSeen: { ...(dueSeen ?? {}) },
       dueDirty: false,
+      paidOnDelivery,
+      paymentsSince,
     };
 
     let maxDate = resume?.maxDate ?? "";
@@ -589,7 +596,6 @@ export async function syncParasut(
       rechecked ? `${rechecked} yeniden denetlendi` : "",
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
-      lineStats?.unpaid ? `${lineStats.unpaid} vadesi gelmemiş fatura "ödenmedi" yazıldı` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
@@ -700,7 +706,7 @@ function appendNote(note: string | null, add: string): string {
  * - panelde aynı fatura (e-fatura kimliği ya da Excel/elle girilmiş aynı numara, tarih, tutar) varsa ona bağlanır;
  *   Excel kaydının tutarı e-faturadakiyle aynıysa dokunulmaz, farklıysa e-faturadaki yazılır ve kontrol istenir;
  * - yoksa yeni kayıt açılır (kategori kurallardan / tedarikçinin geçmişinden; ödeme durumu e-faturada olmadığından
- *   "ödendi" varsayılır, kontrol listesinde değiştirilebilir);
+ *   "ödenmedi" açılır, ödendiğini kullanıcı işaretler; peşin çalışılan tedarikçininki ödendi);
  * - reddedilen/arşivlenen e-faturanın yalnız ondan açılmış kaydı kaldırılır.
  */
 async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "linked" | "updated" | "removed" | "skipped"> {
@@ -789,13 +795,15 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     INVOICE_CATEGORIES,
   );
   const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}${d.refund ? " · iade faturası" : ""}`;
+  // E-faturada ödeme bilgisi yok (parasutUnpaid null)
+  const pay = newInvoicePayment({ payable: d.payable, date: d.date, parasutUnpaid: null }, ctx.paidOnDelivery(supplier), ctx.paymentsSince);
   const [row] = await db
     .insert(s.invoices)
     .values({
       ...values,
       supplier,
       category,
-      unpaid: false,
+      ...pay,
       source: "parasut",
       origin: "parasut",
       eInvoiceId: d.eInvoiceId,
@@ -813,7 +821,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     supplier,
     date: d.date,
     payable: d.payable,
-    unpaid: false,
+    unpaid: pay.unpaid,
     dueDate: null,
     origin: "parasut",
     source: "parasut",
