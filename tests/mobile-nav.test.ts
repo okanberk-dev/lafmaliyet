@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, overdueCount } from "../src/components/panel/nav";
+import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 
 test("yönetici alt menüsü: Genel bakış, Satışlar, Faturalar, Ödemeler, Menü", () => {
   assert.deepEqual(
@@ -19,17 +20,19 @@ test("yönetici alt menüsü: Genel bakış, Satışlar, Faturalar, Ödemeler, M
   assert.equal(BOTTOM_NAV.admin.find((i) => i.id === "odemeler")?.badge, "overdue");
 });
 
-test("personel alt menüsü yalnızca erişebildiği ekranlar (proxy.ts STAFF_ALLOWED)", () => {
+test("personel alt menüsü erişebildiği beş ekranın hepsi (src/lib/roles.ts STAFF_PATHS)", () => {
   assert.deepEqual(
     BOTTOM_NAV.staff.map((i) => [i.label, i.href]),
     [
-      ["Sayım", "/panel/sayim"],
+      ["Karaoke", "/panel/karaoke"],
       ["Reçeteler", "/panel/receteler"],
+      ["Sayım", "/panel/sayim"],
+      ["Hatırlatıcı", "/panel/hatirlaticilarim"],
       ["Hesabım", "/panel/hesap"],
     ],
   );
-  const staffAllowed = ["/panel/sayim", "/panel/receteler", "/panel/hesap"];
-  for (const item of BOTTOM_NAV.staff) assert.ok(staffAllowed.some((p) => item.href!.startsWith(p)), item.href);
+  for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
+  assert.deepEqual([...BOTTOM_NAV.staff.map((i) => i.href)].sort(), [...STAFF_PATHS].sort(), "alt menüde personelin her ekranı var");
 });
 
 test("her alt menü bağlantısı kenar çubuğunda da var (çekmecede kaybolan ekran yok)", () => {
@@ -61,6 +64,8 @@ test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", 
   assert.equal(bottomNavActive(staff, "/panel/sayim"), "sayim");
   assert.equal(bottomNavActive(staff, "/panel/receteler"), "receteler");
   assert.equal(bottomNavActive(staff, "/panel/hesap"), "hesap");
+  assert.equal(bottomNavActive(staff, "/panel/karaoke"), "karaoke");
+  assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), "hatirlaticilarim");
   assert.equal(bottomNavActive(staff, "/panel/tutarlilik"), null);
   assert.equal(bottomNavActive(staff, "/panel/sayim", true), "sayim");
 });
@@ -107,5 +112,8 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/receteler"), "Reçete defteri");
   assert.equal(mobileTitleFor("/panel/hesap"), "Hesabım");
   assert.equal(mobileTitleFor("/panel/ayarlar"), "Ayarlar");
+  assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
+  assert.equal(mobileTitleFor("/panel/hatirlaticilarim"), "Hatırlatıcılarım");
+  assert.equal(mobileTitleFor("/panel/onaylar"), "Reçete onayları");
   assert.equal(mobileTitleFor("/panel/bilinmeyen"), "L'Affogato");
 });

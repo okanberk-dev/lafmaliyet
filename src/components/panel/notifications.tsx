@@ -1,20 +1,22 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, FileText, Info } from "lucide-react";
+import { AlarmClock, AlertCircle, AlertTriangle, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { SPRING_PANEL, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Segmented } from "@/components/ui/segmented";
+import type { Role } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { PanelNotification } from "@/server/actions/notifications";
 
 import { useLocalList } from "./local-list";
 
 /**
- * AkmanOS "Notification Dropdown" görünümünde zil: önce zamanı gelen ödemeler, sonra faturalar (Paraşüt'ten yeni
- * gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları.
+ * AkmanOS "Notification Dropdown" görünümünde zil: önce kişinin kendi hatırlatıcıları ve reçete onayları (yöneticide
+ * onay bekleyen öneriler, personelde önerilerinin sonucu), sonra zamanı gelen ödemeler, faturalar (Paraşüt'ten yeni
+ * gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları. Personel yalnız ilk ikisini görür.
  * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
  * (ör. düşük kârlı ürün sayısı) yeni bildirim sayılır. Her açılışta liste arka planda tazelenir.
  */
@@ -28,11 +30,24 @@ const KIND = {
 
 type Filter = "all" | "unread";
 
+/** Zilin altındaki iki kısayol, role göre */
+const FOOTER_LINKS: Record<Role, { href: string; label: string }[]> = {
+  admin: [
+    { href: "/panel/hatirlaticilar", label: "Ödemeler" },
+    { href: "/panel", label: "Genel bakış" },
+  ],
+  staff: [
+    { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım" },
+    { href: "/panel/receteler", label: "Reçete defteri" },
+  ],
+};
+
 export function NotificationMenu({
   items,
   onOpen,
   align = "left",
   variant = "sidebar",
+  role = "admin",
 }: {
   /** null: yükleniyor */
   items: PanelNotification[] | null;
@@ -41,6 +56,8 @@ export function NotificationMenu({
   align?: "left" | "right";
   /** sidebar: kenar çubuğundaki beyaz karo; bar: mobil üst çubuktaki çerçeveli düğme */
   variant?: "sidebar" | "bar";
+  /** Alttaki kısayollar role göre */
+  role?: Role;
 }) {
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,9 +72,11 @@ export function NotificationMenu({
   const unread = list.filter((n) => n.unread).length;
   const visible = filter === "unread" ? list.filter((n) => n.unread) : list;
   const groups = [
+    { id: "hatirlatici", label: "Hatırlatıcılarım", items: visible.filter((n) => n.group === "hatirlatici") },
+    { id: "onay", label: role === "admin" ? "Onaylar" : "Önerilerim", items: visible.filter((n) => n.group === "onay") },
     { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
     { id: "fatura", label: "Faturalar", items: visible.filter((n) => n.group === "fatura") },
-    { id: "uyari", label: "Uyarılar", items: visible.filter((n) => n.group !== "odeme" && n.group !== "fatura") },
+    { id: "uyari", label: "Uyarılar", items: visible.filter((n) => !n.group || n.group === "uyari") },
   ].filter((g) => g.items.length);
 
   const markRead = (ids: string[]) => {
@@ -188,7 +207,11 @@ export function NotificationMenu({
                 </div>
               ) : groups.length === 0 ? (
                 <p className="px-3 py-10 text-center text-[13px] text-chart-muted">
-                  {filter === "unread" && list.length ? "Okunmamış bildirim yok." : "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."}
+                  {filter === "unread" && list.length
+                    ? "Okunmamış bildirim yok."
+                    : role === "admin"
+                      ? "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."
+                      : "Dikkat isteyen bir şey yok. Hatırlatıcılarınız ve önerilerinizin sonucu burada görünür."}
                 </p>
               ) : (
                 groups.map((g) => (
@@ -199,7 +222,16 @@ export function NotificationMenu({
                     <ul className="flex flex-col gap-0.5">
                       {g.items.map((n) => {
                         const k = KIND[n.kind];
-                        const Icon = n.group === "odeme" ? CalendarClock : n.group === "fatura" && n.kind !== "danger" ? FileText : k.icon;
+                        const Icon =
+                          n.group === "odeme"
+                            ? CalendarClock
+                            : n.group === "hatirlatici"
+                              ? AlarmClock
+                              : n.group === "onay"
+                                ? ClipboardCheck
+                                : n.group === "fatura" && n.kind !== "danger"
+                                  ? FileText
+                                  : k.icon;
                         return (
                           <li key={n.id}>
                             <Link
@@ -236,20 +268,16 @@ export function NotificationMenu({
             </div>
 
             <div className="grid shrink-0 grid-cols-2 gap-1.5 p-2 pt-1">
-              <Link
-                href="/panel/hatirlaticilar"
-                onClick={() => setOpen(false)}
-                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold pointer-coarse:h-11 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
-              >
-                Ödemeler
-              </Link>
-              <Link
-                href="/panel"
-                onClick={() => setOpen(false)}
-                className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold pointer-coarse:h-11 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
-              >
-                Genel bakış
-              </Link>
+              {FOOTER_LINKS[role].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setOpen(false)}
+                  className="flex h-10 items-center justify-center rounded-xl bg-chart-bg text-[13px] font-semibold pointer-coarse:h-11 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-foreground/20"
+                >
+                  {l.label}
+                </Link>
+              ))}
             </div>
           </motion.div>
         ) : null}

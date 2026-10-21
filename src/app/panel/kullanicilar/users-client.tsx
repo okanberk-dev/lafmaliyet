@@ -428,8 +428,8 @@ function RowActions({
 // ---------------------------------------------------------------- Ortak form parçaları
 
 const ROLE_OPTIONS: { value: "staff" | "admin"; label: string; hint: string }[] = [
-  { value: "staff", label: ROLES.staff, hint: "Stok sayımı + reçete defteri" },
-  { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar dahil)" },
+  { value: "staff", label: ROLES.staff, hint: "Stok sayımı, reçete defteri (değişiklik önerir), karaoke sayacı, kendi hatırlatıcıları" },
+  { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar, reçete onayı dahil)" },
 ];
 
 /** Büyük, dokunması kolay seçenek kartları (radyo grubu) */
@@ -963,7 +963,11 @@ function UserDialog({
 const PERMISSIONS: { label: string; admin: boolean; staff: boolean }[] = [
   { label: "Stok sayımı girme", admin: true, staff: true },
   { label: "Reçete defterini görme", admin: true, staff: true },
+  { label: "Reçetede değişiklik önerme (yönetici onaylayınca uygulanır)", admin: true, staff: true },
+  { label: "Karaoke sayacı ve rezervasyonları (fiyatsız)", admin: true, staff: true },
+  { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true },
   { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true },
+  { label: "Reçeteyi doğrudan düzenleme ve önerileri onaylama", admin: true, staff: false },
   { label: "Ürün maliyeti, fiyat ve kârlılık", admin: true, staff: false },
   { label: "Hammadde fiyatları", admin: true, staff: false },
   { label: "Satış, fatura, gelir-gider", admin: true, staff: false },

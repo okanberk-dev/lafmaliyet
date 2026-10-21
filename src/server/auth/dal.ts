@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { STAFF_HOME } from "@/lib/roles";
 import { getDb, schema as s } from "@/server/db";
 
 import {
@@ -59,7 +60,7 @@ export async function requireUser(): Promise<CurrentUser> {
 /** Yalnızca yönetici. Personel ise kendi sayfasına yönlendirilir. */
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await requireUser();
-  if (user.role !== "admin") redirect("/panel/sayim");
+  if (user.role !== "admin") redirect(STAFF_HOME);
   return user;
 }
 

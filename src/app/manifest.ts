@@ -31,6 +31,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { name: "Faturalar", url: "/panel/faturalar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Ödemeler", url: "/panel/hatirlaticilar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Stok sayımı", url: "/panel/sayim", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Karaoke", url: "/panel/karaoke", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
     ],
   };
 }

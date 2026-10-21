@@ -44,6 +44,9 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `RESEND_API_KEY` | (isteğe bağlı) E-posta gönderimi: sabah e-postası, davet ve parola sıfırlama. Ayrıntı [BILDIRIMLER.md](BILDIRIMLER.md) |
 | `EMAIL_FROM` | (isteğe bağlı) Gönderen, ör. `L'Affogato Panel <bildirim@laffogato.net>`; panelden de değiştirilir |
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
+| `KARAOKE_SYNC_SECRET` | (isteğe bağlı) laffogato.net ile karaoke bağlantısı: `openssl rand -base64 48`; **sitedeki değerle aynı** olmalı. Yoksa bağlantı kapalı, hızlı sayaç yine çalışır. Ayrıntı [KARAOKE.md](KARAOKE.md) |
+| `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi; yoksa `https://laffogato.net` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
 [PARASUT.md](PARASUT.md) § 1.

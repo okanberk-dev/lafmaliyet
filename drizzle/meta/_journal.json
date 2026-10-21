@@ -92,6 +92,13 @@
       "when": 1792499186243,
       "tag": "0012_zayi_oranlari",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792568790331,
+      "tag": "0013_personel_yetkileri_karaoke",
+      "breakpoints": true
     }
   ]
 }

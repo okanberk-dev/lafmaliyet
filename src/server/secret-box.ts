@@ -3,11 +3,12 @@ import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 /**
- * Veritabanında duran gizli değerler (Paraşüt belirteçleri, iki adımlı doğrulama anahtarları) AES-256-GCM ile
- * şifrelenir. Anahtar AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET değişirse bu değerler
- * okunamaz (Paraşüt belirteci yeniden alınır, iki adımlı doğrulama yeniden kurulur).
+ * Veritabanında duran gizli değerler (Paraşüt belirteçleri, iki adımlı doğrulama anahtarları, Web Push'un VAPID özel
+ * anahtarı) AES-256-GCM ile şifrelenir. Anahtar AUTH_SECRET'tan, kullanım amacına göre ayrı türetilir; AUTH_SECRET
+ * değişirse bu değerler okunamaz (Paraşüt belirteci yeniden alınır, iki adımlı doğrulama yeniden kurulur, bildirim
+ * anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur).
  */
-export type SealPurpose = "parasut-token" | "totp";
+export type SealPurpose = "parasut-token" | "totp" | "webpush";
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

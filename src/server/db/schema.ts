@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   customType,
@@ -572,4 +573,152 @@ export const notificationLog = pgTable(
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("notification_log_key_uq").on(t.key), index("notification_log_sent_idx").on(t.sentAt)],
+);
+
+// ---------------------------------------------------------------- Reçete değişiklik önerileri
+/** Önerideki ve öneri anındaki reçete: satır adları da saklanır (malzeme sonra silinse ya da adı değişse de okunur) */
+export type RecipeSnapshot = {
+  note: string | null;
+  items: { ingredientId: number; name: string; unit: string; qty: number; qtyExpr: string | null; note: string | null }[];
+};
+
+/**
+ * Personelin reçete defterinden önerdiği değişiklik: yönetici önceki ve önerilen reçeteyi yan yana görür, onaylarsa
+ * reçete `after` ile değişir. Kişi başına ürün başına en çok bir bekleyen öneri olur (yenisi onu günceller).
+ */
+export const recipeChangeRequests = pgTable(
+  "recipe_change_requests",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
+    requestedByName: text("requested_by_name").notNull(),
+    status: text("status", { enum: ["pending", "approved", "rejected", "withdrawn"] }).notNull().default("pending"),
+    /** Öneri anındaki reçete: onayda bugünkü reçeteyle karşılaştırılır (arada değiştiyse yönetici uyarılır) */
+    before: jsonb("before").$type<RecipeSnapshot>().notNull(),
+    after: jsonb("after").$type<RecipeSnapshot>().notNull(),
+    /** Personelin yöneticiye notu ("süt az geliyordu") */
+    message: text("message"),
+    /** Yöneticinin notu (red gerekçesi ya da açıklama) */
+    reviewNote: text("review_note"),
+    reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedByName: text("reviewed_by_name"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("recipe_change_requests_status_idx").on(t.status, t.createdAt),
+    index("recipe_change_requests_product_idx").on(t.productId),
+    uniqueIndex("recipe_change_requests_pending_uq").on(t.productId, t.requestedBy).where(sql`status = 'pending'`),
+  ],
+);
+
+// ---------------------------------------------------------------- Kişisel hatırlatıcılar
+/**
+ * Her kullanıcının kendi hatırlatıcıları (personel de kullanır): yalnız sahibi görür. İşletmenin ödeme
+ * hatırlatıcılarından (reminders) ayrıdır; sabah e-postasına ve Ödemeler ekranına girmez. dueDate sıradaki tarihtir;
+ * tekrar eden "tamamlandı" işaretlenince bir sonraki döneme ilerler, tek seferlik kapanır (active = false).
+ */
+export const userReminders = pgTable(
+  "user_reminders",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    note: text("note"),
+    dueDate: text("due_date").notNull(),
+    /** "HH:MM" (Türkiye saati); boşsa gün içinde herhangi bir saat */
+    dueTime: text("due_time"),
+    /** Aylık tekrarın günü (31 Ocak → 28 Şubat → 31 Mart) */
+    anchorDate: text("anchor_date").notNull(),
+    repeat: text("repeat", { enum: ["none", "daily", "weekly", "monthly"] }).notNull().default("none"),
+    active: boolean("active").notNull().default(true),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("user_reminders_user_idx").on(t.userId, t.active, t.dueDate)],
+);
+
+// ---------------------------------------------------------------- Karaoke
+/**
+ * Karaoke oturumları: laffogato.net'teki rezervasyonların panelde tutulan kopyası (source "site", externalId krk-…)
+ * ve panelden açılan rezervasyonsuz sayaçlar (source "panel"). Eşitleme yalnız site satırlarının rezervasyon
+ * alanlarını yazar; sayaç alanları (extraMinutes, endedAt) panelindir. Ayrıntı: docs/KARAOKE.md.
+ */
+export const karaokeSessions = pgTable(
+  "karaoke_sessions",
+  {
+    id: serial("id").primaryKey(),
+    externalId: text("external_id"),
+    source: text("source", { enum: ["site", "panel"] }).notNull().default("site"),
+    /** Başladığı gün (Türkiye), YYYY-MM-DD */
+    date: text("date").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    /** Rezervasyonun bitişi; uzatma (extraMinutes) eklenmeden */
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    guests: integer("guests"),
+    /** Müşterinin yalnızca adı (soyadı, telefon, e-posta panele gelmez) ya da sayacın etiketi */
+    customerName: text("customer_name"),
+    note: text("note"),
+    status: text("status", { enum: ["requested", "confirmed", "cancelled"] }).notNull().default("confirmed"),
+    paymentStatus: text("payment_status", { enum: ["none", "pending", "paid", "refunding", "refunded", "expired"] }).notNull().default("none"),
+    /** Sitenin tuttuğu toplam (kuruş); yalnız yönetici görür */
+    totalMinor: integer("total_minor"),
+    channel: text("channel"),
+    /** Sitedeki satırın updatedAt değeri (bilgi için) */
+    extUpdatedAt: text("ext_updated_at"),
+    /** Son eşitlemede ne oldu: zil ve bildirim metni buradan */
+    lastEvent: text("last_event", { enum: ["created", "confirmed", "cancelled", "changed"] }),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+    /** Panelde verilen ek süre (dakika) */
+    extraMinutes: integer("extra_minutes").notNull().default(0),
+    /** Erken bitirildi ya da süre dolunca "haber verdim" denildi: alarm susar */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: text("ended_by"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("karaoke_sessions_external_uq").on(t.externalId),
+    index("karaoke_sessions_starts_idx").on(t.startsAt),
+    index("karaoke_sessions_date_idx").on(t.date),
+  ],
+);
+
+// ---------------------------------------------------------------- Anlık bildirim (Web Push)
+/**
+ * Tarayıcı bildirim abonelikleri (cihaz başına bir satır). Gönderim yalnız aktif kullanıcıya ve aboneliği alırken
+ * geçerli olan oturum sürümüyle yapılır: parola, rol ya da erişim değişince eski cihazlara bildirim gitmez. Bildirime
+ * veri konmaz; cihaz ayrıntıyı oturumuyla ister (/api/push/son).
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh"),
+    auth: text("auth"),
+    /** "Chrome · Windows" gibi; cihaz listesinde gösterilir */
+    label: text("label"),
+    sessionVersion: integer("session_version").notNull(),
+    /** Yeni karaoke rezervasyonu, iptal ve saat değişikliği */
+    karaoke: boolean("karaoke").notNull().default(true),
+    /** Sabahları bugünün kişisel hatırlatıcıları */
+    reminders: boolean("reminders").notNull().default(true),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    failures: integer("failures").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("push_subscriptions_endpoint_uq").on(t.endpoint), index("push_subscriptions_user_idx").on(t.userId)],
 );

@@ -1,24 +1,40 @@
 "use client";
 
-import { BookOpen, CircleHelp, Pencil, SearchX } from "lucide-react";
+import { BookOpen, CircleHelp, ClipboardCheck, Pencil, SearchX } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 
 import { useCalmMotion } from "@/components/ui/motion";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink, IconLink } from "@/components/ui/button";
+import { Button, ButtonLink, IconButton, IconLink } from "@/components/ui/button";
 import { Card, Well } from "@/components/ui/card";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { EmptyState, InfoTip, SectionTitle } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { SIZE_LABELS } from "@/lib/constants";
 import { num } from "@/lib/format";
+import type { RecipeSnapshot } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 
+import { ChangeEditor, type EditorVariant, type ProposeKit } from "./change-editor";
+import { MyRequests, type MyRequest } from "./my-requests";
+
+export type { MyRequest, ProposeKit };
+
 type Size = "M" | "L" | "Tek";
-type Line = { name: string; qty: number; unit: string; packaging: boolean };
-type Variant = { id: number; size: Size; note: string | null; lines: Line[] };
+type Line = { ingredientId: number; name: string; qty: number; qtyExpr: string | null; unit: string; packaging: boolean; note: string | null };
+type Variant = {
+  id: number;
+  size: Size;
+  note: string | null;
+  lines: Line[];
+  /** Personel: bu boy için kendi bekleyen önerisi */
+  myPending: { id: number; after: RecipeSnapshot; updatedAt: string } | null;
+  /** Yönetici: bu boy için onay bekleyen öneri sayısı */
+  pendingCount: number;
+};
 type Product = { name: string; variants: Variant[] };
 
 /** Sunucudan gelen veri yalnızca ad, boy, miktar ve not taşır; maliyet bilgisi bu bileşene hiç ulaşmaz. */
@@ -27,6 +43,12 @@ export interface RecipeGroup {
   name: string;
   products: Product[];
 }
+
+/** Kartın bugünkü (onaylı) reçetesi: öneri penceresi bundan başlar */
+const snapshotOf = (v: Variant): RecipeSnapshot => ({
+  note: v.note,
+  items: v.lines.map((l) => ({ ingredientId: l.ingredientId, name: l.name, unit: l.unit, qty: l.qty, qtyExpr: l.qtyExpr, note: l.note })),
+});
 
 /** Boylar yan yana: aynı malzeme tek satırda, her boyun miktarı kendi sütununda */
 type Row = { key: string; name: string; cells: (Line | null)[] };
@@ -64,8 +86,25 @@ const QUERY_KEYS = ["ara", "kategori", "eksik"];
 /**
  * Barda telefonla kullanılan reçete defteri: üstte yapışkan arama, kategori çipleri ve ambalaj anahtarı;
  * altta ürün başına boyları yan yana gösteren reçete kartları. Süzgeçler adreste durur (paylaşılabilir).
+ * Yönetici kalemle reçete kartını açar (doğrudan düzenler); personel kalemle değişiklik önerir, öneri yöneticinin
+ * onayına düşer (Reçete onayları) ve sonucu "Önerilerim"de görünür.
  */
-export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit: boolean }) {
+export function RecipeBook({
+  groups,
+  canEdit,
+  propose = null,
+  myRequests = [],
+  pendingTotal = 0,
+}: {
+  groups: RecipeGroup[];
+  canEdit: boolean;
+  /** Personelin öneri penceresi için malzemeler ve ölçüler; yöneticide yok */
+  propose?: ProposeKit | null;
+  myRequests?: MyRequest[];
+  /** Yönetici: onay bekleyen öneri sayısı */
+  pendingTotal?: number;
+}) {
+  const [editing, setEditing] = useState<Product | null>(null);
   const reduce = useCalmMotion();
   const [q, setQ] = useQueryText("ara");
   const [cat, setCat] = useQueryState<string>("kategori", ALL);
@@ -133,6 +172,19 @@ export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit
 
   return (
     <div>
+      {canEdit && pendingTotal > 0 ? (
+        <div role="status" className="no-print mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+          <ClipboardCheck size={18} className="shrink-0" aria-hidden="true" />
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">{num(pendingTotal)} reçete değişikliği onay bekliyor.</span> Personelin önerdiği değişiklikleri önce ve sonra hâliyle
+            görüp onaylayın.
+          </p>
+          <ButtonLink href="/panel/onaylar" variant="secondary" size="sm">
+            İncele
+          </ButtonLink>
+        </div>
+      ) : null}
+      {propose && myRequests.length ? <MyRequests requests={myRequests} /> : null}
       {/* Barda telefonla kullanılır: arama ve kategori kaydırırken üstte kalır (telefon ve tablette kabuğun üst
           çubuğunun altında: --mobile-top-h, lg ve üstünde 0) */}
       <div
@@ -212,7 +264,7 @@ export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit
               <SectionTitle actions={<span className="text-[13px] text-ink-mute tabular">{num(g.products.length)} ürün</span>}>{g.name}</SectionTitle>
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {g.products.map((p) => (
-                  <RecipeCard key={p.name} product={p} showPack={showPack} canEdit={canEdit} query={q} />
+                  <RecipeCard key={p.name} product={p} showPack={showPack} canEdit={canEdit} canPropose={propose !== null} onPropose={() => setEditing(p)} query={q} />
                 ))}
               </div>
             </section>
@@ -236,11 +288,35 @@ export function RecipeBook({ groups, canEdit }: { groups: RecipeGroup[]; canEdit
           />
         </Card>
       )}
+      {editing && propose ? (
+        <ChangeEditor
+          productName={editing.name}
+          kit={propose}
+          variants={editing.variants.map((v): EditorVariant => ({ id: v.id, size: v.size, current: snapshotOf(v), myPending: v.myPending }))}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function RecipeCard({ product, showPack, canEdit, query }: { product: Product; showPack: boolean; canEdit: boolean; query: string }) {
+function RecipeCard({
+  product,
+  showPack,
+  canEdit,
+  canPropose,
+  onPropose,
+  query,
+}: {
+  product: Product;
+  showPack: boolean;
+  canEdit: boolean;
+  canPropose: boolean;
+  onPropose: () => void;
+  query: string;
+}) {
+  const mine = product.variants.filter((v) => v.myPending);
+  const waiting = product.variants.reduce((a, v) => a + v.pendingCount, 0);
   const multi = product.variants.length > 1;
   const rows = useMemo(() => mergeLines(product.variants), [product.variants]);
   const shown = rows
@@ -265,11 +341,29 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
   return (
     <Card className="break-inside-avoid">
       <div className="flex min-h-[3.25rem] items-center justify-between gap-3 px-4 pt-4 pb-2.5 sm:px-5">
-        <h3 className="min-w-0 text-[17px] leading-6 font-semibold tracking-tight break-words text-ink sm:text-base">{product.name}</h3>
+        <div className="min-w-0">
+          <h3 className="text-[17px] leading-6 font-semibold tracking-tight break-words text-ink sm:text-base">{product.name}</h3>
+          {mine.length ? (
+            <Badge tone="amber" dot className="no-print mt-1">
+              Önerin onayda{product.variants.length > 1 ? ` · ${mine.map((v) => SIZE_LABELS[v.size]).join(", ")}` : ""}
+            </Badge>
+          ) : null}
+          {canEdit && waiting ? (
+            <Link href="/panel/onaylar" className="no-print mt-1 inline-flex rounded-full focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none">
+              <Badge tone="amber" dot>
+                {num(waiting)} öneri onay bekliyor
+              </Badge>
+            </Link>
+          ) : null}
+        </div>
         {canEdit ? (
           <IconLink href={`/panel/urunler/${product.variants[0].id}`} label={`${product.name} reçetesini düzenle`} className="no-print pointer-coarse:size-11">
             <Pencil size={15} />
           </IconLink>
+        ) : canPropose ? (
+          <IconButton label={`${product.name} için değişiklik öner`} onClick={onPropose} className="no-print pointer-coarse:size-11">
+            <Pencil size={15} />
+          </IconButton>
         ) : null}
       </div>
       <div className="px-2 pb-2 sm:px-3 sm:pb-3">
@@ -306,7 +400,15 @@ function RecipeCard({ product, showPack, canEdit, query }: { product: Product; s
                           ) : c.qty === 0 ? (
                             <span className="inline-flex items-center gap-1 text-warn">
                               ?<span className="sr-only"> miktar girilmemiş</span>
-                              <InfoTip text={canEdit ? "Miktar girilmemiş. Kalemle reçeteyi açıp bu boyun miktarını yazın." : "Miktar girilmemiş. Yöneticiye haber verin."} />
+                              <InfoTip
+                                text={
+                                  canEdit
+                                    ? "Miktar girilmemiş. Kalemle reçeteyi açıp bu boyun miktarını yazın."
+                                    : canPropose
+                                      ? "Miktar girilmemiş. Kalemle değişiklik önerin; yönetici onaylayınca yazılır."
+                                      : "Miktar girilmemiş. Yöneticiye haber verin."
+                                }
+                              />
                             </span>
                           ) : (
                             <span className={c.packaging ? "font-medium text-ink-mute" : "text-ink"}>

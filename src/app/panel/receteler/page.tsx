@@ -3,11 +3,13 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { Skeleton } from "@/components/ui/misc";
+import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { countPendingRequests, loadMyRequests, pendingByProduct } from "@/server/data/recipe-requests";
 
 import { PrintButton } from "./print-button";
-import { RecipeBook, type RecipeGroup } from "./recipe-book";
+import { RecipeBook, type MyRequest, type ProposeKit, type RecipeGroup } from "./recipe-book";
 
 export const metadata: Metadata = { title: "Reçete defteri" };
 
@@ -17,7 +19,7 @@ export default function RecipeBookPage() {
       <PageHeader
         title="Reçete defteri"
         eyebrow="Menü"
-        description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır."
+        description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik önerir, yönetici onaylayınca reçete değişir."
         actions={<PrintButton />}
       />
       <Suspense fallback={<RecipeBookSkeleton />}>
@@ -48,7 +50,14 @@ function RecipeBookSkeleton() {
 
 async function RecipeBookContent() {
   const user = await requireUser();
-  const model = await loadModel();
+  const isAdmin = user.role === "admin";
+  const [model, mine, pendingTotal, pendingMap] = await Promise.all([
+    loadModel(),
+    isAdmin ? Promise.resolve([]) : loadMyRequests(user.id),
+    isAdmin ? countPendingRequests() : Promise.resolve(0),
+    isAdmin ? pendingByProduct() : Promise.resolve(new Map<number, number>()),
+  ]);
+  const myPending = new Map(mine.filter((r) => r.status === "pending").map((r) => [r.productId, r]));
   // Personel de bu sayfayı görür: buraya yalnızca ad, boy, miktar ve not geçer; maliyet, fiyat ve kâr asla geçmez.
   const groups: RecipeGroup[] = model.categories
     .map((c) => {
@@ -64,21 +73,55 @@ async function RecipeBookContent() {
         name: c.name,
         products: [...byName.entries()].map(([name, variants]) => ({
           name,
-          variants: variants.map((v) => ({
-            id: v.product.id,
-            size: v.product.size,
-            note: v.product.note,
-            lines: v.lines.map((l) => ({
-              name: l.ingredient?.name ?? "?",
-              qty: l.qty,
-              unit: l.ingredient?.unit ?? "",
-              packaging: l.isPackaging,
-            })),
-          })),
+          variants: variants.map((v) => {
+            const pending = myPending.get(v.product.id);
+            return {
+              id: v.product.id,
+              size: v.product.size,
+              note: v.product.note,
+              lines: v.lines.map((l) => ({
+                ingredientId: l.item.ingredientId,
+                name: l.ingredient?.name ?? "?",
+                qty: l.qty,
+                qtyExpr: l.item.qtyExpr,
+                unit: l.ingredient?.unit ?? "",
+                packaging: l.isPackaging,
+                note: l.item.note,
+              })),
+              myPending: pending ? { id: pending.id, after: pending.after, updatedAt: pending.updatedAt.toISOString() } : null,
+              pendingCount: pendingMap.get(v.product.id) ?? 0,
+            };
+          }),
         })),
       };
     })
     .filter((g) => g.products.length);
 
-  return <RecipeBook groups={groups} canEdit={user.role === "admin"} />;
+  // Personelin öneri penceresi: malzeme adları, birimleri ve formüllerdeki ölçüler (shot, pompa…); fiyat yok
+  let propose: ProposeKit | null = null;
+  if (!isAdmin) {
+    const used = new Set(model.activeProducts.flatMap((p) => p.lines.map((l) => l.item.ingredientId)));
+    propose = {
+      ingredients: model.ds.ingredients
+        .filter((i) => i.active || used.has(i.id))
+        .map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, active: i.active, packaging: i.category === PACKAGING_CATEGORY })),
+      params: RECIPE_PARAMS.map((p) => ({ name: p.name, key: p.key, label: p.label, unit: p.unit, value: Number(model.settings[p.key]) })),
+    };
+  }
+
+  const myRequests: MyRequest[] = mine.map((r) => ({
+    id: r.id,
+    productId: r.productId,
+    productName: r.productName,
+    size: r.size,
+    status: r.status,
+    before: r.before,
+    after: r.after,
+    message: r.message,
+    reviewNote: r.reviewNote,
+    reviewedByName: r.reviewedByName,
+    updatedAt: r.updatedAt.toISOString(),
+  }));
+
+  return <RecipeBook groups={groups} canEdit={isAdmin} propose={propose} myRequests={myRequests} pendingTotal={pendingTotal} />;
 }

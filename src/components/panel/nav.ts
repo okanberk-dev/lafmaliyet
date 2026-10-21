@@ -1,16 +1,19 @@
 import {
+  AlarmClock,
   BarChart3,
   BellRing,
   Boxes,
   Plug,
   BookOpen,
   CalendarRange,
+  ClipboardCheck,
   ClipboardList,
   Coffee,
   FileText,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
+  MicVocal,
   Package,
   Receipt,
   Settings,
@@ -50,7 +53,15 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/panel/urunler", label: "Ürünler", icon: Coffee, excel: "Ürün Kârlılık + Reçete Kartları", roles: ["admin"], keywords: "reçete kartı fiyat marj kârlılık" },
       { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
-      { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif" },
+      { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
+      { href: "/panel/onaylar", label: "Reçete onayları", icon: ClipboardCheck, roles: ["admin"], keywords: "onay bekleyen reçete değişikliği personel önerisi" },
+    ],
+  },
+  {
+    title: "Günlük",
+    items: [
+      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda" },
+      { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
   {
@@ -126,6 +137,7 @@ export interface NavNode {
 
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
+  { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
   {
     id: "menu",
     label: "Menü",
@@ -135,6 +147,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "urunler", label: "Ürünler", href: "/panel/urunler", roles: ["admin"] },
       { id: "hammaddeler", label: "Hammaddeler", href: "/panel/hammaddeler", roles: ["admin"] },
       { id: "receteler", label: "Reçete defteri", href: "/panel/receteler", roles: ["admin", "staff"] },
+      { id: "onaylar", label: "Reçete onayları", href: "/panel/onaylar", roles: ["admin"] },
     ],
   },
   {
@@ -160,6 +173,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
     ],
   },
+  { id: "hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
   { id: "analiz", label: "Analiz & senaryo", icon: BarChart3, href: "/panel/analiz", roles: ["admin"] },
   {
     id: "ayarlar",
@@ -215,7 +229,8 @@ export function isSamePage(href: string | null | undefined, pathname: string): b
 
 /**
  * Telefon ve tabletteki alt menü (lg altında). Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey orada).
- * Personel: yalnız erişebildiği üç ekran. `badge: "overdue"` öğesinde gecikmiş ödeme sayısı görünür.
+ * Personel: erişebildiği beş ekranın hepsi (src/lib/roles.ts STAFF_PATHS). `badge: "overdue"` öğesinde gecikmiş ödeme
+ * sayısı görünür.
  */
 export interface BottomNavItem {
   id: string;
@@ -236,8 +251,10 @@ export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
     { id: "menu", label: "Menü", icon: LayoutGrid },
   ],
   staff: [
-    { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
+    { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },
     { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
+    { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
+    { id: "hatirlaticilarim", label: "Hatırlatıcı", icon: AlarmClock, href: "/panel/hatirlaticilarim" },
     { id: "hesap", label: "Hesabım", icon: UserRound, href: "/panel/hesap" },
   ],
 };
@@ -276,6 +293,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/tutarlilik": "Tutarlılık",
   "/panel/kullanicilar": "Kullanıcılar",
   "/panel/parasut": "Paraşüt",
+  "/panel/onaylar": "Reçete onayları",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

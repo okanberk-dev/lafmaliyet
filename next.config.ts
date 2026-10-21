@@ -13,6 +13,13 @@ const SECURITY_HEADERS = [
   { key: "Strict-Transport-Security", value: "max-age=63072000" },
 ];
 
+/**
+ * Panel sayfalarında mikrofon yalnız bu site için açık: Chrome hoparlörlerin adını (uyarıların hangi hoparlörden
+ * çalacağı seçilsin diye, ör. müzik Bluetooth'tayken bilgisayarın kendi hoparlörü) ancak mikrofon izniyle gösterir.
+ * Mikrofon hiçbir yerde kullanılmaz; izin istenince açılan akış hemen kapatılır (src/components/panel/live/output-client.ts).
+ */
+const PANEL_PERMISSIONS = { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()" };
+
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
@@ -33,7 +40,12 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
-    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+    // Aynı başlık iki kurala uyarsa sonraki geçerli: panelde yalnız Permissions-Policy değişir
+    return [
+      { source: "/:path*", headers: SECURITY_HEADERS },
+      { source: "/panel/:path*", headers: [PANEL_PERMISSIONS] },
+      { source: "/panel", headers: [PANEL_PERMISSIONS] },
+    ];
   },
   async redirects() {
     // Yalnızca sayfalar; zamanlanmış işler (/api/cron) yönlendirmeyi izlemediği için /api hariç

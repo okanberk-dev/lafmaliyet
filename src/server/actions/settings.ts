@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq, gt, isNull, ne, sql } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { hashPassword } from "@/server/auth/password";
 import { requireAdmin, startSession } from "@/server/auth/dal";
 import { appUrl, INVITE_PASSWORD_HASH, TOKEN_HOURS } from "@/server/auth/tokens";
-import { issueUserToken } from "@/server/auth/user-tokens";
+import { expireUserTokens, issueUserToken } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -162,13 +162,10 @@ export async function saveUser(input: z.input<typeof userSchema>) {
         })
         .where(eq(s.users.id, data.id))
         .returning();
-      // Parolayı yönetici belirlediyse bekleyen davet / sıfırlama bağlantıları artık çalışmaz
-      if (data.password) {
-        await db
-          .update(s.userTokens)
-          .set({ expiresAt: new Date() })
-          .where(and(eq(s.userTokens.userId, data.id), isNull(s.userTokens.usedAt), gt(s.userTokens.expiresAt, new Date())));
-      }
+      // Bekleyen davet / sıfırlama bağlantıları artık çalışmaz: parolayı yönetici belirlediyse, giriş e-postası
+      // değiştiyse (bağlantı eski ya da yanlış yazılmış adrese gitmiş olabilir) ya da hesap pasif yapıldıysa (yeniden
+      // aktif yapılınca eski bağlantı canlanmasın)
+      if (data.password || before.email !== data.email || (before.active && !data.active)) await expireUserTokens(data.id);
       // Kendi parolasını buradan değiştiren yönetici bu cihazda oturumda kalır
       if (after && after.id === me.id) await startSession(after);
     } else {

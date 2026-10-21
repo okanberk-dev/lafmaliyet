@@ -49,6 +49,8 @@ const MENU_LAYOUT = NAV_TREE.map((n) => (n.children ? `${n.label} (${n.children.
 const STAFF_SCREENS = NAV_TREE.flatMap((n): { label: string }[] =>
   n.children ? n.children.filter((c) => c.roles.includes("staff")) : n.roles.includes("staff") ? [n] : [],
 ).map((n) => n.label);
+/** "A, B ve C" */
+const STAFF_LIST = STAFF_SCREENS.length > 1 ? `${STAFF_SCREENS.slice(0, -1).join(", ")} ve ${STAFF_SCREENS.at(-1)}` : (STAFF_SCREENS[0] ?? "");
 
 // ---------------------------------------------------------------- İçerik
 
@@ -368,7 +370,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Menü düzeni",
         a: (
           <>
-            Sol menü: {MENU_LAYOUT}. Alt sayfası olan öğeye dokununca liste açılır. Personel yalnızca {STAFF_SCREENS.join(" ve ")} ekranlarını görür.
+            Sol menü: {MENU_LAYOUT}. Alt sayfası olan öğeye dokununca liste açılır. Personel yalnızca {STAFF_LIST} ekranlarını görür.
           </>
         ),
         icon: LayoutList,

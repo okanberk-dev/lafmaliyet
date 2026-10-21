@@ -10,12 +10,15 @@ import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { ROLES } from "@/lib/constants";
+import { homeFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
 import { loadPanelNotifications, type PanelNotification } from "@/server/actions/notifications";
 import type { SearchEntry } from "@/server/data/search";
 
 import { BottomNav, BottomNavSkeleton } from "./bottom-nav";
+import { AlertCenter } from "./live/alert-center";
+import { forgetDeviceOnSignOut } from "./live/push-client";
 import { PanelSearch, SearchTrigger } from "./command-palette";
 import { isSamePage, mobileTitleFor, NAV_FOOTER, NAV_GROUPS, navTreeFor, overdueCount, type NavItem } from "./nav";
 import { NotificationMenu } from "./notifications";
@@ -52,8 +55,8 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   const openerRef = useRef<HTMLElement | null>(null);
 
   const isAdmin = user.role === "admin";
-  // Personelin ana sayfası alt menünün ilk öğesi ve girişteki açılış sayfasıyla aynı: Stok sayımı
-  const home = isAdmin ? "/panel" : "/panel/sayim";
+  // Personelin ana sayfası girişteki açılış sayfasıyla aynı (src/lib/roles.ts)
+  const home = homeFor(user.role);
 
   // Uyarılar kabuk açılınca yüklenir, zil her açıldığında arka planda tazelenir; masaüstü ve mobil zil aynı listeyi gösterir
   const [alerts, setAlerts] = useState<PanelNotification[] | null>(null);
@@ -65,7 +68,6 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       .catch(() => setAlerts((a) => a ?? []));
   }, []);
   useEffect(() => {
-    if (!isAdmin) return;
     let alive = true;
     fetchedAt.current = Date.now();
     loadPanelNotifications()
@@ -80,15 +82,15 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       alive = false;
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isAdmin, refreshAlerts]);
+  }, [refreshAlerts]);
 
   // Ödemeler ekranında ödenen kayıtlar alt menüdeki rozete yansısın: o ekrandan çıkınca liste tazelenir
   const prevPath = useRef(pathname);
   useEffect(() => {
     const prev = prevPath.current;
     prevPath.current = pathname;
-    if (isAdmin && prev !== pathname && prev.startsWith("/panel/hatirlaticilar")) refreshAlerts();
-  }, [pathname, isAdmin, refreshAlerts]);
+    if (prev !== pathname && (prev.startsWith("/panel/hatirlaticilar") || prev.startsWith("/panel/onaylar") || prev.startsWith("/panel/receteler"))) refreshAlerts();
+  }, [pathname, refreshAlerts]);
   const overdue = overdueCount(alerts);
 
   const tree = navTreeFor(user.role);
@@ -155,9 +157,9 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
           >
             <X className="size-[18px]" strokeWidth={1.75} aria-hidden />
           </button>
-        ) : isAdmin ? (
-          <NotificationMenu items={alerts} onOpen={refreshAlerts} align="left" />
-        ) : null}
+        ) : (
+          <NotificationMenu items={alerts} onOpen={refreshAlerts} align="left" role={user.role} />
+        )}
       </header>
 
       {isAdmin ? (
@@ -177,7 +179,7 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
           menuAlign="start"
           accountItems={accountItems}
           workspaceItems={cafeItems}
-          onSignOut={() => void logoutAction()}
+          onSignOut={() => void forgetDeviceOnSignOut().finally(() => logoutAction())}
           className="w-full max-w-none"
         />
       </footer>
@@ -234,20 +236,23 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
         {isAdmin ? (
           <>
             <SearchTrigger compact onClick={openSearch} />
-            <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" />
+            <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
           </>
         ) : (
-          <button
-            ref={menuButtonRef}
-            type="button"
-            onClick={openDrawer}
-            className={iconButton}
-            aria-label="Menüyü aç"
-            aria-expanded={mobileOpen}
-            aria-haspopup="dialog"
-          >
-            <Menu className="size-4" strokeWidth={1.75} aria-hidden />
-          </button>
+          <>
+            <NotificationMenu items={alerts} onOpen={refreshAlerts} align="right" variant="bar" role={user.role} />
+            <button
+              ref={menuButtonRef}
+              type="button"
+              onClick={openDrawer}
+              className={iconButton}
+              aria-label="Menüyü aç"
+              aria-expanded={mobileOpen}
+              aria-haspopup="dialog"
+            >
+              <Menu className="size-4" strokeWidth={1.75} aria-hidden />
+            </button>
+          </>
         )}
       </header>
 
@@ -296,6 +301,8 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       </AnimatePresence>
 
       <BottomNav role={user.role} pathname={pathname} overdue={overdue} menuOpen={mobileOpen} onMenu={openDrawer} menuButtonRef={navMenuRef} />
+
+      <AlertCenter role={user.role} />
 
       {isAdmin ? <PanelSearch pages={pages} index={index} open={searchOpen} onOpenChange={setSearchOpen} hideTrigger /> : null}
     </>

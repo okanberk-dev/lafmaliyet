@@ -1,0 +1,457 @@
+"use client";
+
+import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { useClock } from "@/components/panel/live/clock";
+import { DeviceAlerts } from "@/components/panel/live/device-alerts";
+import { usePrefs } from "@/components/panel/live/prefs";
+import { liveNow, refreshLive, useLive } from "@/components/panel/live/store";
+import { Badge, type Tone } from "@/components/ui/badge";
+import { Button, IconButton } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Field, Input } from "@/components/ui/form";
+import { EmptyState } from "@/components/ui/misc";
+import type { Role } from "@/lib/constants";
+import {
+  countdown,
+  dayLabel,
+  durationLabel,
+  isHold,
+  isLive,
+  phase,
+  sessionEnd,
+  sessionStart,
+  timeRange,
+  trClock,
+  type KaraokeSessionDTO,
+  type Phase,
+} from "@/lib/karaoke/session";
+import { cn } from "@/lib/utils";
+import { deleteKaraokeTimer, endKaraokeSession, extendKaraokeSession, reopenKaraokeSession, startKaraokeTimer, syncKaraokeNow } from "@/server/actions/karaoke";
+
+const PRESETS = [30, 60, 90, 120] as const;
+
+const nameOf = (s: KaraokeSessionDTO) => s.customerName || (s.source === "panel" ? "Rezervasyonsuz" : "İsimsiz rezervasyon");
+
+/** Rezervasyonun durumu (sitedeki): renk tek başına anlam taşımasın diye metinle */
+function statusBadge(s: KaraokeSessionDTO): { tone: Tone; text: string } {
+  if (s.source === "panel") return { tone: "gray", text: s.createdBy ? `Panelden · ${s.createdBy}` : "Panelden" };
+  if (s.status === "cancelled") return { tone: "red", text: s.paymentStatus === "refunding" ? "İptal · iade sürüyor" : s.paymentStatus === "refunded" ? "İptal · iade edildi" : "İptal" };
+  if (isHold(s)) return { tone: "gray", text: "Ödeme bekleniyor" };
+  if (s.status === "requested") return { tone: "amber", text: "Onay bekliyor" };
+  return s.paymentStatus === "paid" ? { tone: "green", text: "Ödendi" } : { tone: "green", text: "Onaylı · kasada ödenecek" };
+}
+
+const PHASE_BADGE: Record<Phase, { tone: Tone; text: string } | null> = {
+  upcoming: null,
+  active: { tone: "blue", text: "Sürüyor" },
+  overtime: { tone: "red", text: "Süre doldu" },
+  done: { tone: "gray", text: "Bitti" },
+  cancelled: null,
+  held: null,
+};
+
+
+/** Karaoke ekranı açıkken ekran kararmasın (Screen Wake Lock; destek yoksa bir şey yapmaz) */
+function useWakeLock(on: boolean) {
+  useEffect(() => {
+    if (!on || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let alive = true;
+    const acquire = async () => {
+      try {
+        if (document.visibilityState === "visible") lock = await navigator.wakeLock.request("screen");
+      } catch {
+        // Pil tasarrufu ya da izin: sessizce geç
+      }
+    };
+    const onVisible = () => {
+      if (alive && document.visibilityState === "visible" && (!lock || lock.released)) void acquire();
+    };
+    void acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
+      void lock?.release().catch(() => {});
+    };
+  }, [on]);
+}
+
+/**
+ * Karaoke ekranı (personel ve yönetici): şu an süren oturum(lar) büyük geri sayımla, hızlı sayaç, bugünün listesi,
+ * yaklaşan rezervasyonlar ve bu cihazın uyarı ayarları. Bugünün verisi canlı uçtan gelir (sayaçlar sunucu saatiyle
+ * sayar); yaklaşan liste sayfayla gelir.
+ */
+export function KaraokeBoard({
+  role,
+  upcoming,
+  siteAdminBase,
+  configured,
+  serverNow,
+}: {
+  role: Role;
+  upcoming: KaraokeSessionDTO[];
+  /** Sayfanın çizildiği an (ilk çizimde sunucu ve tarayıcı aynı saati kullansın) */
+  serverNow: number;
+  /** Yönetici: rezervasyonu sitenin panelinde açan adres (…/admin/mobil/karaoke) */
+  siteAdminBase: string | null;
+  configured: boolean;
+}) {
+  const live = useLive();
+  const prefs = usePrefs(role);
+  useWakeLock(prefs.wakeLock);
+
+  // Bugünün ve yarının oturumları canlı veriden (sayaçlar onunla güncel), daha ilerisi sayfanın verisinden
+  const sessions = useMemo(() => {
+    const fresh = live.data?.karaoke.sessions;
+    if (!fresh) return upcoming;
+    const windowEnd = Date.parse(`${trClock(liveNow()).date}T00:00:00Z`) - 3 * 3_600_000 + 2 * 86_400_000;
+    return [...fresh, ...upcoming.filter((s) => sessionStart(s) >= windowEnd)].sort((a, b) => sessionStart(a) - sessionStart(b) || a.id - b.id);
+  }, [live.data, upcoming]);
+  // Süren ya da sürecek oturum varken saniyede bir (geri sayım), yoksa yarım dakikada bir; ilk çizimde sayfanın saati
+  const clock = useClock(sessions.some(isLive) ? 1000 : 30_000);
+  const now = clock || serverNow;
+  const today = trClock(now).date;
+
+  // Sayfa açılışındaki arka plan eşitlemesi bitince yeni bir şey varsa gelsin
+  useEffect(() => {
+    const id = window.setTimeout(() => void refreshLive(), 4000);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  const running = sessions.filter((s) => ["active", "overtime"].includes(phase(s, now)));
+  const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
+  const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));
+  const later = sessions.filter((s) => s.date > today);
+
+  return (
+    <div className="space-y-6">
+      {!configured ? (
+        <p role="status" className="rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+          {role === "admin"
+            ? "laffogato.net bağlantısı henüz kurulmadı: iki projeye de aynı KARAOKE_SYNC_SECRET eklenince rezervasyonlar buraya kendiliğinden gelir (aşağıdaki Bağlantı kartı). O zamana kadar hızlı sayaç çalışır."
+            : "Sitedeki rezervasyonlar henüz bağlanmadı; o zamana kadar hızlı sayacı kullanabilirsiniz."}
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-4">
+          {running.length ? (
+            running.map((s) => <RunningCard key={s.id} session={s} now={now} warnMinutes={prefs.warnMinutes} />)
+          ) : (
+            <Card>
+              <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
+                <span className="flex size-12 items-center justify-center rounded-2xl bg-surface text-ink-mute ring-1 ring-line">
+                  <MicVocal size={22} aria-hidden="true" />
+                </span>
+                <p className="text-lg font-semibold tracking-tight text-ink">Oda şu an boş</p>
+                {next ? (
+                  <p className="text-sm text-ink-mute">
+                    Sıradaki: <span className="font-medium text-ink">{dayLabel(next.date, now)} {timeRange(sessionStart(next), sessionEnd(next))}</span> · {nameOf(next)}
+                    {next.guests ? ` · ${next.guests} kişi` : ""} · <span className="tabular">{durationLabel(Math.round((sessionStart(next) - now) / 60_000))} sonra</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-ink-mute">Yaklaşan rezervasyon yok. Rezervasyonsuz gelen grup için hızlı sayaç açın.</p>
+                )}
+              </div>
+            </Card>
+          )}
+          <TodayList sessions={todays} now={now} siteAdminBase={siteAdminBase} configured={configured} />
+          <UpcomingList sessions={later} now={now} siteAdminBase={siteAdminBase} admin={role === "admin"} />
+        </div>
+        <div className="space-y-4">
+          <QuickTimer sessions={sessions} now={now} />
+          <DeviceAlerts role={role} karaoke />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useSessionActions() {
+  const [pending, start] = useTransition();
+  const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>, success?: string) =>
+    start(async () => {
+      const res = await fn();
+      if (!res.ok) return void toast.error(res.error);
+      if (success) toast.success(success);
+      await refreshLive();
+    });
+  return { pending, run };
+}
+
+function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSessionDTO; now: number; warnMinutes: number }) {
+  const { pending, run } = useSessionActions();
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const start = sessionStart(s);
+  const end = sessionEnd(s);
+  const p = phase(s, now);
+  const left = end - now;
+  const progress = Math.min(1, Math.max(0, (now - start) / (end - start)));
+  const soon = p === "active" && warnMinutes > 0 && left <= warnMinutes * 60_000;
+  return (
+    <Card className={cn("overflow-hidden", p === "overtime" && "ring-2 ring-bad")}>
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-ink-mute">
+            <Badge tone={p === "overtime" ? "red" : soon ? "amber" : "blue"} dot>
+              {p === "overtime" ? "Süre doldu" : soon ? "Az kaldı" : "Sürüyor"}
+            </Badge>
+            <span className="tabular">{timeRange(start, end)}</span>
+            {s.extraMinutes ? <span>· +{s.extraMinutes} dk uzatıldı</span> : null}
+          </p>
+          <h2 className="mt-1.5 text-xl font-semibold tracking-tight break-words text-ink">
+            {nameOf(s)}
+            {s.guests ? (
+              <span className="ml-2 inline-flex items-center gap-1 text-base font-normal text-ink-mute">
+                <Users size={16} aria-hidden="true" /> {s.guests} kişi
+              </span>
+            ) : null}
+          </h2>
+          {s.note ? <p className="mt-1 text-sm break-words text-ink-mute">Not: {s.note}</p> : null}
+        </div>
+        <div className="text-right">
+          <p className="text-[13px] text-ink-mute">{p === "overtime" ? "Bitişten bu yana" : "Kalan süre"}</p>
+          <p className={cn("text-5xl leading-none font-semibold tracking-tight tabular sm:text-6xl", p === "overtime" ? "text-bad" : soon ? "text-warn" : "text-ink")} aria-live="off">
+            {p === "overtime" ? `+${countdown(now - end)}` : countdown(left)}
+          </p>
+        </div>
+      </div>
+      <div className="px-5 pt-4">
+        <div className="h-2.5 overflow-hidden rounded-full bg-surface ring-1 ring-line" role="progressbar" aria-label="Geçen süre" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+          <div className={cn("h-full rounded-full transition-[width] duration-1000 ease-linear", p === "overtime" ? "bg-bad" : soon ? "bg-warn" : "bg-ink")} style={{ width: `${progress * 100}%` }} />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 px-5 pt-4 pb-5">
+        <Button variant="secondary" disabled={pending} onClick={() => run(() => extendKaraokeSession(s.id, 15))}>
+          <Plus size={15} /> 15 dk
+        </Button>
+        <Button variant="secondary" disabled={pending} onClick={() => run(() => extendKaraokeSession(s.id, 30))}>
+          <Plus size={15} /> 30 dk
+        </Button>
+        {p === "overtime" ? (
+          <Button disabled={pending} onClick={() => run(() => endKaraokeSession(s.id), "Alarm susturuldu")} className="ml-auto">
+            Haber verdim
+          </Button>
+        ) : (
+          <Button variant="ghost" disabled={pending} onClick={() => setConfirmEnd(true)} className="ml-auto">
+            <Square size={14} /> Erken bitir
+          </Button>
+        )}
+      </div>
+      <ConfirmDialog
+        open={confirmEnd}
+        onClose={() => setConfirmEnd(false)}
+        onConfirm={() => {
+          setConfirmEnd(false);
+          run(() => endKaraokeSession(s.id), `${nameOf(s)} bitirildi`);
+        }}
+        title={`${nameOf(s)} şimdi bitirilsin mi?`}
+        description="Sayaç durur, alarm çalmaz. Yanlışlıkla bitirirseniz bugünün listesinden geri açabilirsiniz."
+        confirmLabel="Bitir"
+        tone="primary"
+      />
+    </Card>
+  );
+}
+
+function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: number }) {
+  const [minutes, setMinutes] = useState<number>(60);
+  const [custom, setCustom] = useState("");
+  const [label, setLabel] = useState("");
+  const [guests, setGuests] = useState("");
+  const [pending, start] = useTransition();
+  const chosen = custom ? Number(custom.replace(",", ".")) : minutes;
+  const valid = Number.isFinite(chosen) && chosen >= 5 && chosen <= 720;
+  const endsAt = now + (valid ? chosen : 0) * 60_000;
+  const clash = sessions.find((s) => s.source === "site" && isLive(s) && sessionStart(s) > now && sessionStart(s) < endsAt);
+
+  function submit() {
+    if (!valid) return void toast.error("Süre 5 dakika ile 12 saat arasında olmalı");
+    start(async () => {
+      const res = await startKaraokeTimer({ minutes: Math.round(chosen), label: label.trim() || null, guests: guests ? Number(guests) : null });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(`Sayaç başladı · ${durationLabel(Math.round(chosen))}`, { description: `Bitiş ${trClock(endsAt).time}; süre dolunca alarm çalar.` });
+      setLabel("");
+      setGuests("");
+      setCustom("");
+      await refreshLive();
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader icon={<Timer />} title="Hızlı sayaç" description="Rezervasyonsuz gelen grup için: süreyi seçin, başlatın; süre dolunca alarm çalar." />
+      <div className="space-y-3 px-5 pb-5">
+        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Süre">
+          {PRESETS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={!custom && minutes === m}
+              onClick={() => {
+                setMinutes(m);
+                setCustom("");
+              }}
+              className={cn(
+                "flex h-12 cursor-pointer flex-col items-center justify-center rounded-xl text-sm font-semibold ring-1 transition-colors ring-inset",
+                !custom && minutes === m ? "bg-ink text-white ring-ink" : "bg-surface text-ink ring-line-strong hover:ring-ink/30",
+              )}
+            >
+              {m < 60 ? `${m} dk` : m % 60 ? `${Math.floor(m / 60)},5 sa` : `${m / 60} sa`}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Özel süre (dk)" htmlFor="ks-ozel">
+            <Input id="ks-ozel" inputMode="numeric" value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} placeholder="ör. 45" />
+          </Field>
+          <Field label="Kişi" htmlFor="ks-kisi">
+            <Input id="ks-kisi" inputMode="numeric" value={guests} onChange={(e) => setGuests(e.target.value.replace(/[^\d]/g, "").slice(0, 3))} placeholder="isteğe bağlı" />
+          </Field>
+        </div>
+        <Field label="Ad ya da not" htmlFor="ks-ad">
+          <Input id="ks-ad" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder="ör. Mehmet, doğum günü" />
+        </Field>
+        {clash ? (
+          <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
+            Dikkat: {nameOf(clash)} rezervasyonu (başlangıç {trClock(sessionStart(clash)).time}) bu sayaç bitmeden başlıyor; sayacın bitişi {trClock(endsAt).time}.
+          </p>
+        ) : null}
+        <Button onClick={submit} disabled={pending || !valid} className="w-full" size="lg">
+          <Hourglass size={16} /> {pending ? "Başlatılıyor…" : valid ? `${durationLabel(Math.round(chosen))} başlat` : "Süre seçin"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSessionDTO; now: number; siteAdminBase: string | null; showDay?: boolean }) {
+  const { pending, run } = useSessionActions();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const p = phase(s, now);
+  const status = statusBadge(s);
+  const phaseBadge = PHASE_BADGE[p];
+  const start = sessionStart(s);
+  const end = sessionEnd(s);
+  return (
+    <li className={cn("flex flex-wrap items-start gap-x-3 gap-y-2 px-5 py-3", (p === "cancelled" || p === "held") && "opacity-60")}>
+      <div className="w-[7.5rem] shrink-0 pt-0.5 text-sm font-semibold text-ink tabular">
+        {showDay ? <span className="block text-xs font-normal text-ink-mute">{dayLabel(s.date, now)}</span> : null}
+        {timeRange(start, end)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={cn("font-medium break-words text-ink", p === "cancelled" && "line-through")}>
+          {nameOf(s)}
+          {s.guests ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">· {s.guests} kişi</span> : null}
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-1.5">
+          <Badge tone={status.tone} dot>
+            {status.text}
+          </Badge>
+          {phaseBadge ? <Badge tone={phaseBadge.tone}>{phaseBadge.text}</Badge> : null}
+          {p === "upcoming" && isLive(s) && start - now < 6 * 3_600_000 ? <span className="text-xs text-ink-mute tabular">{durationLabel(Math.round((start - now) / 60_000))} sonra</span> : null}
+          {s.totalMinor ? <span className="text-xs text-ink-mute tabular">· {(s.totalMinor / 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} ₺</span> : null}
+          {s.endedBy && p === "done" ? <span className="text-xs text-ink-mute">· {s.endedBy}</span> : null}
+        </p>
+        {s.note ? <p className="mt-1 text-[13px] break-words text-ink-mute">Not: {s.note}</p> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {p === "done" && s.endedAt && end > now ? (
+          <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => reopenKaraokeSession(s.id), "Sayaç yeniden açıldı")}>
+            <RotateCcw size={14} /> Geri aç
+          </Button>
+        ) : null}
+        {siteAdminBase && s.externalId ? (
+          <a
+            href={`${siteAdminBase}/${encodeURIComponent(s.externalId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex size-8 items-center justify-center rounded-lg bg-surface text-ink-mute ring-1 ring-line ring-inset hover:text-ink pointer-coarse:size-11"
+            aria-label={`${nameOf(s)} rezervasyonunu sitenin panelinde aç`}
+            title="Sitenin panelinde aç (onay, iptal, iade orada)"
+          >
+            <ExternalLink size={14} />
+          </a>
+        ) : null}
+        {s.source === "panel" ? (
+          <IconButton label={`${nameOf(s)} sayacını sil`} tone="danger" disabled={pending} onClick={() => setConfirmDelete(true)}>
+            <Trash2 size={14} />
+          </IconButton>
+        ) : null}
+      </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          run(() => deleteKaraokeTimer(s.id), "Sayaç silindi");
+        }}
+        title={`${nameOf(s)} sayacı silinsin mi?`}
+        description="Yanlış açılan sayaç için. Aylık özetteki rezervasyonsuz oturum sayısından da düşer."
+      />
+    </li>
+  );
+}
+
+function TodayList({ sessions, now, siteAdminBase, configured }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; configured: boolean }) {
+  const [pending, start] = useTransition();
+  function sync() {
+    start(async () => {
+      const res = await syncKaraokeNow();
+      if (!res.ok) return void toast.error(res.error);
+      const r = res.data;
+      toast.success("laffogato.net ile eşitlendi", { description: r.status === "ok" ? `${r.created} yeni, ${r.updated} güncellenen, ${r.removed} kaldırılan` : "Değişiklik yok" });
+      await refreshLive();
+    });
+  }
+  return (
+    <Card>
+      <CardHeader
+        icon={<CalendarClock />}
+        title="Bugün"
+        description={sessions.length ? `${sessions.filter(isLive).length} oturum` : undefined}
+        actions={
+          configured ? (
+            <Button variant="secondary" size="sm" onClick={sync} disabled={pending}>
+              <RefreshCw size={14} className={cn(pending && "animate-spin")} /> {pending ? "Eşitleniyor…" : "Eşitle"}
+            </Button>
+          ) : undefined
+        }
+      />
+      {sessions.length ? (
+        <ul className="divide-y divide-line border-t border-line">
+          {sessions.map((s) => (
+            <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} />
+          ))}
+        </ul>
+      ) : (
+        <EmptyState icon={<MicVocal />} title="Bugün karaoke yok" description="Sitede rezervasyon yapılınca burada görünür ve zil çalar." />
+      )}
+    </Card>
+  );
+}
+
+function UpcomingList({ sessions, now, siteAdminBase, admin }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; admin: boolean }) {
+  if (!sessions.length) return null;
+  const live = sessions.filter((s) => s.status !== "cancelled" && !isHold(s));
+  return (
+    <Card>
+      <CardHeader
+        icon={<CalendarClock />}
+        title="Yaklaşan rezervasyonlar"
+        description={`${admin ? "Önümüzdeki 45 gün" : "Önümüzdeki 7 gün"} · ${live.length} rezervasyon`}
+      />
+      <ul className="divide-y divide-line border-t border-line">
+        {sessions.map((s) => (
+          <SessionRow key={s.id} s={s} now={now} siteAdminBase={siteAdminBase} showDay />
+        ))}
+      </ul>
+    </Card>
+  );
+}

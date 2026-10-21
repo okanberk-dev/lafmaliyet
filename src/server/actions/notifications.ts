@@ -4,11 +4,16 @@ import { and, count, desc, eq, gt } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
+import { SIZE_LABELS } from "@/lib/constants";
 import { dateTR, monthShort, tl } from "@/lib/format";
+import { REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { daysLeftLabel } from "@/lib/reminders";
-import { getCurrentUser } from "@/server/auth/dal";
+import { dueGroup, whenLabel } from "@/lib/user-reminders";
+import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
+import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
@@ -22,7 +27,62 @@ export interface PanelNotification {
   unread: boolean;
   href: string;
   /** Zilde hangi başlığın altında durur */
-  group?: "odeme" | "fatura" | "uyari";
+  group?: "hatirlatici" | "onay" | "odeme" | "fatura" | "uyari";
+}
+
+/** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */
+async function reminderNotifications(user: CurrentUser): Promise<PanelNotification[]> {
+  const now = new Date();
+  return (await loadDueReminders(user.id))
+    .map((r) => ({ r, group: dueGroup(r, now) }))
+    .filter((x) => x.group === "overdue" || x.group === "today")
+    .slice(0, 8)
+    .map(({ r, group }) => ({
+      // Tarih / saat değişince (tamamlandı, ertelendi) yeniden okunmamış olur
+      id: `hatirlatici-${r.id}-${r.dueDate}-${r.dueTime ?? ""}`,
+      kind: group === "overdue" ? "warning" : "info",
+      title: r.title,
+      body: r.note ?? (group === "overdue" ? "Zamanı geçti" : "Bugün"),
+      timeLabel: whenLabel(r, now),
+      unread: group === "overdue",
+      href: "/panel/hatirlaticilarim",
+      group: "hatirlatici" as const,
+    }));
+}
+
+/** Yönetici: onay bekleyen reçete önerileri; personel: son bir haftada sonuçlanan önerileri */
+async function recipeNotifications(user: CurrentUser): Promise<PanelNotification[]> {
+  if (user.role === "admin") {
+    const n = await countPendingRequests();
+    if (!n) return [];
+    const { pending } = await loadReviewQueue(0);
+    const names = [...new Set(pending.map((r) => r.productName))].slice(0, 3).join(", ");
+    return [
+      {
+        id: `onay-${n}-${pending.at(-1)?.updatedAt.toISOString() ?? ""}`,
+        kind: "warning",
+        title: `${n} reçete değişikliği onay bekliyor`,
+        body: `Personel önerdi: ${names}${pending.length > 3 ? "…" : ""}`,
+        timeLabel: "",
+        unread: true,
+        href: "/panel/onaylar",
+        group: "onay",
+      },
+    ];
+  }
+  return (await loadMyRequests(user.id, 7))
+    .filter((r) => r.status === "approved" || r.status === "rejected")
+    .slice(0, 5)
+    .map((r) => ({
+      id: `oneri-${r.id}-${r.status}`,
+      kind: r.status === "approved" ? "info" : "warning",
+      title: `${r.productName} · ${SIZE_LABELS[r.size]}: ${REQUEST_STATUS_LABEL[r.status].toLocaleLowerCase("tr-TR")}`,
+      body: r.reviewNote ? `Yönetici: ${r.reviewNote}` : r.status === "approved" ? "Reçete kartı güncellendi" : "Reçete değişmedi",
+      timeLabel: r.reviewedAt ? dateTR(r.reviewedAt.toISOString().slice(0, 10)) : "",
+      unread: true,
+      href: "/panel/receteler#onerilerim",
+      group: "onay",
+    }));
 }
 
 /** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
@@ -89,13 +149,16 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Kenar çubuğundaki zil: önce zamanı gelen ödemeler (gecikmiş, bugün, yakında), sonra son satış ayının
- * uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir;
- * personel için boş döner.
+ * Kenar çubuğundaki zil: kişinin hatırlatıcıları ve reçete onayları, sonra (yalnız yönetici) zamanı gelen ödemeler
+ * (gecikmiş, bugün, yakında), faturalar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler"
+ * ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu
+ * görür; maliyet, ödeme ve fatura bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") return [];
+  if (!user) return [];
+  const [mine, recipes] = await Promise.all([reminderNotifications(user).catch(() => []), recipeNotifications(user).catch(() => [])]);
+  if (user.role !== "admin") return [...mine, ...recipes];
   const [model, upcoming, invoices] = await Promise.all([loadModel(), loadUpcoming().catch(() => null), invoiceNotifications().catch(() => [])]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -145,5 +208,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...payments, ...invoices, ...priceNote, ...warnings];
+  return [...mine, ...recipes, ...payments, ...invoices, ...priceNote, ...warnings];
 }

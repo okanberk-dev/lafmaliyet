@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { z } from "zod";
 
+import { canOpen, homeFor } from "@/lib/roles";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { clearPending, endSession, readDevice, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
 import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
@@ -58,10 +59,11 @@ const loginSchema = z.object({
   next: z.string().optional(),
 });
 
+/** Girişten sonra gidilecek adres: yalnız panel içi ve rolün açabildiği bir ekran, yoksa rolün ana sayfası */
 function safeNext(next: string | undefined, role: "admin" | "staff") {
-  const fallback = role === "admin" ? "/panel" : "/panel/sayim";
-  if (!next || !next.startsWith("/panel") || next.startsWith("//")) return fallback;
-  return next;
+  const fallback = homeFor(role);
+  if (!next || !next.startsWith("/panel") || next.startsWith("//") || next.includes("\\")) return fallback;
+  return canOpen(role, next.split(/[?#]/)[0]) ? next : fallback;
 }
 
 const slow = () => new Promise((r) => setTimeout(r, 600));

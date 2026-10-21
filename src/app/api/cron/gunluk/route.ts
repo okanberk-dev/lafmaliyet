@@ -3,13 +3,16 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getDb, schema as s } from "@/server/db";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import { syncKaraoke } from "@/server/karaoke/sync";
 import { runReminderDigest } from "@/server/notify/digest";
+import { pushReminderSummaries } from "@/server/notify/reminder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
 // Paraşüt'ten gelen yeni faturalar). Paraşüt eşitlemesi bir saat önce ayrı bir işte çalışır (/api/cron/parasut);
-// o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir.
+// o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
+// kişisel hatırlatıcıların sabah bildirimi ve karaoke rezervasyonlarının günlük yedek eşitlemesi (ping kaçtıysa).
 export const maxDuration = 60;
 
 /** Bugün (İstanbul) başarılı bir eşitleme var mı */
@@ -39,10 +42,18 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     sync = { ok: false, error: (e as Error).message };
   }
+  // Kişisel hatırlatıcı bildirimi ve karaoke eşitlemesi sabah e-postasını bekletmez, bozamaz
+  const extras = async () => {
+    const [reminders, karaoke] = await Promise.all([
+      pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
+      syncKaraoke("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
+    ]);
+    return { reminders, karaoke: karaoke.status };
+  };
   try {
     const result = await runReminderDigest("cron");
-    return NextResponse.json({ ...result, sync }, { status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, sync, ...(await extras()) }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync }, { status: 500 });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...(await extras()) }, { status: 500 });
   }
 }
