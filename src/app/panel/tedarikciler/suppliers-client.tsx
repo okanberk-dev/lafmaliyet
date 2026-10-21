@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronRight, Copy, Plus, Truck } from "lucide-react";
+import { ChevronRight, Copy, EyeOff, Plus, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { dateTR, money, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { unhideSupplier } from "@/server/actions/suppliers";
 
 import { useCopied } from "../kullanicilar/password-field";
 import { SupplierCardDialog } from "./card-dialog";
@@ -34,6 +36,7 @@ import {
   supplierHaystack,
   supplierHref,
   SUPPLIER_SORTS,
+  type HiddenSupplierRow,
   type SupplierFilter,
   type SupplierListRow,
   type SupplierSort,
@@ -70,10 +73,20 @@ const DUE_TONE = { bad: "text-bad", warn: "text-warn", ok: "text-ink-soft" } as 
 
 /**
  * Tedarikçi listesi: arama (ad, unvan, vergi no, IBAN, telefon), süzgeç (borcu olanlar, vadesi geçen, bilgisi
- * eksik) ve sıra adreste. Satıra dokununca tedarikçinin sayfası açılır; IBAN satırdan kopyalanır. Telefonda kart,
- * masaüstünde tablo.
+ * eksik) ve sıra adreste. Satıra dokununca tedarikçinin sayfası açılır (düzenle, sil orada); IBAN satırdan
+ * kopyalanır. Telefonda kart, masaüstünde tablo. Listeden kaldırılanlar altta ayrı açılır.
  */
-export function SuppliersClient({ rows, today, defaultTermDays }: { rows: SupplierListRow[]; today: string; defaultTermDays: number }) {
+export function SuppliersClient({
+  rows,
+  hidden,
+  today,
+  defaultTermDays,
+}: {
+  rows: SupplierListRow[];
+  hidden: HiddenSupplierRow[];
+  today: string;
+  defaultTermDays: number;
+}) {
   const router = useRouter();
   const [q, setQ] = useQueryText("ara");
   const [rawFilter, setFilter] = useQueryState<string>("durum", "tumu");
@@ -82,6 +95,7 @@ export function SuppliersClient({ rows, today, defaultTermDays }: { rows: Suppli
   const sort = parseSupplierSort(rawSort);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const { copied, copy } = useCopied();
 
   const searched = rows.filter((r) => matches(supplierHaystack(r), q));
@@ -130,7 +144,7 @@ export function SuppliersClient({ rows, today, defaultTermDays }: { rows: Suppli
         </Badge>
       ) : null}
       {r.summary.openCount && r.missing.includes("iban") ? (
-        <Badge tone="amber" dot title={r.hasCard ? "Kartta IBAN yok: ödeme talebinde ve kopyalarken gerekir" : "Cari kartı yok: IBAN'ı tedarikçinin sayfasından ekleyin"}>
+        <Badge tone="amber" dot title="IBAN girilmemiş: ödeme talebinde ve kopyalarken gerekir. Tedarikçinin sayfasında Düzenle'den ekleyin.">
           {MISSING_LABEL.iban}
         </Badge>
       ) : null}
@@ -154,8 +168,10 @@ export function SuppliersClient({ rows, today, defaultTermDays }: { rows: Suppli
         title="Tedarikçi listesi"
         description={
           <>
-            <span className="lg:hidden">Tedarikçiye dokunun: cari kartı, faturaları ve ödeme durumu açılır. Kopyala simgesi IBAN&apos;ı panoya alır.</span>
-            <span className="max-lg:hidden">Satıra tıklayınca tedarikçinin sayfası açılır: cari kartı, faturaları ve ödeme durumu. Kopyala simgesi IBAN&apos;ı panoya alır.</span>
+            <span className="lg:hidden">Tedarikçiye dokunun: bilgileri, faturaları ve ödeme durumu açılır; düzenlemek ve silmek de oradan. Kopyala simgesi IBAN&apos;ı panoya alır.</span>
+            <span className="max-lg:hidden">
+              Satıra tıklayınca tedarikçinin sayfası açılır: bilgileri, faturaları ve ödeme durumu; düzenlemek ve silmek de oradan. Kopyala simgesi IBAN&apos;ı panoya alır.
+            </span>
           </>
         }
         meta={
@@ -389,6 +405,57 @@ export function SuppliersClient({ rows, today, defaultTermDays }: { rows: Suppli
         </div>
       )}
 
+      {hidden.length ? (
+        <div className="border-t border-line px-5 py-2 max-sm:px-4">
+          <button
+            type="button"
+            onClick={() => setShowHidden(true)}
+            className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 text-[13px] font-medium text-ink-mute underline-offset-2 hover:text-ink hover:underline pointer-coarse:min-h-11"
+          >
+            <EyeOff size={14} aria-hidden="true" /> Listeden kaldırılanlar ({num(hidden.length)})
+          </button>
+        </div>
+      ) : null}
+      <Dialog
+        open={showHidden && hidden.length > 0}
+        onClose={() => setShowHidden(false)}
+        title="Listeden kaldırılanlar"
+        description="Faturaları Faturalar'da duruyor. Yeni faturası gelen tedarikçi listeye kendiliğinden döner."
+        footer={
+          <Button variant="ghost" className={SHEET_BTN} onClick={() => setShowHidden(false)}>
+            Kapat
+          </Button>
+        }
+      >
+        <ul className="divide-y divide-line">
+          {hidden.map((h) => (
+            <li key={h.cardId} className="flex items-center gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                {/* Önce pencere kapanır: gizlenen liste sayfasında açık kalan pencere yeni sayfayı kilitlerdi */}
+                <Link href={supplierHref(h.slug)} onClick={() => setShowHidden(false)} className="font-medium break-words text-ink underline-offset-2 hover:underline">
+                  {h.name}
+                </Link>
+                <p className="text-xs text-ink-mute tabular">
+                  {num(h.count)} fatura · {dateTR(h.hiddenOn)} kaldırıldı
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0 text-ink pointer-coarse:h-11"
+                onClick={async () => {
+                  const r = await unhideSupplier({ cardId: h.cardId });
+                  if (!r.ok) return void toast.error(r.error);
+                  toast.success("Tedarikçi listeye geri alındı", { description: h.name });
+                }}
+              >
+                Listeye geri al
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
+
       <Fab onClick={() => setAdding(true)} className="h-12 pr-5 pl-4 sm:hidden">
         <Plus size={18} aria-hidden="true" /> Tedarikçi ekle
       </Fab>
@@ -415,5 +482,5 @@ const FILTER_EMPTY: Record<SupplierFilter, string> = {
   tumu: "Arama ya da süzgeç bütün tedarikçileri dışarıda bıraktı.",
   borclu: "Ödenmemiş faturası olan tedarikçi yok.",
   geciken: "Vadesi geçmiş ödeme yok.",
-  eksik: "Borcu olan ya da kartı açılmış tedarikçilerde eksik bilgi yok.",
+  eksik: "Borcu olan ya da bilgisi girilmiş tedarikçilerde eksik bilgi yok.",
 };

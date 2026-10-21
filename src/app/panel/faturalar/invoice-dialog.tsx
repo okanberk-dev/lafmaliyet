@@ -317,7 +317,7 @@ export function InvoiceDialog({
                     {supplierHint ? " " : null}
                     {/* Önce pencere kapanır: gizlenen Faturalar sayfasında açık kalan pencere yeni sayfayı kilitlerdi */}
                     <Link href={cariHref} onClick={onClose} className="font-medium text-info underline-offset-2 hover:underline">
-                      Cari kartı ve ödemeleri →
+                      Tedarikçinin sayfası →
                     </Link>
                   </>
                 ) : null}

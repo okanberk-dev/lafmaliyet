@@ -88,10 +88,17 @@ function subscribe(fn: () => void) {
   };
 }
 
+/** Sunucu ve ilk çizimdeki varsayılanlar rol başına bir kez: her çağrıda yeni nesne React'e "değişti" der */
+const serverPrefs = new Map<Role, DevicePrefs>();
+
 export function usePrefs(role: Role): DevicePrefs {
   return useSyncExternalStore(
     subscribe,
     () => read(role),
-    () => defaultPrefs(role),
+    () => {
+      let p = serverPrefs.get(role);
+      if (!p) serverPrefs.set(role, (p = defaultPrefs(role)));
+      return p;
+    },
   );
 }

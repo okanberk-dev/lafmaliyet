@@ -260,7 +260,8 @@ export const invoices = pgTable(
  * Tedarikçinin cari kartı: ticari unvan, vergi numarası ve dairesi, banka (IBAN), iletişim, vade. Faturalar karta
  * yabancı anahtarla bağlanmaz, tedarikçi adıyla eşleşir (büyük/küçük harf, boşluk ve parantezli not sayılmaz;
  * src/app/panel/tedarikciler/logic.ts): `key` kartın adının anahtarı, `aliases` faturalarda geçen başka adlar. Kartı olmayan
- * tedarikçi de faturalarından Tedarikçiler ekranında görünür; kart yalnız bilgi girilince açılır.
+ * tedarikçi de faturalarından Tedarikçiler ekranında görünür; kart bilgi girilince (ya da faturalı tedarikçi listeden
+ * kaldırılınca, `hiddenOn`) açılır.
  * Ayrıntı: docs/TEDARIKCILER.md.
  */
 export const suppliers = pgTable(
@@ -295,6 +296,11 @@ export const suppliers = pgTable(
     /** Peşin çalışılır: Paraşüt'ten gelen yeni faturası ödendi (fatura günü) olarak gelir */
     paidOnDelivery: boolean("paid_on_delivery").notNull().default(false),
     note: text("note"),
+    /**
+     * Listeden kaldırıldığı gün (YYYY-MM-DD, Türkiye). Faturası olan tedarikçi silinmez, listeden kalkar; ödenmemiş
+     * faturası olunca ya da bu günden sonraki tarihli faturası gelince listeye kendiliğinden döner.
+     */
+    hiddenOn: text("hidden_on"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

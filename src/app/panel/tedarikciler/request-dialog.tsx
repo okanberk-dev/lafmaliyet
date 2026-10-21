@@ -193,7 +193,7 @@ export function RequestDialog({
           <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
             <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>
-              Kartta IBAN yok; metinde “kartta yok” yazar.{" "}
+              IBAN girilmemiş; metinde “IBAN: (girilmemiş)” yazar.{" "}
               <button type="button" onClick={onEditCard} className="cursor-pointer font-semibold underline underline-offset-2">
                 IBAN&apos;ı ekleyin
               </button>

@@ -10,13 +10,13 @@ import { requireAdmin } from "@/server/auth/dal";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 
 import { listBreakdowns, paidInMonth, SOON_TEXT } from "./breakdowns";
-import { missingInfo, paidInParasut, type SupplierListRow } from "./logic";
+import { isHiddenSupplier, missingInfo, paidInParasut, type HiddenSupplierRow, type SupplierListRow } from "./logic";
 import { CountUp, SuppliersClient } from "./suppliers-client";
 
 export const metadata: Metadata = { title: "Tedarikçiler" };
 
 const DESCRIPTION =
-  "Cari bilgileri (unvan, vergi no, IBAN, iletişim) ve tedarikçi tedarikçi ödeme takibi. Faturalar Paraşüt'ten her sabah kendiliğinden gelir; ödendi, ödenmedi ya da ödemesi talep edildi işaretini siz koyarsınız.";
+  "Tedarikçilerin bilgileri (unvan, vergi no, IBAN, iletişim) ve tedarikçi tedarikçi ödeme takibi. Faturalar Paraşüt'ten her sabah kendiliğinden gelir; ödendi, ödenmedi ya da ödemesi talep edildi işaretini siz koyarsınız.";
 
 export default function SuppliersPage() {
   return (
@@ -37,7 +37,12 @@ async function SuppliersContent() {
   await requireAdmin();
   const { today, termDays, groups } = await loadSupplierLedger();
   const month = today.slice(0, 7);
-  const rows: SupplierListRow[] = groups.map((g) => ({
+  // Listeden kaldırılanlar listede görünmez (borçları yok; isHiddenSupplier); ödemeleri "Bu ay ödenen"de sayılır
+  const shown = groups.filter((g) => !isHiddenSupplier(g.card, g.summary));
+  const hidden: HiddenSupplierRow[] = groups.flatMap((g) =>
+    g.card?.hiddenOn && isHiddenSupplier(g.card, g.summary) ? [{ cardId: g.card.id, slug: g.slug, name: g.name, hiddenOn: g.card.hiddenOn, count: g.summary.count }] : [],
+  );
+  const rows: SupplierListRow[] = shown.map((g) => ({
     key: g.key,
     slug: g.slug,
     name: g.name,
@@ -115,7 +120,7 @@ async function SuppliersContent() {
         </StatBreakdown>
       </div>
 
-      <SuppliersClient rows={rows} today={today} defaultTermDays={termDays} />
+      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} />
     </>
   );
 }

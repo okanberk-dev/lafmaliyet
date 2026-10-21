@@ -9,7 +9,7 @@ Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlatic
   ayda son gün).
 - **Ödenmemiş faturalar:** Faturalar'da "ödenmedi" olanlar (Paraşüt'ten gelenler dahil; ödendi'yi Tedarikçiler ya
   da Faturalar ekranında siz işaretlersiniz, [TEDARIKCILER.md](TEDARIKCILER.md)). Vade tarihi yoksa fatura
-  tarihinden 30 gün sonra vadeli sayılır (ayarlanabilir; tedarikçinin cari kartında vade günü yazılıysa o geçer);
+  tarihinden 30 gün sonra vadeli sayılır (ayarlanabilir; tedarikçinin bilgilerinde (Tedarikçiler) vade günü yazılıysa o geçer);
   vade ekrandan girilebilir.
 - **Vergi takvimi şablonları:** KDV (takip eden ayın 28'i), muhtasar ve prim hizmet (26'sı), SGK primi (ay sonu),
   geçici vergi (çeyrekten sonraki ikinci ayın 17'si), maaş. Genel takvimdir; işletmenize göre muhasebecinizle

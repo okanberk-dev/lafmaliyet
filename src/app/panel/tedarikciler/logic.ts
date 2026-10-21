@@ -57,6 +57,8 @@ export interface SupplierCard {
   paymentMethod: PaymentMethod | null;
   paidOnDelivery: boolean;
   note: string | null;
+  /** Listeden kaldırıldığı gün (YYYY-MM-DD); kaldırılmadıysa null (isHiddenSupplier) */
+  hiddenOn: string | null;
 }
 
 type CardNames = Pick<SupplierCard, "id" | "name" | "aliases">;
@@ -384,6 +386,25 @@ export function aliasCandidates(
 // ---------------------------------------------------------------- Liste süzgeci ve sırası
 
 /** Listede gösterilen tedarikçi satırı (sunucudan istemciye geçen düz veri) */
+/**
+ * Listeden kaldırılmış tedarikçi listede gizli mi: kaldırıldığı günden sonraki tarihli faturası gelmediyse ve
+ * ödenmemiş faturası yoksa. Borç listeden gizlenmez; yeni fatura tedarikçiyi listeye kendiliğinden geri getirir.
+ */
+export function isHiddenSupplier(card: { hiddenOn: string | null } | null, summary: Pick<SupplierSummary, "openCount" | "lastInvoice">): boolean {
+  if (!card?.hiddenOn) return false;
+  return summary.openCount === 0 && !(summary.lastInvoice && summary.lastInvoice > card.hiddenOn);
+}
+
+/** Listeden kaldırılmış tedarikçi (listenin altındaki "Listeden kaldırılanlar") */
+export interface HiddenSupplierRow {
+  cardId: number;
+  slug: string;
+  name: string;
+  hiddenOn: string;
+  /** Fatura sayısı */
+  count: number;
+}
+
 export interface SupplierListRow {
   key: string;
   slug: string;
@@ -765,7 +786,7 @@ export function paymentRequestText(opts: {
   const out = [
     opts.payer ? `Ödeme talebi · ${opts.payer}` : "Ödeme talebi",
     `Alıcı: ${recipient}`,
-    card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (kartta yok)",
+    card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (girilmemiş)",
     bank ? `Banka: ${bank}` : null,
     card?.taxNumber ? `Vergi no: ${normalizeTaxNumber(card.taxNumber)}` : null,
     `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,

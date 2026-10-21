@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, CircleCheck, Contact, Copy, ExternalLink, FileText, Mail, MessageCircle, Paperclip, Pencil, Phone, Send, X } from "lucide-react";
+import { ArrowLeft, Check, CircleCheck, Contact, Copy, EyeOff, ExternalLink, FileText, History, Mail, MessageCircle, Paperclip, Pencil, Phone, Send, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useOptimistic, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -21,12 +21,13 @@ import { dateTR, money, num } from "@/lib/format";
 import { daysBetween } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { restoreInvoicePayment, setInvoicePayment, type InvoicePaymentState } from "@/server/actions/invoices";
+import { importSupplierHistory, unhideSupplier } from "@/server/actions/suppliers";
 import type { LedgerRow } from "@/server/data/suppliers";
 import type { DocumentMeta } from "@/server/documents";
 
 import { canHaveDocument, isParasutDocument } from "../../faturalar/document-rules";
 import { DocumentSheet } from "../../faturalar/document-sheet";
-import { isEInvoiceOnly } from "../../faturalar/rules";
+import { isEInvoiceOnly, supplierMatchKey } from "../../faturalar/rules";
 import { useCopied } from "../../kullanicilar/password-field";
 import { SupplierCardDialog } from "../card-dialog";
 import {
@@ -40,6 +41,7 @@ import {
   missingInfo,
   paidInParasut,
   payState,
+  PLACEHOLDER_SUPPLIER_NAME,
   supplierHref,
   telHref,
   whatsappHref,
@@ -47,6 +49,7 @@ import {
   type SupplierCard,
 } from "../logic";
 import { PaymentDialog, type PaymentChoice } from "../payment-dialog";
+import { RemoveSupplierDialog } from "../remove-supplier";
 import { RequestDialog } from "../request-dialog";
 
 const PAGE_SIZE = 25;
@@ -86,6 +89,8 @@ export function SupplierClient({
   defaultTermDays,
   suggestions,
   canFill,
+  canImport,
+  hidden,
   stats,
 }: {
   today: string;
@@ -96,12 +101,18 @@ export function SupplierClient({
   defaultTermDays: number;
   suggestions: string[];
   canFill: boolean;
+  /** Paraşüt bağlı: "Geçmiş faturaları al" görünür */
+  canImport: boolean;
+  /** Listeden kaldırılmış (isHiddenSupplier): üstte geri getirme şeridi çıkar, Sil düğmesi çıkmaz */
+  hidden: boolean;
   /** Sunucuda çizilen özet kartları (dökümleriyle) */
   stats: ReactNode;
 }) {
   const router = useRouter();
   const [list, apply] = useOptimistic(invoices, applyPatch);
   const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [requestFor, setRequestFor] = useState<number[] | null>(null);
   const [paying, setPaying] = useState<{ ids: number[]; initial?: PayState } | null>(null);
   const [docFor, setDocFor] = useState<number | null>(null);
@@ -310,9 +321,41 @@ export function SupplierClient({
     </>
   );
 
-  const headerDescription = card
-    ? [card.legalName, card.taxNumber ? `Vergi no ${card.taxNumber}` : null, card.taxOffice ? `${card.taxOffice} VD` : null].filter(Boolean).join(" · ") || "Cari kartı açık"
-    : `Faturalardan: ${supplier.names.join(", ") || supplier.name}. Cari kartı yok.`;
+  const headerDescription =
+    (card ? [card.legalName, card.taxNumber ? `Vergi no ${card.taxNumber}` : null, card.taxOffice ? `${card.taxOffice} VD` : null].filter(Boolean).join(" · ") : "") ||
+    `Faturalardaki adı: ${supplier.names.join(", ") || supplier.name}`;
+  // Paraşüt'ün adı okunamayan faturaları: silinmez, geçmişi alınmaz (sonraki eşitlemede gerçek tedarikçilerine geçer)
+  const placeholder = supplier.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
+
+  async function importHistory() {
+    setImporting(true);
+    keepScroll();
+    const toastId = toast.loading("Paraşüt'ten geçmiş faturalar okunuyor…", { description: "Faturası çok olan tedarikçide yarım dakikayı bulabilir." });
+    try {
+      const r = await importSupplierHistory({ cardId: card?.id ?? null, key: supplier.key });
+      if (!r.ok) return void toast.error(r.error, { id: toastId, description: undefined });
+      const d = r.data;
+      const parts = [
+        d.oldest ? `En eski fatura ${dateTR(d.oldest)}.` : null,
+        d.added.length ? `Paraşüt'teki adı (${d.added.join(", ")}) diğer adlara eklendi.` : null,
+        d.elsewhere.length ? `“${d.elsewhere.join("”, “")}” adıyla gelenler başka bir tedarikçide görünür; aynı firmaysa Düzenle'den diğer adlara ekleyin.` : null,
+        d.partial ? "Süre doldu: kalanı için düğmeye yeniden basın." : null,
+      ].filter(Boolean);
+      const title = d.created ? `${num(d.created)} eski fatura eklendi` : d.fetched ? "Yeni fatura yok: hepsi zaten panelde" : "Paraşüt'te bu tedarikçinin faturası yok";
+      toast.success(title, { id: toastId, description: [`Paraşüt'te ${num(d.fetched)} fatura okundu.`, ...parts].join(" "), duration: d.partial || d.elsewhere.length ? 15000 : 8000 });
+      if (d.created && status !== "tumu") setStatus("tumu");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function restoreToList() {
+    if (!card) return;
+    keepScroll();
+    const r = await unhideSupplier({ cardId: card.id });
+    if (!r.ok) return void toast.error(r.error);
+    toast.success("Tedarikçi listeye geri alındı", { description: supplier.name });
+  }
 
   return (
     <>
@@ -331,15 +374,32 @@ export function SupplierClient({
               </Button>
             ) : null}
             <Button size="sm" onClick={() => setEditing(true)}>
-              <Pencil size={15} aria-hidden="true" /> {card ? "Cari kartı" : "Cari kartı ekle"}
+              <Pencil size={15} aria-hidden="true" /> Düzenle
             </Button>
+            {hidden || placeholder ? null : (
+              <Button variant="ghost" size="sm" onClick={() => setRemoving(true)} className="text-bad hover:bg-bad-soft hover:text-bad">
+                <Trash2 size={15} aria-hidden="true" /> Sil
+              </Button>
+            )}
           </>
         }
       />
 
+      {hidden && card ? (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-panel px-4 py-3 text-[13px] leading-5 text-ink-soft ring-1 ring-line" role="status">
+          <EyeOff size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+          <span className="min-w-[14rem] flex-1">
+            Bu tedarikçi {card.hiddenOn ? `${dateTR(card.hiddenOn)} tarihinde ` : ""}listeden kaldırıldı; faturaları Faturalar&apos;da duruyor. Yeni faturası gelirse listeye kendiliğinden döner.
+          </span>
+          <Button variant="secondary" size="sm" onClick={restoreToList} className="text-ink">
+            Listeye geri al
+          </Button>
+        </div>
+      ) : null}
+
       {stats}
 
-      {/* Cari kartı faturaların üstünde, tam genişlikte: IBAN'ı kopyalamak ve aramak çoğu zaman ilk iş; fatura
+      {/* Bilgiler faturaların üstünde, tam genişlikte: IBAN'ı kopyalamak ve aramak çoğu zaman ilk iş; fatura
           tablosu da sayfanın genişliğini kullanır (yanda dar sütunda eylemleri sığmıyordu) */}
       <div className="space-y-4">
         <CariPanel card={card} termDays={termDays} defaultTermDays={defaultTermDays} copied={copied} copy={copy} onEdit={() => setEditing(true)} />
@@ -368,6 +428,20 @@ export function SupplierClient({
                   </>
                 ) : null}
               </>
+            }
+            actions={
+              canImport && !placeholder ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={importHistory}
+                  disabled={importing}
+                  className="text-ink"
+                  title="Paraşüt'teki bütün gider faturaları, tarih sınırı olmadan. Paneldekiler çoğalmaz; eskiler Paraşüt'teki ödeme durumuyla gelir."
+                >
+                  <History size={15} aria-hidden="true" className={cn(importing && "animate-spin")} /> {importing ? "Okunuyor…" : "Geçmiş faturaları al"}
+                </Button>
+              ) : null
             }
           />
           <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-3">
@@ -450,7 +524,7 @@ export function SupplierClient({
                       <TH>
                         <span className="inline-flex items-center gap-1.5">
                           Vade
-                          <InfoTip text={`Ödenmemiş faturanın vadesi. * işaretli: faturada vade yok, fatura tarihi + ${termDays} gün (tahmini). Vade günü cari kartında değişir.`} />
+                          <InfoTip text={`Ödenmemiş faturanın vadesi. * işaretli: faturada vade yok, fatura tarihi + ${termDays} gün (tahmini). Vade günü Düzenle'den değişir.`} />
                         </span>
                       </TH>
                       <TH numeric>
@@ -514,7 +588,7 @@ export function SupplierClient({
                   description={
                     status === "odenmedi"
                       ? card?.paidOnDelivery
-                        ? "Bu tedarikçinin bütün faturaları ödendi. Kartta “Faturaları ödendi gelsin” açık: yeni faturaları da ödendi gelir."
+                        ? "Bu tedarikçinin bütün faturaları ödendi. Bilgilerinde “Faturaları ödendi gelsin” açık: yeni faturaları da ödendi gelir."
                         : "Bu tedarikçinin bütün faturaları ödendi. Yeni fatura Paraşüt'ten gelince burada ödenmedi olarak görünür."
                       : "Henüz ödendi işaretlenen fatura yok."
                   }
@@ -527,11 +601,17 @@ export function SupplierClient({
               ) : (
                 <EmptyState
                   title="Henüz fatura yok"
-                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer. Faturalar adla eşleşir: Paraşüt'te başka adla (ör. tam unvanla) gelirse cari kartında “Faturalarda geçen diğer adlar”a ekleyin. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
+                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer; eskileri “Geçmiş faturaları al” getirir. Faturalar adla eşleşir: Paraşüt'te başka adla (ör. tam unvanla) gelirse Düzenle'de “Faturalarda geçen diğer adlar”a ekleyin. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
                   action={
-                    <ButtonLink href="/panel/faturalar" variant="secondary">
-                      Faturalar
-                    </ButtonLink>
+                    canImport && !placeholder ? (
+                      <Button variant="secondary" onClick={importHistory} disabled={importing}>
+                        <History size={16} aria-hidden="true" /> {importing ? "Okunuyor…" : "Geçmiş faturaları al"}
+                      </Button>
+                    ) : (
+                      <ButtonLink href="/panel/faturalar" variant="secondary">
+                        Faturalar
+                      </ButtonLink>
+                    )
                   }
                 />
               )}
@@ -630,9 +710,23 @@ export function SupplierClient({
             // Ad değişince adres de değişir; liste sayfanın yeni adresine geçer
             if (r.slug && r.slug !== supplier.slug) router.replace(supplierHref(r.slug));
           }}
-          // Kart silinince sayfanın adresi (kartın adından) kalmayabilir: listeye dönülür; "Geri al" karta geri getirir
-          onDeleted={() => router.replace("/panel/tedarikciler")}
-          onRestored={(slug) => (slug ? router.push(supplierHref(slug)) : undefined)}
+          onDelete={
+            hidden || placeholder
+              ? undefined
+              : () => {
+                  setEditing(false);
+                  setRemoving(true);
+                }
+          }
+        />
+      ) : null}
+
+      {removing ? (
+        <RemoveSupplierDialog
+          target={{ cardId: card?.id ?? null, key: supplier.key, name: supplier.name, invoiceCount: invoices.length, openCount: unpaid.length, open: unpaid.reduce((a, r) => a + openBalance(r), 0) }}
+          onClose={() => setRemoving(false)}
+          // Silinince sayfanın adresi kalmayabilir: listeye dönülür; bildirimdeki "Geri al" sayfayı yeniden açar
+          onDone={() => router.replace("/panel/tedarikciler")}
         />
       ) : null}
 
@@ -641,7 +735,7 @@ export function SupplierClient({
   );
 }
 
-/** Cari kartı: IBAN (kopyala), vergi no, iletişim (ara, WhatsApp, e-posta), vade ve ödeme şekli */
+/** Tedarikçi bilgileri: IBAN (kopyala), vergi no, iletişim (ara, WhatsApp, e-posta), vade ve ödeme şekli */
 function CariPanel({
   card,
   termDays,
@@ -660,13 +754,13 @@ function CariPanel({
   if (!card) {
     return (
       <Card>
-        <CardHeader icon={<Contact />} title="Cari kartı" />
+        <CardHeader icon={<Contact />} title="Tedarikçi bilgileri" />
         <CardContent>
           <p className="text-sm leading-6 text-ink-mute">
             Unvan, vergi no, IBAN ve iletişim bilgileri girilmemiş. IBAN ödeme talebinde ve kopyalarken kullanılır; vade günü bu tedarikçinin vadesiz faturalarının tahmini vadesini belirler (şu an {defaultTermDays} gün).
           </p>
           <Button onClick={onEdit} className="mt-4 w-full">
-            <Pencil size={16} aria-hidden="true" /> Cari kartı ekle
+            <Pencil size={16} aria-hidden="true" /> Bilgileri ekle
           </Button>
         </CardContent>
       </Card>
@@ -685,7 +779,7 @@ function CariPanel({
     <Card>
       <CardHeader
         icon={<Contact />}
-        title="Cari kartı"
+        title="Tedarikçi bilgileri"
         actions={
           <Button variant="secondary" size="sm" onClick={onEdit} className="text-ink">
             <Pencil size={14} aria-hidden="true" /> Düzenle

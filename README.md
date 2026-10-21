@@ -4,7 +4,7 @@
 karşılık geliyor. Hesaplama motoru Excel formüllerini birebir uyguluyor ve bunu otomatik testler kanıtlıyor. Excel'de
 olmayan araçlar da eklendi: ay bazlı çalışma, POS eşleştirme hafızası, fiyat geçmişi, uyarılar, menü mühendisliği,
 senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'ten her sabah otomatik fatura eşitlemesi
-([docs/PARASUT.md](docs/PARASUT.md)), tedarikçilerin cari kartları, borç ve ödeme takibi, ödeme talebi
+([docs/PARASUT.md](docs/PARASUT.md)), tedarikçilerin bilgileri (unvan, IBAN, iletişim), borç ve ödeme takibi, Paraşüt'ten geçmiş faturaları, ödeme talebi
 ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla
@@ -41,7 +41,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
-| Tedarikçiler: cari kartı (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` | — (yeni) |
+| Tedarikçiler: bilgiler (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi, düzenle / sil (faturalıysa listeden kaldır), Paraşüt'ten geçmiş faturalar ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` | — (yeni) |
 | Gelir-gider | `/panel/gelir-gider` | Genel Maliyet |
 | Giderler & personel (üç sekme: Sabit giderler, Aylık harcamalar, Personel) | `/panel/giderler`, `/panel/harcamalar`, `/panel/personel` | Sabit Giderler, — (yeni), Personel |
 | Ödemeler & hatırlatıcılar (Son ödenenler: 30 gün içinde geri alma) | `/panel/hatirlaticilar` | — (yeni) |

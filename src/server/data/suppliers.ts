@@ -28,6 +28,7 @@ export function toCard(r: SupplierRow): SupplierCard {
     paymentMethod: (r.paymentMethod as PaymentMethod | null) ?? null,
     paidOnDelivery: r.paidOnDelivery,
     note: r.note,
+    hiddenOn: r.hiddenOn,
   };
 }
 

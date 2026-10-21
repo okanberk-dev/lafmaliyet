@@ -45,8 +45,10 @@ const E_CURSOR_KEY = "parasut.eInvoiceCursor";
 const DUE_KEY = "parasut.dueDates";
 /** Panelde silinen Paraşüt faturaları (bir sonraki eşitlemede geri gelmesin) */
 export const IGNORE_KEY = "parasut.ignore";
+/** Tedarikçi geçmişinin kaldığı yer: Paraşüt kişi kimliği → sonraki çalışmanın okuyacağı sayfa (eskiden yeniye) */
+const HISTORY_KEY = "parasut.supplierHistory";
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler */
-export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY];
+export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY];
 const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
 /** Önceki eşitlemeden sonra değişmiş olabilecek faturalar için geriye bakış */
 const LOOKBACK_DAYS = 75;
@@ -351,6 +353,86 @@ export async function parasutSyncRunning(): Promise<boolean> {
 }
 
 /**
+ * Eşitleme kaydını açar; başka bir eşitleme sürüyorsa null. Önceki bir çalışma işlev süresi dolduğu için yarıda
+ * kesildiyse "sürüyor" kalmasın. Sabah işi, e-posta işinin yeniden denemesi, "Şimdi eşitle" ve tedarikçi geçmişi aynı
+ * anda çalışıp aynı faturaları yazmaya kalkmasın: denetim ve kayıt kilit altında (oturum kilidi havuzlu bağlantıda
+ * güvenilmez, işlem kilidi işlem bitince bırakılır)
+ */
+async function openRun(trigger: "cron" | "manual", started: number): Promise<number | null> {
+  return getDb().transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${SYNC_LOCK})`);
+    await tx
+      .update(s.parasutSyncRuns)
+      .set({ status: "error", finishedAt: new Date(), message: "Yarıda kesildi (işlev süresi doldu)" })
+      .where(and(eq(s.parasutSyncRuns.status, "running"), lt(s.parasutSyncRuns.startedAt, new Date(started - STALE_RUN_MS))));
+    const [busy] = await tx.select({ id: s.parasutSyncRuns.id }).from(s.parasutSyncRuns).where(eq(s.parasutSyncRuns.status, "running")).limit(1);
+    if (busy) return null;
+    const [run] = await tx.insert(s.parasutSyncRuns).values({ trigger }).returning({ id: s.parasutSyncRuns.id });
+    return run.id;
+  });
+}
+
+/** Faturaları yazmanın bağlamı: paneldeki faturalar, kurallar, yok sayılanlar, vadeler, peşin kartlar */
+async function loadCtx(): Promise<Ctx> {
+  const db = getDb();
+  const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince] = await Promise.all([
+    db
+      .select({
+        id: s.invoices.id,
+        externalId: s.invoices.externalId,
+        eInvoiceId: s.invoices.eInvoiceId,
+        invoiceNo: s.invoices.invoiceNo,
+        supplier: s.invoices.supplier,
+        date: s.invoices.date,
+        payable: s.invoices.payable,
+        unpaid: s.invoices.unpaid,
+        dueDate: s.invoices.dueDate,
+        origin: s.invoices.origin,
+        source: s.invoices.source,
+        note: s.invoices.note,
+        parasutUnpaid: s.invoices.parasutUnpaid,
+        outstanding: s.invoices.outstanding,
+        paidAt: s.invoices.paidAt,
+        paymentRequestedAt: s.invoices.paymentRequestedAt,
+        syncedAt: s.invoices.syncedAt,
+        category: s.invoices.category,
+        needsReview: s.invoices.needsReview,
+      })
+      .from(s.invoices),
+    loadRules(),
+    getState<string[]>(IGNORE_KEY),
+    getState<Record<string, string | null>>(DUE_KEY),
+    db
+      .selectDistinct({ id: s.parasutBillLines.invoiceId })
+      .from(s.parasutBillLines)
+      .where(like(s.parasutBillLines.externalId, "ubl:%")),
+    loadPaidOnDelivery(),
+    loadPaymentsSince(),
+  ]);
+  // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
+  // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
+  // kontrol bekleyen tahminler katılmaz (yanlış bir tahmin kendini çoğaltmasın)
+  const own = existingRows.filter((i) => i.origin !== "parasut");
+  const history = supplierHistory(existingRows.filter(feedsSupplierHistory));
+  const alias = supplierAliases(own.map((i) => i.supplier));
+  return {
+    existing: existingRows as Existing[],
+    rules,
+    history,
+    alias,
+    ignored: new Set(ignoredList ?? []),
+    ublLines: new Set(ublRows.map((r) => r.id)),
+    applied: new Set(),
+    touchedMonths: new Set(),
+    counts: { created: 0, updated: 0, removed: 0 },
+    dueSeen: { ...(dueSeen ?? {}) },
+    dueDirty: false,
+    paidOnDelivery,
+    paymentsSince,
+  };
+}
+
+/**
  * Paraşüt'ten gider faturalarını çeker ve panele yazar: yeni fatura eklenir, değişen güncellenir, iptal edilen ya
  * da Paraşüt'te silinen kaldırılır; kalemler saklanır, hammaddeye bağlı kalemlerden aylık alınan miktar ve
  * (istenirse) hammadde fiyatı güncellenir.
@@ -370,20 +452,7 @@ export async function syncParasut(
   let runId: number | null = null;
   try {
     const cfg = readParasutConfig();
-    // Önceki bir çalışma işlev süresi dolduğu için yarıda kesildiyse "sürüyor" kalmasın. Sabah işi, e-posta işinin
-    // yeniden denemesi ve "Şimdi eşitle" aynı anda çalışıp aynı faturaları yazmaya kalkmasın: denetim ve kayıt kilit
-    // altında (oturum kilidi havuzlu bağlantıda güvenilmez, işlem kilidi işlem bitince bırakılır)
-    const id = await db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${SYNC_LOCK})`);
-      await tx
-        .update(s.parasutSyncRuns)
-        .set({ status: "error", finishedAt: new Date(), message: "Yarıda kesildi (işlev süresi doldu)" })
-        .where(and(eq(s.parasutSyncRuns.status, "running"), lt(s.parasutSyncRuns.startedAt, new Date(started - STALE_RUN_MS))));
-      const [busy] = await tx.select({ id: s.parasutSyncRuns.id }).from(s.parasutSyncRuns).where(eq(s.parasutSyncRuns.status, "running")).limit(1);
-      if (busy) return null;
-      const [run] = await tx.insert(s.parasutSyncRuns).values({ trigger }).returning({ id: s.parasutSyncRuns.id });
-      return run.id;
-    });
+    const id = await openRun(trigger, started);
     if (id === null) return { ok: false, error: SYNC_BUSY, runId: null, busy: true };
     runId = id;
 
@@ -453,61 +522,7 @@ export async function syncParasut(
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
-    const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince] = await Promise.all([
-      db
-        .select({
-          id: s.invoices.id,
-          externalId: s.invoices.externalId,
-          eInvoiceId: s.invoices.eInvoiceId,
-          invoiceNo: s.invoices.invoiceNo,
-          supplier: s.invoices.supplier,
-          date: s.invoices.date,
-          payable: s.invoices.payable,
-          unpaid: s.invoices.unpaid,
-          dueDate: s.invoices.dueDate,
-          origin: s.invoices.origin,
-          source: s.invoices.source,
-          note: s.invoices.note,
-          parasutUnpaid: s.invoices.parasutUnpaid,
-          outstanding: s.invoices.outstanding,
-          paidAt: s.invoices.paidAt,
-          paymentRequestedAt: s.invoices.paymentRequestedAt,
-          syncedAt: s.invoices.syncedAt,
-          category: s.invoices.category,
-          needsReview: s.invoices.needsReview,
-        })
-        .from(s.invoices),
-      loadRules(),
-      getState<string[]>(IGNORE_KEY),
-      getState<Record<string, string | null>>(DUE_KEY),
-      db
-        .selectDistinct({ id: s.parasutBillLines.invoiceId })
-        .from(s.parasutBillLines)
-        .where(like(s.parasutBillLines.externalId, "ubl:%")),
-      loadPaidOnDelivery(),
-      loadPaymentsSince(),
-    ]);
-    // Kısa adlar kaydı ilk açanın (origin) Paraşüt olmadığı faturalardan öğrenilir. Tedarikçi geçmişine eşitlemenin
-    // açıp kontrol edilmiş (onaylanmış, kategorisi değiştirilmiş ya da kurala/geçmişe dayanan) faturaları da katılır;
-    // kontrol bekleyen tahminler katılmaz (yanlış bir tahmin kendini çoğaltmasın)
-    const own = existingRows.filter((i) => i.origin !== "parasut");
-    const history = supplierHistory(existingRows.filter(feedsSupplierHistory));
-    const alias = supplierAliases(own.map((i) => i.supplier));
-    const ctx: Ctx = {
-      existing: existingRows as Existing[],
-      rules,
-      history,
-      alias,
-      ignored: new Set(ignoredList ?? []),
-      ublLines: new Set(ublRows.map((r) => r.id)),
-      applied: new Set(),
-      touchedMonths: new Set(),
-      counts: { created: 0, updated: 0, removed: 0 },
-      dueSeen: { ...(dueSeen ?? {}) },
-      dueDirty: false,
-      paidOnDelivery,
-      paymentsSince,
-    };
+    const ctx = await loadCtx();
 
     let maxDate = resume?.maxDate ?? "";
     let processedUntilPage = startPage - 1;
@@ -634,6 +649,190 @@ export async function syncParasut(
     const error = e instanceof Error ? e.message : String(e);
     if (runId) await db.update(s.parasutSyncRuns).set({ status: "error", finishedAt: new Date(), message: error.slice(0, 1000) }).where(eq(s.parasutSyncRuns.id, runId));
     console.error("Paraşüt eşitlemesi", e);
+    return { ok: false, error, runId };
+  }
+}
+
+// ---------------------------------------------------------------- Tedarikçinin geçmiş faturaları
+
+/** Ada göre kişi aramasında bakılan en fazla ad ve faturadan kimlik okumada bakılan en fazla fatura */
+const HISTORY_LOOKUPS = 4;
+
+export interface SupplierHistoryTarget {
+  /** İşlem geçmişinde ve eşitleme kaydında görünen ad */
+  label: string;
+  /** Tedarikçinin paneldeki Paraşüt faturalarının dış kimlikleri, en yeni önce (kişi kimliği bunlardan okunur) */
+  billIds: string[];
+  /** Kartta yazılı vergi no: faturası yoksa kişi bununla aranır */
+  taxNumber: string | null;
+  /** Faturası ve vergi nosu yoksa kişi bu adlarla aranır */
+  names: string[];
+  /** Paraşüt'teki kişi adı bu tedarikçinin mi: "same" aynı ad (anahtar), "similar" baştaki kelimeleri tutuyor */
+  match: (name: string) => "same" | "similar" | null;
+}
+
+export type HistoryOk = {
+  ok: true;
+  summary: string;
+  /** Bulunan Paraşüt kişileri (adıyla) */
+  contacts: { id: string; name: string }[];
+  fetched: number;
+  created: number;
+  updated: number;
+  /** Okunan faturaların paneldeki tedarikçi adları (kartın diğer adlarına eklenebilir) */
+  names: string[];
+  oldest: string | null;
+  partial: boolean;
+};
+
+/** Paraşüt `filter[supplier_id]`i uygulamadı: liste başka tedarikçinin faturasını getirdi */
+class FilterIgnoredError extends Error {}
+
+/**
+ * Panel tedarikçisinin Paraşüt kişi kimlikleri: kendi faturalarından, yoksa vergi nosundan, o da yoksa adından. Adla
+ * aramada aynı adlı kişiler alınır; yoksa benzer adlı (ör. kısa ad ↔ tam unvan) tek bir kişi varsa o alınır, birden
+ * çoksa hiçbiri (yanlış firmanın faturaları gelmesin).
+ */
+async function findSupplierContacts(client: ParasutClient, t: SupplierHistoryTarget): Promise<{ id: string; name: string }[]> {
+  const found = new Map<string, string>();
+  for (const id of t.billIds.slice(0, HISTORY_LOOKUPS)) {
+    try {
+      const bill = await client.show(`purchase_bills/${encodeURIComponent(id)}`);
+      const rel = bill.data.relationships?.supplier?.data;
+      if (rel && !Array.isArray(rel) && !found.has(rel.id)) found.set(rel.id, t.label);
+    } catch (e) {
+      // Paraşüt'te silinmiş fatura atlanır; oturum ve süre hataları yukarı çıkar
+      if (!(e instanceof ParasutError) || e.status !== 404) throw e;
+    }
+    if (found.size) break;
+  }
+  if (found.size) return [...found].map(([id, name]) => ({ id, name }));
+  const search = async (filter: Record<string, string>) => {
+    const res = await client.get<ListResponse<{ name?: string }>>("contacts", { ...filter, "page[size]": 25 });
+    return res.data.map((c) => ({ id: c.id, name: c.attributes.name?.trim() ?? "" })).filter((c) => c.name);
+  };
+  if (t.taxNumber) for (const c of await search({ "filter[tax_number]": t.taxNumber })) found.set(c.id, c.name);
+  if (found.size) return [...found].map(([id, name]) => ({ id, name }));
+  const same = new Map<string, string>();
+  const similar = new Map<string, string>();
+  for (const n of t.names.slice(0, HISTORY_LOOKUPS)) {
+    for (const c of await search({ "filter[name]": n })) {
+      const m = t.match(c.name);
+      if (m === "same") same.set(c.id, c.name);
+      else if (m === "similar") similar.set(c.id, c.name);
+    }
+  }
+  const pick = same.size ? same : similar.size === 1 ? similar : new Map<string, string>();
+  return [...pick].map(([id, name]) => ({ id, name }));
+}
+
+/**
+ * Tedarikçinin Paraşüt'teki bütün gider faturaları, tarih sınırı olmadan (tedarikçi sayfasındaki "Geçmiş faturaları
+ * al"). Paraşüt kişi kimliğiyle süzülür (`filter[supplier_id]`) ve eşitlemenin kuralıyla yazılır: var olan fatura
+ * güncellenir, panelde silinen (yok sayılan) gelmez, yeni açılan eski fatura Paraşüt'teki ödeme durumuyla gelir
+ * (newInvoicePayment, payments.since). Eşitlemeden farkı: listede görünmeyen fatura kaldırılmaz, imleç ve yarım tur
+ * kaydı değişmez, gelen e-fatura kutusu okunmaz (o liste tedarikçiye göre süzülemiyor). Faturalar eskiden yeniye
+ * okunur; süre dolarsa okunan sayfalar yazılır ve kalınan sayfa saklanır, yeniden basınca oradan sürer. Paraşüt
+ * süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir şey yazılmaz.
+ */
+export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: { deadlineMs?: number } = {}): Promise<HistoryOk | SyncErr> {
+  const started = Date.now();
+  const deadline = opts.deadlineMs ?? DEADLINE_MS;
+  const fetchUntil = started + deadline * FETCH_SHARE;
+  const db = getDb();
+  let runId: number | null = null;
+  try {
+    const cfg = readParasutConfig();
+    runId = await openRun("manual", started);
+    if (runId === null) return { ok: false, error: SYNC_BUSY, runId: null, busy: true };
+    const client = new ParasutClient(cfg);
+    client.setDeadline(fetchUntil + 15_000);
+
+    const contacts = await findSupplierContacts(client, target);
+    if (!contacts.length) {
+      const error = "Bu tedarikçi Paraşüt'te bulunamadı. Paraşüt'teki adı farklıysa bilgilerine vergi numarasını yazıp yeniden deneyin.";
+      await db.update(s.parasutSyncRuns).set({ status: "error", finishedAt: new Date(), message: `${target.label}: ${error}` }).where(eq(s.parasutSyncRuns.id, runId));
+      return { ok: false, error, runId };
+    }
+
+    const progress = (await getState<Record<string, number>>(HISTORY_KEY)) ?? {};
+    const drafts: BillDraft[] = [];
+    let partial = false;
+    let include = INCLUDES[0];
+    for (const contact of contacts) {
+      const startPage = Math.max(1, progress[contact.id] ?? 1);
+      let next = startPage;
+      for (let i = INCLUDES.indexOf(include); ; i++) {
+        const got: BillDraft[] = [];
+        next = startPage;
+        try {
+          for await (const res of client.pages<Record<string, unknown>>("purchase_bills", { "filter[supplier_id]": contact.id, sort: "id", include }, 400, startPage)) {
+            for (const bill of res.data) {
+              const d = billToDraft(bill, res.included);
+              if (d.supplierId !== contact.id) throw new FilterIgnoredError();
+              got.push(d);
+            }
+            next = res.page + 1;
+            if (Date.now() > fetchUntil) {
+              partial = true;
+              break;
+            }
+          }
+          if (!partial) next = 0;
+        } catch (e) {
+          if (e instanceof ParasutError && !(e instanceof ParasutAuthError) && !(e instanceof ParasutDeadlineError) && (e.status === 400 || e.status === 422) && i < INCLUDES.length - 1) {
+            include = INCLUDES[i + 1];
+            continue;
+          }
+          if (!(e instanceof ParasutDeadlineError)) throw e;
+          partial = true;
+        }
+        drafts.push(...got);
+        break;
+      }
+      if (next > 0) progress[contact.id] = next;
+      else delete progress[contact.id];
+      if (partial) break;
+    }
+
+    client.setDeadline(started + deadline);
+    const cache = (await getState<ContactCache>(CONTACTS_KEY)) ?? {};
+    if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, cache, started + deadline * CONTACTS_SHARE);
+
+    const ctx = await loadCtx();
+    for (const d of drafts) await applyDraft(d, ctx);
+    if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
+    if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
+    await setState(HISTORY_KEY, progress);
+
+    const written = new Set(drafts.map((d) => d.externalId));
+    const rows = ctx.existing.filter((e) => e.externalId && written.has(e.externalId));
+    const names = [...new Set(rows.map((r) => r.supplier))];
+    const oldest = rows.reduce<string | null>((a, r) => (!a || r.date < a ? r.date : a), null);
+    const { created, updated, removed } = ctx.counts;
+    const summary = [
+      `${target.label}: ${drafts.length} gider faturası okundu`,
+      `${created} yeni`,
+      `${updated} güncellendi`,
+      removed ? `${removed} kaldırıldı` : "",
+      partial ? "süre doldu, kalanı için yeniden basın" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    await db
+      .update(s.parasutSyncRuns)
+      .set({ status: "ok", finishedAt: new Date(), fetched: drafts.length, created, updated, removed, message: `Tedarikçi geçmişi · ${summary}` })
+      .where(eq(s.parasutSyncRuns.id, runId));
+    return { ok: true, summary, contacts, fetched: drafts.length, created, updated, names, oldest, partial };
+  } catch (e) {
+    const error =
+      e instanceof FilterIgnoredError
+        ? "Paraşüt listeyi tedarikçiye göre süzmedi; karışıklık olmasın diye hiçbir fatura yazılmadı. Paraşüt sayfasındaki “Tarihten eşitle” ile geçmişi alabilirsiniz."
+        : e instanceof Error
+          ? e.message
+          : String(e);
+    if (runId) await db.update(s.parasutSyncRuns).set({ status: "error", finishedAt: new Date(), message: `${target.label}: ${error}`.slice(0, 1000) }).where(eq(s.parasutSyncRuns.id, runId));
+    console.error("Paraşüt tedarikçi geçmişi", e);
     return { ok: false, error, runId };
   }
 }
