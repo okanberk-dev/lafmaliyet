@@ -281,6 +281,25 @@ html:has([data-scroll-lock]) {
     touch-action: manipulation;
   }
 
+  /* iOS, telefon yan çevrilince yazıları kendiliğinden büyütmesin. Önekli olan ayrı seçicide: ikisi aynı kuralda
+     durunca derleme (Lightning CSS; Next'in hedef tarayıcı listesinde iOS yok) önekliyi siler. Yakınlaştırma açık
+     kalır: görünüm etiketinde user-scalable=no / maximum-scale yok, olmayacak */
+  :root {
+    -webkit-text-size-adjust: 100%;
+  }
+  html {
+    text-size-adjust: 100%;
+  }
+
+  /* Kontrollerin yazısı uzun basınca seçilmesin, iOS'ta kopyala / paylaş balonu açılmasın: yalnızca düğme, sekme,
+     anahtar, seçenek, menü öğesi ve açılır başlık. Body'ye ya da içeriğe asla: IBAN, fatura numarası, tutar seçilip
+     kopyalanabilir kalır. Bir kontrolün içindeki metin seçilebilmeliyse select-text sınıfı kazanır */
+  :where(button, [role="button"], [role="tab"], [role="switch"], [role="radio"], [role="menuitem"], summary) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
   /* Yazı alanlarının halkası kendi sınıfında (focus:ring); sınıfı olmayan alanlar da klavyede belli olsun */
   :where(input, select, textarea):focus-visible {
     outline: 2px solid rgb(23 23 23 / 0.3);

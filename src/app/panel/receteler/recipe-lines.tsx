@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus, StickyNote, Trash2 } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Plus, Sigma, StickyNote, Trash2 } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/form";
@@ -55,7 +55,9 @@ export function useRecipeKit(kit: ProposeKit) {
       .sort(([a], [b]) => catOrder(a) - catOrder(b) || a.localeCompare(b, "tr"))
       .map(([cat, list]) => [cat, [...list].sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
   }, [kit.ingredients]);
-  return { settings, ingById, grouped };
+  /** Formül ölçülerinin birimleri (gr, ml): adet ve dilim satırına formül yazılmaz, "Formül" düğmesi orada çıkmaz */
+  const formulaUnits = useMemo(() => new Set(kit.params.map((p) => p.unit)), [kit.params]);
+  return { settings, ingById, grouped, formulaUnits };
 }
 
 export type RecipeKit = ReturnType<typeof useRecipeKit>;
@@ -94,6 +96,11 @@ export function RecipeLinesEditor({
   label: string;
   children?: ReactNode;
 }) {
+  /**
+   * Telefonda miktar alanı rakam klavyesiyle açılır; formül (2*Pompa) yazmak için harfli klavye gerekir. Formüllü
+   * satırlar kendiliğinden, "Formül" düğmesine basılan satırlar da harfli klavyeyle açılır (ürün kartındaki gibi).
+   */
+  const [textKeys, setTextKeys] = useState<ReadonlySet<number>>(() => new Set());
   const update = (key: number, patch: Partial<LineRow>) => onChange((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const move = (idx: number, d: -1 | 1) =>
     onChange((rs) => {
@@ -103,6 +110,21 @@ export function RecipeLinesEditor({
       [copy[idx], copy[j]] = [copy[j], copy[idx]];
       return copy;
     });
+  /**
+   * "Formül": satırın miktar alanını harfli klavyeyle yeniden odaklar. Klavye türü odakta değişmez: inputMode
+   * çizimi beklemeden alana yazılır, alan bırakılıp yeniden odaklanır. Hepsi dokunuşun içinde, eşzamanlı (iOS
+   * klavyeyi yalnızca kullanıcı hareketi içindeki focus() ile açar). Eski sayı seçili gelir, yazılan formül onun
+   * yerine geçer.
+   */
+  function formulaKeyboard(key: number, inputId: string) {
+    setTextKeys((s) => new Set(s).add(key));
+    const el = document.getElementById(inputId) as HTMLInputElement | null;
+    if (!el) return;
+    el.inputMode = "text";
+    el.blur();
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+  }
   return (
     <>
       <ul className="space-y-2" aria-label={`${label} malzemeleri`}>
@@ -110,6 +132,8 @@ export function RecipeLinesEditor({
           const ing = r.ingredientId ? kit.ingById.get(r.ingredientId) : undefined;
           const q = resolveQty(r.input, kit.settings);
           const hintId = `${idPrefix}-${r.key}`;
+          const qtyId = `${hintId}-miktar`;
+          const textKeyboard = Boolean(q.expr) || textKeys.has(r.key);
           return (
             <li key={r.key} className="rounded-2xl bg-panel p-2.5 ring-1 ring-line">
               <div className="flex items-start gap-2">
@@ -144,9 +168,11 @@ export function RecipeLinesEditor({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <Input
+                    id={qtyId}
                     value={r.input}
                     onChange={(e) => update(r.key, { input: e.target.value })}
-                    inputMode={/[a-zA-Z*]/.test(r.input) ? "text" : "decimal"}
+                    // Rakam klavyesi; formülde (ya da "Formül" düğmesinden sonra) harfli klavye
+                    inputMode={textKeyboard ? "text" : "decimal"}
                     autoComplete="off"
                     aria-label={`${ing?.name ?? `${idx + 1}. satır`} miktarı`}
                     aria-invalid={q.error ? true : undefined}
@@ -171,6 +197,17 @@ export function RecipeLinesEditor({
               <p id={hintId} className={cn("mt-1 text-xs", q.error ? "text-bad" : "text-ink-mute")}>
                 {q.error ?? (q.expr ? `= ${num(q.qty, 3)} ${ing?.unit ?? ""}` : q.echo ? `${q.echo} olarak okundu` : "")}
               </p>
+              {/* Yalnızca dokunmatikte: rakam klavyesinde harf ve * yok. Satırda yer olmadığı için miktarın altında. */}
+              {!textKeyboard && (!ing || kit.formulaUnits.has(ing.unit)) ? (
+                <button
+                  type="button"
+                  onClick={() => formulaKeyboard(r.key, qtyId)}
+                  className="mt-2 hidden h-11 w-fit cursor-pointer items-center gap-1.5 rounded-xl bg-surface px-3 text-[13px] font-medium text-ink-mute ring-1 ring-line ring-inset focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:outline-none pointer-coarse:flex"
+                  title="Miktara formül yazın (ör. 2*ShotCift): harfli klavye açılır"
+                >
+                  <Sigma size={14} aria-hidden="true" /> Formül
+                </button>
+              ) : null}
               {r.noteOpen ? (
                 <Input
                   value={r.note}
@@ -200,7 +237,12 @@ export function FormulaHelp({ params }: { params: ProposeKit["params"] }) {
   return (
     <details className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] text-ink-mute">
       <summary className="cursor-pointer font-medium text-ink-soft">Formüller (ShotCift, Pompa…)</summary>
-      <p className="mt-1.5">Miktara sayı ya da formül yazılabilir: “2*ShotCift”, “Pompa*3”. Ölçüler Ayarlar&apos;dan gelir:</p>
+      <p className="mt-1.5">
+        Miktara sayı ya da formül yazılabilir: “2*ShotCift”, “2*Pompa” (şurup), “1,5*PurePompa” (püre).{" "}
+        {/* Telefonun rakam klavyesinde harf ve * yok: satırdaki "Formül" düğmesi harfli klavyeyi açar */}
+        <span className="hidden pointer-coarse:inline">Harf ve * için satırdaki “Formül” düğmesine dokunun. </span>
+        Ölçüler Ayarlar&apos;dan gelir:
+      </p>
       <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
         {params.map((p) => (
           <li key={p.name}>

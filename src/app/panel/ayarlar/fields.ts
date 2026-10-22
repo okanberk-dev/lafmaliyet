@@ -4,7 +4,7 @@ import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc
 import type { Settings } from "@/lib/calc/types";
 import { num } from "@/lib/format";
 
-export type NumericKey = "kdv" | "kdvHizmet" | "komisyon" | "kartOrani" | "hedefMaliyet" | "fire" | "shotTek" | "shotCift" | "pompa" | "dondurmaTop" | "tkGr" | "potGr" | "potMl" | "acikGun";
+export type NumericKey = "kdv" | "kdvHizmet" | "komisyon" | "kartOrani" | "hedefMaliyet" | "fire" | "shotTek" | "shotCift" | "pompa" | "pompaPure" | "dondurmaTop" | "tkGr" | "potGr" | "potMl" | "acikGun";
 
 export type FieldDef = {
   key: NumericKey;
@@ -35,6 +35,7 @@ export const MEASURE_FIELDS: FieldDef[] = [
   { key: "shotTek", label: "Tek shot kahve (gr)", hint: "Solo espresso", formula: "ShotTek", kind: "num" },
   { key: "shotCift", label: "Çift shot kahve (gr)", hint: "Double espresso", formula: "ShotCift", kind: "num" },
   { key: "pompa", label: "1 pompa şurup (ml)", hint: "Şurup pompasının bir basışı", formula: "Pompa", kind: "num" },
+  { key: "pompaPure", label: "1 pompa püre (ml)", hint: "Püre pompasının bir basışı", formula: "PurePompa", kind: "num" },
   { key: "dondurmaTop", label: "1 top dondurma (ml)", hint: "Varsayım: ~70 ml. Ölçüp yazın.", formula: "DondurmaTop", kind: "num", assumption: true },
   { key: "tkGr", label: "Türk kahvesi 1 fincan (gr)", hint: "Varsayım: 7 gr. Ölçüp yazın.", formula: "TKGr", kind: "num", assumption: true },
   { key: "potGr", label: "Filtre kahve tam pot (gr)", hint: "Bir pota konan çekilmiş kahve", formula: "PotGr", kind: "num" },

@@ -222,11 +222,17 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Shot gramajı / pompa değişti",
         a: (
           <>
-            <Path href="/panel/ayarlar" /> › Reçete ölçüleri. Formülle bağlı bütün reçeteler (ShotTek, Pompa …) birlikte güncellenir.
+            <Path href="/panel/ayarlar" /> › Reçete ölçüleri. Formülle bağlı bütün reçeteler (ShotTek, Pompa, PurePompa …) birlikte güncellenir. Şurup pompası
+            (Pompa) ve püre pompası (PurePompa) ayrı yazılır: başta 10 ml ve 30 ml; sizinkiler farklıysa ölçüp yazın. <Path href="/panel/receteler" /> şurup, sos ve
+            püre satırlarında miktarın altında kaç pompa olduğunu gösterir (45 ml püre: 1,5 pompa). Miktarı ml yazılı satır pompa değişince aynı kalır, yalnız
+            pompa sayısı değişir; pompayla birlikte değişsin isterseniz ürünün reçete kartında miktara 1,5*PurePompa yazın.
           </>
         ),
         icon: Ruler,
-        links: [{ href: "/panel/ayarlar#olculer", label: "Reçete ölçüleri" }],
+        links: [
+          { href: "/panel/ayarlar#olculer", label: "Reçete ölçüleri" },
+          { href: "/panel/receteler", label: "Reçete defteri" },
+        ],
       },
     ],
   },

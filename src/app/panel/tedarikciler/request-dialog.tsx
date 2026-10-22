@@ -232,7 +232,7 @@ export function RequestDialog({
               </Badge>
             ) : null}
           </p>
-          <pre className="max-h-56 overflow-y-auto rounded-2xl bg-panel p-3.5 font-sans text-[13px] leading-5 whitespace-pre-wrap text-ink">{text}</pre>
+          <pre className="max-h-56 overflow-y-auto overscroll-contain rounded-2xl bg-panel p-3.5 font-sans text-[13px] leading-5 whitespace-pre-wrap text-ink">{text}</pre>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => copy("metin", text, "Ödeme talebi kopyalandı")} disabled={!payable} className="text-ink max-sm:min-h-11 max-sm:flex-1">
               {copied === "metin" ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />} Metni kopyala

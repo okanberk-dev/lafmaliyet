@@ -303,7 +303,7 @@ export function CashForm({
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
             {field("zTotal", "Toplam satış (Z)", { autoFocus: !report })}
             <Field label="Z no" htmlFor="k-zNo" hint="isteğe bağlı">
-              <Input id="k-zNo" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" />
+              <Input id="k-zNo" inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" />
             </Field>
             {field("cash", "Nakit")}
             {field("card", "Kredi / banka kartı")}

@@ -472,7 +472,7 @@ function ImpactDetails({ impact: i, invalidCount }: { impact: SettingsImpact; in
   if (changed(i.waterPerLiter)) rows.push({ label: "Su + buz ₺/L", value: <Delta c={i.waterPerLiter} format={(v) => tl(v, 4)} /> });
 
   return (
-    <div className="max-h-[45vh] w-full min-w-0 basis-full overflow-x-hidden overflow-y-auto border-b border-line pr-2 pb-3 scroll-thin" role="region" aria-label="Değişikliğin etkisi">
+    <div className="max-h-[45dvh] w-full min-w-0 basis-full overflow-x-hidden overflow-y-auto overscroll-contain border-b border-line pr-2 pb-3 scroll-thin" role="region" aria-label="Değişikliğin etkisi">
       <p className="text-sm font-semibold text-ink">Kaydetmeden önce etkisi</p>
       <p className="text-xs text-ink-mute">
         Kaydedince bütün ekranlara (ürün kârlılığı, panel, gelir-gider) yansır.

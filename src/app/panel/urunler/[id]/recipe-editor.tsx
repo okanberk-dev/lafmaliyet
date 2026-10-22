@@ -946,7 +946,7 @@ export function RecipeEditor({
               <CardFooter className="flex-col items-start justify-start gap-2.5 py-4">
                 <p className="flex items-center gap-1.5 font-medium text-ink-soft">
                   Formülde kullanılabilecek ayarlar
-                  <InfoTip text="Değerler Ayarlar sayfasından gelir. Ayar değişince bu reçete de güncellenir. Örnek: 2*ShotCift, ShotTek+5." />
+                  <InfoTip text="Değerler Ayarlar sayfasından gelir. Ayar değişince bu reçete de güncellenir. Örnek: 2*ShotCift, ShotTek+5, “2*Pompa” (şurup), “1,5*PurePompa” (püre)." />
                 </p>
                 <ul className="flex flex-wrap gap-1.5" aria-label="Formül adları">
                   {RECIPE_PARAMS.map((p) => (

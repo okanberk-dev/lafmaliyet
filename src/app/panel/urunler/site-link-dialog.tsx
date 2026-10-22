@@ -192,7 +192,7 @@ export function SiteLinkDialog({
           aria-label="Sitedeki kalemi ara"
           aria-controls={listId}
         />
-        <div ref={listRef} id={listId} role="radiogroup" aria-label="Sitedeki kalemler" className="scroll-thin relative max-h-[42dvh] space-y-3 overflow-y-auto rounded-2xl bg-panel p-2">
+        <div ref={listRef} id={listId} role="radiogroup" aria-label="Sitedeki kalemler" className="scroll-thin relative max-h-[42dvh] space-y-3 overflow-y-auto overscroll-contain rounded-2xl bg-panel p-2">
           {load.status === "loading" ? (
             Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 bg-surface/70" />)
           ) : groups.length ? (
