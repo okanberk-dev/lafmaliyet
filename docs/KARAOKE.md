@@ -171,7 +171,7 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/board.ts` | Oturumlar, sürüm sayacı (ETag), ekran verisi |
 | `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma (ikisi de sitedeki rezervasyonla çakışmayı sorar), bitirme, geri açma, elle eşitleme |
 | `src/lib/karaoke/overlap.ts` | Çakışma kuralı: odayı tutan rezervasyon, aralık kesişimi, uyarı metni (saf, testli) |
-| `src/app/panel/karaoke/orders-board.tsx` | Ekranın üstündeki uygulama siparişleri ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
+| `src/app/panel/karaoke/orders-board.tsx` | Ekranın üstündeki uygulama siparişleri ve aşama düğmeleri ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
 | `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, uygulama siparişleri, kişisel hatırlatmalar; ETag / 304) |
 | `src/components/panel/live/` | Uyarı motoru: canlı veri, sesler ve hoparlör seçimi, cihaz tercihleri, bildirim aboneliği |
 | `src/lib/audio-output.ts` | Hoparlör listesi, kayıtlı seçimin yeniden bulunması, Bluetooth / bilgisayar hoparlörü tahmini |
