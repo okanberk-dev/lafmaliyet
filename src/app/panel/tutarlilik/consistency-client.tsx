@@ -35,7 +35,10 @@ interface Row {
   name: string;
   unit: string;
   unitCost: number;
+  /** Reçeteye göre beklenen tüketim: ModPOS satışları + laffogato.net online kafe siparişleri */
   usage: number;
+  /** Bunun online kafe siparişlerinden gelen kısmı (menü bağlantısıyla eşlenen satırlar); yoksa 0 */
+  onlineUsage: number;
   purchased: number | null;
   ratio: number | null;
   diffAmount: number | null;
@@ -55,6 +58,16 @@ interface Row {
   recorded: number;
   /** Sapmanın kayıtlı zayi / ikramla açıklanamayan kısmı × birim maliyet */
   unexplainedAmount: number | null;
+}
+
+/** Beklenen tüketimin kaynağı: online kafe siparişlerinin payı varsa "ModPOS 1.200 · online 300" */
+function UsageSplit({ row }: { row: Pick<Row, "usage" | "onlineUsage"> }) {
+  if (!row.onlineUsage) return null;
+  return (
+    <span className="block text-xs font-normal text-ink-mute" title="ModPOS satışları ve laffogato.net online kafe siparişleri, reçeteye göre">
+      ModPOS {num(row.usage - row.onlineUsage)} · online {num(row.onlineUsage)}
+    </span>
+  );
 }
 
 /** Reçetede olmayan ama stoktan düşen (ya da alınıp tükenen) hammadde */
@@ -506,6 +519,7 @@ export function ConsistencyTable({
                       <dt className="text-xs text-ink-mute">Reçeteye göre</dt>
                       <dd className="text-ink tabular">
                         {num(r.usage)} {r.unit}
+                        <UsageSplit row={r} />
                       </dd>
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right">
@@ -572,7 +586,7 @@ export function ConsistencyTable({
                     <TH numeric>
                       Reçeteye göre
                       <InfoTip
-                        text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar. Fire payı ve ödenmez siparişler hariç."
+                        text="Reçeteye göre kullanım: her ürünün bu ayki satış adedi × reçetedeki miktar; ModPOS satışları ve laffogato.net'in online kafe siparişleri (ayrı gösterilir). Fire payı ve ödenmez siparişler hariç."
                         className="ml-1"
                       />
                     </TH>
@@ -631,6 +645,7 @@ export function ConsistencyTable({
                       </TD>
                       <TD numeric>
                         {num(r.usage)} {r.unit}
+                        <UsageSplit row={r} />
                       </TD>
                       <TD numeric>
                         <div className="flex items-center justify-end gap-1.5">

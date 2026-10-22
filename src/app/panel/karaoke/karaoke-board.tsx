@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import type { Role } from "@/lib/constants";
+import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
 import {
   countdown,
   dayLabel,
@@ -187,6 +188,16 @@ function useSessionActions() {
 function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSessionDTO; now: number; warnMinutes: number }) {
   const { pending, run } = useSessionActions();
   const [confirmEnd, setConfirmEnd] = useState(false);
+  /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur, onaylanınca yine de uzatılır */
+  const [clash, setClash] = useState<{ minutes: number; message: string } | null>(null);
+  const [extending, startExtend] = useTransition();
+  const extend = (minutes: number, force = false) =>
+    startExtend(async () => {
+      const res = await extendKaraokeSession(s.id, minutes, { force });
+      if (!res.ok) return void toast.error(res.error);
+      if (res.data.conflict) return void setClash({ minutes, message: res.data.conflict.message });
+      await refreshLive();
+    });
   const start = sessionStart(s);
   const end = sessionEnd(s);
   const p = phase(s, now);
@@ -227,10 +238,10 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
         </div>
       </div>
       <div className="flex flex-wrap gap-2 px-5 pt-4 pb-5">
-        <Button variant="secondary" disabled={pending} onClick={() => run(() => extendKaraokeSession(s.id, 15))}>
+        <Button variant="secondary" disabled={pending || extending} onClick={() => extend(15)}>
           <Plus size={15} /> 15 dk
         </Button>
-        <Button variant="secondary" disabled={pending} onClick={() => run(() => extendKaraokeSession(s.id, 30))}>
+        <Button variant="secondary" disabled={pending || extending} onClick={() => extend(30)}>
           <Plus size={15} /> 30 dk
         </Button>
         {p === "overtime" ? (
@@ -255,6 +266,19 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
         confirmLabel="Bitir"
         tone="primary"
       />
+      <ConfirmDialog
+        open={clash !== null}
+        onClose={() => setClash(null)}
+        onConfirm={() => {
+          const c = clash;
+          setClash(null);
+          if (c) extend(c.minutes, true);
+        }}
+        title="Sitede rezervasyon var"
+        description={clash?.message}
+        confirmLabel="Yine de uzat"
+        tone="primary"
+      />
     </Card>
   );
 }
@@ -265,16 +289,20 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
   const [label, setLabel] = useState("");
   const [guests, setGuests] = useState("");
   const [pending, start] = useTransition();
+  /** Sunucunun sorduğu çakışma (sitede o saatte rezervasyon var): onaylanınca yine de başlatılır */
+  const [ask, setAsk] = useState<string | null>(null);
   const chosen = custom ? Number(custom.replace(",", ".")) : minutes;
   const valid = Number.isFinite(chosen) && chosen >= 5 && chosen <= 720;
   const endsAt = now + (valid ? chosen : 0) * 60_000;
-  const clash = sessions.find((s) => s.source === "site" && isLive(s) && sessionStart(s) > now && sessionStart(s) < endsAt);
+  // Sunucunun kuralıyla aynı (src/lib/karaoke/overlap.ts): yazarken uyarı, başlatırken sunucu ayrıca sorar
+  const clash = valid ? overlapText(siteOverlaps({ start: now, end: endsAt }, sessions), now) : null;
 
-  function submit() {
+  function submit(force = false) {
     if (!valid) return void toast.error("Süre 5 dakika ile 12 saat arasında olmalı");
     start(async () => {
-      const res = await startKaraokeTimer({ minutes: Math.round(chosen), label: label.trim() || null, guests: guests ? Number(guests) : null });
+      const res = await startKaraokeTimer({ minutes: Math.round(chosen), label: label.trim() || null, guests: guests ? Number(guests) : null, force });
       if (!res.ok) return void toast.error(res.error);
+      if (res.data.conflict) return void setAsk(res.data.conflict.message);
       toast.success(`Sayaç başladı · ${durationLabel(Math.round(chosen))}`, { description: `Bitiş ${trClock(endsAt).time}; süre dolunca alarm çalar.` });
       setLabel("");
       setGuests("");
@@ -320,13 +348,25 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
         </Field>
         {clash ? (
           <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-            Dikkat: {nameOf(clash)} rezervasyonu (başlangıç {trClock(sessionStart(clash)).time}) bu sayaç bitmeden başlıyor; sayacın bitişi {trClock(endsAt).time}.
+            Dikkat: {clash} Sayacın bitişi {trClock(endsAt).time}.
           </p>
         ) : null}
-        <Button onClick={submit} disabled={pending || !valid} className="w-full" size="lg">
+        <Button onClick={() => submit()} disabled={pending || !valid} className="w-full" size="lg">
           <Hourglass size={16} /> {pending ? "Başlatılıyor…" : valid ? `${durationLabel(Math.round(chosen))} başlat` : "Süre seçin"}
         </Button>
       </div>
+      <ConfirmDialog
+        open={ask !== null}
+        onClose={() => setAsk(null)}
+        onConfirm={() => {
+          setAsk(null);
+          submit(true);
+        }}
+        title="Sitede rezervasyon var"
+        description={ask}
+        confirmLabel="Yine de başlat"
+        tone="primary"
+      />
     </Card>
   );
 }

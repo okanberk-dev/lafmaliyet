@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { AlertTriangle, CheckCircle2, CircleAlert, ClipboardList, Info, Receipt, Scale, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, ClipboardList, Globe, Info, Link2, Receipt, Scale, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -14,11 +14,13 @@ import type { PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { alerts, consistency, type Alert } from "@/lib/calc/insights";
-import { monthLabel, num, tl } from "@/lib/format";
+import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
+import { sizeLabel } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
+import { siteLinkSecret } from "@/server/site-link";
 
 import { consistencyBreakdowns, hasNegative } from "./breakdowns";
 import { ConsistencyTable, CountUp, Findings, SeverityBar } from "./consistency-client";
@@ -227,6 +229,7 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
           unit: r.ingredient.unit,
           unitCost: r.unitCost,
           usage: r.usage,
+          onlineUsage: r.onlineUsage,
           purchased: r.purchased,
           ratio: r.ratio,
           diffAmount: r.diffAmount,
@@ -249,6 +252,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         ingredients={ingredientOptions}
         fire={st.fire}
       />
+
+      <OnlineSalesCard online={c.online} month={month} monthLabel={ml} configured={Boolean(siteLinkSecret())} />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card>
@@ -348,5 +353,77 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         />
       </div>
     </>
+  );
+}
+
+/**
+ * laffogato.net online kafe siparişlerinin tüketimi (docs/SITE-SATIS.md): ModPOS satışlarından ayrı bir kaynak. Satırlar
+ * menü bağlantısıyla ürünlere eşlenir; eşlenen satırların malzemesi beklenen tüketime eklenir (tabloda "online"),
+ * eşlenmeyenler listelenir: ürünü laffogato.net menüsündeki kalemine bağlayınca tüketime girer.
+ */
+function OnlineSalesCard({
+  online,
+  month,
+  monthLabel: ml,
+  configured,
+}: {
+  online: ReturnType<typeof consistency>["online"];
+  month: string;
+  monthLabel: string;
+  configured: boolean;
+}) {
+  if (!online && !configured) return null;
+  return (
+    <Card className="mt-6">
+      <CardHeader
+        icon={<Globe />}
+        title="Online kafe siparişleri (laffogato.net)"
+        description={`${ml} · uygulama ve web siparişlerinin tüketimi; ModPOS satışlarından ayrı sayılır, tabloda "online" diye görünür`}
+        actions={
+          online?.unmapped.length ? (
+            <ButtonLink href="/panel/urunler/site" variant="secondary" size="sm">
+              <Link2 size={14} /> Ürünleri bağla
+            </ButtonLink>
+          ) : undefined
+        }
+      />
+      <CardContent className="space-y-3 text-sm">
+        {online ? (
+          <>
+            <p className="text-ink-soft">
+              {num(online.orders)} sipariş · {num(online.mappedQty)} adet ürüne eşlendi
+              {online.unmappedQty ? ` · ${num(online.unmappedQty)} adet eşlenmedi` : ""}
+              <span className="text-ink-mute"> · çekildi {dateTimeTR(online.pulledAt)}{online.closed ? "" : " (ay sürüyor)"}</span>
+            </p>
+            {online.unmapped.length ? (
+              <div className="rounded-2xl bg-warn-soft px-4 py-3 text-[13px] text-warn">
+                <p className="font-medium">Panel ürününe bağlı olmayan satırlar: malzemesi tüketime girmedi</p>
+                <ul className="mt-1.5 space-y-0.5">
+                  {online.unmapped.map((l, i) => (
+                    <li key={`${l.menuItemId}-${l.size}-${i}`}>
+                      {l.qty}× {l.name}
+                      {sizeLabel(l.size) ? ` ${sizeLabel(l.size)}` : ""}
+                      <span className="opacity-75">{l.menuItemId ? ` (${l.menuItemId}, ${l.size === "L" ? "L yuvası" : "M yuvası"})` : " (sitede kalemsiz satır)"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : online.mapped.length ? (
+              <p className="flex items-center gap-2 rounded-2xl bg-good-soft px-3.5 py-2.5 text-[13px] font-medium text-good">
+                <CheckCircle2 size={16} className="shrink-0" /> Bütün online satırlar panel ürünlerine bağlı.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-ink-mute">
+            Bu ayın online satışı henüz çekilmedi. Gelir-gider&apos;deki laffogato.net online satışları kartından{" "}
+            <Link href={`/panel/gelir-gider?yil=${month.slice(0, 4)}`} className="font-medium text-ink underline underline-offset-2">
+              siteden çekin
+            </Link>
+            ; her sabah bu ay kendiliğinden çekilir.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

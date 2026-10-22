@@ -10,7 +10,7 @@ import { encryptPayload, generateVapidKeys, isPushEndpoint, publicKeyOf, vapidAu
 
 /** Bildirimin içeriği (şifreli gider; service worker /sw.js gösterir) */
 export interface PushMessage {
-  kind: "karaoke" | "reminders" | "test";
+  kind: "karaoke" | "orders" | "reminders" | "test";
   title: string;
   body: string;
   /** Bildirime dokununca açılan panel adresi */
@@ -78,15 +78,21 @@ export interface PushResult {
 /**
  * Aboneliklere bildirim gönderir: yalnız aktif kullanıcılar ve aboneliği alırken geçerli olan oturum sürümü hâlâ
  * geçerliyse (parola, rol ya da erişim değişince eski cihaza gitmez). `topic` aboneliğin tercihine bakar (karaoke /
- * hatırlatıcı); "test" herkese değil yalnız `userIds`'e gider. Süresi geçmiş abonelik (404/410) silinir; art arda 10
- * kez başarısız olan da. Hata fırlatmaz, sonucu sayar.
+ * sipariş / hatırlatıcı; sipariş tercihi seçilmemişse personel cihazında açık, yöneticininkinde kapalı); "test" herkese
+ * değil yalnız `userIds`'e gider. Süresi geçmiş abonelik (404/410) silinir; art arda 10 kez başarısız olan da. Hata
+ * fırlatmaz, sonucu sayar.
  */
-export async function sendPush(topic: "karaoke" | "reminders" | "test", message: PushMessage, opts: { userIds?: number[]; ttl?: number; urgency?: "high" | "normal" } = {}): Promise<PushResult> {
+export async function sendPush(
+  topic: "karaoke" | "orders" | "reminders" | "test",
+  message: PushMessage,
+  opts: { userIds?: number[]; ttl?: number; urgency?: "high" | "normal" } = {},
+): Promise<PushResult> {
   const result: PushResult = { sent: 0, removed: 0, failed: 0 };
   if (opts.userIds && !opts.userIds.length) return result;
   const db = getDb();
   const conditions = [eq(s.users.active, true), eq(s.users.sessionVersion, s.pushSubscriptions.sessionVersion)];
   if (topic === "karaoke") conditions.push(eq(s.pushSubscriptions.karaoke, true));
+  if (topic === "orders") conditions.push(sql`coalesce(${s.pushSubscriptions.orders}, ${s.users.role} = 'staff')`);
   if (topic === "reminders") conditions.push(eq(s.pushSubscriptions.reminders, true));
   if (opts.userIds) conditions.push(inArray(s.pushSubscriptions.userId, opts.userIds));
   const subs = await db

@@ -134,6 +134,13 @@
       "when": 1792624440610,
       "tag": "0018_site_menu_baglantisi",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792626041392,
+      "tag": "0019_siparis_bildirimi",
+      "breakpoints": true
     }
   ]
 }

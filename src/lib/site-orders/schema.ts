@@ -1,0 +1,158 @@
+import { z } from "zod";
+
+/**
+ * laffogato.net'in açık kafe siparişleri (bar ekranı): sitenin `GET /api/panel/orders` yanıtının panelde doğrulanması
+ * (saf; sunucu, ekran ve testler paylaşır). Sözleşme sitenin docs/PANEL-ORDERS.md'si, sitedeki karşılığı
+ * src/lib/panel/orders-feed-core.ts; panel tarafı docs/SITE-SIPARIS.md.
+ *
+ * Yanıt: { version: 1, now, complete, orders: [...] }. Tanınmayan sürüm ya da bozuk iskelet bütün yanıtı reddeder
+ * (ekran son doğru listeyi göstermeye devam eder ve hatayı söyler). Tek bir siparişin kullanılan alanı bozuksa
+ * (kimlik, aşama, ödeme anı, satırlar) yalnız o sipariş atlanır ve sayılır: bir siparişteki hata bütün ekranı
+ * boşaltmasın. Ekranda gösterilen metinler kısaltılır; bilinmeyen yeni alanlar atılır (site v1'e alan ekleyebilir).
+ *
+ * KVKK: panele yalnız müşterinin adı gelir (soyad, telefon, e-posta, adres, kurye notu asla); panel siparişin tutarını
+ * kullanmadığı için saklamaz da.
+ */
+
+export const SITE_ORDERS_VERSION = 1;
+/** Site en çok 200 sipariş gönderir (`complete: false` fazlası olduğunu söyler); bundan çoğu bozuk yanıt sayılır */
+export const SITE_ORDERS_MAX = 500;
+/** Bir siparişte en çok bu kadar satır */
+export const SITE_ORDER_LINES_MAX = 100;
+
+export type OrderStage = "new" | "preparing" | "ready";
+export type OrderFulfillment = "table" | "pickup" | "delivery";
+export type OrderLineSize = "M" | "L" | "single";
+
+export const ORDER_STAGES: readonly OrderStage[] = ["new", "preparing", "ready"];
+
+export interface SiteOrderLine {
+  /** Menü kalemi (mnu-0003); kalemsiz satırda "" */
+  menuItemId: string;
+  name: string;
+  size: OrderLineSize;
+  /** Seçenekler, "M · yulaf · +1 shot"; yoksa "" */
+  detail: string;
+  qty: number;
+}
+
+export interface SiteOrder {
+  id: string;
+  orderNo: number;
+  stage: OrderStage;
+  fulfillment: OrderFulfillment;
+  /** Nereye: "Masa 4", "Gel-al", "Kurye" (sitenin sipariş zilindekiyle aynı) */
+  label: string;
+  /** Müşterinin yalnız adı (gel-al'da seslenmek için); bilinmiyorsa "" */
+  firstName: string;
+  /** Planlı saat (ISO); "" = hemen */
+  scheduledFor: string;
+  paidAt: string;
+  lines: SiteOrderLine[];
+  /** Siparişin sitenin panelindeki sayfası ("/admin/siparisler/ord-0042"); güvenli değilse "" (bağlantı yok) */
+  path: string;
+}
+
+export interface SiteOrderList {
+  /** Sitenin yanıt anındaki saati (eski yanıt yenisinin üstüne yazılmasın) */
+  now: string;
+  /** false: sitede 200'den çok açık sipariş var, liste kısa */
+  complete: boolean;
+  orders: SiteOrder[];
+  /** Okunamayıp atlanan sipariş sayısı */
+  skipped: number;
+}
+
+/** Sitenin yanıtı beklenen biçimde değil: yöneticiye gösterilecek açıklamayla */
+export class SiteOrdersFormatError extends Error {}
+
+const iso = z
+  .string()
+  .max(40)
+  .refine((v) => Number.isFinite(Date.parse(v)), "Geçersiz zaman");
+const text = (max: number) =>
+  z
+    .string()
+    .catch("")
+    .transform((v) => Array.from(v.replace(/\s+/g, " ").trim()).slice(0, max).join(""));
+
+/** Sipariş kimliği: sitenin "ord-0042" biçimi ve benzerleri (yol ve anahtar olarak güvenli) */
+export const SITE_ORDER_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** Sitenin panelindeki sayfa: yalnız /admin altı, başka siteye çıkamaz (//, \, .. ve boşluk yok) */
+const SAFE_PATH = /^\/admin\/[A-Za-z0-9_\-.~%/]{1,200}$/;
+
+export function safeOrderPath(path: unknown): string {
+  if (typeof path !== "string" || !SAFE_PATH.test(path) || path.includes("//") || path.includes("..")) return "";
+  return path;
+}
+
+const lineSchema = z.object({
+  menuItemId: z
+    .string()
+    .catch("")
+    .transform((v) => (/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v) ? v : "")),
+  name: text(80).transform((v) => v || "Ürün"),
+  size: z.enum(["M", "L", "single"]).catch("single"),
+  detail: text(160),
+  qty: z.number().int().min(1).max(999),
+});
+
+const orderSchema = z.object({
+  id: z.string().regex(SITE_ORDER_ID),
+  orderNo: z.number().int().min(0).catch(0),
+  stage: z.enum(["new", "preparing", "ready"]),
+  fulfillment: z.enum(["table", "pickup", "delivery"]),
+  label: text(40),
+  firstName: text(40),
+  scheduledFor: z
+    .string()
+    .catch("")
+    .transform((v) => (v && Number.isFinite(Date.parse(v)) ? v.slice(0, 40) : "")),
+  paidAt: iso,
+  lines: z.array(lineSchema).min(1).max(SITE_ORDER_LINES_MAX),
+  path: z.unknown().transform(safeOrderPath),
+});
+
+const listSchema = z.object({
+  now: iso,
+  complete: z.boolean(),
+  orders: z.array(z.unknown()).max(SITE_ORDERS_MAX),
+});
+
+const FALLBACK_LABEL: Record<OrderFulfillment, string> = { table: "Masa", pickup: "Gel-al", delivery: "Kurye" };
+
+/** İlk sorunun yeri, ör. "orders" */
+function where(error: z.ZodError): string {
+  const issue = error.issues[0];
+  return issue?.path.length ? issue.path.join(".") : "biçim";
+}
+
+/**
+ * Okuma ucunun yanıtı. Tanınmayan sürüm ya da bozuk iskelet: SiteOrdersFormatError. Tek bir siparişin bozuk alanı ya
+ * da iki kez geçen kimlik: o sipariş atlanır (`skipped`).
+ */
+export function parseSiteOrders(json: unknown): SiteOrderList {
+  const version = json && typeof json === "object" ? (json as { version?: unknown }).version : undefined;
+  if (version !== SITE_ORDERS_VERSION) {
+    throw new SiteOrdersFormatError(
+      version === undefined
+        ? "Sitenin sipariş yanıtı okunamadı (sürüm yok)"
+        : `Sitenin sipariş listesi tanınmayan sürümde (${String(version).slice(0, 20)}); panel güncel değil`,
+    );
+  }
+  const parsed = listSchema.safeParse(json);
+  if (!parsed.success) throw new SiteOrdersFormatError(`Sitenin sipariş listesi okunamadı (${where(parsed.error)})`);
+  const orders: SiteOrder[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+  for (const raw of parsed.data.orders) {
+    const r = orderSchema.safeParse(raw);
+    if (!r.success || seen.has(r.data.id)) {
+      skipped++;
+      continue;
+    }
+    seen.add(r.data.id);
+    orders.push({ ...r.data, label: r.data.label || FALLBACK_LABEL[r.data.fulfillment] });
+  }
+  return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped };
+}

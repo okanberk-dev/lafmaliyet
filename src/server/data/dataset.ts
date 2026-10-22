@@ -7,6 +7,7 @@ import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { getDb, schema as s } from "@/server/db";
+import { loadSiteSales } from "@/server/site-sales/sync";
 
 export async function loadSettings(): Promise<Settings> {
   const rows = await getDb().select().from(s.settings);
@@ -40,6 +41,7 @@ export async function loadDataset(): Promise<Dataset> {
     expenseCategories,
     expenseEntries,
     wasteEntries,
+    siteSales,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -69,6 +71,8 @@ export async function loadDataset(): Promise<Dataset> {
         factor: s.wasteEntries.factor,
       })
       .from(s.wasteEntries),
+    // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md)
+    loadSiteSales(),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -107,6 +111,8 @@ export async function loadDataset(): Promise<Dataset> {
       active: p.active,
       showOnMenu: p.showOnMenu,
       sortOrder: p.sortOrder,
+      siteMenuId: p.siteMenuId,
+      siteMenuSlot: p.siteMenuSlot,
     })),
     recipeItems,
     months: months.map((m) => ({
@@ -206,6 +212,7 @@ export async function loadDataset(): Promise<Dataset> {
       sortOrder: c.sortOrder,
     })),
     wasteEntries,
+    siteSales,
     expenseEntries: expenseEntries.map((e) => ({
       id: e.id,
       date: e.date,

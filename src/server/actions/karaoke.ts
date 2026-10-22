@@ -1,21 +1,26 @@
 "use server";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { extensionWindow, overlapConflict, siteOverlaps, type OverlapAction, type OverlapConflict } from "@/lib/karaoke/overlap";
 import { durationLabel, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
-import { bumpKaraokeVersion } from "@/server/karaoke/board";
+import { bumpKaraokeVersion, toSessionDTO } from "@/server/karaoke/board";
 import { syncKaraoke } from "@/server/karaoke/sync";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zOptText } from "./util";
+import { attempt, UserError, zOptText, type ActionResult } from "./util";
 
 // Karaoke sayacı: personel ve yönetici kullanır. Sitenin rezervasyon alanlarına (saat, durum, kişi) dokunulmaz;
 // panel yalnızca kendi sayaç alanlarını (uzatma, bitti) yazar ve rezervasyonsuz sayaç açar. Her değişiklik karaoke
 // sayacını artırır: açık sekmeler bir sonraki kontrolde yeni hâli alır.
+//
+// Oda tektir: rezervasyonsuz sayaç ya da uzatma, sitede o saatte hâlâ geçerli bir rezervasyonla çakışıyorsa kaydedilmez;
+// eylem çakışmayı döner, ekran personele sorar ve onaylanınca `force` ile yeniden gönderir (kesin engel değil: bar,
+// gelenin rezervasyonu yapan grup olduğunu bilebilir). Kural src/lib/karaoke/overlap.ts'te (docs/KARAOKE.md).
 
 const zId = z.number().int().positive();
 
@@ -23,14 +28,40 @@ const timerSchema = z.object({
   minutes: z.number().int().min(5, "En az 5 dakika").max(12 * 60, "En fazla 12 saat"),
   label: zOptText(60),
   guests: z.number().int().min(1).max(100).nullish(),
+  /** Çakışma soruldu, personel "yine de" dedi */
+  force: z.boolean().optional(),
 });
 
-/** Rezervasyonsuz gelen grup için sayaç: şimdi başlar, verilen süre sonra alarm çalar */
-export async function startKaraokeTimer(input: z.input<typeof timerSchema>) {
+/** [start, end) aralığıyla çakışan, sitede hâlâ geçerli rezervasyonlar (`excludeId`: uzatılan oturumun kendisi) */
+async function siteConflict(window: { start: number; end: number }, action: OverlapAction, excludeId?: number): Promise<OverlapConflict | null> {
+  const rows = await getDb()
+    .select()
+    .from(s.karaokeSessions)
+    .where(
+      and(
+        eq(s.karaokeSessions.source, "site"),
+        lt(s.karaokeSessions.startsAt, new Date(window.end)),
+        // Sol taraf sütun değil, ifade: sürücü Date'i kendisi çevirmez, ISO metni verilir (board.ts loadSessions gibi)
+        gt(sql`${s.karaokeSessions.endsAt} + make_interval(mins => ${s.karaokeSessions.extraMinutes})`, new Date(window.start).toISOString()),
+      ),
+    )
+    .limit(50);
+  return overlapConflict(siteOverlaps(window, rows.map((r) => toSessionDTO(r, { admin: false })), excludeId), action, Date.now());
+}
+
+/**
+ * Rezervasyonsuz gelen grup için sayaç: şimdi başlar, verilen süre sonra alarm çalar. O saatte sitede geçerli bir
+ * rezervasyon varsa (ve `force` yoksa) kaydedilmez, `{ conflict }` döner.
+ */
+export async function startKaraokeTimer(input: z.input<typeof timerSchema>): Promise<ActionResult<{ id: number; conflict?: undefined } | { id?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
     const me = await requireUser();
     const data = timerSchema.parse(input);
     const now = new Date();
+    if (!data.force) {
+      const conflict = await siteConflict({ start: now.getTime(), end: now.getTime() + data.minutes * 60_000 }, "start");
+      if (conflict) return { conflict };
+    }
     const db = getDb();
     const [row] = await db
       .insert(s.karaokeSessions)
@@ -47,23 +78,39 @@ export async function startKaraokeTimer(input: z.input<typeof timerSchema>) {
       })
       .returning({ id: s.karaokeSessions.id });
     await bumpKaraokeVersion();
-    await logActivity(me, "Karaoke sayacı başlatıldı", `${data.label ?? "Rezervasyonsuz"} · ${durationLabel(data.minutes)}`);
+    await logActivity(
+      me,
+      "Karaoke sayacı başlatıldı",
+      `${data.label ?? "Rezervasyonsuz"} · ${durationLabel(data.minutes)}${data.force ? " · sitedeki rezervasyonla çakışmasına rağmen" : ""}`,
+    );
     refresh();
     return { id: row.id };
   });
 }
 
-/** Süre uzatma (+15 dk gibi); süresi dolmuş ve susturulmuş oturum yeniden açılır */
-export async function extendKaraokeSession(id: number, minutes: number) {
+/**
+ * Süre uzatma (+15 dk gibi); süresi dolmuş ve susturulmuş oturum yeniden açılır. Eklenen süre sitedeki geçerli bir
+ * rezervasyonla çakışıyorsa (ve `force` yoksa) uzatılmaz, `{ conflict }` döner.
+ */
+export async function extendKaraokeSession(
+  id: number,
+  minutes: number,
+  opts: { force?: boolean } = {},
+): Promise<ActionResult<{ extraMinutes: number; conflict?: undefined } | { extraMinutes?: undefined; conflict: OverlapConflict }>> {
   return attempt(async () => {
     const me = await requireUser();
     const sid = zId.parse(id);
     const add = z.number().int().min(5).max(240).parse(minutes);
+    const force = z.boolean().optional().parse(opts?.force);
     const db = getDb();
     const [row] = await db.select().from(s.karaokeSessions).where(eq(s.karaokeSessions.id, sid)).limit(1);
     if (!row) throw new UserError("Oturum bulunamadı; sayfayı yenileyin");
     if (row.status === "cancelled") throw new UserError("İptal edilmiş rezervasyon uzatılamaz");
     if (row.extraMinutes + add > 12 * 60) throw new UserError("En fazla 12 saat uzatılabilir");
+    if (!force) {
+      const conflict = await siteConflict(extensionWindow(toSessionDTO(row, { admin: false }), add), "extend", row.id);
+      if (conflict) return { conflict };
+    }
     await db
       .update(s.karaokeSessions)
       .set({ extraMinutes: row.extraMinutes + add, endedAt: null, endedBy: null, updatedAt: new Date() })

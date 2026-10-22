@@ -5,8 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
+import { ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
@@ -23,6 +25,8 @@ import { liveNow, patchLive, refreshLive, useLive } from "./store";
 const FIRED_KEY = "laf:calan-uyarilar";
 /** Duyurulan karaoke olayları (aynı yeni rezervasyon için iki kez zil çalmasın) */
 const SEEN_KEY = "laf:duyurulan-olaylar";
+/** Bu cihazın gördüğü laffogato.net siparişleri (aynı yeni sipariş için iki kez zil çalmasın) */
+const SEEN_ORDERS_KEY = "laf:gorulen-siparisler";
 
 function loadKeys(key: string): Set<string> {
   try {
@@ -58,7 +62,8 @@ async function notify(title: string, body: string, tag: string, url: string, opt
 /**
  * Panelin uyarı motoru (kabukta bir kez; hangi ekranda olunursa olsun çalışır): canlı veriyi yönetir, karaoke
  * oturumlarının başlangıç / az kaldı / süre doldu uyarılarını ve saatli kişisel hatırlatmaları zamanında çalar, yeni
- * rezervasyonda zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
+ * rezervasyonda ve laffogato.net'ten gelen yeni uygulama siparişinde (bu cihazda sipariş zili açıksa; masa siparişi
+ * daha uzun) zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
  *
  * İstek bütçesi: bildirim açıkken yedek kontrol 10 dakikada bir, kapalıyken dakikada bir; alarm çalarken (başka
  * cihazda susturulursa burada da sussun) 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
@@ -70,8 +75,11 @@ export function AlertCenter({ role }: { role: Role }) {
   const pathname = usePathname();
   const audio = useAudioState();
   const [busy, setBusy] = useState<number | null>(null);
+  /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur */
+  const [clash, setClash] = useState<{ s: KaraokeSessionDTO; minutes: number; message: string } | null>(null);
   const fired = useRef<Set<string> | null>(null);
   const seen = useRef<Set<string> | null>(null);
+  const seenOrders = useRef<Set<string> | null>(null);
   const bursts = useRef(new Map<string, () => void>());
   const pathRef = useRef(pathname);
   useEffect(() => {
@@ -116,7 +124,10 @@ export function AlertCenter({ role }: { role: Role }) {
       const msg = e.data as { type?: string; kind?: string; title?: string; body?: string; ring?: boolean } | null;
       if (msg?.type !== "laf:push") return;
       // Servis çalışanına yanıt: sesi bu sekme (seçilen hoparlörden) çalacaksa sistem bildirimi sessiz gösterilir
-      const willRing = prefs.sound && audioState() === "ready" && (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")));
+      const willRing =
+        prefs.sound &&
+        audioState() === "ready" &&
+        (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")) || (msg.kind === "orders" && prefs.orderAlerts));
       e.ports[0]?.postMessage({ willRing });
       void refreshLive().then(refreshScreen);
       if (msg.kind === "test") {
@@ -126,7 +137,7 @@ export function AlertCenter({ role }: { role: Role }) {
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [prefs.sound, prefs.karaokeAlarms, role, refreshScreen]);
+  }, [prefs.sound, prefs.karaokeAlarms, prefs.orderAlerts, role, refreshScreen]);
 
   // Ses çıkışı: bu cihazda seçilen hoparlör (Bluetooth hoparlörde müzik çalarken uyarılar bilgisayardan gelsin);
   // hoparlör takılıp çıkınca yeniden uygulanır
@@ -187,6 +198,29 @@ export function AlertCenter({ role }: { role: Role }) {
     }
     if (changed) saveKeys(SEEN_KEY, seen.current);
   }, [data, prefs.sound, prefs.karaokeAlarms, role, router]);
+
+  // laffogato.net'ten yeni uygulama siparişi: bu cihazın görmediği her yeni (`new`) sipariş bir kez çalar; masa siparişi
+  // önce ve daha uzun. Zil kapalı cihazda da görülmüş sayılır (sonradan açılınca eskiler için çalmasın).
+  useEffect(() => {
+    // Yayın sırasında eski sunucudan gelen yanıtta sipariş alanı olmayabilir
+    if (!data?.orders) return;
+    const first = seenOrders.current === null;
+    seenOrders.current ??= loadKeys(SEEN_ORDERS_KEY);
+    const { ring, markSeen } = ordersToRing(data.orders.list, seenOrders.current, { first, nowMs: liveNow() });
+    if (!markSeen.length) return;
+    for (const id of markSeen) seenOrders.current.add(id);
+    saveKeys(SEEN_ORDERS_KEY, seenOrders.current);
+    if (!ring.length || !prefs.orderAlerts) return;
+    const table = ring.some((o) => o.fulfillment === "table");
+    if (prefs.sound) play(table ? "table" : "ring");
+    const msg = ringMessage(ring);
+    (table ? toast.warning : toast.success)(msg.title, {
+      description: msg.body,
+      duration: table ? 30_000 : 15_000,
+      action: { label: "Gör", onClick: () => router.push("/panel/karaoke") },
+    });
+    void notify(msg.title, msg.body, `siparis-${ring[0].id}`, "/panel/karaoke", { silent: prefs.sound && audioState() === "ready" });
+  }, [data, prefs.orderAlerts, prefs.sound, router]);
 
   const fire = useCallback(
     (a: PlannedAlarm) => {
@@ -310,16 +344,22 @@ export function AlertCenter({ role }: { role: Role }) {
     void refreshLive().then(refreshScreen);
   }
 
-  async function extend(s: KaraokeSessionDTO, minutes: number) {
+  async function extend(s: KaraokeSessionDTO, minutes: number, force = false) {
     setBusy(s.id);
-    patchLive((d) => ({
-      ...d,
-      karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, extraMinutes: x.extraMinutes + minutes, endedAt: null } : x)) },
-    }));
-    const res = await extendKaraokeSession(s.id, minutes);
+    const res = await extendKaraokeSession(s.id, minutes, { force });
     setBusy(null);
-    if (res.ok) toast.success(`${sessionName(s)}: +${minutes} dk`, { description: `Yeni bitiş ${trClock(sessionEnd(s) + minutes * 60_000).time}` });
-    else toast.error(res.error);
+    if (res.ok && res.data.conflict) {
+      // Sitedeki bir rezervasyonla çakışıyor: uzatılmadı, personele sorulur
+      setClash({ s, minutes, message: res.data.conflict.message });
+      return;
+    }
+    if (res.ok) {
+      patchLive((d) => ({
+        ...d,
+        karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, extraMinutes: x.extraMinutes + minutes, endedAt: null } : x)) },
+      }));
+      toast.success(`${sessionName(s)}: +${minutes} dk`, { description: `Yeni bitiş ${trClock(sessionEnd(s) + minutes * 60_000).time}` });
+    } else toast.error(res.error);
     void refreshLive().then(refreshScreen);
   }
 
@@ -367,6 +407,19 @@ export function AlertCenter({ role }: { role: Role }) {
           </div>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={clash !== null}
+        onClose={() => setClash(null)}
+        onConfirm={() => {
+          const c = clash;
+          setClash(null);
+          if (c) void extend(c.s, c.minutes, true);
+        }}
+        title="Sitede rezervasyon var"
+        description={clash?.message}
+        confirmLabel="Yine de uzat"
+        tone="primary"
+      />
       {needsSound ? (
         <button
           type="button"

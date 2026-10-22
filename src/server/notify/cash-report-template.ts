@@ -7,6 +7,7 @@
 import { CASH_TOLERANCE, computeCash, paymentLines, reportSubject, whatsappText, type CashReportFields, type DayWaste } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
+import type { TillOnlineRow } from "@/lib/site-sales/calc";
 
 import { APP_URL } from "./digest-template";
 
@@ -44,7 +45,19 @@ function section(title: string, rows: string, warning?: string | null) {
 
 export function renderCashReport(
   f: CashReportFields,
-  meta: { by: string; revision: number; submittedAt: Date; waste?: DayWaste | null; /** Panelde kayıtlı ikramın menü fiyatıyla değeri */ ikramValue?: number | null },
+  meta: {
+    by: string;
+    revision: number;
+    submittedAt: Date;
+    waste?: DayWaste | null;
+    /** Panelde kayıtlı ikramın menü fiyatıyla değeri */
+    ikramValue?: number | null;
+    /**
+     * laffogato.net'in o günkü online satışı ve karaoke ön ödemesi (bilgi; kasadan geçmez, kasa farkına girmez). Site
+     * ulaşılamadıysa null: satır yazılmaz.
+     */
+    online?: TillOnlineRow | null;
+  },
 ) {
   const c = computeCash(f);
   const tone = TONE[c.kind];
@@ -97,6 +110,13 @@ export function renderCashReport(
           }),
         ].join("\n");
   const link = `${APP_URL}/panel/kasa?gun=${f.date}`;
+  // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
+  const onlineRows = meta.online
+    ? [
+        row("Online (site + uygulama)", money(meta.online.online), { sub: "uygulama ve web siparişleri, iadeler düşülmüş" }),
+        row("Karaoke ön ödeme", money(meta.online.karaoke)),
+      ].join("\n")
+    : "";
 
   const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(subject)}</title></head>
 <body style="margin:0;padding:0;background:#f4f4f5;-webkit-text-size-adjust:100%;font-family:${FONT}">
@@ -128,6 +148,7 @@ export function renderCashReport(
     ${section("Kasa (nakit)", cashRows)}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
     ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
+    ${onlineRows ? section("laffogato.net (kasadan geçmez)", onlineRows, "Bilgi için: kasa farkına ve Z raporuna girmez.") : ""}
     ${f.note ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:18px"><tr><td style="background:#f4f4f5;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:14px;line-height:20px;color:#3f3f46"><strong>Not:</strong> ${esc(f.note)}</td></tr></table>` : ""}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
       <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
@@ -140,6 +161,6 @@ export function renderCashReport(
 </td></tr></table>
 </body></html>`;
 
-  const text = `${whatsappText(f, meta).replace(/\*/g, "")}\n\nPanelde aç: ${link}`;
+  const text = `${whatsappText(f, meta).replace(/\*/g, "")}${meta.online ? `\n\n${meta.online.text}` : ""}\n\nPanelde aç: ${link}`;
   return { subject, html, text };
 }

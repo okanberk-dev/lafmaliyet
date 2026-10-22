@@ -1,8 +1,10 @@
 # Karaoke sayacı ve laffogato.net bağlantısı
 
-Ekran: **Karaoke** (`/panel/karaoke`), personel ve yönetici. Kasadaki tablette ya da bilgisayarda Chrome'da açık
-bırakılır: laffogato.net'te karaoke rezervasyonu açılınca zil çalar (Yemeksepeti / Getir paneli gibi), oturum
-başlayınca kısa ses, bitime az kala uyarı, süre dolunca personel **Haber verdim**'e basana kadar alarm çalar.
+Ekran: **Karaoke** (`/panel/karaoke`, "Barın ekranı"), personel ve yönetici. Kasadaki tablette ya da bilgisayarda
+Chrome'da açık bırakılır: laffogato.net'te karaoke rezervasyonu açılınca zil çalar (Yemeksepeti / Getir paneli gibi),
+oturum başlayınca kısa ses, bitime az kala uyarı, süre dolunca personel **Haber verdim**'e basana kadar alarm çalar.
+Ekranın en üstünde sitenin ödenmiş, açık kafe siparişleri durur (**Uygulama siparişleri**, yeni siparişte zil;
+[SITE-SIPARIS.md](SITE-SIPARIS.md)).
 
 ## Geliştirilmiş istek (prompt)
 
@@ -53,6 +55,28 @@ GET /api/panel/karaoke  ◀─────────────────�
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
 
+### Çakışma uyarısı
+
+Oda tektir. Hızlı sayaç başlatılırken ya da süren bir oturum uzatılırken (+15 / +30 dk; zildeki "uzat" dahil) o saatte
+sitede **geçerli** bir rezervasyon varsa personele sorulur; kesin engel değildir (bar, gelenin rezervasyonu yapan
+grup olduğunu bilebilir):
+
+- Süre seçilirken formun altında sarı satır: "Dikkat: Bu saatte sitede Deniz adına 20:00–22:00 rezervasyon var.
+  Sayacın bitişi 21:30."
+- **Başlat**'a basınca sunucu yeniden bakar (ekranın listesi eski olabilir); çakışma varsa kaydetmeden döner, ekran
+  sorar: "Sitede rezervasyon var · Bu saatte sitede Deniz adına 20:00–22:00 rezervasyon var. Yine de başlatılsın mı?"
+  **Vazgeç** ya da **Yine de başlat** (uzatmada **Yine de uzat**). Onaylanınca kaydedilir ve işlem geçmişine "sitedeki
+  rezervasyonla çakışmasına rağmen" diye düşer.
+- **Geçerli rezervasyon:** sitenin, iptal edilmemiş, ödeme sayfası açık bekleyen tutma değil, süresi dolup düşmemiş ya
+  da iade edilmemiş, panelde "bitti" denmemiş (onay bekleyen kasada ödemeli talep ve ödenmiş rezervasyon geçerlidir).
+  Uç uca gelen saatler (20:00'de biten, 20:00'de başlayan) çakışmaz. Uzatmada yalnız eklenen süre (şimdiki bitişten
+  yeni bitişe) bakılır, uzatılan oturumun kendisi sayılmaz.
+- Panelde ileri bir saate oturum planlanmaz (sayaç hep şimdi başlar); geri açma (yanlışlıkla bitirilen oturum) süreyi
+  değiştirmediği için sormaz.
+
+Kural tek yerde: `src/lib/karaoke/overlap.ts` (ekran ve sunucu eylemi aynı fonksiyonu çağırır;
+`tests/karaoke-cakisma.test.ts`).
+
 ## Kurulum
 
 1. Ortak anahtarı bir kez üretin: `openssl rand -base64 48` (en az 32 karakter).
@@ -60,11 +84,14 @@ GET /api/panel/karaoke  ◀─────────────────�
    (Settings → Environment Variables, Production; "Sensitive" işaretleyin) ve iki projeyi de yeniden yayımlayın
    (Deployments → son yayın → ⋯ → Redeploy). Sıra önemli değil: iki tarafta da tanımlanana kadar bağlantı kapalı
    kalır, bir şey bozulmaz.
-   Aynı anahtar menü bağlantısını da açar (bağlı ürünün fiyatı ve Satışta / Tükendi durumu, [SITE-MENU.md](SITE-MENU.md)).
+   Aynı anahtar menü bağlantısını (bağlı ürünün fiyatı ve Satışta / Tükendi durumu, [SITE-MENU.md](SITE-MENU.md)),
+   bar ekranındaki uygulama siparişlerini ([SITE-SIPARIS.md](SITE-SIPARIS.md)) ve online satışları
+   ([SITE-SATIS.md](SITE-SATIS.md)) da açar. Dördünün durumu tek yerde: **Ayarlar › laffogato.net**.
 3. İsteğe bağlı: `LAFFOGATO_URL` (boşsa `https://laffogato.net`); sitede `PANEL_URL` (boşsa
    `https://ladmin.laffogato.net`). Bildirim anahtarları (VAPID) ilk kullanımda üretilip veritabanında şifreli
    saklanır; isterseniz `VAPID_PUBLIC_KEY` ve `VAPID_PRIVATE_KEY` ile sabitlenir.
-4. Yönetici olarak **Karaoke** ekranını açın: "laffogato.net bağlantısı" kartı **Bağlı** göstermeli.
+4. Yönetici olarak **Karaoke** ekranını açın: "laffogato.net bağlantısı" kartı **Bağlı** göstermeli (kartta
+   **laffogato.net paneli ↗**: sitenin yönetim paneli, yeni sekmede).
 5. Kasadaki cihazda personel hesabıyla **Karaoke**'yi açın ve **Bu cihazda uyarılar** kartından:
    - **Bildirimleri aç** (Chrome izin sorar): sekme arka plandayken ya da kapalıyken de bildirim gelir;
    - ekrana bir kez dokunun (tarayıcı ilk dokunuştan önce ses çaldırmaz; gerekirse sağ altta "Sesli uyarılar için
@@ -142,11 +169,13 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim |
 | `src/server/site-link.ts` | Menü bağlantısıyla ortak: anahtar, sitenin adresi, imzalı istek (8 sn; [SITE-MENU.md](SITE-MENU.md)) |
 | `src/server/karaoke/board.ts` | Oturumlar, sürüm sayacı (ETag), ekran verisi |
-| `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma, bitirme, geri açma, elle eşitleme |
-| `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, kişisel hatırlatmalar; ETag / 304) |
+| `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma (ikisi de sitedeki rezervasyonla çakışmayı sorar), bitirme, geri açma, elle eşitleme |
+| `src/lib/karaoke/overlap.ts` | Çakışma kuralı: odayı tutan rezervasyon, aralık kesişimi, uyarı metni (saf, testli) |
+| `src/app/panel/karaoke/orders-board.tsx` | Ekranın üstündeki uygulama siparişleri ([SITE-SIPARIS.md](SITE-SIPARIS.md)) |
+| `src/app/api/canli/route.ts` | Açık sekmenin canlı verisi (karaoke, uygulama siparişleri, kişisel hatırlatmalar; ETag / 304) |
 | `src/components/panel/live/` | Uyarı motoru: canlı veri, sesler ve hoparlör seçimi, cihaz tercihleri, bildirim aboneliği |
 | `src/lib/audio-output.ts` | Hoparlör listesi, kayıtlı seçimin yeniden bulunması, Bluetooth / bilgisayar hoparlörü tahmini |
 | `src/server/push/` | VAPID, şifreleme, gönderim |
 | `public/sw.js` | Service worker (bildirim gösterme, tıklayınca panele dönme) |
 | `src/lib/karaoke/` | İmza, oturum evreleri, uyarı planı, sitenin yanıtının doğrulanması (saf, testli) |
-| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, şifreleme, hoparlör seçimi ve sessiz bildirim |
+| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı |

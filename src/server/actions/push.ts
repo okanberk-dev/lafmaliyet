@@ -43,8 +43,9 @@ export async function savePushSubscription(input: z.input<typeof subscriptionSch
       .insert(s.pushSubscriptions)
       .values(values)
       .onConflictDoUpdate({ target: s.pushSubscriptions.endpoint, set: values })
-      .returning({ karaoke: s.pushSubscriptions.karaoke, reminders: s.pushSubscriptions.reminders });
-    return { karaoke: row.karaoke, reminders: row.reminders };
+      .returning({ karaoke: s.pushSubscriptions.karaoke, reminders: s.pushSubscriptions.reminders, orders: s.pushSubscriptions.orders });
+    // Sipariş bildirimi seçilmemişse role göre: barın personel cihazında açık, yöneticininkinde kapalı
+    return { karaoke: row.karaoke, reminders: row.reminders, orders: row.orders ?? me.role === "staff" };
   });
 }
 
@@ -60,12 +61,12 @@ export async function deletePushSubscription(endpoint: string) {
   });
 }
 
-/** Bu cihazda hangi bildirimler gelsin */
-export async function setPushTopics(endpoint: string, topics: { karaoke: boolean; reminders: boolean }) {
+/** Bu cihazda hangi bildirimler gelsin (sipariş verilmezse dokunulmaz) */
+export async function setPushTopics(endpoint: string, topics: { karaoke: boolean; reminders: boolean; orders?: boolean }) {
   return attempt(async () => {
     const me = await requireUser();
     const e = z.string().max(1024).parse(endpoint);
-    const t = z.object({ karaoke: z.boolean(), reminders: z.boolean() }).parse(topics);
+    const t = z.object({ karaoke: z.boolean(), reminders: z.boolean(), orders: z.boolean().optional() }).parse(topics);
     const [row] = await getDb()
       .update(s.pushSubscriptions)
       .set({ ...t, updatedAt: new Date() })

@@ -2,6 +2,8 @@
 // Veritabanı satırlarıyla aynı şekle sahiptir ama hiçbir sunucu bağımlılığı yoktur;
 // hem sunucuda hem tarayıcıda (canlı hesap) kullanılabilir.
 
+import type { SiteSalesMonth } from "../site-sales/schema";
+
 export type Unit = "gr" | "ml" | "adet" | "dilim";
 export type CountUnit = "KG" | "LT" | "ADET" | "DİLİM";
 export type Size = "M" | "L" | "Tek";
@@ -77,6 +79,12 @@ export interface Product {
   active: boolean;
   showOnMenu: boolean;
   sortOrder: number;
+  /**
+   * laffogato.net menüsündeki kalem (mnu-0011) ve yuvası (M / L); bağlı değilse boş. Online satışların kafe satırları
+   * bununla ürüne eşlenir (docs/SITE-SATIS.md). Excel verisinde yok.
+   */
+  siteMenuId?: string | null;
+  siteMenuSlot?: "M" | "L" | null;
 }
 
 export interface RecipeItem {
@@ -298,6 +306,11 @@ export interface Dataset {
   expenseEntries?: ExpenseEntry[];
   /** Zayi ve ikram kayıtları (yoksa boş) */
   wasteEntries?: WasteEntry[];
+  /**
+   * laffogato.net'ten çekilen online satışlar, ay başına bir kayıt (yoksa boş). Kâr-zararda ayrı gelir satırları, kafe
+   * satırları tüketimde ayrı bir kaynak (docs/SITE-SATIS.md). Hiç çekilmemiş ay yoktur (0 değil).
+   */
+  siteSales?: SiteSalesMonth[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
 }
