@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { SYSTEM_ALERT_HELP } from "../src/lib/job-health";
-import type { UpcomingItem } from "../src/lib/reminders";
-import { APP_URL, renderDigest, renderSystemAlert, type DigestInvoices, type DigestPrices } from "../src/server/notify/digest-template";
+import { digestSummary, type UpcomingItem } from "../src/lib/reminders";
+import { APP_URL, invoiceNewsOf, renderDigest, renderSystemAlert, type DigestInvoices, type DigestPrices } from "../src/server/notify/digest-template";
 
 const NBSP = " ";
 
@@ -142,4 +142,65 @@ test("bekçi e-postası: konu ilk sorun, ne yapılacağı ve panel bağlantısı
   assert.match(two.html, /<h1[^>]*>2 sistem uyarısı<\/h1>/);
   assert.ok(two.html.includes("Eşitlemeyi sabah işi yaptı &lt;tamam&gt;."));
   assert.ok(!two.html.includes("<tamam>"));
+});
+
+// ---------------------------------------------------------------- Onay bekleyen fiyatlar (Paraşüt bölümü)
+
+const holds = (fresh: number): DigestInvoices => ({
+  items: [],
+  reviewCount: 0,
+  syncError: null,
+  priceHolds: {
+    count: 2,
+    fresh,
+    items: [
+      { name: "Süt <2,5>", pct: 0.52 },
+      { name: "Kahve", pct: -0.45 },
+    ],
+  },
+});
+
+test("e-posta: onay bekleyen fiyatlar kontrol kutusundan sonra turuncu kutuda; tek haberse konu ve düğme ona", () => {
+  const { subject, html, text } = renderDigest([], "2026-10-22", holds(1));
+  assert.equal(subject, "Sabah özeti: 2 fiyat onay bekliyor");
+  assert.match(html, /<h1[^>]*>2 hammadde fiyatı onay bekliyor<\/h1>/);
+  assert.ok(html.includes("2 hammadde fiyatı onay bekliyor (Süt &lt;2,5&gt; +%52, Kahve −%45). Faturadaki fiyat şimdikinden %40'tan fazla farklı."));
+  assert.ok(html.includes(`href="${APP_URL}/panel/hammaddeler#fiyat-onayi"`));
+  assert.ok(html.includes(">Hammaddeleri aç</a>"));
+  assert.ok(text.includes(`2 hammadde fiyatı onay bekliyor (Süt <2,5> +%52, Kahve −%45): ${APP_URL}/panel/hammaddeler#fiyat-onayi`));
+  assert.ok(text.endsWith(`Hammaddeleri aç: ${APP_URL}/panel/hammaddeler#fiyat-onayi`));
+  // Kontrol bekleyen kutusundan sonra
+  const both = renderDigest([], "2026-10-22", { ...holds(1), reviewCount: 3 }).html;
+  assert.ok(both.indexOf("faturanın kategorisi tahminle yazıldı") < both.indexOf("hammadde fiyatı onay bekliyor ("));
+});
+
+test("e-posta konusu: yeni onaya düşen fiyat ötekilerin arkasına eklenir; eskisi yalnız bölümde görünür", () => {
+  const withInvoices: DigestInvoices = { ...invoices, priceHolds: holds(1).priceHolds };
+  assert.equal(renderDigest([], "2026-10-22", withInvoices, prices).subject, "Sabah özeti: 2 yeni fatura · 2 fiyat onay bekliyor · 1 hammaddeye zam");
+  assert.equal(renderDigest(rows, "2026-10-22", holds(1), prices).subject, "Ödeme hatırlatması: 1 gecikmiş, 1 bugün, 1 yaklaşan · 2 fiyat onay bekliyor · 1 hammaddeye zam");
+  assert.equal(renderDigest([], "2026-10-22", holds(2), null, system).subject, "Sistem uyarısı: Dünkü sabah işi çalışmadı (21 Ekim) · 2 fiyat onay bekliyor");
+  assert.equal(
+    renderDigest([], "2026-10-22", { ...holds(1), syncError: "401" }, prices).subject,
+    "Paraşüt eşitlemesi başarısız · 2 fiyat onay bekliyor · 1 hammaddeye zam",
+  );
+  // Kontrol bekleyen önce gelir
+  assert.equal(renderDigest([], "2026-10-22", { ...holds(1), reviewCount: 3 }).subject, "Sabah özeti: 3 fatura kontrol bekliyor · 2 fiyat onay bekliyor");
+  // Son e-postadan beri yenisi yoksa konu ve başlık değişmez, kutu durur
+  const stale = renderDigest(rows, "2026-10-22", holds(0));
+  assert.equal(stale.subject, "Ödeme hatırlatması: 1 gecikmiş, 1 bugün, 1 yaklaşan");
+  assert.ok(stale.html.includes("2 hammadde fiyatı onay bekliyor ("));
+  const zamOnly = renderDigest([], "2026-10-22", holds(0), prices);
+  assert.equal(zamOnly.subject, "Sabah özeti: 1 hammaddeye zam");
+  assert.ok(zamOnly.html.includes(">Ürünleri aç</a>"));
+  // Fiyat onayı yokken konu eskisi gibi
+  assert.equal(renderDigest([], "2026-10-22", { ...invoices, priceHolds: null }, prices).subject, "Sabah özeti: 2 yeni fatura · 1 hammaddeye zam");
+});
+
+test("e-posta: yalnız yeni onaya düşen fiyat e-postayı gönderir; özet satırı", () => {
+  assert.equal(invoiceNewsOf(holds(1)), true);
+  assert.equal(invoiceNewsOf(holds(0)), false);
+  assert.equal(invoiceNewsOf({ items: [], reviewCount: 4, syncError: null }), false);
+  assert.equal(invoiceNewsOf(invoices), true);
+  assert.equal(digestSummary({ count: 1, invoices: 2, holds: 1, prices: 1 }), "1 hatırlatma · 2 yeni fatura · 1 fiyat onayı · 1 zam");
+  assert.equal(digestSummary({ holds: 0 }), "");
 });

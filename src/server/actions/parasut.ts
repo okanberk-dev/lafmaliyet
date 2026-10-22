@@ -59,17 +59,17 @@ export async function readParasutLines() {
     // Sayfanın süre sınırı 60 sn: son istek en geç 43. saniyede başlar (istek başına 15 sn pay)
     client.setDeadline(started + 58_000);
     const r = await readEInvoiceLines(client, { until: started + 45_000 });
-    if (r.months.length) await applyProductLinks(r.months);
+    const held = r.months.length ? (await applyProductLinks(r.months)).held : 0;
     if (!r.read && !r.failed && r.stoppedBy) throw new UserError(r.stoppedBy);
     if (r.read || r.failed) {
       await logActivity(
         me,
         "E-fatura kalemleri okundu",
-        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}`,
+        `${r.read} fatura, ${r.lines} kalem${r.corrected ? ` · ${r.corrected} tevkifatlı tutar düzeltildi` : ""}${r.remaining ? ` · ${r.remaining} sırada` : ""}${held ? ` · ${held} fiyat onayda` : ""}`,
       );
     }
     refresh();
-    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy };
+    return { read: r.read, lines: r.lines, failed: r.failed, corrected: r.corrected, remaining: r.remaining, stoppedBy: r.stoppedBy, held };
   });
 }
 

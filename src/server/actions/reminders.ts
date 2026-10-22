@@ -24,7 +24,7 @@ import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from 
 import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
-import { loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
+import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
@@ -456,7 +456,7 @@ export async function previewDigest() {
       loadDigestPrices().catch(() => null),
       isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
     ]);
-    const invoiceNews = invoices.items.length > 0 || Boolean(invoices.syncError);
+    const invoiceNews = invoiceNewsOf(invoices);
     const example: UpcomingItem = {
       ref: "preview:0",
       source: "reminder",
@@ -474,7 +474,7 @@ export async function previewDigest() {
     // Gerçek gönderim de yalnız bunlardan biri varsa gider; hiçbiri yoksa örnek satırla gösterilir
     const sample = !due.length && !invoiceNews && !prices && !system.length;
     const rows = sample ? [{ item: example, stage: "due" as const }] : due;
-    const { subject, html } = renderDigest(rows, today, invoiceNews || invoices.reviewCount ? invoices : null, prices, system.length ? { items: system } : null);
+    const { subject, html } = renderDigest(rows, today, invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null, prices, system.length ? { items: system } : null);
     return {
       subject,
       html,
@@ -484,6 +484,7 @@ export async function previewDigest() {
       prices: prices?.changes.length ?? 0,
       syncError: Boolean(invoices.syncError),
       system: system.length,
+      holds: invoices.priceHolds?.fresh ?? 0,
       sample,
     };
   });
