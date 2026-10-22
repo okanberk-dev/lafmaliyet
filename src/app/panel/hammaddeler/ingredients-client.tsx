@@ -44,6 +44,7 @@ import { countUnitsFor } from "@/lib/calc/engine";
 import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc/expr";
 import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
+import { isUnpriced } from "@/lib/count-item";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
@@ -67,14 +68,15 @@ export interface IngredientRow extends Ingredient {
   recentChange?: { pct: number; at: string } | null;
 }
 
-type Filter = "all" | "tahmini" | "kullanilmayan" | "pasif";
+/** fiyatsiz: paket fiyatı girilmemiş (sayımda "Listeye ekle" ile eklenen kalem; zildeki bağlantı ?durum=fiyatsiz) */
+type Filter = "all" | "tahmini" | "fiyatsiz" | "kullanilmayan" | "pasif";
 type SortKey = "name" | "packagePrice" | "unitCost" | "usedIn" | "monthUsage";
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
 
 const PAGE_SIZE = 25;
 /** Görünüm çiplerinin adları (telefon süzgeç özeti de kullanır) */
-const FILTER_LABELS: Record<Filter, string> = { all: "Tümü", tahmini: "Tahmini", kullanilmayan: "Reçetede yok", pasif: "Pasif" };
-const FILTERS: Filter[] = ["all", "tahmini", "kullanilmayan", "pasif"];
+const FILTER_LABELS: Record<Filter, string> = { all: "Tümü", tahmini: "Tahmini", fiyatsiz: "Fiyat yok", kullanilmayan: "Reçetede yok", pasif: "Pasif" };
+const FILTERS: Filter[] = ["all", "tahmini", "fiyatsiz", "kullanilmayan", "pasif"];
 const SORT_KEYS: SortKey[] = ["name", "packagePrice", "unitCost", "usedIn", "monthUsage"];
 
 /** Adresteki sıra: ?sirala=unitCost.desc */
@@ -282,7 +284,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute", compact && "text-[15px] leading-6")}>
             {r.name}
           </span>
-          {r.isEstimate ? (
+          {isUnpriced(r) ? (
+            <Badge tone="red" title="Paket fiyatı girilmedi: maliyetlere ve stok değerine 0 ₺ girer">
+              Fiyat yok
+            </Badge>
+          ) : r.isEstimate ? (
             <Badge tone="amber" dot title={r.note ?? "Faturada bulunamayan, tahmini değer"}>
               Tahmini
             </Badge>
@@ -345,11 +351,14 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
     () => ({
       all: base.filter((r) => r.active).length,
       tahmini: base.filter((r) => r.active && r.isEstimate).length,
+      fiyatsiz: base.filter(isUnpriced).length,
       kullanilmayan: base.filter((r) => r.active && !r.usedIn.length).length,
       pasif: base.filter((r) => !r.active).length,
     }),
     [base],
   );
+  /** "Fiyat yok" çipi yalnız fiyatı girilmemiş malzeme varken (ya da seçiliyken) görünür */
+  const unpricedChip = rows.some(isUnpriced) || chosen === "fiyatsiz";
 
   // Kategori seçeneklerindeki sayılar: seçili görünümün (aktif ya da pasif) malzemeleri
   const categoryCounts = useMemo(() => {
@@ -360,7 +369,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
 
   const visible = useMemo(() => {
     const list = base.filter(
-      (r) => inScope(r, filter) && (filter !== "tahmini" || r.isEstimate) && (filter !== "kullanilmayan" || !r.usedIn.length),
+      (r) =>
+        inScope(r, filter) &&
+        (filter !== "tahmini" || r.isEstimate) &&
+        (filter !== "fiyatsiz" || isUnpriced(r)) &&
+        (filter !== "kullanilmayan" || !r.usedIn.length),
     );
     const byName = (a: IngredientRow, b: IngredientRow) => a.name.localeCompare(b.name, "tr");
     if (!sort) return list.sort((a, b) => catOrder(a.category) - catOrder(b.category) || byName(a, b));
@@ -511,6 +524,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
             Tahmini
           </FilterChip>
+          {unpricedChip ? (
+            <FilterChip active={chosen === "fiyatsiz"} onToggle={() => pick("fiyatsiz")} count={counts.fiyatsiz}>
+              Fiyat yok
+            </FilterChip>
+          ) : null}
           <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan}>
             Reçetede yok
           </FilterChip>
@@ -556,6 +574,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                 Tahmini
               </span>
             </FilterChip>
+            {unpricedChip ? (
+              <FilterChip active={chosen === "fiyatsiz"} onToggle={() => pick("fiyatsiz")} count={counts.fiyatsiz} className={SHEET_CHIP}>
+                Fiyat yok
+              </FilterChip>
+            ) : null}
             <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan} className={SHEET_CHIP}>
               Reçetede yok
             </FilterChip>

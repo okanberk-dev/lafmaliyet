@@ -96,6 +96,7 @@ export async function loadDataset(): Promise<Dataset> {
       priceSource: i.priceSource,
       countUnit: i.countUnit,
       countGroup: i.countGroup,
+      countFrom: i.countFrom,
       sortOrder: i.sortOrder,
       active: i.active,
     })),

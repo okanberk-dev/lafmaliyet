@@ -10,6 +10,7 @@ import {
   HardDriveDownload,
   Info,
   LayoutList,
+  Lightbulb,
   Package,
   Palette,
   Pencil,
@@ -71,7 +72,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
-        personel listede olmayan kalemleri de yazabilir, fiyatını yönetici girer. &quot;Geçen aydan doldur&quot; ek kalemleri de taşır. Ayın ilk 10 gününde ekran, sayımı
+        personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler, fiyatını yönetici girer. &quot;Geçen aydan doldur&quot; ek
+        kalemleri de taşır. Ayın ilk 10 gününde ekran, sayımı
         girilmemişse geçen ayı açar. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
       </>
     ),
@@ -199,6 +201,23 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/urunler", label: "Ürünler" }],
       },
       {
+        id: "personel-yeni-urun",
+        q: "Personel yeni ürünü nasıl ekler?",
+        a: (
+          <>
+            Personel <Path href="/panel/receteler" /> ekranında Yeni ürün öner&apos;e dokunur: adı, kategoriyi, boyları ve her boyun reçetesini yazar; fiyat ve maliyet
+            görmez. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada malzemelerin maliyetini satır satır görüp satış fiyatını yazın, kâr marjı hemen
+            hesaplanır; gerekirse adı ve kategoriyi düzeltin. &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
+            kategoriden); reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz.
+          </>
+        ),
+        icon: Lightbulb,
+        links: [
+          { href: "/panel/onaylar", label: "Reçete onayları" },
+          { href: "/panel/receteler", label: "Reçete defteri" },
+        ],
+      },
+      {
         id: "olcu",
         q: "Shot gramajı / pompa değişti",
         a: (
@@ -260,6 +279,23 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Package,
         links: [{ href: "/panel/hammaddeler", label: "Hammaddeler" }],
+      },
+      {
+        id: "sayim-kalem",
+        q: "Sayım listesine nasıl kalem eklenir?",
+        a: (
+          <>
+            <Path href="/panel/sayim" /> ekranında Listeye ekle: ad, grup, sayım birimi ve isteğe bağlı paket. Personel de ekleyebilir; kalem hemen listeye girer ve
+            bu aydan itibaren her ay sayılır. Fiyatı bilinmediği için 0 ve Tahmini açılır, zil &quot;Fiyatı girilmemiş&quot; der:{" "}
+            <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden paket fiyatını girin (ilk fiyat zam sayılmaz). Yalnız bu ay rafta duran tek seferlik bir
+            şey için sayımdaki Listede olmayanlar yeter.
+          </>
+        ),
+        icon: ClipboardList,
+        links: [
+          { href: "/panel/sayim", label: "Stok sayımı" },
+          { href: "/panel/hammaddeler?durum=fiyatsiz", label: "Fiyatı girilmemiş hammaddeler" },
+        ],
       },
     ],
   },
@@ -459,9 +495,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Bildirim zili",
         a: (
           <>
-            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri üç başlıkta toplar: <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
+            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
+            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
-            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı ve son
+            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
             satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
             e-postası) çalışmadıysa ya da hata verdiyse, ya da son yedek 30 günden eskiyse en üstte <strong className="font-semibold text-ink">Sistem</strong>{" "}
             başlığı çıkar. Bir bildirime dokununca

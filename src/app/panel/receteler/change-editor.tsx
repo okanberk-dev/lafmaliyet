@@ -1,29 +1,21 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Plus, StickyNote, Trash2, Undo2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Undo2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Field, Textarea } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
-import type { Settings } from "@/lib/calc/types";
-import { DEFAULT_SETTINGS, SIZE_LABELS } from "@/lib/constants";
-import { num } from "@/lib/format";
+import { SIZE_LABELS } from "@/lib/constants";
 import { diffRecipe, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
-import { cn } from "@/lib/utils";
 import { proposeRecipeChanges, withdrawRecipeChange } from "@/server/actions/recipe-requests";
 
-import { catOrder } from "../hammaddeler/categories";
-import { qtyText, resolveQty } from "../urunler/logic";
+import { buildSnapshot, FormulaHelp, RecipeLinesEditor, toRows, useRecipeKit, type LineRow, type ProposeKit } from "./recipe-lines";
 
-export interface ProposeKit {
-  ingredients: { id: number; name: string; unit: string; category: string; active: boolean; packaging: boolean }[];
-  /** Formüllerde kullanılan ölçüler (ShotCift = 18 gr …); yalnızca bunlar gönderilir */
-  params: { name: string; key: string; label: string; unit: string; value: number }[];
-}
+export type { ProposeKit };
 
 export interface EditorVariant {
   id: number;
@@ -34,22 +26,11 @@ export interface EditorVariant {
   myPending: { id: number; after: RecipeSnapshot } | null;
 }
 
-interface Row {
-  key: number;
-  ingredientId: number | null;
-  input: string;
-  note: string;
-  noteOpen: boolean;
-}
-
-let seq = 1;
-const toRows = (snap: RecipeSnapshot): Row[] =>
-  snap.items.map((l) => ({ key: seq++, ingredientId: l.ingredientId, input: qtyText(l.qty, l.qtyExpr), note: l.note ?? "", noteOpen: Boolean(l.note) }));
-
 /**
  * Personelin reçete değişiklik önerisi: boy boy malzeme, miktar (sayı ya da 2*ShotCift gibi formül), satır notu ve
  * hazırlama notu. Fiyat ve maliyet burada yoktur. "Onaya gönder" yalnız gerçekten değişen boyları yollar; yönetici
  * onaylayınca reçete değişir. Bekleyen önerisi olan boy ondan başlar; bugünkü hâline geri getirilirse öneri geri çekilir.
+ * Malzeme satırlarının düzenleyicisi yeni ürün önerisiyle ortak (recipe-lines.tsx).
  */
 export function ChangeEditor({
   productName,
@@ -62,19 +43,7 @@ export function ChangeEditor({
   kit: ProposeKit;
   onClose: () => void;
 }) {
-  const settings = useMemo(() => {
-    const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
-    for (const p of kit.params) out[p.key] = p.value;
-    return out as unknown as Settings;
-  }, [kit.params]);
-  const ingById = useMemo(() => new Map(kit.ingredients.map((i) => [i.id, i])), [kit.ingredients]);
-  const grouped = useMemo(() => {
-    const m = new Map<string, ProposeKit["ingredients"]>();
-    for (const i of kit.ingredients) m.set(i.category, [...(m.get(i.category) ?? []), i]);
-    return [...m.entries()]
-      .sort(([a], [b]) => catOrder(a) - catOrder(b) || a.localeCompare(b, "tr"))
-      .map(([cat, list]) => [cat, [...list].sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
-  }, [kit.ingredients]);
+  const recipeKit = useRecipeKit(kit);
 
   const [active, setActive] = useState(String(variants[0].id));
   const [state, setState] = useState(() =>
@@ -85,18 +54,7 @@ export function ChangeEditor({
   const [askDiscard, setAskDiscard] = useState(false);
 
   /** Satırlardan kaydedilecek reçete; okunamayan satır varsa hata */
-  function build(v: EditorVariant): { snap: RecipeSnapshot; error: string | null } {
-    const st = state[v.id];
-    let error: string | null = null;
-    const items = st.rows.map((r, i) => {
-      const ing = r.ingredientId ? ingById.get(r.ingredientId) : undefined;
-      const q = resolveQty(r.input, settings);
-      if (!error && !ing) error = `${SIZE_LABELS[v.size]}: ${i + 1}. satırda malzeme seçin`;
-      if (!error && q.error) error = `${SIZE_LABELS[v.size]} · ${ing?.name ?? `${i + 1}. satır`}: ${q.error}`;
-      return { ingredientId: ing?.id ?? 0, name: ing?.name ?? "?", unit: ing?.unit ?? "", qty: q.qty, qtyExpr: q.expr, note: r.note.trim() || null };
-    });
-    return { snap: { note: st.note.trim() || null, items }, error };
-  }
+  const build = (v: EditorVariant) => buildSnapshot(state[v.id].rows, state[v.id].note, recipeKit, SIZE_LABELS[v.size]);
 
   const plans = variants.map((v) => {
     const { snap, error } = build(v);
@@ -113,16 +71,7 @@ export function ChangeEditor({
   const v = variants.find((x) => String(x.id) === active) ?? variants[0];
   const plan = plans.find((p) => p.v.id === v.id)!;
   const rows = state[v.id].rows;
-  const setRows = (fn: (rows: Row[]) => Row[]) => setState((s) => ({ ...s, [v.id]: { ...s[v.id], rows: fn(s[v.id].rows) } }));
-  const update = (key: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const move = (idx: number, d: -1 | 1) =>
-    setRows((rs) => {
-      const j = idx + d;
-      if (j < 0 || j >= rs.length) return rs;
-      const copy = [...rs];
-      [copy[idx], copy[j]] = [copy[j], copy[idx]];
-      return copy;
-    });
+  const setRows = (fn: (rows: LineRow[]) => LineRow[]) => setState((s) => ({ ...s, [v.id]: { ...s[v.id], rows: fn(s[v.id].rows) } }));
 
   const requestClose = () => {
     if (busy) return;
@@ -220,90 +169,7 @@ export function ChangeEditor({
           </p>
         ) : null}
 
-        <ul className="space-y-2" aria-label={`${SIZE_LABELS[v.size]} malzemeleri`}>
-          {rows.map((r, idx) => {
-            const ing = r.ingredientId ? ingById.get(r.ingredientId) : undefined;
-            const q = resolveQty(r.input, settings);
-            const hintId = `onr-${v.id}-${r.key}`;
-            return (
-              <li key={r.key} className="rounded-2xl bg-panel p-2.5 ring-1 ring-line">
-                <div className="flex items-start gap-2">
-                  <Select
-                    value={r.ingredientId ?? ""}
-                    onChange={(e) => update(r.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
-                    aria-label={`${idx + 1}. satır malzemesi`}
-                    data-warn={!r.ingredientId ? "true" : undefined}
-                    className="min-w-0 flex-1 font-medium"
-                  >
-                    <option value="">Malzeme seçin…</option>
-                    {grouped.map(([cat, list]) => (
-                      <optgroup key={cat} label={cat}>
-                        {list.map((i) => (
-                          <option key={i.id} value={i.id} disabled={!i.active && i.id !== r.ingredientId}>
-                            {i.name}
-                            {i.active ? "" : " (pasif)"}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </Select>
-                  <IconButton
-                    label={`${ing?.name ?? `${idx + 1}. satır`} satırını çıkar`}
-                    tone="danger"
-                    onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}
-                    className="size-9"
-                  >
-                    <Trash2 size={15} />
-                  </IconButton>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      value={r.input}
-                      onChange={(e) => update(r.key, { input: e.target.value })}
-                      inputMode={/[a-zA-Z*]/.test(r.input) ? "text" : "decimal"}
-                      autoComplete="off"
-                      aria-label={`${ing?.name ?? `${idx + 1}. satır`} miktarı`}
-                      aria-invalid={q.error ? true : undefined}
-                      aria-describedby={hintId}
-                      placeholder="0"
-                      className="w-32 text-right tabular"
-                    />
-                    <span className="min-w-8 text-[13px] text-ink-mute">{ing?.unit ?? ""}</span>
-                  </div>
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <IconButton label="Yukarı taşı" disabled={idx === 0} onClick={() => move(idx, -1)}>
-                      <ArrowUp size={15} />
-                    </IconButton>
-                    <IconButton label="Aşağı taşı" disabled={idx === rows.length - 1} onClick={() => move(idx, 1)}>
-                      <ArrowDown size={15} />
-                    </IconButton>
-                    <IconButton label={r.noteOpen ? "Satır notunu gizle" : "Satır notu ekle"} onClick={() => update(r.key, { noteOpen: !r.noteOpen })} className={cn(r.note && "text-ink")}>
-                      <StickyNote size={15} />
-                    </IconButton>
-                  </div>
-                </div>
-                <p id={hintId} className={cn("mt-1 text-xs", q.error ? "text-bad" : "text-ink-mute")}>
-                  {q.error ?? (q.expr ? `= ${num(q.qty, 3)} ${ing?.unit ?? ""}` : q.echo ? `${q.echo} olarak okundu` : "")}
-                </p>
-                {r.noteOpen ? (
-                  <Input
-                    value={r.note}
-                    onChange={(e) => update(r.key, { note: e.target.value })}
-                    maxLength={300}
-                    placeholder="Satır notu (ör. sıcak sütle)"
-                    aria-label={`${ing?.name ?? `${idx + 1}. satır`} notu`}
-                    className="mt-2"
-                  />
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => setRows((rs) => [...rs, { key: seq++, ingredientId: null, input: "", note: "", noteOpen: false }])}>
-            <Plus size={15} /> Malzeme ekle
-          </Button>
+        <RecipeLinesEditor rows={rows} onChange={setRows} kit={recipeKit} idPrefix={`onr-${v.id}`} label={SIZE_LABELS[v.size]}>
           {plan.edited ? (
             <Button
               variant="ghost"
@@ -321,7 +187,7 @@ export function ChangeEditor({
                 .join(" · ") || "sıra değişti"}
             </Badge>
           ) : null}
-        </div>
+        </RecipeLinesEditor>
 
         <Field label="Hazırlama notu" htmlFor={`onr-not-${v.id}`} hint="Reçete kartının altında yazar (ör. “M = solo, L = doppio”).">
           <Textarea
@@ -333,17 +199,7 @@ export function ChangeEditor({
           />
         </Field>
 
-        <details className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] text-ink-mute">
-          <summary className="cursor-pointer font-medium text-ink-soft">Formüller (ShotCift, Pompa…)</summary>
-          <p className="mt-1.5">Miktara sayı ya da formül yazılabilir: “2*ShotCift”, “Pompa*3”. Ölçüler Ayarlar&apos;dan gelir:</p>
-          <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
-            {kit.params.map((p) => (
-              <li key={p.name}>
-                <code className="font-mono text-info">{p.name}</code> = {num(p.value, 2)} {p.unit} · {p.label}
-              </li>
-            ))}
-          </ul>
-        </details>
+        <FormulaHelp params={kit.params} />
 
         <Field label="Yöneticiye not (isteğe bağlı)" htmlFor="onr-mesaj" hint="Neden değişmeli? Ör. “bardak taşıyor”, “müşteriler az tatlı buluyor”.">
           <Textarea id="onr-mesaj" value={message} onChange={(e) => setMessage(e.target.value)} maxLength={500} rows={2} />

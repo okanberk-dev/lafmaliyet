@@ -60,6 +60,8 @@ export interface Ingredient {
   priceSource: PriceSource;
   countUnit: CountUnit | null;
   countGroup: string | null;
+  /** Sayım listesine girdiği ay (YYYY-MM): önceki aylarda, o ay sayılmadıysa listede çıkmaz; boşsa (Excel'den gelenler) her ayda */
+  countFrom?: string | null;
   sortOrder: number;
   active: boolean;
 }
