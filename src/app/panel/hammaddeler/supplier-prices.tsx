@@ -151,7 +151,7 @@ function SupplierBlock({ r, unit, onNavigate }: { r: SupplierPriceRow; unit: str
         {r.windowCount > 1 && r.min !== null && r.max !== null && r.avg !== null
           ? `12 ayda ${amount(r.min * scale)}–${amount(r.max * scale)} · ort. ${amount(r.avg * scale)} · ${num(r.windowCount)} fatura`
           : r.windowCount === 1
-            ? "12 ayda 1 fatura"
+            ? "1 fatura"
             : "Son 12 ayda faturası yok"}
       </p>
       <button

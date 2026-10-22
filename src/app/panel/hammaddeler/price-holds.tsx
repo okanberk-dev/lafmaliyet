@@ -262,9 +262,8 @@ function HoldItem({
         <p className="text-pretty">
           Faturadaki ürün: {x.productName} ·{" "}
           <span className="whitespace-nowrap tabular">
-            {num(x.quantity, 3)} {unitLabel}
+            {num(x.quantity, 3)} {unitLabel} ·
           </span>{" "}
-          ·{" "}
           <span className="whitespace-nowrap tabular">
             1 {unitLabel} = {num(x.factor, 3)} {x.unit}
           </span>

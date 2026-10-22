@@ -1263,6 +1263,8 @@ export async function applyProductLinks(months?: string[]) {
     }
     if (step === "apply") {
       await db.transaction(async (tx) => {
+        // Önce öneri, sonra hammadde: onay ve geri alma da bu sırayla kilitler (aynı anda çalışınca kilitlenmesinler)
+        if (pending) await supersedeHolds([pending.id], `Daha yeni faturanın fiyatı uygulandı (${bulkPrice(after, ing.unit)})`, tx);
         await tx.update(s.ingredients).set({ packagePrice, packageSize, isEstimate: false }).where(eq(s.ingredients.id, ingredientId));
         await tx.insert(s.ingredientPrices).values({
           ingredientId,
@@ -1271,7 +1273,6 @@ export async function applyProductLinks(months?: string[]) {
           changedBy: "Paraşüt",
           note: `${r.supplier}${r.invoiceNo ? ` ${r.invoiceNo}` : ""} (${r.date})`,
         });
-        if (pending) await supersedeHolds([pending.id], `Daha yeni faturanın fiyatı uygulandı (${bulkPrice(after, ing.unit)})`, tx);
       });
       prices++;
       continue;

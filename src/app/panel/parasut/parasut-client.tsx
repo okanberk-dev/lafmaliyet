@@ -110,7 +110,6 @@ interface Unlinked {
   supplier: string;
 }
 
-/** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 /**
  * Bağlama ya da kalem okuma şimdikinden %40'tan fazla farklı fiyat getirdiyse (onaya düştü, uygulanmadı) bildirime
  * eklenen metin ve Hammaddeler'deki "Onay bekleyen fiyatlar"a götüren düğme
@@ -121,6 +120,7 @@ function heldToast(held: number, router: { push: (href: string) => void }) {
     : { text: "", options: undefined };
 }
 
+/** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 function oneOf<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
