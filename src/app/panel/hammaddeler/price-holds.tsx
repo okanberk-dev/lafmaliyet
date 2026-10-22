@@ -195,7 +195,7 @@ export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: R
                       {d.decidedByName ? ` · ${d.decidedByName}` : ""} · <span className="tabular">{dateTimeTR(d.decidedAt)}</span>
                     </span>
                     {d.status !== "superseded" ? (
-                      <Button size="xs" variant="ghost" disabled={busy} onClick={() => start(() => undo(d.id, d.name))}>
+                      <Button size="xs" variant="ghost" disabled={busy} className="ml-auto" onClick={() => start(() => undo(d.id, d.name))}>
                         Geri al
                       </Button>
                     ) : null}
@@ -253,20 +253,26 @@ function HoldItem({
           {x.invoiceNo ? ` · ${x.invoiceNo}` : ""} ·{" "}
           <Link
             href={`/panel/faturalar?ara=${encodeURIComponent(x.invoiceNo ?? x.supplier)}#fatura-listesi`}
-            className="font-medium text-info hover:underline pointer-coarse:-my-3 pointer-coarse:py-3"
+            className="font-medium whitespace-nowrap text-info hover:underline pointer-coarse:-my-3 pointer-coarse:py-3"
           >
             Faturayı aç
           </Link>
         </p>
+        {/* Telefonda miktar, çarpan ve tutarlar bölünmeden alt satıra geçer */}
         <p className="text-pretty">
           Faturadaki ürün: {x.productName} ·{" "}
-          <span className="tabular">
-            {num(x.quantity, 3)} {unitLabel} · 1 {unitLabel} = {num(x.factor, 3)} {x.unit}
+          <span className="whitespace-nowrap tabular">
+            {num(x.quantity, 3)} {unitLabel}
+          </span>{" "}
+          ·{" "}
+          <span className="whitespace-nowrap tabular">
+            1 {unitLabel} = {num(x.factor, 3)} {x.unit}
           </span>
         </p>
         {x.last ? (
           <p>
-            Önceki fatura: <span className="tabular">{bulkPrice(x.last.unitPrice, x.unit)}</span> · {x.last.supplier} · <span className="tabular">{dateTR(x.last.date)}</span>
+            Önceki fatura: <span className="whitespace-nowrap tabular">{bulkPrice(x.last.unitPrice, x.unit)}</span> · {x.last.supplier} ·{" "}
+            <span className="tabular">{dateTR(x.last.date)}</span>
           </p>
         ) : null}
         <p className="text-pretty">
@@ -276,10 +282,13 @@ function HoldItem({
             <>
               {num(x.impact.products)} ürünün maliyeti artar
               {top ? (
-                <span className="tabular">
+                <>
                   {" "}
-                  · en çok {top.name} · {top.size}: {tl2(top.costBefore)} → {tl2(top.costAfter)}
-                </span>
+                  · en çok {top.name} · {top.size}:{" "}
+                  <span className="whitespace-nowrap tabular">
+                    {tl2(top.costBefore)} → {tl2(top.costAfter)}
+                  </span>
+                </>
               ) : null}
             </>
           ) : (

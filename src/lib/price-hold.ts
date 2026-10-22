@@ -9,7 +9,7 @@
  */
 
 import { priceProduct, type Model } from "./calc/engine";
-import { dateTR } from "./format";
+import { dateTR, num } from "./format";
 
 /** ±%40: bundan büyük fark onaya düşer (metinler "%40'tan fazla" der; değişirse onlar da değişmeli) */
 export const PRICE_HOLD_PCT = 0.4;
@@ -180,9 +180,12 @@ export function livePct(proposedUnit: number, currentUnit: number): number | nul
   return currentUnit > 0 ? proposedUnit / currentUnit - 1 : null;
 }
 
-/** "+%52" / "−%45" */
+/**
+ * "+%52" / "−%45" / "+%1.103". İşaret ile yüzde arasında görünmez kelime birleştirici (U+2060): dar sütunda (zil)
+ * "−" satır sonunda tek başına kalmasın
+ */
 export function signedPct(p: number): string {
-  return `${p >= 0 ? "+" : "−"}%${Math.round(Math.abs(p) * 100)}`;
+  return `${p >= 0 ? "+" : "−"}\u2060%${num(Math.abs(p) * 100)}`;
 }
 
 /** "Süt +%52, Kahve −%45 ve 2 hammadde daha" (en çok 3) */

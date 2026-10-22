@@ -17,7 +17,8 @@ Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlatic
 - **Sabit giderlerden:** Giderler & personel'deki aylık/haftalık/yıllık giderlerden, ilk ödeme tarihi seçilerek;
   gider döneminde tekrar eder.
 
-Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür.
+Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
+bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur.
 
 ## Son ödenenler (geri alma)
 
@@ -46,6 +47,9 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - **Paraşüt'ten gelen yeni faturalar** (son sabah e-postasından bu yana eşitlemenin açtıkları: tedarikçi, tarih,
   kategori, tutar; en çok 10 tanesi listelenir);
 - **kontrol bekleyen** fatura sayısı (kategorisi tahminle yazılmış), bağlantısıyla;
+- **onay bekleyen hammadde fiyatları** (Paraşüt bölümünde, kontrol kutusunun altında): faturada şimdikinden %40'tan
+  fazla farklı gelen, onay bekleyen fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.
+  Bekledikçe bölümde görünür; e-postayı yalnız son Paraşüt bölümlü e-postadan beri onaya düşen fiyat gönderir;
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
 - **hammadde zamları**: son zam bölümlü e-postadan bu yana fiyatı %5'ten fazla artan hammaddeler (eski → yeni
   ₺/kg, ₺/L, ₺/adet) ve fiyatı hedef maliyet oranının altında kalan ürünler, önerilen fiyatlarıyla (en çok 6);
@@ -53,10 +57,11 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni zam ya da sistem uyarısı yoksa e-posta gitmez. Konu öncelik sırasıyla:
-ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, zam eklenir); yoksa sistem uyarısı varsa
-"Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura ya
-da kontrol bekleyen "Sabah özeti: …"; yoksa zam. Paraşüt eşitlemesi bir saat önce ayrı bir işte
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam ya da sistem uyarısı yoksa e-posta gitmez. Konu öncelik
+sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
+yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
+başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay
+bekliyor"); yoksa zam. Paraşüt eşitlemesi bir saat önce ayrı bir işte
 çalışır; o sabah başarısız olduysa e-posta işi önce bir kez daha eşitler. Her ödeme için en fazla üç kez haber
 verilir:
 

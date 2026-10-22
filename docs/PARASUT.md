@@ -159,7 +159,8 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   Tutarlılık'ta böyle bir satır elle düzeltilirse notu silinir ve artık eşitlemeye ait olmaz.
 - "Fiyatı güncelle" açıksa, en yeni faturadaki birim fiyat (iskonto sonrası, KDV hariç) hammaddenin paket fiyatı
   olur, paket boyu çarpan olur ve fiyat geçmişine "Paraşüt" olarak yazılır (değişim %0,5'ten küçükse yazılmaz).
-  Bedava gelen kalem (%100 iskonto) miktara girer, fiyata girmez.
+  Şimdiki birim fiyattan %40'tan fazla farklı fiyat uygulanmaz, onaya düşer (5b). Bedava gelen kalem (%100 iskonto)
+  miktara girer, fiyata girmez.
 - **Öneriler** (`src/lib/product-match.ts`): aynı adlı (boyut hariç) ürün daha önce bağlandıysa o hammadde; çarpanı
   yalnız paket de aynıysa (boy ve adet) alınır, değilse addan yeniden tahmin edilir ("SÜT 1 LT" bağlıyken "SÜT 5 LT").
   Bardak ve kapak boyu (oz, cc) farklıysa ayrı üründür, önceki bağlantı önerilmez (8oz bağlıyken 14oz bardak). Bağlı
@@ -189,6 +190,71 @@ zammın payı önerilir. Fiyatı öneriden düşük ürün uyarı olur:
 - Ürünler › **Hammadde zamları** (`#zamlar`): eski → yeni maliyet, maliyet oranı, birim kâr; **Fiyatı X ₺ yap**
   ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır);
 - ürün kartında not, Hammaddeler'de "↑ %16" rozeti.
+
+Onay bekleyen fiyat (5b) fiyat geçmişine yazılmaz: onaylanana kadar zam uyarısı ve fiyat önerisi çıkmaz; onaylanınca
+zam onay anıyla sayılır.
+
+### 5b. Fiyat onayı (büyük fiyat sıçraması)
+
+Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** birim fiyatından **%40'tan fazla** farklıysa
+(artış ya da düşüş) kendiliğinden uygulanmaz, **onaya düşer** (`src/lib/price-hold.ts`, `applyProductLinks`). Yanlış
+çarpan (koli ↔ adet, kg ↔ gr) ya da tek seferlik bir fatura bütün reçete maliyetlerini sessizce değiştirmesin, sahte
+"Hammadde zammı" uyarısı ve fiyat önerisi çıkmasın. %40 ve altı eskisi gibi sessizce uygulanır (tam %40 uygulanır).
+
+- Şimdiki fiyatı olmayan (0 ₺; personelin sayımdan eklediği kalem) hammaddenin ilk fiyatı doğrudan yazılır. Excel'den
+  gelen tahmini ("Tahmini") fiyat da şimdiki fiyattır: ilk Paraşüt fiyatı ondan %40'tan fazla farklıysa onaya düşer.
+- Su ve buz (fiyatı su faturasından) hiç onaya düşmez.
+
+**Nerede görünür** (yalnız yönetici): Hammaddeler › **Onay bekleyen fiyatlar** (`#fiyat-onayi`), listede "Fiyat
+onayda" rozeti ve hammadde penceresinde not (**Onaya git**), zilde Onaylar başlığı, Genel bakış › Dikkat edilmesi
+gerekenler ("Fiyat onayı: N hammadde"), sabah e-postasının Paraşüt bölümü (yalnız son e-postadan beri gelen öneri
+e-postayı gönderir ve konuya girer), Paraşüt sayfasındaki bağlama bildirimleri (**Bak**) ve eşitleme özeti ("N fiyat
+onaya düştü").
+
+**Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
+aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin
+maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). Fiyat şimdikinin yaklaşık tam katı ya da bölümüyse
+(2–20 ve paket boyları, 1000'e kadar; ±%5) çarpan uyarısı çıkar; önerilen çarpan tam sayıysa **Çarpanı X yap** düğmesi.
+
+- **Onayla:** fiyat yazılır, "Tahmini" kalkar, fiyat geçmişine "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı
+  öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi değişti, fiyat güncellemesi kapandı) ya da faturanın
+  kalemi fiyat kapsamından çıktıysa öneri geçersiz sayılır, fiyat yazılmaz.
+- **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (alınan miktar yine
+  sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
+- **Çarpanı X yap:** bağlantının çarpanı değişir (Paraşüt sayfasındaki düzenlemeyle aynı): öneri geçersiz olur, en yeni
+  fatura yeni çarpanla yeniden değerlendirilir, alınan miktarlar da düzelir.
+- **Geri al** (bildirimde ve kartın **Son kararlar** bölümünde; 30 gün): onay geri alınınca eski paket fiyatı, boyu ve
+  "Tahmini" işareti döner (fiyat o arada değiştiyse geri alınmaz); red geri alınınca kapatılan fiyat güncellemesi
+  yeniden açılır. Öneri yeniden onay bekler. Son kararlar son 3 günü gösterir (geçersiz kalanlar nedeniyle).
+- Toplu onay yok: her öneriye bakılsın. Bekleyen öneri kendiliğinden düşmez.
+
+**Sonraki faturalar:** her en yeni fatura bir kez, her zaman hammaddenin şimdiki fiyatına göre değerlendirilir
+(`parasut.prices`): %0,5'ten az fark bekleyen öneriyi geçersiz sayar ("Daha yeni faturada fiyat aynı"); %40 ve altı
+fiyatı uygular ve bekleyen öneriyi geçersiz sayar; %40'tan fazla fark bekleyen önerinin yerini alır (fiyat öncekine ±%10
+yakınsa "Son N faturada" sayısı artar). Onaylanan fiyat sonrakilerin tabanıdır. Bağlantı silinince, çarpanı ya da
+hammaddesi değişince, "Fiyatı güncelle" kapanınca, fatura kafe dışına taşınınca ya da Paraşüt'te iptal edilen elle
+girilmiş kaydın kalemleri silinince bekleyen öneri geçersiz olur. Fatura silinince öneri de silinir; fiyat yeniden
+önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
+Alınan miktar (Tutarlılık) bekletilmez: çarpanla hesaplanmaya devam eder (çarpan yanlışsa o da yanlıştır).
+
+**Veri:** `ingredient_price_holds`: hammadde başına en çok bir bekleyen öneri (kısmi tekil dizin), fatura anındaki
+kalemin kopyası (kalemler her eşitlemede yeniden yazılır), karar, red notu ve geri alma için değiştirilen fiyat.
+
+### 5c. Tedarikçilere göre fiyat
+
+Hammadde penceresinde (Hammaddeler › hammaddeye dokunun) **Tedarikçilere göre fiyat**: hammaddeye bağlı bütün Paraşüt
+ürünlerinin ("Fiyatı güncelle" kapalı olanlar da) faturalarından tedarikçi tedarikçi birim fiyat (₺/kg, ₺/L, ₺/adet;
+KDV hariç, iskonto düşülmüş; `src/lib/supplier-prices.ts`, `GET /api/hammaddeler/[id]/fiyatlar`). Kafe dışı faturalar
+girmez; onay bekleyen fiyatın faturası da gerçek bir alım olarak listededir.
+
+- Tedarikçiler, Tedarikçiler ekranındaki gibi gruplanır (kart adı, diğer adlar, vergi no; `loadSupplierLedger`);
+  "Paraşüt tedarikçisi" kendi grubundadır. Adına dokununca tedarikçi sayfası açılır.
+- Her tedarikçi: son fiyat ve tarih, bir önceki faturasına göre değişim, en ucuzdan farkı, son 12 ayın en düşük – en
+  yüksek ve miktarla ağırlıklı ortalama fiyatı, faturaları (aynı faturanın kalemleri tek satır).
+- **En ucuz** yalnız son 90 günde en az iki tedarikçiden alınmışsa; son alımı 90 günden eski olan **Eski fiyat**. Sıra:
+  son 90 günde alınanlar ucuzdan pahalıya, sonra eskiler en yeni alım önce.
+- Bedava kalem ve iade fiyata girmez, altta sayısı yazar. Yanlış çarpan ₺/kg'ı burada da bozar; çarpanı düzeltmek ikisini
+  birden düzeltir.
 
 ## 6. Gelen e-faturalar ("içeri al" gerekmez)
 

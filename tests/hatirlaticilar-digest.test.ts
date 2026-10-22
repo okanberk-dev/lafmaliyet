@@ -164,10 +164,11 @@ test("e-posta: onay bekleyen fiyatlar kontrol kutusundan sonra turuncu kutuda; t
   const { subject, html, text } = renderDigest([], "2026-10-22", holds(1));
   assert.equal(subject, "Sabah özeti: 2 fiyat onay bekliyor");
   assert.match(html, /<h1[^>]*>2 hammadde fiyatı onay bekliyor<\/h1>/);
-  assert.ok(html.includes("2 hammadde fiyatı onay bekliyor (Süt &lt;2,5&gt; +%52, Kahve −%45). Faturadaki fiyat şimdikinden %40'tan fazla farklı."));
+  const WJ = "\u2060";
+  assert.ok(html.includes(`2 hammadde fiyatı onay bekliyor (Süt &lt;2,5&gt; +${WJ}%52, Kahve −${WJ}%45). Faturadaki fiyat şimdikinden %40'tan fazla farklı.`));
   assert.ok(html.includes(`href="${APP_URL}/panel/hammaddeler#fiyat-onayi"`));
   assert.ok(html.includes(">Hammaddeleri aç</a>"));
-  assert.ok(text.includes(`2 hammadde fiyatı onay bekliyor (Süt <2,5> +%52, Kahve −%45): ${APP_URL}/panel/hammaddeler#fiyat-onayi`));
+  assert.ok(text.includes(`2 hammadde fiyatı onay bekliyor (Süt <2,5> +${WJ}%52, Kahve −${WJ}%45): ${APP_URL}/panel/hammaddeler#fiyat-onayi`));
   assert.ok(text.endsWith(`Hammaddeleri aç: ${APP_URL}/panel/hammaddeler#fiyat-onayi`));
   // Kontrol bekleyen kutusundan sonra
   const both = renderDigest([], "2026-10-22", { ...holds(1), reviewCount: 3 }).html;

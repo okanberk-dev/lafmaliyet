@@ -221,7 +221,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
             eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
-            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
+            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Faturadaki fiyat şimdikinden %40&apos;tan fazla farklıysa
+            uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
+            Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
             <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
           </>
@@ -230,6 +232,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [
           { href: "/panel/faturalar?durum=kontrol", label: "Kontrol bekleyen faturalar" },
           { href: "/panel/parasut?durum=bekleyen", label: "Bağlanmayı bekleyen ürünler" },
+          { href: "/panel/hammaddeler#fiyat-onayi", label: "Onay bekleyen fiyatlar" },
           { href: "/panel/hammaddeler", label: "Hammaddeler" },
         ],
       },
@@ -462,7 +465,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri üç başlıkta toplar: <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı ve son
-            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
+            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). <strong className="font-semibold text-ink">Onaylar</strong>{" "}
+            başlığında onay bekleyen reçete önerileri ve faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları durur. Günlük işlerden biri (Paraşüt eşitlemesi, sabah
             e-postası) çalışmadıysa ya da hata verdiyse, ya da son yedek 30 günden eskiyse en üstte <strong className="font-semibold text-ink">Sistem</strong>{" "}
             başlığı çıkar. Bir bildirime dokununca
             ilgili ekran açılır; alttaki &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.

@@ -177,13 +177,16 @@ test("holdImpact: sütü kullanan etkin ürünler, en çok değişen önce; dü�
   assert.deepEqual(holdImpact(model, unused.id, 1), { products: 0, top: [] });
 });
 
+/** İşaretle yüzde arasındaki kelime birleştirici (signedPct) */
+const WJ = "\u2060";
+
 test("holdAlert ve özet: boşta yok, tek, beş öneride 've 2 hammadde daha'", () => {
   assert.equal(holdAlert([]), null);
   const one = holdAlert([{ name: "Süt", pct: 0.52 }]);
   assert.deepEqual(one, {
     level: "warning",
     title: "Fiyat onayı: 1 hammadde",
-    detail: "Faturadaki fiyat şimdikinden %40'tan fazla farklı: Süt +%52. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.",
+    detail: `Faturadaki fiyat şimdikinden %40'tan fazla farklı: Süt +${WJ}%52. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır.`,
     href: "/panel/hammaddeler#fiyat-onayi",
   });
   assert.equal(HOLDS_HREF, "/panel/hammaddeler#fiyat-onayi");
@@ -195,10 +198,10 @@ test("holdAlert ve özet: boşta yok, tek, beş öneride 've 2 hammadde daha'", 
     { name: "Kapak", pct: null },
   ]);
   assert.equal(five?.title, "Fiyat onayı: 5 hammadde");
-  assert.match(five?.detail ?? "", /: Süt \+%52, Kahve −%45, Kakao \+%1100 ve 2 hammadde daha\. /);
+  assert.ok(five?.detail.includes(`: Süt +${WJ}%52, Kahve −${WJ}%45, Kakao +${WJ}%1.100 ve 2 hammadde daha. `), five?.detail);
   // Şimdiki fiyatı sonradan 0 yapılmış hammadde: yüzde yazılmaz
   assert.equal(holdsSummary([{ name: "Kapak", pct: null }]), "Kapak");
   assert.equal(livePct(0.05, 0), null);
   assert.ok(Math.abs(livePct(0.0486, 0.032)! - 0.51875) < 1e-12);
-  assert.equal(holdLogText({ name: "Süt", pct: 0.52, supplier: "Sütaş", date: "2026-10-21" }), "Süt +%52 (Sütaş 21.10.2026)");
+  assert.equal(holdLogText({ name: "Süt", pct: 0.52, supplier: "Sütaş", date: "2026-10-21" }), `Süt +${WJ}%52 (Sütaş 21.10.2026)`);
 });
