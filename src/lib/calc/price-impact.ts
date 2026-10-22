@@ -11,6 +11,7 @@
  * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. Excel aktarımı) başlangıçtır.
  */
 
+import { tl } from "../format";
 import { ceilTo, priceProduct, type Model, type ProductStatus } from "./engine";
 
 export interface PriceHistoryRow {
@@ -198,15 +199,21 @@ export function changesSummary(changes: Pick<IngredientChange, "name" | "pct">[]
 
 /**
  * Genel bakış ve zil için uyarı: fiyatı önerilenin altına düşen (ve "böyle kalsın" denmemiş) ürün varsa. Uyarı
- * metni insights.alerts ile aynı biçimde; Ürünler sayfasındaki zam bölümüne götürür.
+ * metni insights.alerts ile aynı biçimde; Ürünler sayfasındaki zam bölümüne götürür. `monthlyLoss`: zamların ayda TL
+ * kâr kaybı (price-loss.ts, PriceLoss.totalLoss); 1 ₺'den azsa ya da verilmezse metin eskisi gibi kalır.
  */
-export function priceAlert(changes: IngredientChange[], actionable: Pick<ProductImpact, "key">[]): { level: "warning"; title: string; detail: string; href: string } | null {
+export function priceAlert(
+  changes: IngredientChange[],
+  actionable: Pick<ProductImpact, "key">[],
+  monthlyLoss?: number | null,
+): { level: "warning"; title: string; detail: string; href: string } | null {
   if (!actionable.length) return null;
   const names = actionable.slice(0, 3).map((p) => p.key.replace("|", " "));
+  const loss = monthlyLoss != null && monthlyLoss >= 1 ? ` Bu zamlar ayda ≈ ${tl(monthlyLoss)} kâr götürüyor.` : "";
   return {
     level: "warning",
     title: `Hammadde zammı: ${actionable.length} ürünün fiyatına bakın`,
-    detail: `${changesSummary(changes)}. ${names.join(", ")}${actionable.length > 3 ? "…" : ""}: maliyet oranı hedefin üstünde, önerilen fiyat hazır.`,
+    detail: `${changesSummary(changes)}. ${names.join(", ")}${actionable.length > 3 ? "…" : ""}: maliyet oranı hedefin üstünde, önerilen fiyat hazır.${loss}`,
     href: "/panel/urunler#zamlar",
   };
 }

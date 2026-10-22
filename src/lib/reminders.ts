@@ -372,6 +372,23 @@ export function reminderCategory(kind: ReminderKind, title: string): ReminderCat
   return kind === "diger" ? "diger" : "odeme";
 }
 
+/**
+ * KDV ödemesi hatırlatıcısı (nakit planının KDV tahmini, docs/NAKIT-PLANI.md): başlıkta "KDV" ya da "katma değer".
+ * Kira ve maaş türü ("Kira KDV'si") ile SGK başlıkları KDV ödemesi sayılmaz.
+ */
+export function isVatReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
+  return /(^|[^a-z])kdv([^a-z]|$)|katma deger/.test(foldTR(r.title));
+}
+
+/**
+ * Tekrarlı KDV hatırlatıcısının tutarı yalnız o döneme aittir (her ay başka): "Ödendi" ve ertelemede seriden silinir,
+ * geri al geri yazar. Silinmezse Eylül'ün tutarı Kasım'da da kesin görünürdü.
+ */
+export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): boolean {
+  return r.repeat !== "none" && r.amount !== null && isVatReminder(r);
+}
+
 /** Zaman çizelgesi grupları: geciken, bugün, bu hafta (pazara kadar), bu ay, daha sonra */
 export type TimelineGroup = "overdue" | "today" | "week" | "month" | "later";
 
@@ -561,6 +578,33 @@ export function monthTitleTR(month: string): string {
 /** "20 Ekim Salı" */
 export function longDateTR(date: string): string {
   return `${Number(date.slice(8, 10))} ${MONTHS_TR[Number(date.slice(5, 7)) - 1]} ${WEEKDAYS_TR[new Date(toUTC(date)).getUTCDay()]}`;
+}
+
+// Ay adının ekleri (ünlü uyumu ve sertleşme ay ay sabit): "Kasım'da", "Ağustos'ta", "Eylül'ün"
+const MONTHS_LOC_TR = ["Ocak'ta", "Şubat'ta", "Mart'ta", "Nisan'da", "Mayıs'ta", "Haziran'da", "Temmuz'da", "Ağustos'ta", "Eylül'de", "Ekim'de", "Kasım'da", "Aralık'ta"];
+const MONTHS_GEN_TR = ["Ocak'ın", "Şubat'ın", "Mart'ın", "Nisan'ın", "Mayıs'ın", "Haziran'ın", "Temmuz'un", "Ağustos'un", "Eylül'ün", "Ekim'in", "Kasım'ın", "Aralık'ın"];
+
+/** Ayın bulunma hâli: "2026-09" (ya da "2026-09-14") → "Eylül'de" */
+export function monthLocativeTR(month: string): string {
+  return MONTHS_LOC_TR[Number(month.slice(5, 7)) - 1];
+}
+
+/** Ayın tamlayan hâli: "2026-09" → "Eylül'ün" */
+export function monthGenitiveTR(month: string): string {
+  return MONTHS_GEN_TR[Number(month.slice(5, 7)) - 1];
+}
+
+// Gün ile ay arasında bölünmez boşluk: satır sarılınca "22" bir satırda, "Ekim" ötekinde kalmasın
+const NBSP = "\u00a0";
+
+/** "2026-11-01" → "1 Kasım" */
+export function dayMonthTR(date: string): string {
+  return `${Number(date.slice(8, 10))}${NBSP}${MONTHS_TR[Number(date.slice(5, 7)) - 1]}`;
+}
+
+/** Günün bulunma hâli: "2026-11-01" → "1 Kasım'da" */
+export function dayLocativeTR(date: string): string {
+  return `${Number(date.slice(8, 10))}${NBSP}${monthLocativeTR(date)}`;
 }
 
 /** "2026-10" + 1 → "2026-11" */

@@ -1,18 +1,25 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   addMonthsAnchored,
   advancePast,
+  dayLocativeTR,
   daysBetween,
   digestSummary,
   dueNotifications,
+  isVatReminder,
+  monthGenitiveTR,
+  monthLocativeTR,
   nextOccurrence,
   presetAnchor,
   presetFirstDate,
   REMINDER_PRESETS,
   todayTR,
   upcomingItems,
+  vatAmountTravels,
   type ReminderRow,
 } from "../src/lib/reminders";
 
@@ -150,4 +157,61 @@ test("son gün şablonu her ayın son gününe kayar", () => {
   assert.equal(anchor, "2026-02-31");
   assert.equal(nextOccurrence(first, "monthly", anchor), "2026-03-31");
   assert.equal(nextOccurrence("2026-03-31", "monthly", anchor), "2026-04-30");
+});
+
+test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş ve SGK değil", () => {
+  for (const [title, kind] of [
+    ["KDV beyannamesi ve ödemesi", "vergi"],
+    ["Kdv ödemesi", "odeme"],
+    ["Eylül KDV'si", "diger"],
+    ["Katma değer vergisi", "vergi"],
+  ] as const) {
+    assert.equal(isVatReminder({ title, kind }), true, title);
+  }
+  for (const [title, kind] of [
+    ["Muhtasar ve prim hizmet beyannamesi", "vergi"],
+    ["SGK prim ödemesi", "vergi"],
+    ["Kira KDV'si", "kira"],
+    ["Kadıköy kira", "kira"],
+    ["Maaş KDV", "maas"],
+  ] as const) {
+    assert.equal(isVatReminder({ title, kind }), false, title);
+  }
+  // Şablondaki KDV hatırlatıcısı KDV'dir
+  const preset = REMINDER_PRESETS.find((p) => p.key === "kdv")!;
+  assert.equal(isVatReminder(preset), true);
+  // Tutarı yalnız tekrarlı ve tutarlı KDV hatırlatıcısında döneme aittir
+  const vat = { title: "KDV beyannamesi ve ödemesi", kind: "vergi" as const, amount: 27_200, repeat: "monthly" as const };
+  assert.equal(vatAmountTravels(vat), true);
+  assert.equal(vatAmountTravels({ ...vat, repeat: "none" }), false);
+  assert.equal(vatAmountTravels({ ...vat, amount: null }), false);
+  assert.equal(vatAmountTravels({ ...vat, title: "Kira", kind: "kira" }), false);
+});
+
+test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
+  const src = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
+  const done = src.slice(src.indexOf("export async function markReminderDone"), src.indexOf("type ReminderDbRow"));
+  assert.match(done, /const clear = next !== null && vatAmountTravels\(r\);/);
+  assert.match(done, /amountCleared: clear/);
+  const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
+  assert.match(postpone, /vatAmountTravels\(r\)/);
+  // Ertelenen dönemin kopyası tutarı taşır
+  assert.match(postpone, /amount: r\.amount,/);
+  assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*amount: r\.amount/);
+  const restore = src.slice(src.indexOf("export async function restoreReminder"), src.indexOf("export async function undoRecentPaid"));
+  assert.match(restore, /snap\.amount !== undefined/);
+  const undo = src.slice(src.indexOf("export async function undoRecentPaid"), src.indexOf("const zPostpone"));
+  // Ödendikten sonra yazılmış tutar ezilmez
+  assert.match(undo, /cur\.amount === null/);
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/payment-ui.tsx"), "utf8"), /KDV tutarı her ay değiştiği için silindi\./);
+});
+
+test("ay adının ekleri: bulunma ve tamlayan hâli", () => {
+  assert.deepEqual(
+    ["2026-01", "2026-04", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"].map(monthLocativeTR),
+    ["Ocak'ta", "Nisan'da", "Ağustos'ta", "Eylül'de", "Ekim'de", "Kasım'da", "Aralık'ta"],
+  );
+  assert.equal(monthGenitiveTR("2026-09"), "Eylül'ün");
+  assert.equal(monthGenitiveTR("2026-07-03"), "Temmuz'un");
+  assert.equal(dayLocativeTR("2026-11-01"), "1\u00a0Kasım'da");
 });

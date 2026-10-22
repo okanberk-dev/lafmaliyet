@@ -89,6 +89,9 @@ export async function runSeed({ reset = false } = {}) {
         // laffogato.net menü durumu da ürün kimliklerine bağlı (kopuk / kaldırılan bağlantılar); ürünler bağlantısız
         // yeniden yüklenir, sonraki eşitleme durumu baştan yazar (docs/SITE-MENU.md)
         await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'menu_sync'`));
+        // Nakit planının tahmin ayarı sabit gider kimliklerine bağlı (fixed:<id>), kimlikler baştan sayar: başka bir
+        // gideri kapatmasın. Bakiye zaten kısa ömürlü; devreden KDV kaydı da gider (docs/NAKIT-PLANI.md)
+        await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'cashflow.plan'`));
       }
 
       await tx.insert(s.settings).values(

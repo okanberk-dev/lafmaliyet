@@ -44,10 +44,10 @@ import {
 import { priceAlert } from "@/lib/calc/price-impact";
 import { monthLabel, monthShort, num, pct, tl } from "@/lib/format";
 import { holdAlert } from "@/lib/price-hold";
-import type { UpcomingItem } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
@@ -55,6 +55,7 @@ import { loadUpcoming } from "@/server/notify/digest";
 import { isParasutConfigured } from "@/server/parasut/config";
 
 import { DashboardAlerts } from "./dashboard-alerts";
+import { DashboardCashPlan } from "./dashboard-cash-plan";
 import {
   actualProfitBreakdown,
   breakEvenBreakdown,
@@ -123,10 +124,13 @@ function Change({ g, prevMonth, prevValue, basis }: { g: number | null; prevMont
   );
 }
 
-/** Ödemeler & hatırlatıcılar listesi; okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu söyler) */
-async function loadPayments(): Promise<UpcomingItem[] | null> {
+/**
+ * Ödemeler & hatırlatıcılar (liste, hatırlatıcılar, ayarlar); okunamazsa sayfa yine açılır ("Bu ayın işleri" bunu
+ * söyler). Nakit planı kartı aynı sonucu paylaşır (ikinci kez okunmaz).
+ */
+async function loadPayments(): Promise<Awaited<ReturnType<typeof loadUpcoming>> | null> {
   try {
-    return (await loadUpcoming()).items;
+    return await loadUpcoming();
   } catch {
     return null;
   }
@@ -168,9 +172,13 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const d = dashboard(model, month);
   // "Bu ayın işleri" kartı eşleşmeyen POS ürünlerini ve ödenmemiş faturaları zaten gösterir: uyarılarda tekrarlanmaz
   // (bildirimlerde alerts() olduğu gibi kalır)
-  // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür)
-  const priceAlerts = await loadPriceAlerts(model).catch(() => null);
-  const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable) : null;
+  // Hammadde zammı yüzünden fiyatı hedefin altına düşen ürünler (Ürünler sayfasındaki zam bölümüne götürür) ve 6
+  // haftalık nakit planı (model ve ödemeler paylaşılır; yüklenemezse kart görünmez, sayfa açılır)
+  const [priceAlerts, cashPlan] = await Promise.all([
+    loadPriceAlerts(model).catch(() => null),
+    upcoming ? loadCashPlan(model, upcoming).catch(() => null) : null,
+  ]);
+  const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
   const hold = holdAlert((await pendingHoldSummary().catch(() => null))?.items ?? []);
   const alertItems = [...(hold ? [hold] : []), ...(zam ? [zam] : []), ...alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href))];
@@ -230,7 +238,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Bu ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım, ödemeler
   const tasks = monthTasks(
     monthTaskFacts(model, month, d.monthState, d.refMonth, {
-      payments: upcoming ? paymentFacts(upcoming, unpaidSummary(model.ds.invoices)) : null,
+      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices)) : null,
       parasut,
     }),
   );
@@ -464,7 +472,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
             kalır, 5/12'lik maliyet kartı 270 px'e iner ve "ürün “Düşük kâr”" kutuları sözcük sözcük kırılırdı */}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="flex min-w-0 flex-col gap-4 xl:col-span-7">
-            {upcoming ? <DashboardPayments items={upcoming} /> : null}
+            {upcoming ? <DashboardPayments items={upcoming.items} /> : null}
+            {cashPlan?.plan.hasData ? <DashboardCashPlan plan={cashPlan.plan} /> : null}
             <DashboardAlerts items={alertItems} className="flex-1" />
           </div>
           <CostCard

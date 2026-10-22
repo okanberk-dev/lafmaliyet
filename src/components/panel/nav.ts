@@ -4,6 +4,7 @@ import {
   BarChart3,
   BellRing,
   Boxes,
+  ChartNoAxesColumn,
   Plug,
   BookOpen,
   CalendarRange,
@@ -90,6 +91,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
       },
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
+      // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
+      {
+        href: "/panel/hatirlaticilar/nakit",
+        label: "Nakit planı",
+        icon: ChartNoAxesColumn,
+        roles: ["admin"],
+        keywords: "nakit akış tahmin bakiye kalan para haftalık plan sıkışık kdv devreden",
+      },
       {
         href: "/panel/giderler",
         label: "Giderler & personel",
@@ -318,6 +327,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/personel": "Personel",
   "/panel/harcamalar": "Harcamalar",
   "/panel/hatirlaticilar": "Ödemeler",
+  "/panel/hatirlaticilar/nakit": "Nakit planı",
   "/panel/sayim": "Stok sayımı",
   "/panel/tutarlilik": "Tutarlılık",
   "/panel/kullanicilar": "Kullanıcılar",

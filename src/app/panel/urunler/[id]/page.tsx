@@ -102,7 +102,8 @@ async function RecipeContent({
   const siteItems = siteLinks.snapshot.at ? siteLinks.snapshot.items : [];
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
-  const impact = (await loadPriceAlerts(model).catch(() => null))?.impacts.find((i) => i.productId === product.id) ?? null;
+  const prices = await loadPriceAlerts(model).catch(() => null);
+  const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
   const history = model.salesMonths.map((m) => ({ month: m, label: monthLabel(m), qty: model.soldByProduct(m).get(product.id) ?? 0 }));
   const siblings = model.products
@@ -183,6 +184,10 @@ async function RecipeContent({
               needsPrice: impact.needsPrice,
               acknowledged: impact.acknowledged,
               drivers: impact.drivers.map((d) => ({ name: d.name, pct: d.pct })),
+              // Zammın bu üründen ayda götürdüğü kâr (son satış ayıyla; satış verisi yoksa cümle yok)
+              monthly: impact.monthly,
+              monthlyQty: impact.monthlyQty,
+              lossBasis: prices?.loss.basis ? { month: prices.loss.basis.month, scale: prices.loss.basis.scale } : null,
             }
           : null
       }

@@ -363,7 +363,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     : [];
   // Hammadde zammı: kimlik ürün sayısı ve son zam tarihinden; yeni zam ya da yeni ürün gelince yeniden okunmamış olur
   const prices = await loadPriceAlerts(model).catch(() => null);
-  const zam = prices ? priceAlert(prices.changes, prices.actionable) : null;
+  const zam = prices ? priceAlert(prices.changes, prices.actionable, prices.loss.totalLoss) : null;
   const lastChange = prices?.changes.map((c) => c.changedAt.slice(0, 10)).sort().at(-1) ?? "";
   const priceNote: PanelNotification[] =
     zam && prices

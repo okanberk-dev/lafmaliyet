@@ -15,6 +15,7 @@ import {
   postponeDate,
   postponePlan,
   todayTR,
+  vatAmountTravels,
   type ReminderRepeat,
   type UpcomingItem,
 } from "@/lib/reminders";
@@ -113,7 +114,9 @@ function addDaysBack(day: string) {
 
 /**
  * Ödendi: tekrar edenler bir sonraki döneme ilerler, tek seferlikler kapanır. `through` verilirse (gecikmiş
- * dönemden sonraki öngörülen dönem ödendiğinde) o tarihe kadarki bütün dönemler kapanır.
+ * dönemden sonraki öngörülen dönem ödendiğinde) o tarihe kadarki bütün dönemler kapanır. Tekrarlı KDV
+ * hatırlatıcısının tutarı o döneme aittir (her ay başka): sıradaki döneme geçerken silinir (`amountCleared`), geri al
+ * geri yazar; yoksa nakit planı Eylül'ün tutarını Kasım'da da kesin sayardı (docs/NAKIT-PLANI.md).
  */
 export async function markReminderDone(id: number, through?: string) {
   return attempt(async () => {
@@ -125,22 +128,27 @@ export async function markReminderDone(id: number, through?: string) {
     if (!r) throw new UserError("Hatırlatıcı bulunamadı");
     const repeat = r.repeat as ReminderRepeat;
     const next = until && until >= r.dueDate ? advancePast(r.dueDate, repeat, r.anchorDate, until) : nextOccurrence(r.dueDate, repeat, r.anchorDate);
+    const clear = next !== null && vatAmountTravels(r);
     await db
       .update(s.reminders)
-      .set(next ? { dueDate: next, lastDoneAt: new Date() } : { active: false, lastDoneAt: new Date() })
+      .set(next ? { dueDate: next, lastDoneAt: new Date(), ...(clear ? { amount: null } : {}) } : { active: false, lastDoneAt: new Date() })
       .where(eq(s.reminders.id, rid));
     await rememberPaid([{ kind: "reminder", id: rid, title: r.title, amount: r.amount, dueDate: r.dueDate, prev: snapshot(r), next }]);
-    await logActivity(me, "Ödeme yapıldı", `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}`);
+    await logActivity(
+      me,
+      "Ödeme yapıldı",
+      `${r.title} · ${dateTR(r.dueDate)}${r.amount ? ` · ${tl(r.amount)}` : ""}${next ? ` → sıradaki ${dateTR(next)}` : ""}${clear ? " · tutar silindi (KDV)" : ""}`,
+    );
     refresh();
-    // prev: "Geri al" düğmesi kaydı bu hâline döndürür (restoreReminder)
-    return { next, prev: snapshot(r) };
+    // prev: "Geri al" düğmesi kaydı bu hâline döndürür (restoreReminder; tutar dahil)
+    return { next, prev: snapshot(r), amountCleared: clear };
   });
 }
 
 type ReminderDbRow = typeof s.reminders.$inferSelect;
 
 function snapshot(r: ReminderDbRow) {
-  return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null };
+  return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null, amount: r.amount };
 }
 
 const snapshotSchema = z.object({
@@ -152,6 +160,8 @@ const snapshotSchema = z.object({
     .max(40)
     .nullable()
     .refine((v) => v === null || !Number.isNaN(new Date(v).getTime()), "Geçersiz tarih"),
+  /** Eski bildirimlerin geri al'ı tutarı taşımaz (o zaman tutar yazılmaz) */
+  amount: z.number().finite().min(0).nullable().optional(),
 });
 
 /**
@@ -169,7 +179,14 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
     const title = await db.transaction(async (tx) => {
       const [r] = await tx
         .update(s.reminders)
-        .set({ dueDate: snap.dueDate, anchorDate: snap.anchorDate, active: snap.active, lastDoneAt: snap.lastDoneAt ? new Date(snap.lastDoneAt) : null })
+        .set({
+          dueDate: snap.dueDate,
+          anchorDate: snap.anchorDate,
+          active: snap.active,
+          lastDoneAt: snap.lastDoneAt ? new Date(snap.lastDoneAt) : null,
+          // Ödendi / ertelemede silinen KDV tutarı geri gelir
+          ...(snap.amount !== undefined ? { amount: snap.amount } : {}),
+        })
         .where(eq(s.reminders.id, rid))
         .returning({ title: s.reminders.title });
       if (!r) throw new UserError("Hatırlatıcı bulunamadı");
@@ -225,10 +242,18 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
         refresh();
         throw new UserError("Hatırlatıcı ödendikten sonra değişti (yeniden ödendi, ertelendi ya da düzenlendi); tarihini düzenleyerek düzeltin");
       }
+      // Ödendi'de silinen KDV tutarı geri yazılır; ödendikten sonra yeni yazılmış tutar ezilmez
+      const amount = prev.amount === null || (typeof prev.amount === "number" && Number.isFinite(prev.amount) && prev.amount >= 0) ? prev.amount : undefined;
       // Yalnız okunan hâl hâlâ duruyorsa yazılır (okuma ile yazma arasında başka sekmeden ödenmiş / ertelenmiş olabilir)
       const [done] = await db
         .update(s.reminders)
-        .set({ dueDate: prev.dueDate, anchorDate: prev.anchorDate, active: prev.active, lastDoneAt: prev.lastDoneAt ? new Date(prev.lastDoneAt) : null })
+        .set({
+          dueDate: prev.dueDate,
+          anchorDate: prev.anchorDate,
+          active: prev.active,
+          lastDoneAt: prev.lastDoneAt ? new Date(prev.lastDoneAt) : null,
+          ...(amount !== undefined && cur.amount === null ? { amount } : {}),
+        })
         .where(and(eq(s.reminders.id, rid), eq(s.reminders.dueDate, cur.dueDate), eq(s.reminders.anchorDate, cur.anchorDate), eq(s.reminders.active, cur.active)))
         .returning({ id: s.reminders.id });
       if (!done) {
@@ -284,7 +309,11 @@ export async function postponeReminder(id: number, by: "week" | "month") {
             note: `Ertelendi · asıl tarih ${dateTR(r.dueDate)}${r.note && !r.note.startsWith("Ertelendi") ? ` · ${r.note}` : ""}`.slice(0, 500),
           })
           .returning({ id: s.reminders.id });
-        await tx.update(s.reminders).set({ dueDate: next }).where(eq(s.reminders.id, rid));
+        // KDV tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al geri yazar)
+        await tx
+          .update(s.reminders)
+          .set({ dueDate: next, ...(vatAmountTravels(r) ? { amount: null } : {}) })
+          .where(eq(s.reminders.id, rid));
         return c.id;
       });
     }

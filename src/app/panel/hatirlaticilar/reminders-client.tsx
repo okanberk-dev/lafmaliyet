@@ -1,11 +1,11 @@
 "use client";
 
-import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
+import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChartNoAxesColumn, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { fold, useQueryState } from "@/components/ui/filters";
@@ -226,9 +226,15 @@ export function RemindersClient({
         title="Ödemeler & hatırlatıcılar"
         description="Kira, vergi, SGK, maaş ve fatura ödemeleri tek yerde. Zamanı gelenler her sabah e-postayla hatırlatılır."
         actions={
-          <Button onClick={() => add()} className="max-lg:hidden">
-            <Plus size={16} /> Hatırlatıcı ekle
-          </Button>
+          <>
+            {/* Önümüzdeki 6 haftanın gelen, ödenecek ve kalan parası (alt ekran); telefonda da görünür */}
+            <ButtonLink href="/panel/hatirlaticilar/nakit" variant="secondary">
+              <ChartNoAxesColumn size={16} aria-hidden="true" /> Nakit planı
+            </ButtonLink>
+            <Button onClick={() => add()} className="max-lg:hidden">
+              <Plus size={16} /> Hatırlatıcı ekle
+            </Button>
+          </>
         }
       />
 

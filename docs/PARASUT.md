@@ -191,6 +191,10 @@ zammın payı önerilir. Fiyatı öneriden düşük ürün uyarı olur:
   ya da **Böyle kalsın** (maliyet daha da artarsa yeniden uyarılır; ikisi de geri alınır);
 - ürün kartında not, Hammaddeler'de "↑ %16" rozeti.
 
+Aylık kâr etkisi Ürünler › Hammadde zamları'nda (ve ürün kartında, uyarıda, zilde, e-postada): her ürünün maliyet
+artışı son satış ayındaki adediyle çarpılır, ayda açık gün sayısına çevrilir (`price-loss.ts`; "Ayda ≈ 1.240 ₺ kâr
+kaybı").
+
 Onay bekleyen fiyat (5b) fiyat geçmişine yazılmaz: onaylanana kadar zam uyarısı ve fiyat önerisi çıkmaz; onaylanınca
 zam onay anıyla sayılır.
 

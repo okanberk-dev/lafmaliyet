@@ -240,7 +240,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
           />
         </StatBreakdown>
       </div>
-      {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} /> : null}
+      {prices && prices.impacts.length ? <PriceImpactPanel changes={prices.changes} impacts={prices.impacts} target={st.hedefMaliyet} month={month} loss={prices.loss} /> : null}
       {/* Süzgeçler (?ara, ?kategori, ?boy, ?durum, ?pasif, ?sirala, ?goster) tablonun içinde adresten okunur; ⌘K
           paleti ve genel bakış bağlantıları aynı adları kullanır. Sunucuya yeniden gidilmez. */}
       <ProductsTable rows={rows} categories={categories} month={month} monthLabel={ml} target={st.hedefMaliyet} siteConfigured={site.configured} />

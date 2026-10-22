@@ -11,6 +11,8 @@ export interface ReminderSnapshot {
   anchorDate: string;
   active: boolean;
   lastDoneAt: string | null;
+  /** Tutar (Ödendi'de silinen KDV tutarı geri alınınca geri yazılır); eski kayıtlarda yok */
+  amount?: number | null;
 }
 
 export interface RecentPaid {
