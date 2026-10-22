@@ -8,7 +8,7 @@ import { businessDate, diffKind, diffText } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { dateTR, monthShort, tl } from "@/lib/format";
 import { REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
-import { addDays, daysLeftLabel, longDateTR } from "@/lib/reminders";
+import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween } from "@/server/data/cash-reports";
@@ -17,6 +17,7 @@ import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
+import { loadSystemAlerts } from "@/server/jobs/alerts";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 
@@ -29,7 +30,26 @@ export interface PanelNotification {
   unread: boolean;
   href: string;
   /** Zilde hangi başlığın altında durur */
-  group?: "hatirlatici" | "onay" | "kasa" | "odeme" | "fatura" | "uyari";
+  group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "odeme" | "fatura" | "uyari";
+}
+
+/**
+ * Günlük işlerin sorunları (yalnız canlıda; src/lib/job-health.ts): sabah işi ya da Paraşüt işi çalışmadı, hata
+ * verdi, yarıda kesildi; CRON_SECRET yok. Kimlik çalışmadan (ya da günden) türer: sorun düzelip yeniden çıkarsa yeni
+ * bildirim sayılır.
+ */
+async function systemNotifications(): Promise<PanelNotification[]> {
+  const today = todayTR();
+  return (await loadSystemAlerts()).map((a) => ({
+    id: a.id,
+    kind: a.level,
+    title: a.title,
+    body: a.body,
+    timeLabel: !a.day ? "" : a.day === today ? "Bugün" : a.day === addDays(today, -1) ? "Dün" : dateTR(a.day),
+    unread: true,
+    href: a.href,
+    group: "sistem" as const,
+  }));
 }
 
 /**
@@ -207,10 +227,10 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Kenar çubuğundaki zil: kişinin hatırlatıcıları ve reçete onayları, sonra (yalnız yönetici) zamanı gelen ödemeler
- * (gecikmiş, bugün, yakında), faturalar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler"
- * ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu
- * görür; maliyet, ödeme ve fatura bilgisi ona gitmez.
+ * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
+ * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar ve son satış ayının
+ * uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel
+ * yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
@@ -221,7 +241,12 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     cashNotifications(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...mine, ...recipes];
-  const [model, upcoming, invoices] = await Promise.all([loadModel(), loadUpcoming().catch(() => null), invoiceNotifications().catch(() => [])]);
+  const [model, upcoming, invoices, system] = await Promise.all([
+    loadModel(),
+    loadUpcoming().catch(() => null),
+    invoiceNotifications().catch(() => []),
+    systemNotifications().catch(() => []),
+  ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
     .filter((i) => i.status !== "later")
@@ -270,5 +295,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...mine, ...recipes, ...cash, ...payments, ...invoices, ...priceNote, ...warnings];
+  return [...system, ...mine, ...recipes, ...cash, ...payments, ...invoices, ...priceNote, ...warnings];
 }

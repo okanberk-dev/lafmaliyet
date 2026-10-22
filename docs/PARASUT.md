@@ -250,7 +250,9 @@ kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › B
   `GET /api/cron/gunluk` 08:00–09:00 (05:00 UTC) sabah e-postasını gönderir. Paraşüt işi o sabah başarıyla
   çalışmadıysa e-posta işi önce bir kez daha eşitler; böylece e-postaya o sabahın faturaları girer.
 - Vercel → lafmaliyet → Settings → Cron Jobs ekranında iki iş görünür; **Run** ile elle çalıştırılabilir,
-  **View Logs** son çalışmaları gösterir.
+  **View Logs** son çalışmaları gösterir. Panelde **Ayarlar › Günlük işler** iki işin son çalışmasını ve adımlarını
+  gösterir; çalışmayan ya da hata veren iş zilde ("Sistem"), Genel bakış'ta ve e-postayla bildirilir. Paraşüt işi
+  eşitlemeden önce dünkü sabah işine de bakar (bekçi; [BILDIRIMLER.md](BILDIRIMLER.md) › Sistem uyarıları).
 
 ## 8. Açık noktalar
 

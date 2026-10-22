@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
+import { Activity, AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -14,7 +14,8 @@ import type { PanelNotification } from "@/server/actions/notifications";
 import { useLocalList } from "./local-list";
 
 /**
- * AkmanOS "Notification Dropdown" görünümünde zil: önce kişinin kendi hatırlatıcıları ve reçete onayları (yöneticide
+ * AkmanOS "Notification Dropdown" görünümünde zil: yöneticide en üstte günlük işlerin sorunları ("Sistem": sabah işi ya
+ * da Paraşüt işi çalışmadı, hata verdi), sonra kişinin kendi hatırlatıcıları ve reçete onayları (yöneticide
  * onay bekleyen öneriler, personelde önerilerinin sonucu), sonra zamanı gelen ödemeler, faturalar (Paraşüt'ten yeni
  * gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları. Personel yalnız ilk ikisini görür.
  * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
@@ -72,6 +73,7 @@ export function NotificationMenu({
   const unread = list.filter((n) => n.unread).length;
   const visible = filter === "unread" ? list.filter((n) => n.unread) : list;
   const groups = [
+    { id: "sistem", label: "Sistem", items: visible.filter((n) => n.group === "sistem") },
     { id: "hatirlatici", label: "Hatırlatıcılarım", items: visible.filter((n) => n.group === "hatirlatici") },
     { id: "onay", label: role === "admin" ? "Onaylar" : "Önerilerim", items: visible.filter((n) => n.group === "onay") },
     { id: "kasa", label: "Kasa", items: visible.filter((n) => n.group === "kasa") },
@@ -234,7 +236,9 @@ export function NotificationMenu({
                                   ? Banknote
                                 : n.group === "fatura" && n.kind !== "danger"
                                   ? FileText
-                                  : k.icon;
+                                  : n.group === "sistem" && n.kind !== "danger"
+                                    ? Activity
+                                    : k.icon;
                         return (
                           <li key={n.id}>
                             <Link
