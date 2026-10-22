@@ -1,6 +1,7 @@
 import { desc } from "drizzle-orm";
 import { ChevronRight, Download, ExternalLink, Globe, HardDriveDownload, Users } from "lucide-react";
 import type { Metadata } from "next";
+import { after } from "next/server";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
@@ -13,16 +14,17 @@ import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
-import { readSyncState } from "@/server/karaoke/sync";
+import { readSyncState, syncKaraoke } from "@/server/karaoke/sync";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
-import { readMenuSyncState } from "@/server/site-menu/sync";
-import { readOrdersState } from "@/server/site-orders/sync";
-import { readSalesState } from "@/server/site-sales/sync";
+import { readMenuSyncState, syncSiteMenu } from "@/server/site-menu/sync";
+import { readOrdersState, syncSiteOrders } from "@/server/site-orders/sync";
+import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
+import { SiteLinksTest } from "./site-links-test";
 import { SETTINGS_SECTIONS } from "./sections";
 import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
 
@@ -162,6 +164,7 @@ async function SiteLinksCard() {
       href: "/panel/karaoke",
       health: linkHealth(configured, karaoke.lastOkAt, karaoke.lastTryAt, karaoke.lastError),
       okAt: karaoke.lastOkAt,
+      tryAt: karaoke.lastTryAt,
       pingAt: karaoke.lastPingAt,
       error: karaoke.lastError,
     },
@@ -171,6 +174,7 @@ async function SiteLinksCard() {
       href: "/panel/urunler/site",
       health: linkHealth(configured, menu.lastOkAt, menu.lastPullAt, menu.lastError),
       okAt: menu.lastOkAt,
+      tryAt: menu.lastPullAt,
       pingAt: menu.lastPingAt,
       error: menu.lastError,
     },
@@ -180,6 +184,7 @@ async function SiteLinksCard() {
       href: "/panel/karaoke",
       health: linkHealth(configured, orders.lastOkAt, orders.lastPullAt, orders.lastError),
       okAt: orders.lastOkAt,
+      tryAt: orders.lastPullAt,
       pingAt: orders.lastPingAt,
       error: orders.lastError,
     },
@@ -189,11 +194,35 @@ async function SiteLinksCard() {
       href: "/panel/gelir-gider",
       health: linkHealth(configured, sales.lastOkAt, sales.lastPullAt, sales.lastError),
       okAt: sales.lastOkAt,
+      tryAt: sales.lastPullAt,
       pingAt: null,
       error: sales.lastError,
     },
   ];
   const errors = rows.filter((r) => r.health.tone === "red").length;
+  // Eski bir hata (son deneme yarım saatten eski) kendiliğinden yeniden denenir: sayfa beklemez, bir sonraki açılışta
+  // kart yeni durumu gösterir. Hata gerçekse yeni zamanıyla geri gelir; "Bağlantıları sına" hepsini hemen dener.
+  const nowMs = new Date().getTime();
+  const staleRed = configured
+    ? rows.filter((r) => r.health.tone === "red" && (!r.tryAt || nowMs - Date.parse(r.tryAt) > 30 * 60_000)).map((r) => r.key)
+    : [];
+  if (staleRed.length) {
+    after(async () => {
+      const run: Record<string, () => Promise<unknown>> = {
+        karaoke: () => syncKaraoke("manual"),
+        menu: () => syncSiteMenu("manual"),
+        orders: () => syncSiteOrders("manual"),
+        sales: () => syncSiteSales(),
+      };
+      for (const key of staleRed) {
+        try {
+          await run[key]?.();
+        } catch (e) {
+          console.error("[ayarlar] bağlantı yeniden denemesi", key, e instanceof Error ? e.message : e);
+        }
+      }
+    });
+  }
   return (
     <SectionCard
       id="site"
@@ -207,9 +236,12 @@ async function SiteLinksCard() {
       }
       actionsClassName="max-sm:w-full"
       actions={
-        <a href={`${siteUrl()}/admin`} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "md", "max-sm:w-full")}>
-          laffogato.net paneli <ExternalLink size={15} aria-hidden="true" />
-        </a>
+        <>
+          {configured ? <SiteLinksTest /> : null}
+          <a href={`${siteUrl()}/admin`} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "md", "max-sm:w-full")}>
+            laffogato.net paneli <ExternalLink size={15} aria-hidden="true" />
+          </a>
+        </>
       }
     >
       <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
@@ -230,7 +262,12 @@ async function SiteLinksCard() {
                   {r.key !== "sales" ? ` · sitenin son pingi ${r.pingAt ? dateTimeTR(r.pingAt) : "—"}` : " · her sabah ve Siteden yenile"}
                 </p>
               ) : null}
-              {r.health.tone === "red" && r.error ? <p className="mt-1 rounded-lg bg-bad-soft px-2.5 py-1.5 text-[13px] text-bad">{r.error}</p> : null}
+              {r.health.tone === "red" && r.error ? (
+                <p className="mt-1 rounded-lg bg-bad-soft px-2.5 py-1.5 text-[13px] text-bad">
+                  {r.tryAt ? `${dateTimeTR(r.tryAt)}: ` : null}
+                  {r.error}
+                </p>
+              ) : null}
             </div>
           </li>
         ))}

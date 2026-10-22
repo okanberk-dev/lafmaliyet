@@ -128,6 +128,16 @@ function where(error: z.ZodError): string {
 }
 
 /**
+ * Tek bir sipariş, listedeki bir eleman biçiminde (aşama ucunun yanıtı da aynı biçimi kullanır: `{ order }`). Kullanılan
+ * alanı bozuksa null; metinler kısaltılır, bilinmeyen alanlar atılır, boş etiket varsayılana düşer.
+ */
+export function parseSiteOrder(raw: unknown): SiteOrder | null {
+  const r = orderSchema.safeParse(raw);
+  if (!r.success) return null;
+  return { ...r.data, label: r.data.label || FALLBACK_LABEL[r.data.fulfillment] };
+}
+
+/**
  * Okuma ucunun yanıtı. Tanınmayan sürüm ya da bozuk iskelet: SiteOrdersFormatError. Tek bir siparişin bozuk alanı ya
  * da iki kez geçen kimlik: o sipariş atlanır (`skipped`).
  */
@@ -146,13 +156,13 @@ export function parseSiteOrders(json: unknown): SiteOrderList {
   const seen = new Set<string>();
   let skipped = 0;
   for (const raw of parsed.data.orders) {
-    const r = orderSchema.safeParse(raw);
-    if (!r.success || seen.has(r.data.id)) {
+    const order = parseSiteOrder(raw);
+    if (!order || seen.has(order.id)) {
       skipped++;
       continue;
     }
-    seen.add(r.data.id);
-    orders.push({ ...r.data, label: r.data.label || FALLBACK_LABEL[r.data.fulfillment] });
+    seen.add(order.id);
+    orders.push(order);
   }
   return { now: parsed.data.now, complete: parsed.data.complete, orders, skipped };
 }

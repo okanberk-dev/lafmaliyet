@@ -1,6 +1,7 @@
 // laffogato.net bar ekranı (docs/SITE-SIPARIS.md): sitenin açık sipariş listesinin doğrulanması, ilk kez görülen yeni
-// sipariş, listenin değişmesi, kartın metinleri ve sırası, "Sitede aç" adresi, zil kuralı, sipariş pinginin denetimi ve
-// sunucu kodunun kuralları (kaynaktan).
+// sipariş, listenin değişmesi, kartın metinleri ve sırası, "Sitede aç" adresi, zil kuralı, sipariş pinginin denetimi,
+// bar ekranının aşama düğmeleri (izinli çiftler, adlar, isteğin gövdesi, sitenin yanıtı ve hata metinleri) ve sunucu
+// kodunun kuralları (kaynaktan).
 // Çalıştırma: npx tsx --test tests/site-siparis.test.ts
 
 import assert from "node:assert/strict";
@@ -24,7 +25,22 @@ import {
   STAGE_LABEL,
   waitLabel,
 } from "../src/lib/site-orders/feed";
-import { parseSiteOrders, safeOrderPath, SiteOrdersFormatError, type SiteOrder } from "../src/lib/site-orders/schema";
+import { parseSiteOrder, parseSiteOrders, safeOrderPath, SiteOrdersFormatError, type OrderFulfillment, type OrderStage, type SiteOrder } from "../src/lib/site-orders/schema";
+import {
+  canAdvance,
+  orderRef,
+  READY_LABEL,
+  STAGE_ACTIONS,
+  STAGE_FROM,
+  STAGE_OFF_ERROR,
+  STAGE_PATH,
+  stageButtons,
+  stageDoneMessage,
+  stageFailureMessage,
+  staleMessage,
+  type StageAction,
+} from "../src/lib/site-orders/stage";
+import { buildStageBody, readStageAnswer, STAGE_BODY_MAX_BYTES } from "../src/lib/site-orders/stage-request";
 import { checkSitePing } from "../src/lib/site-ping";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
@@ -307,9 +323,8 @@ test("ekranın isteği: oturum gerekir, güncel listede siteye gidilmez; tetikle
   assert.match(board, /const BUSY_REPULL_MS = 3 \* 60_000/);
   assert.match(board, /const QUIET_REPULL_MS = 60 \* 60_000/);
   assert.match(board, /document\.visibilityState === "visible"/);
-  // Panel siparişi ilerletmez: yalnız sitenin paneline bağlantı
+  // "Sitede aç" kalır (iade ve iptal orada); aşama düğmeleri ayrı testte
   assert.match(board, /Sitede aç/);
-  assert.doesNotMatch(board, /method: "POST", body: JSON\.stringify\(\{ stage/);
   // Günlük işte sipariş adımı yok (Vercel cron kotası dolu; ping + ekran yeter)
   assert.doesNotMatch(read("src/app/api/cron/gunluk/route.ts"), /syncSiteOrders/);
   assert.deepEqual(JSON.parse(read("vercel.json")).crons.length, 2);
@@ -324,4 +339,206 @@ test("bildirim: sipariş konusu, tercihi seçilmemiş cihazda personele açık, 
   const sync = read("src/server/site-orders/sync.ts");
   assert.match(sync, /sendPush\("orders"/);
   assert.match(sync, /ringMessage\(sortForScreen\(orders\)\)/);
+});
+
+// ---------------------------------------------------------------- Aşama: bar ekranından tek dokunuş
+
+const FULFILLMENTS: OrderFulfillment[] = ["pickup", "table", "delivery"];
+const STAGES: OrderStage[] = ["new", "preparing", "ready"];
+
+test("aşama: izin verilen işlem ve başlangıç aşaması sitenin kuralıyla aynı; Teslim edildi yalnız gel-al", () => {
+  assert.equal(STAGE_PATH, "/api/panel/orders/stage");
+  assert.deepEqual(STAGE_ACTIONS, ["preparing", "ready", "delivered"]);
+  assert.deepEqual(STAGE_FROM, { preparing: ["new"], ready: ["new", "preparing"], delivered: ["ready"] });
+  const allowed = new Set([
+    "preparing|new|pickup",
+    "preparing|new|table",
+    "preparing|new|delivery",
+    "ready|new|pickup",
+    "ready|new|table",
+    "ready|new|delivery",
+    "ready|preparing|pickup",
+    "ready|preparing|table",
+    "ready|preparing|delivery",
+    "delivered|ready|pickup",
+  ]);
+  for (const action of STAGE_ACTIONS) {
+    for (const from of STAGES) {
+      for (const f of FULFILLMENTS) {
+        const key = `${action}|${from}|${f}`;
+        assert.equal(canAdvance(action, from, f), allowed.has(key), key);
+      }
+    }
+  }
+  // Teslim biçimi bilinmiyorsa (sipariş son listede yok) yalnız aşama denetlenir; gerisine site karar verir
+  assert.equal(canAdvance("delivered", "ready"), true);
+  assert.equal(canAdvance("delivered", "new"), false);
+  assert.equal(canAdvance("bogus" as StageAction, "new"), false);
+});
+
+test("aşama düğmeleri: yeni → Hazırlanıyor + hazır, hazırlanıyor → hazır, tezgâhtaki gel-al → Teslim edildi; ad teslim biçimine göre", () => {
+  assert.deepEqual(READY_LABEL, { pickup: "Hazır", table: "Masaya götürüldü", delivery: "Kuryeye verildi" });
+  const view = (stage: OrderStage, fulfillment: OrderFulfillment) => stageButtons({ stage, fulfillment }).map((b) => `${b.label}${b.primary ? "*" : ""}`);
+  assert.deepEqual(view("new", "pickup"), ["Hazırlanıyor", "Hazır*"]);
+  assert.deepEqual(view("new", "table"), ["Hazırlanıyor", "Masaya götürüldü*"]);
+  assert.deepEqual(view("new", "delivery"), ["Hazırlanıyor", "Kuryeye verildi*"]);
+  assert.deepEqual(view("preparing", "pickup"), ["Hazır*"]);
+  assert.deepEqual(view("preparing", "table"), ["Masaya götürüldü*"]);
+  assert.deepEqual(view("preparing", "delivery"), ["Kuryeye verildi*"]);
+  assert.deepEqual(view("ready", "pickup"), ["Teslim edildi*"]);
+  // Masa ve kurye siparişi hazır olunca ekrandan kalkar; yine de gelirse düğmesi yok
+  assert.deepEqual(view("ready", "table"), []);
+  assert.deepEqual(view("ready", "delivery"), []);
+  for (const stage of STAGES) {
+    for (const f of FULFILLMENTS) {
+      const buttons = stageButtons({ stage, fulfillment: f });
+      for (const b of buttons) assert.ok(canAdvance(b.action, stage, f), `${stage} ${f} ${b.action}: düğme yalnız izinli işlemde`);
+      if (buttons.length) assert.equal(buttons.filter((b) => b.primary).length, 1, "kartta tek birincil düğme");
+    }
+  }
+});
+
+test("aşama bildirimi: '#10234 hazır', masaya götürüldü, kuryeye verildi, teslim edildi, hazırlanıyor", () => {
+  assert.equal(stageDoneMessage(10234, "ready", "pickup"), "#10234 hazır");
+  assert.equal(stageDoneMessage(10234, "ready", "table"), "#10234 masaya götürüldü");
+  assert.equal(stageDoneMessage(10234, "ready", "delivery"), "#10234 kuryeye verildi");
+  assert.equal(stageDoneMessage(10234, "delivered", "pickup"), "#10234 teslim edildi");
+  assert.equal(stageDoneMessage(10234, "preparing", "table"), "#10234 hazırlanıyor");
+  assert.equal(stageDoneMessage(null, "ready", null), "Sipariş hazır", "numara ve teslim biçimi bilinmiyorsa");
+  assert.equal(orderRef(0), "Sipariş");
+});
+
+test("aşama isteği: gövde yalnız id, action, from, actor; ad sadeleşir, 80 karakterle kısalır; 1 KB'ı aşmaz", () => {
+  const body = buildStageBody({ id: "ord-0042", action: "ready", from: "new", actor: "  Selin \n  Kaya  " });
+  assert.equal(JSON.stringify(body), '{"id":"ord-0042","action":"ready","from":"new","actor":"Selin Kaya"}');
+  // Çağıran siparişin bütününü verse de müşteriye ve satırlara dair hiçbir şey gitmez
+  const leaky = { ...order({ id: "ord-0042", firstName: "Ayşe" }), action: "preparing", from: "new", actor: "Selin", totalMinor: 24000 } as unknown as Parameters<
+    typeof buildStageBody
+  >[0];
+  const sent = JSON.stringify(buildStageBody(leaky));
+  assert.deepEqual(Object.keys(JSON.parse(sent)), ["id", "action", "from", "actor"]);
+  assert.doesNotMatch(sent, /Ayşe|firstName|lines|Latte|totalMinor|Gel-al/);
+  assert.equal(buildStageBody({ id: "a", action: "ready", from: "new", actor: "" }).actor, "Panel");
+  assert.equal(buildStageBody({ id: "a", action: "ready", from: "new", actor: null }).actor, "Panel");
+  assert.equal(buildStageBody({ id: "a", action: "ready", from: "new", actor: "x".repeat(200) }).actor.length, 80);
+  // En kötü durum: 64 karakterlik kimlik, en uzun işlem ve aşama, kaçışlı (6 bayt) ya da çok baytlı 80 karakter
+  for (const ch of ["\u0001", "ğ", "😀", '"']) {
+    const worst = buildStageBody({ id: `o${"x".repeat(63)}`, action: "delivered", from: "preparing", actor: ch.repeat(80) });
+    assert.ok(Buffer.byteLength(JSON.stringify(worst)) <= STAGE_BODY_MAX_BYTES, JSON.stringify(ch));
+  }
+});
+
+test("aşama yanıtı: 200 yeni hâl ya da ekrandan çıktı, 409 eskimiş, okunamayan 2xx, öteki kodlar hata", () => {
+  const moved = readStageAnswer({ status: 200, json: { order: contractOrder({ stage: "preparing" }) } }, "ord-0042");
+  assert.equal(moved.kind, "moved");
+  assert.equal(moved.kind === "moved" && moved.order?.stage, "preparing");
+  assert.ok(moved.kind === "moved" && moved.order && !("totalMinor" in moved.order), "sipariş listedeki biçimde doğrulanır");
+  assert.deepEqual(readStageAnswer({ status: 200, json: { order: null } }, "ord-0042"), { kind: "moved", order: null });
+  // Sözleşmedeki gibi değil: ilerlemiş olabilir, liste yeniden çekilir
+  for (const json of [null, {}, [], { order: { id: "ord-0042", stage: "served" } }, { order: contractOrder({ id: "ord-0099" }) }]) {
+    assert.deepEqual(readStageAnswer({ status: 200, json }, "ord-0042"), { kind: "unreadable" }, JSON.stringify(json));
+  }
+  assert.deepEqual(readStageAnswer({ status: 409, json: { error: "stale", order: contractOrder({ stage: "ready", fulfillment: "pickup" }) } }, "ord-0042"), {
+    kind: "stale",
+    now: "ready",
+  });
+  assert.deepEqual(readStageAnswer({ status: 409, json: { error: "stale", order: null } }, "ord-0042"), { kind: "stale", now: "gone" });
+  assert.deepEqual(readStageAnswer({ status: 409, json: { error: "stale" } }, "ord-0042"), { kind: "stale", now: null });
+  assert.deepEqual(readStageAnswer({ status: 409, json: { error: "stale", order: { id: "x" } } }, "ord-0042"), { kind: "stale", now: null });
+  const failed = (status: number, json: unknown) => readStageAnswer({ status, json }, "ord-0042");
+  assert.deepEqual(failed(404, { error: "not_found" }), { kind: "failed", failure: { kind: "http", status: 404, error: "not_found", field: null } });
+  assert.deepEqual(failed(404, null), { kind: "failed", failure: { kind: "http", status: 404, error: null, field: null } }, "Next'in 404 sayfası (JSON değil)");
+  assert.deepEqual(failed(400, { error: "invalid", field: "actor" }), { kind: "failed", failure: { kind: "http", status: 400, error: "invalid", field: "actor" } });
+  assert.deepEqual(failed(503, { error: "unavailable" }), { kind: "failed", failure: { kind: "http", status: 503, error: "unavailable", field: null } });
+  assert.equal(parseSiteOrder({ ...contractOrder(), stage: "served" }), null);
+  assert.deepEqual(parseSiteOrder(contractOrder({ label: "" })), parseSiteOrders(list([contractOrder({ label: "" })])).orders[0], "liste ve tek sipariş aynı kural");
+});
+
+test("aşama hata metinleri: bağlantı, imza, bulunamadı / uç yok, eskimiş, site kapalı, ağ", () => {
+  assert.equal(STAGE_OFF_ERROR, "laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)");
+  assert.equal(stageFailureMessage({ kind: "off" }), STAGE_OFF_ERROR);
+  const http = (status: number, error: string | null = null, field: string | null = null) => stageFailureMessage({ kind: "http", status, error, field });
+  assert.equal(http(404, "not_found"), "Sipariş sitede bulunamadı ya da artık bar ekranında değil");
+  assert.equal(http(404), "Sitede sipariş ilerletme ucu yok (laffogato.net güncel değil)", "uç yoksa gövde JSON değil");
+  assert.match(http(401, "unauthorized"), /^İmza reddedildi: iki projedeki KARAOKE_SYNC_SECRET aynı mı/);
+  assert.match(http(503, "not_configured"), /Sitede KARAOKE_SYNC_SECRET tanımlı değil/);
+  assert.match(http(503, "unavailable"), /veritabanı şu an okunamıyor; tekrar deneyin/);
+  assert.match(http(400, "invalid", "actor"), /kabul etmedi \(kullanıcı adı\)/);
+  assert.match(http(413, "too_large"), /çok büyük/);
+  assert.match(http(500), /HTTP 500/);
+  assert.equal(http(409, "stale"), "Sipariş bu arada değişti; ekran yenilendi.");
+  assert.match(stageFailureMessage({ kind: "network" }), /^Siteye ulaşılamadı; tekrar deneyin \(sipariş iki kez ilerlemez\)/);
+  assert.match(stageFailureMessage({ kind: "timeout" }), /^Site 8 saniyede yanıt vermedi; tekrar deneyin/);
+  assert.equal(staleMessage("ready"), "Sipariş bu arada değişti (şimdi: Teslime hazır); ekran yenilendi.");
+  assert.equal(staleMessage("gone"), "Sipariş bu arada değişti (artık bar ekranında değil); ekran yenilendi.");
+  assert.equal(staleMessage(null), "Sipariş bu arada değişti; ekran yenilendi.");
+});
+
+test("aşama eylemi: oturum gerekir (personel de); önce doğrulama, ortak imzalı istek, sonra yalnız çekme yazar; ad yazılmaz", () => {
+  const action = read("src/server/actions/site-orders.ts");
+  assert.match(action, /^"use server";/);
+  // "use server" dosyasının her dışa verilen işlevi herkese açık bir uçtur: yalnız eylemin kendisi
+  const exported = [...action.matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1]);
+  assert.deepEqual(exported, ["advanceSiteOrder"]);
+  const body = action.slice(action.indexOf("export async function advanceSiteOrder"));
+  assert.match(body.slice(0, 300), /const me = await requireUser\(\)/, "personel ve yönetici: barista bu ekranı kullanır");
+  assert.doesNotMatch(action, /requireAdmin/);
+  const order = ["requireUser()", "zStage.parse(input)", "siteLinkSecret()", "callSite("].map((s) => body.indexOf(s));
+  assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), `sıra: oturum → doğrulama → anahtar → site (${order})`);
+  assert.match(action, /\.refine\(\(d\) => canAdvance\(d\.action, d\.from\)/, "olmayan işlem / aşama çifti siteye gitmeden reddedilir");
+  assert.match(action, /id: z\.string\(\)\.regex\(SITE_ORDER_ID/);
+  assert.match(action, /if \(!secret\) throw new UserError\(STAGE_OFF_ERROR\)/);
+  // İmza ortak yardımcıdan (menü yazımıyla aynı); HMAC burada yeniden yazılmaz
+  assert.match(action, /callSite\(secret, STAGE_PATH, \{ method: "POST", body: JSON\.stringify\(buildStageBody\(\{ \.\.\.data, actor: me\.name \}\)\) \}\)/);
+  assert.doesNotMatch(action, /createHmac|signedRequest|signedHeaders/);
+  // Son listenin kopyasını yalnız çekme yazar; 200 ve 409'dan sonra liste siteden yeniden çekilir
+  assert.match(action, /syncSiteOrders\("manual"\)/);
+  const resync = body.indexOf("const synced = await resync();");
+  assert.ok(resync > body.indexOf('if (answer.kind === "failed")') && resync < body.indexOf('if (answer.kind === "stale")'), "200'de de 409'da da önce çekme, sonra yanıt");
+  assert.doesNotMatch(action, /integration_state|\.insert\(|\.update\(|site_orders"/);
+  // KVKK: müşterinin adı ve satırlar ne günlüğe ne işlem geçmişine (kaydı sitenin olay kaydı tutar: panel:<ad>)
+  assert.doesNotMatch(action, /firstName|\.lines|logActivity/);
+  // Sayfanın sunucu eylemleri siteye iki kez gidebilir (aşama + çekme): süre sınırı
+  assert.match(read("src/app/panel/karaoke/page.tsx"), /export const maxDuration = 30;/);
+});
+
+test("bar ekranı: tek dokunuş, onaysız; istekte kartın düğmeleri kapalı, çift dokunuş gönderilmez; sonra canlı veri", () => {
+  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  assert.match(board, /advanceSiteOrder\(\{ id: o\.id, action, from: o\.stage \}\)/);
+  assert.match(board, /const buttons = stageButtons\(o\)/);
+  assert.match(board, /useTransition\(\)/);
+  assert.match(board, /if \(busy\.current\) return;/);
+  assert.match(board, /disabled=\{pending\}/);
+  assert.doesNotMatch(board, /ConfirmDialog|confirm\(/, "operatör: tek dokunuş, onay sorulmaz");
+  assert.match(board, /toast\.success\(res\.data\.message/);
+  assert.match(board, /toast\.error\(res\.error\)/);
+  assert.match(board, /await refreshAfterAction\(\)/);
+  // Ekranın paketine zod girmez: kurallar ve metinler zod'suz modülde
+  assert.doesNotMatch(board, /stage-request/);
+  assert.doesNotMatch(read("src/lib/site-orders/stage.ts"), /from "zod"|^import (?!type )[^;]*from "\.\/schema"|site-menu/m);
+});
+
+test("Ayarlar › laffogato.net: 'Bağlantıları sına' dördünü hemen çeker, eski hata kendiliğinden yeniden denenir, müşteri verisi yok", () => {
+  const action = read("src/server/actions/site-links.ts");
+  assert.match(action, /^"use server";/);
+  // Yalnız yönetici; anahtar yoksa hiçbir şey çekilmez
+  assert.match(action, /const me = await requireAdmin\(\);/);
+  assert.match(action, /if \(!siteLinkSecret\(\)\) throw new UserError\(/);
+  // Dört bağlantı birbirini beklemeden, biri düşse de öbürleri sonuç verir
+  assert.match(action, /Promise\.allSettled\(\[/);
+  for (const sync of [/syncKaraoke\("manual"\)/, /syncSiteMenu\("manual"\)/, /syncSiteOrders\("manual"\)/, /syncSiteSales\(\[currentMonthTR\(\)\]\)/]) {
+    assert.match(action, sync);
+  }
+  // İşlem geçmişine yalnız sayı; tek dışa açık eylem (her export bir POST ucudur)
+  assert.match(action, /logActivity\(me, "laffogato\.net bağlantıları sınandı", `\$\{ok\}\/\$\{checks\.length\} bağlı`\)/);
+  assert.doesNotMatch(action, /firstName|email|phone|lines/);
+  assert.deepEqual(action.match(/^export (async )?function \w+/gm), ["export async function testSiteLinks"]);
+
+  const page = read("src/app/panel/ayarlar/page.tsx");
+  // Düğme yalnız bağlantı kuruluyken; kırmızı satır hatanın zamanını gösterir
+  assert.match(page, /\{configured \? <SiteLinksTest \/> : null\}/);
+  assert.match(page, /\{r\.tryAt \? `\$\{dateTimeTR\(r\.tryAt\)\}: ` : null\}/);
+  // Yarım saatten eski kırmızı satır sayfadan sonra (after) yeniden denenir; sayfa beklemez
+  assert.match(page, /r\.health\.tone === "red" && \(!r\.tryAt \|\| nowMs - Date\.parse\(r\.tryAt\) > 30 \* 60_000\)/);
+  assert.match(page, /after\(async \(\) => \{/);
 });

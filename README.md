@@ -8,12 +8,12 @@ senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'
 ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)), ödemeler ve hatırlatıcılar ile sabah e-postası
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), laffogato.net menüsüne bağlı ürünlerde iki yönlü fiyat ve Satışta / Tükendi
-eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md)), barın ekranına düşen uygulama siparişleri ve sipariş zili
-([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), sitenin online satışlarının kâr-zarara, tüketime ve kasa raporuna
-girmesi ([docs/SITE-SATIS.md](docs/SITE-SATIS.md)), personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla
-onayladığı akış, herkesin kendi hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu
-([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) ve stok farkını açıklayan zayi / ikram kaydı
-([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)).
+eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md)), barın ekranına düşen uygulama siparişleri, sipariş zili ve
+tek dokunuşla aşama: Hazır, Masaya götürüldü, Teslim edildi ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), sitenin
+online satışlarının kâr-zarara, tüketime ve kasa raporuna girmesi ([docs/SITE-SATIS.md](docs/SITE-SATIS.md)),
+personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla onayladığı akış, herkesin kendi
+hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) ve
+stok farkını açıklayan zayi / ikram kaydı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)).
 
 - **Adres:** https://ladmin.laffogato.net (kafenin sitesi laffogato.net ayrı projede kalır)
 - **Frontend:** Next.js 16 (App Router, Cache Components), React 19, Tailwind CSS 4, Recharts, Motion
@@ -41,7 +41,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Hammaddeler | `/panel/hammaddeler` | Hammaddeler |
 | Reçete defteri (barista; personel değişiklik önerir, yönetici onaylayınca uygulanır) | `/panel/receteler` | — |
 | Reçete onayları (önce / sonra farkı, maliyet etkisi, onayla ya da gerekçeyle reddet) | `/panel/onaylar` | — (yeni) |
-| Karaoke (barın ekranı): laffogato.net'ten ödenmiş uygulama siparişleri ve sipariş zili ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), oda sayacı, yeni rezervasyon zili, süre dolunca alarm, sitedeki rezervasyonla çakışma uyarısı; yöneticiye ay özeti ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
+| Karaoke (barın ekranı): laffogato.net'ten ödenmiş uygulama siparişleri, sipariş zili ve tek dokunuşla aşama (sitenin aşama ucuna gider; iade ve iptal sitede) ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), oda sayacı, yeni rezervasyon zili, süre dolunca alarm, sitedeki rezervasyonla çakışma uyarısı; yöneticiye ay özeti ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
 | Hatırlatıcılarım (herkesin kendi hatırlatıcıları; saatinde uyarı, tekrar, erteleme) | `/panel/hatirlaticilarim` | — (yeni) |
 | Kasa raporu: her akşam Z raporu ve kasa, eksik / fazla, e-posta ve WhatsApp, günün online satışı (bilgi, kasadan geçmez); yöneticiye günden güne ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) | `/panel/kasa` | — (yeni) |
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
@@ -130,7 +130,7 @@ src/
   lib/roles.ts         personelin açabildiği ekranlar (tek kaynak)
   lib/karaoke/         karaoke: imza, oturum evreleri, uyarı planı, sitenin yanıtı (saf, testli)
   lib/site-menu/       laffogato.net menü bağlantısı: yanıt şeması, yuva ↔ fiyat, çekme planı, öneriler (saf, testli)
-  lib/site-orders/     laffogato.net siparişleri: yanıt şeması, yeni sipariş, sıralama, kart metinleri, zil kuralı (saf)
+  lib/site-orders/     laffogato.net siparişleri: yanıt şeması, yeni sipariş, sıralama, kart metinleri, zil kuralı, aşama düğmeleri (saf)
   lib/site-sales/      laffogato.net online satışları: yanıt şeması, KDV hariç gelir, ürün eşlemesi, kasa satırı (saf)
   lib/calc/            hesaplama motoru: Excel formüllerinin saf TypeScript karşılığı
     engine.ts          hammadde → reçete → ürün → satış → gelir-gider → stok
