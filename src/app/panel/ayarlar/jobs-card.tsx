@@ -3,9 +3,9 @@ import Link from "next/link";
 
 import { Badge, type Tone } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
-import { JOB_KEYS, JOBS, stepTexts, trClock, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
+import { JOB_KEYS, JOBS, jobsSummary, stepTexts, trClock, type JobHealth, type JobRunLite, type JobState } from "@/lib/job-health";
 import { addDays } from "@/lib/reminders";
-import { loadJobsOverview, type JobsOverview } from "@/server/jobs/alerts";
+import { loadJobsOverview } from "@/server/jobs/alerts";
 
 import { SectionCard } from "./section-card";
 
@@ -21,23 +21,6 @@ const STATE_BADGE: Record<JobState, { tone: Tone; text: string }> = {
   stuck: { tone: "red", text: "Yarıda kesildi" },
   partial: { tone: "amber", text: "Kısmen" },
 };
-
-/** Telefonda kapalı satırın özeti: en önemli durum */
-function summaryOf(o: JobsOverview | null, now: Date): string {
-  if (!o) return "Durum okunamadı";
-  if (!o.production) return "Yalnız canlıda çalışır";
-  if (!o.cronSecret) return "CRON_SECRET eksik";
-  const { gunluk: g, parasut: p } = o.health;
-  if (g.state === "late") return "Sabah işi çalışmadı";
-  if (g.state === "failed" || g.state === "stuck") return "Sabah işi hata verdi";
-  if (p.state === "failed" || p.state === "stuck") return "Paraşüt işi hata verdi";
-  if (p.state === "late") return "Paraşüt işi çalışmadı";
-  if (g.state === "partial") return "Sabah işinde bir adım hata verdi";
-  if (g.state === "running" || p.state === "running") return "Bir iş şu an sürüyor";
-  const today = trClock(now).day;
-  if (g.day === today && p.day === today) return "Bu sabah ikisi de çalıştı";
-  return g.state === "waiting" || p.state === "waiting" ? "İlk çalışma bekleniyor" : "Son çalışmalar sorunsuz";
-}
 
 /** "bugün 07:31 (12 sn)" / "dün 08:04" / "20 Eki 08:12" */
 function runWhen(run: JobRunLite, state: JobState, now: Date): string {
@@ -100,7 +83,7 @@ export async function JobsCard() {
       id="isler"
       icon={<Timer />}
       title="Günlük işler"
-      summary={summaryOf(o, now)}
+      summary={jobsSummary(o, now)}
       description="Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcı bildirimi, laffogato.net eşitlemeleri). Çalışmazsa ya da hata verirse zil, Genel bakış ve e-posta haber verir."
     >
       <CardContent className="space-y-3">
@@ -125,7 +108,7 @@ export async function JobsCard() {
           <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">İşlerin durumu okunamadı; sayfayı yenileyin.</p>
         )}
         <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-          Elle çalıştırmak için: Vercel › lafmaliyet › Settings › Cron Jobs › Run. Paraşüt&apos;ü{" "}
+          Elle çalıştırmak için: Vercel › lafmaliyet › Settings › Cron Jobs › Run; uyarıyı bu kaldırır. Paraşüt&apos;ü{" "}
           <Link href="/panel/parasut" className="font-medium text-ink underline underline-offset-2">
             Paraşüt entegrasyonu
           </Link>{" "}
@@ -133,7 +116,8 @@ export async function JobsCard() {
           <Link href="/panel/hatirlaticilar" className="font-medium text-ink underline underline-offset-2">
             Ödemeler
           </Link>{" "}
-          › Bugünküleri şimdi gönder ile de yapabilirsiniz.
+          › Bugünküleri şimdi gönder ile de yapabilirsiniz; bunlar kayda geçmez, uyarıyı kaldırmaz (sabah işinin hatası ertesi
+          sabah e-postayla da gelir).
         </p>
       </CardContent>
     </SectionCard>

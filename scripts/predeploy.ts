@@ -13,7 +13,7 @@
 import { loadEnvConfig } from "@next/env";
 
 import { createDb } from "../src/server/db";
-import { markWatchSince } from "../src/server/jobs/watch";
+import { restartWatchOnDeploy } from "../src/server/jobs/watch";
 
 import { runMigrations } from "./migrate";
 import { predeploySkipReason } from "./predeploy-guard";
@@ -21,14 +21,16 @@ import { runSeed } from "./seed";
 
 /**
  * Günlük işlerin izlenmesi canlıya ilk çıkışta başlar (src/server/jobs/watch.ts): işler bu andan sonra hiç çalışmazsa
- * (CRON_SECRET doğru ama Vercel Cron tetiklemiyor) panel ertesi sabah "çalışmadı" der. Yazılamazsa derleme durmaz.
+ * (CRON_SECRET doğru ama Vercel Cron tetiklemiyor) panel ertesi sabah "çalışmadı" der. İşler bir günden uzun süredir
+ * kayıt yazmıyorsa (önceki derleme bozuldu ya da eski sürüme dönüldü, kayıt yazmayan kod çalıştı) izleme bu yayından
+ * yeniden başlar. Yazılamazsa derleme durmaz.
  */
 async function markJobsWatched() {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!url) return;
   const db = createDb(url, 1);
   try {
-    await markWatchSince(db);
+    if (await restartWatchOnDeploy(db)) console.log("✓ Günlük işlerin izlenmesi bu yayından başlıyor");
   } catch (e) {
     console.warn("! Günlük işlerin izleme başlangıcı yazılamadı:", (e as Error).message);
   } finally {

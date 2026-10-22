@@ -51,8 +51,11 @@ export async function loadUpcoming(today = todayTR()) {
 
 export type DigestResult =
   | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number }
-  /** `off`: e-posta kapalı ya da kurulmamış (gönderilecek bir şey olsa da gitmezdi) */
-  | { status: "skipped"; reason: string; off?: boolean }
+  /**
+   * `off`: neden gitmedi. "disabled" e-posta kapalı, "nokey" Resend kurulmamış (gönderilecek bir şey olsa da gitmezdi);
+   * "norecipient" gönderilecek bir şey vardı ama etkin bildirim adresi yok. Yoksa gönderilecek yeni bir şey yoktu.
+   */
+  | { status: "skipped"; reason: string; off?: "disabled" | "nokey" | "norecipient" }
   | { status: "error"; error: string };
 
 /** Paraşüt bölümünün anahtarı: her gönderimde yeni satır; "son gönderimden bu yana" buna göre bulunur */
@@ -142,8 +145,8 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
 export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean } = {}): Promise<DigestResult> {
   const db = getDb();
   const { today, settings, items } = await loadUpcoming();
-  if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: true };
-  if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: true };
+  if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
+  if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };
 
   const due = dueNotifications(items);
   const sent = due.length ? await db.select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, due.map((d) => d.key))) : [];
@@ -171,7 +174,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
   }
 
   const recipients = await db.select().from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true));
-  if (!recipients.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: true };
+  if (!recipients.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
 
   const { subject, html, text } = renderDigest(fresh, today, invoiceNews || invoices.reviewCount ? invoices : null, prices, system.length ? { items: system } : null);
   const to = recipients.map((r) => r.email);

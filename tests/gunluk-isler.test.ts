@@ -8,14 +8,19 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  CUT_OFF_MESSAGE,
   dailyOutcome,
+  digestStep,
   emailProblems,
   expectedDay,
   jobHealth,
+  jobsSummary,
   parasutOutcome,
+  reminderStep,
   stepTexts,
   systemAlerts,
   trClock,
+  watchRestarts,
   type JobHealth,
   type JobKey,
   type JobRunLite,
@@ -267,6 +272,76 @@ test("e-posta: sabah e-postası bugün süren kendi çalışmasına rağmen dün
   assert.deepEqual(emailProblems({ now: tr("2026-10-22 06:00"), mode: "digest", runs: [run("gunluk", "2026-10-21 08:05", "ok")], watchSince: OLD_WATCH, syncedToday: false }), []);
 });
 
+test("e-posta: yarıda kesilen sabah işi bekçide ve satır kapandıktan sonra sabah e-postasında aynı anahtar", () => {
+  const cut = run("gunluk", "2026-10-21 08:05", "running");
+  const watchdog = emailProblems({ now: tr("2026-10-22 07:30"), mode: "watchdog", runs: [cut], watchSince: OLD_WATCH, syncedToday: false });
+  assert.deepEqual(watchdog.map((p) => [p.key, p.title]), [["job:gunluk:2026-10-21:stuck", "Dünkü sabah işi yarıda kesildi"]]);
+  // 08:05: bugünkü sabah işi başlarken dünkü satırı "hata" olarak kapatır (runs.ts › startJobRun)
+  const closed: JobRunLite = { ...cut, status: "error", finishedAt: tr("2026-10-22 08:05").toISOString(), message: CUT_OFF_MESSAGE };
+  const runs = [closed, run("gunluk", "2026-10-22 08:05", "running"), run("parasut", "2026-10-22 07:30", "ok")];
+  const digest = emailProblems({ now: tr("2026-10-22 08:06"), mode: "digest", runs, watchSince: OLD_WATCH, syncedToday: true });
+  assert.deepEqual(digest.map((p) => p.key), ["job:gunluk:2026-10-21:stuck"]);
+  // Panelde de "yarıda kesildi"; gerçek hata yine "hata verdi"
+  assert.equal(jobHealth("gunluk", [closed], tr("2026-10-22 08:20"), { watchSince: OLD_WATCH }).state, "stuck");
+  const failed = { ...closed, message: "Sabah e-postası: Resend yanıt vermiyor" };
+  assert.equal(jobHealth("gunluk", [failed], tr("2026-10-22 08:20"), { watchSince: OLD_WATCH }).state, "failed");
+});
+
+test("kart özeti: bekleyen iş, kısmen, sürüyor; 'ikisi de çalıştı' yalnız ikisi de bugün çalışıp bittiyse", () => {
+  const now = tr("2026-10-22 14:00");
+  const sum = (runs: JobRunLite[], watchSince: string | null = OLD_WATCH) => jobsSummary({ production: true, cronSecret: true, health: health(now, runs, watchSince) }, now);
+  // Yayın bugün 10:00'da, henüz kayıt yok: iki iş de bekleniyor
+  const deployed = tr("2026-10-22 10:00").toISOString();
+  assert.equal(sum([], deployed), "İlk çalışma bekleniyor");
+  assert.equal(sum([run("parasut", "2026-10-22 07:30", "ok")], deployed), "İlk çalışma bekleniyor");
+  const pOk = run("parasut", "2026-10-22 07:30", "ok");
+  assert.equal(sum([pOk, run("gunluk", "2026-10-22 08:10", "ok")]), "Bu sabah ikisi de çalıştı");
+  assert.equal(sum([run("parasut", "2026-10-22 07:30", "skipped"), run("gunluk", "2026-10-22 08:10", "ok")]), "Bu sabah ikisi de çalıştı");
+  assert.equal(sum([pOk, run("gunluk", "2026-10-22 08:10", "partial")]), "Sabah işinde bir adım hata verdi");
+  assert.equal(jobsSummary({ production: true, cronSecret: true, health: health(tr("2026-10-22 08:11"), [pOk, run("gunluk", "2026-10-22 08:10", "running")]) }, tr("2026-10-22 08:11")), "Bir iş şu an sürüyor");
+  // 07:10: ikisi de dün için değerlendirilir
+  const early = tr("2026-10-22 07:10");
+  const y = [run("parasut", "2026-10-21 07:30", "ok"), run("gunluk", "2026-10-21 08:10", "ok")];
+  assert.equal(jobsSummary({ production: true, cronSecret: true, health: health(early, y) }, early), "Son çalışmalar sorunsuz");
+  assert.equal(sum([], OLD_WATCH), "Sabah işi çalışmadı");
+  assert.equal(jobsSummary(null, now), "Durum okunamadı");
+  assert.equal(jobsSummary({ production: false, cronSecret: true, health: health(now, []) }, now), "Yalnız canlıda çalışır");
+});
+
+test("adımlar gerçekte olanı söyler: cihazı olmayan hatırlatıcı, alıcısız e-posta", () => {
+  assert.deepEqual(reminderStep({ users: 2, sent: 3, failed: 1 }), { code: "ok" });
+  assert.deepEqual(reminderStep({ users: 1, sent: 0, failed: 0 }), { code: "nodevice" });
+  assert.deepEqual(reminderStep({ users: 0, sent: 0, failed: 0 }), { code: "none" });
+  assert.deepEqual(reminderStep({ users: 1, sent: 0, failed: 2 }), { code: "error", error: "2 cihaza gönderilemedi" });
+  assert.deepEqual(reminderStep({ error: "bağlantı koptu" }), { code: "error", error: "bağlantı koptu" });
+  assert.deepEqual(digestStep({ status: "sent" }), { code: "sent" });
+  assert.deepEqual(digestStep({ status: "skipped" }), { code: "skipped" });
+  assert.deepEqual(digestStep({ status: "skipped", off: "disabled" }), { code: "off" });
+  assert.deepEqual(digestStep({ status: "skipped", off: "nokey" }), { code: "nokey" });
+  assert.equal(digestStep({ status: "skipped", off: "norecipient" }).code, "norecipient");
+  assert.deepEqual(digestStep({ status: "error", error: "Resend yanıt vermiyor" }), { code: "error", error: "Resend yanıt vermiyor" });
+  assert.deepEqual(stepTexts({ digest: "norecipient", reminders: "nodevice" }), ["E-posta gitmedi: bildirim adresi yok", "Hatırlatıcı var, bildirim açık cihaz yok"]);
+  assert.deepEqual(stepTexts({ digest: "nokey" }), ["E-posta: Resend kurulmadı"]);
+  // Gönderilecek bir şey varken alıcı yok: iş "kısmen", mesajda neden
+  const ok = { code: "ok" };
+  const base = { sync: { code: "today" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
+  const lonely = dailyOutcome({ ...base, digest: digestStep({ status: "skipped", off: "norecipient" }) });
+  assert.equal(lonely.status, "partial");
+  assert.equal(lonely.message, "Sabah e-postası: gönderilecek bir şey vardı ama etkin bildirim adresi yok");
+  assert.equal(dailyOutcome({ ...base, digest: digestStep({ status: "skipped", off: "nokey" }) }).status, "ok");
+  assert.equal(dailyOutcome({ ...base, digest: { code: "sent" }, reminders: reminderStep({ users: 1, sent: 0, failed: 0 }) }).status, "ok");
+});
+
+test("izleme başlangıcı canlı derlemede yalnız işler bir günden uzun süredir kayıt yazmadıysa yeniden başlar", () => {
+  const now = tr("2026-10-22 14:00");
+  assert.equal(watchRestarts(null, now), true);
+  assert.equal(watchRestarts(tr("2026-10-22 08:05").toISOString(), now), false);
+  // Dünkü 08:05'ten bu yana: 30 saat (eski sürüme dönülmüş ya da önceki derleme bozulmuş)
+  assert.equal(watchRestarts(tr("2026-10-21 08:05").toISOString(), now), true);
+  // Sabah 07:05'teki yayın, dünkü 07:59 çalışmasından sonra: yeniden başlamaz
+  assert.equal(watchRestarts(tr("2026-10-21 07:59").toISOString(), tr("2026-10-22 07:05")), false);
+});
+
 test("rotalar çalışmayı kaydeder; sabah işi e-postaya eşitleme bilgisini verir", () => {
   const parasut = readFileSync(join(process.cwd(), "src/app/api/cron/parasut/route.ts"), "utf8");
   assert.match(parasut, /const denied = await rejectUnlessCron\(request\);\s*if \(denied\) return denied;[\s\S]*startJobRun\("parasut"\)/);
@@ -276,6 +351,10 @@ test("rotalar çalışmayı kaydeder; sabah işi e-postaya eşitleme bilgisini v
   assert.match(gunluk, /const denied = await rejectUnlessCron\(request\);\s*if \(denied\) return denied;\s*const runId = await startJobRun\("gunluk"\)/);
   assert.match(gunluk, /runReminderDigest\("cron", \{ syncedToday: alreadySynced \|\| Boolean\(sync\?\.ok\) \}\)/);
   assert.match(gunluk, /finally \{\s*await finishJobRun\(runId, outcome\);/);
+  assert.match(gunluk, /reminders: reminderStep\(reminders\)/);
+  assert.match(gunluk, /digest: digestStep\(result\)/);
+  const runsSrc = readFileSync(join(process.cwd(), "src/server/jobs/runs.ts"), "utf8");
+  assert.match(runsSrc, /\.set\(\{ status: "error", finishedAt: new Date\(now\), message: CUT_OFF_MESSAGE \}\)/);
 });
 
 test("okuyan ekranlar yazmaz: izleme başlangıcını yalnız derleme ve iş başlangıcı yazar", () => {
@@ -286,4 +365,5 @@ test("okuyan ekranlar yazmaz: izleme başlangıcını yalnız derleme ve iş ba�
   assert.doesNotMatch(alerts, /markWatchSince|insert\(s\.integrationState\)/);
   const predeploy = readFileSync(join(process.cwd(), "scripts/predeploy.ts"), "utf8");
   assert.match(predeploy, /if \(process\.env\.VERCEL_ENV === "production"\) await markJobsWatched\(\);/);
+  assert.match(predeploy, /await restartWatchOnDeploy\(db\)/);
 });

@@ -20,6 +20,10 @@ export const JOBS: Record<JobKey, { label: string; window: string; startMin: num
 export const GRACE_MIN = 30;
 /** İşlevin süresi 60 sn; "running" 5 dakikayı geçtiyse işlev kesilmiş, sonuç yazılamamıştır */
 export const STUCK_MS = 5 * 60_000;
+/** Yarıda kalan çalışmayı aynı işin sonraki çalışması bu iletiyle "hata" olarak kapatır (src/server/jobs/runs.ts) */
+export const CUT_OFF_MESSAGE = "Yarıda kesildi (işlev süresi doldu)";
+/** Canlı derlemede son bu kadar süredir hiçbir iş kaydı yoksa izleme o yayından yeniden başlar (`watchRestarts`) */
+export const WATCH_IDLE_MS = 26 * 3600_000;
 /** job_runs bu kadar gün tutulur */
 export const RUNS_KEEP_DAYS = 90;
 /** Uyarıların götürdüğü yer: Ayarlar › Günlük işler */
@@ -85,10 +89,45 @@ export function jobHealth(job: JobKey, runs: JobRunLite[], now: Date, opts: { wa
     state = !Number.isFinite(since) || since > trTime(day, JOBS[job].startMin) ? "waiting" : "late";
   } else if (run.status === "running") {
     state = now.getTime() - Date.parse(run.startedAt) > STUCK_MS ? "stuck" : "running";
+  } else if (run.status === "error") {
+    // Sonraki çalışmanın kapattığı yarıda kalmış çalışma yine "yarıda kesildi": bekçinin 07:xx'te gönderdiği uyarı
+    // (…:stuck) sabah işi satırı kapattıktan sonra sabah e-postasında "hata verdi" olarak yinelenmesin
+    state = run.message === CUT_OFF_MESSAGE ? "stuck" : "failed";
   } else {
-    state = run.status === "error" ? "failed" : run.status;
+    state = run.status;
   }
   return { state, day, run, last: mine[0] ?? null, lastOk: mine.find((r) => r.status === "ok") ?? null };
+}
+
+/**
+ * Canlı derlemede izleme başlangıcı yeniden mi yazılır: son `WATCH_IDLE_MS` içinde hiçbir iş kaydı yoksa. Derleme
+ * betiği kod yayına çıkmadan çalışır; derleme bozulursa ya da sonra eski sürüme dönülürse (Instant Rollback) işler
+ * kayıt yazmayan eski kodla çalışır, eski başlangıç kalsaydı bu kod yayına çıkınca "çalışmadı" yanlış alarmı verirdi.
+ * İşler kayıt yazıyorsa başlangıç değişmez. Bedeli: iki iş birden bir günden uzun süredir çalışmıyorsa, yayın
+ * "çalışmadı" uyarısını bir sonraki pencereye erteler.
+ */
+export function watchRestarts(lastRunAt: string | null, now: Date): boolean {
+  return lastRunAt === null || now.getTime() - Date.parse(lastRunAt) > WATCH_IDLE_MS;
+}
+
+/**
+ * Ayarlar › Günlük işler kartının kapalı satırdaki (telefonda) özeti: en önemli durum. "İkisi de çalıştı" yalnız iki iş
+ * de bugün çalışıp bittiyse; bekleyen iş (ilk yayın günü) önce söylenir.
+ */
+export function jobsSummary(o: { production: boolean; cronSecret: boolean; health: Record<JobKey, JobHealth> } | null, now: Date): string {
+  if (!o) return "Durum okunamadı";
+  if (!o.production) return "Yalnız canlıda çalışır";
+  if (!o.cronSecret) return "CRON_SECRET eksik";
+  const { gunluk: g, parasut: p } = o.health;
+  if (g.state === "late") return "Sabah işi çalışmadı";
+  if (g.state === "failed" || g.state === "stuck") return "Sabah işi hata verdi";
+  if (p.state === "failed" || p.state === "stuck") return "Paraşüt işi hata verdi";
+  if (p.state === "late") return "Paraşüt işi çalışmadı";
+  if (g.state === "partial") return "Sabah işinde bir adım hata verdi";
+  if (g.state === "running" || p.state === "running") return "Bir iş şu an sürüyor";
+  if (g.state === "waiting" || p.state === "waiting") return "İlk çalışma bekleniyor";
+  const today = trClock(now).day;
+  return g.day === today && p.day === today ? "Bu sabah ikisi de çalıştı" : "Son çalışmalar sorunsuz";
 }
 
 // ---------------------------------------------------------------- Adımlar ve sonuç
@@ -112,9 +151,16 @@ const STEP_NAMES: Record<string, string> = {
 
 /** Adım kodlarının ekrandaki karşılığı (Ayarlar › Günlük işler); sıra da buradan */
 export const STEP_LABELS: Record<string, Record<string, string>> = {
-  digest: { sent: "E-posta gönderildi", skipped: "E-posta: yeni bir şey yok", off: "E-posta kapalı", error: "E-posta gönderilemedi" },
+  digest: {
+    sent: "E-posta gönderildi",
+    skipped: "E-posta: yeni bir şey yok",
+    off: "E-posta kapalı",
+    nokey: "E-posta: Resend kurulmadı",
+    norecipient: "E-posta gitmedi: bildirim adresi yok",
+    error: "E-posta gönderilemedi",
+  },
   sync: { ok: "Paraşüt eşitlendi", today: "Paraşüt bugün eşitlenmişti", busy: "Paraşüt eşitlemesi sürüyordu", off: "Paraşüt bağlı değil", error: "Paraşüt hata" },
-  reminders: { ok: "Hatırlatıcı bildirimi gitti", none: "Bugün kişisel hatırlatıcı yok", error: "Hatırlatıcı bildirimi hata" },
+  reminders: { ok: "Hatırlatıcı bildirimi gitti", nodevice: "Hatırlatıcı var, bildirim açık cihaz yok", none: "Bugün kişisel hatırlatıcı yok", error: "Hatırlatıcı bildirimi hata" },
   karaoke: { ok: "Karaoke tamam", fresh: "Karaoke tamam", off: "Karaoke kurulmadı", error: "Karaoke hata" },
   menu: { ok: "Menü tamam", fresh: "Menü tamam", off: "Menü kurulmadı", error: "Menü hata" },
   sales: { ok: "Online satış tamam", off: "Online satış kurulmadı", error: "Online satış hata" },
@@ -132,14 +178,37 @@ export function stepTexts(steps: Record<string, string> | null): string[] {
 const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` : v);
 
 export type DailyStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
+export type StepResult = { code: string; error?: string | null };
+
+/**
+ * Sabah e-postasının adımı. `off` gitmeme nedeni (src/server/notify/digest.ts): kapalı ve Resend kurulmamış sorun
+ * sayılmaz (ayar); gönderilecek bir şey varken etkin bildirim adresi yoksa e-posta gitmemiştir, adım sorunlu sayılır.
+ */
+export function digestStep(r: { status: "sent" | "skipped" | "error"; off?: "disabled" | "nokey" | "norecipient"; error?: string }): StepResult {
+  if (r.status === "sent") return { code: "sent" };
+  if (r.status === "error") return { code: "error", error: r.error };
+  if (r.off === "norecipient") return { code: "norecipient", error: "gönderilecek bir şey vardı ama etkin bildirim adresi yok" };
+  return { code: r.off === "disabled" ? "off" : (r.off ?? "skipped") };
+}
+
+/** Hatırlatıcı bildiriminin adımı: hiçbir cihaza gidemediyse hata; bildirimi açık cihazı olmayan kişi sorun değil */
+export function reminderStep(r: { users: number; sent: number; failed: number } | { error: string }): StepResult {
+  if ("error" in r) return { code: "error", error: r.error };
+  if (r.sent) return { code: "ok" };
+  if (r.failed) return { code: "error", error: `${r.failed} cihaza gönderilemedi` };
+  return { code: r.users ? "nodevice" : "none" };
+}
+
+/** Hata sayılan adım sonuçları: "error" ve gönderilecek e-postanın alıcısız kalması */
+const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k === "digest" && s.code === "norecipient");
 
 /**
  * Sabah işinin sonucu: e-posta gönderilemediyse (ya da iş istisnayla bittiyse) "error", başka bir adım (Paraşüt dahil)
- * hata verdiyse "partial", aksi "ok". Mesaj hatalı adımların adı ve hatası, e-posta önce.
+ * hata verdiyse ya da e-posta alıcısız kaldıysa "partial", aksi "ok". Mesaj hatalı adımların adı ve hatası, e-posta önce.
  */
-export function dailyOutcome(steps: Record<DailyStep, { code: string; error?: string | null }>): JobOutcome {
+export function dailyOutcome(steps: Record<DailyStep, StepResult>): JobOutcome {
   const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales"];
-  const failed = order.filter((k) => steps[k].code === "error");
+  const failed = order.filter((k) => stepFailed(k, steps[k]));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
   const message = failed.length ? cut(failed.map((k) => `${STEP_NAMES[k]}: ${steps[k].error || "bilinmeyen hata"}`).join(" · "), 500) : null;
   return { status, steps: Object.fromEntries(order.map((k) => [k, steps[k].code])), message };

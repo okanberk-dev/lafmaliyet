@@ -15,7 +15,7 @@ export async function SystemBanner() {
   return (
     <div role="alert" className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-2xl bg-bad-soft px-4 py-3 text-sm text-bad ring-1 ring-bad/20">
       <CircleAlert size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-0.5">
+      <div className="min-w-0 flex-1 space-y-0.5 break-words">
         {items.slice(0, 2).map((i) => (
           <p key={i.id} className="text-pretty">
             <strong className="font-semibold">{i.title}</strong> · {i.body}

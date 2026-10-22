@@ -117,14 +117,23 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
   işine bakar; çalışmadıysa ya da hata verdiyse sabah e-postasının alıcılarına kısa bir **sistem uyarısı e-postası**
   gider (konu "L'Affogato · Dünkü sabah işi çalışmadı (21 Ekim)"; ne yapılacağıyla). Bekçi en çok 8 saniye bekletir,
   kalan süre eşitlemeye verilir. Gitmezse aynı uyarı sabah e-postasının "Sistem uyarıları" bölümüne girer.
-- Her sorun e-postayla bir kez gider (`notification_log` anahtarı `job:<iş>:<gün>:<durum>`).
-- Yanlış alarm olmasın diye: önizlemede ve yerelde uyarı yok (`VERCEL_ENV=production` değilse); canlıya ilk yayının
-  anı (`integration_state` › `jobs.watchSince`, derlemede ve her işin başında yalnız yoksa yazılır) o günün
-  penceresinden sonraysa iş "Bekleniyor" sayılır; aynı gün sonradan başarılı olan çalışma önceki hatanın yerine geçer;
-  bugün zaten çalışmış iş için dünkü hata sürmez.
-- Elle çalıştırma: Vercel › lafmaliyet › Settings › Cron Jobs › **Run** (kayda geçer). Paraşüt için Paraşüt
-  entegrasyonu › Şimdi eşitle, sabah e-postası için Ödemeler › Bugünküleri şimdi gönder de olur (bunlar iş kaydı
-  yazmaz, uyarıyı kaldırmaz; ertesi sabahki başarılı çalışma kaldırır).
+- Her sorun e-postayla bir kez gider (`notification_log` anahtarı `job:<iş>:<gün>:<durum>`). Yarıda kesilen çalışmayı
+  sonraki çalışma "hata" olarak kapatsa da durumu "yarıda kesildi" kalır: bekçinin gönderdiği uyarı sabah e-postasında
+  yinelenmez.
+- Yanlış alarm olmasın diye: önizlemede ve yerelde uyarı yok (`VERCEL_ENV=production` değilse); izlemenin başladığı an
+  (`integration_state` › `jobs.watchSince`) o günün penceresinden sonraysa iş "Bekleniyor" sayılır; aynı gün sonradan
+  başarılı olan çalışma önceki hatanın yerine geçer; bugün zaten çalışmış iş için dünkü hata sürmez. İzleme başlangıcı
+  her işin başında yalnız yoksa yazılır; canlı derlemede işler son 26 saatte hiç kayıt yazmadıysa (ilk yayın, bozulan
+  bir derleme ya da eski sürüme dönüş sonrası kayıt yazmayan kod çalıştı) o yayının anıyla değiştirilir. Bedeli: iki
+  iş birden bir günden uzun süredir çalışmıyorsa yeni bir yayın "çalışmadı" uyarısını bir sonraki pencereye erteler.
+- Elle çalıştırma: Vercel › lafmaliyet › Settings › Cron Jobs › **Run** (kayda geçer, uyarıyı kaldırır). Paraşüt için
+  Paraşüt entegrasyonu › Şimdi eşitle, sabah e-postası için Ödemeler › Bugünküleri şimdi gönder de olur; bunlar iş
+  kaydı yazmaz, uyarıyı kaldırmaz (panel uyarısını ertesi günün çalışması kaldırır, ama bekçi o sabah dünkü hatayı yine
+  e-postayla söyler). Ayarlar › Günlük işler kartı da bunu söyler.
+- Adım sözcükleri gerçekte olanı söyler: hatırlatıcısı olup bildirimi açık cihazı olmayan kişi "Hatırlatıcı var,
+  bildirim açık cihaz yok"; bildirim hiçbir cihaza gidemediyse adım hata. Sabah e-postası "E-posta kapalı", "Resend
+  kurulmadı" ya da "gitmedi: bildirim adresi yok" (gönderilecek bir şey vardı ama etkin adres yok; iş "Kısmen" sayılır,
+  zilde turuncu).
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,

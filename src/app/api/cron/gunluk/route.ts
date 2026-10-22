@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { dailyOutcome, type DailyStep, type JobOutcome } from "@/lib/job-health";
+import { dailyOutcome, digestStep, reminderStep, type DailyStep, type JobOutcome, type StepResult } from "@/lib/job-health";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { syncKaraoke } from "@/server/karaoke/sync";
-import { runReminderDigest, type DigestResult } from "@/server/notify/digest";
+import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
@@ -20,19 +20,11 @@ import { syncSiteSales } from "@/server/site-sales/sync";
 // (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler.
 export const maxDuration = 60;
 
-type Step = { code: string; error?: string | null };
-
 /** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
-function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): Step {
+function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): StepResult {
   if (r.status !== "error") return { code: r.status };
   const months = (r.results ?? []).filter((x) => x.status === "error").map((x) => `${x.month}: ${x.error ?? "hata"}`);
   return { code: "error", error: r.error ?? (months.join(" · ") || null) };
-}
-
-function digestStep(r: DigestResult): Step {
-  if (r.status === "sent") return { code: "sent" };
-  if (r.status === "skipped") return { code: r.off ? "off" : "skipped" };
-  return { code: "error", error: r.error };
 }
 
 export async function GET(request: NextRequest) {
@@ -42,7 +34,7 @@ export async function GET(request: NextRequest) {
   const configured = isParasutConfigured();
   let alreadySynced = false;
   let sync: { ok: boolean; summary?: string; error?: string } | null = null;
-  let syncStep: Step = { code: configured ? "today" : "off" };
+  let syncStep: StepResult = { code: configured ? "today" : "off" };
   try {
     if (configured) {
       alreadySynced = await parasutSyncedToday();
@@ -65,8 +57,8 @@ export async function GET(request: NextRequest) {
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
     ]);
-    const steps: Record<Exclude<DailyStep, "sync" | "digest">, Step> = {
-      reminders: "error" in reminders ? { code: "error", error: reminders.error } : { code: reminders.users ? "ok" : "none" },
+    const steps: Record<Exclude<DailyStep, "sync" | "digest">, StepResult> = {
+      reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
       menu: siteStep(menu),
       sales: siteStep(sales),

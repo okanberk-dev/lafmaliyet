@@ -2,14 +2,15 @@ import "server-only";
 
 import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
 
-import { RUNS_KEEP_DAYS, STUCK_MS, type JobKey, type JobOutcome, type JobRunLite } from "@/lib/job-health";
+import { CUT_OFF_MESSAGE, RUNS_KEEP_DAYS, STUCK_MS, type JobKey, type JobOutcome, type JobRunLite } from "@/lib/job-health";
 import { getDb, schema as s } from "@/server/db";
 
 import { markWatchSince, WATCH_SINCE_KEY } from "./watch";
 
 /**
- * Günlük işin çalışma kaydını açar: aynı işin yarıda kalmış (işlev süresi dolmuş) çalışması "hata" olur, 90 günden
- * eski kayıtlar silinir, izleme başlangıcı yoksa yazılır. Kayıt yazılamazsa (veritabanı yok) iş yine çalışır: null.
+ * Günlük işin çalışma kaydını açar: aynı işin yarıda kalmış (işlev süresi dolmuş) çalışması "hata" olur (iletisi
+ * CUT_OFF_MESSAGE; durumu yine "yarıda kesildi" sayılır), 90 günden eski kayıtlar silinir, izleme başlangıcı yoksa
+ * yazılır. Kayıt yazılamazsa (veritabanı yok) iş yine çalışır: null.
  */
 export async function startJobRun(job: JobKey): Promise<number | null> {
   try {
@@ -18,7 +19,7 @@ export async function startJobRun(job: JobKey): Promise<number | null> {
     await Promise.all([
       db
         .update(s.jobRuns)
-        .set({ status: "error", finishedAt: new Date(now), message: "Yarıda kesildi (işlev süresi doldu)" })
+        .set({ status: "error", finishedAt: new Date(now), message: CUT_OFF_MESSAGE })
         .where(and(eq(s.jobRuns.job, job), eq(s.jobRuns.status, "running"), lt(s.jobRuns.startedAt, new Date(now - STUCK_MS)))),
       db.delete(s.jobRuns).where(lt(s.jobRuns.startedAt, new Date(now - RUNS_KEEP_DAYS * 86_400_000))),
       markWatchSince(db),
