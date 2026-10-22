@@ -121,20 +121,23 @@ async function* tableRows(q: Query, table: string, cols: ColumnInfo[], rule: Tab
 
 /**
  * Yedeğin satırları (her biri "\n" ile biter), son satırdan sonra özet döner. Bütün tablolar tek bir REPEATABLE READ
- * READ ONLY işlemden okunur: indirme sürerken yapılan değişiklikler dosyayı yarım bırakmaz. Bağlantı ayrılır, iş
- * bitince ya da okuyan vazgeçince (generator.return, indirme iptal edildi) bırakılır.
+ * READ ONLY işlemden okunur: indirme sürerken yapılan değişiklikler dosyayı yarım bırakmaz. Bağlantı ayrılır, okuma
+ * bitince ya da okuyan vazgeçince (generator.return, indirme iptal edildi) bırakılır; son satır veritabanı işi
+ * bittikten sonra verilir (okuyan son satırda durursa da bağlantı açık kalmaz).
  */
 export async function* backupLines(sql: postgres.Sql, opts: BackupOptions): AsyncGenerator<string, BackupSummary, undefined> {
   const conn = await sql.reserve();
   let open = false;
+  const hash = createHash("sha256");
+  const out = (line: string) => {
+    hash.update(line, "utf8");
+    return line;
+  };
+  const counts: Record<string, number> = {};
+  let rows = 0;
   try {
     await conn.unsafe("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     open = true;
-    const hash = createHash("sha256");
-    const out = (line: string) => {
-      hash.update(line, "utf8");
-      return line;
-    };
     const [migrations, tables] = [await appliedMigrations(conn), await publicTables(conn)];
     const header: BackupHeader = {
       format: BACKUP_FORMAT,
@@ -148,8 +151,6 @@ export async function* backupLines(sql: postgres.Sql, opts: BackupOptions): Asyn
     };
     yield out(encodeLine(header));
     const skipped = new Set(header.excluded.tables);
-    const counts: Record<string, number> = {};
-    let rows = 0;
     for (const table of tables) {
       if (skipped.has(table)) continue;
       const rule = TABLE_RULES[table];
@@ -163,21 +164,21 @@ export async function* backupLines(sql: postgres.Sql, opts: BackupOptions): Asyn
       counts[table] = n;
       rows += n;
     }
-    const sha256 = hash.digest("hex");
-    yield encodeLine({ end: { tables: counts, rows, sha256 } });
     await conn.unsafe("COMMIT");
     open = false;
-    const docCount = Object.entries(counts).reduce((sum, [t, n]) => sum + (TABLE_RULES[t]?.documents ? n : 0), 0);
-    return { tables: counts, rows, sha256, documents: opts.documents, docCount };
   } finally {
     if (open) await conn.unsafe("ROLLBACK").catch(() => {});
     conn.release();
   }
+  const sha256 = hash.digest("hex");
+  yield encodeLine({ end: { tables: counts, rows, sha256 } });
+  const docCount = Object.entries(counts).reduce((sum, [t, n]) => sum + (TABLE_RULES[t]?.documents ? n : 0), 0);
+  return { tables: counts, rows, sha256, documents: opts.documents, docCount };
 }
 
 /**
- * Yedeği gzip'li dosyaya yazar (komut satırı ve geri yükleme öncesi kopya). Yarıda kalırsa dosya silinir: eksik dosya
- * yedek sanılmasın (son satırı olmadığı için zaten geri yüklenmez).
+ * Yedeği gzip'li dosyaya yazar (komut satırı ve geri yükleme öncesi kopya). Var olan dosyanın üzerine yazmaz. Yarıda
+ * kalırsa yazdığı dosyayı siler: eksik dosya yedek sanılmasın (son satırı olmadığı için zaten geri yüklenmez).
  */
 export async function writeBackupFile(sql: postgres.Sql, path: string, opts: BackupOptions): Promise<BackupSummary & { bytes: number }> {
   let summary: BackupSummary | null = null;
@@ -185,16 +186,17 @@ export async function writeBackupFile(sql: postgres.Sql, path: string, opts: Bac
     summary = yield* backupLines(sql, opts);
   }
   const file = createWriteStream(path, { flags: "wx" });
-  let bytes = 0;
-  const gzip = createGzip();
-  gzip.on("data", (chunk: Buffer) => {
-    bytes += chunk.length;
+  // Dosya açıldıysa (adı boştaydı) hata durumunda silinecek olan bizimkidir; "wx" var olan dosyada açılmaz
+  let created = false;
+  file.once("open", () => {
+    created = true;
   });
   try {
-    await pipeline(Readable.from(lines()), gzip, file);
+    await pipeline(Readable.from(lines()), createGzip(), file);
   } catch (e) {
-    await unlink(path).catch(() => {});
+    if (created) await unlink(path).catch(() => {});
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Dosya zaten var, üzerine yazılmadı: ${path}`);
     throw e;
   }
-  return { ...summary!, bytes };
+  return { ...summary!, bytes: file.bytesWritten };
 }

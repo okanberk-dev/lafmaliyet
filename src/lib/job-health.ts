@@ -6,6 +6,7 @@
  * sonundan sonra GRACE_MIN beklenir. Saatler İstanbul'a göre (UTC+3, yaz saati yok; mevcut kodla aynı varsayım).
  */
 
+import { BACKUP_HREF, backupReminder } from "@/lib/backup/format";
 import { addDays, longDateTR } from "@/lib/reminders";
 
 export type JobKey = "parasut" | "gunluk";
@@ -256,8 +257,10 @@ const LEVEL_ORDER = { danger: 0, warning: 1, info: 2 } as const;
 
 /**
  * Zil, Genel bakış (yalnız "danger") ve /api/health için uyarılar. Yalnız canlıda (işler yalnız orada çalışır).
- * CRON_SECRET yoksa iki iş de hiç çalışmaz: tek uyarı o, işlerin "çalışmadı" uyarıları ayrıca verilmez. Paraşüt işinin
- * hatası, zildeki "Paraşüt eşitlemesi başarısız" (parasut_sync_runs) zaten söylüyorsa yinelenmez. Önce "danger".
+ * CRON_SECRET yoksa iki iş de hiç çalışmaz: tek iş uyarısı o, işlerin "çalışmadı" uyarıları ayrıca verilmez. Paraşüt
+ * işinin hatası, zildeki "Paraşüt eşitlemesi başarısız" (parasut_sync_runs) zaten söylüyorsa yinelenmez. Yedek
+ * hatırlatması (son yedek 30 günden eski ya da hiç yok, src/lib/backup/format.ts) işlerden bağımsızdır ve "info":
+ * Genel bakış şeridine ve /api/health'in 503'üne girmez. Önce "danger".
  */
 export function systemAlerts(i: {
   production: boolean;
@@ -266,9 +269,13 @@ export function systemAlerts(i: {
   health: Record<JobKey, JobHealth>;
   /** Günlük eşitlemenin (tedarikçi geçmişi hariç) son hatalı çalışmasının başlangıcı */
   parasutSyncErrorAt: string | null;
+  /** Son yedeğin anı (integration_state › backup.last); hiç yoksa null, verilmezse yedek hatırlatılmaz */
+  lastBackupAt?: string | null;
 }): SystemAlert[] {
   if (!i.production) return [];
   const today = trClock(i.now).day;
+  const reminder = i.lastBackupAt === undefined ? null : backupReminder(i.lastBackupAt, i.now);
+  const backup: SystemAlert[] = reminder ? [{ ...reminder, level: "info", href: BACKUP_HREF, day: null }] : [];
   if (!i.cronSecret) {
     return [
       {
@@ -279,6 +286,7 @@ export function systemAlerts(i: {
         href: JOBS_HREF,
         day: null,
       },
+      ...backup,
     ];
   }
   const out: SystemAlert[] = [];
@@ -322,7 +330,7 @@ export function systemAlerts(i: {
       );
     }
   }
-  return out.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+  return [...out, ...backup].sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
 }
 
 export interface EmailProblem {

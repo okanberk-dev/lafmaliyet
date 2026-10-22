@@ -1,7 +1,8 @@
 // Tam yedeğin geri yüklenmesi (yalnız komut satırından: npm run db:restore; adımlar docs/YEDEK.md). Dosya önce
 // baştan sona okunup doğrulanır (özet, son satır, sürüm), sonra tek bir işlemde yüklenir: herhangi bir hata hedefi
 // olduğu gibi bırakır. "server-only" yok: komut satırı ve testler kullanır; panel kullanmaz (tek dokunuşla bütün veri
-// değişmesin, Vercel 4,5 MB'tan büyük isteği zaten almaz).
+// değişmesin, Vercel 4,5 MB'tan büyük isteği zaten almaz). Dışa aktarımdan ayrı modül: indirme rotası migration
+// dosyalarını ve parola özetini taşımasın.
 
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
@@ -15,6 +16,7 @@ import {
   BACKUP_FORMAT,
   BACKUP_VERSION,
   backupSchemaPlan,
+  END_PREFIX,
   mergeUserRows,
   orderTables,
   ROW_PREFIX,
@@ -22,6 +24,7 @@ import {
   type BackupEnd,
   type BackupHeader,
   type SavedCredentials,
+  type SchemaPlan,
 } from "@/lib/backup/format";
 import { hashPassword } from "@/server/auth/password";
 import { INVITE_PASSWORD_HASH } from "@/server/auth/tokens";
@@ -49,21 +52,26 @@ const broken = (why: string) => new BackupFileError(`Dosya eksik ya da bozuk (in
 
 /**
  * Satırları okur ve doğrular: ilk satır başlık (biçim ve sürüm), son satır özet; sha256 ve tablo başına satır sayısı
- * tutmalı. Herhangi biri tutmazsa BackupFileError.
+ * tutmalı. Herhangi biri tutmazsa BackupFileError. Yazıcı boş satır üretmez: yalnız dosyanın sonundaki "\n"den sonraki
+ * boş parça kabul edilir.
  */
 export async function parseBackupLines(lines: AsyncIterable<string> | Iterable<string>): Promise<ParsedBackup> {
   const hash = createHash("sha256");
   let header: BackupHeader | null = null;
   let end: BackupEnd | null = null;
+  let trailing = false;
   const tables = new Map<string, BackupTable>();
   let current: BackupTable | null = null;
   let n = 0;
   for await (const line of lines) {
     n++;
-    // Yazıcı boş satır üretmez; dosyanın sonundaki "\n"den sonraki boş parça
-    if (line === "") continue;
+    if (trailing) throw broken(`${n - 1}. satır boş`);
+    if (line === "") {
+      trailing = true;
+      continue;
+    }
     if (end) throw broken("son satırdan sonra veri var");
-    if (line.startsWith('{"end":')) {
+    if (line.startsWith(END_PREFIX)) {
       end = parseJson<{ end: BackupEnd }>(line, n).end;
       continue;
     }
@@ -86,7 +94,7 @@ export async function parseBackupLines(lines: AsyncIterable<string> | Iterable<s
     tables.set(t.table, current);
   }
   if (!header) throw broken("dosya boş");
-  if (!end || typeof end.sha256 !== "string" || !end.tables) throw broken("son satır yok");
+  if (!end || typeof end.sha256 !== "string" || !end.tables || typeof end.tables !== "object") throw broken("son satır yok");
   if (hash.digest("hex") !== end.sha256) throw broken("özet tutmuyor");
   for (const [name, t] of tables) {
     if (end.tables[name] !== t.rows.length) throw broken(`${name} tablosunun satır sayısı tutmuyor`);
@@ -137,6 +145,14 @@ export async function readBackupFile(path: string): Promise<ParsedBackup> {
 export function loadMigrations(folder = "drizzle"): { meta: MigrationMeta; tag: string }[] {
   const journal = JSON.parse(readFileSync(join(folder, "meta", "_journal.json"), "utf8")) as { entries: { tag: string }[] };
   return readMigrationFiles({ migrationsFolder: folder }).map((meta, i) => ({ meta, tag: journal.entries[i].tag }));
+}
+
+/** Yedeğin şema sürümü bu kodla geri yüklenebilir mi (komut satırı onay sormadan önce de bakar) */
+export function planFor(backup: ParsedBackup, folder = "drizzle"): SchemaPlan {
+  return backupSchemaPlan(
+    backup.header.migrations,
+    loadMigrations(folder).map((m) => ({ when: m.meta.folderMillis, tag: m.tag })),
+  );
 }
 
 type Tx = postgres.Sql | postgres.TransactionSql;
@@ -190,13 +206,23 @@ export function targetSummary(t: TargetInfo): string {
   return t.tables.length > 3 ? `${top.join(", ")}, …` : top.join(", ") || "drizzle şeması";
 }
 
+/** Dolu hedefe --sil olmadan yazılmaz */
+export function targetNotEmptyError(t: TargetInfo): RestoreError {
+  return new RestoreError(
+    `Hedefte tablolar var (${targetSummary(t)}). Boş bir veritabanı verin ya da üzerine yazmak için --sil ekleyin; önce hedefin yedeği alınır.`,
+  );
+}
+
 export interface RestoreOptions {
   /** --sil: hedefteki bütün tablolar silinip yedekle değiştirilir */
   wipe: boolean;
-  /** Hedef doluysa değişiklikten önce yedeği buraya alınır */
+  /** Hedef doluysa (--sil) değişiklikten önce hedefin yedeği buraya alınır; dolu hedefte zorunlu */
   safetyCopyPath?: string | null;
-  /** ADMIN_EMAIL + ADMIN_PASSWORD: o kişinin parolası (yoksa yönetici olarak eklenir) */
-  admin?: { email: string; password: string; name?: string } | null;
+  /**
+   * ADMIN_EMAIL + ADMIN_PASSWORD: o kişi yönetici olur, parolası bu olur (yoksa eklenir). `onlyIfLockedOut`: hedef
+   * dolu ve yerel değilse (canlı) yalnız hiçbir yöneticinin parolası korunmadıysa (mergeUserRows › mode)
+   */
+  admin?: { email: string; password: string; name?: string; onlyIfLockedOut?: boolean } | null;
   migrationsFolder?: string;
   now?: Date;
 }
@@ -208,8 +234,14 @@ export interface RestoreResult {
   toTag: string;
   later: number;
   safetyCopy: string | null;
+  /** Hedef boş değildi: oradaki bütün oturumlar kapandı */
+  replaced: boolean;
+  /** Parolası ADMIN_PASSWORD yapılan yönetici; ortamda verildi ama kullanılmadıysa `adminSkipped` */
   admin: string | null;
   adminCreated: boolean;
+  adminSkipped: boolean;
+  /** Geri yüklemeden sonra en az bir aktif yönetici parolasıyla girebilir; yoksa komut satırı ne yapılacağını yazar */
+  adminLogin: boolean;
   kept: string[];
   invited: string[];
   warnings: string[];
@@ -305,28 +337,32 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
 
   const target = await inspectTarget(sql);
   const empty = targetIsEmpty(target);
-  if (!empty && !opts.wipe) {
-    throw new RestoreError(
-      `Hedefte tablolar var (${targetSummary(target)}). Boş bir veritabanı verin ya da üzerine yazmak için --sil ekleyin; önce hedefin yedeği alınır.`,
-    );
-  }
+  if (!empty && !opts.wipe) throw targetNotEmptyError(target);
   let safetyCopy: string | null = null;
-  if (!empty && opts.safetyCopyPath) {
+  if (!empty) {
+    // Hedefin bugünkü hâli, hiçbir şey değişmeden önce dosyaya (belgeler dahil): yanlış dosya verildiyse geri dönülür
+    if (!opts.safetyCopyPath) throw new RestoreError("Dolu bir hedefin üzerine yazmadan önce yedeği alınmalı (geri yükleme öncesi kopya).");
     await writeBackupFile(sql, opts.safetyCopyPath, { documents: true, createdBy: "geri yükleme öncesi", app: appVersion(), now: opts.now });
     safetyCopy = opts.safetyCopyPath;
   }
   const { saved, maxSv } = empty ? { saved: [], maxSv: 0 } : await savedCredentials(sql);
-  const admin = opts.admin?.email && opts.admin.password
-    ? { email: opts.admin.email, hash: await hashPassword(opts.admin.password), name: opts.admin.name || "Yönetici" }
-    : null;
+  const admin =
+    opts.admin?.email && opts.admin.password
+      ? { email: opts.admin.email, hash: await hashPassword(opts.admin.password), name: opts.admin.name || "Yönetici" }
+      : null;
+  const mode = !empty && opts.admin?.onlyIfLockedOut ? "lockout" : "always";
 
   const first = migrations.filter((m) => m.meta.folderMillis <= plan.upTo).map((m) => m.meta);
   const rest = migrations.filter((m) => m.meta.folderMillis > plan.upTo).map((m) => m.meta);
   const result = await sql.begin(async (tx) => {
     if (opts.wipe) await wipeTarget(tx);
     await applyMigrations(tx, first);
-
+    // Hedef boştu (ya da silindi): şimdi tablolarda olan her satırı migration'lar ekledi (ör. 0011'in varsayılan
+    // harcama kategorileri). Yedeğin kaynağında da eklenmişlerdi; sonra değiştirilmiş ya da silinmiş olabilirler.
+    // Doğrusu dosyadaki: tablolar boşaltılır, veri yalnız dosyadan gelir
     const present = new Set(await publicTables(tx));
+    if (present.size) await tx.unsafe(`TRUNCATE ${[...present].map((t) => `public.${ident(t)}`).join(", ")} RESTART IDENTITY CASCADE`);
+
     const names = [...backup.tables.keys()].filter((t) => {
       if (present.has(t)) return true;
       warnings.push(`${t} tablosu bu sürümde yok; atlandı.`);
@@ -352,7 +388,8 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
       let cols = data.columns.filter((c) => byName.has(c)).map((c) => byName.get(c)!);
       let lines = data.rows;
       if (table === "users") {
-        users = mergeUserRows(lines.map((l) => JSON.parse(l) as Record<string, unknown>), saved, { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin });
+        users = mergeUserRows(lines.map((l) => JSON.parse(l) as Record<string, unknown>), saved, { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin, mode });
+        // Giriş bilgileri dosyada yok: hedeften korunan ya da davet değerleri ayrıca yazılır (rol ve aktiflik zaten listede)
         const extra = USER_CREDENTIAL_COLUMNS.filter((c) => byName.has(c) && !data.columns.includes(c)).map((c) => byName.get(c)!);
         cols = [...cols, ...extra];
         lines = users.rows.map((r) => JSON.stringify(r));
@@ -372,14 +409,14 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
 
     let adminCreated = false;
     const u = users as ReturnType<typeof mergeUserRows> | null;
-    if (u?.newAdmin || (!u && admin)) {
-      // Yedekte kullanıcı yok ya da ADMIN_EMAIL aralarında değil: yönetici eklenir (kimliği sayaçtan)
-      const row = u?.newAdmin ?? mergeUserRows([], [], { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin }).newAdmin!;
+    const newAdmin = u ? u.newAdmin : admin ? mergeUserRows([], [], { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin }).newAdmin : null;
+    if (newAdmin) {
+      // ADMIN_EMAIL yedekte yok (ya da yedekte hiç kullanıcı yok): yönetici eklenir (kimliği sayaçtan)
       const have = new Set((await columnsOf(tx, "users")).map((c) => c.name));
-      const keys = Object.keys(row).filter((k) => have.has(k));
+      const keys = Object.keys(newAdmin).filter((k) => have.has(k));
       await tx.unsafe(
         `INSERT INTO public.users (${keys.map(ident).join(", ")}) SELECT ${keys.map(ident).join(", ")} FROM json_populate_record(NULL::public.users, $1::json)`,
-        [JSON.stringify(row)],
+        [JSON.stringify(newAdmin)],
       );
       adminCreated = true;
     }
@@ -389,14 +426,18 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
     await tx.unsafe(`INSERT INTO public.activity_log (user_name, action, detail) VALUES ('Sistem', 'Yedekten geri yüklendi', $1)`, [
       `${trTime(h.createdAt)} yedeği · ${h.createdBy} · ${new Intl.NumberFormat("tr-TR").format(rows)} satır`.slice(0, 500),
     ]);
+    const adminUsed = u ? u.admin : newAdmin ? (admin?.email.trim().toLowerCase() ?? null) : null;
+    const adminLogin = adminCreated || Boolean(u?.rows.some((r) => r.role === "admin" && r.active !== false && r.password_hash !== INVITE_PASSWORD_HASH));
     return {
       tables: names.length,
       rows,
-      admin: admin?.email ?? null,
+      admin: adminUsed,
       adminCreated,
+      adminSkipped: Boolean(admin) && !adminUsed,
+      adminLogin,
       kept: u?.kept ?? [],
       invited: u?.invited ?? [],
     };
   });
-  return { ...result, fromTag: plan.fromTag, toTag: plan.toTag, later: plan.later, safetyCopy, warnings };
+  return { ...result, fromTag: plan.fromTag, toTag: plan.toTag, later: plan.later, safetyCopy, replaced: !empty, warnings };
 }

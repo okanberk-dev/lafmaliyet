@@ -111,7 +111,8 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 | Sabah işinde bir adım hata verdi (ör. menü eşitlemesi) | turuncu | — | ertesi sabahın sabah e-postasında (bekçi ayrı e-posta atmaz) |
 | Paraşüt işi çalışmadı | turuncu | — | aynı sabahın e-postası (eşitlemeyi sabah işi yaptıysa söyler) |
 | Paraşüt işi hata verdi / yarıda kesildi | kırmızı (eşitlemenin kendi hatası zaten "Paraşüt eşitlemesi başarısız" olarak görünüyorsa yinelenmez) | kırmızı şerit | — (hata sabah e-postasında) |
-| `CRON_SECRET` tanımlı değil | kırmızı, tek uyarı | kırmızı şerit | — (hiçbir iş çalışmaz) |
+| `CRON_SECRET` tanımlı değil | kırmızı, tek iş uyarısı | kırmızı şerit | — (hiçbir iş çalışmaz) |
+| Son yedek 30 günden eski ya da hiç yedek yok (işlerden bağımsız) | mavi, Ayarlar › Yedek'e götürür ([YEDEK.md](YEDEK.md)) | — | — |
 
 - **Bekçi:** sabah e-postasını gönderen iş bozulursa bunu kendisi söyleyemez. Paraşüt işi her sabah önce dünkü sabah
   işine bakar; çalışmadıysa ya da hata verdiyse sabah e-postasının alıcılarına kısa bir **sistem uyarısı e-postası**
@@ -139,7 +140,8 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
 "HTTP(s)" monitörü, 1 saatte bir, e-posta uyarısı) `https://ladmin.laffogato.net/api/health?isler=1` adresini
 ekleyin. Adres giriş istemez, yalnız durum adlarını döner (`{ ok, db, ms, isler: { cronSecret, gunluk, parasut } }`);
-ciddi bir sorun varsa (iş çalışmadı, hata verdi, CRON_SECRET yok) **503** döner ve servis e-posta atar.
+ciddi bir sorun varsa (iş çalışmadı, hata verdi, CRON_SECRET yok) **503** döner ve servis e-posta atar (yedek
+hatırlatması sayılmaz).
 `?isler=1` olmadan `/api/health` yalnız veritabanına bakar (eskisi gibi).
 
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
