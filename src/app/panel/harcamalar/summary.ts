@@ -26,7 +26,12 @@ export interface ExpenseBreakdowns {
 export function expenseBreakdowns(month: string, categories: CategoryRow[], entries: EntryRow[], invoices: InvoiceItem[]): ExpenseBreakdowns {
   const entriesOf = (c: CategoryRow) => entries.filter((e) => e.categoryId === c.id);
   const invoicesOf = (c: CategoryRow) => invoices.filter((i) => i.categoryId === c.id);
-  const entryRow = (e: EntryRow): BreakdownRow => ({ key: `e${e.id}`, label: e.description || "Harcama", sub: `${dateTR(e.date)}${e.note ? ` · ${e.note}` : ""}`, amount: e.amount });
+  const entryRow = (e: EntryRow): BreakdownRow => ({
+    key: `e${e.id}`,
+    label: e.description || "Harcama",
+    sub: `${dateTR(e.date)}${e.note ? ` · ${e.note}` : ""}${e.photoId ? " · fişli" : ""}`,
+    amount: e.amount,
+  });
   // Fatura Faturalar'da düzeltilir: dokununca o ayın o tedarikçi faturaları listede açılır
   const invoiceRow = (i: InvoiceItem): BreakdownRow => ({
     key: `i${i.id}`,

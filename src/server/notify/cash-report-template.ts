@@ -4,8 +4,9 @@
  * kart bölümleri, en altta "Panelde aç". Metin sürümü WhatsApp metninin yıldızsız hâli.
  */
 
-import { CASH_TOLERANCE, computeCash, paymentLines, reportSubject, whatsappText, type CashReportFields, type DayWaste } from "@/lib/cash-report";
+import { CASH_TOLERANCE, cashOutLines, computeCash, paymentLines, reportSubject, whatsappText, type CashReportExtras, type CashReportFields, type DayWaste } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 
@@ -57,7 +58,7 @@ export function renderCashReport(
      * ulaşılamadıysa null: satır yazılmaz.
      */
     online?: TillOnlineRow | null;
-  },
+  } & CashReportExtras,
 ) {
   const c = computeCash(f);
   const tone = TONE[c.kind];
@@ -88,10 +89,13 @@ export function renderCashReport(
     ...(meta.waste?.ikram ? [textRow("İkram", meta.waste.ikram)] : []),
     ...(meta.waste?.zayi ? [textRow("Zayi", meta.waste.zayi)] : []),
   ].join("\n");
+  // Kasadan çıkan satırlar "Gün içinde çıkan"ın altında; fotoğrafın kendisi e-postaya girmez (Panelde aç)
+  const outs = cashOutLines(meta.cashOuts);
+  const outRows = outs.map((l) => `<tr><td colspan="2" style="padding:0 0 4px 12px;font-family:${FONT};font-size:12px;line-height:16px;color:#71717a">· ${esc(l)}</td></tr>`);
   const cashRows = [
     row("Açılış (dünden devir)", money(f.openingCash)),
     row("+ Nakit satış", money(f.cash)),
-    ...(f.cashOut ? [row("− Gün içinde çıkan", money(f.cashOut), { sub: f.cashOutNote ?? undefined })] : []),
+    ...(f.cashOut || outs.length ? [row("− Gün içinde çıkan", money(f.cashOut), { sub: f.cashOutNote ?? undefined }), ...outRows] : []),
     row("= Olması gereken", money(c.expectedCash), { strong: true }),
     row("Sayılan", money(f.countedCash), { strong: true }),
     row("Fark", c.kind === "even" ? "Tutuyor" : `${money(Math.abs(c.cashDiff))} ${tone.label}`, { strong: true, color: tone.fg }),
@@ -109,6 +113,8 @@ export function renderCashReport(
             color: Math.abs(c.cardDiff) < CASH_TOLERANCE ? "#15803d" : "#c2410c",
           }),
         ].join("\n");
+  const photoWarning = meta.photoDiffs?.length ? `Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}` : null;
+  const photoNames = [meta.photos?.z ? "Z raporu" : null, meta.photos?.pos ? "banka POS" : null].filter(Boolean).join(", ");
   const link = `${APP_URL}/panel/kasa?gun=${f.date}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
   const onlineRows = meta.online
@@ -138,14 +144,16 @@ export function renderCashReport(
     </tr></table>
   </td></tr>
   <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
-    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${meta.by} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>
+    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${meta.by} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>${
+      photoNames ? `\n    <div style="font-family:${FONT};font-size:12px;line-height:17px;color:#71717a;margin-top:2px">${esc(`Fotoğraflar panelde: ${photoNames}`)}</div>` : ""
+    }
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${tone.bg};border-radius:16px;padding:14px 16px;font-family:${FONT}">
       <div style="font-size:13px;line-height:18px;color:${tone.fg};font-weight:600">Kasa</div>
       <div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${tone.fg}">${esc(headline)}</div>
       <div style="font-size:13px;line-height:18px;color:#3f3f46;margin-top:2px">Olması gereken ${esc(money(c.expectedCash))} · sayılan ${esc(money(f.countedCash))}</div>
     </td></tr></table>
     ${section("Z raporu (ModPOS)", zRows, paymentsWarning ?? ikramWarning)}
-    ${section("Kasa (nakit)", cashRows)}
+    ${section("Kasa (nakit)", cashRows, photoWarning)}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
     ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
     ${onlineRows ? section("laffogato.net (kasadan geçmez)", onlineRows, "Bilgi için: kasa farkına ve Z raporuna girmez.") : ""}

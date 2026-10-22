@@ -1,13 +1,15 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate, computeCash, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
-import { longDateTR } from "@/lib/reminders";
+import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
+import { longDateTR, todayTR } from "@/lib/reminders";
 import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportsBetween, getCashReport, loadCashSettings, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
@@ -15,14 +17,13 @@ import { renderCashReport } from "@/server/notify/cash-report-template";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
+import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zOptText } from "./util";
+import { attempt, UserError, zAmount, zDate, zOptText } from "./util";
 
 // Gün sonu kasa raporu: personel (ve yönetici) her akşam girer; kayıt iş günü başına bir tane, yeniden gönderilince
 // güncellenir. Gönderilince kasa raporu alıcılarına e-posta gider; WhatsApp metni ekranda hazırlanır (docs/KASA-RAPORU.md).
-
-const zAmount = z.number({ message: "Tutar girin" }).finite("Geçersiz tutar").min(0, "Tutar eksi olamaz").max(100_000_000, "Tutar çok büyük");
 
 const reportSchema = z.object({
   date: zDate,
@@ -44,6 +45,8 @@ const reportSchema = z.object({
   note: zOptText(1000),
   /** Formun açıldığı andaki sürüm (0: yeni): arada başkası gönderdiyse üzerine yazılmaz */
   revision: z.number().int().min(0),
+  /** Bu gönderimle eklenen Z ve banka POS fotoğrafları (henüz bağlanmamış; eskileri bağlı kalır) */
+  photos: z.array(z.number().int().positive()).max(MAX_REPORT_PHOTOS).default([]),
 });
 
 export type CashEmailOutcome = { status: "sent" | "failed" | "off"; error: string | null; to: number };
@@ -65,7 +68,8 @@ async function emailReport(reportId: number, site?: Promise<TillOnlineRow | null
     const dto = toCashDTO(row);
     const waste = await dayWaste(row.date);
     const online = await (site ?? fetchTillOnlineRow(row.date));
-    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt, waste, ikramValue: waste.ikramValue || null, online });
+    const extras = await cashReportExtras(dto);
+    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt, waste, ikramValue: waste.ikramValue || null, online, ...extras });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: settings.recipients, ...msg, idempotencyKey: `cash-${row.date}-r${row.revision}` });
     outcome = res.ok ? { status: "sent", error: null, to: settings.recipients.length } : { status: "failed", error: res.error, to: 0 };
@@ -85,7 +89,7 @@ async function emailReport(reportId: number, site?: Promise<TillOnlineRow | null
 export async function submitCashReport(input: z.input<typeof reportSchema>) {
   return attempt(async () => {
     const me = await requireUser();
-    const { revision, ...data } = reportSchema.parse(input);
+    const { revision, photos, ...data } = reportSchema.parse(input);
     const today = businessDate();
     if (data.date > today) throw new UserError("İleri bir günün raporu girilemez");
     if (me.role !== "admin" && !staffCanReport(data.date)) throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
@@ -103,22 +107,35 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
       }
       if (!prev && revision !== 0) throw new UserError("Rapor bu arada silinmiş; sayfayı yenileyin");
       const values = { ...data, cashDiff: c.cashDiff, submittedBy: me.id, submittedByName: me.name, emailStatus: null, emailError: null, updatedAt: new Date() };
-      if (prev) {
-        const [row] = await tx
-          .update(s.cashReports)
-          .set({ ...values, revision: prev.revision + 1 })
-          .where(eq(s.cashReports.id, prev.id))
-          .returning();
-        return row;
+      const [row] = prev
+        ? await tx
+            .update(s.cashReports)
+            .set({ ...values, revision: prev.revision + 1 })
+            .where(eq(s.cashReports.id, prev.id))
+            .returning()
+        : await tx.insert(s.cashReports).values(values).returning();
+      // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
+      // (geçmiş bir güne sonradan eklenen bugünden)
+      const ids = [...new Set(photos)];
+      if (ids.length) {
+        const [{ n }] = await tx.select({ n: count() }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
+        if (n + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+        for (const id of ids) {
+          const p = await getPhoto(id, tx);
+          if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || !linkable(p) || (me.role !== "admin" && p.createdBy !== me.id)) {
+            throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
+          }
+          await tx.insert(s.cashReportPhotos).values({ reportId: row.id, photoId: id, kind: p.kind });
+          await keepPhoto(id, linkedUntil(p.kind, data.date, todayTR()), tx);
+        }
       }
-      const [row] = await tx.insert(s.cashReports).values(values).returning();
       return row;
     });
     const email = await emailReport(saved.id, site);
     await logActivity(me, saved.revision > 1 ? "Kasa raporu güncellendi" : "Kasa raporu", `${longDateTR(data.date)}: ${diffText(c.cashDiff)}`);
     refresh();
     const settings = await loadCashSettings();
-    const text = whatsappText(fields, { by: me.name, revision: saved.revision, waste: await dayWaste(data.date) });
+    const text = whatsappText(fields, { by: me.name, revision: saved.revision, waste: await dayWaste(data.date), ...(await cashReportExtras({ ...fields, id: saved.id })) });
     return { id: saved.id, revision: saved.revision, cashDiff: c.cashDiff, email, whatsapp: { text, link: whatsappLink(text, settings.whatsapp) } };
   });
 }
@@ -139,12 +156,16 @@ export async function resendCashReportEmail(id: number) {
 export async function deleteCashReport(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const [row] = await getDb()
-      .delete(s.cashReports)
-      .where(eq(s.cashReports.id, z.number().int().positive().parse(id)))
-      .returning({ date: s.cashReports.date });
-    if (!row) throw new UserError("Rapor bulunamadı");
-    await logActivity(me, "Kasa raporu silindi", longDateTR(row.date));
+    const reportId = z.number().int().positive().parse(id);
+    // Yanlışlıkla silinen raporun fotoğrafları 30 gün daha saklanır (bağları raporla birlikte silinir)
+    const { row, photos } = await getDb().transaction(async (tx) => {
+      const links = await tx.select({ photoId: s.cashReportPhotos.photoId }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, reportId));
+      for (const l of links) await releasePhoto(l.photoId, DELETED_REPORT_DAYS, tx);
+      const [row] = await tx.delete(s.cashReports).where(eq(s.cashReports.id, reportId)).returning({ date: s.cashReports.date });
+      if (!row) throw new UserError("Rapor bulunamadı");
+      return { row, photos: links.length };
+    });
+    await logActivity(me, "Kasa raporu silindi", `${longDateTR(row.date)}${photos ? ` · ${photos} fotoğraf` : ""}`);
     refresh();
     return null;
   });
@@ -217,7 +238,7 @@ export async function cashReportWhatsapp(date: string) {
     const r = await getCashReport(d);
     if (!r) throw new UserError("Bu günün raporu yok");
     const settings = await loadCashSettings();
-    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste: await dayWaste(d) });
+    const text = whatsappText(r, { by: r.submittedByName, revision: r.revision, waste: await dayWaste(d), ...(await cashReportExtras(r)) });
     return { text, link: whatsappLink(text, settings.whatsapp) };
   });
 }

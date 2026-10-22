@@ -1,10 +1,13 @@
 "use client";
 
-import { ArrowRightLeft, CalendarClock, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, Camera, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { PhotoThumb } from "@/components/panel/photo-picker";
+import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -59,6 +62,13 @@ export interface EntryRow {
   amount: number;
   paymentMethod: Method | null;
   note: string | null;
+  /** Fişin fotoğrafı (kasadan çıkan bir fişten yazıldıysa) */
+  photoId?: number | null;
+  /** Fişteki KDV (bilgi) */
+  vat?: number | null;
+  /** Bağlı kasadan çıkan satırı ve kasa günü: tutar ve tarih orada düzeltilir */
+  cashOutId?: number | null;
+  cashOutDate?: string | null;
 }
 export interface InvoiceItem {
   id: number;
@@ -100,7 +110,18 @@ function localToday() {
 }
 const moneyText = (v: number) => (v ? num(v, 2).replace(/,00$/, "") : "");
 
-type EntryDraft = { id: number | null; date: string; categoryId: string; description: string; amount: string; paymentMethod: Method | null; note: string };
+type EntryDraft = {
+  id: number | null;
+  date: string;
+  categoryId: string;
+  description: string;
+  amount: string;
+  paymentMethod: Method | null;
+  note: string;
+  /** Kasadan çıkan fişten: fotoğrafı ve kasa günü (tutar ve tarih orada düzeltilir) */
+  photoId?: number | null;
+  cashOutDate?: string | null;
+};
 
 /**
  * Aylık harcamalar: hızlı ekleme, ayın harcamaları (kategori kategori; bağlı faturalar dahil), kategoriler ve
@@ -169,7 +190,7 @@ export function MonthlyExpenses({
       const r = await deleteExpenseEntry(e.id);
       if (!r.ok) return void toast.error(r.error);
       setEditing(null);
-      toast.success(`Silindi: ${tl(e.amount, 2)}`, {
+      toast.success(`Silindi: ${tl(e.amount, 2)}${e.cashOutId ? " · kasa satırı kalır" : ""}`, {
         action: {
           label: "Geri al",
           onClick: () =>
@@ -359,12 +380,18 @@ export function MonthlyExpenses({
                                   amount: moneyText(e.amount),
                                   paymentMethod: e.paymentMethod,
                                   note: e.note ?? "",
+                                  photoId: e.photoId ?? null,
+                                  cashOutDate: e.cashOutId ? (e.cashOutDate ?? e.date) : null,
                                 })
                               }
                               className="flex w-full cursor-pointer items-start justify-between gap-3 py-2 text-left hover:bg-ink/[0.02] pointer-coarse:min-h-11"
                             >
                               <span className="min-w-0">
-                                <span className="block text-sm break-words text-ink">{e.description || "Harcama"}</span>
+                                <span className="flex flex-wrap items-center gap-1.5 text-sm break-words text-ink">
+                                  {e.description || "Harcama"}
+                                  {e.photoId ? <Camera size={13} className="shrink-0 text-ink-mute" aria-label="Fişli" role="img" /> : null}
+                                  {e.cashOutId ? <Badge tone="gray">Kasadan</Badge> : null}
+                                </span>
                                 <span className="block text-xs text-ink-mute">
                                   {dateTR(e.date)}
                                   {e.paymentMethod ? ` · ${METHOD_LABEL[e.paymentMethod]}` : ""}
@@ -540,6 +567,9 @@ function EntryDialog({
   onDelete: () => void;
 }) {
   const set = (p: Partial<EntryDraft>) => onChange({ ...draft, ...p });
+  const router = useRouter();
+  const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
+  const linked = Boolean(draft.cashOutDate);
   return (
     <Dialog
       open
@@ -562,6 +592,25 @@ function EntryDialog({
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
+        {draft.photoId ? (
+          <PhotoThumb id={draft.photoId} caption="Fişin fotoğrafı" onOpen={() => setViewer({ id: draft.photoId!, caption: "Fişin fotoğrafı" })} className="sm:col-span-2" />
+        ) : null}
+        {linked ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">
+            <span className="min-w-0 flex-1">Kasa raporundaki bir fişten ({dateTR(draft.cashOutDate!)}). Tutarı ve tarihi Kasa raporu&apos;nda düzeltin.</span>
+            <Button
+              size="xs"
+              variant="secondary"
+              onClick={() => {
+                // Önce pencere kapanır, sonra sayfa değişir (açık pencereyle gezinme olmaz)
+                onClose();
+                router.push(`/panel/kasa?gun=${draft.cashOutDate}`);
+              }}
+            >
+              Kasa raporuna git
+            </Button>
+          </div>
+        ) : null}
         <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
           <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
             {categories
@@ -574,10 +623,10 @@ function EntryDialog({
           </Select>
         </Field>
         <Field label="Tutar (₺)" htmlFor="e-amt" tip="Ödenen tutar (KDV ayrılmaz). İade ya da düzeltme için eksi yazabilirsiniz.">
-          <NumberInput id="e-amt" inputMode="text" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} />
+          <NumberInput id="e-amt" inputMode="text" value={draft.amount} onChange={(e) => set({ amount: e.target.value })} readOnly={linked} disabled={linked} />
         </Field>
         <Field label="Tarih" htmlFor="e-date">
-          <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} />
+          <Input id="e-date" type="date" value={draft.date} onChange={(e) => set({ date: e.target.value })} readOnly={linked} disabled={linked} />
         </Field>
         <Field label="Açıklama" htmlFor="e-desc" className="sm:col-span-2">
           <Input id="e-desc" value={draft.description} onChange={(e) => set({ description: e.target.value })} autoComplete="off" />
@@ -595,6 +644,7 @@ function EntryDialog({
           <Textarea id="e-note" rows={2} value={draft.note} onChange={(e) => set({ note: e.target.value })} />
         </Field>
       </div>
+      <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Dialog>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ChevronLeft, ChevronRight, MessageCircle, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { Camera, CalendarDays, ChevronLeft, ChevronRight, MessageCircle, Pencil, RotateCw, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -10,14 +10,21 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Stat } from "@/components/ui/misc";
-import { CASH_TOLERANCE, computeCash, diffKind, diffText, whatsappLink, whatsappText } from "@/lib/cash-report";
+import { CASH_TOLERANCE, computeCash, diffKind, diffText, whatsappLink, whatsappText, type CashReportExtras } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
+import type { PhotoDiff } from "@/lib/photo-read/kasa";
+import type { CashOutDTO } from "@/server/data/cash-outs";
+import type { CashPhotoDTO } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
 
+import { SavedPhotos } from "./cash-photos";
 import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
+
+/** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
+export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
 
 export interface CashMonthTotals {
   zTotal: number;
@@ -43,6 +50,8 @@ export function CashHistory({
   days,
   totals,
   whatsappPhone,
+  photos = {},
+  cashOuts = {},
 }: {
   monthLabel: string;
   prevHref: string | null;
@@ -50,6 +59,9 @@ export function CashHistory({
   days: { date: string; report: CashReportDTO | null }[];
   totals: CashMonthTotals;
   whatsappPhone: string | null;
+  photos?: CashHistoryPhotos;
+  /** Günlerin kasadan çıkanları (tarihe göre) */
+  cashOuts?: Record<string, CashOutDTO[]>;
 }) {
   const [open, setOpen] = useState<CashReportDTO | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -77,7 +89,8 @@ export function CashHistory({
     });
   }
 
-  const wa = open ? whatsappLink(whatsappText(open, { by: open.submittedByName, revision: open.revision }), whatsappPhone) : null;
+  const wa = open ? whatsappLink(whatsappText(open, { by: open.submittedByName, revision: open.revision, ...photos[open.id]?.extras }), whatsappPhone) : null;
+  const openPhotos = open ? photos[open.id] : undefined;
 
   return (
     <Card>
@@ -142,6 +155,8 @@ export function CashHistory({
                     </span>
                   </span>
                   <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
+                    {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
                     {cardOff ? <Badge tone="amber">Kart {c.cardDiff! > 0 ? "+" : "−"}{money(Math.abs(c.cardDiff!))}</Badge> : null}
                     <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>
@@ -192,7 +207,8 @@ export function CashHistory({
           <div className="space-y-4">
             <DiffHeadline diff={open.cashDiff} />
             {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
-            <CashBreakdown report={open} />
+            {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
+            <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} />
           </div>
         ) : null}
       </Dialog>

@@ -343,6 +343,23 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/harcamalar", label: "Aylık harcamalar" }],
       },
       {
+        id: "fotograf",
+        q: "Fiş ve Z raporunu fotoğraftan doldurmak",
+        a: (
+          <>
+            <Path href="/panel/kasa" /> ekranında Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Turuncu alanları fişle
+            karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin fotoğrafını çekin: tutar, KDV
+            ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına yaklaşık 0,03 $); aç / kapat
+            ve bu ayın tutarı Ayarlar › Fotoğraftan okuma&apos;da. Fotoğraflar kasa için 6 ay, fiş için 13 ay saklanır.
+          </>
+        ),
+        icon: Receipt,
+        links: [
+          { href: "/panel/kasa", label: "Kasa raporu" },
+          { href: "/panel/ayarlar#foto", label: "Fotoğraftan okuma" },
+        ],
+      },
+      {
         id: "tedarikci",
         q: "Tedarikçinin bilgileri ve ödemesi",
         a: (

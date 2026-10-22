@@ -124,6 +124,41 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.text), /120 ₺ EKSİK/);
 });
 
+test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı yazılan; kasadan çıkanlar altında; adres yok", () => {
+  const extras = {
+    photos: { z: true, pos: true },
+    photoDiffs: [{ field: "card" as const, label: "Kart", photo: 8_915, saved: 8_150, confidence: "high" as const, readingWarned: false }],
+    cashOuts: [
+      { kind: "harcama" as const, amount: 112.5, store: "Migros", description: "süt, beyaz peynir", photo: true },
+      { kind: "harcama" as const, amount: 37.5, store: null, description: "buz", photo: false },
+      { kind: "teslim" as const, amount: 0, store: "patrona", description: null, photo: false },
+    ],
+  };
+  const t = plain(whatsappText(day, { by: "Zeynep", ...extras }));
+  assert.match(t, /Z no: 1234 · 87 fiş\n📷 Z ve POS fotoğrafı panelde\n⚠️ Fotoğraftan farklı yazılan: Kart \(fotoğrafta 8\.915 ₺\)\n/);
+  assert.match(t, /− Gün içinde çıkan: 150 ₺ \(süt, buz\)\n  · Migros \(süt, beyaz peynir\) 112,50 ₺ 📷\n  · buz 37,50 ₺\n  · Teslim \(patrona\) 0 ₺\n= Olması gereken/);
+  assert.match(plain(whatsappText(day, { by: "Zeynep", photos: { z: true, pos: false } })), /📷 Z fotoğrafı panelde/);
+  assert.match(plain(whatsappText(day, { by: "Zeynep", photos: { z: false, pos: true } })), /📷 POS fotoğrafı panelde/);
+  // Fotoğrafsız rapor eskisiyle aynı
+  assert.equal(whatsappText(day, { by: "Zeynep", photos: { z: false, pos: false }, photoDiffs: [], cashOuts: [] }), whatsappText(day, { by: "Zeynep" }));
+  // Altıdan fazla satır: kalanı tek satırda
+  const many = Array.from({ length: 8 }, (_, i) => ({ kind: "harcama" as const, amount: 10, store: `Dükkân ${i + 1}`, description: null, photo: false }));
+  const tm = plain(whatsappText({ ...day, cashOut: 80 }, { by: "Zeynep", cashOuts: many }));
+  assert.match(tm, /  · Dükkân 6 10 ₺\n  · ve 2 kalem daha\n/);
+  assert.doesNotMatch(tm, /Dükkân 7/);
+
+  const m = renderCashReport(day, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z"), ...extras });
+  assert.match(m.html, /Fotoğraflar panelde: Z raporu, banka POS/);
+  assert.match(plain(m.html), /Fotoğraftan farklı yazılan: Kart \(fotoğrafta 8\.915 ₺\)/);
+  assert.match(plain(m.html), /· Migros \(süt, beyaz peynir\) 112,50 ₺ 📷/);
+  assert.match(plain(m.text), /📷 Z ve POS fotoğrafı panelde/);
+  for (const out of [m.html, m.text, t]) {
+    assert.doesNotMatch(out, /\/api\/foto/, "fotoğrafın adresi metne girmez");
+    assert.doesNotMatch(out, /blob\.vercel-storage/);
+    assert.doesNotMatch(out, /<img/);
+  }
+});
+
 test("alıcı adresleri: ayırıcılar, küçük harf, tekrar ve geçersiz", () => {
   assert.deepEqual(parseEmails("Patron@ornek.com, muhasebe@ornek.com.tr\npatron@ornek.com; yanlis@ ; a@b"), {
     valid: ["patron@ornek.com", "muhasebe@ornek.com.tr"],

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # tam yedek dosyaları (npm run db:backup, Ayarlar › Yedek; docs/YEDEK.md): ciro, maaş ve IBAN taşır, depoya girmesin
 laffogato-yedek-*.json.gz
+
+# yerel fotoğraf deposu ve deneme görselleri (docs/FOTOGRAF.md): kasa ve fiş fotoğrafları depoya girmesin
+/.data/

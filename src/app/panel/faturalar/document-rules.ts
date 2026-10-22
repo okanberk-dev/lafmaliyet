@@ -4,6 +4,7 @@
  * Testleri: tests/faturalar-belge.test.ts. Sunucu tarafı: src/server/documents.ts, api/faturalar/[id]/belge.
  */
 import { formatBytes, MAX_UPLOAD_BYTES } from "@/lib/documents";
+import { fitWithin as fitWithinEdge } from "@/lib/photo-compress";
 
 /** Bundan büyük ya da JPEG olmayan fotoğraflar yüklenmeden önce tarayıcıda JPEG'e küçültülür */
 export const COMPRESS_OVER_BYTES = 1.5 * 1024 * 1024;
@@ -44,12 +45,9 @@ export function sizeError(size: number): string | null {
   return size > MAX_UPLOAD_BYTES ? `Dosya ${formatBytes(size)}; en çok 4 MB yüklenebilir.` : null;
 }
 
-/** En uzun kenarı `max`'ı aşmayacak boyut; küçük görsel büyütülmez */
+/** En uzun kenarı `max`'ı aşmayacak boyut; küçük görsel büyütülmez (ortak hesap src/lib/photo-compress.ts'te) */
 export function fitWithin(width: number, height: number, max = MAX_IMAGE_SIDE): { width: number; height: number } {
-  const long = Math.max(width, height);
-  if (!(long > max)) return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
-  const k = max / long;
-  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
+  return fitWithinEdge(width, height, max);
 }
 
 /** Küçültülen fotoğrafın adı: "IMG_1234.HEIC" → "IMG_1234.jpg" */

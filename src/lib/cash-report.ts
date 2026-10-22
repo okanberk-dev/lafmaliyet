@@ -1,4 +1,6 @@
+import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
+import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, longDateTR, todayTR } from "./reminders";
 
 /**
@@ -132,14 +134,44 @@ export function paymentLines(f: CashReportFields): { label: string; amount: numb
 }
 
 /**
+ * Raporun fotoğraf ve kasadan çıkan bilgisi (WhatsApp metni ve e-posta; docs/FOTOGRAF.md). Fotoğrafın kendisi ya da
+ * adresi hiçbir zaman metne girmez: "Panelde aç" yeterli.
+ */
+export interface CashReportExtras {
+  /** Rapora bağlı fotoğraflar */
+  photos?: { z: boolean; pos: boolean } | null;
+  /** Net okunmuş ama farklı yazılan alanlar (src/lib/photo-read/kasa.ts suspiciousDiffs) */
+  photoDiffs?: PhotoDiff[] | null;
+  /** Günün kasadan çıkan satırları */
+  cashOuts?: (CashOutLine & { photo: boolean })[] | null;
+}
+
+/** "📷 Z ve POS fotoğrafı panelde" */
+export function photosLine(p: CashReportExtras["photos"]): string | null {
+  if (!p || (!p.z && !p.pos)) return null;
+  return `📷 ${p.z && p.pos ? "Z ve POS" : p.z ? "Z" : "POS"} fotoğrafı panelde`;
+}
+
+/** Kasadan çıkan satırları: en çok altısı, kalanı "ve 2 kalem daha" */
+export function cashOutLines(lines: CashReportExtras["cashOuts"]): string[] {
+  if (!lines?.length) return [];
+  const shown = lines.slice(0, CASH_OUT_LINES_SHOWN).map((l) => `${cashOutShortLine(l)}${l.photo ? " 📷" : ""}`);
+  return lines.length > CASH_OUT_LINES_SHOWN ? [...shown, `ve ${lines.length - CASH_OUT_LINES_SHOWN} kalem daha`] : shown;
+}
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
  * türleriyle tutmaması öne çıkarılır.
  */
-export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null }): string {
+export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras): string {
   const c = computeCash(f);
   const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${meta.by}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
+  const photos = photosLine(meta.photos);
+  if (photos) head.push(photos);
+  if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}`);
+  const outs = cashOutLines(meta.cashOuts);
   const z = ["*Z raporu (ModPOS)*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
@@ -148,7 +180,7 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
     "*Kasa (nakit)*",
     `Açılış (devir): ${money(f.openingCash)}`,
     `+ Nakit satış: ${money(f.cash)}`,
-    ...(f.cashOut ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`] : []),
+    ...(f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : []),
     `= Olması gereken: ${money(c.expectedCash)}`,
     `Sayılan: ${money(f.countedCash)}`,
     `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,

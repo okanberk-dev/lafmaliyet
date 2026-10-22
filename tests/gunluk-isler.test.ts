@@ -16,6 +16,7 @@ import {
   jobHealth,
   jobsSummary,
   parasutOutcome,
+  photosStep,
   reminderStep,
   stepTexts,
   systemAlerts,
@@ -26,6 +27,7 @@ import {
   type JobRunLite,
   type RunStatus,
 } from "../src/lib/job-health";
+import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, TAIL_STEP_MS, tailStepDeadline } from "../src/server/jobs/capped";
 
 /** İstanbul saatiyle "2026-10-22 08:10" → Date */
 const tr = (s: string) => new Date(`${s.replace(" ", "T")}:00+03:00`);
@@ -366,4 +368,61 @@ test("okuyan ekranlar yazmaz: izleme başlangıcını yalnız derleme ve iş ba�
   const predeploy = readFileSync(join(process.cwd(), "scripts/predeploy.ts"), "utf8");
   assert.match(predeploy, /if \(process\.env\.VERCEL_ENV === "production"\) await markJobsWatched\(\);/);
   assert.match(predeploy, /await restartWatchOnDeploy\(db\)/);
+});
+
+test("isteğe bağlı adımlar: verilmeyen hiç yazılmaz; sıra e-posta, eşitleme, … , fotoğraf, sayım, haftalık; yalnız hata kısmen yapar", () => {
+  const ok = { code: "ok" };
+  const base = { sync: { code: "today" }, digest: { code: "sent" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
+  // Verilmeyen isteğe bağlı adım: eskisiyle aynı sonuç
+  assert.deepEqual(Object.keys(dailyOutcome(base).steps), ["digest", "sync", "reminders", "karaoke", "menu", "sales"]);
+  const all = dailyOutcome({ ...base, weekly: { code: "off" }, photos: { code: "none" }, forecast: { code: "noweather" }, count: { code: "sent" } });
+  assert.deepEqual(Object.keys(all.steps), ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "photos", "count", "weekly"]);
+  assert.equal(all.status, "ok");
+  const photos = dailyOutcome({ ...base, photos: { code: "error", error: "3 fotoğraf depodan silinemedi" } });
+  assert.equal(photos.status, "partial");
+  assert.equal(photos.message, "Fotoğraf temizliği: 3 fotoğraf depodan silinemedi");
+  assert.equal(dailyOutcome({ ...base, digest: { code: "error", error: "x" }, photos: { code: "off" } }).status, "error");
+  assert.deepEqual(stepTexts({ photos: "ok" }), ["Eski fotoğraflar silindi"]);
+  assert.deepEqual(stepTexts({ photos: "none", forecast: "nodata", count: "sent", weekly: "late" }), [
+    "Tahmin: veri yok",
+    "Silinecek fotoğraf yok",
+    "Hızlı sayım bildirimi gitti",
+    "Haftalık özet: süre yetmedi, yarın denenecek",
+  ]);
+  assert.deepEqual(stepTexts({ photos: "off" }), ["Fotoğraf deposu yok"]);
+  assert.deepEqual(stepTexts({ photos: "error" }), ["Fotoğraf temizliği hata"]);
+});
+
+test("fotoğraf temizliğinin adımı: silindi, silinecek yok, depo yok, silinemeyen ve hata", () => {
+  assert.deepEqual(photosStep({ deleted: 12, failed: 0, off: false }), { code: "ok" });
+  assert.deepEqual(photosStep({ deleted: 0, failed: 0, off: false }), { code: "none" });
+  assert.deepEqual(photosStep({ deleted: 0, failed: 0, off: true }), { code: "off" });
+  assert.deepEqual(photosStep({ deleted: 0, failed: 4, off: false }), { code: "error", error: "4 fotoğraf depodan silinemedi" });
+  assert.deepEqual(photosStep({ error: "süre doldu" }), { code: "error", error: "süre doldu" });
+});
+
+test("zaman bütçesi: capped süresi dolunca yedek değeri döner, zamanlayıcıyı temizler; kuyruk adımı en çok 8 sn ve 55. saniyeyi aşmaz", async () => {
+  assert.equal(await capped(Promise.resolve("bitti"), 1000, "süre doldu"), "bitti");
+  assert.equal(await capped(new Promise<string>(() => {}), 10, "süre doldu"), "süre doldu");
+  assert.equal(await capped(new Promise<string>((r) => setTimeout(() => r("geç"), 50)), 5, "süre doldu"), "süre doldu");
+  assert.equal(await capped(Promise.resolve(1), -5, 0), 1);
+  // Kısa iş uzun sınırı beklemez (zamanlayıcı kalsaydı test 30 sn askıda kalırdı)
+  const t0 = Date.now();
+  await capped(Promise.resolve(true), 30_000, false);
+  assert.ok(Date.now() - t0 < 1000);
+
+  assert.equal(JOB_SEND_DEADLINE_MS, 48_000);
+  assert.equal(JOB_TAIL_DEADLINE_MS, 55_000);
+  const start = 1_000_000;
+  assert.equal(tailStepDeadline(start, start + 10_000), start + 10_000 + TAIL_STEP_MS);
+  assert.equal(tailStepDeadline(start, start + 50_000), start + 55_000);
+  assert.equal(tailStepDeadline(start, start + 58_000), start + 55_000);
+});
+
+test("sabah işi: fotoğraf temizliği kuyrukta, en çok 100 fotoğraf, kendi sınırıyla; iş başı istekle", () => {
+  const gunluk = readFileSync(join(process.cwd(), "src/app/api/cron/gunluk/route.ts"), "utf8");
+  assert.match(gunluk, /export const maxDuration = 60;/);
+  assert.match(gunluk, /const jobStart = Date\.now\(\);\s*const denied = await rejectUnlessCron\(request\);/);
+  assert.match(gunluk, /cleanupPhotos\(\{ limit: 100, deadlineAt \}\)/);
+  assert.match(gunluk, /photos: photosStep\(photos\)/);
 });
