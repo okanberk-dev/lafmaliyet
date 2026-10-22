@@ -110,6 +110,18 @@ test("Aylık harcamalar: kartların dökümü kartın rakamını tutar; fatura s
   assert.equal(b.fromInvoices[0].rows[0].href, `/panel/faturalar?ay=2026-10&ara=${encodeURIComponent("Tabelacı (ödenmedi)")}#fatura-listesi`);
 });
 
+test("Aylık harcamalar: kasadan çıkan fişten gelen kayıt dökümde 'fişli'", () => {
+  const cats = [crow({ id: 3, name: "Nakit malzeme alımı", monthEntries: 912.5, monthTotal: 912.5 })];
+  const entries: EntryRow[] = [
+    { ...erow(1, 3, 412.5, "Migros · süt, beyaz peynir"), note: "Kasadan · 21 Ekim Çarşamba", photoId: 9, cashOutId: 4, vat: 15.31 },
+    { ...erow(2, 3, 500, "Tamirci"), photoId: null },
+  ];
+  const [group] = expenseBreakdowns("2026-10", cats, entries, []).offInvoice;
+  const sub = (id: string) => group.rows.find((r) => r.key === id)?.sub ?? "";
+  assert.match(sub("e1"), / · Kasadan · 21 Ekim Çarşamba · fişli$/);
+  assert.doesNotMatch(sub("e2"), /fişli/);
+});
+
 test("Aylık harcamalar: bağlı faturası gelen 'her ay' kategorisi girilmemiş sayılmaz", () => {
   const cats = [
     crow({ id: 1, name: "Influencer", monthly: true, expected: true }),

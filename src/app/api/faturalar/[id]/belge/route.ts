@@ -5,6 +5,7 @@ import { logActivity } from "@/server/actions/log";
 import { getCurrentUser } from "@/server/auth/dal";
 import { DocumentError, getInvoiceDocument, storeUpload } from "@/server/documents";
 import { ParasutError } from "@/server/parasut/client";
+import { sameOrigin } from "@/server/same-origin";
 
 /**
  * Fatura belgesi (yalnız yönetici):
@@ -49,21 +50,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (e instanceof ParasutError) return Response.json({ error: `Paraşüt'ten alınamadı: ${e.message}` }, { status: 502 });
     console.error("Fatura belgesi", e);
     return Response.json({ error: "Belge açılamadı; biraz sonra yeniden deneyin." }, { status: 500 });
-  }
-}
-
-/**
- * İstek panelin kendi sayfasından mı (Origin = Host). Yol işleyicileri sunucu eylemlerinin köken denetimini almaz;
- * SameSite=Lax çerez laffogato.net ve alt alan adlarından gelen isteklerde de gider (aynı site). Tarayıcı POST'ta
- * Origin'i her zaman yollar.
- */
-function sameOrigin(request: NextRequest): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).host === request.headers.get("host");
-  } catch {
-    return false;
   }
 }
 

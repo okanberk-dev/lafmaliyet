@@ -147,6 +147,10 @@ const STEP_NAMES: Record<string, string> = {
   karaoke: "Karaoke eşitlemesi",
   menu: "Menü eşitlemesi",
   sales: "Online satışlar",
+  forecast: "Satış tahmini",
+  photos: "Fotoğraf temizliği",
+  count: "Hızlı sayım bildirimi",
+  weekly: "Haftalık özet",
   watchdog: "Sistem uyarısı e-postası",
 };
 
@@ -165,6 +169,16 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
   karaoke: { ok: "Karaoke tamam", fresh: "Karaoke tamam", off: "Karaoke kurulmadı", error: "Karaoke hata" },
   menu: { ok: "Menü tamam", fresh: "Menü tamam", off: "Menü kurulmadı", error: "Menü hata" },
   sales: { ok: "Online satış tamam", off: "Online satış kurulmadı", error: "Online satış hata" },
+  forecast: { ok: "Tahmin kaydedildi", noweather: "Tahmin kaydedildi, hava alınamadı", nodata: "Tahmin: veri yok", error: "Tahmin hata" },
+  photos: { ok: "Eski fotoğraflar silindi", none: "Silinecek fotoğraf yok", off: "Fotoğraf deposu yok", error: "Fotoğraf temizliği hata" },
+  count: { sent: "Hızlı sayım bildirimi gitti", error: "Hızlı sayım bildirimi hata" },
+  weekly: {
+    sent: "Haftalık özet gönderildi",
+    off: "Haftalık özet kapalı",
+    nokey: "Haftalık özet: Resend kurulmadı",
+    late: "Haftalık özet: süre yetmedi, yarın denenecek",
+    error: "Haftalık özet gönderilemedi",
+  },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
 };
 
@@ -178,7 +192,11 @@ export function stepTexts(steps: Record<string, string> | null): string[] {
 
 const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` : v);
 
-export type DailyStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
+/** Sabah işinin her gün yazılan adımları */
+export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
+/** Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, hızlı sayım, haftalık özet */
+export type OptionalStep = "forecast" | "photos" | "count" | "weekly";
+export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
 /**
@@ -206,13 +224,23 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
 /**
  * Sabah işinin sonucu: e-posta gönderilemediyse (ya da iş istisnayla bittiyse) "error", başka bir adım (Paraşüt dahil)
  * hata verdiyse ya da e-posta alıcısız kaldıysa "partial", aksi "ok". Mesaj hatalı adımların adı ve hatası, e-posta önce.
+ * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
-export function dailyOutcome(steps: Record<DailyStep, StepResult>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales"];
-  const failed = order.filter((k) => stepFailed(k, steps[k]));
+export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "photos", "count", "weekly"];
+  const present = order.filter((k) => steps[k] !== undefined);
+  const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
-  const message = failed.length ? cut(failed.map((k) => `${STEP_NAMES[k]}: ${steps[k].error || "bilinmeyen hata"}`).join(" · "), 500) : null;
-  return { status, steps: Object.fromEntries(order.map((k) => [k, steps[k].code])), message };
+  const message = failed.length ? cut(failed.map((k) => `${STEP_NAMES[k]}: ${steps[k]!.error || "bilinmeyen hata"}`).join(" · "), 500) : null;
+  return { status, steps: Object.fromEntries(present.map((k) => [k, steps[k]!.code])), message };
+}
+
+/** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */
+export function photosStep(r: { deleted: number; failed: number; off: boolean } | { error: string }): StepResult {
+  if ("error" in r) return { code: "error", error: r.error };
+  if (r.off) return { code: "off" };
+  if (r.failed) return { code: "error", error: `${r.failed} fotoğraf depodan silinemedi` };
+  return { code: r.deleted ? "ok" : "none" };
 }
 
 /**

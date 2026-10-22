@@ -10,6 +10,7 @@ import { panelGroupOf } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
+import { expenseExtras } from "@/server/data/expense-extras";
 
 import { MonthlyExpenses, type CategoryRow, type EntryRow, type FixedCandidate, type InvoiceItem } from "./monthly-expenses";
 
@@ -80,9 +81,26 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
     prevTotal: prevAmounts.get(cat.id) ?? 0,
   }));
 
+  // Kasadan çıkan fişten yazılan kayıtların fotoğrafı ve kasa günü (veri kümesi dosyalarına dokunmadan)
+  const extras = await expenseExtras(month);
   const entries: EntryRow[] = allEntries
     .filter((e) => monthOfDate(e.date) === month)
-    .map((e) => ({ id: e.id, date: e.date, categoryId: e.categoryId, description: e.description, amount: e.amount, paymentMethod: e.paymentMethod, note: e.note }))
+    .map((e) => {
+      const x = extras.get(e.id);
+      return {
+        id: e.id,
+        date: e.date,
+        categoryId: e.categoryId,
+        description: e.description,
+        amount: e.amount,
+        paymentMethod: e.paymentMethod,
+        note: e.note,
+        photoId: x?.photoId ?? null,
+        vat: x?.vat ?? null,
+        cashOutId: x?.cashOutId ?? null,
+        cashOutDate: x?.cashOutDate ?? null,
+      };
+    })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
 
   const mapped = new Map(categories.filter((c) => c.invoiceCategory).map((c) => [c.invoiceCategory!, c.id]));

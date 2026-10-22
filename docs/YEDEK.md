@@ -45,6 +45,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Bar ekranındaki uygulama siparişlerinin kopyası (`site_orders`) | müşteri adları (KVKK); site bu listeyi bilerek geçmişsiz tutar | bar ekranı açılınca siteden yeniden çekilir |
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
 | Panelden yüklenen fatura belgeleri | yalnız "belgeleri de ekle" seçilmediyse | seçilmediyse belgesiz gelir |
+| Kasa ve fiş fotoğraflarının dosyaları (kayıtları `photos` tablosunda yazılır) | dosyalar veritabanında değil, özel Vercel Blob deposunda ([FOTOGRAF.md](FOTOGRAF.md)) | aynı depo bağlıysa fotoğraflar açılır; değilse "Fotoğraf bulunamadı" |
 
 Karaoke rezervasyonlarındaki müşteri adı (`karaoke_sessions.customer_name`; yalnız ad, soyadı ve iletişim panele hiç
 gelmez) ve müşterinin sitede yazdığı not (`karaoke_sessions.note`, en çok 300 karakter; müşteri içine telefonunu ya da
@@ -174,6 +175,8 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
   eşitlemede sitenin bugünkü hâline gelir.
 - **Günlük işler:** izleme geri yükleme anından yeniden başlar (dosyadaki çalışma kayıtları yedeğin gününde kalır); o
   gün için "Sabah işi çalışmadı" uyarısı çıkmaz, ertesi sabahtan itibaren her şey eskisi gibi denetlenir.
+- **Fotoğraflar:** kayıtlar yedeğin hâline döner, dosyalar Blob deposunda olduğu gibi kalır. Yedekten sonra silinen
+  fotoğrafın satırı geri gelir ama dosyası yoktur ("Fotoğraf bulunamadı"); sabah işi süresi gelince satırı da siler.
 - **Son yedek:** Ayarlar › Yedek'teki "Son yedek" dosyadaki hâline döner (dosyayı alan indirme kendisinden öncekini
   gösterir); yeni bir yedek alınca düzelir.
 - `npm run db:reset` (Excel verisini yeniden yükleme) bununla ilgisizdir ve değişmedi.

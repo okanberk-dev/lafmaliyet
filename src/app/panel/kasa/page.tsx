@@ -9,16 +9,22 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
 import { businessDate, CASH_TOLERANCE, diffKind, diffText, staffCanReport, whatsappLink, whatsappText } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
+import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
+import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { cashReportsBetween, getCashReport, loadCashSettings, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
+import { photoStorage } from "@/server/storage/photos";
 
 import { CashForm } from "./cash-form";
-import { CashHistory, type CashMonthTotals } from "./cash-history";
+import { CashHistory, type CashHistoryPhotos, type CashMonthTotals } from "./cash-history";
+import { CashOutsCard } from "./cash-outs";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE } from "./cash-summary";
 
@@ -79,18 +85,28 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const showForm = !admin || isDay(gun);
 
   const settings = await loadCashSettings();
-  const [report, carry, recent, waste] = await Promise.all([
+  const storage = photoStorage();
+  const [report, carry, recent, waste, ai, outs, categories] = await Promise.all([
     showForm ? getCashReport(date) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
     showForm ? dayWaste(date) : Promise.resolve(null),
+    aiStatus(),
+    showForm ? cashOutsOn(date) : Promise.resolve([]),
+    showForm ? cashOutCategories(user.role) : Promise.resolve([]),
   ]);
+  // Personel yalnız kendi seçebildiği kategorilerin adını görür (yöneticinin maaş, kira gibi seçimi adıyla görünmez)
+  const staffCats = new Set(categories.map((c) => c.id));
+  const dayOuts = admin ? outs : outs.map((o) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o));
+  // Raporun fotoğrafları: yönetici hepsini, personel düzenleyebildiği günü (bu ekranda yalnız bugün ve dün) görür
+  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
   const whatsapp = report
     ? (() => {
-        const text = whatsappText(report, { by: report.submittedByName, revision: report.revision, waste });
+        const text = whatsappText(report, { by: report.submittedByName, revision: report.revision, waste, ...extrasFrom(photoInfo, outs, report) });
         return { text, link: whatsappLink(text, settings.whatsapp) };
       })()
     : null;
+  const photoUi = { storage: storage.available, reading: ai.state, admin, me: user.name };
   // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
   const wasteCard = waste ? (
     <Card>
@@ -133,6 +149,23 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       whatsapp={whatsapp}
       recipients={settings.emailEnabled ? settings.recipients.length : 0}
       canEdit={admin || staffCanReport(date)}
+      photoUi={photoUi}
+      saved={report ? (photoInfo ?? { photos: [], readings: [] }) : null}
+      cashOuts={dayOuts}
+    />
+  ) : null;
+  // Gün içinde kasadan çıkanlar: gün boyunca kullanılan kart (akşam formu boşken de)
+  const outsCard = showForm ? (
+    <CashOutsCard
+      date={date}
+      today={date === today}
+      lines={dayOuts}
+      categories={categories}
+      canEdit={admin || staffCanReport(date)}
+      admin={admin}
+      me={user.name}
+      storage={storage.available}
+      reading={ai.state}
     />
   ) : null;
   const yesterday = addDays(today, -1);
@@ -156,6 +189,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     return (
       <div className="space-y-4">
         {dayChips}
+        {outsCard}
         {form}
         {siteRow}
         {wasteCard}
@@ -185,14 +219,35 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
 
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
-  const monthReports = await cashReportsBetween(`${month}-01`, addDays(`${shiftMonth(month, 1)}-01`, -1));
+  const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
+  const [monthReports, monthOuts] = await Promise.all([cashReportsBetween(`${month}-01`, monthEnd), cashOutsBetween(`${month}-01`, monthEnd)]);
   const days = monthDays(month, today, monthReports);
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today));
+  // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
+  const infos = await cashReportPhotoInfo(monthReports);
+  const outsByDate: Record<string, typeof monthOuts> = {};
+  for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
+  const historyPhotos: CashHistoryPhotos = Object.fromEntries(
+    monthReports.map((r) => {
+      const info = infos.get(r.id);
+      const saved = savedFields(r);
+      return [
+        r.id,
+        {
+          photos: info?.photos ?? [],
+          diffs: info ? photoDiffs(info.readings, saved) : [],
+          suspicious: info ? suspiciousDiffs(info.readings, saved) : [],
+          extras: extrasFrom(info, outsByDate[r.date] ?? [], r),
+        },
+      ];
+    }),
+  );
   return (
     <div className="space-y-4">
       {showForm ? (
         <>
           {dayChips}
+          {outsCard}
           {form}
           {siteRow}
           {wasteCard}
@@ -207,6 +262,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             days={days}
             totals={totalsOf(days)}
             whatsappPhone={settings.whatsapp}
+            photos={historyPhotos}
+            cashOuts={outsByDate}
           />
         </div>
         <div className="space-y-4">
