@@ -6,6 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 
 import { emailProblems, jobHealth, systemAlerts, trClock, type EmailProblem, type JobHealth, type JobKey, type JobRunLite, type SystemAlert } from "@/lib/job-health";
 import { logActivity } from "@/server/actions/log";
+import { readLastBackup } from "@/server/backup/state";
 import { getDb, schema as s } from "@/server/db";
 import { renderSystemAlert } from "@/server/notify/digest-template";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
@@ -26,13 +27,25 @@ export interface JobsOverview {
   alerts: SystemAlert[];
 }
 
-/** Ayarlar › Günlük işler ve /api/health?isler=1: son çalışmalar, iki işin durumu ve uyarılar (yalnız okur) */
+/**
+ * Ayarlar › Günlük işler ve /api/health?isler=1: son çalışmalar, iki işin durumu ve uyarılar (yalnız okur). Uyarılara
+ * yedek hatırlatması da girer (Ayarlar › Yedek); son yedek okunamazsa yalnız o atlanır, iş uyarıları etkilenmez.
+ */
 export async function loadJobsOverview(now = new Date()): Promise<JobsOverview> {
-  const [runs, watchSince, parasutSyncErrorAt] = await Promise.all([loadJobRuns(), readWatchSince(), lastParasutSyncErrorAt()]);
+  const [runs, watchSince, parasutSyncErrorAt, lastBackup] = await Promise.all([
+    loadJobRuns(),
+    readWatchSince(),
+    lastParasutSyncErrorAt(),
+    readLastBackup().catch((e) => {
+      console.error("[sistem uyarıları] son yedek okunamadı", e);
+      return undefined;
+    }),
+  ]);
   const production = isProductionRuntime();
   const cronSecret = Boolean(process.env.CRON_SECRET);
   const health = { parasut: jobHealth("parasut", runs, now, { watchSince }), gunluk: jobHealth("gunluk", runs, now, { watchSince }) };
-  return { production, cronSecret, runs, health, alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt }) };
+  const lastBackupAt = lastBackup === undefined ? undefined : (lastBackup?.at ?? null);
+  return { production, cronSecret, runs, health, alerts: systemAlerts({ production, cronSecret, now, health, parasutSyncErrorAt, lastBackupAt }) };
 }
 
 /** Zil, Genel bakış ve (Bugün) için sistem uyarıları; canlı değilse sorgu yapmadan boş */

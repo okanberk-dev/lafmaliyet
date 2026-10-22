@@ -209,11 +209,14 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   önizlemenin erken uyguladığı menü migration'ı; aynı değişiklik 0018 olarak `IF NOT EXISTS` ile yeniden uygulandı.
   Yeni bir uyarı görünürse hangi dalın uyguladığına ve şemanın koddakiyle aynı olduğuna bakın
   (`select created_at, hash from drizzle.__drizzle_migrations order by created_at`).
-- Veri yedeği: asıl yedek Neon'un otomatik nokta-zaman geri yüklemesidir (point-in-time restore). Panelde
-  **Ayarlar → Yedek → Tüm veriyi Excel'e aktar** ile istediğiniz an okunabilir bir .xlsx kopyası alınır: panel
+- Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
+  ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
+  `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:
+  `npm run db:restore -- <dosya>` (dolu veritabanına `--sil`, önce onun yedeğini alır). Biçim, adımlar, prova ve geri
+  yüklemeden sonra olanlar: [YEDEK.md](YEDEK.md). Aynı karttaki **Excel kopyası** okunabilir bir .xlsx'tir: panel
   sekmeleri ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları. Aylık harcamaların tek
-  tek kayıtları (yalnız Gelir-Gider'de ay toplamı), hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları dosyada
-  yoktur; dosya panele geri yüklenmez.
+  tek kayıtları (yalnız Gelir-Gider'de ay toplamı), hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları o dosyada
+  yoktur; Excel kopyası panele geri yüklenmez.
 - Veriyi Excel'in ilk hâline döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
 
 ```bash

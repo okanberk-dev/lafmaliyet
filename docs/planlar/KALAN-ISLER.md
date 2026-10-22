@@ -22,7 +22,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 
 | # | Grup | Plan | Migration (birleştirmede üretilir) | Durum |
 |---|---|---|---|---|
-| 3 | ops-backup: tam yedek ve denenmiş geri yükleme | `ops.md` §2 + CRITIQUE "ops" düzeltmeleri | yok | **Yarım:** `wip/opsbackup/*.patch` |
+| 3 | ops-backup: tam yedek ve denenmiş geri yükleme | `ops.md` §2 + CRITIQUE "ops" düzeltmeleri | yok | **Bitti, birleştirme bekliyor:** dal `impl/ops-backup` (`docs/YEDEK.md`) |
 | 4 | vkn: tedarikçiyi vergi numarasıyla eşleştirme (çekirdek; "Birleştir" ertelendi) | `vkn.md` + CRITIQUE §3/§4 | `fatura_vergi_no` | **Yarım:** `wip/vkn/*.patch` |
 | 5 | pricing: büyük Paraşüt fiyat sıçramasına onay, tedarikçiye göre fiyat | `pricing.md` | `fiyat_onayi` | başlanmadı |
 | 6 | kasa: ay bilgisi kasa raporlarından, kasa bütünlüğü | `kasa.md` | `kasa_ay_bilgisi_butunluk` | başlanmadı |

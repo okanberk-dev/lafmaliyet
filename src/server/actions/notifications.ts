@@ -36,7 +36,7 @@ export interface PanelNotification {
 /**
  * Günlük işlerin sorunları (yalnız canlıda; src/lib/job-health.ts): sabah işi ya da Paraşüt işi çalışmadı, hata
  * verdi, yarıda kesildi; CRON_SECRET yok. Kimlik çalışmadan (ya da günden) türer: sorun düzelip yeniden çıkarsa yeni
- * bildirim sayılır.
+ * bildirim sayılır. Son yedek 30 günden eskiyse yedek hatırlatması da burada (bilgi; kimliği son yedeğin gününden).
  */
 async function systemNotifications(): Promise<PanelNotification[]> {
   const today = todayTR();
