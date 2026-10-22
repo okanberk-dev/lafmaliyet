@@ -1,6 +1,6 @@
 import { AlarmClock, ArrowLeft, CalendarRange, CircleCheck, Wallet } from "lucide-react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -15,7 +15,7 @@ import { isParasutConfigured } from "@/server/parasut/config";
 import { sameSupplier } from "@/server/parasut/mapping";
 
 import { supplierBreakdowns } from "../breakdowns";
-import { aliasCandidates, isHiddenSupplier } from "../logic";
+import { aliasCandidates, isHiddenSupplier, sharedTaxNotes, supplierHref, supplierSlug, taxNameIndex } from "../logic";
 import { CountUp } from "../suppliers-client";
 import { SupplierClient } from "./supplier-client";
 
@@ -62,8 +62,15 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
   await requireAdmin();
   const { cari } = await params;
   const { today, termDays: defaultTermDays, groups } = await loadSupplierLedger();
-  const g = groups.find((x) => x.slug === slugOf(cari));
-  if (!g) notFound();
+  const slug = slugOf(cari);
+  const g = groups.find((x) => x.slug === slug);
+  if (!g) {
+    // Eski adres: kartsız tedarikçinin adresi anahtarından (adlarının en küçüğünden) gelir; vergi noyla başka bir ad
+    // katılınca ya da tedarikçi başka bir tedarikçide toplanınca değişir. Adlarından birinin adresiyse oraya gider
+    const moved = groups.find((x) => x.keys.some((k) => supplierSlug(k) === slug));
+    if (moved) redirect(supplierHref(moved.slug));
+    notFound();
+  }
   const docs = await listInvoiceDocuments(g.invoices.map((i) => i.id));
   const documents: Record<number, DocumentMeta[]> = {};
   for (const d of docs) (documents[d.invoiceId] ??= []).push(d);
@@ -111,7 +118,9 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     <SupplierClient
       key={g.slug}
       today={today}
-      supplier={{ key: g.key, slug: g.slug, name: g.name, names: g.names, termDays: g.termDays }}
+      supplier={{ key: g.key, slug: g.slug, name: g.name, names: g.names, termDays: g.termDays, taxNumber: g.taxNumber, taxNumbers: g.taxNumbers, viaTax: g.viaTax }}
+      taxNotes={sharedTaxNotes({ hasCard: Boolean(g.card), count: g.invoices.length, names: g.names }, g.sharedTax)}
+      taxIndex={taxNameIndex(groups)}
       card={g.card}
       invoices={g.invoices}
       documents={documents}

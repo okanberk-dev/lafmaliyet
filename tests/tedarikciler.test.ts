@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { supplierMatchKey } from "../src/app/panel/faturalar/rules";
 import {
   aliasCandidates,
   assignSlugs,
@@ -15,7 +16,9 @@ import {
   cardFor,
   cardIndex,
   cleanAliases,
+  cleanTaxNumber,
   compareSuppliers,
+  DUMMY_TAX_NUMBERS,
   dueOf,
   dueTone,
   dueWhen,
@@ -41,10 +44,18 @@ import {
   PLACEHOLDER_SUPPLIER_NAME,
   payState,
   phoneE164,
+  sameTaxNames,
+  sharedTaxNotes,
   summarize,
   supplierHaystack,
+  supplierPairKey,
+  supplierResolver,
   supplierSlug,
+  taxKey,
+  taxNameIndex,
   taxNumberCheck,
+  taxPreview,
+  taxPreviewLines,
   telHref,
   transferNote,
   whatsappHref,
@@ -414,15 +425,22 @@ test("eşitleme: yeni fatura ödenmedi gelir; iade, komisyon, peşin çalışıl
 test("eşitleme kaynağı: ödeme durumunu kullanıcı işaretler, eşitleme var olan faturanınkini değiştirmez", () => {
   const sync = readFileSync(join(root, "src/server/parasut/sync.ts"), "utf8");
   // İki yeni fatura yolu da aynı kural: Paraşüt'ün bilgisi (e-faturada yok), komisyon kategorisi, peşin kartı, başlangıç
-  // Komisyon yalnız kategori güvenilirse (ipucu tahmini değil)
-  assert.equal(sync.match(/commission: category === COMMISSION_CATEGORY && !categoryNeedsReview\(reason\) \},\s*ctx\.paidOnDelivery\(supplier\),\s*ctx\.paymentsSince/g)?.length, 2);
+  // Komisyon yalnız kategori güvenilirse (ipucu tahmini değil). Peşin kartı Tedarikçiler'deki gibi adla ve faturanın
+  // vergi nosuyla bulunur (gider faturasında e-belgenin ya da kişi kartının, e-faturada belgenin numarası)
+  assert.equal(
+    sync.match(/commission: category === COMMISSION_CATEGORY && !categoryNeedsReview\(reason\) \},\s*ctx\.paidOnDelivery\(supplier, (?:taxRaw|d\.supplierTaxNo)\),\s*ctx\.paymentsSince/g)?.length,
+    2,
+  );
   assert.match(sync, /parasutUnpaid: d\.unpaid, commission:/, "gider faturası");
   assert.match(sync, /parasutUnpaid: null, commission:/, "e-fatura");
   // Var olan faturada yalnız Paraşüt'ün ipucu (parasutUnpaid) yazılır, "ödenmedi" yazılmaz; Paraşüt faturayı kapatınca
   // panelde ödenmedi duranın bilinen kalanı korunur; yer tutucu adla açılmış fatura peşin kartına düşerse ödendi olur
   assert.match(sync, /\.set\(\{ \.\.\.common, \.\.\.\(keepOutstanding \? \{ outstanding: match\.outstanding \} : \{\}\), \.\.\.supplierFix, \.\.\.settle, dueDate \}\)/);
   assert.match(sync, /const keepOutstanding = match\.unpaid && !d\.unpaid;/);
-  assert.match(sync, /supplierFix\.supplier && match\.origin === "parasut" && match\.unpaid && !match\.paidAt && !match\.paymentRequestedAt \? ctx\.paidOnDelivery\(supplierFix\.supplier\)/);
+  assert.match(
+    sync,
+    /supplierFix\.supplier && match\.origin === "parasut" && match\.unpaid && !match\.paidAt && !match\.paymentRequestedAt \? ctx\.paidOnDelivery\(supplierFix\.supplier, taxRaw \?\? match\.supplierTaxNumber\)/,
+  );
   // Excel'i yeniden yükleme ödeme takibinin başlangıcını da siler (eski tarih kalsa faturalar "ödenmedi" yığılırdı)
   const seed = readFileSync(join(root, "scripts/seed.ts"), "utf8");
   assert.match(seed, /key IN \('payments\.recent', 'payments\.since'\)/);
@@ -608,4 +626,382 @@ test("isHiddenSupplier: listeden kaldırılan borçsuz tedarikçi gizli; borç y
   assert.equal(isHiddenSupplier(hidden, { openCount: 0, lastInvoice: "2026-10-11" }), false);
   // Geçmişten gelen ödenmemiş fatura da geri getirir: borç listeden gizlenmez
   assert.equal(isHiddenSupplier(hidden, { openCount: 1, lastInvoice: "2025-03-01" }), false);
+});
+
+// ---------------------------------------------------------------- Vergi no ile eşleşme (docs/planlar/vkn.md)
+
+// Kontrol hanesi tutan, yer tutucu olmayan numaralar
+const X = "7810030532";
+const Y = "4567890128";
+const Z = "1122334455";
+const W = "9988776658";
+
+/** Vergi noyla fatura (Paraşüt'ten gelmiş gibi) */
+function tinv(supplier: string, tax: string | null, date = "2026-10-01", payable = 100) {
+  return inv({ supplier, payable, date, supplierTaxNumber: tax });
+}
+
+type IdInvoice = LedgerInvoice & { id: number };
+
+/** Bugünkü (vergi nosuz) gruplama: kartın adı ya da diğer adı, yoksa adın kendi grubu; vergi no yok sayılır */
+function nameOnlyGroups(invoices: readonly IdInvoice[], cards: readonly SupplierCard[]) {
+  const index = cardIndex(cards);
+  const byId = new Map<string, { key: string; ids: number[]; names: string[] }>();
+  for (const c of cards) byId.set(`kart:${c.id}`, { key: supplierMatchKey(c.name), ids: [], names: [] });
+  for (const i of [...invoices].sort((a, b) => b.date.localeCompare(a.date))) {
+    const k = supplierMatchKey(i.supplier);
+    const c = index.get(k);
+    const id = c ? `kart:${c.id}` : `ad:${k}`;
+    const g = byId.get(id) ?? { key: k, ids: [], names: [] };
+    byId.set(id, g);
+    g.ids.push(i.id);
+  }
+  const slugs = assignSlugs([...byId.values()].map((g) => g.key));
+  return [...byId.values()].map((g) => ({ key: g.key, slug: slugs.get(g.key), ids: [...g.ids].sort((a, b) => a - b) })).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+const shape = (groups: readonly { key: string; slug: string; invoices: readonly IdInvoice[] }[]) =>
+  groups.map((g) => ({ key: g.key, slug: g.slug, ids: g.invoices.map((i) => i.id).sort((a, b) => a - b) })).sort((a, b) => a.key.localeCompare(b.key));
+
+test("vergi no: saklanan biçim rakam (10/11 hane); eşleşmede kontrol hanesi ve yer tutucu numara elenir", () => {
+  assert.equal(cleanTaxNumber(" 781 003 05.32 "), X, "boşluk ve nokta atılır");
+  assert.equal(cleanTaxNumber("12345"), null, "yanlış uzunluk");
+  assert.equal(cleanTaxNumber("1234567891"), "1234567891", "kontrol hanesi tutmayan saklanır");
+  assert.equal(taxKey("1234567891"), null, "… ama eşleşmede kullanılmaz");
+  assert.equal(taxKey(`TR ${X}`), X);
+  assert.equal(taxKey("10000000146"), "10000000146", "TCKN");
+  assert.equal(taxKey(null), null);
+  // 1234567890 VKN kontrol hanesini geçer: bu yüzden yer tutucu listesinde
+  assert.equal(isValidVkn("1234567890"), true);
+  for (const d of DUMMY_TAX_NUMBERS) assert.equal(taxKey(d), null, d);
+  assert.equal(cleanTaxNumber("1234567890"), "1234567890", "yer tutucu da saklanır");
+});
+
+test("vergi no: aynı numaralı iki kartsız ad tek tedarikçi; anahtar en küçük ad anahtarı, ad en yenisi", () => {
+  const list = [tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-12"), tinv("Kaldi Kahve Ltd", X, "2026-10-02"), tinv("Sütaş", null)];
+  const groups = groupSuppliers(list, [], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 2);
+  const g = groups.find((x) => x.taxNumbers.length)!;
+  assert.equal(g.key, "kaldi kahve ltd", "tarihe bakmadan en küçük anahtar: her çağıranda aynı adres");
+  assert.equal(g.slug, "kaldi-kahve-ltd");
+  assert.equal(g.name, "KALDI KAHVE TİC. A.Ş.", "görünen ad en yeni faturadaki");
+  assert.deepEqual(g.names, ["KALDI KAHVE TİC. A.Ş.", "Kaldi Kahve Ltd"]);
+  assert.deepEqual(g.keys.sort(), ["kaldi kahve ltd", "kaldi kahve tic. a.ş."]);
+  assert.deepEqual(g.viaTax, ["KALDI KAHVE TİC. A.Ş."], "anahtar dışındaki ad vergi noyla geldi");
+  assert.deepEqual(g.taxNumbers, [{ taxNumber: X, count: 2 }]);
+  assert.equal(g.taxNumber, X);
+  assert.deepEqual(g.sharedTax, []);
+});
+
+test("vergi no: ad köprüsü — vergi nosuz Excel satırı, aynı adla vergi nolu faturanın grubuna katılır", () => {
+  const list = [tinv("Kaldi", null, "2026-03-01"), tinv("Kaldi", X, "2026-10-01"), tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-08")];
+  const groups = groupSuppliers(list, [], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 1, "Excel'deki Kaldi ayrılmaz (bugünkü ad gruplamasından geri gidiş olmaz)");
+  assert.equal(groups[0].key, "kaldi");
+  assert.equal(groups[0].invoices.length, 3);
+  assert.deepEqual(groups[0].viaTax, ["KALDI KAHVE TİC. A.Ş."]);
+});
+
+test("vergi no: numarası yazılmamış karta, kartın faturalarındaki numarayla başka adla gelen fatura da düşer", () => {
+  const kaldi = card({ id: 1, name: "Kaldi", paymentTermDays: 15 });
+  const list = [tinv("Kaldi", X, "2026-10-01"), tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-05"), tinv("Kaldi", null, "2026-02-01")];
+  const groups = groupSuppliers(list, [kaldi], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 1);
+  const g = groups[0];
+  assert.equal(g.card?.id, 1);
+  assert.equal(g.invoices.length, 3);
+  assert.deepEqual(g.viaTax, ["KALDI KAHVE TİC. A.Ş."]);
+  assert.equal(g.taxNumber, X, "kartta yoksa faturalardaki tek numara");
+  const { resolve } = supplierResolver([kaldi], list);
+  assert.equal(resolve("KALDI KAHVE TİC. A.Ş.", X).via, "vergi");
+  assert.equal(resolve("Kaldi", null).via, "ad");
+});
+
+test("vergi no: kartta yazılı numarayla bilinmeyen ad karta gider; kartın numarası faturalardakinden önce gelir", () => {
+  const sutas = card({ id: 3, name: "Sütaş", taxNumber: Y });
+  const list = [tinv("SÜTAŞ SÜT ÜRÜNLERİ A.Ş.", Y), tinv("Sütaş", null)];
+  const groups = groupSuppliers(list, [sutas], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].invoices.length, 2);
+  assert.equal(groups[0].taxNumber, Y);
+  const { resolve } = supplierResolver([sutas], []);
+  assert.equal(resolve("Bambaşka Ad", Y).card?.id, 3, "çiftlerde olmasa da kartın numarası bulur");
+  assert.equal(resolve("Bambaşka Ad", ` ${Y.slice(0, 3)}.${Y.slice(3)} `).card?.id, 3, "biçim farkı sayılmaz");
+});
+
+test("vergi no: ad önce gelir — B'nin diğer adıyla A'nın numarası B'ye gider; ikisi de şeritte birbirini görür", () => {
+  const a = card({ id: 1, name: "Opera AVM", taxNumber: X });
+  const b = card({ id: 2, name: "Opera Gayrimenkul", aliases: ["OPERA GAYRİMENKUL A.Ş."] });
+  const list = [tinv("Opera AVM", X), tinv("OPERA GAYRİMENKUL A.Ş.", X)];
+  const groups = groupSuppliers(list, [a, b], { today: TODAY, termDays: 30 });
+  const ga = groups.find((g) => g.card?.id === 1)!;
+  const gb = groups.find((g) => g.card?.id === 2)!;
+  assert.equal(ga.invoices.length, 1);
+  assert.equal(gb.invoices.length, 1, "kartın diğer adı her zaman kazanır (iki firmayı ayırmanın yolu)");
+  assert.deepEqual(ga.sharedTax, [{ taxNumber: X, others: [{ name: "Opera Gayrimenkul", slug: gb.slug, cardId: 2, count: 1 }] }]);
+  assert.deepEqual(gb.sharedTax, [{ taxNumber: X, others: [{ name: "Opera AVM", slug: ga.slug, cardId: 1, count: 1 }] }]);
+});
+
+test("vergi no: iki kartta aynı numara eşleşmede kullanılmaz; adsız fatura kendi adının grubunda kalır", () => {
+  const a = card({ id: 1, name: "Kaldi", taxNumber: X });
+  const b = card({ id: 2, name: "Kaldi Kahve", taxNumber: X });
+  const list = [tinv("KALDI KAHVE TİC. A.Ş.", X), tinv("Kaldi", null)];
+  const groups = groupSuppliers(list, [a, b], { today: TODAY, termDays: 30 });
+  const legal = groups.find((g) => !g.card)!;
+  assert.equal(legal.key, "kaldi kahve tic. a.ş.", "iki kart arasında karar verilemez: bugünkü gibi kendi adı");
+  assert.equal(groups.find((g) => g.card?.id === 2)!.invoices.length, 0);
+  assert.deepEqual(
+    groups.find((g) => g.card?.id === 2)!.sharedTax[0].others.map((o) => o.name),
+    ["KALDI KAHVE TİC. A.Ş.", "Kaldi"],
+    "Türkçe sıra: ı, i'den önce",
+  );
+  assert.equal(supplierResolver([a, b], list).resolve("Başka Ad", X).card, null);
+  // Kartlardan birinin kendi adıyla gelen faturası numarayı taşıyorsa numara faturalar üzerinden o karta bağlanır
+  const bridged = groupSuppliers([...list, tinv("Kaldi", X)], [a, b], { today: TODAY, termDays: 30 });
+  assert.equal(bridged.find((g) => g.card?.id === 1)!.invoices.length, 3);
+});
+
+test("vergi no: Paraşüt'ün geçici adı numarasıyla gerçek tedarikçisine gider, hiçbir şeyi köprülemez", () => {
+  const P = PLACEHOLDER_SUPPLIER_NAME;
+  const list = [tinv("Kaldi", X, "2026-10-01"), tinv(P, X, "2026-10-09"), tinv(P, Z, "2026-10-09"), tinv("Pruva", W), tinv(P, W, "2026-10-10")];
+  const groups = groupSuppliers(list, [], { today: TODAY, termDays: 30 });
+  const kaldi = groups.find((g) => g.key === "kaldi")!;
+  assert.equal(kaldi.invoices.length, 2, "vergi nosu bilinen geçici ad gerçek tedarikçide");
+  assert.deepEqual(kaldi.names, ["Kaldi"], "geçici ad başka grubun adlarına yazılmaz (Faturadan doldur bütün geçicilere bakmasın)");
+  assert.equal(kaldi.name, "Kaldi");
+  const placeholder = groups.find((g) => g.key === supplierMatchKey(P))!;
+  assert.equal(placeholder.invoices.length, 1, "bağlanmayan numaralı geçici ad kendi grubunda");
+  assert.deepEqual(placeholder.names, [P]);
+  // İki geçici fatura farklı numaralarla iki adlı tedarikçiyi birleştirmez
+  const two = groupSuppliers([tinv("A Ltd", X), tinv("B Ltd", Y), tinv(P, X), tinv(P, Y)], [], { today: TODAY, termDays: 30 });
+  assert.deepEqual(two.map((g) => [g.key, g.invoices.length]).sort(), [["a ltd", 2], ["b ltd", 2]]);
+});
+
+test("vergi no: kontrol hanesi tutmayan ya da yer tutucu numara iki adı birleştirmez", () => {
+  const list = [tinv("Ali Usta", "1234567890"), tinv("Veli Usta", "1234567890"), tinv("Can Gıda", "1234567891"), tinv("Cem Gıda", "1234567891")];
+  const groups = groupSuppliers(list, [], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 4);
+  assert.ok(groups.every((g) => !g.taxNumbers.length && g.taxNumber === null));
+});
+
+test("vergi no: iki numaralı tek ad bölünmez; iki numara da sayılarıyla yazılır", () => {
+  const list = [tinv("Metro", X), tinv("Metro", X), tinv("Metro", Y), tinv("Metro Turizm", Y)];
+  const groups = groupSuppliers(list, [], { today: TODAY, termDays: 30 });
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].taxNumbers, [
+    { taxNumber: Y, count: 2 },
+    { taxNumber: X, count: 2 },
+  ], "çok faturalı önce, eşitse numara sırası");
+  assert.equal(groups[0].taxNumber, null, "birden çok numara: tek numara yok");
+});
+
+test("vergi no: sonuç girdinin sırasından ve tarihlerden bağımsız (liste, adres parçaları, ⌘K aynı adresi bulur)", () => {
+  const cards = [card({ id: 1, name: "Kaldi" }), card({ id: 2, name: "Sütaş", taxNumber: Y })];
+  const list = [
+    tinv("Kaldi", X, "2026-10-01"),
+    tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-05"),
+    tinv("SÜTAŞ A.Ş.", Y, "2026-09-01"),
+    tinv("Pruva", Z, "2026-08-01"),
+    tinv("PRUVA GIDA LTD", Z, "2026-10-03"),
+    tinv("Erbak", null, "2026-07-01"),
+    tinv(PLACEHOLDER_SUPPLIER_NAME, Z, "2026-10-04"),
+  ];
+  const base = shape(groupSuppliers(list, cards, { today: TODAY, termDays: 30 }));
+  for (let n = 0; n < 5; n++) {
+    const shuffled = [...list].sort(() => Math.random() - 0.5);
+    assert.deepEqual(shape(groupSuppliers(shuffled, [...cards].reverse(), { today: TODAY, termDays: 30 })), base);
+  }
+  // loadSupplierRefs biçimi: (ad, vergi no) çiftleri tekrarsız, tarih o çiftin en yenisi
+  const refs = new Map<string, { supplier: string; supplierTaxNumber: string | null; date: string }>();
+  for (const i of list) {
+    const k = `${i.supplier}|${i.supplierTaxNumber ?? ""}`;
+    const cur = refs.get(k);
+    if (!cur || i.date > cur.date) refs.set(k, { supplier: i.supplier, supplierTaxNumber: i.supplierTaxNumber ?? null, date: i.date });
+  }
+  const fromRefs = groupSuppliers(
+    [...refs.values()].map((r) => ({ ...r, payable: 0, unpaid: false })),
+    cards,
+    { today: TODAY, termDays: 0 },
+  );
+  assert.deepEqual(
+    fromRefs.map((g) => [g.key, g.slug]).sort(),
+    base.map((g) => [g.key, g.slug]).sort(),
+  );
+});
+
+test("vergi no: iki kartı bağlayan numarada adın vergi nolu kardeşleri tek karta gittiyse vergi nosuz satırı da onları izler", () => {
+  const a = card({ id: 1, name: "Kaldi", taxNumber: X });
+  const b = card({ id: 2, name: "Pruva" });
+  // "Pruva" faturası X'i taşıyor: X ile Pruva kartı da aynı kümede (çakışma)
+  const list = [tinv("Pruva", X), tinv("Kaldi Kahve", X), tinv("Kaldi Kahve", null, "2026-01-01")];
+  const groups = groupSuppliers(list, [a, b], { today: TODAY, termDays: 30 });
+  const ga = groups.find((g) => g.card?.id === 1)!;
+  assert.deepEqual(ga.invoices.map((i) => i.supplierTaxNumber ?? null).sort(), [X, null].sort(), "Excel'deki Kaldi Kahve de Kaldi kartında");
+  assert.equal(groups.find((g) => g.card?.id === 2)!.invoices.length, 1);
+  // Kardeşleri iki ayrı karta gitmişse vergi nosuz satır kendi adında kalır
+  const c = card({ id: 3, name: "Erbak", taxNumber: Z });
+  const split = groupSuppliers([tinv("Su Ltd", X), tinv("Su Ltd", Z), tinv("Su Ltd", null)], [a, c], { today: TODAY, termDays: 30 });
+  assert.deepEqual(
+    split.map((g) => [g.card?.id ?? g.key, g.invoices.length]).sort(),
+    [[1, 1], [3, 1], ["su ltd", 1]].sort(),
+  );
+});
+
+test("vergi no: vergi nosu olmayan veride gruplar, anahtarlar ve adresler bugünküyle aynı (seed ve örnekler)", () => {
+  const seedList = ds.invoices.map((i) => ({ ...i, outstanding: null }));
+  assert.deepEqual(shape(groupSuppliers(seedList, [], { today: TODAY, termDays: 30 })), nameOnlyGroups(seedList, []));
+  const cards = [card({ id: 1, name: "Sütaş", aliases: ["SÜTAŞ SÜT ÜRÜNLERİ A.Ş."] }), card({ id: 2, name: "Kaldi" }), card({ id: 3, name: "Boş Kart" })];
+  const list = [
+    tinv("Sütaş", null),
+    tinv("SÜTAŞ SÜT ÜRÜNLERİ A.Ş.", null),
+    tinv("KALDI (iade)", null),
+    tinv("Erbak", null),
+    tinv("erbak", null),
+    tinv(PLACEHOLDER_SUPPLIER_NAME, null),
+    tinv("Sutas", null),
+  ];
+  assert.deepEqual(shape(groupSuppliers(list, cards, { today: TODAY, termDays: 30 })), nameOnlyGroups(list, cards));
+  // Faturalarda yalnız geçersiz ya da yer tutucu numara varsa da aynı
+  const dummy = list.map((i, n) => ({ ...i, supplierTaxNumber: n % 2 ? "1234567890" : "1111111111" }));
+  assert.deepEqual(shape(groupSuppliers(dummy, cards, { today: TODAY, termDays: 30 })), nameOnlyGroups(dummy, cards));
+  // Vergi nosuz gruplarda yeni alanlar boş
+  for (const g of groupSuppliers(list, cards, { today: TODAY, termDays: 30 })) {
+    assert.deepEqual([g.viaTax, g.taxNumbers, g.sharedTax], [[], [], []], g.key);
+  }
+});
+
+test("vergi no: eşitlemenin yeni faturası (çiftlerde yok) adıyla bulunur; peşin kartı ve vade günü Tedarikçiler'le aynı", () => {
+  const kaldi = card({ id: 1, name: "Kaldi", paidOnDelivery: true, paymentTermDays: 7 });
+  const refs = [{ supplier: "Kaldi", supplierTaxNumber: X }];
+  const { resolve } = supplierResolver([kaldi], refs);
+  assert.equal(resolve("KALDI KAHVE TİC. A.Ş.", X).card?.id, 1, "bilinen numarayla yeni ad");
+  assert.equal(resolve("Kaldi", Y).card?.id, 1, "kartın adı zaten kazanır");
+  // Kartsız adın bağlı olduğu numara: yeni numarayla gelen fatura adın kümesine katılır
+  const r2 = supplierResolver([kaldi], [{ supplier: "Kaldi Kahve Ltd", supplierTaxNumber: X }, { supplier: "Kaldi", supplierTaxNumber: X }]);
+  assert.equal(r2.resolve("Kaldi Kahve Ltd", Z).card?.id, 1, "yeni numara henüz çiftlerde yok: ad bağlar");
+  assert.equal(r2.resolve("Başka Firma", Z).card, null);
+  // Vade günü: resolve ile bulunan kartınki = grubun termDays (Ödemeler ve Tedarikçiler aynı vadeyi bulur)
+  const list = [tinv("Kaldi", X), tinv("KALDI KAHVE TİC. A.Ş.", X), tinv("Erbak", null)];
+  const groups = groupSuppliers(list, [kaldi], { today: TODAY, termDays: 30 });
+  const r3 = supplierResolver([kaldi], list);
+  for (const g of groups) for (const i of g.invoices) assert.equal(r3.resolve(i.supplier, i.supplierTaxNumber).card?.paymentTermDays ?? 30, g.termDays, i.supplier);
+});
+
+test("vergi no: Faturalar'daki bağlantı anahtarı (ad, vergi no) her faturayı kendi tedarikçisinin sayfasına götürür", () => {
+  const cards = [card({ id: 1, name: "Kaldi" }), card({ id: 2, name: "Pruva", taxNumber: Z }), card({ id: 3, name: "Erbak", taxNumber: W })];
+  const list = [
+    tinv("Kaldi", X),
+    tinv("KALDI KAHVE TİC. A.Ş.", X),
+    tinv("KALDI KAHVE TİC. A.Ş.", null),
+    tinv("Su Ltd", Z),
+    tinv("Su Ltd", W),
+    tinv("Su Ltd", null),
+    tinv("Damla", null),
+  ];
+  const groups = groupSuppliers(list, cards, { today: TODAY, termDays: 30 });
+  const slugs = Object.fromEntries(groups.flatMap((g) => g.invoices.map((i) => [supplierPairKey(i.supplier, i.supplierTaxNumber), g.slug] as const)));
+  for (const g of groups) for (const i of g.invoices) assert.equal(slugs[supplierPairKey(i.supplier, i.supplierTaxNumber)], g.slug, `${i.supplier} ${i.supplierTaxNumber}`);
+  // Aynı ad üç tedarikçide olabilir (numaralar iki ayrı kartta, numarasızı kendi adında): ad tek başına yetmez
+  assert.deepEqual([Z, W, null].map((t) => slugs[supplierPairKey("Su Ltd", t)]), ["pruva", "erbak", "su-ltd"]);
+  assert.equal(supplierPairKey("KALDI (iade)", ` ${X} `), `kaldi|${X}`);
+  assert.equal(supplierPairKey("Kaldi", "1234567890"), "kaldi|", "eşleşmeye girmeyen numara anahtara da girmez");
+});
+
+test("vergi no: eksik bilgi, arama ve ödeme talebi faturalardaki numarayı da kullanır", () => {
+  assert.deepEqual(missingInfo(null, X), ["iban", "iletisim"], "faturalardan bilinen numara eksik sayılmaz");
+  assert.deepEqual(missingInfo({ iban: "TR…", taxNumber: null, phone: "0532", email: null, paidOnDelivery: false }, null), ["vergi"]);
+  const hay = supplierHaystack({ name: "Kaldi", names: [], legalName: null, taxNumber: null, taxNumbers: [X, Y], iban: null, phone: null, contactName: null, email: null });
+  assert.match(hay, new RegExp(Y));
+  const text = paymentRequestText({ name: "Kaldi", card: null, taxNumber: X, lines: [] });
+  assert.match(text, new RegExp(`Vergi no: ${X}`), "kartsız tedarikçide de faturalardaki numara");
+  const own = paymentRequestText({ name: "Kaldi", card: { legalName: null, iban: null, bankName: null, accountHolder: null, taxNumber: Y }, taxNumber: X, lines: [] });
+  assert.match(own, new RegExp(`Vergi no: ${Y}`), "kartta yazılı numara önce gelir");
+});
+
+test("vergi no önizlemesi: gelecek adlar, adıyla başka kartta kalanlar, numarası başka kartta da yazılı olan", () => {
+  const kaldi = card({ id: 1, name: "Kaldi" });
+  const opera = card({ id: 2, name: "Opera AVM" });
+  const list = [
+    tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-01"),
+    tinv("KALDI KAHVE TİC. A.Ş.", null, "2026-03-01"),
+    tinv("Kaldi Kahve Ltd", X),
+    tinv("Opera AVM", Y),
+    tinv("Opera Gayrimenkul", Y),
+    tinv(PLACEHOLDER_SUPPLIER_NAME, X),
+  ];
+  const groups = groupSuppliers(list, [kaldi, opera], { today: TODAY, termDays: 30 });
+  const index = taxNameIndex(groups);
+  // Kaldi kartına X yazılırsa: kartsız grubun bütün adları (vergi nosuz satırıyla) gelir; geçici ad sayılmaz
+  const p = taxPreview(index, X, { cardId: 1, slug: null });
+  assert.deepEqual(p, {
+    join: {
+      names: [
+        { name: "KALDI KAHVE TİC. A.Ş.", count: 2 },
+        { name: "Kaldi Kahve Ltd", count: 1 },
+      ],
+      count: 3,
+    },
+    stay: [],
+    sharedCards: [],
+  });
+  assert.deepEqual(taxPreviewLines(p), ["Bu vergi noyla gelen 3 fatura da bu tedarikçide toplanır: KALDI KAHVE TİC. A.Ş. (2), Kaldi Kahve Ltd (1)."]);
+  // Yeni kart Y ile: Opera AVM kendi adıyla kalır, Opera Gayrimenkul (vergi noyla bağlanmış) gelir
+  const q = taxPreview(index, ` ${Y} `, { cardId: null, slug: null });
+  assert.deepEqual(q.join.names, [{ name: "Opera Gayrimenkul", count: 1 }]);
+  assert.deepEqual(q.stay, ["Opera AVM"]);
+  assert.deepEqual(taxPreviewLines(q)[1], "“Opera AVM” adıyla eşleşen faturalar orada kalır (ad önce gelir).");
+  // Kartsız tedarikçinin kendi sayfasında açılan kart: kendi faturaları zaten adlarıyla gelir
+  const legal = groups.find((g) => g.key === "kaldi kahve ltd")!;
+  assert.equal(taxPreview(index, X, { cardId: null, slug: legal.slug }).join.count, 0);
+  // Numara başka kartta yazılıysa eşleşme ikisinde de çalışmaz
+  const shared = taxNameIndex(groupSuppliers(list, [kaldi, { ...opera, taxNumber: X }], { today: TODAY, termDays: 30 }));
+  assert.deepEqual(shared.cardTax[X], [{ id: 2, name: "Opera AVM" }]);
+  const s = taxPreview(shared, X, { cardId: 1, slug: null });
+  assert.deepEqual(s, { join: { names: [], count: 0 }, stay: [], sharedCards: ["Opera AVM"] });
+  assert.deepEqual(taxPreviewLines(s), ["Bu vergi no “Opera AVM” tedarikçisinde de kayıtlı: vergi noyla eşleşme ikisinde de çalışmaz, faturalar adlarına göre ayrılır."]);
+  assert.deepEqual(taxPreview(shared, X, { cardId: 2, slug: null }).sharedCards, [], "kartın kendi numarası kendisiyle çakışmaz");
+  // Geçersiz numara önizleme vermez
+  assert.deepEqual(taxPreviewLines(taxPreview(index, "1234567891", { cardId: 1, slug: null })), []);
+});
+
+test("vergi no şeridi: öteki tedarikçi başına bir not; yapılabilecek olan söylenir, olmayan söylenmez", () => {
+  const shared = [
+    {
+      taxNumber: X,
+      others: [
+        { name: "Kaldi Kahve", slug: "kaldi-kahve", cardId: 2, count: 4 },
+        { name: "KALDI LTD", slug: "kaldi-ltd", cardId: null, count: 1 },
+      ],
+    },
+    { taxNumber: Y, others: [{ name: "Kaldi Kahve", slug: "kaldi-kahve", cardId: 2, count: 4 }] },
+  ];
+  const notes = sharedTaxNotes({ hasCard: true, count: 3, names: ["Kaldi"] }, shared);
+  assert.deepEqual(
+    notes.map((n) => n.slug),
+    ["kaldi-kahve", "kaldi-ltd"],
+    "aynı tedarikçi iki numarada bir kez",
+  );
+  assert.equal(notes[0].text, `“Kaldi Kahve” tedarikçisi de aynı vergi nosunu (${X}) taşıyor; faturaları ayrı duruyor.`, "ikisi de faturalı: yalnız bilgi");
+  assert.equal(notes[1].text, `“KALDI LTD” adıyla gelen faturalarda da bu vergi no (${X}) var. Aynı firmaysa Düzenle'den diğer adlara ekleyin.`);
+  // Faturasız kart silinebilir: o zaman adı öteki kartın diğer adlarına eklenebilir
+  const empty = sharedTaxNotes({ hasCard: true, count: 3, names: ["Kaldi"] }, [{ taxNumber: X, others: [{ name: "Kaldi Kahve", slug: "k", cardId: 2, count: 0 }] }]);
+  assert.match(empty[0].text, /Aynı firmaysa o tedarikçiyi Düzenle'den silip adını buradaki ‘Diğer adlar’a ekleyin\.$/);
+  const mine = sharedTaxNotes({ hasCard: true, count: 0, names: [] }, [{ taxNumber: X, others: [{ name: "Kaldi", slug: "k", cardId: 2, count: 5 }] }]);
+  assert.match(mine[0].text, /Aynı firmaysa bu tedarikçiyi Düzenle'den silip adını onun ‘Diğer adlar’ına ekleyin\.$/);
+  // Kartsız tedarikçinin adları kartın diğer adlarına eklenebilir
+  const cardless = sharedTaxNotes({ hasCard: false, count: 2, names: ["KALDI LTD", "Kaldi Ltd Şti"] }, [{ taxNumber: X, others: [{ name: "Kaldi", slug: "kaldi", cardId: 1, count: 5 }] }]);
+  assert.match(cardless[0].text, /onun sayfasında Düzenle'den bu adları diğer adlara ekleyin\.$/);
+});
+
+test("vergi no: listede adın altında aynı vergi noyla toplanan öteki adlar", () => {
+  const sutas = card({ id: 1, name: "Sütaş", aliases: ["Sütaş A.Ş."] });
+  const groups = groupSuppliers(
+    [tinv("Kaldi", null, "2026-03-01"), tinv("Kaldi", X, "2026-10-01"), tinv("KALDI KAHVE TİC. A.Ş.", X, "2026-10-08"), tinv("Sütaş A.Ş.", Y), tinv("SÜTAŞ SÜT ÜRÜNLERİ A.Ş.", Y), tinv("Erbak", null)],
+    [sutas],
+    { today: TODAY, termDays: 30 },
+  );
+  const of = (name: string) => sameTaxNames(groups.find((g) => g.name === name)!);
+  assert.deepEqual(of("KALDI KAHVE TİC. A.Ş."), ["Kaldi"], "kartsızda görünen addan başkası");
+  assert.deepEqual(of("Sütaş"), ["SÜTAŞ SÜT ÜRÜNLERİ A.Ş."], "kartlıda yalnız vergi noyla gelen (diğer ad değil)");
+  assert.deepEqual(of("Erbak"), []);
 });

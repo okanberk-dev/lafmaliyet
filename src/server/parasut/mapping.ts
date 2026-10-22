@@ -197,7 +197,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
       const r = bill.relationships?.active_e_document?.data;
       return r && !Array.isArray(r) ? { type: r.type, id: r.id } : null;
     })(),
-    eDocumentTaxNo: str((eDoc?.attributes as Record<string, unknown> | undefined)?.from_vkn),
+    eDocumentTaxNo: eDocumentTaxNo(eDoc),
     description: str(a.description),
     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
@@ -214,6 +214,18 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
 }
 
 // ---------------------------------------------------------------- Tedarikçinin vergi nosu (invoices.supplier_tax_number)
+
+/**
+ * Gider faturasının e-belgesindeki satıcı vergi nosu (`from_vkn`), yalnız gelen e-faturada. Giden bir belgede
+ * `from_vkn` işletmenin kendi numarası olurdu (aynı Paraşüt şirketinde sitenin satış faturaları da kesiliyor) ve
+ * bütün tedarikçileri tek firmada toplardı.
+ */
+function eDocumentTaxNo(doc: Resource | null): string | null {
+  if (doc?.type !== "e_invoices") return null;
+  const a = doc.attributes as Record<string, unknown>;
+  const direction = str(a.direction)?.toLowerCase();
+  return direction && direction !== "inbound" ? null : str(a.from_vkn);
+}
 
 /**
  * Faturada saklı tedarikçi vergi nosunun yeni değeri; null: değişiklik yok. Boş kayda gelen numara yazılır. E-fatura

@@ -9,16 +9,19 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 
 - Faturası olan her tedarikçi listede görünür, bilgileri girilmemiş olsa da. Kart yalnız bilgi girilince açılır
   (**Tedarikçi ekle** ya da tedarikçi sayfasında **Düzenle**).
+- Faturaları aynı vergi numarasını taşıyan adlar tek satırdır ("Kaldi" ve "KALDI KAHVE TİC. A.Ş."; aşağıda
+  *Eşleşme*).
 - Listeden kaldırılan tedarikçiler listenin altındaki **Listeden kaldırılanlar (N)**'de durur; oradan sayfası
   açılır ya da **Listeye geri al** ile geri gelir (aşağıda *Silme*).
 - Özet kartları: **Kalan borç**, **Vadesi geçen**, **7 gün içinde** (vadesi gelecek), **Bu ay ödenen** (ödeme günü bu
   ayda). Karta dokununca tedarikçi tedarikçi döküm açılır.
 - Satırda: son fatura, ödenmemiş fatura sayısı, kalan borç, en yakın vade, IBAN (dokununca kopyalanır). Rozetler:
   *Peşin*, *IBAN yok* (borcu varsa), *N talep edildi*, *N Paraşüt'te ödendi*.
-- Arama (ad, diğer adlar, unvan, vergi no, IBAN, telefon, yetkili, e-posta), süzgeç (**Borcu olanlar**, **Vadesi
-  geçen**, **Bilgisi eksik**) ve sıralama (kalan borç, en yakın vade, son fatura, ad) adreste durur (`?ara=`,
-  `?durum=`, `?sirala=`).
-- ⌘K araması tedarikçileri de bulur (unvan ve vergi no ile).
+- Arama (ad, diğer adlar, unvan, vergi no — kartta yazılı ve faturalarda geçen —, IBAN, telefon, yetkili, e-posta),
+  süzgeç (**Borcu olanlar**, **Vadesi geçen**, **Bilgisi eksik**) ve sıralama (kalan borç, en yakın vade, son fatura,
+  ad) adreste durur (`?ara=`, `?durum=`, `?sirala=`). Faturalardan tek bir vergi no biliniyorsa vergi no eksik
+  sayılmaz.
+- ⌘K araması tedarikçileri de bulur (unvan ve vergi no ile; faturalardaki vergi numaralarıyla da).
 
 ## Tedarikçi sayfası (`/panel/tedarikciler/<ad>`)
 
@@ -26,6 +29,19 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 - **Tedarikçi bilgileri:** IBAN (kopyala), **Ara** / **WhatsApp** / **E-posta**, unvan, vergi no ve dairesi, yetkili,
   adres, vade, ödeme şekli, faturalarda geçen diğer adlar, not. Eksik önemli bilgi (IBAN, vergi no, telefon /
   e-posta) altta yazar.
+  - Kartta vergi no yoksa faturalardaki tek numara `7810030532 · faturalardan` diye görünür (kopyalanır). Kart
+    kendiliğinden yazılmaz; Düzenle numarayı önerir, kaydeden siz olursunuz.
+  - **Aynı vergi no:** yalnız vergi numarasıyla bu tedarikçide toplanan adlar (kartın adı ya da diğer adı olmayan).
+  - Kartın numarası faturalardaki tek numaradan farklıysa uyarı: "Faturalardaki vergi no farklı: … Karttaki numarayı
+    kontrol edin." Faturalarda iki ya da daha çok numara varsa hepsi fatura sayılarıyla yazılır; biri başka firmaysa
+    o faturanın tedarikçi adı Faturalar'dan düzeltilir.
+  - Kartsız tedarikçide başlık "Faturalardaki adı: Kaldi, KALDI KAHVE TİC. A.Ş. (aynı vergi no)", bilgi kartında
+    "Vergi no faturalardan: …".
+- **Aynı vergi no şeridi** (özet kartlarının üstünde): aynı numara başka bir tedarikçide de duruyorsa (adı başka bir
+  kartın adı ya da diğer adı olan fatura, iki kartta yazılı aynı numara) her biri için bir satır ve **Sayfasına git**
+  (en çok 3, fazlası sayıyla). Birleştirme düğmesi yok; satır ne yapılabileceğini söyler: kartsız adı Düzenle'den
+  diğer adlara eklemek, faturası olmayan kartı silip adını ötekinin diğer adlarına eklemek. İki kartın ikisinin de
+  faturası varsa yalnız bilgi verir (faturası olan kart silinince listeden kalkar ama adını tutar).
 - Özet kartları: **Kalan borç**, **Vadesi geçen**, **bu yılın alımları** (ay ay), **Son ödeme** (son 12 ödeme günü).
 - **Faturalar:** Ödenmemiş / Tümü / Ödendi. Her faturada vade (yoksa tahmini vade), durum, belge (PDF) ve
   Faturalar'da açma. Durum hapına dokununca ödeme penceresi açılır; ✓ tek dokunuşla bugün ödendi yapar (kartın
@@ -56,7 +72,8 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 - Süre dolarsa (yaklaşık 30 sn okuma) okunanlar yazılır, kalınan sayfa saklanır (`parasut.supplierHistory`); düğmeye
   yeniden basınca oradan sürer.
 - Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
-  adlarından değilse diğer adlara eklenir (başka bir tedarikçide kayıtlıysa eklenmez, söylenir).
+  adlarından değilse diğer adlara eklenir (başka bir tedarikçide kayıtlıysa eklenmez, söylenir). Kartsız tedarikçide
+  ad eklenmez; o adla gelen faturalar aynı vergi noyla zaten buraya düştüyse bir şey söylenmez.
 - Eski faturalar kendi aylarına gider olarak yazılır (aylık hesaplar o aylar için de dolar). Çalışma, Paraşüt
   sayfasındaki eşitleme geçmişinde ve işlem geçmişinde görünür.
 
@@ -66,7 +83,8 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 
 - **Faturası yoksa** kartı silinir. Bildirimdeki **Geri al** geri getirir.
 - **Faturası varsa** faturalar silinmez (gider ve aylık hesapların kaynağı): tedarikçi **listeden kaldırılır**,
-  bilgileri saklanır (`suppliers.hidden_on`; kartı yoksa yalnız adıyla bir kart açılır). Listeye geri alınınca
+  bilgileri saklanır (`suppliers.hidden_on`; kartı yoksa yalnız görünen adıyla bir kart açılır, vergi noyla
+  birleşen öteki adlar faturalarıyla ona düşer). Listeye geri alınınca
   kartta adından başka bilgi yoksa kart silinir, tedarikçi eskisi gibi faturalarından görünür. Kaldırıldığı günden
   sonraki tarihli faturası gelirse listeye kendiliğinden döner (`isHiddenSupplier`).
 - **Ödenmemiş faturası varsa** silinemez: borç listeden gizlenmesin. Pencere nedenini söyler; faturaları ödendi
@@ -149,6 +167,7 @@ Cuma gününe kadar
   Hangisinin daha önce düşüldüğü bilinmediği için seçili gelmez; seçilen iade tutardan düşülür, metinde "Düşülen
   iadeler" altında yazar, havale açıklamasına girmez.
 - IBAN girilmemişse metinde "IBAN: (girilmemiş)" yazar ve pencerede uyarı çıkar.
+- "Vergi no:" satırı kartta yazılı numaradır; kartta yoksa (kartsız tedarikçide de) faturalardaki tek numara.
 
 ## Bilgiler (Düzenle penceresi)
 
@@ -161,7 +180,16 @@ Cuma gününe kadar
 - **Ödeme:** vade (gün, 0–365), genelde nasıl ödenir (ödendi penceresinde önce bu seçili gelir), *Faturaları ödendi
   gelsin* (peşin).
 - **Faturalarda geçen diğer adlar:** aynı tedarikçinin faturalarda farklı yazılan adları ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş.");
-  onların faturaları da bu karta toplanır. Benzer adlı kartsız tedarikçiler öneri olarak çıkar.
+  onların faturaları da bu karta toplanır. Benzer adlı kartsız tedarikçiler öneri olarak çıkar. Aynı vergi noyla
+  gelen faturalar ad farklı olsa da kendiliğinden gelir.
+- **Vergi no önizlemesi** (alanın altında, geçerli numara yazılınca): bu numarayla başka tedarikçide duran
+  faturaların hangilerinin bu tedarikçide toplanacağı ("Bu vergi noyla gelen 9 fatura da bu tedarikçide toplanır:
+  …"), hangilerinin adı başka bir kartın adı olduğu için orada kalacağı ("ad önce gelir") ve numara başka bir kartta
+  da yazılıysa uyarı (o zaman numara eşleşmede kullanılmaz). Kontrol hanesi tutmayan ya da örnek numarada
+  (1234567890 gibi) "faturalar bu numarayla eşleşmez" yazar. Kaydedince numara başka bir kartta da yazılıysa
+  bildirim söyler; kayıt durmaz (aynı kişinin iki dükkânı olabilir).
+- Kartta vergi no yoksa ve faturalardan tek numara biliniyorsa alan o numarayla açılır, "Faturadan dolduruldu"
+  işaretlenir (numara başka bir kartta yazılıysa önerilmez: iki kartta aynı numara eşleşmeyi kapatırdı).
 - **Faturadan doldur:** tedarikçinin en yeni Paraşüt faturalarından (en çok 3) unvan, vergi no ve dairesi, adres,
   telefon, e-posta ve IBAN okunur: e-faturada imzalı UBL belgesinin satıcı bölümünden (`AccountingSupplierParty`,
   `PayeeFinancialAccount`, notlardaki IBAN), gider faturasında Paraşüt'teki kişi kartından (`contacts`). Yalnız boş
@@ -173,10 +201,35 @@ Cuma gününe kadar
 
 ## Eşleşme
 
-Faturalar karta yabancı anahtarla bağlanmaz, tedarikçi adıyla eşleşir: büyük / küçük harf, Türkçe ı/i, fazla boşluk
-ve sondaki parantezli not ("Sütaş (iade)") sayılmaz (`supplierMatchKey`). Önce kartların kendi adları, sonra diğer
-adları bakılır; iki kart aynı adı (ya da diğer adı) taşıyamaz. Sayfa adresi addan üretilir (`sutas`,
-`cagdas-kahve`); çakışırsa sonuna sayı eklenir.
+Faturalar karta yabancı anahtarla bağlanmaz; tedarikçi adıyla ve Paraşüt'ten gelen faturada tedarikçinin vergi
+numarasıyla (VKN / TCKN, `invoices.supplier_tax_number`; nereden geldiği [PARASUT.md](PARASUT.md#3a-tedarikçinin-vergi-nosu))
+eşleşir. Ad karşılaştırmasında büyük / küçük harf, Türkçe ı/i, fazla boşluk ve sondaki parantezli not ("Sütaş
+(iade)") sayılmaz (`supplierMatchKey`). Sıra (`supplierResolver`, `logic.ts`):
+
+1. **Ad önce:** faturadaki ad bir kartın adı ya da diğer adıysa fatura o kartta. Önce kartların kendi adları, sonra
+   diğer adları bakılır; iki kart aynı adı (ya da diğer adı) taşıyamaz. Elle yazılan ad her zaman kazanır: iki
+   firmayı ayırmanın yolu budur.
+2. **Kartın vergi nosu:** faturanın numarası tek bir kartta yazılıysa o kart. İki kartta aynı numara yazılıysa
+   kartlardaki numara eşleşmede kullanılmaz (iki sayfada da şerit çıkar).
+3. **Öteki faturalar üzerinden:** aynı faturada geçen ad ve numara birbirine bağlanır. Bağlı kümede tek kart varsa
+   fatura o kartta (ör. numarası yazılmamış "Kaldi" kartının bir faturası X'i taşıyorsa "KALDI KAHVE TİC. A.Ş." + X
+   de Kaldi'de); kart yoksa kümedeki adlar tek kartsız tedarikçi. Kümede iki kart varsa (çakışma) adın vergi nolu
+   faturaları 2. adımda tek bir karta gittiyse vergi nosuz faturası da onları izler.
+4. Yoksa (bugünkü kural) adın kendi kartsız grubu.
+
+- Vergi nosuz bir Excel satırı, aynı adla vergi nolu faturası olan grubun içindedir (ad köprüsü): Excel'den gelen
+  "Kaldi" ile Paraşüt'ten gelen "Kaldi" ayrılmaz.
+- Kontrol hanesi tutmayan ve örnek numaralar (1234567890, 1111111111 …) saklanır, faturada görünür ama hiçbir şeyi
+  birleştirmez. Paraşüt'ün geçici adı ("Paraşüt tedarikçisi") numarası bilinen tedarikçisine gider, hiçbir şeyi
+  köprülemez.
+- Aynı adla iki numara gelirse (ör. kısa adla eşlenmiş başka şirket) ad bölünmez; sayfada iki numara da yazılır.
+- Vergi nosu olmayan veride gruplar ve adresler eskisiyle birebir aynıdır.
+- Aynı kural her yerde geçer: liste ve tedarikçi sayfası, ⌘K, Faturalar penceresindeki "Tedarikçinin sayfası"
+  bağlantısı, Ödemeler / zil / sabah e-postası / ertelemedeki tahmini vade (kartın vade günü) ve eşitlemedeki peşin
+  kuralı. Faturalar'daki toplamlar, dökümler, "N tedarikçi" sayısı ve Gelir-gider'in mal alışı satırları adla kalır.
+- Sayfa adresi grubun anahtarından üretilir (`sutas`, `cagdas-kahve`); çakışırsa sonuna sayı eklenir. Kartsız
+  grubun anahtarı adlarının en küçüğüdür (tarihe bakılmaz, her ekran aynı adresi bulur); daha küçük anahtarlı bir ad
+  katılınca adres değişir, eski adres yenisine yönlenir.
 
 ## Dosyalar
 
@@ -187,5 +240,7 @@ adları bakılır; iki kart aynı adı (ya da diğer adı) taşıyamaz. Sayfa ad
 - `src/server/actions/invoices.ts` (`setInvoicePayment`, `restoreInvoicePayment`)
 - `src/server/data/suppliers.ts` (ekranın verisi, kartın vade günü, peşin çalışılan tedarikçiler)
 - `src/server/parasut/mapping.ts` (`newInvoicePayment`, `contactInfo`), `ubl.ts` (`partyInfo`)
-- Tablo `suppliers`, faturada `paid_at`, `paid_via`, `payment_requested_at` (`drizzle/0016_tedarikciler.sql`)
-- Test: `tests/tedarikciler.test.ts`
+- `src/server/parasut/tax-backfill.ts`, `tax-backfill-pass.ts` (eski faturaların vergi nosunun tamamlanması)
+- Tablo `suppliers`, faturada `paid_at`, `paid_via`, `payment_requested_at` (`drizzle/0016_tedarikciler.sql`),
+  `supplier_tax_number` (`drizzle/0021_fatura_vergi_no.sql`)
+- Test: `tests/tedarikciler.test.ts`, `tests/parasut-vergi.test.ts`

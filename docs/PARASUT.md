@@ -39,7 +39,7 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
 - **Kimlik:** OAuth2 parola akışı (`POST https://api.parasut.com/oauth/token`). Erişim belirteci 2 saat geçerli; her
   yenilemede yeni bir `refresh_token` döner ve hemen kaydedilir. Belirteçler veritabanında (`integration_state`)
   AES-256-GCM ile şifreli durur; anahtar `AUTH_SECRET`'tan türetilir.
-- **Okuma:** `GET /v4/{firma}/purchase_bills?sort=-issue_date&include=supplier,category,details,details.product`,
+- **Okuma:** `GET /v4/{firma}/purchase_bills?sort=-issue_date&include=supplier,category,details,details.product,active_e_document`,
   sayfa başına 25 kayıt (Paraşüt'ün üst sınırı). Paraşüt "değişme tarihine göre" süzmeye izin vermediği için her
   eşitleme son faturanın tarihinden **75 gün geriye** bakar; bu pencerede ödenen, düzeltilen ya da iptal edilen
   faturalar güncellenir.
@@ -82,6 +82,31 @@ yazmaz); kategori, tedarikçi adı, açıklama, not, vade ve ödeme durumu düze
 bildirdiği kalan borç (`outstanding`) gösterilir ve toplamlara o girer. Panelde silinen Paraşüt faturaları bir
 sonraki eşitlemede geri gelmez; Faturalar › Silinen Paraşüt faturaları'ndan (ya da silme bildirimindeki "Geri al"
 ile) geri alınır.
+
+## 3a. Tedarikçinin vergi nosu
+
+Paraşüt'ten gelen her faturaya tedarikçinin VKN / TCKN'si yazılır (`invoices.supplier_tax_number`, yalnız rakam,
+10 ya da 11 hane). Tedarikçiler aynı numaralı faturaları adları farklı olsa da tek tedarikçide toplar
+([TEDARIKCILER.md](TEDARIKCILER.md#eşleşme)); faturanın adı değişmez (Faturalar ve Gelir-gider adla kalır).
+
+- **Nereden:** gider faturasında `include=active_e_document` ile gelen e-belgenin `from_vkn`'i (imzalı belge), yoksa
+  `include=supplier` ile gelen kişi kartının `tax_number`'ı (ya da `/contacts/{id}` önbelleği); içeri alınmamış gelen
+  e-faturada `from_vkn`; e-faturanın UBL belgesi okunurken satıcının kimliği (`AccountingSupplierParty`, yalnız boş
+  numarayı doldurur). Yalnız gelen e-belge sayılır: aynı Paraşüt şirketinde sitenin satış faturaları ve e-Arşiv'i de
+  kesiliyor, giden belgedeki `from_vkn` işletmenin kendi numarasıdır.
+- **Öncelik** (`nextTaxNumber`, `mapping.ts`): boş kayda gelen numara yazılır; e-belgedeki numara her zaman geçer;
+  kişi kartındaki numara e-faturaya bağlı kaydın numarasını ezmez, e-faturasız kayıtta yazılır (kişi kartı Paraşüt'te
+  düzeltilmiş olabilir). Elle ve Excel'den girilen faturada numara yoktur.
+- Kontrol hanesi tutmayan ve örnek numaralar (1234567890 …) saklanır, faturada görünür ama eşleşmede kullanılmaz.
+- **Eski faturalar:** her eşitleme son 75 günü yeniden okuduğu için yeni ve yakın tarihli faturalar numarasını
+  hemen alır. Daha eskiler bir kerelik tamamlamayla dolar (`src/server/parasut/tax-backfill.ts`): her eşitlemenin
+  artan süresinde, numarası boş Paraşüt faturaları için gider faturaları (`purchase_bills`,
+  `include=supplier,active_e_document`), sonra gelen e-faturalar (içeri alınmış e-faturanın gider faturası kaydı da)
+  en yeniden geriye okunur; boş kayıtların en eskisine gelince biter. Kaldığı sayfa `integration_state` ›
+  `parasut.taxBackfill`'de durur; bitince bir daha çalışmaz. Yazma yalnız numara hâlâ boşsa yapılır. İlerlemesi
+  eşitleme özetinde görünür: "N faturaya vergi no yazıldı" (yeni faturalar, düzeltilenler ve tamamlama birlikte).
+  "Şimdi eşitle" tamamlamayı hızlandırır. **Oturumu sıfırla** ve `npm run db:reset` durumu siler, baştan başlar.
+- Silinen faturanın kopyası numarayı da saklar (Silinen Paraşüt faturaları'ndan geri alınınca numarasıyla döner).
 
 ## 4. Kategori
 
@@ -241,7 +266,8 @@ kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › B
 - Tek bir tedarikçinin bütün geçmişi için tedarikçi sayfasındaki **Geçmiş faturaları al** ([TEDARIKCILER.md](TEDARIKCILER.md#geçmiş-faturalar)):
   kişiye göre süzülür, listede görünmeyeni kaldırmaz (Paraşüt'te iptal edileni kaldırır), imleci değiştirmez;
   eşitleme geçmişinde "tedarikçi geçmişi" diye görünür, son eşitleme sayılmaz.
-- **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler; mevcut faturalar çoğalmaz.
+- **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması da baştan
+  başlar); mevcut faturalar çoğalmaz.
 - Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da
   e-posta işinin yeniden denemesi başlamaz, "Paraşüt eşitlemesi zaten sürüyor" yanıtı döner. İki dakikadan eski
   "sürüyor" kaydı yarıda kesilmiş sayılır.

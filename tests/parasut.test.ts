@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { INVOICE_CATEGORIES } from "../src/lib/constants";
@@ -9,6 +11,7 @@ import {
   feedsSupplierHistory,
   findByEInvoiceNo,
   findExisting,
+  nextTaxNumber,
   pickCategory,
   recategorizeFromLines,
   shouldImport,
@@ -268,4 +271,57 @@ test("e-faturadan kalemsiz açılan kaydın kategorisi kalemler okununca yeniden
   assert.equal(recategorizeFromLines({ ...row, needsReview: false }, lines, [], INVOICE_CATEGORIES), null);
   assert.equal(recategorizeFromLines({ ...row, origin: "excel" }, lines, [], INVOICE_CATEGORIES), null);
   assert.equal(recategorizeFromLines({ ...row, note: "Paraşüt e-faturası (içeri alınmadan) · kategori: Paraşüt kategorisi / kalem adları" }, lines, [], INVOICE_CATEGORIES), null);
+});
+
+test("vergi no: gider faturasında gelen e-belgenin numarası (from_vkn) ve kişi kartınınki ayrı okunur", () => {
+  const plain = billToDraft(bill, included);
+  assert.equal(plain.supplierTaxNo, "1234567890", "kişi kartı");
+  assert.equal(plain.eDocumentTaxNo, null, "e-belge yok");
+  const withDoc = { ...bill, relationships: { ...bill.relationships, active_e_document: { data: { id: "4401", type: "e_invoices" } } } };
+  const doc = (attributes: Record<string, unknown>): Resource => ({ id: "4401", type: "e_invoices", attributes });
+  const d = billToDraft(withDoc, [...included, doc({ direction: "inbound", uuid: "8f1c", from_vkn: " 7810030532 " })]);
+  assert.equal(d.eDocumentTaxNo, "7810030532", "imzalı belgedeki numara");
+  assert.equal(d.supplierTaxNo, "1234567890", "kişi kartınınki yine okunur");
+  assert.deepEqual(d.eDocument, { type: "e_invoices", id: "4401" });
+  // Yönü yazılmamış belge gelen sayılır; giden belgedeki from_vkn işletmenin kendi numarasıdır, alınmaz
+  assert.equal(billToDraft(withDoc, [...included, doc({ from_vkn: "7810030532" })]).eDocumentTaxNo, "7810030532");
+  assert.equal(billToDraft(withDoc, [...included, doc({ direction: "outbound", from_vkn: "7810030532" })]).eDocumentTaxNo, null);
+  // E-belge include edilmediyse (ya da e-Arşiv ise) numara yok
+  assert.equal(billToDraft(withDoc, included).eDocumentTaxNo, null);
+  const archive = { ...bill, relationships: { ...bill.relationships, active_e_document: { data: { id: "9", type: "e_archives" } } } };
+  assert.equal(billToDraft(archive, [...included, { id: "9", type: "e_archives", attributes: { from_vkn: "7810030532" } }]).eDocumentTaxNo, null);
+});
+
+test("vergi no: boş kayda yazılır; e-fatura numarası geçer; kişi kartınınki e-faturalı kaydı ezmez", () => {
+  // Boş kayıt: nereden gelirse gelsin yazılır (saklanan biçim: yalnız rakam)
+  assert.equal(nextTaxNumber(null, " 781 003 0532 ", { from: "bill", hasEInvoice: false }), "7810030532");
+  assert.equal(nextTaxNumber(null, "7810030532", { from: "bill", hasEInvoice: true }), "7810030532");
+  // Aynıysa ya da gelen boş / yanlış uzunluktaysa değişiklik yok
+  assert.equal(nextTaxNumber("7810030532", "7810030532", { from: "einvoice", hasEInvoice: true }), null);
+  assert.equal(nextTaxNumber("7810030532", null, { from: "einvoice", hasEInvoice: true }), null);
+  assert.equal(nextTaxNumber("7810030532", "123", { from: "bill", hasEInvoice: false }), null);
+  assert.equal(nextTaxNumber(null, "", { from: "bill", hasEInvoice: false }), null);
+  // İmzalı belge her zaman geçer
+  assert.equal(nextTaxNumber("4567890128", "7810030532", { from: "einvoice", hasEInvoice: true }), "7810030532");
+  // Kişi kartı Paraşüt'te düzeltildiyse e-faturasız kayıtta yazılır; e-faturalı kayıtta belgenin numarası kalır
+  assert.equal(nextTaxNumber("4567890128", "7810030532", { from: "bill", hasEInvoice: false }), "7810030532");
+  assert.equal(nextTaxNumber("4567890128", "7810030532", { from: "bill", hasEInvoice: true }), null);
+  // Kontrol hanesi tutmayan numara da saklanır (faturada görünür, eşleşmede kullanılmaz)
+  assert.equal(nextTaxNumber(null, "1234567891", { from: "bill", hasEInvoice: false }), "1234567891");
+});
+
+test("vergi no kaynağı: eşitleme numarayı yeni ve var olan faturaya yazar, var olanın güncellemesini değiştirmez", () => {
+  const sync = readFileSync(join(process.cwd(), "src/server/parasut/sync.ts"), "utf8");
+  // Gider faturası: gelen e-belgenin numarası önce, yoksa kişi kartınınki
+  assert.match(sync, /const taxRaw = d\.eDocumentTaxNo \?\? d\.supplierTaxNo;/);
+  // Yeni kayıtlar numarasıyla açılır (gider faturası ve içeri alınmamış e-fatura)
+  assert.equal(sync.match(/^\s+supplierTaxNumber,$/gm)?.length, 4, "iki yeni kayıt: insert ve bellekteki kopya");
+  assert.match(sync, /const supplierTaxNumber = cleanTaxNumber\(taxRaw\);/);
+  assert.match(sync, /const supplierTaxNumber = cleanTaxNumber\(d\.supplierTaxNo\);/);
+  // Var olan kayıtta ayrı yazılır (nextTaxNumber): gider faturası güncellemesinden sonra, e-faturanın üç yolunda
+  assert.equal(sync.match(/await fillTaxNumber\(ctx, /g)?.length, 4);
+  // Eski faturaların tamamlaması eşitlemenin artan süresinde, sıfırlamada baştan
+  assert.match(sync, /backfillSupplierTaxNumbers\(client, \{ until: started \+ deadline - 3_000 \}\)/);
+  assert.match(sync, /PARASUT_STATE_KEYS = \[[^\]]*TAX_BACKFILL_KEY\]/);
+  assert.match(sync, /`\$\{taxFilled\} faturaya vergi no yazıldı`/);
 });

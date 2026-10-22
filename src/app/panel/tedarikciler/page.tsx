@@ -10,7 +10,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 
 import { listBreakdowns, paidInMonth, SOON_TEXT } from "./breakdowns";
-import { isHiddenSupplier, missingInfo, paidInParasut, type HiddenSupplierRow, type SupplierListRow } from "./logic";
+import { isHiddenSupplier, missingInfo, paidInParasut, sameTaxNames, taxNameIndex, type HiddenSupplierRow, type SupplierListRow } from "./logic";
 import { CountUp, SuppliersClient } from "./suppliers-client";
 
 export const metadata: Metadata = { title: "Tedarikçiler" };
@@ -47,15 +47,18 @@ async function SuppliersContent() {
     slug: g.slug,
     name: g.name,
     names: g.names,
+    sameTaxNames: sameTaxNames(g),
     hasCard: Boolean(g.card),
     legalName: g.card?.legalName ?? null,
-    taxNumber: g.card?.taxNumber ?? null,
+    // Kartta yazılı, yoksa faturalardaki tek vergi no; aramada faturalardaki bütün numaralar
+    taxNumber: g.taxNumber,
+    taxNumbers: g.taxNumbers.map((t) => t.taxNumber),
     iban: g.card?.iban ?? null,
     phone: g.card?.phone ?? null,
     email: g.card?.email ?? null,
     contactName: g.card?.contactName ?? null,
     paidOnDelivery: g.card?.paidOnDelivery ?? false,
-    missing: missingInfo(g.card),
+    missing: missingInfo(g.card, g.taxNumber),
     parasutPaid: g.invoices.filter(paidInParasut).length,
     summary: g.summary,
   }));
@@ -120,7 +123,7 @@ async function SuppliersContent() {
         </StatBreakdown>
       </div>
 
-      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} />
+      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} />
     </>
   );
 }

@@ -247,7 +247,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx);
     return;
   }
-  // Tedarikçinin vergi nosu: e-belgedeki (imzalı) önce, yoksa Paraşüt'teki kişi kartındaki
+  // Tedarikçinin vergi nosu: gelen e-faturadaki (imzalı belge) önce, yoksa Paraşüt'teki kişi kartındaki
   const taxRaw = d.eDocumentTaxNo ?? d.supplierTaxNo;
   const taxFrom = d.eDocumentTaxNo ? ("einvoice" as const) : ("bill" as const);
   const common = {
@@ -275,22 +275,16 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     // faturanın tamamına dönerdi)
     const keepOutstanding = match.unpaid && !d.unpaid;
     // Yer tutucu adla açılmış fatura gerçek adıyla peşin çalışılan tedarikçinin kartına düştü: yeni faturadaki kural
+    // (tedarikçi Tedarikçiler'deki gibi adla ve vergi noyla bulunur)
     const card =
-      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt
-        ? ctx.paidOnDelivery(supplierFix.supplier, taxRaw ?? match.supplierTaxNumber)
-        : null;
+      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier, taxRaw ?? match.supplierTaxNumber) : null;
     const settle = card ? { unpaid: false, paidAt: match.date, paidVia: card.paymentMethod } : {};
     const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
-    const tax = nextTaxNumber(match.supplierTaxNumber, taxRaw, { from: taxFrom, hasEInvoice: Boolean(match.eInvoiceId ?? eInvoiceFree) });
     await db
       .update(s.invoices)
-      .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate, ...(tax ? { supplierTaxNumber: tax } : {}) })
+      .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate })
       .where(eq(s.invoices.id, match.id));
-    if (tax) {
-      match.supplierTaxNumber = tax;
-      ctx.taxFilled++;
-    }
     invoiceId = match.id;
     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
     Object.assign(match, {
@@ -307,6 +301,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       ...(keepOutstanding ? {} : { outstanding: d.outstanding }),
       ...(card ? { unpaid: false, paidAt: match.date } : {}),
     });
+    // E-fatura bağı yukarıda kayda yazıldı: kişi kartındaki numara e-faturalı kaydın numarasını ezmez
+    await fillTaxNumber(ctx, match, taxRaw, taxFrom);
     rememberDue(ctx, d.externalId, d.dueDate, match.unpaid);
     ctx.counts.updated++;
   } else {
@@ -644,8 +640,8 @@ export async function syncParasut(
       }
     }
 
-    // ---- eski faturaların tedarikçi vergi nosu (bir kerelik, kaldığı yerden sürer); yalnız artan sürede, hatası
-    // eşitlemeyi bozmaz
+    // ---- eski faturaların tedarikçi vergi nosu (bir kerelik, kaldığı yerden sürer; tax-backfill.ts): yalnız artan
+    // sürede, hatası eşitlemeyi bozmaz; ilerlemesi yalnız bu özetteki "vergi no yazıldı" sayısında görünür
     let backfill: { filled: number; done: boolean } | null = null;
     if (Date.now() - started < deadline - 6_000) {
       try {
@@ -671,7 +667,8 @@ export async function syncParasut(
 
     const { created, updated, removed } = ctx.counts;
     const fetched = drafts.length + (eStats?.fetched ?? 0);
-    const taxFilled = ctx.taxFilled + (backfill?.filled ?? 0);
+    // Yeni faturalar, var olanlar, e-fatura belgesinden okunanlar ve eski faturaların tamamlaması birlikte
+    const taxFilled = ctx.taxFilled + (lineStats?.taxFilled ?? 0) + (backfill?.filled ?? 0);
     const parts = [
       `${drafts.length} gider faturası${eStats ? ` · ${eStats.fetched} e-fatura` : ""} okundu`,
       `${created} yeni`,
@@ -1088,14 +1085,16 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   // E-faturada ödeme bilgisi yok (parasutUnpaid null)
   const pay = newInvoicePayment(
     { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
-    ctx.paidOnDelivery(supplier),
+    ctx.paidOnDelivery(supplier, d.supplierTaxNo),
     ctx.paymentsSince,
   );
+  const supplierTaxNumber = cleanTaxNumber(d.supplierTaxNo);
   const [row] = await db
     .insert(s.invoices)
     .values({
       ...values,
       supplier,
+      supplierTaxNumber,
       category,
       ...pay,
       source: "parasut",
@@ -1107,6 +1106,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       note,
     })
     .returning({ id: s.invoices.id });
+  if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,
     eInvoiceId: d.eInvoiceId,
@@ -1125,6 +1125,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     paidAt: pay.paidAt,
     paymentRequestedAt: null,
     syncedAt: now,
+    supplierTaxNumber,
   });
   ctx.touchedMonths.add(d.date.slice(0, 7));
   ctx.counts.created++;

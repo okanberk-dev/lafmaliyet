@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowLeft, Check, CircleCheck, Contact, Copy, EyeOff, ExternalLink, FileText, History, Mail, MessageCircle, Paperclip, Pencil, Phone, Send, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, CircleCheck, Contact, Copy, EyeOff, ExternalLink, FileText, History, IdCard, Mail, MessageCircle, Paperclip, Pencil, Phone, Send, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useOptimistic, useState, type ReactNode } from "react";
+import { Fragment, startTransition, useEffect, useOptimistic, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -39,6 +39,7 @@ import {
   mailtoHref,
   methodLabel,
   missingInfo,
+  normalizeTaxNumber,
   paidInParasut,
   payState,
   PLACEHOLDER_SUPPLIER_NAME,
@@ -47,6 +48,8 @@ import {
   whatsappHref,
   type PayState,
   type SupplierCard,
+  type TaxIndex,
+  type TaxNote,
 } from "../logic";
 import { PaymentDialog, type PaymentChoice } from "../payment-dialog";
 import { RemoveSupplierDialog } from "../remove-supplier";
@@ -80,6 +83,12 @@ function patchFor(choice: PaymentChoice): Partial<Row> {
 /** Faturalar'da bu faturaya inen bağlantı (arama fatura no, yoksa tedarikçi) */
 const invoicesHref = (r: Row) => `/panel/faturalar?ara=${encodeURIComponent(r.invoiceNo ?? r.supplier)}#fatura-listesi`;
 
+/** Faturalardaki geçerli vergi numaraları, en çok fatura önce */
+type TaxCount = { taxNumber: string; count: number };
+
+/** Sayfanın üstünde aynı vergi no şeridinde en çok bu kadar tedarikçi; fazlası sayıyla */
+const TAX_NOTES_SHOWN = 3;
+
 export function SupplierClient({
   today,
   supplier,
@@ -92,9 +101,15 @@ export function SupplierClient({
   canImport,
   hidden,
   stats,
+  taxNotes = [],
+  taxIndex,
 }: {
   today: string;
-  supplier: { key: string; slug: string; name: string; names: string[]; termDays: number };
+  /**
+   * `taxNumber`: kartta yazılı, yoksa faturalardaki tek vergi no; `taxNumbers` faturalardaki numaralar; `viaTax` yalnız
+   * vergi noyla gelen adlar (logic.ts groupSuppliers)
+   */
+  supplier: { key: string; slug: string; name: string; names: string[]; termDays: number; taxNumber: string | null; taxNumbers: TaxCount[]; viaTax: string[] };
   card: SupplierCard | null;
   invoices: Row[];
   documents: Record<number, DocumentMeta[]>;
@@ -107,6 +122,10 @@ export function SupplierClient({
   hidden: boolean;
   /** Sunucuda çizilen özet kartları (dökümleriyle) */
   stats: ReactNode;
+  /** Aynı vergi nosunu taşıyan öteki tedarikçiler (sharedTaxNotes) */
+  taxNotes?: TaxNote[];
+  /** Düzenle penceresinde yazılan vergi noyla gelecek faturaların önizlemesi */
+  taxIndex?: TaxIndex;
 }) {
   const router = useRouter();
   const [list, apply] = useOptimistic(invoices, applyPatch);
@@ -323,7 +342,7 @@ export function SupplierClient({
 
   const headerDescription =
     (card ? [card.legalName, card.taxNumber ? `Vergi no ${card.taxNumber}` : null, card.taxOffice ? `${card.taxOffice} VD` : null].filter(Boolean).join(" · ") : "") ||
-    `Faturalardaki adı: ${supplier.names.join(", ") || supplier.name}`;
+    `Faturalardaki adı: ${supplier.names.join(", ") || supplier.name}${supplier.viaTax.length ? " (aynı vergi no)" : ""}`;
   // Paraşüt'ün adı okunamayan faturaları: silinmez, geçmişi alınmaz (sonraki eşitlemede gerçek tedarikçilerine geçer)
   const placeholder = supplier.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
 
@@ -406,12 +425,26 @@ export function SupplierClient({
         </div>
       ) : null}
 
-      {stats}
+      <TaxNotices notes={taxNotes} />
+
+      {/* Sunucudan gelen öğe kendi Fragment'ında: içindeki istemci bileşenleri yüklenmeden RSC yükü okunursa öğe iç
+          içe lazy olarak gelir ve React (geliştirmede) onu bu listede anahtarsız sanıp "unique key" uyarısı verirdi */}
+      <Fragment key="ozet">{stats}</Fragment>
 
       {/* Bilgiler faturaların üstünde, tam genişlikte: IBAN'ı kopyalamak ve aramak çoğu zaman ilk iş; fatura
           tablosu da sayfanın genişliğini kullanır (yanda dar sütunda eylemleri sığmıyordu) */}
       <div className="space-y-4">
-        <CariPanel card={card} termDays={termDays} defaultTermDays={defaultTermDays} copied={copied} copy={copy} onEdit={() => setEditing(true)} />
+        <CariPanel
+          card={card}
+          taxNumber={supplier.taxNumber}
+          taxNumbers={supplier.taxNumbers}
+          viaTax={supplier.viaTax}
+          termDays={termDays}
+          defaultTermDays={defaultTermDays}
+          copied={copied}
+          copy={copy}
+          onEdit={() => setEditing(true)}
+        />
 
         <Card id="faturalar" className="min-w-0 scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
           <CardHeader
@@ -610,7 +643,7 @@ export function SupplierClient({
               ) : (
                 <EmptyState
                   title="Henüz fatura yok"
-                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer; eskileri “Geçmiş faturaları al” getirir. Faturalar adla eşleşir: Paraşüt'te başka adla (ör. tam unvanla) gelirse Düzenle'de “Faturalarda geçen diğer adlar”a ekleyin. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
+                  description="Bu tedarikçinin faturası Paraşüt'e gelince her sabah kendiliğinden buraya düşer; eskileri “Geçmiş faturaları al” getirir. Faturalar adla ve vergi numarasıyla eşleşir: aynı vergi noyla başka adla gelen fatura da buraya düşer. Kâğıt ya da e-Arşiv faturayı Faturalar'dan elle ekleyebilirsiniz."
                   action={
                     canImport && !placeholder ? (
                       <Button variant="secondary" onClick={importHistory} disabled={importing}>
@@ -677,6 +710,7 @@ export function SupplierClient({
         <RequestDialog
           name={supplier.name}
           card={card}
+          taxNumber={supplier.taxNumber}
           invoices={unpaid
             .filter((r) => openBalance(r) > 0)
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, amount: openBalance(r), dueDate: r.dueDate, paymentRequestedAt: r.paymentRequestedAt }))
@@ -711,6 +745,10 @@ export function SupplierClient({
           card={card}
           name={supplier.name}
           names={supplier.names}
+          // Kartta vergi no yoksa faturalardaki tek numara alana önerilir (kart kendiliğinden yazılmaz)
+          inferredTaxNumber={card?.taxNumber ? null : supplier.taxNumber}
+          taxIndex={taxIndex}
+          slug={card ? null : supplier.slug}
           suggestions={suggestions}
           defaultTermDays={defaultTermDays}
           canFill={canFill}
@@ -744,9 +782,42 @@ export function SupplierClient({
   );
 }
 
-/** Tedarikçi bilgileri: IBAN (kopyala), vergi no, iletişim (ara, WhatsApp, e-posta), vade ve ödeme şekli */
+/**
+ * Aynı vergi nosunu taşıyan öteki tedarikçiler: sayfanın üstünde birer satır (listeden kaldırıldı şeridiyle aynı
+ * görünüm), onların sayfasına bağlantıyla. Birleştirme yok, yalnız bilgi ve ne yapılabileceği (sharedTaxNotes).
+ */
+function TaxNotices({ notes }: { notes: TaxNote[] }) {
+  if (!notes.length) return null;
+  const rest = notes.length - TAX_NOTES_SHOWN;
+  return (
+    <div className="mb-4 space-y-2">
+      {notes.slice(0, TAX_NOTES_SHOWN).map((n) => (
+        <div key={n.slug} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-panel px-4 py-3 text-[13px] leading-5 text-ink-soft ring-1 ring-line" role="status">
+          <IdCard size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+          <span className="min-w-[14rem] flex-1">{n.text}</span>
+          <ButtonLink href={supplierHref(n.slug)} variant="secondary" size="sm" className="text-ink max-sm:w-full">
+            Sayfasına git →
+          </ButtonLink>
+        </div>
+      ))}
+      {rest > 0 ? <p className="px-1 text-xs text-ink-mute">+{num(rest)} tedarikçi daha aynı vergi nosunu taşıyor.</p> : null}
+    </div>
+  );
+}
+
+/** "12 fatura" */
+const invoiceCount = (n: number) => `${num(n)} fatura`;
+
+/**
+ * Tedarikçi bilgileri: IBAN (kopyala), vergi no, iletişim (ara, WhatsApp, e-posta), vade ve ödeme şekli. Kartta vergi
+ * no yoksa faturalardaki tek numara "faturalardan" diye görünür (kart kendiliğinden yazılmaz, Düzenle önerir); vergi
+ * noyla gelen adlar ve faturalardaki numaralar kartınkiyle uyuşmazsa not düşülür.
+ */
 function CariPanel({
   card,
+  taxNumber,
+  taxNumbers,
+  viaTax,
   termDays,
   defaultTermDays,
   copied,
@@ -754,28 +825,47 @@ function CariPanel({
   onEdit,
 }: {
   card: SupplierCard | null;
+  /** Kartta yazılı, yoksa faturalardaki tek vergi no */
+  taxNumber: string | null;
+  taxNumbers: TaxCount[];
+  viaTax: string[];
   termDays: number;
   defaultTermDays: number;
   copied: string | null;
   copy: (key: string, text: string, okMessage?: string) => Promise<boolean>;
   onEdit: () => void;
 }) {
+  // Faturalarda iki ya da daha çok numara: biri başka bir firmanın (ör. kısa adla eşlenmiş başka şirket) olabilir
+  const manyTaxes =
+    taxNumbers.length > 1 ? (
+      <p className="text-xs leading-5 text-ink-mute md:col-span-2">
+        Faturalarda {num(taxNumbers.length)} ayrı vergi no var: {taxNumbers.map((t) => `${t.taxNumber} (${invoiceCount(t.count)})`).join(", ")}. Biri başka firmaysa o faturanın tedarikçi
+        adını Faturalar&apos;dan düzeltin.
+      </p>
+    ) : null;
   if (!card) {
     return (
       <Card>
         <CardHeader icon={<Contact />} title="Tedarikçi bilgileri" />
-        <CardContent>
+        <CardContent className="space-y-3">
           <p className="text-sm leading-6 text-ink-mute">
             Unvan, vergi no, IBAN ve iletişim bilgileri girilmemiş. IBAN ödeme talebinde ve kopyalarken kullanılır; vade günü bu tedarikçinin vadesiz faturalarının tahmini vadesini belirler (şu an {defaultTermDays} gün).
+            {taxNumber ? ` Vergi no faturalardan: ${taxNumber}.` : null}
           </p>
-          <Button onClick={onEdit} className="mt-4 w-full">
+          {manyTaxes}
+          <Button onClick={onEdit} className="mt-1 w-full">
             <Pencil size={16} aria-hidden="true" /> Bilgileri ekle
           </Button>
         </CardContent>
       </Card>
     );
   }
-  const missing = missingInfo(card);
+  // Kartta yazılı değilse faturalardaki tek numara (taxNumber), yazılıysa kartınki
+  const inferred = card.taxNumber ? null : taxNumber;
+  const shownTax = card.taxNumber ?? inferred;
+  // Kartın numarası faturalardaki tek numaradan farklı: yazım hatası ya da başka firmanın numarası olabilir
+  const otherTax = card.taxNumber && taxNumbers.length === 1 && normalizeTaxNumber(card.taxNumber) !== taxNumbers[0].taxNumber ? taxNumbers[0] : null;
+  const missing = missingInfo(card, inferred);
   const tel = telHref(card.phone);
   const wa = whatsappHref(card.phone);
   const mail = mailtoHref(card.email);
@@ -839,9 +929,21 @@ function CariPanel({
           <InfoRow label="Unvan" value={card.legalName} action={card.legalName ? copyBtn("unvan", card.legalName, "Unvan") : null} />
           <InfoRow
             label="Vergi no"
-            value={card.taxNumber ? `${card.taxNumber}${card.taxOffice ? ` · ${card.taxOffice} VD` : ""}` : card.taxOffice ? `${card.taxOffice} VD` : null}
-            action={card.taxNumber ? copyBtn("vergi", card.taxNumber, "Vergi no") : null}
+            value={
+              shownTax ? (
+                <>
+                  <span className="tabular">{shownTax}</span>
+                  {/* Kartta yazılı değil: faturalardaki tek numara (Düzenle önerir, kaydedince karta geçer) */}
+                  {inferred ? <span className="text-ink-mute"> · faturalardan</span> : null}
+                  {card.taxOffice ? ` · ${card.taxOffice} VD` : null}
+                </>
+              ) : card.taxOffice ? (
+                `${card.taxOffice} VD`
+              ) : null
+            }
+            action={shownTax ? copyBtn("vergi", shownTax, "Vergi no") : null}
           />
+          {viaTax.length ? <InfoRow label="Aynı vergi no" value={viaTax.join(", ")} /> : null}
           <InfoRow label="Yetkili" value={card.contactName} />
           <InfoRow label="Telefon" value={card.phone ? formatPhone(card.phone) : null} />
           <InfoRow label="E-posta" value={card.email} />
@@ -852,6 +954,12 @@ function CariPanel({
           {card.aliases.length ? <InfoRow label="Diğer adlar" value={card.aliases.join(", ")} /> : null}
           {card.note ? <InfoRow label="Not" value={card.note} /> : null}
         </dl>
+        {otherTax ? (
+          <p className="text-xs leading-5 text-warn md:col-span-2">
+            Faturalardaki vergi no farklı: {otherTax.taxNumber} ({invoiceCount(otherTax.count)}). Karttaki numarayı kontrol edin.
+          </p>
+        ) : null}
+        {manyTaxes}
         {missing.length ? (
           <p className="text-xs text-ink-mute md:col-span-2">
             Eksik:{" "}
@@ -869,7 +977,7 @@ function CariPanel({
   );
 }
 
-function InfoRow({ label, value, action }: { label: string; value: string | null | undefined; action?: ReactNode }) {
+function InfoRow({ label, value, action }: { label: string; value: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex items-start gap-3 py-2.5">
       <dt className="w-24 shrink-0 text-ink-mute">{label}</dt>

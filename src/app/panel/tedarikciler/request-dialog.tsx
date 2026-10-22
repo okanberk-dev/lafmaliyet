@@ -37,6 +37,7 @@ export interface RequestInvoice {
 export function RequestDialog({
   name,
   card,
+  taxNumber = null,
   invoices,
   credits = [],
   selected,
@@ -48,6 +49,8 @@ export function RequestDialog({
 }: {
   name: string;
   card: SupplierCard | null;
+  /** Kartta vergi no yoksa faturalardaki tek vergi no (metindeki "Vergi no:" satırı; kartsız tedarikçide de) */
+  taxNumber?: string | null;
   /** Tedarikçinin ödenmemiş faturaları (eskiden yeniye) */
   invoices: RequestInvoice[];
   /** Ödemeden düşülebilecek son iade faturaları (tutar eksi) */
@@ -73,7 +76,7 @@ export function RequestDialog({
   // İadeler faturaları karşılıyorsa ödenecek bir şey yok: tutar ve gönderme kapanır
   const payable = chosen.length > 0 && total > 0.005;
   const lines = chosen.map(toLine);
-  const text = paymentRequestText({ payer, name, card, lines: [...lines, ...chosenCredits.map(toLine)], note });
+  const text = paymentRequestText({ payer, name, card, taxNumber, lines: [...lines, ...chosenCredits.map(toLine)], note });
   const subject = `Ödeme talebi: ${card?.legalName?.trim() || name} · ${money(total)}`;
   const toMark = chosen.filter((i) => !i.paymentRequestedAt).map((i) => i.id);
   const toggle = (id: number) =>

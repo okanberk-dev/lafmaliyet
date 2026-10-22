@@ -296,7 +296,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
 
 /**
  * Ödenmemiş faturanın vadesini ertele; vadesizse tahmini vadeden (fatura tarihi + tedarikçinin kartındaki ya da
- * ayardaki vade günü) ileri alınır
+ * ayardaki vade günü; kart Tedarikçiler'deki gibi adla ve vergi noyla bulunur) ileri alınır
  */
 export async function postponeInvoice(id: number, by: "week" | "month") {
   return attempt(async () => {
@@ -305,14 +305,14 @@ export async function postponeInvoice(id: number, by: "week" | "month") {
     const step = zPostpone.parse(by);
     const db = getDb();
     const [inv] = await db
-      .select({ id: s.invoices.id, supplier: s.invoices.supplier, date: s.invoices.date, dueDate: s.invoices.dueDate, unpaid: s.invoices.unpaid })
+      .select({ id: s.invoices.id, supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber, date: s.invoices.date, dueDate: s.invoices.dueDate, unpaid: s.invoices.unpaid })
       .from(s.invoices)
       .where(eq(s.invoices.id, iid))
       .limit(1);
     if (!inv) throw new UserError("Fatura bulunamadı");
     if (!inv.unpaid) throw new UserError("Bu fatura ödenmiş görünüyor");
     const [settings, termDays] = await Promise.all([loadNotifySettings(), loadTermDays()]);
-    const current = inv.dueDate ?? addDays(inv.date, termDays(inv.supplier) ?? settings.invoiceTermDays);
+    const current = inv.dueDate ?? addDays(inv.date, termDays(inv.supplier, inv.supplierTaxNumber) ?? settings.invoiceTermDays);
     // Gecikmiş vade bugünden ertelenir (eski vadeden sayılsa yine geçmişte kalırdı)
     const target = postponeDate(current, step, todayTR());
     await db.update(s.invoices).set({ dueDate: target }).where(eq(s.invoices.id, iid));

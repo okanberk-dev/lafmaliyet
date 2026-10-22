@@ -17,6 +17,7 @@ import {
   PAYMENT_METHOD_VALUES,
   isHiddenSupplier,
   PLACEHOLDER_SUPPLIER_NAME,
+  taxKey,
   taxNumberCheck,
   type SupplierInfo,
 } from "@/app/panel/tedarikciler/logic";
@@ -93,7 +94,9 @@ async function hasInvoicesNamed(key: string): Promise<boolean> {
 
 /**
  * Cari kartını ekler ya da günceller. Faturalar adla eşleşir: kartın adı ve diğer adları başka bir kartta olamaz.
- * Ad değiştiyse ve eski adla faturalar duruyorsa eski ad diğer adlara eklenir (faturalar kartta kalır).
+ * Ad değiştiyse ve eski adla faturalar duruyorsa eski ad diğer adlara eklenir (faturalar kartta kalır). Aynı vergi
+ * no başka bir kartta da yazılıysa kayıt durmaz (aynı kişinin iki dükkânı olabilir), adları döner: numara eşleşmede
+ * kullanılmaz, bildirim söyler.
  */
 export async function saveSupplier(input: CardInput & { id: number | null }) {
   return attempt(async () => {
@@ -101,7 +104,9 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     const id = zId.nullable().parse(input.id);
     const data = cleanCard(input);
     const db = getDb();
-    const all = await db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, iban: s.suppliers.iban }).from(s.suppliers);
+    const all = await db
+      .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, iban: s.suppliers.iban, taxNumber: s.suppliers.taxNumber })
+      .from(s.suppliers);
     const cur = id ? all.find((c) => c.id === id) : null;
     if (id && !cur) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
     const renamed = cur && supplierMatchKey(cur.name) !== supplierMatchKey(data.name) && (await hasInvoicesNamed(supplierMatchKey(cur.name))) ? cur.name : null;
@@ -123,21 +128,26 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
       await logActivity(me, "Tedarikçi IBAN'ı değişti", `${data.name}: ${cur.iban ? formatIban(cur.iban) : "yok"} → ${data.iban ? formatIban(data.iban) : "silindi"}`);
     }
     refresh();
-    return { id: savedId, slug: await supplierSlugOf(savedId), renamedAlias: renamed && aliases.includes(renamed) ? renamed : null };
+    const tax = taxKey(data.taxNumber);
+    const sharedTax = tax ? all.filter((c) => c.id !== savedId && taxKey(c.taxNumber) === tax).map((c) => c.name) : [];
+    return { id: savedId, slug: await supplierSlugOf(savedId), renamedAlias: renamed && aliases.includes(renamed) ? renamed : null, sharedTax };
   });
 }
 
 /** Silinen kartın geri yazılabilir kopyası (kimlik ve zamanlar hariç) */
 export type SupplierSnapshot = z.infer<typeof cardSchema>;
 
-/** Sayfadaki tedarikçi: kartı varsa kartın kimliği, yoksa faturalardaki adın anahtarı */
+/** Sayfadaki tedarikçi: kartı varsa kartın kimliği, yoksa faturalardaki adlarından birinin anahtarı */
 const targetSchema = z.object({ cardId: zId.nullable(), key: z.string().min(1).max(300) });
 
-/** Sayfadaki tedarikçinin güncel grubu (kart ve faturalar) */
+/**
+ * Sayfadaki tedarikçinin güncel grubu (kart ve faturalar). Kartsız tedarikçi adlarından biriyle bulunur: vergi noyla
+ * birleşen adların grubunun anahtarı, sayfa açıldıktan sonra daha küçük anahtarlı bir ad katılınca değişebilir.
+ */
 async function findGroup(input: z.input<typeof targetSchema>) {
   const { cardId, key } = targetSchema.parse(input);
   const ledger = await loadSupplierLedger();
-  const g = ledger.groups.find((x) => (cardId ? x.card?.id === cardId : !x.card && x.key === key));
+  const g = ledger.groups.find((x) => (cardId ? x.card?.id === cardId : !x.card && x.keys.includes(key)));
   if (!g) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda değişmiş olabilir. Sayfayı yenileyin.");
   return { ...ledger, g };
 }
@@ -195,8 +205,12 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
       await db.update(s.suppliers).set({ hiddenOn: today, updatedAt: new Date() }).where(eq(s.suppliers.id, g.card.id));
       id = g.card.id;
     } else {
-      // Kartsız tedarikçinin bütün adları aynı anahtarda: kart yalnız adla açılır, faturaları ona düşer
-      const [row] = await db.insert(s.suppliers).values({ name: g.name, key: g.key, aliases: [], hiddenOn: today }).returning({ id: s.suppliers.id });
+      // Kart yalnız görünen adla açılır: aynı anahtarlı yazılışlar ve vergi noyla birleşen öteki adlar (aynı küme)
+      // faturalarıyla ona düşer. Anahtar görünen adın kendi anahtarı (grubun anahtarı başka bir ad olabilir)
+      const [row] = await db
+        .insert(s.suppliers)
+        .values({ name: g.name, key: supplierMatchKey(g.name), aliases: [], hiddenOn: today })
+        .returning({ id: s.suppliers.id });
       id = row.id;
     }
     await logActivity(me, "Tedarikçi listeden kaldırıldı", `${g.name} · ${num(g.invoices.length)} faturası Faturalar'da duruyor`);
@@ -256,7 +270,7 @@ export async function restoreSupplier(snapshot: CardInput) {
  * "Geçmiş faturaları al": tedarikçinin Paraşüt'teki bütün gider faturaları, tarih sınırı olmadan (syncSupplierHistory).
  * Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
  * adlarından değilse kartın diğer adlarına eklenir: faturaları bu sayfada toplanır. O ad başka bir tedarikçide
- * kayıtlıysa eklenmez, söylenir.
+ * kayıtlıysa eklenmez, söylenir. Kartsız tedarikçide ad eklenemez; aynı vergi noyla buraya gelmediyse söylenir.
  */
 export async function importSupplierHistory(input: z.input<typeof targetSchema>) {
   return attempt(async () => {
@@ -269,7 +283,8 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema>)
     const r = await syncSupplierHistory({
       label: g.name,
       billIds: g.invoices.flatMap((i) => (i.externalId ? [i.externalId] : [])),
-      taxNumber: g.card?.taxNumber ?? null,
+      // Kartta yoksa faturalardaki tek vergi no: kişi bununla da bulunur
+      taxNumber: g.taxNumber,
       names: own,
       match: (name) => (keys.has(supplierMatchKey(name)) ? "same" : own.some((n) => sameSupplier(n, name)) ? "similar" : null),
     });
@@ -288,7 +303,13 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema>)
           .set({ aliases: cleanAliases(g.card.name, [...g.card.aliases, ...added], null), updatedAt: new Date() })
           .where(eq(s.suppliers.id, g.card.id));
       }
-    } else elsewhere.push(...fresh);
+    } else if (fresh.length) {
+      // Kartsız tedarikçi: yeni adla gelen faturalar aynı vergi noyla zaten bu tedarikçide toplanmış olabilir; yalnız
+      // başka bir tedarikçide görünenler söylenir
+      const now = (await loadSupplierLedger()).groups.find((x) => !x.card && x.keys.includes(g.key));
+      const here = new Set(now?.keys ?? []);
+      elsewhere.push(...fresh.filter((n) => !here.has(supplierMatchKey(n))));
+    }
     await logActivity(me, "Tedarikçinin geçmiş faturaları alındı", [r.summary, added.length ? `diğer adlara eklendi: ${added.join(", ")}` : null].filter(Boolean).join(" · "));
     refresh();
     return { fetched: r.fetched, created: r.created, updated: r.updated, removed: r.removed, oldest: r.oldest, partial: r.partial, resumed: r.resumed, added, elsewhere };
