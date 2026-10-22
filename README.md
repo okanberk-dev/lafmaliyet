@@ -109,7 +109,7 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 | Komut | Ne yapar |
 |-------|----------|
 | `npm run dev` | Geliştirme sunucusu |
-| `npm run build` | Migration'ları uygular, veritabanı boşsa Excel verisini yükler, ardından production build alır |
+| `npm run build` | Migration'ları uygular, veritabanı boşsa Excel verisini yükler, ardından production build alır (Vercel önizlemesinde bu hazırlık atlanır: önizleme canlının veritabanını kullanır, [DEPLOY.md](docs/DEPLOY.md) § 3) |
 | `npm test` | Bütün testleri çalıştırır (`tests/*.test.ts`): hesaplama motorunu Excel'in değerlerine karşı (129 ürün, 125 satış satırı, panel, gelir-gider, tutarlılık) ve ekran kurallarını |
 | `npm run lint` | ESLint |
 | `npm run db:generate` | Şema değişince yeni migration üretir (`drizzle/`) |

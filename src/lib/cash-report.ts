@@ -185,3 +185,12 @@ export function parseEmails(raw: string): { valid: string[]; invalid: string[] }
   }
   return { valid, invalid };
 }
+
+/**
+ * Yönetici alıcıları hiç kaydetmediyse kasa raporunun gittiği adresler: ortamdaki `CASH_REPORT_RECIPIENTS` (virgül,
+ * noktalı virgül ya da satırla ayrılmış; Vercel'de canlı ortamda). Adresler kodda durmaz: yerel bir kurulum gerçek
+ * kişilere rapor göndermesin. Tanımlı değilse liste boştur ve rapor e-postasız kaydedilir.
+ */
+export function defaultCashRecipients(env: Record<string, string | undefined>): string[] {
+  return parseEmails(env.CASH_REPORT_RECIPIENTS ?? "").valid;
+}

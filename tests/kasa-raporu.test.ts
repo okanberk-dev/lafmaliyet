@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   businessDate,
   computeCash,
+  defaultCashRecipients,
   diffKind,
   diffText,
   parseEmails,
@@ -124,11 +125,17 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
 });
 
 test("alıcı adresleri: ayırıcılar, küçük harf, tekrar ve geçersiz", () => {
-  assert.deepEqual(parseEmails("Bizimfutbol9@gmail.com, iletisim@alpkoc.com.tr\nbizimfutbol9@gmail.com; yanlis@ ; a@b"), {
-    valid: ["bizimfutbol9@gmail.com", "iletisim@alpkoc.com.tr"],
+  assert.deepEqual(parseEmails("Patron@ornek.com, muhasebe@ornek.com.tr\npatron@ornek.com; yanlis@ ; a@b"), {
+    valid: ["patron@ornek.com", "muhasebe@ornek.com.tr"],
     invalid: ["yanlis@", "a@b"],
   });
   assert.deepEqual(parseEmails("  "), { valid: [], invalid: [] });
+});
+
+test("varsayılan alıcılar ortamdan: ayrıştırılır, yoksa boş", () => {
+  assert.deepEqual(defaultCashRecipients({ CASH_REPORT_RECIPIENTS: "Patron@ornek.com;\nmuhasebe@ornek.com.tr, yanlis@" }), ["patron@ornek.com", "muhasebe@ornek.com.tr"]);
+  assert.deepEqual(defaultCashRecipients({}), []);
+  assert.deepEqual(defaultCashRecipients({ CASH_REPORT_RECIPIENTS: "  " }), []);
 });
 
 test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticinin; varsayılan alıcılar", () => {
@@ -139,8 +146,10 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
   for (const fn of ["deleteCashReport", "updateCashSettings", "sendCashTestEmail"]) {
     assert.match(src, new RegExp(`export async function ${fn}[\\s\\S]*?requireAdmin\\(\\)`), fn);
   }
+  // Varsayılan alıcılar kodda değil, ortamda (CASH_REPORT_RECIPIENTS): yerel kurulum gerçek kişilere rapor göndermez
   const data = readFileSync(join(process.cwd(), "src/server/data/cash-reports.ts"), "utf8");
-  assert.match(data, /recipients: \["bizimfutbol9@gmail\.com", "iletisim@alpkoc\.com\.tr"\]/);
+  assert.doesNotMatch(data, /[a-z0-9._-]+@[a-z0-9-]+\.[a-z]{2,}/i);
+  assert.match(data, /: defaultCashRecipients\(process\.env\)/);
   // Personel alıcı adreslerini görmez (yalnız sayısı gider)
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
   assert.match(page, /recipients=\{settings\.emailEnabled \? settings\.recipients\.length : 0\}/);

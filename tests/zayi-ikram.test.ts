@@ -143,3 +143,8 @@ test("yetki: personel bugüne ve düne girer, yalnız kendi kaydını o gün sil
   const choices = readFileSync(join(root, "src/server/data/waste.ts"), "utf8");
   assert.doesNotMatch(choices.slice(0, choices.indexOf("export interface WasteEntryDTO")), /price|cost/i, "seçenekler fiyat taşımaz");
 });
+
+test("ikram formu: uygulamanın ödül içeceği ikram değildir (online satışta sayılır; iki kez düşülmesin)", () => {
+  const board = readFileSync(join(root, "src/app/panel/zayi/waste-board.tsx"), "utf8");
+  assert.match(board, /\{kind === "ikram" \? \(\s*<p[^>]*>\s*Uygulamadaki ödülle \(damga kartı, davet kuponu\) verilen içecek ikram değildir/);
+});

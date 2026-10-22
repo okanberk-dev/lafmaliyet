@@ -14,6 +14,8 @@ export type PriceSource = "manual" | "water";
 export interface Settings {
   /** Satış KDV oranı (menü fiyatları KDV dahil) */
   kdv: number;
+  /** Hizmet satışı KDV oranı: Satışlar'da HİZMET işaretli satırlar (karaoke odası); ciro bu satırlar kadar bu oranla ayrılır */
+  kdvHizmet: number;
   /** Banka / POS komisyon oranı */
   komisyon: number;
   /** Kartlı satışların ciroya oranı (kredi kartı + yemek kartı) */

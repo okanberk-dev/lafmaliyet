@@ -348,7 +348,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
       {
         id: "kdv",
         q: "KDV",
-        a: "Menü fiyatları KDV dahil (%10). Malzeme maliyetleri KDV hariç, çünkü alışta ödenen KDV indirilebiliyor.",
+        a: "Menü fiyatları KDV dahil (%10). Kasada çalınan karaoke gibi hizmet satışları %20: Satışlar'da HİZMET olarak işaretlenen satırlar kendi oranıyla ayrılır (Ayarlar › Oranlar › Hizmet satışı KDV oranı). Malzeme maliyetleri KDV hariç, çünkü alışta ödenen KDV indirilebiliyor.",
         icon: Percent,
       },
       {
@@ -463,7 +463,10 @@ const FORMULAS = [
     "Net kâr / zarar (reçeteye göre)",
     "Brüt kâr − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: açık gün oranı + bu aya özel giderler). Excel temeli: standart aylık sabit gider",
   ],
-  ["Kâr / zarar (faturaya göre)", "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu)"],
+  [
+    "Kâr / zarar (faturaya göre)",
+    "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır",
+  ],
   ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış"],
   ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün"],
   ["Başabaş günlük ciro", "Standart aylık sabit gider ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],

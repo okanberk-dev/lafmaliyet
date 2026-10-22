@@ -5,6 +5,11 @@ Ekran: **Zayi & ikram** (`/panel/zayi`, Stok altında; telefonda alt menüde **Z
 - **Zayi:** atılan, bozulan, dökülen, yanlış hazırlanan.
 - **İkram:** ödenmeden verilen; müşteriye, personele ya da tadım için.
 
+Uygulamadaki ödülle (damga kartı, kilometre taşı, davet kuponu) verilen içecek **ikram değildir**. Ödül kuponu yalnız
+uygulama ve web siparişinde kullanılır (kasada bozdurulmaz): sipariş bar ekranına düşer, Gelir-gider'de ve Tutarlılık'ta
+online satış olarak sayılır ([SITE-SATIS.md](SITE-SATIS.md), [SITE-SIPARIS.md](SITE-SIPARIS.md)). Buraya da girilirse
+malzemesi tutarlılıkta iki kez düşülür. Form ikram seçilince bunu hatırlatır.
+
 ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda görünmezler. Panele girilmeleri gerekir.
 
 ## Kayıt

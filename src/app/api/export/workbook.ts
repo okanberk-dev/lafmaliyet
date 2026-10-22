@@ -404,6 +404,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   headerRow(ay, colHeaders(ay));
   const settingRows: [string, number | string, string | null, string][] = [
     ["Satış KDV oranı", st.kdv, PCT, "Menü fiyatları KDV dahil kabul edilir; net satış = fiyat ÷ (1 + KDV)."],
+    ["Hizmet satışı KDV oranı", st.kdvHizmet, PCT, "Satışlar'da HİZMET işaretli satırlar (karaoke odası); ayın cirosundan bu satırlar kadarı bu oranla ayrılır."],
     ["Banka / POS komisyon oranı", st.komisyon, PCT, "Yalnızca kartlı satışlara uygulanır."],
     ["Kartlı satış oranı (kredi kartı + yemek kartı)", st.kartOrani, PCT, "POS komisyonu = ciro × komisyon oranı × kartlı satış oranı."],
     ["Hedef maliyet oranı (food cost)", st.hedefMaliyet, PCT, "Önerilen fiyat bu orana göre hesaplanır."],
@@ -494,7 +495,10 @@ function fillGuide(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook, model: Model, mo
     ["Kırmızı sayı", "Eksi tutar: gider, zarar ya da fark."],
     ["\"-\"", "Gelir-gider tablosunda sıfır. Boş hücre o ay için veri yok demektir."],
     ["Formüller", "Faturalar'daki Net, KDV ve Ay sütunları ile Aylık Alımlar tablosu formüldür; Faturalar'da bir tutarı düzeltirseniz özet de güncellenir. Diğer sekmelerdeki rakamlar panelin hesapladığı değerlerdir."],
-    ["KDV", `Menü fiyatları KDV dahil (%${num(model.settings.kdv * 100, 1)}); malzeme ve gider tutarları KDV hariçtir (alışta ödenen KDV indirilebildiği için).`],
+    [
+      "KDV",
+      `Menü fiyatları KDV dahil (%${num(model.settings.kdv * 100, 1)}; karaoke gibi hizmet satışları %${num(model.settings.kdvHizmet * 100, 1)}); malzeme ve gider tutarları KDV hariçtir (alışta ödenen KDV indirilebildiği için).`,
+    ],
   ]);
   block(
     "SEKMELER (adına tıklayınca açılır)",

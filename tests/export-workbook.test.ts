@@ -20,9 +20,11 @@ const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/e
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
 const NOW = new Date("2026-10-20T10:00:00Z");
 
+/** Excel'in verisi ve varsayımı: bütün satışa tek KDV oranı (karaoke dahil %10; panelin hizmet ayrımı calc.test.ts'te) */
 function dataset(): Dataset {
   const ds = excelToDataset(data);
   ds.currentMonth = "2026-10";
+  ds.settings = { ...ds.settings, kdvHizmet: ds.settings.kdv };
   return ds;
 }
 const extras = { investments: data.investments.map(investmentSeed), findings: data.findings, now: NOW };

@@ -6,7 +6,8 @@ import type { SalesLineSize, SiteSales, SiteSalesLine } from "./schema";
  * Online satışların panel hesapları (saf; hesap motoru, sunucu ve testler paylaşır). Ayrıntı: docs/SITE-SATIS.md.
  *
  * - **KDV hariç gelir** (sözleşmedeki formül): `netMinor − kdvMinor − unknownKdvNetMinor × r / (100 + r)`; `r` panelin
- *   kendi varsayılan KDV oranı (Ayarlar › Oranlar, `settings.kdv`; %10 → 0,1). Site kuruş gönderir, panel TL gösterir.
+ *   kendi varsayılan KDV oranı (Ayarlar › Oranlar: kafe ve mağaza `settings.kdv`, karaoke `settings.kdvHizmet`; %10 →
+ *   0,1). Site kuruş gönderir, panel TL gösterir.
  *   Ödül kuponuyla bedava verilen içeceğin faturası tam fiyattan KDV doğurur: KDV hariç gelir eksi çıkabilir, doğrudur.
  * - **Ürün eşlemesi** menü bağlantısıyla (docs/SITE-MENU.md): satırın kalemi `products.site_menu_id`, boyu yuvası
  *   (`L` → L yuvası, `M` ve `single` → M yuvası). Bağlı ürünü olmayan satır eşlenmez ve listelenir; başka boya düşülmez
@@ -30,10 +31,11 @@ export interface SiteRevenue {
   total: number;
 }
 
-export function siteRevenue(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate: number): SiteRevenue {
+/** `serviceRate`: oranı saklı olmayan karaoke rezervasyonlarının oranı (hizmet KDV'si); verilmezse `kdvRate` */
+export function siteRevenue(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate: number, serviceRate = kdvRate): SiteRevenue {
   const cafe = exVatMinor(s.cafe, kdvRate) / 100;
   const shop = exVatMinor(s.shop, kdvRate) / 100;
-  const karaoke = exVatMinor(s.karaoke, kdvRate) / 100;
+  const karaoke = exVatMinor(s.karaoke, serviceRate) / 100;
   return { cafe, shop, karaoke, total: cafe + shop + karaoke };
 }
 

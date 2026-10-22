@@ -87,7 +87,7 @@ test("Telefon listesi: tek iş açıksa ayrıntı düğmesi gerekmez", () => {
 
 test("Oranlar özeti: beş oran kayıtlı değerleriyle, yüzde biçiminde", () => {
   const s = { ...model.settings, kdv: 0.1, komisyon: 0.025, kartOrani: 0.856, hedefMaliyet: 0.3, fire: 0.05 };
-  assert.equal(ratesSummary(s), "KDV %10 · POS %2,5 · Kartlı %85,6 · Hedef %30 · Fire %5");
+  assert.equal(ratesSummary(s), "KDV %10 / hizmet %20 · POS %2,5 · Kartlı %85,6 · Hedef %30 · Fire %5");
 });
 
 test("Reçete ölçüleri özeti: shot, pompa, açık gün ve ölçülmemiş varsayım sayısı", () => {
@@ -164,4 +164,15 @@ test("QR menü: tek boylu kategoride tek fiyat; binlik ayırıcı ve bölünmez 
   assert.deepEqual(menuPrices(items[1], false), [`90${NBSP}₺`], "tek sütunda boylu fiyat da gösterilir");
   assert.deepEqual(menuPrices({ name: "Fiyatsız", sizes: [] }, false), [null]);
   assert.equal(menuPrice(5), `5${NBSP}₺`);
+});
+
+test("QR menü: yayında değilken ya da boşken laffogato.net/menu'ye gider (önizleme hariç); yayındayken alerjen bağlantısı", () => {
+  const page = readFileSync(join(root, "src/app/menu/page.tsx"), "utf8");
+  assert.match(page, /const siteMenu = `\$\{siteUrl\(\)\}\/menu`;\s*if \(!preview && \(!menu\.published \|\| menu\.categories\.length === 0\)\) redirect\(siteMenu\);/);
+  assert.doesNotMatch(page, /Menümüz çok yakında burada/, "çıkmaz sayfa yok");
+  assert.match(page, /Alerjen bilgisi ve fiyat listesinin tarihi:\{" "\}\s*<a href=\{siteMenu\}/);
+  // Ayarlar kartı panelin kendi adresini yazar (laffogato.net/menu sitenin menüsüdür)
+  const settings = readFileSync(join(root, "src/app/panel/ayarlar/settings-client.tsx"), "utf8");
+  assert.match(settings, /description=\{bareUrl\(menuUrls\.panel\)\}/);
+  assert.doesNotMatch(settings, /description="laffogato\.net\/menu"/);
 });

@@ -33,6 +33,16 @@ const differs = (a: number, b: number) => Math.abs(a - b) >= 1;
 const safeDiv = (a: number, b: number) => (b ? a / b : 0);
 /** "%10": ayarlardaki oran (0,1) yazı olarak */
 const rate = (v: number) => `%${num(v * 100, 1)}`;
+
+/** Satış listesinin KDV hariç hesabı: ürünler satış KDV'siyle, HİZMET satırları (karaoke) hizmet KDV'siyle */
+const salesNetSub = (model: Model, d: DashboardData) =>
+  `KDV dahil ${tl(d.sales.revenue)} ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `; hizmet (karaoke) ${tl(d.sales.serviceRevenue)} ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}`;
+
+/** POS cirosunun KDV hariç hesabı (gelir-gider tablosuyla aynı): hizmet payı varsa kendi oranıyla */
+const posNetSub = (model: Model, pm: { revenue: number | null; serviceRevenue: number }) =>
+  pm.serviceRevenue
+    ? `POS cirosu ${tl(pm.revenue ?? 0)}: hizmet (karaoke) ${tl(pm.serviceRevenue)} ÷ (1 + ${rate(model.settings.kdvHizmet)}), kalanı ÷ (1 + KDV ${rate(model.settings.kdv)})`
+    : `POS cirosu ${tl(pm.revenue ?? 0)} ÷ (1 + KDV ${rate(model.settings.kdv)})`;
 /** Önce en büyük gider (eksi tutarlar) / önce en büyük tutar */
 const costFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => a.amount - b.amount);
 const biggestFirst = (rows: BreakdownRow[]) => [...rows].sort((a, b) => b.amount - a.amount);
@@ -109,7 +119,7 @@ export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown
   const t = d.theoretical;
   return {
     title: `${monthLabel(d.month)} net satış`,
-    description: `Patron (ModPOS) ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)}), kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.`,
+    description: `Patron (ModPOS) ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.`,
     groups: t
       ? salesBuckets(d).map((b) => ({
           key: b.key,
@@ -129,7 +139,7 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
   const t = d.theoretical!;
   const st = model.settings;
   return [
-    { key: "net", label: "Net satış", sub: `KDV dahil ${tl(d.sales.revenue)} ÷ (1 + KDV ${rate(st.kdv)})`, amount: t.netSales, href: salesHref(d.month) },
+    { key: "net", label: "Net satış", sub: salesNetSub(model, d), amount: t.netSales, href: salesHref(d.month) },
     {
       key: "malzeme",
       label: "Malzeme + ambalaj",
@@ -283,8 +293,9 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
 /** POS cirosu: KDV hariç ciro + KDV; ayın indirim, ikram ve açık gün bilgisi toplamın altında */
 export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const pos = d.info?.posRevenue ?? 0;
-  const kdv = model.settings.kdv;
-  const net = pos / (1 + kdv);
+  // Gelir-gider tablosunun hesabı: hizmet (karaoke) payı varsa kendi KDV oranıyla
+  const pm = model.pnlMonth(d.month);
+  const net = pm.revenueNet ?? 0;
   const info: BreakdownRow[] = [];
   if (d.info?.openDays) info.push({ key: "gun", label: "Açık gün", display: `${num(d.info.openDays)} gün`, amount: 0, href: salesHref(d.month) });
   if (d.info?.discounts) info.push({ key: "indirim", label: "Yönetici indirimleri", sub: "KDV dahil; cirodan düşülmüş", display: tl(d.info.discounts), amount: 0 });
@@ -298,8 +309,12 @@ export function posRevenueBreakdown(model: Model, d: DashboardData): CardBreakdo
           {
             key: "pos",
             rows: [
-              { key: "net", label: "Ciro (KDV hariç)", sub: `POS cirosu ÷ (1 + KDV ${rate(kdv)})`, amount: net, href: salesHref(d.month) },
-              { key: "kdv", label: `KDV (${rate(kdv)})`, amount: pos - net },
+              { key: "net", label: "Ciro (KDV hariç)", sub: posNetSub(model, pm), amount: net, href: salesHref(d.month) },
+              {
+                key: "kdv",
+                label: `KDV (${pm.serviceRevenue ? `${rate(model.settings.kdv)} ve ${rate(model.settings.kdvHizmet)}` : rate(model.settings.kdv)})`,
+                amount: pos - net,
+              },
             ],
           },
           { key: "bilgi", label: "Ay bilgileri", apart: true, noSubtotal: true, rows: info },
@@ -397,7 +412,7 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
             key: "gelir",
             label: "Gelir",
             rows: [
-              { key: "revenueNet", label: "Ciro (KDV hariç)", sub: `POS cirosu ${tl(pm.revenue)} ÷ (1 + KDV ${rate(model.settings.kdv)})`, amount: pm.revenueNet ?? 0, href: salesHref(month) },
+              { key: "revenueNet", label: "Ciro (KDV hariç)", sub: posNetSub(model, pm), amount: pm.revenueNet ?? 0, href: salesHref(month) },
               // laffogato.net online satışı (KDV hariç): ay çekildiyse ayrı satırlar (docs/SITE-SATIS.md)
               ...(pm.site
                 ? [

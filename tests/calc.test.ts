@@ -16,8 +16,11 @@ import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 const root = join(__dirname, "..");
 const data: ExcelData = JSON.parse(readFileSync(join(root, "src/server/db/seed/excel-data.json"), "utf8"));
 const golden = JSON.parse(readFileSync(join(root, "tests/golden.json"), "utf8"));
+// Excel bütün satışa tek KDV oranı uyguluyordu (karaoke dahil %10). Panel hizmet satışını (Satışlar'da HİZMET işaretli
+// satırlar: karaoke odası) kendi oranıyla ayırır (Ayarlar › Hizmet satışı KDV, varsayılan %20). Excel'le birebir
+// karşılaştırma Excel'in varsayımıyla yapılır; ayrımın kendisi en alttaki testte.
 const ds = excelToDataset(data);
-const model = createModel(ds);
+const model = createModel({ ...ds, settings: { ...ds.settings, kdvHizmet: ds.settings.kdv } });
 
 function close(actual: number | null | undefined, expected: number | null | undefined, label: string, tol = 1e-6) {
   assert.ok(actual !== null && actual !== undefined, `${label}: değer yok`);
@@ -181,4 +184,45 @@ test("Fire ambalaj hariç seçeneği maliyeti düşürür", () => {
   const a = m2.products.find((p) => p.key === "Latte|M")!;
   const b = model.products.find((p) => p.key === "Latte|M")!;
   assert.ok(a.cost < b.cost);
+});
+
+test("Hizmet satışı (karaoke) kendi KDV oranıyla: satış raporu ve gelir-gider ayrılır, diğer aylar Excel'le aynı", () => {
+  assert.equal(ds.settings.kdvHizmet, 0.2, "varsayılan %20");
+  const split = createModel(ds);
+  // Satış raporu: yalnız HİZMET satırlarının neti değişir, malzeme ve komisyon aynı
+  const a = split.monthSales("2026-09");
+  const b = model.monthSales("2026-09");
+  assert.equal(a.services.length, 2);
+  close(a.serviceRevenue, 1050 + 1000, "Eylül karaoke cirosu (KDV dahil)");
+  a.lines.forEach((l, i) => {
+    const excel = b.lines[i];
+    close(l.net, l.line.isService ? l.line.revenue / 1.2 : excel.net, `${l.line.posName} net`);
+    close(l.cost, excel.cost, `${l.line.posName} maliyet`);
+    close(l.commission, excel.commission, `${l.line.posName} komisyon`);
+  });
+  close(a.net, b.net - 2050 / 1.1 + 2050 / 1.2, "net ciro");
+  close(a.revenue, b.revenue, "ciro (KDV dahil) değişmez");
+  close(a.avgCostRatio, b.avgCostRatio, "ortalama maliyet oranı (hizmet satırları girmez)");
+  // Gelir-gider: POS cirosunun karaoke payı %20 ile, kalanı %10 ile; giderler aynı
+  const pm = split.pnlMonth("2026-09");
+  close(pm.serviceRevenue, 2050, "hizmet payı");
+  close(pm.revenueNet, (429698 - 2050) / 1.1 + 2050 / 1.2, "Eylül ciro (KDV hariç)");
+  close(pm.expenses, model.pnlMonth("2026-09").expenses, "giderler");
+  close(pm.profit, model.pnlMonth("2026-09").profit - (2050 / 1.1 - 2050 / 1.2), "kâr karaoke KDV farkı kadar düşer");
+  close(split.pnlValue(pm, "revenueNet").value, pm.revenueNet, "tablodaki AYLIK CİRO (KDV hariç)");
+  assert.match(split.pnlRowDefs(["2026-09"]).find((r) => r.key === "revenueNet")?.hint ?? "", /HİZMET .*%20/);
+  // Satış listesi olmayan aylar (Temmuz, Ağustos, Ekim): bütün ciro %10, Excel'le aynı
+  for (const month of ["2026-07", "2026-08", "2026-10"]) {
+    const p = split.pnlMonth(month);
+    assert.equal(p.serviceRevenue, 0, month);
+    close(p.revenueNet, golden.pnl[month].revenueNet, `${month} ciro (KDV hariç)`);
+    close(p.profit, golden.pnl[month].profit, `${month} kâr/zarar`);
+  }
+  // Hizmet oranı satış oranına eşitse Excel'in tek oranlı hesabı
+  const same = createModel({ ...ds, settings: { ...ds.settings, kdvHizmet: 0.1 } });
+  close(same.pnlMonth("2026-09").revenueNet, golden.pnl["2026-09"].revenueNet, "tek oran");
+  // Hizmet payı ay cirosundan büyük olamaz (ciro yanlış girildiyse eksi KDV hariç ciro çıkmasın)
+  const tiny = createModel({ ...ds, months: ds.months.map((m) => (m.month === "2026-09" ? { ...m, posRevenue: 1000 } : m)) });
+  close(tiny.pnlMonth("2026-09").serviceRevenue, 1000, "ciroyla sınırlı");
+  close(tiny.pnlMonth("2026-09").revenueNet, 1000 / 1.2, "ciro tamamen hizmet");
 });

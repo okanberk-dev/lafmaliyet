@@ -10,6 +10,7 @@ import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { appUrl } from "@/server/auth/tokens";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 import { readSyncState } from "@/server/karaoke/sync";
@@ -267,7 +268,7 @@ async function SettingsContent() {
   return (
     <SettingsLayout nav={<SettingsNav />}>
       <UsersLinkCard />
-      <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} />
+      <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
       <div className="grid gap-4 @5xl:grid-cols-2">
         <CategoriesEditor categories={model.categories.map((c) => ({ id: c.id, name: c.name, count: productCount.get(c.id) ?? 0 }))} />
         <ActivityLog

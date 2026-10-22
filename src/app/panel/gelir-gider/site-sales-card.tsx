@@ -46,6 +46,8 @@ export interface SiteSalesCardData {
   sitePanelUrl: string;
   /** Oranı saklı olmayan siparişlere uygulanan KDV (Ayarlar › Oranlar) */
   kdvRate: number;
+  /** Oranı saklı olmayan karaoke rezervasyonlarının oranı (Ayarlar › Hizmet satışı KDV) */
+  serviceKdvRate: number;
 }
 
 /**
@@ -161,7 +163,9 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5 text-ink-mute">
               <span>
                 KDV hariç = net − KDV − oranı saklı olmayan siparişlerin %{num(data.kdvRate * 100, 2)} KDV&apos;si{" "}
-                <InfoTip text={`Site her siparişin satıldığı oranı saklar; 17 Ekim 2026 öncesi siparişlerde oran yoktur, panel onları Ayarlar'daki KDV oranıyla (${pct(data.kdvRate, 0)}) ayırır. Ödül kuponuyla bedava verilen içeceğin KDV'si tam fiyattan doğar: o ay KDV hariç gelir eksi çıkabilir.`} />
+                <InfoTip
+                  text={`Site her siparişin satıldığı oranı saklar; 17 Ekim 2026 öncesi siparişlerde oran yoktur, panel onları Ayarlar'daki KDV oranıyla (${pct(data.kdvRate, 0)}; karaoke rezervasyonları hizmet oranıyla, ${pct(data.serviceKdvRate, 0)}) ayırır. Ödül kuponuyla bedava verilen içeceğin KDV'si tam fiyattan doğar: o ay KDV hariç gelir eksi çıkabilir.`}
+                />
               </span>
               <span>Son çekme {data.lastPullAt ? dateTimeTR(data.lastPullAt) : "—"}</span>
               <a

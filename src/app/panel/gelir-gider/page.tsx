@@ -156,6 +156,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
     refreshMonths: [current, shiftMonth(current, -1)].filter((m) => m >= SITE_SALES_FIRST_MONTH),
     sitePanelUrl: `${siteUrl()}/admin`,
     kdvRate: model.settings.kdv,
+    serviceKdvRate: model.settings.kdvHizmet,
   };
 
   // Yılın 12 ayı: kâr yeşil, zarar kırmızı, cirosu girilmemiş aktif ay sarı, boş ay gri; verisi olan son ay çerçeveli
@@ -197,7 +198,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
-          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür; laffogato.net online satışları (KDV hariç) eklenir. Aya dokununca Satışlar'da o ay açılır.`}
+          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür (HİZMET işaretli satırlar, karaoke odası: ${pct(model.ds.settings.kdvHizmet, 0)}); laffogato.net online satışları (KDV hariç) eklenir. Aya dokununca Satışlar'da o ay açılır.`}
           groups={breakdown.revenue}
           total={revenueNet}
           totalLabel="Ciro (KDV hariç)"

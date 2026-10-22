@@ -30,6 +30,14 @@ olarak `laffogato` seçeceksiniz.
    Türkiye'ye en yakın seçenek bu.
 3. Veritabanını projeye bağlayın. `DATABASE_URL` ve `DATABASE_URL_UNPOOLED` değişkenleri otomatik eklenir.
 
+**Önizlemeler ve migration.** `DATABASE_URL` hem Production hem Preview ortamında aynı veritabanını gösteriyor:
+önizleme (PR) dağıtımları canlının verisini kullanır. Bu yüzden derleme öncesi hazırlık (`scripts/predeploy.ts`)
+önizlemede **migration ve seed çalıştırmaz** (`! Önizleme dağıtımı …: migration ve seed atlandı`); migration yalnız
+canlı dağıtımda, kod yayına çıkarken uygulanır. 21 Eki 2026'da bir önizleme, birleşmemiş bir dalın migration'ını
+canlıya uygulamıştı. Sonucu: yeni sütun isteyen bir PR'ın önizlemesi o sütun canlıya gelene kadar hata verebilir;
+canlı veri korunur. Önizlemelere ayrı veritabanı vermek için Vercel › Storage › Neon'da önizleme dalları açılır ve
+Preview ortamına `MIGRATE_ON_PREVIEW=1` eklenir; o zaman her önizleme kendi dalına migration uygular.
+
 ## 4. Ortam değişkenleri
 
 Proje → **Settings → Environment Variables** (Production ve Preview):
@@ -46,6 +54,8 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
 | `KARAOKE_SYNC_SECRET` | (isteğe bağlı) laffogato.net ile karaoke **ve menü** bağlantısı: `openssl rand -base64 48`; **sitedeki değerle aynı** olmalı. Yoksa bağlantı kapalı: hızlı sayaç çalışır, ürünler yalnız panelde. Ayrıntı [KARAOKE.md](KARAOKE.md), [SITE-MENU.md](SITE-MENU.md) (bağlı ürünün fiyatı ve Satışta / Tükendi durumu iki yerde aynı) |
 | `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi (karaoke ve menü); yoksa `https://laffogato.net` |
+| `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
+| `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
@@ -144,8 +154,12 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
   adımlı doğrulama yeniden kurulmalıdır.
 
-QR menüyü yayınlamak için panelde **Ayarlar → QR menü → Menüyü yayınla** seçeneğini açın. QR kodu tarayıcınızın
-"QR kodu oluştur" özelliğiyle ya da herhangi bir QR üreticisiyle `https://<alan adı>/menu` için oluşturabilirsiniz.
+**QR menü.** Müşterinin tam menüsü `https://laffogato.net/menu`'dedir: alerjenler (Gıda Etiketleme Yönetmeliği) ve
+fiyat listesinin tarihi (Fiyat Etiketi Yönetmeliği) oradadır, panelin menüsünde yoktur. Yeni QR basılacaksa
+`https://laffogato.net/menu` için oluşturun (masalardaki QR kartları zaten sitenin masa sayfasını açar). Panelin kendi
+menüsü (`ladmin.laffogato.net/menu`) **Ayarlar → QR menü → Menüyü yayınla** ile açılır; yayında değilken ya da
+gösterilecek ürün yokken müşteriyi `laffogato.net/menu`'ye yönlendirir (yönetici önizlemesi `?onizleme=1` hariç),
+yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LAFFOGATO_URL`'den gelir.
 
 ## 7. Güncelleme ve yedek
 

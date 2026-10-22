@@ -6,7 +6,7 @@ import { num, pct, tl } from "@/lib/format";
 /** Dökümün kullandığı ay satışı alanları (`model.monthSales`); sayfanın zaten yüklediği veri, yeni sorgu yok */
 export type SalesMonth = Pick<
   MonthSales,
-  "lines" | "qty" | "revenue" | "net" | "cost" | "commission" | "grossProfit" | "matchedNet" | "matchedCost" | "avgCostRatio"
+  "lines" | "qty" | "revenue" | "net" | "cost" | "commission" | "grossProfit" | "matchedNet" | "matchedCost" | "avgCostRatio" | "serviceRevenue"
 >;
 
 /** Satışlar'daki dört özet kartının dökümü */
@@ -103,7 +103,7 @@ const linesNote = (n: number) => (n > 1 ? ` · ${num(n)} POS kalemi` : "");
  * Satışlar kartlarının dökümü, ayın satış satırlarından (`model.monthSales`). Her döküm kartın rakamını tutar:
  * ciro ve adet satır toplamı, brüt kâr net ciro − maliyet − komisyon, eşleşmeyen kalem sayısı.
  */
-export function salesBreakdowns(sales: SalesMonth, settings: Pick<Settings, "kdv" | "komisyon" | "kartOrani">, month: string): SalesBreakdowns {
+export function salesBreakdowns(sales: SalesMonth, settings: Pick<Settings, "kdv" | "kdvHizmet" | "komisyon" | "kartOrani">, month: string): SalesBreakdowns {
   if (!sales.lines.length) return { revenue: [], grossProfit: [], qty: [], unmatched: [] };
   const buckets = bucketsOf(sales.lines, month);
   const byKind = (k: Kind) => sales.lines.filter((l) => kindOf(l) === k);
@@ -135,8 +135,20 @@ export function salesBreakdowns(sales: SalesMonth, settings: Pick<Settings, "kdv
       apart: true,
       noSubtotal: true,
       rows: [
-        { key: "net", label: "Net ciro (KDV hariç)", sub: `Ciro ÷ (1 + ${rate(settings.kdv)} KDV)`, amount: sales.net },
-        { key: "kdv", label: "KDV", sub: `${rate(settings.kdv)}, ciro − net ciro`, amount: sales.revenue - sales.net },
+        {
+          key: "net",
+          label: "Net ciro (KDV hariç)",
+          sub: sales.serviceRevenue
+            ? `Ürünler ÷ (1 + ${rate(settings.kdv)} KDV), hizmet (karaoke) ÷ (1 + ${rate(settings.kdvHizmet)} KDV)`
+            : `Ciro ÷ (1 + ${rate(settings.kdv)} KDV)`,
+          amount: sales.net,
+        },
+        {
+          key: "kdv",
+          label: "KDV",
+          sub: `${sales.serviceRevenue ? `${rate(settings.kdv)} ve ${rate(settings.kdvHizmet)} (hizmet)` : rate(settings.kdv)}, ciro − net ciro`,
+          amount: sales.revenue - sales.net,
+        },
         { key: "commission", label: "POS komisyonu", sub: `${commissionSub}; brüt kârdan düşülür`, amount: sales.commission },
       ],
     },

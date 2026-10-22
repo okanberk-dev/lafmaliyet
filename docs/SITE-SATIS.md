@@ -55,24 +55,41 @@ siteden çekildiyse:
 | TOPLAM CİRO (KDV hariç) | ModPOS cirosu (KDV hariç) + üç online satır |
 
 - **KDV hariç** (sözleşmenin formülü): `netMinor − kdvMinor − unknownKdvNetMinor × r / (100 + r)`. `r` panelin
-  varsayılan KDV oranı (Ayarlar › Oranlar; %10). Site her siparişin satıldığı oranı saklar; 17 Ekim 2026 öncesi
-  siparişlerde oran yoktur, panel onları bu oranla ayırır. Ödül kuponuyla bedava verilen içeceğin faturası tam fiyattan
-  KDV doğurur: o ay KDV hariç gelir eksi çıkabilir, doğrudur. Site kuruş gönderir, panel TL gösterir.
+  varsayılan oranı (Ayarlar › Oranlar): kafe ve mağaza için satış KDV'si (%10), karaoke için hizmet satışı KDV'si
+  (%20). Site her siparişin satıldığı oranı saklar; 17 Ekim 2026 öncesi siparişlerde oran yoktur, panel onları bu
+  oranla ayırır. Ödül kuponuyla bedava verilen içeceğin faturası tam fiyattan KDV doğurur: o ay KDV hariç gelir eksi
+  çıkabilir, doğrudur. Site kuruş gönderir, panel TL gösterir.
 - **Hiç çekilmemiş ay boş kalır** (0 değil): o ayın kârı yalnız ModPOS'la hesaplanır. Çekilmiş ama satışsız ay 0'dır.
 - **KÂR / ZARAR** = toplam ciro − giderler; **oranlar** (maliyet oranı, kira oranı, …) toplam ciroya göre. Genel
   bakışın kârı, yıllık eğilim, ay ay döküm ve Excel'e aktarım aynı toplamı kullanır.
 - **Dokunulmayanlar:** AYLIK CİRO (KDV dahil – POS) elle girilen ModPOS cirosu olarak kalır, AYLIK CİRO (KDV hariç)
-  yalnız ondan hesaplanır; POS komisyonu formülü aynen ModPOS cirosundan. Online satırlar düzenlenemez, gelir-gider
-  düzeltmesi almaz (kaynak sitedir).
+  yalnız ondan hesaplanır (kasada çalınan karaoke, yani Satışlar'da HİZMET işaretli satırlar, hizmet KDV'siyle: bkz.
+  aşağıda "Kasadaki karaoke"); POS komisyonu formülü aynen ModPOS cirosundan. Online satırlar düzenlenemez,
+  gelir-gider düzeltmesi almaz (kaynak sitedir).
 - **Kaynak görünür:** satırların açıklaması nereden geldiğini söyler; tablonun üstündeki **laffogato.net online
   satışları** kartı ayı ayı gösterir: kafe / mağaza / karaoke (KDV hariç) ve sipariş sayıları, "Ay kapandı" / "Ay
   sürüyor" (sitenin `closed`'ı), ne zaman çekildiği, panelden elle girilip eklenmeyen siparişler (KDV dahil), panel
   ürününe bağlı olmayan satır sayısı, son hata. **Siteden yenile** bu ayı ve geçen ayı, satırdaki ↻ o ayı, **Başka bir
   ay** bu yılın herhangi bir ayını (Ocak 2026'dan bu aya) çeker. Kartın altında **laffogato.net paneli ↗**.
 - Telefonda ay özeti "+ online X (laffogato.net)" der.
-- **Açık soru (operatör):** Faturalar'daki "Karaoke box" kategorisi kafe dışıdır (`SEPARATE_CATEGORIES`; gidere
-  girmez), sitenin karaoke odası geliri ise kafenin kâr-zararına girer. İkisi ayrı işse doğru; karaoke odasının
-  giderleri o ayrı hesapta tutuluyorsa gelir de oraya aittir ve KARAOKE (ÖN ÖDEMELİ) satırı kârdan ayrılmalıdır.
+- **Karaoke box ile karaoke odası ayrı işlerdir:** Faturalar'daki "Karaoke box" kategorisi MaviBahçe AVM'deki karaoke
+  box'ların faturalarıdır (Opera Gayrimenkul; `SEPARATE_CATEGORIES`, [PARASUT.md](PARASUT.md) §6a-1), kafenin
+  gelir-giderine girmez. Sitenin karaoke odası ise köşkün kendi odasıdır: ön ödemeli rezervasyonu KARAOKE (ÖN
+  ÖDEMELİ) satırında, kasada çalınanı ModPOS cirosunda kafenin kâr-zararına girer.
+
+### Kasadaki karaoke (hizmet satışı KDV'si)
+
+Köşkte kasadan (ModPOS) çalınan karaoke ("Karaoke Kişi başı", "Karaoke Toplu") Satışlar'da **HİZMET** olarak
+işaretlenir: malzeme maliyeti yoktur ve KDV'si %20'dir (kafenin yiyecek-içeceği %10). Panel bu satırları kendi oranıyla
+ayırır (Ayarlar › Oranlar › **Hizmet satışı KDV oranı**, varsayılan %20; `settings.kdvHizmet`):
+
+- **Satış raporu:** HİZMET satırının neti `ciro ÷ (1 + hizmet KDV)`, ürünlerinki `ciro ÷ (1 + satış KDV)`.
+- **Gelir-gider:** AYLIK CİRO (KDV hariç) = (POS cirosu − hizmet payı) ÷ (1 + satış KDV) + hizmet payı ÷ (1 + hizmet
+  KDV). Hizmet payı, ayın satış listesindeki HİZMET satırlarının cirosudur (ay cirosundan büyük olamaz); satış listesi
+  yüklenmemiş ayda bütün ciro satış KDV'siyle ayrılır.
+- Excel tek oran kullanıyordu: Eylül 2026'nın 2.050 ₺'lik karaokesi yüzünden net ciro ve kâr 155,30 ₺ düşer
+  (`tests/calc.test.ts`; Excel'le birebir karşılaştırma Excel'in tek oranlı varsayımıyla yapılır). Hizmet oranı satış
+  oranına eşitlenirse hesap Excel'inkine döner.
 
 ### Tüketim (Tutarlılık)
 

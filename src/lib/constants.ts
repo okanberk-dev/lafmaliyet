@@ -2,6 +2,7 @@ import type { CountUnit, FixedPeriod, FixedSection, Settings, Size, Unit } from 
 
 export const DEFAULT_SETTINGS: Settings = {
   kdv: 0.1,
+  kdvHizmet: 0.2,
   komisyon: 0.025,
   kartOrani: 0.856,
   hedefMaliyet: 0.3,
