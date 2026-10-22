@@ -97,8 +97,11 @@ export function InvoiceDialog({
   onOpenDocuments?: () => void;
   /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (kategori ipucu için; bkz. categoryEffect) */
   expenseLinks?: Record<string, string>;
-  /** Tedarikçinin Tedarikçiler'deki sayfası (cari bilgileri ve ödeme takibi); kayıtlı faturada bağlantı olur */
-  supplierHref?: (supplier: string) => string | null;
+  /**
+   * Tedarikçinin Tedarikçiler'deki sayfası (cari bilgileri ve ödeme takibi); kayıtlı faturada bağlantı olur. Adla ve
+   * vergi noyla bulunur: aynı vergi noyla başka adla gelen fatura da birleşik tedarikçiye gider
+   */
+  supplierHref?: (invoice: { supplier: string; supplierTaxNumber?: string | null }) => string | null;
 }) {
   const [f, setF] = useState(() => blankForm(invoice));
   const [busy, setBusy] = useState(false);
@@ -133,7 +136,9 @@ export function InvoiceDialog({
   const groupedAs = normalizeSupplier(f.supplier);
   const known = invoice ? undefined : defaults.get(supplierMatchKey(f.supplier));
 
-  const cariHref = invoice && supplierHref ? supplierHref(invoice.supplier) : null;
+  const cariHref = invoice && supplierHref ? supplierHref(invoice) : null;
+  // Paraşüt'ten gelen tedarikçi vergi nosu (kontrol hanesi tutmasa da görünür; eşleşmede kullanılmaz)
+  const taxNo = invoice?.supplierTaxNumber ?? null;
   const supplierHint = [
     groupedAs && groupedAs !== f.supplier.trim() ? `Gelir-giderde “${groupedAs}” altında toplanır; parantezdeki not sayılmaz.` : null,
     known && known.category === f.category
@@ -309,12 +314,19 @@ export function InvoiceDialog({
           htmlFor="f-sup"
           tip="Aynı tedarikçi adını kullanın; gelir-giderde birlikte toplanır. Listeden seçince son faturasındaki kategori ve KDV önerilir."
           hint={
-            supplierHint || cariHref ? (
+            supplierHint || cariHref || taxNo ? (
               <>
                 {supplierHint}
-                {cariHref ? (
+                {taxNo ? (
                   <>
                     {supplierHint ? " " : null}
+                    <span className="tabular">Vergi no {taxNo}</span>
+                    {cariHref ? " · " : null}
+                  </>
+                ) : null}
+                {cariHref ? (
+                  <>
+                    {supplierHint && !taxNo ? " " : null}
                     {/* Önce pencere kapanır: gizlenen Faturalar sayfasında açık kalan pencere yeni sayfayı kilitlerdi */}
                     <Link href={cariHref} onClick={onClose} className="font-medium text-info underline-offset-2 hover:underline">
                       Tedarikçinin sayfası →

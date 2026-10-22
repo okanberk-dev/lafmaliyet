@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN "supplier_tax_number" text;

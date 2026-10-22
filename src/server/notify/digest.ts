@@ -20,7 +20,8 @@ export { APP_URL, renderDigest } from "./digest-template";
 
 /**
  * Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler. Vadesiz faturanın tahmini vadesi tedarikçinin
- * cari kartındaki vade gününden (Tedarikçiler), yoksa genel ayardan.
+ * cari kartındaki vade gününden (Tedarikçiler; kart adla ve vergi noyla bulunur), yoksa genel ayardan. Zil her
+ * açılışta çağırır: faturalar tek sorgu, kartın bulunması tek gruplu sorgu (loadTermDays).
  */
 export async function loadUpcoming(today = todayTR()) {
   const db = getDb();
@@ -36,12 +37,13 @@ export async function loadUpcoming(today = todayTR()) {
         dueDate: s.invoices.dueDate,
         payable: s.invoices.payable,
         outstanding: s.invoices.outstanding,
+        supplierTaxNumber: s.invoices.supplierTaxNumber,
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
     loadTermDays(),
   ]);
-  const invoices = rows.map((i) => ({ ...i, termDays: i.dueDate ? null : termDays(i.supplier) }));
+  const invoices = rows.map(({ supplierTaxNumber, ...i }) => ({ ...i, termDays: i.dueDate ? null : termDays(i.supplier, supplierTaxNumber) }));
   const opts = { invoiceDaysBefore: settings.invoiceDaysBefore, invoiceTermDays: settings.invoiceTermDays };
   const items = upcomingItems(reminders, invoices, today, opts);
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar (listede ve e-postada yer almaz)

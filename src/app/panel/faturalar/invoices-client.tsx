@@ -40,6 +40,7 @@ import {
 } from "@/server/actions/invoices";
 import type { DocumentMeta } from "@/server/documents";
 
+import { supplierPairKey } from "../tedarikciler/logic";
 import { canHaveDocument, isParasutDocument } from "./document-rules";
 import { DocumentSheet } from "./document-sheet";
 import { InvoiceDialog } from "./invoice-dialog";
@@ -55,7 +56,6 @@ import {
   splitSupplier,
   statusCounts,
   supplierDefaults,
-  supplierMatchKey,
   visibleNote,
   type InvoiceRow,
   type InvoiceStatus,
@@ -184,7 +184,7 @@ export function InvoicesClient({
   ignoredCount?: number;
   /** Fatura kategorisi → bağlı Aylık harcamalar kategorisinin adı (pencerenin kategori ipucu; verilmezse ipucu iki olasılığı da söyler) */
   expenseLinks?: Record<string, string>;
-  /** Tedarikçi adı anahtarı → Tedarikçiler'deki sayfasının adres parçası (pencerede cari kartı bağlantısı) */
+  /** (Ad, vergi no) çifti (supplierPairKey) → Tedarikçiler'deki sayfasının adres parçası (pencerede tedarikçi bağlantısı) */
   supplierSlugs?: Record<string, string>;
 }) {
   const reduce = useCalmMotion();
@@ -1373,8 +1373,8 @@ export function InvoicesClient({
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
           onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
           expenseLinks={expenseLinks}
-          supplierHref={(name) => {
-            const slug = supplierSlugs?.[supplierMatchKey(name)];
+          supplierHref={(i) => {
+            const slug = supplierSlugs?.[supplierPairKey(i.supplier, i.supplierTaxNumber)];
             return slug ? `/panel/tedarikciler/${slug}` : null;
           }}
         />

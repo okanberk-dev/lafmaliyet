@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
+import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, money } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
@@ -32,6 +33,8 @@ export interface LineReadStats {
   failed: number;
   /** KDV hariç tutarı belgeden düzeltilen fatura (tevkifatlı) */
   corrected: number;
+  /** Tedarikçi vergi nosu belgedeki satıcı kimliğinden yazılan fatura */
+  taxFilled: number;
   /** Sırada kalan */
   remaining: number;
   /** Kalemi değişen aylar (alınan miktarlar yeniden hesaplanır) */
@@ -73,7 +76,7 @@ function appendNote(note: string | null, add: string): string {
  */
 export async function readEInvoiceLines(client: ParasutClient, opts: { until: number; limit?: number }): Promise<LineReadStats> {
   const db = getDb();
-  const stats: LineReadStats = { read: 0, lines: 0, failed: 0, corrected: 0, remaining: 0, months: [], stoppedBy: null };
+  const stats: LineReadStats = { read: 0, lines: 0, failed: 0, corrected: 0, taxFilled: 0, remaining: 0, months: [], stoppedBy: null };
   const today = todayTR();
   const months = new Set<string>();
   const rows = await db
@@ -94,6 +97,7 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
       note: s.invoices.note,
       category: s.invoices.category,
       needsReview: s.invoices.needsReview,
+      supplierTaxNumber: s.invoices.supplierTaxNumber,
     })
     .from(s.invoices)
     .where(pendingWhere())
@@ -152,6 +156,13 @@ export async function readEInvoiceLines(client: ParasutClient, opts: { until: nu
     let note = row.note;
     // Ödeme (vade, valör) tarihi boş vadeye yazılır; ödenmemiş fatura vadesiyle Ödemeler & hatırlatıcılar'a düşer
     if (!row.dueDate && inv.dueDate) patch.dueDate = inv.dueDate;
+    // Satıcının belgedeki kimliği (VKN / TCKN) yalnız boş numarayı doldurur: e-fatura listesindeki numara (from_vkn)
+    // eşitlemede zaten yazılır; ikisi farklıysa her eşitlemede birbirini ezmesin
+    const tax = row.supplierTaxNumber ? null : cleanTaxNumber(inv.supplierTaxId);
+    if (tax) {
+      patch.supplierTaxNumber = tax;
+      stats.taxFilled++;
+    }
     // Geçmişi yeniden alırken ödeme bilgisi olmadan "ödendi" açılan e-fatura (newInvoicePayment; Paraşüt'te ödeme kaydı
     // yok: parasutUnpaid boş; peşin kartınınki ödeme günüyle açılır) vadesi gelmemişse ödenmedi olur
     const reopen =

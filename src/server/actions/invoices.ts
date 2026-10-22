@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
-import { methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
+import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, tl } from "@/lib/format";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
@@ -412,6 +412,7 @@ function snapshotOf(r: InvoiceRow) {
     paidAt: r.paidAt,
     paidVia: r.paidVia,
     paymentRequestedAt: r.paymentRequestedAt,
+    supplierTaxNumber: r.supplierTaxNumber,
   };
 }
 
@@ -446,6 +447,8 @@ const snapshotSchema = z.object({
   paidAt: zDate.nullable().optional(),
   paidVia: zMethod.nullable().optional(),
   paymentRequestedAt: zDate.nullable().optional(),
+  // Tedarikçinin vergi nosu da sonradan eklendi (eski kopya boş geri gelir); saklanan biçimde (yalnız rakam) yazılır
+  supplierTaxNumber: z.string().max(20).nullable().optional().transform((v) => cleanTaxNumber(v)),
 });
 type Snapshot = z.infer<typeof snapshotSchema>;
 type DeletedEntry = {

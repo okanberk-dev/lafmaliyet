@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { cleanTaxNumber, taxKey } from "../src/app/panel/tedarikciler/logic";
 import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice } from "../src/server/parasut/einvoice";
 
 const base = {
@@ -68,4 +69,16 @@ test("kategori tahmini kontrol gerektirir mi", () => {
   assert.equal(categoryNeedsReview("komisyon platformu"), false);
   assert.equal(categoryNeedsReview("Paraşüt kategorisi / kalem adları"), true);
   assert.equal(categoryNeedsReview("eşleşme yok"), true);
+});
+
+test("tedarikçinin vergi nosu: belgedeki numara saklanır; örnek numara eşleşmede kullanılmaz", () => {
+  const d = eInvoiceToDraft(base);
+  assert.equal(d.supplierTaxNo, "1234567890");
+  // Saklanan biçim numarayı tutar (faturada görünür) ama 1234567890 yer tutucu: iki firmayı birleştirmez
+  assert.equal(cleanTaxNumber(d.supplierTaxNo), "1234567890");
+  assert.equal(taxKey(d.supplierTaxNo), null);
+  const real = eInvoiceToDraft({ ...base, attributes: { ...base.attributes, from_vkn: " 7810030532 " } });
+  assert.equal(cleanTaxNumber(real.supplierTaxNo), "7810030532");
+  assert.equal(taxKey(real.supplierTaxNo), "7810030532");
+  assert.equal(eInvoiceToDraft({ ...base, attributes: { ...base.attributes, from_vkn: null } }).supplierTaxNo, null);
 });
