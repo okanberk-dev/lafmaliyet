@@ -59,7 +59,9 @@ test("Ciro dökümünde KDV ve POS komisyonu toplama girmeyen bilgi bölümünde
   close(net.amount, sales.net);
   close(net.amount + kdv.amount, sales.revenue);
   close(commission.amount, sales.commission);
-  assert.equal(net.sub, "Ciro ÷ (1 + %10 KDV)");
+  // Eylül'de karaoke HİZMET satırları var: kendi oranıyla (Ayarlar › Hizmet satışı KDV)
+  assert.equal(net.sub, "Ürünler ÷ (1 + %10 KDV), hizmet (karaoke) ÷ (1 + %20 KDV)");
+  assert.equal(kdv.sub, "%10 ve %20 (hizmet), ciro − net ciro");
   assert.match(commission.sub ?? "", /kartlı satış %85,6 × komisyon %2,5/);
 });
 
@@ -120,7 +122,7 @@ const product = (id: number, name: string, size: string, category: string | unde
 
 let nextId = 1;
 const line = (posName: string, qty: number, revenue: number, o: { product?: SalesLineCalc["product"]; service?: boolean; cost?: number } = {}): SalesLineCalc => {
-  const net = revenue / 1.1;
+  const net = revenue / (o.service ? 1.2 : 1.1);
   const cost = o.cost ?? 0;
   const commission = revenue * 0.025 * 0.856;
   return {
@@ -151,6 +153,7 @@ function monthOf(lines: SalesLineCalc[]): SalesMonth {
     matchedNet,
     matchedCost,
     avgCostRatio: matchedNet ? matchedCost / matchedNet : 0,
+    serviceRevenue: sum(lines.filter((l) => l.line.isService).map((l) => l.line.revenue)),
   };
 }
 
@@ -162,7 +165,7 @@ test("Aynı ürüne bağlı iki POS adı tek kalem; kategorisiz ürün ayrı bö
     line("Kurabiye", 4, 400, { product: product(11, "Kurabiye", "Tek", undefined), cost: 100 }),
     line("Karaoke", 1, 500, { service: true }),
   ]);
-  const r = salesBreakdowns(m, { kdv: 0.1, komisyon: 0.025, kartOrani: 0.856 }, "2026-10");
+  const r = salesBreakdowns(m, { kdv: 0.1, kdvHizmet: 0.2, komisyon: 0.025, kartOrani: 0.856 }, "2026-10");
   const esp = group(r.revenue, "kat:Espresso Bazlı");
   assert.equal(esp.rows.length, 1);
   assert.equal(esp.rows[0].label, "Latte · M");
@@ -181,6 +184,6 @@ test("Aynı ürüne bağlı iki POS adı tek kalem; kategorisiz ürün ayrı bö
   assert.deepEqual(p.groups.map((g) => g.key), ["durum", "tahmin"]);
   assert.equal(group(r.unmatched, "tahmin").rows[0].display, "%100");
 
-  const empty = salesBreakdowns(monthOf([]), { kdv: 0.1, komisyon: 0.025, kartOrani: 0.856 }, "2026-10");
+  const empty = salesBreakdowns(monthOf([]), { kdv: 0.1, kdvHizmet: 0.2, komisyon: 0.025, kartOrani: 0.856 }, "2026-10");
   assert.deepEqual(empty, { revenue: [], grossProfit: [], qty: [], unmatched: [] });
 });

@@ -111,6 +111,12 @@ export function WasteBoard({
               { value: "ikram", label: "İkram (ödenmedi)" },
             ]}
           />
+          {kind === "ikram" ? (
+            <p className="text-xs leading-5 text-ink-mute">
+              Uygulamadaki ödülle (damga kartı, davet kuponu) verilen içecek ikram değildir: bar ekranına uygulama siparişi olarak düşer ve online satışta sayılır. Buraya
+              da girilirse malzemesi iki kez düşülür.
+            </p>
+          ) : null}
           {picked ? (
             <div className="flex items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
               <div className="min-w-0 flex-1">

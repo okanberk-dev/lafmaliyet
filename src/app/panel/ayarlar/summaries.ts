@@ -1,5 +1,5 @@
 // Ayarlar · telefonda kapalı bölümlerin başlık altındaki tek satırlık özeti (saf; istemci ve testler kullanır).
-// Bölümü açmadan şu anki (kayıtlı) değerler okunur: "KDV %10 · POS %2,5 · Kartlı %85,6 · Hedef %30 · Fire %5".
+// Bölümü açmadan şu anki (kayıtlı) değerler okunur: "KDV %10 / hizmet %20 · POS %2,5 · Kartlı %85,6 · Hedef %30 · Fire %5".
 
 import type { WaterCost } from "@/lib/calc/engine";
 import type { Settings } from "@/lib/calc/types";
@@ -11,10 +11,10 @@ import { waterSource } from "./water-text";
 const field = (key: NumericKey): FieldDef => [...RATE_FIELDS, ...MEASURE_FIELDS].find((f) => f.key === key)!;
 const value = (s: Settings, key: NumericKey) => shown(Number(s[key]), field(key));
 
-/** Oranlar: beş oranın kısa adlarıyla kayıtlı değerleri */
+/** Oranlar: altı oranın kısa adlarıyla kayıtlı değerleri */
 export function ratesSummary(s: Settings): string {
   return [
-    `KDV ${value(s, "kdv")}`,
+    `KDV ${value(s, "kdv")} / hizmet ${value(s, "kdvHizmet")}`,
     `POS ${value(s, "komisyon")}`,
     `Kartlı ${value(s, "kartOrani")}`,
     `Hedef ${value(s, "hedefMaliyet")}`,

@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { LafMark } from "@/components/brand";
 import { num } from "@/lib/format";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadPublicMenu } from "@/server/data/menu";
+import { siteUrl } from "@/server/site-link";
 
 import { CategoryNav } from "./category-nav";
 import { hasSizeColumns, menuPrices } from "./menu-rows";
@@ -68,31 +70,37 @@ async function MenuContent({ searchParams }: { searchParams: PageProps<"/menu">[
   const sp = await searchParams;
   const menu = await loadPublicMenu();
   const preview = !!sp.onizleme && (await getCurrentUser())?.role === "admin";
-
-  if (!menu.published && !preview) {
-    return (
-      <main className={`mx-auto max-w-xl py-20 text-center ${GUTTER}`}>
-        <p className="font-display text-2xl font-bold text-ink">Menümüz çok yakında burada</p>
-        <p className="mt-2 text-ink-mute">Şimdilik bizi kafede ziyaret edin.</p>
-        <a href="https://laffogato.net" className="mt-4 inline-flex min-h-11 items-center px-2 text-sm font-medium text-brand-600 underline underline-offset-2">
-          laffogato.net
-        </a>
-      </main>
-    );
-  }
+  // Müşterinin tam menüsü laffogato.net'tedir: alerjenler, fiyat listesinin tarihi ve satış durumu orada (bu sayfada
+  // yok). Yayında değilken ya da gösterilecek ürün yokken müşteri oraya gider, "çok yakında" çıkmazında kalmaz;
+  // yöneticinin önizlemesi (?onizleme) burada kalır. Yönlendirme akışın içinde olduğu için tarayıcıda yapılır.
+  const siteMenu = `${siteUrl()}/menu`;
+  if (!preview && (!menu.published || menu.categories.length === 0)) redirect(siteMenu);
 
   return (
     <>
       {preview && !menu.published ? (
-        <p className="bg-warn-soft px-4 py-2 text-center text-sm text-pretty text-warn">Önizleme: menü henüz yayında değil (Ayarlar › QR menü).</p>
+        <p className="bg-warn-soft px-4 py-2 text-center text-sm text-pretty text-warn">
+          Önizleme: menü henüz yayında değil (Ayarlar › QR menü). Müşteri şimdilik laffogato.net menüsüne yönlenir.
+        </p>
       ) : null}
       {menu.categories.length ? <CategoryNav categories={menu.categories.map((c) => ({ id: c.id, name: c.name }))} /> : null}
       {/* Altta "Başa dön" (44px, ana ekran çubuğunun üstünde) için boşluk: sayfa sonundaki laffogato.net bağlantısı onun altında kalmaz */}
       <main className={`mx-auto max-w-3xl space-y-10 pt-7 pb-[calc(max(1rem,env(safe-area-inset-bottom)+0.5rem)+4.5rem)] sm:pt-8 ${GUTTER}`}>
-        {menu.categories.length ? <p className="-mb-6 text-center text-xs text-ink-mute">Fiyatlara KDV dahildir.</p> : null}
+        {menu.categories.length ? (
+          // space-y alttan boşluk verir (Tailwind 4): mb-4 ilk bölüme 1rem bırakır; eksi boşluk bölümü notun üstüne çekiyordu
+          <div className="mb-4 text-center text-xs text-ink-mute">
+            <p>Fiyatlara KDV dahildir.</p>
+            <p>
+              Alerjen bilgisi ve fiyat listesinin tarihi:{" "}
+              <a href={siteMenu} className="inline-flex min-h-11 items-center font-medium text-brand-700 underline underline-offset-2">
+                {siteMenu.replace(/^https?:\/\//, "")}
+              </a>
+            </p>
+          </div>
+        ) : null}
         {menu.categories.length === 0 ? (
           <p className="py-12 text-center text-ink-mute">
-            {preview ? "Menüde gösterilecek ürün yok. Ürün kartında “QR menüde göster” açık ve ürün aktif olmalı." : "Menümüz hazırlanıyor; bizi kafede ziyaret edin."}
+            Menüde gösterilecek ürün yok. Ürün kartında “QR menüde göster” açık ve ürün aktif olmalı (müşteri bu durumda laffogato.net menüsüne gider).
           </p>
         ) : null}
         {menu.categories.map((c) => {

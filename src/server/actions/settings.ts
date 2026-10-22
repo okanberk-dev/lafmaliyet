@@ -19,6 +19,7 @@ import { attempt, UserError, zText } from "./util";
 const numKey = z.number().finite();
 const settingsSchema = z.object({
   kdv: numKey.min(0).max(1),
+  kdvHizmet: numKey.min(0).max(1),
   komisyon: numKey.min(0).max(1),
   kartOrani: numKey.min(0).max(1),
   hedefMaliyet: numKey.gt(0, "Hedef maliyet oranı 0'dan büyük olmalı").max(1),
@@ -39,6 +40,7 @@ const settingsSchema = z.object({
 /** İşlem geçmişinde okunur ad ve biçim ("Satış KDV: %10 → %20", "Su + buz ₺/L: otomatik → 0,05") */
 const SETTING_LOG: Record<string, [label: string, kind: "pct" | "num" | "bool" | "water"]> = {
   kdv: ["Satış KDV", "pct"],
+  kdvHizmet: ["Hizmet satışı KDV", "pct"],
   komisyon: ["POS komisyonu", "pct"],
   kartOrani: ["Kartlı satış oranı", "pct"],
   hedefMaliyet: ["Hedef maliyet oranı", "pct"],
@@ -72,10 +74,10 @@ function sameValue(a: unknown, b: unknown) {
 }
 
 /**
- * "%10" yerine "0,1" yazılınca oran binde bire düşer (Excel'deki % biçimli hücrede de 0,1 → %0,1). Satış KDV'si,
- * POS komisyonu ve hedef maliyet oranı için %0,5'in altı (0 hariç) gerçekçi değil: kayıt reddedilir.
+ * "%10" yerine "0,1" yazılınca oran binde bire düşer (Excel'deki % biçimli hücrede de 0,1 → %0,1). Satış ve hizmet
+ * KDV'si, POS komisyonu ve hedef maliyet oranı için %0,5'in altı (0 hariç) gerçekçi değil: kayıt reddedilir.
  */
-const PCT_SANITY = ["kdv", "komisyon", "hedefMaliyet"] as const;
+const PCT_SANITY = ["kdv", "kdvHizmet", "komisyon", "hedefMaliyet"] as const;
 
 /**
  * Yalnızca gönderilen ve kayıtlı değerden farklı ayarları yazar; işlem geçmişine "Etiket: eski → yeni" olarak

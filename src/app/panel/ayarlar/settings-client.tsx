@@ -65,13 +65,18 @@ const sectionOf = (key: NumericKey) => (RATE_FIELDS.some((f) => f.key === key) ?
 type Out = Partial<Record<keyof Settings, number | boolean | null>>;
 type SettingsInput = Parameters<typeof saveSettings>[0];
 
+/** Adres yazısı: "https://ladmin.laffogato.net/menu" → "ladmin.laffogato.net/menu" */
+const bareUrl = (u: string) => u.replace(/^https?:\/\//, "");
+
 /**
  * Oranlar, reçete ölçüleri, su maliyeti ve QR menü tek bir kayıtla saklanır (saveSettings).
  * Değişiklik olunca altta yüzen çubuk açılır: kaydetmeden önce etkisi (durumu değişen ürünler, maliyet oranı,
  * brüt kâr, başabaş) orada görünür. Yalnızca değişen alanlar gönderilir; kayıttan sonra bildirimdeki "Geri al"
- * önceki değerleri olduğu gibi geri yazar. Bir alandayken Enter da kaydeder.
+ * önceki değerleri olduğu gibi geri yazar. Bir alandayken Enter da kaydeder. `menuUrls`: bu panelin QR menüsü ve
+ * müşterinin tam menüsü (laffogato.net/menu: alerjenler, fiyat listesinin tarihi); panelin menüsü yayında değilken
+ * laffogato.net'inkine yönlenir.
  */
-export function SettingsForm({ settings, water, data }: { settings: Settings; water: WaterCost; data: ImpactData }) {
+export function SettingsForm({ settings, water, data, menuUrls }: { settings: Settings; water: WaterCost; data: ImpactData; menuUrls: { panel: string; site: string } }) {
   const [vals, setVals] = useState<Record<NumericKey, string>>(() => textsOf(settings));
   const [fireEx, setFireEx] = useState(settings.fireExcludesPackaging);
   const [publicMenu, setPublicMenu] = useState(settings.publicMenu);
@@ -317,8 +322,8 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
           id="qr-menu"
           icon={<QrCode />}
           title="QR menü"
-          description="laffogato.net/menu"
-          summary={settings.publicMenu ? "Yayında · laffogato.net/menu" : "Yayında değil"}
+          description={bareUrl(menuUrls.panel)}
+          summary={settings.publicMenu ? `Yayında · ${bareUrl(menuUrls.panel)}` : `Yayında değil · ${bareUrl(menuUrls.site)} açılır`}
           dirty={publicMenu !== settings.publicMenu}
           meta={
             <Badge dot tone={settings.publicMenu ? "green" : "gray"}>
@@ -336,6 +341,13 @@ export function SettingsForm({ settings, water, data }: { settings: Settings; wa
             <p className="text-[13px] leading-5 text-ink-mute">
               Ürün adları, boyları ve satış fiyatları herkese açık bir menü sayfasında yayınlanır. Maliyet ve kâr bilgisi asla gösterilmez. Ürün kartında &quot;QR menüde göster&quot; ile
               ürün bazında gizleyebilirsiniz.
+            </p>
+            <p className="text-[13px] leading-5 text-ink-mute">
+              Müşterinin tam menüsü (alerjenler ve fiyat listesinin tarihiyle){" "}
+              <a href={menuUrls.site} target="_blank" rel="noopener noreferrer" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
+                {bareUrl(menuUrls.site)}
+              </a>
+              &apos;dedir; yeni QR basılacaksa oraya verin. Bu sayfa yayında değilken müşteriyi oraya yönlendirir, yayındayken de alerjen bilgisi için oraya bağlantı verir.
             </p>
             <ToggleRow
               title="Menüyü yayınla"

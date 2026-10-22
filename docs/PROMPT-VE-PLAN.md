@@ -230,6 +230,11 @@ yanlış sonuç verdiği durumlarda devreye girer. Hesaplar `src/lib/calc/insigh
     uygulanır (Excel'de G16 boşsa olduğu gibi). Kopyalanmadan açılan yeni ürün, kategorisindeki ürünlerin en sık
     kullandığı oranı alır (eşitlikte en son eklenenin; kategoride ürün yoksa boş, yani genel oran); kopyalanan ürün
     kaynağınkini alır. Ayrı kategori ayarı yoktur, oran ürün kartından değişir (`categoryFireDefault`).
+22. **Hizmet satışı (karaoke) kendi KDV oranıyla ayrılır (22 Eki 2026).** Excel bütün ciroya %10 uygular; kasada
+    çalınan karaoke %20'dir. Satışlar'da HİZMET işaretli satırların neti ve gelir-giderdeki AYLIK CİRO (KDV hariç)
+    içindeki payı Ayarlar › Oranlar › Hizmet satışı KDV oranıyla (varsayılan %20) ayrılır; Eylül 2026'da net ciro ve
+    kâr 155,30 ₺ düşer. Excel'le birebir testler Excel'in tek oranlı varsayımıyla koşar (`tests/calc.test.ts`).
+    Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md) "Kasadaki karaoke".
 
 ## 6. Excel → Web karşılık tablosu
 

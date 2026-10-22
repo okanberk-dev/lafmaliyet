@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 
-import type { CashReportFields } from "@/lib/cash-report";
+import { defaultCashRecipients, type CashReportFields } from "@/lib/cash-report";
 import { getDb, schema as s } from "@/server/db";
 
 /** Kasa raporunun gideceği adresler ve WhatsApp (integration_state, anahtar "cash.settings"; yönetici değiştirir) */
@@ -13,8 +13,8 @@ export interface CashSettings {
   whatsapp: string | null;
 }
 
-export const DEFAULT_CASH_SETTINGS: CashSettings = {
-  recipients: ["bizimfutbol9@gmail.com", "iletisim@alpkoc.com.tr"],
+/** Kayıtlı ayar yokken: alıcılar ortamdan (`CASH_REPORT_RECIPIENTS`, src/lib/cash-report.ts), e-posta açık */
+export const DEFAULT_CASH_SETTINGS: Omit<CashSettings, "recipients"> = {
   emailEnabled: true,
   whatsapp: null,
 };
@@ -24,7 +24,7 @@ export async function loadCashSettings(): Promise<CashSettings> {
   const [row] = await getDb().select().from(s.integrationState).where(eq(s.integrationState.key, KEY)).limit(1);
   const v = (row?.value as Partial<CashSettings> | undefined) ?? {};
   return {
-    recipients: Array.isArray(v.recipients) ? v.recipients.filter((x): x is string => typeof x === "string") : DEFAULT_CASH_SETTINGS.recipients,
+    recipients: Array.isArray(v.recipients) ? v.recipients.filter((x): x is string => typeof x === "string") : defaultCashRecipients(process.env),
     emailEnabled: typeof v.emailEnabled === "boolean" ? v.emailEnabled : DEFAULT_CASH_SETTINGS.emailEnabled,
     whatsapp: typeof v.whatsapp === "string" && v.whatsapp ? v.whatsapp : null,
   };
