@@ -25,8 +25,15 @@ and the local DB. Verified:
   the `parasut.%`, `payments.*` and `menu_sync` keys (:88–91). Pre-existing doc bug: `README.md:120` says monthly
   expense entries survive; they have not survived since 3bab390.
 - Karaoke contract: `src/lib/karaoke/site.ts:11–27` carries `createdAt` and `updatedAt` but no `cancelledAt`; the
-  panel asks for `from = yesterday`, `to = from + 90` (`sync.ts:87–88`). Neither file nor `docs/KARAOKE.md` says the
-  site serves past windows, and the site repo is not reachable from this session.
+  panel asks for `from = yesterday`, `to = from + 90` (`sync.ts:87–88`). **Checked in the site repo (laffogato
+  119c378, 22 Oct):** `GET /api/panel/karaoke` already serves past windows: `parsePanelRange` has no lower bound,
+  defaults to yesterday → +90 and allows a span of up to 400 days (`PANEL_MAX_SPAN_DAYS`,
+  `src/lib/panel/karaoke-sync-core.ts:194, 230`); `listReservationsForAdmin` filters by day only, and
+  `toPanelReservation` maps every status, cancelled, refunded and expired included. The site's table has no
+  cancellation-time column, so there is no `cancelledAt` to send.
+- Site KVKK retention (laffogato #196): guest data of karaoke bookings (name, contact, note) is cleared after
+  3 × 366 days, and bookings are deleted after 11 × 366 days. The panel's copy (`karaoke_sessions.customer_name`,
+  `note`) must follow the first rule (doluluk, item 5 below).
 - `src/app/panel/karaoke/page.tsx` holds the other session's `OrdersBoard` and `maxDuration = 30` (#9), and computes
   `monthStats` itself (:21, :41). The Paraşüt sync reads only `purchase_bills` and supplier contacts
   (`sync.ts:477, 717`).
@@ -338,7 +345,7 @@ oda saatleri; mal siparişi ayarları; haftalık özetin ayarı ve geçmişi".
 |---|---|
 | doluluk × `src/server/karaoke/sync.ts`, `src/lib/karaoke/site.ts` | Additive only. `bookedAt = siteTime(r.createdAt)` and `cancelledAt = cancelledAtFor(prev, r, now)` go inline in sync's `values` and `same`; the mapping is **not** moved byte-for-byte into `site.ts`. `cancelledAt: z.string().max(40).optional().catch(undefined)` goes into `reservationSchema`. `version` and `signature.ts` are untouched. Both files are listed in the PR text |
 | doluluk × karaoke page tabs (shared with `orders-board.tsx`) | `src/app/panel/karaoke/page.tsx` is **not edited**: no `SECTION_TABS`, no `PageHeader` move, `monthStats` unchanged (booked hours; the Doluluk page states its own definition). Entry points: "Doluluk haritası" on the admin "Bu ay" card (`karaoke-admin.tsx`), ⌘K and a back link |
-| doluluk × past windows and `cancelledAt` | Not available on the panel side (see the base list). The request is in §9. Until the site supports them, the page works from the 21 Oct 2026 rows, and "Geçmişi siteden al" shows `Site geçmiş tarihleri vermiyor (laffogato.net'in panel ucu güncellenmeli)`. The late-cancel rate uses the transition the sync saw (`lastEvent`), else "zamanı bilinmiyor". "Gelmedi" exists on neither side (follow-up) |
+| doluluk × past windows and `cancelledAt` | Past windows: **the site already serves them** (base list; up to 400 days per request), so "Geçmişi siteden al" works today with no site change. `cancelledAt`: the site does not store a cancellation time; the panel records the transition it sees (pings arrive within seconds), past cancellations count as "zamanı bilinmiyor". The optional site request is in §9. "Gelmedi" exists on neither side (follow-up) |
 | Naming: "Sipariş"; two meanings of "online" | R18 |
 | KVKK: fotograf, mcp, Blob | §5. No customer data reaches a new processor, so the site's customer KVKK texts need no line. Optional text for an employee notice is in §9 |
 | Paraşüt (site invoices in the same company) | komisyon and siparis read only local rows that come from `purchase_bills` and supplier contacts. There is no new Paraşüt call, `client.ts` is untouched, and the site's sales invoices never reach `invoices` |
@@ -515,14 +522,20 @@ once-only e-mail, the bell and the Bugün row; the "Kanallar" card (`payDays` on
    `If-Modified-Since`, 4 decimals, the CC BY 4.0 credit); same-morning accuracy; the staffing and dessert
    suggestions.
 
-### doluluk: approve the page; stay off the shared karaoke page; the history import waits for the site
+### doluluk: approve the page; stay off the shared karaoke page; the history import works today
 1. **Other session's files:** `karaoke/page.tsx` is not edited (§3); `sync.ts` and `site.ts` get inline, additive
    changes; `isCancelledBooking` goes into `session.ts`.
 2. **Cut:** the "site + kasa" revenue basis, which needs ModPOS months fully covered by timers (R18), and the
    `RoomOrder` seam. Revenue per hour = booking fees ÷ their occupied hours.
 3. **Keep:** the five KPIs, the heatmap, the month table and the two insights; the Oda saatleri dialog (default every
    day 10:00–22:00); the import button, which degrades as described in §3.
-4. **Integration:** `ADMIN_ONLY_PATHS` (R13); the Yardım FAQ uses `links`; send the site request (§9) now.
+4. **Integration:** `ADMIN_ONLY_PATHS` (R13); the Yardım FAQ uses `links`. The history import reads the site's
+   existing past windows (chunks of at most 62 days, well under the site's 400-day cap); no site change is needed.
+5. **KVKK retention, same rule as the site (laffogato #196):** the daily job clears `customer_name` and `note` of
+   `karaoke_sessions` whose `date` is older than 3 × 366 days (Istanbul day; both sources, since a panel timer's label
+   can be a name). One `UPDATE … WHERE date < $cutoff AND (customer_name IS NOT NULL OR note IS NOT NULL)`, under 1 s,
+   step `karaoke` (no new `job_runs` step). Rows stay for the statistics. One test for the cutoff; one line in
+   `docs/KARAOKE.md` › KVKK.
 
 ### haftalik: approve; last; adjust to the cuts
 1. **Its shared edits move into W2.0:** the `emailLayout` / `esc` / `FONT` exports with `footer`, the `sendEmail`
@@ -593,14 +606,15 @@ Günlük işler shows `Haftalık özet gönderildi`, and pass over the bell and 
 
 ## 9. Site-side change requests (send to the owner / the other session as written)
 
-> **laffogato.net — `GET /api/panel/karaoke` (paneldeki karaoke doluluk haritası için)**
-> 1. **Geçmiş pencere:** `from` ve `to` geçmiş tarih olabilsin: en erken `2026-01-01`, `from ≤ to`, pencere en çok
->    62 gün. Yanıtın biçimi bugünkü gibi kalsın: `{ now, from, to, complete, reservations[] }`. Rezervasyonun günü
->    (`date`) aralıktaysa, iptal, iade ve süresi dolan ödeme dahil bütün rezervasyonlar gelsin. İmza aynı;
->    `version` değişmesin.
-> 2. **İptal anı:** her rezervasyona isteğe bağlı `cancelledAt` eklensin. ISO 8601, rezervasyonun iptal edildiği an;
->    iptal değilse alan hiç olmasın ya da `null` olsun. Panel alanı isteğe bağlı okur: eklemek sözleşmeyi bozmaz.
-> 3. Sitedeki panel belgesi ile paneldeki `docs/KARAOKE.md` birlikte güncellensin.
+Checked in the site repo (laffogato 119c378, 22 Oct): past windows are **already served** (no lower bound on `from`,
+up to 400 days per request, every status), so nothing is needed for the history import. One request remains and it is
+**optional** (the owner decides; doluluk works without it):
+
+> **laffogato.net — `GET /api/panel/karaoke` (isteğe bağlı, acele yok)**
+> 1. **İptal anı:** rezervasyon iptal edildiğinde an saklansın (yeni sütun) ve panele isteğe bağlı `cancelledAt`
+>    olarak gitsin: ISO 8601; iptal değilse alan hiç olmasın ya da `null` olsun. Panel alanı isteğe bağlı okur:
+>    eklemek sözleşmeyi bozmaz, `version` değişmez. Geçmiş iptaller için bilinmiyorsa boş kalır.
+> 2. Sitedeki `docs/PANEL-KARAOKE.md` ile paneldeki `docs/KARAOKE.md` birlikte güncellensin.
 >
 > Şimdi istenmeyenler: "gelmedi" işareti; uygulama siparişinde "karaoke odası" teslim yeri.
 
@@ -617,8 +631,9 @@ Günlük işler shows `Haftalık özet gönderildi`, and pass over the bell and 
 
 ## 10. Questions for the owner (defaults are implemented; nothing blocks)
 
-1. **Site change (§9).** Send it now. Default until it ships: Doluluk works from 21 Oct 2026, and "Geçmişi siteden
-   al" says the site is not ready yet.
+1. **Site change (§9), optional.** The site already gives past bookings, so Doluluk shows history right away. Only the
+   cancellation time is missing for past cancellations ("zamanı bilinmiyor"); asking the site to store it is
+   optional. Default: not requested now.
 2. **Photo storage.** The developer creates a private Vercel Blob store, `laffogato-foto`, in Frankfurt, connected
    to Production only; until then the photo buttons are hidden. Default: yes.
 3. **Spending.** A monthly spend limit in the Anthropic Console (≈ $20), plus the panel's 40 readings a day; expected

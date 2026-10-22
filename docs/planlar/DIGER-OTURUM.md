@@ -67,3 +67,23 @@ Paraşüt istemcisini (`src/server/parasut/client.ts`) kopyalamışlar.
   insight'ta etiketleri ayrı tutun.
 - **Kişisel veri:** fotograf, mcp ya da Blob kişisel veriyi yeni bir işleyiciye taşırsa sitenin KVKK metinlerine satır
   gerekir; düzenlemeden önce eşgüdüm.
+
+## Site deposunun durumu (22 Ekim 2026, laffogato 119c378; salt okunur incelendi)
+
+- **Sözleşmeler güncel.** Sitenin panele dönük kodu (`src/lib/panel/*`, `src/app/api/panel/*`) #213'ten beri
+  değişmedi; paneldeki karşılığı #9. Karaoke, menü, siparişler (aşama dahil) ve online satış sözleşmeleri iki tarafta
+  aynı; satış sözleşmesinin KDV alanları (`kdvMinor`, `unknownKdvNetMinor`) panelde sözleşmedeki formülle okunuyor.
+- **Karaoke geçmişi:** `GET /api/panel/karaoke` geçmiş tarihleri zaten veriyor (`from` için alt sınır yok, pencere en
+  çok 400 gün, iptal / iade / süresi dolan dahil bütün durumlar). Doluluk'un geçmiş içe aktarması site değişikliği
+  beklemez. Sitede iptal anı saklanmıyor (`cancelledAt` yok); istenmesi isteğe bağlı (CRITIQUE2 §9).
+- **e-Arşiv (#215, varsayılan kapalı):** site aynı Paraşüt firmasında **kendi API kullanıcısıyla** müşteri kartı
+  (`account_type: customer`), satış faturası, e-Arşiv ve ürün açar. Panel yalnız alış faturalarını
+  (`purchase_bills`), gelen e-faturaları, tedarikçi kartlarını ve alış faturasının tedarikçisini okur; sitenin
+  kayıtları panele karışmaz. İstek sınırı (10 saniyede 10 istek) firma başına paylaşılır: panelin istemcisi istekleri
+  aralıklar ve 429'da `Retry-After`'a uyar; sitenin günlük işi 06:00 UTC, panelinkiler 04:30 ve 05:00 UTC'de.
+  **Sahibe:** sitenin Vercel'deki `PARASUT_USERNAME`'i panelin Paraşüt kullanıcısından farklı olmalı (aynı kullanıcı
+  her oturum yenilemesinde diğerinin oturumunu düşürür).
+- **KVKK saklama (#196):** site, misafir karaoke verisini (ad, iletişim, not) 3 × 366 günde temizler, rezervasyonu
+  11 × 366 günde siler. Panelin karaoke kopyası (`customer_name`, `note`) aynı 3 yıl kuralına uyacak (CRITIQUE2,
+  doluluk 5).
+- **İYS (#214) ve üye bildirim tercihleri (#216):** yalnız site; panelde bağlantı gerekmez.
