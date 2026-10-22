@@ -1,10 +1,11 @@
 "use client";
 
 import { Check, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
-import { useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useOptimistic, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
+import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -21,6 +22,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { ROLES } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
+import { isStepUpError, needsStepUp, STEP_UP_REQUIRED, stepUpChanges, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { cn } from "@/lib/utils";
 import { createAccessLink } from "@/server/actions/invites";
 import { createUser, deleteUser, resetUserTwoFactor, saveUser, signOutUserEverywhere, unlockUser } from "@/server/actions/settings";
@@ -29,11 +31,71 @@ import { generatePassword, linkReason, relinkText, type AccessInfo } from "./acc
 import { AccessSheet } from "./access-sheet";
 import { CloseGuardFooter } from "./close-guard";
 import { PasswordField } from "./password-field";
+import { DELETE_TEXT, stepUpText, type StepUpText } from "./step-up-text";
 
 const count = (v: number) => num(Math.round(v), 0);
 
 /** Telefonda 44px dokunma alanı (paylaşılan düğmeler dokunmatikte 40px) */
 const TAP = "h-11 pointer-coarse:h-11";
+
+type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
+type StepUpRequest = StepUpText & { run: (confirm: StepUpConfirm) => Promise<string | null> };
+
+/**
+ * Yönetici işlemlerinde kendi parolanızla onay (kural src/lib/step-up.ts, metinler ./step-up-text). `guard` eylemi
+ * yürütür: metin verilirse önce parola penceresi açılır, eylem parolayla çalışır. Metin yoksa eylem parolasız çalışır;
+ * sunucu yine de parola isterse (sayfa eski: rol başka sekmede değişmiş) yedek pencere açılır ve aynı çağrı parolayla
+ * yinelenir. Parola hataları pencerede kalır; `done` başarıyı ve öteki hataları (bildirim, alan hatası) işler, isterse
+ * pencere kapanınca odaklanacak alanı döndürür (pencere açıkken alttaki form erişilemez). `dialog` çağıran bileşenin
+ * penceresinin içinde değil yanında bağlanır (ConfirmDialog'daki kural).
+ */
+function useStepUp() {
+  const [request, setRequest] = useState<StepUpRequest | null>(null);
+  const focusAfter = useRef<string | null>(null);
+  useEffect(() => {
+    if (request || !focusAfter.current) return;
+    document.getElementById(focusAfter.current)?.focus();
+    focusAfter.current = null;
+  }, [request]);
+
+  async function guard<T>(
+    text: StepUpText | null,
+    call: (confirm?: StepUpConfirm) => Promise<ActionResult<T>>,
+    done: (res: ActionResult<T>) => { focus: string } | undefined,
+  ): Promise<void> {
+    const ask = (t: StepUpText) =>
+      setRequest({
+        ...t,
+        run: async (confirm) => {
+          const res = await call(confirm);
+          if (!res.ok && isStepUpError(res.error)) return res.error;
+          focusAfter.current = done(res)?.focus ?? null;
+          return null;
+        },
+      });
+    if (text) return ask(text);
+    const res = await call();
+    if (!res.ok && res.error === STEP_UP_REQUIRED) return ask(stepUpText({ kind: "fallback" }));
+    const after = done(res);
+    if (after) document.getElementById(after.focus)?.focus();
+  }
+
+  const dialog = request ? (
+    <ConfirmPasswordDialog
+      title={request.title}
+      description={request.description}
+      confirmLabel={request.confirmLabel}
+      danger={request.danger}
+      onClose={() => setRequest(null)}
+      onConfirm={async (password) => {
+        const problem = await request.run({ password });
+        if (!problem) setRequest(null);
+        return problem;
+      }}
+    />
+  ) : null;
+  return { guard, dialog };
+}
 
 export type UserRow = {
   id: number;
@@ -83,34 +145,64 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
     clearQuery(["ara", "rol"]);
   };
 
+  const stepUp = useStepUp();
+
+  const saveActive = (u: UserRow, active: boolean, confirm?: StepUpConfirm) => saveUser({ id: u.id, name: u.name, email: u.email, role: u.role, active }, confirm);
+  const activeDone = (u: UserRow, active: boolean) => (res: ActionResult<unknown>) =>
+    void (res.ok ? toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`) : toast.error(res.error));
+
+  /** Personel: anahtar hemen döner (iyimser), sunucu yenileyince kesinleşir */
   function setActive(u: UserRow, active: boolean) {
     setConfirmOff(null);
     startTransition(async () => {
       setOptimistic({ id: u.id, active });
-      const res = await saveUser({ id: u.id, name: u.name, email: u.email, role: u.role, active });
-      if (res.ok) toast.success(active ? `${u.name} yeniden aktif` : `${u.name} pasif yapıldı`);
-      else toast.error(res.error);
+      await stepUp.guard(null, (confirm) => saveActive(u, active, confirm), activeDone(u, active));
     });
+  }
+
+  /**
+   * Yönetici satırı iki yönde de parola ister (yeniden aktif yapmak yönetici girişini geri verir); anahtar parola
+   * onaylanıp sayfa yenilenene kadar yerinde durur. Personeli pasif yapmak yalnızca onay ister.
+   */
+  function toggle(u: UserRow, active: boolean) {
+    if (needsStepUp({ kind: "save", before: u, after: { role: u.role, active, email: u.email, password: false } })) {
+      void stepUp.guard(stepUpText({ kind: "toggle", name: u.name, active }), (confirm) => saveActive(u, active, confirm), activeDone(u, active));
+    } else if (active) setActive(u, true);
+    else setConfirmOff(u);
   }
 
   /**
    * Davet bekleyene yeni davet, diğerlerine parola sıfırlama bağlantısı; ardından "Giriş bilgileri". Düzenleme
    * penceresinde kaydedilmemiş değişiklik varsa pencere kapanmaz (bilgiler penceresi üstünde açılır, kapanınca
-   * düzenlemeye dönülür).
+   * düzenlemeye dönülür). `text`: yöneticiye bağlantı parola ister.
    */
-  async function createLink(u: UserRow, keepEditor = false) {
+  function createLink(u: UserRow, keepEditor: boolean, text: StepUpText | null) {
     setConfirmLink(null);
-    setLinkBusy(u.id);
-    const res = await createAccessLink(u.id);
-    setLinkBusy(null);
-    if (!res.ok) return void toast.error(res.error);
-    if (!keepEditor) setEditing(null);
-    setAccess({ ...res.data, reason: linkReason(res.data.kind === "invite" ? "invite" : "reset", u.liveLink !== null) });
+    void stepUp.guard(
+      text,
+      async (confirm) => {
+        setLinkBusy(u.id);
+        try {
+          return await createAccessLink(u.id, confirm);
+        } finally {
+          setLinkBusy(null);
+        }
+      },
+      (res) => {
+        if (!res.ok) return void toast.error(res.error);
+        if (!keepEditor) setEditing(null);
+        setAccess({ ...res.data, reason: linkReason(res.data.kind === "invite" ? "invite" : "reset", u.liveLink !== null) });
+      },
+    );
   }
-  /** Geçerli bir davet ya da sıfırlama bağlantısı varsa yenisi onu hemen geçersiz kılar: önce sorulur */
+  /**
+   * Geçerli bir davet ya da sıfırlama bağlantısı varsa yenisi onu hemen geçersiz kılar: önce sorulur. Yöneticide bu
+   * soru parola penceresinin içindedir (iki ayrı onay açılmaz).
+   */
   function newLink(u: UserRow, keepEditor = false) {
-    if (u.liveLink) setConfirmLink({ user: u, keepEditor });
-    else void createLink(u, keepEditor);
+    if (needsStepUp({ kind: "link", targetRole: u.role })) createLink(u, keepEditor, stepUpText({ kind: "link", user: u }));
+    else if (u.liveLink) setConfirmLink({ user: u, keepEditor });
+    else createLink(u, keepEditor, null);
   }
 
   const addButton = (
@@ -184,7 +276,7 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
                       </span>
                       <span className="mt-1.5 block text-xs text-ink-mute tabular">{lastLoginText(u)}</span>
                     </button>
-                    <RowActions user={u} me={me} pending={pending} onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))} onEdit={() => setEditing(u)} />
+                    <RowActions user={u} me={me} pending={pending} onToggle={(next) => toggle(u, next)} onEdit={() => setEditing(u)} />
                   </div>
                   {u.invite !== "none" && u.active ? (
                     <Button variant="secondary" className={cn(TAP, "mt-3 w-full")} disabled={linkBusy === u.id} onClick={() => newLink(u)}>
@@ -252,7 +344,7 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
                             pending={pending}
                             linkBusy={linkBusy === u.id}
                             onLink={u.invite !== "none" && u.active ? () => newLink(u) : undefined}
-                            onToggle={(next) => (next ? setActive(u, true) : setConfirmOff(u))}
+                            onToggle={(next) => toggle(u, next)}
                             onEdit={() => setEditing(u)}
                           />
                         </TD>
@@ -313,12 +405,13 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
       <ConfirmDialog
         open={confirmLink !== null}
         onClose={() => setConfirmLink(null)}
-        onConfirm={() => confirmLink && void createLink(confirmLink.user, confirmLink.keepEditor)}
+        onConfirm={() => confirmLink && createLink(confirmLink.user, confirmLink.keepEditor, null)}
         title={confirmLink ? relinkText(confirmLink.user).title : ""}
         description={confirmLink ? relinkText(confirmLink.user).description : undefined}
         confirmLabel="Yeni bağlantı oluştur"
         tone="primary"
       />
+      {stepUp.dialog}
     </Card>
   );
 }
@@ -603,130 +696,149 @@ function NewUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
     else onClose();
   };
 
+  const stepUp = useStepUp();
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     const found = validateUser({ name, email, password: mode === "password" ? password : "", needPassword: mode === "password" });
     setErrors(found);
     if (focusFirst(found, NEW_IDS)) return;
-    setBusy(true);
-    const res = await createUser(mode === "password" ? { mode, name, email, role, active, password } : { mode, name, email, role, active: true });
-    setBusy(false);
-    if (!res.ok) {
-      if (/e-posta/i.test(res.error)) {
-        setErrors({ email: res.error });
-        document.getElementById(NEW_IDS.email)?.focus();
-      } else toast.error(res.error);
-      return;
-    }
-    // "… eklendi" bilgisi açılan "Giriş bilgileri" penceresinde yazar (ayrı bildirim pencerenin başlığını örtmesin)
-    onCreated(mode === "password" ? { ...res.data, password, reason: "new" } : { ...res.data, reason: "new" });
+    const payload = mode === "password" ? ({ mode, name, email, role, active, password } as const) : ({ mode, name, email, role, active: true } as const);
+    // Yönetici eklemek kendi parolanızı ister: önce parola penceresi açılır
+    await stepUp.guard(
+      needsStepUp({ kind: "create", role }) ? stepUpText({ kind: "create", name, mode }) : null,
+      async (confirm) => {
+        setBusy(true);
+        try {
+          return await createUser(payload, confirm);
+        } finally {
+          setBusy(false);
+        }
+      },
+      (res) => {
+        if (!res.ok) {
+          // Aynı e-posta: alanın altında (parola penceresi açıktıysa kapanınca alana odaklanılır)
+          if (/e-posta/i.test(res.error)) {
+            setErrors({ email: res.error });
+            return { focus: NEW_IDS.email };
+          }
+          return void toast.error(res.error);
+        }
+        // "… eklendi" bilgisi açılan "Giriş bilgileri" penceresinde yazar (ayrı bildirim pencerenin başlığını örtmesin)
+        onCreated(mode === "password" ? { ...res.data, password, reason: "new" } : { ...res.data, reason: "new" });
+      },
+    );
   }
 
   return (
-    <Dialog
-      open
-      onClose={requestClose}
-      title="Kullanıcı ekle"
-      description="Kişi, rol ve parola: üç adım."
-      footer={
-        askDiscard ? (
-          <CloseGuardFooter
-            title="Form kapatılsın mı?"
-            description="Yazdığınız ad ve e-posta silinir; kullanıcı eklenmez."
-            confirmLabel="Kapat ve sil"
-            onStay={() => setAskDiscard(false)}
-            onLeave={onClose}
-          />
-        ) : (
-          <>
-            <Button variant="ghost" onClick={requestClose} className="max-sm:h-11">
-              Vazgeç
-            </Button>
-            <Button type="submit" form="new-user-form" disabled={busy} className="max-sm:h-11 max-sm:flex-1">
-              {busy ? "Ekleniyor…" : mode === "password" ? "Kullanıcıyı ekle" : "Ekle ve bağlantı oluştur"}
-            </Button>
-          </>
-        )
-      }
-    >
-      <form id="new-user-form" onSubmit={submit} noValidate className="space-y-5 pb-2">
-        <fieldset>
-          <StepLegend n={1}>Kişi</StepLegend>
-          <NameEmailFields
-            ids={NEW_IDS}
-            name={name}
-            email={email}
-            errors={errors}
-            onName={(v) => {
-              setName(v);
-              setErrors((x) => ({ ...x, name: undefined }));
-            }}
-            onEmail={(v) => {
-              setEmail(v);
-              setErrors((x) => ({ ...x, email: undefined }));
-            }}
-          />
-        </fieldset>
-        <fieldset>
-          <StepLegend n={2}>Rol</StepLegend>
-          <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
-        </fieldset>
-        <fieldset className="space-y-3">
-          <StepLegend n={3}>Parola</StepLegend>
-          <ChoiceCards<Mode>
-            name="nu-mode"
-            value={mode}
-            onChange={(m) => {
-              setMode(m);
-              setErrors((x) => ({ ...x, password: undefined }));
-            }}
-            columns={false}
-            options={[
-              {
-                value: "password",
-                label: "Parolayı ben belirleyeyim",
-                hint: "Parolayı siz iletirsiniz (WhatsApp, e-posta); kişi sonra Hesabım'dan değiştirebilir.",
-                icon: <KeyRound />,
-              },
-              {
-                value: "invite",
-                label: "Davet bağlantısı gönder",
-                hint: "Kişi tek kullanımlık bağlantıdan (72 saat geçerli) parolasını kendisi belirler.",
-                icon: <Send />,
-              },
-            ]}
-          />
-          {mode === "password" ? (
-            <PasswordField
-              id={NEW_IDS.password}
-              label="Parola"
-              hint="En az 8 karakter. Hazır gelen güçlü parolayı kullanabilir ya da kendiniz yazabilirsiniz."
-              error={errors.password}
-              value={password}
-              initiallyVisible
-              onChange={(v) => {
-                setPassword(v);
-                setErrors((x) => ({ ...x, password: undefined }));
-              }}
+    <>
+      <Dialog
+        open
+        onClose={requestClose}
+        title="Kullanıcı ekle"
+        description="Kişi, rol ve parola: üç adım."
+        footer={
+          askDiscard ? (
+            <CloseGuardFooter
+              title="Form kapatılsın mı?"
+              description="Yazdığınız ad ve e-posta silinir; kullanıcı eklenmez."
+              confirmLabel="Kapat ve sil"
+              onStay={() => setAskDiscard(false)}
+              onLeave={onClose}
             />
           ) : (
-            <p className="rounded-2xl bg-panel px-3.5 py-3 text-[13px] leading-5 text-ink-soft">
-              Eklediğinizde bağlantı oluşur; sonraki ekrandan kopyalayıp WhatsApp&apos;tan ya da e-postayla iletirsiniz. Kişi parolasını belirleyene kadar
-              listede <span className="font-medium text-ink">Davet bekliyor</span> yazar.
-            </p>
-          )}
-        </fieldset>
-        {mode === "password" ? (
-          <ToggleRow
-            title="Aktif (giriş yapabilir)"
-            description={active ? "Bu hesapla hemen giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; sonra aktif yapabilirsiniz."}
-            label="Aktif (giriş yapabilir)"
-            checked={active}
-            onChange={setActive}
-          />
-        ) : null}
-      </form>
-    </Dialog>
+            <>
+              <Button variant="ghost" onClick={requestClose} className="max-sm:h-11">
+                Vazgeç
+              </Button>
+              <Button type="submit" form="new-user-form" disabled={busy} className="max-sm:h-11 max-sm:flex-1">
+                {busy ? "Ekleniyor…" : mode === "password" ? "Kullanıcıyı ekle" : "Ekle ve bağlantı oluştur"}
+              </Button>
+            </>
+          )
+        }
+      >
+        <form id="new-user-form" onSubmit={submit} noValidate className="space-y-5 pb-2">
+          <fieldset>
+            <StepLegend n={1}>Kişi</StepLegend>
+            <NameEmailFields
+              ids={NEW_IDS}
+              name={name}
+              email={email}
+              errors={errors}
+              onName={(v) => {
+                setName(v);
+                setErrors((x) => ({ ...x, name: undefined }));
+              }}
+              onEmail={(v) => {
+                setEmail(v);
+                setErrors((x) => ({ ...x, email: undefined }));
+              }}
+            />
+          </fieldset>
+          <fieldset>
+            <StepLegend n={2}>Rol</StepLegend>
+            <ChoiceCards name="nu-role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
+            {role === "admin" ? <p className="mt-1.5 text-xs text-ink-mute">Yönetici eklerken kendi parolanız sorulur.</p> : null}
+          </fieldset>
+          <fieldset className="space-y-3">
+            <StepLegend n={3}>Parola</StepLegend>
+            <ChoiceCards<Mode>
+              name="nu-mode"
+              value={mode}
+              onChange={(m) => {
+                setMode(m);
+                setErrors((x) => ({ ...x, password: undefined }));
+              }}
+              columns={false}
+              options={[
+                {
+                  value: "password",
+                  label: "Parolayı ben belirleyeyim",
+                  hint: "Parolayı siz iletirsiniz (WhatsApp, e-posta); kişi sonra Hesabım'dan değiştirebilir.",
+                  icon: <KeyRound />,
+                },
+                {
+                  value: "invite",
+                  label: "Davet bağlantısı gönder",
+                  hint: "Kişi tek kullanımlık bağlantıdan (72 saat geçerli) parolasını kendisi belirler.",
+                  icon: <Send />,
+                },
+              ]}
+            />
+            {mode === "password" ? (
+              <PasswordField
+                id={NEW_IDS.password}
+                label="Parola"
+                hint="En az 8 karakter. Hazır gelen güçlü parolayı kullanabilir ya da kendiniz yazabilirsiniz."
+                error={errors.password}
+                value={password}
+                initiallyVisible
+                onChange={(v) => {
+                  setPassword(v);
+                  setErrors((x) => ({ ...x, password: undefined }));
+                }}
+              />
+            ) : (
+              <p className="rounded-2xl bg-panel px-3.5 py-3 text-[13px] leading-5 text-ink-soft">
+                Eklediğinizde bağlantı oluşur; sonraki ekrandan kopyalayıp WhatsApp&apos;tan ya da e-postayla iletirsiniz. Kişi parolasını belirleyene kadar
+                listede <span className="font-medium text-ink">Davet bekliyor</span> yazar.
+              </p>
+            )}
+          </fieldset>
+          {mode === "password" ? (
+            <ToggleRow
+              title="Aktif (giriş yapabilir)"
+              description={active ? "Bu hesapla hemen giriş yapılabilir." : "Pasif hesapla giriş yapılamaz; sonra aktif yapabilirsiniz."}
+              label="Aktif (giriş yapabilir)"
+              checked={active}
+              onChange={setActive}
+            />
+          ) : null}
+        </form>
+      </Dialog>
+      {stepUp.dialog}
+    </>
   );
 }
 
@@ -773,44 +885,69 @@ function UserDialog({
     else onClose();
   };
 
+  const stepUp = useStepUp();
+  // Formun şu anki hâli bir yönetici hesabını etkiliyor mu (kaydederken parola sorulur; sunucu da aynı kurala bakar)
+  const change: Extract<StepUpCase, { kind: "save" }> = { kind: "save", before: user, after: { role, active, email, password: password !== "" } };
+  const asksPassword = needsStepUp(change);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     // Sunucu da denetler; burada eksik alan pencere kapanmadan, alanın altında gösterilir
     const found = validateUser({ name, email, password, needPassword: false });
     setErrors(found);
     if (focusFirst(found, EDIT_IDS)) return;
-    setBusy(true);
-    const res = await saveUser({ id: user.id, name, email, role, active, password: password || undefined });
-    setBusy(false);
-    if (!res.ok) return toast.error(res.error);
-    // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
-    // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
-    if (password && !self) {
-      onAccess({ kind: "password", reason: invited ? "set" : "changed", userId: user.id, name: name.trim(), email: email.trim().toLowerCase(), loginUrl, password, handle: res.data?.handle ?? undefined });
-    }
-    else {
-      toast.success("Kullanıcı kaydedildi");
-      onClose();
-    }
+    await stepUp.guard(
+      asksPassword ? stepUpText({ kind: "save", user, changes: stepUpChanges(change), name, email }) : null,
+      async (confirm) => {
+        setBusy(true);
+        try {
+          return await saveUser({ id: user.id, name, email, role, active, password: password || undefined }, confirm);
+        } finally {
+          setBusy(false);
+        }
+      },
+      (res) => {
+        if (!res.ok) return void toast.error(res.error);
+        // Başkasına yeni parola verildiyse giriş bilgileri iletilmeye hazır gösterilir; "kaydedildi" o pencerede yazar
+        // (ayrı bildirim telefonda pencerenin başlığını örtmesin)
+        if (password && !self) {
+          onAccess({ kind: "password", reason: invited ? "set" : "changed", userId: user.id, name: name.trim(), email: email.trim().toLowerCase(), loginUrl, password, handle: res.data?.handle ?? undefined });
+        }
+        else {
+          toast.success("Kullanıcı kaydedildi");
+          onClose();
+        }
+      },
+    );
   }
+
+  const act = (kind: Confirm | "unlock", confirm?: StepUpConfirm) =>
+    kind === "2fa"
+      ? resetUserTwoFactor(user.id, confirm)
+      : kind === "logout"
+        ? signOutUserEverywhere(user.id)
+        : kind === "delete"
+          ? deleteUser(user.id, confirm)
+          : unlockUser(user.id);
+  const finish = (kind: Confirm | "unlock") => (res: ActionResult<null>) => {
+    if (!res.ok) return void toast.error(res.error);
+    toast.success(
+      { "2fa": "İki adımlı doğrulama kapatıldı", logout: "Oturumları kapatıldı", unlock: "Hesap kilidi açıldı", delete: `${user.name} silindi` }[kind],
+    );
+    onClose();
+  };
 
   function run(kind: Confirm | "unlock") {
     setConfirm(null);
     startTransition(async () => {
-      const res =
-        kind === "2fa"
-          ? await resetUserTwoFactor(user.id)
-          : kind === "logout"
-            ? await signOutUserEverywhere(user.id)
-            : kind === "delete"
-              ? await deleteUser(user.id)
-              : await unlockUser(user.id);
-      if (!res.ok) return void toast.error(res.error);
-      toast.success(
-        { "2fa": "İki adımlı doğrulama kapatıldı", logout: "Oturumları kapatıldı", unlock: "Hesap kilidi açıldı", delete: `${user.name} silindi` }[kind],
-      );
-      onClose();
+      await stepUp.guard(null, (confirm) => act(kind, confirm), finish(kind));
     });
+  }
+
+  /** Yöneticinin iki adımlısını sıfırlamak ve yöneticiyi silmek kendi parolanızı ister; personelde yalnızca onay */
+  function ask(kind: "2fa" | "delete") {
+    if (!needsStepUp({ kind, targetRole: user.role })) return setConfirm(kind);
+    void stepUp.guard(stepUpText(kind === "2fa" ? { kind } : { kind, name: user.name }), (confirm) => act(kind, confirm), finish(kind));
   }
 
   const secBtn = cn(TAP, "w-full justify-start sm:w-auto sm:pointer-fine:h-8");
@@ -831,7 +968,7 @@ function UserDialog({
         ) : null}
         {/* Kendi iki adımlınız Hesabım'da parolayla kapanır */}
         {user.twoFactor && !self ? (
-          <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => setConfirm("2fa")}>
+          <Button variant="secondary" size="sm" className={secBtn} disabled={pending} onClick={() => ask("2fa")}>
             <ShieldOff size={15} /> İki adımlıyı sıfırla
           </Button>
         ) : null}
@@ -861,11 +998,7 @@ function UserDialog({
       label: "Sıfırla",
     },
     logout: { title: "Bütün oturumları kapatılsın mı?", description: "Kullanıcı bütün cihazlarda çıkış yapar ve yeniden giriş yapması gerekir.", label: "Oturumları kapat" },
-    delete: {
-      title: `${user.name} silinsin mi?`,
-      description: "Hesap kalıcı olarak silinir, geri alınamaz; işlem geçmişindeki kayıtları durur. Yalnızca girişini durdurmak istiyorsanız Pasif yapın.",
-      label: "Kalıcı olarak sil",
-    },
+    delete: { title: `${user.name} silinsin mi?`, description: DELETE_TEXT, label: "Kalıcı olarak sil" },
   };
 
   return (
@@ -876,7 +1009,7 @@ function UserDialog({
         title="Kullanıcıyı düzenle"
         footerStart={
           !self && !askDiscard ? (
-            <Button variant="ghost" className={cn(TAP, "text-bad hover:bg-bad-soft hover:text-bad sm:pointer-fine:h-9")} disabled={pending} onClick={() => setConfirm("delete")}>
+            <Button variant="ghost" className={cn(TAP, "text-bad hover:bg-bad-soft hover:text-bad sm:pointer-fine:h-9")} disabled={pending} onClick={() => ask("delete")}>
               <Trash2 size={15} /> Sil
             </Button>
           ) : undefined
@@ -958,6 +1091,7 @@ function UserDialog({
               onChange={setActive}
             />
           )}
+          {asksPassword ? <p className="px-1 text-xs leading-5 text-ink-mute">Bu değişiklik bir yönetici hesabını etkiliyor; kaydederken kendi parolanız sorulur.</p> : null}
           {user.locked || !self ? security : null}
         </form>
       </Dialog>
@@ -971,6 +1105,7 @@ function UserDialog({
         description={confirm ? confirmText[confirm].description : undefined}
         confirmLabel={confirm ? confirmText[confirm].label : undefined}
       />
+      {stepUp.dialog}
     </>
   );
 }
@@ -1008,7 +1143,11 @@ function Mark({ on, label }: { on: boolean; label: string }) {
 export function RolesCard() {
   return (
     <Card>
-      <CardHeader icon={<ShieldCheck />} title="Roller" description="Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir." />
+      <CardHeader
+        icon={<ShieldCheck />}
+        title="Roller"
+        description="Her kullanıcının tek rolü vardır. Yetkiler hem menüde hem sunucuda denetlenir. Yönetici eklemek ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirmek kendi parolanızı ister."
+      />
       <TableWrap>
         <Table>
           <THead>
