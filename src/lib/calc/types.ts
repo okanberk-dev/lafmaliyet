@@ -26,7 +26,10 @@ export interface Settings {
   fire: number;
   shotTek: number;
   shotCift: number;
+  /** Şurup (ve sos) pompasının bir basışı, ml: formüllerde Pompa */
   pompa: number;
+  /** Püre pompasının bir basışı, ml: formüllerde PurePompa */
+  pompaPure: number;
   potGr: number;
   potMl: number;
   dondurmaTop: number;

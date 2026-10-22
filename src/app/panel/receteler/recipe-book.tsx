@@ -24,7 +24,17 @@ import { MyRequests, type MyRequest } from "./my-requests";
 export type { MyRequest, ProposeKit };
 
 type Size = "M" | "L" | "Tek";
-type Line = { ingredientId: number; name: string; qty: number; qtyExpr: string | null; unit: string; packaging: boolean; note: string | null };
+type Line = {
+  ingredientId: number;
+  name: string;
+  qty: number;
+  qtyExpr: string | null;
+  unit: string;
+  packaging: boolean;
+  note: string | null;
+  /** Şurup, sos ve püre satırının pompa karşılığı ("1,5 pompa"); sunucuda hesaplanır (src/lib/recipe-pump.ts) */
+  pump: string | null;
+};
 type Variant = {
   id: number;
   size: Size;
@@ -415,9 +425,13 @@ function RecipeCard({
                               />
                             </span>
                           ) : (
-                            <span className={c.packaging ? "font-medium text-ink-mute" : "text-ink"}>
-                              {num(c.qty, 3)} {c.unit}
-                            </span>
+                            <>
+                              <span className={c.packaging ? "font-medium text-ink-mute" : "text-ink"}>
+                                {num(c.qty, 3)} {c.unit}
+                              </span>
+                              {/* Barista ml'yi pompaya bölmesin: miktarın altında küçük, soluk ikinci satır */}
+                              {c.pump ? <span className="block text-[13px] leading-4 font-normal text-ink-mute sm:text-xs">{c.pump}</span> : null}
+                            </>
                           )}
                         </td>
                       ))}

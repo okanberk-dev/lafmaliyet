@@ -200,7 +200,9 @@ export function FormulaHelp({ params }: { params: ProposeKit["params"] }) {
   return (
     <details className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] text-ink-mute">
       <summary className="cursor-pointer font-medium text-ink-soft">Formüller (ShotCift, Pompa…)</summary>
-      <p className="mt-1.5">Miktara sayı ya da formül yazılabilir: “2*ShotCift”, “Pompa*3”. Ölçüler Ayarlar&apos;dan gelir:</p>
+      <p className="mt-1.5">
+        Miktara sayı ya da formül yazılabilir: “2*ShotCift”, “2*Pompa” (şurup), “1,5*PurePompa” (püre). Ölçüler Ayarlar&apos;dan gelir:
+      </p>
       <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
         {params.map((p) => (
           <li key={p.name}>

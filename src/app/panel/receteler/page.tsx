@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
+import { pumpHint } from "@/lib/recipe-pump";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
@@ -80,6 +81,7 @@ async function RecipeBookContent() {
   // Kartın "Önerin onayda" rozeti yalnız reçete değişikliğinden (yeni ürün önerisinin ürünü henüz yok)
   const myPending = new Map(mine.flatMap((r) => (r.status === "pending" && r.kind === "change" && r.productId !== null ? [[r.productId, r] as const] : [])));
   // Personel de bu sayfayı görür: buraya yalnızca ad, boy, miktar ve not geçer; maliyet, fiyat ve kâr asla geçmez.
+  // Şurup, sos ve püre satırlarının pompa karşılığı ("1,5 pompa") burada hesaplanır, sayfaya yalnız metni gider.
   const groups: RecipeGroup[] = model.categories
     .map((c) => {
       const products = model.activeProducts.filter((p) => p.product.categoryId === c.id);
@@ -108,6 +110,10 @@ async function RecipeBookContent() {
                 unit: l.ingredient?.unit ?? "",
                 packaging: l.isPackaging,
                 note: l.item.note,
+                pump: pumpHint(
+                  { qty: l.qty, unit: l.ingredient?.unit ?? "", qtyExpr: l.item.qtyExpr, category: l.ingredient?.category, packaging: l.isPackaging },
+                  model.settings,
+                ),
               })),
               myPending: pending ? { id: pending.id, after: pending.after, updatedAt: pending.updatedAt.toISOString() } : null,
               pendingCount: pendingMap.get(v.product.id) ?? 0,

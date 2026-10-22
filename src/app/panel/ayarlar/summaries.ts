@@ -22,12 +22,12 @@ export function ratesSummary(s: Settings): string {
   ].join(" · ");
 }
 
-/** Reçete ölçüleri: en çok bakılan üç ölçü + açık gün; ölçülmemiş (varsayım) değer sayısı */
+/** Reçete ölçüleri: en çok bakılan ölçüler (shot, şurup ve püre pompası) + açık gün; ölçülmemiş (varsayım) değer sayısı */
 export function measuresSummary(s: Settings): string {
   const assumptions = MEASURE_FIELDS.filter((f) => f.assumption).length;
   return [
     `Shot ${value(s, "shotTek")} / ${value(s, "shotCift")} gr`,
-    `Pompa ${value(s, "pompa")} ml`,
+    `Pompa ${value(s, "pompa")} ml · püre ${value(s, "pompaPure")} ml`,
     `${num(Number(s.acikGun))} açık gün`,
     ...(assumptions ? [`${num(assumptions)} varsayım`] : []),
   ].join(" · ");

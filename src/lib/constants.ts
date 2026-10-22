@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shotTek: 11,
   shotCift: 18,
   pompa: 10,
+  pompaPure: 30,
   potGr: 105,
   potMl: 1800,
   dondurmaTop: 70,
@@ -24,11 +25,22 @@ export const DEFAULT_SETTINGS: Settings = {
   publicMenu: false,
 };
 
+/**
+ * Veritabanındaki ayar satırlarından hesap ayarları (loadSettings). Satırı olmayan anahtar varsayılanı okur: sonradan
+ * eklenen bir ayar (ör. püre pompası) eski veritabanında kayıt gerektirmez. Bilinmeyen (eski) anahtarlar yok sayılır.
+ */
+export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>): Settings {
+  const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
+  for (const r of rows) if (r.key in DEFAULT_SETTINGS) out[r.key] = r.value;
+  return out as unknown as Settings;
+}
+
 /** Reçete miktar formüllerinde kullanılabilen ayarlar (Excel'deki adlandırılmış hücreler). */
 export const RECIPE_PARAMS: { name: string; key: keyof Settings; label: string; unit: string }[] = [
   { name: "ShotTek", key: "shotTek", label: "Tek shot kahve", unit: "gr" },
   { name: "ShotCift", key: "shotCift", label: "Çift shot kahve", unit: "gr" },
   { name: "Pompa", key: "pompa", label: "1 pompa şurup", unit: "ml" },
+  { name: "PurePompa", key: "pompaPure", label: "1 pompa püre", unit: "ml" },
   { name: "DondurmaTop", key: "dondurmaTop", label: "1 top dondurma", unit: "ml" },
   { name: "TKGr", key: "tkGr", label: "Türk kahvesi 1 fincan", unit: "gr" },
   { name: "PotGr", key: "potGr", label: "Filtre kahve tam pot", unit: "gr" },
