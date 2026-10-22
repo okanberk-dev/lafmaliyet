@@ -20,11 +20,15 @@ import { formatBytes } from "@/lib/documents";
 export const BACKUP_FORMAT = "laffogato-yedek";
 export const BACKUP_VERSION = 1;
 /**
- * Panelden indirilen yedeğe eklenebilecek yüklenmiş belgelerin toplamı. Vercel'in yanıt sınırı (4,5 MB) akan yanıtta
- * da geçerli mi doğrulanmadı: 4,5 MB'ı aşan belgeli bir indirme canlıda denenene kadar 4 MB. Daha büyüğü bilgisayardan
- * alınır (npm run db:backup -- --belgeler).
+ * Panelden indirilen belgeli yedeğin (tahmini) boyutu en çok bu kadar olur (documentsDownloadBytes). Vercel'in yanıt
+ * sınırı (4,5 MB) akan yanıtta da geçerli mi doğrulanmadı: 4,5 MB'ı aşan belgeli bir indirme canlıda denenene kadar
+ * 4 MB. Daha büyüğü bilgisayardan alınır (npm run db:backup -- --belgeler).
  */
 export const PANEL_DOCUMENTS_MAX_BYTES = 4 * 1024 * 1024;
+/** Belgeler dosyada onaltılık metin olarak gzip'lenir: fotoğraf ve PDF sıkışmaz, ~%8 büyür (%10 sayılır) */
+const DOCUMENT_GROWTH = 1.1;
+/** Verinin kendi payı bilinmiyorsa (panelden henüz belgesiz yedek alınmadı): bugün 1 MB'ın çok altında */
+const DATA_BYTES_GUESS = 1024 * 1024;
 /** Son yedek bundan eskiyse zil hatırlatır, kart rozet gösterir */
 export const BACKUP_REMIND_DAYS = 30;
 /** Yedek uyarısının ve kartın yeri: Ayarlar › Yedek */
@@ -321,6 +325,22 @@ export interface LastBackup {
   tables: number;
   documents: boolean;
   docCount: number;
+  /** Verinin kendi payı: son belgesiz yedeğin boyutu (belgeli indirmenin tahmini için; documentsDownloadBytes) */
+  dataBytes?: number;
+}
+
+/** Yeni kaydın dataBytes'ı: belgesiz yedekte dosyanın boyutu; belgeli yedekte ayrılamaz, önceki kayıttan taşınır */
+export function nextDataBytes(documents: boolean, bytes: number, prev: Pick<LastBackup, "dataBytes"> | null): number | undefined {
+  return documents ? prev?.dataBytes : bytes;
+}
+
+/**
+ * Belgeli panel indirmesinin tahmini boyutu: yüklenen belgeler (~%10 büyür) ve verinin kendisi (son belgesiz yedeğin
+ * boyutu, bilinmiyorsa 1 MB). Belgelerin ham toplamına bakmak yetmezdi: 4 MB'lık fotoğraf dosyada 4,3 MB'ı geçer, üstüne
+ * veri gelir. PANEL_DOCUMENTS_MAX_BYTES'ı aşarsa panel belgeli yedek vermez; kart ve eylem aynı hesabı yapar.
+ */
+export function documentsDownloadBytes(uploadBytes: number, last: Pick<LastBackup, "dataBytes"> | null): number {
+  return Math.ceil(uploadBytes * DOCUMENT_GROWTH) + (last?.dataBytes ?? DATA_BYTES_GUESS);
 }
 
 const trDay = (d: Date) => new Date(d.getTime() + TR_OFFSET_MS).toISOString().slice(0, 10);
@@ -358,6 +378,10 @@ export function backupSummaryText(v: { tables: number; rows: number; bytes: numb
 
 /** Ekranda boyut: sayı ve birim ayrı satırlara bölünmesin ("1,2 MB", araları bölünmez boşluk) */
 export const sizeText = (bytes: number) => formatBytes(bytes).replace(" ", "\u00a0");
+
+/** Belgeli yedek panelden inemeyecekse kartta ve eylemde aynı söz: "Belgelerle yedek yaklaşık 4,6 MB olur, …" */
+export const documentsTooBigText = (estimate: number) =>
+  `Belgelerle yedek yaklaşık ${sizeText(estimate)} olur, panelden en çok ${sizeText(PANEL_DOCUMENTS_MAX_BYTES).replace(",0\u00a0", "\u00a0")} iner`;
 
 /** Ayarlar › Yedek kartının telefonda kapalı satırı: "Son yedek 12 Eki · 1,2 MB", "Son yedek 34 gün önce" */
 export function backupCardSummary(last: LastBackup | null, now: Date): string {

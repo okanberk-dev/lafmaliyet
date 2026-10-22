@@ -5,10 +5,11 @@
 // Çalıştırma: npx tsx --test tests/yedek.test.ts
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { gzipSync } from "node:zlib";
 
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
@@ -27,11 +28,14 @@ import {
   backupSummaryText,
   databaseTarget,
   databaseUrl,
+  documentsDownloadBytes,
+  documentsTooBigText,
   encodeLine,
   EXCLUDED_STATE_KEYS,
   excludedFor,
   lastBackupText,
   mergeUserRows,
+  nextDataBytes,
   orderTables,
   PANEL_DOCUMENTS_MAX_BYTES,
   rowLine,
@@ -41,6 +45,7 @@ import {
   type SavedCredentials,
 } from "../src/lib/backup/format";
 import { jobHealth, systemAlerts, type JobKey } from "../src/lib/job-health";
+import { backupStream, type BackupSummary } from "../src/server/backup/core";
 import { parseBackupLines } from "../src/server/backup/restore";
 import * as schema from "../src/server/db/schema";
 
@@ -245,6 +250,28 @@ test("yedek dışı: Paraşüt belirteci, bildirim anahtarı ve uygulama sipari�
 
 test("panelden belgeli yedek en çok 4 MB (Vercel'in yanıt sınırı canlıda doğrulanana kadar)", () => {
   assert.equal(PANEL_DOCUMENTS_MAX_BYTES, 4 * 1024 * 1024);
+});
+
+test("panelden belgeli yedek: sınır dosyanın tahmini boyutuna bakar (belgeler ~%10 büyür, üstüne veri)", () => {
+  const MB = 1024 * 1024;
+  const known = { dataBytes: 300 * 1024 };
+  assert.equal(documentsDownloadBytes(2 * MB, known), Math.ceil(2.2 * MB) + 300 * 1024);
+  assert.ok(documentsDownloadBytes(2 * MB, known) <= PANEL_DOCUMENTS_MAX_BYTES);
+  // Belgelerin ham toplamı sınırın altında ama dosya aşar: 3,6 MB belge ~3,96 MB olur, üstüne 300 KB veri
+  assert.ok(3.6 * MB < PANEL_DOCUMENTS_MAX_BYTES && documentsDownloadBytes(3.6 * MB, known) > PANEL_DOCUMENTS_MAX_BYTES);
+  assert.ok(documentsDownloadBytes(4 * MB, { dataBytes: 0 }) > PANEL_DOCUMENTS_MAX_BYTES);
+  // Verinin payı bilinmiyorsa (panelden henüz belgesiz yedek alınmadı) 1 MB sayılır
+  assert.equal(documentsDownloadBytes(MB, null), Math.ceil(1.1 * MB) + MB);
+  assert.equal(documentsDownloadBytes(MB, {}), Math.ceil(1.1 * MB) + MB);
+  // Kayıttaki pay: belgesiz yedekte dosyanın boyutu; belgeli yedekte ayrılamaz, öncekinden taşınır
+  assert.equal(nextDataBytes(false, 31_000, { dataBytes: 20_000 }), 31_000);
+  assert.equal(nextDataBytes(true, 2_900_000, { dataBytes: 31_000 }), 31_000);
+  assert.equal(nextDataBytes(true, 2_900_000, null), undefined);
+  // Sıkışmayan bir belge (fotoğraf gibi rastgele baytlar) dosyada gerçekten tahminden az yer tutar
+  const raw = randomBytes(512 * 1024);
+  const line = rowLine(JSON.stringify({ id: 1, invoice_id: 1, data: `\\x${raw.toString("hex")}` }));
+  assert.ok(gzipSync(line).length <= documentsDownloadBytes(raw.length, { dataBytes: 0 }));
+  assert.equal(documentsTooBigText(4.6 * MB), "Belgelerle yedek yaklaşık 4,6\u00a0MB olur, panelden en çok 4\u00a0MB iner");
 });
 
 // ---------------------------------------------------------------- Yükleme sırası
@@ -550,6 +577,72 @@ test("komut satırı: seçenekler", () => {
   assert.throws(() => parseRestoreArgs([]), /Yedek dosyasını verin/);
   assert.throws(() => parseRestoreArgs(["a", "b"]), /Tek dosya verin/);
   assert.throws(() => parseRestoreArgs(["a", "--force"]), /Bilinmeyen seçenek: --force/);
+});
+
+// ---------------------------------------------------------------- İndirme akışı
+
+const SUMMARY: BackupSummary = { tables: { categories: 2 }, rows: 2, sha256: "x", documents: false, docCount: 0 };
+
+/** Veritabanının yerine: iki satır, ikincisinden önce `wait` beklenir; kapanınca `closed` */
+async function* fakeLines(state: { closed: boolean; wait?: Promise<void> }): AsyncGenerator<string, BackupSummary, undefined> {
+  try {
+    yield "a\n";
+    if (state.wait) await state.wait;
+    yield "b\n";
+    return SUMMARY;
+  } finally {
+    state.closed = true;
+  }
+}
+
+test("indirme akışı: satırlar sırayla, sonunda özet; iptalde işlem kapanır ve hata yazılmaz; gerçek hata yazılır", async () => {
+  const errors: unknown[][] = [];
+  const consoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args);
+  };
+  try {
+    // Baştan sona
+    const whole = { closed: false };
+    const lines = fakeLines(whole);
+    let ended: BackupSummary | null = null;
+    const reader = backupStream(lines, await lines.next(), (s) => {
+      ended = s;
+    }).getReader();
+    const got: string[] = [];
+    for (let r = await reader.read(); !r.done; r = await reader.read()) got.push(r.value);
+    assert.deepEqual(got, ["a\n", "b\n"]);
+    assert.deepEqual(ended, SUMMARY);
+    assert.equal(whole.closed, true);
+
+    // İndiren vazgeçti; o sırada ikinci satır okunuyordu (pull sürüyor): kapanmış akışa yazılmaz, hata sayılmaz
+    let release!: () => void;
+    const cut = { closed: false, wait: new Promise<void>((r) => (release = r)) };
+    const cutLines = fakeLines(cut);
+    const cutReader = backupStream(cutLines, await cutLines.next(), () => assert.fail("iptal edilen indirme bitmiş sayılmaz")).getReader();
+    assert.deepEqual(await cutReader.read(), { done: false, value: "a\n" });
+    await new Promise((r) => setImmediate(r));
+    const cancelling = cutReader.cancel();
+    release();
+    await cancelling;
+    await new Promise((r) => setImmediate(r));
+    assert.equal(cut.closed, true, "işlem kapandı, bağlantı bırakıldı");
+    assert.deepEqual(errors, []);
+
+    // Okuma gerçekten yarıda kalırsa yazılır ve akış hata verir (dosya eksik iner)
+    async function* failing(): AsyncGenerator<string, BackupSummary, undefined> {
+      yield "a\n";
+      throw new Error("bağlantı koptu");
+    }
+    const failingLines = failing();
+    const failingReader = backupStream(failingLines, await failingLines.next(), () => {}).getReader();
+    assert.deepEqual(await failingReader.read(), { done: false, value: "a\n" });
+    await assert.rejects(failingReader.read(), /bağlantı koptu/);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0][0], "[yedek] yarıda kaldı");
+  } finally {
+    console.error = consoleError;
+  }
 });
 
 // ---------------------------------------------------------------- Kaynakta sabitlenenler

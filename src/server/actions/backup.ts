@@ -2,11 +2,10 @@
 
 import { z } from "zod";
 
-import { backupFileName, PANEL_DOCUMENTS_MAX_BYTES } from "@/lib/backup/format";
-import { formatBytes } from "@/lib/documents";
+import { backupFileName, documentsDownloadBytes, documentsTooBigText, PANEL_DOCUMENTS_MAX_BYTES } from "@/lib/backup/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { requirePassword } from "@/server/auth/step-up";
-import { backupHandle, uploadsTotal } from "@/server/backup/state";
+import { backupHandle, readLastBackup, uploadsTotal } from "@/server/backup/state";
 
 import { attempt, UserError } from "./util";
 
@@ -24,9 +23,10 @@ export async function prepareBackupDownload(input: z.input<typeof schema>) {
     const data = schema.parse(input);
     await requirePassword(me, data.password, "Yedek");
     if (data.documents) {
-      const { bytes } = await uploadsTotal();
-      if (bytes > PANEL_DOCUMENTS_MAX_BYTES) {
-        throw new UserError(`Belgeler panelden indirilemeyecek kadar büyük (${formatBytes(bytes)}). Belgeli yedeği bilgisayardan alın: docs/YEDEK.md › Belgeler.`);
+      const [{ bytes }, last] = await Promise.all([uploadsTotal(), readLastBackup()]);
+      const estimate = documentsDownloadBytes(bytes, last);
+      if (estimate > PANEL_DOCUMENTS_MAX_BYTES) {
+        throw new UserError(`${documentsTooBigText(estimate)}. Belgeli yedeği bilgisayardan alın: docs/YEDEK.md › Belgeler.`);
       }
     }
     const fileName = backupFileName(new Date());

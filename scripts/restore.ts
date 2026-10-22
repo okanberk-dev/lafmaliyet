@@ -5,6 +5,7 @@
 // Kullanım:
 //   DATABASE_URL=postgres://…/laffogato_prova npm run db:restore -- <dosya.json.gz>   -> boş veritabanına
 //   npm run db:restore -- <dosya.json.gz> --sil [--onay=<sunucu>]                     -> dolu veritabanının yerine
+// Tarayıcının açıp bıraktığı .json da verilebilir (Safari .gz'yi kendiliğinden açar).
 //
 // Hedef: komut satırında verilen DATABASE_URL_UNPOOLED / DATABASE_URL, yoksa .env.local'daki. Dolu hedefe yalnız --sil
 // ile yazılır; önce hedefin yedeği dosyanın yanına alınır (laffogato-yedek-once-<sunucu>-….json.gz). Bu bilgisayarda
@@ -116,6 +117,11 @@ export async function runRestore(argv: string[], io: RestoreIo, opts: { env: Rec
       );
     }
     if (r.replaced) io.log("! Bu veritabanındaki bütün oturumlar kapandı; herkes yeniden giriş yapacak.");
+    // Boş hedefte eski veritabanının oturumları bilinmez: aynı AUTH_SECRET'la imzalı eski bir çerez, aynı kimliği alan
+    // yeni bir kişinin hesabını açabilirdi. Canlının yeni veritabanıysa anahtar yenilenir
+    else if (!target.local) {
+      io.log("! Bu, canlının yeni veritabanıysa Vercel'de AUTH_SECRET'ı yenileyip yeniden yayınlayın: eski veritabanında açılmış oturumlar burada geçmesin (docs/YEDEK.md § 8).");
+    }
     io.log("! Paraşüt bağlantısı ilk eşitlemede yeniden kurulur; bildirim izinli cihazlar panel açılınca yeniden abone olur.");
     for (const w of r.warnings) io.log(`! ${w}`);
   } finally {

@@ -177,6 +177,45 @@ export async function* backupLines(sql: postgres.Sql, opts: BackupOptions): Asyn
 }
 
 /**
+ * Satırları web akışı olarak verir (indirme rotası). ReadableStream.from yerine pull: TypeScript'in dom türlerinde yok,
+ * Node'da var; ikisi de aynı işi görür. `first`: rotanın yanıttan önce okuduğu başlık. Satırlar bitince `onEnd` özeti
+ * alır. İndirme iptal edilirse generator kapatılır (işlem kapanır, bağlantı havuza döner, backupLines › finally); o
+ * sırada okunmakta olan satır sessizce bırakılır: kapanmış akışa yazılamaz, bu bir hata değil (günlüğe "yarıda kaldı"
+ * düşmesin).
+ */
+export function backupStream(
+  lines: AsyncGenerator<string, BackupSummary, undefined>,
+  first: IteratorResult<string, BackupSummary> | null,
+  onEnd: (summary: BackupSummary) => void,
+): ReadableStream<string> {
+  let pending = first;
+  let cancelled = false;
+  return new ReadableStream<string>({
+    async pull(controller) {
+      try {
+        const r = pending ?? (await lines.next());
+        pending = null;
+        if (cancelled) return;
+        if (r.done) {
+          onEnd(r.value);
+          controller.close();
+        } else {
+          controller.enqueue(r.value);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("[yedek] yarıda kaldı", e);
+        controller.error(e);
+      }
+    },
+    async cancel() {
+      cancelled = true;
+      await lines.return(undefined as never).catch(() => {});
+    },
+  });
+}
+
+/**
  * Yedeği gzip'li dosyaya yazar (komut satırı ve geri yükleme öncesi kopya). Var olan dosyanın üzerine yazmaz. Yarıda
  * kalırsa yazdığı dosyayı siler: eksik dosya yedek sanılmasın (son satırı olmadığı için zaten geri yüklenmez).
  */

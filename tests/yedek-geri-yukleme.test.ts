@@ -1,7 +1,7 @@
 // Geri yüklemenin otomatik provası (docs/YEDEK.md › Otomatik prova), gerçek Postgres'te: yedek al → boş veritabanına
 // geri yükle → her tablo aynı (dışarıda bırakılanlar hariç); dolu veritabanına --sil önce onun yedeğini alır, parolaları
-// korur; yarım ya da bozuk dosya reddedilir; sayılar tutmazsa hedef olduğu gibi kalır; eski sürümde alınmış yedek
-// yüklenip son sürüme taşınır.
+// korur, sayaçları geri götürmez; yarım ya da bozuk dosya reddedilir; sayılar tutmazsa hedef olduğu gibi kalır; eski
+// sürümde alınmış yedek yüklenip son sürüme taşınır.
 //
 // YEDEK_TEST_DATABASE_URL verilmezse atlanır. Verilen sunucuda geçici veritabanları (laf_yedek_*_<pid>) açılıp sonunda
 // silinir; adres yalnız bağlanmak için (ör. postgres://postgres:postgres@localhost/postgres).
@@ -226,7 +226,7 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.match(last.detail, /^22\.10\.2026 09:15 yedeği · Okan · [\d.]+ satır$/);
   });
 
-  test("yarım, bozuk ya da yedek olmayan dosya reddedilir; hedefe dokunulmaz", async () => {
+  test("yarım, bozuk ya da yedek olmayan dosya reddedilir, hedefe dokunulmaz; tarayıcının açtığı düz .json okunur", async () => {
     const bytes = readFileSync(fileA);
     const half = join(dir, "yarim.json.gz");
     writeFileSync(half, bytes.subarray(0, Math.floor(bytes.length / 2)));
@@ -238,13 +238,29 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     const changed = join(dir, "degismis.json.gz");
     writeFileSync(changed, gzipSync(text.replace("Zeynep", "Zeynap")));
     await assert.rejects(readBackupFile(changed), /özet tutmuyor/);
-    const plain = join(dir, "duz.json.gz");
+    // Tarayıcının açıp bıraktığı düz .json (Safari .gz'yi kendiliğinden açar): aynı doğrulamayla okunur
+    const plain = join(dir, "laffogato-yedek-a.json");
     writeFileSync(plain, text);
-    await assert.rejects(readBackupFile(plain), /Dosya eksik ya da bozuk/);
+    const fromPlain = await readBackupFile(plain);
+    const fromGz = await readBackupFile(fileA);
+    assert.deepEqual(fromPlain.header, fromGz.header);
+    assert.deepEqual(fromPlain.end, fromGz.end);
+    assert.deepEqual([...fromPlain.tables], [...fromGz.tables]);
+    const plainHalf = join(dir, "yarim.json");
+    writeFileSync(plainHalf, text.slice(0, Math.floor(text.length / 2)));
+    await assert.rejects(readBackupFile(plainHalf), /Dosya eksik ya da bozuk/);
+    const plainChanged = join(dir, "degismis.json");
+    writeFileSync(plainChanged, text.replace("Zeynep", "Zeynap"));
+    await assert.rejects(readBackupFile(plainChanged), /özet tutmuyor/);
+    // Ne gzip ne yedek (ör. zip arşivi)
+    const zip = join(dir, "yedek.zip");
+    writeFileSync(zip, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00]));
+    await assert.rejects(readBackupFile(zip), /Dosya eksik ya da bozuk/);
     await assert.rejects(readBackupFile(join(dir, "yok.json.gz")), /Dosya bulunamadı/);
     // Komut satırı da hedefe bağlanmadan durur
     const before = await wholeFingerprint(sqlB);
     await assert.rejects(runRestore([half, "--sil"], { log: () => {}, ask: null }, { env: {}, url: urlFor(NAMES.b) }), /Dosya eksik ya da bozuk/);
+    await assert.rejects(runRestore([plainHalf, "--sil"], { log: () => {}, ask: null }, { env: {}, url: urlFor(NAMES.b) }), /Dosya eksik ya da bozuk/);
     assert.equal(await wholeFingerprint(sqlB), before);
   });
 
@@ -328,6 +344,30 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     assert.equal((await sqlB.unsafe(`SELECT 1 FROM invoice_documents`)).length, 0);
   });
 
+  test("--sil: sayaçlar hedefteki yerinin gerisine düşmez; eski bir oturumun kimliği yeni bir kişiye verilmez", async () => {
+    // Yedekten sonra hedefte eklenen kişi (çerezi {sub: mehmet, sv: 1}), eklenip silinen kişi ve fatura
+    const [{ id: mehmet }] = await sqlB.unsafe<{ id: number }[]>(
+      `INSERT INTO users (email, name, password_hash, role, session_version) VALUES ('mehmet@ornek.com', 'Mehmet', 'scrypt$m', 'staff', 1) RETURNING id`,
+    );
+    const [{ id: gone }] = await sqlB.unsafe<{ id: number }[]>(`INSERT INTO users (email, name, password_hash, role) VALUES ('gecici@ornek.com', 'Geçici', 'scrypt$g', 'staff') RETURNING id`);
+    await sqlB.unsafe(`DELETE FROM users WHERE id = $1`, [gone]);
+    const [{ id: invoice }] = await sqlB.unsafe<{ id: number }[]>(`INSERT INTO invoices (date, supplier, category) VALUES ('2026-10-23', 'Sonradan', 'Diğer') RETURNING id`);
+    const [{ max }] = await sqlA.unsafe<{ max: number }[]>(`SELECT max(id) AS max FROM users`);
+    assert.ok(max < mehmet && mehmet < gone, "yedekteki en büyük kimlik hedefte sonradan verilenlerden küçük");
+
+    await restoreBackup(sqlB, await readBackupFile(fileA), { wipe: true, safetyCopyPath: join(dir, "sayac-once.json.gz") });
+    assert.equal((await sqlB.unsafe(`SELECT 1 FROM users WHERE id IN ($1, $2)`, [mehmet, gone])).length, 0);
+    // Sonra eklenen kişi (varsayılan oturum sürümü 1) hedefte verilmiş hiçbir kimliği almaz: Mehmet'in eski çerezi
+    // ona geçmez. Silinmiş kişinin kimliği de (en büyük kimlik değil, sayacın yeri)
+    const [zeynep] = await sqlB.unsafe<{ id: number; session_version: number }[]>(
+      `INSERT INTO users (email, name, password_hash, role) VALUES ('zeynep@ornek.com', 'Zeynep', 'scrypt$z', 'admin') RETURNING id, session_version`,
+    );
+    assert.equal(zeynep.session_version, 1);
+    assert.ok(zeynep.id > gone, `${zeynep.id} > ${gone}`);
+    const [{ id: next }] = await sqlB.unsafe<{ id: number }[]>(`INSERT INTO invoices (date, supplier, category) VALUES ('2026-10-23', 'Yeni', 'Diğer') RETURNING id`);
+    assert.ok(next > invoice, `${next} > ${invoice}`);
+  });
+
   test("eski sürümde alınmış yedek: veri o sürümde yüklenir, sonraki migration'lar ardından uygulanır", async () => {
     const sqlC = dbs.c!.$client;
     const sqlD = dbs.d!.$client;
@@ -363,6 +403,15 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     // Sayaç: yeni ürün kimliği eskisinin ardından
     const [{ id }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO categories (name) VALUES ('Çay') RETURNING id`);
     assert.equal(id, 2);
+
+    // Aynı eski yedek --sil ile bugünkü şemadaki bir hedefe: yedekte olmayan (sonraki migration'ın kurduğu) tablonun
+    // sayacı da hedefteki yerinin gerisine düşmez
+    const [{ id: run }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO job_runs (job, status) VALUES ('gunluk', 'ok'), ('gunluk', 'ok') RETURNING id`).then((rows) => rows.slice(-1));
+    await restoreBackup(sqlD, await readBackupFile(file), { wipe: true, safetyCopyPath: join(dir, "eski-once.json.gz") });
+    const [{ id: nextRun }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO job_runs (job, status) VALUES ('gunluk', 'ok') RETURNING id`);
+    assert.ok(nextRun > run, `${nextRun} > ${run}`);
+    const [{ id: cat }] = await sqlD.unsafe<{ id: number }[]>(`INSERT INTO categories (name) VALUES ('Soğuk') RETURNING id`);
+    assert.equal(cat, 3, "Çay'ın (2) kimliği yeniden verilmez");
   });
 
 });

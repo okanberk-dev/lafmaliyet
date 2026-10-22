@@ -13,7 +13,7 @@ içindir, geri yüklenmez.
 
 1. Ayarlar › Yedek › **Yedeği indir**.
 2. Parolanızı girin. Panelden yüklenmiş fatura belgeleri varsa isteğe bağlı **Yüklenen fatura belgelerini de ekle**
-   (dosya büyür; toplamı 4 MB'ı aşarsa panelden seçilemez, bkz. § 7).
+   (dosya büyür; belgelerle dosya 4 MB'ı aşacaksa panelden seçilemez, bkz. § 7).
 3. Dosya tarayıcının indirdiklerine iner: `laffogato-yedek-2026-10-22-0915.json.gz` (İstanbul saati).
 4. Ayda bir alın; bilgisayarınızda ya da Google Drive'da (yalnız size açık bir klasörde) saklayın.
 
@@ -47,8 +47,10 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Panelden yüklenen fatura belgeleri | yalnız "belgeleri de ekle" seçilmediyse | seçilmediyse belgesiz gelir |
 
 Karaoke rezervasyonlarındaki müşteri adı (`karaoke_sessions.customer_name`; yalnız ad, soyadı ve iletişim panele hiç
-gelmez) dosyada **kalır**: panelin kendi kaydıdır, geçmiş ayların karaoke özeti ona dayanır. Tedarikçilerin IBAN ve
-vergi numaraları, personelin maaşları, ciro ve kasa raporları da dosyadadır; bu yüzden dosya paylaşılmaz.
+gelmez) ve müşterinin sitede yazdığı not (`karaoke_sessions.note`, en çok 300 karakter; müşteri içine telefonunu ya da
+soyadını yazmış olabilir) dosyada **kalır**: panelin kendi kaydıdır, geçmiş ayların karaoke özeti ona dayanır.
+Tedarikçilerin IBAN ve vergi numaraları, personelin maaşları, ciro ve kasa raporları da dosyadadır; bu yüzden dosya
+paylaşılmaz.
 
 Adı parola, anahtar, belirteç, özet gibi görünen yeni bir sütun ya da durum anahtarı eklenirse `tests/yedek.test.ts`
 düşer: ya `TABLE_RULES` / `EXCLUDED_STATE_KEYS`'e eklenir ya da testte gizli olmadığı nedeniyle yazılır.
@@ -90,6 +92,9 @@ veritabanının adresi. Hedef, komut satırında verilen `DATABASE_URL_UNPOOLED`
 `.env.local`'daki. Komut satırında verilen her zaman önce gelir: `.env.local`'da canlının adresi dursa da elle verilen
 yerel adres kullanılır. Neon'da havuzsuz (unpooled, adında `-pooler` olmayan) adresi verin.
 
+Safari indirilen `.gz` dosyasını kendiliğinden açıp yalnız `laffogato-yedek-….json` bırakabilir: o dosya da aynı komutla
+yüklenir, aynı özet ve son satırla denetlenir.
+
 ### Boş bir veritabanına (prova, yeni veritabanı)
 
 ```bash
@@ -120,9 +125,9 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
    Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır.
 3. **Tek bir işlemde:** (`--sil` ise) hedefteki tabloları ve `drizzle` şemasını siler, şemayı yedeğin sürümüne kurar,
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
-   ilerletir, kalan migration'ları uygular, günlük işlerin izlenmesini o andan başlatır, işlem geçmişine **Yedekten geri
-   yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı tutmazsa her şey geri alınır, hedef olduğu gibi
-   kalır.
+   ilerletir (hedefteki eski yerlerinin gerisine düşmez, § 5), kalan migration'ları uygular, günlük işlerin izlenmesini
+   o andan başlatır, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı
+   tutmazsa her şey geri alınır, hedef olduğu gibi kalır.
 4. Özeti yazar:
 
 ```
@@ -149,7 +154,12 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
 - Hiçbir yönetici parolasıyla giremeyecekse (ör. yeni ve boş bir veritabanına `ADMIN_*` olmadan) komut bunu yazar:
   `ADMIN_EMAIL` ve `ADMIN_PASSWORD` verip `--sil` ile yeniden yükleyin ya da giriş ekranında "Parolamı unuttum" ile
   bağlantı isteyin (e-posta kuruluysa).
-- Hedef doluysa oradaki **bütün oturumlar kapanır**: herkes yeniden giriş yapar.
+- Hedef doluysa oradaki **bütün oturumlar kapanır**: herkes yeniden giriş yapar. Kimlik sayaçları hedefteki eski
+  yerlerinin gerisine düşmez: geri yüklemeden sonra eklenen kişi, yedekten sonra eklenmiş ya da silinmiş birinin
+  kimliğini almaz (oturum çerezi kimlik ve oturum sürümüyle eşleşir; eski bir çerez yeni kişinin hesabını açmasın).
+- Hedef boşsa (yeni bir canlı veritabanı) eski veritabanında açılmış oturumlar bilinmez: aynı `AUTH_SECRET`'la imzalı
+  eski bir çerez burada da geçebilir. Bu yüzden canlıya yeni veritabanı kurulunca `AUTH_SECRET` da yenilenir (§ 8);
+  komut bu bilgisayarda olmayan boş bir hedefte bunu hatırlatır.
 
 ## 6. Geri yüklemeden sonra
 
@@ -170,8 +180,10 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
 
 ## 7. Belgeler (büyük belgeli yedek)
 
-Panelden yüklenen fatura belgeleri toplamı 4 MB'ı aşarsa panel belgeli yedek vermez (Vercel'in yanıt sınırı akan
-yanıtta doğrulanana kadar). Belgeli yedek bilgisayardan alınır:
+Belgelerle dosya 4 MB'ı aşacaksa panel belgeli yedek vermez (Vercel'in 4,5 MB'lık yanıt sınırı akan yanıtta
+doğrulanana kadar). Tahmin: belgeler dosyada yaklaşık %10 büyür (fotoğraf ve PDF neredeyse sıkışmaz), üstüne verinin
+kendisi eklenir (panelden alınan son belgesiz yedeğin boyutu; henüz yoksa 1 MB). Kart ve parola penceresi aynı hesabı
+yapar. Belgeli yedek bilgisayardan alınır:
 
 ```bash
 DATABASE_URL="<neon unpooled adresi>" npm run db:backup -- --belgeler
@@ -192,6 +204,10 @@ yüklenir. Komut veritabanına yazmaz. Depo klasörüne yazılan yedek git'e gir
    Yeni, boş bir canlı veritabanına yüklerken `ADMIN_EMAIL=<sahibin e-postası> ADMIN_PASSWORD=<geçici parola>`'yı da
    komut satırında verin: kimsenin parolası korunmaz, sahip bu geçici parolayla girip Hesabım'dan değiştirir
    (`.env.local`'daki değerler canlı bir hedefte kullanılmaz).
+3. **Yeni, boş bir canlı veritabanına** yüklendiyse Vercel'de `AUTH_SECRET`'ı da yenileyin (`openssl rand -base64 48`)
+   ve yeniden yayınlayın: eski veritabanında açılmış oturum ve cihaz çerezleri yenisinde geçmesin (kimlikler yeniden
+   verilebilir, § 5). Dosyada bu anahtarla şifrelenmiş bir değer yok: Paraşüt bağlantısı ve bildirim anahtarı zaten
+   yeniden kurulur, iki adımlı doğrulama yedekle gelmez (isteyen Hesabım'dan yeniden açar).
 
 ## 9. Prova (her 3 ayda bir)
 
@@ -224,11 +240,12 @@ YEDEK_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/postgres npm test
 
 Verilen sunucuda geçici veritabanları açıp sonunda siler. Sınadıkları: Excel verisi ve uç durumlar (bayt dizisi, JSON
 `null`, `NaN` / `Infinity`, satır sonu ve emoji içeren metin) yedeklenip boş veritabanına yüklenir, her tablo aynıdır,
-yazılmayanlar hedefte yoktur, sayaçlar ileridedir, şema günceldir; yarım, değişmiş ya da gzip olmayan dosya reddedilir;
-`--sil` olmadan dolu hedefe yazılmaz; sayı tutmazsa hedef olduğu gibi kalır; `--sil` önce hedefin yedeğini alır,
-parolaları korur, oturumları kapatır; belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema sürümünde alınmış
-yedek yüklenip son sürüme taşınır. **Her migration birleştirmesinden sonra** bir kez çalıştırın (yeni tablolar ve
-sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
+yazılmayanlar hedefte yoktur, sayaçlar ileridedir, şema günceldir; yarım, değişmiş ya da yedek olmayan dosya reddedilir,
+tarayıcının açtığı düz `.json` okunur; `--sil` olmadan dolu hedefe yazılmaz; sayı tutmazsa hedef olduğu gibi kalır;
+`--sil` önce hedefin yedeğini alır, parolaları korur, oturumları kapatır, sayaçları hedefteki yerlerinin gerisine
+düşürmez (sonra eklenen kişi eski bir kimliği almaz); belgesiz yedek hedefteki belgeyi silip söyler; eski bir şema
+sürümünde alınmış yedek yüklenip son sürüme taşınır. **Her migration birleştirmesinden sonra** bir kez çalıştırın
+(yeni tablolar ve sütunlar kod değişmeden yedeğe girer; bu test onları da gidip getirir).
 
 ## 11. Kod
 

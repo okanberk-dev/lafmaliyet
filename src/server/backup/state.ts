@@ -37,7 +37,16 @@ function asLastBackup(v: unknown): LastBackup | null {
   const o = v as Record<string, unknown>;
   if (typeof o.at !== "string" || !Number.isFinite(Date.parse(o.at))) return null;
   const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
-  return { at: o.at, by: typeof o.by === "string" ? o.by : "", bytes: n(o.bytes), rows: n(o.rows), tables: n(o.tables), documents: o.documents === true, docCount: n(o.docCount) };
+  return {
+    at: o.at,
+    by: typeof o.by === "string" ? o.by : "",
+    bytes: n(o.bytes),
+    rows: n(o.rows),
+    tables: n(o.tables),
+    documents: o.documents === true,
+    docCount: n(o.docCount),
+    dataBytes: typeof o.dataBytes === "number" && Number.isFinite(o.dataBytes) ? o.dataBytes : undefined,
+  };
 }
 
 export async function readLastBackup(): Promise<LastBackup | null> {

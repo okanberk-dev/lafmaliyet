@@ -143,7 +143,7 @@ async function BackupCard() {
       actionsClassName="max-sm:w-full"
       actions={
         <>
-          <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} />
+          <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} last={last ? { dataBytes: last.dataBytes } : null} />
           {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin) */}
           <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
             <FileSpreadsheet size={16} aria-hidden="true" /> Excel kopyası

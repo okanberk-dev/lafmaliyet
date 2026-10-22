@@ -6,6 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { createGunzip } from "node:zlib";
 
@@ -123,20 +124,48 @@ async function* splitLines(chunks: AsyncIterable<string>): AsyncGenerator<string
   yield rest;
 }
 
-/** .json.gz dosyasını okuyup doğrular; gzip bozuksa ya da yarıda kesildiyse BackupFileError */
-export async function readBackupFile(path: string): Promise<ParsedBackup> {
-  const gunzip = createGunzip();
-  const file = createReadStream(path);
-  file.on("error", (e) => gunzip.destroy(e));
-  file.pipe(gunzip);
-  gunzip.setEncoding("utf8");
+/** gzip mi: ilk iki bayt 1f 8b */
+async function isGzip(path: string): Promise<boolean> {
+  const fd = await open(path, "r");
   try {
-    return await parseBackupLines(splitLines(gunzip));
+    const { buffer, bytesRead } = await fd.read(Buffer.alloc(2), 0, 2, 0);
+    return bytesRead === 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+  } finally {
+    await fd.close();
+  }
+}
+
+/**
+ * Yedek dosyasını okuyup doğrular. Panelin verdiği .json.gz ya da tarayıcının açıp bıraktığı düz .json (Safari
+ * indirilen .gz'yi kendiliğinden açar): ikisinde de bütünlüğü özet ve son satır denetler. gzip bozuksa ya da yarıda
+ * kesildiyse BackupFileError.
+ */
+export async function readBackupFile(path: string): Promise<ParsedBackup> {
+  let gzip: boolean;
+  try {
+    gzip = await isGzip(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new BackupFileError(`Dosya bulunamadı: ${path}`);
+    throw new BackupFileError(`Dosya okunamadı: ${path} (${(e as Error).message})`);
+  }
+  const file = createReadStream(path);
+  let text: AsyncIterable<string>;
+  if (gzip) {
+    const gunzip = createGunzip();
+    file.on("error", (e) => gunzip.destroy(e));
+    file.pipe(gunzip);
+    gunzip.setEncoding("utf8");
+    text = gunzip;
+  } else {
+    file.setEncoding("utf8");
+    text = file;
+  }
+  try {
+    return await parseBackupLines(splitLines(text));
   } catch (e) {
     if (e instanceof BackupFileError) throw e;
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new BackupFileError(`Dosya bulunamadı: ${path}`);
     // zlib: "unexpected end of file", "incorrect header check"…
-    throw broken(`sıkıştırılmış veri yarıda bitiyor ya da bozuk (${(e as Error).message})`);
+    throw broken(gzip ? `sıkıştırılmış veri yarıda bitiyor ya da bozuk (${(e as Error).message})` : `okunamadı (${(e as Error).message})`);
   } finally {
     file.destroy();
   }
@@ -260,10 +289,26 @@ async function savedCredentials(sql: Tx): Promise<{ saved: SavedCredentials[]; m
   return { saved: rows, maxSv: Math.max(0, ...rows.map((r) => Number(r.session_version) || 0)) };
 }
 
-/** Hedefteki her şeyi siler (public şeması kalır: yetkileri korunur) */
-async function wipeTarget(tx: Tx) {
-  const tables = await publicTables(tx);
-  if (tables.length) await tx.unsafe(`DROP TABLE ${tables.map((t) => `public.${ident(t)}`).join(", ")} CASCADE`);
+/** Sayaçların yeri: "tablo.sütun" → son verilen kimlik (hiç kullanılmamış sayaç listede yok) */
+async function sequencePositions(tx: Tx): Promise<Map<string, string>> {
+  const rows = await tx.unsafe<{ t: string; c: string; v: string }[]>(
+    `SELECT c.table_name AS t, c.column_name AS c, s.last_value::text AS v
+       FROM information_schema.columns c
+       JOIN pg_sequences s ON format('%I.%I', s.schemaname, s.sequencename) = pg_get_serial_sequence(format('%I.%I', c.table_schema, c.table_name), c.column_name)
+      WHERE c.table_schema = 'public' AND c.column_default LIKE 'nextval(%' AND s.last_value IS NOT NULL`,
+  );
+  return new Map(rows.map((r) => [`${r.t}.${r.c}`, r.v]));
+}
+
+/**
+ * Hedefteki her şeyi siler (public şeması kalır: yetkileri korunur). Önce tablolar kilitlenir ve sayaçların yeri okunur
+ * (döner): kilitten sonra kimse yeni kimlik alamaz, geri yüklemeden sonra sayaçlar bunun gerisine düşmez (resetSequences).
+ */
+async function wipeTarget(tx: Tx): Promise<Map<string, string>> {
+  const tables = (await publicTables(tx)).map((t) => `public.${ident(t)}`).join(", ");
+  if (tables) await tx.unsafe(`LOCK TABLE ${tables} IN ACCESS EXCLUSIVE MODE`);
+  const positions = await sequencePositions(tx);
+  if (tables) await tx.unsafe(`DROP TABLE ${tables} CASCADE`);
   const seqs = await tx.unsafe<{ name: string }[]>(`SELECT sequence_name AS name FROM information_schema.sequences WHERE sequence_schema = 'public'`);
   for (const s of seqs) await tx.unsafe(`DROP SEQUENCE IF EXISTS public.${ident(s.name)} CASCADE`);
   const types = await tx.unsafe<{ name: string }[]>(
@@ -271,6 +316,7 @@ async function wipeTarget(tx: Tx) {
   );
   for (const t of types) await tx.unsafe(`DROP TYPE IF EXISTS public.${ident(t.name)} CASCADE`);
   await tx.unsafe(`DROP SCHEMA IF EXISTS drizzle CASCADE`);
+  return positions;
 }
 
 /** Bir sorguda gönderilen satırlar: en çok 500 ya da ~8 MB (belgeler büyük) */
@@ -303,15 +349,20 @@ async function insertRows(tx: Tx, table: string, cols: ColumnInfo[], rows: strin
   await flush();
 }
 
-/** Sayaçlar en büyük kimliğin ardına (seed.ts'teki gibi, her serial sütun için) */
-async function resetSequences(tx: Tx) {
+/**
+ * Sayaçlar en büyük kimliğin ardına (seed.ts'teki gibi, her serial sütun için) ve hedefteki eski yerlerinin (`floor`,
+ * --sil) gerisine düşmez. Yoksa yedekten sonra eklenmiş ya da silinmiş bir kişinin kimliği yeni bir kişiye verilirdi:
+ * oturum ve cihaz çerezleri yalnız kimlik ve oturum sürümüyle eşleşir, yeni kişi sürüm 1'le başlar, eski çerez onun
+ * hesabını açardı. Eski bağlantılar (ör. bir faturanınki) da başka bir kayda gitmez.
+ */
+async function resetSequences(tx: Tx, floor: Map<string, string>) {
   const cols = await tx.unsafe<{ t: string; c: string }[]>(
     `SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public' AND column_default LIKE 'nextval(%'`,
   );
   for (const { t, c } of cols) {
     await tx.unsafe(
-      `SELECT setval(pg_get_serial_sequence($1, $2), GREATEST(COALESCE(MAX(${ident(c)}), 0), 1), COUNT(*) > 0) FROM public.${ident(t)}`,
-      [`public.${ident(t)}`, c],
+      `SELECT setval(pg_get_serial_sequence($1, $2), GREATEST(COALESCE(MAX(${ident(c)}), 0), $3::bigint, 1), COUNT(*) > 0 OR $3::bigint > 0) FROM public.${ident(t)}`,
+      [`public.${ident(t)}`, c, floor.get(`${t}.${c}`) ?? "0"],
     );
   }
 }
@@ -322,8 +373,8 @@ const trTime = (iso: string) =>
 /**
  * Yedeği hedefe yükler. Hedef boş değilse `wipe` gerekir; o zaman önce hedefin yedeği alınır (`safetyCopyPath`), giriş
  * bilgileri okunur, sonra tek işlemde: hedef silinir, şema yedeğin sürümüne kurulur, tablolar yabancı anahtar sırasıyla
- * yüklenir, satır sayıları dosyayla karşılaştırılır, sayaçlar ilerletilir, kalan migration'lar uygulanır. Sayılar
- * tutmazsa ya da herhangi bir adım hata verirse işlem geri alınır, hedef değişmez.
+ * yüklenir, satır sayıları dosyayla karşılaştırılır, sayaçlar ilerletilir (hedefteki eski yerlerinin gerisine düşmez),
+ * kalan migration'lar uygulanır. Sayılar tutmazsa ya da herhangi bir adım hata verirse işlem geri alınır, hedef değişmez.
  */
 export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opts: RestoreOptions): Promise<RestoreResult> {
   const migrations = loadMigrations(opts.migrationsFolder);
@@ -356,7 +407,8 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
   const first = migrations.filter((m) => m.meta.folderMillis <= plan.upTo).map((m) => m.meta);
   const rest = migrations.filter((m) => m.meta.folderMillis > plan.upTo).map((m) => m.meta);
   const result = await sql.begin(async (tx) => {
-    if (opts.wipe) await wipeTarget(tx);
+    // --sil: sayaçların hedefteki yeri silmeden önce okunur; geri yüklemeden sonra hiçbiri bunun gerisine düşmez
+    const floor = opts.wipe ? await wipeTarget(tx) : new Map<string, string>();
     await applyMigrations(tx, first);
     // Hedef boştu (ya da silindi): şimdi tablolarda olan her satırı migration'lar ekledi (ör. 0011'in varsayılan
     // harcama kategorileri). Yedeğin kaynağında da eklenmişlerdi; sonra değiştirilmiş ya da silinmiş olabilirler.
@@ -406,7 +458,7 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
         throw new RestoreError(`${table} tablosuna ${n} satır yüklendi, dosyada ${backup.end.tables[table]} var; geri yükleme geri alındı, hedef değişmedi.`);
       }
     }
-    await resetSequences(tx);
+    await resetSequences(tx, floor);
 
     let adminCreated = false;
     const u = users as ReturnType<typeof mergeUserRows> | null;
@@ -423,6 +475,8 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
     }
 
     await applyMigrations(tx, rest);
+    // Yedekten yeni migration'ların kurduğu tablolar hedefte de vardıysa onların sayaçları da eski yerinden geri gitmez
+    if (rest.length && floor.size) await resetSequences(tx, floor);
     // Günlük işlerin izlenmesi geri yükleme anından yeniden başlar (src/server/jobs/watch.ts): dosyadaki çalışma
     // kayıtları yedeğin gününde kaldı, bugünün işi çalıştıysa kaydı da silindi; yoksa canlıda "Sabah işi çalışmadı"
     // yanlış alarmı çıkardı. İşler gerçekten çalışmıyorsa ertesi sabahın penceresinden sonra yine söylenir

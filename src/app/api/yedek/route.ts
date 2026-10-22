@@ -1,11 +1,11 @@
 import { connection, type NextRequest } from "next/server";
 
-import { backupSummaryText } from "@/lib/backup/format";
+import { backupSummaryText, nextDataBytes } from "@/lib/backup/format";
 import { contentDisposition } from "@/lib/documents";
 import { logActivity } from "@/server/actions/log";
 import { getCurrentUser } from "@/server/auth/dal";
-import { appVersion, backupLines, type BackupSummary } from "@/server/backup/core";
-import { openBackupHandle, saveLastBackup } from "@/server/backup/state";
+import { appVersion, backupLines, backupStream, type BackupSummary } from "@/server/backup/core";
+import { openBackupHandle, readLastBackup, saveLastBackup } from "@/server/backup/state";
 import { getDb } from "@/server/db";
 
 /**
@@ -35,28 +35,9 @@ export async function GET(request: NextRequest) {
   }
 
   let summary: BackupSummary | null = null;
-  let pending: IteratorResult<string, BackupSummary> | null = first;
-  // ReadableStream.from yerine pull: TypeScript'in dom türlerinde yok, Node'da var; ikisi de aynı işi görür
-  const source = new ReadableStream<string>({
-    async pull(controller) {
-      try {
-        const r = pending ?? (await lines.next());
-        pending = null;
-        if (r.done) {
-          summary = r.value;
-          controller.close();
-        } else {
-          controller.enqueue(r.value);
-        }
-      } catch (e) {
-        console.error("[yedek] yarıda kaldı", e);
-        controller.error(e);
-      }
-    },
-    // İndirme iptal edildi: işlem kapanır, bağlantı havuza döner (backupLines › finally)
-    async cancel() {
-      await lines.return(undefined as never).catch(() => {});
-    },
+  // İndirme iptal edilirse işlem kapanır, bağlantı havuza döner; iptal hata olarak yazılmaz (backupStream)
+  const source = backupStream(lines, first, (s) => {
+    summary = s;
   });
 
   let bytes = 0;
@@ -70,7 +51,10 @@ export async function GET(request: NextRequest) {
       const s: BackupSummary = summary;
       const tables = Object.keys(s.tables).length;
       try {
-        await saveLastBackup({ at: now.toISOString(), by: user.name, bytes, rows: s.rows, tables, documents: s.documents, docCount: s.docCount });
+        // Verinin kendi payı belgeli indirmenin tahmininde kullanılır; belgeli dosyada ayrılamaz, öncekinden taşınır
+        const prev = s.documents ? await readLastBackup() : null;
+        const dataBytes = nextDataBytes(s.documents, bytes, prev);
+        await saveLastBackup({ at: now.toISOString(), by: user.name, bytes, rows: s.rows, tables, documents: s.documents, docCount: s.docCount, dataBytes });
       } catch (e) {
         console.error("[yedek] son yedek kaydı yazılamadı", e);
       }
