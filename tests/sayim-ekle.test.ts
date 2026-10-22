@@ -232,6 +232,11 @@ test("zil: fiyatı girilmemiş hammaddeler yalnız yöneticide, hata zili düş�
   assert.match(client, /\(filter !== "fiyatsiz" \|\| isUnpriced\(r\)\)/);
   // Zilin SQL'i isUnpriced ile aynı koşul
   assert.match(read("src/server/data/unpriced.ts"), /eq\(s\.ingredients\.active, true\), eq\(s\.ingredients\.priceSource, "manual"\), eq\(s\.ingredients\.packagePrice, 0\)/);
+  // Reçete onaylarında fiyatı girilmemiş malzeme hem değişiklikte hem yeni üründe söylenir (maliyet eksik görünür)
+  const approvals = read("src/app/panel/onaylar/page.tsx");
+  assert.equal([...approvals.matchAll(/isUnpriced\(ing\)/g)].length, 2);
+  const list = read("src/app/panel/onaylar/review-list.tsx");
+  assert.equal([...list.matchAll(/<UnpricedNote names=/g)].length, 2);
 });
 
 // ---------------------------------------------------------------- Yedi kalem (migration)

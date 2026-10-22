@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ExternalLink, History, PackagePlus, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -41,6 +42,8 @@ export interface ReviewItem {
   current: RecipeSnapshot | null;
   changedSince: boolean;
   cost: { before: number; after: number; price: number; ratioBefore: number; ratioAfter: number; target: number } | null;
+  /** Önerilen reçetede paket fiyatı girilmemiş malzemeler (sayımda eklenen kalem): maliyet eksik görünür */
+  unpriced: string[];
 }
 
 /** Personelin yeni ürün önerisi (boy başına bir öneri): satır maliyetleri bugünkü hammadde fiyatlarıyla */
@@ -179,6 +182,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                     </p>
                   ) : null}
                   <RecipeDiff before={item.before} after={item.after} />
+                  <UnpricedNote names={item.unpriced} />
                   {item.cost ? <CostImpact cost={item.cost} /> : null}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button onClick={() => approve(item)} disabled={busy} className="max-sm:flex-1">
@@ -343,6 +347,7 @@ function NewProductCard({
   const unpriced = item.lines.filter((l) => l.unpriced);
   const nameId = `yeni-ad-${item.id}`;
   const priceId = `yeni-fiyat-${item.id}`;
+  const proposedCategory = env.categories.find((c) => c.id === item.categoryId)?.name;
 
   function approve() {
     if (priceValue === null) {
@@ -374,7 +379,7 @@ function NewProductCard({
             <Badge tone="blue">Yeni ürün</Badge>
           </span>
         }
-        description={`${item.requestedByName} önerdi · ${dateTimeTR(item.updatedAt)}${env.categories.find((c) => c.id === item.categoryId) ? ` · ${env.categories.find((c) => c.id === item.categoryId)!.name}` : ""}`}
+        description={`${item.requestedByName} önerdi · ${dateTimeTR(item.updatedAt)}${proposedCategory ? ` · ${proposedCategory}` : ""}`}
       />
       <div className="space-y-3 px-5 pb-5">
         {item.message ? (
@@ -388,12 +393,7 @@ function NewProductCard({
             {missing.map((l) => l.name).join(", ")} artık hammaddelerde yok; bu öneri onaylanamaz, reddedin.
           </p>
         ) : null}
-        {unpriced.length ? (
-          <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            {unpriced.map((l) => l.name).join(", ")} için paket fiyatı girilmemiş; maliyet eksik görünür. Önce Hammaddeler&apos;den fiyatını girin.
-          </p>
-        ) : null}
+        <UnpricedNote names={[...new Set(unpriced.map((l) => l.name))]} />
 
         <div className="overflow-x-auto rounded-2xl bg-surface ring-1 ring-line">
           <table className="w-full border-collapse text-sm">
@@ -515,6 +515,23 @@ function NewProductCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+/** Paket fiyatı girilmemiş malzeme (sayımda "Listeye ekle" ile eklenen kalem) maliyete 0 ₺ girer: karar vermeden önce söylenir */
+function UnpricedNote({ names }: { names: string[] }) {
+  if (!names.length) return null;
+  return (
+    <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span>
+        {names.join(", ")} için paket fiyatı girilmemiş; maliyet eksik görünür.{" "}
+        <Link href="/panel/hammaddeler?durum=fiyatsiz" className="font-medium underline underline-offset-2">
+          Hammaddeler&apos;den fiyatını girin
+        </Link>
+        .
+      </span>
+    </p>
   );
 }
 

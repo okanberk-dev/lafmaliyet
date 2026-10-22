@@ -135,6 +135,14 @@ async function ApprovalsContent() {
         before && after && product
           ? { before: before.cost, after: after.cost, price: product.price, ratioBefore: before.costRatio, ratioAfter: after.costRatio, target: model.settings.hedefMaliyet }
           : null,
+      unpriced: [
+        ...new Set(
+          r.after.items.flatMap((l) => {
+            const ing = model.ingById.get(l.ingredientId);
+            return ing && isUnpriced(ing) ? [ing.name] : [];
+          }),
+        ),
+      ],
     };
   });
   const recent: RecentItem[] = queue.recent.map((r) => ({
