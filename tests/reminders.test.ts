@@ -132,6 +132,7 @@ test("sabah e-postası özeti: yalnız gidenler yazılır", () => {
   assert.equal(digestSummary({ count: 0, invoices: 0, prices: 3 }), "3 zam");
   assert.equal(digestSummary({ count: 1, syncError: true }), "1 hatırlatma · Paraşüt eşitleme hatası");
   assert.equal(digestSummary({ count: 0, invoices: 0, prices: 0, syncError: false }), "");
+  assert.equal(digestSummary({ count: 1, system: 2 }), "1 hatırlatma · 2 sistem uyarısı");
 });
 
 test("uzun hatırlatma süresi 45 günlük pencereye takılmaz; ödendi ilerletmesi", () => {

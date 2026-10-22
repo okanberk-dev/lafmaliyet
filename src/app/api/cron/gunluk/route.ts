@@ -1,10 +1,10 @@
-import { and, desc, eq, gte, ne } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { getDb, schema as s } from "@/server/db";
+import { dailyOutcome, type DailyStep, type JobOutcome } from "@/lib/job-health";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { syncKaraoke } from "@/server/karaoke/sync";
-import { runReminderDigest } from "@/server/notify/digest";
+import { runReminderDigest, type DigestResult } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
@@ -16,36 +16,45 @@ import { syncSiteSales } from "@/server/site-sales/sync";
 // o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
-// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md).
+// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md). Her çalışma ve adımlarının sonucu job_runs'a yazılır
+// (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler.
 export const maxDuration = 60;
 
-/** Bugün (İstanbul) başarılı bir eşitleme var mı */
-async function syncedToday(): Promise<boolean> {
-  const start = new Date();
-  // İstanbul gece yarısı (UTC+3, yaz saati yok)
-  start.setUTCHours(-3, 0, 0, 0);
-  if (start.getTime() > Date.now()) start.setUTCDate(start.getUTCDate() - 1);
-  const [run] = await getDb()
-    .select({ id: s.parasutSyncRuns.id })
-    .from(s.parasutSyncRuns)
-    // Tedarikçi geçmişi (tek tedarikçi) günün eşitlemesi sayılmaz
-    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history"), gte(s.parasutSyncRuns.startedAt, start)))
-    .orderBy(desc(s.parasutSyncRuns.startedAt))
-    .limit(1);
-  return Boolean(run);
+type Step = { code: string; error?: string | null };
+
+/** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
+function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): Step {
+  if (r.status !== "error") return { code: r.status };
+  const months = (r.results ?? []).filter((x) => x.status === "error").map((x) => `${x.month}: ${x.error ?? "hata"}`);
+  return { code: "error", error: r.error ?? (months.join(" · ") || null) };
+}
+
+function digestStep(r: DigestResult): Step {
+  if (r.status === "sent") return { code: "sent" };
+  if (r.status === "skipped") return { code: r.off ? "off" : "skipped" };
+  return { code: "error", error: r.error };
 }
 
 export async function GET(request: NextRequest) {
   const denied = await rejectUnlessCron(request);
   if (denied) return denied;
+  const runId = await startJobRun("gunluk");
+  const configured = isParasutConfigured();
+  let alreadySynced = false;
   let sync: { ok: boolean; summary?: string; error?: string } | null = null;
+  let syncStep: Step = { code: configured ? "today" : "off" };
   try {
-    if (isParasutConfigured() && !(await syncedToday())) {
-      const r = await syncParasut("cron", { deadlineMs: 35_000 });
-      sync = r.ok ? { ok: true, summary: r.summary } : { ok: false, error: r.error };
+    if (configured) {
+      alreadySynced = await parasutSyncedToday();
+      if (!alreadySynced) {
+        const r = await syncParasut("cron", { deadlineMs: 35_000 });
+        sync = r.ok ? { ok: true, summary: r.summary } : { ok: false, error: r.error };
+        syncStep = r.ok ? { code: "ok" } : "busy" in r && r.busy ? { code: "busy" } : { code: "error", error: r.error };
+      }
     }
   } catch (e) {
     sync = { ok: false, error: (e as Error).message };
+    syncStep = { code: "error", error: sync.error };
   }
   // Kişisel hatırlatıcı bildirimi, karaoke ve menü eşitlemesi, online satışlar sabah e-postasını bekletmez, bozamaz;
   // her biri kendi hatasını yakalar, biri bozulsa öteki çalışır
@@ -56,12 +65,26 @@ export async function GET(request: NextRequest) {
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
     ]);
-    return { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status };
+    const steps: Record<Exclude<DailyStep, "sync" | "digest">, Step> = {
+      reminders: "error" in reminders ? { code: "error", error: reminders.error } : { code: reminders.users ? "ok" : "none" },
+      karaoke: siteStep(karaoke),
+      menu: siteStep(menu),
+      sales: siteStep(sales),
+    };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status }, steps };
   };
+  let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {
-    const result = await runReminderDigest("cron");
-    return NextResponse.json({ ...result, sync, ...(await extras()) }, { status: result.status === "error" ? 500 : 200 });
+    // Sistem bölümü (bu sabahki Paraşüt işi) eşitlemenin bugün yapılıp yapılmadığını söyler
+    const result = await runReminderDigest("cron", { syncedToday: alreadySynced || Boolean(sync?.ok) });
+    const ex = await extras();
+    outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps });
+    return NextResponse.json({ ...result, sync, ...ex.body }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...(await extras()) }, { status: 500 });
+    const ex = await extras();
+    outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body }, { status: 500 });
+  } finally {
+    await finishJobRun(runId, outcome);
   }
 }

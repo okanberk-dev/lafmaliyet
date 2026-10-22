@@ -21,6 +21,7 @@ import {
   Sigma,
   Table2,
   Tag,
+  Timer,
   UserPlus,
   Undo2,
   UserRound,
@@ -394,6 +395,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         icon: CalendarCheck,
         links: [{ href: "/panel/satislar", label: "Açık gün ve POS cirosu" }],
       },
+      {
+        id: "gunluk-isler",
+        q: "Sabah e-postası ya da Paraşüt faturaları gelmedi",
+        a: (
+          <>
+            Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcı bildirimi, laffogato.net
+            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında ve{" "}
+            <Path href="/panel" />&apos;ta kırmızı şeritle görünür, ertesi sabah e-postayla da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
+            Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder.
+          </>
+        ),
+        icon: Timer,
+        links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
+      },
     ],
   },
   {
@@ -431,8 +446,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri üç başlıkta toplar: <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı ve son
-            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Bir bildirime dokununca ilgili ekran açılır; alttaki
-            &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
+            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
+            e-postası) çalışmadıysa ya da hata verdiyse en üstte <strong className="font-semibold text-ink">Sistem</strong> başlığı çıkar. Bir bildirime dokununca
+            ilgili ekran açılır; alttaki &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
           </>
         ),
         icon: Bell,

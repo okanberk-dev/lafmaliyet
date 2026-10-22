@@ -20,6 +20,7 @@ import { readOrdersState } from "@/server/site-orders/sync";
 import { readSalesState } from "@/server/site-sales/sync";
 
 import { impactData } from "./impact";
+import { JobsCard } from "./jobs-card";
 import { SectionCard } from "./section-card";
 import { SettingsNav } from "./section-nav";
 import { SETTINGS_SECTIONS } from "./sections";
@@ -285,6 +286,7 @@ async function SettingsContent() {
           }))}
         />
       </div>
+      <JobsCard />
       <SiteLinksCard />
       <BackupCard />
     </SettingsLayout>

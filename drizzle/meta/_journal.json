@@ -141,6 +141,13 @@
       "when": 1792626041392,
       "tag": "0019_siparis_bildirimi",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792650814952,
+      "tag": "0020_gunluk_isler",
+      "breakpoints": true
     }
   ]
 }
