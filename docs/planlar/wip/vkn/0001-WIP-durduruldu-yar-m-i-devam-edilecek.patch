@@ -1,0 +1,5314 @@
+From 74879b4d4558c81a2ae1b8b5cbaccef19d814a0f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 22 Oct 2026 07:59:43 +0000
+Subject: [PATCH] =?UTF-8?q?WIP:=20durduruldu,=20yar=C4=B1m=20i=C5=9F=20(de?=
+ =?UTF-8?q?vam=20edilecek)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GMUTt3CmELPDBL31cVobaH
+---
+ drizzle/0021_fatura_vergi_no.sql    |    1 +
+ drizzle/meta/0021_snapshot.json     | 4290 +++++++++++++++++++++++++++
+ drizzle/meta/_journal.json          |    7 +
+ src/app/panel/tedarikciler/logic.ts |  354 ++-
+ src/server/data/search.ts           |   17 +-
+ src/server/data/suppliers.ts        |   77 +-
+ src/server/db/schema.ts             |    7 +
+ src/server/parasut/mapping.ts       |   28 +
+ src/server/parasut/sync.ts          |   64 +-
+ 9 files changed, 4786 insertions(+), 59 deletions(-)
+ create mode 100644 drizzle/0021_fatura_vergi_no.sql
+ create mode 100644 drizzle/meta/0021_snapshot.json
+
+diff --git a/drizzle/0021_fatura_vergi_no.sql b/drizzle/0021_fatura_vergi_no.sql
+new file mode 100644
+index 0000000..c1c5359
+--- /dev/null
++++ b/drizzle/0021_fatura_vergi_no.sql
+@@ -0,0 +1 @@
++ALTER TABLE "invoices" ADD COLUMN "supplier_tax_number" text;
+\ No newline at end of file
+diff --git a/drizzle/meta/0021_snapshot.json b/drizzle/meta/0021_snapshot.json
+new file mode 100644
+index 0000000..4bd40c1
+--- /dev/null
++++ b/drizzle/meta/0021_snapshot.json
+@@ -0,0 +1,4290 @@
++{
++  "id": "f7dde665-3a1e-4e0f-8289-c61b362403ca",
++  "prevId": "7f00b484-50e9-4045-94de-3d39a437868f",
++  "version": "7",
++  "dialect": "postgresql",
++  "tables": {
++    "public.activity_log": {
++      "name": "activity_log",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "at": {
++          "name": "at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "user_name": {
++          "name": "user_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "action": {
++          "name": "action",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "detail": {
++          "name": "detail",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {
++        "activity_log_at_idx": {
++          "name": "activity_log_at_idx",
++          "columns": [
++            {
++              "expression": "at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.cash_reports": {
++      "name": "cash_reports",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "z_no": {
++          "name": "z_no",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "receipts": {
++          "name": "receipts",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "z_total": {
++          "name": "z_total",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "cash": {
++          "name": "cash",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "card": {
++          "name": "card",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "meal_card": {
++          "name": "meal_card",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "online": {
++          "name": "online",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "other": {
++          "name": "other",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "opening_cash": {
++          "name": "opening_cash",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "cash_out": {
++          "name": "cash_out",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "cash_out_note": {
++          "name": "cash_out_note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "counted_cash": {
++          "name": "counted_cash",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "handed_over": {
++          "name": "handed_over",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "bank_pos": {
++          "name": "bank_pos",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "off_revenue": {
++          "name": "off_revenue",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "cash_diff": {
++          "name": "cash_diff",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "submitted_by": {
++          "name": "submitted_by",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "submitted_by_name": {
++          "name": "submitted_by_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "revision": {
++          "name": "revision",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 1
++        },
++        "email_status": {
++          "name": "email_status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "email_error": {
++          "name": "email_error",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "emailed_at": {
++          "name": "emailed_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "cash_reports_date_uq": {
++          "name": "cash_reports_date_uq",
++          "columns": [
++            {
++              "expression": "date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "cash_reports_submitted_by_users_id_fk": {
++          "name": "cash_reports_submitted_by_users_id_fk",
++          "tableFrom": "cash_reports",
++          "tableTo": "users",
++          "columnsFrom": [
++            "submitted_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.categories": {
++      "name": "categories",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "categories_name_unique": {
++          "name": "categories_name_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "name"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.expense_categories": {
++      "name": "expense_categories",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "section": {
++          "name": "section",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'genel'"
++        },
++        "panel_group": {
++          "name": "panel_group",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'diger'"
++        },
++        "invoice_category": {
++          "name": "invoice_category",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "monthly": {
++          "name": "monthly",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "expense_categories_name_unique": {
++          "name": "expense_categories_name_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "name"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.expense_entries": {
++      "name": "expense_entries",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "category_id": {
++          "name": "category_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "description": {
++          "name": "description",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "payment_method": {
++          "name": "payment_method",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "expense_entries_date_idx": {
++          "name": "expense_entries_date_idx",
++          "columns": [
++            {
++              "expression": "date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "expense_entries_category_idx": {
++          "name": "expense_entries_category_idx",
++          "columns": [
++            {
++              "expression": "category_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "expense_entries_category_id_expense_categories_id_fk": {
++          "name": "expense_entries_category_id_expense_categories_id_fk",
++          "tableFrom": "expense_entries",
++          "tableTo": "expense_categories",
++          "columnsFrom": [
++            "category_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.findings": {
++      "name": "findings",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "section": {
++          "name": "section",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "detail": {
++          "name": "detail",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "resolved": {
++          "name": "resolved",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "resolved_at": {
++          "name": "resolved_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.fixed_expense_versions": {
++      "name": "fixed_expense_versions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "fixed_expense_id": {
++          "name": "fixed_expense_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "from_month": {
++          "name": "from_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "period": {
++          "name": "period",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'aylik'"
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "fixed_expense_versions_item_month_uq": {
++          "name": "fixed_expense_versions_item_month_uq",
++          "columns": [
++            {
++              "expression": "fixed_expense_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "from_month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "fixed_expense_versions_fixed_expense_id_fixed_expenses_id_fk": {
++          "name": "fixed_expense_versions_fixed_expense_id_fixed_expenses_id_fk",
++          "tableFrom": "fixed_expense_versions",
++          "tableTo": "fixed_expenses",
++          "columnsFrom": [
++            "fixed_expense_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.fixed_expenses": {
++      "name": "fixed_expenses",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "section": {
++          "name": "section",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "period": {
++          "name": "period",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'aylik'"
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "start_month": {
++          "name": "start_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "end_month": {
++          "name": "end_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.ingredient_prices": {
++      "name": "ingredient_prices",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "package_price": {
++          "name": "package_price",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "package_size": {
++          "name": "package_size",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "changed_by": {
++          "name": "changed_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "changed_at": {
++          "name": "changed_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "ingredient_prices_ingredient_idx": {
++          "name": "ingredient_prices_ingredient_idx",
++          "columns": [
++            {
++              "expression": "ingredient_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "ingredient_prices_ingredient_id_ingredients_id_fk": {
++          "name": "ingredient_prices_ingredient_id_ingredients_id_fk",
++          "tableFrom": "ingredient_prices",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.ingredients": {
++      "name": "ingredients",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "category": {
++          "name": "category",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "supplier": {
++          "name": "supplier",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "package_desc": {
++          "name": "package_desc",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "package_price": {
++          "name": "package_price",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "package_size": {
++          "name": "package_size",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 1
++        },
++        "unit": {
++          "name": "unit",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "vat_rate": {
++          "name": "vat_rate",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0.01
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "is_estimate": {
++          "name": "is_estimate",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "price_source": {
++          "name": "price_source",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'manual'"
++        },
++        "count_unit": {
++          "name": "count_unit",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "count_group": {
++          "name": "count_group",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "ingredients_name_unique": {
++          "name": "ingredients_name_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "name"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.integration_state": {
++      "name": "integration_state",
++      "schema": "",
++      "columns": {
++        "key": {
++          "name": "key",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "value": {
++          "name": "value",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.investments": {
++      "name": "investments",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.invoice_documents": {
++      "name": "invoice_documents",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "invoice_id": {
++          "name": "invoice_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "source": {
++          "name": "source",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "file_name": {
++          "name": "file_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "mime": {
++          "name": "mime",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "size": {
++          "name": "size",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "data": {
++          "name": "data",
++          "type": "bytea",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "uploaded_by": {
++          "name": "uploaded_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "invoice_documents_invoice_idx": {
++          "name": "invoice_documents_invoice_idx",
++          "columns": [
++            {
++              "expression": "invoice_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "invoice_documents_invoice_id_invoices_id_fk": {
++          "name": "invoice_documents_invoice_id_invoices_id_fk",
++          "tableFrom": "invoice_documents",
++          "tableTo": "invoices",
++          "columnsFrom": [
++            "invoice_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.invoices": {
++      "name": "invoices",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "supplier": {
++          "name": "supplier",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "description": {
++          "name": "description",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "invoice_no": {
++          "name": "invoice_no",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "category": {
++          "name": "category",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "discount": {
++          "name": "discount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "payable": {
++          "name": "payable",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "unpaid": {
++          "name": "unpaid",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "source": {
++          "name": "source",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'manual'"
++        },
++        "origin": {
++          "name": "origin",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'manual'"
++        },
++        "external_id": {
++          "name": "external_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "vat": {
++          "name": "vat",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "due_date": {
++          "name": "due_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "parasut_unpaid": {
++          "name": "parasut_unpaid",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "outstanding": {
++          "name": "outstanding",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "synced_at": {
++          "name": "synced_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "e_invoice_id": {
++          "name": "e_invoice_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "e_invoice_uuid": {
++          "name": "e_invoice_uuid",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "needs_review": {
++          "name": "needs_review",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "ubl_read_at": {
++          "name": "ubl_read_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "paid_at": {
++          "name": "paid_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "paid_via": {
++          "name": "paid_via",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "payment_requested_at": {
++          "name": "payment_requested_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "supplier_tax_number": {
++          "name": "supplier_tax_number",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "invoices_date_idx": {
++          "name": "invoices_date_idx",
++          "columns": [
++            {
++              "expression": "date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "invoices_external_id_uq": {
++          "name": "invoices_external_id_uq",
++          "columns": [
++            {
++              "expression": "external_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "invoices_e_invoice_id_uq": {
++          "name": "invoices_e_invoice_id_uq",
++          "columns": [
++            {
++              "expression": "e_invoice_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.job_runs": {
++      "name": "job_runs",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "job": {
++          "name": "job",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'running'"
++        },
++        "started_at": {
++          "name": "started_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "finished_at": {
++          "name": "finished_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "steps": {
++          "name": "steps",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "message": {
++          "name": "message",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {
++        "job_runs_job_started_idx": {
++          "name": "job_runs_job_started_idx",
++          "columns": [
++            {
++              "expression": "job",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "started_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.karaoke_sessions": {
++      "name": "karaoke_sessions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "external_id": {
++          "name": "external_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "source": {
++          "name": "source",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'site'"
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "starts_at": {
++          "name": "starts_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ends_at": {
++          "name": "ends_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "guests": {
++          "name": "guests",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "customer_name": {
++          "name": "customer_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'confirmed'"
++        },
++        "payment_status": {
++          "name": "payment_status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'none'"
++        },
++        "total_minor": {
++          "name": "total_minor",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "channel": {
++          "name": "channel",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "ext_updated_at": {
++          "name": "ext_updated_at",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "last_event": {
++          "name": "last_event",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "last_event_at": {
++          "name": "last_event_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "extra_minutes": {
++          "name": "extra_minutes",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "ended_at": {
++          "name": "ended_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "ended_by": {
++          "name": "ended_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "karaoke_sessions_external_uq": {
++          "name": "karaoke_sessions_external_uq",
++          "columns": [
++            {
++              "expression": "external_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "karaoke_sessions_starts_idx": {
++          "name": "karaoke_sessions_starts_idx",
++          "columns": [
++            {
++              "expression": "starts_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "karaoke_sessions_date_idx": {
++          "name": "karaoke_sessions_date_idx",
++          "columns": [
++            {
++              "expression": "date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.months": {
++      "name": "months",
++      "schema": "",
++      "columns": {
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "open_days": {
++          "name": "open_days",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "pos_revenue": {
++          "name": "pos_revenue",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "discounts": {
++          "name": "discounts",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "off_revenue": {
++          "name": "off_revenue",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.notification_log": {
++      "name": "notification_log",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "key": {
++          "name": "key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "channel": {
++          "name": "channel",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'email'"
++        },
++        "subject": {
++          "name": "subject",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "recipients": {
++          "name": "recipients",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "ok": {
++          "name": "ok",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "error": {
++          "name": "error",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sent_at": {
++          "name": "sent_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "notification_log_key_uq": {
++          "name": "notification_log_key_uq",
++          "columns": [
++            {
++              "expression": "key",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "notification_log_sent_idx": {
++          "name": "notification_log_sent_idx",
++          "columns": [
++            {
++              "expression": "sent_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.notification_recipients": {
++      "name": "notification_recipients",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "notification_recipients_email_unique": {
++          "name": "notification_recipients_email_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "email"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.parasut_bill_lines": {
++      "name": "parasut_bill_lines",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "invoice_id": {
++          "name": "invoice_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "external_id": {
++          "name": "external_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "product_key": {
++          "name": "product_key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "product_name": {
++          "name": "product_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "description": {
++          "name": "description",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "quantity": {
++          "name": "quantity",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "unit": {
++          "name": "unit",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "unit_price": {
++          "name": "unit_price",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "discount": {
++          "name": "discount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "vat_rate": {
++          "name": "vat_rate",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "net_total": {
++          "name": "net_total",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {
++        "parasut_bill_lines_external_uq": {
++          "name": "parasut_bill_lines_external_uq",
++          "columns": [
++            {
++              "expression": "external_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "parasut_bill_lines_product_idx": {
++          "name": "parasut_bill_lines_product_idx",
++          "columns": [
++            {
++              "expression": "product_key",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "parasut_bill_lines_invoice_id_invoices_id_fk": {
++          "name": "parasut_bill_lines_invoice_id_invoices_id_fk",
++          "tableFrom": "parasut_bill_lines",
++          "tableTo": "invoices",
++          "columnsFrom": [
++            "invoice_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.parasut_category_rules": {
++      "name": "parasut_category_rules",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "match_type": {
++          "name": "match_type",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "pattern": {
++          "name": "pattern",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "category": {
++          "name": "category",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "priority": {
++          "name": "priority",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 100
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.parasut_product_links": {
++      "name": "parasut_product_links",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "product_key": {
++          "name": "product_key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "product_name": {
++          "name": "product_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "factor": {
++          "name": "factor",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 1
++        },
++        "update_price": {
++          "name": "update_price",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "parasut_product_links_ingredient_id_ingredients_id_fk": {
++          "name": "parasut_product_links_ingredient_id_ingredients_id_fk",
++          "tableFrom": "parasut_product_links",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "parasut_product_links_product_key_unique": {
++          "name": "parasut_product_links_product_key_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "product_key"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.parasut_sync_runs": {
++      "name": "parasut_sync_runs",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "trigger": {
++          "name": "trigger",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'running'"
++        },
++        "started_at": {
++          "name": "started_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "finished_at": {
++          "name": "finished_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "fetched": {
++          "name": "fetched",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created": {
++          "name": "created",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "updated": {
++          "name": "updated",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "removed": {
++          "name": "removed",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "message": {
++          "name": "message",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {
++        "parasut_sync_runs_started_idx": {
++          "name": "parasut_sync_runs_started_idx",
++          "columns": [
++            {
++              "expression": "started_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.pnl_entries": {
++      "name": "pnl_entries",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "row_key": {
++          "name": "row_key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "pnl_entries_month_row_uq": {
++          "name": "pnl_entries_month_row_uq",
++          "columns": [
++            {
++              "expression": "month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "row_key",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.pos_mappings": {
++      "name": "pos_mappings",
++      "schema": "",
++      "columns": {
++        "pos_name": {
++          "name": "pos_name",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "product_id": {
++          "name": "product_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "is_service": {
++          "name": "is_service",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "pos_mappings_product_id_products_id_fk": {
++          "name": "pos_mappings_product_id_products_id_fk",
++          "tableFrom": "pos_mappings",
++          "tableTo": "products",
++          "columnsFrom": [
++            "product_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.products": {
++      "name": "products",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "category_id": {
++          "name": "category_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "size": {
++          "name": "size",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "price": {
++          "name": "price",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "fire_override": {
++          "name": "fire_override",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "show_on_menu": {
++          "name": "show_on_menu",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "site_menu_id": {
++          "name": "site_menu_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "site_menu_slot": {
++          "name": "site_menu_slot",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "products_name_size_uq": {
++          "name": "products_name_size_uq",
++          "columns": [
++            {
++              "expression": "name",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "size",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "products_site_menu_uq": {
++          "name": "products_site_menu_uq",
++          "columns": [
++            {
++              "expression": "site_menu_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "site_menu_slot",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "products_category_id_categories_id_fk": {
++          "name": "products_category_id_categories_id_fk",
++          "tableFrom": "products",
++          "tableTo": "categories",
++          "columnsFrom": [
++            "category_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {
++        "products_site_menu_slot_ck": {
++          "name": "products_site_menu_slot_ck",
++          "value": "\"products\".\"site_menu_slot\" is null or \"products\".\"site_menu_slot\" in ('M', 'L')"
++        },
++        "products_site_menu_pair_ck": {
++          "name": "products_site_menu_pair_ck",
++          "value": "(\"products\".\"site_menu_id\" is null) = (\"products\".\"site_menu_slot\" is null)"
++        }
++      },
++      "isRLSEnabled": false
++    },
++    "public.purchase_quantities": {
++      "name": "purchase_quantities",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {
++        "purchase_quantities_month_ingredient_uq": {
++          "name": "purchase_quantities_month_ingredient_uq",
++          "columns": [
++            {
++              "expression": "month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "ingredient_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "purchase_quantities_ingredient_id_ingredients_id_fk": {
++          "name": "purchase_quantities_ingredient_id_ingredients_id_fk",
++          "tableFrom": "purchase_quantities",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.push_subscriptions": {
++      "name": "push_subscriptions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "endpoint": {
++          "name": "endpoint",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "p256dh": {
++          "name": "p256dh",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "auth": {
++          "name": "auth",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "label": {
++          "name": "label",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "session_version": {
++          "name": "session_version",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "karaoke": {
++          "name": "karaoke",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "reminders": {
++          "name": "reminders",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "orders": {
++          "name": "orders",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "last_success_at": {
++          "name": "last_success_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "failures": {
++          "name": "failures",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "push_subscriptions_endpoint_uq": {
++          "name": "push_subscriptions_endpoint_uq",
++          "columns": [
++            {
++              "expression": "endpoint",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "push_subscriptions_user_idx": {
++          "name": "push_subscriptions_user_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "push_subscriptions_user_id_users_id_fk": {
++          "name": "push_subscriptions_user_id_users_id_fk",
++          "tableFrom": "push_subscriptions",
++          "tableTo": "users",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.recipe_change_requests": {
++      "name": "recipe_change_requests",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "product_id": {
++          "name": "product_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "requested_by": {
++          "name": "requested_by",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "requested_by_name": {
++          "name": "requested_by_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "status": {
++          "name": "status",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'pending'"
++        },
++        "before": {
++          "name": "before",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "after": {
++          "name": "after",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "message": {
++          "name": "message",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "review_note": {
++          "name": "review_note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "reviewed_by": {
++          "name": "reviewed_by",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "reviewed_by_name": {
++          "name": "reviewed_by_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "reviewed_at": {
++          "name": "reviewed_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "recipe_change_requests_status_idx": {
++          "name": "recipe_change_requests_status_idx",
++          "columns": [
++            {
++              "expression": "status",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "created_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "recipe_change_requests_product_idx": {
++          "name": "recipe_change_requests_product_idx",
++          "columns": [
++            {
++              "expression": "product_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "recipe_change_requests_pending_uq": {
++          "name": "recipe_change_requests_pending_uq",
++          "columns": [
++            {
++              "expression": "product_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "requested_by",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "where": "status = 'pending'",
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "recipe_change_requests_product_id_products_id_fk": {
++          "name": "recipe_change_requests_product_id_products_id_fk",
++          "tableFrom": "recipe_change_requests",
++          "tableTo": "products",
++          "columnsFrom": [
++            "product_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "recipe_change_requests_requested_by_users_id_fk": {
++          "name": "recipe_change_requests_requested_by_users_id_fk",
++          "tableFrom": "recipe_change_requests",
++          "tableTo": "users",
++          "columnsFrom": [
++            "requested_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        },
++        "recipe_change_requests_reviewed_by_users_id_fk": {
++          "name": "recipe_change_requests_reviewed_by_users_id_fk",
++          "tableFrom": "recipe_change_requests",
++          "tableTo": "users",
++          "columnsFrom": [
++            "reviewed_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.recipe_items": {
++      "name": "recipe_items",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "product_id": {
++          "name": "product_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "qty_expr": {
++          "name": "qty_expr",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {
++        "recipe_items_product_idx": {
++          "name": "recipe_items_product_idx",
++          "columns": [
++            {
++              "expression": "product_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "recipe_items_ingredient_idx": {
++          "name": "recipe_items_ingredient_idx",
++          "columns": [
++            {
++              "expression": "ingredient_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "recipe_items_product_id_products_id_fk": {
++          "name": "recipe_items_product_id_products_id_fk",
++          "tableFrom": "recipe_items",
++          "tableTo": "products",
++          "columnsFrom": [
++            "product_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "recipe_items_ingredient_id_ingredients_id_fk": {
++          "name": "recipe_items_ingredient_id_ingredients_id_fk",
++          "tableFrom": "recipe_items",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "restrict",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.reminders": {
++      "name": "reminders",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "kind": {
++          "name": "kind",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'odeme'"
++        },
++        "amount": {
++          "name": "amount",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "due_date": {
++          "name": "due_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "anchor_date": {
++          "name": "anchor_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "repeat": {
++          "name": "repeat",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'none'"
++        },
++        "remind_days_before": {
++          "name": "remind_days_before",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 3
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "last_done_at": {
++          "name": "last_done_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "reminders_due_idx": {
++          "name": "reminders_due_idx",
++          "columns": [
++            {
++              "expression": "due_date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.sales_lines": {
++      "name": "sales_lines",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "pos_name": {
++          "name": "pos_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "revenue": {
++          "name": "revenue",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "product_id": {
++          "name": "product_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "is_service": {
++          "name": "is_service",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {
++        "sales_lines_month_idx": {
++          "name": "sales_lines_month_idx",
++          "columns": [
++            {
++              "expression": "month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "sales_lines_month_months_month_fk": {
++          "name": "sales_lines_month_months_month_fk",
++          "tableFrom": "sales_lines",
++          "tableTo": "months",
++          "columnsFrom": [
++            "month"
++          ],
++          "columnsTo": [
++            "month"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "sales_lines_product_id_products_id_fk": {
++          "name": "sales_lines_product_id_products_id_fk",
++          "tableFrom": "sales_lines",
++          "tableTo": "products",
++          "columnsFrom": [
++            "product_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.settings": {
++      "name": "settings",
++      "schema": "",
++      "columns": {
++        "key": {
++          "name": "key",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "value": {
++          "name": "value",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.staff": {
++      "name": "staff",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "net_salary": {
++          "name": "net_salary",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "extras": {
++          "name": "extras",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "start_month": {
++          "name": "start_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "end_month": {
++          "name": "end_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "sort_order": {
++          "name": "sort_order",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.staff_versions": {
++      "name": "staff_versions",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "staff_id": {
++          "name": "staff_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "from_month": {
++          "name": "from_month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "net_salary": {
++          "name": "net_salary",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "extras": {
++          "name": "extras",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "staff_versions_staff_month_uq": {
++          "name": "staff_versions_staff_month_uq",
++          "columns": [
++            {
++              "expression": "staff_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "from_month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "staff_versions_staff_id_staff_id_fk": {
++          "name": "staff_versions_staff_id_staff_id_fk",
++          "tableFrom": "staff_versions",
++          "tableTo": "staff",
++          "columnsFrom": [
++            "staff_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.stock_counts": {
++      "name": "stock_counts",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "factor": {
++          "name": "factor",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "counted_by": {
++          "name": "counted_by",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "stock_counts_month_ingredient_uq": {
++          "name": "stock_counts_month_ingredient_uq",
++          "columns": [
++            {
++              "expression": "month",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "ingredient_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "stock_counts_ingredient_id_ingredients_id_fk": {
++          "name": "stock_counts_ingredient_id_ingredients_id_fk",
++          "tableFrom": "stock_counts",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.stock_extras": {
++      "name": "stock_extras",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "month": {
++          "name": "month",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "unit": {
++          "name": "unit",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'ADET'"
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "unit_price": {
++          "name": "unit_price",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.suppliers": {
++      "name": "suppliers",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "key": {
++          "name": "key",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "aliases": {
++          "name": "aliases",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'[]'::jsonb"
++        },
++        "legal_name": {
++          "name": "legal_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "tax_number": {
++          "name": "tax_number",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "tax_office": {
++          "name": "tax_office",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "iban": {
++          "name": "iban",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "bank_name": {
++          "name": "bank_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "account_holder": {
++          "name": "account_holder",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "contact_name": {
++          "name": "contact_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "phone": {
++          "name": "phone",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "address": {
++          "name": "address",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "payment_term_days": {
++          "name": "payment_term_days",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "payment_method": {
++          "name": "payment_method",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "paid_on_delivery": {
++          "name": "paid_on_delivery",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "hidden_on": {
++          "name": "hidden_on",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "suppliers_key_uq": {
++          "name": "suppliers_key_uq",
++          "columns": [
++            {
++              "expression": "key",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.user_reminders": {
++      "name": "user_reminders",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "due_date": {
++          "name": "due_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "due_time": {
++          "name": "due_time",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "anchor_date": {
++          "name": "anchor_date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "repeat": {
++          "name": "repeat",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'none'"
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "done_at": {
++          "name": "done_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "user_reminders_user_idx": {
++          "name": "user_reminders_user_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "active",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "due_date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "user_reminders_user_id_users_id_fk": {
++          "name": "user_reminders_user_id_users_id_fk",
++          "tableFrom": "user_reminders",
++          "tableTo": "users",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.user_tokens": {
++      "name": "user_tokens",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "kind": {
++          "name": "kind",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "token_hash": {
++          "name": "token_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "used_at": {
++          "name": "used_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "attempts": {
++          "name": "attempts",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "user_tokens_hash_uq": {
++          "name": "user_tokens_hash_uq",
++          "columns": [
++            {
++              "expression": "token_hash",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "user_tokens_user_idx": {
++          "name": "user_tokens_user_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            },
++            {
++              "expression": "kind",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "user_tokens_user_id_users_id_fk": {
++          "name": "user_tokens_user_id_users_id_fk",
++          "tableFrom": "user_tokens",
++          "tableTo": "users",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.users": {
++      "name": "users",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "password_hash": {
++          "name": "password_hash",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "role": {
++          "name": "role",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'staff'"
++        },
++        "active": {
++          "name": "active",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "last_login_at": {
++          "name": "last_login_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "totp_secret": {
++          "name": "totp_secret",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "totp_enabled": {
++          "name": "totp_enabled",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "totp_last_step": {
++          "name": "totp_last_step",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "recovery_codes": {
++          "name": "recovery_codes",
++          "type": "jsonb",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "failed_logins": {
++          "name": "failed_logins",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "locked_until": {
++          "name": "locked_until",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "session_version": {
++          "name": "session_version",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 1
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "users_email_unique": {
++          "name": "users_email_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "email"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.waste_entries": {
++      "name": "waste_entries",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "serial",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "date": {
++          "name": "date",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "kind": {
++          "name": "kind",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "product_id": {
++          "name": "product_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "ingredient_id": {
++          "name": "ingredient_id",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "qty": {
++          "name": "qty",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "unit": {
++          "name": "unit",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "factor": {
++          "name": "factor",
++          "type": "double precision",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 1
++        },
++        "reason": {
++          "name": "reason",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "note": {
++          "name": "note",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by": {
++          "name": "created_by",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_by_name": {
++          "name": "created_by_name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "waste_entries_date_idx": {
++          "name": "waste_entries_date_idx",
++          "columns": [
++            {
++              "expression": "date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "waste_entries_product_id_products_id_fk": {
++          "name": "waste_entries_product_id_products_id_fk",
++          "tableFrom": "waste_entries",
++          "tableTo": "products",
++          "columnsFrom": [
++            "product_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        },
++        "waste_entries_ingredient_id_ingredients_id_fk": {
++          "name": "waste_entries_ingredient_id_ingredients_id_fk",
++          "tableFrom": "waste_entries",
++          "tableTo": "ingredients",
++          "columnsFrom": [
++            "ingredient_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        },
++        "waste_entries_created_by_users_id_fk": {
++          "name": "waste_entries_created_by_users_id_fk",
++          "tableFrom": "waste_entries",
++          "tableTo": "users",
++          "columnsFrom": [
++            "created_by"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "set null",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    }
++  },
++  "enums": {},
++  "schemas": {},
++  "sequences": {},
++  "roles": {},
++  "policies": {},
++  "views": {},
++  "_meta": {
++    "columns": {},
++    "schemas": {},
++    "tables": {}
++  }
++}
+\ No newline at end of file
+diff --git a/drizzle/meta/_journal.json b/drizzle/meta/_journal.json
+index 77eb35d..ce76208 100644
+--- a/drizzle/meta/_journal.json
++++ b/drizzle/meta/_journal.json
+@@ -148,6 +148,13 @@
+       "when": 1792654639885,
+       "tag": "0020_gunluk_isler",
+       "breakpoints": true
++    },
++    {
++      "idx": 21,
++      "version": "7",
++      "when": 1792655398472,
++      "tag": "0021_fatura_vergi_no",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/src/app/panel/tedarikciler/logic.ts b/src/app/panel/tedarikciler/logic.ts
+index 453aec0..d90c1b9 100644
+--- a/src/app/panel/tedarikciler/logic.ts
++++ b/src/app/panel/tedarikciler/logic.ts
+@@ -6,7 +6,9 @@
+  *
+  * Faturalar karta yabancı anahtarla bağlanmaz: faturadaki tedarikçi adının anahtarı (supplierMatchKey: büyük/küçük
+  * harf, I/ı, boşluk ve parantezli not sayılmaz) kartın adının ya da diğer adlarından birinin anahtarıyla aynıysa
+- * fatura o karttadır. Kartı olmayan ad kendi başına bir tedarikçidir; kart, bilgi girilince açılır.
++ * fatura o karttadır. Adı tutmayan fatura vergi numarasıyla (VKN / TCKN) eşleşir: kartta yazılı numarayla ya da aynı
++ * numarayı taşıyan öteki faturaların adlarıyla (supplierResolver). Kartı olmayan ad kendi başına bir tedarikçidir
++ * (aynı vergi nolu adlar birlikte); kart, bilgi girilince açılır.
+  */
+ import { openBalance } from "@/lib/calc/insights";
+ import { dateTR, money } from "@/lib/format";
+@@ -135,6 +137,177 @@ export function cleanAliases(name: string, aliases: readonly string[], previousN
+   return out;
+ }
+ 
++// ---------------------------------------------------------------- Vergi no ile eşleşme
++
++/**
++ * Eşleşmede yok sayılan yer tutucu numaralar: formlarda ve örneklerde yazılan numaralar. 1234567890 VKN kontrol
++ * hanesini geçtiği için listede; yerel seed'deki "Sütaş" kartında da bu yazılı (yerelde eşleşme yapmaz).
++ */
++export const DUMMY_TAX_NUMBERS: ReadonlySet<string> = new Set([
++  "1234567890",
++  "1111111111",
++  "11111111111",
++  "2222222222",
++  "22222222222",
++  "0000000000",
++  "00000000000",
++  "9999999999",
++  "99999999999",
++]);
++
++/** Faturada saklanan biçim: yalnız rakam, 10 (VKN) ya da 11 (TCKN) hane; başka uzunlukta null */
++export function cleanTaxNumber(raw: string | null | undefined): string | null {
++  const v = normalizeTaxNumber(raw);
++  return v.length === 10 || v.length === 11 ? v : null;
++}
++
++/**
++ * Eşleşmede kullanılan biçim: kontrol hanesi tutan ve yer tutucu olmayan numara. Değilse null: o numara saklanır,
++ * faturada görünür ama iki firmayı birleştirmez.
++ */
++export function taxKey(raw: string | null | undefined): string | null {
++  const v = cleanTaxNumber(raw);
++  if (!v || DUMMY_TAX_NUMBERS.has(v)) return null;
++  return (v.length === 10 ? isValidVkn(v) : isValidTckn(v)) ? v : null;
++}
++
++/** Faturalar'daki "Tedarikçinin sayfası" bağlantısının anahtarı: ad ve (geçerliyse) vergi no birlikte */
++export const supplierPairKey = (name: string, taxNumber?: string | null) => `${supplierMatchKey(name)}|${taxKey(taxNumber) ?? ""}`;
++
++/** Birleşim-bul (yol kısaltmalı); düğüm adları "n:<ad anahtarı>", "t:<vergi no>", "c:<kart kimliği>" */
++class UnionFind {
++  private parent = new Map<string, string>();
++
++  has(x: string): boolean {
++    return this.parent.has(x);
++  }
++
++  find(x: string): string {
++    if (!this.parent.has(x)) this.parent.set(x, x);
++    let root = x;
++    while (this.parent.get(root) !== root) root = this.parent.get(root)!;
++    for (let cur = x; cur !== root; ) {
++      const next = this.parent.get(cur)!;
++      this.parent.set(cur, root);
++      cur = next;
++    }
++    return root;
++  }
++
++  union(a: string, b: string) {
++    const ra = this.find(a);
++    const rb = this.find(b);
++    if (ra === rb) return;
++    // Kök sıradan bağımsız seçilir (küçük olan): aynı girdi her sırada aynı ağacı verir
++    if (ra < rb) this.parent.set(rb, ra);
++    else this.parent.set(ra, rb);
++  }
++
++  nodes(): string[] {
++    return [...this.parent.keys()];
++  }
++}
++
++/** Tedarikçisi bulunacak fatura: ad ve (Paraşüt'ten geldiyse) vergi no; tarih gerekmez */
++export interface SupplierRef {
++  supplier: string;
++  supplierTaxNumber?: string | null;
++  date?: string;
++}
++
++/**
++ * Faturanın tedarikçisi. `id` grubu ayırır ("kart:<kimlik>" ya da kartsızda "ad:<anahtar>"), `key` grubun anahtarı.
++ * `via`: "ad" kartın adı ya da diğer adıyla, "vergi" vergi numarasıyla eşleşti; kartsızda null.
++ */
++export interface SupplierMatch<C> {
++  id: string;
++  key: string;
++  card: C | null;
++  via: "ad" | "vergi" | null;
++}
++
++/**
++ * Faturayı (ad, vergi no) çiftinden tedarikçisine bağlar. Sonuç yalnız çifte, kartlara ve bütün çiftlerin kümesine
++ * bağlıdır: aynı çiftleri veren her çağıran (Tedarikçiler, adres parçaları, ⌘K, Faturalar'daki bağlantı, Ödemeler'in
++ * tahmini vadesi, eşitlemedeki peşin kuralı) aynı tedarikçiyi bulur. Sıra:
++ * 1. Ad önce: kartın adı ya da diğer adıysa o kart. Sahibin elle yazdığı ad hep kazanır (iki firmayı ayırmanın yolu).
++ * 2. Kartta yazılı vergi no tek bir kartta varsa o kart. İki kartta aynı numara varsa numara eşleşmede kullanılmaz.
++ * 3. Öteki faturalar üzerinden: aynı faturada geçen ad ve vergi no birbirine bağlanır (birleşim-bul). Bağlı küme tek
++ *    kart içeriyorsa o kart; kartsızsa kümenin kartsız grubu (anahtarı kümedeki en küçük ad anahtarı). İki kart
++ *    içeriyorsa (çakışma) aynı adlı ve vergi nolu faturalar 2. adımda tek karta gittiyse onu izler.
++ * 4. Yoksa (bugünkü kural) kendi adının kartsız grubu.
++ * Kontrol hanesi tutmayan ve yer tutucu numaralar (taxKey) hiçbir şeyi bağlamaz; Paraşüt'ün geçici adı ("Paraşüt
++ * tedarikçisi") köprü olmaz, vergi nosu bilinen tedarikçisine gider. Vergi nosu olmayan veride sonuç eskisiyle aynıdır.
++ */
++export function supplierResolver<C extends CardNames & { taxNumber?: string | null }>(cards: readonly C[], refs: readonly SupplierRef[]) {
++  const placeholder = supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
++  const byName = cardIndex(cards);
++  const byId = new Map(cards.map((c) => [String(c.id), c] as const));
++  const taxCards = new Map<string, C[]>();
++  for (const c of cards) {
++    const t = taxKey(c.taxNumber);
++    if (t) taxCards.set(t, [...(taxCards.get(t) ?? []), c]);
++  }
++  const byTax = new Map<string, C>();
++  for (const [t, list] of taxCards) if (list.length === 1) byTax.set(t, list[0]);
++
++  const uf = new UnionFind();
++  for (const [k, c] of byName) uf.union(`n:${k}`, `c:${c.id}`);
++  for (const [t, c] of byTax) uf.union(`t:${t}`, `c:${c.id}`);
++  const pairs = refs.map((r) => ({ k: supplierMatchKey(r.supplier), t: taxKey(r.supplierTaxNumber) }));
++  for (const { k, t } of pairs) if (k && t && k !== placeholder) uf.union(`n:${k}`, `t:${t}`);
++
++  // Kümelerin kartları ve kartsız kümenin anahtarı (en küçük ad anahtarı: tarihe bakmadan her çağıranda aynı)
++  const compCards = new Map<string, Set<C>>();
++  const compKey = new Map<string, string>();
++  for (const node of uf.nodes()) {
++    const root = uf.find(node);
++    if (node.startsWith("c:")) {
++      const c = byId.get(node.slice(2));
++      if (c) compCards.set(root, (compCards.get(root) ?? new Set()).add(c));
++    } else if (node.startsWith("n:")) {
++      const k = node.slice(2);
++      const cur = compKey.get(root);
++      if (k !== placeholder && (cur === undefined || k < cur)) compKey.set(root, k);
++    }
++  }
++  // Çakışmada: adı karta ait olmayan, vergi nosu bir kartta yazılı faturalar (2. adım) hangi kartlara gitti
++  const nameTaxCards = new Map<string, Set<C>>();
++  for (const { k, t } of pairs) {
++    const c = t ? byTax.get(t) : undefined;
++    if (!c || !k || k === placeholder || byName.has(k)) continue;
++    nameTaxCards.set(k, (nameTaxCards.get(k) ?? new Set()).add(c));
++  }
++
++  const toCard = (c: C, via: "ad" | "vergi"): SupplierMatch<C> => ({ id: `kart:${c.id}`, key: supplierMatchKey(c.name), card: c, via });
++  const only = (set: Set<C>) => set.values().next().value as C;
++
++  function resolve(supplier: string, taxNumber?: string | null): SupplierMatch<C> {
++    const k = supplierMatchKey(supplier);
++    const named = byName.get(k);
++    if (named) return toCard(named, "ad");
++    const t = taxKey(taxNumber);
++    const taxed = t ? byTax.get(t) : undefined;
++    if (taxed) return toCard(taxed, "vergi");
++    const node = t ? `t:${t}` : k !== placeholder ? `n:${k}` : null;
++    if (node && uf.has(node)) {
++      const root = uf.find(node);
++      const inComp = compCards.get(root);
++      if (inComp?.size === 1) return toCard(only(inComp), "vergi");
++      if (!inComp?.size) {
++        const key = compKey.get(root);
++        if (key !== undefined) return { id: `ad:${key}`, key, card: null, via: null };
++      } else if (k !== placeholder) {
++        const follow = nameTaxCards.get(k);
++        if (follow?.size === 1) return toCard(only(follow), "vergi");
++      }
++    }
++    return { id: `ad:${k}`, key: k, card: null, via: null };
++  }
++
++  return { resolve };
++}
++
+ // ---------------------------------------------------------------- Vade ve ödeme durumu
+ 
+ /** "Yakında" sayılan gün: vadesi bugünden en çok bu kadar sonra (gecikmişler hariç) */
+@@ -152,6 +325,8 @@ export interface LedgerInvoice {
+   dueDate?: string | null;
+   paidAt?: string | null;
+   paymentRequestedAt?: string | null;
++  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
++  supplierTaxNumber?: string | null;
+ }
+ 
+ export interface Due {
+@@ -271,15 +446,34 @@ export function summarize(invoices: readonly LedgerInvoice[], opts: { today: str
+ 
+ // ---------------------------------------------------------------- Tedarikçiler (gruplar)
+ 
++/** Aynı vergi nosunu taşıyan başka bir tedarikçi (tedarikçi sayfasındaki şerit) */
++export interface SharedTax {
++  taxNumber: string;
++  others: { name: string; slug: string; cardId: number | null }[];
++}
++
+ export interface SupplierGroup<I extends LedgerInvoice = LedgerInvoice, C extends CardNames = SupplierCard> {
+-  /** Kartın adının ya da (kartsızda) faturalardaki adın anahtarı */
++  /** Kartın adının ya da (kartsızda) faturalardaki adların en küçük anahtarı */
+   key: string;
+   /** Adresteki parça: /panel/tedarikciler/<slug> */
+   slug: string;
+   name: string;
+   card: C | null;
+-  /** Faturalarda geçen adlar (parantezli not hariç), en yeni faturanınki önce */
++  /**
++   * Faturalarda geçen adlar (parantezli not hariç), en yeni faturanınki önce. Paraşüt'ün geçici adı yalnız kendi
++   * grubunda yazılır ("Faturadan doldur" bu adla bütün adı okunamayan faturalara bakmasın)
++   */
+   names: string[];
++  /** Grubun bütün ad anahtarları: faturalardaki adlar, kartın adı ve diğer adları (kartsız grubu adıyla bulmak için) */
++  keys: string[];
++  /** Yalnız vergi numarasıyla gelen adlar (kartın adı ya da diğer adı değil; kartsızda grubun anahtarından başkası) */
++  viaTax: string[];
++  /** Faturalardaki geçerli vergi numaraları, en çok fatura önce */
++  taxNumbers: { taxNumber: string; count: number }[];
++  /** Kartta yazılı vergi no; yoksa faturalardaki tek vergi no (birden çoksa null) */
++  taxNumber: string | null;
++  /** Aynı vergi nosunu taşıyan öteki tedarikçiler (adı başka karta ait faturalar, iki kartta aynı numara) */
++  sharedTax: SharedTax[];
+   /** En yeni önce */
+   invoices: I[];
+   /** Tahmini vadenin günü: kartta yazılıysa o, değilse genel ayar */
+@@ -288,25 +482,25 @@ export interface SupplierGroup<I extends LedgerInvoice = LedgerInvoice, C extend
+ }
+ 
+ /**
+- * Faturaları tedarikçi tedarikçi toplar: kartı olan adlar kartta (diğer adlarıyla birlikte), kartsız adlar kendi
+- * başına. Faturası olmayan kartlar da listede (yeni eklenmiş tedarikçi). Sıra ada göre; ekran kendisi sıralar.
++ * Faturaları tedarikçi tedarikçi toplar (supplierResolver): kartı olan adlar kartta (diğer adlarıyla birlikte),
++ * vergi nosu karta ya da kartın faturalarına bağlanan adlar da kartta; kartsız adlar kendi başına, aynı vergi nolu
++ * olanlar birlikte. Faturası olmayan kartlar da listede (yeni eklenmiş tedarikçi). Sıra ada göre; ekran kendisi sıralar.
+  */
+-export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { paymentTermDays?: number | null }>(
++export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { paymentTermDays?: number | null; taxNumber?: string | null }>(
+   invoices: readonly I[],
+   cards: readonly C[],
+   opts: { today: string; termDays: number },
+ ): SupplierGroup<I, C>[] {
+-  const index = cardIndex(cards);
++  const placeholder = supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
++  const { resolve } = supplierResolver(cards, invoices);
+   const byId = new Map<string, { key: string; card: C | null; invoices: I[] }>();
+   for (const c of cards) byId.set(`kart:${c.id}`, { key: supplierMatchKey(c.name), card: c, invoices: [] });
+   for (const inv of invoices) {
+-    const k = supplierMatchKey(inv.supplier);
+-    const card = index.get(k) ?? null;
+-    const id = card ? `kart:${card.id}` : `ad:${k}`;
+-    let g = byId.get(id);
++    const r = resolve(inv.supplier, inv.supplierTaxNumber);
++    let g = byId.get(r.id);
+     if (!g) {
+-      g = { key: k, card: null, invoices: [] };
+-      byId.set(id, g);
++      g = { key: r.key, card: null, invoices: [] };
++      byId.set(r.id, g);
+     }
+     g.invoices.push(inv);
+   }
+@@ -314,16 +508,25 @@ export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & {
+   const out: SupplierGroup<I, C>[] = [];
+   for (const g of byId.values()) {
+     const list = [...g.invoices].sort((a, b) => b.date.localeCompare(a.date));
++    const own = g.card ? [g.card.name, ...g.card.aliases].map(supplierMatchKey) : [g.key];
+     // Her anahtardan bir ad (en yeni faturadaki yazılışı): "KALDI" ile "Kaldi" aynı addır
+     const names: string[] = [];
++    const keys = new Set<string>(g.card ? own.filter(Boolean) : []);
+     const seen = new Set<string>();
++    const taxCount = new Map<string, number>();
+     for (const inv of list) {
+       const k = supplierMatchKey(inv.supplier);
+-      if (!seen.has(k)) {
+-        seen.add(k);
+-        names.push(splitSupplier(inv.supplier).base.trim());
+-      }
++      const t = taxKey(inv.supplierTaxNumber);
++      if (t) taxCount.set(t, (taxCount.get(t) ?? 0) + 1);
++      if (seen.has(k) || (k === placeholder && g.key !== placeholder)) continue;
++      seen.add(k);
++      keys.add(k);
++      names.push(splitSupplier(inv.supplier).base.trim());
+     }
++    const ownKeys = new Set(own);
++    const taxNumbers = [...taxCount]
++      .map(([taxNumber, count]) => ({ taxNumber, count }))
++      .sort((a, b) => b.count - a.count || a.taxNumber.localeCompare(b.taxNumber));
+     const termDays = g.card?.paymentTermDays ?? opts.termDays;
+     out.push({
+       key: g.key,
+@@ -331,14 +534,104 @@ export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & {
+       name: g.card?.name ?? names[0] ?? g.key,
+       card: g.card,
+       names,
++      keys: [...keys],
++      viaTax: names.filter((n) => !ownKeys.has(supplierMatchKey(n))),
++      taxNumbers,
++      taxNumber: g.card?.taxNumber || (taxNumbers.length === 1 ? taxNumbers[0].taxNumber : null),
++      sharedTax: [],
+       invoices: list,
+       termDays,
+       summary: summarize(list, { today: opts.today, termDays }),
+     });
+   }
++  // Aynı vergi no birden çok tedarikçide: faturalarındaki ya da kartındaki numara. Paraşüt'ün geçici adının grubu
++  // sayılmaz (orada kalan faturanın tedarikçisi henüz bilinmiyor)
++  const holders = new Map<string, SupplierGroup<I, C>[]>();
++  const taxesOf = (g: SupplierGroup<I, C>) => {
++    const own = taxKey(g.card?.taxNumber);
++    return [...new Set([...g.taxNumbers.map((t) => t.taxNumber), ...(own ? [own] : [])])];
++  };
++  for (const g of out) {
++    if (!g.card && g.key === placeholder) continue;
++    for (const t of taxesOf(g)) holders.set(t, [...(holders.get(t) ?? []), g]);
++  }
++  for (const g of out) {
++    if (!g.card && g.key === placeholder) continue;
++    g.sharedTax = taxesOf(g).flatMap((taxNumber) => {
++      const others = (holders.get(taxNumber) ?? []).filter((o) => o !== g).sort((a, b) => a.name.localeCompare(b.name, "tr"));
++      return others.length ? [{ taxNumber, others: others.map((o) => ({ name: o.name, slug: o.slug, cardId: o.card?.id ?? null })) }] : [];
++    });
++  }
+   return out.sort((a, b) => a.name.localeCompare(b.name, "tr"));
+ }
+ 
++/** Vergi no önizlemesindeki ad: o vergi noyla kaç fatura, adı tedarikçinin kendi adı mı (ad önce gelir) */
++export interface TaxIndexEntry {
++  slug: string;
++  name: string;
++  cardId: number | null;
++  names: { name: string; count: number; own: boolean }[];
++}
++
++/** Tedarikçi penceresinin vergi no önizlemesi için düz veri (sunucudan istemciye geçer) */
++export interface TaxIndex {
++  /** Vergi no → onu taşıyan faturaların tedarikçileri */
++  byTax: Record<string, TaxIndexEntry[]>;
++  /** Vergi no → kartında bu numara yazılı tedarikçiler */
++  cardTax: Record<string, { id: number; name: string }[]>;
++}
++
++export function taxNameIndex(groups: readonly SupplierGroup<LedgerInvoice, CardNames & { taxNumber?: string | null }>[]): TaxIndex {
++  const byTax: TaxIndex["byTax"] = {};
++  const cardTax: TaxIndex["cardTax"] = {};
++  for (const g of groups) {
++    const own = new Set(g.card ? [g.card.name, ...g.card.aliases].map(supplierMatchKey) : []);
++    const perTax = new Map<string, Map<string, { name: string; count: number; own: boolean }>>();
++    for (const inv of g.invoices) {
++      const t = taxKey(inv.supplierTaxNumber);
++      if (!t) continue;
++      const k = supplierMatchKey(inv.supplier);
++      const m = perTax.get(t) ?? new Map();
++      const cur = m.get(k);
++      if (cur) cur.count++;
++      else m.set(k, { name: splitSupplier(inv.supplier).base.trim(), count: 1, own: own.has(k) });
++      perTax.set(t, m);
++    }
++    for (const [t, m] of perTax) {
++      (byTax[t] ??= []).push({ slug: g.slug, name: g.name, cardId: g.card?.id ?? null, names: [...m.values()].sort((a, b) => b.count - a.count) });
++    }
++    const ct = taxKey(g.card?.taxNumber);
++    if (g.card && ct) (cardTax[ct] ??= []).push({ id: g.card.id, name: g.card.name });
++  }
++  return { byTax, cardTax };
++}
++
++/**
++ * Pencerede yazılan vergi no kaydedilirse ne olur: hangi adların faturaları bu tedarikçiye gelir (`join`), hangileri
++ * adı başka bir tedarikçiye ait olduğu için orada kalır (`stay`, ad önce gelir), numara başka bir kartta da yazılı mı
++ * (`sharedCards`: o zaman vergi noyla eşleşme ikisinde de çalışmaz). `self`: açık olan tedarikçi (yeni kartta ikisi
++ * de null; kartsız tedarikçinin sayfasında adres parçası).
++ */
++export function taxPreview(index: TaxIndex, taxNumber: string, self: { cardId: number | null; slug: string | null }) {
++  const out = { join: { names: [] as { name: string; count: number }[], count: 0 }, stay: [] as string[], sharedCards: [] as string[] };
++  const t = taxKey(taxNumber);
++  if (!t) return out;
++  out.sharedCards = (index.cardTax[t] ?? []).filter((c) => c.id !== self.cardId).map((c) => c.name);
++  if (out.sharedCards.length) return out;
++  for (const e of index.byTax[t] ?? []) {
++    if ((self.cardId !== null && e.cardId === self.cardId) || (self.slug !== null && e.slug === self.slug)) continue;
++    // Kartsız tedarikçinin bütün adları gelir; kartlının yalnız vergi noyla bağlanmış adları
++    const moving = e.names.filter((n) => !n.own);
++    if (moving.length < e.names.length) out.stay.push(e.name);
++    for (const n of moving) {
++      out.join.names.push({ name: n.name, count: n.count });
++      out.join.count += n.count;
++    }
++  }
++  out.join.names.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
++  return out;
++}
++
+ /** Adres parçası: Türkçe harfler ASCII'ye iner, harf ve rakam dışı tireye döner ("Sütaş" → "sutas") */
+ export function supplierSlug(key: string): string {
+   const s = key
+@@ -412,7 +705,10 @@ export interface SupplierListRow {
+   names: string[];
+   hasCard: boolean;
+   legalName: string | null;
++  /** Kartta yazılı, yoksa faturalardaki tek vergi no */
+   taxNumber: string | null;
++  /** Faturalardaki vergi numaraları (aramada) */
++  taxNumbers: string[];
+   iban: string | null;
+   phone: string | null;
+   email: string | null;
+@@ -470,9 +766,13 @@ export function compareSuppliers(sort: SupplierSort) {
+   };
+ }
+ 
+-/** Aramada taranan metin: adlar, unvan, vergi no, IBAN (boşluklu ve boşluksuz), telefon, yetkili, e-posta */
+-export function supplierHaystack(r: Pick<SupplierListRow, "name" | "names" | "legalName" | "taxNumber" | "iban" | "phone" | "contactName" | "email">): string {
+-  return [r.name, ...r.names, r.legalName, r.taxNumber, r.iban, r.iban ? formatIban(r.iban) : null, r.phone, r.contactName, r.email].filter(Boolean).join(" ");
++/** Aramada taranan metin: adlar, unvan, vergi no (kartta ve faturalarda), IBAN (boşluklu ve boşluksuz), telefon, yetkili, e-posta */
++export function supplierHaystack(
++  r: Pick<SupplierListRow, "name" | "names" | "legalName" | "taxNumber" | "iban" | "phone" | "contactName" | "email"> & { taxNumbers?: readonly string[] },
++): string {
++  return [r.name, ...r.names, r.legalName, r.taxNumber, ...(r.taxNumbers ?? []), r.iban, r.iban ? formatIban(r.iban) : null, r.phone, r.contactName, r.email]
++    .filter(Boolean)
++    .join(" ");
+ }
+ 
+ // ---------------------------------------------------------------- Kart bilgilerinin denetimi
+@@ -482,13 +782,14 @@ export type MissingInfo = "iban" | "vergi" | "iletisim";
+ export const MISSING_LABEL: Record<MissingInfo, string> = { iban: "IBAN yok", vergi: "Vergi no yok", iletisim: "Telefon / e-posta yok" };
+ 
+ /**
+- * Kartta eksik olan önemli bilgiler: ödeme için IBAN (peşin çalışılan tedarikçide aranmaz), cari için vergi no,
+- * ulaşmak için telefon ya da e-posta. Kart hiç yoksa hepsi eksiktir.
++ * Kartta eksik olan önemli bilgiler: ödeme için IBAN (peşin çalışılan tedarikçide aranmaz), cari için vergi no
++ * (faturalardan tek bir vergi no biliniyorsa eksik sayılmaz: `inferredTaxNumber`), ulaşmak için telefon ya da
++ * e-posta. Kart hiç yoksa (faturalardaki vergi no dışında) hepsi eksiktir.
+  */
+-export function missingInfo(card: Pick<SupplierCard, "iban" | "taxNumber" | "phone" | "email" | "paidOnDelivery"> | null): MissingInfo[] {
++export function missingInfo(card: Pick<SupplierCard, "iban" | "taxNumber" | "phone" | "email" | "paidOnDelivery"> | null, inferredTaxNumber?: string | null): MissingInfo[] {
+   const out: MissingInfo[] = [];
+   if (!card?.iban && !card?.paidOnDelivery) out.push("iban");
+-  if (!card?.taxNumber) out.push("vergi");
++  if (!card?.taxNumber && !inferredTaxNumber) out.push("vergi");
+   if (!card?.phone && !card?.email) out.push("iletisim");
+   return out;
+ }
+@@ -772,6 +1073,8 @@ export function paymentRequestText(opts: {
+   payer?: string;
+   name: string;
+   card: Pick<SupplierCard, "legalName" | "iban" | "bankName" | "accountHolder" | "taxNumber"> | null;
++  /** Kartta vergi no yoksa faturalardaki (tek) vergi no; kartsız tedarikçide de yazılır */
++  taxNumber?: string | null;
+   /** Ödenecek faturalar; eksi tutarlılar ödemeden düşülen iade faturaları */
+   lines: readonly RequestLine[];
+   note?: string | null;
+@@ -783,12 +1086,13 @@ export function paymentRequestText(opts: {
+   const recipient = card?.accountHolder?.trim() || card?.legalName?.trim() || opts.name;
+   const bank = card?.bankName?.trim() || bankFromIban(card?.iban);
+   const credit = round2(credits.reduce((a, l) => a - l.amount, 0));
++  const taxNumber = card?.taxNumber || opts.taxNumber;
+   const out = [
+     opts.payer ? `Ödeme talebi · ${opts.payer}` : "Ödeme talebi",
+     `Alıcı: ${recipient}`,
+     card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (girilmemiş)",
+     bank ? `Banka: ${bank}` : null,
+-    card?.taxNumber ? `Vergi no: ${normalizeTaxNumber(card.taxNumber)}` : null,
++    taxNumber ? `Vergi no: ${normalizeTaxNumber(taxNumber)}` : null,
+     `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
+     debts.length ? `Açıklama: ${transferNote(debts)}` : null,
+   ].filter((x): x is string => Boolean(x));
+diff --git a/src/server/data/search.ts b/src/server/data/search.ts
+index b8b72a2..093fd0e 100644
+--- a/src/server/data/search.ts
++++ b/src/server/data/search.ts
+@@ -6,7 +6,7 @@ import { groupSuppliers, supplierHref } from "@/app/panel/tedarikciler/logic";
+ import { SIZE_LABELS } from "@/lib/constants";
+ import { getDb, schema as s } from "@/server/db";
+ 
+-import { loadSupplierCards } from "./suppliers";
++import { loadSupplierCards, loadSupplierRefs } from "./suppliers";
+ 
+ export interface SearchEntry {
+   kind: "product" | "ingredient" | "supplier";
+@@ -18,18 +18,19 @@ export interface SearchEntry {
+ /** Komut paletinin (⌘K) ürün, hammadde ve tedarikçi listesi: yalnızca adlar (ve unvan, vergi no), tutar yok */
+ export async function loadSearchIndex(): Promise<SearchEntry[]> {
+   const db = getDb();
+-  const [products, ingredients, cards, supplierNames] = await Promise.all([
++  const [products, ingredients, cards, supplierRefs] = await Promise.all([
+     db
+       .select({ id: s.products.id, name: s.products.name, size: s.products.size, active: s.products.active })
+       .from(s.products)
+       .orderBy(asc(s.products.sortOrder), asc(s.products.id)),
+     db.select({ name: s.ingredients.name, category: s.ingredients.category }).from(s.ingredients).orderBy(asc(s.ingredients.sortOrder)),
+     loadSupplierCards(),
+-    db.selectDistinct({ supplier: s.invoices.supplier }).from(s.invoices),
++    loadSupplierRefs(),
+   ]);
+-  // Tedarikçiler ekranındaki gibi: kartlar ve faturalardaki adlar (adres parçası aynı atamayla); tarih ve tutar gerekmez
++  // Tedarikçiler ekranındaki gibi: kartlar ve faturalardaki (ad, vergi no) çiftleri (adres parçası aynı atamayla);
++  // tarih ve tutar gerekmez
+   const suppliers = groupSuppliers(
+-    supplierNames.map((n) => ({ supplier: n.supplier, date: "", payable: 0, unpaid: false })),
++    supplierRefs.map((r) => ({ ...r, date: r.date ?? "", payable: 0, unpaid: false })),
+     cards,
+     { today: "", termDays: 0 },
+   );
+@@ -46,11 +47,13 @@ export async function loadSearchIndex(): Promise<SearchEntry[]> {
+       hint: i.category ? `Hammadde · ${i.category}` : "Hammadde",
+       href: `/panel/hammaddeler?ara=${encodeURIComponent(i.name)}`,
+     })),
+-    // Alt satırda unvan ve vergi no da aranır ("SÜTAŞ SÜT", "1234567890")
++    // Alt satırda unvan ve vergi no (kartta ve faturalarda) da aranır ("SÜTAŞ SÜT", "1234567890")
+     ...suppliers.map((g) => ({
+       kind: "supplier" as const,
+       label: g.name,
+-      hint: ["Tedarikçi", g.card?.legalName, g.card?.taxNumber, ...g.names.filter((n) => n !== g.name)].filter(Boolean).join(" · "),
++      hint: ["Tedarikçi", g.card?.legalName, ...new Set([g.card?.taxNumber, ...g.taxNumbers.map((t) => t.taxNumber)].filter(Boolean)), ...g.names.filter((n) => n !== g.name)]
++        .filter(Boolean)
++        .join(" · "),
+       href: supplierHref(g.slug),
+     })),
+   ];
+diff --git a/src/server/data/suppliers.ts b/src/server/data/suppliers.ts
+index d0778fa..6c58659 100644
+--- a/src/server/data/suppliers.ts
++++ b/src/server/data/suppliers.ts
+@@ -1,8 +1,8 @@
+ import "server-only";
+ 
+-import { asc, desc, eq } from "drizzle-orm";
++import { asc, desc, eq, sql } from "drizzle-orm";
+ 
+-import { cardFor, cardIndex, groupSuppliers, type PaymentMethod, type SupplierCard } from "@/app/panel/tedarikciler/logic";
++import { groupSuppliers, supplierResolver, type PaymentMethod, type SupplierCard, type SupplierRef } from "@/app/panel/tedarikciler/logic";
+ import { addDays, todayTR } from "@/lib/reminders";
+ import { getDb, schema as s } from "@/server/db";
+ import { loadNotifySettings } from "@/server/notify/settings";
+@@ -37,27 +37,57 @@ export async function loadSupplierCards(): Promise<SupplierCard[]> {
+   return rows.map(toCard);
+ }
+ 
+-/** Tedarikçi adı → kartındaki vade günü (yoksa null): Ödemeler'in ve ertelemenin tahmini vadesi */
+-export async function loadTermDays(): Promise<(supplier: string) => number | null> {
+-  const cards = await getDb().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, paymentTermDays: s.suppliers.paymentTermDays }).from(s.suppliers);
+-  const index = cardIndex(cards);
+-  return (supplier) => cardFor(index, supplier)?.paymentTermDays ?? null;
++/**
++ * Faturalardaki (ad, vergi no) çiftleri, tekrarsız: tedarikçiyi bulan her yer (adres parçası, ⌘K, vade günü, peşin
++ * kuralı) aynı çiftlerle Tedarikçiler ekranıyla aynı eşleşmeyi kurar (supplierResolver). Tek sorgu, faturalar okunmaz.
++ */
++export async function loadSupplierRefs(): Promise<SupplierRef[]> {
++  return getDb()
++    .select({ supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber, date: sql<string>`max(${s.invoices.date})` })
++    .from(s.invoices)
++    .groupBy(s.invoices.supplier, s.invoices.supplierTaxNumber);
++}
++
++/**
++ * Faturanın tedarikçisi (ad ve varsa vergi no) → kartındaki vade günü (yoksa null): Ödemeler'in, zilin, sabah
++ * e-postasının ve ertelemenin tahmini vadesi. Vergi no verilmezse yalnız adla bulunur (ör. gelecek tahmini faturalar).
++ */
++export async function loadTermDays(): Promise<(supplier: string, taxNumber?: string | null) => number | null> {
++  const [cards, refs] = await Promise.all([
++    getDb()
++      .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber, paymentTermDays: s.suppliers.paymentTermDays })
++      .from(s.suppliers),
++    loadSupplierRefs(),
++  ]);
++  const { resolve } = supplierResolver(cards, refs);
++  return (supplier, taxNumber) => resolve(supplier, taxNumber).card?.paymentTermDays ?? null;
+ }
+ 
+-/** Tedarikçi adı → kartı peşin çalışılansa ("Faturaları ödendi gelsin") kartın ödeme şekli, değilse null */
+-export type PaidOnDelivery = (supplier: string) => { paymentMethod: PaymentMethod | null } | null;
++/** Faturanın tedarikçisi → kartı peşin çalışılansa ("Faturaları ödendi gelsin") kartın ödeme şekli, değilse null */
++export type PaidOnDelivery = (supplier: string, taxNumber?: string | null) => { paymentMethod: PaymentMethod | null } | null;
+ 
+ /**
+  * Peşin çalışılan tedarikçiler: Paraşüt'ten gelen yeni faturaları ödendi açılır (fatura günü, kartın ödeme şekliyle;
+- * newInvoicePayment). Ad bütün kartlarla eşlenir: başka bir kartın adı peşin karta düşmesin.
++ * newInvoicePayment). Tedarikçi Tedarikçiler'deki kuralla bulunur (ad önce, sonra vergi no): başka bir kartın adı peşin
++ * karta düşmez, vergi noyla peşin karta bağlanan yeni ad da ödendi gelir.
+  */
+ export async function loadPaidOnDelivery(): Promise<PaidOnDelivery> {
+-  const cards = await getDb()
+-    .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, paidOnDelivery: s.suppliers.paidOnDelivery, paymentMethod: s.suppliers.paymentMethod })
+-    .from(s.suppliers);
+-  const index = cardIndex(cards);
+-  return (supplier) => {
+-    const c = cardFor(index, supplier);
++  const [cards, refs] = await Promise.all([
++    getDb()
++      .select({
++        id: s.suppliers.id,
++        name: s.suppliers.name,
++        aliases: s.suppliers.aliases,
++        taxNumber: s.suppliers.taxNumber,
++        paidOnDelivery: s.suppliers.paidOnDelivery,
++        paymentMethod: s.suppliers.paymentMethod,
++      })
++      .from(s.suppliers),
++    loadSupplierRefs(),
++  ]);
++  const { resolve } = supplierResolver(cards, refs);
++  return (supplier, taxNumber) => {
++    const c = resolve(supplier, taxNumber).card;
+     return c?.paidOnDelivery ? { paymentMethod: c.paymentMethod } : null;
+   };
+ }
+@@ -105,6 +135,7 @@ const LEDGER_COLUMNS = {
+   externalId: s.invoices.externalId,
+   eInvoiceId: s.invoices.eInvoiceId,
+   needsReview: s.invoices.needsReview,
++  supplierTaxNumber: s.invoices.supplierTaxNumber,
+ };
+ 
+ export async function loadLedgerInvoices() {
+@@ -121,16 +152,20 @@ export async function supplierSlugOf(cardId: number): Promise<string | null> {
+   return (await slugGroups()).find((g) => g.card?.id === cardId)?.slug ?? null;
+ }
+ 
+-/** Kartsız tedarikçinin (faturalardaki adın anahtarı) adres parçası; listedeki atamayla aynı */
++/**
++ * Kartsız tedarikçinin (faturalardaki adlarından birinin anahtarı) adres parçası; listedeki atamayla aynı. Vergi noyla
++ * birleşen adların grubu en küçük anahtarı taşır: verilen anahtar grubun adlarından biriyse de o grup bulunur.
++ */
+ export async function supplierSlugOfKey(key: string): Promise<string | null> {
+-  return (await slugGroups()).find((g) => !g.card && g.key === key)?.slug ?? null;
++  const groups = await slugGroups();
++  return (groups.find((g) => !g.card && g.key === key) ?? groups.find((g) => !g.card && g.keys.includes(key)))?.slug ?? null;
+ }
+ 
+ async function slugGroups() {
+-  const [cards, names] = await Promise.all([loadSupplierCards(), getDb().selectDistinct({ supplier: s.invoices.supplier }).from(s.invoices)]);
+-  // Yalnız adlar gerekir: tutar ve tarih atamaya katılmaz
++  const [cards, refs] = await Promise.all([loadSupplierCards(), loadSupplierRefs()]);
++  // Yalnız (ad, vergi no) çiftleri gerekir: tutar ve tarih atamaya katılmaz
+   return groupSuppliers(
+-    names.map((n) => ({ supplier: n.supplier, date: "", payable: 0, unpaid: false })),
++    refs.map((r) => ({ ...r, date: r.date ?? "", payable: 0, unpaid: false })),
+     cards,
+     { today: todayTR(), termDays: 0 },
+   );
+diff --git a/src/server/db/schema.ts b/src/server/db/schema.ts
+index 733ab56..3d8a991 100644
+--- a/src/server/db/schema.ts
++++ b/src/server/db/schema.ts
+@@ -261,6 +261,13 @@ export const invoices = pgTable(
+     paidVia: text("paid_via", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
+     /** Ödemesi istendiği / ödeme talebi verildiği gün (YYYY-MM-DD): ödenmemiş faturada "Talep edildi" */
+     paymentRequestedAt: text("payment_requested_at"),
++    /**
++     * Tedarikçinin VKN / TCKN'si (yalnız rakam, 10 ya da 11 hane): Paraşüt gider faturasında e-belgenin `from_vkn`'i ya da
++     * kişi kartının `tax_number`'ı, gelen e-faturada `from_vkn`, UBL'de satıcının kimliği. Elle ve Excel'den girilen
++     * faturada boş. Tedarikçiler aynı (geçerli) vergi nolu faturaları tek tedarikçide toplar (logic.ts supplierResolver).
++     * Kontrol hanesi tutmayan ya da yer tutucu numara saklanır ama eşleşmede kullanılmaz (taxKey).
++     */
++    supplierTaxNumber: text("supplier_tax_number"),
+     createdAt: createdAt(),
+   },
+   (t) => [
+diff --git a/src/server/parasut/mapping.ts b/src/server/parasut/mapping.ts
+index 4d6ab2e..e0c2ea8 100644
+--- a/src/server/parasut/mapping.ts
++++ b/src/server/parasut/mapping.ts
+@@ -9,6 +9,8 @@
+  * Fatura altı iskonto kalemlerin net tutarına oranla dağıtılır (birim maliyet doğru çıksın).
+  */
+ 
++import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
++
+ import { dec, indexIncluded, relMany, relOne, str, type Resource } from "./jsonapi";
+ 
+ export interface LineDraft {
+@@ -53,6 +55,11 @@ export interface BillDraft {
+   lines: LineDraft[];
+   /** Paraşüt'teki e-belge bağı (`active_e_document`): e-fatura PDF'i buradan alınır; e-fatura eşitlemesi aynı kaydı tanır */
+   eDocument: { type: string; id: string } | null;
++  /**
++   * E-belgedeki satıcı vergi nosu (`active_e_document` include edildiyse `from_vkn`): imzalı belgedeki numara, kişi
++   * kartındakinden (`supplierTaxNo`) önce gelir
++   */
++  eDocumentTaxNo: string | null;
+ }
+ 
+ /** Komisyon faturası kesen platformlar (Excel aktarımındaki listeyle aynı) */
+@@ -99,6 +106,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
+   const supplier = relOne(bill, "supplier", index);
+   const category = relOne(bill, "category", index);
+   const details = relMany(bill, "details", index);
++  const eDoc = relOne(bill, "active_e_document", index);
+ 
+   const currency = (str(a.currency) ?? "TRL").toUpperCase();
+   const rate = currency === "TRL" || currency === "TRY" ? 1 : dec(a.exchange_rate) || 1;
+@@ -189,6 +197,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
+       const r = bill.relationships?.active_e_document?.data;
+       return r && !Array.isArray(r) ? { type: r.type, id: r.id } : null;
+     })(),
++    eDocumentTaxNo: str((eDoc?.attributes as Record<string, unknown> | undefined)?.from_vkn),
+     description: str(a.description),
+     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
+     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
+@@ -204,6 +213,25 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
+   };
+ }
+ 
++// ---------------------------------------------------------------- Tedarikçinin vergi nosu (invoices.supplier_tax_number)
++
++/**
++ * Faturada saklı tedarikçi vergi nosunun yeni değeri; null: değişiklik yok. Boş kayda gelen numara yazılır. E-fatura
++ * (imzalı belgedeki `from_vkn`) her zaman geçer. Gider faturasının kişi kartındaki numara e-faturaya bağlı kaydın
++ * numarasını ezmez; e-faturasız kayıtta yazılır (kişi kartı Paraşüt'te düzeltilmiş olabilir). Boş ya da 10/11 hane
++ * olmayan numara yazılmaz.
++ */
++export function nextTaxNumber(
++  stored: string | null,
++  incoming: string | null | undefined,
++  opts: { from: "bill" | "einvoice"; hasEInvoice: boolean },
++): string | null {
++  const t = cleanTaxNumber(incoming);
++  if (!t || t === stored) return null;
++  if (!stored || opts.from === "einvoice") return t;
++  return opts.hasEInvoice ? null : t;
++}
++
+ // ---------------------------------------------------------------- Tedarikçinin kişi kartı (contacts)
+ 
+ /**
+diff --git a/src/server/parasut/sync.ts b/src/server/parasut/sync.ts
+index 4de28f9..98fded6 100644
+--- a/src/server/parasut/sync.ts
++++ b/src/server/parasut/sync.ts
+@@ -2,6 +2,7 @@ import "server-only";
+ 
+ import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, sql } from "drizzle-orm";
+ 
++import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
+ import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
+ import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
+ import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
+@@ -23,6 +24,7 @@ import {
+   findByEInvoiceNo,
+   findExisting,
+   newInvoicePayment,
++  nextTaxNumber,
+   pickCategory,
+   shouldImport,
+   supplierHistory,
+@@ -30,6 +32,7 @@ import {
+   type BillDraft,
+   type ExistingInvoice,
+ } from "./mapping";
++import { backfillSupplierTaxNumbers, TAX_BACKFILL_KEY } from "./tax-backfill";
+ 
+ const CURSOR_KEY = "parasut.cursor";
+ const PRICE_KEY = "parasut.prices";
+@@ -47,8 +50,8 @@ const DUE_KEY = "parasut.dueDates";
+ export const IGNORE_KEY = "parasut.ignore";
+ /** Tedarikçi geçmişinin kaldığı yer: Paraşüt kişi kimliği → sonraki çalışmanın okuyacağı sayfa (eskiden yeniye) */
+ const HISTORY_KEY = "parasut.supplierHistory";
+-/** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler */
+-export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY];
++/** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler (vergi no tamamlaması da baştan başlar) */
++export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY, TAX_BACKFILL_KEY];
+ const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
+ /** Önceki eşitlemeden sonra değişmiş olabilecek faturalar için geriye bakış */
+ const LOOKBACK_DAYS = 75;
+@@ -145,6 +148,7 @@ type Existing = ExistingInvoice & {
+   outstanding: number | null;
+   paidAt: string | null;
+   paymentRequestedAt: string | null;
++  supplierTaxNumber: string | null;
+ };
+ 
+ interface Ctx {
+@@ -169,6 +173,20 @@ interface Ctx {
+   paidOnDelivery: PaidOnDelivery;
+   /** Ödeme takibinin başlangıcı: bundan eski yeni fatura (geçmişi yeniden alırken) Paraşüt'teki durumuyla gelir */
+   paymentsSince: string;
++  /** Bu çalışmada vergi nosu yazılan fatura (yeni ve var olan; özet satırında, "güncellendi"ye sayılmaz) */
++  taxFilled: number;
++}
++
++/**
++ * Var olan faturanın tedarikçi vergi nosunu Paraşüt'ten gelenle yazar (nextTaxNumber: boşsa yazılır, e-fatura
++ * geçer, kişi kartındaki numara e-faturalı kaydı ezmez)
++ */
++async function fillTaxNumber(ctx: Ctx, row: Existing, raw: string | null | undefined, from: "bill" | "einvoice") {
++  const t = nextTaxNumber(row.supplierTaxNumber, raw, { from, hasEInvoice: Boolean(row.eInvoiceId) });
++  if (!t) return;
++  await getDb().update(s.invoices).set({ supplierTaxNumber: t }).where(eq(s.invoices.id, row.id));
++  row.supplierTaxNumber = t;
++  ctx.taxFilled++;
+ }
+ 
+ /** Ödenmemiş faturanın Paraşüt'teki vadesini kaydeder; ödenmiş ya da kaldırılmış faturanın kaydı silinir */
+@@ -229,6 +247,9 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+     if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx);
+     return;
+   }
++  // Tedarikçinin vergi nosu: e-belgedeki (imzalı) önce, yoksa Paraşüt'teki kişi kartındaki
++  const taxRaw = d.eDocumentTaxNo ?? d.supplierTaxNo;
++  const taxFrom = d.eDocumentTaxNo ? ("einvoice" as const) : ("bill" as const);
+   const common = {
+     date: d.date,
+     invoiceNo: d.invoiceNo,
+@@ -255,14 +276,21 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+     const keepOutstanding = match.unpaid && !d.unpaid;
+     // Yer tutucu adla açılmış fatura gerçek adıyla peşin çalışılan tedarikçinin kartına düştü: yeni faturadaki kural
+     const card =
+-      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier) : null;
++      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt
++        ? ctx.paidOnDelivery(supplierFix.supplier, taxRaw ?? match.supplierTaxNumber)
++        : null;
+     const settle = card ? { unpaid: false, paidAt: match.date, paidVia: card.paymentMethod } : {};
+     const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
+     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
++    const tax = nextTaxNumber(match.supplierTaxNumber, taxRaw, { from: taxFrom, hasEInvoice: Boolean(match.eInvoiceId ?? eInvoiceFree) });
+     await db
+       .update(s.invoices)
+-      .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate })
++      .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate, ...(tax ? { supplierTaxNumber: tax } : {}) })
+       .where(eq(s.invoices.id, match.id));
++    if (tax) {
++      match.supplierTaxNumber = tax;
++      ctx.taxFilled++;
++    }
+     invoiceId = match.id;
+     if (match.date !== d.date) ctx.touchedMonths.add(match.date.slice(0, 7));
+     Object.assign(match, {
+@@ -290,9 +318,10 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+     const pay = newInvoicePayment(
+       // Komisyon yalnız kategori güvenilirse (kural, geçmiş, platform listesi) ödendi sayılır; ipucu tahmini sayılmaz
+       { payable: d.payable, date: d.date, parasutUnpaid: d.unpaid, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
+-      ctx.paidOnDelivery(supplier),
++      ctx.paidOnDelivery(supplier, taxRaw),
+       ctx.paymentsSince,
+     );
++    const supplierTaxNumber = cleanTaxNumber(taxRaw);
+     const [row] = await db
+       .insert(s.invoices)
+       .values({
+@@ -301,6 +330,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+         dueDate: d.dueDate,
+         origin: "parasut",
+         supplier,
++        supplierTaxNumber,
+         category,
+         description: d.description,
+         needsReview: categoryNeedsReview(reason),
+@@ -308,6 +338,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+       })
+       .returning({ id: s.invoices.id });
+     invoiceId = row.id;
++    if (supplierTaxNumber) ctx.taxFilled++;
+     ctx.existing.push({
+       id: row.id,
+       eInvoiceId: eInvoiceFree,
+@@ -326,6 +357,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
+       paidAt: pay.paidAt,
+       paymentRequestedAt: null,
+       syncedAt: common.syncedAt,
++      supplierTaxNumber,
+     });
+     rememberDue(ctx, d.externalId, d.dueDate, pay.unpaid);
+     ctx.counts.created++;
+@@ -397,6 +429,7 @@ async function loadCtx(): Promise<Ctx> {
+         syncedAt: s.invoices.syncedAt,
+         category: s.invoices.category,
+         needsReview: s.invoices.needsReview,
++        supplierTaxNumber: s.invoices.supplierTaxNumber,
+       })
+       .from(s.invoices),
+     loadRules(),
+@@ -429,6 +462,7 @@ async function loadCtx(): Promise<Ctx> {
+     dueDirty: false,
+     paidOnDelivery,
+     paymentsSince,
++    taxFilled: 0,
+   };
+ }
+ 
+@@ -610,6 +644,17 @@ export async function syncParasut(
+       }
+     }
+ 
++    // ---- eski faturaların tedarikçi vergi nosu (bir kerelik, kaldığı yerden sürer); yalnız artan sürede, hatası
++    // eşitlemeyi bozmaz
++    let backfill: { filled: number; done: boolean } | null = null;
++    if (Date.now() - started < deadline - 6_000) {
++      try {
++        backfill = await backfillSupplierTaxNumbers(client, { until: started + deadline - 3_000 });
++      } catch (err) {
++        if (!(err instanceof ParasutDeadlineError)) console.error("Paraşüt vergi no tamamlama", err);
++      }
++    }
++
+     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
+     if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
+     if (partial && !reachedEnd) {
+@@ -626,12 +671,14 @@ export async function syncParasut(
+ 
+     const { created, updated, removed } = ctx.counts;
+     const fetched = drafts.length + (eStats?.fetched ?? 0);
++    const taxFilled = ctx.taxFilled + (backfill?.filled ?? 0);
+     const parts = [
+       `${drafts.length} gider faturası${eStats ? ` · ${eStats.fetched} e-fatura` : ""} okundu`,
+       `${created} yeni`,
+       `${updated} güncellendi`,
+       removed ? `${removed} kaldırıldı` : "",
+       rechecked ? `${rechecked} yeniden denetlendi` : "",
++      taxFilled ? `${taxFilled} faturaya vergi no yazıldı` : "",
+       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
+       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
+       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
+@@ -643,7 +690,7 @@ export async function syncParasut(
+       .update(s.parasutSyncRuns)
+       .set({ status: "ok", finishedAt: new Date(), fetched, created, updated, removed, message: summary })
+       .where(eq(s.parasutSyncRuns.id, runId));
+-    if (created || updated || removed) await logActivity(null, trigger === "cron" ? "Paraşüt eşitlemesi (otomatik)" : "Paraşüt eşitlemesi", summary);
++    if (created || updated || removed || taxFilled) await logActivity(null, trigger === "cron" ? "Paraşüt eşitlemesi (otomatik)" : "Paraşüt eşitlemesi", summary);
+     return { ok: true, summary, runId, fetched, created, updated, removed, partial };
+   } catch (e) {
+     const error = e instanceof Error ? e.message : String(e);
+@@ -978,6 +1025,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
+   }
+ 
+   if (d.importedBillId) {
++    // İçeri alınmış e-fatura: tutarları gider faturası taşır, imzalı belgedeki vergi no kayda yazılır
++    if (match) await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
+     if (match && !match.eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === d.eInvoiceId)) {
+       await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, match.id));
+       match.eInvoiceId = d.eInvoiceId;
+@@ -998,6 +1047,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
+     if (bill) {
+       await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, bill.id));
+       bill.eInvoiceId = d.eInvoiceId;
++      await fillTaxNumber(ctx, bill, d.supplierTaxNo, "einvoice");
+       return "linked";
+     }
+   }
+@@ -1008,6 +1058,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
+     const firstLink = match.eInvoiceId !== d.eInvoiceId;
+     const fromThis = match.origin === "parasut" && !match.externalId;
+     const differs = Math.abs(match.payable - d.payable) > 1 || match.date !== d.date;
++    // Değişmemiş e-faturada da (eski kayıtta boşsa) vergi no yazılır
++    await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
+     if (!firstLink && !(fromThis && differs)) return "skipped";
+     const set: Partial<typeof s.invoices.$inferInsert> = { eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid, source: "parasut", syncedAt: now };
+     if (fromThis) Object.assign(set, values);
+-- 
+2.43.0
+

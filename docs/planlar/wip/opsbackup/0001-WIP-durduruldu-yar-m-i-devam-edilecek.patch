@@ -1,0 +1,1164 @@
+From 5947aa78f88b9ca758e42124eef36671813d57dc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 22 Oct 2026 07:59:43 +0000
+Subject: [PATCH] =?UTF-8?q?WIP:=20durduruldu,=20yar=C4=B1m=20i=C5=9F=20(de?=
+ =?UTF-8?q?vam=20edilecek)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GMUTt3CmELPDBL31cVobaH
+---
+ src/app/api/yedek/route.ts   |  90 ++++++++
+ src/lib/backup/format.ts     | 290 +++++++++++++++++++++++++
+ src/server/actions/backup.ts |  35 +++
+ src/server/backup/core.ts    | 200 +++++++++++++++++
+ src/server/backup/restore.ts | 402 +++++++++++++++++++++++++++++++++++
+ src/server/backup/state.ts   |  68 ++++++
+ src/server/secret-box.ts     |   2 +-
+ 7 files changed, 1086 insertions(+), 1 deletion(-)
+ create mode 100644 src/app/api/yedek/route.ts
+ create mode 100644 src/lib/backup/format.ts
+ create mode 100644 src/server/actions/backup.ts
+ create mode 100644 src/server/backup/core.ts
+ create mode 100644 src/server/backup/restore.ts
+ create mode 100644 src/server/backup/state.ts
+
+diff --git a/src/app/api/yedek/route.ts b/src/app/api/yedek/route.ts
+new file mode 100644
+index 0000000..b13e0a8
+--- /dev/null
++++ b/src/app/api/yedek/route.ts
+@@ -0,0 +1,90 @@
++import { connection, type NextRequest } from "next/server";
++
++import { backupSummaryText } from "@/lib/backup/format";
++import { contentDisposition } from "@/lib/documents";
++import { logActivity } from "@/server/actions/log";
++import { getCurrentUser } from "@/server/auth/dal";
++import { appVersion, backupLines, type BackupSummary } from "@/server/backup/core";
++import { openBackupHandle, saveLastBackup } from "@/server/backup/state";
++import { getDb } from "@/server/db";
++
++/**
++ * Tam yedek (yalnız yönetici, docs/YEDEK.md): GET /api/yedek?t=<bağlantı>. Bağlantıyı Ayarlar › Yedek'te parola
++ * onayından sonra prepareBackupDownload verir (iki dakika, yalnız o kişi). Dosya akarak üretilir: satırlar
++ * veritabanından okunurken gzip'lenip gönderilir, bellekte bütün dosya tutulmaz. Son yedek kaydı (zil hatırlatması,
++ * kart) ve işlem geçmişi satırı yalnız dosyanın tamamı gönderilince yazılır; yarıda kesilen indirme kayda geçmez.
++ */
++export const maxDuration = 60;
++
++export async function GET(request: NextRequest) {
++  await connection();
++  const user = await getCurrentUser();
++  if (!user || user.role !== "admin") return Response.json({ error: "Bu işlem için yönetici girişi gerekli" }, { status: 403 });
++  const handle = openBackupHandle(request.nextUrl.searchParams.get("t") ?? "", user.id);
++  if (!handle) return Response.json({ error: "İndirme bağlantısının süresi doldu. Ayarlar › Yedek'ten yeniden indirin." }, { status: 403 });
++
++  const now = new Date();
++  const lines = backupLines(getDb().$client, { documents: handle.documents, createdBy: user.name, app: appVersion(), now });
++  // İlk satır (başlık) yanıttan önce: veritabanına ulaşılamıyorsa yarım dosya yerine anlaşılır bir hata
++  let first: IteratorResult<string, BackupSummary>;
++  try {
++    first = await lines.next();
++  } catch (e) {
++    console.error("[yedek] başlatılamadı", e);
++    return Response.json({ error: "Yedek hazırlanamadı; biraz sonra yeniden deneyin." }, { status: 500 });
++  }
++
++  let summary: BackupSummary | null = null;
++  let pending: IteratorResult<string, BackupSummary> | null = first;
++  // ReadableStream.from yerine pull: TypeScript'in dom türlerinde yok, Node'da var; ikisi de aynı işi görür
++  const source = new ReadableStream<string>({
++    async pull(controller) {
++      try {
++        const r = pending ?? (await lines.next());
++        pending = null;
++        if (r.done) {
++          summary = r.value;
++          controller.close();
++        } else {
++          controller.enqueue(r.value);
++        }
++      } catch (e) {
++        console.error("[yedek] yarıda kaldı", e);
++        controller.error(e);
++      }
++    },
++    // İndirme iptal edildi: işlem kapanır, bağlantı havuza döner (backupLines › finally)
++    async cancel() {
++      await lines.return(undefined as never).catch(() => {});
++    },
++  });
++
++  let bytes = 0;
++  const counted = new TransformStream<Uint8Array, Uint8Array>({
++    transform(chunk, controller) {
++      bytes += chunk.byteLength;
++      controller.enqueue(chunk);
++    },
++    async flush() {
++      if (!summary) return;
++      const s: BackupSummary = summary;
++      const tables = Object.keys(s.tables).length;
++      try {
++        await saveLastBackup({ at: now.toISOString(), by: user.name, bytes, rows: s.rows, tables, documents: s.documents, docCount: s.docCount });
++      } catch (e) {
++        console.error("[yedek] son yedek kaydı yazılamadı", e);
++      }
++      await logActivity(user, "Yedek indirildi", backupSummaryText({ tables, rows: s.rows, bytes, documents: s.documents, docCount: s.docCount }));
++    },
++  });
++
++  const body = source.pipeThrough(new TextEncoderStream()).pipeThrough(new CompressionStream("gzip")).pipeThrough(counted);
++  return new Response(body, {
++    headers: {
++      "Content-Type": "application/gzip",
++      "Content-Disposition": contentDisposition("attachment", handle.fileName),
++      "Cache-Control": "no-store",
++      "X-Content-Type-Options": "nosniff",
++    },
++  });
++}
+diff --git a/src/lib/backup/format.ts b/src/lib/backup/format.ts
+new file mode 100644
+index 0000000..0b0618e
+--- /dev/null
++++ b/src/lib/backup/format.ts
+@@ -0,0 +1,290 @@
++/*
++ * Tam yedek dosyasının biçimi (sürüm 1) ve saf kuralları (tests/yedek.test.ts sınar; docs/YEDEK.md aynısını anlatır).
++ *
++ * Dosya: UTF-8 JSON satırlarının (her satır bir JSON değeri, "\n" ile biter) gzip'i.
++ *   1. satır: başlık  {"format":"laffogato-yedek","version":1,"createdAt":…,"createdBy":…,"app":…,"documents":…,
++ *                      "migrations":[{"hash":…,"createdAt":…}],"excluded":{…}}
++ *   her tablo: {"table":"<ad>","columns":[…]} ardından satır başına {"r":{…}} (row_to_json; tablolar alfabe sırasıyla)
++ *   son satır: {"end":{"tables":{"<ad>":<satır>},"rows":<toplam>,"sha256":"<hex>"}}
++ * sha256, son satırdan önceki bütün satırların ("\n" dahil) UTF-8 baytlarını kapsar: son satır yoksa ya da özet
++ * tutmuyorsa dosya yarıda kesilmiş ya da bozulmuştur, geri yüklenmez.
++ *
++ * Tablolar çalışırken information_schema'dan bulunur: yeni bir tablo kod değişmeden yedeğe girer. Burada yalnız
++ * istisnalar durur (parolalar, tek kullanımlık bağlantılar, cihaz anahtarları, şifreli belirteçler dosyaya yazılmaz).
++ */
++
++import { formatBytes } from "@/lib/documents";
++
++export const BACKUP_FORMAT = "laffogato-yedek";
++export const BACKUP_VERSION = 1;
++/**
++ * Panelden indirilen yedeğe eklenebilecek yüklenmiş belgelerin toplamı. Vercel'in yanıt sınırı (4,5 MB) akan yanıtta
++ * da geçerli mi doğrulanmadı: 4,5 MB'ı aşan belgeli bir indirme canlıda denenene kadar 4 MB. Daha büyüğü bilgisayardan
++ * alınır (npm run db:backup -- --belgeler).
++ */
++export const PANEL_DOCUMENTS_MAX_BYTES = 4 * 1024 * 1024;
++/** Son yedek bundan eskiyse zil hatırlatır, kart rozet gösterir */
++export const BACKUP_REMIND_DAYS = 30;
++/** Yedek uyarısının ve kartın yeri: Ayarlar › Yedek */
++export const BACKUP_HREF = "/panel/ayarlar#yedek";
++
++export interface TableRule {
++  /** Tablo hiç yazılmaz; neden */
++  skip?: string;
++  /** Yazılmayan sütunlar */
++  dropColumns?: readonly string[];
++  /** Yalnız bu koşulu tutan satırlar (SQL; yalnız buradaki sabit metin, kullanıcı girdisi değil) */
++  where?: string;
++  /** Yüklenmiş belgeler: yalnız "belgeleri de ekle" seçilince yazılır */
++  documents?: true;
++}
++
++/** Giriş bilgileri: dosyaya yazılmaz; geri yüklemede hedefteki aynı e-postanın bilgisi korunur (mergeUserRows) */
++export const USER_CREDENTIAL_COLUMNS = [
++  "password_hash",
++  "totp_secret",
++  "totp_enabled",
++  "totp_last_step",
++  "recovery_codes",
++  "failed_logins",
++  "locked_until",
++  "session_version",
++] as const;
++
++/** AUTH_SECRET ile şifreli durum anahtarları: Paraşüt belirteci yeniden alınır, bildirim anahtarı yenilenir */
++export const SECRET_STATE_KEYS = ["parasut.token", "webpush_vapid"] as const;
++
++export const TABLE_RULES: Record<string, TableRule> = {
++  user_tokens: { skip: "tek kullanımlık bağlantılar (özet); yenisi gönderilir" },
++  push_subscriptions: { skip: "cihazlar panel açılınca yeniden abone olur" },
++  users: { dropColumns: USER_CREDENTIAL_COLUMNS },
++  integration_state: { where: `key NOT IN (${SECRET_STATE_KEYS.map((k) => `'${k}'`).join(", ")})` },
++  // Paraşüt'ün e-fatura PDF'i önbellektir (ilk açılışta yeniden indirilir); yalnız panelden yüklenenler
++  invoice_documents: { where: `source = 'upload'`, documents: true },
++};
++
++export interface BackupMigration {
++  hash: string;
++  createdAt: number;
++}
++
++export interface BackupHeader {
++  format: string;
++  version: number;
++  createdAt: string;
++  createdBy: string;
++  /** Yedeği alan sürüm (Vercel'de commit'in ilk 7 karakteri, yerelde "yerel") */
++  app: string;
++  documents: boolean;
++  /** Kaynak veritabanının drizzle.__drizzle_migrations kayıtları: şema sürümü */
++  migrations: BackupMigration[];
++  excluded: { tables: string[]; columns: Record<string, string[]>; stateKeys: string[]; documents: "parasut-onbellek" | "hepsi" };
++}
++
++export interface BackupEnd {
++  tables: Record<string, number>;
++  rows: number;
++  sha256: string;
++}
++
++/** Yedeğe girmeyenler (başlıkta yazılır): atlanan tablolar, düşen sütunlar, şifreli anahtarlar */
++export function excludedFor(tables: string[], documents: boolean): BackupHeader["excluded"] {
++  const skipped = tables.filter((t) => TABLE_RULES[t]?.skip || (TABLE_RULES[t]?.documents && !documents));
++  const columns: Record<string, string[]> = {};
++  for (const t of tables) if (TABLE_RULES[t]?.dropColumns) columns[t] = [...TABLE_RULES[t].dropColumns!];
++  return { tables: skipped, columns, stateKeys: [...SECRET_STATE_KEYS], documents: documents ? "parasut-onbellek" : "hepsi" };
++}
++
++/** Bir satır: JSON + "\n" */
++export const encodeLine = (v: unknown) => `${JSON.stringify(v)}\n`;
++/** Satır satırı veritabanının row_to_json metniyle kurulur (sayılar ve tarihler yeniden yazılmaz) */
++export const ROW_PREFIX = '{"r":';
++export const rowLine = (json: string) => `${ROW_PREFIX}${json}}\n`;
++
++const TR_OFFSET_MS = 3 * 3600_000;
++
++/** laffogato-yedek-2026-10-22-0915.json.gz (İstanbul saati); `before` verilirse geri yükleme öncesi kopyası */
++export function backupFileName(now: Date, before?: { host: string }): string {
++  const t = new Date(now.getTime() + TR_OFFSET_MS).toISOString();
++  const stamp = `${t.slice(0, 10)}-${t.slice(11, 13)}${t.slice(14, 16)}`;
++  const host = before ? `once-${before.host.replace(/[^a-zA-Z0-9.-]+/g, "_").slice(0, 60)}-` : "";
++  return `laffogato-yedek-${host}${stamp}.json.gz`;
++}
++
++export type SchemaPlan =
++  | {
++      error: null;
++      /** Yedeğin uyguladığı en yeni günlük girdisinin zamanı: veri bu sürümde yüklenir, sonrakiler veriden sonra */
++      upTo: number;
++      fromTag: string;
++      toTag: string;
++      /** Veriden sonra uygulanacak migration sayısı */
++      later: number;
++      /** Yedekte olup günlükte olmayan kayıtlar (ör. bir önizlemenin uyguladığı): uyarı */
++      unknown: number[];
++      /** upTo'dan eski olup yedekte kaydı olmayan günlük girdileri (kaynakta atlanmış): veriden önce uygulanır, uyarı */
++      missing: string[];
++    }
++  | { error: string };
++
++/**
++ * Yedeğin şema sürümü ile koddaki migration günlüğü: veri yedeğin sürümünde yüklenir (o sürüme kadar migration, veri,
++ * sonra kalan migration'lar; veri migration'ları da geri yüklenen satırlarda çalışır). Yedek koddan yeniyse yüklenmez.
++ */
++export function backupSchemaPlan(migrations: BackupMigration[], journal: { when: number; tag: string }[]): SchemaPlan {
++  if (!journal.length) return { error: "Kodda migration günlüğü yok (drizzle/meta/_journal.json)." };
++  if (!migrations.length) return { error: "Yedekte şema sürümü (migration kaydı) yok; bu dosya geri yüklenemez." };
++  const newest = journal[journal.length - 1];
++  const applied = new Set(migrations.map((m) => Number(m.createdAt)));
++  if ([...applied].some((t) => t > newest.when)) return { error: "Yedek bu koddan daha yeni bir sürümle alınmış: önce kodu güncelleyin (git pull)." };
++  const known = journal.filter((e) => applied.has(e.when));
++  if (!known.length) return { error: "Yedeğin şema sürümü bu kodun migration günlüğünde yok; bu dosya geri yüklenemez." };
++  const from = known[known.length - 1];
++  const journalWhens = new Set(journal.map((e) => e.when));
++  return {
++    error: null,
++    upTo: from.when,
++    fromTag: from.tag,
++    toTag: newest.tag,
++    later: journal.filter((e) => e.when > from.when).length,
++    unknown: [...applied].filter((t) => !journalWhens.has(t)).sort((a, b) => a - b),
++    missing: journal.filter((e) => e.when < from.when && !applied.has(e.when)).map((e) => e.tag),
++  };
++}
++
++/**
++ * Tabloları yükleme sırasına dizer: her tablo başvurduğu (yabancı anahtar) tablolardan sonra. Hazır olanlar arasında
++ * alfabe sırası (sonuç her seferinde aynı). Kendine başvuru yok sayılır; döngü olursa kalanlar alfabe sırasıyla sona.
++ */
++export function orderTables(tables: string[], edges: { child: string; parent: string }[]): string[] {
++  const names = [...new Set(tables)].sort();
++  const set = new Set(names);
++  const parents = new Map(names.map((n) => [n, new Set<string>()]));
++  for (const e of edges) if (e.child !== e.parent && set.has(e.child) && set.has(e.parent)) parents.get(e.child)!.add(e.parent);
++  const out: string[] = [];
++  const done = new Set<string>();
++  while (out.length < names.length) {
++    const next = names.find((n) => !done.has(n) && [...parents.get(n)!].every((p) => done.has(p)));
++    if (!next) {
++      for (const n of names) if (!done.has(n)) out.push(n);
++      break;
++    }
++    out.push(next);
++    done.add(next);
++  }
++  return out;
++}
++
++/** Hedefte geri yüklemeden önce okunan giriş bilgileri */
++export interface SavedCredentials {
++  email: string;
++  password_hash: string;
++  totp_secret: string | null;
++  totp_enabled: boolean;
++  totp_last_step: number | null;
++  recovery_codes: unknown;
++  session_version: number;
++}
++
++export interface MergedUsers {
++  rows: Record<string, unknown>[];
++  /** ADMIN_EMAIL yedekte yoksa eklenecek yönetici (kimliği sayaçtan) */
++  newAdmin: Record<string, unknown> | null;
++  /** Parolası hedeften korunanlar, davet bekleyenler (e-postası hedefte olmayanlar), parolası ADMIN_PASSWORD olan */
++  kept: string[];
++  invited: string[];
++  admin: string | null;
++}
++
++/**
++ * Yedekteki kullanıcılara giriş bilgisi verir: hedefte aynı e-posta (büyük/küçük harf farkı yok) varsa onun parolası ve
++ * iki adımlı doğrulaması, yoksa "davet bekliyor" (parola yok, bağlantı gönderilir). ADMIN_EMAIL + ADMIN_PASSWORD
++ * verildiyse o kişinin parolası odur (yedekte yoksa yönetici olarak eklenir).
++ * Herkesin oturum sürümü hedefteki en büyüğün bir fazlası: eski bütün oturum çerezleri geçersiz olur. Kişi başına
++ * "eskisi + 1" yetmezdi: yedekte kimlikler başka kişilere ait olabilir, eski bir çerez başkasının satırında aynı sürüme
++ * denk gelip o kişinin oturumunu açabilirdi.
++ */
++export function mergeUserRows(
++  rows: Record<string, unknown>[],
++  saved: SavedCredentials[],
++  opts: { inviteHash: string; maxSv: number; admin?: { email: string; hash: string; name: string } | null },
++): MergedUsers {
++  const byEmail = new Map(saved.map((c) => [c.email.trim().toLowerCase(), c]));
++  const sv = Math.max(0, opts.maxSv) + 1;
++  const adminEmail = opts.admin?.email.trim().toLowerCase() || null;
++  const kept: string[] = [];
++  const invited: string[] = [];
++  let admin: string | null = null;
++  const out = rows.map((r) => {
++    const email = String(r.email ?? "").trim().toLowerCase();
++    const c = byEmail.get(email);
++    const creds = c
++      ? {
++          password_hash: c.password_hash,
++          totp_secret: c.totp_secret,
++          totp_enabled: c.totp_enabled,
++          totp_last_step: c.totp_last_step,
++          recovery_codes: c.recovery_codes ?? null,
++        }
++      : { password_hash: opts.inviteHash, totp_secret: null, totp_enabled: false, totp_last_step: null, recovery_codes: null };
++    const name = String(r.name ?? email);
++    if (adminEmail && email === adminEmail) {
++      creds.password_hash = opts.admin!.hash;
++      admin = email;
++    } else if (c) {
++      kept.push(name);
++    } else if (r.active !== false) {
++      invited.push(name);
++    }
++    return { ...r, ...creds, failed_logins: 0, locked_until: null, session_version: sv };
++  });
++  const newAdmin =
++    adminEmail && !admin
++      ? { email: adminEmail, name: opts.admin!.name, password_hash: opts.admin!.hash, role: "admin", active: true, totp_enabled: false, session_version: sv }
++      : null;
++  return { rows: out, newAdmin, kept, invited, admin: adminEmail };
++}
++
++/** Panelde saklanan son yedek (integration_state › backup.last; dosya tamamen gönderilince yazılır) */
++export interface LastBackup {
++  at: string;
++  by: string;
++  bytes: number;
++  rows: number;
++  tables: number;
++  documents: boolean;
++  docCount: number;
++}
++
++const trDay = (d: Date) => new Date(d.getTime() + TR_OFFSET_MS).toISOString().slice(0, 10);
++
++/** Son yedekten bu yana geçen gün (İstanbul günü) */
++export function backupAgeDays(lastAt: string, now: Date): number {
++  return Math.round((Date.parse(trDay(now)) - Date.parse(trDay(new Date(lastAt)))) / 86_400_000);
++}
++
++/** Yedek hatırlatması gerekiyor mu: hiç yedek yoksa ya da son yedek 30 günden eskiyse */
++export function backupDue(lastAt: string | null, now: Date): boolean {
++  return lastAt === null || backupAgeDays(lastAt, now) >= BACKUP_REMIND_DAYS;
++}
++
++/**
++ * Zildeki yedek hatırlatması (yalnız canlıda; src/lib/job-health.ts › systemAlerts ekler). Kimlik son yedeğin
++ * gününden: okundu işareti yeni bir yedek alınana kadar kalır.
++ */
++export function backupReminder(lastAt: string | null, now: Date): { id: string; title: string; body: string } | null {
++  if (!backupDue(lastAt, now)) return null;
++  return {
++    id: `yedek-${lastAt ? trDay(new Date(lastAt)) : "yok"}`,
++    title: lastAt ? `Yedek almayalı ${backupAgeDays(lastAt, now)} gün oldu` : "Henüz yedek indirilmedi",
++    body: "Ayarlar › Yedek › Yedeği indir; dosyayı bilgisayarınızda ya da Drive'da saklayın.",
++  };
++}
++
++const thousands = (n: number) => new Intl.NumberFormat("tr-TR").format(n);
++
++/** İşlem geçmişi ve komut satırı: "41 tablo · 4.312 satır · 1,2 MB · belgeler hariç" */
++export function backupSummaryText(v: { tables: number; rows: number; bytes: number; documents: boolean; docCount: number }): string {
++  const docs = v.documents ? `${thousands(v.docCount)} belge dahil` : "belgeler hariç";
++  return `${v.tables} tablo · ${thousands(v.rows)} satır · ${formatBytes(v.bytes)} · ${docs}`;
++}
+diff --git a/src/server/actions/backup.ts b/src/server/actions/backup.ts
+new file mode 100644
+index 0000000..2228945
+--- /dev/null
++++ b/src/server/actions/backup.ts
+@@ -0,0 +1,35 @@
++"use server";
++
++import { z } from "zod";
++
++import { backupFileName, PANEL_DOCUMENTS_MAX_BYTES } from "@/lib/backup/format";
++import { formatBytes } from "@/lib/documents";
++import { requireAdmin } from "@/server/auth/dal";
++import { requirePassword } from "@/server/auth/step-up";
++import { backupHandle, uploadsTotal } from "@/server/backup/state";
++
++import { attempt, UserError } from "./util";
++
++const schema = z.object({ password: z.string().max(200, "Parola hatalı"), documents: z.boolean() });
++
++/**
++ * Ayarlar › Yedek › Yedeği indir: yöneticinin kendi parolasıyla onaylanır (yedek paneldeki bütün veriyi taşır; açık
++ * kalmış bir oturumla indirilmesin). Dosyayı bu eylem değil /api/yedek verir: burada yalnız iki dakika geçerli, bu
++ * kişiye özel bir indirme bağlantısı üretilir. Sayfada bir şey değişmez (refresh yok); son yedek, dosya tamamen
++ * gönderilince rotada yazılır.
++ */
++export async function prepareBackupDownload(input: z.input<typeof schema>) {
++  return attempt(async () => {
++    const me = await requireAdmin();
++    const data = schema.parse(input);
++    await requirePassword(me, data.password, "Yedek");
++    if (data.documents) {
++      const { bytes } = await uploadsTotal();
++      if (bytes > PANEL_DOCUMENTS_MAX_BYTES) {
++        throw new UserError(`Belgeler panelden indirilemeyecek kadar büyük (${formatBytes(bytes)}). Belgeli yedeği bilgisayardan alın: docs/YEDEK.md › Belgeler.`);
++      }
++    }
++    const fileName = backupFileName(new Date());
++    return { url: `/api/yedek?t=${encodeURIComponent(backupHandle(me.id, data.documents, fileName))}`, fileName };
++  });
++}
+diff --git a/src/server/backup/core.ts b/src/server/backup/core.ts
+new file mode 100644
+index 0000000..85c7e89
+--- /dev/null
++++ b/src/server/backup/core.ts
+@@ -0,0 +1,200 @@
++// Tam yedeğin dışa aktarımı: veritabanının bütün tabloları tek tutarlı anlık görüntüden JSON satırları olarak
++// (biçim: src/lib/backup/format.ts, docs/YEDEK.md). Panelin indirme rotası (/api/yedek), komut satırı
++// (npm run db:backup, geri yükleme öncesi kopya) ve testler kullanır; bu yüzden "server-only" yok
++// (src/server/db/index.ts gibi). Geri yükleme ayrı modülde (./restore.ts): rota migration dosyalarını taşımasın.
++
++import { createHash } from "node:crypto";
++import { createWriteStream } from "node:fs";
++import { unlink } from "node:fs/promises";
++import { Readable } from "node:stream";
++import { pipeline } from "node:stream/promises";
++import { createGzip } from "node:zlib";
++
++import type postgres from "postgres";
++
++import {
++  BACKUP_FORMAT,
++  BACKUP_VERSION,
++  encodeLine,
++  excludedFor,
++  rowLine,
++  TABLE_RULES,
++  type BackupHeader,
++  type BackupMigration,
++  type TableRule,
++} from "@/lib/backup/format";
++
++export interface BackupOptions {
++  /** Panelden yüklenmiş fatura belgeleri de yazılsın */
++  documents: boolean;
++  createdBy: string;
++  app: string;
++  now?: Date;
++}
++
++export interface BackupSummary {
++  tables: Record<string, number>;
++  rows: number;
++  sha256: string;
++  documents: boolean;
++  docCount: number;
++}
++
++/** Yedeği alan sürüm: Vercel'de commit'in ilk 7 karakteri */
++export function appVersion(): string {
++  return process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "yerel";
++}
++
++/** Tanımlayıcı yalnız information_schema'dan gelir; yine de tırnaklanır (içindeki " ikilenir) */
++export const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
++
++type Query = postgres.Sql | postgres.ReservedSql | postgres.TransactionSql;
++
++/** public şemasındaki tablolar, alfabe sırasıyla */
++export async function publicTables(q: Query): Promise<string[]> {
++  const rows = await q.unsafe<{ name: string }[]>(
++    `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`,
++  );
++  return rows.map((r) => r.name).sort();
++}
++
++export interface ColumnInfo {
++  name: string;
++  type: string;
++  nullable: boolean;
++  serial: boolean;
++}
++
++/** Tablonun sütunları (sıra: ordinal_position); hesaplanan (GENERATED) sütunlar yazılmaz, geri yüklenmez */
++export async function columnsOf(q: Query, table: string): Promise<ColumnInfo[]> {
++  const rows = await q.unsafe<{ name: string; type: string; nullable: string; def: string | null }[]>(
++    `SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS def
++       FROM information_schema.columns
++      WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'
++      ORDER BY ordinal_position`,
++    [table],
++  );
++  return rows.map((r) => ({ name: r.name, type: r.type, nullable: r.nullable === "YES", serial: Boolean(r.def?.startsWith("nextval(")) }));
++}
++
++/** Kaynağın uyguladığı migration'lar (şema sürümü); drizzle şeması yoksa boş */
++async function appliedMigrations(q: Query): Promise<BackupMigration[]> {
++  const [{ exists }] = await q.unsafe<{ exists: boolean }[]>(`SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists`);
++  if (!exists) return [];
++  const rows = await q.unsafe<{ hash: string; created_at: string }[]>(`SELECT hash, created_at::text AS created_at FROM drizzle.__drizzle_migrations ORDER BY created_at`);
++  return rows.map((r) => ({ hash: r.hash, createdAt: Number(r.created_at) }));
++}
++
++const INTEGER_TYPES = new Set(["integer", "bigint", "smallint"]);
++/** Bir sorguda okunan satır: belgeler (her biri 4 MB'a kadar) için az, ötekiler için çok */
++const pageSize = (rule: TableRule | undefined) => (rule?.documents ? 10 : 2000);
++
++/**
++ * Tablonun satırları row_to_json metni olarak. Tamsayı `id`'si olan tablolar sayfa sayfa (id > son), ötekiler tek
++ * sorguda (küçük tablolar: ayarlar, aylar, eşleştirmeler). row_to_json tek satırdır; düz `json` sütunu satır sonu
++ * taşıyabilirdi, o zaman yeniden yazılır (dosyada satır = kayıt).
++ */
++async function* tableRows(q: Query, table: string, cols: ColumnInfo[], rule: TableRule | undefined): AsyncGenerator<string> {
++  const list = cols.map((c) => ident(c.name)).join(", ");
++  const where = rule?.where ? ` AND (${rule.where})` : "";
++  const flat = (j: string) => (j.includes("\n") ? JSON.stringify(JSON.parse(j)) : j);
++  const id = cols.find((c) => c.name === "id" && INTEGER_TYPES.has(c.type));
++  if (!id) {
++    const rows = await q.unsafe<{ j: string }[]>(`SELECT row_to_json(x)::text AS j FROM (SELECT ${list} FROM public.${ident(table)} WHERE TRUE${where} ORDER BY 1) x`);
++    for (const r of rows) yield flat(r.j);
++    return;
++  }
++  const limit = pageSize(rule);
++  let last = "-9223372036854775808";
++  for (;;) {
++    const rows = await q.unsafe<{ k: string; j: string }[]>(
++      `SELECT x.id::text AS k, row_to_json(x)::text AS j
++         FROM (SELECT ${list} FROM public.${ident(table)} WHERE id > $1::bigint${where} ORDER BY id LIMIT ${limit}) x
++        ORDER BY x.id`,
++      [last],
++    );
++    for (const r of rows) yield flat(r.j);
++    if (rows.length < limit) return;
++    last = rows[rows.length - 1].k;
++  }
++}
++
++/**
++ * Yedeğin satırları (her biri "\n" ile biter), son satırdan sonra özet döner. Bütün tablolar tek bir REPEATABLE READ
++ * READ ONLY işlemden okunur: indirme sürerken yapılan değişiklikler dosyayı yarım bırakmaz. Bağlantı ayrılır, iş
++ * bitince ya da okuyan vazgeçince (generator.return, indirme iptal edildi) bırakılır.
++ */
++export async function* backupLines(sql: postgres.Sql, opts: BackupOptions): AsyncGenerator<string, BackupSummary, undefined> {
++  const conn = await sql.reserve();
++  let open = false;
++  try {
++    await conn.unsafe("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
++    open = true;
++    const hash = createHash("sha256");
++    const out = (line: string) => {
++      hash.update(line, "utf8");
++      return line;
++    };
++    const [migrations, tables] = [await appliedMigrations(conn), await publicTables(conn)];
++    const header: BackupHeader = {
++      format: BACKUP_FORMAT,
++      version: BACKUP_VERSION,
++      createdAt: (opts.now ?? new Date()).toISOString(),
++      createdBy: opts.createdBy,
++      app: opts.app,
++      documents: opts.documents,
++      migrations,
++      excluded: excludedFor(tables, opts.documents),
++    };
++    yield out(encodeLine(header));
++    const skipped = new Set(header.excluded.tables);
++    const counts: Record<string, number> = {};
++    let rows = 0;
++    for (const table of tables) {
++      if (skipped.has(table)) continue;
++      const rule = TABLE_RULES[table];
++      const cols = (await columnsOf(conn, table)).filter((c) => !rule?.dropColumns?.includes(c.name));
++      yield out(encodeLine({ table, columns: cols.map((c) => c.name) }));
++      let n = 0;
++      for await (const j of tableRows(conn, table, cols, rule)) {
++        yield out(rowLine(j));
++        n++;
++      }
++      counts[table] = n;
++      rows += n;
++    }
++    const sha256 = hash.digest("hex");
++    yield encodeLine({ end: { tables: counts, rows, sha256 } });
++    await conn.unsafe("COMMIT");
++    open = false;
++    const docCount = Object.entries(counts).reduce((sum, [t, n]) => sum + (TABLE_RULES[t]?.documents ? n : 0), 0);
++    return { tables: counts, rows, sha256, documents: opts.documents, docCount };
++  } finally {
++    if (open) await conn.unsafe("ROLLBACK").catch(() => {});
++    conn.release();
++  }
++}
++
++/**
++ * Yedeği gzip'li dosyaya yazar (komut satırı ve geri yükleme öncesi kopya). Yarıda kalırsa dosya silinir: eksik dosya
++ * yedek sanılmasın (son satırı olmadığı için zaten geri yüklenmez).
++ */
++export async function writeBackupFile(sql: postgres.Sql, path: string, opts: BackupOptions): Promise<BackupSummary & { bytes: number }> {
++  let summary: BackupSummary | null = null;
++  async function* lines() {
++    summary = yield* backupLines(sql, opts);
++  }
++  const file = createWriteStream(path, { flags: "wx" });
++  let bytes = 0;
++  const gzip = createGzip();
++  gzip.on("data", (chunk: Buffer) => {
++    bytes += chunk.length;
++  });
++  try {
++    await pipeline(Readable.from(lines()), gzip, file);
++  } catch (e) {
++    await unlink(path).catch(() => {});
++    throw e;
++  }
++  return { ...summary!, bytes };
++}
+diff --git a/src/server/backup/restore.ts b/src/server/backup/restore.ts
+new file mode 100644
+index 0000000..92c56f8
+--- /dev/null
++++ b/src/server/backup/restore.ts
+@@ -0,0 +1,402 @@
++// Tam yedeğin geri yüklenmesi (yalnız komut satırından: npm run db:restore; adımlar docs/YEDEK.md). Dosya önce
++// baştan sona okunup doğrulanır (özet, son satır, sürüm), sonra tek bir işlemde yüklenir: herhangi bir hata hedefi
++// olduğu gibi bırakır. "server-only" yok: komut satırı ve testler kullanır; panel kullanmaz (tek dokunuşla bütün veri
++// değişmesin, Vercel 4,5 MB'tan büyük isteği zaten almaz).
++
++import { createHash } from "node:crypto";
++import { createReadStream, readFileSync } from "node:fs";
++import { join } from "node:path";
++import { createGunzip } from "node:zlib";
++
++import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
++import type postgres from "postgres";
++
++import {
++  BACKUP_FORMAT,
++  BACKUP_VERSION,
++  backupSchemaPlan,
++  mergeUserRows,
++  orderTables,
++  ROW_PREFIX,
++  USER_CREDENTIAL_COLUMNS,
++  type BackupEnd,
++  type BackupHeader,
++  type SavedCredentials,
++} from "@/lib/backup/format";
++import { hashPassword } from "@/server/auth/password";
++import { INVITE_PASSWORD_HASH } from "@/server/auth/tokens";
++
++import { appVersion, columnsOf, ident, publicTables, writeBackupFile, type ColumnInfo } from "./core";
++
++/** Dosya okunamadı ya da doğrulanamadı; komut satırı mesajı olduğu gibi yazar */
++export class BackupFileError extends Error {}
++/** Geri yükleme yapılmadı (hedef dolu, sürüm uymuyor…); hedef değişmedi */
++export class RestoreError extends Error {}
++
++export interface BackupTable {
++  columns: string[];
++  /** Satırların JSON metni, dosyadaki gibi (sayılar ve tarihler yeniden yazılmaz) */
++  rows: string[];
++}
++
++export interface ParsedBackup {
++  header: BackupHeader;
++  tables: Map<string, BackupTable>;
++  end: BackupEnd;
++}
++
++const broken = (why: string) => new BackupFileError(`Dosya eksik ya da bozuk (indirme yarıda kesilmiş olabilir): ${why}`);
++
++/**
++ * Satırları okur ve doğrular: ilk satır başlık (biçim ve sürüm), son satır özet; sha256 ve tablo başına satır sayısı
++ * tutmalı. Herhangi biri tutmazsa BackupFileError.
++ */
++export async function parseBackupLines(lines: AsyncIterable<string> | Iterable<string>): Promise<ParsedBackup> {
++  const hash = createHash("sha256");
++  let header: BackupHeader | null = null;
++  let end: BackupEnd | null = null;
++  const tables = new Map<string, BackupTable>();
++  let current: BackupTable | null = null;
++  let n = 0;
++  for await (const line of lines) {
++    n++;
++    // Yazıcı boş satır üretmez; dosyanın sonundaki "\n"den sonraki boş parça
++    if (line === "") continue;
++    if (end) throw broken("son satırdan sonra veri var");
++    if (line.startsWith('{"end":')) {
++      end = parseJson<{ end: BackupEnd }>(line, n).end;
++      continue;
++    }
++    hash.update(`${line}\n`, "utf8");
++    if (!header) {
++      const h = parseJson<Partial<BackupHeader>>(line, n);
++      if (h.format !== BACKUP_FORMAT) throw new BackupFileError("Bu dosya bir L'Affogato yedeği değil.");
++      if (h.version !== BACKUP_VERSION) throw new BackupFileError(`Bu yedek biçimi (sürüm ${h.version}) bu kodla okunamıyor; kodu güncelleyin.`);
++      header = h as BackupHeader;
++      continue;
++    }
++    if (line.startsWith(ROW_PREFIX)) {
++      if (!current || !line.endsWith("}")) throw broken(`${n}. satır okunamadı`);
++      current.rows.push(line.slice(ROW_PREFIX.length, -1));
++      continue;
++    }
++    const t = parseJson<{ table?: unknown; columns?: unknown }>(line, n);
++    if (typeof t.table !== "string" || !Array.isArray(t.columns) || tables.has(t.table)) throw broken(`${n}. satır okunamadı`);
++    current = { columns: t.columns.map(String), rows: [] };
++    tables.set(t.table, current);
++  }
++  if (!header) throw broken("dosya boş");
++  if (!end || typeof end.sha256 !== "string" || !end.tables) throw broken("son satır yok");
++  if (hash.digest("hex") !== end.sha256) throw broken("özet tutmuyor");
++  for (const [name, t] of tables) {
++    if (end.tables[name] !== t.rows.length) throw broken(`${name} tablosunun satır sayısı tutmuyor`);
++  }
++  if (Object.keys(end.tables).some((name) => !tables.has(name))) throw broken("bir tablo eksik");
++  return { header, tables, end };
++}
++
++function parseJson<T>(line: string, n: number): T {
++  try {
++    return JSON.parse(line) as T;
++  } catch {
++    throw broken(`${n}. satır okunamadı`);
++  }
++}
++
++/** Akıştaki metni satırlara böler (son satırdaki "\n" sonrası boş parça da verilir) */
++async function* splitLines(chunks: AsyncIterable<string>): AsyncGenerator<string> {
++  let rest = "";
++  for await (const chunk of chunks) {
++    const parts = (rest + chunk).split("\n");
++    rest = parts.pop()!;
++    yield* parts;
++  }
++  yield rest;
++}
++
++/** .json.gz dosyasını okuyup doğrular; gzip bozuksa ya da yarıda kesildiyse BackupFileError */
++export async function readBackupFile(path: string): Promise<ParsedBackup> {
++  const gunzip = createGunzip();
++  const file = createReadStream(path);
++  file.on("error", (e) => gunzip.destroy(e));
++  file.pipe(gunzip);
++  gunzip.setEncoding("utf8");
++  try {
++    return await parseBackupLines(splitLines(gunzip));
++  } catch (e) {
++    if (e instanceof BackupFileError) throw e;
++    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new BackupFileError(`Dosya bulunamadı: ${path}`);
++    // zlib: "unexpected end of file", "incorrect header check"…
++    throw broken(`sıkıştırılmış veri yarıda bitiyor ya da bozuk (${(e as Error).message})`);
++  } finally {
++    file.destroy();
++  }
++}
++
++/** Koddaki migration'lar (drizzle'ın kendi okuyucusu) ve günlükteki adları */
++export function loadMigrations(folder = "drizzle"): { meta: MigrationMeta; tag: string }[] {
++  const journal = JSON.parse(readFileSync(join(folder, "meta", "_journal.json"), "utf8")) as { entries: { tag: string }[] };
++  return readMigrationFiles({ migrationsFolder: folder }).map((meta, i) => ({ meta, tag: journal.entries[i].tag }));
++}
++
++type Tx = postgres.Sql | postgres.TransactionSql;
++
++/**
++ * drizzle'ın migrate döngüsünün kopyası (drizzle-orm/pg-core/dialect.js › migrate), verilen işlemin içinde ve
++ * verilen migration'larla: geri yükleme yedeğin sürümünde durup veriyi yükleyebilsin, sonra kalanları uygulasın,
++ * hepsi tek işlemde (bir hata hedefi olduğu gibi bırakır). drizzle'ın migrate'i kendi işlemini açar ve hep sonuna
++ * kadar gider.
++ */
++export async function applyMigrations(tx: Tx, migrations: MigrationMeta[]): Promise<void> {
++  await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS drizzle`);
++  await tx.unsafe(`CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)`);
++  for (const m of migrations) {
++    for (const stmt of m.sql) if (stmt.trim()) await tx.unsafe(stmt);
++    await tx.unsafe(`INSERT INTO drizzle.__drizzle_migrations ("hash", "created_at") VALUES ($1, $2::bigint)`, [m.hash, String(m.folderMillis)]);
++  }
++}
++
++export interface TargetInfo {
++  /** public'teki tablolar ve satır sayıları (çoktan aza) */
++  tables: { name: string; rows: number }[];
++  drizzle: boolean;
++  /** Panelden yüklenmiş belge sayısı (yedekte belge yoksa bunlar silinir) */
++  uploads: number;
++}
++
++/** Hedef veritabanının durumu: boş mu, neler var */
++export async function inspectTarget(sql: Tx): Promise<TargetInfo> {
++  const names = await publicTables(sql);
++  const tables: TargetInfo["tables"] = [];
++  for (const name of names) {
++    const [{ n }] = await sql.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public.${ident(name)}`);
++    tables.push({ name, rows: n });
++  }
++  tables.sort((a, b) => b.rows - a.rows || a.name.localeCompare(b.name));
++  const [{ drizzle }] = await sql.unsafe<{ drizzle: boolean }[]>(`SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'drizzle') AS drizzle`);
++  let uploads = 0;
++  if (names.includes("invoice_documents")) {
++    const [{ n }] = await sql.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public.invoice_documents WHERE source = 'upload'`).catch(() => [{ n: 0 }]);
++    uploads = n;
++  }
++  return { tables, drizzle, uploads };
++}
++
++export const targetIsEmpty = (t: TargetInfo) => !t.tables.length && !t.drizzle;
++
++/** "invoices 111 satır, sales_lines 125 satır, …" */
++export function targetSummary(t: TargetInfo): string {
++  const top = t.tables.slice(0, 3).map((x) => `${x.name} ${x.rows} satır`);
++  return t.tables.length > 3 ? `${top.join(", ")}, …` : top.join(", ") || "drizzle şeması";
++}
++
++export interface RestoreOptions {
++  /** --sil: hedefteki bütün tablolar silinip yedekle değiştirilir */
++  wipe: boolean;
++  /** Hedef doluysa değişiklikten önce yedeği buraya alınır */
++  safetyCopyPath?: string | null;
++  /** ADMIN_EMAIL + ADMIN_PASSWORD: o kişinin parolası (yoksa yönetici olarak eklenir) */
++  admin?: { email: string; password: string; name?: string } | null;
++  migrationsFolder?: string;
++  now?: Date;
++}
++
++export interface RestoreResult {
++  tables: number;
++  rows: number;
++  fromTag: string;
++  toTag: string;
++  later: number;
++  safetyCopy: string | null;
++  admin: string | null;
++  adminCreated: boolean;
++  kept: string[];
++  invited: string[];
++  warnings: string[];
++}
++
++/** Hedefteki kişilerin giriş bilgileri (yedekte yok); eski şemada sütun yoksa varsayılanı */
++async function savedCredentials(sql: Tx): Promise<{ saved: SavedCredentials[]; maxSv: number }> {
++  if (!(await publicTables(sql)).includes("users")) return { saved: [], maxSv: 0 };
++  const have = new Set((await columnsOf(sql, "users")).map((c) => c.name));
++  const pick = (col: string, fallback: string) => (have.has(col) ? ident(col) : `${fallback} AS ${ident(col)}`);
++  const rows = await sql.unsafe<SavedCredentials[]>(
++    `SELECT email, password_hash, ${pick("totp_secret", "NULL::text")}, ${pick("totp_enabled", "false")}, ${pick("totp_last_step", "NULL::int")},
++            ${pick("recovery_codes", "NULL::jsonb")}, ${pick("session_version", "1")} FROM public.users`,
++  );
++  return { saved: rows, maxSv: Math.max(0, ...rows.map((r) => Number(r.session_version) || 0)) };
++}
++
++/** Hedefteki her şeyi siler (public şeması kalır: yetkileri korunur) */
++async function wipeTarget(tx: Tx) {
++  const tables = await publicTables(tx);
++  if (tables.length) await tx.unsafe(`DROP TABLE ${tables.map((t) => `public.${ident(t)}`).join(", ")} CASCADE`);
++  const seqs = await tx.unsafe<{ name: string }[]>(`SELECT sequence_name AS name FROM information_schema.sequences WHERE sequence_schema = 'public'`);
++  for (const s of seqs) await tx.unsafe(`DROP SEQUENCE IF EXISTS public.${ident(s.name)} CASCADE`);
++  const types = await tx.unsafe<{ name: string }[]>(
++    `SELECT t.typname AS name FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typtype IN ('e', 'd')`,
++  );
++  for (const t of types) await tx.unsafe(`DROP TYPE IF EXISTS public.${ident(t.name)} CASCADE`);
++  await tx.unsafe(`DROP SCHEMA IF EXISTS drizzle CASCADE`);
++}
++
++/** Bir sorguda gönderilen satırlar: en çok 500 ya da ~8 MB (belgeler büyük) */
++const BATCH_ROWS = 500;
++const BATCH_CHARS = 8 * 1024 * 1024;
++
++/**
++ * Satırları json_populate_recordset ile ekler: sütunlar açıkça yazılır (dosyada olmayan sütun varsayılanını alır).
++ * Boş olamayan jsonb/json sütununda JSON null, SQL NULL'a dönüşmesin diye yeniden 'null' yapılır.
++ */
++async function insertRows(tx: Tx, table: string, cols: ColumnInfo[], rows: string[]) {
++  const list = cols.map((c) => ident(c.name)).join(", ");
++  const exprs = cols
++    .map((c) => (!c.nullable && (c.type === "jsonb" || c.type === "json") ? `COALESCE(${ident(c.name)}, 'null'::${c.type})` : ident(c.name)))
++    .join(", ");
++  const query = `INSERT INTO public.${ident(table)} (${list}) SELECT ${exprs} FROM json_populate_recordset(NULL::public.${ident(table)}, $1::json)`;
++  let batch: string[] = [];
++  let size = 0;
++  const flush = async () => {
++    if (!batch.length) return;
++    await tx.unsafe(query, [`[${batch.join(",")}]`]);
++    batch = [];
++    size = 0;
++  };
++  for (const r of rows) {
++    batch.push(r);
++    size += r.length;
++    if (batch.length >= BATCH_ROWS || size >= BATCH_CHARS) await flush();
++  }
++  await flush();
++}
++
++/** Sayaçlar en büyük kimliğin ardına (seed.ts'teki gibi, her serial sütun için) */
++async function resetSequences(tx: Tx) {
++  const cols = await tx.unsafe<{ t: string; c: string }[]>(
++    `SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public' AND column_default LIKE 'nextval(%'`,
++  );
++  for (const { t, c } of cols) {
++    await tx.unsafe(
++      `SELECT setval(pg_get_serial_sequence($1, $2), GREATEST(COALESCE(MAX(${ident(c)}), 0), 1), COUNT(*) > 0) FROM public.${ident(t)}`,
++      [`public.${ident(t)}`, c],
++    );
++  }
++}
++
++const trTime = (iso: string) =>
++  new Date(iso).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
++
++/**
++ * Yedeği hedefe yükler. Hedef boş değilse `wipe` gerekir; o zaman önce hedefin yedeği alınır (`safetyCopyPath`), giriş
++ * bilgileri okunur, sonra tek işlemde: hedef silinir, şema yedeğin sürümüne kurulur, tablolar yabancı anahtar sırasıyla
++ * yüklenir, satır sayıları dosyayla karşılaştırılır, sayaçlar ilerletilir, kalan migration'lar uygulanır. Sayılar
++ * tutmazsa ya da herhangi bir adım hata verirse işlem geri alınır, hedef değişmez.
++ */
++export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opts: RestoreOptions): Promise<RestoreResult> {
++  const migrations = loadMigrations(opts.migrationsFolder);
++  const plan = backupSchemaPlan(
++    backup.header.migrations,
++    migrations.map((m) => ({ when: m.meta.folderMillis, tag: m.tag })),
++  );
++  if (plan.error !== null) throw new RestoreError(plan.error);
++  const warnings: string[] = [];
++  if (plan.unknown.length) warnings.push(`Yedekte bu kodun günlüğünde olmayan ${plan.unknown.length} migration kaydı var (bir önizleme uygulamış olabilir); yok sayıldı.`);
++  if (plan.missing.length) warnings.push(`Yedeğin veritabanında kaydı olmayan migration'lar veriden önce uygulandı: ${plan.missing.join(", ")}.`);
++
++  const target = await inspectTarget(sql);
++  const empty = targetIsEmpty(target);
++  if (!empty && !opts.wipe) {
++    throw new RestoreError(
++      `Hedefte tablolar var (${targetSummary(target)}). Boş bir veritabanı verin ya da üzerine yazmak için --sil ekleyin; önce hedefin yedeği alınır.`,
++    );
++  }
++  let safetyCopy: string | null = null;
++  if (!empty && opts.safetyCopyPath) {
++    await writeBackupFile(sql, opts.safetyCopyPath, { documents: true, createdBy: "geri yükleme öncesi", app: appVersion(), now: opts.now });
++    safetyCopy = opts.safetyCopyPath;
++  }
++  const { saved, maxSv } = empty ? { saved: [], maxSv: 0 } : await savedCredentials(sql);
++  const admin = opts.admin?.email && opts.admin.password
++    ? { email: opts.admin.email, hash: await hashPassword(opts.admin.password), name: opts.admin.name || "Yönetici" }
++    : null;
++
++  const first = migrations.filter((m) => m.meta.folderMillis <= plan.upTo).map((m) => m.meta);
++  const rest = migrations.filter((m) => m.meta.folderMillis > plan.upTo).map((m) => m.meta);
++  const result = await sql.begin(async (tx) => {
++    if (opts.wipe) await wipeTarget(tx);
++    await applyMigrations(tx, first);
++
++    const present = new Set(await publicTables(tx));
++    const names = [...backup.tables.keys()].filter((t) => {
++      if (present.has(t)) return true;
++      warnings.push(`${t} tablosu bu sürümde yok; atlandı.`);
++      return false;
++    });
++    const edges = await tx.unsafe<{ child: string; parent: string }[]>(
++      `SELECT ch.relname AS child, pa.relname AS parent
++         FROM pg_constraint c
++         JOIN pg_class ch ON ch.oid = c.conrelid
++         JOIN pg_class pa ON pa.oid = c.confrelid
++         JOIN pg_namespace n ON n.oid = ch.relnamespace
++        WHERE c.contype = 'f' AND n.nspname = 'public'`,
++    );
++
++    let users: ReturnType<typeof mergeUserRows> | null = null;
++    let rows = 0;
++    for (const table of orderTables(names, edges)) {
++      const data = backup.tables.get(table)!;
++      const targetCols = await columnsOf(tx, table);
++      const byName = new Map(targetCols.map((c) => [c.name, c]));
++      const missingCols = data.columns.filter((c) => !byName.has(c));
++      if (missingCols.length) warnings.push(`${table}: bu sürümde olmayan sütunlar atlandı (${missingCols.join(", ")}).`);
++      let cols = data.columns.filter((c) => byName.has(c)).map((c) => byName.get(c)!);
++      let lines = data.rows;
++      if (table === "users") {
++        users = mergeUserRows(lines.map((l) => JSON.parse(l) as Record<string, unknown>), saved, { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin });
++        const extra = USER_CREDENTIAL_COLUMNS.filter((c) => byName.has(c) && !data.columns.includes(c)).map((c) => byName.get(c)!);
++        cols = [...cols, ...extra];
++        lines = users.rows.map((r) => JSON.stringify(r));
++      }
++      await insertRows(tx, table, cols, lines);
++      rows += lines.length;
++    }
++
++    // Dosyadaki sayılarla karşılaştır: tutmazsa hepsi geri alınır
++    for (const table of names) {
++      const [{ n }] = await tx.unsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public.${ident(table)}`);
++      if (n !== backup.end.tables[table]) {
++        throw new RestoreError(`${table} tablosuna ${n} satır yüklendi, dosyada ${backup.end.tables[table]} var; geri yükleme geri alındı, hedef değişmedi.`);
++      }
++    }
++    await resetSequences(tx);
++
++    let adminCreated = false;
++    const u = users as ReturnType<typeof mergeUserRows> | null;
++    if (u?.newAdmin || (!u && admin)) {
++      // Yedekte kullanıcı yok ya da ADMIN_EMAIL aralarında değil: yönetici eklenir (kimliği sayaçtan)
++      const row = u?.newAdmin ?? mergeUserRows([], [], { inviteHash: INVITE_PASSWORD_HASH, maxSv, admin }).newAdmin!;
++      const have = new Set((await columnsOf(tx, "users")).map((c) => c.name));
++      const keys = Object.keys(row).filter((k) => have.has(k));
++      await tx.unsafe(
++        `INSERT INTO public.users (${keys.map(ident).join(", ")}) SELECT ${keys.map(ident).join(", ")} FROM json_populate_record(NULL::public.users, $1::json)`,
++        [JSON.stringify(row)],
++      );
++      adminCreated = true;
++    }
++
++    await applyMigrations(tx, rest);
++    const h = backup.header;
++    await tx.unsafe(`INSERT INTO public.activity_log (user_name, action, detail) VALUES ('Sistem', 'Yedekten geri yüklendi', $1)`, [
++      `${trTime(h.createdAt)} yedeği · ${h.createdBy} · ${new Intl.NumberFormat("tr-TR").format(rows)} satır`.slice(0, 500),
++    ]);
++    return {
++      tables: names.length,
++      rows,
++      admin: admin?.email ?? null,
++      adminCreated,
++      kept: u?.kept ?? [],
++      invited: u?.invited ?? [],
++    };
++  });
++  return { ...result, fromTag: plan.fromTag, toTag: plan.toTag, later: plan.later, safetyCopy, warnings };
++}
+diff --git a/src/server/backup/state.ts b/src/server/backup/state.ts
+new file mode 100644
+index 0000000..059f167
+--- /dev/null
++++ b/src/server/backup/state.ts
+@@ -0,0 +1,68 @@
++import "server-only";
++
++import { eq, sql } from "drizzle-orm";
++
++import type { LastBackup } from "@/lib/backup/format";
++import { getDb, schema as s } from "@/server/db";
++import { open, seal } from "@/server/secret-box";
++
++/** Son yedeğin kaydı (integration_state); dosya tamamen gönderilince yazılır */
++export const LAST_BACKUP_KEY = "backup.last";
++/** Parolayla verilen indirme bağlantısının süresi */
++const HANDLE_MS = 120_000;
++
++/**
++ * Parola onayından sonra verilen indirme bağlantısının mühürlü değeri: kişi, belgeler dahil mi, dosya adı, süre.
++ * İndirme düz bir bağlantı (tarayıcı dosyayı kendisi kaydeder); parola rotaya gitmez, rota yalnız bunu açar.
++ */
++export function backupHandle(userId: number, documents: boolean, fileName: string): string {
++  return seal(JSON.stringify({ u: userId, d: documents, f: fileName, exp: Date.now() + HANDLE_MS }), "backup");
++}
++
++/** Mühürlü değerden indirme bilgisi; kişi tutmuyorsa, süresi geçtiyse ya da bozuksa null */
++export function openBackupHandle(handle: string, userId: number): { documents: boolean; fileName: string } | null {
++  const raw = handle ? open(handle, "backup") : null;
++  if (!raw) return null;
++  try {
++    const v = JSON.parse(raw) as { u?: unknown; d?: unknown; f?: unknown; exp?: unknown };
++    if (v.u !== userId || typeof v.d !== "boolean" || typeof v.f !== "string" || typeof v.exp !== "number" || v.exp < Date.now()) return null;
++    return { documents: v.d, fileName: v.f };
++  } catch {
++    return null;
++  }
++}
++
++function asLastBackup(v: unknown): LastBackup | null {
++  if (!v || typeof v !== "object") return null;
++  const o = v as Record<string, unknown>;
++  if (typeof o.at !== "string" || !Number.isFinite(Date.parse(o.at))) return null;
++  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
++  return { at: o.at, by: typeof o.by === "string" ? o.by : "", bytes: n(o.bytes), rows: n(o.rows), tables: n(o.tables), documents: o.documents === true, docCount: n(o.docCount) };
++}
++
++export async function readLastBackup(): Promise<LastBackup | null> {
++  const [row] = await getDb().select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, LAST_BACKUP_KEY)).limit(1);
++  return asLastBackup(row?.value);
++}
++
++export async function saveLastBackup(v: LastBackup): Promise<void> {
++  await getDb()
++    .insert(s.integrationState)
++    .values({ key: LAST_BACKUP_KEY, value: v })
++    .onConflictDoUpdate({ target: s.integrationState.key, set: { value: v, updatedAt: new Date() } });
++}
++
++/** Panelden yüklenmiş fatura belgeleri: sayısı ve toplam boyutu (Paraşüt PDF'leri önbellek, yedeğe girmez) */
++export async function uploadsTotal(): Promise<{ count: number; bytes: number }> {
++  const [row] = await getDb()
++    .select({ count: sql<number>`count(*)::int`, bytes: sql<number>`coalesce(sum(${s.invoiceDocuments.size}), 0)::bigint` })
++    .from(s.invoiceDocuments)
++    .where(eq(s.invoiceDocuments.source, "upload"));
++  return { count: Number(row?.count ?? 0), bytes: Number(row?.bytes ?? 0) };
++}
++
++/** Ayarlar › Yedek kartı: son yedek ve yüklenmiş belgeler */
++export async function loadBackupInfo(): Promise<{ last: LastBackup | null; uploads: { count: number; bytes: number } }> {
++  const [last, uploads] = await Promise.all([readLastBackup(), uploadsTotal()]);
++  return { last, uploads };
++}
+diff --git a/src/server/secret-box.ts b/src/server/secret-box.ts
+index f50d85b..be996b1 100644
+--- a/src/server/secret-box.ts
++++ b/src/server/secret-box.ts
+@@ -8,7 +8,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
+  * değişirse bu değerler okunamaz (Paraşüt belirteci yeniden alınır, iki adımlı doğrulama yeniden kurulur, bildirim
+  * anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur).
+  */
+-export type SealPurpose = "parasut-token" | "totp" | "webpush" | "access-mail";
++export type SealPurpose = "parasut-token" | "totp" | "webpush" | "access-mail" | "backup";
+ 
+ function key(purpose: SealPurpose): Buffer {
+   const secret = process.env.AUTH_SECRET;
+-- 
+2.43.0
+
