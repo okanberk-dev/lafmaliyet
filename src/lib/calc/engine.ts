@@ -6,6 +6,8 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
+import { buildSiteLinkIndex, mapSiteLines, siteRevenue, type SiteRevenue } from "../site-sales/calc";
+import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
 import type {
   Category,
@@ -520,9 +522,31 @@ export interface PnlMonthCalc {
   cogs: number;
   sections: Record<FixedSection | "komisyon", number>;
   expenses: number;
+  /** ModPOS cirosu (KDV dahil, Satışlar'a girilen); girilmediyse null */
   revenue: number | null;
+  /** ModPOS cirosu, KDV hariç */
   revenueNet: number | null;
+  /** laffogato.net'in online satışı (KDV hariç); ay hiç çekilmediyse null (0 değil) */
+  site: SiteMonthRevenue | null;
+  /** Kârın ve oranların cirosu: ModPOS (KDV hariç) + online; ikisi de yoksa null */
+  revenueTotalNet: number | null;
+  /** revenueTotalNet − giderler */
   profit: number;
+}
+
+/** Bir ayın online geliri (KDV hariç, TL) ve kaydın bilgisi */
+export interface SiteMonthRevenue extends SiteRevenue {
+  /** Panelin siteden çektiği an */
+  pulledAt: string;
+  /** Ay köşkte bitti (rakamlar yalnız sonradan gelen iadeyle değişir) */
+  closed: boolean;
+}
+
+/** Online kafe satırlarının panel ürünlerine eşlenmesi (menü bağlantısıyla) */
+export interface SiteLinesCalc {
+  mapped: { line: SiteSalesLine; product: Product }[];
+  /** Bağlı ürünü olmayan satırlar: tüketime girmez, eşleştirme için listelenir */
+  unmapped: SiteSalesLine[];
 }
 
 export interface StockLine {
@@ -716,6 +740,54 @@ export function createModel(ds: Dataset) {
       recordedCache.set(month, u);
     }
     return u;
+  }
+
+  // --- laffogato.net online satışları (docs/SITE-SATIS.md) -------------------------
+  // Ay başına bir kayıt; kafe satırları menü bağlantısıyla (products.site_menu_id + yuva) ürünlere eşlenir. ModPOS
+  // satışlarından (sales_lines) ayrı bir kaynaktır: satış raporuna yazılmaz, tüketimde ve kâr-zararda ayrı görünür.
+  const siteByMonth = new Map((ds.siteSales ?? []).map((r) => [r.month, r]));
+  const siteIndex = buildSiteLinkIndex(ds.products);
+  function siteSalesOf(month: string): SiteSalesMonth | null {
+    return siteByMonth.get(month) ?? null;
+  }
+  const siteLinesCache = new Map<string, SiteLinesCalc>();
+  function siteLines(month: string): SiteLinesCalc {
+    let c = siteLinesCache.get(month);
+    if (!c) {
+      const lines = siteByMonth.get(month)?.cafe.lines ?? [];
+      const { mapped, unmapped } = mapSiteLines(lines, siteIndex);
+      c = { mapped: [], unmapped };
+      for (const m of mapped) {
+        const product = productById.get(m.productId);
+        if (product) c.mapped.push({ line: m.line, product });
+        else c.unmapped.push(m.line);
+      }
+      siteLinesCache.set(month, c);
+    }
+    return c;
+  }
+  /**
+   * Online kafe siparişlerinin reçeteye göre harcadığı malzeme (fire hariç, malzemenin kendi biriminde). ModPOS
+   * satışlarının tüketimine (ingredientUsage) eklenmez; tutarlılıkta ayrı kaynak olarak gösterilir.
+   */
+  const onlineCache = new Map<string, Map<number, number>>();
+  function onlineUsage(month: string): Map<number, number> {
+    let u = onlineCache.get(month);
+    if (!u) {
+      u = new Map();
+      for (const { line, product } of siteLines(month).mapped) {
+        for (const it of itemsByProduct.get(product.id) ?? []) {
+          u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * line.qty);
+        }
+      }
+      onlineCache.set(month, u);
+    }
+    return u;
+  }
+  /** Ayın online geliri (KDV hariç; oranı saklı olmayanlar Ayarlar'daki KDV oranıyla); çekilmemiş ayda null */
+  function siteRevenueOf(month: string): SiteMonthRevenue | null {
+    const r = siteByMonth.get(month);
+    return r ? { ...siteRevenue(r, st.kdv), pulledAt: r.pulledAt, closed: r.closed } : null;
   }
 
   // --- Su + buz birim maliyeti (Ayarlar!B17) -----------------------------------
@@ -1216,6 +1288,12 @@ export function createModel(ds: Dataset) {
 
     const expenses = cogs + sections.personel + sections.faturalar + sections.kira + sections.genel + sections.komisyon;
     const revenueNet = revenue === null ? null : revenue / (1 + st.kdv);
+    // Online satış: ModPOS cirosuna dokunmadan ayrı gelir satırları (KDV hariç); çekilmemiş ayda hücre yok (boş)
+    const site = siteRevenueOf(month);
+    if (site) {
+      for (const k of ["cafe", "shop", "karaoke"] as const) cells.set(`site:${k}`, { value: site[k], computed: site[k], overridden: false });
+    }
+    const revenueTotalNet = revenueNet === null && !site ? null : (revenueNet ?? 0) + (site?.total ?? 0);
     pm = {
       month,
       info,
@@ -1231,7 +1309,9 @@ export function createModel(ds: Dataset) {
       expenses,
       revenue,
       revenueNet,
-      profit: (revenueNet ?? 0) - expenses,
+      site,
+      revenueTotalNet,
+      profit: (revenueTotalNet ?? 0) - expenses,
     };
     pnlCache.set(month, pm);
     return pm;
@@ -1356,6 +1436,15 @@ export function createModel(ds: Dataset) {
     const sonuc = sec("sonuc");
     sonuc({ key: "revenue", label: "AYLIK CİRO (KDV dahil – POS)", kind: "manual", editable: true, hint: "Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır." });
     sonuc({ key: "revenueNet", label: "AYLIK CİRO (KDV hariç)", kind: "total", editable: false });
+    // laffogato.net online satışları: yalnız bu aylardan en az biri siteden çekildiyse (çekilmemiş ay boş kalır, 0 değil)
+    if (months.some((m) => siteByMonth.has(m))) {
+      const from = "laffogato.net'ten çekilir (Gelir-gider › laffogato.net online satışları, her sabah ve Siteden yenile).";
+      const vat = `KDV hariç: net − KDV − oranı bilinmeyen siparişlerin %${(st.kdv * 100).toLocaleString("tr-TR")} KDV'si. Kasadan (ModPOS) geçmez; AYLIK CİRO'ya eklenmez.`;
+      sonuc({ key: "site:cafe", label: "KAFE ONLİNE (SİTE + UYGULAMA)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Uygulama ve web kafe siparişleri (masa, gel-al, kurye), iadeler düşülmüş. Panelden elle girilen siparişler ModPOS'ta olduğu için girmez. ${vat} ${from}` });
+      sonuc({ key: "site:shop", label: "MAĞAZA (ONLİNE)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Sitenin mağaza kolileri (kargo ücreti dahil), iadeler düşülmüş. ${vat} ${from}` });
+      sonuc({ key: "site:karaoke", label: "KARAOKE (ÖN ÖDEMELİ)", sub: "laffogato.net · KDV hariç", kind: "auto", editable: false, hint: `Sitede ödenen karaoke rezervasyonlarının köşkte kalan tutarı, parasının alındığı ayda. ${vat} ${from}` });
+      sonuc({ key: "revenue:total", label: "TOPLAM CİRO (KDV hariç)", kind: "total", editable: false, hint: "ModPOS cirosu + online satışlar (KDV hariç). Kâr / zarar ve oranlar bununla hesaplanır." });
+    }
     sonuc({ key: "total:expenses", label: "MAL MALİYETİ VE GİDER TOPLAMLARI", kind: "total", editable: false });
     sonuc({ key: "profit", label: "KÂR / ZARAR", kind: "total", editable: false, strong: true });
     sonuc({ key: "ratio:expenses", label: "MALİYET ORANI (tüm giderler ÷ ciro)", kind: "ratio", editable: false, format: "percent" });
@@ -1373,7 +1462,8 @@ export function createModel(ds: Dataset) {
     const c = pm.cells.get(key);
     if (c) return c;
     const v = (value: number | null): PnlCell => ({ value, computed: value, overridden: false });
-    const rn = pm.revenueNet;
+    // Oranlar bütün cironun (ModPOS + online) payı; online satış yoksa ModPOS cirosuyla aynı
+    const rn = pm.revenueTotalNet;
     const r = (x: number) => (rn ? x / rn : null);
     switch (key) {
       case "total:mal":
@@ -1391,7 +1481,9 @@ export function createModel(ds: Dataset) {
       case "revenue":
         return { value: pm.revenue, computed: null, overridden: pm.revenue !== null };
       case "revenueNet":
-        return v(rn);
+        return v(pm.revenueNet);
+      case "revenue:total":
+        return v(pm.revenueTotalNet);
       case "profit":
         return v(pm.profit);
       case "ratio:expenses":
@@ -1433,6 +1525,13 @@ export function createModel(ds: Dataset) {
     ingredientUsage,
     recordedUsage,
     wasteSummary,
+    /** laffogato.net online satışları: ayın kaydı, ürünlere eşlenen satırlar, tüketim ve KDV hariç gelir */
+    siteSales: siteSalesOf,
+    siteLines,
+    onlineUsage,
+    siteRevenue: siteRevenueOf,
+    /** Online satışı çekilmiş aylar */
+    siteMonths: [...siteByMonth.keys()].sort(),
     /** "Bu ay" (YYYY-MM, Türkiye saati) */
     currentMonth,
     /** Verisi olan ilk ay */

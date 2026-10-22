@@ -23,16 +23,21 @@ export function pnlRowLabel(def: Pick<PnlRowDef, "key" | "label">, fixedNames: R
   return fixedNames.get(def.key) ?? sentenceCase(def.label);
 }
 
-/** Yılın ay hesaplarından dökümün kullandıkları */
-export type YearMonthCalc = Pick<PnlMonthCalc, "opening" | "closing" | "cogs" | "sections" | "revenueNet">;
+/** Yılın ay hesaplarından dökümün kullandıkları (online satış laffogato.net'ten; çekilmemiş ayda yok) */
+export type YearMonthCalc = Pick<PnlMonthCalc, "opening" | "closing" | "cogs" | "sections" | "revenueNet"> & Partial<Pick<PnlMonthCalc, "site">>;
 
 /** Ciro dökümünün ay hesabından kullandıkları (açık gün: Satışlar'a girilen, girilmediyse null) */
-export type RevenueMonthCalc = Pick<PnlMonthCalc, "month" | "revenue" | "revenueNet"> & { info?: { openDays: number | null } | undefined };
+export type RevenueMonthCalc = Pick<PnlMonthCalc, "month" | "revenue" | "revenueNet"> &
+  Partial<Pick<PnlMonthCalc, "site">> & { info?: { openDays: number | null } | undefined };
+
+/** Ayın KDV hariç cirosu: ModPOS + laffogato.net online satışı */
+const monthRevenue = (c: Pick<PnlMonthCalc, "revenueNet"> & Partial<Pick<PnlMonthCalc, "site">>) => (c.revenueNet ?? 0) + (c.site?.total ?? 0);
 
 /**
- * Yıl cirosu kartının dökümü: ay ay ciro (KDV hariç), takvim sırasıyla; aya dokununca Satışlar'da o ay açılır.
- * Kalemler kartın rakamını (ayların KDV hariç cirosu toplamı) tutar. Gideri ya da açık günü olup cirosu girilmemiş
- * aylar ("aktif ay" sayılır) toplama girmeyen ayrı bölümde: kartın "N aktif ay" yazısı dökümde de görünsün.
+ * Yıl cirosu kartının dökümü: ay ay ciro (KDV hariç; ModPOS + laffogato.net online satışı), takvim sırasıyla; aya
+ * dokununca Satışlar'da o ay açılır. Kalemler kartın rakamını (ayların KDV hariç cirosu toplamı) tutar. Gideri ya da
+ * açık günü olup POS cirosu girilmemiş aylar ("aktif ay" sayılır) toplama girmeyen ayrı bölümde: kartın "N aktif ay"
+ * yazısı dökümde de görünsün.
  */
 export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string[]): BreakdownGroup[] {
   const days = (c: RevenueMonthCalc) => (c.info?.openDays ? `${num(c.info.openDays)} açık gün` : null);
@@ -41,15 +46,21 @@ export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string
     {
       key: "ciro",
       rows: calcs
-        .filter((c) => c.revenueNet !== null)
+        .filter((c) => c.revenueNet !== null || c.site)
         .map((c) => ({
           key: c.month,
           label: monthLabel(c.month),
-          sub: [`POS cirosu ${tl(c.revenue)} (KDV dahil)`, days(c)].filter(Boolean).join(" · "),
-          amount: c.revenueNet ?? 0,
+          sub: [
+            c.revenueNet !== null ? `POS cirosu ${tl(c.revenue)} (KDV dahil)` : "POS cirosu girilmedi",
+            c.site ? `online ${tl(c.site.total)} (KDV hariç)` : null,
+            days(c),
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          amount: monthRevenue(c),
           href: `/panel/satislar?ay=${c.month}`,
           // Sıfır girilen ay da görünsün: cirosu girilmemiş aydan ayrı
-          ...(c.revenueNet === 0 ? { display: tl(0) } : {}),
+          ...(monthRevenue(c) === 0 ? { display: tl(0) } : {}),
         })),
     },
     {
@@ -110,12 +121,27 @@ export function yearBreakdowns(sections: GridSection[], calcs: YearMonthCalc[]):
     })),
   ];
   const revenueNet = sum(calcs.map((c) => c.revenueNet ?? 0));
+  // laffogato.net online satışı: yalnız çekilmiş aylar (KDV hariç), ayrı gelir satırları
+  const online = calcs.some((c) => c.site);
+  const siteRow = (key: "cafe" | "shop" | "karaoke", label: string): BreakdownRow => ({
+    key: `site:${key}`,
+    label,
+    sub: "laffogato.net · KDV hariç",
+    amount: sum(calcs.map((c) => c.site?.[key] ?? 0)),
+  });
   return {
     cogs: [{ key: "cogs", rows: cogsRows }],
     expenses,
     // Kâr: önce ciro, sonra bölüm giderleri eksi olarak, büyükten küçüğe
     profit: [
-      { key: "gelir", label: "Gelir", rows: [{ key: "revenueNet", label: "Ciro (KDV hariç)", amount: revenueNet }] },
+      {
+        key: "gelir",
+        label: "Gelir",
+        rows: [
+          { key: "revenueNet", label: online ? "ModPOS cirosu (KDV hariç)" : "Ciro (KDV hariç)", amount: revenueNet },
+          ...(online ? [siteRow("cafe", "Kafe online (site + uygulama)"), siteRow("shop", "Mağaza (online)"), siteRow("karaoke", "Karaoke (ön ödemeli)")] : []),
+        ],
+      },
       {
         key: "gider",
         label: "Giderler",

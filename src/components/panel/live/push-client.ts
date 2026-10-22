@@ -54,7 +54,10 @@ export function deviceLabel(): string {
  * Bu cihazı bildirimlere abone eder (izin yoksa önce sorar; `ask` false ise sormaz, yalnız izin verilmişse yeniler).
  * Sunucunun anahtarı değiştiyse eski abonelik bırakılıp yenisi alınır. Sonuç: abonelik tercihleri ya da hata metni.
  */
-export async function subscribeDevice(publicKey: string, ask: boolean): Promise<{ ok: true; karaoke: boolean; reminders: boolean } | { ok: false; error: string }> {
+export async function subscribeDevice(
+  publicKey: string,
+  ask: boolean,
+): Promise<{ ok: true; karaoke: boolean; reminders: boolean; orders: boolean } | { ok: false; error: string }> {
   if (pushSupport() === "unsupported") return { ok: false, error: "Bu tarayıcı bildirim desteklemiyor" };
   let permission = Notification.permission;
   if (permission === "default" && ask) permission = await Notification.requestPermission();

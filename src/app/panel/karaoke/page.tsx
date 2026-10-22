@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull } from "drizzle-orm";
 import type { Metadata } from "next";
 import { after } from "next/server";
 import { Suspense } from "react";
@@ -13,6 +13,7 @@ import { karaokeSecret, readSyncState, siteUrl, syncKaraoke } from "@/server/kar
 
 import { KaraokeAdmin, type MonthStats } from "./karaoke-admin";
 import { KaraokeBoard } from "./karaoke-board";
+import { OrdersBoard } from "./orders-board";
 
 export const metadata: Metadata = { title: "Karaoke" };
 
@@ -22,7 +23,7 @@ export default function KaraokePage() {
       <PageHeader
         title="Karaoke"
         eyebrow="Günlük"
-        description="laffogato.net'teki karaoke rezervasyonları ve oda sayacı. Yeni rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
+        description="Barın ekranı: laffogato.net'ten gelen uygulama siparişleri, karaoke rezervasyonları ve oda sayacı. Yeni sipariş ve rezervasyonda zil çalar, bitime az kala uyarır, süre dolunca “Haber verdim” denene kadar alarm çalar. Rezervasyonsuz gelenler için hızlı sayaç açın."
       />
       <Suspense fallback={<PageSkeleton rows={8} />}>
         <KaraokeContent />
@@ -65,7 +66,7 @@ async function KaraokeContent() {
   const [y, m] = monthStart.split("-").map(Number);
   const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`;
   const trMidnight = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 3 * 3_600_000);
-  const [upcoming, month, history, sync, devices] = await Promise.all([
+  const [upcoming, month, history, sync, devices, linked] = await Promise.all([
     loadSessions(new Date(now - 12 * 3_600_000), new Date(now + (admin ? 45 : 8) * DAY_MS), { admin }),
     admin ? loadSessions(trMidnight(monthStart), trMidnight(nextMonth), { admin }) : Promise.resolve([]),
     admin ? loadSessions(new Date(now - 30 * DAY_MS), new Date(now), { admin }) : Promise.resolve([]),
@@ -77,9 +78,16 @@ async function KaraokeContent() {
           .innerJoin(s.users, eq(s.users.id, s.pushSubscriptions.userId))
           .where(and(eq(s.users.active, true), eq(s.users.sessionVersion, s.pushSubscriptions.sessionVersion), eq(s.pushSubscriptions.karaoke, true)))
       : Promise.resolve(null),
+    // Sipariş satırının reçetesi: laffogato.net menüsüne bağlı ürünler (kalem + yuva → ürün adı; reçete defterinde aranır)
+    getDb()
+      .select({ name: s.products.name, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
+      .from(s.products)
+      .where(and(isNotNull(s.products.siteMenuId), eq(s.products.active, true))),
   ]);
+  const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <div className="space-y-6">
+      <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
       <KaraokeBoard role={user.role} upcoming={upcoming} siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null} configured={Boolean(karaokeSecret())} serverNow={now} />
       {admin ? (
         <KaraokeAdmin
@@ -90,6 +98,7 @@ async function KaraokeContent() {
           configured={Boolean(karaokeSecret())}
           devices={devices?.[0]?.n ?? 0}
           siteAdminBase={`${siteUrl()}/admin/mobil/karaoke`}
+          sitePanelUrl={`${siteUrl()}/admin`}
           nowMs={now}
         />
       ) : null}

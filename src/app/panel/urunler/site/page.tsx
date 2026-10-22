@@ -1,15 +1,16 @@
 import { asc, eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 import { after } from "next/server";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
-import { ButtonLink } from "@/components/ui/button";
+import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { siteGaps, suggestLinks } from "@/lib/site-menu/names";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { siteUrl } from "@/server/site-link";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -28,9 +29,15 @@ function Header() {
       title={TITLE}
       description="Panel ürünlerini laffogato.net menüsündeki kalemlere bağlayın: bağlı ürünün satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir. Ad, kategori, reçete ve maliyet eşitlenmez."
       actions={
-        <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
-          <ArrowLeft size={16} aria-hidden="true" /> Ürünler
-        </ButtonLink>
+        <>
+          <ButtonLink href="/panel/urunler" variant="ghost" size="sm">
+            <ArrowLeft size={16} aria-hidden="true" /> Ürünler
+          </ButtonLink>
+          {/* Bağlantının öbür ucu: kalemler sitenin panelinde açılır, silinir, adlandırılır */}
+          <a href={`${siteUrl()}/admin`} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "sm")}>
+            laffogato.net paneli <ExternalLink size={14} aria-hidden="true" />
+          </a>
+        </>
       }
     />
   );

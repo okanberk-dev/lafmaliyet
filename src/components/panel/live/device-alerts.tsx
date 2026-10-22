@@ -21,9 +21,10 @@ import { useLive } from "./store";
 const noopSubscribe = () => () => {};
 
 /**
- * "Bu cihazda uyarılar": bildirim izni ve aboneliği (sekme kapalıyken bile yeni rezervasyon ve sabah hatırlatma
- * bildirimi), ses ve sesin çalacağı hoparlör, karaoke alarmları, kaç dakika kala uyarılacağı ve ekranın açık kalması. Tercihler cihaza özeldir:
- * bardaki tablet çalar, yöneticinin telefonu yalnız bildirim alabilir.
+ * "Bu cihazda uyarılar": bildirim izni ve aboneliği (sekme kapalıyken bile yeni rezervasyon, yeni uygulama siparişi ve
+ * sabah hatırlatma bildirimi), ses ve sesin çalacağı hoparlör, sipariş zili, karaoke alarmları, kaç dakika kala
+ * uyarılacağı ve ekranın açık kalması. Tercihler cihaza özeldir: bardaki tablet çalar, yöneticinin telefonu yalnız
+ * bildirim alabilir.
  */
 export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: boolean }) {
   const prefs = usePrefs(role);
@@ -33,7 +34,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   const [rev, setRev] = useState(0);
   const support = useSyncExternalStore<PushSupport>(noopSubscribe, pushSupport, () => "unsupported");
   const [endpoint, setEndpoint] = useState<string | null>(null);
-  const [topics, setTopics] = useState<{ karaoke: boolean; reminders: boolean } | null>(null);
+  const [topics, setTopics] = useState<{ karaoke: boolean; reminders: boolean; orders: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const audio = useAudioState();
 
@@ -45,7 +46,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     if (!publicKey || pushSupport() !== "granted") return;
     void subscribeDevice(publicKey, false).then(async (res) => {
       if (!res.ok) return;
-      setTopics({ karaoke: res.karaoke, reminders: res.reminders });
+      setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders });
       setEndpoint(await currentEndpoint());
     });
   }, [publicKey]);
@@ -57,9 +58,9 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     setBusy(false);
     setRev((r) => r + 1);
     if (!res.ok) return void toast.error(res.error);
-    setTopics({ karaoke: res.karaoke, reminders: res.reminders });
+    setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders });
     setEndpoint(await currentEndpoint());
-    toast.success("Bildirimler bu cihazda açık", { description: "Sekme kapalıyken de yeni rezervasyon ve hatırlatmalar gelir." });
+    toast.success("Bildirimler bu cihazda açık", { description: "Sekme kapalıyken de yeni rezervasyon, sipariş ve hatırlatmalar gelir." });
   }
 
   async function disable() {
@@ -71,9 +72,9 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     toast.success("Bu cihazda bildirimler kapatıldı");
   }
 
-  async function changeTopic(key: "karaoke" | "reminders", value: boolean) {
+  async function changeTopic(key: "karaoke" | "reminders" | "orders", value: boolean) {
     if (!endpoint) return;
-    const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, [key]: value };
+    const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", [key]: value };
     setTopics(next);
     const res = await setPushTopics(endpoint, next);
     if (!res.ok) toast.error(res.error);
@@ -102,7 +103,11 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
       <CardHeader
         icon={<MonitorSmartphone />}
         title="Bu cihazda uyarılar"
-        description={karaoke ? "Sekmeyi Chrome'da açık bırakın: yeni rezervasyonda zil, bitime az kala uyarı, süre dolunca alarm çalar." : "Saatli hatırlatmalar panel açıkken saatinde çalar; bildirim açıksa sekme kapalıyken de gelir."}
+        description={
+          karaoke
+            ? "Sekmeyi Chrome'da açık bırakın: yeni sipariş ve rezervasyonda zil, bitime az kala uyarı, süre dolunca alarm çalar."
+            : "Saatli hatırlatmalar panel açıkken saatinde çalar; bildirim açıksa sekme kapalıyken de gelir."
+        }
         meta={
           <Badge tone={status.tone} dot>
             {status.text}
@@ -138,6 +143,15 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
                 onChange={(v) => void changeTopic("karaoke", v)}
               />
             ) : null}
+            {karaoke ? (
+              <ToggleRow
+                title="Sipariş bildirimleri"
+                description="laffogato.net'ten yeni uygulama siparişi (masa, gel-al, kurye)"
+                label="Sipariş bildirimleri"
+                checked={topics?.orders ?? role === "staff"}
+                onChange={(v) => void changeTopic("orders", v)}
+              />
+            ) : null}
             <ToggleRow
               title="Sabah hatırlatma özeti"
               description="Bugün yapılacak kişisel hatırlatıcılarınız, her sabah"
@@ -166,6 +180,13 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
         {prefs.sound ? <OutputPicker role={role} /> : null}
         {karaoke ? (
           <>
+            <ToggleRow
+              title="Sipariş zili bu cihazda"
+              description="Yeni uygulama siparişinde zil (masa siparişi daha uzun çalar)"
+              label="Sipariş zili bu cihazda"
+              checked={prefs.orderAlerts}
+              onChange={(v) => updatePrefs(role, { orderAlerts: v })}
+            />
             <ToggleRow
               title="Karaoke alarmları bu cihazda"
               description="Başlarken kısa ses, bitime az kala uyarı, süre dolunca “Haber verdim” denene kadar alarm"

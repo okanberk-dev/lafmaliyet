@@ -396,7 +396,17 @@ export function actualProfitBreakdown(model: Model, d: DashboardData): CardBreak
           {
             key: "gelir",
             label: "Gelir",
-            rows: [{ key: "revenueNet", label: "Ciro (KDV hariç)", sub: `POS cirosu ${tl(pm.revenue)} ÷ (1 + KDV ${rate(model.settings.kdv)})`, amount: pm.revenueNet ?? 0, href: salesHref(month) }],
+            rows: [
+              { key: "revenueNet", label: "Ciro (KDV hariç)", sub: `POS cirosu ${tl(pm.revenue)} ÷ (1 + KDV ${rate(model.settings.kdv)})`, amount: pm.revenueNet ?? 0, href: salesHref(month) },
+              // laffogato.net online satışı (KDV hariç): ay çekildiyse ayrı satırlar (docs/SITE-SATIS.md)
+              ...(pm.site
+                ? [
+                    { key: "site:cafe", label: "Kafe online (site + uygulama)", sub: "laffogato.net · KDV hariç", amount: pm.site.cafe, href: "/panel/gelir-gider" },
+                    { key: "site:shop", label: "Mağaza (online)", sub: "laffogato.net · KDV hariç", amount: pm.site.shop, href: "/panel/gelir-gider" },
+                    { key: "site:karaoke", label: "Karaoke (ön ödemeli)", sub: "laffogato.net · KDV hariç", amount: pm.site.karaoke, href: "/panel/gelir-gider" },
+                  ]
+                : []),
+            ],
           },
           ...expenses,
         ]

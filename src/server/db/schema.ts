@@ -795,6 +795,11 @@ export const pushSubscriptions = pgTable(
     karaoke: boolean("karaoke").notNull().default(true),
     /** Sabahları bugünün kişisel hatırlatıcıları */
     reminders: boolean("reminders").notNull().default(true),
+    /**
+     * laffogato.net'ten gelen yeni uygulama siparişi (bar ekranı, docs/SITE-SIPARIS.md). Boş: kişinin rolüne göre
+     * (personel cihazında açık, yöneticininkinde kapalı); cihazda değiştirilince açık ya da kapalı yazılır.
+     */
+    orders: boolean("orders"),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     failures: integer("failures").notNull().default(0),
     createdAt: createdAt(),

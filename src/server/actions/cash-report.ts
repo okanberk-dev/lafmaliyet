@@ -6,11 +6,13 @@ import { z } from "zod";
 
 import { businessDate, computeCash, diffText, parseEmails, staffCanReport, waPhone, whatsappLink, whatsappText, type CashReportFields } from "@/lib/cash-report";
 import { longDateTR } from "@/lib/reminders";
+import type { TillOnlineRow } from "@/lib/site-sales/calc";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { cashReportsBetween, getCashReport, loadCashSettings, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
 import { renderCashReport } from "@/server/notify/cash-report-template";
+import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { isEmailConfigured, resolveFrom, sendEmail } from "@/server/notify/resend";
 import { loadNotifySettings } from "@/server/notify/settings";
 
@@ -46,7 +48,11 @@ const reportSchema = z.object({
 
 export type CashEmailOutcome = { status: "sent" | "failed" | "off"; error: string | null; to: number };
 
-async function emailReport(reportId: number): Promise<CashEmailOutcome> {
+/**
+ * Raporu alıcılara e-postalar. `site`: laffogato.net'in o günkü online satış satırı (önceden başlatılmış istek; yoksa
+ * burada sorulur). Site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır yazılmaz; e-posta yine gider.
+ */
+async function emailReport(reportId: number, site?: Promise<TillOnlineRow | null>): Promise<CashEmailOutcome> {
   const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).limit(1);
   if (!row) throw new UserError("Rapor bulunamadı");
   const settings = await loadCashSettings();
@@ -58,7 +64,8 @@ async function emailReport(reportId: number): Promise<CashEmailOutcome> {
   } else {
     const dto = toCashDTO(row);
     const waste = await dayWaste(row.date);
-    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt, waste, ikramValue: waste.ikramValue || null });
+    const online = await (site ?? fetchTillOnlineRow(row.date));
+    const msg = renderCashReport(dto, { by: dto.submittedByName, revision: dto.revision, submittedAt: row.updatedAt, waste, ikramValue: waste.ikramValue || null, online });
     const notify = await loadNotifySettings();
     const res = await sendEmail({ from: resolveFrom(notify.from), to: settings.recipients, ...msg, idempotencyKey: `cash-${row.date}-r${row.revision}` });
     outcome = res.ok ? { status: "sent", error: null, to: settings.recipients.length } : { status: "failed", error: res.error, to: 0 };
@@ -85,6 +92,9 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
     const fields: CashReportFields = data;
     const c = computeCash(fields);
+    // laffogato.net'in o günkü online satışı e-postaya bilgi satırı olarak girer: istek kayıtla aynı anda başlar, site
+    // yavaşsa e-posta en çok 8 saniye bekler, ulaşılamazsa satırsız gider (kasa rakamlarına hiç girmez)
+    const site = fetchTillOnlineRow(data.date);
     const db = getDb();
     const saved = await db.transaction(async (tx) => {
       const [prev] = await tx.select().from(s.cashReports).where(eq(s.cashReports.date, data.date)).for("update").limit(1);
@@ -104,7 +114,7 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
       const [row] = await tx.insert(s.cashReports).values(values).returning();
       return row;
     });
-    const email = await emailReport(saved.id);
+    const email = await emailReport(saved.id, site);
     await logActivity(me, saved.revision > 1 ? "Kasa raporu güncellendi" : "Kasa raporu", `${longDateTR(data.date)}: ${diffText(c.cashDiff)}`);
     refresh();
     const settings = await loadCashSettings();

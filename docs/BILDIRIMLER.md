@@ -105,7 +105,8 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
   her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var").
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
-izni ve aboneliği, karaoke bildirimleri, sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
+izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
+siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
 güvenliği [KARAOKE.md](KARAOKE.md)'de.
 
 ## Resend kurulumu

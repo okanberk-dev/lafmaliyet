@@ -450,6 +450,10 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const actual = {
     revenue: pm.revenue,
     revenueNet: pm.revenueNet,
+    /** laffogato.net online satışı (KDV hariç); ay çekilmediyse null */
+    site: pm.site,
+    /** ModPOS + online (KDV hariç): kârın cirosu */
+    revenueTotalNet: pm.revenueTotalNet,
     cogs: pm.cogs,
     purchases: pm.purchases,
     personel: pm.sections.personel,
@@ -575,7 +579,8 @@ export function yearTrend(model: Model, year: number) {
     const noRevenue = pm.revenue === null;
     return {
       month,
-      revenueNet: pm.revenueNet ?? 0,
+      // ModPOS + laffogato.net online satışı (KDV hariç): kârla aynı ciro
+      revenueNet: pm.revenueTotalNet ?? 0,
       expenses: pm.expenses,
       profit: noRevenue ? 0 : pm.profit,
       /** POS cirosu girilmiş: kâr/zarar şeridine, yıl toplamına ve grafiğe girer */
@@ -653,6 +658,20 @@ export function alerts(model: Model, month: string): Alert[] {
       title: `${unmatched.length} POS ürününün reçetesi yok`,
       detail: `${nameList(unmatched.map((l) => l.line.posName), 5, "ürün")}. Bunlara ortalama maliyet oranı uygulanıyor.`,
       href: `/panel/satislar${ay}&durum=eslesmeyen`,
+    });
+  }
+  // laffogato.net online kafe satırları menü bağlantısıyla ürünlere eşlenir; eşlenmeyenin malzemesi tüketime girmez
+  const siteUnmapped = model.siteLines(month).unmapped;
+  if (siteUnmapped.length) {
+    out.push({
+      level: "warning",
+      title: `${siteUnmapped.length} online satış satırı panel ürününe bağlı değil`,
+      detail: `${nameList(
+        siteUnmapped.map((l) => `${l.name}${l.size === "single" ? "" : ` ${l.size}`}`),
+        5,
+        "ürün",
+      )}. Ürünü laffogato.net menüsündeki kalemine bağlayın; bağlanana kadar bu satışların malzemesi tutarlılıkta sayılmaz.`,
+      href: "/panel/urunler/site",
     });
   }
   if (sales.lines.length && info?.posRevenue) {
@@ -772,7 +791,12 @@ export type StockCheck = "complete" | "needsPurchase" | "noCount";
 export interface ConsistencyRow {
   ingredient: Ingredient;
   unitCost: number;
+  /** Reçeteye göre beklenen tüketim: ModPOS satışları + online kafe siparişleri */
   usage: number;
+  /** Bunun ModPOS satışlarından gelen kısmı (Satışlar sayfasındaki rapor) */
+  posUsage: number;
+  /** laffogato.net online kafe siparişlerinden gelen kısmı (menü bağlantısıyla eşlenen satırlar) */
+  onlineUsage: number;
   purchased: number | null;
   ratio: number | null;
   diffAmount: number | null;
@@ -808,6 +832,8 @@ export function consistency(model: Model, month: string) {
   const offRevenue = info?.offRevenue ?? 0;
 
   const usage = model.ingredientUsage(month);
+  // Online kafe siparişleri ayrı bir kaynak: ModPOS satışına yazılmaz, beklenen tüketime eklenir ve ayrıca gösterilir
+  const online = model.onlineUsage(month);
   const recorded = model.recordedUsage(month);
   const purchases = new Map(
     model.ds.purchaseQuantities.filter((p) => p.month === month).map((p) => [p.ingredientId, p]),
@@ -818,14 +844,16 @@ export function consistency(model: Model, month: string) {
   // İki ay da sayılan hammaddeler de listelenir: reçetesi olmayan ama stoktan düşen mal görünür olsun
   const countedBoth = [...countedIn(month)].filter((id) => prevCounted.has(id));
 
-  const ids = new Set<number>([...usage.keys(), ...purchases.keys(), ...countedBoth, ...recorded.keys()]);
+  const ids = new Set<number>([...usage.keys(), ...online.keys(), ...purchases.keys(), ...countedBoth, ...recorded.keys()]);
   const rows: ConsistencyRow[] = [];
   for (const id of ids) {
     const ingredient = model.ingById.get(id);
     if (!ingredient) continue;
     if (ingredient.priceSource === "water" && !purchases.has(id)) continue;
     const unitCost = model.unitCost.get(id) ?? 0;
-    const u = usage.get(id) ?? 0;
+    const posU = usage.get(id) ?? 0;
+    const onlineU = online.get(id) ?? 0;
+    const u = posU + onlineU;
     const p = purchases.get(id);
     const purchased = p ? p.qty : null;
     // Sayım biriminden malzemenin kendi birimine (sayıldığı andaki çarpanla: KG/LT = 1000)
@@ -842,6 +870,8 @@ export function consistency(model: Model, month: string) {
       ingredient,
       unitCost,
       usage: u,
+      posUsage: posU,
+      onlineUsage: onlineU,
       purchased,
       ratio: purchased !== null && u ? purchased / u : null,
       diffAmount: purchased !== null ? (purchased - u) * unitCost : null,
@@ -868,6 +898,8 @@ export function consistency(model: Model, month: string) {
 
   const complete = rows.filter((r) => r.stock === "complete");
   const unreciped = rows.filter((r) => !r.inRecipe && r.stockDrop !== null && (r.stockDrop + (r.purchased ?? 0)) > 0);
+  const siteRecord = model.siteSales(month);
+  const siteLines = model.siteLines(month);
 
   return {
     month,
@@ -901,6 +933,21 @@ export function consistency(model: Model, month: string) {
       count: unreciped.length,
       amount: sum(unreciped.map((r) => (r.stockDrop! + (r.purchased ?? 0)) * r.unitCost)),
     },
+    /**
+     * laffogato.net online kafe siparişleri (ay çekilmediyse null): ürüne eşlenen ve eşlenmeyen satırlar. Eşlenmeyenin
+     * malzemesi beklenen tüketime girmez; ürünü Ürünler › Site menüsü'nden bağlanınca girer.
+     */
+    online: siteRecord
+      ? {
+          pulledAt: siteRecord.pulledAt,
+          closed: siteRecord.closed,
+          orders: siteRecord.cafe.orders,
+          mappedQty: sum(siteLines.mapped.map((m) => m.line.qty)),
+          mapped: siteLines.mapped.map((m) => ({ ...m.line, productId: m.product.id, productName: m.product.name, productSize: m.product.size })),
+          unmapped: siteLines.unmapped,
+          unmappedQty: sum(siteLines.unmapped.map((l) => l.qty)),
+        }
+      : null,
   };
 }
 

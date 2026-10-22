@@ -202,7 +202,8 @@ function historyText<T extends { fromMonth: string | null; versionId: number | n
  */
 export function pnlYearTotal(model: Pick<Model, "pnlValue">, calcs: PnlMonthCalc[], key: string): number | null {
   if (key.startsWith("ratio:")) {
-    const rn = sum(calcs.map((c) => c.revenueNet ?? 0));
+    // Oranlar bütün cironun (ModPOS + laffogato.net online) payı; online satış yoksa ModPOS cirosu
+    const rn = sum(calcs.map((c) => c.revenueTotalNet ?? 0));
     if (!rn) return null;
     const of = key.slice(6);
     const numerator = pnlYearTotal(model, calcs, of === "expenses" ? "total:expenses" : of === "profit" ? "profit" : `total:${of}`);

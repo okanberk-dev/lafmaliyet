@@ -6,14 +6,16 @@ import type { Role } from "@/lib/constants";
 
 /**
  * Bu cihazın uyarı tercihleri (tarayıcıda saklanır; her cihaz kendi karar verir: kasadaki tablet çalar, yöneticinin
- * telefonu çalmayabilir). Varsayılan: personelde karaoke alarmları açık, yöneticide kapalı; sesli uyarı ve kişisel
- * hatırlatmalar herkeste açık; sesler sistemin varsayılan çıkışından (hoparlör seçilene kadar).
+ * telefonu çalmayabilir). Varsayılan: personelde karaoke alarmları ve sipariş zili açık, yöneticide kapalı; sesli uyarı
+ * ve kişisel hatırlatmalar herkeste açık; sesler sistemin varsayılan çıkışından (hoparlör seçilene kadar).
  */
 export interface DevicePrefs {
   /** Bu cihazda ses çalınsın */
   sound: boolean;
   /** Karaoke başlangıç / az kaldı / süre doldu uyarıları bu cihazda */
   karaokeAlarms: boolean;
+  /** laffogato.net'ten yeni uygulama siparişi gelince zil (bar ekranı, docs/SITE-SIPARIS.md) bu cihazda */
+  orderAlerts: boolean;
   /** Saatli kişisel hatırlatmalar bu cihazda */
   reminderAlerts: boolean;
   /** Bitime kaç dakika kala uyarılsın (0: uyarma) */
@@ -31,7 +33,7 @@ const WARN_CHOICES = [0, 5, 10, 15] as const;
 export { WARN_CHOICES };
 
 export function defaultPrefs(role: Role): DevicePrefs {
-  return { sound: true, karaokeAlarms: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "" };
+  return { sound: true, karaokeAlarms: role === "staff", orderAlerts: role === "staff", reminderAlerts: true, warnMinutes: 10, wakeLock: role === "staff", outputId: "", outputLabel: "" };
 }
 
 let cache: { role: Role; prefs: DevicePrefs } | null = null;
@@ -47,6 +49,7 @@ function read(role: Role): DevicePrefs {
       prefs = {
         sound: typeof p.sound === "boolean" ? p.sound : prefs.sound,
         karaokeAlarms: typeof p.karaokeAlarms === "boolean" ? p.karaokeAlarms : prefs.karaokeAlarms,
+        orderAlerts: typeof p.orderAlerts === "boolean" ? p.orderAlerts : prefs.orderAlerts,
         reminderAlerts: typeof p.reminderAlerts === "boolean" ? p.reminderAlerts : prefs.reminderAlerts,
         warnMinutes: WARN_CHOICES.includes(p.warnMinutes as (typeof WARN_CHOICES)[number]) ? (p.warnMinutes as number) : prefs.warnMinutes,
         wakeLock: typeof p.wakeLock === "boolean" ? p.wakeLock : prefs.wakeLock,

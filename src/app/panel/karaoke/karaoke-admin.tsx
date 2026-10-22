@@ -36,6 +36,7 @@ export function KaraokeAdmin({
   configured,
   devices,
   siteAdminBase,
+  sitePanelUrl,
   nowMs,
 }: {
   history: KaraokeSessionDTO[];
@@ -45,6 +46,8 @@ export function KaraokeAdmin({
   configured: boolean;
   devices: number;
   siteAdminBase: string;
+  /** Sitenin yönetim paneli (…/admin): bağlantının öbür ucu */
+  sitePanelUrl: string;
   /** Sayfanın çizildiği an ("Bugün", "Dün" etiketleri için) */
   nowMs: number;
 }) {
@@ -147,8 +150,11 @@ export function KaraokeAdmin({
               {health.tone === "red" && sync?.lastError ? <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{sync.lastError}</p> : null}
               <p className="text-[13px] leading-5 text-ink-mute">
                 Site her rezervasyon değişikliğinde panele imzalı bir ping atar; panel değişenleri hemen çeker ve cihazlara bildirir. Ayrıca bu sayfa açılınca en
-                çok beş dakikada bir kontrol edilir. Sürekli sorgu yapılmaz.
+                çok beş dakikada bir kontrol edilir. Sürekli sorgu yapılmaz. Bütün bağlantıların durumu: Ayarlar › laffogato.net.
               </p>
+              <a href={sitePanelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
+                laffogato.net paneli <ExternalLink size={13} aria-hidden="true" />
+              </a>
             </>
           ) : (
             <ol className="list-decimal space-y-1.5 pl-5 text-[13px] leading-5 text-ink-soft">

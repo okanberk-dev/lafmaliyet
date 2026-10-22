@@ -6,14 +6,17 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
+import { daysInMonth, shiftMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { siteLinkSecret, siteUrl } from "@/server/site-link";
+import { readSalesState, SITE_SALES_FIRST_MONTH } from "@/server/site-sales/sync";
 
 import { pnlRowLabel, revenueBreakdown, yearBreakdowns } from "./breakdowns";
 import { CountUp, PnlGrid, YearPicker, type GridSection, type StripMonth } from "./pnl-grid";
+import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
 
@@ -54,7 +57,7 @@ export default function PnlPage({ searchParams }: PageProps<"/panel/gelir-gider"
 async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/gelir-gider">["searchParams"] }) {
   await requireAdmin();
   const sp = await searchParams;
-  const model = await loadModel();
+  const [model, salesState] = await Promise.all([loadModel(), readSalesState()]);
   const known = [...model.monthInfo.keys(), ...model.ds.invoices.map((i) => i.date.slice(0, 7))].sort();
   const knownYears = new Set(known.map((k) => Number(k.slice(0, 4))));
   // Varsayılan yıl: bu yıl (verisi varsa); yoksa verisi olan son yıl. İleri tarihli tek bir kayıt tabloyu boş bir yıla atmasın.
@@ -69,7 +72,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
 
   const totalOf = (key: string): number | null => {
     if (key.startsWith("ratio:")) {
-      const rn = calcs.reduce((a, c) => a + (c.revenueNet ?? 0), 0);
+      // Oranlar bütün cironun (ModPOS + laffogato.net online) payı
+      const rn = calcs.reduce((a, c) => a + (c.revenueTotalNet ?? 0), 0);
       if (!rn) return null;
       const num = key === "ratio:expenses" ? totalOf("total:expenses") : key === "ratio:profit" ? totalOf("profit") : totalOf(`total:${key.slice(6)}`);
       return num === null ? null : num / rn;
@@ -115,10 +119,44 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   // Ay sütunu başlığındaki not (Satışlar'daki ay notuyla aynı alan) ve ayın gün sayısı (açık gün sınırı)
   const monthNotes = calcs.map((c) => c.info?.note ?? null);
   const dims = months.map(daysInMonth);
-  const activeMonths = months.filter((_, i) => calcs[i].revenue !== null || calcs[i].expenses !== 0 || openDays[i] !== null);
-  const revenueNet = calcs.reduce((a, c) => a + (c.revenueNet ?? 0), 0);
+  const activeMonths = months.filter((_, i) => calcs[i].revenue !== null || calcs[i].expenses !== 0 || openDays[i] !== null || calcs[i].site !== null);
+  // Ciro: ModPOS (KDV hariç) + laffogato.net online satışı (KDV hariç; çekilmemiş ayda yok)
+  const revenueNet = calcs.reduce((a, c) => a + (c.revenueTotalNet ?? 0), 0);
+  const online = calcs.reduce((a, c) => a + (c.site?.total ?? 0), 0);
   const expenses = calcs.reduce((a, c) => a + c.expenses, 0);
   const profit = revenueNet - expenses;
+
+  // laffogato.net online satışları kartı: yılın çekilmiş ayları, elle çekilebilecek aylar
+  const current = model.currentMonth;
+  const siteCard: SiteSalesCardData = {
+    configured: Boolean(siteLinkSecret()),
+    lastPullAt: salesState.lastPullAt,
+    lastOkAt: salesState.lastOkAt,
+    lastError: salesState.lastError,
+    months: months
+      .map((m) => ({ m, rec: model.siteSales(m), rev: model.siteRevenue(m) }))
+      .filter((x) => x.rec && x.rev)
+      .reverse()
+      .map(({ m, rec, rev }) => ({
+        month: m,
+        pulledAt: rec!.pulledAt,
+        closed: rec!.closed,
+        cafe: rev!.cafe,
+        shop: rev!.shop,
+        karaoke: rev!.karaoke,
+        total: rev!.total,
+        cafeOrders: rec!.cafe.orders,
+        shopOrders: rec!.shop.orders,
+        bookings: rec!.karaoke.bookings,
+        manualOrders: rec!.manual.orders,
+        manualNet: rec!.manual.netMinor / 100,
+        unmapped: model.siteLines(m).unmapped.length,
+      })),
+    choices: months.filter((m) => m <= current && m >= SITE_SALES_FIRST_MONTH).reverse(),
+    refreshMonths: [current, shiftMonth(current, -1)].filter((m) => m >= SITE_SALES_FIRST_MONTH),
+    sitePanelUrl: `${siteUrl()}/admin`,
+    kdvRate: model.settings.kdv,
+  };
 
   // Yılın 12 ayı: kâr yeşil, zarar kırmızı, cirosu girilmemiş aktif ay sarı, boş ay gri; verisi olan son ay çerçeveli
   const latestMonth = activeMonths[activeMonths.length - 1];
@@ -159,14 +197,19 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown
           title={`${year} cirosu`}
-          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür. Aya dokununca Satışlar'da o ay açılır.`}
+          description={`Ay ay ciro (KDV hariç): Satışlar'a girilen POS cirosundan ${pct(model.ds.settings.kdv, 0)} KDV düşülür; laffogato.net online satışları (KDV hariç) eklenir. Aya dokununca Satışlar'da o ay açılır.`}
           groups={breakdown.revenue}
           total={revenueNet}
           totalLabel="Ciro (KDV hariç)"
           order="given"
           empty="Bu yıl ciro girilmedi."
         >
-          <Stat icon={<Banknote />} label={`${year} ciro (KDV hariç)`} value={<CountUp value={revenueNet} />} sub={`${activeMonths.length} aktif ay`} />
+          <Stat
+            icon={<Banknote />}
+            label={`${year} ciro (KDV hariç)`}
+            value={<CountUp value={revenueNet} />}
+            sub={online ? `${activeMonths.length} aktif ay · online ${tl(online)}` : `${activeMonths.length} aktif ay`}
+          />
         </StatBreakdown>
         <StatBreakdown
           title={`${year} giderleri`}
@@ -217,6 +260,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
             info="Ay içinde satılan mal maliyeti = önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)."
           />
         </StatBreakdown>
+      </div>
+      <div className="mb-6">
+        <SiteSalesCard data={siteCard} />
       </div>
       {/* Yıl değişince tablo yeniden kurulur: "Aktif aylar / 12 ay" seçimi o yılın verisine göre baştan belirlenir */}
       <PnlGrid

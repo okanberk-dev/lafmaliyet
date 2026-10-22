@@ -99,6 +99,10 @@ export function MonthView({
   const cellOf = (key: string): PnlCell | undefined => all.find((r) => r.def.key === key)?.cells[i];
   const profit = cellOf("profit")?.value ?? null;
   const revenueNet = cellOf("revenueNet")?.value ?? null;
+  // laffogato.net online satışı (KDV hariç): ay çekildiyse kâr ve oranlar ModPOS + online cirosuyla
+  const onlineCells = ["site:cafe", "site:shop", "site:karaoke"].map((k) => cellOf(k)?.value ?? null);
+  const online = onlineCells.some((v) => v !== null) ? onlineCells.reduce<number>((a, v) => a + (v ?? 0), 0) : null;
+  const revenueBase = online !== null ? (revenueNet ?? 0) + online : revenueNet;
   const revenue = cellOf("revenue")?.value ?? null;
   const expenses = cellOf("total:expenses")?.value ?? null;
   const active = activeMonths.includes(month);
@@ -194,17 +198,19 @@ export function MonthView({
                 ) : (
                   fmt(revenueNet)
                 )}
+                {online !== null ? <span className="block text-xs font-normal text-ink-mute">+ online {fmt(online)} (laffogato.net)</span> : null}
               </dd>
             </div>
             <div className="min-w-0">
               <dt className="text-xs text-ink-mute">Giderler</dt>
               <dd className="font-medium text-ink tabular">{fmt(expenses)}</dd>
             </div>
-            {revenueNet ? (
+            {revenueBase ? (
               <div className="col-span-2 min-w-0">
                 <dt className="sr-only">Maliyet oranı</dt>
                 <dd className="text-xs text-ink-mute tabular">
-                  Giderler cironun {pct((expenses ?? 0) / revenueNet, 0)} · kâr oranı {pct((profit ?? 0) / revenueNet)}
+                  Giderler cironun {pct((expenses ?? 0) / revenueBase, 0)} · kâr oranı {pct((profit ?? 0) / revenueBase)}
+                  {online !== null ? " (ciro: ModPOS + online)" : ""}
                 </dd>
               </div>
             ) : null}

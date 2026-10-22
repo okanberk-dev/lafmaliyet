@@ -1,15 +1,22 @@
 import { desc } from "drizzle-orm";
-import { ChevronRight, Download, HardDriveDownload, Users } from "lucide-react";
+import { ChevronRight, Download, ExternalLink, Globe, HardDriveDownload, Users } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { Badge } from "@/components/ui/badge";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
+import { readSyncState } from "@/server/karaoke/sync";
+import { siteLinkSecret, siteUrl } from "@/server/site-link";
+import { readMenuSyncState } from "@/server/site-menu/sync";
+import { readOrdersState } from "@/server/site-orders/sync";
+import { readSalesState } from "@/server/site-sales/sync";
 
 import { impactData } from "./impact";
 import { SectionCard } from "./section-card";
@@ -130,6 +137,106 @@ function BackupCard() {
   );
 }
 
+/** Bir bağlantının son çekme durumu: son deneme hatalıysa "Hata", başarılı çekme varsa "Bağlı" */
+function linkHealth(configured: boolean, okAt: string | null, tryAt: string | null, error: string | null) {
+  if (!configured) return { tone: "gray" as const, text: "Kurulmadı" };
+  if (error && (!okAt || Date.parse(tryAt ?? "") >= Date.parse(okAt))) return { tone: "red" as const, text: "Hata" };
+  if (okAt) return { tone: "green" as const, text: "Bağlı" };
+  return { tone: "amber" as const, text: "Henüz çekilmedi" };
+}
+
+/**
+ * laffogato.net bağlantılarının tek yerden durumu (karaoke, menü, uygulama siparişleri, online satışlar): son başarılı
+ * çekme, son ping, hata ve her birinin ekranı; sitenin yönetim paneline bağlantı. Dört bağlantı aynı anahtarı
+ * (KARAOKE_SYNC_SECRET) ve imzayı kullanır (docs/KARAOKE.md, SITE-MENU.md, SITE-SIPARIS.md, SITE-SATIS.md).
+ */
+async function SiteLinksCard() {
+  const configured = Boolean(siteLinkSecret());
+  const [karaoke, menu, orders, sales] = await Promise.all([readSyncState(), readMenuSyncState(), readOrdersState(), readSalesState()]);
+  const rows = [
+    {
+      key: "karaoke",
+      title: "Karaoke rezervasyonları",
+      href: "/panel/karaoke",
+      health: linkHealth(configured, karaoke.lastOkAt, karaoke.lastTryAt, karaoke.lastError),
+      okAt: karaoke.lastOkAt,
+      pingAt: karaoke.lastPingAt,
+      error: karaoke.lastError,
+    },
+    {
+      key: "menu",
+      title: "Menü: fiyat ve Satışta / Tükendi",
+      href: "/panel/urunler/site",
+      health: linkHealth(configured, menu.lastOkAt, menu.lastPullAt, menu.lastError),
+      okAt: menu.lastOkAt,
+      pingAt: menu.lastPingAt,
+      error: menu.lastError,
+    },
+    {
+      key: "orders",
+      title: "Uygulama siparişleri (bar ekranı)",
+      href: "/panel/karaoke",
+      health: linkHealth(configured, orders.lastOkAt, orders.lastPullAt, orders.lastError),
+      okAt: orders.lastOkAt,
+      pingAt: orders.lastPingAt,
+      error: orders.lastError,
+    },
+    {
+      key: "sales",
+      title: "Online satışlar (gelir-gider, tutarlılık, kasa)",
+      href: "/panel/gelir-gider",
+      health: linkHealth(configured, sales.lastOkAt, sales.lastPullAt, sales.lastError),
+      okAt: sales.lastOkAt,
+      pingAt: null,
+      error: sales.lastError,
+    },
+  ];
+  const errors = rows.filter((r) => r.health.tone === "red").length;
+  return (
+    <SectionCard
+      id="site"
+      icon={<Globe />}
+      title="laffogato.net"
+      summary={!configured ? "Bağlantı kurulmadı" : errors ? `${errors} bağlantıda hata` : "Karaoke, menü, siparişler, online satışlar"}
+      description={
+        configured
+          ? "Kafenin sitesiyle dört bağlantı: aynı anahtar (KARAOKE_SYNC_SECRET) ve imza. Site her değişiklikte panele imzalı ping atar, panel imzalı tek okumayla çeker."
+          : "Bağlantı kurulmadı: Vercel'de iki projeye de (laffogato.net ve bu panel) aynı değerle KARAOKE_SYNC_SECRET ekleyin (en az 32 karakter), ikisini yeniden yayınlayın."
+      }
+      actionsClassName="max-sm:w-full"
+      actions={
+        <a href={`${siteUrl()}/admin`} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "md", "max-sm:w-full")}>
+          laffogato.net paneli <ExternalLink size={15} aria-hidden="true" />
+        </a>
+      }
+    >
+      <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
+        {rows.map((r) => (
+          <li key={r.key} className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3 text-sm">
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2">
+                <Link href={r.href} className="font-medium text-ink underline decoration-transparent underline-offset-2 hover:decoration-ink">
+                  {r.title}
+                </Link>
+                <Badge tone={r.health.tone} dot>
+                  {r.health.text}
+                </Badge>
+              </p>
+              {configured ? (
+                <p className="mt-0.5 text-[13px] text-ink-mute">
+                  Son çekme {r.okAt ? dateTimeTR(r.okAt) : "—"}
+                  {r.key !== "sales" ? ` · sitenin son pingi ${r.pingAt ? dateTimeTR(r.pingAt) : "—"}` : " · her sabah ve Siteden yenile"}
+                </p>
+              ) : null}
+              {r.health.tone === "red" && r.error ? <p className="mt-1 rounded-lg bg-bad-soft px-2.5 py-1.5 text-[13px] text-bad">{r.error}</p> : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </SectionCard>
+  );
+}
+
 const TZ = "Europe/Istanbul";
 /** Kafenin saatine göre gün anahtarı (YYYY-MM-DD) */
 const dayKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ });
@@ -177,6 +284,7 @@ async function SettingsContent() {
           }))}
         />
       </div>
+      <SiteLinksCard />
       <BackupCard />
     </SettingsLayout>
   );

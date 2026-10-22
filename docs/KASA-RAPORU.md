@@ -24,11 +24,23 @@ Gece 05:00'e kadar kapanan gün bir önceki güne yazılır. Personel bugünün 
 Daha eski bir günü yalnız yönetici açar. Rapor yeniden gönderilince "güncellendi" diye işaretlenir. Arada başkası
 göndermişse üzerine yazılmaz: sayfa yenilenip onun girdikleri görülür.
 
+## laffogato.net satırı (bilgi)
+
+Formun altında, site bağlıysa o günün online satışı tek satır olarak görünür:
+
+> **laffogato.net · 21 Ekim Çarşamba:** Online (site + uygulama) 1.331,02 ₺ · Karaoke ön ödeme 410 ₺ — kasadan geçmez.
+
+Uygulama ve web siparişleri (kafe + mağaza) ile ön ödemeli karaoke, KDV dahil, iadeler düşülmüş. Parası sanal POS'tan
+alındığı için **kasadan geçmez**: kasa farkına, Z kontrolüne ve devre girmez; ModPOS'un "Online" ödemesi (Yemeksepeti,
+Getir…) ayrıdır. Personel karaoke tutarını görmez. Rapor açılınca, gönderilince ve e-postası gönderilince siteden
+sorulur (saklanmaz); site düşük ya da yavaşsa (8 saniye) satır görünmez, form ve gönderim hiç beklemez. Sitenin günü
+gece yarısında biter (kasanınki 05:00'te). Ayrıntı: [SITE-SATIS.md](SITE-SATIS.md).
+
 ## Gönderince
 
 - **E-posta:** yöneticinin seçtiği adreslere gider (varsayılan `bizimfutbol9@gmail.com` ve `iletisim@alpkoc.com.tr`).
   Konu örneği: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik". İçinde kasa sonucu, Z raporu, kasa, kart, günün zayi ve
-  ikramı yer alır. Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
+  ikramı ve (site o an yanıt verdiyse) "laffogato.net (kasadan geçmez)" bölümü yer alır. Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
   E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar.
 - **WhatsApp:** "WhatsApp ile gönder" ayrıntılı metni hazır açar. Ayarlarda numara girildiyse o sohbet açılır,
   girilmediyse kişi ya da grup seçilir. "Metni kopyala" ile başka yere de yapıştırılır.

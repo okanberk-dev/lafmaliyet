@@ -1,4 +1,4 @@
-import { ArrowLeft, Gift, ReceiptText } from "lucide-react";
+import { ArrowLeft, Gift, Globe, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -15,6 +15,7 @@ import { requireUser } from "@/server/auth/dal";
 import { cashReportsBetween, getCashReport, loadCashSettings, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { isEmailConfigured } from "@/server/notify/resend";
+import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 
 import { CashForm } from "./cash-form";
 import { CashHistory, type CashMonthTotals } from "./cash-history";
@@ -117,6 +118,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       </div>
     </Card>
   ) : null;
+  // laffogato.net'in o günkü online satışı: bilgi satırı, sayfayı bekletmez (site gelene kadar boş, gelmezse yok)
+  const siteRow = showForm ? (
+    <Suspense fallback={null}>
+      <SiteDayRow date={date} admin={admin} />
+    </Suspense>
+  ) : null;
   const form = showForm ? (
     <CashForm
       key={`${date}:${report?.revision ?? 0}`}
@@ -150,6 +157,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       <div className="space-y-4">
         {dayChips}
         {form}
+        {siteRow}
         {wasteCard}
         <Card>
           <CardHeader icon={<ReceiptText />} title="Son 7 gün" description="Gönderilen raporlar" />
@@ -186,6 +194,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         <>
           {dayChips}
           {form}
+          {siteRow}
           {wasteCard}
         </>
       ) : null}
@@ -224,6 +233,29 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * laffogato.net'in o günkü online satışı (docs/SITE-SATIS.md): uygulama ve web siparişleri ve karaoke ön ödemesi,
+ * kasadan geçmez. Bilgi satırıdır: kasa farkına, Z raporuna ve hiçbir kasa rakamına girmez. Sayfa açılınca sorulur;
+ * bağlantı kapalıysa, site ulaşılamazsa ya da 8 saniyede yanıt vermezse satır görünmez (rapor beklemez). Personele
+ * karaoke tutarı gösterilmez (README: karaoke tutarları yalnız yöneticiye).
+ */
+async function SiteDayRow({ date, admin }: { date: string; admin: boolean }) {
+  const row = await fetchTillOnlineRow(date);
+  if (!row) return null;
+  return (
+    <div role="note" className="flex flex-wrap items-start gap-x-3 gap-y-1 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+      <Globe size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <p className="min-w-0 flex-1">
+        <span className="font-semibold">laffogato.net · {longDateTR(date)}:</span> Online (site + uygulama) {money(row.online)}
+        {admin ? <> · Karaoke ön ödeme {money(row.karaoke)}</> : null} — kasadan geçmez.
+        <span className="block text-[13px] text-info/80">
+          Bilgi için: kasa farkına ve Z raporuna girmez; ModPOS&apos;un &quot;Online&quot; ödemesi (Yemeksepeti, Getir…) ayrı. Sitenin günü gece yarısında biter.
+        </span>
+      </p>
     </div>
   );
 }
