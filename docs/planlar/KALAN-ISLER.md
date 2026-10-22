@@ -1,4 +1,4 @@
-# Kalan işler (22 Ekim 2026, 11:00 UTC itibarıyla)
+# Kalan işler (22 Ekim 2026, 14:00 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
@@ -22,16 +22,17 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 
 | # | Grup | Plan | Migration (birleştirmede üretilir) | Durum |
 |---|---|---|---|---|
-| 3 | ops-backup: tam yedek ve denenmiş geri yükleme | `ops.md` §2 + CRITIQUE "ops" düzeltmeleri | yok | **Bitti, birleştirme bekliyor:** dal `impl/ops-backup` (`docs/YEDEK.md`) |
-| 4 | vkn: tedarikçiyi vergi numarasıyla eşleştirme (çekirdek; "Birleştir" ertelendi) | `vkn.md` + CRITIQUE §3/§4 | `fatura_vergi_no` | **Yarım:** `wip/vkn/*.patch` |
-| 5 | pricing: büyük Paraşüt fiyat sıçramasına onay, tedarikçiye göre fiyat | `pricing.md` | `fiyat_onayi` | başlanmadı |
-| 6 | kasa: ay bilgisi kasa raporlarından, kasa bütünlüğü | `kasa.md` | `kasa_ay_bilgisi_butunluk` | başlanmadı |
-| 7 | insight: zam etkisi (₺/ay), 6 haftalık nakit planı **+ `kdv.md` eki** (aynı dalda) | `insight.md`, `kdv.md` | yok | başlanmadı |
-| 8 | menu: toplu fiyat değişikliği, ModPOS listesi, fiyat geçmişi | `menu.md` | `fiyat_gecmisi` | başlanmadı |
-| 9 | today: "Bugün" ekranı, telefonda yeni alt menü | `today.md` | yok | başlanmadı |
+| 3 | ops-backup: tam yedek ve denenmiş geri yükleme | `ops.md` §2 + CRITIQUE "ops" düzeltmeleri | yok | **Bitti:** dalga 1 PR'ı (`docs/YEDEK.md`) |
+| 4 | vkn: tedarikçiyi vergi numarasıyla eşleştirme (çekirdek; "Birleştir" ertelendi) | `vkn.md` + CRITIQUE §3/§4 | `0021_fatura_vergi_no` | **Bitti:** dalga 1 PR'ı |
+| — | **ekle** (sahibin 22 Ekim isteği): sayıma kalem ekleme (personel de), sekiz yeni kalem, personelin yeni ürün önerisi | `ekle.md` | `recete_yeni_urun`, `sayim_yeni_kalemler` (veri) | **Uygulanıyor** (dalga 2); birleştirirken Klips kapak satırı eklenecek |
+| 5 | pricing: büyük Paraşüt fiyat sıçramasına onay, tedarikçiye göre fiyat | `pricing.md` | `fiyat_onayi` | dalga 2 (vkn'den sonra) |
+| 6 | kasa: ay bilgisi kasa raporlarından, kasa bütünlüğü | `kasa.md` | `kasa_ay_bilgisi_butunluk` | dalga 3 |
+| 7 | insight: zam etkisi (₺/ay), 6 haftalık nakit planı **+ `kdv.md` eki** (aynı dalda) | `insight.md`, `kdv.md` | yok | dalga 3 |
+| 8 | menu: toplu fiyat değişikliği, ModPOS listesi, fiyat geçmişi | `menu.md` | `fiyat_gecmisi` | dalga 4 (insight'tan sonra birleşir) |
+| 9 | today: "Bugün" ekranı, telefonda yeni alt menü | `today.md` | yok | dalga 4 (en son birleşir) |
 
-WIP yamaları `fa989a3` üzerine yazıldı; güncel main (099dc8a) üzerinde de `git apply --check` temiz geçiyor; `git am` ile uygulanır. Yamalar
-yarımdır: önce gözden geçirin, sonra tamamlayın. vkn yamasındaki `0021` migration'ı birleştirmede yeniden üretilir.
+Dalga 1 (ops-backup, vkn) yarım yamalardan tamamlandı; `wip/` klasörü kaldırıldı. Birleştirmede migration'lar
+yeniden üretilir (R2); her dalga main'e ayrı bir PR'dır.
 
 ### İkinci paket (planlar hazır; ortak bilgi `BRIEF2.md`)
 
@@ -44,22 +45,13 @@ yarımdır: önce gözden geçirin, sonra tamamlayın. vkn yamasındaki `0021` m
 | mcp | `mcp.md` | Claude uygulamasından panele soru sorma (salt okunur, yalnız yönetici, OAuth) |
 | tahmin | `tahmin.md` | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü |
 | doluluk | `doluluk.md` | Karaoke doluluk haritası ve göstergeler |
-| haftalik | **plan yazılmadı** | Haftalık yönetici özeti (pazartesi e-postası, ₺ etkisine göre 3–5 madde); diğer planların hepsini tüketir |
+| haftalik | `haftalik.md` | Haftalık yönetici özeti (pazartesi e-postası, ₺ etkisine göre en çok 5 madde); diğer planların hepsini tüketir; en son |
 
-**İkinci paket uygulanmadan önce yapılacaklar:**
-1. `haftalik.md` planını yazın (istek: her pazartesi kısa e-posta; lira etkisine göre sıralı 3–5 madde; her biri
-   tek dokunuşla ilgili ekrana; ör. "Süt zammı Latte'de ayda 4.800 ₺ kâr kaybı", "Salı 15–18 karaoke %12 dolu";
-   Vercel Hobby'de cron günlüktür, haftalık iş günlük işin içinde pazartesi çalışır; her kaynak isteğe bağlı).
-2. `CRITIQUE2.md` çapraz eleştirisini yazın (CRITIQUE.md tarzında): plan başına karar ve kesilecekler; ortak
-   sözleşmeler R8+ (foto modülü ve `/api/foto/[id]` erişim denetimi — sahibi fotograf; Claude istemcisi
-   `src/server/ai/claude.ts` — sahibi fotograf; `renderDigest` uzantıları: kontrol ve tahmin ayrı konumsal argüman
-   istiyor → tek bir `extras` nesnesine birleştirin; zil grupları; nav/roller/⌘K/Yardım/README eklemeleri; Bugün
-   satır kaynakları; günlük iş adımları; yedek `TABLE_RULES`; `db:reset`); bağımlılık sürümleri
-   (`@anthropic-ai/sdk`, `@vercel/blob`, `@modelcontextprotocol/server`); güvenlik incelemesi (mcp, fotograf);
-   dalga ve birleştirme sırası; sahibe sorular.
-3. **Bilinen düzeltme:** kafe **İstanbul Tuzla, Opera AVM**'dedir (`docs/PROMPT-VE-PLAN.md`). MaviBahçe/İzmir ayrı
-   karaoke box işidir. `tahmin.md` hava durumu için MaviBahçe koordinatı kullanıyor → Opera AVM Tuzla koordinatıyla
-   değiştirin. `doluluk.md` ve `kontrol.md`'deki saat varsayımlarını da buna göre gözden geçirin.
+**İkinci paketin çapraz eleştirisi `CRITIQUE2.md`'de** (R8–R19 ortak sözleşmeler, zaman bütçesi, güvenlik, kesintiler,
+sıra, sahibe sorular). Önce ortak altyapı PR'ı (W2.0), sonra fotograf ∥ mcp, kontrol ∥ doluluk, siparis ∥ komisyon,
+tahmin ∥ haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir; `tahmin.md`'nin hava durumu noktası Tuzla'ya alındı (R19).
+Site deposu 22 Ekim'de incelendi (`DIGER-OTURUM.md` sonu): karaoke ucu geçmiş tarihleri zaten veriyor; doluluk site
+değişikliği beklemez.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis

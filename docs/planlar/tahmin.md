@@ -11,7 +11,7 @@ R1–R7. No new dependency. One migration (`satis_tahmini`, three new tables, ge
 
 Every morning the panel works out how much the café will sell (Z total) on each of the next 7 business days. It uses
 the cash-report history, the weekday pattern, a verified Turkish calendar (resmî tatiller, bayramlar and arife
-half-days, Ramazan, MEB school holidays), the weather forecast for MaviBahçe AVM (MET Norway, free) and the "özel gün"
+half-days, Ramazan, MEB school holidays), the weather forecast for Tuzla, Opera AVM (MET Norway, free) and the "özel gün"
 entries the admin types in (derbi, AVM etkinliği, kampanya, kapalı gün). The result is shown as:
 
 - a number and a range;
@@ -558,7 +558,7 @@ günlere göre değişir.", action `Button` ghost sm "Ekle"):
 - **"Tatlı sayılan kategoriler"**: `Checkbox` per category, default ticked = names containing "tatlı". Hint "Tatlı
   hazırlığı bu kategorilerdeki ürünlerin satış payından hesaplanır."
 - **`ToggleRow` "Hava durumunu kullan"**: "MET Norway'den (Norveç Meteoroloji Enstitüsü) ücretsiz, günde bir kez;
-  MaviBahçe AVM'nin konumu için."
+  kafenin konumu (Tuzla, Opera AVM) için."
 - **`ToggleRow` "Personel bugünün yoğunluğunu görsün"**: "Bugün ekranında Yüksek / Normal / Düşük ve tatlı sayısı;
   tutar ve kişi önerisi görünmez."
 - **`ToggleRow` "Sabah e-postasına tahmin satırı"**: "Yalnız zaten giden sabah e-postasına eklenir; tahmin için
@@ -724,11 +724,12 @@ explains how to add 2029 and MEB 2027–28 (§13).
 
 **Endpoint and position:**
 
-- `GET https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=38.4741&lon=27.0747`.
-- MaviBahçe AVM is at Mavişehir, Caher Dudayev Blv. No: 40, Karşıyaka. Store listings put it at 38.474123, 27.074696
-  and ≈ 38.4737, 27.0749. The coordinates are truncated to 4 decimals: MET blocks more (403/400) and needs it for
-  caching.
-- Constant `MAVIBAHCE = { lat: 38.4741, lon: 27.0747 }`. It is not a setting.
+- `GET https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=40.8160&lon=29.3010`.
+- The café is in **Tuzla, Opera AVM** (Istanbul; `docs/PROMPT-VE-PLAN.md`). MaviBahçe AVM (İzmir) is the separate
+  karaoke-box business and must not be used (corrected per CRITIQUE2 R19). Tuzla centre is used; replace it with the
+  mall's own map pin if that is more than about 5 km away (it does not change MET's grid). The coordinates are
+  truncated to 4 decimals: MET blocks more (403/400) and needs it for caching.
+- Constant `TUZLA = { lat: 40.8160, lon: 29.3010 }`. It is not a setting.
 
 **Terms**, followed in code and in `docs/SATIS-TAHMINI.md`:
 
@@ -873,7 +874,7 @@ export const forecastSnapshots = pgTable(
 |---|---|
 | `calendar.ts` | §6 |
 | `model.ts` | constants §4.1; types `DayTotal { date; total; source: "kasa" \| "pos" }`, `SpecialDay`, `WeatherDay`, `MonthLevel`, `ForecastInput`, `Factor`, `ForecastDay`, `Forecast`, `LearnedFactor`; `buildForecast`, `baseFor`, `learnFactors`, `realisedEffect`, `kindHistory`, `robustMean`, `quantile`, `mergeDailyTotals(kasa, pos)` (kasa wins; seam §8.6) |
-| `weather.ts` | `MAVIBAHCE`, `metUrl()`, `userAgent(appUrl, contact?)`, `parseMetCompact`, `weatherKind`, `weatherText`, `canRefetch(state, now)` |
+| `weather.ts` | `TUZLA`, `metUrl()`, `userAgent(appUrl, contact?)`, `parseMetCompact`, `weatherKind`, `weatherText`, `canRefetch(state, now)` |
 | `staffing.ts` | §4.4 |
 | `desserts.ts` | §4.5 |
 | `accuracy.ts` | §4.6 |
@@ -1457,11 +1458,7 @@ Existing `kenar-cubugu`, `roller`, `yardim` and `mobile-nav` cover the new nav i
 - JSON format: https://api.met.no/doc/ForecastJSON
 - Licence (NLOD 2.0 + CC BY 4.0, "Data from MET Norway"): https://api.met.no/doc/License
 
-**MaviBahçe location:**
-
-- Address: https://www.mavibahce.com.tr/iletisim
-- Coordinates: https://www.defacto.com.tr/magazalar/mavibahce-961 (38.474123, 27.074696) and
-  https://www.tikla.com.tr/mavi-bahce-avm.html (≈ 38.4737, 27.0749)
+**Location:** Tuzla, Opera AVM (Istanbul); Tuzla centre 40.8160, 29.3010 (CRITIQUE2 R19).
 
 **2026 holidays and religious days:**
 
