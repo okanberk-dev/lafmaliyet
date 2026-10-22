@@ -9,7 +9,7 @@ import { dateTR } from "@/lib/format";
 import { linkChange } from "@/lib/price-hold";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { requireAdmin } from "@/server/auth/dal";
-import { supersedeHolds } from "@/server/data/price-holds";
+import { newerPriceInvoice, supersedeHolds } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -31,8 +31,8 @@ const isUniqueViolation = (e: unknown) => ((e as { code?: string })?.code ?? (e 
 /**
  * Onay bekleyen fiyatı uygular: hammaddenin paket fiyatı ve boyu önerilen olur, "Tahmini" kalkar, fiyat geçmişine
  * "Paraşüt" olarak yazılır (zam uyarısı bundan sonra işler). Hammaddenin fiyatı arada elle değiştiyse önerilen yine
- * yazılır; değiştirilen fiyat "Geri al" için saklanır. Bağlantı öneri anından beri değiştiyse ya da faturanın kalemi
- * fiyat kapsamından çıktıysa öneri geçersiz sayılır, fiyat yazılmaz.
+ * yazılır; değiştirilen fiyat "Geri al" için saklanır. Bağlantı öneri anından beri değiştiyse, faturanın kalemi fiyat
+ * kapsamından çıktıysa ya da hammaddenin daha yeni bir faturası geldiyse öneri geçersiz sayılır, fiyat yazılmaz.
  */
 export async function approvePriceHold(id: number) {
   return attempt(async () => {
@@ -43,7 +43,7 @@ export async function approvePriceHold(id: number) {
     // geri alınırdı); sayfa yenilenir, kullanıcıya nedeni söylenir
     const [hold] = await db.select().from(h).where(eq(h.id, hid)).limit(1);
     if (!hold || hold.status !== "pending") throw new UserError(NOT_PENDING);
-    const [[link], [line]] = await Promise.all([
+    const [[link], [line], newer] = await Promise.all([
       db.select().from(s.parasutProductLinks).where(eq(s.parasutProductLinks.productKey, hold.productKey)).limit(1),
       db
         .select({ id: s.parasutBillLines.id })
@@ -51,12 +51,22 @@ export async function approvePriceHold(id: number) {
         .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
         .where(and(eq(s.parasutBillLines.invoiceId, hold.invoiceId), eq(s.parasutBillLines.productKey, hold.productKey), notInArray(s.invoices.category, SEPARATE_CATEGORIES)))
         .limit(1),
+      // Eşitleme daha yeni faturayı değerlendirince bekleyen öneriyi zaten geçersiz sayar; arada kalan öneride (yarıda
+      // kalan eşitleme, aynı anda okunan kalemler) eski faturanın fiyatı yenisinin üstüne yazılmasın
+      newerPriceInvoice(hold),
     ]);
     const changed = linkChange(hold, link);
-    if (changed || !line) {
-      await supersedeHolds([hold.id], changed ?? "Faturadaki kalem artık yok");
+    const stale = changed
+      ? { note: changed, message: "Paraşüt bağlantısı değişti; bu öneri geçersiz oldu." }
+      : !line
+        ? { note: "Faturadaki kalem artık yok", message: "Faturadaki kalem artık yok (fatura kafe dışına taşınmış olabilir); bu öneri geçersiz oldu." }
+        : newer
+          ? { note: "Daha yeni fatura geldi", message: `Bu hammaddenin daha yeni bir faturası var (${newer.supplier} ${dateTR(newer.date)}); bu öneri geçersiz oldu.` }
+          : null;
+    if (stale) {
+      await supersedeHolds([hold.id], stale.note);
       refresh();
-      throw new UserError(changed ? "Paraşüt bağlantısı değişti; bu öneri geçersiz oldu." : "Faturadaki kalem artık yok (fatura kafe dışına taşınmış olabilir); bu öneri geçersiz oldu.");
+      throw new UserError(stale.message);
     }
     const done = await db.transaction(async (tx) => {
       // Aynı öneriyi iki sekme aynı anda karara bağlamasın
@@ -143,7 +153,8 @@ export async function rejectPriceHold(input: z.input<typeof rejectSchema>) {
 /**
  * Onayı ya da reddi geri alır (bildirimdeki ve "Son kararlar"daki Geri al; 30 gün): öneri yeniden onay bekler. Onay
  * geri alınınca değiştirilen fiyat, paket boyu ve "Tahmini" işareti yazılır; fiyat o arada değiştiyse (yeni fatura,
- * elle) geri alınmaz. Red geri alınınca kapatılan fiyat güncellemesi yeniden açılır.
+ * elle) geri alınmaz. Red geri alınınca kapatılan fiyat güncellemesi yeniden açılır. Karardan sonra hammaddenin daha
+ * yeni faturası geldiyse ikisi de geri alınmaz: öneri eskidi.
  */
 export async function undoPriceHold(id: number) {
   return attempt(async () => {
@@ -157,6 +168,14 @@ export async function undoPriceHold(id: number) {
         if (!cur.decidedAt || Date.now() - cur.decidedAt.getTime() > UNDO_DAYS * 86_400_000) throw new UserError(`Karar ${UNDO_DAYS} günden eski; geri alınamaz. Hammaddeler'den elle düzeltin.`);
         const [other] = await tx.select({ id: h.id }).from(h).where(and(eq(h.ingredientId, cur.ingredientId), eq(h.status, "pending"))).limit(1);
         if (other) throw new UserError(NEW_PENDING);
+        // Fiyatı artık daha yeni fatura belirliyor: yeniden bekleyen öneriye eşitleme bir daha bakmaz, onaylanırsa eski
+        // faturanın fiyatı yenisinin üstüne yazılırdı
+        const newer = await newerPriceInvoice(cur, tx);
+        if (newer) {
+          const hint =
+            cur.status === "approved" ? " Hammaddeler'den elle düzeltin." : cur.stoppedUpdates ? " Kapatılan fiyat güncellemesini Paraşüt sayfasından açabilirsiniz." : "";
+          throw new UserError(`Bu karardan sonra daha yeni bir fatura geldi (${newer.supplier} ${dateTR(newer.date)}); geri alınamaz.${hint}`);
+        }
         const [ing] = await tx.select().from(s.ingredients).where(eq(s.ingredients.id, cur.ingredientId)).for("update");
         if (!ing) throw new UserError("Hammadde bulunamadı; sayfayı yenileyin.");
         let reopened = false;

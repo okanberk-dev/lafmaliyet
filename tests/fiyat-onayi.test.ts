@@ -1,5 +1,6 @@
 // Paraşüt'ten gelen büyük fiyat sıçramasının onayı (src/lib/price-hold.ts): hangi fiyat yazılır, hangisi onaya düşer,
-// çarpan ipucu, ardışık fatura sayısı, geçersiz kalan öneriler, önceki fatura, maliyet etkisi ve uyarı metni.
+// çarpan ipucu, ardışık fatura sayısı, geçersiz kalan öneriler ve yeniden değerlendirilmeleri, daha yeni fatura (geri
+// alma ve onay), önceki fatura, maliyet etkisi ve uyarı metni.
 // Çalıştırma: npx tsx --test tests/fiyat-onayi.test.ts
 
 import assert from "node:assert/strict";
@@ -10,6 +11,7 @@ import { test } from "node:test";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import {
+  appliedKeyOf,
   factorHint,
   holdAlert,
   holdImpact,
@@ -18,9 +20,11 @@ import {
   HOLDS_HREF,
   linkChange,
   livePct,
-  nextRepeats,
+  newerInvoice,
   previousInvoicePrice,
   priceStep,
+  reopenApplied,
+  repeatCount,
   staleHolds,
   suggestedFactor,
 } from "../src/lib/price-hold";
@@ -75,13 +79,92 @@ test("suggestedFactor: yalnız tam sayı (≥1) önerilir", () => {
   assert.equal(suggestedFactor(1, { multiplier: 1 / 2 }), null);
 });
 
-test("nextRepeats: başka faturada ±%10 içinde aynı fiyat sayıyı artırır", () => {
-  assert.equal(nextRepeats(null, { invoiceId: 1, unitPrice: 10 }), 1);
-  // Aynı faturanın yeniden değerlendirilmesi sayıyı değiştirmez
-  assert.equal(nextRepeats({ invoiceId: 1, unitPrice: 10, repeats: 2 }, { invoiceId: 1, unitPrice: 30 }), 2);
-  assert.equal(nextRepeats({ invoiceId: 1, unitPrice: 10, repeats: 1 }, { invoiceId: 2, unitPrice: 10.9 }), 2);
-  assert.equal(nextRepeats({ invoiceId: 1, unitPrice: 10, repeats: 2 }, { invoiceId: 3, unitPrice: 9.1 }), 3);
-  assert.equal(nextRepeats({ invoiceId: 1, unitPrice: 10, repeats: 3 }, { invoiceId: 2, unitPrice: 11.2 }), 1);
+test("repeatCount: kaç fatura arka arkaya ±%10 aynı fiyat; arada başka fiyatlı fatura sayımı keser", () => {
+  const links = new Map([
+    ["p", { ingredientId: 1, factor: 1 }],
+    ["koli", { ingredientId: 1, factor: 1 }],
+    ["baska", { ingredientId: 2, factor: 1 }],
+  ]);
+  const line = (invoiceId: number, date: string, unit: number, productKey = "p") => ({ invoiceId, productKey, date, supplier: "Sütaş", quantity: 2, netTotal: unit * 2 });
+  const cur = (invoiceId: number, date: string, unitPrice: number) => ({ invoiceId, date, unitPrice });
+  assert.equal(repeatCount([], links, 1, cur(9, "2026-10-21", 10)), 1);
+  // ±%10 sınırı: 10 → 10,9 ve 9,1 sayılır, 11,2 sayılmaz
+  assert.equal(repeatCount([line(1, "2026-10-01", 10)], links, 1, cur(9, "2026-10-21", 10.9)), 2);
+  assert.equal(repeatCount([line(1, "2026-09-01", 10), line(2, "2026-10-01", 10)], links, 1, cur(9, "2026-10-21", 9.1)), 3);
+  assert.equal(repeatCount([line(1, "2026-10-01", 10)], links, 1, cur(9, "2026-10-21", 11.2)), 1);
+  // 27,50 (17.10) → şimdiki fiyatla aynı 49,52 (19.10) → 27,60 (21.10): arada başka fiyat var, "Son 2 faturada" denmez
+  // ("Önceki fatura" da 49,52 der)
+  const lak = [line(1, "2026-10-17", 27.5), line(2, "2026-10-19", 49.52), line(3, "2026-10-21", 27.6)];
+  assert.equal(repeatCount(lak, links, 1, cur(3, "2026-10-21", 27.6)), 1);
+  assert.equal(previousInvoicePrice(lak, links, 1, cur(3, "2026-10-21", 27.6))?.unitPrice, 49.52);
+  assert.equal(repeatCount([lak[0], lak[2]], links, 1, cur(3, "2026-10-21", 27.6)), 2);
+  // Yanlış çarpanlı koli doğru fiyatlı faturalarla sırayla gelince sayı büyümez
+  const alternating = [line(1, "2026-09-01", 600, "koli"), line(2, "2026-09-10", 50), line(3, "2026-09-20", 600, "koli"), line(4, "2026-10-01", 50)];
+  assert.equal(repeatCount(alternating, links, 1, cur(5, "2026-10-10", 600)), 1);
+  // Önerilere değil faturalara bakılır (ilk kez bağlanan ürünün eski faturaları da sayılır); bedava kalem, iade ve
+  // başka hammaddenin faturası sayılmaz, sayımı da kesmez
+  const history = [
+    line(1, "2026-06-01", 15),
+    line(2, "2026-07-01", 15.2),
+    line(3, "2026-08-01", 0),
+    { invoiceId: 4, productKey: "p", date: "2026-08-10", supplier: "Sütaş", quantity: -1, netTotal: -40 },
+    line(5, "2026-08-15", 40, "baska"),
+    line(6, "2026-09-01", 15.1),
+  ];
+  assert.equal(repeatCount(history, links, 1, cur(7, "2026-10-01", 15)), 4);
+  // Faturanın kendi öteki kalemi ve sonraki faturalar sayılmaz: aynı faturanın yeniden değerlendirilmesi sayıyı değiştirmez
+  assert.equal(repeatCount([...history, line(7, "2026-10-01", 30), line(8, "2026-10-15", 30)], links, 1, cur(7, "2026-10-01", 15)), 4);
+});
+
+test("newerInvoice: öneriden sonra hammaddenin fiyatını belirleyen fatura (geri alma ve onay buna bakar)", () => {
+  const links = new Map([
+    ["espresso", { ingredientId: 1, updatePrice: true }],
+    ["espresso-cfm", { ingredientId: 1, updatePrice: false }],
+    ["sut", { ingredientId: 4, updatePrice: true }],
+  ]);
+  const line = (invoiceId: number, productKey: string, date: string, quantity: number, netTotal: number, supplier = "Kaldi") => ({ invoiceId, productKey, date, supplier, quantity, netTotal });
+  const hold = { ingredientId: 1, invoiceId: 126, invoiceDate: "2026-10-18", productKey: "espresso" };
+  // 18.10'daki 1.530 ₺/kg reddedildi, 21.10'daki 1.100 ₺/kg bant içinde uygulandı: red geri alınırsa eski fiyat bekler
+  // ve onaylanınca yenisinin üstüne yazılırdı
+  const lines = [line(121, "espresso", "2026-09-20", 4, 6080), line(126, "espresso", "2026-10-18", 5, 7650), line(127, "espresso", "2026-10-21", 5, 5500)];
+  assert.deepEqual(newerInvoice(lines, links, hold), { invoiceId: 127, date: "2026-10-21", supplier: "Kaldi" });
+  assert.equal(newerInvoice(lines.slice(0, 2), links, hold), null);
+  // Fiyata girmeyen sayılmaz: bedava kalem, iade, fiyatı güncellenmeyen başka ürün, başka hammadde, aynı gün başka fatura
+  const ignored = [
+    line(130, "espresso", "2026-10-20", 1, 0),
+    line(131, "espresso", "2026-10-20", -1, -1530),
+    line(132, "espresso-cfm", "2026-10-22", 3, 3150, "Coffeemania"),
+    line(133, "sut", "2026-10-22", 12, 600, "Sütaş"),
+    line(134, "espresso", "2026-10-18", 1, 1100),
+  ];
+  assert.equal(newerInvoice([...lines.slice(0, 2), ...ignored], links, hold), null);
+  // Önerinin kendi ürünü, reddederken fiyat güncellemesi kapatılmış olsa da sayılır (geri alma onu yeniden açar)
+  const stopped = new Map(links).set("espresso", { ingredientId: 1, updatePrice: false });
+  assert.equal(newerInvoice(lines, stopped, hold)?.invoiceId, 127);
+  // Faturanın kendisi, tarihi sonradan değişse de daha yeni sayılmaz; birden çoksa en yenisi
+  assert.equal(newerInvoice([line(126, "espresso", "2026-10-25", 5, 7650)], links, hold), null);
+  assert.equal(newerInvoice([...lines, line(128, "espresso", "2026-10-24", 1, 1100)], links, hold)?.date, "2026-10-24");
+});
+
+test("reopenApplied: geçersiz kalan önerinin faturası, değişiklik geri dönünce yeniden değerlendirilir", () => {
+  const applied: Record<string, string> = { "5|laktozsuz|1000": "2026-10-21", "1|espresso|1000": "2026-10-24", "4|sut|1000": "2026-11-01", "8|karamel|2000": "2026-10-15" };
+  const hold = (ingredientId: number, productKey: string, factor: number, invoiceDate: string) => ({ ingredientId, productKey, factor, invoiceDate });
+  const n = reopenApplied(applied, [
+    hold(5, "laktozsuz", 1000, "2026-10-21"),
+    // İşaret o arada daha yeni faturaya geçti: dokunulmaz
+    hold(1, "espresso", 1000, "2026-10-18"),
+    // Ay başından önceki gün
+    hold(4, "sut", 1000, "2026-11-01"),
+    // Hiç değerlendirilmemiş anahtar eklenmez
+    hold(9, "yok", 1, "2026-10-10"),
+  ]);
+  assert.equal(n, 2);
+  assert.deepEqual(applied, { "5|laktozsuz|1000": "2026-10-20", "1|espresso|1000": "2026-10-24", "4|sut|1000": "2026-10-31", "8|karamel|2000": "2026-10-15" });
+  // Eşitlemenin kuralı (işaret ≥ fatura günü ise atlanır): aynı fatura yeniden değerlendirilir, daha eskisi yine atlanır
+  const key = appliedKeyOf(5, "laktozsuz", 1000);
+  assert.equal(key, "5|laktozsuz|1000");
+  assert.ok(!(applied[key] >= "2026-10-21"));
+  assert.ok(applied[key] >= "2026-10-19");
 });
 
 test("staleHolds: beş neden ve bozulmamış öneri", () => {

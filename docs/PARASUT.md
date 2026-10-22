@@ -217,24 +217,29 @@ maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). Fiyat şim
 (2–20 ve paket boyları, 1000'e kadar; ±%5) çarpan uyarısı çıkar; önerilen çarpan tam sayıysa **Çarpanı X yap** düğmesi.
 
 - **Onayla:** fiyat yazılır, "Tahmini" kalkar, fiyat geçmişine "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı
-  öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi değişti, fiyat güncellemesi kapandı) ya da faturanın
-  kalemi fiyat kapsamından çıktıysa öneri geçersiz sayılır, fiyat yazılmaz.
+  öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi değişti, fiyat güncellemesi kapandı), faturanın
+  kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha yeni bir faturası geldiyse (eşitleme henüz değerlendirmeden)
+  öneri geçersiz sayılır, fiyat yazılmaz.
 - **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (alınan miktar yine
   sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
 - **Çarpanı X yap:** bağlantının çarpanı değişir (Paraşüt sayfasındaki düzenlemeyle aynı): öneri geçersiz olur, en yeni
   fatura yeni çarpanla yeniden değerlendirilir, alınan miktarlar da düzelir.
 - **Geri al** (bildirimde ve kartın **Son kararlar** bölümünde; 30 gün): onay geri alınınca eski paket fiyatı, boyu ve
   "Tahmini" işareti döner (fiyat o arada değiştiyse geri alınmaz); red geri alınınca kapatılan fiyat güncellemesi
-  yeniden açılır. Öneri yeniden onay bekler. Son kararlar son 3 günü gösterir (geçersiz kalanlar nedeniyle).
+  yeniden açılır. Öneri yeniden onay bekler. Karardan sonra hammaddenin daha yeni faturası geldiyse ikisi de geri
+  alınmaz: fiyatı artık o fatura belirler, eski faturanın fiyatı yenisinin üstüne yazılmasın. Son kararlar son 3 günü
+  gösterir (geçersiz kalanlar nedeniyle).
 - Toplu onay yok: her öneriye bakılsın. Bekleyen öneri kendiliğinden düşmez.
 
 **Sonraki faturalar:** her en yeni fatura bir kez, her zaman hammaddenin şimdiki fiyatına göre değerlendirilir
 (`parasut.prices`): %0,5'ten az fark bekleyen öneriyi geçersiz sayar ("Daha yeni faturada fiyat aynı"); %40 ve altı
-fiyatı uygular ve bekleyen öneriyi geçersiz sayar; %40'tan fazla fark bekleyen önerinin yerini alır (fiyat öncekine ±%10
-yakınsa "Son N faturada" sayısı artar). Onaylanan fiyat sonrakilerin tabanıdır. Bağlantı silinince, çarpanı ya da
-hammaddesi değişince, "Fiyatı güncelle" kapanınca, fatura kafe dışına taşınınca ya da Paraşüt'te iptal edilen elle
-girilmiş kaydın kalemleri silinince bekleyen öneri geçersiz olur. Fatura silinince öneri de silinir; fiyat yeniden
-önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
+fiyatı uygular ve bekleyen öneriyi geçersiz sayar; %40'tan fazla fark bekleyen önerinin yerini alır. "Son N faturada da
+bu fiyat": hammaddenin son faturalarından arka arkaya kaçında birim fiyat ±%10 aynı (arada başka fiyatlı fatura sayımı
+keser; ilk kez bağlanan ürünün eski faturaları da sayılır). Onaylanan fiyat sonrakilerin tabanıdır. Bağlantı silinince,
+çarpanı ya da hammaddesi değişince, "Fiyatı güncelle" kapanınca, fatura kafe dışına taşınınca ya da Paraşüt'te iptal
+edilen elle girilmiş kaydın kalemleri silinince bekleyen öneri geçersiz olur; değişiklik geri dönünce ("Fiyatı güncelle"
+yeniden açılır, aynı çarpanla yeniden bağlanır, fatura kafeye döner) aynı fatura yeniden değerlendirilir, daha eskileri
+değerlendirilmez. Fatura silinince öneri de silinir; fiyat yeniden önerilmez (uygulanan fiyatta da böyledir). Hammaddenin fiyatı elle değişirse öneri bekler, kart canlı farkı gösterir.
 Alınan miktar (Tutarlılık) bekletilmez: çarpanla hesaplanmaya devam eder (çarpan yanlışsa o da yanlıştır).
 
 **Veri:** `ingredient_price_holds`: hammadde başına en çok bir bekleyen öneri (kısmi tekil dizin), fatura anındaki

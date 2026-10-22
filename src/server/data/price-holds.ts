@@ -1,8 +1,9 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, ne, notInArray } from "drizzle-orm";
 
-import { livePct } from "@/lib/price-hold";
+import { SEPARATE_CATEGORIES } from "@/lib/constants";
+import { livePct, newerInvoice } from "@/lib/price-hold";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
@@ -30,6 +31,29 @@ export async function supersedeHolds(ids: number[] | null, note: string, tx: Tx 
     .update(h)
     .set({ status: "superseded", note, decidedAt: new Date() })
     .where(and(eq(h.status, "pending"), ids ? inArray(h.id, ids) : undefined));
+}
+
+/**
+ * Önerinin faturasından sonra hammaddenin fiyatını belirleyen fatura geldiyse o (src/lib/price-hold.ts newerInvoice):
+ * hammaddeye bağlı ürünlerin, öneri faturasından sonraki kafe kalemleri (eşitlemenin fiyat kapsamı).
+ */
+export async function newerPriceInvoice(hold: { ingredientId: number; invoiceId: number; invoiceDate: string; productKey: string }, tx: Tx | DB = getDb()) {
+  const lines = await tx
+    .select({
+      invoiceId: s.invoices.id,
+      productKey: s.parasutBillLines.productKey,
+      date: s.invoices.date,
+      supplier: s.invoices.supplier,
+      quantity: s.parasutBillLines.quantity,
+      netTotal: s.parasutBillLines.netTotal,
+      ingredientId: s.parasutProductLinks.ingredientId,
+      updatePrice: s.parasutProductLinks.updatePrice,
+    })
+    .from(s.parasutBillLines)
+    .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
+    .innerJoin(s.parasutProductLinks, eq(s.parasutProductLinks.productKey, s.parasutBillLines.productKey))
+    .where(and(eq(s.parasutProductLinks.ingredientId, hold.ingredientId), gt(s.invoices.date, hold.invoiceDate), notInArray(s.invoices.category, SEPARATE_CATEGORIES)));
+  return newerInvoice(lines, new Map(lines.map((l) => [l.productKey, l])), hold);
 }
 
 const columns = {

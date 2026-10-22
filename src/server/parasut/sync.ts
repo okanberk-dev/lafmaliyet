@@ -5,7 +5,7 @@ import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, or, sql }
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
-import { holdLogText, livePct, nextRepeats, previousInvoicePrice, priceStep, staleHolds } from "@/lib/price-hold";
+import { appliedKeyOf, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
@@ -1219,7 +1219,7 @@ export async function applyProductLinks(months?: string[]) {
 
   // Onay bekleyen fiyatlar (docs/PARASUT.md 5b): bağlantısı silinen, başka hammaddeye geçen, çarpanı değişen, fiyat
   // güncellemesi kapanan ya da kalemi fiyat kapsamından çıkan öneri geçersiz olur. Değerlendirilecek hammaddelerin
-  // son kararları da okunur (reddedilen fatura yeniden sorulmaz, ardışık benzer fiyat sayılır)
+  // son kararları da okunur (reddedilen fatura yeniden sorulmaz)
   const hs = s.ingredientPriceHolds;
   const holds = await db
     .select()
@@ -1238,6 +1238,9 @@ export async function applyProductLinks(months?: string[]) {
     );
   }
   const staleIds = new Set(stale.map((x) => x.id));
+  // Geçersiz kalan önerinin fiyatı hiç uygulanmadı: değişiklik geri dönünce (ör. "Fiyatı güncelle" yanlışlıkla kapatılıp
+  // açılınca) aynı fatura yeniden değerlendirilir, öneri kaybolmaz
+  reopenApplied(applied, holds.filter((h) => staleIds.has(h.id)));
   const pendingBy = new Map(holds.filter((h) => h.status === "pending" && !staleIds.has(h.id)).map((h) => [h.ingredientId, h]));
   const linkOf = new Map(links.map((l) => [l.productKey, { ingredientId: l.ingredientId, factor: l.factor }]));
   const held: string[] = [];
@@ -1245,7 +1248,7 @@ export async function applyProductLinks(months?: string[]) {
   for (const [ingredientId, r] of latest) {
     const link = byKey.get(r.productKey)!;
     // Anahtar bağlantıyı da içerir: çarpan ya da ürün değişince aynı faturanın fiyatı yeni çarpanla yeniden yazılır
-    const appliedKey = `${ingredientId}|${link.productKey}|${link.factor}`;
+    const appliedKey = appliedKeyOf(ingredientId, link.productKey, link.factor);
     if ((applied[appliedKey] ?? "") >= r.date) continue;
     const packagePrice = Math.round((r.netTotal / r.quantity) * 100) / 100;
     const packageSize = link.factor;
@@ -1283,7 +1286,6 @@ export async function applyProductLinks(months?: string[]) {
     const same = (x: (typeof holds)[number]) => x.invoiceId === r.invoiceId && x.productKey === r.productKey && x.factor === link.factor;
     if (pending && same(pending)) continue;
     if (holds.some((x) => x.ingredientId === ingredientId && x.status === "rejected" && same(x))) continue;
-    const last = holds.find((x) => x.ingredientId === ingredientId);
     const prev = previousInvoicePrice(rows, linkOf, ingredientId, { invoiceId: r.invoiceId, date: r.date });
     const inserted = await db.transaction(async (tx) => {
       if (pending) await supersedeHolds([pending.id], "Daha yeni fatura geldi", tx);
@@ -1310,7 +1312,7 @@ export async function applyProductLinks(months?: string[]) {
           lastUnitPrice: prev?.unitPrice ?? null,
           lastDate: prev?.date ?? null,
           lastSupplier: prev?.supplier ?? null,
-          repeats: nextRepeats(last ? { invoiceId: last.invoiceId, unitPrice: last.packagePrice / last.packageSize, repeats: last.repeats } : null, { invoiceId: r.invoiceId, unitPrice: after }),
+          repeats: repeatCount(rows, linkOf, ingredientId, { invoiceId: r.invoiceId, date: r.date, unitPrice: after }),
         })
         .onConflictDoNothing({ target: hs.ingredientId, where: sql`status = 'pending'` })
         .returning({ id: hs.id });

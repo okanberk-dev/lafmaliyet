@@ -135,7 +135,8 @@ function SupplierBlock({ r, unit, onNavigate }: { r: SupplierPriceRow; unit: str
       </div>
       <p className="mt-0.5 tabular">
         Son {dateTR(r.last.date)}
-        {r.change !== null && Math.abs(r.change) >= 0.0005 ? (
+        {/* Yüzde tam sayıya yuvarlanır: %1'den küçük fark (çoğu kuruş yuvarlaması) "+%0" diye görünmesin */}
+        {r.change !== null && Math.round(Math.abs(r.change) * 100) >= 1 ? (
           <>
             {" "}
             · öncekine göre{" "}

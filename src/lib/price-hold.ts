@@ -10,6 +10,7 @@
 
 import { priceProduct, type Model } from "./calc/engine";
 import { dateTR, num } from "./format";
+import { addDays } from "./reminders";
 
 /** ±%40: bundan büyük fark onaya düşer (metinler "%40'tan fazla" der; değişirse onlar da değişmeli) */
 export const PRICE_HOLD_PCT = 0.4;
@@ -79,16 +80,6 @@ export function suggestedFactor(factor: number, hint: { multiplier: number }): n
   return whole >= 1 && Math.abs(next - whole) < 1e-6 * whole ? whole : null;
 }
 
-/**
- * Ardışık benzer fiyat sayısı ("Son 2 faturada da bu fiyat"): önceki öneri başka faturadan ve birim fiyatı ±%10
- * içindeyse bir artar; aynı faturanın yeniden değerlendirilmesi sayıyı değiştirmez.
- */
-export function nextRepeats(prev: { invoiceId: number; unitPrice: number; repeats: number } | null, cur: { invoiceId: number; unitPrice: number }): number {
-  if (!prev) return 1;
-  if (prev.invoiceId === cur.invoiceId) return prev.repeats;
-  return prev.unitPrice > 0 && Math.abs(cur.unitPrice / prev.unitPrice - 1) <= REPEAT_PCT + EPS ? prev.repeats + 1 : 1;
-}
-
 /** Bağlantı öneri anından beri değiştiyse nedeni (öneri geçersiz olur); değişmediyse null */
 export function linkChange(
   hold: { ingredientId: number; factor: number },
@@ -121,31 +112,115 @@ export function staleHolds(
   return out;
 }
 
+/** Eşitlemenin "değerlendirildi" işaretinin anahtarı (`parasut.prices`): ürün ya da çarpan değişince fatura yeniden değerlendirilir */
+export const appliedKeyOf = (ingredientId: number, productKey: string, factor: number) => `${ingredientId}|${productKey}|${factor}`;
+
 /**
- * Aynı hammaddenin, verilen faturadan önceki (aynı gün başka fatura dahil) en yeni ücretli faturasındaki birim fiyat:
- * hammaddeye bağlı bütün ürünlerin kalemleri, her biri kendi çarpanıyla; aynı faturanın kalemleri birlikte (Σnet ÷
- * Σ miktar × çarpan). Bedava kalem ve iade sayılmaz. Kartta "Önceki fatura" (başka tedarikçi de olabilir).
+ * Eşitleme her anahtarın en yeni faturasını bir kez değerlendirir (`applied`: anahtar → o faturanın günü). staleHolds'un
+ * geçersiz saydığı önerinin fiyatı hiç uygulanmadı: değişiklik geri dönünce ("Fiyatı güncelle" yeniden açılır, aynı
+ * çarpanla yeniden bağlanır, fatura kafeye geri taşınır) aynı fatura yeniden değerlendirilsin diye işaret o faturanın bir
+ * gün öncesine çekilir; daha eski faturalar yine atlanır. İşaret o arada başka faturaya geçtiyse dokunulmaz. `applied`
+ * yerinde değişir; çekilen işaret sayısı döner.
  */
-export function previousInvoicePrice(
-  lines: { invoiceId: number; productKey: string; date: string; supplier: string; quantity: number; netTotal: number }[],
+export function reopenApplied(applied: Record<string, string>, holds: { ingredientId: number; productKey: string; factor: number; invoiceDate: string }[]): number {
+  let n = 0;
+  for (const h of holds) {
+    const key = appliedKeyOf(h.ingredientId, h.productKey, h.factor);
+    if (applied[key] !== h.invoiceDate) continue;
+    applied[key] = addDays(h.invoiceDate, -1);
+    n++;
+  }
+  return n;
+}
+
+/** Eşitlemenin okuduğu fatura kalemi (hammaddeye bağlı ürünün; kafe dışı faturalar yükleyicide çıkar) */
+interface BillLine {
+  invoiceId: number;
+  productKey: string;
+  date: string;
+  supplier: string;
+  quantity: number;
+  netTotal: number;
+}
+
+/**
+ * Aynı hammaddenin, verilen faturadan önceki (aynı gün başka fatura dahil) ücretli faturaları, en yeni önce: hammaddeye
+ * bağlı bütün ürünlerin kalemleri, her biri kendi çarpanıyla; aynı faturanın kalemleri birlikte (Σnet ÷ Σ miktar ×
+ * çarpan). Bedava kalem ve iade sayılmaz.
+ */
+function invoicesBefore(
+  lines: BillLine[],
   links: Map<string, { ingredientId: number; factor: number }>,
   ingredientId: number,
   current: { invoiceId: number; date: string },
-): { unitPrice: number; date: string; supplier: string } | null {
-  const byInvoice = new Map<number, { date: string; supplier: string; net: number; base: number }>();
+): { invoiceId: number; date: string; supplier: string; unitPrice: number }[] {
+  const byInvoice = new Map<number, { invoiceId: number; date: string; supplier: string; net: number; base: number }>();
   for (const l of lines) {
     const link = links.get(l.productKey);
     if (!link || link.ingredientId !== ingredientId || !(link.factor > 0)) continue;
     if (l.invoiceId === current.invoiceId || l.date > current.date) continue;
     if (!(l.quantity > 0) || !(l.netTotal > 0)) continue;
-    const agg = byInvoice.get(l.invoiceId) ?? { date: l.date, supplier: l.supplier, net: 0, base: 0 };
+    const agg = byInvoice.get(l.invoiceId) ?? { invoiceId: l.invoiceId, date: l.date, supplier: l.supplier, net: 0, base: 0 };
     agg.net += l.netTotal;
     agg.base += l.quantity * link.factor;
     byInvoice.set(l.invoiceId, agg);
   }
-  let best: { id: number; date: string; supplier: string; net: number; base: number } | null = null;
-  for (const [id, a] of byInvoice) if (!best || a.date > best.date || (a.date === best.date && id > best.id)) best = { id, ...a };
-  return best ? { unitPrice: best.net / best.base, date: best.date, supplier: best.supplier } : null;
+  return [...byInvoice.values()]
+    .sort((a, b) => (a.date === b.date ? b.invoiceId - a.invoiceId : a.date < b.date ? 1 : -1))
+    .map((a) => ({ invoiceId: a.invoiceId, date: a.date, supplier: a.supplier, unitPrice: a.net / a.base }));
+}
+
+/** Aynı hammaddenin bir önceki ücretli faturasındaki birim fiyat: kartta "Önceki fatura" (başka tedarikçi de olabilir) */
+export function previousInvoicePrice(
+  lines: BillLine[],
+  links: Map<string, { ingredientId: number; factor: number }>,
+  ingredientId: number,
+  current: { invoiceId: number; date: string },
+): { unitPrice: number; date: string; supplier: string } | null {
+  const p = invoicesBefore(lines, links, ingredientId, current)[0];
+  return p ? { unitPrice: p.unitPrice, date: p.date, supplier: p.supplier } : null;
+}
+
+/**
+ * "Son N faturada da bu fiyat": değerlendirilen fatura ve hemen önceki faturalardan arka arkaya kaçında birim fiyat
+ * bununla ±%10 aynı (önceki faturalar "Önceki fatura"daki gibi). Arada başka fiyatlı fatura sayımı keser: yanlış
+ * çarpanlı koli faturası doğru fiyatlı faturalarla sırayla gelince sayı büyüyüp "fiyat büyük olasılıkla gerçek"
+ * demesin. Önerilere değil faturalara bakılır: ürün ilk kez bağlanınca eski faturaları da sayılır.
+ */
+export function repeatCount(
+  lines: BillLine[],
+  links: Map<string, { ingredientId: number; factor: number }>,
+  ingredientId: number,
+  current: { invoiceId: number; date: string; unitPrice: number },
+): number {
+  let n = 1;
+  for (const p of invoicesBefore(lines, links, ingredientId, current)) {
+    if (!(p.unitPrice > 0) || Math.abs(current.unitPrice / p.unitPrice - 1) > REPEAT_PCT + EPS) break;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Önerinin faturasından sonra gelen, hammaddenin fiyatını belirleyen en yeni fatura: eşitlemenin "en yeni fatura"sı
+ * gibi fiyatı güncellenen bağlı ürünlerin ücretli kalemleri. Önerinin kendi ürünü, reddederken fiyat güncellemesi
+ * kapatılmış olsa da sayılır (geri alma onu yeniden açar). Varsa öneri eskimiştir: onaylanırsa ya da kararı geri
+ * alınırsa eski faturanın fiyatı yenisinin üstüne yazılırdı (eşitleme o faturaya bir daha bakmaz). Yoksa null.
+ */
+export function newerInvoice(
+  lines: BillLine[],
+  links: Map<string, { ingredientId: number; updatePrice: boolean }>,
+  hold: { ingredientId: number; invoiceId: number; invoiceDate: string; productKey: string },
+): { invoiceId: number; date: string; supplier: string } | null {
+  let best: { invoiceId: number; date: string; supplier: string } | null = null;
+  for (const l of lines) {
+    const link = links.get(l.productKey);
+    if (!link || link.ingredientId !== hold.ingredientId || !(link.updatePrice || l.productKey === hold.productKey)) continue;
+    // Faturanın kendisi tarihi sonradan değişse de "daha yeni" sayılmaz
+    if (l.invoiceId === hold.invoiceId || !(l.date > hold.invoiceDate) || !(l.quantity > 0) || !(l.netTotal > 0)) continue;
+    if (!best || l.date > best.date) best = { invoiceId: l.invoiceId, date: l.date, supplier: l.supplier };
+  }
+  return best;
 }
 
 export interface HoldImpact {

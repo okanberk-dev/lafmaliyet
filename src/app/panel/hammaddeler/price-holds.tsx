@@ -290,6 +290,8 @@ function HoldItem({
                 </>
               ) : null}
             </>
+          ) : x.impact.products === 1 ? (
+            "1 üründe kullanılıyor; maliyeti düşer"
           ) : (
             `${num(x.impact.products)} üründe kullanılıyor; maliyetleri düşer`
           )}
