@@ -1,4 +1,4 @@
-# Kalan işler (22 Ekim 2026, 14:00 UTC itibarıyla)
+# Kalan işler (22 Ekim 2026, 17:30 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
@@ -15,6 +15,10 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - Canlı derleme günlüğü: `✓ Veritabanı şeması güncel (21 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir
   önizlemenin uyguladığı eski menü migration kaydı; zararsız).
+- **Birleştirilmeyi bekleyen PR'lar:** #8 dalga 1 (ops-backup, vkn; `claude/kalan-isler`, 21. migration'a kadar),
+  #10 dalga 2 (ekle, pricing, pompa-mobil; `claude/kalan-isler-2`, #8'in üstüne; 22–24. migration'lar), #11 taslak
+  (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince
+  açılır). Sıra: #8, sonra #10 (tabanı main'e alınır), sonra dalga 3.
 
 ## 2. Kalan işler (sırayla)
 
@@ -24,10 +28,11 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 |---|---|---|---|---|
 | 3 | ops-backup: tam yedek ve denenmiş geri yükleme | `ops.md` §2 + CRITIQUE "ops" düzeltmeleri | yok | **Bitti:** dalga 1 PR'ı (`docs/YEDEK.md`) |
 | 4 | vkn: tedarikçiyi vergi numarasıyla eşleştirme (çekirdek; "Birleştir" ertelendi) | `vkn.md` + CRITIQUE §3/§4 | `0021_fatura_vergi_no` | **Bitti:** dalga 1 PR'ı |
-| — | **ekle** (sahibin 22 Ekim isteği): sayıma kalem ekleme (personel de), sekiz yeni kalem, personelin yeni ürün önerisi | `ekle.md` | `recete_yeni_urun`, `sayim_yeni_kalemler` (veri) | **Uygulanıyor** (dalga 2); birleştirirken Klips kapak satırı eklenecek |
-| 5 | pricing: büyük Paraşüt fiyat sıçramasına onay, tedarikçiye göre fiyat | `pricing.md` | `fiyat_onayi` | dalga 2 (vkn'den sonra) |
-| 6 | kasa: ay bilgisi kasa raporlarından, kasa bütünlüğü | `kasa.md` | `kasa_ay_bilgisi_butunluk` | dalga 3 |
-| 7 | insight: zam etkisi (₺/ay), 6 haftalık nakit planı **+ `kdv.md` eki** (aynı dalda) | `insight.md`, `kdv.md` | yok | dalga 3 |
+| — | **ekle** (sahibin 22 Ekim isteği): sayıma kalem ekleme (personel de), sekiz yeni kalem (Klips kapak dahil), personelin yeni ürün önerisi | `ekle.md` | `0022_recete_yeni_urun`, `0023_sayim_yeni_kalemler` (veri) | **Bitti:** dalga 2 PR'ı |
+| 5 | pricing: büyük Paraşüt fiyat sıçramasına onay, tedarikçiye göre fiyat | `pricing.md` | `0024_fiyat_onayi` | **Bitti:** dalga 2 PR'ı |
+| — | **pompa-mobil** (sahibin 22 Ekim isteği): püre pompası 30 ml (şurup 10 ml), reçete defterinde pompa ipucu, telefonda uygulama hissi | `pompa-mobil.md` | yok | **Bitti:** dalga 2 PR'ı |
+| 6 | kasa: ay bilgisi kasa raporlarından, kasa bütünlüğü | `kasa.md` | `kasa_ay_bilgisi_butunluk` | dalga 3, fotograf'tan sonra (kasa formunu ikisi de değiştirir) |
+| 7 | insight: zam etkisi (₺/ay), 6 haftalık nakit planı **+ `kdv.md` eki** (aynı dalda) | `insight.md`, `kdv.md` | yok | **Uygulanıyor** (dalga 3) |
 | 8 | menu: toplu fiyat değişikliği, ModPOS listesi, fiyat geçmişi | `menu.md` | `fiyat_gecmisi` | dalga 4 (insight'tan sonra birleşir) |
 | 9 | today: "Bugün" ekranı, telefonda yeni alt menü | `today.md` | yok | dalga 4 (en son birleşir) |
 
@@ -40,7 +45,7 @@ yeniden üretilir (R2); her dalga main'e ayrı bir PR'dır.
 |---|---|---|
 | kontrol | `kontrol.md` | Fotoğraflı açılış/kapanış kontrol listeleri, Bugün ekranında |
 | komisyon | `komisyon.md` | Yemek kartı ve platform komisyon/hakediş kontrolü (%6 sınırı, 30 gün; hakediş elle işaretlenir) |
-| fotograf | `fotograf.md` | Z raporu, POS gün sonu ve market fişini fotoğraftan Claude ile okuma; ortak foto deposu ve Claude istemcisi bu grubun |
+| fotograf | `fotograf.md` | Z raporu, POS gün sonu ve market fişini fotoğraftan Claude ile okuma; ortak foto deposu ve Claude istemcisi bu grubun. **Uygulanıyor** (dalga 3; sahibin 22 Ekim isteğiyle öne alındı) |
 | siparis | `siparis.md` | Sipariş önerisi, hızlı sayım, tedarikçiye WhatsApp siparişi, teslim kontrolü |
 | mcp | `mcp.md` | Claude uygulamasından panele soru sorma (salt okunur, yalnız yönetici, OAuth) |
 | tahmin | `tahmin.md` | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü |
@@ -77,8 +82,9 @@ değişikliği beklemez.
 - `ANTHROPIC_API_KEY`: Vercel'de yalnız Production, sensitive olarak var. Yerelde deneme için anahtarı sahibinden
   isteyin; **asla commit etmeyin, yazdırmayın.** Önerilen model `claude-opus-5-5`, efor `low`
   (bkz. `fotograf.md`).
-- **Vercel Blob:** fotograf ve kontrol yayına girmeden önce private bir Blob store oluşturup projeye bağlayın
-  (`BLOB_READ_WRITE_TOKEN`). Hobby kotasını Vercel › Usage'da kontrol edin.
+- **Vercel Blob:** `laffogato-foto` (private, fra1) oluşturuldu; projeye **yalnız Production** için bağlanması
+  bekleniyor (Vercel › Storage › laffogato-foto › Connect Project; `BLOB_READ_WRITE_TOKEN`). Bağlanmadan fotoğraf
+  düğmeleri görünmez, personel tutarları bugünkü gibi elle yazar. Hobby kotasını Vercel › Usage'da kontrol edin.
 - mcp: `MCP_DISABLED=1` acil kapatma; önizlemelerde kapalı (plana bakın).
 
 ## 5. Sahibe açık sorular (cevap yoksa varsayılan uygulanır)
