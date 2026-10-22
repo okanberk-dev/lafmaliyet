@@ -7,10 +7,12 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { ACCESS_REASONS, accessEmail, linkAccessInfo, type AccessInfo, type AccessKind } from "@/app/panel/kullanicilar/access";
+import { needsStepUp, stepUpWhat, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { openAccessMailHandle } from "@/server/auth/access-handle";
 import { requireAdmin } from "@/server/auth/dal";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clientIp, createLimiter } from "@/server/auth/rate-limit";
+import { requireStepUp } from "@/server/auth/step-up";
 import { appUrl, isPendingInvite, TOKEN_HOURS, tokenStatus, type TokenKind, type TokenStatus } from "@/server/auth/tokens";
 import { consumeTokenAndSetPassword, countTokenAttempt, issueUserToken, loadToken, recentResetCount } from "@/server/auth/user-tokens";
 import { getDb, schema as s } from "@/server/db";
@@ -34,20 +36,23 @@ const linkInfo = (user: { id: number; name: string; email: string }, kind: Token
 /**
  * Yönetici: davet bekleyen kişiye yeni davet bağlantısı (72 saat), parolası olan kişiye parola sıfırlama
  * bağlantısı (24 saat). Eski bağlantı hemen geçersiz olur. Kişinin mevcut parolası bağlantı kullanılana kadar değişmez.
+ * Yöneticiye bağlantı işlemi yapanın kendi parolasını ister: bağlantıyı alan kişi yönetici hesabına parola belirler.
  */
-export async function createAccessLink(id: number) {
+export async function createAccessLink(id: number, confirm?: StepUpConfirm) {
   return attempt(async () => {
     const me = await requireAdmin();
     const userId = zId.parse(id);
     // Kendi parolanız Hesabım'da (mevcut parolayla) değişir: kendine alınan bağlantı o parola onayını atlatmasın
     if (userId === me.id) throw new UserError("Kendi parolanızı Hesabım'dan değiştirin");
     const [u] = await getDb()
-      .select({ id: s.users.id, name: s.users.name, email: s.users.email, active: s.users.active, passwordHash: s.users.passwordHash })
+      .select({ id: s.users.id, name: s.users.name, email: s.users.email, role: s.users.role, active: s.users.active, passwordHash: s.users.passwordHash })
       .from(s.users)
       .where(eq(s.users.id, userId))
       .limit(1);
     if (!u) throw new UserError("Kullanıcı bulunamadı");
     if (!u.active) throw new UserError("Pasif kullanıcıya bağlantı oluşturulamaz; önce aktif yapın");
+    const change: StepUpCase = { kind: "link", targetRole: u.role };
+    if (needsStepUp(change)) await requireStepUp(me, confirm, `${stepUpWhat(change)}: ${u.email}`);
     const kind: TokenKind = isPendingInvite(u.passwordHash) ? "invite" : "reset";
     const { raw, expiresAt } = await issueUserToken(u.id, kind, kind === "invite" ? TOKEN_HOURS.invite : TOKEN_HOURS.reset);
     await logActivity(me, kind === "invite" ? "Davet bağlantısı yenilendi" : "Parola sıfırlama bağlantısı oluşturuldu", `${u.name} (${u.email})`);

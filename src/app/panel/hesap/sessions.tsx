@@ -4,11 +4,10 @@ import { LogOut, MonitorSmartphone } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
 import { signOutOtherSessions } from "@/server/actions/auth";
-
-import { ConfirmPasswordDialog } from "./confirm-password";
 
 /**
  * Oturumlar: başka cihazda (kasa bilgisayarı, tablet, kaybolan telefon) açık kalmış oturumları parolayı değiştirmeden
