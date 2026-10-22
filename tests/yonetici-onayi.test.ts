@@ -20,6 +20,7 @@ import {
   TOO_MANY_REAUTH,
   WRONG_PASSWORD,
   type StepUpCase,
+  type StepUpChange,
 } from "../src/lib/step-up";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
@@ -74,15 +75,17 @@ test("işlem geçmişi metni her işlem için ayrı", () => {
 });
 
 const target = { name: "Ali Kaya", email: "ali@laffogato.net", invite: "none" as const, liveLink: null };
-const invitee = { ...target, invite: "pending" as const };
+// "pending": geçerli davet bağlantısı var (sayfa öyle hesaplar); "expired": yok (süresi doldu ya da pasif yapılınca iptal oldu)
+const invitee = { ...target, invite: "pending" as const, liveLink: { kind: "invite" as const, until: "25.10.2026 14:30" } };
+const expiredInvitee = { ...target, invite: "expired" as const };
 const live = { ...target, liveLink: { kind: "reset" as const, until: "23.10.2026 14:30" } };
 
 test("pencere metinleri: her açıklama aynı cümleyle biter, kişinin adı yazar, başlıklar ayrı", () => {
   const named: StepUpTextCase[] = [
     { kind: "create", name: "Ali Kaya", mode: "password" },
     { kind: "save", user: target, changes: ["password"], name: "Ali Kaya", email: target.email },
-    { kind: "toggle", name: "Ali Kaya", active: false },
-    { kind: "toggle", name: "Ali Kaya", active: true },
+    { kind: "toggle", name: "Ali Kaya", active: false, invite: "none" },
+    { kind: "toggle", name: "Ali Kaya", active: true, invite: "none" },
     { kind: "link", user: target },
     { kind: "delete", name: "Ali Kaya" },
   ];
@@ -117,18 +120,51 @@ test("pencere metinleri: değişiklikler sırayla, e-posta eski ve yeniyle, dave
   assert.equal(stepUpText({ kind: "save", user: target, changes: ["activate", "email"], name: "Ali", email: "x@y.z" }).danger, false);
   assert.equal(stepUpText({ kind: "2fa" }).danger, true);
   assert.equal(stepUpText({ kind: "delete", name: "Ali" }).danger, true);
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false }).danger, true);
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true }).danger, false);
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false, invite: "none" }).danger, true);
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true, invite: "none" }).danger, false);
 
   // Listedeki anahtar: tek değişiklik, özel başlık ve düğme
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false }).title, "Ali pasif yapılsın mı?");
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false }).confirmLabel, "Pasif yap");
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true }).title, "Ali yeniden aktif yapılsın mı?");
-  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true }).confirmLabel, "Aktif yap");
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false, invite: "none" }).title, "Ali pasif yapılsın mı?");
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: false, invite: "none" }).confirmLabel, "Pasif yap");
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true, invite: "none" }).title, "Ali yeniden aktif yapılsın mı?");
+  assert.equal(stepUpText({ kind: "toggle", name: "Ali", active: true, invite: "none" }).confirmLabel, "Aktif yap");
 
   // Ekle: düğme parola adımına göre
   assert.equal(stepUpText({ kind: "create", name: "Ali", mode: "password" }).confirmLabel, "Yöneticiyi ekle");
   assert.equal(stepUpText({ kind: "create", name: "Ali", mode: "invite" }).confirmLabel, "Ekle ve bağlantı oluştur");
+});
+
+test("pencere metinleri: davetli ve geçerli bağlantı, yalnızca gerçekten olanı söyler", () => {
+  const say = (user: Extract<StepUpTextCase, { kind: "save" }>["user"], changes: StepUpChange[]) =>
+    stepUpText({ kind: "save", user, changes, name: "Ali Kaya", email: user.email }).description;
+
+  // Yönetici yapmak geçerli bağlantıyı iptal eder (sunucu expireUserTokens); pencere bunu söyler
+  assert.match(say(live, ["promote"]), /Geçerli parola sıfırlama bağlantısı iptal olur\./);
+  assert.match(say(invitee, ["promote"]), /Gönderilen davet bağlantısı iptal olur; yenisini oluşturmanız gerekir\./);
+  assert.doesNotMatch(say(target, ["promote"]), /bağlantı/);
+  // Parola da belirleniyorsa bağlantı bir kez anılır (parola cümlesinde)
+  assert.equal(say(invitee, ["promote", "password"]).match(/bağlantı/g)?.length, 1);
+  assert.doesNotMatch(say(live, ["promote", "password"]), /bağlantı/);
+
+  // Davetliye parola: bağlantı yalnızca varsa "çalışmaz olur"
+  assert.match(say(invitee, ["password"]), /Ali Kaya için parola belirlenecek; davet bağlantısı çalışmaz olur\./);
+  assert.equal(say(expiredInvitee, ["password"]), `Ali Kaya için parola belirlenecek. ${STEP_UP_CLOSING}`);
+
+  // Pasif davetliyi aktif yapıp aynı kayıtta parola vermek: kişi o parolayla girer, davet bağlantısı gerekmez
+  const passiveInvitee = { ...expiredInvitee, name: "Pasif Davetli" };
+  assert.equal(
+    stepUpText({ kind: "save", user: passiveInvitee, changes: ["activate", "password"], name: "Pasif Davetli", email: passiveInvitee.email }).description,
+    `Pasif Davetli yeniden giriş yapabilecek. Pasif Davetli için parola belirlenecek. ${STEP_UP_CLOSING}`,
+  );
+  assert.match(say(expiredInvitee, ["activate"]), /yeniden aktif olacak; giriş için yeni davet bağlantısı gerekir/);
+  assert.match(say(target, ["activate"]), /Ali Kaya yeniden giriş yapabilecek\./);
+
+  // Listedeki anahtar: pasif davetli yeniden aktif olunca da giriş yapamaz (bağlantı iptal olmuştu, parola yok)
+  const on = stepUpText({ kind: "toggle", name: "Pasif Davetli", active: true, invite: "expired" });
+  assert.equal(on.title, "Pasif Davetli yeniden aktif yapılsın mı?");
+  assert.equal(on.description, `Hesap yeniden aktif olur; giriş için yeni davet bağlantısı oluşturmanız gerekir. ${STEP_UP_CLOSING}`);
+  assert.doesNotMatch(on.description, /giriş yapılabilir/);
+  assert.match(stepUpText({ kind: "toggle", name: "Ali", active: true, invite: "none" }).description, /yeniden giriş yapılabilir/);
 });
 
 test("yöneticiye bağlantı: geçerli bağlantı varsa 'eskisi çalışmaz olur' sorusu aynı pencerede", () => {
@@ -139,7 +175,7 @@ test("yöneticiye bağlantı: geçerli bağlantı varsa 'eskisi çalışmaz olur
   assert.match(withLive.description, /yeni parola belirleyebilir/);
 
   assert.equal(stepUpText({ kind: "link", user: target }).title, "Ali Kaya için parola sıfırlama bağlantısı oluşturulsun mu?");
-  const invite = stepUpText({ kind: "link", user: { ...invitee, invite: "expired" } });
+  const invite = stepUpText({ kind: "link", user: expiredInvitee });
   assert.equal(invite.title, "Ali Kaya için yeni davet bağlantısı oluşturulsun mu?");
   assert.match(invite.description, /yönetici olarak giriş yapabilir/);
   assert.equal(invite.confirmLabel, "Bağlantı oluştur");
@@ -210,6 +246,10 @@ test("her yönetici işlemi parolayı ilk yazımdan önce yeniden denetler", () 
   const saveUser = body(settings, "saveUser");
   assert.doesNotMatch(saveUser, /\.insert\(s\.users\)/);
   assert.match(settings, /const userSchema = z\.object\(\{\n {2}id: z\.number\(\)\.int\(\)\.positive\(\),/);
+  // Personelken parola sorulmadan oluşturulan davet / sıfırlama bağlantısı yönetici yapılınca iptal olur (yoksa
+  // bağlantıyı alan kişi yönetici hesabına parola belirler); güncellemeden sonra
+  const promoteExpire = saveUser.search(/if \(before\.role !== "admin" && data\.role === "admin"\) await expireUserTokens\(data\.id\);/);
+  assert.ok(promoteExpire > saveUser.indexOf(".update(s.users)"), "saveUser: yönetici yapınca bağlantılar iptal olmuyor");
   // Savunma araçları parola istemez: kilit açma ve oturumları kapatma hızlı kalır
   assert.doesNotMatch(body(settings, "unlockUser"), /requireStepUp/);
   assert.doesNotMatch(body(settings, "signOutUserEverywhere"), /requireStepUp/);

@@ -166,7 +166,7 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
    */
   function toggle(u: UserRow, active: boolean) {
     if (needsStepUp({ kind: "save", before: u, after: { role: u.role, active, email: u.email, password: false } })) {
-      void stepUp.guard(stepUpText({ kind: "toggle", name: u.name, active }), (confirm) => saveActive(u, active, confirm), activeDone(u, active));
+      void stepUp.guard(stepUpText({ kind: "toggle", name: u.name, active, invite: u.invite }), (confirm) => saveActive(u, active, confirm), activeDone(u, active));
     } else if (active) setActive(u, true);
     else setConfirmOff(u);
   }

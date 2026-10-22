@@ -119,8 +119,11 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   personeli yönetici yapma ve yöneticiyi personel yapma; bir yöneticiyi pasif ya da yeniden aktif yapma; bir
   yöneticinin giriş e-postasını ya da parolasını değiştirme (davetliye parola verme dahil); yöneticiye parola
   sıfırlama / davet bağlantısı; yöneticinin iki adımlı doğrulamasını sıfırlama; yönetici silme. Açık kalmış bir
-  yönetici oturumuyla yeni yönetici açılamaz, başka bir yöneticinin hesabı ele geçirilemez. Personel işleri, ad
-  değişikliği, kilit açma ve "Tüm oturumlarını kapat" sormaz (savunma araçları hızlı kalır). Kural tek yerde
+  yönetici oturumuyla yeni yönetici açılamaz, başka bir yöneticinin hesabı ele geçirilemez. Personeli yönetici
+  yapınca bekleyen davet / sıfırlama bağlantısı iptal olur (personelken parola sorulmadan oluşturulmuştu; yöneticiye
+  yenisi parolayla oluşturulur). Personelin parolası ve e-postası ise parola sorulmadan değişir: birini yönetici
+  yapmadan önce kendi parolasıyla girebildiğinden emin olun. Personel işleri, ad değişikliği, kilit açma ve "Tüm
+  oturumlarını kapat" sormaz (savunma araçları hızlı kalır). Kural tek yerde
   (`src/lib/step-up.ts`); sunucu her eylemde veritabanındaki önceki hâlle yeniden denetler, parolayı ilk yazımdan
   önce ister. Sınır Hesabım'la ortaktır: kişi başına 15 dakikada 5 hatalı parola (Hesabım ve Kullanıcılar birlikte
   sayılır); hatalar işlem geçmişine "Hatalı parola onayı (Kullanıcılar)" diye, neyin denendiğiyle yazılır. Ortak

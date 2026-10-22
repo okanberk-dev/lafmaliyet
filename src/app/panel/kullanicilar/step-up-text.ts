@@ -26,7 +26,7 @@ export type StepUpTextCase =
   /** Düzenleme penceresinde Kaydet: `name` ve `email` formdaki yeni değerler */
   | { kind: "save"; user: Target; changes: StepUpChange[]; name: string; email: string }
   /** Listedeki aktif / pasif anahtarı (yönetici satırı) */
-  | { kind: "toggle"; name: string; active: boolean }
+  | { kind: "toggle"; name: string; active: boolean; invite: Target["invite"] }
   | { kind: "link"; user: Target }
   | { kind: "2fa" }
   | { kind: "delete"; name: string }
@@ -35,23 +35,29 @@ export type StepUpTextCase =
 
 const close = (...sentences: string[]) => [...sentences, STEP_UP_CLOSING].join(" ");
 
-function changeSentence(change: StepUpChange, name: string, user: Target, email: string): string {
+function changeSentence(change: StepUpChange, changes: StepUpChange[], name: string, user: Target, email: string): string {
+  const password = changes.includes("password");
   switch (change) {
-    case "promote":
-      return `${name} yönetici olacak: maliyet, kâr, ayarlar ve kullanıcılar dahil her şeyi görür.`;
+    case "promote": {
+      const promote = `${name} yönetici olacak: maliyet, kâr, ayarlar ve kullanıcılar dahil her şeyi görür.`;
+      // Sunucu yönetici yapınca geçerli bağlantıyı iptal eder; parola da belirleniyorsa bağlantı zaten anlamsız
+      if (!user.liveLink || password) return promote;
+      return user.liveLink.kind === "invite"
+        ? `${promote} Gönderilen davet bağlantısı iptal olur; yenisini oluşturmanız gerekir.`
+        : `${promote} Geçerli parola sıfırlama bağlantısı iptal olur.`;
+    }
     case "demote":
       return `${name} artık yönetici olmayacak (personel).`;
     case "deactivate":
       return `${name} pasif olacak: giriş yapamaz, açık oturumları kapanır.`;
     case "activate":
-      // Pasif yapılınca davet bağlantısı da iptal olmuştu
-      return user.invite === "none" ? `${name} yeniden giriş yapabilecek.` : `${name} yeniden aktif olacak; giriş için yeni davet bağlantısı gerekir.`;
+      // Pasif yapılınca davet bağlantısı da iptal olmuştu; davetliye aynı kayıtta parola verilirse bağlantı gerekmez
+      return user.invite === "none" || password ? `${name} yeniden giriş yapabilecek.` : `${name} yeniden aktif olacak; giriş için yeni davet bağlantısı gerekir.`;
     case "email":
       return `Giriş e-postası ${user.email} yerine ${email.trim().toLowerCase()} olacak.`;
     case "password":
-      return user.invite === "none"
-        ? `${name} kullanıcısının parolası değişecek; açık oturumları kapanır.`
-        : `${name} için parola belirlenecek; davet bağlantısı çalışmaz olur.`;
+      if (user.invite === "none") return `${name} kullanıcısının parolası değişecek; açık oturumları kapanır.`;
+      return user.liveLink ? `${name} için parola belirlenecek; davet bağlantısı çalışmaz olur.` : `${name} için parola belirlenecek.`;
   }
 }
 
@@ -68,7 +74,7 @@ export function stepUpText(c: StepUpTextCase): StepUpText {
       const name = c.name.trim() || c.user.name;
       return {
         title: "Değişiklikleri onaylayın",
-        description: close(...c.changes.map((ch) => changeSentence(ch, name, c.user, c.email))),
+        description: close(...c.changes.map((ch) => changeSentence(ch, c.changes, name, c.user, c.email))),
         confirmLabel: "Kaydet",
         danger: c.changes.includes("deactivate") || c.changes.includes("demote"),
       };
@@ -77,7 +83,10 @@ export function stepUpText(c: StepUpTextCase): StepUpText {
       return c.active
         ? {
             title: `${c.name} yeniden aktif yapılsın mı?`,
-            description: close("Bu yönetici hesabıyla yeniden giriş yapılabilir."),
+            // Davetlinin bağlantısı pasif yapılınca iptal olmuştu, parolası da yok
+            description: close(
+              c.invite === "none" ? "Bu yönetici hesabıyla yeniden giriş yapılabilir." : "Hesap yeniden aktif olur; giriş için yeni davet bağlantısı oluşturmanız gerekir.",
+            ),
             confirmLabel: "Aktif yap",
             danger: false,
           }

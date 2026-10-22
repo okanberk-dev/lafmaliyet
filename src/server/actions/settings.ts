@@ -185,6 +185,9 @@ export async function saveUser(input: z.input<typeof userSchema>, confirm?: Step
     // değiştiyse (bağlantı eski ya da yanlış yazılmış adrese gitmiş olabilir) ya da hesap pasif yapıldıysa (yeniden
     // aktif yapılınca eski bağlantı canlanmasın)
     if (data.password || before.email !== data.email || (before.active && !data.active)) await expireUserTokens(data.id);
+    // Personelken (parola sorulmadan) oluşturulan bağlantı yönetici girişine dönüşmesin: yöneticiye yeni bağlantı
+    // createAccessLink'te parolayla oluşturulur
+    if (before.role !== "admin" && data.role === "admin") await expireUserTokens(data.id);
     // Kendi adını buradan değiştiren yönetici bu cihazda oturumda kalır (ad oturum çerezinde de duruyor)
     if (after && after.id === me.id) await startSession(after);
     await logActivity(me, "Kullanıcı güncellendi", `${data.name} (${data.role === "admin" ? "yönetici" : "personel"})`);
