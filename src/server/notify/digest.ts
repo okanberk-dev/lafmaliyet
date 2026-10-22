@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 
 import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
 
+import { latestSalesMonth } from "@/lib/calc/insights";
+import { priceLoss } from "@/lib/calc/price-loss";
 import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
@@ -127,7 +129,8 @@ const PRICE_LOG_PREFIX = "prices:";
 
 /**
  * Sabah e-postasının zam bölümü: son zam bölümlü e-postadan (yoksa son 24 saatten) bu yana fiyatı artan
- * hammaddeler ve fiyatı hedefin altında kalan ürünler. Yeni zam yoksa null (her sabah aynı zam yinelenmez).
+ * hammaddeler, bu yeni zamların ayda kaç lira kâr götürdüğü (son satış ayıyla; price-loss.ts) ve fiyatı hedefin
+ * altında kalan ürünler. Yeni zam yoksa null (her sabah aynı zam yinelenmez).
  */
 export async function loadDigestPrices(): Promise<DigestPrices | null> {
   const db = getDb();
@@ -138,13 +141,19 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = (lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS)).toISOString();
-  const pa = await loadPriceAlerts(await loadModel());
+  const model = await loadModel();
+  const pa = await loadPriceAlerts(model);
   const fresh = pa.changes.filter((c) => c.pct > 0 && c.changedAt > since);
   if (!fresh.length) return null;
+  // Yalnız yeni zamların etkisi (pencerenin bütün zamları Ürünler'de)
+  const loss = priceLoss(model, fresh, latestSalesMonth(model));
+  const monthlyOf = new Map(loss.ingredients.map((i) => [i.ingredientId, i.monthly]));
   return {
-    changes: fresh.map((c) => ({ name: c.name, unit: c.unit, before: c.before, after: c.after, pct: c.pct })),
+    changes: fresh.map((c) => ({ name: c.name, unit: c.unit, before: c.before, after: c.after, pct: c.pct, monthly: loss.basis ? (monthlyOf.get(c.ingredientId) ?? 0) : null })),
     products: pa.actionable.map((p) => ({ name: p.name, size: p.size, price: p.price, suggestedPrice: p.suggestedPrice, basis: p.basis, ratioBefore: p.ratioBefore, ratioAfter: p.ratioAfter })),
     productCount: pa.actionable.length,
+    monthlyTotal: loss.basis ? loss.totalLoss : null,
+    basisMonth: loss.basis?.month ?? null,
   };
 }
 

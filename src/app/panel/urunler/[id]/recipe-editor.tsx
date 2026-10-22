@@ -58,7 +58,8 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
-import { num, pct, tl, tlUnit } from "@/lib/format";
+import { monthLabel as monthTitle, num, pct, tl, tlUnit } from "@/lib/format";
+import { monthLocativeTR } from "@/lib/reminders";
 import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
 import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
@@ -163,6 +164,19 @@ function sliderRange(price: number, suggested: number, trial: number | null) {
   return { min, max };
 }
 
+/**
+ * Zam kutusundaki aylık etki: "Bu zam ayda ≈ 1.240 ₺ kâr götürüyor (Eylül'de 310 adet). " Satış ayı standart aya
+ * ölçeklendiyse (süren ay) adet "ayda" yazılır; satış verisi yoksa boş (price-loss.ts).
+ */
+function impactMonthText(pi: { monthly?: number | null; monthlyQty?: number | null; lossBasis?: { month: string; scale: number } | null; drivers: unknown[] }): string {
+  const b = pi.lossBasis;
+  if (!b || pi.monthly == null || pi.monthlyQty == null) return "";
+  if (!(pi.monthlyQty > 0)) return `${monthLocativeTR(b.month)} satılmadı. `;
+  if (pi.monthly < 1) return "";
+  const qty = b.scale === 1 ? `${monthLocativeTR(b.month)} ${num(pi.monthlyQty)} adet` : `${monthTitle(b.month)} satışlarından ayda ≈ ${num(pi.monthlyQty)} adet`;
+  return `${pi.drivers.length > 1 ? "Bu zamlar" : "Bu zam"} ayda ≈ ${tl(pi.monthly)} kâr götürüyor (${qty}). `;
+}
+
 type SideTab = "dokum" | "dene" | "satis";
 
 export function RecipeEditor({
@@ -216,6 +230,11 @@ export function RecipeEditor({
     needsPrice: boolean;
     acknowledged: boolean;
     drivers: { name: string; pct: number }[];
+    /** Zammın bu üründen ayda götürdüğü kâr ve ayda satılan adet (price-loss.ts); satış verisi yoksa null */
+    monthly?: number | null;
+    monthlyQty?: number | null;
+    /** Aylık tutarın satış ayı ve standart aya ölçeği (1: ay olduğu gibi) */
+    lossBasis?: { month: string; scale: number } | null;
   } | null;
   /** laffogato.net menü bağlantısı (docs/SITE-MENU.md); yoksa kart gösterilmez */
   site?: ProductSiteInfo | null;
@@ -617,6 +636,7 @@ export function RecipeEditor({
               {pct(priceImpact.ratioBefore, 0)} → {pct(priceImpact.ratioAfter, 0)}
             </span>
             .{" "}
+            {impactMonthText(priceImpact)}
             {priceImpact.needsPrice
               ? priceImpact.acknowledged
                 ? "Fiyatı korumayı seçtiniz."

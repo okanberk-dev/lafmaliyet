@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   Bell,
   CalendarCheck,
+  ChartNoAxesColumn,
   ClipboardList,
   Coffee,
   CupSoda,
@@ -24,6 +25,7 @@ import {
   Table2,
   Tag,
   Timer,
+  TrendingUp,
   UserPlus,
   Undo2,
   UserRound,
@@ -373,6 +375,51 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Undo2,
         links: [{ href: "/panel/hatirlaticilar#son-odenenler", label: "Son ödenenler" }],
+      },
+      {
+        id: "nakit-plani",
+        q: "Önümüzdeki haftalarda param yeter mi?",
+        a: (
+          <>
+            <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın kasa
+            raporlarından günlük satış, laffogato.net online), vade gününde ödenmemiş faturalar, hatırlatıcılar, maaş, SGK, KDV ve hatırlatıcısı olmayan sabit
+            giderler. Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
+            yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
+            tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
+            onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Her varsayım
+            ekrandaki Nasıl hesaplandı kartında rakamlarıyla yazar.
+          </>
+        ),
+        icon: ChartNoAxesColumn,
+        links: [{ href: "/panel/hatirlaticilar/nakit", label: "Nakit planı" }],
+      },
+      {
+        id: "kdv-tahmini",
+        q: "Bu ay ne kadar KDV ödeyeceğim?",
+        a: (
+          <>
+            Nakit planındaki KDV tahmini kartı, önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
+            sonuç ayın 28&apos;inde plana girer. Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin
+            beyannamesindedir. Muhasebeciniz tutarı söyleyince{" "}
+            <Path href="/panel/hatirlaticilar" /> ekranındaki KDV hatırlatıcısına yazın, plan onu kullanır; ödendi deyince tutar silinir, çünkü her ay farklıdır.
+          </>
+        ),
+        icon: Percent,
+        links: [{ href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" }],
+      },
+      {
+        id: "zam-etkisi",
+        q: "Zamlar bana ayda kaça mal oluyor?",
+        a: (
+          <>
+            <Path href="/panel/urunler" /> ekranındaki Hammadde zamları kartı, son 30 günde fiyatı artan malzemelerin ayda kaç lira kâr götürdüğünü yazar: her ürünün
+            maliyet artışı (fire payı dahil; Zayi &amp; ikram kayıtları sayılmaz) son satış ayındaki adediyle çarpılır; adetler Ayarlar&apos;daki ayda açık gün
+            sayısına çevrilir. Toplamı Genel bakış&apos;taki uyarıda, zilde ve sabah e-postasında da yazar; ürün kartı o ürünün payını gösterir. Satışlar&apos;a ürün
+            satış raporu yüklenmemişse yalnız birim maliyet farkı görünür; ürüne eşleşmeyen satışlar sayılmaz. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
+          </>
+        ),
+        icon: TrendingUp,
+        links: [{ href: "/panel/urunler#zamlar", label: "Hammadde zamları" }],
       },
       {
         id: "hesap",
