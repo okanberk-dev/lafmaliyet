@@ -170,8 +170,10 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
       }
       const cols = (await columnsOf(sqlA, t)).map((c) => c.name).filter((c) => !rule?.dropColumns?.includes(c));
       const a = await fingerprint(sqlA, t, cols, rule?.where);
-      // B'de dosyanın dışında satır yok; işlem geçmişine yalnız geri yükleme satırı eklenir
-      const b = await fingerprint(sqlB, t, cols, t === "activity_log" ? "action <> 'Yedekten geri yüklendi'" : "TRUE");
+      // B'de dosyanın dışında satır yok; geri yükleme yalnız işlem geçmişine kendi satırını ve günlük işlerin izleme
+      // başlangıcını (jobs.watchSince) ekler
+      const added: Record<string, string> = { activity_log: "action <> 'Yedekten geri yüklendi'", integration_state: "key <> 'jobs.watchSince'" };
+      const b = await fingerprint(sqlB, t, cols, added[t] ?? "TRUE");
       assert.deepEqual(b, a, `${t} farklı`);
       assert.equal(a.n, backup.end.tables[t], `${t}: dosyadaki sayı`);
       compared++;
@@ -195,6 +197,9 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
     const keys = (await sqlB.unsafe<{ key: string }[]>(`SELECT key FROM integration_state`)).map((k) => k.key);
     for (const k of Object.keys(EXCLUDED_STATE_KEYS)) assert.ok(!keys.includes(k), `${k} yedeğe girmemeli`);
     assert.ok(keys.includes("notify.settings") && keys.includes("menu_sync"));
+    // Günlük işlerin izlenmesi geri yükleme anından başlar (eski çalışma kayıtlarıyla yanlış "çalışmadı" alarmı olmasın)
+    const [watch] = await sqlB.unsafe<{ v: string }[]>(`SELECT value #>> '{}' AS v FROM integration_state WHERE key = 'jobs.watchSince'`);
+    assert.ok(Math.abs(Date.parse(watch.v) - Date.now()) < 120_000, watch.v);
 
     // Boş hedefte kimsenin parolası yok: davet bekler, iki adımlı kapalı, eski oturumlar geçmez
     const users = await sqlB.unsafe<{ password_hash: string; totp_enabled: boolean; totp_secret: string | null; recovery_codes: unknown; session_version: number; failed_logins: number }[]>(

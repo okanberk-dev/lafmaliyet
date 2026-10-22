@@ -120,8 +120,9 @@ DATABASE_URL="<neon unpooled adresi>" npm run db:restore -- <dosya.json.gz> --si
    Eski bir sürümle alınmışsa veri o sürümde yüklenir, sonraki migration'lar veriden sonra uygulanır.
 3. **Tek bir işlemde:** (`--sil` ise) hedefteki tabloları ve `drizzle` şemasını siler, şemayı yedeğin sürümüne kurar,
    tabloları yabancı anahtar sırasıyla yükler, satır sayılarını dosyayla karşılaştırır, sayaçları (kimlik dizileri)
-   ilerletir, kalan migration'ları uygular, işlem geçmişine **Yedekten geri yüklendi** yazar. Herhangi bir adım hata
-   verirse ya da bir sayı tutmazsa her şey geri alınır, hedef olduğu gibi kalır.
+   ilerletir, kalan migration'ları uygular, günlük işlerin izlenmesini o andan başlatır, işlem geçmişine **Yedekten geri
+   yüklendi** yazar. Herhangi bir adım hata verirse ya da bir sayı tutmazsa her şey geri alınır, hedef olduğu gibi
+   kalır.
 4. Özeti yazar:
 
 ```
@@ -161,6 +162,8 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
 - **Bildirimler:** VAPID anahtarı yenilenir; bildirim izni verilmiş cihazlar panel açılınca yeniden abone olur.
 - **laffogato.net:** bar ekranındaki açık siparişler siteden yeniden çekilir; karaoke, menü ve online satışlar sonraki
   eşitlemede sitenin bugünkü hâline gelir.
+- **Günlük işler:** izleme geri yükleme anından yeniden başlar (dosyadaki çalışma kayıtları yedeğin gününde kalır); o
+  gün için "Sabah işi çalışmadı" uyarısı çıkmaz, ertesi sabahtan itibaren her şey eskisi gibi denetlenir.
 - **Son yedek:** Ayarlar › Yedek'teki "Son yedek" dosyadaki hâline döner (dosyayı alan indirme kendisinden öncekini
   gösterir); yeni bir yedek alınca düzelir.
 - `npm run db:reset` (Excel verisini yeniden yükleme) bununla ilgisizdir ve değişmedi.

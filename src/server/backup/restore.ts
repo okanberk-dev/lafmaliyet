@@ -28,6 +28,7 @@ import {
 } from "@/lib/backup/format";
 import { hashPassword } from "@/server/auth/password";
 import { INVITE_PASSWORD_HASH } from "@/server/auth/tokens";
+import { WATCH_SINCE_KEY } from "@/server/jobs/watch";
 
 import { appVersion, columnsOf, ident, publicTables, writeBackupFile, type ColumnInfo } from "./core";
 
@@ -422,6 +423,14 @@ export async function restoreBackup(sql: postgres.Sql, backup: ParsedBackup, opt
     }
 
     await applyMigrations(tx, rest);
+    // Günlük işlerin izlenmesi geri yükleme anından yeniden başlar (src/server/jobs/watch.ts): dosyadaki çalışma
+    // kayıtları yedeğin gününde kaldı, bugünün işi çalıştıysa kaydı da silindi; yoksa canlıda "Sabah işi çalışmadı"
+    // yanlış alarmı çıkardı. İşler gerçekten çalışmıyorsa ertesi sabahın penceresinden sonra yine söylenir
+    await tx.unsafe(
+      `INSERT INTO public.integration_state (key, value) VALUES ($1, to_jsonb($2::text))
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
+      [WATCH_SINCE_KEY, new Date().toISOString()],
+    );
     const h = backup.header;
     await tx.unsafe(`INSERT INTO public.activity_log (user_name, action, detail) VALUES ('Sistem', 'Yedekten geri yüklendi', $1)`, [
       `${trTime(h.createdAt)} yedeği · ${h.createdBy} · ${new Intl.NumberFormat("tr-TR").format(rows)} satır`.slice(0, 500),

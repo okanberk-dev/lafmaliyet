@@ -285,13 +285,13 @@ export function mergeUserRows(
         }
       : { password_hash: opts.inviteHash, totp_secret: null, totp_enabled: false, totp_last_step: null, recovery_codes: null };
     // Hedefte de davet bekliyorsa korunan bir parola yok
-    const kept = Boolean(c) && c!.password_hash !== opts.inviteHash;
-    return { row: { ...r, ...creds, failed_logins: 0, locked_until: null, session_version: sv } as Record<string, unknown>, email, kept };
+    const hasPassword = Boolean(c) && c!.password_hash !== opts.inviteHash;
+    return { row: { ...r, ...creds, failed_logins: 0, locked_until: null, session_version: sv } as Record<string, unknown>, email, hasPassword };
   });
 
   const adminEmail = opts.admin?.email.trim().toLowerCase() || null;
   // Korunan parolasıyla girebilecek aktif bir yönetici varsa "lockout" kipinde ADMIN_* kullanılmaz
-  const adminCanLogIn = out.some((u) => u.kept && u.row.role === "admin" && u.row.active !== false);
+  const adminCanLogIn = out.some((u) => u.hasPassword && u.row.role === "admin" && u.row.active !== false);
   const useAdmin = Boolean(adminEmail) && (opts.mode !== "lockout" || !adminCanLogIn);
   let adminFound = false;
   for (const u of out) {
@@ -302,7 +302,7 @@ export function mergeUserRows(
       continue;
     }
     const name = String(u.row.name ?? u.email);
-    if (u.kept) kept.push(name);
+    if (u.hasPassword) kept.push(name);
     else if (u.row.active !== false) invited.push(name);
   }
   const newAdmin =
