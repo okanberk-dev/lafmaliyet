@@ -1,11 +1,10 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 import type { CashReportExtras, CashReportFields } from "@/lib/cash-report";
 import { normalizePos, normalizeZ, savedFields, suspiciousDiffs, type CashPhotoKind, type CashReading } from "@/lib/photo-read/kasa";
 import { KasaPosRaw, KasaZRaw } from "@/lib/photo-read/schemas";
-import { addDays } from "@/lib/reminders";
 import { cashOutsOn, type CashOutDTO } from "@/server/data/cash-outs";
 import { getDb, schema as s } from "@/server/db";
 
@@ -25,7 +24,9 @@ export interface CashPhotoInfo {
 
 /**
  * Raporların fotoğrafları ve okumaları. Okuma ai_calls.result'tan (doğrulanmış ham okuma) saf kodla yeniden
- * çıkarılır; Z no denetimi için raporun gününden önceki son raporun Z no'su kullanılır (okurkenki gibi).
+ * çıkarılır; yalnız ham okumaya ve raporun gününe bakar. Z no sırası denetimi (önceki raporun Z no'su) okurken formda
+ * söylenir, burada yapılmaz: sonradan geçmiş bir güne girilen rapor kayıtlı raporun "Fotoğraftan farklı" alarmını
+ * değiştirmesin.
  */
 export async function cashReportPhotoInfo(reports: { id: number; date: string }[]): Promise<Map<number, CashPhotoInfo>> {
   const out = new Map<number, CashPhotoInfo>();
@@ -43,13 +44,6 @@ export async function cashReportPhotoInfo(reports: { id: number; date: string }[
     .from(s.aiCalls)
     .where(and(inArray(s.aiCalls.photoId, links.map((l) => l.id)), eq(s.aiCalls.status, "ok")))
     .orderBy(desc(s.aiCalls.at), desc(s.aiCalls.id));
-  const dates = reports.map((r) => r.date).sort();
-  const earlier = await db
-    .select({ date: s.cashReports.date, zNo: s.cashReports.zNo })
-    .from(s.cashReports)
-    .where(and(gte(s.cashReports.date, addDays(dates[0], -60)), lt(s.cashReports.date, dates[dates.length - 1])))
-    .orderBy(asc(s.cashReports.date));
-  const prevZNo = (day: string) => [...earlier].reverse().find((r) => r.date < day)?.zNo ?? null;
   const dayOf = new Map(reports.map((r) => [r.id, r.date]));
   for (const l of links) {
     if (l.kind !== "kasa-z" && l.kind !== "kasa-pos") continue;
@@ -57,18 +51,17 @@ export async function cashReportPhotoInfo(reports: { id: number; date: string }[
     info.photos.push({ id: l.id, kind: l.kind, createdAt: l.createdAt.toISOString(), byName: l.byName });
     // Fotoğrafın şimdiki türüyle yapılmış son başarılı okuma (öteki bölüme okutulduysa tür değişmiştir)
     const call = calls.find((c) => c.photoId === l.id && c.feature === l.kind);
-    const day = dayOf.get(l.reportId)!;
-    const reading = call ? readingOf(l.kind, call.result, day, prevZNo(day)) : null;
+    const reading = call ? readingOf(l.kind, call.result, dayOf.get(l.reportId)!) : null;
     if (reading) info.readings.push(reading);
     out.set(l.reportId, info);
   }
   return out;
 }
 
-function readingOf(kind: CashPhotoKind, result: unknown, day: string, prevZNo: string | null): CashReading | null {
+function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReading | null {
   if (kind === "kasa-z") {
     const raw = KasaZRaw.safeParse(result);
-    return raw.success ? normalizeZ(raw.data, { day, prevZNo }) : null;
+    return raw.success ? normalizeZ(raw.data, { day, prevZNo: null }) : null;
   }
   const raw = KasaPosRaw.safeParse(result);
   return raw.success ? normalizePos(raw.data, { day }) : null;

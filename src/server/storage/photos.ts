@@ -167,7 +167,8 @@ export async function releasePhoto(id: number, days = RELEASED_DAYS, tx?: Tx): P
 
 /**
  * Fotoğrafı hemen siler: önce dosya, sonra satır (bağları: kasa raporu bağı silinir, kasadan çıkan / harcama / okuma
- * kayıtlarında boşalır). Satır yoksa bir şey yapmaz; dosya silinemezse hata atar (satır kalır, sabah işi yeniden dener).
+ * kayıtlarında boşalır; okumanın sonucu da silinir, maliyet satırı kalır). Satır yoksa bir şey yapmaz; dosya
+ * silinemezse hata atar (satır kalır, sabah işi yeniden dener).
  */
 export async function deletePhoto(id: number): Promise<void> {
   const db = getDb();
@@ -176,12 +177,16 @@ export async function deletePhoto(id: number): Promise<void> {
   const driver = selectDriver();
   if (!driver) throw new PhotoError(NO_STORAGE_TEXT, 503);
   await driver.del([row.key]);
-  await db.delete(s.photos).where(eq(s.photos.id, id));
+  await db.transaction(async (tx) => {
+    await tx.update(s.aiCalls).set({ result: null }).where(eq(s.aiCalls.photoId, id));
+    await tx.delete(s.photos).where(eq(s.photos.id, id));
+  });
 }
 
 /**
- * Sabah işi: süresi dolan fotoğrafları siler (önce depo, tek çağrıda; sonra satırlar). En çok `limit` adet; `deadlineAt`
- * geçtiyse başlamaz. Depo yoksa `off`. Silinemeyen dosyanın satırı kalır, ertesi sabah yeniden denenir.
+ * Sabah işi: süresi dolan fotoğrafları siler (önce depo, tek çağrıda; sonra satırlar ve okumalarının sonucu: fişteki
+ * ad, tarih ve kalemler fotoğraftan uzun kalmaz). En çok `limit` adet; `deadlineAt` geçtiyse başlamaz. Depo yoksa
+ * `off`. Silinemeyen dosyanın satırı kalır, ertesi sabah yeniden denenir.
  */
 export async function cleanupPhotos(opts: { limit?: number; deadlineAt?: number } = {}): Promise<{ deleted: number; failed: number; off: boolean }> {
   const driver = selectDriver();
@@ -202,10 +207,14 @@ export async function cleanupPhotos(opts: { limit?: number; deadlineAt?: number 
     console.error("[foto] temizlik: depo silemedi", e instanceof Error ? e.message : e);
     return { deleted: 0, failed: rows.length, off: false };
   }
-  const gone = await db
-    .delete(s.photos)
-    .where(and(inArray(s.photos.id, rows.map((r) => r.id)), lt(s.photos.expiresAt, now)))
-    .returning({ id: s.photos.id });
+  const expired = and(inArray(s.photos.id, rows.map((r) => r.id)), lt(s.photos.expiresAt, now));
+  const gone = await db.transaction(async (tx) => {
+    await tx
+      .update(s.aiCalls)
+      .set({ result: null })
+      .where(inArray(s.aiCalls.photoId, tx.select({ id: s.photos.id }).from(s.photos).where(expired)));
+    return tx.delete(s.photos).where(expired).returning({ id: s.photos.id });
+  });
   return { deleted: gone.length, failed: 0, off: false };
 }
 

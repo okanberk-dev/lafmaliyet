@@ -96,5 +96,16 @@
       "checksInclude": ["e-Arşiv fatura"],
       "toExpensesDefault": false
     }
+  },
+  {
+    "name": "z-uzun-tek-fotograf",
+    "image": "z-uzun.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0186",
+    "expect": {
+      "documentType": "z_report",
+      "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187", "receipts": 143 }
+    }
   }
 ]

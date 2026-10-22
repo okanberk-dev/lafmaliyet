@@ -13,7 +13,7 @@ import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { cashOutShortLabel, staffToExpenses, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
+import { cashOutShortLabel, cashOutWritesExpense, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
@@ -84,8 +84,10 @@ export type CashOutDialogMode = { mode: "photo" } | { mode: "plain" } | { mode: 
 /**
  * Kasadan çıkan: fişin fotoğrafından okunan (ya da elle yazılan) tutar, yer, ne alındı, tarih, KDV ve kategori.
  * Okuma yalnız boş alanları doldurur ("Fişten" rozeti); denetimler altta, turuncu olanlar alanı da işaretler. Kaydet'e
- * basılmadan hiçbir şey yazılmaz. Yönetici "Aylık harcamalar'a da yaz"ı seçer; personelin fişi kurala göre yazılır
- * (fatura ve e-Arşiv hayır). Telefonda alttan açılan sayfa; içinde sayfa değişmez.
+ * basılmadan hiçbir şey yazılmaz. Yönetici "Aylık harcamalar'a da yaz"ı seçer; personelin yeni fişi kurala göre
+ * yazılır (fatura ve e-Arşiv hayır), düzeltmesi kaydı açmaz ve silmez (cashOutWritesExpense). Kaydı yöneticinin
+ * kategorisindeki satırı personel silemez, kategorisini ve türünü değiştiremez. Telefonda alttan açılan sayfa; içinde
+ * sayfa değişmez.
  */
 export function CashOutDialog({
   open,
@@ -140,7 +142,9 @@ export function CashOutDialog({
   const withPhoto = photoId !== null || mode.mode === "photo";
   const harcama = draft.kind === "harcama";
   const docInvoice = draft.docType === "fatura" || draft.docType === "e_arsiv";
-  const writes = harcama && (admin ? draft.toExpenses : staffToExpenses(draft.kind, draft.docType));
+  const writes = cashOutWritesExpense({ admin, mode: line ? "edit" : "new", kind: draft.kind, docType: draft.docType, requested: draft.toExpenses, hasExpense: line?.expenseEntryId != null });
+  // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
+  const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
   const checks: ReceiptCheck[] = reading?.checks ?? [];
   const warnFields = new Set<ReceiptField>(checks.filter((c) => c.level === "warn").flatMap((c) => c.fields));
   const suggested = reading && reading.confidence.categoryId === "high" ? categories.find((c) => c.id === reading.values.categoryId) : undefined;
@@ -220,7 +224,7 @@ export function CashOutDialog({
       onClose={() => !pending && onClose()}
       title={line ? "Kasadan çıkanı düzelt" : "Kasadan çıkan"}
       footerStart={
-        line ? (
+        line && !locked ? (
           <Button variant="ghost" className="text-bad" onClick={remove} disabled={pending}>
             <Trash2 size={15} /> Sil
           </Button>
@@ -245,7 +249,7 @@ export function CashOutDialog({
             {uploaded?.readError ? <ReadError message={uploaded.readError} onRetry={uploaded.canRetry ? () => onRetry(uploaded.photo.id) : undefined} busy={busyPhoto} /> : null}
             {fresh && !fresh.ok && fresh.error ? <p className="text-[13px] leading-5 text-bad">{fresh.error}</p> : null}
           </div>
-        ) : (
+        ) : locked ? null : (
           <Field label="Ne için">
             <Segmented<CashOutKind>
               label="Ne için"
@@ -286,7 +290,7 @@ export function CashOutDialog({
           ) : null}
           {writes ? (
             <Field label={chip("categoryId", "Kategori")} htmlFor="co-cat" hint={suggested ? `Önerilen: ${suggested.name}` : undefined} className="sm:col-span-2">
-              <Select id="co-cat" value={draft.categoryId} onChange={set("categoryId")} data-warn={warn("categoryId")}>
+              <Select id="co-cat" value={draft.categoryId} onChange={set("categoryId")} disabled={locked} data-warn={warn("categoryId")}>
                 <option value="">Kategori seçin</option>
                 {options.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -297,10 +301,16 @@ export function CashOutDialog({
             </Field>
           ) : null}
         </div>
-        {harcama && !admin && docInvoice ? (
+        {harcama && !admin && !writes && docInvoice ? (
           <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
             <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
             Fatura olduğu için Aylık harcamalar&apos;a yazılmadı; yönetici bakar.
+          </p>
+        ) : null}
+        {locked ? (
+          <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
+            <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            Bu satır yöneticinin harcama kaydına bağlı; silmek için yöneticiye haber verin.
           </p>
         ) : null}
         {checks.length ? (

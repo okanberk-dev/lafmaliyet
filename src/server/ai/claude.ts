@@ -100,7 +100,8 @@ const STATUS: Partial<Record<AiErrorCode, "refusal" | "incomplete" | "invalid">>
 
 /**
  * Görseli okur ve sonucu günlüğe yazar. Kapılar sırayla: anahtar, ayar, bugünkü sınır, fotoğraf başına 3 okuma.
- * Doğrulanmış okuma ai_calls.result'ta saklanır (karşılaştırmalar istemcinin gönderdiğine değil buna bakar).
+ * Doğrulanmış okuma ai_calls.result'ta saklanır (karşılaştırmalar istemcinin gönderdiğine değil buna bakar);
+ * `stored` saklanacak hâlini verir (ör. fişte vergi no düşer). Sonuç fotoğrafla birlikte silinir.
  */
 export async function extractImage<T>(req: {
   feature: AiFeature;
@@ -111,6 +112,7 @@ export async function extractImage<T>(req: {
   task: string;
   schema: z.ZodType<T>;
   maxTokens?: number;
+  stored?: (data: T) => T;
 }): Promise<AiResult<T>> {
   const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap), callId: null });
   if (!aiConfigured()) return gate("nokey");
@@ -152,7 +154,7 @@ export async function extractImage<T>(req: {
   }
   await db
     .update(s.aiCalls)
-    .set({ ...common, status: "ok", result: res.data as object })
+    .set({ ...common, status: "ok", result: (req.stored ? req.stored(res.data) : res.data) as object })
     .where(eq(s.aiCalls.id, call.id));
   return { ok: true, data: res.data, callId: call.id, ms, costUsd: common.costUsd, servedModel: res.servedModel ?? AI_MODEL, fallback: common.fallback };
 }

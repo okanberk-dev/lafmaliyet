@@ -77,8 +77,8 @@ function sameStore(a: string | null, b: string | null): boolean {
 const dayDiff = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 
 export function normalizeReceipt(raw: Receipt, ctx: ReceiptContext): ReceiptReading {
-  if (raw.documentType === "z_report") return failed("Bu bir Z raporu; kasadan çıkan fişi değil.");
-  if (raw.documentType === "bank_pos_end_of_day") return failed("Bu bir banka POS fişi; kasadan çıkan fişi değil.");
+  if (raw.documentType === "z_report") return failed("Bu bir Z raporu, kasadan ödenen bir fiş değil.");
+  if (raw.documentType === "bank_pos_end_of_day") return failed("Bu bir banka POS fişi, kasadan ödenen bir fiş değil.");
   if (!raw.readable || raw.issues.includes("not_a_document")) return failed(UNREADABLE_TEXT);
 
   const checks: ReceiptCheck[] = [];
@@ -185,6 +185,14 @@ export function normalizeReceipt(raw: Receipt, ctx: ReceiptContext): ReceiptRead
     checks: [...checks.filter((c) => c.level === "warn"), ...checks.filter((c) => c.level === "info")],
     toExpensesDefault: !invoice,
   };
+}
+
+/**
+ * ai_calls.result'ta saklanan fiş okuması: satıcının vergi numarası düşer (şahıs şirketinde TC kimlik no olabilir;
+ * hiçbir yerde kullanılmaz). Kalanı fotoğrafla birlikte silinir (src/server/storage/photos.ts).
+ */
+export function receiptToStore(raw: Receipt): Receipt {
+  return { ...raw, storeTaxNo: null };
 }
 
 /** Harcamanın tarihi: fişin tarihi kasanın gününden en çok 3 gün önceyse o, değilse kasanın günü */

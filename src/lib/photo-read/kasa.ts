@@ -46,6 +46,8 @@ export interface ReadCheck {
   fields: ReadField[];
   level: "warn" | "info";
   text: string;
+  /** Okumanın bütününe dair (fiş başka bir günün, fotoğrafta birden çok fiş): kayıttaki farklar alarm sayılmaz */
+  whole?: boolean;
 }
 
 export interface CashReading {
@@ -87,16 +89,22 @@ const failed = (kind: CashPhotoKind, error: string, switchTo: CashPhotoKind | nu
   checks: [],
 });
 
+/** "Bu bir alışveriş fişi gibi görünüyor." (tanınmayan belge: "Bu başka bir belge gibi görünüyor.") */
+function looksLike(documentType: string): string {
+  const name = documentType === "other" ? undefined : DOC_NAMES[documentType];
+  return name ? `Bu bir ${name} gibi görünüyor.` : `Bu ${DOC_NAMES.other} gibi görünüyor.`;
+}
+
 /** Yanlış belgenin metni: Z bölümüne POS fişi (ve tersi) öteki bölüme okutulabilir */
 function wrongDocument(expected: CashPhotoKind, documentType: string): CashReading {
   if (expected === "kasa-z") {
     return documentType === "bank_pos_end_of_day"
       ? failed("kasa-z", "Bu bir banka POS gün sonu fişi gibi görünüyor, Z raporu değil.", "kasa-pos")
-      : failed("kasa-z", `Bu bir ${DOC_NAMES[documentType] ?? DOC_NAMES.other} gibi görünüyor. Z raporunun fotoğrafını çekin.`);
+      : failed("kasa-z", `${looksLike(documentType)} Z raporunun fotoğrafını çekin.`);
   }
   return documentType === "z_report"
     ? failed("kasa-pos", "Bu bir Z raporu gibi görünüyor, banka POS fişi değil.", "kasa-z")
-    : failed("kasa-pos", `Bu bir ${DOC_NAMES[documentType] ?? DOC_NAMES.other} gibi görünüyor. Banka POS gün sonu fişinin fotoğrafını çekin.`);
+    : failed("kasa-pos", `${looksLike(documentType)} Banka POS gün sonu fişinin fotoğrafını çekin.`);
 }
 
 /** Tutar okunurken fişteki metinle modelin sayısı tutmadıysa uyarı */
@@ -104,21 +112,26 @@ function mismatchCheck(field: ReadField, a: AmountRaw): ReadCheck {
   return { fields: [field], level: "warn", text: `Okuma tutarsız (fişte “${clean(a.text, 30) ?? ""}”); fişle karşılaştırın.` };
 }
 
-/** Fotoğrafın sorunları: görüntü sorunları güveni "high" olmayan alanları turuncu yapar */
+/**
+ * Fotoğrafın sorunları: görüntü sorunları güveni "high" olmayan alanları turuncu yapar. Birden çok fiş okumanın
+ * bütününü şüpheli yapar (rakam öteki fişten okunmuş olabilir)
+ */
 function issueChecks(issues: IssueRaw[], values: Partial<Record<ReadField, ReadValue>>, skip: IssueRaw[] = []): ReadCheck[] {
   const unsure = (Object.keys(values) as ReadField[]).filter((f) => values[f]!.confidence !== "high");
   const out: ReadCheck[] = [];
   for (const issue of [...new Set(issues)]) {
     if (issue === "not_a_document" || skip.includes(issue)) continue;
-    out.push({ fields: IMAGE_ISSUES.includes(issue) ? unsure : [], level: "warn", text: ISSUE_TEXT[issue] });
+    const check: ReadCheck = { fields: IMAGE_ISSUES.includes(issue) ? unsure : [], level: "warn", text: ISSUE_TEXT[issue] };
+    if (issue === "multiple_documents") check.whole = true;
+    out.push(check);
   }
   return out;
 }
 
-/** Fişteki gün raporun günü değilse uyarı */
-function dayCheck(printedDay: string | null, day: string, what: string): ReadCheck | null {
+/** Fişteki gün raporun günü değilse uyarı (okumanın bütünü başka bir günün olabilir). `question`: "Z raporu mu" */
+function dayCheck(printedDay: string | null, day: string, question: string): ReadCheck | null {
   if (!printedDay || printedDay === day) return null;
-  return { fields: [], level: "warn", text: `Fişteki tarih ${longDateTR(printedDay)}; bu rapor ${longDateTR(day)} için. Doğru günün ${what} mu?` };
+  return { fields: [], level: "warn", text: `Fişteki tarih ${longDateTR(printedDay)}; bu rapor ${longDateTR(day)} için. Doğru günün ${question}?`, whole: true };
 }
 
 /** Sıra: önce uyarılar, sonra bilgiler (ekranda en çok dördü) */
@@ -221,7 +234,7 @@ export function normalizeZ(raw: KasaZ, ctx: { day: string; prevZNo: string | nul
   }
 
   const printedDay = businessDayOf(raw.date, raw.time);
-  checks.push(dayCheck(printedDay, ctx.day, "Z raporu"));
+  checks.push(dayCheck(printedDay, ctx.day, "Z raporu mu"));
   // Z no sırayla artar: arada atlanan ya da eski bir Z raporu
   const cur = zNo && /^\d+$/.test(zNo) ? Number(zNo) : null;
   const prev = ctx.prevZNo && /^\d+$/.test(ctx.prevZNo.trim()) ? Number(ctx.prevZNo.trim()) : null;
@@ -264,7 +277,7 @@ export function normalizePos(raw: KasaPos, ctx: { day: string }): CashReading {
     checks.push({ fields: ["bankPos"], level: "warn", text: "Fişte birden fazla cihaz ya da gün var; yalnız bu günün toplamını yazın." });
   }
   const printedDay = businessDayOf(raw.date, raw.time);
-  checks.push(dayCheck(printedDay, ctx.day, "POS fişi"));
+  checks.push(dayCheck(printedDay, ctx.day, "POS fişi mi"));
   checks.push(...issueChecks(raw.issues, values, ["multiple_documents"]));
   return { kind: "kasa-pos", ok: true, error: null, switchTo: null, printedDay, values, missing: values.bankPos ? [] : ["bankPos"], checks: ordered(checks) };
 }
@@ -330,6 +343,18 @@ export function prefillPlan(reading: CashReading, current: Partial<Record<ReadFi
   return plan;
 }
 
+/**
+ * İkinci banka POS fişi (iki cihaz) "Toplama ekle" / "Yerine yaz" ile sorulur; seçmek kişinin onayıdır. Rakam net
+ * değilse (`unsure`: soruda da söylenir) ya da bir denetime takıldıysa (`warn`) seçilen değer yine de turuncu kalır,
+ * tahmin edilen rakam temiz bir "Fotoğraftan" gibi görünmez.
+ */
+export function posPromptMarks(reading: CashReading): { warn: string | null; unsure: string | null } {
+  const v = reading.values.bankPos;
+  if (!v) return { warn: null, unsure: null };
+  const unsure = v.confidence === "low" ? `Fotoğrafta net okunamadı (${money(Number(v.value))}); fişle karşılaştırın.` : v.confidence === "medium" ? UNSURE_TEXT : null;
+  return { warn: v.confidence === "low" ? unsure : (fieldWarnings(reading).bankPos ?? unsure), unsure };
+}
+
 /** Okumadan sonraki yeşil satır */
 export function prefillSummary(kind: CashPhotoKind, plan: PrefillPlan): string {
   const doc = kind === "kasa-z" ? "Z raporu" : "Banka POS fişi";
@@ -349,8 +374,11 @@ export interface PhotoDiff {
   /** Raporda yazılan; boş bırakılan alan null */
   saved: number | string | null;
   confidence: Confidence;
-  /** Değerin geldiği okumada uyarı vardı (ör. soluk fiş, tutmayan toplam) */
-  readingWarned: boolean;
+  /**
+   * Değerin geldiği okumada bu alanı turuncu yapan bir uyarı vardı (tutmayan toplam, tanınmayan satır, tutarsız
+   * okuma) ya da okumanın bütünü şüpheliydi (başka bir günün fişi, fotoğrafta birden çok fiş)
+   */
+  excused: boolean;
 }
 
 export type SavedFields = Partial<Record<ReadField, number | string | null>>;
@@ -397,15 +425,20 @@ export function photoDiffs(readings: CashReading[], saved: SavedFields): PhotoDi
       }
     }
     if (differs) {
-      out.push({ field, label: FIELD_LABELS[field], photo: read.value, saved: s, confidence: read.confidence, readingWarned: source.checks.some((c) => c.level === "warn") });
+      const excused = source.checks.some((c) => c.level === "warn" && (c.whole === true || c.fields.includes(field)));
+      out.push({ field, label: FIELD_LABELS[field], photo: read.value, saved: s, confidence: read.confidence, excused });
     }
   }
   return out;
 }
 
-/** Alarm sayılan farklar: uyarısız bir okumada net okunmuş alan (soluk okumanın düzeltilmesi alarm değil) */
+/**
+ * Alarm sayılan farklar: net (high) okunmuş ve kendisine bir uyarı düşmemiş alan. Turuncu bir alanın (soluk baskı,
+ * tutmayan toplam, tanınmayan satır) ya da başka güne ait / birden çok fişli okumanın düzeltilmesi alarm değil. İlgisiz
+ * bir uyarı (ör. Z no sırası, fişte alışılmadık yazılar) net okunmuş öteki alanların alarmını gizlemez.
+ */
 export function suspiciousDiffs(readings: CashReading[], saved: SavedFields): PhotoDiff[] {
-  return photoDiffs(readings, saved).filter((d) => d.confidence === "high" && !d.readingWarned);
+  return photoDiffs(readings, saved).filter((d) => d.confidence === "high" && !d.excused);
 }
 
 const shown = (d: PhotoDiff, v: number | string | null) => (v === null ? "boş" : d.field === "zNo" || d.field === "receipts" ? String(v) : money(Number(v)));

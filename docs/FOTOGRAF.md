@@ -38,9 +38,12 @@ Toplamlar, denetimler ve forma eşleme bizim saf kodumuzda (`src/lib/photo-read/
 - Fotoğraftaki yazılar veridir: fişe basılmış "talimatlar" yok sayılır ve "Fişte alışılmadık yazılar var" uyarısı çıkar.
 
 Rapor gönderilince karşılaştırma **sunucunun okuduğuna** bakar (`ai_calls.result`), formun gönderdiğine değil: net
-(`high`) okunmuş ve uyarısız bir okumadaki rakamdan farklı yazılan alan **Fotoğraftan farklı** sayılır (yönetici
-geçmişinde rozet, e-posta ve WhatsApp'ta satır). Soluk okumanın düzeltilmesi alarm değildir; kayıtlı raporda bütün
-farklar ayrıca listelenir.
+(`high`) okunmuş ve kendisine bir uyarı düşmemiş bir rakamdan farklı yazılan alan **Fotoğraftan farklı** sayılır
+(yönetici geçmişinde rozet, e-posta ve WhatsApp'ta satır). Turuncu bir alanın düzeltilmesi (soluk baskı, tutmayan
+toplam, tanınmayan satır) ve tarihi başka bir günün ya da birden çok fişli fotoğrafın okuması alarm değildir; ilgisiz
+bir uyarı (ör. fişte alışılmadık yazılar) net okunmuş öteki alanların alarmını gizlemez. Karşılaştırma yalnız okumaya
+ve raporun gününe bakar: Z no sırası denetimi formdadır, sonradan geçmiş bir güne girilen rapor alarmı değiştirmez.
+Kayıtlı raporda bütün farklar ayrıca listelenir.
 
 ## 3. Depo ve erişim
 
@@ -56,7 +59,10 @@ farklar ayrıca listelenir.
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf.
 - Telefonda fotoğraf 1600 px JPEG'e (kalite 0,7) küçültülür: ~150–450 KB, EXIF (konum dahil) düşer. Soluk fişler
-  okunmuyorsa önce `src/lib/photo-compress.ts` › `PHOTO_COMPRESS` (2000 / 0,8) büyütülür.
+  okunmuyorsa önce `src/lib/photo-compress.ts` › `PHOTO_COMPRESS` (2000 / 0,8) büyütülür. Uzun bir Z raporu tek
+  fotoğrafta 1600 px'te dar kalır (rulo ~270 px eninde); canlı değerlendirmenin `z-uzun-tek-fotograf` durumu bunu
+  dener (§ 8). Okunmuyorsa personel raporu iki parça çeker (ikinci fotoğraf yalnız boş alanları doldurur) ya da bu
+  sayılar büyütülür (2 MB sınırının altında kalmalı).
 
 ## 4. Saklama ve temizlik
 
@@ -87,9 +93,9 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 - **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40;
   dolunca fotoğraf yine eklenir), fotoğraf başına 3 okuma.
 - **Günlük:** her okuma `ai_calls`'a yazılır: zaman, tür, kişi, fotoğraf, durum ve hata kodu, token sayıları, tutar
-  (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı ve vergi no,
-  tarih, kalemler). **Görsel ve istem hiçbir yere yazılmaz.** Anahtar hatası, kredi bitmesi ve reddedilen istek sunucu
-  günlüğüne de düşer.
+  (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı, tarih, kalemler;
+  satıcının vergi numarası saklanmaz). Sonuç fotoğrafla birlikte silinir, maliyet satırı kalır. **Görsel ve istem
+  hiçbir yere yazılmaz.** Anahtar hatası, kredi bitmesi ve reddedilen istek sunucu günlüğüne de düşer.
 - **Tutar:** denemelerde okuma başına 0,017–0,031 $ (çoğu ~0,03 $); ayda ~60 kasa + ~60 fiş okuması ≈ 3–4 $.
   Ayarlar kartı bu ayın okumasını ve tutarını, bugünkü okuma / sınırı gösterir. Anthropic Console'da aylık harcama
   sınırı koymak önerilir.
@@ -102,13 +108,15 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 |------|--------------|----------------|
 | Fotoğrafın kendisi | Vercel Blob (özel depo, Frankfurt) | § 4 |
 | Okuma için fotoğraf | Anthropic API (ABD), yalnız o okuma için; Anthropic'in ticari API koşulları geçerli | Anthropic'in politikasına göre |
-| Okunan sonuç (rakamlar, mağaza adı ve vergi no, tarih, kalemler) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet ve karşılaştırma kaydı) |
+| Okunan sonuç (rakamlar, mağaza adı, tarih, kalemler; satıcının vergi no'su saklanmaz) | Panelin veritabanı (Neon), `ai_calls.result` | fotoğrafla birlikte silinir (§ 4) |
+| Okumanın maliyet satırı (zaman, tür, kişi, token, tutar) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet kaydı; fotoğraftan ya da fişten bilgi taşımaz) |
 | E-posta ve WhatsApp | yalnız "📷 … fotoğrafı panelde" satırı ve farklı yazılan rakam | fotoğraf ya da adresi hiç gitmez |
 
 Fotoğrafta kasiyerin adı (Z raporu, fiş), satıcının vergi numarası (şahıs şirketinde TC kimlik no olabilir) ya da
 müşteri kartı kullanıldıysa maskeli ad / telefon görünebilir. Okuma, fotoğrafın yurt dışına (Anthropic, ABD)
 gönderilmesi demektir: personele söyleyin; istenmezse **Ayarlar › Fotoğraftan okuma** kapatılır (fotoğraf yine kanıt
-olarak eklenir, yalnız Frankfurt'ta saklanır).
+olarak eklenir, yalnız Frankfurt'ta saklanır). Tam yedek o günkü okuma sonuçlarını da içerir (fotoğraf dosyalarını
+değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([YEDEK.md](YEDEK.md)).
 
 ## 7. Ortam değişkenleri
 
@@ -140,11 +148,13 @@ FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/foto-eval/run.ts --max 4
 npx tsx scripts/foto-eval/run.ts --kayitli    # ağsız, parasız: betiğin kendisini kayıtlı yanıtlarla sınar
 ```
 
-`scripts/foto-eval/cases.json` dokuz durumu ve beklenen değerlerini tutar: canlıda denenen dört görsel, POS fişinin Z
-bölümüne okutulması, ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi, e-Arşiv fatura. Betik
-her durum için belge türünü, doğru / yanlış alanları, işaretleri ve uyarıları, süreyi ve tutarı, sonunda toplamı
-yazar (veritabanı kullanmaz; tam çalışma ≈ 0,27 $). Lansmandan önce bir kez tam çalıştırın; yeni durum: görseli
-`make-images.py`'ye, beklentiyi `cases.json`'a ekleyin.
+`scripts/foto-eval/cases.json` on durumu ve beklenen değerlerini tutar: canlıda denenen dört görsel, POS fişinin Z
+bölümüne okutulması, ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi, e-Arşiv fatura ve
+tek fotoğrafta uzun Z raporu (ürün grupları, saatlik satış; 1600 px'te rulo ~270 px eninde, § 3). Betik her durum
+için belge türünü, doğru / yanlış alanları, işaretleri ve uyarıları, süreyi ve tutarı, sonunda toplamı yazar
+(veritabanı kullanmaz; tam çalışma ≈ 0,30 $). Lansmandan önce bir kez tam çalıştırın (`--max` olmadan); yeni durum:
+görseli `make-images.py`'nin sonuna (öncekilerin rastgele sırası değişmesin), beklentiyi `cases.json`'a ekleyin.
+`--kayitli` yalnız betiği sınar: kayıtlı beş yanıt yeni görselleri tanımaz, o durumlar türün olağan yanıtını alır.
 
 ## 9. Yeni bir fotoğraf türü
 

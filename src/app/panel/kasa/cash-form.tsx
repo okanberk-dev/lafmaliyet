@@ -18,6 +18,7 @@ import {
   fieldText,
   MISSING_TEXT,
   photoDiffs,
+  posPromptMarks,
   prefillPlan,
   prefillSummary,
   savedFields,
@@ -191,11 +192,17 @@ type Marks = Partial<Record<FormReadField, Mark>>;
 /** Fotoğraftaki değerin ekrandaki hâli */
 const shownValue = (field: FormReadField, v: number | string) => (field === "zNo" || field === "receipts" ? String(v) : money(Number(v)));
 
-/** İki banka POS fişi (iki cihaz): ikinci okumada toplama ekle ya da yerine yaz */
+/**
+ * İki banka POS fişi (iki cihaz): ikinci okumada toplama ekle ya da yerine yaz. İkinci fişin rakamı net değilse ya da
+ * bir denetime takıldıysa (`warn`) seçilen değer turuncu kalır; net olmayan rakam (`unsure`) soruda da söylenir
+ * (posPromptMarks).
+ */
 interface PosPrompt {
   photoId: number;
   prev: number;
   next: number;
+  warn: string | null;
+  unsure: string | null;
 }
 
 /**
@@ -292,7 +299,7 @@ export function CashForm({
     const prevMark = marksRef.current.bankPos;
     const posValue = r.values.bankPos ? Number(r.values.bankPos.value) : null;
     if (r.kind === "kasa-pos" && posValue !== null && prevMark && prevMark.photoId !== photoId && prevMark.filled !== null && current.bankPos === prevMark.filled) {
-      setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue });
+      setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue, ...posPromptMarks(r) });
       return "Banka POS fişi okundu.";
     }
     const plan = prefillPlan(r, Object.fromEntries(READ_FIELDS.map((f) => [f, current[f]])));
@@ -378,7 +385,7 @@ export function CashForm({
     if (!posPrompt) return;
     const text = fieldText("bankPos", sum ? posPrompt.prev + posPrompt.next : posPrompt.next);
     setValues((v) => ({ ...v, bankPos: text }));
-    setMarks((m) => ({ ...m, bankPos: { photoId: posPrompt.photoId, filled: text, warn: null, suggest: null } }));
+    setMarks((m) => ({ ...m, bankPos: { photoId: posPrompt.photoId, filled: text, warn: posPrompt.warn, suggest: null } }));
     setPosPrompt(null);
   }
 
@@ -631,6 +638,7 @@ export function CashForm({
             {posPrompt ? (
               <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info sm:col-span-2">
                 <p>Bu günün bir POS fişi daha okundu ({money(posPrompt.next)}).</p>
+                {posPrompt.unsure ? <p className="text-warn">{posPrompt.unsure}</p> : null}
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => posChoice(true)}>
                     Toplama ekle ({money(posPrompt.prev + posPrompt.next)})

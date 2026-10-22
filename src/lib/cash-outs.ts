@@ -86,3 +86,36 @@ export function staffCategory(c: { section: string; panelGroup: string; active: 
 export function staffToExpenses(kind: CashOutKind, docType: CashOutDocType): boolean {
   return kind === "harcama" && (docType === "fis" || docType === "yok");
 }
+
+/** Satırın kaydedilişi: yeni satır, düzeltme ya da silinenin geri alınması */
+export type CashOutSaveMode = "new" | "edit" | "restore";
+
+/**
+ * Satırın Aylık harcamalar kaydı olacak mı. Yönetici anahtarla seçer. Personel yalnız satırı eklerken kurala göre
+ * (staffToExpenses); düzeltmede kaydın şimdiki hâli kalır: yöneticinin Aylık harcamalar'dan sildiği kayıt geri gelmez,
+ * faturaya açtığı kayıt silinmez. Geri almada ikisinde de silinen satırdaki gibi. Teslimin kaydı olmaz.
+ */
+export function cashOutWritesExpense(o: {
+  admin: boolean;
+  mode: CashOutSaveMode;
+  kind: CashOutKind;
+  docType: CashOutDocType;
+  /** Yöneticinin anahtarı; geri almada silinen satırın kaydı vardı mı */
+  requested: boolean;
+  /** Satırın şimdi bir harcama kaydı var mı (düzeltmede) */
+  hasExpense: boolean;
+}): boolean {
+  if (o.kind !== "harcama") return false;
+  if (o.admin || o.mode === "restore") return o.requested;
+  if (o.mode === "edit") return o.hasExpense;
+  return staffToExpenses(o.kind, o.docType);
+}
+
+/**
+ * Bağlı harcama kaydı personele kapalı mı: personelin seçemediği bir kategorideyse (yöneticinin maaş, kira gibi
+ * kategorisi ya da kapatılmış kategori). Personel o satırı silemez, teslime çeviremez, kategorisini değiştiremez;
+ * tutarını düzeltebilir (kasadan çıkan para odur).
+ */
+export function staffExpenseLocked(category: { section: string; panelGroup: string; active: boolean } | null | undefined): boolean {
+  return category != null && !staffCategory(category);
+}

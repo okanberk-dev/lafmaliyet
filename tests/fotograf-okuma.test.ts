@@ -9,7 +9,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { cashOutCheck, cashOutLabel, cashOutNoteOf, cashOutShortLabel, cashOutShortLine, staffCategory, staffToExpenses } from "../src/lib/cash-outs";
+import {
+  cashOutCheck,
+  cashOutLabel,
+  cashOutNoteOf,
+  cashOutShortLabel,
+  cashOutShortLine,
+  cashOutWritesExpense,
+  staffCategory,
+  staffExpenseLocked,
+  staffToExpenses,
+} from "../src/lib/cash-outs";
 import { claudeSchema } from "../src/lib/photo-read/claude-schema";
 import { businessDayOf, clean, foldName, printedAmount, tidyStore, validDay } from "../src/lib/photo-read/common";
 import {
@@ -18,13 +28,14 @@ import {
   normalizeZ,
   photoDiffs,
   photoDiffText,
+  posPromptMarks,
   prefillPlan,
   prefillSummary,
   savedFields,
   suspiciousDiffs,
   type CashReading,
 } from "../src/lib/photo-read/kasa";
-import { expenseDateFor, normalizeReceipt, type ReceiptContext } from "../src/lib/photo-read/receipt";
+import { expenseDateFor, normalizeReceipt, receiptToStore, type ReceiptContext } from "../src/lib/photo-read/receipt";
 import { KasaPosRaw, KasaZRaw, ReceiptRaw, type KasaPos, type KasaZ, type Receipt } from "../src/lib/photo-read/schemas";
 
 /** Boşlukları (₺ önündeki bölünmez boşluk dahil) düz boşluğa çevirir */
@@ -188,6 +199,13 @@ test("Z bölümüne POS fişi: belge türü yanlışsa hiçbir alan dolmaz, Kart
   const x = normalizeZ(receipt, { day: "2026-10-21", prevZNo: null });
   assert.equal(x.error, "Bu bir alışveriş fişi gibi görünüyor. Z raporunun fotoğrafını çekin.");
   assert.equal(x.switchTo, null);
+  // Tanınmayan belge: "Bu bir başka bir belge" değil
+  const other = clone(Z);
+  other.documentType = "other";
+  assert.equal(normalizeZ(other, { day: "2026-10-21", prevZNo: null }).error, "Bu başka bir belge gibi görünüyor. Z raporunun fotoğrafını çekin.");
+  const otherPos = clone(POS);
+  otherPos.documentType = "other";
+  assert.equal(normalizePos(otherPos, { day: "2026-10-21" }).error, "Bu başka bir belge gibi görünüyor. Banka POS gün sonu fişinin fotoğrafını çekin.");
 });
 
 test("banka POS: net toplam; satış − iade tutmazsa uyarı; Z raporu Z bölümüne", () => {
@@ -213,6 +231,29 @@ test("banka POS: net toplam; satış − iade tutmazsa uyarı; Z raporu Z bölü
   nothing.netTotal = { text: null, value: null, confidence: "low" };
   nothing.salesTotal = { text: null, value: null, confidence: "low" };
   assert.deepEqual(normalizePos(nothing, { day: "2026-10-21" }).missing, ["bankPos"]);
+  const wrongDay = normalizePos(POS, { day: "2026-10-22" });
+  assert.equal(plain(wrongDay.checks[0].text), "Fişteki tarih 21 Ekim Çarşamba; bu rapor 22 Ekim Perşembe için. Doğru günün POS fişi mi?");
+});
+
+test("ikinci POS fişi: net okunmayan ya da denetime takılan rakam seçilince de turuncu kalır", () => {
+  assert.deepEqual(posPromptMarks(normalizePos(POS, { day: "2026-10-21" })), { warn: null, unsure: null });
+  // Orta güven: soruda ve alanda "net değil"
+  const faint = clone(POS);
+  faint.netTotal.confidence = "medium";
+  assert.deepEqual(posPromptMarks(normalizePos(faint, { day: "2026-10-21" })), { warn: "Fotoğrafta net değil; fişle karşılaştırın.", unsure: "Fotoğrafta net değil; fişle karşılaştırın." });
+  // Tahmin: soruda söylenir, seçilirse alan turuncu kalır
+  const guess = clone(POS);
+  guess.netTotal = { text: "1.200,00", value: 1200, confidence: "low" };
+  guess.salesTotal = { text: "1.200,00", value: 1200, confidence: "low" };
+  const g = posPromptMarks(normalizePos(guess, { day: "2026-10-21" }));
+  assert.equal(plain(g.unsure!), "Fotoğrafta net okunamadı (1.200 ₺); fişle karşılaştırın.");
+  assert.equal(g.warn, g.unsure);
+  // Net okunmuş ama denetime takılmış: alan denetimin metniyle turuncu, soruda ek satır yok
+  const off = clone(POS);
+  off.refundTotal = { text: "120,00", value: 120, confidence: "high" };
+  const w = posPromptMarks(normalizePos(off, { day: "2026-10-21" }));
+  assert.equal(w.unsure, null);
+  assert.equal(plain(w.warn!), "Net toplam 8.915 ₺, satış − iade 8.795 ₺; fişle karşılaştırın.");
 });
 
 test("forma uygulama: yalnız boş alanlar dolar; farklı yazılan kalır; tahmin yazılmaz; okunamayan söylenir", () => {
@@ -263,9 +304,11 @@ test("fotoğraftan farklı: net okunmuş değerden ayrılan kayıt alarmdır; so
   faint.values.card = { value: 8915, confidence: "medium" };
   assert.equal(photoDiffs([faint], SAVED).length, 1);
   assert.equal(suspiciousDiffs([faint], SAVED).length, 0);
-  // Uyarılı okumadan gelen değer de alarm değil
+  // İlgisiz bir uyarı (Z no sırası) net okunmuş kartın alarmını gizlemez; yalnız Z no farkını bağışlar
   const warned = normalizeZ(Z, { day: "2026-10-21", prevZNo: "0190" });
-  assert.equal(suspiciousDiffs([warned], SAVED).length, 0);
+  assert.deepEqual(suspiciousDiffs([warned], SAVED).map((d) => d.field), ["card"]);
+  assert.deepEqual(photoDiffs([warned], { ...SAVED, zNo: "0191" }).map((d) => [d.field, d.excused]), [["card", false], ["zNo", true]]);
+  assert.deepEqual(suspiciousDiffs([warned], { ...SAVED, zNo: "0191" }).map((d) => d.field), ["card"]);
   // 1 ₺'nin altındaki fark ve baştaki sıfırlar fark sayılmaz; boş bırakılan alan "boş"
   assert.deepEqual(photoDiffs([z], { ...SAVED, card: 8915.4, zNo: "187" }), []);
   const empty = photoDiffs([pos], { ...SAVED, bankPos: null });
@@ -281,6 +324,40 @@ test("fotoğraftan farklı: net okunmuş değerden ayrılan kayıt alarmdır; so
   assert.deepEqual(photoDiffs([z, tail], SAVED), []);
   // Okunamayan okuma karşılaştırmaya girmez
   assert.deepEqual(photoDiffs([normalizeZ(WRONG, { day: "2026-10-21", prevZNo: null })], SAVED), []);
+});
+
+test("fotoğraftan farklı: alarmı yalnız o alana düşen uyarı ya da başka güne ait / birden çok fişli okuma bağışlar", () => {
+  const read = (raw: typeof Z, day = "2026-10-21") => normalizeZ(raw, { day, prevZNo: null });
+  // Toplam tutmuyor: Z toplamı ve ödeme alanları turuncu; onların düzeltilmesi alarm değil
+  const misread = clone(Z);
+  misread.paymentLines[0].amount = { text: "3.402,50", value: 3402.5, confidence: "high" };
+  assert.deepEqual(photoDiffs([read(misread)], SAVED).map((d) => [d.field, d.excused]), [["cash", true], ["card", true]]);
+  assert.deepEqual(suspiciousDiffs([read(misread)], SAVED), []);
+  // Fişin günü raporun günü değil ya da fotoğrafta birden çok fiş: okumanın bütünü şüpheli
+  assert.equal(photoDiffs([read(Z, "2026-10-22")], SAVED).length, 1);
+  assert.deepEqual(suspiciousDiffs([read(Z, "2026-10-22")], SAVED), []);
+  const several = clone(Z);
+  several.issues = ["multiple_documents"];
+  assert.deepEqual(suspiciousDiffs([read(several)], SAVED), []);
+  // Görüntü sorunu yalnız net okunmamış alanlara düşer; net okunmuş kartın farkı yine alarm
+  const faded = clone(Z);
+  faded.issues = ["faded"];
+  assert.deepEqual(suspiciousDiffs([read(faded)], SAVED).map((d) => d.field), ["card"]);
+  // Fişe basılmış "talimat" alarmı gizleyemez
+  const injected = clone(Z);
+  injected.issues = ["contains_instructions"];
+  assert.deepEqual(suspiciousDiffs([read(injected)], SAVED).map((d) => d.field), ["card"]);
+  // Tanınmayan satır yalnız Diğer'i bağışlar
+  const odd = clone(Z);
+  odd.total = { text: "*13.025,50", value: 13025.5, confidence: "high" };
+  odd.paymentLines.push({ label: "KUPON", amount: { text: "50,00", value: 50, confidence: "high" }, kind: "unknown" });
+  assert.deepEqual(photoDiffs([read(odd)], { ...SAVED, zTotal: 13025.5 }).map((d) => [d.field, d.excused]), [["card", false], ["other", true]]);
+  // POS: satış − iade tutmuyorsa Banka POS'un düzeltilmesi alarm değil; başka günün fişi de
+  const off = clone(POS);
+  off.refundTotal = { text: "120,00", value: 120, confidence: "high" };
+  assert.deepEqual(suspiciousDiffs([normalizePos(off, { day: "2026-10-21" })], { ...SAVED, bankPos: 8795 }), []);
+  assert.deepEqual(suspiciousDiffs([normalizePos(POS, { day: "2026-10-22" })], { ...SAVED, bankPos: 8795 }), []);
+  assert.deepEqual(suspiciousDiffs([normalizePos(POS, { day: "2026-10-21" })], { ...SAVED, bankPos: 8795 }).map((d) => d.field), ["bankPos"]);
 });
 
 test("fiş: toplam (verilen nakit ya da para üstü değil), KDV, özet, kategori; soluk baskı", () => {
@@ -354,7 +431,18 @@ test("fiş: kartla ödenmiş, fatura, tekrar, tarih, kategori listede değil, tu
   assert.ok(normalizeReceipt(big, ctx()).checks.some((x) => plain(x.text) === "Tutar alışılmadık büyük (25.000 ₺); fişle karşılaştırın."));
   const z = clone(FIS);
   z.documentType = "z_report";
-  assert.equal(normalizeReceipt(z, ctx()).error, "Bu bir Z raporu; kasadan çıkan fişi değil.");
+  assert.equal(normalizeReceipt(z, ctx()).error, "Bu bir Z raporu, kasadan ödenen bir fiş değil.");
+  const pos = clone(FIS);
+  pos.documentType = "bank_pos_end_of_day";
+  assert.equal(normalizeReceipt(pos, ctx()).error, "Bu bir banka POS fişi, kasadan ödenen bir fiş değil.");
+});
+
+test("fiş: saklanan okumada satıcının vergi numarası yok (şahıs şirketinde TC kimlik no olabilir)", () => {
+  assert.equal(FIS.storeTaxNo, "6220529513");
+  const stored = receiptToStore(FIS);
+  assert.equal(stored.storeTaxNo, null);
+  assert.deepEqual({ ...stored, storeTaxNo: FIS.storeTaxNo }, FIS);
+  assert.ok(ReceiptRaw.safeParse(stored).success, "saklanan hâl şemaya uyar");
 });
 
 test("harcama tarihi: fişin tarihi kasa gününden en çok 3 gün önceyse o, değilse kasanın günü", () => {
@@ -390,4 +478,38 @@ test("kasadan çıkanlar: ad, akşam raporunun notu, uyarı ve personelin kurall
   assert.equal(staffCategory({ section: "personel", panelGroup: "personel", active: true }), false);
   assert.equal(staffCategory({ section: "genel", panelGroup: "reklam", active: true }), false);
   assert.equal(staffCategory({ section: "mal", panelGroup: "diger", active: false }), false);
+});
+
+test("kasadan çıkanın harcama kaydı: personelin düzeltmesi açmaz ve silmez, geri alma olduğu gibi getirir", () => {
+  const writes = (o: Partial<Parameters<typeof cashOutWritesExpense>[0]>) =>
+    cashOutWritesExpense({ admin: false, mode: "new", kind: "harcama", docType: "fis", requested: false, hasExpense: false, ...o });
+  // Yeni satır: personel kurala göre, yönetici anahtarla
+  assert.equal(writes({}), true);
+  assert.equal(writes({ docType: "yok" }), true);
+  assert.equal(writes({ docType: "fatura", requested: true }), false);
+  assert.equal(writes({ kind: "teslim" }), false);
+  assert.equal(writes({ admin: true }), false);
+  assert.equal(writes({ admin: true, docType: "fatura", requested: true }), true);
+  // Yöneticinin faturaya açtığı kayıt personelin düzeltmesiyle silinmez (tutar değişse de)
+  assert.equal(writes({ mode: "edit", docType: "fatura", hasExpense: true }), true);
+  // Yöneticinin Aylık harcamalar'dan sildiği kayıt personelin düzeltmesiyle geri gelmez
+  assert.equal(writes({ mode: "edit", docType: "fis", requested: true }), false);
+  // Teslime çevrilen satırın kaydı kalkar (kayıt yöneticinin kategorisindeyse eylem reddeder: staffExpenseLocked)
+  assert.equal(writes({ mode: "edit", kind: "teslim", hasExpense: true }), false);
+  // Yönetici düzeltmede anahtarla açar ya da kaldırır
+  assert.equal(writes({ admin: true, mode: "edit", hasExpense: true }), false);
+  assert.equal(writes({ admin: true, mode: "edit", requested: true }), true);
+  // Geri alma silinen satırdaki gibi: faturanın kaydı geri gelir, kaydı olmayan fişe açılmaz
+  assert.equal(writes({ mode: "restore", docType: "fatura", requested: true }), true);
+  assert.equal(writes({ mode: "restore", docType: "fis", requested: false }), false);
+  assert.equal(writes({ admin: true, mode: "restore", requested: true }), true);
+  assert.equal(writes({ mode: "restore", kind: "teslim", requested: true }), false);
+  // Yöneticinin kategorisindeki (ya da kapatılmış kategorideki) kayıt personele kapalı: silme, teslime çevirme, taşıma
+  assert.equal(staffExpenseLocked({ section: "personel", panelGroup: "personel", active: true }), true);
+  assert.equal(staffExpenseLocked({ section: "genel", panelGroup: "reklam", active: true }), true);
+  assert.equal(staffExpenseLocked({ section: "mal", panelGroup: "diger", active: false }), true);
+  assert.equal(staffExpenseLocked({ section: "mal", panelGroup: "diger", active: true }), false);
+  assert.equal(staffExpenseLocked({ section: "genel", panelGroup: "diger", active: true }), false);
+  assert.equal(staffExpenseLocked(null), false);
+  assert.equal(staffExpenseLocked(undefined), false);
 });

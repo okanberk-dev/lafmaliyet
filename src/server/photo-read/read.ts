@@ -5,7 +5,7 @@ import { and, desc, gte, lt, lte } from "drizzle-orm";
 import { normalizePos, normalizeZ } from "@/lib/photo-read/kasa";
 import { POS_TASK, RECEIPT_TASK, SYSTEM, Z_TASK } from "@/lib/photo-read/prompts";
 import type { PhotoReading } from "@/lib/photo-read/reading";
-import { normalizeReceipt } from "@/lib/photo-read/receipt";
+import { normalizeReceipt, receiptToStore } from "@/lib/photo-read/receipt";
 import { KasaPosRaw, KasaZRaw, ReceiptRaw } from "@/lib/photo-read/schemas";
 import { addDays } from "@/lib/reminders";
 import { extractImage, type AiErrorCode } from "@/server/ai/claude";
@@ -71,7 +71,7 @@ export async function readPhotoFor(
   }
   const staff = input.me.role !== "admin";
   const [categories, recent] = await Promise.all([cashOutCategories(input.me.role), recentReceipts(input.day)]);
-  const res = await extractImage({ ...base, task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw });
+  const res = await extractImage({ ...base, task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, stored: receiptToStore });
   if (!res.ok) return failed(res.code, res.message);
   return { reading: { kind: "fis", ...normalizeReceipt(res.data, { day: input.day, categories, recent, staff }) }, readError: null, readCode: null, canRetry: false };
 }

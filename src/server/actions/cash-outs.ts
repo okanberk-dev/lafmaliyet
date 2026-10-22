@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { cashOutLabel, staffCategory, staffToExpenses } from "@/lib/cash-outs";
+import { cashOutLabel, cashOutWritesExpense, staffCategory, staffExpenseLocked } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
@@ -20,8 +20,10 @@ import { attempt, UserError, zAmount, zDate, zOptText } from "./util";
 
 // Gün içinde kasadan çıkanlar (docs/KASA-RAPORU.md, docs/FOTOGRAF.md): personel ve yönetici ekler. Alışveriş satırı
 // Aylık harcamalar'a da yazılabilir; o kayıt expense_entries.cash_out_id ile satıra ve fişin fotoğrafına bağlıdır.
-// Personelin satırı kurala göre yazılır (fiş evet, fatura / e-Arşiv hayır: Paraşüt'ten de gelir), yalnız alım
-// kategorilerinde; teslim hiçbir zaman. Akşam raporunun "Gün içinde kasadan çıkan" tutarı bunlardan dolar.
+// Personelin yeni satırı kurala göre yazılır (fiş evet, fatura / e-Arşiv hayır: Paraşüt'ten de gelir), yalnız alım
+// kategorilerinde; teslim hiçbir zaman. Personelin düzeltmesi kaydı açmaz ve silmez (yöneticinin Aylık harcamalar'daki
+// kararı kalır); geri alma silineni olduğu gibi getirir (cashOutWritesExpense). Akşam raporunun "Gün içinde kasadan
+// çıkan" tutarı bunlardan dolar.
 
 const cashOutSchema = z.object({
   id: z.number().int().positive().nullable(),
@@ -38,8 +40,10 @@ const cashOutSchema = z.object({
   /** Yöneticinin "Aylık harcamalar'a da yaz" anahtarı (personel için sunucu karar verir) */
   toExpenses: z.boolean(),
   photoId: z.number().int().positive().nullable(),
-  /** Harcama kaydının notu (yalnız geri almada) */
+  /** Harcama kaydının notu, açıklaması ve ödeme şekli (yalnız geri almada: silinmeden önceki gibi) */
   expenseNote: zOptText(500).optional(),
+  expenseDescription: zOptText(200).optional(),
+  expensePaymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullish(),
 });
 
 export type CashOutInput = z.input<typeof cashOutSchema>;
@@ -56,11 +60,14 @@ export interface CashOutSnapshot {
   vat: number | null;
   docType: "fis" | "e_arsiv" | "fatura" | "yok";
   photoId: number | null;
-  expense: { categoryId: number; note: string | null } | null;
+  expense: { categoryId: number; note: string | null; description?: string | null; paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null } | null;
 }
 
 const LOCKED = "Bu günün kasasına artık yalnız yönetici ekleyebilir";
 const PHOTO_GONE = "Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin";
+/** Personel, yöneticinin kategorisindeki harcama kaydını kaldıramaz ya da taşıyamaz (staffExpenseLocked) */
+const EXPENSE_LOCKED = "Bu satır yöneticinin harcama kaydına bağlı; silmek için yöneticiye haber verin";
+const EXPENSE_LOCKED_EDIT = "Bu satır yöneticinin harcama kaydına bağlı; türünü ve kategorisini yönetici değiştirir";
 
 /**
  * Geri al: satır silinince fotoğrafı bırakılır (7 gün). Personel başkasının yüklediği fotoğrafı yalnız az önce
@@ -76,28 +83,37 @@ function logDetail(d: z.output<typeof cashOutSchema>, expense: boolean) {
 
 /**
  * Satırı yazar (yeni ya da düzeltme) ve bağlı harcama kaydını kurar, günceller ya da siler; fiş fotoğrafını bağlar
- * (satırın gününden 400 gün) ya da değiştiyse eskisini bırakır. Hepsi tek işlemde. `restore`: geri almada satırın
- * kendi fotoğrafı (az önce bırakılmıştı) başkası yüklemiş olsa da yeniden bağlanır.
+ * (satırın gününden 400 gün) ya da değiştiyse eskisini bırakır. Hepsi tek işlemde. `restore`: silinen satır geri
+ * gelir; harcama kaydı silinmeden önceki gibi kurulur ve satırın kendi fotoğrafı (az önce bırakılmıştı) başkası
+ * yüklemiş olsa da yeniden bağlanır.
  */
 async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts: { restore?: boolean } = {}) {
   const admin = me.role === "admin";
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
   if (!admin && !staffDayOpen(d.date)) throw new UserError(LOCKED);
   const harcama = d.kind === "harcama";
-  const toExpenses = harcama && (admin ? d.toExpenses : staffToExpenses(d.kind, d.docType));
   const db = getDb();
   const saved = await db.transaction(async (tx) => {
     const [prev] = d.id ? await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, d.id)).for("update").limit(1) : [];
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
     if (prev && !admin && !staffDayOpen(prev.date)) throw new UserError(LOCKED);
     const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
+    const mode = opts.restore ? "restore" : prev ? "edit" : "new";
+    const toExpenses = cashOutWritesExpense({ admin, mode, kind: d.kind, docType: d.docType, requested: d.toExpenses, hasExpense: Boolean(existing) });
 
-    // Kategori: personel yalnız alım kategorilerinden (satırın şimdiki kategorisi kalabilir)
+    // Yöneticinin kategorisindeki kayıt: personel tutarı düzeltir, kaydı kaldıramaz (teslime çevirerek) ve taşıyamaz
+    if (!admin && existing && (!toExpenses || d.categoryId !== existing.categoryId)) {
+      const [cur] = await tx.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, existing.categoryId)).limit(1);
+      if (staffExpenseLocked(cur)) throw new UserError(EXPENSE_LOCKED_EDIT);
+    }
+
+    // Kategori: personel yalnız alım kategorilerinden (satırın şimdiki kategorisi kalabilir). Geri almada silinen
+    // kaydın kategorisi sonradan kapatılmış olsa da geri gelir (kayıt onu taşıyordu)
     if (toExpenses) {
       if (!d.categoryId) throw new UserError("Kategori seçin");
       const [cat] = await tx.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, d.categoryId)).limit(1);
       const unchanged = existing?.categoryId === d.categoryId;
-      if (!cat || (!cat.active && !unchanged)) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+      if (!cat || (!cat.active && !unchanged && !opts.restore)) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
       if (!admin && !staffCategory(cat) && !unchanged) throw new UserError("Bu kategoriye yalnız yönetici yazabilir");
     }
 
@@ -134,26 +150,37 @@ async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts:
     // Harcama kaydı: tarih fişin tarihi (kasanın gününden en çok 3 gün önceyse), nakit, "Kasadan · 21 Ekim Salı"
     let expenseId: number | null = null;
     if (toExpenses) {
+      // Satırdan gelenler (tutar ve tarih yalnız buradan düzeltilir)
       const entry = {
         date: expenseDateFor(d.date, values.receiptDate),
         categoryId: d.categoryId!,
-        description: [d.store, d.description].filter(Boolean).join(" · ").slice(0, 200) || null,
         amount: d.amount,
-        paymentMethod: "nakit" as const,
         photoId: d.photoId,
         vat: values.vat,
         cashOutId: row.id,
       };
+      const description = [d.store, d.description].filter(Boolean).join(" · ").slice(0, 200) || null;
       if (existing) {
+        // Yöneticinin Aylık harcamalar'da yazdığı açıklama, ödeme şekli ve not kalır; açıklama yalnız yer ya da ne
+        // alındığı değişince satırdan yeniden yazılır
+        const renamed = prev!.store !== d.store || prev!.description !== d.description;
         await tx
           .update(s.expenseEntries)
-          .set({ ...entry, updatedAt: new Date() })
+          .set({ ...entry, ...(renamed ? { description } : {}), updatedAt: new Date() })
           .where(eq(s.expenseEntries.id, existing.id));
         expenseId = existing.id;
       } else {
+        // Geri almada silinen kaydın açıklaması, ödeme şekli ve notu olduğu gibi
+        const restored = opts.restore ? d : null;
         const [e] = await tx
           .insert(s.expenseEntries)
-          .values({ ...entry, note: d.expenseNote ?? `Kasadan · ${longDateTR(d.date)}`, createdBy: me.name })
+          .values({
+            ...entry,
+            description: restored?.expenseDescription !== undefined ? restored.expenseDescription : description,
+            paymentMethod: restored?.expensePaymentMethod !== undefined ? restored.expensePaymentMethod : "nakit",
+            note: restored?.expenseNote !== undefined ? restored.expenseNote : `Kasadan · ${longDateTR(d.date)}`,
+            createdBy: me.name,
+          })
           .returning({ id: s.expenseEntries.id });
         expenseId = e.id;
       }
@@ -178,7 +205,10 @@ export async function saveCashOut(input: CashOutInput) {
   });
 }
 
-/** Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için kopyası döner */
+/**
+ * Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için kopyası döner. Personel, kaydı
+ * yöneticinin kategorisinde olan satırı silemez (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı).
+ */
 export async function deleteCashOut(id: number) {
   return attempt(async (): Promise<CashOutSnapshot> => {
     const me = await requireUser();
@@ -187,6 +217,15 @@ export async function deleteCashOut(id: number) {
       const [row] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, cid)).for("update").limit(1);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
       if (me.role !== "admin" && !staffDayOpen(row.date)) throw new UserError(LOCKED);
+      if (me.role !== "admin") {
+        const [cur] = await tx
+          .select({ section: s.expenseCategories.section, panelGroup: s.expenseCategories.panelGroup, active: s.expenseCategories.active })
+          .from(s.expenseEntries)
+          .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+          .where(eq(s.expenseEntries.cashOutId, cid))
+          .limit(1);
+        if (staffExpenseLocked(cur)) throw new UserError(EXPENSE_LOCKED);
+      }
       const [entry] = await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, cid)).returning();
       await tx.delete(s.cashOuts).where(eq(s.cashOuts.id, cid));
       if (row.photoId) await releasePhoto(row.photoId, RELEASED_DAYS, tx);
@@ -201,7 +240,7 @@ export async function deleteCashOut(id: number) {
         vat: row.vat,
         docType: row.docType,
         photoId: row.photoId,
-        expense: entry ? { categoryId: entry.categoryId, note: entry.note } : null,
+        expense: entry ? { categoryId: entry.categoryId, note: entry.note, description: entry.description, paymentMethod: entry.paymentMethod } : null,
       };
       return out;
     });
@@ -211,7 +250,10 @@ export async function deleteCashOut(id: number) {
   });
 }
 
-/** Silineni geri getirir (yeni satır; harcama kaydı ve fotoğraf yeniden bağlanır) */
+/**
+ * Silineni geri getirir (yeni satır; fotoğraf yeniden bağlanır). Harcama kaydı silinmeden önceki gibi: varsa aynı
+ * kategori, açıklama, ödeme şekli ve notla geri gelir, yoksa açılmaz (personelde de).
+ */
 export async function restoreCashOut(snap: CashOutSnapshot) {
   return attempt(async () => {
     const me = await requireUser();
@@ -230,6 +272,8 @@ export async function restoreCashOut(snap: CashOutSnapshot) {
       toExpenses: snap.expense !== null,
       photoId: snap.photoId,
       expenseNote: snap.expense?.note ?? null,
+      expenseDescription: snap.expense?.description,
+      expensePaymentMethod: snap.expense?.paymentMethod,
     });
     return persist(me, d, { restore: true });
   });

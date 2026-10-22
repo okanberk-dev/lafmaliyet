@@ -127,7 +127,7 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
 test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı yazılan; kasadan çıkanlar altında; adres yok", () => {
   const extras = {
     photos: { z: true, pos: true },
-    photoDiffs: [{ field: "card" as const, label: "Kart", photo: 8_915, saved: 8_150, confidence: "high" as const, readingWarned: false }],
+    photoDiffs: [{ field: "card" as const, label: "Kart", photo: 8_915, saved: 8_150, confidence: "high" as const, excused: false }],
     cashOuts: [
       { kind: "harcama" as const, amount: 112.5, store: "Migros", description: "süt, beyaz peynir", photo: true },
       { kind: "harcama" as const, amount: 37.5, store: null, description: "buz", photo: false },

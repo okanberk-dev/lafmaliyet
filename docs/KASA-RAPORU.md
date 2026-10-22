@@ -40,7 +40,10 @@ kaydedilmez:** personel bakıp **Raporu gönder**'e basar.
   kesik fotoğraf.
 - Z bölümüne POS fişi çekilirse hiçbir alan dolmaz: "Bu bir banka POS gün sonu fişi gibi görünüyor" ve
   **Kart bölümüne okut**. Tersi için **Z bölümüne okut**.
-- İki POS cihazı varsa ikinci fişte **Toplama ekle** ya da **Yerine yaz** sorulur.
+- İki POS cihazı varsa ikinci fişte **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net değilse
+  soruda söylenir; seçilen tutar turuncu kalır, fişle karşılaştırın.
+- Uzun bir Z raporu tek fotoğrafta okunmuyorsa üst ve alt yarısını ayrı çekin: ikinci fotoğraf yalnız boş alanları
+  doldurur.
 - **Kaldır** fotoğrafı formdan çıkarır (ondan dolan ve değiştirilmemiş alanlar boşalır). Gönderilmeyen fotoğraf 2
   günde silinir.
 - Okuma kapalıysa ya da bu ortamda kurulu değilse fotoğraf yine kanıt olarak eklenir, rakamlar elle yazılır.
@@ -59,8 +62,12 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   "Aylık harcamalar'a da yaz"ı seçer. Personel yalnız alım ve genel gider kategorilerini seçebilir.
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
-- Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye). Gün personele kapanınca (dünden eskisi) yalnız
-  yönetici ekler ve düzeltir.
+- Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi geri
+  gelir). Gün personele kapanınca (dünden eskisi) yalnız yönetici ekler ve düzeltir.
+- Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
+  faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
+  Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırı personel silemez, türünü ve kategorisini değiştiremez:
+  "yöneticiye haber verin".
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
 
@@ -95,10 +102,10 @@ gece yarısında biter (kasanınki 05:00'te). Ayrıntı: [SITE-SATIS.md](SITE-SA
 
 - **Günden güne:** ayın her günü bir satır, rapor girilmeyen günler dahil. Satırda Z toplamı, nakit / kart, kasa
   farkı rozeti, kart farkı ve "Z tutmuyor" işaretleri var. Fotoğraflı raporda fotoğraf simgesi; net okunmuş bir
-  rakamdan farklı yazılan alan varsa **Fotoğraftan farklı** rozeti (soluk okumanın düzeltilmesi sayılmaz). Satıra
-  dokununca ayrıntı açılır: fotoğraflar (büyütülür, yönetici siler; rapor kalır), fotoğraftan farklı yazılanlar,
-  kasadan çıkan satırlar, WhatsApp, düzenle, e-postayı yeniden gönder, sil. Silinen raporun fotoğrafları 30 gün
-  saklanır.
+  rakamdan farklı yazılan alan varsa **Fotoğraftan farklı** rozeti (turuncu bir alanın ya da başka güne ait fişin
+  düzeltilmesi sayılmaz). Satıra dokununca ayrıntı açılır: fotoğraflar (büyütülür, yönetici siler; rapor kalır),
+  fotoğraftan farklı yazılanlar, kasadan çıkan satırlar, WhatsApp, düzenle, e-postayı yeniden gönder, sil. Silinen
+  raporun fotoğrafları 30 gün saklanır.
 - **Ay özeti:** Z toplamı, net kasa farkı, eksik ve fazlaların toplamı, rapor girilen gün sayısı.
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
   E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).

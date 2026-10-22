@@ -54,8 +54,9 @@ export function CashOutsCard({
   reading: ReadingState;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  // Her açılış yeni bir pencere (önceki taslak kalmasın)
+  // Her açılış yeni bir pencere (önceki taslak kalmasın); `shown` açık pencerenin anahtarı (kapalıysa null)
   const opened = useRef(0);
+  const shown = useRef<number | null>(null);
   const up = usePhotoUpload();
   const [dialog, setDialog] = useState<{ key: number; mode: CashOutDialogMode } | null>(null);
   const [uploaded, setUploaded] = useState<PhotoUploadResponse | null>(null);
@@ -64,24 +65,34 @@ export function CashOutsCard({
   const read = reading === "on";
 
   const open = (mode: CashOutDialogMode) => {
-    up.reset();
+    // Süren yükleme sıfırlanmaz: "Fiş ekle" o bitene kadar kapalı kalır
+    if (!up.busy) up.reset();
     setUploaded(null);
     opened.current += 1;
+    shown.current = opened.current;
     setDialog({ key: opened.current, mode });
+    return opened.current;
+  };
+  const close = () => {
+    shown.current = null;
+    setDialog(null);
   };
 
+  // Yükleme ya da yeniden okuma yalnız onu başlatan pencereye yazılır: pencere kapandıysa ya da yenisi açıldıysa geç
+  // gelen yanıt atlanır (iki fişin fotoğrafı ve rakamları karışmasın; fotoğraf bağlanmadığı için 2 günde silinir)
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    open({ mode: "photo" });
+    const key = open({ mode: "photo" });
     const res = await up.upload(file, { kind: "fis", day: date, read });
-    if (res) setUploaded(res);
+    if (res && shown.current === key) setUploaded(res);
   }
 
   async function retry(photoId: number) {
+    const key = shown.current;
     const res = await up.reread(photoId, "fis", date);
-    if (res) setUploaded(res);
+    if (res && key !== null && shown.current === key) setUploaded(res);
   }
 
   return (
@@ -168,7 +179,7 @@ export function CashOutsCard({
           phase={dialog.mode.mode === "photo" ? up.phase : { kind: "idle" }}
           uploaded={dialog.mode.mode === "photo" ? uploaded : null}
           onRetry={(id) => void retry(id)}
-          onClose={() => setDialog(null)}
+          onClose={close}
         />
       ) : null}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />

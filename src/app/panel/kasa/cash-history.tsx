@@ -154,7 +154,7 @@ export function CashHistory({
                       {report.note ? ` · ${report.note.slice(0, 60)}${report.note.length > 60 ? "…" : ""}` : ""}
                     </span>
                   </span>
-                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <span className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5">
                     {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}

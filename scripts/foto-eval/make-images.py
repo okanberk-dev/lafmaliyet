@@ -3,7 +3,7 @@
 Termal fiş görünümü + telefonla çekilmiş etkisi (eğim, perspektif, ışık, bulanıklık, gürültü), sonra 1600 px / JPEG
 0.7 (telefondaki küçültmeyle aynı). İlk dördü canlıda denenen görsellerdir (docs/planlar/ekler/fotograf-eval/img);
 kalanlar lansmandan önce eklenen durumlar: ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi,
-e-Arşiv fatura. Veri sentetiktir; gerçek fiş ya da kişi yoktur.
+e-Arşiv fatura, tek fotoğrafta uzun Z raporu. Veri sentetiktir; gerçek fiş ya da kişi yoktur.
 
     python3 -m pip install pillow numpy
     python3 scripts/foto-eval/make-images.py            # → .data/foto-eval/
@@ -150,4 +150,17 @@ EARSIV = [
     "Mal Hizmet Toplam|485,00", "KDV %20|97,00", "**Ödenecek Tutar|582,00", "", "Ödeme şekli: NAKİT",
 ]
 photo(receipt(EARSIV, width=620, size=20, fade=0.05), "e-arsiv.jpg", angle=-1.5, light=0.2, blur=0.6)
+
+# Uzun Z raporu tek fotoğrafta (ürün grupları, saatlik satış, iptaller, personel; ~35 cm): 1600 px'e inince rulo ~270
+# px eninde kalır. Okunmuyorsa iki parça çekilir ya da PHOTO_COMPRESS büyütülür (docs/FOTOGRAF.md § 3). En sonda:
+# öncekilerin rastgele sırası değişmesin
+GROUPS = ["SICAK İÇECEK|4.812,00", "SOĞUK İÇECEK|2.215,50", "TATLI|2.640,00", "AFFOGATO|1.420,00", "KAHVALTI|980,00", "SANDVİÇ|608,00", "PAKETLİ ÜRÜN|300,00"]
+HOURLY = ["420,00", "610,50", "705,00", "980,00", "1.140,00", "860,00", "935,00", "1.020,00", "1.180,00", "1.090,00", "1.245,00", "1.110,00", "880,00", "520,00", "280,00"]
+Z_LONG = Z[:-1] + [
+    "-" * 40, "**ÜRÜN GRUPLARI", *GROUPS, "-" * 40,
+    "**SAATLİK SATIŞ", *[f"{h:02d}:00-{h + 1:02d}:00|{v}" for h, v in zip(range(9, 24), HOURLY)], "-" * 40,
+    "**İPTAL / İADE", "İPTAL FİŞ 2 ADET|86,00", "İADE FİŞ 0 ADET|0,00", "-" * 40,
+    "**PERSONEL", "AYŞE|58 FİŞ", "MEHMET|51 FİŞ", "ZEYNEP|34 FİŞ", "", Z[-1],
+]
+photo(receipt(Z_LONG, fade=0.15), "z-uzun.jpg", angle=-1.5)
 
