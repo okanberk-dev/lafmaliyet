@@ -16,6 +16,9 @@ import { KaraokeBoard } from "./karaoke-board";
 import { OrdersBoard } from "./orders-board";
 
 export const metadata: Metadata = { title: "Karaoke" };
+// Siparişin aşama düğmesi bu sayfanın sunucu eylemiyle siteye gider (en çok 8 saniye), ardından listeyi siteden
+// yeniden çeker (en çok 8 saniye daha); "Şimdi eşitle" de siteye gider
+export const maxDuration = 30;
 
 export default function KaraokePage() {
   return (

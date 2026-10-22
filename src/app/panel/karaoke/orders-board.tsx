@@ -1,8 +1,23 @@
 "use client";
 
-import { BellOff, BookOpen, Clock, ExternalLink, RefreshCw, ShoppingBag, TriangleAlert } from "lucide-react";
+import {
+  BellOff,
+  Bike,
+  BookOpen,
+  Check,
+  Clock,
+  CookingPot,
+  ExternalLink,
+  HandPlatter,
+  LoaderCircle,
+  PackageCheck,
+  RefreshCw,
+  ShoppingBag,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { useClock } from "@/components/panel/live/clock";
@@ -10,7 +25,7 @@ import { updatePrefs, usePrefs } from "@/components/panel/live/prefs";
 import { pushSupport } from "@/components/panel/live/push-client";
 import { refreshLive, useLive } from "@/components/panel/live/store";
 import { Badge, type Tone } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import type { Role } from "@/lib/constants";
 import { dateTimeTR, num } from "@/lib/format";
@@ -18,8 +33,10 @@ import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
 import { lineLabel, minutesSince, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitLabel } from "@/lib/site-orders/feed";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
+import { stageButtons, type StageAction, type StageButton } from "@/lib/site-orders/stage";
 import { lineSlot } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
+import { advanceSiteOrder } from "@/server/actions/site-orders";
 
 /** Ekran açılınca ya da öne gelince son çekme bundan eskiyse site sorulur */
 const OPEN_STALE_MS = 60_000;
@@ -61,8 +78,9 @@ const recent = (iso: string | null | undefined, nowMs: number) => Boolean(iso) &
 /**
  * Bar ekranının "Uygulama siparişleri" bölümü (docs/SITE-SIPARIS.md): laffogato.net'te (uygulama ve web) ödenmiş, hâlâ
  * açık kafe siparişleri. Kart: nereye ("Masa 4", "Gel-al", "Kurye"), aşama, planlı saat, müşterinin adı, satırlar,
- * ödemeden bu yana geçen süre ve siparişi sitenin panelinde açan "Sitede aç" (hazırlanıyor / teslime hazır orada
- * işaretlenir; bu panel siparişi ilerletmez). Zil kabuktaki uyarı motorunda çalar (alert-center.tsx).
+ * ödemeden bu yana geçen süre, aşamayı tek dokunuşla ilerleten düğmeler (Hazırlanıyor, Hazır / Masaya götürüldü /
+ * Kuryeye verildi, Teslim edildi; sitenin aşama ucuna gider, src/server/actions/site-orders.ts) ve siparişi sitenin
+ * panelinde açan "Sitede aç" (iade ve iptal orada). Zil kabuktaki uyarı motorunda çalar (alert-center.tsx).
  *
  * Veri canlı uçtan gelir; ekran ayrıca siteyi yeniden çektirir: açılınca ve öne gelince (son çekme bir dakikadan
  * eskiyse), yoğunken üç dakikada, sakinken saatte bir (ping kaçtıysa diye). Sürekli sorgu yok.
@@ -126,7 +144,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
       <CardHeader
         icon={<ShoppingBag />}
         title="Uygulama siparişleri"
-        description="laffogato.net'te (uygulama ve web) ödenmiş kafe siparişleri. Hazırlanıyor ve teslime hazır, sitenin panelinde işaretlenir."
+        description="laffogato.net'te (uygulama ve web) ödenmiş kafe siparişleri. Aşamayı buradan tek dokunuşla ilerletin; iade ve iptal sitenin panelinde."
         meta={
           list.length ? (
             <>
@@ -203,20 +221,67 @@ function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
   );
 }
 
+/** Düğmenin simgesi: hazırlanıyor, gel-al hazır, masaya, kuryeye, teslim */
+function stageIcon(b: StageButton, order: Pick<SiteOrder, "fulfillment">): LucideIcon {
+  if (b.action === "preparing") return CookingPot;
+  if (b.action === "delivered") return PackageCheck;
+  return order.fulfillment === "table" ? HandPlatter : order.fulfillment === "delivery" ? Bike : Check;
+}
+
+/**
+ * Eylemden sonra canlı veri. refreshLive yolda bir istek varsa onu bekler; o istek eylemden önce gönderildiyse eski
+ * listeyle dönebilir, ikinci çağrı yeni hâli alır (yolda istek yoksa ikincisi 304).
+ */
+async function refreshAfterAction(): Promise<void> {
+  await refreshLive();
+  await refreshLive();
+}
+
+/**
+ * Kartın aşama düğmeleri: tek dokunuş, onay sorulmaz. İstek sürerken kartın bütün düğmeleri kapalı; çift dokunuş
+ * (geçiş başlamadan gelen ikinci dokunuş) gönderilmez. Sonuç bildirimle söylenir, ekran canlı uçtan yenilenir.
+ */
+function useStageAction(o: SiteOrder) {
+  const [pending, start] = useTransition();
+  const [tapped, setTapped] = useState<StageAction | null>(null);
+  const busy = useRef(false);
+  const advance = (action: StageAction) => {
+    if (busy.current) return;
+    busy.current = true;
+    setTapped(action);
+    start(async () => {
+      try {
+        const res = await advanceSiteOrder({ id: o.id, action, from: o.stage });
+        if (res.ok) toast.success(res.data.message, res.data.note ? { description: res.data.note } : undefined);
+        else toast.error(res.error);
+      } catch {
+        toast.error("Panele ulaşılamadı; bağlantıyı kontrol edip tekrar deneyin.");
+      } finally {
+        await refreshAfterAction();
+        busy.current = false;
+        setTapped(null);
+      }
+    });
+  };
+  return { pending: pending || tapped !== null, tapped, advance };
+}
+
 function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now: number; siteBase: string; recipes: Record<string, string> }) {
   const url = siteOrderUrl(siteBase, o.path);
   const planned = scheduleLabel(o.scheduledFor, now);
   const waited = minutesSince(o.paidAt, now);
   const table = o.fulfillment === "table";
   const isNew = o.stage === "new";
+  const buttons = stageButtons(o);
+  const { pending, tapped, advance } = useStageAction(o);
   return (
     <li
       className={cn(
         "flex min-w-0 flex-col gap-2.5 rounded-2xl bg-surface p-3.5 ring-1 ring-line",
         isNew && "ring-2 ring-brass-500",
         isNew && table && "bg-warn-soft/60",
-        o.stage === "ready" && "opacity-80",
       )}
+      aria-busy={pending || undefined}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -235,7 +300,7 @@ function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now
           {STAGE_LABEL[o.stage]}
         </Badge>
       </div>
-      <ul className="space-y-1 text-[15px] leading-6 text-ink">
+      <ul className={cn("space-y-1 text-[15px] leading-6", o.stage === "ready" ? "text-ink-mute" : "text-ink")}>
         {o.lines.map((l, i) => {
           const recipe = l.menuItemId ? recipes[`${l.menuItemId}|${lineSlot(l.size)}`] : undefined;
           return (
@@ -259,21 +324,45 @@ function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now
           );
         })}
       </ul>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5">
-        <span className={cn("text-[13px] tabular", isNew && waited >= 10 ? "font-semibold text-warn" : "text-ink-mute")}>
-          Ödendi · {waitLabel(waited)}
-          {waited >= 1 ? " önce" : ""}
-        </span>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[10px] bg-ink px-3 text-[13px] font-medium text-white hover:bg-ink/85 pointer-coarse:h-11"
-            title="Siparişi sitenin panelinde aç (hazırlanıyor / teslime hazır orada işaretlenir)"
-          >
-            Sitede aç <ExternalLink size={13} aria-hidden="true" />
-          </a>
+      <div className="mt-auto space-y-2.5 border-t border-line pt-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className={cn("text-[13px] tabular", isNew && waited >= 10 ? "font-semibold text-warn" : "text-ink-mute")}>
+            Ödendi · {waitLabel(waited)}
+            {waited >= 1 ? " önce" : ""}
+          </span>
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonClass("secondary", "sm")}
+              title="Siparişi sitenin panelinde aç (iade ve iptal orada)"
+            >
+              Sitede aç <ExternalLink size={13} aria-hidden="true" />
+            </a>
+          ) : null}
+        </div>
+        {buttons.length ? (
+          // Barın dokunmatik ekranı: büyük düğmeler; dar kartta alt alta, genişte yan yana
+          <div className="flex flex-wrap gap-2">
+            {buttons.map((b) => {
+              const Icon = stageIcon(b, o);
+              return (
+                <Button
+                  key={b.action}
+                  variant={b.primary ? "primary" : "secondary"}
+                  size="lg"
+                  className="h-auto min-h-12 flex-1 basis-40 py-2 text-center text-base leading-tight whitespace-normal"
+                  disabled={pending}
+                  onClick={() => advance(b.action)}
+                  aria-label={`${o.label} #${o.orderNo}: ${b.label}`}
+                >
+                  {tapped === b.action ? <LoaderCircle size={18} className="shrink-0 animate-spin" aria-hidden="true" /> : <Icon size={18} className="shrink-0" aria-hidden="true" />}
+                  {b.label}
+                </Button>
+              );
+            })}
+          </div>
         ) : null}
       </div>
     </li>

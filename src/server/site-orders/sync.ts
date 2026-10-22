@@ -17,8 +17,10 @@ import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
  * (`site_orders_version`, canlı ucun ETag'i) yeni listeyi alır; ilk kez görülen yeni siparişte zil çalar ve cihazlara
  * bildirim gider.
  *
- * Panel siparişi ilerletmez: "Hazırlanıyor", "Teslime hazır" sitenin panelinde yapılır, ekran her siparişte oraya
- * giden bağlantıyı taşır. KVKK: panele yalnız müşterinin adı gelir; adlar günlüğe ve işlem geçmişine yazılmaz.
+ * Aşamayı panel kendisi yazmaz: bar ekranının düğmeleri sitenin imzalı aşama ucuna gider
+ * (src/server/actions/site-orders.ts), site kendi durum makinesini işletir ve panel listeyi bu dosyadaki çekmeyle
+ * yeniden alır. Son listenin kopyasını yalnız `syncSiteOrders` yazar. İade ve iptal yalnız sitenin panelinde. KVKK:
+ * panele yalnız müşterinin adı gelir; adlar günlüğe ve işlem geçmişine yazılmaz.
  */
 
 const STATE_KEY = "site_orders_sync";
