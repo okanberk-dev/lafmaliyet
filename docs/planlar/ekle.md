@@ -19,9 +19,9 @@ Base: `claude/kalan-isler` after wave 1 (ops-backup, vkn). Conventions as in `BR
    product with its recipe from Reçete defteri; the admin opens it in Reçete onayları, sees the cost, types the sales
    price and approves; only then is the product created (active, with the recipe). Same bell, same pages, same
    "Önerilerim" list. The admin keeps using Ürünler › Yeni ürün directly.
-3. **The seven items** are added to every database that already has data by one guarded data migration (custom SQL),
+3. **The seven items** (plus **Klips kapak**, asked for later the same day: eight in all) are added to every database that already has data by one guarded data migration (custom SQL),
    following the Excel convention for items not seen on invoices: supplier `(faturada yok)`, `is_estimate = true`, a
-   price estimated from the same family (DVG syrup 750 ml ≈ 760 ₺, DVG sauce 2 L ≈ 1.352 ₺, DVG purée 1 L ≈ 1.080 ₺).
+   price estimated from the same family (DVG syrup 750 ml ≈ 760 ₺, DVG sauce 2 L ≈ 1.352 ₺, DVG purée 1 L ≈ 1.080 ₺, lid 1.000 adet ≈ 1.165 ₺ like Kapak 8-12oz).
    A fresh empty database gets nothing (the Excel seed must still run there); a name that already exists
    (case-insensitive) is skipped. The first Paraşüt price replaces the estimate (pricing's ±40 % hold applies).
 
@@ -66,7 +66,7 @@ Base: `claude/kalan-isler` after wave 1 (ops-backup, vkn). Conventions as in `BR
 - Hammaddeler: such rows already show "Tahmini"; if there is no visible cue for price 0, add a small `Fiyat yok`
   badge (admin only page).
 
-## 3. The seven items (migration `sayim_yeni_kalemler`, custom SQL)
+## 3. The eight items (migration `sayim_yeni_kalemler`, custom SQL)
 
 `npm run db:generate -- --custom --name sayim_yeni_kalemler`, then write the SQL (one statement per breakpoint):
 
@@ -79,8 +79,9 @@ Base: `claude/kalan-isler` after wave 1 (ops-backup, vkn). Conventions as in `BR
 | Vanilya sos | Sos & Şurup | ml | LT | SOS / ŞURUP / PÜRE | Sos 2 L | 2000 | 1352 |
 | Yaban mersini püre | Püre | ml | LT | SOS / ŞURUP / PÜRE | Püre 1 L | 1000 | 1080 |
 | Böğürtlen püre | Püre | ml | LT | SOS / ŞURUP / PÜRE | Püre 1 L | 1000 | 1080 |
+| Klips kapak | Ambalaj | adet | ADET | AMBALAJ MALZEMELERİ | Klips kapak, 1.000 adet | 1000 | 1165 |
 
-All: supplier `(faturada yok)`, `vat_rate` 0.01, `is_estimate` true, `price_source` manual, `active` true,
+All: supplier `(faturada yok)`, `vat_rate` 0.01 (Klips kapak: 0.2, like the other lids), `is_estimate` true, `price_source` manual, `active` true,
 `sort_order` after the current maximum, one `ingredient_prices` row each (`changed_by` `Sistem`, note
 `Sayım listesine eklendi (tahmini fiyat)`) so the estimate has a history start like the Excel rows.
 Guards: insert only `WHERE EXISTS (SELECT 1 FROM ingredients)` (a fresh database stays empty, so `db:seed` still
