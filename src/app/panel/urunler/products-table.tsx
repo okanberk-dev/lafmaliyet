@@ -1015,7 +1015,7 @@ export function ProductsTable({
             {paged.slice.map((r) => (
               <li
                 key={r.id}
-                className="relative rounded-2xl px-3 py-3.5 transition-colors has-[[data-card-link]:active]:bg-surface/70 has-[[data-card-link]:hover]:bg-surface/50"
+                className="relative rounded-2xl px-3 py-3.5 transition-colors has-[[data-card-link]:active]:bg-surface/70 [@media(hover:hover)]:has-[[data-card-link]:hover]:bg-surface/50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <ProductName r={r} compact month={month} />
