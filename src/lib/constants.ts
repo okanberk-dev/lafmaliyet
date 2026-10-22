@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
  */
 export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>): Settings {
   const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
-  for (const r of rows) if (r.key in DEFAULT_SETTINGS) out[r.key] = r.value;
+  for (const r of rows) if (Object.hasOwn(DEFAULT_SETTINGS, r.key)) out[r.key] = r.value;
   return out as unknown as Settings;
 }
 

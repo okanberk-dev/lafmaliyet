@@ -61,6 +61,7 @@ test("formülde geçen ölçüler: tam adla, okunamayan formülde boş", () => {
   assert.deepEqual([...formulaParams("=2*Pompa")], ["pompa"]);
   assert.deepEqual([...formulaParams("Pompa + PurePompa")].sort(), ["pompa", "pompaPure"]);
   assert.deepEqual([...formulaParams("2*ShotCift")], ["shotCift"]);
+  assert.deepEqual([...formulaParams("1,5*PürePompa")], ["pompaPure"]);
   assert.equal(formulaParams("45").size, 0);
   assert.equal(formulaParams("2*Bilinmeyen").size, 0);
   assert.equal(formulaParams("2 $ Pompa").size, 0);
@@ -72,11 +73,13 @@ test("kaydı olmayan veritabanı varsayılanı okur; kayıtlı değer ve bilinme
     { key: "pompa", value: 12 },
     { key: "shotTek", value: 9 },
     { key: "eskiAyar", value: 5 },
+    { key: "constructor", value: 1 },
   ]);
   assert.equal(before.pompaPure, 30);
   assert.equal(before.pompa, 12);
   assert.equal(before.shotTek, 9);
   assert.equal("eskiAyar" in before, false);
+  assert.equal(Object.hasOwn(before, "constructor"), false);
   assert.equal(settingsFromRows([]).pompaPure, 30);
   assert.equal(settingsFromRows([{ key: "pompaPure", value: 25 }]).pompaPure, 25);
   // Excel verisinde de yok: seed varsayılanı yazar
