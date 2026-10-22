@@ -243,7 +243,9 @@ test("sabah e-postası: zam bölümüne aylık kayıp ve hammadde satırına ayd
   // Konu değişmez
   assert.equal(withLoss.subject, old.subject);
   assert.match(withLoss.html, /Bu zamlar ayda ≈ 7\.850 ₺ kâr götürüyor \(Eylül 2026 satışlarıyla\)\./);
-  assert.match(withLoss.html, /· ayda ≈ 690 ₺/);
+  // Aylık tutar fiyatların altında kendi satırında: kaydırmasız hücrede aynı satırda e-posta telefonda taşardı
+  assert.match(withLoss.html, /\+%16<\/span><div style="[^"]*">ayda ≈ 690 ₺<\/div><\/td>/);
+  assert.doesNotMatch(withLoss.html, / · ayda/);
   assert.match(withLoss.text, /Bu zamlar ayda ≈ 7\.850 ₺ kâr götürüyor \(Eylül 2026 satışlarıyla\)\./);
   assert.match(withLoss.text, /- Süt: .*\(\+%16\) · ayda ≈ 690 ₺/);
   // Satış ayı yok ya da tutar 1 ₺'den az: ek yazılmaz

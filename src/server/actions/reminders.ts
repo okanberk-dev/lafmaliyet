@@ -10,6 +10,7 @@ import {
   advancePast,
   dueNotifications,
   endOfMonthAnchor,
+  FIXED_REMINDER_NOTE,
   isLastDayOfMonth,
   nextOccurrence,
   postponeDate,
@@ -382,7 +383,7 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       anchorDate: dueDate,
       repeat,
       remindDaysBefore: 3,
-      note: "Sabit giderlerden",
+      note: FIXED_REMINDER_NOTE,
     });
     await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}`);
     refresh();

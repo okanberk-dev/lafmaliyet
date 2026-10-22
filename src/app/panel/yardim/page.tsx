@@ -407,9 +407,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> ekranındaki Hammadde zamları kartı, son 30 günde fiyatı artan malzemelerin ayda kaç lira kâr götürdüğünü yazar: her ürünün
-            maliyet artışı (zayi dahil) son satış ayındaki adediyle çarpılır; adetler Ayarlar&apos;daki ayda açık gün sayısına çevrilir. Toplamı Genel bakış&apos;taki
-            uyarıda, zilde ve sabah e-postasında da yazar; ürün kartı o ürünün payını gösterir. Satışlar&apos;a ürün satış raporu yüklenmemişse yalnız birim maliyet
-            farkı görünür; ürüne eşleşmeyen satışlar sayılmaz. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
+            maliyet artışı (fire payı dahil; Zayi &amp; ikram kayıtları sayılmaz) son satış ayındaki adediyle çarpılır; adetler Ayarlar&apos;daki ayda açık gün
+            sayısına çevrilir. Toplamı Genel bakış&apos;taki uyarıda, zilde ve sabah e-postasında da yazar; ürün kartı o ürünün payını gösterir. Satışlar&apos;a ürün
+            satış raporu yüklenmemişse yalnız birim maliyet farkı görünür; ürüne eşleşmeyen satışlar sayılmaz. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
           </>
         ),
         icon: TrendingUp,

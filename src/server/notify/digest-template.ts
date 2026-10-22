@@ -64,8 +64,8 @@ export interface DigestPrices {
 
 const MAX_PRICE_ROWS = 6;
 const pctText = (v: number) => `%${Math.round(v * 100)}`;
-/** Zam satırının sağındaki ek: " · ayda ≈ 690 ₺" (1 ₺'den azsa ya da satış ayı yoksa boş) */
-const monthlyText = (v: number | null | undefined) => (v != null && v >= 1 ? ` · ayda ≈ ${tl(v)}` : "");
+/** Zammın ayda götürdüğü kâr: "ayda ≈ 690 ₺" (1 ₺'den azsa ya da satış ayı yoksa boş) */
+const monthlyText = (v: number | null | undefined) => (v != null && v >= 1 ? `ayda ≈ ${tl(v)}` : "");
 /** Zam bölümünün başlığının altındaki cümle (satış ayı yoksa ya da kayıp 1 ₺'den azsa boş) */
 function lossSentence(p: DigestPrices): string {
   if (p.monthlyTotal == null || p.monthlyTotal < 1 || !p.basisMonth) return "";
@@ -280,9 +280,13 @@ export function renderDigest(
 </table>${zamLoss ? `\n<div style="font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412;padding:10px 0 2px;font-weight:600">${esc(zamLoss)}</div>` : ""}
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${zam.changes
         .slice(0, MAX_PRICE_ROWS)
-        .map(
-          (c) => `<tr><td style="padding:8px 0;font-family:${FONT};font-size:14px;line-height:19px;color:#171717">${esc(c.name)}</td><td align="right" style="padding:8px 0 8px 12px;font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;white-space:nowrap">${esc(perUnit(c.before, c.unit))} → <strong style="color:#171717">${esc(perUnit(c.after, c.unit))}</strong> <span style="color:#c2410c;font-weight:600">+${esc(pctText(c.pct))}</span>${monthlyText(c.monthly) ? `<span style="color:#c2410c">${esc(monthlyText(c.monthly))}</span>` : ""}</td></tr>`,
-        )
+        .map((c) => {
+          // Aylık tutar fiyatların altında kendi satırında: aynı satırda kaydırmasız (nowrap) hücre e-postayı telefon
+          // genişliğinden taşırırdı. İki satırlı hücrede ad üste hizalanır; tutar yoksa satır eskisinin aynısı
+          const monthly = monthlyText(c.monthly);
+          const top = monthly ? "vertical-align:top;" : "";
+          return `<tr><td style="padding:8px 0;${top}font-family:${FONT};font-size:14px;line-height:19px;color:#171717">${esc(c.name)}</td><td align="right" style="padding:8px 0 8px 12px;${top}font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;white-space:nowrap">${esc(perUnit(c.before, c.unit))} → <strong style="color:#171717">${esc(perUnit(c.after, c.unit))}</strong> <span style="color:#c2410c;font-weight:600">+${esc(pctText(c.pct))}</span>${monthly ? `<div style="font-size:12px;line-height:16px;color:#c2410c">${esc(monthly)}</div>` : ""}</td></tr>`;
+        })
         .join("\n")}</table>${
         zam.products.length
           ? `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#3f3f46;padding:14px 0 0;font-weight:600">Fiyatına bakılacak ürünler · ${zam.productCount}</div>
@@ -368,7 +372,7 @@ export function renderDigest(
           "",
           `Hammadde zamları (${zam.changes.length})`,
           ...(zamLoss ? [zamLoss] : []),
-          ...zam.changes.slice(0, MAX_PRICE_ROWS).map((c) => `- ${c.name}: ${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} (+${pctText(c.pct)})${monthlyText(c.monthly)}`),
+          ...zam.changes.slice(0, MAX_PRICE_ROWS).map((c) => `- ${c.name}: ${perUnit(c.before, c.unit)} → ${perUnit(c.after, c.unit)} (+${pctText(c.pct)})${monthlyText(c.monthly) ? ` · ${monthlyText(c.monthly)}` : ""}`),
           ...(zam.products.length
             ? [
                 `Fiyatına bakılacak ürünler (${zam.productCount})`,

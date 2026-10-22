@@ -57,6 +57,9 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
           <p>{VAT_DISCLAIMER}</p>
           {vat.baseMode === "reminder" ? (
             <p>Muhasebeciniz tutarı söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın; plan onu kullanır.</p>
+          ) : muted ? (
+            // Hatırlatıcı yok ve tahmin kapalı: ayın 28'ine bir şey yazılmadı
+            <p>KDV tahmini plana katılmıyor; Tahmine katılanlar&apos;dan açabilirsiniz.</p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <p className="min-w-0 flex-1">Ödemeler&apos;de KDV hatırlatıcısı yok; tahmin ayın 28&apos;ine yazıldı.</p>

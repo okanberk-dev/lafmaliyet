@@ -372,13 +372,21 @@ export function reminderCategory(kind: ReminderKind, title: string): ReminderCat
   return kind === "diger" ? "diger" : "odeme";
 }
 
+/** "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı not: Ödemeler'de kaynağı, nakit planında bordro olmadığını gösterir */
+export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
+
+// KDV tevkifatı (2 No.lu KDV beyannamesi, "KDV2"): ayrı beyanname ve ödeme. Asıl KDV sayılsa tutarı o ayın kesin KDV'si
+// olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı
+const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\s*(no|numara)/;
+
 /**
  * KDV ödemesi hatırlatıcısı (nakit planının KDV tahmini, docs/NAKIT-PLANI.md): başlıkta "KDV" ya da "katma değer".
- * Kira ve maaş türü ("Kira KDV'si") ile SGK başlıkları KDV ödemesi sayılmaz.
+ * Kira ve maaş türü ("Kira KDV'si"), SGK başlıkları ve KDV tevkifatı ("2 No.lu KDV", "KDV2") KDV ödemesi sayılmaz.
  */
 export function isVatReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
-  return /(^|[^a-z])kdv([^a-z]|$)|katma deger/.test(foldTR(r.title));
+  const t = foldTR(r.title);
+  return !VAT_WITHHOLDING.test(t) && /(^|[^a-z])kdv([^a-z]|$)|katma deger/.test(t);
 }
 
 /**

@@ -74,8 +74,10 @@ export function BalanceDialog({ balance, carry, onClose }: { balance: number | n
           error={error}
           hint={carry ? `Son kasa raporu (${dayMonthTR(carry.date)}): ertesi güne ${money(carry.amount)} devretti.` : "Kredili hesapta eksi yazabilirsiniz."}
         >
+          {/* Tam klavye: iPhone'un ondalık tuş takımında eksi yok, kredili hesapta eksi yazılır */}
           <NumberInput
             id="nakit-bakiye"
+            inputMode="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}

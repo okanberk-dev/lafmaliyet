@@ -17,7 +17,7 @@ import type { FixedPeriod } from "./calc/types";
 import { GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
-import { addDays, daysBetween, isVatReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
 
 export const PLAN_WEEKS = 6;
 /** 42 gün; Ödemeler'in ufkundan (UPCOMING_HORIZON_DAYS, 45) kısa: faturaların hepsi yükleyicinin listesinde (testli) */
@@ -447,6 +447,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     const f = fixedByName.get(foldName(r.title));
     if (f) return { kind: "fixed", id: f.id };
     const cat = reminderCategory(r.kind, r.title);
+    // "Sabit giderlerden ekle" personel kalemini maaş türüyle açar (Muhasebeci, Part-time çalışan): gider silinir ya da
+    // adı değişince ad eşleşmesi kalkar, ama bu hatırlatıcı bordro değildir; maaşı ya da SGK'yı kapatmaz, taşımaz
+    if ((cat === "maas" || cat === "sgk") && r.note?.startsWith(FIXED_REMINDER_NOTE)) return { kind: "other" };
     if (cat === "maas") return { kind: "salary" };
     if (cat === "sgk") return { kind: "sgk" };
     if (isVatReminder(r)) return { kind: "kdv" };

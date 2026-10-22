@@ -53,13 +53,13 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
 - **hammadde zamları**: son zam bölümlü e-postadan bu yana fiyatı %5'ten fazla artan hammaddeler (eski → yeni
   ₺/kg, ₺/L, ₺/adet) ve fiyatı hedef maliyet oranının altında kalan ürünler, önerilen fiyatlarıyla (en çok 6);
-  bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a). Her zammın yanında ayda kaç lira kâr
-  götürdüğü (" · ayda ≈ 690 ₺"), bölümün başında bu yeni zamların toplamı ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor
-  (Eylül 2026 satışlarıyla).") yazar. Dayanak son satış ayının ürün adetleridir; adetler Ayarlar'daki ayda açık gün
-  sayısına çevrilir (o ayın açık günü girilmemişse olduğu gibi), maliyet artışına zayi dahildir
-  (`src/lib/calc/price-loss.ts`). Satış ayı yoksa ya da tutar 1 ₺'den azsa yazılmaz. Genel bakış'taki ve zildeki
-  "Hammadde zammı" uyarısının sonuna da aynı toplam eklenir ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor."; orada son 30
-  günün bütün zamları);
+  bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a). Her zammın fiyatlarının altında ayda kaç
+  lira kâr götürdüğü ("ayda ≈ 690 ₺", kendi satırında: telefonda e-posta taşmasın), bölümün başında bu yeni zamların
+  toplamı ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor (Eylül 2026 satışlarıyla).") yazar. Dayanak son satış ayının ürün
+  adetleridir; adetler Ayarlar'daki ayda açık gün sayısına çevrilir (o ayın açık günü girilmemişse olduğu gibi),
+  maliyet artışına fire payı dahildir, Zayi & ikram kayıtları sayılmaz (`src/lib/calc/price-loss.ts`). Satış ayı
+  yoksa ya da tutar 1 ₺'den azsa yazılmaz. Genel bakış'taki ve zildeki "Hammadde zammı" uyarısının sonuna da aynı
+  toplam eklenir ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor."; orada son 30 günün bütün zamları);
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 

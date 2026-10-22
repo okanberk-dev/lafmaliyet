@@ -27,8 +27,9 @@ import {
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import { vatMonthInputs } from "../src/lib/kdv";
-import { addDays, daysBetween, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
 import { canOpen } from "../src/lib/roles";
+import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -311,6 +312,44 @@ test("maaş hatırlatıcısı: tutarlıysa tahmin yok; tutarsızsa günü onun, 
   assert.equal(p.estimates.find((e) => e.key === "fixed:10")!.status, "covered");
 });
 
+test("sabit giderden açılan maaş türü hatırlatıcı: gideri silinir ya da adı değişirse bordroyu kapatmaz, taşımaz", () => {
+  // "Sabit giderlerden ekle" personel kalemini maaş türüyle açar, notu bu sabit
+  assert.equal(FIXED_REMINDER_NOTE, "Sabit giderlerden");
+  assert.match(read("src/server/actions/reminders.ts"), /note: FIXED_REMINDER_NOTE,/);
+  const partTime = rem({ title: "Part-time çalışan", kind: "maas", amount: 3_000, dueDate: "2026-10-23", repeat: "weekly", note: FIXED_REMINDER_NOTE });
+  const renamed = [{ id: 3, name: "Part-time eleman", period: "haftalik" as const }];
+  for (const fixedNames of [renamed, []]) {
+    const p = buildCashPlan(input({ months: monthsWith(), fixedNames, reminders: [partTime] }));
+    // Bordro tahmini yerinde
+    assert.equal(p.basis.salaryMode, "default");
+    assert.deepEqual(
+      lineAt(p, "salary@").map((l) => [l.date, l.amount]),
+      [
+        ["2026-11-01", 60_000],
+        ["2026-12-01", 60_000],
+      ],
+    );
+    assert.equal(p.estimates.find((e) => e.key === "salary")!.status, "on");
+    // Hatırlatıcı diğerleri gibi: tutarı her dönemiyle kesin
+    const own = lineAt(p, `reminder:${partTime.id}@`);
+    assert.equal(own.length, 6);
+    assert.ok(own.every((l) => l.kind === "reminder" && l.amount === 3_000 && !l.estimated));
+  }
+  // Tutarsızsa bordroyu taşımaz: "Tutarı girilmemiş ödemeler"de
+  const acc = rem({ title: "Muhasebeci", kind: "maas", amount: null, dueDate: "2026-11-03", note: FIXED_REMINDER_NOTE });
+  const q = buildCashPlan(input({ months: monthsWith(), reminders: [acc] }));
+  assert.equal(q.basis.salaryMode, "default");
+  assert.equal(lineAt(q, "salary@").length, 2);
+  assert.equal(lineAt(q, `reminder:${acc.id}@`).length, 0);
+  assert.deepEqual(
+    q.unknownAmounts.map((u) => u.reminderId),
+    [acc.id],
+  );
+  // Elle açılan maaş türü hatırlatıcı maaştır
+  const manual = rem({ title: "Part-time çalışan", kind: "maas", amount: 3_000, dueDate: "2026-10-23", repeat: "weekly", note: "Cuma günleri" });
+  assert.equal(buildCashPlan(input({ months: monthsWith(), reminders: [manual] })).basis.salaryMode, "reminder");
+});
+
 test("SGK hatırlatıcısı da aynı kuralla; 'SGK prim ödemesi' SGK'dır", () => {
   const sgk = rem({ title: "SGK prim ödemesi", kind: "vergi", amount: null, dueDate: "2026-10-31", anchorDate: "2026-10-31" });
   const p = buildCashPlan(input({ months: monthsWith(), reminders: [sgk] }));
@@ -561,6 +600,29 @@ test("KDV: gecikmiş hatırlatıcı bugüne önceki dönemle; ertelenmiş kopya 
   );
 });
 
+test("KDV tevkifatı (KDV2, 2 No.lu) asıl KDV değildir: tutarı her dönemiyle kesin; asıl KDV'nin dönemini almaz, devredeni sıfırlamaz", () => {
+  const main = kdvRem();
+  const kdv2 = rem({ title: "KDV2 tevkifat", kind: "vergi", amount: 3_000, dueDate: "2026-10-26" });
+  const p = withVat({ reminders: [main, kdv2] });
+  assert.deepEqual(
+    lineAt(p, `reminder:${kdv2.id}@`).map((l) => [l.date, l.amount, l.estimated]),
+    [
+      ["2026-10-26", 3_000, false],
+      ["2026-11-26", 3_000, false],
+    ],
+  );
+  // Asıl KDV hatırlatıcısı iki dönemi de tahminle taşır; otomatik zincirde (Excel) ikisinde de ödeme beklenmez
+  assert.deepEqual(
+    p.vat!.rows.map((r) => [r.date, r.period, r.source, r.amount, r.reminderId]),
+    [
+      ["2026-10-28", "2026-09", "estimate", 0, main.id],
+      ["2026-11-28", "2026-10", "estimate", 0, main.id],
+    ],
+  );
+  assert.equal(lineAt(p, "kdv@").length, 0);
+  assert.equal(p.unknownAmounts.length, 0);
+});
+
 test("KDV tahmine katılmıyorsa: tahmin satırı yok, tutarsız dönem listede, kart 'katılmıyor'", () => {
   const r = kdvRem();
   const p = withVat({ reminders: [r], excluded: ["kdv"], vatAnchor: { month: "2026-08", amount: 0 } });
@@ -622,6 +684,39 @@ test("girdiler (Excel, bugün 2026-10-22): POS yedeği Ekim, 2 kişi, sabit gide
   assert.equal(base.settings.kdv, 0.1);
   assert.equal(base.settings.kdvHizmet, 0.2);
   assert.equal(base.fixedNames.length, 16);
+});
+
+test("laffogato.net online dayanağı: süren ayda çekildiği günden bir eksiğe (Türkiye saatiyle), 7 günden azsa önceki aya, kapanmış ayda ayın gününe bölünür", () => {
+  // Kafe, mağaza ve karaoke neti (TL)
+  const site = (month: string, net: [number, number, number], pulledAt: string, closed: boolean): SiteSalesMonth => {
+    const t = (v: number) => ({ orders: 1, grossMinor: v * 100, discountMinor: 0, deliveryMinor: 0, refundedMinor: 0, netMinor: v * 100, kdvMinor: 0, unknownKdvNetMinor: v * 100 });
+    return {
+      month,
+      pulledAt,
+      now: pulledAt,
+      from: `${month}-01`,
+      to: `${month}-28`,
+      closed,
+      cafe: { ...t(net[0]), lines: [] },
+      shop: t(net[1]),
+      karaoke: { bookings: 1, collectedMinor: net[2] * 100, refundedMinor: 0, netMinor: net[2] * 100, refundPendingMinor: 0, kdvMinor: 0, unknownKdvNetMinor: net[2] * 100 },
+      manual: { orders: 0, grossMinor: 0, netMinor: 0 },
+    };
+  };
+  const onlineOf = (today: string, ...records: SiteSalesMonth[]) => planInputFromModel(createModel({ ...ds, siteSales: records }), today).online;
+  const sep = site("2026-09", [30_000, 9_000, 6_000], "2026-10-02T05:00:00.000Z", true);
+  // Süren ay 22 Ekim sabahı çekildi: kayıt 1–21 Ekim'i kapsar; bugün 25 Ekim olsa da 21 güne bölünür
+  const oct = site("2026-10", [15_000, 4_000, 2_000], "2026-10-22T05:00:00.000Z", false);
+  assert.deepEqual(onlineOf("2026-10-25", sep, oct), { month: "2026-10", perDay: 1_000 });
+  // UTC'de 21 Ekim akşamı, Türkiye'de 22 Ekim: yine 21 gün
+  assert.deepEqual(onlineOf("2026-10-25", sep, { ...oct, pulledAt: "2026-10-21T21:30:00.000Z" }), { month: "2026-10", perDay: 1_000 });
+  // Kapanmış ay: ayın gün sayısıyla (45.000 ₺ ÷ 30)
+  assert.deepEqual(onlineOf("2026-10-25", sep), { month: "2026-09", perDay: 1_500 });
+  // 3 Kasım: süren ayın 2 günü yetmez, kapanmış Ekim 31 güne bölünür (31.000 ₺)
+  const octClosed = site("2026-10", [20_000, 8_000, 3_000], "2026-11-02T05:00:00.000Z", true);
+  const nov = site("2026-11", [3_000, 0, 0], "2026-11-03T05:00:00.000Z", false);
+  assert.deepEqual(onlineOf("2026-11-03", sep, octClosed, nov), { month: "2026-10", perDay: 1_000 });
+  assert.equal(onlineOf("2026-10-25"), null);
 });
 
 test("Nasıl hesaplandı: rakamlarıyla; yedek ve 'satış verisi yok' metinleri; KDV 'Dahil değil'de geçmez", () => {

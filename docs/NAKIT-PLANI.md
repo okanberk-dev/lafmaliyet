@@ -34,8 +34,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
 1. **Adı bir sabit giderle aynıysa** (büyük/küçük harf ve Türkçe karakter farkı gözetilmez; Ödemeler'deki “Listede var”
    eşleşmesi) o giderin yerine geçer: gider ay içine yayılmaz. Hatırlatıcı tutarlıysa kendi tutarı, tutarsızsa giderin
    tutarı onun günlerine “tahmini” yazılır.
-2. **Maaş** ve **SGK** (Ödemeler'deki türü ya da adı): yukarıdaki maaş ve SGK kuralı.
-3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*.
+2. **Maaş** ve **SGK** (Ödemeler'deki türü ya da adı): yukarıdaki maaş ve SGK kuralı. “Sabit giderlerden ekle” ile
+   açılan hatırlatıcı (personel bölümündeki kalem maaş türüyle açılır: Muhasebeci, Part-time çalışan) gideri silinse ya
+   da adı değişse de bordro sayılmaz: maaşı ve SGK'yı kapatmaz, diğer hatırlatıcıdır.
+3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
+   tevkifatı (“2 No.lu KDV”, “KDV2”, “tevkifat”) ayrı bir ödemedir, diğer hatırlatıcı sayılır: asıl KDV'nin dönemini
+   almaz, devredeni sıfırlamaz.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
    görünür (“Ödemeler'de tutar girin”).
 
@@ -101,7 +105,8 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 **Plana yerleşme:**
 
 - Ödemeler'de KDV hatırlatıcısı yoksa her dönem ayın 28'ine, yarından itibaren “KDV (Ekim)” tahmini satırı olarak girer.
-  Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Hatırlatıcı ekle** önerir.
+  Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Hatırlatıcı ekle** önerir (KDV
+  tahmine katılmıyorsa “KDV tahmini plana katılmıyor; Tahmine katılanlar'dan açabilirsiniz.”).
 - KDV hatırlatıcısı varsa tahmin onun günlerine yazılır. Tutar yazılmış dönem kesindir (normal hatırlatıcı satırı);
   tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Hatırlatıcı 1 hafta ertelenince açılan
   kopya (ayın 1–7'si) hâlâ iki ay önceki dönemin KDV'sidir. Aynı döneme ikinci bir KDV hatırlatıcısı “Tutarı girilmemiş”e

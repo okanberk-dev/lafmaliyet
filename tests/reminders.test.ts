@@ -159,12 +159,15 @@ test("son gün şablonu her ayın son gününe kayar", () => {
   assert.equal(nextOccurrence("2026-03-31", "monthly", anchor), "2026-04-30");
 });
 
-test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş ve SGK değil", () => {
+test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK ve KDV tevkifatı (2 No.lu, KDV2) değil", () => {
   for (const [title, kind] of [
     ["KDV beyannamesi ve ödemesi", "vergi"],
     ["Kdv ödemesi", "odeme"],
     ["Eylül KDV'si", "diger"],
     ["Katma değer vergisi", "vergi"],
+    ["1 No.lu KDV", "vergi"],
+    ["Ekim 2026 KDV", "vergi"],
+    ["KDV 2. taksit", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), true, title);
   }
@@ -174,6 +177,14 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş ve S
     ["Kira KDV'si", "kira"],
     ["Kadıköy kira", "kira"],
     ["Maaş KDV", "maas"],
+    // Tevkifat ayrı beyanname ve ödemedir: asıl KDV'nin dönemini ve devredenini değiştirmez
+    ["KDV2 tevkifat", "vergi"],
+    ["KDV 2", "vergi"],
+    ["KDV-2 ödemesi", "odeme"],
+    ["2 No.lu KDV beyannamesi", "vergi"],
+    ["2 numaralı KDV", "vergi"],
+    ["Tevkifatlı KDV", "vergi"],
+    ["KDV tevkifatı", "diger"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), false, title);
   }
@@ -186,6 +197,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş ve S
   assert.equal(vatAmountTravels({ ...vat, repeat: "none" }), false);
   assert.equal(vatAmountTravels({ ...vat, amount: null }), false);
   assert.equal(vatAmountTravels({ ...vat, title: "Kira", kind: "kira" }), false);
+  assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
 });
 
 test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
