@@ -157,12 +157,34 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> ekranında satış fiyatı hücresini değiştirip Enter&apos;a basın ya da ürün kartında fiyatı değiştirin. Kartta fiyat simülatörü ile önce
-            deneyebilirsiniz. Ürün laffogato.net menüsüne bağlıysa (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin
-            tarihini güncelleyin, kasadaki (ModPOS) fiyatı da elle değiştirin.
+            deneyebilirsiniz. Birçok ürüne birden zam için <Path href="/panel/urunler" /> › Fiyatlar › Toplu değiştir: kategoriyi ve boyu seçin, yüzde ya da tutar
+            yazın (ör. %10, 5 ₺&apos;ye yukarı yuvarlanır); önizlemede her ürünün yeni fiyatı, maliyet oranı ve ayda kâra etkisi görünür, istemediğinizi çıkarın ya da
+            fiyatını elle yazın. Toplu değişiklik Fiyatlar › Geçmiş&apos;ten geri alınabilir (sonradan değişen ürüne dokunulmaz). Ürün laffogato.net menüsüne bağlıysa
+            (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin tarihini güncelleyin. Kasadaki (ModPOS) fiyatı elle
+            değiştirin: değişen her fiyat Fiyatlar › Kasaya işle listesine girer.
           </>
         ),
         icon: Tag,
-        links: [{ href: "/panel/urunler", label: "Ürünler" }],
+        links: [
+          { href: "/panel/urunler", label: "Ürünler" },
+          { href: "/panel/urunler/fiyatlar", label: "Toplu fiyat" },
+        ],
+      },
+      {
+        id: "kasa-fiyat",
+        q: "Kasadaki (ModPOS) fiyatlar",
+        a: (
+          <>
+            Panelde, toplu ya da laffogato.net&apos;te değişen satış fiyatı ModPOS&apos;a kendiliğinden geçmez. Panel bunu unutmaz: fiyatı değişen her ürün{" "}
+            <Path href="/panel/urunler" /> › Fiyatlar › Kasaya işle listesine kasadaki adı, eski ve yeni fiyatıyla girer; zil de &quot;Kasada değişecek N
+            fiyat&quot; der. Kasada değiştirdikçe işaretleyin, işaretlenen listeden düşer (bildirimdeki Geri al geri getirir); liste açıkken fiyat yeniden
+            değiştiyse işaretlenmez, yeni fiyatıyla listede kalır. Metni kopyala ile listeyi
+            WhatsApp&apos;a yapıştırabilirsiniz. Fiyat kasadaki fiyata geri dönerse (ör. toplu değişiklik geri alındı) kendiliğinden düşer. Yeni ürün listeye girmez;
+            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir.
+          </>
+        ),
+        icon: Receipt,
+        links: [{ href: "/panel/urunler/fiyatlar?sekme=kasa", label: "Kasaya işle" }],
       },
       {
         id: "site-menusu",

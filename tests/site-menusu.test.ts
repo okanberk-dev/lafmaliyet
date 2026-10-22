@@ -294,7 +294,7 @@ test("hata metinleri: ağ / zaman aşımı, 404, 400 alanı, imza, kapalı bağl
   assert.match(pullFailureMessage({ kind: "http", status: 404 }), /güncel değil/);
   assert.equal(
     PRICE_PUSH_REMINDER,
-    "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyatı da elle değiştir.",
+    "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyat Fiyatlar › Kasaya işle listesinde.",
   );
 });
 

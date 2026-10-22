@@ -110,6 +110,7 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/hatirlaticilar"), "Ödemeler");
   assert.equal(mobileTitleFor("/panel/urunler"), "Ürünler");
   assert.equal(mobileTitleFor("/panel/urunler/42"), "Ürünler");
+  assert.equal(mobileTitleFor("/panel/urunler/fiyatlar"), "Fiyatlar");
   assert.equal(mobileTitleFor("/panel/giderler"), "Sabit giderler");
   assert.equal(mobileTitleFor("/panel/gelir-gider"), "Gelir-gider");
   assert.equal(mobileTitleFor("/panel/personel"), "Personel");

@@ -12,7 +12,7 @@ import type { IngredientChange, ProductImpact } from "@/lib/calc/price-impact";
 import { basisText, type PriceLoss } from "@/lib/calc/price-loss";
 import { dateTR, num, pct, tl, tl2 } from "@/lib/format";
 import { monthLocativeTR } from "@/lib/reminders";
-import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
+import { priceReminder } from "@/lib/prices/pos";
 import { cn } from "@/lib/utils";
 import { acknowledgePriceAlert, updateProductPrice } from "@/server/actions/products";
 
@@ -73,13 +73,16 @@ export function PriceImpactPanel({
     setBusyId(i.productId);
     start(async () => {
       // Zammın payı fiyattan hesaplanır: uygulanınca bu maliyette uyarı kapanır (yoksa öneri yeni fiyattan yeniden
-      // artardı). Geri al eski fiyatı yazar; fiyat önerinin altına inince uyarı kendiliğinden geri gelir
-      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep");
+      // artardı). Geri al eski fiyatı yazar; fiyat önerinin altına inince uyarı kendiliğinden geri gelir. Fiyat
+      // geçmişinde iki dayanakta da "Zam önerisi"; Geri al elle
+      const r = await updateProductPrice(i.productId, i.suggestedPrice, i.basis === "keep", "suggestion");
       setBusyId(null);
       if (!r.ok) return void toast.error(r.error);
-      // Siteye bağlı üründe fiyat laffogato.net'te de değişti: elle yapılacak iki iş hatırlatılır
+      // Siteye bağlı üründe fiyat laffogato.net'te de değişti (fiyat listesinin tarihi sitede elle); kasada (ModPOS)
+      // değişecek fiyat Fiyatlar › Kasaya işle listesinde
+      const reminder = priceReminder(r.data);
       toast.success(`${i.name} ${i.size}: ${tl(i.price)} → ${tl(r.data.price)}`, {
-        ...(r.data.site ? { description: PRICE_PUSH_REMINDER, duration: 12_000 } : {}),
+        ...(reminder ? { description: reminder, duration: r.data.site ? 12_000 : 8_000 } : {}),
         action: {
           label: "Geri al",
           onClick: () =>

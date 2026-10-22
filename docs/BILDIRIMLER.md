@@ -18,7 +18,10 @@ Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlatic
   gider döneminde tekrar eder.
 
 Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
-bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur.
+bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur. **Uyarılar** başlığının
+başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (yalnız yönetici;
+**Ürünler › Fiyatlar › Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur; e-postaya girmez,
+`docs/FIYATLAR.md`).
 
 ## Son ödenenler (geri alma)
 

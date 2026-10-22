@@ -9,7 +9,9 @@ senaryo simülatörü, Excel'e aktarım, QR menü, aylık harcamalar, Paraşüt'
 ([docs/BILDIRIMLER.md](docs/BILDIRIMLER.md)), 6 haftalık nakit planı ve KDV tahmini ([docs/NAKIT-PLANI.md](docs/NAKIT-PLANI.md)),
 hammadde zamlarının ayda kaç lira kâr götürdüğü, laffogato.net'e bağlı karaoke sayacı ve rezervasyon zili
 ([docs/KARAOKE.md](docs/KARAOKE.md)), laffogato.net menüsüne bağlı ürünlerde iki yönlü fiyat ve Satışta / Tükendi
-eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md)), barın ekranına düşen uygulama siparişleri, sipariş zili ve
+eşitlemesi ([docs/SITE-MENU.md](docs/SITE-MENU.md)), menü fiyatlarının toplu değişikliği, kasada (ModPOS) elle
+değişecek fiyatların listesi ve satış fiyatı geçmişi ([docs/FIYATLAR.md](docs/FIYATLAR.md)), barın ekranına düşen
+uygulama siparişleri, sipariş zili ve
 tek dokunuşla aşama: Hazır, Masaya götürüldü, Teslim edildi ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), sitenin
 online satışlarının kâr-zarara, tüketime ve kasa raporuna girmesi ([docs/SITE-SATIS.md](docs/SITE-SATIS.md)),
 personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla onayladığı akış, herkesin kendi
@@ -39,6 +41,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Genel bakış | `/panel` | Panel |
 | Ürünler, reçete kartı (Hammadde zamları: önerilen fiyat ve zammın ayda kaç lira kâr götürdüğü) | `/panel/urunler`, `/panel/urunler/[id]` | Ürün Kârlılık, Reçete Kartları |
 | Site menüsü: ürünleri laffogato.net menüsündeki kalemlere bağlama (öneriler), bağlantının durumu, Siteyle eşitle ([docs/SITE-MENU.md](docs/SITE-MENU.md)) | `/panel/urunler/site` | — (yeni) |
+| Fiyatlar: toplu değiştir (yüzde, tutar ya da önerilen fiyat; önizleme ve aylık etki), kasaya (ModPOS) işle, fiyat geçmişi ve toplu değişikliği geri alma ([docs/FIYATLAR.md](docs/FIYATLAR.md)) | `/panel/urunler/fiyatlar` | — (yeni) |
 | Hammaddeler: onay bekleyen fiyatlar (Paraşüt faturasında %40'tan büyük değişim onaylanınca uygulanır), tedarikçilere göre fiyat ([docs/PARASUT.md](docs/PARASUT.md) 5b, 5c) | `/panel/hammaddeler` | Hammaddeler |
 | Reçete defteri (barista; personel değişiklik ya da reçetesiyle yeni ürün önerir, yönetici onaylayınca uygulanır) | `/panel/receteler` | — |
 | Reçete onayları (önce / sonra farkı, maliyet etkisi, onayla ya da gerekçeyle reddet; yeni ürün önerisinde satır maliyeti, satış fiyatı ve canlı kâr marjı, "Onayla ve ürünü ekle") | `/panel/onaylar` | — (yeni) |
@@ -71,7 +74,7 @@ Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, T
 Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Satışlar · Faturalar · Ödemeler · Menü çubuğu var. ⌘K
 (Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
 eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini ve fiyat onaylarını, kişisel
-hatırlatıcıları ve uyarıları (zammın aylık kâr etkisiyle hammadde zammı, fiyatı girilmemiş hammaddeler, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
+hatırlatıcıları ve uyarıları (kasada değişecek fiyatlar, zammın aylık kâr etkisiyle hammadde zammı, fiyatı girilmemiş hammaddeler, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
 var.
 
 Personel rolü yalnızca **Karaoke**, **Kasa raporu**, **Zayi & ikram**, **Reçete defteri** (değişiklik ya da yeni ürün
@@ -119,7 +122,7 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 | `npm run db:generate` | Şema değişince yeni migration üretir (`drizzle/`) |
 | `npm run db:migrate` | Migration'ları uygular ve hepsinin uygulandığını doğrular (atlanan varsa hata; docs/DEPLOY.md § 7) |
 | `npm run db:seed` | Veritabanı boşsa Excel verisini yükler |
-| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri (laffogato.net menü bağlantıları ve reçete önerileriyle), hammaddeleri (sayımda “Listeye ekle” ile eklenenler ve `sayim_yeni_kalemler` migration'ının eklediği sekiz kalem dahil: yalnız Excel'dekiler geri gelir), satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, fiyat onaylarını, aylık harcama kayıtlarını, bildirim günlüğünü, nakit planının bakiyesini ve tahmin ayarlarını (devreden KDV dahil) siler. **Silmedikleri:** kullanıcılar, aylık harcama kategorileri, hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, laffogato.net'ten çekilen online satış ayları ve açık sipariş listesinin kopyası (sitenin verisi), tedarikçi cari kartları (faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir); fotoğraflar, kasadan çıkanlar ve okuma kayıtları |
+| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri (laffogato.net menü bağlantıları, reçete önerileri, fiyat geçmişi ve kasaya işlenecek fiyatlarla), hammaddeleri (sayımda “Listeye ekle” ile eklenenler ve `sayim_yeni_kalemler` migration'ının eklediği sekiz kalem dahil: yalnız Excel'dekiler geri gelir), satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, fiyat onaylarını, aylık harcama kayıtlarını, bildirim günlüğünü, nakit planının bakiyesini ve tahmin ayarlarını (devreden KDV dahil) siler. **Silmedikleri:** kullanıcılar, aylık harcama kategorileri, hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, laffogato.net'ten çekilen online satış ayları ve açık sipariş listesinin kopyası (sitenin verisi), tedarikçi cari kartları (faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir); fotoğraflar, kasadan çıkanlar ve okuma kayıtları |
 | `npm run db:backup` | Tam yedeği bilgisayara alır (`~/laffogato-yedek-….json.gz`; `--belgeler` panelden yüklenen belgelerle, `--cikti <dosya>` başka bir yere). Panelin Ayarlar › Yedek dosyasıyla aynı biçim ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run db:restore -- <dosya>` | Yedeği boş bir veritabanına yükler; `--sil` ile dolu bir veritabanının yerine (önce onun yedeğini dosyanın yanına alır; Neon'da `--onay=<sunucu>`). Parolalar dosyada yok: aynı e-postalı kişi hedefteki parolasını korur, ötekiler davet bekler ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run excel:extract -- "<excel yolu>"` | Excel'den `excel-data.json` ve `tests/golden.json` dosyalarını yeniden üretir (Python 3 + openpyxl gerekir) |
@@ -136,6 +139,7 @@ src/
   lib/site-menu/       laffogato.net menü bağlantısı: yanıt şeması, yuva ↔ fiyat, çekme planı, öneriler (saf, testli)
   lib/site-orders/     laffogato.net siparişleri: yanıt şeması, yeni sipariş, sıralama, kart metinleri, zil kuralı, aşama düğmeleri (saf)
   lib/site-sales/      laffogato.net online satışları: yanıt şeması, KDV hariç gelir, ürün eşlemesi, kasa satırı (saf)
+  lib/prices/          menü fiyatları: toplu kural ve yuvarlama, önizleme, kasanın (ModPOS) durumu, fiyat geçmişi ve geri alma planı (saf, testli; docs/FIYATLAR.md)
   lib/backup/          tam yedek: dosya biçimi, yazılmayanlar, şema sürümü, yükleme sırası, giriş bilgileri (saf, testli)
   lib/cash-plan.ts     nakit planı: 6 haftanın gelen, ödenecek ve kalan parası, hatırlatıcı eşleşmesi (saf, testli; docs/NAKIT-PLANI.md)
   lib/kdv.ts           KDV tahmini: satışların ve alışların KDV'si, devreden zinciri (saf, testli)
@@ -159,6 +163,7 @@ src/
     site-menu/         laffogato.net menüsü: çekme, panel → site yazımı, bağlama (docs/SITE-MENU.md); site-link.ts ortak imzalı istek
     site-orders/       laffogato.net'in açık siparişleri: çekme, son listenin kopyası, bildirim (docs/SITE-SIPARIS.md)
     site-sales/        laffogato.net'in online satışları: ay ay çekme ve saklama, kasa satırı (docs/SITE-SATIS.md)
+    prices/            satış fiyatı yazımı: geçmiş ve kasa durumu, tek fiyat (önce site), toplu değişiklik ve geri alması (docs/FIYATLAR.md)
     push/              Web Push: VAPID, içerik şifrelemesi (RFC 8291), aboneliklere gönderim
     storage/           fotoğraf deposu: özel Vercel Blob (yerelde .data/photos), erişim kuralları (docs/FOTOGRAF.md)
     ai/                Claude istemcisi: fotoğraftan okuma, günlük sınır, maliyet günlüğü (ai_calls)

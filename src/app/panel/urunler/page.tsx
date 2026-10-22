@@ -1,4 +1,4 @@
-import { Coffee, Globe, ShoppingBag, Target, TrendingUp } from "lucide-react";
+import { Coffee, Globe, ShoppingBag, Tags, Target, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import { after } from "next/server";
 import { Suspense } from "react";
@@ -13,6 +13,7 @@ import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { posPendingSummary } from "@/server/data/prices";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -53,7 +54,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
     }
   });
   const sp = await searchParams;
-  const [model, site] = await Promise.all([loadModel(), loadSiteLinks()]);
+  // Kasada (ModPOS) değişecek fiyatlar: Fiyatlar düğmesinin rozeti (okunamazsa rozet yok)
+  const [model, site, pos] = await Promise.all([loadModel(), loadSiteLinks(), posPendingSummary().catch(() => null)]);
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
   const prices = await loadPriceAlerts(model).catch(() => null);
@@ -144,6 +146,17 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             >
               <Globe size={16} aria-hidden="true" /> Site menüsü
               {site.configured && (siteProblems || site.state.lastError) ? <span className="size-2 rounded-full bg-bad" aria-label="sorun var" /> : null}
+            </ButtonLink>
+            {/* Toplu fiyat, kasaya (ModPOS) işle, fiyat geçmişi; kasada bekleyen varsa doğrudan o liste */}
+            <ButtonLink
+              href={pos?.count ? "/panel/urunler/fiyatlar?sekme=kasa" : "/panel/urunler/fiyatlar"}
+              variant="secondary"
+              title={pos?.count ? `Kasada (ModPOS) değişecek ${num(pos.count)} fiyat` : "Menü fiyatlarını toplu değiştirin; fiyat geçmişi"}
+            >
+              <Tags size={16} aria-hidden="true" /> Fiyatlar
+              {pos?.count ? (
+                <span className="-mr-1 rounded-full bg-warn-soft px-1.5 py-0.5 text-[11px] leading-4 font-semibold text-warn tabular">Kasa {num(pos.count)}</span>
+              ) : null}
             </ButtonLink>
             <NewProductButton
               categories={categories}

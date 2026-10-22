@@ -12,6 +12,7 @@ import { suggestLinks } from "@/lib/site-menu/names";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { loadProductPriceHistory } from "@/server/data/prices";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
@@ -102,7 +103,8 @@ async function RecipeContent({
   const siteItems = siteLinks.snapshot.at ? siteLinks.snapshot.items : [];
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
-  const prices = await loadPriceAlerts(model).catch(() => null);
+  // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
+  const [prices, priceHistory] = await Promise.all([loadPriceAlerts(model).catch(() => null), loadProductPriceHistory(product.id).catch(() => null)]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
   const history = model.salesMonths.map((m) => ({ month: m, label: monthLabel(m), qty: model.soldByProduct(m).get(product.id) ?? 0 }));
@@ -172,6 +174,7 @@ async function RecipeContent({
             ? (suggestLinks([{ id: product.id, name: product.name, size: product.size, price: product.price }], siteItems, siteLinks.links)[0] ?? null)
             : null,
       }}
+      priceHistory={priceHistory}
       priceImpact={
         impact
           ? {

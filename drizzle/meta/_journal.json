@@ -183,6 +183,13 @@
       "when": 1792709989605,
       "tag": "0025_fotograf_okuma",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792712471915,
+      "tag": "0026_fiyat_gecmisi",
+      "breakpoints": true
     }
   ]
 }
