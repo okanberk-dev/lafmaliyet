@@ -517,3 +517,28 @@ test("bar ekranı: tek dokunuş, onaysız; istekte kartın düğmeleri kapalı, 
   assert.doesNotMatch(board, /stage-request/);
   assert.doesNotMatch(read("src/lib/site-orders/stage.ts"), /from "zod"|^import (?!type )[^;]*from "\.\/schema"|site-menu/m);
 });
+
+test("Ayarlar › laffogato.net: 'Bağlantıları sına' dördünü hemen çeker, eski hata kendiliğinden yeniden denenir, müşteri verisi yok", () => {
+  const action = read("src/server/actions/site-links.ts");
+  assert.match(action, /^"use server";/);
+  // Yalnız yönetici; anahtar yoksa hiçbir şey çekilmez
+  assert.match(action, /const me = await requireAdmin\(\);/);
+  assert.match(action, /if \(!siteLinkSecret\(\)\) throw new UserError\(/);
+  // Dört bağlantı birbirini beklemeden, biri düşse de öbürleri sonuç verir
+  assert.match(action, /Promise\.allSettled\(\[/);
+  for (const sync of [/syncKaraoke\("manual"\)/, /syncSiteMenu\("manual"\)/, /syncSiteOrders\("manual"\)/, /syncSiteSales\(\[currentMonthTR\(\)\]\)/]) {
+    assert.match(action, sync);
+  }
+  // İşlem geçmişine yalnız sayı; tek dışa açık eylem (her export bir POST ucudur)
+  assert.match(action, /logActivity\(me, "laffogato\.net bağlantıları sınandı", `\$\{ok\}\/\$\{checks\.length\} bağlı`\)/);
+  assert.doesNotMatch(action, /firstName|email|phone|lines/);
+  assert.deepEqual(action.match(/^export (async )?function \w+/gm), ["export async function testSiteLinks"]);
+
+  const page = read("src/app/panel/ayarlar/page.tsx");
+  // Düğme yalnız bağlantı kuruluyken; kırmızı satır hatanın zamanını gösterir
+  assert.match(page, /\{configured \? <SiteLinksTest \/> : null\}/);
+  assert.match(page, /\{r\.tryAt \? `\$\{dateTimeTR\(r\.tryAt\)\}: ` : null\}/);
+  // Yarım saatten eski kırmızı satır sayfadan sonra (after) yeniden denenir; sayfa beklemez
+  assert.match(page, /r\.health\.tone === "red" && \(!r\.tryAt \|\| nowMs - Date\.parse\(r\.tryAt\) > 30 \* 60_000\)/);
+  assert.match(page, /after\(async \(\) => \{/);
+});

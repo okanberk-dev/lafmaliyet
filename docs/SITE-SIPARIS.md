@@ -229,6 +229,15 @@ Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bun
 | İmza reddedildi: iki projedeki KARAOKE_SYNC_SECRET aynı mı? | Okumadaki imza hatasıyla aynı: anahtar ve sunucu saatleri |
 | Site 8 saniyede yanıt vermedi / Siteye ulaşılamadı; tekrar deneyin | Yeniden dokunun; sipariş iki kez ilerlemez (site 409 verir) |
 
+**Ayarlar › laffogato.net** kartındaki "Hata", o bağlantının **son denemesinin** hatasıdır ve bir sonraki başarılı
+çekmeye kadar kalır; satır hatanın zamanını da yazar. Uzun süre çekilmemiş bir bağlantının eski hatası (sitenin ucu
+henüz yayında değilken alınmış bir 404, soğuk açılışta bir zaman aşımı) bu yüzden kırmızı görünebilir:
+
+- Kart açıldığında son denemesi **yarım saatten eski** kırmızı satırlar sayfa çizildikten sonra kendiliğinden yeniden
+  denenir; bir sonraki açılışta yeni durum görünür.
+- **Bağlantıları sına** (yalnız yönetici) dördünü hemen çeker (karaoke, menü, siparişler, bu ayın online satışı) ve
+  sonucu bildirir. Hata gerçekse kart onu yeni zamanıyla gösterir; işlem geçmişine yalnız "N/4 bağlı" yazılır.
+
 "Sitenin son pingi" (**Ayarlar › laffogato.net**) boş kalıyorsa site panele ulaşamıyor: sitedeki `PANEL_URL` ve
 anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker; yalnız gecikir.
 
@@ -247,6 +256,7 @@ anahtarı kontrol edin. Ping gelmese de ekran açılınca ve arka planda çeker;
 | `src/app/api/siparisler/route.ts` | Ekranın yeniden çekme isteği (oturumlu) |
 | `src/app/api/canli/route.ts`, `src/lib/live.ts` | Canlı veri: sipariş listesi ve durumu, ETag'te sürüm |
 | `src/app/panel/karaoke/orders-board.tsx` | "Uygulama siparişleri" bölümü |
+| `src/server/actions/site-links.ts`, `src/app/panel/ayarlar/site-links-test.tsx` | Ayarlar › laffogato.net: **Bağlantıları sına** |
 | `src/components/panel/live/alert-center.tsx`, `sounds.ts`, `prefs.ts`, `device-alerts.tsx` | Zil (masa deseni), cihaz tercihleri |
 | `src/server/push/send.ts`, `src/server/actions/push.ts` | `orders` bildirim konusu ve tercihi |
 | `tests/site-siparis.test.ts` | Şema, yeni sipariş, sıralama, kart metinleri, zil kuralı, ping, tetikleyiciler, bildirim, aşama düğmeleri (çiftler, adlar, gövde, yanıt ve hata metinleri, eylemin oturumu) |
