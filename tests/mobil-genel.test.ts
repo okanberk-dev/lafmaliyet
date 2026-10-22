@@ -92,8 +92,9 @@ test("Oranlar özeti: beş oran kayıtlı değerleriyle, yüzde biçiminde", () 
 
 test("Reçete ölçüleri özeti: shot, şurup ve püre pompası, açık gün ve ölçülmemiş varsayım sayısı", () => {
   const s = { ...model.settings, shotTek: 9, shotCift: 18, pompa: 10, pompaPure: 30, acikGun: 30 };
-  assert.equal(measuresSummary(s), "Shot 9 / 18 gr · Pompa 10 ml · püre 30 ml · 30 açık gün · 3 varsayım");
-  assert.match(measuresSummary({ ...s, pompaPure: 25 }), /· Pompa 10 ml · püre 25 ml ·/);
+  // Pompa ölçüleri bölünmez boşlukla: dar ekranda sayı ile birimi ayrı satıra düşmez
+  assert.equal(measuresSummary(s), `Shot 9 / 18 gr · Pompa${NBSP}10${NBSP}ml · püre${NBSP}30${NBSP}ml · 30 açık gün · 3 varsayım`);
+  assert.ok(measuresSummary({ ...s, pompaPure: 25 }).includes(`· püre${NBSP}25${NBSP}ml ·`));
   // Ondalıklı ölçü Türkçe virgülle
   assert.match(measuresSummary({ ...s, shotTek: 8.5 }), /^Shot 8,5 \/ 18 gr/);
 });
