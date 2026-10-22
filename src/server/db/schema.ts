@@ -143,6 +143,13 @@ export const products = pgTable(
     siteMenuId: text("site_menu_id"),
     /** Bu satır sitedeki hangi fiyat: M = priceMinor (tek boyda tek fiyat), L = priceMinorL */
     siteMenuSlot: text("site_menu_slot", { enum: ["M", "L"] }),
+    /**
+     * Kasada (ModPOS) hâlâ duran eski fiyat: panelde ya da sitede fiyat değişince kasa elle güncellenene kadar dolu kalır
+     * ("Fiyatlar › Kasaya işle"). Boşsa kasa panelle aynı sayılır. Fiyat kasadaki fiyata geri dönerse kendiliğinden boşalır.
+     */
+    posStalePrice: doublePrecision("pos_stale_price"),
+    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
+    posStaleSince: timestamp("pos_stale_since", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
   (t) => [
@@ -170,6 +177,34 @@ export const recipeItems = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("recipe_items_product_idx").on(t.productId), index("recipe_items_ingredient_idx").on(t.ingredientId)],
+);
+
+/** Satış fiyatı geçmişi: her fiyat değişikliğinde bir satır (panel, toplu, site, yeni ürün). Ayrıntı: docs/FIYATLAR.md */
+export const productPrices = pgTable(
+  "product_prices",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Önceki fiyat (TL, KDV dahil); yeni üründe boş */
+    priceBefore: doublePrecision("price_before"),
+    price: doublePrecision("price").notNull(),
+    source: text("source", { enum: ["manual", "suggestion", "bulk", "undo", "site", "create"] }).notNull(),
+    /** Panelin değişikliği laffogato.net'e de yazıldı */
+    onSite: boolean("on_site").notNull().default(false),
+    /** Aynı toplu değişikliğin (ve geri almasının) satırları; uuid */
+    batchId: text("batch_id"),
+    /** Toplu kuralın özeti ("+%10 · 5 ₺'ye yukarı · Espresso Bazlı") */
+    note: text("note"),
+    changedBy: text("changed_by"),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("product_prices_product_idx").on(t.productId, t.changedAt),
+    index("product_prices_changed_idx").on(t.changedAt),
+    index("product_prices_batch_idx").on(t.batchId),
+  ],
 );
 
 // ---------------------------------------------------------------- Aylar & satışlar

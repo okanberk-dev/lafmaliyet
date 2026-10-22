@@ -107,8 +107,16 @@ bırakır; ürün bundan sonra yalnız panelde değişir. Bağlantı ürün açm
    güncellenir, son listenin kopyası ve site saati ilerler. Yanıt okunamazsa gönderilen değerler yazılır (sitenin
    pingi sonraki çekmeyi getirir).
 6. Başarılı fiyat yazımından sonra bildirim hatırlatır: _"Fiyat sitede de değişti. Fiyat listesinin tarihini sitede
-   (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyatı da elle değiştir."_ Fiyat listesi tarihini
-   bağlantı değiştirmez (sitenin kararı); kasanın fiyatı üçüncü bir kopyadır, iki depo da ona ulaşamaz.
+   (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyat Fiyatlar › Kasaya işle listesinde."_ Fiyat listesi
+   tarihini bağlantı değiştirmez (sitenin kararı); kasanın fiyatı üçüncü bir kopyadır, iki depo da ona ulaşamaz: panel
+   değişen fiyatı **Ürünler › Fiyatlar › Kasaya işle** listesine ekler, kasada elle değiştirilince işaretlenir
+   ([FIYATLAR.md](FIYATLAR.md)).
+
+**Toplu fiyat değişikliği** ve geri alması (Ürünler › Fiyatlar, [FIYATLAR.md](FIYATLAR.md)) aynı kalem kalem yazımı
+kullanır (sitede toplu uç yok): bağlı ürünler site kalemine göre gruplanır, bir kalemin M ve L satırı sırayla gider
+(öteki boyu güncelleyen yanıt eski fiyatı geri yazmasın), gruplar dörder dörder; site kapalı görünürse (ağ, zaman
+aşımı, kurulmamış bağlantı, imza reddi, 5xx) sıradakiler gönderilmez, 40 saniyeden sonra yeni ürün gönderilmez
+(sayfanın `maxDuration`'ı 60). Bağlı olmayanlar tek işlemde, önce danışma kilidi alınarak yazılır.
 
 ### Panel ne zaman çeker
 
@@ -124,7 +132,9 @@ sürerken başlamış çekme onu geri almasın). Sonuç `integration_state`'te:
 | `menu_site_items` | Son listenin kopyası (`now`, `at`, `items`): ekranlar siteye gitmeden kalemin adını, fiyatını ve durumunu gösterir |
 
 Site kaynaklı değişiklikler işlem geçmişine "laffogato.net" adıyla düşer ("Site menüsünden güncellendi", "Site
-bağlantısı kaldırıldı", "Site bağlantısı koptu"); bağlama ve kaldırma yöneticinin adıyla.
+bağlantısı kaldırıldı", "Site bağlantısı koptu"); bağlama ve kaldırma yöneticinin adıyla. Sitenin değiştirdiği fiyat
+(çekme, bağlanan ürünün aldığı fiyat, aynı kalemin öteki boyu) satış fiyatı geçmişine "laffogato.net" kaynağıyla girer
+ve kasaya işlenecekler listesine eklenir; yalnız menü durumu değişen satır geçmişe girmez ([FIYATLAR.md](FIYATLAR.md)).
 
 ## Kurulum
 
@@ -184,6 +194,7 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/server/site-menu/link.ts`, `view.ts` | Bağlama / kaldırma; ekranlar için bağlantılar |
 | `src/server/actions/site-menu.ts` | Siteyle eşitle, bağlama penceresinin listesi, bağla, önerileri bağla, kaldır |
 | `src/server/actions/products.ts` | `updateProductPrice`, `saveRecipe`: bağlı üründe önce site |
+| `src/server/prices/*` | Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (`recordPriceChange`; `applyPlan` da çağırır), toplu değişikliğin kalem kalem site yazımı ([FIYATLAR.md](FIYATLAR.md)) |
 | `src/app/api/menu/ping/route.ts` | Sitenin pingi |
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |
 | `src/app/panel/urunler/site-link-dialog.tsx`, `[id]/site-menu-card.tsx` | Bağlama penceresi, ürün kartındaki Site menüsü |

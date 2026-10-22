@@ -145,4 +145,4 @@ export function pullFailureMessage(failure: PushFailure): string {
 
 /** Fiyat siteye yazılınca kullanıcıya hatırlatılan iki elle iş */
 export const PRICE_PUSH_REMINDER =
-  "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyatı da elle değiştir.";
+  "Fiyat sitede de değişti. Fiyat listesinin tarihini sitede (Ayarlar → Vergi) güncellemeyi unutma; kasadaki (ModPOS) fiyat Fiyatlar › Kasaya işle listesinde.";

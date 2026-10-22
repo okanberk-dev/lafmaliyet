@@ -176,6 +176,13 @@
       "when": 1792683554248,
       "tag": "0024_fiyat_onayi",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792692022929,
+      "tag": "0025_fiyat_gecmisi",
+      "breakpoints": true
     }
   ]
 }

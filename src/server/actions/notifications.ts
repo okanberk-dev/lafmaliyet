@@ -9,6 +9,7 @@ import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, monthShort, tl } from "@/lib/format";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
+import { agoLabel } from "@/lib/prices/pos";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
@@ -17,6 +18,7 @@ import { cashReportsBetween } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
+import { posPendingSummary } from "@/server/data/prices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -244,6 +246,27 @@ async function holdNotifications(): Promise<PanelNotification[]> {
   ];
 }
 
+/**
+ * Yönetici: kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; docs/FIYATLAR.md). Kimlik
+ * sayıdan ve en yeni değişiklikten: yeni bir fiyat listeye girince yeniden okunmamış olur. Zaman en eskisinden.
+ */
+async function posNotifications(): Promise<PanelNotification[]> {
+  const p = await posPendingSummary();
+  if (!p.count) return [];
+  return [
+    {
+      id: `kasa-fiyat-${p.count}-${p.newest?.getTime() ?? 0}`,
+      kind: "info",
+      title: `Kasada değişecek ${p.count} fiyat`,
+      body: "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin",
+      timeLabel: p.oldest ? agoLabel(p.oldest) : "",
+      unread: true,
+      href: "/panel/urunler/fiyatlar?sekme=kasa",
+      group: "uyari",
+    },
+  ];
+}
+
 /** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
@@ -311,9 +334,9 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 /**
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
  * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar, fiyatı girilmemiş
- * hammaddeler ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk
- * açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu görür; maliyet, ödeme,
- * fatura ve sistem bilgisi ona gitmez.
+ * hammaddeler, kasada (ModPOS) değişecek fiyatlar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi
+ * gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin
+ * sonucunu görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
@@ -324,13 +347,14 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     cashNotifications(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...mine, ...recipes];
-  const [model, upcoming, invoices, system, unpriced, holds] = await Promise.all([
+  const [model, upcoming, invoices, system, unpriced, holds, pos] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
     unpricedNotifications().catch(() => []),
     holdNotifications().catch(() => []),
+    posNotifications().catch(() => []),
   ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -380,5 +404,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...holds, ...cash, ...payments, ...invoices, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...payments, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
 }

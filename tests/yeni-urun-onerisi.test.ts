@@ -108,11 +108,11 @@ test("ürün açma kuralı tek yerde: Yeni ürün ve öneri onayı aynı yardım
   assert.match(helper, /categoryFireDefault\(peers\)/);
   assert.match(helper, /sortOrder: \(m \?\? 0\) \+ 1/);
   const products = read("src/server/actions/products.ts");
-  assert.match(products, /getDb\(\)\.transaction\(\(tx\) => insertProduct\(tx, data, \{ copyFromId \}\)\)/);
+  assert.match(products, /getDb\(\)\.transaction\(\(tx\) => insertProduct\(tx, data, \{ copyFromId, changedBy: me\.name \}\)\)/);
   // Ürün tablosuna yazan başka ekleme yok (kopya kod kalmadı)
   assert.doesNotMatch(products, /\.insert\(s\.products\)/);
   assert.doesNotMatch(actions, /\.insert\(s\.products\)/);
-  assert.match(body("approveNewProduct"), /insertProduct\(tx, \{ name: data\.name, size, categoryId: data\.categoryId, price: data\.price \}, \{ items, note: req\.after\.note \}\)/);
+  assert.match(body("approveNewProduct"), /insertProduct\(tx, \{ name: data\.name, size, categoryId: data\.categoryId, price: data\.price \}, \{ items, note: req\.after\.note, changedBy: me\.name \}\)/);
 });
 
 test("öneri ve onay: kilit, durum ve aynı ad + boy yeniden denetlenir; formüller sunucuda; red ürünü açmaz", () => {

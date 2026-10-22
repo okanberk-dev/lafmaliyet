@@ -65,15 +65,17 @@ export async function pushSaleChange(user: { name: string }, row: SaleRow, after
   if (plan.kind === "none") return { kind: "local" };
   if (plan.kind === "refuse") throw new UserError(plan.error);
   const secret = siteLinkSecret();
-  if (!secret) throw new UserError(pushFailureMessage({ kind: "off" }, consequence));
+  // Sitenin hatalarında nedeni (`cause`, PushFailure) de taşınır: toplu fiyat değişikliği site kapalıyken sıradaki
+  // ürünleri göndermez (src/server/prices/batch.ts); metin ve öteki çağıranlar için hata aynı UserError
+  if (!secret) throw new UserError(pushFailureMessage({ kind: "off" }, consequence), { cause: { kind: "off" } });
   let res: Awaited<ReturnType<typeof callSite>>;
   try {
     res = await callSite(secret, "/api/panel/menu", { method: "POST", body: JSON.stringify(plan.body) });
   } catch (e) {
-    if (e instanceof SiteRequestError) throw new UserError(pushFailureMessage(e.failure, consequence));
+    if (e instanceof SiteRequestError) throw new UserError(pushFailureMessage(e.failure, consequence), { cause: e.failure });
     throw e;
   }
-  if (!res.ok) throw new UserError(pushFailureMessage({ kind: "http", status: res.status, field: errorField(res.json) }, consequence));
+  if (!res.ok) throw new UserError(pushFailureMessage({ kind: "http", status: res.status, field: errorField(res.json) }, consequence), { cause: { kind: "http", status: res.status } });
   return { kind: "pushed", item: parseSiteMenuAnswer(res.json), body: plan.body, price: plan.price, visibility: plan.visibility, ...link };
 }
 

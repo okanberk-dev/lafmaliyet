@@ -5,6 +5,7 @@ import { and, eq, max } from "drizzle-orm";
 import { categoryFireDefault } from "@/app/panel/urunler/logic";
 import { UserError } from "@/server/actions/util";
 import { getDb, schema as s } from "@/server/db";
+import { recordPriceChange } from "@/server/prices/record";
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
@@ -29,9 +30,15 @@ export interface NewRecipeLine {
  * Kopyalamada (`copyFromId`) kaynağın ürüne özel fire oranı, notu ve reçetesi de gelir (Excel'de kart bloğu
  * kopyalanınca G16 ve notlar da taşınır). Kopyasız yeni ürün, kategorisindeki ürünlerin en sık kullandığı zayi oranını
  * alır (categoryFireDefault); `items` verilirse reçetesi o satırlardır. Sıra en sonda; aktiflik ve QR menüde
- * görünürlük varsayılan (açık). laffogato.net menüsüne bağlanmaz (bağlantı Ürünler › Site menüsü'nde).
+ * görünürlük varsayılan (açık). laffogato.net menüsüne bağlanmaz (bağlantı Ürünler › Site menüsü'nde). Fiyatı varsa
+ * fiyat geçmişinin ilk satırı ("Yeni ürün", `changedBy` adıyla) yazılır; kasanın (ModPOS) listesine girmez (yeni ürün
+ * kasaya zaten elle eklenir, sahibin kararı D3; docs/FIYATLAR.md).
  */
-export async function insertProduct(tx: Tx, data: NewProduct, opts: { copyFromId?: number | null; note?: string | null; items?: NewRecipeLine[] } = {}) {
+export async function insertProduct(
+  tx: Tx,
+  data: NewProduct,
+  opts: { copyFromId?: number | null; note?: string | null; items?: NewRecipeLine[]; changedBy: string },
+) {
   const copyFromId = opts.copyFromId ?? null;
   const [dup] = await tx
     .select({ id: s.products.id })
@@ -63,5 +70,6 @@ export async function insertProduct(tx: Tx, data: NewProduct, opts: { copyFromId
       }))
     : (opts.items ?? []).map((it, i) => ({ ...it, sortOrder: i + 1 }));
   if (lines.length) await tx.insert(s.recipeItems).values(lines.map((l) => ({ ...l, productId: created.id })));
+  if (data.price > 0) await recordPriceChange(tx, { productId: created.id, before: null, after: data.price, source: "create", changedBy: opts.changedBy }, new Date(), { pos: false });
   return { id: created.id, lines: lines.length, fireOverride: initial.fireOverride, noteCopied: !!(copyFromId && initial.note) };
 }
