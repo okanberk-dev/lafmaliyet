@@ -1,15 +1,18 @@
-# Kalan işler (22 Ekim 2026, 08:30 UTC itibarıyla)
+# Kalan işler (22 Ekim 2026, 11:00 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
 
 ## 1. Canlıda olanlar
 
-- `main` @ e10fbb0 (PR #7): **yönetici işlemlerinde parolayla onay** (`adminstepup.md`) ve **günlük işlerin takibi**
+- `main` @ 099dc8a. PR #7 (e10fbb0): **yönetici işlemlerinde parolayla onay** (`adminstepup.md`) ve **günlük işlerin takibi**
   (`ops.md` §3: `job_runs`, sistem uyarıları, bekçi e-postası, `/api/health?isler=1`, migration `0020_gunluk_isler`)
   ile **canlı derlemede migration doğrulaması** (`scripts/migration-check.ts`).
 - Daha önce: önizlemeler migration çalıştırmaz (`scripts/predeploy-guard.ts`, PR #6), tedarikçiler, giriş güvenliği,
-  site menüsü eşitlemesi, bar ekranında siparişler.
+  site menüsü eşitlemesi, bar ekranında siparişler; PR #9 (diğer oturum): bar ekranından tek dokunuşla sipariş
+  aşaması, Ayarlar'da "Bağlantıları sına".
+- **Paralel çalışan bir oturum daha var** (site ↔ panel işleri): sahiplik, sözleşmeler ve çakışma noktaları
+  `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - Canlı derleme günlüğü: `✓ Veritabanı şeması güncel (21 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir
   önizlemenin uyguladığı eski menü migration kaydı; zararsız).
 
@@ -27,7 +30,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 | 8 | menu: toplu fiyat değişikliği, ModPOS listesi, fiyat geçmişi | `menu.md` | `fiyat_gecmisi` | başlanmadı |
 | 9 | today: "Bugün" ekranı, telefonda yeni alt menü | `today.md` | yok | başlanmadı |
 
-WIP yamaları `fa989a3` üzerine yazıldı; `main` (e10fbb0) içerik olarak aynıdır, `git am` ile uygulanır. Yamalar
+WIP yamaları `fa989a3` üzerine yazıldı; güncel main (099dc8a) üzerinde de `git apply --check` temiz geçiyor; `git am` ile uygulanır. Yamalar
 yarımdır: önce gözden geçirin, sonra tamamlayın. vkn yamasındaki `0021` migration'ı birleştirmede yeniden üretilir.
 
 ### İkinci paket (planlar hazır; ortak bilgi `BRIEF2.md`)
