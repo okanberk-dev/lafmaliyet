@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
 
 /*
  * Fotoğraf ekleme (kasa raporu, kasadan çıkan fiş): telefonda "Fotoğraf çek" arka kamerayı açar (<input capture>:
- * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Fotoğraf telefonda 1600 px JPEG'e
- * küçültülür (EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur. Aşamalar ekranda:
+ * getUserMedia değil, panelin camera=() kuralı değişmez), "Galeriden seç" galeriyi. Fotoğraf telefonda JPEG'e
+ * küçültülür (en çok 2576 px / ~3,7 MP; EXIF ve konum düşer), POST /api/foto ile yüklenir ve aynı istekte okunur. Aşamalar ekranda:
  * küçültülüyor → yükleniyor → okunuyor; hata kırmızı. Kurallar ve hata metinleri src/lib/photo-rules.ts'te.
  */
 

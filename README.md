@@ -137,7 +137,7 @@ src/
   lib/backup/          tam yedek: dosya biçimi, yazılmayanlar, şema sürümü, yükleme sırası, giriş bilgileri (saf, testli)
   lib/photo-read/      fotoğraftan okunanın kontrolü: şemalar, istemler, Z / POS / fiş okumasının forma gidecek hâli (saf, testli)
   lib/photo-rules.ts   fotoğraf türleri, boyut ve ölçü sınırları, saklama süreleri, kim görür (saf, testli)
-  lib/photo-compress.ts  fotoğrafı telefonda 1600 px JPEG'e küçültme
+  lib/photo-compress.ts  fotoğrafı telefonda JPEG'e küçültme (en çok 2576 px / ~3,7 MP, 1,8 MB)
   lib/calc/            hesaplama motoru: Excel formüllerinin saf TypeScript karşılığı
     engine.ts          hammadde → reçete → ürün → satış → gelir-gider → stok
     insights.ts        panel, uyarılar, tutarlılık, menü mühendisliği, senaryo

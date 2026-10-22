@@ -12,7 +12,8 @@ import { PhotoError, recentUploads, savePhoto } from "@/server/storage/photos";
 /**
  * Fotoğraf yükleme ve ilk okuma tek istekte (POST /api/foto, form: dosya, tur, gun, oku=1). Okuma başarısız olsa da
  * fotoğraf saklanır (yanıtta readError); personel rakamları elle yazar ya da /api/foto/{id}/oku ile yeniden dener.
- * Fotoğraf telefonda 1600 px JPEG'e küçültülmüş gelir; boyut, tür ve ölçü savePhoto'da denetlenir. Okuma en çok 45 sn.
+ * Fotoğraf telefonda JPEG'e küçültülmüş gelir (photo-compress PHOTO_COMPRESS); boyut, tür ve ölçü savePhoto'da
+ * denetlenir. Okuma en çok 45 sn.
  */
 export const maxDuration = 60;
 

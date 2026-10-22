@@ -13,7 +13,7 @@ export const PHOTO_KINDS: readonly PhotoKind[] = ["kasa-z", "kasa-pos", "fis", "
 export type PhotoMime = "image/jpeg" | "image/png" | "image/webp";
 export const PHOTO_MIMES: readonly PhotoMime[] = ["image/jpeg", "image/png", "image/webp"];
 
-/** Telefonda 1600 px JPEG'e küçültülen fotoğraf 150–450 KB olur; 2 MB küçültülmemiş (ya da elle gönderilmiş) dosyayı keser */
+/** Telefonda küçültülen fotoğraf (en çok 2576 px / ~3,7 MP JPEG) çoğunlukla 0,4–1,2 MB olur ve 1,8 MB'ı aşmaz; 2 MB küçültülmemiş (ya da elle gönderilmiş) dosyayı keser */
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 /** Kısa kenarı bundan küçük fotoğrafta rakam okunmaz; uzun kenarı bundan büyüğü küçültülmemiştir */
 export const MIN_PHOTO_EDGE = 200;

@@ -58,11 +58,13 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
   "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf.
-- Telefonda fotoğraf 1600 px JPEG'e (kalite 0,7) küçültülür: ~150–450 KB, EXIF (konum dahil) düşer. Soluk fişler
-  okunmuyorsa önce `src/lib/photo-compress.ts` › `PHOTO_COMPRESS` (2000 / 0,8) büyütülür. Uzun bir Z raporu tek
-  fotoğrafta 1600 px'te dar kalır (rulo ~270 px eninde); canlı değerlendirmenin `z-uzun-tek-fotograf` durumu bunu
-  dener (§ 8). Okunmuyorsa personel raporu iki parça çeker (ikinci fotoğraf yalnız boş alanları doldurur) ya da bu
-  sayılar büyütülür (2 MB sınırının altında kalmalı).
+- Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını
+  kaybetmeden okuduğu en büyük ölçüdür: en uzun kenar en çok 2576 px, alan en çok ~3,7 megapiksel
+  (`src/lib/photo-compress.ts` › `PHOTO_COMPRESS`). Telefon fotoğrafı 3:4 olduğundan ~1670×2220 px olur, çoğu
+  0,4–1,2 MB; 1,8 MB'ı aşan görsel önce daha düşük kaliteyle, gerekirse daha küçük yeniden kodlanır (sunucu 2 MB'ta
+  keser). Uzun bir Z raporu tek fotoğrafta yine dar kalır (rulo ~375 px eninde; 1600 px'te ~270 px kalıyordu); canlı
+  değerlendirmenin `z-uzun-tek-fotograf` durumu bunu dener (§ 8). Okunmuyorsa personel raporu iki parça çeker (ikinci
+  fotoğraf yalnız boş alanları doldurur).
 
 ## 4. Saklama ve temizlik
 
@@ -96,7 +98,8 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
   (dolar), süre, çalışan model, Anthropic'in istek kimliği ve doğrulanmış sonuç (sayılar, mağaza adı, tarih, kalemler;
   satıcının vergi numarası saklanmaz). Sonuç fotoğrafla birlikte silinir, maliyet satırı kalır. **Görsel ve istem
   hiçbir yere yazılmaz.** Anahtar hatası, kredi bitmesi ve reddedilen istek sunucu günlüğüne de düşer.
-- **Tutar:** denemelerde okuma başına 0,017–0,031 $ (çoğu ~0,03 $); ayda ~60 kasa + ~60 fiş okuması ≈ 3–4 $.
+- **Tutar:** denemelerde (1600 px görsellerle) okuma başına 0,017–0,031 $ (çoğu ~0,03 $). Görsel artık ~3,7 MP
+  olduğundan bir okuma ~0,01 $ daha pahalı olur (görsel ~4.800 token); ayda ~60 kasa + ~60 fiş okuması ≈ 4–5 $.
   Ayarlar kartı bu ayın okumasını ve tutarını, bugünkü okuma / sınırı gösterir. Anthropic Console'da aylık harcama
   sınırı koymak önerilir.
 - Hata metinleri (`src/server/ai/run.ts` › `aiErrorText`): zaman aşımı, bağlantı, yoğunluk ve yarım kalan okumada
@@ -150,7 +153,7 @@ npx tsx scripts/foto-eval/run.ts --kayitli    # ağsız, parasız: betiğin kend
 
 `scripts/foto-eval/cases.json` on durumu ve beklenen değerlerini tutar: canlıda denenen dört görsel, POS fişinin Z
 bölümüne okutulması, ödeme satırı yanlış basılmış Z, çok bulanık Z, kartla ödenmiş market fişi, e-Arşiv fatura ve
-tek fotoğrafta uzun Z raporu (ürün grupları, saatlik satış; 1600 px'te rulo ~270 px eninde, § 3). Betik her durum
+tek fotoğrafta uzun Z raporu (ürün grupları, saatlik satış; rulo ~375 px eninde, § 3). Betik her durum
 için belge türünü, doğru / yanlış alanları, işaretleri ve uyarıları, süreyi ve tutarı, sonunda toplamı yazar
 (veritabanı kullanmaz; tam çalışma ≈ 0,30 $). Lansmandan önce bir kez tam çalıştırın (`--max` olmadan); yeni durum:
 görseli `make-images.py`'nin sonuna (öncekilerin rastgele sırası değişmesin), beklentiyi `cases.json`'a ekleyin.

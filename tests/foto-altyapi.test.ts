@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { test } from "node:test";
 
-import { fitWithin } from "../src/lib/photo-compress";
+import { fitWithin, PHOTO_COMPRESS } from "../src/lib/photo-compress";
 import {
   imageSize,
   keepUntil,
@@ -252,6 +252,22 @@ test("fitWithin: uzun kenar 1600'e iner, oran korunur; küçük görsel büyüt�
   assert.deepEqual(fitWithin(1200, 900, 1600), { width: 1200, height: 900 });
   assert.deepEqual(fitWithin(1600, 1600, 1600), { width: 1600, height: 1600 });
   assert.deepEqual(fitWithin(9000, 10, 1600), { width: 1600, height: 2 });
+});
+
+test("PHOTO_COMPRESS: telefon fotoğrafını megapiksel, kırpılmış uzun fişi kenar sınırı keser; API ve sunucu sınırlarının içinde", () => {
+  const { maxEdge, maxPixels, maxBytes } = PHOTO_COMPRESS;
+  // 12 MP telefon fotoğrafı (3:4): alanı ~3,7 MP'ye iner (Claude'un en büyük ölçüsü ~3,75 MP)
+  const phone = fitWithin(3024, 4032, maxEdge, maxPixels);
+  assert.deepEqual(phone, { width: 1666, height: 2221 });
+  assert.ok(phone.width * phone.height <= 3_750_000);
+  // kırpılmış uzun Z (1:5): en uzun kenar 2576
+  assert.deepEqual(fitWithin(800, 4000, maxEdge, maxPixels), { width: 515, height: 2576 });
+  // sınırın içindeki görsel değişmez (kayıtlı deneme görselleri aynı ölçüde gider, AI_REPLAY onları ölçüsünden tanır)
+  assert.deepEqual(fitWithin(517, 1600, maxEdge, maxPixels), { width: 517, height: 1600 });
+  assert.deepEqual(fitWithin(1200, 1600, maxEdge, maxPixels), { width: 1200, height: 1600 });
+  // maxPixels verilmezse yalnız kenar sınırı (fatura belgeleri)
+  assert.deepEqual(fitWithin(4032, 3024, 2000), { width: 2000, height: 1500 });
+  assert.ok(maxEdge <= 2576 && maxBytes < MAX_PHOTO_BYTES && maxEdge <= 4096);
 });
 
 test("uploadErrorText: sunucunun metni önce; yoksa durum koduna göre", () => {
