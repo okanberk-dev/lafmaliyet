@@ -6,7 +6,9 @@
  *
  * Faturalar karta yabancı anahtarla bağlanmaz: faturadaki tedarikçi adının anahtarı (supplierMatchKey: büyük/küçük
  * harf, I/ı, boşluk ve parantezli not sayılmaz) kartın adının ya da diğer adlarından birinin anahtarıyla aynıysa
- * fatura o karttadır. Kartı olmayan ad kendi başına bir tedarikçidir; kart, bilgi girilince açılır.
+ * fatura o karttadır. Adı tutmayan fatura vergi numarasıyla (VKN / TCKN) eşleşir: kartta yazılı numarayla ya da aynı
+ * numarayı taşıyan öteki faturaların adlarıyla (supplierResolver). Kartı olmayan ad kendi başına bir tedarikçidir
+ * (aynı vergi nolu adlar birlikte); kart, bilgi girilince açılır.
  */
 import { openBalance } from "@/lib/calc/insights";
 import { dateTR, money } from "@/lib/format";
@@ -135,6 +137,177 @@ export function cleanAliases(name: string, aliases: readonly string[], previousN
   return out;
 }
 
+// ---------------------------------------------------------------- Vergi no ile eşleşme
+
+/**
+ * Eşleşmede yok sayılan yer tutucu numaralar: formlarda ve örneklerde yazılan numaralar. 1234567890 VKN kontrol
+ * hanesini geçtiği için listede; yerel seed'deki "Sütaş" kartında da bu yazılı (yerelde eşleşme yapmaz).
+ */
+export const DUMMY_TAX_NUMBERS: ReadonlySet<string> = new Set([
+  "1234567890",
+  "1111111111",
+  "11111111111",
+  "2222222222",
+  "22222222222",
+  "0000000000",
+  "00000000000",
+  "9999999999",
+  "99999999999",
+]);
+
+/** Faturada saklanan biçim: yalnız rakam, 10 (VKN) ya da 11 (TCKN) hane; başka uzunlukta null */
+export function cleanTaxNumber(raw: string | null | undefined): string | null {
+  const v = normalizeTaxNumber(raw);
+  return v.length === 10 || v.length === 11 ? v : null;
+}
+
+/**
+ * Eşleşmede kullanılan biçim: kontrol hanesi tutan ve yer tutucu olmayan numara. Değilse null: o numara saklanır,
+ * faturada görünür ama iki firmayı birleştirmez.
+ */
+export function taxKey(raw: string | null | undefined): string | null {
+  const v = cleanTaxNumber(raw);
+  if (!v || DUMMY_TAX_NUMBERS.has(v)) return null;
+  return (v.length === 10 ? isValidVkn(v) : isValidTckn(v)) ? v : null;
+}
+
+/** Faturalar'daki "Tedarikçinin sayfası" bağlantısının anahtarı: ad ve (geçerliyse) vergi no birlikte */
+export const supplierPairKey = (name: string, taxNumber?: string | null) => `${supplierMatchKey(name)}|${taxKey(taxNumber) ?? ""}`;
+
+/** Birleşim-bul (yol kısaltmalı); düğüm adları "n:<ad anahtarı>", "t:<vergi no>", "c:<kart kimliği>" */
+class UnionFind {
+  private parent = new Map<string, string>();
+
+  has(x: string): boolean {
+    return this.parent.has(x);
+  }
+
+  find(x: string): string {
+    if (!this.parent.has(x)) this.parent.set(x, x);
+    let root = x;
+    while (this.parent.get(root) !== root) root = this.parent.get(root)!;
+    for (let cur = x; cur !== root; ) {
+      const next = this.parent.get(cur)!;
+      this.parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  }
+
+  union(a: string, b: string) {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra === rb) return;
+    // Kök sıradan bağımsız seçilir (küçük olan): aynı girdi her sırada aynı ağacı verir
+    if (ra < rb) this.parent.set(rb, ra);
+    else this.parent.set(ra, rb);
+  }
+
+  nodes(): string[] {
+    return [...this.parent.keys()];
+  }
+}
+
+/** Tedarikçisi bulunacak fatura: ad ve (Paraşüt'ten geldiyse) vergi no; tarih gerekmez */
+export interface SupplierRef {
+  supplier: string;
+  supplierTaxNumber?: string | null;
+  date?: string;
+}
+
+/**
+ * Faturanın tedarikçisi. `id` grubu ayırır ("kart:<kimlik>" ya da kartsızda "ad:<anahtar>"), `key` grubun anahtarı.
+ * `via`: "ad" kartın adı ya da diğer adıyla, "vergi" vergi numarasıyla eşleşti; kartsızda null.
+ */
+export interface SupplierMatch<C> {
+  id: string;
+  key: string;
+  card: C | null;
+  via: "ad" | "vergi" | null;
+}
+
+/**
+ * Faturayı (ad, vergi no) çiftinden tedarikçisine bağlar. Sonuç yalnız çifte, kartlara ve bütün çiftlerin kümesine
+ * bağlıdır: aynı çiftleri veren her çağıran (Tedarikçiler, adres parçaları, ⌘K, Faturalar'daki bağlantı, Ödemeler'in
+ * tahmini vadesi, eşitlemedeki peşin kuralı) aynı tedarikçiyi bulur. Sıra:
+ * 1. Ad önce: kartın adı ya da diğer adıysa o kart. Sahibin elle yazdığı ad hep kazanır (iki firmayı ayırmanın yolu).
+ * 2. Kartta yazılı vergi no tek bir kartta varsa o kart. İki kartta aynı numara varsa numara eşleşmede kullanılmaz.
+ * 3. Öteki faturalar üzerinden: aynı faturada geçen ad ve vergi no birbirine bağlanır (birleşim-bul). Bağlı küme tek
+ *    kart içeriyorsa o kart; kartsızsa kümenin kartsız grubu (anahtarı kümedeki en küçük ad anahtarı). İki kart
+ *    içeriyorsa (çakışma) aynı adlı ve vergi nolu faturalar 2. adımda tek karta gittiyse onu izler.
+ * 4. Yoksa (bugünkü kural) kendi adının kartsız grubu.
+ * Kontrol hanesi tutmayan ve yer tutucu numaralar (taxKey) hiçbir şeyi bağlamaz; Paraşüt'ün geçici adı ("Paraşüt
+ * tedarikçisi") köprü olmaz, vergi nosu bilinen tedarikçisine gider. Vergi nosu olmayan veride sonuç eskisiyle aynıdır.
+ */
+export function supplierResolver<C extends CardNames & { taxNumber?: string | null }>(cards: readonly C[], refs: readonly SupplierRef[]) {
+  const placeholder = supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
+  const byName = cardIndex(cards);
+  const byId = new Map(cards.map((c) => [String(c.id), c] as const));
+  const taxCards = new Map<string, C[]>();
+  for (const c of cards) {
+    const t = taxKey(c.taxNumber);
+    if (t) taxCards.set(t, [...(taxCards.get(t) ?? []), c]);
+  }
+  const byTax = new Map<string, C>();
+  for (const [t, list] of taxCards) if (list.length === 1) byTax.set(t, list[0]);
+
+  const uf = new UnionFind();
+  for (const [k, c] of byName) uf.union(`n:${k}`, `c:${c.id}`);
+  for (const [t, c] of byTax) uf.union(`t:${t}`, `c:${c.id}`);
+  const pairs = refs.map((r) => ({ k: supplierMatchKey(r.supplier), t: taxKey(r.supplierTaxNumber) }));
+  for (const { k, t } of pairs) if (k && t && k !== placeholder) uf.union(`n:${k}`, `t:${t}`);
+
+  // Kümelerin kartları ve kartsız kümenin anahtarı (en küçük ad anahtarı: tarihe bakmadan her çağıranda aynı)
+  const compCards = new Map<string, Set<C>>();
+  const compKey = new Map<string, string>();
+  for (const node of uf.nodes()) {
+    const root = uf.find(node);
+    if (node.startsWith("c:")) {
+      const c = byId.get(node.slice(2));
+      if (c) compCards.set(root, (compCards.get(root) ?? new Set()).add(c));
+    } else if (node.startsWith("n:")) {
+      const k = node.slice(2);
+      const cur = compKey.get(root);
+      if (k !== placeholder && (cur === undefined || k < cur)) compKey.set(root, k);
+    }
+  }
+  // Çakışmada: adı karta ait olmayan, vergi nosu bir kartta yazılı faturalar (2. adım) hangi kartlara gitti
+  const nameTaxCards = new Map<string, Set<C>>();
+  for (const { k, t } of pairs) {
+    const c = t ? byTax.get(t) : undefined;
+    if (!c || !k || k === placeholder || byName.has(k)) continue;
+    nameTaxCards.set(k, (nameTaxCards.get(k) ?? new Set()).add(c));
+  }
+
+  const toCard = (c: C, via: "ad" | "vergi"): SupplierMatch<C> => ({ id: `kart:${c.id}`, key: supplierMatchKey(c.name), card: c, via });
+  const only = (set: Set<C>) => set.values().next().value as C;
+
+  function resolve(supplier: string, taxNumber?: string | null): SupplierMatch<C> {
+    const k = supplierMatchKey(supplier);
+    const named = byName.get(k);
+    if (named) return toCard(named, "ad");
+    const t = taxKey(taxNumber);
+    const taxed = t ? byTax.get(t) : undefined;
+    if (taxed) return toCard(taxed, "vergi");
+    const node = t ? `t:${t}` : k !== placeholder ? `n:${k}` : null;
+    if (node && uf.has(node)) {
+      const root = uf.find(node);
+      const inComp = compCards.get(root);
+      if (inComp?.size === 1) return toCard(only(inComp), "vergi");
+      if (!inComp?.size) {
+        const key = compKey.get(root);
+        if (key !== undefined) return { id: `ad:${key}`, key, card: null, via: null };
+      } else if (k !== placeholder) {
+        const follow = nameTaxCards.get(k);
+        if (follow?.size === 1) return toCard(only(follow), "vergi");
+      }
+    }
+    return { id: `ad:${k}`, key: k, card: null, via: null };
+  }
+
+  return { resolve };
+}
+
 // ---------------------------------------------------------------- Vade ve ödeme durumu
 
 /** "Yakında" sayılan gün: vadesi bugünden en çok bu kadar sonra (gecikmişler hariç) */
@@ -152,6 +325,8 @@ export interface LedgerInvoice {
   dueDate?: string | null;
   paidAt?: string | null;
   paymentRequestedAt?: string | null;
+  /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
+  supplierTaxNumber?: string | null;
 }
 
 export interface Due {
@@ -271,15 +446,34 @@ export function summarize(invoices: readonly LedgerInvoice[], opts: { today: str
 
 // ---------------------------------------------------------------- Tedarikçiler (gruplar)
 
+/** Aynı vergi nosunu taşıyan başka bir tedarikçi (tedarikçi sayfasındaki şerit) */
+export interface SharedTax {
+  taxNumber: string;
+  others: { name: string; slug: string; cardId: number | null }[];
+}
+
 export interface SupplierGroup<I extends LedgerInvoice = LedgerInvoice, C extends CardNames = SupplierCard> {
-  /** Kartın adının ya da (kartsızda) faturalardaki adın anahtarı */
+  /** Kartın adının ya da (kartsızda) faturalardaki adların en küçük anahtarı */
   key: string;
   /** Adresteki parça: /panel/tedarikciler/<slug> */
   slug: string;
   name: string;
   card: C | null;
-  /** Faturalarda geçen adlar (parantezli not hariç), en yeni faturanınki önce */
+  /**
+   * Faturalarda geçen adlar (parantezli not hariç), en yeni faturanınki önce. Paraşüt'ün geçici adı yalnız kendi
+   * grubunda yazılır ("Faturadan doldur" bu adla bütün adı okunamayan faturalara bakmasın)
+   */
   names: string[];
+  /** Grubun bütün ad anahtarları: faturalardaki adlar, kartın adı ve diğer adları (kartsız grubu adıyla bulmak için) */
+  keys: string[];
+  /** Yalnız vergi numarasıyla gelen adlar (kartın adı ya da diğer adı değil; kartsızda grubun anahtarından başkası) */
+  viaTax: string[];
+  /** Faturalardaki geçerli vergi numaraları, en çok fatura önce */
+  taxNumbers: { taxNumber: string; count: number }[];
+  /** Kartta yazılı vergi no; yoksa faturalardaki tek vergi no (birden çoksa null) */
+  taxNumber: string | null;
+  /** Aynı vergi nosunu taşıyan öteki tedarikçiler (adı başka karta ait faturalar, iki kartta aynı numara) */
+  sharedTax: SharedTax[];
   /** En yeni önce */
   invoices: I[];
   /** Tahmini vadenin günü: kartta yazılıysa o, değilse genel ayar */
@@ -288,25 +482,25 @@ export interface SupplierGroup<I extends LedgerInvoice = LedgerInvoice, C extend
 }
 
 /**
- * Faturaları tedarikçi tedarikçi toplar: kartı olan adlar kartta (diğer adlarıyla birlikte), kartsız adlar kendi
- * başına. Faturası olmayan kartlar da listede (yeni eklenmiş tedarikçi). Sıra ada göre; ekran kendisi sıralar.
+ * Faturaları tedarikçi tedarikçi toplar (supplierResolver): kartı olan adlar kartta (diğer adlarıyla birlikte),
+ * vergi nosu karta ya da kartın faturalarına bağlanan adlar da kartta; kartsız adlar kendi başına, aynı vergi nolu
+ * olanlar birlikte. Faturası olmayan kartlar da listede (yeni eklenmiş tedarikçi). Sıra ada göre; ekran kendisi sıralar.
  */
-export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { paymentTermDays?: number | null }>(
+export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { paymentTermDays?: number | null; taxNumber?: string | null }>(
   invoices: readonly I[],
   cards: readonly C[],
   opts: { today: string; termDays: number },
 ): SupplierGroup<I, C>[] {
-  const index = cardIndex(cards);
+  const placeholder = supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
+  const { resolve } = supplierResolver(cards, invoices);
   const byId = new Map<string, { key: string; card: C | null; invoices: I[] }>();
   for (const c of cards) byId.set(`kart:${c.id}`, { key: supplierMatchKey(c.name), card: c, invoices: [] });
   for (const inv of invoices) {
-    const k = supplierMatchKey(inv.supplier);
-    const card = index.get(k) ?? null;
-    const id = card ? `kart:${card.id}` : `ad:${k}`;
-    let g = byId.get(id);
+    const r = resolve(inv.supplier, inv.supplierTaxNumber);
+    let g = byId.get(r.id);
     if (!g) {
-      g = { key: k, card: null, invoices: [] };
-      byId.set(id, g);
+      g = { key: r.key, card: null, invoices: [] };
+      byId.set(r.id, g);
     }
     g.invoices.push(inv);
   }
@@ -314,16 +508,25 @@ export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { 
   const out: SupplierGroup<I, C>[] = [];
   for (const g of byId.values()) {
     const list = [...g.invoices].sort((a, b) => b.date.localeCompare(a.date));
+    const own = g.card ? [g.card.name, ...g.card.aliases].map(supplierMatchKey) : [g.key];
     // Her anahtardan bir ad (en yeni faturadaki yazılışı): "KALDI" ile "Kaldi" aynı addır
     const names: string[] = [];
+    const keys = new Set<string>(g.card ? own.filter(Boolean) : []);
     const seen = new Set<string>();
+    const taxCount = new Map<string, number>();
     for (const inv of list) {
       const k = supplierMatchKey(inv.supplier);
-      if (!seen.has(k)) {
-        seen.add(k);
-        names.push(splitSupplier(inv.supplier).base.trim());
-      }
+      const t = taxKey(inv.supplierTaxNumber);
+      if (t) taxCount.set(t, (taxCount.get(t) ?? 0) + 1);
+      if (seen.has(k) || (k === placeholder && g.key !== placeholder)) continue;
+      seen.add(k);
+      keys.add(k);
+      names.push(splitSupplier(inv.supplier).base.trim());
     }
+    const ownKeys = new Set(own);
+    const taxNumbers = [...taxCount]
+      .map(([taxNumber, count]) => ({ taxNumber, count }))
+      .sort((a, b) => b.count - a.count || a.taxNumber.localeCompare(b.taxNumber));
     const termDays = g.card?.paymentTermDays ?? opts.termDays;
     out.push({
       key: g.key,
@@ -331,12 +534,102 @@ export function groupSuppliers<I extends LedgerInvoice, C extends CardNames & { 
       name: g.card?.name ?? names[0] ?? g.key,
       card: g.card,
       names,
+      keys: [...keys],
+      viaTax: names.filter((n) => !ownKeys.has(supplierMatchKey(n))),
+      taxNumbers,
+      taxNumber: g.card?.taxNumber || (taxNumbers.length === 1 ? taxNumbers[0].taxNumber : null),
+      sharedTax: [],
       invoices: list,
       termDays,
       summary: summarize(list, { today: opts.today, termDays }),
     });
   }
+  // Aynı vergi no birden çok tedarikçide: faturalarındaki ya da kartındaki numara. Paraşüt'ün geçici adının grubu
+  // sayılmaz (orada kalan faturanın tedarikçisi henüz bilinmiyor)
+  const holders = new Map<string, SupplierGroup<I, C>[]>();
+  const taxesOf = (g: SupplierGroup<I, C>) => {
+    const own = taxKey(g.card?.taxNumber);
+    return [...new Set([...g.taxNumbers.map((t) => t.taxNumber), ...(own ? [own] : [])])];
+  };
+  for (const g of out) {
+    if (!g.card && g.key === placeholder) continue;
+    for (const t of taxesOf(g)) holders.set(t, [...(holders.get(t) ?? []), g]);
+  }
+  for (const g of out) {
+    if (!g.card && g.key === placeholder) continue;
+    g.sharedTax = taxesOf(g).flatMap((taxNumber) => {
+      const others = (holders.get(taxNumber) ?? []).filter((o) => o !== g).sort((a, b) => a.name.localeCompare(b.name, "tr"));
+      return others.length ? [{ taxNumber, others: others.map((o) => ({ name: o.name, slug: o.slug, cardId: o.card?.id ?? null })) }] : [];
+    });
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name, "tr"));
+}
+
+/** Vergi no önizlemesindeki ad: o vergi noyla kaç fatura, adı tedarikçinin kendi adı mı (ad önce gelir) */
+export interface TaxIndexEntry {
+  slug: string;
+  name: string;
+  cardId: number | null;
+  names: { name: string; count: number; own: boolean }[];
+}
+
+/** Tedarikçi penceresinin vergi no önizlemesi için düz veri (sunucudan istemciye geçer) */
+export interface TaxIndex {
+  /** Vergi no → onu taşıyan faturaların tedarikçileri */
+  byTax: Record<string, TaxIndexEntry[]>;
+  /** Vergi no → kartında bu numara yazılı tedarikçiler */
+  cardTax: Record<string, { id: number; name: string }[]>;
+}
+
+export function taxNameIndex(groups: readonly SupplierGroup<LedgerInvoice, CardNames & { taxNumber?: string | null }>[]): TaxIndex {
+  const byTax: TaxIndex["byTax"] = {};
+  const cardTax: TaxIndex["cardTax"] = {};
+  for (const g of groups) {
+    const own = new Set(g.card ? [g.card.name, ...g.card.aliases].map(supplierMatchKey) : []);
+    const perTax = new Map<string, Map<string, { name: string; count: number; own: boolean }>>();
+    for (const inv of g.invoices) {
+      const t = taxKey(inv.supplierTaxNumber);
+      if (!t) continue;
+      const k = supplierMatchKey(inv.supplier);
+      const m = perTax.get(t) ?? new Map();
+      const cur = m.get(k);
+      if (cur) cur.count++;
+      else m.set(k, { name: splitSupplier(inv.supplier).base.trim(), count: 1, own: own.has(k) });
+      perTax.set(t, m);
+    }
+    for (const [t, m] of perTax) {
+      (byTax[t] ??= []).push({ slug: g.slug, name: g.name, cardId: g.card?.id ?? null, names: [...m.values()].sort((a, b) => b.count - a.count) });
+    }
+    const ct = taxKey(g.card?.taxNumber);
+    if (g.card && ct) (cardTax[ct] ??= []).push({ id: g.card.id, name: g.card.name });
+  }
+  return { byTax, cardTax };
+}
+
+/**
+ * Pencerede yazılan vergi no kaydedilirse ne olur: hangi adların faturaları bu tedarikçiye gelir (`join`), hangileri
+ * adı başka bir tedarikçiye ait olduğu için orada kalır (`stay`, ad önce gelir), numara başka bir kartta da yazılı mı
+ * (`sharedCards`: o zaman vergi noyla eşleşme ikisinde de çalışmaz). `self`: açık olan tedarikçi (yeni kartta ikisi
+ * de null; kartsız tedarikçinin sayfasında adres parçası).
+ */
+export function taxPreview(index: TaxIndex, taxNumber: string, self: { cardId: number | null; slug: string | null }) {
+  const out = { join: { names: [] as { name: string; count: number }[], count: 0 }, stay: [] as string[], sharedCards: [] as string[] };
+  const t = taxKey(taxNumber);
+  if (!t) return out;
+  out.sharedCards = (index.cardTax[t] ?? []).filter((c) => c.id !== self.cardId).map((c) => c.name);
+  if (out.sharedCards.length) return out;
+  for (const e of index.byTax[t] ?? []) {
+    if ((self.cardId !== null && e.cardId === self.cardId) || (self.slug !== null && e.slug === self.slug)) continue;
+    // Kartsız tedarikçinin bütün adları gelir; kartlının yalnız vergi noyla bağlanmış adları
+    const moving = e.names.filter((n) => !n.own);
+    if (moving.length < e.names.length) out.stay.push(e.name);
+    for (const n of moving) {
+      out.join.names.push({ name: n.name, count: n.count });
+      out.join.count += n.count;
+    }
+  }
+  out.join.names.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
+  return out;
 }
 
 /** Adres parçası: Türkçe harfler ASCII'ye iner, harf ve rakam dışı tireye döner ("Sütaş" → "sutas") */
@@ -412,7 +705,10 @@ export interface SupplierListRow {
   names: string[];
   hasCard: boolean;
   legalName: string | null;
+  /** Kartta yazılı, yoksa faturalardaki tek vergi no */
   taxNumber: string | null;
+  /** Faturalardaki vergi numaraları (aramada) */
+  taxNumbers: string[];
   iban: string | null;
   phone: string | null;
   email: string | null;
@@ -470,9 +766,13 @@ export function compareSuppliers(sort: SupplierSort) {
   };
 }
 
-/** Aramada taranan metin: adlar, unvan, vergi no, IBAN (boşluklu ve boşluksuz), telefon, yetkili, e-posta */
-export function supplierHaystack(r: Pick<SupplierListRow, "name" | "names" | "legalName" | "taxNumber" | "iban" | "phone" | "contactName" | "email">): string {
-  return [r.name, ...r.names, r.legalName, r.taxNumber, r.iban, r.iban ? formatIban(r.iban) : null, r.phone, r.contactName, r.email].filter(Boolean).join(" ");
+/** Aramada taranan metin: adlar, unvan, vergi no (kartta ve faturalarda), IBAN (boşluklu ve boşluksuz), telefon, yetkili, e-posta */
+export function supplierHaystack(
+  r: Pick<SupplierListRow, "name" | "names" | "legalName" | "taxNumber" | "iban" | "phone" | "contactName" | "email"> & { taxNumbers?: readonly string[] },
+): string {
+  return [r.name, ...r.names, r.legalName, r.taxNumber, ...(r.taxNumbers ?? []), r.iban, r.iban ? formatIban(r.iban) : null, r.phone, r.contactName, r.email]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // ---------------------------------------------------------------- Kart bilgilerinin denetimi
@@ -482,13 +782,14 @@ export type MissingInfo = "iban" | "vergi" | "iletisim";
 export const MISSING_LABEL: Record<MissingInfo, string> = { iban: "IBAN yok", vergi: "Vergi no yok", iletisim: "Telefon / e-posta yok" };
 
 /**
- * Kartta eksik olan önemli bilgiler: ödeme için IBAN (peşin çalışılan tedarikçide aranmaz), cari için vergi no,
- * ulaşmak için telefon ya da e-posta. Kart hiç yoksa hepsi eksiktir.
+ * Kartta eksik olan önemli bilgiler: ödeme için IBAN (peşin çalışılan tedarikçide aranmaz), cari için vergi no
+ * (faturalardan tek bir vergi no biliniyorsa eksik sayılmaz: `inferredTaxNumber`), ulaşmak için telefon ya da
+ * e-posta. Kart hiç yoksa (faturalardaki vergi no dışında) hepsi eksiktir.
  */
-export function missingInfo(card: Pick<SupplierCard, "iban" | "taxNumber" | "phone" | "email" | "paidOnDelivery"> | null): MissingInfo[] {
+export function missingInfo(card: Pick<SupplierCard, "iban" | "taxNumber" | "phone" | "email" | "paidOnDelivery"> | null, inferredTaxNumber?: string | null): MissingInfo[] {
   const out: MissingInfo[] = [];
   if (!card?.iban && !card?.paidOnDelivery) out.push("iban");
-  if (!card?.taxNumber) out.push("vergi");
+  if (!card?.taxNumber && !inferredTaxNumber) out.push("vergi");
   if (!card?.phone && !card?.email) out.push("iletisim");
   return out;
 }
@@ -772,6 +1073,8 @@ export function paymentRequestText(opts: {
   payer?: string;
   name: string;
   card: Pick<SupplierCard, "legalName" | "iban" | "bankName" | "accountHolder" | "taxNumber"> | null;
+  /** Kartta vergi no yoksa faturalardaki (tek) vergi no; kartsız tedarikçide de yazılır */
+  taxNumber?: string | null;
   /** Ödenecek faturalar; eksi tutarlılar ödemeden düşülen iade faturaları */
   lines: readonly RequestLine[];
   note?: string | null;
@@ -783,12 +1086,13 @@ export function paymentRequestText(opts: {
   const recipient = card?.accountHolder?.trim() || card?.legalName?.trim() || opts.name;
   const bank = card?.bankName?.trim() || bankFromIban(card?.iban);
   const credit = round2(credits.reduce((a, l) => a - l.amount, 0));
+  const taxNumber = card?.taxNumber || opts.taxNumber;
   const out = [
     opts.payer ? `Ödeme talebi · ${opts.payer}` : "Ödeme talebi",
     `Alıcı: ${recipient}`,
     card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (girilmemiş)",
     bank ? `Banka: ${bank}` : null,
-    card?.taxNumber ? `Vergi no: ${normalizeTaxNumber(card.taxNumber)}` : null,
+    taxNumber ? `Vergi no: ${normalizeTaxNumber(taxNumber)}` : null,
     `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
     debts.length ? `Açıklama: ${transferNote(debts)}` : null,
   ].filter((x): x is string => Boolean(x));

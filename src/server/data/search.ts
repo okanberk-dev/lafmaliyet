@@ -6,7 +6,7 @@ import { groupSuppliers, supplierHref } from "@/app/panel/tedarikciler/logic";
 import { SIZE_LABELS } from "@/lib/constants";
 import { getDb, schema as s } from "@/server/db";
 
-import { loadSupplierCards } from "./suppliers";
+import { loadSupplierCards, loadSupplierRefs } from "./suppliers";
 
 export interface SearchEntry {
   kind: "product" | "ingredient" | "supplier";
@@ -18,18 +18,19 @@ export interface SearchEntry {
 /** Komut paletinin (⌘K) ürün, hammadde ve tedarikçi listesi: yalnızca adlar (ve unvan, vergi no), tutar yok */
 export async function loadSearchIndex(): Promise<SearchEntry[]> {
   const db = getDb();
-  const [products, ingredients, cards, supplierNames] = await Promise.all([
+  const [products, ingredients, cards, supplierRefs] = await Promise.all([
     db
       .select({ id: s.products.id, name: s.products.name, size: s.products.size, active: s.products.active })
       .from(s.products)
       .orderBy(asc(s.products.sortOrder), asc(s.products.id)),
     db.select({ name: s.ingredients.name, category: s.ingredients.category }).from(s.ingredients).orderBy(asc(s.ingredients.sortOrder)),
     loadSupplierCards(),
-    db.selectDistinct({ supplier: s.invoices.supplier }).from(s.invoices),
+    loadSupplierRefs(),
   ]);
-  // Tedarikçiler ekranındaki gibi: kartlar ve faturalardaki adlar (adres parçası aynı atamayla); tarih ve tutar gerekmez
+  // Tedarikçiler ekranındaki gibi: kartlar ve faturalardaki (ad, vergi no) çiftleri (adres parçası aynı atamayla);
+  // tarih ve tutar gerekmez
   const suppliers = groupSuppliers(
-    supplierNames.map((n) => ({ supplier: n.supplier, date: "", payable: 0, unpaid: false })),
+    supplierRefs.map((r) => ({ ...r, date: r.date ?? "", payable: 0, unpaid: false })),
     cards,
     { today: "", termDays: 0 },
   );
@@ -46,11 +47,13 @@ export async function loadSearchIndex(): Promise<SearchEntry[]> {
       hint: i.category ? `Hammadde · ${i.category}` : "Hammadde",
       href: `/panel/hammaddeler?ara=${encodeURIComponent(i.name)}`,
     })),
-    // Alt satırda unvan ve vergi no da aranır ("SÜTAŞ SÜT", "1234567890")
+    // Alt satırda unvan ve vergi no (kartta ve faturalarda) da aranır ("SÜTAŞ SÜT", "1234567890")
     ...suppliers.map((g) => ({
       kind: "supplier" as const,
       label: g.name,
-      hint: ["Tedarikçi", g.card?.legalName, g.card?.taxNumber, ...g.names.filter((n) => n !== g.name)].filter(Boolean).join(" · "),
+      hint: ["Tedarikçi", g.card?.legalName, ...new Set([g.card?.taxNumber, ...g.taxNumbers.map((t) => t.taxNumber)].filter(Boolean)), ...g.names.filter((n) => n !== g.name)]
+        .filter(Boolean)
+        .join(" · "),
       href: supplierHref(g.slug),
     })),
   ];

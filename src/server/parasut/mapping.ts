@@ -9,6 +9,8 @@
  * Fatura altı iskonto kalemlerin net tutarına oranla dağıtılır (birim maliyet doğru çıksın).
  */
 
+import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
+
 import { dec, indexIncluded, relMany, relOne, str, type Resource } from "./jsonapi";
 
 export interface LineDraft {
@@ -53,6 +55,11 @@ export interface BillDraft {
   lines: LineDraft[];
   /** Paraşüt'teki e-belge bağı (`active_e_document`): e-fatura PDF'i buradan alınır; e-fatura eşitlemesi aynı kaydı tanır */
   eDocument: { type: string; id: string } | null;
+  /**
+   * E-belgedeki satıcı vergi nosu (`active_e_document` include edildiyse `from_vkn`): imzalı belgedeki numara, kişi
+   * kartındakinden (`supplierTaxNo`) önce gelir
+   */
+  eDocumentTaxNo: string | null;
 }
 
 /** Komisyon faturası kesen platformlar (Excel aktarımındaki listeyle aynı) */
@@ -99,6 +106,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
   const supplier = relOne(bill, "supplier", index);
   const category = relOne(bill, "category", index);
   const details = relMany(bill, "details", index);
+  const eDoc = relOne(bill, "active_e_document", index);
 
   const currency = (str(a.currency) ?? "TRL").toUpperCase();
   const rate = currency === "TRL" || currency === "TRY" ? 1 : dec(a.exchange_rate) || 1;
@@ -189,6 +197,7 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
       const r = bill.relationships?.active_e_document?.data;
       return r && !Array.isArray(r) ? { type: r.type, id: r.id } : null;
     })(),
+    eDocumentTaxNo: str((eDoc?.attributes as Record<string, unknown> | undefined)?.from_vkn),
     description: str(a.description),
     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
@@ -202,6 +211,25 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
     updatedAt: str(a.updated_at),
     lines,
   };
+}
+
+// ---------------------------------------------------------------- Tedarikçinin vergi nosu (invoices.supplier_tax_number)
+
+/**
+ * Faturada saklı tedarikçi vergi nosunun yeni değeri; null: değişiklik yok. Boş kayda gelen numara yazılır. E-fatura
+ * (imzalı belgedeki `from_vkn`) her zaman geçer. Gider faturasının kişi kartındaki numara e-faturaya bağlı kaydın
+ * numarasını ezmez; e-faturasız kayıtta yazılır (kişi kartı Paraşüt'te düzeltilmiş olabilir). Boş ya da 10/11 hane
+ * olmayan numara yazılmaz.
+ */
+export function nextTaxNumber(
+  stored: string | null,
+  incoming: string | null | undefined,
+  opts: { from: "bill" | "einvoice"; hasEInvoice: boolean },
+): string | null {
+  const t = cleanTaxNumber(incoming);
+  if (!t || t === stored) return null;
+  if (!stored || opts.from === "einvoice") return t;
+  return opts.hasEInvoice ? null : t;
 }
 
 // ---------------------------------------------------------------- Tedarikçinin kişi kartı (contacts)
