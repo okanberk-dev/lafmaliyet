@@ -77,8 +77,9 @@ export function MyRequests({ requests }: { requests: MyRequest[] }) {
           const isNew = r.kind === "new";
           return (
             <li key={r.id} className="px-5 py-3.5">
+              {/* Telefonda düğmeler başlığın altına iner (başlık sütunu daralıp kelime kelime kırılmasın) */}
               <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                <div className="min-w-0 flex-1">
+                <div className="min-w-48 flex-1">
                   <p className="font-medium break-words text-ink">
                     {isNew ? <span className="font-normal text-ink-mute">Yeni ürün: </span> : null}
                     {r.productName} <span className="font-normal text-ink-mute">· {SIZE_LABELS[r.size]}</span>

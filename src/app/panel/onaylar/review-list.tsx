@@ -218,7 +218,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
               return (
                 <li key={r.id} className="px-5 py-3">
                   <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-48 flex-1">
                       <p className="font-medium break-words text-ink">
                         {isNew ? <span className="font-normal text-ink-mute">Yeni ürün: </span> : null}
                         {r.productName} <span className="font-normal text-ink-mute">· {SIZE_LABELS[r.size]}</span>
@@ -346,7 +346,7 @@ function NewProductCard({
 
   function approve() {
     if (priceValue === null) {
-      setPriceError("Satış fiyatını yazın (KDV dahil, ör. 165)");
+      setPriceError(`Satış fiyatını yazın (KDV dahil${econ.cost > 0 ? `; hedef maliyet oranıyla ${tl(econ.suggestedPrice)}` : ""})`);
       document.getElementById(priceId)?.focus();
       return;
     }

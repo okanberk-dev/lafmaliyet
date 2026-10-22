@@ -83,10 +83,10 @@ export async function countPendingByKind(): Promise<Record<RequestKind, number>>
 /** Yönetici: bekleyenler (eskiden yeniye) ve son `days` günde karara bağlananlar (yeniden eskiye) */
 export async function loadReviewQueue(days = 30): Promise<{ pending: RecipeRequestRow[]; recent: RecipeRequestRow[] }> {
   const [pending, recent] = await Promise.all([
-    select().where(eq(s.recipeChangeRequests.status, "pending")).orderBy(s.recipeChangeRequests.createdAt),
+    select().where(eq(s.recipeChangeRequests.status, "pending")).orderBy(s.recipeChangeRequests.createdAt, s.recipeChangeRequests.id),
     select()
       .where(and(inArray(s.recipeChangeRequests.status, ["approved", "rejected", "withdrawn"]), gt(s.recipeChangeRequests.updatedAt, daysAgo(days))))
-      .orderBy(desc(s.recipeChangeRequests.updatedAt))
+      .orderBy(desc(s.recipeChangeRequests.updatedAt), s.recipeChangeRequests.id)
       .limit(40),
   ]);
   return { pending: pending.map(toRow), recent: recent.map(toRow) };
@@ -101,7 +101,8 @@ export async function loadMyRequests(userId: number, days = 14): Promise<RecipeR
         or(eq(s.recipeChangeRequests.status, "pending"), gt(s.recipeChangeRequests.updatedAt, daysAgo(days))),
       ),
     )
-    .orderBy(desc(s.recipeChangeRequests.updatedAt))
+    // Aynı işlemde açılan boylar (yeni ürün önerisi) kendi sırasıyla: M, L
+    .orderBy(desc(s.recipeChangeRequests.updatedAt), s.recipeChangeRequests.id)
     .limit(50);
   return rows.map(toRow);
 }
