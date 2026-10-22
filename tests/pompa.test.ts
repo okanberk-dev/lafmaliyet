@@ -1,5 +1,6 @@
 // Püre pompası (30 ml) şurup pompasının (10 ml) yanında: PurePompa formülü, kaydı olmayan veritabanında varsayılan,
-// Ayarlar alanı ve eylemin kabul ettiği anahtar, reçete defterindeki pompa karşılığı (src/lib/recipe-pump.ts).
+// Ayarlar alanı ve eylemin kabul ettiği anahtar, reçete defterindeki pompa karşılığı (src/lib/recipe-pump.ts),
+// personelin önerisinde telefonla formül yazılması.
 // Çalıştırma: npx tsx --test tests/pompa.test.ts
 
 import assert from "node:assert/strict";
@@ -8,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { ALL_FIELDS, MEASURE_FIELDS } from "../src/app/panel/ayarlar/fields";
+import { resolveQty } from "../src/app/panel/urunler/logic";
 import { createModel } from "../src/lib/calc/engine";
 import { evaluateExpression, formulaParams, validateExpression } from "../src/lib/calc/expr";
 import type { Dataset } from "../src/lib/calc/types";
@@ -200,4 +202,22 @@ test("reçete defteri: pompa metni sunucuda hesaplanır, personelin sayfasına y
   // Formül yardımında örnek bir kez
   const help = read("src/app/panel/receteler/recipe-lines.tsx");
   assert.equal(help.split("“1,5*PurePompa” (püre)").length - 1, 1);
+});
+
+test("personelin önerisi telefonda: sayı rakam klavyesinde, formül harfli klavyede; “Formül” düğmesi yalnız dokunmatikte", () => {
+  // Klavye kuralı (ürün kartındaki gibi): düz sayı rakam klavyesinde kalır, formül (Türkçe harfli de) harfli klavyeye geçer
+  for (const s of ["", "45", "0,5", "0.125", "1.250"]) assert.equal(resolveQty(s, st).expr, null, s);
+  for (const s of ["1,5*PurePompa", "1,5*PürePompa", "2*", "=Pompa"]) assert.ok(resolveQty(s, st).expr, s);
+  const src = read("src/app/panel/receteler/recipe-lines.tsx");
+  assert.match(src, /const textKeyboard = Boolean\(q\.expr\) \|\| textKeys\.has\(r\.key\);/);
+  assert.match(src, /inputMode=\{textKeyboard \? "text" : "decimal"\}/);
+  // Rakam klavyesinde harf ve * yok: düğme dokunmatikte görünür, alanı harfli klavyeyle yeniden odaklar
+  const at = src.indexOf("onClick={() => formulaKeyboard(r.key, qtyId)}");
+  assert.ok(at > 0);
+  assert.match(src.slice(at, src.indexOf("</button>", at)), /className="[^"]*\bhidden\b[^"]*\bpointer-coarse:flex"[\s\S]*> Formül\n/);
+  // Klavye türü odakta değişmez: önce inputMode, sonra bırakıp yeniden odak (iOS dokunuşun içinde açar)
+  const fn = src.slice(src.indexOf("function formulaKeyboard"), src.indexOf("function formulaKeyboard") + 600);
+  assert.ok(fn.indexOf('el.inputMode = "text";') > 0);
+  assert.ok(fn.indexOf('el.inputMode = "text";') < fn.indexOf("el.blur();"));
+  assert.ok(fn.indexOf("el.blur();") < fn.indexOf("el.focus();"));
 });
