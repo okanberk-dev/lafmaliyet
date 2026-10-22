@@ -1,15 +1,20 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
 
-import type { RequestStatus } from "@/lib/recipe-change";
+import type { ProductSize, ProposedProduct, RequestKind, RequestStatus } from "@/lib/recipe-change";
 import { getDb, schema as s } from "@/server/db";
 
 export interface RecipeRequestRow {
   id: number;
-  productId: number;
+  kind: RequestKind;
+  /** Değişiklik önerisinde ürün; yeni ürün önerisinde onaylanana kadar null (onayda açılan ürün) */
+  productId: number | null;
+  /** Ürün varsa bugünkü adı ve boyu, yoksa önerilen */
   productName: string;
-  size: "M" | "L" | "Tek";
+  size: ProductSize;
+  /** Yalnız yeni ürün önerisinde: önerilen ad, boy ve kategori */
+  proposed: ProposedProduct | null;
   status: RequestStatus;
   requestedBy: number | null;
   requestedByName: string;
@@ -25,9 +30,11 @@ export interface RecipeRequestRow {
 
 const columns = {
   id: s.recipeChangeRequests.id,
+  kind: s.recipeChangeRequests.kind,
   productId: s.recipeChangeRequests.productId,
-  productName: s.products.name,
-  size: s.products.size,
+  currentName: s.products.name,
+  currentSize: s.products.size,
+  proposed: s.recipeChangeRequests.proposed,
   status: s.recipeChangeRequests.status,
   requestedBy: s.recipeChangeRequests.requestedBy,
   requestedByName: s.recipeChangeRequests.requestedByName,
@@ -41,41 +48,53 @@ const columns = {
   reviewedAt: s.recipeChangeRequests.reviewedAt,
 };
 
+/**
+ * Yeni ürün önerisinin ürünü onaylanana kadar yok (productId boş): ürün tablosu sol birleşimle okunur, ad ve boy
+ * ürün yoksa önerilenden gelir.
+ */
+function toRow({
+  currentName,
+  currentSize,
+  ...r
+}: Omit<RecipeRequestRow, "productName" | "size"> & { currentName: string | null; currentSize: ProductSize | null }): RecipeRequestRow {
+  return { ...r, productName: currentName ?? r.proposed?.name ?? "?", size: currentSize ?? r.proposed?.size ?? "M" };
+}
+
+const select = () => getDb().select(columns).from(s.recipeChangeRequests).leftJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId));
+
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
 
-/** Onay bekleyen öneri sayısı (zil ve reçete defterindeki şerit) */
+/** Onay bekleyen öneri sayısı, iki tür birlikte */
 export async function countPendingRequests(): Promise<number> {
   const [row] = await getDb().select({ n: count() }).from(s.recipeChangeRequests).where(eq(s.recipeChangeRequests.status, "pending"));
   return row?.n ?? 0;
 }
 
+/** Onay bekleyenler türüne göre: reçete değişikliği ve yeni ürün önerisi (reçete defterindeki şerit) */
+export async function countPendingByKind(): Promise<Record<RequestKind, number>> {
+  const rows = await getDb()
+    .select({ kind: s.recipeChangeRequests.kind, n: count() })
+    .from(s.recipeChangeRequests)
+    .where(eq(s.recipeChangeRequests.status, "pending"))
+    .groupBy(s.recipeChangeRequests.kind);
+  return { change: rows.find((r) => r.kind === "change")?.n ?? 0, new: rows.find((r) => r.kind === "new")?.n ?? 0 };
+}
+
 /** Yönetici: bekleyenler (eskiden yeniye) ve son `days` günde karara bağlananlar (yeniden eskiye) */
 export async function loadReviewQueue(days = 30): Promise<{ pending: RecipeRequestRow[]; recent: RecipeRequestRow[] }> {
-  const db = getDb();
   const [pending, recent] = await Promise.all([
-    db
-      .select(columns)
-      .from(s.recipeChangeRequests)
-      .innerJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId))
-      .where(eq(s.recipeChangeRequests.status, "pending"))
-      .orderBy(s.recipeChangeRequests.createdAt),
-    db
-      .select(columns)
-      .from(s.recipeChangeRequests)
-      .innerJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId))
+    select().where(eq(s.recipeChangeRequests.status, "pending")).orderBy(s.recipeChangeRequests.createdAt),
+    select()
       .where(and(inArray(s.recipeChangeRequests.status, ["approved", "rejected", "withdrawn"]), gt(s.recipeChangeRequests.updatedAt, daysAgo(days))))
       .orderBy(desc(s.recipeChangeRequests.updatedAt))
       .limit(40),
   ]);
-  return { pending, recent };
+  return { pending: pending.map(toRow), recent: recent.map(toRow) };
 }
 
 /** Kişinin önerileri: bekleyenler ve son `days` günde sonuçlananlar (yeniden eskiye) */
 export async function loadMyRequests(userId: number, days = 14): Promise<RecipeRequestRow[]> {
-  return getDb()
-    .select(columns)
-    .from(s.recipeChangeRequests)
-    .innerJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId))
+  const rows = await select()
     .where(
       and(
         eq(s.recipeChangeRequests.requestedBy, userId),
@@ -84,14 +103,24 @@ export async function loadMyRequests(userId: number, days = 14): Promise<RecipeR
     )
     .orderBy(desc(s.recipeChangeRequests.updatedAt))
     .limit(50);
+  return rows.map(toRow);
 }
 
-/** Ürün başına bekleyen öneri sayısı (yöneticinin reçete defterindeki rozet) */
+/** Ürün başına bekleyen değişiklik önerisi sayısı (yöneticinin reçete defterindeki rozet) */
 export async function pendingByProduct(): Promise<Map<number, number>> {
   const rows = await getDb()
     .select({ productId: s.recipeChangeRequests.productId, n: count() })
     .from(s.recipeChangeRequests)
-    .where(eq(s.recipeChangeRequests.status, "pending"))
+    .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "change"), isNotNull(s.recipeChangeRequests.productId)))
     .groupBy(s.recipeChangeRequests.productId);
-  return new Map(rows.map((r) => [r.productId, r.n]));
+  return new Map(rows.flatMap((r) => (r.productId === null ? [] : [[r.productId, r.n] as const])));
+}
+
+/** Bekleyen yeni ürün önerilerinin ad ve boyu (öneri penceresi aynı ad + boyu göndermeden uyarır) */
+export async function pendingNewProposals(): Promise<{ name: string; size: ProductSize }[]> {
+  const rows = await getDb()
+    .select({ proposed: s.recipeChangeRequests.proposed })
+    .from(s.recipeChangeRequests)
+    .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "new")));
+  return rows.flatMap((r) => (r.proposed ? [{ name: r.proposed.name, size: r.proposed.size }] : []));
 }

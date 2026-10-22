@@ -148,6 +148,20 @@
       "when": 1792654639885,
       "tag": "0020_gunluk_isler",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792676077873,
+      "tag": "0021_recete_yeni_urun",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792676081531,
+      "tag": "0022_sayim_yeni_kalemler",
+      "breakpoints": true
     }
   ]
 }

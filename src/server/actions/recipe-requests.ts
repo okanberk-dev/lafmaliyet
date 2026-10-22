@@ -1,18 +1,32 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { evaluateExpression } from "@/lib/calc/expr";
-import { diffRecipe, sameRecipe, summarizeDiff, type RecipeSnapshot } from "@/lib/recipe-change";
+import { cleanName, nameKey } from "@/lib/count-item";
+import { money } from "@/lib/format";
+import {
+  diffRecipe,
+  EMPTY_SNAPSHOT,
+  genitive,
+  NEW_PRODUCT_NAME_MAX,
+  NEW_PRODUCT_NAME_MIN,
+  newProductIssue,
+  productSizeLabel,
+  sameRecipe,
+  summarizeDiff,
+  type RecipeSnapshot,
+} from "@/lib/recipe-change";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { loadSettings } from "@/server/data/dataset";
+import { insertProduct } from "@/server/data/product-create";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zOptText } from "./util";
+import { attempt, UserError, zMoney, zOptText } from "./util";
 
 const zId = z.number().int().positive();
 
@@ -170,9 +184,16 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
       const [req] = await tx.select().from(s.recipeChangeRequests).where(eq(s.recipeChangeRequests.id, data.id)).for("update");
       if (!req) throw new UserError("Öneri bulunamadı (ürün silinmiş olabilir)");
       if (req.status !== "pending") throw new UserError("Bu öneri zaten karara bağlanmış; sayfayı yenileyin");
+      const decided = { reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: new Date(), updatedAt: new Date() };
+      if (req.kind === "new") {
+        // Yeni ürün önerisi satış fiyatıyla onaylanır (approveNewProduct); burada yalnızca reddedilir, ürün açılmaz
+        if (data.decision !== "reject" || !req.proposed) throw new UserError("Yeni ürün önerisini satış fiyatını yazarak onaylayın; sayfayı yenileyin");
+        await tx.update(s.recipeChangeRequests).set({ ...decided, status: "rejected" }).where(eq(s.recipeChangeRequests.id, req.id));
+        return { kind: "rejected-new" as const, proposed: req.proposed, req };
+      }
+      if (req.productId === null) throw new UserError("Ürün bulunamadı");
       const [product] = await tx.select({ id: s.products.id, name: s.products.name, size: s.products.size }).from(s.products).where(eq(s.products.id, req.productId)).limit(1);
       if (!product) throw new UserError("Ürün bulunamadı");
-      const decided = { reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: new Date(), updatedAt: new Date() };
       if (data.decision === "reject") {
         await tx.update(s.recipeChangeRequests).set({ ...decided, status: "rejected" }).where(eq(s.recipeChangeRequests.id, req.id));
         return { kind: "rejected" as const, product, req, summary: summarizeDiff(diffRecipe(req.before, req.after)) };
@@ -207,12 +228,174 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
     });
     if (outcome.kind === "conflict") return { conflict: true, current: outcome.current };
     const who = outcome.req.requestedByName;
-    await logActivity(
-      me,
-      outcome.kind === "approved" ? "Reçete değişikliği onaylandı" : "Reçete değişikliği reddedildi",
-      `${productLabel(outcome.product)} (${who} önerdi): ${outcome.summary}${data.note ? ` · not: ${data.note}` : ""}`,
-    );
+    const note = data.note ? ` · not: ${data.note}` : "";
+    if (outcome.kind === "rejected-new") await logActivity(me, "Yeni ürün önerisi reddedildi", `${productLabel(outcome.proposed)} (${who} önerdi)${note}`);
+    else
+      await logActivity(
+        me,
+        outcome.kind === "approved" ? "Reçete değişikliği onaylandı" : "Reçete değişikliği reddedildi",
+        `${productLabel(outcome.product)} (${who} önerdi): ${outcome.summary}${note}`,
+      );
     refresh();
     return { conflict: false };
+  });
+}
+
+// ---------------------------------------------------------------- Yeni ürün önerisi
+
+const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
+
+/** İki kişi aynı ad + boyu aynı anda öneremesin / onaylanırken araya öneri girmesin (boş productId benzersiz dizine girmez) */
+const lockNewProducts = (tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0]) =>
+  tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
+
+const newProductSchema = z.object({
+  name: z.string({ message: "Ürün adını yazın" }).transform(cleanName),
+  categoryId: z.number().int().positive("Kategori seçin"),
+  message: zOptText(500),
+  sizes: z
+    .array(z.object({ size: zSize, items: z.array(lineSchema).max(40, "En fazla 40 malzeme") }))
+    .min(1, "En az bir boy seçin")
+    .max(3, "En çok üç boy"),
+});
+
+/**
+ * Personel (yönetici de olabilir) menüde olmayan bir ürünü reçetesiyle önerir; boy başına bir öneri satırı açılır
+ * (kind 'new', ürün yok). Ürün ancak yönetici Reçete onayları'nda satış fiyatını yazıp onaylayınca açılır: fiyatı 0
+ * bir ürün kârlılığı, uyarıları ve analizleri bozardı. Denetim sayfayla aynı (newProductIssue): aynı ad + boyda ürün
+ * ya da bekleyen öneri varsa gönderilmez. Formüllü miktar sunucuda yeniden hesaplanır.
+ */
+export async function proposeNewProduct(input: z.input<typeof newProductSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    const data = newProductSchema.parse(input);
+    if (new Set(data.sizes.map((x) => x.size)).size !== data.sizes.length) throw new UserError("Aynı boy iki kez gönderildi");
+    const settings = await loadSettings();
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      await lockNewProducts(tx);
+      const [category] = await tx.select({ id: s.categories.id }).from(s.categories).where(eq(s.categories.id, data.categoryId)).limit(1);
+      if (!category) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+      const [existing, pending] = await Promise.all([
+        tx.select({ name: s.products.name, size: s.products.size }).from(s.products),
+        tx
+          .select({ proposed: s.recipeChangeRequests.proposed })
+          .from(s.recipeChangeRequests)
+          .where(and(eq(s.recipeChangeRequests.status, "pending"), eq(s.recipeChangeRequests.kind, "new"))),
+      ]);
+      const issue = newProductIssue(
+        { name: data.name, categoryId: data.categoryId, sizes: data.sizes.map((x) => ({ size: x.size, lines: x.items.length })) },
+        existing,
+        pending.flatMap((p) => (p.proposed ? [p.proposed] : [])),
+      );
+      if (issue) throw new UserError(issue);
+      const ingredientIds = [...new Set(data.sizes.flatMap((x) => x.items.map((i) => i.ingredientId)))];
+      const ingredients = new Map(
+        (
+          await tx
+            .select({ id: s.ingredients.id, name: s.ingredients.name, unit: s.ingredients.unit, active: s.ingredients.active })
+            .from(s.ingredients)
+            .where(inArray(s.ingredients.id, ingredientIds))
+        ).map((i) => [i.id, i]),
+      );
+      for (const sz of data.sizes) {
+        const label = productLabel({ name: data.name, size: sz.size });
+        const after: RecipeSnapshot = {
+          note: null,
+          items: sz.items.map((line, idx) => {
+            const ing = ingredients.get(line.ingredientId);
+            // Yeni reçeteye pasif malzeme seçilemez
+            if (!ing || !ing.active) throw new UserError(`${label}: ${idx + 1}. satırdaki malzeme listede yok; sayfayı yenileyin`);
+            let qty = line.qty;
+            if (line.qtyExpr) {
+              try {
+                qty = evaluateExpression(line.qtyExpr, settings);
+              } catch (e) {
+                throw new UserError(`${label} · ${ing.name}: formül hatası (${line.qtyExpr}): ${(e as Error).message}`);
+              }
+              if (qty < 0) throw new UserError(`${label} · ${ing.name}: miktar negatif olamaz`);
+            }
+            return { ingredientId: ing.id, name: ing.name, unit: ing.unit, qty, qtyExpr: line.qtyExpr, note: line.note };
+          }),
+        };
+        await tx.insert(s.recipeChangeRequests).values({
+          kind: "new",
+          productId: null,
+          proposed: { name: data.name, size: sz.size, categoryId: data.categoryId },
+          requestedBy: me.id,
+          requestedByName: me.name,
+          before: EMPTY_SNAPSHOT,
+          after,
+          message: data.message,
+        });
+      }
+    });
+    await logActivity(me, "Yeni ürün önerisi", `${data.name} · ${data.sizes.map((x) => x.size).join(", ")}`);
+    refresh();
+    return { sizes: data.sizes.length };
+  });
+}
+
+const approveNewSchema = z.object({
+  id: zId,
+  /** Yönetici onaylarken adı ve kategoriyi düzeltebilir; boy önerideki gibi kalır */
+  name: z.string({ message: "Ürün adını yazın" }).transform(cleanName),
+  categoryId: z.number().int().positive("Kategori seçin"),
+  price: zMoney.positive("Satış fiyatını yazın"),
+  note: zOptText(500),
+});
+
+/**
+ * Yönetici yeni ürün önerisini satış fiyatıyla onaylar: tek işlemde öneri kilitlenir, durumu ve aynı ad + boy kuralı
+ * yeniden denetlenir, ürün Ürünler › Yeni ürün ile aynı kuralla açılır (insertProduct: kategoriden zayi oranı, sıra en
+ * sonda, aktif) ve reçetesi yazılır; öneri ürüne bağlanır. Formüller bugünkü ayarlarla yeniden hesaplanır. Ürün
+ * laffogato.net menüsüne bağlanmaz (Ürünler › Site menüsü).
+ */
+export async function approveNewProduct(input: z.input<typeof approveNewSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = approveNewSchema.parse(input);
+    if (data.name.length < NEW_PRODUCT_NAME_MIN) throw new UserError(`Ürün adı en az ${NEW_PRODUCT_NAME_MIN} harf olmalı`);
+    if (data.name.length > NEW_PRODUCT_NAME_MAX) throw new UserError("Ürün adı çok uzun");
+    const settings = await loadSettings();
+    const db = getDb();
+    const outcome = await db.transaction(async (tx) => {
+      await lockNewProducts(tx);
+      const [req] = await tx.select().from(s.recipeChangeRequests).where(eq(s.recipeChangeRequests.id, data.id)).for("update");
+      if (!req) throw new UserError("Öneri bulunamadı");
+      if (req.kind !== "new" || !req.proposed) throw new UserError("Bu bir yeni ürün önerisi değil; sayfayı yenileyin");
+      if (req.status !== "pending") throw new UserError("Bu öneri zaten karara bağlanmış; sayfayı yenileyin");
+      const size = req.proposed.size;
+      const [category] = await tx.select({ id: s.categories.id }).from(s.categories).where(eq(s.categories.id, data.categoryId)).limit(1);
+      if (!category) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+      const sameSize = await tx.select({ name: s.products.name }).from(s.products).where(eq(s.products.size, size));
+      if (sameSize.some((p) => nameKey(p.name) === nameKey(data.name)))
+        throw new UserError(`“${productSizeLabel(data.name, size)}” zaten var; adı değiştirin ya da öneriyi reddedin`);
+      const ids = [...new Set(req.after.items.map((i) => i.ingredientId))];
+      const found = ids.length ? await tx.select({ id: s.ingredients.id }).from(s.ingredients).where(inArray(s.ingredients.id, ids)) : [];
+      const missing = req.after.items.filter((i) => !found.some((f) => f.id === i.ingredientId));
+      if (missing.length) throw new UserError(`${missing.map((m) => m.name).join(", ")} artık hammaddelerde yok; öneriyi reddedin`);
+      const items = req.after.items.map((line) => {
+        let qty = line.qty;
+        if (line.qtyExpr) {
+          try {
+            qty = evaluateExpression(line.qtyExpr, settings);
+          } catch (e) {
+            throw new UserError(`${line.name}: formül hatası (${line.qtyExpr}): ${(e as Error).message}`);
+          }
+        }
+        return { ingredientId: line.ingredientId, qty, qtyExpr: line.qtyExpr, note: line.note };
+      });
+      const created = await insertProduct(tx, { name: data.name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note });
+      const now = new Date();
+      await tx
+        .update(s.recipeChangeRequests)
+        .set({ productId: created.id, status: "approved", reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: now, updatedAt: now })
+        .where(eq(s.recipeChangeRequests.id, req.id));
+      return { productId: created.id, size, who: req.requestedByName };
+    });
+    await logActivity(me, "Yeni ürün (öneriden)", `${data.name} ${outcome.size} · ${money(data.price)} · ${genitive(outcome.who)} önerisi`);
+    refresh();
+    return { productId: outcome.productId };
   });
 }

@@ -684,17 +684,25 @@ export type RecipeSnapshot = {
   items: { ingredientId: number; name: string; unit: string; qty: number; qtyExpr: string | null; note: string | null }[];
 };
 
+/** Yeni ürün önerisinde önerilen ürün (yönetici onaylarken adı ve kategoriyi değiştirebilir; boy sabit) */
+export type ProposedProduct = { name: string; size: "M" | "L" | "Tek"; categoryId: number };
+
 /**
  * Personelin reçete defterinden önerdiği değişiklik: yönetici önceki ve önerilen reçeteyi yan yana görür, onaylarsa
  * reçete `after` ile değişir. Kişi başına ürün başına en çok bir bekleyen öneri olur (yenisi onu günceller).
+ * Yeni ürün önerisi (`kind = 'new'`) boy başına bir satırdır: ürün onaylanana kadar yoktur (`productId` boş,
+ * `proposed` ad / boy / kategori, `before` boş reçete); yönetici satış fiyatını yazıp onaylayınca ürün açılır ve
+ * `productId` ona bağlanır.
  */
 export const recipeChangeRequests = pgTable(
   "recipe_change_requests",
   {
     id: serial("id").primaryKey(),
-    productId: integer("product_id")
-      .notNull()
-      .references(() => products.id, { onDelete: "cascade" }),
+    productId: integer("product_id").references(() => products.id, { onDelete: "cascade" }),
+    /** change: var olan ürünün reçetesi değişsin; new: menüde olmayan ürün eklensin */
+    kind: text("kind", { enum: ["change", "new"] }).notNull().default("change"),
+    /** Yalnız yeni ürün önerisinde */
+    proposed: jsonb("proposed").$type<ProposedProduct>(),
     requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
     requestedByName: text("requested_by_name").notNull(),
     status: text("status", { enum: ["pending", "approved", "rejected", "withdrawn"] }).notNull().default("pending"),
@@ -714,7 +722,12 @@ export const recipeChangeRequests = pgTable(
   (t) => [
     index("recipe_change_requests_status_idx").on(t.status, t.createdAt),
     index("recipe_change_requests_product_idx").on(t.productId),
+    // Yeni ürün önerisinde productId boş: boşlar birbirini engellemez; aynı ad + boy kuralı eylemde, danışma kilidiyle
     uniqueIndex("recipe_change_requests_pending_uq").on(t.productId, t.requestedBy).where(sql`status = 'pending'`),
+    check(
+      "recipe_change_requests_kind_ck",
+      sql`(${t.kind} = 'change' and ${t.productId} is not null) or (${t.kind} = 'new' and ${t.proposed} is not null)`,
+    ),
   ],
 );
 

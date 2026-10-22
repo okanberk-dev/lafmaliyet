@@ -7,12 +7,13 @@ import { SectionTabs } from "@/components/panel/section-tabs";
 import { PageSkeleton } from "@/components/ui/misc";
 import { countFactor, shiftMonth } from "@/lib/calc/engine";
 import { stockVatSummary } from "@/lib/calc/insights";
+import { countGroupOptions } from "@/lib/count-item";
 import { monthLabel, monthShort } from "@/lib/format";
 import { requireUser } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { counterLine, defaultCountMonth } from "./logic";
+import { counterLine, defaultCountMonth, staffCountMonths } from "./logic";
 import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
@@ -115,6 +116,17 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevTotal={isAdmin && (prev.hasData || opening.overridden) ? { value: opening.value, overridden: opening.overridden } : null}
         closingOverride={isAdmin && closing.overridden ? closing.value : null}
         counter={counterLine(counters)}
+        // "Listeye ekle": personel yalnız sayımını değiştirebildiği ayda (bu ay ve geçen ay; sunucu da denetler)
+        addItem={
+          isAdmin || staffCountMonths().includes(month)
+            ? {
+                groups: countGroupOptions(
+                  sheet.groups.map((g) => g.name),
+                  [...model.ds.ingredients].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+                ),
+              }
+            : null
+        }
       />
     </>
   );

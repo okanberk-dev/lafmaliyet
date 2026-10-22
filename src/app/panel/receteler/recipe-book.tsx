@@ -15,7 +15,7 @@ import { EmptyState, InfoTip, SectionTitle } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { SIZE_LABELS } from "@/lib/constants";
 import { num } from "@/lib/format";
-import type { RecipeSnapshot } from "@/lib/recipe-change";
+import { pendingSummary, type RecipeSnapshot } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 
 import { ChangeEditor, type EditorVariant, type ProposeKit } from "./change-editor";
@@ -94,15 +94,15 @@ export function RecipeBook({
   canEdit,
   propose = null,
   myRequests = [],
-  pendingTotal = 0,
+  pending = { change: 0, new: 0 },
 }: {
   groups: RecipeGroup[];
   canEdit: boolean;
   /** Personelin öneri penceresi için malzemeler ve ölçüler; yöneticide yok */
   propose?: ProposeKit | null;
   myRequests?: MyRequest[];
-  /** Yönetici: onay bekleyen öneri sayısı */
-  pendingTotal?: number;
+  /** Yönetici: onay bekleyen reçete değişikliği ve yeni ürün önerisi sayısı */
+  pending?: { change: number; new: number };
 }) {
   const [editing, setEditing] = useState<Product | null>(null);
   const reduce = useCalmMotion();
@@ -172,12 +172,16 @@ export function RecipeBook({
 
   return (
     <div>
-      {canEdit && pendingTotal > 0 ? (
+      {canEdit && pending.change + pending.new > 0 ? (
         <div role="status" className="no-print mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
           <ClipboardCheck size={18} className="shrink-0" aria-hidden="true" />
           <p className="min-w-0 flex-1">
-            <span className="font-semibold">{num(pendingTotal)} reçete değişikliği onay bekliyor.</span> Personelin önerdiği değişiklikleri önce ve sonra hâliyle
-            görüp onaylayın.
+            <span className="font-semibold">{pendingSummary(pending.change, pending.new)}.</span>{" "}
+            {!pending.new
+              ? "Personelin önerdiği değişiklikleri önce ve sonra hâliyle görüp onaylayın."
+              : pending.change
+                ? "Değişiklikleri önce ve sonra hâliyle görün; yeni ürünün satış fiyatını yazıp onaylayın."
+                : "Satış fiyatını yazıp onaylayınca ürün reçetesiyle eklenir."}
           </p>
           <ButtonLink href="/panel/onaylar" variant="secondary" size="sm">
             İncele

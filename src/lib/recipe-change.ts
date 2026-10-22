@@ -1,14 +1,17 @@
 /**
  * Reçete değişiklik önerisinin saf hesapları: öneri anındaki reçete ile önerilen reçetenin farkı (yönetici "ne nasılmış,
- * ne olmuş" diye görsün), işlem geçmişine giden kısa özet ve iki reçetenin aynı olup olmadığı. Hem sunucu hem tarayıcı
- * kullanır; tests/recete-onay.test.ts sınar.
+ * ne olmuş" diye görsün), işlem geçmişine giden kısa özet ve iki reçetenin aynı olup olmadığı. Personelin yeni ürün
+ * önerisinin denetimi de burada (sayfa ve sunucu aynı kural). Hem sunucu hem tarayıcı kullanır; tests/recete-onay.test.ts
+ * ve tests/yeni-urun-onerisi.test.ts sınar.
  */
 
-import type { RecipeSnapshot } from "@/server/db/schema";
+import type { ProposedProduct, RecipeSnapshot } from "@/server/db/schema";
 
+import { SIZE_LABELS } from "./constants";
+import { cleanName, nameKey } from "./count-item";
 import { num } from "./format";
 
-export type { RecipeSnapshot };
+export type { ProposedProduct, RecipeSnapshot };
 export type SnapshotLine = RecipeSnapshot["items"][number];
 
 export type DiffRow =
@@ -118,3 +121,101 @@ export const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
   rejected: "Reddedildi",
   withdrawn: "Geri çekildi",
 };
+
+// ---------------------------------------------------------------- Yeni ürün önerisi
+
+export type RequestKind = "change" | "new";
+export type ProductSize = ProposedProduct["size"];
+
+/** Yeni ürün önerisinin "öneri anındaki reçetesi": ürün henüz yok */
+export const EMPTY_SNAPSHOT: RecipeSnapshot = { note: null, items: [] };
+
+export const NEW_PRODUCT_NAME_MIN = 2;
+export const NEW_PRODUCT_NAME_MAX = 120;
+
+/** "Çilekli Latte · Medium" (ekranda boyun uzun adı, Reçete defteri ve onaylarla aynı) */
+export const productSizeLabel = (name: string, size: ProductSize) => `${name} · ${SIZE_LABELS[size]}`;
+
+export interface NewProductDraft {
+  name: string;
+  categoryId: number | null;
+  /** Seçilen boylar ve her boyun reçete satırı sayısı */
+  sizes: { size: ProductSize; lines: number }[];
+}
+
+/**
+ * Yeni ürün önerisinin denetimi (öneri penceresi ve sunucu aynı kural): ad 2–120 harf, kategori, en az bir boy, her
+ * boyda en az bir malzeme; aynı ad + boyda ürün (pasif de olsa) ya da bekleyen yeni ürün önerisi yok. Ad Türkçe büyük /
+ * küçük harf ve boşluk farkı gözetmeden karşılaştırılır (nameKey). İlk sorunun metni döner, sorun yoksa null.
+ */
+export function newProductIssue(
+  draft: NewProductDraft,
+  existing: { name: string; size: string }[],
+  pending: { name: string; size: string }[],
+): string | null {
+  const name = cleanName(draft.name);
+  if (!name) return "Ürün adını yazın";
+  if (name.length < NEW_PRODUCT_NAME_MIN) return `Ürün adı en az ${NEW_PRODUCT_NAME_MIN} harf olmalı`;
+  if (name.length > NEW_PRODUCT_NAME_MAX) return "Ürün adı çok uzun";
+  if (!draft.categoryId) return "Kategori seçin";
+  if (!draft.sizes.length) return "En az bir boy seçin";
+  for (const s of draft.sizes) {
+    const taken = takenIssue(name, s.size, existing, pending);
+    if (taken) return taken;
+    if (!s.lines) return `${SIZE_LABELS[s.size]} için en az bir malzeme ekleyin`;
+  }
+  return null;
+}
+
+/** Aynı ad + boyda ürün ya da bekleyen öneri varsa metni (öneri penceresi adın altında hemen gösterir), yoksa null */
+export function takenIssue(name: string, size: ProductSize, existing: { name: string; size: string }[], pending: { name: string; size: string }[]): string | null {
+  const key = nameKey(name);
+  if (!key) return null;
+  const label = productSizeLabel(cleanName(name), size);
+  if (existing.some((p) => p.size === size && nameKey(p.name) === key)) return `“${label}” zaten var`;
+  if (pending.some((p) => p.size === size && nameKey(p.name) === key)) return `“${label}” için bekleyen bir öneri var`;
+  return null;
+}
+
+const SIZE_ORDER: ProductSize[] = ["M", "L", "Tek"];
+
+/**
+ * Zil: bekleyen yeni ürün önerileri ad (nameKey) ve öneren başına tek satır, boyları birlikte, en eskisi önce.
+ * "Yeni ürün önerisi: Çilekli Latte · Medium, Large (Ayşe)"
+ */
+export function groupNewProposals<T extends { id: number; name: string; size: ProductSize; by: string; message: string | null }>(
+  rows: T[],
+): { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null; title: string }[] {
+  const groups = new Map<string, { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null }>();
+  for (const r of rows) {
+    const key = `${nameKey(r.name)}|${r.by}`;
+    const g = groups.get(key) ?? { ids: [], name: r.name, sizes: [], by: r.by, message: r.message };
+    g.ids.push(r.id);
+    if (!g.sizes.includes(r.size)) g.sizes.push(r.size);
+    g.message ??= r.message;
+    groups.set(key, g);
+  }
+  return [...groups.values()].map((g) => {
+    const sizes = [...g.sizes].sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
+    return { ...g, sizes, title: `Yeni ürün önerisi: ${g.name} · ${sizes.map((x) => SIZE_LABELS[x]).join(", ")} (${g.by})` };
+  });
+}
+
+/** Reçete defterindeki şerit: "2 reçete değişikliği ve 1 yeni ürün önerisi onay bekliyor" */
+export function pendingSummary(changes: number, newProducts: number): string {
+  const parts = [changes ? `${num(changes)} reçete değişikliği` : null, newProducts ? `${num(newProducts)} yeni ürün önerisi` : null].filter(Boolean);
+  return parts.length ? `${parts.join(" ve ")} onay bekliyor` : "";
+}
+
+/**
+ * Türkçe tamlayan eki, kesme işaretiyle: "Ayşe'nin", "Mehmet'in", "Can'ın", "Oğuz'un", "Gül'ün" (son ünlüye göre;
+ * ünlüyle biten ada n kaynaştırması). İşlem geçmişindeki "… · Ayşe'nin önerisi" için.
+ */
+export function genitive(name: string): string {
+  const n = name.trim();
+  const lower = n.toLocaleLowerCase("tr-TR");
+  const vowels = "aeıioöuü";
+  const last = [...lower].reverse().find((c) => vowels.includes(c)) ?? "e";
+  const v = "aı".includes(last) ? "ı" : "ei".includes(last) ? "i" : "ou".includes(last) ? "u" : "ü";
+  return `${n}'${vowels.includes(lower.at(-1) ?? "") ? "n" : ""}${v}n`;
+}
