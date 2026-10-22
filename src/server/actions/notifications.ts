@@ -8,6 +8,7 @@ import { businessDate, diffKind, diffText } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, monthShort, tl } from "@/lib/format";
+import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
@@ -15,6 +16,7 @@ import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
@@ -221,6 +223,27 @@ async function unpricedNotifications(): Promise<PanelNotification[]> {
   ];
 }
 
+/**
+ * Yönetici: Paraşüt faturasında şimdikinden %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatları (Hammaddeler ›
+ * Onay bekleyen fiyatlar). Kimlik sayıdan ve en yeni öneriden: yeni öneri gelince yeniden okunmamış olur.
+ */
+async function holdNotifications(): Promise<PanelNotification[]> {
+  const h = await pendingHoldSummary();
+  if (!h.count) return [];
+  return [
+    {
+      id: `fiyat-onay-${h.count}-${h.latestId}`,
+      kind: "warning",
+      title: `${h.count} hammadde fiyatı onay bekliyor`,
+      body: `${holdsSummary(h.items)}: faturadaki fiyat %40'tan fazla farklı`,
+      timeLabel: "",
+      unread: true,
+      href: HOLDS_HREF,
+      group: "onay",
+    },
+  ];
+}
+
 /** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
@@ -301,12 +324,13 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     cashNotifications(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...mine, ...recipes];
-  const [model, upcoming, invoices, system, unpriced] = await Promise.all([
+  const [model, upcoming, invoices, system, unpriced, holds] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
     unpricedNotifications().catch(() => []),
+    holdNotifications().catch(() => []),
   ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -356,5 +380,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...cash, ...payments, ...invoices, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...payments, ...invoices, ...priceNote, ...unpriced, ...warnings];
 }

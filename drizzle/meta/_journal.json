@@ -169,6 +169,13 @@
       "when": 1792682364779,
       "tag": "0023_sayim_yeni_kalemler",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792683554248,
+      "tag": "0024_fiyat_onayi",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@
 
 import { dateTR, money } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
+import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { daysLeftLabel, longDateTR, monthShortTR, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
 
 export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
@@ -27,7 +28,21 @@ export interface DigestInvoices {
   reviewCount: number;
   /** Son eşitleme başarısızsa mesajı */
   syncError?: string | null;
+  /**
+   * Onay bekleyen hammadde fiyatları (Paraşüt faturasında şimdikinden %40'tan fazla farklı; docs/PARASUT.md 5b): hepsinin
+   * sayısı, son Paraşüt bölümlü e-postadan beri gelenler (`fresh`: yalnız bunlar e-postayı gönderir ve konuya girer) ve
+   * hammadde başına fark
+   */
+  priceHolds?: { count: number; fresh: number; items: { name: string; pct: number | null }[] } | null;
 }
+
+/** Paraşüt bölümünde e-postayı tek başına gönderen haber: yeni fatura, eşitleme hatası, yeni onaya düşen fiyat */
+export function invoiceNewsOf(i: DigestInvoices): boolean {
+  return i.items.length > 0 || Boolean(i.syncError) || (i.priceHolds?.fresh ?? 0) > 0;
+}
+
+/** Fiyat onayı kartı (Hammaddeler) */
+const HOLDS_LINK = `${APP_URL}${HOLDS_HREF}`;
 
 /** E-postada listelenen en fazla yeni fatura (kalanı "ve N fatura daha") */
 const MAX_INVOICE_ROWS = 10;
@@ -100,9 +115,10 @@ function emailLayout(o: { subject: string; preheader: string; brandSub: string; 
  * öteki bölümler.
  *
  * Konu (öncelik sırasıyla; ötekiler " · " ile eklenir): ödeme varsa "Ödeme hatırlatması: …" (+ sistem uyarısı, yeni
- * fatura, zam); yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk başlık>"; yoksa yeni faturasız eşitleme hatası
- * "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura ya da kontrol bekleyen "Sabah özeti: …"; yoksa zam ya da
- * "bugün yeni bir şey yok". Bölüm ekleyenler konuya yalnız kendi parçasını katar; sırayı burası belirler.
+ * fatura, yeni fiyat onayı, zam); yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk başlık>"; yoksa yeni faturasız
+ * eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah
+ * özeti: …"; yoksa zam ya da "bugün yeni bir şey yok". Bölüm ekleyenler konuya yalnız kendi parçasını katar; sırayı
+ * burası belirler.
  */
 export function renderDigest(
   rows: { item: UpcomingItem; stage: NotifyStage }[],
@@ -114,21 +130,25 @@ export function renderDigest(
   const counts = { overdue: 0, due: 0, before: 0 };
   for (const r of rows) counts[r.stage]++;
   const parts = [counts.overdue ? `${counts.overdue} gecikmiş` : null, counts.due ? `${counts.due} bugün` : null, counts.before ? `${counts.before} yaklaşan` : null].filter(Boolean);
-  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError) ? invoices : null;
+  const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count) ? invoices : null;
   const invPart = inv?.items.length ? `${inv.items.length} yeni fatura` : null;
+  // Onay bekleyen fiyatlar bölümde hep görünür; konuya ve başlığa yalnız son e-postadan beri yenisi geldiyse girer
+  const holds = inv?.priceHolds?.count ? inv.priceHolds : null;
+  const holdPart = holds?.fresh ? `${holds.count} fiyat onay bekliyor` : null;
   const zam = prices && prices.changes.length ? prices : null;
   const zamPart = zam ? (zam.productCount ? `zam: ${zam.productCount} ürünün fiyatına bakın` : `${zam.changes.length} hammaddeye zam`) : null;
   const sys = system && system.items.length ? system : null;
-  const extra = [sys ? "sistem uyarısı" : null, invPart, zamPart].filter(Boolean).join(" · ");
-  const sysExtra = [invPart, zamPart].filter(Boolean).join(" · ");
+  const extra = [sys ? "sistem uyarısı" : null, invPart, holdPart, zamPart].filter(Boolean).join(" · ");
+  const sysExtra = [invPart, holdPart, zamPart].filter(Boolean).join(" · ");
+  const failExtra = [holdPart, zamPart].filter(Boolean).join(" · ");
   const subject = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
       ? `Sistem uyarısı: ${sys.items[0].title}${sysExtra ? ` · ${sysExtra}` : ""}`
       : inv?.syncError && !invPart
-        ? `Paraşüt eşitlemesi başarısız${zamPart ? ` · ${zamPart}` : ""}`
-        : invPart || inv?.reviewCount
-          ? `Sabah özeti: ${invPart ?? `${inv?.reviewCount ?? 0} fatura kontrol bekliyor`}${zamPart ? ` · ${zamPart}` : ""}`
+        ? `Paraşüt eşitlemesi başarısız${failExtra ? ` · ${failExtra}` : ""}`
+        : invPart || inv?.reviewCount || holdPart
+          ? `Sabah özeti: ${[invPart ?? (inv?.reviewCount ? `${inv.reviewCount} fatura kontrol bekliyor` : null), holdPart, zamPart].filter(Boolean).join(" · ")}`
           : `Sabah özeti: ${zamPart ?? "bugün yeni bir şey yok"}`;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
@@ -144,7 +164,9 @@ export function renderDigest(
           ? "Paraşüt eşitlemesi bu sabah yapılamadı"
           : inv?.reviewCount
             ? `${inv.reviewCount} fatura kontrol bekliyor`
-            : zam
+            : holdPart && holds
+              ? `${holds.count} hammadde fiyatı onay bekliyor`
+              : zam
               ? zam.productCount
                 ? `Hammadde zammı: ${zam.productCount} ürünün fiyatına bakın`
                 : `${zam.changes.length} hammaddenin fiyatı arttı`
@@ -225,6 +247,10 @@ export function renderDigest(
         inv.reviewCount
           ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${inv.reviewCount} faturanın kategorisi tahminle yazıldı. <a href="${APP_URL}/panel/faturalar?durum=kontrol" style="color:#9a3412;font-weight:600">Kontrol edin →</a></td></tr></table>`
           : ""
+      }${
+        holds
+          ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:#fff7ed;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#9a3412">${holds.count} hammadde fiyatı onay bekliyor (${esc(holdsSummary(holds.items))}). Faturadaki fiyat şimdikinden %40'tan fazla farklı. <a href="${HOLDS_LINK}" style="color:#9a3412;font-weight:600">Bakın →</a></td></tr></table>`
+          : ""
       }`
     : "";
   const priceRow = (p: DigestPrices["products"][number]) => `<tr>
@@ -256,7 +282,9 @@ export function renderDigest(
     ? { href: link, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError)
       ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
-      : zam || !sys
+      : holdPart
+        ? { href: HOLDS_LINK, label: "Hammaddeleri aç" }
+        : zam || !sys
         ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
         : { href: JOBS_LINK, label: "Günlük işleri aç" };
   const systemSection = sys
@@ -320,6 +348,7 @@ export function renderDigest(
       ? ["", `Paraşüt'ten gelen yeni faturalar (${inv.items.length}) · ${money(invoiceTotal)}`, ...inv.items.slice(0, MAX_INVOICE_ROWS).map((i) => `- ${i.supplier} · ${dateTR(i.date)} · ${i.category} · ${money(i.payable)}${i.unpaid && i.dueDate ? ` · vade ${dateTR(i.dueDate)}` : ""}${i.needsReview ? " · kontrol edin" : ""}`), ...(inv.items.length > MAX_INVOICE_ROWS ? [`ve ${inv.items.length - MAX_INVOICE_ROWS} fatura daha`] : [])]
       : []),
     ...(inv?.reviewCount ? ["", `${inv.reviewCount} fatura kontrol bekliyor: ${APP_URL}/panel/faturalar?durum=kontrol`] : []),
+    ...(holds ? ["", `${holds.count} hammadde fiyatı onay bekliyor (${holdsSummary(holds.items)}): ${HOLDS_LINK}`] : []),
     ...(zam
       ? [
           "",

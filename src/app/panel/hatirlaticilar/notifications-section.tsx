@@ -62,7 +62,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
   const [daysBefore, setDaysBefore] = useState(String(settings.invoiceDaysBefore));
   const [term, setTerm] = useState(String(settings.invoiceTermDays));
   const [removing, setRemoving] = useState<Recipient | null>(null);
-  const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; system?: number; sample: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ subject: string; html: string; count: number; alreadySent: number; invoices: number; prices: number; syncError: boolean; system?: number; holds?: number; sample: boolean } | null>(null);
   const addrRef = useRef<HTMLInputElement>(null);
   const settingsForm = useId();
   const [enabled, setEnabled] = useOptimistic(settings.emailEnabled);

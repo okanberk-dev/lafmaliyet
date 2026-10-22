@@ -1,0 +1,364 @@
+"use client";
+
+import { ChevronDown, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
+import { Checkbox, Field, Input } from "@/components/ui/form";
+import type { Unit } from "@/lib/calc/types";
+import { dateTimeTR, dateTR, num, pct, tl2 } from "@/lib/format";
+import { HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
+import { bulkPrice } from "@/lib/supplier-prices";
+import { cn } from "@/lib/utils";
+import { saveProductLink } from "@/server/actions/parasut";
+import { approvePriceHold, rejectPriceHold, undoPriceHold } from "@/server/actions/price-holds";
+
+import { listHref } from "./breakdowns";
+
+/** Bekleyen öneri (sayfa sunucuda kurar; fiyatlar ₺ / hammadde birimi, yüzde canlı: şimdiki fiyata göre) */
+export interface HoldView {
+  id: number;
+  ingredientId: number;
+  name: string;
+  unit: Unit;
+  current: number;
+  proposed: number;
+  /** Önerilen ÷ şimdiki − 1; şimdiki fiyat yoksa null */
+  pct: number | null;
+  repeats: number;
+  supplier: string;
+  date: string;
+  invoiceNo: string | null;
+  productKey: string;
+  productName: string;
+  /** Faturadaki kalem: miktar ve birim ("Koli"), bağlantının çarpanı */
+  quantity: number;
+  lineUnit: string | null;
+  factor: number;
+  /** Aynı hammaddenin bir önceki faturası (başka tedarikçi olabilir) */
+  last: { unitPrice: number; date: string; supplier: string } | null;
+  impact: HoldImpact;
+  /** Fiyat şimdikinin yaklaşık tam katı ya da bölümü (çarpan hatası olabilir) */
+  hint: { times: number; direction: "up" | "down" } | null;
+  /** Önerilecek çarpan (tam sayıysa); "Çarpanı X yap" */
+  suggestedFactor: number | null;
+}
+
+/** Son 3 günün kararı ya da geçersiz kalan öneri ("Son kararlar") */
+export interface RecentHoldView {
+  id: number;
+  name: string;
+  unit: Unit;
+  proposed: number;
+  status: "approved" | "rejected" | "superseded";
+  note: string | null;
+  stoppedUpdates: boolean;
+  decidedByName: string | null;
+  /** ISO */
+  decidedAt: string;
+}
+
+const STATUS_LABEL: Record<RecentHoldView["status"], string> = { approved: "Onaylandı", rejected: "Reddedildi", superseded: "Geçersiz" };
+
+/** Kartın görünen kopyasına kaydırır (Next önceki sayfaların gizli kopyalarını tutar) */
+export function scrollToHolds(smooth = false) {
+  requestAnimationFrame(() => {
+    const el = [...document.querySelectorAll<HTMLElement>(`#${HOLDS_ANCHOR}`)].find((x) => x.getClientRects().length > 0);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el?.scrollIntoView({ block: "start", behavior: smooth && !reduce ? "smooth" : "instant" });
+  });
+}
+
+/** "Geri al": karar geri alınır, öneri yeniden onay bekler */
+async function undo(id: number, name: string) {
+  const r = await undoPriceHold(id);
+  if (r.ok) toast.success(`${name}: fiyat yeniden onay bekliyor`);
+  else toast.error(r.error);
+}
+
+/**
+ * Hammaddeler › "Onay bekleyen fiyatlar" (#fiyat-onayi): Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla
+ * farklı olan hammaddeler (docs/PARASUT.md 5b). Onayla fiyatı yazar, Reddet şimdiki fiyatı bırakır; çarpan yanlış
+ * görünüyorsa tek dokunuşla düzeltilir. Son 3 günün kararları altta, geri alınabilir (bildirim kaybolduktan sonra da).
+ * Zil, Genel bakış ve sabah e-postası buraya getirir.
+ */
+export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: RecentHoldView[] }) {
+  const [busy, start] = useTransition();
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [rejecting, setRejecting] = useState<HoldView | null>(null);
+  const [showRecent, setShowRecent] = useState(false);
+  // Onaylanan / reddedilen öneri listeden hemen düşer; sunucu sayfayı yeniden çizer
+  const [items, hide] = useOptimistic(pending, (state, id: number) => state.filter((x) => x.id !== id));
+
+  // Sayfa akarak geldiği için tarayıcının (ya da Next'in) çapa kaydırması karta ulaşamayabilir: kart çizilince bir kez
+  useEffect(() => {
+    if (window.location.hash === `#${HOLDS_ANCHOR}`) scrollToHolds();
+  }, []);
+
+  const approve = (x: HoldView) => {
+    setBusyId(x.id);
+    start(async () => {
+      hide(x.id);
+      const r = await approvePriceHold(x.id);
+      setBusyId(null);
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(`${r.data.name}: ${bulkPrice(r.data.before, r.data.unit)} → ${bulkPrice(r.data.after, r.data.unit)} uygulandı`, {
+        action: { label: "Geri al", onClick: () => void undo(x.id, r.data.name) },
+      });
+    });
+  };
+
+  const reject = (x: HoldView, stopUpdates: boolean, note: string) => {
+    setBusyId(x.id);
+    setRejecting(null);
+    start(async () => {
+      hide(x.id);
+      const r = await rejectPriceHold({ id: x.id, stopUpdates, note });
+      setBusyId(null);
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(`${r.data.name} fiyatı değişmedi`, {
+        description: r.data.stoppedUpdates ? "Bu üründen fiyat güncellemesi kapatıldı" : undefined,
+        action: { label: "Geri al", onClick: () => void undo(x.id, r.data.name) },
+      });
+    });
+  };
+
+  // Bağlantının çarpanı düzelir: eşitleme öneriyi geçersiz sayar ve en yeni faturayı yeni çarpanla yeniden değerlendirir
+  const fixFactor = (x: HoldView, factor: number) => {
+    setBusyId(x.id);
+    start(async () => {
+      hide(x.id);
+      const r = await saveProductLink({ productKey: x.productKey, productName: x.productName, ingredientId: x.ingredientId, factor, updatePrice: true });
+      setBusyId(null);
+      if (!r.ok) return void toast.error(r.error);
+      const f = num(factor, 3);
+      if (r.data.held) toast.warning(`Çarpan ${f} oldu · fiyat hâlâ %40'tan fazla farklı, onay bekliyor`);
+      else toast.success(`Çarpan ${f} oldu · ${r.data.prices ? "fiyat uygulandı" : "fiyat şimdikiyle aynı"}`);
+    });
+  };
+
+  return (
+    <Card id={HOLDS_ANCHOR} className="mb-6 scroll-mt-[calc(var(--mobile-top-h)+1.5rem)] lg:scroll-mt-4">
+      <CardHeader
+        icon={<TriangleAlert />}
+        title="Onay bekleyen fiyatlar"
+        description="Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla farklı. Çoğu zaman çarpan yanlıştır (koli ↔ adet); fiyat doğruysa onaylayın. Onaylanana kadar maliyetler şimdiki fiyatla hesaplanır."
+        meta={items.length ? <span className="font-medium text-warn tabular">{num(items.length)} hammadde</span> : null}
+      />
+      <CardContent className="space-y-3">
+        {items.length ? (
+          <ul className="divide-y divide-ink/[0.06] rounded-2xl bg-surface px-3" aria-label="Onay bekleyen fiyatlar">
+            {items.map((x) => (
+              <HoldItem
+                key={x.id}
+                x={x}
+                busy={busy && busyId === x.id}
+                disabled={busy}
+                onApprove={() => approve(x)}
+                onReject={() => setRejecting(x)}
+                onFactor={(f) => fixFactor(x, f)}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink-mute">Onay bekleyen fiyat yok.</p>
+        )}
+
+        {recent.length ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowRecent((v) => !v)}
+              aria-expanded={showRecent}
+              className="inline-flex min-h-8 cursor-pointer items-center gap-1 text-xs font-medium text-ink-soft hover:text-ink pointer-coarse:min-h-11"
+            >
+              <ChevronDown size={14} className={cn("transition-transform", showRecent && "rotate-180")} aria-hidden="true" />
+              Son kararlar ({num(recent.length)})
+            </button>
+            {showRecent ? (
+              <ul className="mt-2 divide-y divide-ink/[0.06] rounded-2xl bg-surface px-3 text-xs text-ink-mute">
+                {recent.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+                    <span className="min-w-0 text-pretty">
+                      <span className="font-medium text-ink">{d.name}</span>
+                      <span className="tabular"> · {bulkPrice(d.proposed, d.unit)}</span> ·{" "}
+                      <span className={cn(d.status === "approved" ? "text-good-ink" : d.status === "rejected" ? "text-bad" : "text-ink-soft")}>
+                        {STATUS_LABEL[d.status]}
+                        {d.note ? `: ${d.note}` : ""}
+                      </span>
+                      {d.status === "rejected" && d.stoppedUpdates ? " (fiyat güncellemesi kapatıldı)" : ""}
+                      {d.decidedByName ? ` · ${d.decidedByName}` : ""} · <span className="tabular">{dateTimeTR(d.decidedAt)}</span>
+                    </span>
+                    {d.status !== "superseded" ? (
+                      <Button size="xs" variant="ghost" disabled={busy} className="ml-auto" onClick={() => start(() => undo(d.id, d.name))}>
+                        Geri al
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </CardContent>
+      {rejecting ? <RejectDialog x={rejecting} onClose={() => setRejecting(null)} onReject={(stop, note) => reject(rejecting, stop, note)} /> : null}
+    </Card>
+  );
+}
+
+function HoldItem({
+  x,
+  busy,
+  disabled,
+  onApprove,
+  onReject,
+  onFactor,
+}: {
+  x: HoldView;
+  busy: boolean;
+  disabled: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  onFactor: (factor: number) => void;
+}) {
+  const up = x.pct === null || x.pct > 0;
+  const unitLabel = x.lineUnit ?? "birim";
+  const top = x.impact.top[0];
+  return (
+    <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+      <div className="min-w-0 space-y-0.5 text-xs text-ink-mute">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {/* Aynı sayfa: listede o hammaddeyi gösterir (pencere değil). Dokunmatikte 44px dokunma alanı */}
+          <Link href={listHref({ ara: x.name })} className="text-sm font-semibold break-words text-ink hover:underline pointer-coarse:-my-3 pointer-coarse:py-3">
+            {x.name}
+          </Link>
+          {x.pct !== null ? (
+            <Badge tone={x.pct > 0 ? "red" : "green"} title="Faturadaki birim fiyatın şimdikine göre farkı">
+              {x.pct > 0 ? "↑" : "↓"} {pct(Math.abs(x.pct), 0)}
+            </Badge>
+          ) : null}
+          {x.repeats >= 2 ? <Badge tone="gray">Son {num(x.repeats)} faturada da bu fiyat</Badge> : null}
+        </p>
+        <p className="text-[13px] text-ink-soft tabular">
+          Şimdi <span className="font-semibold text-ink">{bulkPrice(x.current, x.unit)}</span> → faturada{" "}
+          <span className="font-semibold text-ink">{bulkPrice(x.proposed, x.unit)}</span>
+        </p>
+        <p>
+          {x.supplier} · <span className="tabular">{dateTR(x.date)}</span>
+          {x.invoiceNo ? ` · ${x.invoiceNo}` : ""} ·{" "}
+          <Link
+            href={`/panel/faturalar?ara=${encodeURIComponent(x.invoiceNo ?? x.supplier)}#fatura-listesi`}
+            className="font-medium whitespace-nowrap text-info hover:underline pointer-coarse:-my-3 pointer-coarse:py-3"
+          >
+            Faturayı aç
+          </Link>
+        </p>
+        {/* Telefonda miktar, çarpan ve tutarlar bölünmeden alt satıra geçer */}
+        <p className="text-pretty">
+          Faturadaki ürün: {x.productName} ·{" "}
+          <span className="whitespace-nowrap tabular">
+            {num(x.quantity, 3)} {unitLabel} ·
+          </span>{" "}
+          <span className="whitespace-nowrap tabular">
+            1 {unitLabel} = {num(x.factor, 3)} {x.unit}
+          </span>
+        </p>
+        {x.last ? (
+          <p>
+            Önceki fatura: <span className="whitespace-nowrap tabular">{bulkPrice(x.last.unitPrice, x.unit)}</span> · {x.last.supplier} ·{" "}
+            <span className="tabular">{dateTR(x.last.date)}</span>
+          </p>
+        ) : null}
+        <p className="text-pretty">
+          {!x.impact.products ? (
+            "Hiçbir reçetede yok"
+          ) : up ? (
+            <>
+              {num(x.impact.products)} ürünün maliyeti artar
+              {top ? (
+                <>
+                  {" "}
+                  · en çok {top.name} · {top.size}:{" "}
+                  <span className="whitespace-nowrap tabular">
+                    {tl2(top.costBefore)} → {tl2(top.costAfter)}
+                  </span>
+                </>
+              ) : null}
+            </>
+          ) : x.impact.products === 1 ? (
+            "1 üründe kullanılıyor; maliyeti düşer"
+          ) : (
+            `${num(x.impact.products)} üründe kullanılıyor; maliyetleri düşer`
+          )}
+        </p>
+        {x.hint ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warn-soft px-3 py-2 text-warn">
+            <p className="min-w-0 flex-1 basis-60 text-pretty">
+              {x.hint.direction === "up" ? `Fiyat şimdikinin yaklaşık ${num(x.hint.times)} katı` : `Fiyat şimdikinden yaklaşık ${num(x.hint.times)} kat düşük`}: çarpan yanlış
+              olabilir{x.suggestedFactor ? ` (1 ${unitLabel} = ${num(x.suggestedFactor, 3)} ${x.unit} mi?)` : ""}. Çarpan yanlışsa alınan miktar da yanlış sayılır.
+            </p>
+            {x.suggestedFactor ? (
+              <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onFactor(x.suggestedFactor!)}>
+                Çarpanı {num(x.suggestedFactor, 3)} yap
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-2 sm:items-end">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Button size="sm" disabled={disabled} onClick={onApprove} className="pointer-coarse:min-h-11">
+            {busy ? "Kaydediliyor…" : "Onayla"}
+          </Button>
+          <Button size="sm" variant="secondary" disabled={disabled} onClick={onReject} className="pointer-coarse:min-h-11">
+            Reddet
+          </Button>
+        </div>
+        <Link
+          href={`/panel/parasut?durum=bagli&ara=${encodeURIComponent(x.productName)}#urun-baglantilari`}
+          className="inline-flex min-h-8 items-center text-xs font-medium text-ink-soft hover:text-ink hover:underline max-sm:justify-center pointer-coarse:min-h-11"
+        >
+          Bağlantıyı düzelt
+        </Link>
+      </div>
+    </li>
+  );
+}
+
+/** "Reddet": şimdiki fiyat kalır; istenirse bu üründen fiyat güncellemesi kapanır */
+function RejectDialog({ x, onClose, onReject }: { x: HoldView; onClose: () => void; onReject: (stopUpdates: boolean, note: string) => void }) {
+  const [stop, setStop] = useState(false);
+  const [note, setNote] = useState("");
+  const noteId = useId();
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title="Bu fiyat uygulanmasın mı?"
+      description={`${x.name} şimdiki fiyatında (${bulkPrice(x.current, x.unit)}) kalır. Sonraki faturada fiyat yine %40'tan fazla farklıysa yeniden sorulur.`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Vazgeç
+          </Button>
+          <Button variant="danger" onClick={() => onReject(stop, note.trim())}>
+            Reddet
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 pb-3">
+        <Checkbox label="Bu üründen fiyat güncellemesini kapat (alınan miktar yine sayılır)" checked={stop} onChange={(e) => setStop(e.target.checked)} />
+        <Field label="Not (isteğe bağlı)" htmlFor={noteId}>
+          <Input id={noteId} value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="ör. Faturada koli yazılmış" />
+        </Field>
+      </div>
+    </Dialog>
+  );
+}

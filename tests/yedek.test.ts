@@ -151,6 +151,7 @@ const NOT_SECRET: Record<string, string> = {
   "notification_log.key": "aynı bildirimin iki kez gitmemesi için anahtar",
   "parasut_bill_lines.product_key": "Paraşüt ürününün adından anahtar",
   "parasut_product_links.product_key": "Paraşüt ürününün adından anahtar",
+  "ingredient_price_holds.product_key": "Paraşüt ürününün adından anahtar (onay bekleyen fiyatın ürünü)",
   "pnl_entries.row_key": "gelir-gider tablosundaki satırın adı",
 };
 

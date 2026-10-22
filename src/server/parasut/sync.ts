@@ -1,13 +1,16 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, or, sql } from "drizzle-orm";
 
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
+import { appliedKeyOf, holdLogText, livePct, previousInvoicePrice, priceStep, reopenApplied, repeatCount, staleHolds } from "@/lib/price-hold";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
 import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
+import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
+import { supersedeHolds } from "@/server/data/price-holds";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
@@ -652,7 +655,7 @@ export async function syncParasut(
     }
 
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
-    if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
+    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
     if (partial && !reachedEnd) {
       // Hiç sayfa yazılamadıysa kalınan yer değişmez
       if (!keepStoredResume && processedUntilPage >= startPage) {
@@ -679,6 +682,7 @@ export async function syncParasut(
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
     ].filter(Boolean);
@@ -861,7 +865,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     const ctx = await loadCtx();
     for (const d of drafts) await applyDraft(d, ctx);
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
-    if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
+    const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
     await setState(HISTORY_KEY, progress);
 
     const written = new Set(drafts.map((d) => d.externalId));
@@ -875,6 +879,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       `${created} yeni`,
       `${updated} güncellendi`,
       removed ? `${removed} kaldırıldı (Paraşüt'te iptal)` : "",
+      linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
       partial ? "süre doldu, kalanı için yeniden basın" : "",
     ]
       .filter(Boolean)
@@ -1136,20 +1141,26 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
  * Hammaddeye bağlı Paraşüt kalemlerinden verilen ayların alınan miktarlarını yeniden hesaplar ve
  * (bağlantıda istenmişse) hammaddenin paket fiyatını en son faturadaki birim fiyatla günceller.
  * Elle girilmiş alınan miktar satırlarına dokunulmaz; yalnızca notu "Paraşüt" olanlar yönetilir.
+ * Şimdikinden %40'tan fazla farklı fiyat yazılmaz, onaya düşer (`held`; docs/PARASUT.md 5b).
  */
 export async function applyProductLinks(months?: string[]) {
   const db = getDb();
   const links = await db.select().from(s.parasutProductLinks);
   if (!links.length) {
-    // Bağlantı kalmadıysa yönetilen (Paraşüt kaynaklı) alınan miktar satırları da kalkar
+    // Bağlantı kalmadıysa yönetilen (Paraşüt kaynaklı) alınan miktar satırları da kalkar, bekleyen fiyat önerileri de
+    // geçersiz olur
     await db.delete(s.purchaseQuantities).where(eq(s.purchaseQuantities.note, MANAGED_QTY_NOTE));
-    return { quantities: 0, prices: 0 };
+    await supersedeHolds(null, "Bağlantı kaldırıldı");
+    return { quantities: 0, prices: 0, held: 0 };
   }
   const byKey = new Map(links.map((l) => [l.productKey, l]));
 
   const rows = await db
     .select({
+      invoiceId: s.invoices.id,
       productKey: s.parasutBillLines.productKey,
+      productName: s.parasutBillLines.productName,
+      unit: s.parasutBillLines.unit,
       quantity: s.parasutBillLines.quantity,
       netTotal: s.parasutBillLines.netTotal,
       date: s.invoices.date,
@@ -1205,10 +1216,39 @@ export async function applyProductLinks(months?: string[]) {
     const cur = latest.get(link.ingredientId);
     if (!cur || r.date > cur.date) latest.set(link.ingredientId, r);
   }
+
+  // Onay bekleyen fiyatlar (docs/PARASUT.md 5b): bağlantısı silinen, başka hammaddeye geçen, çarpanı değişen, fiyat
+  // güncellemesi kapanan ya da kalemi fiyat kapsamından çıkan öneri geçersiz olur. Değerlendirilecek hammaddelerin
+  // son kararları da okunur (reddedilen fatura yeniden sorulmaz)
+  const hs = s.ingredientPriceHolds;
+  const holds = await db
+    .select()
+    .from(hs)
+    .where(latest.size ? or(eq(hs.status, "pending"), inArray(hs.ingredientId, [...latest.keys()])) : eq(hs.status, "pending"))
+    .orderBy(desc(hs.createdAt), desc(hs.id));
+  const stale = staleHolds(
+    holds.filter((h) => h.status === "pending"),
+    links,
+    rows,
+  );
+  for (const reason of new Set(stale.map((x) => x.reason))) {
+    await supersedeHolds(
+      stale.filter((x) => x.reason === reason).map((x) => x.id),
+      reason,
+    );
+  }
+  const staleIds = new Set(stale.map((x) => x.id));
+  // Geçersiz kalan önerinin fiyatı hiç uygulanmadı: değişiklik geri dönünce (ör. "Fiyatı güncelle" yanlışlıkla kapatılıp
+  // açılınca) aynı fatura yeniden değerlendirilir, öneri kaybolmaz
+  reopenApplied(applied, holds.filter((h) => staleIds.has(h.id)));
+  const pendingBy = new Map(holds.filter((h) => h.status === "pending" && !staleIds.has(h.id)).map((h) => [h.ingredientId, h]));
+  const linkOf = new Map(links.map((l) => [l.productKey, { ingredientId: l.ingredientId, factor: l.factor }]));
+  const held: string[] = [];
+
   for (const [ingredientId, r] of latest) {
     const link = byKey.get(r.productKey)!;
     // Anahtar bağlantıyı da içerir: çarpan ya da ürün değişince aynı faturanın fiyatı yeni çarpanla yeniden yazılır
-    const appliedKey = `${ingredientId}|${link.productKey}|${link.factor}`;
+    const appliedKey = appliedKeyOf(ingredientId, link.productKey, link.factor);
     if ((applied[appliedKey] ?? "") >= r.date) continue;
     const packagePrice = Math.round((r.netTotal / r.quantity) * 100) / 100;
     const packageSize = link.factor;
@@ -1217,19 +1257,72 @@ export async function applyProductLinks(months?: string[]) {
     const before = ing.packagePrice / (ing.packageSize || 1);
     const after = packagePrice / (packageSize || 1);
     applied[appliedKey] = r.date;
-    if (before > 0 && Math.abs(after - before) / before < 0.005) continue;
-    await db.update(s.ingredients).set({ packagePrice, packageSize, isEstimate: false }).where(eq(s.ingredients.id, ingredientId));
-    await db.insert(s.ingredientPrices).values({
-      ingredientId,
-      packagePrice,
-      packageSize,
-      changedBy: "Paraşüt",
-      note: `${r.supplier}${r.invoiceNo ? ` ${r.invoiceNo}` : ""} (${r.date})`,
+    // Her zaman hammaddenin şimdiki fiyatına göre: onaylanan fiyat sonrakilerin tabanı olur, reddedilende eski fiyat kalır
+    const step = priceStep({ before, after, exempt: ing.priceSource === "water" });
+    const pending = pendingBy.get(ingredientId) ?? null;
+    if (step === "same") {
+      if (pending) await supersedeHolds([pending.id], "Daha yeni faturada fiyat aynı");
+      continue;
+    }
+    if (step === "apply") {
+      await db.transaction(async (tx) => {
+        // Önce öneri, sonra hammadde: onay ve geri alma da bu sırayla kilitler (aynı anda çalışınca kilitlenmesinler)
+        if (pending) await supersedeHolds([pending.id], `Daha yeni faturanın fiyatı uygulandı (${bulkPrice(after, ing.unit)})`, tx);
+        await tx.update(s.ingredients).set({ packagePrice, packageSize, isEstimate: false }).where(eq(s.ingredients.id, ingredientId));
+        await tx.insert(s.ingredientPrices).values({
+          ingredientId,
+          packagePrice,
+          packageSize,
+          changedBy: "Paraşüt",
+          note: `${r.supplier}${r.invoiceNo ? ` ${r.invoiceNo}` : ""} (${r.date})`,
+        });
+      });
+      prices++;
+      continue;
+    }
+    // %40'tan fazla fark: yanlış çarpan ya da tek seferlik fatura bütün reçete maliyetlerini sessizce değiştirmesin,
+    // çarpan hatası sahte zam uyarısı açmasın. Aynı öneri zaten bekliyorsa (yeniden çalışma, yarıda kalan eşitleme) ya
+    // da sahibi bu faturanın fiyatını reddettiyse yeni satır açılmaz
+    const same = (x: (typeof holds)[number]) => x.invoiceId === r.invoiceId && x.productKey === r.productKey && x.factor === link.factor;
+    if (pending && same(pending)) continue;
+    if (holds.some((x) => x.ingredientId === ingredientId && x.status === "rejected" && same(x))) continue;
+    const prev = previousInvoicePrice(rows, linkOf, ingredientId, { invoiceId: r.invoiceId, date: r.date });
+    const inserted = await db.transaction(async (tx) => {
+      if (pending) await supersedeHolds([pending.id], "Daha yeni fatura geldi", tx);
+      // Kısmi tekil dizin hammadde başına tek bekleyen öneriyi korur (eşitleme ile elle bağlama aynı anda çalışırsa)
+      const [row] = await tx
+        .insert(hs)
+        .values({
+          ingredientId,
+          invoiceId: r.invoiceId,
+          productKey: r.productKey,
+          productName: r.productName,
+          factor: link.factor,
+          quantity: r.quantity,
+          unit: r.unit,
+          netTotal: r.netTotal,
+          invoiceDate: r.date,
+          supplier: r.supplier,
+          invoiceNo: r.invoiceNo,
+          packagePrice,
+          packageSize,
+          prevPackagePrice: ing.packagePrice,
+          prevPackageSize: ing.packageSize,
+          prevIsEstimate: ing.isEstimate,
+          lastUnitPrice: prev?.unitPrice ?? null,
+          lastDate: prev?.date ?? null,
+          lastSupplier: prev?.supplier ?? null,
+          repeats: repeatCount(rows, linkOf, ingredientId, { invoiceId: r.invoiceId, date: r.date, unitPrice: after }),
+        })
+        .onConflictDoNothing({ target: hs.ingredientId, where: sql`status = 'pending'` })
+        .returning({ id: hs.id });
+      return Boolean(row);
     });
-    prices++;
+    if (inserted) held.push(holdLogText({ name: ing.name, pct: livePct(after, before), supplier: r.supplier, date: r.date }));
   }
   await setState(PRICE_KEY, applied);
-  return { quantities, prices };
+  if (held.length) await logActivity(null, "Fiyat onaya düştü", held.join(", "));
+  return { quantities, prices, held: held.length };
 }
 
 // Hammaddeye bağlanmaya aday kalemlerin geldiği fatura kategorileri (mal alışları ve "Diğer") tek yerde tanımlı:

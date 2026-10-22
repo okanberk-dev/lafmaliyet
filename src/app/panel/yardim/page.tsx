@@ -240,7 +240,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             Paraşüt&apos;e gelen fatura ertesi sabah <Path href="/panel/faturalar" /> ekranına kendiliğinden düşer; beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi
             eşitle. Fatura “ödenmedi” gelir; ödediğinizde <Path href="/panel/tedarikciler" /> ya da Faturalar ekranında ödendi işaretleyin. Kontrol bekleyen varsa kategorisini onaylayın. Yeni bir ürün geldiyse Paraşüt entegrasyonu ekranındaki Bağlanmayı bekleyenler listesinde hammaddeye
-            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
+            bağlayın: alınan miktar ve (&quot;Fiyatı güncelle&quot; açıksa) paket fiyatı oradan güncellenir. Faturadaki fiyat şimdikinden %40&apos;tan fazla farklıysa
+            uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
+            Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
             <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
           </>
@@ -249,6 +251,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [
           { href: "/panel/faturalar?durum=kontrol", label: "Kontrol bekleyen faturalar" },
           { href: "/panel/parasut?durum=bekleyen", label: "Bağlanmayı bekleyen ürünler" },
+          { href: "/panel/hammaddeler#fiyat-onayi", label: "Onay bekleyen fiyatlar" },
           { href: "/panel/hammaddeler", label: "Hammaddeler" },
         ],
       },
@@ -496,7 +499,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
-            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
+            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
             satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah

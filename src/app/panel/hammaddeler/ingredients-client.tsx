@@ -46,6 +46,7 @@ import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
 
@@ -55,6 +56,8 @@ import { priceText } from "../urunler/price-text";
 
 import { catOrder } from "./categories";
 import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup, type IngredientDeps } from "./form-helpers";
+import { scrollToHolds } from "./price-holds";
+import { SupplierPrices } from "./supplier-prices";
 
 export interface IngredientRow extends Ingredient {
   unitCost: number;
@@ -66,6 +69,11 @@ export interface IngredientRow extends Ingredient {
   deps: IngredientDeps;
   /** Son 30 günde %5'ten fazla fiyat değişimi (zam uyarısıyla aynı hesap); yoksa null */
   recentChange?: { pct: number; at: string } | null;
+  /**
+   * Paraşüt faturasından gelen, onay bekleyen fiyat (şimdikinden %40'tan fazla farklı; "Onay bekleyen fiyatlar"):
+   * önerilen birim fiyat (₺ / birim), canlı fark, faturanın tedarikçisi ve tarihi; yoksa null
+   */
+  pendingHold?: { pct: number | null; proposed: number; supplier: string; date: string } | null;
 }
 
 /** fiyatsiz: paket fiyatı girilmemiş (sayımda "Listeye ekle" ile eklenen kalem; zildeki bağlantı ?durum=fiyatsiz) */
@@ -296,6 +304,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           {r.recentChange ? (
             <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(r.recentChange.at.slice(0, 10))})`}>
               {r.recentChange.pct > 0 ? "↑" : "↓"} {pct(Math.abs(r.recentChange.pct), 0)}
+            </Badge>
+          ) : null}
+          {r.pendingHold ? (
+            <Badge tone="amber" dot title={`Faturadan gelen yeni fiyat onay bekliyor: ${bulkPrice(r.pendingHold.proposed, r.unit)} (${r.pendingHold.supplier}, ${dateTR(r.pendingHold.date)})`}>
+              Fiyat onayda
             </Badge>
           ) : null}
           {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}
@@ -1401,6 +1414,25 @@ function IngredientDialog({
         </form>
         {row ? (
           <div className="space-y-4">
+            {live?.pendingHold ? (
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
+                <p className="min-w-0 flex-1 basis-56 text-pretty">
+                  Faturadan gelen yeni fiyat onay bekliyor: <span className="font-semibold tabular">{bulkPrice(live.pendingHold.proposed, row.unit)}</span> (
+                  {live.pendingHold.supplier}, {dateTR(live.pendingHold.date)}).
+                </p>
+                {/* Kart aynı sayfada: pencere kapanır, sayfa karta kayar (gezinme yok) */}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    onClose();
+                    setTimeout(() => scrollToHolds(true), 0);
+                  }}
+                >
+                  Onaya git
+                </Button>
+              </div>
+            ) : null}
             {row.history.length ? (
               // Beyaz pencerede kuyu gri zeminle ayrılır
               <Well className="bg-panel">
@@ -1450,14 +1482,18 @@ function IngredientDialog({
                 </ul>
               </Well>
             ) : null}
+            {/* Su ve buzun fiyatı su faturasından: tedarikçi karşılaştırması yok */}
+            {row.priceSource !== "water" ? <SupplierPrices ingredientId={row.id} onNavigate={onClose} /> : null}
             <div>
               <p className="mb-2 text-sm font-semibold text-ink">Kullanıldığı ürünler ({row.usedIn.length})</p>
               {row.usedIn.length ? (
                 <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto scroll-thin">
                   {row.usedIn.map((u) => (
+                    // Pencere önce kapanır: açık kalsa ürün sayfasının üstünde dururdu
                     <Link
                       key={u.id}
                       href={`/panel/urunler/${u.id}`}
+                      onClick={onClose}
                       className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11"
                     >
                       {u.label}

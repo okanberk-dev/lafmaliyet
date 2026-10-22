@@ -8,15 +8,16 @@ import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type Upcom
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { pendingHoldSummary } from "@/server/data/price-holds";
 import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
-import { renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
+import { invoiceNewsOf, renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
 import { isEmailConfigured, resolveFrom, sendEmail } from "./resend";
 import { loadNotifySettings } from "./settings";
 
-export { APP_URL, renderDigest } from "./digest-template";
+export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
 
 /**
  * Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler. Vadesiz faturanın tahmini vadesi tedarikçinin
@@ -52,7 +53,7 @@ export async function loadUpcoming(today = todayTR()) {
 }
 
 export type DigestResult =
-  | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number }
+  | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number; holds?: number }
   /**
    * `off`: neden gitmedi. "disabled" e-posta kapalı, "nokey" Resend kurulmamış (gönderilecek bir şey olsa da gitmezdi);
    * "norecipient" gönderilecek bir şey vardı ama etkin bildirim adresi yok. Yoksa gönderilecek yeni bir şey yoktu.
@@ -67,8 +68,9 @@ const FIRST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Sabah e-postasının Paraşüt bölümü: son Paraşüt bölümlü e-postadan bu yana eşitlemenin açtığı faturalar,
- * kontrol bekleyenlerin sayısı ve (henüz bildirilmediyse) başarısız son eşitleme. `sinceKey` son Paraşüt bölümlü
- * gönderimin anıdır (hiç yoksa ""): aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir.
+ * kontrol bekleyenlerin sayısı, (henüz bildirilmediyse) başarısız son eşitleme ve onay bekleyen hammadde fiyatları
+ * (`fresh`: aynı andan bu yana onaya düşenler). `sinceKey` son Paraşüt bölümlü gönderimin anıdır (hiç yoksa ""):
+ * aynı gün ikinci gönderimin Resend tekil anahtarı buna göre değişir.
  */
 export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; failedRunKey: string | null; sinceKey: string }> {
   const db = getDb();
@@ -79,7 +81,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     .orderBy(desc(s.notificationLog.sentAt))
     .limit(1);
   const since = lastSent?.at ?? new Date(Date.now() - FIRST_LOOKBACK_MS);
-  const [rows, [{ n }], [lastRun]] = await Promise.all([
+  const [rows, [{ n }], [lastRun], holds] = await Promise.all([
     db
       .select({
         supplier: s.invoices.supplier,
@@ -96,7 +98,15 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
     db.select({ n: count() }).from(s.invoices).where(eq(s.invoices.needsReview, true)),
     // Tedarikçi geçmişi (tek tedarikçi, elle) günlük eşitlemenin sağlığına sayılmaz
     db.select().from(s.parasutSyncRuns).where(ne(s.parasutSyncRuns.trigger, "history")).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(1),
+    pendingHoldSummary().catch((e) => {
+      console.error("Sabah e-postası fiyat onayları", e);
+      return null;
+    }),
   ]);
+  const sinceIso = since.toISOString();
+  const priceHolds = holds?.count
+    ? { count: holds.count, fresh: holds.items.filter((i) => i.createdAt > sinceIso).length, items: holds.items.map(({ name, pct }) => ({ name, pct })) }
+    : null;
   let syncError: string | null = null;
   let failedRunKey: string | null = null;
   if (lastRun?.status === "error" && Date.now() - lastRun.startedAt.getTime() < 36 * 60 * 60 * 1000) {
@@ -109,7 +119,7 @@ export async function loadDigestInvoices(): Promise<{ invoices: DigestInvoices; 
   }
   // Hesaplanan `since` değil kayıt anı: ilk gönderimde "şimdi − 24 saat" her çağrıda değişir, eşzamanlı iki gönderim
   // (sabah işi + elle) aynı anahtarı paylaşmazdı
-  return { invoices: { items: rows, reviewCount: n, syncError }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
+  return { invoices: { items: rows, reviewCount: n, syncError, priceHolds }, failedRunKey, sinceKey: lastSent?.at?.toISOString() ?? "" };
 }
 
 /** Zam bölümünün anahtarı: her gönderimde yeni satır; yalnız son zam e-postasından sonraki zamlar yeni sayılır */
@@ -166,8 +176,9 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
         return [];
       })
     : [];
-  // Kontrol bekleyen sayısı tek başına her gün e-posta göndermez; yeni fatura ya da hata varsa bölümde yer alır
-  const invoiceNews = invoices.items.length > 0 || Boolean(invoices.syncError);
+  // Kontrol bekleyen ve eski onay bekleyen sayısı tek başına her gün e-posta göndermez; yeni fatura, hata ya da yeni
+  // onaya düşen fiyat varsa bölümde yer alır
+  const invoiceNews = invoiceNewsOf(invoices);
   if (!fresh.length && !invoiceNews && !prices && !system.length) {
     return {
       status: "skipped",
@@ -178,13 +189,13 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
   const recipients = await db.select().from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true));
   if (!recipients.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
 
-  const { subject, html, text } = renderDigest(fresh, today, invoiceNews || invoices.reviewCount ? invoices : null, prices, system.length ? { items: system } : null);
+  const { subject, html, text } = renderDigest(fresh, today, invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null, prices, system.length ? { items: system } : null);
   const to = recipients.map((r) => r.email);
   // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
   // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
   const keySeed = [
     ...fresh.map((f) => f.key),
-    `inv:${sinceKey}:${invoices.items.length}:${invoices.items[0]?.date ?? ""}`,
+    `inv:${sinceKey}:${invoices.items.length}:${invoices.items[0]?.date ?? ""}${invoices.priceHolds?.fresh ? `:h${invoices.priceHolds.fresh}` : ""}`,
     failedRunKey ?? "",
     prices ? `zam:${prices.changes.map((c) => `${c.name}:${c.after}`).join(",")}` : "",
     system.length ? `sys:${system.map((p) => p.key).join(",")}` : "",
@@ -214,6 +225,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     prices: prices?.changes.length ?? 0,
     syncError: Boolean(invoices.syncError),
     system: system.length,
+    holds: invoices.priceHolds?.fresh ?? 0,
   };
 }
 

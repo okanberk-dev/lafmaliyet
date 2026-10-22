@@ -2,6 +2,7 @@
 
 import { CheckCircle2, ChevronDown, CircleDashed, FileText, Link2, ListFilter, Package, PackageX, Pencil, PlugZap, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useId, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -22,6 +23,7 @@ import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui
 import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
+import { HOLDS_HREF } from "@/lib/price-hold";
 import { guessLinkFactor, suggestIngredient } from "@/lib/product-match";
 import type { IgnoredProduct } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
@@ -108,6 +110,16 @@ interface Unlinked {
   supplier: string;
 }
 
+/**
+ * Bağlama ya da kalem okuma şimdikinden %40'tan fazla farklı fiyat getirdiyse (onaya düştü, uygulanmadı) bildirime
+ * eklenen metin ve Hammaddeler'deki "Onay bekleyen fiyatlar"a götüren düğme
+ */
+function heldToast(held: number, router: { push: (href: string) => void }) {
+  return held
+    ? { text: ` · ${num(held)} fiyat onay bekliyor`, options: { duration: 10_000, action: { label: "Bak", onClick: () => router.push(HOLDS_HREF) } } }
+    : { text: "", options: undefined };
+}
+
 /** Adresten gelen değer beklenenlerden biri değilse varsayılan kullanılır */
 function oneOf<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
@@ -160,6 +172,7 @@ export function ParasutClient({
   const [syncing, startSync] = useTransition();
   const [resetting, startReset] = useTransition();
   const [reading, startRead] = useTransition();
+  const router = useRouter();
   const [readProgress, setReadProgress] = useState<{ done: number; left: number } | null>(null);
   const busy = testing || syncing || resetting || reading;
   const [from, setFrom] = useState("");
@@ -179,6 +192,7 @@ export function ParasutClient({
       let done = 0;
       let lineCount = 0;
       let corrected = 0;
+      let held = 0;
       for (let round = 0; round < 12; round++) {
         const r = await readParasutLines();
         if (!r.ok) {
@@ -189,6 +203,7 @@ export function ParasutClient({
         done += step;
         lineCount += r.data.lines;
         corrected += r.data.corrected;
+        held += r.data.held;
         setReadProgress({ done, left: r.data.remaining });
         if (!r.data.remaining || !step) {
           if (r.data.stoppedBy && r.data.remaining) toast.warning(`Paraşüt yavaş yanıt verdi; kalan ${num(r.data.remaining)} fatura sonraki eşitlemede okunur.`);
@@ -197,9 +212,10 @@ export function ParasutClient({
         toast.loading(`E-fatura kalemleri okunuyor… ${num(done)} fatura okundu, ${num(r.data.remaining)} kaldı`, { id: t });
       }
       setReadProgress(null);
+      const h = heldToast(held, router);
       toast.success(
-        `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}`,
-        { id: t },
+        `${num(done)} faturanın ${num(lineCount)} kalemi okundu${corrected ? ` · ${num(corrected)} tevkifatlı faturanın tutarı belgeden düzeltildi` : ""}${h.text}`,
+        { id: t, ...h.options },
       );
     });
 
@@ -566,6 +582,7 @@ function ProductLinks({
   canRead: boolean;
 }) {
   const [pending, start] = useTransition();
+  const router = useRouter();
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [removing, setRemoving] = useState<LinkRow | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
@@ -612,7 +629,8 @@ function ProductLinks({
       hideUnlinked(u.productKey);
       const r = await saveProductLink({ productKey: u.productKey, productName: u.productName, ingredientId: Number(d.ingredientId), factor, updatePrice: d.updatePrice });
       if (!r.ok) return void toast.error(r.error);
-      toast.success(`${u.productName} → ${ing?.name ?? "hammadde"} bağlandı · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat güncellendi`);
+      const h = heldToast(r.data.held, router);
+      toast.success(`${u.productName} → ${ing?.name ?? "hammadde"} bağlandı · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat güncellendi${h.text}`, h.options);
     });
   };
 
@@ -664,7 +682,8 @@ function ProductLinks({
       );
       if (!r.ok) return void toast.error(r.error);
       setBulkOpen(false);
-      toast.success(`${num(r.data.linked)} ürün bağlandı · ${num(r.data.quantities)} aylık miktar, ${num(r.data.prices)} fiyat güncellendi`);
+      const h = heldToast(r.data.held, router);
+      toast.success(`${num(r.data.linked)} ürün bağlandı · ${num(r.data.quantities)} aylık miktar, ${num(r.data.prices)} fiyat güncellendi${h.text}`, h.options);
     });
 
   const update = (l: LinkRow, patch: { ingredientId: number; factor: number; updatePrice: boolean }, done?: () => void) => {
@@ -674,7 +693,8 @@ function ProductLinks({
       done?.();
       const r = await saveProductLink({ productKey: l.productKey, productName: l.productName, ...patch });
       if (!r.ok) return void toast.error(r.error);
-      toast.success(`${l.productName} güncellendi · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat yeniden hesaplandı`);
+      const h = heldToast(r.data.held, router);
+      toast.success(`${l.productName} güncellendi · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat yeniden hesaplandı${h.text}`, h.options);
     });
   };
 
