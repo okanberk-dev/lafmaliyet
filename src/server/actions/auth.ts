@@ -7,10 +7,12 @@ import QRCode from "qrcode";
 import { z } from "zod";
 
 import { canOpen, homeFor } from "@/lib/roles";
+import { WRONG_PASSWORD } from "@/lib/step-up";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
-import { clearPending, endSession, readDevice, readPending, rememberDevice, requireUser, startPending, startSession, type CurrentUser } from "@/server/auth/dal";
+import { clearPending, endSession, readDevice, readPending, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
 import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
 import { isKnownDevice, verifyPending, type DeviceToken } from "@/server/auth/session";
+import { confirmPassword, requirePassword } from "@/server/auth/step-up";
 import {
   consumeRecoveryCode,
   formatSecret,
@@ -48,11 +50,6 @@ const deviceLock = createLockout({ max: MAX_FAILED * 2, lockMs: LOCK_MS });
 const ghostLock = createLockout({ max: MAX_FAILED, lockMs: LOCK_MS });
 /** Kayıtsız e-postada da bir parola özeti denenir (işlemci yükü kayıtlı hesapla aynı olsun) */
 let ghostHash: Promise<string> | undefined;
-/**
- * Hesabım'daki parola onayları (parola, e-posta, iki adımlı doğrulama, oturumları kapat): kişi başına 15 dakikada 5
- * hata. Açık kalmış bir oturumla parola tahmin edilemesin. Giriş kilidine dokunmaz: sahibi kendi girişini kilitlemez.
- */
-const reauthFails = createLimiter({ limit: MAX_FAILED, windowMs: LOCK_MS });
 
 const WRONG = "E-posta ya da parola hatalı";
 const TOO_MANY = `Çok fazla deneme yapıldı. ${LOCK_MINUTES} dakika sonra yeniden deneyin.`;
@@ -298,31 +295,11 @@ async function rotateSessions(userId: number) {
   }
 }
 
-const passwordOnly = z.string().min(1, "Parolanızı girin");
-
-/**
- * Hesabım'da değişikliği onaylayan parola. Deneme doğrulamadan önce sayılır (kişi başına 15 dakikada 5 hata; doğrusu
- * geri verilir) ve hatalı deneme işlem geçmişine yazılır: açık kalmış bir oturumla parola tahmin edilemesin.
+/*
+ * Hesabım'daki parola onayı src/server/auth/step-up.ts'te (confirmPassword / requirePassword): kişi başına 15
+ * dakikada 5 hata, Kullanıcılar'daki yönetici onaylarıyla aynı pay; hatalı deneme işlem geçmişine yazılır. Buradan
+ * dışa açılmaz: "use server" dosyasının dışa açtığı her işlev istemciden çağrılabilir.
  */
-async function confirmPassword(me: CurrentUser, password: string): Promise<{ ok: true; user: typeof s.users.$inferSelect } | { ok: false; error: string }> {
-  const key = String(me.id);
-  if (!reauthFails.hit(key)) return { ok: false, error: `Çok fazla hatalı parola. ${LOCK_MINUTES} dakika sonra yeniden deneyin.` };
-  const [u] = await getDb().select().from(s.users).where(eq(s.users.id, me.id)).limit(1);
-  if (u && (await verifyPassword(password, u.passwordHash))) {
-    reauthFails.undo(key);
-    return { ok: true, user: u };
-  }
-  await logActivity(me, "Hatalı parola onayı (Hesabım)", me.email);
-  return { ok: false, error: "Parola hatalı" };
-}
-
-/** attempt() içindeki eylemler için: parola tutmazsa kullanıcıya gösterilen hata */
-async function requirePassword(me: CurrentUser, password: string) {
-  passwordOnly.parse(password);
-  const c = await confirmPassword(me, password);
-  if (!c.ok) throw new UserError(c.error);
-  return c.user;
-}
 
 export type PasswordState = { error?: string; ok?: boolean };
 
@@ -334,8 +311,8 @@ export async function changePasswordAction(_prev: PasswordState, formData: FormD
   const problem = passwordProblem(next, me.email);
   if (problem) return { error: problem };
   if (next !== repeat) return { error: "Yeni parolalar aynı değil" };
-  const c = await confirmPassword(me, current);
-  if (!c.ok) return { error: c.error === "Parola hatalı" ? "Mevcut parola hatalı" : c.error };
+  const c = await confirmPassword(me, current, "Hesabım");
+  if (!c.ok) return { error: c.error === WRONG_PASSWORD ? "Mevcut parola hatalı" : c.error };
   await getDb().update(s.users).set({ passwordHash: await hashPassword(next) }).where(eq(s.users.id, me.id));
   // Bekleyen sıfırlama / davet bağlantıları eski parolayla birlikte geçersiz olur
   await expireUserTokens(me.id);
@@ -356,7 +333,7 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
     const me = await requireUser();
     const data = profileSchema.parse(input);
     const db = getDb();
-    const u = await requirePassword(me, data.password);
+    const u = await requirePassword(me, data.password, "Hesabım");
     const [{ n }] = await db
       .select({ n: count() })
       .from(s.users)
@@ -377,7 +354,7 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
 export async function signOutOtherSessions(password: string) {
   return attempt(async () => {
     const me = await requireUser();
-    await requirePassword(me, password);
+    await requirePassword(me, password, "Hesabım");
     await rotateSessions(me.id);
     await logActivity(me, "Diğer cihazlardaki oturumlar kapatıldı", me.email);
     return null;
@@ -393,7 +370,7 @@ export async function signOutOtherSessions(password: string) {
 export async function beginTotpSetup(password: string) {
   return attempt(async () => {
     const me = await requireUser();
-    const u = await requirePassword(me, password);
+    const u = await requirePassword(me, password, "Hesabım");
     if (u.totpEnabled) throw new UserError("İki adımlı doğrulama zaten açık");
     const secret = generateTotpSecret();
     await getDb().update(s.users).set({ totpSecret: seal(secret, "totp"), totpLastStep: null }).where(eq(s.users.id, me.id));
@@ -431,7 +408,7 @@ export async function confirmTotpSetup(code: string) {
 export async function disableTotp(password: string) {
   return attempt(async () => {
     const me = await requireUser();
-    await requirePassword(me, password);
+    await requirePassword(me, password, "Hesabım");
     await getDb().update(s.users).set({ totpEnabled: false, totpSecret: null, totpLastStep: null, recoveryCodes: null }).where(eq(s.users.id, me.id));
     await rotateSessions(me.id);
     await logActivity(me, "İki adımlı doğrulama kapatıldı", me.email);
@@ -443,7 +420,7 @@ export async function disableTotp(password: string) {
 export async function regenerateRecoveryCodes(password: string) {
   return attempt(async () => {
     const me = await requireUser();
-    const u = await requirePassword(me, password);
+    const u = await requirePassword(me, password, "Hesabım");
     if (!u.totpEnabled) throw new UserError("İki adımlı doğrulama kapalı");
     const codes = generateRecoveryCodes();
     await getDb().update(s.users).set({ recoveryCodes: await hashCodes(me.id, codes) }).where(eq(s.users.id, me.id));

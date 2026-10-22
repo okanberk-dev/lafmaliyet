@@ -236,8 +236,29 @@ export function dueNotifications(items: UpcomingItem[]): { item: UpcomingItem; s
  * Sabah e-postasında ne olduğu, tek satır ("2 hatırlatma · 4 yeni fatura · 1 zam"): "şimdi gönder" bildirimi ve
  * önizleme açıklaması. Hiçbir bölüm yoksa boş döner.
  */
-export function digestSummary({ count = 0, invoices = 0, prices = 0, syncError = false }: { count?: number; invoices?: number; prices?: number; syncError?: boolean }): string {
-  return [count ? `${count} hatırlatma` : "", invoices ? `${invoices} yeni fatura` : "", prices ? `${prices} zam` : "", syncError ? "Paraşüt eşitleme hatası" : ""].filter(Boolean).join(" · ");
+export function digestSummary({
+  count = 0,
+  invoices = 0,
+  prices = 0,
+  syncError = false,
+  system = 0,
+}: {
+  count?: number;
+  invoices?: number;
+  prices?: number;
+  syncError?: boolean;
+  /** Günlük işlerin sorunları (Sistem uyarıları bölümü) */
+  system?: number;
+}): string {
+  return [
+    count ? `${count} hatırlatma` : "",
+    invoices ? `${invoices} yeni fatura` : "",
+    prices ? `${prices} zam` : "",
+    syncError ? "Paraşüt eşitleme hatası" : "",
+    system ? `${system} sistem uyarısı` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function daysLeftLabel(daysLeft: number): string {

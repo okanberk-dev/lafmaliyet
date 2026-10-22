@@ -49,9 +49,14 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
 - **hammadde zamları**: son zam bölümlü e-postadan bu yana fiyatı %5'ten fazla artan hammaddeler (eski → yeni
   ₺/kg, ₺/L, ₺/adet) ve fiyatı hedef maliyet oranının altında kalan ürünler, önerilen fiyatlarıyla (en çok 6);
-  bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a).
+  bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a);
+- en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
+  çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası ya da yeni zam yoksa e-posta gitmez. Paraşüt eşitlemesi bir saat önce ayrı bir işte
+Ödeme, yeni fatura, eşitleme hatası, yeni zam ya da sistem uyarısı yoksa e-posta gitmez. Konu öncelik sırasıyla:
+ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, zam eklenir); yoksa sistem uyarısı varsa
+"Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura ya
+da kontrol bekleyen "Sabah özeti: …"; yoksa zam. Paraşüt eşitlemesi bir saat önce ayrı bir işte
 çalışır; o sabah başarısız olduysa e-posta işi önce bir kez daha eşitler. Her ödeme için en fazla üç kez haber
 verilir:
 
@@ -83,12 +88,59 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
 - e-postaları açma / kapatma anahtarı: yalnız açık/kapalıyı kaydeder, "Gönderim ayarları"nda yazılıp
   kaydedilmemiş değerlere dokunmaz;
 - bildirim adresi ekleme, kapatma, silme;
-- **E-postayı önizle** (gönderilmez): bugün gidecek sabah e-postasının kendisi, Paraşüt ve zam bölümleriyle;
-  ödeme, yeni fatura ya da zam yoksa örnek bir ödeme satırıyla;
+- **E-postayı önizle** (gönderilmez): bugün gidecek sabah e-postasının kendisi, sistem, Paraşüt ve zam bölümleriyle;
+  ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla;
 - **Deneme gönder** (kayıtlı gönderenle, etkin adreslere);
 - **Bugünküleri şimdi gönder** (sabahı beklemeden; daha önce gidenler tekrar gitmez). Bildirimde ne gittiği
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";
 - gönderen adresi ve gün ayarları (Gönderim ayarları › Kaydet).
+
+## Sistem uyarıları (günlük işler)
+
+Her sabah iki zamanlanmış iş çalışır (`vercel.json`, Vercel Cron, yalnız canlıda): 07:00–08:00 **Paraşüt eşitlemesi**
+(`/api/cron/parasut`), 08:00–09:00 **sabah işi** (`/api/cron/gunluk`: sabah e-postası, hatırlatıcı bildirimi,
+karaoke / menü / online satış eşitlemeleri). Her çalışma başlarken ve biterken `job_runs` tablosuna yazılır (adımların
+sonucu ve hatasıyla; 90 gün tutulur). Ekran: **Ayarlar › Günlük işler** (`/panel/ayarlar#isler`): iki işin son
+çalışması, rozeti (Çalıştı, Atlandı, Sürüyor, Bekleniyor, Çalışmadı, Hata, Yarıda kesildi, Kısmen), adımları ve hatası.
+
+Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalışması aranır (`src/lib/job-health.ts`):
+
+| Durum | Zil (Sistem) | Genel bakış | E-posta |
+|-------|--------------|-------------|---------|
+| Sabah işi çalışmadı / hata verdi / yarıda kesildi | kırmızı | kırmızı şerit | ertesi sabah bekçi e-postası (gidemezse sabah e-postasında) |
+| Sabah işinde bir adım hata verdi (ör. menü eşitlemesi) | turuncu | — | ertesi sabahın sabah e-postasında (bekçi ayrı e-posta atmaz) |
+| Paraşüt işi çalışmadı | turuncu | — | aynı sabahın e-postası (eşitlemeyi sabah işi yaptıysa söyler) |
+| Paraşüt işi hata verdi / yarıda kesildi | kırmızı (eşitlemenin kendi hatası zaten "Paraşüt eşitlemesi başarısız" olarak görünüyorsa yinelenmez) | kırmızı şerit | — (hata sabah e-postasında) |
+| `CRON_SECRET` tanımlı değil | kırmızı, tek uyarı | kırmızı şerit | — (hiçbir iş çalışmaz) |
+
+- **Bekçi:** sabah e-postasını gönderen iş bozulursa bunu kendisi söyleyemez. Paraşüt işi her sabah önce dünkü sabah
+  işine bakar; çalışmadıysa ya da hata verdiyse sabah e-postasının alıcılarına kısa bir **sistem uyarısı e-postası**
+  gider (konu "L'Affogato · Dünkü sabah işi çalışmadı (21 Ekim)"; ne yapılacağıyla). Bekçi en çok 8 saniye bekletir,
+  kalan süre eşitlemeye verilir. Gitmezse aynı uyarı sabah e-postasının "Sistem uyarıları" bölümüne girer.
+- Her sorun e-postayla bir kez gider (`notification_log` anahtarı `job:<iş>:<gün>:<durum>`). Yarıda kesilen çalışmayı
+  sonraki çalışma "hata" olarak kapatsa da durumu "yarıda kesildi" kalır: bekçinin gönderdiği uyarı sabah e-postasında
+  yinelenmez.
+- Yanlış alarm olmasın diye: önizlemede ve yerelde uyarı yok (`VERCEL_ENV=production` değilse); izlemenin başladığı an
+  (`integration_state` › `jobs.watchSince`) o günün penceresinden sonraysa iş "Bekleniyor" sayılır; aynı gün sonradan
+  başarılı olan çalışma önceki hatanın yerine geçer; bugün zaten çalışmış iş için dünkü hata sürmez. İzleme başlangıcı
+  her işin başında yalnız yoksa yazılır; canlı derlemede işler son 26 saatte hiç kayıt yazmadıysa (ilk yayın, bozulan
+  bir derleme ya da eski sürüme dönüş sonrası kayıt yazmayan kod çalıştı) o yayının anıyla değiştirilir. Bedeli: iki
+  iş birden bir günden uzun süredir çalışmıyorsa yeni bir yayın "çalışmadı" uyarısını bir sonraki pencereye erteler.
+- Elle çalıştırma: Vercel › lafmaliyet › Settings › Cron Jobs › **Run** (kayda geçer, uyarıyı kaldırır). Paraşüt için
+  Paraşüt entegrasyonu › Şimdi eşitle, sabah e-postası için Ödemeler › Bugünküleri şimdi gönder de olur; bunlar iş
+  kaydı yazmaz, uyarıyı kaldırmaz (panel uyarısını ertesi günün çalışması kaldırır, ama bekçi o sabah dünkü hatayı yine
+  e-postayla söyler). Ayarlar › Günlük işler kartı da bunu söyler.
+- Adım sözcükleri gerçekte olanı söyler: hatırlatıcısı olup bildirimi açık cihazı olmayan kişi "Hatırlatıcı var,
+  bildirim açık cihaz yok"; bildirim hiçbir cihaza gidemediyse adım hata. Sabah e-postası "E-posta kapalı", "Resend
+  kurulmadı" ya da "gitmedi: bildirim adresi yok" (gönderilecek bir şey vardı ama etkin adres yok; iş "Kısmen" sayılır,
+  zilde turuncu).
+
+**İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
+ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
+"HTTP(s)" monitörü, 1 saatte bir, e-posta uyarısı) `https://ladmin.laffogato.net/api/health?isler=1` adresini
+ekleyin. Adres giriş istemez, yalnız durum adlarını döner (`{ ok, db, ms, isler: { cronSecret, gunluk, parasut } }`);
+ciddi bir sorun varsa (iş çalışmadı, hata verdi, CRON_SECRET yok) **503** döner ve servis e-posta atar.
+`?isler=1` olmadan `/api/health` yalnız veritabanına bakar (eskisi gibi).
 
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
 
@@ -118,7 +170,7 @@ deposu, `docs/EMAIL-RESEND.md`). Vercel → lafmaliyet → Settings → Environm
 |----------|-------|
 | `RESEND_API_KEY` | Resend API anahtarı (sitedekiyle aynı olabilir; yalnız sunucuda) |
 | `EMAIL_FROM` | (isteğe bağlı) `L'Affogato Panel <bildirim@laffogato.net>` |
-| `CRON_SECRET` | `openssl rand -hex 32` |
+| `CRON_SECRET` | `openssl rand -hex 32` (yoksa hiçbir günlük iş çalışmaz; zil ve Genel bakış "Günlük işler kapalı" der) |
 | `APP_URL` | (isteğe bağlı) `https://ladmin.laffogato.net` |
 
 Gönderen sırası: ekrandaki ayar → `EMAIL_FROM` → `L'Affogato Panel <bildirim@laffogato.net>`. Alan adı Resend'de

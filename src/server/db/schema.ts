@@ -655,6 +655,28 @@ export const notificationLog = pgTable(
   (t) => [uniqueIndex("notification_log_key_uq").on(t.key), index("notification_log_sent_idx").on(t.sentAt)],
 );
 
+// ---------------------------------------------------------------- Günlük işler (Vercel Cron)
+/**
+ * Zamanlanmış işlerin her çalışması: başlarken "running", biterken sonucu yazılır. Beklenen günde satır yoksa iş
+ * çalışmamış, "running"de kaldıysa yarıda kesilmiştir (işlev süresi doldu); zil, Genel bakış ve e-posta bunu söyler
+ * (src/lib/job-health.ts). 90 günden eski satırlar iş başlarken silinir.
+ */
+export const jobRuns = pgTable(
+  "job_runs",
+  {
+    id: serial("id").primaryKey(),
+    job: text("job", { enum: ["parasut", "gunluk"] }).notNull(),
+    status: text("status", { enum: ["running", "ok", "partial", "error", "skipped"] }).notNull().default("running"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** Adımların kısa sonucu, ör. { sync: "today", digest: "sent", menu: "error" } (ekrandaki karşılıkları STEP_LABELS) */
+    steps: jsonb("steps").$type<Record<string, string>>(),
+    /** Hata ya da atlanma nedeni (en çok 500 karakter) */
+    message: text("message"),
+  },
+  (t) => [index("job_runs_job_started_idx").on(t.job, t.startedAt)],
+);
+
 // ---------------------------------------------------------------- Reçete değişiklik önerileri
 /** Önerideki ve öneri anındaki reçete: satır adları da saklanır (malzeme sonra silinse ya da adı değişse de okunur) */
 export type RecipeSnapshot = {
