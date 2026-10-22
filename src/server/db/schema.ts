@@ -86,6 +86,11 @@ export const ingredients = pgTable("ingredients", {
   priceSource: text("price_source", { enum: ["manual", "water"] }).notNull().default("manual"),
   countUnit: text("count_unit", { enum: ["KG", "LT", "ADET", "DİLİM"] }),
   countGroup: text("count_group"),
+  /**
+   * Sayım listesine girdiği ay (YYYY-MM): sayımda "Listeye ekle" ve sayim_yeni_kalemler migration'ı yazar. Daha önceki
+   * aylarda, o ay sayılmadıysa listede çıkmaz (sayımı bitmiş ay "kalem kaldı" demesin). Boşsa her ayda.
+   */
+  countFrom: text("count_from"),
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),
   updatedAt: updatedAt(),

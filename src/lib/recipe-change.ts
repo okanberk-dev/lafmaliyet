@@ -8,7 +8,7 @@
 import type { ProposedProduct, RecipeSnapshot } from "@/server/db/schema";
 
 import { SIZE_LABELS } from "./constants";
-import { cleanName, nameKey } from "./count-item";
+import { cleanName, formulaStartMessage, nameKey, startsLikeFormula } from "./count-item";
 import { num } from "./format";
 
 export type { ProposedProduct, RecipeSnapshot };
@@ -146,7 +146,8 @@ export interface NewProductDraft {
 /**
  * Yeni ürün önerisinin denetimi (öneri penceresi ve sunucu aynı kural): ad 2–120 harf, kategori, en az bir boy, her
  * boyda en az bir malzeme; aynı ad + boyda ürün (pasif de olsa) ya da bekleyen yeni ürün önerisi yok. Ad Türkçe büyük /
- * küçük harf ve boşluk farkı gözetmeden karşılaştırılır (nameKey). İlk sorunun metni döner, sorun yoksa null.
+ * küçük harf ve boşluk farkı gözetmeden karşılaştırılır (nameKey). Ad =, +, - ya da @ ile başlamaz (Ürünler'in CSV'si
+ * Excel'de formül çalıştırmasın). İlk sorunun metni döner, sorun yoksa null.
  */
 export function newProductIssue(
   draft: NewProductDraft,
@@ -157,6 +158,7 @@ export function newProductIssue(
   if (!name) return "Ürün adını yazın";
   if (name.length < NEW_PRODUCT_NAME_MIN) return `Ürün adı en az ${NEW_PRODUCT_NAME_MIN} harf olmalı`;
   if (name.length > NEW_PRODUCT_NAME_MAX) return "Ürün adı çok uzun";
+  if (startsLikeFormula(name)) return formulaStartMessage("Ürün adı");
   if (!draft.categoryId) return "Kategori seçin";
   if (!draft.sizes.length) return "En az bir boy seçin";
   for (const s of draft.sizes) {

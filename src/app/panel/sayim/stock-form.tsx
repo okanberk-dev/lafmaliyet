@@ -751,13 +751,15 @@ export function StockCountForm({
     el.focus({ preventScroll: true });
   }, [groups, group, q]);
 
-  function onItemAdded(item: { id: number; name: string; group: string }) {
+  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean }) {
     setAdding(null);
     pendingFocus.current = item.id;
     // Yeni kalem süzgeçte gizli kalmasın: grup süzgeci başka gruptaysa onun grubuna geçilir, arama uymuyorsa silinir
     if (group && group !== item.group) setGroup(item.group);
     if (q.trim() && !matches(`${item.name} ${item.group}`, q)) setQ("");
     if (filter === "empty") setEmptyIds((x) => new Set([...x, item.id]));
+    // Kalem zaten vardı (daha sonraki bir aydan itibaren listedeydi): fiyatı varsa da yoksa da Hammaddeler'deki gibi kalır
+    if (item.existed) return void toast.success(`Listeye eklendi: ${item.name}`, { description: "Kalem zaten vardı; artık bu aydan itibaren de listede." });
     const href = `/panel/hammaddeler?ara=${encodeURIComponent(item.name)}`;
     toast.success(`Listeye eklendi: ${item.name}`, {
       description: isAdmin ? "Paket fiyatı 0 ₺; fiyatını girince stok toplamına yansır." : "Miktarını yazıp sayımı kaydedin. Fiyatını yönetici girecek.",

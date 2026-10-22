@@ -1086,7 +1086,10 @@ export function createModel(ds: Dataset) {
       .filter((id) => !countableIds.has(id))
       .map((id) => ingById.get(id))
       .filter((i): i is Ingredient => !!i);
-    const lines = [...countable, ...archivedIngs].sort(bySortOrder);
+    // Sonradan listeye eklenen kalem (sayımda "Listeye ekle", sayim_yeni_kalemler) eklendiği aydan önceki aylarda, o ay
+    // sayılmadıysa çıkmaz: sayımı bitmiş eski ay "kalem kaldı" demesin, yazdırılan listeye girmesin
+    const listed = countable.filter((i) => !i.countFrom || i.countFrom <= month || counts.has(i.id));
+    const lines = [...listed, ...archivedIngs].sort(bySortOrder);
     const groupMap = new Map<string, StockLine[]>();
     for (const ing of lines) {
       const c = counts.get(ing.id);

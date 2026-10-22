@@ -154,7 +154,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                 onReject={() => askReject({ id: item.id, kind: "new", productName: item.name, size: item.size })}
               />
             ) : (
-              <Card key={item.id} id={`oneri-${item.id}`}>
+              <Card key={item.id} id={`oneri-${item.id}`} className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
                 <CardHeader
                   icon={<ClipboardCheck />}
                   title={
@@ -367,8 +367,9 @@ function NewProductCard({
     });
   }
 
+  // Zildeki öneri bağlantısı (#oneri-…) kartı başlığıyla, telefonun yapışkan üst çubuğunun altında açar
   return (
-    <Card id={`oneri-${item.id}`}>
+    <Card id={`oneri-${item.id}`} className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
       <CardHeader
         icon={<PackagePlus />}
         title={

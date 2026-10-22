@@ -1,5 +1,5 @@
 {
-  "id": "548e732f-7836-49b2-939b-0167033a82c4",
+  "id": "181e5432-c0c7-4546-bec0-c9d8d4909532",
   "prevId": "7f00b484-50e9-4045-94de-3d39a437868f",
   "version": "7",
   "dialect": "postgresql",
@@ -921,6 +921,12 @@
         },
         "count_group": {
           "name": "count_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "count_from": {
+          "name": "count_from",
           "type": "text",
           "primaryKey": false,
           "notNull": false

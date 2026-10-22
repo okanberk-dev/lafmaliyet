@@ -10,7 +10,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { CountUnit } from "@/lib/calc/types";
 import { COUNT_UNITS } from "@/lib/constants";
-import { BASE_UNIT, cleanName, COUNT_ITEM_NAME_MAX, COUNT_ITEM_NAME_MIN, defaultPackageSize, nameKey } from "@/lib/count-item";
+import { BASE_UNIT, cleanName, COUNT_ITEM_NAME_MAX, COUNT_ITEM_NAME_MIN, defaultPackageSize, formulaStartMessage, nameKey, startsLikeFormula } from "@/lib/count-item";
 import { num } from "@/lib/format";
 
 import { addCountItem } from "./actions";
@@ -47,10 +47,11 @@ export function AddCountItemDialog({
   defaultGroup: string | null;
   /** Arama kutusunda yazılan (bulunamayan) ad */
   initialName?: string;
-  /** Bugünkü sayım listesinin adları */
+  /** Gösterilen ayın sayım listesindeki adlar */
   listNames: string[];
   onClose: () => void;
-  onAdded: (item: { id: number; name: string; group: string }) => void;
+  /** `existed`: kalem zaten vardı, daha sonraki bir aydan itibaren listedeydi; artık bu aydan itibaren de */
+  onAdded: (item: { id: number; name: string; group: string; existed: boolean }) => void;
 }) {
   const formId = useId();
   const first = groups.find((g) => g.name === defaultGroup) ?? groups[0];
@@ -86,8 +87,8 @@ export function AddCountItemDialog({
     e.preventDefault();
     if (busy) return;
     const clean = cleanName(name);
-    if (clean.length < COUNT_ITEM_NAME_MIN) {
-      setNameError(clean ? `Ad en az ${COUNT_ITEM_NAME_MIN} harf olmalı` : "Kalemin adını yazın");
+    if (clean.length < COUNT_ITEM_NAME_MIN || startsLikeFormula(clean)) {
+      setNameError(!clean ? "Kalemin adını yazın" : clean.length < COUNT_ITEM_NAME_MIN ? `Ad en az ${COUNT_ITEM_NAME_MIN} harf olmalı` : formulaStartMessage("Ad"));
       document.getElementById(`${formId}-ad`)?.focus();
       return;
     }

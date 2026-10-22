@@ -1,6 +1,7 @@
-// Stok sayımı › "Listeye ekle" (src/lib/count-item.ts, src/app/panel/sayim/actions.ts addCountItem) ve yedi yeni kalemin
+// Stok sayımı › "Listeye ekle" (src/lib/count-item.ts, src/app/panel/sayim/actions.ts addCountItem) ve sekiz yeni kalemin
 // migration'ı (drizzle/*_sayim_yeni_kalemler.sql): Türkçe ad anahtarı ve aynı ad kuralı, sayım biriminden malzeme
-// birimi, grubun varsayılanları, fiyatı 0 kalemin ilk fiyatının zam sayılmaması, personelin fiyat görmemesi.
+// birimi, grubun varsayılanları, kalemin listeye girdiği ay (count_from), fiyatı 0 kalemin ilk fiyatının zam
+// sayılmaması, personelin fiyat görmemesi, CSV'de formül gibi başlayan adın kabul edilmemesi.
 // Migration'ın veritabanı denemesi EKLE_TEST_DATABASE_URL verilince çalışır (işlem geri alınır; migrate edilmiş bir
 // yerel kopya verin, ör. postgres://postgres:postgres@localhost:5432/laffogato_ekle).
 // Çalıştırma: npx tsx --test tests/sayim-ekle.test.ts
@@ -13,22 +14,28 @@ import { test } from "node:test";
 import postgres from "postgres";
 
 import { countUnitsFor, createModel } from "../src/lib/calc/engine";
+import { alerts } from "../src/lib/calc/insights";
 import { ingredientChanges, productImpacts, type PriceHistoryRow } from "../src/lib/calc/price-impact";
-import type { CountUnit, Dataset } from "../src/lib/calc/types";
+import type { CountUnit, Dataset, Unit } from "../src/lib/calc/types";
 import { COUNT_UNITS } from "../src/lib/constants";
 import {
   BASE_UNIT,
   cleanName,
+  countFromMonth,
   countGroupOptions,
   defaultPackageSize,
   duplicateMessage,
   findDuplicate,
+  formulaStartMessage,
   groupDefaults,
   isUnpriced,
+  laterCountItem,
   nameKey,
   nextSortOrder,
+  startsLikeFormula,
   unpricedNotice,
 } from "../src/lib/count-item";
+import { newProductIssue } from "../src/lib/recipe-change";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -44,6 +51,32 @@ test("ad anahtarı: boşluklar sadeleşir, Türkçe büyük/küçük harf (İ/i,
   // Ünlü noktaları ayırt edicidir (Ç ≠ C)
   assert.notEqual(nameKey("Cilek surubu"), nameKey("Çilek şurubu"));
   assert.equal(cleanName("  Çilek\t  şurubu  "), "Çilek şurubu");
+});
+
+test("ad anahtarı: düzeltme işareti sayılmaz (telefon klavyesinde â yok): kase = Kâse, büyük harfle de", () => {
+  assert.equal(nameKey("kase 12oz"), nameKey("Kâse 12oz"));
+  assert.equal(nameKey("KÂSE 12OZ"), nameKey("kase 12oz"));
+  assert.equal(nameKey("Hala"), nameKey("Hâlâ"));
+  assert.equal(nameKey("Mİllî"), nameKey("milli"));
+  assert.equal(nameKey("RÛHSAT"), nameKey("ruhsat"));
+  assert.equal(nameKey("kÂse"), "kase");
+  // Sayım listesinde "Kâse 12oz" varken personelin yazdığı "kase 12oz" aynı ad sayılır
+  assert.deepEqual(findDuplicate("kase 12oz", [{ name: "Kâse 12oz", active: true, countUnit: "ADET" }]), { kind: "counted", name: "Kâse 12oz" });
+  // Ç, Ş, Ğ, Ö, Ü ayrı harftir; yalnız düzeltme işareti düşer
+  assert.notEqual(nameKey("Kose"), nameKey("Köse"));
+});
+
+test("formül gibi başlayan ad ve paket kabul edilmez (Hammaddeler / Ürünler CSV'si Excel'de çalıştırmasın)", () => {
+  for (const bad of ["=HYPERLINK(\"http://x\";\"Fatura\")", "+90 şurup", "-1 kutu", "@SUM(A1)", "  =1+2"]) assert.equal(startsLikeFormula(bad), true, bad);
+  for (const ok of ["Çilek şurubu", "1+1 kampanya bardağı", "Kapak 8-12oz", "e-posta", "Şurup 750 ml"]) assert.equal(startsLikeFormula(ok), false, ok);
+  assert.equal(formulaStartMessage("Ad"), "Ad =, +, - ya da @ ile başlayamaz");
+  // Sunucu ve pencere aynı kuralı uygular; yeni ürün önerisi de (personelin adı Ürünler CSV'sine gider)
+  const actions = read("src/app/panel/sayim/actions.ts");
+  assert.match(actions, /\.refine\(\(v\) => !startsLikeFormula\(v\), formulaStartMessage\("Ad"\)\)/);
+  assert.match(actions, /packageDesc: zOptText\(160\)\.refine\(\(v\) => !v \|\| !startsLikeFormula\(v\), formulaStartMessage\("Paket"\)\)/);
+  assert.match(read("src/app/panel/sayim/add-item.tsx"), /startsLikeFormula\(clean\)/);
+  assert.equal(newProductIssue({ name: "=1+2", categoryId: 3, sizes: [{ size: "M", lines: 1 }] }, [], []), "Ürün adı =, +, - ya da @ ile başlayamaz");
+  assert.equal(newProductIssue({ name: "Çilekli Latte", categoryId: 3, sizes: [{ size: "M", lines: 1 }] }, [], []), null);
 });
 
 const existing = [
@@ -134,6 +167,96 @@ test("fiyatı girilmemiş: aktif, elle fiyatlı, paket fiyatı 0; zil metni", ()
     body: "Çilek şurubu, Böğürtlen püre · Hammaddeler'den paket fiyatını girin.",
   });
   assert.equal(unpricedNotice(5, ["A", "B", "C"]).body, "A, B, C ve 2 hammadde daha · Hammaddeler'den paket fiyatını girin.");
+});
+
+// ---------------------------------------------------------------- Listeye girdiği ay (count_from)
+
+test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılmadıysa listede çıkmaz", () => {
+  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+  const base = excelToDataset(data);
+  const newId = Math.max(...base.ingredients.map((i) => i.id)) + 1;
+  const added = { ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!, id: newId, name: "Çilek şurubu", packagePrice: 0, isEstimate: true, sortOrder: 2000, countFrom: "2026-10" };
+  const countable = base.ingredients.filter((i) => i.countUnit && i.active);
+  // Eylül sayımı bitmiş: bugünkü listenin hepsi sayılmış
+  const september = countable.map((i) => ({ month: "2026-09", ingredientId: i.id, qty: 1 }));
+  const ds: Dataset = { ...base, ingredients: [...base.ingredients, added], stockCounts: [...base.stockCounts, ...september] };
+  const m = createModel(ds);
+  const lines = (model: typeof m, month: string) => model.stockSheet(month).groups.flatMap((g) => g.lines);
+  // Ekim'de eklenen kalem Eylül'de yok: biten sayım "kalem kaldı" demez, yazdırılan listeye girmez
+  assert.ok(!lines(m, "2026-09").some((l) => l.ingredient.id === newId));
+  assert.equal(lines(m, "2026-09").filter((l) => l.qty === null).length, 0);
+  // Eklendiği ay ve sonrası listede, grubunun sonunda
+  for (const month of ["2026-10", "2026-11"]) {
+    const sos = m.stockSheet(month).groups.find((g) => g.name === "SOS / ŞURUP / PÜRE")!;
+    assert.equal(sos.lines.at(-1)?.ingredient.id, newId, month);
+  }
+  // Excel'den gelenler (count_from boş) her ayda
+  assert.equal(lines(m, "2026-07").length, countable.length);
+  // O ay sayılmışsa (ör. sonradan geriye alındı) değeriyle görünür
+  const counted = createModel({ ...ds, stockCounts: [...ds.stockCounts, { month: "2026-09", ingredientId: newId, qty: 2 }] });
+  assert.equal(lines(counted, "2026-09").find((l) => l.ingredient.id === newId)?.qty, 2);
+  // Kalemin ayı: eklenirken gösterilen ay; ileri bir ayda eklense de bu ay
+  assert.equal(countFromMonth("2026-09", "2026-10"), "2026-09");
+  assert.equal(countFromMonth("2026-10", "2026-10"), "2026-10");
+  assert.equal(countFromMonth("2026-12", "2026-10"), "2026-10");
+  // Listede ama daha sonraki bir aydan itibaren çıkan kalem: "Listeye ekle" onu yeniden açmaz, bu aydan itibaren de alır
+  const rows = [
+    { id: 7, name: "Çilek şurubu", active: true, countUnit: "LT", countFrom: "2026-10" },
+    { id: 8, name: "Peçetelik", active: true, countUnit: "ADET", countFrom: null },
+    { id: 9, name: "Eski şurup", active: false, countUnit: "LT", countFrom: "2026-11" },
+  ];
+  assert.equal(laterCountItem("ÇİLEK  ŞURUBU", rows, "2026-09")?.id, 7);
+  assert.equal(laterCountItem("Çilek şurubu", rows, "2026-10"), undefined);
+  assert.equal(laterCountItem("Peçetelik", rows, "2026-09"), undefined);
+  assert.equal(laterCountItem("Eski şurup", rows, "2026-09"), undefined, "pasif kalem geri açılmaz (aynı ad kuralı söyler)");
+  const actions = read("src/app/panel/sayim/actions.ts");
+  const add = actions.slice(actions.indexOf("export async function addCountItem"), actions.indexOf("export async function saveStaffStockExtras"));
+  assert.match(add, /const from = countFromMonth\(m, currentMonthTR\(\)\);/);
+  assert.match(add, /countFrom: from,/);
+  assert.match(add, /\.set\(\{ countFrom: from \}\)\.where\(eq\(s\.ingredients\.id, later\.id\)\)/);
+  assert.ok(add.indexOf("laterCountItem(") < add.indexOf("findDuplicate("), "önce geriye çekme, sonra aynı ad kuralı");
+  // Sütun modele taşınır; motor yalnız sayım listesinde süzer
+  assert.match(read("src/server/data/dataset.ts"), /countFrom: i\.countFrom,/);
+  assert.match(read("src/lib/calc/engine.ts"), /countable\.filter\(\(i\) => !i\.countFrom \|\| i\.countFrom <= month \|\| counts\.has\(i\.id\)\)/);
+});
+
+test("fiyatı girilmemiş malzeme kullanan ürün: 'maliyeti eksik' uyarısı; yalnız ondan oluşan reçete 'reçetesi boş' sayılmaz", () => {
+  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+  const base = excelToDataset(data);
+  const newId = Math.max(...base.ingredients.map((i) => i.id)) + 1;
+  const syrup = { ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!, id: newId, name: "Fındık şurubu (yeni)", packagePrice: 0, isEstimate: true, priceSource: "manual" as const, sortOrder: 2000 };
+  const latte = base.products.find((p) => p.name === "Latte" && p.size === "M")!;
+  const sodaId = Math.max(...base.products.map((p) => p.id)) + 1;
+  const soda = { ...latte, id: sodaId, name: "Fındıklı Soda", size: "Tek" as const };
+  const line = (id: number, productId: number, qty: number) => ({ id, productId, ingredientId: newId, qty, qtyExpr: null, note: null, sortOrder: 99 });
+  const ds: Dataset = {
+    ...base,
+    ingredients: [...base.ingredients, syrup],
+    products: [...base.products, soda],
+    // Latte'de bir satır fiyatsız (maliyeti eksik), Fındıklı Soda yalnız fiyatsız malzemeden (maliyet 0)
+    recipeItems: [...base.recipeItems, line(900_001, latte.id, 20), line(900_002, sodaId, 30)],
+  };
+  const m = createModel(ds);
+  const month = "2026-09";
+  const a = alerts(m, month);
+  const missing = a.find((x) => x.title.endsWith("ürünün maliyeti eksik"));
+  assert.ok(missing, a.map((x) => x.title).join(" | "));
+  assert.equal(missing.title, "2 ürünün maliyeti eksik");
+  assert.equal(missing.level, "warning");
+  assert.equal(missing.href, "/panel/hammaddeler?durum=fiyatsiz");
+  assert.equal(missing.detail, "Latte|M, Fındıklı Soda|Tek. Reçetesinde fiyatı girilmemiş hammadde var; Hammaddeler'den paket fiyatını girin.");
+  // Ürünler'deki durum Excel kuralıyla "Reçete yok" kalır ama reçetesi boş diye sayılmaz
+  assert.equal(m.products.find((p) => p.product.id === sodaId)!.status, "Reçete yok");
+  const before = alerts(createModel(base), month).find((x) => x.title.includes("reçetesi boş"))?.title ?? null;
+  const empty = a.find((x) => x.title.includes("reçetesi boş"));
+  assert.equal(empty?.title ?? null, before);
+  assert.ok(!empty || !empty.detail.includes("Fındıklı Soda"));
+  // Fiyat girilince uyarı kalkar, ürünün maliyeti ve durumu gelir
+  const priced = createModel({ ...ds, ingredients: ds.ingredients.map((i) => (i.id === newId ? { ...i, packagePrice: 760 } : i)) });
+  assert.ok(!alerts(priced, month).some((x) => x.title.endsWith("ürünün maliyeti eksik")));
+  assert.notEqual(priced.products.find((p) => p.product.id === sodaId)!.status, "Reçete yok");
+  // Fiyatsız malzeme yoksa uyarı da yok
+  assert.ok(!alerts(createModel(base), month).some((x) => x.title.endsWith("ürünün maliyeti eksik")));
 });
 
 // ---------------------------------------------------------------- Sahte zam yok
@@ -239,24 +362,86 @@ test("zil: fiyatı girilmemiş hammaddeler yalnız yöneticide, hata zili düş�
   assert.equal([...list.matchAll(/<UnpricedNote names=/g)].length, 2);
 });
 
-// ---------------------------------------------------------------- Yedi kalem (migration)
+// ---------------------------------------------------------------- Sekiz kalem (migration)
 
 const migrationFile = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_sayim_yeni_kalemler.sql"));
-const SEVEN = ["Çilek şurubu", "Cookie şurubu", "Lemon tea şurubu", "Hazelnut şurubu", "Vanilya sos", "Yaban mersini püre", "Böğürtlen püre"];
+const EIGHT = ["Çilek şurubu", "Cookie şurubu", "Lemon tea şurubu", "Hazelnut şurubu", "Vanilya sos", "Yaban mersini püre", "Böğürtlen püre", "Klips kapak"];
 
-test("migration: yedi kalem, korumalar, Excel usulü tahmin ve fiyat geçmişi", () => {
+interface MigrationRow {
+  name: string;
+  category: string;
+  packageDesc: string;
+  size: number;
+  price: number;
+  unit: string;
+  countUnit: string;
+  group: string;
+  vat: number;
+  note: string;
+  ord: number;
+}
+
+/** Migration'ın VALUES satırları: her kalemin birimi, sayım birimi, grubu ve KDV'si kendi satırında */
+function migrationRows(sql: string): MigrationRow[] {
+  const re = /^\s*\('([^']+)', '([^']+)', '([^']+)', (\d+), (\d+), '([^']+)', '([^']+)', '([^']+)', ([\d.]+), '([^']*)', (\d+)\),?$/gm;
+  return [...sql.matchAll(re)].map((m) => ({
+    name: m[1],
+    category: m[2],
+    packageDesc: m[3],
+    size: Number(m[4]),
+    price: Number(m[5]),
+    unit: m[6],
+    countUnit: m[7],
+    group: m[8],
+    vat: Number(m[9]),
+    note: m[10],
+    ord: Number(m[11]),
+  }));
+}
+
+test("migration: sekiz kalem, korumalar, Excel usulü tahmin ve fiyat geçmişi", () => {
   assert.ok(migrationFile, "sayim_yeni_kalemler migration'ı yok");
   const sql = read(`drizzle/${migrationFile}`);
-  for (const name of SEVEN) assert.match(sql, new RegExp(`\\('${name}', '`), name);
+  const rows = migrationRows(sql);
+  assert.deepEqual(
+    rows.map((r) => r.name),
+    EIGHT,
+  );
+  assert.deepEqual(
+    rows.map((r) => r.ord),
+    [1, 2, 3, 4, 5, 6, 7, 8],
+  );
   assert.match(sql, /WHERE EXISTS \(SELECT 1 FROM "ingredients"\)/, "boş veritabanına eklemez (db:seed Excel'i yükler)");
   assert.match(sql, /AND NOT EXISTS \(/);
   assert.match(sql, /'\(faturada yok\)'/);
-  assert.match(sql, /'LT', 'SOS \/ ŞURUP \/ PÜRE'/);
-  assert.match(sql, /"son"\."m" \+ y\."ord"/, "sıra en büyük sıradan sonra");
+  // Birim, sayım birimi, grup ve KDV satırdan gelir (sabit yazılsa kapak şurup grubuna, ml'ye ve %1'e düşerdi); kalemler
+  // Ekim 2026 sayımından itibaren listede
+  assert.match(sql, /y\."unit", y\."vat_rate", y\."note", true, 'manual', y\."count_unit", y\."count_group", '2026-10', "son"\."m" \+ y\."ord", true/);
   assert.match(sql, /'Sayım listesine eklendi \(tahmini fiyat\)', 'Sistem'/);
   assert.match(sql, /HAVING count\(\*\) > 0/, "eklenmediyse işlem geçmişine yazmaz");
   // Tek ifade (tek kırılma noktasız blok): birleştirmede --custom ile yeniden üretilip aynen yapıştırılır
   assert.doesNotMatch(sql, /statement-breakpoint/);
+});
+
+test("migration satırları Excel'in gruplarıyla tutarlı: birim sayım birimine uyar, grup ve kategori var, KDV grubunki", () => {
+  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+  const excel = excelToDataset(data).ingredients;
+  const rows = migrationRows(read(`drizzle/${migrationFile}`));
+  for (const r of rows) {
+    assert.equal(BASE_UNIT[r.countUnit as CountUnit], r.unit, `${r.name}: birim`);
+    assert.ok(countUnitsFor(r.unit as Unit).includes(r.countUnit as CountUnit), `${r.name}: sayım birimi`);
+    assert.ok(excel.some((i) => i.countGroup === r.group && i.category === r.category), `${r.name}: ${r.group} grubunda ${r.category} yok`);
+    assert.equal(groupDefaults(excel, r.group).vatRate, r.vat, `${r.name}: KDV`);
+    assert.ok(r.size > 0 && r.price > 0, `${r.name}: paket`);
+    assert.match(r.note, /^VARSAYIM: Faturada yok, .+ Gerçek fiyatı yazın\.$/, r.name);
+  }
+  // Klips kapak, Kapak 8-12oz gibi: ambalaj, adetle sayılır, 1.000'lik paket 1.165 ₺, KDV %20
+  const lid = excel.find((i) => i.name === "Kapak 8-12oz")!;
+  const klips = rows.find((r) => r.name === "Klips kapak")!;
+  assert.deepEqual(
+    { category: klips.category, unit: klips.unit, countUnit: klips.countUnit, group: klips.group, vat: klips.vat, size: klips.size, price: klips.price },
+    { category: lid.category, unit: lid.unit, countUnit: lid.countUnit, group: lid.countGroup, vat: lid.vatRate, size: lid.packageSize, price: lid.packagePrice },
+  );
 });
 
 /** Migration'daki SQL anahtarının JS karşılığı: translate + yalnız ASCII küçültme (C yerel ayarı) */
@@ -266,33 +451,37 @@ function sqlKey(name: string, from: string, to: string): string {
   return translated.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
-test("migration'ın ad anahtarı uygulamanınkiyle aynı (Türkçe harfler, C yerel ayarında da)", () => {
+test("migration'ın ad anahtarı uygulamanınkiyle aynı (Türkçe harfler ve düzeltme işareti, C yerel ayarında da)", () => {
   const sql = read(`drizzle/${migrationFile}`);
   const m = sql.match(/translate\(y\."name", '([^']+)', '([^']+)'\)/);
   assert.ok(m, "translate bulunamadı");
   const [, from, to] = m;
-  for (const name of [...SEVEN, "ÇİLEK ŞURUBU", "Çilek  Şurubu ", "COOKIE ŞURUBU", "HAZELNUT ŞURUBU", "VANILYA SOS", "YABAN MERSİNİ PÜRE", "BÖĞÜRTLEN PÜRE", "Lemon Tea Şurubu"]) {
+  // Var olan adın yanındaki translate da aynı harfleri çevirir
+  assert.ok(sql.includes(`translate(regexp_replace(btrim(i."name"), '\\s+', ' ', 'g'), '${from}', '${to}')`));
+  const names = [...EIGHT, "ÇİLEK ŞURUBU", "Çilek  Şurubu ", "COOKIE ŞURUBU", "HAZELNUT ŞURUBU", "VANILYA SOS", "YABAN MERSİNİ PÜRE", "BÖĞÜRTLEN PÜRE", "Lemon Tea Şurubu"];
+  for (const name of [...names, "KLİPS KAPAK", "Klîps kâpak", "KLÎPS KÂPAK", "Kâse 12oz", "KÛRU ÜZÜM"]) {
     assert.equal(sqlKey(name, from, to), nameKey(name), name);
   }
 });
 
-test("migration veritabanında: boşta 0, doluda 7 (her biri bir fiyat satırıyla), 'Çilek Şurubu' varsa 6", { skip: process.env.EKLE_TEST_DATABASE_URL ? false : "EKLE_TEST_DATABASE_URL yok" }, async () => {
+test("migration veritabanında: boşta 0, doluda 8 (her biri fiyat satırı, kendi birimi ve grubuyla), aynı ad varsa 7", { skip: process.env.EKLE_TEST_DATABASE_URL ? false : "EKLE_TEST_DATABASE_URL yok" }, async () => {
   const db = postgres(process.env.EKLE_TEST_DATABASE_URL!, { max: 1, onnotice: () => {} });
   const migration = read(`drizzle/${migrationFile}`);
   const ROLLBACK = new Error("geri al");
+  type Added = { name: string; unit: string; count_unit: string; count_group: string; vat_rate: number; count_from: string; supplier: string; is_estimate: boolean };
   /** Migration'ı işlemde çalıştırır, sonucu okur, hepsini geri alır */
   async function trial(prepare: (tx: postgres.TransactionSql) => Promise<unknown>) {
-    let result: { added: number; prices: number; log: number } | null = null;
+    let result: { added: number; prices: number; log: number; rows: Added[] } | null = null;
     await db
       .begin(async (tx) => {
         await prepare(tx);
         const before = await tx`select coalesce(max(id), 0) as id from ingredients`;
         const logBefore = await tx`select coalesce(max(id), 0) as id from activity_log`;
         await tx.unsafe(migration);
-        const [{ added }] = await tx`select count(*)::int as added from ingredients where id > ${before[0].id}`;
+        const rows = await tx<Added[]>`select name, unit, count_unit, count_group, vat_rate, count_from, supplier, is_estimate from ingredients where id > ${before[0].id} order by sort_order`;
         const [{ prices }] = await tx`select count(*)::int as prices from ingredient_prices p join ingredients i on i.id = p.ingredient_id where i.id > ${before[0].id} and p.note = 'Sayım listesine eklendi (tahmini fiyat)'`;
         const [{ log }] = await tx`select count(*)::int as log from activity_log where id > ${logBefore[0].id} and action = 'Sayım listesine eklendi'`;
-        result = { added, prices, log };
+        result = { added: rows.length, prices, log, rows: [...rows] };
         throw ROLLBACK;
       })
       .catch((e) => {
@@ -300,21 +489,37 @@ test("migration veritabanında: boşta 0, doluda 7 (her biri bir fiyat satırıy
       });
     return result!;
   }
-  // Yedisi zaten eklenmişse (bu veritabanı migrate edildi) adları geçici olarak değiştirilir: silmek reçete ve sayım
+  // Sekizi zaten eklenmişse (bu veritabanı migrate edildi) adları geçici olarak değiştirilir: silmek reçete ve sayım
   // bağlarına takılırdı; işlem sonunda hepsi geri alınır
-  const hideSeven = (tx: postgres.TransactionSql) => tx`update ingredients set name = name || ' (deneme)' where name in ${tx(SEVEN)}`;
+  const hideEight = (tx: postgres.TransactionSql) => tx`update ingredients set name = name || ' (deneme)' where name in ${tx(EIGHT)}`;
+  const counts = (r: { added: number; prices: number; log: number }) => ({ added: r.added, prices: r.prices, log: r.log });
   try {
-    const filled = await trial(hideSeven);
-    assert.deepEqual(filled, { added: 7, prices: 7, log: 1 });
+    const filled = await trial(hideEight);
+    assert.deepEqual(counts(filled), { added: 8, prices: 8, log: 1 });
+    assert.deepEqual(
+      filled.rows.map((r) => r.name),
+      EIGHT,
+    );
+    const pick = (r: Added) => ({ unit: r.unit, countUnit: r.count_unit, group: r.count_group, vat: r.vat_rate, from: r.count_from, supplier: r.supplier, estimate: r.is_estimate });
+    assert.deepEqual(pick(filled.rows.find((r) => r.name === "Çilek şurubu")!), { unit: "ml", countUnit: "LT", group: "SOS / ŞURUP / PÜRE", vat: 0.01, from: "2026-10", supplier: "(faturada yok)", estimate: true });
+    assert.deepEqual(pick(filled.rows.find((r) => r.name === "Klips kapak")!), { unit: "adet", countUnit: "ADET", group: "AMBALAJ MALZEMELERİ", vat: 0.2, from: "2026-10", supplier: "(faturada yok)", estimate: true });
     // Aynı ad (Türkçe büyük harf, fazladan boşluk) varsa atlanır
-    const six = await trial(async (tx) => {
-      await hideSeven(tx);
+    const noStrawberry = await trial(async (tx) => {
+      await hideEight(tx);
       await tx`insert into ingredients (name, category, unit) values ('ÇİLEK  ŞURUBU', 'Sos & Şurup', 'ml')`;
     });
-    assert.deepEqual(six, { added: 6, prices: 6, log: 1 });
+    assert.deepEqual(counts(noStrawberry), { added: 7, prices: 7, log: 1 });
+    assert.ok(!noStrawberry.rows.some((r) => r.name === "Çilek şurubu"));
+    // Düzeltme işaretli yazım da aynı ad sayılır
+    const noLid = await trial(async (tx) => {
+      await hideEight(tx);
+      await tx`insert into ingredients (name, category, unit) values ('KLİPS  KÂPAK ', 'Ambalaj', 'adet')`;
+    });
+    assert.deepEqual(counts(noLid), { added: 7, prices: 7, log: 1 });
+    assert.ok(!noLid.rows.some((r) => r.name === "Klips kapak"));
     // Boş veritabanında hiçbir şey eklenmez ve işlem geçmişine yazılmaz
     const empty = await trial((tx) => tx`truncate ingredients cascade`);
-    assert.deepEqual(empty, { added: 0, prices: 0, log: 0 });
+    assert.deepEqual(counts(empty), { added: 0, prices: 0, log: 0 });
     // Hepsi zaten varsa yine sessiz
     const again = await trial(async () => {});
     assert.equal(again.log, again.added ? 1 : 0);

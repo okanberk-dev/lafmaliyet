@@ -16,15 +16,28 @@ export function cleanName(name: string): string {
 
 /**
  * Aynı ad denetiminin anahtarı: Türkçe küçük harf (İ → i, I → ı) ve boşluklar sadeleşir. Türkçe olmayan klavyede
- * yazılan "VANILYA" da "Vanilya" ile aynı sayılsın diye ı da i'ye iner (anlamı ı/i farkıyla ayrılan iki kalem yok).
- * Migration'daki SQL karşılığı: lower(translate(ad, 'ÇĞİIÖŞÜı', 'çğiiöşüi')) (drizzle/*_sayim_yeni_kalemler.sql).
+ * yazılan "VANILYA" da "Vanilya" ile aynı sayılsın diye ı da i'ye iner (anlamı ı/i farkıyla ayrılan iki kalem yok);
+ * düzeltme işareti de sayılmaz (telefon klavyesinde â yok gibidir: "kase 12oz" = "Kâse 12oz").
+ * Migration'daki SQL karşılığı: lower(translate(ad, 'ÇĞİIÖŞÜıÂÎÛâîû', 'çğiiöşüiaiuaiu')) (drizzle/*_sayim_yeni_kalemler.sql).
  */
 export function nameKey(name: string): string {
-  return cleanName(name).toLocaleLowerCase("tr-TR").replace(/ı/g, "i");
+  return cleanName(name).toLocaleLowerCase("tr-TR").replace(/ı/g, "i").replace(/â/g, "a").replace(/î/g, "i").replace(/û/g, "u");
 }
 
 export const COUNT_ITEM_NAME_MIN = 2;
 export const COUNT_ITEM_NAME_MAX = 120;
+
+/**
+ * Elektronik tablonun formül ya da bağlantı diye çalıştırdığı başlangıç (=, +, -, @). Personelin yazdığı ad ve paket
+ * bilgisi Hammaddeler'in ve Ürünler'in CSV'sine olduğu gibi gider; Excel böyle başlayan hücreyi açınca çalıştırır.
+ * Sayımda "Listeye ekle" ve yeni ürün önerisi bunu kabul etmez.
+ */
+export function startsLikeFormula(text: string): boolean {
+  return /^[=+\-@]/.test(text.trim());
+}
+
+/** "Ad =, +, - ya da @ ile başlayamaz" */
+export const formulaStartMessage = (label: string) => `${label} =, +, - ya da @ ile başlayamaz`;
 
 /** Sayım biriminden malzemenin kendi birimi (stok değeri ve reçete bu birimle hesaplanır) */
 export const BASE_UNIT: Record<CountUnit, Unit> = { KG: "gr", LT: "ml", ADET: "adet", "DİLİM": "dilim" };
@@ -38,6 +51,8 @@ export interface ExistingIngredient {
   name: string;
   active: boolean;
   countUnit: string | null;
+  /** Sayım listesine girdiği ay (ingredients.count_from); boşsa her ayda */
+  countFrom?: string | null;
 }
 
 /** counted: aktif ve sayım listesinde; uncounted: aktif ama "Sayılmaz"; inactive: pasif */
@@ -55,6 +70,15 @@ export function findDuplicate(name: string, existing: ExistingIngredient[]): Cou
   const active = same.find((e) => e.active);
   if (active) return { kind: "uncounted", name: active.name };
   return same[0] ? { kind: "inactive", name: same[0].name } : null;
+}
+
+/**
+ * Sayım listesinde olan ama `from` ayından sonraki bir aydan itibaren çıkan aynı adlı kalem (count_from). "Listeye
+ * ekle" onu yeniden açmaz, `from` ayından itibaren de listeye alır (ör. Ekim'de eklenen şurup Eylül sayımına da girsin).
+ */
+export function laterCountItem<T extends ExistingIngredient>(name: string, existing: T[], from: string): T | undefined {
+  const key = nameKey(name);
+  return existing.find((e) => e.active && e.countUnit && e.countFrom && e.countFrom > from && nameKey(e.name) === key);
 }
 
 /** Aynı ad bulununca gösterilen metin; yönetici ne yapacağını, personel kime yazacağını okur */
@@ -122,6 +146,15 @@ export function countGroupOptions(
 /** Kalemin yeni sırası: bütün malzemelerin en büyük sırasından sonra (sayım listesinde grubunun sonuna düşer) */
 export function nextSortOrder(rows: { sortOrder: number }[]): number {
   return rows.reduce((m, r) => Math.max(m, r.sortOrder), 0) + 1;
+}
+
+/**
+ * Kalemin sayım listesine girdiği ay (ingredients.count_from): eklenirken gösterilen ay (ayın ilk günlerinde geçen ayın
+ * sayımına eklendiyse geçen ay). İleri bir ayın sayımında eklense de bu aydan: bugünkü listede görünsün. Daha önceki
+ * aylarda, o ay sayılmadıysa listede çıkmaz (engine.stockSheet).
+ */
+export function countFromMonth(month: string, current: string): string {
+  return month < current ? month : current;
 }
 
 /**

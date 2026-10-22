@@ -1,6 +1,6 @@
 {
-  "id": "3824e314-da31-4058-a456-cdad45a869ce",
-  "prevId": "548e732f-7836-49b2-939b-0167033a82c4",
+  "id": "f2f20140-f9f2-46d5-9a01-ba288352a95b",
+  "prevId": "181e5432-c0c7-4546-bec0-c9d8d4909532",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -921,6 +921,12 @@
         },
         "count_group": {
           "name": "count_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "count_from": {
+          "name": "count_from",
           "type": "text",
           "primaryKey": false,
           "notNull": false

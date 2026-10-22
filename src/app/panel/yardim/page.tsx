@@ -479,11 +479,11 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Bildirim zili",
         a: (
           <>
-            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri üç başlıkta toplar: <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
+            Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
+            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
-            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı,
-            fiyatı girilmemiş hammaddeler ve son satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları);{" "}
-            <strong className="font-semibold text-ink">Onaylar</strong> personelin reçete değişikliklerini ve yeni ürün önerilerini gösterir. Günlük işlerden biri (Paraşüt eşitlemesi, sabah
+            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
+            satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
             e-postası) çalışmadıysa ya da hata verdiyse en üstte <strong className="font-semibold text-ink">Sistem</strong> başlığı çıkar. Bir bildirime dokununca
             ilgili ekran açılır; alttaki &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
           </>
