@@ -73,6 +73,7 @@ import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import { monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
 export const metadata: Metadata = { title: "Genel bakış" };
@@ -339,6 +340,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
       />
 
       <div className="space-y-4">
+        {/* Günlük işler çalışmadıysa ya da hata verdiyse kırmızı şerit (yalnız canlıda; kendi başına yüklenir) */}
+        <Suspense fallback={null}>
+          <SystemBanner />
+        </Suspense>
         {/* 0. Bu ayın işleri: eksik veri, sıradaki iş (ürün satışları yoksa kâr oranının hangi aydan geldiği de burada) */}
         <DashboardChecklist month={month} state={d.monthState} tasks={tasks} />
 

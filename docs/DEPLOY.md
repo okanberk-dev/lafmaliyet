@@ -20,8 +20,9 @@ olarak `laffogato` seçeceksiniz.
 
 1. vercel.com → **Add New… → Project** → depoyu seçin.
 2. Framework: **Next.js** (otomatik). Root Directory: `laffogato` (gerekiyorsa).
-3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular, veritabanı boşsa Excel verisini
-   yükler, sonra derler.
+3. Build komutu değişmez (`npm run build`). Bu komut önce migration'ları uygular ve hepsinin gerçekten uygulandığını
+   doğrular (§ 7), veritabanı boşsa Excel verisini yükler, sonra derler. Önizleme derlemesi migration ve seed
+   çalıştırmaz (§ 3).
 
 ## 3. Veritabanı (Neon)
 
@@ -48,7 +49,7 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `ADMIN_EMAIL` | İlk yönetici hesabının e-postası |
 | `ADMIN_PASSWORD` | İlk yönetici parolası (en az 8 karakter; ilk girişten sonra **Hesabım** sayfasından değiştirin) |
 | `ADMIN_NAME` | Görünecek ad (ör. Okan) |
-| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz, Paraşüt ekranı "CRON_SECRET eksik" der |
+| `CRON_SECRET` | Günlük işlerin anahtarı (Paraşüt eşitlemesi + sabah e-postası): `openssl rand -hex 32`. Yoksa iki iş de çalışmaz; Paraşüt ekranı "CRON_SECRET eksik", zil ve Genel bakış "Günlük işler kapalı" der |
 | `RESEND_API_KEY` | (isteğe bağlı) E-posta gönderimi: sabah e-postası, davet ve parola sıfırlama. Ayrıntı [BILDIRIMLER.md](BILDIRIMLER.md) |
 | `EMAIL_FROM` | (isteğe bağlı) Gönderen, ör. `L'Affogato Panel <bildirim@laffogato.net>`; panelden de değiştirilir |
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
@@ -63,19 +64,23 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 
 İki günlük iş `vercel.json`'da tanımlı (Vercel Cron, Türkiye saatiyle): `/api/cron/parasut` 07:00–08:00 arasında
 Paraşüt'ü eşitler, `/api/cron/gunluk` 08:00–09:00 arasında sabah e-postasını gönderir. Vercel → Settings → Cron Jobs
-ekranında görünür, **Run** ile elle çalıştırılır.
+ekranında görünür, **Run** ile elle çalıştırılır. Her çalışma panelde **Ayarlar › Günlük işler**'de görünür; çalışmayan
+ya da hata veren iş zilde, Genel bakış'ta ve e-postayla bildirilir ([BILDIRIMLER.md](BILDIRIMLER.md) › Sistem
+uyarıları; iki iş birden durursa diye isteğe bağlı dış izleme: `/api/health?isler=1`).
 
 ## 5. Deploy
 
 **Deploy** düğmesine basın. Build günlüğünde şunları görmelisiniz:
 
 ```
-✓ Veritabanı şeması güncel
+✓ Veritabanı şeması güncel (21 migration)
 ✓ Excel verisi yüklendi: 74 hammadde, 129 ürün, 699 reçete satırı, 125 satış satırı, 81 fatura
 ✓ Yönetici hesabı oluşturuldu: …
 ```
 
-Sonra `https://<proje>.vercel.app/giris` adresinden giriş yapın. Sağlık kontrolü: `/api/health`.
+Önizleme derlemesinde bunların yerine `! Önizleme dağıtımı …: migration ve seed atlandı` yazar. Sonra
+`https://<proje>.vercel.app/giris` adresinden giriş yapın. Sağlık kontrolü: `/api/health` (günlük işlerle birlikte:
+`/api/health?isler=1`).
 
 ## 6. Alan adı (ladmin.laffogato.net)
 
@@ -112,9 +117,23 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   kullanılana kadar çalışır), kilit açma, iki adımlı doğrulamayı sıfırlama, bütün oturumları kapatma. Ayrıca pasif
   yapma ve (kendiniz ve son aktif yönetici hariç) kalıcı silme. **Kendi satırınızda** e-posta, parola, iki adımlı
   sıfırlama ve sıfırlama bağlantısı yoktur: bunlar Hesabım'da mevcut parolayla değişir (oradaki parola onayı
-  buradan atlanamasın). Yöneticiler bütün kullanıcıları yönetir: açık kalmış bir yönetici oturumu yeni bir yönetici
-  açıp onunla her şeyi değiştirebilir. Ortak cihazda işiniz bitince çıkış yapın; unuttuysanız başka bir cihazdan
+  buradan atlanamasın). Ortak cihazda işiniz bitince çıkış yapın; unuttuysanız başka bir cihazdan
   Hesabım › Oturumlar › Diğer cihazlardaki oturumları kapat.
+- **Parolayla onay (yönetici işlemleri):** yönetici gücü veren ya da bir yönetici hesabına dokunan işlemler, işlemi
+  yapan yöneticinin **kendi parolasını** ister: yönetici ekleme (parolalı ya da davetli, aktif ya da pasif),
+  personeli yönetici yapma ve yöneticiyi personel yapma; bir yöneticiyi pasif ya da yeniden aktif yapma; bir
+  yöneticinin giriş e-postasını ya da parolasını değiştirme (davetliye parola verme dahil); yöneticiye parola
+  sıfırlama / davet bağlantısı; yöneticinin iki adımlı doğrulamasını sıfırlama; yönetici silme. Açık kalmış bir
+  yönetici oturumuyla yeni yönetici açılamaz, başka bir yöneticinin hesabı ele geçirilemez. Personeli yönetici
+  yapınca bekleyen davet / sıfırlama bağlantısı iptal olur (personelken parola sorulmadan oluşturulmuştu; yöneticiye
+  yenisi parolayla oluşturulur). Personelin parolası ve e-postası ise parola sorulmadan değişir: birini yönetici
+  yapmadan önce kendi parolasıyla girebildiğinden emin olun. Personel işleri, ad değişikliği, kilit açma ve "Tüm
+  oturumlarını kapat" sormaz (savunma araçları hızlı kalır). Kural tek yerde
+  (`src/lib/step-up.ts`); sunucu her eylemde veritabanındaki önceki hâlle yeniden denetler, parolayı ilk yazımdan
+  önce ister. Sınır Hesabım'la ortaktır: kişi başına 15 dakikada 5 hatalı parola (Hesabım ve Kullanıcılar birlikte
+  sayılır); hatalar işlem geçmişine "Hatalı parola onayı (Kullanıcılar)" diye, neyin denendiğiyle yazılır. Ortak
+  bilgisayarda tarayıcıya parolanızı kaydettirmeyin; kaydedilmiş parola bu onayı da doldurur. Personel hesabı açmak
+  bilerek parola istemez (işlem geçmişine yazılır).
 - **Giriş kilidi:** 5 hatalı denemede hesap 15 dakika kilitlenir (parola ve iki adımlı kod birlikte sayılır).
   Her deneme doğrulanmadan **önce** sayılır: aynı anda gönderilen yüzlerce istek de 5'i aşamaz. Kilit işlem
   geçmişine "Hesap kilitlendi" diye yazılır. Daha önce bu hesapla giriş yapılmış tarayıcı bu kilide takılmaz
@@ -148,7 +167,8 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   8 tek seferlik kurtarma kodu verilir. Telefon kaybolursa girişte "Telefonum yanımda değil" ile kurtarma kodu
   kullanılır ya da bir yönetici sıfırlar. **Oturumlar › Diğer cihazlardaki oturumları kapat** (parolayla): kasa
   bilgisayarında ya da kaybolan telefonda açık kalan oturumları parolayı değiştirmeden kapatır. Hesabım'daki parola
-  onayları kişi başına 15 dakikada 5 hatayla sınırlıdır; hatalar işlem geçmişine yazılır.
+  onayları kişi başına 15 dakikada 5 hatayla sınırlıdır (Kullanıcılar'daki yönetici onaylarıyla aynı pay;
+  `src/server/auth/step-up.ts`); hatalar işlem geçmişine yazılır.
 - Kurtarma kodları kişiye özel tuzlu, yavaş bir özetle (scrypt) saklanır; veritabanı sızsa bile kodlar denenerek
   bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
@@ -164,7 +184,31 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 ## 7. Güncelleme ve yedek
 
 - Kodda değişiklik yapıp Git'e gönderdiğinizde Vercel yeniden deploy eder. Şema değiştiyse `npm run db:generate`
-  ile migration üretip onu da gönderin; build sırasında otomatik uygulanır.
+  ile migration üretip onu da gönderin; canlı derlemede otomatik uygulanır (önizlemede uygulanmaz, § 3).
+- **Migration kuralları.** Drizzle bir migration'ı yalnız günlükteki zamanı (`drizzle/meta/_journal.json` › `when`,
+  üretildiği an) veritabanındaki en yeni kayıttan sonraysa uygular; daha yeni tarihli bir migration önce uygulandıysa
+  eskisi **hata vermeden atlanır**. Bu yüzden:
+  - Migration'ı dalı main'le birleştirdikten hemen sonra üretin (`npm run db:generate -- --name <ad>`). Önce
+    üretilmiş bir migration'ı olan dal main'e geç kalırsa: dalı main'le birleştirin, `drizzle/meta/_journal.json`'ı
+    main'dekiyle değiştirin, dalın kendi `drizzle/00NN_*.sql` ve `drizzle/meta/00NN_snapshot.json` dosyalarını silin,
+    yeniden üretin. Migration'lı dallar birer birer birleştirilir. `tests/migrations.test.ts` günlükteki zamanlar
+    sırayla artmıyorsa düşer.
+  - Uygulanmış bir migration elle değiştirilmez (tek istisna: 0018'deki gibi `IF NOT EXISTS` onarımı, inceleyen
+    isterse).
+  - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
+    şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
+    uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.
+- **"Migration uygulanmadı" hatası.** Canlı derleme (ve `npm run db:migrate`) migration'dan sonra günlükteki her
+  girdinin `drizzle.__drizzle_migrations`'ta kaydını arar (`scripts/migration-check.ts`). Eksik varsa derleme
+  `Migration uygulanmadı: 0021_x … (sıra bozuk)` diye durur ve yayındaki sürüm değişmez. Çözüm: yukarıdaki gibi
+  migration'ı main'in ardına yeniden üretip gönderin. Şema değişikliği canlıda zaten varsa (ör. bir önizleme uyguladı),
+  eksik satır elle eklenir: `insert into drizzle.__drizzle_migrations (hash, created_at) values ('<sha256>', <when>)`
+  (değerler günlükten; yalnız şemanın gerçekten aynı olduğu doğrulandıktan sonra).
+- **"Veritabanında depoda olmayan N migration kaydı var" uyarısı** derlemeyi durdurmaz: günlükte olmayan bir kayıt
+  (bir önizlemenin ya da birleşmemiş bir dalın uyguladığı). Canlıda bir tane bilinen kayıt var: 21 Eki 2026'da bir
+  önizlemenin erken uyguladığı menü migration'ı; aynı değişiklik 0018 olarak `IF NOT EXISTS` ile yeniden uygulandı.
+  Yeni bir uyarı görünürse hangi dalın uyguladığına ve şemanın koddakiyle aynı olduğuna bakın
+  (`select created_at, hash from drizzle.__drizzle_migrations order by created_at`).
 - Veri yedeği: asıl yedek Neon'un otomatik nokta-zaman geri yüklemesidir (point-in-time restore). Panelde
   **Ayarlar → Yedek → Tüm veriyi Excel'e aktar** ile istediğiniz an okunabilir bir .xlsx kopyası alınır: panel
   sekmeleri ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları. Aylık harcamaların tek
@@ -181,5 +225,5 @@ DATABASE_URL="<neon bağlantı adresi>" npm run db:reset
   eşitleme geçmişi, imleci ve ürün bağlantıları, ürünlerin laffogato.net menü bağlantıları ve eşitleme durumu,
   Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip Excel verisi yeniden yüklenir. Faturaların ödendi / talep edildi işaretleri de gider; ödeme takibinin başlangıcı
   sıfırlanır. **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir), hatırlatıcılar,
-  bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları. Sonraki eşitleme
+  bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları, günlük işlerin çalışma kayıtları. Sonraki eşitleme
   Paraşüt faturalarını baştan alır: son 30 günün faturaları "ödenmedi", daha eskileri Paraşüt'teki durumuyla gelir.

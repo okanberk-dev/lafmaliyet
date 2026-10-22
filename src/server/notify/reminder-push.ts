@@ -10,7 +10,7 @@ import { sendPush } from "@/server/push/send";
  * Sabah özeti (günlük iş, /api/cron/gunluk): bugün ya da önceden kalmış açık kişisel hatırlatıcısı olan her kişinin
  * "sabah özeti" açık cihazlarına tek bildirim. Kimsenin hatırlatıcısı başkasına gitmez.
  */
-export async function pushReminderSummaries(today = todayTR()): Promise<{ users: number; sent: number }> {
+export async function pushReminderSummaries(today = todayTR()): Promise<{ users: number; sent: number; failed: number }> {
   const rows = await getDb()
     .select({ userId: s.userReminders.userId, title: s.userReminders.title, dueTime: s.userReminders.dueTime, dueDate: s.userReminders.dueDate })
     .from(s.userReminders)
@@ -20,6 +20,7 @@ export async function pushReminderSummaries(today = todayTR()): Promise<{ users:
   const byUser = new Map<number, typeof rows>();
   for (const r of rows) byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r]);
   let sent = 0;
+  let failed = 0;
   for (const [userId, list] of byUser) {
     const late = list.filter((r) => r.dueDate < today).length;
     const titles = list.slice(0, 3).map((r) => (r.dueTime && r.dueDate === today ? `${r.dueTime} ${r.title}` : r.title));
@@ -35,6 +36,7 @@ export async function pushReminderSummaries(today = todayTR()): Promise<{ users:
       { userIds: [userId], ttl: 6 * 3600, urgency: "normal" },
     );
     sent += res.sent;
+    failed += res.failed;
   }
-  return { users: byUser.size, sent };
+  return { users: byUser.size, sent, failed };
 }
