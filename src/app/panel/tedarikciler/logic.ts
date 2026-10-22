@@ -582,18 +582,27 @@ export interface TaxIndexEntry {
   names: { name: string; count: number; own: boolean }[];
 }
 
-/** Tedarikçi penceresinin vergi no önizlemesi için düz veri (sunucudan istemciye geçer; yalnız vergi nolu tedarikçiler) */
+/**
+ * Tedarikçi penceresinin vergi no ve ad önizlemesi için düz veri (sunucudan istemciye geçer; yalnız vergi nolu
+ * tedarikçiler)
+ */
 export interface TaxIndex {
   /** Vergi no → onu taşıyan faturaların tedarikçileri */
   byTax: Record<string, TaxIndexEntry[]>;
   /** Vergi no → kartında bu numara yazılı tedarikçiler */
   cardTax: Record<string, { id: number; name: string }[]>;
+  /**
+   * Ad anahtarı → bu adla gelip vergi nosuyla bir kartta duran faturalar (ad o kartın adı ya da diğer adı değil):
+   * ad başka bir karta yazılırsa ad önce geldiği için faturaları oraya geçer (nameMoves)
+   */
+  viaTax: Record<string, { cardId: number; card: string; name: string; count: number }[]>;
 }
 
 export function taxNameIndex(groups: readonly SupplierGroup<LedgerInvoice, CardNames & { taxNumber?: string | null }>[]): TaxIndex {
   const placeholder = supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME);
   const byTax: TaxIndex["byTax"] = {};
   const cardTax: TaxIndex["cardTax"] = {};
+  const viaTax: TaxIndex["viaTax"] = {};
   for (const g of groups) {
     const own = new Set(g.card ? [g.card.name, ...g.card.aliases].map(supplierMatchKey) : []);
     // Ad anahtarı → yazılış, fatura sayısı ve taşıdığı vergi numaraları; Paraşüt'ün geçici adı sayılmaz (sonraki
@@ -618,8 +627,10 @@ export function taxNameIndex(groups: readonly SupplierGroup<LedgerInvoice, CardN
     }
     const ct = taxKey(g.card?.taxNumber);
     if (g.card && ct) (cardTax[ct] ??= []).push({ id: g.card.id, name: g.card.name });
+    if (!g.card) continue;
+    for (const [k, n] of byName) if (!own.has(k)) (viaTax[k] ??= []).push({ cardId: g.card.id, card: g.card.name, name: n.name, count: n.count });
   }
-  return { byTax, cardTax };
+  return { byTax, cardTax, viaTax };
 }
 
 export interface TaxPreview {
@@ -673,6 +684,61 @@ export function taxPreviewLines(p: TaxPreview): string[] {
   }
   if (p.stay.length) out.push(`${quoted(p.stay)} adıyla eşleşen faturalar orada kalır (ad önce gelir).`);
   return out;
+}
+
+/** Adlar bir karta yazılınca başka kartlardan o karta geçecek faturalar */
+export interface NameMoves {
+  /** Faturalardaki yazılışıyla adlar ve fatura sayıları */
+  names: { name: string; count: number }[];
+  /** Faturaların şimdi durduğu kartlar */
+  cards: string[];
+  count: number;
+}
+
+/**
+ * Bu adlar bir kartın adı ya da diğer adı olursa (kart kaydı; kartsız tedarikçi listeden kaldırılırken onun adıyla
+ * açılan kart) hangi faturalar başka kartlardan ona geçer: o adla gelip vergi nosuyla bir kartta duranlar, çünkü ad
+ * önce gelir. Vergi no önizlemesi bunu göstermez (numara yazılmadan da olur). `cardId`: adların yazılacağı kart
+ * (kendi faturaları sayılmaz; yeni kartta ve kartsız tedarikçide null). Kartsız tedarikçinin adı ancak iki kartı
+ * bağlayan numarada (supplierResolver 3. adımdaki çakışma) başka kartlarda da durur: aynı adın vergi nolu faturaları
+ * iki ayrı kartta, vergi nosuzu kendi adının grubunda.
+ */
+export function nameMoves(index: TaxIndex, names: readonly string[], cardId: number | null): NameMoves {
+  const out: NameMoves = { names: [], cards: [], count: 0 };
+  const cards = new Set<string>();
+  for (const k of new Set(names.map(supplierMatchKey))) {
+    const from = k ? (index.viaTax[k] ?? []).filter((e) => e.cardId !== cardId) : [];
+    if (!from.length) continue;
+    const count = from.reduce((a, e) => a + e.count, 0);
+    out.names.push({ name: from[0].name, count });
+    out.count += count;
+    for (const e of from) cards.add(e.card);
+  }
+  out.names.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
+  out.cards = [...cards].sort((a, b) => a.localeCompare(b, "tr"));
+  return out;
+}
+
+const fromCards = (cards: readonly string[], one: string, many: string) => `${quoted(cards)} ${cards.length > 1 ? many : one}`;
+
+/** Ad önizlemesinin cümlesi (Düzenle / Tedarikçi ekle penceresi): başka kartlardan bu tedarikçiye geçecek faturalar */
+export function nameMoveLines(m: NameMoves): string[] {
+  if (!m.count) return [];
+  const names = `${quoted(m.names.map((n) => n.name))} ${m.names.length > 1 ? "adlarıyla" : "adıyla"}`;
+  return [`${names} gelen ${m.count} fatura ${fromCards(m.cards, "tedarikçisinden", "tedarikçilerinden")} bu tedarikçiye geçer (ad önce gelir).`];
+}
+
+/**
+ * Kartsız tedarikçi neden listeden kaldırılamaz: kaldırmak onun adıyla (gizli) bir kart açar, ad önce geldiği için
+ * o adla gelip vergi nosuyla başka kartlarda duran faturalar da o karta geçerdi (nameMoves). Silme penceresi ve
+ * sunucu aynı cümleyi söyler; `here` sayfadaki fatura sayısı.
+ */
+export function nameMoveBlock(name: string, m: NameMoves, here: number): string {
+  const many = m.count > 1;
+  return (
+    `“${name}” adıyla gelen ${m.count} fatura daha vergi ${many ? "nolarıyla" : "nosuyla"} ${fromCards(m.cards, "tedarikçisinde", "tedarikçilerinde")} duruyor; ` +
+    `bu tedarikçi listeden kaldırılsa ${many ? "onlar" : "o"} da buraya geçerdi. Buradaki ${here > 1 ? "faturaların" : "faturanın"} tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.`
+  );
 }
 
 /** Tedarikçi sayfasındaki aynı vergi no şeridi: bir satır, öteki tedarikçinin sayfasına bağlantıyla */

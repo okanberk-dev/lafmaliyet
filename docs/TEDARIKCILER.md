@@ -90,6 +90,11 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 - **Ödenmemiş faturası varsa** silinemez: borç listeden gizlenmesin. Pencere nedenini söyler; faturaları ödendi
   yapın ya da yanlış geldiyse Faturalar'dan silin (yalnız ödenmemiş iade kaldıysa "Önce iade kapanmalı").
   Geçmişten ödenmemiş bir fatura gelirse kaldırılmış tedarikçi de listeye döner.
+- **Adı başka kartlarda da duran kartsız tedarikçi** listeden kaldırılamaz ("Listeden kaldırılamaz"; borçtan önce
+  söylenir). Bu, iki kartı bağlayan numarada olur: aynı adın vergi nolu faturaları numaralarıyla iki ayrı kartta,
+  vergi nosuzu kendi adında (*Eşleşme* 3–4). Kaldırmak bu adla bir kart açardı; ad önce geldiği için o kartlardaki
+  faturalar da ona geçerdi (`nameMoves`). Pencere hangi kartlarda kaç fatura olduğunu söyler: buradaki faturanın
+  tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.
 - Listeden kaldırılanın sayfası açılabilir; üstteki şeritten **Listeye geri al**.
 - Paraşüt'ün adı okunamayan faturaları ("Paraşüt tedarikçisi") silinmez; sonraki eşitlemede tedarikçilerine geçer.
 
@@ -188,6 +193,10 @@ Cuma gününe kadar
   da yazılıysa uyarı (o zaman numara eşleşmede kullanılmaz). Kontrol hanesi tutmayan ya da örnek numarada
   (1234567890 gibi) "faturalar bu numarayla eşleşmez" yazar. Kaydedince numara başka bir kartta da yazılıysa
   bildirim söyler; kayıt durmaz (aynı kişinin iki dükkânı olabilir).
+- **Ad önizlemesi** (turuncu, numara yazılmasa da): kartın adı ya da bir diğer adı, vergi nosuyla başka bir kartta
+  duran faturaların adıysa kaydedince onların buraya geçeceği yazılır ("“Su Ltd” adıyla gelen 2 fatura “Erbak”,
+  “Pruva” tedarikçilerinden bu tedarikçiye geçer (ad önce gelir)."). Adınki vergi no önizlemesiyle aynı yerde,
+  diğer adınki diğer adların altında çıkar. Kayıt durmaz (`nameMoves`).
 - Kartta vergi no yoksa ve faturalardan tek numara biliniyorsa alan o numarayla açılır, "Faturadan dolduruldu"
   işaretlenir (numara başka bir kartta yazılıysa önerilmez: iki kartta aynı numara eşleşmeyi kapatırdı).
 - **Faturadan doldur:** tedarikçinin en yeni Paraşüt faturalarından (en çok 3) unvan, vergi no ve dairesi, adres,

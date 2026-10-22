@@ -36,6 +36,9 @@ import {
   mergeInfo,
   missingInfo,
   nameConflict,
+  nameMoveBlock,
+  nameMoveLines,
+  nameMoves,
   normalizeIban,
   paidInParasut,
   parseSupplierFilter,
@@ -845,6 +848,45 @@ test("vergi no: iki kartı bağlayan numarada adın vergi nolu kardeşleri tek k
     split.map((g) => [g.card?.id ?? g.key, g.invoices.length]).sort(),
     [[1, 1], [3, 1], ["su ltd", 1]].sort(),
   );
+});
+
+test("vergi no: iki kartta duran addan kart açılırsa öteki faturalar da gelir; pencere söyler, listeden kaldırma durur", () => {
+  const pruva = card({ id: 1, name: "Pruva", taxNumber: X });
+  const erbak = card({ id: 2, name: "Erbak", taxNumber: Z });
+  const list = [tinv("Su Ltd", X), tinv("Su Ltd", Z), tinv("Su Ltd", null, "2025-03-01"), tinv("Damla", Y), tinv("DAMLA SU A.Ş.", Y)];
+  const groups = groupSuppliers(list, [pruva, erbak], { today: TODAY, termDays: 30 });
+  const su = groups.find((g) => !g.card && g.key === "su ltd")!;
+  assert.equal(su.invoices.length, 1, "vergi nosuz satır kendi adında (iki kart arasında karar verilemez)");
+  const index = taxNameIndex(groups);
+  const moves = nameMoves(index, su.names, null);
+  assert.deepEqual(moves, { names: [{ name: "Su Ltd", count: 2 }], cards: ["Erbak", "Pruva"], count: 2 });
+  // Önizleme olanla aynı: bu adla kart açılınca (listeden kaldırırken açılan gizli kart ya da Bilgileri ekle) iki
+  // kartın "Su Ltd" faturaları da ona geçer
+  const after = groupSuppliers(list, [pruva, erbak, card({ id: 3, name: "Su Ltd", hiddenOn: TODAY })], { today: TODAY, termDays: 30 });
+  const count = (id: number) => after.find((g) => g.card?.id === id)!.invoices.length;
+  assert.deepEqual([count(1), count(2), count(3)], [0, 0, su.invoices.length + moves.count]);
+  assert.deepEqual(nameMoveLines(moves), ["“Su Ltd” adıyla gelen 2 fatura “Erbak”, “Pruva” tedarikçilerinden bu tedarikçiye geçer (ad önce gelir)."]);
+  assert.equal(
+    nameMoveBlock(su.name, moves, su.invoices.length),
+    "“Su Ltd” adıyla gelen 2 fatura daha vergi nolarıyla “Erbak”, “Pruva” tedarikçilerinde duruyor; bu tedarikçi listeden kaldırılsa onlar da buraya geçerdi. Buradaki faturanın tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.",
+  );
+  // Kartın kendi faturaları sayılmaz: Pruva'ya diğer ad olarak "Su Ltd" yazılırsa yalnız Erbak'taki gelir
+  assert.deepEqual(nameMoves(index, ["Pruva", "su  LTD"], 1), { names: [{ name: "Su Ltd", count: 1 }], cards: ["Erbak"], count: 1 });
+  assert.deepEqual(nameMoveLines(nameMoves(index, ["Su Ltd"], 1)), ["“Su Ltd” adıyla gelen 1 fatura “Erbak” tedarikçisinden bu tedarikçiye geçer (ad önce gelir)."]);
+  // Kartsız kümenin adları başka kartta durmaz: ondan açılan kart yalnız kendi faturalarını alır (boşuna uyarı yok)
+  const damla = groups.find((g) => !g.card && g.keys.includes("damla"))!;
+  assert.equal(damla.invoices.length, 2);
+  assert.equal(nameMoves(index, damla.names, null).count, 0);
+  assert.deepEqual(nameMoveLines(nameMoves(index, ["Bambaşka"], null)), []);
+  // Vergi nosu olmayan veride hiçbir ad başka kartta durmaz
+  const plain = taxNameIndex(groupSuppliers(list.map((i) => ({ ...i, supplierTaxNumber: null })), [pruva, erbak], { today: TODAY, termDays: 30 }));
+  assert.deepEqual(plain.viaTax, {});
+  // Sunucu da aynı kuralla durur: kartsız tedarikçi için kart açılmadan (ve borçtan) önce bakılır
+  const actions = readFileSync(join(root, "src/server/actions/suppliers.ts"), "utf8");
+  const remove = actions.slice(actions.indexOf("export async function removeSupplier"), actions.indexOf("const hasInfo"));
+  assert.match(remove, /const moves = g\.card \? null : nameMoves\(taxNameIndex\(groups\), g\.names, null\);\s*if \(moves\?\.count\) throw new UserError\(nameMoveBlock\(g\.name, moves, g\.invoices\.length\)\);/);
+  assert.ok(remove.indexOf("nameMoves(") < remove.indexOf("if (g.summary.openCount)"), "borçtan önce");
+  assert.ok(remove.indexOf("nameMoves(") < remove.indexOf(".insert(s.suppliers)"), "kart açılmadan önce");
 });
 
 test("vergi no: vergi nosu olmayan veride gruplar, anahtarlar ve adresler bugünküyle aynı (seed ve örnekler)", () => {

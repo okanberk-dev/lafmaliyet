@@ -21,6 +21,8 @@ import {
   formatIban,
   ibanProblem,
   INFO_LABEL,
+  nameMoveLines,
+  nameMoves,
   normalizeIban,
   PAYMENT_METHODS,
   phoneE164,
@@ -66,7 +68,8 @@ type Form = ReturnType<typeof blankForm>;
  * okunan bilgileri yalnız boş alanlara yazar; kartta vergi no yoksa faturalardaki tek numara alana önerilir
  * (`inferredTaxNumber`, kaydedince karta geçer; numara başka bir kartta yazılıysa önerilmez: iki kartta aynı numara
  * eşleşmeyi kapatırdı). Vergi no alanının altında o numarayla hangi faturaların bu
- * tedarikçide toplanacağı görünür (`taxIndex`). Kaydedince `onSaved` yeni adres parçasıyla çağrılır (ad değiştiyse
+ * tedarikçide toplanacağı görünür (`taxIndex`); ad ya da diğer ad, vergi nosuyla başka bir kartta duran faturaların
+ * adıysa onların buraya geçeceği de yazılır (ad önce gelir). Kaydedince `onSaved` yeni adres parçasıyla çağrılır (ad değiştiyse
  * sayfa oraya geçer). `onDelete` verilirse altta "Tedarikçiyi sil" çıkar (RemoveSupplierDialog).
  */
 export function SupplierCardDialog({
@@ -147,6 +150,17 @@ export function SupplierCardDialog({
 
   const ownKey = supplierMatchKey(f.name);
   const freeSuggestions = suggestions.filter((s) => !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(s)) && supplierMatchKey(s) !== ownKey);
+  // Kaydedilecek diğer adlar: kutuda yazılı kalan ad da eklenir
+  const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
+  // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
+  // (faturalar karta düşer, sayfa boş kalmaz)
+  const fromPage = card
+    ? []
+    : names.filter((n) => n !== PLACEHOLDER_SUPPLIER_NAME && supplierMatchKey(n) !== ownKey && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
+  // Bu adlarla gelip vergi nosuyla başka kartta duran faturalar kaydedince buraya geçer (ad önce gelir); vergi no
+  // önizlemesi bunu göstermez. Ör. iki kartı bağlayan numarada aynı adın kartsız kalan grubundan açılan kart
+  const nameLines = taxIndex ? nameMoveLines(nameMoves(taxIndex, [f.name, ...fromPage], card?.id ?? null)) : [];
+  const aliasLines = taxIndex ? nameMoveLines(nameMoves(taxIndex, typed, card?.id ?? null)) : [];
 
   function addAlias(raw: string) {
     const a = raw.replace(/\s+/g, " ").trim();
@@ -190,12 +204,6 @@ export function SupplierCardDialog({
     setBusy(true);
     keepScroll();
     try {
-      const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
-      // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
-      // (faturalar karta düşer, sayfa boş kalmaz)
-      const fromPage = card
-        ? []
-        : names.filter((n) => n !== PLACEHOLDER_SUPPLIER_NAME && supplierMatchKey(n) !== supplierMatchKey(f.name) && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
       const r = await saveSupplier({
         id: card?.id ?? null,
         name: f.name,
@@ -332,10 +340,17 @@ export function SupplierCardDialog({
             <Field label="Vergi dairesi" htmlFor="s-office" hint={filledHint("taxOffice")}>
               <Input id="s-office" value={f.taxOffice} onChange={(e) => set({ taxOffice: e.target.value })} autoComplete="off" />
             </Field>
-            {preview.length ? (
-              <div className={cn("space-y-1 text-xs leading-5 sm:col-span-2", previewShared ? "text-warn" : "text-ink-soft")} aria-live="polite">
+            {nameLines.length || preview.length ? (
+              <div className="space-y-1 text-xs leading-5 sm:col-span-2" aria-live="polite">
+                {nameLines.map((line) => (
+                  <p key={line} className="text-warn">
+                    {line}
+                  </p>
+                ))}
                 {preview.map((line) => (
-                  <p key={line}>{line}</p>
+                  <p key={line} className={previewShared ? "text-warn" : "text-ink-soft"}>
+                    {line}
+                  </p>
                 ))}
               </div>
             ) : null}
@@ -492,6 +507,13 @@ export function SupplierCardDialog({
                 <Plus size={16} aria-hidden="true" /> Ekle
               </Button>
             </div>
+            {aliasLines.length ? (
+              <div className="mt-2 space-y-1 text-xs leading-5 text-warn" aria-live="polite">
+                {aliasLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            ) : null}
             {freeSuggestions.length ? (
               <div className="mt-2.5">
                 <p className="mb-1.5 text-xs text-ink-mute">Aynı firma olabilir:</p>

@@ -39,6 +39,7 @@ import {
   mailtoHref,
   methodLabel,
   missingInfo,
+  nameMoves,
   normalizeTaxNumber,
   paidInParasut,
   payState,
@@ -770,7 +771,16 @@ export function SupplierClient({
 
       {removing ? (
         <RemoveSupplierDialog
-          target={{ cardId: card?.id ?? null, key: supplier.key, name: supplier.name, invoiceCount: invoices.length, openCount: unpaid.length, open: unpaid.reduce((a, r) => a + openBalance(r), 0) }}
+          target={{
+            cardId: card?.id ?? null,
+            key: supplier.key,
+            name: supplier.name,
+            invoiceCount: invoices.length,
+            openCount: unpaid.length,
+            open: unpaid.reduce((a, r) => a + openBalance(r), 0),
+            // Kartsız tedarikçi adıyla açılan kartla kaldırılır: adı başka kartlarda da duruyorsa onları da çekerdi
+            moves: !card && taxIndex ? nameMoves(taxIndex, supplier.names, null) : null,
+          }}
           onClose={() => setRemoving(false)}
           // Silinince sayfanın adresi kalmayabilir: listeye dönülür; bildirimdeki "Geri al" sayfayı yeniden açar
           onDone={() => router.replace("/panel/tedarikciler")}

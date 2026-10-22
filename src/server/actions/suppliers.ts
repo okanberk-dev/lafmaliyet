@@ -12,12 +12,15 @@ import {
   INFO_FIELDS,
   mergeInfo,
   nameConflict,
+  nameMoveBlock,
+  nameMoves,
   normalizeIban,
   normalizeTaxNumber,
   PAYMENT_METHOD_VALUES,
   isHiddenSupplier,
   PLACEHOLDER_SUPPLIER_NAME,
   taxKey,
+  taxNameIndex,
   taxNumberCheck,
   type SupplierInfo,
 } from "@/app/panel/tedarikciler/logic";
@@ -155,13 +158,14 @@ async function findGroup(input: z.input<typeof targetSchema>) {
 /**
  * Tedarikçiyi siler. Faturası yoksa kartı silinir; bildirimdeki "Geri al" kopyayla geri yazar. Faturası varsa faturalar
  * (gider ve aylık hesapların kaynağı) silinmez: tedarikçi listeden kaldırılır, bilgileri saklanır (kartı yoksa adıyla
- * bir kart açılır). Ödenmemiş faturası olan kaldırılamaz: borç listeden gizlenmesin. Kaldırıldıktan sonraki tarihli
+ * bir kart açılır). Ödenmemiş faturası olan kaldırılamaz: borç listeden gizlenmesin. Adı başka kartlarda da duran
+ * kartsız tedarikçi de kaldırılamaz: açılan kart o faturaları da çekerdi (nameMoves). Kaldırıldıktan sonraki tarihli
  * faturası gelirse listeye kendiliğinden döner (isHiddenSupplier).
  */
 export async function removeSupplier(input: z.input<typeof targetSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const { today, g } = await findGroup(input);
+    const { today, groups, g } = await findGroup(input);
     if (g.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) {
       throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; sonraki eşitlemede gerçek tedarikçilerine geçer.");
     }
@@ -192,6 +196,11 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
       };
       return { mode: "deleted" as const, snapshot };
     }
+    // Kartsız tedarikçi onun adıyla açılan (gizli) kartla kaldırılır. İki kartı bağlayan numarada adın vergi nolu
+    // faturaları o kartlarda durur; ad önce geldiği için yeni kart onları da çekerdi. Borçtan önce söylenir: borç
+    // kapansa da kaldırılamaz
+    const moves = g.card ? null : nameMoves(taxNameIndex(groups), g.names, null);
+    if (moves?.count) throw new UserError(nameMoveBlock(g.name, moves, g.invoices.length));
     if (g.summary.openCount) {
       // Yalnız ödenmemiş iade (eksi) kaldıysa borç değil, düşülecek iade
       throw new UserError(
