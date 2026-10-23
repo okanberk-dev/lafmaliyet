@@ -16,7 +16,7 @@ import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
-import { loadChecklistDay } from "@/server/data/checklists";
+import { loadChecklistDays } from "@/server/data/checklists";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -165,21 +165,21 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
 /**
  * Kontrol listeleri (docs/KONTROL-LISTELERI.md): yöneticiye bugün son saati geçen liste, dün tamamlanmayan liste ve
  * bugünün ve dünün açık sorunları (aralık dışı ölçüm, "Sorun var"); personele yalnız bugün, aralığı açılan ve kendi
- * doldurabildiği liste ("bekliyor", son saat geçince "gecikti"). Metinler src/lib/checklists.ts checklistBell'de; günün
- * listesi üç küçük sorgu (yöneticide dün için üç daha), maliyet modeli yok.
+ * doldurabildiği liste ("bekliyor", son saat geçince "gecikti"). Metinler src/lib/checklists.ts checklistBell'de; iki
+ * gün birlikte okunur (şablon, madde, kayıt, yanıt: dört küçük sorgu), maliyet modeli yok.
  */
 async function checklistNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   const day = businessDate(now);
   const yesterday = addDays(day, -1);
-  const [today, past] = await Promise.all([
-    loadChecklistDay(day, user.role, now),
-    user.role === "admin" ? loadChecklistDay(yesterday, "admin", now) : Promise.resolve(null),
-  ]);
-  return checklistBell({ role: user.role, now, today: { day, lists: today }, yesterday: past ? { day: yesterday, lists: past } : null }).map((b) => ({
-    ...b,
-    group: "kontrol" as const,
-  }));
+  const admin = user.role === "admin";
+  const lists = await loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now);
+  return checklistBell({
+    role: user.role,
+    now,
+    today: { day, lists: lists.get(day) ?? [] },
+    yesterday: admin ? { day: yesterday, lists: lists.get(yesterday) ?? [] } : null,
+  }).map((b) => ({ ...b, group: "kontrol" as const }));
 }
 
 /** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */

@@ -215,27 +215,36 @@ export interface DayCtx {
 }
 
 /**
- * Bir günün listeleri (Bugün, zil, sabah e-postası, Kontrol listeleri ekranı): o gün beklenen ve o gün kaydı olan
+ * Günlerin listeleri (Bugün, zil, sabah e-postası, Kontrol listeleri ekranı): her gün o gün beklenen ve o gün kaydı olan
  * etkin listeler, açılış saatine göre. Pasif liste o gün kaydı olsa da çıkmaz (kaydı Geçmiş'te kalır): pasife alınan
- * liste ne Bugün'de ne zilde ne e-postada hatırlatılır. Personel yalnız "Personel doldurabilir" listeleri görür. Dört
- * küçük sorgu, maliyet modeli yok.
+ * liste ne Bugün'de ne zilde ne e-postada hatırlatılır. Personel yalnız "Personel doldurabilir" listeleri görür. Günler
+ * birlikte okunur (zil: bugün ve dün): şablon, madde, kayıt ve yanıt için birer sorgu, maliyet modeli yok.
  */
-export async function loadChecklistDay(db: Db, day: string, role: "admin" | "staff", ctx: DayCtx): Promise<ChecklistLite[]> {
+export async function loadChecklistDays(db: Db, days: string[], role: "admin" | "staff", ctx: DayCtx): Promise<Map<string, ChecklistLite[]>> {
+  const out = new Map<string, ChecklistLite[]>(days.map((d) => [d, []]));
   const templates = await loadTemplates(db);
   const visible = templates.filter((t) => t.active && (role === "admin" || t.staffAllowed));
-  if (!visible.length) return [];
+  if (!visible.length || !days.length) return out;
+  const r = s.checklistRuns;
   const runs = await db
     .select()
-    .from(s.checklistRuns)
-    .where(and(eq(s.checklistRuns.date, day), eq(s.checklistRuns.seq, 1), inArray(s.checklistRuns.templateId, visible.map((t) => t.id))));
-  const answers = runs.length ? (await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((r) => r.id)))).map((a) => ({ runId: a.runId, a: answerLite(a) })) : [];
-  return visible
-    .flatMap((t) => {
-      const run = runs.find((r) => r.templateId === t.id);
+    .from(r)
+    .where(and(inArray(r.date, days), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id))));
+  const answers = runs.length ? (await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id)))).map((a) => ({ runId: a.runId, a: answerLite(a) })) : [];
+  for (const day of out.keys()) {
+    const lists = visible.flatMap((t) => {
+      const run = runs.find((x) => x.templateId === t.id && x.date === day);
       if (!run && !expectedOn(t, day, ctx.today)) return [];
       return [liteOf(t, run, run ? answers.filter((x) => x.runId === run.id).map((x) => x.a) : [], ctx.photos)];
-    })
-    .sort(byOpening(templates));
+    });
+    out.set(day, lists.sort(byOpening(templates)));
+  }
+  return out;
+}
+
+/** Bir günün listeleri (loadChecklistDays'in tek günlüğü) */
+export async function loadChecklistDay(db: Db, day: string, role: "admin" | "staff", ctx: DayCtx): Promise<ChecklistLite[]> {
+  return (await loadChecklistDays(db, [day], role, ctx)).get(day) ?? [];
 }
 
 /** Doldurma ekranının verisi */

@@ -21,6 +21,7 @@ import {
   checkPhotoTarget,
   firstChecklistDay,
   loadChecklistDay,
+  loadChecklistDays,
   loadHistory,
   loadRunView,
   photoRun,
@@ -233,6 +234,10 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     assert.equal(mine.run?.complete, true);
     assert.equal(mine.required, 3);
     assert.ok(adminDay.some((l) => l.templateId === adminOnly && l.run === null));
+    // Zil iki günü tek okumada alır: günler tek tek okunanla aynı
+    const both = await loadChecklistDays(db, [DAY, "2026-10-21"], "admin", { today: DAY, photos: true });
+    assert.deepEqual(both.get(DAY), adminDay);
+    assert.deepEqual(both.get("2026-10-21"), await loadChecklistDay(db, "2026-10-21", "admin", { today: DAY, photos: true }));
 
     const history = await loadHistory(db, "2026-10-21", DAY, { today: DAY, photos: true });
     assert.deepEqual(

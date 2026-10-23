@@ -37,9 +37,14 @@ export async function loadChecklistTemplate(id: number) {
   return t ?? null;
 }
 
-/** Bir günün listeleri (Bugün, zil, sabah e-postası, Kontrol listeleri); personel yalnız kendi doldurabildiklerini görür */
+/** Bir günün listeleri (Bugün, sabah e-postası, Kontrol listeleri); personel yalnız kendi doldurabildiklerini görür */
 export function loadChecklistDay(day: string, role: "admin" | "staff", now: Date = new Date()) {
   return store.loadChecklistDay(getDb(), day, role, ctxOf(now));
+}
+
+/** Birkaç günün listeleri tek okumada (zil: bugün ve dün) */
+export function loadChecklistDays(days: string[], role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadChecklistDays(getDb(), days, role, ctxOf(now));
 }
 
 export function loadRunView(templateId: number, day: string, now: Date = new Date()) {
