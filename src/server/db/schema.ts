@@ -1281,6 +1281,40 @@ export const invoiceReadings = pgTable(
   (t) => [uniqueIndex("invoice_readings_invoice_product_uq").on(t.invoiceId, t.productKey)],
 );
 
+// ---------------------------------------------------------------- Komisyon ve hakediş
+/**
+ * Komisyon kanalının bir satış ayı (yemek kartı şirketi ya da sipariş platformu): yöneticinin yazdığı aylık satış
+ * (kanalın ekstresinden) ve gelen hakediş. Banka hesabı panele bağlı olmadığı için hakediş elle işaretlenir. Satır
+ * yalnız yönetici bir şey yazınca açılır, her şey boşalınca silinir; ekran faturalardan ve kasa raporlarından hesaplar.
+ * Faturalara değil kanal ve aya bağlı: faturalar yeniden yüklense de (db:reset) işaret yerinde kalır. Ayrıntı:
+ * docs/KOMISYON.md.
+ */
+export const commissionMonths = pgTable(
+  "commission_months",
+  {
+    id: serial("id").primaryKey(),
+    /** Kanal anahtarı (pluxee, multinet, …, trendyol; src/lib/commission/channels.ts) */
+    channel: text("channel").notNull(),
+    /** Satış ayı (YYYY-MM): faturanın kapsadığı ay */
+    month: text("month").notNull(),
+    /** Elle yazılan satış, KDV dahil (kanalın ekstresinden); boş = Z raporlarından ya da bilinmiyor */
+    sales: doublePrecision("sales"),
+    /** Hakedişin geldiği gün (YYYY-MM-DD); boş = gelmedi */
+    receivedOn: text("received_on"),
+    /** Gelen tutar (₺); receivedOn ile birlikte dolu ya da boş */
+    received: doublePrecision("received"),
+    note: text("note"),
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedByName: text("updated_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("commission_months_channel_month_uq").on(t.channel, t.month),
+    check("commission_months_received_pair", sql`(${t.receivedOn} is null) = (${t.received} is null)`),
+  ],
+);
+
 // ---------------------------------------------------------------- Kontrol listeleri
 /**
  * Kontrol listesi şablonu (Açılış, Kapanış …): seçili günlerde bir kez, saat aralığıyla (iş günü 05:00'te döner,

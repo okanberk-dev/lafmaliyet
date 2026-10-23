@@ -19,6 +19,7 @@ test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel/hatirlaticilar"), ["Satış & gider", "Ödemeler & hatırlatıcılar"]);
   assert.deepEqual(pathOf("/panel/tutarlilik"), ["Stok", "Tutarlılık"]);
   assert.deepEqual(pathOf("/panel/parasut"), ["Ayarlar", "Paraşüt entegrasyonu"]);
+  assert.deepEqual(pathOf("/panel/komisyonlar"), ["Satış & gider", "Komisyon & hakediş"]);
   assert.deepEqual(pathOf("/panel/yok"), []);
 });
 

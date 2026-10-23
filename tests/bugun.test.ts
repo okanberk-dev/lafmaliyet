@@ -383,6 +383,25 @@ test("8. faturalar: kontrol bekleyen yapılacak, yoksa tamam; okunamazsa satır 
   assert.doesNotMatch(read("src/app/panel/bugun/logic.ts"), /lastStatus|lastOkAt|Eşitleme hatası/);
 });
 
+test("komisyon: geciken hakediş varsa 'sorun var' (en eski son gün), yoksa satır yok; Komisyon & hakediş'e götürür", () => {
+  const row = (overdue: { label: string; month: string; due: string }[]) => byKey(dayTasks(admin(NOON, { commission: { overdue } }))).komisyon;
+  const one = row([{ label: "Pluxee", month: "2026-09", due: "2026-10-20" }]);
+  assert.equal(one.status, "warn");
+  assert.equal(one.title, "Hakedişler");
+  assert.equal(one.badge, "1 gecikti");
+  assert.equal(one.detail.replaceAll("\u00a0", " "), "Pluxee (Eylül) · son gün 20 Ekim");
+  assert.equal(one.href, "/panel/komisyonlar");
+  assert.equal(one.action, "Hakedişlere bak");
+  const two = row([
+    { label: "Trendyol Go", month: "2026-09", due: "2026-10-14" },
+    { label: "Pluxee", month: "2026-09", due: "2026-10-20" },
+  ]);
+  assert.equal(two.badge, "2 gecikti");
+  assert.equal(two.detail.replaceAll("\u00a0", " "), "Trendyol Go (Eylül) · son gün 14 Ekim ve 1 hakediş daha");
+  // Geciken yok, okunamadı ya da olgu yok: satır çıkmaz
+  for (const commission of [{ overdue: [] }, null, undefined]) assert.ok(!keys(dayTasks(admin(NOON, { commission }))).includes("komisyon"));
+});
+
 test("isler: günlük işlerin sorunları en üstte 'sorun var', Ayarlar › Günlük işler'e götürür; birden çoksa rozet sayar", () => {
   const one = dayTasks(admin(NOON, { system: [{ title: "Sabah işi çalışmadı", body: "22 Ekim Çarşamba 08:00–09:00 arasında çalışması gerekiyordu" }] }));
   assert.equal(one[0].key, "isler");
@@ -498,7 +517,7 @@ test("9. ürün bağlantısı, fiyatı girilmemiş hammadde, reçete onayı, fiy
   assert.equal(t.modpos.detail, "Kasada değişecek 3 fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin. En eskisi 3 gündür bekliyor.");
 });
 
-test("yönetici satır sırası: isler, kasa-dun, odeme, fatura, urun, fiyat-yok, onay, fiyat-onay, zam, modpos, sayim-gecen, kasa", () => {
+test("yönetici satır sırası: isler, kasa-dun, odeme, komisyon, fatura, urun, fiyat-yok, onay, fiyat-onay, zam, modpos, sayim-gecen, kasa", () => {
   const now = tr("2026-11-03T21:00");
   const tasks = dayTasks(
     admin(now, {
@@ -511,12 +530,13 @@ test("yönetici satır sırası: isler, kasa-dun, odeme, fatura, urun, fiyat-yok
       holds: { count: 1, items: [{ name: "Süt", pct: 0.5 }] },
       prices: { detail: "…", href: "/panel/urunler#zamlar", count: 1 },
       pos: { count: 1, oldest: null },
+      commission: { overdue: [{ label: "Pluxee", month: "2026-09", due: "2026-10-30" }] },
     }),
   );
-  assert.deepEqual(keys(tasks), ["isler", "kasa-dun", "odeme", "fatura", "urun", "fiyat-yok", "onay", "fiyat-onay", "zam", "modpos", "sayim-gecen", "kasa"]);
+  assert.deepEqual(keys(tasks), ["isler", "kasa-dun", "odeme", "komisyon", "fatura", "urun", "fiyat-yok", "onay", "fiyat-onay", "zam", "modpos", "sayim-gecen", "kasa"]);
   // Bölümler sırayı korur: tamamlanan ödeme ve fatura Şimdi'de değil
   const split = splitTasks(tasks);
-  assert.deepEqual(keys(split.now), ["isler", "kasa-dun", "urun", "fiyat-yok", "onay", "fiyat-onay", "zam", "modpos", "sayim-gecen", "kasa"]);
+  assert.deepEqual(keys(split.now), ["isler", "kasa-dun", "komisyon", "urun", "fiyat-yok", "onay", "fiyat-onay", "zam", "modpos", "sayim-gecen", "kasa"]);
   assert.deepEqual(keys(split.done), ["odeme", "fatura"]);
   // Personel sırası
   const staffTasks = dayTasks(
@@ -536,6 +556,7 @@ test("personelin olgusuna yönetici bilgisi yanlışlıkla gelse de hiçbir yön
     holds: { count: 1, items: [{ name: "Süt", pct: 0.5 }] },
     prices: { detail: "…", href: "/panel/urunler#zamlar", count: 3 },
     pos: { count: 2, oldest: null },
+    commission: { overdue: [{ label: "Pluxee", month: "2026-09", due: "2026-10-20" }] },
     cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.carry] }), firstDate: "2026-10-01" },
   });
   const tasks = dayTasks(facts);
@@ -917,6 +938,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "lastParasutSyncOkAt(",
     "previousCarryOver(",
     "cashRevisionsFor(",
+    "loadOverduePayouts(",
     "needsReview",
   ];
   for (const name of ADMIN_ONLY) {
@@ -963,6 +985,7 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "countUnlinkedProducts(",
     "loadUnpricedIngredients(",
     "loadChecklistDay(",
+    "loadOverduePayouts(",
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }
