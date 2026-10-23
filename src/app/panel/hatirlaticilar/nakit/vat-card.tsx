@@ -6,10 +6,10 @@ import { useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { CashPlanState, CashPlanVat, VatRow } from "@/lib/cash-plan";
+import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-plan";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
-import { round100, VAT_DISCLAIMER, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
+import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +22,8 @@ const pctText = (rate: number) => `%${num(rate * 100, 1)}`;
 /**
  * Nakit planı › KDV tahmini (src/lib/kdv.ts): her ödeme günü bir satır ("Ekim KDV'si ≈ 42.100 ₺"); satıra dokununca
  * satışların KDV'si, alışların KDV'si ve devreden açılır. Muhasebecinin devreden KDV'si buradan girilir. Haftalardaki
- * "KDV (Ekim)" satırı buraya getirir (#kdv).
+ * "KDV (Ekim)" satırı buraya getirir (#kdv). Alış faturalarında tevkifat varsa dönemin 2 No.lu KDV'si ayrı satırdır
+ * (izleyen ayın 25'i): 1 No.lu beyannamede indirilir, devreden olsa da ödenir.
  */
 export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPlanState["vatCarry"]; today: string }) {
   const [carryOpen, setCarryOpen] = useState(false);
@@ -53,6 +54,13 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
             ))}
           </ul>
         )}
+        {vat.vat2.length ? (
+          <ul className="divide-y divide-line rounded-2xl bg-surface px-3">
+            {vat.vat2.map((r) => (
+              <Vat2RowItem key={r.key} row={r} today={today} muted={muted} />
+            ))}
+          </ul>
+        ) : null}
         <div className="space-y-2 border-t border-line pt-3 text-xs leading-5 text-ink-mute">
           <p>{VAT_DISCLAIMER}</p>
           {vat.baseMode === "reminder" ? (
@@ -82,6 +90,24 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
       </CardContent>
       {carryOpen ? <VatCarryDialog carry={carry} today={today} onClose={() => setCarryOpen(false)} /> : null}
     </Card>
+  );
+}
+
+/** 2 No.lu KDV (tevkifat) satırı: döküm yok, alt yazı ne olduğunu söyler */
+function Vat2RowItem({ row: r, today, muted }: { row: Vat2Row; today: string; muted: boolean }) {
+  return (
+    <li className="flex min-h-11 items-start gap-3 py-3">
+      <DateTile date={r.date} daysLeft={daysBetween(today, r.date)} size="sm" muted={muted} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-start justify-between gap-2">
+          <span className="min-w-0 text-sm leading-5 font-semibold text-ink">{monthName(r.period)} KDV-2 (tevkifat)</span>
+          <span className={cn("shrink-0 text-sm font-semibold tabular", muted ? "text-ink-mute" : "text-ink")}>≈ {tl(r.amount)}</span>
+        </span>
+        <span className="mt-0.5 block text-xs leading-[18px] text-ink-mute">
+          {r.covered ? "Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o, boşsa bu tahmin" : `Faturalardaki tevkifat, ayın ${VAT2_DUE_DAY}'inde; 1 No.lu beyannamede indirilir`}
+        </span>
+      </span>
+    </li>
   );
 }
 
@@ -206,6 +232,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
           <dd className="font-medium text-ink tabular">− ≈ {tl(e.purchases)}</dd>
         </div>
         {estimate ? <p className="text-xs text-ink-mute">{invoiceText}</p> : null}
+        {estimate && e.withheld > 0 ? <p className="text-xs text-ink-mute">İçinde tevkifat ≈ {tl(e.withheld)}: 2 No.lu beyannameyle ayın {VAT2_DUE_DAY}&apos;inde ödenir</p> : null}
       </div>
       {e.carryIn > 0 ? (
         <div className="flex items-baseline justify-between gap-3">

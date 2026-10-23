@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { cleanTaxNumber, taxKey } from "../src/app/panel/tedarikciler/logic";
-import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice } from "../src/server/parasut/einvoice";
+import { purchaseVat, purchaseWithheld } from "../src/lib/kdv";
+import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, withholdingVatFill } from "../src/server/parasut/einvoice";
 
 const base = {
   id: "1074821121",
@@ -81,4 +82,21 @@ test("tedarikçinin vergi nosu: belgedeki numara saklanır; örnek numara eşle�
   assert.equal(cleanTaxNumber(real.supplierTaxNo), "7810030532");
   assert.equal(taxKey(real.supplierTaxNo), "7810030532");
   assert.equal(eInvoiceToDraft({ ...base, attributes: { ...base.attributes, from_vkn: null } }).supplierTaxNo, null);
+});
+
+test("tevkifatlı e-faturaya bağlı Excel kaydının boş KDV'si belgedeki tam KDV'yle dolar (Eylül 2026 reklam faturası)", () => {
+  // Liste tevkifat düşülmüş ödenecek tutarı (34.200) ve tam KDV'yi (6.000) verir; Excel kaydında KDV yok
+  const d = eInvoiceToDraft({ ...base, attributes: { ...base.attributes, invoice_type_code: "TEVKIFAT", net_total: "34200", total_vat: "6000" } });
+  const excel = { amount: 30_000, discount: 0, payable: 34_200, vat: 0 };
+  assert.equal(purchaseVat(excel), 4_200);
+  const vat = withholdingVatFill(excel, d);
+  assert.equal(vat, 6_000);
+  // KDV tahmini artık tamamını indirir, farkı KDV-2'ye yazar
+  assert.equal(purchaseVat({ ...excel, vat: vat! }), 6_000);
+  assert.equal(purchaseWithheld({ ...excel, vat: vat! }), 1_800);
+  // Kayıttaki KDV'ye, elle değişmiş ödenecek tutara, tevkifatsız faturaya ve iadeye dokunulmaz
+  assert.equal(withholdingVatFill({ ...excel, vat: 4_200 }, d), null);
+  assert.equal(withholdingVatFill({ ...excel, payable: 36_000 }, d), null);
+  assert.equal(withholdingVatFill(excel, { ...d, withholding: false }), null);
+  assert.equal(withholdingVatFill(excel, { ...d, refund: true }), null);
 });

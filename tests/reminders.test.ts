@@ -11,6 +11,7 @@ import {
   digestSummary,
   dueNotifications,
   isVatReminder,
+  isVatWithholdingReminder,
   monthGenitiveTR,
   monthLocativeTR,
   nextOccurrence,
@@ -198,6 +199,31 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
   assert.equal(vatAmountTravels({ ...vat, amount: null }), false);
   assert.equal(vatAmountTravels({ ...vat, title: "Kira", kind: "kira" }), false);
   assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
+});
+
+test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KDV; muhtasar, stopaj ve 2 No.lu dükkan değil", () => {
+  for (const [title, kind] of [
+    ["KDV2 tevkifat", "vergi"],
+    ["KDV 2", "vergi"],
+    ["KDV-2 ödemesi", "odeme"],
+    ["2 No.lu KDV beyannamesi", "vergi"],
+    ["2 numaralı KDV", "vergi"],
+    ["KDV tevkifatı", "diger"],
+    ["Katma değer vergisi tevkifatı", "vergi"],
+  ] as const) {
+    assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
+  }
+  // Gelir vergisi tevkifatı (muhtasar, stopaj) ve "2 No.lu" geçen kira, aidat, sayaç KDV-2 tahminini kapatmaz
+  for (const [title, kind] of [
+    ["Muhtasar (gelir vergisi tevkifatı)", "vergi"],
+    ["Stopaj tevkifat", "vergi"],
+    ["Aidat 2 No.lu dükkan", "odeme"],
+    ["Elektrik 2 numaralı sayaç", "odeme"],
+    ["KDV beyannamesi ve ödemesi", "vergi"],
+    ["Kira KDV2", "kira"],
+  ] as const) {
+    assert.equal(isVatWithholdingReminder({ title, kind }), false, title);
+  }
 });
 
 test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
