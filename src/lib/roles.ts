@@ -52,3 +52,34 @@ export function canOpen(role: Role, pathname: string): boolean {
   if (ADMIN_ONLY_PATHS.some((p) => under(pathname, p))) return false;
   return STAFF_PATHS.some((p) => under(pathname, p));
 }
+
+/**
+ * Personelin rolü tek cümlede: Kullanıcılar & roller'deki rol seçicinin açıklaması. Yardım'daki "Personele hesap
+ * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
+ */
+export const STAFF_ROLE_HINT =
+  "Bugün, kasa raporu, açılış / kapanış listeleri, zayi ve ikram, stok sayımı, reçete defteri (öneri), karaoke ve bar ekranı; maliyet, maaş ve kâr görmez";
+
+/**
+ * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
+ * tabloda bir satırda geçer (tests/personel-yetkileri.test.ts), ekran eklenince tablo eskimesin.
+ */
+export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: boolean; paths?: readonly string[] }[] = [
+  { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, staff: true, paths: ["/panel/bugun"] },
+  { label: "Karaoke ve bar ekranı: uygulama siparişleri, oda sayacı, rezervasyonlar (tutarsız)", admin: true, staff: true, paths: ["/panel/karaoke"] },
+  { label: "Gün sonu kasa raporu; Z raporu ve fişler fotoğraftan, kasadan çıkanlar", admin: true, staff: true, paths: ["/panel/kasa"] },
+  { label: "Açılış ve kapanış kontrol listeleri", admin: true, staff: true, paths: ["/panel/kontrol"] },
+  { label: "Zayi ve ikram kaydı", admin: true, staff: true, paths: ["/panel/zayi"] },
+  { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/receteler"] },
+  { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, staff: true, paths: ["/panel/sayim"] },
+  { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true, paths: ["/panel/hatirlaticilarim"] },
+  { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true, paths: ["/panel/hesap"] },
+  { label: "Reçeteyi doğrudan düzenleme ve önerileri onaylama", admin: true, staff: false },
+  { label: "Ürün maliyeti, fiyat ve kârlılık", admin: true, staff: false },
+  { label: "Hammadde fiyatları", admin: true, staff: false },
+  { label: "Satış, fatura, gelir-gider, kasa raporlarının geçmişi", admin: true, staff: false },
+  { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
+  { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
+  { label: "Kontrol listelerinin geçmişi ve düzenlenmesi, karaoke doluluğu", admin: true, staff: false },
+  { label: "Paraşüt, ayarlar, yedek, kullanıcı yönetimi, Claude bağlantısı", admin: true, staff: false },
+];

@@ -106,7 +106,8 @@ ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 
 
 1. Kafe konumu: **Tuzla, Opera AVM** (hava durumu ve AVM saatleri buna göre).
 2. Açılış/kapanış listelerinin saatleri: **açılış 08:00–11:00, kapanış 22:00–02:00**.
-3. Karaoke: **tek oda, her gün 10:00–22:00**.
+3. Karaoke: **tek oda, her gün 12:00–24:00** (laffogato.net'teki karaoke saatleri; 23 Ekim denetiminden önce AVM'nin
+   10:00–22:00'si varsayılmıştı). Sahip Doluluk › Oda saatleri'nden değiştirir.
 4. KDV: panel devreden KDV'yi açılış alımlarından kendisi hesaplar (≈ 98.100 ₺; bu durumda Ekim–Kasım'da ödeme
    çıkmaz); muhasebeciden gelen tutar girilirse o esas alınır.
 5. Sahibin verdiği cevaplar: kurye yok; Paraşüt'te banka hesapları bağlı değil (hakediş/ödeme elle işaretlenir);

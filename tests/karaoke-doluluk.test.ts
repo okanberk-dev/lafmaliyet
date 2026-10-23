@@ -234,10 +234,11 @@ test("dönemler: iş günüyle, bugün sayılmaz; ay, önceki dönem, geçersiz 
   assert.deepEqual(periodBounds(per("2026-10-23", "2026-10-24")), { start: T("2026-10-23", "05:00"), end: T("2026-10-24", "05:00") });
 });
 
-test("kapasite: 10–22 ve son 4 hafta → açık hücre 4 gün × 60 dk, toplam 20.160 dk", () => {
+test("kapasite: varsayılan 12–24 (sitenin karaoke saatleri) ve son 4 hafta → açık hücre 4 gün × 60 dk, toplam 20.160 dk", () => {
   const p = resolvePeriod("4h", undefined, T("2026-10-22", "14:00"));
   const { grid, summary } = computeOccupancy([], p, { hours: DEFAULT_ROOM_HOURS });
-  assert.deepEqual(grid.hours, [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+  assert.deepEqual(DEFAULT_ROOM_HOURS, { open: 12, close: 24 });
+  assert.deepEqual(grid.hours, [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
   assert.ok(grid.rows.flat().every((c) => c.open && c.capacityMin === 240 && c.ratio === 0));
   assert.equal(summary.capacityMin, 20_160);
   assert.equal(summary.ratio, 0);
@@ -439,7 +440,8 @@ test("öne çıkanlar: en boş blok, en dolu blok, son dakika iptal; az veride n
 
 test("metinler: oda saatleri, kapanış seçenekleri, puan, basamak, hücre, dakika, ay aralığı, dönem satırı", () => {
   assert.equal(hoursText({ open: 12, close: 26 }), "12:00–02:00");
-  assert.equal(hoursText(DEFAULT_ROOM_HOURS), "10:00–22:00");
+  assert.equal(hoursText(DEFAULT_ROOM_HOURS), "12:00–00:00");
+  assert.equal(hoursText({ open: 10, close: 22 }), "10:00–22:00");
   assert.equal(hourLabel(25), "01:00");
   assert.equal(closeOptionLabel(22), "22:00");
   assert.equal(closeOptionLabel(24), "00:00 (gece yarısı)");
@@ -473,9 +475,9 @@ test("metinler: oda saatleri, kapanış seçenekleri, puan, basamak, hücre, dak
   assert.equal(cellNumber({ ...cell, days: 0, capacityMin: 0, ratio: null }), "–", "dönemde o gün yok");
 
   const now = T("2026-10-22", "14:00");
-  assert.equal(periodLine(resolvePeriod("4h", undefined, now), DEFAULT_ROOM_HOURS), "24 Eylül – 21 Ekim · 28 gün · oda saatleri 10:00–22:00 · bugün sayılmaz");
-  assert.equal(periodLine(resolvePeriod("ay", "2026-09", now), DEFAULT_ROOM_HOURS), "Eylül 2026 · 30 gün · oda saatleri 10:00–22:00");
-  assert.equal(periodLine(resolvePeriod("ay", "2026-10", now), DEFAULT_ROOM_HOURS), "Ekim 2026 · 1–21 Ekim · oda saatleri 10:00–22:00 · bugün sayılmaz");
+  assert.equal(periodLine(resolvePeriod("4h", undefined, now), DEFAULT_ROOM_HOURS), "24 Eylül – 21 Ekim · 28 gün · oda saatleri 12:00–00:00 · bugün sayılmaz");
+  assert.equal(periodLine(resolvePeriod("ay", "2026-09", now), { open: 10, close: 22 }), "Eylül 2026 · 30 gün · oda saatleri 10:00–22:00");
+  assert.equal(periodLine(resolvePeriod("ay", "2026-10", now), DEFAULT_ROOM_HOURS), "Ekim 2026 · 1–21 Ekim · oda saatleri 12:00–00:00 · bugün sayılmaz");
 });
 
 test("göstergelerin metinleri: eğik çizgili biçim, rakamdan sonra ek yok", () => {

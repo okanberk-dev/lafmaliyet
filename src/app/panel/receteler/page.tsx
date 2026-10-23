@@ -111,7 +111,7 @@ async function RecipeBookContent() {
                 packaging: l.isPackaging,
                 note: l.item.note,
                 pump: pumpHint(
-                  { qty: l.qty, unit: l.ingredient?.unit ?? "", qtyExpr: l.item.qtyExpr, category: l.ingredient?.category, packaging: l.isPackaging },
+                  { qty: l.qty, unit: l.ingredient?.unit ?? "", qtyExpr: l.item.qtyExpr, category: l.ingredient?.category, name: l.ingredient?.name, packaging: l.isPackaging },
                   model.settings,
                 ),
               })),

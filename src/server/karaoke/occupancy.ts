@@ -41,7 +41,7 @@ export async function loadOccupancySessions(from: Date, to: Date): Promise<OccSe
   return rows.map(rowToOcc);
 }
 
-/** Oda saatleri: kaydedilmediyse varsayılan (her gün 10:00–22:00) */
+/** Oda saatleri: kaydedilmediyse varsayılan (her gün 12:00–24:00, sitenin karaoke saatleri) */
 export async function readKaraokeHours(): Promise<{ hours: RoomHours; saved: boolean }> {
   const [row] = await getDb().select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, HOURS_KEY)).limit(1);
   const hours = parseRoomHours(row?.value);

@@ -43,14 +43,24 @@ GET /api/panel/karaoke  ◀─────────────────�
                                                               zil çalar, kart gösterir
 ```
 
-- **Ping kaçarsa:** Karaoke ekranı açılınca en çok beş dakikada bir site yeniden sorulur; günlük iş
-  (`/api/cron/gunluk`) de bir kez eşitler. Yönetici **Şimdi eşitle** ile elle eşitler.
+- **Ping kaçarsa:** Ping ucu 202'den sonra işi kaybetmez: pingin kaydı yazılamasa da çekilir, çekme düşerse 4 saniye
+  sonra bir kez daha denenir (`src/lib/ping-work.ts`). İkisi de olmazsa kopyayı açık bir panel sekmesi tazeler: canlı uç
+  her soruluşunda (yanıttan sonra) bakar, çekmesi kaybolan bir ping varsa 30 saniye sonra, son çekme hatalıysa iki
+  dakikada bir, kopya 30 dakikadan eskiyse site yeniden sorulur (`src/lib/karaoke/freshness.ts`; kimse bakmıyorsa ne
+  panelin ne sitenin veritabanı uyanır). Hızlı sayaç ve uzatma, sitedeki rezervasyonla çakışmayı sormadan önce kopya üç
+  dakikadan eskiyse siteyi sorar. Son çekme başarısızsa bar ekranında sarı satır: "Son kontrol başarısız: … Rezervasyonları
+  sitenin panelinde de kontrol edin." Karaoke sayfası açılınca da en çok beş dakikada bir site sorulur; günlük iş
+  (`/api/cron/gunluk`) bir kez eşitler. Yönetici **Şimdi eşitle** ile elle eşitler.
 - **İlk eşitleme** geçmiş kayıtları sessizce alır (eski rezervasyonlar için zil çalmaz). Bitmiş rezervasyonun
   değişikliği bildirilmez. Ödemesi beklenen tutma (sitede ödeme sayfası açık) sessizdir; ödeme tamamlanınca "yeni
   rezervasyon" olarak çalar.
-- **Açık sekmenin istek bütçesi** (`/api/canli`, ETag'li; değişiklik yoksa 304 ve veri okunmaz):
-  açılışta, bildirim gelince, sekmeye dönünce, ağ geri gelince; yedek kontrol bildirim açıkken 10 dakikada,
-  kapalıyken dakikada bir; alarm çalarken 15 saniyede bir (başka cihazda susturulursa burada da sussun).
+- **Açık sekmenin istek bütçesi** (`/api/canli`, ETag'li; değişiklik yoksa 304 ve veri okunmaz; `src/lib/live-poll.ts`):
+  açılışta, bildirim gelince, sekmeye dönünce, ağ geri gelince; yedek kontrol yalnız sekme öndeyken, bildirim açıkken
+  30 dakikada, kapalıyken dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve bir saat içinde oturum ya da saatli
+  hatırlatıcı yoksa 10 dakikada bir); alarm çalarken arka planda da 15 saniyede bir (başka cihazda susturulursa burada
+  da sussun). Panelin veritabanı Neon'un ücretsiz planında: her kontrol onu uyandırır ([BILDIRIMLER.md](BILDIRIMLER.md) ›
+  Neon kotası).
+- **Uzatma** tek yazımda ve SQL'de toplanır: bar ekranı ve bir telefon aynı anda +15'e basarsa ikisi de sayılır.
 - **Sayaç sunucu saatiyle sayar:** tabletin saati yanlış olsa da alarm zamanında çalar. Sekme arka plandayken
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
@@ -185,7 +195,8 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
   %50'den azsa yok) ya da son dakika iptal yüksekse (%15 ve en az 3) onun satırı.
 - **Ay ay:** son 6 ay, ilk veri ayından eskiye gitmez. ¹: ay ilk rezervasyonsuz sayaçtan önce başlıyor, o aylarda yalnız
   site rezervasyonları var. Doluluk farkı bir eski aya göre, rozetteki kuralla (aynı verinin sayıldığı aylar arasında).
-- **Oda saatleri:** varsayılan her gün 10:00–22:00 (AVM saatleri); ekranın altındaki Veri ve ayarlar › Değiştir.
+- **Oda saatleri:** varsayılan her gün 12:00–24:00 (laffogato.net'teki karaoke saatleri: ilk rezervasyon 12:00, son
+  başlangıç 23:00); ekranın altındaki Veri ve ayarlar › Değiştir.
   Kapanış gece yarısını geçebilir (en geç 05:00). Değişiklik geçmiş aylara da uygulanır, işlem geçmişine düşer
   (`integration_state` › `karaoke.hours`).
 - **Geçmişi siteden al:** panelin karaoke bağlantısı 21 Ekim 2026'da kuruldu; öncesi için düğme sitenin aynı imzalı
@@ -215,9 +226,12 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 | Mesaj | Ne yapılır |
 |-------|------------|
 | Site isteği reddetti (imza) | İki projedeki `KARAOKE_SYNC_SECRET` aynı mı? İkisi de yeniden yayımlandı mı? |
-| Sitede KARAOKE_SYNC_SECRET tanımlı değil | Siteye değişkeni ekleyip yeniden yayımlayın |
+| Sitede KARAOKE_SYNC_SECRET tanımlı değil | Siteye değişkeni ekleyip yeniden yayımlayın (site 503 `not_configured` dedi) |
+| Sitenin veritabanı şu an okunamıyor | Geçici (site 503 `unavailable`); panel iki dakikada bir kendisi yeniden dener |
+| Sitede bağlantı kapalı ya da sitenin veritabanı okunamadı | 503 ama neden yazılmamış: önce biraz bekleyin, sürerse sitedeki anahtara bakın |
 | Sitede panel ucu yok | laffogato.net güncel değil (karaoke bağlantısı yayımlanmamış) |
-| Site 8 saniyede yanıt vermedi | Geçici; **Şimdi eşitle** ile yeniden deneyin |
+| Site 8 saniyede yanıt vermedi / Siteye ulaşılamadı | Geçici; **Şimdi eşitle** ile yeniden deneyin |
+| Sitenin yanıtı okunamadı (site ile panel uyumsuz olabilir) | Site ya da panel güncel değil; iki tarafın sözleşmesini (`docs/PANEL-KARAOKE.md`) karşılaştırın |
 
 "Sitenin son pingi" boş kalıyorsa site panele ulaşamıyor: sitedeki `PANEL_URL` ve anahtarı kontrol edin.
 
@@ -229,8 +243,10 @@ dene** seçilen hoparlörden çalmalı.
 
 | Dosya | Görev |
 |-------|-------|
-| `src/app/api/karaoke/ping/route.ts` | Sitenin pingi: imza, 202, arka planda eşitleme |
-| `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim |
+| `src/app/api/karaoke/ping/route.ts` | Sitenin pingi: imza, 202, arka planda eşitleme (`src/lib/ping-work.ts`: kayıt yazılamasa da çeker, düşen çekmeyi bir kez yineler) |
+| `src/server/karaoke/sync.ts` | Çekme, yazma, olay tespiti, bildirim; kopyanın tazelenmesi (`ensureKaraokeFresh`) |
+| `src/lib/karaoke/freshness.ts`, `src/lib/karaoke/sync-text.ts` | Kopya ne zaman yeniden çekilir, bar ekranının uyarı satırı; çekme hatalarının metinleri (saf, testli) |
+| `src/server/karaoke/extend.ts` | Uzatmanın tek yazımı (SQL'de toplar, 12 saat sınırı) |
 | `src/server/site-link.ts` | Menü bağlantısıyla ortak: anahtar, sitenin adresi, imzalı istek (8 sn; [SITE-MENU.md](SITE-MENU.md)) |
 | `src/server/karaoke/board.ts` | Oturumlar, sürüm sayacı (ETag), ekran verisi |
 | `src/server/actions/karaoke.ts` | Hızlı sayaç, uzatma (ikisi de sitedeki rezervasyonla çakışmayı sorar), bitirme, geri açma, elle eşitleme |

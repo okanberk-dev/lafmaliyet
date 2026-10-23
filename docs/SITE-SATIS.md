@@ -2,7 +2,12 @@
 
 Ekranlar: **Gelir-gider** (`/panel/gelir-gider`; "laffogato.net online satışları" kartı ve tablonun Maliyet
 bölümündeki satırlar), **Tutarlılık** (`/panel/tutarlilik`; online tüketim), **Kasa raporu** (`/panel/kasa`; günün
-bilgi satırı) ve **Ayarlar › laffogato.net** (bağlantının durumu). Sözleşmenin sitedeki kopyası: laffogato deposunda
+bilgi satırı) ve **Ayarlar › laffogato.net** (bağlantının durumu).
+
+**Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar ve tüketim (hesap motoru,
+`src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`), **Nakit planı › KDV
+tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan `src/lib/kdv.ts`;
+[NAKIT-PLANI.md](NAKIT-PLANI.md)). Sözleşmenin sitedeki kopyası: laffogato deposunda
 `docs/PANEL-SALES.md` (uç, alanlar, KDV kuralı, hata kodları; sitenin kuralı `src/lib/panel/sales-export-core.ts`).
 
 ## Geliştirilmiş istek (prompt)
