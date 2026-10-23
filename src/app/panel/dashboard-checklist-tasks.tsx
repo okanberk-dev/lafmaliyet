@@ -1,20 +1,14 @@
 "use client";
 
-import { ArrowRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleDashed, Clock3 } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useState } from "react";
 
-import { Badge, type Tone } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-import { phoneChecklist, type ChecklistView, type MonthTask, type TaskStatus } from "./dashboard-tasks";
-
-const STYLE: Record<TaskStatus, { icon: ReactNode; well: string; tone: Tone; label: string }> = {
-  done: { icon: <CircleCheck />, well: "bg-lime/25 text-good-ink", tone: "green", label: "Tamam" },
-  todo: { icon: <CircleDashed />, well: "bg-warn-soft text-warn", tone: "amber", label: "Yapılacak" },
-  warn: { icon: <CircleAlert />, well: "bg-bad-soft text-bad", tone: "red", label: "Sorun var" },
-  later: { icon: <Clock3 />, well: "bg-panel text-ink-mute ring-1 ring-inset ring-line", tone: "gray", label: "Sonra" },
-};
+import { phoneChecklist, type ChecklistView, type MonthTask } from "./dashboard-tasks";
+import { TASK_STYLE } from "./task-style";
 
 /** Telefonda / geniş ekranda gizlenen kopyalar (phoneChecklist: DOM sırası görünen sırayla aynı kalsın diye) */
 const VIEW: Record<ChecklistView, string | undefined> = { phone: "sm:hidden", wide: "max-sm:hidden", all: undefined };
@@ -34,7 +28,7 @@ export function ChecklistTasks({ tasks, laterLabel }: { tasks: MonthTask[]; late
     <div className="px-5 pb-5 max-sm:px-4 max-sm:pb-4">
       <ul id={listId} className="grid gap-2.5 max-sm:gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map(({ task: t, next, compact, view }) => {
-          const st = STYLE[t.status];
+          const st = TASK_STYLE[t.status];
           // Yalnızca telefonda tek satır (sm ve üstünde sınıfların etkisi yok)
           const short = compact && !details;
           return (

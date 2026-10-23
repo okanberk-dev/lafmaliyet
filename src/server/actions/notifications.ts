@@ -4,7 +4,7 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, lateCorrections } from "@/lib/cash-report";
+import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, money, monthShort, tl } from "@/lib/format";
@@ -68,8 +68,7 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   const day = businessDate(now);
   const reports = await cashReportsBetween(addDays(day, -6), day);
   if (user.role !== "admin") {
-    const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
-    if ((hour >= 5 && hour < 20) || reports.some((r) => r.date === day)) return [];
+    if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
     return [
       {
         id: `kasa-bekliyor-${day}`,

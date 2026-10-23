@@ -95,3 +95,18 @@ export async function lastParasutSyncErrorAt(): Promise<string | null> {
     .limit(1);
   return run?.startedAt.toISOString() ?? null;
 }
+
+/**
+ * Günlük eşitlemenin (tedarikçi geçmişi hariç) son başarılı çalışmasının başlangıcı (cron, sabah işinin yeniden
+ * denemesi ya da "Şimdi eşitle"). Bugün ekranı, Paraşüt işinin hatasından sonra başarılı bir eşitleme olduysa o hatayı
+ * göstermez (src/app/panel/bugun/logic.ts systemIssues).
+ */
+export async function lastParasutSyncOkAt(): Promise<string | null> {
+  const [run] = await getDb()
+    .select({ startedAt: s.parasutSyncRuns.startedAt })
+    .from(s.parasutSyncRuns)
+    .where(and(eq(s.parasutSyncRuns.status, "ok"), ne(s.parasutSyncRuns.trigger, "history")))
+    .orderBy(desc(s.parasutSyncRuns.startedAt))
+    .limit(1);
+  return run?.startedAt.toISOString() ?? null;
+}

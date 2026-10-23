@@ -15,8 +15,9 @@ uygulama siparişleri, sipariş zili ve
 tek dokunuşla aşama: Hazır, Masaya götürüldü, Teslim edildi ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), sitenin
 online satışlarının kâr-zarara, tüketime ve kasa raporuna girmesi ([docs/SITE-SATIS.md](docs/SITE-SATIS.md)),
 personelin reçete değişikliği önerip yöneticinin önce / sonra farkıyla onayladığı akış, herkesin kendi
-hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) ve
-stok farkını açıklayan zayi / ikram kaydı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)).
+hatırlatıcıları, e-posta ve WhatsApp'la giden gün sonu kasa raporu ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)),
+stok farkını açıklayan zayi / ikram kaydı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) ve günün işlerini rol rol tek
+ekranda toplayan Bugün ([docs/BUGUN.md](docs/BUGUN.md)).
 
 - **Adres:** https://ladmin.laffogato.net (kafenin sitesi laffogato.net ayrı projede kalır)
 - **Frontend:** Next.js 16 (App Router, Cache Components), React 19, Tailwind CSS 4, Recharts, Motion
@@ -39,6 +40,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Ekran | Adres | Excel karşılığı |
 |-------|-------|-----------------|
 | Genel bakış | `/panel` | Panel |
+| Bugün: günün işleri ve durumu (dünkü / bugünkü kasa raporu, zayi / ikram, ay sonu sayımı; yöneticiye günlük işlerin sorunları, ödemeler, fatura kontrolü, ürün bağlantıları, fiyatı girilmemiş hammaddeler, reçete ve fiyat onayları, hammadde zammı, kasada değişecek fiyatlar; kasa farkı, açılış ↔ devir ve ertesi gün düzeltme), Hatırlatıcılarım (tamamlandı), Yaklaşan ödemeler (yönetici), Bugün kafede (karaoke, uygulama siparişleri; tutar yok). Personel girişte burada açılır ([docs/BUGUN.md](docs/BUGUN.md)) | `/panel/bugun` | — (yeni) |
 | Ürünler, reçete kartı (Hammadde zamları: önerilen fiyat ve zammın ayda kaç lira kâr götürdüğü) | `/panel/urunler`, `/panel/urunler/[id]` | Ürün Kârlılık, Reçete Kartları |
 | Site menüsü: ürünleri laffogato.net menüsündeki kalemlere bağlama (öneriler), bağlantının durumu, Siteyle eşitle ([docs/SITE-MENU.md](docs/SITE-MENU.md)) | `/panel/urunler/site` | — (yeni) |
 | Fiyatlar: toplu değiştir (yüzde, tutar ya da önerilen fiyat; önizleme ve aylık etki), kasaya (ModPOS) işle, fiyat geçmişi ve toplu değişikliği geri alma ([docs/FIYATLAR.md](docs/FIYATLAR.md)) | `/panel/urunler/fiyatlar` | — (yeni) |
@@ -65,21 +67,24 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Yardım | `/panel/yardim` | Nasıl Kullanılır |
 | Giriş, davetle parola belirleme, QR menü (`/` panele yönlendirir) | `/giris`, `/davet`, `/menu` | — (yeni) |
 | Excel'e aktar / tam yedek / sağlık / menü JSON / fatura belgesi ve kalemleri | `/api/export`, `/api/yedek` (parola onayından sonra verilen iki dakikalık bağlantıyla, yalnız yönetici), `/api/health` (`?isler=1`: günlük işlerin durumu, sorun varsa 503), `/api/menu`, `/api/faturalar/[id]/belge`, `/api/faturalar/[id]/kalemler`, `/api/hammaddeler/[id]/fiyatlar` (tedarikçilere göre fiyat) | — |
-| Günlük işler (Vercel Cron): Paraşüt eşitlemesi, sabah e-postası, hatırlatıcı özeti, karaoke ve site menüsü eşitlemesi, online satışlar; her çalışma `job_runs`'a yazılır, çalışmayan ya da hata veren iş zil, Genel bakış ve e-postayla bildirilir (docs/BILDIRIMLER.md › Sistem uyarıları) | `/api/cron/parasut`, `/api/cron/gunluk` | — |
+| Günlük işler (Vercel Cron): Paraşüt eşitlemesi, sabah e-postası, hatırlatıcı özeti, karaoke ve site menüsü eşitlemesi, online satışlar; her çalışma `job_runs`'a yazılır, çalışmayan ya da hata veren iş zil, Genel bakış, Bugün ve e-postayla bildirilir (docs/BILDIRIMLER.md › Sistem uyarıları) | `/api/cron/parasut`, `/api/cron/gunluk` | — |
 | Açık sekmenin canlı verisi (ETag / 304), laffogato.net'in karaoke, menü ve sipariş pingleri, bar ekranının sipariş isteği | `/api/canli`, `/api/karaoke/ping`, `/api/menu/ping`, `/api/orders/ping`, `/api/siparisler` | — |
 
-Menü kenar çubuğunda dokuz öğeye toplandı: Genel bakış · Karaoke · Menü (Ürünler, Hammaddeler, Reçete defteri,
+Menü kenar çubuğunda on öğeye toplandı: Genel bakış · Bugün · Karaoke · Menü (Ürünler, Hammaddeler, Reçete defteri,
 Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider, Giderler & personel,
 Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
-Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Satışlar · Faturalar · Ödemeler · Menü çubuğu var. ⌘K
+Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Bugün · Kasa · Ödemeler · Menü çubuğu var (Satışlar ve
+Faturalar Menü'de). ⌘K
 (Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
 eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini ve fiyat onaylarını, kişisel
 hatırlatıcıları ve uyarıları (kasada değişecek fiyatlar, zammın aylık kâr etkisiyle hammadde zammı, fiyatı girilmemiş hammaddeler, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
 var.
 
-Personel rolü yalnızca **Karaoke**, **Kasa raporu**, **Zayi & ikram**, **Reçete defteri** (değişiklik ya da yeni ürün
+Personel rolü yalnızca **Bugün** (günün işleri: kasa raporu, zayi / ikram, ay sonu sayımı; yönetici bilgisi yüklenmez),
+**Karaoke**, **Kasa raporu**, **Zayi & ikram**, **Reçete defteri** (değişiklik ya da yeni ürün
 önerir; yönetici onaylayınca uygulanır), **Stok sayımı** (yalnız bu ay ve geçen ay; listeye kalem de ekler), **Hatırlatıcılarım** ve **Hesabım**
-ekranlarını görür; telefonda altta Karaoke · Kasa · Zayi · Sayım · Reçeteler çubuğu var. Personelin zili yalnız kendi hatırlatıcılarını, önerilerinin sonucunu ve akşam bekleyen kasa raporunu gösterir.
+ekranlarını görür; girişte Bugün açılır. Telefonda altta Bugün · Karaoke · Kasa · Zayi · Reçeteler çubuğu var (Stok sayımı
+ve Hatırlatıcılarım üst çubuktaki menüde; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar). Personelin zili yalnız kendi hatırlatıcılarını, önerilerinin sonucunu ve akşam bekleyen kasa raporunu gösterir.
 Maliyet, maaş, kâr ve karaoke tutarları personele gösterilmez. Hangi rolün hangi ekranı açtığı tek yerde:
 `src/lib/roles.ts` (proxy, giriş sonrası yönlendirme ve menü bunu kullanır).
 

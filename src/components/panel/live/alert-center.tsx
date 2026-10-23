@@ -93,10 +93,10 @@ export function AlertCenter({ role }: { role: Role }) {
   const overtime = prefs.karaokeAlarms && now ? sessions.filter((s) => phase(s, now) === "overtime") : [];
   const overtimeKey = overtime.map((s) => s.id).join(",");
 
-  /** Karaoke ya da hatırlatıcı ekranındaysa sunucu bileşenleri de yenilensin */
+  /** Karaoke, hatırlatıcı ya da Bugün ekranındaysa sunucu bileşenleri de yenilensin (Bugün ikisini de gösterir) */
   const refreshScreen = useCallback(() => {
     const p = pathRef.current;
-    if (p.startsWith("/panel/karaoke") || p.startsWith("/panel/hatirlaticilarim")) router.refresh();
+    if (p.startsWith("/panel/karaoke") || p.startsWith("/panel/hatirlaticilarim") || p.startsWith("/panel/bugun")) router.refresh();
   }, [router]);
 
   // Açılışta ve sekmeye dönünce, ağ gelince canlı veri

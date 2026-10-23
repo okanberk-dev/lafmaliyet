@@ -32,6 +32,10 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(homeFor("admin"), "/panel");
   assert.equal(homeFor("staff"), STAFF_HOME);
   assert.ok(canOpen("staff", STAFF_HOME));
+  // Personel girişte Bugün'de açılır (günün işleri; ay sonu sayımı orada satır olarak çıkar)
+  assert.equal(STAFF_HOME, "/panel/bugun");
+  assert.ok(canOpen("staff", "/panel/bugun"));
+  assert.equal(canOpen("staff", "/panel/bugunler"), false);
 });
 
 test("menüdeki her öğenin rolü erişim kuralıyla aynı (personel menüde gördüğü her ekrana girebilir, başkasını görmez)", () => {

@@ -8,14 +8,14 @@ import { test } from "node:test";
 import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, overdueCount } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 
-test("yönetici alt menüsü: Genel bakış, Satışlar, Faturalar, Ödemeler, Menü", () => {
+test("yönetici alt menüsü: Genel bakış, Bugün, Kasa, Ödemeler, Menü (Satışlar ve Faturalar çekmecede)", () => {
   assert.deepEqual(
     BOTTOM_NAV.admin.map((i) => i.label),
-    ["Genel bakış", "Satışlar", "Faturalar", "Ödemeler", "Menü"],
+    ["Genel bakış", "Bugün", "Kasa", "Ödemeler", "Menü"],
   );
   assert.deepEqual(
     BOTTOM_NAV.admin.map((i) => i.href ?? null),
-    ["/panel", "/panel/satislar", "/panel/faturalar", "/panel/hatirlaticilar", null],
+    ["/panel", "/panel/bugun", "/panel/kasa", "/panel/hatirlaticilar", null],
   );
   assert.equal(BOTTOM_NAV.admin.find((i) => i.id === "odemeler")?.badge, "overdue");
 });
@@ -24,19 +24,23 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
   assert.deepEqual(
     BOTTOM_NAV.staff.map((i) => [i.label, i.href]),
     [
+      ["Bugün", "/panel/bugun"],
       ["Karaoke", "/panel/karaoke"],
       ["Kasa", "/panel/kasa"],
       ["Zayi", "/panel/zayi"],
-      ["Sayım", "/panel/sayim"],
       ["Reçeteler", "/panel/receteler"],
     ],
   );
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
-  // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü)
+  // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü), Sayım (çekmece; ay sonunda
+  // Bugün'de satır)
   assert.deepEqual(
     STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
-    ["/panel/hatirlaticilarim", "/panel/hesap"],
+    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/sayim"],
   );
+  // Beş öğe: 390 px'te hücre başına 78 px
+  assert.equal(BOTTOM_NAV.staff.length, 5);
+  assert.equal(BOTTOM_NAV.admin.length, 5);
 });
 
 test("her alt menü bağlantısı kenar çubuğunda da var (çekmecede kaybolan ekran yok)", () => {
@@ -50,8 +54,11 @@ test("her alt menü bağlantısı kenar çubuğunda da var (çekmecede kaybolan 
 test("etkin öğe: adres eşleşmesi, alt sayfalar, çekmecedeki ekranlar Menü'yü yakar", () => {
   const admin = BOTTOM_NAV.admin;
   assert.equal(bottomNavActive(admin, "/panel"), "genel");
-  assert.equal(bottomNavActive(admin, "/panel/satislar"), "satislar");
-  assert.equal(bottomNavActive(admin, "/panel/faturalar"), "faturalar");
+  assert.equal(bottomNavActive(admin, "/panel/bugun"), "bugun");
+  assert.equal(bottomNavActive(admin, "/panel/kasa"), "kasa");
+  // Çubuktan çıkan Satışlar ve Faturalar çekmecede: "Menü"
+  assert.equal(bottomNavActive(admin, "/panel/satislar"), "menu");
+  assert.equal(bottomNavActive(admin, "/panel/faturalar"), "menu");
   assert.equal(bottomNavActive(admin, "/panel/hatirlaticilar"), "odemeler");
   // "/panel" yalnızca tam eşleşir: başka her ekran Genel bakış'ı yakmaz
   assert.equal(bottomNavActive(admin, "/panel/urunler"), "menu");
@@ -65,7 +72,9 @@ test("etkin öğe: adres eşleşmesi, alt sayfalar, çekmecedeki ekranlar Menü'
 
 test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", () => {
   const staff = BOTTOM_NAV.staff;
-  assert.equal(bottomNavActive(staff, "/panel/sayim"), "sayim");
+  assert.equal(bottomNavActive(staff, "/panel/bugun"), "bugun");
+  // Sayım çekmecede (ay sonunda Bugün'de satır): hiçbir öğe yanmaz
+  assert.equal(bottomNavActive(staff, "/panel/sayim"), null);
   assert.equal(bottomNavActive(staff, "/panel/receteler"), "receteler");
   assert.equal(bottomNavActive(staff, "/panel/hesap"), null);
   assert.equal(bottomNavActive(staff, "/panel/kasa"), "kasa");
@@ -73,7 +82,7 @@ test("personelde Menü öğesi yok: eşleşmeyen adres hiçbir öğeyi yakmaz", 
   assert.equal(bottomNavActive(staff, "/panel/hatirlaticilarim"), null);
   assert.equal(bottomNavActive(staff, "/panel/zayi"), "zayi");
   assert.equal(bottomNavActive(staff, "/panel/tutarlilik"), null);
-  assert.equal(bottomNavActive(staff, "/panel/sayim", true), "sayim");
+  assert.equal(bottomNavActive(staff, "/panel/bugun", true), "bugun");
 });
 
 test("gecikmiş ödeme sayısı yalnızca ödeme grubundaki 'danger' bildirimleri sayar", () => {
@@ -122,5 +131,6 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
   assert.equal(mobileTitleFor("/panel/hatirlaticilarim"), "Hatırlatıcılarım");
   assert.equal(mobileTitleFor("/panel/onaylar"), "Reçete onayları");
+  assert.equal(mobileTitleFor("/panel/bugun"), "Bugün");
   assert.equal(mobileTitleFor("/panel/bilinmeyen"), "L'Affogato");
 });

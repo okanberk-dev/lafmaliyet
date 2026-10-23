@@ -1,7 +1,8 @@
 # Gün sonu kasa raporu
 
 Ekran: **Kasa raporu** (`/panel/kasa`). Personel her akşam kapanışta ModPOS'tan Z raporunu alır, kasadaki nakdi sayar
-ve buraya girer. Telefonda alt menüde **Kasa**.
+ve buraya girer. Telefonda iki rolün de alt menüsünde **Kasa**; günün kasa işi **Bugün** ekranında da satır olarak
+görünür ([BUGUN.md](BUGUN.md)).
 
 ## Personel ne girer
 
@@ -165,6 +166,10 @@ silinen rapor ayın rakamını hemen değiştirir.
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa
     ve son 7 günün bir raporu ertesi gün kasa alanı değiştirilerek düzeltildiyse bildirim (açılış uyarısı rapor
     yeniden gönderilince, düzeltme uyarısı yeni bir ertesi gün düzeltmesiyle yeniden okunmamış olur).
+- **Bugün ekranı** (`/panel/bugun`): kasa satırı gündüz "Akşam" (sonra), 20:00'den sonra "Yapılacak" (zil ile aynı
+  kural, `isCashEvening`); personelde gönderilince "Gönderildi", dünün raporu girilmediyse "Dünkü kasa raporu"
+  (bugün de girilebilir). Yöneticiye dünkü ve bugünkü raporun farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam);
+  açılış devirle tutmuyorsa ya da rapor ertesi gün düzeltildiyse satır "Sorun var" olur ve açıklamaya yazılır.
 
 ## Yönetici
 

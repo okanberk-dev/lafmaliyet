@@ -142,7 +142,7 @@ Tek fiyat değişikliğinden sonra bildirim kasayı söyler: bağlı olmayan ür
 Fiyatlar › Kasaya işle listesine eklendi.", bağlı üründe sitenin hatırlatmasıyla birlikte; fiyat kasadakine döndüyse
 kasa yazılmaz. **Zil** (yalnız yönetici, Uyarılar): "Kasada değişecek N fiyat", Kasaya işle'ye götürür; listeye yeni
 fiyat girince yeniden okunmamış olur. Sabah e-postasına girmez (D2). Sayı ve en eski / en yeni an tek sorguyla
-`posPendingSummary()`'den (Ürünler başlığı, sekme, zil; Bugün ekranı da bunu okuyacak).
+`posPendingSummary()`'den (Ürünler başlığı, sekme, zil ve Bugün ekranının "Kasadaki fiyatlar" satırı).
 
 ## Geçmiş
 

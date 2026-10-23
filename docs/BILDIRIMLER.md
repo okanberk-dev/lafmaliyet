@@ -151,6 +151,10 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 | `CRON_SECRET` tanımlı değil | kırmızı, tek iş uyarısı | kırmızı şerit | — (hiçbir iş çalışmaz) |
 | Son yedek 30 günden eski ya da hiç yedek yok (işlerden bağımsız) | mavi, Ayarlar › Yedek'e götürür ([YEDEK.md](YEDEK.md)) | — | — |
 
+- **Bugün ekranı** ([BUGUN.md](BUGUN.md)): kırmızı uyarılar yöneticiye listenin ilk satırında ("Günlük işler", sorun
+  var) görünür ve Ayarlar › Günlük işler'e götürür. Bugün'de ayrı bir "Paraşüt eşitlemesi başarısız" satırı olmadığı
+  için Paraşüt işinin hatası, eşitlemenin kendi hatası olsa da orada yazılır; sonradan başarılı bir eşitleme olunca
+  (sabah işinin yeniden denemesi ya da Paraşüt › Şimdi eşitle) kalkar, zildeki eşitleme satırı gibi.
 - **Bekçi:** sabah e-postasını gönderen iş bozulursa bunu kendisi söyleyemez. Paraşüt işi her sabah önce dünkü sabah
   işine bakar; çalışmadıysa ya da hata verdiyse sabah e-postasının alıcılarına kısa bir **sistem uyarısı e-postası**
   gider (konu "L'Affogato · Dünkü sabah işi çalışmadı (21 Ekim)"; ne yapılacağıyla). Bekçi en çok 8 saniye bekletir,

@@ -17,6 +17,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
+  ListTodo,
   MicVocal,
   Package,
   Receipt,
@@ -82,6 +83,13 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Günlük",
     items: [
+      {
+        href: "/panel/bugun",
+        label: "Bugün",
+        icon: ListTodo,
+        roles: ["admin", "staff"],
+        keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
+      },
       { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
       { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
@@ -176,6 +184,8 @@ export interface NavNode {
 
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
+  // Günün işleri (docs/BUGUN.md); personelde ağacın ilk öğesi ve girişte açılan ekran
+  { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun", roles: ["admin", "staff"] },
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
   // Personelde üst düzeyde; yönetici Satış & gider altında görür (aynı ekran)
   { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
@@ -273,9 +283,10 @@ export function isSamePage(href: string | null | undefined, pathname: string): b
 }
 
 /**
- * Telefon ve tabletteki alt menü (lg altında). Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey orada).
- * Personel: erişebildiği beş ekranın hepsi (src/lib/roles.ts STAFF_PATHS). `badge: "overdue"` öğesinde gecikmiş ödeme
- * sayısı görünür.
+ * Telefon ve tabletteki alt menü (lg altında), beş öğe. Yönetici: dört sık ekran + "Menü" (çekmeceyi açar, her şey
+ * orada; ayda bir açılan Satışlar ve Faturalar da). Personel: günün beş ekranı; Sayım ve Hatırlatıcılarım çekmecede
+ * (üst çubuktaki menü düğmesi), ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar. `badge: "overdue"` öğesinde
+ * gecikmiş ödeme sayısı görünür.
  */
 export interface BottomNavItem {
   id: string;
@@ -290,17 +301,17 @@ export interface BottomNavItem {
 export const BOTTOM_NAV: Record<"admin" | "staff", BottomNavItem[]> = {
   admin: [
     { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel" },
-    { id: "satislar", label: "Satışlar", icon: Receipt, href: "/panel/satislar" },
-    { id: "faturalar", label: "Faturalar", icon: FileText, href: "/panel/faturalar" },
+    { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun" },
+    { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
     { id: "odemeler", label: "Ödemeler", icon: BellRing, href: "/panel/hatirlaticilar", badge: "overdue" },
     { id: "menu", label: "Menü", icon: LayoutGrid },
   ],
-  // Günün işleri (alt menü beş öğe); Hatırlatıcılarım çekmece menüde ve zilde, Hesabım profil menüsünde
+  // Günün işleri; Sayım ve Hatırlatıcılarım çekmece menüde (Hatırlatıcılarım zilde de), Hesabım profil menüsünde
   staff: [
+    { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun" },
     { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke" },
     { id: "kasa", label: "Kasa", icon: Banknote, href: "/panel/kasa" },
     { id: "zayi", label: "Zayi", icon: Gift, href: "/panel/zayi" },
-    { id: "sayim", label: "Sayım", icon: ClipboardList, href: "/panel/sayim" },
     { id: "receteler", label: "Reçeteler", icon: BookOpen, href: "/panel/receteler" },
   ],
 };
