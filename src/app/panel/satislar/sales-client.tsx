@@ -419,7 +419,7 @@ function ProductPicker({
             <X size={15} /> Eşleşmeyi kaldır
           </Button>
         </div>
-        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto rounded-2xl bg-surface ring-1 ring-line-strong">
+        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong">
           {list.map((p) => {
             const current = !isService && p.id === currentId;
             return (
@@ -1216,7 +1216,7 @@ export function SalesTable({
           </>
         }
       >
-        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto rounded-2xl bg-surface text-sm ring-1 ring-line-strong">
+        <ul className="scroll-thin max-h-80 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface text-sm ring-1 ring-line-strong">
           {suggestions.map(({ row, product }) => (
             <li key={row.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2">
               <span className="min-w-0 font-medium break-words text-ink">{row.posName}</span>

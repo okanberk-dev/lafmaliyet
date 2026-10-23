@@ -125,6 +125,27 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
   (iOS ondalık klavyesinde eksi yok), gün sayısı gibi tam sayılarda `inputMode="numeric"`.
 - Masaüstü yardım metni ("tıklayın", "Enter kaydeder") telefonda dokunmaya göre yazılır.
 
+### Telefonda uygulama hissi (kontrol listesi)
+
+- Görünüm: `viewport-fit=cover`, `interactive-widget=resizes-content` (`src/app/layout.tsx`); yakınlaştırma asla
+  kapatılmaz (`user-scalable=no`, `maximum-scale` yok).
+- Dokunma vurgusu yok (`-webkit-tap-highlight-color: transparent`); basılan düğme hafifçe küçülür (`active:scale-[0.98]`).
+- Kontrollerde `touch-action: manipulation`: dokunuşa beklemeden tepki.
+- Düğme, sekme, anahtar, seçenek, menü öğesi ve açılır başlığın yazısı seçilmez, uzun basınca balon açılmaz
+  (`globals.css`); içerik (IBAN, fatura no, tutar) seçilebilir kalır, `body`'ye asla.
+- `text-size-adjust: 100%`: iOS yan çevrilince yazıyı büyütmez.
+- Kabuk ve pencere yükseklikleri `dvh`; `100vh` / `h-screen` yok.
+- Güvenli alan payı (`env(safe-area-inset-*)`): alt menü, üst çubuk, çekmece, alttan açılan pencere, bildirim, yüzen
+  çubuk.
+- Pencere, zil, ⌘K, çekmece ve pencere içindeki kayan listeler `overscroll-contain`; sayfanın dikey yenilemesi kalır
+  (kökte yalnız `overscroll-behavior-x: none`).
+- Üzerine gelme yalnız `(hover: hover)` ile: Tailwind'in `hover:` öneki zaten öyle; elle yazılan `:hover` (ör.
+  `has-[…:hover]`) `[@media(hover:hover)]:` ile sarılır.
+- Sayı alanlarında `inputMode` (yukarıdaki kural); dokunmatikte yazı alanı en az 16px.
+- Açık tema: `themeColor` beyaz, `colorScheme: light`.
+- **Son kontrol gerçek telefonda** (iPhone Safari, Android Chrome): yazı büyütme, uzun basma, kopyalama ve klavye
+  tarayıcının telefon görünümünde denenemez.
+
 ## 7. Kodlama kuralları (Next.js 16)
 
 - `cacheComponents` açık: veritabanı, çerez ya da `searchParams` okuyan her şey `<Suspense>` içinde; sayfa bileşeni

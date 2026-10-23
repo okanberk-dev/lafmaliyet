@@ -5,17 +5,13 @@ import { asc } from "drizzle-orm";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
-import { DEFAULT_SETTINGS } from "@/lib/constants";
+import { settingsFromRows } from "@/lib/constants";
 import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
+/** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
 export async function loadSettings(): Promise<Settings> {
-  const rows = await getDb().select().from(s.settings);
-  const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
-  for (const r of rows) {
-    if (r.key in DEFAULT_SETTINGS) out[r.key] = r.value;
-  }
-  return out as unknown as Settings;
+  return settingsFromRows(await getDb().select().from(s.settings));
 }
 
 /** Hesaplama motorunun ihtiyaç duyduğu bütün veriyi tek seferde, paralel okur. */
@@ -96,6 +92,7 @@ export async function loadDataset(): Promise<Dataset> {
       priceSource: i.priceSource,
       countUnit: i.countUnit,
       countGroup: i.countGroup,
+      countFrom: i.countFrom,
       sortOrder: i.sortOrder,
       active: i.active,
     })),

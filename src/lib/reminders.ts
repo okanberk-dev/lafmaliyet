@@ -242,6 +242,7 @@ export function digestSummary({
   prices = 0,
   syncError = false,
   system = 0,
+  holds = 0,
 }: {
   count?: number;
   invoices?: number;
@@ -249,10 +250,13 @@ export function digestSummary({
   syncError?: boolean;
   /** Günlük işlerin sorunları (Sistem uyarıları bölümü) */
   system?: number;
+  /** Son e-postadan beri onaya düşen hammadde fiyatları (Paraşüt bölümü) */
+  holds?: number;
 }): string {
   return [
     count ? `${count} hatırlatma` : "",
     invoices ? `${invoices} yeni fatura` : "",
+    holds ? `${holds} fiyat onayı` : "",
     prices ? `${prices} zam` : "",
     syncError ? "Paraşüt eşitleme hatası" : "",
     system ? `${system} sistem uyarısı` : "",

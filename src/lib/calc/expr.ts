@@ -2,7 +2,7 @@ import { RECIPE_PARAMS } from "../constants";
 import type { Settings } from "./types";
 
 // Reçete miktarları için küçük ve güvenli bir formül değerlendirici.
-// Desteklenen: sayılar (1,5 veya 1.5), + - * / ve parantez, Ayarlar'daki değişkenler (ShotTek, Pompa ...).
+// Desteklenen: sayılar (1,5 veya 1.5), + - * / ve parantez, Ayarlar'daki değişkenler (ShotTek, Pompa, PurePompa ...).
 // eval kullanılmaz; yalnızca bu dilbilgisi kabul edilir.
 
 type Token = { t: "num"; v: number } | { t: "id"; v: string } | { t: "op"; v: string };
@@ -43,7 +43,33 @@ function tokenize(src: string): Token[] {
   return out;
 }
 
-const PARAM_LOOKUP = new Map(RECIPE_PARAMS.map((p) => [p.name.toLowerCase(), p.key]));
+/**
+ * Değişken adı büyük/küçük harf ve Türkçe harf farkı gözetmeden aranır: "PürePompa" = "PurePompa", "SHOTÇİFT" =
+ * "ShotCift". Adlar ASCII yazılı; Türkçe klavyeyle "ü" ya da "ç" yazan da aynı ölçüyü bulsun.
+ */
+const ASCII_OF: Record<string, string> = { ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u" };
+const paramName = (name: string) => name.toLocaleLowerCase("tr-TR").replace(/[çğıöşü]/g, (c) => ASCII_OF[c]);
+
+const PARAM_LOOKUP = new Map(RECIPE_PARAMS.map((p) => [paramName(p.name), p.key]));
+
+/**
+ * Formülde geçen ayarlar (Ayarlar'daki anahtarlarıyla): "1,5*PurePompa" → pompaPure, "2*Pompa" → pompa. Ad tam
+ * eşleşir ("PurePompa" Pompa sayılmaz); okunamayan formülde boş küme.
+ */
+export function formulaParams(src: string): Set<keyof Settings> {
+  const out = new Set<keyof Settings>();
+  let tokens: Token[];
+  try {
+    tokens = tokenize(src.trim().replace(/^=/, ""));
+  } catch {
+    return out;
+  }
+  for (const tok of tokens) {
+    const key = tok.t === "id" ? PARAM_LOOKUP.get(paramName(tok.v)) : undefined;
+    if (key) out.add(key);
+  }
+  return out;
+}
 
 export function evaluateExpression(src: string, settings: Settings): number {
   const tokens = tokenize(src.trim().replace(/^=/, ""));
@@ -76,7 +102,7 @@ export function evaluateExpression(src: string, settings: Settings): number {
     if (!tok) throw new Error("Formül eksik");
     if (tok.t === "num") return tok.v;
     if (tok.t === "id") {
-      const key = PARAM_LOOKUP.get(tok.v.toLowerCase());
+      const key = PARAM_LOOKUP.get(paramName(tok.v));
       if (!key) throw new Error(`Bilinmeyen değişken: ${tok.v}`);
       return Number(settings[key]);
     }

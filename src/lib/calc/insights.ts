@@ -6,6 +6,7 @@ import {
   PANEL_GROUP_KEYWORDS,
   type PanelFixedGroup,
 } from "../constants";
+import { isUnpriced } from "../count-item";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type Model, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num } from "../format";
 import { isSummaryRow } from "./pos-paste";
@@ -694,13 +695,26 @@ export function alerts(model: Model, month: string): Alert[] {
       href: "/panel/urunler?durum=Düşük kâr",
     });
   }
-  const noRecipe = model.activeProducts.filter((p) => p.status === "Reçete yok");
+  // Fiyatı girilmemiş hammadde (çoğu sayımda "Listeye ekle" ile 0 ₺ açılan) kullanan ürünün maliyeti eksik. Bütün
+  // malzemesi fiyatsızsa maliyet 0 olur ve durumu "Reçete yok" görünür (Excel kuralı): reçetesi boş sayılmaz, burada söylenir
+  const unpricedIds = new Set(model.ds.ingredients.filter(isUnpriced).map((i) => i.id));
+  const usesUnpriced = (p: ProductCalc) => p.lines.some((l) => l.ingredient !== undefined && unpricedIds.has(l.ingredient.id));
+  const noRecipe = model.activeProducts.filter((p) => p.status === "Reçete yok" && !usesUnpriced(p));
   if (noRecipe.length) {
     out.push({
       level: "warning",
       title: `${noRecipe.length} ürünün reçetesi boş`,
       detail: nameList(noRecipe.map((p) => p.key), 5, "ürün"),
       href: "/panel/urunler?durum=Reçete yok",
+    });
+  }
+  const unpricedUse = unpricedIds.size ? model.activeProducts.filter(usesUnpriced) : [];
+  if (unpricedUse.length) {
+    out.push({
+      level: "warning",
+      title: `${unpricedUse.length} ürünün maliyeti eksik`,
+      detail: `${nameList(unpricedUse.map((p) => p.key), 5, "ürün")}. Reçetesinde fiyatı girilmemiş hammadde var; Hammaddeler'den paket fiyatını girin.`,
+      href: "/panel/hammaddeler?durum=fiyatsiz",
     });
   }
   const zeroQty = model.activeProducts.flatMap((p) =>

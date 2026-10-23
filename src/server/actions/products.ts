@@ -1,10 +1,9 @@
 "use server";
 
-import { and, eq, inArray, max, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { categoryFireDefault } from "@/app/panel/urunler/logic";
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
 import type { PriceAck } from "@/lib/calc/price-impact";
@@ -12,6 +11,7 @@ import { panelIsActive } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, loadSettings } from "@/server/data/dataset";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
+import { insertProduct } from "@/server/data/product-create";
 import { getDb, schema as s } from "@/server/db";
 import { applyPushed, pushSaleChange } from "@/server/site-menu/push";
 
@@ -114,52 +114,9 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
     const me = await requireAdmin();
     const data = productSchema.parse(input);
     const copyFromId = z.number().int().positive().nullish().parse(input.copyFromId) ?? null;
-    const db = getDb();
-    const result = await db.transaction(async (tx) => {
-      const [dup] = await tx
-        .select({ id: s.products.id })
-        .from(s.products)
-        .where(and(eq(s.products.name, data.name), eq(s.products.size, data.size)));
-      if (dup) throw new UserError(`“${data.name} · ${data.size}” zaten var; başka bir boy seçin ya da adı değiştirin`);
-      // Kopyalamada kaynağın ürüne özel fire oranı ve notu da gelir (Excel'de kart bloğu kopyalanınca G16 ve
-      // notlar da taşınır). QR menü görünürlüğü ve aktiflik varsayılanda kalır. Kopyasız yeni ürün, kategorisindeki
-      // ürünlerin en sık kullandığı zayi oranını alır (categoryFireDefault); ürün kartından değiştirilir.
-      let initial: { fireOverride: number | null; note: string | null };
-      if (copyFromId) {
-        const [src] = await tx
-          .select({ fireOverride: s.products.fireOverride, note: s.products.note })
-          .from(s.products)
-          .where(eq(s.products.id, copyFromId));
-        if (!src) throw new UserError("Kopyalanacak ürün bulunamadı; sayfayı yenileyip tekrar deneyin");
-        initial = src;
-      } else {
-        const peers = await tx.select({ id: s.products.id, fireOverride: s.products.fireOverride }).from(s.products).where(eq(s.products.categoryId, data.categoryId));
-        initial = { fireOverride: categoryFireDefault(peers), note: null };
-      }
-      const [{ m }] = await tx.select({ m: max(s.products.sortOrder) }).from(s.products);
-      const [created] = await tx
-        .insert(s.products)
-        .values({ ...data, ...initial, sortOrder: (m ?? 0) + 1 })
-        .returning({ id: s.products.id });
-      let lines = 0;
-      if (copyFromId) {
-        const items = await tx.select().from(s.recipeItems).where(eq(s.recipeItems.productId, copyFromId));
-        lines = items.length;
-        if (items.length) {
-          await tx.insert(s.recipeItems).values(
-            items.map((it) => ({
-              productId: created.id,
-              ingredientId: it.ingredientId,
-              qty: it.qty,
-              qtyExpr: it.qtyExpr,
-              note: it.note,
-              sortOrder: it.sortOrder,
-            })),
-          );
-        }
-      }
-      return { id: created.id, lines, fireOverride: initial.fireOverride, noteCopied: !!initial.note };
-    });
+    // Aynı ad + boy denetimi, kopyalama, kategoriden zayi oranı ve sıra: personelin yeni ürün önerisinin onayıyla
+    // ortak yardımcıda (src/server/data/product-create.ts)
+    const result = await getDb().transaction((tx) => insertProduct(tx, data, { copyFromId }));
     await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
     /** Kopyalamada neyin geldiği, kopyasızda kategoriden gelen zayi oranı: bildirimde söylenir (sessizce taşınmasın) */

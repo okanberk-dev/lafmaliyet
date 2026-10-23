@@ -9,6 +9,8 @@ import { MEASURE_FIELDS, RATE_FIELDS, shown, type FieldDef, type NumericKey } fr
 import { waterSource } from "./water-text";
 
 const field = (key: NumericKey): FieldDef => [...RATE_FIELDS, ...MEASURE_FIELDS].find((f) => f.key === key)!;
+/** Bölünmez boşluk: dar ekranda "püre 30" bir satırda, "ml" alt satırda kalmasın */
+const NBSP = "\u00a0";
 const value = (s: Settings, key: NumericKey) => shown(Number(s[key]), field(key));
 
 /** Oranlar: altı oranın kısa adlarıyla kayıtlı değerleri */
@@ -22,12 +24,12 @@ export function ratesSummary(s: Settings): string {
   ].join(" · ");
 }
 
-/** Reçete ölçüleri: en çok bakılan üç ölçü + açık gün; ölçülmemiş (varsayım) değer sayısı */
+/** Reçete ölçüleri: en çok bakılan ölçüler (shot, şurup ve püre pompası) + açık gün; ölçülmemiş (varsayım) değer sayısı */
 export function measuresSummary(s: Settings): string {
   const assumptions = MEASURE_FIELDS.filter((f) => f.assumption).length;
   return [
     `Shot ${value(s, "shotTek")} / ${value(s, "shotCift")} gr`,
-    `Pompa ${value(s, "pompa")} ml`,
+    `Pompa${NBSP}${value(s, "pompa")}${NBSP}ml · püre${NBSP}${value(s, "pompaPure")}${NBSP}ml`,
     `${num(Number(s.acikGun))} açık gün`,
     ...(assumptions ? [`${num(assumptions)} varsayım`] : []),
   ].join(" · ");

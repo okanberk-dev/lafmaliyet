@@ -6,15 +6,19 @@ import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate, diffKind, diffText } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
+import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, monthShort, tl } from "@/lib/format";
-import { REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
+import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
+import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { pendingHoldSummary } from "@/server/data/price-holds";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
+import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
 import { loadSystemAlerts } from "@/server/jobs/alerts";
@@ -127,39 +131,117 @@ async function reminderNotifications(user: CurrentUser): Promise<PanelNotificati
     }));
 }
 
-/** Yönetici: onay bekleyen reçete önerileri; personel: son bir haftada sonuçlanan önerileri */
+/**
+ * Yönetici: onay bekleyen reçete değişiklikleri (tek satır) ve yeni ürün önerileri (ad ve öneren başına bir satır);
+ * personel: son bir haftada sonuçlanan önerileri
+ */
 async function recipeNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   if (user.role === "admin") {
     const n = await countPendingRequests();
     if (!n) return [];
     const { pending } = await loadReviewQueue(0);
-    const names = [...new Set(pending.map((r) => r.productName))].slice(0, 3).join(", ");
-    return [
-      {
-        id: `onay-${n}-${pending.at(-1)?.updatedAt.toISOString() ?? ""}`,
+    const changes = pending.filter((r) => r.kind === "change");
+    const out: PanelNotification[] = [];
+    if (changes.length) {
+      const names = [...new Set(changes.map((r) => r.productName))].slice(0, 3).join(", ");
+      out.push({
+        id: `onay-${changes.length}-${changes.at(-1)?.updatedAt.toISOString() ?? ""}`,
         kind: "warning",
-        title: `${n} reçete değişikliği onay bekliyor`,
-        body: `Personel önerdi: ${names}${pending.length > 3 ? "…" : ""}`,
+        title: `${changes.length} reçete değişikliği onay bekliyor`,
+        body: `Personel önerdi: ${names}${changes.length > 3 ? "…" : ""}`,
         timeLabel: "",
         unread: true,
         href: "/panel/onaylar",
         group: "onay",
-      },
-    ];
+      });
+    }
+    const proposals = groupNewProposals(
+      pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })),
+    );
+    for (const g of proposals) {
+      out.push({
+        id: `onay-yeni-${g.ids.join("-")}`,
+        kind: "warning",
+        title: g.title,
+        body: g.message ? `Not: ${g.message}` : "Satış fiyatını yazıp onaylayın",
+        timeLabel: "",
+        unread: true,
+        href: `/panel/onaylar#oneri-${g.ids[0]}`,
+        group: "onay",
+      });
+    }
+    return out;
   }
   return (await loadMyRequests(user.id, 7))
     .filter((r) => r.status === "approved" || r.status === "rejected")
     .slice(0, 5)
-    .map((r) => ({
-      id: `oneri-${r.id}-${r.status}`,
-      kind: r.status === "approved" ? "info" : "warning",
-      title: `${r.productName} · ${SIZE_LABELS[r.size]}: ${REQUEST_STATUS_LABEL[r.status].toLocaleLowerCase("tr-TR")}`,
-      body: r.reviewNote ? `Yönetici: ${r.reviewNote}` : r.status === "approved" ? "Reçete kartı güncellendi" : "Reçete değişmedi",
-      timeLabel: r.reviewedAt ? dateTR(r.reviewedAt.toISOString().slice(0, 10)) : "",
+    .map((r): PanelNotification => {
+      const label = `${r.productName} · ${SIZE_LABELS[r.size]}`;
+      const common = {
+        id: `oneri-${r.id}-${r.status}`,
+        kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
+        timeLabel: r.reviewedAt ? dateTR(r.reviewedAt.toISOString().slice(0, 10)) : "",
+        unread: true,
+        group: "onay" as const,
+      };
+      if (r.kind === "new")
+        return {
+          ...common,
+          title: r.status === "approved" ? `${label} eklendi` : `${label} önerisi reddedildi`,
+          body: r.reviewNote ? `Yönetici: ${r.reviewNote}` : r.status === "approved" ? "Reçete defterinde" : "Ürün eklenmedi",
+          href: r.status === "approved" ? `/panel/receteler?ara=${encodeURIComponent(r.productName)}` : "/panel/receteler#onerilerim",
+        };
+      return {
+        ...common,
+        title: `${label}: ${REQUEST_STATUS_LABEL[r.status].toLocaleLowerCase("tr-TR")}`,
+        body: r.reviewNote ? `Yönetici: ${r.reviewNote}` : r.status === "approved" ? "Reçete kartı güncellendi" : "Reçete değişmedi",
+        href: "/panel/receteler#onerilerim",
+      };
+    });
+}
+
+/**
+ * Fiyatı girilmemiş hammaddeler (çoğu sayımda "Listeye ekle" ile eklenen kalem; paket fiyatı 0): yönetici
+ * Hammaddeler'in "Fiyat yok" süzgecinde fiyatını girer. Kimlik sayı ve en yeni kalemden: yeni kalem gelince yeniden
+ * okunmamış olur.
+ */
+async function unpricedNotifications(): Promise<PanelNotification[]> {
+  const u = await loadUnpricedIngredients();
+  if (!u.count) return [];
+  const text = unpricedNotice(u.count, u.names);
+  return [
+    {
+      id: `uyari-fiyatsiz-${u.count}-${u.newestId}`,
+      kind: "warning",
+      title: text.title,
+      body: text.body,
+      timeLabel: "",
       unread: true,
-      href: "/panel/receteler#onerilerim",
+      href: "/panel/hammaddeler?durum=fiyatsiz",
+      group: "uyari",
+    },
+  ];
+}
+
+/**
+ * Yönetici: Paraşüt faturasında şimdikinden %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatları (Hammaddeler ›
+ * Onay bekleyen fiyatlar). Kimlik sayıdan ve en yeni öneriden: yeni öneri gelince yeniden okunmamış olur.
+ */
+async function holdNotifications(): Promise<PanelNotification[]> {
+  const h = await pendingHoldSummary();
+  if (!h.count) return [];
+  return [
+    {
+      id: `fiyat-onay-${h.count}-${h.latestId}`,
+      kind: "warning",
+      title: `${h.count} hammadde fiyatı onay bekliyor`,
+      body: `${holdsSummary(h.items)}: faturadaki fiyat %40'tan fazla farklı`,
+      timeLabel: "",
+      unread: true,
+      href: HOLDS_HREF,
       group: "onay",
-    }));
+    },
+  ];
 }
 
 /** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
@@ -228,9 +310,10 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 
 /**
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
- * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar ve son satış ayının
- * uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel
- * yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
+ * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar, fiyatı girilmemiş
+ * hammaddeler ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk
+ * açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin sonucunu görür; maliyet, ödeme,
+ * fatura ve sistem bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
@@ -241,11 +324,13 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     cashNotifications(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...mine, ...recipes];
-  const [model, upcoming, invoices, system] = await Promise.all([
+  const [model, upcoming, invoices, system, unpriced, holds] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
+    unpricedNotifications().catch(() => []),
+    holdNotifications().catch(() => []),
   ]);
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
@@ -295,5 +380,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...cash, ...payments, ...invoices, ...priceNote, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...payments, ...invoices, ...priceNote, ...unpriced, ...warnings];
 }

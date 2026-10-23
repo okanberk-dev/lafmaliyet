@@ -26,7 +26,10 @@ export interface Settings {
   fire: number;
   shotTek: number;
   shotCift: number;
+  /** Şurup (ve sos) pompasının bir basışı, ml: formüllerde Pompa */
   pompa: number;
+  /** Püre pompasının bir basışı, ml: formüllerde PurePompa */
+  pompaPure: number;
   potGr: number;
   potMl: number;
   dondurmaTop: number;
@@ -60,6 +63,8 @@ export interface Ingredient {
   priceSource: PriceSource;
   countUnit: CountUnit | null;
   countGroup: string | null;
+  /** Sayım listesine girdiği ay (YYYY-MM): önceki aylarda, o ay sayılmadıysa listede çıkmaz; boşsa (Excel'den gelenler) her ayda */
+  countFrom?: string | null;
   sortOrder: number;
   active: boolean;
 }

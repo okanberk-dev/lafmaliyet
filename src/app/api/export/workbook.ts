@@ -413,6 +413,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
     ["Tek shot kahve (gr)", st.shotTek, null, "Reçetelerdeki ShotTek formülü."],
     ["Çift shot kahve (gr)", st.shotCift, null, "Reçetelerdeki ShotCift formülü."],
     ["1 pompa şurup (ml)", st.pompa, null, "Reçetelerdeki Pompa formülü."],
+    ["1 pompa püre (ml)", st.pompaPure, null, "Reçetelerdeki PurePompa formülü."],
     ["Filtre kahve: tam pot kahve (gr)", st.potGr, null, "Reçetelerdeki PotGr formülü."],
     ["Filtre kahve: tam pottan çıkan (ml)", st.potMl, null, "Reçetelerdeki PotMl formülü."],
     ["1 top dondurma (ml)", st.dondurmaTop, null, "Reçetelerdeki DondurmaTop formülü."],

@@ -112,3 +112,46 @@ export function RecipeDiff({ before, after, className }: { before: RecipeSnapsho
     </div>
   );
 }
+
+/**
+ * Yeni ürün önerisinin reçetesi (önceki hâli yok): malzeme ve miktar, satır notu altında. Maliyet göstermez; personelin
+ * "Önerilerim"i ve yöneticinin "Son kararlar"ı kullanır.
+ */
+export function RecipeList({ recipe, className }: { recipe: RecipeSnapshot; className?: string }) {
+  return (
+    <div className={cn("overflow-hidden rounded-2xl bg-surface ring-1 ring-line", className)}>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-line-strong text-left text-[13px] text-ink-soft">
+            <th scope="col" className="px-3 py-2 font-semibold">
+              Malzeme
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-semibold">
+              Miktar
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {recipe.items.length ? (
+            recipe.items.map((l, i) => (
+              <tr key={`${l.ingredientId}-${i}`} className="border-b border-line align-top last:border-0">
+                <td className="px-3 py-2">
+                  <span className="font-medium break-words text-ink">{l.name}</span>
+                  {l.note ? <span className="mt-1 block text-xs text-ink-mute">Not: {l.note}</span> : null}
+                </td>
+                <td className="px-3 py-2 text-right whitespace-nowrap text-ink tabular">{qtyLabel(l)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={2} className="px-3 py-3 text-[13px] text-ink-mute">
+                Malzeme yok.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {recipe.note ? <p className="border-t border-line px-3 py-2 text-[13px] break-words whitespace-pre-line text-ink-mute">{recipe.note}</p> : null}
+    </div>
+  );
+}

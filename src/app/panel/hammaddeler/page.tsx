@@ -10,9 +10,11 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
+import { factorHint, holdImpact, livePct, suggestedFactor } from "@/lib/price-hold";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { priceWindowStart } from "@/server/data/price-alerts";
+import { loadPriceHolds } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
 
 import { waterSource } from "../ayarlar/water-text";
@@ -21,6 +23,7 @@ import { ingredientBreakdowns, waterBreakdown } from "./breakdowns";
 import { sortCategories } from "./categories";
 import { CountUp, IngredientsClient, NewIngredientButton, type IngredientRow } from "./ingredients-client";
 import { ListAnchor } from "./list-anchor";
+import { PriceHolds, type HoldView, type RecentHoldView } from "./price-holds";
 
 export const metadata: Metadata = { title: "Hammaddeler" };
 
@@ -42,10 +45,11 @@ export default function IngredientsPage() {
 async function IngredientsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, history, links] = await Promise.all([
+  const [model, history, links, holds] = await Promise.all([
     loadModel(),
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
+    loadPriceHolds(),
   ]);
   const usageMonth = latestSalesMonth(model);
   const usage = usageMonth ? model.ingredientUsage(usageMonth) : new Map<number, number>();
@@ -74,6 +78,47 @@ async function IngredientsContent() {
     ).map((c) => [c.ingredientId, { pct: c.pct, at: c.changedAt }]),
   );
 
+  // Onay bekleyen fiyatlar: yüzde, çarpan ipucu ve ürün maliyetleri şimdiki fiyata göre (arada elle değişmiş olabilir)
+  const holdViews: HoldView[] = holds.pending.map((h) => {
+    const current = h.ingredient.packageSize > 0 ? h.ingredient.packagePrice / h.ingredient.packageSize : 0;
+    const proposed = h.packagePrice / h.packageSize;
+    const hint = factorHint(current, proposed);
+    return {
+      id: h.id,
+      ingredientId: h.ingredientId,
+      name: h.ingredient.name,
+      unit: h.ingredient.unit,
+      current,
+      proposed,
+      pct: livePct(proposed, current),
+      repeats: h.repeats,
+      supplier: h.supplier,
+      date: h.invoiceDate,
+      invoiceNo: h.invoiceNo,
+      productKey: h.productKey,
+      productName: h.productName,
+      quantity: h.quantity,
+      lineUnit: h.unit,
+      factor: h.factor,
+      last: h.lastUnitPrice !== null && h.lastDate && h.lastSupplier ? { unitPrice: h.lastUnitPrice, date: h.lastDate, supplier: h.lastSupplier } : null,
+      impact: holdImpact(model, h.ingredientId, proposed),
+      hint: hint ? { times: hint.times, direction: hint.direction } : null,
+      suggestedFactor: hint ? suggestedFactor(h.factor, hint) : null,
+    };
+  });
+  const recentHolds: RecentHoldView[] = holds.recent.map((h) => ({
+    id: h.id,
+    name: h.ingredient.name,
+    unit: h.ingredient.unit,
+    proposed: h.packagePrice / h.packageSize,
+    status: h.status as RecentHoldView["status"],
+    note: h.note,
+    stoppedUpdates: h.stoppedUpdates,
+    decidedByName: h.decidedByName,
+    decidedAt: h.decidedAt ?? h.createdAt,
+  }));
+  const holdBy = new Map(holdViews.map((v) => [v.ingredientId, { pct: v.pct, proposed: v.proposed, supplier: v.supplier, date: v.date }]));
+
   const rows: IngredientRow[] = model.ds.ingredients.map((i) => ({
     ...i,
     unitCost: model.unitCost.get(i.id) ?? 0,
@@ -85,6 +130,7 @@ async function IngredientsContent() {
     history: histBy.get(i.id) ?? [],
     deps: { counts: countsBy.get(i.id) ?? 0, purchases: purchasesBy.get(i.id) ?? 0, links: linksBy.get(i.id) ?? 0 },
     recentChange: recent.get(i.id) ?? null,
+    pendingHold: holdBy.get(i.id) ?? null,
   }));
 
   // Süzgeçler (?ara, ?durum, ?kategori, ?sirala) istemcide adresten okunur; ⌘K paleti ?ara=<ad> ile gönderir
@@ -176,6 +222,8 @@ async function IngredientsContent() {
           />
         </StatBreakdown>
       </div>
+      {/* Paraşüt faturasında %40'tan fazla farklı gelen fiyatlar (#fiyat-onayi); son 3 günde karar varsa da görünür */}
+      {holdViews.length || recentHolds.length ? <PriceHolds pending={holdViews} recent={recentHolds} /> : null}
       {/* Dökümdeki bağlantıların çapası (#hammadde-listesi): süzülmüş listeye kayar */}
       <ListAnchor>
         <IngredientsClient rows={rows} categories={categories} />

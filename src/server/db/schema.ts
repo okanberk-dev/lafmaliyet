@@ -86,6 +86,11 @@ export const ingredients = pgTable("ingredients", {
   priceSource: text("price_source", { enum: ["manual", "water"] }).notNull().default("manual"),
   countUnit: text("count_unit", { enum: ["KG", "LT", "ADET", "DİLİM"] }),
   countGroup: text("count_group"),
+  /**
+   * Sayım listesine girdiği ay (YYYY-MM): sayımda "Listeye ekle" ve sayim_yeni_kalemler migration'ı yazar. Daha önceki
+   * aylarda, o ay sayılmadıysa listede çıkmaz (sayımı bitmiş ay "kalem kaldı" demesin). Boşsa her ayda.
+   */
+  countFrom: text("count_from"),
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),
   updatedAt: updatedAt(),
@@ -613,6 +618,63 @@ export const parasutCategoryRules = pgTable("parasut_category_rules", {
   createdAt: createdAt(),
 });
 
+/**
+ * Paraşüt faturasından gelen, hammaddenin şimdiki birim fiyatından %40'tan fazla farklı fiyat: kendiliğinden uygulanmaz,
+ * yönetici onaylar ya da reddeder (docs/PARASUT.md 5b). Yanlış çarpan (koli ↔ adet) ya da tek seferlik bir fatura bütün
+ * reçete maliyetlerini sessizce değiştirmesin. Hammadde başına en çok bir bekleyen öneri olur.
+ */
+export const ingredientPriceHolds = pgTable(
+  "ingredient_price_holds",
+  {
+    id: serial("id").primaryKey(),
+    ingredientId: integer("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "cascade" }),
+    // Kaleme değil faturaya bağlı: kalemler her eşitlemede silinip yeniden yazılır (sync.ts, lines.ts)
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    productKey: text("product_key").notNull(),
+    productName: text("product_name").notNull(),
+    /** Bağlantının öneri anındaki çarpanı: bağlantı değişirse öneri geçersiz olur */
+    factor: doublePrecision("factor").notNull(),
+    /** Faturadaki kalemin miktarı, birimi ve KDV hariç net tutarı (öneri anındaki kopya; kalemler yeniden yazılır) */
+    quantity: doublePrecision("quantity").notNull(),
+    unit: text("unit"),
+    netTotal: doublePrecision("net_total").notNull(),
+    invoiceDate: text("invoice_date").notNull(),
+    supplier: text("supplier").notNull(),
+    invoiceNo: text("invoice_no"),
+    /** Önerilen paket fiyatı ve boyu (= çarpan); onaylanınca hammaddeye yazılır */
+    packagePrice: doublePrecision("package_price").notNull(),
+    packageSize: doublePrecision("package_size").notNull(),
+    /** Öneri anında (onaylanınca: değiştirilen) paket fiyatı, boyu ve "Tahmini" işareti; "Geri al" bunları yazar */
+    prevPackagePrice: doublePrecision("prev_package_price").notNull(),
+    prevPackageSize: doublePrecision("prev_package_size").notNull(),
+    prevIsEstimate: boolean("prev_is_estimate").notNull().default(false),
+    /** Aynı hammaddenin bir önceki faturadaki birim fiyatı (₺/gr, ₺/ml, ₺/adet), tarihi, tedarikçisi; yoksa boş */
+    lastUnitPrice: doublePrecision("last_unit_price"),
+    lastDate: text("last_date"),
+    lastSupplier: text("last_supplier"),
+    /** Arka arkaya kaç faturada benzer (±%10) fiyat geldi: 2+ ise fiyat büyük olasılıkla gerçek */
+    repeats: integer("repeats").notNull().default(1),
+    status: text("status", { enum: ["pending", "approved", "rejected", "superseded"] }).notNull().default("pending"),
+    /** Geçersiz kalma nedeni ("Daha yeni fatura geldi", "Çarpan değişti") ya da yöneticinin red notu */
+    note: text("note"),
+    /** Reddederken bu ürünün fiyat güncellemesi kapatıldı (geri almada yeniden açılır) */
+    stoppedUpdates: boolean("stopped_updates").notNull().default(false),
+    decidedBy: integer("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedByName: text("decided_by_name"),
+    /** Karar ya da geçersiz kalma anı ("Son kararlar" son 3 günü gösterir, "Geri al" 30 gün geçerli) */
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("ingredient_price_holds_pending_uq").on(t.ingredientId).where(sql`status = 'pending'`),
+    index("ingredient_price_holds_status_idx").on(t.status, t.createdAt),
+  ],
+);
+
 // ---------------------------------------------------------------- Hatırlatıcılar ve bildirimler
 /**
  * Ödeme ve beyan hatırlatıcıları. dueDate her zaman sıradaki (bekleyen) tarihtir; tekrar eden bir hatırlatıcı
@@ -691,17 +753,25 @@ export type RecipeSnapshot = {
   items: { ingredientId: number; name: string; unit: string; qty: number; qtyExpr: string | null; note: string | null }[];
 };
 
+/** Yeni ürün önerisinde önerilen ürün (yönetici onaylarken adı ve kategoriyi değiştirebilir; boy sabit) */
+export type ProposedProduct = { name: string; size: "M" | "L" | "Tek"; categoryId: number };
+
 /**
  * Personelin reçete defterinden önerdiği değişiklik: yönetici önceki ve önerilen reçeteyi yan yana görür, onaylarsa
  * reçete `after` ile değişir. Kişi başına ürün başına en çok bir bekleyen öneri olur (yenisi onu günceller).
+ * Yeni ürün önerisi (`kind = 'new'`) boy başına bir satırdır: ürün onaylanana kadar yoktur (`productId` boş,
+ * `proposed` ad / boy / kategori, `before` boş reçete); yönetici satış fiyatını yazıp onaylayınca ürün açılır ve
+ * `productId` ona bağlanır.
  */
 export const recipeChangeRequests = pgTable(
   "recipe_change_requests",
   {
     id: serial("id").primaryKey(),
-    productId: integer("product_id")
-      .notNull()
-      .references(() => products.id, { onDelete: "cascade" }),
+    productId: integer("product_id").references(() => products.id, { onDelete: "cascade" }),
+    /** change: var olan ürünün reçetesi değişsin; new: menüde olmayan ürün eklensin */
+    kind: text("kind", { enum: ["change", "new"] }).notNull().default("change"),
+    /** Yalnız yeni ürün önerisinde */
+    proposed: jsonb("proposed").$type<ProposedProduct>(),
     requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
     requestedByName: text("requested_by_name").notNull(),
     status: text("status", { enum: ["pending", "approved", "rejected", "withdrawn"] }).notNull().default("pending"),
@@ -721,7 +791,12 @@ export const recipeChangeRequests = pgTable(
   (t) => [
     index("recipe_change_requests_status_idx").on(t.status, t.createdAt),
     index("recipe_change_requests_product_idx").on(t.productId),
+    // Yeni ürün önerisinde productId boş: boşlar birbirini engellemez; aynı ad + boy kuralı eylemde, danışma kilidiyle
     uniqueIndex("recipe_change_requests_pending_uq").on(t.productId, t.requestedBy).where(sql`status = 'pending'`),
+    check(
+      "recipe_change_requests_kind_ck",
+      sql`(${t.kind} = 'change' and ${t.productId} is not null) or (${t.kind} = 'new' and ${t.proposed} is not null)`,
+    ),
   ],
 );
 

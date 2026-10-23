@@ -1,13 +1,17 @@
+import { Plus } from "lucide-react";
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
+import { pumpHint } from "@/lib/recipe-pump";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { countPendingRequests, loadMyRequests, pendingByProduct } from "@/server/data/recipe-requests";
+import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
 
+import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
 import { RecipeBook, type MyRequest, type ProposeKit, type RecipeGroup } from "./recipe-book";
 
@@ -15,17 +19,33 @@ export const metadata: Metadata = { title: "Reçete defteri" };
 
 export default function RecipeBookPage() {
   return (
-    <>
-      <PageHeader
-        title="Reçete defteri"
-        eyebrow="Menü"
-        description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik önerir, yönetici onaylayınca reçete değişir."
-        actions={<PrintButton />}
-      />
-      <Suspense fallback={<RecipeBookSkeleton />}>
-        <RecipeBookContent />
-      </Suspense>
-    </>
+    // Başlıktaki "Yeni ürün öner" / "Yeni ürün" role göre: başlık içerikle birlikte çizilir (bekleme sırasında eylemsiz)
+    <Suspense
+      fallback={
+        <>
+          <RecipeBookHeader />
+          <RecipeBookSkeleton />
+        </>
+      }
+    >
+      <RecipeBookContent />
+    </Suspense>
+  );
+}
+
+function RecipeBookHeader({ action }: { action?: ReactNode }) {
+  return (
+    <PageHeader
+      title="Reçete defteri"
+      eyebrow="Menü"
+      description="Baristalar için standart reçeteler: her ürünün her boyunda ne kadar malzeme kullanılacağı. Herkes aynı ölçüyle hazırlarsa fire ve maliyet farkı azalır. Personel değişiklik ya da yeni ürün önerir, yönetici onaylayınca uygulanır."
+      actions={
+        <>
+          {action}
+          <PrintButton />
+        </>
+      }
+    />
   );
 }
 
@@ -51,14 +71,17 @@ function RecipeBookSkeleton() {
 async function RecipeBookContent() {
   const user = await requireUser();
   const isAdmin = user.role === "admin";
-  const [model, mine, pendingTotal, pendingMap] = await Promise.all([
+  const [model, mine, pendingKinds, pendingMap, pendingNew] = await Promise.all([
     loadModel(),
     isAdmin ? Promise.resolve([]) : loadMyRequests(user.id),
-    isAdmin ? countPendingRequests() : Promise.resolve(0),
+    isAdmin ? countPendingByKind() : Promise.resolve({ change: 0, new: 0 }),
     isAdmin ? pendingByProduct() : Promise.resolve(new Map<number, number>()),
+    isAdmin ? Promise.resolve([]) : pendingNewProposals(),
   ]);
-  const myPending = new Map(mine.filter((r) => r.status === "pending").map((r) => [r.productId, r]));
+  // Kartın "Önerin onayda" rozeti yalnız reçete değişikliğinden (yeni ürün önerisinin ürünü henüz yok)
+  const myPending = new Map(mine.flatMap((r) => (r.status === "pending" && r.kind === "change" && r.productId !== null ? [[r.productId, r] as const] : [])));
   // Personel de bu sayfayı görür: buraya yalnızca ad, boy, miktar ve not geçer; maliyet, fiyat ve kâr asla geçmez.
+  // Şurup, sos ve püre satırlarının pompa karşılığı ("1,5 pompa") burada hesaplanır, sayfaya yalnız metni gider.
   const groups: RecipeGroup[] = model.categories
     .map((c) => {
       const products = model.activeProducts.filter((p) => p.product.categoryId === c.id);
@@ -87,6 +110,10 @@ async function RecipeBookContent() {
                 unit: l.ingredient?.unit ?? "",
                 packaging: l.isPackaging,
                 note: l.item.note,
+                pump: pumpHint(
+                  { qty: l.qty, unit: l.ingredient?.unit ?? "", qtyExpr: l.item.qtyExpr, category: l.ingredient?.category, packaging: l.isPackaging },
+                  model.settings,
+                ),
               })),
               myPending: pending ? { id: pending.id, after: pending.after, updatedAt: pending.updatedAt.toISOString() } : null,
               pendingCount: pendingMap.get(v.product.id) ?? 0,
@@ -97,8 +124,10 @@ async function RecipeBookContent() {
     })
     .filter((g) => g.products.length);
 
-  // Personelin öneri penceresi: malzeme adları, birimleri ve formüllerdeki ölçüler (shot, pompa…); fiyat yok
+  // Personelin öneri pencereleri: malzeme adları, birimleri ve formüllerdeki ölçüler (shot, pompa…); yeni ürün için
+  // kategoriler ve var olan ürünlerin ad + boyu (aynısı önerilmesin). Hiçbirinde tutar yok.
   let propose: ProposeKit | null = null;
+  let newProduct: NewProductKit | null = null;
   if (!isAdmin) {
     const used = new Set(model.activeProducts.flatMap((p) => p.lines.map((l) => l.item.ingredientId)));
     propose = {
@@ -107,10 +136,16 @@ async function RecipeBookContent() {
         .map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, active: i.active, packaging: i.category === PACKAGING_CATEGORY })),
       params: RECIPE_PARAMS.map((p) => ({ name: p.name, key: p.key, label: p.label, unit: p.unit, value: Number(model.settings[p.key]) })),
     };
+    newProduct = {
+      categories: model.categories.map((c) => ({ id: c.id, name: c.name })),
+      taken: model.ds.products.map((p) => ({ name: p.name, size: p.size })),
+      pending: pendingNew,
+    };
   }
 
   const myRequests: MyRequest[] = mine.map((r) => ({
     id: r.id,
+    kind: r.kind,
     productId: r.productId,
     productName: r.productName,
     size: r.size,
@@ -123,5 +158,19 @@ async function RecipeBookContent() {
     updatedAt: r.updatedAt.toISOString(),
   }));
 
-  return <RecipeBook groups={groups} canEdit={isAdmin} propose={propose} myRequests={myRequests} pendingTotal={pendingTotal} />;
+  // Yönetici ürünü doğrudan Ürünler › Yeni ürün'den açar; personel önerir
+  const action = isAdmin ? (
+    <ButtonLink href="/panel/urunler" variant="secondary">
+      <Plus size={16} aria-hidden="true" /> Yeni ürün
+    </ButtonLink>
+  ) : propose && newProduct ? (
+    <ProposeProductButton kit={propose} product={newProduct} />
+  ) : null;
+
+  return (
+    <>
+      <RecipeBookHeader action={action} />
+      <RecipeBook groups={groups} canEdit={isAdmin} propose={propose} myRequests={myRequests} pending={pendingKinds} />
+    </>
+  );
 }

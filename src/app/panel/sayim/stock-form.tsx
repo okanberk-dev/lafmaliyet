@@ -41,12 +41,14 @@ import { EmptyState, InfoTip, KeyValue, Stat } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
+import type { CountUnit } from "@/lib/calc/types";
 import { COUNT_UNITS } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { saveStockCounts, saveStockExtras } from "@/server/actions/stock";
 
 import { saveStaffStockExtras } from "./actions";
+import { AddCountItemDialog } from "./add-item";
 import { stockBreakdown } from "./breakdowns";
 import {
   activeGroupIndex,
@@ -537,6 +539,7 @@ export function StockCountForm({
   prevTotal,
   closingOverride,
   counter,
+  addItem = null,
 }: {
   month: string;
   monthLabel: string;
@@ -555,6 +558,8 @@ export function StockCountForm({
   closingOverride: number | null;
   /** "Sayan: … · son kayıt …" */
   counter: string | null;
+  /** "Listeye ekle" açık mı (kişi bu ayı değiştirebiliyorsa) ve grupları; null: düğme yok */
+  addItem?: { groups: { name: string; unit: CountUnit }[] } | null;
 }) {
   const reduce = useCalmMotion() ?? false;
   const all = groups.flatMap((g) => g.lines);
@@ -726,6 +731,42 @@ export function StockCountForm({
     document.querySelector<HTMLInputElement>(`input[data-extra-name="${focusExtra.current}"]`)?.focus();
     focusExtra.current = null;
   }, [extras.length]);
+
+  // ---------------------------------------------------------------- Listeye ekle (yeni sayım kalemi)
+  /** Açık "Sayım listesine ekle" penceresi; `name`: aramada bulunamayan ad */
+  const [adding, setAdding] = useState<{ name: string } | null>(null);
+  const canAddItem = addItem !== null && addItem.groups.length > 0;
+  /** Eklenen kalem sunucudan gelince (refresh) kutusuna odaklanılır: hemen sayılsın */
+  const pendingFocus = useRef<number | null>(null);
+  const dirtyRef = useRef(dirty);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  });
+  useEffect(() => {
+    const id = pendingFocus.current;
+    const el = id === null ? null : document.getElementById(`count-${id}`);
+    if (!el) return;
+    pendingFocus.current = null;
+    el.scrollIntoView({ block: "center", behavior: scrollBehavior() });
+    el.focus({ preventScroll: true });
+  }, [groups, group, q]);
+
+  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean }) {
+    setAdding(null);
+    pendingFocus.current = item.id;
+    // Yeni kalem süzgeçte gizli kalmasın: grup süzgeci başka gruptaysa onun grubuna geçilir, arama uymuyorsa silinir
+    if (group && group !== item.group) setGroup(item.group);
+    if (q.trim() && !matches(`${item.name} ${item.group}`, q)) setQ("");
+    if (filter === "empty") setEmptyIds((x) => new Set([...x, item.id]));
+    // Kalem zaten vardı (daha sonraki bir aydan itibaren listedeydi): fiyatı varsa da yoksa da Hammaddeler'deki gibi kalır
+    if (item.existed) return void toast.success(`Listeye eklendi: ${item.name}`, { description: "Kalem zaten vardı; artık bu aydan itibaren de listede." });
+    const href = `/panel/hammaddeler?ara=${encodeURIComponent(item.name)}`;
+    toast.success(`Listeye eklendi: ${item.name}`, {
+      description: isAdmin ? "Paket fiyatı 0 ₺; fiyatını girince stok toplamına yansır." : "Miktarını yazıp sayımı kaydedin. Fiyatını yönetici girecek.",
+      // Kaydedilmemiş sayım varken sayfadan çıkmadan önce sorulur (bağlantı tıklamasıyla aynı kural)
+      action: isAdmin ? { label: "Fiyatını gir", onClick: () => (dirtyRef.current ? setLeaveHref(href) : router.push(href)) } : undefined,
+    });
+  }
 
   const changeFilter = (f: Filter) => {
     if (f === "empty") setEmptyIds(new Set(countable.filter((l) => qtyOf(l) === null).map((l) => l.id)));
@@ -1056,6 +1097,11 @@ export function StockCountForm({
                   <ClipboardCopy size={16} /> Geçen aydan doldur
                 </Button>
               ) : null}
+              {canAddItem ? (
+                <Button variant="secondary" onClick={() => setAdding({ name: "" })} title="Listede olmayan, her ay sayılacak bir kalem ekleyin">
+                  <Plus size={16} /> Listeye ekle
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={() => window.print()}>
                 <Printer size={16} /> Yazdır
               </Button>
@@ -1319,17 +1365,24 @@ export function StockCountForm({
                 const v = qtyOf(l);
                 const unit = unitOf(l);
                 const price = l.archived || (l.qty !== null && v === l.qty) ? l.unitPrice : l.unitPriceNow;
+                // Yalnız yönetici: fiyatı girilmemiş kalem (sayımda "Listeye ekle" ile eklenen) 0 ₺ değil "fiyat yok" yazar
+                const unitText =
+                  price > 0 ? (
+                    `${tl(price, 2)}/${unit}`
+                  ) : (
+                    <span className="font-medium text-warn" title="Paket fiyatı girilmedi: Hammaddeler'den girin; o zamana kadar stok toplamına 0 ₺ girer">
+                      fiyat yok
+                    </span>
+                  );
                 const money = isAdmin ? (
                   <div className="hidden w-48 shrink-0 justify-end gap-4 text-right text-xs text-ink-mute tabular sm:flex">
-                    <span className="whitespace-nowrap">
-                      {tl(price, 2)}/{unit}
-                    </span>
+                    <span className="whitespace-nowrap">{unitText}</span>
                     <span className="w-20 font-semibold whitespace-nowrap text-ink">{v ? tl(v * price) : "–"}</span>
                   </div>
                 ) : null;
                 const moneyMobile = isAdmin ? (
                   <p className="mt-0.5 text-xs text-ink-mute tabular sm:hidden">
-                    {tl(price, 2)}/{unit} · <span className="font-semibold text-ink">{v ? tl(v * price) : "–"}</span>
+                    {unitText} · <span className="font-semibold text-ink">{v ? tl(v * price) : "–"}</span>
                   </p>
                 ) : null;
                 if (l.archived) {
@@ -1503,11 +1556,23 @@ export function StockCountForm({
             <EmptyState
               icon={<SearchX />}
               title="Bu süzgece uyan kalem yok"
-              description={q.trim() ? `"${q.trim()}" için sonuç bulunamadı. Yazımı kontrol edin ya da süzgeci temizleyin.` : "Seçili grupta ya da süzgeçte gösterilecek kalem yok."}
+              description={
+                q.trim()
+                  ? `"${q.trim()}" için sonuç bulunamadı. Yazımı kontrol edin${canAddItem ? "; listede yoksa ekleyin" : " ya da süzgeci temizleyin"}.`
+                  : "Seçili grupta ya da süzgeçte gösterilecek kalem yok."
+              }
               action={
-                <Button variant="secondary" onClick={clearFilters}>
-                  Süzgeci temizle
-                </Button>
+                <>
+                  {/* Aranıp bulunamayan kalem tek dokunuşla eklenir (ad hazır gelir) */}
+                  {canAddItem && q.trim() ? (
+                    <Button onClick={() => setAdding({ name: q.trim() })}>
+                      <Plus size={16} /> Listeye ekle
+                    </Button>
+                  ) : null}
+                  <Button variant="secondary" onClick={clearFilters}>
+                    Süzgeci temizle
+                  </Button>
+                </>
               }
             />
           )}
@@ -1824,6 +1889,18 @@ export function StockCountForm({
         description={`${monthLabel} sayımında yazdığınız ama kaydetmediğiniz miktarlar son kayda döner. Kaydedilmiş sayım değişmez.`}
         confirmLabel="Değişiklikleri sil"
       />
+      {adding && addItem ? (
+        <AddCountItemDialog
+          isAdmin={isAdmin}
+          month={month}
+          groups={addItem.groups}
+          defaultGroup={group || activeGroup}
+          initialName={adding.name}
+          listNames={countable.map((l) => l.name)}
+          onClose={() => setAdding(null)}
+          onAdded={onItemAdded}
+        />
+      ) : null}
       <ConfirmDialog
         open={leaveHref !== null}
         onClose={() => setLeaveHref(null)}

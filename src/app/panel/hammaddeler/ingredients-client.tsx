@@ -44,7 +44,9 @@ import { countUnitsFor } from "@/lib/calc/engine";
 import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc/expr";
 import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
+import { isUnpriced } from "@/lib/count-item";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
+import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
 import { deleteIngredient, saveIngredient, setIngredientActive, setIngredientEstimate, updateIngredientPrice } from "@/server/actions/ingredients";
 
@@ -54,6 +56,8 @@ import { priceText } from "../urunler/price-text";
 
 import { catOrder } from "./categories";
 import { countUnitHint, groupForCategory, historyText, nearMatch, vatForGroup, type IngredientDeps } from "./form-helpers";
+import { scrollToHolds } from "./price-holds";
+import { SupplierPrices } from "./supplier-prices";
 
 export interface IngredientRow extends Ingredient {
   unitCost: number;
@@ -65,16 +69,22 @@ export interface IngredientRow extends Ingredient {
   deps: IngredientDeps;
   /** Son 30 günde %5'ten fazla fiyat değişimi (zam uyarısıyla aynı hesap); yoksa null */
   recentChange?: { pct: number; at: string } | null;
+  /**
+   * Paraşüt faturasından gelen, onay bekleyen fiyat (şimdikinden %40'tan fazla farklı; "Onay bekleyen fiyatlar"):
+   * önerilen birim fiyat (₺ / birim), canlı fark, faturanın tedarikçisi ve tarihi; yoksa null
+   */
+  pendingHold?: { pct: number | null; proposed: number; supplier: string; date: string } | null;
 }
 
-type Filter = "all" | "tahmini" | "kullanilmayan" | "pasif";
+/** fiyatsiz: paket fiyatı girilmemiş (sayımda "Listeye ekle" ile eklenen kalem; zildeki bağlantı ?durum=fiyatsiz) */
+type Filter = "all" | "tahmini" | "fiyatsiz" | "kullanilmayan" | "pasif";
 type SortKey = "name" | "packagePrice" | "unitCost" | "usedIn" | "monthUsage";
 type Sort = { key: SortKey; dir: "asc" | "desc" } | null;
 
 const PAGE_SIZE = 25;
 /** Görünüm çiplerinin adları (telefon süzgeç özeti de kullanır) */
-const FILTER_LABELS: Record<Filter, string> = { all: "Tümü", tahmini: "Tahmini", kullanilmayan: "Reçetede yok", pasif: "Pasif" };
-const FILTERS: Filter[] = ["all", "tahmini", "kullanilmayan", "pasif"];
+const FILTER_LABELS: Record<Filter, string> = { all: "Tümü", tahmini: "Tahmini", fiyatsiz: "Fiyat yok", kullanilmayan: "Reçetede yok", pasif: "Pasif" };
+const FILTERS: Filter[] = ["all", "tahmini", "fiyatsiz", "kullanilmayan", "pasif"];
 const SORT_KEYS: SortKey[] = ["name", "packagePrice", "unitCost", "usedIn", "monthUsage"];
 
 /** Adresteki sıra: ?sirala=unitCost.desc */
@@ -282,7 +292,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           <span className={cn("font-semibold break-words group-hover/name:underline", r.active ? "text-ink" : "text-ink-mute", compact && "text-[15px] leading-6")}>
             {r.name}
           </span>
-          {r.isEstimate ? (
+          {isUnpriced(r) ? (
+            <Badge tone="red" title="Paket fiyatı girilmedi: maliyetlere ve stok değerine 0 ₺ girer">
+              Fiyat yok
+            </Badge>
+          ) : r.isEstimate ? (
             <Badge tone="amber" dot title={r.note ?? "Faturada bulunamayan, tahmini değer"}>
               Tahmini
             </Badge>
@@ -290,6 +304,11 @@ function IngredientName({ r, onOpen, compact }: { r: IngredientRow; onOpen: () =
           {r.recentChange ? (
             <Badge tone={r.recentChange.pct > 0 ? "red" : "green"} title={`Son 30 günde (son değişiklik ${dateTR(r.recentChange.at.slice(0, 10))})`}>
               {r.recentChange.pct > 0 ? "↑" : "↓"} {pct(Math.abs(r.recentChange.pct), 0)}
+            </Badge>
+          ) : null}
+          {r.pendingHold ? (
+            <Badge tone="amber" dot title={`Faturadan gelen yeni fiyat onay bekliyor: ${bulkPrice(r.pendingHold.proposed, r.unit)} (${r.pendingHold.supplier}, ${dateTR(r.pendingHold.date)})`}>
+              Fiyat onayda
             </Badge>
           ) : null}
           {!r.usedIn.length ? <Badge tone="gray">Reçetede yok</Badge> : null}
@@ -345,11 +364,14 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
     () => ({
       all: base.filter((r) => r.active).length,
       tahmini: base.filter((r) => r.active && r.isEstimate).length,
+      fiyatsiz: base.filter(isUnpriced).length,
       kullanilmayan: base.filter((r) => r.active && !r.usedIn.length).length,
       pasif: base.filter((r) => !r.active).length,
     }),
     [base],
   );
+  /** "Fiyat yok" çipi yalnız fiyatı girilmemiş malzeme varken (ya da seçiliyken) görünür */
+  const unpricedChip = rows.some(isUnpriced) || chosen === "fiyatsiz";
 
   // Kategori seçeneklerindeki sayılar: seçili görünümün (aktif ya da pasif) malzemeleri
   const categoryCounts = useMemo(() => {
@@ -360,7 +382,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
 
   const visible = useMemo(() => {
     const list = base.filter(
-      (r) => inScope(r, filter) && (filter !== "tahmini" || r.isEstimate) && (filter !== "kullanilmayan" || !r.usedIn.length),
+      (r) =>
+        inScope(r, filter) &&
+        (filter !== "tahmini" || r.isEstimate) &&
+        (filter !== "fiyatsiz" || isUnpriced(r)) &&
+        (filter !== "kullanilmayan" || !r.usedIn.length),
     );
     const byName = (a: IngredientRow, b: IngredientRow) => a.name.localeCompare(b.name, "tr");
     if (!sort) return list.sort((a, b) => catOrder(a.category) - catOrder(b.category) || byName(a, b));
@@ -511,6 +537,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
             <span className={cn("size-1.5 rounded-full bg-warn", chosen === "tahmini" && "ring-1 ring-white/70")} aria-hidden="true" />
             Tahmini
           </FilterChip>
+          {unpricedChip ? (
+            <FilterChip active={chosen === "fiyatsiz"} onToggle={() => pick("fiyatsiz")} count={counts.fiyatsiz}>
+              Fiyat yok
+            </FilterChip>
+          ) : null}
           <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan}>
             Reçetede yok
           </FilterChip>
@@ -556,6 +587,11 @@ export function IngredientsClient({ rows, categories }: { rows: IngredientRow[];
                 Tahmini
               </span>
             </FilterChip>
+            {unpricedChip ? (
+              <FilterChip active={chosen === "fiyatsiz"} onToggle={() => pick("fiyatsiz")} count={counts.fiyatsiz} className={SHEET_CHIP}>
+                Fiyat yok
+              </FilterChip>
+            ) : null}
             <FilterChip active={chosen === "kullanilmayan"} onToggle={() => pick("kullanilmayan")} count={counts.kullanilmayan} className={SHEET_CHIP}>
               Reçetede yok
             </FilterChip>
@@ -1378,6 +1414,25 @@ function IngredientDialog({
         </form>
         {row ? (
           <div className="space-y-4">
+            {live?.pendingHold ? (
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] text-warn" role="status">
+                <p className="min-w-0 flex-1 basis-56 text-pretty">
+                  Faturadan gelen yeni fiyat onay bekliyor: <span className="font-semibold tabular">{bulkPrice(live.pendingHold.proposed, row.unit)}</span> (
+                  {live.pendingHold.supplier}, {dateTR(live.pendingHold.date)}).
+                </p>
+                {/* Kart aynı sayfada: pencere kapanır, sayfa karta kayar (gezinme yok) */}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    onClose();
+                    setTimeout(() => scrollToHolds(true), 0);
+                  }}
+                >
+                  Onaya git
+                </Button>
+              </div>
+            ) : null}
             {row.history.length ? (
               // Beyaz pencerede kuyu gri zeminle ayrılır
               <Well className="bg-panel">
@@ -1427,14 +1482,18 @@ function IngredientDialog({
                 </ul>
               </Well>
             ) : null}
+            {/* Su ve buzun fiyatı su faturasından: tedarikçi karşılaştırması yok */}
+            {row.priceSource !== "water" ? <SupplierPrices ingredientId={row.id} onNavigate={onClose} /> : null}
             <div>
               <p className="mb-2 text-sm font-semibold text-ink">Kullanıldığı ürünler ({row.usedIn.length})</p>
               {row.usedIn.length ? (
                 <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto scroll-thin">
                   {row.usedIn.map((u) => (
+                    // Pencere önce kapanır: açık kalsa ürün sayfasının üstünde dururdu
                     <Link
                       key={u.id}
                       href={`/panel/urunler/${u.id}`}
+                      onClick={onClose}
                       className="inline-flex min-h-8 items-center rounded-full bg-panel px-3 text-xs font-medium text-ink-soft transition-colors hover:bg-panel-deep hover:text-ink pointer-coarse:min-h-11"
                     >
                       {u.label}
