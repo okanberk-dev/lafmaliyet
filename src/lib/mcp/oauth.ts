@@ -205,11 +205,13 @@ export function isAllowedCimdUrl(raw: string): boolean {
 /** URL biçiminde (https://…) istemci kimliği: CIMD sayılır; izinli değilse istemci tanınmaz */
 export const isUrlClientId = (clientId: string) => /^https?:\/\//i.test(clientId);
 
-type ClientCheck = { ok: true; name: string; redirectUris: string[] } | { ok: false; reason: string };
+type ClientCheck = { ok: true; name: string; redirectUris: string[]; ignored: string[] } | { ok: false; reason: string };
 
 /**
- * Okunan CIMD belgesi: client_id adresin kendisi, dönüş adreslerinin hepsi izinli (localhost portsuz da olur; port
- * eşleşmede sayılmaz), istemci açık (token_endpoint_auth_method yok ya da "none"). Ad kendi beyanıdır, temizlenir.
+ * Okunan CIMD belgesi: client_id adresin kendisi, istemci açık (token_endpoint_auth_method yok ya da "none"), en az bir
+ * izinli dönüş adresi (localhost portsuz da olur; port eşleşmede sayılmaz). İzin listesinde olmayan adresler (ör.
+ * Claude'un ileride ekleyeceği bir masaüstü dönüşü) belgeyi düşürmez, yalnız saklanmaz (`ignored`, günlük için): istek
+ * birebir eşleşmeyle yine yalnız izinli adrese dönebilir. Ad kendi beyanıdır, temizlenir.
  */
 export function validateCimdDocument(url: string, doc: unknown, opts: { loopback: boolean }): ClientCheck {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, reason: "belge bir nesne değil" };
@@ -219,11 +221,84 @@ export function validateCimdDocument(url: string, doc: unknown, opts: { loopback
   if (!Array.isArray(uris) || !uris.length || uris.length > 10 || !uris.every((x): x is string => typeof x === "string" && x.length <= 2000)) {
     return { ok: false, reason: "redirect_uris geçersiz" };
   }
-  const bad = uris.find((x) => !isAllowedRedirect(x, opts));
-  if (bad) return { ok: false, reason: `izinsiz dönüş adresi: ${cleanName(bad, 120)}` };
+  const allowed = uris.filter((x) => isAllowedRedirect(x, opts));
+  if (!allowed.length) return { ok: false, reason: `izinli dönüş adresi yok: ${cleanName(uris[0], 120)}` };
   if (d.token_endpoint_auth_method !== undefined && d.token_endpoint_auth_method !== "none") return { ok: false, reason: "istemci gizli anahtar istiyor" };
   const name = typeof d.client_name === "string" ? cleanName(d.client_name, 100) : "";
-  return { ok: true, name: name || (parse(url)?.hostname ?? "Claude"), redirectUris: [...new Set(uris)] };
+  const ignored = [...new Set(uris.filter((x) => !allowed.includes(x)))].map((x) => cleanName(x, 120));
+  return { ok: true, name: name || (parse(url)?.hostname ?? "Claude"), redirectUris: [...new Set(allowed)], ignored };
+}
+
+/** CIMD belgesi en çok bu kadar bayt */
+export const CIMD_MAX_BYTES = 10 * 1024;
+
+/** Belgenin isteği: yönlendirme izlenmez (SSRF: başka sunucuya gidilmez), yalnız JSON, önbellek yok; süre sınırı ayrıca */
+export const CIMD_FETCH_INIT: RequestInit = { redirect: "error", headers: { accept: "application/json" }, cache: "no-store" };
+
+export type CimdRead = { ok: true; doc: unknown } | { ok: false; reason: string };
+
+/** CIMD yanıtı: 200, JSON türü, en çok `max` bayt (gövde okunurken kesilir), geçerli JSON; değilse okunamadı */
+export async function readCimdResponse(res: Response, max = CIMD_MAX_BYTES): Promise<CimdRead> {
+  const type = res.headers.get("content-type") ?? "";
+  if (res.status !== 200 || !/json/i.test(type) || !res.body) {
+    await res.body?.cancel().catch(() => {});
+    return { ok: false, reason: res.status !== 200 ? `HTTP ${res.status}` : `tür ${cleanName(type, 60) || "yok"}` };
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      return { ok: false, reason: `${max} bayttan büyük` };
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  try {
+    return { ok: true, doc: JSON.parse(text + decoder.decode()) as unknown };
+  } catch {
+    return { ok: false, reason: "JSON okunamadı" };
+  }
+}
+
+/**
+ * Claude'un kimlik belgesinden istemci (saf karar; okuma, kayıt ve günlük dışarıdan: src/server/mcp/cimd.ts). İzinsiz
+ * adres → null, hiçbir şey okunmaz. Önbellekteki satır 24 saatten yeniyse o. Değilse belge okunur: geçerliyse
+ * kaydedilir; okunamazsa (ağ, süre, durum, tür, boy, JSON) önbellekteki eski satır kullanılır (Claude'un sunucusuna
+ * o an ulaşılamıyor diye bağlantı kesilmez), o da yoksa null. Okunup geçersiz çıkan belgede eskisine dönülmez (belge
+ * değişmiş: eski kayda güvenilmez), null.
+ */
+export async function resolveCimd<C extends { fetchedAt: Date | null }>(
+  url: string,
+  now: Date,
+  opts: { loopback: boolean },
+  io: {
+    /** Önbellekteki CIMD satırı (yalnız CIMD; yoksa null) */
+    cached: () => Promise<C | null>;
+    fetchDocument: () => Promise<CimdRead>;
+    save: (v: { name: string; redirectUris: string[] }) => Promise<C>;
+    warn: (message: string) => void;
+  },
+): Promise<C | null> {
+  if (!isAllowedCimdUrl(url)) return null;
+  const cached = await io.cached();
+  if (cached?.fetchedAt && now.getTime() - cached.fetchedAt.getTime() < CIMD_MAX_AGE_H * 3_600_000) return cached;
+  const read = await io.fetchDocument();
+  if (!read.ok) {
+    io.warn(`CIMD belgesi okunamadı (${read.reason})${cached ? "; önbellekteki kullanıldı" : ""}`);
+    return cached;
+  }
+  const v = validateCimdDocument(url, read.doc, opts);
+  if (!v.ok) {
+    io.warn(`CIMD belgesi reddedildi (${v.reason})`);
+    return null;
+  }
+  if (v.ignored.length) io.warn(`CIMD belgesindeki izinsiz dönüş adresleri saklanmadı: ${v.ignored.join(", ")}`);
+  return io.save({ name: v.name, redirectUris: v.redirectUris });
 }
 
 const registrationSchema = z

@@ -15,7 +15,7 @@ import { ingredientChanges, productImpacts, type PriceHistoryRow } from "../src/
 import { priceLoss } from "../src/lib/calc/price-loss";
 import type { Dataset } from "../src/lib/calc/types";
 import { cashReportSummary, type CashReportLike } from "../src/lib/mcp/answers/cash";
-import { checkRange, CUT_NOTE, fitOutput, salesFor, ToolInputError, unpricedInRecipes } from "../src/lib/mcp/answers/common";
+import { checkRange, CUT_NOTE, fitOutput, pct, salesFor, tl, ToolInputError, unpricedInRecipes, unpricedWarnings } from "../src/lib/mcp/answers/common";
 import { monthSummary, yearSummary } from "../src/lib/mcp/answers/month";
 import { isEstimatedDue, upcomingPayments } from "../src/lib/mcp/answers/payments";
 import { priceRiseImpact, readableUnit, type PriceAlertsLike } from "../src/lib/mcp/answers/prices";
@@ -24,6 +24,8 @@ import { safeHint, searchResults } from "../src/lib/mcp/answers/search";
 import { supplierSummary, type LedgerGroupLike } from "../src/lib/mcp/answers/suppliers";
 import { araInput, kasaRaporlariInput, odemelerInput, tedarikciOzetiInput, urunKarliligiInput, zamEtkisiInput } from "../src/lib/mcp/schemas";
 import { upcomingItems, type ReminderRow } from "../src/lib/reminders";
+import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
+import { productLabel } from "../src/lib/waste";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -156,6 +158,63 @@ test("yıl özeti 2026: 12 ay, ciro yalnız Temmuz–Ekim; toplam cirosu girilmi
   assert.equal(y.aylar[0].kar, null);
 });
 
+/** Ayın laffogato.net online satışı (kafe; KDV dahil 2.350 ₺, içindeki KDV 213,64 ₺ → KDV hariç 2.136,36 ₺) */
+function siteMonth(month: string): SiteSalesMonth {
+  const none = { orders: 0, grossMinor: 0, discountMinor: 0, deliveryMinor: 0, refundedMinor: 0, netMinor: 0, kdvMinor: 0, unknownKdvNetMinor: 0 };
+  return {
+    month,
+    pulledAt: `${month}-01T06:00:00.000Z`,
+    now: `${month}-01T06:00:00.000Z`,
+    from: `${month}-01`,
+    to: `${month}-30`,
+    closed: false,
+    cafe: { ...none, orders: 3, grossMinor: 235_000, netMinor: 235_000, kdvMinor: 21_364, lines: [] },
+    shop: none,
+    karaoke: { bookings: 0, collectedMinor: 0, refundedMinor: 0, netMinor: 0, refundPendingMinor: 0, kdvMinor: 0, unknownKdvNetMinor: 0 },
+    manual: { orders: 0, grossMinor: 0, netMinor: 0 },
+  };
+}
+
+test("ay özeti: POS cirosu girilmemiş, yalnız online satışı olan ay (her ayın 1'i) kâr ve marj vermez, 'POS cirosu girilmedi' der", () => {
+  // Faturasız: eski hâli %100 marjla 2.136 ₺ kâr derdi; ilk mal faturası gelince büyük zarar
+  const onlyOnline = monthSummary(createModel({ ...ds, currentMonth: "2026-11", siteSales: [siteMonth("2026-11")] }), "2026-11", ctx);
+  assert.equal(onlyOnline.gerceklesen?.kar, null);
+  assert.equal(onlyOnline.gerceklesen?.karMarjiYuzde, null);
+  close(onlyOnline.gerceklesen?.onlineKdvHaric, 2136.36, "online, KDV hariç");
+
+  const goods = ds.invoices.find((i) => i.category === "Hammadde & İçecek")!;
+  const invoice = { ...goods, id: 999_001, date: "2026-11-01", amount: 10_000, discount: 0, payable: 11_000 };
+  const nov = createModel({ ...ds, currentMonth: "2026-11", siteSales: [siteMonth("2026-11")], invoices: [...ds.invoices, invoice] });
+  const pm = nov.pnlMonth("2026-11");
+  assert.equal(pm.revenue, null);
+  assert.ok(pm.site && pm.expenses >= 10_000, "online satış ve mal faturası var");
+  // Panelin kuralı: Genel bakış "Faturaya göre" kârı göstermez, Gelir-gider yıl şeridi ayı saymaz
+  assert.equal(dashboard(nov, "2026-11").actual.hasRevenue, false);
+  assert.equal(yearSummary(nov, 2026, ctx).aylar.find((a) => a.ay === "2026-11")!.kar, null);
+
+  const m = monthSummary(nov, "2026-11", ctx);
+  const g = m.gerceklesen!;
+  assert.ok(g, "online satış ve giderler yine görünür");
+  assert.equal(g.kar, null);
+  assert.equal(g.karMarjiYuzde, null);
+  assert.equal(g.ciroKdvDahil, null);
+  assert.equal(g.ciroKdvHaric, null);
+  assert.equal(g.toplamCiroKdvHaric, null);
+  close(g.onlineKdvHaric, 2136.36, "online, KDV hariç");
+  close(g.toplamGider, pm.expenses, "gider = pnlMonth");
+  assert.ok(m.uyarilar.includes("Kasım 2026 için POS cirosu girilmedi (Satışlar'daki ay bilgisi ya da kasa raporu): faturaya göre kâr hesaplanmadı."), m.uyarilar.join(" | "));
+  assert.ok(!m.hesap.some((h) => h.startsWith("Kâr =")), "kâr hesap satırı yok");
+  assert.ok(m.hesap.includes("laffogato.net online satışı 2.136 ₺ (KDV hariç); POS cirosu girilmediği için kâr hesaplanmadı"), m.hesap.join(" | "));
+  assert.ok(m.hesap.some((h) => h.startsWith("Giderler = mal maliyeti")));
+
+  // Ne POS cirosu ne online satış: aynı uyarı, gerçekleşen yok
+  const dec = monthSummary(nov, "2026-12", ctx);
+  assert.equal(dec.gerceklesen, null);
+  assert.ok(dec.uyarilar.includes("Aralık 2026 için POS cirosu girilmedi (Satışlar'daki ay bilgisi ya da kasa raporu): faturaya göre kâr hesaplanmadı."));
+  // POS cirosu girilmiş ayda uyarı yok
+  assert.ok(!monthSummary(model, "2026-10", ctx).uyarilar.some((u) => /POS cirosu girilmedi/.test(u)));
+});
+
 // ---------------------------------------------------------------- urun_karliligi
 
 test("ürün kârlılığı: Ekim'de satış listesi yok → Eylül adetleri ve notu; 'zarar' sırası en az kâr bırakan beş ürün", () => {
@@ -195,20 +254,51 @@ test("ürün kârlılığı: menü sınıfı Analiz'deki menü mühendisliğiyle
   assert.throws(() => urun({ kategori: "yokböyle" }), (e: Error) => e instanceof ToolInputError && /adında kategori yok/.test(e.message));
 });
 
-test("fiyatı girilmemiş hammadde reçetede: ürün kârlılığı ve zam etkisi 'maliyet eksik' der (ekle)", () => {
+/** Adı verilen hammaddelerin fiyatı girilmemiş (ekle'nin kuralı: elle, paket fiyatı 0) */
+const unpricedDs = (base: Dataset, ...names: string[]): Dataset => ({
+  ...base,
+  ingredients: base.ingredients.map((i) => (names.includes(i.name) ? { ...i, packagePrice: 0, priceSource: "manual" as const } : i)),
+});
+/** Reçetesinde `name` geçen etkin ürünlerin adları ("Latte M"; tek boyda yalnız ad), modeldeki sırayla */
+const usersOf = (m: ReturnType<typeof createModel>, name: string, filter: (product: string) => boolean = () => true) =>
+  m.activeProducts.filter((x) => filter(x.product.name) && x.lines.some((l) => l.ingredient?.name === name)).map((x) => productLabel(x.product));
+
+test("fiyatı girilmemiş hammadde reçetede: ürün kârlılığı 'maliyet eksik' der, ürünleri ve satırında maliyetEksik (ekle)", () => {
   const milk = ds.ingredients.find((i) => i.name === "Süt %2,5")!;
-  const unpriced = createModel({ ...ds, ingredients: ds.ingredients.map((i) => (i.id === milk.id ? { ...i, packagePrice: 0, priceSource: "manual" as const } : i)) });
-  assert.deepEqual(unpricedInRecipes(unpriced), ["Süt %2,5"]);
-  assert.deepEqual(unpricedInRecipes(model), []);
+  const unpriced = createModel(unpricedDs(ds, "Süt %2,5"));
+  const withMilk = usersOf(unpriced, "Süt %2,5");
+  assert.ok(withMilk.length > 5);
+  assert.deepEqual(unpricedInRecipes(unpriced.activeProducts), { ingredients: ["Süt %2,5"], products: withMilk });
+  assert.deepEqual(unpricedInRecipes(model.activeProducts), { ingredients: [], products: [] });
   const p = productProfitability(unpriced, { ...urunKarliligiInput.parse({}), ay: "2026-09" }, ctx);
   assert.ok(p.uyarilar.includes("1 hammaddenin fiyatı girilmemiş; maliyet eksik"), p.uyarilar.join(" | "));
   assert.ok(p.uyarilar.includes("Fiyatı girilmemiş: Süt %2,5."));
-  const loss = priceLoss(unpriced, [], "2026-09");
-  const z = priceRiseImpact(unpriced, { changes: [], impacts: [], loss }, { baslangic: "2026-09-22", bitis: "2026-10-22", limit: 10 }, ctx);
-  assert.ok(z.uyarilar.includes("1 hammaddenin fiyatı girilmemiş; maliyet eksik"));
+  assert.ok(p.uyarilar.includes(`Maliyeti eksik ${withMilk.length} ürün (kârı olduğundan yüksek görünür): ${withMilk.slice(0, 5).join(", ")} ve ${withMilk.length - 5} ürün daha.`), p.uyarilar.join(" | "));
+  for (const u of p.urunler) assert.equal(u.maliyetEksik, withMilk.includes(productLabel({ name: u.ad, size: u.boy })), u.ad);
   // Reçetede olmayan fiyatsız kalem (sayım için eklenen) uyarı vermez
   const extra = createModel({ ...ds, ingredients: [...ds.ingredients, { ...milk, id: 99_999, name: "Sayım kalemi", packagePrice: 0, priceSource: "manual" as const }] });
-  assert.deepEqual(unpricedInRecipes(extra), []);
+  assert.deepEqual(unpricedInRecipes(extra.activeProducts).ingredients, []);
+  assert.deepEqual(unpricedWarnings({ ingredients: [], products: [] }), []);
+});
+
+test("maliyet eksik uyarısı yalnız cevaptaki ürünler için: Latte M'ye başka ürünün sosu yüzünden 'eksik' denmez; sıralama bütün listeden", () => {
+  const m = createModel(unpricedDs(ds, "Karamel sos"));
+  // "latte" araması karamelli latteleri de kapsar: uyarı onlar için, satırda yalnız onlar işaretli
+  const caramelLattes = usersOf(m, "Karamel sos", (n) => /latte/i.test(n));
+  assert.ok(caramelLattes.length >= 2 && caramelLattes.length < usersOf(m, "Karamel sos").length, "kapsam dışında karamelli ürün de var");
+  const latte = productProfitability(m, { ...urunKarliligiInput.parse({ urun: "latte", limit: 50 }), ay: "2026-09" }, ctx);
+  assert.equal(latte.urunler.find((u) => u.ad === "Latte" && u.boy === "M")!.maliyetEksik, false, "Latte M'nin reçetesi tam");
+  assert.deepEqual(latte.urunler.filter((u) => u.maliyetEksik).map((u) => productLabel({ name: u.ad, size: u.boy })).sort(), [...caramelLattes].sort());
+  assert.ok(latte.uyarilar.includes("1 hammaddenin fiyatı girilmemiş; maliyet eksik"));
+  assert.ok(latte.uyarilar.includes("Fiyatı girilmemiş: Karamel sos."));
+  assert.ok(latte.uyarilar.includes(`Maliyeti eksik ${caramelLattes.length} ürün (kârı olduğundan yüksek görünür): ${caramelLattes.join(", ")}.`), latte.uyarilar.join(" | "));
+  // Karamel sos kullanmayan lattelerde uyarı yok
+  const spanish = productProfitability(m, { ...urunKarliligiInput.parse({ urun: "spanish" }), ay: "2026-09" }, ctx);
+  assert.ok(spanish.urunler.length > 0 && spanish.urunler.every((u) => !u.maliyetEksik));
+  assert.ok(!spanish.uyarilar.some((u) => /fiyatı girilmemiş|Maliyeti eksik/i.test(u)), spanish.uyarilar.join(" | "));
+  // Süzgeçsiz sıralama bütün menüden yapılır: ilk 3'te karamelli ürün olmasa da eksik maliyet sıralamayı etkiler, uyarı var
+  const top = productProfitability(m, { ...urunKarliligiInput.parse({ limit: 3 }), ay: "2026-09" }, ctx);
+  assert.ok(top.uyarilar.includes("1 hammaddenin fiyatı girilmemiş; maliyet eksik"));
 });
 
 // ---------------------------------------------------------------- zam_etkisi
@@ -222,8 +312,8 @@ const row = (ingredientId: number, packagePrice: number, packageSize: number, ch
   changedBy: "Excel",
   note: null,
 });
-function milkAlerts(month: string | null): { model: ReturnType<typeof createModel>; alerts: PriceAlertsLike } {
-  const m = createModel({ ...ds, ingredients: ds.ingredients.map((i) => (i.id === milk.id ? { ...i, packagePrice: 60 } : i)) });
+function milkAlerts(month: string | null, base: Dataset = ds): { model: ReturnType<typeof createModel>; alerts: PriceAlertsLike } {
+  const m = createModel({ ...base, ingredients: base.ingredients.map((i) => (i.id === milk.id ? { ...i, packagePrice: 60 } : i)) });
   const changes = ingredientChanges(
     m.ds.ingredients,
     [row(milk.id, milk.packagePrice, milk.packageSize, "2026-09-01T09:00:00.000Z"), row(milk.id, 60, 1000, "2026-10-15T09:00:00.000Z")],
@@ -248,7 +338,9 @@ test("zam etkisi: süt +%16 → ürünler aylık kayba göre; hammadde L ile; he
   assert.ok(Math.abs((h.aylikKayip ?? 0) - 690) < 20, `süt ayda ≈ 690 ₺: ${h.aylikKayip}`);
   assert.equal(z.hesap[0], "Ayda kâr kaybı = (yeni − eski birim fiyat) × reçetedeki miktar × (1 + fire) × ayda satılan adet");
   assert.match(z.hesap[1], /^Süt %2,5: .* → 60,00 ₺\/L \(\+%16\), ayda .* L kullanım → ayda ≈ /);
-  assert.match(z.hesap.at(-1)!, /^Toplam ≈ .* ₺\/ay, brüt kârın %.*'i$/);
+  // Yüzde eksiz yazılır (iyelik eki sayının okunuşuna göre değişir: "%3,2'si", "%16'sı")
+  assert.match(z.hesap.at(-1)!, /^Toplam ≈ [\d.]+ ₺\/ay \(brüt kâra oranı %\d+(,\d)?\)$/);
+  assert.equal(z.hesap.at(-1), `Toplam ≈ ${tl(alerts.loss.totalLoss)}/ay (brüt kâra oranı ${pct(alerts.loss.totalLoss / alerts.loss.grossProfit!)})`);
   assert.equal(z.kaynak[1], "Eylül 2026 satışlarına göre (ayda 30 açık gün).");
   assert.equal(z.panelAdresi, `${ctx.base}/panel/urunler#zamlar`);
   assert.equal(readableUnit("gr").label, "kg");
@@ -262,9 +354,28 @@ test("zam etkisi: satış listesi yoksa aylık tutarlar null, yalnız birim mali
   assert.equal(z.dayanak.olcek, null);
   assert.ok(z.urunler.every((u) => u.aylikKayip === null && u.aylikAdet === null && u.birimMaliyetArtisi > 0));
   assert.equal(z.kaynak[1], "Satış listesi yok: aylık tutar hesaplanamadı, yalnız birim maliyet farkı var.");
-  // Zam yoksa bir cümle
+  // Zam yoksa bir cümle; "Toplam ≈ 0 ₺/ay" satırı yok
   const none = priceRiseImpact(model, { changes: [], impacts: [], loss: priceLoss(model, [], "2026-09") }, { baslangic: "2026-09-22", bitis: "2026-10-22", limit: 5 }, ctx);
   assert.ok(none.uyarilar.includes("Bu dönemde fiyatı %5'ten fazla artan hammadde yok."));
+  assert.ok(!none.hesap.some((h) => h.startsWith("Toplam")), none.hesap.join(" | "));
+  assert.doesNotMatch(JSON.stringify(none.hesap), /%[\d,]+'/);
+});
+
+test("zam etkisi: fiyatı girilmemiş hammadde yalnız zamdan etkilenen ürünlerde uyarı verir; satırında maliyetEksik", () => {
+  // Süt zammı + Karamel sos fiyatsız: karamelli sütlü ürünlerin birim kârı ve önerilen fiyatı eksik maliyetle
+  const { model: m, alerts } = milkAlerts("2026-09", unpricedDs(ds, "Karamel sos"));
+  const affected = new Set(alerts.loss.products.map((p) => p.productId));
+  const caramel = m.activeProducts.filter((x) => affected.has(x.product.id) && x.lines.some((l) => l.ingredient?.name === "Karamel sos")).map((x) => productLabel(x.product));
+  assert.ok(caramel.length > 0);
+  const z = priceRiseImpact(m, alerts, { baslangic: "2026-09-22", bitis: "2026-10-22", limit: 200 }, ctx);
+  assert.ok(z.uyarilar.includes("1 hammaddenin fiyatı girilmemiş; maliyet eksik"), z.uyarilar.join(" | "));
+  assert.ok(z.uyarilar.includes("Fiyatı girilmemiş: Karamel sos."));
+  assert.deepEqual(z.urunler.filter((u) => u.maliyetEksik).map((u) => productLabel({ name: u.ad, size: u.boy })).sort(), [...caramel].sort());
+  // Zamdan etkilenmeyen bir ürünün fiyatsız hammaddesi (Su (PET) yalnız şişe suda) uyarı vermez
+  const { alerts: a2, model: m2 } = milkAlerts("2026-09", unpricedDs(ds, "Su (PET)"));
+  const z2 = priceRiseImpact(m2, a2, { baslangic: "2026-09-22", bitis: "2026-10-22", limit: 10 }, ctx);
+  assert.ok(!z2.uyarilar.some((u) => /fiyatı girilmemiş|Maliyeti eksik/i.test(u)), z2.uyarilar.join(" | "));
+  assert.ok(z2.urunler.every((u) => !u.maliyetEksik));
 });
 
 // ---------------------------------------------------------------- tedarikci_ozeti

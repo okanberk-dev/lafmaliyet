@@ -5,10 +5,11 @@
  * "...Yuzde" alanlarında yüzde olarak (34,2 = %34,2). Dışarıdan gelen her ad cleanName'den geçer.
  */
 
-import type { Model } from "../../calc/engine";
+import type { Model, ProductCalc } from "../../calc/engine";
 import { referenceSalesMonth } from "../../calc/insights";
 import { isUnpriced } from "../../count-item";
 import { money as moneyNb, monthLabel, num, pct as pctNb, tl as tlNb } from "../../format";
+import { productLabel } from "../../waste";
 import { cleanName } from "../oauth";
 
 export { cleanName };
@@ -68,23 +69,47 @@ export function salesFor(model: Model, month: string): SalesBasisFor {
   return { month, salesMonth, qtyByProduct: salesMonth ? model.soldByProduct(salesMonth) : new Map(), note };
 }
 
-/**
- * Etkin ürünlerin reçetelerinde geçen, fiyatı girilmemiş hammaddeler (ekle'nin kuralı: isUnpriced). Bunlar varken
- * maliyetler eksik: yanıt bunu `uyarilar`'da söyler.
- */
-export function unpricedInRecipes(model: Model): string[] {
-  const names = new Map<number, string>();
-  for (const p of model.activeProducts) {
-    for (const l of p.lines) if (l.ingredient && isUnpriced(l.ingredient)) names.set(l.ingredient.id, l.ingredient.name);
-  }
-  return [...names.values()].map((n) => cleanName(n));
+/** Reçetesinde fiyatı girilmemiş hammadde var (ekle'nin kuralı: isUnpriced): maliyeti eksik, kârı olduğundan yüksek */
+export const costIncomplete = (p: Pick<ProductCalc, "lines">): boolean => p.lines.some((l) => l.ingredient !== undefined && isUnpriced(l.ingredient));
+
+export interface UnpricedScope {
+  /** Fiyatı girilmemiş hammaddeler */
+  ingredients: string[];
+  /** Bunları reçetesinde kullanan ürünler ("Latte M", tek boyda yalnız ad) */
+  products: string[];
 }
 
-/** "{n} hammaddenin fiyatı girilmemiş; maliyet eksik" ve adları (en çok 5) */
-export function unpricedWarnings(names: string[]): string[] {
-  if (!names.length) return [];
-  const shown = names.slice(0, 5).join(", ");
-  return [`${num(names.length)} hammaddenin fiyatı girilmemiş; maliyet eksik`, `Fiyatı girilmemiş: ${shown}${names.length > 5 ? ` ve ${num(names.length - 5)} hammadde daha` : ""}.`];
+/**
+ * Yanıtın kapsamındaki ürünlerin reçetelerinde geçen, fiyatı girilmemiş hammaddeler ve bunları kullanan ürünler. Kapsam
+ * yanıtın süzülmüş listesidir (limitten önce: eksik maliyet sıralamayı da değiştirir); kapsam dışındaki bir ürünün eksik
+ * fiyatı bu yanıtın rakamlarını etkilemez, uyarı da vermez ("Latte M'nin maliyeti?" sorusuna başka ürünün şurubu
+ * yüzünden "maliyet eksik" denmez).
+ */
+export function unpricedInRecipes(products: Iterable<ProductCalc>): UnpricedScope {
+  const ingredients = new Map<number, string>();
+  const names: string[] = [];
+  for (const p of products) {
+    if (!costIncomplete(p)) continue;
+    for (const l of p.lines) if (l.ingredient && isUnpriced(l.ingredient)) ingredients.set(l.ingredient.id, l.ingredient.name);
+    names.push(productLabel(p.product));
+  }
+  return { ingredients: [...ingredients.values()].map((n) => cleanName(n)), products: names.map((n) => cleanName(n)) };
+}
+
+/** En çok 5 ad, kalanı "ve 3 ürün daha" */
+const someOf = (names: string[], unit: string) => `${names.slice(0, 5).join(", ")}${names.length > 5 ? ` ve ${num(names.length - 5)} ${unit} daha` : ""}`;
+
+/**
+ * "{n} hammaddenin fiyatı girilmemiş; maliyet eksik" (CRITIQUE2 §6.4), hammaddelerin ve maliyeti eksik ürünlerin adları
+ * (en çok 5'er); hangi satırın eksik olduğunu satırın `maliyetEksik` alanı söyler
+ */
+export function unpricedWarnings(u: UnpricedScope): string[] {
+  if (!u.ingredients.length) return [];
+  return [
+    `${num(u.ingredients.length)} hammaddenin fiyatı girilmemiş; maliyet eksik`,
+    `Fiyatı girilmemiş: ${someOf(u.ingredients, "hammadde")}.`,
+    `Maliyeti eksik ${num(u.products.length)} ürün (kârı olduğundan yüksek görünür): ${someOf(u.products, "ürün")}.`,
+  ];
 }
 
 // ---------------------------------------------------------------- Tarih aralığı

@@ -7,7 +7,7 @@
 import type { Model, ProductCalc, ProductStatus } from "../../calc/engine";
 import { MENU_CLASS_INFO, menuEngineering, type MenuClass } from "../../calc/insights";
 import type { UrunKarliligiInput } from "../schemas";
-import { cleanName, foldName, monthLabel, nameMatches, num, panelUrl, pct, pctNum, r2, salesFor, tl, ToolInputError, unpricedInRecipes, unpricedWarnings } from "./common";
+import { cleanName, costIncomplete, foldName, monthLabel, nameMatches, num, panelUrl, pct, pctNum, r2, salesFor, tl, ToolInputError, unpricedInRecipes, unpricedWarnings } from "./common";
 
 export interface ProductRow {
   ad: string;
@@ -18,6 +18,8 @@ export interface ProductRow {
   birimKar: number;
   marjYuzde: number | null;
   maliyetOraniYuzde: number | null;
+  /** Reçetede fiyatı girilmemiş hammadde var: maliyet eksik, kâr ve marj olduğundan yüksek */
+  maliyetEksik: boolean;
   durum: ProductStatus;
   adet: number;
   toplamKar: number;
@@ -97,6 +99,7 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
       birimKar: r2(p.unitProfit),
       marjYuzde: pctNum(p.margin),
       maliyetOraniYuzde: pctNum(p.costRatio),
+      maliyetEksik: costIncomplete(p),
       durum: p.status,
       adet: x.qty,
       toplamKar: r2(x.totalCm),
@@ -125,7 +128,9 @@ export function productProfitability(model: Model, input: UrunKarliligiInput & {
   }
 
   const noRecipe = items.filter((x) => !ranked(x.p)).length;
-  const uyarilar = [...(basis.note ? [basis.note] : []), ...unpricedWarnings(unpricedInRecipes(model))];
+  // Kapsam süzülmüş liste (kategori, ürün adı), limitten önce: eksik maliyet ürünün sıradaki yerini de değiştirir
+  // ("zarar" sırasında hiç görünmeyebilir), uyarı yine verilir
+  const uyarilar = [...(basis.note ? [basis.note] : []), ...unpricedWarnings(unpricedInRecipes(items.map((x) => x.p)))];
   if (noRecipe && input.siralama !== "adet") uyarilar.push(`Reçetesi olmayan ${num(noRecipe)} ürün kâr sıralamasına girmedi (maliyeti bilinmiyor).`);
 
   return {

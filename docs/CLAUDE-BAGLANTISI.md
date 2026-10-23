@@ -12,8 +12,9 @@ verisine dayandığını ve hesabı gösterir, ilgili ekranın bağlantısını 
 
 ## 1. Bağlamak (bir kez)
 
-Claude'un menü adları aşağıda Anthropic'in belgelerindeki İngilizce adlarıyla yazıldı; Türkçe arayüzde karşılıkları
-vardır (ör. Customize › Connectors = Ayarlar › Bağlayıcılar).
+Claude'un menü adları aşağıda Anthropic'in belgelerindeki İngilizce adlarıyla yazıldı (panelin Hesabım ve Yardım
+metinleri de aynı adları kullanır). Bağlayıcılar Claude'da **Customize › Connectors** altındadır; doğrudan bağlantı:
+https://claude.ai/customize/connectors.
 
 1. **claude.ai'de (web) ya da Claude masaüstü uygulamasında** (telefon uygulaması bağlayıcı ekleyemez, eklenmiş olanı
    kullanır): **Customize › Connectors** (https://claude.ai/customize/connectors) › **Add custom connector**.
@@ -64,9 +65,11 @@ Bu sürümde karaoke, zayi / ikram ve hammadde fiyat geçmişi araçları **yok*
 | `ara` (Ürün, hammadde, tedarikçi ara) | Adla arama, tür ve ekran bağlantısı (tutar yok) | "Süt adlı hammaddeler hangileri?" | ⌘K arama |
 
 Her cevap `hesap` (gerçek rakamlarla hesap satırları), `kaynak` (verinin dayanağı), gerekirse `uyarilar` (sayım
-girilmedi, satış listesi yok, kasa raporu eksik, fiyatı girilmemiş hammadde) ve `panelAdresi` taşır. Claude'a giden
-yönerge bunları cevapta göstermesini, rakam uydurmamasını ve "kâr kaybettiren" gibi belirsiz sorularda iki anlamı
-(zam etkisi / en az kâr bırakan ürünler) ayırmasını söyler.
+girilmedi, POS cirosu girilmedi, satış listesi yok, kasa raporu eksik, fiyatı girilmemiş hammadde) ve `panelAdresi`
+taşır. Fiyatı girilmemiş hammadde yalnız cevaptaki ürünler için söylenir ve o ürünlerin satırında `maliyetEksik: true`
+yazar (maliyeti eksik, kârı olduğundan yüksek). POS cirosu girilmemiş ayın kârı, panelde olduğu gibi, hesaplanmaz; o
+ay laffogato.net online satışı olsa da. Claude'a giden yönerge bunları cevapta göstermesini, rakam uydurmamasını ve
+"kâr kaybettiren" gibi belirsiz sorularda iki anlamı (zam etkisi / en az kâr bırakan ürünler) ayırmasını söyler.
 
 Satış adetleri ModPOS'un aylık ürün satış listesinden gelir: ayın listesi yoksa önceki son ayın adetleri kullanılır ve
 cevap bunu söyler. "Ödendi" bilgisi paneldeki ya da Paraşüt'teki işarettir, banka hareketi değildir.
@@ -129,7 +132,10 @@ Panel kendi OAuth yetkilendirme sunucusudur (issuer `https://ladmin.laffogato.ne
   izlenmeden, 5 sn, en çok 10 KB, 24 saat önbellekte) ya da otomatik kayıt (DCR; IP başına saatte 10, bağlanmamış
   istemci günde en çok 50). İkisinde de dönüş adresi yalnız `https://claude.ai/api/mcp/auth_callback` ve
   `https://claude.com/api/mcp/auth_callback` (localhost yalnız geliştirmede ya da `MCP_ALLOW_LOCALHOST=1` ile); birebir
-  eşleşme. Gizli anahtar yok, PKCE S256 zorunlu; dönüşte `iss`.
+  eşleşme. CIMD belgesinde listede olmayan başka bir dönüş adresi varsa belge reddedilmez, yalnız o adres saklanmaz
+  (Vercel loglarında `[mcp] CIMD belgesindeki izinsiz dönüş adresleri saklanmadı`); hiç izinli adres yoksa istemci
+  tanınmaz. Otomatik kayıtta izinsiz adres kaydı reddeder. Belge okunamazsa önbellekteki eski kayıt kullanılır; okunup
+  geçersiz çıkarsa kullanılmaz. Gizli anahtar yok, PKCE S256 zorunlu; dönüşte `iss`.
 - Yetki kodu 2 dakika, tek kullanım; ikinci kullanım o koddan açılan bağlantıyı kapatır. Erişim anahtarı 1 saat;
   yenileme anahtarı 30 gün, her kullanımda yenisiyle değişir; eski anahtar 60 sn içinde (yenisi kullanılmadıysa) bir
   kez daha geçer (ağ hatası payı), sonra kullanılırsa bağlantı kapanır. Bağlantı en çok 90 gün ve kullanıcının oturum
@@ -138,7 +144,9 @@ Panel kendi OAuth yetkilendirme sunucusudur (issuer `https://ladmin.laffogato.ne
 - Her istekte: anahtar ve bağlantı açık, süresi dolmamış, kullanıcı etkin **yönetici** ve oturum sürümü aynı.
   `Origin` varsa panelin kendisi, `claude.ai`, `claude.com` ya da `*.anthropic.com` olmalı (değilse 403). Bellekte
   sınırlayıcılar (hatalı anahtarla 10 dakikada 30, bağlantı başına dakikada 60 istek) yalnız ilk savunma; asıl
-  sınırlar veritabanında (tek kullanımlık kod, 10 bağlantı, günde 50 bekleyen kayıt).
+  sınırlar veritabanında (tek kullanımlık kod, 10 bağlantı, günde 50 bekleyen kayıt). IP sınırı anahtar doğrulandıktan
+  sonra ve yalnız hatalı anahtara uygulanır: Claude'un bütün istekleri Anthropic'in ortak çıkış adreslerinden gelir,
+  geçerli anahtar başkasının hatalı istekleri yüzünden 429 almaz.
 - Araçlar yalnız okur: `src/server/mcp/tools.ts` yalnız izinli okuyucuları içe aktarır, hiçbiri yazmaz
   (`tests/claude-guvenlik.test.ts`); hepsi `readOnlyHint: true`. Her çağrı `mcp_calls`'a yazılır (araç, girdi, sonuç,
   süre; yanıt saklanmaz, 180 gün).

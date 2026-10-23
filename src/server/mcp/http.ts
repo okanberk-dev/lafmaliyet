@@ -65,7 +65,10 @@ export const tokenClientLimiter = createLimiter({ limit: 30, windowMs: 60_000 })
 export const registerLimiter = createLimiter({ limit: 10, windowMs: 60 * 60_000 });
 /** /oauth/revoke: IP başına dakikada 30 */
 export const revokeLimiter = createLimiter({ limit: 30, windowMs: 60_000 });
-/** /api/mcp: hatalı anahtarla 10 dakikada 30 istek (IP), bağlantı başına dakikada 60 istek */
+/**
+ * /api/mcp: hatalı anahtarla 10 dakikada 30 istek (IP; anahtar doğrulandıktan sonra, yalnız hatalıya: geçerli anahtar
+ * IP yüzünden reddedilmez), bağlantı başına dakikada 60 istek
+ */
 export const mcpFailLimiter = createLimiter({ limit: 30, windowMs: 10 * 60_000 });
 export const mcpGrantLimiter = createLimiter({ limit: 60, windowMs: 60_000 });
 

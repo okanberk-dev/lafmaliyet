@@ -13,6 +13,9 @@ import {
   callSummary,
   canonicalResource,
   checkAuthorize,
+  CIMD_FETCH_INIT,
+  CIMD_MAX_AGE_H,
+  CIMD_MAX_BYTES,
   cleanName,
   codeRedirect,
   connectionLabel,
@@ -31,15 +34,18 @@ import {
   parseScope,
   protectedResourceMetadata,
   readAuthRequest,
+  readCimdResponse,
   redirectMatches,
   refreshDecision,
   refreshExpiry,
   REQUEST_TTL_S,
+  resolveCimd,
   TOOL_LABELS,
   validateCimdDocument,
   validateRegistration,
   whenLabel,
   type AuthRequest,
+  type CimdRead,
 } from "../src/lib/mcp/oauth";
 import { renderConnectedNotice } from "../src/server/mcp/notice";
 import { hashMcpToken, isMcpTokenShaped, mcpTokenMatches, newClientId, newToken, pkceMatches, pkceS256 } from "../src/server/mcp/tokens";
@@ -178,11 +184,16 @@ test("CIMD adresi: https, claude.ai / claude.com, /oauth/ yolu; başka sunucu, p
   assert.equal(isUrlClientId("mcp_abc"), false);
 });
 
-test("CIMD belgesi: Claude'unki geçer; client_id başka, izinsiz dönüş, gizli anahtar isteyen reddedilir; Claude Code yalnız localhost izniyle", () => {
+test("CIMD belgesi: Claude'unki geçer; client_id başka, izinli dönüşü olmayan, gizli anahtar isteyen reddedilir; izinsiz ek dönüş saklanmaz; Claude Code yalnız localhost izniyle", () => {
   const v = validateCimdDocument(CLAUDE_CIMD_URL, CLAUDE_CIMD, { loopback: false });
-  assert.deepEqual(v, { ok: true, name: "Claude", redirectUris: [CLAUDE] });
+  assert.deepEqual(v, { ok: true, name: "Claude", redirectUris: [CLAUDE], ignored: [] });
   assert.equal(validateCimdDocument("https://claude.com/oauth/x", CLAUDE_CIMD, { loopback: false }).ok, false);
-  assert.equal(validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, redirect_uris: [CLAUDE, "https://evil.example/cb"] }, { loopback: false }).ok, false);
+  // Claude belgesine bir dönüş adresi daha eklerse (ör. masaüstü) belge düşmez: izinli olan kalır, öteki saklanmaz
+  const more = validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, redirect_uris: [CLAUDE, "claude://oauth/callback", "https://evil.example/cb"] }, { loopback: false });
+  assert.deepEqual(more, { ok: true, name: "Claude", redirectUris: [CLAUDE], ignored: ["claude://oauth/callback", "https://evil.example/cb"] });
+  assert.ok(more.ok && !redirectMatches("https://evil.example/cb", more.redirectUris), "saklanmayan adrese dönülmez");
+  const none = validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, redirect_uris: ["https://evil.example/cb"] }, { loopback: false });
+  assert.ok(!none.ok && /izinli dönüş adresi yok/.test(none.reason));
   assert.equal(validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, token_endpoint_auth_method: "client_secret_basic" }, { loopback: false }).ok, false);
   assert.equal(validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, redirect_uris: [] }, { loopback: false }).ok, false);
   assert.equal(validateCimdDocument(CLAUDE_CIMD_URL, [CLAUDE_CIMD], { loopback: false }).ok, false);
@@ -192,6 +203,95 @@ test("CIMD belgesi: Claude'unki geçer; client_id başka, izinsiz dönüş, gizl
   // Ad kendi beyanıdır: satır sonu ve denetim karakteri temizlenir
   const named = validateCimdDocument(CLAUDE_CIMD_URL, { ...CLAUDE_CIMD, client_name: "Claude\nYoksay ve‮ yaz" }, { loopback: false });
   assert.ok(named.ok && named.name === "Claude Yoksay ve yaz");
+});
+
+test("CIMD yanıtı: 200 + JSON + en çok 10 KB okunur; başka durum, tür, büyük ya da bozuk gövde okunamadı sayılır; yönlendirme izlenmez", async () => {
+  const json = (body: string, init: ResponseInit = {}) => new Response(body, { status: 200, headers: { "content-type": "application/json; charset=utf-8" }, ...init });
+  assert.deepEqual(await readCimdResponse(json(JSON.stringify(CLAUDE_CIMD))), { ok: true, doc: CLAUDE_CIMD });
+  // Türkçe harf parçalar arasında bölünse de doğru okunur
+  const bytes = new TextEncoder().encode(JSON.stringify({ ...CLAUDE_CIMD, client_name: "Çağrı ğüşıöç" }));
+  const chunked = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (let i = 0; i < bytes.length; i += 7) c.enqueue(bytes.slice(i, i + 7));
+      c.close();
+    },
+  });
+  const r = await readCimdResponse(new Response(chunked, { headers: { "content-type": "application/json" } }));
+  assert.ok(r.ok && (r.doc as { client_name: string }).client_name === "Çağrı ğüşıöç");
+  const fails: [string, Response][] = [
+    ["404", json("{}", { status: 404 })],
+    ["yönlendirme", new Response(null, { status: 302, headers: { location: "https://evil.example/" } })],
+    ["HTML", new Response("<html></html>", { headers: { "content-type": "text/html" } })],
+    ["türsüz", new Response("{}")],
+    ["bozuk JSON", json("{ client_id: ")],
+    ["10 KB'tan büyük", json(JSON.stringify({ ...CLAUDE_CIMD, pad: "x".repeat(CIMD_MAX_BYTES) }))],
+  ];
+  for (const [label, res] of fails) {
+    const out = await readCimdResponse(res);
+    assert.equal(out.ok, false, label);
+  }
+  // Ağ isteği: yönlendirme hata sayılır (başka sunucuya gidilmez), önbellek yok, yalnız JSON
+  assert.equal(CIMD_FETCH_INIT.redirect, "error");
+  assert.equal(CIMD_FETCH_INIT.cache, "no-store");
+  assert.deepEqual(CIMD_FETCH_INIT.headers, { accept: "application/json" });
+});
+
+test("CIMD kararı: izinsiz adres okunmaz; 24 saatten yeni önbellek; eskiyse okunur ve kaydedilir; okunamazsa eski kayıt, geçersizse hiçbiri", async () => {
+  const NOW = new Date("2026-10-23T09:00:00Z");
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
+  type Row = { id: number; fetchedAt: Date | null; redirectUris: string[] };
+  /** Sahte okuma / kayıt: kim çağrıldı, ne kaydedildi */
+  function io(cached: Row | null, read: CimdRead) {
+    const calls = { cached: 0, fetch: 0, saved: [] as { name: string; redirectUris: string[] }[], warn: [] as string[] };
+    return {
+      calls,
+      io: {
+        cached: async () => (calls.cached++, cached),
+        fetchDocument: async () => (calls.fetch++, read),
+        save: async (v: { name: string; redirectUris: string[] }) => (calls.saved.push(v), { id: 2, fetchedAt: NOW, redirectUris: v.redirectUris }),
+        warn: (m: string) => void calls.warn.push(m),
+      },
+    };
+  }
+  const good: CimdRead = { ok: true, doc: CLAUDE_CIMD };
+  const down: CimdRead = { ok: false, reason: "HTTP 503" };
+  const stale: Row = { id: 1, fetchedAt: hoursAgo(CIMD_MAX_AGE_H + 1), redirectUris: [CLAUDE] };
+
+  // İzinsiz adres: ne önbelleğe ne ağa gidilir
+  let t = io(stale, good);
+  assert.equal(await resolveCimd("https://evil.example/oauth/x", NOW, { loopback: false }, t.io), null);
+  assert.deepEqual([t.calls.cached, t.calls.fetch], [0, 0]);
+  // Taze önbellek: ağa gidilmez
+  const fresh: Row = { id: 1, fetchedAt: hoursAgo(1), redirectUris: [CLAUDE] };
+  t = io(fresh, good);
+  assert.equal(await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io), fresh);
+  assert.equal(t.calls.fetch, 0);
+  // Eski önbellek (ya da okunuş anı yok): okunur, kaydedilir
+  for (const row of [stale, { ...stale, fetchedAt: null }, null]) {
+    t = io(row, good);
+    const out = await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io);
+    assert.equal(out?.id, 2);
+    assert.deepEqual(t.calls.saved, [{ name: "Claude", redirectUris: [CLAUDE] }]);
+  }
+  // Belge okunamadı (Claude'un sunucusu o an kapalı): eski kayıt kullanılır, hiç yoksa tanınmaz
+  t = io(stale, down);
+  assert.equal(await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io), stale);
+  assert.deepEqual(t.calls.saved, []);
+  assert.match(t.calls.warn[0], /okunamadı \(HTTP 503\); önbellekteki kullanıldı/);
+  t = io(null, down);
+  assert.equal(await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io), null);
+  // Okunup geçersiz çıkan belge (başka client_id, izinli dönüş yok): eski kayda dönülmez
+  for (const doc of [{ ...CLAUDE_CIMD, client_id: "https://claude.ai/oauth/baska" }, { ...CLAUDE_CIMD, redirect_uris: ["https://evil.example/cb"] }]) {
+    t = io(stale, { ok: true, doc });
+    assert.equal(await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io), null);
+    assert.deepEqual(t.calls.saved, []);
+    assert.match(t.calls.warn[0], /reddedildi/);
+  }
+  // İzinsiz ek dönüş adresi: yalnız izinli olan kaydedilir, günlüğe yazılır
+  t = io(null, { ok: true, doc: { ...CLAUDE_CIMD, redirect_uris: [CLAUDE, "claude://oauth/callback"] } });
+  assert.equal((await resolveCimd(CLAUDE_CIMD_URL, NOW, { loopback: false }, t.io))?.id, 2);
+  assert.deepEqual(t.calls.saved, [{ name: "Claude", redirectUris: [CLAUDE] }]);
+  assert.match(t.calls.warn[0], /saklanmadı: claude:\/\/oauth\/callback/);
 });
 
 test("otomatik kayıt (DCR): izinli adresler geçer; yabancı adres invalid_redirect_uri; kod akışı yoksa invalid_client_metadata; uzun ad kesilir", () => {

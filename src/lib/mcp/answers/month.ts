@@ -15,12 +15,15 @@ export interface MonthSummary {
   durum: "suruyor" | "bitti" | "gelecek";
   acikGun: number | null;
   ayinGunSayisi: number;
-  /** Faturaya göre (Gelir-gider); ciro girilmemiş ayda null */
+  /**
+   * Faturaya göre (Gelir-gider); ne POS cirosu ne online satış varsa null. POS cirosu girilmemişse (yalnız laffogato.net
+   * online satışı) ciro, kâr ve marj null, giderler ve online satış durur: panel de o ayın kârını saymaz
+   */
   gerceklesen: {
-    ciroKdvDahil: number;
-    ciroKdvHaric: number;
+    ciroKdvDahil: number | null;
+    ciroKdvHaric: number | null;
     onlineKdvHaric: number | null;
-    toplamCiroKdvHaric: number;
+    toplamCiroKdvHaric: number | null;
     malMaliyeti: number;
     malAlimi: number;
     acilisStok: number;
@@ -31,7 +34,7 @@ export interface MonthSummary {
     genel: number;
     komisyon: number;
     toplamGider: number;
-    kar: number;
+    kar: number | null;
     karMarjiYuzde: number | null;
   } | null;
   /** Reçeteye göre (Genel bakış); satış listesi olmayan ayda null */
@@ -72,15 +75,18 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   const kaynak: string[] = [];
   const uyarilar: string[] = [];
 
+  // Panelin kuralı: POS cirosu girilmemiş ayın kârı sayılmaz (Genel bakış'ta hasRevenue, Gelir-gider'de yearTrend'in
+  // active'i). Yalnız laffogato.net online satışı olan ay (her ayın 1'i, kasa raporları gecikince) %100 marjlı ya da
+  // faturalar gelince büyük zararda görünmesin: ciro ve kâr null, giderler ve online satış yerinde
+  const hasPos = pm.revenue !== null;
   let gerceklesen: MonthSummary["gerceklesen"] = null;
-  if (pm.revenue !== null || pm.site) {
-    const ciroNet = pm.revenueNet ?? 0;
+  if (hasPos || pm.site) {
     const total = pm.revenueTotalNet ?? 0;
     gerceklesen = {
-      ciroKdvDahil: r2(pm.revenue ?? 0),
-      ciroKdvHaric: r2(ciroNet),
+      ciroKdvDahil: r2n(pm.revenue),
+      ciroKdvHaric: r2n(pm.revenueNet),
       onlineKdvHaric: r2n(pm.site?.total),
-      toplamCiroKdvHaric: r2(total),
+      toplamCiroKdvHaric: hasPos ? r2(total) : null,
       malMaliyeti: r2(pm.cogs),
       malAlimi: r2(pm.purchases),
       acilisStok: r2(pm.opening),
@@ -91,11 +97,12 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
       genel: r2(pm.sections.genel),
       komisyon: r2(pm.sections.komisyon),
       toplamGider: r2(pm.expenses),
-      kar: r2(pm.profit),
-      karMarjiYuzde: total ? pctNum(pm.profit / total) : null,
+      kar: hasPos ? r2(pm.profit) : null,
+      karMarjiYuzde: hasPos && total ? pctNum(pm.profit / total) : null,
     };
-    hesap.push(`Kâr = KDV hariç ciro − giderler = ${tl(total)} − ${tl(pm.expenses)} = ${tl(pm.profit)}`);
     if (pm.revenue !== null) {
+      const ciroNet = pm.revenueNet ?? 0;
+      hesap.push(`Kâr = KDV hariç ciro − giderler = ${tl(total)} − ${tl(pm.expenses)} = ${tl(pm.profit)}`);
       const service = pm.serviceRevenue;
       const pos =
         service > 0
@@ -103,17 +110,17 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
           : `${tl(pm.revenue)} ÷ ${kdvText(st.kdv)}`;
       hesap.push(`KDV hariç ciro = ${pos} = ${tl(ciroNet)} (ModPOS${pm.site ? `; laffogato.net online ${tl(pm.site.total)} ayrıca eklendi, toplam ${tl(total)}` : "; online satış yok"})`);
     } else if (pm.site) {
-      hesap.push(`KDV hariç ciro = laffogato.net online ${tl(pm.site.total)} (ModPOS cirosu girilmedi)`);
+      hesap.push(`laffogato.net online satışı ${tl(pm.site.total)} (KDV hariç); POS cirosu girilmediği için kâr hesaplanmadı`);
     }
     hesap.push(
       `Giderler = mal maliyeti ${tl(pm.cogs)} + personel ${tl(pm.sections.personel)} + faturalar ${tl(pm.sections.faturalar)} + kira ${tl(pm.sections.kira)} + genel ${tl(pm.sections.genel)} + komisyon ${tl(pm.sections.komisyon)}`,
     );
     hesap.push(`Mal maliyeti = açılış stoğu ${tl(pm.opening)} + alınan mal ${tl(pm.purchases)} − kapanış stoğu ${tl(pm.closing)}`);
     if (pm.openDays > 0 && pm.openDays < dim) hesap.push(`Sabit giderler açık güne göre: ${num(pm.openDays)} / ${num(dim)} gün`);
-  } else {
-    uyarilar.push(`${label} için ciro girilmedi (Satışlar'daki ay bilgisi ya da kasa raporu): faturaya göre kâr hesaplanmadı.`);
-    if (pm.expenses > 0) hesap.push(`Şimdiye kadarki giderler ${tl(pm.expenses)} (ciro girilince kâr hesaplanır)`);
+  } else if (pm.expenses > 0) {
+    hesap.push(`Şimdiye kadarki giderler ${tl(pm.expenses)} (ciro girilince kâr hesaplanır)`);
   }
+  if (!hasPos) uyarilar.push(`${label} için POS cirosu girilmedi (Satışlar'daki ay bilgisi ya da kasa raporu): faturaya göre kâr hesaplanmadı.`);
 
   const t = d.theoretical;
   const teorik = t

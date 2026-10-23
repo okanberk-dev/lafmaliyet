@@ -99,9 +99,13 @@ export function ConnectionsCard({ rows, calls, mcpUrl }: { rows: ConnectionView[
           <>
             <p className="text-sm text-ink-soft">Bağlı uygulama yok.</p>
             <Well className="space-y-3 text-sm leading-6 text-ink-soft ring-1 ring-line">
+              {/* Claude'un menü adları İngilizce (Anthropic'in belgesindeki gibi); bağlantı doğrudan o sayfayı açar */}
               <p>
-                Claude&apos;dan panele soru sormak için Claude&apos;da Ayarlar › Bağlayıcılar › <strong className="font-semibold text-ink">Özel bağlayıcı ekle</strong>
-                &apos;ye bu adresi girin:
+                Claude&apos;dan panele soru sormak için Claude&apos;da (web ya da masaüstü){" "}
+                <a href="https://claude.ai/customize/connectors" target="_blank" rel="noopener noreferrer" className="font-semibold whitespace-nowrap text-ink underline underline-offset-2">
+                  Customize › Connectors
+                </a>{" "}
+                sayfasında <strong className="font-semibold text-ink">Add custom connector</strong> düğmesine basıp bu adresi girin:
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <code className="min-w-0 flex-1 rounded-xl bg-panel px-3 py-2 font-mono text-[13px] break-all text-ink select-all">{mcpUrl}</code>

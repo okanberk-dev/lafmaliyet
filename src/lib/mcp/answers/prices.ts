@@ -4,10 +4,10 @@
  * tests/claude-araclar.test.ts.
  */
 
-import type { Model } from "../../calc/engine";
+import type { Model, ProductCalc } from "../../calc/engine";
 import type { IngredientChange, ProductImpact } from "../../calc/price-impact";
 import { basisText, type PriceLoss } from "../../calc/price-loss";
-import { cleanName, num, panelUrl, pct, pctNum, r2, tl, unpricedInRecipes, unpricedWarnings } from "./common";
+import { cleanName, costIncomplete, num, panelUrl, pct, pctNum, r2, tl, unpricedInRecipes, unpricedWarnings } from "./common";
 
 /** loadPriceAlerts'in bu araca gereken parçası */
 export interface PriceAlertsLike {
@@ -43,6 +43,8 @@ export interface PriceRiseImpact {
     birimKarSonra: number;
     onerilenFiyat: number | null;
     fiyatinaBakin: boolean;
+    /** Reçetede fiyatı girilmemiş hammadde var: birim kâr ve önerilen fiyat eksik maliyetle */
+    maliyetEksik: boolean;
     panelAdresi: string;
   }[];
   uyarilar: string[];
@@ -64,6 +66,7 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
   const loss = alerts.loss;
   const basis = loss.basis;
   const impactOf = new Map(alerts.impacts.map((i) => [i.productId, i]));
+  const calcOf = new Map(model.activeProducts.map((p) => [p.product.id, p]));
   const ups = loss.ingredients.filter((i) => i.pct > 0);
   const downs = loss.ingredients.filter((i) => i.pct <= 0);
 
@@ -83,6 +86,7 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
   });
   const urunler = loss.products.slice(0, input.limit).map((p) => {
     const imp = impactOf.get(p.productId);
+    const calc = calcOf.get(p.productId);
     return {
       ad: cleanName(p.name),
       boy: p.size,
@@ -93,6 +97,7 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
       birimKarSonra: r2(p.profitAfter),
       onerilenFiyat: imp?.needsPrice ? imp.suggestedPrice : null,
       fiyatinaBakin: Boolean(imp?.needsPrice && !imp.acknowledged),
+      maliyetEksik: calc ? costIncomplete(calc) : false,
       panelAdresi: panelUrl(ctx.base, `/panel/urunler/${p.productId}`),
     };
   });
@@ -104,12 +109,15 @@ export function priceRiseImpact(model: Model, alerts: PriceAlertsLike, input: { 
     hesap.push(`${cleanName(i.name)}: ${tl(i.before * u.factor, 2)} → ${tl(i.after * u.factor, 2)}/${u.label} (+${pct(i.pct, 0)})${usage}`);
   }
   if (basis) {
-    const share = loss.grossProfit ? `, brüt kârın ${pct(loss.totalLoss / loss.grossProfit)}'i` : "";
-    hesap.push(`Toplam ≈ ${tl(loss.totalLoss)}/ay${share}`);
+    // Yüzde eksiz: iyelik eki sayının okunuşuna göre değişir ("%3,2'si", "%16'sı", "%3,4'ü")
+    const share = loss.grossProfit ? ` (brüt kâra oranı ${pct(loss.totalLoss / loss.grossProfit)})` : "";
+    if (ups.length) hesap.push(`Toplam ≈ ${tl(loss.totalLoss)}/ay${share}`);
     if (loss.totalGain >= 1) hesap.push(`Ucuzlayan hammaddelerin aylık kazancı ≈ ${tl(loss.totalGain)}`);
   }
 
-  const uyarilar = unpricedWarnings(unpricedInRecipes(model));
+  // Kapsam zamdan etkilenen ürünler (limitten önce): birim kârları ve önerilen fiyatları eksik maliyetle hesaplandı
+  const affected = loss.products.map((p) => calcOf.get(p.productId)).filter((p): p is ProductCalc => p !== undefined);
+  const uyarilar = unpricedWarnings(unpricedInRecipes(affected));
   if (!ups.length) uyarilar.push("Bu dönemde fiyatı %5'ten fazla artan hammadde yok.");
   const actionable = urunler.filter((u) => u.fiyatinaBakin).length;
   if (actionable) uyarilar.push(`${num(actionable)} ürünün maliyet oranı hedefin üstünde: önerilen fiyat hazır (Ürünler › Hammadde zamları).`);

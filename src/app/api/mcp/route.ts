@@ -47,8 +47,6 @@ export async function POST(request: Request) {
     console.warn("[mcp] Origin reddedildi:", origin);
     return Response.json({ error: "forbidden_origin" }, { status: 403 });
   }
-  const ip = clientIp(request.headers);
-  if (mcpFailLimiter.blocked(ip)) return Response.json({ error: "too_many_requests" }, { status: 429, headers: { "Retry-After": "600" } });
 
   const urls = mcpUrls(base);
   const options = { verifier, requiredScopes: [MCP_SCOPE], resourceMetadataUrl: urls.prm, expectedResource: new URL(urls.resource) };
@@ -61,8 +59,12 @@ export async function POST(request: Request) {
   }
   const auth = await requireBearerAuth(options)(request);
   if (auth instanceof Response) {
-    // Yalnız hatalı anahtarlar sayılır (veritabanı hatası, 500, sayılmaz)
-    if (auth.status === 401 || auth.status === 403) mcpFailLimiter.hit(ip);
+    // IP sınırı anahtar doğrulandıktan sonra ve yalnız hatalı anahtara: Claude'un bütün istekleri Anthropic'in ortak
+    // çıkış adreslerinden gelir, geçerli anahtar başkasının hatalı istekleri yüzünden reddedilmez. Yalnız hatalı
+    // anahtarlar sayılır (veritabanı hatası, 500, sayılmaz); sınırı aşan IP'nin hatalı istekleri 429 alır
+    if ((auth.status === 401 || auth.status === 403) && !mcpFailLimiter.hit(clientIp(request.headers))) {
+      return Response.json({ error: "too_many_requests" }, { status: 429, headers: { "Retry-After": "600", "Cache-Control": "no-store" } });
+    }
     return auth;
   }
   let p: Principal;

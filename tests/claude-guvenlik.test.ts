@@ -129,6 +129,22 @@ test("/api/mcp çerez okumaz; yalnız POST ve maxDuration dışa açık; CORS yo
   assert.doesNotMatch(src, /import \{[^}]*\b(CORS|preflight)\b[^}]*\} from "@\/server\/mcp\/http"/);
 });
 
+test("/api/mcp: IP sınırı anahtar doğrulandıktan sonra ve yalnız hatalı anahtara (Anthropic'in ortak IP'si geçerli anahtarı kesmez)", () => {
+  const src = read("src/app/api/mcp/route.ts");
+  const post = src.slice(src.indexOf("export async function POST"));
+  // Doğrulamadan önce IP'ye bakılmaz
+  assert.doesNotMatch(post, /mcpFailLimiter\.blocked\(/);
+  const verify = post.indexOf("await requireBearerAuth(options)(request)");
+  assert.ok(verify > 0, "anahtar doğrulaması");
+  const uses = [...post.matchAll(/mcpFailLimiter\./g)].map((m) => m.index!);
+  assert.equal(uses.length, 1, "sınırlayıcı tek yerde");
+  assert.ok(uses[0] > verify, "sınır doğrulamadan sonra");
+  // Yalnız doğrulanamayan anahtarın dalında (auth bir Response iken) sayılır ve 429 verilir
+  const failBranch = post.slice(post.indexOf("if (auth instanceof Response) {"), post.indexOf("return auth;"));
+  assert.match(failBranch, /\(auth\.status === 401 \|\| auth\.status === 403\) && !mcpFailLimiter\.hit\(clientIp\(request\.headers\)\)/);
+  assert.match(failBranch, /status: 429/);
+});
+
 test("her uç önce açık mı diye bakar (önizleme ve MCP_DISABLED → 404)", () => {
   for (const f of ROUTES) {
     const src = read(f);
