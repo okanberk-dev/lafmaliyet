@@ -1,15 +1,19 @@
-# Kalan işler (23 Ekim 2026, 08:00 UTC itibarıyla)
+# Kalan işler (23 Ekim 2026, 18:30 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
 
 ## 1. Canlıda olanlar
 
-- `main` @ 6ef84f2: dalga 1–4 birleşti (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
-  #10 (ekle, pricing, pompa-mobil), #12 (insight + KDV, fotograf, menu), #13 (kasa, W2.0'ın kalanı, today, mcp).
-  Canlı derleme günlüğü: `✓ Veritabanı şeması güncel (29 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir
-  önizlemenin uyguladığı eski menü migration kaydı; zararsız). **#13'ten geriye Instant Rollback yok**
+- `main` @ 663b166: dalga 1–6 birleşti (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
+  #10 (ekle, pricing, pompa-mobil), #12 (insight + KDV, fotograf, menu), #13 (kasa, W2.0'ın kalanı, today, mcp),
+  #14 (kontrol, doluluk), #17 (fatura okuma, oneri-fiyat). Ayrıca #11 (PR incelemesi için Claude iş akışı) ve diğer
+  oturumdan #15 (KDV-2: tevkifatlı faturanın KDV'si, nakit planında 25'inde ayrı ödeme). Canlı derleme günlüğü:
+  `✓ Veritabanı şeması güncel (32 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir önizlemenin uyguladığı
+  eski menü migration kaydı; zararsız, dalga 7'den sonra `KNOWN_ORPHANS`'ta). **#13'ten geriye Instant Rollback yok**
   (`docs/DEPLOY.md` §7).
+- **Dalga 7 (denetim düzeltmeleri, `claude/kalan-isler-7`):** 23 Ekim denetiminin panel bulguları; migration'lar
+  `0032_giris_cihaz_islem_kisisi` ve `0033_sabit_gider_kdv`. Ayrıntı ve sahibe notlar aşağıda, "Denetim düzeltmeleri".
 - Fotoğraftan okuma canlıda açık: özel Vercel Blob deposu `laffogato-foto-panel` (fra1); `BLOB_READ_WRITE_TOKEN` ve
   `ANTHROPIC_API_KEY` yalnız Production'da. Eski boş `laffogato-foto` deposu kullanılmıyor.
 - Daha önce: PR #7 (yönetici işlemlerinde parolayla onay, günlük işlerin takibi, canlı derlemede migration
@@ -18,8 +22,9 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   ekranından tek dokunuşla sipariş aşaması, Ayarlar'da "Bağlantıları sına".
 - **Paralel çalışan bir oturum daha var** (site ↔ panel işleri): sahiplik, sözleşmeler ve çakışma noktaları
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
-- **Açık PR:** #11 taslak (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da
-  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–8'in her biri main'e ayrı bir PR'dır.
+- **PR incelemesi:** #11 birleşti ama iş akışı çalışmıyor: hesabın GitHub Actions dakikaları bitti (iş, çalıştırıcı
+  başlamadan düşüyor, `runner_id: 0`); Codex incelemesi de kullanım sınırında. Doğrulama her dalgada yerelde yapılır.
+  Diğer oturumun açık PR'ı: #16 (KDV-2 hatırlatıcısı, taslak). Kalan dalgaların her biri main'e ayrı bir PR'dır.
 
 ## 2. Kalan işler (sırayla)
 
@@ -58,15 +63,38 @@ sıra, sahibe sorular). Önce ortak altyapı PR'ı (W2.0), sonra fotograf ∥ mc
 tahmin ∥ haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir; `tahmin.md`'nin hava durumu noktası Tuzla'ya alındı (R19).
 Site deposu 22 Ekim'de incelendi (`DIGER-OTURUM.md` sonu): karaoke ucu geçmiş tarihleri zaten veriyor; doluluk site
 değişikliği beklemez. W2.0'ın kalanı (sendEmail seçenekleri, sabah e-postası kutuları ve `DIGEST_EXTRA_SOURCES`,
-ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 4'te. Kalan dalgalar: 5 kontrol ∥ doluluk,
-6 fatura ∥ oneri-fiyat (sahibin 23 Ekim istekleri, aşağıda), 7 siparis ∥ komisyon, 8 tahmin ∥ haftalik; her biri ayrı PR.
+ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 4'te. Dalgalar: 5 kontrol ∥ doluluk (#14),
+6 fatura ∥ oneri-fiyat (#17; sahibin 23 Ekim istekleri, aşağıda), 7 denetim düzeltmeleri (baglanti ∥ para, aşağıda);
+kalanlar 8 siparis ∥ komisyon, 9 tahmin ∥ haftalik; her biri ayrı PR.
 
 ### Sahibin 23 Ekim istekleri (dalga 6, ikinci paketten önce)
 
 | Grup | Plan | Ne |
 |---|---|---|
-| fatura | `fatura-okuma.md` | Faturadaki paket boyu addan ("150 AD.") ve PDF'ten (Claude Haiku 5.5) okunur; fiyat onayında kanıtsız "Çarpanı X yap" önerisi kalkar, tahmini fiyat açıkça söylenir. Canlıdaki iki örnek: Yenilebilir bardak (1 Adet = 150 adet, adet başı 20 ₺, %52 ucuz) ve Klips kapak (1,165 ₺ 0023'ün varsayımıydı; Serendi'nin 24.07 faturası 12,02 ₺). **Uygulanıyor** |
-| oneri-fiyat | `oneri-fiyat.md` | Personel yeni ürün önerirken boy başına satış fiyatı yazabilir (yönetici onayda görür, değiştirebilir); reçetede listede olmayan malzemeyi formdan çıkmadan ekler (Listeye ekle kurallarıyla, isteğe bağlı paket fiyatı); Listeye ekle'ye de paket fiyatı |
+| fatura | `fatura-okuma.md` | Faturadaki paket boyu addan ("150 AD.") ve PDF'ten (Claude Haiku 5.5) okunur; fiyat onayında kanıtsız "Çarpanı X yap" önerisi kalkar, tahmini fiyat açıkça söylenir. Canlıdaki iki örnek: Yenilebilir bardak (1 Adet = 150 adet, adet başı 20 ₺, %52 ucuz) ve Klips kapak (1,165 ₺ 0023'ün varsayımıydı; Serendi'nin 24.07 faturası 12,02 ₺). **Bitti:** dalga 6 PR'ı #17 (`0031_fatura_okuma`, `docs/FATURA-OKUMA.md`) |
+| oneri-fiyat | `oneri-fiyat.md` | Personel yeni ürün önerirken boy başına satış fiyatı yazabilir (yönetici onayda görür, değiştirebilir); reçetede listede olmayan malzemeyi formdan çıkmadan ekler (Listeye ekle kurallarıyla, isteğe bağlı paket fiyatı); Listeye ekle'ye de paket fiyatı. **Bitti:** dalga 6 PR'ı #17 (personelin paket fiyatı KDV dahil alınır, KDV düşülüp yazılır) |
+
+### Denetim düzeltmeleri (dalga 7)
+
+23 Ekim'de dokuz bölümlü salt okunur denetim (bağlantı, canlı sağlık, güvenlik, para, veri, kalan işler, arayüz)
+yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato oturumuna iki prompt olarak verildi.
+
+| Grup | Ne |
+|---|---|
+| baglanti | Veritabanı: okumada bir kez yeniden deneme, havuz süreleri, TLS `verify-full` (acil durumda `DATABASE_SSL=require`), derlemede havuz bağlantısı migration'dan önce denetlenir. Site pingleri kaydı yazamasa da çeker, düşen çekme bir kez daha; kaçan karaoke çekmesi açık sekmede yakalanır. Neon kotası: yoklama yalnız sekme görünürken ve seyrek, `/api/health` önbellekte. Hata ekranları yeniden dener. Giriş: bilinen cihazın kilidi veritabanında (`login_device_locks`), TOTP ve kurtarma kodu tek kullanımlık, işlem geçmişinde hesap (`activity_log.user_id`). Kasadan çıkanın geri alınması mühürlü ve tek kullanımlık. Karaoke uzatma tek SQL yazımı, planlı bar siparişinde "45 dk kaldı" ve 15 dk önce zil. `db:reset` uzak veritabanında onay ve önce yedek, zayi kayıtları kalır. Personel rolü metinleri, oda saatleri 12:00–24:00, pompa kuralı, belgeler |
+| para | Paraşüt: sitenin satış iadeleri gider sayılmaz (yalnız bilgi), e-faturaya bağlı kayıt silinmez, geç girilen faturalar kaçmaz, eşitlemenin veritabanı yolları sahte Paraşüt'le sınanır. Nakit planı sabit giderleri faturadaki KDV'siyle öder (`fixed_expenses.vat_rate`). Sayım ay sonundaki fiyatla değerlenir. Genel bakış online satışı da sayar. Kapalı günler sabit gideri azaltmaz. Ay ortasında yapıştırılan satış listesinin günü. `1,250.00` doğru okunur. Online satış üç ay geriye çekilir (geç iadeler). Sitenin isteğe bağlı `counter`, seçenek sayıları ve sipariş notları kabul edilir. Geçmişi olan ürün silinmez |
+
+**Sahibe notlar (dalga 7):**
+- Neon Free planı (ayda 100 CU-saat): Vercel › Storage › kullanım tahmini 100'ü aşıyorsa ücretli plana geçin; bar
+  tabletine bildirim izni verin (izin yoksa açık siparişte 20 saniyede bir sorulur).
+- Dış izleyici `/api/health?isler=1`'i saatte bir değil 6 saatte bir çağırsın.
+- Vercel Preview ortamından gizli anahtarları (AUTH_SECRET, ADMIN_PASSWORD, CRON_SECRET, KARAOKE_SYNC_SECRET,
+  PARASUT_*, RESEND_API_KEY, ANTHROPIC_API_KEY, BLOB) kaldırın (`docs/DEPLOY.md` §4); önizlemeye giriş yapılamaz olur.
+- Giderler'de her sabit giderin "Faturadaki KDV"sini kontrol edin (varsayılanlar: kira, faturalar, genel %20; personel
+  %0; stopajlı şahıs kirası %0 olmalı).
+- `npm run db:reset` uzak veritabanında `-- --onay=<sunucu>` ister ve önce tam yedek alır.
+- Site tarafı (laffogato oturumu): çift sayımı önleyen `counter`, seçenek sayıları, sipariş notları, menü listesinde
+  `now`'ın okumadan önce alınması, karaoke oda saatleri ve PANEL-KARAOKE belgesi; panel hepsini isteğe bağlı okur.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
@@ -106,7 +134,8 @@ ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 
 
 1. Kafe konumu: **Tuzla, Opera AVM** (hava durumu ve AVM saatleri buna göre).
 2. Açılış/kapanış listelerinin saatleri: **açılış 08:00–11:00, kapanış 22:00–02:00**.
-3. Karaoke: **tek oda, her gün 10:00–22:00**.
+3. Karaoke: **tek oda, her gün 12:00–24:00** (laffogato.net'teki karaoke saatleri; 23 Ekim denetiminden önce AVM'nin
+   10:00–22:00'si varsayılmıştı). Sahip Doluluk › Oda saatleri'nden değiştirir.
 4. KDV: panel devreden KDV'yi açılış alımlarından kendisi hesaplar (≈ 98.100 ₺; bu durumda Ekim–Kasım'da ödeme
    çıkmaz); muhasebeciden gelen tutar girilirse o esas alınır.
 5. Sahibin verdiği cevaplar: kurye yok; Paraşüt'te banka hesapları bağlı değil (hakediş/ödeme elle işaretlenir);

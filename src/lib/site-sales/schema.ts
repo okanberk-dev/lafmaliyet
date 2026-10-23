@@ -43,6 +43,15 @@ export interface SiteSalesLine {
   qty: number;
   /** Birim fiyat × adet, indirim ve iade düşülmeden (bilgi için) */
   listMinor: number;
+  /**
+   * Seçenekler (v1'e sonradan eklenen, isteğe bağlı alanlar; eski site göndermez): satırdaki ekstra shot sayısı (adet
+   * dahil, ör. 3 içeceğe birer shot = 3), şurup ve süt seçimlerinin adedi (seçeneğin kimliğine göre; normal süt
+   * gönderilmez ya da sayılmaz). Tutarlılıkta ekstra shot ve şurup panelin "Extra Shot" ve "Syrup" ürünlerinin
+   * reçetesiyle, alternatif süt "Alternatif Süt" ürününün reçetesiyle sayılır (docs/SITE-SATIS.md)
+   */
+  extraShots?: number;
+  syrups?: Record<string, number>;
+  milks?: Record<string, number>;
 }
 
 export interface SiteSalesKaraoke {
@@ -67,6 +76,12 @@ export interface SiteSales {
   karaoke: SiteSalesKaraoke;
   /** Panelden elle girilen siparişler: kasada (ModPOS) zaten var, ciroya eklenmez */
   manual: { orders: number; grossMinor: number; netMinor: number };
+  /**
+   * Uygulama / web siparişi olup kasada (nakit ya da kasadaki kart cihazıyla) ödenen siparişler: ModPOS'ta da
+   * çalındıkları için kafe ve mağaza toplamlarına ve satırlarına girmez, ciroya eklenmez (v1'e sonradan eklenen,
+   * isteğe bağlı blok; eski site göndermez: doğrulamadan sıfırla çıkar, eski kayıtta yok)
+   */
+  counter?: { orders: number; grossMinor: number; netMinor: number };
 }
 
 /** Panelde ay başına saklanan kayıt (integration_state `site_sales:YYYY-MM`) */
@@ -99,6 +114,9 @@ const totals = {
   unknownKdvNetMinor: minor,
 };
 
+/** Seçeneğin kimliği → adet; en çok 20 seçenek */
+const optionCounts = z.record(z.string().max(40), count).refine((r) => Object.keys(r).length <= 20, "En çok 20 seçenek");
+
 const lineSchema = z.object({
   menuItemId: z.string().max(64),
   size: z.enum(["M", "L", "single"]),
@@ -108,6 +126,10 @@ const lineSchema = z.object({
     .transform((v) => Array.from(v.replace(/\s+/g, " ").trim()).slice(0, 120).join("") || "Ürün"),
   qty: count,
   listMinor: minor,
+  // Seçenekler isteğe bağlı (eski site göndermez); gönderildiyse katı: bozuk sayı bütün yanıtı reddeder
+  extraShots: count.optional(),
+  syrups: optionCounts.optional(),
+  milks: optionCounts.optional(),
 });
 
 const salesSchema = z.object({
@@ -127,6 +149,8 @@ const salesSchema = z.object({
     unknownKdvNetMinor: minor,
   }),
   manual: z.object({ orders: count, grossMinor: minor, netMinor: minor }),
+  // Kasada ödenen uygulama / web siparişleri: isteğe bağlı (eski site göndermez), gönderildiyse katı
+  counter: z.object({ orders: count, grossMinor: minor, netMinor: minor }).default({ orders: 0, grossMinor: 0, netMinor: 0 }),
 });
 
 /** İlk sorunun yeri, ör. "cafe.lines.3.size" */

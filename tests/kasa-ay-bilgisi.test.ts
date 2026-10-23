@@ -31,6 +31,10 @@ import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 /** Boşlukları (₺ ve gün-ay arasındaki bölünmez boşluk dahil) düz boşluğa çevirir */
 const plain = (s: string) => s.replace(/ /g, " ");
 
+function close(actual: number, expected: number, label: string) {
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${label}: beklenen ${expected}, bulunan ${actual}`);
+}
+
 const row = (date: string, o: Partial<TillRow> = {}): TillRow => ({ date, zTotal: 10_000, card: 7_000, mealCard: 1_000, discounts: null, offRevenue: null, ...o });
 
 /** 1–30 Kasım her gün rapor; bazı günler indirim ve ödenmez girilmiş */
@@ -298,6 +302,36 @@ test("motor: Gelir-gider ciro hücresi kasadan gelen ciroyu hesaplanan gibi taş
   assert.match(def.hint!, /Boşsa kasa raporlarının Z toplamı kullanılır\./);
   // Yalnız kasadan gelen ay: açık gün oranı ve giderler o ayın günleriyle
   assert.equal(following.pnlMonth("2026-11").openDays, 30);
+});
+
+test("motor: kasadan gelen ayda kapalı gün kira ve maaşı düşürmez (takvim günü); elle girilen açık gün Excel'deki gibi", () => {
+  // Kasım'da her gün rapor ama 15 Kasım kapalı (bayram) ve 20 Kasım'ın raporu hiç girilmedi
+  const rows = november(["2026-11-20"]).map((r) => (r.date === "2026-11-15" ? { ...r, zTotal: 0, card: 0, mealCard: 0 } : r));
+  const [till] = tillMonths(rows, "2026-12-01");
+  assert.equal(till.openDays, 28);
+  const full = createModel({ ...ds, months: [...ds.months, resolveMonth("2026-11", undefined, till)] });
+  const pm = full.pnlMonth("2026-11");
+  assert.equal(pm.openDays, 28, "açık gün bilgisi yine satış olan gün");
+  assert.equal(pm.prorationDays, 30, "aylık kalemler ayın tamamı");
+  const personnel = full.personnelFor("2026-11");
+  close(pm.cells.get("personnel:net")!.value!, personnel.net, "maaş tam");
+  const rent = ds.fixedExpenses.find((f) => f.name === "Kira")!;
+  close(pm.cells.get(`fixed:${rent.id}`)!.value!, rent.amount, "kira tam");
+  // Günlük kalem (personel yemeği) açık günle
+  const meal = ds.fixedExpenses.find((f) => f.period === "gunluk")!;
+  close(pm.cells.get(`fixed:${meal.id}`)!.value!, meal.amount * 28, "günlük kalem açık günle");
+  // Süren ay: 1–16 Kasım raporları (dün 16 Kasım), 10 Kasım kapalı: aylık kalemler 16 / 30
+  const [running] = tillMonths(november().filter((r) => r.date <= "2026-11-16").map((r) => (r.date === "2026-11-10" ? { ...r, zTotal: 0 } : r)), "2026-11-16");
+  const mid = createModel({ ...ds, months: [...ds.months, resolveMonth("2026-11", undefined, running)] }).pnlMonth("2026-11");
+  assert.equal(mid.openDays, 15);
+  assert.equal(mid.prorationDays, 16);
+  close(mid.cells.get(`fixed:${rent.id}`)!.value!, (rent.amount * 16) / 30, "kira bugüne kadar");
+  // Açık gün elle yazıldıysa Excel'deki gibi açık gün ÷ ayın günü
+  const typed = createModel({ ...ds, months: [...ds.months, resolveMonth("2026-11", entry("2026-11", { openDays: 25 }), till)] }).pnlMonth("2026-11");
+  assert.equal(typed.prorationDays, 25);
+  close(typed.cells.get(`fixed:${rent.id}`)!.value!, (rent.amount * 25) / 30, "elle açık gün");
+  // Excel ayları (kasa yok) değişmez
+  assert.equal(createModel(ds).pnlMonth("2026-07").prorationDays, createModel(ds).pnlMonth("2026-07").openDays);
 });
 
 test("kapanmış veri ayları: açık günü kasa raporlarından gelen ay da sayılır (sabit gider sürümü onu değiştirmez)", () => {

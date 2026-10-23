@@ -14,7 +14,7 @@ import { createModel } from "../src/lib/calc/engine";
 import { evaluateExpression, formulaParams, validateExpression } from "../src/lib/calc/expr";
 import type { Dataset } from "../src/lib/calc/types";
 import { DEFAULT_SETTINGS, RECIPE_PARAMS, settingsFromRows } from "../src/lib/constants";
-import { pumpCount, pumpHint, pumpOf, type PumpLine } from "../src/lib/recipe-pump";
+import { NOT_PUMPED, notPumped, pumpCount, pumpHint, pumpOf, type PumpLine } from "../src/lib/recipe-pump";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -220,4 +220,34 @@ test("personelin önerisi telefonda: sayı rakam klavyesinde, formül harfli kla
   assert.ok(fn.indexOf('el.inputMode = "text";') > 0);
   assert.ok(fn.indexOf('el.inputMode = "text";') < fn.indexOf("el.blur();"));
   assert.ok(fn.indexOf("el.blur();") < fn.indexOf("el.focus();"));
+});
+
+test("pompayla verilmeyenler: limon özü ve kondanse süt Sos & Şurup'ta olsa da pompa yazmaz; formülde Pompa varsa yazar", () => {
+  assert.deepEqual([...NOT_PUMPED], ["limon özü", "limon suyu", "condensed", "kondanse", "yoğunlaştırılmış süt"]);
+  assert.equal(notPumped("Limon özü"), true);
+  assert.equal(notPumped("LİMON ÖZÜ"), true);
+  assert.equal(notPumped("Condensed milk"), true);
+  assert.equal(notPumped("Kondanse süt"), true);
+  assert.equal(notPumped("Karamel sos"), false);
+  assert.equal(notPumped(null), false);
+  assert.equal(pumpOf({ qtyExpr: null, category: "Sos & Şurup", name: "Limon özü" }), null);
+  assert.equal(pumpOf({ qtyExpr: null, category: "Sos & Şurup", name: "Condensed milk" }), null);
+  assert.equal(pumpOf({ qtyExpr: null, category: "Sos & Şurup", name: "Karamel sos" }), "pompa");
+  assert.equal(pumpOf({ qtyExpr: null, category: "Sos & Şurup" }), "pompa", "adı bilinmeyen satır eskisi gibi");
+  // Yazılan formül önce gelir: biri limon özünü pompayla yazdıysa pompadır
+  assert.equal(pumpOf({ qtyExpr: "2*Pompa", category: "Sos & Şurup", name: "Limon özü" }), "pompa");
+  assert.equal(pumpHint(L({ qty: 80, category: "Sos & Şurup", name: "Limon özü" }), st), null, "Limonata'da '8 pompa' yazmaz");
+
+  // Excel reçeteleri: Limon özü ve Condensed milk satırlarında pompa yok, şuruplarda var
+  const model = createModel({ ...excelToDataset(data), currentMonth: "2026-10" });
+  const lines = model.products.flatMap((p) => p.lines.filter((l) => l.ingredient).map((l) => ({ p, l })));
+  const hintOf = ({ l }: (typeof lines)[number]) =>
+    pumpHint({ qty: l.qty, unit: l.ingredient!.unit, qtyExpr: l.item.qtyExpr, category: l.ingredient!.category, name: l.ingredient!.name, packaging: l.isPackaging }, model.settings);
+  const lemon = lines.filter((x) => x.l.ingredient!.name === "Limon özü");
+  const milk = lines.filter((x) => x.l.ingredient!.name === "Condensed milk");
+  assert.ok(lemon.length && milk.length);
+  for (const x of [...lemon, ...milk]) assert.equal(hintOf(x), null, `${x.p.key}: ${x.l.ingredient!.name}`);
+  assert.equal(hintOf(lines.find((x) => x.p.key === "Caramel Latte|M" && x.l.ingredient!.name === "Karamel sos")!), "1,5 pompa");
+  // Reçete defteri adı da verir
+  assert.match(read("src/app/panel/receteler/page.tsx"), /category: l\.ingredient\?\.category, name: l\.ingredient\?\.name, packaging: l\.isPackaging/);
 });

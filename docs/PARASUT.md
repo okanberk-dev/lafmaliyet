@@ -52,7 +52,20 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   `net ≈ brüt − iskontolar + KDV + ÖTV + ÖİV` sınanır; tutarsa maliyet (KDV hariç) `net − KDV` olur ve panelde
   tutar = maliyet + iskonto, iskonto = iskontolar yazılır. Tutmazsa net'in KDV hariç geldiği durum ve "kalan = net"
   denenir. Fatura altı iskonto kalemlere oranla dağıtılır. Döviz faturaları `exchange_rate` ile TL'ye çevrilir,
-  iade faturaları eksi yazılır, iptal/arşivlenmiş ve tekrarlayan şablonlar alınmaz.
+  tedarikçinin iade faturaları eksi yazılır, iptal ve tekrarlayan şablonlar alınmaz (arşivlenmiş fatura alınır). Satış
+  iadeleri gider sayılmaz, tedarikçiye iadeler panele girmez: bkz. 2a.
+- **Geç girilen faturalar:** tarihi 75 günlük pencereden eski ama Paraşüt'e sonradan girilmiş fatura (kâğıt fatura;
+  KDV'si sonraki yılın sonuna kadar indirilebilir) tarihe göre okunan listede görünmez. Tam turdan sonra liste
+  kimliğe göre azalan sırayla (`sort=-id`) önceki taramanın en büyük kimliğine kadar okunur (`parasut.lastBillId`,
+  `late-bills.ts`); panelde olmayan yazılır, özette "N geç girilmiş eski fatura alındı" (yalnız yeni açılan kayıt
+  sayılır). Çalışma başına en çok 4 sayfa: iki eşitleme arasında 100'den fazla fatura girildiyse (ay sonu toplu giriş,
+  duran eşitleme) tarama kaldığı yeri saklar (`scan`: başındaki en büyük kimlik, sayfa, işlenen en küçük kimlik) ve
+  sonraki çalışmada oradan sürer; sınır ancak tarama bitince ilerler. Sürdürme en son işlenen sayfayı yeniden okur;
+  arada fatura silinip sayfalar kaydıysa önceki sayfaya döner (işlenmemiş fatura atlanmaz). Yazılamayıp ertelenen
+  fatura (aşağıda: eski gider faturası Paraşüt'e sorulamadı) taramayı o faturada tutar; art arda 3 çalışmada yine
+  yazılamazsa geçilir (e-faturası paneldeki başka kayıtta durduğu için gider kaybolmaz). İlk çalışma yalnız en büyük
+  kimliği kaydeder (daha önce kaçanlar için "Tarihten eşitle"). Gelen e-faturalar yalnız tarihe göre listelenebildiği
+  için bu tarama gider faturalarına uygulanır.
 - **Ödeme ve vade:** `due_date` → vade. Ödendi / ödenmedi'yi **siz işaretlersiniz** (Tedarikçiler ya da Faturalar,
   [TEDARIKCILER.md](TEDARIKCILER.md)): Paraşüt'ten gelen her yeni fatura "ödenmedi" gelir, eşitleme var olan
   faturanın ödeme durumuna dokunmaz; `remaining` / `payment_status` yalnız ipucu olarak saklanır (`parasut_unpaid`,
@@ -60,6 +73,36 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   (peşin) tedarikçinin faturası ödendi gelir; takip başlamadan önceki tarihli fatura geçmişi yeniden alırken
   Paraşüt'teki durumuyla gelir. Ödenmemiş
   faturalar **Ödemeler & hatırlatıcılar**'a ve hatırlatma e-postasına düşer.
+
+## 2a. İadeler
+
+Paraşüt bir iadeyi karşı belgenin tersi tarafa yazar: **satış faturasına karşı** kesilen iade *Giderler*'e (gider
+faturası, `item_type: refund`), **gider faturasına karşı** kesilen iade *Satışlar*'a (satış faturası) düşer. Aynı
+Paraşüt şirketinde laffogato.net'in e-Arşiv / e-Fatura satış faturaları da kesildiği için (docs/planlar/DIGER-OTURUM.md)
+iki yol da panelin okuduğu listelere değer:
+
+- **Satış iadesi gider sayılmaz** (`isSalesReturn`, `mapping.ts`; `shouldImport` nedeni "satış iadesi"). İşaretler:
+  kalemlerin hepsi sitenin Paraşüt ürünü (kod tam olarak `LAF-<grup>-<KDV oranı>`: KAFE, MAGAZA, TESLIMAT, HIZMET ya da
+  eski KARAOKE; muhasebecinin kendi `LAF-…` kodlu ürünleri sayılmaz), faturanın bağlı gelen e-belgesi iade türünde (`IADE`,
+  `TEVKIFATIADE`) ya da iade faturasının kişisi **müşteri kartı** (`account_type: customer`). Gelen iade e-faturası da
+  (içeri alınmamış) gider olarak açılmaz: GİB kuralıyla iadeyi malı geri veren alıcı keser, gelen iade kafenin sattığı
+  bir malın iadesidir (sitenin e-Fatura kestiği şirket müşterisi). Daha önce gider olarak alınmış böyle bir kayıt
+  eşitlemede kalkar (elle/Excel'le girilmiş kayda bağlıysa bağı çözülür, notuna "Paraşüt'te satış iadesi — kontrol
+  edin" düşer). Online satış sitenin dökümünde zaten iadesi düşülmüş gelir; iade bir de gider sayılsaydı iki kez
+  düşerdi, müşterinin tam adı tedarikçi olur, KDV tahmini kayardı.
+- Müşteri kartıyla girilmiş **normal** (iade türünde olmayan) gider faturası sessizce atılmaz: gerçek bir alış da
+  olabilir. Kayıt kontrol bekleyen açılır, notunda "Paraşüt'te müşteri kartıyla girilmiş: satış iadesiyse silin" yazar.
+- Tedarikçi kartlı iade faturası (işaretlerden hiçbiri yok) eskisi gibi **eksi gider** yazılır, kalemleri alınan
+  miktardan düşer.
+- **Tedarikçiye iade panele girmez:** Paraşüt bunu satış faturası olarak tutar, panel satış faturalarını okumaz.
+  Tedarikçi e-Fatura kullanıcısıysa iade giden bir iade e-faturasıdır (`direction: outbound`, `IADE`); eşitleme bunları
+  listeler (tedarikçi adı `contact_name`, vergi nosu `to_vkn`). Paraşüt sayfası "Tedarikçiye N iade panele girmedi"
+  der: Faturalar'da aynı tedarikçiye eksi tutarlı fatura girilince (ad ya da vergi no, ±31 gün, tutar ±1 ₺) listeden
+  kalkar. e-Fatura kullanmayan tedarikçiye iade (e-Arşiv, kâğıt) API'den hiç görünmez: elle eksi fatura girin.
+- Liste `integration_state` › `parasut.returns`'te durur (son 120 gün, türüne göre en çok 60). Satış iadesinde
+  müşterinin adı saklanmaz (yalnız tarih, tutar, belge no; site panele yalnız ilk adı verir). Eşitleme özeti yalnız ilk
+  kez görülenleri söyler: "N satış iadesi gider sayılmadı", "N tedarikçiye iade panele girmedi (Paraşüt sayfasında)".
+  Paraşüt sayfasında satış iadeleri bilgi olarak sayıyla görünür.
 
 ## 3. Çift sayım olmaz
 
@@ -71,8 +114,15 @@ Panelde elle ya da Excel'den girilmiş aynı fatura bulunursa yenisi açılmaz, 
 
 Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tutar, KDV ve tarih Paraşüt'ten gelir.
 Paraşüt'te vade yoksa paneldeki vade korunur. Fatura numarası eşleşmesi yalnızca **aynı tedarikçide** ve ±31 gün içinde geçerlidir (farklı firmalar aynı
-e-fatura önekini kullanabilir). Paraşüt'te **iptal edilen** fatura, panelde Paraşüt'ten açılmışsa kaldırılır;
-elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol edin" düşülür.
+e-fatura önekini kullanabilir). Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
+kaldırılır; elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
+edin" düşülür. Kayıt **gelen bir e-faturaya da bağlıysa** silinmez (e-fatura duruyor, borç da): yalnız gider
+faturasının bağı ve kalemleri kalkar; ödeme durumu, kategori, vade ve not kalır, kalemler e-fatura belgesinden yeniden
+okunur. E-fatura Paraşüt'te **yeniden içeri alınırsa** (eski gider faturası silinip yenisi açılır) aynı kayıt yeni gider
+faturasına geçer; eski fatura Paraşüt'e sorulur, hâlâ duruyorsa yeni fatura ayrı açılır ama "aynı e-fatura başka bir
+gider faturasında da var" notuyla kontrol bekler (çift sayım görünür kalsın). Eski fatura **okunamazsa** (ağ, zaman
+aşımı, Paraşüt hatası) yeni fatura o çalışmada yazılmaz, sonraki eşitleme yeniden sorar: "duruyor" sayılsaydı aynı
+e-fatura "ödenmedi" ikinci bir kayıt olarak açılır, eski fatura sonra silinmiş görülse de iki kayıt birleşmezdi.
 Arşivlenmiş faturalar (Paraşüt'te yalnızca listeden gizlenmiş) geçerli gider olarak alınır.
 Yeni tedarikçi adları paneldeki kısa adlarla eşlenir ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş." → "Sütaş"), böylece gelir-gider
 tablosundaki tedarikçi satırları dağılmaz.
@@ -295,8 +345,9 @@ listesini her eşitlemede okur ve gelen her e-faturayı doğrudan fatura olarak 
   sayfa başına 25 kayıt. Gelen (`direction=inbound`) faturalar alınır; giden, reddedilen, arşivlenen ve döviz olanlar
   alınmaz.
 - `external_id` fatura numarası, `issue_date` tarih, `contact_name` tedarikçi, `net_total` KDV dahil ödenecek,
-  `total_vat` KDV. KDV hariç tutar = `net_total − total_vat` (e-fatura listesinde iskonto ayrıca gelmez). İade
-  faturası eksi, tevkifatlı fatura "kontrol bekleyen" yazılır (tutarı belge okununca düzelir, bkz. 5).
+  `total_vat` KDV. KDV hariç tutar = `net_total − total_vat` (e-fatura listesinde iskonto ayrıca gelmez). Tevkifatlı
+  fatura "kontrol bekleyen" yazılır (tutarı belge okununca düzelir, bkz. 5). Gelen iade e-faturası (`IADE`,
+  `TEVKIFATIADE`) satış iadesidir, gider olarak açılmaz; giden iade e-faturası tedarikçiye iadedir, listelenir (bkz. 2a).
 - Kalemler `signed_ubl` belgesinden okunur (bkz. 5). `ubl`, `xml`, `html` uçları yoktur (404).
 - **Ödeme (vade, valör) tarihi** belge okununca yazılır (`ubl.ts` → `readPayment`): sırayla ödeme alanı
   (`PaymentMeans/PaymentDueDate`), ödeme koşulları (`PaymentTerms/PaymentDueDate`), notlar ("Vade Tarihi: 26.10.2026",
@@ -360,8 +411,13 @@ kaydetmek de onaylar. Sayısı zilde, sabah e-postasında ve Genel bakış › B
 - Tek bir tedarikçinin bütün geçmişi için tedarikçi sayfasındaki **Geçmiş faturaları al** ([TEDARIKCILER.md](TEDARIKCILER.md#geçmiş-faturalar)):
   kişiye göre süzülür, listede görünmeyeni kaldırmaz (Paraşüt'te iptal edileni kaldırır), imleci değiştirmez;
   eşitleme geçmişinde "tedarikçi geçmişi" diye görünür, son eşitleme sayılmaz.
-- **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması da baştan
-  başlar); mevcut faturalar çoğalmaz.
+- **Oturumu sıfırla:** kayıtlı belirteci ve eşitleme imlecini siler (eski faturaların vergi no tamamlaması ve geç
+  girilen faturaların kimliği de baştan başlar); mevcut faturalar çoğalmaz.
+- **Deneme:** `tests/parasut-esitleme-db.test.ts` eşitlemeyi sahte bir Paraşüt'e karşı gerçek Postgres'te çalıştırır
+  (silinen / iptal edilen / yeniden içeri alınan e-faturalı fatura, eski faturası okunamayan yeniden içeri alma, satış
+  ve tedarikçi iadeleri, geç girilen fatura, 100'den fazla yeni faturada süren tarama, 429 ve reddedilen yenileme).
+  Taramanın kuralları ayrıca Paraşüt'süz `tests/parasut-gec-fatura.test.ts`'te. Kendi geçici veritabanını açıp siler:
+  `PARASUT_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx tsx --test tests/parasut-esitleme-db.test.ts`.
 - Aynı anda tek eşitleme çalışır (Postgres danışma kilidi, `SYNC_LOCK`): sabah işi sürerken "Şimdi eşitle" ya da
   e-posta işinin yeniden denemesi başlamaz, "Paraşüt eşitlemesi zaten sürüyor" yanıtı döner. İki dakikadan eski
   "sürüyor" kaydı yarıda kesilmiş sayılır.

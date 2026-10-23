@@ -169,6 +169,8 @@ Cuma gününe kadar
 - **Talep edildi işaretle (N)** seçilen faturaları *talep edildi* yapar (daha önce talep edilenlerin günü korunur).
   Ödeyince **Ödendi** işaretlenir; ödeme talebi kapanır.
 - **İade faturaları:** tedarikçinin son 90 gündeki iade (eksi) faturaları pencerede ayrıca, uyarıyla listelenir.
+  Paraşüt tedarikçiye iadeyi satış faturası olarak tuttuğu için eşitleme onu getirmez (Paraşüt sayfası listeler,
+  [PARASUT.md](PARASUT.md) §2a); Faturalar'a elle girilen eksi fatura burada görünür.
   Hangisinin daha önce düşüldüğü bilinmediği için seçili gelmez; seçilen iade tutardan düşülür, metinde "Düşülen
   iadeler" altında yazar, havale açıklamasına girmez.
 - IBAN girilmemişse metinde "IBAN: (girilmemiş)" yazar ve pencerede uyarı çıkar.

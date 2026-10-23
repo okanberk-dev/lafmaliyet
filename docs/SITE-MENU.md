@@ -124,11 +124,15 @@ Sitenin pingi (`/api/menu/ping`), Ürünler sayfaları açılınca (liste, kart 
 dakika geçtiyse, sayfa beklemez), günlük iş (`/api/cron/gunluk`, karaoke eşitlemesinin yanında) ve **Siteyle eşitle**.
 Çekme tek işlemde ve `pg_advisory_xact_lock(hashtext('menu-sync'))` ile yazar (bağlama ve panelin yazımı da aynı
 kilidi alır); uygulanan son listenin ya da panel yazımının site saatinden eski bir liste uygulanmaz (bir panel yazımı
-sürerken başlamış çekme onu geri almasın). Sonuç `integration_state`'te:
+sürerken başlamış çekme onu geri almasın). Site listenin saatini (`now`) kalemleri okuduktan sonra aldığı için bu tek
+başına yetmez: panel yazdığı her kalemin sitedeki `updatedAt`'ini bir saat saklar (`pushed`); listede bundan eski kalan
+kalemin bağlı satırları o çekmede uygulanmaz, kopyada yazımın hâli kalır, bağlantı kaldırılmaz; sonraki çekme yeni
+hâli getirir (`src/lib/site-menu/plan.ts` › `staleItemIds`). Sitenin `now`'ı kalemlerden önce alması sitenin işi
+(o yapılınca da bu koruma zarar vermez). Sonuç `integration_state`'te:
 
 | Anahtar | İçerik |
 |---------|--------|
-| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount` |
+| `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı) |
 | `menu_site_items` | Son listenin kopyası (`now`, `at`, `items`): ekranlar siteye gitmeden kalemin adını, fiyatını ve durumunu gösterir |
 
 Site kaynaklı değişiklikler işlem geçmişine "laffogato.net" adıyla düşer ("Site menüsünden güncellendi", "Site

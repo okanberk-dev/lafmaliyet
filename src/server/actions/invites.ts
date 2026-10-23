@@ -142,7 +142,7 @@ export async function setPasswordWithToken(_prev: SetPasswordState, formData: Fo
 
   const ok = await consumeTokenAndSetPassword(found.token.id, found.user.id, await hashPassword(password));
   if (!ok) return { status: "used" };
-  await logActivity({ name: found.user.name }, found.token.kind === "invite" ? "Davet kabul edildi, parola belirlendi" : "Parola bağlantıyla sıfırlandı", found.user.email);
+  await logActivity({ id: found.user.id, name: found.user.name }, found.token.kind === "invite" ? "Davet kabul edildi, parola belirlendi" : "Parola bağlantıyla sıfırlandı", found.user.email);
   return { done: true };
 }
 
@@ -191,7 +191,7 @@ export async function requestPasswordReset(_prev: ForgotState, formData: FormDat
       const mail = accessEmail(linkInfo(u, "reset", raw, expiresAt));
       const notify = await loadNotifySettings();
       const res = await sendEmail({ from: resolveFrom(notify.from), to: [u.email], subject: mail.subject, html: mail.html, text: mail.text });
-      if (res.ok) await logActivity({ name: u.name }, "Parola sıfırlama istendi", u.email);
+      if (res.ok) await logActivity({ id: u.id, name: u.name }, "Parola sıfırlama istendi", u.email);
       else console.error("Parola sıfırlama e-postası gönderilemedi:", res.error);
     } catch (e) {
       console.error("Parola sıfırlama isteği:", (e as Error).message);

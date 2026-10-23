@@ -77,6 +77,7 @@ async function ExpensesContent() {
     note: f.note,
     period: f.period,
     amount: f.amount,
+    vatRate: f.vatRate ?? null,
     monthly: f.monthly,
     startMonth: f.startMonth ?? null,
     endMonth: f.endMonth ?? null,
@@ -93,7 +94,7 @@ async function ExpensesContent() {
         description={
           <>
             Satış adedinden bağımsız aylık giderler (KDV hariç). Günlük, haftalık ve yıllık tutarlar otomatik aylığa çevrilir.{" "}
-            <InfoTip text="Gelir-gider tablosunda bu tutarlar ayın açık gün oranıyla bölünür. Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (Excel'de her ay sütunu kendi tutarını taşıdığı gibi)." />
+            <InfoTip text="Gelir-gider tablosunda bu tutarlar ayın gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Tutar değişince 'hangi aydan itibaren' sorulur: önceki aylar eski tutarla kalır (Excel'de her ay sütunu kendi tutarını taşıdığı gibi)." />
           </>
         }
       />

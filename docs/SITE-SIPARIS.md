@@ -73,9 +73,15 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 - **Kart:** nereye (sitenin dili: "Masa 4", "Gel-al", "Kurye"), müşterinin adı, sipariş numarası, planlı saat
   ("14:30 için", başka gündeyse "Yarın 09:00 için"), aşama rozeti (**Yeni**, **Hazırlanıyor**, **Teslime hazır**),
   satırlar (adet kalın; ad ve seçenekler sitenin yazdığı gibi), "Ödendi · 7 dk önce" (10 dakikadan uzun bekleyen yeni
-  sipariş turuncu), **Sitede aç** (`laffogato.net/admin/siparisler/<id>`, yeni sekmede; yalnız sitenin kendi
-  adresine giden `/admin/…` yolları bağlanır; iade ve iptal orada) ve kartın altında büyük **aşama düğmeleri**
-  (aşağıda).
+  sipariş turuncu; planlı sipariş ödemeden değil vaktinden sayılır: "45 dk kaldı", "Vakti geldi", geçince "7 dk
+  gecikti", hâlâ yeniyse turuncu; `waitInfo`), **Sitede aç** (`laffogato.net/admin/siparisler/<id>`, yeni
+  sekmede; yalnız sitenin kendi adresine giden `/admin/…` yolları bağlanır; iade ve iptal orada) ve kartın altında
+  büyük **aşama düğmeleri** (aşağıda).
+- **Müşterinin notu:** siparişe yazılan not ("Fındık alerjim var, şurupsuz lütfen") kartın üstünde turuncu kutuda,
+  içeceğe yazılan not ("çok sıcak olmasın") satırın altında "Not: …" olarak. Yalnız **masa** ve **gel-al**
+  siparişinde gelir (v1'e eklenen, isteğe bağlı `note` alanları; sipariş notu en çok 300, satır notu 200 karakter).
+  Kurye siparişinin notu adres notuyla aynı alanda durur (kapı kodu, tarif): site göndermez, gönderse de panel atar.
+  Not zile, telefon bildirimine ve günlüğe girmez; not değişince kart yenilenir.
 - **Reçete:** satırın kalemi menü bağlantısıyla bir panel ürününe bağlıysa ([SITE-MENU.md](SITE-MENU.md); `L` → L
   yuvası, `M` ve tek boy → M yuvası) satırın yanında kitap simgesi: Reçete defterini o ürünün adıyla açar (sayfa
   yeniden yüklenmez; ses kilidi açık kalır).
@@ -145,6 +151,12 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
   içinde açılan sayfa o siparişi bir kez daha çalar (barista sesi duysun).
 - Panelin **ilk çekmesi** (hiç liste yokken) hiçbir siparişi yeni saymaz: bağlantı kurulunca o an açık olan
   siparişler için bildirim gitmez.
+- **Planlı sipariş** ("Yarın 09:00 için" gel-al) hâlâ **Yeni**yken vaktine 15 dakika kala bir kez daha çalar:
+  "Planlı sipariş · Gel-al", "09:00 için · 2× Latte" (ad yok), turuncu bildirim 30 saniye. Cihaz başına bir kez
+  (`localStorage` `laf:planli-siparis-zili`); sunucu bu zil için bildirim göndermez, panel o cihazda açık olmalı (sekme
+  arkadaysa ve bildirim izni varsa sistem bildirimiyle). Ekran sonradan açılırsa vakti yaklaşmış ya da en çok 15
+  dakika geçmiş sipariş için çalar; iki dakikadan yeni ödenmiş sipariş için çalmaz (geliş zili az önce çaldı). Sipariş
+  zili kapalı cihazda çalmaz (`src/lib/site-orders/feed.ts` › `dueSoonToRing`, `alert-center.tsx`).
 - **Web Push** konusu `orders`: ilk kez görülen yeni siparişte sunucu bildirim gönderir ("Yeni sipariş · Masa 4",
   "2× Latte, 1× Matcha Latte"; birden çoksa "2 yeni sipariş", "Masa 4 · Gel-al"). **Müşterinin adı bildirimde yok**
   (kilit ekranı). Tercih aboneliğin `orders` sütununda (`drizzle/0019_siparis_bildirimi.sql`); boşsa personelin
@@ -180,6 +192,15 @@ saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran ist
 
 Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bunu durum satırıyla söyler.
 
+## Sitede yapılacak (v1'e ekleme)
+
+Panel müşterinin notunu **isteğe bağlı** okur; site göndermezken kart eskisi gibidir. Sitenin `docs/PANEL-ORDERS.md`'si
+(KVKK bölümü dahil) ve `tests/panel-orders-feed.test.ts` aynı PR'da güncellenmeli:
+
+1. `listPanelOpenOrderRows` `"deliveryNote"`'u da okusun; `toPanelOrder` `note`'u yalnız `orderFulfillment(row)` masa ya
+   da gel-al ise, kırpılmış ve en çok 300 karakter göndersin (kuryede hiç: kapı kodu siteden çıkmaz).
+2. Satırlara `items[].options.note`'tan `note` (en çok 200 karakter).
+
 ## Kurulum
 
 1. Karaoke bağlantısı kuruluysa ek bir şey gerekmez: aynı `KARAOKE_SYNC_SECRET` (iki projede aynı, en az 32
@@ -204,9 +225,11 @@ Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bun
   değil"); kullanılan alanlar sıkı (kimlik, aşama, nereye, ödeme anı, satırlar), bozuk ya da iki kez geçen sipariş
   atlanır ve sayılır; metinler kısaltılır, bilinmeyen alanlar atılır (site yeni alan eklese de panel bozulmaz).
   `path` yalnız `/admin/…` olabilir.
-- Panele gelen kişisel veri yalnız müşterinin **adıdır** (gel-al'da seslenmek için). Ad ekranda ve son listenin
-  kopyasında durur; günlüğe, işlem geçmişine ve bildirime yazılmaz. Liste her çekmede üzerine yazılır, çıkan sipariş
-  panelden de çıkar. Tutar (`totalMinor`) saklanmaz.
+- Panele gelen kişisel veri yalnız müşterinin **adıdır** (gel-al'da seslenmek için) ve masa / gel-al siparişinde
+  müşterinin kendi yazdığı **not** (alerji, istek; sitenin personel e-postasındaki "MÜŞTERİNİN NOTU" kuralı). Ad ve
+  not ekranda ve son listenin kopyasında durur; günlüğe, işlem geçmişine ve bildirime yazılmaz. Kurye notu (adres
+  tarifi, kapı kodu) hiç gelmez; gelirse panel atar (`parseSiteOrder`). Liste her çekmede üzerine yazılır, çıkan
+  sipariş panelden de çıkar. Tutar (`totalMinor`) saklanmaz.
 - Ekranın isteği (`/api/siparisler`) ve aşama eylemi oturum ister (personel ve yönetici); siteye panelin anahtarıyla
   sunucu gider, tarayıcı anahtarı görmez.
 - Aşama isteği müşteriye dair hiçbir şey taşımaz (yalnız kimlik, işlem, aşama ve panel kullanıcısının adı). Hata

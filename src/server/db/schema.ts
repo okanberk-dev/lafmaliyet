@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -66,6 +67,26 @@ export const userTokens = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("user_tokens_hash_uq").on(t.tokenHash), index("user_tokens_user_idx").on(t.userId, t.kind)],
+);
+
+/**
+ * Bilinen cihazın giriş hata payı (cihaz + kişi; src/server/auth/login-locks.ts): hesap kilidi bilinen cihazı dışarıda
+ * bırakmaz, o cihazın kendi denemeleri burada sayılır (10 hatada 15 dakika). Başarılı girişte satır silinir. Yedeğe
+ * girmez (geçici sayaç; src/lib/backup/format.ts).
+ */
+export const loginDeviceLocks = pgTable(
+  "login_device_locks",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Bilinen cihaz çerezindeki kimlik (çerez imzalı; kimlik tek başına giriş sağlamaz) */
+    deviceId: text("device_id").notNull(),
+    failedLogins: integer("failed_logins").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.deviceId] })],
 );
 
 // ---------------------------------------------------------------- Ayarlar (anahtar → değer)
@@ -440,7 +461,13 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   name: text("name").notNull(),
   section: text("section", { enum: ["personel", "faturalar", "kira", "genel"] }).notNull(),
   period: text("period", { enum: ["aylik", "gunluk", "haftalik", "yillik"] }).notNull().default("aylik"),
+  /** KDV hariç (gelir-gider bu tutarla) */
   amount: doublePrecision("amount").notNull().default(0),
+  /**
+   * Faturasındaki KDV oranı (0, 0,01, 0,1, 0,2): nakit planı gideri KDV dahil öder (src/lib/cash-plan.ts). Boşsa
+   * bölümün varsayılanı: personel KDV'siz, ötekiler %20 (FIXED_SECTION_VAT)
+   */
+  vatRate: doublePrecision("vat_rate"),
   note: text("note"),
   active: boolean("active").notNull().default(true),
   startMonth: text("start_month"),
@@ -601,6 +628,11 @@ export const activityLog = pgTable(
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
     userName: text("user_name"),
+    /**
+     * İşlemi yapan hesap (eski kayıtlarda ve "Sistem"de boş). Ad serbest metindir ve kişi kendi adını değiştirebilir:
+     * İşlem geçmişi hesabın e-postasını da gösterir, başkasının adını alan kayıt sahibini taklit edemez
+     */
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     action: text("action").notNull(),
     detail: text("detail"),
   },

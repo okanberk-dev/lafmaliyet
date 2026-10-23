@@ -348,7 +348,7 @@ oda saatleri; mal siparişi ayarları; haftalık özetin ayarı ve geçmişi".
 | doluluk × past windows and `cancelledAt` | Past windows: **the site already serves them** (base list; up to 400 days per request), so "Geçmişi siteden al" works today with no site change. `cancelledAt`: the site does not store a cancellation time; the panel records the transition it sees (pings arrive within seconds), past cancellations count as "zamanı bilinmiyor". The optional site request is in §9. "Gelmedi" exists on neither side (follow-up) |
 | Naming: "Sipariş"; two meanings of "online" | R18 |
 | KVKK: fotograf, mcp, Blob | §5. No customer data reaches a new processor, so the site's customer KVKK texts need no line. Optional text for an employee notice is in §9 |
-| Paraşüt (site invoices in the same company) | komisyon and siparis read only local rows that come from `purchase_bills` and supplier contacts. There is no new Paraşüt call, `client.ts` is untouched, and the site's sales invoices never reach `invoices` |
+| Paraşüt (site invoices in the same company) | komisyon and siparis read only local rows that come from `purchase_bills` and supplier contacts. There is no new Paraşüt call, `client.ts` is untouched, and the site's sales invoices never reach `invoices`. **Correction (23 Oct audit, fixed in the para group):** returns of site-invoiced orders did reach `invoices` as negative supplier bills (Paraşüt books a refund against a sales invoice under Giderler); they are now recognised and skipped (docs/PARASUT.md §2a) |
 | ModPOS daily export | R18: seam only |
 | Shared files: Ayarlar | Only fotograf adds `foto`; `SiteLinksCard` is untouched |
 | Shared files: gunluk route; nav and tests, README, `BILDIRIMLER.md`, Yardım | R15; R13 |

@@ -109,6 +109,57 @@ test("Sayım formu: pasif yapılan malzemenin kayıtlı sayımı toplamda kalır
 
 // ---------------------------------------------------------------- Varsayılan sayım ayı
 
+test("Sayım ay sonunda geçerli fiyatla değerlenir: sonraki zam kapanmış ayın devreden malını ve kârını değiştirmez", () => {
+  const coffee = ingId("Espresso çekirdeği");
+  const milk = ingId("Süt %2,5");
+  const base = ds.ingredients.find((i) => i.id === coffee)!;
+  const milkBase = ds.ingredients.find((i) => i.id === milk)!;
+  const counts = [
+    { month: "2026-09", ingredientId: coffee, qty: 40, factor: 1000 },
+    { month: "2026-09", ingredientId: milk, qty: 60, factor: 1000 },
+    { month: "2026-10", ingredientId: coffee, qty: 30, factor: 1000 },
+  ];
+  // Excel aktarımı 17 Ekim'de (Eylül'den sonra) fiyat geçmişine yazıldı: Eylül bilinen ilk fiyatla değerlenir
+  const excelRows = [coffee, milk].map((id) => {
+    const i = ds.ingredients.find((x) => x.id === id)!;
+    return { ingredientId: id, packagePrice: i.packagePrice, packageSize: i.packageSize, changedAt: "2026-10-17T09:00:00.000Z" };
+  });
+  const before = createModel({ ...ds, stockCounts: counts, ingredientPrices: excelRows });
+  const sepBefore = before.pnlMonth("2026-09");
+  // 20 Ekim'de iki fiyat da %25 arttı (Paraşüt faturası): bugünkü fiyat ve geçmiş satırı
+  const raised = [base, milkBase].map((i) => ({ ingredientId: i.id, packagePrice: i.packagePrice * 1.25, packageSize: i.packageSize, changedAt: "2026-10-20T05:00:00.000Z" }));
+  const after = createModel({
+    ...ds,
+    ingredients: ds.ingredients.map((i) => (i.id === coffee || i.id === milk ? { ...i, packagePrice: i.packagePrice * 1.25 } : i)),
+    stockCounts: counts,
+    ingredientPrices: [...excelRows, ...raised],
+  });
+  const sepAfter = after.pnlMonth("2026-09");
+  close(sepAfter.closing, sepBefore.closing, "Eylül devreden mal aynı");
+  close(sepAfter.cogs, sepBefore.cogs, "Eylül mal maliyeti aynı");
+  close(sepAfter.profit, sepBefore.profit, "Eylül kârı aynı");
+  close(sepBefore.closing, 40 * (base.packagePrice / base.packageSize) * 1000 + 60 * (milkBase.packagePrice / milkBase.packageSize) * 1000, "Eylül eski fiyatla");
+  // Ekim'in açılışı Eylül'ün kapanışı; Ekim'in kendi sayımı (süren ay) bugünkü fiyatla
+  close(after.pnlMonth("2026-10").opening, sepAfter.closing, "Ekim devir");
+  close(after.stockSheet("2026-10").total, 30 * (base.packagePrice * 1.25 / base.packageSize) * 1000, "Ekim yeni fiyatla");
+  // Ay içindeki değişiklik o ayın sonunda geçerlidir: 15 Eylül'de değişen fiyat Eylül'ü değerler
+  const midSep = createModel({
+    ...ds,
+    stockCounts: counts,
+    ingredientPrices: [
+      { ingredientId: coffee, packagePrice: base.packagePrice * 0.8, packageSize: base.packageSize, changedAt: "2026-07-01T09:00:00.000Z" },
+      { ingredientId: coffee, packagePrice: base.packagePrice * 0.9, packageSize: base.packageSize, changedAt: "2026-09-15T09:00:00.000Z" },
+      { ingredientId: coffee, packagePrice: base.packagePrice, packageSize: base.packageSize, changedAt: "2026-10-01T06:00:00.000Z" },
+    ],
+  });
+  close(midSep.unitCostAtMonthEnd(coffee, "2026-09"), (base.packagePrice * 0.9) / base.packageSize, "15 Eylül fiyatı");
+  close(midSep.unitCostAtMonthEnd(coffee, "2026-08"), (base.packagePrice * 0.8) / base.packageSize, "Ağustos'ta Temmuz fiyatı");
+  // 1 Ekim 09:00 (Türkiye) değişikliği Eylül'e girmez; sonrasında değişiklik yoksa bugünkü fiyat
+  close(midSep.unitCostAtMonthEnd(coffee, "2026-10"), base.packagePrice / base.packageSize, "Ekim bugünkü");
+  // Geçmişi olmayan malzeme ve fiyat geçmişi hiç verilmezse bugünkü fiyat (eski davranış)
+  close(createModel({ ...ds, stockCounts: counts }).stockSheet("2026-09").total, sepBefore.closing, "geçmişsiz");
+});
+
 test("Sayım sayfası adreste ay yokken: ayın ilk 10 gününde geçen ay sayılmadıysa geçen ay, yoksa bu ay (Türkiye saati)", () => {
   const none = () => false;
   const all = () => true;

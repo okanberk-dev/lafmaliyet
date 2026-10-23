@@ -15,6 +15,12 @@ export interface LiveResponse {
     /** laffogato.net bağlantısı kurulu (KARAOKE_SYNC_SECRET) */
     configured: boolean;
     sessions: KaraokeSessionDTO[];
+    /**
+     * Son başarılı çekme ve son denemenin hatası (başarılıysa null): bar ekranı hata varken uyarı satırı gösterir. Yayın
+     * sırasında eski sunucunun yanıtında olmayabilir
+     */
+    okAt?: string | null;
+    error?: string | null;
   };
   /** laffogato.net'in açık kafe siparişleri: son çekmenin listesi ve bağlantının durumu (docs/SITE-SIPARIS.md) */
   orders: LiveOrders;

@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import type { PastelTone } from "@/components/ui/icon-tile";
 import { EmptyState, InfoTip, KeyValue, PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { alerts, consistency, type Alert } from "@/lib/calc/insights";
+import { alerts, consistency, listDaysText, type Alert } from "@/lib/calc/insights";
 import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
@@ -63,11 +63,21 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const st = model.settings;
   const ml = monthLabel(month);
 
+  const listDays = c.sales.listPeriod ? listDaysText(c.sales.listPeriod) : null;
   const salesRows: { label: string; value: string; note?: string; strong?: boolean }[] = [
     { label: "Ürün listesi toplamı (indirim öncesi)", value: tl(c.sales.listTotal), note: "Satışlar sayfasındaki POS ürünleri" },
-    { label: "– Yönetici indirimleri", value: tl(-c.sales.discounts) },
+    // Süren ayda yapıştırılan liste kasa raporlarından kısaysa indirim ve POS cirosu listenin günlerinin
+    {
+      label: listDays ? `– Yönetici indirimleri (${listDays})` : "– Yönetici indirimleri",
+      value: tl(-c.sales.discounts),
+      note: listDays ? `${listDays} kasa raporları: satış listesi bu günleri kapsıyor` : undefined,
+    },
     { label: "Hesaplanan ciro (liste − indirim)", value: tl(c.sales.computed), strong: true },
-    { label: "POS ciro raporu", value: tl(c.sales.pos), note: "Satışlar > ay bilgileri" },
+    {
+      label: listDays ? `POS ciro raporu (${listDays})` : "POS ciro raporu",
+      value: tl(c.sales.pos),
+      note: listDays ? `${listDays} kasa raporlarının Z toplamı: satış listesi bu günleri kapsıyor` : "Satışlar > ay bilgileri",
+    },
     { label: "Fark", value: c.sales.diff === null ? "–" : tl(c.sales.diff), strong: true },
     { label: "Ödenmez (sahip / personel tüketimi)", value: tl(c.sales.offRevenue), note: "Satış listesine dahil değil; ciroya girmez." },
     {
@@ -395,6 +405,23 @@ function OnlineSalesCard({
               {online.unmappedQty ? ` · ${num(online.unmappedQty)} adet eşlenmedi` : ""}
               <span className="text-ink-mute"> · çekildi {dateTimeTR(online.pulledAt)}{online.closed ? "" : " (ay sürüyor)"}</span>
             </p>
+            {online.options.length ? (
+              // Seçenekler (site gönderiyorsa): ürünü olan reçetesiyle beklenen tüketime girer, olmayan listelenir
+              <p className="text-[13px] text-ink-soft">
+                Seçenekler:{" "}
+                {online.options.map((o, i) => (
+                  <span key={o.kind}>
+                    {i ? " · " : ""}
+                    {num(o.qty)} {o.label.toLocaleLowerCase("tr-TR")}{" "}
+                    {o.productName ? (
+                      <span className="text-ink-mute">({o.productName} reçetesiyle)</span>
+                    ) : (
+                      <span className="text-warn">(panelde ürünü yok, tüketime girmedi)</span>
+                    )}
+                  </span>
+                ))}
+              </p>
+            ) : null}
             {online.unmapped.length ? (
               <div className="rounded-2xl bg-warn-soft px-4 py-3 text-[13px] text-warn">
                 <p className="font-medium">Panel ürününe bağlı olmayan satırlar: malzemesi tüketime girmedi</p>

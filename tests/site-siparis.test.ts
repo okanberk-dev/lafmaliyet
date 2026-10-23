@@ -257,6 +257,41 @@ test("zil metni: nereye ve ne; müşterinin adı bildirime yazılmaz (kilit ekra
   assert.equal(ringMessage([order({ lines })]).body, "1× Ürün 0, 1× Ürün 1, 1× Ürün 2 +2");
 });
 
+test("müşterinin notu: masa ve gel-al siparişinin ve içeceğin notu kartta; kurye notu asla; zile girmez, değişince liste değişir", () => {
+  const withNotes = (over: Record<string, unknown> = {}) =>
+    contractOrder({
+      note: "  Fındık alerjim var,   şurupsuz lütfen ",
+      lines: [{ menuItemId: "mnu-0003", name: "Latte", size: "M", detail: "M · yulaf", qty: 1, note: "çok sıcak olmasın" }],
+      ...over,
+    });
+  const [table] = parseSiteOrders(list([withNotes()])).orders;
+  assert.equal(table.note, "Fındık alerjim var, şurupsuz lütfen", "boşluklar sadeleşir");
+  assert.equal(table.lines[0].note, "çok sıcak olmasın");
+  const [pickup] = parseSiteOrders(list([withNotes({ fulfillment: "pickup", label: "Gel-al" })])).orders;
+  assert.equal(pickup.note, "Fındık alerjim var, şurupsuz lütfen");
+  // Kurye: site göndermez; gönderse de panel atar (kapı kodu, adres tarifi)
+  const [delivery] = parseSiteOrders(list([withNotes({ fulfillment: "delivery", label: "Kurye", note: "Kapı kodu 1234" })])).orders;
+  assert.ok(!("note" in delivery));
+  // Not yoksa ya da bozuksa alan yok, sipariş atlanmaz; uzun not kısaltılır
+  const [plain] = parseSiteOrders(list([contractOrder()])).orders;
+  assert.ok(!("note" in plain) && !("note" in plain.lines[0]));
+  const r = parseSiteOrders(list([withNotes({ note: 42, lines: [{ menuItemId: "", name: "Su", size: "single", detail: "", qty: 1, note: { x: 1 } }] })]));
+  assert.equal(r.skipped, 0);
+  assert.ok(!("note" in r.orders[0]) && !("note" in r.orders[0].lines[0]));
+  assert.equal(Array.from(parseSiteOrder(withNotes({ note: "Ç".repeat(400) }))!.note!).length, 300);
+  assert.equal(Array.from(parseSiteOrder(withNotes({ lines: [{ menuItemId: "", name: "Su", size: "single", detail: "", qty: 1, note: "Ç".repeat(400) }] }))!.lines[0].note!).length, 200);
+  // Zil ve bildirim metnine not girmez
+  assert.doesNotMatch(JSON.stringify(ringMessage([table])), /alerji|sıcak/);
+  // Not değişince ekran yenilenir
+  assert.notEqual(ordersFingerprint([table]), ordersFingerprint([{ ...table, note: "başka" }]));
+  assert.notEqual(ordersFingerprint([table]), ordersFingerprint([{ ...table, lines: [{ ...table.lines[0], note: undefined }] }]));
+  assert.equal(ordersFingerprint([plain]), ordersFingerprint([{ ...plain, note: undefined }]), "notsuz eski kayıt aynı");
+  // Kart notları gösterir
+  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  assert.match(board, /\{o\.note \? \(/);
+  assert.match(board, /\{l\.note \? <span[^>]*>Not: \{l\.note\}<\/span> : null\}/);
+});
+
 // ---------------------------------------------------------------- Ping
 
 test("sipariş pingi: anahtar yoksa 503, 4 KB üstü 413, imzasız / yanlış / eski 401; menü pingi bu uçta geçmez", () => {

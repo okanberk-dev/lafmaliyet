@@ -11,6 +11,7 @@
 // sıra bozulup atlanan varsa derleme durur, canlıda eski sürüm yayında kalır.
 
 import { loadEnvConfig } from "@next/env";
+import { sql } from "drizzle-orm";
 
 import { createDb } from "../src/server/db";
 import { restartWatchOnDeploy } from "../src/server/jobs/watch";
@@ -38,6 +39,26 @@ async function markJobsWatched() {
   }
 }
 
+/**
+ * Çalışma zamanının bağlantısı da açılıyor mu: migration doğrudan adresle (DATABASE_URL_UNPOOLED) yapılır, sayfalar
+ * havuzlu adresi (DATABASE_URL) kullanır. İkisi de sunucu sertifikasını doğrular (src/server/db/index.ts › sslOption).
+ * Migration'dan önce bakılır: havuzlu adres açılmazsa derleme şemaya dokunmadan durur, yayındaki sürüm de veritabanı
+ * da değişmez (yeni sürüm hiç bağlanamadan yayına çıkmasın; geriye uyumsuz bir migration da eski sürümü bozmasın).
+ * Boş veritabanında da çalışır ("select 1").
+ */
+async function checkRuntimeConnection() {
+  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  const migrated = process.env.DATABASE_URL_UNPOOLED ?? url;
+  if (!url || url === migrated) return;
+  const db = createDb(url, 1);
+  try {
+    await db.execute(sql`select 1`);
+    console.log("✓ Havuzlu veritabanı bağlantısı açılıyor");
+  } finally {
+    await db.$client.end();
+  }
+}
+
 async function main() {
   loadEnvConfig(process.cwd());
   const skip = predeploySkipReason(process.env);
@@ -45,6 +66,7 @@ async function main() {
     console.log(`! ${skip}: migration ve seed atlandı`);
     return;
   }
+  await checkRuntimeConnection();
   await runMigrations();
   await runSeed();
   if (process.env.VERCEL_ENV === "production") await markJobsWatched();

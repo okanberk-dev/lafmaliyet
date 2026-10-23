@@ -19,8 +19,15 @@ export interface SalesBasis {
   openDays: number | null;
   /** Ayarlar › ayda açık gün (standart ay) */
   standardDays: number;
-  /** standardDays ÷ openDays; açık gün yoksa 1 (adetler olduğu gibi) */
+  /**
+   * ModPOS adetlerinin ölçeği: standardDays ÷ listenin açık günü (liste kasa raporlarından kısa bir dönemi kapsıyorsa o
+   * dönemin açık günü, yoksa ayın); açık gün yoksa 1 (adetler olduğu gibi)
+   */
   scale: number;
+  /** Online adetlerin ölçeği: standardDays ÷ ayın açık günü (online satış ayın bugüne kadarını kapsar) */
+  onlineScale: number;
+  /** Süren ayda yapıştırılan liste kasa raporlarından kısaysa listenin dönemi ve açık günü (engine listPeriod) */
+  listPeriod: { from: string; through: string; openDays: number } | null;
   /** Ürüne eşlenen ModPOS adedi (ölçeksiz) */
   posQty: number;
   /** Ürüne eşlenen online kafe adedi, laffogato.net (ölçeksiz) */
@@ -51,30 +58,36 @@ function openDaysSource(info: unknown): SalesBasis["openDaysFrom"] {
  */
 export function salesBasis(model: Model, month: string): { basis: SalesBasis; perMonth: Map<number, number> } | null {
   const sales = model.monthSales(month);
-  const online = model.siteLines(month).mapped;
-  if (!sales.lines.length && !online.length) return null;
+  // Online: eşlenen kafe satırları ve Extra Shot gibi seçenek ürünleri
+  const online = model.onlineSold(month);
+  if (!sales.lines.length && !online.size) return null;
   const info = model.monthInfo.get(month);
   const openDays = info?.openDays && info.openDays > 0 ? info.openDays : null;
   const standardDays = model.settings.acikGun;
-  const scale = openDays && standardDays > 0 ? standardDays / openDays : 1;
-  const raw = new Map<number, number>();
+  const onlineScale = openDays && standardDays > 0 ? standardDays / openDays : 1;
+  // Süren ayda yapıştırılan liste kasa raporlarından kısa bir dönemi kapsıyorsa ModPOS adetleri o dönemin açık günüyle
+  const lp = sales.lines.length ? model.listPeriod(month) : null;
+  const listDays = lp ? lp.openDays : openDays;
+  const scale = listDays && standardDays > 0 ? standardDays / listDays : 1;
+  const perMonth = new Map<number, number>();
   let posQty = 0;
   for (const [id, qty] of model.soldByProduct(month)) {
-    raw.set(id, (raw.get(id) ?? 0) + qty);
+    perMonth.set(id, (perMonth.get(id) ?? 0) + qty * scale);
     posQty += qty;
   }
   let onlineQty = 0;
-  for (const { line, product } of online) {
-    raw.set(product.id, (raw.get(product.id) ?? 0) + line.qty);
-    onlineQty += line.qty;
+  for (const [id, qty] of online) {
+    perMonth.set(id, (perMonth.get(id) ?? 0) + qty * onlineScale);
+    onlineQty += qty;
   }
-  const perMonth = new Map([...raw].map(([id, qty]) => [id, qty * scale]));
   return {
     basis: {
       month,
       openDays,
       standardDays,
       scale,
+      onlineScale,
+      listPeriod: lp ? { from: lp.from, through: lp.through, openDays: lp.openDays } : null,
       posQty,
       onlineQty,
       unmatchedQty: sales.unmatched.reduce((a, l) => a + l.line.qty, 0),
@@ -92,6 +105,10 @@ export function basisText(b: SalesBasis): string {
   const m = monthLabel(b.month);
   const from = b.openDaysFrom ? `kasa raporlarından${b.openDaysFrom.missing ? `, ${num(b.openDaysFrom.missing)} gün eksik` : ""}` : null;
   if (!b.openDays) return `${m} satışlarına göre (ayın açık günü girilmedi; adetler olduğu gibi).`;
+  if (b.listPeriod) {
+    const lp = b.listPeriod;
+    return `${m} satışlarına göre: satış listesi ${Number(lp.from.slice(8, 10))}–${Number(lp.through.slice(8, 10))} ${monthLabel(b.month).split(" ")[0]} (${num(lp.openDays)} açık gün; ayın açık günü ${num(b.openDays)}${from ? `, ${from}` : ""}), ayda ${num(b.standardDays)} açık güne çevrildi.`;
+  }
   if (b.scale === 1) return `${m} satışlarına göre (ayda ${num(b.standardDays)} açık gün${from ? `; açık gün ${from}` : ""}).`;
   return `${m} satışlarına göre: ${num(b.openDays)} açık gün${from ? ` (${from})` : ""}, ayda ${num(b.standardDays)} açık güne çevrildi.`;
 }
@@ -143,7 +160,7 @@ export interface PriceLoss {
   totalLoss: number;
   /** Ucuzlayan hammaddelerin aylık kazancı (artı) */
   totalGain: number;
-  /** Referans ayın teorik brüt kârı × ölçek ("brüt kârın %X'i" için); dayanak yoksa null */
+  /** Referans ayın teorik brüt kârı (ModPOS + online) × ölçek ("brüt kârın %X'i" için); dayanak yoksa null */
   grossProfit: number | null;
 }
 
@@ -225,6 +242,7 @@ export function priceLoss(model: Model, changes: IngredientChange[], month: stri
     products,
     totalLoss: products.reduce((s, p) => s + p.monthly, 0),
     totalGain: downs.reduce((s, i) => s - i.monthly, 0),
-    grossProfit: sb && month ? model.monthSales(month).grossProfit * sb.basis.scale : null,
+    // ModPOS ve online brüt kârı, adetlerle aynı ölçekle (online: laffogato.net, reçeteye göre)
+    grossProfit: sb && month ? model.monthSales(month).grossProfit * sb.basis.scale + (model.onlineMonth(month)?.grossProfit ?? 0) * sb.basis.onlineScale : null,
   };
 }

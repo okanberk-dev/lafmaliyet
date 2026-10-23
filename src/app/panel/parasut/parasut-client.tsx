@@ -198,6 +198,7 @@ export function ParasutClient({
   categories,
   checks = [],
   readState = "nokey",
+  returns = null,
 }: {
   configured: boolean;
   env: { name: string; set: boolean }[];
@@ -225,6 +226,11 @@ export function ParasutClient({
   checks?: LinkCheck[];
   /** Faturadan okuma (Claude): anahtar, Ayarlar › Fotoğraftan okuma, bugünkü sınır */
   readState?: ReadingState;
+  /**
+   * Panele girmeyen iadeler (son 4 ay; docs/PARASUT.md §2a): gider sayılmayan satış iadeleri (yalnız sayı ve tutar;
+   * müşterinin adı saklanmaz) ve Faturalar'a henüz girilmemiş tedarikçiye iadeler
+   */
+  returns?: { sales: { count: number; total: number }; supplier: { id: string; date: string; amount: number; invoiceNo: string | null; supplier: string }[] } | null;
 }) {
   // Her eylemin kendi bekleme durumu: "Bağlantıyı dene" sürerken eşitleme düğmesi dönmez
   const [testing, startTest] = useTransition();
@@ -436,6 +442,8 @@ export function ParasutClient({
         )
       ) : null}
 
+      {returns ? <ReturnsNotice returns={returns} /> : null}
+
       {/* Yan yana yalnız geniş ekranda: 1024'te kenar çubuğuyla içerik ~660 px kalır, "Yeniden eşitleme" formu sıkışırdı */}
       <div className="grid gap-4 xl:grid-cols-12">
         <Card className="xl:col-span-7">
@@ -566,6 +574,56 @@ export function ParasutClient({
           })
         }
       />
+    </>
+  );
+}
+
+/**
+ * Panele girmeyen iadeler. Tedarikçiye iade: Paraşüt satış faturası tutar, panel okumaz; eksi tutarlı fatura girilince
+ * listeden düşer. Satış iadesi: bilgi (gider sayılmadı; online satış zaten iadesi düşülmüş gelir).
+ */
+function ReturnsNotice({ returns }: { returns: NonNullable<Parameters<typeof ParasutClient>[0]["returns"]> }) {
+  const shown = returns.supplier.slice(0, 5);
+  return (
+    <>
+      {returns.supplier.length ? (
+        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+          <RotateCcw size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Tedarikçiye {num(returns.supplier.length)} iade panele girmedi</p>
+            <ul className="mt-1 space-y-0.5 text-warn/90">
+              {shown.map((r) => (
+                <li key={r.id} className="break-words">
+                  {r.supplier} · {dateTR(r.date)} · <span className="font-medium whitespace-nowrap tabular">{tl(r.amount)}</span>
+                  {r.invoiceNo ? <span className="text-warn/80"> · {r.invoiceNo}</span> : null}
+                </li>
+              ))}
+              {returns.supplier.length > shown.length ? <li>ve {num(returns.supplier.length - shown.length)} iade daha</li> : null}
+            </ul>
+            <p className="mt-1 break-words text-warn/90">
+              Paraşüt tedarikçiye iadeyi satış faturası olarak tutar, panel okumaz. Maliyet ve KDV tahmini düzelsin diye Faturalar&apos;da aynı tedarikçiye eksi
+              tutarlı fatura ekleyin; eklenince buradan kalkar.{" "}
+              <a href="/panel/faturalar" className="font-medium underline-offset-2 hover:underline pointer-coarse:py-3">
+                Faturalara git →
+              </a>
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {returns.sales.count ? (
+        <div role="status" className="mb-4 flex items-start gap-3 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">
+              Son 4 ayda {num(returns.sales.count)} satış iadesi gider sayılmadı (toplam {tl(returns.sales.total)})
+            </p>
+            <p className="mt-0.5 break-words text-info/90">
+              laffogato.net&apos;in ya da kafenin faturaladığı bir satışın iadesi Paraşüt&apos;te gider listesine düşer; panel onu tedarikçi faturası saymaz.
+              Online satış zaten iadesi düşülmüş gelir.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -8,7 +8,9 @@ import { salesFileProblem } from "@/app/panel/satislar/sales-logic";
 import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow, posMatchKey, samePosName } from "@/lib/calc/pos-paste";
 import { monthRowEmpty } from "@/lib/cash-month";
-import { monthLabel, num, tl } from "@/lib/format";
+import { dateTR, monthLabel, num, tl } from "@/lib/format";
+import { todayTR } from "@/lib/reminders";
+import { coverageFor, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
 import { hasCashReportIn } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -18,6 +20,22 @@ import { attempt, UserError, zMonth, zOptText, zText } from "./util";
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * Ayın satış listesinin son gününü yazar (null: ayın tamamı, ayın kaydı silinir). Tek ifadeyle (jsonb birleştirme)
+ * güncellenir: iki ayın yüklemesi aynı anda birbirinin kaydını ezmez
+ */
+async function setCoverage(db: Db | Tx, month: string, through: string | null) {
+  await db.execute(sql`
+    insert into integration_state (key, value) values (${SALES_COVERAGE_KEY}, '{}'::jsonb)
+    on conflict (key) do nothing`);
+  // Bozulmuş (nesne olmayan) kayıt boş nesneden başlar
+  const current = sql`(case when jsonb_typeof(value) = 'object' then value else '{}'::jsonb end)`;
+  await db.execute(sql`
+    update integration_state
+       set value = ${through ? sql`${current} || jsonb_build_object(${month}::text, ${through}::text)` : sql`${current} - ${month}::text`}, updated_at = now()
+     where key = ${SALES_COVERAGE_KEY}`);
+}
 
 /** Ay satırı açar; alanları boş (indirim ve ödenmez dahil): boş alan kasa raporlarından dolar (src/lib/cash-month.ts) */
 async function ensureMonth(month: string) {
@@ -108,10 +126,12 @@ const lineSchema = z.object({
  * Satış listesini aya yükler. Toplam satırları ("TOPLAM", "Genel toplam (KDV dahil)") istemcide zaten
  * atlanır; buraya gelirse de ürün satırı olarak yazılmaz ve kaç tane atlandığı döner (ciro iki kez sayılmasın).
  */
-export async function importSales(input: { month: string; lines: z.input<typeof lineSchema>[]; mode: "replace" | "append" }) {
+export async function importSales(input: { month: string; lines: z.input<typeof lineSchema>[]; mode: "replace" | "append"; through?: string | null }) {
   return attempt(async () => {
     const me = await requireAdmin();
     const month = zMonth.parse(input.month);
+    // Süren ayda listenin son günü (verilmezse dün); biten aya yüklenen liste ayın tamamı (src/lib/sales-coverage.ts)
+    const through = coverageFor(month, todayTR(), z.string().max(10).nullish().parse(input.through));
     const parsed = z.array(lineSchema).max(2000, "En fazla 2000 satır yüklenebilir").parse(input.lines);
     const lines = parsed.filter((l) => !isSummaryRow(l.posName));
     const skippedSummary = parsed.length - lines.length;
@@ -144,11 +164,12 @@ export async function importSales(input: { month: string; lines: z.input<typeof 
           };
         }),
       );
+      await setCoverage(tx, month, through);
     });
     await logActivity(
       me,
       "Satış raporu yüklendi",
-      `${monthLabel(month)}: ${lines.length} satır, ${matched} eşleşti${replaced ? `, önceki ${replaced} satır değiştirildi` : ""}${skippedSummary ? `, ${skippedSummary} toplam satırı atlandı` : ""}`,
+      `${monthLabel(month)}: ${lines.length} satır, ${matched} eşleşti${replaced ? `, önceki ${replaced} satır değiştirildi` : ""}${skippedSummary ? `, ${skippedSummary} toplam satırı atlandı` : ""}${through ? ` · ${dateTR(through)} tarihine kadar` : ""}`,
     );
     refresh();
     return { count: lines.length, matched, replaced, skippedSummary };
@@ -324,6 +345,7 @@ export async function clearMonthSales(month: string, opts?: { withInfo?: boolean
     const db = getDb();
     const withInfo = opts?.withInfo === true;
     const gone = await db.delete(s.salesLines).where(eq(s.salesLines.month, m)).returning({ id: s.salesLines.id });
+    await setCoverage(db, m, null);
     if (withInfo) {
       await db
         .update(s.months)

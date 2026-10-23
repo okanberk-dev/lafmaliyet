@@ -38,7 +38,18 @@ export interface MonthSummary {
     karMarjiYuzde: number | null;
   } | null;
   /** Reçeteye göre (Genel bakış); satış listesi olmayan ayda null */
-  teorik: { netSatis: number; malzeme: number; komisyon: number; brutKar: number; indirim: number; sabitGider: number; netKar: number } | null;
+  teorik: {
+    netSatis: number;
+    /** laffogato.net online satışı (netSatis'in içinde, KDV hariç) ve brüt kârı; çekilmemiş ayda null */
+    onlineNetSatis: number | null;
+    onlineBrutKar: number | null;
+    malzeme: number;
+    komisyon: number;
+    brutKar: number;
+    indirim: number;
+    sabitGider: number;
+    netKar: number;
+  } | null;
   /** Yalnız süren ay */
   tahmin: { aySonuCiroKdvDahil: number; aySonuKar: number; dayanakAy: string | null } | null;
   basaBas: { gunlukCiroKdvDahil: number | null; gunlukOrtalama: number | null; ilerlemeYuzde: number | null };
@@ -116,7 +127,13 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
       `Giderler = mal maliyeti ${tl(pm.cogs)} + personel ${tl(pm.sections.personel)} + faturalar ${tl(pm.sections.faturalar)} + kira ${tl(pm.sections.kira)} + genel ${tl(pm.sections.genel)} + komisyon ${tl(pm.sections.komisyon)}`,
     );
     hesap.push(`Mal maliyeti = açılış stoğu ${tl(pm.opening)} + alınan mal ${tl(pm.purchases)} − kapanış stoğu ${tl(pm.closing)}`);
-    if (pm.openDays > 0 && pm.openDays < dim) hesap.push(`Sabit giderler açık güne göre: ${num(pm.openDays)} / ${num(dim)} gün`);
+    if (pm.prorationDays > 0 && pm.prorationDays < dim) {
+      hesap.push(
+        pm.prorationDays === pm.openDays
+          ? `Sabit giderler açık güne göre: ${num(pm.openDays)} / ${num(dim)} gün`
+          : `Sabit giderler ayın geçen gününe göre (açık gün kasa raporlarından): ${num(pm.prorationDays)} / ${num(dim)} gün`,
+      );
+    }
   } else if (pm.expenses > 0) {
     hesap.push(`Şimdiye kadarki giderler ${tl(pm.expenses)} (ciro girilince kâr hesaplanır)`);
   }
@@ -126,6 +143,9 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
   const teorik = t
     ? {
         netSatis: r2(t.netSales),
+        // laffogato.net online satışı (KDV hariç, reçeteye göre); çekilmemiş ayda null
+        onlineNetSatis: t.online ? r2(t.online.revenue) : null,
+        onlineBrutKar: t.online ? r2(t.online.grossProfit) : null,
         malzeme: r2(t.material),
         komisyon: r2(t.commission),
         brutKar: r2(t.grossProfit),
@@ -136,8 +156,15 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
     : null;
   if (t) {
     hesap.push(
-      `Reçeteye göre net kâr = brüt kâr ${tl(t.grossProfit)} (net satış ${tl(t.netSales)} − malzeme ${tl(t.material)} − komisyon ${tl(t.commission)}) − indirim ${tl(t.discountsNet)} − sabit gider ${tl(t.fixedTotal)} = ${tl(t.netProfit)}`,
+      `Reçeteye göre net kâr = brüt kâr ${tl(t.grossProfit)} (net satış ${tl(t.netSales)}${
+        t.online ? ` = ModPOS ${tl(t.posNetSales)} + laffogato.net online ${tl(t.online.revenue)}` : ""
+      } − malzeme ${tl(t.material)} − komisyon ${tl(t.commission)}) − indirim ${tl(t.discountsNet)} − sabit gider ${tl(t.fixedTotal)} = ${tl(t.netProfit)}`,
     );
+    if (t.listPeriod) {
+      hesap.push(
+        `Satış listesi ayın ${num(t.listPeriod.of)} gününün ${num(t.listPeriod.days)}'ini kapsıyor (${t.listPeriod.from} – ${t.listPeriod.through}): indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla`,
+      );
+    }
   } else {
     uyarilar.push(`${label} için ürün satış listesi yok: reçeteye göre kâr hesaplanamadı.`);
   }

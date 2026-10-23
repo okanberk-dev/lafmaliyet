@@ -22,7 +22,19 @@ export function newOrderIds(prev: readonly Pick<SiteOrder, "id">[] | null, next:
 /** Ekranda görünen her şeyin özeti: aynıysa liste değişmemiştir (sürüm artmaz, açık sekmeler veri indirmez) */
 export function ordersFingerprint(orders: readonly SiteOrder[]): string {
   return JSON.stringify(
-    orders.map((o) => [o.id, o.orderNo, o.stage, o.fulfillment, o.label, o.firstName, o.scheduledFor, o.paidAt, o.path, o.lines.map((l) => [l.menuItemId, l.name, l.size, l.detail, l.qty])]),
+    orders.map((o) => [
+      o.id,
+      o.orderNo,
+      o.stage,
+      o.fulfillment,
+      o.label,
+      o.firstName,
+      o.scheduledFor,
+      o.paidAt,
+      o.path,
+      o.note ?? "",
+      o.lines.map((l) => [l.menuItemId, l.name, l.size, l.detail, l.qty, l.note ?? ""]),
+    ]),
   );
 }
 
@@ -107,6 +119,71 @@ export function ordersToRing<T extends Pick<SiteOrder, "id" | "stage" | "fulfill
   const unseen = orders.filter((o) => o.stage === "new" && !seen.has(o.id));
   const ring = unseen.filter((o) => !opts.first || opts.nowMs - Date.parse(o.paidAt) <= fresh);
   return { ring: sortForScreen(ring), markSeen: unseen.map((o) => o.id) };
+}
+
+/**
+ * Kartın bekleme satırı. Planlı sipariş (`scheduledFor`) ödemeden değil vaktinden sayılır: vakti gelmeden sakin
+ * ("45 dk kaldı"), geçince "7 dk gecikti" (hâlâ yeniyse vurgulu). Akşam ödenen yarın sabahki gel-al, sabah bar açılınca
+ * "9 sa önce ödendi" diye gecikmiş görünmüyordu artık. Planlı değilse ödemeden bu yana ("Ödendi · 12 dk önce"); yeni
+ * sipariş 10 dakikayı geçince vurgulu.
+ */
+export function waitInfo(o: Pick<SiteOrder, "scheduledFor" | "paidAt" | "stage">, nowMs: number): { text: string; late: boolean } {
+  const due = Date.parse(o.scheduledFor);
+  if (o.scheduledFor && Number.isFinite(due)) {
+    if (due > nowMs) return { text: `${waitLabel(Math.ceil((due - nowMs) / 60_000))} kaldı`, late: false };
+    const late = Math.floor((nowMs - due) / 60_000);
+    return { text: late < 1 ? "Vakti geldi" : `${waitLabel(late)} gecikti`, late: o.stage === "new" && late >= 1 };
+  }
+  const waited = minutesSince(o.paidAt, nowMs);
+  return { text: `Ödendi · ${waitLabel(waited)}${waited >= 1 ? " önce" : ""}`, late: o.stage === "new" && waited >= 10 };
+}
+
+/** Planlı siparişin hazırlanma zili vaktinden bu kadar önce çalar */
+export const DUE_SOON_MS = 15 * 60_000;
+/** Ekran sonradan açılırsa vakti bundan çok geçmiş planlı siparişin zili çalmaz (kartı zaten "gecikti" der) */
+const DUE_RING_LATE_MS = 15 * 60_000;
+/** Bu kadar yeni ödenmiş siparişin hazırlanma zili çalmaz: geliş zili (ordersToRing) az önce çaldı */
+const ARRIVAL_COVERS_MS = 120_000;
+
+/**
+ * Planlı siparişin hazırlanma zili: yeni (`new`) ve planlı bir sipariş vaktine 15 dakika kala bir kez çalar (cihaz
+ * başına; `rung`: bu cihazda çalmış ya da sessizce geçilmiş planlı siparişler). Ekran sonradan açılırsa da (bar sabah
+ * açılınca) vakti yaklaşmış ya da en çok 15 dakika geçmiş sipariş için çalar; daha geç olanınki çalmaz. Az önce
+ * ödenmiş sipariş için çalmaz (geliş zili çaldı). `nextAt`: sıradaki planlı siparişin zil anı (ekran o ana zamanlayıcı
+ * kurar); yoksa null.
+ */
+export function dueSoonToRing<T extends Pick<SiteOrder, "id" | "stage" | "fulfillment" | "paidAt" | "scheduledFor" | "orderNo">>(
+  orders: readonly T[],
+  rung: ReadonlySet<string>,
+  nowMs: number,
+): { ring: T[]; markRung: string[]; nextAt: number | null } {
+  const ring: T[] = [];
+  const markRung: string[] = [];
+  let nextAt: number | null = null;
+  for (const o of orders) {
+    const due = Date.parse(o.scheduledFor);
+    if (o.stage !== "new" || !o.scheduledFor || !Number.isFinite(due) || rung.has(o.id)) continue;
+    const ringAt = due - DUE_SOON_MS;
+    if (nowMs < ringAt) {
+      nextAt = nextAt === null ? ringAt : Math.min(nextAt, ringAt);
+      continue;
+    }
+    markRung.push(o.id);
+    if (nowMs - due <= DUE_RING_LATE_MS && nowMs - Date.parse(o.paidAt) > ARRIVAL_COVERS_MS) ring.push(o);
+  }
+  return { ring: sortForScreen(ring), markRung, nextAt };
+}
+
+/** Hazırlanma zilinin metni: "Planlı sipariş · Gel-al" ve "09:00 için · 2× Latte, 1× Su"; adı geçmez (kilit ekranı) */
+export function dueRingMessage(orders: readonly Pick<SiteOrder, "label" | "lines" | "scheduledFor">[], nowMs: number): { title: string; body: string } {
+  if (!orders.length) return { title: "", body: "" };
+  if (orders.length === 1) {
+    const o = orders[0];
+    const items = o.lines.map((l) => `${l.qty}× ${l.name}`);
+    const list = items.length > 3 ? `${items.slice(0, 3).join(", ")} +${items.length - 3}` : items.join(", ");
+    return { title: `Planlı sipariş · ${o.label}`, body: [scheduleLabel(o.scheduledFor, nowMs), list].filter(Boolean).join(" · ") };
+  }
+  return { title: `${orders.length} planlı siparişin vakti yaklaştı`, body: orders.map((o) => `${o.label} (${scheduleLabel(o.scheduledFor, nowMs) ?? ""})`).join(" · ") };
 }
 
 /** Zil ve bildirim metni: "Yeni sipariş · Masa 4" ve satırlar ("2× Latte, 1× Su"); adı geçmez (kilit ekranı) */

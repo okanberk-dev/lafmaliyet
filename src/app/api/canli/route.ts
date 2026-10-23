@@ -1,11 +1,12 @@
-import { connection, type NextRequest } from "next/server";
+import { after, connection, type NextRequest } from "next/server";
 
+import { needsCatchUp } from "@/lib/karaoke/freshness";
 import type { LiveResponse } from "@/lib/live";
 import { todayTR } from "@/lib/reminders";
 import { getCurrentUser } from "@/server/auth/dal";
 import { loadDueReminders, remindersMarker } from "@/server/data/user-reminders";
-import { karaokeVersion, liveWindow, loadSessions } from "@/server/karaoke/board";
-import { karaokeSecret } from "@/server/karaoke/sync";
+import { liveWindow, loadSessions } from "@/server/karaoke/board";
+import { ensureKaraokeFresh, karaokeSecret, readKaraokeLive } from "@/server/karaoke/sync";
 import { vapidPublicKey } from "@/server/push/send";
 import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/site-orders/sync";
 
@@ -13,8 +14,12 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
  * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları, laffogato.net'in açık kafe siparişleri (bar
  * ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına kadarki hatırlatıcıları, sunucu saati (sayaç
  * cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu sürekli sormaz: açılışta, bildirim gelince,
- * sekmeye dönünce ve seyrek bir yedek kontrolde ister. ETag üç ucuz işaretten (karaoke ve sipariş sayaçları,
- * hatırlatıcıların değişim işareti) ve günden oluşur; değişiklik yoksa veri okunmadan 304 döner.
+ * sekmeye dönünce ve seyrek bir yedek kontrolde ister (yalnız sekme görünürken; src/lib/live-poll.ts). ETag üç ucuz
+ * işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların değişim işareti) ve günden oluşur; değişiklik yoksa veri
+ * okunmadan 304 döner.
+ *
+ * Karaoke kopyası bayatsa (ping kaçtı, son çekme düştü) yanıttan sonra site yeniden sorulur
+ * (src/lib/karaoke/freshness.ts): kaçan rezervasyonu, kimse bakmazken veritabanını uyandırmadan, bakan ilk sekme getirir.
  */
 export async function GET(request: NextRequest) {
   await connection();
@@ -22,7 +27,19 @@ export async function GET(request: NextRequest) {
   const me = await getCurrentUser();
   if (!me) return Response.json({ error: "Giriş gerekli" }, { status: 401, headers });
   const today = todayTR();
-  const [version, marker, orders] = await Promise.all([karaokeVersion(), remindersMarker(me.id), ordersVersion()]);
+  const [karaoke, marker, orders] = await Promise.all([readKaraokeLive(), remindersMarker(me.id), ordersVersion()]);
+  const linked = Boolean(karaokeSecret());
+  if (linked && needsCatchUp(karaoke.sync, Date.now())) {
+    after(async () => {
+      try {
+        const r = await ensureKaraokeFresh({ state: karaoke.sync });
+        if (r.status === "error") console.warn("[karaoke] tazeleme:", r.error);
+      } catch (e) {
+        console.error("[karaoke] tazeleme", e);
+      }
+    });
+  }
+  const version = karaoke.version;
   const etag = `W/"${version}.o${orders}.${marker}.${today}.${me.role}"`;
   if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ...headers, ETag: etag } });
   const { from, to } = liveWindow();
@@ -33,11 +50,16 @@ export async function GET(request: NextRequest) {
     readOrdersSnapshot(),
     readOrdersState(),
   ]);
-  const linked = Boolean(karaokeSecret());
   const body: LiveResponse = {
     serverNow: new Date().toISOString(),
     me: { id: me.id, role: me.role },
-    karaoke: { configured: linked, sessions },
+    karaoke: {
+      configured: linked,
+      sessions,
+      // Son çekme düştüyse ekran uyarır (ping kaçmış olabilir; rezervasyonlar sitenin panelinde de kontrol edilsin)
+      okAt: linked ? karaoke.sync.lastOkAt : null,
+      error: linked ? karaoke.sync.lastError : null,
+    },
     orders: {
       configured: linked,
       // Bağlantı kaldırıldıysa eski listenin kopyası gösterilmez (ekran "kurulmadı" der, zil çalmaz)

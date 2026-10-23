@@ -35,6 +35,7 @@ import {
   Undo2,
   UserRound,
   Wallet,
+  Wifi,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -224,7 +225,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> › Yeni ürün. İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
-            yok.
+            yok. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif
+            anahtarını kapatın.
           </>
         ),
         icon: Coffee,
@@ -283,7 +285,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
             Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
-            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
+            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır). Satışın iadesi (site ya da müşteri iadesi) Paraşüt&apos;te gider
+            listesine düşse de gider sayılmaz; tedarikçiye iadeniz panele kendiliğinden girmez: ikisi de <Path href="/panel/parasut" /> ekranının başında yazar,
+            tedarikçiye iadeyi Faturalar&apos;a aynı tedarikçiye eksi tutarla girin.
           </>
         ),
         icon: FileText,
@@ -470,7 +474,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın kasa
             raporlarından günlük satış, laffogato.net online), vade gününde ödenmemiş faturalar, hatırlatıcılar, maaş, SGK, KDV ve hatırlatıcısı olmayan sabit
-            giderler. Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
+            giderler (faturadaki KDV&apos;siyle: kira ve faturalar %20, personel KDV&apos;siz; oran Giderler&apos;de kalemin Faturadaki KDV alanında). Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
             yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
             tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
             onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Her varsayım
@@ -515,8 +519,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            yalnızca stok sayımını ve reçete defterini görür. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google Authenticator vb.)
-            açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
+            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan), Kontrol listeleri, Zayi &amp; ikram, Reçete
+            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hatırlatıcılarım ve Hesabım
+            ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google
+            Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
           </>
         ),
         icon: UserPlus,
@@ -567,7 +573,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel" /> reçeteye göre (teorik) kârı, <Path href="/panel/gelir-gider" /> tablosu ise faturaya göre (gerçekleşen) kârı gösterir. Aradaki fark fire, ikram,
-            stok birikmesi ya da reçetede eksik malzemedir. Stok sayımı girdikçe iki rakam birbirine yaklaşır.
+            stok birikmesi ya da reçetede eksik malzemedir. Stok sayımı girdikçe iki rakam birbirine yaklaşır. İkisi de laffogato.net online satışını (uygulama
+            siparişleri, mağaza, karaoke) içerir: Genel bakış&apos;ta online satış reçetesiyle, menüye bağlı olmayan satırlar ortalama maliyet oranıyla sayılır.
           </>
         ),
         icon: Scale,
@@ -578,9 +585,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Excel Panel&apos;i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. <Path href="/panel" /> o ayın <Path href="/panel/gelir-gider" /> tutarlarını
-            kullanır: kalemler açık gün oranıyla bölünür, elle düzeltilen hücreler ve yalnızca o aya yazılan giderler (doğalgaz, ciro kirası, harici…) eklenir. Fark varsa net
+            kullanır: kalemler gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez), elle düzeltilen hücreler ve yalnızca o aya yazılan giderler (doğalgaz, ciro kirası, harici…) eklenir. Fark varsa net
             kârın altında &quot;Excel temeli&quot; ayrıca yazar; &quot;Para nereye gitti?&quot; kartındaki &quot;Bu ay düşülen sabit gider&quot; kutusu farkı satır satır gösterir.
-            SU GİDERİ reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderde ikinci kez düşülmez.
+            SU GİDERİ reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderde ikinci kez düşülmez. Panel kâra laffogato.net online satışının brüt kârını da
+            katar; Excel&apos;de online satış yoktu.
           </>
         ),
         icon: Sigma,
@@ -591,12 +599,27 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Ay sonu tahmini ne zaman çıkar?",
         a: (
           <>
-            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı − standart aylık sabit gider (Excel&apos;deki &quot;Ekim
-            tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre kâr/zarar) görünür.
+            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + online satışın brüt kârı (aynı tempoyla) −
+            standart aylık sabit gider (Excel&apos;deki &quot;Ekim tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre
+            kâr/zarar) görünür.
           </>
         ),
         icon: CalendarCheck,
         links: [{ href: "/panel/satislar", label: "Açık gün ve POS cirosu" }],
+      },
+      {
+        id: "ay-ortasi-liste",
+        q: "Ay bitmeden satış listesi yüklemek",
+        a: (
+          <>
+            Ay sürerken Patron&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
+            (varsayılan dün). Kasa raporları her akşam ilerler; Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı, indirimi ve reçeteye göre kârın sabit
+            giderini listenin günleriyle hesaplar, &quot;POS cirosu tutmuyor&quot; uyarısı yanlış yere çıkmaz. Ay bitince ayın tamamının listesini Yenisiyle değiştir ile
+            yükleyin; biten aya yüklenen liste ayın tamamı sayılır.
+          </>
+        ),
+        icon: CalendarCheck,
+        links: [{ href: "/panel/satislar", label: "Satışlar" }],
       },
       {
         id: "gunluk-isler",
@@ -612,6 +635,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Timer,
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
+      },
+      {
+        id: "bar-baglanti",
+        q: "Bar ekranında “Son kontrol başarısız” yazıyor",
+        a: (
+          <>
+            <Path href="/panel/karaoke" /> ekranı yeni rezervasyon ve siparişleri laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı
+            kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener (karaokede iki dakikada, siparişlerde dakikada bir), o arada
+            yenileri sitenin panelinde de kontrol edin. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
+            ve sipariş anında gelir, ekran panelin veritabanını daha seyrek sorar (ücretsiz planın aylık süresi bitmesin).
+          </>
+        ),
+        icon: Wifi,
+        links: [{ href: "/panel/karaoke", label: "Karaoke (bar ekranı)" }],
       },
       {
         id: "yedek",
@@ -635,8 +672,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             Karaoke doluluğu ekranı (<Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası) odanın hangi gün ve saatte dolu olduğunu gösterir: son 4 hafta,
             son 12 hafta ya da bir ay. Hücreye dokununca o saatin ayrıntısı çıkar; üstte doluluk, saat başına gelir, uzatma, son dakika iptal ve rezervasyonların
             kaç gün önceden yapıldığı, altta ay ay karşılaştırma var. Doluluk oda saatlerine göre hesaplanır (ekranın altındaki Oda saatleri; başta her gün
-            10:00–22:00). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not alınmaz); rezervasyonsuz gruplar
-            yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
+            12:00–24:00, sitedeki karaoke saatleri). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not
+            alınmaz); rezervasyonsuz gruplar yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
           </>
         ),
         icon: Grid3x3,
@@ -724,23 +761,26 @@ const FORMULAS = [
   ["Önerilen fiyat", "TAVAN(maliyet ÷ hedef oran × (1 + KDV); 5\u00a0₺)"],
   ["Durum", "İyi ≤ hedef · Dikkat ≤ hedef + 10 puan · Düşük kâr > hedef + 10 puan"],
   ["Eşleşmeyen POS ürünü", "Net ciro × eşleşen ürünlerin ortalama maliyet oranı"],
-  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu"],
+  ["Brüt kâr", "Net satış − malzeme/ambalaj (reçeteye göre) − POS komisyonu; Genel bakış'ta laffogato.net online satışı da dahil"],
   [
     "Net kâr / zarar (reçeteye göre)",
-    "Brüt kâr − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: açık gün oranı + bu aya özel giderler). Excel temeli: standart aylık sabit gider",
+    "Brüt kâr (laffogato.net online dahil) − indirimler ÷ (1 + KDV) − o ayın sabit giderleri (Gelir-gider: gün oranı + bu aya özel giderler). Satış listesi ayın bir kısmını kapsıyorsa indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla. Excel temeli: standart aylık sabit gider",
   ],
   [
     "Kâr / zarar (faturaya göre)",
     "Ciro ÷ (1 + KDV) − satılan malın maliyeti − giderler (Gelir-gider tablosu). Satışlar'daki HİZMET satırları (karaoke) kadarı hizmet KDV'siyle (%20) ayrılır",
   ],
-  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış"],
-  ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün"],
-  ["Başabaş günlük ciro", "Standart aylık sabit gider ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
+  ["Faturaya göre maliyet oranı", "Faturayla alınan mal (KDV hariç) ÷ net satış (laffogato.net online dahil)"],
+  ["Günlük ortalama ciro", "Satış listesi toplamı (yoksa POS cirosu) ÷ açık gün; liste ayın bir kısmını kapsıyorsa listenin kendi açık günü"],
+  ["Başabaş günlük ciro", "(Standart aylık sabit gider − kapanmış son ayın laffogato.net online brüt kârı) ÷ (brüt kâr ÷ ciro) ÷ ayda açık gün"],
   [
     "Ay sonu tahmini (yalnızca devam eden ay)",
-    "POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı − standart aylık sabit gider",
+    "POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + laffogato.net online brüt kârı (aynı tempoyla) − standart aylık sabit gider",
   ],
-  ["Aylık sabit gider (gelir-gider)", "Aylık tutar × açık gün ÷ ayın gün sayısı (günlük giderler × açık gün)"],
+  [
+    "Aylık sabit gider (gelir-gider)",
+    "Aylık tutar × gün ÷ ayın gün sayısı. Gün: açık gün elle yazıldıysa o; kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler × açık gün",
+  ],
   ["Su + buz litre maliyeti", "SU GİDERİ ÷ satışlara göre su + buz litresi (fatura girilmiş ve satış listesi olan son ay)"],
   ["Satılan malın maliyeti", "Önceki aydan devir + ay içinde alınan − sonraki aya devreden (sayım)"],
 ];

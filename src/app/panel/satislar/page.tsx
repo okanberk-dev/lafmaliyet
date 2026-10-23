@@ -7,8 +7,11 @@ import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { listDaysText } from "@/lib/calc/insights";
 import { manualOf } from "@/lib/cash-month";
 import { monthLabel, num, pct, tl } from "@/lib/format";
+import { todayTR } from "@/lib/reminders";
+import { coverageFor } from "@/lib/sales-coverage";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
@@ -43,6 +46,11 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   const month = resolveMonth(sp.ay, model);
   const sales = model.monthSales(month);
   const info = model.monthInfo.get(month);
+  // Süren ayda yüklenen listenin son günü (varsayılan dün) ve liste kasa raporlarından kısaysa dönemi (sales-coverage.ts)
+  const today = todayTR();
+  const defaultThrough = coverageFor(month, today);
+  const runningImport = defaultThrough ? { today, defaultThrough } : null;
+  const listPeriod = sales.lines.length ? model.listPeriod(month) : null;
 
   const products: ProductOption[] = model.products.map((p) => ({
     id: p.product.id,
@@ -211,6 +219,9 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           mappings={mappingList}
           products={products}
           hasInfo={hasInfo}
+          running={runningImport}
+          coveredThrough={model.ds.salesCoverage?.find((c) => c.month === month)?.through ?? null}
+          listDays={listPeriod ? listDaysText(listPeriod) : null}
         />
         <MonthInfoForm
           // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
@@ -222,6 +233,7 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           kasa={info?.kasa ?? null}
           settingsCardShare={model.settings.kartOrani}
           listTotal={sales.revenue}
+          listPeriod={listPeriod ? { label: listDaysText(listPeriod), posRevenue: listPeriod.posRevenue, discounts: listPeriod.discounts } : null}
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}
         />

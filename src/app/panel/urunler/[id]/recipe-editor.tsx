@@ -191,6 +191,7 @@ export function RecipeEditor({
   months,
   monthLabel,
   history,
+  deleteBlocker = null,
   siblings,
   water,
   priceImpact = null,
@@ -218,6 +219,8 @@ export function RecipeEditor({
   months: string[];
   monthLabel: string;
   history: { month: string; label: string; qty: number }[];
+  /** Satışı, zayi kaydı, fiyat geçmişi ya da online satışı varsa silinemez (src/lib/product-delete.ts); kart pasif yapmayı önerir */
+  deleteBlocker?: string | null;
   siblings: { id: number; size: string }[];
   /** Su + buz litre maliyeti ve nereden geldiği (water.reason metni) */
   water: { perLiter: number; costed: boolean; text: string; short: string };
@@ -391,8 +394,10 @@ export function RecipeEditor({
     el.setSelectionRange(0, el.value.length);
   }
 
-  async function save() {
+  /** `override.active`: silinemeyen ürünü pasif yapan düğme anahtarı kapatıp hemen kaydeder (durum güncellenmeden) */
+  async function save(override?: { active: boolean }) {
     if (saving) return;
+    const activeValue = override?.active ?? active;
     if (!name.trim()) return toast.error("Ürün adını girin");
     const badIdx = lines.findIndex((l) => l.error);
     if (badIdx >= 0) {
@@ -416,7 +421,7 @@ export function RecipeEditor({
       note,
       price,
       fire,
-      active,
+      active: activeValue,
       showOnMenu,
       rows: new Map(lines.map((l) => [l.row.key, { input: l.row.input, note: l.row.note, to: qtyText(l.qty, l.expr) }])),
     };
@@ -429,7 +434,7 @@ export function RecipeEditor({
       price: priceNum,
       fireOverride: fireInput.rate,
       note,
-      active,
+      active: activeValue,
       showOnMenu,
       items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
     });
@@ -522,6 +527,20 @@ export function RecipeEditor({
     router.push(listHref(readListQuery(), month));
   }
 
+  /**
+   * Silinemeyen ürün: "Menüde aktif" kapanır. Kartta kaydedilmemiş başka değişiklik yoksa hemen kaydedilir; varsa
+   * yalnız anahtar kapanır, kullanıcı değişiklikleriyle birlikte Kaydet'e basar (yarım değişiklik sessizce yazılmasın)
+   */
+  function deactivate() {
+    setConfirmDelete(false);
+    setActive(false);
+    if (dirty) {
+      toast.info("“Menüde aktif” kapatıldı", { description: "Karttaki öteki değişikliklerle birlikte kaydetmek için Kaydet'e basın." });
+      return;
+    }
+    void save({ active: false });
+  }
+
   /** "← Ürünler": listenin son süzgeçlerine döner (yoksa düz bağlantı, kartın ayıyla) */
   function backToList(e: MouseEvent<HTMLAnchorElement>) {
     const saved = readListQuery();
@@ -551,8 +570,6 @@ export function RecipeEditor({
   const trialDiff = trialEcon ? trialEcon.unitProfit - econ.unitProfit : 0;
   const plus = (v: number) => (v >= 0 ? "+" : "");
   const maxSold = Math.max(1, ...history.map((h) => h.qty));
-  const totalSold = history.reduce((a, h) => a + h.qty, 0);
-  const soldMonths = history.filter((h) => h.qty > 0).length;
   const categoryName = categories.find((c) => c.id === product.categoryId)?.name;
   const range = sliderRange(priceNum, econ.suggestedPrice, trialPrice);
 
@@ -1380,7 +1397,7 @@ export function RecipeEditor({
           <Button variant="ghost" onClick={reset} title="Kaydedilmemiş değişiklikleri geri al" className="h-11 pointer-coarse:h-11 max-sm:px-3 sm:h-9">
             <RotateCcw size={16} className="max-sm:hidden" aria-hidden="true" /> Geri al
           </Button>
-          <Button onClick={save} disabled={saving} title="Kaydet (⌘S / Ctrl+S)" className="h-11 px-4 pointer-coarse:h-11 sm:h-9">
+          <Button onClick={() => void save()} disabled={saving} title="Kaydet (⌘S / Ctrl+S)" className="h-11 px-4 pointer-coarse:h-11 sm:h-9">
             <Save size={16} className="max-sm:hidden" aria-hidden="true" /> {saving ? "Kaydediliyor…" : "Kaydet"}
           </Button>
         </div>
@@ -1399,27 +1416,50 @@ export function RecipeEditor({
         description="Bu karttaki değişiklikler henüz kaydedilmedi; çıkarsanız kaybolur. Kalmak için Vazgeç'e basıp alttaki Kaydet'i kullanın."
       />
 
-      <ConfirmDialog
-        open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        onConfirm={() => void remove()}
-        pending={deleting}
-        title="Ürün silinsin mi?"
-        confirmLabel="Ürünü sil"
-        description={
-          <>
-            <span className="mb-2 block font-semibold text-ink">
-              {product.name} · {product.size}
-            </span>
-            Reçetesiyle birlikte kalıcı olarak silinir; geri alınamaz.
-            {totalSold
-              ? ` Satış raporlarında ${num(soldMonths)} ayda toplam ${num(totalSold)} adet satışı var: bu satırlar kalır ama eşleşmesiz görünür ve POS eşleştirmesi de silinir.`
-              : " Bu ürünün satış kaydı yok."}{" "}
-            Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatıp kaydedin.
-            {site?.link ? ` Site bağlantısı da kalkar; laffogato.net'teki ${site.item?.name ?? "kalem"} silinmez.` : null}
-          </>
-        }
-      />
+      {deleteBlocker ? (
+        // Geçmişi olan ürün silinmez (eylem de reddeder): pencere nedenini söyler, menüden kaldırmayı önerir
+        <ConfirmDialog
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={() => (active ? deactivate() : setConfirmDelete(false))}
+          pending={saving}
+          tone="primary"
+          title="Bu ürün silinemez"
+          confirmLabel={active ? "Menüde pasif yap" : "Tamam"}
+          description={
+            <>
+              <span className="mb-2 block font-semibold text-ink">
+                {product.name} · {product.size}
+              </span>
+              {deleteBlocker}{" "}
+              {active
+                ? "Pasif ürün menü listelerinde ve QR menüde görünmez; geçmiş ayların hesabı olduğu gibi kalır."
+                : "Ürün zaten menüde pasif; geçmiş ayların hesabı olduğu gibi kalır."}
+              {/* Siteye bağlı, sitede "Satışta" ürün: kaydedince sitedeki kalem de "Tükendi" olur (saveRecipe → pushSaleChange) */}
+              {active && showOnMenu && site?.link ? ` laffogato.net'te de ${site.item?.name ?? "bağlı kalem"} “Tükendi” görünür.` : null}
+            </>
+          }
+        />
+      ) : (
+        <ConfirmDialog
+          open={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={() => void remove()}
+          pending={deleting}
+          title="Ürün silinsin mi?"
+          confirmLabel="Ürünü sil"
+          description={
+            <>
+              <span className="mb-2 block font-semibold text-ink">
+                {product.name} · {product.size}
+              </span>
+              Reçetesiyle birlikte kalıcı olarak silinir; geri alınamaz. Bu ürünün satış kaydı yok.{" "}
+              Yalnızca menüden kaldırmak için silmek yerine &apos;Menüde aktif&apos; anahtarını kapatıp kaydedin.
+              {site?.link ? ` Site bağlantısı da kalkar; laffogato.net'teki ${site.item?.name ?? "kalem"} silinmez.` : null}
+            </>
+          }
+        />
+      )}
 
       {/* Yalnız açıkken çizilir: kart kayıttan sonra baştan kurulmaz, alanlar her açılışta son kaydedilen ad ve fiyatla başlasın */}
       {copyOpen ? (

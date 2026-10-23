@@ -225,6 +225,20 @@
       "when": 1792768742678,
       "tag": "0031_fatura_okuma",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792779111549,
+      "tag": "0032_giris_cihaz_islem_kisisi",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792779172582,
+      "tag": "0033_sabit_gider_kdv",
+      "breakpoints": true
     }
   ]
 }

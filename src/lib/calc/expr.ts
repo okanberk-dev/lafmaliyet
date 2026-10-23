@@ -133,7 +133,38 @@ export function validateExpression(src: string, settings: Settings): string | nu
   }
 }
 
-/** "1.234,5" / "1234.5" / "51,85" gibi Türkçe veya İngilizce yazılmış sayıları çözer. */
+/**
+ * Ayraçları JavaScript sayısına çevirir; bozuk gruplamada null. Virgül ve nokta birlikteyse sonuncusu ondalıktır,
+ * öteki bin ayıracı ("1.234,5" ve İngilizce dökümün "1,250.00"si; banka POS fişi, yapıştırılan dışa aktarım). Tek
+ * virgül ondalıktır ("51,85"); birden çok nokta ya da virgül bin ayıracıdır ve grupları üçer hane olmalıdır
+ * ("2.000.50" okunmaz: yanlış okunan bir tutar okunamayandan kötüdür).
+ */
+function plainNumber(s: string): string | null {
+  const sign = /^[+-]/.test(s) ? s[0] : "";
+  const body = sign ? s.slice(1) : s;
+  const comma = body.lastIndexOf(",");
+  const dot = body.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const dec = comma > dot ? "," : ".";
+    const sep = dec === "," ? "." : ",";
+    const at = body.lastIndexOf(dec);
+    const int = body.slice(0, at);
+    const frac = body.slice(at + 1);
+    const grouped = sep === "." ? /^\d{1,3}(\.\d{3})*$/ : /^\d{1,3}(,\d{3})*$/;
+    if (!grouped.test(int) || !/^\d+$/.test(frac)) return null;
+    return `${sign}${int.split(sep).join("")}.${frac}`;
+  }
+  if (comma >= 0) {
+    if (body.indexOf(",") === comma) return `${sign}${body.replace(",", ".")}`;
+    return /^\d{1,3}(,\d{3})+$/.test(body) ? `${sign}${body.replace(/,/g, "")}` : null;
+  }
+  if (dot >= 0 && body.indexOf(".") !== dot) return /^\d{1,3}(\.\d{3})+$/.test(body) ? `${sign}${body.replace(/\./g, "")}` : null;
+  // "1.022" Türkçede bin ayıracıdır; "0.125" ise ondalıktır (bin ayıracı 0 ile başlamaz)
+  if (/^[1-9]\d{0,2}\.\d{3}$/.test(body)) return `${sign}${body.replace(".", "")}`;
+  return s;
+}
+
+/** "1.234,5" / "1234.5" / "51,85" / "1,250.00" gibi Türkçe veya İngilizce yazılmış sayıları çözer. */
 export function parseNumberTR(raw: string | number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
@@ -141,15 +172,9 @@ export function parseNumberTR(raw: string | number | null | undefined): number |
   if (!s) return null;
   const pct = s.startsWith("%") || s.endsWith("%");
   s = s.replace(/%/g, "");
-  if (s.includes(",")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else if ((s.match(/\./g) || []).length > 1) {
-    s = s.replace(/\./g, "");
-  } else if (/^-?[1-9]\d{0,2}\.\d{3}$/.test(s)) {
-    // "1.022" Türkçede bin ayıracıdır; "0.125" ise ondalıktır (bin ayıracı 0 ile başlamaz)
-    s = s.replace(".", "");
-  }
-  const v = Number(s);
+  const plain = plainNumber(s);
+  if (plain === null) return null;
+  const v = Number(plain);
   if (!Number.isFinite(v)) return null;
   return pct ? v / 100 : v;
 }

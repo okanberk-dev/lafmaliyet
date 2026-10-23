@@ -6,12 +6,14 @@ import { z } from "zod";
 
 import { validateExpression } from "@/lib/calc/expr";
 import { tl } from "@/lib/format";
+import { productDeleteBlocker } from "@/lib/product-delete";
 import type { PriceAck } from "@/lib/calc/price-impact";
 import { panelIsActive } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, loadSettings } from "@/server/data/dataset";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
+import { productHistoryCounts } from "@/server/data/product-history";
 import { getDb, schema as s } from "@/server/db";
 import { recordPriceChange } from "@/server/prices/record";
 import { applyPushed, pushSaleChange } from "@/server/site-menu/push";
@@ -262,10 +264,13 @@ export async function deleteProduct(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
     const db = getDb();
-    const [p] = await db.select().from(s.products).where(eq(s.products.id, id));
+    const [p] = await db.select().from(s.products).where(eq(s.products.id, z.number().int().positive().parse(id)));
     if (!p) throw new UserError("Ürün bulunamadı");
-    // Geçmiş satışlar silinmez; eşleştirmeleri boşa düşer (ortalama maliyet oranıyla hesaplanır)
-    await db.delete(s.products).where(eq(s.products.id, id));
+    // Satışı, zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez: kapanmış ayların maliyeti ve kârı
+    // değişirdi (eşleşmesiz satır ortalama maliyet oranıyla hesaplanır), fiyat geçmişi kaybolurdu. Pasif yapılır.
+    const blocker = productDeleteBlocker(await productHistoryCounts(p));
+    if (blocker) throw new UserError(blocker);
+    await db.delete(s.products).where(eq(s.products.id, p.id));
     // Sitedeki kalem kalır; yalnız panelin bağlantısı ürünle birlikte gider
     await logActivity(me, "Ürün silindi", `${p.name} ${p.size}${p.siteMenuId ? ` (site bağlantısı da kaldırıldı: ${p.siteMenuId} ${p.siteMenuSlot})` : ""}`);
     refresh();

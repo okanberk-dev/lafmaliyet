@@ -127,3 +127,39 @@ export function planSummary(changes: readonly RowChange[]): string {
     .join("; ")
     .slice(0, 500);
 }
+
+/**
+ * Panelin siteye yazıp sitenin kabul ettiği kalemler: kalem kimliği → sitenin yanıtındaki `updatedAt` ve yazımın anı
+ * (integration_state `menu_sync` › `pushed`). Bir saat tutulur.
+ */
+export type PushedStamps = Record<string, { updatedAt: string; at: string }>;
+
+/** Bir yazımın damgası bu kadar tutulur: o sırada okunmuş listeler çoktan gelmiştir */
+export const PUSHED_KEEP_MS = 60 * 60_000;
+
+/** Süresi geçmemiş damgalar (bozuk ve eskiler atılır) */
+export function freshStamps(stamps: PushedStamps | null | undefined, nowMs: number): PushedStamps {
+  const out: PushedStamps = {};
+  for (const [id, v] of Object.entries(stamps ?? {})) {
+    const at = Date.parse(v?.at ?? "");
+    if (Number.isFinite(at) && nowMs - at < PUSHED_KEEP_MS && Number.isFinite(Date.parse(v.updatedAt))) out[id] = v;
+  }
+  return out;
+}
+
+/**
+ * Listede panelin kendi yazımından eski kalan kalemler. Site listenin zamanını (`now`) kalemleri okuduktan sonra alır:
+ * yazımdan hemen önce okunmuş bir liste yazımdan sonraki bir `now` taşıyabilir ve son yazımı geri alırdı (toplu fiyat
+ * değişikliğinde bir ürünün fiyatı birkaç saniye eskiye dönüp fiyat geçmişine sitenin yapmadığı bir değişiklik olarak
+ * düşüyordu). Bu kalemlere bağlı satırlar o çekmede uygulanmaz; kalem listede kalır (bağlantı kaldırılmaz), sonraki
+ * çekme yeni hâli getirir. Kalemin zamanı okunamıyorsa eski sayılmaz.
+ */
+export function staleItemIds(items: readonly Pick<SiteMenuItem, "id" | "updatedAt">[], stamps: PushedStamps): Set<string> {
+  const stale = new Set<string>();
+  for (const i of items) {
+    const pushed = stamps[i.id];
+    const listed = Date.parse(i.updatedAt);
+    if (pushed && Number.isFinite(listed) && listed < Date.parse(pushed.updatedAt)) stale.add(i.id);
+  }
+  return stale;
+}

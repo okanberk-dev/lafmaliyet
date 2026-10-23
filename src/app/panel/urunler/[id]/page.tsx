@@ -7,7 +7,9 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
+import { productSalesHistory, soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
+import { productDeleteBlocker } from "@/lib/product-delete";
 import { suggestLinks } from "@/lib/site-menu/names";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -107,7 +109,16 @@ async function RecipeContent({
   const [prices, priceHistory] = await Promise.all([loadPriceAlerts(model).catch(() => null), loadProductPriceHistory(product.id).catch(() => null)]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
-  const history = model.salesMonths.map((m) => ({ month: m, label: monthLabel(m), qty: model.soldByProduct(m).get(product.id) ?? 0 }));
+  // Satılan adet ModPOS + laffogato.net online: Ürünler, Genel bakış ve Claude aracının (panelAdresi) sayısıyla aynı
+  const history = productSalesHistory(model, product.id).map((h) => ({ ...h, label: monthLabel(h.month) }));
+  // Silme engeli (src/lib/product-delete.ts; eylem aynı kuralı veritabanından yeniden sayar): kart silmek yerine pasif
+  // yapmayı önerir. Fiyat geçmişinin ilk 20 satırı yeter: bir değişiklik bile engeldir
+  const deleteBlocker = productDeleteBlocker({
+    salesLines: model.ds.salesLines.filter((l) => l.productId === product.id).length,
+    waste: (model.ds.wasteEntries ?? []).filter((w) => w.productId === product.id).length,
+    priceChanges: priceHistory?.rows.filter((r) => r.source !== "create").length ?? 0,
+    onlineMonths: model.siteMonths.filter((m) => model.siteLines(m).mapped.some((x) => x.product.id === product.id)).length,
+  });
   const siblings = model.products
     .filter((p) => p.product.name === product.name)
     .map((p) => ({ id: p.product.id, size: p.product.size }));
@@ -150,11 +161,12 @@ async function RecipeContent({
       categories={model.categories.map((c) => ({ id: c.id, name: c.name }))}
       ingredients={ingredients}
       settings={model.settings}
-      soldQty={model.soldByProduct(month).get(product.id) ?? 0}
+      soldQty={soldWithOnline(model, month).get(product.id) ?? 0}
       month={month}
       months={availableMonths(model)}
       monthLabel={monthLabel(month)}
       history={history}
+      deleteBlocker={deleteBlocker}
       siblings={siblings}
       water={{
         perLiter: model.water.perLiter,

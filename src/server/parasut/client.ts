@@ -13,7 +13,7 @@ import { open, seal } from "@/server/secret-box";
  * - Kimlik: OAuth2 "password" akışı (client_id + client_secret + kullanıcı e-postası/parolası), belirteç
  *   yaklaşık 2 saat geçerli; "refresh_token" ile yenilenir. Belirteçler integration_state'te şifreli durur.
  * - Uç noktalar: {baseUrl}/v4/{company_id}/<kaynak>, JSON:API (include, filter[..], sort, page[number|size]).
- * - Hız sınırı: belgelere göre 10 saniyede 10 istek; istekler arasında en az MIN_GAP_MS beklenir, 429'da
+ * - Hız sınırı: belgelere göre 10 saniyede 10 istek; istekler arasında en az PACING.minGapMs beklenir, 429'da
  *   Retry-After'a uyulur, 5xx'te geri çekilerek yeniden denenir.
  * - Her yenilemede yeni bir refresh_token döner (döndürmeli); en son gelen hemen veritabanına yazılır.
  */
@@ -23,7 +23,11 @@ const TOKEN_KEY = "parasut.token";
 const TOKEN_LOCK = 7_340_211;
 
 type Exec = Pick<ReturnType<typeof getDb>, "select" | "insert">;
-const MIN_GAP_MS = 1050;
+/**
+ * İstekler arası en az bekleme ve 429/5xx'te Retry-After yoksa geri çekilmenin tabanı (2^deneme ile çarpılır). Yalnız
+ * sahte Paraşüt'le koşan veritabanı testi (tests/parasut-esitleme-db.test.ts) sıfırlar; canlıda değişmez
+ */
+export const PACING = { minGapMs: 1050, retryBaseMs: 1000 };
 const MAX_RETRIES = 4;
 const REQUEST_TIMEOUT_MS = 15_000;
 /** Paraşüt'ün sayfa başına izin verdiği en büyük kayıt sayısı */
@@ -190,7 +194,7 @@ export class ParasutClient {
 
   // ------------------------------------------------------------ istek
   private async throttle() {
-    const wait = this.lastCall + MIN_GAP_MS - Date.now();
+    const wait = this.lastCall + PACING.minGapMs - Date.now();
     if (wait > 0) await sleep(wait);
     this.lastCall = Date.now();
   }
@@ -225,7 +229,7 @@ export class ParasutClient {
       }
       if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
         const retryAfter = Number(res.headers.get("retry-after"));
-        const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
+        const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : PACING.retryBaseMs * 2 ** attempt;
         this.ensureTime(wait);
         await sleep(wait);
         continue;

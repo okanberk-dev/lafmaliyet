@@ -22,6 +22,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { ROLES } from "@/lib/constants";
 import { num } from "@/lib/format";
 import { PASSWORD_MIN, passwordProblem } from "@/lib/password-rules";
+import { ROLE_PERMISSIONS, STAFF_ROLE_HINT } from "@/lib/roles";
 import { isStepUpError, needsStepUp, STEP_UP_REQUIRED, stepUpChanges, type StepUpCase, type StepUpConfirm } from "@/lib/step-up";
 import { cn } from "@/lib/utils";
 import { createAccessLink } from "@/server/actions/invites";
@@ -522,7 +523,7 @@ function RowActions({
 // ---------------------------------------------------------------- Ortak form parçaları
 
 const ROLE_OPTIONS: { value: "staff" | "admin"; label: string; hint: string }[] = [
-  { value: "staff", label: ROLES.staff, hint: "Stok sayımı, reçete defteri (değişiklik önerir), karaoke sayacı, kendi hatırlatıcıları" },
+  { value: "staff", label: ROLES.staff, hint: STAFF_ROLE_HINT },
   { value: "admin", label: ROLES.admin, hint: "Her şey (maliyet, kâr, ayarlar, reçete onayı dahil)" },
 ];
 
@@ -1112,21 +1113,7 @@ function UserDialog({
 
 // ---------------------------------------------------------------- Roller
 
-const PERMISSIONS: { label: string; admin: boolean; staff: boolean }[] = [
-  { label: "Stok sayımı girme", admin: true, staff: true },
-  { label: "Reçete defterini görme", admin: true, staff: true },
-  { label: "Reçetede değişiklik önerme (yönetici onaylayınca uygulanır)", admin: true, staff: true },
-  { label: "Karaoke sayacı ve rezervasyonları (fiyatsız)", admin: true, staff: true },
-  { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true },
-  { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true },
-  { label: "Reçeteyi doğrudan düzenleme ve önerileri onaylama", admin: true, staff: false },
-  { label: "Ürün maliyeti, fiyat ve kârlılık", admin: true, staff: false },
-  { label: "Hammadde fiyatları", admin: true, staff: false },
-  { label: "Satış, fatura, gelir-gider", admin: true, staff: false },
-  { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
-  { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
-  { label: "Paraşüt, ayarlar, kullanıcı yönetimi", admin: true, staff: false },
-];
+// Yetki tablosu src/lib/roles.ts'te (personelin her ekranı bir satırda: tests/personel-yetkileri.test.ts)
 
 function Mark({ on, label }: { on: boolean; label: string }) {
   return on ? (
@@ -1158,7 +1145,7 @@ export function RolesCard() {
             </tr>
           </THead>
           <tbody>
-            {PERMISSIONS.map((p) => (
+            {ROLE_PERMISSIONS.map((p) => (
               <TR key={p.label}>
                 <TD className="text-ink-soft">{p.label}</TD>
                 <TD className="text-center">

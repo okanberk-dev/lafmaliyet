@@ -13,7 +13,8 @@ import { sameOrigin } from "@/server/same-origin";
  * - GET  /api/faturalar/{id}/belge?indir=1    → indirme
  * - GET  /api/faturalar/{id}/belge?belge={n}  → belirli bir yüklenmiş dosya
  * - POST /api/faturalar/{id}/belge  (form "dosya") → PDF ya da fotoğraf yükler (en çok 4 MB; tür içerikten denetlenir)
- * Paraşüt e-fatura PDF'i ilk açılışta Paraşüt'ten indirilip saklanır; sonraki açılışlar anında gelir.
+ * Paraşüt e-fatura PDF'i ilk açılışta Paraşüt'ten indirilip saklanır; sonraki açılışlar anında gelir. Tarayıcı belgeyi
+ * saklamaz (no-store): ortak bilgisayarda yönetici çıkış yaptıktan sonra personel geçmişten tedarikçi faturasını açamasın.
  */
 export const maxDuration = 30;
 
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         "Content-Type": doc.mime,
         "Content-Length": String(doc.bytes.length),
         "Content-Disposition": contentDisposition(sp.get("indir") ? "attachment" : "inline", doc.fileName),
-        "Cache-Control": "private, max-age=600",
+        "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },
     });

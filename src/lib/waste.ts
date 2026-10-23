@@ -77,3 +77,23 @@ export function matchesChoice(choice: Pick<WasteChoice, "name" | "group">, query
     .filter(Boolean)
     .every((w) => hay.includes(w));
 }
+
+/**
+ * db:reset'te zayi / ikram kayıtları kalır (kasa raporları ve kasadan çıkanlar gibi; scripts/seed.ts). Ürünler ve
+ * hammaddeler Excel'den yeniden yüklenip kimlikleri baştan sayıldığı için kayıt yalnız aynı kimlikte aynı adı taşıyan
+ * ürüne ya da hammaddeye bağlı kalır (Excel'den gelenler); yoksa (sonradan eklenip silinen kalem) yalnız adıyla durur
+ * ve tüketim hesabına girmez.
+ */
+export function relinkWaste<W extends { productId: number | null; ingredientId: number | null; name: string }>(
+  rows: readonly W[],
+  products: readonly { id: number; name: string; size: string }[],
+  ingredients: readonly { id: number; name: string }[],
+): W[] {
+  const product = new Map(products.map((p) => [p.id, productLabel(p)]));
+  const ingredient = new Map(ingredients.map((i) => [i.id, i.name]));
+  return rows.map((w) => ({
+    ...w,
+    productId: w.productId !== null && product.get(w.productId) === w.name ? w.productId : null,
+    ingredientId: w.ingredientId !== null && ingredient.get(w.ingredientId) === w.name ? w.ingredientId : null,
+  }));
+}
