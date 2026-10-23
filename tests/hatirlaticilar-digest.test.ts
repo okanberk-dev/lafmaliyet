@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mock, test } from "node:test";
@@ -295,6 +296,16 @@ test("ek kutular: verilmezse ya da boşsa e-posta kutusuz hâliyle birebir aynı
       }
     }
   }
+});
+
+test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz metnin özeti 0671969'daki şablonunkiyle aynı", () => {
+  // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir
+  const sha = (r: { subject: string; html: string; text: string }) =>
+    createHash("sha256").update([r.subject, r.html, r.text].join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
+  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "e8d6a4e8a1ae42ba");
+  assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "bb7dbd83bd9f361b");
+  assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "02b9362fad5fa62a");
+  assert.equal(sha(renderDigest([], "2026-10-22")), "209cf167133b0239");
 });
 
 test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme", () => {

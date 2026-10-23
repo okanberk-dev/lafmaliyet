@@ -159,7 +159,7 @@ const NEVER_NEWS: readonly (keyof DigestExtras)[] = ["forecast"];
 
 /**
  * Ek kutuları aynı anda yükler: her biri en çok `ms` (capped); hata veren ya da süresi dolan kaynak yok sayılır ve
- * günlüğe yazılır. Asla hata fırlatmaz. Aynı anahtarlı ikinci kaynak yok sayılır (ilki geçer). Kaynak yoksa sonuç boş:
+ * günlüğe yazılır. Asla hata fırlatmaz. Aynı anahtarda listede önce gelen kaynağın kutusu geçer. Kaynak yoksa sonuç boş:
  * e-posta, konusu, tekil anahtarı ve günlük satırları kutusuz hâliyle birebir aynı kalır.
  */
 export async function collectDigestExtras(sources: readonly DigestExtraSource[], today: string, ctx: DigestExtraCtx, ms = DIGEST_EXTRA_MS): Promise<DigestExtrasResult> {

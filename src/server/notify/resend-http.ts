@@ -1,6 +1,6 @@
 /**
  * Resend'e tek iletinin gönderimi: deneme sayısı, deneme başına süre, işin son anı ve yeniden denemeler. Ortam değişkeni
- * okumaz, "server-only" yok: anahtar dışarıdan gelir, ağ ve saat değiştirilebilir (tests/hatirlaticilar-digest.test.ts
+ * okumaz, "server-only" yok: anahtar dışarıdan gelir, ağ ve saat değiştirilebilir (tests/eposta-gonderimi.test.ts
  * sahte fetch ve saatle sınar). Anahtarı ve gönderen sırasını resend.ts verir (sendEmail).
  */
 
