@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, Users } from "lucide-react";
+import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, TriangleAlert, Users } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field, Input } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import type { Role } from "@/lib/constants";
+import { karaokeStaleLine } from "@/lib/karaoke/freshness";
 import { overlapText, siteOverlaps } from "@/lib/karaoke/overlap";
 import {
   countdown,
@@ -124,6 +125,8 @@ export function KaraokeBoard({
     return () => window.clearTimeout(id);
   }, []);
 
+  // Son çekme düştüyse (ping kaçmış olabilir) ekran söyler; panel kopyayı kendisi yeniden dener (src/lib/karaoke/freshness.ts)
+  const stale = configured ? karaokeStaleLine(live.data?.karaoke.error, live.data?.karaoke.okAt, now) : null;
   const running = sessions.filter((s) => ["active", "overtime"].includes(phase(s, now)));
   const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
   const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));
@@ -136,6 +139,12 @@ export function KaraokeBoard({
           {role === "admin"
             ? "laffogato.net bağlantısı henüz kurulmadı: iki projeye de aynı KARAOKE_SYNC_SECRET eklenince rezervasyonlar buraya kendiliğinden gelir (aşağıdaki Bağlantı kartı). O zamana kadar hızlı sayaç çalışır."
             : "Sitedeki rezervasyonlar henüz bağlanmadı; o zamana kadar hızlı sayacı kullanabilirsiniz."}
+        </p>
+      ) : null}
+      {stale ? (
+        <p role="status" className="flex items-start gap-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
+          <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">{stale}</span>
         </p>
       ) : null}
 

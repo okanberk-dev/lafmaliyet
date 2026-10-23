@@ -9,7 +9,8 @@ import { durationLabel, trClock } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { bumpKaraokeVersion, toSessionDTO } from "@/server/karaoke/board";
-import { syncKaraoke } from "@/server/karaoke/sync";
+import { addExtraMinutes, MAX_EXTRA_MINUTES } from "@/server/karaoke/extend";
+import { ensureKaraokeFresh, syncKaraoke } from "@/server/karaoke/sync";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zOptText, type ActionResult } from "./util";
@@ -20,9 +21,15 @@ import { attempt, UserError, zOptText, type ActionResult } from "./util";
 //
 // Oda tektir: rezervasyonsuz sayaç ya da uzatma, sitede o saatte hâlâ geçerli bir rezervasyonla çakışıyorsa kaydedilmez;
 // eylem çakışmayı döner, ekran personele sorar ve onaylanınca `force` ile yeniden gönderir (kesin engel değil: bar,
-// gelenin rezervasyonu yapan grup olduğunu bilebilir). Kural src/lib/karaoke/overlap.ts'te (docs/KARAOKE.md).
+// gelenin rezervasyonu yapan grup olduğunu bilebilir). Kural src/lib/karaoke/overlap.ts'te (docs/KARAOKE.md). Çakışma
+// panelin kopyasına bakar: kopya birkaç dakikadan eskiyse ya da bir pingin çekmesi kaybolduysa önce site sorulur
+// (freshBeforeConflict).
 
 const zId = z.number().int().positive();
+
+const SESSION_GONE = "Oturum bulunamadı; sayfayı yenileyin";
+const CANCELLED = "İptal edilmiş rezervasyon uzatılamaz";
+const TOO_LONG = "En fazla 12 saat uzatılabilir";
 
 const timerSchema = z.object({
   minutes: z.number().int().min(5, "En az 5 dakika").max(12 * 60, "En fazla 12 saat"),
@@ -31,6 +38,21 @@ const timerSchema = z.object({
   /** Çakışma soruldu, personel "yine de" dedi */
   force: z.boolean().optional(),
 });
+
+/** Çakışma denetiminden önce kopya en çok bu kadar eski olabilir; daha eskiyse site sorulur */
+const CONFLICT_FRESH_MS = 3 * 60_000;
+
+/**
+ * Kopya bayatsa önce siteden tazelenir (son birkaç dakikada yapılan rezervasyon da görülsün). Site düşük ya da yavaşsa
+ * kopyayla devam edilir: tazeleme hatası sayacı ya da uzatmayı durdurmaz (son deneme hatalı ve yeniyse hiç sorulmaz).
+ */
+async function freshBeforeConflict(): Promise<void> {
+  try {
+    await ensureKaraokeFresh({ maxAgeMs: CONFLICT_FRESH_MS });
+  } catch (e) {
+    console.error("[karaoke] çakışma öncesi tazeleme", e instanceof Error ? e.message : e);
+  }
+}
 
 /** [start, end) aralığıyla çakışan, sitede hâlâ geçerli rezervasyonlar (`excludeId`: uzatılan oturumun kendisi) */
 async function siteConflict(window: { start: number; end: number }, action: OverlapAction, excludeId?: number): Promise<OverlapConflict | null> {
@@ -59,6 +81,7 @@ export async function startKaraokeTimer(input: z.input<typeof timerSchema>): Pro
     const data = timerSchema.parse(input);
     const now = new Date();
     if (!data.force) {
+      await freshBeforeConflict();
       const conflict = await siteConflict({ start: now.getTime(), end: now.getTime() + data.minutes * 60_000 }, "start");
       if (conflict) return { conflict };
     }
@@ -90,7 +113,8 @@ export async function startKaraokeTimer(input: z.input<typeof timerSchema>): Pro
 
 /**
  * Süre uzatma (+15 dk gibi); süresi dolmuş ve susturulmuş oturum yeniden açılır. Eklenen süre sitedeki geçerli bir
- * rezervasyonla çakışıyorsa (ve `force` yoksa) uzatılmaz, `{ conflict }` döner.
+ * rezervasyonla çakışıyorsa (ve `force` yoksa) uzatılmaz, `{ conflict }` döner. Yazım tek adımda ve SQL'de toplar
+ * (src/server/karaoke/extend.ts): iki cihazdan aynı anda basılan iki uzatma da sayılır.
  */
 export async function extendKaraokeSession(
   id: number,
@@ -104,21 +128,24 @@ export async function extendKaraokeSession(
     const force = z.boolean().optional().parse(opts?.force);
     const db = getDb();
     const [row] = await db.select().from(s.karaokeSessions).where(eq(s.karaokeSessions.id, sid)).limit(1);
-    if (!row) throw new UserError("Oturum bulunamadı; sayfayı yenileyin");
-    if (row.status === "cancelled") throw new UserError("İptal edilmiş rezervasyon uzatılamaz");
-    if (row.extraMinutes + add > 12 * 60) throw new UserError("En fazla 12 saat uzatılabilir");
+    if (!row) throw new UserError(SESSION_GONE);
+    if (row.status === "cancelled") throw new UserError(CANCELLED);
+    if (row.extraMinutes + add > MAX_EXTRA_MINUTES) throw new UserError(TOO_LONG);
     if (!force) {
+      await freshBeforeConflict();
       const conflict = await siteConflict(extensionWindow(toSessionDTO(row, { admin: false }), add), "extend", row.id);
       if (conflict) return { conflict };
     }
-    await db
-      .update(s.karaokeSessions)
-      .set({ extraMinutes: row.extraMinutes + add, endedAt: null, endedBy: null, updatedAt: new Date() })
-      .where(eq(s.karaokeSessions.id, sid));
+    const done = await addExtraMinutes(db, sid, add);
+    if (!done) {
+      // Arada silindi, iptal edildi ya da başka bir cihazın uzatmasıyla 12 saati geçti
+      const [cur] = await db.select({ status: s.karaokeSessions.status }).from(s.karaokeSessions).where(eq(s.karaokeSessions.id, sid)).limit(1);
+      throw new UserError(!cur ? SESSION_GONE : cur.status === "cancelled" ? CANCELLED : TOO_LONG);
+    }
     await bumpKaraokeVersion();
     await logActivity(me, "Karaoke süresi uzatıldı", `${row.customerName ?? "Oturum"} · +${add} dk`);
     refresh();
-    return { extraMinutes: row.extraMinutes + add };
+    return { extraMinutes: done.extraMinutes };
   });
 }
 

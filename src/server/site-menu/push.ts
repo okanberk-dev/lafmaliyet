@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, eq, ne } from "drizzle-orm";
 
-import { planMenuSync, targetValues, type SaleValues } from "@/lib/site-menu/plan";
+import { freshStamps, planMenuSync, targetValues, type SaleValues } from "@/lib/site-menu/plan";
 import { planPush, pushFailureMessage, type PushBody } from "@/lib/site-menu/push";
 import { errorField, parseSiteMenuAnswer, type SiteMenuItem } from "@/lib/site-menu/schema";
 import { fromMinor, visibilityFromSite, type SiteMenuSlot } from "@/lib/site-menu/slot";
@@ -106,11 +106,18 @@ export async function applyPushed(tx: Tx, outcome: Extract<PushOutcome, { kind: 
   if (siblings.length) await applyPlan(tx, planMenuSync([item], siblings, { partial: true }), at);
   await replaceSnapshotItem(tx, item);
   // Site saati ilerler: bu yazımdan önce alınmış liste artık uygulanmaz. Panelin saatinden bir dakikadan ileri bir
-  // zaman (sitede bozuk bir updatedAt) sayılmaz, sonraki bütün çekmeleri durdurmasın
+  // zaman (sitede bozuk bir updatedAt) sayılmaz, sonraki bütün çekmeleri durdurmasın. Kalemin kendi zamanı da saklanır:
+  // listenin zamanı okumadan sonra alındığı için yalnız site saati yetmez (src/lib/site-menu/plan.ts › staleItemIds)
   const cur = await readMenuSyncState(tx);
   const stamp = Math.min(Date.parse(item.updatedAt), Date.now() + 60_000);
-  if (Number.isFinite(stamp) && (!cur.lastSiteNow || stamp > Date.parse(cur.lastSiteNow))) {
-    await patchMenuState({ lastSiteNow: new Date(stamp).toISOString() }, tx);
+  if (Number.isFinite(stamp)) {
+    await patchMenuState(
+      {
+        ...(!cur.lastSiteNow || stamp > Date.parse(cur.lastSiteNow) ? { lastSiteNow: new Date(stamp).toISOString() } : {}),
+        pushed: { ...freshStamps(cur.pushed, Date.now()), [item.id]: { updatedAt: item.updatedAt, at: new Date().toISOString() } },
+      },
+      tx,
+    );
   }
   return final;
 }

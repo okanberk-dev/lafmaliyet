@@ -30,5 +30,6 @@ test("önizlemede canlının veritabanına dokunmaz; ayrı veritabanı varsa aç
 
 test("betik kararı bu fonksiyona bırakır", () => {
   const src = readFileSync(join(process.cwd(), "scripts/predeploy.ts"), "utf8");
-  assert.match(src, /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*await runMigrations\(\);\s*await runSeed\(\);/);
+  // Havuzlu bağlantının denetimi de kararın arkasında ve migration'dan önce (açılmazsa şemaya dokunulmadan durulur)
+  assert.match(src, /const skip = predeploySkipReason\(process\.env\);\s*if \(skip\) \{[\s\S]*?return;\s*\}\s*await checkRuntimeConnection\(\);\s*await runMigrations\(\);\s*await runSeed\(\);/);
 });

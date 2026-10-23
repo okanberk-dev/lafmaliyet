@@ -35,6 +35,7 @@ import {
   Undo2,
   UserRound,
   Wallet,
+  Wifi,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -515,8 +516,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            yalnızca stok sayımını ve reçete defterini görür. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google Authenticator vb.)
-            açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
+            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan), Kontrol listeleri, Zayi &amp; ikram, Reçete
+            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hatırlatıcılarım ve Hesabım
+            ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google
+            Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
           </>
         ),
         icon: UserPlus,
@@ -614,6 +617,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
       },
       {
+        id: "bar-baglanti",
+        q: "Bar ekranında “Son kontrol başarısız” yazıyor",
+        a: (
+          <>
+            <Path href="/panel/karaoke" /> ekranı yeni rezervasyon ve siparişleri laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı
+            kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener (karaokede iki dakikada, siparişlerde dakikada bir), o arada
+            yenileri sitenin panelinde de kontrol edin. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
+            ve sipariş anında gelir, ekran panelin veritabanını daha seyrek sorar (ücretsiz planın aylık süresi bitmesin).
+          </>
+        ),
+        icon: Wifi,
+        links: [{ href: "/panel/karaoke", label: "Karaoke (bar ekranı)" }],
+      },
+      {
         id: "yedek",
         q: "Yedek nasıl alınır, nasıl geri yüklenir?",
         a: (
@@ -635,8 +652,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             Karaoke doluluğu ekranı (<Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası) odanın hangi gün ve saatte dolu olduğunu gösterir: son 4 hafta,
             son 12 hafta ya da bir ay. Hücreye dokununca o saatin ayrıntısı çıkar; üstte doluluk, saat başına gelir, uzatma, son dakika iptal ve rezervasyonların
             kaç gün önceden yapıldığı, altta ay ay karşılaştırma var. Doluluk oda saatlerine göre hesaplanır (ekranın altındaki Oda saatleri; başta her gün
-            10:00–22:00). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not alınmaz); rezervasyonsuz gruplar
-            yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
+            12:00–24:00, sitedeki karaoke saatleri). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not
+            alınmaz); rezervasyonsuz gruplar yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
           </>
         ),
         icon: Grid3x3,

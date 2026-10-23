@@ -31,7 +31,7 @@ import type { Role } from "@/lib/constants";
 import { dateTimeTR, num } from "@/lib/format";
 import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
-import { lineLabel, minutesSince, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitLabel } from "@/lib/site-orders/feed";
+import { lineLabel, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitInfo } from "@/lib/site-orders/feed";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
 import { stageButtons, type StageAction, type StageButton } from "@/lib/site-orders/stage";
 import { lineSlot } from "@/lib/site-sales/calc";
@@ -78,9 +78,10 @@ const recent = (iso: string | null | undefined, nowMs: number) => Boolean(iso) &
 /**
  * Bar ekranının "Uygulama siparişleri" bölümü (docs/SITE-SIPARIS.md): laffogato.net'te (uygulama ve web) ödenmiş, hâlâ
  * açık kafe siparişleri. Kart: nereye ("Masa 4", "Gel-al", "Kurye"), aşama, planlı saat, müşterinin adı, satırlar,
- * ödemeden bu yana geçen süre, aşamayı tek dokunuşla ilerleten düğmeler (Hazırlanıyor, Hazır / Masaya götürüldü /
- * Kuryeye verildi, Teslim edildi; sitenin aşama ucuna gider, src/server/actions/site-orders.ts) ve siparişi sitenin
- * panelinde açan "Sitede aç" (iade ve iptal orada). Zil kabuktaki uyarı motorunda çalar (alert-center.tsx).
+ * ödemeden bu yana geçen süre (planlı siparişte vaktine kalan ya da geciken süre), aşamayı tek dokunuşla ilerleten
+ * düğmeler (Hazırlanıyor, Hazır / Masaya götürüldü / Kuryeye verildi, Teslim edildi; sitenin aşama ucuna gider,
+ * src/server/actions/site-orders.ts) ve siparişi sitenin panelinde açan "Sitede aç" (iade ve iptal orada). Zil
+ * kabuktaki uyarı motorunda çalar (alert-center.tsx; planlı sipariş vaktine 15 dakika kala bir kez daha).
  *
  * Veri canlı uçtan gelir; ekran ayrıca siteyi yeniden çektirir: açılınca ve öne gelince (son çekme bir dakikadan
  * eskiyse), yoğunken üç dakikada, sakinken saatte bir (ping kaçtıysa diye). Sürekli sorgu yok.
@@ -269,7 +270,8 @@ function useStageAction(o: SiteOrder) {
 function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now: number; siteBase: string; recipes: Record<string, string> }) {
   const url = siteOrderUrl(siteBase, o.path);
   const planned = scheduleLabel(o.scheduledFor, now);
-  const waited = minutesSince(o.paidAt, now);
+  // Planlı sipariş vaktinden sayılır (vakti gelmeden "kaldı", geçince "gecikti"); değilse ödemeden bu yana
+  const wait = waitInfo(o, now);
   const table = o.fulfillment === "table";
   const isNew = o.stage === "new";
   const buttons = stageButtons(o);
@@ -326,10 +328,7 @@ function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now
       </ul>
       <div className="mt-auto space-y-2.5 border-t border-line pt-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={cn("text-[13px] tabular", isNew && waited >= 10 ? "font-semibold text-warn" : "text-ink-mute")}>
-            Ödendi · {waitLabel(waited)}
-            {waited >= 1 ? " önce" : ""}
-          </span>
+          <span className={cn("text-[13px] tabular", wait.late ? "font-semibold text-warn" : "text-ink-mute")}>{wait.text}</span>
           {url ? (
             <a
               href={url}

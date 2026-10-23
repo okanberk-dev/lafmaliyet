@@ -1,6 +1,7 @@
 import { after, connection, type NextRequest } from "next/server";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER } from "@/lib/karaoke/signature";
+import { runPingWork } from "@/lib/ping-work";
 import { checkMenuPing } from "@/lib/site-menu/ping";
 import { siteLinkSecret } from "@/server/site-link";
 import { notePing, syncSiteMenu } from "@/server/site-menu/sync";
@@ -11,7 +12,8 @@ export const maxDuration = 30;
  * laffogato.net'in menü pingi: sitede bir menü kalemi değişti (fiyat, Satışta / Tükendi, yeni ya da silinen kalem).
  * İçerik taşımaz; imza (KARAOKE_SYNC_SECRET, src/lib/karaoke/signature.ts) doğrulanınca hemen 202 döner, panel
  * sitenin bütün menüsünü yanıttan sonra imzalı çeker ve bağlı ürünlere uygular (docs/SITE-MENU.md). Anahtar yoksa
- * 503, gövde 4 KB'tan büyükse 413, imza tutmazsa 401 (ayrıntı verilmez). Denetim src/lib/site-menu/ping.ts'te.
+ * 503, gövde 4 KB'tan büyükse 413, imza tutmazsa 401 (ayrıntı verilmez). Denetim src/lib/site-menu/ping.ts'te. Ping
+ * kaydı yazılamasa da çekilir; çekme hata verir ya da düşerse bir kez daha denenir (src/lib/ping-work.ts).
  */
 export async function POST(request: NextRequest) {
   await connection();
@@ -29,13 +31,7 @@ export async function POST(request: NextRequest) {
   });
   if (!check.ok) return Response.json({ error: check.error }, { status: check.status });
   after(async () => {
-    try {
-      await notePing();
-      const r = await syncSiteMenu("ping");
-      if (r.status === "error") console.warn("[menu] ping eşitlemesi:", r.error);
-    } catch (e) {
-      console.error("[menu] ping", e);
-    }
+    await runPingWork("[menu]", { note: notePing, pull: () => syncSiteMenu("ping") });
   });
   return Response.json({ ok: true }, { status: 202 });
 }

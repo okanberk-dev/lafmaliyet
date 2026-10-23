@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
+import { logPerson } from "@/lib/activity-person";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -344,10 +345,13 @@ function dayLabeler(now: Date) {
 async function SettingsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, log] = await Promise.all([
+  const [model, log, accounts] = await Promise.all([
     loadModel(),
     db.select().from(s.activityLog).orderBy(desc(s.activityLog.at), desc(s.activityLog.id)).limit(60),
+    // Kaydın hesabı: ad tek başına yanıltabiliyorsa (sonradan değişti ya da başka hesap aynı adı taşıyor) e-postası da
+    db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
   ]);
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
   const dayLabel = dayLabeler(new Date());
@@ -367,6 +371,7 @@ async function SettingsContent() {
             dayLabel: dayLabel(l.at),
             time: l.at.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: TZ }),
             userName: l.userName,
+            person: logPerson(l.userName, (l.userId !== null && accountById.get(l.userId)) || null, accounts),
             action: l.action,
             detail: l.detail,
           }))}

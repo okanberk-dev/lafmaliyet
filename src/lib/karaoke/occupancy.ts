@@ -32,8 +32,12 @@ export interface RoomHours {
   close: number;
 }
 
-/** Sahibin varsayılanı: her gün 10:00–22:00 (AVM saatleri; Ayarlar'da değil, Doluluk ekranında değişir) */
-export const DEFAULT_ROOM_HOURS: RoomHours = { open: 10, close: 22 };
+/**
+ * Kaydedilmemişse her gün 12:00–24:00: laffogato.net'in karaoke saatleri (ilk rezervasyon 12:00, son başlangıç 23:00;
+ * sitenin uygun saatler ucu, 23 Ekim 2026). Önce AVM saatleri (10:00–22:00) varsayılmıştı: sitede alınamayan 10–12
+ * açık sayılıyor, en yoğun 22–24 orana girmiyordu. Ayarlar'da değil, Doluluk ekranında değişir.
+ */
+export const DEFAULT_ROOM_HOURS: RoomHours = { open: 12, close: 24 };
 
 /** Kayıtlı oda saatleri; bozuk ya da sınır dışıysa null (çağıran varsayılana düşer) */
 export function parseRoomHours(v: unknown): RoomHours | null {

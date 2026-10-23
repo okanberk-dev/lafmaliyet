@@ -2,14 +2,16 @@ import "server-only";
 
 import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
+import { CATCH_UP, needsCatchUp } from "@/lib/karaoke/freshness";
 import { detectEvent, eventMessage, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
 import { cancelledAtFor, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
+import { fetchFailure, karaokePullError, siteErrorCode } from "@/lib/karaoke/sync-text";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
 import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
 
-import { bumpKaraokeVersion } from "./board";
+import { bumpKaraokeVersion, KARAOKE_VERSION_KEY } from "./board";
 
 // Anahtar, adres ve imzalı istek menü bağlantısıyla ortak (src/server/site-link.ts)
 export { siteUrl };
@@ -42,6 +44,22 @@ export async function readSyncState(): Promise<SyncState> {
   return { ...EMPTY, ...((row?.value as Partial<SyncState> | undefined) ?? {}) };
 }
 
+/**
+ * Canlı ucun karaoke işaretleri tek sorguda: sürüm (ETag'e girer) ve eşitlemenin durumu (uyarı satırı ve kopyanın
+ * tazelenmesi; src/lib/karaoke/freshness.ts)
+ */
+export async function readKaraokeLive(): Promise<{ version: string; sync: SyncState }> {
+  const rows = await getDb()
+    .select({ key: s.integrationState.key, value: s.integrationState.value })
+    .from(s.integrationState)
+    .where(inArray(s.integrationState.key, [KARAOKE_VERSION_KEY, STATE_KEY]));
+  const value = (key: string) => rows.find((r) => r.key === key)?.value;
+  return {
+    version: String((value(KARAOKE_VERSION_KEY) as { v?: number } | undefined)?.v ?? 0),
+    sync: { ...EMPTY, ...((value(STATE_KEY) as Partial<SyncState> | undefined) ?? {}) },
+  };
+}
+
 async function patchState(patch: Partial<SyncState>, db: { execute: (query: SQL) => Promise<unknown> } = getDb()) {
   await db.execute(sql`
     insert into integration_state (key, value) values (${STATE_KEY}, ${JSON.stringify(patch)}::jsonb)
@@ -61,12 +79,21 @@ export type SyncResult =
 /** Sayfa açılışında site en çok bu kadar sürede bir sorulur (ping yoksa bile liste bayatlamasın) */
 const PAGE_SYNC_INTERVAL_MS = 5 * 60_000;
 
-/** Sitenin hata yanıtının yöneticiye okunur açıklaması (geçmişi siteden alma da kullanır: history.ts) */
-export function explain(status: number): string {
-  if (status === 401) return "Site isteği reddetti (imza): iki projedeki KARAOKE_SYNC_SECRET aynı mı, sunucu saatleri doğru mu?";
-  if (status === 503) return "Sitede KARAOKE_SYNC_SECRET tanımlı değil";
-  if (status === 404) return "Sitede panel ucu yok (laffogato.net güncel değil)";
-  return `Site yanıt vermedi (HTTP ${status})`;
+/**
+ * Sitenin hata yanıtının yöneticiye okunur açıklaması; `code` gövdedeki hata kodu (503'te anahtar yok mu, veritabanı mı;
+ * src/lib/karaoke/sync-text.ts). Geçmişi siteden alma da kullanır: history.ts.
+ */
+export function explain(status: number, code?: string | null): string {
+  return karaokePullError({ kind: "http", status, code });
+}
+
+/** Hata yanıtının gövdesindeki kod ({"error":"unavailable"}); gövde okunamazsa null */
+export async function errorCodeOf(res: Response): Promise<string | null> {
+  try {
+    return siteErrorCode(await res.json());
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -78,7 +105,7 @@ export function explain(status: number): string {
  * gelirken) ve bitmiş rezervasyonlarda bildirim gitmez. Eşzamanlı iki eşitleme sırayla yazar; eski yanıt yenisinin
  * üstüne yazılmaz. Sitede artık olmayan (silinen) rezervasyon, yanıt eksiksizse panelden de kalkar.
  */
-export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"): Promise<SyncResult> {
+export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron" | "screen"): Promise<SyncResult> {
   const secret = karaokeSecret();
   if (!secret) return { status: "off" };
   const state = await readSyncState();
@@ -90,15 +117,26 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
   url.searchParams.set("from", from);
   url.searchParams.set("to", to);
   const tryAt = new Date().toISOString();
+  const failed = async (message: string): Promise<SyncResult> => {
+    const error = message.slice(0, 300);
+    await patchState({ lastTryAt: tryAt, lastError: error });
+    // Hata ilk kez görünüyor ya da değişti: açık ekranlar uyarı satırını göstersin (canlı ucun ETag'i sürümden)
+    if (state.lastError !== error) await bumpKaraokeVersion();
+    return { status: "error", error };
+  };
+  let res: Response;
+  try {
+    res = await signedSiteFetch(secret, url);
+  } catch (e) {
+    return failed(karaokePullError(fetchFailure(e)));
+  }
+  if (!res.ok) return failed(explain(res.status, await errorCodeOf(res)));
   let snapshot: SiteSnapshot;
   try {
-    const res = await signedSiteFetch(secret, url);
-    if (!res.ok) throw new Error(explain(res.status));
     snapshot = parseSiteResponse(await res.json());
   } catch (e) {
-    const error = e instanceof Error ? (e.name === "TimeoutError" ? "Site 8 saniyede yanıt vermedi" : e.message) : "Bilinmeyen hata";
-    await patchState({ lastTryAt: tryAt, lastError: error.slice(0, 300) });
-    return { status: "error", error };
+    // Gövde okunurken dolan süre zaman aşımıdır (8 sn), bozuk yanıt değil
+    return failed(karaokePullError(e instanceof Error && e.name === "TimeoutError" ? { kind: "timeout" } : { kind: "format" }));
   }
 
   const firstSync = !state.lastOkAt;
@@ -107,7 +145,8 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
   const applied = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('karaoke-sync'))`);
     const [cur] = await tx.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, STATE_KEY)).limit(1);
-    const lastSiteNow = (cur?.value as Partial<SyncState> | undefined)?.lastSiteNow;
+    const curState = (cur?.value as Partial<SyncState> | undefined) ?? {};
+    const lastSiteNow = curState.lastSiteNow;
     // Arada daha yeni bir yanıt uygulandıysa bu eski kalır
     if (lastSiteNow && Date.parse(lastSiteNow) > Date.parse(snapshot.now)) return null;
 
@@ -185,7 +224,8 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
         removed = gone.length;
       }
     }
-    if (created || updated || removed) await bumpKaraokeVersion(tx);
+    // Önceki çekme hatalıydıysa da: ekranların uyarı satırı kalksın
+    if (created || updated || removed || curState.lastError) await bumpKaraokeVersion(tx);
     await patchState({ lastOkAt: now.toISOString(), lastTryAt: tryAt, lastError: null, lastSiteNow: snapshot.now, count: snapshot.reservations.length }, tx);
     return { created, updated, removed, events };
   });
@@ -199,6 +239,19 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
     }
   }
   return { status: "ok", created: applied.created, updated: applied.updated, removed: applied.removed, events: applied.events.length, skipped: snapshot.skipped };
+}
+
+/**
+ * Kopyayı gerekiyorsa tazeler (kural src/lib/karaoke/freshness.ts): canlı uç (açık bir sekme sorduğunda, yanıttan sonra)
+ * ve hızlı sayaç / uzatma (çakışma denetiminden önce, daha kısa `maxAgeMs` ile) çağırır. Gerekmiyorsa siteye gidilmez;
+ * son deneme hatalı ve yeniyse de (site düşükken her istek 8 sn beklemesin). `state` verilirse yeniden okunmaz.
+ */
+export async function ensureKaraokeFresh(opts: { maxAgeMs?: number; state?: SyncState } = {}): Promise<SyncResult> {
+  if (!karaokeSecret()) return { status: "off" };
+  const state = opts.state ?? (await readSyncState());
+  const rules = opts.maxAgeMs === undefined ? CATCH_UP : { ...CATCH_UP, staleMs: opts.maxAgeMs };
+  if (!needsCatchUp(state, Date.now(), rules)) return { status: "fresh" };
+  return syncKaraoke("screen");
 }
 
 /** Olayları cihazlara bildirir: üçten fazlaysa tek özet bildirim */
