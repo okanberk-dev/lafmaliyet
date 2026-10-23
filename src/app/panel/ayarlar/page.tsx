@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { ChevronRight, Download, ExternalLink, Globe, HardDriveDownload, Users } from "lucide-react";
+import { ChevronRight, ExternalLink, FileSpreadsheet, Globe, HardDriveDownload, Users } from "lucide-react";
 import type { Metadata } from "next";
 import { after } from "next/server";
 import Link from "next/link";
@@ -8,10 +8,13 @@ import { Suspense, type ReactNode } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonClass, ButtonLink } from "@/components/ui/button";
+import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
+import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
+import { loadBackupInfo } from "@/server/backup/state";
 import { loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 import { readSyncState, syncKaraoke } from "@/server/karaoke/sync";
@@ -20,6 +23,7 @@ import { readMenuSyncState, syncSiteMenu } from "@/server/site-menu/sync";
 import { readOrdersState, syncSiteOrders } from "@/server/site-orders/sync";
 import { readSalesState, syncSiteSales } from "@/server/site-sales/sync";
 
+import { BackupDownload } from "./backup-client";
 import { impactData } from "./impact";
 import { JobsCard } from "./jobs-card";
 import { SectionCard } from "./section-card";
@@ -112,32 +116,76 @@ function UsersLinkCard() {
 }
 
 /**
- * Yedek: panelin sekmeleri ve bütün ayların ham kayıtları tek Excel dosyasında (/api/export, yalnızca yönetici). Dosyada
- * olmayanlar (aylık harcamaların tek tek kayıtları, hatırlatıcılar, Paraşüt bağlantıları) açıkça yazılır: "bütün veri" denmez.
+ * Yedek: paneldeki bütün verinin geri yüklenebilir tek dosyası (parolayla; /api/yedek, docs/YEDEK.md) ve okunabilir
+ * Excel kopyası (/api/export; geri yüklenmez). Son yedek 30 günden eskiyse rozet çıkar, canlıda zil de hatırlatır
+ * (src/lib/job-health.ts › systemAlerts). Geri yükleme panelde yok: bilgisayardan bir komutla yapılır.
  */
-function BackupCard() {
+async function BackupCard() {
+  const info = await loadBackupInfo().catch((e) => {
+    console.error("Yedek bilgisi okunamadı", e);
+    return null;
+  });
+  const now = new Date();
+  const last = info?.last ?? null;
   return (
     <SectionCard
       id="yedek"
       icon={<HardDriveDownload />}
       title="Yedek"
-      summary="Panel sekmeleri ve ham kayıtlar tek Excel dosyasında"
+      summary={info ? backupCardSummary(last, now) : "Durum okunamadı"}
       description={
         <>
-          Panelin sekmeleri (özet, gelir-gider, sayım, tutarlılık, ürün kârlılığı, reçete kartları, satış, hammaddeler, faturalar, aylık
-          alımlar, personel, sabit giderler, ayarlar) ve bütün ayların satış, ay bilgisi, gelir-gider, sayım ve alım miktarı kayıtları tek
-          Excel dosyasına iner. Dosya Özet&apos;te açılır; &quot;Nasıl Okunur&quot; sekmesi her sekmeyi anlatır.{" "}
-          <InfoTip text="Aya bağlı sekmeler (Özet, Sayım, Tutarlılık, Satış) satış listesi olan son ayı gösterir; başka bir ay için Genel bakış'ta ayı seçip oradaki Excel'e aktar düğmesini kullanın. Ham kayıt sekmeleri her durumda bütün ayları içerir. Aylık harcamalar'ın tek tek kayıtları (tarih, açıklama, ödeme şekli) dosyada yok, Gelir-Gider'de ay toplamı olarak görünür; hatırlatıcılar, kullanıcılar ve Paraşüt bağlantıları da dosyaya girmez. Dosya okunabilir bir kopyadır, panele geri yüklenmez; veritabanı ayrıca kendiliğinden yedeklenir." />
+          Paneldeki bütün veri tek dosyada iner ve gerekirse geri yüklenir. Ayda bir indirip bilgisayarınızda ya da Google Drive&apos;da saklayın. Parolalar
+          dosyaya yazılmaz; dosyada ciro, maaş ve IBAN&apos;lar var, kimseyle paylaşmayın.{" "}
+          <InfoTip text="Veritabanı Neon'da da kendiliğinden yedeklenir ama yalnız kısa bir süre geriye gidilebilir; bu dosya sizde kalan uzun süreli kopyadır. Geri yükleme panelden yapılmaz (tek dokunuşla bütün veri değişmesin); bilgisayardan bir komutla yapılır, adımlar docs/YEDEK.md'de. Excel kopyası okunmak içindir, geri yüklenmez." />
         </>
       }
       actionsClassName="max-sm:w-full"
       actions={
-        // Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin)
-        <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
-          <Download size={16} /> Tüm veriyi Excel&apos;e aktar
-        </a>
+        <>
+          <BackupDownload uploads={info?.uploads ?? { count: 0, bytes: 0 }} last={last ? { dataBytes: last.dataBytes } : null} />
+          {/* Dosya indiren rota: düz bağlantı (istemci yönlendirmesi önce sayfa isteği yapıp ikinci kez indirmesin) */}
+          <a href="/api/export" download className={buttonClass("secondary", "md", "max-sm:w-full")}>
+            <FileSpreadsheet size={16} aria-hidden="true" /> Excel kopyası
+          </a>
+        </>
       }
-    />
+    >
+      <CardContent>
+        {info ? (
+          <div className="space-y-1 rounded-2xl bg-surface px-4 py-3 text-sm ring-1 ring-line">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {last ? (
+                <>
+                  <span className="text-ink">
+                    <span className="text-ink-mute">Son yedek:</span> {lastBackupText(last)}
+                  </span>
+                  {backupDue(last.at, now) ? (
+                    <Badge tone="amber" dot>
+                      30 günü geçti
+                    </Badge>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <span className="text-ink">Henüz yedek indirilmedi.</span>
+                  <Badge tone="amber" dot>
+                    Yedek yok
+                  </Badge>
+                </>
+              )}
+            </p>
+            {info.uploads.count > 0 ? (
+              <p className="text-[13px] text-ink-mute">
+                Yüklenen fatura belgeleri: {info.uploads.count} dosya · {sizeText(info.uploads.bytes)}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Son yedeğin bilgisi okunamadı; sayfayı yenileyin. İndirme yine çalışır.</p>
+        )}
+      </CardContent>
+    </SectionCard>
   );
 }
 

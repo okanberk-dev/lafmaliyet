@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, sql } from "drizzle-orm";
 
+import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { LINKABLE_CATEGORIES } from "@/lib/invoice-linking";
 import { parseIgnored, type IgnoredProduct } from "@/lib/product-ignore";
@@ -23,6 +24,7 @@ import {
   findByEInvoiceNo,
   findExisting,
   newInvoicePayment,
+  nextTaxNumber,
   pickCategory,
   shouldImport,
   supplierHistory,
@@ -30,6 +32,7 @@ import {
   type BillDraft,
   type ExistingInvoice,
 } from "./mapping";
+import { backfillSupplierTaxNumbers, TAX_BACKFILL_KEY } from "./tax-backfill";
 
 const CURSOR_KEY = "parasut.cursor";
 const PRICE_KEY = "parasut.prices";
@@ -47,8 +50,8 @@ const DUE_KEY = "parasut.dueDates";
 export const IGNORE_KEY = "parasut.ignore";
 /** Tedarikçi geçmişinin kaldığı yer: Paraşüt kişi kimliği → sonraki çalışmanın okuyacağı sayfa (eskiden yeniye) */
 const HISTORY_KEY = "parasut.supplierHistory";
-/** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler */
-export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY];
+/** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler (vergi no tamamlaması da baştan başlar) */
+export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY, TAX_BACKFILL_KEY];
 const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
 /** Önceki eşitlemeden sonra değişmiş olabilecek faturalar için geriye bakış */
 const LOOKBACK_DAYS = 75;
@@ -145,6 +148,7 @@ type Existing = ExistingInvoice & {
   outstanding: number | null;
   paidAt: string | null;
   paymentRequestedAt: string | null;
+  supplierTaxNumber: string | null;
 };
 
 interface Ctx {
@@ -169,6 +173,20 @@ interface Ctx {
   paidOnDelivery: PaidOnDelivery;
   /** Ödeme takibinin başlangıcı: bundan eski yeni fatura (geçmişi yeniden alırken) Paraşüt'teki durumuyla gelir */
   paymentsSince: string;
+  /** Bu çalışmada vergi nosu yazılan fatura (yeni ve var olan; özet satırında, "güncellendi"ye sayılmaz) */
+  taxFilled: number;
+}
+
+/**
+ * Var olan faturanın tedarikçi vergi nosunu Paraşüt'ten gelenle yazar (nextTaxNumber: boşsa yazılır, e-fatura
+ * geçer, kişi kartındaki numara e-faturalı kaydı ezmez)
+ */
+async function fillTaxNumber(ctx: Ctx, row: Existing, raw: string | null | undefined, from: "bill" | "einvoice") {
+  const t = nextTaxNumber(row.supplierTaxNumber, raw, { from, hasEInvoice: Boolean(row.eInvoiceId) });
+  if (!t) return;
+  await getDb().update(s.invoices).set({ supplierTaxNumber: t }).where(eq(s.invoices.id, row.id));
+  row.supplierTaxNumber = t;
+  ctx.taxFilled++;
 }
 
 /** Ödenmemiş faturanın Paraşüt'teki vadesini kaydeder; ödenmiş ya da kaldırılmış faturanın kaydı silinir */
@@ -229,6 +247,9 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx);
     return;
   }
+  // Tedarikçinin vergi nosu: gelen e-faturadaki (imzalı belge) önce, yoksa Paraşüt'teki kişi kartındaki
+  const taxRaw = d.eDocumentTaxNo ?? d.supplierTaxNo;
+  const taxFrom = d.eDocumentTaxNo ? ("einvoice" as const) : ("bill" as const);
   const common = {
     date: d.date,
     invoiceNo: d.invoiceNo,
@@ -254,8 +275,9 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     // faturanın tamamına dönerdi)
     const keepOutstanding = match.unpaid && !d.unpaid;
     // Yer tutucu adla açılmış fatura gerçek adıyla peşin çalışılan tedarikçinin kartına düştü: yeni faturadaki kural
+    // (tedarikçi Tedarikçiler'deki gibi adla ve vergi noyla bulunur)
     const card =
-      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier) : null;
+      supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier, taxRaw ?? match.supplierTaxNumber) : null;
     const settle = card ? { unpaid: false, paidAt: match.date, paidVia: card.paymentMethod } : {};
     const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
@@ -279,6 +301,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       ...(keepOutstanding ? {} : { outstanding: d.outstanding }),
       ...(card ? { unpaid: false, paidAt: match.date } : {}),
     });
+    // E-fatura bağı yukarıda kayda yazıldı: kişi kartındaki numara e-faturalı kaydın numarasını ezmez
+    await fillTaxNumber(ctx, match, taxRaw, taxFrom);
     rememberDue(ctx, d.externalId, d.dueDate, match.unpaid);
     ctx.counts.updated++;
   } else {
@@ -290,9 +314,10 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     const pay = newInvoicePayment(
       // Komisyon yalnız kategori güvenilirse (kural, geçmiş, platform listesi) ödendi sayılır; ipucu tahmini sayılmaz
       { payable: d.payable, date: d.date, parasutUnpaid: d.unpaid, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
-      ctx.paidOnDelivery(supplier),
+      ctx.paidOnDelivery(supplier, taxRaw),
       ctx.paymentsSince,
     );
+    const supplierTaxNumber = cleanTaxNumber(taxRaw);
     const [row] = await db
       .insert(s.invoices)
       .values({
@@ -301,6 +326,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
         dueDate: d.dueDate,
         origin: "parasut",
         supplier,
+        supplierTaxNumber,
         category,
         description: d.description,
         needsReview: categoryNeedsReview(reason),
@@ -308,6 +334,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       })
       .returning({ id: s.invoices.id });
     invoiceId = row.id;
+    if (supplierTaxNumber) ctx.taxFilled++;
     ctx.existing.push({
       id: row.id,
       eInvoiceId: eInvoiceFree,
@@ -326,6 +353,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       paidAt: pay.paidAt,
       paymentRequestedAt: null,
       syncedAt: common.syncedAt,
+      supplierTaxNumber,
     });
     rememberDue(ctx, d.externalId, d.dueDate, pay.unpaid);
     ctx.counts.created++;
@@ -397,6 +425,7 @@ async function loadCtx(): Promise<Ctx> {
         syncedAt: s.invoices.syncedAt,
         category: s.invoices.category,
         needsReview: s.invoices.needsReview,
+        supplierTaxNumber: s.invoices.supplierTaxNumber,
       })
       .from(s.invoices),
     loadRules(),
@@ -429,6 +458,7 @@ async function loadCtx(): Promise<Ctx> {
     dueDirty: false,
     paidOnDelivery,
     paymentsSince,
+    taxFilled: 0,
   };
 }
 
@@ -610,6 +640,17 @@ export async function syncParasut(
       }
     }
 
+    // ---- eski faturaların tedarikçi vergi nosu (bir kerelik, kaldığı yerden sürer; tax-backfill.ts): yalnız artan
+    // sürede, hatası eşitlemeyi bozmaz; ilerlemesi yalnız bu özetteki "vergi no yazıldı" sayısında görünür
+    let backfill: { filled: number; done: boolean } | null = null;
+    if (Date.now() - started < deadline - 6_000) {
+      try {
+        backfill = await backfillSupplierTaxNumbers(client, { until: started + deadline - 3_000 });
+      } catch (err) {
+        if (!(err instanceof ParasutDeadlineError)) console.error("Paraşüt vergi no tamamlama", err);
+      }
+    }
+
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     if (ctx.touchedMonths.size) await applyProductLinks([...ctx.touchedMonths]);
     if (partial && !reachedEnd) {
@@ -626,12 +667,15 @@ export async function syncParasut(
 
     const { created, updated, removed } = ctx.counts;
     const fetched = drafts.length + (eStats?.fetched ?? 0);
+    // Yeni faturalar, var olanlar, e-fatura belgesinden okunanlar ve eski faturaların tamamlaması birlikte
+    const taxFilled = ctx.taxFilled + (lineStats?.taxFilled ?? 0) + (backfill?.filled ?? 0);
     const parts = [
       `${drafts.length} gider faturası${eStats ? ` · ${eStats.fetched} e-fatura` : ""} okundu`,
       `${created} yeni`,
       `${updated} güncellendi`,
       removed ? `${removed} kaldırıldı` : "",
       rechecked ? `${rechecked} yeniden denetlendi` : "",
+      taxFilled ? `${taxFilled} faturaya vergi no yazıldı` : "",
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
@@ -643,7 +687,7 @@ export async function syncParasut(
       .update(s.parasutSyncRuns)
       .set({ status: "ok", finishedAt: new Date(), fetched, created, updated, removed, message: summary })
       .where(eq(s.parasutSyncRuns.id, runId));
-    if (created || updated || removed) await logActivity(null, trigger === "cron" ? "Paraşüt eşitlemesi (otomatik)" : "Paraşüt eşitlemesi", summary);
+    if (created || updated || removed || taxFilled) await logActivity(null, trigger === "cron" ? "Paraşüt eşitlemesi (otomatik)" : "Paraşüt eşitlemesi", summary);
     return { ok: true, summary, runId, fetched, created, updated, removed, partial };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
@@ -978,6 +1022,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   }
 
   if (d.importedBillId) {
+    // İçeri alınmış e-fatura: tutarları gider faturası taşır, imzalı belgedeki vergi no kayda yazılır
+    if (match) await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
     if (match && !match.eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === d.eInvoiceId)) {
       await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, match.id));
       match.eInvoiceId = d.eInvoiceId;
@@ -998,6 +1044,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     if (bill) {
       await db.update(s.invoices).set({ eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid }).where(eq(s.invoices.id, bill.id));
       bill.eInvoiceId = d.eInvoiceId;
+      await fillTaxNumber(ctx, bill, d.supplierTaxNo, "einvoice");
       return "linked";
     }
   }
@@ -1008,6 +1055,8 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     const firstLink = match.eInvoiceId !== d.eInvoiceId;
     const fromThis = match.origin === "parasut" && !match.externalId;
     const differs = Math.abs(match.payable - d.payable) > 1 || match.date !== d.date;
+    // Değişmemiş e-faturada da (eski kayıtta boşsa) vergi no yazılır
+    await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
     if (!firstLink && !(fromThis && differs)) return "skipped";
     const set: Partial<typeof s.invoices.$inferInsert> = { eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid, source: "parasut", syncedAt: now };
     if (fromThis) Object.assign(set, values);
@@ -1036,14 +1085,16 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   // E-faturada ödeme bilgisi yok (parasutUnpaid null)
   const pay = newInvoicePayment(
     { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },
-    ctx.paidOnDelivery(supplier),
+    ctx.paidOnDelivery(supplier, d.supplierTaxNo),
     ctx.paymentsSince,
   );
+  const supplierTaxNumber = cleanTaxNumber(d.supplierTaxNo);
   const [row] = await db
     .insert(s.invoices)
     .values({
       ...values,
       supplier,
+      supplierTaxNumber,
       category,
       ...pay,
       source: "parasut",
@@ -1055,6 +1106,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       note,
     })
     .returning({ id: s.invoices.id });
+  if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,
     eInvoiceId: d.eInvoiceId,
@@ -1073,6 +1125,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     paidAt: pay.paidAt,
     paymentRequestedAt: null,
     syncedAt: now,
+    supplierTaxNumber,
   });
   ctx.touchedMonths.add(d.date.slice(0, 7));
   ctx.counts.created++;

@@ -148,6 +148,13 @@
       "when": 1792654639885,
       "tag": "0020_gunluk_isler",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792676830472,
+      "tag": "0021_fatura_vergi_no",
+      "breakpoints": true
     }
   ]
 }

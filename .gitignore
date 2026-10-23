@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tam yedek dosyaları (npm run db:backup, Ayarlar › Yedek; docs/YEDEK.md): ciro, maaş ve IBAN taşır, depoya girmesin
+laffogato-yedek-*.json.gz

@@ -5,8 +5,12 @@
 import { normalizeSupplier } from "../../../lib/calc/engine";
 import type { Invoice } from "../../../lib/calc/types";
 
-/** Kalan borç alanıyla fatura (çekirdek Invoice tipine `outstanding` eklenene kadar sayfa bunu doldurur) */
-export type InvoiceRow = Invoice & { outstanding?: number | null };
+/**
+ * Kalan borç alanıyla fatura (çekirdek Invoice tipine `outstanding` eklenene kadar sayfa bunu doldurur). Tedarikçinin
+ * vergi nosu yalnız Faturalar sayfasında eklenir (pencerede görünür, Tedarikçiler bağlantısını bulur); hesaplar
+ * kullanmaz
+ */
+export type InvoiceRow = Invoice & { outstanding?: number | null; supplierTaxNumber?: string | null };
 
 // ---------------------------------------------------------------- Paraşüt kilidi
 

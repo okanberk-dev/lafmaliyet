@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { inArray, isNotNull } from "drizzle-orm";
 import { ChevronDown, CircleAlert, FileText, Table2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -21,14 +21,14 @@ import { getDb, schema as s } from "@/server/db";
 import { listInvoiceDocuments } from "@/server/documents";
 import { IGNORE_KEY } from "@/server/parasut/sync";
 
-import { groupSuppliers } from "../tedarikciler/logic";
+import { groupSuppliers, supplierPairKey } from "../tedarikciler/logic";
 import { invoiceBreakdowns } from "./breakdowns";
 import { DeletedBills } from "./deleted-bills";
 import { groupDocuments } from "./document-rules";
 import { CountUp, InvoicesClient } from "./invoices-client";
 import { MonthStatCards } from "./month-stat-cards";
 import { ReviewNotice } from "./review-notice";
-import { DELETED_BILLS_KEY, ignoredBills, supplierMatchKey, type InvoiceRow } from "./rules";
+import { DELETED_BILLS_KEY, ignoredBills, type InvoiceRow } from "./rules";
 
 export const metadata: Metadata = { title: "Faturalar" };
 
@@ -75,7 +75,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards] = await Promise.all([
+  const [model, state, docs, cards, taxRows] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -84,10 +84,13 @@ async function InvoicesContent() {
     // Yalnız belge bilgileri (ad, tür, boyut); dosyanın kendisi açılınca /api/faturalar/{id}/belge'den gelir
     listInvoiceDocuments(),
     loadSupplierCards(),
+    // Tedarikçinin vergi nosu çekirdek veride yok (hesaplar kullanmaz): pencere ve tedarikçi bağlantısı için ayrıca
+    db.select({ id: s.invoices.id, supplierTaxNumber: s.invoices.supplierTaxNumber }).from(s.invoices).where(isNotNull(s.invoices.supplierTaxNumber)),
   ]);
+  const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
   const invoices: InvoiceRow[] = model.ds.invoices
-    .map((i) => ({ ...i, outstanding: i.outstanding ?? null }))
+    .map((i) => ({ ...i, outstanding: i.outstanding ?? null, supplierTaxNumber: taxOf.get(i.id) ?? null }))
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const ignored = ignoredBills(state.find((r) => r.key === IGNORE_KEY)?.value, state.find((r) => r.key === DELETED_BILLS_KEY)?.value);
   const months = [...new Set(invoices.map((i) => monthOfDate(i.date)))].sort();
@@ -112,9 +115,10 @@ async function InvoicesContent() {
   const breakdown = invoiceBreakdowns(invoices, months, listHref);
   // Fatura kategorisi → bağlı Aylık harcamalar kategorisi (pencere bu faturanın gelir-giderde nerede sayıldığını söyler)
   const expenseLinks = Object.fromEntries((model.ds.expenseCategories ?? []).filter((c) => c.invoiceCategory).map((c) => [c.invoiceCategory!, c.name]));
-  // Tedarikçi adı anahtarı → Tedarikçiler'deki sayfası (pencerede "Cari kartı ve ödemeleri" bağlantısı); tarih ve tutar gerekmez
+  // (Ad, vergi no) çifti → Tedarikçiler'deki sayfası (pencerede "Tedarikçinin sayfası" bağlantısı): aynı adın
+  // faturaları vergi nolarına göre farklı tedarikçide olabilir; tarih ve tutar gerekmez
   const supplierSlugs = Object.fromEntries(
-    groupSuppliers(invoices, cards, { today: "", termDays: 0 }).flatMap((g) => g.names.map((n) => [supplierMatchKey(n), g.slug] as const)),
+    groupSuppliers(invoices, cards, { today: "", termDays: 0 }).flatMap((g) => g.invoices.map((i) => [supplierPairKey(i.supplier, i.supplierTaxNumber), g.slug] as const)),
   );
 
   return (

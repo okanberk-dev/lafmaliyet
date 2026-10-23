@@ -8,7 +8,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * değişirse bu değerler okunamaz (Paraşüt belirteci yeniden alınır, iki adımlı doğrulama yeniden kurulur, bildirim
  * anahtarı yenilenir ve cihazlar bir sonraki açılışta yeniden abone olur).
  */
-export type SealPurpose = "parasut-token" | "totp" | "webpush" | "access-mail";
+export type SealPurpose = "parasut-token" | "totp" | "webpush" | "access-mail" | "backup";
 
 function key(purpose: SealPurpose): Buffer {
   const secret = process.env.AUTH_SECRET;

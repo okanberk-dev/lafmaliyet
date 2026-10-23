@@ -11,7 +11,7 @@ import { keepScroll } from "@/components/ui/filters";
 import { money, num } from "@/lib/format";
 import { removeSupplier, restoreSupplier, unhideSupplier } from "@/server/actions/suppliers";
 
-import { supplierHref } from "./logic";
+import { nameMoveBlock, supplierHref, type NameMoves } from "./logic";
 
 export interface RemoveTarget {
   cardId: number | null;
@@ -20,18 +20,39 @@ export interface RemoveTarget {
   invoiceCount: number;
   openCount: number;
   open: number;
+  /** Kartsız tedarikçide: kaldırırken onun adıyla açılacak kartın başka kartlardan çekeceği faturalar (nameMoves) */
+  moves?: NameMoves | null;
 }
 
 /**
  * Tedarikçiyi silme penceresi. Faturası yoksa kartı silinir. Faturası varsa faturalar silinmez (gider ve aylık
- * hesaplar değişmesin), tedarikçi listeden kaldırılır. Ödenmemiş faturası varsa kaldırılamaz; pencere nedenini söyler.
- * Bildirimdeki "Geri al" ikisini de geri getirir ve tedarikçinin sayfasını açar. `onDone`: silindi ya da kaldırıldı
- * (sayfa listeye döner).
+ * hesaplar değişmesin), tedarikçi listeden kaldırılır. Ödenmemiş faturası varsa ya da kaldırmak (adıyla kart açmak)
+ * başka kartların faturalarını çekecekse kaldırılamaz; pencere nedenini söyler. Bildirimdeki "Geri al" ikisini de geri
+ * getirir ve tedarikçinin sayfasını açar. `onDone`: silindi ya da kaldırıldı (sayfa listeye döner).
  */
 export function RemoveSupplierDialog({ target, onClose, onDone }: { target: RemoveTarget; onClose: () => void; onDone: () => void }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const { name } = target;
+
+  // Borçtan önce: borç kapansa da kaldırılamaz (sunucu da aynı sırayla söyler)
+  if (target.moves?.count) {
+    return (
+      <Dialog
+        open
+        onClose={onClose}
+        size="sm"
+        title="Listeden kaldırılamaz"
+        footer={
+          <Button onClick={onClose} data-autofocus>
+            Tamam
+          </Button>
+        }
+      >
+        <p className="text-sm leading-6 text-ink-mute">{nameMoveBlock(name, target.moves, target.invoiceCount)}</p>
+      </Dialog>
+    );
+  }
 
   if (target.openCount) {
     // Yalnız ödenmemiş iade (eksi) kaldıysa borç değil, düşülecek iade

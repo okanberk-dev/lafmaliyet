@@ -7,6 +7,7 @@ import {
   CupSoda,
   FileText,
   Globe,
+  HardDriveDownload,
   Info,
   LayoutList,
   Package,
@@ -304,7 +305,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             <Path href="/panel/tedarikciler" /> ekranında her tedarikçi faturalarından kendiliğinden listelenir: kalan borç, vadesi geçen ve en yakın vade. Tedarikçiye
             dokunup Düzenle&apos;den unvanı, vergi no ve dairesini, IBAN&apos;ı (kontrol hanesi denetlenir), telefon ve e-postayı, vade gününü yazın; Faturadan doldur unvan,
             vergi no, adres, iletişim ve IBAN&apos;ı en yeni Paraşüt faturasından okur. Geçmiş faturaları al, tedarikçinin Paraşüt&apos;teki eski faturalarını da getirir.
-            Sil: faturası olmayan tedarikçi silinir; faturası olan listeden kalkar (faturaları ve giderler yerinde kalır, borcu olan kaldırılamaz). Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup
+            Aynı vergi numarasıyla farklı adla gelen faturalar (“Kaldi” ile “KALDI KAHVE TİC. A.Ş.”) tek tedarikçide toplanır; kartta yazdığınız ad ve diğer adlar hep
+            önce gelir. Aynı numara iki tedarikçide duruyorsa sayfasının üstünde yazar. Sil: faturası olmayan tedarikçi silinir; faturası olan listeden kalkar (faturaları ve giderler yerinde kalır, borcu olan kaldırılamaz). Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup
             Ödendi&apos;yi seçin (ödeme günü ve şekliyle), birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale
             açıklamasını hazır metin yapar (son iade faturaları seçilirse düşülür); kopyalayın ya da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep
             edildi” olur. Komisyon faturaları (Trendyol, Yemek Sepeti, yemek kartları) hakedişten düşüldüğü için ödendi gelir; peşin ya da kartla otomatik ödediğiniz
@@ -409,6 +411,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         icon: Timer,
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
       },
+      {
+        id: "yedek",
+        q: "Yedek nasıl alınır, nasıl geri yüklenir?",
+        a: (
+          <>
+            <Path href="/panel/ayarlar" /> › Yedek › Yedeği indir: parolanızı girince paneldeki bütün veri tek dosyada iner. Ayda bir indirip bilgisayarınızda ya
+            da Google Drive&apos;da saklayın; son yedek 30 günü geçince zil hatırlatır. Dosyada ciro, maaş ve IBAN&apos;lar var (parolalar yok), kimseyle
+            paylaşmayın. Geri yükleme panelden yapılmaz: gerekirse dosyayı geliştiriciye verin, bilgisayardan bir komutla yükler (docs/YEDEK.md). Aynı
+            karttaki Excel kopyası okumak içindir, geri yüklenmez.
+          </>
+        ),
+        icon: HardDriveDownload,
+        links: [{ href: "/panel/ayarlar#yedek", label: "Yedek" }],
+      },
     ],
   },
   {
@@ -447,7 +463,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı ve son
             satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
-            e-postası) çalışmadıysa ya da hata verdiyse en üstte <strong className="font-semibold text-ink">Sistem</strong> başlığı çıkar. Bir bildirime dokununca
+            e-postası) çalışmadıysa ya da hata verdiyse, ya da son yedek 30 günden eskiyse en üstte <strong className="font-semibold text-ink">Sistem</strong>{" "}
+            başlığı çıkar. Bir bildirime dokununca
             ilgili ekran açılır; alttaki &quot;Ödemeler&quot; ve &quot;Genel bakış&quot; düğmeleri o ekranlara gider.
           </>
         ),

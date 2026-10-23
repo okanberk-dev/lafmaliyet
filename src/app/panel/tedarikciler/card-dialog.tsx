@@ -21,23 +21,29 @@ import {
   formatIban,
   ibanProblem,
   INFO_LABEL,
+  nameMoveLines,
+  nameMoves,
   normalizeIban,
   PAYMENT_METHODS,
   phoneE164,
   PLACEHOLDER_SUPPLIER_NAME,
+  taxKey,
   taxNumberCheck,
+  taxPreview,
+  taxPreviewLines,
   whatsappHref,
   type PaymentMethod,
   type SupplierCard,
+  type TaxIndex,
 } from "./logic";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function blankForm(card: SupplierCard | null, name: string) {
+function blankForm(card: SupplierCard | null, name: string, inferredTaxNumber: string | null) {
   return {
     name: card?.name ?? name,
     legalName: card?.legalName ?? "",
-    taxNumber: card?.taxNumber ?? "",
+    taxNumber: card?.taxNumber || inferredTaxNumber || "",
     taxOffice: card?.taxOffice ?? "",
     iban: card?.iban ? formatIban(card.iban) : "",
     bankName: card?.bankName ?? "",
@@ -59,13 +65,20 @@ type Form = ReturnType<typeof blankForm>;
  * Tedarikçi penceresi (yeni ya da düzenleme): ad, unvan, vergi no ve dairesi, IBAN, iletişim, vade, ödeme şekli, peşin
  * çalışma, faturalarda geçen diğer adlar ve not; bunlar tedarikçinin kartında (suppliers) saklanır. Faturası olup
  * kartı olmayan tedarikçide ilk kayıt kartı açar. "Faturadan doldur" tedarikçinin en yeni Paraşüt faturasından
- * okunan bilgileri yalnız boş alanlara yazar. Kaydedince `onSaved` yeni adres parçasıyla çağrılır (ad değiştiyse
+ * okunan bilgileri yalnız boş alanlara yazar; kartta vergi no yoksa faturalardaki tek numara alana önerilir
+ * (`inferredTaxNumber`, kaydedince karta geçer; numara başka bir kartta yazılıysa önerilmez: iki kartta aynı numara
+ * eşleşmeyi kapatırdı). Vergi no alanının altında o numarayla hangi faturaların bu
+ * tedarikçide toplanacağı görünür (`taxIndex`); ad ya da diğer ad, vergi nosuyla başka bir kartta duran faturaların
+ * adıysa onların buraya geçeceği de yazılır (ad önce gelir). Kaydedince `onSaved` yeni adres parçasıyla çağrılır (ad değiştiyse
  * sayfa oraya geçer). `onDelete` verilirse altta "Tedarikçiyi sil" çıkar (RemoveSupplierDialog).
  */
 export function SupplierCardDialog({
   card,
   name = "",
   names = [],
+  inferredTaxNumber = null,
+  taxIndex,
+  slug = null,
   suggestions = [],
   defaultTermDays,
   canFill = false,
@@ -78,6 +91,12 @@ export function SupplierCardDialog({
   name?: string;
   /** Faturalarda geçen adlar: "Faturadan doldur" bu adlı faturalara bakar */
   names?: string[];
+  /** Kartta vergi no yoksa faturalardaki tek vergi no: alana yazılı gelir, "faturadan dolduruldu" işaretlenir */
+  inferredTaxNumber?: string | null;
+  /** Vergi no önizlemesinin verisi (taxNameIndex) */
+  taxIndex?: TaxIndex;
+  /** Kartsız tedarikçinin sayfasında açıldıysa adres parçası: onun faturaları önizlemede "gelecek" sayılmaz */
+  slug?: string | null;
   /** Diğer ad olabilecek kartsız adlar (aynı firmanın farklı yazılışı) */
   suggestions?: string[];
   /** Ödemeler'deki genel vade (gün): vade alanı boşken geçerli olan */
@@ -89,12 +108,19 @@ export function SupplierCardDialog({
   /** Tedarikçiyi sil (pencere kapanır, silme penceresi açılır) */
   onDelete?: () => void;
 }) {
-  const [f, setF] = useState<Form>(() => blankForm(card, name));
+  // Faturalardaki numara başka bir kartta da yazılıysa alana önerilmez: kaydedilse numara iki kartta olur ve vergi
+  // noyla eşleşme ikisinde de kapanırdı (sayfadaki şerit durumu zaten söylüyor)
+  const [suggested] = useState(() =>
+    !card?.taxNumber && inferredTaxNumber && !(taxIndex && taxPreview(taxIndex, inferredTaxNumber, { cardId: card?.id ?? null, slug: null }).sharedCards.length)
+      ? inferredTaxNumber
+      : null,
+  );
+  const [f, setF] = useState<Form>(() => blankForm(card, name, suggested));
   const [aliases, setAliases] = useState<string[]>(() => card?.aliases ?? []);
   const [aliasInput, setAliasInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [filling, setFilling] = useState(false);
-  const [filled, setFilled] = useState<ReadonlySet<string>>(() => new Set());
+  const [filled, setFilled] = useState<ReadonlySet<string>>(() => new Set(suggested ? ["taxNumber"] : []));
   const [tried, setTried] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
@@ -107,6 +133,13 @@ export function SupplierCardDialog({
   const tax = taxNumberCheck(f.taxNumber);
   const taxError = tax && "error" in tax ? tax.error : null;
   const taxWarning = tax && "warning" in tax ? tax.warning : null;
+  // Kontrol hanesi tutan ama formlarda örnek diye yazılan numara (1234567890 …): saklanır, eşleşmede kullanılmaz
+  const taxDummy = !tax && f.taxNumber.trim() !== "" && !taxKey(f.taxNumber);
+  // Bu numara kaydedilirse hangi faturalar bu tedarikçide toplanır, hangileri adıyla başka yerde kalır
+  const previewData = taxIndex && !taxError ? taxPreview(taxIndex, f.taxNumber, { cardId: card?.id ?? null, slug: card ? null : slug }) : null;
+  const preview = previewData ? taxPreviewLines(previewData) : [];
+  // Numara başka bir kartta da yazılı: uyarı renginde
+  const previewShared = Boolean(previewData?.sharedCards.length);
   const emailError = f.email.trim() && !EMAIL.test(f.email.trim()) ? "E-posta adresi geçersiz" : null;
   const term = f.paymentTermDays.trim() ? Number(f.paymentTermDays) : null;
   const termError = term !== null && (!Number.isInteger(term) || term < 0 || term > 365) ? "0 ile 365 arasında tam gün" : null;
@@ -117,6 +150,17 @@ export function SupplierCardDialog({
 
   const ownKey = supplierMatchKey(f.name);
   const freeSuggestions = suggestions.filter((s) => !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(s)) && supplierMatchKey(s) !== ownKey);
+  // Kaydedilecek diğer adlar: kutuda yazılı kalan ad da eklenir
+  const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
+  // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
+  // (faturalar karta düşer, sayfa boş kalmaz)
+  const fromPage = card
+    ? []
+    : names.filter((n) => n !== PLACEHOLDER_SUPPLIER_NAME && supplierMatchKey(n) !== ownKey && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
+  // Bu adlarla gelip vergi nosuyla başka kartta duran faturalar kaydedince buraya geçer (ad önce gelir); vergi no
+  // önizlemesi bunu göstermez. Ör. iki kartı bağlayan numarada aynı adın kartsız kalan grubundan açılan kart
+  const nameLines = taxIndex ? nameMoveLines(nameMoves(taxIndex, [f.name, ...fromPage], card?.id ?? null)) : [];
+  const aliasLines = taxIndex ? nameMoveLines(nameMoves(taxIndex, typed, card?.id ?? null)) : [];
 
   function addAlias(raw: string) {
     const a = raw.replace(/\s+/g, " ").trim();
@@ -160,12 +204,6 @@ export function SupplierCardDialog({
     setBusy(true);
     keepScroll();
     try {
-      const typed = aliasInput.trim() && !aliases.some((a) => supplierMatchKey(a) === supplierMatchKey(aliasInput)) ? [...aliases, aliasInput.trim()] : aliases;
-      // Kartsız tedarikçinin sayfasında açılan kart başka adla kaydedilirse faturalardaki adlar diğer adlara girer
-      // (faturalar karta düşer, sayfa boş kalmaz)
-      const fromPage = card
-        ? []
-        : names.filter((n) => n !== PLACEHOLDER_SUPPLIER_NAME && supplierMatchKey(n) !== supplierMatchKey(f.name) && !typed.some((a) => supplierMatchKey(a) === supplierMatchKey(n)));
       const r = await saveSupplier({
         id: card?.id ?? null,
         name: f.name,
@@ -186,8 +224,14 @@ export function SupplierCardDialog({
         note: f.note,
       });
       if (!r.ok) return void toast.error(r.error);
+      // Aynı vergi no başka bir kartta da yazılı: kayıt durmaz, numara eşleşmede kullanılmaz
+      const shared = r.data.sharedTax.length
+        ? `Bu vergi no ${r.data.sharedTax.map((n) => `“${n}”`).join(", ")} ${r.data.sharedTax.length > 1 ? "tedarikçilerinde" : "tedarikçisinde"} de kayıtlı; faturalar adlarına göre ayrılır.`
+        : null;
+      const lead = r.data.renamedAlias ? `“${r.data.renamedAlias}” adıyla gelen faturalar bu tedarikçide kalsın diye diğer adlara eklendi.` : f.name.trim();
       toast.success(card || names.length ? "Tedarikçi kaydedildi" : "Tedarikçi eklendi", {
-        description: r.data.renamedAlias ? `“${r.data.renamedAlias}” adıyla gelen faturalar bu tedarikçide kalsın diye diğer adlara eklendi.` : f.name.trim(),
+        description: shared ? `${lead}${lead.endsWith(".") ? " " : " · "}${shared}` : lead,
+        duration: shared ? 10000 : undefined,
       });
       onSaved?.({ id: r.data.id, slug: r.data.slug });
       onClose();
@@ -270,12 +314,23 @@ export function SupplierCardDialog({
               label="Vergi no (VKN / TCKN)"
               htmlFor="s-tax"
               error={taxError ?? undefined}
-              hint={filledHint("taxNumber") ?? taxWarning ?? "Şirketlerde 10 haneli VKN, şahıs şirketinde 11 haneli TCKN"}
+              hint={
+                // Numarayla ilgili uyarı "faturadan dolduruldu"dan önce gelir
+                taxWarning
+                  ? `${taxWarning} · faturalar bu numarayla eşleşmez`
+                  : taxDummy
+                    ? "Örnek numara gibi görünüyor · faturalar bu numarayla eşleşmez"
+                    : (filledHint("taxNumber") ?? "Şirketlerde 10 haneli VKN, şahıs şirketinde 11 haneli TCKN")
+              }
             >
               <Input
                 id="s-tax"
                 value={f.taxNumber}
-                onChange={(e) => set({ taxNumber: e.target.value })}
+                onChange={(e) => {
+                  set({ taxNumber: e.target.value });
+                  // Elle değiştirilen numara artık faturadan gelmiş sayılmaz
+                  if (filled.has("taxNumber")) setFilled((x) => new Set([...x].filter((k) => k !== "taxNumber")));
+                }}
                 inputMode="numeric"
                 autoComplete="off"
                 aria-invalid={Boolean(taxError) || undefined}
@@ -285,6 +340,20 @@ export function SupplierCardDialog({
             <Field label="Vergi dairesi" htmlFor="s-office" hint={filledHint("taxOffice")}>
               <Input id="s-office" value={f.taxOffice} onChange={(e) => set({ taxOffice: e.target.value })} autoComplete="off" />
             </Field>
+            {nameLines.length || preview.length ? (
+              <div className="space-y-1 text-xs leading-5 sm:col-span-2" aria-live="polite">
+                {nameLines.map((line) => (
+                  <p key={line} className="text-warn">
+                    {line}
+                  </p>
+                ))}
+                {preview.map((line) => (
+                  <p key={line} className={previewShared ? "text-warn" : "text-ink-soft"}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </fieldset>
 
           <fieldset className="grid gap-x-3 gap-y-4 rounded-2xl bg-panel p-4 sm:grid-cols-2">
@@ -398,7 +467,8 @@ export function SupplierCardDialog({
           <fieldset>
             <legend className="mb-1 text-[13px] font-semibold text-ink">Faturalarda geçen diğer adlar</legend>
             <p className="mb-2.5 text-xs leading-5 text-ink-mute">
-              Aynı firma faturalarda farklı yazılıyorsa (“YEMEK SEPETİ ELEKTRONİK…” ile “Yemek Sepeti”) ekleyin: o adla gelen faturalar da bu tedarikçide toplanır.
+              Aynı firma faturalarda farklı yazılıyorsa (“YEMEK SEPETİ ELEKTRONİK…” ile “Yemek Sepeti”) ekleyin: o adla gelen faturalar da bu tedarikçide toplanır. Aynı
+              vergi noyla gelen faturalar ad farklı olsa da kendiliğinden buraya düşer.
             </p>
             {aliases.length ? (
               <ul className="mb-2.5 flex flex-wrap gap-2" aria-label="Diğer adlar">
@@ -437,6 +507,13 @@ export function SupplierCardDialog({
                 <Plus size={16} aria-hidden="true" /> Ekle
               </Button>
             </div>
+            {aliasLines.length ? (
+              <div className="mt-2 space-y-1 text-xs leading-5 text-warn" aria-live="polite">
+                {aliasLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            ) : null}
             {freeSuggestions.length ? (
               <div className="mt-2.5">
                 <p className="mb-1.5 text-xs text-ink-mute">Aynı firma olabilir:</p>

@@ -261,6 +261,13 @@ export const invoices = pgTable(
     paidVia: text("paid_via", { enum: ["havale", "nakit", "kart", "cek", "diger"] }),
     /** Ödemesi istendiği / ödeme talebi verildiği gün (YYYY-MM-DD): ödenmemiş faturada "Talep edildi" */
     paymentRequestedAt: text("payment_requested_at"),
+    /**
+     * Tedarikçinin VKN / TCKN'si (yalnız rakam, 10 ya da 11 hane): Paraşüt gider faturasında e-belgenin `from_vkn`'i ya da
+     * kişi kartının `tax_number`'ı, gelen e-faturada `from_vkn`, UBL'de satıcının kimliği. Elle ve Excel'den girilen
+     * faturada boş. Tedarikçiler aynı (geçerli) vergi nolu faturaları tek tedarikçide toplar (logic.ts supplierResolver).
+     * Kontrol hanesi tutmayan ya da yer tutucu numara saklanır ama eşleşmede kullanılmaz (taxKey).
+     */
+    supplierTaxNumber: text("supplier_tax_number"),
     createdAt: createdAt(),
   },
   (t) => [

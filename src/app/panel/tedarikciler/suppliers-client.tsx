@@ -40,6 +40,7 @@ import {
   type SupplierFilter,
   type SupplierListRow,
   type SupplierSort,
+  type TaxIndex,
 } from "./logic";
 
 const PAGE_SIZE = 25;
@@ -81,11 +82,14 @@ export function SuppliersClient({
   hidden,
   today,
   defaultTermDays,
+  taxIndex,
 }: {
   rows: SupplierListRow[];
   hidden: HiddenSupplierRow[];
   today: string;
   defaultTermDays: number;
+  /** Yeni tedarikçi penceresinde yazılan vergi noyla gelecek faturaların önizlemesi */
+  taxIndex?: TaxIndex;
 }) {
   const router = useRouter();
   const [q, setQ] = useQueryText("ara");
@@ -295,6 +299,7 @@ export function SuppliersClient({
                   >
                     <span className="block text-[15px] leading-5 font-medium break-words text-ink">{r.name}</span>
                     {r.legalName ? <span className="mt-0.5 block text-[13px] break-words text-ink-mute">{r.legalName}</span> : null}
+                    {r.sameTaxNames.length ? <span className="mt-0.5 block text-[13px] break-words text-ink-mute">Aynı vergi no: {r.sameTaxNames.join(", ")}</span> : null}
                     {r.summary.openCount ? <DueLine row={r} today={today} className="mt-0.5 block text-[13px]" /> : null}
                     <span className="mt-0.5 block text-[13px] text-ink-mute tabular">
                       {r.summary.lastInvoice ? `Son fatura ${dateTR(r.summary.lastInvoice)}` : "Faturası yok"}
@@ -349,6 +354,7 @@ export function SuppliersClient({
                             {r.name}
                           </Link>
                           {r.legalName ? <p className="text-[13px] break-words text-ink-mute">{r.legalName}</p> : null}
+                          {r.sameTaxNames.length ? <p className="text-[13px] break-words text-ink-mute">Aynı vergi no: {r.sameTaxNames.join(", ")}</p> : null}
                           <div className="mt-1 flex flex-wrap gap-1 empty:hidden">{badges(r)}</div>
                         </div>
                       </div>
@@ -466,6 +472,7 @@ export function SuppliersClient({
         <SupplierCardDialog
           card={null}
           defaultTermDays={defaultTermDays}
+          taxIndex={taxIndex}
           onClose={() => setAdding(false)}
           onSaved={(r) => {
             if (r.slug) router.push(supplierHref(r.slug));

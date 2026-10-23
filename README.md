@@ -47,19 +47,19 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
-| Tedarikçiler: bilgiler (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi, düzenle / sil (faturalıysa listeden kaldır), Paraşüt'ten geçmiş faturalar ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` | — (yeni) |
+| Tedarikçiler: bilgiler (unvan, vergi no, IBAN, iletişim, vade), kalan borç, ödendi / talep edildi işareti, ödeme talebi, düzenle / sil (faturalıysa listeden kaldır), Paraşüt'ten geçmiş faturalar, vergi noyla eşleşme (farklı adla gelen aynı firma tek tedarikçi) ([docs/TEDARIKCILER.md](docs/TEDARIKCILER.md)) | `/panel/tedarikciler`, `/panel/tedarikciler/[cari]` | — (yeni) |
 | Gelir-gider (laffogato.net online satışları: ayrı, KDV hariç gelir satırları ve toplam ciro; Siteden yenile, [docs/SITE-SATIS.md](docs/SITE-SATIS.md)) | `/panel/gelir-gider` | Genel Maliyet |
 | Giderler & personel (üç sekme: Sabit giderler, Aylık harcamalar, Personel) | `/panel/giderler`, `/panel/harcamalar`, `/panel/personel` | Sabit Giderler, — (yeni), Personel |
 | Ödemeler & hatırlatıcılar (Son ödenenler: 30 gün içinde geri alma) | `/panel/hatirlaticilar` | — (yeni) |
 | Stok sayımı, tutarlılık (iki sekme; beklenen kullanım ModPOS + online kafe siparişleri) | `/panel/sayim`, `/panel/tutarlilik` | Sayım, Tutarlılık Kontrolü |
 | Analiz & senaryo | `/panel/analiz` | — (yeni) |
-| Ayarlar, işlem geçmişi, günlük işlerin son çalışması, laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar), yedek | `/panel/ayarlar` | Ayarlar |
+| Ayarlar, işlem geçmişi, günlük işlerin son çalışması, laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar), yedek: paneldeki bütün verinin tek dosyası (parolayla iner; geri yükleme bilgisayardan, [docs/YEDEK.md](docs/YEDEK.md)) ve Excel kopyası | `/panel/ayarlar` | Ayarlar |
 | Kullanıcılar & roller | `/panel/kullanicilar` | — (yeni) |
 | Paraşüt entegrasyonu (eşitleme, ürün → hammadde bağlantıları, kategori kuralları) | `/panel/parasut` | — (yeni) |
 | Hesabım (profil menüsü) | `/panel/hesap` | — (yeni) |
 | Yardım | `/panel/yardim` | Nasıl Kullanılır |
 | Giriş, davetle parola belirleme, QR menü (`/` panele yönlendirir) | `/giris`, `/davet`, `/menu` | — (yeni) |
-| Excel'e aktar / sağlık / menü JSON / fatura belgesi ve kalemleri | `/api/export`, `/api/health` (`?isler=1`: günlük işlerin durumu, sorun varsa 503), `/api/menu`, `/api/faturalar/[id]/belge`, `/api/faturalar/[id]/kalemler` | — |
+| Excel'e aktar / tam yedek / sağlık / menü JSON / fatura belgesi ve kalemleri | `/api/export`, `/api/yedek` (parola onayından sonra verilen iki dakikalık bağlantıyla, yalnız yönetici), `/api/health` (`?isler=1`: günlük işlerin durumu, sorun varsa 503), `/api/menu`, `/api/faturalar/[id]/belge`, `/api/faturalar/[id]/kalemler` | — |
 | Günlük işler (Vercel Cron): Paraşüt eşitlemesi, sabah e-postası, hatırlatıcı özeti, karaoke ve site menüsü eşitlemesi, online satışlar; her çalışma `job_runs`'a yazılır, çalışmayan ya da hata veren iş zil, Genel bakış ve e-postayla bildirilir (docs/BILDIRIMLER.md › Sistem uyarıları) | `/api/cron/parasut`, `/api/cron/gunluk` | — |
 | Açık sekmenin canlı verisi (ETag / 304), laffogato.net'in karaoke, menü ve sipariş pingleri, bar ekranının sipariş isteği | `/api/canli`, `/api/karaoke/ping`, `/api/menu/ping`, `/api/orders/ping`, `/api/siparisler` | — |
 
@@ -112,12 +112,14 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 |-------|----------|
 | `npm run dev` | Geliştirme sunucusu |
 | `npm run build` | Migration'ları uygular, veritabanı boşsa Excel verisini yükler, ardından production build alır (Vercel önizlemesinde bu hazırlık atlanır: önizleme canlının veritabanını kullanır, [DEPLOY.md](docs/DEPLOY.md) § 3) |
-| `npm test` | Bütün testleri çalıştırır (`tests/*.test.ts`): hesaplama motorunu Excel'in değerlerine karşı (129 ürün, 125 satış satırı, panel, gelir-gider, tutarlılık) ve ekran kurallarını |
+| `npm test` | Bütün testleri çalıştırır (`tests/*.test.ts`): hesaplama motorunu Excel'in değerlerine karşı (129 ürün, 125 satış satırı, panel, gelir-gider, tutarlılık) ve ekran kurallarını. `YEDEK_TEST_DATABASE_URL=postgres://…/postgres` verilirse yedeğin gerçek bir veritabanında alınıp geri yüklenmesi de sınanır ([docs/YEDEK.md](docs/YEDEK.md) § 10) |
 | `npm run lint` | ESLint |
 | `npm run db:generate` | Şema değişince yeni migration üretir (`drizzle/`) |
 | `npm run db:migrate` | Migration'ları uygular ve hepsinin uygulandığını doğrular (atlanan varsa hata; docs/DEPLOY.md § 7) |
 | `npm run db:seed` | Veritabanı boşsa Excel verisini yükler |
 | `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri (laffogato.net menü bağlantılarıyla), hammaddeleri, satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, bildirim günlüğünü siler. **Silmedikleri:** kullanıcılar, aylık harcamalar (kategoriler ve kayıtlar), hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, laffogato.net'ten çekilen online satış ayları ve açık sipariş listesinin kopyası (sitenin verisi), tedarikçi cari kartları (faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir); kalan harcama kayıtları gelir-gideri Excel'den ayırır |
+| `npm run db:backup` | Tam yedeği bilgisayara alır (`~/laffogato-yedek-….json.gz`; `--belgeler` panelden yüklenen belgelerle, `--cikti <dosya>` başka bir yere). Panelin Ayarlar › Yedek dosyasıyla aynı biçim ([docs/YEDEK.md](docs/YEDEK.md)) |
+| `npm run db:restore -- <dosya>` | Yedeği boş bir veritabanına yükler; `--sil` ile dolu bir veritabanının yerine (önce onun yedeğini dosyanın yanına alır; Neon'da `--onay=<sunucu>`). Parolalar dosyada yok: aynı e-postalı kişi hedefteki parolasını korur, ötekiler davet bekler ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run excel:extract -- "<excel yolu>"` | Excel'den `excel-data.json` ve `tests/golden.json` dosyalarını yeniden üretir (Python 3 + openpyxl gerekir) |
 
 ## Klasör yapısı
@@ -132,6 +134,7 @@ src/
   lib/site-menu/       laffogato.net menü bağlantısı: yanıt şeması, yuva ↔ fiyat, çekme planı, öneriler (saf, testli)
   lib/site-orders/     laffogato.net siparişleri: yanıt şeması, yeni sipariş, sıralama, kart metinleri, zil kuralı, aşama düğmeleri (saf)
   lib/site-sales/      laffogato.net online satışları: yanıt şeması, KDV hariç gelir, ürün eşlemesi, kasa satırı (saf)
+  lib/backup/          tam yedek: dosya biçimi, yazılmayanlar, şema sürümü, yükleme sırası, giriş bilgileri (saf, testli)
   lib/calc/            hesaplama motoru: Excel formüllerinin saf TypeScript karşılığı
     engine.ts          hammadde → reçete → ürün → satış → gelir-gider → stok
     insights.ts        panel, uyarılar, tutarlılık, menü mühendisliği, senaryo
@@ -144,13 +147,14 @@ src/
     parasut/           Paraşüt API istemcisi, eşitleme, e-fatura kalemleri (docs/PARASUT.md)
     notify/            sabah e-postası ve Resend gönderimi (docs/BILDIRIMLER.md)
     jobs/              günlük işler: anahtar denetimi, çalışma kayıtları (job_runs), sistem uyarıları ve bekçi e-postası
+    backup/            tam yedek: dışa aktarım, geri yükleme, indirme bağlantısı ve son yedek kaydı (docs/YEDEK.md)
     karaoke/           laffogato.net ile eşitleme ve karaoke panosu (docs/KARAOKE.md)
     site-menu/         laffogato.net menüsü: çekme, panel → site yazımı, bağlama (docs/SITE-MENU.md); site-link.ts ortak imzalı istek
     site-orders/       laffogato.net'in açık siparişleri: çekme, son listenin kopyası, bildirim (docs/SITE-SIPARIS.md)
     site-sales/        laffogato.net'in online satışları: ay ay çekme ve saklama, kasa satırı (docs/SITE-SATIS.md)
     push/              Web Push: VAPID, içerik şifrelemesi (RFC 8291), aboneliklere gönderim
   proxy.ts             panel sayfaları için oturum kontrolü (Next 16'da middleware'in yeni adı)
-scripts/               migrate (ve migration doğrulaması), seed, predeploy ve Excel çıkarma betikleri
+scripts/               migrate (ve migration doğrulaması), seed, predeploy, tam yedek ve geri yükleme, Excel çıkarma betikleri
 tests/                 Excel karşılaştırma testleri ve ekran kuralları
 drizzle/               SQL migration'ları
 ```
