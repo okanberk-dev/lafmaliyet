@@ -223,7 +223,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> › Yeni ürün. İsterseniz benzer bir ürünün reçetesini kopyalayarak başlayın. Excel&apos;deki gibi &quot;bana söyleyin&quot; demeye gerek
-            yok.
+            yok. Satışı, zayi kaydı ya da fiyat geçmişi olan ürün silinmez (geçmiş ayların maliyeti değişirdi): menüden kaldırmak için reçete kartında Menüde aktif
+            anahtarını kapatın.
           </>
         ),
         icon: Coffee,
@@ -279,7 +280,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             uygulanmaz: <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar&apos;da onaylayın ya da reddedin (çoğu zaman çarpan yanlıştır, oradan düzeltilir).
             Paraşüt&apos;te olmayan (kâğıt, e-Arşiv) faturayı Faturalar ›
             Fatura ekle ile girin, fotoğrafını ya da PDF&apos;ini ekleyin; sonradan Paraşüt&apos;e girilirse aynı kayda bağlanır, iki kez sayılmaz. Bağlı olmayan bir malzemenin fiyatını{" "}
-            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır).
+            <Path href="/panel/hammaddeler" /> ekranında elle değiştirin (fiyat geçmişi saklanır). Satışın iadesi (site ya da müşteri iadesi) Paraşüt&apos;te gider
+            listesine düşse de gider sayılmaz; tedarikçiye iadeniz panele kendiliğinden girmez: ikisi de <Path href="/panel/parasut" /> ekranının başında yazar,
+            tedarikçiye iadeyi Faturalar&apos;a aynı tedarikçiye eksi tutarla girin.
           </>
         ),
         icon: FileText,
@@ -445,7 +448,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın kasa
             raporlarından günlük satış, laffogato.net online), vade gününde ödenmemiş faturalar, hatırlatıcılar, maaş, SGK, KDV ve hatırlatıcısı olmayan sabit
-            giderler. Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
+            giderler (faturadaki KDV&apos;siyle: kira ve faturalar %20, personel KDV&apos;siz; oran Giderler&apos;de kalemin Faturadaki KDV alanında). Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
             yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
             tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
             onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Her varsayım
