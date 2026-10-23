@@ -75,7 +75,7 @@ export async function setMonthNote(month: string, note: string | null) {
   });
 }
 
-/** Ayın cirosu (KDV dahil) ya da açık gün sayısı */
+/** Ayın cirosu (KDV dahil) ya da açık gün sayısı; boş (null): kasa raporlarından (varsa) */
 export async function setMonthField(month: string, field: "posRevenue" | "openDays", value: number | null) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -96,7 +96,7 @@ export async function setMonthField(month: string, field: "posRevenue" | "openDa
       .insert(s.months)
       .values({ month: m, [field]: v })
       .onConflictDoUpdate({ target: s.months.month, set: { [field]: v, updatedAt: new Date() } });
-    await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş" : field === "openDays" ? `${v} gün` : tl(v)}`);
+    await logActivity(me, field === "openDays" ? "Açık gün" : "Aylık ciro", `${monthLabel(m)}: ${v === null ? "boş (kasa raporu varsa oradan)" : field === "openDays" ? `${v} gün` : tl(v)}`);
     refresh();
     return null;
   });

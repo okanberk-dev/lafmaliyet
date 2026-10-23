@@ -26,7 +26,12 @@ export const RATE_FIELDS: FieldDef[] = [
   { key: "kdv", label: "Satış KDV oranı", hint: "Kafe satışlarında %10", kind: "pct", sane: true },
   { key: "kdvHizmet", label: "Hizmet satışı KDV oranı", hint: "Satışlar'da HİZMET işaretli satırlar (karaoke odası): %20", kind: "pct", sane: true },
   { key: "komisyon", label: "Banka / POS komisyon oranı", hint: "Sadece kartlı satışlara uygulanır", kind: "pct", sane: true },
-  { key: "kartOrani", label: "Kartlı satış oranı", hint: "Kredi kartı + yemek kartı ÷ ciro (Patron Eylül: %85,6)", kind: "pct" },
+  {
+    key: "kartOrani",
+    label: "Kartlı satış oranı",
+    hint: "Kredi kartı + yemek kartı ÷ ciro. Kasa raporu olan aylarda o ayın gerçek oranı kullanılır; bu değer ürün fiyat hesabında ve raporu olmayan aylarda geçer.",
+    kind: "pct",
+  },
   { key: "hedefMaliyet", label: "Hedef maliyet oranı (food cost)", hint: "Kafeler için ideal %25–35", kind: "pct", sane: true, positive: true },
   { key: "fire", label: "Fire / kayıp payı", hint: "Dökülen süt, atılan kahve; yalnız ürün kartında zayi oranı boş ürünlere uygulanır", kind: "pct" },
 ];

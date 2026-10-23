@@ -5,9 +5,14 @@ import { asc } from "drizzle-orm";
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
+import { resolveMonths, tillMonths } from "@/lib/cash-month";
+import { businessDate } from "@/lib/cash-report";
 import { settingsFromRows } from "@/lib/constants";
+import { addDays } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
+
+import { tillRows } from "./cash-reports";
 
 /** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
 export async function loadSettings(): Promise<Settings> {
@@ -38,6 +43,7 @@ export async function loadDataset(): Promise<Dataset> {
     expenseEntries,
     wasteEntries,
     siteSales,
+    till,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -69,10 +75,14 @@ export async function loadDataset(): Promise<Dataset> {
       .from(s.wasteEntries),
     // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md)
     loadSiteSales(),
+    // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
+    tillRows(),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
   const currentMonth = currentMonthTR();
+  // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
+  const through = addDays(businessDate(), -1);
 
   return {
     settings,
@@ -112,14 +122,20 @@ export async function loadDataset(): Promise<Dataset> {
       siteMenuSlot: p.siteMenuSlot,
     })),
     recipeItems,
-    months: months.map((m) => ({
-      month: m.month,
-      openDays: m.openDays,
-      posRevenue: m.posRevenue,
-      discounts: m.discounts,
-      offRevenue: m.offRevenue,
-      note: m.note,
-    })),
+    // Etkin ay bilgisi: elle yazılan, yoksa kasa raporlarından (hiçbir şey months'a kopyalanmaz); yalnız kasa raporu
+    // olan ay da gelir. Kaynaklar (sources) ve kasanın değerleri (kasa) ekranlar için Month'ta taşınır
+    months: resolveMonths(
+      months.map((m) => ({
+        month: m.month,
+        openDays: m.openDays,
+        posRevenue: m.posRevenue,
+        discounts: m.discounts,
+        offRevenue: m.offRevenue,
+        cardShare: m.cardShare,
+        note: m.note,
+      })),
+      tillMonths(till, through),
+    ),
     salesLines: salesLines.map((l) => ({
       id: l.id,
       month: l.month,

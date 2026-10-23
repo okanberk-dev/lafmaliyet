@@ -98,7 +98,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın. Devam eden ayda
-        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır.
+        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır. Kasa raporu girilen aylarda boş bıraktığınız alanlar kasa raporlarından
+        kendiliğinden dolar; elle yazdığınız her zaman geçerlidir.
       </>
     ),
     href: "/panel/satislar",

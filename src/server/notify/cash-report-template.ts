@@ -4,7 +4,22 @@
  * kart bölümleri, en altta "Panelde aç". Metin sürümü WhatsApp metninin yıldızsız hâli.
  */
 
-import { CASH_TOLERANCE, cashOutLines, computeCash, paymentLines, reportSubject, whatsappText, type CashReportExtras, type CashReportFields, type DayWaste } from "@/lib/cash-report";
+import {
+  byLine,
+  carryWarning,
+  CASH_TOLERANCE,
+  cashOutLines,
+  changesText,
+  computeCash,
+  nextWarning,
+  paymentLines,
+  reportSubject,
+  whatsappText,
+  type CashReportExtras,
+  type CashReportFields,
+  type CashReportIntegrity,
+  type DayWaste,
+} from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { photoDiffText } from "@/lib/photo-read/kasa";
 import { longDateTR } from "@/lib/reminders";
@@ -33,15 +48,18 @@ function textRow(label: string, text: string) {
   return `<tr><td colspan="2" style="padding:7px 0;font-family:${FONT};font-size:14px;line-height:20px;color:#171717"><span style="color:#3f3f46">${esc(label)}:</span> ${esc(text)}</td></tr>`;
 }
 
-function section(title: string, rows: string, warning?: string | null) {
+/** Turuncu uyarı kutusu; birden çok uyarı alt alta */
+function warnBox(lines: (string | null | undefined)[], marginTop = 6) {
+  const list = lines.filter((l): l is string => Boolean(l));
+  if (!list.length) return "";
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:${marginTop}px"><tr><td style="background:#fff7ed;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:#9a3412">${list.map(esc).join("<br>")}</td></tr></table>`;
+}
+
+function section(title: string, rows: string, warning?: string | null | (string | null | undefined)[]) {
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;margin-top:20px">
   <tr><td style="padding:0 0 4px;border-bottom:1px solid #e4e4e7;font-family:${FONT};font-size:13px;font-weight:600;color:#3f3f46">${esc(title)}</td></tr>
 </table>
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${rows}</table>${
-    warning
-      ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:6px"><tr><td style="background:#fff7ed;border-radius:12px;padding:10px 12px;font-family:${FONT};font-size:13px;line-height:18px;color:#9a3412">${esc(warning)}</td></tr></table>`
-      : ""
-  }`;
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">${rows}</table>${warnBox(Array.isArray(warning) ? warning : [warning])}`;
 }
 
 export function renderCashReport(
@@ -58,7 +76,8 @@ export function renderCashReport(
      * ulaşılamadıysa null: satır yazılmaz.
      */
     online?: TillOnlineRow | null;
-  } & CashReportExtras,
+  } & CashReportExtras &
+    CashReportIntegrity,
 ) {
   const c = computeCash(f);
   const tone = TONE[c.kind];
@@ -78,6 +97,7 @@ export function renderCashReport(
   const zRows = [
     row("Toplam satış", money(f.zTotal), { strong: true }),
     ...paymentLines(f).map((p) => row(p.label, money(p.amount))),
+    ...(f.discounts ? [row("İndirim", money(f.discounts))] : []),
     ...(f.offRevenue ? [row("Ödenmez / ikram (ciro dışı)", money(f.offRevenue))] : []),
     ...(meta.ikramValue ? [row("Panelde kayıtlı ikram", money(meta.ikramValue), { sub: "menü fiyatıyla" })] : []),
   ].join("\n");
@@ -114,6 +134,8 @@ export function renderCashReport(
           }),
         ].join("\n");
   const photoWarning = meta.photoDiffs?.length ? `Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}` : null;
+  // Düzeltilen raporda neyin değiştiği: bölümlerin üstünde turuncu kutu
+  const changesBox = meta.revision > 1 && meta.changes?.length ? warnBox([`Değişen: ${changesText(meta.changes)}`], 14) : "";
   const photoNames = [meta.photos?.z ? "Z raporu" : null, meta.photos?.pos ? "banka POS" : null].filter(Boolean).join(", ");
   const link = `${APP_URL}/panel/kasa?gun=${f.date}`;
   // laffogato.net: bilgi satırı, hesaba katılmaz (sitenin günü gece yarısında biter)
@@ -144,7 +166,7 @@ export function renderCashReport(
     </tr></table>
   </td></tr>
   <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
-    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${meta.by} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>${
+    <div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a">${esc(`${byLine(meta.by, meta.countedBy)} · ${time}${meta.revision > 1 ? " · güncellendi" : ""}${zMeta ? ` · ${zMeta}` : ""}`)}</div>${
       photoNames ? `\n    <div style="font-family:${FONT};font-size:12px;line-height:17px;color:#71717a;margin-top:2px">${esc(`Fotoğraflar panelde: ${photoNames}`)}</div>` : ""
     }
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px"><tr><td style="background:${tone.bg};border-radius:16px;padding:14px 16px;font-family:${FONT}">
@@ -152,8 +174,9 @@ export function renderCashReport(
       <div style="font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${tone.fg}">${esc(headline)}</div>
       <div style="font-size:13px;line-height:18px;color:#3f3f46;margin-top:2px">Olması gereken ${esc(money(c.expectedCash))} · sayılan ${esc(money(f.countedCash))}</div>
     </td></tr></table>
+    ${changesBox}
     ${section("Z raporu (ModPOS)", zRows, paymentsWarning ?? ikramWarning)}
-    ${section("Kasa (nakit)", cashRows, photoWarning)}
+    ${section("Kasa (nakit)", cashRows, [meta.carry ? carryWarning(meta.carry) : null, meta.next ? nextWarning(meta.next) : null, photoWarning])}
     ${cardRows ? section("Kart", cardRows, cardWarning) : ""}
     ${wasteRows ? section("Zayi & ikram", wasteRows) : ""}
     ${onlineRows ? section("laffogato.net (kasadan geçmez)", onlineRows, "Bilgi için: kasa farkına ve Z raporuna girmez.") : ""}

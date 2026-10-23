@@ -7,6 +7,7 @@ import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { GrowthPill, PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { manualOf } from "@/lib/cash-month";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
@@ -73,20 +74,22 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
   }));
   const unmatched = sales.unmatched.length;
   const mappingList = mappings.map((m) => ({ posName: m.posName, productId: m.productId, isService: m.isService, updatedAt: m.updatedAt }));
+  // Formda yalnız elle yazılanlar; kasa raporlarından gelenler formda "Kasadan" olarak ayrıca gösterilir
   const infoValues = {
-    openDays: info?.openDays ?? null,
-    posRevenue: info?.posRevenue ?? null,
-    discounts: info?.discounts ?? 0,
-    offRevenue: info?.offRevenue ?? 0,
+    openDays: manualOf(info, "openDays"),
+    posRevenue: manualOf(info, "posRevenue"),
+    discounts: manualOf(info, "discounts"),
+    offRevenue: manualOf(info, "offRevenue"),
+    cardShare: manualOf(info, "cardShare"),
     note: info?.note ?? null,
   };
-  const hasInfo =
-    infoValues.openDays !== null || infoValues.posRevenue !== null || !!infoValues.discounts || !!infoValues.offRevenue || !!infoValues.note;
+  // "Ayı temizle › ay bilgileri de" yalnız elle yazılanları siler (kasadan gelenler raporlarla kalır)
+  const hasInfo = Object.values(infoValues).some((v) => v !== null && v !== "");
   // Bir ürüne ya da HİZMET'e bağlanmış satırların ciro payı (kalanın maliyeti tahmini)
   const assignedRevenue = rows.reduce((a, r) => a + (r.matched || r.isService ? r.revenue : 0), 0);
   const coverage = sales.revenue ? assignedRevenue / sales.revenue : 0;
   // Kartların dökümü (karta dokununca açılan pencere): aynı ay satırlarından, yeni sorgu yok
-  const breakdown = salesBreakdowns(sales, model.settings, month);
+  const breakdown = salesBreakdowns(sales, model.settings, month, model.cardShareOf(month).rate);
   const label = monthLabel(month);
 
   return (
@@ -210,12 +213,14 @@ async function SalesContent({ searchParams }: { searchParams: PageProps<"/panel/
           hasInfo={hasInfo}
         />
         <MonthInfoForm
-          // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider) form yeni değerlerle açılsın
-          key={`${month}|${JSON.stringify(infoValues)}`}
+          // Ay bilgisi başka yerden değişince (Ayı temizle, Gelir-gider, yeni kasa raporu) form yeni değerlerle açılsın
+          key={`${month}|${JSON.stringify(infoValues)}|${JSON.stringify(info?.kasa?.values ?? null)}`}
           className="xl:col-span-5"
           month={month}
           label={monthLabel(month)}
           info={infoValues}
+          kasa={info?.kasa ?? null}
+          settingsCardShare={model.settings.kartOrani}
           listTotal={sales.revenue}
           currentMonth={model.currentMonth}
           recordedIkram={model.wasteSummary(month).ikram}

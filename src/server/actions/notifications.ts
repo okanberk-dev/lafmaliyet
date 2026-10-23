@@ -4,17 +4,17 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { businessDate, diffKind, diffText } from "@/lib/cash-report";
+import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, lateCorrections } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
-import { dateTR, monthShort, tl } from "@/lib/format";
+import { dateTR, money, monthShort, tl } from "@/lib/format";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { agoLabel } from "@/lib/prices/pos";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
-import { cashReportsBetween } from "@/server/data/cash-reports";
+import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -60,7 +60,8 @@ async function systemNotifications(): Promise<PanelNotification[]> {
 
 /**
  * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma; yöneticiye dünün
- * raporu girilmediyse ve son raporda kasa farkı varsa (eksik kırmızı, fazla turuncu).
+ * raporu girilmediyse, son raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor
+ * ertesi gün kasa alanı değiştirilerek düzeltildiyse.
  */
 async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
@@ -107,6 +108,53 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
       timeLabel: dateTR(last.date),
       unread: true,
       href: `/panel/kasa?gun=${last.date}`,
+      group: "kasa",
+    });
+  }
+  // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
+  out.push(...(await cashIntegrityNotifications(reports, day, user.id).catch(() => [])));
+  return out;
+}
+
+/**
+ * Yönetici: kasanın bütünlüğü (docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). Bugünün ve dünün raporunda açılış
+ * önceki devirle tutmuyorsa (kimlik raporun sürümünden: yeniden gönderilince yeniden okunmamış olur); son 7 günün bir
+ * raporu iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildiyse (src/lib/cash-report.ts lateCorrections:
+ * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). İki küçük sorgu.
+ */
+async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
+  if (!reports.length) return [];
+  const oldest = reports[reports.length - 1];
+  const [before, revisions] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
+  const checks = carryChecks(reports, before);
+  const yesterday = addDays(day, -1);
+  const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
+  const out: PanelNotification[] = [];
+  for (const r of reports) {
+    const c = checks.get(r.date);
+    if (!c || (r.date !== day && r.date !== yesterday)) continue;
+    out.push({
+      id: `kasa-acilis-${r.date}-r${r.revision}`,
+      kind: "warning",
+      title: "Kasa açılışı devirle tutmuyor",
+      body: [`${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
+      timeLabel: timeLabel(r.date),
+      unread: true,
+      href: `/panel/kasa?gun=${r.date}`,
+      group: "kasa",
+    });
+  }
+  for (const r of reports) {
+    const late = r.revision > 1 ? lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) : null;
+    if (!late) continue;
+    out.push({
+      id: `kasa-duzeltme-${r.date}-r${late.revision}`,
+      kind: "warning",
+      title: "Kasa raporu ertesi gün değişti",
+      body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
+      timeLabel: timeLabel(r.date),
+      unread: true,
+      href: `/panel/kasa?gun=${r.date}`,
       group: "kasa",
     });
   }

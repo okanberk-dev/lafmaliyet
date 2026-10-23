@@ -115,7 +115,10 @@ export async function runSeed({ reset = false } = {}) {
       );
       await tx.insert(s.products).values(ds.products);
       await tx.insert(s.recipeItems).values(ds.recipeItems);
-      await tx.insert(s.months).values(ds.months);
+      // Excel'in ay bilgileri elle yazılmış değerlerdir (sıfırlar dahil); kasa raporundan gelen bir şey yok
+      await tx.insert(s.months).values(
+        ds.months.map((m) => ({ month: m.month, openDays: m.openDays, posRevenue: m.posRevenue, discounts: m.discounts, offRevenue: m.offRevenue, note: m.note })),
+      );
       await tx.insert(s.salesLines).values(ds.salesLines.map((l, i) => ({ ...l, sortOrder: i + 1 })));
 
       const mappings = new Map<string, { productId: number | null; isService: boolean }>();

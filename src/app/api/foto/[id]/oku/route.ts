@@ -34,7 +34,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Kasa fotoğrafı Z ile POS arasında değişebilir; fiş fiş kalır
   const cash = (k: string) => k === "kasa-z" || k === "kasa-pos";
   if (cash(photo.kind) !== cash(kind) || photo.kind === "kontrol") return Response.json({ error: "Geçersiz istek" }, { status: 400 });
-  if (!canUploadPhoto(me, kind, day)) return Response.json({ error: "Bu gün için fotoğraf ekleyemezsiniz." }, { status: 403 });
+  if (!(await canUploadPhoto(me, kind, day))) return Response.json({ error: "Bu gün için fotoğraf ekleyemezsiniz." }, { status: 403 });
   try {
     const file = await readPhoto(id);
     if (!file) return Response.json({ error: NOT_FOUND_TEXT }, { status: 404 });

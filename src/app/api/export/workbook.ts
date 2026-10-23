@@ -10,7 +10,8 @@ import ExcelJS from "exceljs";
 
 import { fixedMonthly, inRange, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
 import { consistency, dashboard, forecastMonthOf, openBalance, stockVatSummary } from "../../../lib/calc/insights";
-import type { FixedPeriod, MonthRange } from "../../../lib/calc/types";
+import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/types";
+import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
 import { dateTimeTR, dateTR, monthLabel, num, pct, tl } from "../../../lib/format";
 
@@ -460,7 +461,7 @@ function sheetPurpose(name: string, label: string): string {
     "Sabit Giderler": `${label} sabit giderleri, aylık karşılığı ve TOPLAM; tek seferlik yatırımlar; varsa tutar geçmişi.`,
     Ayarlar: "KDV, komisyon, kartlı satış, hedef maliyet, fire, gramajlar, SGK oranları ve su + buz birim maliyeti.",
     "Satış Kayıtları": "Yedek: bütün ayların POS satış satırları (eşleşen ürün, hizmet, not).",
-    "Ay Bilgileri": "Yedek: her ayın açık gün sayısı, POS cirosu, yönetici indirimi, ödenmez tutarı ve ay notu.",
+    "Ay Bilgileri": "Yedek: her ayın açık gün sayısı, POS cirosu, yönetici indirimi, ödenmez tutarı, kartlı satış oranı ve ay notu; kasa raporlarından gelenler ayrıca yazılır.",
     "Gelir-Gider Kayıtları": "Yedek: Gelir-gider tablosunda elle girilen ya da düzeltilen bütün hücreler ve notları.",
     "Sayım Kayıtları": "Yedek: bütün ayların stok sayımları (sayım biriminde ve malzemenin biriminde) ve listede olmayan kalemler.",
     "Alım Miktarları": "Yedek: Tutarlılık için girilen aylık faturayla alınan miktarlar.",
@@ -704,7 +705,10 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
     months.forEach((m, i) => {
       const c = cells[i];
       const parts: string[] = [];
-      if (c.overridden && c.computed !== null && c.value !== null && Math.abs(c.value - c.computed) >= 0.005) parts.push(`Elle düzeltildi (hesaplanan ${tl(c.computed)}).`);
+      if (c.overridden && c.computed !== null && c.value !== null && Math.abs(c.value - c.computed) >= 0.005) {
+        // Aylık ciroda hesaplanan, kasa raporlarının Z toplamıdır
+        parts.push(def.key === "revenue" ? `Elle girildi (kasa raporlarından ${tl(c.computed)}).` : `Elle düzeltildi (hesaplanan ${tl(c.computed)}).`);
+      }
       if (c.note) parts.push(c.note);
       if (parts.length) r.getCell(m).note = parts.join(" ");
     });
@@ -1257,13 +1261,20 @@ function addRawRecords(wb: ExcelJS.Workbook, model: Model) {
       { key: "r", header: "POS ciro (KDV dahil)", width: 16, fmt: MONEY0 },
       { key: "d", header: "Yönetici indirimleri", width: 15, fmt: MONEY0 },
       { key: "x", header: "Ciro dışı (ödenmez / ikram)", width: 16, fmt: MONEY0 },
+      { key: "c", header: "Kartlı satış oranı", width: 11, fmt: PCT },
+      { key: "k", header: "Kasa raporundan", width: 24 },
       { key: "note", header: "Ay notu", width: 70 },
     ],
     { y: 1, raw: true },
   );
   headerRow(ai, colHeaders(ai));
   const months = [...ds.months].sort((a, b) => a.month.localeCompare(b.month));
-  for (const m of months) ai.addRow({ m: excelDate(`${m.month}-01`), o: m.openDays, r: m.posRevenue, d: m.discounts, x: m.offRevenue, note: m.note });
+  // Değerler etkin olanlar (elle yazılan, yoksa kasa raporlarından); kasadan gelen alanlar ayrıca adıyla
+  const KASA_NAMES: Record<MonthField, string> = { openDays: "açık gün", posRevenue: "ciro", discounts: "indirim", offRevenue: "ödenmez", cardShare: "kartlı oran" };
+  for (const m of months) {
+    const fromKasa = MONTH_FIELDS.filter((f) => m.sources?.[f] === "kasa").map((f) => KASA_NAMES[f]);
+    ai.addRow({ m: excelDate(`${m.month}-01`), o: m.openDays, r: m.posRevenue, d: m.discounts, x: m.offRevenue, c: m.cardShare ?? null, k: fromKasa.join(", ") || null, note: m.note });
+  }
   if (!months.length) ai.addRow({ note: "Kayıtlı ay bilgisi yok." });
 
   // ---------------------------------------------------------------- Gelir-Gider Kayıtları

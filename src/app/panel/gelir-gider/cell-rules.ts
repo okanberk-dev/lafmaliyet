@@ -82,7 +82,11 @@ export function noteSaveMessage(o: {
 
 // ---------------------------------------------------------------- Telefon: tek hücre düzenleme sayfası
 
-/** Düzenlenen hücrenin türü: gelir-gider hücresi (not alabilir), ayın cirosu ya da açık gün sayısı (ay bilgisi) */
+/**
+ * Düzenlenen hücrenin türü: gelir-gider hücresi (not alabilir), ayın cirosu ya da açık gün sayısı (ay bilgisi). Ciro ve
+ * açık gün kasa raporlarından da gelebilir: o zaman `computed` kasanın değeridir, `kind` "auto"dur ve elle yazılan
+ * `overridden` sayılır; boşaltınca kasaya döner.
+ */
 export type CellField = "pnl" | "revenue" | "openDays";
 
 export interface CellEditInput {
@@ -124,6 +128,8 @@ export function planCellEdit(o: CellEditInput): CellEditPlan {
 
   if (o.field !== "pnl") {
     const what = o.field === "revenue" ? "Aylık ciro" : "Açık gün";
+    // Kasa raporlarından gelen değer: boşaltmak bir şey değiştirmez; elle yazılanı boşaltmak kasaya döndürür
+    if (amount === null && o.computed !== null) return o.overridden ? { action: "clear", message: `${what} kasa raporlarına döndü` } : { action: "none" };
     if (amount === null) return o.value === null ? { action: "none" } : { action: "clear", message: `${what} boşaltıldı` };
     if (same(amount, o.value)) return { action: "none" };
     const shown = o.field === "revenue" ? tl(amount, Number.isInteger(amount) ? 0 : 2) : `${amount} gün`;
@@ -161,6 +167,8 @@ export function planCellRestore(
 ): Extract<CellEditPlan, { action: "save" }> | null {
   if (before.value === null) return null;
   if (before.field !== "pnl") {
+    // Kasa raporlarından gelen değer geri yazılmaz (yazılsa elle girilmiş sayılır, sonraki raporla değişmezdi)
+    if (before.kind === "auto" && !before.overridden) return null;
     const what = before.field === "revenue" ? "Aylık ciro" : "Açık gün";
     return { action: "save", amount: before.value, note: undefined, freeze: false, message: `${what} geri alındı` };
   }

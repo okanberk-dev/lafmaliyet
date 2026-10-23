@@ -9,7 +9,7 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 
 | Nerede | Fotoğraf | Dolan alanlar |
 |--------|----------|---------------|
-| Kasa raporu › Z raporu (ModPOS) | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, Z no, fiş sayısı |
+| Kasa raporu › Z raporu (ModPOS) | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, indirim, Z no, fiş sayısı |
 | Kasa raporu › Kart | Banka POS cihazının gün sonu fişi | Banka POS gün sonu (net toplam; iki cihazda "Toplama ekle") |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
 
@@ -54,8 +54,11 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 - Fotoğrafın paneldeki tek adresi `/api/foto/{id}`: giriş, sonra kural, sonra baytlar (Blob'a yönlendirme yok).
   Yanıt `Cache-Control: private, max-age=3600`, `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`.
 - **Kim görür:** yönetici hepsini; yükleyen kişi henüz kayda bağlanmamış kendi fotoğrafını (formdaki küçük resim);
-  personel, hâlâ düzenleyebildiği günlerin (bugün ve dün) kasa raporu ve kasadan çıkan fotoğraflarını. Kalanı 403
-  "Bu fotoğrafı görme yetkiniz yok."
+  personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
+  KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını. O günlere fotoğraf eklemek de aynı kuralla
+  (`src/server/photo-read/rules.ts` › `staffDayOpen`). Kapanan günde personel fotoğrafları görmez (kasadan çıkan
+  satırında küçük resim yerine fiş simgesi); WhatsApp metnindeki "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı
+  yazılan" satırları kalır. Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
   kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf.
 - Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını

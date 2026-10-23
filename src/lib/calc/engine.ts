@@ -645,6 +645,16 @@ export function createModel(ds: Dataset) {
     itemsByProduct.set(it.productId, list);
   }
   const monthInfo = new Map(ds.months.map((m) => [m.month, m]));
+  /**
+   * Ayın kartlı satış oranı: elle yazılan ya da o ayın kasa raporlarından (kart + yemek kartı ÷ Z toplamı); yoksa
+   * Ayarlar › kartlı satış oranı. POS komisyonu bununla hesaplanır; ürün fiyatı hesabı Ayarlar'daki oranla kalır.
+   */
+  function cardShareOf(month: string): { rate: number; source: "manual" | "kasa" | "ayar" } {
+    const info = monthInfo.get(month);
+    const v = info?.cardShare ?? null;
+    if (v === null) return { rate: st.kartOrani, source: "ayar" };
+    return { rate: v, source: info?.sources?.cardShare === "kasa" ? "kasa" : "manual" };
+  }
   /** "Bu ay": listelerde gösterilen güncel tutar ve aktiflik buna göre */
   const currentMonth = ds.currentMonth ?? currentMonthTR();
   const pnlByMonth = new Map<string, Map<string, number>>();
@@ -905,12 +915,13 @@ export function createModel(ds: Dataset) {
     let ms = salesCache.get(month);
     if (ms) return ms;
     const raw = linesByMonth.get(month) ?? [];
+    const cardShare = cardShareOf(month).rate;
     const base = raw.map((line) => {
       const product = line.productId ? productById.get(line.productId) : undefined;
       const pc = product ? computeProduct(product) : undefined;
       // Hizmet satışı (karaoke odası) kendi KDV oranıyla; ürünler satış KDV'siyle
       const net = line.revenue / (1 + (line.isService ? st.kdvHizmet : st.kdv));
-      const commission = line.revenue * st.komisyon * st.kartOrani;
+      const commission = line.revenue * st.komisyon * cardShare;
       return { line, pc, net, commission };
     });
     const matched = base.filter((b) => b.pc && !b.line.isService);
@@ -1290,7 +1301,7 @@ export function createModel(ds: Dataset) {
 
     // Komisyonlar
     const revenue = info?.posRevenue ?? null;
-    sections.komisyon += auto("commission:pos", (revenue ?? 0) * st.komisyon * st.kartOrani);
+    sections.komisyon += auto("commission:pos", (revenue ?? 0) * st.komisyon * cardShareOf(month).rate);
     const commBySupplier = new Map<string, number>();
     for (const inv of invs.filter((i) => i.category === COMMISSION_CATEGORY)) {
       const s = normalizeSupplier(inv.supplier);
@@ -1440,7 +1451,13 @@ export function createModel(ds: Dataset) {
     }
 
     const kom = sec("komisyon");
-    kom({ key: "commission:pos", label: `BANKA POS KOMİSYONU (%${(st.komisyon * 100).toLocaleString("tr-TR")})`, kind: "auto", editable: true, hint: "Aylık ciro (KDV dahil) × komisyon × kartlı satış oranı. Banka ekstresindeki gerçek tutarı yazabilirsiniz." });
+    kom({
+      key: "commission:pos",
+      label: `BANKA POS KOMİSYONU (%${(st.komisyon * 100).toLocaleString("tr-TR")})`,
+      kind: "auto",
+      editable: true,
+      hint: "Aylık ciro (KDV dahil) × komisyon × kartlı satış oranı (kasa raporu olan ayda o ayın oranı, yoksa Ayarlar'daki). Banka ekstresindeki gerçek tutarı yazabilirsiniz.",
+    });
     for (const k of [...commSuppliers].sort()) {
       kom({ key: k, label: `${k.slice("commission:".length).toLocaleUpperCase("tr-TR")} KOMİSYONU`, kind: "auto", editable: false, hint: "Faturalar sayfasından otomatik (Komisyon kategorisi)." });
     }
@@ -1454,7 +1471,13 @@ export function createModel(ds: Dataset) {
 
     const sonuc = sec("sonuc");
     const pctOf = (r: number) => `%${(r * 100).toLocaleString("tr-TR")}`;
-    sonuc({ key: "revenue", label: "AYLIK CİRO (KDV dahil – POS)", kind: "manual", editable: true, hint: "Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır." });
+    sonuc({
+      key: "revenue",
+      label: "AYLIK CİRO (KDV dahil – POS)",
+      kind: "manual",
+      editable: true,
+      hint: "Patron > Raporlar > Ciro (indirimler düşülmüş, ödenmezler hariç). Satışlar sayfasındaki ay bilgisiyle aynıdır. Boşsa kasa raporlarının Z toplamı kullanılır.",
+    });
     sonuc({
       key: "revenueNet",
       label: "AYLIK CİRO (KDV hariç)",
@@ -1504,8 +1527,15 @@ export function createModel(ds: Dataset) {
         return v(pm.sections[key.slice(6) as FixedSection | "komisyon"]);
       case "total:expenses":
         return v(pm.expenses);
-      case "revenue":
-        return { value: pm.revenue, computed: null, overridden: pm.revenue !== null };
+      case "revenue": {
+        // Kasa raporlarından gelen ciro hesaplanan değer gibidir: elle yazılan onun üzerine yazılmıştır, boşaltınca kasaya döner
+        const info = pm.info;
+        return {
+          value: pm.revenue,
+          computed: info?.kasa?.values.posRevenue ?? null,
+          overridden: info?.sources ? info.sources.posRevenue === "manual" : pm.revenue !== null,
+        };
+      }
       case "revenueNet":
         return v(pm.revenueNet);
       case "revenue:total":
@@ -1545,6 +1575,8 @@ export function createModel(ds: Dataset) {
     evalQty,
     usedIn,
     monthInfo,
+    /** Ayın kartlı satış oranı ve kaynağı (elle, kasa raporlarından ya da Ayarlar) */
+    cardShareOf,
     salesMonths,
     monthSales,
     soldByProduct,

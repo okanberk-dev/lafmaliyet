@@ -105,6 +105,43 @@ export interface RecipeItem {
   sortOrder: number;
 }
 
+/** Ay bilgisinin kasa raporlarından dolabilen alanları (src/lib/cash-month.ts) */
+export type MonthField = "openDays" | "posRevenue" | "discounts" | "offRevenue" | "cardShare";
+/** Alanın değeri nereden: elle yazıldı, kasa raporlarından, hiçbiri (varsayılan: boş ya da 0) */
+export type FieldSource = "manual" | "kasa" | "none";
+
+/** Bir ayın kasa raporlarından çıkanlar (src/lib/cash-month.ts tillMonths) */
+export interface TillMonth {
+  /** "YYYY-MM" */
+  month: string;
+  /** Kapsanan aralık: ay başı (ilk rapor ay içindeyse o gün) → ay sonu (süren ayda dün; bugünün raporu girildiyse bugün) */
+  from: string;
+  to: string;
+  /** Rapor girilen gün */
+  reported: number;
+  /** Satış olan (Z toplamı > 0) gün */
+  openDays: number;
+  /** Z toplamlarının toplamı: KDV dahil, indirimler düşülmüş, ödenmezler hariç (Patron › Ciro ile aynı anlam) */
+  posRevenue: number;
+  /** İndirim ve ödenmez: yalnız girildiği günlerin toplamı (hiç girilmediyse null) ve o gün sayısı */
+  discounts: number | null;
+  discountDays: number;
+  offRevenue: number | null;
+  offDays: number;
+  /** (Kart + yemek kartı) ÷ Z toplamı; Z toplamı 0 ise null */
+  cardShare: number | null;
+  /** [from, to] içinde raporu olmayan günler */
+  missing: string[];
+  /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
+  partialFrom: string | null;
+  /** Son raporun günü */
+  lastDate: string;
+}
+
+/**
+ * Ayın bilgisi. Sunucudaki yükleyici (src/server/data/dataset.ts) burada etkin değeri verir: elle yazılan, yoksa kasa
+ * raporlarından türeyen, o da yoksa varsayılan. Hesapların hepsi (Gelir-gider, Genel bakış, Excel) bu değerle çalışır.
+ */
 export interface Month {
   /** "YYYY-MM" */
   month: string;
@@ -116,6 +153,12 @@ export interface Month {
   /** Ciro dışı / ödenmez (ikram, sahip/personel tüketimi), KDV dahil */
   offRevenue: number;
   note: string | null;
+  /** Kartlı satış oranı (0–1): elle ya da kasa raporlarından; yoksa Ayarlar › kartlı satış oranı geçer */
+  cardShare?: number | null;
+  /** Alanların kaynağı (yalnız sunucudaki yükleyici doldurur; testlerde ve Excel verisinde yok) */
+  sources?: Record<MonthField, FieldSource>;
+  /** Kasa raporlarından türeyen değerler (uygulanmayan alan null) ve kapsamı; ayın raporu yoksa null */
+  kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
 }
 
 export interface SalesLine {
