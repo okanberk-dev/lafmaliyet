@@ -5,8 +5,13 @@ import { GrowthPill, KeyValue } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { monthLabel, num, tl } from "@/lib/format";
 import { hasActivity, occupancyDelta, type Coverage, type MonthRow } from "@/lib/karaoke/occupancy";
-import { longDayText, percentText, pointsText } from "@/lib/karaoke/occupancy-text";
+import { longDayText, percentText, pointsText, pointsValue } from "@/lib/karaoke/occupancy-text";
 import { addDays, dayMonthTR } from "@/lib/reminders";
+
+/** Doluluğun puan farkı rozeti (Doluluk kartı ve ay ay): rengi metinle aynı yuvarlamadan, "aynı" yazan rozet gri */
+export function PointsPill({ delta }: { delta: number }) {
+  return <GrowthPill value={pointsValue(delta)}>{pointsText(delta)}</GrowthPill>;
+}
 
 /** Ayın satırındaki metinler (ay boşsa "–"); doluluk farkı bir eski satıra göre, yalnız karşılaştırılabilirse */
 function cells(r: MonthRow, older: MonthRow | undefined, coverage: Coverage) {
@@ -90,7 +95,7 @@ export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: C
                 <TD numeric>
                   <span className="inline-flex flex-col items-end">
                     <span className="inline-flex items-center gap-1.5">
-                      {c.delta !== null ? <GrowthPill value={c.delta}>{pointsText(c.delta)}</GrowthPill> : null}
+                      {c.delta !== null ? <PointsPill delta={c.delta} /> : null}
                       {c.occupancy}
                     </span>
                     <span className="w-16">
@@ -123,7 +128,7 @@ export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: C
                 </span>
                 {partialSpan(r, true) ? <span className="ml-1.5 text-[13px] text-ink-mute">{partialSpan(r, true)}</span> : null}
               </span>
-              {c.delta !== null ? <GrowthPill value={c.delta}>{pointsText(c.delta)}</GrowthPill> : null}
+              {c.delta !== null ? <PointsPill delta={c.delta} /> : null}
               <span className="text-sm font-semibold text-ink tabular">{c.occupancy}</span>
               <ChevronDown size={16} aria-hidden="true" className="shrink-0 text-ink-quiet transition-transform group-open:rotate-180" />
             </summary>

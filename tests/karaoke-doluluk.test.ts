@@ -11,6 +11,7 @@ import { test } from "node:test";
 
 import {
   EMPTY_HISTORY,
+  HISTORY_START,
   historyCancelledAt,
   historyChanged,
   historyEnd,
@@ -20,6 +21,7 @@ import {
   historyWindows,
   parseHistoryState,
   personalDataCutoff,
+  recordHistoryMonth,
   retryAfterMs,
   writeErrorText,
   type HistoryState,
@@ -68,6 +70,7 @@ import {
   monthsRange,
   periodLine,
   pointsText,
+  pointsValue,
   weekdayRange,
 } from "../src/lib/karaoke/occupancy-text";
 import type { SiteReservation } from "../src/lib/karaoke/session";
@@ -565,6 +568,22 @@ test("puan farkı: önceki dönemde hiç oturum ya da rezervasyon yoksa gösteri
   assert.equal(occupancyDelta(aug, { ...jul, summary: summaryWith({ ratio: 0.1, capacityMin: 0 }) }, since), null);
 });
 
+test("puan farkı rozeti: rengi metinle aynı yuvarlamadan; 'aynı' yazan rozet gri (yeşil ya da kırmızı değil)", () => {
+  // GrowthPill |değer| < 0,0005'i gri gösterir: rozete ham fark (%12,3 ↔ %12,0 = 0,003) değil tam puan gider
+  for (const d of [0.003, -0.003, 0.0049, -0.0049, -0.005, 0]) {
+    assert.equal(pointsText(d), "aynı", String(d));
+    assert.ok(Object.is(pointsValue(d), 0), `${d}: gri rozet (eksi sıfır da değil)`);
+  }
+  assert.deepEqual([pointsValue(0.006), pointsText(0.006)], [1, "+1 puan"]);
+  assert.deepEqual([pointsValue(-0.006), pointsText(-0.006)], [-1, "−1 puan"]);
+  assert.deepEqual([pointsValue(0.06), pointsText(0.06)], [6, "+6 puan"]);
+  // Doluluk kartı ve ay ay tablosunun iki görünümü aynı rozeti kullanır
+  const ui = read("src/app/panel/karaoke/doluluk/page.tsx") + read("src/app/panel/karaoke/doluluk/month-compare.tsx");
+  assert.doesNotMatch(ui, /<GrowthPill value=\{(c\.)?delta\}/, "rozete ham fark verilmez");
+  assert.equal((ui.match(/<PointsPill delta=\{(c\.)?delta\} \/>/g) ?? []).length, 3);
+  assert.match(ui, /<GrowthPill value=\{pointsValue\(delta\)\}>\{pointsText\(delta\)\}<\/GrowthPill>/);
+});
+
 test("oda saatleri: geçerli aralık; kapanış açılıştan sonra, en geç 05:00; bozuk değer null", () => {
   assert.deepEqual(parseRoomHours({ open: 10, close: 22, by: "Yönetici" }), { open: 10, close: 22 });
   assert.deepEqual(parseRoomHours({ open: 12, close: 29 }), { open: 12, close: 29 });
@@ -636,6 +655,43 @@ test("geçmişi siteden alma: ay ay pencereler, ilerleme, devam ve yeniden alma"
     lastError: null,
   });
   assert.deepEqual(parseHistoryState(null), EMPTY_HISTORY);
+});
+
+test("geçmiş alma: son gün ilk okunan ayla kaydedilir; ilk ayında düşen alma günler sonra bugüne göre başlar", () => {
+  // 1 Kasım: ilk alma Ekim'de düştü (site 5xx ya da anahtar düzeltiliyor); durumda yalnız son deneme var
+  const failed: HistoryState = { ...EMPTY_HISTORY, lastRunAt: "2026-11-01T09:00:00.000Z", lastError: "Site yanıt vermedi (HTTP 500)" };
+  // 10 Kasım: düğme hâlâ "Geçmişi siteden al"; 8 Kasım'a kadar okunur (31 Ekim–8 Kasım eşitlemede de yoksa eksik kalmaz)
+  const retry = historyPlan(failed, "2026-11-10");
+  assert.deepEqual(
+    [retry.through, retry.windows[0], retry.windows.length, retry.reread],
+    ["2026-11-08", { month: "2026-11", from: "2026-11-01", to: "2026-11-08" }, 11, false],
+  );
+  // Hiç ay okunmadan kalmış son gün (bozuk ay kaydı) de almayı eski güne bağlamaz
+  const stale: HistoryState = { ...failed, through: "2026-10-30" };
+  assert.equal(historyPlan(stale, "2026-11-10").through, "2026-11-08");
+  assert.deepEqual(historyProgress(stale, "2026-11-10"), { done: 0, total: 11, complete: false, first: null, through: "2026-11-08" });
+  // İlk ay yazılınca son gün onunla gelir; "Devam et" o son günle, eksik aylardan sürer
+  const firstMonth = recordHistoryMonth(failed, retry.through, "2026-11", { count: 2, at: "2026-11-10T09:00:00.000Z" });
+  assert.deepEqual([firstMonth.through, firstMonth.months["2026-11"].count, firstMonth.lastError], ["2026-11-08", 2, failed.lastError]);
+  const cont = historyPlan(firstMonth, "2026-11-20");
+  assert.deepEqual([cont.through, cont.windows[0].month, cont.windows.length, cont.reread], ["2026-11-08", "2026-10", 10, false]);
+
+  // Bitmiş alma (20 Ekim'e kadar). 15 Kasım'da "Yeniden al" ilk penceresinde (Kasım) düşerse hiçbir ay yazılmaz, durum
+  // değişmez: alma bitmiş kalır ("Devam et" afişi çıkmaz). Kasım yazılıp Ekim'de düşerse de bitmiş (eski aylar kayıtlı).
+  const all: HistoryState = {
+    ...EMPTY_HISTORY,
+    through: "2026-10-20",
+    months: Object.fromEntries(historyWindows(HISTORY_START, "2026-10-20").map((w) => [w.month, { count: 3, at: "2026-10-22T10:00:00.000Z" }])),
+  };
+  assert.equal(historyProgress(all, "2026-11-15").complete, true);
+  const again = historyPlan(all, "2026-11-15");
+  const novOnly = recordHistoryMonth(all, again.through, "2026-11", { count: 1, at: "2026-11-15T09:00:00.000Z" });
+  assert.deepEqual(historyProgress(novOnly, "2026-11-15"), { done: 11, total: 11, complete: true, first: "2026-01", through: "2026-11-13" });
+
+  // Sunucu son günü aydan önce yazmaz: yalnız okunan ayın kaydıyla, aynı işlemde
+  const src = read("src/server/karaoke/history.ts");
+  assert.doesNotMatch(src, /through: plan\.through/);
+  assert.match(src, /updateHistory\(\(st\) => recordHistoryMonth\(st, plan\.through, w\.month, \{ count: out\.count, at: now\.toISOString\(\) \}\), tx\)/);
 });
 
 test("geçmişten gelen satır: ad ve not yok, rezervasyon anı createdAt'ten; iptal anı ilk kez görülen kuralıyla", () => {

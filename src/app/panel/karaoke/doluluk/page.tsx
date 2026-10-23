@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { EmptyState, GrowthPill, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
+import { EmptyState, InfoTip, PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { dateTimeTR } from "@/lib/format";
 import { historyProgress } from "@/lib/karaoke/history";
@@ -37,7 +37,6 @@ import {
   minutesText,
   monthsRange,
   periodLine,
-  pointsText,
 } from "@/lib/karaoke/occupancy-text";
 import { todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
@@ -48,7 +47,7 @@ import { karaokeSecret } from "@/server/karaoke/sync";
 import { Heatmap, type HeatmapView } from "./heatmap";
 import { HistoryButton } from "./history-button";
 import { HoursButton } from "./hours-dialog";
-import { MonthCompare } from "./month-compare";
+import { MonthCompare, PointsPill } from "./month-compare";
 
 export const metadata: Metadata = { title: "Karaoke doluluğu" };
 // Geçmişi siteden alma bu sayfanın sunucu eylemiyle çalışır (en çok 45 sn, ay ay okur): eylemler sayfanın süresini kullanır
@@ -227,7 +226,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
             value={kpi.occupancy.value}
             sub={kpi.occupancy.sub}
             info={INFO.occupancy}
-            badge={delta !== null ? <GrowthPill value={delta}>{pointsText(delta)}</GrowthPill> : undefined}
+            badge={delta !== null ? <PointsPill delta={delta} /> : undefined}
           />
           <Stat compact label="Saat başına gelir" value={kpi.revenue.value} sub={kpi.revenue.sub} info={INFO.revenue} />
           <Stat compact label="Uzatma" value={kpi.extension.value} sub={kpi.extension.sub} info={INFO.extension} />

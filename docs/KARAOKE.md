@@ -149,10 +149,13 @@ kendi cihazında açar.
 
 ### KVKK
 
-- Misafirin adı ve notu, sitenin kuralıyla (laffogato #196) **3 × 366 gün** sonra panelden de silinir: sabah işinin
-  karaoke adımı, günü (Türkiye) bundan eski oturumların `customer_name` ve `note`'unu boşaltır (iki kaynak da:
-  rezervasyonsuz sayacın etiketi de bir ad olabilir). Satır istatistik için kalır (`src/server/karaoke/history.ts`
-  `clearOldKaraokePersonalData`).
+- Karaoke oturum kayıtlarındaki misafir adı ve not, sitenin kuralıyla (laffogato #196) **3 × 366 gün** sonra silinir:
+  sabah işinin karaoke adımı, günü (Türkiye) bundan eski oturumların `customer_name` ve `note`'unu boşaltır (iki
+  kaynak da: rezervasyonsuz sayacın etiketi de bir ad olabilir). Satır istatistik için kalır
+  (`src/server/karaoke/history.ts` `clearOldKaraokePersonalData`).
+- İşlem geçmişi (`activity_log`) bu temizliğe girmez: "Karaoke sayacı başlatıldı", "Karaoke sayacı silindi" ve
+  "Karaoke süresi uzatıldı" satırları misafirin adını ya da sayacın etiketini taşır ve 3 × 366 günden sonra da kalır
+  (işlem geçmişinin saklama süresi yok).
 - Geçmişten alınan rezervasyonlar (Doluluk › Geçmişi siteden al) ad ve not olmadan saklanır.
 
 ## Doluluk haritası (yönetici)
@@ -188,9 +191,11 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 - **Geçmişi siteden al:** panelin karaoke bağlantısı 21 Ekim 2026'da kuruldu; öncesi için düğme sitenin aynı imzalı
   ucunu (`GET /api/panel/karaoke?from&to`; site geçmiş tarihleri de verir, istek başına en çok 400 gün) Ocak 2026'dan
   bugünden iki gün öncesine kadar takvim ayı ay ay, en yeniden okur. En çok 45 sn sürer; yetmezse **Devam et**
-  kaldığı aydan sürer, **Yeniden al** hepsini baştan okur (geç gelen iade ve iptaller de gelir). Yeni satır ad ve not
-  olmadan yazılır; var olan satırın yalnız rezervasyon alanları değişir (ad, not, sayaç ve zil alanları değişmez);
-  satır silinmez, zil çalmaz, düzenli eşitlemenin durumuna dokunulmaz; düzenli eşitlemeyle aynı kilitle yazılır.
+  kaldığı aydan sürer, **Yeniden al** hepsini baştan okur (geç gelen iade ve iptaller de gelir). Almanın son günü ilk
+  okunan ayla birlikte kaydedilir: hiç ay alınamadan düşen deneme günler sonra yeniden basılınca bugüne göre başlar,
+  ilk ayında düşen Yeniden al alınmış geçmişi yarım göstermez. Yeni satır ad ve not olmadan yazılır; var olan
+  satırın yalnız rezervasyon alanları değişir (ad, not, sayaç ve zil alanları değişmez); satır silinmez, zil çalmaz,
+  düzenli eşitlemenin durumuna dokunulmaz; düzenli eşitlemeyle aynı kilitle yazılır.
   429'da sitenin `Retry-After`'ına uyulur (en çok 10 sn, bir kez). Durum: `integration_state` › `karaoke_history`.
 - **İptal anı:** site iptal anını saklamıyor. Eşitleme iptale geçişi görünce sitenin son değişikliğini (`updatedAt`;
   ping saniyeler içinde gelir) `cancelled_at`'e yazar; yeniden açılan rezervasyonda boşalır. Sütundan önceki iptallerde

@@ -11,6 +11,7 @@ import {
   historyValues,
   parseHistoryState,
   personalDataCutoff,
+  recordHistoryMonth,
   retryAfterMs,
   writeErrorText,
   type HistoryResult,
@@ -146,8 +147,8 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
   const secret = karaokeSecret();
   if (!secret) return { status: "off" };
   const today = todayTR();
+  // Son gün burada yazılmaz: ilk ayla birlikte (recordHistoryMonth); hiç ay okunmazsa durum yalnız son denemeyi taşır
   const plan = historyPlan(await readHistoryState(), today);
-  await updateHistory((st) => ({ ...st, through: plan.through }));
 
   const read: string[] = [];
   let reservations = 0;
@@ -177,7 +178,7 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
       r = await getDb().transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('karaoke-sync'))`);
         const out = await applyWindow(tx, w, snapshot, now);
-        await updateHistory((st) => ({ ...st, months: { ...st.months, [w.month]: { count: out.count, at: now.toISOString() } } }), tx);
+        await updateHistory((st) => recordHistoryMonth(st, plan.through, w.month, { count: out.count, at: now.toISOString() }), tx);
         return out;
       });
     } catch (e) {
@@ -212,7 +213,8 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
 
 /**
  * Saklama süresi (3 × 366 gün, sitenin kuralı) dolan oturumların adını ve notunu siler; satır istatistik için kalır.
- * İki kaynak da: sayacın etiketi de bir ad olabilir. Silinen satır sayısını döner.
+ * İki kaynak da: sayacın etiketi de bir ad olabilir. İşlem geçmişine dokunmaz (docs/KARAOKE.md › KVKK). Silinen satır
+ * sayısını döner.
  */
 export async function clearOldKaraokePersonalData(now = new Date()): Promise<number> {
   const k = s.karaokeSessions;

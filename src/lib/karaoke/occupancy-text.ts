@@ -97,9 +97,17 @@ function percentNumber(r: number): string {
 /** "%75", "%0,4" */
 export const percentText = (r: number) => `%${percentNumber(r)}`;
 
+/**
+ * Puan farkı tam puan olarak: +0,06 → 6, yarım puandan az fark 0. Rozetin rengi buna göre verilir (metinle aynı
+ * yuvarlama): "aynı" yazan rozet gri kalır, yeşil ya da kırmızı olmaz.
+ */
+export function pointsValue(delta: number): number {
+  return Math.round(delta * 100) || 0;
+}
+
 /** Puan farkı: +0,06 → "+6 puan", −0,04 → "−4 puan", yarım puandan az fark "aynı" */
 export function pointsText(delta: number): string {
-  const p = Math.round(delta * 100);
+  const p = pointsValue(delta);
   if (p === 0) return "aynı";
   return p > 0 ? `+${p} puan` : `−${-p} puan`;
 }

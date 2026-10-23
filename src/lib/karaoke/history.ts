@@ -23,7 +23,7 @@ export interface HistoryMonth {
 
 export interface HistoryState {
   months: Record<string, HistoryMonth>;
-  /** Alınan son gün: alma başlarken bugünden iki gün önce (sonrasını düzenli eşitleme getirir) */
+  /** Alınan son gün: alma başlarken bugünden iki gün önce (sonrasını düzenli eşitleme getirir); ilk okunan ayla kaydedilir */
   through: string | null;
   lastRunAt: string | null;
   lastError: string | null;
@@ -84,9 +84,17 @@ export interface HistoryProgress {
   through: string;
 }
 
+/**
+ * Kayıtlı son gün, ancak en az bir ay okunduysa: hiç ay okunmadan kalan son gün (ör. bozuk ay kaydı) almayı eski bir
+ * güne bağlamasın; alma bugüne göre baştan başlar.
+ */
+function savedThrough(state: HistoryState): string | null {
+  return Object.keys(state.months).length ? state.through : null;
+}
+
 /** Alma nereye kadar geldi: ilk kez alınırken bugünden iki gün öncesine kadarki aylar */
 export function historyProgress(state: HistoryState, today: string): HistoryProgress {
-  const through = state.through ?? historyEnd(today);
+  const through = savedThrough(state) ?? historyEnd(today);
   const windows = historyWindows(HISTORY_START, through);
   const done = windows.filter((w) => state.months[w.month]);
   return { done: done.length, total: windows.length, complete: done.length === windows.length, first: done.at(-1)?.month ?? null, through };
@@ -97,12 +105,22 @@ export function historyProgress(state: HistoryState, today: string): HistoryProg
  * ayları en yeniden okur (geç gelen iade ve iptaller de gelir); yarım kalan alma ("Devam et") eksik aylardan sürer.
  */
 export function historyPlan(state: HistoryState, today: string): { through: string; windows: HistoryWindow[]; reread: boolean } {
+  const saved = savedThrough(state);
   const progress = historyProgress(state, today);
-  if (!state.through || progress.complete) {
+  if (!saved || progress.complete) {
     const through = historyEnd(today);
-    return { through, windows: historyWindows(HISTORY_START, through), reread: Boolean(state.through) && progress.done > 0 };
+    return { through, windows: historyWindows(HISTORY_START, through), reread: Boolean(saved) && progress.done > 0 };
   }
-  return { through: state.through, windows: historyWindows(HISTORY_START, state.through).filter((w) => !state.months[w.month]), reread: false };
+  return { through: saved, windows: historyWindows(HISTORY_START, saved).filter((w) => !state.months[w.month]), reread: false };
+}
+
+/**
+ * Okunan bir ayın kaydı; almanın son günü (`through`) yalnız onunla birlikte yazılır. Ay yazılmadan kaydedilen son gün
+ * iki yanlış yapardı: ilk ayında düşen alma günler sonra yeniden basılınca eski son güne kadar okur (aradaki günler
+ * düzenli eşitlemede de yoksa sessizce eksik kalır), ilk penceresinde düşen "Yeniden al" bitmiş almayı yarım gösterir.
+ */
+export function recordHistoryMonth(state: HistoryState, through: string, month: string, entry: HistoryMonth): HistoryState {
+  return { ...state, through, months: { ...state.months, [month]: entry } };
 }
 
 /**
