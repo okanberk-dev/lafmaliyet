@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, isNull, lt, max, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -8,6 +8,7 @@ import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { isParasutConfigured, parasutEnvStatus } from "@/server/parasut/config";
+import { parseReturnLog, RETURNS_KEY, supplierReturnEntered } from "@/server/parasut/returns";
 import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
 import { invoiceBreakdown, invoiceStats, type InvoiceMix } from "./breakdowns";
@@ -40,7 +41,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, returnsRow, negatives] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -95,7 +96,14 @@ async function ParasutContent() {
       .from(s.invoices)
       .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId))),
     ignoredProducts(),
+    // Panele girmeyen iadeler (docs/PARASUT.md §2a) ve elle girilmiş eksi faturalar (tedarikçiye iade girildi mi)
+    db.select().from(s.integrationState).where(eq(s.integrationState.key, RETURNS_KEY)).limit(1),
+    db
+      .select({ date: s.invoices.date, supplier: s.invoices.supplier, payable: s.invoices.payable, supplierTaxNumber: s.invoices.supplierTaxNumber })
+      .from(s.invoices)
+      .where(lt(s.invoices.payable, 0)),
   ]);
+  const returnLog = parseReturnLog(returnsRow[0]?.value);
   const invoiceMix: InvoiceMix[] = invoiceRows.map((r) => ({
     month: r.month,
     origin: r.origin,
@@ -126,6 +134,13 @@ async function ParasutContent() {
       ignored={ignored}
       lineReads={{ read: lineReads?.read ?? 0, pending: lineReads?.pending ?? 0 }}
       categories={INVOICE_CATEGORIES}
+      returns={{
+        sales: { count: returnLog.sales.length, total: returnLog.sales.reduce((a, e) => a + e.amount, 0) },
+        // Faturalar'a eksi tutarla girilmiş tedarikçi iadesi listede kalmaz
+        supplier: returnLog.supplier
+          .filter((e) => !supplierReturnEntered(e, negatives))
+          .map((e) => ({ id: e.id, date: e.date, amount: e.amount, invoiceNo: e.invoiceNo, supplier: e.supplier ?? "Tedarikçi" })),
+      }}
     />
   );
 }

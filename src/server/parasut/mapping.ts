@@ -60,7 +60,39 @@ export interface BillDraft {
    * kartındakinden (`supplierTaxNo`) önce gelir
    */
   eDocumentTaxNo: string | null;
+  /** Kişi kartının türü (`account_type`: "supplier" | "customer"); kart okunamadıysa null */
+  contactType: string | null;
+  /** Bütün kalemler laffogato.net'in Paraşüt ürünleri (kod "LAF-…"): satış faturasından açılmış iade */
+  siteProducts: boolean;
+  /** Bağlı gelen e-belgenin türü (`invoice_type_code`, büyük harf: "SATIS", "IADE"…); yoksa ya da giden belgede null */
+  eDocumentKind: string | null;
 }
+
+/** Sitenin (laffogato.net e-Arşiv / e-Fatura) Paraşüt'te açtığı ürünlerin kodu: alış faturasında bulunmaz */
+export const SITE_PRODUCT_CODE = /^LAF-/i;
+/** Gelen iade e-faturası: GİB kuralıyla iadeyi malı geri veren alıcı keser, gelen iade kafenin sattığı bir malındır */
+export const RETURN_DOC_TYPES: readonly string[] = ["IADE", "TEVKIFATIADE"];
+/** Panele gider olarak girmeyen satış iadesinin nedeni (eşitleme özeti, bağlı kaydın notu) */
+export const SALES_RETURN = "satış iadesi";
+
+/**
+ * Bu gider faturası aslında bir satış iadesi mi (docs/PARASUT.md §2a). Paraşüt bir satış faturasına karşı kesilen
+ * iadeyi Giderler'e yazar: sitenin faturaladığı bir siparişin iadesi gider faturası olarak gelir, müşteri tedarikçi
+ * olurdu. İşaretler: kalemlerin hepsi sitenin ürünü (LAF-…), bağlı gelen e-belge iade türünde ya da iade faturasının
+ * kişisi müşteri kartı. Tedarikçi kartlı iade faturası eskisi gibi eksi gider sayılır.
+ */
+export function isSalesReturn(d: Pick<BillDraft, "itemType" | "contactType" | "siteProducts" | "eDocumentKind">): boolean {
+  if (d.siteProducts) return true;
+  if (d.eDocumentKind && RETURN_DOC_TYPES.includes(d.eDocumentKind)) return true;
+  return d.itemType === "refund" && d.contactType === "customer";
+}
+
+/**
+ * Müşteri kartıyla girilmiş (iade türünde olmayan) gider faturası: gerçek bir alış da olabilir, elle girilmiş bir satış
+ * iadesi (gider pusulası) de. Sessizce atılmaz; yeni kayıt kontrol bekleyen açılır, notu bunu söyler.
+ */
+export const CUSTOMER_CONTACT_NOTE = "Paraşüt'te müşteri kartıyla girilmiş: satış iadesiyse silin";
+export const customerContactBill = (d: Pick<BillDraft, "itemType" | "contactType" | "siteProducts" | "eDocumentKind">) => d.contactType === "customer" && !isSalesReturn(d);
 
 /** Komisyon faturası kesen platformlar (Excel aktarımındaki listeyle aynı) */
 export const COMMISSION_SUPPLIERS = ["Trendyol", "Set Kart", "Pluxee", "Yemek Sepeti", "Multinet", "Edenred", "Metropol", "Getir", "Migros Yemek"];
@@ -111,10 +143,13 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
   const currency = (str(a.currency) ?? "TRL").toUpperCase();
   const rate = currency === "TRL" || currency === "TRY" ? 1 : dec(a.exchange_rate) || 1;
 
+  let siteLines = 0;
   const lines: LineDraft[] = details.map((d) => {
     const da = d.attributes as Record<string, unknown>;
     const product = relOne(d, "product", index);
     const pa = (product?.attributes ?? {}) as Record<string, unknown>;
+    const code = str(pa.code);
+    if (code && SITE_PRODUCT_CODE.test(code)) siteLines++;
     const name = str(pa.name) ?? str(da.description) ?? "Kalem";
     const qty = dec(da.quantity);
     const unitPrice = dec(da.unit_price) * rate;
@@ -198,6 +233,9 @@ export function billToDraft(bill: Resource, included: Resource[] | undefined): B
       return r && !Array.isArray(r) ? { type: r.type, id: r.id } : null;
     })(),
     eDocumentTaxNo: eDocumentTaxNo(eDoc),
+    contactType: str((supplier?.attributes as Record<string, unknown> | undefined)?.account_type)?.toLowerCase() ?? null,
+    siteProducts: lines.length > 0 && siteLines === lines.length,
+    eDocumentKind: eDocumentKind(eDoc),
     description: str(a.description),
     invoiceNo: str(a.invoice_no) ?? str(a.invoice_id),
     // İadede iskonto pozitif kalır (amount − discount = eksi maliyet; fatura formu negatif iskontoyu kabul etmez)
@@ -225,6 +263,15 @@ function eDocumentTaxNo(doc: Resource | null): string | null {
   const a = doc.attributes as Record<string, unknown>;
   const direction = str(a.direction)?.toLowerCase();
   return direction && direction !== "inbound" ? null : str(a.from_vkn);
+}
+
+/** Bağlı gelen e-belgenin türü (`invoice_type_code`); giden belgede ya da tür yoksa null */
+function eDocumentKind(doc: Resource | null): string | null {
+  if (doc?.type !== "e_invoices") return null;
+  const a = doc.attributes as Record<string, unknown>;
+  const direction = str(a.direction)?.toLowerCase();
+  if (direction && direction !== "inbound") return null;
+  return str(a.invoice_type_code)?.toUpperCase() ?? null;
 }
 
 /**
@@ -307,12 +354,13 @@ export function newInvoicePayment(
 
 /**
  * Bu fatura panele alınmalı mı. İptal ve tekrarlayan şablonlar alınmaz; arşivlenmiş fatura (Paraşüt'te yalnızca
- * listeden gizlenmiş) geçerli bir giderdir ve alınır.
+ * listeden gizlenmiş) geçerli bir giderdir ve alınır. Satış iadesi (isSalesReturn) tedarikçi faturası değildir.
  */
 export function shouldImport(d: BillDraft): { ok: true } | { ok: false; reason: string } {
   if (d.itemType === "cancelled") return { ok: false, reason: "iptal" };
   if (d.itemType.startsWith("recurring")) return { ok: false, reason: "tekrarlayan şablon" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { ok: false, reason: "tarihsiz" };
+  if (isSalesReturn(d)) return { ok: false, reason: SALES_RETURN };
   return { ok: true };
 }
 

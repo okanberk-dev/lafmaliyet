@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, like, lt, notInArray, notLike, or, sql } from "drizzle-orm";
 
 import { cleanTaxNumber } from "@/app/panel/tedarikciler/logic";
 import { COMMISSION_CATEGORY, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
@@ -17,11 +17,13 @@ import { getDb, schema as s } from "@/server/db";
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
 import { MANAGED_QTY_NOTE } from "./constants";
 import { readParasutConfig } from "./config";
-import type { ListResponse, ShowResponse } from "./jsonapi";
-import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
+import { str, type ListResponse, type ShowResponse } from "./jsonapi";
+import { categoryNeedsReview, eInvoiceToDraft, isSupplierReturn, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
 import { readEInvoiceLines, type LineReadStats } from "./lines";
 import {
   billToDraft,
+  CUSTOMER_CONTACT_NOTE,
+  customerContactBill,
   eInvoiceDeleted,
   feedsSupplierHistory,
   findByEInvoiceNo,
@@ -29,12 +31,14 @@ import {
   newInvoicePayment,
   nextTaxNumber,
   pickCategory,
+  SALES_RETURN,
   shouldImport,
   supplierHistory,
   supplierKey,
   type BillDraft,
   type ExistingInvoice,
 } from "./mapping";
+import { mergeReturns, parseReturnLog, RETURN_KEEP_DAYS, RETURNS_KEY, type ReturnEntry, type ReturnLog } from "./returns";
 import { backfillSupplierTaxNumbers, TAX_BACKFILL_KEY } from "./tax-backfill";
 
 const CURSOR_KEY = "parasut.cursor";
@@ -53,8 +57,14 @@ const DUE_KEY = "parasut.dueDates";
 export const IGNORE_KEY = "parasut.ignore";
 /** Tedarikçi geçmişinin kaldığı yer: Paraşüt kişi kimliği → sonraki çalışmanın okuyacağı sayfa (eskiden yeniye) */
 const HISTORY_KEY = "parasut.supplierHistory";
+/**
+ * Geç girilen faturalar: en son görülen gider faturası kimliği. Paraşüt kimlikleri artarak verilir; tarihi eski ama
+ * yeni girilmiş fatura (kâğıt fatura, KDV'si sonraki yıl sonuna kadar indirilebilir) 75 günlük pencerenin dışında
+ * kalsa da kimliği büyüktür (catchLateBills)
+ */
+const LAST_BILL_KEY = "parasut.lastBillId";
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler (vergi no tamamlaması da baştan başlar) */
-export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY, TAX_BACKFILL_KEY];
+export const PARASUT_STATE_KEYS = [CURSOR_KEY, RESUME_KEY, PENDING_KEY, E_CURSOR_KEY, HISTORY_KEY, LAST_BILL_KEY, TAX_BACKFILL_KEY];
 const PLACEHOLDER_SUPPLIER = "Paraşüt tedarikçisi";
 /** Önceki eşitlemeden sonra değişmiş olabilecek faturalar için geriye bakış */
 const LOOKBACK_DAYS = 75;
@@ -75,6 +85,8 @@ const FETCH_SHARE = 0.6;
 const CONTACTS_SHARE = 0.75;
 /** Bir çalışmada tek tek yeniden okunacak en fazla fatura (listede görünmeyenler + pencere dışı ödenmemişler) */
 const RECHECK_LIMIT = 8;
+/** Geç girilenler için bir çalışmada en çok okunacak sayfa (25'er fatura; günde birkaç fatura girilir) */
+const LATE_PAGES = 4;
 /**
  * "supplier" belgelenen include listesinde yok ama çalışıyor (topluluk istemcileri); reddedilirse
  * tedarikçisiz, o da olmazsa ürünsüz istenir. Tedarikçi adı gelmeyen faturalar için /contacts/{id} okunur.
@@ -137,7 +149,8 @@ function supplierAliases(names: string[]) {
   };
 }
 
-type ContactCache = Record<string, { name: string; taxNo: string | null }>;
+/** Kişi kartlarının önbelleği: ad, vergi no ve tür (`account_type`; eski kayıtlarda yok) */
+type ContactCache = Record<string, { name: string; taxNo: string | null; type?: string | null }>;
 
 type Existing = ExistingInvoice & {
   eInvoiceId: string | null;
@@ -178,6 +191,33 @@ interface Ctx {
   paymentsSince: string;
   /** Bu çalışmada vergi nosu yazılan fatura (yeni ve var olan; özet satırında, "güncellendi"ye sayılmaz) */
   taxFilled: number;
+  /** Bu çalışmanın listesinde görünen gider faturaları (yeniden içeri alınan e-fatura: eski fatura hâlâ duruyor mu) */
+  listed: Set<string>;
+  /** Gider faturası Paraşüt'te silinmiş ya da iptal mi (tek okuma; bilinemezse false: kayıt taşınmaz) */
+  billGone: (externalId: string) => Promise<boolean>;
+  /** Bu çalışmada görülen, panele girmeyen iadeler (kimliğe göre) */
+  returns: { sales: Map<string, Omit<ReturnEntry, "seenAt">>; supplier: Map<string, Omit<ReturnEntry, "seenAt">> };
+}
+
+/** Panele girmeyen iadeyi bu çalışmanın listesine ekler (çalışma sonunda saklanır: saveReturns) */
+function noteReturn(ctx: Ctx, kind: keyof ReturnLog, e: Omit<ReturnEntry, "seenAt">) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(e.date)) ctx.returns[kind].set(e.id, e);
+}
+
+/**
+ * Bu çalışmanın iadelerini saklanan listeye katar (eskiler RETURN_KEEP_DAYS günde düşer); yeni görülenlerin sayısını
+ * döner (eşitleme özeti yalnız yenileri söyler, aynı iade her sabah yeniden yazılmasın)
+ */
+async function saveReturns(ctx: Ctx, today: string): Promise<Record<keyof ReturnLog, number>> {
+  if (!ctx.returns.sales.size && !ctx.returns.supplier.size) return { sales: 0, supplier: 0 };
+  const stored = parseReturnLog(await getState(RETURNS_KEY));
+  const { log, fresh } = mergeReturns(
+    stored,
+    { sales: ctx.returns.sales.values(), supplier: ctx.returns.supplier.values() },
+    { now: new Date().toISOString(), cutoff: addDays(today, -RETURN_KEEP_DAYS) },
+  );
+  await setState(RETURNS_KEY, log);
+  return fresh;
 }
 
 /**
@@ -206,25 +246,51 @@ function rememberDue(ctx: Ctx, externalId: string, dueDate: string | null, unpai
 
 const loadRules = () => getDb().select().from(s.parasutCategoryRules);
 
-/** Paraşüt'te kaldırılmış (iptal, silinmiş) bir faturanın panel karşılığı */
-async function retire(match: Existing, reason: string, ctx: Ctx) {
+/** Gider faturasının kalemleri (e-fatura belgesinden okunan `ubl:` kalemleri değil) */
+const billLinesOf = (invoiceId: number) => and(eq(s.parasutBillLines.invoiceId, invoiceId), notLike(s.parasutBillLines.externalId, "ubl:%"));
+
+/**
+ * Paraşüt'te kaldırılmış (iptal, silinmiş) ya da gider sayılmayan (satış iadesi) bir faturanın panel karşılığı.
+ *
+ * `billOnly`: yalnız gider faturası kalktı (silindi, iptal edildi). Kayıt gelen bir e-faturaya da bağlıysa silinmez:
+ * e-fatura duruyor, borç da duruyor. Yalnız gider faturasının bağı çözülür (kategori, ödeme durumu, vade ve not
+ * kalır), gider faturasının kalemleri silinir; e-faturanın belgeden okunmuş kalemleri kalır, yoksa sıradaki okumada
+ * belgeden okunur. Bundan sonrasını e-fatura eşitlemesi yürütür: e-fatura reddedilir ya da arşivlenirse yalnız ondan
+ * açılan kayıt kalkar, yeniden içeri alınırsa kayıt yeni gider faturasına bağlanır. Silinseydi e-fatura aynı çalışmada
+ * "ödenmedi" yeni kayıt olarak geri gelir, işaretlenen ödeme kaybolurdu.
+ */
+async function retire(match: Existing, reason: string, ctx: Ctx, billOnly = false) {
   const db = getDb();
   ctx.touchedMonths.add(match.date.slice(0, 7));
   if (match.externalId) rememberDue(ctx, match.externalId, null, false);
+  if (billOnly && match.eInvoiceId) {
+    const syncedAt = new Date();
+    await db.delete(s.parasutBillLines).where(billLinesOf(match.id));
+    const keepsLines = ctx.ublLines.has(match.id);
+    await db
+      .update(s.invoices)
+      .set({ externalId: null, parasutUnpaid: null, outstanding: null, syncedAt, ...(keepsLines ? {} : { ublReadAt: null }) })
+      .where(eq(s.invoices.id, match.id));
+    Object.assign(match, { externalId: null, parasutUnpaid: null, outstanding: null, syncedAt });
+    ctx.counts.updated++;
+    return;
+  }
   if (match.origin === "parasut") {
     await db.delete(s.invoices).where(eq(s.invoices.id, match.id));
     const i = ctx.existing.indexOf(match);
     if (i >= 0) ctx.existing.splice(i, 1);
     ctx.counts.removed++;
   } else {
-    // Elle/Excel'le girilmiş kayıt silinmez: bağı çözülür ve not düşülür
+    // Elle/Excel'le girilmiş kayıt silinmez: bağı çözülür ve not düşülür. E-faturaya da bağlıysa belgeden okunan
+    // kalemleri kalır; okunmamışsa sıradaki okumada belgeden okunur
     const note = `${match.note ? `${match.note} · ` : ""}Paraşüt'te ${reason} — kontrol edin`;
     const syncedAt = new Date();
+    const rereadLines = Boolean(match.eInvoiceId) && !ctx.ublLines.has(match.id);
     await db
       .update(s.invoices)
-      .set({ externalId: null, source: match.origin, syncedAt, parasutUnpaid: null, note })
+      .set({ externalId: null, source: match.origin, syncedAt, parasutUnpaid: null, note, ...(rereadLines ? { ublReadAt: null } : {}) })
       .where(eq(s.invoices.id, match.id));
-    await db.delete(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, match.id));
+    await db.delete(s.parasutBillLines).where(billLinesOf(match.id));
     Object.assign(match, { externalId: null, source: match.origin, parasutUnpaid: null, note, syncedAt });
     ctx.counts.updated++;
   }
@@ -238,7 +304,20 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   // Aynı fatura e-fatura eşitlemesiyle (içeri alınmadan) zaten açılmış olabilir: e-belge kimliği önce bakılır
   const eInvoiceId = d.eDocument?.type === "e_invoices" ? d.eDocument.id : null;
   const byExt = ctx.existing.find((e) => e.externalId === d.externalId) ?? null;
-  const byEDoc = !byExt && eInvoiceId ? (ctx.existing.find((e) => e.eInvoiceId === eInvoiceId && !e.externalId) ?? null) : null;
+  const holder = !byExt && eInvoiceId ? (ctx.existing.find((e) => e.eInvoiceId === eInvoiceId) ?? null) : null;
+  let byEDoc = holder && !holder.externalId ? holder : null;
+  // E-faturanın kaydı başka bir gider faturasına bağlı: e-fatura Paraşüt'te o fatura silinip yeniden içeri alındıysa
+  // kayıt yenisine geçer (ödeme durumu, kategori, not korunur; tek kayıt). Eski fatura hâlâ duruyorsa aynı e-fatura
+  // iki gider faturasında: yenisi açılır ama kontrol bekler, çift sayım görünür olsun
+  let relinkFrom: string | null = null;
+  let twin: Existing | null = null;
+  if (holder?.externalId) {
+    const gone = !ctx.listed.has(holder.externalId) && (await ctx.billGone(holder.externalId));
+    if (gone) {
+      byEDoc = holder;
+      relinkFrom = holder.externalId;
+    } else twin = holder;
+  }
   const match = (byExt ?? byEDoc ?? findExisting(d, ctx.existing)) as Existing | null;
   // Paneldeki e-fatura kaydı silinmiş (ei:<kimlik> yok sayılıyor): Paraşüt'te içeri alınınca gider faturası olarak da
   // geri gelmez; var olan bir kayda denk gelirse o kayıt yine bağlanır/güncellenir
@@ -247,7 +326,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   const eInvoiceFree = eInvoiceId && !ctx.existing.some((e) => e.eInvoiceId === eInvoiceId && e !== match) ? eInvoiceId : null;
   const verdict = shouldImport(d);
   if (!verdict.ok) {
-    if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx);
+    // Satış iadesi gider sayılmaz: daha önce gider olarak alındıysa e-faturası olsa da kalkar. İptal edilen gider
+    // faturasının yalnız bağı çözülür (e-faturası duruyorsa kayıt e-faturayla kalır)
+    const salesReturn = verdict.reason === SALES_RETURN;
+    if (salesReturn) noteReturn(ctx, "sales", { id: d.externalId, date: d.date, amount: Math.abs(d.payable), invoiceNo: d.invoiceNo });
+    if (match && match.externalId === d.externalId) await retire(match, verdict.reason, ctx, !salesReturn);
     return;
   }
   // Tedarikçinin vergi nosu: gelen e-faturadaki (imzalı belge) önce, yoksa Paraşüt'teki kişi kartındaki
@@ -282,8 +365,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     const card =
       supplierFix.supplier && match.origin === "parasut" && match.unpaid && !match.paidAt && !match.paymentRequestedAt ? ctx.paidOnDelivery(supplierFix.supplier, taxRaw ?? match.supplierTaxNumber) : null;
     const settle = card ? { unpaid: false, paidAt: match.date, paidVia: card.paymentMethod } : {};
-    const seenDue = match.externalId === d.externalId && Object.hasOwn(ctx.dueSeen, d.externalId) ? ctx.dueSeen[d.externalId] : undefined;
+    // Yeniden içeri alınan e-faturada eski gider faturasının vadesi: panelde ertelenen vade, Paraşüt'teki vade aynıysa kalır
+    const dueKey = match.externalId === d.externalId ? d.externalId : relinkFrom;
+    const seenDue = dueKey && Object.hasOwn(ctx.dueSeen, dueKey) ? ctx.dueSeen[dueKey] : undefined;
     const dueDate = syncedDueDate(match.dueDate, d.dueDate, seenDue);
+    if (relinkFrom) rememberDue(ctx, relinkFrom, null, false);
     await db
       .update(s.invoices)
       .set({ ...common, ...(keepOutstanding ? { outstanding: match.outstanding } : {}), ...supplierFix, ...settle, dueDate })
@@ -321,6 +407,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
       ctx.paymentsSince,
     );
     const supplierTaxNumber = cleanTaxNumber(taxRaw);
+    // Aynı e-fatura başka bir (hâlâ duran) gider faturasında ya da kişisi müşteri kartı: kayıt kontrol bekler
+    const doubt = [
+      twin ? `aynı e-fatura başka bir gider faturasında da var (${twin.invoiceNo ?? twin.externalId}); çift sayılmasın, kontrol edin` : "",
+      customerContactBill(d) ? CUSTOMER_CONTACT_NOTE : "",
+    ].filter(Boolean);
     const [row] = await db
       .insert(s.invoices)
       .values({
@@ -332,10 +423,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
         supplierTaxNumber,
         category,
         description: d.description,
-        needsReview: categoryNeedsReview(reason),
-        note: `Paraşüt'ten alındı · kategori: ${reason}`,
+        needsReview: categoryNeedsReview(reason) || doubt.length > 0,
+        note: [`Paraşüt'ten alındı · kategori: ${reason}`, ...doubt].join(" · "),
       })
       .returning({ id: s.invoices.id });
+    if (twin) console.warn("Paraşüt: aynı e-fatura iki gider faturasında", { eInvoiceId, bills: [twin.externalId, d.externalId] });
     invoiceId = row.id;
     if (supplierTaxNumber) ctx.taxFilled++;
     ctx.existing.push({
@@ -403,8 +495,11 @@ async function openRun(trigger: "cron" | "manual" | "history", started: number):
   });
 }
 
-/** Faturaları yazmanın bağlamı: paneldeki faturalar, kurallar, yok sayılanlar, vadeler, peşin kartlar */
-async function loadCtx(): Promise<Ctx> {
+/**
+ * Faturaları yazmanın bağlamı: paneldeki faturalar, kurallar, yok sayılanlar, vadeler, peşin kartlar. `client`
+ * verilirse yeniden içeri alınan e-faturanın eski gider faturası Paraşüt'e sorulur (yoksa kayıt taşınmaz)
+ */
+async function loadCtx(listed: Iterable<string> = [], client: ParasutClient | null = null): Promise<Ctx> {
   const db = getDb();
   const [existingRows, rules, ignoredList, dueSeen, ublRows, paidOnDelivery, paymentsSince] = await Promise.all([
     db
@@ -462,7 +557,20 @@ async function loadCtx(): Promise<Ctx> {
     paidOnDelivery,
     paymentsSince,
     taxFilled: 0,
+    listed: new Set(listed),
+    billGone: client ? (id) => billGone(client, id) : async () => false,
+    returns: { sales: new Map(), supplier: new Map() },
   };
+}
+
+/** Gider faturası Paraşüt'te silinmiş (404) ya da iptal edilmiş mi; okunamazsa false (kayıt yerinde kalır) */
+async function billGone(client: ParasutClient, externalId: string): Promise<boolean> {
+  try {
+    const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(externalId)}`);
+    return str(res.data.attributes.item_type) === "cancelled";
+  } catch (e) {
+    return e instanceof ParasutError && !(e instanceof ParasutAuthError) && e.status === 404;
+  }
 }
 
 /**
@@ -555,7 +663,10 @@ export async function syncParasut(
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, contacts, started + deadline * CONTACTS_SHARE);
 
     // ---- panel verisi
-    const ctx = await loadCtx();
+    const ctx = await loadCtx(
+      drafts.map((d) => d.externalId),
+      client,
+    );
 
     let maxDate = resume?.maxDate ?? "";
     let processedUntilPage = startPage - 1;
@@ -603,13 +714,23 @@ export async function syncParasut(
             break;
           }
           try {
-            if (err instanceof ParasutError && err.status === 404) await retire(e, "silinmiş", ctx);
+            if (err instanceof ParasutError && err.status === 404) await retire(e, "silinmiş", ctx, true);
             else console.error("Paraşüt yeniden denetim", externalId, err);
           } catch (inner) {
             console.error("Paraşüt yeniden denetim", externalId, inner);
           }
         }
         rechecked++;
+      }
+    }
+
+    // ---- geç girilen eski tarihli faturalar (kimlik sırasıyla; tam turdan sonra, e-faturalara süre kalacak kadar)
+    let late: { applied: number; done: boolean } | null = null;
+    if (reachedEnd && !partial && Date.now() - started < deadline - 14_000) {
+      try {
+        late = await catchLateBills(client, ctx, { include, contacts, until: started + deadline * CONTACTS_SHARE });
+      } catch (err) {
+        if (!(err instanceof ParasutDeadlineError)) console.error("Paraşüt geç girilen faturalar", err);
       }
     }
 
@@ -655,6 +776,7 @@ export async function syncParasut(
     }
 
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
+    const returns = await saveReturns(ctx, today);
     const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
     if (partial && !reachedEnd) {
       // Hiç sayfa yazılamadıysa kalınan yer değişmez
@@ -682,6 +804,9 @@ export async function syncParasut(
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
+      late?.applied ? `${late.applied} geç girilmiş eski fatura alındı` : "",
+      returns.sales ? `${returns.sales} satış iadesi gider sayılmadı` : "",
+      returns.supplier ? `${returns.supplier} tedarikçiye iade panele girmedi (Paraşüt sayfasında)` : "",
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
@@ -862,9 +987,13 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     const cache = (await getState<ContactCache>(CONTACTS_KEY)) ?? {};
     if (!include.startsWith("supplier")) await fillSupplierNames(client, drafts, cache, started + deadline * CONTACTS_SHARE);
 
-    const ctx = await loadCtx();
+    const ctx = await loadCtx(
+      drafts.map((d) => d.externalId),
+      client,
+    );
     for (const d of drafts) await applyDraft(d, ctx);
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
+    await saveReturns(ctx, todayTR());
     const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
     await setState(HISTORY_KEY, progress);
 
@@ -902,6 +1031,55 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
   }
 }
 
+/**
+ * Geç girilen faturalar: Paraşüt'e bugün girilen ama tarihi 75 günlük pencereden eski fatura günlük taramada görünmez
+ * (liste tarihe göre okunur). Kimliğe göre azalan sırayla (`sort=-id`) en son görülen kimliğe kadar okunur, panelde
+ * olmayanlar yazılır (pencere içindekiler bu çalışmada zaten yazıldı, tekrar yazılmaz). İlk çalışmada yalnız en büyük
+ * kimlik kaydedilir (eskiler "Tarihten eşitle" ile alınır). Sayfa sınırı ya da süre dolarsa kimlik ilerlemez, sonraki
+ * çalışma baştan okur.
+ */
+async function catchLateBills(
+  client: ParasutClient,
+  ctx: Ctx,
+  opts: { include: string; contacts: ContactCache; until: number },
+): Promise<{ applied: number; done: boolean }> {
+  const stored = await getState<{ id?: unknown }>(LAST_BILL_KEY);
+  const last = typeof stored?.id === "number" && Number.isSafeInteger(stored.id) ? stored.id : null;
+  let top = last ?? 0;
+  // Son görülen kimliğe ya da listenin sonuna inildi: yalnız o zaman kimlik ilerler
+  let complete = false;
+  const found: BillDraft[] = [];
+  for await (const page of client.pages<Record<string, unknown>>("purchase_bills", { sort: "-id", include: opts.include }, last === null ? 1 : LATE_PAGES)) {
+    let reached = false;
+    for (const bill of page.data) {
+      const n = Number(bill.id);
+      if (!Number.isSafeInteger(n)) continue;
+      if (n > top) top = n;
+      if (last !== null && n <= last) {
+        reached = true;
+        break;
+      }
+      found.push(billToDraft(bill, page.included));
+    }
+    const total = page.meta?.total_pages;
+    if (reached || !page.data.length || (total !== undefined && page.page >= total)) {
+      complete = true;
+      break;
+    }
+    if (last === null || Date.now() > opts.until) break;
+  }
+  if (last === null) {
+    if (top) await setState(LAST_BILL_KEY, { id: top, at: new Date().toISOString() });
+    return { applied: 0, done: true };
+  }
+  if (!opts.include.startsWith("supplier")) await fillSupplierNames(client, found, opts.contacts, opts.until);
+  const before = ctx.counts.created + ctx.counts.updated;
+  for (const d of found) ctx.listed.add(d.externalId);
+  for (const d of found) await applyDraft(d, ctx);
+  if (complete && top > last) await setState(LAST_BILL_KEY, { id: top, at: new Date().toISOString() });
+  return { applied: ctx.counts.created + ctx.counts.updated - before, done: complete };
+}
+
 /** Önbellekteki tedarikçi adlarını taslaklara yazar; ad henüz okunamadıysa yer tutucu kalır (sonraki eşitlemede düzelir) */
 function applyContacts(drafts: BillDraft[], cache: ContactCache) {
   for (const d of drafts) {
@@ -911,6 +1089,7 @@ function applyContacts(drafts: BillDraft[], cache: ContactCache) {
       d.supplier = c.name;
       d.supplierTaxNo = c.taxNo;
       d.supplierResolved = true;
+      d.contactType = c.type?.toLowerCase() ?? null;
     } else {
       d.supplier = PLACEHOLDER_SUPPLIER;
     }
@@ -924,8 +1103,8 @@ async function fillSupplierNames(client: ParasutClient, drafts: BillDraft[], cac
   for (const id of missing) {
     if (Date.now() > until) break;
     try {
-      const res = await client.show<{ name?: string; tax_number?: string }>(`contacts/${encodeURIComponent(id)}`);
-      cache[id] = { name: res.data.attributes.name?.trim() || PLACEHOLDER_SUPPLIER, taxNo: res.data.attributes.tax_number ?? null };
+      const res = await client.show<{ name?: string; tax_number?: string; account_type?: string }>(`contacts/${encodeURIComponent(id)}`);
+      cache[id] = { name: res.data.attributes.name?.trim() || PLACEHOLDER_SUPPLIER, taxNo: res.data.attributes.tax_number ?? null, type: res.data.attributes.account_type ?? null };
       added++;
     } catch (e) {
       if (e instanceof ParasutDeadlineError || e instanceof ParasutAuthError) break;
@@ -960,6 +1139,17 @@ async function syncEInvoices(client: ParasutClient, ctx: Ctx, opts: { windowStar
       if (d.date && d.date < opts.windowStart) {
         older = true;
         continue;
+      }
+      // Kafenin tedarikçiye iadesi (giden iade e-faturası) panele girmez, Paraşüt sayfasında listelenir
+      if (isSupplierReturn(d)) {
+        noteReturn(ctx, "supplier", {
+          id: `ei:${d.eInvoiceId}`,
+          date: d.date,
+          amount: Math.abs(d.payable),
+          invoiceNo: d.invoiceNo,
+          supplier: d.supplier,
+          taxNumber: cleanTaxNumber(d.receiverTaxNo),
+        });
       }
       if (!d.inbound) continue;
       stats.fetched++;
@@ -1004,6 +1194,10 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   const verdict = shouldImportEInvoice(d);
   let match: Existing | null = ctx.existing.find((e) => e.eInvoiceId === d.eInvoiceId) ?? null;
   if (!match && d.importedBillId) match = ctx.existing.find((e) => e.externalId === d.importedBillId) ?? null;
+  // Gelen iade e-faturası (satış iadesi): içeri alınmışsa gider faturasının kimliğiyle (iki yoldan bir kez listelenir)
+  if (!verdict.ok && verdict.reason === SALES_RETURN) {
+    noteReturn(ctx, "sales", { id: d.importedBillId ?? key, date: d.date, amount: Math.abs(d.payable), invoiceNo: d.invoiceNo });
+  }
 
   if (!verdict.ok) {
     // Gider faturasına bağlı kayıt (içeri alınmış ya da Paraşüt'e elle girilmiş) gider faturasını izler: e-faturanın
@@ -1086,7 +1280,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     supplier === PLACEHOLDER_SUPPLIER ? new Map() : ctx.history,
     INVOICE_CATEGORIES,
   );
-  const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}${d.refund ? " · iade faturası" : ""}`;
+  const note = `Paraşüt e-faturası (içeri alınmadan) · kategori: ${reason}${d.withholding ? " · tevkifatlı: tutarı kontrol edin" : ""}`;
   // E-faturada ödeme bilgisi yok (parasutUnpaid null)
   const pay = newInvoicePayment(
     { payable: d.payable, date: d.date, parasutUnpaid: null, commission: category === COMMISSION_CATEGORY && !categoryNeedsReview(reason) },

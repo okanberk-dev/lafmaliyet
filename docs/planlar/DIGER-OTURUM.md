@@ -79,7 +79,10 @@ Paraşüt istemcisini (`src/server/parasut/client.ts`) kopyalamışlar.
 - **e-Arşiv (#215, varsayılan kapalı):** site aynı Paraşüt firmasında **kendi API kullanıcısıyla** müşteri kartı
   (`account_type: customer`), satış faturası, e-Arşiv ve ürün açar. Panel yalnız alış faturalarını
   (`purchase_bills`), gelen e-faturaları, tedarikçi kartlarını ve alış faturasının tedarikçisini okur; sitenin
-  kayıtları panele karışmaz. İstek sınırı (10 saniyede 10 istek) firma başına paylaşılır: panelin istemcisi istekleri
+  kayıtları panele karışmaz. **Tek istisna iadeler (23 Ekim denetimi, düzeltildi):** muhasebeci sitenin faturaladığı
+  bir siparişin iadesini Paraşüt'te "İade oluştur" ile keserse Paraşüt onu gider faturası (`refund`) yapar; şirket
+  müşterisinin iadesi gelen iade e-faturası olur. Panel bunları satış iadesi sayar, gider yazmaz (müşteri kartı, `LAF-`
+  ürün kodu, iade türündeki gelen e-belge; docs/PARASUT.md §2a). İstek sınırı (10 saniyede 10 istek) firma başına paylaşılır: panelin istemcisi istekleri
   aralıklar ve 429'da `Retry-After`'a uyar; sitenin günlük işi 06:00 UTC, panelinkiler 04:30 ve 05:00 UTC'de.
   **Sahibe:** sitenin Vercel'deki `PARASUT_USERNAME`'i panelin Paraşüt kullanıcısından farklı olmalı (aynı kullanıcı
   her oturum yenilemesinde diğerinin oturumunu düşürür).
