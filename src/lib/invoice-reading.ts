@@ -98,6 +98,18 @@ export function normalizeInvoiceReading(raw: InvoiceReadingRawT, ctx: { quantity
 /** Saklanan okumanın bugünkü hammadde için geçerli olup olmadığı (çarpan hammaddenin birimine göre sorulmuştu) */
 export const readingFits = (r: Pick<InvoiceReading, "unit">, unit: string) => r.unit === unit;
 
+/** Günlük sınırdan fotoğraflara ayrılan pay: sınırın yarısı, en az bu kadar okuma */
+export const AUTO_READ_RESERVE_MIN = 10;
+
+/**
+ * Kartın kendiliğinden okuması yapılabilir mi: sınır fotoğraflarla ortak (Z raporu, banka POS'u, fiş akşam okunur).
+ * Hammaddeler'i açmak bu payı yemesin diye kendiliğinden okuma, kalan sınır payın üstündeyken yapılır; düğme ("Faturayı
+ * oku") sınırın tamamını kullanır. Sınır 40 → bugün 20 okuma yapılmışsa kendiliğinden okuma durur.
+ */
+export function autoReadAllowed(usedToday: number, cap: number): boolean {
+  return cap - usedToday > Math.max(AUTO_READ_RESERVE_MIN, Math.ceil(cap / 2));
+}
+
 /**
  * Kartın ve bağlantı formunun okuma satırı: "Faturada: “…”. 1 Adet = 150 adet → adet başı 20,00 ₺ (şimdikinden %52
  * ucuz)." Az eminse "Emin değil; faturayı açıp bakın." eklenir (düğme gösterilmez). Birim fiyat bizim kalemimizden.

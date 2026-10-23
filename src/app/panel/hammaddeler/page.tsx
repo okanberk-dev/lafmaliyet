@@ -26,7 +26,7 @@ import { loadModel } from "@/server/data/dataset";
 import { priceWindowStart } from "@/server/data/price-alerts";
 import { loadHoldLines, loadPriceHolds } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
-import { invoiceReadingState, loadInvoiceReadings, readingKey } from "@/server/invoice-reading/read";
+import { holdReadingState, loadInvoiceReadings, readingKey } from "@/server/invoice-reading/read";
 
 import { waterSource } from "../ayarlar/water-text";
 
@@ -63,7 +63,7 @@ async function IngredientsContent() {
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
     loadPriceHolds(),
-    invoiceReadingState(),
+    holdReadingState(),
   ]);
   // Bekleyen önerilerin kalemleri (açıklama, aynı ürünün geçmişi) ve saklanan fatura okumaları
   const [holdLines, readings] = holds.pending.length
@@ -149,7 +149,8 @@ async function IngredientsContent() {
       reading: readingLine && suggestion?.kind !== "reading" ? { text: readingLine, low: reading!.confidence === "low" } : null,
       readError: stored?.status === "error" ? stored.error : null,
       // Kendiliğinden okuma: kanıtı ve okuması olmayan kartta bir kez; başka sekme okuyorsa bekler; okuma kapalıysa düğme yok
-      read: readState !== "on" ? null : running ? "running" : !stored && !evidence ? "auto" : "manual",
+      // Günlük sınırın fotoğraf payına inildiyse kendiliğinden okuma yok, düğme kalır
+      read: readState.state !== "on" ? null : running ? "running" : !stored && !evidence && readState.auto ? "auto" : "manual",
       hasReading: Boolean(stored && stored.status !== "running"),
     };
   });

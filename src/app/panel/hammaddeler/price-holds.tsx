@@ -64,6 +64,19 @@ export interface HoldView {
 
 /** Kendiliğinden okunan öneriler (sayfa yeniden çizilince ya da geliştirmede iki kez bağlanınca yeniden istenmesin) */
 const autoRead = new Set<number>();
+/** Kendiliğinden okumalar sırayla (birkaç kart aynı anda açılınca okumalar üst üste binmesin) */
+let autoQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Kartın kendiliğinden okuması yol işleyicisiyle, sunucu eylemiyle değil: Next eylemleri istemci başına tek tek
+ * yollar; 55 sn'ye varan okuma sürerken Onayla / Reddet / "Çarpanı X yap" sıraya girerdi. Hata sessiz: sonuç ya da
+ * okunamama nedeni sayfa tazelenince kartta
+ */
+function autoReadHold(id: number): Promise<void> {
+  const run = autoQueue.then(() => fetch(`/api/fiyat-onerileri/${id}/oku`, { method: "POST" }).catch(() => null));
+  autoQueue = run;
+  return run.then(() => undefined);
+}
 
 /** Son 3 günün kararı ya da geçersiz kalan öneri ("Son kararlar") */
 export interface RecentHoldView {
@@ -249,17 +262,20 @@ function HoldItem({
 
   // Kanıtı ve okuması olmayan kart açılınca fatura bir kez kendiliğinden okunur (öneri başına bir istek); sonuç sayfa
   // yenilenince kartta. Hata sessiz: kart okunamadı satırını gösterir
+  const router = useRouter();
+  const [autoReading, setAutoReading] = useState(false);
   useEffect(() => {
     if (x.read !== "auto" || autoRead.has(x.id)) return;
     autoRead.add(x.id);
-    startReading(async () => {
-      await readHoldInvoice({ id: x.id, mode: "auto" });
+    setAutoReading(true);
+    void autoReadHold(x.id).then(() => {
+      setAutoReading(false);
+      router.refresh();
     });
-  }, [x.id, x.read]);
+  }, [x.id, x.read, router]);
 
   // Başka sekme ya da yönetici okuyorsa (ya da sayfa okuma sürerken yenilendiyse) kart okuma bitene kadar 8 sn'de bir
   // tazelenir; yarıda kalan okuma 90 sn sonra "okunuyor" olmaktan çıkar, tazeleme de durur
-  const router = useRouter();
   useEffect(() => {
     if (x.read !== "running") return;
     const t = setInterval(() => router.refresh(), 8000);
@@ -274,7 +290,7 @@ function HoldItem({
       if (r.data.status === "busy") return void toast.message("Bu fatura şu an okunuyor; bitince kart kendiliğinden yenilenir.");
       toast.success(`${x.name}: fatura okundu`);
     });
-  const busyReading = reading || x.read === "running";
+  const busyReading = reading || autoReading || x.read === "running";
 
   return (
     <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
