@@ -873,6 +873,63 @@ test("KDV hatırlatıcısı: tahmin onun günlerinde; tutarı o dönemin kesin t
   assert.equal(zero.vat!.rows[0].source, "reminder");
 });
 
+test("KDV: Ödendi denen dönem tahmin olarak geri gelmez; ödenen tutar sonraki ayın devredenini sıfırlamaya devam eder", () => {
+  const anchor = { month: "2026-08", amount: 0 };
+  const kdvLines = (p: CashPlan) =>
+    lines(p)
+      .filter((l) => l.kind === "kdv" || l.key.startsWith("reminder:"))
+      .map((l) => [l.date, l.title, l.amount]);
+  // Tek seferlik "KDV Eylül" 28 Ekim'den önce ödendi (Ödendi onu kapatır): Eylül 28 Ekim'de yeniden düşülmez
+  const once = rem({ title: "KDV Eylül", kind: "vergi", amount: 27_300, dueDate: "2026-10-28", repeat: "none", active: false });
+  const o = withVat({ reminders: [once], vatAnchor: anchor, paidReminders: [{ id: once.id, dueDate: "2026-10-28", next: null, amount: 27_300 }] });
+  assert.equal(o.vat!.mode, "default");
+  assert.deepEqual(kdvLines(o), [["2026-11-28", "KDV (Ekim)", 42_100]]);
+  assert.deepEqual(
+    o.vat!.rows.map((r) => r.period),
+    ["2026-10"],
+  );
+  // "Geri al" kaydı siler: Eylül yine beklenir
+  assert.deepEqual(kdvLines(withVat({ reminders: [once], vatAnchor: anchor })), [
+    ["2026-10-28", "KDV (Eylül)", 27_300],
+    ["2026-11-28", "KDV (Ekim)", 42_100],
+  ]);
+  // Yeniden açılan tek seferlik dönemini yine bekler (yalnız onun günü: KDV hatırlatıcısı varken tahmin onun günlerinde)
+  assert.deepEqual(
+    kdvLines(withVat({ reminders: [{ ...once, active: true }], vatAnchor: anchor, paidReminders: [{ id: once.id, dueDate: "2026-10-28", next: null, amount: 27_300 }] })),
+    [["2026-10-28", "KDV Eylül", 27_300]],
+  );
+  // Ödendikten sonra kapatılan seri: ödenen dönem yine bitmiştir
+  const closed = kdvRem({ dueDate: "2026-11-28", anchorDate: "2026-10-28", active: false });
+  assert.deepEqual(kdvLines(withVat({ reminders: [closed], vatAnchor: anchor, paidReminders: [{ id: closed.id, dueDate: "2026-10-28", next: "2026-11-28", amount: null }] })), [
+    ["2026-11-28", "KDV (Ekim)", 42_100],
+  ]);
+  // Seride Eylül 27.200 yazılıydı; Ödendi tutarı sildi, seri 28 Kasım'da. Otomatik zincirde Eylül'den 140.200 ₺
+  // devrederdi (Ekim'de ödeme yok); ödenen tutar Eylül'ün kesin tutarı olarak kalır, Ekim 42.100
+  const series = kdvRem({ dueDate: "2026-11-28", anchorDate: "2026-10-28" });
+  const paid = withVat({ reminders: [series], paidReminders: [{ id: series.id, dueDate: "2026-10-28", next: "2026-11-28", amount: 27_200 }] });
+  assert.deepEqual(kdvLines(paid), [["2026-11-28", "KDV (Ekim)", 42_100]]);
+  assert.deepEqual(
+    paid.vat!.rows.map((r) => [r.period, r.estimate!.carryIn]),
+    [["2026-10", 0]],
+  );
+  // Tutarsız Ödendi zinciri değiştirmez (beyanname devreden göstermiş olabilir)
+  assert.deepEqual(kdvLines(withVat({ reminders: [series], paidReminders: [{ id: series.id, dueDate: "2026-10-28", next: "2026-11-28", amount: null }] })), []);
+  // "Tarihe kadar ödendi" Eylül ve Ekim'i birden kapatır
+  const through = kdvRem({ dueDate: "2026-12-28", anchorDate: "2026-10-28" });
+  const t = withVat({ reminders: [through], vatAnchor: anchor, paidReminders: [{ id: through.id, dueDate: "2026-10-28", next: "2026-12-28", amount: 27_300 }] });
+  assert.deepEqual(kdvLines(t), []);
+  assert.deepEqual(t.vat!.rows, []);
+  // KDV-2'nin Ödendi'si asıl KDV'nin dönemini kapatmaz
+  const v2 = rem({ title: "KDV2 Eylül", kind: "vergi", amount: 1_800, dueDate: "2026-10-25", repeat: "none", active: false });
+  assert.deepEqual(
+    kdvLines(withVat({ reminders: [v2], vatAnchor: anchor, paidReminders: [{ id: v2.id, dueDate: "2026-10-25", next: null, amount: 1_800 }] })).filter((l) => String(l[1]).startsWith("KDV (")),
+    [
+      ["2026-10-28", "KDV (Eylül)", 27_300],
+      ["2026-11-28", "KDV (Ekim)", 42_100],
+    ],
+  );
+});
+
 test("KDV: gecikmiş hatırlatıcı bugüne önceki dönemle; ertelenmiş kopya ve seri kendi dönemini alır; aynı aya ikinci hatırlatıcı listede", () => {
   const late = kdvRem({ dueDate: "2026-09-28" });
   const p = withVat({ reminders: [late], vatAnchor: { month: "2026-06", amount: 0 } });

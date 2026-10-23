@@ -60,7 +60,7 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     cashReports: reports.map((r) => ({ date: r.date, zTotal: r.zTotal, card: r.card, mealCard: r.mealCard, online: r.online })),
     invoices: up.items.filter((i) => i.source === "invoice"),
     reminders: up.reminders,
-    paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null })),
+    paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),
     goods: goods.rows,
     goodsSpanDays: goods.spanDays,
     vatAnchor: state.vatCarry ? { month: state.vatCarry.month, amount: state.vatCarry.amount } : null,
