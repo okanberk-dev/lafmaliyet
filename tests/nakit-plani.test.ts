@@ -27,7 +27,7 @@ import {
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import { vatMonthInputs } from "../src/lib/kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, postponeNote, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, fixedReminderAt, postponeNote, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
 import { canOpen } from "../src/lib/roles";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -426,6 +426,10 @@ test("sabit giderler KDV dahil ödenir: kiranın %20'si de çıkar, personel KDV
   const line = lineAt(carried, `reminder:${kira.id}@`)[0];
   assert.deepEqual([line.date, line.amount, line.estimated], ["2026-11-01", 37_200, true]);
   assert.equal(line.detail, "Sabit giderdeki tutar + %20 KDV");
+  // "Sabit giderlerden ekle" aynı tutarı yazar (fixedReminderAt): tutarlı hatırlatıcı planın ödediğini kesin taşır
+  const added = rem({ title: "Kira", amount: fixedReminderAt({ amount: 31_000, period: "aylik", section: "kira" }, [], "2026-11").amount, dueDate: "2026-11-01" });
+  const certain = lineAt(buildCashPlan(input({ months: monthsWith(fixed), fixedNames: fixed, settings, reminders: [added] })), `reminder:${added.id}@`)[0];
+  assert.deepEqual([certain.date, certain.amount, certain.estimated], ["2026-11-01", line.amount, false]);
   // KDV'siz kalemler eskisi gibi: açıklama "KDV dahil" demez
   const plain = buildCashPlan(input({ months: monthsWith([fixed[1]]), fixedNames: [fixed[1]], settings }));
   assert.match(plain.weeks[0].lines.find((l) => l.key === "fixed")!.detail!, /^Ay içine yayıldı: /);

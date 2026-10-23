@@ -4,7 +4,9 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { shiftMonth } from "@/lib/calc/engine";
 import { liveRecentPaid } from "@/lib/recent-paid";
+import { fixedReminderAt } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
@@ -33,15 +35,18 @@ export default function RemindersPage() {
 async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
-  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixed, unpaid, recentPaid] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixedRows, versions, unpaid, recentPaid] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
     db
-      .select({ id: s.fixedExpenses.id, name: s.fixedExpenses.name, amount: s.fixedExpenses.amount, period: s.fixedExpenses.period, section: s.fixedExpenses.section })
+      .select({ id: s.fixedExpenses.id, name: s.fixedExpenses.name, amount: s.fixedExpenses.amount, period: s.fixedExpenses.period, section: s.fixedExpenses.section, vatRate: s.fixedExpenses.vatRate })
       .from(s.fixedExpenses)
       .where(eq(s.fixedExpenses.active, true))
       .orderBy(asc(s.fixedExpenses.sortOrder)),
+    db
+      .select({ fixedExpenseId: s.fixedExpenseVersions.fixedExpenseId, fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
+      .from(s.fixedExpenseVersions),
     // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
     db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
     loadRecentPaid(),
@@ -49,6 +54,16 @@ async function RemindersContent() {
   // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura)
   // gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
   const undoable = liveRecentPaid(recentPaid, reminders, unpaid.map((i) => i.id));
+  // "Sabit giderlerden ekle"nin göstereceği tutar: varsayılan ilk ödeme ayında (gelecek ay) hatırlatıcıya yazılacak olan
+  const firstMonth = shiftMonth(today.slice(0, 7), 1);
+  const fixed = fixedRows.map((f) => {
+    const at = fixedReminderAt(
+      f,
+      versions.filter((v) => v.fixedExpenseId === f.id),
+      firstMonth,
+    );
+    return { id: f.id, name: f.name, amount: f.amount, period: f.period, section: f.section, reminderAmount: at.amount, vatRate: at.vatRate };
+  });
 
   return (
     <RemindersClient

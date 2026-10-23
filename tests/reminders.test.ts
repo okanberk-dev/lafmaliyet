@@ -10,6 +10,7 @@ import {
   daysBetween,
   digestSummary,
   dueNotifications,
+  fixedReminderAt,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
@@ -315,4 +316,25 @@ test("ay adının ekleri: bulunma ve tamlayan hâli", () => {
   assert.equal(monthGenitiveTR("2026-09"), "Eylül'ün");
   assert.equal(monthGenitiveTR("2026-07-03"), "Temmuz'un");
   assert.equal(dayLocativeTR("2026-11-01"), "1\u00a0Kasım'da");
+});
+
+test("Sabit giderlerden ekle: tutar ilk ödeme ayındaki sürümden, faturadaki KDV'siyle (nakit planı bunu kesin öder)", () => {
+  const kira = { amount: 150_000, period: "aylik" as const, section: "kira" as const, vatRate: null };
+  // Bölümün varsayılanı %20: plan ayda 180.000 öder, hatırlatıcı da 180.000 taşır (150.000 değil)
+  assert.deepEqual(fixedReminderAt(kira, [], "2026-11"), { period: "aylik", amount: 180_000, vatRate: 0.2 });
+  // Ekim'den geçerli zam: Kasım'daki ilk ödeme zamlı, Eylül'deki zamsız
+  const raise = [{ fromMonth: "2026-10", period: "aylik" as const, amount: 160_000 }];
+  assert.equal(fixedReminderAt(kira, raise, "2026-11").amount, 192_000);
+  assert.equal(fixedReminderAt(kira, raise, "2026-10").amount, 192_000);
+  assert.equal(fixedReminderAt(kira, raise, "2026-09").amount, 180_000);
+  // Birden çok sürümde ayda geçerli olan en son sürüm; sürüm dönemi de değiştirebilir
+  const two = [...raise, { fromMonth: "2027-01", period: "yillik" as const, amount: 1_000_000 }, { fromMonth: "2026-12", period: "aylik" as const, amount: 170_000 }];
+  assert.deepEqual(fixedReminderAt(kira, two, "2026-12"), { period: "aylik", amount: 204_000, vatRate: 0.2 });
+  assert.deepEqual(fixedReminderAt(kira, two, "2027-03"), { period: "yillik", amount: 1_200_000, vatRate: 0.2 });
+  // Personel KDV'siz; kalemde girilen oran bölümün önüne geçer (stopajlı şahıs kirası %0)
+  assert.equal(fixedReminderAt({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11").amount, 40_000);
+  assert.equal(fixedReminderAt({ ...kira, vatRate: 0 }, [], "2026-11").amount, 150_000);
+  assert.equal(fixedReminderAt({ ...kira, amount: 1_234.5, vatRate: 0.1 }, [], "2026-11").amount, 1_357.95);
+  // Tutarı 0 olan giderin hatırlatıcısı tutarsız (plan giderin tutarını taşır)
+  assert.equal(fixedReminderAt({ ...kira, amount: 0 }, [], "2026-11").amount, null);
 });

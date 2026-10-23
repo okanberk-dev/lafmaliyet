@@ -3,6 +3,9 @@
  * Tarihler "YYYY-MM-DD" metni, gün farkları Türkiye saatine göre takvim günü.
  */
 
+import type { FixedPeriod, FixedSection } from "./calc/types";
+import { fixedVatRate } from "./constants";
+
 export type ReminderKind = "odeme" | "vergi" | "kira" | "maas" | "fatura" | "diger";
 export type ReminderRepeat = "none" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -395,6 +398,23 @@ export function postponedFrom(note: string | null): string | null {
 
 /** "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı not: Ödemeler'de kaynağı, nakit planında bordro olmadığını gösterir */
 export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
+
+/**
+ * "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı dönem ve tutar: ilk ödeme ayında geçerli sürümden (o aydan
+ * geçerli zam dahil), tutar faturadaki KDV'siyle (nakit planı sabit gideri KDV dahil öder; hatırlatıcının tutarı
+ * bankadan çıkan paradır, plan onu olduğu gibi kesin sayar). Tutar 0 ise null.
+ */
+export function fixedReminderAt(
+  f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null },
+  versions: readonly { fromMonth: string; period: FixedPeriod; amount: number }[],
+  month: string,
+): { period: FixedPeriod; amount: number | null; vatRate: number } {
+  let at: { fromMonth: string; period: FixedPeriod; amount: number } = { fromMonth: "", period: f.period, amount: f.amount };
+  for (const v of versions) if (v.fromMonth <= month && v.fromMonth >= at.fromMonth) at = v;
+  const vatRate = fixedVatRate(f);
+  const amount = Math.round(at.amount * (1 + vatRate) * 100) / 100;
+  return { period: at.period, amount: amount > 0 ? amount : null, vatRate };
+}
 
 // KDV tevkifatı (2 No.lu KDV beyannamesi, "KDV2"): ayrı beyanname ve ödeme. Asıl KDV sayılsa tutarı o ayın kesin KDV'si
 // olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı

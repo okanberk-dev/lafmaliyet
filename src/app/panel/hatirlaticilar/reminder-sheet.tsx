@@ -56,6 +56,9 @@ export interface FixedRow {
   amount: number;
   period: string;
   section: string;
+  /** Gelecek ayın 1'inde eklenirse hatırlatıcıya yazılacak tutar: o ayın sürümü, KDV dahil (fixedReminderAt) */
+  reminderAmount: number | null;
+  vatRate: number;
 }
 
 /**
@@ -501,7 +504,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
       const r = await addFixedExpenseReminder(f.id, days[f.id] ?? defaultFirst);
       if (!r.ok) return void toast.error(r.error);
       setAdded((a) => ({ ...a, [f.id]: r.data.dueDate }));
-      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}` });
+      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}${r.data.amount ? ` · ${money(r.data.amount)}` : ""}` });
     });
 
   return (
@@ -560,7 +563,8 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">
-                          {money(f.amount)} · {PERIOD_LABEL[f.period] ?? f.period}
+                          {money(f.reminderAmount ?? f.amount)}
+                          {f.vatRate > 0 ? ` (%${Math.round(f.vatRate * 100)} KDV dahil)` : ""} · {PERIOD_LABEL[f.period] ?? f.period}
                         </p>
                       </div>
                     </div>
