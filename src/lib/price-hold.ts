@@ -9,8 +9,10 @@
  */
 
 import { priceProduct, type Model } from "./calc/engine";
-import { dateTR, num } from "./format";
+import { dateTR, num, tl2, tlUnit } from "./format";
+import { sameFactor, type PackEvidence } from "./product-match";
 import { addDays } from "./reminders";
+import { bulkUnit } from "./supplier-prices";
 
 /** ±%40: bundan büyük fark onaya düşer (metinler "%40'tan fazla" der; değişirse onlar da değişmeli) */
 export const PRICE_HOLD_PCT = 0.4;
@@ -200,6 +202,136 @@ export function repeatCount(
   }
   return n;
 }
+
+/**
+ * Çarpan oranı ipucunun tek kanıtı: aynı ürünün (productKey) daha önceki ücretli bir faturası aynı çarpanla şimdiki
+ * fiyatın ±%10'unda. Öyleyse ürün eskiden bu çarpanla doğru fiyat verdi, şimdiki fark tedarikçinin birim değiştirmesidir
+ * (koli ↔ adet) ve "Çarpanı X yap" doğrudur. Yeni tedarikçi ya da ürün, tahmini fiyat ya da başka fiyatlı geçmiş kanıt
+ * değildir: oran gerçek bir fiyat değişimini gizlerdi (Yenilebilir bardak 150 AD. "Çarpanı 72 yap", Klips kapak
+ * "Çarpanı 10 yap"). Önceki faturalar "Önceki fatura"daki gibi: aynı gün başka fatura dahil, bedava kalem ve iade hariç.
+ */
+export function sameProductHistory(
+  lines: BillLine[],
+  hold: { ingredientId: number; invoiceId: number; invoiceDate: string; productKey: string; factor: number },
+  currentUnit: number,
+): boolean {
+  if (!(currentUnit > 0) || !(hold.factor > 0)) return false;
+  const own = lines.filter((l) => l.productKey === hold.productKey);
+  const links = new Map([[hold.productKey, { ingredientId: hold.ingredientId, factor: hold.factor }]]);
+  return invoicesBefore(own, links, hold.ingredientId, { invoiceId: hold.invoiceId, date: hold.invoiceDate }).some(
+    (p) => Math.abs(p.unitPrice / currentUnit - 1) <= REPEAT_PCT + EPS,
+  );
+}
+
+/** Kalemin birim fiyatı bu çarpanla: net ÷ (miktar × çarpan); bedava kalemde ya da iadede null */
+export function unitPriceFor(line: { quantity: number; netTotal: number }, factor: number): number | null {
+  const base = line.quantity * factor;
+  return base > 0 && line.netTotal > 0 ? line.netTotal / base : null;
+}
+
+/** Okunan ya da kanıtlı çarpan önerisi için gereken okuma (src/lib/invoice-reading.ts) */
+export interface ReadingFactor {
+  factor: number | null;
+  confidence: "high" | "medium" | "low";
+}
+
+export interface HoldSuggestion {
+  /** evidence: addaki ya da birimdeki paket boyu; reading: faturanın okunması (Claude); ratio: aynı ürünün geçmişiyle oran */
+  kind: "evidence" | "reading" | "ratio";
+  /** Önerilen çarpan ("Çarpanı X yap"); null: yalnız uyarı (oran tam sayı çarpan vermiyor) */
+  factor: number | null;
+  /** Önerilen çarpanla birim fiyat ve şimdikine göre farkı: gerçek bir fiyat değişimi mi, görünsün */
+  unitPrice: number | null;
+  pct: number | null;
+  evidence?: PackEvidence;
+  hint?: FactorHint;
+}
+
+/**
+ * Onay bekleyen fiyat kartının tek önerisi; kanıt sırası, ilk tutan kazanır (en çok bir "Çarpanı X yap"):
+ * 1. adındaki ya da birimindeki paket boyu (packEvidence), bağlantınınkinden farklıysa;
+ * 2. faturanın okunması, emin (high) ya da büyük olasılıkla (medium) ve bağlantınınkinden farklıysa;
+ * 3. çarpan oranı (factorHint), yalnız aynı ürünün geçmişi varsa (sameProductHistory);
+ * yoksa öneri yok (kart okumayı ya da "Faturayı oku"yu gösterir). Yeni çarpanla birim fiyat bizim kalemimizden hesaplanır.
+ */
+export function holdSuggestion(i: {
+  factor: number;
+  quantity: number;
+  netTotal: number;
+  /** Hammaddenin şimdiki birim fiyatı */
+  current: number;
+  evidence: PackEvidence | null;
+  reading: ReadingFactor | null;
+  history: boolean;
+}): HoldSuggestion | null {
+  const at = (f: number) => {
+    const unitPrice = unitPriceFor(i, f);
+    return { unitPrice, pct: unitPrice === null ? null : livePct(unitPrice, i.current) };
+  };
+  if (i.evidence && i.evidence.factor > 0 && !sameFactor(i.evidence.factor, i.factor)) return { kind: "evidence", factor: i.evidence.factor, evidence: i.evidence, ...at(i.evidence.factor) };
+  const r = i.reading;
+  if (r && r.factor !== null && r.factor > 0 && r.confidence !== "low" && !sameFactor(r.factor, i.factor)) return { kind: "reading", factor: r.factor, ...at(r.factor) };
+  const proposed = unitPriceFor(i, i.factor);
+  const hint = i.history && proposed !== null ? factorHint(i.current, proposed) : null;
+  if (!hint) return null;
+  const f = suggestedFactor(i.factor, hint);
+  return { kind: "ratio", factor: f, hint, ...(f ? at(f) : { unitPrice: null, pct: null }) };
+}
+
+/** "adet başı 20,00 ₺" / "kg başı 950,00 ₺" / "L başı 31,00 ₺" */
+export function perUnitText(unitPrice: number, unit: string): string {
+  const b = bulkUnit(unit);
+  const v = unitPrice * b.scale;
+  return `${b.per} başı ${Math.abs(v) >= 1 ? tl2(v) : tlUnit(v)}`;
+}
+
+/** "şimdikinden %52 ucuz" / "şimdikinden %18 pahalı" / "şimdikiyle aynı"; şimdiki fiyat yoksa null */
+export function vsCurrentText(unitPrice: number, currentUnit: number): string | null {
+  const p = livePct(unitPrice, currentUnit);
+  if (p === null) return null;
+  const shown = num(Math.abs(p) * 100);
+  if (Math.abs(p) < SAME_PCT || shown === "0") return "şimdikiyle aynı";
+  return `şimdikinden %${shown} ${p < 0 ? "ucuz" : "pahalı"}`;
+}
+
+/** "adet başı 20,00 ₺ (şimdikinden %52 ucuz)" */
+export function priceWithPct(unitPrice: number, unit: string, currentUnit: number): string {
+  const vs = vsCurrentText(unitPrice, currentUnit);
+  return `${perUnitText(unitPrice, unit)}${vs ? ` (${vs})` : ""}`;
+}
+
+/** "1 Adet = 150 adet" (faturadaki birim yoksa "1 birim") */
+export const factorText = (lineUnit: string | null, factor: number, unit: string) => `1 ${lineUnit?.trim() || "birim"} = ${num(factor, 3)} ${unit}`;
+
+/** Kanıtın başı: "Adında “150 AD.” yazıyor" / "Açıklamasında “…” yazıyor" / "Faturadaki birim “kg”" */
+export function evidenceLead(ev: PackEvidence): string {
+  if (ev.source === "unit") return `Faturadaki birim “${ev.text}”`;
+  return `${ev.source === "name" ? "Adında" : "Açıklamasında"} “${ev.text}” yazıyor`;
+}
+
+/**
+ * Kartta kanıtlı öneri: "Adında “150 AD.” yazıyor: 1 Adet = 150 adet olmalı. Öyle olursa adet başı 20,00 ₺ (şimdikinden
+ * %52 ucuz)."
+ */
+export function evidenceSuggestionText(ev: PackEvidence, s: { lineUnit: string | null; unit: string; unitPrice: number | null; currentUnit: number }): string {
+  const then = s.unitPrice !== null ? ` Öyle olursa ${priceWithPct(s.unitPrice, s.unit, s.currentUnit)}.` : "";
+  return `${evidenceLead(ev)}: ${factorText(s.lineUnit, ev.factor, s.unit)} olmalı.${then}`;
+}
+
+/**
+ * Kartta oran önerisi (yalnız aynı ürünün geçmişi varken): "Fiyat şimdikinin yaklaşık 12 katı: çarpan yanlış olabilir
+ * (1 Koli = 12.000 ml mi?). Çarpan yanlışsa alınan miktar da yanlış sayılır. Öyle olursa L başı 31,00 ₺ (şimdikiyle aynı)."
+ */
+export function ratioSuggestionText(hint: FactorHint, s: { lineUnit: string | null; unit: string; factor: number | null; unitPrice: number | null; currentUnit: number }): string {
+  const head = hint.direction === "up" ? `Fiyat şimdikinin yaklaşık ${num(hint.times)} katı` : `Fiyat şimdikinden yaklaşık ${num(hint.times)} kat düşük`;
+  const ask = s.factor ? ` (${factorText(s.lineUnit, s.factor, s.unit)} mi?)` : "";
+  const then = s.factor && s.unitPrice !== null ? ` Öyle olursa ${priceWithPct(s.unitPrice, s.unit, s.currentUnit)}.` : "";
+  return `${head}: çarpan yanlış olabilir${ask}. Çarpan yanlışsa alınan miktar da yanlış sayılır.${then}`;
+}
+
+/** Hammaddenin şimdiki fiyatı tahminiyse (varsayım) kartın satırı ve yüzde rozetinin eki */
+export const ESTIMATE_TEXT = "Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir.";
+export const ESTIMATE_BADGE = "tahmini fiyata göre";
 
 /**
  * Önerinin faturasından sonra gelen, hammaddenin fiyatını belirleyen en yeni fatura: eşitlemenin "en yeni fatura"sı

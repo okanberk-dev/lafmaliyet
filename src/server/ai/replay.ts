@@ -3,7 +3,8 @@
  * beş yanıt, docs/planlar/fotograf.md §10). Yalnız `next dev`te ve AI_REPLAY=1 iken açılır; canlıda (NODE_ENV
  * production) hiçbir koşulda devreye girmez. Hangi yanıtın döneceği türe ve deneme görsellerinin ölçüsüne göre seçilir
  * (docs/planlar/ekler/fotograf-eval/img: telefonda küçültülünce ölçüleri değişmez); başka bir fotoğrafa türün olağan
- * yanıtı döner. Görsel hiçbir yere gönderilmez.
+ * yanıtı döner. Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
+ * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez.
  */
 
 import { readFileSync } from "node:fs";
@@ -65,8 +66,8 @@ interface Recorded {
   model: string;
 }
 
-/** Türe ve görsele göre kayıtlı yanıt */
-export function replayAnswer(feature: AiFeature, size: { width: number; height: number } | null): Recorded {
+/** Türe ve görsele göre kayıtlı yanıt (fotoğraflar) */
+export function replayAnswer(feature: Exclude<AiFeature, "fatura">, size: { width: number; height: number } | null): Recorded {
   const image = size ? IMAGES[`${size.width}x${size.height}`] : undefined;
   const key = image ? `${feature}:${image}` : feature;
   const usage = { input_tokens: 4000, output_tokens: 300, iterations: [{ type: "message", model: null, input_tokens: 4000, output_tokens: 300 }] };
@@ -74,6 +75,19 @@ export function replayAnswer(feature: AiFeature, size: { width: number; height: 
   const file = FILES[key] ?? FILES[feature];
   const rec = JSON.parse(readFileSync(join(process.cwd(), "tests", "fixtures", "foto", `${file}.json`), "utf8")) as Recorded;
   return rec;
+}
+
+/** Fatura okumasının kayıtlı yanıtları: istemdeki kalem adına göre; tanınmayan kalem "bulunamadı" */
+const INVOICE_FILES: [RegExp, string][] = [
+  [/YENİLEBİLİR BARDAK 150 AD/, "bardak"],
+  [/PLASTİK KAPAK KLIPS/, "klips"],
+];
+
+export function replayInvoiceAnswer(task: string): Recorded {
+  const hit = INVOICE_FILES.find(([re]) => re.test(task));
+  if (hit) return JSON.parse(readFileSync(join(process.cwd(), "tests", "fixtures", "fatura", `${hit[1]}.json`), "utf8")) as Recorded;
+  const usage = { input_tokens: 2500, output_tokens: 200, iterations: [{ type: "message", model: null, input_tokens: 2500, output_tokens: 200 }] };
+  return { json: { found: false, line: null, perPackage: null, factor: null, confidence: "low", evidence: "", note: "Kayıtlı yanıtı olmayan kalem" }, usage, ms: 1200, model: "claude-haiku-5-5" };
 }
 
 /** Kayıtlı yanıtı gerçek bir çağrı gibi (kısa bir beklemeyle) döndüren istemci */
@@ -85,7 +99,8 @@ export function replayClient(feature: AiFeature): AiClient {
           const first = params.messages[0]?.content;
           const block = Array.isArray(first) ? first.find((b) => b.type === "image") : undefined;
           const data = block && block.type === "image" && block.source.type === "base64" ? block.source.data : "";
-          const rec = replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
+          const task = Array.isArray(first) ? first.map((b) => (b.type === "text" ? b.text : "")).join("\n") : "";
+          const rec = feature === "fatura" ? replayInvoiceAnswer(task) : replayAnswer(feature, imageSize(new Uint8Array(Buffer.from(data, "base64"))));
           await new Promise((r) => setTimeout(r, Math.min(rec.ms, 2500)));
           return { model: rec.model, stop_reason: "end_turn", stop_details: null, content: [{ type: "text", text: JSON.stringify(rec.json) }], usage: rec.usage, _request_id: "kayitli-yanit" };
         },

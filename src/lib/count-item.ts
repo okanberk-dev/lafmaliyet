@@ -1,13 +1,16 @@
 /**
- * Stok sayımı › "Listeye ekle": sayım listesine yeni kalem (yönetici ve personel). Kalem bir hammaddedir; fiyatı
- * bilinmediği için paket fiyatı 0 ve "Tahmini" açılır, yönetici Hammaddeler'den girer. Saf kurallar: ad anahtarı
- * (Türkçe büyük/küçük harf), aynı ad denetimi, sayım biriminden malzeme birimi, grubun varsayılan kategori ve KDV'si,
- * zildeki "fiyatı girilmemiş" metni. Sunucu eylemi (src/app/panel/sayim/actions.ts), sayım formu ve
- * tests/sayim-ekle.test.ts aynı kuralı kullanır; burada veritabanı ya da tarayıcı yok.
+ * Stok sayımı › "Listeye ekle": sayım listesine yeni kalem (yönetici ve personel). Kalem bir hammaddedir; paket fiyatı
+ * isteğe bağlıdır: yazılmazsa 0, yazılırsa o; ikisinde de "Tahmini" açılır, yönetici Hammaddeler'den doğrular. Reçete
+ * önerisindeki "Yeni malzeme" de aynı kuralla kalem açar. Saf kurallar: ad anahtarı (Türkçe büyük/küçük harf), aynı ad
+ * denetimi, sayım biriminden malzeme birimi, grubun varsayılan kategori ve KDV'si, yazılan tutarın okunması, kalemin
+ * yazılacak değerleri ve notu, personelin ay kuralı, zildeki "fiyatı girilmemiş" metni. Ortak sunucu çekirdeği
+ * (src/server/data/count-item.ts), iki eylem, sayım formu ve tests/sayim-ekle.test.ts aynı kuralı kullanır; burada
+ * veritabanı ya da tarayıcı yok.
  */
 
+import { parseNumberTR } from "./calc/expr";
 import type { CountUnit, Unit } from "./calc/types";
-import { num } from "./format";
+import { money, monthLabel, num } from "./format";
 
 /** Kayıtlı ad: baştaki / sondaki boşluk gider, aradaki boşluklar teke iner */
 export function cleanName(name: string): string {
@@ -22,6 +25,15 @@ export function cleanName(name: string): string {
  */
 export function nameKey(name: string): string {
   return cleanName(name).toLocaleLowerCase("tr-TR").replace(/ı/g, "i").replace(/â/g, "a").replace(/î/g, "i").replace(/û/g, "u");
+}
+
+/**
+ * Benzer ad anahtarı: nameKey'e ek olarak Türkçe harfler de sadeleşir (ç→c, ş→s, ğ→g, ö→o, ü→u). Türkçe olmayan
+ * klavyede yazılan "cilek surubu" listedeki "Çilek şurubu"dur: aynı ad denetimi ve reçetedeki malzeme araması bununla
+ * karşılaştırır, ikinci bir kalem açılmaz. nameKey migration'ın SQL anahtarıyla aynı kalır (sayim_yeni_kalemler).
+ */
+export function looseKey(name: string): string {
+  return nameKey(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 export const COUNT_ITEM_NAME_MIN = 2;
@@ -63,8 +75,8 @@ export type CountItemDuplicate = { kind: "counted" | "uncounted" | "inactive"; n
  * olan döner (kullanıcıya en işe yarar yönlendirme).
  */
 export function findDuplicate(name: string, existing: ExistingIngredient[]): CountItemDuplicate | null {
-  const key = nameKey(name);
-  const same = existing.filter((e) => nameKey(e.name) === key);
+  const key = looseKey(name);
+  const same = existing.filter((e) => looseKey(e.name) === key);
   const counted = same.find((e) => e.active && e.countUnit);
   if (counted) return { kind: "counted", name: counted.name };
   const active = same.find((e) => e.active);
@@ -77,8 +89,8 @@ export function findDuplicate(name: string, existing: ExistingIngredient[]): Cou
  * ekle" onu yeniden açmaz, `from` ayından itibaren de listeye alır (ör. Ekim'de eklenen şurup Eylül sayımına da girsin).
  */
 export function laterCountItem<T extends ExistingIngredient>(name: string, existing: T[], from: string): T | undefined {
-  const key = nameKey(name);
-  return existing.find((e) => e.active && e.countUnit && e.countFrom && e.countFrom > from && nameKey(e.name) === key);
+  const key = looseKey(name);
+  return existing.find((e) => e.active && e.countUnit && e.countFrom && e.countFrom > from && looseKey(e.name) === key);
 }
 
 /** Aynı ad bulununca gösterilen metin; yönetici ne yapacağını, personel kime yazacağını okur */
@@ -155,6 +167,139 @@ export function nextSortOrder(rows: { sortOrder: number }[]): number {
  */
 export function countFromMonth(month: string, current: string): string {
   return month < current ? month : current;
+}
+
+// ---------------------------------------------------------------- Yazılan tutar
+
+/** Okunan tutar: boşsa `value` null ve hata yok; okunamayan ya da sınır dışı tutarda `error` */
+export interface MoneyRead {
+  value: number | null;
+  error: string | null;
+}
+
+/**
+ * Personelin yazdığı tutar (satış fiyatı, paket fiyatı): boş bırakılabilir; Türkçe ("1.250,50") ya da noktalı
+ * ("1250.5") yazılır, kuruşa yuvarlanır. Yüzde işareti tutar değildir. `label` yalın ("Satış fiyatı"), `accusative`
+ * belirtme hâlinde ("Satış fiyatını") verilir.
+ */
+export function readMoneyText(text: string, field: { label: string; accusative: string; max: number }): MoneyRead {
+  const t = text.trim();
+  if (!t) return { value: null, error: null };
+  const parsed = t.includes("%") ? null : parseNumberTR(t);
+  if (parsed === null) return { value: null, error: `${field.accusative} sayıyla yazın` };
+  const value = Math.round(parsed * 100) / 100;
+  if (!(value > 0)) return { value: null, error: `${field.label} 0'dan büyük olmalı` };
+  if (value > field.max) return { value: null, error: `${field.label} çok büyük` };
+  return { value, error: null };
+}
+
+/** "Listeye ekle"de yazılan paket fiyatının üst sınırı (KDV hariç; fazladan yazılan sıfırlar burada durur) */
+export const COUNT_ITEM_PRICE_MAX = 1_000_000;
+
+/** "Paket fiyatı (₺, biliyorsanız)": boş bırakılabilir */
+export function readPackagePrice(text: string): MoneyRead {
+  return readMoneyText(text, { label: "Paket fiyatı", accusative: "Paket fiyatını", max: COUNT_ITEM_PRICE_MAX });
+}
+
+// ---------------------------------------------------------------- Kalemin yazılacak değerleri
+
+/** Personelin "Listeye ekle"ye yazamayacağı ay (sayımını değiştiremediği ay) */
+export const STAFF_MONTH_MESSAGE = "Personel yalnız bu ayın ve geçen ayın sayımına kalem ekleyebilir; daha eski bir ay için yöneticiye yazın";
+
+/** Personel yalnız sayımını değiştirebildiği ayda (bu ay ve geçen ay: `staffMonths`) kalem ekler; yönetici her ayda */
+export function countItemMonthIssue(role: "admin" | "staff", month: string, staffMonths: string[]): string | null {
+  return role !== "admin" && !staffMonths.includes(month) ? STAFF_MONTH_MESSAGE : null;
+}
+
+/** Kalem nereden eklendi: Stok sayımı › Listeye ekle ya da reçete önerisindeki "Yeni malzeme" */
+export type CountItemSource = "sayim" | "recete";
+
+/**
+ * Kalemin notu (Hammaddeler'de ve Tahmini dökümünde okunur): kim, ne zaman, nereden ekledi; paket fiyatını yazdıysa
+ * kimin yazdığı (yönetici neyi doğrulayacağını bilsin). `date`: "23.10.2026".
+ * "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi."
+ */
+export function countItemNote(by: string, date: string, opts: { pricedBy?: "admin" | "staff" | null; source?: CountItemSource } = {}): string {
+  const base = `Sayım listesine ${by} ekledi (${date}${opts.source === "recete" ? ", reçete önerisinden" : ""})`;
+  if (!opts.pricedBy) return `${base}.`;
+  return opts.pricedBy === "admin" ? `${base}; paket fiyatını yönetici yazdı.` : `${base}; paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi.`;
+}
+
+/** Formdan gelen kalem (sunucuda doğrulanmış) */
+export interface CountItemDraft {
+  name: string;
+  group: string;
+  countUnit: CountUnit;
+  packageDesc: string | null;
+  packageSize: number;
+  /** Yazılmadıysa null: paket fiyatı 0 açılır */
+  packagePrice: number | null;
+}
+
+/**
+ * Hammaddelerde paket fiyatı KDV hariçtir. Personel fişteki ya da etiketteki fiyatı (KDV dahil) yazar: grubun KDV
+ * oranıyla düşülür (120 ₺, %20 → 100 ₺). Yönetici Hammaddeler'deki gibi KDV hariç yazar. Yazılmadıysa 0.
+ */
+export function netPackagePrice(typed: number | null, vatRate: number, includesVat: boolean): number {
+  if (typed === null) return 0;
+  if (!includesVat || !(vatRate > 0)) return typed;
+  return Math.round((typed / (1 + vatRate)) * 100) / 100;
+}
+
+/**
+ * Yeni kalemin hammaddeler tablosuna yazılacak değerleri. Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zil "Fiyatı
+ * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Fiyat geçmişine
+ * satır yazılmaz (çekirdek yazmaz): yazılan tahmin başlangıç olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü
+ * (price-impact.ts ingredientChanges ilk satırı başlangıç sayar). Kategori ve KDV grubun en sık değerinden, sıra en
+ * sonda (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
+ */
+export function newCountItemValues(
+  draft: CountItemDraft,
+  rows: { countGroup: string | null; category: string; vatRate: number; active: boolean; sortOrder: number }[],
+  from: string,
+  note: string,
+  opts: { priceIncludesVat?: boolean } = {},
+) {
+  const defaults = groupDefaults(rows, draft.group);
+  return {
+    name: draft.name,
+    category: defaults.category,
+    supplier: null,
+    packageDesc: draft.packageDesc,
+    packagePrice: netPackagePrice(draft.packagePrice, defaults.vatRate, opts.priceIncludesVat ?? false),
+    packageSize: draft.packageSize,
+    unit: BASE_UNIT[draft.countUnit],
+    vatRate: defaults.vatRate,
+    note,
+    isEstimate: true,
+    priceSource: "manual" as const,
+    countUnit: draft.countUnit,
+    countGroup: draft.group,
+    countFrom: from,
+    sortOrder: nextSortOrder(rows),
+    active: true,
+  };
+}
+
+/**
+ * İşlem geçmişi satırı: "Çilek şurubu · SOS / ŞURUP / PÜRE · LT · paket fiyatı 760 ₺ (tahmini)"; reçete önerisinden
+ * eklendiyse sonuna "reçete önerisinden"; kalem zaten vardıysa (daha sonraki bir aydan itibaren listedeydi) hangi aydan
+ * itibaren listede olduğu.
+ */
+export function countItemLogDetail(item: {
+  name: string;
+  group: string;
+  countUnit: string;
+  existed: boolean;
+  from: string;
+  packagePrice: number | null;
+  source?: CountItemSource;
+}): string {
+  const parts = item.existed
+    ? [item.name, `${monthLabel(item.from)} sayımından itibaren`]
+    : [item.name, item.group, item.countUnit, item.packagePrice !== null ? `paket fiyatı ${money(item.packagePrice)} (tahmini)` : null];
+  if (item.source === "recete") parts.push("reçete önerisinden");
+  return parts.filter(Boolean).join(" · ");
 }
 
 /**

@@ -10,16 +10,29 @@ import { getDb, schema as s } from "@/server/db";
 
 import { costUsd } from "./pricing";
 import { replayClient, replayEnabled } from "./replay";
-import { AI_MODEL, aiErrorText, runExtraction, type AiClient, type AiErrorCode, type AiFeature, type AiImageType } from "./run";
+import {
+  AI_INVOICE_MODEL,
+  AI_MODEL,
+  aiErrorText,
+  runExtraction,
+  type AiClient,
+  type AiDocumentType,
+  type AiErrorCode,
+  type AiFeature,
+  type AiImageType,
+  type AiInput,
+  type AiModel,
+} from "./run";
 
 /*
- * Fotoğraftan okumanın kapısı (Claude): anahtar var mı, ayar açık mı, bugünkü sınır doldu mu, fotoğraf kaç kez okundu.
- * Her çağrı ai_calls'a yazılır (önce "running": aynı anda gelen iki okuma sınırı bir kez aşabilir, çökme de kalır);
- * görüntü ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY) yalnız sunucuda: sayfalar yalnız aiStatus().state
- * alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir, rakamlar elle yazılır (docs/FOTOGRAF.md).
+ * Fotoğraftan ve faturadan okumanın kapısı (Claude): anahtar var mı, ayar açık mı, bugünkü sınır doldu mu, fotoğraf kaç
+ * kez okundu. Her çağrı ai_calls'a yazılır (önce "running": aynı anda gelen iki okuma sınırı bir kez aşabilir, çökme de
+ * kalır); görüntü, PDF ve istem hiçbir yere yazılmaz. Anahtar (ANTHROPIC_API_KEY) yalnız sunucuda: sayfalar yalnız
+ * aiStatus().state alır. Anahtar yoksa (yerelde, önizlemelerde) fotoğraf yine eklenir, rakamlar elle yazılır
+ * (docs/FOTOGRAF.md); fatura okunmaz, kart bugünkü gibi kalır (docs/FATURA-OKUMA.md).
  */
 
-export { AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
+export { AI_INVOICE_MODEL, AI_MODEL, type AiErrorCode, type AiFeature } from "./run";
 
 export interface AiSettings {
   enabled: boolean;
@@ -98,23 +111,45 @@ export type AiResult<T> =
 
 const STATUS: Partial<Record<AiErrorCode, "refusal" | "incomplete" | "invalid">> = { refusal: "refusal", incomplete: "incomplete", invalid: "invalid" };
 
-/**
- * Görseli okur ve sonucu günlüğe yazar. Kapılar sırayla: anahtar, ayar, bugünkü sınır, fotoğraf başına 3 okuma.
- * Doğrulanmış okuma ai_calls.result'ta saklanır (karşılaştırmalar istemcinin gönderdiğine değil buna bakar);
- * `stored` saklanacak hâlini verir (ör. fişte vergi no düşer). Sonuç fotoğrafla birlikte silinir.
- */
-export async function extractImage<T>(req: {
+interface ExtractCall<T> {
   feature: AiFeature;
   userId: number;
   photoId: number | null;
-  image: { bytes: Uint8Array; mediaType: AiImageType };
   system: string;
   task: string;
   schema: z.ZodType<T>;
   maxTokens?: number;
   stored?: (data: T) => T;
-}): Promise<AiResult<T>> {
-  const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap), callId: null });
+}
+
+/**
+ * Görseli okur ve sonucu günlüğe yazar. Kapılar sırayla: anahtar, ayar, bugünkü sınır, fotoğraf başına 3 okuma.
+ * Doğrulanmış okuma ai_calls.result'ta saklanır (karşılaştırmalar istemcinin gönderdiğine değil buna bakar);
+ * `stored` saklanacak hâlini verir (ör. fişte vergi no düşer). Sonuç fotoğrafla birlikte silinir.
+ */
+export async function extractImage<T>(req: ExtractCall<T> & { image: { bytes: Uint8Array; mediaType: AiImageType } }): Promise<AiResult<T>> {
+  return extract({ ...req, model: AI_MODEL, keepResult: true });
+}
+
+/**
+ * Faturayı okur (Claude Haiku 5.5; PDF ya da faturanın görseli): fotoğrafla aynı kapılar (anahtar, Ayarlar › Fotoğraftan
+ * okuma, günlük sınır) ve günlük; fotoğraf başına sınır yok ("Yeniden oku" da sınıra sayılır). Okuma ai_calls'a yazılmaz,
+ * yalnız maliyet satırı: sonuç invoice_readings'te faturayla birlikte durur ve onunla silinir. Hata metinleri faturaya göre.
+ */
+export async function extractDocument<T>(
+  req: Omit<ExtractCall<T>, "feature" | "photoId"> & {
+    input: { document: { bytes: Uint8Array; mediaType: AiDocumentType } } | { image: { bytes: Uint8Array; mediaType: AiImageType } };
+    totalMs?: number;
+  },
+): Promise<AiResult<T>> {
+  const { input, ...rest } = req;
+  return extract({ ...rest, ...(input as AiInput), feature: "fatura", photoId: null, model: AI_INVOICE_MODEL, keepResult: false });
+}
+
+async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; totalMs?: number; keepResult: boolean }): Promise<AiResult<T>> {
+  const subject = req.feature === "fatura" ? "fatura" : "foto";
+  const tag = `[${subject}] okuma`;
+  const gate = (code: AiErrorCode, cap?: number): AiResult<T> => ({ ok: false, code, message: aiErrorText(code, cap, subject), callId: null });
   if (!aiConfigured()) return gate("nokey");
   const settings = await loadAiSettings();
   if (!settings.enabled) return gate("off");
@@ -124,12 +159,12 @@ export async function extractImage<T>(req: {
     const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
     if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
   }
-  const [call] = await db.insert(s.aiCalls).values({ feature: req.feature, model: AI_MODEL, status: "running", userId: req.userId, photoId: req.photoId }).returning({ id: s.aiCalls.id });
+  const [call] = await db.insert(s.aiCalls).values({ feature: req.feature, model: req.model, status: "running", userId: req.userId, photoId: req.photoId }).returning({ id: s.aiCalls.id });
   const t0 = Date.now();
   const client = replayEnabled() ? replayClient(req.feature) : liveClient();
   const res = await runExtraction(client, req);
   const ms = Date.now() - t0;
-  const cost = res.usage ? costUsd(res.usage, AI_MODEL) : null;
+  const cost = res.usage ? costUsd(res.usage, req.model) : null;
   const common = {
     servedModel: res.servedModel,
     stopReason: res.stopReason,
@@ -142,19 +177,19 @@ export async function extractImage<T>(req: {
     costUsd: cost?.usd ?? 0,
     fallback: cost?.fallback ?? false,
   };
-  if (cost && !cost.priceKnown) console.warn("[foto] okuma: fiyatı bilinmeyen model", res.servedModel);
+  if (cost && !cost.priceKnown) console.warn(`${tag}: fiyatı bilinmeyen model`, res.servedModel);
   if (!res.ok) {
     await db
       .update(s.aiCalls)
       .set({ ...common, status: STATUS[res.code] ?? "error", errorCode: res.code, error: res.detail.slice(0, 300) })
       .where(eq(s.aiCalls.id, call.id));
-    // Yöneticinin bakması gerekenler günlüğe (anahtar, görsel, istem asla)
-    if (res.code === "auth" || res.code === "billing" || res.code === "badrequest") console.error("[foto] okuma", res.code, res.status, res.requestId);
-    return { ok: false, code: res.code, message: res.message, callId: call.id };
+    // Yöneticinin bakması gerekenler günlüğe (anahtar, görsel, belge, istem asla)
+    if (res.code === "auth" || res.code === "billing" || res.code === "badrequest") console.error(tag, res.code, res.status, res.requestId);
+    return { ok: false, code: res.code, message: subject === "fatura" ? aiErrorText(res.code, undefined, subject) : res.message, callId: call.id };
   }
   await db
     .update(s.aiCalls)
-    .set({ ...common, status: "ok", result: (req.stored ? req.stored(res.data) : res.data) as object })
+    .set({ ...common, status: "ok", result: req.keepResult ? ((req.stored ? req.stored(res.data) : res.data) as object) : null })
     .where(eq(s.aiCalls.id, call.id));
-  return { ok: true, data: res.data, callId: call.id, ms, costUsd: common.costUsd, servedModel: res.servedModel ?? AI_MODEL, fallback: common.fallback };
+  return { ok: true, data: res.data, callId: call.id, ms, costUsd: common.costUsd, servedModel: res.servedModel ?? req.model, fallback: common.fallback };
 }

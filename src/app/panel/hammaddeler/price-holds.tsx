@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronDown, TriangleAlert } from "lucide-react";
+import { ChevronDown, ScanText, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +13,10 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input } from "@/components/ui/form";
 import type { Unit } from "@/lib/calc/types";
 import { dateTimeTR, dateTR, num, pct, tl2 } from "@/lib/format";
-import { HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
+import { ESTIMATE_BADGE, ESTIMATE_TEXT, HOLDS_ANCHOR, type HoldImpact } from "@/lib/price-hold";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
+import { readHoldInvoice } from "@/server/actions/invoice-readings";
 import { saveProductLink } from "@/server/actions/parasut";
 import { approvePriceHold, rejectPriceHold, undoPriceHold } from "@/server/actions/price-holds";
 
@@ -43,10 +45,56 @@ export interface HoldView {
   /** Aynı hammaddenin bir önceki faturası (başka tedarikçi olabilir) */
   last: { unitPrice: number; date: string; supplier: string } | null;
   impact: HoldImpact;
-  /** Fiyat şimdikinin yaklaşık tam katı ya da bölümü (çarpan hatası olabilir) */
-  hint: { times: number; direction: "up" | "down" } | null;
-  /** Önerilecek çarpan (tam sayıysa); "Çarpanı X yap" */
-  suggestedFactor: number | null;
+  /** Hammaddenin şimdiki fiyatı tahmini (varsayım): yüzde ona göre, kart söyler */
+  estimate: boolean;
+  /**
+   * Kanıta dayalı tek öneri (sunucuda kurulur, src/lib/price-hold.ts holdSuggestion): adındaki paket boyu, faturanın
+   * okunması ya da (yalnız aynı ürünün geçmişi varsa) çarpan oranı; `factor` varsa "Çarpanı X yap"
+   */
+  suggestion: { kind: "evidence" | "reading" | "ratio"; factor: number | null; text: string } | null;
+  /** Faturanın okunması öneri değilse bilgi satırı (aynı çarpanı doğruluyor ya da az emin) */
+  reading: { text: string; low: boolean } | null;
+  /** Fatura okunamadıysa nedeni */
+  readError: string | null;
+  /** auto: kendiliğinden bir kez okunur; manual: düğme; running: başka sekmede okunuyor; null: okuma kapalı */
+  read: "auto" | "manual" | "running" | null;
+  /** Saklanan okuma (ya da hatası) var: düğme "Yeniden oku" */
+  hasReading: boolean;
+}
+
+/**
+ * Kendiliğinden okumalar (öneri → sırada ya da okunuyor / bitti): kart yeniden çizilince, yeniden bağlanınca ya da
+ * geliştirmede iki kez bağlanınca yeniden istenmesin. Kartlar useSyncExternalStore ile okur
+ */
+const autoReads = new Map<number, "reading" | "done">();
+const autoListeners = new Set<() => void>();
+/** Okumalar sırayla: birkaç kart aynı anda açılınca belge indirmeleri ve Claude istekleri üst üste binmesin */
+let autoQueue: Promise<unknown> = Promise.resolve();
+
+function subscribeAutoReads(listener: () => void) {
+  autoListeners.add(listener);
+  return () => void autoListeners.delete(listener);
+}
+
+function setAutoRead(id: number, state: "reading" | "done") {
+  autoReads.set(id, state);
+  for (const listener of autoListeners) listener();
+}
+
+/**
+ * Kartın kendiliğinden okuması yol işleyicisiyle (POST /api/fiyat-onerileri/{id}/oku), sunucu eylemiyle değil: Next
+ * eylemleri istemci başına tek tek yollar; 55 sn'ye varan okuma sürerken Onayla / Reddet / "Çarpanı X yap" sıraya
+ * girerdi. Hata sessiz: sonuç ya da okunamama nedeni sayfa tazelenince kartta (`done`)
+ */
+function autoReadHold(id: number, done: () => void) {
+  setAutoRead(id, "reading");
+  const run = autoQueue.then(() => fetch(`/api/fiyat-onerileri/${id}/oku`, { method: "POST" }).catch(() => null));
+  autoQueue = run
+    .then(() => {
+      setAutoRead(id, "done");
+      done();
+    })
+    .catch(() => undefined);
 }
 
 /** Son 3 günün kararı ya da geçersiz kalan öneri ("Son kararlar") */
@@ -83,9 +131,9 @@ async function undo(id: number, name: string) {
 
 /**
  * Hammaddeler › "Onay bekleyen fiyatlar" (#fiyat-onayi): Paraşüt faturasındaki birim fiyat şimdikinden %40'tan fazla
- * farklı olan hammaddeler (docs/PARASUT.md 5b). Onayla fiyatı yazar, Reddet şimdiki fiyatı bırakır; çarpan yanlış
- * görünüyorsa tek dokunuşla düzeltilir. Son 3 günün kararları altta, geri alınabilir (bildirim kaybolduktan sonra da).
- * Zil, Genel bakış ve sabah e-postası buraya getirir.
+ * farklı olan hammaddeler (docs/PARASUT.md 5b). Onayla fiyatı yazar, Reddet şimdiki fiyatı bırakır; çarpan yanlışsa
+ * kanıtıyla (adındaki paket boyu, faturanın okunması; docs/FATURA-OKUMA.md) tek dokunuşla düzeltilir. Son 3 günün
+ * kararları altta, geri alınabilir (bildirim kaybolduktan sonra da). Zil, Genel bakış ve sabah e-postası buraya getirir.
  */
 export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: RecentHoldView[] }) {
   const [busy, start] = useTransition();
@@ -229,6 +277,55 @@ function HoldItem({
   const up = x.pct === null || x.pct > 0;
   const unitLabel = x.lineUnit ?? "birim";
   const top = x.impact.top[0];
+  const [reading, startReading] = useTransition();
+  const router = useRouter();
+  const auto = useSyncExternalStore(
+    subscribeAutoReads,
+    () => autoReads.get(x.id),
+    () => undefined,
+  );
+  // Okuma bitince sayfa geçişle tazelenir: yeni kart gelene kadar "Fatura okunuyor…" kalır (düğme bir an görünmesin)
+  const [refreshing, startRefresh] = useTransition();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // Kanıtı ve okuması olmayan kart açılınca fatura bir kez kendiliğinden okunur (öneri başına bir istek); sonuç sayfa
+  // tazelenince kartta. Hata sessiz: kart okunamadı satırını gösterir. Kart artık ekranda değilse (onaylandı, başka
+  // sayfaya geçildi) tazelenmez
+  useEffect(() => {
+    if (x.read !== "auto" || autoReads.has(x.id)) return;
+    autoReadHold(x.id, () => {
+      if (mounted.current) startRefresh(() => router.refresh());
+    });
+  }, [x.id, x.read, router]);
+
+  // Başka sekme ya da yönetici okuyorsa (ya da sayfa okuma sürerken yenilendiyse) kart okuma bitene kadar 8 sn'de bir
+  // tazelenir; yarıda kalan okuma 90 sn sonra "okunuyor" olmaktan çıkar, tazeleme de durur. Bu sekme okuyorsa gerekmez:
+  // okuma bitince kendisi tazeler
+  const selfReading = reading || auto === "reading";
+  useEffect(() => {
+    if (x.read !== "running" || selfReading) return;
+    const t = setInterval(() => router.refresh(), 8000);
+    return () => clearInterval(t);
+  }, [x.read, selfReading, router]);
+
+  const read = () =>
+    startReading(async () => {
+      const r = await readHoldInvoice({ id: x.id, mode: x.hasReading ? "force" : "manual" });
+      if (!r.ok) return void toast.error(r.error);
+      if (r.data.status === "error") return void toast.error(r.data.message);
+      if (r.data.status === "busy") return void toast.message("Bu fatura şu an okunuyor; bitince kart kendiliğinden yenilenir.");
+      toast.success(`${x.name}: fatura okundu`);
+    });
+  // Kendiliğinden okunacak kart ilk çizimden "okunuyor" der; bu sekmede okuma bittiyse ve kart hâlâ "auto" ise (okuma
+  // kapıdan döndü: sınırın fotoğraf payı, kapalı) düğme görünür
+  const busyReading = selfReading || refreshing || x.read === "running" || (x.read === "auto" && auto === undefined);
+
   return (
     <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
       <div className="min-w-0 space-y-0.5 text-xs text-ink-mute">
@@ -238,8 +335,10 @@ function HoldItem({
             {x.name}
           </Link>
           {x.pct !== null ? (
-            <Badge tone={x.pct > 0 ? "red" : "green"} title="Faturadaki birim fiyatın şimdikine göre farkı">
+            // Tahmini fiyata göre yüzde gerçek bir zam ya da indirim değildir: kırmızı / yeşil değil
+            <Badge tone={x.estimate ? "amber" : x.pct > 0 ? "red" : "green"} title={x.estimate ? "Faturadaki birim fiyatın tahmini (varsayım) fiyata göre farkı" : "Faturadaki birim fiyatın şimdikine göre farkı"}>
               {x.pct > 0 ? "↑" : "↓"} {pct(Math.abs(x.pct), 0)}
+              {x.estimate ? ` ${ESTIMATE_BADGE}` : ""}
             </Badge>
           ) : null}
           {x.repeats >= 2 ? <Badge tone="gray">Son {num(x.repeats)} faturada da bu fiyat</Badge> : null}
@@ -248,6 +347,7 @@ function HoldItem({
           Şimdi <span className="font-semibold text-ink">{bulkPrice(x.current, x.unit)}</span> → faturada{" "}
           <span className="font-semibold text-ink">{bulkPrice(x.proposed, x.unit)}</span>
         </p>
+        {x.estimate ? <p className="text-pretty text-warn">{ESTIMATE_TEXT}</p> : null}
         <p>
           {x.supplier} · <span className="tabular">{dateTR(x.date)}</span>
           {x.invoiceNo ? ` · ${x.invoiceNo}` : ""} ·{" "}
@@ -296,15 +396,37 @@ function HoldItem({
             `${num(x.impact.products)} üründe kullanılıyor; maliyetleri düşer`
           )}
         </p>
-        {x.hint ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warn-soft px-3 py-2 text-warn">
+        {x.suggestion ? (
+          <div className={cn("mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2", x.suggestion.kind === "reading" ? "bg-info-soft text-info" : "bg-warn-soft text-warn")}>
             <p className="min-w-0 flex-1 basis-60 text-pretty">
-              {x.hint.direction === "up" ? `Fiyat şimdikinin yaklaşık ${num(x.hint.times)} katı` : `Fiyat şimdikinden yaklaşık ${num(x.hint.times)} kat düşük`}: çarpan yanlış
-              olabilir{x.suggestedFactor ? ` (1 ${unitLabel} = ${num(x.suggestedFactor, 3)} ${x.unit} mi?)` : ""}. Çarpan yanlışsa alınan miktar da yanlış sayılır.
+              {x.suggestion.kind === "reading" ? <ScanText size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" /> : null}
+              {x.suggestion.text}
             </p>
-            {x.suggestedFactor ? (
-              <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onFactor(x.suggestedFactor!)}>
-                Çarpanı {num(x.suggestedFactor, 3)} yap
+            {x.suggestion.factor ? (
+              <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onFactor(x.suggestion!.factor!)}>
+                Çarpanı {num(x.suggestion.factor, 3)} yap
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {/* Faturanın okunması: bilgi satırı, okunamadıysa nedeni, okunuyor ya da düğme */}
+        {x.reading || x.readError || x.read ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {busyReading ? (
+              <p className="flex items-center gap-1.5 text-info" role="status">
+                <ScanText size={13} className="shrink-0 animate-pulse" aria-hidden="true" /> Fatura okunuyor…
+              </p>
+            ) : x.reading ? (
+              <p className={cn("min-w-0 flex-1 basis-60 text-pretty", x.reading.low ? "text-warn" : "text-ink-soft")}>
+                <ScanText size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
+                {x.reading.text}
+              </p>
+            ) : x.readError ? (
+              <p className="min-w-0 flex-1 basis-60 text-pretty text-warn">Fatura okunamadı: {x.readError}</p>
+            ) : null}
+            {x.read && !busyReading ? (
+              <Button size="xs" variant={x.hasReading ? "ghost" : "secondary"} disabled={disabled} onClick={read} className="shrink-0">
+                <ScanText size={13} aria-hidden="true" /> {x.hasReading ? "Yeniden oku" : "Faturayı oku"}
               </Button>
             ) : null}
           </div>

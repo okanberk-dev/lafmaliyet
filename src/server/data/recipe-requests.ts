@@ -15,6 +15,8 @@ export interface RecipeRequestRow {
   size: ProductSize;
   /** Yalnız yeni ürün önerisinde: önerilen ad, boy ve kategori */
   proposed: ProposedProduct | null;
+  /** Yeni ürün önerisinde personelin yazdığı satış fiyatı (yazılmadıysa ya da eski öneride null) */
+  proposedPrice: number | null;
   status: RequestStatus;
   requestedBy: number | null;
   requestedByName: string;
@@ -56,8 +58,14 @@ function toRow({
   currentName,
   currentSize,
   ...r
-}: Omit<RecipeRequestRow, "productName" | "size"> & { currentName: string | null; currentSize: ProductSize | null }): RecipeRequestRow {
-  return { ...r, productName: currentName ?? r.proposed?.name ?? "?", size: currentSize ?? r.proposed?.size ?? "M" };
+}: Omit<RecipeRequestRow, "productName" | "size" | "proposedPrice"> & { currentName: string | null; currentSize: ProductSize | null }): RecipeRequestRow {
+  const proposedPrice = r.proposed?.price;
+  return {
+    ...r,
+    productName: currentName ?? r.proposed?.name ?? "?",
+    size: currentSize ?? r.proposed?.size ?? "M",
+    proposedPrice: typeof proposedPrice === "number" && proposedPrice > 0 ? proposedPrice : null,
+  };
 }
 
 const select = () => getDb().select(columns).from(s.recipeChangeRequests).leftJoin(s.products, eq(s.products.id, s.recipeChangeRequests.productId));

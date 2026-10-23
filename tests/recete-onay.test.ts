@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { diffRecipe, qtyLabel, sameQty, sameRecipe, summarizeDiff, type RecipeSnapshot } from "../src/lib/recipe-change";
+import { diffRecipe, estimateNames, qtyLabel, sameQty, sameRecipe, summarizeDiff, type RecipeSnapshot } from "../src/lib/recipe-change";
 
 const line = (ingredientId: number, name: string, qty: number, unit = "ml", qtyExpr: string | null = null, note: string | null = null) => ({
   ingredientId,
@@ -110,4 +110,28 @@ test("personelin reçete defteri verisinde fiyat ve maliyet yok", () => {
   for (const word of ["unitCost", "price", "cost", "packagePrice", "hedefMaliyet", "kdv"]) {
     assert.doesNotMatch(page, new RegExp(`\\b${word}\\b`), `${word} reçete defterine geçmemeli`);
   }
+});
+
+test("değişiklik önerisi: eklenen ya da miktarı değişen satırın tahmini fiyatlı malzemesi onay kartında söylenir", () => {
+  const ing = (name: string, isEstimate: boolean, packagePrice = 100) => ({ name, active: true, priceSource: "manual", packagePrice, isEstimate });
+  const byId = new Map([
+    [1, ing("Espresso", false)],
+    [2, ing("Süt", true)],
+    [3, ing("Bardak 8oz", true)],
+    [4, ing("Lavanta şurubu", true, 9000)],
+    [6, ing("Fiyatsız şurup", true, 0)],
+  ]);
+  const before: RecipeSnapshot = { note: null, items: [line(1, "Espresso", 18, "gr"), line(2, "Süt", 200), line(3, "Bardak 8oz", 1, "adet")] };
+  // Lavanta eklendi (personelin yazdığı fiyat), süt arttı (tahmini), bardak aynı (tahmini ama farkı taşımaz), fiyatsız olan ayrı uyarıda
+  const after: RecipeSnapshot = {
+    note: null,
+    items: [line(1, "Espresso", 18, "gr"), line(2, "Süt", 220), line(3, "Bardak 8oz", 1, "adet"), line(4, "Lavanta şurubu", 20), line(6, "Fiyatsız şurup", 10)],
+  };
+  assert.deepEqual(estimateNames(before, after, byId), ["Süt", "Lavanta şurubu"]);
+  assert.deepEqual(estimateNames(before, before, byId), []);
+  const page = readFileSync(join(process.cwd(), "src/app/panel/onaylar/page.tsx"), "utf8");
+  assert.match(page, /estimates: estimateNames\(r\.before, r\.after, model\.ingById\)/);
+  const list = readFileSync(join(process.cwd(), "src/app/panel/onaylar/review-list.tsx"), "utf8");
+  assert.match(list, /<EstimateNote names=\{item\.estimates\} \/>/);
+  assert.match(list, /Tahmini fiyatlı: \{names\.join\(", "\)\}\. Paket fiyatı faturadan gelmedi; maliyet kesin değil\./);
 });

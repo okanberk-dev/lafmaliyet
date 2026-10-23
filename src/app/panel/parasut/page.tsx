@@ -5,13 +5,15 @@ import { Suspense } from "react";
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { packEvidence, sameFactor } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { invoiceReadingState } from "@/server/invoice-reading/read";
 import { isParasutConfigured, parasutEnvStatus } from "@/server/parasut/config";
 import { ignoredProducts, unlinkedProducts } from "@/server/parasut/sync";
 
 import { invoiceBreakdown, invoiceStats, type InvoiceMix } from "./breakdowns";
-import { ParasutClient as ParasutScreen } from "./parasut-client";
+import { ParasutClient as ParasutScreen, type LinkCheck } from "./parasut-client";
 
 export const metadata: Metadata = { title: "Paraşüt entegrasyonu" };
 // Elle eşitleme bu sayfanın sunucu eylemiyle çalışır
@@ -40,7 +42,7 @@ export default function ParasutPage() {
 async function ParasutContent() {
   await requireAdmin();
   const db = getDb();
-  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored] = await Promise.all([
+  const [runs, rules, links, ingredients, unlinked, invoiceRows, cursorRow, pendingRow, [lineReads], ignored, newestLines, readState] = await Promise.all([
     db.select().from(s.parasutSyncRuns).orderBy(desc(s.parasutSyncRuns.startedAt)).limit(8),
     db.select().from(s.parasutCategoryRules).orderBy(asc(s.parasutCategoryRules.priority), asc(s.parasutCategoryRules.id)),
     db
@@ -95,7 +97,28 @@ async function ParasutContent() {
       .from(s.invoices)
       .where(and(isNotNull(s.invoices.eInvoiceId), isNull(s.invoices.externalId))),
     ignoredProducts(),
+    // Bağlı her ürünün en yeni kalemi: adındaki paket boyu bağlantının çarpanıyla tutuyor mu (Kontrol edilecek bağlantılar)
+    db
+      .selectDistinctOn([s.parasutBillLines.productKey], {
+        productKey: s.parasutBillLines.productKey,
+        name: s.parasutBillLines.productName,
+        description: s.parasutBillLines.description,
+        unit: s.parasutBillLines.unit,
+        quantity: s.parasutBillLines.quantity,
+      })
+      .from(s.parasutBillLines)
+      .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
+      .innerJoin(s.parasutProductLinks, eq(s.parasutProductLinks.productKey, s.parasutBillLines.productKey))
+      .orderBy(s.parasutBillLines.productKey, desc(s.invoices.date), desc(s.parasutBillLines.id)),
+    invoiceReadingState(),
   ]);
+  const lineOf = new Map(newestLines.map((l) => [l.productKey, l]));
+  // Adındaki ya da birimindeki paket boyu bağlantının çarpanından farklı olanlar: yalnız gösterilir, hiçbir şey değişmez
+  const checks: LinkCheck[] = links.flatMap((l) => {
+    const line = lineOf.get(l.productKey);
+    const ev = line ? packEvidence(line, l.unit) : null;
+    return line && ev && !sameFactor(ev.factor, l.factor) ? [{ linkId: l.id, lineUnit: line.unit, evidence: ev }] : [];
+  });
   const invoiceMix: InvoiceMix[] = invoiceRows.map((r) => ({
     month: r.month,
     origin: r.origin,
@@ -119,7 +142,9 @@ async function ParasutContent() {
       invoiceGroups={invoiceBreakdown(invoiceMix)}
       runs={runs.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null }))}
       rules={rules.map((r) => ({ id: r.id, matchType: r.matchType, pattern: r.pattern, category: r.category, priority: r.priority }))}
-      links={links}
+      links={links.map((l) => ({ ...l, line: lineOf.get(l.productKey) ?? null }))}
+      checks={checks}
+      readState={readState}
       ingredients={ingredients.map(({ packagePrice, packageSize, ...i }) => ({ ...i, unitCost: packageSize ? packagePrice / packageSize : 0 }))}
       unlinked={unlinked.items}
       unlinkedTotal={unlinked.total}

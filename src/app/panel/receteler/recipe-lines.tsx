@@ -1,11 +1,11 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Plus, Sigma, StickyNote, Trash2 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import { Button, IconButton } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/form";
-import type { Settings } from "@/lib/calc/types";
+import { Input } from "@/components/ui/form";
+import type { CountUnit, Settings } from "@/lib/calc/types";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { num } from "@/lib/format";
 import type { RecipeSnapshot } from "@/lib/recipe-change";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 
 import { catOrder } from "../hammaddeler/categories";
 import { qtyText, resolveQty } from "../urunler/logic";
+
+import { IngredientPicker } from "./ingredient-picker";
 
 /**
  * Personelin reçete önerisindeki malzeme satırları: "Değişiklik öner" (change-editor.tsx) ve "Yeni ürün öner"
@@ -23,6 +25,11 @@ export interface ProposeKit {
   ingredients: { id: number; name: string; unit: string; category: string; active: boolean; packaging: boolean }[];
   /** Formüllerde kullanılan ölçüler (ShotCift = 18 gr …); yalnızca bunlar gönderilir */
   params: { name: string; key: string; label: string; unit: string; value: number }[];
+  /**
+   * Listede olmayan malzemeyi formdan çıkmadan açmak ("Yeni malzeme", Stok sayımı › Listeye ekle'nin kuralı): kalemin
+   * gireceği sayım ayı ve sayım grupları (olağan birimleriyle). Yoksa açılamaz.
+   */
+  newIngredient?: { month: string; groups: { name: string; unit: CountUnit }[] } | null;
 }
 
 export interface LineRow {
@@ -40,24 +47,30 @@ export const blankRow = (): LineRow => ({ key: seq++, ingredientId: null, input:
 /** Başka boyun satırlarının kopyası (yeni anahtarlarla) */
 export const copyRows = (rows: LineRow[]): LineRow[] => rows.map((r) => ({ ...r, key: seq++ }));
 
-/** Önerinin hesap ortamı: formül ölçüleri (yalnız kit'tekiler), malzemeler ve kategoriye göre seçim listesi */
+/**
+ * Önerinin hesap ortamı: formül ölçüleri (yalnız kit'tekiler), malzemeler ve kategoriye göre seçim listesi. Pencerede
+ * "Yeni malzeme" ile açılan malzeme hemen listeye eklenir (`addIngredient`; sayfa yenilenince sunucudan da gelir).
+ */
 export function useRecipeKit(kit: ProposeKit) {
   const settings = useMemo(() => {
     const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
     for (const p of kit.params) out[p.key] = p.value;
     return out as unknown as Settings;
   }, [kit.params]);
-  const ingById = useMemo(() => new Map(kit.ingredients.map((i) => [i.id, i])), [kit.ingredients]);
+  const [added, setAdded] = useState<ProposeKit["ingredients"]>([]);
+  const ingredients = useMemo(() => [...kit.ingredients, ...added.filter((a) => !kit.ingredients.some((i) => i.id === a.id))], [kit.ingredients, added]);
+  const addIngredient = useCallback((i: ProposeKit["ingredients"][number]) => setAdded((list) => (list.some((x) => x.id === i.id) ? list : [...list, i])), []);
+  const ingById = useMemo(() => new Map(ingredients.map((i) => [i.id, i])), [ingredients]);
   const grouped = useMemo(() => {
     const m = new Map<string, ProposeKit["ingredients"]>();
-    for (const i of kit.ingredients) m.set(i.category, [...(m.get(i.category) ?? []), i]);
+    for (const i of ingredients) m.set(i.category, [...(m.get(i.category) ?? []), i]);
     return [...m.entries()]
       .sort(([a], [b]) => catOrder(a) - catOrder(b) || a.localeCompare(b, "tr"))
       .map(([cat, list]) => [cat, [...list].sort((a, b) => a.name.localeCompare(b.name, "tr"))] as const);
-  }, [kit.ingredients]);
+  }, [ingredients]);
   /** Formül ölçülerinin birimleri (gr, ml): adet ve dilim satırına formül yazılmaz, "Formül" düğmesi orada çıkmaz */
   const formulaUnits = useMemo(() => new Set(kit.params.map((p) => p.unit)), [kit.params]);
-  return { settings, ingById, grouped, formulaUnits };
+  return { settings, ingredients, ingById, grouped, formulaUnits, addIngredient, newIngredient: kit.newIngredient ?? null };
 }
 
 export type RecipeKit = ReturnType<typeof useRecipeKit>;
@@ -76,8 +89,9 @@ export function buildSnapshot(rows: LineRow[], note: string, kit: RecipeKit, lab
 }
 
 /**
- * Malzeme satırları: malzeme seçimi, miktar (sayı ya da 2*ShotCift gibi formül), sıra ve satır notu; altta
- * "Malzeme ekle" ve çağıranın ek düğmeleri (`children`). Pasif malzeme yeni satıra seçilemez, satırda duruyorsa kalır.
+ * Malzeme satırları: malzeme seçimi (arama kutulu liste; listede yoksa "Yeni malzeme"), miktar (sayı ya da 2*ShotCift
+ * gibi formül), sıra ve satır notu; altta "Malzeme ekle" ve çağıranın ek düğmeleri (`children`). Pasif malzeme yeni
+ * satıra seçilemez, satırda duruyorsa kalır.
  */
 export function RecipeLinesEditor({
   rows,
@@ -137,25 +151,13 @@ export function RecipeLinesEditor({
           return (
             <li key={r.key} className="rounded-2xl bg-panel p-2.5 ring-1 ring-line">
               <div className="flex items-start gap-2">
-                <Select
-                  value={r.ingredientId ?? ""}
-                  onChange={(e) => update(r.key, { ingredientId: e.target.value ? Number(e.target.value) : null })}
-                  aria-label={`${idx + 1}. satır malzemesi`}
-                  data-warn={!r.ingredientId ? "true" : undefined}
-                  className="min-w-0 flex-1 font-medium"
-                >
-                  <option value="">Malzeme seçin…</option>
-                  {kit.grouped.map(([cat, list]) => (
-                    <optgroup key={cat} label={cat}>
-                      {list.map((i) => (
-                        <option key={i.id} value={i.id} disabled={!i.active && i.id !== r.ingredientId}>
-                          {i.name}
-                          {i.active ? "" : " (pasif)"}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </Select>
+                <IngredientPicker
+                  value={r.ingredientId}
+                  onChange={(id) => update(r.key, { ingredientId: id })}
+                  kit={kit}
+                  label={`${idx + 1}. satır malzemesi`}
+                  className="min-w-0 flex-1"
+                />
                 <IconButton
                   label={`${ing?.name ?? `${idx + 1}. satır`} satırını çıkar`}
                   tone="danger"

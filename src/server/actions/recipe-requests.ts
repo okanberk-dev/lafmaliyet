@@ -5,7 +5,8 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { evaluateExpression } from "@/lib/calc/expr";
-import { cleanName, nameKey } from "@/lib/count-item";
+import { PACKAGING_CATEGORY } from "@/lib/constants";
+import { cleanName, countItemLogDetail, nameKey } from "@/lib/count-item";
 import { money } from "@/lib/format";
 import {
   diffRecipe,
@@ -15,11 +16,13 @@ import {
   NEW_PRODUCT_NAME_MIN,
   newProductIssue,
   productSizeLabel,
+  PROPOSED_PRICE_MAX,
   sameRecipe,
   summarizeDiff,
   type RecipeSnapshot,
 } from "@/lib/recipe-change";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { CountItemExists, countItemSchema, createCountItem } from "@/server/data/count-item";
 import { loadSettings } from "@/server/data/dataset";
 import { insertProduct } from "@/server/data/product-create";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
@@ -249,12 +252,22 @@ const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
 const lockNewProducts = (tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0]) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtext('yeni-urun-onerisi'))`);
 
+/**
+ * Personelin önerdiği satış fiyatı (KDV dahil, boy başına, isteğe bağlı): kuruşa yuvarlanır, 0'dan büyük ve en çok
+ * 10.000 ₺ (öneri penceresindeki readProposedPrice ile aynı sınırlar). Yazılmadıysa null.
+ */
+const zProposedPrice = zMoney
+  .transform((v) => Math.round(v * 100) / 100)
+  .pipe(z.number().positive("Satış fiyatı 0'dan büyük olmalı").max(PROPOSED_PRICE_MAX, "Satış fiyatı çok büyük"))
+  .nullish()
+  .transform((v) => v ?? null);
+
 const newProductSchema = z.object({
   name: z.string({ message: "Ürün adını yazın" }).transform(cleanName),
   categoryId: z.number().int().positive("Kategori seçin"),
   message: zOptText(500),
   sizes: z
-    .array(z.object({ size: zSize, items: z.array(lineSchema).max(40, "En fazla 40 malzeme") }))
+    .array(z.object({ size: zSize, items: z.array(lineSchema).max(40, "En fazla 40 malzeme"), price: zProposedPrice }))
     .min(1, "En az bir boy seçin")
     .max(3, "En çok üç boy"),
 });
@@ -262,8 +275,10 @@ const newProductSchema = z.object({
 /**
  * Personel (yönetici de olabilir) menüde olmayan bir ürünü reçetesiyle önerir; boy başına bir öneri satırı açılır
  * (kind 'new', ürün yok). Ürün ancak yönetici Reçete onayları'nda satış fiyatını yazıp onaylayınca açılır: fiyatı 0
- * bir ürün kârlılığı, uyarıları ve analizleri bozardı. Denetim sayfayla aynı (newProductIssue): aynı ad + boyda ürün
- * ya da bekleyen öneri varsa gönderilmez. Formüllü miktar sunucuda yeniden hesaplanır.
+ * bir ürün kârlılığı, uyarıları ve analizleri bozardı. Personelin yazdığı satış fiyatı (boy başına, isteğe bağlı)
+ * öneride saklanır (`proposed.price`): onayda fiyat alanı onunla dolu gelir, yönetici değiştirebilir. Denetim sayfayla
+ * aynı (newProductIssue): aynı ad + boyda ürün ya da bekleyen öneri varsa gönderilmez. Formüllü miktar sunucuda
+ * yeniden hesaplanır.
  */
 export async function proposeNewProduct(input: z.input<typeof newProductSchema>) {
   return attempt(async () => {
@@ -321,7 +336,7 @@ export async function proposeNewProduct(input: z.input<typeof newProductSchema>)
         await tx.insert(s.recipeChangeRequests).values({
           kind: "new",
           productId: null,
-          proposed: { name: data.name, size: sz.size, categoryId: data.categoryId },
+          proposed: { name: data.name, size: sz.size, categoryId: data.categoryId, price: sz.price },
           requestedBy: me.id,
           requestedByName: me.name,
           before: EMPTY_SNAPSHOT,
@@ -330,9 +345,42 @@ export async function proposeNewProduct(input: z.input<typeof newProductSchema>)
         });
       }
     });
-    await logActivity(me, "Yeni ürün önerisi", `${data.name} · ${data.sizes.map((x) => x.size).join(", ")}`);
+    // "Çilekli Matcha · M (önerilen 185 ₺), L"
+    const sizes = data.sizes.map((x) => (x.price !== null ? `${x.size} (önerilen ${money(x.price)})` : x.size)).join(", ");
+    await logActivity(me, "Yeni ürün önerisi", `${data.name} · ${sizes}`);
     refresh();
     return { sizes: data.sizes.length };
+  });
+}
+
+/**
+ * Reçete önerisindeki "Yeni malzeme" (Yeni ürün öner ve Değişiklik öner): aranıp listede bulunamayan malzeme formdan
+ * çıkmadan açılır. Stok sayımı › Listeye ekle ile aynı çekirdek (createCountItem): aynı alanlar ve kurallar, kalem
+ * sayım listesine de girer, paket fiyatı isteğe bağlı ve Tahmini. Aynı adlı aktif malzeme varsa hata yerine o döner
+ * (`existing`): pencere "Onu seç" der. Dönen malzemede fiyat yok (personel yazdığı fiyatı bir daha görmez).
+ */
+export async function addProposalIngredient(input: z.input<typeof countItemSchema>) {
+  return attempt(async () => {
+    const me = await requireUser();
+    const data = countItemSchema.parse(input);
+    const ref = (i: { id: number; name: string; unit: string; category: string }) => ({
+      id: i.id,
+      name: i.name,
+      unit: i.unit,
+      category: i.category,
+      active: true,
+      packaging: i.category === PACKAGING_CATEGORY,
+    });
+    try {
+      const created = await createCountItem(me, data, "recete");
+      await logActivity(me, "Sayım listesine eklendi", countItemLogDetail({ ...created, countUnit: data.countUnit, source: "recete" }));
+      refresh();
+      return { ingredient: ref(created), existing: false as const };
+    } catch (e) {
+      // Aynı ad: aktif malzeme seçilebilir (pencere sorar); pasif olanın metni olduğu gibi gösterilir
+      if (e instanceof CountItemExists && e.existing.active && e.existing.id > 0) return { ingredient: ref(e.existing), existing: true as const };
+      throw e;
+    }
   });
 }
 
@@ -392,9 +440,11 @@ export async function approveNewProduct(input: z.input<typeof approveNewSchema>)
         .update(s.recipeChangeRequests)
         .set({ productId: created.id, status: "approved", reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: now, updatedAt: now })
         .where(eq(s.recipeChangeRequests.id, req.id));
-      return { productId: created.id, size, who: req.requestedByName };
+      return { productId: created.id, size, who: req.requestedByName, proposedPrice: req.proposed.price ?? null };
     });
-    await logActivity(me, "Yeni ürün (öneriden)", `${data.name} ${outcome.size} · ${money(data.price)} · ${genitive(outcome.who)} önerisi`);
+    // Personelin önerdiği fiyat değiştirildiyse o da yazılır: "Çilekli Matcha M · 190 ₺ (önerilen 185 ₺) · Ayşe'nin önerisi"
+    const proposed = outcome.proposedPrice !== null && Math.abs(outcome.proposedPrice - data.price) >= 0.005 ? ` (önerilen ${money(outcome.proposedPrice)})` : "";
+    await logActivity(me, "Yeni ürün (öneriden)", `${data.name} ${outcome.size} · ${money(data.price)}${proposed} · ${genitive(outcome.who)} önerisi`);
     refresh();
     return { productId: outcome.productId };
   });

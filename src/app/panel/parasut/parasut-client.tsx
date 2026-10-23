@@ -1,6 +1,29 @@
 "use client";
 
-import { CheckCircle2, ChevronDown, CircleDashed, FileText, Link2, ListFilter, Package, PackageX, Pencil, PlugZap, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, Unplug, Wand2, X, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  CircleDashed,
+  FileText,
+  Link2,
+  ListFilter,
+  Package,
+  PackageX,
+  Pencil,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  ScanText,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  Unplug,
+  Wand2,
+  X,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
@@ -23,11 +46,13 @@ import { SortButton, Table, TableWrap, TD, TH, THead, TR } from "@/components/ui
 import type { BreakdownGroup } from "@/lib/breakdown";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR, dateTR, num, tl, tl2 } from "@/lib/format";
-import { HOLDS_HREF } from "@/lib/price-hold";
-import { guessLinkFactor, suggestIngredient } from "@/lib/product-match";
+import type { ReadingState } from "@/lib/photo-rules";
+import { evidenceLead, factorText, HOLDS_HREF } from "@/lib/price-hold";
+import { guessLinkFactor, packEvidence, sameFactor, suggestIngredient, type PackEvidence } from "@/lib/product-match";
 import type { IgnoredProduct } from "@/lib/product-ignore";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { readProductInvoice } from "@/server/actions/invoice-readings";
 import {
   deleteCategoryRule,
   deleteProductLink,
@@ -82,6 +107,22 @@ interface LinkRow {
   unit: string;
   factor: number;
   updatePrice: boolean;
+  /** Ürünün en yeni kalemi: paket boyunun kanıtı (adı, açıklaması, birimi, miktarı) */
+  line?: LinkLine | null;
+}
+/** Faturadaki kalem: paket boyunun kanıtı için (src/lib/product-match.ts packEvidence) */
+interface LinkLine {
+  name: string;
+  description: string | null;
+  unit: string | null;
+  quantity: number;
+}
+/** Kontrol edilecek bağlantı: adında ya da biriminde yazan paket boyu çarpandan farklı (sayfa sunucuda bulur) */
+export interface LinkCheck {
+  linkId: number;
+  /** Faturadaki birim ("Adet") */
+  lineUnit: string | null;
+  evidence: PackEvidence;
 }
 interface Ingredient {
   id: number;
@@ -103,12 +144,24 @@ function unitPriceText(v: number, unit: string): string {
 interface Unlinked {
   productKey: string;
   productName: string;
+  /** En yeni kalemin açıklaması ve miktarı (paket boyunun kanıtı) */
+  description?: string | null;
   unit: string | null;
   count: number;
   lastDate: string;
+  lastQuantity?: number;
   lastUnitPrice: number;
   supplier: string;
 }
+
+/** Kalemin kanıt için hâli */
+const lineOf = (u: Unlinked): LinkLine => ({ name: u.productName, description: u.description ?? null, unit: u.unit, quantity: u.lastQuantity ?? 0 });
+
+/** Formdaki çarpan: binlik ayırıcısız ("12000", "0,5"; formun tahminleri gibi) */
+const factorInput = (f: number) => num(f, 3).replace(/\./g, "");
+
+/** Kontrol kutusunda kanıtın yeri: "adında 150 AD." / "açıklamasında …" / "faturadaki birim kg" */
+const evidenceWhere = (ev: PackEvidence) => (ev.source === "unit" ? `faturadaki birim ${ev.text}` : `${ev.source === "name" ? "adında" : "açıklamasında"} ${ev.text}`);
 
 /**
  * Bağlama ya da kalem okuma şimdikinden %40'tan fazla farklı fiyat getirdiyse (onaya düştü, uygulanmadı) bildirime
@@ -143,6 +196,8 @@ export function ParasutClient({
   ignored = [],
   lineReads,
   categories,
+  checks = [],
+  readState = "nokey",
 }: {
   configured: boolean;
   env: { name: string; set: boolean }[];
@@ -166,6 +221,10 @@ export function ParasutClient({
   /** E-faturaya bağlı, gider faturası olmayan kayıtlar: kalemleri okunan / sırada */
   lineReads: { read: number; pending: number };
   categories: readonly string[];
+  /** Kontrol edilecek bağlantılar (adındaki paket boyu çarpandan farklı) */
+  checks?: LinkCheck[];
+  /** Faturadan okuma (Claude): anahtar, Ayarlar › Fotoğraftan okuma, bugünkü sınır */
+  readState?: ReadingState;
 }) {
   // Her eylemin kendi bekleme durumu: "Bağlantıyı dene" sürerken eşitleme düğmesi dönmez
   const [testing, startTest] = useTransition();
@@ -485,6 +544,8 @@ export function ParasutClient({
         reading={reading}
         readProgress={readProgress}
         canRead={configured && !busy}
+        checks={checks}
+        readState={readState}
       />
       <CategoryRules rules={rules} categories={categories} />
 
@@ -569,6 +630,8 @@ function ProductLinks({
   reading,
   readProgress,
   canRead,
+  checks,
+  readState,
 }: {
   links: LinkRow[];
   unlinked: Unlinked[];
@@ -580,6 +643,8 @@ function ProductLinks({
   reading: boolean;
   readProgress: { done: number; left: number } | null;
   canRead: boolean;
+  checks: LinkCheck[];
+  readState: ReadingState;
 }) {
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -669,7 +734,7 @@ function ProductLinks({
         const ing = sug ? byId.get(sug.ingredientId) : undefined;
         if (!sug || !ing) return [];
         // Bağlantının çarpanı yalnız aynı pakette gelir (suggestIngredient); başka pakette ("SÜT 5 LT") addan tahmin edilir
-        const f = sug.factor ?? parseNumberTR(guessLinkFactor({ name: u.productName, unit: u.unit }, ing.unit) ?? "");
+        const f = sug.factor ?? parseNumberTR(guessLinkFactor(lineOf(u), ing.unit) ?? "");
         return f && f > 0 ? [{ u, ing, factor: f, updatePrice: true }] : [];
   });
   const chosen = proposals.filter((p) => !skipped.has(p.u.productKey));
@@ -695,6 +760,23 @@ function ProductLinks({
       if (!r.ok) return void toast.error(r.error);
       const h = heldToast(r.data.held, router);
       toast.success(`${l.productName} güncellendi · ${r.data.quantities} aylık miktar, ${r.data.prices} fiyat yeniden hesaplandı${h.text}`, h.options);
+    });
+  };
+
+  // Kontrol edilecek bağlantılar: düzeltilen (çarpanı kanıta eşitlenen) hemen düşer, sayfa yenilenince sunucu yeniden bakar
+  const openChecks = checks.flatMap((c) => {
+    const l = linked.find((x) => x.id === c.linkId);
+    return l && !sameFactor(l.factor, c.evidence.factor) ? [{ ...c, link: l }] : [];
+  });
+  // "Düzelt": bağlantı listede açılır, düzenleme formu görünür
+  const fix = (l: LinkRow) => {
+    setQ(l.productName);
+    if (view === "bekleyen") setView("bagli");
+    setEditing(l.id);
+    requestAnimationFrame(() => {
+      const el = [...document.querySelectorAll<HTMLElement>(`[data-link-row="${l.id}"]`)].find((x) => x.getClientRects().length > 0);
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el?.scrollIntoView({ block: "center", behavior: reduce ? "instant" : "smooth" });
     });
   };
 
@@ -738,6 +820,31 @@ function ProductLinks({
               <RefreshCw size={14} className={cn(reading && "animate-spin")} /> {reading ? "Okunuyor…" : "Kalemleri şimdi oku"}
             </Button>
           ) : null}
+        </div>
+      ) : null}
+
+      {openChecks.length ? (
+        <div className="mx-5 mb-3 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-sm text-warn" role="status">
+          <p className="flex items-center gap-1.5 font-semibold">
+            <TriangleAlert size={16} className="shrink-0" aria-hidden="true" /> Kontrol edilecek bağlantılar · {num(openChecks.length)}
+          </p>
+          <p className="mt-0.5 text-xs text-pretty text-warn/90">
+            Faturadaki adında ya da biriminde yazan paket boyu bağlantının çarpanından farklı. Hiçbir şey kendiliğinden değişmez; çarpan doğruysa olduğu gibi
+            bırakın.
+          </p>
+          <ul className="mt-2 divide-y divide-warn/15">
+            {openChecks.map((c) => (
+              <li key={c.linkId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+                <span className="min-w-0 text-[13px] text-pretty">
+                  <span className="font-medium break-words text-ink">{c.link.productName}</span> → {c.link.ingredientName}:{" "}
+                  <span className="whitespace-nowrap tabular">{factorText(c.lineUnit, c.link.factor, UNIT_LABEL[c.link.unit] ?? c.link.unit)}</span>; {evidenceWhere(c.evidence)}
+                </span>
+                <Button size="xs" variant="secondary" className="shrink-0" onClick={() => fix(c.link)} aria-label={`${c.link.productName} bağlantısını düzelt`}>
+                  <Pencil size={13} /> Düzelt
+                </Button>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -810,7 +917,7 @@ function ProductLinks({
                   // Hammadde seçilince çarpan addaki paket bilgisinden tahmin edilir ("330ML 1X24" → 24 adet); elle yazılmışsa dokunulmaz
                   const choose = (id: string, known?: number | null) => {
                     const next = byId.get(Number(id));
-                    const guess = known ? num(known, 3).replace(/\./g, "") : next && !d.factorTouched ? guessLinkFactor({ name: u.productName, unit: u.unit }, next.unit) : null;
+                    const guess = known ? factorInput(known) : next && !d.factorTouched ? guessLinkFactor(lineOf(u), next.unit) : null;
                     set(u.productKey, { ingredientId: id, ...(guess ? { factor: guess } : {}) });
                   };
                   return (
@@ -896,6 +1003,15 @@ function ProductLinks({
                             </Button>
                           </div>
                         </div>
+                        <FactorHelp
+                          className="lg:col-span-5"
+                          productKey={u.productKey}
+                          line={lineOf(u)}
+                          ingredient={ing}
+                          factor={d.factor}
+                          onFactor={(f) => set(u.productKey, { factor: f, factorTouched: true })}
+                          readState={readState}
+                        />
                       </form>
                     </li>
                   );
@@ -940,9 +1056,17 @@ function ProductLinks({
               {/* Telefon: kart listesi */}
               <ul className="mx-2 mb-2 rounded-2xl bg-surface p-1.5 md:hidden">
                 {linkedShown.map((l, i) => (
-                  <li key={l.id} className={cn("px-2.5 py-3", i > 0 && "border-t border-ink/[0.06]")}>
+                  <li key={l.id} data-link-row={l.id} className={cn("px-2.5 py-3", i > 0 && "border-t border-ink/[0.06]")}>
                     {editing === l.id ? (
-                      <LinkEditor link={l} ingredients={ingredients} byId={byId} pending={pending} onCancel={() => setEditing(null)} onSave={(p) => update(l, p, () => setEditing(null))} />
+                      <LinkEditor
+                        link={l}
+                        ingredients={ingredients}
+                        byId={byId}
+                        pending={pending}
+                        readState={readState}
+                        onCancel={() => setEditing(null)}
+                        onSave={(p) => update(l, p, () => setEditing(null))}
+                      />
                     ) : (
                       <>
                         <div className="flex items-start justify-between gap-3">
@@ -1020,9 +1144,17 @@ function ProductLinks({
                   <tbody>
                     {linkedShown.map((l) =>
                       editing === l.id ? (
-                        <TR key={l.id} className="hover:bg-transparent">
+                        <TR key={l.id} data-link-row={l.id} className="hover:bg-transparent">
                           <TD colSpan={5}>
-                            <LinkEditor link={l} ingredients={ingredients} byId={byId} pending={pending} onCancel={() => setEditing(null)} onSave={(p) => update(l, p, () => setEditing(null))} />
+                            <LinkEditor
+                              link={l}
+                              ingredients={ingredients}
+                              byId={byId}
+                              pending={pending}
+                              readState={readState}
+                              onCancel={() => setEditing(null)}
+                              onSave={(p) => update(l, p, () => setEditing(null))}
+                            />
                           </TD>
                         </TR>
                       ) : (
@@ -1122,6 +1254,9 @@ function ProductLinks({
             const nowUnit = p.ing.unitCost ?? 0;
             const ratio = newUnit && nowUnit ? newUnit / nowUnit : null;
             const odd = ratio !== null && (ratio > 1.5 || ratio < 0.67);
+            // Önerinin çarpanı (aynı ürünün bağlantısından) addaki paket boyundan farklıysa söylenir
+            const ev = packEvidence(lineOf(p.u), p.ing.unit);
+            const evOff = ev && !sameFactor(ev.factor, p.factor) ? ev : null;
             return (
               <li key={p.u.productKey} className="py-2.5 text-sm">
                 <label className="flex cursor-pointer items-start gap-3">
@@ -1155,6 +1290,11 @@ function ProductLinks({
                         {odd ? " · çok farklı, kontrol edin" : ""}
                       </span>
                     ) : null}
+                    {evOff ? (
+                      <span className="mt-0.5 block text-xs font-medium text-warn">
+                        {evidenceLead(evOff)}: {factorText(p.u.unit, evOff.factor, UNIT_LABEL[p.ing.unit] ?? p.ing.unit)} olabilir.
+                      </span>
+                    ) : null}
                   </span>
                 </label>
               </li>
@@ -1172,6 +1312,7 @@ function LinkEditor({
   ingredients,
   byId,
   pending,
+  readState,
   onCancel,
   onSave,
 }: {
@@ -1179,6 +1320,7 @@ function LinkEditor({
   ingredients: Ingredient[];
   byId: Map<number, Ingredient>;
   pending: boolean;
+  readState: ReadingState;
   onCancel: () => void;
   onSave: (p: { ingredientId: number; factor: number; updatePrice: boolean }) => void;
 }) {
@@ -1221,7 +1363,88 @@ function LinkEditor({
           Kaydet
         </Button>
       </div>
+      {link.line ? (
+        <FactorHelp className="md:col-span-5" productKey={link.productKey} line={link.line} ingredient={ing} factor={factor} onFactor={setFactor} readState={readState} />
+      ) : null}
     </form>
+  );
+}
+
+/**
+ * Bağlama formunun çarpan yardımı (hammadde seçilince): adında ya da biriminde yazan paket boyu yazılan çarpandan
+ * farklıysa uyarı ve "{n} yap" (packEvidence; kendiliğinden değişmez) ve "Faturadan oku" (ürünün en yeni faturası,
+ * Claude Haiku; emin okunursa çarpanı doldurur, kanıtı gösterir; docs/FATURA-OKUMA.md).
+ */
+function FactorHelp({
+  productKey,
+  line,
+  ingredient,
+  factor,
+  onFactor,
+  readState,
+  className,
+}: {
+  productKey: string;
+  line: LinkLine;
+  ingredient: Ingredient | undefined;
+  factor: string;
+  onFactor: (value: string) => void;
+  readState: ReadingState;
+  className?: string;
+}) {
+  const [reading, start] = useTransition();
+  const [read, setRead] = useState<{ ingredientId: number; text: string } | null>(null);
+  if (!ingredient) return null;
+  const typed = parseNumberTR(factor);
+  const ev = packEvidence(line, ingredient.unit);
+  const mismatch = ev && !(typed && sameFactor(typed, ev.factor)) ? ev : null;
+  const unitLabel = UNIT_LABEL[ingredient.unit] ?? ingredient.unit;
+  // Okuma seçilen hammaddenin birimine göre: hammadde değişince eski okuma gösterilmez
+  const shown = read && read.ingredientId === ingredient.id ? read : null;
+  const canRead = readState !== "nokey";
+  if (!mismatch && !shown && !canRead) return null;
+  const readNow = () =>
+    start(async () => {
+      const r = await readProductInvoice({ productKey, ingredientId: ingredient.id, mode: shown ? "force" : "manual" });
+      if (!r.ok) return void toast.error(r.error);
+      if (r.data.status !== "ok") return void toast.error(r.data.message);
+      setRead({ ingredientId: ingredient.id, text: r.data.text });
+      if (r.data.factor) {
+        onFactor(factorInput(r.data.factor));
+        toast.success(`Çarpan faturadan: ${factorText(r.data.lineUnit, r.data.factor, unitLabel)}`);
+      }
+    });
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs", className)}>
+      {mismatch ? (
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-warn">
+          <TriangleAlert size={13} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 text-pretty">
+            {evidenceLead(mismatch)}: {factorText(line.unit, mismatch.factor, unitLabel)} olabilir.
+          </span>
+          <Button size="xs" variant="secondary" onClick={() => onFactor(factorInput(mismatch.factor))}>
+            {num(mismatch.factor, 3)} yap
+          </Button>
+        </p>
+      ) : null}
+      {shown ? (
+        <p className="min-w-0 text-pretty text-ink-soft">
+          <ScanText size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
+          {shown.text}
+        </p>
+      ) : null}
+      {canRead ? (
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={reading || readState === "off"}
+          title={readState === "off" ? "Okuma kapalı (Ayarlar › Fotoğraftan okuma)" : "Ürünün en yeni faturasını okur (Claude); çarpanı doldurur, kaydetmez"}
+          onClick={readNow}
+        >
+          <ScanText size={13} aria-hidden="true" /> {reading ? "Fatura okunuyor…" : shown ? "Yeniden oku" : "Faturadan oku"}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
