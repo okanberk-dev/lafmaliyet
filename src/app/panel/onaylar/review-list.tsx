@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ExternalLink, History, PackagePlus, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ExternalLink, History, Info, PackagePlus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -44,6 +44,8 @@ export interface ReviewItem {
   cost: { before: number; after: number; price: number; ratioBefore: number; ratioAfter: number; target: number } | null;
   /** Önerilen reçetede paket fiyatı girilmemiş malzemeler (sayımda eklenen kalem): maliyet eksik görünür */
   unpriced: string[];
+  /** Eklenen ya da miktarı değişen satırlarda paket fiyatı tahmini olan malzemeler (estimateNames): maliyet farkı kesin değil */
+  estimates: string[];
 }
 
 /** Personelin yeni ürün önerisi (boy başına bir öneri): satır maliyetleri bugünkü hammadde fiyatlarıyla */
@@ -188,6 +190,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                   <RecipeDiff before={item.before} after={item.after} />
                   <UnpricedNote names={item.unpriced} />
                   {item.cost ? <CostImpact cost={item.cost} /> : null}
+                  <EstimateNote names={item.estimates} />
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button onClick={() => approve(item)} disabled={busy} className="max-sm:flex-1">
                       <Check size={16} /> Onayla ve uygula
@@ -562,6 +565,23 @@ function UnpricedNote({ names }: { names: string[] }) {
         {names.join(", ")} için paket fiyatı girilmemiş; maliyet eksik görünür.{" "}
         <Link href="/panel/hammaddeler?durum=fiyatsiz" className="font-medium underline underline-offset-2">
           Hammaddeler&apos;den fiyatını girin
+        </Link>
+        .
+      </span>
+    </p>
+  );
+}
+
+/** Personelin "Yeni malzeme"de yazdığı ya da faturadan gelmemiş paket fiyatı: maliyet farkı onunla hesaplandı */
+function EstimateNote({ names }: { names: string[] }) {
+  if (!names.length) return null;
+  return (
+    <p className="flex items-start gap-2 rounded-2xl bg-surface px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft ring-1 ring-line">
+      <Info size={16} className="mt-0.5 shrink-0 text-ink-mute" aria-hidden="true" />
+      <span>
+        Tahmini fiyatlı: {names.join(", ")}. Paket fiyatı faturadan gelmedi; maliyet kesin değil.{" "}
+        <Link href="/panel/hammaddeler?durum=tahmini" className="font-medium underline underline-offset-2">
+          Hammaddeler&apos;de bakın
         </Link>
         .
       </span>

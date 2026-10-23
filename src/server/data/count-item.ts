@@ -153,10 +153,12 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
     }
     if (!rows.some((r) => r.countGroup === data.group)) throw new UserError("Bu sayım grubu bulunamadı; sayfayı yenileyin");
     const note = countItemNote(me.name, dateTR(todayTR()), { pricedBy: data.packagePrice !== null ? me.role : null, source });
+    // Personelin yazdığı fiş fiyatı KDV dahil: hammaddeye KDV hariç yazılır (netPackagePrice)
+    const values = newCountItemValues(data, rows, from, note, { priceIncludesVat: me.role !== "admin" });
     const [row] = await tx
       .insert(s.ingredients)
-      .values(newCountItemValues(data, rows, from, note))
+      .values(values)
       .returning({ id: s.ingredients.id, name: s.ingredients.name, unit: s.ingredients.unit, category: s.ingredients.category });
-    return { ...row, group: data.group, existed: false, from, packagePrice: data.packagePrice };
+    return { ...row, group: data.group, existed: false, from, packagePrice: data.packagePrice !== null ? values.packagePrice : null };
   });
 }

@@ -36,7 +36,9 @@ import {
   groupDefaults,
   isUnpriced,
   laterCountItem,
+  looseKey,
   nameKey,
+  netPackagePrice,
   newCountItemValues,
   nextSortOrder,
   readPackagePrice,
@@ -235,7 +237,7 @@ test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılma
   const add = fnBody(CORE, "createCountItem");
   assert.match(add, /const from = countFromMonth\(m, currentMonthTR\(\)\);/);
   assert.match(read("src/lib/count-item.ts"), /countFrom: from,/);
-  assert.match(add, /newCountItemValues\(data, rows, from, note\)/);
+  assert.match(add, /newCountItemValues\(data, rows, from, note(, \{[^}]*\})?\)/);
   assert.match(add, /\.set\(\{ countFrom: from \}\)\.where\(eq\(s\.ingredients\.id, later\.id\)\)/);
   assert.ok(add.indexOf("laterCountItem(") < add.indexOf("findDuplicate("), "önce geriye çekme, sonra aynı ad kuralı");
   for (const [file, fn] of [
@@ -327,11 +329,14 @@ test("ay kuralı: personel yalnız bu ayın ve geçen ayın sayımına (reçete 
 
 test("kalemin notu: kim, ne zaman, nereden; paket fiyatını kimin yazdığı (plan metni)", () => {
   assert.equal(countItemNote("Ayşe", "23.10.2026"), "Sayım listesine Ayşe ekledi (23.10.2026).");
-  assert.equal(countItemNote("Ayşe", "23.10.2026", { pricedBy: "staff" }), "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel yazdı.");
+  assert.equal(
+    countItemNote("Ayşe", "23.10.2026", { pricedBy: "staff" }),
+    "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi.",
+  );
   assert.equal(countItemNote("Yönetici", "23.10.2026", { pricedBy: "admin" }), "Sayım listesine Yönetici ekledi (23.10.2026); paket fiyatını yönetici yazdı.");
   assert.equal(
     countItemNote("Ayşe", "23.10.2026", { pricedBy: "staff", source: "recete" }),
-    "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden); paket fiyatını personel yazdı.",
+    "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden); paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi.",
   );
   assert.equal(countItemNote("Ayşe", "23.10.2026", { source: "recete" }), "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden).");
   // Çekirdek notu yazanın rolüyle kurar (paket fiyatı yazılmadıysa fiyat cümlesi yok)
@@ -371,6 +376,38 @@ test("ortak çekirdeğin yazdığı kalem: grup varsayılanları, birim, sıra, 
   // Fiyatı 0 açılan kalem zilde "Fiyatı girilmemiş" sayılır; yazılan fiyatla açılan sayılmaz (Hammaddeler › Tahmini'de)
   assert.equal(isUnpriced(unpriced), true);
   assert.equal(isUnpriced(newCountItemValues(draft, rows, "2026-10", "not")), false);
+});
+
+test("personelin yazdığı paket fiyatı KDV dahildir: grubun oranıyla düşülür; yöneticininki KDV hariç kalır", () => {
+  assert.equal(netPackagePrice(120, 0.2, true), 100);
+  assert.equal(netPackagePrice(1080, 0.1, true), 981.82);
+  assert.equal(netPackagePrice(120, 0.2, false), 120);
+  assert.equal(netPackagePrice(null, 0.2, true), 0);
+  // Oranı 0 ya da bilinmeyen grupta olduğu gibi
+  assert.equal(netPackagePrice(50, 0, true), 50);
+  const rows = [{ countGroup: "AMBALAJ", category: "Ambalaj", vatRate: 0.2, active: true, sortOrder: 7 }];
+  const draft = { name: "Klips kapak", group: "AMBALAJ", countUnit: "ADET" as const, packageDesc: null, packageSize: 1000, packagePrice: 1200 };
+  assert.equal(newCountItemValues(draft, rows, "2026-10", "not", { priceIncludesVat: true }).packagePrice, 1000);
+  assert.equal(newCountItemValues(draft, rows, "2026-10", "not").packagePrice, 1200);
+  // Çekirdek personelin fiyatını KDV dahil sayar, yöneticininkini saymaz
+  assert.match(fnBody(CORE, "createCountItem"), /newCountItemValues\(data, rows, from, note, \{ priceIncludesVat: me\.role !== "admin" \}\)/);
+  // İpuçları hangi fiyatın yazılacağını söyler
+  assert.match(read("src/app/panel/sayim/add-item.tsx"), /Fişteki gibi KDV dahil yazın/);
+  assert.match(read("src/app/panel/sayim/add-item.tsx"), /KDV hariç yazın/);
+  assert.match(read("src/app/panel/receteler/ingredient-picker.tsx"), /Fişteki gibi KDV dahil yazın/);
+});
+
+test("aynı ad denetimi Türkçe harfleri de sadeleştirir: \"cilek surubu\" listedeki \"Çilek şurubu\"dur", () => {
+  assert.equal(looseKey("cilek  surubu"), looseKey("Çilek Şurubu"));
+  assert.equal(looseKey("KÖFTE ÇÖREĞİ"), "kofte coregi");
+  const existing = [
+    { name: "Çilek şurubu", active: true, countUnit: "LT", countFrom: null },
+    { name: "Süt", active: true, countUnit: "LT", countFrom: "2026-11" },
+  ];
+  assert.deepEqual(findDuplicate("cilek surubu", existing), { kind: "counted", name: "Çilek şurubu" });
+  assert.equal(laterCountItem("sut", existing, "2026-10")?.name, "Süt");
+  // Farklı ad farklı kalemdir
+  assert.equal(findDuplicate("cilek pure", existing), null);
 });
 
 test("işlem geçmişi satırı: grup, birim, yazılan paket fiyatı; reçete önerisinden; zaten vardıysa ay", () => {

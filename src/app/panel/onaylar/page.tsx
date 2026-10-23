@@ -9,7 +9,7 @@ import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression } from "@/lib/calc/expr";
 import { PACKAGING_CATEGORY } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
-import { qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
+import { estimateNames, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { loadReviewQueue } from "@/server/data/recipe-requests";
@@ -148,6 +148,7 @@ async function ApprovalsContent() {
           }),
         ),
       ],
+      estimates: estimateNames(r.before, r.after, model.ingById),
     };
   });
   const recent: RecentItem[] = queue.recent.map((r) => ({

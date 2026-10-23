@@ -318,7 +318,7 @@ export function AddCountItemDialog({
         <CountItemFields
           form={form}
           nameNotice={inList ? `“${inList}” zaten sayım listesinde.` : undefined}
-          priceHint={isAdmin ? "Bilmiyorsanız boş bırakın. Yazdığınız fiyat Tahmini işaretli kalır." : "Bilmiyorsanız boş bırakın; yönetici girer."}
+          priceHint={isAdmin ? "KDV hariç yazın; bilmiyorsanız boş bırakın. Tahmini işaretli kalır." : "Fişteki gibi KDV dahil yazın; bilmiyorsanız boş bırakın, yönetici girer."}
         />
       </form>
     </Dialog>

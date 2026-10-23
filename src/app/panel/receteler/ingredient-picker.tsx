@@ -6,9 +6,9 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { matches } from "@/components/ui/filters";
 import { fieldControl, SearchInput } from "@/components/ui/form";
-import { cleanName, COUNT_ITEM_NAME_MIN, nameKey } from "@/lib/count-item";
+import { cleanName, COUNT_ITEM_NAME_MIN, looseKey } from "@/lib/count-item";
+import { searchIngredients } from "@/lib/ingredient-search";
 import { cn } from "@/lib/utils";
 import { addProposalIngredient } from "@/server/actions/recipe-requests";
 
@@ -20,7 +20,8 @@ type Ingredient = ProposeKit["ingredients"][number];
 
 /**
  * Reçete önerisindeki malzeme seçimi (Yeni ürün öner ve Değişiklik öner): alan gibi görünen düğme, dokununca arama
- * kutulu liste açılır (malzemeler kategori kategori). Aranan malzeme listede yoksa “Listede yok: “…” ekle” ile
+ * kutulu liste açılır (malzemeler kategori kategori; arama sırası ve Enter kuralı src/lib/ingredient-search.ts).
+ * Aranan malzeme listede yoksa “Listede yok: “…” ekle” (benzer adlar görünürken ““…” adıyla yeni malzeme ekle”) ile
  * formdan çıkmadan "Yeni malzeme" açılır: Stok sayımı › Listeye ekle'nin alanları ve kuralı (sunucuda aynı çekirdek),
  * eklenen malzeme bu satıra seçilir. Pasif malzeme yeni satıra seçilemez, satırda duruyorsa kalır. Fiyat ve maliyet
  * gösterilmez.
@@ -90,14 +91,11 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
   const listRef = useRef<HTMLDivElement>(null);
 
   const query = cleanName(q);
-  const visible = useMemo(
-    () => kit.grouped.map(([cat, list]) => [cat, list.filter((i) => matches(`${i.name} ${cat}`, q))] as const).filter(([, list]) => list.length),
-    [kit.grouped, q],
-  );
-  const firstMatch = visible.flatMap(([, list]) => list).find((i) => i.active || i.id === value);
-  // Aynı ad listede varsa (Türkçe büyük/küçük harf farkı gözetmeden) "ekle" çıkmaz: o malzeme listededir
-  const exact = query ? kit.ingredients.some((i) => nameKey(i.name) === nameKey(query)) : false;
-  const canAdd = kit.newIngredient !== null && query.length >= COUNT_ITEM_NAME_MIN && !exact;
+  // Sıra, Enter'ın seçtiği ve tam ad: src/lib/ingredient-search.ts (Türkçe harf ve büyük/küçük harf farkı gözetmez)
+  const search = useMemo(() => searchIngredients(kit.grouped, q, value), [kit.grouped, q, value]);
+  const visible = search.groups;
+  // Aynı ad listede varsa ("cilek surubu" = "Çilek şurubu") "ekle" çıkmaz: o malzeme listededir
+  const canAdd = kit.newIngredient !== null && query.length >= COUNT_ITEM_NAME_MIN && !search.exact;
 
   function pick(i: Ingredient) {
     if (!i.active && i.id !== value) return;
@@ -112,8 +110,11 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
       moveFocus(listRef.current, null, 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (firstMatch) pick(firstMatch);
-      else if (canAdd) setView("new");
+      // Yalnız tam ad ya da tek aday seçilir; ilk benzer sonuç değil ("Su" yazıp Enter "Laktozsuz süt" seçmesin)
+      if (search.enterPick) return pick(search.enterPick);
+      // Telefonda "Ara" klavyeyi kapatır, sonuçlar görünür; masaüstünde odak ilk seçeneğe iner
+      if (window.matchMedia("(pointer: coarse)").matches) e.currentTarget.blur();
+      else moveFocus(listRef.current, null, 1);
     }
   }
 
@@ -125,11 +126,12 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
     if (!moved && e.key === "ArrowUp") document.getElementById(searchId)?.focus();
   }
 
+  // Sonuç yoksa "Listede yok"; benzer adlar görünürken yazılan adla yeni malzeme açılabilir ama "yok" denmez
   const addButton = (prominent: boolean) =>
     canAdd ? (
       <Button data-option variant={prominent ? "primary" : "ghost"} onClick={() => setView("new")} className={cn("w-full justify-start text-left", prominent && "justify-center")}>
         <Plus size={16} aria-hidden="true" className="shrink-0" />
-        <span className="min-w-0 break-words">Listede yok: “{query}” ekle</span>
+        <span className="min-w-0 break-words">{prominent ? `Listede yok: “${query}” ekle` : `“${query}” adıyla yeni malzeme ekle`}</span>
       </Button>
     ) : null;
 
@@ -272,8 +274,9 @@ function NewIngredientForm({
   }, [groupId]);
   // Sunucunun bulduğu aynı adlı malzeme (sayfa açıldıktan sonra başkası eklediyse)
   const [found, setFound] = useState<Ingredient | null>(null);
-  const key = nameKey(form.name);
-  const same = key ? (kit.ingredients.find((i) => nameKey(i.name) === key) ?? (found && nameKey(found.name) === key ? found : undefined)) : undefined;
+  // Aramanın anahtarıyla: "cilek surubu" listedeki "Çilek şurubu"dur
+  const key = looseKey(form.name);
+  const same = key ? (kit.ingredients.find((i) => looseKey(i.name) === key) ?? (found && looseKey(found.name) === key ? found : undefined)) : undefined;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -310,7 +313,7 @@ function NewIngredientForm({
 
   return (
     <form id={formId} onSubmit={submit} className="space-y-4 pb-3" noValidate>
-      <CountItemFields form={form} nameNotice={notice} priceHint="Bilmiyorsanız boş bırakın; yönetici girer." />
+      <CountItemFields form={form} nameNotice={notice} priceHint="Fişteki gibi KDV dahil yazın; bilmiyorsanız boş bırakın, yönetici girer." />
     </form>
   );
 }

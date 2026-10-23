@@ -8,7 +8,7 @@
 import type { ProposedProduct, RecipeSnapshot } from "@/server/db/schema";
 
 import { SIZE_LABELS } from "./constants";
-import { cleanName, formulaStartMessage, nameKey, readMoneyText, startsLikeFormula, type MoneyRead } from "./count-item";
+import { cleanName, formulaStartMessage, isUnpriced, nameKey, readMoneyText, startsLikeFormula, type MoneyRead } from "./count-item";
 import { money, num } from "./format";
 
 export type { ProposedProduct, RecipeSnapshot };
@@ -86,6 +86,24 @@ export function diffRecipe(before: RecipeSnapshot, after: RecipeSnapshot): Recip
     changed,
     empty: !added && !removed && !changed && !reordered && noteBefore === noteAfter,
   };
+}
+
+/**
+ * Değişiklik önerisinde maliyet farkını taşıyan satırların (eklenen ya da miktarı değişen) paket fiyatı tahmini olan
+ * malzemeleri: öneride "Yeni malzeme" ile personelin yazdığı ya da faturadan gelmemiş fiyat. Reçete onayları kartı
+ * "Tahmini fiyatlı" diye söyler; fiyatı hiç girilmemiş olanlar (isUnpriced) ayrı uyarıdadır.
+ */
+export function estimateNames(
+  before: RecipeSnapshot,
+  after: RecipeSnapshot,
+  ingById: ReadonlyMap<number, { name: string; active: boolean; priceSource: string; packagePrice: number; isEstimate: boolean }>,
+): string[] {
+  const names = diffRecipe(before, after).rows.flatMap((r) => {
+    if (r.kind !== "added" && !(r.kind === "changed" && r.qty)) return [];
+    const ing = ingById.get(r.after.ingredientId);
+    return ing && ing.isEstimate && !isUnpriced(ing) ? [ing.name] : [];
+  });
+  return [...new Set(names)];
 }
 
 /** İki reçete aynı mı (onayda: öneriden sonra reçete değişti mi) */

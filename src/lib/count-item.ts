@@ -27,6 +27,15 @@ export function nameKey(name: string): string {
   return cleanName(name).toLocaleLowerCase("tr-TR").replace(/ı/g, "i").replace(/â/g, "a").replace(/î/g, "i").replace(/û/g, "u");
 }
 
+/**
+ * Benzer ad anahtarı: nameKey'e ek olarak Türkçe harfler de sadeleşir (ç→c, ş→s, ğ→g, ö→o, ü→u). Türkçe olmayan
+ * klavyede yazılan "cilek surubu" listedeki "Çilek şurubu"dur: aynı ad denetimi ve reçetedeki malzeme araması bununla
+ * karşılaştırır, ikinci bir kalem açılmaz. nameKey migration'ın SQL anahtarıyla aynı kalır (sayim_yeni_kalemler).
+ */
+export function looseKey(name: string): string {
+  return nameKey(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 export const COUNT_ITEM_NAME_MIN = 2;
 export const COUNT_ITEM_NAME_MAX = 120;
 
@@ -66,8 +75,8 @@ export type CountItemDuplicate = { kind: "counted" | "uncounted" | "inactive"; n
  * olan döner (kullanıcıya en işe yarar yönlendirme).
  */
 export function findDuplicate(name: string, existing: ExistingIngredient[]): CountItemDuplicate | null {
-  const key = nameKey(name);
-  const same = existing.filter((e) => nameKey(e.name) === key);
+  const key = looseKey(name);
+  const same = existing.filter((e) => looseKey(e.name) === key);
   const counted = same.find((e) => e.active && e.countUnit);
   if (counted) return { kind: "counted", name: counted.name };
   const active = same.find((e) => e.active);
@@ -80,8 +89,8 @@ export function findDuplicate(name: string, existing: ExistingIngredient[]): Cou
  * ekle" onu yeniden açmaz, `from` ayından itibaren de listeye alır (ör. Ekim'de eklenen şurup Eylül sayımına da girsin).
  */
 export function laterCountItem<T extends ExistingIngredient>(name: string, existing: T[], from: string): T | undefined {
-  const key = nameKey(name);
-  return existing.find((e) => e.active && e.countUnit && e.countFrom && e.countFrom > from && nameKey(e.name) === key);
+  const key = looseKey(name);
+  return existing.find((e) => e.active && e.countUnit && e.countFrom && e.countFrom > from && looseKey(e.name) === key);
 }
 
 /** Aynı ad bulununca gösterilen metin; yönetici ne yapacağını, personel kime yazacağını okur */
@@ -208,12 +217,12 @@ export type CountItemSource = "sayim" | "recete";
 /**
  * Kalemin notu (Hammaddeler'de ve Tahmini dökümünde okunur): kim, ne zaman, nereden ekledi; paket fiyatını yazdıysa
  * kimin yazdığı (yönetici neyi doğrulayacağını bilsin). `date`: "23.10.2026".
- * "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel yazdı."
+ * "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi."
  */
 export function countItemNote(by: string, date: string, opts: { pricedBy?: "admin" | "staff" | null; source?: CountItemSource } = {}): string {
   const base = `Sayım listesine ${by} ekledi (${date}${opts.source === "recete" ? ", reçete önerisinden" : ""})`;
   if (!opts.pricedBy) return `${base}.`;
-  return `${base}; paket fiyatını ${opts.pricedBy === "admin" ? "yönetici" : "personel"} yazdı.`;
+  return opts.pricedBy === "admin" ? `${base}; paket fiyatını yönetici yazdı.` : `${base}; paket fiyatını personel KDV dahil yazdı, KDV düşülüp kaydedildi.`;
 }
 
 /** Formdan gelen kalem (sunucuda doğrulanmış) */
@@ -228,6 +237,16 @@ export interface CountItemDraft {
 }
 
 /**
+ * Hammaddelerde paket fiyatı KDV hariçtir. Personel fişteki ya da etiketteki fiyatı (KDV dahil) yazar: grubun KDV
+ * oranıyla düşülür (120 ₺, %20 → 100 ₺). Yönetici Hammaddeler'deki gibi KDV hariç yazar. Yazılmadıysa 0.
+ */
+export function netPackagePrice(typed: number | null, vatRate: number, includesVat: boolean): number {
+  if (typed === null) return 0;
+  if (!includesVat || !(vatRate > 0)) return typed;
+  return Math.round((typed / (1 + vatRate)) * 100) / 100;
+}
+
+/**
  * Yeni kalemin hammaddeler tablosuna yazılacak değerleri. Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zil "Fiyatı
  * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Fiyat geçmişine
  * satır yazılmaz (çekirdek yazmaz): yazılan tahmin başlangıç olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü
@@ -239,6 +258,7 @@ export function newCountItemValues(
   rows: { countGroup: string | null; category: string; vatRate: number; active: boolean; sortOrder: number }[],
   from: string,
   note: string,
+  opts: { priceIncludesVat?: boolean } = {},
 ) {
   const defaults = groupDefaults(rows, draft.group);
   return {
@@ -246,7 +266,7 @@ export function newCountItemValues(
     category: defaults.category,
     supplier: null,
     packageDesc: draft.packageDesc,
-    packagePrice: draft.packagePrice ?? 0,
+    packagePrice: netPackagePrice(draft.packagePrice, defaults.vatRate, opts.priceIncludesVat ?? false),
     packageSize: draft.packageSize,
     unit: BASE_UNIT[draft.countUnit],
     vatRate: defaults.vatRate,
