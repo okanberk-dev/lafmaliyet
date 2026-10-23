@@ -38,13 +38,16 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    açılan hatırlatıcı (personel bölümündeki kalem maaş türüyle açılır: Muhasebeci, Part-time çalışan) gideri silinse ya
    da adı değişse de bordro sayılmaz: maaşı ve SGK'yı kapatmaz, diğer hatırlatıcıdır.
 3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
-   tevkifatı (adında KDV ile birlikte “2 No.lu”, “KDV2”, “tevkifat”) ayrı bir ödemedir: asıl KDV'nin dönemini almaz,
-   devredeni sıfırlamaz. Böyle bir hatırlatıcı yalnız günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü): o
-   dönemde faturalardan hesaplanan *KDV-2* tahmini ayrıca yazılmaz (iki kez sayılmasın diye). Tutarı yazılıysa her
-   gününde o tutar girer; tutarsızsa tahmin hatırlatıcının gününde girer, tahmin yoksa (KDV tahmine katılmıyor ya da
-   dönemin verisi yok) tutarı girilmemiş ödemedir. Kartta “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı
-   yazılıysa o, boşsa bu tahmin” yazar. Adında KDV geçmeyen “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj” ya da
-   “2 No.lu dükkan” KDV-2 değildir, diğer hatırlatıcıdır.
+   tevkifatı (adında “2 No.lu”, “KDV2” ya da “tevkifat” ile birlikte KDV ya da beyanname: “2 No.lu beyanname”,
+   “Tevkifat beyannamesi”) ayrı bir ödemedir: asıl KDV'nin dönemini almaz, devredeni sıfırlamaz. Böyle bir hatırlatıcı
+   günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü): o dönemde faturalardan hesaplanan *KDV-2* tahmini ayrıca
+   yazılmaz (iki kez sayılmasın diye). Tutarı yazılıysa her gününde o tutar girer; tutarsızsa tahmin hatırlatıcının
+   gününde, dönem başına bir kez girer (aynı dönemi tutarıyla ya da tahminle taşıyan başka bir KDV-2 hatırlatıcısı
+   varsa girmez); tahmin yoksa (KDV tahmine katılmıyor ya da dönemin verisi yok) tutarı girilmemiş ödemedir.
+   Tekrarlayan hatırlatıcı ilk gününden bugünkü gününe kadarki dönemleri de karşılar: vadesinden önce “Ödendi” denince
+   sıradaki aya geçer, ödenen dönemin tahmini geri gelmez. Kartta “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer:
+   tutarı yazılıysa o, boşsa bu tahmin” yazar. “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj” ya da “2 No.lu dükkan”
+   KDV-2 değildir, diğer hatırlatıcıdır.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
    görünür (“Ödemeler'de tutar girin”).
 

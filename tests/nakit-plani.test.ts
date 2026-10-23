@@ -627,6 +627,77 @@ test("KDV-2 hatırlatıcısı yalnız kendi dönemini karşılar; tutarsızsa ta
   assert.equal(lineAt(m, `reminder:${muhtasar.id}@`)[0].amount, 4_000);
 });
 
+test("KDV-2: vadesinden önce Ödendi denen dönemin tahmini geri gelmez; aynı döneme iki hatırlatıcı bir kez sayılır", () => {
+  const sepBill = ds.invoices.find((i) => i.date === "2026-09-17" && i.amount === 30_000)!;
+  const v = vatMonthInputs(
+    createModel({
+      ...ds,
+      invoices: [...ds.invoices.map((i) => (i === sepBill ? { ...i, vat: 6_000 } : i)), { ...sepBill, id: 990_002, date: "2026-10-10", vat: 6_000 }],
+    }),
+    TODAY,
+  );
+  const base = { vat: v, vatAnchor: { month: "2026-09", amount: 121_204.69 } };
+  // 22 Ekim'de Eylül'ün KDV-2'si ödendi, aylık seri "Ödendi" ile 25 Kasım'a geçti (ilk günü 25 Ekim kalır)
+  const paid = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-11-25", anchorDate: "2026-10-25" });
+  const p = buildCashPlan(input({ ...base, reminders: [paid] }));
+  assert.equal(lineAt(p, "kdv2@").length, 0);
+  assert.deepEqual(
+    lineAt(p, `reminder:${paid.id}@`).map((l) => [l.date, l.title, l.amount]),
+    [["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800]],
+  );
+  assert.deepEqual(
+    p.vat!.vat2.map((r) => [r.date, r.covered]),
+    [
+      ["2026-10-25", true],
+      ["2026-11-25", true],
+    ],
+  );
+  // Tutarlı seri de aynı: ödenen Eylül geri gelmez, Ekim'e yazılı tutar
+  const paidAmount = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: 2_591, dueDate: "2026-11-25", anchorDate: "2026-10-25" });
+  const pa = buildCashPlan(input({ ...base, reminders: [paidAmount] }));
+  assert.equal(lineAt(pa, "kdv2@").length, 0);
+  assert.deepEqual(
+    lineAt(pa, `reminder:${paidAmount.id}@`).map((l) => [l.date, l.amount]),
+    [["2026-11-25", 2_591]],
+  );
+  // 25 Kasım'da başlamak üzere yeni açılan seri Eylül'ü karşılamaz: tahmini 25 Ekim'de kalır
+  const fresh = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-11-25" });
+  assert.deepEqual(
+    lineAt(buildCashPlan(input({ ...base, reminders: [fresh] })), "kdv2@").map((l) => [l.date, l.amount]),
+    [["2026-10-25", 1_800]],
+  );
+  // Tutarsız seri ve aynı güne tutarlı tek seferlik (tahakkuk 1.800 + damga 791): Eylül yalnız 2.591
+  const series = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-10-25" });
+  const once = rem({ title: "KDV2 Eylül", kind: "vergi", amount: 2_591, dueDate: "2026-10-25", repeat: "none" });
+  const two = buildCashPlan(input({ ...base, reminders: [series, once] }));
+  assert.deepEqual(
+    lines(two)
+      .filter((l) => l.date === "2026-10-25" && l.direction === "out" && (l.kind === "kdv" || l.key.startsWith("reminder:")))
+      .map((l) => [l.key, l.amount]),
+    [[`reminder:${once.id}@2026-10-25`, 2_591]],
+  );
+  assert.deepEqual(
+    lineAt(two, `reminder:${series.id}@`).map((l) => [l.date, l.amount]),
+    [["2026-11-25", 1_800]],
+  );
+  assert.equal(two.unknownAmounts.length, 0);
+  // İki tutarsız seri: dönemin tahmini bir kez
+  const twin = rem({ title: "2 No.lu KDV", kind: "vergi", amount: null, dueDate: "2026-10-25" });
+  const twins = buildCashPlan(input({ ...base, reminders: [series, twin] }));
+  assert.deepEqual(
+    lines(twins)
+      .filter((l) => l.kind === "kdv" && l.direction === "out")
+      .map((l) => [l.date, l.amount]),
+    [
+      ["2026-10-25", 1_800],
+      ["2026-11-25", 1_800],
+    ],
+  );
+  // "2 No.lu beyanname" (panelin kendi sözü) KDV-2'dir: tahmin ikinci kez yazılmaz
+  const words = rem({ title: "2 No.lu beyanname", kind: "vergi", amount: 2_591, dueDate: "2026-10-25", repeat: "none" });
+  assert.equal(lineAt(buildCashPlan(input({ ...base, reminders: [words] })), "kdv2@2026-10-25").length, 0);
+});
+
 const kdvRem = (over: Partial<ReminderRow> = {}) => rem({ title: "KDV beyannamesi ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-10-28", ...over });
 
 test("KDV hatırlatıcısı: tahmin onun günlerinde; tutarı o dönemin kesin tutarı, sonraki dönem yine tahmin", () => {

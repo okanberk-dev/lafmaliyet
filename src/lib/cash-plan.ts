@@ -169,7 +169,10 @@ export interface Vat2Row {
   date: string;
   /** 100'e yuvarlı */
   amount: number;
-  /** Ödemeler'deki KDV-2 hatırlatıcısının bu döneme günü var: plana hatırlatıcı girer (tutarı ya da bu tahmin) */
+  /**
+   * Ödemeler'deki KDV-2 hatırlatıcısı bu dönemi karşılıyor: günü varsa plana hatırlatıcı girer (tutarı ya da bu
+   * tahmin), tekrarlayan hatırlatıcıda vadesinden önce "Ödendi" denmiş dönemse hiçbir şey girmez
+   */
   covered: boolean;
 }
 
@@ -638,37 +641,47 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   vatRows.sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
   // KDV-2 (tevkifat): alış faturalarındaki tevkifat izleyen ayın 25'inde 2 No.lu beyannameyle ödenir; 1 No.lu
   // beyannamede indirilir (alışların içinde), o ay ödenecek çıkmasa da (Eylül 2026: devreden 121.204,69, KDV-2
-  // 1.800 ₺). Tahminler yarından. Ödemeler'deki KDV-2 hatırlatıcısı yalnız günlerinin dönemlerini karşılar: yazılı
-  // tutarı her gününde kesindir; tutarsızsa tahmin hatırlatıcının gününde girer, tahmin yoksa tutarı girilmemiş ödemedir.
+  // 1.800 ₺). Tahminler yarından. Ödemeler'deki KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar:
+  // - yazılı tutarı her gününde kesindir;
+  // - tutarsızsa dönemin tahmini hatırlatıcının gününde girer, dönem başına bir kez (başka bir KDV-2 hatırlatıcısı o
+  //   dönemi tutarıyla ya da tahminle zaten taşıyorsa girmez); tahmin yoksa tutarı girilmemiş ödemedir;
+  // - tekrarlayan hatırlatıcı ilk gününden (`anchorDate`) bugünkü gününe kadarki dönemleri de karşılar: vadesinden
+  //   önce "Ödendi" denince sıradaki aya geçer, ödenen dönemin tahmini geri gelmez.
   const withheldOf = new Map(input.vat.months.map((m) => [m.month, round100(m.purchases.withheld)]));
+  const vat2Occs = vat2Rems
+    .flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, period: vatPeriodOf(o.due) })))
+    .sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
   const vat2Claimed = new Set<string>();
-  for (const r of vat2Rems) {
-    for (const o of reminderOccurrences(r, today, end)) {
-      const period = vatPeriodOf(o.due);
-      vat2Claimed.add(period);
-      if (r.amount !== null) {
-        if (r.amount > 0) reminderLine(r, o);
-        continue;
-      }
-      const amount = withheldOf.get(period);
-      if (vatMode === "excluded" || amount === undefined) addUnknown(r, o.date);
-      else if (amount > 0)
-        reminderLine(r, o, {
-          kind: "kdv",
-          amount,
-          estimated: true,
-          title: `${r.title} (${MONTH_NAMES[Number(period.slice(5, 7)) - 1]})`,
-          detail: vat2LineDetail(period),
-          href: "#kdv",
-        });
-    }
+  for (const x of vat2Occs) {
+    if (x.r.amount === null) continue;
+    if (x.r.amount > 0) reminderLine(x.r, x.o);
+    vat2Claimed.add(x.period);
   }
+  for (const x of vat2Occs) {
+    if (x.r.amount !== null || vat2Claimed.has(x.period)) continue;
+    vat2Claimed.add(x.period);
+    const amount = withheldOf.get(x.period);
+    if (vatMode === "excluded" || amount === undefined) addUnknown(x.r, x.o.date);
+    else if (amount > 0)
+      reminderLine(x.r, x.o, {
+        kind: "kdv",
+        amount,
+        estimated: true,
+        title: `${x.r.title} (${MONTH_NAMES[Number(x.period.slice(5, 7)) - 1]})`,
+        detail: vat2LineDetail(x.period),
+        href: "#kdv",
+      });
+  }
+  const vat2Paid = vat2Rems
+    .filter((r) => r.repeat !== "none")
+    .map((r) => ({ from: vatPeriodOf(r.anchorDate), to: vatPeriodOf(r.dueDate) }));
+  const vat2Covered = (period: string) => vat2Claimed.has(period) || vat2Paid.some((p) => p.from <= period && period < p.to);
   const vat2: Vat2Row[] = [];
   for (const m of input.vat.months) {
     const date = vat2DueDate(m.month);
     const amount = round100(m.purchases.withheld);
     if (date <= today || date > end || amount <= 0) continue;
-    const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Claimed.has(m.month) };
+    const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Covered(m.month) };
     vat2.push(row);
     if (vatMode === "excluded" || row.covered) continue;
     dated.push({

@@ -201,7 +201,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
   assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
 });
 
-test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KDV; muhtasar, stopaj ve 2 No.lu dükkan değil", () => {
+test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KDV ya da beyanname; muhtasar, stopaj ve 2 No.lu dükkan değil", () => {
   for (const [title, kind] of [
     ["KDV2 tevkifat", "vergi"],
     ["KDV 2", "vergi"],
@@ -210,6 +210,9 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
     ["2 numaralı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
     ["Katma değer vergisi tevkifatı", "vergi"],
+    // Panelin kendi sözleri (KDV-2 satırının açıklaması: "2 No.lu beyannameyle ayın 25'inde ödenir")
+    ["2 No.lu beyanname", "vergi"],
+    ["Tevkifat beyannamesi", "odeme"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -217,6 +220,8 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
   for (const [title, kind] of [
     ["Muhtasar (gelir vergisi tevkifatı)", "vergi"],
     ["Stopaj tevkifat", "vergi"],
+    ["Muhtasar beyannamesi (gelir vergisi tevkifatı)", "vergi"],
+    ["Stopaj tevkifat beyannamesi", "vergi"],
     ["Aidat 2 No.lu dükkan", "odeme"],
     ["Elektrik 2 numaralı sayaç", "odeme"],
     ["KDV beyannamesi ve ödemesi", "vergi"],
