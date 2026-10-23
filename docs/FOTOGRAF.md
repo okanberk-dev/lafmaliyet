@@ -79,7 +79,7 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 | Yüklenip bir kayda bağlanmayan (form bırakıldı, Kaldır) | 2 gün sonra |
 | Kasa raporunun (Z, POS) | raporun gününden 180 gün (6 ay) sonra |
 | Kasadan çıkan fişin | satırın gününden 400 gün (13 ay) sonra |
-| Kontrol listesinin (açılış, kapanış) | kaydın gününden 60 gün sonra; yeniden çekilen ya da geri alınanın eskisi hemen |
+| Kontrol listesinin (açılış, kapanış) | kaydın gününden 60 gün sonra; yeniden çekilenin eskisi hemen |
 | Bağı kalkan (satır silindi, fotoğraf değişti) | 7 gün sonra (Geri al payı) |
 | Silinen kasa raporunun | 30 gün sonra |
 

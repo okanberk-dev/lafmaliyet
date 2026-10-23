@@ -23,7 +23,7 @@ Madde türleri:
 |-----|-------------|-------|
 | **Tamam işareti** | **Tamam** ya da **Sorun var** | "Sorun var" kısa bir not ister ("Buz makinesi su kaçırıyor") |
 | **Fotoğraf** | **Fotoğraf çek**; isteğe bağlı not | Telefonun kamerası açılır. Fotoğraf çekilmeden madde yapılmış sayılmaz |
-| **Sayı / sıcaklık** | Değer (ör. 3,5); birim ve aralık yanında | Aralık dışı değer kırmızı görünür ve ne yapıldığını yazan not ister (hazır notlar: "Kapı kapatıldı", "Termostat ayarlandı", …). Eksi aralıkta (dondurucu) alan "−" önekli gelir; iPhone'un sayı klavyesinde eksi yok |
+| **Sayı / sıcaklık** | Değer (ör. 3,5); birim ve aralık yanında | Aralık dışı değer kırmızı görünür ve ne yapıldığını yazan not ister (hazır notlar: "Kapı kapatıldı", "Termostat ayarlandı", …). Eksi aralıkta (dondurucu) alanın yanındaki işaret düğmesi "−" gelir; iPhone'un sayı klavyesinde eksi yok |
 | **Kısa not** | En çok 300 karakter | Boş bırakılırsa yanıt silinir |
 
 Her madde **zorunlu** ya da **isteğe bağlı**dır; liste bütün zorunlu maddeler yanıtlanınca kendiliğinden tamamlanır.
@@ -61,7 +61,7 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
   yapılır ve yanıt aynı istekte yazılır; yarıda kalan yükleme "Tekrar dene" ile yeniden gönderilir.
 - **60 gün saklanır** (kaydın gününden). Süresi dolan fotoğrafı sabah işi siler (fotoğrafların ortak temizliği,
   [FOTOGRAF.md](FOTOGRAF.md) § 4); madde "Fotoğraf çekildi · 60 günden eski olduğu için silindi" der, kaydın kendisi
-  kalır. Yeniden çekilen ya da geri alınan fotoğrafın eskisi hemen silinir.
+  kalır. Yeniden çekilen fotoğrafın eskisi hemen silinir.
 - **Kim görür:** yönetici hepsini; personel yalnız personelin doldurduğu listelerin bugünkü ve dünkü fotoğraflarını.
   Fotoğraf panelin kendi adresinden, oturumla açılır (`/api/foto/[id]`); e-postaya ve zile fotoğraf adresi yazılmaz.
 - Fotoğraflar mekânın içindir: maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der (KVKK).
@@ -73,7 +73,7 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 | Ekran | Kimde | İçerik |
 |-------|-------|--------|
 | **Bugün** (`/panel/kontrol`) | İkisi | Bugünün listeleri açılış saatine göre: durum (Sonra, Yapılacak, Gecikti, Tamam), ilerleme ("3 / 13 madde · 1 fotoğraf kaldı"), dolduranlar; sıradaki liste vurgulu. Yöneticide sekmeler ve "Bugün olmayan listeler" satırı (pasif, günü değil, yarından) |
-| **Doldurma** (`/panel/kontrol/[id]`) | İkisi | Maddeler bölüm bölüm; üstte yapışkan ilerleme çubuğu; bitince "Liste tamam · 09:12 · Ayşe ve Mehmet". 05:00–05:30 arasında bitmemiş dünkü liste açılır |
+| **Doldurma** (`/panel/kontrol/[id]`) | İkisi | Maddeler bölüm bölüm; üstte yapışkan ilerleme çubuğu; bitince "Liste tamam · 09:12 · Ayşe ve Mehmet". 05:00–05:30 arasında başlanmış ama bitmemiş dünkü liste açılır |
 | **Geçmiş** (`/panel/kontrol/gecmis`) | Yönetici | Son 14 gün (her gün listelerin durumu, eksik, sorun), "Daha eski günler". Gün açılınca her liste: kim ne zaman (kişi başına ilk ve son yanıt), erken / geç işareti, maddeler, önceki hâller, aralık dışı değerler, fotoğraflar (dokununca büyür) |
 | **Listeler** (`/panel/kontrol/duzenle`) | Yönetici | Yeni liste; ad, açıklama, saat aralığı (son saat 02:00 olabilir), günler, Personel doldurabilir, Etkin. Maddeler: ekle, düzenle, bölüm içinde yukarı / aşağı, kaldır (kaldırılan geçmişte kalır, "Kaldırılan maddeler"den geri eklenir). Kaydı olan liste silinmez, pasife alınır |
 
