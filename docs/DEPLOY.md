@@ -41,7 +41,17 @@ Preview ortamına `MIGRATE_ON_PREVIEW=1` eklenir; o zaman her önizleme kendi da
 
 ## 4. Ortam değişkenleri
 
-Proje → **Settings → Environment Variables** (Production ve Preview):
+Proje → **Settings → Environment Variables**. Önizlemeler canlının veritabanını kullandığı sürece (§ 3) gizli değerler
+**yalnız Production**'a eklenir: `AUTH_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET`, `KARAOKE_SYNC_SECRET`, `PARASUT_*`,
+`RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`, `CASH_REPORT_RECIPIENTS`. Önizlemeye giriş
+yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
+
+- Aynı `AUTH_SECRET` önizlemede olsaydı incelenmemiş dal kodu canlının verisiyle gerçek oturum açardı.
+- Farklı bir `AUTH_SECRET`'la önizleme ortak veritabanındaki şifreli değerleri okuyamaz: bildirim anahtarını (VAPID)
+  "okunamıyor" diye yenisiyle değiştirir, canlının cihaz bildirimleri durur; iki adımlı doğrulama da açılmaz.
+
+Önizlemelere kendi Neon dalı verilince (§ 3) `AUTH_SECRET` önizlemeye `MIGRATE_ON_PREVIEW=1` ile birlikte eklenir.
+`ADMIN_EMAIL` ve `ADMIN_NAME` önizlemede kullanılmaz (yalnız ilk kurulumda, boş veritabanında okunur).
 
 | Değişken | Değer |
 |----------|-------|
@@ -63,6 +73,7 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
 | `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 | `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
+| `DATABASE_SSL` | (isteğe bağlı, yalnız acil durumda) `require`: veritabanı sunucusunun sertifikası doğrulanmaz. Varsayılan doğrulamalı bağlantıdır (`verify-full`; Neon'un sertifikası Let's Encrypt'ten, Node tanır): şifreli ama sertifikası denetlenmeyen bağlantıda araya giren biri kendi sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme hem doğrudan hem havuzlu adresi doğrulamalı açar; açılmazsa derleme durur, yayındaki sürüm değişmez. Neon sertifikasını değiştirdiği için derleme durursa geçici olarak `require` yazılır |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
 [PARASUT.md](PARASUT.md) § 1.
@@ -216,9 +227,14 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   (değerler günlükten; yalnız şemanın gerçekten aynı olduğu doğrulandıktan sonra).
 - **"Veritabanında depoda olmayan N migration kaydı var" uyarısı** derlemeyi durdurmaz: günlükte olmayan bir kayıt
   (bir önizlemenin ya da birleşmemiş bir dalın uyguladığı). Canlıda bir tane bilinen kayıt var: 21 Eki 2026'da bir
-  önizlemenin erken uyguladığı menü migration'ı; aynı değişiklik 0018 olarak `IF NOT EXISTS` ile yeniden uygulandı.
-  Yeni bir uyarı görünürse hangi dalın uyguladığına ve şemanın koddakiyle aynı olduğuna bakın
+  önizlemenin erken uyguladığı menü migration'ı (created_at 1792621679613); aynı değişiklik 0018 olarak
+  `IF NOT EXISTS` ile yeniden uygulandı. Bu kayıt için uyarı artık yazılmaz (`scripts/migration-check.ts` ›
+  `KNOWN_ORPHANS`): her derlemede çıkan uyarıya alışılıp yeni bir kayıt gözden kaçmasın. Uyarı görünürse yenidir: hangi
+  dalın uyguladığına ve şemanın koddakiyle aynı olduğuna bakın
   (`select created_at, hash from drizzle.__drizzle_migrations order by created_at`).
+- Derleme günlüğündeki iki npm uyarısı zararsızdır: `npm warn install-scripts … esbuild, unrs-resolver` (geliştirme
+  araçlarının kurulum betikleri; esbuild platform paketinden yine çalışır) ve `npm warn Unknown env config "cache-dir"`
+  (Vercel'in derleme ortamından).
 - Veri yedeği: Neon'un otomatik nokta-zaman geri yüklemesi (point-in-time restore) küçük planlarda yalnız birkaç saat
   ya da gün geriye gider. Uzun süreli yedek: **Ayarlar › Yedek › Yedeği indir** (parolayla) paneldeki bütün veriyi tek
   `.json.gz` dosyasında indirir; ayda bir alınır, 30 günü geçince zil hatırlatır. Geri yükleme yalnız bilgisayardan:
@@ -231,14 +247,21 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
 - Veriyi Excel'in ilk hâline döndürmek için yerel makineden production veritabanı adresiyle şunu çalıştırın:
 
 ```bash
-DATABASE_URL="<neon bağlantı adresi>" npm run db:reset
+DATABASE_URL="<neon bağlantı adresi>" npm run db:reset -- --onay=<sunucu adı>
 ```
+
+  Bu bilgisayarda olmayan veritabanında komut sunucu adıyla onay ister (`--onay=` yoksa terminalde sorar; adı yanlışsa
+  hiçbir şey silinmez): `.env.local` canlının adresini gösteriyorsa yerel sanılan bir sıfırlama canlıyı silmesin. Silmeden
+  önce bütün verinin yedeği ev klasörüne yazılır (`laffogato-yedek-once-<sunucu>-….json.gz`, yüklenen belgeler dahil);
+  yanlışlıkla sıfırlandıysa `npm run db:restore -- <o dosya> --sil --onay=<sunucu>` ile geri gelir ([YEDEK.md](YEDEK.md)).
 
   Dikkat: ürünler, hammaddeler, satışlar, faturalar (belge ve kalemleriyle), sabit giderler, personel, gelir-gider
   düzeltmeleri, sayımlar, ay bilgileri, ayarlar, POS eşleştirmeleri, aylık harcama kayıtları, işlem geçmişi, Paraşüt
   eşitleme geçmişi, imleci ve ürün bağlantıları, ürünlerin laffogato.net menü bağlantıları ve eşitleme durumu,
   Ödemeler › Son ödenenler listesi ile bildirim günlüğü silinip Excel verisi yeniden yüklenir. Faturaların ödendi / talep edildi işaretleri de gider; ödeme takibinin başlangıcı
-  sıfırlanır. **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir), hatırlatıcılar,
+  sıfırlanır. Ürünler zayi oranlarını kategorilerinden alır (kahve %5, tatlı %20, çay %40…; `src/lib/fire-defaults.ts`).
+  **Silinmeyenler:** kullanıcılar, aylık harcama kategorileri (kayıtları silinir), hatırlatıcılar,
   bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, tedarikçi cari kartları, günlük işlerin çalışma kayıtları,
-  fotoğraflar, kasadan çıkanlar ve okuma kayıtları. Sonraki eşitleme
+  fotoğraflar, kasadan çıkanlar ve okuma kayıtları, zayi ve ikram kayıtları (Excel'de aynı kimlik ve adla geri gelen ürüne
+  ya da hammaddeye bağlı kalır, gerisi yalnız adıyla). Sonraki eşitleme
   Paraşüt faturalarını baştan alır: son 30 günün faturaları "ödenmedi", daha eskileri Paraşüt'teki durumuyla gelir.

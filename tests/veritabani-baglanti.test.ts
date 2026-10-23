@@ -12,6 +12,7 @@ import { sql } from "drizzle-orm";
 import { integer, pgTable, text } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
 
+import { KNOWN_ORPHANS, migrationReport, type JournalEntry } from "../scripts/migration-check";
 import { sslOption } from "../src/server/db";
 import { connectionErrorCode, isReadOnlyStatement, shouldRetry, withConnectionRetry, type RetryClient } from "../src/server/db/retry";
 
@@ -193,4 +194,24 @@ test("havuzun ayarları ve canlı derlemenin bağlantı denetimi", () => {
   const pre = read("scripts/predeploy.ts");
   assert.match(pre, /await runMigrations\(\);\s*await runSeed\(\);\s*await checkRuntimeConnection\(\);/);
   assert.match(pre, /if \(!url \|\| url === migrated\) return;/);
+});
+
+test("derleme günlüğü: bilinen eski önizleme kaydı uyarı yazmaz, yeni bir kayıt yazar", () => {
+  const J: JournalEntry[] = [{ idx: 0, when: 1000, tag: "0000_ilk" }];
+  assert.deepEqual([...KNOWN_ORPHANS], [1792621679613]);
+  assert.equal(migrationReport(J, [1000, 1792621679613]).warning, null);
+  const fresh = migrationReport(J, [1000, 1792621679613, 1792700000000]).warning ?? "";
+  assert.match(fresh, /depoda olmayan 1 migration kaydı var \(created_at 1792700000000 = /);
+  assert.equal(migrationReport(J, [1000]).ok, "✓ Veritabanı şeması güncel (1 migration)", "canlı derleme günlüğünün satırı aynı");
+});
+
+test("DEPLOY.md: gizli değerler yalnız Production (önizleme canlının veritabanını kullanır), TLS acil geri dönüşü yazılı", () => {
+  const doc = read("docs/DEPLOY.md");
+  assert.doesNotMatch(doc, /Environment Variables\*\* \(Production ve Preview\)/);
+  const env = doc.slice(doc.indexOf("## 4. Ortam değişkenleri"), doc.indexOf("## 5."));
+  assert.match(env, /gizli değerler\s+\*\*yalnız Production\*\*'a eklenir/);
+  for (const name of ["AUTH_SECRET", "ADMIN_PASSWORD", "CRON_SECRET", "KARAOKE_SYNC_SECRET", "PARASUT_*"]) assert.ok(env.includes(`\`${name}\``), name);
+  assert.match(env, /`MIGRATE_ON_PREVIEW=1` ile birlikte/);
+  assert.match(env, /\| `DATABASE_SSL` \|/);
+  assert.match(doc, /npm run db:reset -- --onay=<sunucu adı>/);
 });

@@ -1,18 +1,29 @@
 // Excel'den çıkarılan başlangıç verisini veritabanına yükler.
 // Kullanım:
-//   npm run db:seed              -> veritabanı boşsa yükler
-//   npm run db:seed -- --reset   -> kullanıcılar hariç bütün veriyi silip yeniden yükler
-// İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış).
+//   npm run db:seed                        -> veritabanı boşsa yükler
+//   npm run db:reset [-- --onay=<sunucu>]  -> kullanıcılar hariç verinin çoğunu silip yeniden yükler (README › db:reset)
+// İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış). Ürünler
+// Excel'de boş bıraktığı zayi oranlarını kategorilerinden alır (src/lib/fire-defaults.ts).
+//
+// db:reset geri alınamaz: bu bilgisayarda olmayan bir veritabanında (Neon) sunucu adıyla onay ister (db:restore gibi;
+// .env.local canlının adresini gösteriyorsa yerel sanılan sıfırlama canlıyı silmesin) ve silmeden önce her zaman tam
+// yedeği ev klasörüne yazar (laffogato-yedek-once-<sunucu>-….json.gz; yüklenen belgeler dahil, docs/YEDEK.md).
 
+import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 
 import { loadEnvConfig } from "@next/env";
 import { count, sql } from "drizzle-orm";
 
+import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
 import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
+import { withFireDefaults } from "../src/lib/fire-defaults";
+import { relinkWaste } from "../src/lib/waste";
 import { hashPassword } from "../src/server/auth/password";
+import { appVersion, writeBackupFile } from "../src/server/backup/core";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { excelToDataset, investmentSeed, type ExcelData } from "../src/server/db/seed/excel";
@@ -99,9 +110,41 @@ async function ensureChecklistSeed(db: DB) {
   if (added.length) console.log(`✓ Kontrol listeleri eklendi: ${added.join(", ")}`);
 }
 
-export async function runSeed({ reset = false } = {}) {
+/**
+ * db:reset'in hedefe göre onayı (saf; tests/zayi-oranlari.test.ts). Bu bilgisayardaki veritabanı onaysız; başkası (Neon)
+ * yalnız sunucu adıyla: `--onay=<sunucu>` ya da terminalde sorulunca adı yazmak.
+ */
+export function resetCheck(
+  target: { host: string; label: string; local: boolean },
+  confirm: string | null,
+): { ok: true } | { ok: false; error: string } | { ok: false; warning: string } {
+  if (target.local || confirm === target.host) return { ok: true };
+  if (confirm !== null) return { ok: false, error: `Onay tutmuyor: --onay=${target.host} yazın (sunucu adı). Hiçbir şey silinmedi.` };
+  return { ok: false, warning: `Bu veritabanındaki ürünler, faturalar, satışlar, sayımlar ve ayarlar silinip Excel verisi yüklenecek: ${target.label}.` };
+}
+
+export interface SeedOptions {
+  reset?: boolean;
+  /** db:reset için `--onay=<sunucu>` */
+  confirm?: string | null;
+  /** Etkileşimli terminalde soru (yoksa onay yalnız --onay ile) */
+  ask?: ((question: string) => Promise<string>) | null;
+  now?: Date;
+}
+
+export async function runSeed({ reset = false, confirm = null, ask = null, now = new Date() }: SeedOptions = {}) {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!url) throw new Error("DATABASE_URL tanımlı değil");
+  if (reset) {
+    const target = databaseTarget(url);
+    console.log(`Hedef: ${target.label}${target.local ? " (bu bilgisayar)" : ""}`);
+    const check = resetCheck(target, confirm);
+    if (!check.ok) {
+      if ("error" in check) throw new Error(check.error);
+      if (!ask) throw new Error(`${check.warning} Onay için --onay=${target.host} ekleyin. Hiçbir şey silinmedi.`);
+      if ((await ask(`${check.warning} Onaylamak için sunucu adını yazın: `)).trim() !== target.host) throw new Error("Onaylanmadı; hiçbir şey silinmedi.");
+    }
+  }
   const db = createDb(url, 1);
   try {
     const [{ n }] = await db.select({ n: count() }).from(s.ingredients);
@@ -117,7 +160,18 @@ export async function runSeed({ reset = false } = {}) {
     );
     const ds = excelToDataset(raw);
 
+    if (reset) {
+      // Silmeden önce tam yedek (yüklenen belgeler dahil): yanlış veritabanı sıfırlandıysa db:restore ile geri gelir
+      const target = databaseTarget(url);
+      const file = join(homedir(), backupFileName(now, { host: target.host }));
+      const b = await writeBackupFile(db.$client, file, { documents: true, createdBy: "db:reset öncesi", app: appVersion(), now });
+      console.log(`✓ Silmeden önce yedek: ${file} · ${backupSummaryText({ tables: Object.keys(b.tables).length, rows: b.rows, bytes: b.bytes, documents: b.documents, docCount: b.docCount })}`);
+    }
+
     await db.transaction(async (tx) => {
+      // Zayi ve ikram kayıtları kalır (kasa raporları ve kasadan çıkanlar gibi): TRUNCATE … CASCADE ürünlere bağlı
+      // oldukları için onları da boşaltır; önce okunur, Excel verisinden sonra aynı kimliklerle geri yazılır
+      const keptWaste = reset ? await tx.select().from(s.wasteEntries) : [];
       if (reset) {
         await tx.execute(
           sql.raw(
@@ -158,7 +212,8 @@ export async function runSeed({ reset = false } = {}) {
             changedAt: new Date("2026-10-17T12:00:00+03:00"),
           })),
       );
-      await tx.insert(s.products).values(ds.products);
+      // Excel'de zayi oranı boş ürünler kategorisinin oranını alır (0012_zayi_oranlari'nın kuralları)
+      await tx.insert(s.products).values(withFireDefaults(ds.products, ds.categories));
       await tx.insert(s.recipeItems).values(ds.recipeItems);
       // Excel'in ay bilgileri elle yazılmış değerlerdir (sıfırlar dahil); kasa raporundan gelen bir şey yok
       await tx.insert(s.months).values(
@@ -189,9 +244,11 @@ export async function runSeed({ reset = false } = {}) {
         action: "Excel'den aktarım",
         detail: `${raw.meta.source}: ${ds.ingredients.length} hammadde, ${ds.products.length} ürün, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
       });
+      // Kalan zayi / ikram kayıtları: aynı kimlikte aynı adla geri gelen ürüne ya da hammaddeye bağlı kalır, yoksa adıyla
+      if (keptWaste.length) await tx.insert(s.wasteEntries).values(relinkWaste(keptWaste, ds.products, ds.ingredients));
 
       // Açık id'lerle eklenen tabloların sayaçlarını ileri al
-      for (const t of SERIAL_TABLES) {
+      for (const t of [...SERIAL_TABLES, ...(keptWaste.length ? ["waste_entries"] : [])]) {
         await tx.execute(
           sql.raw(
             `SELECT setval(pg_get_serial_sequence('${t}', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM ${t}), 0), 1), (SELECT COUNT(*) > 0 FROM ${t}))`,
@@ -213,8 +270,14 @@ export async function runSeed({ reset = false } = {}) {
 
 if (process.argv[1]?.endsWith("seed.ts")) {
   loadEnvConfig(process.cwd());
-  runSeed({ reset: process.argv.includes("--reset") }).catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+  const args = process.argv.slice(2);
+  const onay = args.find((a) => a.startsWith("--onay="))?.slice("--onay=".length) ?? null;
+  const rl = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : null;
+  runSeed({ reset: args.includes("--reset"), confirm: onay, ask: rl ? (q) => rl.question(q) : null })
+    .then(() => rl?.close())
+    .catch((e) => {
+      rl?.close();
+      console.error(`✗ ${(e as Error).message}`);
+      process.exit(1);
+    });
 }

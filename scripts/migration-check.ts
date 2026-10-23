@@ -35,9 +35,22 @@ export function migrationGaps(journal: JournalEntry[], appliedCreatedAt: number[
   };
 }
 
-/** Derleme günlüğüne yazılacaklar: `error` doluysa derleme durur, `warning` yalnız yazılır */
-export function migrationReport(journal: JournalEntry[], appliedCreatedAt: number[]): { error: string | null; warning: string | null; ok: string } {
-  const { missing, orphans } = migrationGaps(journal, appliedCreatedAt);
+/**
+ * Bilinen, zararsız kayıtlar: 21 Eki 2026 22:27 UTC'de bir önizlemenin erken uyguladığı menü migration'ı (aynı
+ * değişiklik 0018 olarak IF NOT EXISTS ile yeniden uygulandı; docs/DEPLOY.md § 7). Her canlı derlemede çıkan uyarı
+ * alışkanlık olup yeni bir kaydı ("1" yerine "2") gizlemesin diye uyarı yalnız bunların dışındaki kayıtta çıkar.
+ */
+export const KNOWN_ORPHANS: readonly number[] = [1792621679613];
+
+/** Derleme günlüğüne yazılacaklar: `error` doluysa derleme durur, `warning` yalnız yazılır (bilinen kayıtlar hariç) */
+export function migrationReport(
+  journal: JournalEntry[],
+  appliedCreatedAt: number[],
+  known: readonly number[] = KNOWN_ORPHANS,
+): { error: string | null; warning: string | null; ok: string } {
+  const gaps = migrationGaps(journal, appliedCreatedAt);
+  const missing = gaps.missing;
+  const orphans = gaps.orphans.filter((t) => !known.includes(t));
   const error = missing.length
     ? `Migration uygulanmadı: ${missing.map((e) => e.tag).join(", ")}. Veritabanında daha yeni tarihli bir migration kayıtlı olduğu için drizzle bunları atladı (sıra bozuk). Dalı main ile birleştirip "npm run db:generate" ile migration'ı yeniden üretin. Ayrıntı: docs/DEPLOY.md § 7.`
     : null;
