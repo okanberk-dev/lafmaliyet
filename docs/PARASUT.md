@@ -165,7 +165,10 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   yalnız paket de aynıysa (boy ve adet) alınır, değilse addan yeniden tahmin edilir ("SÜT 1 LT" bağlıyken "SÜT 5 LT").
   Bardak ve kapak boyu (oz, cc) farklıysa ayrı üründür, önceki bağlantı önerilmez (8oz bağlıyken 14oz bardak). Bağlı
   benzeri yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
-  tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9.
+  tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9,
+  tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md)).
+  Yazılan çarpan addaki kanıttan farklıysa form uyarır ("150 yap"); **Faturadan oku** çarpanı faturanın kendisinden
+  okur (Claude Haiku). Bağlı ürünlerden çarpanı kanıtla tutmayanlar sayfanın **Kontrol edilecek bağlantılar** kutusunda.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
 - Hammadde olmayan kalemler (kargo, nakliye, hizmet bedeli, klişe, pompa, ekipman) bağlanmaz: **Hammadde değil**
   denince bekleyenlerden ve zildeki sayıdan çıkar; listenin altındaki "Hammadde değil" bölümünden **Geri al** ile
@@ -217,13 +220,27 @@ onaya düştü").
 
 **Kart:** şimdiki ve faturadaki birim fiyat (₺/kg, ₺/L, ₺/adet), canlı fark, tedarikçi, tarih, fatura no (Faturayı
 aç), faturadaki ürün ve çarpan, bir önceki fatura (başka tedarikçi olabilir), etkilenen ürünler (en çok değişenin
-maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). Fiyat şimdikinin yaklaşık tam katı ya da bölümüyse
-(2–20 ve paket boyları, 1000'e kadar; ±%5) çarpan uyarısı çıkar; önerilen çarpan tam sayıysa **Çarpanı X yap** düğmesi.
+maliyeti) ve arka arkaya benzer fiyat ("Son 2 faturada da bu fiyat"). En çok bir **Çarpanı X yap**, kanıta göre (ilk
+tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2):
 
-- **Onayla:** fiyat yazılır, "Tahmini" kalkar, fiyat geçmişine "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı
-  öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi değişti, fiyat güncellemesi kapandı), faturanın
-  kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha yeni bir faturası geldiyse (eşitleme henüz değerlendirmeden)
-  öneri geçersiz sayılır, fiyat yazılmaz.
+1. kalemin adındaki ya da birimindeki paket boyu çarpandan farklıysa: `Adında “150 AD.” yazıyor: 1 Adet = 150 adet
+   olmalı. Öyle olursa adet başı 20,00 ₺ (şimdikinden %52 ucuz).`;
+2. faturanın okunması (Claude Haiku 5.5), emin ya da büyük olasılıkla ve çarpandan farklıysa: `Faturada: “…”. 1 Adet =
+   150 adet → adet başı 20,00 ₺ (…).`; az emin okumada düğme yok, "Emin değil; faturayı açıp bakın.";
+3. fiyat şimdikinin yaklaşık tam katı ya da bölümüyse (2–20 ve paket boyları, 1000'e kadar; ±%5) çarpan uyarısı, ama
+   **yalnız aynı ürünün geçmişi varsa**: aynı Paraşüt ürününün önceki ücretli faturası bu çarpanla şimdiki fiyatın ±%10'unda
+   (tedarikçi koli ↔ adet değiştirdi). Yeni tedarikçi ya da ürün, tahmini fiyat karşısında oran gösterilmez (canlıda
+   "Yenilebilir bardak 150 AD." için "Çarpanı 72 yap", "Klips kapak" için "Çarpanı 10 yap" demişti).
+
+Önerilen çarpanla birim fiyat ve şimdikine göre fark her zaman yazar. Kanıtı ve okuması olmayan kart açılınca fatura
+bir kez kendiliğinden okunur ("Fatura okunuyor…"); öteki kartlarda **Faturayı oku** / **Yeniden oku**. Okuma sabah
+işinde hiç çalışmaz, fiyat yazmaz. Hammaddenin şimdiki fiyatı tahminiyse kart "Şimdiki fiyat tahmini (varsayım),
+faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir." der, rozet "tahmini fiyata göre".
+
+- **Onayla:** fiyat yazılır, "Tahmini" kalkar (aynı işlemde; işlem geçmişinde "tahmini fiyat kalktı"), fiyat geçmişine
+  "Paraşüt" olarak onaylayanın adıyla girer. Bağlantı öneri anından beri değiştiyse (silindi, çarpanı ya da hammaddesi
+  değişti, fiyat güncellemesi kapandı), faturanın kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha yeni bir
+  faturası geldiyse (eşitleme henüz değerlendirmeden) öneri geçersiz sayılır, fiyat yazılmaz.
 - **Reddet:** şimdiki fiyat kalır; isteğe bağlı not ve "Bu üründen fiyat güncellemesini kapat" (alınan miktar yine
   sayılır). Reddedilen fatura yeniden sorulmaz; sonraki fatura yine %40'tan fazla farklıysa sorulur.
 - **Çarpanı X yap:** bağlantının çarpanı değişir (Paraşüt sayfasındaki düzenlemeyle aynı): öneri geçersiz olur, en yeni

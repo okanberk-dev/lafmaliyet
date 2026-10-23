@@ -61,6 +61,8 @@ export function logSummary(entries: { dayLabel: string; time: string; userName: 
 
 /** Dolar tutarı: "1,24 $" (Anthropic dolar üzerinden faturalar) */
 export function usdText(v: number): string {
+  // Fatura okuması (Haiku) bir kuruşun altında kalır: "0,00 $" hiç okunmamış gibi görünmesin
+  if (v > 0 && v < 0.005) return "0,01 $'dan az";
   return `${num(v, 2, 2)} $`;
 }
 

@@ -23,6 +23,7 @@ import {
   Receipt,
   Ruler,
   Scale,
+  ScanText,
   Search,
   ShieldCheck,
   Sigma,
@@ -288,6 +289,25 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           { href: "/panel/parasut?durum=bekleyen", label: "Bağlanmayı bekleyen ürünler" },
           { href: "/panel/hammaddeler#fiyat-onayi", label: "Onay bekleyen fiyatlar" },
           { href: "/panel/hammaddeler", label: "Hammaddeler" },
+        ],
+      },
+      {
+        id: "carpan",
+        q: "Fiyat onayındaki “Çarpanı … yap” önerisi",
+        a: (
+          <>
+            Çarpan, faturadaki 1 birimin kaç hammadde birimi ettiğidir: 1 koli = 12 adet, adında “150 AD.” yazan 1 adet bardak = 150 adet. Yanlışsa fiyat da
+            alınan miktar da yanlış çıkar. <Path href="/panel/hammaddeler" /> › Onay bekleyen fiyatlar öneriyi kanıtla yapar: kalemin adında yazan paket
+            boyu, yoksa faturanın kendisi (Claude okur, kartta “Faturada: …” yazar), yoksa aynı ürünün eski faturaları. Önerinin yanında o çarpanla çıkan
+            birim fiyat ve şimdikine göre farkı yazar; fiyat gerçekten değiştiyse çarpanı değiştirmeden onaylayın. Şimdiki fiyat tahminiyse kart söyler,
+            onaylayınca Tahmini kalkar. <Path href="/panel/parasut" /> ekranındaki Kontrol edilecek bağlantılar, adında yazan paket boyuyla tutmayan
+            bağlantıları gösterir; hiçbir şey kendiliğinden değişmez.
+          </>
+        ),
+        icon: ScanText,
+        links: [
+          { href: "/panel/hammaddeler#fiyat-onayi", label: "Onay bekleyen fiyatlar" },
+          { href: "/panel/parasut?durum=bagli#urun-baglantilari", label: "Bağlı ürünler" },
         ],
       },
       {
