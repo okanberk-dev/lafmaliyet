@@ -22,7 +22,19 @@ export function newOrderIds(prev: readonly Pick<SiteOrder, "id">[] | null, next:
 /** Ekranda görünen her şeyin özeti: aynıysa liste değişmemiştir (sürüm artmaz, açık sekmeler veri indirmez) */
 export function ordersFingerprint(orders: readonly SiteOrder[]): string {
   return JSON.stringify(
-    orders.map((o) => [o.id, o.orderNo, o.stage, o.fulfillment, o.label, o.firstName, o.scheduledFor, o.paidAt, o.path, o.lines.map((l) => [l.menuItemId, l.name, l.size, l.detail, l.qty])]),
+    orders.map((o) => [
+      o.id,
+      o.orderNo,
+      o.stage,
+      o.fulfillment,
+      o.label,
+      o.firstName,
+      o.scheduledFor,
+      o.paidAt,
+      o.path,
+      o.note ?? "",
+      o.lines.map((l) => [l.menuItemId, l.name, l.size, l.detail, l.qty, l.note ?? ""]),
+    ]),
   );
 }
 
