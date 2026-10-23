@@ -56,6 +56,27 @@ export async function newerPriceInvoice(hold: { ingredientId: number; invoiceId:
   return newerInvoice(lines, new Map(lines.map((l) => [l.productKey, l])), hold);
 }
 
+/**
+ * Bekleyen önerilerin ürünlerinin fiyat kapsamındaki (kafe) kalemleri: kartın kanıtı (kalemin açıklaması) ve aynı ürünün
+ * geçmişi (sameProductHistory: çarpan oranı ancak bununla önerilir)
+ */
+export async function loadHoldLines(productKeys: string[]) {
+  if (!productKeys.length) return [];
+  return getDb()
+    .select({
+      invoiceId: s.invoices.id,
+      productKey: s.parasutBillLines.productKey,
+      date: s.invoices.date,
+      supplier: s.invoices.supplier,
+      quantity: s.parasutBillLines.quantity,
+      netTotal: s.parasutBillLines.netTotal,
+      description: s.parasutBillLines.description,
+    })
+    .from(s.parasutBillLines)
+    .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
+    .where(and(inArray(s.parasutBillLines.productKey, productKeys), notInArray(s.invoices.category, SEPARATE_CATEGORIES)));
+}
+
 const columns = {
   hold: h,
   ingredient: {

@@ -17,6 +17,7 @@ import {
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
+import type { InvoiceReading } from "../../lib/invoice-reading";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
@@ -1188,7 +1189,7 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "fis" */
+    /** "kasa-z" | "kasa-pos" | "fis" | "fatura" */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),
@@ -1213,6 +1214,36 @@ export const aiCalls = pgTable(
     error: text("error"),
   },
   (t) => [index("ai_calls_at_idx").on(t.at), index("ai_calls_photo_idx").on(t.photoId)],
+);
+
+/**
+ * Fatura okumaları (Claude Haiku 5.5; docs/FATURA-OKUMA.md): onay bekleyen fiyatın ya da bağlanacak ürünün faturasında
+ * kalemin paket boyu ("1 Adet = 150 adet"). Fatura ve ürün başına bir satır; "Yeniden oku" üzerine yazar. Yalnız
+ * doğrulanmış JSON sonuç saklanır, PDF ve istem saklanmaz. Fatura silinince okuması da silinir.
+ */
+export const invoiceReadings = pgTable(
+  "invoice_readings",
+  {
+    id: serial("id").primaryKey(),
+    invoiceId: integer("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    /** Faturadaki kalemin ürün anahtarı (parasut_bill_lines.product_key) */
+    productKey: text("product_key").notNull(),
+    /** running: okunuyor (yarıda kalan okuma 90 sn sonra yeniden okunabilir); ok; error: okunamadı (nedeni `error`) */
+    status: text("status", { enum: ["running", "ok", "error"] }).notNull(),
+    /** Doğrulanmış okuma (src/lib/invoice-reading.ts); yalnız başarılıda */
+    result: jsonb("result").$type<InvoiceReading>(),
+    /** Okunamadıysa ekrandaki metin (en çok 300 karakter) */
+    error: text("error"),
+    model: text("model"),
+    aiCallId: integer("ai_call_id").references(() => aiCalls.id, { onDelete: "set null" }),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** Okumanın başladığı an */
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("invoice_readings_invoice_product_uq").on(t.invoiceId, t.productKey)],
 );
 
 // ---------------------------------------------------------------- Kontrol listeleri

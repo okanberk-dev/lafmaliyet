@@ -14,9 +14,10 @@ import { photoReadingSummary, usdText } from "./summaries";
 const STORAGE_WARN_BYTES = 800 * 1024 * 1024;
 
 /**
- * Ayarlar › Fotoğraftan okuma: Z raporu, POS fişi ve kasadan çıkan fişler Claude ile okunur (docs/FOTOGRAF.md).
- * Aç / kapat, günde en çok okuma, bu ayın ve bugünün okumaları, fotoğraf deposu. Anahtar yoksa (yerel, önizleme)
- * okuma kapalıdır; fotoğraf yine eklenir.
+ * Ayarlar › Fotoğraftan okuma: Z raporu, POS fişi ve kasadan çıkan fişler Claude ile okunur (docs/FOTOGRAF.md); aynı
+ * anahtar ve sınır faturadan okumayı da (fiyat onayı, ürün bağlama; docs/FATURA-OKUMA.md) açar ve kapatır. Aç / kapat,
+ * günde en çok okuma, bu ayın ve bugünün okumaları, fotoğraf deposu. Anahtar yoksa (yerel, önizleme) okuma kapalıdır;
+ * fotoğraf yine eklenir.
  */
 export async function PhotoReadingCard() {
   const storage = photoStorage();
@@ -43,7 +44,7 @@ export async function PhotoReadingCard() {
       icon={<ScanText />}
       title="Fotoğraftan okuma"
       summary={photoReadingSummary({ configured, enabled: settings.enabled, ...usage })}
-      description="Kasa raporunda Z raporu ve POS fişi, kasadan çıkan fişler fotoğraftan okunur (Claude). Okunanlar kaydedilmeden önce her zaman kontrol edilir."
+      description="Kasa raporunda Z raporu ve POS fişi, kasadan çıkan fişler fotoğraftan okunur (Claude); fiyat onayında ve Paraşüt'te ürün bağlarken faturanın paket boyu okunur (Claude Haiku). Okunanlar kaydedilmeden önce her zaman kontrol edilir."
     >
       <CardContent className="space-y-3">
         {configured ? (
@@ -65,7 +66,13 @@ export async function PhotoReadingCard() {
         )}
         {storageLine ? <p className="text-[13px] leading-5 text-pretty text-ink-mute">{storageLine}</p> : null}
         {stats && stats.bytes >= STORAGE_WARN_BYTES ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">Fotoğraf deposu 1 GB sınırına yaklaşıyor.</p> : null}
-        {configured ? <p className="text-[13px] leading-5 text-ink-mute">Anthropic dolar üzerinden faturalar; tutarlar yaklaşık.</p> : null}
+        {configured ? (
+          <p className="text-[13px] leading-5 text-pretty text-ink-mute">
+            Okumak için fotoğraf ya da faturanın PDF&apos;i Anthropic&apos;e (ABD) gider; okunan sonuç panelde saklanır. Fotoğraf ve PDF panelde de durur (PDF,
+            Faturayı aç&apos;taki gibi faturanın belgesi olarak). Şahıs firmasının faturasında kişinin adı ve TC kimlik numarası olabilir: istemezseniz okumayı
+            kapatın. Anthropic dolar üzerinden faturalar; tutarlar yaklaşık.
+          </p>
+        ) : null}
       </CardContent>
     </SectionCard>
   );

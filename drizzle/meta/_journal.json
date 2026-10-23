@@ -218,6 +218,13 @@
       "when": 1792752056339,
       "tag": "0030_karaoke_doluluk",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792753078348,
+      "tag": "0031_fatura_okuma",
+      "breakpoints": true
     }
   ]
 }

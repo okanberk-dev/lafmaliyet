@@ -1,6 +1,6 @@
 // Claude ile okuma, sahte istemciyle: isteğin biçimi (canlıda denenmiş hâli), yanıtın denetimi (ret, yarım, bozuk
-// JSON, şema), yedek modelin bloğu, SDK hatalarının Türkçe karşılığı ve maliyet (src/server/ai/run.ts, pricing.ts).
-// Anahtar gerekmez; ağ yok.
+// JSON, şema), yedek modelin bloğu, SDK hatalarının Türkçe karşılığı ve maliyet (src/server/ai/run.ts, pricing.ts);
+// fatura okumasının Haiku 5.5 + PDF isteği (yedek model yok). Anahtar gerekmez; ağ yok.
 // Çalıştırma: npx tsx --test tests/ai-istemci.test.ts
 
 import assert from "node:assert/strict";
@@ -15,6 +15,7 @@ import { KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas"
 import { costUsd, priceOf } from "../src/server/ai/pricing";
 import {
   AI_FALLBACK_BETA,
+  AI_INVOICE_MODEL,
   AI_MODEL,
   aiErrorText,
   buildRequest,
@@ -239,4 +240,64 @@ test("costUsd: kayıtlı Z okuması 0,029788 $; yedek denemesi kendi fiyatıyla;
   assert.deepEqual(priceOf("claude-opus-5-20260301"), priceOf("claude-opus-5"));
   assert.notDeepEqual(priceOf("claude-opus-5-5"), priceOf("claude-opus-5"));
   assert.equal(priceOf("claude-opus-55"), null);
+});
+
+const PDF = { bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a]), mediaType: "application/pdf" as const };
+
+test("fatura isteği: Haiku 5.5, PDF belge metinden önce, efor medium, JSON şeması; yedek model ve düşünme yok", async () => {
+  const { client, calls } = fake({ model: AI_INVOICE_MODEL, content: [text(JSON.stringify({ total: 1, kind: "a" }))] });
+  const res = await runExtraction(client, { document: PDF, model: AI_INVOICE_MODEL, system: "SİSTEM", task: "GÖREV", schema: Small, totalMs: 30_000 });
+  assert.equal(res.ok, true);
+  const [{ params, options }] = calls;
+  assert.equal(AI_INVOICE_MODEL, "claude-haiku-5-5");
+  assert.equal(params.model, "claude-haiku-5-5");
+  assert.equal(params.max_tokens, 6000);
+  // Haiku 5.5'te sunucu tarafı yedek model yok: beta başlığı ve fallbacks gönderilmez
+  for (const key of ["betas", "fallbacks", "temperature", "top_p", "top_k", "thinking", "stream", "tools"]) assert.equal(key in params, false, key);
+  assert.equal(params.output_config?.effort, "medium");
+  assert.equal(params.output_config?.format?.type, "json_schema");
+  assert.deepEqual(Object.keys(params), ["model", "max_tokens", "output_config", "system", "messages"]);
+  const [doc, task] = params.messages[0].content as { type: string; source?: unknown; text?: string }[];
+  assert.deepEqual(doc, { type: "document", source: { type: "base64", media_type: "application/pdf", data: Buffer.from(PDF.bytes).toString("base64") } });
+  assert.deepEqual(task, { type: "text", text: "GÖREV" });
+  assert.equal(options.timeout, 20_000);
+  assert.equal(options.maxRetries, 1);
+  // Faturanın görseli (Paraşüt fotoğrafı) görsel bloğuyla
+  const img = buildRequest({ image: IMAGE, model: AI_INVOICE_MODEL, system: "S", task: "T", schema: Small }).params;
+  assert.equal((img.messages[0].content as { type: string }[])[0].type, "image");
+  assert.equal("betas" in img, false);
+});
+
+test("fotoğraf isteği değişmedi: alanlar ve sırası canlıda denenen hâliyle", () => {
+  const { params } = buildRequest(req(Small));
+  assert.deepEqual(Object.keys(params), ["model", "max_tokens", "betas", "fallbacks", "output_config", "system", "messages"]);
+  assert.deepEqual(params.output_config, { effort: "low", format: params.output_config!.format });
+  assert.equal(buildRequest({ ...req(Small), model: AI_MODEL }).params.model, "claude-opus-5-5");
+});
+
+test("fatura hata metinleri: fotoğrafa özgü olanlar faturaya göre, ortak olanlar aynı", () => {
+  assert.equal(aiErrorText("nokey", undefined, "fatura"), "Faturadan okuma bu ortamda kurulu değil; faturayı açıp bakın.");
+  assert.equal(aiErrorText("off", undefined, "fatura"), "Okuma kapalı (Ayarlar › Fotoğraftan okuma); faturayı açıp bakın.");
+  assert.equal(aiErrorText("cap", 40, "fatura"), "Bugünkü okuma sınırı doldu (40); faturayı açıp bakın.");
+  assert.equal(aiErrorText("invalid", undefined, "fatura"), "Faturadaki bilgi güvenilir okunamadı; faturayı açıp bakın.");
+  assert.equal(aiErrorText("rate", undefined, "fatura"), aiErrorText("rate"));
+  for (const c of ["nokey", "off", "cap", "timeout", "toolarge", "badrequest", "refusal", "invalid"] as const) {
+    assert.doesNotMatch(aiErrorText(c, 40, "fatura"), /Fotoğraf (eklendi|çok|okunamadı)|yeniden çekin|rakamları elle/, c);
+  }
+  // Fotoğraf metinleri olduğu gibi
+  assert.equal(aiErrorText("nokey"), "Fotoğraftan okuma bu ortamda kurulu değil; rakamları elle yazın.");
+});
+
+test("costUsd: Haiku 5.5 (0,10 / 0,50 $; 100 bin token üstü istem 0,50 / 2,50 $)", () => {
+  const rec = JSON.parse(readFileSync(join(__dirname, "fixtures", "fatura", "bardak.json"), "utf8")) as { usage: AiMessage["usage"] };
+  const c = costUsd(rec.usage, AI_INVOICE_MODEL);
+  assert.equal(c.priceKnown, true);
+  assert.equal(c.usd, 0.000505); // 2950 × 0,10 + 420 × 0,50
+  assert.equal(costUsd({ input_tokens: 100_000, output_tokens: 1000 }, AI_INVOICE_MODEL).usd, 0.0105);
+  assert.equal(costUsd({ input_tokens: 200_000, output_tokens: 1000 }, AI_INVOICE_MODEL).usd, 0.1025);
+  // Önbellekten okunan da istemin parçası
+  assert.equal(costUsd({ input_tokens: 1000, output_tokens: 0, cache_read_input_tokens: 100_000 }, AI_INVOICE_MODEL).usd, 0.0055);
+  assert.deepEqual(priceOf("claude-haiku-5-5")?.input, 0.1);
+  // Opus 5.5 tek fiyat kartı (uzun istemde değişmez)
+  assert.equal(costUsd({ input_tokens: 200_000, output_tokens: 0 }, AI_MODEL).usd, 0.8);
 });

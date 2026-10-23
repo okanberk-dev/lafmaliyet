@@ -9,7 +9,7 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { updatePhotoReading } from "@/server/actions/photos";
 
 /**
- * Fotoğraftan okumayı aç / kapat (dokununca kaydedilir) ve günlük sınır (Kaydet ile). Yalnız yönetici.
+ * Fotoğraftan (ve faturadan) okumayı aç / kapat (dokununca kaydedilir) ve günlük sınır (Kaydet ile). Yalnız yönetici.
  */
 export function PhotoReadingForm({ enabled: initialEnabled, dailyCap: initialCap }: { enabled: boolean; dailyCap: number }) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -44,7 +44,7 @@ export function PhotoReadingForm({ enabled: initialEnabled, dailyCap: initialCap
     <div className="space-y-3">
       <ToggleRow
         title="Fotoğraftan okuma"
-        description="Kapalıyken fotoğraf yine eklenir; rakamlar elle yazılır."
+        description="Kapalıyken fotoğraf yine eklenir, rakamlar elle yazılır; fatura da okunmaz."
         label="Fotoğraftan okuma"
         checked={enabled}
         onChange={toggle}
