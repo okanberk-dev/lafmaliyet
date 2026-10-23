@@ -383,10 +383,14 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 // olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı
 const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\s*(no|numara)/;
 
-/** 2 No.lu KDV (tevkifat) hatırlatıcısı: plan o dönemin KDV-2 tahminini yazmaz, hatırlatıcı kendi satırıyla girer */
+/**
+ * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta KDV de geçmeli:
+ * "Muhtasar (gelir vergisi tevkifatı)", "Stopaj tevkifat", "Aidat 2 No.lu dükkan" KDV-2 değildir.
+ */
 export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
-  return VAT_WITHHOLDING.test(foldTR(r.title));
+  const t = foldTR(r.title);
+  return VAT_WITHHOLDING.test(t) && /(^|[^a-z])kdv|katma deger/.test(t);
 }
 
 /**

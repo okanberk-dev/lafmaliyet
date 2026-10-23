@@ -117,6 +117,15 @@ test("alış KDV'si: KDV toplamı (tevkifat dahil), yoksa ödenecek − (tutar �
   const refund = billToDraft({ ...bill, attributes: { ...bill.attributes, item_type: "refund", gross_total: "2000", total_discount: "100", total_vat: "190", total_vat_withholding: "0", net_total: "2090", remaining: "0" } }, []);
   assert.equal(purchaseVat(refund), -190);
   assert.equal(purchaseWithheld(refund), 0);
+  // Paraşüt bağı kopup tutarları elle sıfırlanan kayıtta eski KDV (6.000) kalır: net tutar onu taşıyamaz (en çok
+  // %20), indirilmez ve tevkifat sanılmaz
+  assert.equal(purchaseVat({ amount: 0, discount: 0, payable: 0, vat: 6_000 }), 0);
+  assert.equal(purchaseWithheld({ amount: 0, discount: 0, payable: 0, vat: 6_000 }), 0);
+  assert.equal(purchaseVat({ amount: 15_000, discount: 0, payable: 17_100, vat: 6_000 }), 2_100);
+  assert.equal(purchaseWithheld({ amount: 15_000, discount: 0, payable: 17_100, vat: 6_000 }), 0);
+  // ÖİV'li fatura (ödenecek KDV'den fazlasını taşır): KDV toplamı yine geçerli
+  assert.equal(purchaseVat({ amount: 1_000, discount: 0, payable: 1_275, vat: 200 }), 200);
+  assert.equal(purchaseWithheld({ amount: 1_000, discount: 0, payable: 1_275, vat: 200 }), 0);
   // Excel'den gelen faturalarda vat sütunu yok (0); KDV ödenecek ile net farkından
   const excelInv = ds.invoices.find((i) => i.payable - (i.amount - i.discount) > 1)!;
   assert.ok(excelInv);

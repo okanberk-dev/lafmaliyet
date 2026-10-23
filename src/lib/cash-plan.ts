@@ -169,7 +169,7 @@ export interface Vat2Row {
   date: string;
   /** 100'e yuvarlı */
   amount: number;
-  /** Ödemeler'de KDV-2 hatırlatıcısı var: plana o girer, bu satır yalnız kartta */
+  /** Ödemeler'deki KDV-2 hatırlatıcısının bu döneme günü var: plana hatırlatıcı girer (tutarı ya da bu tahmin) */
   covered: boolean;
 }
 
@@ -363,7 +363,7 @@ function monthlyOf(f: Pick<FixedItem, "period" | "amount">, acikGun: number): nu
   return f.amount;
 }
 
-type RemClass = { kind: "fixed"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "other" };
+type RemClass = { kind: "fixed"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "kdv2" } | { kind: "other" };
 
 const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amount > 0;
 
@@ -466,6 +466,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     if ((cat === "maas" || cat === "sgk") && r.note?.startsWith(FIXED_REMINDER_NOTE)) return { kind: "other" };
     if (cat === "maas") return { kind: "salary" };
     if (cat === "sgk") return { kind: "sgk" };
+    if (isVatWithholdingReminder(r)) return { kind: "kdv2" };
     if (isVatReminder(r)) return { kind: "kdv" };
     return { kind: "other" };
   };
@@ -473,12 +474,14 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const salaryRems: ReminderRow[] = [];
   const sgkRems: ReminderRow[] = [];
   const vatRems: ReminderRow[] = [];
+  const vat2Rems: ReminderRow[] = [];
   const covered = new Set<number>();
   for (const r of active) {
     const c = classify(r);
     if (c.kind === "salary") salaryRems.push(r);
     else if (c.kind === "sgk") sgkRems.push(r);
     else if (c.kind === "kdv") vatRems.push(r);
+    else if (c.kind === "kdv2") vat2Rems.push(r);
     else if (c.kind === "fixed") {
       // Gideri bir hatırlatıcı karşılıyor: ay içine yayılmaz; tutarsızsa hatırlatıcının günlerine giderin tutarı
       covered.add(c.id);
@@ -635,16 +638,39 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   vatRows.sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
   // KDV-2 (tevkifat): alış faturalarındaki tevkifat izleyen ayın 25'inde 2 No.lu beyannameyle ödenir; 1 No.lu
   // beyannamede indirilir (alışların içinde), o ay ödenecek çıkmasa da (Eylül 2026: devreden 121.204,69, KDV-2
-  // 1.800 ₺). Tahminler yarından; Ödemeler'de KDV-2 hatırlatıcısı varsa plana o girer.
-  const vat2Covered = input.reminders.some((r) => r.active && isVatWithholdingReminder(r));
+  // 1.800 ₺). Tahminler yarından. Ödemeler'deki KDV-2 hatırlatıcısı yalnız günlerinin dönemlerini karşılar: yazılı
+  // tutarı her gününde kesindir; tutarsızsa tahmin hatırlatıcının gününde girer, tahmin yoksa tutarı girilmemiş ödemedir.
+  const withheldOf = new Map(input.vat.months.map((m) => [m.month, round100(m.purchases.withheld)]));
+  const vat2Claimed = new Set<string>();
+  for (const r of vat2Rems) {
+    for (const o of reminderOccurrences(r, today, end)) {
+      const period = vatPeriodOf(o.due);
+      vat2Claimed.add(period);
+      if (r.amount !== null) {
+        if (r.amount > 0) reminderLine(r, o);
+        continue;
+      }
+      const amount = withheldOf.get(period);
+      if (vatMode === "excluded" || amount === undefined) addUnknown(r, o.date);
+      else if (amount > 0)
+        reminderLine(r, o, {
+          kind: "kdv",
+          amount,
+          estimated: true,
+          title: `${r.title} (${MONTH_NAMES[Number(period.slice(5, 7)) - 1]})`,
+          detail: vat2LineDetail(period),
+          href: "#kdv",
+        });
+    }
+  }
   const vat2: Vat2Row[] = [];
   for (const m of input.vat.months) {
     const date = vat2DueDate(m.month);
     const amount = round100(m.purchases.withheld);
     if (date <= today || date > end || amount <= 0) continue;
-    const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Covered };
+    const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Claimed.has(m.month) };
     vat2.push(row);
-    if (vatMode === "excluded" || vat2Covered) continue;
+    if (vatMode === "excluded" || row.covered) continue;
     dated.push({
       key: row.key,
       kind: "kdv",

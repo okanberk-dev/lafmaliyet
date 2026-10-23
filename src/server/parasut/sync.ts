@@ -18,7 +18,7 @@ import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } f
 import { MANAGED_QTY_NOTE } from "./constants";
 import { readParasutConfig } from "./config";
 import type { ListResponse, ShowResponse } from "./jsonapi";
-import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
+import { categoryNeedsReview, eInvoiceToDraft, shouldImportEInvoice, withholdingVatFill, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
 import { readEInvoiceLines, type LineReadStats } from "./lines";
 import {
   billToDraft,
@@ -140,6 +140,7 @@ function supplierAliases(names: string[]) {
 type ContactCache = Record<string, { name: string; taxNo: string | null }>;
 
 type Existing = ExistingInvoice & {
+  vat: number | null;
   eInvoiceId: string | null;
   unpaid: boolean;
   syncedAt: Date | null;
@@ -340,6 +341,7 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
     if (supplierTaxNumber) ctx.taxFilled++;
     ctx.existing.push({
       id: row.id,
+      vat: common.vat,
       eInvoiceId: eInvoiceFree,
       externalId: d.externalId,
       invoiceNo: d.invoiceNo,
@@ -416,6 +418,7 @@ async function loadCtx(): Promise<Ctx> {
         supplier: s.invoices.supplier,
         date: s.invoices.date,
         payable: s.invoices.payable,
+        vat: s.invoices.vat,
         unpaid: s.invoices.unpaid,
         dueDate: s.invoices.dueDate,
         origin: s.invoices.origin,
@@ -1062,6 +1065,13 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     const differs = Math.abs(match.payable - d.payable) > 1 || match.date !== d.date;
     // Değişmemiş e-faturada da (eski kayıtta boşsa) vergi no yazılır
     await fillTaxNumber(ctx, match, d.supplierTaxNo, "einvoice");
+    // Tevkifatlı e-faturaya bağlı Excel / elle kaydın boş KDV'si belgedekiyle dolar (KDV-2 tahmini ondan)
+    const vat = fromThis ? null : withholdingVatFill(match, d);
+    if (vat !== null) {
+      await db.update(s.invoices).set({ vat }).where(eq(s.invoices.id, match.id));
+      match.vat = vat;
+      ctx.touchedMonths.add(match.date.slice(0, 7));
+    }
     if (!firstLink && !(fromThis && differs)) return "skipped";
     const set: Partial<typeof s.invoices.$inferInsert> = { eInvoiceId: d.eInvoiceId, eInvoiceUuid: d.uuid, source: "parasut", syncedAt: now };
     if (fromThis) Object.assign(set, values);
@@ -1114,6 +1124,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
   if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,
+    vat: d.vat,
     eInvoiceId: d.eInvoiceId,
     externalId: null,
     invoiceNo: d.invoiceNo,
