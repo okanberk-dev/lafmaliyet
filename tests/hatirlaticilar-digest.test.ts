@@ -448,6 +448,52 @@ test("başlık ve düğme: kutu fiyat onayından sonra, zamdan önce; yalnız ku
   assert.ok(renderDigest(one, "2026-10-22", null, null, null, { commission: com }).html.includes(`>1 bugün · toplam 25.000${NBSP}₺ · Hakediş gecikti: Pluxee (Ekim)</div>`));
 });
 
+test("başlığı ya da konu parçası olmayan kutu tek içerikse e-posta 'yeni bir şey yok' demez: kutunun parçası, yoksa adı", async () => {
+  const mail = (ex: DigestExtras, pr: DigestPrices | null = null) => {
+    const r = renderDigest([], "2026-10-23", null, pr, null, ex);
+    return {
+      subject: r.subject,
+      h1: /<h1[^>]*>([^<]*)<\/h1>/.exec(r.html)?.[1],
+      pre: /<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">([^<]*)<\/div>/.exec(r.html)?.[1],
+    };
+  };
+  const comNoHead = { ...com, headline: null };
+  const comBare = { ...com, headline: null, subjectPart: null };
+  const konBare = { ...kon, headline: null, subjectPart: null };
+  // Başlıksız: başlık ve ön metin konu parçası
+  assert.deepEqual(mail({ commission: comNoHead }), { subject: "Sabah özeti: Hakediş gecikti: Pluxee (Ekim)", h1: "Hakediş gecikti: Pluxee (Ekim)", pre: "Hakediş gecikti: Pluxee (Ekim)" });
+  // Küçük harfle başlayan parça başlıkta büyük harfle (Türkçe: i → İ)
+  assert.deepEqual(mail({ kontrol: { ...kon, headline: null } }), { subject: "Sabah özeti: dünkü kapanış listesi eksik", h1: "Dünkü kapanış listesi eksik", pre: "Dünkü kapanış listesi eksik" });
+  assert.equal(mail({ kontrol: { ...kon, headline: null, subjectPart: "iki liste eksik" } }).h1, "İki liste eksik");
+  // Başlığı ve parçası yok: konu ve başlık kutunun adı
+  assert.deepEqual(mail({ commission: comBare }), { subject: "Sabah özeti: Komisyon ve hakediş", h1: "Komisyon ve hakediş", pre: "Komisyon ve hakediş" });
+  assert.deepEqual(mail({ kontrol: konBare }), { subject: "Sabah özeti: Kontrol listeleri · 21 Ekim Salı", h1: "Kontrol listeleri · 21 Ekim Salı", pre: "Kontrol listeleri · 21 Ekim Salı" });
+  // Önce parçası olan kutu (konu da onunla başlar), yoksa önce komisyon
+  assert.deepEqual(mail({ commission: comBare, kontrol: { ...kon, headline: null } }), { subject: "Sabah özeti: dünkü kapanış listesi eksik", h1: "Dünkü kapanış listesi eksik", pre: "Dünkü kapanış listesi eksik" });
+  assert.equal(mail({ commission: comBare, kontrol: konBare }).h1, "Komisyon ve hakediş");
+  // Sıra değişmez: başlığı olan kutu ve zam önce gelir; parçası olmayan kutu konuya girmez
+  assert.equal(mail({ commission: comBare, kontrol: kon }).h1, "Dünkü kontrol listelerinde eksik var");
+  assert.deepEqual(mail({ commission: comBare }, prices), { subject: "Sabah özeti: 1 hammaddeye zam", h1: "1 hammaddenin fiyatı arttı", pre: "1 hammaddenin fiyatı arttı" });
+  assert.equal(mail({ commission: comNoHead }, prices).h1, "1 hammaddenin fiyatı arttı");
+  assert.equal(renderDigest(one, "2026-10-23", null, null, null, { commission: comBare }).subject, "Ödeme hatırlatması: 1 bugün");
+  // Tahmin kutusu yine hiçbir şey söylemez
+  assert.deepEqual(mail({ forecast: fc }), { subject: "Sabah özeti: bugün yeni bir şey yok", h1: "Bugün yeni bir şey yok", pre: "Bugün yeni bir şey yok" });
+  assert.deepEqual(mail({ forecast: { ...fc, title: "Tahmin", subjectPart: "tahmin", headline: "Tahmin başlığı" } }), mail({}));
+
+  // Bildirimdeki ve önizlemedeki özet satırı: parçası olmayan haber kutusu adıyla (tek haberse "Bugün: ." olmasın)
+  const r = await collectDigestExtras(
+    [
+      { key: "commission", news: true, load: async () => ({ box: comBare, logKeys: [] }) },
+      { key: "kontrol", news: false, load: async () => ({ box: konBare, logKeys: [] }) },
+    ],
+    "2026-10-23",
+    { preview: true },
+  );
+  assert.equal(r.news, true);
+  assert.deepEqual(r.parts, ["Komisyon ve hakediş"]);
+  assert.equal(digestSummary({ boxes: r.parts }), "Komisyon ve hakediş");
+});
+
 test("tahmin kutusu konuya, başlığa, düğmeye ve habere girmez; yalnız gövdede (zamdan sonra) ve düz metinde", async () => {
   const sneaky: DigestBox = { ...fc, subjectPart: "tahmin", headline: "Tahmin başlığı" };
   for (const [r, inv, pr, sys] of [[[], null, null, null], [[], null, prices, null], [one, null, null, null], [[], null, null, system], [[], invoices, null, null]] as const) {

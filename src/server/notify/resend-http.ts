@@ -31,6 +31,17 @@ export interface SendOptions {
  */
 export type SendResult = { ok: true; id: string | null } | { ok: false; error: string; uncertain?: true };
 
+/** Belirsiz gönderimin ekrandaki metni: ham hata ("…aborted due to timeout") "gitmedi" diye okunur, oysa gitmiş olabilir */
+export const UNCERTAIN_SEND_TEXT = "Resend yanıt vermedi; e-posta yine de gitmiş olabilir.";
+
+/**
+ * Başarısız gönderimin günlüğe, bildirime ve iş kaydına yazılan metni: belirsizse UNCERTAIN_SEND_TEXT, değilse hatanın
+ * kendisi (resendErrorText'in Türkçesi). Ham hatayı gerekirse çağıran sunucu günlüğüne yazar.
+ */
+export function sendFailureText(r: { error: string; uncertain?: true }): string {
+  return r.uncertain ? UNCERTAIN_SEND_TEXT : r.error;
+}
+
 export const SEND_DEFAULTS = { timeoutMs: 15_000, attempts: 3 } as const;
 /** Kalan süre bundan azsa yeni deneme başlamaz: yarıda kesilecek deneme iletiyi "belirsiz" bırakırdı */
 export const MIN_ATTEMPT_MS = 1_000;

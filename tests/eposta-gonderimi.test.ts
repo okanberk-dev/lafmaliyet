@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { MIN_ATTEMPT_MS, postEmail, SEND_DEFAULTS, type EmailMessage, type SendIo, type SendOptions } from "../src/server/notify/resend-http";
+import { dailyOutcome, digestStep } from "../src/lib/job-health";
+import { MIN_ATTEMPT_MS, postEmail, SEND_DEFAULTS, sendFailureText, UNCERTAIN_SEND_TEXT, type EmailMessage, type SendIo, type SendOptions } from "../src/server/notify/resend-http";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 
@@ -119,6 +120,37 @@ test("belirsiz: son deneme zaman aşımı, ağ hatası ya da 409 ise ileti gitmi
   assert.deepEqual(settled, { ok: false, error: "Alıcı adresi geçerli biçimde değil." });
   // Kesin hatalar belirsiz değil
   assert.equal("uncertain" in (await send([500, 500, 500])).r, false);
+});
+
+test("belirsiz gönderimin metni Türkçe ve 'gitmiş olabilir' der (ham hata yerine); sabah e-postası günlüğe, bildirime ve iş kaydına bunu yazar", async () => {
+  assert.equal(UNCERTAIN_SEND_TEXT, "Resend yanıt vermedi; e-posta yine de gitmiş olabilir.");
+  // Sabah işinin sınırında kesilen gönderim: tek deneme, ham hata İngilizce
+  const late = (await send(["hang"], { deadlineAt: START + 7_000 })).r;
+  assert.deepEqual(late, { ok: false, error: "Resend'e ulaşılamadı: The operation was aborted due to timeout", uncertain: true });
+  assert.equal(!late.ok && sendFailureText(late), UNCERTAIN_SEND_TEXT);
+  // Ağ hatası ve 409 da belirsiz
+  for (const answers of [[new Error("fetch failed")], [409]] as Answer[][]) {
+    const r = (await send(answers, { attempts: 1 })).r;
+    assert.equal(!r.ok && sendFailureText(r), UNCERTAIN_SEND_TEXT);
+  }
+  // Kesin hata olduğu gibi kalır (zaten Türkçe)
+  const down = (await send([500], { attempts: 1 })).r;
+  assert.equal(!down.ok && sendFailureText(down), "Resend şu an yanıt vermiyor; biraz sonra yeniden deneyin.");
+  const none = (await send([200], { deadlineAt: START + 999 })).r;
+  assert.equal(!none.ok && sendFailureText(none), "Süre yetmedi; e-posta gönderilmedi.");
+  // Ayarlar › Günlük işler'deki iş kaydı
+  const off = { code: "off" };
+  const outcome = dailyOutcome({ sync: off, digest: digestStep({ status: "error", error: UNCERTAIN_SEND_TEXT }), reminders: { code: "none" }, karaoke: off, menu: off, sales: off });
+  assert.equal(outcome.message, "Sabah e-postası: Resend yanıt vermedi; e-posta yine de gitmiş olabilir.");
+
+  // runReminderDigest: Son gönderimler satırı ve sonuç (bildirim, iş kaydı) bu metni taşır; ham hata yalnız sunucu günlüğünde
+  const digest = read("src/server/notify/digest.ts");
+  const fail = digest.slice(digest.indexOf("if (!res.ok) {"), digest.indexOf("const logRows"));
+  assert.match(fail, /const error = sendFailureText\(res\);/);
+  assert.match(fail, /if \(res\.uncertain\) console\.error\(/);
+  assert.match(fail, /ok: false, error \}\)/);
+  assert.match(fail, /return \{ status: "error", error \};/);
+  assert.doesNotMatch(fail, /error: res\.error/);
 });
 
 test("seçenekler: deneme sayısı ve deneme başına süre", async () => {

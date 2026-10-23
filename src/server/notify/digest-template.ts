@@ -110,9 +110,13 @@ export interface DigestBox {
   href: string;
   /** Bağlantı metni, ör. "Komisyon & hakediş'te aç" (sonuna "→" eklenir; düğme de bunu yazar) */
   link: string;
-  /** Konuya eklenen parça; null: konuya girmez */
+  /** Konuya eklenen parça; null: konuya girmez (konuya yazılacak başka hiçbir şey yoksa yerine kutunun adı, `title`) */
   subjectPart: string | null;
-  /** Ödeme, sistem uyarısı, fatura, kontrol bekleyen ya da fiyat onayı yoksa e-postanın başlığı; null: başlık olmaz */
+  /**
+   * Ödeme, sistem uyarısı, fatura, kontrol bekleyen ya da fiyat onayı yoksa e-postanın başlığı; null: kutu başlığa aday
+   * olmaz (sıra öteki kutuya, sonra zama geçer). Başlık olacak başka hiçbir şey yoksa kutunun konu parçası (ilk harfi
+   * büyük), o da yoksa adı: kutulu e-posta "Bugün yeni bir şey yok" demez
+   */
   headline: string | null;
 }
 
@@ -148,7 +152,7 @@ export interface DigestExtrasResult {
   extras: DigestExtras;
   news: boolean;
   logKeys: string[];
-  /** Haber olan kutuların konu parçaları (bildirimdeki ve önizlemedeki özet satırı için) */
+  /** Haber olan kutuların konu parçaları, parçası olmayanın adı (bildirimdeki ve önizlemedeki özet satırı için) */
   parts: string[];
 }
 
@@ -187,7 +191,9 @@ export async function collectDigestExtras(sources: readonly DigestExtraSource[],
     for (const k of r.logKeys ?? []) if (k) keys.add(k);
     const isNews = src.news && !NEVER_NEWS.includes(src.key);
     news ||= isNews;
-    if (isNews && r.box.subjectPart) parts.push(r.box.subjectPart);
+    // Konu parçası olmayan haber kutusu özet satırına adıyla girer (tek haberse özet boş kalmasın: "Bugün: .")
+    const part = r.box.subjectPart || r.box.title;
+    if (isNews && part) parts.push(part);
   });
   return { extras, news, logKeys: [...keys], parts };
 }
@@ -199,6 +205,8 @@ const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
   forecast: { bg: "#f4f4f5", fg: "#3f3f46" },
 };
 const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
+/** İlk harf büyük, Türkçe ("i" → "İ"): konu parçası küçük harfle başlayabilir ("dünkü kapanış listesi eksik") */
+const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.slice(1)}`;
 
 /**
  * Kutunun bağlantısı: yalnız panelin bir yolu (harf, rakam, tire, alt çizgi; sorgu ve # serbest). Başka her adres
@@ -271,10 +279,11 @@ export function emailLayout(o: { subject: string; preheader: string; brandSub: s
  * Konu (öncelik sırasıyla; ötekiler " · " ile, hep aynı sırada eklenir: yeni fatura, yeni fiyat onayı, zam, komisyon,
  * kontrol): ödeme varsa "Ödeme hatırlatması: …" (+ önce sistem uyarısı); yoksa sistem uyarısı varsa "Sistem uyarısı:
  * <ilk başlık>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura, kontrol
- * bekleyen, yeni fiyat onayı, komisyon ya da kontrol kutusundan ilki "Sabah özeti: …"; yoksa zam ya da "bugün yeni bir
- * şey yok". Başlık da aynı sırayla (kutunun `headline`'ı fiyat onayından sonra, zamdan önce). Bölüm ve kutu ekleyenler
- * konuya yalnız kendi parçasını katar; sırayı burası belirler. Tahmin kutusu konuya, başlığa ve düğmeye hiç girmez.
- * `extras` verilmezse (ya da kutusuzsa) e-posta eskisiyle birebir aynı.
+ * bekleyen, yeni fiyat onayı, komisyon ya da kontrol kutusundan ilki "Sabah özeti: …"; yoksa zam, yoksa (konu parçası
+ * olmayan) komisyon ya da kontrol kutusunun adı, yoksa "bugün yeni bir şey yok". Başlık da aynı sırayla (kutunun
+ * `headline`'ı fiyat onayından sonra, zamdan önce; başlıksız kutu en sonda konu parçası ya da adıyla). Bölüm ve kutu
+ * ekleyenler konuya yalnız kendi parçasını katar; sırayı burası belirler. Tahmin kutusu konuya, başlığa ve düğmeye hiç
+ * girmez. `extras` verilmezse (ya da kutusuzsa) e-posta eskisiyle birebir aynı.
  */
 export function renderDigest(
   rows: { item: UpcomingItem; stage: NotifyStage }[],
@@ -309,6 +318,10 @@ export function renderDigest(
   const failExtra = [holdPart, zamPart, comPart, konPart].filter(Boolean).join(" · ");
   // "Sabah özeti: <ilk haber>": adayın kuyruktaki yeri (kontrol bekleyen kuyrukta yok); ilk haber kuyruktan çıkar
   const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4]] as const).find(([p]) => p);
+  // Başlığı ya da konu parçası olmayan kutu e-postanın tek içeriğiyse konu ve başlık "yeni bir şey yok" demesin: kutunun
+  // parçası (başlıkta ilk harfi büyük), o da yoksa adı. Konunun son dalında parça zaten yoktur (varsa `lead` olurdu)
+  const boxPart = comPart || konPart;
+  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || null;
   const subject = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
@@ -317,7 +330,7 @@ export function renderDigest(
         ? `Paraşüt eşitlemesi başarısız${failExtra ? ` · ${failExtra}` : ""}`
         : lead
           ? `Sabah özeti: ${[lead[0], ...tail.filter((_, i) => i !== lead[1])].filter(Boolean).join(" · ")}`
-          : `Sabah özeti: ${zamPart ?? "bugün yeni bir şey yok"}`;
+          : `Sabah özeti: ${zamPart ?? boxLast ?? "bugün yeni bir şey yok"}`;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
   const boxHeadline = com?.headline || kon?.headline || null;
@@ -341,7 +354,7 @@ export function renderDigest(
                   ? zam.productCount
                     ? `Hammadde zammı: ${zam.productCount} ürünün fiyatına bakın`
                     : `${zam.changes.length} hammaddenin fiyatı arttı`
-                  : "Bugün yeni bir şey yok";
+                  : (boxLast ?? "Bugün yeni bir şey yok");
   const preheader = rows.length ? `${parts.join(", ")} · toplam ${money(total)}${extra ? ` · ${extra}` : ""}` : headline;
 
   const pills = STAGE_ORDER.filter((st) => counts[st])

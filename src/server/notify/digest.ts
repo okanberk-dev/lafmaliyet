@@ -17,7 +17,7 @@ import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
 import { loadDigestExtras } from "./digest-extras";
 import { invoiceNewsOf, renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
-import { isEmailConfigured, resolveFrom, sendEmail } from "./resend";
+import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
 
 export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
@@ -56,7 +56,7 @@ export async function loadUpcoming(today = todayTR()) {
 }
 
 export type DigestResult =
-  /** `boxes`: haber olan ek kutuların konu parçaları (yalnız varsa; digest-extras.ts) */
+  /** `boxes`: haber olan ek kutuların konu parçaları, parçası olmayanın adı (yalnız varsa; digest-extras.ts) */
   | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number; holds?: number; boxes?: string[] }
   /**
    * `off`: neden gitmedi. "disabled" e-posta kapalı, "nokey" Resend kurulmamış (gönderilecek bir şey olsa da gitmezdi);
@@ -229,11 +229,15 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     ctx.sendDeadlineAt === undefined ? undefined : { deadlineAt: ctx.sendDeadlineAt },
   );
   if (!res.ok) {
+    // Belirsiz gönderimde (zaman aşımı, ör. sabah işinin 48. saniyesi; ağ hatası; 409) ileti gitmiş olabilir: Son
+    // gönderimler, bildirim ve Günlük işler bunu Türkçe söyler; ham hata yalnız sunucu günlüğünde
+    const error = sendFailureText(res);
+    if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
     await db
       .insert(s.notificationLog)
-      .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error: res.error })
+      .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error })
       .onConflictDoNothing();
-    return { status: "error", error: res.error };
+    return { status: "error", error };
   }
   const logRows = [
     ...fresh.map((f) => ({ key: f.key, subject, recipients: to.join(", "), ok: true })),

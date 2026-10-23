@@ -96,8 +96,10 @@ anını da içerir; aynı gün ikinci kez "şimdi gönder" denince (aynı sayıd
 
 Gönderim üç kez denenir (her deneme en çok 15 sn). Sabah işinde gönderim en geç işin 48. saniyesinde kesilir: Resend
 takılırsa iş 60 saniyelik sınırı aşmasın, sonraki adımlar (hatırlatıcı bildirimi, eşitlemeler) çalışsın. Kesilen
-gönderim "Son gönderimler"de hata olarak görünür; ileti yine de ulaşmış olabilir. Aynı gün **Bugünküleri şimdi gönder**
-aynı tekil anahtarla gider: ilk ileti ulaştıysa Resend ikinci kez göndermez.
+gönderim (ağ hatası ve Resend'in "aynı ileti hâlâ işleniyor" yanıtı da) "Son gönderimler"de ve Ayarlar › Günlük
+işler'de "Resend yanıt vermedi; e-posta yine de gitmiş olabilir." diye görünür: ileti ulaşmış olabilir, ham hata
+yalnız Vercel günlüğündedir. Aynı gün **Bugünküleri şimdi gönder** aynı tekil anahtarla gider: ilk ileti ulaştıysa
+Resend ikinci kez göndermez.
 
 **Ek kutular (geliştirici notu).** Başka ekranların sabah e-postasına eklediği kutular (komisyon ve hakediş, dünkü
 kontrol listeleri, satış tahmini) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
@@ -110,6 +112,8 @@ gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak
 uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme. Konuda kutunun
 parçası zamdan sonra eklenir ("Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik"); ödeme,
 sistem uyarısı, fatura ve fiyat onayı yoksa konu "Sabah özeti: <kutunun parçası>" olur, başlık ve düğme kutunun.
+Konu parçası ya da başlığı olmayan kutu e-postanın tek içeriğiyse konu ve başlık kutunun parçasını, o da yoksa adını
+yazar ("bugün yeni bir şey yok" yazılmaz).
 Kutunun bağlantısı yalnız panelin bir yolu olabilir (fotoğraf ya da depo adresi yazılmaz). Önizleme kutuları yazmadan
 gösterir; liste boşken e-posta öncekinin aynısıdır. Ayrıntı: `docs/planlar/CRITIQUE2.md` R11.
 
