@@ -339,7 +339,7 @@ export function SettingsForm({ settings, water, data, menuUrls }: { settings: Se
         >
           <CardContent className="space-y-4">
             <p className="text-[13px] leading-5 text-ink-mute">
-              Ürün adları, boyları ve satış fiyatları herkese açık bir menü sayfasında yayınlanır. Maliyet ve kâr bilgisi asla gösterilmez. Ürün kartında &quot;QR menüde göster&quot; ile
+              Ürün adları, boyları ve satış fiyatları herkese açık bir menü sayfasında yayınlanır. Maliyet ve kâr bilgisi asla gösterilmez. Ürün kartındaki &quot;QR menüde görünür / gizli&quot; anahtarıyla
               ürün bazında gizleyebilirsiniz.
             </p>
             <p className="text-[13px] leading-5 text-ink-mute">

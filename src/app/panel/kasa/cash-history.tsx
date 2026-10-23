@@ -1,9 +1,10 @@
 "use client";
 
 import { Camera, CalendarDays, ChevronLeft, ChevronRight, MessageCircle, Pencil, RotateCw, Trash2 } from "lucide-react";
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -91,7 +92,7 @@ export function CashHistory({
 }) {
   const [open, setOpen] = useState<CashReportDTO | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const net = Math.round((totals.over - totals.short) * 100) / 100;
   const checks = Object.values(carry);
   /** İş günü kapandıktan sonra kasa alanı değiştirilerek düzeltilen rapor */
@@ -161,9 +162,17 @@ export function CashHistory({
           </div>
         }
       />
-      <div className="grid grid-cols-2 gap-3 px-5 pb-4 lg:grid-cols-4">
+      {/* Kart geniş ekranda sayfanın üçte ikisi: dört kutu orada sığmaz, rakamlar satır kırar (2xl'de dört sütun) */}
+      <div className="grid grid-cols-2 gap-3 px-5 pb-4 sm:grid-cols-4 lg:grid-cols-2 2xl:grid-cols-4">
         <Stat label="Z toplamı" value={money(totals.zTotal)} sub={`Nakit ${money(totals.cash)} · kart ${money(totals.card)}`} compact />
-        <Stat label="Kasa farkı (net)" value={Math.abs(net) < CASH_TOLERANCE ? "Tutuyor" : `${money(Math.abs(net))} ${net < 0 ? "eksik" : "fazla"}`} tone={net <= -CASH_TOLERANCE ? "bad" : net >= CASH_TOLERANCE ? "warn" : "good"} compact />
+        {/* Rapor girilmeyen ayda yeşil "Tutuyor" yanlış güven verir */}
+        <Stat
+          label="Kasa farkı (net)"
+          value={!totals.reported ? "Rapor yok" : Math.abs(net) < CASH_TOLERANCE ? "Tutuyor" : money(Math.abs(net))}
+          sub={totals.reported && Math.abs(net) >= CASH_TOLERANCE ? (net < 0 ? "eksik" : "fazla") : undefined}
+          tone={!totals.reported ? "default" : net <= -CASH_TOLERANCE ? "bad" : net >= CASH_TOLERANCE ? "warn" : "good"}
+          compact
+        />
         <Stat label="Eksik / fazla" value={`${money(totals.short)} / ${money(totals.over)}`} sub="günlerin toplamı" compact />
         <Stat
           label="Rapor girilen gün"

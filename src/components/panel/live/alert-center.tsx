@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
@@ -24,6 +25,12 @@ import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
 const FIRED_KEY = "laf:calan-uyarilar";
+
+/** Bu cihazda az önce başlatılan sayaçlar: başlatan "Sayaç başladı"yı gördü, "Karaoke başladı" ikinci kez çıkmasın */
+const STARTED_HERE = new Set<number>();
+export function startedOnThisDevice(sessionId: number): void {
+  STARTED_HERE.add(sessionId);
+}
 /** Duyurulan karaoke olayları (aynı yeni rezervasyon için iki kez zil çalmasın) */
 const SEEN_KEY = "laf:duyurulan-olaylar";
 /** Bu cihazın gördüğü laffogato.net siparişleri (aynı yeni sipariş için iki kez zil çalmasın) */
@@ -294,6 +301,8 @@ export function AlertCenter({ role }: { role: Role }) {
       const range = timeRange(sessionStart(s), sessionEnd(s));
       const silent = prefs.sound && audioState() === "ready";
       if (a.kind === "start") {
+        // Sayacı bu cihaz başlattı: bildirim sayacın üstünü kapatmasın (başlatma bildirimi zaten çıktı)
+        if (STARTED_HERE.has(s.id)) return;
         if (prefs.sound) play("start");
         toast(`Karaoke başladı: ${name}`, { description: `${s.guests ? `${s.guests} kişi · ` : ""}${range}`, duration: 15_000 });
         void notify(`Karaoke başladı: ${name}`, range, `karaoke-start-${s.id}`, "/panel/karaoke", { silent });
@@ -398,16 +407,30 @@ export function AlertCenter({ role }: { role: Role }) {
     setBusy(s.id);
     patchLive((d) => ({ ...d, karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, endedAt: new Date(liveNow()).toISOString() } : x)) } }));
     if (alarmRinging() && overtime.length <= 1) stopAlarm();
-    const res = await endKaraokeSession(s.id);
-    setBusy(null);
-    if (!res.ok) toast.error(res.error);
+    try {
+      const res = await endKaraokeSession(s.id);
+      if (!res.ok) toast.error(res.error);
+    } catch (e) {
+      // Bitirilemedi (bağlantı yok, panel güncellendi): iyimser bitiş geri alınır; alarm düğmeleri açık kalır
+      patchLive((d) => ({ ...d, karaoke: { ...d.karaoke, sessions: d.karaoke.sessions.map((x) => (x.id === s.id ? { ...x, endedAt: s.endedAt } : x)) } }));
+      toastUnreachable(e, "karaoke-alarm");
+    } finally {
+      setBusy(null);
+    }
     void refreshLive().then(refreshScreen);
   }
 
   async function extend(s: KaraokeSessionDTO, minutes: number, force = false) {
     setBusy(s.id);
-    const res = await extendKaraokeSession(s.id, minutes, { force });
-    setBusy(null);
+    let res: Awaited<ReturnType<typeof extendKaraokeSession>>;
+    try {
+      res = await extendKaraokeSession(s.id, minutes, { force });
+    } catch (e) {
+      toastUnreachable(e, "karaoke-alarm");
+      return;
+    } finally {
+      setBusy(null);
+    }
     if (res.ok && res.data.conflict) {
       // Sitedeki bir rezervasyonla çakışıyor: uzatılmadı, personele sorulur
       setClash({ s, minutes, message: res.data.conflict.message });
@@ -437,7 +460,8 @@ export function AlertCenter({ role }: { role: Role }) {
             {overtime.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-bad px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
                 <BellRing size={20} className="shrink-0 motion-safe:animate-bounce" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
+                {/* Metnin tabanı var (basis-56): dar ekranda düğmeler metnin altına iner, metin sütunu daralıp satır satır kırılmaz */}
+                <div className="min-w-0 flex-1 basis-56">
                   <p className="font-semibold">Karaoke süresi doldu: {sessionName(s)}</p>
                   <p className="text-[13px] text-white/85 tabular">
                     {s.guests ? `${s.guests} kişi · ` : ""}

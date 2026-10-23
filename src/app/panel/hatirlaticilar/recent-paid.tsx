@@ -1,9 +1,10 @@
 "use client";
 
 import { ChevronDown, RotateCcw } from "lucide-react";
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { dateTimeTR, dateTR, money, num } from "@/lib/format";
 import { recentPaidKey, RECENT_PAID_DAYS, type RecentPaid } from "@/lib/recent-paid";
@@ -14,7 +15,7 @@ import { undoRecentPaid } from "@/server/actions/reminders";
  * hatırlatıcı 30 gün boyunca buradan geri alınır (fatura ödenmemişe, hatırlatıcı önceki tarihine döner).
  */
 export function RecentPaidList({ items }: { items: RecentPaid[] }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [shown, hide] = useOptimistic(items, (state, key: string) => state.filter((e) => recentPaidKey(e) !== key));
   if (!shown.length) return null;
 

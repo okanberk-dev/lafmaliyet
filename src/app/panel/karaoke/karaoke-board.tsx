@@ -1,13 +1,15 @@
 "use client";
 
 import { CalendarClock, ExternalLink, Hourglass, MicVocal, Plus, RefreshCw, RotateCcw, Square, Timer, Trash2, TriangleAlert, Users } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { startedOnThisDevice } from "@/components/panel/live/alert-center";
 import { useClock } from "@/components/panel/live/clock";
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { usePrefs } from "@/components/panel/live/prefs";
 import { liveNow, refreshLive, useLive } from "@/components/panel/live/store";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -183,7 +185,7 @@ export function KaraokeBoard({
 }
 
 function useSessionActions() {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>, success?: string) =>
     start(async () => {
       const res = await fn();
@@ -199,7 +201,7 @@ function RunningCard({ session: s, now, warnMinutes }: { session: KaraokeSession
   const [confirmEnd, setConfirmEnd] = useState(false);
   /** Uzatma sitedeki bir rezervasyonla çakışıyor: personele sorulur, onaylanınca yine de uzatılır */
   const [clash, setClash] = useState<{ minutes: number; message: string } | null>(null);
-  const [extending, startExtend] = useTransition();
+  const [extending, startExtend] = useActionTransition();
   const extend = (minutes: number, force = false) =>
     startExtend(async () => {
       const res = await extendKaraokeSession(s.id, minutes, { force });
@@ -297,7 +299,7 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
   const [custom, setCustom] = useState("");
   const [label, setLabel] = useState("");
   const [guests, setGuests] = useState("");
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   /** Sunucunun sorduğu çakışma (sitede o saatte rezervasyon var): onaylanınca yine de başlatılır */
   const [ask, setAsk] = useState<string | null>(null);
   const chosen = custom ? Number(custom.replace(",", ".")) : minutes;
@@ -312,6 +314,7 @@ function QuickTimer({ sessions, now }: { sessions: KaraokeSessionDTO[]; now: num
       const res = await startKaraokeTimer({ minutes: Math.round(chosen), label: label.trim() || null, guests: guests ? Number(guests) : null, force });
       if (!res.ok) return void toast.error(res.error);
       if (res.data.conflict) return void setAsk(res.data.conflict.message);
+      startedOnThisDevice(res.data.id);
       toast.success(`Sayaç başladı · ${durationLabel(Math.round(chosen))}`, { description: `Bitiş ${trClock(endsAt).time}; süre dolunca alarm çalar.` });
       setLabel("");
       setGuests("");
@@ -449,7 +452,7 @@ function SessionRow({ s, now, siteAdminBase, showDay = false }: { s: KaraokeSess
 }
 
 function TodayList({ sessions, now, siteAdminBase, configured }: { sessions: KaraokeSessionDTO[]; now: number; siteAdminBase: string | null; configured: boolean }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   function sync() {
     start(async () => {
       const res = await syncKaraokeNow();

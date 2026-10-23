@@ -1,10 +1,11 @@
 "use client";
 
 import { Calculator, Copy, CreditCard, MessageCircle, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -292,7 +293,7 @@ export function CashForm({
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
   const [photos, setPhotos] = useState<FormPhoto[]>([]);
   const [marks, setMarks] = useState<Marks>({});
@@ -444,6 +445,11 @@ export function CashForm({
     setErrors(errs);
     if (!fields) {
       toast.error("Eksik ya da hatalı alan var", { description: Object.values(errs)[0] });
+      // Telefonda düğme formun altında: hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
+      const first = Object.keys(errs)[0];
+      const el = first ? document.getElementById(`k-${first}`) : null;
+      el?.scrollIntoView({ block: "center" });
+      el?.focus({ preventScroll: true });
       return;
     }
     // Açılış önceki devirle tutmuyorsa nedeni nota (sunucu da reddeder; burada not alanına gidilir)
@@ -456,7 +462,8 @@ export function CashForm({
       const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const e: CashEmailOutcome = res.data.email;
-      const head = `Rapor gönderildi · ${diffText(res.data.cashDiff)}`;
+      // Kayıtlı raporun düzeltmesi "gönderildi" değil (e-posta yalnız ilk gönderimde gider)
+      const head = `${report ? "Rapor güncellendi" : "Rapor gönderildi"} · ${diffText(res.data.cashDiff)}`;
       if (e.status === "failed") toast.warning(head, { description: e.error ?? "E-posta gitmedi", duration: 12_000 });
       else toast.success(head, { description: e.status === "sent" ? `E-posta ${e.to} adrese gitti. Şimdi WhatsApp ile gönderebilirsiniz.` : "WhatsApp ile gönderebilirsiniz." });
       // Düzeltme ertesi günün zincirini bozduysa söylenir (ertesi günün açılışı bu raporun devrine dayanır)

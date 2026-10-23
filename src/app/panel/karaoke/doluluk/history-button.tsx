@@ -1,9 +1,9 @@
 "use client";
 
 import { History } from "lucide-react";
-import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { historyToast } from "@/lib/karaoke/occupancy-text";
 import { importKaraokeHistoryNow } from "@/server/actions/karaoke-doluluk";
@@ -13,7 +13,7 @@ import { importKaraokeHistoryNow } from "@/server/actions/karaoke-doluluk";
  * yetmezse kalanı Devam et ile). Bitince bildirim çıkar, sayfa sunucu eylemiyle yenilenir.
  */
 export function HistoryButton({ label, variant = "secondary" }: { label: string; variant?: "primary" | "secondary" }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   function run() {
     start(async () => {

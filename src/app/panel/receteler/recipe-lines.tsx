@@ -155,6 +155,7 @@ export function RecipeLinesEditor({
                   value={r.ingredientId}
                   onChange={(id) => update(r.key, { ingredientId: id })}
                   kit={kit}
+                  taken={new Set(rows.flatMap((x) => (x.key !== r.key && x.ingredientId ? [x.ingredientId] : [])))}
                   label={`${idx + 1}. satır malzemesi`}
                   className="min-w-0 flex-1"
                 />

@@ -4,6 +4,7 @@ import { Check, FileSearch, Plus, Trash2, TriangleAlert, X } from "lucide-react"
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -188,6 +189,8 @@ export function SupplierCardDialog({
         description: `${keys.map((k) => INFO_LABEL[k]).join(", ")}${r.data.source ? ` · ${r.data.source}` : ""}. Kaydetmeden önce kontrol edin.`,
         duration: 8000,
       });
+    } catch (e) {
+      toastUnreachable(e);
     } finally {
       setFilling(false);
     }
@@ -235,6 +238,8 @@ export function SupplierCardDialog({
       });
       onSaved?.({ id: r.data.id, slug: r.data.slug });
       onClose();
+    } catch (e) {
+      toastUnreachable(e);
     } finally {
       setBusy(false);
     }

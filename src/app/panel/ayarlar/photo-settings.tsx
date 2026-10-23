@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Field, NumberInput } from "@/components/ui/form";
 import { ToggleRow } from "@/components/ui/toggle-row";
@@ -15,7 +16,7 @@ export function PhotoReadingForm({ enabled: initialEnabled, dailyCap: initialCap
   const [enabled, setEnabled] = useState(initialEnabled);
   const [savedCap, setSavedCap] = useState(initialCap);
   const [cap, setCap] = useState(String(initialCap));
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   function save(next: { enabled: boolean; dailyCap: number }, previous: boolean) {
     start(async () => {

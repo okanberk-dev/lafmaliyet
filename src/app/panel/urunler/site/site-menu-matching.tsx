@@ -2,9 +2,10 @@
 
 import { ArrowRight, Globe, Link2, ListChecks, Plug, RefreshCw, Store, Unlink } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -90,7 +91,7 @@ export function SiteMenuMatching({
   const [chosen, setChosen] = useState<ReadonlySet<number>>(
     () => new Set(suggestions.filter((s) => s.confidence !== "similar" && productById.get(s.productId)?.active).map((s) => s.productId)),
   );
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [dialogFor, setDialogFor] = useState<MatchProduct | null>(null);
   const [unlinkFor, setUnlinkFor] = useState<MatchProduct | null>(null);
   const [busy, setBusy] = useState(false);

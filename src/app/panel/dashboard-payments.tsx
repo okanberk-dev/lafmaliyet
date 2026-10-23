@@ -25,14 +25,22 @@ export function DashboardPayments({ items, className }: { items: UpcomingItem[];
   const near = nearAll.slice(0, 4);
   if (!near.length) return null;
   const overdue = nearAll.filter((i) => i.status === "overdue");
-  const total = nearAll.reduce((a, i) => a + (i.amount ?? 0), 0);
+  const sum = (list: UpcomingItem[]) => list.reduce((a, i) => a + (i.amount ?? 0), 0);
+  const total = sum(nearAll);
+  // Gecikenlerin toplamı ayrı yazılır: "Bu ayın işleri"ndeki gecikme tutarıyla aynı olsun, vadesi gelmemiş öğe karışmasın
+  const overdueTotal = sum(overdue);
+  const soonTotal = total - overdueTotal;
 
   return (
     <Card className={className}>
       <CardHeader
         icon={<BellRing />}
         title="Yaklaşan ödemeler"
-        description={overdue.length ? `${overdue.length} ödeme gecikti · toplam ${money(total)}` : `Önümüzdeki 7 gün · ${money(total)}`}
+        description={
+          overdue.length
+            ? `${overdue.length} ödeme gecikti · ${money(overdueTotal)}${soonTotal > 0 ? ` · 7 gün içinde ${money(soonTotal)}` : ""}`
+            : `Önümüzdeki 7 gün · ${money(total)}`
+        }
         actions={
           <ButtonLink href="/panel/hatirlaticilar" variant="secondary" size="sm" className="pointer-coarse:h-11">
             Tümü{nearAll.length > near.length ? ` (${nearAll.length})` : ""}

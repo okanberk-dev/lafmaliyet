@@ -1,9 +1,10 @@
 "use client";
 
 import { ExternalLink, Globe, RefreshCw } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -61,7 +62,7 @@ export interface SiteSalesCardData {
  * hariç); ModPOS cirosuna eklenmez, kâr / zarar ve oranlar ikisinin toplamıyla hesaplanır.
  */
 export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [busyMonth, setBusyMonth] = useState<string | null>(null);
   const [pick, setPick] = useState(data.choices.find((m) => !data.months.some((x) => x.month === m)) ?? data.choices[0] ?? "");
 

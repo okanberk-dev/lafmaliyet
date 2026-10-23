@@ -2,9 +2,10 @@
 
 import { ListChecks, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useOptimistic, useState, useTransition, type FormEvent } from "react";
+import { useOptimistic, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -36,7 +37,7 @@ export interface TemplateRow {
  */
 export function TemplatesClient({ templates }: { templates: TemplateRow[] }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [rows, setRowActive] = useOptimistic(templates, (state, p: { id: number; active: boolean }) => state.map((t) => (t.id === p.id ? { ...t, active: p.active } : t)));
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<TemplateDraft>(EMPTY_TEMPLATE);

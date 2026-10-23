@@ -26,10 +26,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
+import { useId, useMemo, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -233,10 +234,10 @@ export function ParasutClient({
   returns?: { sales: { count: number; total: number }; supplier: { id: string; date: string; amount: number; invoiceNo: string | null; supplier: string }[] } | null;
 }) {
   // Her eylemin kendi bekleme durumu: "Bağlantıyı dene" sürerken eşitleme düğmesi dönmez
-  const [testing, startTest] = useTransition();
-  const [syncing, startSync] = useTransition();
-  const [resetting, startReset] = useTransition();
-  const [reading, startRead] = useTransition();
+  const [testing, startTest] = useActionTransition();
+  const [syncing, startSync] = useActionTransition();
+  const [resetting, startReset] = useActionTransition();
+  const [reading, startRead] = useActionTransition();
   const router = useRouter();
   const [readProgress, setReadProgress] = useState<{ done: number; left: number } | null>(null);
   const busy = testing || syncing || resetting || reading;
@@ -704,7 +705,7 @@ function ProductLinks({
   checks: LinkCheck[];
   readState: ReadingState;
 }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const router = useRouter();
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [removing, setRemoving] = useState<LinkRow | null>(null);
@@ -1450,7 +1451,7 @@ function FactorHelp({
   readState: ReadingState;
   className?: string;
 }) {
-  const [reading, start] = useTransition();
+  const [reading, start] = useActionTransition();
   const [read, setRead] = useState<{ ingredientId: number; text: string } | null>(null);
   if (!ingredient) return null;
   const typed = parseNumberTR(factor);
@@ -1510,7 +1511,7 @@ function FactorHelp({
 
 function CategoryRules({ rules, categories }: { rules: Rule[]; categories: readonly string[] }) {
   const formId = useId();
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [matchType, setMatchType] = useState<MatchType>("supplier");
   const [pattern, setPattern] = useState("");

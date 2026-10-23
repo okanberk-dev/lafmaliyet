@@ -2,9 +2,10 @@
 
 import { History, Store } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -30,7 +31,7 @@ export interface ProductPriceHistoryInfo {
  * veriyle çizilir: kayıttan sonra sayfa yenilenince güncellenir (docs/FIYATLAR.md).
  */
 export function PriceHistoryCard({ product, history }: { product: { id: number; name: string; size: string }; history: ProductPriceHistoryInfo }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   // İşaretlenince uyarı hemen kalkar; aynı ürün sonra yeniden kasada geri kalırsa (başka an) yine görünür
   const [doneSince, setDoneSince] = useState<string | null>(null);
   const stale = history.price !== null && history.posStalePrice !== null && history.posStaleSince !== null && history.posStaleSince !== doneSince;

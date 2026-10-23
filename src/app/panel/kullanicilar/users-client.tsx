@@ -1,11 +1,12 @@
 "use client";
 
 import { Check, KeyRound, LockOpen, LogOut, Minus, Pencil, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
-import { useEffect, useOptimistic, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useOptimistic, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -132,7 +133,7 @@ export function UsersEditor({ users, meId, emailConfigured, loginUrl }: { users:
   const [query, setQuery] = useQueryText("ara");
   const [roleRaw, setRole] = useQueryState<RoleFilter>("rol", "all");
   const role = ROLE_FILTERS.includes(roleRaw) ? roleRaw : "all";
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
   const [rows, setOptimistic] = useOptimistic(users, (state, p: { id: number; active: boolean }) => state.map((u) => (u.id === p.id ? { ...u, active: p.active } : u)));
   // Davet bekleyen henüz giriş yapamaz: "Aktif" sayılmaz, ayrıca "Davet bekleyen" diye sayılır
   const activeCount = rows.filter((u) => u.active && u.invite === "none").length;
@@ -874,7 +875,7 @@ function UserDialog({
   const [errors, setErrors] = useState<FormErrors>({});
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
   const self = user.id === meId;
   const invited = user.invite !== "none";
   const dirty = name !== user.name || email !== user.email || role !== user.role || active !== user.active || password !== "";

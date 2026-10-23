@@ -2,9 +2,10 @@
 
 import { Camera, Download, ExternalLink, FileText, FileWarning, ImageIcon, LoaderCircle, Paperclip, RotateCw, Share2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog } from "@/components/ui/dialog";
@@ -245,7 +246,7 @@ export function DocumentSheet({ invoice, documents, onClose }: { invoice: Invoic
   }
 
   const [deleting, setDeleting] = useState<Entry | null>(null);
-  const [deletePending, startDelete] = useTransition();
+  const [deletePending, startDelete] = useActionTransition();
   function confirmDelete() {
     const target = deleting;
     if (!target?.docId) return;

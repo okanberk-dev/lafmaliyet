@@ -1,9 +1,10 @@
 "use client";
 
 import { Ban, Eye, EyeOff, Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
-import { useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthError, AuthHeading, authButton, authCard, FloatingField } from "@/app/giris/auth-ui";
+import { useActionTransition } from "@/components/ui/action-error";
 import type { ConsentText, Rich } from "@/lib/mcp/oauth";
 import { approveConnection, denyConnection } from "@/server/actions/mcp";
 
@@ -46,7 +47,7 @@ function Notice({ children }: { children: ReactNode }) {
 
 /** Personel ya da bağlantı tavanı: yalnız "Reddet ve Claude'a dön" */
 export function DenyButton({ istek, label }: { istek: string; label: string }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (leaving) return <Leaving text="Reddedildi. Claude'a dönülüyor…" />;
@@ -80,7 +81,7 @@ export function ConsentForm({ istek, text }: { istek: string; text: ConsentText 
   const [error, setError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<string | null>(null);
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
-  const [, start] = useTransition();
+  const [, start] = useActionTransition();
 
   function go(kind: "approve" | "deny") {
     setError(null);

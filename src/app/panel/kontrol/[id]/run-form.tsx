@@ -2,9 +2,10 @@
 
 import { Check, CircleCheck, Undo2 } from "lucide-react";
 import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
-import { useMemo, useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useMemo, useOptimistic, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
 import { Progress } from "@/components/ui/misc";
@@ -73,7 +74,7 @@ export function RunForm({
   me: string;
 }) {
   const router = useRouter();
-  const [, start] = useTransition();
+  const [, start] = useActionTransition();
   // Yüklenen fotoğrafların yanıtı: sayfa yenilenip (renderedAt ilerleyince) sunucunun yanıtı gelene kadar
   const [uploaded, setUploaded] = useState<Record<number, AnswerLite>>({});
   const base = useMemo(() => {

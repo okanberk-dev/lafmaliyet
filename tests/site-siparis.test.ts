@@ -541,7 +541,8 @@ test("bar ekranı: tek dokunuş, onaysız; istekte kartın düğmeleri kapalı, 
   const board = read("src/app/panel/karaoke/orders-board.tsx");
   assert.match(board, /advanceSiteOrder\(\{ id: o\.id, action, from: o\.stage \}\)/);
   assert.match(board, /const buttons = stageButtons\(o\)/);
-  assert.match(board, /useTransition\(\)/);
+  // Geçiş, atılan eylemi yakalayan sarmalayıcıdan (src/components/ui/action-error.ts)
+  assert.match(board, /useActionTransition\(\)/);
   assert.match(board, /if \(busy\.current\) return;/);
   assert.match(board, /disabled=\{pending\}/);
   assert.doesNotMatch(board, /ConfirmDialog|confirm\(/, "operatör: tek dokunuş, onay sorulmaz");

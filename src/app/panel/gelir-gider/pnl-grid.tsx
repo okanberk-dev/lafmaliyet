@@ -4,9 +4,10 @@ import { CalendarRange, MessageSquareText, RotateCcw, TriangleAlert } from "luci
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState, useTransition } from "react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
@@ -68,7 +69,7 @@ export function CountUp({ value, format = "tl" }: { value: number | null; format
 /** Çok yıl olduğunda sekmeler yerine açılır liste */
 export function YearPicker({ year, years }: { year: number; years: number[] }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   return (
     <Select
       value={year}

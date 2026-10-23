@@ -1,9 +1,10 @@
 "use client";
 
 import { Gift, Plus, Search, Trash2, X } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -42,7 +43,7 @@ export function WasteBoard({
   const [qty, setQty] = useState("1");
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
 
   const results = query.trim() ? choices.filter((c) => matchesChoice(c, query)).slice(0, MAX_RESULTS) : [];
@@ -62,7 +63,7 @@ export function WasteBoard({
   function submit() {
     if (!picked) return void toast.error("Önce ürün ya da hammadde seçin");
     const n = parseNumberTR(qty);
-    if (n === null || n <= 0) return void toast.error("Miktarı yazın (ör. 1 ya da 0,5)");
+    if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
     start(async () => {
       const res = await addWasteEntry({
         date,
@@ -73,7 +74,8 @@ export function WasteBoard({
         reason,
         note: note.trim() || null,
       });
-      if (!res.ok) return void toast.error(res.error);
+      // Sunucu miktarı reddettiyse ("Ürün adetle girilir") düzeltilecek alan miktar
+      if (!res.ok) return void (toast.error(res.error), document.getElementById("zi-miktar")?.focus());
       toast.success(`${WASTE_KIND_LABEL[kind]}: ${res.data.name} ${qtyText(n, res.data.unit)}`);
       setPicked(null);
       setQty("1");

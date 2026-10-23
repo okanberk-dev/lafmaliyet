@@ -6,6 +6,7 @@ import { Fragment, startTransition, useEffect, useOptimistic, useState, type Rea
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink, IconButton, IconLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -373,6 +374,8 @@ export function SupplierClient({
             : "Paraşüt'te bu tedarikçinin faturası yok";
       toast.success(title, { id: toastId, description: [`Paraşüt'te ${num(d.fetched)} fatura okundu.`, ...parts].join(" "), duration: d.partial || d.elsewhere.length ? 15000 : 8000 });
       if (d.created && status !== "tumu" && window.location.pathname === path) setStatus("tumu");
+    } catch (e) {
+      toastUnreachable(e, toastId);
     } finally {
       setImporting(false);
     }

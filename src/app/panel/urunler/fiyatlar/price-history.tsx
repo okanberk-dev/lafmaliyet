@@ -2,9 +2,10 @@
 
 import { ChevronDown, History, RotateCcw, SearchX } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -51,7 +52,7 @@ export function PriceHistory({ rows, products }: { rows: HistoryRow[]; products:
   const [q, setQ] = useQueryText("ara");
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [confirm, setConfirm] = useState<Extract<HistoryEntry, { kind: "batch" }> | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const current = useMemo(() => new Map(products.map((p) => [p.id, p.price])), [products]);
   const linked = useMemo(() => new Set(products.filter((p) => p.linked).map((p) => p.id)), [products]);
   const entries = useMemo(() => groupHistory(rows), [rows]);

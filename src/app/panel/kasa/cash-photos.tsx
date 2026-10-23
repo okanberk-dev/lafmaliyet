@@ -1,11 +1,12 @@
 "use client";
 
 import { Info, Trash2, TriangleAlert } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { PhotoThumb, ReadError } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { photoDiffText, type CashPhotoKind, type CashReading, type PhotoDiff, type ReadCheck } from "@/lib/photo-read/kasa";
@@ -109,7 +110,7 @@ export function CardPhotos({
 export function SavedPhotos({ photos, diffs, admin }: { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; admin: boolean }) {
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const [confirm, setConfirm] = useState<CashPhotoDTO | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   if (!photos.length && !diffs.length) return null;
   function remove() {
     const p = confirm;

@@ -915,12 +915,12 @@ export function InvoicesClient({
                           <span className="tabular">{dateTR(i.date)}</span>
                           {i.description ? ` · ${i.description}` : ""}
                         </span>
-                        {i.invoiceNo ? <span className="mt-0.5 block text-xs break-all text-ink-quiet">No {i.invoiceNo}</span> : null}
+                        {i.invoiceNo ? <span className="mt-0.5 block text-xs break-all text-ink-mute">No {i.invoiceNo}</span> : null}
                       </span>
                       <span className="shrink-0 text-right tabular">
                         <span className="block text-[15px] leading-5 font-semibold text-ink">{tl(net, 2)}</span>
                         <span className="block text-xs text-ink-mute">KDV hariç</span>
-                        {Math.abs(vat) >= 0.005 ? <span className="block text-xs text-ink-mute">öd. {tl(i.payable, 2)}</span> : null}
+                        {Math.abs(vat) >= 0.005 ? <span className="block text-xs text-ink-mute">ödenecek {tl(i.payable, 2)}</span> : null}
                       </span>
                     </button>
                   </div>

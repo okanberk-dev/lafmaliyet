@@ -1,9 +1,9 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { testSiteLinks } from "@/server/actions/site-links";
 
@@ -11,7 +11,7 @@ const TITLES = { karaoke: "Karaoke", menu: "Menü", orders: "Siparişler", sales
 
 /** Ayarlar › laffogato.net: dört bağlantıyı şimdi çeker, sonucu bildirir; kart yeni durumu gösterir */
 export function SiteLinksTest() {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   return (
     <Button
       variant="secondary"

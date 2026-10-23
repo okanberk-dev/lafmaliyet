@@ -3,11 +3,12 @@
 import { ArrowRightLeft, CalendarClock, Camera, Megaphone, Pencil, Plus, ReceiptText, Tags, Trash2, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { PhotoThumb } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -144,7 +145,7 @@ export function MonthlyExpenses({
   fixed: FixedCandidate[];
   invoiceCategories: string[];
 }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const defaultDate = isCurrent ? localToday() : `${month}-01`;
   const active = categories.filter((c) => c.active);
   const blank = (categoryId = ""): EntryDraft => ({ id: null, date: defaultDate, categoryId, description: "", amount: "", paymentMethod: null, note: "" });
@@ -662,7 +663,7 @@ function CategoryDialog({
   onClose: () => void;
   onSaved: (id: number | null) => void;
 }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [f, setF] = useState({
     name: category?.name ?? "",

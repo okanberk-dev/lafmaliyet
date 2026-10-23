@@ -1,11 +1,12 @@
 "use client";
 
 import { Info, Trash2, TriangleAlert } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { PhotoStatus, PhotoThumb, ReadError, type PhotoPhase } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -119,7 +120,7 @@ export function CashOutDialog({
   const [applied, setApplied] = useState<number | null>(null);
   const [reading, setReading] = useState<ReceiptReading | null>(null);
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   // Okuma gelince (yükleme pencere açıkken biter) taslağa bir kez uygulanır; o arada yazılanlar kalır
   const fresh = uploaded && uploaded.reading?.kind === "fis" ? uploaded.reading : null;
@@ -168,10 +169,10 @@ export function CashOutDialog({
 
   function save() {
     const amount = parseNumberTR(draft.amount);
-    if (amount === null || amount <= 0) return void toast.error("Tutarı yazın (ör. 412,50)");
+    if (amount === null || amount <= 0) return void (toast.error("Tutarı yazın (ör. 412,50)"), document.getElementById("co-amount")?.focus());
     const vat = draft.vat.trim() ? parseNumberTR(draft.vat) : null;
-    if (draft.vat.trim() && (vat === null || vat < 0)) return void toast.error("KDV'yi tutar olarak yazın (ör. 15,31)");
-    if (writes && !draft.categoryId) return void toast.error("Kategori seçin");
+    if (draft.vat.trim() && (vat === null || vat < 0)) return void (toast.error("KDV'yi tutar olarak yazın (ör. 15,31)"), document.getElementById("co-vat")?.focus());
+    if (writes && !draft.categoryId) return void (toast.error("Kategori seçin"), document.getElementById("co-cat")?.focus());
     start(async () => {
       const res = await saveCashOut({
         id: line?.id ?? null,

@@ -2,9 +2,10 @@
 
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
+import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { useCalmMotion } from "@/components/ui/motion";
 import { AvatarFallback, LiquidMetalAvatar } from "@/components/akmanos/liquid-metal-avatar";
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
@@ -117,7 +118,7 @@ export function ProfileForm({ name: initialName, email: initialEmail }: { name: 
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
   const dirty = name.trim() !== initialName || email.trim().toLowerCase() !== initialEmail;
 
   function submit(e: FormEvent) {

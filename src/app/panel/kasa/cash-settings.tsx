@@ -1,9 +1,10 @@
 "use client";
 
 import { Mail, Send } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/form";
@@ -16,7 +17,7 @@ export function CashSettingsCard({ settings, emailConfigured }: { settings: Cash
   const [recipients, setRecipients] = useState(settings.recipients.join("\n"));
   const [emailEnabled, setEmailEnabled] = useState(settings.emailEnabled);
   const [whatsapp, setWhatsapp] = useState(settings.whatsapp ?? "");
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   function save() {
     start(async () => {
