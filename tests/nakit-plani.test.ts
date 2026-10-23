@@ -534,6 +534,99 @@ test("KDV: hatırlatıcı yokken ayın 28'inde, yarından; otomatik zincirde öd
   assert.equal(buildCashPlan(input()).vat, null);
 });
 
+test("KDV-2 (tevkifat): Eylül'ün tevkifatı 25 Ekim'de, devreden olsa da; KDV-2 hatırlatıcısı varsa ya da KDV kapalıysa plana girmez", () => {
+  // Eylül 2026: reklam faturası 30.000 + 6.000 KDV, 3/10 tevkifat 1.800 (KDV2 tahakkuku); Paraşüt'ten vat 6.000
+  const tevkifat = createModel({ ...ds, invoices: ds.invoices.map((i) => (i.date === "2026-09-17" && i.amount === 30_000 ? { ...i, vat: 6_000 } : i)) });
+  const v = vatMonthInputs(tevkifat, TODAY);
+  // Eylül beyannamesinde devreden 121.204,69: 1 No.lu ödeme yok, 2 No.lu 1.800 yine ödenir
+  const p = buildCashPlan(input({ vat: v, vatAnchor: { month: "2026-09", amount: 121_204.69 } }));
+  assert.deepEqual(
+    lineAt(p, "kdv2@").map((l) => [l.date, l.title, l.amount, l.estimated, l.href]),
+    [["2026-10-25", "KDV-2 (Eylül)", 1_800, true, "#kdv"]],
+  );
+  assert.equal(lineAt(p, "kdv@").length, 0);
+  assert.deepEqual(p.vat!.vat2, [{ key: "kdv2@2026-10-25", period: "2026-09", date: "2026-10-25", amount: 1_800, covered: false }]);
+  // 25 Ekim bugünse yazılmaz (bugünkü ödeme elinizdeki paradan)
+  assert.equal(lineAt(buildCashPlan(input({ today: "2026-10-25", vat: vatMonthInputs(tevkifat, "2026-10-25") })), "kdv2@").length, 0);
+  // KDV tahmini kapalı: kartta görünür, plana girmez
+  const off = buildCashPlan(input({ vat: v, excluded: ["kdv"] }));
+  assert.equal(lineAt(off, "kdv2@").length, 0);
+  assert.equal(off.vat!.vat2.length, 1);
+  // Ödemeler'de KDV-2 hatırlatıcısı: plana o girer, tahmin yazılmaz; 1 No.lu KDV hatırlatıcısı sayılmaz
+  const r = rem({ title: "KDV2 tevkifat", kind: "vergi", amount: 1_800, dueDate: "2026-10-25", repeat: "none" });
+  const covered = buildCashPlan(input({ vat: v, reminders: [r] }));
+  assert.equal(lineAt(covered, "kdv2@").length, 0);
+  assert.equal(covered.vat!.vat2[0].covered, true);
+  assert.deepEqual(
+    lineAt(covered, `reminder:${r.id}@`).map((l) => [l.date, l.amount]),
+    [["2026-10-25", 1_800]],
+  );
+  assert.equal(covered.vat!.baseMode, "default");
+  // Tevkifatsız veride (Excel) KDV-2 satırı yok
+  assert.equal(buildCashPlan(input({ vat })).vat!.vat2.length, 0);
+});
+
+test("KDV-2 hatırlatıcısı yalnız kendi dönemini karşılar; tutarsızsa tahmin onun gününde girer, muhtasar karşılamaz", () => {
+  // Eylül (25 Ekim) ve Ekim (25 Kasım) faturalarında 1.800'er ₺ tevkifat
+  const sepBill = ds.invoices.find((i) => i.date === "2026-09-17" && i.amount === 30_000)!;
+  const twoMonths = createModel({
+    ...ds,
+    invoices: [...ds.invoices.map((i) => (i === sepBill ? { ...i, vat: 6_000 } : i)), { ...sepBill, id: 990_001, date: "2026-10-10", vat: 6_000 }],
+  });
+  const v = vatMonthInputs(twoMonths, TODAY);
+  const base = { vat: v, vatAnchor: { month: "2026-09", amount: 121_204.69 } };
+  // Tutarsız aylık hatırlatıcı: plana iki dönemin tahmini hatırlatıcının günlerinde girer, tutarı bilinmeyen sayılmaz
+  const amountless = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-10-25" });
+  const a = buildCashPlan(input({ ...base, reminders: [amountless] }));
+  assert.deepEqual(
+    lineAt(a, `reminder:${amountless.id}@`).map((l) => [l.date, l.title, l.amount, l.estimated, l.kind]),
+    [
+      ["2026-10-25", "KDV2 beyannamesi (Eylül)", 1_800, true, "kdv"],
+      ["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800, true, "kdv"],
+    ],
+  );
+  assert.equal(lineAt(a, "kdv2@").length, 0);
+  assert.deepEqual(
+    a.vat!.vat2.map((r) => [r.date, r.covered]),
+    [
+      ["2026-10-25", true],
+      ["2026-11-25", true],
+    ],
+  );
+  assert.equal(a.unknownAmounts.length, 0);
+  // KDV tahmini kapalıyken tutarsız hatırlatıcı tutarı girilmemiş ödemedir (ilk günüyle)
+  assert.deepEqual(
+    buildCashPlan(input({ ...base, reminders: [amountless], excluded: ["kdv"] })).unknownAmounts.map((u) => [u.reminderId, u.date]),
+    [[amountless.id, "2026-10-25"]],
+  );
+  // Tek seferlik Eylül hatırlatıcısı Ekim'in KDV-2'sini kapatmaz
+  const once = rem({ title: "KDV2 Eylül", kind: "vergi", amount: 1_800, dueDate: "2026-10-25", repeat: "none" });
+  const o = buildCashPlan(input({ ...base, reminders: [once] }));
+  assert.deepEqual(
+    lineAt(o, `reminder:${once.id}@`).map((l) => [l.date, l.amount]),
+    [["2026-10-25", 1_800]],
+  );
+  assert.deepEqual(
+    lineAt(o, "kdv2@").map((l) => [l.date, l.title, l.amount]),
+    [["2026-11-25", "KDV-2 (Ekim)", 1_800]],
+  );
+  assert.deepEqual(
+    o.vat!.vat2.map((r) => [r.date, r.covered]),
+    [
+      ["2026-10-25", true],
+      ["2026-11-25", false],
+    ],
+  );
+  // Gelir vergisi tevkifatı (muhtasar) KDV-2 değildir: tahminler yerinde, hatırlatıcı kendi satırıyla
+  const muhtasar = rem({ title: "Muhtasar (gelir vergisi tevkifatı)", kind: "vergi", amount: 4_000, dueDate: "2026-10-26" });
+  const m = buildCashPlan(input({ ...base, reminders: [muhtasar] }));
+  assert.deepEqual(
+    lineAt(m, "kdv2@").map((l) => l.date),
+    ["2026-10-25", "2026-11-25"],
+  );
+  assert.equal(lineAt(m, `reminder:${muhtasar.id}@`)[0].amount, 4_000);
+});
+
 const kdvRem = (over: Partial<ReminderRow> = {}) => rem({ title: "KDV beyannamesi ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-10-28", ...over });
 
 test("KDV hatırlatıcısı: tahmin onun günlerinde; tutarı o dönemin kesin tutarı, sonraki dönem yine tahmin", () => {

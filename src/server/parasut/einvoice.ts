@@ -90,6 +90,18 @@ export function eInvoiceToDraft(r: Resource<EInvoiceAttrs>): EInvoiceDraft {
   };
 }
 
+/**
+ * Tevkifatlı e-faturaya bağlı Excel / elle kaydın boş KDV'si için belgedeki tam KDV (`total_vat`). Liste tevkifat
+ * düşülmüş ödenecek tutarı verir, kayıtta KDV yoksa KDV tahmini (src/lib/kdv.ts) "ödenecek − tutar"a düşer ve
+ * tevkifatı göremez (Eylül 2026 reklam faturası: 4.200 indirildi, 6.000 indirilmeliydi). Kayıttaki KDV'ye
+ * dokunulmaz; ödenecek tutar e-faturayı tutmuyorsa (elle değişmiş) ya da iadeyse null.
+ */
+export function withholdingVatFill(row: { vat: number | null; payable: number }, d: Pick<EInvoiceDraft, "withholding" | "refund" | "vat" | "payable">): number | null {
+  if (!d.withholding || d.refund || !(d.vat > 0)) return null;
+  if ((row.vat ?? 0) > 0) return null;
+  return Math.abs(row.payable - d.payable) <= 1 ? d.vat : null;
+}
+
 /** Panele gider olarak girmeli mi; girmemeliyse nedeni (mevcut kaydı kaldırırken nota yazılır) */
 export function shouldImportEInvoice(d: EInvoiceDraft): { ok: true } | { ok: false; reason: string } {
   if (!d.inbound) return { ok: false, reason: "giden fatura" };

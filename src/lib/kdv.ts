@@ -7,8 +7,11 @@
  *   yani karaoke hizmet oranıyla; engine.ts pnlMonth). Süren ayın cirosu Genel bakış'taki ay sonu tahminiyle aya
  *   tamamlanır.
  * - laffogato.net: sitenin saklı KDV'si ve oranı bilinmeyenin panel oranıyla KDV'si (site-sales/calc.ts siteVat).
- * - Alış KDV'si: faturanın ödenecek − (tutar − iskonto); `vat` sütunu kullanılmaz (Excel'den gelenlerde 0).
- *   Tevkifatlıda fark tevkifat düşülmüş KDV'dir (nakit etkisi bu); iadede eksi. Kafe dışı (Karaoke box, Alp Koç) sayılmaz.
+ * - Alış KDV'si (indirilecek KDV): faturanın KDV toplamı (`vat`, Paraşüt); yoksa (Excel'den gelenlerde 0) ödenecek −
+ *   (tutar − iskonto). Tevkifatlı faturada KDV'nin tamamı indirilir: tedarikçiye ödenen kısmı "yurtiçi alımlar", tevkif
+ *   edilen kısmı "sorumlu sıfatıyla ödenen KDV" olarak (Eylül 2026 beyannamesi: 11.875,70 + 1.800). Tevkif edilen kısım
+ *   2 No.lu beyannameyle izleyen ayın 25'inde ayrıca ödenir, 1 No.lu ödenecek sıfır ya da devreden olsa da
+ *   (`purchaseWithheld`, `vat2DueDate`). İadede eksi. Kafe dışı (Karaoke box, Alp Koç) sayılmaz.
  * - Her bileşen 100 ₺'ye yuvarlanır; ödenecek ve devreden yuvarlı bileşenlerden çıkar (ekrandaki çıkarma birebir tutar).
  */
 
@@ -21,6 +24,8 @@ import { monthGenitiveTR, todayTR } from "./reminders";
 import { siteVat } from "./site-sales/calc";
 
 export const VAT_DUE_DAY = 28;
+/** 2 No.lu KDV (tevkifat) beyanı ve ödemesi izleyen ayın 25'inde (Eylül 2026 tahakkuk fişi: vade 25.10.2026) */
+export const VAT2_DUE_DAY = 25;
 /** Otomatik devreden zinciri en çok bu kadar ay geriden başlar */
 export const VAT_CHAIN_MAX_MONTHS = 24;
 export const VAT_DISCLAIMER = "Tahmin; kesin tutar muhasebecinizin beyannamesindedir.";
@@ -34,6 +39,11 @@ export function round100(x: number): number {
 /** Dönemin ödeme günü: "2026-10" → "2026-11-28" (hafta sonu kaydırması yok; plan parayı en çok iki gün erken çıkarır) */
 export function vatDueDate(period: string): string {
   return `${shiftMonth(period, 1)}-${VAT_DUE_DAY}`;
+}
+
+/** Dönemin 2 No.lu KDV (tevkifat) ödeme günü: "2026-09" → "2026-10-25" */
+export function vat2DueDate(period: string): string {
+  return `${shiftMonth(period, 1)}-${VAT2_DUE_DAY}`;
 }
 
 /**
@@ -55,9 +65,36 @@ export function posVat(revenue: number, serviceRevenue: number, kdv: number, kdv
   return ((revenue - s) * kdv) / (1 + kdv) + (s * kdvHizmet) / (1 + kdvHizmet);
 }
 
-/** Alış faturasının KDV'si: ödenecek − (tutar − iskonto) */
-export function purchaseVat(inv: Pick<Invoice, "amount" | "discount" | "payable">): number {
-  return inv.payable - (inv.amount - inv.discount);
+type PurchaseVatInput = Pick<Invoice, "amount" | "discount" | "payable"> & { vat?: number | null };
+
+/** En yüksek KDV oranı (%1, %10, %20) */
+const MAX_VAT_RATE = 0.2;
+
+/**
+ * Kayıttaki KDV toplamı, tutarlar onu taşıyabiliyorsa (net tutarın en çok %20'si). Paraşüt bağı kopan (iptal) ve
+ * tutarları sonra elle değiştirilen kayıtta eski `vat` kalır; ona güvenilse olmayan KDV indirilir ve fark tevkifat
+ * sanılırdı.
+ */
+function storedVat(inv: PurchaseVatInput): number | null {
+  const vat = inv.vat ?? 0;
+  if (vat <= 0) return null;
+  return vat <= (inv.amount - inv.discount) * MAX_VAT_RATE + 1 ? vat : null;
+}
+
+/**
+ * Alış faturasının indirilecek KDV'si: KDV toplamı (`vat`, tevkifat düşülmemiş); yoksa ödenecek − (tutar − iskonto).
+ * İadede (eksi) fark kullanılır: tevkifatın iadesi 2 No.lu beyannamede düzeltilir, burada sayılmaz.
+ */
+export function purchaseVat(inv: PurchaseVatInput): number {
+  return storedVat(inv) ?? inv.payable - (inv.amount - inv.discount);
+}
+
+/** Faturadaki KDV tevkifatı: KDV toplamı − tedarikçiye ödenen KDV (ödenecek − net); tevkifatsız ve iadede 0 */
+export function purchaseWithheld(inv: PurchaseVatInput): number {
+  const vat = storedVat(inv);
+  if (vat === null) return 0;
+  const withheld = vat - (inv.payable - (inv.amount - inv.discount));
+  return withheld > 0.01 ? withheld : 0;
 }
 
 export interface VatMonthInput {
@@ -66,8 +103,11 @@ export interface VatMonthInput {
   pos: { revenue: number; vat: number; openDays: number | null; serviceRevenue: number } | null;
   /** laffogato.net kaydı (çekilmemiş ayda null): KDV (TL), ay köşkte bitti mi, çekildiği gün (Türkiye) */
   online: { vat: number; closed: boolean; pulledOn: string } | null;
-  /** Kafe faturalarının KDV'si ve sayısı; kafe dışı faturalar yalnız sayılır */
-  purchases: { vat: number; count: number; separateCount: number };
+  /**
+   * Kafe faturalarının indirilecek KDV'si (tevkifat dahil) ve sayısı; `withheld` içindeki tevkifat (2 No.lu
+   * beyanname); kafe dışı faturalar yalnız sayılır
+   */
+  purchases: { vat: number; withheld: number; count: number; separateCount: number };
 }
 
 /**
@@ -94,13 +134,14 @@ export function vatMonthInputs(model: Model, today: string): { months: VatMonthI
     const rec = model.siteSales(m);
     const pulled = rec ? Date.parse(rec.pulledAt) : NaN;
     const online = rec ? { vat: siteVat(rec, st.kdv, st.kdvHizmet), closed: rec.closed, pulledOn: Number.isFinite(pulled) ? todayTR(new Date(pulled)) : today } : null;
-    const purchases = { vat: 0, count: 0, separateCount: 0 };
+    const purchases = { vat: 0, withheld: 0, count: 0, separateCount: 0 };
     for (const inv of model.invoicesByMonth.get(m) ?? []) {
       if (SEPARATE_CATEGORIES.includes(inv.category)) {
         purchases.separateCount++;
         continue;
       }
       purchases.vat += purchaseVat(inv);
+      purchases.withheld += purchaseWithheld(inv);
       purchases.count++;
     }
     months.push({ month: m, pos, online, purchases });
@@ -117,6 +158,8 @@ export interface VatEstimate {
   online: number;
   sales: number;
   purchases: number;
+  /** Alışların içindeki tevkifat: 2 No.lu beyannameyle izleyen ayın 25'inde ödenir (100'e yuvarlı) */
+  withheld: number;
   /** Önceki aylardan devreden, net (satış − alış − devreden), ödenecek ve sonraki aya devreden: 100'ün katı */
   carryIn: number;
   net: number;
@@ -214,6 +257,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
       inProgress: m === cur,
     };
     const purchases = round100(inp?.purchases.vat ?? 0);
+    const withheld = round100(inp?.purchases.withheld ?? 0);
     // Açılıştan önceki ayda satış 0'dır (alışları devredene girer); sonrasında veri yoksa hesaplanamaz
     if (posRaw === null && onlineRaw === null && !(firstSalesMonth !== null && m < firstSalesMonth)) {
       return {
@@ -223,6 +267,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
         online: 0,
         sales: 0,
         purchases,
+        withheld,
         carryIn,
         net: 0,
         payable: k ?? 0,
@@ -245,6 +290,7 @@ export function vatEstimates(input: VatInput): Map<string, VatEstimate> {
       online,
       sales,
       purchases,
+      withheld,
       carryIn,
       net,
       payable: k ?? (anchored ? 0 : Math.max(0, net)),
@@ -300,6 +346,11 @@ export function vatProgressText(e: VatEstimate): string | null {
   if (e.basis.posFrom) return `${m} bitmedi: ${monthGenitiveTR(e.basis.posFrom)} günlük ortalamasıyla tahmin`;
   if (!e.projected) return null;
   return e.basis.openDays ? `${m} bitmedi: ${num(e.basis.openDays)} günün satışıyla tahmin` : `${m} bitmedi: ay sonuna tamamlandı`;
+}
+
+/** Haftalar listesindeki "KDV-2 (Eylül)" satırının açıklaması (ⓘ) */
+export function vat2LineDetail(period: string): string {
+  return `${monthName(period)} faturalarındaki KDV tevkifatı: 2 No.lu beyannameyle ayın ${VAT2_DUE_DAY}'inde ödenir, 1 No.lu beyannamede indirilir. ${VAT_DISCLAIMER}`;
 }
 
 /** Haftalar listesindeki "KDV (Ekim)" satırının açıklaması (ⓘ) */

@@ -13,7 +13,10 @@ import type { Dataset } from "../src/lib/calc/types";
 import {
   posVat,
   purchaseVat,
+  purchaseWithheld,
   round100,
+  vat2DueDate,
+  vat2LineDetail,
   vatDueDate,
   vatEstimates,
   vatLineDetail,
@@ -97,8 +100,9 @@ test("kasa KDV'si gelir-giderdeki kuralla: ciro − KDV hariç ciro (karaoke %20
   close(posVat(1_200, 5_000, 0.1, 0.2), 200, "hepsi hizmet", 1e-9);
 });
 
-test("alış KDV'si: ödenecek − (tutar − iskonto); iade eksi, tevkifatlıda tevkifat düşülmüş; Excel'de vat 0 olsa da", () => {
+test("alış KDV'si: KDV toplamı (tevkifat dahil), yoksa ödenecek − (tutar − iskonto); iade eksi; tevkifat ayrıca", () => {
   assert.equal(purchaseVat({ amount: 1_000, discount: 50, payable: 1_045 }), 95);
+  assert.equal(purchaseWithheld({ amount: 1_000, discount: 50, payable: 1_045 }), 0);
   const bill: Resource = {
     id: "1",
     type: "purchase_bills",
@@ -106,14 +110,57 @@ test("alış KDV'si: ödenecek − (tutar − iskonto); iade eksi, tevkifatlıda
     relationships: {},
   };
   const tevkifat = billToDraft(bill, []);
-  assert.equal(purchaseVat(tevkifat), 100);
-  assert.equal(purchaseVat(tevkifat), tevkifat.vat - 100);
+  // Beyannamede KDV'nin tamamı indirilir (yurtiçi alımlar 100 + sorumlu sıfatıyla 100); tevkifat 2 No.lu beyannameyle ödenir
+  assert.equal(purchaseVat(tevkifat), 200);
+  assert.equal(purchaseVat(tevkifat), tevkifat.vat);
+  assert.equal(purchaseWithheld(tevkifat), 100);
   const refund = billToDraft({ ...bill, attributes: { ...bill.attributes, item_type: "refund", gross_total: "2000", total_discount: "100", total_vat: "190", total_vat_withholding: "0", net_total: "2090", remaining: "0" } }, []);
   assert.equal(purchaseVat(refund), -190);
+  assert.equal(purchaseWithheld(refund), 0);
+  // Paraşüt bağı kopup tutarları elle sıfırlanan kayıtta eski KDV (6.000) kalır: net tutar onu taşıyamaz (en çok
+  // %20), indirilmez ve tevkifat sanılmaz
+  assert.equal(purchaseVat({ amount: 0, discount: 0, payable: 0, vat: 6_000 }), 0);
+  assert.equal(purchaseWithheld({ amount: 0, discount: 0, payable: 0, vat: 6_000 }), 0);
+  assert.equal(purchaseVat({ amount: 15_000, discount: 0, payable: 17_100, vat: 6_000 }), 2_100);
+  assert.equal(purchaseWithheld({ amount: 15_000, discount: 0, payable: 17_100, vat: 6_000 }), 0);
+  // ÖİV'li fatura (ödenecek KDV'den fazlasını taşır): KDV toplamı yine geçerli
+  assert.equal(purchaseVat({ amount: 1_000, discount: 0, payable: 1_275, vat: 200 }), 200);
+  assert.equal(purchaseWithheld({ amount: 1_000, discount: 0, payable: 1_275, vat: 200 }), 0);
   // Excel'den gelen faturalarda vat sütunu yok (0); KDV ödenecek ile net farkından
   const excelInv = ds.invoices.find((i) => i.payable - (i.amount - i.discount) > 1)!;
   assert.ok(excelInv);
   assert.ok(purchaseVat(excelInv) > 0);
+  assert.equal(purchaseWithheld(excelInv), 0);
+});
+
+// ---------------------------------------------------------------- Muhasebecinin beyannameleri (Temmuz–Eylül 2026)
+
+// Eylül 2026'nın tevkifatlı faturası: reklam 30.000 + %20 KDV 6.000, 3/10 tevkifat 1.800, tedarikçiye 34.200.
+// Excel'de vat sütunu yok (fark 4.200); Paraşüt'ten gelince vat 6.000 olur.
+const withParasutVat = (): Dataset => ({
+  ...ds,
+  invoices: ds.invoices.map((i) => (i.date === "2026-09-17" && i.amount === 30_000 && i.payable === 34_200 ? { ...i, vat: 6_000 } : i)),
+});
+
+test("Eylül 2026 beyannamesi: tevkifatlı faturanın KDV'si tam indirilir (11.875,70 + 1.800), tevkifat 25 Ekim'de", () => {
+  const sep = vatMonthInputs(createModel(withParasutVat()), TODAY).months.find((m) => m.month === "2026-09")!;
+  // Beyanname: yurtiçi alımlara ilişkin KDV 11.875,70 + sorumlu sıfatıyla ödenen 1.800 = indirilecek 13.675,70
+  close(sep.purchases.vat, 11_875.67 + 1_800, "indirilecek KDV");
+  close(sep.purchases.withheld, 1_800, "tevkifat (KDV2 tahakkuku 1.800)");
+  assert.equal(vat2DueDate("2026-09"), "2026-10-25");
+  assert.equal(vat2DueDate("2026-12"), "2027-01-25");
+  assert.equal(vat2LineDetail("2026-09"), "Eylül faturalarındaki KDV tevkifatı: 2 No.lu beyannameyle ayın 25'inde ödenir, 1 No.lu beyannamede indirilir. Tahmin; kesin tutar muhasebecinizin beyannamesindedir.");
+  // Ağustos beyannamesindeki devreden 209.238,91, Eylül'ün hesaplanan KDV'si 101.709,92 (%10 ve %20; %20'si kafe dışı
+  // satış, panelde yok): zincir beyannamedeki 121.204,69'a iner
+  const months = vatMonthInputs(createModel(withParasutVat()), TODAY).months.map((m) => (m.month === "2026-09" ? { ...m, pos: { ...m.pos!, vat: 101_709.92 } } : m));
+  const out = vatEstimates({ today: TODAY, months, firstSalesMonth: "2026-07", anchor: { month: "2026-08", amount: 209_238.91 }, known: new Map(), periods: ["2026-09"] }).get("2026-09")!;
+  assert.equal(out.purchases, 13_700);
+  assert.equal(out.withheld, 1_800);
+  assert.deepEqual({ carryIn: out.carryIn, net: out.net, payable: out.payable, carryOut: out.carryOut }, { carryIn: 209_200, net: -121_200, payable: 0, carryOut: 121_200 });
+  assert.equal(round100(121_204.69), out.carryOut);
+  // Tevkifat düşülmüş KDV'yle (eski kural) 1.800 eksik indirilirdi
+  const old = vatEstimates({ today: TODAY, months: months.map((m) => (m.month === "2026-09" ? { ...m, purchases: { ...m.purchases, vat: m.purchases.vat - 1_800 } } : m)), firstSalesMonth: "2026-07", anchor: { month: "2026-08", amount: 209_238.91 }, known: new Map(), periods: ["2026-09"] }).get("2026-09")!;
+  assert.equal(old.carryOut, 119_400);
 });
 
 test("laffogato.net KDV'si: saklı KDV + oranı bilinmeyenin panel oranıyla KDV'si; karaoke hizmet oranıyla; elle girilen sayılmaz", () => {
@@ -224,7 +271,7 @@ test("yedek ay: cirosu girilmemiş ayda önceki ayın günlük ortalaması; aç�
   assert.equal(vatProgressText(nov), "Kasım bitmedi: Ekim'in günlük ortalamasıyla tahmin");
   assert.match(vatLineDetail(nov), /Kasım cirosu yok: Ekim'in günlük ortalamasıyla\./);
   // Haziran'da (açılıştan önce) 10.000 ₺ KDV'li alış: satış 0, Temmuz'a devreder
-  const june: VatMonthInput = { month: "2026-06", pos: null, online: null, purchases: { vat: 10_000, count: 1, separateCount: 0 } };
+  const june: VatMonthInput = { month: "2026-06", pos: null, online: null, purchases: { vat: 10_000, withheld: 0, count: 1, separateCount: 0 } };
   const out = vatEstimates({ today: TODAY, months: [june, ...inputs.months], firstSalesMonth: "2026-07", anchor: { month: "2026-05", amount: 0 }, known: new Map(), periods: ["2026-06", "2026-07"] });
   assert.equal(out.get("2026-06")!.status, "ok");
   assert.equal(out.get("2026-06")!.sales, 0);

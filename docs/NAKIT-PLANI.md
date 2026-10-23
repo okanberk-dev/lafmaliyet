@@ -38,8 +38,13 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    açılan hatırlatıcı (personel bölümündeki kalem maaş türüyle açılır: Muhasebeci, Part-time çalışan) gideri silinse ya
    da adı değişse de bordro sayılmaz: maaşı ve SGK'yı kapatmaz, diğer hatırlatıcıdır.
 3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
-   tevkifatı (“2 No.lu KDV”, “KDV2”, “tevkifat”) ayrı bir ödemedir, diğer hatırlatıcı sayılır: asıl KDV'nin dönemini
-   almaz, devredeni sıfırlamaz.
+   tevkifatı (adında KDV ile birlikte “2 No.lu”, “KDV2”, “tevkifat”) ayrı bir ödemedir: asıl KDV'nin dönemini almaz,
+   devredeni sıfırlamaz. Böyle bir hatırlatıcı yalnız günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü): o
+   dönemde faturalardan hesaplanan *KDV-2* tahmini ayrıca yazılmaz (iki kez sayılmasın diye). Tutarı yazılıysa her
+   gününde o tutar girer; tutarsızsa tahmin hatırlatıcının gününde girer, tahmin yoksa (KDV tahmine katılmıyor ya da
+   dönemin verisi yok) tutarı girilmemiş ödemedir. Kartta “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı
+   yazılıysa o, boşsa bu tahmin” yazar. Adında KDV geçmeyen “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj” ya da
+   “2 No.lu dükkan” KDV-2 değildir, diğer hatırlatıcıdır.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
    görünür (“Ödemeler'de tutar girin”).
 
@@ -96,7 +101,8 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 | Süren ay | Ciro Genel bakış'taki ay sonu tahminiyle aya tamamlanır (÷ açık gün × ayın gün sayısı; açık gün yoksa ÷ geçen gün). Ekranda “Ekim bitmedi: 16 günün satışıyla tahmin”. |
 | Ciro girilmemiş ay | Önceki, cirosu ve açık günü olan son ayın günlük KDV'si × ayın gün sayısı (“Ekim cirosu yok: Eylül'ün günlük ortalamasıyla”). |
 | laffogato.net | Sitenin her siparişte sakladığı KDV; oranı saklı olmayanlara panelin oranı (kafe ve mağaza %10, karaoke %20; `siteVat`, `src/lib/site-sales/calc.ts`). Süren ayın açık kaydı çekildiği günün dününe kadardır, aya tamamlanır. Kayıt yoksa 0; site bağlıysa dökümde “laffogato.net: bu ay çekilmedi”. Elle girilen siparişler ModPOS'tadır, sayılmaz. |
-| Alış KDV'si | Faturanın **ödenecek − (tutar − iskonto)** değeri; `vat` sütunu kullanılmaz (Excel'den gelenlerde 0). Tevkifatlıda fark tevkifat düşülmüş KDV'dir (nakit etkisi bu), iadede eksi. Kontrol bekleyen faturalar sayılır. **Kafe dışı** (Karaoke box, Alp Koç) sayılmaz. Süren ayda yalnız bugüne kadar gelen faturalar (ay sonuna tamamlanmaz; tahmin yüksek tarafta kalır). |
+| Alış KDV'si | Faturanın **KDV toplamı** (`vat`, Paraşüt'ün `total_vat`'ı, tevkifat düşülmemiş); `vat` yoksa (Excel'den gelenlerde 0) ya da net tutarın %20'sinden fazlaysa (Paraşüt bağı kopup tutarı elle değişmiş kayıt) **ödenecek − (tutar − iskonto)**. Tevkifatlı faturada KDV'nin tamamı indirilir: beyannamede tedarikçiye ödenen kısmı “yurtiçi alımlara ilişkin KDV”, tevkif edilen kısmı “sorumlu sıfatıyla beyan edilerek ödenen KDV” olarak (23 Ekim 2026'ya kadar yalnız ilki sayılıyordu; Eylül 2026'da 1.800 ₺ eksik indirildi). İadede eksi (fark; tevkifatın iadesi 2 No.lu beyannamede düzeltilir). Kontrol bekleyen faturalar sayılır. **Kafe dışı** (Karaoke box, Alp Koç) sayılmaz. Süren ayda yalnız bugüne kadar gelen faturalar (ay sonuna tamamlanmaz; tahmin yüksek tarafta kalır). |
+| KDV-2 (tevkifat) | Dönemin kafe faturalarındaki tevkifat: `vat` − (ödenecek − net), 100 ₺'ye yuvarlı (`purchaseWithheld`). **2 No.lu beyannameyle izleyen ayın 25'inde** ödenir (Eylül 2026 tahakkuk fişi: vade 25.10.2026), 1 No.lu beyannamede aynı dönemde indirilir. 1 No.lu ödenecek sıfır ya da devreden olsa da ödenir. Beyannamenin damga vergisi (Eylül 2026 KDV2'sinde 791 ₺) sayılmaz. |
 | Devreden | **Otomatik:** cirosu olan ilk aydan (yoksa ilk site kaydının ayından; en çok 24 ay geriden) ay ay zincir. İlk satış ayından önceki faturalar sayılmaz. Verisiz ay zinciri bozmaz. **Muhasebeciden:** “Devreden KDV'yi gir” penceresi (ay + “sonraki döneme devreden KDV”); zincir o ayın ertesinden başlar. O ayın kendi ödemesi devreden > 0 ise 0'dır (“Beyannamede devreden …”). |
 | Ödemeler'deki tutar | KDV hatırlatıcısına yazılan tutar (0 dahil) **o dönemin kesin tutarıdır**, tahminin önüne geçer; > 0 ise sonraki aya devreden sıfırlanır. Tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir: **Ödendi** deyince ve tekrarlı seri ertelenince tutar silinir (Geri al geri getirir). |
 | Yuvarlama | Kasa, online ve alış KDV'si ile muhasebecinin tutarı ayrı ayrı en yakın **100 ₺**'ye yuvarlanır (yarım yukarı, işaret korunur); ödenecek ve devreden bunlardan çıkar, ekrandaki çıkarma birebir tutar. Ödemeler'deki tutar ve muhasebecinin tutarı olduğu gibi yazılır. |
@@ -117,11 +123,50 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
   katılmıyor”).
 - **Nasıl hesaplandı** kartında tek satır: “Önceki ayın satış KDV'si (kafe %10, karaoke %20, laffogato.net) eksi alış
   faturalarının KDV'si, ayın 28'inde …”.
+- **KDV-2:** dönemin faturalarında tevkifat varsa izleyen ayın 25'ine, yarından itibaren “KDV-2 (Eylül)” tahmini satırı
+  girer (anahtar `kdv2@2026-10-25`, `#kdv`'ye götürür). Kartta 1 No.lu satırların altında ayrı satırdır; dökümde alışların
+  altında “İçinde tevkifat ≈ …” yazar. KDV tahmine katılmıyorsa ya da Ödemeler'deki KDV-2 hatırlatıcısı o dönemi
+  karşılıyorsa plana girmez.
 
 **Excel verisiyle** (bugün 22 Ekim 2026): kasa KDV'si Temmuz 15.800, Ağustos 45.500, Eylül 39.200, Ekim ≈ 51.800 ₺ (16
 günden aya tamamlanmış); alış KDV'si 225.300 (açılış alımları), 3.500, 11.900, 9.700 ₺. Otomatik zincirle Eylül'den
 140.200, Ekim'den 98.100 ₺ devreder: 28 Ekim ve 28 Kasım'da **ödeme beklenmez**. Muhasebeci Ağustos için “devreden 0”
 derse 28 Ekim ≈ 27.300 ₺, 28 Kasım ≈ 42.100 ₺.
+
+### Muhasebecinin beyannameleriyle karşılaştırma (Temmuz–Eylül 2026)
+
+23 Ekim 2026'da muhasebecinin 1 No.lu KDV beyannameleri (Temmuz, Ağustos, Eylül) ve Eylül'ün 2 No.lu tahakkuk fişi
+geldi. Panelin Excel verisiyle hesabı (yukarıdaki paragraf) beyannamelerden şöyle ayrılıyor:
+
+| Ay | Panel: satış KDV'si | Beyanname: hesaplanan KDV | Panel: alış KDV'si | Beyanname: indirilecek KDV | Panel: devreden | Beyanname: devreden |
+|---|---|---|---|---|---|---|
+| Temmuz | 15.800 (ciro 173.587, hepsi %10) | 15.383,92 (%10: 128.700,46, %20: 12.569,37 matrah) | 225.300 | 256.972,25 | 209.500 | 241.588,33 |
+| Ağustos | 45.500 (ciro 500.000) | 36.999,46 (%10: 369.994,62 matrah) | 3.500 | 4.650,04 | 167.500 | 209.238,91 |
+| Eylül | 39.200 (ciro 429.698) | 101.709,92 (%10: 347.099,03, **%20: 335.000** matrah) | 11.900 | 11.875,70 + 1.800 tevkifat | 140.200 | **121.204,69** |
+
+Farkların nedeni:
+
+1. **Tevkifat** (hesap hatası, düzeltildi): Eylül'ün reklam faturasının (30.000 + 6.000 KDV, 3/10 tevkifat) KDV'sinin
+   tamamı indirilir; panel tevkifat düşülmüş 4.200'ü sayıyordu ve 25 Ekim'deki 2 No.lu ödemeyi (1.800 ₺ + 791 ₺ damga
+   vergisi) hiç göstermiyordu. Hesap faturanın **KDV toplamına** (`vat`) dayanır. Paraşüt'ten gelen gider faturası onu
+   taşır; Excel'den ya da elle girilen kayıtta yoktur. Böyle bir kayıt tevkifatlı bir e-faturaya bağlıysa Paraşüt
+   eşitlemesi boş KDV'yi belgedeki tam KDV'yle doldurur (`withholdingVatFill`, ödenecek tutar e-faturayı tutuyorsa);
+   e-faturası olmayan Excel kaydında tevkifat görünmez. Eylül'ün reklam faturası Excel'den geldiyse KDV-2 satırı ilk
+   eşitlemeden sonra çıkar; 25 Ekim'den önce çıkmadıysa Ödemeler'e tutarıyla bir KDV-2 hatırlatıcısı girilmelidir.
+   Kayıttaki KDV, net tutarın %20'sinden fazlaysa (Paraşüt bağı kopup tutarı elle değişmiş kayıt) kullanılmaz.
+2. **Satışlar:** beyanname ÖKC'nin (Z raporlarının) KDV'li satışıdır; panel ModPOS cirosunu kullanır. Ağustos'un
+   500.000'i Excel'deki yuvarlak bir değerdir, beyannamede KDV dahil ≈ 406.994. Eylül'de ModPOS 429.698, beyannamede
+   %10'luk satış KDV dahil ≈ 381.809. Satışlar'daki ay cirosunu Z toplamıyla düzeltmek tahmini beyannameye yaklaştırır.
+3. **Kafe dışı:** Eylül beyannamesindeki %20'lik 335.000 ₺ matrah (67.000 ₺ KDV) kafenin satışı değil (panelde karaoke
+   %20'si 2.050 ₺); beyanname şirketin tamamınındır. Karaoke box (MaviBahçe) ve Alp Koç'un satış ve alışları da aynı
+   beyannamedeyse panel onları göremez: tahmin yalnız kafeyi sayar.
+4. **Alışlar:** Temmuz'da beyannamede ≈ 31.700 ₺ daha fazla indirilecek KDV var; panele gelmeyen (açılış öncesi ya da
+   kafe dışı) faturalar.
+
+Sonuç: panelin kendi zinciri beyannameyi tutturamaz; **muhasebecinin son beyannamesindeki devreden girilmelidir**
+(“Devreden KDV'yi gir”: Eylül 2026, 121.204,69 ₺). O zaman 28 Ekim'de 1 No.lu KDV ödemesi yoktur, 25 Ekim'de KDV-2
+1.800 ₺ (ve damga vergisi) ödenir; Ekim'in tahmini 121.204,69'dan devam eder. Her ay yeni beyanname gelince devreden
+güncellenir.
 
 ModPOS günlük ürün satış raporu süren aya girince karaoke payı (`monthSales(ay).serviceRevenue`) kendiliğinden kesinleşir;
 ek iş yok.
