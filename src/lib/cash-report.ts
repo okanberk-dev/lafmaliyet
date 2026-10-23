@@ -93,14 +93,29 @@ export function computeCash(f: Pick<CashReportFields, "zTotal" | "cash" | "card"
   };
 }
 
+/** İş gününün döndüğü saat (Türkiye): gece bundan önce kapatılan gün bir önceki güne yazılır */
+export const DAY_TURN_HOUR = 5;
+/** Kasa raporunun "akşam" sayıldığı saat: bugünün raporu bundan sonra beklenir (zil ve Bugün ekranı) */
+export const CASH_EVENING_HOUR = 20;
+
+/** Türkiye saatiyle saat (0–23) */
+export function trHour(now: Date = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
+}
+
+/** Akşam (20:00 ve sonrası) ya da gece 05:00'ten önce: bugünün kasa raporu beklenir (zil ve Bugün aynı kurala bakar) */
+export function isCashEvening(now: Date = new Date()): boolean {
+  const hour = trHour(now);
+  return hour >= CASH_EVENING_HOUR || hour < DAY_TURN_HOUR;
+}
+
 /**
  * Formdaki iş günü: gece 05:00'ten önce kapatılan gün bir önceki güne yazılır (kafe gece yarısından sonra kapanabilir).
  * Türkiye saatiyle.
  */
 export function businessDate(now: Date = new Date()): string {
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
   const today = todayTR(now);
-  return hour < 5 ? addDays(today, -1) : today;
+  return trHour(now) < DAY_TURN_HOUR ? addDays(today, -1) : today;
 }
 
 /** Personelin rapor girebileceği günler: iş günü ve bir önceki gün (unutulan akşam ertesi gün girilir) */

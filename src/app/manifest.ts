@@ -26,12 +26,14 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // Uzun basınca açılan kısayollar: günün ekranları (iki rol). Personel yöneticinin ekranına (Ödemeler) dokunursa proxy
+    // onu kendi ana ekranına (Bugün) götürür
     shortcuts: [
-      { name: "Satışlar", url: "/panel/satislar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
-      { name: "Faturalar", url: "/panel/faturalar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Bugün", url: "/panel/bugun", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Kasa raporu", url: "/panel/kasa", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Ödemeler", url: "/panel/hatirlaticilar", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
-      { name: "Stok sayımı", url: "/panel/sayim", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
       { name: "Karaoke", url: "/panel/karaoke", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+      { name: "Stok sayımı", url: "/panel/sayim", icons: [{ src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
     ],
   };
 }

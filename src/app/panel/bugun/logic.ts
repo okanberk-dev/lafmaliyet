@@ -1,0 +1,602 @@
+// Bugün ekranının saf mantığı (sunucuda ve testlerde çalışır; veritabanı ve tarayıcı yok): günün işleri rol rol, her
+// birinin durumu ve ilgili ekranın adresi, Şimdi / Sonra / Tamam bölümleri, sayfa başlığı, "Bugün kafede" satırları ve
+// ekranın kendiliğinden yenileneceği an. Olguları sunucu toplar (src/server/data/today.ts); yöneticiye ait olgular
+// personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
+
+import { businessDate, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening } from "@/lib/cash-report";
+import { unpricedNotice } from "@/lib/count-item";
+import { money, monthLabel, num } from "@/lib/format";
+import { JOBS_HREF } from "@/lib/job-health";
+import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
+import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
+import { staleForText } from "@/lib/prices/pos";
+import { pendingSummary } from "@/lib/recipe-change";
+import { addDays, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
+
+import type { TaskStatus } from "../dashboard-tasks";
+import { COUNT_GRACE_DAYS } from "../sayim/logic";
+
+/**
+ * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
+ * `liste-dun` ve `liste-{templateId}`, komisyon `komisyon`, siparis `hizli-sayim` ve `mal-siparisi`.
+ */
+export type DayTaskKey =
+  | "isler"
+  | "kasa-dun"
+  | "odeme"
+  | "fatura"
+  | "urun"
+  | "fiyat-yok"
+  | "onay"
+  | "fiyat-onay"
+  | "zam"
+  | "modpos"
+  | "sayim-gecen"
+  | "zayi"
+  | "kasa"
+  | "sayim-son";
+
+export interface DayTask {
+  key: DayTaskKey;
+  title: string;
+  /** Genel bakış'taki "Bu ayın işleri"yle aynı durumlar (done / todo / warn / later) */
+  status: TaskStatus;
+  /** Rozet; verilmezse durumun adı yazılır (Tamam, Yapılacak, Sorun var, Sonra) */
+  badge?: string;
+  /** Bir iki satırlık açıklama */
+  detail: string;
+  /** İlgili ekranın tam adresi (gün, ay, süzgeç, bölüm) */
+  href: string;
+  /** Bağlantının kısa adı, ör. "Raporu gir" */
+  action: string;
+}
+
+/** Kasa raporunun Bugün'e giden kısmı (fotoğraf, kasadan çıkanlar, e-posta durumu gerekmez) */
+export interface CashLite {
+  date: string;
+  cashDiff: number;
+  zTotal: number;
+  cash: number;
+  card: number;
+  submittedByName: string;
+  revision: number;
+  note: string | null;
+  /** Yalnız yönetici: kasanın bütünlük uyarıları (CASH_FLAGS); varsa satır "sorun var" olur */
+  flags?: string[];
+}
+
+/** Kasanın bütünlük uyarıları (kasa'nın carryChecks ve lateCorrections'ı; docs/KASA-RAPORU.md › Açılış ve devir) */
+export const CASH_FLAGS = { carry: "Açılış devirle tutmuyor", late: "Ertesi gün düzeltildi" } as const;
+
+/** Günün olguları. Yöneticiye ait alanlar personelin olgusunda hiç doldurulmaz; mantık da rolü ayrıca denetler */
+export interface DayFacts {
+  role: "admin" | "staff";
+  now: Date;
+  /** Dünün ve bugünün (iş günü) raporu, ilk raporun günü; null: okunamadı */
+  cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
+  /** Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti) */
+  waste?: { count: number; zayi: string | null; ikram: string | null } | null;
+  /** Bu ayın (takvim) sayılan / sayılacak kalemi ve geçen ayın sayımı var mı */
+  stock: { month: string; counted: number; total: number; prevMonth: string; prevHasData: boolean } | null;
+  // ---- Yalnız yönetici
+  /** Günlük işlerin ciddi sorunları (ops'un sistem uyarıları, yalnız canlıda) */
+  system?: { title: string; body: string }[] | null;
+  /** Ödemeler & hatırlatıcılar listesi (loadUpcoming); null: okunamadı */
+  payments?: UpcomingItem[] | null;
+  /** Kontrol bekleyen faturalar */
+  invoices?: { review: number } | null;
+  /** Hammaddeye bağlanmayı bekleyen fatura ürünleri */
+  unlinked?: number | null;
+  /** Fiyatı girilmemiş hammaddeler (ilk birkaç ad) */
+  unpriced?: { count: number; names: string[] } | null;
+  /** Onay bekleyen reçete değişiklikleri ve yeni ürün önerileri (ürün başına bir), ürün adları */
+  approvals?: { changes: number; newProducts: number; names: string[] } | null;
+  /** Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatları */
+  holds?: { count: number; items: { name: string; pct: number | null }[] } | null;
+  /** Hammadde zammı uyarısı (priceAlert; Genel bakış ve zille aynı metin) ve fiyatına bakılacak ürün sayısı */
+  prices?: { detail: string; href: string; count: number } | null;
+  /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı */
+  pos?: { count: number; oldest: string | null } | null;
+}
+
+/** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
+export interface DayContext {
+  /** Takvim günü (Türkiye): ödemeler, hatırlatıcılar ve sayım */
+  today: string;
+  /** İş günü: kasa ve zayi (Kasa ve Zayi ekranlarıyla aynı) */
+  day: string;
+  yesterday: string;
+  /** 20:00 ve sonrası ya da gece 05:00'ten önce: bugünün kasa raporu beklenir */
+  evening: boolean;
+  dayOfMonth: number;
+  /** Takvim günü ayın son günü (ay sonu sayımı) */
+  lastDay: boolean;
+  month: string;
+  prevMonth: string;
+}
+
+export function dayContext(now: Date): DayContext {
+  const today = todayTR(now);
+  const day = businessDate(now);
+  const month = today.slice(0, 7);
+  return {
+    today,
+    day,
+    yesterday: addDays(day, -1),
+    evening: isCashEvening(now),
+    dayOfMonth: Number(today.slice(8, 10)),
+    lastDay: addDays(today, 1).slice(0, 7) !== month,
+    month,
+    prevMonth: shiftMonth(month, -1),
+  };
+}
+
+/** Metni en çok `max` karaktere kısaltır; kısalınca sonuna "…" (o da sayılır) */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+/** Zayi / ikram özetinin en uzun hâli */
+export const WASTE_SUMMARY_MAX = 140;
+
+/** Cümle sonu: nokta, soru ya da üç nokta yoksa nokta eklenir */
+const sentence = (s: string) => (/[.!?…]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+
+/** Gece 05:00'ten önce iş günü dündür: kasa ve zayi açıklaması hangi güne baktığını tarihle söyler */
+const dated = (c: DayContext, date: string, text: string) => (c.day !== c.today ? `${longDateTR(date)} · ${text}` : text);
+
+type Row = (f: DayFacts, c: DayContext) => DayTask | DayTask[] | null;
+
+// ---------------------------------------------------------------- Kasa
+
+/** Eksik kasa ya da bütünlük uyarısı sorun, fazla yapılacak (bakılmalı), tutuyorsa tamam */
+function cashStatus(r: CashLite): TaskStatus {
+  const kind = diffKind(r.cashDiff);
+  if (kind === "short" || r.flags?.length) return "warn";
+  return kind === "over" ? "todo" : "done";
+}
+
+/** Rozet kasa farkıdır; kasa tutuyor ama bütünlük uyarısı varsa uyarı ("Kasa tutuyor" kırmızı rozette çelişirdi) */
+function cashBadge(r: CashLite): string {
+  return diffKind(r.cashDiff) === "even" && r.flags?.length ? r.flags[0] : diffText(r.cashDiff);
+}
+
+/** "Mehmet · Z 12.400 ₺ · nakit 3.100 ₺ · kart 9.300 ₺ · güncellendi · Not: …" (`full` değilse yalnız gönderen ve Z) */
+function cashDetail(r: CashLite, full: boolean): string {
+  const flags = r.flags ?? [];
+  const parts = [`${r.submittedByName} · Z ${money(r.zTotal)}`];
+  if (full) parts.push(`nakit ${money(r.cash)}`, `kart ${money(r.card)}`);
+  // Ertesi gün düzeltildiyse "güncellendi" ayrıca yazılmaz
+  if (full && r.revision > 1 && !flags.includes(CASH_FLAGS.late)) parts.push("güncellendi");
+  if (flags.length && diffKind(r.cashDiff) === "even") parts.push(diffText(r.cashDiff));
+  parts.push(...flags);
+  if (full && r.note?.trim()) parts.push(`Not: ${clip(r.note.trim(), 120)}`);
+  return parts.join(" · ");
+}
+
+/** Dünün raporu: yöneticiye farkı ve bütünlüğü; ikisine de girilmediyse (kasa kullanılmaya başladıysa) */
+const cashYesterday: Row = (f, c) => {
+  const admin = f.role === "admin";
+  const title = "Dünkü kasa raporu";
+  const href = `/panel/kasa?gun=${c.yesterday}`;
+  if (!f.cash) return admin ? { key: "kasa-dun", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" } : null;
+  const r = f.cash.yesterday;
+  if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
+  // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
+  if (!f.cash.firstDate || c.yesterday < f.cash.firstDate) return null;
+  return admin
+    ? {
+        key: "kasa-dun",
+        title,
+        status: "todo",
+        badge: "Girilmedi",
+        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa personel bugün de girebilir; daha sonra yalnız siz girersiniz.`,
+        href,
+        action: "Raporu gir",
+      }
+    : {
+        key: "kasa-dun",
+        title,
+        status: "todo",
+        badge: "Girilmedi",
+        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir.`,
+        href,
+        action: "Dünü gir",
+      };
+};
+
+/** Bugünün (iş günü) raporu: gündüz "Akşam", 20:00'den sonra yapılacak; gönderilince yöneticiye farkı */
+const cashToday: Row = (f, c) => {
+  const href = `/panel/kasa?gun=${c.day}`;
+  if (f.role === "admin") {
+    const title = "Bugünkü kasa raporu";
+    // Okunamadıysa dünün satırı zaten söylüyor
+    if (!f.cash) return null;
+    const r = f.cash.today;
+    if (r) return { key: "kasa", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, false)), href, action: "Raporu aç" };
+    if (c.evening) return { key: "kasa", title, status: "todo", badge: "Girilmedi", detail: dated(c, c.day, "Henüz girilmedi; personel kapanışta girer."), href, action: "Kasa raporu" };
+    return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Personel kapanışta girer.", href, action: "Kasa raporu" };
+  }
+  const title = "Kasa raporu";
+  if (!f.cash) return { key: "kasa", title, status: "later", badge: "Okunamadı", detail: "Kasa raporları şu an okunamadı.", href: "/panel/kasa", action: "Kasa raporu" };
+  const r = f.cash.today;
+  if (r) return { key: "kasa", title, status: "done", badge: "Gönderildi", detail: dated(c, r.date, `${r.submittedByName} gönderdi · ${diffText(r.cashDiff)}`), href, action: "Raporu aç" };
+  if (c.evening) return { key: "kasa", title, status: "todo", detail: dated(c, c.day, "Kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayıp girin."), href: "/panel/kasa", action: "Raporu gir" };
+  return { key: "kasa", title, status: "later", badge: "Akşam", detail: "Kapanışta girilir: Z raporu ve kasa sayımı.", href: "/panel/kasa", action: "Kasa raporu" };
+};
+
+// ---------------------------------------------------------------- Zayi (personel)
+
+/** Zayi / ikram: gün içinde bilgi, akşam rapordan önce yapılacak, rapor gönderilince tamam */
+const wasteRow: Row = (f, c) => {
+  const w = f.waste;
+  if (!w) return null;
+  const summary = clip([w.ikram ? `İkram: ${w.ikram}` : null, w.zayi ? `Zayi: ${w.zayi}` : null].filter(Boolean).join(" · "), WASTE_SUMMARY_MAX);
+  const entries = w.count > 0 ? (summary ? `${num(w.count)} kayıt · ${summary}` : `${num(w.count)} kayıt`) : null;
+  const base = { key: "zayi" as const, title: "Zayi & ikram", href: "/panel/zayi", action: "Zayi / ikram ekle" };
+  if (f.cash?.today) return { ...base, status: "done", detail: dated(c, c.day, entries ?? "Bugün kayıt yok.") };
+  if (c.evening) {
+    return {
+      ...base,
+      status: "todo",
+      badge: "Rapordan önce",
+      detail: dated(
+        c,
+        c.day,
+        entries ? `${sentence(entries)} Eksik varsa kasa raporundan önce ekleyin.` : "Bugün kayıt yok. Atılan ya da ikram edilen olduysa kasa raporundan önce girin.",
+      ),
+    };
+  }
+  return { ...base, status: "later", badge: "Gün içinde", detail: entries ?? "Atılan, dökülen ya da ödenmeden verilen olursa o an girin; kasa raporuna geçer." };
+};
+
+// ---------------------------------------------------------------- Sayım (ikisi)
+
+/** Ayın ilk 10 gününde geçen ayın sayımı yoksa (Stok sayımı ekranının açılış ayı kuralıyla aynı) */
+const countPrevious: Row = (f, c) => {
+  const s = f.stock;
+  if (!s || c.dayOfMonth > COUNT_GRACE_DAYS || s.prevHasData) return null;
+  return {
+    key: "sayim-gecen",
+    title: "Geçen ayın stok sayımı",
+    status: "todo",
+    badge: "Girilmedi",
+    detail:
+      f.role === "admin"
+        ? `${monthLabel(s.prevMonth)} sayımı yok: devreden stok 0 sayılır, alınan malın tamamı o ayın maliyeti olur.`
+        : `${monthLabel(s.prevMonth)} ay sonu sayımı girilmedi; buradan girebilirsiniz.`,
+    href: `/panel/sayim?ay=${s.prevMonth}`,
+    action: "Sayım gir",
+  };
+};
+
+/** Ayın son günü (takvim): sayımın ilerlemesi, sayım formundaki "n / toplam kalem sayıldı" ile aynı kural */
+const countMonthEnd: Row = (f, c) => {
+  const s = f.stock;
+  if (!c.lastDay || !s || s.total <= 0) return null;
+  const base = { key: "sayim-son" as const, title: "Ay sonu stok sayımı", href: `/panel/sayim?ay=${s.month}` };
+  if (s.counted <= 0) return { ...base, status: "todo", badge: "Bugün", detail: "Bugün ayın son günü: kapanıştan sonra sayın. Telefondan grup grup girilir.", action: "Sayıma başla" };
+  if (s.counted < s.total) {
+    const progress = `${num(s.counted)} / ${num(s.total)}`;
+    return { ...base, status: "todo", badge: progress, detail: `${progress} kalem sayıldı; kalanları da girin.`, action: "Sayıma devam" };
+  }
+  return { ...base, status: "done", detail: `${num(s.total)} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
+};
+
+// ---------------------------------------------------------------- Yalnız yönetici
+
+/** Günlük işlerin ciddi sorunları (sabah işi çalışmadı / hata verdi, Paraşüt işi hata verdi, CRON_SECRET yok) */
+const systemRow: Row = (f) => {
+  const items = f.system;
+  if (!items?.length) return null;
+  const [first, ...rest] = items;
+  return {
+    key: "isler",
+    title: "Günlük işler",
+    status: "warn",
+    badge: rest.length ? `${num(items.length)} sorun` : undefined,
+    detail: `${first.title}: ${sentence(first.body)}${rest.length ? ` Ayrıca: ${rest.map((r) => r.title).join(", ")}.` : ""}`,
+    href: JOBS_HREF,
+    action: "Günlük işlere bak",
+  };
+};
+
+/** Tutarı bilinenlerin toplamı parantez içinde (hiçbirinin tutarı yoksa yazılmaz) */
+function amountOf(items: UpcomingItem[]): string {
+  const total = items.reduce((a, i) => a + (i.amount ?? 0), 0);
+  return total > 0 ? ` (${money(total)})` : "";
+}
+
+/** Ödemeler: geciken sorun, bugünkü yapılacak, ikisi de yoksa tamam (yaklaşanlar bilgi olarak) */
+const paymentsRow: Row = (f) => {
+  const base = { key: "odeme" as const, title: "Ödemeler", href: "/panel/hatirlaticilar" };
+  const items = f.payments;
+  if (!items) return { ...base, status: "later", badge: "Okunamadı", detail: "Ödeme listesi şu an okunamadı.", action: "Ödemeler" };
+  const overdue = items.filter((i) => i.status === "overdue");
+  const today = items.filter((i) => i.status === "today");
+  const soon = items.filter((i) => i.status === "soon");
+  if (overdue.length) {
+    return {
+      ...base,
+      status: "warn",
+      badge: `${num(overdue.length)} gecikti`,
+      detail: `${num(overdue.length)} ödeme gecikti${amountOf(overdue)}. Ödendiyse işaretleyin.${today.length ? ` Bugün: ${num(today.length)} ödeme${amountOf(today)}.` : ""}`,
+      action: "Ödemelere bak",
+    };
+  }
+  if (today.length) {
+    const titles = `${today
+      .slice(0, 2)
+      .map((i) => i.title)
+      .join(", ")}${today.length > 2 ? "…" : ""}`;
+    return { ...base, status: "todo", badge: "Bugün", detail: `${num(today.length)} ödeme bugün${amountOf(today)}: ${titles}`, action: "Ödemelere bak" };
+  }
+  return { ...base, status: "done", detail: `Bugün ödenecek yok.${soon.length ? ` Yaklaşan ${num(soon.length)} ödeme${amountOf(soon)}.` : ""}`, action: "Ödemeler" };
+};
+
+/**
+ * Faturalar: kontrol bekleyenler. Paraşüt eşitlemesinin hatası burada değil, `isler` satırında (ops'un sistem
+ * uyarıları; docs/planlar/CRITIQUE.md §3 today): aynı hata iki satırda yazılmaz.
+ */
+const invoicesRow: Row = (f) => {
+  const inv = f.invoices;
+  if (!inv) return null;
+  if (inv.review > 0) {
+    return {
+      key: "fatura",
+      title: "Faturalar",
+      status: "todo",
+      badge: `${num(inv.review)} kontrol`,
+      detail: `${num(inv.review)} fatura kontrol bekliyor: kategorisi tahminle yazıldı, doğruysa tek dokunuşla onaylayın.`,
+      href: "/panel/faturalar?durum=kontrol",
+      action: "Kontrol et",
+    };
+  }
+  return { key: "fatura", title: "Faturalar", status: "done", detail: "Kontrol bekleyen fatura yok.", href: "/panel/faturalar", action: "Faturalar" };
+};
+
+const unlinkedRow: Row = (f) => {
+  const n = f.unlinked ?? 0;
+  if (n <= 0) return null;
+  return {
+    key: "urun",
+    title: "Ürün bağlantıları",
+    status: "todo",
+    badge: `${num(n)} bekliyor`,
+    detail: `${num(n)} fatura ürünü hammaddeye bağlanmayı bekliyor; bir kez bağlanınca fiyat ve miktar sonraki faturalardan kendiliğinden gelir.`,
+    href: "/panel/parasut?durum=bekleyen",
+    action: "Bağla",
+  };
+};
+
+/** Fiyatı girilmemiş hammaddeler (çoğu sayımda "Listeye ekle" ile eklenen kalem; zil ile aynı metin) */
+const unpricedRow: Row = (f) => {
+  const u = f.unpriced;
+  if (!u || u.count <= 0) return null;
+  return {
+    key: "fiyat-yok",
+    title: "Fiyatı girilmemiş hammaddeler",
+    status: "todo",
+    badge: `${num(u.count)} hammadde`,
+    detail: unpricedNotice(u.count, u.names).body,
+    href: "/panel/hammaddeler?durum=fiyatsiz",
+    action: "Fiyatı gir",
+  };
+};
+
+const approvalsRow: Row = (f) => {
+  const a = f.approvals;
+  const n = (a?.changes ?? 0) + (a?.newProducts ?? 0);
+  if (!a || n <= 0) return null;
+  const names = a.names.slice(0, 3).join(", ");
+  return {
+    key: "onay",
+    title: "Reçete onayları",
+    status: "todo",
+    badge: `${num(n)} bekliyor`,
+    detail: `Personelin önerdiği ${pendingSummary(a.changes, a.newProducts)}${names ? `: ${names}${a.names.length > 3 ? "…" : ""}` : "."}`,
+    href: "/panel/onaylar",
+    action: "İncele",
+  };
+};
+
+/** Onay bekleyen hammadde fiyatları (Genel bakış'taki uyarıyla aynı metin) */
+const holdsRow: Row = (f) => {
+  const h = f.holds;
+  const alert = h && h.count > 0 ? holdAlert(h.items) : null;
+  if (!h || !alert) return null;
+  return { key: "fiyat-onay", title: "Fiyat onayı", status: "todo", badge: `${num(h.count)} hammadde`, detail: alert.detail, href: HOLDS_HREF, action: "İncele" };
+};
+
+const pricesRow: Row = (f) => {
+  const p = f.prices;
+  if (!p) return null;
+  return { key: "zam", title: "Hammadde zammı", status: "todo", badge: `${num(p.count)} ürün`, detail: p.detail, href: p.href, action: "Fiyatlara bak" };
+};
+
+/** Kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; zil ile aynı metin) */
+const posRow: Row = (f) => {
+  const p = f.pos;
+  if (!p || p.count <= 0) return null;
+  return {
+    key: "modpos",
+    title: "Kasadaki fiyatlar",
+    status: "todo",
+    badge: `${num(p.count)} fiyat`,
+    detail: `Kasada değişecek ${num(p.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${p.oldest ? ` En eskisi ${staleForText(p.oldest, f.now)} bekliyor.` : ""}`,
+    href: "/panel/urunler/fiyatlar?sekme=kasa",
+    action: "Kasaya işle",
+  };
+};
+
+/**
+ * Yöneticinin satır sırası (Şimdi / Sonra / Tamamlananlar bölümlerinde de korunur). Yorumdaki yuvalar ikinci paketin
+ * satırlarıdır (docs/planlar/CRITIQUE2.md R14; olgusu, fonksiyonu ve testiyle o gruplar ekler).
+ */
+const ADMIN_ROWS: Row[] = [
+  systemRow, // isler
+  cashYesterday, // kasa-dun
+  // liste-dun (kontrol)
+  paymentsRow, // odeme
+  // komisyon (komisyon)
+  invoicesRow, // fatura
+  unlinkedRow, // urun
+  unpricedRow, // fiyat-yok
+  approvalsRow, // onay
+  holdsRow, // fiyat-onay
+  pricesRow, // zam
+  posRow, // modpos
+  countPrevious, // sayim-gecen
+  // liste-{templateId} (kontrol, açılış saatine göre), hizli-sayim ve mal-siparisi (siparis)
+  cashToday, // kasa
+  countMonthEnd, // sayim-son
+];
+
+/** Personelin satır sırası; yönetici satırları burada hiç yok */
+const STAFF_ROWS: Row[] = [
+  cashYesterday, // kasa-dun
+  countPrevious, // sayim-gecen
+  // liste-{templateId} (kontrol), hizli-sayim (siparis)
+  wasteRow, // zayi
+  cashToday, // kasa
+  countMonthEnd, // sayim-son
+];
+
+/** Günün işleri, rolün sırasıyla */
+export function dayTasks(f: DayFacts): DayTask[] {
+  const c = dayContext(f.now);
+  return (f.role === "admin" ? ADMIN_ROWS : STAFF_ROWS).flatMap((row) => row(f, c) ?? []);
+}
+
+/**
+ * Ekrandaki bölümler: Şimdi (sorunlu ve yapılacak), Sonra (zamanı gelmemiş), Tamamlananlar; her biri günün sırasıyla.
+ * Sıradaki iş: ilk sorunlu, yoksa ilk yapılacak.
+ */
+export function splitTasks(tasks: DayTask[]): { now: DayTask[]; later: DayTask[]; done: DayTask[]; next: DayTask | null } {
+  return {
+    now: tasks.filter((t) => t.status === "warn" || t.status === "todo"),
+    later: tasks.filter((t) => t.status === "later"),
+    done: tasks.filter((t) => t.status === "done"),
+    next: tasks.find((t) => t.status === "warn") ?? tasks.find((t) => t.status === "todo") ?? null,
+  };
+}
+
+/** Sayfa başlığının özeti: "3 iş bekliyor (1 sorun)", "Şimdilik iş yok · 2 iş sonra", "Bugünün işleri tamam" (+ hatırlatıcı) */
+export function daySummary(tasks: DayTask[], reminders: number): { open: number; warn: number; later: number; done: number; total: number; headline: string } {
+  const count = (s: TaskStatus) => tasks.filter((t) => t.status === s).length;
+  const warn = count("warn");
+  const open = count("todo") + warn;
+  const later = count("later");
+  const head = open ? `${num(open)} iş bekliyor${warn ? ` (${num(warn)} sorun)` : ""}` : later ? `Şimdilik iş yok · ${num(later)} iş sonra` : "Bugünün işleri tamam";
+  return { open, warn, later, done: count("done"), total: tasks.length, headline: reminders > 0 ? `${head} · ${num(reminders)} hatırlatıcı` : head };
+}
+
+// ---------------------------------------------------------------- Bugün kafede
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+/** Türkiye UTC+3, yaz saati yok (panelin her yerindeki varsayım) */
+const TR_OFFSET_MS = 3 * HOUR_MS;
+
+/** İş gününün aralığı: [gün 05:00, ertesi gün 05:00) Türkiye saatiyle */
+export function businessDayRange(day: string): { from: Date; to: Date } {
+  const from = Date.parse(`${day}T00:00:00Z`) - TR_OFFSET_MS + DAY_TURN_HOUR * HOUR_MS;
+  return { from: new Date(from), to: new Date(from + DAY_MS) };
+}
+
+export interface KaraokeToday {
+  /** Sitenin rezervasyonları ve bar ekranından açılan rezervasyonsuz oturumlar (iptal ve ödenmemiş tutma sayılmaz) */
+  reservations: number;
+  walkIns: number;
+  /** Süren oturum: bitiş saati (uzatmalar dahil), süresi doldu mu */
+  active: { until: string; overtime: boolean } | null;
+  /** Sıradaki oturum */
+  next: { time: string; guests: number | null; name: string | null } | null;
+  /** Kartın değişeceği sıradaki an (bir oturumun başlaması ya da bitmesi; kendiliğinden yenileme), yoksa null */
+  changeAt: number | null;
+}
+
+/** İş gününde başlayan oturumların özeti (tutar hiçbir rolde taşınmaz) */
+export function karaokeToday(sessions: KaraokeSessionDTO[], day: string, nowMs: number): KaraokeToday {
+  const { from, to } = businessDayRange(day);
+  const list = sessions
+    .filter((s) => {
+      const p = phase(s, nowMs);
+      const start = sessionStart(s);
+      return isPlayable(s) && p !== "cancelled" && p !== "held" && start >= from.getTime() && start < to.getTime();
+    })
+    .sort((a, b) => sessionStart(a) - sessionStart(b) || a.id - b.id);
+  // Süresi dolup bitirilmeyen oturum önce: bar ekranında alarmı çalıyor, odaya haber verilmeli
+  const active = list.find((s) => phase(s, nowMs) === "overtime") ?? list.find((s) => phase(s, nowMs) === "active") ?? null;
+  const next = list.find((s) => phase(s, nowMs) === "upcoming") ?? null;
+  const changes = list
+    .filter((s) => phase(s, nowMs) === "upcoming" || phase(s, nowMs) === "active")
+    .flatMap((s) => [sessionStart(s), sessionEnd(s)])
+    .filter((t) => t > nowMs);
+  return {
+    reservations: list.filter((s) => s.source === "site").length,
+    walkIns: list.filter((s) => s.source === "panel").length,
+    active: active ? { until: trClock(sessionEnd(active)).time, overtime: phase(active, nowMs) === "overtime" } : null,
+    next: next ? { time: trClock(sessionStart(next)).time, guests: next.guests, name: next.customerName } : null,
+    changeAt: changes.length ? Math.min(...changes) : null,
+  };
+}
+
+/** Uygulama siparişleri: sitenin son listesinin kopyasından yalnız sayılar (ad, tutar taşınmaz) */
+export interface OrdersLite {
+  /** Listenin son doğrulandığı an: panelin siteden son başarılı çekmesi (liste değişmese de) */
+  at: string | null;
+  /** Hazırlanacaklar (yeni ve hazırlanan) */
+  open: number;
+  /** Tezgâhta teslim bekleyen gel-al'lar */
+  ready: number;
+}
+
+/** Sipariş listesinin kopyası bundan eskiyse sayı gösterilmez (bağlantı kopmuş olabilir) */
+export const ORDERS_FRESH_MS = 30 * 60_000;
+
+export interface CafeLine {
+  key: "oda" | "karaoke" | "siradaki" | "siparis";
+  text: string;
+  tone: "info" | "warn";
+}
+
+/**
+ * "Bugün kafede" kartının satırları. laffogato.net bağlantısı kurulu değilse ve bugün oturum yoksa karaoke satırı
+ * yazılmaz; liste boşsa kart çizilmez. Tutar hiçbir rolde yazılmaz.
+ */
+export function cafeLines(i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean }, nowMs: number): CafeLine[] {
+  const out: CafeLine[] = [];
+  const k = i.karaoke;
+  const any = k ? k.reservations + k.walkIns > 0 : false;
+  if (k && (i.configured || any)) {
+    if (k.active) out.push(k.active.overtime ? { key: "oda", text: "Süre doldu: odaya haber verin", tone: "warn" } : { key: "oda", text: `Oda dolu · bitiş ${k.active.until}`, tone: "info" });
+    const counts = [k.reservations ? `${num(k.reservations)} rezervasyon` : "rezervasyon yok", k.walkIns ? `${num(k.walkIns)} rezervasyonsuz` : null].filter(Boolean).join(" · ");
+    out.push({ key: "karaoke", text: any ? `Bugün ${counts}` : "Bugün karaoke rezervasyonu yok", tone: "info" });
+    if (k.next) out.push({ key: "siradaki", text: [`Sıradaki ${k.next.time}`, k.next.guests ? `${num(k.next.guests)} kişi` : null, k.next.name?.trim() || null].filter(Boolean).join(" · "), tone: "info" });
+  }
+  const o = i.orders;
+  const fresh = Boolean(o?.at && nowMs - Date.parse(o.at) <= ORDERS_FRESH_MS);
+  if (i.configured && o && fresh && (o.open > 0 || o.ready > 0)) {
+    const text = o.open > 0 ? `${num(o.open)} açık uygulama siparişi${o.ready > 0 ? ` · ${num(o.ready)} teslime hazır` : ""}` : `${num(o.ready)} uygulama siparişi teslime hazır`;
+    out.push({ key: "siparis", text, tone: "info" });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- Kendiliğinden yenileme
+
+/** Satırların değiştiği saatler (Türkiye): gece yarısı (takvim günü), 05:00 (iş günü) ve 20:00 (akşam) */
+const REFRESH_HOURS = [0, DAY_TURN_HOUR, CASH_EVENING_HOUR];
+
+/**
+ * Ekranın kendiliğinden yenileneceği an (epoch ms): sıradaki 00:00, 05:00 ya da 20:00 (Türkiye); `extra` verilirse
+ * (ör. karaoke oturumunun başlaması / bitmesi, ikinci paketin kontrol listelerinin saatleri) ondan önceyse o.
+ */
+export function nextRefreshAt(now: Date, extra: number[] = []): number {
+  const t = now.getTime();
+  const midnight = Math.floor((t + TR_OFFSET_MS) / DAY_MS) * DAY_MS - TR_OFFSET_MS;
+  const marks = [0, 1].flatMap((d) => REFRESH_HOURS.map((h) => midnight + d * DAY_MS + h * HOUR_MS));
+  return Math.min(...[...marks, ...extra].filter((x) => Number.isFinite(x) && x > t));
+}

@@ -28,6 +28,7 @@ ModPOS'ta bunlar ödenmez ya da hiç girilmez, bu yüzden satış raporunda gör
 |-----|---------|
 | Tutarlılık (`/panel/tutarlilik`) | Her malzemenin sayım sapmasından kayıtlı zayi ve ikram düşülür. Satırda "zayi + ikram … · kalan …", özette "kayıtlı zayi + ikram … · açıklanamayan …" görünür. Sapma, kullanım ve fatura farkının kendisi değişmez |
 | Kasa raporu (`/panel/kasa`) | Günün zayi ve ikramı ekrana, e-postaya ve WhatsApp metnine eklenir. E-postada kayıtlı ikramın menü değeri, Z raporundaki ödenmez tutarıyla karşılaştırılır |
+| Bugün (`/panel/bugun`, personel) | Günün kayıt sayısı ve özeti. Akşam (20:00'den sonra) kasa raporu gönderilmeden "Rapordan önce" der: özet rapora geçtiği için eksik kayıt rapordan önce girilir; rapor gönderilince tamam ([BUGUN.md](BUGUN.md)) |
 | Satışlar (`/panel/satislar`) | Ayın "Ödenmez / ikram" alanının altında panelde kayıtlı ikram ve menü değeri görünür; "Bunu yaz" ile alana yazılır. ModPOS'un rakamı esastır, kendiliğinden değişmez |
 | Yönetici ay özeti (`/panel/zayi`) | Zayi ve ikramın malzeme maliyeti (KDV hariç), ikramın menü değeri, ModPOS'un ödenmez tutarı ve en çok giden kalemler |
 

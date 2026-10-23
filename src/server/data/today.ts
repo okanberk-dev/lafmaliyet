@@ -1,0 +1,247 @@
+import "server-only";
+
+import { and, count, eq, exists, isNotNull, isNull, lte, or } from "drizzle-orm";
+
+import { businessDayRange, CASH_FLAGS, dayContext, karaokeToday, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
+import { priceAlert } from "@/lib/calc/price-impact";
+import { carryChecks, lateCorrections } from "@/lib/cash-report";
+import { systemAlerts } from "@/lib/job-health";
+import { groupNewProposals } from "@/lib/recipe-change";
+import type { UpcomingItem } from "@/lib/reminders";
+import { dueGroup } from "@/lib/user-reminders";
+import type { CurrentUser } from "@/server/auth/dal";
+import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import { loadModel } from "@/server/data/dataset";
+import { loadPriceAlerts } from "@/server/data/price-alerts";
+import { pendingHoldSummary } from "@/server/data/price-holds";
+import { posPendingSummary } from "@/server/data/prices";
+import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
+import { loadUnpricedIngredients } from "@/server/data/unpriced";
+import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
+import { dayWaste } from "@/server/data/waste";
+import { getDb, schema as s } from "@/server/db";
+import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
+import { loadSessions } from "@/server/karaoke/board";
+import { karaokeSecret } from "@/server/karaoke/sync";
+import { loadUpcoming } from "@/server/notify/digest";
+import { countUnlinkedProducts } from "@/server/parasut/sync";
+import { readOrdersSnapshot, readOrdersState, type OrdersSnapshot, type OrdersSyncState } from "@/server/site-orders/sync";
+
+/**
+ * Bugün ekranının verisi (src/app/panel/bugun; satırların kuralları bugun/logic.ts, docs/BUGUN.md). İki rol için ortak
+ * olgular (kasa, sayım, hatırlatıcılar, karaoke, uygulama siparişleri) ve rolün kendi olguları ayrı fonksiyonlarda:
+ * personel için yalnız staffFacts çalışır, yöneticinin olguları (ödemeler, faturalar, maliyet modeli, fiyatlar, kasanın
+ * bütünlüğü, günlük işler) ona hiç yüklenmez (tests/bugun.test.ts kaynaktan denetler).
+ */
+export interface TodayData {
+  facts: DayFacts;
+  /** Geciken ve bugünkü hatırlatıcılar (en çok 50); null: okunamadı */
+  reminders: UserReminderDTO[] | null;
+  /** Yalnız yönetici: Yaklaşan ödemeler kartının listesi (DashboardPayments) */
+  payments: UpcomingItem[] | null;
+  cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean };
+  renderedAt: string;
+}
+
+/**
+ * Bir kaynak düşerse sayfa yine açılır: ilgili satır "okunamadı" der ya da hiç çıkmaz, hata sunucu günlüğüne yazılır.
+ * Her yükleyici bundan geçer (ikinci paketin satırları da).
+ */
+export function safe<T>(p: Promise<T>): Promise<T | null> {
+  return p.catch((e: unknown) => {
+    console.error("[bugun]", e);
+    return null;
+  });
+}
+
+/**
+ * Uygulama siparişlerinden yalnız sayılar: müşteri adları (KVKK) ve tutarlar ekrana taşınmaz. "Teslime hazır" gel-al
+ * tezgâhta bekleyendir (#9'dan beri listede kalır), ayrı sayılır. Listenin tazeliği son başarılı çekmeden: kopya yalnız
+ * liste değişince yeniden yazılır (`at`), bar ekranının ya da sitenin pinginin her çekmesi onu doğrular; değişmeden
+ * duran liste eski sayılmasın.
+ */
+function ordersLite(snapshot: OrdersSnapshot, state: OrdersSyncState): OrdersLite {
+  return {
+    at: state.lastOkAt ?? snapshot.at,
+    open: snapshot.orders.filter((o) => o.stage !== "ready").length,
+    ready: snapshot.orders.filter((o) => o.stage === "ready").length,
+  };
+}
+
+const toLite = (r: CashReportDTO): CashLite => ({
+  date: r.date,
+  cashDiff: r.cashDiff,
+  zTotal: r.zTotal,
+  cash: r.cash,
+  card: r.card,
+  submittedByName: r.submittedByName,
+  revision: r.revision,
+  note: r.note,
+});
+
+/**
+ * Ay sonu sayımının ilerlemesi: bu ay sayılan kalem, sayılacak kalem (Stok sayımı ekranının listesi: etkin, sayım birimi
+ * olan, listeye girdiği ay gelmiş ya da bu ay sayılmış; engine.ts stockSheet) ve geçen ayın sayımı var mı (sayım ya da
+ * ek kalem; stockSheet().hasData ile aynı kural). Arşivlenen (pasif ya da "Sayılmaz") kalem sayılmaz.
+ */
+async function stockProgress(month: string, prevMonth: string): Promise<NonNullable<DayFacts["stock"]>> {
+  const db = getDb();
+  const i = s.ingredients;
+  const sc = s.stockCounts;
+  const listed = and(eq(i.active, true), isNotNull(i.countUnit));
+  const countedThisMonth = exists(
+    db
+      .select({ id: sc.id })
+      .from(sc)
+      .where(and(eq(sc.month, month), eq(sc.ingredientId, i.id))),
+  );
+  const [[counted], [total], [prevCount], [prevExtra]] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(sc)
+      .innerJoin(i, eq(i.id, sc.ingredientId))
+      .where(and(eq(sc.month, month), listed)),
+    db
+      .select({ n: count() })
+      .from(i)
+      .where(and(listed, or(isNull(i.countFrom), lte(i.countFrom, month), countedThisMonth))),
+    db.select({ id: sc.id }).from(sc).where(eq(sc.month, prevMonth)).limit(1),
+    db.select({ id: s.stockExtras.id }).from(s.stockExtras).where(eq(s.stockExtras.month, prevMonth)).limit(1),
+  ]);
+  return { month, counted: counted?.n ?? 0, total: total?.n ?? 0, prevMonth, prevHasData: Boolean(prevCount || prevExtra) };
+}
+
+/** Rolün kendi olguları ve (yalnız yönetici) rapor gününe göre kasanın bütünlük uyarıları */
+interface RoleFacts {
+  facts: Partial<DayFacts>;
+  cashFlags: Map<string, string[]> | null;
+}
+
+/** Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) */
+async function staffFacts(c: DayContext): Promise<RoleFacts> {
+  const waste = await safe(dayWaste(c.day));
+  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null }, cashFlags: null };
+}
+
+/**
+ * Yalnız yönetici; hepsi aynı anda. `cash`: ortak olguların kasa raporu okuması (bütünlük uyarıları onun üstüne).
+ * `viewer`: bakan yönetici (kendi ertesi gün düzeltmesi uyarı sayılmaz; zil ile aynı kural).
+ */
+async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
+  const db = getDb();
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, cashFlags] = await Promise.all([
+    // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridiyle aynı "danger" kümesi). Zil ve şerit Paraşüt
+    // işinin hatasını, zilin kendi "Paraşüt eşitlemesi başarısız" satırı varken yinelemez; Bugün'de o satır yok (fatura
+    // satırı eşitlemeyi sormaz, docs/planlar/CRITIQUE.md §3 today), o yüzden burada bu yinelenme denetimi yapılmaz
+    isProductionRuntime()
+      ? safe(
+          loadJobsOverview(now).then((o) =>
+            systemAlerts({ production: o.production, cronSecret: o.cronSecret, now, health: o.health, parasutSyncErrorAt: null })
+              .filter((a) => a.level === "danger")
+              .map((a) => ({ title: a.title, body: a.body })),
+          ),
+        )
+      : Promise.resolve([]),
+    safe(loadUpcoming()),
+    safe(
+      db
+        .select({ n: count() })
+        .from(s.invoices)
+        .where(eq(s.invoices.needsReview, true))
+        .then(([r]) => ({ review: r?.n ?? 0 })),
+    ),
+    safe(countUnlinkedProducts()),
+    safe(loadUnpricedIngredients()),
+    // Onay bekleyen öneriler: değişiklikler ve yeni ürünler (boyları tek öneri), ilk ürün adları
+    safe(
+      (async () => {
+        if (!(await countPendingRequests())) return { changes: 0, newProducts: 0, names: [] };
+        const { pending } = await loadReviewQueue(0);
+        const changes = pending.filter((r) => r.kind === "change");
+        const proposals = groupNewProposals(pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })));
+        return { changes: changes.length, newProducts: proposals.length, names: [...new Set([...changes.map((r) => r.productName), ...proposals.map((p) => p.name)])] };
+      })(),
+    ),
+    safe(pendingHoldSummary().then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
+    // Hammadde zammı: Genel bakış ve zil ile aynı metin (ayda TL etkisiyle); personelde model hiç kurulmaz
+    safe(
+      (async () => {
+        const pa = await loadPriceAlerts(await loadModel());
+        const alert = priceAlert(pa.changes, pa.actionable, pa.loss.totalLoss);
+        return alert ? { detail: alert.detail, href: alert.href, count: pa.actionable.length } : null;
+      })(),
+    ),
+    safe(posPendingSummary().then((p) => ({ count: p.count, oldest: p.oldest?.toISOString() ?? null }))),
+    // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı): açılış önceki devirle tutmuyor; rapor iş günü kapandıktan
+    // sonra kasa alanı değiştirilerek düzeltildi
+    safe(
+      cash.then(async (reports) => {
+        if (!reports?.length) return new Map<string, string[]>();
+        const oldest = reports[reports.length - 1];
+        const [before, revisions] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
+        const checks = carryChecks(reports, before);
+        return new Map(
+          reports.map((r) => {
+            const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
+            return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : [])]];
+          }),
+        );
+      }),
+    ),
+  ]);
+  return { facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos }, cashFlags };
+}
+
+/**
+ * Bugün ekranının bütün verisi. Şimdiki zaman oturum okumasından (requireUser, çerez) sonra okunur: Cache Components
+ * önceden render ederken saat okumaz; sayfa zaten isteğe göre çizilir.
+ */
+export async function loadToday(user: CurrentUser): Promise<TodayData> {
+  const now = new Date();
+  const c = dayContext(now);
+  const admin = user.role === "admin";
+  const range = businessDayRange(c.day);
+  const configured = Boolean(karaokeSecret());
+  const cashP = safe(cashReportsBetween(c.yesterday, c.day));
+  const [reports, firstDate, stock, due, sessions, orders, own] = await Promise.all([
+    cashP,
+    safe(firstCashReportDate()),
+    safe(stockProgress(c.month, c.prevMonth)),
+    safe(loadDueReminders(user.id, c.today)),
+    safe(loadSessions(range.from, range.to, { admin })),
+    configured ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
+    admin ? adminFacts(now, user.id, cashP) : staffFacts(c),
+  ]);
+
+  const lite = (date: string): CashLite | null => {
+    const r = reports?.find((x) => x.date === date);
+    if (!r) return null;
+    const flags = own.cashFlags?.get(date);
+    return flags?.length ? { ...toLite(r), flags } : toLite(r);
+  };
+  const facts: DayFacts = {
+    ...own.facts,
+    role: user.role,
+    now,
+    cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
+    stock,
+  };
+  return {
+    facts,
+    reminders: due
+      ? due
+          .filter((r) => {
+            const g = dueGroup(r, now);
+            return g === "overdue" || g === "today";
+          })
+          .slice(0, 50)
+      : null,
+    payments: admin ? (facts.payments ?? null) : null,
+    cafe: {
+      karaoke: sessions ? karaokeToday(sessions, c.day, now.getTime()) : null,
+      orders,
+      configured,
+    },
+    renderedAt: now.toISOString(),
+  };
+}

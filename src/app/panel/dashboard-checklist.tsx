@@ -6,10 +6,8 @@ import { monthLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { ChecklistTasks } from "./dashboard-checklist-tasks";
-import { taskSummary, type MonthTask, type TaskStatus } from "./dashboard-tasks";
-
-/** Özet satırındaki ilerleme şeridinin renkleri (listedeki rozetlerle aynı anlam) */
-const BAR: Record<TaskStatus, string> = { done: "bg-good", todo: "bg-brass-500", warn: "bg-bad", later: "bg-panel-deep" };
+import { taskSummary, type MonthTask } from "./dashboard-tasks";
+import { TASK_BAR } from "./task-style";
 
 /**
  * Genel bakış · "Bu ayın işleri": seçili ay için her ay yapılan işlerin (satış raporu, ay bilgileri, faturalar,
@@ -60,7 +58,7 @@ export function DashboardChecklist({ month, state, tasks, className }: { month: 
             <span className="flex items-center gap-2 text-[13px] text-ink-mute">
               <span aria-hidden="true" className="flex gap-1">
                 {tasks.map((t) => (
-                  <span key={t.key} className={cn("h-1.5 w-3.5 rounded-full", BAR[t.status])} />
+                  <span key={t.key} className={cn("h-1.5 w-3.5 rounded-full", TASK_BAR[t.status])} />
                 ))}
               </span>
               <span className="font-medium whitespace-nowrap text-ink tabular">

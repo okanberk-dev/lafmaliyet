@@ -12,6 +12,7 @@ import {
   Info,
   LayoutList,
   Lightbulb,
+  ListTodo,
   Package,
   Palette,
   Pencil,
@@ -535,8 +536,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcı bildirimi, laffogato.net
-            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında ve{" "}
-            <Path href="/panel" />&apos;ta kırmızı şeritle görünür, ertesi sabah e-postayla da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
+            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında,{" "}
+            <Path href="/panel" />&apos;ta kırmızı şeritle ve <Path href="/panel/bugun" />&apos;de ilk satırda görünür, ertesi sabah e-postayla
+            da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
             Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder.
           </>
         ),
@@ -562,6 +564,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
   {
     title: "Panelde gezinme",
     items: [
+      {
+        id: "bugun",
+        q: "Bugün ekranında ne var?",
+        a: (
+          <>
+            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
+            faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı ve hatırlatıcılarınız. Her satır ilgili ekranı açar;
+            sıradaki iş siyah çerçeveyle öne çıkar, biten işler Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini (kasa
+            raporu, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
+          </>
+        ),
+        icon: ListTodo,
+        links: [{ href: "/panel/bugun", label: "Bugün" }],
+      },
       {
         id: "menu",
         q: "Menü düzeni",
