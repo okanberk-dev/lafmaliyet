@@ -1,9 +1,10 @@
 "use client";
 
 import { Settings2 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { NumberInput } from "@/components/ui/form";
@@ -27,7 +28,7 @@ function dayError(text: string, max: number, meal: boolean): string | null {
 export function ChannelSettingsCard({ settings }: { settings: Record<ChannelKey, ChannelSettings> }) {
   const initial = () => Object.fromEntries(CHANNELS.map((c) => [c.key, String(settings[c.key].payDays)])) as Record<ChannelKey, string>;
   const [values, setValues] = useState(initial);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   // Kayıtlı değerler değişince (kayıttan sonra, başka sekmede) form onlara döner; sayfanın başka bir kaydı (hakediş)
   // yazılmış ama kaydedilmemiş günleri silmez
   const savedKey = CHANNELS.map((c) => settings[c.key].payDays).join(",");
