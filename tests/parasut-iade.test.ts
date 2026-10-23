@@ -37,7 +37,7 @@ function siteRefund(over: { itemType?: string; accountType?: string; code?: stri
   const included: Resource[] = [
     { id: "c9", type: "contacts", attributes: { name: "Ayşe Yılmaz", account_type: over.accountType ?? "customer", tax_number: "11111111111" } },
     { id: "d9", type: "purchase_bill_details", attributes: { quantity: "1", unit_price: "1000", vat_rate: "20", net_total: "1000" }, relationships: { product: { data: { id: "p55", type: "products" } } } },
-    { id: "p55", type: "products", attributes: { name: "Mağaza ürünü (KDV %20)", code: over.code ?? "LAF-SHOP-20", unit: "Adet" } },
+    { id: "p55", type: "products", attributes: { name: "Mağaza ürünü (KDV %20)", code: over.code ?? "LAF-MAGAZA-20", unit: "Adet" } },
     ...(over.eDoc ? [{ id: "e9", type: "e_invoices", attributes: over.eDoc }] : []),
   ];
   return billToDraft(bill, included);
@@ -59,6 +59,20 @@ test("satış iadesi gider faturası olarak gelir ama gider sayılmaz: müşteri
   assert.deepEqual(shouldImport(imported), { ok: false, reason: SALES_RETURN });
   // Giden e-belge (sitenin kendi faturası) türü sayılmaz
   assert.equal(siteRefund({ accountType: "supplier", code: "KOD", eDoc: { direction: "outbound", invoice_type_code: "IADE" } }).eDocumentKind, null);
+});
+
+test("sitenin ürün kodu yalnız sitenin biçimi (LAF-<grup>-<oran>): muhasebecinin LAF- kodlu alışı gider kalır", () => {
+  for (const code of ["LAF-KAFE-10", "LAF-MAGAZA-20", "LAF-TESLIMAT-20", "LAF-HIZMET-20", "LAF-KARAOKE-20", "laf-kafe-0"]) {
+    assert.equal(siteRefund({ accountType: "supplier", code }).siteProducts, true, code);
+  }
+  for (const code of ["LAF-SUT-1L", "LAF-KAFE", "LAF-KAFE-10-B", "LAF-SHOP-20", "XLAF-KAFE-10", "LAF-"]) {
+    assert.equal(siteRefund({ accountType: "supplier", code }).siteProducts, false, code);
+  }
+  // Tedarikçinin süt faturası, kalemleri muhasebecinin "LAF-SUT-1L" ürünü: normal alış, gider olarak alınır
+  const milk = siteRefund({ itemType: "purchase_bill", accountType: "supplier", code: "LAF-SUT-1L" });
+  assert.equal(isSalesReturn(milk), false);
+  assert.deepEqual(shouldImport(milk), { ok: true });
+  assert.equal(customerContactBill(milk), false);
 });
 
 test("tedarikçi kartlı iade faturası eskisi gibi eksi gider; müşteri kartlı alış kontrol bekler", () => {

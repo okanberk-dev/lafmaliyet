@@ -79,6 +79,8 @@ class FakeParasut {
   requests: string[] = [];
   /** Sonraki N fatura listesi isteği 429 döner */
   throttle = 0;
+  /** Yol → bu yola gelecek sonraki N istek bağlantı hatasıyla düşer (ağ, zaman aşımı) */
+  failures = new Map<string, number>();
   rejectRefresh = false;
   private tokens = 0;
 
@@ -88,6 +90,7 @@ class FakeParasut {
     this.grants = [];
     this.requests = [];
     this.throttle = 0;
+    this.failures.clear();
     this.rejectRefresh = false;
   }
 
@@ -184,6 +187,11 @@ class FakeParasut {
     assert.ok(url.pathname.startsWith(prefix), url.pathname);
     const path = url.pathname.slice(prefix.length);
     this.requests.push(`${path}?${url.searchParams.get("sort") ?? ""}`);
+    const fails = this.failures.get(path) ?? 0;
+    if (fails > 0) {
+      this.failures.set(path, fails - 1);
+      throw new TypeError("fetch failed");
+    }
     if (path === "purchase_bills") {
       if (this.throttle > 0) {
         this.throttle--;
@@ -363,6 +371,48 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.equal(twin.eInvoiceId, null);
   });
 
+  test("eski gider faturası Paraşüt'ten okunamaz (ağ hatası): yeni fatura ödenmedi ikinci kayıt açmaz, sonraki eşitlemede kayda geçer", async () => {
+    const id = await linkedAndPaid();
+    fake.bills.delete("101");
+    fake.bills.set("102", bill("102", { eInvoiceId: "801" }));
+    fake.eInvoices.get("801")!.importedBillId = "102";
+    // Eski faturanın her okuması bu çalışmada düşer: taşıma denetimi, yeniden denetim, geç girilenler taraması
+    fake.failures.set("purchase_bills/101", 3);
+    await run();
+    let list = await rows();
+    assert.equal(list.length, 1, "aynı e-fatura için ikinci (ödenmedi) kayıt açılmaz");
+    assert.equal(list[0].externalId, "101", "bilinmeyen durumda kayıt yerinde kalır");
+    assert.equal(list[0].unpaid, false);
+    const [mark] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.lastBillId"));
+    assert.equal((mark.value as { id: number }).id, 101, "ertelenen fatura geç girilenler taramasında geçilmez");
+    // Sonraki eşitleme eski faturayı okur (silinmiş): kayıt yeni faturaya geçer, ödemesi ve notu korunur
+    await run();
+    list = await rows();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, id);
+    assert.equal(list[0].externalId, "102");
+    assert.equal(list[0].eInvoiceId, "801");
+    assert.equal(list[0].unpaid, false);
+    assert.equal(list[0].note, "Havaleyle ödendi");
+    const [mark2] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.lastBillId"));
+    assert.equal((mark2.value as { id: number }).id, 102);
+  });
+
+  test("eski fatura aynı çalışmada yeniden denetimde silinmiş görülür: kayıt aynı çalışmada yeni faturaya geçer", async () => {
+    const id = await linkedAndPaid();
+    fake.bills.delete("101");
+    fake.bills.set("102", bill("102", { eInvoiceId: "801" }));
+    fake.eInvoices.get("801")!.importedBillId = "102";
+    fake.failures.set("purchase_bills/101", 1);
+    const r = await run();
+    const list = await rows();
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, id);
+    assert.equal(list[0].externalId, "102");
+    assert.equal(list[0].unpaid, false);
+    assert.match(r.summary, /0 yeni/);
+  });
+
   test("iptal edilen gider faturası: e-faturası varsa kayıt kalır, yoksa kalkar", async () => {
     const id = await linkedAndPaid();
     fake.bills.set("103", bill("103", { invoiceNo: "SUT2026000000103", amount: 500, vat: 50 }));
@@ -387,7 +437,7 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
       { date: daysAgo(3), supplier: "Ayşe Yılmaz", category: "Diğer", amount: -1000, vat: -200, payable: -1200, source: "parasut", origin: "parasut", externalId: "201" },
       { date: daysAgo(4), supplier: "ÖRNEK GIDA A.Ş.", category: "Diğer", amount: -500, vat: -100, payable: -600, source: "parasut", origin: "parasut", eInvoiceId: "802" },
     ]);
-    fake.bills.set("201", bill("201", { itemType: "refund", contact: CUSTOMER, date: daysAgo(3), invoiceNo: null, lines: [{ ...milk("201"), name: "Mağaza ürünü (KDV %20)", code: "LAF-SHOP-20" }] }));
+    fake.bills.set("201", bill("201", { itemType: "refund", contact: CUSTOMER, date: daysAgo(3), invoiceNo: null, lines: [{ ...milk("201"), name: "Mağaza ürünü (KDV %20)", code: "LAF-MAGAZA-20" }] }));
     fake.eInvoices.set("802", eInvoice("802", { type: "IADE", date: daysAgo(4), contactName: "ÖRNEK GIDA A.Ş.", fromVkn: "1234567891", net: 600 }));
     fake.eInvoices.set("803", eInvoice("803", { direction: "outbound", type: "IADE", date: daysAgo(2), contactName: "SÜTAŞ A.Ş.", fromVkn: null, toVkn: SUTAS.taxNumber, net: 2200, vat: 200 }));
     const r = await run();
@@ -420,6 +470,33 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     // Bir sonraki çalışma aynı faturayı yeniden yazmaz
     const again = await run();
     assert.doesNotMatch(again.summary, /geç girilmiş/);
+  });
+
+  test("iki eşitleme arasında 100'den fazla fatura girilir: tarama kaldığı yerden sürer, eski tarihli fatura kaybolmaz", async () => {
+    fake.bills.set("301", bill("301", { date: daysAgo(3) }));
+    await run();
+    // 302 ve 320 kâğıt faturalar (tarihleri pencereden eski); üstlerine ay sonunda topluca 120 fatura girilir
+    fake.bills.set("302", bill("302", { date: daysAgo(200), invoiceNo: "KAGIT-0042", amount: 300, vat: 30 }));
+    for (let n = 303; n <= 422; n++) fake.bills.set(String(n), bill(String(n), { date: daysAgo(2) }));
+    fake.bills.get("320")!.date = daysAgo(250);
+    const late = () => rows().then((list) => list.filter((x) => x.externalId === "302" || x.externalId === "320").map((x) => x.externalId));
+    const mark = async () => {
+      const [m] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.lastBillId"));
+      return m.value as { id: number; scan?: { top: number; page: number; edge: number } };
+    };
+    const first = await run();
+    assert.deepEqual(await late(), [], "ilk çalışma 4 sayfa okur (422…323), eski tarihlilere inemez");
+    assert.doesNotMatch(first.summary, /geç girilmiş/, "pencere içinde yazılan faturalar geç girilmiş sayılmaz");
+    assert.equal((await mark()).id, 301, "sınır ancak tarama bitince ilerler");
+    assert.deepEqual((await mark()).scan, { top: 422, page: 4, edge: 323 }, "kalınan yer saklanır");
+    // Bu arada işlenmiş faturalardan 30'u silinir: sayfalar yukarı kayar, işlenmemiş 322…318 önceki sayfaya geçer
+    for (let n = 330; n < 360; n++) fake.bills.delete(String(n));
+    const second = await run();
+    assert.deepEqual((await late()).sort(), ["302", "320"], "tarama sürdü, kayan sayfada kalan fatura da alındı");
+    assert.match(second.summary, /2 geç girilmiş eski fatura alındı/);
+    assert.deepEqual(await mark().then((m) => [m.id, m.scan]), [422, undefined], "tarama bitti, yeni sınır en büyük kimlik");
+    const third = await run();
+    assert.doesNotMatch(third.summary, /geç girilmiş/, "aynı faturalar her sabah yeniden sayılmaz");
   });
 
   test("istemci: 429'da yeniden dener; yenileme belirteci reddedilince parolayla girer", async () => {

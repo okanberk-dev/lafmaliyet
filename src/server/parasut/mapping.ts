@@ -62,14 +62,18 @@ export interface BillDraft {
   eDocumentTaxNo: string | null;
   /** Kişi kartının türü (`account_type`: "supplier" | "customer"); kart okunamadıysa null */
   contactType: string | null;
-  /** Bütün kalemler laffogato.net'in Paraşüt ürünleri (kod "LAF-…"): satış faturasından açılmış iade */
+  /** Bütün kalemler laffogato.net'in Paraşüt ürünleri (SITE_PRODUCT_CODE): satış faturasından açılmış iade */
   siteProducts: boolean;
   /** Bağlı gelen e-belgenin türü (`invoice_type_code`, büyük harf: "SATIS", "IADE"…); yoksa ya da giden belgede null */
   eDocumentKind: string | null;
 }
 
-/** Sitenin (laffogato.net e-Arşiv / e-Fatura) Paraşüt'te açtığı ürünlerin kodu: alış faturasında bulunmaz */
-export const SITE_PRODUCT_CODE = /^LAF-/i;
+/**
+ * Sitenin (laffogato.net e-Arşiv / e-Fatura) Paraşüt'te açtığı ürünlerin kodu, alış faturasında bulunmaz: LAF-<grup>-<KDV
+ * oranı> (KAFE, MAGAZA, TESLIMAT, HIZMET; karaoke'nin eski kodu LAF-KARAOKE-20). Yalnız bu biçim: muhasebecinin kendi
+ * "LAF-…" kodlu ürünleri (ör. LAF-SUT-1L) sitenin ürünü sayılsaydı o alış faturaları sessizce gider dışı kalırdı
+ */
+export const SITE_PRODUCT_CODE = /^LAF-(KAFE|MAGAZA|TESLIMAT|HIZMET|KARAOKE)-\d{1,3}$/i;
 /** Gelen iade e-faturası: GİB kuralıyla iadeyi malı geri veren alıcı keser, gelen iade kafenin sattığı bir malındır */
 export const RETURN_DOC_TYPES: readonly string[] = ["IADE", "TEVKIFATIADE"];
 /** Panele gider olarak girmeyen satış iadesinin nedeni (eşitleme özeti, bağlı kaydın notu) */
@@ -78,8 +82,8 @@ export const SALES_RETURN = "satış iadesi";
 /**
  * Bu gider faturası aslında bir satış iadesi mi (docs/PARASUT.md §2a). Paraşüt bir satış faturasına karşı kesilen
  * iadeyi Giderler'e yazar: sitenin faturaladığı bir siparişin iadesi gider faturası olarak gelir, müşteri tedarikçi
- * olurdu. İşaretler: kalemlerin hepsi sitenin ürünü (LAF-…), bağlı gelen e-belge iade türünde ya da iade faturasının
- * kişisi müşteri kartı. Tedarikçi kartlı iade faturası eskisi gibi eksi gider sayılır.
+ * olurdu. İşaretler: kalemlerin hepsi sitenin ürünü (LAF-KAFE-10 gibi), bağlı gelen e-belge iade türünde ya da iade
+ * faturasının kişisi müşteri kartı. Tedarikçi kartlı iade faturası eskisi gibi eksi gider sayılır.
  */
 export function isSalesReturn(d: Pick<BillDraft, "itemType" | "contactType" | "siteProducts" | "eDocumentKind">): boolean {
   if (d.siteProducts) return true;

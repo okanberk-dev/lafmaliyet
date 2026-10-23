@@ -14,11 +14,12 @@ import { supersedeHolds } from "@/server/data/price-holds";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
-import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
+import { PAGE_SIZE, ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
 import { MANAGED_QTY_NOTE } from "./constants";
 import { readParasutConfig } from "./config";
 import { str, type ListResponse, type ShowResponse } from "./jsonapi";
 import { categoryNeedsReview, eInvoiceToDraft, isSupplierReturn, shouldImportEInvoice, type EInvoiceAttrs, type EInvoiceDraft } from "./einvoice";
+import { parseLateCursor, runLateScan } from "./late-bills";
 import { readEInvoiceLines, type LineReadStats } from "./lines";
 import {
   billToDraft,
@@ -58,9 +59,9 @@ export const IGNORE_KEY = "parasut.ignore";
 /** Tedarikçi geçmişinin kaldığı yer: Paraşüt kişi kimliği → sonraki çalışmanın okuyacağı sayfa (eskiden yeniye) */
 const HISTORY_KEY = "parasut.supplierHistory";
 /**
- * Geç girilen faturalar: en son görülen gider faturası kimliği. Paraşüt kimlikleri artarak verilir; tarihi eski ama
- * yeni girilmiş fatura (kâğıt fatura, KDV'si sonraki yıl sonuna kadar indirilebilir) 75 günlük pencerenin dışında
- * kalsa da kimliği büyüktür (catchLateBills)
+ * Geç girilen faturalar: görülmüş en büyük gider faturası kimliği ve bitmemiş taramanın yeri (late-bills.ts). Paraşüt
+ * kimlikleri artarak verilir; tarihi eski ama yeni girilmiş fatura (kâğıt fatura, KDV'si sonraki yıl sonuna kadar
+ * indirilebilir) 75 günlük pencerenin dışında kalsa da kimliği büyüktür (catchLateBills)
  */
 const LAST_BILL_KEY = "parasut.lastBillId";
 /** Eşitlemenin kendi durumu; "Oturumu sıfırla" bunları siler (vergi no tamamlaması da baştan başlar) */
@@ -152,6 +153,9 @@ function supplierAliases(names: string[]) {
 /** Kişi kartlarının önbelleği: ad, vergi no ve tür (`account_type`; eski kayıtlarda yok) */
 type ContactCache = Record<string, { name: string; taxNo: string | null; type?: string | null }>;
 
+/** Gider faturası Paraşüt'te: silinmiş ya da iptal ("gone"), duruyor ("present"), okunamadı ("unknown") */
+type BillState = "gone" | "present" | "unknown";
+
 type Existing = ExistingInvoice & {
   eInvoiceId: string | null;
   unpaid: boolean;
@@ -193,8 +197,8 @@ interface Ctx {
   taxFilled: number;
   /** Bu çalışmanın listesinde görünen gider faturaları (yeniden içeri alınan e-fatura: eski fatura hâlâ duruyor mu) */
   listed: Set<string>;
-  /** Gider faturası Paraşüt'te silinmiş ya da iptal mi (tek okuma; bilinemezse false: kayıt taşınmaz) */
-  billGone: (externalId: string) => Promise<boolean>;
+  /** Gider faturası Paraşüt'te silinmiş ya da iptal mi (tek okuma; okunamazsa "unknown") */
+  billState: (externalId: string) => Promise<BillState>;
   /** Bu çalışmada görülen, panele girmeyen iadeler (kimliğe göre) */
   returns: { sales: Map<string, Omit<ReturnEntry, "seenAt">>; supplier: Map<string, Omit<ReturnEntry, "seenAt">> };
 }
@@ -296,8 +300,11 @@ async function retire(match: Existing, reason: string, ctx: Ctx, billOnly = fals
   }
 }
 
-/** Tek bir Paraşüt faturasını panele yazar (yeni / güncelle / kaldır) */
-async function applyDraft(d: BillDraft, ctx: Ctx) {
+/**
+ * Tek bir Paraşüt faturasını panele yazar (yeni / güncelle / kaldır). "deferred": bu çalışmada yazılamadı (yeniden
+ * içeri alınan e-faturanın eski gider faturası Paraşüt'e sorulamadı), sonraki çalışma yeniden dener
+ */
+async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefined> {
   const db = getDb();
   if (ctx.ignored.has(d.externalId) || ctx.applied.has(d.externalId)) return;
   ctx.applied.add(d.externalId);
@@ -312,8 +319,16 @@ async function applyDraft(d: BillDraft, ctx: Ctx) {
   let relinkFrom: string | null = null;
   let twin: Existing | null = null;
   if (holder?.externalId) {
-    const gone = !ctx.listed.has(holder.externalId) && (await ctx.billGone(holder.externalId));
-    if (gone) {
+    const state = ctx.listed.has(holder.externalId) ? "present" : await ctx.billState(holder.externalId);
+    if (state === "unknown") {
+      // Eski fatura okunamadı (ağ, zaman aşımı, Paraşüt hatası): yeni fatura bu çalışmada yazılmaz, sonraki çalışma
+      // yeniden sorar. "Duruyor" sayılsaydı aynı e-fatura ödenmedi ikinci bir kayıt olarak açılır, eski fatura sonra
+      // silinmiş görülse de iki kayıt hiç birleşmezdi (ödeme iki kez yapılabilirdi)
+      ctx.applied.delete(d.externalId);
+      console.warn("Paraşüt: yeniden içeri alınan e-faturanın eski faturası okunamadı, sonraki eşitlemeye kaldı", { bill: d.externalId, previous: holder.externalId });
+      return "deferred";
+    }
+    if (state === "gone") {
       byEDoc = holder;
       relinkFrom = holder.externalId;
     } else twin = holder;
@@ -558,18 +573,21 @@ async function loadCtx(listed: Iterable<string> = [], client: ParasutClient | nu
     paymentsSince,
     taxFilled: 0,
     listed: new Set(listed),
-    billGone: client ? (id) => billGone(client, id) : async () => false,
+    billState: client ? (id) => billState(client, id) : async () => "present",
     returns: { sales: new Map(), supplier: new Map() },
   };
 }
 
-/** Gider faturası Paraşüt'te silinmiş (404) ya da iptal edilmiş mi; okunamazsa false (kayıt yerinde kalır) */
-async function billGone(client: ParasutClient, externalId: string): Promise<boolean> {
+/**
+ * Gider faturası Paraşüt'te silinmiş (404) ya da iptal edilmiş mi. Okunamazsa (ağ, zaman aşımı, 5xx, süre) "unknown":
+ * kayıt taşınmaz, yeni fatura da yazılmaz (applyDraft)
+ */
+async function billState(client: ParasutClient, externalId: string): Promise<BillState> {
   try {
     const res = await client.show<Record<string, unknown>>(`purchase_bills/${encodeURIComponent(externalId)}`);
-    return str(res.data.attributes.item_type) === "cancelled";
+    return str(res.data.attributes.item_type) === "cancelled" ? "gone" : "present";
   } catch (e) {
-    return e instanceof ParasutError && !(e instanceof ParasutAuthError) && e.status === 404;
+    return e instanceof ParasutError && !(e instanceof ParasutAuthError) && e.status === 404 ? "gone" : "unknown";
   }
 }
 
@@ -725,7 +743,7 @@ export async function syncParasut(
     }
 
     // ---- geç girilen eski tarihli faturalar (kimlik sırasıyla; tam turdan sonra, e-faturalara süre kalacak kadar)
-    let late: { applied: number; done: boolean } | null = null;
+    let late: { created: number; done: boolean } | null = null;
     if (reachedEnd && !partial && Date.now() - started < deadline - 14_000) {
       try {
         late = await catchLateBills(client, ctx, { include, contacts, until: started + deadline * CONTACTS_SHARE });
@@ -804,7 +822,7 @@ export async function syncParasut(
       lineStats?.read ? `${lineStats.read} e-faturanın kalemleri okundu` : "",
       lineStats?.corrected ? `${lineStats.corrected} tevkifatlı faturanın tutarı belgeden düzeltildi` : "",
       lineStats?.remaining ? `${lineStats.remaining} faturanın kalemleri sırada` : "",
-      late?.applied ? `${late.applied} geç girilmiş eski fatura alındı` : "",
+      late?.created ? `${late.created} geç girilmiş eski fatura alındı` : "",
       returns.sales ? `${returns.sales} satış iadesi gider sayılmadı` : "",
       returns.supplier ? `${returns.supplier} tedarikçiye iade panele girmedi (Paraşüt sayfasında)` : "",
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
@@ -1033,51 +1051,44 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
 
 /**
  * Geç girilen faturalar: Paraşüt'e bugün girilen ama tarihi 75 günlük pencereden eski fatura günlük taramada görünmez
- * (liste tarihe göre okunur). Kimliğe göre azalan sırayla (`sort=-id`) en son görülen kimliğe kadar okunur, panelde
- * olmayanlar yazılır (pencere içindekiler bu çalışmada zaten yazıldı, tekrar yazılmaz). İlk çalışmada yalnız en büyük
- * kimlik kaydedilir (eskiler "Tarihten eşitle" ile alınır). Sayfa sınırı ya da süre dolarsa kimlik ilerlemez, sonraki
- * çalışma baştan okur.
+ * (liste tarihe göre okunur). Kimliğe göre azalan sırayla (`sort=-id`) önceki taramanın en büyük kimliğine kadar
+ * okunur, panelde olmayanlar yazılır (pencere içindekiler bu çalışmada zaten yazıldı, tekrar yazılmaz). Bir çalışmada
+ * en çok LATE_PAGES sayfa; tarama bitmezse kaldığı yer saklanır, sonraki çalışma oradan sürer (late-bills.ts). İlk
+ * çalışmada yalnız en büyük kimlik kaydedilir (eskiler "Tarihten eşitle" ile alınır). `created`: yeni açılan kayıt
+ * (var olan kayda bağlanan fatura sayılmaz; özet aynı faturayı her sabah yeniden saymasın)
  */
 async function catchLateBills(
   client: ParasutClient,
   ctx: Ctx,
   opts: { include: string; contacts: ContactCache; until: number },
-): Promise<{ applied: number; done: boolean }> {
-  const stored = await getState<{ id?: unknown }>(LAST_BILL_KEY);
-  const last = typeof stored?.id === "number" && Number.isSafeInteger(stored.id) ? stored.id : null;
-  let top = last ?? 0;
-  // Son görülen kimliğe ya da listenin sonuna inildi: yalnız o zaman kimlik ilerler
-  let complete = false;
-  const found: BillDraft[] = [];
-  for await (const page of client.pages<Record<string, unknown>>("purchase_bills", { sort: "-id", include: opts.include }, last === null ? 1 : LATE_PAGES)) {
-    let reached = false;
-    for (const bill of page.data) {
-      const n = Number(bill.id);
-      if (!Number.isSafeInteger(n)) continue;
-      if (n > top) top = n;
-      if (last !== null && n <= last) {
-        reached = true;
-        break;
-      }
-      found.push(billToDraft(bill, page.included));
-    }
-    const total = page.meta?.total_pages;
-    if (reached || !page.data.length || (total !== undefined && page.page >= total)) {
-      complete = true;
-      break;
-    }
-    if (last === null || Date.now() > opts.until) break;
-  }
-  if (last === null) {
-    if (top) await setState(LAST_BILL_KEY, { id: top, at: new Date().toISOString() });
-    return { applied: 0, done: true };
-  }
-  if (!opts.include.startsWith("supplier")) await fillSupplierNames(client, found, opts.contacts, opts.until);
-  const before = ctx.counts.created + ctx.counts.updated;
-  for (const d of found) ctx.listed.add(d.externalId);
-  for (const d of found) await applyDraft(d, ctx);
-  if (complete && top > last) await setState(LAST_BILL_KEY, { id: top, at: new Date().toISOString() });
-  return { applied: ctx.counts.created + ctx.counts.updated - before, done: complete };
+): Promise<{ created: number; done: boolean }> {
+  const before = ctx.counts.created;
+  const run = await runLateScan<BillDraft>(
+    parseLateCursor(await getState(LAST_BILL_KEY)),
+    {
+      read: async (page) => {
+        let res: ListResponse<Record<string, unknown>>;
+        try {
+          res = await client.get<ListResponse<Record<string, unknown>>>("purchase_bills", { sort: "-id", include: opts.include, "page[number]": page, "page[size]": PAGE_SIZE });
+        } catch (e) {
+          // Süre doldu: okunmuş sayfalar yazılır, kalınan yer saklanır
+          if (e instanceof ParasutDeadlineError) return null;
+          throw e;
+        }
+        const bills = res.data.map((b) => ({ n: Number(b.id), bill: b })).filter((b) => Number.isSafeInteger(b.n));
+        return { bills: bills.map(({ n, bill }) => ({ n, bill: billToDraft(bill, res.included) })), totalPages: res.meta?.total_pages };
+      },
+      prepare: async (found) => {
+        if (!opts.include.startsWith("supplier")) await fillSupplierNames(client, found, opts.contacts, opts.until);
+        for (const d of found) ctx.listed.add(d.externalId);
+      },
+      apply: (d) => applyDraft(d, ctx),
+    },
+    { pages: LATE_PAGES, until: opts.until },
+  );
+  if (run.passed.length) console.warn("Paraşüt geç girilen faturalar: art arda yazılamayan fatura geçildi", run.passed);
+  if (run.save) await setState(LAST_BILL_KEY, { ...run.save, at: new Date().toISOString() });
+  return { created: ctx.counts.created - before, done: run.complete };
 }
 
 /** Önbellekteki tedarikçi adlarını taslaklara yazar; ad henüz okunamadıysa yer tutucu kalır (sonraki eşitlemede düzelir) */
