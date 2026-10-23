@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PAYMENT_STATUSES, type SiteReservation } from "./session";
+import { isCancelledBooking, PAYMENT_STATUSES, type KaraokeStatus, type PaymentStatus, type SiteReservation } from "./session";
 
 /**
  * Sitenin yanıtını doğrular: bozuk ya da beklenmeyen satır atlanır (eşitlemeyi durdurmaz), bilinmeyen durum
@@ -24,6 +24,8 @@ const reservationSchema = z.object({
   channel: z.string().catch("").transform((v) => v.slice(0, 20)),
   createdAt: z.string().catch("").transform((v) => v.slice(0, 40)),
   updatedAt: z.string().catch("").transform((v) => v.slice(0, 40)),
+  // İsteğe bağlı: site bugün göndermiyor; gönderirse iptal anı ondan (yoksa ya da bozuksa yok sayılır)
+  cancelledAt: z.string().max(40).optional().catch(undefined),
 });
 
 const responseSchema = z.object({
@@ -54,4 +56,35 @@ export function parseSiteResponse(json: unknown): SiteSnapshot {
     else skipped++;
   }
   return { now: res.now, from: res.from, to: res.to, complete: res.complete, reservations, skipped };
+}
+
+/** Sitenin zaman metni → Date; boş ya da bozuksa null */
+export function siteTime(v: string | null | undefined): Date | null {
+  if (!v) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? new Date(t) : null;
+}
+
+/**
+ * Rezervasyonun iptal anı (doluluk haritasının "son dakika iptal"i; docs/KARAOKE.md › Doluluk haritası). Satır iptal
+ * edilmiş bir rezervasyon değilse null (yeniden açılan iptal de boşalır). Site anı gönderirse o; panel anı zaten
+ * biliyorsa korunur. Yoksa iptale geçişi panel gördüyse (önceki satır iptal değildi) sitenin son değişikliği
+ * (updatedAt; ping saniyeler içinde gelir), o da yoksa şimdi. Önceki satırda iptal anı yoksa bilinmez (null). İlk kez
+ * iptal hâlinde görülen satırda (ilk eşitleme, geçmişten alma) yalnız ödeme akışı yoksa (ödeme yok ya da bekliyor)
+ * updatedAt: iade adımları updatedAt'i sonradan oynatır, ödenmiş ya da iade edilmişte zaman bilinmez. Gelecekteki an
+ * şimdiye kırpılır (iki sunucunun saat farkı).
+ */
+export function cancelledAtFor(
+  prev: { cancelledAt: Date | null; status: KaraokeStatus; paymentStatus: PaymentStatus } | null,
+  r: Pick<SiteReservation, "status" | "paymentStatus" | "updatedAt" | "cancelledAt">,
+  now: Date,
+): Date | null {
+  if (!isCancelledBooking(r)) return null;
+  const clamp = (d: Date) => (d.getTime() > now.getTime() ? now : d);
+  const site = siteTime(r.cancelledAt);
+  if (site) return clamp(site);
+  if (prev?.cancelledAt) return prev.cancelledAt;
+  const updated = siteTime(r.updatedAt);
+  if (prev) return isCancelledBooking(prev) ? null : clamp(updated ?? now);
+  return updated && (r.paymentStatus === "none" || r.paymentStatus === "pending") ? clamp(updated) : null;
 }

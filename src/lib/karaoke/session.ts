@@ -27,6 +27,8 @@ export interface SiteReservation {
   channel: string;
   createdAt: string;
   updatedAt: string;
+  /** İptal anı: site bugün göndermiyor; eklerse panel onu kullanır (docs/KARAOKE.md › Doluluk haritası) */
+  cancelledAt?: string;
 }
 
 /** Panelin tuttuğu oturum (ekrana giden biçim); tutar yalnız yöneticiye gider */
@@ -56,6 +58,13 @@ export const isHold = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus 
 
 /** Gerçek rezervasyon: iptal değil, ödemesi beklenen tutma değil */
 export const isLive = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus }) => r.status !== "cancelled" && !isHold(r);
+
+/**
+ * İptal edilmiş gerçek rezervasyon: iptal (ödeme sayfasında süresi dolan tutma değil) ya da iade. Doluluk haritasının
+ * iptal sayısı ve eşitlemenin iptal anı aynı kurala bakar (docs/KARAOKE.md › Doluluk haritası)
+ */
+export const isCancelledBooking = (r: { status: KaraokeStatus; paymentStatus: PaymentStatus }) =>
+  (r.status === "cancelled" && r.paymentStatus !== "expired") || r.paymentStatus === "refunded" || r.paymentStatus === "refunding";
 
 /**
  * Sitedeki değişiklik personel için ne demek: yeni rezervasyon (ilk kez görülen ya da ödemesi tamamlanan tutma, yeniden

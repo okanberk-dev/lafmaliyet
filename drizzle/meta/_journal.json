@@ -204,6 +204,20 @@
       "when": 1792737647449,
       "tag": "0028_claude_baglantisi",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792752031250,
+      "tag": "0029_kontrol_listeleri",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792752056339,
+      "tag": "0030_karaoke_doluluk",
+      "breakpoints": true
     }
   ]
 }

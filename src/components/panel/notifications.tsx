@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info } from "lucide-react";
+import { Activity, AlarmClock, AlertCircle, AlertTriangle, Banknote, Bell, CalendarClock, CheckCheck, ClipboardCheck, FileText, Info, ListChecks } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -16,8 +16,10 @@ import { useLocalList } from "./local-list";
 /**
  * AkmanOS "Notification Dropdown" görünümünde zil: yöneticide en üstte günlük işlerin sorunları ("Sistem": sabah işi ya
  * da Paraşüt işi çalışmadı, hata verdi), sonra kişinin kendi hatırlatıcıları ve reçete onayları (yöneticide
- * onay bekleyen öneriler, personelde önerilerinin sonucu), sonra zamanı gelen ödemeler, faturalar (Paraşüt'ten yeni
- * gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları. Personel yalnız ilk ikisini görür.
+ * onay bekleyen öneriler, personelde önerilerinin sonucu), kasa, kontrol listeleri (geciken ya da dünden eksik liste,
+ * aralık dışı ölçüm; personelde bekleyen liste), sonra zamanı gelen ödemeler, faturalar (Paraşüt'ten yeni gelenler,
+ * kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları. Personel hatırlatıcılarını, önerilerini,
+ * kasayı ve kontrol listelerini görür.
  * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
  * (ör. düşük kârlı ürün sayısı) yeni bildirim sayılır. Her açılışta liste arka planda tazelenir.
  */
@@ -77,6 +79,7 @@ export function NotificationMenu({
     { id: "hatirlatici", label: "Hatırlatıcılarım", items: visible.filter((n) => n.group === "hatirlatici") },
     { id: "onay", label: role === "admin" ? "Onaylar" : "Önerilerim", items: visible.filter((n) => n.group === "onay") },
     { id: "kasa", label: "Kasa", items: visible.filter((n) => n.group === "kasa") },
+    { id: "kontrol", label: "Kontrol listeleri", items: visible.filter((n) => n.group === "kontrol") },
     { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
     { id: "fatura", label: "Faturalar", items: visible.filter((n) => n.group === "fatura") },
     { id: "uyari", label: "Uyarılar", items: visible.filter((n) => !n.group || n.group === "uyari") },
@@ -237,6 +240,8 @@ export function NotificationMenu({
                                 ? ClipboardCheck
                                 : n.group === "kasa"
                                   ? Banknote
+                                : n.group === "kontrol" && n.kind !== "danger"
+                                  ? ListChecks
                                 : n.group === "fatura" && n.kind !== "danger"
                                   ? FileText
                                   : n.group === "sistem" && n.kind !== "danger"

@@ -9,18 +9,27 @@ import type { Role } from "./constants";
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, fiyat, kâr, maaş ve ayar ekranları yok; günün
  * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), karaoke
- * sayacını, gün sonu kasa raporunu, zayi / ikram kaydını, stok sayımını ve kendi hatırlatıcılarını kullanır.
+ * sayacını, gün sonu kasa raporunu, açılış / kapanış kontrol listelerini, zayi / ikram kaydını, stok sayımını ve kendi
+ * hatırlatıcılarını kullanır. Kontrol listelerinin yönetici alt sayfaları (Geçmiş, Listeler) personeli kendileri geri
+ * gönderir (requireAdmin; Kasa'nın yönetici görünümleri gibi).
  */
 export const STAFF_PATHS = [
   "/panel/bugun",
   "/panel/karaoke",
   "/panel/kasa",
+  "/panel/kontrol",
   "/panel/zayi",
   "/panel/receteler",
   "/panel/hatirlaticilarim",
   "/panel/sayim",
   "/panel/hesap",
 ] as const;
+
+/**
+ * Personel yolunun altında yalnız yöneticinin ekranı (tutar gösterir): proxy personeli buraya sokmaz, sayfa ve
+ * eylemleri ayrıca requireAdmin ile denetler. canOpen önce buna bakar.
+ */
+export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk"] as const;
 
 /**
  * Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran: Bugün (günün işleri; ay sonu sayımı da orada
@@ -40,5 +49,6 @@ function under(pathname: string, base: string): boolean {
 /** Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz) */
 export function canOpen(role: Role, pathname: string): boolean {
   if (role === "admin" || !under(pathname, "/panel")) return true;
+  if (ADMIN_ONLY_PATHS.some((p) => under(pathname, p))) return false;
   return STAFF_PATHS.some((p) => under(pathname, p));
 }

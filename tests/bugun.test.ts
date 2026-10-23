@@ -29,6 +29,7 @@ import {
   type DayTask,
 } from "../src/app/panel/bugun/logic";
 import { businessDate, isCashEvening, revisionDataOf, trHour, type CashRevisionRow } from "../src/lib/cash-report";
+import { checklistBoundaries, type ChecklistLite, type IssueLite, type RunLite } from "../src/lib/checklists";
 import { jobHealth, type JobKey, type JobRunLite, type RunStatus } from "../src/lib/job-health";
 import type { KaraokeSessionDTO } from "../src/lib/karaoke/session";
 import { HOLDS_HREF } from "../src/lib/price-hold";
@@ -545,6 +546,184 @@ test("personelin olgusuna yönetici bilgisi yanlışlıkla gelse de hiçbir yön
   assert.doesNotMatch(byKey(sent).kasa.detail, /devir/);
 });
 
+// ---------------------------------------------------------------- Kontrol listeleri (docs/KONTROL-LISTELERI.md)
+
+/** Günün listesi: kayıt yoksa `run` null; varsayılan Açılış 11 zorunlu madde, 2'si fotoğraflı */
+function checklist(templateId: number, name: string, opensAt: string, dueAt: string, run: Partial<RunLite> | null = null, o: Partial<ChecklistLite> = {}): ChecklistLite {
+  return {
+    templateId,
+    name,
+    opensAt,
+    dueAt,
+    required: run?.required ?? 11,
+    photos: 2,
+    staffAllowed: true,
+    run: run
+      ? {
+          required: 11,
+          done: 0,
+          complete: false,
+          photosLeft: 0,
+          photos: 0,
+          missing: [],
+          issues: [],
+          contributors: ["Ayşe"],
+          firstAt: tr("2026-10-22T08:40").toISOString(),
+          lastAt: tr("2026-10-22T08:50").toISOString(),
+          completedAt: null,
+          ...run,
+        }
+      : null,
+    ...o,
+  };
+}
+
+const ACILIS = checklist(1, "Açılış", "08:00", "11:00");
+const KAPANIS = checklist(2, "Kapanış", "22:00", "02:00", null, { required: 15, photos: 3 });
+const lists = (...l: ChecklistLite[]) => ({ day: "2026-10-22", lists: l });
+
+const RANGE: IssueLite = {
+  answerId: 41,
+  itemId: 2,
+  label: "Bar buzdolabı sıcaklığı",
+  text: "Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)",
+  note: "kapı açık kalmış",
+  by: "Ayşe",
+  at: tr("2026-10-22T09:12").toISOString(),
+  open: true,
+  versions: 0,
+  kind: "range",
+};
+
+test("kontrol 1. personel 09:00: Açılış yapılacak ve sıradaki, Kapanış sonra (saat aralığı rozette); 07:00'de ikisi de sonra", () => {
+  const tasks = dayTasks(staff(tr("2026-10-22T09:00"), { checklists: lists(ACILIS, KAPANIS) }));
+  assert.deepEqual(keys(tasks), ["liste-1", "liste-2", "zayi", "kasa"]);
+  const t = byKey(tasks);
+  assert.equal(t["liste-1"].status, "todo");
+  assert.equal(t["liste-1"].badge, undefined);
+  assert.equal(t["liste-1"].title, "Açılış listesi");
+  assert.equal(t["liste-1"].detail, "11 madde, 2 fotoğraflı · son saat 11:00.");
+  assert.equal(t["liste-1"].href, "/panel/kontrol/1");
+  assert.equal(t["liste-1"].action, "Listeyi aç");
+  assert.equal(splitTasks(tasks).next?.key, "liste-1");
+  assert.equal(t["liste-2"].status, "later");
+  assert.equal(t["liste-2"].badge, "22:00–02:00");
+  assert.equal(t["liste-2"].detail, "15 madde, 3 fotoğraflı · 22:00 – 02:00 arası.");
+  const early = dayTasks(staff(tr("2026-10-22T07:00"), { checklists: lists(ACILIS, KAPANIS) }));
+  assert.deepEqual(
+    early.filter((x) => x.key.startsWith("liste")).map((x) => [x.key, x.status, x.badge]),
+    [
+      ["liste-1", "later", "08:00–11:00"],
+      ["liste-2", "later", "22:00–02:00"],
+    ],
+  );
+});
+
+test("kontrol 2. son saat geçti: gecikti (personele 'Gün 05:00'te kapanır'); başlamış listede ilerleme; yarım liste ilerleme ve kalan fotoğrafla", () => {
+  const late = byKey(dayTasks(staff(tr("2026-10-22T12:00"), { checklists: lists(ACILIS) })))["liste-1"];
+  assert.equal(late.status, "warn");
+  assert.equal(late.badge, "Gecikti");
+  assert.equal(late.detail, "Henüz başlanmadı · son saat 11:00 idi. Gün 05:00'te kapanır.");
+  assert.equal(late.action, "Listeyi aç");
+  const adminLate = byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: lists(checklist(1, "Açılış", "08:00", "11:00", { done: 3, required: 12 })) })))["liste-1"];
+  assert.equal(adminLate.detail, "3 / 12 madde · son saat 11:00 idi.");
+  assert.equal(adminLate.action, "Devam et");
+  const half = byKey(dayTasks(staff(tr("2026-10-22T09:00"), { checklists: lists(checklist(1, "Açılış", "08:00", "11:00", { done: 3, required: 12, photosLeft: 1, contributors: ["Ayşe", "Mehmet"] })) })))["liste-1"];
+  assert.equal(half.status, "todo");
+  assert.equal(half.badge, "3 / 12");
+  assert.equal(half.detail, "3 / 12 madde · Ayşe ve Mehmet · son saat 11:00. 1 fotoğraf kaldı.");
+  assert.equal(half.action, "Devam et");
+  // Aralıktan önce başlanan liste de yapılacak (Kapanış sabah doldurulursa)
+  const early = byKey(dayTasks(staff(tr("2026-10-22T10:00"), { checklists: lists(checklist(2, "Kapanış", "22:00", "02:00", { done: 2, required: 15 })) })))["liste-2"];
+  assert.equal(early.status, "todo");
+});
+
+test("kontrol 3. tamam: kim ve saat, geç ve fotoğraf sayısı; açık sorun yöneticide 'sorun var', personelde tamam ve 'sorun bildirildi'", () => {
+  const done = { complete: true, done: 11, photos: 2, completedAt: tr("2026-10-22T09:42").toISOString(), contributors: ["Ayşe", "Mehmet"] };
+  const ok = byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: lists(checklist(1, "Açılış", "08:00", "11:00", done)) })))["liste-1"];
+  assert.equal(ok.status, "done");
+  assert.equal(ok.badge, "Tamam");
+  assert.equal(ok.detail, "Ayşe ve Mehmet · 09:42 · 2 fotoğraf");
+  assert.equal(ok.action, "Listeye bak");
+  const late = byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: lists(checklist(1, "Açılış", "08:00", "11:00", { ...done, photos: 0, completedAt: tr("2026-10-22T11:20").toISOString() })) })))["liste-1"];
+  assert.equal(late.detail, "Ayşe ve Mehmet · 11:20 · geç");
+  const problem = lists(checklist(1, "Açılış", "08:00", "11:00", { ...done, issues: [RANGE, { ...RANGE, answerId: 43, open: false, text: "Bar buzdolabı sıcaklığı: 6 °C → 3,5 °C" }] }));
+  const a = byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: problem })))["liste-1"];
+  assert.equal(a.status, "warn");
+  assert.equal(a.badge, "1 sorun");
+  assert.equal(a.detail, "Ayşe ve Mehmet · 09:42 · Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)");
+  const s = byKey(dayTasks(staff(tr("2026-10-22T12:00"), { checklists: problem })))["liste-1"];
+  assert.equal(s.status, "done");
+  assert.equal(s.badge, "Tamam");
+  assert.equal(s.detail, "Ayşe ve Mehmet · 09:42 · 1 sorun bildirildi");
+  // Sorun metni uzunsa 140 karakterde kısalır
+  const long = lists(checklist(1, "Açılış", "08:00", "11:00", { ...done, issues: Array.from({ length: 6 }, (_, i) => ({ ...RANGE, answerId: i })) }));
+  assert.ok(byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: long })))["liste-1"].detail.length <= 140);
+});
+
+test("kontrol 4. dünkü listeler yalnız yöneticide, yalnız eksik ya da sorun varken; dünün kasa raporu da yoksa kafe kapalı olabilir", () => {
+  const yesterday = { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 }), checklist(2, "Kapanış", "22:00", "02:00", { done: 13, required: 16 })] };
+  const row = byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday, cash: { today: null, yesterday: report("2026-10-21"), firstDate: "2026-10-01" } })))["liste-dun"];
+  assert.equal(row.status, "warn");
+  assert.equal(row.title, "Dünkü kontrol listeleri");
+  assert.equal(row.badge, "1 eksik");
+  assert.equal(row.detail, "Kapanış: 3 madde yapılmadı");
+  assert.equal(row.href, "/panel/kontrol/gecmis?gun=2026-10-21");
+  assert.equal(row.action, "Geçmişe bak");
+  // Hiç açılmadı + düzeltilmiş ölçüm; dünün kasası da yok (kasa kullanılıyor): not eklenir
+  const fixed = { ...RANGE, open: false, text: "Bar buzdolabı sıcaklığı: 6 °C → 3,5 °C" };
+  const closed = byKey(
+    dayTasks(
+      admin(NOON, {
+        checklistsYesterday: { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11, issues: [fixed] }), checklist(2, "Kapanış", "22:00", "02:00")] },
+        cash: { today: null, yesterday: null, firstDate: "2026-10-01" },
+      }),
+    ),
+  )["liste-dun"];
+  assert.equal(closed.detail, "Kapanış: hiç açılmadı · Bar buzdolabı sıcaklığı: 6 °C → 3,5 °C · Kasa raporu da yok; kafe kapalıysa önemsemeyin.");
+  // Yalnız sorun: rozet sorun sayısı
+  const onlyProblem = byKey(dayTasks(admin(NOON, { checklistsYesterday: { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11, issues: [RANGE] })] } })))["liste-dun"];
+  assert.equal(onlyProblem.badge, "1 sorun");
+  // Hepsi tamam ve sorunsuz: satır yok; kasa hiç kullanılmadıysa not yok
+  assert.ok(!keys(dayTasks(admin(NOON, { checklistsYesterday: { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 })] } }))).includes("liste-dun"));
+  assert.doesNotMatch(byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday })))["liste-dun"].detail, /Kasa raporu/);
+  // Personelde hiç yok
+  assert.ok(!keys(dayTasks(staff(NOON, { checklistsYesterday: yesterday }))).includes("liste-dun"));
+});
+
+test("kontrol 5. okunamadı: tek gri satır; olgu yoksa (eski olgular) satır yok", () => {
+  const t = byKey(dayTasks(staff(NOON, { checklists: null })))["liste"];
+  assert.equal(t.status, "later");
+  assert.equal(t.badge, "Okunamadı");
+  assert.equal(t.detail, "Kontrol listeleri şu an okunamadı.");
+  assert.equal(t.href, "/panel/kontrol");
+  assert.ok(!keys(dayTasks(staff(NOON))).some((k) => k.startsWith("liste")));
+});
+
+test("kontrol 6. sıra: personelde 23:00'te Kapanış zayi ve kasadan önce, sıradaki; yöneticide dünkü listeler kasa-dun'dan sonra, günün listeleri sayımdan sonra", () => {
+  const morningDone = checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 });
+  const tasks = dayTasks(staff(tr("2026-10-22T23:00"), { checklists: lists(KAPANIS, morningDone), waste: { count: 0, zayi: null, ikram: null } }));
+  assert.deepEqual(keys(tasks), ["liste-1", "liste-2", "zayi", "kasa"]);
+  assert.equal(splitTasks(tasks).next?.key, "liste-2");
+  const adminTasks = dayTasks(
+    admin(tr("2026-11-03T21:00"), {
+      cash: { today: null, yesterday: null, firstDate: "2026-10-01" },
+      stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false, prevCounted: 0, prevTotal: 40 },
+      checklists: { day: "2026-11-03", lists: [KAPANIS, ACILIS] },
+      checklistsYesterday: { day: "2026-11-02", lists: [checklist(2, "Kapanış", "22:00", "02:00")] },
+    }),
+  );
+  assert.deepEqual(keys(adminTasks), ["kasa-dun", "liste-dun", "odeme", "fatura", "sayim-gecen", "liste-1", "liste-2", "kasa"]);
+});
+
+test("kontrol 7. kendiliğinden yenileme: listenin açılış ve son saatinde (10:00'da sıradaki an 11:00)", () => {
+  const at10 = tr("2026-10-22T10:00");
+  assert.equal(nextRefreshAt(at10, checklistBoundaries(lists(ACILIS, KAPANIS))), tr("2026-10-22T11:00").getTime());
+  assert.equal(nextRefreshAt(tr("2026-10-22T07:30"), checklistBoundaries(lists(ACILIS))), tr("2026-10-22T08:00").getTime());
+  // Kapanışın 02:00'si gece yarısından sonra: 00:30'da sıradaki an 02:00
+  assert.equal(nextRefreshAt(tr("2026-10-23T00:30"), checklistBoundaries(lists(KAPANIS))), tr("2026-10-23T02:00").getTime());
+});
+
 // ---------------------------------------------------------------- Bölümler ve başlık
 
 test("10. bölümler ve başlık: sorun sayısı, hatırlatıcı eki, hepsi tamam", () => {
@@ -760,6 +939,17 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /cashFlags\(reports, before, revisions, viewer\)/);
 });
 
+test("kaynak: kontrol listeleri iki rolde (personel yalnız kendininkiler), dünkü listeler yalnız yöneticide; ekran liste saatlerinde yenilenir", () => {
+  const src = read("src/server/data/today.ts");
+  const adminBody = bodyOf(src, "adminFacts");
+  const load = bodyOf(src, "loadToday");
+  assert.match(load, /safe\(loadChecklistDay\(c\.day, user\.role, now\)\)/);
+  assert.match(load, /checklists: checklists \? \{ day: c\.day, lists: checklists \} : null,/);
+  assert.match(adminBody, /safe\(loadChecklistDay\(yesterday, "admin", now\)\)/);
+  assert.doesNotMatch(bodyOf(src, "staffFacts"), /loadChecklistDay/);
+  assert.match(read("src/app/panel/bugun/page.tsx"), /checklistBoundaries\(data\.facts\.checklists\)/);
+});
+
 test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", () => {
   const src = read("src/server/data/today.ts");
   for (const call of [
@@ -772,6 +962,7 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadUpcoming(",
     "countUnlinkedProducts(",
     "loadUnpricedIngredients(",
+    "loadChecklistDay(",
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }

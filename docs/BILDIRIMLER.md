@@ -21,7 +21,10 @@ Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zi
 bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur. **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (yalnız yönetici;
 **Ürünler › Fiyatlar › Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur; e-postaya girmez,
-`docs/FIYATLAR.md`).
+`docs/FIYATLAR.md`). **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
+liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
+yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
+([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6).
 
 ## Son ödenenler (geri alma)
 
@@ -54,6 +57,10 @@ e-postası**, bildirim adreslerine gider. İçinde:
   fazla farklı gelen, onay bekleyen fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.
   Bekledikçe bölümde görünür; e-postayı yalnız son Paraşüt bölümlü e-postadan beri onaya düşen fiyat gönderir;
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
+- **dünkü kontrol listeleri** (eksik ya da sorun varsa): tamamlanmayan listeler ("3 / 13 madde; yapılmayan: …" ya da
+  "hiç açılmadı"), aralık dışı değerler ve "Sorun var" notları (en çok 5), o gün kasa raporu da yoksa "kafe kapalıysa
+  önemsemeyin"; her gün için bir kez (`kontrol:{gün}`), Kontrol listeleri › Geçmiş bağlantısıyla
+  ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6);
 - **hammadde zamları**: son zam bölümlü e-postadan bu yana fiyatı %5'ten fazla artan hammaddeler (eski → yeni
   ₺/kg, ₺/L, ₺/adet) ve fiyatı hedef maliyet oranının altında kalan ürünler, önerilen fiyatlarıyla (en çok 6);
   bağlantı Ürünler › Hammadde zamları'na gider (`docs/PARASUT.md` 5a). Her zammın fiyatlarının altında ayda kaç
@@ -66,7 +73,7 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam ya da sistem uyarısı yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı ya da dünkü kontrol listelerinin kutusu yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay

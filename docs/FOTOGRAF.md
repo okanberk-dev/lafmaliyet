@@ -58,9 +58,12 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
   KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını. O günlere fotoğraf eklemek de aynı kuralla
   (`src/server/photo-read/rules.ts` › `staffDayOpen`). Kapanan günde personel fotoğrafları görmez (kasadan çıkan
   satırında küçük resim yerine fiş simgesi); WhatsApp metnindeki "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı
-  yazılan" satırları kalır. Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
+  yazılan" satırları kalır. Kontrol listelerinin fotoğraflarını personel, personelin doldurduğu listelerin bugünkü ve
+  dünkü (iş günü) kayıtlarında görür (`src/lib/checklists.ts` › `photoAccess`, [KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)
+  § 4). Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
-  kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf.
+  kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf; bir kontrol listesinde
+  en çok 10 fotoğraflı madde (kontrol fotoğrafı okunmaz, yalnız saklanır; yüklemesi `POST /api/kontrol/foto`).
 - Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını
   kaybetmeden okuduğu en büyük ölçüdür: en uzun kenar en çok 2576 px, alan en çok ~3,7 megapiksel
   (`src/lib/photo-compress.ts` › `PHOTO_COMPRESS`). Telefon fotoğrafı 3:4 olduğundan ~1670×2220 px olur, çoğu
@@ -76,6 +79,7 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 | Yüklenip bir kayda bağlanmayan (form bırakıldı, Kaldır) | 2 gün sonra |
 | Kasa raporunun (Z, POS) | raporun gününden 180 gün (6 ay) sonra |
 | Kasadan çıkan fişin | satırın gününden 400 gün (13 ay) sonra |
+| Kontrol listesinin (açılış, kapanış) | kaydın gününden 60 gün sonra; yeniden çekilenin eskisi hemen |
 | Bağı kalkan (satır silindi, fotoğraf değişti) | 7 gün sonra (Geri al payı) |
 | Silinen kasa raporunun | 30 gün sonra |
 
@@ -117,6 +121,7 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 | Okunan sonuç (rakamlar, mağaza adı, tarih, kalemler; satıcının vergi no'su saklanmaz) | Panelin veritabanı (Neon), `ai_calls.result` | fotoğrafla birlikte silinir (§ 4) |
 | Okumanın maliyet satırı (zaman, tür, kişi, token, tutar) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet kaydı; fotoğraftan ya da fişten bilgi taşımaz) |
 | E-posta ve WhatsApp | yalnız "📷 … fotoğrafı panelde" satırı ve farklı yazılan rakam | fotoğraf ya da adresi hiç gitmez |
+| Kontrol listesinin fotoğrafı (tezgâh, salon, oda) | Vercel Blob (özel depo, Frankfurt); okunmaz, Anthropic'e gitmez | 60 gün (§ 4). Maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der |
 
 Fotoğrafta kasiyerin adı (Z raporu, fiş), satıcının vergi numarası (şahıs şirketinde TC kimlik no olabilir) ya da
 müşteri kartı kullanıldıysa maskeli ad / telefon görünebilir. Okuma, fotoğrafın yurt dışına (Anthropic, ABD)
@@ -185,4 +190,5 @@ görseli `make-images.py`'nin sonuna (öncekilerin rastgele sırası değişmesi
 | `src/components/panel/photo-picker.tsx`, `photo-viewer.tsx` | fotoğraf düğmeleri, durum satırı, küçük resim, büyütme |
 | `src/app/panel/kasa/cash-form.tsx`, `cash-photos.tsx`, `cash-outs.tsx`, `cash-out-dialog.tsx` | ekranlar |
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
+| `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | `scripts/foto-eval/` | canlı değerlendirme |

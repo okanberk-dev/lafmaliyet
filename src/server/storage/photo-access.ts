@@ -1,7 +1,8 @@
 import "server-only";
 
-import { KEEP_DAYS, photoViewDecision, type PhotoKind } from "@/lib/photo-rules";
+import { photoViewDecision, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
+import { kontrolPhotoRules } from "@/server/data/checklists";
 import { cashPhotoRules, receiptPhotoRules } from "@/server/photo-read/rules";
 
 import type { PhotoRow } from "./photos";
@@ -23,8 +24,8 @@ export const PHOTO_RULES: Record<PhotoKind, PhotoKindRules> = {
   "kasa-z": cashPhotoRules,
   "kasa-pos": cashPhotoRules,
   fis: receiptPhotoRules,
-  // Kontrol listeleri kendi kuralıyla değiştirir (kontrol grubu); o gelene kadar yalnız yönetici
-  kontrol: { canView: async () => false, keepDays: KEEP_DAYS.kontrol },
+  // Kontrol listeleri: personel yalnız kendi doldurabildiği listenin bugünkü ve dünkü fotoğraflarını (src/lib/checklists.ts photoAccess)
+  kontrol: kontrolPhotoRules,
 };
 
 export const FORBIDDEN_TEXT = "Bu fotoğrafı görme yetkiniz yok.";
