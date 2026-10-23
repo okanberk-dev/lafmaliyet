@@ -95,10 +95,10 @@ const INFO = {
   occupancy:
     "Odanın dolu olduğu süre ÷ oda saatlerindeki toplam süre. Rezervasyonlar (uzatma dahil) ve rezervasyonsuz sayaçlar sayılır; erken bitirilen oturum bittiği anda boşalır; iptal, süresi dolan ödeme ve iade sayılmaz. Bugün sayılmaz.",
   revenue:
-    "Dolu bir oda-saatin getirdiği para (KDV dahil). Sitede ödenen ya da kasada ödenecek rezervasyon ücretleri, o rezervasyonların dolu saatlerine bölünür. Uzatmaların, rezervasyonsuz oturumların ve odadaki siparişlerin parası kasada alınır, oturuma bağlı değildir: burada sayılmaz. Altındaki açık saat başına rakamı fiyatla doluluğu birlikte gösterir.",
+    "Dolu bir oda-saatin getirdiği para (KDV dahil). Sitede ödenen ya da kasada ödenecek rezervasyon ücretleri, o rezervasyonların kullanılan saatlerine bölünür (uzatma hariç). Uzatmaların, rezervasyonsuz oturumların ve odadaki siparişlerin parası kasada alınır, oturuma bağlı değildir: burada sayılmaz. Altındaki açık saat başına rakamı fiyatla doluluğu birlikte gösterir.",
   extension: "+15 / +30 dk ile süresi uzatılan oturumlar (rezervasyonlu ve rezervasyonsuz).",
   cancel:
-    "Başlangıçtan önceki 24 saat içinde (ya da sonra) iptal edilen rezervasyonlar ÷ bütün rezervasyonlar. Ödeme sayfasında bırakılıp süresi dolanlar rezervasyon sayılmaz. İptal anı, panelin iptali gördüğü andır; siteden geçmişle alınan iptallerin çoğunun zamanı bilinmez.",
+    "Başlangıçtan önceki 24 saat içinde (ya da sonra) iptal edilen rezervasyonlar ÷ bütün rezervasyonlar. Ödeme sayfasında bırakılıp süresi dolanlar rezervasyon sayılmaz. İptal anı, panelin iptali gördüğü andır; geçmişten alınan iptallerin çoğunun zamanı bilinmez ve son dakika sayılmaz.",
   lead: "Sitede rezervasyonun yapıldığı gün ile oturumun günü arasındaki fark (gece 05:00'e kadarki oturum önceki güne sayılır). Rezervasyonsuz oturumlar girmez.",
 };
 
@@ -122,9 +122,11 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
             icon={<MicVocal />}
             title="Henüz karaoke verisi yok"
             description={
-              configured
-                ? "Sitedeki geçmiş rezervasyonları alarak başlayın."
-                : "laffogato.net bağlantısı kurulunca rezervasyonlar gelir; rezervasyonsuz gruplar bar ekranındaki hızlı sayaçla sayılır."
+              !configured
+                ? "laffogato.net bağlantısı kurulunca rezervasyonlar gelir; rezervasyonsuz gruplar bar ekranındaki hızlı sayaçla sayılır."
+                : progress.done
+                  ? "Sitede geçmiş karaoke rezervasyonu bulunamadı; yeni rezervasyonlar ve bar ekranındaki hızlı sayaç geldikçe harita dolar."
+                  : "Sitedeki geçmiş rezervasyonları alarak başlayın."
             }
             action={
               configured ? (
@@ -258,7 +260,8 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
           </div>
         </Card>
 
-        <Heatmap view={heat} hours={hours} />
+        {/* Dönem ya da oda saatleri değişince seçili hücre sıfırlanır (aynı sıradaki hücre başka bir saat olabilir) */}
+        <Heatmap key={`${period.from}|${period.to}|${hours.open}|${hours.close}`} view={heat} hours={hours} />
 
         <MonthCompare rows={rows} coverage={since} />
 

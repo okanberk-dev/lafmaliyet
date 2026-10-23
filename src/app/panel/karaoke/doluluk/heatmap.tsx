@@ -171,10 +171,11 @@ export function Heatmap({ view, hours }: { view: HeatmapView; hours: RoomHours }
         {view.outsideNote || view.overlapNote ? (
           <div className="mt-3 space-y-1.5 text-[13px] leading-5 text-ink-mute">
             {view.outsideNote ? (
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              // div: düğmenin penceresi (<dialog>) paragrafın içinde olamaz
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span>{view.outsideNote}</span>
                 <HoursButton hours={hours} label="Saatleri değiştir" variant="ghost" />
-              </p>
+              </div>
             ) : null}
             {view.overlapNote ? <p>{view.overlapNote}</p> : null}
           </div>

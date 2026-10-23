@@ -163,7 +163,7 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 
 | Gösterge | Hesap |
 |----------|-------|
-| Doluluk | Odanın dolu olduğu süre ÷ oda saatlerindeki açık süre. Dolu: başlangıçtan bitişe, uzatma dahil; erken bitirilen oturum bittiği anda boşalır, süre dolduktan sonraki "Haber verdim" uzatmaz. İptal, ödenmemiş tutma, süresi dolan ödeme ve iade (sürerken de) odayı tutmaz; kasada ödenecek onay bekleyen talep ve rezervasyonsuz sayaç tutar. Rozet: hemen önceki aynı uzunluktaki döneme göre puan farkı |
+| Doluluk | Odanın dolu olduğu süre ÷ oda saatlerindeki açık süre. Dolu: başlangıçtan bitişe, uzatma dahil; erken bitirilen oturum bittiği anda boşalır, süre dolduktan sonraki "Haber verdim" uzatmaz. İptal, ödenmemiş tutma, süresi dolan ödeme ve iade (sürerken de) odayı tutmaz; kasada ödenecek onay bekleyen talep ve rezervasyonsuz sayaç tutar. Rozet: hemen önceki aynı uzunluktaki döneme göre puan farkı; yalnız iki dönem de verinin başladığı günden sonraysa ve rezervasyonsuz sayacın başladığı güne göre aynı taraftaysa (verisiz günlerle ya da yalnız site rezervasyonlarının sayıldığı günlerle kıyas yanıltırdı) |
 | Saat başına gelir | Sitede ödenmiş ya da kasada ödenecek rezervasyon ücretleri (KDV dahil) ÷ o rezervasyonların dolu saatleri. Uzatma saate eklenmez (parası kasada alınır), erken bitirilen rezervasyon kullandığı saate bölünür, dönem sınırındaki oturum ücretinin payıyla girer. Alt satır: açık saat başına (ücretler ÷ oda saatleri; fiyatla doluluğu birlikte gösterir). Kasadaki karaoke (uzatma, rezervasyonsuz oturum) ve odadaki siparişler oturuma bağlanamadığı için girmez |
 | Uzatma | +15 / +30 dk ile uzatılan oturumlar ÷ oturumlar (rezervasyonlu ve rezervasyonsuz); uzatılanların ortalama ek süresi |
 | Son dakika iptal | Başlangıçtan önceki 24 saat içinde ya da sonra iptal edilen rezervasyonlar ÷ rezervasyonlar (iptaller dahil; ödeme sayfasında süresi dolan tutma rezervasyon değil). Anı bilinmeyen iptal ayrı sayılır, "son dakika" sayılmaz |
@@ -181,7 +181,7 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 - **Öne çıkanlar:** en az 14 gün ve 8 oturumla: en boş blok (1–4 gün × 2–4 saat) ve en dolu blok (1–3 gün × 2–3 saat;
   %50'den azsa yok) ya da son dakika iptal yüksekse (%15 ve en az 3) onun satırı.
 - **Ay ay:** son 6 ay, ilk veri ayından eskiye gitmez. ¹: ay ilk rezervasyonsuz sayaçtan önce başlıyor, o aylarda yalnız
-  site rezervasyonları var.
+  site rezervasyonları var. Doluluk farkı bir eski aya göre, rozetteki kuralla (aynı verinin sayıldığı aylar arasında).
 - **Oda saatleri:** varsayılan her gün 10:00–22:00 (AVM saatleri); ekranın altındaki Veri ve ayarlar › Değiştir.
   Kapanış gece yarısını geçebilir (en geç 05:00). Değişiklik geçmiş aylara da uygulanır, işlem geçmişine düşer
   (`integration_state` › `karaoke.hours`).
