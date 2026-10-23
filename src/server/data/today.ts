@@ -2,10 +2,8 @@ import "server-only";
 
 import { and, count, eq, exists, isNotNull, isNull, lte, or } from "drizzle-orm";
 
-import { businessDayRange, CASH_FLAGS, dayContext, karaokeToday, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
+import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { carryChecks, lateCorrections } from "@/lib/cash-report";
-import { systemAlerts } from "@/lib/job-health";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
@@ -21,6 +19,7 @@ import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-remin
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
+import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret } from "@/server/karaoke/sync";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -80,22 +79,22 @@ const toLite = (r: CashReportDTO): CashLite => ({
 });
 
 /**
- * Ay sonu sayımının ilerlemesi: bu ay sayılan kalem, sayılacak kalem (Stok sayımı ekranının listesi: etkin, sayım birimi
- * olan, listeye girdiği ay gelmiş ya da bu ay sayılmış; engine.ts stockSheet) ve geçen ayın sayımı var mı (sayım ya da
- * ek kalem; stockSheet().hasData ile aynı kural). Arşivlenen (pasif ya da "Sayılmaz") kalem sayılmaz.
+ * Bir ayın sayım ilerlemesi: o ay sayılan kalem ve sayılacak kalem (Stok sayımı ekranının listesi: etkin, sayım birimi
+ * olan, listeye girdiği ay gelmiş ya da o ay sayılmış; engine.ts stockSheet). Arşivlenen (pasif ya da "Sayılmaz") kalem
+ * sayılmaz.
  */
-async function stockProgress(month: string, prevMonth: string): Promise<NonNullable<DayFacts["stock"]>> {
+async function countProgress(month: string): Promise<{ counted: number; total: number }> {
   const db = getDb();
   const i = s.ingredients;
   const sc = s.stockCounts;
   const listed = and(eq(i.active, true), isNotNull(i.countUnit));
-  const countedThisMonth = exists(
+  const countedThatMonth = exists(
     db
       .select({ id: sc.id })
       .from(sc)
       .where(and(eq(sc.month, month), eq(sc.ingredientId, i.id))),
   );
-  const [[counted], [total], [prevCount], [prevExtra]] = await Promise.all([
+  const [[counted], [total]] = await Promise.all([
     db
       .select({ n: count() })
       .from(sc)
@@ -104,11 +103,25 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
     db
       .select({ n: count() })
       .from(i)
-      .where(and(listed, or(isNull(i.countFrom), lte(i.countFrom, month), countedThisMonth))),
-    db.select({ id: sc.id }).from(sc).where(eq(sc.month, prevMonth)).limit(1),
+      .where(and(listed, or(isNull(i.countFrom), lte(i.countFrom, month), countedThatMonth))),
+  ]);
+  return { counted: counted?.n ?? 0, total: total?.n ?? 0 };
+}
+
+/**
+ * Ay sonu sayımının ilerlemesi: bu ayın ve geçen ayın sayılan / sayılacak kalemi (countProgress) ve geçen ayın sayımı
+ * var mı (sayım ya da ek kalem; stockSheet().hasData ile aynı kural). Geçen ayınki, sayımı ertesi güne kalan ayın
+ * satırı için (bugun/logic.ts countPrevious).
+ */
+async function stockProgress(month: string, prevMonth: string): Promise<NonNullable<DayFacts["stock"]>> {
+  const db = getDb();
+  const [current, prev, [prevCount], [prevExtra]] = await Promise.all([
+    countProgress(month),
+    countProgress(prevMonth),
+    db.select({ id: s.stockCounts.id }).from(s.stockCounts).where(eq(s.stockCounts.month, prevMonth)).limit(1),
     db.select({ id: s.stockExtras.id }).from(s.stockExtras).where(eq(s.stockExtras.month, prevMonth)).limit(1),
   ]);
-  return { month, counted: counted?.n ?? 0, total: total?.n ?? 0, prevMonth, prevHasData: Boolean(prevCount || prevExtra) };
+  return { month, ...current, prevMonth, prevHasData: Boolean(prevCount || prevExtra), prevCounted: prev.counted, prevTotal: prev.total };
 }
 
 /** Rolün kendi olguları ve (yalnız yönetici) rapor gününe göre kasanın bütünlük uyarıları */
@@ -129,18 +142,12 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, cashFlags] = await Promise.all([
-    // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridiyle aynı "danger" kümesi). Zil ve şerit Paraşüt
-    // işinin hatasını, zilin kendi "Paraşüt eşitlemesi başarısız" satırı varken yinelemez; Bugün'de o satır yok (fatura
-    // satırı eşitlemeyi sormaz, docs/planlar/CRITIQUE.md §3 today), o yüzden burada bu yinelenme denetimi yapılmaz
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags] = await Promise.all([
+    // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
+    // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
+    // docs/planlar/CRITIQUE.md §3 today)
     isProductionRuntime()
-      ? safe(
-          loadJobsOverview(now).then((o) =>
-            systemAlerts({ production: o.production, cronSecret: o.cronSecret, now, health: o.health, parasutSyncErrorAt: null })
-              .filter((a) => a.level === "danger")
-              .map((a) => ({ title: a.title, body: a.body })),
-          ),
-        )
+      ? safe(Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()]).then(([o, okAt]) => systemIssues(o, now, okAt)))
       : Promise.resolve([]),
     safe(loadUpcoming()),
     safe(
@@ -172,24 +179,19 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
       })(),
     ),
     safe(posPendingSummary().then((p) => ({ count: p.count, oldest: p.oldest?.toISOString() ?? null }))),
-    // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı): açılış önceki devirle tutmuyor; rapor iş günü kapandıktan
-    // sonra kasa alanı değiştirilerek düzeltildi
+    // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
+    // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi. Zincir listenin en eski gününden önceki son
+    // rapordan başlar (en eski gün sıraya güvenmeden bulunur)
     safe(
       cash.then(async (reports) => {
         if (!reports?.length) return new Map<string, string[]>();
-        const oldest = reports[reports.length - 1];
-        const [before, revisions] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
-        const checks = carryChecks(reports, before);
-        return new Map(
-          reports.map((r) => {
-            const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
-            return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : [])]];
-          }),
-        );
+        const oldest = reports.map((r) => r.date).sort()[0];
+        const [before, revisions] = await Promise.all([previousCarryOver(oldest), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
+        return cashFlags(reports, before, revisions, viewer);
       }),
     ),
   ]);
-  return { facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos }, cashFlags };
+  return { facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos }, cashFlags: flags };
 }
 
 /**

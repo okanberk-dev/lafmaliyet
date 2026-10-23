@@ -3,10 +3,10 @@
 // ekranın kendiliğinden yenileneceği an. Olguları sunucu toplar (src/server/data/today.ts); yöneticiye ait olgular
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
-import { businessDate, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening } from "@/lib/cash-report";
+import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
-import { JOBS_HREF } from "@/lib/job-health";
+import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { staleForText } from "@/lib/prices/pos";
@@ -76,10 +76,13 @@ export interface DayFacts {
   cash: { today: CashLite | null; yesterday: CashLite | null; firstDate: string | null } | null;
   /** Yalnız personel: iş gününün zayi / ikram kayıtları (src/lib/waste.ts summarize özeti) */
   waste?: { count: number; zayi: string | null; ikram: string | null } | null;
-  /** Bu ayın (takvim) sayılan / sayılacak kalemi ve geçen ayın sayımı var mı */
-  stock: { month: string; counted: number; total: number; prevMonth: string; prevHasData: boolean } | null;
+  /**
+   * Bu ayın (takvim) sayılan / sayılacak kalemi; geçen ayın sayımı var mı (sayım ya da ek kalem) ve orada sayılan /
+   * sayılacak kalem
+   */
+  stock: { month: string; counted: number; total: number; prevMonth: string; prevHasData: boolean; prevCounted: number; prevTotal: number } | null;
   // ---- Yalnız yönetici
-  /** Günlük işlerin ciddi sorunları (ops'un sistem uyarıları, yalnız canlıda) */
+  /** Günlük işlerin ciddi sorunları (ops'un sistem uyarıları, yalnız canlıda; systemIssues) */
   system?: { title: string; body: string }[] | null;
   /** Ödemeler & hatırlatıcılar listesi (loadUpcoming); null: okunamadı */
   payments?: UpcomingItem[] | null;
@@ -149,6 +152,32 @@ const dated = (c: DayContext, date: string, text: string) => (c.day !== c.today 
 type Row = (f: DayFacts, c: DayContext) => DayTask | DayTask[] | null;
 
 // ---------------------------------------------------------------- Kasa
+
+/** Bütünlük uyarıları için raporun gerekenleri (CashReportDTO bunları taşır) */
+export type CashFlagReport = Parameters<typeof lateCorrections>[0] & { id: number };
+
+/**
+ * Yöneticinin kasa satırlarının bütünlük uyarıları, rapor gününe göre (kasa'nın kuralları, zil ile aynı;
+ * docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). "Açılış devirle tutmuyor": açılış kendinden önceki raporun
+ * ertesi güne devriyle tutmuyor; zincir `before`'dan, listenin en eski raporundan önceki son raporun devrinden başlar
+ * (previousCarryOver), dünün raporu yoksa bugünün açılışı ondan önceki raporla karşılaştırılır. "Ertesi gün
+ * düzeltildi": rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi; bakan yöneticinin (`viewer`)
+ * kendi düzeltmesi sayılmaz. `revisions`: raporların kayıtlı önceki sürümleri. Listenin sırası önemsiz.
+ */
+export function cashFlags(
+  reports: CashFlagReport[],
+  before: { date: string; amount: number } | null,
+  revisions: (CashRevisionRow & { reportId: number })[],
+  viewer: number,
+): Map<string, string[]> {
+  const checks = carryChecks(reports, before);
+  return new Map(
+    reports.map((r) => {
+      const late = r.revision > 1 && lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) !== null;
+      return [r.date, [...(checks.has(r.date) ? [CASH_FLAGS.carry] : []), ...(late ? [CASH_FLAGS.late] : [])]];
+    }),
+  );
+}
 
 /** Eksik kasa ya da bütünlük uyarısı sorun, fazla yapılacak (bakılmalı), tutuyorsa tamam */
 function cashStatus(r: CashLite): TaskStatus {
@@ -253,21 +282,37 @@ const wasteRow: Row = (f, c) => {
 
 // ---------------------------------------------------------------- Sayım (ikisi)
 
-/** Ayın ilk 10 gününde geçen ayın sayımı yoksa (Stok sayımı ekranının açılış ayı kuralıyla aynı) */
+/**
+ * Ayın ilk 10 gününde geçen ayın sayımı yoksa (Stok sayımı ekranının açılış ayı kuralıyla aynı) ya da yarım kaldıysa.
+ * Ay sonu sayımı kapanıştan sonra yapılır, çoğu zaman ertesi sabah biter: gece yarısı "Ay sonu stok sayımı" satırı
+ * kalkınca yarım sayım burada sürer ve geçen aya götürür. Stok sayımı ekranı, sayılmaya başlanmış geçen ayı değil bu
+ * ayı açar; kalan kalemler yanlış aya yazılmasın.
+ */
 const countPrevious: Row = (f, c) => {
   const s = f.stock;
-  if (!s || c.dayOfMonth > COUNT_GRACE_DAYS || s.prevHasData) return null;
+  if (!s || c.dayOfMonth > COUNT_GRACE_DAYS) return null;
+  const base = { key: "sayim-gecen" as const, title: "Geçen ayın stok sayımı", href: `/panel/sayim?ay=${s.prevMonth}` };
+  const month = monthLabel(s.prevMonth);
+  if (!s.prevHasData) {
+    return {
+      ...base,
+      status: "todo",
+      badge: "Girilmedi",
+      detail: f.role === "admin" ? `${month} sayımı yok: devreden stok 0 sayılır, alınan malın tamamı o ayın maliyeti olur.` : `${month} ay sonu sayımı girilmedi; buradan girebilirsiniz.`,
+      action: "Sayım gir",
+    };
+  }
+  if (s.prevCounted >= s.prevTotal) return null;
+  const progress = `${num(s.prevCounted)} / ${num(s.prevTotal)}`;
   return {
-    key: "sayim-gecen",
-    title: "Geçen ayın stok sayımı",
+    ...base,
     status: "todo",
-    badge: "Girilmedi",
+    badge: progress,
     detail:
       f.role === "admin"
-        ? `${monthLabel(s.prevMonth)} sayımı yok: devreden stok 0 sayılır, alınan malın tamamı o ayın maliyeti olur.`
-        : `${monthLabel(s.prevMonth)} ay sonu sayımı girilmedi; buradan girebilirsiniz.`,
-    href: `/panel/sayim?ay=${s.prevMonth}`,
-    action: "Sayım gir",
+        ? `${month} sayımı yarım kaldı: ${progress} kalem sayıldı, kalanların stoğu 0 sayılır.`
+        : `${month} ay sonu sayımı yarım kaldı: ${progress} kalem sayıldı; kalanları da girin.`,
+    action: "Sayıma devam",
   };
 };
 
@@ -285,6 +330,27 @@ const countMonthEnd: Row = (f, c) => {
 };
 
 // ---------------------------------------------------------------- Yalnız yönetici
+
+/**
+ * `isler` satırının uyarıları (yalnız canlıda): ops'un sistem uyarılarının ciddileri, Genel bakış şeridindekiler
+ * (src/lib/job-health.ts systemAlerts). Zil ve şerit Paraşüt işinin eşitleme hatasını zilin kendi "Paraşüt eşitlemesi
+ * başarısız" satırına bırakır; Bugün'de öyle bir satır yok (Faturalar satırı eşitlemeyi sormaz), bu yüzden uyarılar o
+ * yinelenme denetimi olmadan alınır. Bunun yerine Paraşüt işinin hatası ya da yarıda kesilmesi, o çalışmadan sonra
+ * başlayan bir eşitleme başarılı olunca düşer (sabah işinin yeniden denemesi ya da Paraşüt › Şimdi eşitle; zilin
+ * eşitleme satırı da o an kalkar): yapılacak bir şey kalmamışken ertesi sabaha kadar "sorun var" denmez.
+ * `lastSyncOkAt`: günlük eşitlemenin (tedarikçi geçmişi hariç) son başarılı çalışmasının başlangıcı.
+ */
+export function systemIssues(
+  o: { production: boolean; cronSecret: boolean; health: Record<JobKey, JobHealth> },
+  now: Date,
+  lastSyncOkAt: string | null,
+): { title: string; body: string }[] {
+  const run = o.health.parasut.run;
+  const synced = run !== null && lastSyncOkAt !== null && Date.parse(lastSyncOkAt) > Date.parse(run.startedAt);
+  return systemAlerts({ production: o.production, cronSecret: o.cronSecret, now, health: o.health, parasutSyncErrorAt: null })
+    .filter((a) => a.level === "danger" && !(synced && a.id.startsWith("is-parasut-")))
+    .map(({ title, body }) => ({ title, body }));
+}
 
 /** Günlük işlerin ciddi sorunları (sabah işi çalışmadı / hata verdi, Paraşüt işi hata verdi, CRON_SECRET yok) */
 const systemRow: Row = (f) => {

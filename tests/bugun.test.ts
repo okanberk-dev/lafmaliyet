@@ -13,6 +13,7 @@ import {
   businessDayRange,
   cafeLines,
   CASH_FLAGS,
+  cashFlags,
   clip,
   dayContext,
   daySummary,
@@ -20,12 +21,15 @@ import {
   karaokeToday,
   nextRefreshAt,
   splitTasks,
+  systemIssues,
   WASTE_SUMMARY_MAX,
+  type CashFlagReport,
   type CashLite,
   type DayFacts,
   type DayTask,
 } from "../src/app/panel/bugun/logic";
-import { businessDate, isCashEvening, trHour } from "../src/lib/cash-report";
+import { businessDate, isCashEvening, revisionDataOf, trHour, type CashRevisionRow } from "../src/lib/cash-report";
+import { jobHealth, type JobKey, type JobRunLite, type RunStatus } from "../src/lib/job-health";
 import type { KaraokeSessionDTO } from "../src/lib/karaoke/session";
 import { HOLDS_HREF } from "../src/lib/price-hold";
 import type { UpcomingItem, UpcomingStatus } from "../src/lib/reminders";
@@ -43,7 +47,7 @@ function report(date: string, o: Partial<CashLite> = {}): CashLite {
 }
 
 /** Sayım: bu ay sayılmadı, geçen ay sayıldı (sayım satırları çıkmasın) */
-const STOCK = { month: "2026-10", counted: 0, total: 40, prevMonth: "2026-09", prevHasData: true };
+const STOCK = { month: "2026-10", counted: 0, total: 40, prevMonth: "2026-09", prevHasData: true, prevCounted: 40, prevTotal: 40 };
 
 function staff(now: Date, o: Partial<DayFacts> = {}): DayFacts {
   return { role: "staff", now, cash: { today: null, yesterday: null, firstDate: null }, waste: { count: 0, zayi: null, ikram: null }, stock: STOCK, ...o };
@@ -183,6 +187,80 @@ test("kasa bütünlüğü (yönetici): açılış devirle tutmuyor ya da ertesi 
   assert.equal(byKey(dayTasks(facts({})))["kasa-dun"].status, "done");
 });
 
+/** Bütünlük uyarıları için tam kasa raporu: açılış 500, sayılan 3.600, teslim 3.100 (ertesi güne devir 500), Mehmet (7) */
+function fullReport(id: number, date: string, o: Partial<CashFlagReport> = {}): CashFlagReport {
+  return {
+    id,
+    date,
+    zNo: null,
+    receipts: null,
+    zTotal: 12400,
+    cash: 3100,
+    card: 9300,
+    mealCard: 0,
+    online: 0,
+    other: 0,
+    openingCash: 500,
+    cashOut: 0,
+    cashOutNote: null,
+    countedCash: 3600,
+    handedOver: 3100,
+    bankPos: null,
+    offRevenue: null,
+    discounts: null,
+    note: null,
+    revision: 1,
+    cashDiff: 0,
+    countedByName: "Mehmet",
+    submittedBy: 7,
+    submittedByName: "Mehmet",
+    createdAt: tr(`${date}T23:00`).toISOString(),
+    updatedAt: tr(`${date}T23:00`).toISOString(),
+    ...o,
+  };
+}
+
+test("kasa bütünlüğü (cashFlags): açılış önceki raporun devriyle (dünün raporu yoksa ondan öncekiyle), ertesi gün düzeltmesi, sıra önemsiz", () => {
+  const Y = "2026-10-21";
+  const T = "2026-10-22";
+  const before = { date: "2026-10-20", amount: 500 };
+  type Revision = CashRevisionRow & { reportId: number };
+  const flags = (reports: CashFlagReport[], b: { date: string; amount: number } | null = before, revisions: Revision[] = [], viewer = 1) =>
+    Object.fromEntries(cashFlags(reports, b, revisions, viewer));
+  // Dünün açılışı önceki günün devriyle
+  assert.deepEqual(flags([fullReport(1, Y)]), { [Y]: [] });
+  assert.deepEqual(flags([fullReport(1, Y)], { date: "2026-10-20", amount: 380 }), { [Y]: [CASH_FLAGS.carry] });
+  // Önceki rapor hiç yoksa (ilk rapor) denetlenmez
+  assert.deepEqual(flags([fullReport(1, Y, { openingCash: 0 })], null), { [Y]: [] });
+  // Bugünün açılışı dünün devriyle (sayılan − teslim)
+  assert.deepEqual(flags([fullReport(2, T), fullReport(1, Y)]), { [T]: [], [Y]: [] });
+  assert.deepEqual(flags([fullReport(2, T, { openingCash: 450 }), fullReport(1, Y)]), { [T]: [CASH_FLAGS.carry], [Y]: [] });
+  // Dünün sayılanı sonradan değişti: dün tutuyor, bugünün açılışı artık tutmuyor
+  assert.deepEqual(flags([fullReport(2, T), fullReport(1, Y, { countedCash: 3700 })]), { [T]: [CASH_FLAGS.carry], [Y]: [] });
+  // Dünün raporu yok: bugünün açılışı ondan önceki son raporun devriyle (yükleyici onu `before` olarak verir)
+  assert.deepEqual(flags([fullReport(2, T, { openingCash: 450 })]), { [T]: [CASH_FLAGS.carry] });
+  assert.deepEqual(flags([fullReport(2, T, { openingCash: 450 })], { date: "2026-10-20", amount: 450 }), { [T]: [] });
+
+  // Ertesi gün düzeltmesi: dünün raporu bugün 10:00'da kasa alanı (nakit satış) değiştirilerek yeniden gönderildi
+  const revisions: Revision[] = [
+    { reportId: 1, revision: 1, data: revisionDataOf(fullReport(1, Y, { cash: 3000 })), submittedBy: 7, submittedByName: "Mehmet", submittedAt: tr(`${Y}T23:00`).toISOString() },
+  ];
+  const fixedBy = (submittedBy: number, updatedAt = tr("2026-10-22T10:00").toISOString()) =>
+    fullReport(1, Y, { revision: 2, submittedBy, submittedByName: submittedBy === 7 ? "Mehmet" : "Yönetici", updatedAt });
+  assert.deepEqual(flags([fixedBy(7)], before, revisions), { [Y]: [CASH_FLAGS.late] }, "personel düzeltti");
+  assert.deepEqual(flags([fixedBy(1)], before, revisions, 1), { [Y]: [] }, "bakan yöneticinin kendi düzeltmesi");
+  assert.deepEqual(flags([fixedBy(1)], before, revisions, 2), { [Y]: [CASH_FLAGS.late] }, "başka bir yöneticinin düzeltmesi");
+  // İş günü kapanmadan (gece 01:30) düzeltilen rapor uyarı değil; başka raporun sürümleri bu rapora yazılmaz
+  assert.deepEqual(flags([fixedBy(7, tr("2026-10-22T01:30").toISOString())], before, revisions), { [Y]: [] });
+  assert.deepEqual(flags([fixedBy(7)], before, revisions.map((r) => ({ ...r, reportId: 9 }))), { [Y]: [] });
+  // İki uyarı birden (önce açılış, sonra düzeltme) ve listenin sırası sonucu değiştirmez
+  const reports = [fullReport(2, T, { openingCash: 450 }), fixedBy(7)];
+  const expected = { [T]: [CASH_FLAGS.carry], [Y]: [CASH_FLAGS.carry, CASH_FLAGS.late] };
+  const off = { date: "2026-10-20", amount: 380 };
+  assert.deepEqual(flags(reports, off, revisions), expected);
+  assert.deepEqual(flags([...reports].reverse(), off, revisions), expected);
+});
+
 test("yönetici bugünkü kasa: gündüz 'Akşam', 20:00'den sonra girilmedi; okunamazsa dün satırı söyler, bugünkü çıkmaz", () => {
   const day = byKey(dayTasks(admin(NOON))).kasa;
   assert.equal(day.status, "later");
@@ -220,7 +298,7 @@ test("6. ay sonu sayımı: son gün başlamadıysa, yarıdaysa, bittiyse; ayın 
 
   const nov = (local: string, prevHasData: boolean, role: "staff" | "admin" = "staff") => {
     const now = tr(local);
-    const stock = { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData };
+    const stock = { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData, prevCounted: prevHasData ? 40 : 0, prevTotal: 40 };
     return dayTasks(role === "staff" ? staff(now, { stock }) : admin(now, { stock }));
   };
   const prev = byKey(nov("2026-11-03T10:00", false))["sayim-gecen"];
@@ -234,6 +312,38 @@ test("6. ay sonu sayımı: son gün başlamadıysa, yarıdaysa, bittiyse; ayın 
   const midnight = keys(nov("2026-11-01T00:30", false));
   assert.ok(!midnight.includes("sayim-son"));
   assert.ok(midnight.includes("sayim-gecen"));
+});
+
+test("sayım gece yarısını geçerse: 31 Ekim 23:50'deki 12 / 40, 1 Kasım 00:30'da 'Geçen ayın stok sayımı' olur ve Ekim'e götürür", () => {
+  // 23:50: ay sonu satırı Ekim'in ilerlemesini söyler
+  const october = { month: "2026-10", counted: 12, total: 40, prevMonth: "2026-09", prevHasData: true, prevCounted: 40, prevTotal: 40 };
+  const before = dayTasks(staff(tr("2026-10-31T23:50"), { stock: october }));
+  assert.equal(byKey(before)["sayim-son"].badge, "12 / 40");
+  assert.equal(byKey(before)["sayim-son"].href, "/panel/sayim?ay=2026-10");
+  assert.ok(!keys(before).includes("sayim-gecen"));
+  // 00:30: takvim ayı Kasım; Ekim'in sayımı yarım. Stok sayımı ekranı kendiliğinden Kasım'ı açar (Ekim'de sayım var):
+  // satır kalan kalemleri Ekim'e götürür
+  const november = { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: true, prevCounted: 12, prevTotal: 40 };
+  const after = dayTasks(staff(tr("2026-11-01T00:30"), { stock: november }));
+  assert.ok(!keys(after).includes("sayim-son"));
+  const row = byKey(after)["sayim-gecen"];
+  assert.equal(row.status, "todo");
+  assert.equal(row.badge, "12 / 40");
+  assert.equal(row.href, "/panel/sayim?ay=2026-10");
+  assert.equal(row.action, "Sayıma devam");
+  assert.equal(row.detail, "Ekim 2026 ay sonu sayımı yarım kaldı: 12 / 40 kalem sayıldı; kalanları da girin.");
+  assert.equal(splitTasks(after).next?.key, "sayim-gecen");
+  // Yöneticiye eksik sayımın etkisi
+  assert.equal(
+    byKey(dayTasks(admin(tr("2026-11-01T09:00"), { stock: november })))["sayim-gecen"].detail,
+    "Ekim 2026 sayımı yarım kaldı: 12 / 40 kalem sayıldı, kalanların stoğu 0 sayılır.",
+  );
+  // Ertesi sabah da sürer (sayım çoğu zaman ertesi sabah biter); 10. günden sonra yok
+  assert.ok(keys(dayTasks(staff(tr("2026-11-10T18:00"), { stock: november }))).includes("sayim-gecen"));
+  assert.ok(!keys(dayTasks(staff(tr("2026-11-11T09:00"), { stock: november }))).includes("sayim-gecen"));
+  // Hepsi sayılınca satır kalkar; sayılacak kalem yoksa (yalnız ek kalem girilmiş) yarım sayılmaz
+  assert.ok(!keys(dayTasks(staff(tr("2026-11-01T00:45"), { stock: { ...november, prevCounted: 40 } }))).includes("sayim-gecen"));
+  assert.ok(!keys(dayTasks(staff(tr("2026-11-01T09:00"), { stock: { ...november, prevCounted: 0, prevTotal: 0 } }))).includes("sayim-gecen"));
 });
 
 // ---------------------------------------------------------------- Yönetici: öteki satırlar
@@ -295,6 +405,57 @@ test("isler: günlük işlerin sorunları en üstte 'sorun var', Ayarlar › Gü
   for (const system of [[], null, undefined]) assert.ok(!keys(dayTasks(admin(NOON, { system }))).includes("isler"));
 });
 
+test("isler (systemIssues): Paraşüt işinin hatası sonradan başarılı bir eşitleme olana kadar (sabah işi ya da Şimdi eşitle); yalnız canlıda", () => {
+  let id = 1;
+  const jobRun = (job: JobKey, local: string, status: RunStatus, message: string | null = null): JobRunLite => ({
+    id: id++,
+    job,
+    status,
+    startedAt: tr(local).toISOString(),
+    finishedAt: status === "running" ? null : new Date(tr(local).getTime() + 12_000).toISOString(),
+    steps: null,
+    message,
+  });
+  const watchSince = tr("2026-10-01T00:00").toISOString();
+  const overview = (now: Date, runs: JobRunLite[]) => ({
+    production: true,
+    cronSecret: true,
+    health: { parasut: jobHealth("parasut", runs, now, { watchSince }), gunluk: jobHealth("gunluk", runs, now, { watchSince }) },
+  });
+  const at = (local: string) => tr(local).toISOString();
+  // 07:30 Paraşüt işi hata verdi; 08:15 sabah işi çalıştı (eşitlemeyi bir kez daha dener)
+  const runs = [jobRun("parasut", "2026-10-22T07:30", "error", "Paraşüt 503 Service Unavailable"), jobRun("gunluk", "2026-10-22T08:15", "ok")];
+  const now = tr("2026-10-22T10:00");
+  // Eşitleme hâlâ hatalı (son başarılı eşitleme dün sabah ya da hiç yok): en üstte sorun var
+  const failing = systemIssues(overview(now, runs), now, at("2026-10-21T07:30"));
+  assert.deepEqual(failing, [{ title: "Paraşüt işi hata verdi", body: "Paraşüt 503 Service Unavailable" }]);
+  assert.deepEqual(systemIssues(overview(now, runs), now, null), failing);
+  const row = byKey(dayTasks(admin(now, { system: failing }))).isler;
+  assert.equal(row.status, "warn");
+  assert.equal(row.detail, "Paraşüt işi hata verdi: Paraşüt 503 Service Unavailable.");
+  // Sabah işinin yeniden denemesi 08:15'te eşitledi: satır yok (zilin eşitleme satırı da kalktı)
+  const healed = systemIssues(overview(now, runs), now, at("2026-10-22T08:15"));
+  assert.deepEqual(healed, []);
+  assert.ok(!keys(dayTasks(admin(now, { system: healed }))).includes("isler"));
+  // Ya da yönetici öğleden sonra Paraşüt › Şimdi eşitle dedi
+  const afternoon = tr("2026-10-22T14:30");
+  assert.equal(systemIssues(overview(afternoon, runs), afternoon, at("2026-10-21T07:30")).length, 1);
+  assert.deepEqual(systemIssues(overview(afternoon, runs), afternoon, at("2026-10-22T14:00")), []);
+  // Gece 01:00'de Paraşüt işi hâlâ dün için değerlendirilir: dün telafi edildiyse yok, edilmediyse dünün hatası
+  const night = tr("2026-10-23T01:00");
+  assert.deepEqual(systemIssues(overview(night, runs), night, at("2026-10-22T08:15")), []);
+  assert.deepEqual(systemIssues(overview(night, runs), night, at("2026-10-21T07:30")), failing);
+  // Yarıda kesilen Paraşüt işi de aynı kurala bakar
+  const stuck = [jobRun("parasut", "2026-10-22T07:30", "running"), jobRun("gunluk", "2026-10-22T08:15", "ok")];
+  assert.deepEqual(systemIssues(overview(now, stuck), now, at("2026-10-21T07:30")).map((a) => a.title), ["Paraşüt işi yarıda kesildi"]);
+  assert.deepEqual(systemIssues(overview(now, stuck), now, at("2026-10-22T08:15")), []);
+  // Eşitlemenin telafisi sabah işinin kendi hatasını kapatmaz
+  const both = [jobRun("parasut", "2026-10-22T07:30", "error", "Paraşüt 503"), jobRun("gunluk", "2026-10-22T08:15", "error", "Sabah e-postası: Resend 500")];
+  assert.deepEqual(systemIssues(overview(now, both), now, at("2026-10-22T13:00")).map((a) => a.title), ["Sabah işi hata verdi"]);
+  // Canlı değilse uyarı yok
+  assert.deepEqual(systemIssues({ ...overview(now, runs), production: false }, now, null), []);
+});
+
 test("9. ürün bağlantısı, fiyatı girilmemiş hammadde, reçete onayı, fiyat onayı, zam ve kasa fiyatları yalnız sayı > 0 iken", () => {
   const empty = keys(dayTasks(admin(NOON, { unlinked: 0, unpriced: { count: 0, names: [] }, approvals: { changes: 0, newProducts: 0, names: [] }, holds: { count: 0, items: [] }, prices: null, pos: { count: 0, oldest: null } })));
   for (const k of ["urun", "fiyat-yok", "onay", "fiyat-onay", "zam", "modpos"] as const) assert.ok(!empty.includes(k), k);
@@ -342,7 +503,7 @@ test("yönetici satır sırası: isler, kasa-dun, odeme, fatura, urun, fiyat-yok
     admin(now, {
       system: [{ title: "Sabah işi çalışmadı", body: "…" }],
       cash: { today: null, yesterday: null, firstDate: "2026-10-01" },
-      stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false },
+      stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false, prevCounted: 0, prevTotal: 40 },
       unlinked: 1,
       unpriced: { count: 1, names: ["Klips kapak"] },
       approvals: { changes: 1, newProducts: 0, names: ["Latte"] },
@@ -358,7 +519,7 @@ test("yönetici satır sırası: isler, kasa-dun, odeme, fatura, urun, fiyat-yok
   assert.deepEqual(keys(split.done), ["odeme", "fatura"]);
   // Personel sırası
   const staffTasks = dayTasks(
-    staff(now, { cash: { today: null, yesterday: null, firstDate: "2026-10-01" }, stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false } }),
+    staff(now, { cash: { today: null, yesterday: null, firstDate: "2026-10-01" }, stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false, prevCounted: 0, prevTotal: 40 } }),
   );
   assert.deepEqual(keys(staffTasks), ["kasa-dun", "sayim-gecen", "zayi", "kasa"]);
 });
@@ -574,6 +735,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "posPendingSummary(",
     "loadUnpricedIngredients(",
     "loadJobsOverview(",
+    "lastParasutSyncOkAt(",
     "previousCarryOver(",
     "cashRevisionsFor(",
     "needsReview",
@@ -590,6 +752,12 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /priceAlert\(pa\.changes, pa\.actionable, pa\.loss\.totalLoss\)/);
   // Bugün parasut_sync_runs'ı kendisi sormaz (R4: günlük işlerin sağlığı ops'un modülünden)
   assert.doesNotMatch(src, /parasutSyncRuns/);
+  // Paraşüt işinin hatası, sonraki başarılı eşitlemeyle düşer (systemIssues); kasanın bütünlüğü saf cashFlags'ten, zincir
+  // listenin sırasına güvenmeden en eski günden
+  assert.match(admin, /systemIssues\(o, now, okAt\)/);
+  assert.match(admin, /const oldest = reports\.map\(\(r\) => r\.date\)\.sort\(\)\[0\];/);
+  assert.match(admin, /previousCarryOver\(oldest\)/);
+  assert.match(admin, /cashFlags\(reports, before, revisions, viewer\)/);
 });
 
 test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", () => {
@@ -608,7 +776,13 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (const call of ["pendingHoldSummary(", "posPendingSummary(", "loadJobsOverview(", "cash.then(", "Promise.all([readOrdersSnapshot(), readOrdersState()])"]) {
+  for (const call of [
+    "pendingHoldSummary(",
+    "posPendingSummary(",
+    "Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()])",
+    "cash.then(",
+    "Promise.all([readOrdersSnapshot(), readOrdersState()])",
+  ]) {
     assert.match(src, new RegExp(`safe\\(\\s*${escape(call)}`), call);
   }
 });

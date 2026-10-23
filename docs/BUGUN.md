@@ -28,7 +28,7 @@ bu sırayla yazılır; bölümler sırayı korur.
 
 | Satır | Kimde | Kural |
 |-------|-------|-------|
-| Günlük işler (`isler`) | Yönetici | Yalnız canlıda: sabah işi çalışmadı / hata verdi / yarıda kesildi, Paraşüt işi hata verdi, CRON_SECRET yok (Genel bakış şeridinin "ciddi" uyarıları, `src/server/jobs/alerts.ts`) → sorun var, en üstte, Ayarlar › Günlük işler. Paraşüt eşitlemesinin hatası burada söylenir (Faturalar satırında değil); zildeki gibi ayrı bir "Paraşüt eşitlemesi başarısız" satırı olmadığı için yinelenme denetimi yapılmaz |
+| Günlük işler (`isler`) | Yönetici | Yalnız canlıda: sabah işi çalışmadı / hata verdi / yarıda kesildi, Paraşüt işi hata verdi / yarıda kesildi, CRON_SECRET yok (Genel bakış şeridinin "ciddi" uyarıları, `src/server/jobs/alerts.ts`) → sorun var, en üstte, Ayarlar › Günlük işler. Paraşüt eşitlemesinin hatası burada söylenir (Faturalar satırında değil; zildeki gibi ayrı bir "Paraşüt eşitlemesi başarısız" satırı yok): Paraşüt işinin hatası, sonradan başarılı bir eşitleme olana kadar görünür. Sabah işi eşitlemeyi yeniden dener; o ya da Paraşüt › Şimdi eşitle başarılı olunca satır kalkar |
 | Dünkü kasa raporu (`kasa-dun`) | İkisi | Yönetici: farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam), "Mehmet · Z … · nakit … · kart …", güncellendiyse ve not. **Açılış devirle tutmuyor** ya da **Ertesi gün düzeltildi** satırı "sorun var" yapar. Girilmediyse yapılacak (personel bugün de girebilir). Personel yalnız girilmediyse görür: "Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir." Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa satır yok |
 | Ödemeler (`odeme`) | Yönetici | Geciken sorun var ("Ödendiyse işaretleyin"), bugünkü yapılacak, ikisi de yoksa tamam (yaklaşanlar bilgi) |
 | Faturalar (`fatura`) | Yönetici | Kontrol bekleyen fatura varsa yapılacak, yoksa tamam |
@@ -38,7 +38,7 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Fiyat onayı (`fiyat-onay`) | Yönetici | Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatı varsa (Hammaddeler › Onay bekleyen fiyatlar) |
 | Hammadde zammı (`zam`) | Yönetici | Fiyatı önerilenin altında kalan ürün varsa; metin Genel bakış ve zil ile aynı (zammın ayda kaç lira kâr götürdüğü) |
 | Kasadaki fiyatlar (`modpos`) | Yönetici | "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler |
-| Geçen ayın stok sayımı (`sayim-gecen`) | İkisi | Ayın ilk 10 gününde geçen ayın sayımı yoksa |
+| Geçen ayın stok sayımı (`sayim-gecen`) | İkisi | Ayın ilk 10 gününde geçen ayın sayımı yoksa ("Girilmedi") ya da yarım kaldıysa ("12 / 40", "Sayıma devam"). Geçen aya götürür: Stok sayımı ekranı, sayılmaya başlanmış geçen ayı değil bu ayı açar |
 | Zayi & ikram (`zayi`) | Personel | Gün içinde "Gün içinde" (bilgi), akşam rapor gönderilmeden "Rapordan önce" (yapılacak), rapor gönderilince tamam. Günün kayıt sayısı ve özeti |
 | Kasa raporu (`kasa`) | İkisi | Gündüz "Akşam" (sonra), 20:00'den sonra yapılacak, gönderilince personelde "Gönderildi" (tamam), yöneticide farkı ve bütünlüğü (dünkü gibi) |
 | Ay sonu stok sayımı (`sayim-son`) | İkisi | Ayın son günü: başlamadıysa "Sayıma başla", yarıdaysa "12 / 40", bittiyse tamam (sayım formundaki "kalem sayıldı" ile aynı kural) |
@@ -54,8 +54,9 @@ rolü ayrıca denetler.
   açıklama hangi güne baktığını tarihle söyler ("22 Ekim Perşembe · …"); başlıktaki tarih takvim günüdür.
 - **Akşam 20:00:** bugünün kasa raporu bundan sonra beklenir. Zil de aynı kurala bakar (`isCashEvening`,
   `src/lib/cash-report.ts`).
-- **Takvim günü:** ödemeler, hatırlatıcılar ve sayım. 1 Kasım 00:30'da ay sonu satırı çıkmaz; Ekim sayılmadıysa
-  "Geçen ayın stok sayımı" çıkar.
+- **Takvim günü:** ödemeler, hatırlatıcılar ve sayım. 1 Kasım 00:30'da ay sonu satırı çıkmaz; Ekim sayılmadıysa ya da
+  sayımı yarım kaldıysa "Geçen ayın stok sayımı" çıkar ve Ekim'e götürür (gece kapanıştan sonra başlayan sayım ertesi
+  sabah da sürebilir).
 - Ekran 00:00, 05:00 ve 20:00'de ve karaoke oturumu başlayınca ya da bitince kendiliğinden yenilenir; sekme bir
   dakikadan uzun gizli kalıp görünür olunca da. Başka ekrana gidilip geri tuşuyla dönülünce korunan eski hâli
   yenilenir (Kasa'da gönderilen rapor, Ödemeler'de ödenen kayıt görünsün); menüden ya da alt menüden açılınca zaten
