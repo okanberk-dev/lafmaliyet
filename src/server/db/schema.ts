@@ -813,8 +813,11 @@ export type RecipeSnapshot = {
   items: { ingredientId: number; name: string; unit: string; qty: number; qtyExpr: string | null; note: string | null }[];
 };
 
-/** Yeni ürün önerisinde önerilen ürün (yönetici onaylarken adı ve kategoriyi değiştirebilir; boy sabit) */
-export type ProposedProduct = { name: string; size: "M" | "L" | "Tek"; categoryId: number };
+/**
+ * Yeni ürün önerisinde önerilen ürün (yönetici onaylarken adı ve kategoriyi değiştirebilir; boy sabit). `price`:
+ * personelin yazdığı satış fiyatı (KDV dahil, isteğe bağlı); onayda fiyat alanı bununla dolu gelir. Eski önerilerde yok.
+ */
+export type ProposedProduct = { name: string; size: "M" | "L" | "Tek"; categoryId: number; price?: number | null };
 
 /**
  * Personelin reçete defterinden önerdiği değişiklik: yönetici önceki ve önerilen reçeteyi yan yana görür, onaylarsa

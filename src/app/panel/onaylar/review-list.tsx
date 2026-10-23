@@ -17,7 +17,7 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings } from "@/lib/calc/types";
 import { SIZE_LABELS } from "@/lib/constants";
-import { dateTimeTR, pct, tl } from "@/lib/format";
+import { dateTimeTR, money, pct, tl } from "@/lib/format";
 import { genitive, NEW_PRODUCT_NAME_MAX, REQUEST_STATUS_LABEL, takenIssue, type ProductSize, type RecipeSnapshot, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import { approveNewProduct, reviewRecipeChange } from "@/server/actions/recipe-requests";
@@ -56,6 +56,8 @@ export interface NewProductItem {
   requestedByName: string;
   updatedAt: string;
   message: string | null;
+  /** Personelin yazdığı satış fiyatı (KDV dahil); fiyat alanı bununla dolu gelir */
+  proposedPrice: number | null;
   lines: {
     name: string;
     qtyLabel: string;
@@ -69,6 +71,8 @@ export interface NewProductItem {
     missing: boolean;
     /** Paket fiyatı girilmemiş (sayımda eklenen kalem): maliyet eksik */
     unpriced: boolean;
+    /** Paket fiyatı tahmini (öneride "Yeni malzeme" ile ya da sayımda personelin yazdığı, faturada bulunmayan) */
+    estimate: boolean;
   }[];
 }
 
@@ -312,9 +316,10 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
 }
 
 /**
- * Yeni ürün önerisinin kartı: önerilen reçete satır satır maliyetiyle (bugünkü hammadde fiyatları, KDV hariç),
- * zayi (kategorinin oranı) ve toplam maliyet; yönetici adı ve kategoriyi düzeltebilir (boy sabit), satış fiyatını yazar,
- * kâr marjı ve maliyet oranı canlı hesaplanır (Ürünler ile aynı formül, priceProduct). Fiyat girilmeden onaylanmaz.
+ * Yeni ürün önerisinin kartı: önerilen reçete satır satır maliyetiyle (bugünkü hammadde fiyatları, KDV hariç; tahmini
+ * fiyatlı malzeme "Tahmini" işaretli), zayi (kategorinin oranı) ve toplam maliyet; yönetici adı ve kategoriyi
+ * düzeltebilir (boy sabit), satış fiyatını yazar (personel önerdiyse onunla dolu gelir), kâr marjı ve maliyet oranı canlı
+ * hesaplanır (Ürünler ile aynı formül, priceProduct). Fiyat girilmeden onaylanmaz.
  */
 function NewProductCard({
   item,
@@ -332,7 +337,9 @@ function NewProductCard({
   const router = useRouter();
   const [name, setName] = useState(item.name);
   const [categoryId, setCategoryId] = useState(env.categories.some((c) => c.id === item.categoryId) ? item.categoryId : (env.categories[0]?.id ?? 0));
-  const [price, setPrice] = useState("");
+  // Personelin önerdiği satış fiyatı (yoksa alan boş gelir)
+  const proposed = item.proposedPrice;
+  const [price, setPrice] = useState(proposed !== null ? priceText(proposed) : "");
   const [priceError, setPriceError] = useState<string | null>(null);
   const typed = parseNumberTR(price);
   const priceValue = typed !== null && typed > 0 ? typed : null;
@@ -420,6 +427,10 @@ function NewProductCard({
                       <Badge tone="amber" className="ml-1.5">
                         Fiyat yok
                       </Badge>
+                    ) : l.estimate ? (
+                      <Badge tone="amber" dot className="ml-1.5" title="Paket fiyatı tahmini (faturadan gelmedi); maliyet kesin değil">
+                        Tahmini
+                      </Badge>
                     ) : null}
                     {l.note ? <span className="mt-1 block text-xs text-ink-mute">Not: {l.note}</span> : null}
                   </td>
@@ -464,29 +475,51 @@ function NewProductCard({
             htmlFor={priceId}
             error={priceError}
             hint={
-              priceValue !== null ? (
-                <span className="tabular">
-                  Kâr marjı <span className={cn("font-semibold", econ.unitProfit < 0 ? "text-bad" : "text-ink")}>{pct(econ.margin, 0)}</span> · maliyet oranı{" "}
-                  <span className={cn("font-semibold", econ.costRatio > env.settings.hedefMaliyet ? "text-bad" : "text-ink")}>{pct(econ.costRatio, 0)}</span> (hedef{" "}
-                  {pct(env.settings.hedefMaliyet, 0)})
-                </span>
-              ) : econ.cost > 0 ? (
-                <span>
-                  Hedef maliyet oranıyla önerilen{" "}
-                  <button
-                    type="button"
-                    className="cursor-pointer font-semibold text-ink underline underline-offset-2 pointer-coarse:py-2"
-                    onClick={() => {
-                      setPrice(priceText(econ.suggestedPrice));
-                      setPriceError(null);
-                    }}
-                  >
-                    {tl(econ.suggestedPrice)}
-                  </button>
-                </span>
-              ) : (
-                "Menüdeki fiyat; virgüllü yazabilirsiniz"
-              )
+              <>
+                {priceValue !== null ? (
+                  <span className="block tabular">
+                    Kâr marjı <span className={cn("font-semibold", econ.unitProfit < 0 ? "text-bad" : "text-ink")}>{pct(econ.margin, 0)}</span> · maliyet oranı{" "}
+                    <span className={cn("font-semibold", econ.costRatio > env.settings.hedefMaliyet ? "text-bad" : "text-ink")}>{pct(econ.costRatio, 0)}</span> (hedef{" "}
+                    {pct(env.settings.hedefMaliyet, 0)})
+                  </span>
+                ) : econ.cost > 0 ? (
+                  <span className="block">
+                    Hedef maliyet oranıyla önerilen{" "}
+                    <button
+                      type="button"
+                      className="cursor-pointer font-semibold text-ink underline underline-offset-2 pointer-coarse:py-2"
+                      onClick={() => {
+                        setPrice(priceText(econ.suggestedPrice));
+                        setPriceError(null);
+                      }}
+                    >
+                      {tl(econ.suggestedPrice)}
+                    </button>
+                  </span>
+                ) : proposed === null ? (
+                  "Menüdeki fiyat; virgüllü yazabilirsiniz"
+                ) : null}
+                {/* Personel fiyat yazdıysa alan onunla dolu gelir; değiştirilince öneriye tek dokunuşla dönülür */}
+                {proposed !== null ? (
+                  <span className="mt-0.5 block tabular">
+                    Personelin önerisi:{" "}
+                    {priceValue !== null && Math.abs(priceValue - proposed) < 0.005 ? (
+                      money(proposed)
+                    ) : (
+                      <button
+                        type="button"
+                        className="cursor-pointer font-semibold text-ink underline underline-offset-2 pointer-coarse:py-2"
+                        onClick={() => {
+                          setPrice(priceText(proposed));
+                          setPriceError(null);
+                        }}
+                      >
+                        {money(proposed)}
+                      </button>
+                    )}
+                  </span>
+                ) : null}
+              </>
             }
           >
             <div className="relative">

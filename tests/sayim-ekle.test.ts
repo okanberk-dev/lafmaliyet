@@ -1,7 +1,9 @@
-// Stok sayımı › "Listeye ekle" (src/lib/count-item.ts, src/app/panel/sayim/actions.ts addCountItem) ve sekiz yeni kalemin
-// migration'ı (drizzle/*_sayim_yeni_kalemler.sql): Türkçe ad anahtarı ve aynı ad kuralı, sayım biriminden malzeme
-// birimi, grubun varsayılanları, kalemin listeye girdiği ay (count_from), fiyatı 0 kalemin ilk fiyatının zam
-// sayılmaması, personelin fiyat görmemesi, CSV'de formül gibi başlayan adın kabul edilmemesi.
+// Stok sayımı › "Listeye ekle" (src/lib/count-item.ts, ortak çekirdek src/server/data/count-item.ts; eylemler
+// src/app/panel/sayim/actions.ts addCountItem ve reçete önerisindeki "Yeni malzeme" addProposalIngredient) ve sekiz yeni
+// kalemin migration'ı (drizzle/*_sayim_yeni_kalemler.sql): Türkçe ad anahtarı ve aynı ad kuralı, sayım biriminden malzeme
+// birimi, grubun varsayılanları, kalemin listeye girdiği ay (count_from), isteğe bağlı paket fiyatı (Tahmini kalır, fiyat
+// geçmişine yazılmaz), fiyatı 0 kalemin ilk fiyatının zam sayılmaması, personelin ay kuralı, personelin fiyatı yalnız
+// yazması (görmemesi), CSV'de formül gibi başlayan adın kabul edilmemesi.
 // Migration'ın veritabanı denemesi EKLE_TEST_DATABASE_URL verilince çalışır (işlem geri alınır; migrate edilmiş bir
 // yerel kopya verin, ör. postgres://postgres:postgres@localhost:5432/laffogato_ekle).
 // Çalıştırma: npx tsx --test tests/sayim-ekle.test.ts
@@ -21,8 +23,12 @@ import { COUNT_UNITS } from "../src/lib/constants";
 import {
   BASE_UNIT,
   cleanName,
+  COUNT_ITEM_PRICE_MAX,
   countFromMonth,
   countGroupOptions,
+  countItemLogDetail,
+  countItemMonthIssue,
+  countItemNote,
   defaultPackageSize,
   duplicateMessage,
   findDuplicate,
@@ -31,7 +37,10 @@ import {
   isUnpriced,
   laterCountItem,
   nameKey,
+  newCountItemValues,
   nextSortOrder,
+  readPackagePrice,
+  STAFF_MONTH_MESSAGE,
   startsLikeFormula,
   unpricedNotice,
 } from "../src/lib/count-item";
@@ -39,6 +48,16 @@ import { newProductIssue } from "../src/lib/recipe-change";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+/** Kaynaktaki bir işlevin gövdesi: adından sonraki ilk "export async function"a kadar */
+const fnBody = (file: string, name: string) => {
+  const src = read(file);
+  const start = src.indexOf(`export async function ${name}`);
+  assert.ok(start >= 0, `${file}: ${name}`);
+  const next = src.indexOf("export async function", start + 10);
+  return src.slice(start, next < 0 ? undefined : next);
+};
+/** Listeye ekle'nin ortak çekirdeği: iki eylem (sayım ve reçete önerisi) aynı işlevi çağırır */
+const CORE = "src/server/data/count-item.ts";
 
 test("ad anahtarı: boşluklar sadeleşir, Türkçe büyük/küçük harf (İ/i, I/ı) ve ı/i aynı", () => {
   assert.equal(nameKey("  Çilek  Şurubu "), "çilek şurubu");
@@ -70,10 +89,13 @@ test("formül gibi başlayan ad ve paket kabul edilmez (Hammaddeler / Ürünler 
   for (const bad of ["=HYPERLINK(\"http://x\";\"Fatura\")", "+90 şurup", "-1 kutu", "@SUM(A1)", "  =1+2"]) assert.equal(startsLikeFormula(bad), true, bad);
   for (const ok of ["Çilek şurubu", "1+1 kampanya bardağı", "Kapak 8-12oz", "e-posta", "Şurup 750 ml"]) assert.equal(startsLikeFormula(ok), false, ok);
   assert.equal(formulaStartMessage("Ad"), "Ad =, +, - ya da @ ile başlayamaz");
-  // Sunucu ve pencere aynı kuralı uygular; yeni ürün önerisi de (personelin adı Ürünler CSV'sine gider)
-  const actions = read("src/app/panel/sayim/actions.ts");
+  // Sunucu ve pencere aynı kuralı uygular; yeni ürün önerisi de (personelin adı Ürünler CSV'sine gider). Şema ortak
+  // çekirdekte, iki eylem de onunla doğrular
+  const actions = read(CORE);
   assert.match(actions, /\.refine\(\(v\) => !startsLikeFormula\(v\), formulaStartMessage\("Ad"\)\)/);
   assert.match(actions, /packageDesc: zOptText\(160\)\.refine\(\(v\) => !v \|\| !startsLikeFormula\(v\), formulaStartMessage\("Paket"\)\)/);
+  assert.match(fnBody("src/app/panel/sayim/actions.ts", "addCountItem"), /const data = countItemSchema\.parse\(input\);/);
+  assert.match(fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient"), /const data = countItemSchema\.parse\(input\);/);
   assert.match(read("src/app/panel/sayim/add-item.tsx"), /startsLikeFormula\(clean\)/);
   assert.equal(newProductIssue({ name: "=1+2", categoryId: 3, sizes: [{ size: "M", lines: 1 }] }, [], []), "Ürün adı =, +, - ya da @ ile başlayamaz");
   assert.equal(newProductIssue({ name: "Çilekli Latte", categoryId: 3, sizes: [{ size: "M", lines: 1 }] }, [], []), null);
@@ -209,12 +231,19 @@ test("listeye girdiği ay: sonradan eklenen kalem önceki aylarda, o ay sayılma
   assert.equal(laterCountItem("Çilek şurubu", rows, "2026-10"), undefined);
   assert.equal(laterCountItem("Peçetelik", rows, "2026-09"), undefined);
   assert.equal(laterCountItem("Eski şurup", rows, "2026-09"), undefined, "pasif kalem geri açılmaz (aynı ad kuralı söyler)");
-  const actions = read("src/app/panel/sayim/actions.ts");
-  const add = actions.slice(actions.indexOf("export async function addCountItem"), actions.indexOf("export async function saveStaffStockExtras"));
+  // Ortak çekirdek (Listeye ekle ve reçete önerisindeki "Yeni malzeme" aynı işlevi çağırır)
+  const add = fnBody(CORE, "createCountItem");
   assert.match(add, /const from = countFromMonth\(m, currentMonthTR\(\)\);/);
-  assert.match(add, /countFrom: from,/);
+  assert.match(read("src/lib/count-item.ts"), /countFrom: from,/);
+  assert.match(add, /newCountItemValues\(data, rows, from, note\)/);
   assert.match(add, /\.set\(\{ countFrom: from \}\)\.where\(eq\(s\.ingredients\.id, later\.id\)\)/);
   assert.ok(add.indexOf("laterCountItem(") < add.indexOf("findDuplicate("), "önce geriye çekme, sonra aynı ad kuralı");
+  for (const [file, fn] of [
+    ["src/app/panel/sayim/actions.ts", "addCountItem"],
+    ["src/server/actions/recipe-requests.ts", "addProposalIngredient"],
+  ]) {
+    assert.match(fnBody(file, fn), /await createCountItem\(me, data, "(sayim|recete)"\)/, `${fn} ortak çekirdeği çağırır`);
+  }
   // Sütun modele taşınır; motor yalnız sayım listesinde süzer
   assert.match(read("src/server/data/dataset.ts"), /countFrom: i\.countFrom,/);
   assert.match(read("src/lib/calc/engine.ts"), /countable\.filter\(\(i\) => !i\.countFrom \|\| i\.countFrom <= month \|\| counts\.has\(i\.id\)\)/);
@@ -257,6 +286,116 @@ test("fiyatı girilmemiş malzeme kullanan ürün: 'maliyeti eksik' uyarısı; y
   assert.notEqual(priced.products.find((p) => p.product.id === sodaId)!.status, "Reçete yok");
   // Fiyatsız malzeme yoksa uyarı da yok
   assert.ok(!alerts(createModel(base), month).some((x) => x.title.endsWith("ürünün maliyeti eksik")));
+});
+
+// ---------------------------------------------------------------- Paket fiyatı (isteğe bağlı) ve ortak çekirdeğin değerleri
+
+test("paket fiyatı: boş bırakılabilir; Türkçe ya da noktalı yazılır, kuruşa yuvarlanır; 0, eksi, yazı ve yüzde kabul edilmez", () => {
+  assert.deepEqual(readPackagePrice(""), { value: null, error: null });
+  assert.deepEqual(readPackagePrice("   "), { value: null, error: null });
+  assert.deepEqual(readPackagePrice("760"), { value: 760, error: null });
+  assert.deepEqual(readPackagePrice("1.250,50"), { value: 1250.5, error: null });
+  assert.deepEqual(readPackagePrice("1250.5"), { value: 1250.5, error: null });
+  assert.deepEqual(readPackagePrice("12,024"), { value: 12.02, error: null });
+  assert.deepEqual(readPackagePrice("760 ₺"), { value: 760, error: null });
+  assert.equal(readPackagePrice("0").error, "Paket fiyatı 0'dan büyük olmalı");
+  assert.equal(readPackagePrice("0,001").error, "Paket fiyatı 0'dan büyük olmalı", "kuruşa yuvarlanınca 0");
+  assert.equal(readPackagePrice("-5").error, "Paket fiyatı 0'dan büyük olmalı");
+  assert.equal(readPackagePrice("on beş").error, "Paket fiyatını sayıyla yazın");
+  assert.equal(readPackagePrice("%5").error, "Paket fiyatını sayıyla yazın", "yüzde tutar değil");
+  assert.deepEqual(readPackagePrice(String(COUNT_ITEM_PRICE_MAX)), { value: COUNT_ITEM_PRICE_MAX, error: null });
+  assert.equal(readPackagePrice("1.000.001").error, "Paket fiyatı çok büyük");
+  // Sunucu aynı sınırları uygular (kuruşa yuvarladıktan sonra 0'dan büyük, sınırın altında; yazılmadıysa null)
+  const core = read(CORE);
+  assert.match(core, /\.transform\(\(v\) => Math\.round\(v \* 100\) \/ 100\)\s+\.pipe\(z\.number\(\)\.positive\("Paket fiyatı 0'dan büyük olmalı"\)\.max\(COUNT_ITEM_PRICE_MAX, "Paket fiyatı çok büyük"\)\)/);
+  assert.match(core, /packagePrice: zPackagePrice\.nullish\(\)\.transform\(\(v\) => v \?\? null\),/);
+});
+
+test("ay kuralı: personel yalnız bu ayın ve geçen ayın sayımına (reçete önerisinden de) kalem ekler; yönetici her aya", () => {
+  const months = ["2026-10", "2026-09"];
+  assert.equal(countItemMonthIssue("staff", "2026-10", months), null);
+  assert.equal(countItemMonthIssue("staff", "2026-09", months), null);
+  assert.equal(countItemMonthIssue("staff", "2026-08", months), STAFF_MONTH_MESSAGE);
+  assert.equal(countItemMonthIssue("staff", "2026-11", months), STAFF_MONTH_MESSAGE);
+  assert.equal(countItemMonthIssue("admin", "2025-01", months), null);
+  assert.equal(STAFF_MONTH_MESSAGE, "Personel yalnız bu ayın ve geçen ayın sayımına kalem ekleyebilir; daha eski bir ay için yöneticiye yazın");
+  // Reçete önerisi kalemi sayım sayfasının açtığı aya yazar (bu ay ya da ay başında geçen ay): kural her zaman geçer
+  const page = read("src/app/panel/receteler/page.tsx");
+  assert.match(page, /const countMonth = defaultCountMonth\(new Date\(\), \(m\) => model\.stockSheet\(m\)\.hasData\);/);
+  assert.match(read("src/app/panel/receteler/ingredient-picker.tsx"), /addProposalIngredient\(\{ month: newIngredient\.month, \.\.\.values \}\)/);
+});
+
+test("kalemin notu: kim, ne zaman, nereden; paket fiyatını kimin yazdığı (plan metni)", () => {
+  assert.equal(countItemNote("Ayşe", "23.10.2026"), "Sayım listesine Ayşe ekledi (23.10.2026).");
+  assert.equal(countItemNote("Ayşe", "23.10.2026", { pricedBy: "staff" }), "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel yazdı.");
+  assert.equal(countItemNote("Yönetici", "23.10.2026", { pricedBy: "admin" }), "Sayım listesine Yönetici ekledi (23.10.2026); paket fiyatını yönetici yazdı.");
+  assert.equal(
+    countItemNote("Ayşe", "23.10.2026", { pricedBy: "staff", source: "recete" }),
+    "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden); paket fiyatını personel yazdı.",
+  );
+  assert.equal(countItemNote("Ayşe", "23.10.2026", { source: "recete" }), "Sayım listesine Ayşe ekledi (23.10.2026, reçete önerisinden).");
+  // Çekirdek notu yazanın rolüyle kurar (paket fiyatı yazılmadıysa fiyat cümlesi yok)
+  assert.match(fnBody(CORE, "createCountItem"), /countItemNote\(me\.name, dateTR\(todayTR\(\)\), \{ pricedBy: data\.packagePrice !== null \? me\.role : null, source \}\)/);
+});
+
+test("ortak çekirdeğin yazdığı kalem: grup varsayılanları, birim, sıra, ay; fiyat isteğe bağlı ve Tahmini", () => {
+  const rows = [
+    { countGroup: "SOS", category: "Sos & Şurup", vatRate: 0.01, active: true, sortOrder: 12 },
+    { countGroup: "SOS", category: "Sos & Şurup", vatRate: 0.01, active: true, sortOrder: 40 },
+    { countGroup: "AMBALAJ", category: "Ambalaj", vatRate: 0.2, active: true, sortOrder: 7 },
+  ];
+  const draft = { name: "Çilek şurubu", group: "SOS", countUnit: "LT" as const, packageDesc: "Şurup 750 ml", packageSize: 750, packagePrice: 760 };
+  assert.deepEqual(newCountItemValues(draft, rows, "2026-10", "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel yazdı."), {
+    name: "Çilek şurubu",
+    category: "Sos & Şurup",
+    supplier: null,
+    packageDesc: "Şurup 750 ml",
+    packagePrice: 760,
+    packageSize: 750,
+    unit: "ml",
+    vatRate: 0.01,
+    note: "Sayım listesine Ayşe ekledi (23.10.2026); paket fiyatını personel yazdı.",
+    isEstimate: true,
+    priceSource: "manual",
+    countUnit: "LT",
+    countGroup: "SOS",
+    countFrom: "2026-10",
+    sortOrder: 41,
+    active: true,
+  });
+  const unpriced = newCountItemValues({ ...draft, group: "AMBALAJ", countUnit: "ADET", packageSize: 1000, packagePrice: null }, rows, "2026-09", "not");
+  assert.deepEqual(
+    { price: unpriced.packagePrice, unit: unpriced.unit, category: unpriced.category, vat: unpriced.vatRate, from: unpriced.countFrom, estimate: unpriced.isEstimate },
+    { price: 0, unit: "adet", category: "Ambalaj", vat: 0.2, from: "2026-09", estimate: true },
+  );
+  // Fiyatı 0 açılan kalem zilde "Fiyatı girilmemiş" sayılır; yazılan fiyatla açılan sayılmaz (Hammaddeler › Tahmini'de)
+  assert.equal(isUnpriced(unpriced), true);
+  assert.equal(isUnpriced(newCountItemValues(draft, rows, "2026-10", "not")), false);
+});
+
+test("işlem geçmişi satırı: grup, birim, yazılan paket fiyatı; reçete önerisinden; zaten vardıysa ay", () => {
+  const base = { name: "Çilek şurubu", group: "SOS / ŞURUP / PÜRE", countUnit: "LT", existed: false, from: "2026-10", packagePrice: null };
+  assert.equal(countItemLogDetail(base), "Çilek şurubu · SOS / ŞURUP / PÜRE · LT");
+  // Tutarla ₺ arasında bölünmez boşluk (money)
+  assert.equal(countItemLogDetail({ ...base, packagePrice: 760 }), "Çilek şurubu · SOS / ŞURUP / PÜRE · LT · paket fiyatı 760\u00a0₺ (tahmini)");
+  assert.equal(
+    countItemLogDetail({ ...base, packagePrice: 12.5, source: "recete" }),
+    "Çilek şurubu · SOS / ŞURUP / PÜRE · LT · paket fiyatı 12,50\u00a0₺ (tahmini) · reçete önerisinden",
+  );
+  assert.equal(countItemLogDetail({ ...base, existed: true, from: "2026-09" }), "Çilek şurubu · Eylül 2026 sayımından itibaren");
+});
+
+test("aynı ad: çekirdek kaydı bulur; reçete önerisi aktif olanı seçtirir, pasifte metni gösterir", () => {
+  const core = fnBody(CORE, "createCountItem");
+  assert.match(core, /throw new CountItemExists\(duplicateMessage\(dup, me\.role\), \{/);
+  const recipe = fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient");
+  assert.match(recipe, /if \(e instanceof CountItemExists && e\.existing\.active && e\.existing\.id > 0\) return \{ ingredient: ref\(e\.existing\), existing: true as const \};/);
+  assert.match(recipe, /throw e;/);
+  // Dönen malzemede fiyat yok: personel yazdığı fiyatı bir daha görmez
+  const ref = recipe.slice(recipe.indexOf("const ref = "), recipe.indexOf("try {"));
+  assert.doesNotMatch(ref, /price|cost/i);
+  // Sayımın eylemi metni olduğu gibi gösterir (CountItemExists bir UserError)
+  assert.match(read(CORE), /export class CountItemExists extends UserError/);
 });
 
 // ---------------------------------------------------------------- Sahte zam yok
@@ -304,9 +443,18 @@ test("eylem ve yazım yolları: Listeye ekle fiyat geçmişine yazmaz; ilk elle 
   const actions = read("src/app/panel/sayim/actions.ts");
   const add = actions.slice(actions.indexOf("export async function addCountItem"));
   assert.doesNotMatch(add, /ingredientPrices/);
-  assert.match(add, /packagePrice: 0,/);
-  assert.match(add, /isEstimate: true,/);
-  assert.match(add, /priceSource: "manual",/);
+  // Ortak çekirdek ve reçete önerisinin eylemi de yazmaz (paket fiyatı yazılsa da: tahmin başlangıç olmasın)
+  assert.doesNotMatch(read(CORE), /ingredientPrices/);
+  assert.doesNotMatch(fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient"), /ingredientPrices|\.insert\(s\.ingredients\)/);
+  assert.doesNotMatch(add, /\.insert\(s\.ingredients\)/, "kalemi yalnız çekirdek açar");
+  const values = (packagePrice: number | null) =>
+    newCountItemValues({ name: "Çilek şurubu", group: "SOS", countUnit: "LT", packageDesc: null, packageSize: 750, packagePrice }, [], "2026-10", "not");
+  assert.equal(values(null).packagePrice, 0);
+  assert.equal(values(null).isEstimate, true);
+  assert.equal(values(null).priceSource, "manual");
+  assert.equal(values(760).packagePrice, 760);
+  assert.equal(values(760).isEstimate, true, "yazılan fiyat da tahmin");
+  assert.equal(values(760).priceSource, "manual");
   // Zam hesabı 0'lık başlangıcı atlar: price-impact.ts'teki koruma
   assert.match(read("src/lib/calc/price-impact.ts"), /if \(!\(before > 0\) \|\| !\(after > 0\)\) continue;/);
   // Bütün zam okuyucuları aynı hesaptan (ingredientChanges): zil, Genel bakış, sabah e-postası, Ürünler, Hammaddeler
@@ -319,16 +467,33 @@ test("eylem ve yazım yolları: Listeye ekle fiyat geçmişine yazmaz; ilk elle 
 
 // ---------------------------------------------------------------- Yetki ve görünürlük
 
-test("personel kalem ekler (bu ay ve geçen ay); fiyat alanı yok, personel fiyat görmez", () => {
+test("personel kalem ekler (bu ay ve geçen ay); paket fiyatını yalnız yazar, personel fiyat görmez", () => {
   const actions = read("src/app/panel/sayim/actions.ts");
   const add = actions.slice(actions.indexOf("export async function addCountItem"));
   assert.match(add, /const me = await requireUser\(\);/);
   assert.doesNotMatch(add, /requireAdmin/);
-  assert.match(add, /if \(me\.role !== "admin" && !staffCountMonths\(\)\.includes\(m\)\)/);
-  assert.match(add, /pg_advisory_xact_lock\(hashtext\('sayim-listeye-ekle'\)\)/);
-  // Pencere fiyat sormaz, fiyat göstermez
+  // "Listede olmayanlar" da aynı ay kuralıyla (Listeye ekle'ninki aşağıda, ortak çekirdekte)
+  assert.match(fnBody("src/app/panel/sayim/actions.ts", "saveStaffStockExtras"), /if \(me\.role !== "admin" && !staffCountMonths\(\)\.includes\(m\)\)/);
+  // Reçete önerisindeki "Yeni malzeme" de personelin; ay kuralı ve kilit ikisi için ortak çekirdekte
+  const recipe = fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient");
+  assert.match(recipe, /const me = await requireUser\(\);/);
+  assert.doesNotMatch(recipe, /requireAdmin/);
+  const core = fnBody(CORE, "createCountItem");
+  assert.match(core, /const monthIssue = countItemMonthIssue\(me\.role, m, staffCountMonths\(\)\);\s+if \(monthIssue\) throw new UserError\(monthIssue\);/);
+  assert.ok(core.indexOf("countItemMonthIssue(") < core.indexOf("getDb().transaction("), "ay kuralı yazmadan önce");
+  assert.match(core, /pg_advisory_xact_lock\(hashtext\('sayim-listeye-ekle'\)\)/);
+  assert.doesNotMatch(read(CORE), /"use server"/, "çekirdek dışarıdan çağrılan bir uç değil");
+  assert.match(read(CORE), /^import "server-only";/);
+  // Pencere paket fiyatını yalnız sorar (isteğe bağlı); kayıtlı fiyat ya da maliyet göstermez, sunucudan fiyat almaz
   const dialog = read("src/app/panel/sayim/add-item.tsx");
-  for (const word of ["price", "Price", "unitCost", "₺", "Fiyat ", "tl("]) assert.ok(!dialog.includes(word), `${word} pencerede olmamalı`);
+  for (const word of ["unitCost", "unitPrice", "Fiyat ", "tl(", "money("]) assert.ok(!dialog.includes(word), `${word} pencerede olmamalı`);
+  assert.match(dialog, /label="Paket fiyatı \(₺, biliyorsanız\)"/);
+  const groupType = dialog.slice(dialog.indexOf("export interface CountItemGroup"), dialog.indexOf("export interface CountItemValues"));
+  assert.doesNotMatch(groupType, /price|cost/i, "grup seçeneklerinde fiyat yok");
+  const dialogProps = dialog.slice(dialog.indexOf("export function AddCountItemDialog"), dialog.indexOf("const form = useCountItemForm({ groups, defaultGroup, initialName });"));
+  // Açıklamalar dışında (kod): pencereye fiyat gelmez; dönüşte yalnız eklenen kalemin fiyatı yazıldı mı (priced)
+  const code = dialogProps.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(code.replace("priced: boolean", ""), /price|cost/i, "pencereye fiyat gelmez");
   // Sayım sayfası personele fiyat geçirmez (0); "fiyat yok" ipucu yalnız yönetici satırında
   const page = read("src/app/panel/sayim/page.tsx");
   assert.match(page, /unitPrice: isAdmin \? l\.unitPrice : 0/);

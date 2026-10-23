@@ -751,7 +751,7 @@ export function StockCountForm({
     el.focus({ preventScroll: true });
   }, [groups, group, q]);
 
-  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean }) {
+  function onItemAdded(item: { id: number; name: string; group: string; existed: boolean; priced: boolean }) {
     setAdding(null);
     pendingFocus.current = item.id;
     // Yeni kalem süzgeçte gizli kalmasın: grup süzgeci başka gruptaysa onun grubuna geçilir, arama uymuyorsa silinir
@@ -762,7 +762,14 @@ export function StockCountForm({
     if (item.existed) return void toast.success(`Listeye eklendi: ${item.name}`, { description: "Kalem zaten vardı; artık bu aydan itibaren de listede." });
     const href = `/panel/hammaddeler?ara=${encodeURIComponent(item.name)}`;
     toast.success(`Listeye eklendi: ${item.name}`, {
-      description: isAdmin ? "Paket fiyatı 0 ₺; fiyatını girince stok toplamına yansır." : "Miktarını yazıp sayımı kaydedin. Fiyatını yönetici girecek.",
+      // Paket fiyatı yazıldıysa Tahmini kaydedildi (yönetici doğrular); yazılmadıysa 0 ₺
+      description: isAdmin
+        ? item.priced
+          ? "Paket fiyatı Tahmini olarak kaydedildi; Hammaddeler'den doğrulayın."
+          : "Paket fiyatı 0 ₺; fiyatını girince stok toplamına yansır."
+        : item.priced
+          ? "Miktarını yazıp sayımı kaydedin. Yazdığınız fiyatı yönetici kontrol edecek."
+          : "Miktarını yazıp sayımı kaydedin. Fiyatını yönetici girecek.",
       // Kaydedilmemiş sayım varken sayfadan çıkmadan önce sorulur (bağlantı tıklamasıyla aynı kural)
       action: isAdmin ? { label: "Fiyatını gir", onClick: () => (dirtyRef.current ? setLeaveHref(href) : router.push(href)) } : undefined,
     });

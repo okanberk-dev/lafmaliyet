@@ -86,6 +86,7 @@ async function ApprovalsContent() {
   const pending: (ReviewItem | NewProductItem)[] = queue.pending.map((r): ReviewItem | NewProductItem => {
     if (r.kind === "new" || r.productId === null) {
       // Yeni ürün: maliyet satır satır bugünkü fiyatlarla; satış fiyatı ve marj yöneticinin yazdığı fiyatla tarayıcıda
+      // (personel fiyat yazdıysa alan onunla dolu gelir)
       return {
         kind: "new",
         id: r.id,
@@ -95,8 +96,10 @@ async function ApprovalsContent() {
         requestedByName: r.requestedByName,
         updatedAt: r.updatedAt.toISOString(),
         message: r.message,
+        proposedPrice: r.proposedPrice,
         lines: r.after.items.map((l) => {
           const ing = model.ingById.get(l.ingredientId);
+          const unpriced = !!ing && isUnpriced(ing);
           return {
             name: l.name,
             qtyLabel: qtyLabel({ ...l, qty: lineQty(model, l) }),
@@ -106,7 +109,9 @@ async function ApprovalsContent() {
             vatRate: ing?.vatRate ?? 0,
             isPackaging: ing?.category === PACKAGING_CATEGORY,
             missing: !ing,
-            unpriced: !!ing && isUnpriced(ing),
+            unpriced,
+            // Fiyatı tahmini (öneride "Yeni malzeme" ile açılan ya da faturada bulunmayan): maliyet kesin değil
+            estimate: !!ing && ing.isEstimate && !unpriced,
           };
         }),
       };

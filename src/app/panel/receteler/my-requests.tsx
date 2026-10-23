@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SIZE_LABELS } from "@/lib/constants";
-import { dateTimeTR } from "@/lib/format";
+import { dateTimeTR, money } from "@/lib/format";
 import { REQUEST_STATUS_LABEL, type RecipeSnapshot, type RequestKind, type RequestStatus } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 import { withdrawRecipeChange } from "@/server/actions/recipe-requests";
@@ -24,6 +24,11 @@ export interface MyRequest {
   productName: string;
   size: "M" | "L" | "Tek";
   status: RequestStatus;
+  /**
+   * Yeni ürün önerisinde kişinin kendi yazdığı satış fiyatı, yalnız öneri beklerken (sunucu başka durumda göndermez).
+   * Menü fiyatıdır, maliyet değil; onaylanınca fiyatı yönetici belirler.
+   */
+  proposedPrice: number | null;
   before: RecipeSnapshot;
   after: RecipeSnapshot;
   message: string | null;
@@ -36,7 +41,8 @@ export const STATUS_TONE: Record<RequestStatus, Tone> = { pending: "amber", appr
 
 /**
  * Personelin önerileri: bekleyenler ve son iki haftada sonuçlananlar. Reçete değişikliğinde önce / sonra farkı, yeni
- * üründe önerilen reçete açılır; bekleyen öneri geri çekilebilir. Reddedilende yöneticinin notu yazar.
+ * üründe önerilen reçete açılır; bekleyen öneri geri çekilebilir. Reddedilende yöneticinin notu yazar. Bekleyen yeni
+ * ürün önerisinde kişinin yazdığı satış fiyatı görünür.
  */
 export function MyRequests({ requests }: { requests: MyRequest[] }) {
   const [open, setOpen] = useState<number | null>(null);
@@ -90,6 +96,7 @@ export function MyRequests({ requests }: { requests: MyRequest[] }) {
                     </Badge>
                     <span className="tabular">{dateTimeTR(r.updatedAt)}</span>
                     {r.reviewedByName && r.status !== "pending" && r.status !== "withdrawn" ? <span>· {r.reviewedByName}</span> : null}
+                    {isNew && r.status === "pending" && r.proposedPrice !== null ? <span className="tabular">· Önerdiğiniz fiyat {money(r.proposedPrice)}</span> : null}
                   </p>
                   {r.reviewNote ? <p className="mt-1.5 rounded-xl bg-surface px-3 py-2 text-[13px] break-words text-ink-soft ring-1 ring-line">Yönetici: {r.reviewNote}</p> : null}
                   {r.message ? <p className="mt-1.5 text-[13px] break-words text-ink-mute">Notunuz: {r.message}</p> : null}

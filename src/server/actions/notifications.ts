@@ -204,15 +204,18 @@ async function recipeNotifications(user: CurrentUser): Promise<PanelNotification
         group: "onay",
       });
     }
+    // Gövde: personelin önerdiği fiyat ve notu ("Önerilen fiyat: Medium 165 ₺ · Not: …"), ikisi de yoksa ne yapılacağı
     const proposals = groupNewProposals(
-      pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })),
+      pending
+        .filter((r) => r.kind === "new")
+        .map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message, price: r.proposedPrice })),
     );
     for (const g of proposals) {
       out.push({
         id: `onay-yeni-${g.ids.join("-")}`,
         kind: "warning",
         title: g.title,
-        body: g.message ? `Not: ${g.message}` : "Satış fiyatını yazıp onaylayın",
+        body: g.body,
         timeLabel: "",
         unread: true,
         href: `/panel/onaylar#oneri-${g.ids[0]}`,

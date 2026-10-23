@@ -8,8 +8,8 @@
 import type { ProposedProduct, RecipeSnapshot } from "@/server/db/schema";
 
 import { SIZE_LABELS } from "./constants";
-import { cleanName, formulaStartMessage, nameKey, startsLikeFormula } from "./count-item";
-import { num } from "./format";
+import { cleanName, formulaStartMessage, nameKey, readMoneyText, startsLikeFormula, type MoneyRead } from "./count-item";
+import { money, num } from "./format";
 
 export type { ProposedProduct, RecipeSnapshot };
 export type SnapshotLine = RecipeSnapshot["items"][number];
@@ -169,6 +169,17 @@ export function newProductIssue(
   return null;
 }
 
+/** Personelin önerdiği satış fiyatının üst sınırı (KDV dahil, boy başına) */
+export const PROPOSED_PRICE_MAX = 10_000;
+
+/**
+ * "Satış fiyatı (₺, KDV dahil)": personel boy başına yazabilir, boş bırakabilir. Yazılan fiyat bir ipucudur: yönetici
+ * Reçete onayları'nda önceden dolu görür, onaylarken değiştirebilir. Sunucu aynı sınırları zod ile uygular.
+ */
+export function readProposedPrice(text: string): MoneyRead {
+  return readMoneyText(text, { label: "Satış fiyatı", accusative: "Satış fiyatını", max: PROPOSED_PRICE_MAX });
+}
+
 /** Aynı ad + boyda ürün ya da bekleyen öneri varsa metni (öneri penceresi adın altında hemen gösterir), yoksa null */
 export function takenIssue(name: string, size: ProductSize, existing: { name: string; size: string }[], pending: { name: string; size: string }[]): string | null {
   const key = nameKey(name);
@@ -183,23 +194,28 @@ const SIZE_ORDER: ProductSize[] = ["M", "L", "Tek"];
 
 /**
  * Zil: bekleyen yeni ürün önerileri ad (nameKey) ve öneren başına tek satır, boyları birlikte, en eskisi önce.
- * "Yeni ürün önerisi: Çilekli Latte · Medium, Large (Ayşe)"
+ * "Yeni ürün önerisi: Çilekli Latte · Medium, Large (Ayşe)". Personel satış fiyatı yazdıysa `body`'de boy boy:
+ * "Önerilen fiyat: Medium 165 ₺, Large 185 ₺".
  */
-export function groupNewProposals<T extends { id: number; name: string; size: ProductSize; by: string; message: string | null }>(
+export function groupNewProposals<T extends { id: number; name: string; size: ProductSize; by: string; message: string | null; price?: number | null }>(
   rows: T[],
-): { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null; title: string }[] {
-  const groups = new Map<string, { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null }>();
+): { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null; title: string; body: string }[] {
+  type Group = { ids: number[]; name: string; sizes: ProductSize[]; by: string; message: string | null; prices: Map<ProductSize, number> };
+  const groups = new Map<string, Group>();
   for (const r of rows) {
     const key = `${nameKey(r.name)}|${r.by}`;
-    const g = groups.get(key) ?? { ids: [], name: r.name, sizes: [], by: r.by, message: r.message };
+    const g: Group = groups.get(key) ?? { ids: [], name: r.name, sizes: [], by: r.by, message: r.message, prices: new Map() };
     g.ids.push(r.id);
     if (!g.sizes.includes(r.size)) g.sizes.push(r.size);
+    if (r.price && !g.prices.has(r.size)) g.prices.set(r.size, r.price);
     g.message ??= r.message;
     groups.set(key, g);
   }
-  return [...groups.values()].map((g) => {
+  return [...groups.values()].map(({ prices, ...g }) => {
     const sizes = [...g.sizes].sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
-    return { ...g, sizes, title: `Yeni ürün önerisi: ${g.name} · ${sizes.map((x) => SIZE_LABELS[x]).join(", ")} (${g.by})` };
+    const priced = sizes.filter((x) => prices.has(x)).map((x) => `${SIZE_LABELS[x]} ${money(prices.get(x))}`);
+    const body = [priced.length ? `Önerilen fiyat: ${priced.join(", ")}` : null, g.message ? `Not: ${g.message}` : null].filter(Boolean).join(" · ");
+    return { ...g, sizes, title: `Yeni ürün önerisi: ${g.name} · ${sizes.map((x) => SIZE_LABELS[x]).join(", ")} (${g.by})`, body: body || "Satış fiyatını yazıp onaylayın" };
   });
 }
 
