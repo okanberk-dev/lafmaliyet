@@ -9,18 +9,37 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { dialogData, openPayouts, openPayoutsSub, payoutText, pendingBadge, pendingSub, ratePartsText, sourceLabel, statusBadge, tillSub } from "../src/app/panel/komisyonlar/texts";
+import {
+  dialogData,
+  mealStatSub,
+  openPayouts,
+  openPayoutsSub,
+  payoutText,
+  pendingBadge,
+  pendingSub,
+  platformTillLine,
+  ratePartsText,
+  sourceLabel,
+  statusBadge,
+  tillSub,
+} from "../src/app/panel/komisyonlar/texts";
 import { CHANNELS, channelDef, channelOf, classifyLine, fold } from "../src/lib/commission/channels";
 import {
   buildCommissionReport,
+  channelMonthChange,
   channelTill,
   commissionAlerts,
   commissionDigestBox,
+  commissionLogKey,
   coverMonth,
   effectiveSettings,
+  freshAlerts,
+  groupInvoiceRows,
   groupOf,
   invoiceView,
+  markValues,
   MAX_ALERTS,
+  offCycleInvoice,
   overduePayouts,
   parseCommissionSettings,
   payoutOf,
@@ -28,8 +47,10 @@ import {
   shownChannels,
   type ChannelMonth,
   type ChannelMonthIn,
+  type CommissionAlert,
   type CommissionInput,
   type CommissionInvoiceIn,
+  type CommissionInvoiceRow,
   type TillDayIn,
 } from "../src/lib/commission/report";
 import { COMMISSION_SUPPLIERS } from "../src/server/parasut/mapping";
@@ -252,6 +273,41 @@ test("satışın kaynağı: elle yazılan ekstre; yoksa grupta tek kanal varsa Z
   assert.equal(must(rowOf(plat, "trendyol", "2026-10")).salesReason, "Satış bilinmiyor: Z'deki online (platformlar) tek toplam ve bu ay 2 platform var. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.");
 });
 
+test("öteki kanalın bu aya ait faturası sonraki ayın 1–15'inde kesildiyse o da etkin: Z toplamı tek kanala yazılmaz", () => {
+  // Trendyol Go haftalık fatura keser; Yemeksepeti'nin Ekim faturası (ilk ayı) 14 Kasım tarihli
+  const weekly = () => ["2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"].map((d) => inv("Trendyol Go", d, 300));
+  const input = (ysDate: string) =>
+    f1({ today: "2026-11-27", through: "2026-11-26", since: "2026-10-01", marks: [], till: days("2026-10-01", "2026-11-26"), invoices: [...weekly(), inv("Yemek Sepeti", ysDate, 200)] });
+  const r = buildCommissionReport(input("2026-11-14"));
+  const t = must(rowOf(r, "trendyol", "2026-10"));
+  assert.equal(t.sales, null);
+  assert.equal(t.tekSales, null);
+  assert.equal(
+    plain(t.salesReason),
+    "Satış bilinmiyor: Z'deki online (platformlar) tek toplam ve 14 Kasım tarihli Yemeksepeti faturası Ekim satışlarını da kapsıyor olabilir. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
+  );
+  // Hakedişin son günü belli, beklenen tutar yok: Yemeksepeti'nin satışı Trendyol'dan beklenmez
+  assert.deepEqual([t.payout.status, t.payout.due, t.payout.expected], ["gecikti", "2026-11-25", null]);
+  // Gelen havale yazılınca "eksik geldi" çıkmaz (eskiden Z'deki 12.400 ₺'nin tamamı beklenirdi)
+  const paid = buildCommissionReport({ ...input("2026-11-14"), marks: [mark("trendyol", "2026-10", { receivedOn: "2026-11-26", received: 6000 })] });
+  assert.equal(must(rowOf(paid, "trendyol", "2026-10")).payout.status, "geldi");
+  assert.equal(plain(commissionAlerts(r, "2026-11-27").find((a) => a.key === "gecikti:trendyol:2026-10")?.body), "Son gün 25 Kasım. Geldiyse işaretleyin.");
+  assert.deepEqual(groupOf(r, "platform", "2026-10")!.activeChannels, ["yemeksepeti", "trendyol"]);
+  // Ayın 15'inden sonra kesilen fatura sonraki ayındır: Ekim'de Trendyol tek platform, satış Z'den
+  assert.deepEqual(must(rowOf(buildCommissionReport(input("2026-11-16")), "trendyol", "2026-10")).sales, { amount: 12400, source: "tek" });
+
+  // Yemek kartında: Multinet'in ilk faturası 10 Kasım'da (ayın 1–5'i değil); Pluxee Z'deki toplamın tamamını almaz
+  const meal = buildCommissionReport(f1({ today: "2026-11-20", through: "2026-11-19", marks: [], invoices: [inv("Pluxee", "2026-10-31", 300), inv("Multinet", "2026-11-10", 250)] }));
+  const p = must(rowOf(meal, "pluxee", "2026-10"));
+  assert.equal(p.sales, null);
+  assert.equal(
+    plain(p.salesReason),
+    "Satış bilinmiyor: Z'de yemek kartları tek toplam ve 10 Kasım tarihli Multinet faturası Ekim satışlarını da kapsıyor olabilir. Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.",
+  );
+  assert.deepEqual(statusBadge(p), { text: "Satış bilinmiyor", tone: "gray" });
+  assert.deepEqual(groupOf(meal, "meal", "2026-10")!.activeChannels, ["pluxee", "multinet"]);
+});
+
 test("kasa raporunun günleri: eksik günler ay başından düne kadar, ay ortasında başlayan ilk ay yarım", () => {
   const t = channelTill(days("2026-10-01", "2026-10-22", undefined, ["2026-10-05"]), "2026-10", "2026-10-22", "2026-08-01");
   assert.deepEqual(t, { meal: 10500, online: 8400, reportDays: 21, missing: ["2026-10-05"], partialFrom: null });
@@ -327,6 +383,61 @@ test("gerçek oran ve uyarılar: %6 aşımı, komisyon dışı ücret, erken öd
   );
   assert.match(g.flags[0].text, /Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin\.$/);
   assert.equal(g.flags[1].text, "3 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür.");
+  // Toplamda da (tek kart): eksik günde turuncu
+  assert.deepEqual(
+    groupOf(gaps, "meal", "2026-10")!.flags.map((f) => [f.key, f.level, f.text]),
+    [["oran-sinir", "warn", "Ortalama kesinti %7,1: yemek kartında yasal üst sınır %6. Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin."]],
+  );
+});
+
+test("%6 aşımı ay sonunda kesilmeyen faturada kesin değil: turuncu ve 'olabilir'; zil ve e-posta uyarmaz", () => {
+  // Ayın son beş günü ve sonraki ayın ilk beş günü ekstrenin günüdür; iade (eksi) fatura oranı büyütmez, sayılmaz
+  const dated = (date: string, net = 10) => ({ date, net });
+  assert.equal(offCycleInvoice([dated("2026-10-27"), dated("2026-10-31", 100), dated("2026-11-05", 50)], "2026-10"), null);
+  assert.equal(offCycleInvoice([dated("2026-10-31", 100), dated("2026-10-15", 50), dated("2026-10-12", -20)], "2026-10"), "2026-10-15");
+  assert.equal(offCycleInvoice([dated("2026-10-26"), dated("2026-11-06")], "2026-10"), "2026-10-26");
+  assert.equal(offCycleInvoice([dated("2026-11-06")], "2026-10"), "2026-11-06");
+  // Şubat 28 gün: son beş gün 24–28
+  assert.equal(offCycleInvoice([dated("2026-02-23")], "2026-02"), "2026-02-23");
+  assert.equal(offCycleInvoice([dated("2026-02-24")], "2026-02"), null);
+
+  // Kart: Ekim ekstresi 31 Ekim, 15 Ekim'de Eylül'ün düzeltmesi; satış elle yazıldı
+  const today = { today: "2026-11-20", through: "2026-11-19" };
+  const card = buildCommissionReport(f1({ ...today, marks: [mark("pluxee", "2026-10", { sales: 9300 })], invoices: [inv("Pluxee", "2026-10-31", 450), inv("Pluxee", "2026-10-15", 150)] }));
+  const p = must(rowOf(card, "pluxee", "2026-10"));
+  assert.deepEqual(
+    p.flags.map((f) => [f.key, f.level, plain(f.text)]),
+    [
+      [
+        "oran-sinir",
+        "warn",
+        "Toplam kesinti %6,5: yemek kartında yasal üst sınır %6. 15 Ekim tarihli fatura ay sonunda kesilmemiş, başka bir ayın ücretini de taşıyor olabilir; kesin değil, kontrol edin.",
+      ],
+    ],
+  );
+  assert.deepEqual(statusBadge(p), { text: "Kontrol edin", tone: "amber" });
+  assert.ok(!commissionAlerts(card, "2026-11-20").some((a) => a.kind === "oran"));
+
+  // Toplam: iki kart, Multinet'in faturası ay ortasında; ortalama %6'yı aşıyor ama kesin değil
+  const two = buildCommissionReport(f1({ ...today, marks: [], invoices: [inv("Pluxee", "2026-10-31", 600), inv("Multinet", "2026-10-14", 400)] }));
+  assert.deepEqual(
+    groupOf(two, "meal", "2026-10")!.flags.map((f) => [f.key, f.level, plain(f.text)]),
+    [
+      [
+        "oran-sinir",
+        "warn",
+        "Ortalama kesinti %6,5: en az bir yemek kartı %6'yı aşıyor olabilir. 14 Ekim tarihli fatura ay sonunda kesilmemiş, başka bir ayın ücretini de taşıyor olabilir; kontrol edin.",
+      ],
+    ],
+  );
+  assert.ok(!commissionAlerts(two, "2026-11-20").some((a) => a.kind === "oran"));
+  // Aynı tutarlar ay sonunda kesilince kesin: kırmızı, zilde
+  const sure = buildCommissionReport(f1({ ...today, marks: [], invoices: [inv("Pluxee", "2026-10-31", 600), inv("Multinet", "2026-11-03", 400)] }));
+  assert.equal(groupOf(sure, "meal", "2026-10")!.flags[0].level, "bad");
+  assert.deepEqual(
+    commissionAlerts(sure, "2026-11-20").map((a) => a.key),
+    ["oran:yemek-kartlari:2026-10:65"],
+  );
 });
 
 test("yemek kartlarının toplamı: Z'deki yemek kartı, bütün yemek kartı faturaları, ortalama oran, beklenen hakediş", () => {
@@ -364,6 +475,34 @@ test("faturası gelmeyen ay: yazılan satış var, fatura yok; sonraki ayın 15'
   assert.equal(plain(meal("2026-11-15")[0].text), "Ekim'de 15.500 ₺ yemek kartı satışı var ama hiçbir yemek kartı faturası gelmedi.");
 });
 
+test("kasa raporu olan ayda Z'deki toplam 0 da bilinir: 'kasa raporu yok' denmez", () => {
+  // Aralık'ta platformlara ara verildi: her günün raporu var, online 0; Trendyol'un kartı Kasım'dan ötürü görünür
+  const r = buildCommissionReport(
+    f1({
+      today: "2027-01-05",
+      through: "2027-01-04",
+      marks: [],
+      invoices: [inv("Trendyol Go", "2026-11-20", 300)],
+      till: [...days("2026-11-01", "2026-11-30"), ...days("2026-12-01", "2026-12-31", () => ({ mealCard: 0, online: 0 }))],
+    }),
+  );
+  const dec = groupOf(r, "platform", "2026-12")!;
+  assert.deepEqual([dec.zTotal, dec.reportDays, dec.rate, dec.invoiceCount], [0, 31, null, 0]);
+  assert.equal(plain(platformTillLine(dec)), "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu");
+  assert.equal(plain(mealStatSub(groupOf(r, "meal", "2026-12"))), "Satış 0 ₺");
+  // Raporu olmayan ayda grup yok
+  assert.equal(groupOf(r, "platform", "2026-10"), null);
+  assert.equal(platformTillLine(null), "Kasa raporu yok");
+  assert.equal(mealStatSub(null), "Satış bilinmiyor");
+  // Karonun alt satırı: oran varsa yalnız satış; yoksa nedeni (ay ortasında başlayan rapor, fatura yok)
+  const base = { zTotal: 15500, rate: null, partialFrom: null, invoiceCount: 2 };
+  assert.equal(plain(mealStatSub({ ...base, rate: 0.063 })), "Satış 15.500 ₺");
+  assert.equal(plain(mealStatSub({ ...base, partialFrom: "2026-10-16" })), "Satış 15.500 ₺ · Z ayın bir kısmı");
+  assert.equal(plain(mealStatSub({ ...base, invoiceCount: 0 })), "Satış 15.500 ₺ · fatura yok");
+  // İade ayı eksiye düştü (oran yok): "Z ayın bir kısmı" denmez
+  assert.equal(plain(mealStatSub(base)), "Satış 15.500 ₺");
+});
+
 test("platformun 3 aylık oranı: satışı bilinen en az iki ay", () => {
   const r = buildCommissionReport(
     f1({
@@ -378,6 +517,15 @@ test("platformun 3 aylık oranı: satışı bilinen en az iki ay", () => {
   assert.ok(Math.abs(must(rowOf(r, "trendyol", "2026-10")).rate3! - 3600 / 32400) < 1e-9);
   // Yemek kartında 3 aylık oran yok
   assert.equal(must(rowOf(buildCommissionReport(f1()), "pluxee", "2026-10")).rate3, null);
+  // Seçilen ayın kendi oranı bilinmiyorsa (Ekim'de iki platform) yok: başlıktaki oran yalnız önceki aylardan gelmesin
+  const two = buildCommissionReport(
+    f1({
+      invoices: [inv("Trendyol Go", "2026-08-31", 1000), inv("Trendyol Go", "2026-09-30", 1200), inv("Trendyol Go", "2026-10-27", 1400), inv("Yemek Sepeti", "2026-10-20", 150)],
+      marks: [mark("trendyol", "2026-08", { sales: 10000 }), mark("trendyol", "2026-09", { sales: 10000 })],
+    }),
+  );
+  assert.deepEqual([must(rowOf(two, "trendyol", "2026-10")).rate, must(rowOf(two, "trendyol", "2026-10")).rate3], [null, null]);
+  assert.ok(Math.abs(must(rowOf(two, "trendyol", "2026-09")).rate3! - 2200 / 20000) < 1e-9);
 });
 
 // ---------------------------------------------------------------- Hakediş
@@ -637,6 +785,14 @@ test("ekran metinleri: hakediş satırı, durum rozeti (en kötüsü), satışı
   assert.deepEqual(statusBadge(ok), { text: "Tamam", tone: "green" });
   const unknownOk = must(rowOf(buildCommissionReport(f1({ invoices: [inv("Pluxee", "2026-11-20", 300), inv("Multinet", "2026-11-20", 300)], marks: [] })), "pluxee", "2026-11"));
   assert.deepEqual(statusBadge(unknownOk), { text: "Satış bilinmiyor", tone: "gray" });
+  // Satış yazıldı, fatura henüz gelmedi: satış biliniyor, rozet faturayı bekler
+  const early = { today: "2026-11-10", through: "2026-11-09" };
+  const typed = must(rowOf(buildCommissionReport(f1({ ...early, invoices: [], marks: [mark("getir", "2026-10", { sales: 2000 })] })), "getir", "2026-10"));
+  assert.deepEqual(statusBadge(typed), { text: "Fatura bekleniyor", tone: "gray" });
+  // İade faturası ayı eksiye düşürdü (satış ve fatura var, oran yok)
+  const refund = must(rowOf(buildCommissionReport(f1({ ...early, invoices: [inv("Pluxee", "2026-10-31", 100), inv("Pluxee", "2026-10-31", -300)], marks: [mark("pluxee", "2026-10", { sales: 9300 })] })), "pluxee", "2026-10"));
+  assert.equal(refund.rate, null);
+  assert.deepEqual(statusBadge(refund), { text: "Oran yok", tone: "gray" });
 
   assert.equal(sourceLabel("elle", "meal"), "Kanalın ekstresinden (elle)");
   assert.equal(sourceLabel("tek", "meal"), "Z'deki yemek kartı toplamı (tek kart)");
@@ -678,6 +834,103 @@ test("ekran metinleri: hakediş satırı, durum rozeti (en kötüsü), satışı
   assert.equal(dialogData(channelDef("getir"), "2026-10", null).invoiced, false);
 });
 
+// ---------------------------------------------------------------- Kayıt, e-posta günlüğü, sorgunun satırları
+
+test("hakediş kaydı: önceki değerler (Geri al), değişikliğin türü ve işlem geçmişinin metni", () => {
+  const L = "Pluxee Ekim 2026";
+  const empty = markValues(null);
+  assert.deepEqual(empty, { received: null, sales: null, note: null });
+  assert.deepEqual(markValues({ receivedOn: "2026-11-28", received: 8605.2, sales: 9300, note: "ekstre" }), { received: { on: "2026-11-28", amount: 8605.2 }, sales: 9300, note: "ekstre" });
+  // Gün ya da tutarı eksik işaret yok sayılır (veritabanı ikisini birlikte ister)
+  assert.equal(markValues({ receivedOn: null, received: 100, sales: null, note: null }).received, null);
+
+  const first = { received: { on: "2026-11-28", amount: 8605.2 }, sales: null, note: null };
+  const got = channelMonthChange(empty, first, L);
+  assert.deepEqual([got.change, plain(got.log)], ["geldi", "Hakediş geldi: Pluxee Ekim 2026 · 8.605,20 ₺ (28 Kasım)"]);
+  // Geri al: önceki (boş) değerler yazılınca işaret kalkar; hepsi boş olduğu için eylem satırı siler
+  assert.deepEqual(channelMonthChange(first, empty, L), { change: "kaldirildi", log: "Hakediş işareti kaldırıldı: Pluxee Ekim 2026" });
+
+  // Birden çok değişiklik: türü önce hakediş, sonra satış, sonra not; metin hepsini " · " ile sayar
+  const full = { received: { on: "2026-11-28", amount: 100 }, sales: 9300, note: "ekstre" };
+  const all = channelMonthChange(empty, full, L);
+  assert.equal(all.change, "geldi");
+  assert.equal(plain(all.log), "Hakediş geldi: Pluxee Ekim 2026 · 100 ₺ (28 Kasım) · Komisyon kanalı satışı: Pluxee Ekim 2026 → 9.300 ₺ · Not: Pluxee Ekim 2026 → ekstre");
+  assert.equal(channelMonthChange(full, { ...full, received: { on: "2026-11-29", amount: 100 } }, L).change, "geldi");
+  assert.equal(channelMonthChange(full, { ...full, received: { on: "2026-11-28", amount: 120 } }, L).change, "geldi");
+  assert.deepEqual(channelMonthChange(full, { ...full, sales: null, note: null }, L), {
+    change: "satis-silindi",
+    log: "Komisyon kanalı satışı: Pluxee Ekim 2026 → boş · Not: Pluxee Ekim 2026 → boş",
+  });
+  assert.equal(channelMonthChange(full, { ...full, sales: 9400 }, L).change, "satis");
+  assert.equal(channelMonthChange(full, { ...full, note: "düzeltildi" }, L).change, "not");
+  // Aynı değerler (yeni nesne): değişiklik yok, işlem geçmişine yazılmaz
+  assert.deepEqual(channelMonthChange(full, { received: { ...full.received }, sales: 9300, note: "ekstre" }, L), { change: "yok", log: null });
+});
+
+test("sabah e-postası: daha önce gönderilen uyarılar önce elenir, sonra en çok beş; günlük anahtarı komisyon:<uyarı>", () => {
+  const alert = (key: string): CommissionAlert => ({ kind: "gecikti", key, level: "danger", title: key, body: "", href: "/panel/komisyonlar", date: "2026-11-30" });
+  assert.equal(commissionLogKey(alert("gecikti:pluxee:2026-10")), "komisyon:gecikti:pluxee:2026-10");
+  const seven = ["a", "b", "c", "d", "e", "f", "g"].map(alert);
+  // İlk beşi gönderilmiş: kesmek önce olsaydı hiç yeni uyarı kalmazdı
+  const sent = new Set(seven.slice(0, 5).map(commissionLogKey));
+  assert.deepEqual(
+    freshAlerts(seven, sent).map((a) => a.key),
+    ["f", "g"],
+  );
+  assert.deepEqual(
+    freshAlerts(seven, new Set()).map((a) => a.key),
+    ["a", "b", "c", "d", "e"],
+  );
+  assert.deepEqual(
+    freshAlerts(seven, new Set(["komisyon:b"]), 2).map((a) => a.key),
+    ["a", "c"],
+  );
+  // Anahtarı önekli değilse (başka bir kutunun) eşleşmez
+  assert.equal(freshAlerts(seven, new Set(["a", "b"])).length, MAX_ALERTS);
+});
+
+test("sorgunun satırları: fatura başına bir kayıt, kalemleri sırasıyla; kalemsiz fatura; kanalın aranacağı adlar", () => {
+  const row = (o: Partial<CommissionInvoiceRow>): CommissionInvoiceRow => ({
+    id: 1,
+    date: "2026-10-31",
+    supplier: "Pluxee",
+    supplierTaxNumber: null,
+    invoiceNo: "PLX1",
+    amount: 579,
+    discount: 0,
+    payable: 694.8,
+    needsReview: false,
+    lineName: null,
+    lineDescription: null,
+    lineNet: null,
+    ...o,
+  });
+  const rows = [
+    row({ lineName: "Komisyon Bedeli", lineNet: 279 }),
+    row({ lineName: "Erken Ödeme Komisyonu", lineDescription: "Ekim", lineNet: 300 }),
+    row({ id: 2, date: "2026-11-03", supplier: "Kurumsal Hizmetler A.Ş.", supplierTaxNumber: "1234567890", invoiceNo: null, amount: 398, payable: 477.6 }),
+  ];
+  const out = groupInvoiceRows(rows);
+  assert.deepEqual(
+    out.map((i) => [i.id, i.names, i.invoiceNo, i.lines.length]),
+    [
+      [1, ["Pluxee"], "PLX1", 2],
+      [2, ["Kurumsal Hizmetler A.Ş."], null, 0],
+    ],
+  );
+  assert.deepEqual(out[0].lines, [
+    { name: "Komisyon Bedeli", description: null, netTotal: 279 },
+    { name: "Erken Ödeme Komisyonu", description: "Ekim", netTotal: 300 },
+  ]);
+  // Tedarikçi kartının adları faturadaki addan sonra: unvanı tanınmayan fatura kartın diğer adıyla kanala bağlanır
+  const named = groupInvoiceRows(rows, (supplier, tax) => (tax === "1234567890" ? [supplier, "Multinet", "Multinet Up"] : [supplier]));
+  assert.deepEqual(named[1].names, ["Kurumsal Hizmetler A.Ş.", "Multinet", "Multinet Up"]);
+  const r = buildCommissionReport(f1({ invoices: named, marks: [] }));
+  assert.equal(must(rowOf(r, "multinet", "2026-10")).invoices[0].supplier, "Kurumsal Hizmetler A.Ş.");
+  assert.deepEqual(r.unmatched, []);
+  assert.deepEqual(buildCommissionReport(f1({ invoices: out, marks: [] })).unmatched.map((u) => u.supplier), ["Kurumsal Hizmetler A.Ş."]);
+});
+
 // ---------------------------------------------------------------- Kaynak denetimi
 
 test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafif yoldan; okuyan yol yazmaz", () => {
@@ -700,6 +953,12 @@ test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafi
     assert.match(fn, /refresh\(\);/, `${name} refresh çağırmıyor`);
     assert.match(fn, /await ensureCommissionSince\(\);/, `${name} yazma yolu: takibin başlangıcı`);
   }
+  // Geri al ve bildirim saf fonksiyonlardan (aşağıda testli): önceki değerler kayıttaki satırdan, fark ve metin birlikte
+  assert.match(actions, /const before = markValues\(prev\);/);
+  assert.match(actions, /channelMonthChange\(before, \{ received, sales, note \}, /);
+  assert.match(actions, /return \{ previous: \{ channel: data\.channel, month: data\.month, \.\.\.before \}, change \};/);
+  // Hepsi boşalınca satır silinir
+  assert.match(actions, /if \(!received && sales === null && !note\) \{\s*if \(row\) await tx\.delete\(s\.commissionMonths\)/);
 
   const bell = read("src/server/actions/notifications.ts");
   const staffReturn = bell.indexOf('if (user.role !== "admin") return');
@@ -710,11 +969,18 @@ test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafi
 
   const data = read("src/server/data/commission.ts");
   assert.ok(data.startsWith('import "server-only";'));
-  // Hafif yol (zil, Bugün, e-posta) tedarikçi eşleşmesini (bütün faturaları okuyan loadSupplierRefs) çalıştırmaz
+  // Hafif yol (zil, Bugün, e-posta) bütün faturaları okuyan loadSupplierRefs'i çalıştırmaz; kartların adlarına yalnız
+  // adı bir kanala bağlanmayan fatura varsa bakar ("Diğer adlar" orada da geçerli)
   const light = data.slice(data.indexOf("async function loadLightReport"), data.indexOf("export async function loadCommissionAlerts"));
   assert.match(light, /resolveNames: false/);
   assert.match(data.slice(data.indexOf("export async function loadCommissionReport"), data.indexOf("async function loadLightReport")), /resolveNames: true/);
-  assert.match(data, /opts\.resolveNames \? supplierNames\(\) : Promise\.resolve\(null\)/);
+  assert.match(data, /opts\.resolveNames \? supplierNames\(true\) : Promise\.resolve\(null\)/);
+  assert.match(data, /pageNames \?\? \(invoiceRows\.some\(\(r\) => !channelOf\(\[r\.supplier\]\)\) \? await supplierNames\(false\) : null\)/);
+  assert.match(data, /withRefs \? loadSupplierRefs\(\) : Promise\.resolve<SupplierRef\[\]>\(\[\]\)/);
+  assert.equal(data.match(/loadSupplierRefs\(\)/g)?.length, 1, "loadSupplierRefs yalnız ekranın yolunda");
+  // E-posta: önce gönderilenler elenir, sonra kesilir (saf, aşağıda testli)
+  assert.match(data, /const fresh = freshAlerts\(alerts, sent\);/);
+  assert.match(data, /invoices: groupInvoiceRows\(invoiceRows, names\)/);
   // Okuyan yollar yazmaz: takibin başlangıcı yalnız e-postanın gönderiminde (önizlemede değil)
   const reads = data.slice(data.indexOf("export async function loadCommissionInput"), data.indexOf("export async function ensureCommissionSince"));
   assert.doesNotMatch(reads, /\.insert\(|\.update\(|\.delete\(|ensureCommissionSince\(/);

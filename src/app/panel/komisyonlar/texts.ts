@@ -1,5 +1,6 @@
 // Komisyon & hakediş ekranının metinleri (saf; tests/komisyon.test.ts): hakediş satırı, kartın durum rozeti, satışın
-// kaynağı, oranın parçaları, bekleyen hakedişler ve Z toplamının alt satırı. Kurallar src/lib/commission/report.ts'te.
+// kaynağı, oranın parçaları, bekleyen hakedişler, Z toplamının alt satırı, Platformlar satırı ve yemek kartı oranı
+// karosu. Kurallar src/lib/commission/report.ts'te.
 
 import type { Tone } from "@/components/ui/badge";
 import { LINE_CLASSES, LINE_LABEL, type ChannelDef, type ChannelKind } from "@/lib/commission/channels";
@@ -20,8 +21,9 @@ export const overMealLimit = (rate: number | null | undefined) => rate !== null 
 
 /**
  * Kartın durum rozeti, en kötüsü: Sınırın üstünde (kesin %6 aşımı), Hakediş gecikti, Kontrol edin (kırmızı: komisyon
- * dışı ücret; turuncu: öteki uyarılar), Tamam (oran belli, uyarı yok, hakediş geldi ya da bekliyor), Satış bilinmiyor.
- * O ay satırı yoksa "Bu ay fatura yok".
+ * dışı ücret; turuncu: öteki uyarılar), oran yoksa nedeni (Satış bilinmiyor; satış yazıldı ama Fatura bekleniyor;
+ * satış ve fatura var ama iade ayı eksiye düşürdü ya da satış 0: Oran yok), Takip öncesi, Tamam (oran belli, uyarı yok,
+ * hakediş geldi ya da bekliyor). O ay satırı yoksa "Bu ay fatura yok".
  */
 export function statusBadge(row: ChannelMonth | null): { text: string; tone: Tone } {
   if (!row) return { text: "Bu ay fatura yok", tone: "gray" };
@@ -29,7 +31,9 @@ export function statusBadge(row: ChannelMonth | null): { text: string; tone: Ton
   if (row.payout.status === "gecikti") return { text: "Hakediş gecikti", tone: "red" };
   if (row.flags.some((f) => f.level === "bad")) return { text: "Kontrol edin", tone: "red" };
   if (row.flags.some((f) => f.level === "warn") || row.payout.status === "eksik") return { text: "Kontrol edin", tone: "amber" };
-  if (row.rate === null) return { text: "Satış bilinmiyor", tone: "gray" };
+  if (!row.sales) return { text: "Satış bilinmiyor", tone: "gray" };
+  if (!row.invoices.length) return { text: "Fatura bekleniyor", tone: "gray" };
+  if (row.rate === null) return { text: "Oran yok", tone: "gray" };
   if (row.payout.status === "takip-oncesi") return { text: "Takip öncesi", tone: "gray" };
   return { text: "Tamam", tone: "green" };
 }
@@ -128,6 +132,18 @@ export function tillSub(g: Pick<GroupMonth, "zTotal" | "reportDays" | "missing" 
   if (g.partialFrom) return `kasa raporları ${dayLocativeTR(g.partialFrom)} başladı`;
   if (g.missing.length) return `${g.missing.length} gün rapor yok`;
   return `${g.reportDays} / ${g.reportDays} gün raporlu`;
+}
+
+/** Platformlar bölümünün satırı: "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu"; o ay kasa raporu yoksa "Kasa raporu yok" */
+export function platformTillLine(g: Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> | null): string {
+  return g?.zTotal != null ? `Z'deki online (platformlar): ${money(g.zTotal)} · ${tillSub(g)}` : "Kasa raporu yok";
+}
+
+/** Yemek kartı oranı karosunun alt satırı: Z'deki yemek kartı (kasa raporu olan ayda 0 da) ve oran yoksa nedeni */
+export function mealStatSub(g: Pick<GroupMonth, "zTotal" | "rate" | "partialFrom" | "invoiceCount"> | null): string {
+  if (!g || g.zTotal === null) return "Satış bilinmiyor";
+  const why = g.rate !== null || g.zTotal <= 0 ? null : g.partialFrom ? "Z ayın bir kısmı" : !g.invoiceCount ? "fatura yok" : null;
+  return `Satış ${money(g.zTotal)}${why ? ` · ${why}` : ""}`;
 }
 
 /** Hakediş penceresinin verisi: kayıtlı işaret, ayın faturaları ve Z toplamı (o ay satırı yoksa boş işaretle) */

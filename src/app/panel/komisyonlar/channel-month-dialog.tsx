@@ -9,11 +9,12 @@ import { Field, Input, NumberInput } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { ChannelKey, ChannelKind } from "@/lib/commission/channels";
+import type { ChannelMonthChange } from "@/lib/commission/report";
 import { MONTH_NAMES } from "@/lib/constants";
 import { money, monthLabel, num } from "@/lib/format";
 import { addDays, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { saveChannelMonth, type ChannelMonthChange, type ChannelMonthInput } from "@/server/actions/commission";
+import { saveChannelMonth, type ChannelMonthInput } from "@/server/actions/commission";
 
 /** Pencerenin bildiği: kanal ve ay, kayıtlı işaret, faturaların KDV dahil toplamı ve Z'den gelen satış (grupta tek kanalsa) */
 export interface ChannelMonthData {

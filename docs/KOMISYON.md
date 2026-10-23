@@ -18,9 +18,9 @@ Telefonda tek sütun, bu sırayla; geniş ekranda kanal kartları iki sütun.
 | Bölüm | İçerik |
 |---|---|
 | **Bekleyen hakedişler** | Bütün aylardan gelmesi gereken para: gecikti (kırmızı), eksik geldi, son günü 7 gün içinde (Bu hafta). En acil önce; **Geldi** penceresi açar, ad kanalın kartına götürür. Yoksa kart yok |
-| Karolar | **Kesilen (KDV hariç)**: seçilen ayın bütün kanal faturaları · **Yemek kartı oranı**: yemek kartlarının toplam oranı (%6'nın üstü kırmızı) · **Bekleyen hakediş**: açık hakedişlerin tutarı bilinen toplamı; altında geciken sayısı, gecikme yoksa tutarı bilinmeyenlerin sayısı |
-| **Yemek kartları** | Önce **Yemek kartları (toplam)**: Z'deki yemek kartı (raporlu gün sayısı ya da eksik gün), kesilen ve kaç şirket, ortalama oran, beklenen hakediş ve gelen. Sonra seçilen ayda ya da önceki beş ayda faturası ya da işareti olan her kartın kartı |
-| **Platformlar** | "Z'deki online (platformlar): …" satırı (Z'nin online alanı platform satışıdır; laffogato.net'in online satışı kasadan geçmez, [SITE-SATIS.md](SITE-SATIS.md)) ve her platformun kartı |
+| Karolar | **Kesilen (KDV hariç)**: seçilen ayın bütün kanal faturaları · **Yemek kartı oranı**: yemek kartlarının toplam oranı (%6'nın üstü kırmızı; altında Z'deki yemek kartı, kasa raporu olan ayda 0 da, ya da "Satış bilinmiyor") · **Bekleyen hakediş**: açık hakedişlerin tutarı bilinen toplamı; altında geciken sayısı, gecikme yoksa tutarı bilinmeyenlerin sayısı |
+| **Yemek kartları** | Önce **Yemek kartları (toplam)** (o ay Z'de yemek kartı ya da yemek kartı faturası varsa): Z'deki yemek kartı (raporlu gün sayısı ya da eksik gün), kesilen ve kaç şirket, ortalama oran, beklenen hakediş ve gelen. Sonra seçilen ayda ya da önceki beş ayda faturası ya da işareti olan her kartın kartı |
+| **Platformlar** | "Z'deki online (platformlar): …" satırı (Z'nin online alanı platform satışıdır; laffogato.net'in online satışı kasadan geçmez, [SITE-SATIS.md](SITE-SATIS.md)); kasa raporu olan ayda tutar 0 da yazılır ("0 ₺ · 31 / 31 gün raporlu"), "Kasa raporu yok" yalnız o ay hiç rapor yoksa. Sonra her platformun kartı |
 | **Kanalı bulunamayan komisyon faturaları** | Seçilen ayda kategorisi Komisyon olup hiçbir kanala bağlanmayan faturalar (§2); Faturalar'da açılır |
 | **Kanallar** (`#kanallar`) | Her kanalın ödeme süresi (gün): hakedişin son günü = ayın son faturası + bu süre (§7) |
 | **Kurallar ve hesap** | Kapalı başlar: yasal dayanak, oranın, ayın ve hakedişin hesabı, uyarıların kesin hüküm olmadığı |
@@ -31,10 +31,13 @@ faturası ve Z'de yemek kartı / online yoksa yalnız "Henüz komisyon faturası
 **Kanal kartı** (`#pluxee`, `#trendyol` …; zil, e-posta ve Bugün buraya getirir):
 
 - rozet, en kötüsü: *Sınırın üstünde* (kesin %6 aşımı), *Hakediş gecikti*, *Kontrol edin* (kırmızı: komisyon dışı
-  ücret; turuncu: öteki uyarılar, eksik gelen hakediş), *Tamam*, *Satış bilinmiyor*, *Takip öncesi*, *Bu ay fatura yok*;
+  ücret; turuncu: öteki uyarılar, eksik gelen hakediş); oran yoksa nedeni: *Satış bilinmiyor*, *Fatura bekleniyor*
+  (satış yazıldı, fatura gelmedi), *Oran yok* (iade faturası ayı eksiye düşürdü ya da satış 0); sonra *Takip öncesi*,
+  *Tamam*; o ay satırı yoksa *Bu ay fatura yok*;
 - **Gerçek oran** ve parçaları ("Komisyon %3,0 · erken ödeme %3,2"; satış bilinmiyorsa tutarlar), **Satış** ve kaynağı,
-  **Kesilen** (KDV hariç; ⓘ KDV dahil). Platformda satışı bilinen en az iki ay varsa başlık **Gerçek oran (3 ay)**, ayın
-  kendi oranı **Bu ay** satırında;
+  **Kesilen** (KDV hariç; ⓘ KDV dahil). Platformda seçilen ayın oranı ve önceki iki aydan en az birininki biliniyorsa
+  başlık **Gerçek oran (3 ay)**, ayın kendi oranı **Bu ay** satırında; seçilen ayın oranı bilinmiyorsa başlık "–" (önceki
+  ayların oranı şeritte kalır, bu ayınki sanılmaz);
 - son altı ayın oranı (yemek kartında %6'nın üstü kırmızı);
 - uyarılar (§6) ve satış bilinmiyorsa nedeni;
 - **Faturalar ve kalemler** (kapalı): tarih, numara, KDV hariç tutar; *Kalemsiz* (kalemleri okunmamış: tamamı komisyon
@@ -66,12 +69,14 @@ platformda ayın havalelerinin toplamı ve son havalenin günü yazılır: ayda 
   Paraşüt'ün kategori kuralı (`COMMISSION_SUPPLIERS`, `pickCategory`) değişmedi; test, listedeki her adın bir kanala
   bağlandığını denetler. Başka kategoride duran kanal faturası (ör. Reklam & Tabela'daki Yemeksepeti reklamı) sayılmaz:
   orana girsin isteniyorsa kategorisi Komisyon yapılır.
-- **Hangi ad:** önce faturadaki tedarikçi adı, sonra (ekranda) Tedarikçiler'deki kartın adı ve diğer adları: kart
-  Tedarikçiler'in kuralıyla bulunur (ad önce, sonra vergi no; `supplierResolver`). Zil, Bugün ve sabah e-postası hafif
-  yoldan okur ve yalnız faturadaki adın önekine bakar (bütün faturaları okuyan vergi no eşleşmesi yalnız ekranda).
+- **Hangi ad:** önce faturadaki tedarikçi adı, sonra Tedarikçiler'deki kartın adı ve diğer adları: kart Tedarikçiler'in
+  kuralıyla bulunur (ad önce, sonra vergi no; `supplierResolver`). Zil, Bugün ve sabah e-postası hafif yoldan okur: önce
+  faturadaki adın önekine bakar; adı bir kanala bağlanmayan fatura varsa tedarikçi kartlarını da okur (tek küçük sorgu:
+  kartın adı, diğer adları ve kartta yazılı vergi no). Vergi nonun öteki faturalar üzerinden bağlanması (bütün
+  faturaları okur, `loadSupplierRefs`) yalnız ekranda.
 - **Kanalı bulunamayan** fatura (ör. bankanın POS komisyonu) "Kanalı bulunamayan komisyon faturaları"nda durur. Yemek
-  kartı ya da platformsa Tedarikçiler'de o tedarikçinin **Diğer adlar**ına bu ad eklenir, fatura kanala geçer; başka bir
-  şeyse dokunulmaz. Yeni bir marka = `CHANNELS`'a bir satır ve bir test.
+  kartı ya da platformsa Tedarikçiler'de o tedarikçinin **Diğer adlar**ına bu ad eklenir, fatura kanala geçer (zilde,
+  Bugün'de ve e-postada da); başka bir şeyse dokunulmaz. Yeni bir marka = `CHANNELS`'a bir satır ve bir test.
 
 ## 3. Satış: nereden gelir
 
@@ -83,10 +88,13 @@ satışı (KDV dahil, müşterinin o kanaldan ödediği), sırayla:
 |---|---|---|
 | `elle` | Hakediş penceresinde yazılan aylık satış (kanalın ekstresi) | Kanalın ekstresinden (elle) |
 | `tek` | O ay grubunda (yemek kartı ya da platform) etkin tek kanal bu ve faturası var; ayın kasa raporu var, ay ortasında başlamadı, Z'de grubun tutarı > 0 → grubun bütün Z toplamı | Z'deki yemek kartı toplamı (tek kart) / Z'deki online (platformlar) toplamı (tek platform) |
-| – | Yoksa | *Satış bilinmiyor* ve nedeni: bu ay kasa raporu yok; kasa raporları 16 Ekim'de başladı; Z'de yemek kartları tek toplam ve bu ay 2 kart var; bu ayın kasa raporlarında yemek kartı tutarı yok. Hepsinin sonu: "Kanalın ekstresindeki satışı yazarsanız oran hesaplanır." |
+| – | Yoksa | *Satış bilinmiyor* ve nedeni: bu ay kasa raporu yok; kasa raporları 16 Ekim'de başladı; Z'de yemek kartları tek toplam ve bu ay 2 kart var; Z'deki online (platformlar) tek toplam ve 14 Kasım tarihli Yemeksepeti faturası Ekim satışlarını da kapsıyor olabilir; bu ayın kasa raporlarında yemek kartı tutarı yok. Hepsinin sonu: "Kanalın ekstresindeki satışı yazarsanız oran hesaplanır." |
 
 - **Etkin kanal:** o ay faturası, yazılmış satışı (> 0) ya da gelen hakedişi olan. Satışı 0 yazılan kanal etkin
-  sayılmaz (o ay kullanılmadı); hakedişi gelen kanal sayılır (satışı da o aydan geçmiştir).
+  sayılmaz (o ay kullanılmadı); hakedişi gelen kanal sayılır (satışı da o aydan geçmiştir). Faturası **sonraki ayın
+  1–15'inde** kesilen kanal da etkin sayılır (ilk ayı ya da kayan fatura: o fatura bu ayın satışlarını kapsıyor
+  olabilir; 15'i `fatura-yok` uyarısının da günü). Yoksa Z'deki toplamın tamamı öteki kanala yazılır, oranı düşük,
+  beklenen hakedişi yüksek görünürdü; ayın ilk 5 gününde kesilen yemek kartı faturası zaten önceki aya sayılır (§5).
 - **Yarım ilk ay:** ilk kasa raporu ayın ortasındaysa (Kasa raporu ekranının `partialFrom` kuralı) Z toplamı ayın bir
   kısmıdır, kullanılmaz; canlıda Ekim 2026 böyle, ilk tam ay Kasım 2026.
 - **Eksik günler** (ayın başından ya da ilk rapordan ayın sonuna ya da düne kadar raporu olmayan gün) Z toplamını
@@ -132,7 +140,7 @@ Sınır %6, yuvarlamayı yutan payla **%6,05**'in üstü.
 
 | Uyarı | Tür | Ne zaman | Düzey | Metin |
 |---|---|---|---|---|
-| `oran-sinir` | yemek kartı | Oran > %6,05 | Kırmızı: satış elle yazıldıysa ya da Z toplamı (tek kart) ve eksik gün yoksa (Z toplamı kartın satışından az olamaz, aşım kesindir); yoksa turuncu | "Toplam kesinti %6,2: yemek kartında yasal üst sınır %6." (turuncuda "Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin.") |
+| `oran-sinir` | yemek kartı | Oran > %6,05 | Kırmızı (kesin) iki koşulla: satış elle yazıldı ya da Z toplamından (tek kart) ve eksik gün yok (Z toplamı kartın satışından az olamaz); ayın bütün faturaları ekstre gününde kesildi (ayın son 5 günü ya da sonraki ayın ilk 5 günü; ay ortasında kesilen düzeltme ya da iki aylık fatura başka bir ayın ücretini de taşıyabilir; iade faturası sayılmaz). Yoksa turuncu | "Toplam kesinti %6,2: yemek kartında yasal üst sınır %6." (turuncuda nedeni: "Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin." ya da "15 Ekim tarihli fatura ay sonunda kesilmemiş, başka bir ayın ücretini de taşıyor olabilir; kesin değil, kontrol edin.") |
 | `yasak-ucret` | yemek kartı | Komisyon dışı ücret > 0 | Kırmızı | "Komisyon dışı ücret olabilir: “POS Cihaz Kira Bedeli” 150 ₺. Yönetmelik komisyon dışında kira, sarf malzemesi, teknik destek, bakım, depozito gibi adlarla ücret alınmasını yasaklıyor." (en çok iki ad, sonra "ve 2 kalem daha") |
 | `erken-odeme` | yemek kartı | Erken ödeme > 0 | Turuncu | "Erken ödeme ücreti 300 ₺ (oranı %3,2 artırıyor). Erken ödemeyi siz mi seçtiniz? Seçmediyseniz kapattırın." |
 | `asli-ucret` | platform | 1 Nisan 2026 ve sonraki faturada sipariş / ödeme altyapısı ücreti | Turuncu | "“Online Ödeme Hizmet Bedeli” 40 ₺: sipariş ya da ödeme altyapısı ücreti olabilir. 1 Nisan 2026'dan beri bunlar için ayrı ücret alınamıyor." |
@@ -141,8 +149,9 @@ Sınır %6, yuvarlamayı yutan payla **%6,05**'in üstü.
 | `kasa-eksik` | ikisi | Satış Z toplamından (tek kanal) ve ayın eksik günü var | Mavi | "3 gün kasa raporu yok; satış eksik kaldıysa oran yüksek görünür." |
 
 Yemek kartlarının toplamında: `oran-sinir` ("Ortalama kesinti %6,3: en az bir yemek kartı %6'yı aşıyor."; eksik günde
-turuncu) ve `fatura-yok` ("Ekim'de 15.500 ₺ yemek kartı satışı var ama hiçbir yemek kartı faturası gelmedi.", sonraki
-ayın 15'inden sonra). Birden çok kart varken satışı yazılmamış kart varsa kart kart oranın ekstreyle çıkacağı yazar.
+ya da ay sonunda kesilmeyen faturada turuncu ve "… %6'yı aşıyor olabilir.", nedeniyle) ve `fatura-yok` ("Ekim'de
+15.500 ₺ yemek kartı satışı var ama hiçbir yemek kartı faturası gelmedi.", sonraki ayın 15'inden sonra). Birden çok kart
+varken satışı yazılmamış kart varsa kart kart oranın ekstreyle çıkacağı yazar. Zil ve e-posta yalnız kırmızıda uyarır.
 
 Bu turda yok (kesildi): faturada yazan işlem tutarı ve dönem okuması, oran sıçraması, taban farkı, başka kategorideki
 kanal faturası ve platformun tek kalemli faturası uyarıları; Tedarikçiler'deki bağlantı; Nakit planı satırları. Kasa
@@ -190,8 +199,8 @@ raporunun kartlı satış payı (banka POS komisyonu için) değişmedi: (kart +
   Konuya giden parça: tek gecikme "Hakediş gecikti: Pluxee (Ekim)", birden çoğu "2 hakediş gecikti", gecikme yoksa
   "komisyon uyarısı". Kutu e-postayı tek başına gönderir; önizleme hiçbir şey yazmaz ([BILDIRIMLER.md](BILDIRIMLER.md)).
 - Zil, Bugün ve e-posta **hafif yoldan** okur: son 4 ayın Komisyon faturaları ve kalemleri, hakediş işaretleri, kanal
-  ayarları ve ayların Z'deki yemek kartı / online toplamı (dört küçük sorgu, maliyet modeli yok). Biri bozulursa yalnız
-  kendisi düşer.
+  ayarları ve ayların Z'deki yemek kartı / online toplamı (dört küçük sorgu, maliyet modeli yok); adı bir kanala
+  bağlanmayan fatura varsa tedarikçi kartları da (§2). Biri bozulursa yalnız kendisi düşer.
 
 ## 9. Yasal dayanak
 
@@ -231,12 +240,14 @@ metni mevzuat.gov.tr'den denetleyin; "Kurallar ve hesap" kartındaki cümleler o
 | Dosya | Ne |
 |---|---|
 | `src/lib/commission/channels.ts` | Kanal kaydı, adın kanalı, kalemin sınıfı |
-| `src/lib/commission/report.ts` | Rapor (satış, oran, uyarılar, hakediş, gruplar), zil ve e-posta uyarıları, e-posta kutusu, kanal ayarları |
+| `src/lib/commission/report.ts` | Rapor (satış, oran, uyarılar, hakediş, gruplar), zil ve e-posta uyarıları, e-posta kutusu ve daha önce gönderilenlerin elenmesi, kanal ayarları, sorgunun satırlarından faturalar, hakediş kaydının farkı (Geri al ve işlem geçmişi) |
 | `src/server/data/commission.ts` | Okuma (ekran ve hafif yol), sabah e-postası kaynağı, takibin başlangıcı |
 | `src/server/actions/commission.ts` | `saveChannelMonth` (hakediş, satış, not; Geri al için öncekiler), `saveCommissionSettings` |
 | `src/app/panel/komisyonlar/` | Ekran: `page.tsx`, kanal kartı, yemek kartları toplamı, bekleyen hakedişler, hakediş penceresi, Kanallar, `texts.ts` (saf metinler) |
 | `src/server/notify/digest-extras.ts`, `src/server/actions/notifications.ts`, `src/server/data/today.ts`, `src/app/panel/bugun/logic.ts` | Sabah e-postası kutusu, zil, Bugün satırı |
 
-Testler: `tests/komisyon.test.ts` (kanallar, kalemler, ay, satışın kaynağı, oran ve uyarılar, toplam, hakediş, uyarı
-sırası ve anahtarları, e-posta kutusu ve konu, Excel'deki 10 faturalık veri, ekran metinleri, kaynak denetimi),
+Testler: `tests/komisyon.test.ts` (kanallar, kalemler, ay, satışın kaynağı ve sonraki ayda kesilen fatura, oran ve
+uyarılar, ay sonunda kesilmeyen fatura, toplam, Z'de 0, hakediş, uyarı sırası ve anahtarları, e-posta kutusu, konu ve
+daha önce gönderilenler, Excel'deki 10 faturalık veri, ekran metinleri, kaydın farkı ve Geri al, sorgunun satırları,
+kaynak denetimi),
 `tests/bugun.test.ts` (Hakedişler satırı), `tests/mobile-nav.test.ts`, `tests/yardim.test.ts`.

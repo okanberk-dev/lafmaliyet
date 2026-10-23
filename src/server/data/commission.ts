@@ -2,20 +2,21 @@ import "server-only";
 
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 
-import { supplierResolver } from "@/app/panel/tedarikciler/logic";
+import { supplierResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { businessDate } from "@/lib/cash-report";
-import { isChannelKey } from "@/lib/commission/channels";
+import { channelOf, isChannelKey } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
   commissionAlerts,
   commissionDigestBox,
-  MAX_ALERTS,
+  commissionLogKey,
+  freshAlerts,
+  groupInvoiceRows,
   overduePayouts,
   parseCommissionSettings,
   type ChannelMonthIn,
   type CommissionAlert,
   type CommissionInput,
-  type CommissionInvoiceIn,
   type CommissionReport,
 } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
@@ -28,7 +29,9 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
  * Komisyon ve hakediş verisi (src/lib/commission/report.ts; docs/KOMISYON.md). İki yol:
  * - ekran (`loadCommissionReport`): 13 ay; faturanın kanalı tedarikçi kartının adı ve diğer adlarıyla da aranır (vergi
  *   noyla eşleşme, Tedarikçiler'in kuralı; loadSupplierRefs bütün faturaları okur, yalnız burada);
- * - hafif yol (zil, Bugün, sabah e-postası): 4 ay, yalnız faturadaki adın öneki; dört küçük sorgu aynı anda.
+ * - hafif yol (zil, Bugün, sabah e-postası): 4 ay, faturadaki adın öneki; dört küçük sorgu aynı anda. Adı bir kanala
+ *   bağlanmayan fatura varsa (ör. "Diğer adlar"a eklenen unvan) bir küçük sorgu daha: tedarikçi kartlarının adları ve
+ *   kartta yazılı vergi no; öteki faturalar üzerinden vergi no eşleşmesi yalnız ekranda.
  * Okuyan yollar hiçbir şey yazmaz; takibin başladığı gün (`komisyon.since`) yalnız yazma yollarında kaydedilir.
  */
 
@@ -36,8 +39,6 @@ import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-tem
 export const COMMISSION_SETTINGS_KEY = "komisyon.ayar";
 /** Hakediş takibinin başladığı gün (YYYY-MM-DD): öncesinde son günü geçen hakediş gecikme sayılmaz */
 export const COMMISSION_SINCE_KEY = "komisyon.since";
-/** Sabah e-postasının tekil anahtarı: her uyarı bir kez (notification_log) */
-export const COMMISSION_LOG_PREFIX = "komisyon:";
 
 const SCREEN_MONTHS = 13;
 const LIGHT_MONTHS = 4;
@@ -45,15 +46,16 @@ const LIGHT_MONTHS = 4;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Raporun girdisi. `months`: pencere (bu ay dahil); `resolveNames`: kanal tedarikçi kartının adlarıyla da aranır
- * (yalnız ekran). `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği okuduktan sonra).
+ * Raporun girdisi. `months`: pencere (bu ay dahil); `resolveNames` (ekran): kanal baştan tedarikçi kartının adlarıyla
+ * da aranır, vergi no öteki faturalar üzerinden de bağlanır; hafif yolda kartlara yalnız adı bir kanala bağlanmayan
+ * fatura varsa bakılır. `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği okuduktan sonra).
  */
 export async function loadCommissionInput(opts: { months: number; resolveNames: boolean; today?: string }): Promise<CommissionInput> {
   const db = getDb();
   const today = opts.today ?? todayTR();
   const fromMonth = shiftMonth(today.slice(0, 7), -(opts.months - 1));
   const fromDay = `${fromMonth}-01`;
-  const [invoiceRows, marks, state, till, names] = await Promise.all([
+  const [invoiceRows, marks, state, till, pageNames] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
       .select({
@@ -99,29 +101,12 @@ export async function loadCommissionInput(opts: { months: number; resolveNames: 
       })
       .from(s.cashReports)
       .where(gte(s.cashReports.date, fromDay)),
-    opts.resolveNames ? supplierNames() : Promise.resolve(null),
+    opts.resolveNames ? supplierNames(true) : Promise.resolve(null),
   ]);
+  // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
+  // faturalar kartının "Diğer adlar" önerisi zilde, Bugün'de ve e-postada da geçerli olsun)
+  const names = pageNames ?? (invoiceRows.some((r) => !channelOf([r.supplier])) ? await supplierNames(false) : null);
 
-  const byId = new Map<number, CommissionInvoiceIn>();
-  for (const r of invoiceRows) {
-    let inv = byId.get(r.id);
-    if (!inv) {
-      inv = {
-        id: r.id,
-        date: r.date,
-        supplier: r.supplier,
-        names: names ? names(r.supplier, r.supplierTaxNumber) : [r.supplier],
-        invoiceNo: r.invoiceNo,
-        amount: r.amount,
-        discount: r.discount,
-        payable: r.payable,
-        needsReview: r.needsReview,
-        lines: [],
-      };
-      byId.set(r.id, inv);
-    }
-    if (r.lineName !== null && r.lineNet !== null) inv.lines.push({ name: r.lineName, description: r.lineDescription, netTotal: r.lineNet });
-  }
   const stored = new Map(state.map((x) => [x.key, x.value]));
   const since = stored.get(COMMISSION_SINCE_KEY);
   return {
@@ -130,7 +115,7 @@ export async function loadCommissionInput(opts: { months: number; resolveNames: 
     // Takip başlamadıysa (kayıt yoksa) bugün: okuyan yol yazmaz, geçmiş son günler "takip öncesi" kalır
     since: typeof since === "string" && DAY.test(since) ? since : today,
     fromMonth,
-    invoices: [...byId.values()],
+    invoices: groupInvoiceRows(invoiceRows, names),
     till: till.map(({ date, mealCard, online }) => ({ date, mealCard, online })),
     firstReport: till[0]?.first ?? null,
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
@@ -140,12 +125,14 @@ export async function loadCommissionInput(opts: { months: number; resolveNames: 
 
 /**
  * Faturadaki ad (ve vergi no) → kanalın aranacağı adlar: faturadaki ad, sonra tedarikçi kartının adı ve diğer adları
- * (Tedarikçiler'in eşleşmesi: ad önce, sonra vergi no). "Diğer adlar"a eklenen ad faturayı kanala bağlar.
+ * (Tedarikçiler'in eşleşmesi: ad önce, sonra vergi no). "Diğer adlar"a eklenen ad faturayı kanala bağlar. `withRefs`
+ * (yalnız ekran): vergi no öteki faturalar üzerinden de bağlanır (loadSupplierRefs bütün faturaları okur); yoksa
+ * yalnız kartta yazılı vergi no.
  */
-async function supplierNames(): Promise<(supplier: string, taxNumber: string | null) => string[]> {
+async function supplierNames(withRefs: boolean): Promise<(supplier: string, taxNumber: string | null) => string[]> {
   const [cards, refs] = await Promise.all([
     getDb().select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
-    loadSupplierRefs(),
+    withRefs ? loadSupplierRefs() : Promise.resolve<SupplierRef[]>([]),
   ]);
   const { resolve } = supplierResolver(
     cards.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases.filter((a): a is string => typeof a === "string") : [] })),
@@ -162,7 +149,7 @@ export async function loadCommissionReport(): Promise<CommissionReport> {
   return buildCommissionReport(await loadCommissionInput({ months: SCREEN_MONTHS, resolveNames: true }));
 }
 
-/** Hafif rapor (zil, Bugün, sabah e-postası): 4 ay, faturadaki adın öneki */
+/** Hafif rapor (zil, Bugün, sabah e-postası): 4 ay, faturadaki adın öneki (bağlanmazsa kartın adları) */
 async function loadLightReport(today?: string): Promise<CommissionReport> {
   return buildCommissionReport(await loadCommissionInput({ months: LIGHT_MONTHS, resolveNames: false, today }));
 }
@@ -196,9 +183,9 @@ export async function loadCommissionDigest(today: string, ctx: DigestExtraCtx): 
   const report = await loadLightReport(today);
   const alerts = commissionAlerts(report, today, Infinity);
   if (!alerts.length) return null;
-  const keys = alerts.map((a) => `${COMMISSION_LOG_PREFIX}${a.key}`);
+  const keys = alerts.map(commissionLogKey);
   const sent = new Set((await getDb().select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, keys))).map((r) => r.key));
-  const fresh = alerts.filter((a) => !sent.has(`${COMMISSION_LOG_PREFIX}${a.key}`)).slice(0, MAX_ALERTS);
+  const fresh = freshAlerts(alerts, sent);
   const box = commissionDigestBox(fresh);
-  return box ? { box, logKeys: fresh.map((a) => `${COMMISSION_LOG_PREFIX}${a.key}`) } : null;
+  return box ? { box, logKeys: fresh.map(commissionLogKey) } : null;
 }

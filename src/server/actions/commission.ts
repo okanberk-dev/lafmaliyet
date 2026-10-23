@@ -5,9 +5,17 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { CHANNEL_KEYS, CHANNELS, channelDef } from "@/lib/commission/channels";
-import { effectiveSettings, MEAL_MAX_PAY_DAYS, parseCommissionSettings, PLATFORM_MAX_PAY_DAYS } from "@/lib/commission/report";
-import { money, monthLabel } from "@/lib/format";
-import { addDays, dayMonthTR, todayTR } from "@/lib/reminders";
+import {
+  channelMonthChange,
+  effectiveSettings,
+  markValues,
+  MEAL_MAX_PAY_DAYS,
+  parseCommissionSettings,
+  PLATFORM_MAX_PAY_DAYS,
+  type ChannelMonthChange,
+} from "@/lib/commission/report";
+import { monthLabel } from "@/lib/format";
+import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { COMMISSION_SETTINGS_KEY, ensureCommissionSince } from "@/server/data/commission";
 import { getDb, schema as s } from "@/server/db";
@@ -37,8 +45,6 @@ const monthInput = z.object({
 });
 
 export type ChannelMonthInput = z.input<typeof monthInput>;
-/** Kaydın asıl değişikliği (bildirimin metni): hakediş işaretlendi, işaret kalktı, satış, not ya da hiçbiri */
-export type ChannelMonthChange = "geldi" | "kaldirildi" | "satis" | "satis-silindi" | "not" | "yok";
 
 /**
  * Kanalın satış ayı: gelen hakediş (gün ve tutar; null işareti kaldırır), kanalın ekstresindeki satış (KDV dahil; null
@@ -73,25 +79,12 @@ export async function saveChannelMonth(input: ChannelMonthInput): Promise<Action
     });
     await ensureCommissionSince();
 
-    const previous: ChannelMonthInput = {
-      channel: data.channel,
-      month: data.month,
-      received: prev?.receivedOn && prev.received !== null ? { on: prev.receivedOn, amount: prev.received } : null,
-      sales: prev?.sales ?? null,
-      note: prev?.note ?? null,
-    };
-    const label = `${channelDef(data.channel).label} ${monthLabel(data.month)}`;
-    const receivedChanged = (previous.received?.on ?? null) !== (received?.on ?? null) || (previous.received?.amount ?? null) !== (received?.amount ?? null);
-    const salesChanged = previous.sales !== sales;
-    const noteChanged = (previous.note ?? null) !== note;
-    const parts: string[] = [];
-    if (receivedChanged) parts.push(received ? `Hakediş geldi: ${label} · ${money(received.amount)} (${dayMonthTR(received.on)})` : `Hakediş işareti kaldırıldı: ${label}`);
-    if (salesChanged) parts.push(`Komisyon kanalı satışı: ${label} → ${sales === null ? "boş" : money(sales)}`);
-    if (noteChanged) parts.push(`Not: ${label} → ${note ?? "boş"}`);
-    if (parts.length) await logActivity(me, ACTION, parts.join(" · "));
+    // Önceki değerler (Geri al aynı eylemle yazar) ve farkın bildirimi ile işlem geçmişi (saf, testli: report.ts)
+    const before = markValues(prev);
+    const { change, log } = channelMonthChange(before, { received, sales, note }, `${channelDef(data.channel).label} ${monthLabel(data.month)}`);
+    if (log) await logActivity(me, ACTION, log);
     refresh();
-    const change: ChannelMonthChange = receivedChanged ? (received ? "geldi" : "kaldirildi") : salesChanged ? (sales === null ? "satis-silindi" : "satis") : noteChanged ? "not" : "yok";
-    return { previous, change };
+    return { previous: { channel: data.channel, month: data.month, ...before }, change };
   });
 }
 

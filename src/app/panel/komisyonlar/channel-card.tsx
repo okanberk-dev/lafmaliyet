@@ -180,17 +180,13 @@ function InvoiceDetails({ row }: { row: ChannelMonth }) {
               <ul className="space-y-1.5">
                 {inv.lines.map((l, i) => (
                   <li key={i} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    {/* Uyarılar "olabilir" der, kalemin kendi metni tam okunmalı: kesilmez, satır kırılır (dokunmatikte title görünmez) */}
                     <span className="min-w-0 flex-[1_1_10rem]">
-                      <span className="block truncate text-ink" title={l.name}>
-                        {l.name}
-                      </span>
-                      {l.description ? (
-                        <span className="block truncate text-xs text-ink-mute" title={l.description}>
-                          {l.description}
-                        </span>
-                      ) : null}
+                      <span className="block break-words text-ink">{l.name}</span>
+                      {l.description ? <span className="block break-words text-xs text-ink-mute">{l.description}</span> : null}
                     </span>
-                    <span className="flex shrink-0 items-center gap-2">
+                    {/* Alt satıra inince de sağda: tutarlar alt alta hizalı kalır */}
+                    <span className="ml-auto flex shrink-0 items-center gap-2">
                       <Badge tone={LINE_TONE[l.cls]}>{LINE_LABEL[l.cls]}</Badge>
                       <span className="text-ink tabular">{money(l.amount)}</span>
                     </span>

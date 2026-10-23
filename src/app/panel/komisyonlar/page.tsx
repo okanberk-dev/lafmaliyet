@@ -7,7 +7,7 @@ import { MonthPicker } from "@/components/panel/month-picker";
 import { PageHeader } from "@/components/panel/page-header";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton, SectionTitle, Stat } from "@/components/ui/misc";
-import { groupOf, shownChannels, type GroupMonth } from "@/lib/commission/report";
+import { groupOf, shownChannels } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { dateTR, money, monthLabel, num, pct } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -18,7 +18,7 @@ import { ChannelSettingsCard } from "./channel-settings";
 import { HashScroll } from "./hash-scroll";
 import { MealTotalCard } from "./meal-total-card";
 import { PendingCard } from "./pending-card";
-import { openPayouts, openPayoutsSub, overMealLimit, tillSub } from "./texts";
+import { mealStatSub, openPayouts, openPayoutsSub, overMealLimit, platformTillLine } from "./texts";
 
 export const metadata: Metadata = { title: "Komisyon & hakediş" };
 
@@ -47,13 +47,6 @@ export default function CommissionPage({ searchParams }: PageProps<"/panel/komis
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
-/** Yemek kartı oranı karosunun alt satırı */
-function mealStatSub(g: GroupMonth | null): string {
-  if (!g || g.zTotal === null || g.zTotal <= 0) return "Satış bilinmiyor";
-  if (g.rate !== null) return `Satış ${money(g.zTotal)}`;
-  return `Satış ${money(g.zTotal)} · ${g.invoiceCount ? "Z ayın bir kısmı" : "fatura yok"}`;
-}
-
 /** Satış & gider › Komisyon & hakediş (docs/KOMISYON.md); yalnız yönetici, proxy personeli buraya sokmaz */
 async function CommissionContent({ searchParams }: { searchParams: PageProps<"/panel/komisyonlar">["searchParams"] }) {
   await requireAdmin();
@@ -80,6 +73,8 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 
   const monthRows = report.rows.filter((r) => r.month === month);
   const meal = groupOf(report, "meal", month);
+  // Toplam kartı yemek kartı satışı ya da faturası olan ayda (kasa raporu olup Z'de yemek kartı 0 olan ayda yalnız karo)
+  const mealTotal = meal && (meal.invoiceCount > 0 || (meal.zTotal ?? 0) > 0) ? meal : null;
   const platform = groupOf(report, "platform", month);
   const mealChannels = shownChannels(report, "meal", month);
   const platformChannels = shownChannels(report, "platform", month);
@@ -116,9 +111,9 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 
         <section aria-label="Yemek kartları">
           <SectionTitle>Yemek kartları</SectionTitle>
-          {meal || mealChannels.length ? (
+          {mealTotal || mealChannels.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              {meal ? <MealTotalCard group={meal} rows={monthRows.filter((r) => r.kind === "meal")} className="lg:col-span-2" /> : null}
+              {mealTotal ? <MealTotalCard group={mealTotal} rows={monthRows.filter((r) => r.kind === "meal")} className="lg:col-span-2" /> : null}
               {mealChannels.map((ch) => (
                 <ChannelCard key={ch} channel={ch} month={month} report={report} />
               ))}
@@ -130,9 +125,7 @@ async function CommissionContent({ searchParams }: { searchParams: PageProps<"/p
 
         <section aria-label="Platformlar">
           <SectionTitle>Platformlar</SectionTitle>
-          <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">
-            {platform?.zTotal != null ? `Z'deki online (platformlar): ${money(platform.zTotal)} · ${tillSub(platform)}` : "Kasa raporu yok"}
-          </p>
+          <p className="-mt-1.5 mb-3 text-[13px] text-ink-mute">{platformTillLine(platform)}</p>
           {platformChannels.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {platformChannels.map((ch) => (
@@ -194,11 +187,11 @@ function RulesCard() {
     },
     {
       title: "Gerçek oran",
-      body: "Kanalın o ay kestiği her şey (komisyon, erken ödeme ve diğer ücretler, KDV hariç) ÷ o kanaldan yapılan satış (KDV dahil). Satış, Hakediş penceresine yazdığınız aylık ekstreden gelir; yazmadıysanız ve o ay tek yemek kartının (ya da tek platformun) faturası varsa kasa raporlarındaki Z toplamından. Z'de kartlar tek toplam olduğu için birden çok kart kullanılan ayda kart kart oran ancak ekstreyle çıkar; yemek kartlarının toplam oranı her zaman hesaplanır.",
+      body: "Kanalın o ay kestiği her şey (komisyon, erken ödeme ve diğer ücretler, KDV hariç) ÷ o kanaldan yapılan satış (KDV dahil). Satış, Hakediş penceresine yazdığınız aylık ekstreden gelir; yazmadıysanız ve o ay tek yemek kartının (ya da tek platformun) faturası varsa (sonraki ayın 15'ine kadar başkasınınki de gelmediyse) kasa raporlarındaki Z toplamından. Z'de kartlar tek toplam olduğu için birden çok kart kullanılan ayda kart kart oran ancak ekstreyle çıkar; yemek kartlarının toplam oranı her zaman hesaplanır.",
     },
     {
       title: "Hangi ay",
-      body: "Yemek kartı faturası ayın ilk 5 gününde kesildiyse önceki ayın satışları için sayılır. Haftalık platform faturaları ay sınırında kaydığı için platformlarda 3 aylık oran gösterilir. Gelir-gider ise her faturayı kendi tarihinin ayına yazar.",
+      body: "Yemek kartı faturası ayın ilk 5 gününde kesildiyse önceki ayın satışları için sayılır. Ay sonunda kesilmeyen yemek kartı faturası (düzeltme, iki aylık fatura) başka bir ayın ücretini de taşıyabilir; o ayda %6 aşımı kesin sayılmaz. Haftalık platform faturaları ay sınırında kaydığı için platformlarda 3 aylık oran gösterilir. Gelir-gider ise her faturayı kendi tarihinin ayına yazar.",
     },
     {
       title: "Hakediş",

@@ -59,6 +59,50 @@ export interface ChannelSettings {
   payDays: number;
 }
 
+/** Komisyon faturası sorgusunun satırı (src/server/data/commission.ts): fatura ve LEFT JOIN'le kalemi; kalemsizde kalem alanları boş */
+export interface CommissionInvoiceRow {
+  id: number;
+  date: string;
+  supplier: string;
+  supplierTaxNumber: string | null;
+  invoiceNo: string | null;
+  amount: number;
+  discount: number;
+  payable: number;
+  needsReview: boolean;
+  lineName: string | null;
+  lineDescription: string | null;
+  lineNet: number | null;
+}
+
+/**
+ * Sorgunun satırları → faturalar ve kalemleri, sorgunun sırasıyla (fatura başına bir kayıt, kalemleri altında).
+ * `names`: kanalın aranacağı adlar (faturadaki ad, tedarikçi kartının adı ve diğer adları); yoksa yalnız faturadaki ad.
+ */
+export function groupInvoiceRows(rows: readonly CommissionInvoiceRow[], names?: ((supplier: string, taxNumber: string | null) => string[]) | null): CommissionInvoiceIn[] {
+  const byId = new Map<number, CommissionInvoiceIn>();
+  for (const r of rows) {
+    let inv = byId.get(r.id);
+    if (!inv) {
+      inv = {
+        id: r.id,
+        date: r.date,
+        supplier: r.supplier,
+        names: names ? names(r.supplier, r.supplierTaxNumber) : [r.supplier],
+        invoiceNo: r.invoiceNo,
+        amount: r.amount,
+        discount: r.discount,
+        payable: r.payable,
+        needsReview: r.needsReview,
+        lines: [],
+      };
+      byId.set(r.id, inv);
+    }
+    if (r.lineName !== null && r.lineNet !== null) inv.lines.push({ name: r.lineName, description: r.lineDescription, netTotal: r.lineNet });
+  }
+  return [...byId.values()];
+}
+
 export interface CommissionInput {
   /** Türkiye'de bugün (okumalardan sonra alınır) */
   today: string;
@@ -146,7 +190,10 @@ export interface ChannelMonth {
   /** Yazılan satış silinirse kullanılacak Z toplamı (yalnız grupta tek kanal varsa; pencerenin ipucu) */
   tekSales: number | null;
   rate: number | null;
-  /** Platform: seçilen ay ve önceki iki ayda satışı bilinen (en az iki) ayın toplam oranı; haftalık fatura ay sınırında kayar */
+  /**
+   * Platform: seçilen ay ve önceki iki ayda satışı bilinen (en az iki) ayın toplam oranı; haftalık fatura ay sınırında
+   * kayar. Seçilen ayın kendi oranı bilinmiyorsa null
+   */
   rate3: number | null;
   payout: Payout;
   mark: ChannelMonthIn | null;
@@ -158,7 +205,7 @@ export interface ChannelMonth {
 export interface GroupMonth {
   kind: ChannelKind;
   month: string;
-  /** Z'deki yemek kartı (ya da online) toplamı; ayın kasa raporu yoksa null */
+  /** Z'deki yemek kartı (ya da online) toplamı; ayın kasa raporu yoksa null (raporu olan ayda 0 da olabilir) */
   zTotal: number | null;
   reportDays: number;
   missing: string[];
@@ -171,6 +218,7 @@ export interface GroupMonth {
   rate: number | null;
   expected: number | null;
   received: number;
+  /** O ay etkin kanallar; faturası sonraki ayın 1–15'inde kesilen kanal da (bu ayın satışlarını kapsıyor olabilir) */
   activeChannels: ChannelKey[];
   latestInvoice: string | null;
   flags: Flag[];
@@ -385,19 +433,46 @@ function isActive(invoices: readonly InvoiceView[] | undefined, mark: ChannelMon
   return Boolean(invoices?.length) || (mark?.sales ?? 0) > 0 || (mark?.received ?? 0) > 0;
 }
 
+/** Grubun o ayki etkin kanalları: kendi verisiyle olanlar ve yalnız sonraki ayın ilk yarısındaki faturasıyla görünenler */
+interface ActiveChannels {
+  own: ChannelKey[];
+  /** Faturası sonraki ayın 1–15'inde (bu ayın satışlarını da kapsıyor olabilir); en eski fatura günüyle */
+  late: { key: ChannelKey; date: string }[];
+}
+
 /** Satışı bilinmeyen kanal-ayın nedeni (gri satır) */
-function salesReason(kind: ChannelKind, till: ChannelTill, active: number, hasInvoice: boolean): string {
+function salesReason(kind: ChannelKind, month: string, till: ChannelTill, active: ActiveChannels, hasInvoice: boolean): string {
   if (!hasInvoice) return `Satış bilinmiyor.${TYPE_HINT}`;
   if (!till.reportDays) return `Satış bilinmiyor: bu ay kasa raporu yok.${TYPE_HINT}`;
   if (till.partialFrom) return `Satış bilinmiyor: kasa raporları ${dayLocativeTR(till.partialFrom)} başladı.${TYPE_HINT}`;
-  if (active >= 2) {
-    return kind === "meal"
-      ? `Satış bilinmiyor: Z'de yemek kartları tek toplam ve bu ay ${active} kart var.${TYPE_HINT}`
-      : `Satış bilinmiyor: Z'deki online (platformlar) tek toplam ve bu ay ${active} platform var.${TYPE_HINT}`;
-  }
+  const total = kind === "meal" ? "Z'de yemek kartları tek toplam" : "Z'deki online (platformlar) tek toplam";
+  if (active.own.length >= 2) return `Satış bilinmiyor: ${total} ve bu ay ${active.own.length} ${kind === "meal" ? "kart" : "platform"} var.${TYPE_HINT}`;
+  // Öteki kanalın bu aya ait faturası sonraki ayda kesilmiş: ekranda o ay kartı yok, bu yüzden adı ve günü yazılır
+  const [late] = active.late;
+  if (late) return `Satış bilinmiyor: ${total} ve ${dayMonthTR(late.date)} tarihli ${channelDef(late.key).label} faturası ${monthName(month)} satışlarını da kapsıyor olabilir.${TYPE_HINT}`;
   return kind === "meal"
     ? `Satış bilinmiyor: bu ayın kasa raporlarında yemek kartı tutarı yok.${TYPE_HINT}`
     : `Satış bilinmiyor: bu ayın kasa raporlarında Z'deki online (platformlar) tutarı yok.${TYPE_HINT}`;
+}
+
+/**
+ * Ayın ekstresi gibi kesilmemiş en eski fatura: ayın son beş gününden önce ya da sonraki ayın beşinden sonra kesilen
+ * (iade değil). Düzeltme ya da iki aylık fatura başka bir ayın ücretini de taşır; o ayda %6 aşımı kesin sayılmaz. Hepsi
+ * ay sonunda kesildiyse null.
+ */
+export function offCycleInvoice(invoices: readonly Pick<InvoiceView, "date" | "net">[], month: string): string | null {
+  const end = monthEnd(`${month}-01`);
+  const from = addDays(end, -(MEAL_PREVIOUS_MONTH_DAYS - 1));
+  const to = addDays(end, MEAL_PREVIOUS_MONTH_DAYS);
+  const off = invoices.filter((i) => i.net > 0 && (i.date < from || i.date > to)).map((i) => i.date);
+  return off.sort()[0] ?? null;
+}
+
+/** %6 aşımının neden kesin olmadığı: "Bazı günlerin kasa raporu eksik ve 15 Ekim tarihli fatura ay sonunda kesilmemiş …" */
+function doubtText(gaps: boolean, offCycle: string | null): string {
+  const parts = [gaps ? "bazı günlerin kasa raporu eksik" : null, offCycle ? `${dayMonthTR(offCycle)} tarihli fatura ay sonunda kesilmemiş, başka bir ayın ücretini de taşıyor olabilir` : null];
+  const text = parts.filter((p): p is string => p !== null).join(" ve ");
+  return text.charAt(0).toLocaleUpperCase("tr-TR") + text.slice(1);
 }
 
 /**
@@ -441,12 +516,14 @@ function channelFlags(cm: Omit<ChannelMonth, "flags" | "rate3">, till: ChannelTi
   if (cm.kind === "meal") {
     if (overLimit(cm.rate) && sales) {
       // Yazılan ekstre kesindir; Z toplamı (tek kart) kartın satışından az olamaz, o yüzden aşım da kesindir. Yalnız
-      // raporu eksik günler varsa Z eksik kalmış olabilir
-      const sure = sales.source === "elle" || !till.missing.length;
+      // raporu eksik günler varsa Z eksik kalmış olabilir; ay sonunda kesilmeyen fatura da başka bir ayın ücretini taşıyabilir
+      const gaps = sales.source === "tek" && till.missing.length > 0;
+      const offCycle = offCycleInvoice(cm.invoices, cm.month);
+      const sure = !gaps && !offCycle;
       flags.push({
         key: "oran-sinir",
         level: sure ? "bad" : "warn",
-        text: `Toplam kesinti ${pct(cm.rate)}: yemek kartında yasal üst sınır %6.${sure ? "" : " Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin."}`,
+        text: `Toplam kesinti ${pct(cm.rate)}: yemek kartında yasal üst sınır %6.${sure ? "" : ` ${doubtText(gaps, offCycle)}; kesin değil, kontrol edin.`}`,
       });
     }
     if (cm.fees.yasak > 0) {
@@ -510,8 +587,25 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
 
   // 2. Ay ay kasa raporları
   const tills = new Map(months.map((m) => [m, channelTill(input.till, m, through, input.firstReport)]));
-  const activeOf = (kind: ChannelKind, month: string) =>
-    CHANNELS.filter((c) => c.kind === kind && isActive(data.get(c.key)!.get(month)?.invoices, data.get(c.key)!.get(month)?.mark)).map((c) => c.key);
+  // Etkin kanallar. Bir kanalın bu ayın satışları için faturası sonraki ayın ilk yarısında kesilebilir (ilk ayı, kayan
+  // fatura): o kanal da sayılır, yoksa Z'deki toplamın tamamı öteki kanala yazılırdı (`tek`)
+  const graceDay = String(INVOICE_GRACE_DAY).padStart(2, "0");
+  const activeOf = (kind: ChannelKind, month: string): ActiveChannels => {
+    const next = shiftMonth(month, 1);
+    const own: ChannelKey[] = [];
+    const late: ActiveChannels["late"] = [];
+    for (const c of CHANNELS) {
+      if (c.kind !== kind) continue;
+      const d = data.get(c.key)!;
+      if (isActive(d.get(month)?.invoices, d.get(month)?.mark)) {
+        own.push(c.key);
+        continue;
+      }
+      const date = (d.get(next)?.invoices ?? []).map((i) => i.date).filter((x) => x <= `${next}-${graceDay}`).sort()[0];
+      if (date) late.push({ key: c.key, date });
+    }
+    return { own, late };
+  };
 
   // 3. Kanal-aylar
   const rows: ChannelMonth[] = [];
@@ -523,7 +617,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
       const invoices = [...d.invoices].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
       const active = activeOf(def.kind, month);
       const groupTotal = def.kind === "meal" ? till.meal : till.online;
-      const tekOk = invoices.length > 0 && active.length === 1 && active[0] === def.key && till.reportDays > 0 && !till.partialFrom && groupTotal > 0;
+      const tekOk = invoices.length > 0 && active.own.length === 1 && active.own[0] === def.key && !active.late.length && till.reportDays > 0 && !till.partialFrom && groupTotal > 0;
       const tekSales = tekOk ? groupTotal : null;
       const typed = d.mark?.sales ?? null;
       const sales = typed !== null ? { amount: typed, source: "elle" as const } : tekSales !== null ? { amount: tekSales, source: "tek" as const } : null;
@@ -540,7 +634,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         vat: r2(invoices.reduce((a, i) => a + i.vat, 0)),
         payable,
         sales,
-        salesReason: sales ? null : salesReason(def.kind, till, active.length, invoices.length > 0),
+        salesReason: sales ? null : salesReason(def.kind, month, till, active, invoices.length > 0),
         tekSales,
         // İade (eksi) faturası ayın toplamını eksiye düşürürse oran yazılmaz
         rate: sales && sales.amount > 0 && invoices.length && feesTotal >= 0 ? feesTotal / sales.amount : null,
@@ -552,11 +646,13 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
     }
   }
 
-  // 4. Platformların 3 aylık oranı: seçilen ay ve önceki ikisi, satışı bilinen en az iki ay
+  // 4. Platformların 3 aylık oranı: seçilen ay ve önceki ikisi, satışı bilinen en az iki ay. Seçilen ayın kendi oranı
+  // bilinmiyorsa yok: başlıktaki oran yalnız önceki aylardan gelip bu ayınki sanılmasın
+  const knownRate = (x: ChannelMonth) => x.sales !== null && x.sales.amount > 0 && x.rate !== null;
   for (const r of rows) {
-    if (r.kind !== "platform") continue;
+    if (r.kind !== "platform" || !knownRate(r)) continue;
     const window = new Set([shiftMonth(r.month, -2), shiftMonth(r.month, -1), r.month]);
-    const known = rows.filter((x) => x.channel === r.channel && window.has(x.month) && x.sales && x.sales.amount > 0 && x.rate !== null);
+    const known = rows.filter((x) => x.channel === r.channel && window.has(x.month) && knownRate(x));
     if (known.length < 2) continue;
     const fees = known.reduce((a, x) => a + x.feesTotal, 0);
     const sales = known.reduce((a, x) => a + x.sales!.amount, 0);
@@ -571,20 +667,28 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
       const kRows = rows.filter((r) => r.kind === kind && r.month === month);
       const invoiceCount = kRows.reduce((a, r) => a + r.invoices.length, 0);
       const total = kind === "meal" ? till.meal : till.online;
-      if (!(till.reportDays > 0 && total > 0) && !invoiceCount) continue;
+      // Kasa raporu olan ayın Z toplamı 0 da olsa bilinir ("0 ₺ · 31 / 31 gün raporlu", "kasa raporu yok" değil)
+      if (!till.reportDays && !invoiceCount) continue;
       const zTotal = till.reportDays > 0 ? total : null;
       const feesTotal = r2(kRows.reduce((a, r) => a + r.feesTotal, 0));
       const payable = r2(kRows.reduce((a, r) => a + r.payable, 0));
       const usable = zTotal !== null && zTotal > 0 && !till.partialFrom;
       const rate = usable && invoiceCount > 0 && feesTotal >= 0 ? feesTotal / zTotal : null;
       const active = activeOf(kind, month);
+      const activeChannels = CHANNELS.filter((c) => active.own.includes(c.key) || active.late.some((l) => l.key === c.key)).map((c) => c.key);
       const latestInvoice = kRows.map((r) => r.latestInvoice).filter((d): d is string => d !== null).sort().at(-1) ?? null;
       const flags: Flag[] = [];
       if (kind === "meal") {
         if (overLimit(rate)) {
-          const sure = !till.missing.length;
-          const lead = `Ortalama kesinti ${pct(rate)}: ${active.length >= 2 ? "en az bir yemek kartı %6'yı aşıyor." : "yemek kartında yasal üst sınır %6."}`;
-          flags.push({ key: "oran-sinir", level: sure ? "bad" : "warn", text: `${lead}${sure ? "" : " Bazı günlerin kasa raporu eksik; kesin değil, kontrol edin."}` });
+          // Z toplamı yemek kartı satışından az olamaz: aşım kesindir. Yalnız eksik günde Z eksik kalmış, ay sonunda
+          // kesilmeyen faturada ayın ücreti başka bir ayınkiyle karışmış olabilir; o zaman "olabilir" ve turuncu
+          const gaps = till.missing.length > 0;
+          const offCycle = offCycleInvoice(kRows.flatMap((r) => r.invoices), month);
+          const sure = !gaps && !offCycle;
+          const many = activeChannels.length >= 2;
+          const lead = many ? `en az bir yemek kartı %6'yı aşıyor${sure ? "" : " olabilir"}.` : "yemek kartında yasal üst sınır %6.";
+          const tail = sure ? "" : ` ${doubtText(gaps, offCycle)}; ${many ? "" : "kesin değil, "}kontrol edin.`;
+          flags.push({ key: "oran-sinir", level: sure ? "bad" : "warn", text: `Ortalama kesinti ${pct(rate)}: ${lead}${tail}` });
         }
         if (zTotal !== null && zTotal > 0 && !invoiceCount && today >= `${shiftMonth(month, 1)}-${String(INVOICE_GRACE_DAY).padStart(2, "0")}`) {
           flags.push({ key: "fatura-yok", level: "warn", text: `${monthLocativeTR(month)} ${money(zTotal)} yemek kartı satışı var ama hiçbir yemek kartı faturası gelmedi.` });
@@ -604,7 +708,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         rate,
         expected: usable && invoiceCount > 0 ? r2(zTotal - payable) : null,
         received: r2(kRows.reduce((a, r) => a + (r.payout.received ?? 0), 0)),
-        activeChannels: active,
+        activeChannels,
         latestInvoice,
         flags,
       });
@@ -636,6 +740,45 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
     defaultMonth,
     settings,
   };
+}
+
+// ---------------------------------------------------------------- Hakediş işareti (kayıt)
+
+/** Kanal-ayın yazılan değerleri (Hakediş penceresi): gelen hakediş (gün ve tutar birlikte), ekstredeki satış, not */
+export interface ChannelMonthValues {
+  received: { on: string; amount: number } | null;
+  sales: number | null;
+  note: string | null;
+}
+
+/** Kaydın asıl değişikliği (bildirimin metni): hakediş işaretlendi, işaret kalktı, satış, not ya da hiçbiri */
+export type ChannelMonthChange = "geldi" | "kaldirildi" | "satis" | "satis-silindi" | "not" | "yok";
+
+/** Kayıttaki satırın değerleri (satır yoksa hepsi boş): "Geri al" bunları aynı eylemle yeniden yazar */
+export function markValues(row: Pick<ChannelMonthIn, "receivedOn" | "received" | "sales" | "note"> | null | undefined): ChannelMonthValues {
+  return {
+    received: row?.receivedOn && row.received !== null ? { on: row.receivedOn, amount: row.received } : null,
+    sales: row?.sales ?? null,
+    note: row?.note ?? null,
+  };
+}
+
+/**
+ * Kaydın farkı: bildirimin türü (önce hakediş, sonra satış, sonra not) ve işlem geçmişinin metni (değişen her parça,
+ * " · " ile; değişiklik yoksa null). `label`: "Pluxee Ekim 2026".
+ */
+export function channelMonthChange(prev: ChannelMonthValues, next: ChannelMonthValues, label: string): { change: ChannelMonthChange; log: string | null } {
+  const receivedChanged = (prev.received?.on ?? null) !== (next.received?.on ?? null) || (prev.received?.amount ?? null) !== (next.received?.amount ?? null);
+  const salesChanged = prev.sales !== next.sales;
+  const noteChanged = prev.note !== next.note;
+  const parts: string[] = [];
+  if (receivedChanged) {
+    parts.push(next.received ? `Hakediş geldi: ${label} · ${money(next.received.amount)} (${dayMonthTR(next.received.on)})` : `Hakediş işareti kaldırıldı: ${label}`);
+  }
+  if (salesChanged) parts.push(`Komisyon kanalı satışı: ${label} → ${next.sales === null ? "boş" : money(next.sales)}`);
+  if (noteChanged) parts.push(`Not: ${label} → ${next.note ?? "boş"}`);
+  const change: ChannelMonthChange = receivedChanged ? (next.received ? "geldi" : "kaldirildi") : salesChanged ? (next.sales === null ? "satis-silindi" : "satis") : noteChanged ? "not" : "yok";
+  return { change, log: parts.length ? parts.join(" · ") : null };
 }
 
 // ---------------------------------------------------------------- Ekran yardımcıları
@@ -747,6 +890,17 @@ export function commissionAlerts(report: Pick<CommissionReport, "rows" | "groups
   return out
     .sort((a, b) => (a.level === b.level ? b.date.localeCompare(a.date) : a.level === "danger" ? -1 : 1))
     .slice(0, limit);
+}
+
+/** Uyarının sabah e-postası günlüğündeki anahtarı (notification_log): "komisyon:gecikti:pluxee:2026-10" */
+export const commissionLogKey = (alert: Pick<CommissionAlert, "key">): string => `komisyon:${alert.key}`;
+
+/**
+ * E-postaya girecek uyarılar: daha önce gönderilenler (anahtarı günlükte olanlar) önce elenir, sonra en çok `max`.
+ * Sıra tersine olsaydı gönderilmiş beş uyarı yeni olanları her sabah dışarıda bırakırdı.
+ */
+export function freshAlerts(alerts: readonly CommissionAlert[], sent: ReadonlySet<string>, max: number = MAX_ALERTS): CommissionAlert[] {
+  return alerts.filter((a) => !sent.has(commissionLogKey(a))).slice(0, max);
 }
 
 /**
