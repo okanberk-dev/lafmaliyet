@@ -185,6 +185,7 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
   const remaining = plan.windows.slice(next).map((w) => w.month);
   return {
     status: error ? "error" : remaining.length ? "partial" : "ok",
+    reread: plan.reread,
     read,
     remaining,
     done: progress.done,

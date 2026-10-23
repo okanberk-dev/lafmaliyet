@@ -124,10 +124,14 @@ export function bucket(ratio: number | null): 0 | 1 | 2 | 3 | 4 | null {
   return ratio < 0.25 ? 1 : ratio < 0.5 ? 2 : ratio < 0.75 ? 3 : 4;
 }
 
-/** Hücredeki rakam (yüzde işaretsiz): kapalı saatte boş, o gün dönemde yoksa "–", sıfır değil ama yuvarlanınca 0 ise "<1" */
+/**
+ * Hücredeki rakam (yüzde işaretsiz). Boş hücre ve kapalı saat yazısız (sıfırlar haritayı kalabalıklaştırır; rengi ve
+ * ayrıntı satırı söyler), o gün dönemde yoksa "–", sıfır değil ama yuvarlanınca 0 ise "<1"
+ */
 export function cellNumber(c: GridCell): string {
   if (c.ratio === null) return c.open ? "–" : "";
-  if (c.ratio > 0 && c.ratio < 0.005) return "<1";
+  if (c.ratio === 0) return "";
+  if (c.ratio < 0.005) return "<1";
   return num(c.ratio * 100, 0);
 }
 
@@ -233,10 +237,13 @@ export function kpiTexts(s: OccupancySummary): Record<KpiKey, { value: string; s
   return { occupancy, revenue, extension, cancel, lead };
 }
 
-/** Geçmişi siteden alma bitince çıkan bildirim (sunucu eyleminin sonucu) */
+/**
+ * Geçmişi siteden alma bitince çıkan bildirim (sunucu eyleminin sonucu). İlk almada ilerleme bütün aylara göre
+ * ("4 / 10 ay alındı"), yeniden almada bu çalışmada okunan aylara göre (eski aylar zaten alınmıştı)
+ */
 export function historyToast(r: HistoryRun): { tone: "success" | "info" | "error"; text: string } {
-  if (r.status === "ok") return { tone: "success", text: `Geçmiş alındı: ${r.read.length} ay, ${r.reservations} rezervasyon` };
-  const head = `${r.done} / ${r.total} ay alındı`;
-  if (r.status === "partial") return { tone: "info", text: `${head}; kalanı için Devam et'e basın` };
+  if (r.status === "ok") return { tone: "success", text: `Geçmiş ${r.reread ? "yeniden " : ""}alındı: ${r.read.length} ay, ${r.reservations} rezervasyon` };
+  const head = r.reread ? `${r.read.length} / ${r.read.length + r.remaining.length} ay yeniden okundu` : `${r.done} / ${r.total} ay alındı`;
+  if (r.status === "partial") return { tone: "info", text: r.reread ? `${head}; süre yetmedi, birazdan yeniden deneyin` : `${head}; kalanı için Devam et'e basın` };
   return { tone: "error", text: `${head}. ${r.error ?? "Bilinmeyen hata"}` };
 }

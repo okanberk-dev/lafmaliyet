@@ -28,6 +28,7 @@ import {
   businessHour,
   busiestBlock,
   clockHour,
+  comparable,
   computeOccupancy,
   DEFAULT_ROOM_HOURS,
   emptiestBlock,
@@ -463,6 +464,8 @@ test("metinler: oda saatleri, kapanış seçenekleri, puan, basamak, hücre, dak
   assert.equal(cellLabel(outside), "Cuma 01:00, oda saatleri dışında, 130 dakika dolu");
   assert.equal(cellDetail(outside), "Cuma 01:00–02:00 · oda saatleri dışında · 2 sa 10 dk dolu · kullanılan gün 2 / 4");
   assert.equal(cellNumber({ ...cell, ratio: 0.003 }), "<1");
+  assert.equal(cellNumber({ ...cell, ratio: 0, occupiedMin: 0 }), "", "boş hücre yazısız (rengi ve ayrıntısı söyler)");
+  assert.equal(cellNumber({ ...cell, days: 0, capacityMin: 0, ratio: null }), "–", "dönemde o gün yok");
 
   const now = T("2026-10-22", "14:00");
   assert.equal(periodLine(resolvePeriod("4h", undefined, now), DEFAULT_ROOM_HOURS), "24 Eylül – 21 Ekim · 28 gün · oda saatleri 10:00–22:00 · bugün sayılmaz");
@@ -520,6 +523,25 @@ test("ay ay: en yeni başta en çok 6 ay, ilk veri ayından eskiye gitmez; saya�
   );
   assert.equal(monthRows([], ["2026-11"], "2026-11-15", { hours: DEFAULT_ROOM_HOURS, firstTimerDay: "2026-10-21" })[0].beforeTimers, false);
   assert.equal(monthRows([], ["2026-09"], "2026-10-22", { hours: DEFAULT_ROOM_HOURS, firstTimerDay: null })[0].beforeTimers, false, "sayaç hiç yoksa işaret yok");
+});
+
+test("puan farkı yalnız karşılaştırılabilir dönemlerde: veriden önce ya da sayacın başladığı günü içeren dönem yok", () => {
+  const p4 = (now: string) => resolvePeriod("4h", undefined, T(now, "14:00"));
+  const prod = { siteSince: "2026-01-01", timerSince: "2026-10-21" };
+  // 1 Kasım: bu dönem sayacın başladığı günü içeriyor
+  assert.equal(comparable(p4("2026-11-01"), previousPeriod(p4("2026-11-01")), prod), false);
+  // 20 Kasım: bu dönem sayaçtan sonra, önceki içeriyor
+  assert.equal(comparable(p4("2026-11-20"), previousPeriod(p4("2026-11-20")), prod), false);
+  // 20 Aralık: ikisi de sayaçtan sonra
+  assert.equal(comparable(p4("2026-12-20"), previousPeriod(p4("2026-12-20")), prod), true);
+  // Ay ay: Eylül ↔ Ağustos (ikisi de yalnız site), Ekim ↔ Eylül (Ekim karışık), Aralık ↔ Kasım
+  assert.equal(comparable(monthPeriod("2026-09", "2026-10-22"), monthPeriod("2026-08", "2026-10-22"), prod), true);
+  assert.equal(comparable(monthPeriod("2026-10", "2026-10-22"), monthPeriod("2026-09", "2026-10-22"), prod), false);
+  assert.equal(comparable(monthPeriod("2026-12", "2027-01-05"), monthPeriod("2026-11", "2027-01-05"), prod), true);
+  // Geçmiş alınmadan: verinin başladığı günden önceki dönemle kıyas yok
+  assert.equal(comparable(p4("2026-11-20"), previousPeriod(p4("2026-11-20")), { siteSince: "2026-10-22", timerSince: null }), false);
+  assert.equal(comparable(p4("2026-12-20"), previousPeriod(p4("2026-12-20")), { siteSince: "2026-10-22", timerSince: null }), true);
+  assert.equal(comparable(p4("2026-12-20"), previousPeriod(p4("2026-12-20")), { siteSince: null, timerSince: null }), false, "veri yok");
 });
 
 test("oda saatleri: geçerli aralık; kapanış açılıştan sonra, en geç 05:00; bozuk değer null", () => {
@@ -582,7 +604,9 @@ test("geçmişi siteden alma: ay ay pencereler, ilerleme, devam ve yeniden alma"
   const all = done(windows.map((w) => w.month));
   assert.equal(historyProgress(all, "2026-11-15").complete, true);
   const again = historyPlan(all, "2026-11-15");
-  assert.deepEqual([again.through, again.windows.length, again.windows[0].month], ["2026-11-13", 11, "2026-11"]);
+  assert.deepEqual([again.through, again.windows.length, again.windows[0].month, again.reread], ["2026-11-13", 11, "2026-11", true]);
+  assert.equal(first.reread, false);
+  assert.equal(cont.reread, false);
   // Bozuk kayıt
   assert.deepEqual(parseHistoryState({ months: { "2026-09": { count: 2, at: "x" }, bozuk: { count: 1, at: "x" }, "2026-08": "x" }, through: "dün" }), {
     months: { "2026-09": { count: 2, at: "x" } },
@@ -628,11 +652,15 @@ test("429: Retry-After saniye ya da tarih, en çok 10 sn; yoksa beklenmez", () =
   assert.equal(retryAfterMs("Thu, 22 Oct 2026 10:00:05 GMT", now), 5000);
 });
 
-test("bildirim metni: tamam, yarım, hata", () => {
-  const run = { read: ["2026-10", "2026-09"], remaining: [], done: 10, total: 10, reservations: 214, created: 200, updated: 14, error: null };
+test("bildirim metni: tamam, yarım, hata; yeniden almada bu çalışmanın ayları", () => {
+  const run = { reread: false, read: ["2026-10", "2026-09"], remaining: [], done: 10, total: 10, reservations: 214, created: 200, updated: 14, error: null };
   assert.deepEqual(historyToast({ ...run, status: "ok" }), { tone: "success", text: "Geçmiş alındı: 2 ay, 214 rezervasyon" });
   assert.deepEqual(historyToast({ ...run, status: "partial", done: 4, remaining: ["2026-06"] }), { tone: "info", text: "4 / 10 ay alındı; kalanı için Devam et'e basın" });
   assert.deepEqual(historyToast({ ...run, status: "error", done: 4, error: "Site 8 saniyede yanıt vermedi" }), { tone: "error", text: "4 / 10 ay alındı. Site 8 saniyede yanıt vermedi" });
+  const again = { ...run, reread: true, read: ["2026-10", "2026-09", "2026-08", "2026-07"], remaining: ["2026-06", "2026-05"] };
+  assert.deepEqual(historyToast({ ...again, status: "ok", remaining: [] }), { tone: "success", text: "Geçmiş yeniden alındı: 4 ay, 214 rezervasyon" });
+  assert.deepEqual(historyToast({ ...again, status: "error", error: "Site yanıt vermedi (HTTP 500)" }), { tone: "error", text: "4 / 6 ay yeniden okundu. Site yanıt vermedi (HTTP 500)" });
+  assert.deepEqual(historyToast({ ...again, status: "partial" }), { tone: "info", text: "4 / 6 ay yeniden okundu; süre yetmedi, birazdan yeniden deneyin" });
 });
 
 test("KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (sitenin kuralı)", () => {

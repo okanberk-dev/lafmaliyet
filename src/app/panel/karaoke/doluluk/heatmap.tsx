@@ -155,7 +155,11 @@ export function Heatmap({ view, hours }: { view: HeatmapView; hours: RoomHours }
           ))}
         </div>
 
-        <p aria-live="polite" className="mt-3 min-h-10 rounded-xl bg-surface px-3 py-2.5 text-[13px] leading-5 text-ink-soft">
+        {/* Telefonda satır ekranın altında (alt menünün üstünde) asılı kalır: uzun ızgarada dokunulan hücrenin ayrıntısı görünsün */}
+        <p
+          aria-live="polite"
+          className="z-20 mt-3 min-h-10 rounded-xl bg-surface px-3 py-2.5 text-[13px] leading-5 text-ink-soft max-lg:sticky max-lg:bottom-[calc(var(--mobile-nav-h)+0.75rem)] max-lg:shadow-[0_4px_16px_rgb(0_0_0/0.10)] max-lg:ring-1 max-lg:ring-line"
+        >
           {detail ?? (
             <>
               <span className="pointer-coarse:hidden">Bir hücre seçin: o gün ve saatin ayrıntısı burada görünür.</span>

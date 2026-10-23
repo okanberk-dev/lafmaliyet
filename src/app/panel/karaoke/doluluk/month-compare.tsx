@@ -4,18 +4,19 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { GrowthPill, KeyValue } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { monthLabel, num, tl } from "@/lib/format";
-import type { MonthRow } from "@/lib/karaoke/occupancy";
+import { comparable, type Coverage, type MonthRow } from "@/lib/karaoke/occupancy";
 import { longDayText, percentText, pointsText } from "@/lib/karaoke/occupancy-text";
 import { addDays, dayMonthTR } from "@/lib/reminders";
 
-/** Ayın satırındaki metinler (ay boşsa "–") */
-function cells(r: MonthRow, older: MonthRow | undefined) {
+/** Ayın satırındaki metinler (ay boşsa "–"); doluluk farkı bir eski satıra göre, yalnız karşılaştırılabilirse */
+function cells(r: MonthRow, older: MonthRow | undefined, coverage: Coverage) {
   const s = r.summary;
   const sessions = s.sessions.site + s.sessions.panel;
   const has = sessions + s.cancellations.bookings > 0;
   const dash = "–";
   const olderHas = older && older.summary.sessions.site + older.summary.sessions.panel + older.summary.cancellations.bookings > 0;
-  const delta = has && olderHas && s.ratio !== null && older.summary.ratio !== null ? s.ratio - older.summary.ratio : null;
+  const delta =
+    has && olderHas && s.ratio !== null && older.summary.ratio !== null && comparable(r.period, older.period, coverage) ? s.ratio - older.summary.ratio : null;
   const hours = s.occupiedMin / 60;
   return {
     has,
@@ -57,9 +58,9 @@ function Bar({ ratio }: { ratio: number | null }) {
  * "Ay ay": son 6 ay, en yeni başta (içinde bulunulan ay dünkü güne kadar), ilk veri ayından eskiye gitmez. Masaüstünde
  * tablo, telefonda ay başına açılır satır (en yenisi açık).
  */
-export function MonthCompare({ rows, firstTimerDay }: { rows: MonthRow[]; firstTimerDay: string | null }) {
+export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: Coverage }) {
   const marked = rows.some((r) => r.beforeTimers);
-  const view = rows.map((r, i) => ({ r, c: cells(r, rows[i + 1]) }));
+  const view = rows.map((r, i) => ({ r, c: cells(r, rows[i + 1], coverage) }));
   return (
     <Card>
       <CardHeader icon={<CalendarRange />} title="Ay ay" description="Son 6 ay; içinde bulunulan ay dünkü güne kadar." />
@@ -141,9 +142,10 @@ export function MonthCompare({ rows, firstTimerDay }: { rows: MonthRow[]; firstT
         ))}
       </div>
 
-      {marked && firstTimerDay ? (
+      {marked && coverage.timerSince ? (
         <p className="px-5 pb-5 text-xs leading-5 text-ink-mute">
-          ¹ Rezervasyonsuz oturumlar {longDayText(firstTimerDay)} itibarıyla sayılıyor; önceki aylarda yalnız site rezervasyonları var.
+          ¹ Rezervasyonsuz oturumlar {longDayText(coverage.timerSince)} itibarıyla sayılıyor; önceki aylarda yalnız site rezervasyonları var. Doluluk
+          farkı yalnız aynı verinin sayıldığı aylar arasında gösterilir.
         </p>
       ) : null}
     </Card>

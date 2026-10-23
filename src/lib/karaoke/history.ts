@@ -96,13 +96,13 @@ export function historyProgress(state: HistoryState, today: string): HistoryProg
  * Bu çalışmada okunacak pencereler. İlk alma ve "Yeniden al" (hepsi alınmışsa) bugünden iki gün öncesine kadar bütün
  * ayları en yeniden okur (geç gelen iade ve iptaller de gelir); yarım kalan alma ("Devam et") eksik aylardan sürer.
  */
-export function historyPlan(state: HistoryState, today: string): { through: string; windows: HistoryWindow[] } {
+export function historyPlan(state: HistoryState, today: string): { through: string; windows: HistoryWindow[]; reread: boolean } {
   const progress = historyProgress(state, today);
   if (!state.through || progress.complete) {
     const through = historyEnd(today);
-    return { through, windows: historyWindows(HISTORY_START, through) };
+    return { through, windows: historyWindows(HISTORY_START, through), reread: Boolean(state.through) && progress.done > 0 };
   }
-  return { through: state.through, windows: historyWindows(HISTORY_START, state.through).filter((w) => !state.months[w.month]) };
+  return { through: state.through, windows: historyWindows(HISTORY_START, state.through).filter((w) => !state.months[w.month]), reread: false };
 }
 
 /**
@@ -181,6 +181,8 @@ export function retryAfterMs(v: string | null, now = Date.now()): number | null 
 /** Bir çalışmanın sonucu (sunucu eylemi istemciye döner) */
 export interface HistoryRun {
   status: "ok" | "partial" | "error";
+  /** Hepsi alınmıştı, baştan okundu ("Yeniden al") */
+  reread: boolean;
   /** Bu çalışmada okunan aylar */
   read: string[];
   /** Okunmayı bekleyen aylar */

@@ -213,6 +213,30 @@ export function periodBounds(p: Pick<Period, "from" | "to">): { start: number; e
   return { start: dayStart(p.from), end: dayStart(p.to) };
 }
 
+/** Verinin başladığı günler: site rezervasyonları (geçmiş alındıysa alınan ilk ayın başı) ve rezervasyonsuz sayaçlar */
+export interface Coverage {
+  siteSince: string | null;
+  timerSince: string | null;
+}
+
+/** Dönem, rezervasyonsuz sayaçların başladığı güne göre nerede: tamamen önce, tamamen sonra ya da ikisi birden */
+function timerSide(p: Pick<Period, "from" | "to">, timerSince: string | null): "before" | "after" | "mixed" {
+  if (!timerSince || p.from >= timerSince) return "after";
+  return p.to <= timerSince ? "before" : "mixed";
+}
+
+/**
+ * İki dönemin doluluğu karşılaştırılabilir mi (puan farkı rozeti): ikisi de verinin başladığı günden sonra başlıyor ve
+ * sayaçların başladığı güne göre aynı tarafta. Verisiz günlerle ya da yalnız site rezervasyonlarının sayıldığı
+ * günlerle kıyas farkı yanlış gösterirdi.
+ */
+export function comparable(a: Pick<Period, "from" | "to">, b: Pick<Period, "from" | "to">, c: Coverage): boolean {
+  const since = c.siteSince ?? c.timerSince;
+  if (!since || a.from < since || b.from < since) return false;
+  const side = timerSide(a, c.timerSince);
+  return side !== "mixed" && side === timerSide(b, c.timerSince);
+}
+
 /** Haftanın her günü dönemde kaç kez var (pazartesi 0) */
 function weekdayCounts(p: Pick<Period, "from" | "to">): number[] {
   const counts = [0, 0, 0, 0, 0, 0, 0];

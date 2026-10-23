@@ -13,6 +13,7 @@ import { dateTimeTR } from "@/lib/format";
 import { historyProgress } from "@/lib/karaoke/history";
 import {
   businessDay,
+  comparable,
   computeOccupancy,
   dayStart,
   KARAOKE_ROOMS,
@@ -155,7 +156,11 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
   const rows = monthRows(sessions, months, today, { ...opts, firstTimerDay: coverage.firstTimerDay });
   const insights = insightLines(grid, summary, period);
   const kpi = kpiTexts(summary);
-  const delta = summary.ratio !== null && before.capacityMin > 0 && before.ratio !== null ? summary.ratio - before.ratio : null;
+  // Verinin başladığı yer: site için geçmiş alındıysa alınan ilk ayın başı (yoksa eşitlemenin ilk günü), sayaç için ilk sayaç
+  const imported = progress.done && progress.first ? `${progress.first}-01` : null;
+  const siteSince = [imported, coverage.firstSiteDay].filter((d): d is string => d !== null).sort()[0] ?? null;
+  const since = { siteSince, timerSince: coverage.firstTimerDay };
+  const delta = summary.ratio !== null && before.ratio !== null && before.capacityMin > 0 && comparable(period, prev, since) ? summary.ratio - before.ratio : null;
 
   const heat: HeatmapView = {
     hours: grid.hours.map((h) => ({ hour: h, label: hourLabel(h), short: hourLabel(h).slice(0, 2) })),
@@ -185,7 +190,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
     </div>
   );
 
-  const siteSince = progress.done && progress.first ? `${monthsRange([progress.first])} ve sonrası` : coverage.firstSiteDay ? `${longDayText(coverage.firstSiteDay)} ve sonrası` : "Henüz yok";
+  const siteText = progress.done && progress.first ? `${monthsRange([progress.first])} ve sonrası` : coverage.firstSiteDay ? `${longDayText(coverage.firstSiteDay)} ve sonrası` : "Henüz yok";
   const firstDay = [coverage.firstSiteDay, coverage.firstTimerDay].filter((d): d is string => d !== null).sort()[0];
 
   return (
@@ -196,8 +201,9 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
       <div className="space-y-4">
         {configured && !progress.complete ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-[13px] leading-5 text-info">
-            <Info size={16} aria-hidden="true" className="shrink-0" />
-            <span className="min-w-0 flex-1">
+            {/* Telefonda düğme metnin altına iner (metin sıkışmasın) */}
+            <span className="flex min-w-0 flex-[1_1_16rem] items-start gap-2">
+              <Info size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
               {progress.done
                 ? `Geçmiş rezervasyonların ${progress.done} / ${progress.total} ayı alındı.`
                 : `Geçmiş rezervasyonlar henüz siteden alınmadı; harita yalnız ${firstDay ? longDayText(firstDay) : "bugün"} ve sonrasını gösteriyor.`}
@@ -207,7 +213,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
         ) : null}
         {!saved ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-panel px-4 py-2.5 text-[13px] leading-5 text-ink-mute">
-            <span className="min-w-0 flex-1">Oda saatleri varsayılan: her gün {hoursText(hours)}. Doğru değilse değiştirin; doluluk bu saatlere göre hesaplanır.</span>
+            <span className="min-w-0 flex-[1_1_16rem]">Oda saatleri varsayılan: her gün {hoursText(hours)}. Doğru değilse değiştirin; doluluk bu saatlere göre hesaplanır.</span>
             <HoursButton hours={hours} variant="ghost" />
           </div>
         ) : null}
@@ -254,7 +260,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
 
         <Heatmap view={heat} hours={hours} />
 
-        <MonthCompare rows={rows} firstTimerDay={coverage.firstTimerDay} />
+        <MonthCompare rows={rows} coverage={since} />
 
         <Card>
           <CardHeader icon={<Settings2 />} title="Veri ve ayarlar" />
@@ -268,7 +274,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
             </DataRow>
             <DataRow label="Site rezervasyonları">
               <span className="min-w-0">
-                {siteSince}
+                {siteText}
                 {history.lastRunAt && progress.done ? <span className="text-ink-mute"> · son alma {dateTimeTR(history.lastRunAt)}</span> : null}
               </span>
               {configured ? <HistoryButton label={historyLabel} /> : null}

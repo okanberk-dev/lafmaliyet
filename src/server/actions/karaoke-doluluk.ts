@@ -46,7 +46,9 @@ export async function importKaraokeHistoryNow(): Promise<ActionResult<HistoryRun
     refresh();
     if (r.status === "error" && !r.read.length) throw new UserError(r.error ?? "Geçmiş alınamadı");
     if (r.read.length) {
-      await logActivity(me, "Karaoke geçmişi siteden alındı", `${monthsRange(r.read)} · ${r.reservations} rezervasyon (${r.created} yeni, ${r.updated} güncellenen)`);
+      const what = r.reread ? "Karaoke geçmişi siteden yeniden alındı" : "Karaoke geçmişi siteden alındı";
+      const detail = `${monthsRange(r.read)} · ${r.reservations} rezervasyon (${r.created} yeni, ${r.updated} güncellenen)${r.error ? ` · ${r.error}` : ""}`;
+      await logActivity(me, what, detail);
     }
     return r;
   });
