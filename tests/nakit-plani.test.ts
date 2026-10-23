@@ -27,7 +27,7 @@ import {
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import { vatMonthInputs } from "../src/lib/kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, postponeNote, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
 import { canOpen } from "../src/lib/roles";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -734,6 +734,31 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
   // "2 No.lu beyanname" (panelin kendi sözü) KDV-2'dir; damga vergisi ayrı ödemedir, KDV-2 tahminini kapatmaz
   const words = rem({ title: "2 No.lu beyanname", kind: "vergi", amount: 2_591, dueDate: "2026-10-25", repeat: "none" });
   assert.equal(lineAt(plan([words]), "kdv2@2026-10-25").length, 0);
+  // Ertelenen tek seferlik (kopya değil) de asıl gününün dönemindedir: 9 Kasım'daki Eylül KDV-2'si Ekim'i almaz
+  const moved1 = rem({ title: "KDV2 Eylül", kind: "vergi", amount: 2_591, dueDate: "2026-11-09", repeat: "none", note: postponeNote(null, "2026-10-25") });
+  const m1 = plan([moved1]);
+  assert.deepEqual(kdv2Lines(m1), [
+    ["2026-11-09", "KDV2 Eylül", 2_591],
+    ["2026-11-25", "KDV-2 (Ekim)", 1_800],
+  ]);
+  // ödenince Eylül kapanır, Ekim değil
+  assert.deepEqual(kdv2Lines(plan([{ ...moved1, active: false }], [{ id: moved1.id, dueDate: "2026-11-09", next: null }])), [["2026-11-25", "KDV-2 (Ekim)", 1_800]]);
+  // Yanlışlıkla Ödendi denip tarihi geri alınan seri ve yeniden açılan tek seferlik: dönem yine beklenir
+  const reopened = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-10-25" });
+  assert.deepEqual(kdv2Lines(plan([reopened], [{ id: reopened.id, dueDate: "2026-10-25", next: "2026-11-25" }])), [
+    ["2026-10-25", "KDV2 beyannamesi (Eylül)", 1_800],
+    ["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800],
+  ]);
+  assert.deepEqual(kdv2Lines(plan([{ ...once, active: true }], [{ id: once.id, dueDate: "2026-10-25", next: null }])), [
+    ["2026-10-25", "KDV2 Eylül", 2_591],
+    ["2026-11-25", "KDV-2 (Ekim)", 1_800],
+  ]);
+  // Tahakkukla birlikte yazılan damga ("KDV2 + damga vergisi" 2.591) KDV-2'dir: tahmin ikinci kez yazılmaz
+  const bundled = rem({ title: "KDV2 + damga vergisi", kind: "vergi", amount: 2_591, dueDate: "2026-10-25", repeat: "none" });
+  assert.deepEqual(kdv2Lines(plan([bundled])), [
+    ["2026-10-25", "KDV2 + damga vergisi", 2_591],
+    ["2026-11-25", "KDV-2 (Ekim)", 1_800],
+  ]);
   const stamp = rem({ title: "KDV2 damga vergisi", kind: "vergi", amount: 791, dueDate: "2026-10-25", repeat: "none" });
   assert.deepEqual(
     lines(plan([daily, stamp]))

@@ -13,6 +13,8 @@ import {
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
+  postponedFrom,
+  postponeNote,
   monthLocativeTR,
   nextOccurrence,
   presetAnchor,
@@ -217,6 +219,10 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["2. No.lu beyanname", "vergi"],
     ["2 nolu beyanname", "odeme"],
     ["Beyanname (2 No'lu)", "vergi"],
+    // Tahakkukla birlikte yazılan damga vergisi
+    ["KDV2 + damga vergisi", "vergi"],
+    ["KDV 2 (damga dahil)", "vergi"],
+    ["2 No.lu KDV ve damga vergisi", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -243,6 +249,21 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), false, title);
   }
+});
+
+test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü korunur; iki erteleme yolu da onu yazar", () => {
+  assert.equal(postponeNote(null, "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026");
+  assert.equal(postponeNote("Muhasebeci öder", "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026 · Muhasebeci öder");
+  assert.equal(postponeNote("Ertelendi · asıl tarih 25.10.2026", "2026-11-01"), "Ertelendi · asıl tarih 25.10.2026");
+  assert.equal(postponeNote("x".repeat(600), "2026-10-25").length, 500);
+  assert.equal(postponedFrom(postponeNote("Muhasebeci öder", "2026-10-25")), "2026-10-25");
+  assert.equal(postponedFrom("Muhasebeci öder"), null);
+  assert.equal(postponedFrom(null), null);
+  const src = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
+  const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
+  // Tek seferlik (yerinde kayar) ve tekrar edenin kopyası
+  assert.equal(postpone.match(/postponeNote\(/g)?.length, 2);
+  assert.match(postpone, /set\(\{ dueDate: target, anchorDate: target, note: postponeNote\(r\.note, r\.dueDate\) \}\)/);
 });
 
 test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {

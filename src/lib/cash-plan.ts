@@ -17,7 +17,7 @@ import type { FixedPeriod } from "./calc/types";
 import { GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, postponedFrom, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
 
 export const PLAN_WEEKS = 6;
 /** 42 gün; Ödemeler'in ufkundan (UPCOMING_HORIZON_DAYS, 45) kısa: faturaların hepsi yükleyicinin listesinde (testli) */
@@ -377,20 +377,22 @@ const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amo
  * bulunur. 8 Kasım'a ertelenen Eylül KDV-2'si Ekim'in değildir.
  */
 export function originalDue(r: Pick<ReminderRow, "note" | "repeat">, due: string): string {
-  const m = r.repeat === "none" ? /^Ertelendi · asıl tarih (\d{2})\.(\d{2})\.(\d{4})/.exec(r.note ?? "") : null;
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : due;
+  return (r.repeat === "none" ? postponedFrom(r.note) : null) ?? due;
 }
 
 /**
  * KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler (`payments.recent`): ödenen gün ile sıradaki gün arasındaki her
- * gün ("tarihe kadar ödendi" birkaç dönem kapatır). Erteleme, tarih düzenleme ve hatırlatıcıyı kapatma bunu
- * değiştirmez; yalnız "Geri al" kaydı siler.
+ * gün ("tarihe kadar ödendi" birkaç dönem kapatır). Erteleme ve hatırlatıcıyı kapatma bunu değiştirmez; tarihi geri
+ * alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler. "Geri al" ve hatırlatıcıyı silmek kaydı siler
+ * (kayıt hatırlatıcı başına bir tane: aynı seride ikinci Ödendi geri alınınca ilki de gider).
  */
 export function vat2PaidPeriods(paid: CashPlanInput["paidReminders"], byId: ReadonlyMap<number, ReminderRow>): Set<string> {
   const out = new Set<string>();
   for (const e of paid ?? []) {
     const r = byId.get(e.id);
     if (!r || !e.dueDate) continue;
+    // Yeniden açılmış ödeme sayılmaz: tarihi geri alınmış seri ya da yeniden açılmış tek seferlik dönemini yine bekler
+    if (r.active && (r.repeat === "none" || (e.next && r.dueDate < e.next))) continue;
     let d: string | null = e.dueDate;
     for (let guard = 0; d && guard < 24; guard++) {
       out.add(vatPeriodOf(originalDue(r, d)));

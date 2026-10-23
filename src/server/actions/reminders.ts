@@ -14,6 +14,7 @@ import {
   isLastDayOfMonth,
   nextOccurrence,
   postponeDate,
+  postponeNote,
   postponePlan,
   todayTR,
   vatAmountTravels,
@@ -295,7 +296,8 @@ export async function postponeReminder(id: number, by: "week" | "month") {
     const prev = snapshot(r);
     let createdId: number | null = null;
     if (!next) {
-      await db.update(s.reminders).set({ dueDate: target, anchorDate: target }).where(eq(s.reminders.id, rid));
+      // Tek seferlik de asıl gününü notunda taşır (nakit planı KDV-2'nin dönemini ondan bulur)
+      await db.update(s.reminders).set({ dueDate: target, anchorDate: target, note: postponeNote(r.note, r.dueDate) }).where(eq(s.reminders.id, rid));
     } else {
       createdId = await db.transaction(async (tx) => {
         const [c] = await tx
@@ -308,7 +310,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
             anchorDate: target,
             repeat: "none",
             remindDaysBefore: r.remindDaysBefore,
-            note: `Ertelendi · asıl tarih ${dateTR(r.dueDate)}${r.note && !r.note.startsWith("Ertelendi") ? ` · ${r.note}` : ""}`.slice(0, 500),
+            note: postponeNote(r.note && !r.note.startsWith("Ertelendi") ? r.note : null, r.dueDate),
           })
           .returning({ id: s.reminders.id });
         // KDV tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al geri yazar)

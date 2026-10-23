@@ -376,6 +376,23 @@ export function reminderCategory(kind: ReminderKind, title: string): ReminderCat
   return kind === "diger" ? "diger" : "odeme";
 }
 
+/**
+ * Ertelenen dönemin notu: "Ertelendi · asıl tarih 25.10.2026 · <eski not>". Tekrar edenin kopyası da, ertelenen tek
+ * seferlik hatırlatıcı da bunu taşır; zaten ertelenmiş olanın notu (ilk asıl tarih) korunur. Nakit planı dönemi
+ * asıl günden bulur (`postponedFrom`): 8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür.
+ */
+export function postponeNote(note: string | null, dueDate: string): string {
+  if (note?.startsWith("Ertelendi")) return note;
+  const [y, m, d] = dueDate.split("-");
+  return `Ertelendi · asıl tarih ${d}.${m}.${y}${note ? ` · ${note}` : ""}`.slice(0, 500);
+}
+
+/** `postponeNote`'un asıl günü ("YYYY-MM-DD"); ertelenmemişse null */
+export function postponedFrom(note: string | null): string | null {
+  const m = /^Ertelendi · asıl tarih (\d{2})\.(\d{2})\.(\d{4})/.exec(note ?? "");
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
 /** "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı not: Ödemeler'de kaynağı, nakit planında bordro olmadığını gösterir */
 export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 
@@ -386,13 +403,15 @@ const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\.?\s*(no|numara)
 /**
  * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta tevkifat, "2 No.lu"
  * ya da "sorumlu sıfatıyla" ile birlikte KDV geçmeli; KDV'siz yalnız "2 No.lu beyanname" (panelin kendi sözü) ve
- * başka bir vergi adı yoksa. Damga vergisi ayrı bir ödemedir; "Muhtasar (gelir vergisi tevkifatı)", "Stopaj
+ * başka bir vergi adı yoksa. Yalnız damga vergisi ayrı bir ödemedir; "Muhtasar (gelir vergisi tevkifatı)", "Stopaj
  * tevkifat", "Kira tevkifatı beyannamesi" ve "Tevkifat beyannamesi" (muhtasar da böyle anılır) KDV-2 değildir.
  */
 export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
-  if (!VAT_WITHHOLDING.test(t) || /damga/.test(t)) return false;
+  // Damga vergisi ayrı ödemedir ("KDV2 damga vergisi"); tahakkukla birlikte yazılan ("KDV2 + damga", "damga dahil",
+  // "KDV2 ve damga vergisi") KDV-2'dir
+  if (!VAT_WITHHOLDING.test(t) || (/damga/.test(t) && !/\+|&|\bve\b|dahil/.test(t))) return false;
   if (/(^|[^a-z])kdv|katma deger/.test(t)) return true;
   // "2 No.lu beyanname" ya da başlığın sonunda "Beyanname (2 No'lu)"; "Beyanname 2 numaralı şube" değil
   const declaration = /(^|\D)2\.?\s*(no|numara)\S*\s+beyan|beyan\S*\s*\(?2\.?\s*(no|numara)\S*\s*$/.test(t);

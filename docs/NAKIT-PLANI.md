@@ -40,7 +40,8 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
 3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
    tevkifatı ayrı bir ödemedir: asıl KDV'nin dönemini almaz, devredeni sıfırlamaz. KDV-2 hatırlatıcısı adında
    “tevkifat”, “2 No.lu”, “KDV2” ya da “sorumlu sıfatıyla” ile birlikte KDV geçen hatırlatıcıdır; KDV'siz yalnız
-   “2 No.lu beyanname”. Damga vergisi ayrı ödemedir; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
+   “2 No.lu beyanname”. Yalnız damga vergisi (“KDV2 damga vergisi”) ayrı ödemedir, tahakkukla birlikte yazılan
+   (“KDV2 + damga vergisi”, “damga dahil”) KDV-2'dir; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
    beyannamesi”, “Tevkifat beyannamesi” (muhtasar da böyle anılır) ve “2 No.lu dükkan” diğer hatırlatıcıdır.
    KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü), 1 No.lu KDV'deki gibi:
    - tutarı yazılıysa her gününde o tutar girer ve dönemi alır;
@@ -49,10 +50,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
      tutarı girilmemiş ödemedir: iki kez sayılmaz, sessizce de düşmez;
    - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, kartta görünmez. Ödenen gün
      Ödemeler'in son ödenenlerinden (`payments.recent`, 30 gün) okunur: ödenen gün ile sıradaki gün arasındaki her
-     dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme, tarihi elle değiştirme ya da hatırlatıcıyı kapatma
-     bir dönemi ödemiş saymaz, ödenmişi de geri açmaz; yalnız “Geri al” kaydı siler;
-   - ertelenmiş kopyanın dönemi notundaki asıl gündendir (“Ertelendi · asıl tarih 25.10.2026”): 8 Kasım'a ertelenen
-     Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
+     dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme ya da hatırlatıcıyı kapatma bir dönemi ödemiş saymaz,
+     ödenmişi de geri açmaz. Tarihi geri alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler. “Geri al”
+     ve hatırlatıcıyı silmek kaydı siler; kayıt hatırlatıcı başına bir tanedir, aynı seride ikinci (yanlış) Ödendi geri
+     alınınca ilki de gider ve dönemin tahmini 25'ine kadar geri gelir;
+   - ertelenen dönemin notu asıl günü taşır (“Ertelendi · asıl tarih 25.10.2026”, tekrar edenin kopyası da ertelenen
+     tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
    Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o,
    boşsa bu tahmin” yazar.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
