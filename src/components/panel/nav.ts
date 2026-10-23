@@ -14,6 +14,7 @@ import {
   FileText,
   Gift,
   Globe,
+  Grid3x3,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
@@ -92,6 +93,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
       },
       { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
+      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
+      {
+        href: "/panel/karaoke/doluluk",
+        label: "Karaoke doluluğu",
+        icon: Grid3x3,
+        roles: ["admin"],
+        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
+      },
       { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
       {
         href: "/panel/kontrol",
@@ -366,6 +375,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/onaylar": "Reçete onayları",
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
+  "/panel/karaoke/doluluk": "Doluluk",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

@@ -918,6 +918,10 @@ export const karaokeSessions = pgTable(
     channel: text("channel"),
     /** Sitedeki satırın updatedAt değeri (bilgi için) */
     extUpdatedAt: text("ext_updated_at"),
+    /** Sitede rezervasyonun yapıldığı an (sitenin createdAt'i): doluluk haritasının "kaç gün önceden"i. Sayaçta boş */
+    bookedAt: timestamp("booked_at", { withTimezone: true }),
+    /** İptal anı: eşitleme iptale geçişi görünce yazar (bilinmiyorsa boş); yeniden açılan rezervasyonda boşalır */
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     /** Son eşitlemede ne oldu: zil ve bildirim metni buradan */
     lastEvent: text("last_event", { enum: ["created", "confirmed", "cancelled", "changed"] }),
     lastEventAt: timestamp("last_event_at", { withTimezone: true }),

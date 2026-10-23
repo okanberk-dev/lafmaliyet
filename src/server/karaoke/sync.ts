@@ -3,7 +3,7 @@ import "server-only";
 import { and, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 
 import { detectEvent, eventMessage, type KaraokeEvent, type SiteReservation } from "@/lib/karaoke/session";
-import { parseSiteResponse, type SiteSnapshot } from "@/lib/karaoke/site";
+import { cancelledAtFor, parseSiteResponse, siteTime, type SiteSnapshot } from "@/lib/karaoke/site";
 import { addDays, todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { sendPush } from "@/server/push/send";
@@ -61,8 +61,8 @@ export type SyncResult =
 /** Sayfa açılışında site en çok bu kadar sürede bir sorulur (ping yoksa bile liste bayatlamasın) */
 const PAGE_SYNC_INTERVAL_MS = 5 * 60_000;
 
-/** Sitenin hata yanıtının yöneticiye okunur açıklaması */
-function explain(status: number): string {
+/** Sitenin hata yanıtının yöneticiye okunur açıklaması (geçmişi siteden alma da kullanır: history.ts) */
+export function explain(status: number): string {
   if (status === 401) return "Site isteği reddetti (imza): iki projedeki KARAOKE_SYNC_SECRET aynı mı, sunucu saatleri doğru mu?";
   if (status === 503) return "Sitede KARAOKE_SYNC_SECRET tanımlı değil";
   if (status === 404) return "Sitede panel ucu yok (laffogato.net güncel değil)";
@@ -141,6 +141,9 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
         totalMinor: r.totalMinor,
         channel: r.channel || null,
         extUpdatedAt: r.updatedAt || null,
+        // Doluluk haritası için: rezervasyonun yapıldığı an ve iptal anı (docs/KARAOKE.md › Doluluk haritası)
+        bookedAt: siteTime(r.createdAt),
+        cancelledAt: cancelledAtFor(prev ?? null, r, now),
       };
       // Geçmiş ya da ilk eşitlemedeki kayıtlar olaysız yazılır (zil çalmaz, bildirim gitmez)
       const notify = event !== null && !firstSync && Date.parse(r.endsAt) > now.getTime();
@@ -159,7 +162,9 @@ export async function syncKaraoke(trigger: "ping" | "page" | "manual" | "cron"):
           prev.status === values.status &&
           prev.paymentStatus === values.paymentStatus &&
           prev.totalMinor === values.totalMinor &&
-          prev.channel === values.channel;
+          prev.channel === values.channel &&
+          (prev.bookedAt?.getTime() ?? null) === (values.bookedAt?.getTime() ?? null) &&
+          (prev.cancelledAt?.getTime() ?? null) === (values.cancelledAt?.getTime() ?? null);
         if (same && !notify) continue;
         // Saat değiştiyse sayaçtaki uzatma ve "bitti" sıfırlanır (yeni saatle yeniden çalsın)
         const timer = event === "changed" ? { extraMinutes: 0, endedAt: null, endedBy: null } : {};
