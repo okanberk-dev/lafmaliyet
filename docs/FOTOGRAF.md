@@ -124,7 +124,7 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 | Okumanın maliyet satırı (zaman, tür, kişi, token, tutar) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet kaydı; fotoğraftan ya da fişten bilgi taşımaz) |
 | E-posta ve WhatsApp | yalnız "📷 … fotoğrafı panelde" satırı ve farklı yazılan rakam | fotoğraf ya da adresi hiç gitmez |
 | Kontrol listesinin fotoğrafı (tezgâh, salon, oda) | Vercel Blob (özel depo, Frankfurt); okunmaz, Anthropic'e gitmez | 60 gün (§ 4). Maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der |
-| Faturadan okuma için faturanın PDF'i ya da görseli | Anthropic API (ABD), yalnız o okuma için ([FATURA-OKUMA.md](FATURA-OKUMA.md) § 5) | Anthropic'in politikasına göre; panelde yalnız okunan sonuç (`invoice_readings`), PDF ayrıca saklanmaz |
+| Faturadan okuma için faturanın PDF'i ya da görseli | Anthropic API (ABD), yalnız o okuma için ([FATURA-OKUMA.md](FATURA-OKUMA.md) § 5) | Anthropic'in politikasına göre. Panelde okunan sonuç (`invoice_readings`) ve PDF'in kendisi: "Faturayı aç"taki gibi faturanın belgesi olarak (`invoice_documents`, okumada ilk kez indirildiyse de; [PARASUT.md](PARASUT.md) 6a) |
 
 Fotoğrafta kasiyerin adı (Z raporu, fiş), satıcının vergi numarası (şahıs şirketinde TC kimlik no olabilir) ya da
 müşteri kartı kullanıldıysa maskeli ad / telefon görünebilir. Okuma, fotoğrafın yurt dışına (Anthropic, ABD)

@@ -68,9 +68,9 @@ export async function PhotoReadingCard() {
         {stats && stats.bytes >= STORAGE_WARN_BYTES ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">Fotoğraf deposu 1 GB sınırına yaklaşıyor.</p> : null}
         {configured ? (
           <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-            Okunan fotoğraf ya da fatura (PDF) Anthropic&apos;e (ABD) gider; panelde yalnız okunan sonuç saklanır. Şahıs firmasının faturasında kişinin adı ve
-            TC kimlik numarası olabilir: istemezseniz okumayı kapatın, fotoğraf ve fatura yine panelde kalır. Anthropic dolar üzerinden faturalar; tutarlar
-            yaklaşık.
+            Okumak için fotoğraf ya da faturanın PDF&apos;i Anthropic&apos;e (ABD) gider; okunan sonuç panelde saklanır. Fotoğraf ve PDF panelde de durur (PDF,
+            Faturayı aç&apos;taki gibi faturanın belgesi olarak). Şahıs firmasının faturasında kişinin adı ve TC kimlik numarası olabilir: istemezseniz okumayı
+            kapatın. Anthropic dolar üzerinden faturalar; tutarlar yaklaşık.
           </p>
         ) : null}
       </CardContent>

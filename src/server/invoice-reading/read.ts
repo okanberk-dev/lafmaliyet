@@ -37,8 +37,9 @@ export interface ReadTarget {
   ingredient: { name: string; unit: ReadingUnit };
   userId: number;
   /**
-   * auto: kartın kendiliğinden okuması (saklanan okuma ya da okunamama nedeni varsa o döner, yeniden sorulmaz);
-   * manual: düğme (saklanan okuma döner, okunamadıysa yeniden okunur); force: Yeniden oku (her zaman okunur)
+   * auto: kartın kendiliğinden okuması (saklanan okuma ya da okunamama nedeni varsa o döner, yeniden sorulmaz; günlük
+   * sınırın fotoğraflara ayrılan payına girmez, autoReadAllowed); manual: düğme (saklanan okuma döner, okunamadıysa
+   * yeniden okunur); force: Yeniden oku (her zaman okunur)
    */
   mode: "auto" | "manual" | "force";
 }
@@ -104,7 +105,10 @@ async function claim(t: ReadTarget): Promise<Claim> {
   });
 }
 
-/** Faturanın belgesi okunacak hâliyle; yoksa ya da alınamazsa Türkçe neden */
+/**
+ * Faturanın belgesi okunacak hâliyle; yoksa ya da alınamazsa Türkçe neden. Paraşüt'ten ilk kez indirilen PDF "Faturayı
+ * aç"taki gibi faturanın belgesi olarak saklanır (invoice_documents, docs/FATURA-OKUMA.md § 5); okuma ayrıca kopyalamaz
+ */
 async function documentFor(invoiceId: number): Promise<{ ok: true; input: Parameters<typeof extractDocument>[0]["input"] } | { ok: false; message: string }> {
   try {
     const doc = await getInvoiceDocument(invoiceId);

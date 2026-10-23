@@ -159,11 +159,18 @@ test("paket kanıtı: tek parça birimde adında ya da açıklamasında tek baş
   assert.deepEqual(ev("SÜT 1 LT 12 Lİ", "Adet", "ml"), { factor: 12000, source: "name", text: "1 LT 12 Lİ" });
   // Boyutu olmayan paket sayısı gr / ml'ye çevrilmez
   assert.equal(ev("BARDAK 150 AD.", "Adet", "gr"), null);
-  // O kadar ya da daha çok alındıysa faturadaki birim tek parçadır ("PİPET 500 AD" 2.000 adet)
+  // O kadar ya da daha çok alındıysa faturadaki birim tek parça da olabilir ("PİPET 500 AD" 2.000 adet): kanıt değil
   assert.equal(ev("PİPET 500 AD", "Adet", "adet", { quantity: 2000 }), null);
   assert.equal(ev("PİPET 500 AD", "Adet", "adet", { quantity: 500 }), null);
   assert.equal(ev("PİPET 500 AD", "Adet", "adet", { quantity: 3 })?.factor, 500);
-  assert.equal(guessLinkFactor({ name: "PİPET 500 AD", unit: "Adet", quantity: 2000 }, "adet"), "1");
+  // … ama form da "1" ya da tek ürünün boyutunu önermez (canlıdaki bardak hatası): çarpan boş kalır, sahibi yazar ya da
+  // faturadan okur. Miktar bilinmiyorsa sayı kanıttır
+  assert.equal(guessLinkFactor({ name: "PİPET 500 AD", unit: "Adet", quantity: 2000 }, "adet"), null);
+  assert.equal(guessLinkFactor({ name: "LİVİ YENİLEBİLİR BARDAK 150 AD.", unit: "Adet", quantity: 200 }, "adet"), null);
+  assert.equal(guessLinkFactor({ name: "PEÇETE 100 LÜ", unit: "Adet", quantity: 120 }, "adet"), null);
+  assert.equal(guessLinkFactor({ name: "SÜT 1 LT 12 Lİ", unit: "Adet", quantity: 24 }, "ml"), null);
+  assert.equal(guessLinkFactor({ name: "SÜT 1 LT 12 Lİ", unit: "Adet", quantity: 2 }, "ml"), "12000");
+  assert.equal(guessLinkFactor({ name: "PİPET 500 AD", unit: "Adet" }, "adet"), "500");
   // Rulo, şişe gibi birimlerde tek başına sayı paket boyu sayılmaz
   assert.equal(ev("TERMAL RULO 10 LU", "Rulo"), null);
 });
@@ -173,9 +180,13 @@ test("paket kanıtı: sayılmayanlar (bardak boyu, çap, uzunluk, yüzde, kat, b
     assert.equal(packEvidence({ name, unit: "Adet" }, "adet"), null, name);
     assert.equal(guessLinkFactor({ name, unit: "Adet" }, "adet"), "1", name);
   }
-  // Boyut yazanlar gr / ml hammaddede tek ürünün boyutunu verir (sayı değil): %35 kremanın 35'i sayılmaz
-  assert.deepEqual(packEvidence({ name: "%35 YAĞLI KREMA 1 LT", unit: "Adet" }, "ml"), { factor: 1000, source: "name", text: "1 LT" });
-  assert.deepEqual(packEvidence({ name: "SÜT 1 L", unit: "Adet" }, "ml"), { factor: 1000, source: "name", text: "1 L" });
+  // Yalnız boyut gr / ml hammaddede de kanıt değil (tedarikçi 12 × 1 L koliyi de "1 Adet" yazar: 12.000 ml'lik doğru
+  // bağlantı "Kontrol edilecek" düşmesin, kart "1.000 ml olmalı" demesin); form tek ürünün boyutunu önerir, %35 sayılmaz
+  for (const name of ["%35 YAĞLI KREMA 1 LT", "SÜT 1 L"]) {
+    assert.equal(packEvidence({ name, unit: "Adet" }, "ml"), null, name);
+    assert.equal(packEvidence({ name, unit: "Adet", quantity: 1 }, "ml"), null, name);
+    assert.equal(guessLinkFactor({ name, unit: "Adet" }, "ml"), "1000", name);
+  }
   assert.equal(packEvidence({ name: "SÜT 1 L", unit: "Adet" }, "gr"), null);
   assert.equal(packEvidence({ name: "BARDAK 8OZ", unit: "Adet" }, "ml"), null);
 });
@@ -201,16 +212,17 @@ test("paket kanıtı: ölçü birimi, paket ve tek üründe boyut × sayı", () 
 });
 
 test("paket kanıtı: binlik ayraç (1.000 GR, 1.000 AD.) ve ondalık nokta (1.500 KG)", () => {
-  // gr / ml'de noktadan sonra üç hane binliktir: "1.000 GR" 1 gr değil (yoksa doğru bağlantı "kontrol edilecek" düşerdi)
-  assert.deepEqual(packEvidence({ name: "TOZ ŞEKER 1.000 GR", unit: "Adet" }, "gr"), { factor: 1000, source: "name", text: "1.000 GR" });
-  assert.equal(packEvidence({ name: "SÜT 2.500 ML", unit: "Adet" }, "ml")?.factor, 2500);
+  // gr / ml'de noktadan sonra üç hane binliktir: "1.000 GR" 1 gr değil (yoksa form 1 gr önerir, "… 10 LU" 10 gr çıkardı)
+  assert.deepEqual(packEvidence({ name: "TOZ ŞEKER 1.000 GR 10 LU", unit: "Adet", quantity: 1 }, "gr"), { factor: 10000, source: "name", text: "1.000 GR 10 LU" });
+  assert.equal(guessLinkFactor({ name: "SÜT 2.500 ML", unit: "Adet" }, "ml"), "2500");
   assert.equal(guessLinkFactor({ name: "TOZ ŞEKER 1.000 GR", unit: "Adet" }, "gr"), "1000");
   assert.deepEqual(parsePack("TOZ ŞEKER 1.000 GR").size, { amount: 1000, dim: "mass" });
   assert.equal(packKey("TOZ ŞEKER 1.000 GR"), packKey("TOZ ŞEKER 1 KG"));
   // kg / lt'de nokta ondalıktır; tek hane de ("1.5 LT")
-  assert.equal(packEvidence({ name: "KAKAO 1.500 KG", unit: "Adet" }, "gr")?.factor, 1500);
-  assert.equal(packEvidence({ name: "SÜT 1.5 LT", unit: "Adet" }, "ml")?.factor, 1500);
-  assert.equal(packEvidence({ name: "TUZ 0.250 GR", unit: "Adet" }, "gr")?.factor, 0.25);
+  assert.equal(guessLinkFactor({ name: "KAKAO 1.500 KG", unit: "Adet" }, "gr"), "1500");
+  assert.equal(guessLinkFactor({ name: "SÜT 1.5 LT", unit: "Adet" }, "ml"), "1500");
+  assert.equal(guessLinkFactor({ name: "TUZ 0.250 GR", unit: "Adet" }, "gr"), "0,25");
+  assert.equal(packEvidence({ name: "SÜT 1.5 LT 6 LI", unit: "Adet", quantity: 1 }, "ml")?.factor, 9000);
   // Paket sayısında binlik ayraç; ondalığın kuyruğu yine sayı değil
   assert.deepEqual(packEvidence({ name: "PİPET 1.000 AD.", unit: "Adet", quantity: 2 }, "adet"), { factor: 1000, source: "name", text: "1.000 AD." });
   assert.equal(packEvidence({ name: "PİPET 1.000 AD.", unit: "Adet", quantity: 1000 }, "adet"), null);

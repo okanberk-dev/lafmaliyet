@@ -166,7 +166,8 @@ listelenir; komisyon, kira, demirbaş, yazılım, reklam ve hizmet faturaları g
   Bardak ve kapak boyu (oz, cc) farklıysa ayrı üründür, önceki bağlantı önerilmez (8oz bağlıyken 14oz bardak). Bağlı
   benzeri yoksa hammadde adının sözcüklerinin hepsi ürün adında geçiyorsa o hammadde. Çarpan addaki paket bilgisinden
   tahmin edilir: "SÜT 1 L" (Adet) → 1000 ml, "330ML 1X24" (Kutu) → 24 adet ya da 7920 ml, "KUTU İÇİ 9 ADET" → 9,
-  tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md)).
+  tek parçada tek başına yazan paket sayısı "150 AD." (Adet) → 150 (`packEvidence`, [FATURA-OKUMA.md](FATURA-OKUMA.md));
+  faturada o kadar ya da daha çok alınmışsa ("PEÇETE 100 LÜ" 120 adet) çarpan boş kalır, sahibi yazar.
   Yazılan çarpan addaki kanıttan farklıysa form uyarır ("150 yap"); **Faturadan oku** çarpanı faturanın kendisinden
   okur (Claude Haiku). Bağlı ürünlerden çarpanı kanıtla tutmayanlar sayfanın **Kontrol edilecek bağlantılar** kutusunda.
   **Hazır olanları bağla** önerisi ve çarpanı belli bütün bekleyenleri listeleyip tek seferde bağlar.
@@ -233,7 +234,8 @@ tutan; ayrıntı [FATURA-OKUMA.md](FATURA-OKUMA.md) § 2):
    "Yenilebilir bardak 150 AD." için "Çarpanı 72 yap", "Klips kapak" için "Çarpanı 10 yap" demişti).
 
 Önerilen çarpanla birim fiyat ve şimdikine göre fark her zaman yazar. Kanıtı ve okuması olmayan kart açılınca fatura
-bir kez kendiliğinden okunur ("Fatura okunuyor…"); öteki kartlarda **Faturayı oku** / **Yeniden oku**. Okuma sabah
+bir kez kendiliğinden okunur ("Fatura okunuyor…"; günlük okuma sınırının yarısına kadar, kalanı fotoğraflara);
+öteki kartlarda **Faturayı oku** / **Yeniden oku**. Okuma sabah
 işinde hiç çalışmaz, fiyat yazmaz. Hammaddenin şimdiki fiyatı tahminiyse kart "Şimdiki fiyat tahmini (varsayım),
 faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir." der, rozet "tahmini fiyata göre".
 

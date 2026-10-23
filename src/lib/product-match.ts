@@ -291,13 +291,14 @@ function evidenceIn(text: string, source: "name" | "description", line: PackLine
   // Bundan kanıt çıkmaz (guessLinkFactor eskisi gibi tek ürünün boyutunu önerir)
   if (mult) return null;
   // Tek başına sayı yalnız adet birimlerinde ve faturada o kadar ya da daha çok alınmadıysa paket boyudur: "PİPET 500 AD"
-  // 2.000 adet alındıysa faturadaki birim tek pipettir
+  // 2.000 adet alındıysa faturadaki birim tek pipet de olabilir (guessLinkFactor o zaman tahmin etmez)
   const q = line.quantity;
   const packCount = kind === "single" && count && !(q !== null && q !== undefined && Math.abs(q) >= count.count) ? count : null;
-  if (pieces) return packCount ? { factor: packCount.count, source, text: fragment(text, at, [packCount]) } : null;
+  if (!packCount) return null;
+  if (pieces) return { factor: packCount.count, source, text: fragment(text, at, [packCount]) };
+  // Yalnız boyut ("SÜT 1 L") kanıt değildir: tedarikçi 12 × 1 L koliyi de "1 Adet" yazar. Boyut formun tahmini olarak kalır
   if (!dim || !size || size.size.dim !== dim) return null;
-  if (packCount) return { factor: packCount.count * size.size.amount, source, text: fragment(text, at, [size, packCount]) };
-  return { factor: size.size.amount, source, text: fragment(text, at, [size]) };
+  return { factor: packCount.count * size.size.amount, source, text: fragment(text, at, [size, packCount]) };
 }
 
 /**
@@ -305,8 +306,8 @@ function evidenceIn(text: string, source: "name" | "description", line: PackLine
  * - faturada ölçü birimi varsa (KG, LT, gr, ml; UBL KGM, LTR, GRM, MLT) çevrilir: 1 kg = 1000 gr (`unit`);
  * - paketse (Koli, Kutu, Paket…) addaki sayı × boyut: "330ML 1X24" → 24 adet ya da 7920 ml; düzine 12;
  * - tek parçaysa (Adet, C62, AD, Tane) adında ya da açıklamasında tek başına yazan paket sayısı ("150 AD.",
- *   "150'Lİ", "100 LÜ", "X150", "150 PCS"): adet / dilim hammaddede sayı, gr / ml'de boyutla birlikte sayı × boyut;
- *   sayı yoksa gr / ml'de tek ürünün boyutu ("SÜT 1 L" → 1000 ml).
+ *   "150'Lİ", "100 LÜ", "X150", "150 PCS"): adet / dilim hammaddede sayı, gr / ml'de boyutla birlikte sayı × boyut.
+ *   Sayısız boyut kanıt değildir ("SÜT 1 L": tek şişe de olabilir koli de; formun tahmini 1000 ml, guessLinkFactor).
  * Sayılmayanlar: bardak boyu (8OZ), çap ve uzunluk (90 MM, 23 CM), yüzde (%35), "2 KAT". Ad açıklamadan önce gelir.
  */
 export function packEvidence(line: PackLine, ingredientUnit: IngredientUnit): PackEvidence | null {
@@ -328,12 +329,15 @@ export function sameFactor(a: number, b: number): boolean {
 /**
  * Faturadaki 1 birimin kaç hammadde birimi ettiği (formdaki "1 Koli = … ml"), bilinmiyorsa null. Önce kanıt
  * (packEvidence: "150 AD." → 150); kanıt yoksa eski tahmin: tek ürünse (Adet) adet / dilim hammaddede 1, gr / ml'de
- * addaki boyut ("1000 GR * 8 AD" → 1000 gr: koli sayısı sayılmaz); ölçü birimi başka boyuttaysa ya da pakette sayı yoksa
- * tahmin edilmez.
+ * addaki boyut ("SÜT 1 L" → 1000 ml; "1000 GR * 8 AD" → 1000 gr: koli sayısı sayılmaz); ölçü birimi başka boyuttaysa ya
+ * da pakette sayı yoksa tahmin edilmez. Adında paket sayısı yazıyor ama faturada o kadar ya da daha çok alınmışsa
+ * ("PEÇETE 100 LÜ" 120 paket mi, 120 peçete mi) de tahmin edilmez: "1" canlıdaki yanlış bağlantıyı (Yenilebilir bardak
+ * 150 AD.) yeniden doğururdu; sahibi yazar ya da faturadan okur.
  */
 export function guessLinkFactor(product: PackLine, ingredientUnit: IngredientUnit): string | null {
   const ev = packEvidence(product, ingredientUnit);
   if (ev) return fmt(ev.factor);
+  if (product.quantity != null && packEvidence({ ...product, quantity: null }, ingredientUnit)) return null;
   const kind = unitKind(product.unit);
   if (kind !== "single" && kind !== "other") return null;
   if (ingredientUnit === "adet" || ingredientUnit === "dilim") return "1";

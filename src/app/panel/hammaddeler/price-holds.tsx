@@ -3,7 +3,7 @@
 import { ChevronDown, ScanText, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useOptimistic, useState, useTransition } from "react";
+import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -62,20 +62,39 @@ export interface HoldView {
   hasReading: boolean;
 }
 
-/** Kendiliğinden okunan öneriler (sayfa yeniden çizilince ya da geliştirmede iki kez bağlanınca yeniden istenmesin) */
-const autoRead = new Set<number>();
-/** Kendiliğinden okumalar sırayla (birkaç kart aynı anda açılınca okumalar üst üste binmesin) */
+/**
+ * Kendiliğinden okumalar (öneri → sırada ya da okunuyor / bitti): kart yeniden çizilince, yeniden bağlanınca ya da
+ * geliştirmede iki kez bağlanınca yeniden istenmesin. Kartlar useSyncExternalStore ile okur
+ */
+const autoReads = new Map<number, "reading" | "done">();
+const autoListeners = new Set<() => void>();
+/** Okumalar sırayla: birkaç kart aynı anda açılınca belge indirmeleri ve Claude istekleri üst üste binmesin */
 let autoQueue: Promise<unknown> = Promise.resolve();
 
+function subscribeAutoReads(listener: () => void) {
+  autoListeners.add(listener);
+  return () => void autoListeners.delete(listener);
+}
+
+function setAutoRead(id: number, state: "reading" | "done") {
+  autoReads.set(id, state);
+  for (const listener of autoListeners) listener();
+}
+
 /**
- * Kartın kendiliğinden okuması yol işleyicisiyle, sunucu eylemiyle değil: Next eylemleri istemci başına tek tek
- * yollar; 55 sn'ye varan okuma sürerken Onayla / Reddet / "Çarpanı X yap" sıraya girerdi. Hata sessiz: sonuç ya da
- * okunamama nedeni sayfa tazelenince kartta
+ * Kartın kendiliğinden okuması yol işleyicisiyle (POST /api/fiyat-onerileri/{id}/oku), sunucu eylemiyle değil: Next
+ * eylemleri istemci başına tek tek yollar; 55 sn'ye varan okuma sürerken Onayla / Reddet / "Çarpanı X yap" sıraya
+ * girerdi. Hata sessiz: sonuç ya da okunamama nedeni sayfa tazelenince kartta (`done`)
  */
-function autoReadHold(id: number): Promise<void> {
+function autoReadHold(id: number, done: () => void) {
+  setAutoRead(id, "reading");
   const run = autoQueue.then(() => fetch(`/api/fiyat-onerileri/${id}/oku`, { method: "POST" }).catch(() => null));
-  autoQueue = run;
-  return run.then(() => undefined);
+  autoQueue = run
+    .then(() => {
+      setAutoRead(id, "done");
+      done();
+    })
+    .catch(() => undefined);
 }
 
 /** Son 3 günün kararı ya da geçersiz kalan öneri ("Son kararlar") */
@@ -259,28 +278,41 @@ function HoldItem({
   const unitLabel = x.lineUnit ?? "birim";
   const top = x.impact.top[0];
   const [reading, startReading] = useTransition();
+  const router = useRouter();
+  const auto = useSyncExternalStore(
+    subscribeAutoReads,
+    () => autoReads.get(x.id),
+    () => undefined,
+  );
+  // Okuma bitince sayfa geçişle tazelenir: yeni kart gelene kadar "Fatura okunuyor…" kalır (düğme bir an görünmesin)
+  const [refreshing, startRefresh] = useTransition();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Kanıtı ve okuması olmayan kart açılınca fatura bir kez kendiliğinden okunur (öneri başına bir istek); sonuç sayfa
-  // yenilenince kartta. Hata sessiz: kart okunamadı satırını gösterir
-  const router = useRouter();
-  const [autoReading, setAutoReading] = useState(false);
+  // tazelenince kartta. Hata sessiz: kart okunamadı satırını gösterir. Kart artık ekranda değilse (onaylandı, başka
+  // sayfaya geçildi) tazelenmez
   useEffect(() => {
-    if (x.read !== "auto" || autoRead.has(x.id)) return;
-    autoRead.add(x.id);
-    setAutoReading(true);
-    void autoReadHold(x.id).then(() => {
-      setAutoReading(false);
-      router.refresh();
+    if (x.read !== "auto" || autoReads.has(x.id)) return;
+    autoReadHold(x.id, () => {
+      if (mounted.current) startRefresh(() => router.refresh());
     });
   }, [x.id, x.read, router]);
 
   // Başka sekme ya da yönetici okuyorsa (ya da sayfa okuma sürerken yenilendiyse) kart okuma bitene kadar 8 sn'de bir
-  // tazelenir; yarıda kalan okuma 90 sn sonra "okunuyor" olmaktan çıkar, tazeleme de durur
+  // tazelenir; yarıda kalan okuma 90 sn sonra "okunuyor" olmaktan çıkar, tazeleme de durur. Bu sekme okuyorsa gerekmez:
+  // okuma bitince kendisi tazeler
+  const selfReading = reading || auto === "reading";
   useEffect(() => {
-    if (x.read !== "running") return;
+    if (x.read !== "running" || selfReading) return;
     const t = setInterval(() => router.refresh(), 8000);
     return () => clearInterval(t);
-  }, [x.read, router]);
+  }, [x.read, selfReading, router]);
 
   const read = () =>
     startReading(async () => {
@@ -290,7 +322,9 @@ function HoldItem({
       if (r.data.status === "busy") return void toast.message("Bu fatura şu an okunuyor; bitince kart kendiliğinden yenilenir.");
       toast.success(`${x.name}: fatura okundu`);
     });
-  const busyReading = reading || autoReading || x.read === "running";
+  // Kendiliğinden okunacak kart ilk çizimden "okunuyor" der; bu sekmede okuma bittiyse ve kart hâlâ "auto" ise (okuma
+  // kapıdan döndü: sınırın fotoğraf payı, kapalı) düğme görünür
+  const busyReading = selfReading || refreshing || x.read === "running" || (x.read === "auto" && auto === undefined);
 
   return (
     <li className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">

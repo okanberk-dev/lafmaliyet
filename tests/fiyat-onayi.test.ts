@@ -336,6 +336,17 @@ test("öneri: Klips kapak (tahmini 1,165 ₺, faturada 12,02 ₺) → oran düğ
   assert.equal(ESTIMATE_BADGE, "tahmini fiyata göre");
 });
 
+test("öneri: adında yalnız boyut ('SÜT 1 L', Adet) kanıt değil: doğru koli çarpanına (12.000) '1.000 ml olmalı' denmez", () => {
+  // Tedarikçi 12 × 1 L koliyi "1 Adet" yazıyor, sahibi doğru bağlamış (12.000 ml); fiyat gerçekten %61 arttı
+  const evidence = packEvidence({ name: "SÜT 1 L", unit: "Adet", quantity: 2 }, "ml");
+  assert.equal(evidence, null);
+  const hold = { factor: 12000, quantity: 2, netTotal: 1200, current: 0.031, evidence, reading: null, history: true };
+  assert.equal(holdSuggestion(hold), null);
+  // Okuma gizlenmez: emin okunan farklı çarpan önerilir, aynı çarpan öneri değil
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 6000, confidence: "high" } })?.factor, 6000);
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 12000, confidence: "high" } }), null);
+});
+
 test("öneri: aynı ürün koli ↔ adet değiştirdi (geçmişi aynı çarpanla şimdiki fiyatta) → oran düğmesi kalır", () => {
   // SÜT 1 L, çarpan 1000: 1 ve 2 Ekim'de adet başı 31 ₺ (0,031 ₺/ml); 20 Ekim'de aynı ürün Koli (12 × 1 L) 372 ₺
   const lines = [

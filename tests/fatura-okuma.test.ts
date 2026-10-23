@@ -9,7 +9,17 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { usdText } from "../src/app/panel/ayarlar/summaries";
-import { INVOICE_SYSTEM, invoiceTask, InvoiceReadingRaw, normalizeInvoiceReading, readingFits, readingText, type InvoiceReadingRawT } from "../src/lib/invoice-reading";
+import {
+  AUTO_READ_RESERVE_MIN,
+  autoReadAllowed,
+  INVOICE_SYSTEM,
+  invoiceTask,
+  InvoiceReadingRaw,
+  normalizeInvoiceReading,
+  readingFits,
+  readingText,
+  type InvoiceReadingRawT,
+} from "../src/lib/invoice-reading";
 import { claudeSchema } from "../src/lib/photo-read/claude-schema";
 import { holdSuggestion } from "../src/lib/price-hold";
 import { replayInvoiceAnswer } from "../src/server/ai/replay";
@@ -160,21 +170,50 @@ function walk(dir: string): string[] {
   });
 }
 
-test("kaynak: okuma sabah işinde çalışmaz, yalnız yöneticinin eylemi çağırır; okuma fiyat yazmaz", () => {
+test("kaynak: okuma sabah işinde çalışmaz, yalnız yönetici çağırır; kendiliğinden okuma eylem değil; okuma fiyat yazmaz", () => {
   for (const f of walk(join(ROOT, "src/app/api/cron"))) {
     const code = readFileSync(f, "utf8");
     assert.doesNotMatch(code, /invoice-reading|readInvoiceLine|extractDocument/, f);
   }
+  const rel = (files: string[]) => files.map((f) => f.slice(ROOT.length + 1)).sort();
   const callers = walk(join(ROOT, "src")).filter((f) => /readInvoiceLine\(/.test(readFileSync(f, "utf8")));
-  assert.deepEqual(callers.map((f) => f.slice(ROOT.length + 1)).sort(), ["src/server/actions/invoice-readings.ts", "src/server/invoice-reading/read.ts"]);
+  assert.deepEqual(rel(callers), ["src/server/actions/invoice-readings.ts", "src/server/invoice-reading/hold.ts", "src/server/invoice-reading/read.ts"]);
+  // Onay bekleyen fiyatın okuması: düğme eylemden, kartın kendiliğinden okuması yol işleyicisinden
+  const holdCallers = walk(join(ROOT, "src")).filter((f) => /await readHold\(/.test(readFileSync(f, "utf8")));
+  assert.deepEqual(rel(holdCallers), ["src/app/api/fiyat-onerileri/[id]/oku/route.ts", "src/server/actions/invoice-readings.ts"]);
   const actions = readFileSync(join(ROOT, "src/server/actions/invoice-readings.ts"), "utf8");
   assert.match(actions, /^"use server";/);
   assert.equal((actions.match(/export async function/g) ?? []).length, 2);
   assert.equal((actions.match(/const me = await requireAdmin\(\);/g) ?? []).length, 2);
+  // Eylem kendiliğinden okumayı almaz: Next eylemleri tek tek yollar, 55 sn'lik okuma sayfadaki Onayla'yı bekletirdi
+  assert.match(actions, /const holdSchema = z\.object\(\{ id: z\.number\(\)\.int\(\)\.positive\(\), mode: z\.enum\(\["manual", "force"\]\)/);
+  const route = readFileSync(join(ROOT, "src/app/api/fiyat-onerileri/[id]/oku/route.ts"), "utf8");
+  assert.equal((route.match(/export async function/g) ?? []).length, 1);
+  assert.match(route, /export async function POST\(/);
+  assert.match(route, /if \(!sameOrigin\(request\)\) return/);
+  assert.match(route, /if \(!me \|\| me\.role !== "admin"\) return/);
+  assert.match(route, /await readHold\(me, id, "auto"\)/);
+  const card = readFileSync(join(ROOT, "src/app/panel/hammaddeler/price-holds.tsx"), "utf8");
+  assert.match(card, /fetch\(`\/api\/fiyat-onerileri\/\$\{id\}\/oku`, \{ method: "POST" \}\)/);
+  assert.doesNotMatch(card, /mode: "auto"/);
   // Okuma yalnız invoice_readings'e yazar: fiyat, bağlantı ve hammadde değişmez
   const read = readFileSync(join(ROOT, "src/server/invoice-reading/read.ts"), "utf8");
   for (const t of ["ingredients", "ingredientPrices", "parasutProductLinks", "ingredientPriceHolds"]) assert.doesNotMatch(read, new RegExp(`s\\.${t}\\b`), t);
   for (const t of ["ingredients", "ingredientPrices", "parasutProductLinks"]) assert.doesNotMatch(actions, new RegExp(`(update|insert)\\(s\\.${t}\\)`), t);
+});
+
+test("kendiliğinden okuma günlük sınırın yarısına kadar: kalanı fotoğraflara (Z, POS, fiş) ve düğmelere", () => {
+  // Sınır 40: 19 okuma yapılmışsa bir kart daha okunur, 20'de durur (20 okuma kalır)
+  assert.equal(autoReadAllowed(0, 40), true);
+  assert.equal(autoReadAllowed(19, 40), true);
+  assert.equal(autoReadAllowed(20, 40), false);
+  assert.equal(autoReadAllowed(45, 40), false);
+  // Küçük sınırda da en az 10 okuma kalır: 20'de 10'a kadar, 10 ve altında hiç
+  assert.equal(autoReadAllowed(9, 20), true);
+  assert.equal(autoReadAllowed(10, 20), false);
+  assert.equal(autoReadAllowed(0, 10), false);
+  assert.equal(autoReadAllowed(0, 0), false);
+  assert.equal(AUTO_READ_RESERVE_MIN, 10);
 });
 
 test("Ayarlar: fatura okumasının bir kuruşun altındaki tutarı 0,00 $ görünmez", () => {
