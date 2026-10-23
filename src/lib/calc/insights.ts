@@ -783,13 +783,13 @@ export function unpaidSummary(invoices: InvoiceBalance[]) {
 // Uyarılar
 // ============================================================================
 
-/** Uyarı metnindeki ad listesi: ilk `max` ad, kalanı sayıyla ("A, B, C ve 3 ürün daha") */
 /** "1–15 Kasım" (listenin dönemi; ay adıyla) */
 export function listDaysText(lp: Pick<ListPeriod, "from" | "through">): string {
   const d = (iso: string) => Number(iso.slice(8, 10));
   return `${d(lp.from)}–${d(lp.through)} ${monthLabel(lp.through.slice(0, 7)).split(" ")[0]}`;
 }
 
+/** Uyarı metnindeki ad listesi: ilk `max` ad, kalanı sayıyla ("A, B, C ve 3 ürün daha") */
 export function nameList(names: string[], max: number, noun: string): string {
   const head = names.slice(0, max).join(", ");
   return names.length > max ? `${head} ve ${num(names.length - max)} ${noun} daha` : head;

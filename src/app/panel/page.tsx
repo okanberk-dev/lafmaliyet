@@ -196,9 +196,10 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const t = d.theoretical;
   const purchases = model.goodsPurchases(month);
 
-  // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler
-  // Online satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
+  // Süren ayda kısa satış listesi: sabit gider grupları listenin günlerine düşen payla
   const listNote = t?.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} (ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'i): tutar o günlere düşen pay.` : "";
+  // "Para nereye gitti?": Excel Panel'in 4 grubu (Kira, Personel, Reklam, Diğer) + varsa bu aya özel giderler; online
+  // satış (laffogato.net) net satışın içinde: kâr-zarardaki gibi ModPOS + online
   const waterfall: FlowRow[] = t
     ? [
         {

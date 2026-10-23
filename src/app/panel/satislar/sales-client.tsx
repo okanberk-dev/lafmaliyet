@@ -1686,8 +1686,12 @@ export function ImportCard({
   const [withInfo, setWithInfo] = useState(false);
   /** "Yenisiyle değiştir": ayın satırları silinmeden önce sorulur */
   const [confirmingReplace, setConfirmingReplace] = useState(false);
-  /** Süren ayda listenin son günü (Patron'un raporu genelde dünün sonuna kadar) */
-  const [through, setThrough] = useState(running?.defaultThrough ?? "");
+  /**
+   * Süren ayda listenin son günü (Patron'un raporu genelde dünün sonuna kadar). Kart ay değişince yeniden kurulmaz
+   * (önizleme açık kalır): elle seçilen gün yalnız seçildiği ayda geçerlidir, başka ayda varsayılana döner
+   */
+  const [throughEdit, setThroughEdit] = useState<{ month: string; value: string } | null>(null);
+  const through = throughEdit?.month === month ? throughEdit.value : (running?.defaultThrough ?? "");
   const throughBad = Boolean(running) && (!/^\d{4}-\d{2}-\d{2}$/.test(through) || through.slice(0, 7) !== month || through > (running?.today ?? ""));
 
   const rows = useMemo(() => parsed?.rows ?? [], [parsed]);
@@ -2035,7 +2039,7 @@ export function ImportCard({
                     value={through}
                     min={`${month}-01`}
                     max={running.today}
-                    onChange={(e) => setThrough(e.target.value)}
+                    onChange={(e) => setThroughEdit({ month, value: e.target.value })}
                     aria-invalid={throughBad || undefined}
                     className="w-auto"
                   />

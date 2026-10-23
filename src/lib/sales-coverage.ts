@@ -2,7 +2,7 @@
  * Satış listesinin (ModPOS ürün satış raporu) kapsadığı dönem. Ay bitince yüklenen liste ayın tamamıdır; süren ayda
  * yapıştırılan liste o güne kadardır, kasa raporları ise her akşam ilerler. Listeye dayanan hesaplar (günlük ortalama,
  * liste ↔ POS cirosu uyarısı, "ayda …" adetleri, reçeteye göre kârın sabit gideri) listenin günleriyle yapılır
- * (engine.ts listPeriod). Saf modül; tests/insights.test.ts.
+ * (engine.ts listPeriod). Saf modül; tests/satis-donemi.test.ts.
  *
  * Saklama: integration_state › `sales.coverage` = { "YYYY-MM": "YYYY-MM-DD" } (yalnız süren ayda yüklenen listeler;
  * biten aya yüklenen liste kaydı siler: ayın tamamı).

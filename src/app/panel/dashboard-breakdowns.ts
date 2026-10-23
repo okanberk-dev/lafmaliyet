@@ -114,7 +114,6 @@ function salesBuckets(d: DashboardData): SalesBucket[] {
   return [...buckets.values()];
 }
 
-/** Net satış: kategori kategori, ürün ürün (KDV hariç) */
 /** Online satışın Gelir-gider'deki üç satırı (KDV hariç), listenin dönemine düşen payla */
 function onlineRows(d: DashboardData): BreakdownRow[] {
   const o = d.theoretical?.online;
@@ -129,6 +128,7 @@ function onlineRows(d: DashboardData): BreakdownRow[] {
   ].filter((r) => Math.abs(r.amount) >= 0.005);
 }
 
+/** Net satış: kategori kategori, ürün ürün (KDV hariç); online satış ayrı bölüm */
 export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
   const online = onlineRows(d);
