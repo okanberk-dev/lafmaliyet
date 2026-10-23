@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   Bell,
+  Bot,
   CalendarCheck,
   ChartNoAxesColumn,
   ClipboardList,
@@ -474,6 +475,22 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: UserPlus,
         links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }, { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" }],
+      },
+      {
+        id: "claude",
+        q: "Claude'dan panele soru sormak",
+        a: (
+          <>
+            Claude&apos;da (web ya da masaüstü) Ayarlar › Bağlayıcılar › Özel bağlayıcı ekle&apos;ye{" "}
+            {/* Telefonda adres kendi satırına geçer, ortadan bölünmez */}
+            <code className="inline-block max-w-full rounded bg-surface px-1 font-mono text-[12px] break-all text-ink ring-1 ring-line sm:text-[13px]">https://ladmin.laffogato.net/api/mcp</code>{" "}
+            adresini girin, Bağlan&apos;a dokunun, panele girip parolanızla izin verin. Claude rakamları panelden okur ve hesabı gösterir; hiçbir şeyi değiştiremez.
+            IBAN, vergi no, telefon, e-posta, notlar, personel ve müşteri adları gönderilmez. Bağlantıyı Hesabım&apos;dan kaldırabilirsiniz; 90 günde bir ya da parolanızı
+            değiştirince yeniden bağlanmanız gerekir. Yalnız yönetici bağlayabilir.
+          </>
+        ),
+        icon: Bot,
+        links: [{ href: "/panel/hesap#bagli-uygulamalar", label: "Hesabım (Bağlı uygulamalar)" }],
       },
     ],
   },

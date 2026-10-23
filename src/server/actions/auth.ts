@@ -64,10 +64,13 @@ const loginSchema = z.object({
   next: z.string().optional(),
 });
 
-/** Girişten sonra gidilecek adres: yalnız panel içi ve rolün açabildiği bir ekran, yoksa rolün ana sayfası */
+/**
+ * Girişten sonra gidilecek adres: yalnız panel içi ve rolün açabildiği bir ekran ya da Claude bağlantısının onay ekranı
+ * (/baglan?istek=…), yoksa rolün ana sayfası
+ */
 function safeNext(next: string | undefined, role: "admin" | "staff") {
   const fallback = homeFor(role);
-  if (!next || !next.startsWith("/panel") || next.startsWith("//") || next.includes("\\")) return fallback;
+  if (!next || !(next.startsWith("/panel") || next.startsWith("/baglan?")) || next.startsWith("//") || next.includes("\\")) return fallback;
   return canOpen(role, next.split(/[?#]/)[0]) ? next : fallback;
 }
 

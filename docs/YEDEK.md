@@ -46,6 +46,7 @@ Yalnız şunlar dosyaya girmez (`src/lib/backup/format.ts` › `TABLE_RULES`, `E
 | Paraşüt'ten alınan e-fatura PDF'leri | önbellek | ilk açılışta Paraşüt'ten yeniden indirilir |
 | Panelden yüklenen fatura belgeleri | yalnız "belgeleri de ekle" seçilmediyse | seçilmediyse belgesiz gelir |
 | Kasa ve fiş fotoğraflarının dosyaları (kayıtları `photos` tablosunda yazılır) | dosyalar veritabanında değil, özel Vercel Blob deposunda ([FOTOGRAF.md](FOTOGRAF.md)) | aynı depo bağlıysa fotoğraflar açılır; değilse "Fotoğraf bulunamadı" |
+| Claude bağlantıları (`mcp_clients`, `mcp_codes`, `mcp_grants`, `mcp_tokens`, `mcp_calls`) | anahtar özetleri ve verilmiş erişim; eski bir yedekten bağlantı geri gelmesin | Claude'da bağlayıcıya yeniden "Connect" denir ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
 
 Karaoke rezervasyonlarındaki müşteri adı (`karaoke_sessions.customer_name`; yalnız ad, soyadı ve iletişim panele hiç
 gelmez) ve müşterinin sitede yazdığı not (`karaoke_sessions.note`, en çok 300 karakter; müşteri içine telefonunu ya da
