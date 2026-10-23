@@ -27,6 +27,7 @@ import {
   type SortableRow,
 } from "../src/app/panel/urunler/logic";
 import { createModel, priceProduct } from "../src/lib/calc/engine";
+import { productDeleteBlocker } from "../src/lib/product-delete";
 import { DEFAULT_SETTINGS } from "../src/lib/constants";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -289,4 +290,24 @@ test("Yeni ürünün zayi oranı: kategorideki en sık oran; eşitlikte en yeni 
   assert.equal(newProductFireHint(0.2), "Zayi oranı %20 olur (bu kategorideki ürünlerin çoğunda böyle); ürün kartından değiştirebilirsiniz.");
   assert.equal(newProductFireHint(0.075), "Zayi oranı %7,5 olur (bu kategorideki ürünlerin çoğunda böyle); ürün kartından değiştirebilirsiniz.");
   assert.equal(newProductFireHint(null), "Zayi oranı Ayarlar'daki genel oran olur; ürün kartından değiştirebilirsiniz.");
+});
+
+test("ürün silme: satışı, zayi kaydı, fiyat geçmişi ya da online satışı olan ürün silinmez, pasif yapılır", () => {
+  const none = { salesLines: 0, waste: 0, priceChanges: 0, onlineMonths: 0 };
+  // Geçmişi yok (yalnız ilk fiyat kaydı): silinebilir
+  assert.equal(productDeleteBlocker(none), null);
+  const msg = productDeleteBlocker({ salesLines: 12, waste: 2, priceChanges: 3, onlineMonths: 1 });
+  assert.equal(
+    msg,
+    "Bu ürünün 12 satış satırı, 1 ayda online satış, 2 zayi / ikram, 3 fiyat değişikliği kaydı var; silinirse geçmiş ayların maliyeti ve kârı değişir, fiyat geçmişi kaybolur. Silmek yerine “Menüde aktif” anahtarını kapatıp kaydedin.",
+  );
+  // Tek bir kayıt bile yeter
+  for (const k of ["salesLines", "waste", "priceChanges", "onlineMonths"] as const) assert.ok(productDeleteBlocker({ ...none, [k]: 1 }), k);
+  // Eylem de aynı kuralla reddeder (kart yalnız öneride bulunur); sayaçlar sunucu modülünde, "use server" dosyasında değil
+  const actions = readFileSync(join(process.cwd(), "src/server/actions/products.ts"), "utf8");
+  assert.match(actions, /const blocker = productDeleteBlocker\(await productHistoryCounts\(p\)\);\s*if \(blocker\) throw new UserError\(blocker\);/);
+  assert.doesNotMatch(actions, /export async function productHistoryCounts/);
+  const history = readFileSync(join(process.cwd(), "src/server/data/product-history.ts"), "utf8");
+  assert.match(history, /^import "server-only";/);
+  assert.match(history, /ne\(s\.productPrices\.source, "create"\)/);
 });
