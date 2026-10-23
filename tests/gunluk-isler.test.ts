@@ -351,7 +351,7 @@ test("rotalar çalışmayı kaydeder; sabah işi e-postaya eşitleme bilgisini v
   assert.match(parasut, /deadlineMs: Math\.max\(20_000, 45_000 - \(Date\.now\(\) - started\)\)/);
   const gunluk = readFileSync(join(process.cwd(), "src/app/api/cron/gunluk/route.ts"), "utf8");
   assert.match(gunluk, /const denied = await rejectUnlessCron\(request\);\s*if \(denied\) return denied;\s*const runId = await startJobRun\("gunluk"\)/);
-  assert.match(gunluk, /runReminderDigest\("cron", \{ syncedToday: alreadySynced \|\| Boolean\(sync\?\.ok\) \}\)/);
+  assert.match(gunluk, /runReminderDigest\("cron", \{ syncedToday: alreadySynced \|\| Boolean\(sync\?\.ok\), sendDeadlineAt: jobStart \+ JOB_SEND_DEADLINE_MS \}\)/);
   assert.match(gunluk, /finally \{\s*await finishJobRun\(runId, outcome\);/);
   assert.match(gunluk, /reminders: reminderStep\(reminders\)/);
   assert.match(gunluk, /digest: digestStep\(result\)/);
@@ -425,4 +425,59 @@ test("sabah işi: fotoğraf temizliği kuyrukta, en çok 100 fotoğraf, kendi s�
   assert.match(gunluk, /const jobStart = Date\.now\(\);\s*const denied = await rejectUnlessCron\(request\);/);
   assert.match(gunluk, /cleanupPhotos\(\{ limit: 100, deadlineAt \}\)/);
   assert.match(gunluk, /photos: photosStep\(photos\)/);
+});
+
+test("isteğe bağlı adımların sözcükleri: satış tahmini, hızlı sayım, haftalık özet; hata mesajı adımın adıyla, yalnız hata kısmen yapar", () => {
+  const ok = { code: "ok" };
+  const base = { sync: { code: "today" }, digest: { code: "sent" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
+  const words: Record<string, Record<string, string>> = {
+    forecast: { ok: "Tahmin kaydedildi", noweather: "Tahmin kaydedildi, hava alınamadı", nodata: "Tahmin: veri yok", error: "Tahmin hata" },
+    count: { sent: "Hızlı sayım bildirimi gitti", error: "Hızlı sayım bildirimi hata" },
+    weekly: {
+      sent: "Haftalık özet gönderildi",
+      off: "Haftalık özet kapalı",
+      nokey: "Haftalık özet: Resend kurulmadı",
+      late: "Haftalık özet: süre yetmedi, yarın denenecek",
+      error: "Haftalık özet gönderilemedi",
+    },
+  };
+  for (const [step, codes] of Object.entries(words)) {
+    for (const [code, text] of Object.entries(codes)) {
+      assert.deepEqual(stepTexts({ [step]: code }), [text], `${step}.${code}`);
+      const out = dailyOutcome({ ...base, [step]: { code, error: code === "error" ? "zaman aşımı" : null } });
+      assert.deepEqual(out.steps, { ...dailyOutcome(base).steps, [step]: code });
+      assert.equal(out.status, code === "error" ? "partial" : "ok", `${step}.${code}`);
+    }
+  }
+  // Hata mesajı adımın adıyla, sırası e-posta, eşitleme, …, tahmin, fotoğraf, sayım, haftalık
+  const bad = dailyOutcome({
+    ...base,
+    weekly: { code: "error", error: "Resend yanıt vermiyor" },
+    count: { code: "error", error: "2 cihaza gönderilemedi" },
+    forecast: { code: "error", error: "MET yanıt vermedi" },
+    menu: { code: "error", error: "HTTP 500" },
+  });
+  assert.equal(bad.status, "partial");
+  assert.equal(bad.message, "Menü eşitlemesi: HTTP 500 · Satış tahmini: MET yanıt vermedi · Hızlı sayım bildirimi: 2 cihaza gönderilemedi · Haftalık özet: Resend yanıt vermiyor");
+  // Bilinmeyen kod adın yanında yazılır; sözcükler STEP_LABELS sırasıyla
+  assert.deepEqual(stepTexts({ weekly: "skip" }), ["Haftalık özet: skip"]);
+  assert.deepEqual(stepTexts({ weekly: "sent", count: "sent", forecast: "ok", photos: "none", digest: "sent" }), [
+    "E-posta gönderildi",
+    "Tahmin kaydedildi",
+    "Silinecek fotoğraf yok",
+    "Hızlı sayım bildirimi gitti",
+    "Haftalık özet gönderildi",
+  ]);
+});
+
+test("sabah işi: e-postanın gönderimi en geç jobStart + 48 sn'de kesilir; elle gönderim sınırsız (bugünkü gibi)", () => {
+  const gunluk = readFileSync(join(process.cwd(), "src/app/api/cron/gunluk/route.ts"), "utf8");
+  assert.match(gunluk, /import \{ capped, JOB_SEND_DEADLINE_MS, tailStepDeadline \} from "@\/server\/jobs\/capped";/);
+  assert.match(gunluk, /sendDeadlineAt: jobStart \+ JOB_SEND_DEADLINE_MS/);
+  const digest = readFileSync(join(process.cwd(), "src/server/notify/digest.ts"), "utf8");
+  assert.match(digest, /ctx: \{ syncedToday\?: boolean; sendDeadlineAt\?: number \} = \{\}/);
+  assert.match(digest, /ctx\.sendDeadlineAt === undefined \? undefined : \{ deadlineAt: ctx\.sendDeadlineAt \}/);
+  // Elle gönderim ve önizleme sınır vermez
+  const actions = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
+  assert.match(actions, /runReminderDigest\("manual"\)/);
 });
