@@ -268,7 +268,9 @@ test("metinler: kalan süre, süre, gün, saat aralığı ve bildirim", () => {
 test("ping ucu imzasız isteği reddeder, eşitleme yanıttan sonra; personel tutarı görmez", () => {
   const ping = readFileSync(join(process.cwd(), "src/app/api/karaoke/ping/route.ts"), "utf8");
   assert.match(ping, /if \(!secret\) return Response\.json\(\{ error: "not_configured" \}, \{ status: 503 \}\)/);
-  assert.match(ping, /if \(!ok\) return Response\.json\(\{ error: "unauthorized" \}, \{ status: 401 \}\)/);
+  // İmza ve boyut menü ve sipariş pingleriyle ortak denetimden (src/lib/site-ping.ts: imzasız ya da yanlış 401)
+  assert.match(ping, /if \(!check\.ok\) return Response\.json\(\{ error: check\.error \}, \{ status: check\.status \}\)/);
+  assert.ok(ping.indexOf("checkSitePing(") > 0 && ping.indexOf("checkSitePing(") < ping.indexOf("after("), "202'den önce imza");
   assert.match(ping, /after\(async \(\) =>/);
   const board = readFileSync(join(process.cwd(), "src/server/karaoke/board.ts"), "utf8");
   assert.match(board, /totalMinor: opts\.admin \? r\.totalMinor : null/);
