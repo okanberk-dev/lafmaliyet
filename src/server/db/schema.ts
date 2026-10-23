@@ -439,7 +439,13 @@ export const fixedExpenses = pgTable("fixed_expenses", {
   name: text("name").notNull(),
   section: text("section", { enum: ["personel", "faturalar", "kira", "genel"] }).notNull(),
   period: text("period", { enum: ["aylik", "gunluk", "haftalik", "yillik"] }).notNull().default("aylik"),
+  /** KDV hariç (gelir-gider bu tutarla) */
   amount: doublePrecision("amount").notNull().default(0),
+  /**
+   * Faturasındaki KDV oranı (0, 0,01, 0,1, 0,2): nakit planı gideri KDV dahil öder (src/lib/cash-plan.ts). Boşsa
+   * bölümün varsayılanı: personel KDV'siz, ötekiler %20 (FIXED_SECTION_VAT)
+   */
+  vatRate: doublePrecision("vat_rate"),
   note: text("note"),
   active: boolean("active").notNull().default(true),
   startMonth: text("start_month"),

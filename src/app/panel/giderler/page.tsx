@@ -77,6 +77,7 @@ async function ExpensesContent() {
     note: f.note,
     period: f.period,
     amount: f.amount,
+    vatRate: f.vatRate ?? null,
     monthly: f.monthly,
     startMonth: f.startMonth ?? null,
     endMonth: f.endMonth ?? null,

@@ -1,0 +1,1 @@
+ALTER TABLE "fixed_expenses" ADD COLUMN "vat_rate" double precision;

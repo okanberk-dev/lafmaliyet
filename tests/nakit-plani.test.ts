@@ -402,6 +402,50 @@ test("sabit giderler: aylık ayın gününe, haftalık 7'ye bölünür, günlük
   assert.doesNotMatch(carried.weeks[1].lines.find((l) => l.key === "fixed")!.detail!, /Kira/);
 });
 
+test("sabit giderler KDV dahil ödenir: kiranın %20'si de çıkar, personel KDV'siz; hatırlatıcının taşıdığı tutar da", () => {
+  const fixed = [
+    { id: 1, name: "Kira", period: "aylik" as const, amount: 31_000, vatRate: 0.2 },
+    { id: 2, name: "Personel yemeği", period: "gunluk" as const, amount: 300, vatRate: 0 },
+    { id: 3, name: "Spotify", period: "aylik" as const, amount: 3_100, vatRate: 0.2 },
+  ];
+  const settings = { komisyon: 0.025, kartOrani: 0.8, acikGun: 30, kdv: 0.1, kdvHizmet: 0.2 };
+  const p = buildCashPlan(input({ months: monthsWith(fixed), fixedNames: fixed, settings }));
+  // Ekim 31 gün: kira 31.000 × 1,2 ÷ 31 = 1.200, Spotify 120, yemek 300 (KDV'siz)
+  close(p.weeks[0].lines.find((l) => l.key === "fixed")!.amount, 6 * (1_200 + 120 + 300), "bu hafta (gün 1–6)");
+  assert.match(p.weeks[0].lines.find((l) => l.key === "fixed")!.detail!, /^Ay içine yayıldı \(faturadaki KDV dahil\): Kira 7\.200\s₺/);
+  close(p.basis.fixedSpread.monthly, 37_200 + 3_720 + 9_000, "ayda KDV dahil");
+  assert.equal(p.basis.fixedSpread.vat, true);
+  assert.equal(p.estimates.find((e) => e.key === "fixed:1")!.monthly, 37_200);
+  assert.match(p.estimates.find((e) => e.key === "fixed:1")!.note!, /%20 KDV dahil$/);
+  assert.doesNotMatch(p.estimates.find((e) => e.key === "fixed:2")!.note!, /KDV/);
+  const notes = planNotes(p, { komisyon: 0.025, acikGun: 30, invoiceTermDays: 30 });
+  assert.match(notes.find((n) => n.key === "fixed")!.text, /ayda 49\.920\s₺, faturadaki KDV dahil\) ay içine eşit yayıldı/);
+  // Tutarsız "Kira" hatırlatıcısı giderin KDV dahil tutarını taşır
+  const kira = rem({ title: "Kira", amount: null, dueDate: "2026-11-01" });
+  const carried = buildCashPlan(input({ months: monthsWith(fixed), fixedNames: fixed, settings, reminders: [kira] }));
+  const line = lineAt(carried, `reminder:${kira.id}@`)[0];
+  assert.deepEqual([line.date, line.amount, line.estimated], ["2026-11-01", 37_200, true]);
+  assert.equal(line.detail, "Sabit giderdeki tutar + %20 KDV");
+  // KDV'siz kalemler eskisi gibi: açıklama "KDV dahil" demez
+  const plain = buildCashPlan(input({ months: monthsWith([fixed[1]]), fixedNames: [fixed[1]], settings }));
+  assert.match(plain.weeks[0].lines.find((l) => l.key === "fixed")!.detail!, /^Ay içine yayıldı: /);
+});
+
+test("girdiler: sabit giderin KDV'si kalemden, boşsa bölümden (kira, faturalar, genel %20; personel KDV'siz)", () => {
+  const base = planInputFromModel(model, TODAY);
+  const rate = (name: string) => base.months["2026-10"].fixed.find((f) => f.name === name)!.vatRate;
+  assert.equal(rate("Kira"), 0.2);
+  assert.equal(rate("Elektrik (ana fatura)"), 0.2);
+  assert.equal(rate("Instagram reklamı"), 0.2);
+  assert.equal(rate("Personel yemeği"), 0);
+  assert.equal(rate("Muhasebeci"), 0);
+  // Kalemde girilen oran bölümün varsayılanının önüne geçer
+  const withRate = createModel({ ...ds, fixedExpenses: ds.fixedExpenses.map((f) => (f.name === "Influencer" ? { ...f, vatRate: 0 } : f.name === "Muhasebeci" ? { ...f, vatRate: 0.2 } : f)) });
+  const fixed = planInputFromModel(withRate, TODAY).months["2026-10"].fixed;
+  assert.equal(fixed.find((f) => f.name === "Influencer")!.vatRate, 0);
+  assert.equal(fixed.find((f) => f.name === "Muhasebeci")!.vatRate, 0.2);
+});
+
 // ---------------------------------------------------------------- Mal alımı
 
 test("mal alımı: son 8 haftanın mal faturaları; peşin tedarikçi gün 1'den, 30 gün vadeli gün 31'den; 14 günden kısa geçmişte yok", () => {

@@ -23,7 +23,7 @@ import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/com
 import { shiftMonth, type FixedHistoryEntry, type RangeStatus } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { FixedPeriod, FixedSection } from "@/lib/calc/types";
-import { FIXED_PERIODS, FIXED_SECTIONS } from "@/lib/constants";
+import { FIXED_PERIODS, FIXED_SECTION_VAT, FIXED_SECTIONS, FIXED_VAT_RATES, fixedVatRate } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -331,6 +331,8 @@ export type FixedRow = {
   note: string | null;
   period: FixedPeriod;
   amount: number;
+  /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (yalnız nakit planı kullanır) */
+  vatRate: number | null;
   monthly: number;
   startMonth: string | null;
   endMonth: string | null;
@@ -490,7 +492,7 @@ export function FixedExpensesClient({
     }
     // Arada kapanmış aylar var: o ayları değiştirmemek için aynı kalem seçilen aydan itibaren yeni kayıt olarak açılır
     const done = await run(
-      saveFixedExpense({ id: null, name: r.name, section: r.section, period: r.period, amount: r.amount, note: r.note, effectiveFrom: fromMonth }),
+      saveFixedExpense({ id: null, name: r.name, section: r.section, period: r.period, amount: r.amount, note: r.note, vatRate: r.vatRate, effectiveFrom: fromMonth }),
       `${r.name} ${monthLabel(fromMonth)} itibarıyla devam ediyor`,
     );
     if (done) onSaved(done.id, true);
@@ -1056,7 +1058,10 @@ function FixedDialog({
     period: row?.period ?? ("aylik" as FixedPeriod),
     amount: row ? num(row.amount, 2) : "",
     note: row?.note ?? "",
+    // Faturadaki KDV: kalemde girilmemişse bölümün varsayılanı gösterilir ve bölümle birlikte değişir
+    vatRate: row?.vatRate ?? null,
   });
+  const vatRate = fixedVatRate({ section: f.section, vatRate: f.vatRate });
   // Biten kalemde tutar değişikliği kalemin kendi ayları için anlamlı: varsayılan olarak son ayı
   const [choice, setChoice] = useState<MonthChoice>(() =>
     row?.status === "ended" ? { mode: "month", month: row.valueMonth } : { mode: "current", month: row?.status === "upcoming" ? row.valueMonth : currentMonth },
@@ -1098,6 +1103,7 @@ function FixedDialog({
       period: f.period,
       amount,
       note: f.note,
+      vatRate,
       // Tutar değişmediyse gösterilen ayın değeri geri gider (hiçbir ay değişmez)
       effectiveFrom: !row || amountChanged ? eff : row.valueMonth,
     });
@@ -1109,7 +1115,7 @@ function FixedDialog({
     });
     if (!again) return onClose();
     // Bölüm, dönem ve başlangıç ayı korunur: aynı türden kalemler arka arkaya girilir
-    setF((x) => ({ ...x, name: "", amount: "", note: "" }));
+    setF((x) => ({ ...x, name: "", amount: "", note: "", vatRate: null }));
     setTried(false);
     setAdded((n) => n + 1);
     nameRef.current?.focus();
@@ -1243,6 +1249,22 @@ function FixedDialog({
             aria-invalid={amountError ? true : undefined}
             className="cell-input pointer-coarse:h-12 pointer-coarse:text-lg"
           />
+        </Field>
+
+        <Field
+          label="Faturadaki KDV"
+          htmlFor="fx-v"
+          tip="Gelir-gider KDV hariç tutarla hesaplanır. Nakit planı gideri faturadaki KDV'siyle öder: kira 10.000 ₺ + %20 KDV ise bankadan 12.000 ₺ çıkar."
+          hint={vatRate ? `Nakit planı aylık ${money(monthly * (1 + vatRate))} öder (KDV dahil).` : "Nakit planı KDV eklemeden öder."}
+        >
+          <Select id="fx-v" value={String(vatRate)} onChange={(e) => setF({ ...f, vatRate: Number(e.target.value) })}>
+            {FIXED_VAT_RATES.map((r) => (
+              <option key={r.value} value={String(r.value)}>
+                {r.label}
+                {f.vatRate === null && r.value === FIXED_SECTION_VAT[f.section] ? " (bölümün varsayılanı)" : ""}
+              </option>
+            ))}
+          </Select>
         </Field>
 
         {!row || amountChanged ? (

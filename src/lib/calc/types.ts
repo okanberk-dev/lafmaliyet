@@ -239,7 +239,10 @@ export interface FixedExpense extends MonthRange {
   section: FixedSection;
   /** Taban değerler: ilk tutar değişikliğinden (FixedExpenseVersion) önceki aylarda geçerli */
   period: FixedPeriod;
+  /** KDV hariç */
   amount: number;
+  /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (constants.ts fixedVatRate). Yalnız nakit planı kullanır */
+  vatRate?: number | null;
   note: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;

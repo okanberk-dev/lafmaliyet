@@ -185,6 +185,7 @@ export async function loadDataset(): Promise<Dataset> {
       section: f.section,
       period: f.period,
       amount: f.amount,
+      vatRate: f.vatRate,
       note: f.note,
       active: activeFromRange(f.endMonth, currentMonth),
       startMonth: f.startMonth,
