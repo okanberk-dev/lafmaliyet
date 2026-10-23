@@ -127,9 +127,10 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
   Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Hatırlatıcı ekle** önerir (KDV
   tahmine katılmıyorsa “KDV tahmini plana katılmıyor; Tahmine katılanlar'dan açabilirsiniz.”).
 - KDV hatırlatıcısı varsa tahmin onun günlerine yazılır. Tutar yazılmış dönem kesindir (normal hatırlatıcı satırı);
-  tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Hatırlatıcı 1 hafta ertelenince açılan
-  kopya (ayın 1–7'si) hâlâ iki ay önceki dönemin KDV'sidir. Aynı döneme ikinci bir KDV hatırlatıcısı “Tutarı girilmemiş”e
-  düşer.
+  tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Ertelenen dönemin (tekrar edenin kopyası
+  ya da tek seferlik) dönemi notundaki asıl gündendir (“Ertelendi · asıl tarih 28.10.2026”): 10 Kasım'a ertelenen Eylül
+  KDV'si Eylül'ündür. Notsuz bir günün ayın 1–7'si iki ay önceki dönemdir. Aynı döneme ikinci bir KDV hatırlatıcısı
+  “Tutarı girilmemiş”e düşer. “Geri al” ertelemenin yazdığı notu da geri alır.
 - Tahmin ≤ 0 ise satır yok (kartta “Ödeme beklenmez”). Satış verisi olmayan dönemde tahmin yok. KDV hatırlatıcısının
   sıradaki günü 6 haftanın dışındaysa kartta satır olmaz (“bu dönemde KDV ödemesi yok”).
 - Tahmine katılanlar'dan **KDV** kapatılırsa kesin tutarlar yine yazılır, tahminler plana girmez (kart gri, “Plana

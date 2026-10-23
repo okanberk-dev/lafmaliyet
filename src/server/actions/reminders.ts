@@ -14,6 +14,7 @@ import {
   isLastDayOfMonth,
   nextOccurrence,
   postponeDate,
+  postponedFrom,
   postponeNote,
   postponePlan,
   todayTR,
@@ -151,7 +152,7 @@ export async function markReminderDone(id: number, through?: string) {
 type ReminderDbRow = typeof s.reminders.$inferSelect;
 
 function snapshot(r: ReminderDbRow) {
-  return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null, amount: r.amount };
+  return { dueDate: r.dueDate, anchorDate: r.anchorDate, active: r.active, lastDoneAt: r.lastDoneAt ? r.lastDoneAt.toISOString() : null, amount: r.amount, note: r.note };
 }
 
 const snapshotSchema = z.object({
@@ -165,6 +166,8 @@ const snapshotSchema = z.object({
     .refine((v) => v === null || !Number.isNaN(new Date(v).getTime()), "Geçersiz tarih"),
   /** Eski bildirimlerin geri al'ı tutarı taşımaz (o zaman tutar yazılmaz) */
   amount: z.number().finite().min(0).nullable().optional(),
+  /** Ertelemenin yazdığı not ("Ertelendi · asıl tarih ...") geri alınınca eski hâline döner; eskilerde yok */
+  note: z.string().max(500).nullable().optional(),
 });
 
 /**
@@ -189,6 +192,7 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
           lastDoneAt: snap.lastDoneAt ? new Date(snap.lastDoneAt) : null,
           // Ödendi / ertelemede silinen KDV tutarı geri gelir
           ...(snap.amount !== undefined ? { amount: snap.amount } : {}),
+          ...(snap.note !== undefined ? { note: snap.note } : {}),
         })
         .where(eq(s.reminders.id, rid))
         .returning({ title: s.reminders.title });
@@ -310,7 +314,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
             anchorDate: target,
             repeat: "none",
             remindDaysBefore: r.remindDaysBefore,
-            note: postponeNote(r.note && !r.note.startsWith("Ertelendi") ? r.note : null, r.dueDate),
+            note: postponeNote(postponedFrom(r.note) ? null : r.note, r.dueDate),
           })
           .returning({ id: s.reminders.id });
         // KDV tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al geri yazar)

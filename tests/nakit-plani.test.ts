@@ -772,6 +772,30 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
   );
 });
 
+test("KDV: 8'inden sonraya ertelenen dönem asıl gününün dönemindedir (kopya ve tek seferlik)", () => {
+  // 3 Kasım: Eylül'ün 28 Ekim KDV'si gecikmiş, bugünden 1 hafta ertelendi: kopya 10 Kasım, seri 28 Kasım'da sürer
+  const today = "2026-11-03";
+  const v = vatMonthInputs(model, today);
+  const base = { today, vat: v, vatAnchor: { month: "2026-08", amount: 0 } };
+  const copy = rem({ title: "KDV beyannamesi ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-11-10", repeat: "none", note: postponeNote(null, "2026-10-28") });
+  const series = rem({ title: "KDV beyannamesi ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-11-28" });
+  const p = buildCashPlan(input({ ...base, reminders: [copy, series] }));
+  assert.deepEqual(
+    p.vat!.rows.map((r) => [r.date, r.period, r.reminderId]),
+    [
+      ["2026-11-10", "2026-09", copy.id],
+      ["2026-11-28", "2026-10", series.id],
+    ],
+  );
+  assert.equal(p.unknownAmounts.length, 0);
+  // Tek seferlik "KDV Eylül" 1 ay ertelendi (28 Kasım): yine Eylül'ün
+  const once = rem({ title: "KDV Eylül", kind: "vergi", amount: null, dueDate: "2026-11-28", repeat: "none", note: postponeNote(null, "2026-10-28") });
+  assert.deepEqual(
+    buildCashPlan(input({ ...base, today: "2026-10-22", vat: vatMonthInputs(model, "2026-10-22"), reminders: [once] })).vat!.rows.map((r) => [r.date, r.period]),
+    [["2026-11-28", "2026-09"]],
+  );
+});
+
 const kdvRem = (over: Partial<ReminderRow> = {}) => rem({ title: "KDV beyannamesi ve ödemesi", kind: "vergi", amount: null, dueDate: "2026-10-28", ...over });
 
 test("KDV hatırlatıcısı: tahmin onun günlerinde; tutarı o dönemin kesin tutarı, sonraki dönem yine tahmin", () => {

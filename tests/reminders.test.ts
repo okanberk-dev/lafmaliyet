@@ -223,6 +223,7 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["KDV2 + damga vergisi", "vergi"],
     ["KDV 2 (damga dahil)", "vergi"],
     ["2 No.lu KDV ve damga vergisi", "vergi"],
+    ["KDV2 tahakkuku + damga", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -241,6 +242,10 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["Damga vergisi beyannamesi 2 No.lu", "vergi"],
     ["2 No.lu beyanname damga vergisi", "vergi"],
     ["KDV2 damga vergisi", "vergi"],
+    // Yalnız damga vergisi, başka bir şeyle birlikte ("ve gecikme zammı", "Eylül ve Ekim")
+    ["KDV2 damga vergisi ve gecikme zammı", "vergi"],
+    ["KDV2 damga vergisi (gecikme zammı dahil)", "vergi"],
+    ["KDV2 damga vergisi Eylül ve Ekim", "vergi"],
     ["Beyanname 2 numaralı şube", "odeme"],
     ["Aidat 2 No.lu dükkan", "odeme"],
     ["Elektrik 2 numaralı sayaç", "odeme"],
@@ -255,6 +260,8 @@ test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü k
   assert.equal(postponeNote(null, "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026");
   assert.equal(postponeNote("Muhasebeci öder", "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026 · Muhasebeci öder");
   assert.equal(postponeNote("Ertelendi · asıl tarih 25.10.2026", "2026-11-01"), "Ertelendi · asıl tarih 25.10.2026");
+  // Elle yazılmış "Ertelendi, ..." notu asıl gün sayılmaz: asıl gün yine yazılır
+  assert.equal(postponeNote("Ertelendi, muhasebeci haber verecek", "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026 · Ertelendi, muhasebeci haber verecek");
   assert.equal(postponeNote("x".repeat(600), "2026-10-25").length, 500);
   assert.equal(postponedFrom(postponeNote("Muhasebeci öder", "2026-10-25")), "2026-10-25");
   assert.equal(postponedFrom("Muhasebeci öder"), null);
@@ -264,6 +271,10 @@ test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü k
   // Tek seferlik (yerinde kayar) ve tekrar edenin kopyası
   assert.equal(postpone.match(/postponeNote\(/g)?.length, 2);
   assert.match(postpone, /set\(\{ dueDate: target, anchorDate: target, note: postponeNote\(r\.note, r\.dueDate\) \}\)/);
+  // "Geri al" ertelemenin yazdığı notu da geri alır
+  assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*note: r\.note/);
+  const restore = src.slice(src.indexOf("export async function restoreReminder"), src.indexOf("export async function undoRecentPaid"));
+  assert.match(restore, /snap\.note !== undefined \? \{ note: snap\.note \}/);
 });
 
 test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {

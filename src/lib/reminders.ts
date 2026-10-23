@@ -382,7 +382,7 @@ export function reminderCategory(kind: ReminderKind, title: string): ReminderCat
  * asıl günden bulur (`postponedFrom`): 8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür.
  */
 export function postponeNote(note: string | null, dueDate: string): string {
-  if (note?.startsWith("Ertelendi")) return note;
+  if (postponedFrom(note)) return note!;
   const [y, m, d] = dueDate.split("-");
   return `Ertelendi · asıl tarih ${d}.${m}.${y}${note ? ` · ${note}` : ""}`.slice(0, 500);
 }
@@ -409,9 +409,10 @@ const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\.?\s*(no|numara)
 export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
-  // Damga vergisi ayrı ödemedir ("KDV2 damga vergisi"); tahakkukla birlikte yazılan ("KDV2 + damga", "damga dahil",
-  // "KDV2 ve damga vergisi") KDV-2'dir
-  if (!VAT_WITHHOLDING.test(t) || (/damga/.test(t) && !/\+|&|\bve\b|dahil/.test(t))) return false;
+  // Damga vergisi ayrı ödemedir ("KDV2 damga vergisi", "... damga vergisi ve gecikme zammı"); tahakkuka bağlanarak
+  // yazılan ("KDV2 + damga", "KDV2 ve damga vergisi", "damga dahil") KDV-2'dir
+  const bundled = /(\+|&|\bve\b)\s*damga|damga\s*(vergisi\s*)?dahil/.test(t);
+  if (!VAT_WITHHOLDING.test(t) || (/damga/.test(t) && !bundled)) return false;
   if (/(^|[^a-z])kdv|katma deger/.test(t)) return true;
   // "2 No.lu beyanname" ya da başlığın sonunda "Beyanname (2 No'lu)"; "Beyanname 2 numaralı şube" değil
   const declaration = /(^|\D)2\.?\s*(no|numara)\S*\s+beyan|beyan\S*\s*\(?2\.?\s*(no|numara)\S*\s*$/.test(t);

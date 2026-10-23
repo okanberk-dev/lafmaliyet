@@ -604,7 +604,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const knownRows: VatRow[] = [];
   const placements: { period: string; date: string; due: string; overdue: boolean; reminder: ReminderRow | null }[] = [];
   if (vatBaseMode === "reminder") {
-    const occs = vatRems.flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, first: o.due === r.dueDate, period: vatPeriodOf(o.due) })));
+    // Ertelenmiş kopyanın ve tek seferliğin dönemi asıl gününden (8'inden sonraya ertelenen Eylül KDV'si Ekim'in değildir)
+    const occs = vatRems.flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, first: o.due === r.dueDate, period: vatPeriodOf(originalDue(r, o.due)) })));
     // Ödemeler'e yazılan tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir
     for (const x of occs) {
       if (!x.first || x.r.amount === null) continue;
