@@ -563,6 +563,7 @@ export interface StockLine {
   factor: number;
   /** Miktarın birimi (KG, LT, ADET, DİLİM); eski sayımda sayıldığı andaki birim */
   countUnit: string;
+  /** Sayım biriminin fiyatı, ayın sonunda geçerli hammadde fiyatıyla (süren ayda bugünkü) */
   unitPrice: number;
   amount: number;
   amountVatIncl: number;
@@ -844,6 +845,33 @@ export function createModel(ds: Dataset) {
   }
   const unitCost = new Map(ds.ingredients.map((i) => [i.id, unitCostOf(i)]));
 
+  // --- Ay sonunda geçerli birim fiyat (sayımın değeri) ---------------------------
+  // Kapanmış ayın devreden malı o ayın sonundaki fiyatla değerlenir: sonraki bir zam (Paraşüt faturası, elle) geçmiş
+  // ayın kârını değiştirmez. Fiyat geçmişindeki ay sonundan önceki son kayıt geçerlidir; ondan sonra değişiklik yoksa
+  // bugünkü fiyat (aynısı). İlk kayıttan önceki ay (Excel aktarımı ya da fiyatsız eklenen kalem, kayıt sonradan) bilinen
+  // ilk fiyatla. Su ve buz su faturasından gelir (geçmişi yok).
+  const priceHistory = new Map<number, { at: number; unit: number }[]>();
+  for (const r of ds.ingredientPrices ?? []) {
+    const at = Date.parse(r.changedAt);
+    if (!Number.isFinite(at)) continue;
+    const list = priceHistory.get(r.ingredientId) ?? [];
+    list.push({ at, unit: r.packageSize ? r.packagePrice / r.packageSize : 0 });
+    priceHistory.set(r.ingredientId, list);
+  }
+  for (const list of priceHistory.values()) list.sort((a, b) => a.at - b.at);
+  /** Ayın bittiği an: sonraki ayın 1'i 00:00, Türkiye saati */
+  const monthEndAt = (month: string) => Date.parse(`${shiftMonth(month, 1)}-01T00:00:00+03:00`);
+  function unitCostAtMonthEnd(ingredientId: number, month: string): number {
+    const now = unitCost.get(ingredientId) ?? 0;
+    const hist = priceHistory.get(ingredientId);
+    if (!hist?.length || ingById.get(ingredientId)?.priceSource === "water") return now;
+    const end = monthEndAt(month);
+    let i = -1;
+    while (i + 1 < hist.length && hist[i + 1].at < end) i++;
+    if (i === hist.length - 1) return now;
+    return hist[Math.max(i, 0)].unit;
+  }
+
   // --- Ürünler -----------------------------------------------------------------
   const productCache = new Map<number, ProductCalc>();
   function computeProduct(p: Product): ProductCalc {
@@ -1106,7 +1134,7 @@ export function createModel(ds: Dataset) {
       const c = counts.get(ing.id);
       const currentFactor = countFactor(ing.countUnit);
       const factor = c?.factor ?? currentFactor;
-      const unitPrice = (unitCost.get(ing.id) ?? 0) * factor;
+      const unitPrice = unitCostAtMonthEnd(ing.id, month) * factor;
       const qty = c ? c.qty : null;
       const amount = (qty ?? 0) * unitPrice;
       const archived = !countableIds.has(ing.id);
@@ -1612,6 +1640,8 @@ export function createModel(ds: Dataset) {
     fixedStandardTotal,
     fixedStandardTotalFor,
     stockSheet,
+    /** Sayımın birim fiyatı: ayın sonunda geçerli fiyat (kapanmış ay sonraki zamla değişmez) */
+    unitCostAtMonthEnd,
     countInBaseUnit,
     closingStock,
     invoicesByMonth,

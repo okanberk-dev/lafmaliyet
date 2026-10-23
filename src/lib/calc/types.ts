@@ -266,6 +266,15 @@ export interface PnlEntry {
   note?: string | null;
 }
 
+/** Hammadde fiyat geçmişinin bir satırı (ingredient_prices): o andan itibaren geçerli paket fiyatı ve boyu */
+export interface IngredientPriceRow {
+  ingredientId: number;
+  packagePrice: number;
+  packageSize: number;
+  /** ISO an */
+  changedAt: string;
+}
+
 export interface StockCount {
   month: string;
   ingredientId: number;
@@ -352,6 +361,11 @@ export interface Dataset {
   fixedExpenseVersions?: FixedExpenseVersion[];
   pnlEntries: PnlEntry[];
   stockCounts: StockCount[];
+  /**
+   * Hammadde fiyat geçmişi (yoksa boş: sayımlar bugünkü fiyatla). Sayım, ayın sonunda geçerli fiyatla değerlenir; sonraki
+   * bir zam kapanmış ayın devreden malını ve kârını değiştirmez (engine.ts stockSheet)
+   */
+  ingredientPrices?: IngredientPriceRow[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */

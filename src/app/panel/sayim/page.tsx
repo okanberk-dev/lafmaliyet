@@ -85,7 +85,8 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevQty: p?.qty ?? null,
         prevUnit: p?.unit ?? null,
         unitPrice: isAdmin ? l.unitPrice : 0,
-        unitPriceNow: isAdmin ? (model.unitCost.get(l.ingredient.id) ?? 0) * countFactor(l.ingredient.countUnit) : 0,
+        // Yeni ya da değişen miktar bugünkü sayım birimiyle, ayın sonunda geçerli fiyatla (kayıttan sonraki değeriyle aynı)
+        unitPriceNow: isAdmin ? model.unitCostAtMonthEnd(l.ingredient.id, month) * countFactor(l.ingredient.countUnit) : 0,
         vatRate: isAdmin ? l.ingredient.vatRate : 0,
       };
     }),

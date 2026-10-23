@@ -37,6 +37,7 @@ export async function loadDataset(): Promise<Dataset> {
     fixedExpenseVersions,
     pnlEntries,
     stockCounts,
+    ingredientPrices,
     stockExtras,
     purchaseQuantities,
     expenseCategories,
@@ -59,6 +60,16 @@ export async function loadDataset(): Promise<Dataset> {
     db.select().from(s.fixedExpenseVersions).orderBy(asc(s.fixedExpenseVersions.fixedExpenseId), asc(s.fixedExpenseVersions.fromMonth)),
     db.select().from(s.pnlEntries),
     db.select().from(s.stockCounts),
+    // Sayımlar ay sonunda geçerli fiyatla değerlenir (engine.ts stockSheet)
+    db
+      .select({
+        ingredientId: s.ingredientPrices.ingredientId,
+        packagePrice: s.ingredientPrices.packagePrice,
+        packageSize: s.ingredientPrices.packageSize,
+        changedAt: s.ingredientPrices.changedAt,
+      })
+      .from(s.ingredientPrices)
+      .orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select().from(s.stockExtras).orderBy(asc(s.stockExtras.id)),
     db.select().from(s.purchaseQuantities),
     db.select().from(s.expenseCategories).orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.id)),
@@ -201,6 +212,7 @@ export async function loadDataset(): Promise<Dataset> {
     })),
     pnlEntries: pnlEntries.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
     stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
+    ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     stockExtras: stockExtras.map((e) => ({
       id: e.id,
       month: e.month,

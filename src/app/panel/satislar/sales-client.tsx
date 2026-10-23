@@ -1196,7 +1196,7 @@ export function SalesTable({
                   <TH numeric>
                     <HeadLabel sub="malzeme + ambalaj" wrap>
                       <span className="inline-flex items-center gap-1.5">
-                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde net ciro × ortalama maliyet oranı (turuncu, tahmini)." />
+                        <InfoTip text="Eşleşenlerde adet × birim maliyet; eşleşmeyenlerde net ciro × ortalama maliyet oranı (turuncu, tahmini). Birim maliyet bugünkü reçete ve hammadde fiyatlarıyla hesaplanır (Excel'deki gibi): geçmiş bir ayda da bugünün maliyetidir. Gelir-gider'in mal maliyeti faturalardan ve ay sonu sayımından gelir, sonraki zamla değişmez." />
                         <SortButton numeric dir={dirOf("maliyet")} onClick={() => toggleSort("maliyet")}>
                           Maliyet
                         </SortButton>
