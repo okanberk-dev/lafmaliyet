@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { cashOutLabel, cashOutWritesExpense, staffCategory, staffExpenseLocked } from "@/lib/cash-outs";
+import { cashOutLabel, cashOutUndoJson, cashOutWritesExpense, readCashOutUndo, staffCategory, staffExpenseLocked, type CashOutSnapshot } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
@@ -13,6 +13,7 @@ import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser, type CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
+import { open, seal } from "@/server/secret-box";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
@@ -48,21 +49,6 @@ const cashOutSchema = z.object({
 
 export type CashOutInput = z.input<typeof cashOutSchema>;
 
-/** Silinen satırın kopyası: "Geri al" satırı ve harcama kaydını geri getirir */
-export interface CashOutSnapshot {
-  date: string;
-  kind: "harcama" | "teslim";
-  amount: number;
-  store: string | null;
-  description: string | null;
-  receiptDate: string | null;
-  receiptNo: string | null;
-  vat: number | null;
-  docType: "fis" | "e_arsiv" | "fatura" | "yok";
-  photoId: number | null;
-  expense: { categoryId: number; note: string | null; description?: string | null; paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null } | null;
-}
-
 const LOCKED = "Bu günün kasasına artık yalnız yönetici ekleyebilir";
 const PHOTO_GONE = "Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin";
 /** Personel, yöneticinin kategorisindeki harcama kaydını kaldıramaz ya da taşıyamaz (staffExpenseLocked) */
@@ -70,8 +56,9 @@ const EXPENSE_LOCKED = "Bu satır yöneticinin harcama kaydına bağlı; silmek 
 const EXPENSE_LOCKED_EDIT = "Bu satır yöneticinin harcama kaydına bağlı; türünü ve kategorisini yönetici değiştirir";
 
 /**
- * Geri al: satır silinince fotoğrafı bırakılır (7 gün). Personel başkasının yüklediği fotoğrafı yalnız az önce
- * bırakılmışsa yeniden bağlar; kopya istemciden geldiği için başka bir bağlanmamış fotoğraf böyle alınamaz.
+ * Geri al: satır silinince fotoğrafı bırakılır (7 gün). Silinen satırın kopyası mühürlüdür (src/lib/cash-outs.ts ›
+ * cashOutUndoJson): yalnız silen kişi, 15 dakika içinde ve silinenin aynısını geri getirir. Fotoğraf da o satırınki;
+ * personel başkasının yüklediği fotoğrafı yalnız az önce bırakılmışsa yeniden bağlar.
  */
 const UNDO_WINDOW_MS = 15 * 60_000;
 const justReleased = (expiresAt: Date | null) => expiresAt !== null && expiresAt.getTime() > Date.now() + RELEASED_DAYS * 86_400_000 - UNDO_WINDOW_MS;
@@ -206,11 +193,12 @@ export async function saveCashOut(input: CashOutInput) {
 }
 
 /**
- * Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için kopyası döner. Personel, kaydı
- * yöneticinin kategorisinde olan satırı silemez (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı).
+ * Siler (bağlı harcama kaydıyla); fotoğraf 7 gün daha saklanır. Geri almak için silinenin mühürlü kopyası döner
+ * (`undo`; istemci içini okuyamaz ve değiştiremez). Personel, kaydı yöneticinin kategorisinde olan satırı silemez
+ * (kayıt onunla giderdi; geri alma da o kategoriye yazamazdı).
  */
 export async function deleteCashOut(id: number) {
-  return attempt(async (): Promise<CashOutSnapshot> => {
+  return attempt(async (): Promise<{ undo: string }> => {
     const me = await requireUser();
     const cid = z.number().int().positive().parse(id);
     const snap = await getDb().transaction(async (tx) => {
@@ -246,17 +234,21 @@ export async function deleteCashOut(id: number) {
     });
     await logActivity(me, "Kasadan çıkan silindi", [longDateTR(snap.date), cashOutLabel(snap), money(snap.amount)].join(" · "));
     refresh();
-    return snap;
+    return { undo: seal(cashOutUndoJson(me.id, snap, Date.now()), "cashout-undo") };
   });
 }
 
 /**
- * Silineni geri getirir (yeni satır; fotoğraf yeniden bağlanır). Harcama kaydı silinmeden önceki gibi: varsa aynı
- * kategori, açıklama, ödeme şekli ve notla geri gelir, yoksa açılmaz (personelde de).
+ * Silineni geri getirir (yeni satır; fotoğraf yeniden bağlanır). Yalnız deleteCashOut'un mühürlü kopyasıyla: aynı kişi,
+ * 15 dakika içinde. Harcama kaydı silinmeden önceki gibi: varsa aynı kategori, açıklama, ödeme şekli ve notla geri
+ * gelir, yoksa açılmaz (personelde de). İstemcinin yazdığı bir kopya kabul edilmez.
  */
-export async function restoreCashOut(snap: CashOutSnapshot) {
+export async function restoreCashOut(undo: string) {
   return attempt(async () => {
     const me = await requireUser();
+    const sealed = z.string().max(8000).safeParse(undo);
+    const snap: CashOutSnapshot | null = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
+    if (!snap) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");
     const d = cashOutSchema.parse({
       id: null,
       date: snap.date,

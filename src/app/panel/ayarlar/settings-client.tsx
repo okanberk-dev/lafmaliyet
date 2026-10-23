@@ -729,6 +729,8 @@ export type LogEntry = {
   dayLabel: string;
   time: string;
   userName: string | null;
+  /** Kayıttaki ad; ad tek başına yanıltabiliyorsa hesabın e-postası (src/lib/activity-person.ts) */
+  person: { name: string; email: string | null; label: string };
   action: string;
   detail: string | null;
 };
@@ -765,17 +767,17 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
   const [kindRaw, setKind] = useQueryState<string>("tur", "");
   const [personRaw, setPerson] = useQueryState<string>("kisi", "");
 
-  const withKind = entries.map((l) => ({ ...l, meta: kindOf(l.action), person: l.userName ?? "Sistem" }));
+  const withKind = entries.map((l) => ({ ...l, meta: kindOf(l.action), who: l.person.label }));
   const kinds = [...LOG_KINDS, OTHER_KIND]
     .map((k) => ({ ...k, count: withKind.filter((l) => l.meta.kind === k.kind).length }))
     .filter((k) => k.count > 0);
-  const people = [...new Set(withKind.map((l) => l.person))].sort((a, b) => a.localeCompare(b, "tr"));
+  const people = [...new Set(withKind.map((l) => l.who))].sort((a, b) => a.localeCompare(b, "tr"));
   // Adresteki geçersiz değer (silinmiş tür, artık listede olmayan kişi) süzgeci kilitlemesin
   const kind = kinds.some((k) => k.kind === kindRaw) ? kindRaw : "";
   const person = people.includes(personRaw) ? personRaw : "";
 
   const shown = withKind.filter(
-    (l) => (!kind || l.meta.kind === kind) && (!person || l.person === person) && matches(`${l.action} ${l.detail ?? ""} ${l.person}`, q),
+    (l) => (!kind || l.meta.kind === kind) && (!person || l.who === person) && matches(`${l.action} ${l.detail ?? ""} ${l.who}`, q),
   );
   const filterActive = Boolean(q.trim()) || Boolean(kind) || Boolean(person);
   const paged = usePaged(shown, 10, `${q}|${kind}|${person}`);
@@ -850,7 +852,8 @@ export function ActivityLog({ entries }: { entries: LogEntry[] }) {
                           }
                           description={
                             <span title={l.detail ?? undefined}>
-                              <span className="font-medium text-ink-soft">{l.person}</span>
+                              <span className="font-medium text-ink-soft">{l.person.name}</span>
+                              {l.person.email ? <span className="break-all text-ink-mute"> ({l.person.email})</span> : null}
                               {l.detail ? ` · ${l.detail}` : null}
                             </span>
                           }

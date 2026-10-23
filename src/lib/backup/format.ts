@@ -75,6 +75,8 @@ const MCP_SKIP = "Claude bağlantıları; geri yüklemeden sonra Claude'da yenid
 
 export const TABLE_RULES: Record<string, TableRule> = {
   user_tokens: { skip: "tek kullanımlık bağlantılar (özet); yenisi gönderilir" },
+  // Giriş bilgileri gibi (USER_CREDENTIAL_COLUMNS): bilinen cihazların hata sayacı ve kilidi geçicidir
+  login_device_locks: { skip: "bilinen cihazların giriş deneme sayaçları (geçici)" },
   push_subscriptions: { skip: "cihazlar panel açılınca yeniden abone olur" },
   users: { dropColumns: USER_CREDENTIAL_COLUMNS },
   integration_state: { where: `key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})` },

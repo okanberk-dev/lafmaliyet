@@ -206,7 +206,7 @@ export function CashOutDialog({
         action: {
           label: "Geri al",
           onClick: () =>
-            void restoreCashOut(res.data).then((r) => {
+            void restoreCashOut(res.data.undo).then((r) => {
               if (!r.ok) toast.error(r.error);
               else toast.success(`Geri alındı: ${cashOutShortLabel(line)} · ${money(line.amount)}`);
             }),

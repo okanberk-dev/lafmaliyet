@@ -6,10 +6,12 @@ import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { z } from "zod";
 
+import { nameTakenBy, sameName } from "@/lib/activity-person";
 import { canOpen, homeFor } from "@/lib/roles";
 import { WRONG_PASSWORD } from "@/lib/step-up";
 import { hashPassword, passwordProblem, verifyPassword } from "@/server/auth/password";
 import { clearPending, endSession, readDevice, readPending, rememberDevice, requireUser, startPending, startSession } from "@/server/auth/dal";
+import { clearDeviceAttempts, consumeRecoveryList, consumeTotpStep, DEVICE_MAX_FAILED, refundDeviceAttempt, reserveDeviceAttempt, type Reservation } from "@/server/auth/login-locks";
 import { clientIp, createLimiter, createLockout } from "@/server/auth/rate-limit";
 import { isKnownDevice, verifyPending, type DeviceToken } from "@/server/auth/session";
 import { confirmPassword, requirePassword } from "@/server/auth/step-up";
@@ -36,16 +38,19 @@ const LOCK_MS = LOCK_MINUTES * 60_000;
 
 /*
  * Kaba kuvvete karşı üç katman. Her deneme doğrulanmadan ÖNCE sayılır, denetim ve sayım tek adımdadır: aynı anda
- * gönderilen yüzlerce istek de sınırı aşamaz (önce sorup sonra sayınca hepsi kilitten önce geçiyordu). Bellektekiler
- * sunucusuz örnek başına sayılır, ilk savunmadır.
- * - Aynı IP'den 15 dakikada en fazla 20 deneme. Başarılı giriş geri verilir: kafedeki ortak IP kapanmasın.
- * - Hesap kilidi (veritabanı): 5 denemede 15 dakika. Bilinen cihaza (bu tarayıcıdan güncel oturum sürümüyle girilmiş)
- *   uygulanmaz; e-postayı bilen biri 5 yanlış parolayla sahibini panelden kapatamasın.
- * - Bilinen cihazın kendi payı: cihaz + kişi başına 10 denemede 15 dakika. Bunu yalnızca o cihaz tüketebilir.
- * Parola doğruysa ve kod adımına geçiliyorsa deneme geri verilir; kod adımı kendi denemelerini aynı paydan sayar.
+ * gönderilen yüzlerce istek de sınırı aşamaz (önce sorup sonra sayınca hepsi kilitten önce geçiyordu). IP sınırı
+ * bellekte, sunucusuz örnek başına sayılır, ilk savunmadır; iki kilit veritabanındadır.
+ * - Aynı IP'den 15 dakikada en fazla 20 deneme, bilinen cihazınki de. Başarılı giriş geri verilir: kafedeki ortak IP
+ *   kapanmasın.
+ * - Hesap kilidi: 5 denemede 15 dakika. Bilinen cihaza (bu tarayıcıdan güncel oturum sürümüyle girilmiş) uygulanmaz;
+ *   e-postayı bilen biri 5 yanlış parolayla sahibini panelden kapatamasın.
+ * - Bilinen cihazın kendi payı (src/server/auth/login-locks.ts): cihaz + kişi başına 10 denemede 15 dakika. Bunu
+ *   yalnızca o cihaz tüketebilir. Önceden bellekteydi ve kilidi yazılmazdı: ortak tablette biri sahibinin parolasını
+ *   kimse görmeden deneyebiliyordu.
+ * İki kilit de başlayınca işlem geçmişine yazılır. Parola doğruysa ve kod adımına geçiliyorsa deneme geri verilir; kod
+ * adımı kendi denemelerini aynı paydan sayar.
  */
 const loginIp = createLimiter({ limit: 20, windowMs: LOCK_MS });
-const deviceLock = createLockout({ max: MAX_FAILED * 2, lockMs: LOCK_MS });
 /** Kayıtsız / pasif e-posta da 5. denemede aynı kilit mesajını alır: girişten hesap var mı yok mu anlaşılmasın */
 const ghostLock = createLockout({ max: MAX_FAILED, lockMs: LOCK_MS });
 /** Kayıtsız e-postada da bir parola özeti denenir (işlemci yükü kayıtlı hesapla aynı olsun) */
@@ -84,17 +89,13 @@ async function padTo(started: number) {
 /** Veritabanındaki kilit sürüyorsa bitişi */
 const activeLock = (u: { lockedUntil: Date | null }) => (u.lockedUntil && u.lockedUntil > new Date() ? u.lockedUntil : null);
 
-/** Bu tarayıcı kişi için bilinen cihazsa (güncel oturum sürümüyle) cihazın hata payı anahtarı, değilse null */
-const knownDeviceKey = (user: { id: number; sessionVersion: number }, device: DeviceToken | null) =>
-  device && isKnownDevice(device, user) ? `${user.id}:${device.did}` : null;
+/** Bu tarayıcı kişi için bilinen cihazsa (güncel oturum sürümüyle) cihazın kimliği (hata payının anahtarı), değilse null */
+const knownDeviceId = (user: { id: number; sessionVersion: number }, device: DeviceToken | null) => (device && isKnownDevice(device, user) ? device.did : null);
 
 function lockedMessage(until: Date) {
   const min = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
   return `Çok fazla hatalı deneme. ${min} dakika sonra yeniden deneyin.`;
 }
-
-/** Sayılan deneme: kilit sürüyorsa değerlendirilmez (`until`), değilse `locked` bu denemeyle başlayan kilidin bitişi */
-type Reservation = { ok: true; locked: Date | null } | { ok: false; until: Date };
 
 /**
  * Denemeyi doğrulamadan ÖNCE hesabın sayacından düşer ve kilidi aynı UPDATE'te verir. Kilit sürüyorsa satır
@@ -134,27 +135,30 @@ async function refundAttempt(userId: number) {
     .where(eq(s.users.id, userId));
 }
 
-/** Denemeyi doğrulamadan önce sayar: bilinen cihazda cihazın payından (bellek), değilse hesabın kilidinden */
-const charge = (userId: number, deviceKey: string | null): Promise<Reservation> | Reservation => (deviceKey ? deviceLock.attempt(deviceKey) : reserveAttempt(userId));
+/** Denemeyi doğrulamadan önce sayar: bilinen cihazda cihazın payından, değilse hesabın kilidinden (ikisi de veritabanında) */
+const charge = (userId: number, deviceId: string | null): Promise<Reservation> => (deviceId ? reserveDeviceAttempt(getDb(), userId, deviceId) : reserveAttempt(userId));
 
 /** charge()'ın saydığı denemeyi geri verir */
-async function refund(userId: number, deviceKey: string | null) {
-  if (deviceKey) deviceLock.refund(deviceKey);
+async function refund(userId: number, deviceId: string | null) {
+  if (deviceId) await refundDeviceAttempt(getDb(), userId, deviceId);
   else await refundAttempt(userId);
 }
 
-/** Hesap kilidi başladı: işlem geçmişine yazılır (sahibi kimin denediğini görsün) */
-async function logLock(user: { name: string; email: string }, where: string) {
-  await logActivity({ name: user.name }, "Hesap kilitlendi", `${user.email}: ${where}, ${MAX_FAILED} hatalı deneme · ${LOCK_MINUTES} dakika`);
+/**
+ * Kilit başladı: işlem geçmişine yazılır (sahibi kimin denediğini görsün). Bilinen cihazın kilidi de: yalnız o cihaz
+ * kilitlenir ama ortak tablette sahibinin parolasını deneyen biri böyle görünür.
+ */
+async function logLock(user: { id: number; name: string; email: string }, where: string, deviceId: string | null) {
+  const detail = deviceId
+    ? `${user.email}: ${where}, bilinen bir cihazdan ${DEVICE_MAX_FAILED} hatalı deneme · o cihaz ${LOCK_MINUTES} dakika`
+    : `${user.email}: ${where}, ${MAX_FAILED} hatalı deneme · ${LOCK_MINUTES} dakika`;
+  await logActivity({ id: user.id, name: user.name }, "Hesap kilitlendi", detail);
 }
 
-async function completeLogin(user: typeof s.users.$inferSelect, next: string | undefined, extra: Partial<typeof s.users.$inferInsert> = {}) {
-  await getDb()
-    .update(s.users)
-    .set({ lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null, ...extra })
-    .where(eq(s.users.id, user.id));
+async function completeLogin(user: typeof s.users.$inferSelect, next: string | undefined) {
+  await getDb().update(s.users).set({ lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null }).where(eq(s.users.id, user.id));
   const did = await rememberDevice(user);
-  deviceLock.clear(`${user.id}:${did}`);
+  await clearDeviceAttempts(getDb(), user.id, did);
   await startSession(user);
   redirect(safeNext(next, user.role));
 }
@@ -189,10 +193,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     await padTo(started);
     return { error, email };
   };
-  const deviceKey = user?.active ? knownDeviceKey(user, await readDevice()) : null;
+  const deviceId = user?.active ? knownDeviceId(user, await readDevice()) : null;
   const ip = clientIp(await headers());
-  // Bilinen cihaz dışında her deneme IP'nin payından düşer; doğru parola geri verir
-  if (!deviceKey && !loginIp.hit(ip)) return fail(TOO_MANY);
+  // Her deneme IP'nin payından düşer (bilinen cihazınki de); doğru parola geri verir
+  if (!loginIp.hit(ip)) return fail(TOO_MANY);
 
   // Kayıtsız ya da pasif: parola yine bir özetle denenir, kilit bellekte tutulur (kayıtlı hesapla aynı kural)
   if (!user || !user.active) {
@@ -205,20 +209,20 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return fail(r.locked ? lockedMessage(r.locked) : WRONG);
   }
 
-  const r = await charge(user.id, deviceKey);
+  const r = await charge(user.id, deviceId);
   if (!r.ok) {
     // Kilitliyken deneme değerlendirilmez; IP'nin payından da düşmez
-    if (!deviceKey) loginIp.undo(ip);
+    loginIp.undo(ip);
     return fail(lockedMessage(r.until));
   }
   if (!(await verifyPassword(password, user.passwordHash))) {
-    if (r.locked && !deviceKey) await logLock(user, "parola");
+    if (r.locked) await logLock(user, "parola", deviceId);
     return fail(r.locked ? lockedMessage(r.locked) : WRONG);
   }
-  if (!deviceKey) loginIp.undo(ip);
+  loginIp.undo(ip);
 
   if (user.totpEnabled && user.totpSecret) {
-    await refund(user.id, deviceKey);
+    await refund(user.id, deviceId);
     await startPending(user, next ?? "");
     return { step: "totp", email };
   }
@@ -241,28 +245,31 @@ export async function verifyLoginCodeAction(_prev: TotpState, formData: FormData
     await clearPending();
     return { error: "Oturum açılamadı, yeniden giriş yapın.", expired: true };
   }
-  const deviceKey = knownDeviceKey(user, await readDevice());
+  const deviceId = knownDeviceId(user, await readDevice());
   // Kod da doğrulanmadan önce sayılır: aynı anda gönderilen yüzlerce kod 15 dakikada 5 denemeyi aşamaz
-  const r = await charge(user.id, deviceKey);
+  const r = await charge(user.id, deviceId);
   if (!r.ok) {
     await clearPending();
     return { error: lockedMessage(r.until), expired: true };
   }
 
+  // Kod ve kurtarma kodu oturum açılmadan önce tek yazımda tüketilir: aynı kod aynı anda iki kez gönderilirse yalnız
+  // biri geçer (okuyup sonra yazınca ikisi de geçiyordu); yarışı kaybeden geçersiz kod sayılır
   const secret = open(user.totpSecret, "totp");
   const step = secret ? verifyTotp(secret, code, user.totpLastStep) : null;
-  if (step !== null) {
-    await completeLogin(user, pending.next, { totpLastStep: step });
+  if (step !== null && (await consumeTotpStep(getDb(), user.id, step))) {
+    await completeLogin(user, pending.next);
     return {};
   }
-  const remaining = await consumeRecoveryCode(user.id, user.recoveryCodes ?? [], code);
-  if (remaining) {
+  const codes = user.recoveryCodes ?? [];
+  const remaining = await consumeRecoveryCode(user.id, codes, code);
+  if (remaining && (await consumeRecoveryList(getDb(), user.id, codes, remaining))) {
     await logActivity(user, "Kurtarma koduyla giriş", `${remaining.length} kod kaldı`);
-    await completeLogin(user, pending.next, { recoveryCodes: remaining });
+    await completeLogin(user, pending.next);
     return {};
   }
 
-  if (r.locked && !deviceKey) await logLock(user, "iki adımlı kod");
+  if (r.locked) await logLock(user, "iki adımlı kod", deviceId);
   await slow();
   if (r.locked) {
     await clearPending();
@@ -330,7 +337,10 @@ const profileSchema = z.object({
   password: z.string().min(1, "Değişikliği onaylamak için parolanızı girin"),
 });
 
-/** Ad ve giriş e-postası; parola ile onaylanır */
+/**
+ * Ad ve giriş e-postası; parola ile onaylanır. Ad başka bir hesabın adı olamaz: işlem geçmişinde ve sitenin olay
+ * kaydında o kişi gibi görünmesin (İşlem geçmişi hesabın e-postasını da gösterir, src/lib/activity-person.ts).
+ */
 export async function updateProfile(input: z.input<typeof profileSchema>) {
   return attempt(async () => {
     const me = await requireUser();
@@ -342,6 +352,10 @@ export async function updateProfile(input: z.input<typeof profileSchema>) {
       .from(s.users)
       .where(and(eq(s.users.email, data.email), ne(s.users.id, me.id)));
     if (n > 0) throw new UserError("Bu e-posta başka bir kullanıcıda kayıtlı");
+    // Ad değişmediyse (eskiden aynı adla açılmış iki hesap) e-posta yine değiştirilebilir
+    if (!sameName(data.name, u.name) && nameTakenBy(data.name, me.id, await db.select({ id: s.users.id, name: s.users.name }).from(s.users))) {
+      throw new UserError("Bu ad başka bir kullanıcıda kayıtlı; ayırt edilecek bir ad yazın (ör. soyadının baş harfiyle)");
+    }
     await db.update(s.users).set({ name: data.name, email: data.email }).where(eq(s.users.id, me.id));
     // Eski adrese gönderilmiş sıfırlama bağlantısı artık parola belirleyemez
     if (data.email !== u.email) await expireUserTokens(me.id);

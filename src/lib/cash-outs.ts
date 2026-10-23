@@ -4,6 +4,8 @@
  * src/app/panel/kasa/cash-outs.tsx, eylemler src/server/actions/cash-outs.ts.
  */
 
+import { z } from "zod";
+
 import { money } from "./format";
 
 export type CashOutKind = "harcama" | "teslim";
@@ -118,4 +120,69 @@ export function cashOutWritesExpense(o: {
  */
 export function staffExpenseLocked(category: { section: string; panelGroup: string; active: boolean } | null | undefined): boolean {
   return category != null && !staffCategory(category);
+}
+
+/** Silinen satırın kopyası: "Geri al" satırı ve harcama kaydını silinmeden önceki gibi geri getirir */
+export interface CashOutSnapshot {
+  date: string;
+  kind: CashOutKind;
+  amount: number;
+  store: string | null;
+  description: string | null;
+  receiptDate: string | null;
+  receiptNo: string | null;
+  vat: number | null;
+  docType: CashOutDocType;
+  photoId: number | null;
+  expense: { categoryId: number; note: string | null; description?: string | null; paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null } | null;
+}
+
+/** "Geri al" bu kadar süre geçerli (bildirim 8 sn görünür; fotoğrafı az önce bırakılmış sayma penceresiyle aynı) */
+export const CASH_OUT_UNDO_MS = 15 * 60_000;
+
+const snapshotSchema = z.object({
+  date: z.string(),
+  kind: z.enum(["harcama", "teslim"]),
+  amount: z.number(),
+  store: z.string().nullable(),
+  description: z.string().nullable(),
+  receiptDate: z.string().nullable(),
+  receiptNo: z.string().nullable(),
+  vat: z.number().nullable(),
+  docType: z.enum(["fis", "e_arsiv", "fatura", "yok"]),
+  photoId: z.number().int().nullable(),
+  expense: z
+    .object({
+      categoryId: z.number().int(),
+      note: z.string().nullable(),
+      description: z.string().nullable().optional(),
+      paymentMethod: z.enum(["nakit", "kart", "havale", "diger"]).nullable().optional(),
+    })
+    .nullable(),
+});
+
+const undoSchema = z.object({ v: z.literal(1), by: z.number().int(), exp: z.number(), snap: snapshotSchema });
+
+/**
+ * "Geri al"ın içeriği: kim sildi, ne zamana kadar ve silinen satır. Sunucu bunu mühürler (secret-box "cashout-undo");
+ * istemci yalnız mühürlü metni geri verir, içini değiştiremez. Önceden kopya istemciden olduğu gibi alınıyordu:
+ * personel hiç silmediği bir satırı faturalı, kartla ödenmiş ve istediği notla "geri getirip" Aylık harcamalar'a
+ * yazdırabiliyordu (fatura Paraşüt'ten de geldiği için iki kez sayılırdı).
+ */
+export function cashOutUndoJson(by: number, snap: CashOutSnapshot, now: number): string {
+  return JSON.stringify({ v: 1, by, exp: now + CASH_OUT_UNDO_MS, snap });
+}
+
+/** Mühür açıldıktan sonra: aynı kişi ve süresi geçmemişse silinen satır, değilse null */
+export function readCashOutUndo(json: string | null, by: number, now: number): CashOutSnapshot | null {
+  if (!json) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const parsed = undoSchema.safeParse(value);
+  if (!parsed.success || parsed.data.by !== by || parsed.data.exp <= now) return null;
+  return parsed.data.snap;
 }
