@@ -38,13 +38,28 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    açılan hatırlatıcı (personel bölümündeki kalem maaş türüyle açılır: Muhasebeci, Part-time çalışan) gideri silinse ya
    da adı değişse de bordro sayılmaz: maaşı ve SGK'yı kapatmaz, diğer hatırlatıcıdır.
 3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
-   tevkifatı (adında KDV ile birlikte “2 No.lu”, “KDV2”, “tevkifat”) ayrı bir ödemedir: asıl KDV'nin dönemini almaz,
-   devredeni sıfırlamaz. Böyle bir hatırlatıcı yalnız günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü): o
-   dönemde faturalardan hesaplanan *KDV-2* tahmini ayrıca yazılmaz (iki kez sayılmasın diye). Tutarı yazılıysa her
-   gününde o tutar girer; tutarsızsa tahmin hatırlatıcının gününde girer, tahmin yoksa (KDV tahmine katılmıyor ya da
-   dönemin verisi yok) tutarı girilmemiş ödemedir. Kartta “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı
-   yazılıysa o, boşsa bu tahmin” yazar. Adında KDV geçmeyen “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj” ya da
-   “2 No.lu dükkan” KDV-2 değildir, diğer hatırlatıcıdır.
+   tevkifatı ayrı bir ödemedir: asıl KDV'nin dönemini almaz, devredeni sıfırlamaz. KDV-2 hatırlatıcısı adında
+   “tevkifat”, “2 No.lu”, “KDV2” ya da “sorumlu sıfatıyla” ile birlikte KDV geçen hatırlatıcıdır; KDV'siz yalnız
+   “2 No.lu beyanname”. Yalnız damga vergisi (“KDV2 damga vergisi”, “KDV damga vergisi”) ayrı ödemedir, ne KDV ne
+   KDV-2 hatırlatıcısıdır; tahakkukla birlikte yazılan (“KDV2 + damga vergisi”, “Damga vergisi ve Eylül KDV2”, “damga
+   dahil”) ya da damgayı dışarıda bırakan (“KDV2 (damga hariç)”) KDV-2'dir. Başlık serbest metindir: en sağlamı
+   tahakkuku “KDV2 Eylül”, damgayı ayrı “KDV2 damga vergisi” diye yazmaktır; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
+   beyannamesi”, “Tevkifat beyannamesi” (muhtasar da böyle anılır) ve “2 No.lu dükkan” diğer hatırlatıcıdır.
+   KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü), 1 No.lu KDV'deki gibi:
+   - tutarı yazılıysa her gününde o tutar girer ve dönemi alır;
+   - tutarsızsa faturalardan hesaplanan *KDV-2* tahmini hatırlatıcının gününde girer;
+   - dönemi başka bir KDV-2 hatırlatıcısı almışsa ya da tahmin yoksa (KDV tahmine katılmıyor, dönemin verisi yok)
+     tutarı girilmemiş ödemedir: iki kez sayılmaz, sessizce de düşmez;
+   - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, kartta görünmez. Ödenen gün
+     Ödemeler'in son ödenenlerinden (`payments.recent`, 30 gün) okunur: ödenen gün ile sıradaki gün arasındaki her
+     dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme ya da hatırlatıcıyı kapatma bir dönemi ödemiş saymaz,
+     ödenmişi de geri açmaz. Tarihi geri alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler. “Geri al”
+     ve hatırlatıcıyı silmek kaydı siler; kayıt hatırlatıcı başına bir tanedir, aynı seride ikinci (yanlış) Ödendi geri
+     alınınca ilki de gider ve dönemin tahmini 25'ine kadar geri gelir;
+   - ertelenen dönemin notu asıl günü taşır (“Ertelendi · asıl tarih 25.10.2026”, tekrar edenin kopyası da ertelenen
+     tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
+   Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o,
+   boşsa bu tahmin” yazar.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
    görünür (“Ödemeler'de tutar girin”).
 
@@ -114,9 +129,10 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
   Kart “Ödemeler'de KDV hatırlatıcısı yok; tahmin ayın 28'ine yazıldı” der ve **Hatırlatıcı ekle** önerir (KDV
   tahmine katılmıyorsa “KDV tahmini plana katılmıyor; Tahmine katılanlar'dan açabilirsiniz.”).
 - KDV hatırlatıcısı varsa tahmin onun günlerine yazılır. Tutar yazılmış dönem kesindir (normal hatırlatıcı satırı);
-  tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Hatırlatıcı 1 hafta ertelenince açılan
-  kopya (ayın 1–7'si) hâlâ iki ay önceki dönemin KDV'sidir. Aynı döneme ikinci bir KDV hatırlatıcısı “Tutarı girilmemiş”e
-  düşer.
+  tutarsız dönem tahminini taşır ve “Tutarı girilmemiş ödemeler”de görünmez. Ertelenen dönemin (tekrar edenin kopyası
+  ya da tek seferlik) dönemi notundaki asıl gündendir (“Ertelendi · asıl tarih 28.10.2026”): 10 Kasım'a ertelenen Eylül
+  KDV'si Eylül'ündür. Notsuz bir günün ayın 1–7'si iki ay önceki dönemdir. Aynı döneme ikinci bir KDV hatırlatıcısı
+  “Tutarı girilmemiş”e düşer. “Geri al” ertelemenin yazdığı notu da geri alır.
 - Tahmin ≤ 0 ise satır yok (kartta “Ödeme beklenmez”). Satış verisi olmayan dönemde tahmin yok. KDV hatırlatıcısının
   sıradaki günü 6 haftanın dışındaysa kartta satır olmaz (“bu dönemde KDV ödemesi yok”).
 - Tahmine katılanlar'dan **KDV** kapatılırsa kesin tutarlar yine yazılır, tahminler plana girmez (kart gri, “Plana
@@ -126,7 +142,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 - **KDV-2:** dönemin faturalarında tevkifat varsa izleyen ayın 25'ine, yarından itibaren “KDV-2 (Eylül)” tahmini satırı
   girer (anahtar `kdv2@2026-10-25`, `#kdv`'ye götürür). Kartta 1 No.lu satırların altında ayrı satırdır; dökümde alışların
   altında “İçinde tevkifat ≈ …” yazar. KDV tahmine katılmıyorsa ya da Ödemeler'deki KDV-2 hatırlatıcısı o dönemi
-  karşılıyorsa plana girmez.
+  karşılıyorsa plana girmez; o dönem için “Ödendi” denmişse kartta da görünmez.
 
 **Excel verisiyle** (bugün 22 Ekim 2026): kasa KDV'si Temmuz 15.800, Ağustos 45.500, Eylül 39.200, Ekim ≈ 51.800 ₺ (16
 günden aya tamamlanmış); alış KDV'si 225.300 (açılış alımları), 3.500, 11.900, 9.700 ₺. Otomatik zincirle Eylül'den

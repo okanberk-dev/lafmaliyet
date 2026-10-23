@@ -13,6 +13,8 @@ export interface ReminderSnapshot {
   lastDoneAt: string | null;
   /** Tutar (Ödendi'de silinen KDV tutarı geri alınınca geri yazılır); eski kayıtlarda yok */
   amount?: number | null;
+  /** Not (ertelemenin yazdığı "Ertelendi · asıl tarih" geri alınınca döner); eski kayıtlarda yok */
+  note?: string | null;
 }
 
 export interface RecentPaid {

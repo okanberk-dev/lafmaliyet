@@ -13,6 +13,8 @@ import {
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
+  postponedFrom,
+  postponeNote,
   monthLocativeTR,
   nextOccurrence,
   presetAnchor,
@@ -169,6 +171,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
     ["1 No.lu KDV", "vergi"],
     ["Ekim 2026 KDV", "vergi"],
     ["KDV 2. taksit", "vergi"],
+    ["KDV ve damga vergisi", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), true, title);
   }
@@ -186,6 +189,10 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
     ["2 numaralı KDV", "vergi"],
     ["Tevkifatlı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
+    ["Sorumlu sıfatıyla KDV beyannamesi", "vergi"],
+    // Beyannamenin yalnız damga vergisi KDV ödemesi değildir
+    ["KDV damga vergisi", "vergi"],
+    ["1 No.lu KDV damga vergisi", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), false, title);
   }
@@ -201,7 +208,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
   assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
 });
 
-test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KDV; muhtasar, stopaj ve 2 No.lu dükkan değil", () => {
+test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfatıyla ile birlikte KDV, ya da \"2 No.lu beyanname\"; muhtasar, stopaj, damga ve 2 No.lu dükkan değil", () => {
   for (const [title, kind] of [
     ["KDV2 tevkifat", "vergi"],
     ["KDV 2", "vergi"],
@@ -210,6 +217,24 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
     ["2 numaralı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
     ["Katma değer vergisi tevkifatı", "vergi"],
+    ["Sorumlu sıfatıyla KDV beyannamesi", "vergi"],
+    // Panelin kendi sözü (KDV-2 satırının açıklaması: "2 No.lu beyannameyle ayın 25'inde ödenir")
+    ["2 No.lu beyanname", "vergi"],
+    ["2. No.lu beyanname", "vergi"],
+    ["2 nolu beyanname", "odeme"],
+    ["Beyanname (2 No'lu)", "vergi"],
+    // Tahakkukla birlikte yazılan damga vergisi
+    ["KDV2 + damga vergisi", "vergi"],
+    ["KDV 2 (damga dahil)", "vergi"],
+    ["2 No.lu KDV ve damga vergisi", "vergi"],
+    ["KDV2 tahakkuku + damga", "vergi"],
+    ["Damga vergisi ve KDV2", "vergi"],
+    ["Damga + KDV2", "vergi"],
+    ["Damga ve 2 No.lu KDV", "vergi"],
+    ["Damga vergisi ve Eylül KDV2", "vergi"],
+    // Damgayı dışarıda bırakan tahakkuk
+    ["KDV2 (damga hariç)", "vergi"],
+    ["KDV2 (damga ayrı)", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -217,6 +242,23 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
   for (const [title, kind] of [
     ["Muhtasar (gelir vergisi tevkifatı)", "vergi"],
     ["Stopaj tevkifat", "vergi"],
+    ["Muhtasar beyannamesi (gelir vergisi tevkifatı)", "vergi"],
+    ["Stopaj tevkifat beyannamesi", "vergi"],
+    // Muhtasar da "tevkifat beyannamesi" diye anılır; damga vergisi ayrı ödemedir; başka vergilerin beyannamesi
+    ["Tevkifat beyannamesi", "odeme"],
+    ["Kira tevkifatı beyannamesi", "vergi"],
+    ["Serbest meslek tevkifatı beyannamesi", "vergi"],
+    ["Kurumlar vergisi tevkifatı beyannamesi", "vergi"],
+    ["Geçici vergi beyannamesi 2 No.lu", "vergi"],
+    ["Damga vergisi beyannamesi 2 No.lu", "vergi"],
+    ["2 No.lu beyanname damga vergisi", "vergi"],
+    ["KDV2 damga vergisi", "vergi"],
+    // Yalnız damga vergisi, başka bir şeyle birlikte ("ve gecikme zammı", "Eylül ve Ekim")
+    ["KDV2 damga vergisi ve gecikme zammı", "vergi"],
+    ["KDV2 damga vergisi (gecikme zammı dahil)", "vergi"],
+    ["KDV2 damga vergisi Eylül ve Ekim", "vergi"],
+    ["Damga vergisi (KDV2 ve Muhtasar)", "vergi"],
+    ["Beyanname 2 numaralı şube", "odeme"],
     ["Aidat 2 No.lu dükkan", "odeme"],
     ["Elektrik 2 numaralı sayaç", "odeme"],
     ["KDV beyannamesi ve ödemesi", "vergi"],
@@ -224,6 +266,27 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), false, title);
   }
+});
+
+test("erteleme notu asıl günü taşır; zaten ertelenmişin ilk asıl günü korunur; iki erteleme yolu da onu yazar", () => {
+  assert.equal(postponeNote(null, "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026");
+  assert.equal(postponeNote("Muhasebeci öder", "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026 · Muhasebeci öder");
+  assert.equal(postponeNote("Ertelendi · asıl tarih 25.10.2026", "2026-11-01"), "Ertelendi · asıl tarih 25.10.2026");
+  // Elle yazılmış "Ertelendi, ..." notu asıl gün sayılmaz: asıl gün yine yazılır
+  assert.equal(postponeNote("Ertelendi, muhasebeci haber verecek", "2026-10-25"), "Ertelendi · asıl tarih 25.10.2026 · Ertelendi, muhasebeci haber verecek");
+  assert.equal(postponeNote("x".repeat(600), "2026-10-25").length, 500);
+  assert.equal(postponedFrom(postponeNote("Muhasebeci öder", "2026-10-25")), "2026-10-25");
+  assert.equal(postponedFrom("Muhasebeci öder"), null);
+  assert.equal(postponedFrom(null), null);
+  const src = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
+  const postpone = src.slice(src.indexOf("export async function postponeReminder"), src.indexOf("export async function postponeInvoice"));
+  // Tek seferlik (yerinde kayar) ve tekrar edenin kopyası
+  assert.equal(postpone.match(/postponeNote\(/g)?.length, 2);
+  assert.match(postpone, /set\(\{ dueDate: target, anchorDate: target, note: postponeNote\(r\.note, r\.dueDate\) \}\)/);
+  // "Geri al" ertelemenin yazdığı notu da geri alır
+  assert.match(src, /function snapshot\(r: ReminderDbRow\) \{\n {2}return \{[^}]*note: r\.note/);
+  const restore = src.slice(src.indexOf("export async function restoreReminder"), src.indexOf("export async function undoRecentPaid"));
+  assert.match(restore, /snap\.note !== undefined \? \{ note: snap\.note \}/);
 });
 
 test("KDV tutarı Ödendi ve ertelemede seriden silinir, geri al geri yazar (sunucu eylemleri)", () => {
