@@ -392,8 +392,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Açılış ve kapanış listeleri",
         a: (
           <>
-            Personel sabah açılışta ve gece kapanışta <Path href="/panel/kontrol" /> listesini telefondan doldurur: maddeyi işaretler, buzdolabı sıcaklığını
-            yazar, istenen yerde fotoğraf çeker. Her dokunuş hemen kaydedilir; geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Sıcaklık aralık
+            Personel sabah açılışta ve gece kapanışta listeyi telefondan <Path href="/panel/kontrol" /> ekranında doldurur: maddeyi işaretler, buzdolabı
+            sıcaklığını yazar, istenen yerde fotoğraf çeker. Her dokunuş hemen kaydedilir; geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Sıcaklık aralık
             dışındaysa not ister ve size bildirilir. Listeler Bugün ekranında görünür; yapılmayan liste ertesi sabah e-postada çıkar. Maddeleri ve saatleri
             Kontrol listeleri › Listeler&apos;den, geçmişi Kontrol listeleri › Geçmiş&apos;ten görürsünüz. Fotoğraflar 60 gün saklanır.
           </>

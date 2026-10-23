@@ -2,6 +2,7 @@
 // Kullanım:
 //   npm run db:seed              -> veritabanı boşsa yükler
 //   npm run db:seed -- --reset   -> kullanıcılar hariç bütün veriyi silip yeniden yükler
+// İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
