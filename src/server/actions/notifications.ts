@@ -4,7 +4,7 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, lastRevision } from "@/lib/cash-report";
+import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, lateCorrections } from "@/lib/cash-report";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, money, monthShort, tl } from "@/lib/format";
@@ -110,16 +110,17 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
     });
   }
   // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
-  out.push(...(await cashIntegrityNotifications(reports, day).catch(() => [])));
+  out.push(...(await cashIntegrityNotifications(reports, day, user.id).catch(() => [])));
   return out;
 }
 
 /**
  * Yönetici: kasanın bütünlüğü (docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). Bugünün ve dünün raporunda açılış
- * önceki devirle tutmuyorsa; son 7 günün bir raporu iş günü kapandıktan sonra kasa alanı değiştirilerek
- * düzeltildiyse. Kimlik sürümden: rapor yeniden düzeltilince yeniden okunmamış olur. İki küçük sorgu.
+ * önceki devirle tutmuyorsa (kimlik raporun sürümünden: yeniden gönderilince yeniden okunmamış olur); son 7 günün bir
+ * raporu iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildiyse (src/lib/cash-report.ts lateCorrections:
+ * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). İki küçük sorgu.
  */
-async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string): Promise<PanelNotification[]> {
+async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
   if (!reports.length) return [];
   const oldest = reports[reports.length - 1];
   const [before, revisions] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
@@ -142,13 +143,13 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
     });
   }
   for (const r of reports) {
-    const last = r.revision > 1 ? lastRevision(r, revisions.filter((x) => x.reportId === r.id)) : null;
-    if (!last?.late) continue;
+    const late = r.revision > 1 ? lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) : null;
+    if (!late) continue;
     out.push({
-      id: `kasa-duzeltme-${r.date}-r${r.revision}`,
+      id: `kasa-duzeltme-${r.date}-r${late.revision}`,
       kind: "warning",
       title: "Kasa raporu ertesi gün değişti",
-      body: [longDateTR(r.date), r.submittedByName, changesText(last.changes.filter((x) => x.sensitive))].join(" · "),
+      body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
       timeLabel: timeLabel(r.date),
       unread: true,
       href: `/panel/kasa?gun=${r.date}`,

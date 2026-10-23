@@ -269,8 +269,12 @@ export function isLateEdit(date: string, submittedAt: Date): boolean {
   return businessDate(submittedAt) > date;
 }
 
-/** Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan) */
-export function revisionDataOf(r: CashReportFields & { cashDiff: number; countedByName: string | null }): CashRevisionData {
+/**
+ * Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan). Sayanı boş rapor (bu özellikten önce
+ * kaydedilmiş) gönderenin saydığı raporudur: kopyaya o yazılır, yoksa ilk düzeltmede kimsenin yapmadığı "Sayan — → Ayşe"
+ * değişikliği görünür.
+ */
+export function revisionDataOf(r: CashReportFields & { cashDiff: number; countedByName: string | null; submittedByName?: string }): CashRevisionData {
   return {
     date: r.date,
     zNo: r.zNo,
@@ -291,7 +295,7 @@ export function revisionDataOf(r: CashReportFields & { cashDiff: number; counted
     discounts: r.discounts,
     note: r.note,
     cashDiff: r.cashDiff,
-    countedByName: r.countedByName,
+    countedByName: r.countedByName ?? r.submittedByName ?? null,
   };
 }
 
@@ -299,10 +303,15 @@ export function revisionDataOf(r: CashReportFields & { cashDiff: number; counted
 export interface CashRevisionRow {
   revision: number;
   data: CashRevisionData;
+  /** O sürümü gönderen (zil yöneticinin kendi düzeltmesini saymaz; kullanıcı silindiyse boş) */
+  submittedBy?: number | null;
   submittedByName: string;
   /** O sürümün gönderildiği an (ISO) */
   submittedAt: string;
 }
+
+/** Sayanı boş kopya (bu özellikten önceki rapordan, düzeltilmeden alınmış): o sürümü gönderen saymış sayılır */
+const withCounter = (d: CashRevisionData, by: string): CashRevisionData => (d.countedByName ? d : { ...d, countedByName: by });
 
 export interface RevisionEntry {
   /** Bu gönderimle gelen sürüm */
@@ -310,6 +319,7 @@ export interface RevisionEntry {
   /** Gönderim anı (ISO) ve gönderen */
   at: string;
   by: string;
+  byId: number | null;
   changes: FieldChange[];
   /** İş günü kapandıktan sonra ve kasa alanı değişti */
   late: boolean;
@@ -321,19 +331,27 @@ export interface RevisionEntry {
  * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar.
  */
 export function historyOf(
-  report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string },
+  report: CashReportFields & {
+    revision: number;
+    cashDiff: number;
+    countedByName: string | null;
+    submittedBy?: number | null;
+    submittedByName: string;
+    createdAt: string;
+    updatedAt: string;
+  },
   revisions: CashRevisionRow[],
 ): { entries: RevisionEntry[]; first: { at: string; by: string | null } } {
   const snaps = [...revisions].filter((r) => r.revision < report.revision).sort((a, b) => a.revision - b.revision);
   const versions = [
-    ...snaps.map((s) => ({ revision: s.revision, data: s.data, at: s.submittedAt, by: s.submittedByName })),
-    { revision: report.revision, data: revisionDataOf(report), at: report.updatedAt, by: report.submittedByName },
+    ...snaps.map((s) => ({ revision: s.revision, data: withCounter(s.data, s.submittedByName), at: s.submittedAt, by: s.submittedByName, byId: s.submittedBy ?? null })),
+    { revision: report.revision, data: revisionDataOf(report), at: report.updatedAt, by: report.submittedByName, byId: report.submittedBy ?? null },
   ];
   const entries: RevisionEntry[] = [];
   for (let i = 1; i < versions.length; i++) {
     const v = versions[i];
     const changes = revisionChanges(versions[i - 1].data, v.data);
-    entries.push({ revision: v.revision, at: v.at, by: v.by, changes, late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive) });
+    entries.push({ revision: v.revision, at: v.at, by: v.by, byId: v.byId, changes, late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive) });
   }
   const knownFirst = snaps[0]?.revision === 1 ? snaps[0].submittedByName : report.revision === 1 ? report.submittedByName : null;
   return { entries: entries.reverse(), first: { at: report.createdAt, by: knownFirst } };
@@ -345,7 +363,7 @@ export function historyOf(
  * (previousCarryOver), `next`: sonraki rapor (nextReportAfter), `revisions`: raporun kayıtlı önceki sürümleri.
  */
 export function integrityOf(
-  r: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; updatedAt: string },
+  r: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; updatedAt: string },
   prev: { date: string; amount: number } | null,
   next: { date: string; openingCash: number } | null,
   revisions: CashRevisionRow[],
@@ -365,15 +383,37 @@ export function stampTR(iso: string): string {
   return `${dayMonthTR(todayTR(d))} ${time}`;
 }
 
-/** Son düzeltme (şimdiki sürüm ile bir önceki kopya): ertesi gün kasa alanı değiştiyse yönetici uyarılır */
+/** Son düzeltme (şimdiki sürüm ile bir önceki kopya): e-posta ve WhatsApp'taki "Değişen:" satırı */
 export function lastRevision(
-  report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; updatedAt: string },
+  report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; updatedAt: string },
   revisions: CashRevisionRow[],
 ): { changes: FieldChange[]; late: boolean } | null {
   const prev = revisions.find((r) => r.revision === report.revision - 1);
   if (!prev) return null;
-  const changes = revisionChanges(prev.data, revisionDataOf(report));
+  const changes = revisionChanges(withCounter(prev.data, prev.submittedByName), revisionDataOf(report));
   return { changes, late: isLateEdit(report.date, new Date(report.updatedAt)) && changes.some((c) => c.sensitive) };
+}
+
+/**
+ * Zilin "Kasa raporu ertesi gün değişti" bildirimi: iş günü kapandıktan sonra kasa alanı değişen bütün düzeltmeler,
+ * yalnız sonuncusu değil (ardından not için yeniden gönderilen rapor uyarıyı kapatmaz). Bakan yöneticinin kendi
+ * düzeltmeleri sayılmaz (`viewer`). `revision`: en yeni geç düzeltmenin sürümü (bildirimin kimliği; yalnız yeni bir geç
+ * düzeltme yeniden okunmamış yapar), `by`: düzeltenler, `changes`: o düzeltmelerde değişen kasa alanları, eskiden
+ * yeniye. Yoksa null.
+ */
+export function lateCorrections(
+  report: Parameters<typeof historyOf>[0],
+  revisions: CashRevisionRow[],
+  viewer: number | null,
+): { revision: number; by: string[]; changes: FieldChange[] } | null {
+  const late = historyOf(report, revisions).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
+  if (!late.length) return null;
+  const oldestFirst = [...late].reverse();
+  return {
+    revision: late[0].revision,
+    by: [...new Set(oldestFirst.map((e) => e.by))],
+    changes: oldestFirst.flatMap((e) => e.changes.filter((c) => c.sensitive)),
+  };
 }
 
 /** Türkiye numarası wa.me biçimine: "0532 123 45 67" → "905321234567"; geçersizse null */

@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   cardShareProblem,
   collectSuggestions,
+  effectiveValue,
   fieldPayload,
   fieldText,
   fieldValue,
@@ -21,6 +22,7 @@ import {
   marginPosition,
   marginScale,
   monthPhase,
+  monthSavedToast,
   openDaysHint,
   openDaysProblem,
   percentileInc,
@@ -218,6 +220,36 @@ test("kaydedilecek değer: kasa kipinde ve boşta null; kasadakine dokunup deği
   assert.equal(fieldPayload("discounts", { mode: "elle", text: "0", kasa: null, manualBefore: false }), 0, "elle yazılan 0");
   assert.equal(fieldPayload("cardShare", { mode: "elle", text: "83,2", kasa: 0.832, manualBefore: false }), null);
   assert.equal(fieldPayload("cardShare", { mode: "elle", text: "85", kasa: 0.832, manualBefore: false }), 0.85);
+});
+
+test("geçerli değer: kasadakine dokunup değiştirmemek kasadakini korur (tutarlılık kutusu ve 'Bunu yaz' kaybolmaz)", () => {
+  assert.equal(effectiveValue("posRevenue", { mode: "kasa", text: "", kasa: 245_300, payload: null }), 245_300);
+  assert.equal(effectiveValue("posRevenue", { mode: "elle", text: " ", kasa: 245_300, payload: null }), 245_300, "boş elle alan kasaya döner");
+  // Kasadan gelen alana dokunuldu (Elle kipi, kasadaki yazılı): gidecek değer boş, geçerli değer yine kasadaki
+  const touched = { mode: "elle" as const, text: fieldText("posRevenue", 245_300.5), kasa: 245_300.5 };
+  assert.equal(fieldPayload("posRevenue", { ...touched, manualBefore: false }), null);
+  assert.equal(effectiveValue("posRevenue", { ...touched, payload: null }), 245_300.5);
+  assert.equal(effectiveValue("offRevenue", { mode: "elle", text: fieldText("offRevenue", 1_250), kasa: 1_250, payload: null }), 1_250);
+  assert.equal(effectiveValue("cardShare", { mode: "elle", text: fieldText("cardShare", 0.8346), kasa: 0.8346, payload: null }), 0.8346);
+  // Yazılan değer (0 dahil) geçerli; okunamayan metin ve kasanın uygulanmadığı boş alan değersiz
+  assert.equal(effectiveValue("posRevenue", { mode: "elle", text: "250.000", kasa: 245_300, payload: 250_000 }), 250_000);
+  assert.equal(effectiveValue("discounts", { mode: "elle", text: "0", kasa: 3_200, payload: 0 }), 0);
+  assert.equal(effectiveValue("posRevenue", { mode: "elle", text: "abc", kasa: 245_300, payload: null }), null);
+  assert.equal(effectiveValue("posRevenue", { mode: "elle", text: "", kasa: null, payload: null }), null);
+  // Ekran bu kuralı kullanır
+  const client = readFileSync(join(root, "src/app/panel/satislar/sales-client.tsx"), "utf8");
+  assert.match(client, /const effective = \(f: MonthField\) => effectiveValue\(f, \{ mode: modes\[f\], text: texts\[f\], kasa: kasaOf\(f\), payload: payloads\[f\] \}\);/);
+});
+
+test("ay bilgisi kaydedildi: bütün alanlar boşalınca kasa raporu olan ay 'boşaltıldı' sayılmaz (bilgiler kasadan gelir)", () => {
+  assert.deepEqual(monthSavedToast({ removed: false, kasa: true }, "Kasım 2026"), { title: "Ay bilgileri kaydedildi" });
+  assert.deepEqual(monthSavedToast({ removed: true, kasa: true }, "Kasım 2026"), {
+    title: "Ay bilgileri kaydedildi",
+    description: "Elle yazılan kalmadı; boş alanlar kasa raporlarından gelir.",
+  });
+  assert.deepEqual(monthSavedToast({ removed: true, kasa: false }, "Kasım 2026"), { title: "Ay bilgileri boşaltıldı", description: "Kasım 2026 için kayıtlı bilgi kalmadı." });
+  const action = readFileSync(join(root, "src/server/actions/sales.ts"), "utf8");
+  assert.match(action, /const kasa = await hasCashReportIn\(data\.month, db\);[\s\S]*?return \{ removed, kasa \};/);
 });
 
 test("kasa açıklaması: kaç günlük rapordan; indirim ve ödenmezde kaç günde girildi; elle kipinde kasadaki", () => {

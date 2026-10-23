@@ -172,6 +172,7 @@ export async function cashRevisionsFor(ids: number[]): Promise<CashRevisionDTO[]
     reportId: r.reportId,
     revision: r.revision,
     data: r.data as CashRevisionData,
+    submittedBy: r.submittedBy,
     submittedByName: r.submittedByName,
     submittedAt: r.submittedAt.toISOString(),
     createdAt: r.createdAt.toISOString(),

@@ -83,17 +83,18 @@ export async function saveMonthInfo(input: z.input<typeof monthInfoSchema>) {
       });
     // Bütün alanlar boşaltıldıysa ve ayda başka kayıt yoksa boş ay satırı kalmasın
     const removed = await dropEmptyMonth(db, data.month);
-    // Boş alan, ayın kasa raporu varsa oradan gelir: işlem geçmişi bunu söyler
-    const empty = (await hasCashReportIn(data.month, db)) ? "kasadan" : "boş";
+    // Boş alan, ayın kasa raporu varsa oradan gelir: işlem geçmişi ve ekrandaki bildirim bunu söyler ("boşaltıldı" değil)
+    const kasa = await hasCashReportIn(data.month, db);
+    const empty = kasa ? "kasadan" : "boş";
     await logActivity(
       me,
       "Ay bilgisi",
       removed
-        ? `${monthLabel(data.month)}: bilgiler boşaltıldı`
+        ? `${monthLabel(data.month)}: ${kasa ? "elle yazılanlar boşaltıldı, bilgiler kasa raporlarından" : "bilgiler boşaltıldı"}`
         : `${monthLabel(data.month)}: ciro ${data.posRevenue === null ? empty : tl(data.posRevenue)}, açık gün ${data.openDays ?? empty}`,
     );
     refresh();
-    return { removed };
+    return { removed, kasa };
   });
 }
 

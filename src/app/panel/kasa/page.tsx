@@ -133,8 +133,12 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // Personel yalnız kendi seçebildiği kategorilerin adını görür (yöneticinin maaş, kira gibi seçimi adıyla görünmez)
   const staffCats = new Set(categories.map((c) => c.id));
   const dayOuts = admin ? outs : outs.map((o) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o));
-  // Raporun fotoğrafları: yönetici hepsini, personel hâlâ düzenleyebildiği günü görür (fotoğraf erişimiyle aynı kural)
-  const photoInfo = report && canEdit ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
+  // Raporun fotoğraf bilgisi: WhatsApp metninin "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı yazılan" satırları
+  // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
+  // kendisini (küçük resim, büyütme) yalnız görebilen görür: yönetici ya da personelin hâlâ düzenleyebildiği gün
+  // (/api/foto'nun kuralı, staffDayOpen); kapanan günde personel küçük resim yerine fiş simgesini görür (403 olmasın)
+  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
+  const showPhotos = canEdit;
   const whatsapp = report
     ? (() => {
         const text = whatsappText(report, {
@@ -197,7 +201,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       recipients={settings.emailEnabled ? settings.recipients.length : 0}
       canEdit={canEdit}
       photoUi={photoUi}
-      saved={report ? (photoInfo ?? { photos: [], readings: [] }) : null}
+      saved={report ? { photos: showPhotos ? (photoInfo?.photos ?? []) : [], readings: photoInfo?.readings ?? [] } : null}
       cashOuts={dayOuts}
       next={next}
       counters={counterOptions}
@@ -214,6 +218,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       lines={dayOuts}
       categories={categories}
       canEdit={canEdit}
+      showPhotos={showPhotos}
       admin={admin}
       me={user.name}
       storage={storage.available}

@@ -22,12 +22,14 @@ import {
   historyOf,
   isLateEdit,
   lastRevision,
+  lateCorrections,
   nextCheckOf,
   nextWarning,
   openingNeedsNote,
   parseEmails,
   reportSubject,
   revisionChanges,
+  revisionDataOf,
   staffCanReport,
   staffDayEditable,
   waPhone,
@@ -319,6 +321,67 @@ test("düzeltme geçmişi: sürümler sırayla karşılaştırılır, en yeni ö
   assert.equal(lastRevision({ ...report, revision: 1 }, []), null);
 });
 
+test("eski rapor (sayan boş): gönderen saymış sayılır; ilk düzeltmede yapılmamış bir 'Sayan' değişikliği görünmez", () => {
+  // Bu özellikten önce kaydedilmiş satır: counted_by_name boş. Form sayanı gönderenle açar, düzeltmenin kopyası da onunla
+  const old = { ...rev({ receipts: 80 }), countedByName: null, submittedByName: "Ayşe" };
+  assert.equal(revisionDataOf(old).countedByName, "Ayşe");
+  assert.equal(revisionDataOf({ ...old, countedByName: "Mehmet" }).countedByName, "Mehmet");
+  const fixed = { ...rev({ receipts: 81 }), submittedByName: "Ayşe" };
+  assert.deepEqual(
+    revisionChanges(revisionDataOf(old), revisionDataOf(fixed)).map((c) => c.key),
+    ["receipts"],
+    "eylemin işlem geçmişine yazdığı değişiklik",
+  );
+  // Sayanı boş kaydedilmiş bir kopya da (geçmiş, son düzeltme: e-posta ve WhatsApp'taki "Değişen:") aynı kuralla
+  const report = { ...fixed, revision: 2, createdAt: "2026-10-21T20:10:00Z", updatedAt: "2026-10-21T20:40:00Z" };
+  const snaps = [{ revision: 1, data: rev({ receipts: 80, countedByName: null }), submittedByName: "Ayşe", submittedAt: "2026-10-21T20:10:00Z" }];
+  assert.deepEqual(historyOf(report, snaps).entries[0].changes.map((c) => c.key), ["receipts"]);
+  assert.deepEqual(lastRevision(report, snaps)?.changes.map((c) => c.key), ["receipts"]);
+  // Başka biri sayan seçildiyse gerçek değişiklik
+  assert.deepEqual(
+    lastRevision({ ...report, countedByName: "Mehmet" }, snaps)?.changes.map((c) => [c.key, c.from, c.to]),
+    [
+      ["receipts", "80", "81"],
+      ["countedByName", "Ayşe", "Mehmet"],
+    ],
+  );
+});
+
+test("zil: ertesi gün kasa düzeltmesi ardından gelen not düzeltmesiyle kaybolmaz; yöneticinin kendi düzeltmesi sayılmaz", () => {
+  // 21 Ekim: akşam gönderildi (1), ertesi sabah Ayşe sayılan nakdi değiştirdi (2), sonra yalnız not ekledi (3)
+  const revisions = [
+    { revision: 1, data: rev(), submittedBy: 3, submittedByName: "Ayşe", submittedAt: "2026-10-21T20:10:00Z" },
+    { revision: 2, data: rev({ countedCash: 3_530 }), submittedBy: 3, submittedByName: "Ayşe", submittedAt: "2026-10-22T07:00:00Z" },
+  ];
+  const report = {
+    ...rev({ countedCash: 3_530, note: "sabah tekrar saydık" }),
+    revision: 3,
+    submittedBy: 3,
+    submittedByName: "Ayşe",
+    createdAt: "2026-10-21T20:10:00Z",
+    updatedAt: "2026-10-22T07:30:00Z",
+  };
+  assert.equal(lastRevision(report, revisions)?.late, false, "son düzeltme yalnız not");
+  const late = lateCorrections(report, revisions, 1)!;
+  assert.equal(late.revision, 2, "bildirimin kimliği en yeni geç düzeltmeden: not düzeltmesi yeniden çaldırmaz");
+  assert.deepEqual(late.by, ["Ayşe"]);
+  assert.deepEqual(late.changes.map((c) => plain(changeLine(c, false))), ["Sayılan nakit 3.430 ₺ → 3.530 ₺"]);
+  // Yöneticinin (1) kendi sabah düzeltmesi kendi zilinde yok; başka bir yöneticinin (2) zilinde var
+  const own = { ...rev({ countedCash: 3_530 }), revision: 2, submittedBy: 1, submittedByName: "Yönetici", createdAt: report.createdAt, updatedAt: "2026-10-22T07:00:00Z" };
+  assert.equal(lateCorrections(own, revisions.slice(0, 1), 1), null);
+  assert.equal(lateCorrections(own, revisions.slice(0, 1), 2)?.revision, 2);
+  // Önce Ayşe (2), sonra yönetici (3) ertesi gün değiştirdi: yönetici yalnız Ayşe'ninkini görür; herkesinki eskiden yeniye
+  const both = { ...rev({ countedCash: 3_530, handedOver: 3_100 }), revision: 3, submittedBy: 1, submittedByName: "Yönetici", createdAt: report.createdAt, updatedAt: "2026-10-22T09:00:00Z" };
+  assert.deepEqual(lateCorrections(both, revisions, 1), { revision: 2, by: ["Ayşe"], changes: late.changes });
+  const all = lateCorrections(both, revisions, null)!;
+  assert.equal(all.revision, 3);
+  assert.deepEqual(all.by, ["Ayşe", "Yönetici"]);
+  assert.deepEqual(all.changes.map((c) => c.key), ["countedCash", "handedOver"]);
+  // Aynı akşam düzeltilen ya da ertesi gün yalnız Z / not değişen rapor zile düşmez
+  assert.equal(lateCorrections({ ...report, countedCash: 3_430, note: day.note }, [revisions[0], { ...revisions[1], data: rev({ zTotal: 12_500 }) }], 1), null);
+  assert.equal(lateCorrections({ ...own, updatedAt: "2026-10-21T21:00:00Z" }, revisions.slice(0, 1), 2), null);
+});
+
 test("WhatsApp ve e-posta: sayan, değişenler, açılış ↔ devir, ertesi gün, İndirim; not kaçışlı", () => {
   const carry = carryCheck("2026-10-21", 500, { date: "2026-10-20", amount: 620 })!;
   const next = carryCheck("2026-10-22", 1_200, { date: "2026-10-21", amount: 430 })!;
@@ -370,4 +433,22 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   assert.equal(outs.match(/await staffDayOpen\(/g)?.length, 3);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
+  assert.match(page, /const canEdit = admin \|\| staffOpen;/);
+});
+
+test("kapanmış gün: personel fotoğrafları görmez (küçük resim ve büyütme yok, /api/foto 403 vermesin); WhatsApp satırları kalır", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+  const page = read("src/app/panel/kasa/page.tsx");
+  // Fotoğraf bilgisi WhatsApp metni için personelin girebildiği günde okunur (e-postadakiyle aynı satırlar)
+  assert.match(page, /const photoInfo = report && \(admin \|\| staffCanReport\(date\)\) \?/);
+  // Fotoğrafların kendisi yalnız görebilene: /api/foto'nun kuralı (staffDayOpen) düzenleme kuralıyla aynı
+  assert.match(page, /const showPhotos = canEdit;/);
+  assert.match(page, /saved=\{report \? \{ photos: showPhotos \? \(photoInfo\?\.photos \?\? \[\]\) : \[\], readings: photoInfo\?\.readings \?\? \[\] \} : null\}/);
+  assert.match(page, /<CashOutsCard[^>]*?showPhotos=\{showPhotos\}/);
+  const outs = read("src/app/panel/kasa/cash-outs.tsx");
+  // Küçük resim ve büyütme yalnız görebilene; ötekine fiş simgesi ve açılmayan satır
+  assert.equal(outs.match(/photoUrl\(/g)?.length, 1, "fotoğrafın adresi tek yerde");
+  assert.match(outs, /\{o\.photoId && showPhotos \? \([^)]*?<img src=\{photoUrl\(o\.photoId\)\}/);
+  assert.match(outs, /\) : o\.photoId && showPhotos \? \(\s*<button\s+type="button"\s+onClick=\{\(\) => setViewer\(/);
+  assert.doesNotMatch(outs, /: o\.photoId \? \(/);
 });

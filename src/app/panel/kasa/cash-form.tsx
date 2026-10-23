@@ -272,7 +272,7 @@ export function CashForm({
   canEdit: boolean;
   /** Fotoğraf deposu var mı, okuma durumu, bakan yönetici mi */
   photoUi: { storage: boolean; reading: ReadingState; admin: boolean; me: string };
-  /** Kayıtlı raporun fotoğrafları ve okumaları (görebilene) */
+  /** Kayıtlı raporun fotoğrafları (görebilene; kapanmış günde personele boş) ve okumaları ("Fotoğraftan farklı") */
   saved: CashPhotoInfo | null;
   /** Günün kasadan çıkan satırları */
   cashOuts: CashOutDTO[];

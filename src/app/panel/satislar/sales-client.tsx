@@ -73,6 +73,7 @@ import {
 import {
   cardShareProblem,
   collectSuggestions,
+  effectiveValue,
   fieldPayload,
   fieldText,
   fieldValue,
@@ -83,6 +84,7 @@ import {
   marginLevelLabel,
   marginScale,
   monthPhase,
+  monthSavedToast,
   openDaysHint,
   openDaysProblem,
   previewMatches,
@@ -248,8 +250,8 @@ export function MonthInfoForm({
   const [saved, setSaved] = useState(snapshot);
   const dirty = snapshot !== saved;
 
-  /** Kasadakini kullanan ya da boş bırakılan alanın geçerli değeri (tutarlılık kutusu ve açıklamalar) */
-  const effective = (f: MonthField) => payloads[f] ?? (modes[f] === "kasa" || !texts[f].trim() ? kasaOf(f) : null);
+  /** Alanın geçerli değeri (tutarlılık kutusu, "Bunu yaz"): yazılan ya da kasadaki */
+  const effective = (f: MonthField) => effectiveValue(f, { mode: modes[f], text: texts[f], kasa: kasaOf(f), payload: payloads[f] });
   const posNum = effective("posRevenue");
   const discNum = effective("discounts") ?? 0;
   const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
@@ -294,9 +296,8 @@ export function MonthInfoForm({
     setBusy(false);
     if (res.ok) {
       setSaved(snapshot);
-      toast.success(res.data.removed ? "Ay bilgileri boşaltıldı" : "Ay bilgileri kaydedildi", {
-        description: res.data.removed ? `${label} için kayıtlı bilgi kalmadı.` : undefined,
-      });
+      const msg = monthSavedToast(res.data, label);
+      toast.success(msg.title, { description: msg.description });
     } else toast.error(res.error);
   }
 

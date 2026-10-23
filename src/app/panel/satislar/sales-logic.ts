@@ -99,6 +99,28 @@ export function fieldPayload(f: MonthField, o: { mode: FieldMode; text: string; 
   return fieldValue(f, t);
 }
 
+/**
+ * Alanın geçerli değeri (tutarlılık kutusu, "Bunu yaz"): gidecek değer; yoksa kasa kipinde, boş alanda ya da kasadan
+ * gelen değere dokunulup değiştirilmeden bırakıldığında kasadaki (gidecek değer o zaman da boştur, kasaya bağlı kalır).
+ * Okunamayan metin null.
+ */
+export function effectiveValue(f: MonthField, o: { mode: FieldMode; text: string; kasa: number | null; payload: number | null }): number | null {
+  if (o.payload !== null) return o.payload;
+  const t = o.text.trim();
+  if (o.mode === "kasa" || !t || (o.kasa !== null && t === fieldText(f, o.kasa))) return o.kasa;
+  return null;
+}
+
+/**
+ * Ay bilgisi kaydedilince çıkan bildirim. Bütün alanlar boşalınca ay satırı silinir (saveMonthInfo `removed`); ayın
+ * kasa raporu varsa bilgiler oradan gelmeye devam eder: "boşaltıldı, kayıtlı bilgi kalmadı" denmez.
+ */
+export function monthSavedToast(r: { removed: boolean; kasa: boolean }, label: string): { title: string; description?: string } {
+  if (!r.removed) return { title: "Ay bilgileri kaydedildi" };
+  if (r.kasa) return { title: "Ay bilgileri kaydedildi", description: "Elle yazılan kalmadı; boş alanlar kasa raporlarından gelir." };
+  return { title: "Ay bilgileri boşaltıldı", description: `${label} için kayıtlı bilgi kalmadı.` };
+}
+
 /** Değerin kısa gösterimi (ipucunda): "245.300 ₺", "18 gün", "%83,2" */
 export function fieldShown(f: MonthField, v: number): string {
   if (f === "openDays") return `${num(v)} gün`;

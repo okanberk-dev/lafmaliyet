@@ -30,7 +30,8 @@ function rowSub(o: CashOutDTO): string {
 /**
  * Gün içinde kasadan çıkanlar: market fişi, buz, tamirci, gün ortası teslim. "Fiş ekle" kamerayı ya da galeriyi açar;
  * fotoğraf yüklenip okunurken pencere açılır ve okunanlar boş alanlara dolar. Akşam raporunun "Gün içinde kasadan
- * çıkan" tutarı bunların toplamından gelir. Satıra dokununca düzeltilir (gün personele açıksa).
+ * çıkan" tutarı bunların toplamından gelir. Satıra dokununca düzeltilir (gün personele açıksa). Fişin fotoğrafını
+ * göremeyen (personel, kapanmış gün) küçük resim yerine fiş simgesini görür; satır açılmaz.
  */
 export function CashOutsCard({
   date,
@@ -38,6 +39,7 @@ export function CashOutsCard({
   lines,
   categories,
   canEdit,
+  showPhotos,
   admin,
   me,
   storage,
@@ -48,6 +50,8 @@ export function CashOutsCard({
   lines: CashOutDTO[];
   categories: CashOutCategory[];
   canEdit: boolean;
+  /** Fiş fotoğraflarını görebilir mi: yönetici ya da personelin hâlâ düzenleyebildiği gün (/api/foto'nun kuralı) */
+  showPhotos: boolean;
   admin: boolean;
   me: string;
   storage: boolean;
@@ -109,7 +113,7 @@ export function CashOutsCard({
             const label = cashOutLabel(o);
             const body = (
               <>
-                {o.photoId ? (
+                {o.photoId && showPhotos ? (
                   // eslint-disable-next-line @next/next/no-img-element -- yetkili yol; görsel iyileştirici giriş çerezini taşımaz
                   <img src={photoUrl(o.photoId)} alt="" loading="lazy" decoding="async" className="size-10 shrink-0 rounded-lg bg-panel object-cover ring-1 ring-line" />
                 ) : (
@@ -130,7 +134,7 @@ export function CashOutsCard({
                   <button type="button" onClick={() => open({ mode: "edit", line: o })} className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left hover:bg-panel/60 pointer-coarse:min-h-11">
                     {body}
                   </button>
-                ) : o.photoId ? (
+                ) : o.photoId && showPhotos ? (
                   <button
                     type="button"
                     onClick={() => setViewer({ id: o.photoId!, caption: photoCaption("fis", o.createdAt, o.createdByName) })}

@@ -113,11 +113,13 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
 - İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) kasadaki nakdi değiştiren bir alan (açılış, nakit satış, gün
   içinde çıkan, sayılan nakit, teslim edilen) değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
   **Ertesi gün düzeltildi** rozeti, yöneticinin zilinde "Kasa raporu ertesi gün değişti" (son 7 gün; kim ve ne
-  değişti). Yalnız Z, kart ya da not düzeltmesi uyarı vermez.
+  değişti). Yalnız Z, kart ya da not düzeltmesi uyarı vermez; ardından yapılan bir not düzeltmesi uyarıyı da kapatmaz.
+  Yöneticinin kendi düzeltmesi kendi zilinde görünmez.
 - Güncellenen raporun e-postasında ve WhatsApp metninde "Değişen: Sayılan nakit 2.880 ₺ → 2.980 ₺; Not değişti".
 - Günden güne satırında "· 2 kez düzeltildi". İşlem geçmişine düzeltmede değişenler, silmede raporun değerleri (Z,
   sayılan, fark, sayan, fotoğraf sayısı) yazılır.
-- Bu özellikten önce düzeltilmiş raporların geçmişi ilk yeni düzeltmeden başlar.
+- Bu özellikten önce düzeltilmiş raporların geçmişi ilk yeni düzeltmeden başlar. Bu özellikten önce kaydedilen
+  raporlarda sayan boştur: kasayı gönderen saymış sayılır (ilk düzeltmede "Sayan" değişmiş görünmez).
 
 ## Ay bilgisine aktarım
 
@@ -161,8 +163,8 @@ silinen rapor ayın rakamını hemen değiştirir.
 - **Zil:**
   - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma.
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa
-    ve son 7 günün bir raporu ertesi gün kasa alanı değiştirilerek düzeltildiyse bildirim (rapor yeniden
-    düzeltilince yeniden okunmamış olur).
+    ve son 7 günün bir raporu ertesi gün kasa alanı değiştirilerek düzeltildiyse bildirim (açılış uyarısı rapor
+    yeniden gönderilince, düzeltme uyarısı yeni bir ertesi gün düzeltmesiyle yeniden okunmamış olur).
 
 ## Yönetici
 
