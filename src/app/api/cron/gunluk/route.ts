@@ -3,8 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
+import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { syncKaraoke } from "@/server/karaoke/sync";
+import { pruneMcp } from "@/server/mcp/store";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
@@ -18,7 +20,8 @@ import { cleanupPhotos } from "@/server/storage/photos";
 // o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
-// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md) ve süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md).
+// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md) ve
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -65,13 +68,27 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   };
+  // Claude bağlantısının temizliği (süresi dolan kod ve anahtarlar, eski kayıtlar; docs/CLAUDE-BAGLANTISI.md): en çok
+  // 3 sn, sonucu yalnız yanıtta (body.mcp). İş adımı değil: temizlik aksarsa "Günlük işler" uyarısı açılmaz
+  const mcpTask = () =>
+    capped(
+      pruneMcp(getDb(), new Date())
+        .then(() => "ok" as const)
+        .catch((e: Error) => {
+          console.error("[mcp] temizlik", e);
+          return "error" as const;
+        }),
+      Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
+      "süre doldu" as const,
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       syncKaraoke("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
       photosTask(),
+      mcpTask(),
     ]);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
@@ -80,7 +97,7 @@ export async function GET(request: NextRequest) {
       sales: siteStep(sales),
       photos: photosStep(photos),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos }, steps };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps };
   };
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {

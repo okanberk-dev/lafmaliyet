@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { KeyRound, UserRound } from "lucide-react";
+import { KeyRound, PlugZap, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -10,7 +10,9 @@ import { Skeleton } from "@/components/ui/misc";
 import { ROLES } from "@/lib/constants";
 import { requireUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { loadMyConnections } from "@/server/mcp/connections";
 
+import { ConnectionsCard } from "./connections";
 import { AccountAvatar, PasswordForm, ProfileForm } from "./password-form";
 import { SessionsCard } from "./sessions";
 import { TwoFactorCard } from "./two-factor";
@@ -39,11 +41,16 @@ function AccountSkeleton() {
 
 async function Account() {
   const user = await requireUser();
-  const [security] = await getDb()
-    .select({ totpEnabled: s.users.totpEnabled, recoveryCodes: s.users.recoveryCodes })
-    .from(s.users)
-    .where(eq(s.users.id, user.id))
-    .limit(1);
+  // Bağlı uygulamalar (Claude bağlantısı) yalnız yöneticide; okunamazsa sayfanın geri kalanı yine açılır
+  const [[security], connections] = await Promise.all([
+    getDb().select({ totpEnabled: s.users.totpEnabled, recoveryCodes: s.users.recoveryCodes }).from(s.users).where(eq(s.users.id, user.id)).limit(1),
+    user.role === "admin"
+      ? loadMyConnections(user.id).catch((e) => {
+          console.error("Bağlı uygulamalar okunamadı", e);
+          return null;
+        })
+      : null,
+  ]);
   return (
     <div className="space-y-4">
       <Card>
@@ -86,6 +93,20 @@ async function Account() {
       <Card>
         <SessionsCard />
       </Card>
+      {user.role === "admin" ? (
+        <Card id="bagli-uygulamalar" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
+          {connections ? (
+            <ConnectionsCard rows={connections.rows} calls={connections.calls} mcpUrl={connections.mcpUrl} />
+          ) : (
+            <>
+              <CardHeader icon={<PlugZap />} title="Bağlı uygulamalar" />
+              <CardContent>
+                <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] text-bad">Bağlı uygulamalar okunamadı; sayfayı yenileyin.</p>
+              </CardContent>
+            </>
+          )}
+        </Card>
+      ) : null}
     </div>
   );
 }

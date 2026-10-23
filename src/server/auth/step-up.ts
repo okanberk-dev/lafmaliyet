@@ -18,8 +18,11 @@ import { createLimiter } from "./rate-limit";
  * çağrılabilseydi oturumu açık herkese bir parola deneme kapısı olurdu. Eylemler bunları içeriden çağırır.
  */
 
-/** İşlem geçmişindeki "Hatalı parola onayı (…)" satırının yeri. "Yedek": yedekten geri yükleme de aynı onayı kullanır */
-export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek";
+/**
+ * İşlem geçmişindeki "Hatalı parola onayı (…)" satırının yeri. "Yedek": yedekten geri yükleme de aynı onayı kullanır;
+ * "Claude bağlantısı": onay ekranında (/baglan) izin verirken
+ */
+export type StepUpWhere = "Hesabım" | "Kullanıcılar" | "Yedek" | "Claude bağlantısı";
 
 /**
  * Kişi başına 15 dakikada 5 hata; bütün yerler aynı payı kullanır (açık kalmış bir oturumla her ekranda ayrı 5 tahmin

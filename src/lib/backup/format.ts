@@ -71,6 +71,8 @@ export const EXCLUDED_STATE_KEYS: Readonly<Record<string, string>> = {
 
 const sqlList = (keys: string[]) => keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(", ");
 
+const MCP_SKIP = "Claude bağlantıları; geri yüklemeden sonra Claude'da yeniden bağlanılır";
+
 export const TABLE_RULES: Record<string, TableRule> = {
   user_tokens: { skip: "tek kullanımlık bağlantılar (özet); yenisi gönderilir" },
   push_subscriptions: { skip: "cihazlar panel açılınca yeniden abone olur" },
@@ -78,6 +80,13 @@ export const TABLE_RULES: Record<string, TableRule> = {
   integration_state: { where: `key NOT IN (${sqlList(Object.keys(EXCLUDED_STATE_KEYS))})` },
   // Paraşüt'ün e-fatura PDF'i önbellektir (ilk açılışta yeniden indirilir); yalnız panelden yüklenenler
   invoice_documents: { where: `source = 'upload'`, documents: true },
+  // Claude bağlantısı (docs/CLAUDE-BAGLANTISI.md): anahtar özetleri ve bağlantılar; beşi birden dışarıda kalır, atlanan
+  // tabloya yabancı anahtarla bağlı yazılan satır olmasın
+  mcp_clients: { skip: MCP_SKIP },
+  mcp_codes: { skip: MCP_SKIP },
+  mcp_grants: { skip: MCP_SKIP },
+  mcp_tokens: { skip: MCP_SKIP },
+  mcp_calls: { skip: MCP_SKIP },
 };
 
 export interface BackupMigration {

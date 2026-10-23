@@ -1209,3 +1209,123 @@ export const aiCalls = pgTable(
   },
   (t) => [index("ai_calls_at_idx").on(t.at), index("ai_calls_photo_idx").on(t.photoId)],
 );
+
+// ---------------------------------------------------------------- Claude bağlantısı (MCP, salt okunur)
+/**
+ * OAuth istemcisi: Claude'un yayımlanmış kimliği (CIMD adresi) ya da otomatik kayıt (DCR). Gizli anahtar yok: bütün
+ * istemciler açık (PKCE S256). Dönüş adresleri izinli listeden (claude.ai / claude.com; yerelde localhost) gelir,
+ * başkası kaydedilmez. Ayrıntı: docs/CLAUDE-BAGLANTISI.md.
+ */
+export const mcpClients = pgTable(
+  "mcp_clients",
+  {
+    id: serial("id").primaryKey(),
+    /** "mcp_…" (DCR) ya da https://claude.ai/oauth/… (CIMD) */
+    clientId: text("client_id").notNull(),
+    kind: text("kind", { enum: ["dcr", "cimd"] }).notNull(),
+    /** Kendi beyanı, temizlenmiş, en çok 100 karakter */
+    name: text("name").notNull(),
+    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull(),
+    /** CIMD belgesinin son okunuşu */
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("mcp_clients_client_id_uq").on(t.clientId), index("mcp_clients_created_idx").on(t.createdAt)],
+);
+
+/** Yetki kodu: onay ekranında verilir, 2 dakika, tek kullanım; ham kod yalnız Claude'a gider (burada sha256 özeti) */
+export const mcpCodes = pgTable(
+  "mcp_codes",
+  {
+    id: serial("id").primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: integer("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    /** PKCE S256 */
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    sessionVersion: integer("session_version").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    /** Kodla açılan bağlantı: kod ikinci kez kullanılırsa kapatılır */
+    grantId: integer("grant_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("mcp_codes_hash_uq").on(t.codeHash)],
+);
+
+/** Bağlantı: yöneticinin bir istemciye verdiği salt okunur erişim (Hesabım › Bağlı uygulamalar'daki satır) */
+export const mcpGrants = pgTable(
+  "mcp_grants",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    clientId: integer("client_id")
+      .notNull()
+      .references(() => mcpClients.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    /** Dönüş adresinin sunucusu, ör. "claude.ai" */
+    redirectHost: text("redirect_host").notNull(),
+    /** İzin anındaki oturum sürümü; kullanıcınınki değişince (parola, oturumları kapat…) bağlantı geçersiz */
+    sessionVersion: integer("session_version").notNull(),
+    createdAt: createdAt(),
+    /** En geç 90 gün */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /** kullanici | istemci (Claude anahtarı geri verdi) | yeniden-kullanim | kod-tekrari | oturum | suresi-doldu */
+    revokedReason: text("revoked_reason"),
+  },
+  (t) => [index("mcp_grants_user_idx").on(t.userId)],
+);
+
+/** Erişim (1 saat) ve yenileme (30 gün, her kullanımda yenisiyle değişir) anahtarları; yalnız sha256 özeti */
+export const mcpTokens = pgTable(
+  "mcp_tokens",
+  {
+    id: serial("id").primaryKey(),
+    grantId: integer("grant_id")
+      .notNull()
+      .references(() => mcpGrants.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["access", "refresh"] }).notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** Yenileme anahtarı kullanıldı, yerine yenisi verildi */
+    rotatedAt: timestamp("rotated_at", { withTimezone: true }),
+    /** Yerine verilen yenileme anahtarının satırı */
+    replacedBy: integer("replaced_by"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("mcp_tokens_hash_uq").on(t.tokenHash), index("mcp_tokens_grant_idx").on(t.grantId, t.kind)],
+);
+
+/** Claude'un her araç çağrısı (Hesabım › Son sorular). Yanıt saklanmaz; 180 gün tutulur */
+export const mcpCalls = pgTable(
+  "mcp_calls",
+  {
+    id: serial("id").primaryKey(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    grantId: integer("grant_id").references(() => mcpGrants.id, { onDelete: "set null" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    tool: text("tool").notNull(),
+    /** Doğrulanmış girdi (kısa) */
+    args: jsonb("args").$type<Record<string, unknown>>(),
+    ok: boolean("ok").notNull(),
+    error: text("error"),
+    ms: integer("ms").notNull(),
+    /** Yanıtın uzunluğu (karakter) */
+    chars: integer("chars"),
+  },
+  (t) => [index("mcp_calls_at_idx").on(t.at), index("mcp_calls_user_idx").on(t.userId, t.at)],
+);

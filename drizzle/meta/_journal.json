@@ -197,6 +197,13 @@
       "when": 1792717306779,
       "tag": "0027_kasa_ay_bilgisi_butunluk",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792737647449,
+      "tag": "0028_claude_baglantisi",
+      "breakpoints": true
     }
   ]
 }
