@@ -20,15 +20,15 @@ export function lowest(a: Confidence, b: Confidence): Confidence {
  * Fişte yazan tutar: modelin yazdığı metin (`*12.975,50`, `8.915,00 TL`, banka fişinin `12,975.50`'si) bizim kodumuzla
  * yeniden okunur. Metin okunur ve modelin sayısından 0,005'ten fazla ayrılırsa metindeki geçer, güven "low" olur
  * (`mismatch`). Yalnız basamak kayması (biri ötekinin yüzde birinden küçük; ayraç yanlış okunmuş) varsa modelin sayısı
- * kalır, yine "low": alan turuncu olur, kullanıcı fişle karşılaştırır. Metin yoksa modelin sayısı (yazılmamış rakam
- * null'dır).
+ * kalır, yine "low": alan turuncu olur, kullanıcı fişle karşılaştırır. Sıfır basamak kayması değildir: model 0 yazdıysa
+ * metindeki tutar geçer. Metin yoksa modelin sayısı (yazılmamış rakam null'dır).
  */
 export function printedAmount(a: AmountRaw): { value: number | null; confidence: Confidence; mismatch: boolean } {
   const parsed = a.text === null ? null : parseNumberTR(a.text.replace(/\*/g, ""));
   if (parsed !== null && a.value !== null && Math.abs(parsed - a.value) >= 0.005) {
     const small = Math.min(Math.abs(parsed), Math.abs(a.value));
     const big = Math.max(Math.abs(parsed), Math.abs(a.value));
-    const shifted = big > 0 && small / big < 0.01;
+    const shifted = small > 0 && small / big < 0.01;
     return { value: round2(shifted ? a.value : parsed), confidence: "low", mismatch: true };
   }
   const value = parsed ?? a.value;
