@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   Bell,
+  Bot,
   CalendarCheck,
   ChartNoAxesColumn,
   ClipboardList,
@@ -12,6 +13,7 @@ import {
   Info,
   LayoutList,
   Lightbulb,
+  ListTodo,
   Package,
   Palette,
   Pencil,
@@ -98,7 +100,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         <Path href="/panel/satislar" /> ekranında POS cirosunu (KDV dahil), açık gün sayısını, yönetici indirimlerini ve ödenmez/ikram tutarını yazın. Devam eden ayda
-        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır.
+        açık gün sayısını bugüne kadar olarak yazın: ay sonu tahmini bununla yapılır. Kasa raporu girilen aylarda boş bıraktığınız alanlar kasa raporlarından
+        kendiliğinden dolar; elle yazdığınız her zaman geçerlidir.
       </>
     ),
     href: "/panel/satislar",
@@ -474,6 +477,28 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         icon: UserPlus,
         links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }, { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" }],
       },
+      {
+        id: "claude",
+        q: "Claude'dan panele soru sormak",
+        a: (
+          <>
+            {/* Claude'un menü adları İngilizce (Anthropic'in belgesindeki gibi); bağlantı doğrudan o sayfayı açar */}
+            Claude&apos;da (web ya da masaüstü){" "}
+            <a href="https://claude.ai/customize/connectors" target="_blank" rel="noopener noreferrer" className="font-medium whitespace-nowrap text-ink underline underline-offset-2">
+              Customize › Connectors
+            </a>{" "}
+            sayfasında <strong className="font-semibold text-ink">Add custom connector</strong> düğmesine basıp{" "}
+            {/* Telefonda adres kendi satırına geçer, ortadan bölünmez */}
+            <code className="inline-block max-w-full rounded bg-surface px-1 font-mono text-[12px] break-all text-ink ring-1 ring-line sm:text-[13px]">https://ladmin.laffogato.net/api/mcp</code>{" "}
+            adresini girin, <strong className="font-semibold text-ink">Connect</strong>&apos;e basın, panele girip parolanızla izin verin. Claude rakamları panelden okur ve
+            hesabı gösterir; hiçbir şeyi değiştiremez.
+            IBAN, vergi no, telefon, e-posta, notlar, personel ve müşteri adları gönderilmez. Bağlantıyı Hesabım&apos;dan kaldırabilirsiniz; 90 günde bir ya da parolanızı
+            değiştirince yeniden bağlanmanız gerekir. Yalnız yönetici bağlayabilir.
+          </>
+        ),
+        icon: Bot,
+        links: [{ href: "/panel/hesap#bagli-uygulamalar", label: "Hesabım (Bağlı uygulamalar)" }],
+      },
     ],
   },
   {
@@ -534,8 +559,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Her sabah iki iş kendiliğinden çalışır: 07:00–08:00 Paraşüt eşitlemesi, 08:00–09:00 sabah işi (sabah e-postası, hatırlatıcı bildirimi, laffogato.net
-            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında ve{" "}
-            <Path href="/panel" />&apos;ta kırmızı şeritle görünür, ertesi sabah e-postayla da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
+            eşitlemeleri). Biri çalışmazsa ya da hata verirse zilde <strong className="font-semibold text-ink">Sistem</strong> başlığında,{" "}
+            <Path href="/panel" />&apos;ta kırmızı şeritle ve <Path href="/panel/bugun" />&apos;de ilk satırda görünür, ertesi sabah e-postayla
+            da gelir. Son çalışmalar ve hataları Ayarlar › Günlük işler&apos;de.
             Beklemek istemezseniz <Path href="/panel/parasut" /> › Şimdi eşitle ya da <Path href="/panel/hatirlaticilar" /> › Bugünküleri şimdi gönder.
           </>
         ),
@@ -561,6 +587,20 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
   {
     title: "Panelde gezinme",
     items: [
+      {
+        id: "bugun",
+        q: "Bugün ekranında ne var?",
+        a: (
+          <>
+            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
+            faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı ve hatırlatıcılarınız. Her satır ilgili ekranı açar;
+            sıradaki iş siyah çerçeveyle öne çıkar, biten işler Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini (kasa
+            raporu, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
+          </>
+        ),
+        icon: ListTodo,
+        links: [{ href: "/panel/bugun", label: "Bugün" }],
+      },
       {
         id: "menu",
         q: "Menü düzeni",

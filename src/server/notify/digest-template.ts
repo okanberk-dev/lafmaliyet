@@ -1,16 +1,20 @@
 /**
  * Günlük hatırlatma e-postasının şablonu (saf; "server-only" yok, tests/hatirlaticilar-digest.test.ts sınar).
- * Veriyi okuyup gönderen kısım digest.ts'te.
+ * Veriyi okuyup gönderen kısım digest.ts'te. Ek kutuların (komisyon, kontrol, tahmin) toplanması da burada
+ * (`collectDigestExtras`); kaynakların listesi src/server/notify/digest-extras.ts'te. E-postaların ortak kabuğu
+ * (`emailLayout`, `esc`, `FONT`) öteki e-postalar için dışa açık.
  */
 
 import { dateTR, money, monthLabel, tl } from "@/lib/format";
 import { SYSTEM_ALERT_HELP } from "@/lib/job-health";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { daysLeftLabel, longDateTR, monthShortTR, type NotifyStage, type UpcomingItem } from "@/lib/reminders";
+import { capped } from "@/server/jobs/capped";
 
 export const APP_URL = (process.env.APP_URL?.trim() || "https://ladmin.laffogato.net").replace(/\/+$/, "");
 
-const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+/** HTML'e giden her kullanıcı metni buradan geçer */
+export const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const STAGE: Record<NotifyStage, { label: string; title: string; bg: string; fg: string; tile: string; tileFg: string }> = {
   overdue: { label: "Gecikti", title: "Gecikenler", bg: "#fef2f2", fg: "#dc2626", tile: "#dc2626", tileFg: "#ffffff" },
@@ -18,7 +22,7 @@ const STAGE: Record<NotifyStage, { label: string; title: string; bg: string; fg:
   before: { label: "Yaklaşıyor", title: "Yaklaşanlar", bg: "#f4f4f5", fg: "#3f3f46", tile: "#e4e4e7", tileFg: "#3f3f46" },
 };
 const STAGE_ORDER: NotifyStage[] = ["overdue", "due", "before"];
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica,Arial,sans-serif";
+export const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Geist,Roboto,Helvetica,Arial,sans-serif";
 
 /** Sabah e-postasının Paraşüt bölümü: son e-postadan bu yana gelen faturalar, kontrol bekleyenler, eşitleme hatası */
 export interface DigestInvoices {
@@ -88,11 +92,155 @@ export interface DigestSystem {
 /** Sistem uyarılarının panelde açıldığı yer (Ayarlar › Günlük işler) */
 const JOBS_LINK = `${APP_URL}/panel/ayarlar#isler`;
 
+// ---------------------------------------------------------------- Ek kutular (docs/planlar/CRITIQUE2.md R11)
+
+/**
+ * Sabah e-postasının ek kutusu. Her grup kendi kutusunu kendi saf modülünde kurar ve sınar; kaynağını
+ * src/server/notify/digest-extras.ts › DIGEST_EXTRA_SOURCES'a bir satırla ekler.
+ */
+export interface DigestBox {
+  /** Kutunun başlığı, ör. "Komisyon ve hakediş" */
+  title: string;
+  /**
+   * Satırlar: `strong` kalın ilk satır (varsa metin altına geçer); `tone` satırın rengi (kötü kırmızı, uyarı turuncu,
+   * sönük gri ve küçük). Metin sarılır (telefonda taşmaz); tutarı money() / tl() ile yazın: sayı ile ₺ ayrılmaz
+   */
+  lines: { strong?: string; text: string; tone?: "bad" | "warn" | "muted" }[];
+  /** APP_URL'siz panel yolu (ör. "/panel/komisyonlar"); fotoğraf ya da Blob adresi asla: /panel dışı yol panelin girişine düşer */
+  href: string;
+  /** Bağlantı metni, ör. "Komisyon & hakediş'te aç" (sonuna "→" eklenir; düğme de bunu yazar) */
+  link: string;
+  /** Konuya eklenen parça; null: konuya girmez (konuya yazılacak başka hiçbir şey yoksa yerine kutunun adı, `title`) */
+  subjectPart: string | null;
+  /**
+   * Ödeme, sistem uyarısı, fatura, kontrol bekleyen ya da fiyat onayı yoksa e-postanın başlığı; null: kutu başlığa aday
+   * olmaz (sıra öteki kutuya, sonra zama geçer). Başlık olacak başka hiçbir şey yoksa kutunun konu parçası (ilk harfi
+   * büyük), o da yoksa adı: kutulu e-posta "Bugün yeni bir şey yok" demez
+   */
+  headline: string | null;
+}
+
+/** renderDigest'in 6. bağımsız değişkeni: komisyon (komisyon grubu), kontrol (kontrol), tahmin (tahmin) */
+export interface DigestExtras {
+  commission?: DigestBox | null;
+  kontrol?: DigestBox | null;
+  forecast?: DigestBox | null;
+}
+
+/** Kaynağın bulduğu kutu ve gönderimden sonra notification_log'a yazılacak anahtarlar (ör. "komisyon:<uyarı>", "kontrol:<gün>") */
+export interface DigestExtraLoad {
+  box: DigestBox;
+  logKeys: string[];
+}
+
+/** Yükleyiciye: önizlemede (`preview`) hiçbir şey yazmaz (okuyan yol), gönderimde ilk kayıt gibi yazımlar serbest */
+export interface DigestExtraCtx {
+  preview: boolean;
+}
+
+/**
+ * Ek kutu kaynağı (DIGEST_EXTRA_SOURCES'ın bir satırı). `news`: kutu varsa e-posta gider (yeni bir şey var sayılır);
+ * tahmin hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya ve başlığa da girmez). `load` boş
+ * dönerse (null) kutu yok.
+ */
+export type DigestExtraSource =
+  | { key: "commission" | "kontrol"; news: boolean; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> }
+  | { key: "forecast"; news: false; load(today: string, ctx: DigestExtraCtx): Promise<DigestExtraLoad | null> };
+
+/** Kaynakların toplu sonucu: e-postanın kutuları, "yeni bir şey var mı"ya katkısı, tekil anahtara ve günlüğe giden anahtarlar */
+export interface DigestExtrasResult {
+  extras: DigestExtras;
+  news: boolean;
+  logKeys: string[];
+  /** Haber olan kutuların konu parçaları, parçası olmayanın adı (bildirimdeki ve önizlemedeki özet satırı için) */
+  parts: string[];
+}
+
+/** Bir kaynağın en çok bekletebileceği süre; aşan ya da hata veren kutu e-postaya girmez, e-postayı bozmaz */
+export const DIGEST_EXTRA_MS = 4_000;
+/** Haber sayılmayan kutular (konuya ve başlığa da girmez) */
+const NEVER_NEWS: readonly (keyof DigestExtras)[] = ["forecast"];
+
+/**
+ * Ek kutuları aynı anda yükler: her biri en çok `ms` (capped); hata veren ya da süresi dolan kaynak yok sayılır ve
+ * günlüğe yazılır. Asla hata fırlatmaz. Aynı anahtarda listede önce gelen kaynağın kutusu geçer. Kaynak yoksa sonuç boş:
+ * e-posta, konusu, tekil anahtarı ve günlük satırları kutusuz hâliyle birebir aynı kalır.
+ */
+export async function collectDigestExtras(sources: readonly DigestExtraSource[], today: string, ctx: DigestExtraCtx, ms = DIGEST_EXTRA_MS): Promise<DigestExtrasResult> {
+  const TIMEOUT = Symbol("süre doldu");
+  const loaded = await Promise.all(
+    sources.map(async (src) => {
+      try {
+        const r = await capped<DigestExtraLoad | null | typeof TIMEOUT>(Promise.resolve().then(() => src.load(today, ctx)), ms, TIMEOUT);
+        if (r === TIMEOUT) console.error(`Sabah e-postası ek kutusu (${src.key}): ${ms / 1000} sn içinde yüklenemedi`);
+        return r === TIMEOUT ? null : r;
+      } catch (e) {
+        console.error(`Sabah e-postası ek kutusu (${src.key})`, e);
+        return null;
+      }
+    }),
+  );
+  const extras: DigestExtras = {};
+  const keys = new Set<string>();
+  const parts: string[] = [];
+  let news = false;
+  sources.forEach((src, i) => {
+    const r = loaded[i];
+    if (!r?.box || extras[src.key]) return;
+    extras[src.key] = r.box;
+    for (const k of r.logKeys ?? []) if (k) keys.add(k);
+    const isNews = src.news && !NEVER_NEWS.includes(src.key);
+    news ||= isNews;
+    // Konu parçası olmayan haber kutusu özet satırına adıyla girer (tek haberse özet boş kalmasın: "Bugün: .")
+    const part = r.box.subjectPart || r.box.title;
+    if (isNews && part) parts.push(part);
+  });
+  return { extras, news, logKeys: [...keys], parts };
+}
+
+/** Kutu renkleri: komisyon ve kontrol turuncu (fiyat onayı kutusu gibi), tahmin gri (bilgi) */
+const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
+  commission: { bg: "#fff7ed", fg: "#9a3412" },
+  kontrol: { bg: "#fff7ed", fg: "#9a3412" },
+  forecast: { bg: "#f4f4f5", fg: "#3f3f46" },
+};
+const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
+/** İlk harf büyük, Türkçe ("i" → "İ"): konu parçası küçük harfle başlayabilir ("dünkü kapanış listesi eksik") */
+const upperFirst = (v: string) => `${v.charAt(0).toLocaleUpperCase("tr-TR")}${v.slice(1)}`;
+
+/**
+ * Kutunun bağlantısı: yalnız panelin bir yolu (harf, rakam, tire, alt çizgi; sorgu ve # serbest). Başka her adres
+ * (fotoğraf, Blob, dış site, ".." ya da %2e ile yukarı çıkan yol) panelin girişine düşer.
+ */
+const PANEL_PATH = /^\/panel(?:\/[\w-]+)*\/?(?:[?#]\S*)?$/;
+const boxUrl = (href: string) => `${APP_URL}${PANEL_PATH.test(href) ? href : "/panel"}`;
+
+/** Ek kutunun HTML'i: fiyat onayı kutusu gibi yuvarlak köşeli renkli kutu; uzun metin sarılır (telefonda taşmaz) */
+function boxHtml(b: DigestBox, key: keyof DigestExtras): string {
+  const t = BOX_TONE[key];
+  const lines = b.lines.map((l) => {
+    const style = l.tone ? `;color:${LINE_TONE[l.tone]}${l.tone === "muted" ? ";font-size:13px;line-height:18px" : ""}` : "";
+    const body = l.strong ? `<strong>${esc(l.strong)}</strong>${l.text ? `<br>${esc(l.text)}` : ""}` : esc(l.text);
+    return `<div style="margin-top:6px${style}">${body}</div>`;
+  });
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:14px"><tr><td style="background:${t.bg};border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:${t.fg};word-break:break-word">
+  <div style="font-size:13px;line-height:18px;font-weight:600">${esc(b.title)}</div>
+  ${lines.join("\n  ")}
+  <div style="margin-top:8px"><a href="${esc(boxUrl(b.href))}" style="color:${t.fg};font-weight:600">${esc(b.link)} →</a></div>
+</td></tr></table>`;
+}
+
+/** Ek kutunun düz metni: boş satır, başlık, satırlar, bağlantı */
+const boxText = (b: DigestBox) => ["", b.title, ...b.lines.map((l) => `- ${l.strong ? `${l.strong}${l.text ? `: ${l.text}` : ""}` : l.text}`), `${b.link}: ${boxUrl(b.href)}`];
+
+/** Ortak kabuğun alt notu (sabah e-postası, bekçi e-postası) */
+const DEFAULT_FOOTER = "Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler & hatırlatıcılar sayfasından değiştirebilirsiniz.";
+
 /**
  * E-postaların ortak kabuğu: üstte L'Af başlığı ve tarih, ortada beyaz kart (`card`), altta alıcı notu. `card` ve
- * `brandSub` hazır (kaçışlı) HTML.
+ * `brandSub` hazır (kaçışlı) HTML; `footer` düz metin (kaçışı burada; verilmezse bildirim adresleri notu).
  */
-function emailLayout(o: { subject: string; preheader: string; brandSub: string; today: string; card: string }): string {
+export function emailLayout(o: { subject: string; preheader: string; brandSub: string; today: string; card: string; footer?: string }): string {
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>${esc(o.subject)}</title></head>
 <body style="margin:0;padding:0;background:#f4f4f5;-webkit-text-size-adjust:100%;font-family:${FONT}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(o.preheader)}</div>
@@ -115,7 +263,7 @@ function emailLayout(o: { subject: string; preheader: string; brandSub: string; 
   <tr><td style="background:#ffffff;border-radius:24px;padding:24px 20px 22px">
     ${o.card}
   </td></tr>
-  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa;text-align:center">Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar sayfasından değiştirebilirsiniz.</td></tr>
+  <tr><td style="padding:16px 12px 0;font-family:${FONT};font-size:12px;line-height:17px;color:#a1a1aa;text-align:center">${esc(o.footer ?? DEFAULT_FOOTER)}</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;
@@ -125,13 +273,17 @@ function emailLayout(o: { subject: string; preheader: string; brandSub: string; 
  * Günlük sabah e-postası: AkmanOS açık teması, satır içi stiller ve tablolarla (e-posta istemcileri flex ve
  * dış CSS tanımaz). Telefonda tek sütun: üstte L'Af başlığı, varsa sistem uyarıları, aşamalara göre ödemeler, sağa
  * hizalı tutarlar, Paraşüt'ten gelen yeni faturalar, en altta tam genişlikte "Panelde aç" düğmesi. Ödeme yoksa yalnız
- * öteki bölümler.
+ * öteki bölümler. Gövde sırası: sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, ek kutular (komisyon,
+ * kontrol), zam, tahmin kutusu, düğme.
  *
- * Konu (öncelik sırasıyla; ötekiler " · " ile eklenir): ödeme varsa "Ödeme hatırlatması: …" (+ sistem uyarısı, yeni
- * fatura, yeni fiyat onayı, zam); yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk başlık>"; yoksa yeni faturasız
- * eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah
- * özeti: …"; yoksa zam ya da "bugün yeni bir şey yok". Bölüm ekleyenler konuya yalnız kendi parçasını katar; sırayı
- * burası belirler.
+ * Konu (öncelik sırasıyla; ötekiler " · " ile, hep aynı sırada eklenir: yeni fatura, yeni fiyat onayı, zam, komisyon,
+ * kontrol): ödeme varsa "Ödeme hatırlatması: …" (+ önce sistem uyarısı); yoksa sistem uyarısı varsa "Sistem uyarısı:
+ * <ilk başlık>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi başarısız"; yoksa yeni fatura, kontrol
+ * bekleyen, yeni fiyat onayı, komisyon ya da kontrol kutusundan ilki "Sabah özeti: …"; yoksa zam, yoksa (konu parçası
+ * olmayan) komisyon ya da kontrol kutusunun adı, yoksa "bugün yeni bir şey yok". Başlık da aynı sırayla (kutunun
+ * `headline`'ı fiyat onayından sonra, zamdan önce; başlıksız kutu en sonda konu parçası ya da adıyla). Bölüm ve kutu
+ * ekleyenler konuya yalnız kendi parçasını katar; sırayı burası belirler. Tahmin kutusu konuya, başlığa ve düğmeye hiç
+ * girmez. `extras` verilmezse (ya da kutusuzsa) e-posta eskisiyle birebir aynı.
  */
 export function renderDigest(
   rows: { item: UpcomingItem; stage: NotifyStage }[],
@@ -139,32 +291,49 @@ export function renderDigest(
   invoices?: DigestInvoices | null,
   prices?: DigestPrices | null,
   system?: DigestSystem | null,
+  extras?: DigestExtras | null,
 ) {
   const counts = { overdue: 0, due: 0, before: 0 };
   for (const r of rows) counts[r.stage]++;
   const parts = [counts.overdue ? `${counts.overdue} gecikmiş` : null, counts.due ? `${counts.due} bugün` : null, counts.before ? `${counts.before} yaklaşan` : null].filter(Boolean);
   const inv = invoices && (invoices.items.length || invoices.reviewCount || invoices.syncError || invoices.priceHolds?.count) ? invoices : null;
   const invPart = inv?.items.length ? `${inv.items.length} yeni fatura` : null;
+  const reviewPart = inv?.reviewCount ? `${inv.reviewCount} fatura kontrol bekliyor` : null;
   // Onay bekleyen fiyatlar bölümde hep görünür; konuya ve başlığa yalnız son e-postadan beri yenisi geldiyse girer
   const holds = inv?.priceHolds?.count ? inv.priceHolds : null;
   const holdPart = holds?.fresh ? `${holds.count} fiyat onay bekliyor` : null;
   const zam = prices && prices.changes.length ? prices : null;
   const zamPart = zam ? (zam.productCount ? `zam: ${zam.productCount} ürünün fiyatına bakın` : `${zam.changes.length} hammaddeye zam`) : null;
   const sys = system && system.items.length ? system : null;
-  const extra = [sys ? "sistem uyarısı" : null, invPart, holdPart, zamPart].filter(Boolean).join(" · ");
-  const sysExtra = [invPart, holdPart, zamPart].filter(Boolean).join(" · ");
-  const failExtra = [holdPart, zamPart].filter(Boolean).join(" · ");
+  // Ek kutular: komisyon ve kontrol haber (konu, başlık, düğme); tahmin yalnız gövdede
+  const com = extras?.commission ?? null;
+  const kon = extras?.kontrol ?? null;
+  const fc = extras?.forecast ?? null;
+  const comPart = com?.subjectPart || null;
+  const konPart = kon?.subjectPart || null;
+  // Konuya eklenen parçaların tek sırası
+  const tail = [invPart, holdPart, zamPart, comPart, konPart];
+  const extra = [sys ? "sistem uyarısı" : null, ...tail].filter(Boolean).join(" · ");
+  const sysExtra = tail.filter(Boolean).join(" · ");
+  const failExtra = [holdPart, zamPart, comPart, konPart].filter(Boolean).join(" · ");
+  // "Sabah özeti: <ilk haber>": adayın kuyruktaki yeri (kontrol bekleyen kuyrukta yok); ilk haber kuyruktan çıkar
+  const lead = ([[invPart, 0], [reviewPart, -1], [holdPart, 1], [comPart, 3], [konPart, 4]] as const).find(([p]) => p);
+  // Başlığı ya da konu parçası olmayan kutu e-postanın tek içeriğiyse konu ve başlık "yeni bir şey yok" demesin: kutunun
+  // parçası (başlıkta ilk harfi büyük), o da yoksa adı. Konunun son dalında parça zaten yoktur (varsa `lead` olurdu)
+  const boxPart = comPart || konPart;
+  const boxLast = boxPart ? upperFirst(boxPart) : com?.title || kon?.title || null;
   const subject = rows.length
     ? `Ödeme hatırlatması: ${parts.join(", ")}${extra ? ` · ${extra}` : ""}`
     : sys
       ? `Sistem uyarısı: ${sys.items[0].title}${sysExtra ? ` · ${sysExtra}` : ""}`
       : inv?.syncError && !invPart
         ? `Paraşüt eşitlemesi başarısız${failExtra ? ` · ${failExtra}` : ""}`
-        : invPart || inv?.reviewCount || holdPart
-          ? `Sabah özeti: ${[invPart ?? (inv?.reviewCount ? `${inv.reviewCount} fatura kontrol bekliyor` : null), holdPart, zamPart].filter(Boolean).join(" · ")}`
-          : `Sabah özeti: ${zamPart ?? "bugün yeni bir şey yok"}`;
+        : lead
+          ? `Sabah özeti: ${[lead[0], ...tail.filter((_, i) => i !== lead[1])].filter(Boolean).join(" · ")}`
+          : `Sabah özeti: ${zamPart ?? boxLast ?? "bugün yeni bir şey yok"}`;
   const total = rows.reduce((a, r) => a + (r.item.amount ?? 0), 0);
   const link = `${APP_URL}/panel/hatirlaticilar`;
+  const boxHeadline = com?.headline || kon?.headline || null;
   const headline = rows.length
     ? rows.length === 1
       ? "1 ödeme sizi bekliyor"
@@ -179,11 +348,13 @@ export function renderDigest(
             ? `${inv.reviewCount} fatura kontrol bekliyor`
             : holdPart && holds
               ? `${holds.count} hammadde fiyatı onay bekliyor`
-              : zam
-              ? zam.productCount
-                ? `Hammadde zammı: ${zam.productCount} ürünün fiyatına bakın`
-                : `${zam.changes.length} hammaddenin fiyatı arttı`
-              : "Bugün yeni bir şey yok";
+              : boxHeadline
+                ? boxHeadline
+                : zam
+                  ? zam.productCount
+                    ? `Hammadde zammı: ${zam.productCount} ürünün fiyatına bakın`
+                    : `${zam.changes.length} hammaddenin fiyatı arttı`
+                  : (boxLast ?? "Bugün yeni bir şey yok");
   const preheader = rows.length ? `${parts.join(", ")} · toplam ${money(total)}${extra ? ` · ${extra}` : ""}` : headline;
 
   const pills = STAGE_ORDER.filter((st) => counts[st])
@@ -296,15 +467,29 @@ export function renderDigest(
           : `<div style="font-family:${FONT};font-size:13px;line-height:18px;color:#71717a;padding:10px 0 0">Etkilenen ürünlerin maliyet oranı hâlâ hedefte.</div>`
       }<div style="font-family:${FONT};font-size:14px;padding:10px 0 0"><a href="${APP_URL}/panel/urunler#zamlar" style="color:#c2410c;font-weight:600">Önerilen fiyatlara bak →</a></div>`
     : "";
+  // Düğme kutunun bağlantısına: fiyat onayından sonra, zamdan önce (komisyon, sonra kontrol)
+  const actionBox = com ?? kon;
   const button = rows.length
     ? { href: link, label: "Panelde aç" }
     : inv && (inv.items.length || inv.reviewCount || inv.syncError)
       ? { href: `${APP_URL}/panel/faturalar${inv?.reviewCount ? "?durum=kontrol" : "?kaynak=parasut"}`, label: "Faturaları aç" }
       : holdPart
         ? { href: HOLDS_LINK, label: "Hammaddeleri aç" }
-        : zam || !sys
-        ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
-        : { href: JOBS_LINK, label: "Günlük işleri aç" };
+        : actionBox
+          ? { href: boxUrl(actionBox.href), label: actionBox.link }
+          : zam || !sys
+            ? { href: `${APP_URL}/panel/urunler#zamlar`, label: "Ürünleri aç" }
+            : { href: JOBS_LINK, label: "Günlük işleri aç" };
+  const boxes = [com ? boxHtml(com, "commission") : "", kon ? boxHtml(kon, "kontrol") : ""].join("");
+  const forecastBox = fc ? boxHtml(fc, "forecast") : "";
+  // Kapanış notu gövdenin asıl bölümüne göre; yalnız ek kutu varsa not yok (kutular kendi bağlantısını taşır)
+  const note = rows.length
+    ? "Ödediklerinizi panelde “Ödendi” olarak işaretleyin; tekrar edenler sıradaki tarihe geçer."
+    : inv || zam || (!sys && !actionBox)
+      ? "Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın."
+      : sys
+        ? "İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."
+        : "";
   const systemSection = sys
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:8px"><tr><td style="background:#fef2f2;border-radius:14px;padding:12px 14px;font-family:${FONT};font-size:14px;line-height:20px;color:#b91c1c">
   <div style="font-size:13px;line-height:18px;font-weight:600">Sistem uyarıları · ${sys.items.length}</div>
@@ -333,20 +518,14 @@ export function renderDigest(
     </table>`
         : ""
     }
-    ${invoiceSection}
-    ${priceSection}
+    ${invoiceSection}${boxes}
+    ${priceSection}${forecastBox}
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:22px">
       <tr><td align="center" bgcolor="#171717" style="border-radius:14px;background:#171717">
-        <a href="${button.href}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${button.label}</a>
+        <a href="${esc(button.href)}" style="display:block;padding:15px 20px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:14px">${esc(button.label)}</a>
       </td></tr>
     </table>
-    <p style="margin:12px 0 0;font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;text-align:center">${
-      rows.length
-        ? "Ödediklerinizi panelde “Ödendi” olarak işaretleyin; tekrar edenler sıradaki tarihe geçer."
-        : inv || zam || !sys
-          ? "Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın."
-          : "İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."
-    }</p>`,
+    ${note ? `<p style="margin:12px 0 0;font-family:${FONT};font-size:13px;line-height:19px;color:#71717a;text-align:center">${note}</p>` : ""}`,
   });
 
   const text = [
@@ -367,6 +546,8 @@ export function renderDigest(
       : []),
     ...(inv?.reviewCount ? ["", `${inv.reviewCount} fatura kontrol bekliyor: ${APP_URL}/panel/faturalar?durum=kontrol`] : []),
     ...(holds ? ["", `${holds.count} hammadde fiyatı onay bekliyor (${holdsSummary(holds.items)}): ${HOLDS_LINK}`] : []),
+    ...(com ? boxText(com) : []),
+    ...(kon ? boxText(kon) : []),
     ...(zam
       ? [
           "",
@@ -384,6 +565,7 @@ export function renderDigest(
           `Önerilen fiyatlar: ${APP_URL}/panel/urunler#zamlar`,
         ]
       : []),
+    ...(fc ? boxText(fc) : []),
     "",
     `${button.label}: ${button.href}`,
   ].join("\n");

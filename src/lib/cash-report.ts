@@ -1,7 +1,7 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
-import { addDays, longDateTR, todayTR } from "./reminders";
+import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 
 /**
  * Gün sonu kasa raporu (saf; testli: tests/kasa-raporu.test.ts). Personel her akşam ModPOS'un Z raporuna ve kasaya
@@ -31,6 +31,11 @@ export interface CashReportFields {
   bankPos: number | null;
   /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez); girilmediyse null */
   offRevenue: number | null;
+  /**
+   * Z raporundaki indirim toplamı (isteğe bağlı); girilmediyse null: ayın indirimine yalnız girilen günler gider.
+   * Alan sonradan geldi: eski kopyalarda ve elle kurulan raporlarda olmayabilir (boş sayılır)
+   */
+  discounts?: number | null;
   note: string | null;
 }
 
@@ -88,20 +93,342 @@ export function computeCash(f: Pick<CashReportFields, "zTotal" | "cash" | "card"
   };
 }
 
+/** İş gününün döndüğü saat (Türkiye): gece bundan önce kapatılan gün bir önceki güne yazılır */
+export const DAY_TURN_HOUR = 5;
+/** Kasa raporunun "akşam" sayıldığı saat: bugünün raporu bundan sonra beklenir (zil ve Bugün ekranı) */
+export const CASH_EVENING_HOUR = 20;
+
+/** Türkiye saatiyle saat (0–23) */
+export function trHour(now: Date = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
+}
+
+/** Akşam (20:00 ve sonrası) ya da gece 05:00'ten önce: bugünün kasa raporu beklenir (zil ve Bugün aynı kurala bakar) */
+export function isCashEvening(now: Date = new Date()): boolean {
+  const hour = trHour(now);
+  return hour >= CASH_EVENING_HOUR || hour < DAY_TURN_HOUR;
+}
+
 /**
  * Formdaki iş günü: gece 05:00'ten önce kapatılan gün bir önceki güne yazılır (kafe gece yarısından sonra kapanabilir).
  * Türkiye saatiyle.
  */
 export function businessDate(now: Date = new Date()): string {
-  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", hourCycle: "h23" }).format(now));
   const today = todayTR(now);
-  return hour < 5 ? addDays(today, -1) : today;
+  return trHour(now) < DAY_TURN_HOUR ? addDays(today, -1) : today;
 }
 
 /** Personelin rapor girebileceği günler: iş günü ve bir önceki gün (unutulan akşam ertesi gün girilir) */
 export function staffCanReport(date: string, now: Date = new Date()): boolean {
   const day = businessDate(now);
   return date === day || date === addDays(day, -1);
+}
+
+/**
+ * Personel bu günün kasasına (rapor, kasadan çıkanlar, fotoğraflar) hâlâ dokunabilir mi: bugün ve dün; ama günün raporu
+ * varken sonraki bir günün raporu da girildiyse artık yalnız yönetici düzeltir (ertesi günün açılışı bu raporun devrine
+ * dayanır). Unutulan dünü girmek serbest: o günün raporu yoksa kilit yok. Kasa sayfası, rapor eylemi, kasadan
+ * çıkanlar ve fotoğraflar (src/server/photo-read/rules.ts staffDayOpen) aynı kuralı kullanır.
+ */
+export function staffDayEditable(date: string, state: { hasReport: boolean; laterReport: boolean }, now: Date = new Date()): boolean {
+  return staffCanReport(date, now) && !(state.hasReport && state.laterReport);
+}
+
+// ---------------------------------------------------------------- Açılış ↔ önceki devir
+
+/** Açılışın önceki raporun ertesi güne devriyle karşılaştırması (yalnız tutmadığında üretilir) */
+export interface CarryCheck {
+  /** Denetlenen raporun günü */
+  date: string;
+  /** Önceki raporun günü ve ertesi güne devri */
+  prevDate: string;
+  carry: number;
+  opening: number;
+  /** Açılış − devir: eksi az, artı fazla */
+  diff: number;
+  /** İki rapor arasında rapor girilmemiş gün */
+  gapDays: number;
+}
+
+/**
+ * Açılış önceki raporun devriyle tutuyor mu (1 ₺ altı tutar). Önceki rapor yoksa ya da tutuyorsa null. Okurken
+ * hesaplanır: ertesi günün açılışını kullandıktan sonra düzeltilen bir önceki gün de yakalanır.
+ */
+export function carryCheck(date: string, openingCash: number, prev: { date: string; amount: number } | null): CarryCheck | null {
+  if (!prev) return null;
+  const diff = r2(openingCash - prev.amount);
+  if (Math.abs(diff) < CASH_TOLERANCE) return null;
+  return { date, prevDate: prev.date, carry: prev.amount, opening: openingCash, diff, gapDays: Math.max(0, daysBetween(prev.date, date) - 1) };
+}
+
+/** "120 ₺ az", "30 ₺ fazla" (açılış devre göre) */
+export function carryDiffText(c: Pick<CarryCheck, "diff">): string {
+  return `${money(Math.abs(c.diff))} ${c.diff < 0 ? "az" : "fazla"}`;
+}
+
+/**
+ * Raporların açılış ↔ devir zinciri (günden güne listesi): her raporun açılışı kendinden önceki raporun devriyle.
+ * `before`: listenin ilk raporundan önceki son raporun devri (previousCarryOver). Yalnız tutmayanlar, denetlenen
+ * raporun gününe göre.
+ */
+export function carryChecks(
+  reports: Pick<CashReportFields, "date" | "openingCash" | "countedCash" | "handedOver">[],
+  before: { date: string; amount: number } | null,
+): Map<string, CarryCheck> {
+  const out = new Map<string, CarryCheck>();
+  let prev = before;
+  for (const r of [...reports].sort((a, b) => a.date.localeCompare(b.date))) {
+    const c = carryCheck(r.date, r.openingCash, prev);
+    if (c) out.set(r.date, c);
+    prev = { date: r.date, amount: r2(r.countedCash - r.handedOver) };
+  }
+  return out;
+}
+
+/** Bu günün devriyle tutmayan sonraki rapor (zincirdeki denetimlerden) */
+export function nextCheckOf(checks: Iterable<CarryCheck>, date: string): CarryCheck | null {
+  for (const c of checks) if (c.prevDate === date) return c;
+  return null;
+}
+
+/**
+ * Açılış devirle tutmuyorsa not zorunlu: yalnız rapor yeniyse ya da açılış değiştiyse (tutmayan eski bir raporda Z
+ * yazım hatasını düzeltmek engellenmez). `prevOpening`: kayıtlı raporun açılışı (yeni raporda null).
+ */
+export function openingNeedsNote(o: { check: CarryCheck | null; openingCash: number; prevOpening: number | null; note: string | null }): boolean {
+  if (!o.check || (o.note ?? "").trim()) return false;
+  return o.prevOpening === null || Math.abs(o.openingCash - o.prevOpening) >= 0.005;
+}
+
+// ---------------------------------------------------------------- Düzeltmeler (önceki sürümler)
+
+/** Önceki sürümün kopyası (cash_report_revisions.data): formun alanları, kasa farkı ve sayan */
+export type CashRevisionData = CashReportFields & { cashDiff: number; countedByName: string | null };
+
+type ChangeKey = Exclude<keyof CashRevisionData, "date" | "cashDiff">;
+
+/** Değişiklik listesindeki adlar ve sıra: önce kasa (nakit), sonra Z raporu, kart ve notlar */
+export const CHANGE_LABELS: Record<ChangeKey, string> = {
+  openingCash: "Açılış",
+  cash: "Nakit satış",
+  cashOut: "Gün içinde çıkan",
+  countedCash: "Sayılan nakit",
+  handedOver: "Teslim edilen",
+  zTotal: "Toplam satış",
+  card: "Kart",
+  mealCard: "Yemek kartı",
+  online: "Online",
+  other: "Diğer",
+  discounts: "İndirim",
+  offRevenue: "Ödenmez / ikram",
+  bankPos: "Banka POS",
+  zNo: "Z no",
+  receipts: "Fiş sayısı",
+  cashOutNote: "Neye çıktı",
+  note: "Not",
+  countedByName: "Sayan",
+};
+
+/** Kasadaki nakdi değiştiren alanlar: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır */
+export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver"];
+
+const TEXT_FIELDS: readonly ChangeKey[] = ["cashOutNote", "note"];
+const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "countedByName"];
+
+export interface FieldChange {
+  key: ChangeKey;
+  label: string;
+  /** Önceki ve yeni değer (metin alanında boş: yalnız "değişti" yazılır) */
+  from: string;
+  to: string;
+  sensitive: boolean;
+}
+
+/** Eksik alan (eski bir kopyada olmayan) boş sayılır */
+const valueOf = (d: Partial<CashRevisionData>, k: ChangeKey) => d[k] ?? null;
+
+/**
+ * İki sürüm arasındaki değişiklikler. Tutarlar 0,005 hassasiyetle, boş "—"; metin alanı (not, neye çıktı) içeriği
+ * yazılmadan "Not değişti". Değişiklik yoksa boş liste.
+ */
+export function revisionChanges(before: Partial<CashRevisionData>, after: Partial<CashRevisionData>): FieldChange[] {
+  const out: FieldChange[] = [];
+  for (const key of Object.keys(CHANGE_LABELS) as ChangeKey[]) {
+    const a = valueOf(before, key);
+    const b = valueOf(after, key);
+    const text = TEXT_FIELDS.includes(key) || PLAIN_FIELDS.includes(key);
+    const same = text
+      ? String(a ?? "").trim() === String(b ?? "").trim()
+      : (a === null && b === null) || (a !== null && b !== null && Math.abs(Number(a) - Number(b)) < 0.005);
+    if (same) continue;
+    const shown = (v: string | number | null) => (v === null || v === "" ? "—" : PLAIN_FIELDS.includes(key) ? String(v) : money(Number(v)));
+    const quiet = TEXT_FIELDS.includes(key);
+    out.push({ key, label: CHANGE_LABELS[key], from: quiet ? "" : shown(a), to: quiet ? "" : shown(b), sensitive: SENSITIVE.includes(key) });
+  }
+  return out;
+}
+
+/** "Sayılan nakit: 2.880 ₺ → 2.980 ₺", metin alanında "Not değişti" (`colon: false`: iki noktasız, satır içi) */
+export function changeLine(c: FieldChange, colon = true): string {
+  if (TEXT_FIELDS.includes(c.key)) return `${c.label} değişti`;
+  return `${c.label}${colon ? ":" : ""} ${c.from} → ${c.to}`;
+}
+
+/** "Sayılan nakit 2.880 ₺ → 2.980 ₺; Not değişti" */
+export function changesText(changes: FieldChange[]): string {
+  return changes.map((c) => changeLine(c, false)).join("; ");
+}
+
+/** İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) yapılan gönderim */
+export function isLateEdit(date: string, submittedAt: Date): boolean {
+  return businessDate(submittedAt) > date;
+}
+
+/**
+ * Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan). Sayanı boş rapor (bu özellikten önce
+ * kaydedilmiş) gönderenin saydığı raporudur: kopyaya o yazılır, yoksa ilk düzeltmede kimsenin yapmadığı "Sayan — → Ayşe"
+ * değişikliği görünür.
+ */
+export function revisionDataOf(r: CashReportFields & { cashDiff: number; countedByName: string | null; submittedByName?: string }): CashRevisionData {
+  return {
+    date: r.date,
+    zNo: r.zNo,
+    receipts: r.receipts,
+    zTotal: r.zTotal,
+    cash: r.cash,
+    card: r.card,
+    mealCard: r.mealCard,
+    online: r.online,
+    other: r.other,
+    openingCash: r.openingCash,
+    cashOut: r.cashOut,
+    cashOutNote: r.cashOutNote,
+    countedCash: r.countedCash,
+    handedOver: r.handedOver,
+    bankPos: r.bankPos,
+    offRevenue: r.offRevenue,
+    discounts: r.discounts,
+    note: r.note,
+    cashDiff: r.cashDiff,
+    countedByName: r.countedByName ?? r.submittedByName ?? null,
+  };
+}
+
+/** Kayıtlı önceki sürüm (cash_report_revisions satırı) */
+export interface CashRevisionRow {
+  revision: number;
+  data: CashRevisionData;
+  /** O sürümü gönderen (zil yöneticinin kendi düzeltmesini saymaz; kullanıcı silindiyse boş) */
+  submittedBy?: number | null;
+  submittedByName: string;
+  /** O sürümün gönderildiği an (ISO) */
+  submittedAt: string;
+}
+
+/** Sayanı boş kopya (bu özellikten önceki rapordan, düzeltilmeden alınmış): o sürümü gönderen saymış sayılır */
+const withCounter = (d: CashRevisionData, by: string): CashRevisionData => (d.countedByName ? d : { ...d, countedByName: by });
+
+export interface RevisionEntry {
+  /** Bu gönderimle gelen sürüm */
+  revision: number;
+  /** Gönderim anı (ISO) ve gönderen */
+  at: string;
+  by: string;
+  byId: number | null;
+  changes: FieldChange[];
+  /** İş günü kapandıktan sonra ve kasa alanı değişti */
+  late: boolean;
+}
+
+/**
+ * Raporun düzeltme geçmişi, en yeni önce: kayıtlı sürümler sırayla birbiriyle, sonuncusu raporun şimdiki hâliyle
+ * karşılaştırılır. `first`: ilk gönderim (raporun açıldığı an; gönderen yalnız 1. sürümün kopyası varsa bilinir).
+ * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar.
+ */
+export function historyOf(
+  report: CashReportFields & {
+    revision: number;
+    cashDiff: number;
+    countedByName: string | null;
+    submittedBy?: number | null;
+    submittedByName: string;
+    createdAt: string;
+    updatedAt: string;
+  },
+  revisions: CashRevisionRow[],
+): { entries: RevisionEntry[]; first: { at: string; by: string | null } } {
+  const snaps = [...revisions].filter((r) => r.revision < report.revision).sort((a, b) => a.revision - b.revision);
+  const versions = [
+    ...snaps.map((s) => ({ revision: s.revision, data: withCounter(s.data, s.submittedByName), at: s.submittedAt, by: s.submittedByName, byId: s.submittedBy ?? null })),
+    { revision: report.revision, data: revisionDataOf(report), at: report.updatedAt, by: report.submittedByName, byId: report.submittedBy ?? null },
+  ];
+  const entries: RevisionEntry[] = [];
+  for (let i = 1; i < versions.length; i++) {
+    const v = versions[i];
+    const changes = revisionChanges(versions[i - 1].data, v.data);
+    entries.push({ revision: v.revision, at: v.at, by: v.by, byId: v.byId, changes, late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive) });
+  }
+  const knownFirst = snaps[0]?.revision === 1 ? snaps[0].submittedByName : report.revision === 1 ? report.submittedByName : null;
+  return { entries: entries.reverse(), first: { at: report.createdAt, by: knownFirst } };
+}
+
+/**
+ * Kayıtlı raporun bütünlük bilgisi (WhatsApp metni, e-posta, ekran): sayan, açılışın önceki devirle tutmaması, bu
+ * raporun devriyle tutmayan sonraki rapor ve son düzeltmede değişenler. `prev`: önceki raporun devri
+ * (previousCarryOver), `next`: sonraki rapor (nextReportAfter), `revisions`: raporun kayıtlı önceki sürümleri.
+ */
+export function integrityOf(
+  r: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; updatedAt: string },
+  prev: { date: string; amount: number } | null,
+  next: { date: string; openingCash: number } | null,
+  revisions: CashRevisionRow[],
+): CashReportIntegrity {
+  return {
+    countedBy: r.countedByName,
+    carry: carryCheck(r.date, r.openingCash, prev),
+    next: next ? carryCheck(next.date, next.openingCash, { date: r.date, amount: r2(r.countedCash - r.handedOver) }) : null,
+    changes: lastRevision(r, revisions)?.changes ?? null,
+  };
+}
+
+/** Gönderim anı, Türkiye saatiyle: "22 Ekim 10:05" */
+export function stampTR(iso: string): string {
+  const d = new Date(iso);
+  const time = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${dayMonthTR(todayTR(d))} ${time}`;
+}
+
+/** Son düzeltme (şimdiki sürüm ile bir önceki kopya): e-posta ve WhatsApp'taki "Değişen:" satırı */
+export function lastRevision(
+  report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; updatedAt: string },
+  revisions: CashRevisionRow[],
+): { changes: FieldChange[]; late: boolean } | null {
+  const prev = revisions.find((r) => r.revision === report.revision - 1);
+  if (!prev) return null;
+  const changes = revisionChanges(withCounter(prev.data, prev.submittedByName), revisionDataOf(report));
+  return { changes, late: isLateEdit(report.date, new Date(report.updatedAt)) && changes.some((c) => c.sensitive) };
+}
+
+/**
+ * Zilin "Kasa raporu ertesi gün değişti" bildirimi: iş günü kapandıktan sonra kasa alanı değişen bütün düzeltmeler,
+ * yalnız sonuncusu değil (ardından not için yeniden gönderilen rapor uyarıyı kapatmaz). Bakan yöneticinin kendi
+ * düzeltmeleri sayılmaz (`viewer`). `revision`: en yeni geç düzeltmenin sürümü (bildirimin kimliği; yalnız yeni bir geç
+ * düzeltme yeniden okunmamış yapar), `by`: düzeltenler, `changes`: o düzeltmelerde değişen kasa alanları, eskiden
+ * yeniye. Yoksa null.
+ */
+export function lateCorrections(
+  report: Parameters<typeof historyOf>[0],
+  revisions: CashRevisionRow[],
+  viewer: number | null,
+): { revision: number; by: string[]; changes: FieldChange[] } | null {
+  const late = historyOf(report, revisions).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
+  if (!late.length) return null;
+  const oldestFirst = [...late].reverse();
+  return {
+    revision: late[0].revision,
+    by: [...new Set(oldestFirst.map((e) => e.by))],
+    changes: oldestFirst.flatMap((e) => e.changes.filter((c) => c.sensitive)),
+  };
 }
 
 /** Türkiye numarası wa.me biçimine: "0532 123 45 67" → "905321234567"; geçersizse null */
@@ -160,31 +487,65 @@ export function cashOutLines(lines: CashReportExtras["cashOuts"]): string[] {
 }
 
 /**
+ * Kasanın bütünlüğü (WhatsApp metni ve e-posta; docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler): kasayı kimin
+ * saydığı, açılışın önceki devirle tutmaması, bu raporun devriyle tutmayan ertesi gün ve son düzeltmede değişenler.
+ */
+export interface CashReportIntegrity {
+  /** Kasayı sayan (gönderenden farklıysa yazılır) */
+  countedBy?: string | null;
+  /** Açılış önceki raporun devriyle tutmuyor */
+  carry?: CarryCheck | null;
+  /** Sonraki raporun açılışı bu raporun devriyle tutmuyor */
+  next?: CarryCheck | null;
+  /** Son düzeltmede değişenler (yalnız güncellenen raporda) */
+  changes?: FieldChange[] | null;
+}
+
+/** "Önceki devir 1.200 ₺ (21 Ekim): açılış 120 ₺ az" */
+export function carryWarning(c: CarryCheck): string {
+  return `Önceki devir ${money(c.carry)} (${dayMonthTR(c.prevDate)}): açılış ${carryDiffText(c)}`;
+}
+
+/** "22 Ekim açılışı (1.200 ₺) bu devirle tutmuyor" */
+export function nextWarning(c: CarryCheck): string {
+  return `${dayMonthTR(c.date)} açılışı (${money(c.opening)}) bu devirle tutmuyor`;
+}
+
+/** Başlıktaki kişi: "Mehmet", sayan başkaysa "Mehmet · sayan Ayşe" */
+export function byLine(by: string, countedBy?: string | null): string {
+  return countedBy && countedBy !== by ? `${by} · sayan ${countedBy}` : by;
+}
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
  * türleriyle tutmaması öne çıkarılır.
  */
-export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras): string {
+export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity): string {
   const c = computeCash(f);
-  const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${meta.by}`];
+  const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const photos = photosLine(meta.photos);
   if (photos) head.push(photos);
   if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}`);
+  if (meta.revision && meta.revision > 1 && meta.changes?.length) head.push(`*Değişen:* ${changesText(meta.changes)}`);
   const outs = cashOutLines(meta.cashOuts);
   const z = ["*Z raporu (ModPOS)*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
+  if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
   const mark = c.kind === "short" ? "🔴" : c.kind === "over" ? "🟠" : "✅";
   const kasa = [
     "*Kasa (nakit)*",
     `Açılış (devir): ${money(f.openingCash)}`,
+    ...(meta.carry ? [`⚠️ ${carryWarning(meta.carry)}`] : []),
     `+ Nakit satış: ${money(f.cash)}`,
     ...(f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : []),
     `= Olması gereken: ${money(c.expectedCash)}`,
     `Sayılan: ${money(f.countedCash)}`,
     `${mark} *${c.kind === "even" ? "Kasa tutuyor" : diffText(c.cashDiff).toLocaleUpperCase("tr")}*`,
     ...(f.handedOver ? [`Teslim edilen: ${money(f.handedOver)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
+    ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
   ];
   const kart =
     c.cardDiff === null

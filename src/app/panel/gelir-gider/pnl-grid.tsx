@@ -146,6 +146,7 @@ function EditableCell({
   validate,
   onSave,
   onNote,
+  computedLabel = "Hesaplanan",
 }: {
   value: number | null;
   computed: number | null;
@@ -167,6 +168,8 @@ function EditableCell({
   onSave: (v: number | null) => Promise<void>;
   /** Not penceresini açar (verilmezse hücreye not eklenemez: ciro ve açık gün ay bilgisidir) */
   onNote?: (amountText: string) => void;
+  /** Hesaplanan değerin adı (ipucunda): ciro ve açık günde "Kasa raporlarından" */
+  computedLabel?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
@@ -310,8 +313,10 @@ function EditableCell({
   const help = muted
     ? "Bu kalem bu ay hesaba girmiyor (başlamadı ya da bitti). Tutar yazarsanız yine de sayılır."
     : overridden && computed !== null
-      ? `Elle girildi. Hesaplanan: ${fmt(computed, format)}`
-      : "Değer girmek için tıklayın ya da rakam yazın";
+      ? `Elle girildi. ${computedLabel}: ${fmt(computed, format)}`
+      : computed !== null && kind === "auto" && computedLabel !== "Hesaplanan"
+        ? `${computedLabel}. Değer girmek için tıklayın ya da rakam yazın`
+        : "Değer girmek için tıklayın ya da rakam yazın";
   return (
     <button
       type="button"
@@ -555,12 +560,17 @@ type GridRow = GridSection["rows"][number];
 const FILTER_KEYS = ["ara", "bolum", "girilebilir", "yazilan", "dolu"];
 const OPEN_DAYS_LABEL = "Açık gün sayısı";
 
+/** Ciro ve açık gün kasa raporlarından geliyorsa hücrenin hesaplanan değerinin adı */
+const KASA_LABEL = "Kasa raporlarından";
+
 export function PnlGrid({
   year,
   months,
   activeMonths,
   sections,
   openDays,
+  openDaysKasa,
+  openDaysManual,
   dims,
   monthNotes,
   currentMonth,
@@ -572,6 +582,9 @@ export function PnlGrid({
   activeMonths: string[];
   sections: GridSection[];
   openDays: (number | null)[];
+  /** Kasa raporlarından açık gün (uygulanmayan ayda null) ve elle yazılan (yoksa null); verilmezse açık gün hep elle */
+  openDaysKasa?: (number | null)[];
+  openDaysManual?: (number | null)[];
   /** Her ayın gün sayısı: açık gün en fazla bu kadar */
   dims: number[];
   /** Ay notları (Satışlar'daki ay bilgisiyle aynı alan) */
@@ -659,7 +672,7 @@ export function PnlGrid({
     return res.ok ? null : res.error;
   }
 
-  async function save(month: string, key: string, v: number | null, hadNote?: boolean): Promise<void> {
+  async function save(month: string, key: string, v: number | null, hadNote?: boolean, kasa?: boolean): Promise<void> {
     const res =
       key === "revenue"
         ? await setMonthField(month, "posRevenue", v)
@@ -670,8 +683,10 @@ export function PnlGrid({
       toast.error(res.error);
       return;
     }
+    // Elle yazılan ciro / açık gün boşaltılınca kasa raporlarının değeri geri gelir
+    if (v === null && kasa) toast.success(key === "revenue" ? "Aylık ciro kasa raporlarına döndü" : "Açık gün kasa raporlarına döndü");
     // Boşaltılan hücrenin notu da silinir: sessizce kaybolmasın
-    if (v === null && hadNote) toast("Hücre boşaltıldı; notu da silindi");
+    else if (v === null && hadNote) toast("Hücre boşaltıldı; notu da silindi");
   }
 
   /** Not penceresi: satır ve ay bilgisiyle */
@@ -887,6 +902,8 @@ export function PnlGrid({
         shownSections={phone.shownSections}
         showOpenDays={phone.showOpenDays}
         openDays={openDays}
+        openDaysKasa={openDaysKasa}
+        openDaysManual={openDaysManual}
         dims={dims}
         monthNotes={monthNotes}
         currentMonth={currentMonth}
@@ -945,25 +962,30 @@ export function PnlGrid({
                   <TD sticky className={cn(STICKY, "py-1.5 font-medium")}>
                     <span className="flex items-center gap-1.5">
                       {OPEN_DAYS_LABEL}
-                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır." />
+                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır. Kasa raporu girilen aylarda boşsa rapor girilen (satış olan) gün sayılır." />
                     </span>
                   </TD>
-                  {visibleIdx.map(({ m, i }) => (
-                    <td key={m} className={CELL}>
-                      <EditableCell
-                        value={openDays[i]}
-                        computed={null}
-                        overridden={openDays[i] !== null}
-                        kind="manual"
-                        format="days"
-                        label={`${OPEN_DAYS_LABEL} · ${MONTH_NAMES[i]} (en fazla ${dims[i]})`}
-                        col={m}
-                        suffix={`/${dims[i]}`}
-                        validate={(v) => openDaysError(m, v)}
-                        onSave={(v) => save(m, "openDays", v)}
-                      />
-                    </td>
-                  ))}
+                  {visibleIdx.map(({ m, i }) => {
+                    // Kasa raporlarından gelen açık gün hesaplanan gibi: elle yazılan onun üzerine yazılmıştır
+                    const kasa = openDaysKasa?.[i] ?? null;
+                    return (
+                      <td key={m} className={CELL}>
+                        <EditableCell
+                          value={openDays[i]}
+                          computed={kasa}
+                          overridden={openDaysManual ? openDaysManual[i] !== null : openDays[i] !== null}
+                          kind={kasa !== null ? "auto" : "manual"}
+                          computedLabel={KASA_LABEL}
+                          format="days"
+                          label={`${OPEN_DAYS_LABEL} · ${MONTH_NAMES[i]} (en fazla ${dims[i]})`}
+                          col={m}
+                          suffix={`/${dims[i]}`}
+                          validate={(v) => openDaysError(m, v)}
+                          onSave={(v) => save(m, "openDays", v, false, kasa !== null)}
+                        />
+                      </td>
+                    );
+                  })}
                   <td className={cn(YEAR_COL, "font-semibold text-ink")}>{num(openDays.reduce<number>((a, v) => a + (v ?? 0), 0))} gün</td>
                 </tr>
               ) : null}
@@ -1015,7 +1037,7 @@ function SectionRows({
 }: {
   sec: GridSection;
   visibleIdx: { m: string; i: number }[];
-  onSave: (month: string, key: string, v: number | null, hadNote?: boolean) => Promise<unknown>;
+  onSave: (month: string, key: string, v: number | null, hadNote?: boolean, kasa?: boolean) => Promise<unknown>;
   onNote: (month: string, i: number, def: PnlRowDef, c: PnlCell, amountText: string) => void;
 }) {
   return (
@@ -1044,6 +1066,8 @@ function SectionRows({
             </TD>
             {visibleIdx.map(({ m, i }) => {
               const c = cells[i];
+              // Aylık ciro kasa raporlarından geliyorsa hesaplanan hücre gibi (elle yazılan mavi, boşaltınca kasaya döner)
+              const kasa = def.key === "revenue" && c.computed !== null;
               return (
                 <td key={m} className={cn(CELL, "text-right")}>
                   {def.editable ? (
@@ -1051,14 +1075,15 @@ function SectionRows({
                       value={c.value}
                       computed={c.computed}
                       overridden={c.overridden}
-                      kind={def.kind}
+                      kind={kasa ? "auto" : def.kind}
+                      computedLabel={kasa ? KASA_LABEL : undefined}
                       format={def.format}
                       label={`${def.label} · ${MONTH_NAMES[i]}`}
                       col={m}
                       note={c.note}
                       outOfRange={c.outOfRange}
                       onSave={async (v) => {
-                        await onSave(m, def.key, v, !!c.note);
+                        await onSave(m, def.key, v, !!c.note, kasa);
                       }}
                       // Ciro ay bilgisidir (Satışlar ile ortak): notu ay notunda
                       onNote={def.key === "revenue" ? undefined : (text) => onNote(m, i, def, c, text)}

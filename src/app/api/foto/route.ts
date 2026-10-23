@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const day = typeof gun === "string" && validDay(gun) ? gun : null;
   if (!(file instanceof File) || file.size === 0) return Response.json({ error: BAD_FORM }, { status: 400 });
   if (!isPhotoKind(kind) || kind === "kontrol") return Response.json({ error: "Geçersiz fotoğraf türü." }, { status: 400 });
-  if (!canUploadPhoto(me, kind, day)) return Response.json({ error: "Bu gün için fotoğraf ekleyemezsiniz." }, { status: 403 });
+  if (!(await canUploadPhoto(me, kind, day))) return Response.json({ error: "Bu gün için fotoğraf ekleyemezsiniz." }, { status: 403 });
   if ((await recentUploads(me.id)) >= UPLOADS_PER_HOUR) {
     return Response.json({ error: "Kısa sürede çok fotoğraf yüklendi; biraz sonra yeniden deneyin." }, { status: 429 });
   }

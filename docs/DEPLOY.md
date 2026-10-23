@@ -61,6 +61,8 @@ Proje → **Settings → Environment Variables** (Production ve Preview):
 | `ANTHROPIC_API_KEY` | (isteğe bağlı, **yalnız Production**) Fotoğraftan okuma (Claude): kasa raporunda Z raporu, banka POS fişi ve kasadan çıkan fişler. Yoksa fotoğraf yine eklenir, rakamlar elle yazılır. Ayrıntı [FOTOGRAF.md](FOTOGRAF.md) |
 | `BLOB_READ_WRITE_TOKEN` | (isteğe bağlı, **yalnız Production**) Fotoğraf deposu: Vercel › Storage › Blob, erişim **Private**, bölge Frankfurt (fra1). Depoyu projeye bağlayınca kendiliğinden eklenir (yeni bağlantı anahtar yerine `BLOB_STORE_ID` verirse o da yeter). Yoksa fotoğraf düğmeleri görünmez ([FOTOGRAF.md](FOTOGRAF.md)) |
 | `PHOTO_DIR` | (yalnız yerel, isteğe bağlı) Fotoğrafların yerel klasörü; yoksa `.data/photos` |
+| `MCP_DISABLED` | (isteğe bağlı) `1` ise Claude bağlantısı kapalı (bütün uçlar 404, verilmiş anahtarlar çalışmaz). Önizlemelerde zaten kapalı ([CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md)) |
+| `MCP_ALLOW_LOCALHOST` | (isteğe bağlı) `1` ise Claude Code / MCP Inspector'ın localhost dönüş adresine canlıda da izin verilir; varsayılan kapalı |
 
 `DATABASE_URL` / `DATABASE_URL_UNPOOLED` Neon entegrasyonundan gelir. Paraşüt değişkenleri (`PARASUT_*`) için
 [PARASUT.md](PARASUT.md) § 1.
@@ -176,6 +178,8 @@ yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
   bulunamaz. Önceki biçimde saklanmış kodlar yenilenene kadar çalışır.
 - Doğrulama anahtarı veritabanında `AUTH_SECRET`'tan türetilen anahtarla şifrelidir; `AUTH_SECRET` değişirse iki
   adımlı doğrulama yeniden kurulmalıdır.
+- **Claude bağlantısı:** yalnız yönetici, parolayla onay; Hesabım › Bağlı uygulamalar'dan kaldırılır; parola değişince
+  ya da oturumlar kapatılınca kapanır. Kurulum ve güvenlik ayrıntısı [CLAUDE-BAGLANTISI.md](CLAUDE-BAGLANTISI.md).
 
 **QR menü.** Müşterinin tam menüsü `https://laffogato.net/menu`'dedir: alerjenler (Gıda Etiketleme Yönetmeliği) ve
 fiyat listesinin tarihi (Fiyat Etiketi Yönetmeliği) oradadır, panelin menüsünde yoktur. Yeni QR basılacaksa
@@ -201,6 +205,9 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.
+  - **kasa_ay_bilgisi_butunluk** (kasa bütünlüğü ve kasa raporlarından ay bilgisi): ay bilgisinin indirim ve ödenmezi
+    artık boş olabilir (boş = kasa raporlarından), eski kod boş beklemez. Bu sürümden geriye Instant Rollback
+    yapmayın; düzeltmeyi ileri yayınlayın.
 - **"Migration uygulanmadı" hatası.** Canlı derleme (ve `npm run db:migrate`) migration'dan sonra günlükteki her
   girdinin `drizzle.__drizzle_migrations`'ta kaydını arar (`scripts/migration-check.ts`). Eksik varsa derleme
   `Migration uygulanmadı: 0021_x … (sıra bozuk)` diye durur ve yayındaki sürüm değişmez. Çözüm: yukarıdaki gibi

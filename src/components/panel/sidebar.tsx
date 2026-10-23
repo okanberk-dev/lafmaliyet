@@ -84,12 +84,17 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
     };
   }, [refreshAlerts]);
 
-  // Ödemeler ekranında ödenen kayıtlar alt menüdeki rozete yansısın: o ekrandan çıkınca liste tazelenir
+  // Ödemeler ekranında (ya da Bugün'ün ödeme kartında) ödenen kayıtlar alt menüdeki rozete yansısın: o ekrandan çıkınca
+  // liste tazelenir
   const prevPath = useRef(pathname);
   useEffect(() => {
     const prev = prevPath.current;
     prevPath.current = pathname;
-    if (prev !== pathname && (prev.startsWith("/panel/hatirlaticilar") || prev.startsWith("/panel/onaylar") || prev.startsWith("/panel/receteler"))) refreshAlerts();
+    if (
+      prev !== pathname &&
+      (prev.startsWith("/panel/hatirlaticilar") || prev.startsWith("/panel/onaylar") || prev.startsWith("/panel/receteler") || prev.startsWith("/panel/bugun"))
+    )
+      refreshAlerts();
   }, [pathname, refreshAlerts]);
   const overdue = overdueCount(alerts);
 

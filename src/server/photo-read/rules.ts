@@ -1,22 +1,28 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { asc, eq, gte } from "drizzle-orm";
 
-import { businessDate, staffCanReport } from "@/lib/cash-report";
+import { businessDate, staffCanReport, staffDayEditable } from "@/lib/cash-report";
 import { KEEP_DAYS, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
 
 /*
- * Kasa ve fiş fotoğraflarının personel kuralları. Personel yalnız hâlâ düzenleyebildiği günlerin (bugün ve dün, kasa
- * raporunun kuralı) fotoğraflarını görür ve o günlere fotoğraf ekler; daha eskisini yalnız yönetici. Kasa grubunun
- * kilidi (ertesi günün raporu girilince dün kapanır) gelince bu iki kural ona bakar.
+ * Kasa ve fiş fotoğraflarının personel kuralları. Personel yalnız hâlâ düzenleyebildiği günlerin fotoğraflarını görür
+ * ve o günlere fotoğraf ve kasadan çıkan satırı ekler; kasa raporunun kuralıyla aynı (staffDayEditable): bugün ve dün,
+ * ama günün raporu varken ertesi günün raporu da girildiyse o gün kapanır. Daha eskisini yalnız yönetici.
  */
 
-/** Personel bu günün kasasına fotoğraf ve satır ekleyebilir mi */
-export function staffDayOpen(day: string): boolean {
-  return staffCanReport(day);
+type Db = ReturnType<typeof getDb>;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** Personel bu günün kasasına (rapor, kasadan çıkanlar, fotoğraflar) hâlâ dokunabilir mi; bir sorgu */
+export async function staffDayOpen(day: string, db: Db | Tx = getDb()): Promise<boolean> {
+  if (!staffCanReport(day)) return false;
+  // Bu gün ve sonrası en çok iki rapor: günün raporu var mı, ondan sonra bir rapor var mı
+  const rows = await db.select({ date: s.cashReports.date }).from(s.cashReports).where(gte(s.cashReports.date, day)).orderBy(asc(s.cashReports.date)).limit(2);
+  return staffDayEditable(day, { hasReport: rows[0]?.date === day, laterReport: rows.some((r) => r.date > day) });
 }
 
 export const cashPhotoRules: PhotoKindRules = {
@@ -29,7 +35,7 @@ export const cashPhotoRules: PhotoKindRules = {
       .innerJoin(s.cashReports, eq(s.cashReports.id, s.cashReportPhotos.reportId))
       .where(eq(s.cashReportPhotos.photoId, photo.id))
       .limit(1);
-    return Boolean(row && staffDayOpen(row.date));
+    return Boolean(row && (await staffDayOpen(row.date)));
   },
 };
 
@@ -39,12 +45,12 @@ export const receiptPhotoRules: PhotoKindRules = {
   async canView(me, photo) {
     if (me.role === "admin") return true;
     const [row] = await getDb().select({ date: s.cashOuts.date }).from(s.cashOuts).where(eq(s.cashOuts.photoId, photo.id)).limit(1);
-    return Boolean(row && staffDayOpen(row.date));
+    return Boolean(row && (await staffDayOpen(row.date)));
   },
 };
 
 /** Fotoğraf ekleme kuralı (POST /api/foto): gün gerekli ve ileri bir gün değil; personel yalnız açık günlere */
-export function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: string | null): boolean {
+export async function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: string | null): Promise<boolean> {
   if (kind === "kontrol") return false; // kontrol listelerinin kendi yolu var
   if (!day || day > businessDate()) return false;
   return me.role === "admin" || staffDayOpen(day);

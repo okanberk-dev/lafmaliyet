@@ -62,10 +62,13 @@ export function Field({
   className,
   htmlFor,
   tip,
+  aside,
 }: {
   label: ReactNode;
   /** Etiketin yanında ⓘ açıklaması */
   tip?: ReactNode;
+  /** Etiket satırının sağ ucunda küçük bir işaret (ör. "Kasadan" rozeti); etiket uzunsa o sarılır, bu yerinde kalır */
+  aside?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
   children: ReactNode;
@@ -77,6 +80,7 @@ export function Field({
       <span className="flex items-center gap-1.5">
         <Label htmlFor={htmlFor}>{label}</Label>
         {tip ? <InfoTip text={tip} /> : null}
+        {aside ? <span className="ml-auto shrink-0">{aside}</span> : null}
       </span>
       {children}
       {error ? <p className="text-xs text-bad">{error}</p> : hint ? <p className="text-xs text-ink-mute">{hint}</p> : null}

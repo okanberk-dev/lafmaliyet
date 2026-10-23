@@ -66,6 +66,8 @@ export function MonthView({
   shownSections,
   showOpenDays,
   openDays,
+  openDaysKasa,
+  openDaysManual,
   dims,
   monthNotes,
   currentMonth,
@@ -84,6 +86,9 @@ export function MonthView({
   shownSections: GridSection[];
   showOpenDays: boolean;
   openDays: (number | null)[];
+  /** Kasa raporlarından açık gün ve elle yazılan (verilmezse açık gün hep elle) */
+  openDaysKasa?: (number | null)[];
+  openDaysManual?: (number | null)[];
   dims: number[];
   monthNotes: (string | null)[];
   currentMonth: string;
@@ -130,10 +135,13 @@ export function MonthView({
       rowKey: def.key,
       label: def.label,
       hint: def.hint,
-      kind: def.kind === "manual" ? "manual" : "auto",
+      // Kasa raporlarından gelen ciro hesaplanan gibi: elle yazılanı boşaltmak kasaya döndürür
+      kind: def.kind === "manual" && !(def.key === "revenue" && cell.computed !== null) ? "manual" : "auto",
       format: def.format,
       cell,
     });
+  const daysKasa = openDaysKasa?.[i] ?? null;
+  const daysManual = openDaysManual ? openDaysManual[i] !== null : openDays[i] !== null;
 
   return (
     <div className="md:hidden">
@@ -239,16 +247,19 @@ export function MonthView({
                   rowKey: "openDays",
                   label: "Açık gün sayısı",
                   hint: "Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır.",
-                  kind: "manual",
+                  kind: daysKasa !== null ? "auto" : "manual",
                   format: "days",
-                  cell: { value: openDays[i], computed: null, overridden: openDays[i] !== null },
+                  cell: { value: openDays[i], computed: daysKasa, overridden: daysManual },
                   dim: dims[i],
                 })
               }
               className={cn(ROW, "cursor-pointer rounded-2xl")}
             >
-              <span className="min-w-0 flex-1 text-[15px] font-medium text-ink">Açık gün sayısı</span>
-              <Value value={openDays[i]} format="days" suffix={`/${dims[i]}`} editable manual />
+              <span className="min-w-0 flex-1 text-[15px] font-medium text-ink">
+                Açık gün sayısı
+                {daysKasa !== null && !daysManual ? <span className="block text-xs font-normal text-ink-mute">Kasa raporlarından</span> : null}
+              </span>
+              <Value value={openDays[i]} format="days" suffix={`/${dims[i]}`} editable manual={daysKasa === null || daysManual} overridden={daysKasa !== null && daysManual} />
             </button>
           </li>
         </ul>
@@ -304,8 +315,8 @@ export function MonthView({
                             value={c.value}
                             format={def.format}
                             editable
-                            manual={def.kind === "manual"}
-                            overridden={c.overridden && def.kind === "auto"}
+                            manual={def.kind === "manual" && !(def.key === "revenue" && c.computed !== null && !c.overridden)}
+                            overridden={c.overridden && (def.kind === "auto" || (def.key === "revenue" && c.computed !== null))}
                             muted={c.outOfRange && !c.overridden}
                           />
                         </button>
@@ -480,7 +491,9 @@ function CellSheet({
   // Telefonda "Temizle" altbilgide Vazgeç'in yanında değil, tutar alanının altında durur: başparmağın durduğu
   // köşede yanlışlıkla dokunulmasın. Masaüstü ve tablette altbilginin solunda.
   const phone = useIsPhone();
-  const clearLabel = kind === "auto" && field === "pnl" ? "Hesaplanana dön" : "Temizle";
+  // Ciro ve açık gün kasa raporlarından geliyorsa (kind "auto"): boşaltmak kasaya döndürür
+  const fromKasa = kind === "auto" && field !== "pnl";
+  const clearLabel = kind === "auto" && field === "pnl" ? "Hesaplanana dön" : fromKasa ? "Kasaya dön" : "Temizle";
 
   return (
     <Dialog
@@ -491,13 +504,15 @@ function CellSheet({
       size="sm"
       title={title}
       description={
-        kind === "auto" && cell.computed !== null
-          ? `Hesaplanan: ${fmt(cell.computed, format)}${cell.overridden ? " · şu an elle girilmiş tutar geçerli" : ""}`
-          : days
-            ? `${monthLabel(month)} ${target.dim} gün çeker`
-            : field === "revenue"
-              ? "KDV dahil POS cirosu (Satışlar'daki ay bilgisiyle aynı alan)"
-              : "Elle girilen tutar (KDV hariç)"
+        fromKasa && cell.computed !== null
+          ? `Kasa raporlarından: ${fmt(cell.computed, format)}${cell.overridden ? " · şu an elle girilen geçerli" : ""}`
+          : kind === "auto" && cell.computed !== null
+            ? `Hesaplanan: ${fmt(cell.computed, format)}${cell.overridden ? " · şu an elle girilmiş tutar geçerli" : ""}`
+            : days
+              ? `${monthLabel(month)} ${target.dim} gün çeker`
+              : field === "revenue"
+                ? "KDV dahil POS cirosu (Satışlar'daki ay bilgisiyle aynı alan)"
+                : "Elle girilen tutar (KDV hariç)"
       }
       footerStart={
         canClear && !phone ? (
@@ -533,7 +548,9 @@ function CellSheet({
           hint={
             kind === "auto" && field === "pnl"
               ? "Boş bırakıp kaydederseniz hesaplanan değere döner."
-              : days
+              : fromKasa
+                ? `${days ? `0 ile ${target.dim} arası tam sayı. ` : ""}Boş bırakıp kaydederseniz kasa raporlarındaki değere döner.`
+                : days
                 ? `0 ile ${target.dim} arası tam sayı`
                 : "Boş bırakıp kaydederseniz hücre boşalır."
           }

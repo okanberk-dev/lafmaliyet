@@ -1,10 +1,10 @@
-// Gelir-gider giriş kuralları: açık gün sınırı ve not penceresinin etkisi.
+// Gelir-gider giriş kuralları: açık gün sınırı, not penceresinin etkisi ve kasa raporlarından gelen ciro / açık gün.
 // Çalıştırma: npx tsx --test tests/gelir-gider-cells.test.ts
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { cleanNote, enterProblem, noteSaveEffect, noteSaveMessage, openDaysError } from "../src/app/panel/gelir-gider/cell-rules";
+import { cleanNote, enterProblem, noteSaveEffect, noteSaveMessage, openDaysError, planCellEdit, planCellRestore, type CellEditInput } from "../src/app/panel/gelir-gider/cell-rules";
 
 test("openDaysError: en fazla ayın gün sayısı (Eylül 30, Şubat 28/29, Ekim 31)", () => {
   assert.equal(openDaysError("2026-09", 30), null);
@@ -54,4 +54,28 @@ test("noteSaveMessage: tutar da değiştiyse ileti onu da söyler", () => {
     "Not eklendi, hesaplanan tutar artık elle girilmiş sayılır",
   );
   assert.match(noteSaveMessage({ prevValue: null, amount: 5000, prevNote: null, note: null }), /^Tutar 5\.000/);
+});
+
+test("kasa raporlarından gelen ciro ve açık gün: boşaltmak kasaya döndürür, kasanın değeri hiç dondurulmaz", () => {
+  const rev: CellEditInput = { field: "revenue", kind: "auto", overridden: true, value: 310_000, computed: 300_000, prevNote: null, amountText: "", noteText: "" };
+  // Elle yazılanı boşaltmak kasaya döner
+  assert.deepEqual(planCellEdit(rev), { action: "clear", message: "Aylık ciro kasa raporlarına döndü" });
+  assert.deepEqual(planCellEdit({ ...rev, field: "openDays", value: 29, computed: 30 }), { action: "clear", message: "Açık gün kasa raporlarına döndü" });
+  // Kasadan gelen değeri boşaltmak bir şey değiştirmez; aynısını yazmak da elle girmek sayılmaz
+  const following = { ...rev, overridden: false, value: 300_000 };
+  assert.deepEqual(planCellEdit(following), { action: "none" });
+  assert.deepEqual(planCellEdit({ ...following, amountText: "300.000" }), { action: "none" });
+  assert.equal(planCellEdit({ ...following, amountText: "305.000" }).action, "save");
+  // Kasa yoksa bugünkü gibi: elle yazılan boşalır
+  assert.deepEqual(planCellEdit({ ...rev, kind: "manual", computed: null }), { action: "clear", message: "Aylık ciro boşaltıldı" });
+  // Geri al: elle yazılan geri yazılır; kasanın değeri asla (yazılsa elle girilmiş sayılırdı)
+  assert.deepEqual(planCellRestore({ field: "revenue", kind: "auto", overridden: true, value: 310_000, prevNote: null }), {
+    action: "save",
+    amount: 310_000,
+    note: undefined,
+    freeze: false,
+    message: "Aylık ciro geri alındı",
+  });
+  assert.equal(planCellRestore({ field: "revenue", kind: "auto", overridden: false, value: 300_000, prevNote: null }), null);
+  assert.equal(planCellRestore({ field: "openDays", kind: "auto", overridden: false, value: 30, prevNote: null }), null);
 });

@@ -310,3 +310,44 @@ test("Faturalar: kontrol bekleyenler (kafe dışı dahil) kafe faturası sayıs�
   const none = monthTasks({ ...f, invoices: { count: 0, goods: 0, review: 2 } }).find((x) => x.key === "fatura")!;
   assert.equal(none.detail, "2 fatura kontrol bekliyor; doğruysa tek dokunuşla onaylayın.");
 });
+
+test("Açık gün ve POS cirosu kasa raporlarından: tamamsa kaynağı yazar; kapanmış ayda eksik gün uyarıdır", () => {
+  const base = {
+    month: "2026-11",
+    state: "closed",
+    dim: 30,
+    sales: { lines: 120, unmatched: 0, summaryRows: 0, refMonth: "2026-11" },
+    info: {
+      openDays: 30,
+      posRevenue: 512_400,
+      source: { openDays: "kasa", posRevenue: "kasa" },
+      till: { missing: [], partialFrom: null },
+    },
+    invoices: { count: 1, goods: 1 },
+    water: { bill: 3000, usedInRecipes: true, perLiter: 2.5, costMonth: "2026-11", reason: "ok" },
+    stock: { lines: 1, total: 1 },
+    payments: null,
+    parasut: null,
+  } satisfies MonthTaskFacts;
+  const done = byKey(monthTasks(base)).gun;
+  assert.equal(done.status, "done");
+  assert.equal(done.detail.replace(/ /g, " "), "Kasa raporlarından: 30 / 30 gün açık · POS 512.400 ₺.");
+  assert.equal(done.href, "/panel/satislar?ay=2026-11#m-days");
+  // Süren ay: bugüne kadar, her raporla güncellenir
+  const running = byKey(monthTasks({ ...base, state: "running", info: { ...base.info, openDays: 18, posRevenue: 245_300 } })).gun;
+  assert.equal(running.detail.replace(/ /g, " "), "Kasa raporlarından: bugüne kadar 18 gün · POS 245.300 ₺. Her akşamki raporla güncellenir.");
+  // Kapanmış ayda raporu girilmemiş gün: uyarı, Kasa'ya gider
+  const gaps = byKey(monthTasks({ ...base, info: { ...base.info, openDays: 27, till: { missing: ["2026-11-05", "2026-11-12", "2026-11-20"], partialFrom: null } } })).gun;
+  assert.equal(gaps.status, "warn");
+  assert.equal(gaps.detail, "3 günün kasa raporu yok (5, 12, 20 Kasım); açık gün ve ciro eksik olabilir.");
+  assert.equal(gaps.href, "/panel/kasa?ay=2026-11");
+  assert.equal(gaps.action, "Kasaya bak");
+  // Elle yazılmış ayda eksik gün uyarı değildir (ay bilgisi kasadan gelmiyor)
+  const typed = byKey(monthTasks({ ...base, info: { ...base.info, source: { openDays: "manual", posRevenue: "manual" }, till: { missing: ["2026-11-05"], partialFrom: null } } })).gun;
+  assert.equal(typed.status, "done");
+  assert.doesNotMatch(typed.detail, /Kasa raporlarından/);
+  // Modelden: yalnız kasa raporu olan ay da kaynağıyla gelir (sources ve till isteğe bağlı alanlar)
+  const facts = monthTaskFacts(model, "2026-09", "closed", "2026-09", { payments: NO_PAYMENTS, parasut: null });
+  assert.equal(facts.info.source, undefined, "Excel verisinde kaynak yok");
+  assert.equal(facts.info.till, null);
+});

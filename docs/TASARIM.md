@@ -51,9 +51,10 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   Çıkış).
 - İçerik beyaz zeminde, `max-w-[1400px]`.
 - **Telefon ve tablet kabuğu (lg altı, `bottom-nav.tsx`, `sidebar.tsx`):** üstte 56px yapışkan çubuk (L'Af karosu →
-  ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü** (yönetici: Genel bakış · Satışlar ·
-  Faturalar · Ödemeler (gecikmiş sayısı rozeti) · Menü; personel: Sayım · Reçeteler · Hesabım). "Menü" kenar çubuğunun
-  içeriğini yaylı çekmecede açar (odak çekmecede döner, Esc kapatır). Ekran klavyesi açıkken alt menü gizlenir.
+  ana sayfa, sayfa başlığı, arama, zil), altta 64px + güvenli alan **alt menü**, beş öğe (`BOTTOM_NAV`; yönetici:
+  Genel bakış · Bugün · Kasa · Ödemeler (gecikmiş sayısı rozeti) · Menü; personel: Bugün · Karaoke · Kasa · Zayi ·
+  Reçeteler, öteki ekranları üst çubuktaki menü düğmesiyle açılan çekmecede). "Menü" kenar çubuğunun içeriğini yaylı
+  çekmecede açar (odak çekmecede döner, Esc kapatır). Ekran klavyesi açıkken alt menü gizlenir.
 - Kabuk değişkenleri (`globals.css`): `--mobile-nav-h` alt menünün yüksekliği (güvenli alan dahil; lg ve üstünde ve
   klavye açıkken 0): yüzen/yapışkan alt öğeler `bottom-[calc(var(--mobile-nav-h)+0.75rem)]`; `--mobile-nav-space`
   içeriğin altındaki boşluk (klavyeyle değişmez); `--mobile-top-h` üst çubuk (56px, lg ve üstünde 0): yapışkan araç
@@ -64,12 +65,13 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   başlığını örtmez, dokunulabilir); tablette üst çubuğun altında.
 - Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
   etiketlerini kapatır.
-- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) ·
-  Satış & gider (Satışlar, Faturalar, Tedarikçiler, Gelir-gider, Giderler & personel, Ödemeler & hatırlatıcılar) · Stok (Stok sayımı,
-  Tutarlılık) · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım.
+- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Bugün · Karaoke · Menü (Ürünler, Hammaddeler,
+  Reçete defteri, Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider,
+  Giderler & personel, Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım ·
+  Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
-  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Personel yalnızca Reçete defteri ve Stok sayımı'nı
-  görür.
+  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Personel yalnız kendi ekranlarını görür
+  (`src/lib/roles.ts` STAFF_PATHS); ağacının ilk öğesi Bugün, girişte o açılır.
 
 ## 4. Bileşenler
 
@@ -89,6 +91,7 @@ Sayfalar önce `src/components/ui/*` ve `src/components/panel/*`'ı kullanır (b
 | `Badge({ tone, dot })`, `StatusBadge` | hap rozetler | 11px. |
 | `IconTile`, `Avatar`, `toneFor` | avatar karoları | %15 renkli zemin; ton sırası 0 yeşil · 1 turuncu · 2 mavi · 3 kırmızı · 4 mor · 5 gök. |
 | `ActivityList`, `ActivityItem({ icon, tone, title, description, aside, href, dot })` | recent-activity | iOS doygun ikon kuyuları, mavi okunmamış noktası. |
+| `TASK_STYLE`, `TASK_BAR` (`src/app/panel/task-style.tsx`) | — | İş listelerinin durum görünümü (Tamam, Yapılacak, Sorun var, Sonra: ikon, kuyu rengi, rozet, özet şeridi). Genel bakış'ın "Bu ayın işleri" ve Bugün'ün "Yapılacaklar" kartı ortak kullanır; sunucu ve istemci bileşenleri içe aktarır. |
 | `Gauge({ value, target, label, display, tone })` | gauge | Siyahtan griye çubuklar, açılışta dolar; hedef turuncu işaret. |
 | `SegmentStrip({ segments })` | system-status-page | 12 aylık kâr/zarar şeridi. |
 | `EmptyState({ title, description, action, icon })` | empty-state | Süzülen kayıt kartı yığını. |

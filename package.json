@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.132.1",
+    "@modelcontextprotocol/server": "2.3.1",
     "@paper-design/shaders-react": "^0.0.80",
     "@vercel/blob": "2.8.1",
     "class-variance-authority": "^0.7.1",

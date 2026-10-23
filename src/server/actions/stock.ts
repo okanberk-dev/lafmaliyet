@@ -6,8 +6,10 @@ import { z } from "zod";
 
 import { staffCountMonths } from "@/app/panel/sayim/logic";
 import { countFactor } from "@/lib/calc/engine";
+import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel } from "@/lib/format";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
+import { hasCashReportIn } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -132,12 +134,14 @@ type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
 
 /**
  * Sayımı silinen ayda başka hiçbir kayıt kalmadıysa (ay bilgisi, satış, gelir-gider, sayım, ek kalem) içi boş ay
- * satırını kaldırır; deneme için açılmış ay ay seçicide kalmaz. Değer taşıyan hiçbir kayıt silinmez.
+ * satırını kaldırır; deneme için açılmış ay ay seçicide kalmaz. Değer taşıyan hiçbir kayıt silinmez (kasa raporu
+ * olan ayda elle yazılmış 0 da değerdir: src/lib/cash-month.ts monthRowEmpty).
  */
 async function dropEmptyStockMonth(tx: Tx, month: string) {
   const [row] = await tx.select().from(s.months).where(eq(s.months.month, month));
   if (!row) return;
-  if (row.openDays !== null || row.posRevenue !== null || row.discounts || row.offRevenue || row.note) return;
+  const zeros = row.discounts === 0 || row.offRevenue === 0;
+  if (!monthRowEmpty(row, zeros && (await hasCashReportIn(month, tx)))) return;
   const [counts, extras, lines, pnl] = await Promise.all([
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockCounts).where(eq(s.stockCounts.month, month)),
     tx.select({ n: sql<number>`count(*)::int` }).from(s.stockExtras).where(eq(s.stockExtras.month, month)),

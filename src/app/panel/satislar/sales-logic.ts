@@ -3,8 +3,10 @@
 // eşleştirme önerileri burada; sales-client.tsx yalnızca bunları gösterir.
 
 import { daysInMonth } from "@/lib/calc/engine";
+import { parseNumberTR } from "@/lib/calc/expr";
 import { createPosMappingIndex, posMatchKey } from "@/lib/calc/pos-paste";
-import { monthLabel, num, pct } from "@/lib/format";
+import type { MonthField, TillMonth } from "@/lib/calc/types";
+import { money, monthLabel, num, pct } from "@/lib/format";
 
 // ---------------------------------------------------------------- Açık gün
 
@@ -41,6 +43,104 @@ export function openDaysHint(text: string, month: string, currentMonth: string):
   if (n === dim) return `Tüm ay açık (${dim}/${dim} gün)`;
   if (phase === "running") return `Ay sürüyor: ${n}/${dim} gün (tahmin bu sayıyla)`;
   return `${n}/${dim} gün · sabit gider oranı ${pct(n / dim)}`;
+}
+
+// ---------------------------------------------------------------- Ay bilgisi: kasa raporlarından
+
+/**
+ * Ay bilgisi alanının kipi (kasa raporu olan ayda): "kasa" kasa raporlarından gelen değeri gösterir (salt okunur, dokununca
+ * elle kipine geçer), "elle" yazılanı. Kasa uygulanmayan alan hep "elle"dir ve rozetsiz bugünkü gibi davranır.
+ */
+export type FieldMode = "kasa" | "elle";
+
+/** Kasadan uygulanan (değeri olan) ve elle yazılmamış alan "kasa" kipinde açılır */
+export function initialModes(manual: Record<MonthField, number | null>, kasa: Record<MonthField, number | null> | null): Record<MonthField, FieldMode> {
+  const mode = (f: MonthField): FieldMode => (kasa?.[f] != null && manual[f] === null ? "kasa" : "elle");
+  return { openDays: mode("openDays"), posRevenue: mode("posRevenue"), discounts: mode("discounts"), offRevenue: mode("offRevenue"), cardShare: mode("cardShare") };
+}
+
+/** Alanın formdaki metni: açık gün tam sayı, tutar en çok 2 ondalık, oran yüzde ("83,2") */
+export function fieldText(f: MonthField, v: number | null): string {
+  if (v === null) return "";
+  if (f === "openDays") return String(v);
+  if (f === "cardShare") return num(v * 100, 2);
+  return num(v, 2);
+}
+
+/** Formdaki metnin değeri (boş ya da okunamayan null); oran yüzdeden 0–1'e */
+export function fieldValue(f: MonthField, text: string): number | null {
+  const t = text.trim().replace(/^%/, "").replace(/%$/, "");
+  if (!t) return null;
+  if (f === "openDays") return /^\d+$/.test(t) ? Number(t) : null;
+  const n = parseNumberTR(t);
+  if (n === null) return null;
+  return f === "cardShare" ? Math.round(n * 100) / 10_000 : n;
+}
+
+/** Kartlı satış oranı alanının hatası (yüzde, 0–100); boşsa null */
+export function cardShareProblem(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  const n = parseNumberTR(t.replace(/%/g, ""));
+  if (n === null) return "Oranı yüzde olarak yazın (ör. 83,2)";
+  if (n < 0 || n > 100) return "Oran 0 ile 100 arasında olmalı";
+  return null;
+}
+
+/**
+ * Kaydedilecek değer: kasa kipinde ve boş elle alanda null (kasa raporlarından ya da boş). Kasadan gelen değere dokunup
+ * değiştirmeden bırakmak elle yazmak sayılmaz: değer kasaya bağlı kalır (sonraki rapor onu yine değiştirir).
+ */
+export function fieldPayload(f: MonthField, o: { mode: FieldMode; text: string; kasa: number | null; manualBefore: boolean }): number | null {
+  if (o.mode === "kasa") return null;
+  const t = o.text.trim();
+  if (!t) return null;
+  if (!o.manualBefore && o.kasa !== null && t === fieldText(f, o.kasa)) return null;
+  return fieldValue(f, t);
+}
+
+/**
+ * Alanın geçerli değeri (tutarlılık kutusu, "Bunu yaz"): gidecek değer; yoksa kasa kipinde, boş alanda ya da kasadan
+ * gelen değere dokunulup değiştirilmeden bırakıldığında kasadaki (gidecek değer o zaman da boştur, kasaya bağlı kalır).
+ * Okunamayan metin null.
+ */
+export function effectiveValue(f: MonthField, o: { mode: FieldMode; text: string; kasa: number | null; payload: number | null }): number | null {
+  if (o.payload !== null) return o.payload;
+  const t = o.text.trim();
+  if (o.mode === "kasa" || !t || (o.kasa !== null && t === fieldText(f, o.kasa))) return o.kasa;
+  return null;
+}
+
+/**
+ * Ay bilgisi kaydedilince çıkan bildirim. Bütün alanlar boşalınca ay satırı silinir (saveMonthInfo `removed`); ayın
+ * kasa raporu varsa bilgiler oradan gelmeye devam eder: "boşaltıldı, kayıtlı bilgi kalmadı" denmez.
+ */
+export function monthSavedToast(r: { removed: boolean; kasa: boolean }, label: string): { title: string; description?: string } {
+  if (!r.removed) return { title: "Ay bilgileri kaydedildi" };
+  if (r.kasa) return { title: "Ay bilgileri kaydedildi", description: "Elle yazılan kalmadı; boş alanlar kasa raporlarından gelir." };
+  return { title: "Ay bilgileri boşaltıldı", description: `${label} için kayıtlı bilgi kalmadı.` };
+}
+
+/** Değerin kısa gösterimi (ipucunda): "245.300 ₺", "18 gün", "%83,2" */
+export function fieldShown(f: MonthField, v: number): string {
+  if (f === "openDays") return `${num(v)} gün`;
+  if (f === "cardShare") return pct(v);
+  return money(v);
+}
+
+/**
+ * Alanın altındaki kasa açıklaması. Kasa kipinde kaç günlük rapordan geldiği (indirim ve ödenmezde kaç günde
+ * girildiği), elle kipinde kasadaki değer; kasa bu alana uygulanmıyorsa null.
+ */
+export function kasaHint(f: MonthField, kasa: { values: Record<MonthField, number | null>; till: TillMonth } | null, mode: FieldMode, typed: string): string | null {
+  const v = kasa?.values[f] ?? null;
+  if (!kasa || v === null) return null;
+  const t = kasa.till;
+  if (mode === "kasa") {
+    const days = f === "discounts" ? `${t.discountDays} / ${t.reported} günde girildi` : f === "offRevenue" ? `${t.offDays} / ${t.reported} günde girildi` : `${t.reported} gün`;
+    return `Kasa raporlarından (${days}). Değiştirmek için dokunun.`;
+  }
+  return typed.trim() ? `Elle girildi · kasada ${fieldShown(f, v)}` : `Boş bırakırsanız kasadaki kullanılır (${fieldShown(f, v)})`;
 }
 
 // ---------------------------------------------------------------- Kâr marjı renk ölçeği

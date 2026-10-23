@@ -27,6 +27,7 @@ import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 import { invoiceNewsOf, loadDigestInvoices, loadDigestPrices, loadUpcoming, renderDigest, runReminderDigest, sendTestEmail } from "@/server/notify/digest";
+import { loadDigestExtras } from "@/server/notify/digest-extras";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
@@ -466,8 +467,9 @@ export async function sendTestNotification() {
 
 /**
  * E-posta önizlemesi: bugün gidecek sabah e-postasının HTML'i (gönderilmez, günlüğe yazılmaz). Gerçek gönderim gibi
- * Paraşüt bölümü (yeni faturalar, kontrol bekleyenler, eşitleme hatası), yeni zamlar ve (canlıda) günlük işlerin
- * sorunları da girer; ödeme, yeni fatura, zam ya da sistem uyarısı yoksa örnek bir ödeme satırıyla gösterilir.
+ * Paraşüt bölümü (yeni faturalar, kontrol bekleyenler, eşitleme hatası), yeni zamlar, ek kutular (yükleyicileri
+ * önizlemede yazmaz) ve (canlıda) günlük işlerin sorunları da girer; ödeme, yeni fatura, zam, sistem uyarısı ya da
+ * haber olan ek kutu yoksa örnek bir ödeme satırıyla gösterilir.
  */
 export async function previewDigest() {
   return attempt(async () => {
@@ -475,7 +477,7 @@ export async function previewDigest() {
     const { today, items } = await loadUpcoming();
     const due = dueNotifications(items);
     // Yükleyiciler yalnız okur; failedRunKey gönderimden sonra günlüğe yazmak içindir, burada kullanılmaz
-    const [sent, { invoices }, prices, system] = await Promise.all([
+    const [sent, { invoices }, prices, system, extras] = await Promise.all([
       due.length
         ? getDb()
             .select({ key: s.notificationLog.key })
@@ -485,6 +487,7 @@ export async function previewDigest() {
       loadDigestInvoices(),
       loadDigestPrices().catch(() => null),
       isProductionRuntime() ? loadEmailProblems("digest").catch(() => []) : [],
+      loadDigestExtras(today, { preview: true }),
     ]);
     const invoiceNews = invoiceNewsOf(invoices);
     const example: UpcomingItem = {
@@ -502,9 +505,16 @@ export async function previewDigest() {
       repeat: "monthly",
     };
     // Gerçek gönderim de yalnız bunlardan biri varsa gider; hiçbiri yoksa örnek satırla gösterilir
-    const sample = !due.length && !invoiceNews && !prices && !system.length;
+    const sample = !due.length && !invoiceNews && !prices && !system.length && !extras.news;
     const rows = sample ? [{ item: example, stage: "due" as const }] : due;
-    const { subject, html } = renderDigest(rows, today, invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null, prices, system.length ? { items: system } : null);
+    const { subject, html } = renderDigest(
+      rows,
+      today,
+      invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null,
+      prices,
+      system.length ? { items: system } : null,
+      extras.extras,
+    );
     return {
       subject,
       html,
@@ -515,6 +525,7 @@ export async function previewDigest() {
       syncError: Boolean(invoices.syncError),
       system: system.length,
       holds: invoices.priceHolds?.fresh ?? 0,
+      boxes: extras.parts,
       sample,
     };
   });

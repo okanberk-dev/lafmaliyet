@@ -9,17 +9,34 @@ import { test } from "node:test";
 
 import {
   businessDate,
+  carryCheck,
+  carryChecks,
+  carryDiffText,
+  carryWarning,
+  changeLine,
+  changesText,
   computeCash,
   defaultCashRecipients,
   diffKind,
   diffText,
+  historyOf,
+  isLateEdit,
+  lastRevision,
+  lateCorrections,
+  nextCheckOf,
+  nextWarning,
+  openingNeedsNote,
   parseEmails,
   reportSubject,
+  revisionChanges,
+  revisionDataOf,
   staffCanReport,
+  staffDayEditable,
   waPhone,
   whatsappLink,
   whatsappText,
   type CashReportFields,
+  type CashRevisionData,
 } from "../src/lib/cash-report";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
@@ -188,4 +205,250 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
   // Personel alıcı adreslerini görmez (yalnız sayısı gider)
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
   assert.match(page, /recipients=\{settings\.emailEnabled \? settings\.recipients\.length : 0\}/);
+});
+
+// ---------------------------------------------------------------- Kasa bütünlüğü: açılış ↔ devir, düzeltmeler, kilit
+
+test("açılış ↔ önceki devir: 1 ₺ altı tutar; az / fazla; arada rapor girilmemiş gün", () => {
+  const prev = { date: "2026-10-20", amount: 1_200 };
+  assert.equal(carryCheck("2026-10-21", 1_200.99, prev), null, "0,99 ₺ fark tutuyor");
+  assert.equal(carryCheck("2026-10-21", 1_500, null), null, "ilk rapor: karşılaştırılacak devir yok");
+  const less = carryCheck("2026-10-21", 1_080, prev)!;
+  assert.deepEqual(less, { date: "2026-10-21", prevDate: "2026-10-20", carry: 1_200, opening: 1_080, diff: -120, gapDays: 0 });
+  assert.equal(plain(carryDiffText(less)), "120 ₺ az");
+  const more = carryCheck("2026-10-23", 1_230, prev)!;
+  assert.equal(plain(carryDiffText(more)), "30 ₺ fazla");
+  assert.equal(more.gapDays, 2);
+  assert.equal(plain(carryWarning(less)), "Önceki devir 1.200 ₺ (20 Ekim): açılış 120 ₺ az");
+  assert.equal(plain(nextWarning(less)), "21 Ekim açılışı (1.080 ₺) bu devirle tutmuyor");
+});
+
+test("açılış ↔ devir zinciri: her raporun açılışı bir öncekinin devriyle; sonradan düzeltilen önceki gün de yakalanır", () => {
+  const r = (date: string, openingCash: number, countedCash: number, handedOver: number) => ({ date, openingCash, countedCash, handedOver });
+  const reports = [r("2026-10-21", 500, 3_430, 3_000), r("2026-10-20", 400, 900, 400), r("2026-10-22", 430, 2_000, 1_500)];
+  // 20 Ekim'in açılışı önceki aydan devirle (before), 21'i 20'nin devriyle (500), 22'si 21'inkiyle (430)
+  assert.deepEqual([...carryChecks(reports, { date: "2026-10-19", amount: 400 }).keys()], []);
+  const before = carryChecks(reports, { date: "2026-10-19", amount: 350 });
+  assert.deepEqual([...before.keys()], ["2026-10-20"]);
+  assert.equal(before.get("2026-10-20")!.diff, 50);
+  // 21 Ekim sonradan düzeltildi: devri 430'dan 330'a indi, 22'nin açılışı artık tutmuyor
+  const edited = carryChecks([reports[0], { ...reports[1] }, { ...reports[2] }].map((x) => (x.date === "2026-10-21" ? { ...x, countedCash: 3_330 } : x)), null);
+  const c = edited.get("2026-10-22")!;
+  assert.equal(c.prevDate, "2026-10-21");
+  assert.equal(c.carry, 330);
+  assert.equal(c.diff, 100);
+  assert.equal(nextCheckOf(edited.values(), "2026-10-21"), c, "21'in devriyle tutmayan sonraki rapor");
+  assert.equal(nextCheckOf(edited.values(), "2026-10-22"), null);
+});
+
+test("açılış devirle tutmuyorsa not zorunlu: yeni raporda ya da açılış değiştiyse", () => {
+  const check = carryCheck("2026-10-21", 1_080, { date: "2026-10-20", amount: 1_200 });
+  assert.equal(openingNeedsNote({ check, openingCash: 1_080, prevOpening: null, note: null }), true, "yeni rapor");
+  assert.equal(openingNeedsNote({ check, openingCash: 1_080, prevOpening: null, note: "  " }), true, "boşluk not değil");
+  assert.equal(openingNeedsNote({ check, openingCash: 1_080, prevOpening: null, note: "patron 120 aldı" }), false);
+  assert.equal(openingNeedsNote({ check, openingCash: 1_080, prevOpening: 1_100, note: null }), true, "açılış değişti");
+  assert.equal(openingNeedsNote({ check, openingCash: 1_080, prevOpening: 1_080, note: null }), false, "açılışa dokunmayan düzeltme (ör. Z yazım hatası) engellenmez");
+  assert.equal(openingNeedsNote({ check: null, openingCash: 1_080, prevOpening: null, note: null }), false);
+});
+
+const rev = (o: Partial<CashRevisionData> = {}): CashRevisionData => ({ ...day, discounts: null, cashDiff: -120, countedByName: "Ayşe", ...o });
+
+test("düzeltmeler: değişen alanlar, tutar biçimi, boş, metin alanı içeriksiz, kasa alanı işaretli", () => {
+  assert.deepEqual(revisionChanges(rev(), rev()), []);
+  const changes = revisionChanges(rev(), rev({ countedCash: 3_530, note: "bozuk para", bankPos: null, zNo: "1235", countedByName: "Mehmet", discounts: 250 }));
+  assert.deepEqual(
+    changes.map((c) => [c.key, c.label, plain(c.from), plain(c.to), c.sensitive]),
+    [
+      ["countedCash", "Sayılan nakit", "3.430 ₺", "3.530 ₺", true],
+      ["discounts", "İndirim", "—", "250 ₺", false],
+      ["bankPos", "Banka POS", "8.150 ₺", "—", false],
+      ["zNo", "Z no", "1234", "1235", false],
+      ["note", "Not", "", "", false],
+      ["countedByName", "Sayan", "Ayşe", "Mehmet", false],
+    ],
+  );
+  assert.equal(plain(changeLine(changes[0])), "Sayılan nakit: 3.430 ₺ → 3.530 ₺");
+  assert.equal(changeLine(changes[4]), "Not değişti");
+  assert.equal(plain(changesText([changes[0], changes[4]])), "Sayılan nakit 3.430 ₺ → 3.530 ₺; Not değişti");
+  // Kuruş altı fark değişiklik değil; eski bir kopyada olmayan alan boş sayılır
+  assert.deepEqual(revisionChanges(rev({ cash: 3_200.001 }), rev()), []);
+  const old: Partial<CashRevisionData> = { ...rev() };
+  delete old.discounts;
+  assert.deepEqual(revisionChanges(old, rev()), []);
+});
+
+test("geç düzeltme: iş günü ertesi gün 05:00'te kapanır", () => {
+  // 21 Ekim'in raporu: aynı gece 23:59 ve ertesi gün 04:59 düzeltme normal, 05:01 sonrası geç
+  assert.equal(isLateEdit("2026-10-21", new Date("2026-10-21T20:59:00Z")), false);
+  assert.equal(isLateEdit("2026-10-21", new Date("2026-10-22T01:59:00Z")), false);
+  assert.equal(isLateEdit("2026-10-21", new Date("2026-10-22T02:01:00Z")), true);
+});
+
+test("düzeltme geçmişi: sürümler sırayla karşılaştırılır, en yeni önce; geç ve kasa alanı değişen işaretli", () => {
+  const report = {
+    ...day,
+    discounts: null,
+    revision: 3,
+    cashDiff: -20,
+    countedByName: "Ayşe",
+    submittedByName: "Mehmet",
+    createdAt: "2026-10-21T20:10:00Z",
+    updatedAt: "2026-10-22T07:05:00Z",
+    countedCash: 3_530,
+  };
+  const revisions = [
+    { revision: 2, data: rev({ note: "ilk not" }), submittedByName: "Ayşe", submittedAt: "2026-10-21T20:40:00Z" },
+    { revision: 1, data: rev(), submittedByName: "Ayşe", submittedAt: "2026-10-21T20:10:00Z" },
+  ];
+  const h = historyOf(report, revisions);
+  assert.deepEqual(
+    h.entries.map((e) => [e.revision, e.by, e.late, e.changes.map((c) => c.key)]),
+    [
+      [3, "Mehmet", true, ["countedCash", "note"]],
+      [2, "Ayşe", false, ["note"]],
+    ],
+  );
+  assert.deepEqual(h.first, { at: "2026-10-21T20:10:00Z", by: "Ayşe" });
+  // Ertesi gün yalnız not değiştiyse geç düzeltme sayılmaz
+  assert.equal(historyOf({ ...report, countedCash: 3_430 }, revisions).entries[0].late, false);
+  // Bu özellikten önceki rapor: geçmiş ilk kopyadan başlar, ilk göndereni bilinmez
+  const older = historyOf(report, [revisions[0]]);
+  assert.equal(older.entries.length, 1);
+  assert.equal(older.first.by, null);
+  // Son düzeltme (zil): şimdiki sürüm ile bir önceki kopya
+  assert.deepEqual(lastRevision(report, revisions)?.changes.map((c) => c.key), ["countedCash", "note"]);
+  assert.equal(lastRevision(report, revisions)?.late, true);
+  assert.equal(lastRevision({ ...report, revision: 1 }, []), null);
+});
+
+test("eski rapor (sayan boş): gönderen saymış sayılır; ilk düzeltmede yapılmamış bir 'Sayan' değişikliği görünmez", () => {
+  // Bu özellikten önce kaydedilmiş satır: counted_by_name boş. Form sayanı gönderenle açar, düzeltmenin kopyası da onunla
+  const old = { ...rev({ receipts: 80 }), countedByName: null, submittedByName: "Ayşe" };
+  assert.equal(revisionDataOf(old).countedByName, "Ayşe");
+  assert.equal(revisionDataOf({ ...old, countedByName: "Mehmet" }).countedByName, "Mehmet");
+  const fixed = { ...rev({ receipts: 81 }), submittedByName: "Ayşe" };
+  assert.deepEqual(
+    revisionChanges(revisionDataOf(old), revisionDataOf(fixed)).map((c) => c.key),
+    ["receipts"],
+    "eylemin işlem geçmişine yazdığı değişiklik",
+  );
+  // Sayanı boş kaydedilmiş bir kopya da (geçmiş, son düzeltme: e-posta ve WhatsApp'taki "Değişen:") aynı kuralla
+  const report = { ...fixed, revision: 2, createdAt: "2026-10-21T20:10:00Z", updatedAt: "2026-10-21T20:40:00Z" };
+  const snaps = [{ revision: 1, data: rev({ receipts: 80, countedByName: null }), submittedByName: "Ayşe", submittedAt: "2026-10-21T20:10:00Z" }];
+  assert.deepEqual(historyOf(report, snaps).entries[0].changes.map((c) => c.key), ["receipts"]);
+  assert.deepEqual(lastRevision(report, snaps)?.changes.map((c) => c.key), ["receipts"]);
+  // Başka biri sayan seçildiyse gerçek değişiklik
+  assert.deepEqual(
+    lastRevision({ ...report, countedByName: "Mehmet" }, snaps)?.changes.map((c) => [c.key, c.from, c.to]),
+    [
+      ["receipts", "80", "81"],
+      ["countedByName", "Ayşe", "Mehmet"],
+    ],
+  );
+});
+
+test("zil: ertesi gün kasa düzeltmesi ardından gelen not düzeltmesiyle kaybolmaz; yöneticinin kendi düzeltmesi sayılmaz", () => {
+  // 21 Ekim: akşam gönderildi (1), ertesi sabah Ayşe sayılan nakdi değiştirdi (2), sonra yalnız not ekledi (3)
+  const revisions = [
+    { revision: 1, data: rev(), submittedBy: 3, submittedByName: "Ayşe", submittedAt: "2026-10-21T20:10:00Z" },
+    { revision: 2, data: rev({ countedCash: 3_530 }), submittedBy: 3, submittedByName: "Ayşe", submittedAt: "2026-10-22T07:00:00Z" },
+  ];
+  const report = {
+    ...rev({ countedCash: 3_530, note: "sabah tekrar saydık" }),
+    revision: 3,
+    submittedBy: 3,
+    submittedByName: "Ayşe",
+    createdAt: "2026-10-21T20:10:00Z",
+    updatedAt: "2026-10-22T07:30:00Z",
+  };
+  assert.equal(lastRevision(report, revisions)?.late, false, "son düzeltme yalnız not");
+  const late = lateCorrections(report, revisions, 1)!;
+  assert.equal(late.revision, 2, "bildirimin kimliği en yeni geç düzeltmeden: not düzeltmesi yeniden çaldırmaz");
+  assert.deepEqual(late.by, ["Ayşe"]);
+  assert.deepEqual(late.changes.map((c) => plain(changeLine(c, false))), ["Sayılan nakit 3.430 ₺ → 3.530 ₺"]);
+  // Yöneticinin (1) kendi sabah düzeltmesi kendi zilinde yok; başka bir yöneticinin (2) zilinde var
+  const own = { ...rev({ countedCash: 3_530 }), revision: 2, submittedBy: 1, submittedByName: "Yönetici", createdAt: report.createdAt, updatedAt: "2026-10-22T07:00:00Z" };
+  assert.equal(lateCorrections(own, revisions.slice(0, 1), 1), null);
+  assert.equal(lateCorrections(own, revisions.slice(0, 1), 2)?.revision, 2);
+  // Önce Ayşe (2), sonra yönetici (3) ertesi gün değiştirdi: yönetici yalnız Ayşe'ninkini görür; herkesinki eskiden yeniye
+  const both = { ...rev({ countedCash: 3_530, handedOver: 3_100 }), revision: 3, submittedBy: 1, submittedByName: "Yönetici", createdAt: report.createdAt, updatedAt: "2026-10-22T09:00:00Z" };
+  assert.deepEqual(lateCorrections(both, revisions, 1), { revision: 2, by: ["Ayşe"], changes: late.changes });
+  const all = lateCorrections(both, revisions, null)!;
+  assert.equal(all.revision, 3);
+  assert.deepEqual(all.by, ["Ayşe", "Yönetici"]);
+  assert.deepEqual(all.changes.map((c) => c.key), ["countedCash", "handedOver"]);
+  // Aynı akşam düzeltilen ya da ertesi gün yalnız Z / not değişen rapor zile düşmez
+  assert.equal(lateCorrections({ ...report, countedCash: 3_430, note: day.note }, [revisions[0], { ...revisions[1], data: rev({ zTotal: 12_500 }) }], 1), null);
+  assert.equal(lateCorrections({ ...own, updatedAt: "2026-10-21T21:00:00Z" }, revisions.slice(0, 1), 2), null);
+});
+
+test("WhatsApp ve e-posta: sayan, değişenler, açılış ↔ devir, ertesi gün, İndirim; not kaçışlı", () => {
+  const carry = carryCheck("2026-10-21", 500, { date: "2026-10-20", amount: 620 })!;
+  const next = carryCheck("2026-10-22", 1_200, { date: "2026-10-21", amount: 430 })!;
+  const changes = revisionChanges(rev(), rev({ countedCash: 3_530, note: "x" }));
+  const f = { ...day, discounts: 3_200 };
+  const t = plain(whatsappText(f, { by: "Mehmet", countedBy: "Ayşe", revision: 2, carry, next, changes }));
+  assert.match(t, /^\*L'Affogato · Gün sonu kasa raporu\* \(güncellendi\)\n21 Ekim Çarşamba · Mehmet · sayan Ayşe\n/);
+  assert.match(t, /\*Değişen:\* Sayılan nakit 3\.430 ₺ → 3\.530 ₺; Not değişti/);
+  assert.match(t, /• Online: 500 ₺\n• İndirim: 3\.200 ₺\n/);
+  assert.match(t, /Açılış \(devir\): 500 ₺\n⚠️ Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az\n\+ Nakit satış/);
+  assert.match(t, /Ertesi güne devir: 430 ₺\n⚠️ 22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor/);
+  // Sayan gönderenle aynıysa yazılmaz; ilk gönderimde "Değişen" yok
+  const same = plain(whatsappText(day, { by: "Ayşe", countedBy: "Ayşe", revision: 1, changes }));
+  assert.match(same, /21 Ekim Çarşamba · Ayşe\n/);
+  assert.doesNotMatch(same, /Değişen|sayan|İndirim/);
+
+  const m = renderCashReport({ ...f, note: "<b>x</b>" }, { by: "Mehmet", countedBy: "Ayşe", revision: 2, submittedAt: new Date("2026-10-21T20:15:00Z"), carry, next, changes });
+  const html = plain(m.html);
+  assert.match(html, /Mehmet · sayan Ayşe · 23:15 · güncellendi/);
+  assert.match(html, /Değişen: Sayılan nakit 3\.430 ₺ → 3\.530 ₺; Not değişti/);
+  assert.match(html, />İndirim</);
+  assert.match(html, /Önceki devir 620 ₺ \(20 Ekim\): açılış 120 ₺ az<br>22 Ekim açılışı \(1\.200 ₺\) bu devirle tutmuyor/);
+  assert.doesNotMatch(m.html, /<b>x<\/b>/);
+  assert.equal(m.subject, renderCashReport(f, { by: "Mehmet", revision: 2, submittedAt: new Date() }).subject, "konu değişmez");
+  assert.match(plain(m.text), /⚠️ 22 Ekim açılışı/);
+});
+
+test("personelin kilidi: bugün ve dün; günün raporu varken ertesi günün raporu girildiyse yalnız yönetici", () => {
+  const now = new Date("2026-10-22T18:00:00Z");
+  assert.equal(staffDayEditable("2026-10-21", { hasReport: true, laterReport: false }, now), true);
+  assert.equal(staffDayEditable("2026-10-21", { hasReport: true, laterReport: true }, now), false);
+  assert.equal(staffDayEditable("2026-10-21", { hasReport: false, laterReport: true }, now), true, "unutulan dünü girmek serbest");
+  assert.equal(staffDayEditable("2026-10-22", { hasReport: true, laterReport: false }, now), true);
+  assert.equal(staffDayEditable("2026-10-20", { hasReport: false, laterReport: false }, now), false);
+});
+
+test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanlar ve fotoğraflar (staffDayOpen)", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+  const action = read("src/server/actions/cash-report.ts");
+  assert.match(action, /if \(prev && me\.role !== "admin"\) \{\s*const \[later\][\s\S]*?gt\(s\.cashReports\.date, data\.date\)[\s\S]*?yalnız yönetici düzeltebilir/);
+  // Açılış notu ve önceki sürümün kopyası aynı işlemde, satır kilitliyken
+  assert.match(action, /\.for\("update"\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
+  const rules = read("src/server/photo-read/rules.ts");
+  assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}\)/);
+  assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date\)/);
+  assert.match(rules, /export async function canUploadPhoto[\s\S]*?staffDayOpen\(day\)/);
+  for (const route of ["src/app/api/foto/route.ts", "src/app/api/foto/[id]/oku/route.ts"]) assert.match(read(route), /await canUploadPhoto\(/, route);
+  const outs = read("src/server/actions/cash-outs.ts");
+  assert.equal(outs.match(/await staffDayOpen\(/g)?.length, 3);
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
+  assert.match(page, /const canEdit = admin \|\| staffOpen;/);
+});
+
+test("kapanmış gün: personel fotoğrafları görmez (küçük resim ve büyütme yok, /api/foto 403 vermesin); WhatsApp satırları kalır", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+  const page = read("src/app/panel/kasa/page.tsx");
+  // Fotoğraf bilgisi WhatsApp metni için personelin girebildiği günde okunur (e-postadakiyle aynı satırlar)
+  assert.match(page, /const photoInfo = report && \(admin \|\| staffCanReport\(date\)\) \?/);
+  // Fotoğrafların kendisi yalnız görebilene: /api/foto'nun kuralı (staffDayOpen) düzenleme kuralıyla aynı
+  assert.match(page, /const showPhotos = canEdit;/);
+  assert.match(page, /saved=\{report \? \{ photos: showPhotos \? \(photoInfo\?\.photos \?\? \[\]\) : \[\], readings: photoInfo\?\.readings \?\? \[\] \} : null\}/);
+  assert.match(page, /<CashOutsCard[^>]*?showPhotos=\{showPhotos\}/);
+  const outs = read("src/app/panel/kasa/cash-outs.tsx");
+  // Küçük resim ve büyütme yalnız görebilene; ötekine fiş simgesi ve açılmayan satır
+  assert.equal(outs.match(/photoUrl\(/g)?.length, 1, "fotoğrafın adresi tek yerde");
+  assert.match(outs, /\{o\.photoId && showPhotos \? \([^)]*?<img src=\{photoUrl\(o\.photoId\)\}/);
+  assert.match(outs, /\) : o\.photoId && showPhotos \? \(\s*<button\s+type="button"\s+onClick=\{\(\) => setViewer\(/);
+  assert.doesNotMatch(outs, /: o\.photoId \? \(/);
 });

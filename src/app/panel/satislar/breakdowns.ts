@@ -101,9 +101,15 @@ const linesNote = (n: number) => (n > 1 ? ` · ${num(n)} POS kalemi` : "");
 
 /**
  * Satışlar kartlarının dökümü, ayın satış satırlarından (`model.monthSales`). Her döküm kartın rakamını tutar:
- * ciro ve adet satır toplamı, brüt kâr net ciro − maliyet − komisyon, eşleşmeyen kalem sayısı.
+ * ciro ve adet satır toplamı, brüt kâr net ciro − maliyet − komisyon, eşleşmeyen kalem sayısı. `cardShare`: ayın kartlı
+ * satış oranı (`model.cardShareOf(ay).rate`: kasa raporlarından ya da elle; verilmezse Ayarlar'daki).
  */
-export function salesBreakdowns(sales: SalesMonth, settings: Pick<Settings, "kdv" | "kdvHizmet" | "komisyon" | "kartOrani">, month: string): SalesBreakdowns {
+export function salesBreakdowns(
+  sales: SalesMonth,
+  settings: Pick<Settings, "kdv" | "kdvHizmet" | "komisyon" | "kartOrani">,
+  month: string,
+  cardShare: number = settings.kartOrani,
+): SalesBreakdowns {
   if (!sales.lines.length) return { revenue: [], grossProfit: [], qty: [], unmatched: [] };
   const buckets = bucketsOf(sales.lines, month);
   const byKind = (k: Kind) => sales.lines.filter((l) => kindOf(l) === k);
@@ -112,7 +118,7 @@ export function salesBreakdowns(sales: SalesMonth, settings: Pick<Settings, "kdv
   const services = byKind("service");
   const unmatchedNet = total(unmatched, (l) => l.net);
   const unmatchedCost = total(unmatched, (l) => l.cost);
-  const commissionSub = `Ciro × kartlı satış ${rate(settings.kartOrani)} × komisyon ${rate(settings.komisyon)}`;
+  const commissionSub = `Ciro × kartlı satış ${rate(cardShare)} × komisyon ${rate(settings.komisyon)}`;
 
   const itemRows = (b: Bucket, amount: (ls: SalesLineCalc[]) => number, sub: (ls: SalesLineCalc[]) => string): BreakdownRow[] =>
     b.items.map((it) => ({ key: it.key, label: it.label, sub: sub(it.lines), amount: amount(it.lines), href: it.href }));

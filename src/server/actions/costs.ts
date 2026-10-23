@@ -5,9 +5,13 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { activeFromRange, currentMonthTR, inRange, planVersionChange, shiftMonth } from "@/lib/calc/engine";
+import { resolveMonths, tillMonths } from "@/lib/cash-month";
+import { businessDate } from "@/lib/cash-report";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, tl } from "@/lib/format";
+import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { tillRows } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -40,14 +44,29 @@ function spanText(months: string[]): string {
 }
 
 /**
- * Hesabı olan aylar: açık gün girilmiş ay ya da gelir-gider tablosunda elle giriş olan ay.
- * `before` verilirse yalnızca o aydan önceki (kapanmış) aylar.
+ * Hesabı olan aylar: açık günü olan ay (elle yazılmış ya da kasa raporlarından; giderler/history-text.ts
+ * closedDataMonths ile aynı etkin değer) ya da gelir-gider tablosunda elle giriş olan ay. `before` verilirse yalnızca o
+ * aydan önceki (kapanmış) aylar. Kasa raporlarından açık günü gelen ay da veri ayıdır: maaş ve sabit gider sürümü onu
+ * geriye dönük değiştirmesin.
  */
 async function dataMonths(tx: Tx, before?: string): Promise<string[]> {
-  const ms = await tx
-    .select({ m: s.months.month })
-    .from(s.months)
-    .where(before ? and(gt(s.months.openDays, 0), lt(s.months.month, before)) : gt(s.months.openDays, 0));
+  const [rows, till] = await Promise.all([
+    tx
+      .select({
+        month: s.months.month,
+        openDays: s.months.openDays,
+        posRevenue: s.months.posRevenue,
+        discounts: s.months.discounts,
+        offRevenue: s.months.offRevenue,
+        cardShare: s.months.cardShare,
+        note: s.months.note,
+      })
+      .from(s.months),
+    tillRows(tx),
+  ]);
+  const ms = resolveMonths(rows, tillMonths(till, addDays(businessDate(), -1)))
+    .filter((m) => (m.openDays ?? 0) > 0 && (!before || m.month < before))
+    .map((m) => ({ m: m.month }));
   const ps = await tx
     .selectDistinct({ m: s.pnlEntries.month })
     .from(s.pnlEntries)

@@ -5,6 +5,8 @@
 import type { Model, WaterCost } from "@/lib/calc/engine";
 import type { MonthState } from "@/lib/calc/insights";
 import { isSummaryRow } from "@/lib/calc/pos-paste";
+import type { FieldSource } from "@/lib/calc/types";
+import { missingText } from "@/lib/cash-month";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -52,7 +54,16 @@ export interface MonthTaskFacts {
   state: MonthState;
   dim: number;
   sales: { lines: number; unmatched: number; summaryRows: number; refMonth: string | null };
-  info: { openDays: number | null; posRevenue: number | null };
+  /**
+   * Ayın etkin açık günü ve cirosu. `source`: elle mi kasa raporlarından mı (yoksa elle sayılır); `till`: ayın kasa
+   * raporlarında eksik günler ve ay ortasında başlayıp başlamadığı (raporu olmayan ayda null)
+   */
+  info: {
+    openDays: number | null;
+    posRevenue: number | null;
+    source?: { openDays: FieldSource; posRevenue: FieldSource };
+    till?: { missing: string[]; partialFrom: string | null } | null;
+  };
   /**
    * count: kafenin faturaları (kafe dışı hariç). review: kontrol bekleyen, henüz onaylanmamış faturalar (Paraşüt
    * eşitlemesi: kategori tahmini, tevkifat, e-faturaya göre değişen tutar); kafe dışı dahil, count'un alt kümesi değil
@@ -110,7 +121,12 @@ export function monthTaskFacts(
       summaryRows: sales.lines.filter((l) => isSummaryRow(l.line.posName)).length,
       refMonth,
     },
-    info: { openDays: info?.openDays ?? null, posRevenue: info?.posRevenue ?? null },
+    info: {
+      openDays: info?.openDays ?? null,
+      posRevenue: info?.posRevenue ?? null,
+      source: info?.sources ? { openDays: info.sources.openDays, posRevenue: info.sources.posRevenue } : undefined,
+      till: info?.kasa ? { missing: info.kasa.till.missing, partialFrom: info.kasa.till.partialFrom } : null,
+    },
     invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: monthInvoices.filter((i) => i.needsReview).length },
     water: { bill, usedInRecipes, perLiter: model.water.perLiter, costMonth: model.water.month, reason: model.water.reason },
     stock: {
@@ -181,14 +197,38 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
     }
   }
 
-  // 2. Açık gün ve POS cirosu (Satışlar › ay bilgileri)
+  // 2. Açık gün ve POS cirosu (Satışlar › ay bilgileri; boşsa kasa raporlarından)
   {
     const href = `/panel/satislar?ay=${m}#m-days`;
     const od = f.info.openDays ?? 0;
     const pos = f.info.posRevenue ?? 0;
     const title = "Açık gün ve POS cirosu";
+    const fromKasa = f.info.source?.openDays === "kasa" || f.info.source?.posRevenue === "kasa";
+    const missing = f.info.till?.missing ?? [];
     if (od > f.dim) {
       out.push({ key: "gun", title, status: "warn", detail: `Açık gün (${od}) ayın gün sayısından (${f.dim}) fazla; sabit giderler fazla çıkar.`, href, action: "Düzelt" });
+    } else if (fromKasa && od > 0 && f.state === "closed" && missing.length) {
+      // Kapanmış ayda raporu girilmemiş gün: kasadan gelen açık gün ve ciro eksik kalır (sessizce düzeltilmez)
+      out.push({
+        key: "gun",
+        title,
+        status: "warn",
+        detail: `${missing.length} günün kasa raporu yok (${missingText(missing)}); açık gün ve ciro eksik olabilir.`,
+        href: `/panel/kasa?ay=${m}`,
+        action: "Kasaya bak",
+      });
+    } else if (fromKasa && od > 0 && pos > 0) {
+      out.push({
+        key: "gun",
+        title,
+        status: "done",
+        detail:
+          f.state === "running"
+            ? `Kasa raporlarından: bugüne kadar ${od} gün · POS ${tl(pos)}. Her akşamki raporla güncellenir.`
+            : `Kasa raporlarından: ${od} / ${f.dim} gün açık · POS ${tl(pos)}.`,
+        href,
+        action: "Ay bilgileri",
+      });
     } else if (od > 0 && pos > 0) {
       out.push({
         key: "gun",

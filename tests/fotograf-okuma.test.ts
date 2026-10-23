@@ -513,3 +513,21 @@ test("kasadan çıkanın harcama kaydı: personelin düzeltmesi açmaz ve silmez
   assert.equal(staffExpenseLocked(null), false);
   assert.equal(staffExpenseLocked(undefined), false);
 });
+
+test("İndirim (kasa grubu): Z okuması boş İndirim'i doldurur, yazılanı değiştirmez; kayıtta yalnız yazılmışsa karşılaştırılır", () => {
+  const r = normalizeZ(Z, { day: "2026-10-21", prevZNo: null });
+  const empty = { zTotal: "", cash: "", card: "", mealCard: "", online: "", other: "", offRevenue: "", discounts: "", zNo: "", receipts: "", bankPos: "" };
+  const plan = prefillPlan(r, empty);
+  assert.deepEqual(plan.fill.find((f) => f.field === "discounts"), { field: "discounts", text: "310", warn: null });
+  assert.equal(plan.fill.length, 10);
+  // Elle yazılmış indirim kalır; fotoğraftaki farklıysa önerilir
+  const typed = prefillPlan(r, { ...empty, discounts: "300" });
+  assert.ok(!typed.fill.some((f) => f.field === "discounts"));
+  assert.deepEqual(typed.differs, [{ field: "discounts", photo: 310, text: "310" }]);
+  // Kayıtlı rapor: boş indirim karşılaştırılmaz (eski raporlarda alan yoktu), yazılan farklıysa "fotoğraftan farklı"
+  assert.equal("discounts" in SAVED, false);
+  assert.deepEqual(photoDiffs([r], SAVED).map((d) => d.field), ["card"]);
+  const withDisc = savedFields({ zTotal: 12975.5, cash: 3420.5, card: 8951, mealCard: 640, online: 0, other: 0, offRevenue: 245, discounts: 300, zNo: "0187", receipts: 143, bankPos: 8915 });
+  assert.deepEqual(photoDiffs([r], withDisc).map((d) => [d.field, d.label]), [["card", "Kart"], ["discounts", "İndirim"]]);
+  assert.deepEqual(photoDiffs([r], { ...withDisc, discounts: 310 }).map((d) => d.field), ["card"]);
+});
