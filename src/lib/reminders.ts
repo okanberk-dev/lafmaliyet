@@ -34,6 +34,8 @@ export interface ReminderRow {
   remindDaysBefore: number;
   note: string | null;
   active: boolean;
+  /** Son "Ödendi" anı (nakit planı KDV-2'nin ödenmiş dönemini bundan bulur); yoksa hiç ödenmedi */
+  lastDoneAt?: Date | string | null;
 }
 
 export interface UnpaidInvoiceRow {
@@ -381,19 +383,22 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 
 // KDV tevkifatı (2 No.lu KDV beyannamesi, "KDV2"): ayrı beyanname ve ödeme. Asıl KDV sayılsa tutarı o ayın kesin KDV'si
 // olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı
-const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\s*(no|numara)/;
+const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\.?\s*(no|numara)|sorumlu sifat/;
 
 /**
- * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta KDV ya da beyanname
- * de geçmeli ("2 No.lu beyanname", "Tevkifat beyannamesi": panelin kendi sözleri); "Muhtasar (gelir vergisi
- * tevkifatı)", "Stopaj tevkifat", "Aidat 2 No.lu dükkan" KDV-2 değildir.
+ * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta tevkifat, "2 No.lu"
+ * ya da "sorumlu sıfatıyla" ile birlikte KDV geçmeli; KDV'siz yalnız "2 No.lu beyanname" (panelin kendi sözü) ve
+ * başka bir vergi adı yoksa. Damga vergisi ayrı bir ödemedir; "Muhtasar (gelir vergisi tevkifatı)", "Stopaj
+ * tevkifat", "Kira tevkifatı beyannamesi" ve "Tevkifat beyannamesi" (muhtasar da böyle anılır) KDV-2 değildir.
  */
 export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
-  if (!VAT_WITHHOLDING.test(t)) return false;
+  if (!VAT_WITHHOLDING.test(t) || /damga/.test(t)) return false;
   if (/(^|[^a-z])kdv|katma deger/.test(t)) return true;
-  return /beyan/.test(t) && !/muhtasar|stopaj|gelir vergisi/.test(t);
+  // "2 No.lu beyanname" ya da başlığın sonunda "Beyanname (2 No'lu)"; "Beyanname 2 numaralı şube" değil
+  const declaration = /(^|\D)2\.?\s*(no|numara)\S*\s+beyan|beyan\S*\s*\(?2\.?\s*(no|numara)\S*\s*$/.test(t);
+  return declaration && !/muhtasar|stopaj|gelir|kurumlar|gecici|kira|serbest meslek/.test(t);
 }
 
 /**

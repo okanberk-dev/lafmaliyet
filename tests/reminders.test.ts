@@ -186,6 +186,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
     ["2 numaralı KDV", "vergi"],
     ["Tevkifatlı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
+    ["Sorumlu sıfatıyla KDV beyannamesi", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), false, title);
   }
@@ -201,7 +202,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
   assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
 });
 
-test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KDV ya da beyanname; muhtasar, stopaj ve 2 No.lu dükkan değil", () => {
+test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfatıyla ile birlikte KDV, ya da \"2 No.lu beyanname\"; muhtasar, stopaj, damga ve 2 No.lu dükkan değil", () => {
   for (const [title, kind] of [
     ["KDV2 tevkifat", "vergi"],
     ["KDV 2", "vergi"],
@@ -210,9 +211,12 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
     ["2 numaralı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
     ["Katma değer vergisi tevkifatı", "vergi"],
-    // Panelin kendi sözleri (KDV-2 satırının açıklaması: "2 No.lu beyannameyle ayın 25'inde ödenir")
+    ["Sorumlu sıfatıyla KDV beyannamesi", "vergi"],
+    // Panelin kendi sözü (KDV-2 satırının açıklaması: "2 No.lu beyannameyle ayın 25'inde ödenir")
     ["2 No.lu beyanname", "vergi"],
-    ["Tevkifat beyannamesi", "odeme"],
+    ["2. No.lu beyanname", "vergi"],
+    ["2 nolu beyanname", "odeme"],
+    ["Beyanname (2 No'lu)", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -222,6 +226,16 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat ya da 2 No.lu ile birlikte KD
     ["Stopaj tevkifat", "vergi"],
     ["Muhtasar beyannamesi (gelir vergisi tevkifatı)", "vergi"],
     ["Stopaj tevkifat beyannamesi", "vergi"],
+    // Muhtasar da "tevkifat beyannamesi" diye anılır; damga vergisi ayrı ödemedir; başka vergilerin beyannamesi
+    ["Tevkifat beyannamesi", "odeme"],
+    ["Kira tevkifatı beyannamesi", "vergi"],
+    ["Serbest meslek tevkifatı beyannamesi", "vergi"],
+    ["Kurumlar vergisi tevkifatı beyannamesi", "vergi"],
+    ["Geçici vergi beyannamesi 2 No.lu", "vergi"],
+    ["Damga vergisi beyannamesi 2 No.lu", "vergi"],
+    ["2 No.lu beyanname damga vergisi", "vergi"],
+    ["KDV2 damga vergisi", "vergi"],
+    ["Beyanname 2 numaralı şube", "odeme"],
     ["Aidat 2 No.lu dükkan", "odeme"],
     ["Elektrik 2 numaralı sayaç", "odeme"],
     ["KDV beyannamesi ve ödemesi", "vergi"],
