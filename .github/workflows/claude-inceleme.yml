@@ -1,8 +1,11 @@
 # Claude ile PR incelemesi (anthropics/claude-code-action). Codex'in kullanım sınırı dolunca yerine kuruldu.
 # Gerekenler: depo sırrı ANTHROPIC_API_KEY (ya da Claude Pro/Max için `claude setup-token` ile
 # CLAUDE_CODE_OAUTH_TOKEN) ve depoda kurulu Claude GitHub uygulaması (https://github.com/apps/claude).
+# Sır yoksa adımlar atlanır, iş yeşil biter (PR'da kırmızı görünmez).
 # Maliyet: inceleme her push'ta değil, PR açılınca / taslaktan çıkınca / yeniden açılınca çalışır; yeniden
-# inceleme için PR'a "@claude" yazın. İş akışı kodu değiştiremez (contents: read), yalnız yorum yazar.
+# inceleme için PR'a "@claude" yazın. Tavanlar: inceleme başına en çok 5 $, yanıt başına 2 $ (Claude Code'un
+# tahmini; --max-budget-usd), 30 dakika. Aylık toplam sınır Anthropic Console › Limits'te, Actions dakikalarının
+# sınırı GitHub › Billing › Budgets'ta konur. İş akışı kodu değiştiremez (contents: read), yalnız yorum yazar.
 name: Claude ile PR incelemesi
 
 on:
@@ -13,13 +16,14 @@ on:
   pull_request_review_comment:
     types: [created]
 
-concurrency:
-  group: claude-inceleme-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
   inceleme:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    # Eşzamanlılık iş düzeyinde: iş akışı düzeyinde olsaydı PR'a düşen her yorum (Vercel, Codex) süren incelemeyi
+    # iptal ederdi.
+    concurrency:
+      group: claude-inceleme-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -27,12 +31,16 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    env:
+      ANAHTAR_VAR: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - if: env.ANAHTAR_VAR == 'true'
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@v1
+      - if: env.ANAHTAR_VAR == 'true'
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -52,6 +60,9 @@ jobs:
             - telefonda (390 px) bozulan arayüz, yanıltıcı ya da doğal olmayan Türkçe metin.
             Biçim ve zevk konularını yazma; depo prettier ile biçimlenmez. Bulgu yoksa bunu kısaca söyle.
 
+            Harcama tavanı var: büyük PR'da önce riskli dosyalara (src/server, src/lib, drizzle, yetki) bak ve
+            bulduğunu erken yaz; tavana yaklaşırsan bakamadığın kısmı genel yorumda söyle.
+
             Yorumları Türkçe, kısa ve sade yaz. Genel değerlendirme için `gh pr comment`, satıra özel
             sorunlar için `mcp__github_inline_comment__create_inline_comment` (`confirmed: true`) kullan.
             Yalnız GitHub yorumu bırak.
@@ -59,14 +70,18 @@ jobs:
           claude_args: |
             --model claude-opus-5-5
             --max-turns 40
+            --max-budget-usd 5
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
 
   # PR'daki "@claude …" yorumlarına yanıt (yeniden inceleme ya da soru). Yalnız yazma yetkisi olanlar tetikler
-  # (eylemin varsayılanı); kod değiştirmez.
+  # (eylemin varsayılanı); kod değiştirmez. Yanıtlar sıraya girer, birbirini iptal etmez.
   yanit:
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+    concurrency:
+      group: claude-yanit-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -74,15 +89,20 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+    env:
+      ANAHTAR_VAR: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - if: env.ANAHTAR_VAR == 'true'
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@v1
+      - if: env.ANAHTAR_VAR == 'true'
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-opus-5-5
             --max-turns 30
+            --max-budget-usd 2
