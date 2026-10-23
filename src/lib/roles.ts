@@ -23,6 +23,12 @@ export const STAFF_PATHS = [
 ] as const;
 
 /**
+ * Personel yolunun altında yalnız yöneticinin ekranı (tutar gösterir): proxy personeli buraya sokmaz, sayfa ve
+ * eylemleri ayrıca requireAdmin ile denetler. canOpen önce buna bakar.
+ */
+export const ADMIN_ONLY_PATHS = ["/panel/karaoke/doluluk"] as const;
+
+/**
  * Personelin girişte açılan ve izinsiz bir adrese gidince döndüğü ekran: Bugün (günün işleri; ay sonu sayımı da orada
  * satır olarak çıkar). Ana ekrana eklenmiş uygulama /panel'den açılır, proxy personeli buraya götürür.
  */
@@ -40,5 +46,6 @@ function under(pathname: string, base: string): boolean {
 /** Bu rol bu panel adresini açabilir mi (panel dışı adreslere karışmaz) */
 export function canOpen(role: Role, pathname: string): boolean {
   if (role === "admin" || !under(pathname, "/panel")) return true;
+  if (ADMIN_ONLY_PATHS.some((p) => under(pathname, p))) return false;
   return STAFF_PATHS.some((p) => under(pathname, p));
 }

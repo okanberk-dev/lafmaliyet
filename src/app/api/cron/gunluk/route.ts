@@ -5,7 +5,7 @@ import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/ca
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
-import { syncKaraoke } from "@/server/karaoke/sync";
+import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
@@ -84,7 +84,8 @@ export async function GET(request: NextRequest) {
   const extras = async () => {
     const [reminders, karaoke, menu, sales, photos, mcp] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
-      syncKaraoke("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
+      // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
+      dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
       photosTask(),

@@ -9,6 +9,7 @@ import {
   CupSoda,
   FileText,
   Globe,
+  Grid3x3,
   HardDriveDownload,
   Info,
   LayoutList,
@@ -581,6 +582,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: HardDriveDownload,
         links: [{ href: "/panel/ayarlar#yedek", label: "Yedek" }],
+      },
+      {
+        id: "karaoke-doluluk",
+        q: "Karaoke odası ne zaman boş?",
+        a: (
+          <>
+            Karaoke doluluğu ekranı (<Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası) odanın hangi gün ve saatte dolu olduğunu gösterir: son 4 hafta,
+            son 12 hafta ya da bir ay. Hücreye dokununca o saatin ayrıntısı çıkar; üstte doluluk, saat başına gelir, uzatma, son dakika iptal ve rezervasyonların
+            kaç gün önceden yapıldığı, altta ay ay karşılaştırma var. Doluluk oda saatlerine göre hesaplanır (ekranın altındaki Oda saatleri; başta her gün
+            10:00–22:00). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not alınmaz); rezervasyonsuz gruplar
+            yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
+          </>
+        ),
+        icon: Grid3x3,
+        links: [{ href: "/panel/karaoke/doluluk", label: "Karaoke doluluğu" }],
       },
     ],
   },

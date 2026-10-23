@@ -54,6 +54,8 @@ GET /api/panel/karaoke  ◀─────────────────�
 - **Sayaç sunucu saatiyle sayar:** tabletin saati yanlış olsa da alarm zamanında çalar. Sekme arka plandayken
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
 - **Rezervasyonsuz oturum** (hızlı sayaç) yalnız panelde tutulur; siteye gitmez.
+- Eşitleme rezervasyonun yapıldığı ve iptal edildiği anı da yazar (`booked_at`, `cancelled_at`; doluluk haritası için,
+  aşağıda).
 
 ### Çakışma uyarısı
 
@@ -136,13 +138,70 @@ kendi cihazında açar.
   farkı en çok 5 dakika, karşılaştırma sabit süreli. Kurallar `src/lib/karaoke/signature.ts`'te; sitenin kopyası
   (`src/lib/panel/karaoke-sync-core.ts`) ile iki depodaki testler aynı iki imza vektörünü sabitler.
 - İmzasız ya da yanlış istek yalnız `401` alır; anahtar tanımlı değilse uç `503` döner.
-- Siteden yalnız ad (soyad değil), gün, saat, kişi sayısı, durum, ödeme durumu, not, tutar ve kanal gelir. Panelde
-  sitenin yanıtı ayrıca doğrulanır: bozuk satır atlanır, metinler kısaltılır.
+- Siteden yalnız ad (soyad değil), gün, saat, kişi sayısı, durum, ödeme durumu, not, tutar, kanal ve rezervasyonun
+  yapıldığı an gelir; geçmişten alınanlar ad ve not olmadan saklanır. Panelde sitenin yanıtı ayrıca doğrulanır: bozuk
+  satır atlanır, metinler kısaltılır.
 - **Personel tutar görmez:** canlı veri ve sayfa, personele tutarı hiç göndermez (`toSessionDTO`).
 - Web Push içeriği uçtan uca şifrelidir (RFC 8291, aes128gcm), VAPID imzalıdır (RFC 8292). Abonelik yalnız bilinen
   push servislerine (Google, Mozilla, Apple, Microsoft) kaydedilir; çıkışta cihazın aboneliği silinir, parola ya da
   rol değişince (oturum sürümü) eski cihazlara bildirim gitmez.
 - Service worker yalnız bildirim işi yapar: sayfa önbelleklemez, istek yakalamaz.
+
+### KVKK
+
+- Misafirin adı ve notu, sitenin kuralıyla (laffogato #196) **3 × 366 gün** sonra panelden de silinir: sabah işinin
+  karaoke adımı, günü (Türkiye) bundan eski oturumların `customer_name` ve `note`'unu boşaltır (iki kaynak da:
+  rezervasyonsuz sayacın etiketi de bir ad olabilir). Satır istatistik için kalır (`src/server/karaoke/history.ts`
+  `clearOldKaraokePersonalData`).
+- Geçmişten alınan rezervasyonlar (Doluluk › Geçmişi siteden al) ad ve not olmadan saklanır.
+
+## Doluluk haritası (yönetici)
+
+Ekran: **Karaoke doluluğu** (`/panel/karaoke/doluluk`): Karaoke ekranındaki "Bu ay" kartının **Doluluk haritası**
+düğmesi ya da ⌘K. Yalnız yönetici: personel bu adresi açamaz (`ADMIN_ONLY_PATHS`, `src/lib/roles.ts`), tutar
+personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
+
+| Gösterge | Hesap |
+|----------|-------|
+| Doluluk | Odanın dolu olduğu süre ÷ oda saatlerindeki açık süre. Dolu: başlangıçtan bitişe, uzatma dahil; erken bitirilen oturum bittiği anda boşalır, süre dolduktan sonraki "Haber verdim" uzatmaz. İptal, ödenmemiş tutma, süresi dolan ödeme ve iade (sürerken de) odayı tutmaz; kasada ödenecek onay bekleyen talep ve rezervasyonsuz sayaç tutar. Rozet: hemen önceki aynı uzunluktaki döneme göre puan farkı |
+| Saat başına gelir | Sitede ödenmiş ya da kasada ödenecek rezervasyon ücretleri (KDV dahil) ÷ o rezervasyonların dolu saatleri. Uzatma saate eklenmez (parası kasada alınır), erken bitirilen rezervasyon kullandığı saate bölünür, dönem sınırındaki oturum ücretinin payıyla girer. Alt satır: açık saat başına (ücretler ÷ oda saatleri; fiyatla doluluğu birlikte gösterir). Kasadaki karaoke (uzatma, rezervasyonsuz oturum) ve odadaki siparişler oturuma bağlanamadığı için girmez |
+| Uzatma | +15 / +30 dk ile uzatılan oturumlar ÷ oturumlar (rezervasyonlu ve rezervasyonsuz); uzatılanların ortalama ek süresi |
+| Son dakika iptal | Başlangıçtan önceki 24 saat içinde ya da sonra iptal edilen rezervasyonlar ÷ rezervasyonlar (iptaller dahil; ödeme sayfasında süresi dolan tutma rezervasyon değil). Anı bilinmeyen iptal ayrı sayılır, "son dakika" sayılmaz |
+| Kaç gün önceden | Sitede rezervasyonun yapıldığı gün ile oturumun iş günü arasındaki fark: ortalama, ortanca ("yarısı en çok 2 gün önceden"), aynı gün payı. Rezervasyonsuz oturumlar girmez |
+
+- **Dönem:** son 4 hafta (varsayılan), son 12 hafta ya da takvim ayı. Bugün hiç sayılmaz (yarım kalan akşam her
+  karşılaştırmayı kötü gösterirdi); içinde bulunulan ay dünkü güne kadar. Sayılar dönemde başlayan oturumlardan,
+  dakikalar döneme kırpılarak.
+- **Izgara:** satırlar haftanın günü, sütunlar saat (telefonda tersi: satırlar saat, sütunlar gün; yatay kaydırma
+  yok). İş günü kasa gibi 05:00'te döner: gece 00:30'daki oturum önceki günün satırında. Hücre: o gün ve saatte dolu
+  süre ÷ açık süre (dönemde o günden kaç tane varsa × 60 dk). Oda tektir: aynı anda iki oturum (çoğunlukla
+  rezervasyonlu grup için ayrıca açılan sayaç) bir kez sayılır, fazlası dipnotta. Oda saatleri dışındaki dolu dakikalar
+  orana girmez; taralı hücrede noktayla ve dipnotta görünür. Renk tek (mürekkep), açıktan koyuya beş basamak; rakam
+  hücrede, seçilen hücrenin ayrıntısı altta.
+- **Öne çıkanlar:** en az 14 gün ve 8 oturumla: en boş blok (1–4 gün × 2–4 saat) ve en dolu blok (1–3 gün × 2–3 saat;
+  %50'den azsa yok) ya da son dakika iptal yüksekse (%15 ve en az 3) onun satırı.
+- **Ay ay:** son 6 ay, ilk veri ayından eskiye gitmez. ¹: ay ilk rezervasyonsuz sayaçtan önce başlıyor, o aylarda yalnız
+  site rezervasyonları var.
+- **Oda saatleri:** varsayılan her gün 10:00–22:00 (AVM saatleri); ekranın altındaki Veri ve ayarlar › Değiştir.
+  Kapanış gece yarısını geçebilir (en geç 05:00). Değişiklik geçmiş aylara da uygulanır, işlem geçmişine düşer
+  (`integration_state` › `karaoke.hours`).
+- **Geçmişi siteden al:** panelin karaoke bağlantısı 21 Ekim 2026'da kuruldu; öncesi için düğme sitenin aynı imzalı
+  ucunu (`GET /api/panel/karaoke?from&to`; site geçmiş tarihleri de verir, istek başına en çok 400 gün) Ocak 2026'dan
+  bugünden iki gün öncesine kadar takvim ayı ay ay, en yeniden okur. En çok 45 sn sürer; yetmezse **Devam et**
+  kaldığı aydan sürer, **Yeniden al** hepsini baştan okur (geç gelen iade ve iptaller de gelir). Yeni satır ad ve not
+  olmadan yazılır; var olan satırın yalnız rezervasyon alanları değişir (ad, not, sayaç ve zil alanları değişmez);
+  satır silinmez, zil çalmaz, düzenli eşitlemenin durumuna dokunulmaz; düzenli eşitlemeyle aynı kilitle yazılır.
+  429'da sitenin `Retry-After`'ına uyulur (en çok 10 sn, bir kez). Durum: `integration_state` › `karaoke_history`.
+- **İptal anı:** site iptal anını saklamıyor. Eşitleme iptale geçişi görünce sitenin son değişikliğini (`updatedAt`;
+  ping saniyeler içinde gelir) `cancelled_at`'e yazar; yeniden açılan rezervasyonda boşalır. Sütundan önceki iptallerde
+  iptal zilinin anı kullanılır. Geçmişten alınan iptallerin çoğunun anı bilinmez ("zamanı bilinmiyor"; ödemesiz
+  iptalde sitenin son değişikliği kullanılır), eski ayların son dakika oranı bu yüzden alt sınırdır. Site
+  `cancelledAt` gönderirse (isteğe bağlı) o kullanılır.
+- **Henüz yapılamayanlar:** gelmeyenler ("Gelmedi" düğmesi yok; personel **Erken bitir**'e basarsa oda o andan boş
+  sayılır, basılmazsa rezervasyonun süresi dolu sayılır), odadaki siparişler (uygulama siparişi bar ekranına "Masa"
+  olarak gelir, odaya ait olduğu ayrılmıyor ve panel sipariş geçmişi tutmuyor), kasadaki karaoke parası (oturuma
+  bağlı değil; ModPOS günlük dökümü gelince değerlendirilir). Oda tek kabul edilir (site oda bilgisi göndermez); hesap
+  oda sayısını parametre alır.
 
 ## Sorun giderme
 
@@ -178,4 +237,7 @@ dene** seçilen hoparlörden çalmalı.
 | `src/server/push/` | VAPID, şifreleme, gönderim |
 | `public/sw.js` | Service worker (bildirim gösterme, tıklayınca panele dönme) |
 | `src/lib/karaoke/` | İmza, oturum evreleri, uyarı planı, sitenin yanıtının doğrulanması (saf, testli) |
-| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı |
+| `src/lib/karaoke/occupancy.ts`, `occupancy-text.ts`, `history.ts` | Doluluk hesabı (dönem, ızgara, göstergeler, öne çıkanlar, ay ay), ekran metinleri, geçmişi alma ve KVKK kuralları (saf, testli) |
+| `src/server/karaoke/occupancy.ts`, `history.ts` | Doluluğun verisi (ad ve not okunmaz), oda saatleri; geçmişi siteden alma, KVKK temizliği ve sabah işinin karaoke adımı |
+| `src/server/actions/karaoke-doluluk.ts`, `src/app/panel/karaoke/doluluk/` | Oda saatleri ve geçmişi alma eylemleri (yalnız yönetici); Doluluk ekranı, ısı haritası, ay ay |
+| `tests/karaoke.test.ts`, `tests/web-push.test.ts`, `tests/ses-cikisi.test.ts`, `tests/karaoke-cakisma.test.ts`, `tests/karaoke-doluluk.test.ts` | İmza vektörleri, olaylar, evreler, alarm planı, şifreleme, hoparlör seçimi ve sessiz bildirim, çakışma uyarısı, doluluk |

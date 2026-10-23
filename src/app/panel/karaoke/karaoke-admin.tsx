@@ -1,12 +1,12 @@
 "use client";
 
-import { BarChart3, ExternalLink, History, Plug, RefreshCw } from "lucide-react";
+import { BarChart3, ExternalLink, Grid3x3, History, Plug, RefreshCw } from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { refreshLive } from "@/components/panel/live/store";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { KeyValue, Stat } from "@/components/ui/misc";
 import { dateTimeTR, num, tl } from "@/lib/format";
@@ -75,7 +75,17 @@ export function KaraokeAdmin({
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="min-w-0 space-y-4">
         <Card>
-          <CardHeader icon={<BarChart3 />} title={`Bu ay · ${monthLabel}`} description="Sitedeki rezervasyonlar (iptaller hariç) ve panelden açılan sayaçlar" />
+          <CardHeader
+            icon={<BarChart3 />}
+            title={`Bu ay · ${monthLabel}`}
+            description="Sitedeki rezervasyonlar (iptaller hariç) ve panelden açılan sayaçlar"
+            actions={
+              // Gün × saat doluluğu, saat başına gelir, uzatma, son dakika iptal (docs/KARAOKE.md › Doluluk haritası)
+              <ButtonLink href="/panel/karaoke/doluluk" variant="secondary" size="sm">
+                <Grid3x3 size={14} aria-hidden="true" /> Doluluk haritası
+              </ButtonLink>
+            }
+          />
           <div className="grid grid-cols-2 gap-2 px-5 pb-5 lg:grid-cols-3">
             <Stat compact label="Rezervasyon" value={num(stats.reservations)} sub={`${num(stats.hours, 1)} saat`} />
             <Stat compact label="Ciro (sitede)" value={tl(stats.revenueMinor / 100)} sub="Ödenen ve kasada ödenecek" />

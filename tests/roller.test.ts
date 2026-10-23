@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { BOTTOM_NAV, NAV_FOOTER, NAV_GROUPS, NAV_TREE, navTreeFor } from "../src/components/panel/nav";
-import { canOpen, homeFor, STAFF_HOME, STAFF_PATHS } from "../src/lib/roles";
+import { ADMIN_ONLY_PATHS, canOpen, homeFor, STAFF_HOME, STAFF_PATHS } from "../src/lib/roles";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
@@ -36,6 +36,17 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(STAFF_HOME, "/panel/bugun");
   assert.ok(canOpen("staff", "/panel/bugun"));
   assert.equal(canOpen("staff", "/panel/bugunler"), false);
+});
+
+test("personel yolunun altındaki yönetici ekranı (Karaoke › Doluluk) personele kapalı", () => {
+  assert.deepEqual([...ADMIN_ONLY_PATHS], ["/panel/karaoke/doluluk"]);
+  assert.equal(canOpen("staff", "/panel/karaoke/doluluk"), false);
+  assert.equal(canOpen("staff", "/panel/karaoke/doluluk/x"), false);
+  assert.equal(canOpen("staff", "/panel/karaoke"), true);
+  assert.equal(canOpen("staff", "/panel/karaoke/dolulukx"), true, "yol parçası sınırında");
+  assert.equal(canOpen("admin", "/panel/karaoke/doluluk"), true);
+  // Her yönetici ekranı gerçekten bir personel yolunun altında (yoksa liste gereksiz)
+  for (const p of ADMIN_ONLY_PATHS) assert.ok(STAFF_PATHS.some((s) => p.startsWith(`${s}/`)), p);
 });
 
 test("menüdeki her öğenin rolü erişim kuralıyla aynı (personel menüde gördüğü her ekrana girebilir, başkasını görmez)", () => {
