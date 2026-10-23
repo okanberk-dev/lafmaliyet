@@ -548,7 +548,18 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     lines.push({ k: "Bu ayın satış listesi yüklenmemiş: reçeteye göre satırlar boş. Faturaya göre kâr yine aşağıda.", v: null });
   }
   lines.push(
-    { k: "Satışlar (net ciro)", v: t?.netSales ?? null },
+    // ModPOS + laffogato.net online (kâr-zarardaki gibi); online ayrıca alt satırda
+    { k: "Satışlar (net ciro)", v: t?.netSales ?? null, note: t?.online ? "Patron (ModPOS) satış listesi + laffogato.net online satışı, KDV hariç." : undefined },
+    ...(t?.online
+      ? [
+          { k: "   ModPOS satış listesi", v: t.posNetSales },
+          {
+            k: "   laffogato.net online (kafe, mağaza, karaoke)",
+            v: t.online.revenue,
+            note: "Gelir-gider'deki online satırlar, KDV hariç; malzemesi reçeteye göre (menüye bağlı olmayan satırlar ve mağaza kolileri ortalama maliyet oranıyla).",
+          },
+        ]
+      : []),
     { k: "– İndirimler (yönetici indirimi)", v: t ? -t.discountsNet : null },
     { k: "– Malzeme + ambalaj (reçeteye göre)", v: t ? -t.material : null },
     { k: "– Kart / POS komisyonu", v: t ? -t.commission : null },
@@ -563,13 +574,17 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     k: `${name.toLocaleUpperCase("tr-TR")} NET KÂR / ZARAR (reçeteye göre)`,
     v: t?.netProfit ?? null,
     strong: true,
-    note: "Brüt kâr − indirim − o ayın Gelir-gider sabit giderleri (açık gün oranı ve bu aya özel giderler dahil). SU GİDERİ reçetelerde su + buz olarak sayıldıysa burada ikinci kez düşülmez.",
+    note: `Brüt kâr − indirim − o ayın Gelir-gider sabit giderleri (açık gün oranı ve bu aya özel giderler dahil). SU GİDERİ reçetelerde su + buz olarak sayıldıysa burada ikinci kez düşülmez.${
+      t?.listPeriod ? ` Satış listesi ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'ini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
+    }`,
   });
   if (t && Math.abs(t.netProfit - t.netProfitStandard) >= 1) {
     lines.push({
       k: "Net kâr / zarar (standart sabit giderle – Excel Panel temeli)",
       v: t.netProfitStandard,
-      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: açık gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}.`,
+      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: açık gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}${
+        t.fixedBreakdown.listShare ? `, satış listesinin günleri ${tl(t.fixedBreakdown.listShare.amount)}` : ""
+      }.`,
     });
   }
   // Hiç verisi olmayan ayda (ay bilgisi, fatura, Gelir-gider girişi, sayım yok) 0 yazılmaz: "veri yok" ile "kâr 0" karışmasın

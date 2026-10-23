@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
@@ -9,6 +9,7 @@ import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
 import { settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
+import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
 import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
@@ -44,6 +45,7 @@ export async function loadDataset(): Promise<Dataset> {
     expenseEntries,
     wasteEntries,
     siteSales,
+    coverageRow,
     till,
   ] = await Promise.all([
     loadSettings(),
@@ -86,6 +88,8 @@ export async function loadDataset(): Promise<Dataset> {
       .from(s.wasteEntries),
     // laffogato.net online satışları (ay başına kayıt; docs/SITE-SATIS.md)
     loadSiteSales(),
+    // Süren ayda yüklenen satış listesinin son günü (src/lib/sales-coverage.ts)
+    db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
   ]);
@@ -94,10 +98,18 @@ export async function loadDataset(): Promise<Dataset> {
   const currentMonth = currentMonthTR();
   // Kasa raporlarının eksik günleri düne kadar aranır (bugünün raporu akşam girilir); saat de okumalardan sonra
   const through = addDays(businessDate(), -1);
+  // Satış listesinin son gününe kadarki kasa raporları (aynı ilk rapor günüyle: ay ortasında başlayan ilk ay aynı tanınır)
+  const firstEver = till.reduce<string | null>((a, r) => (a === null || r.date < a ? r.date : a), null);
+  const salesCoverage = Object.entries(parseCoverage(coverageRow[0]?.value)).map(([month, upto]) => ({
+    month,
+    through: upto,
+    till: tillMonths(till.filter((r) => r.date.slice(0, 7) === month && r.date <= upto), upto, firstEver)[0] ?? null,
+  }));
 
   return {
     settings,
     currentMonth,
+    salesCoverage,
     ingredients: ingredients.map((i) => ({
       id: i.id,
       name: i.name,

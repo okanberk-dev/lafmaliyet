@@ -1,6 +1,6 @@
 import { withRemainder, type BreakdownGroup, type BreakdownRow } from "@/lib/breakdown";
 import type { Model } from "@/lib/calc/engine";
-import type { DashboardData, FixedLine, FixedMonthBreakdown } from "@/lib/calc/insights";
+import { listDaysText, listShareFactor, type DashboardData, type FixedLine, type FixedMonthBreakdown } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
 import { monthLabel, num, pct, tl } from "@/lib/format";
 
@@ -115,18 +115,38 @@ function salesBuckets(d: DashboardData): SalesBucket[] {
 }
 
 /** Net satış: kategori kategori, ürün ürün (KDV hariç) */
+/** Online satışın Gelir-gider'deki üç satırı (KDV hariç), listenin dönemine düşen payla */
+function onlineRows(d: DashboardData): BreakdownRow[] {
+  const o = d.theoretical?.online;
+  if (!o) return [];
+  const share = o.share < 1 ? ` · ayın bugüne kadarki satışının %${num(o.share * 100, 0)}'i (satış listesinin günleri)` : "";
+  const href = pnlHref(d.month);
+  return [
+    { key: "online:cafe", label: "Kafe online (site + uygulama)", sub: `KDV hariç${share}`, amount: o.cafe, href },
+    { key: "online:shop", label: "Mağaza (online)", sub: `KDV hariç${share}`, amount: o.shop, href },
+    { key: "online:karaoke", label: "Karaoke (ön ödemeli)", sub: `KDV hariç${share}`, amount: o.karaoke, href },
+    // Yalnız sıfır olan atlanır: satırlar net satışı kuruşu kuruşuna tutsun
+  ].filter((r) => Math.abs(r.amount) >= 0.005);
+}
+
 export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
+  const online = onlineRows(d);
   return {
     title: `${monthLabel(d.month)} net satış`,
-    description: `Patron (ModPOS) ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.`,
+    description: `Patron (ModPOS) ürün satışları ÷ (1 + KDV ${rate(model.settings.kdv)})${d.sales.serviceRevenue ? `, hizmet satırları (karaoke) ÷ (1 + ${rate(model.settings.kdvHizmet)})` : ""}, kategori kategori, ürün ürün. KDV dahil ${tl(d.sales.revenue)}; ürüne dokununca ürün kartı açılır.${
+      t?.online ? " laffogato.net online satışı (kafe, mağaza, karaoke) Gelir-gider'deki gibi KDV hariç, ayrı bölümde." : ""
+    }`,
     groups: t
-      ? salesBuckets(d).map((b) => ({
-          key: b.key,
-          label: b.label,
-          note: b.note,
-          rows: [...b.items.values()].map((i) => ({ key: i.key, label: i.label, sub: `${num(i.qty)} adet`, amount: i.net, href: i.href })),
-        }))
+      ? [
+          ...salesBuckets(d).map((b) => ({
+            key: b.key,
+            label: b.label,
+            note: b.note,
+            rows: [...b.items.values()].map((i) => ({ key: i.key, label: i.label, sub: `${num(i.qty)} adet`, amount: i.net, href: i.href })),
+          })),
+          ...(online.length ? [{ key: "online", label: "laffogato.net online", note: "Uygulama ve web siparişleri; kasadan (ModPOS) geçmez.", rows: online }] : []),
+        ]
       : [],
     total: t?.netSales,
     totalLabel: "Net satış",
@@ -138,12 +158,18 @@ export function netSalesBreakdown(model: Model, d: DashboardData): CardBreakdown
 function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
   const t = d.theoretical!;
   const st = model.settings;
+  const o = t.online;
   return [
-    { key: "net", label: "Net satış", sub: salesNetSub(model, d), amount: t.netSales, href: salesHref(d.month) },
+    { key: "net", label: o ? "Net satış (ModPOS)" : "Net satış", sub: salesNetSub(model, d), amount: t.posNetSales, href: salesHref(d.month) },
+    ...(o ? [{ key: "online", label: "Online satış (laffogato.net)", sub: "Kafe, mağaza, karaoke; KDV hariç", amount: o.revenue, href: pnlHref(d.month) }] : []),
     {
       key: "malzeme",
       label: "Malzeme + ambalaj",
-      sub: `Satılan her ürün × reçete maliyeti${d.sales.unmatched.length ? "; eşleşmeyen satırlar ortalama maliyet oranıyla" : ""}`,
+      sub: `Satılan her ürün × reçete maliyeti${d.sales.unmatched.length ? "; eşleşmeyen satırlar ortalama maliyet oranıyla" : ""}${
+        o
+          ? `; online ${tl(o.material)}${o.estimatedCost > 0 ? ` (menüye bağlı olmayan satırlar ve mağaza kolileri ortalama maliyet oranıyla, %${num(o.avgCostRatio * 100, 1)})` : ""}`
+          : ""
+      }`,
       amount: -t.material,
     },
     { key: "komisyon", label: "Kart / POS komisyonu", sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)}`, amount: -t.commission },
@@ -154,14 +180,17 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
 export function grossProfitBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const t = d.theoretical;
   const byCategory = t
-    ? biggestFirst(
-        salesBuckets(d).map((b) => {
+    ? biggestFirst([
+        ...salesBuckets(d).map((b) => {
           const items = [...b.items.values()];
           const net = sum(items.map((i) => i.net));
           const gross = sum(items.map((i) => i.gross));
           return { key: b.key, label: b.label, sub: `Net satış ${tl(net)} · marj ${pct(safeDiv(gross, net))}`, amount: gross };
         }),
-      )
+        ...(t.online
+          ? [{ key: "online", label: "laffogato.net online", sub: `Net satış ${tl(t.online.revenue)} · marj ${pct(safeDiv(t.online.grossProfit, t.online.revenue))}`, amount: t.online.grossProfit }]
+          : []),
+      ])
     : [];
   return {
     title: `${monthLabel(d.month)} brüt kâr`,
@@ -188,7 +217,9 @@ export function grossProfitBreakdown(model: Model, d: DashboardData): CardBreakd
 function lineSub(l: FixedLine, f: FixedMonthBreakdown): string | undefined {
   if (l.key.startsWith("expense:")) return "Aylık harcamalar (bu ay girilen)";
   if (l.overridden) return "Gelir-gider'de elle düzeltildi";
-  if (f.basis === "month" && differs(l.computed, l.standard)) return `Standart ${tl(l.standard)} · ${f.openDays} / ${f.dim} gün açık`;
+  if (f.basis === "month" && differs(l.computed, l.standard)) {
+    return f.prorationBasis === "takvim" ? `Standart ${tl(l.standard)} · ayın ${f.prorationDays} / ${f.dim} günü` : `Standart ${tl(l.standard)} · ${f.prorationDays} / ${f.dim} gün açık`;
+  }
   return undefined;
 }
 
@@ -197,11 +228,14 @@ function lineSub(l: FixedLine, f: FixedMonthBreakdown): string | undefined {
  * kalem kalem, eksi tutarla. Her bölüm "Para nereye gitti?" kartındaki tutarı tutar.
  */
 function fixedGroups(f: FixedMonthBreakdown): BreakdownGroup[] {
+  // Süren ayda satış listesi ayın bir kısmını kapsıyorsa kalemler o günlere düşen payla (gruplar da öyle)
+  const k = listShareFactor(f);
+  const note = f.listShare ? `Ayın tutarı × ${f.listShare.days} / ${f.listShare.of} gün (satış listesinin günleri)` : undefined;
   return f.flow.map((fl) => {
     const rows: BreakdownRow[] =
       fl.key === "extras"
-        ? f.manualRows.map((r) => ({ key: r.key, label: sentenceCase(r.label), amount: -r.amount, href: pnlHref(f.month) }))
-        : f.lines.filter((l) => l.group === fl.key).map((l) => ({ key: l.key, label: l.label, sub: lineSub(l, f), amount: -l.value, href: lineHref(l.key, f.month) }));
+        ? f.manualRows.map((r) => ({ key: r.key, label: sentenceCase(r.label), sub: note, amount: -r.amount * k, href: pnlHref(f.month) }))
+        : f.lines.filter((l) => l.group === fl.key).map((l) => ({ key: l.key, label: l.label, sub: note ?? lineSub(l, f), amount: -l.value * k, href: lineHref(l.key, f.month) }));
     return { key: `sabit:${fl.key}`, label: fl.label, rows: withRemainder(costFirst(rows), -fl.amount, "Diğer", `sabit:${fl.key}:diger`) };
   });
 }
@@ -260,9 +294,9 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
   }
   return {
     title: `${monthLabel(d.month)} net kâr / zarar`,
-    description: `Brüt kâr − indirimler − o ayın Gelir-gider sabit giderleri (açık gün oranı, düzeltmeler, bu aya özel satırlar, aylık harcamalar), KDV hariç, reçeteye göre.${
-      f.waterExcluded > 0 ? ` SU GİDERİ (${tl(f.waterExcluded)}) reçetelerde sayıldığı için burada ikinci kez düşülmedi.` : ""
-    }`,
+    description: `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler − o ayın Gelir-gider sabit giderleri (açık gün oranı, düzeltmeler, bu aya özel satırlar, aylık harcamalar), KDV hariç, reçeteye göre.${
+      t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor (ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'i): indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
+    }${f.waterExcluded > 0 ? ` SU GİDERİ (${tl(f.waterExcluded)}) reçetelerde sayıldığı için burada ikinci kez düşülmedi.` : ""}`,
     groups: [
       { key: "brut", label: "Brüt kâr", rows: grossRows(model, d) },
       {
@@ -272,7 +306,7 @@ export function netProfitBreakdown(model: Model, d: DashboardData): CardBreakdow
           {
             key: "indirim",
             label: "Yönetici indirimleri (KDV hariç)",
-            sub: `KDV dahil ${tl(d.info?.discounts ?? 0)}`,
+            sub: t.listPeriod ? `${listDaysText(t.listPeriod)}, KDV dahil ${tl(t.listPeriod.discounts)}` : `KDV dahil ${tl(d.info?.discounts ?? 0)}`,
             amount: -t.discountsNet,
             href: salesHref(d.month),
           },
@@ -454,7 +488,7 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
     title,
     description: `Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
       fc.refMonth ? `${monthLabel(fc.refMonth)} ` : "son satış ayının "
-    }brüt kâr oranı − standart aylık sabit gider (Excel Panel B19). Açık gün bugüne kadar geçen gün sayılır.`,
+    }brüt kâr oranı${fc.projectedOnline !== null ? " + online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün bugüne kadar geçen gün sayılır.`,
     groups: [
       {
         key: "ciro",
@@ -476,6 +510,17 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
             sub: fc.refMonth ? `${monthLabel(fc.refMonth)} brüt kâr ÷ ciro (KDV dahil)` : undefined,
             amount: gross,
           },
+          ...(fc.projectedOnline !== null
+            ? [
+                {
+                  key: "online",
+                  label: "Online satışın brüt kârı (laffogato.net)",
+                  sub: "Bugüne kadarki ÷ geçen gün × ayın gün sayısı, reçeteye göre",
+                  amount: fc.projectedOnline,
+                  href: pnlHref(d.month),
+                },
+              ]
+            : []),
         ],
       },
       { key: "sabit", label: "Standart aylık sabit gider", rows: standardRows(d, -1) },
@@ -494,15 +539,17 @@ export function forecastBreakdown(d: DashboardData): CardBreakdown {
 export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdown {
   const st = model.settings;
   const ref = d.refMonth ? model.monthSales(d.refMonth) : null;
-  const monthly = d.grossRatio > 0 ? d.fixedStandardTotal / d.grossRatio : null;
+  const cover = d.onlineCover;
+  const monthly = d.grossRatio > 0 ? Math.max(0, d.fixedStandardTotal - (cover?.grossProfit ?? 0)) / d.grossRatio : null;
   const progress = d.breakEvenProgress;
+  const lp = d.theoretical?.listPeriod;
   const tempo: BreakdownRow[] =
     d.dailyAvg && progress !== null
       ? [
           {
             key: "ortalama",
             label: "Günlük ortalama ciro",
-            sub: d.hasSales ? "Satış listesi (indirim öncesi) ÷ açık gün" : "POS cirosu ÷ açık gün",
+            sub: d.hasSales ? (lp ? `Satış listesi (indirim öncesi) ÷ listenin açık günü (${listDaysText(lp)}, ${num(lp.openDays)} gün)` : "Satış listesi (indirim öncesi) ÷ açık gün") : "POS cirosu ÷ açık gün",
             display: tl(d.dailyAvg),
             amount: 0,
           },
@@ -511,9 +558,9 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
       : [];
   return {
     title: "Başabaş günlük ciro",
-    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ÷ brüt kâr oranı ÷ ayda açık gün.${
+    description: `Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider${cover ? " − online satışın brüt kârı" : ""} ÷ brüt kâr oranı ÷ ayda açık gün.${
       d.refMonth ? ` Brüt kâr oranı ${monthLabel(d.refMonth)} satışlarından.` : ""
-    }`,
+    }${cover ? ` Online satış (laffogato.net) sabit giderin bir kısmını karşılar: ${monthLabel(cover.month)} brüt kârı düşülür, kalanı kasanın cirosu karşılar.` : ""}`,
     groups: [
       { key: "sabit", label: "Standart aylık sabit gider", rows: standardRows(d, 1) },
       {
@@ -529,7 +576,19 @@ export function breakEvenBreakdown(model: Model, d: DashboardData): CardBreakdow
             amount: 0,
             tone: ref ? undefined : "warn",
           },
-          { key: "aylik", label: "Başabaş aylık ciro", sub: "Sabit gider ÷ brüt kâr oranı", display: tl(monthly), amount: 0 },
+          ...(cover
+            ? [
+                {
+                  key: "online",
+                  label: "Online satışın brüt kârı",
+                  sub: `${monthLabel(cover.month)}, laffogato.net (reçeteye göre); sabit giderden düşülür`,
+                  display: tl(cover.grossProfit),
+                  amount: 0,
+                  href: pnlHref(cover.month),
+                },
+              ]
+            : []),
+          { key: "aylik", label: "Başabaş aylık ciro", sub: cover ? "(Sabit gider − online brüt kâr) ÷ brüt kâr oranı" : "Sabit gider ÷ brüt kâr oranı", display: tl(monthly), amount: 0 },
           { key: "gun", label: "Ayda açık gün", sub: "Ayarlar", display: `${num(st.acikGun)} gün`, amount: 0, href: "/panel/ayarlar" },
         ],
       },

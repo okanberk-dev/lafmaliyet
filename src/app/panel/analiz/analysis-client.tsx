@@ -836,7 +836,8 @@ export function ScenarioSimulator({
               <InfoTip text="Örnek: “Bütün menüye %5 zam yaparsam, süt %10 zamlanırsa, satışlar %15 artarsa ay sonu ne olur?”" />
             </span>
           }
-          description={`${monthLabel} satış karmasından yola çıkar.`}
+          // Senaryo ModPOS satış listesinin karmasıyladır; online satışın kârı Genel bakış'ta (docs/SITE-SATIS.md)
+          description={`${monthLabel} ModPOS satış karmasından yola çıkar (laffogato.net online satışı dahil değil).`}
           actions={
             <Button
               variant="secondary"

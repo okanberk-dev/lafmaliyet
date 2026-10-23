@@ -380,4 +380,9 @@ export interface Dataset {
   siteSales?: SiteSalesMonth[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
+  /**
+   * Süren ayda yüklenen satış listesinin son günü ve o güne kadarki kasa raporları (src/lib/sales-coverage.ts; yoksa
+   * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)
+   */
+  salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
 }

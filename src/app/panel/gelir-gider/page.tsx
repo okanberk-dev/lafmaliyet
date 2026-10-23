@@ -6,10 +6,11 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { daysInMonth, shiftMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
+import { daysInMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
 import { manualOf } from "@/lib/cash-month";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
+import { salesMonthsToPull } from "@/lib/site-sales/calc";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
@@ -154,10 +155,15 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         bookings: rec!.karaoke.bookings,
         manualOrders: rec!.manual.orders,
         manualNet: rec!.manual.netMinor / 100,
+        // Kasada ödenen uygulama / web siparişleri (ModPOS'ta da var) ve iadesi bekleyen karaoke: bilgi, ciroya girmez
+        counterOrders: rec!.counter?.orders ?? 0,
+        counterNet: (rec!.counter?.netMinor ?? 0) / 100,
+        refundPending: rec!.karaoke.refundPendingMinor / 100,
         unmapped: model.siteLines(m).unmapped.length,
       })),
     choices: months.filter((m) => m <= current && m >= SITE_SALES_FIRST_MONTH).reverse(),
-    refreshMonths: [current, shiftMonth(current, -1)].filter((m) => m >= SITE_SALES_FIRST_MONTH),
+    // Günlük işle aynı aylar: bu ay ve önceki iki ay (geç gelen iadeler kapanmış ayı düşürür)
+    refreshMonths: salesMonthsToPull(`${current}-01`).filter((m) => m >= SITE_SALES_FIRST_MONTH),
     sitePanelUrl: `${siteUrl()}/admin`,
     kdvRate: model.settings.kdv,
     serviceKdvRate: model.settings.kdvHizmet,

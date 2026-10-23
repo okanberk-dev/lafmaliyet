@@ -14,9 +14,10 @@ import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
  * yeniden çekmek üzerine yazar, eski bir yanıt yenisinin üstüne yazılmaz). Kâr-zarar (ayrı gelir satırları, KDV hariç)
  * ve tutarlılık (kafe satırlarının tüketimi) bu kayıtları hesap motoruna verir (src/server/data/dataset.ts).
  *
- * Ne zaman: günlük iş (içinde bulunulan ay; ayın ilk 7 gününde geçen ay da: geç gelen iadeler kapanmış ayı düşürür) ve
- * Gelir-gider'deki "Siteden yenile". Kasa raporunun günlük satırı (`?from=GÜN&to=GÜN`) saklanmaz, rapor açılınca,
- * gönderilince ve e-postalanınca sorulur; site düşük ya da yavaşsa (8 sn) satır görünmez, rapor hiç beklemez / bozulmaz.
+ * Ne zaman: günlük iş (içinde bulunulan ay ve önceki iki ay: cayma hakkıyla dönen koli ya da ileri tarihli karaokenin
+ * iptali kapanmış ayı haftalar sonra düşürür; salesMonthsToPull) ve Gelir-gider'deki "Siteden yenile". Kasa raporunun
+ * günlük satırı (`?from=GÜN&to=GÜN`) saklanmaz, rapor açılınca, gönderilince ve e-postalanınca sorulur; site düşük ya da
+ * yavaşsa (8 sn) satır görünmez, rapor hiç beklemez / bozulmaz.
  *
  * KVKK: siteden yalnız toplamlar ve ürün satırları gelir (müşteri adı, e-posta, sipariş numarası yok).
  */

@@ -6,7 +6,7 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
-import { buildSiteLinkIndex, mapSiteLines, siteRevenue, type SiteRevenue } from "../site-sales/calc";
+import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
 import type {
@@ -388,10 +388,28 @@ export function fixedMonthly(fe: Pick<FixedExpense, "period" | "amount">, st: Se
   }
 }
 
-/** Belirli bir ay için tutar: açık gün ÷ ayın gün sayısı oranıyla (Genel Maliyet sayfası) */
-export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: Settings, openDays: number, dim: number): number {
+/**
+ * Belirli bir ay için tutar (Genel Maliyet sayfası): günlük kalem × açık gün; ötekiler aylık karşılık × gün ÷ ayın gün
+ * sayısı. `days` aylık kalemlerin günü (prorationDays): açık gün elle girildiyse o (Excel), kasa raporlarından geliyorsa
+ * raporların kapsadığı takvim günü
+ */
+export function fixedForMonth(fe: Pick<FixedExpense, "period" | "amount">, st: Settings, openDays: number, dim: number, days = openDays): number {
   if (fe.period === "gunluk") return fe.amount * openDays;
-  return (fixedMonthly(fe, st) * openDays) / dim;
+  return (fixedMonthly(fe, st) * days) / dim;
+}
+
+/**
+ * Aylık kalemlerin (aylık, haftalık, yıllık sabit giderler ve personel) ayın kaçta kaçına düştüğü gün sayısı. Açık gün
+ * elle girildiyse (Excel: açılış ayı Temmuz 23 gün) o gün; kasa raporlarından geliyorsa raporların kapsadığı takvim
+ * günü (biten ayda ayın tamamı, süren ayda bugüne kadar). Kapalı bir gün (bayram, raporu hiç girilmemiş gün) kira ve
+ * maaşı düşürmez: cirosu zaten 0'dır, gider ise tam ödenir. Günlük kalemler yine açık günle çarpılır.
+ */
+export function prorationDays(info: Pick<Month, "month" | "openDays" | "sources" | "kasa"> | undefined): number {
+  const open = info?.openDays ?? 0;
+  const till = info?.kasa?.till;
+  if (!info || info.sources?.openDays !== "kasa" || !till) return open;
+  const span = Math.round((Date.parse(`${till.to}T00:00:00Z`) - Date.parse(`${till.from}T00:00:00Z`)) / 86_400_000) + 1;
+  return Number.isFinite(span) ? Math.max(open, Math.min(daysInMonth(info.month), span)) : open;
 }
 
 // ============================================================================
@@ -515,7 +533,10 @@ export interface PnlMonthCalc {
   month: string;
   info: Month | undefined;
   openDays: number;
+  /** Aylık kalemlerin ve personelin günü (prorationDays): elle açık gün ya da kasa raporlarının kapsadığı takvim günü */
+  prorationDays: number;
   dim: number;
+  /** prorationDays ÷ ayın gün sayısı */
   ratio: number;
   cells: Map<string, PnlCell>;
   purchases: number;
@@ -554,6 +575,36 @@ export interface SiteLinesCalc {
   mapped: { line: SiteSalesLine; product: Product }[];
   /** Bağlı ürünü olmayan satırlar: tüketime girmez, eşleştirme için listelenir */
   unmapped: SiteSalesLine[];
+  /**
+   * Satırların seçenekleri (ekstra shot, şurup, alternatif süt; site gönderiyorsa): adet ve panel ürünü (Extra Shot,
+   * Syrup, Alternatif Süt). Ürünü olan seçenek o ürünün reçetesiyle tüketime ve maliyete girer; olmayan listelenir
+   */
+  options: { kind: OptionKind; qty: number; product: Product | null }[];
+}
+
+/**
+ * Bir ayın laffogato.net online satışı, reçeteye göre (Genel bakış, zam etkisi; docs/SITE-SATIS.md). Gelir KDV hariç
+ * (Gelir-gider'deki üç satırla aynı). Malzeme: ürüne eşlenen kafe satırları ve ürünü olan seçenekler adet × ürünün
+ * reçete maliyeti; eşlenmeyen kafe satırları ve mağaza kolileri (kargo hariç) KDV hariç tutar × ayın ortalama maliyet
+ * oranı (ModPOS'ta eşleşmeyen satırın kuralı). Karaokenin malzemesi yok; online ödemenin komisyonu faturasıyla
+ * Gelir-gider'de (reçeteye göre görünümde yok).
+ */
+export interface OnlineMonthCalc {
+  month: string;
+  revenue: SiteMonthRevenue;
+  /** Ürüne eşlenen satırların ve seçeneklerin reçete maliyeti */
+  mappedCost: number;
+  /** Ortalama maliyet oranıyla tahmin edilen kısmın dayanağı (KDV hariç) ve maliyeti */
+  estimatedBase: number;
+  estimatedCost: number;
+  /** Ayın ModPOS ortalama maliyet oranı (ayın satış listesi yoksa son satış ayınınki; hiç yoksa 0) */
+  avgCostRatio: number;
+  material: number;
+  /** revenue.total − material */
+  grossProfit: number;
+  /** Ürüne eşlenen kafe adedi (seçenekler dahil: Extra Shot ürünü gibi) */
+  mappedQty: number;
+  soldByProduct: Map<number, number>;
 }
 
 export interface StockLine {
@@ -584,6 +635,20 @@ export interface StockSheet {
   total: number;
   totalVatIncl: number;
   hasData: boolean;
+}
+
+/**
+ * Süren ayda yapıştırılan satış listesinin dönemi, kasa raporlarından kısaysa (engine listPeriod): listenin ilk ve son
+ * günü, o güne kadarki kasa açık günü, Z toplamı ve indirimi, takvim günü
+ */
+export interface ListPeriod {
+  from: string;
+  through: string;
+  openDays: number;
+  posRevenue: number;
+  discounts: number;
+  /** Takvim günü (ilk günden son güne) */
+  days: number;
 }
 
 export type Model = ReturnType<typeof createModel>;
@@ -760,6 +825,32 @@ export function createModel(ds: Dataset) {
     return u;
   }
 
+  // --- Satış listesinin dönemi (src/lib/sales-coverage.ts) --------------------------
+  const coverageByMonth = new Map((ds.salesCoverage ?? []).map((c) => [c.month, c]));
+  /**
+   * Süren ayda yapıştırılan satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa o dönem: liste ↔ POS cirosu
+   * karşılaştırması, günlük ortalama, "ayda …" adetleri ve reçeteye göre kârın sabit gideri listenin günleriyle yapılır.
+   * Liste kasayla aynı dönemi kapsıyorsa (ay bitince yüklenen liste) ya da ayın açık günü ve cirosu kasadan gelmiyorsa
+   * (elle yazıldı: Excel'deki gibi listeye göre yazılmıştır) null.
+   */
+  function listPeriod(month: string): ListPeriod | null {
+    const c = coverageByMonth.get(month);
+    const info = monthInfo.get(month);
+    const till = info?.kasa?.till;
+    if (!c?.till || !till || info?.sources?.openDays !== "kasa" || info.sources.posRevenue !== "kasa") return null;
+    if (c.through >= till.to || c.till.openDays <= 0) return null;
+    const days = Math.round((Date.parse(`${c.through}T00:00:00Z`) - Date.parse(`${c.till.from}T00:00:00Z`)) / 86_400_000) + 1;
+    return {
+      from: c.till.from,
+      through: c.through,
+      openDays: c.till.openDays,
+      posRevenue: c.till.posRevenue,
+      // İndirim kasadan geliyorsa listenin günlerine kadarki; elle yazıldıysa ayın yazılan tutarı
+      discounts: info.sources.discounts === "kasa" ? (c.till.discounts ?? 0) : info.discounts,
+      days: Math.max(1, days),
+    };
+  }
+
   // --- laffogato.net online satışları (docs/SITE-SATIS.md) -------------------------
   // Ay başına bir kayıt; kafe satırları menü bağlantısıyla (products.site_menu_id + yuva) ürünlere eşlenir. ModPOS
   // satışlarından (sales_lines) ayrı bir kaynaktır: satış raporuna yazılmaz, tüketimde ve kâr-zararda ayrı görünür.
@@ -768,13 +859,26 @@ export function createModel(ds: Dataset) {
   function siteSalesOf(month: string): SiteSalesMonth | null {
     return siteByMonth.get(month) ?? null;
   }
+  // Seçeneklerin panel ürünü (Extra Shot, Syrup, Alternatif Süt): menü bağlantısı ya da ad (site-sales/calc.ts)
+  const optionProduct = new Map<OptionKind, Product | null>(
+    OPTION_KINDS.map((k) => {
+      const id = optionProductId(k, siteIndex, ds.products);
+      return [k, id === null ? null : (productById.get(id) ?? null)];
+    }),
+  );
   const siteLinesCache = new Map<string, SiteLinesCalc>();
   function siteLines(month: string): SiteLinesCalc {
     let c = siteLinesCache.get(month);
     if (!c) {
       const lines = siteByMonth.get(month)?.cafe.lines ?? [];
       const { mapped, unmapped } = mapSiteLines(lines, siteIndex);
-      c = { mapped: [], unmapped };
+      const totals = optionTotals(lines);
+      c = {
+        mapped: [],
+        unmapped,
+        // Bağlı olmayan satırın seçeneği de satılmıştır: seçenekler bütün satırlardan
+        options: OPTION_KINDS.filter((k) => totals[k] > 0).map((k) => ({ kind: k, qty: totals[k], product: optionProduct.get(k) ?? null })),
+      };
       for (const m of mapped) {
         const product = productById.get(m.productId);
         if (product) c.mapped.push({ line: m.line, product });
@@ -784,18 +888,27 @@ export function createModel(ds: Dataset) {
     }
     return c;
   }
+  /** Online satışın ürün başına adedi: eşlenen kafe satırları ve ürünü olan seçenekler (Extra Shot gibi) */
+  function onlineSold(month: string): Map<number, number> {
+    const sold = new Map<number, number>();
+    const c = siteLines(month);
+    for (const { line, product } of c.mapped) sold.set(product.id, (sold.get(product.id) ?? 0) + line.qty);
+    for (const o of c.options) if (o.product) sold.set(o.product.id, (sold.get(o.product.id) ?? 0) + o.qty);
+    return sold;
+  }
   /**
-   * Online kafe siparişlerinin reçeteye göre harcadığı malzeme (fire hariç, malzemenin kendi biriminde). ModPOS
-   * satışlarının tüketimine (ingredientUsage) eklenmez; tutarlılıkta ayrı kaynak olarak gösterilir.
+   * Online kafe siparişlerinin reçeteye göre harcadığı malzeme (fire hariç, malzemenin kendi biriminde): eşlenen
+   * satırlar ve ürünü olan seçenekler (ekstra shot → Extra Shot ürününün reçetesi). ModPOS satışlarının tüketimine
+   * (ingredientUsage) eklenmez; tutarlılıkta ayrı kaynak olarak gösterilir.
    */
   const onlineCache = new Map<string, Map<number, number>>();
   function onlineUsage(month: string): Map<number, number> {
     let u = onlineCache.get(month);
     if (!u) {
       u = new Map();
-      for (const { line, product } of siteLines(month).mapped) {
-        for (const it of itemsByProduct.get(product.id) ?? []) {
-          u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * line.qty);
+      for (const [productId, qty] of onlineSold(month)) {
+        for (const it of itemsByProduct.get(productId) ?? []) {
+          u.set(it.ingredientId, (u.get(it.ingredientId) ?? 0) + evalQty(it).qty * qty);
         }
       }
       onlineCache.set(month, u);
@@ -999,6 +1112,39 @@ export function createModel(ds: Dataset) {
   }
 
   const salesMonths = [...linesByMonth.keys()].sort();
+
+  // --- Online satış, reçeteye göre (OnlineMonthCalc) ------------------------------
+  const onlineMonthCache = new Map<string, OnlineMonthCalc | null>();
+  /** Ayın online satışının reçeteye göre hesabı; ay çekilmediyse null */
+  function onlineMonth(month: string): OnlineMonthCalc | null {
+    if (onlineMonthCache.has(month)) return onlineMonthCache.get(month)!;
+    const r = siteByMonth.get(month);
+    let out: OnlineMonthCalc | null = null;
+    if (r) {
+      const revenue = siteRevenueOf(month)!;
+      const soldBy = onlineSold(month);
+      let mappedCost = 0;
+      let mappedQty = 0;
+      for (const [productId, qty] of soldBy) {
+        const product = productById.get(productId);
+        if (!product) continue;
+        mappedCost += qty * computeProduct(product).cost;
+        mappedQty += qty;
+      }
+      // Eşlenmeyen kafe satırları liste fiyatıyla, mağaza kolileri kargo ücreti (taşıma hizmeti, hizmet KDV'si) düşülerek
+      const unmappedNet = sum(siteLines(month).unmapped.map((l) => l.listMinor)) / 100 / (1 + st.kdv);
+      const shopGoods = Math.max(0, revenue.shop - r.shop.deliveryMinor / 100 / (1 + st.kdvHizmet));
+      // Ayın satış listesi yoksa (süren ay, liste ay sonunda) son satış ayının oranı
+      const ratioMonth = linesByMonth.has(month) ? month : (salesMonths.filter((m) => m <= month).at(-1) ?? salesMonths[0]);
+      const avgCostRatio = ratioMonth ? monthSales(ratioMonth).avgCostRatio : 0;
+      const estimatedBase = unmappedNet + shopGoods;
+      const estimatedCost = estimatedBase * avgCostRatio;
+      const material = mappedCost + estimatedCost;
+      out = { month, revenue, mappedCost, estimatedBase, estimatedCost, avgCostRatio, material, grossProfit: revenue.total - material, mappedQty, soldByProduct: soldBy };
+    }
+    onlineMonthCache.set(month, out);
+    return out;
+  }
 
   // --- Personel ve sabit giderler ------------------------------------------------
   // Her ay kendi aralığı ve sürümüyle hesaplanır; böylece bir zam ya da yeni kalem geçmiş ayları değiştirmez.
@@ -1246,7 +1392,9 @@ export function createModel(ds: Dataset) {
     const noteOf = (key: string) => notes?.get(key) ?? null;
     const dim = daysInMonth(month);
     const openDays = info?.openDays ?? 0;
-    const ratio = openDays / dim;
+    // Aylık kalemler ve personel bu günle (kasa raporlarından gelen ayda takvim günü; prorationDays)
+    const days = prorationDays(info);
+    const ratio = days / dim;
     const cells = new Map<string, PnlCell>();
     const auto = (key: string, computed: number) => {
       const ov = overrides.get(key);
@@ -1304,7 +1452,7 @@ export function createModel(ds: Dataset) {
     for (const fe of allFixed) {
       const key = `fixed:${fe.id}`;
       if (inRange(fe, month)) {
-        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim));
+        sections[fe.section] += auto(key, fixedForMonth(fixedAtMonth(fe, month), st, openDays, dim, days));
       } else {
         const ov = overrides.get(key);
         cells.set(key, { value: ov ?? null, computed: null, overridden: ov !== undefined, note: ov !== undefined ? noteOf(key) : null, outOfRange: true });
@@ -1355,6 +1503,7 @@ export function createModel(ds: Dataset) {
       month,
       info,
       openDays,
+      prorationDays: days,
       dim,
       ratio,
       cells,
@@ -1457,7 +1606,13 @@ export function createModel(ds: Dataset) {
     for (const { key } of FIXED_SECTIONS) {
       const add = sec(key);
       if (key === "personel") {
-        add({ key: "personnel:net", label: "PERSONEL MAAŞ (net)", kind: "auto", editable: true, hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı)." });
+        add({
+          key: "personnel:net",
+          label: "PERSONEL MAAŞ (net)",
+          kind: "auto",
+          editable: true,
+          hint: "Personel sayfasındaki net maaşlar × (açık gün ÷ ayın gün sayısı). Açık günü kasa raporlarından gelen ayda raporların kapsadığı takvim günüyle: kapalı gün maaşı düşürmez.",
+        });
         add({ key: "personnel:employer", label: "PERSONEL SGK + İŞSİZLİK (işveren)", kind: "auto", editable: true, hint: "Personel sayfasındaki tahmini işveren maliyeti − net maaş. Bordrodaki gerçek tutarı yazabilirsiniz." });
       }
       // Bu aylardan en az birinde (verisi olan dönemde) geçerli olan ya da elle tutarı girilmiş kalemler
@@ -1607,6 +1762,12 @@ export function createModel(ds: Dataset) {
     cardShareOf,
     salesMonths,
     monthSales,
+    /** Süren ayda yapıştırılan satış listesinin dönemi (kasa raporlarından kısaysa; yoksa null) */
+    listPeriod,
+    /** Ayın online satışı reçeteye göre (gelir, malzeme, brüt kâr); çekilmemiş ayda null */
+    onlineMonth,
+    /** Online satışın ürün başına adedi (eşlenen kafe satırları ve seçenek ürünleri) */
+    onlineSold,
     soldByProduct,
     ingredientUsage,
     recordedUsage,

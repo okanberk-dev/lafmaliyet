@@ -1,5 +1,5 @@
 import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
-import type { consistency, ConsistencyRow } from "@/lib/calc/insights";
+import { listDaysText, type consistency, type ConsistencyRow } from "@/lib/calc/insights";
 import { num, qty, tlUnit } from "@/lib/format";
 
 import { RATIO_GUIDE, SEVERITY, severityOf } from "./severity";
@@ -141,6 +141,8 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
   // ---------------------------------------------------------------- Satış ↔ POS (₺)
   const s = c.sales;
   const salesHref = `/panel/satislar?ay=${month}`;
+  // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) indirim ve POS o dönemin
+  const period = s.listPeriod ? `${listDaysText(s.listPeriod)} kasa raporları` : "Satışlar > ay bilgileri";
   const sales: BreakdownGroup[] = s.hasLines
     ? [
         {
@@ -148,7 +150,7 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
           label: "Hesaplanan ciro",
           rows: [
             { key: "liste", label: "Ürün listesi toplamı", sub: "POS ürün listesi, indirim öncesi", amount: s.listTotal, href: `${salesHref}#satirlar` },
-            { key: "indirim", label: "Yönetici indirimleri", sub: "Satışlar > ay bilgileri", amount: -s.discounts, href: salesHref },
+            { key: "indirim", label: "Yönetici indirimleri", sub: period, amount: -s.discounts, href: salesHref },
           ],
         },
         {
@@ -158,7 +160,7 @@ export function consistencyBreakdowns(c: ConsistencyCalc, month: string): Consis
           rows: [
             s.pos === null
               ? { key: "pos", label: "POS ciro raporu", sub: "Satışlar > ay bilgileri", amount: 0, display: "Girilmedi", tone: "warn", href: salesHref }
-              : { key: "pos", label: "POS ciro raporu (düşülür)", sub: "Satışlar > ay bilgileri", amount: -s.pos, href: salesHref },
+              : { key: "pos", label: "POS ciro raporu (düşülür)", sub: period, amount: -s.pos, href: salesHref },
           ],
         },
         {

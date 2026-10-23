@@ -7,8 +7,9 @@ import {
   type PanelFixedGroup,
 } from "../constants";
 import { isUnpriced } from "../count-item";
-import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type Model, type ProductCalc, type StockSheet } from "./engine";
+import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num } from "../format";
+import { OPTION_PRODUCTS } from "../site-sales/calc";
 import { isSummaryRow } from "./pos-paste";
 import type { FixedSection, Ingredient } from "./types";
 
@@ -77,12 +78,40 @@ export function latestSalesMonth(model: Model): string | null {
 }
 
 /**
+ * Süren ayda kasa raporlarından kısa bir dönemin satış listesi yapıştırıldıysa (engine listPeriod) listenin o döneme
+ * düşen payı: liste takvim günü ÷ ayın bugüne kadarki günü (engine prorationDays); öteki her durumda 1. Reçeteye göre
+ * kâr sabit gideri ve online satışı bu payla alır (o dönemin tutarı bilinmez, gün oranıyla).
+ */
+export function listShareOf(model: Model, month: string): { lp: ListPeriod; share: number; of: number } | null {
+  const lp = model.listPeriod(month);
+  if (!lp) return null;
+  const of = model.pnlMonth(month).prorationDays;
+  if (!(of > lp.days)) return null;
+  return { lp, share: lp.days / of, of };
+}
+
+/**
+ * Ayda satılan adet, ürün başına: Patron (ModPOS) satış listesi + laffogato.net online (eşlenen kafe satırları ve
+ * Extra Shot gibi seçenek ürünleri). Online, listenin dönemine oranlanır (listShareOf; yuvarlanır). Kategoriler, menü
+ * mühendisliği ve zam etkisi bununla sayar: online satılan ürün de satılmıştır.
+ */
+export function soldWithOnline(model: Model, month: string): Map<number, number> {
+  const out = new Map(model.soldByProduct(month));
+  const share = listShareOf(model, month)?.share ?? 1;
+  for (const [id, qty] of model.onlineSold(month)) {
+    const q = share === 1 ? qty : Math.round(qty * share);
+    if (q) out.set(id, (out.get(id) ?? 0) + q);
+  }
+  return out;
+}
+
+/**
  * Kategori satırları. Ortalamalar ve satış ağırlıklı marj reçetesi olan ürünlerden ("Bütün menü" satırı,
  * urunler/logic.ts menuAverages ile aynı kural): reçetesiz ürünün maliyeti 0, marjı ~%98 sayılıp ortalamayı
  * olduğundan iyi göstermesin. Ürün ve satış adedi bütün etkin ürünlerden. Excel'de reçetesiz ürün yok, sonuç aynı.
  */
 export function categoryStats(model: Model, month: string | null): CategoryStat[] {
-  const sold = month ? model.soldByProduct(month) : new Map<number, number>();
+  const sold = month ? soldWithOnline(model, month) : new Map<number, number>();
   return model.categories.map((c) => {
     const ps = model.products.filter((p) => p.product.categoryId === c.id && p.product.active);
     const rp = ps.filter((p) => p.status !== "Reçete yok");
@@ -170,6 +199,12 @@ export interface FixedMonthBreakdown {
    */
   basis: "month" | "standard";
   openDays: number;
+  /**
+   * Aylık kalemlerin günü (engine prorationDays): "acik" elle girilen açık gün (Excel), "takvim" kasa raporlarının
+   * kapsadığı takvim günü (biten ayda ayın tamamı, süren ayda bugüne kadar; kapalı gün kira ve maaşı düşürmez)
+   */
+  prorationDays: number;
+  prorationBasis: "acik" | "takvim";
   dim: number;
   /** Ayarlar'daki "ayda açık gün" (günlük kalemlerin standart çarpanı) */
   acikGun: number;
@@ -188,7 +223,13 @@ export interface FixedMonthBreakdown {
   /** Reçetelerde su + buz maliyeti olarak sayıldığı için sabit giderden çıkarılan SU GİDERİ */
   waterExcluded: number;
   waterInRecipes: boolean;
-  /** standard + proration + overrides + manual + expenses */
+  /**
+   * Süren ayda yapıştırılan satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (fixedForListPeriod): reçeteye
+   * göre kâr o dönemin sabit gideriyle hesaplanır, ayın bugüne kadarki tutarı × liste günü ÷ ayın geçen günü (`flow`
+   * ve `sections` bu oranla; `lines` ayın tutarıyla). `amount` listenin kapsamadığı günlerin payı (eksi). Yoksa null
+   */
+  listShare: { from: string; through: string; days: number; of: number; amount: number } | null;
+  /** standard + proration + overrides + manual + expenses (+ listShare.amount) */
   total: number;
   /** Gelir-gider bölümlerine göre (SU GİDERİ düşülmüş) */
   sections: Record<FixedSection, number>;
@@ -331,6 +372,8 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     month,
     basis,
     openDays,
+    prorationDays: pm.prorationDays,
+    prorationBasis: pm.info?.sources?.openDays === "kasa" && pm.info.kasa ? "takvim" : "acik",
     dim,
     acikGun: st.acikGun,
     standard,
@@ -341,6 +384,7 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     expenses,
     waterExcluded,
     waterInRecipes,
+    listShare: null,
     total: lineValues + manual,
     sections,
     lines,
@@ -349,6 +393,30 @@ export function fixedCostsForMonth(model: Model, month: string): FixedMonthBreak
     flow,
   };
 }
+
+/**
+ * Satış listesinin dönemine düşen sabit gider (listShareOf): ayın bugüne kadarki sabit gideri × liste günü ÷ ayın
+ * geçen günü. Gruplar ("Para nereye gitti?") ve bölümler aynı oranla küçülür; kalemler (`lines`) ayın tutarıyla kalır,
+ * ekranda oranla gösterilir (listShareFactor). Fark `listShare.amount` (eksi). Pay yoksa ya da ayın tutarları yoksa
+ * ("standard") aynen döner.
+ */
+export function fixedForListPeriod(f: FixedMonthBreakdown, period: { lp: Pick<ListPeriod, "from" | "through" | "days">; of: number }): FixedMonthBreakdown {
+  const { lp, of } = period;
+  if (f.basis !== "month" || !(of > lp.days) || lp.days <= 0) return f;
+  const factor = lp.days / of;
+  const total = f.total * factor;
+  const sections = Object.fromEntries(Object.entries(f.sections).map(([k, v]) => [k, v * factor])) as Record<FixedSection, number>;
+  return {
+    ...f,
+    sections,
+    flow: f.flow.map((l) => ({ ...l, amount: l.amount * factor })),
+    listShare: { from: lp.from, through: lp.through, days: lp.days, of, amount: total - f.total },
+    total,
+  };
+}
+
+/** Kalem tutarlarının satış listesinin dönemine oranı (listShare yoksa 1) */
+export const listShareFactor = (f: Pick<FixedMonthBreakdown, "listShare">) => (f.listShare ? f.listShare.days / f.listShare.of : 1);
 
 // ---------------------------------------------------------------------------- Devam eden ay
 
@@ -405,6 +473,58 @@ export function forecastMonthOf(model: Model, opts?: DashboardOptions): string |
 
 // ---------------------------------------------------------------------------- Genel bakış
 
+/** Genel bakışın online satır(lar)ı: reçeteye göre online satış, listenin dönemine düşen payla (1: ayın tamamı) */
+export interface OnlineTheory {
+  /** KDV hariç: kafe + mağaza + karaoke */
+  revenue: number;
+  cafe: number;
+  shop: number;
+  karaoke: number;
+  material: number;
+  mappedCost: number;
+  estimatedCost: number;
+  estimatedBase: number;
+  avgCostRatio: number;
+  grossProfit: number;
+  share: number;
+  closed: boolean;
+  pulledAt: string;
+}
+
+function onlineTheory(o: OnlineMonthCalc | null, share: number): OnlineTheory | null {
+  if (!o) return null;
+  const k = (v: number) => v * share;
+  return {
+    revenue: k(o.revenue.total),
+    cafe: k(o.revenue.cafe),
+    shop: k(o.revenue.shop),
+    karaoke: k(o.revenue.karaoke),
+    material: k(o.material),
+    mappedCost: k(o.mappedCost),
+    estimatedCost: k(o.estimatedCost),
+    estimatedBase: k(o.estimatedBase),
+    avgCostRatio: o.avgCostRatio,
+    grossProfit: k(o.grossProfit),
+    share,
+    closed: o.revenue.closed,
+    pulledAt: o.revenue.pulledAt,
+  };
+}
+
+/**
+ * Başabaşta sabit giderden düşülen online brüt kâr: referans satış ayının online ayı kapandıysa onunki, değilse ondan
+ * önceki son kapanmış online ay (süren ayın yarım online satışı bir ayı karşılamaz). Yoksa null
+ */
+export function onlineCoverFor(model: Model, refMonth: string | null): { month: string; grossProfit: number } | null {
+  if (!refMonth) return null;
+  const months = model.ds.siteSales?.map((r) => r.month).filter((m) => m <= refMonth).sort().reverse() ?? [];
+  for (const m of months) {
+    const o = model.onlineMonth(m);
+    if (o?.revenue.closed) return { month: m, grossProfit: o.grossProfit };
+  }
+  return null;
+}
+
 /**
  * Genel bakış (Excel Panel) verileri.
  * Ay sonu tahmini yalnızca devam eden ay için yapılır (bkz. resolveCurrentMonth). Sunucuda loadModel()
@@ -422,28 +542,46 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const fixedMonth = fixedCostsForMonth(model, month);
   /** Standart aylık sabit gider (Excel SabitGiderToplam), o ayda geçerli kalemler ve tutarlarla */
   const fixedStandardTotal = model.fixedStandardTotalFor(month);
-  const fixed = fixedMonth.sections;
-  const fixedTotal = fixedMonth.total;
-  const discountsNet = (info?.discounts ?? 0) / (1 + st.kdv);
+  // Süren ayda kasa raporlarından kısa bir dönemin satış listesi (engine listPeriod): listeye dayanan her şey o dönemle,
+  // indirim o dönemin kasa raporlarından, sabit gider ve online satış o döneme düşen payla
+  const listShare = hasSales ? listShareOf(model, month) : null;
+  const share = listShare?.share ?? 1;
+  const listFixed = listShare ? fixedForListPeriod(fixedMonth, listShare) : fixedMonth;
+  const fixed = listFixed.sections;
+  const fixedTotal = listFixed.total;
+  const discountsNet = ((listShare ? listShare.lp.discounts : info?.discounts) ?? 0) / (1 + st.kdv);
+  // laffogato.net online satışı reçeteye göre (kâr-zarardaki gibi: kâr ModPOS + online ile)
+  const online = hasSales ? onlineTheory(model.onlineMonth(month), share) : null;
 
-  // Excel Panel: Brüt kâr − indirim − sabit giderler (reçeteye göre teorik maliyet)
+  // Excel Panel: Brüt kâr − indirim − sabit giderler (reçeteye göre teorik maliyet); online satış ayrı satır
+  const grossProfit = sales.grossProfit + (online?.grossProfit ?? 0);
   const theoretical = hasSales
     ? {
-        netSales: sales.net,
+        /** ModPOS satış listesi + online (KDV hariç) */
+        netSales: sales.net + (online?.revenue ?? 0),
+        /** Patron (ModPOS) satış listesi, KDV hariç */
+        posNetSales: sales.net,
+        /** laffogato.net online satışı, reçeteye göre (ay çekilmediyse null) */
+        online,
         discountsNet,
-        material: sales.cost,
+        /** Malzeme + ambalaj: ModPOS + online */
+        material: sales.cost + (online?.material ?? 0),
         commission: sales.commission,
-        grossProfit: sales.grossProfit,
+        grossProfit,
+        /** ModPOS satış listesinin brüt kârı (online hariç) */
+        posGrossProfit: sales.grossProfit,
         /** Gelir-gider bölümlerine göre (SU GİDERİ reçetedeyse düşülmüş) */
         fixed,
         fixedTotal,
         /** Standart / açık gün etkisi / bu aya özel ayrımı ve Excel Panel grupları */
-        fixedBreakdown: fixedMonth,
+        fixedBreakdown: listFixed,
         /** "Para nereye gitti?" sabit gider satırları (Kira, Personel, Reklam, Diğer, bu aya özel) */
-        fixedFlow: fixedMonth.flow,
-        netProfit: sales.grossProfit - discountsNet - fixedTotal,
+        fixedFlow: listFixed.flow,
+        netProfit: grossProfit - discountsNet - fixedTotal,
         /** Excel Panel!B13 temelinde: standart SabitGiderToplam ile */
-        netProfitStandard: sales.grossProfit - discountsNet - fixedStandardTotal,
+        netProfitStandard: grossProfit - discountsNet - fixedStandardTotal,
+        /** Satış listesinin dönemi, kasa raporlarından kısaysa (yoksa null) */
+        listPeriod: listShare ? { ...listShare.lp, of: listShare.of, share } : null,
       }
     : null;
 
@@ -471,10 +609,16 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const ref = refMonth ? model.monthSales(refMonth) : null;
   /** 1 ₺ (KDV dahil) cirodan kalan brüt kâr (Excel: EylulBrutKar / EylulCiro) */
   const grossRatio = ref ? safeDiv(ref.grossProfit, ref.revenue) : 0;
-  const breakEvenDaily = grossRatio > 0 ? fixedStandardTotal / grossRatio / st.acikGun : null;
+  // Online satışın brüt kârı sabit giderin bir kısmını karşılar: kasanın (POS) karşılaması gereken kalanı
+  const onlineCover = onlineCoverFor(model, refMonth);
+  const breakEvenDaily = grossRatio > 0 ? Math.max(0, fixedStandardTotal - (onlineCover?.grossProfit ?? 0)) / grossRatio / st.acikGun : null;
   const grossRevenue = hasSales ? sales.revenue : (info?.posRevenue ?? 0);
-  /** Excel B17: satış listesi varsa liste toplamı (indirim öncesi) ÷ açık gün, yoksa POS cirosu ÷ açık gün */
-  const dailyAvg = openDays ? grossRevenue / openDays : null;
+  /**
+   * Excel B17: satış listesi varsa liste toplamı (indirim öncesi) ÷ açık gün, yoksa POS cirosu ÷ açık gün. Liste kasa
+   * raporlarından kısa bir dönemi kapsıyorsa o dönemin açık günüyle
+   */
+  const listDays = listShare ? listShare.lp.openDays : openDays;
+  const dailyAvg = listDays ? grossRevenue / listDays : null;
   /** POS cirosu (indirim sonrası) ÷ açık gün: aylar arası karşılaştırma için ortak temel */
   const dailyPosAvg = openDays && (info?.posRevenue ?? 0) > 0 ? (info!.posRevenue as number) / openDays : null;
   const breakEvenProgress = breakEvenDaily && dailyAvg ? dailyAvg / breakEvenDaily : null;
@@ -486,17 +630,23 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
   const forecast = partial
     ? (() => {
         const projectedRevenue = ((info!.posRevenue as number) / openDays) * dim;
+        // Online satışın bugüne kadarki brüt kârı aynı tempoyla (çekilmediyse yok)
+        const onlineSoFar = model.onlineMonth(month)?.grossProfit ?? null;
+        const projectedOnline = onlineSoFar === null ? null : (onlineSoFar / openDays) * dim;
         return {
           daysElapsed: openDays,
           dim,
           projectedRevenue,
-          projectedProfit: projectedRevenue * grossRatio - fixedStandardTotal,
+          /** Online satışın ay sonu brüt kârı (bugüne kadarki ÷ geçen gün × ayın günü); çekilmediyse null */
+          projectedOnline,
+          projectedProfit: projectedRevenue * grossRatio + (projectedOnline ?? 0) - fixedStandardTotal,
           refMonth,
         };
       })()
     : null;
 
-  const sold = sales.soldByProduct;
+  // En kârlı / en çok satan / en az kârlı: online satılanlar da sayılır (listenin dönemine oranla)
+  const sold = hasSales ? soldWithOnline(model, month) : sales.soldByProduct;
   const withProfit = model.activeProducts
     .map((p) => ({ p, qty: sold.get(p.product.id) ?? 0, profit: p.unitProfit * (sold.get(p.product.id) ?? 0) }))
     .filter((x) => x.qty > 0);
@@ -526,16 +676,21 @@ export function dashboard(model: Model, month: string, opts?: DashboardOptions) 
     fixedMonth,
     refMonth,
     grossRatio,
+    /** Başabaşta düşülen online brüt kâr (referans ayın ya da son kapanmış online ayın); yoksa null */
+    onlineCover,
     breakEvenDaily,
     dailyAvg,
+    /** dailyAvg'nin açık günü: liste kasa raporlarından kısaysa listenin döneminin açık günü */
+    dailyAvgDays: listDays,
     dailyPosAvg,
     breakEvenProgress,
     /** Seçili ay devam ediyor mu, bitti mi (bugüne göre) */
     monthState,
     currentMonth,
     forecast,
-    recipeCostRatio: hasSales ? safeDiv(sales.cost, sales.net) : null,
-    invoiceCostRatio: hasSales ? safeDiv(model.goodsPurchases(month), sales.net) : null,
+    // Malzeme ve alınan mal online satışı da karşılar: oranlar ModPOS + online net satışa göre (kartta yazan tutarla aynı)
+    recipeCostRatio: theoretical ? safeDiv(theoretical.material, theoretical.netSales) : null,
+    invoiceCostRatio: theoretical ? safeDiv(model.goodsPurchases(month), theoretical.netSales) : null,
     bestProduct: topProducts[0] ?? null,
     topProducts,
     bestSellers,
@@ -629,6 +784,12 @@ export function unpaidSummary(invoices: InvoiceBalance[]) {
 // ============================================================================
 
 /** Uyarı metnindeki ad listesi: ilk `max` ad, kalanı sayıyla ("A, B, C ve 3 ürün daha") */
+/** "1–15 Kasım" (listenin dönemi; ay adıyla) */
+export function listDaysText(lp: Pick<ListPeriod, "from" | "through">): string {
+  const d = (iso: string) => Number(iso.slice(8, 10));
+  return `${d(lp.from)}–${d(lp.through)} ${monthLabel(lp.through.slice(0, 7)).split(" ")[0]}`;
+}
+
 export function nameList(names: string[], max: number, noun: string): string {
   const head = names.slice(0, max).join(", ");
   return names.length > max ? `${head} ve ${num(names.length - max)} ${noun} daha` : head;
@@ -676,12 +837,15 @@ export function alerts(model: Model, month: string): Alert[] {
     });
   }
   if (sales.lines.length && info?.posRevenue) {
-    const diff = sales.revenue - (info.discounts ?? 0) - info.posRevenue;
+    // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) o dönemin Z toplamıyla
+    const lp = model.listPeriod(month);
+    const pos = lp ? lp.posRevenue : info.posRevenue;
+    const diff = sales.revenue - ((lp ? lp.discounts : info.discounts) ?? 0) - pos;
     if (Math.abs(diff) >= 1000) {
       out.push({
         level: "warning",
         title: "Satış listesi ile POS cirosu tutmuyor",
-        detail: `Fark ${Math.round(diff).toLocaleString("tr-TR")} ₺. Satış raporunu ve indirimleri kontrol edin.`,
+        detail: `Fark ${Math.round(diff).toLocaleString("tr-TR")} ₺${lp ? ` (listenin günleri: ${listDaysText(lp)})` : ""}. Satış raporunu ve indirimleri kontrol edin.`,
         href: `/panel/tutarlilik${ay}`,
       });
     }
@@ -839,9 +1003,11 @@ export function consistency(model: Model, month: string) {
   const sales = model.monthSales(month);
   const info = model.monthInfo.get(month);
   const listTotal = sales.revenue;
-  const discounts = info?.discounts ?? 0;
+  // Liste kasa raporlarından kısa bir dönemi kapsıyorsa (süren ayda yapıştırılan liste) karşılaştırma o dönemle
+  const lp = sales.lines.length ? model.listPeriod(month) : null;
+  const discounts = (lp ? lp.discounts : info?.discounts) ?? 0;
   const computed = listTotal - discounts;
-  const pos = info?.posRevenue ?? null;
+  const pos = lp ? lp.posRevenue : (info?.posRevenue ?? null);
   const diff = pos === null || !sales.lines.length ? null : computed - pos;
   const offRevenue = info?.offRevenue ?? 0;
 
@@ -924,6 +1090,8 @@ export function consistency(model: Model, month: string) {
       pos,
       diff,
       ok: diff !== null && Math.abs(diff) < 1000,
+      /** Listenin dönemi, kasa raporlarından kısaysa (POS ve indirim o dönemin); yoksa null */
+      listPeriod: lp,
       offRevenue,
       offRevenueCost: (offRevenue / (1 + st.kdv)) * sales.avgCostRatio,
       hasLines: sales.lines.length > 0,
@@ -960,6 +1128,8 @@ export function consistency(model: Model, month: string) {
           mapped: siteLines.mapped.map((m) => ({ ...m.line, productId: m.product.id, productName: m.product.name, productSize: m.product.size })),
           unmapped: siteLines.unmapped,
           unmappedQty: sum(siteLines.unmapped.map((l) => l.qty)),
+          /** Seçenekler (ekstra shot, şurup, alternatif süt): ürünü olan reçetesiyle beklenen tüketime girer */
+          options: siteLines.options.map((o) => ({ kind: o.kind, label: OPTION_PRODUCTS[o.kind].label, qty: o.qty, productId: o.product?.id ?? null, productName: o.product?.name ?? null })),
         }
       : null,
   };
@@ -1023,7 +1193,8 @@ export interface MenuEngItem {
 }
 
 export function menuEngineering(model: Model, month: string, categoryId?: number) {
-  const sold = model.soldByProduct(month);
+  // ModPOS + online (laffogato.net): online satılan ürün de satılmıştır
+  const sold = soldWithOnline(model, month);
   const items = model.activeProducts.filter((p) => categoryId === undefined || p.product.categoryId === categoryId);
   const totalQty = sum(items.map((p) => sold.get(p.product.id) ?? 0));
   const n = items.length;

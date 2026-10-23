@@ -542,7 +542,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel" /> reçeteye göre (teorik) kârı, <Path href="/panel/gelir-gider" /> tablosu ise faturaya göre (gerçekleşen) kârı gösterir. Aradaki fark fire, ikram,
-            stok birikmesi ya da reçetede eksik malzemedir. Stok sayımı girdikçe iki rakam birbirine yaklaşır.
+            stok birikmesi ya da reçetede eksik malzemedir. Stok sayımı girdikçe iki rakam birbirine yaklaşır. İkisi de laffogato.net online satışını (uygulama
+            siparişleri, mağaza, karaoke) içerir: Genel bakış&apos;ta online satış reçetesiyle, menüye bağlı olmayan satırlar ortalama maliyet oranıyla sayılır.
           </>
         ),
         icon: Scale,
@@ -566,12 +567,27 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Ay sonu tahmini ne zaman çıkar?",
         a: (
           <>
-            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı − standart aylık sabit gider (Excel&apos;deki &quot;Ekim
-            tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre kâr/zarar) görünür.
+            Yalnızca devam eden ay için: POS cirosu ÷ açık gün × ayın gün sayısı × son satış ayının brüt kâr oranı + online satışın brüt kârı (aynı tempoyla) −
+            standart aylık sabit gider (Excel&apos;deki &quot;Ekim tahmini&quot;). Bitmiş bir ayda tahmin yapılmaz; yerine Gelir-gider&apos;deki gerçek sonuç (faturaya göre
+            kâr/zarar) görünür.
           </>
         ),
         icon: CalendarCheck,
         links: [{ href: "/panel/satislar", label: "Açık gün ve POS cirosu" }],
+      },
+      {
+        id: "ay-ortasi-liste",
+        q: "Ay bitmeden satış listesi yüklemek",
+        a: (
+          <>
+            Ay sürerken Patron&apos;un satış raporunu <Path href="/panel/satislar" /> ekranına yüklerken Liste hangi güne kadar? alanına raporun son gününü yazın
+            (varsayılan dün). Kasa raporları her akşam ilerler; Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı, indirimi ve reçeteye göre kârın sabit
+            giderini listenin günleriyle hesaplar, &quot;POS cirosu tutmuyor&quot; uyarısı yanlış yere çıkmaz. Ay bitince ayın tamamının listesini Yenisiyle değiştir ile
+            yükleyin; biten aya yüklenen liste ayın tamamı sayılır.
+          </>
+        ),
+        icon: CalendarCheck,
+        links: [{ href: "/panel/satislar", label: "Satışlar" }],
       },
       {
         id: "gunluk-isler",

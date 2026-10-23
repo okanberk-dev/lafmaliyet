@@ -210,6 +210,7 @@ export function MonthInfoForm({
   kasa = null,
   settingsCardShare,
   listTotal,
+  listPeriod = null,
   currentMonth,
   recordedIkram,
   className,
@@ -223,6 +224,11 @@ export function MonthInfoForm({
   /** Ayarlar › kartlı satış oranı (bu ay için hiçbir oran yoksa geçer) */
   settingsCardShare: number;
   listTotal: number;
+  /**
+   * Süren ayda yüklenen liste kasa raporlarından kısa bir dönemi kapsıyorsa (engine listPeriod) dönemin adı ("1–15
+   * Ekim"), o günlerin Z toplamı ve indirimi: liste ↔ POS kutusu onlarla karşılaştırır (açık gün ve ciro kasadan geldikçe)
+   */
+  listPeriod?: { label: string; posRevenue: number; discounts: number } | null;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
   /** Personelin bu ay panele girdiği ikram (Zayi & ikram): ödenmez tutarına öneri, ModPOS'un rakamı esas */
@@ -252,8 +258,10 @@ export function MonthInfoForm({
 
   /** Alanın geçerli değeri (tutarlılık kutusu, "Bunu yaz"): yazılan ya da kasadaki */
   const effective = (f: MonthField) => effectiveValue(f, { mode: modes[f], text: texts[f], kasa: kasaOf(f), payload: payloads[f] });
-  const posNum = effective("posRevenue");
-  const discNum = effective("discounts") ?? 0;
+  // Liste kasa raporlarından kısaysa listenin günleriyle (motorun kuralı: açık gün ve ciro kasadan gelirken)
+  const byList = listPeriod && modes.posRevenue === "kasa" && modes.openDays === "kasa" ? listPeriod : null;
+  const posNum = byList ? byList.posRevenue : effective("posRevenue");
+  const discNum = (byList && modes.discounts === "kasa" ? byList.discounts : effective("discounts")) ?? 0;
   const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
@@ -420,7 +428,8 @@ export function MonthInfoForm({
                   Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür (Excel Genel Maliyet, 2. satır). Devam eden ayda bu sayı
                   &quot;bugüne kadar geçen gün&quot; olarak da kullanılır: Genel bakış&apos;taki ay sonu tahmini POS cirosu ÷ açık gün × ayın
                   gün sayısıdır. Ay bitince gerçek açık gün sayısını yazın; kapanmış aylarda tahmin yapılmaz. Kasa raporu girilen aylarda boşsa
-                  rapor girilen (satış olan) gün sayılır.
+                  rapor girilen (satış olan) gün sayılır; o aylarda kira ve maaş gibi aylık giderler ayın geçen takvim günüyle bölünür,
+                  kapalı bir gün onları düşürmez.
                 </>
               }
               htmlFor="m-days"
@@ -513,8 +522,8 @@ export function MonthInfoForm({
                 <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
               )}
               <p className="tabular">
-                <span className="font-semibold">{consistent ? "Tutarlı" : "Kontrol edin"}:</span> ürün listesi {tl(listTotal)} − indirim {tl(discNum)} ={" "}
-                {tl(listTotal - discNum)} · POS cirosu ile fark {tl(diff)}
+                <span className="font-semibold">{consistent ? "Tutarlı" : "Kontrol edin"}:</span> ürün listesi{byList ? ` (${byList.label})` : ""} {tl(listTotal)} −
+                indirim {tl(discNum)} = {tl(listTotal - discNum)} · {byList ? `${byList.label} POS cirosu` : "POS cirosu"} ile fark {tl(diff)}
               </p>
             </div>
           ) : null}
@@ -1641,6 +1650,9 @@ export function ImportCard({
   mappings,
   products,
   hasInfo,
+  running,
+  coveredThrough,
+  listDays,
   className,
 }: {
   month: string;
@@ -1651,6 +1663,15 @@ export function ImportCard({
   products: ProductOption[];
   /** Ayda ciro / açık gün / not gibi bilgi var mı ("Ayı temizle" penceresinde seçenek olarak) */
   hasInfo: boolean;
+  /**
+   * Hedef ay süren aysa bugün ve listenin varsayılan son günü (dün; ayın 1'inde bugün): liste o güne kadardır
+   * (src/lib/sales-coverage.ts). Biten ayda null: liste ayın tamamı
+   */
+  running?: { today: string; defaultThrough: string } | null;
+  /** Yüklü listenin son günü (süren ayda yüklendiyse); yoksa null */
+  coveredThrough?: string | null;
+  /** Liste kasa raporlarından kısa bir dönemi kapsıyorsa dönemi ("1–15 Kasım"); yoksa null */
+  listDays?: string | null;
   className?: string;
 }) {
   const reduce = useCalmMotion();
@@ -1665,6 +1686,9 @@ export function ImportCard({
   const [withInfo, setWithInfo] = useState(false);
   /** "Yenisiyle değiştir": ayın satırları silinmeden önce sorulur */
   const [confirmingReplace, setConfirmingReplace] = useState(false);
+  /** Süren ayda listenin son günü (Patron'un raporu genelde dünün sonuna kadar) */
+  const [through, setThrough] = useState(running?.defaultThrough ?? "");
+  const throughBad = Boolean(running) && (!/^\d{4}-\d{2}-\d{2}$/.test(through) || through.slice(0, 7) !== month || through > (running?.today ?? ""));
 
   const rows = useMemo(() => parsed?.rows ?? [], [parsed]);
   const preview = useMemo(() => previewMatches(rows, mappings, products), [rows, mappings, products]);
@@ -1735,7 +1759,7 @@ export function ImportCard({
   async function submit() {
     setBusy(true);
     keepScroll();
-    const res = await importSales({ month, lines: rows, mode });
+    const res = await importSales({ month, lines: rows, mode, through: running ? through : null });
     setBusy(false);
     setConfirmingReplace(false);
     if (!res.ok) return toast.error(res.error);
@@ -1836,8 +1860,11 @@ export function ImportCard({
             <CardFooter className="mt-auto">
               <span>
                 {hasLines
-                  ? `Bu ayda ${num(lineCount)} satır var. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
+                  ? `Bu ayda ${num(lineCount)} satır var${coveredThrough ? ` (${dayMonthTR(coveredThrough)} tarihine kadar)` : ""}. Yeni rapor yüklerken değiştirmeyi ya da eklemeyi seçersiniz.`
                   : "Bu ayda satış satırı yok; yalnızca ay bilgileri var."}
+                {hasLines && listDays
+                  ? ` Kasa raporları daha ileride: Genel bakış ve Tutarlılık listeye dayanan hesapları (günlük ortalama, POS cirosuyla karşılaştırma, sabit gider) ${listDays} günleriyle yapar.`
+                  : null}
               </span>
               <Button variant="ghost" size="sm" className="text-bad hover:bg-bad-soft hover:text-bad pointer-coarse:h-11" onClick={() => setConfirmClear(true)}>
                 <Eraser size={15} /> Ayı temizle
@@ -1992,9 +2019,31 @@ export function ImportCard({
               ) : (
                 <span className="text-[13px] text-ink-mute">Bu ay boş; satırlar doğrudan yüklenir.</span>
               )}
+              {running ? (
+                // Süren ay: liste o güne kadardır; kasa raporları ilerledikçe hesaplar listenin günleriyle yapılır
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Bilgi simgesi etiketle birlikte sarılır (telefonda tek başına alt satıra düşmez) */}
+                  <span className="inline-flex items-center gap-1.5">
+                    <label htmlFor="sales-through" className="text-[13px] text-ink-mute">
+                      Liste hangi güne kadar?
+                    </label>
+                    <InfoTip text="Ay sürerken yüklenen satış listesi o güne kadardır; kasa raporları her akşam ilerler. Genel bakış günlük ortalamayı, POS cirosuyla karşılaştırmayı ve reçeteye göre kârın sabit giderini listenin günleriyle hesaplar. Ay bitince ayın tamamının listesini yükleyin." />
+                  </span>
+                  <Input
+                    id="sales-through"
+                    type="date"
+                    value={through}
+                    min={`${month}-01`}
+                    max={running.today}
+                    onChange={(e) => setThrough(e.target.value)}
+                    aria-invalid={throughBad || undefined}
+                    className="w-auto"
+                  />
+                </div>
+              ) : null}
               <Button
                 onClick={() => (replaceAsk ? setConfirmingReplace(true) : void submit())}
-                disabled={busy || !rows.length}
+                disabled={busy || !rows.length || throughBad}
                 className="max-sm:min-h-12 max-sm:w-full"
               >
                 {busy ? "Yükleniyor…" : `${num(rows.length)} satırı yükle`}
