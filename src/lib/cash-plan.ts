@@ -87,6 +87,11 @@ export interface CashPlanInput {
   /** Ödemeler'in listesi (source "invoice" olanlar kullanılır) */
   invoices: readonly UpcomingItem[];
   reminders: readonly ReminderRow[];
+  /**
+   * Son 30 günde Ödemeler'de "Ödendi" denen hatırlatıcılar (`payments.recent`; geri alınan düşer): ödenen gün ve
+   * sıradaki gün. KDV-2'nin ödenmiş dönemi bundan bulunur. Yoksa boş.
+   */
+  paidReminders?: readonly { id: number; dueDate: string | null; next?: string | null }[];
   /** Son 8 haftanın mal faturaları ve tedarikçinin ödeme gecikmesi (peşinde 0) */
   goods: readonly { supplier: string; date: string; payable: number; lagDays: number }[];
   /** Mal faturalarının ortalama aralığı; 0 = yetersiz geçmiş */
@@ -367,26 +372,32 @@ type RemClass = { kind: "fixed"; id: number } | { kind: "salary" } | { kind: "sg
 
 const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amount > 0;
 
-/** Tekrarlayan hatırlatıcının bir önceki günü (yalnız dönemi için: ay sonu kaydırması gerekmez) */
-function previousDue(r: Pick<ReminderRow, "dueDate" | "repeat">): string | null {
-  const back = { monthly: 1, quarterly: 3, yearly: 12 }[r.repeat as "monthly" | "quarterly" | "yearly"];
-  if (back) return `${shiftMonth(r.dueDate.slice(0, 7), -back)}-${r.dueDate.slice(8, 10)}`;
-  return r.repeat === "weekly" ? addDays(r.dueDate, -7) : null;
+/**
+ * Ertelenmiş kopyanın asıl günü ("Ertelendi · asıl tarih 25.10.2026", postponeReminder): kopyanın dönemi ondan
+ * bulunur. 8 Kasım'a ertelenen Eylül KDV-2'si Ekim'in değildir.
+ */
+export function originalDue(r: Pick<ReminderRow, "note" | "repeat">, due: string): string {
+  const m = r.repeat === "none" ? /^Ertelendi · asıl tarih (\d{2})\.(\d{2})\.(\d{4})/.exec(r.note ?? "") : null;
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : due;
 }
 
 /**
- * KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler: tek seferlikte (Ödendi'den sonra pasif) kendi günü, tekrarlayanda
- * Ödendi'nin geçtiği bir önceki gün. Ödeme dönemin ödeme ayında ya da sonra yapılmış olmalı; daha eski bir "Ödendi"
- * (tarihi elle ileri alınmış seri) bu dönemi ödemez.
+ * KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler (`payments.recent`): ödenen gün ile sıradaki gün arasındaki her
+ * gün ("tarihe kadar ödendi" birkaç dönem kapatır). Erteleme, tarih düzenleme ve hatırlatıcıyı kapatma bunu
+ * değiştirmez; yalnız "Geri al" kaydı siler.
  */
-export function vat2PaidPeriods(rems: readonly ReminderRow[]): Set<string> {
+export function vat2PaidPeriods(paid: CashPlanInput["paidReminders"], byId: ReadonlyMap<number, ReminderRow>): Set<string> {
   const out = new Set<string>();
-  for (const r of rems) {
-    if (!r.lastDoneAt) continue;
-    const paidDue = r.repeat === "none" ? (r.active ? null : r.dueDate) : r.active ? previousDue(r) : null;
-    if (!paidDue) continue;
-    const period = vatPeriodOf(paidDue);
-    if (todayTR(new Date(r.lastDoneAt)) >= `${shiftMonth(period, 1)}-01`) out.add(period);
+  for (const e of paid ?? []) {
+    const r = byId.get(e.id);
+    if (!r || !e.dueDate) continue;
+    let d: string | null = e.dueDate;
+    for (let guard = 0; d && guard < 24; guard++) {
+      out.add(vatPeriodOf(originalDue(r, d)));
+      if (r.repeat === "none" || !e.next) break;
+      d = nextOccurrence(d, r.repeat, r.anchorDate);
+      if (d && d >= e.next) break;
+    }
   }
   return out;
 }
@@ -666,11 +677,12 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // - yazılı tutarı her gününde kesindir ve o dönemi alır;
   // - tutarsızsa dönemin tahmini hatırlatıcının gününde girer; dönemi başka bir KDV-2 hatırlatıcısı almışsa tutarı
   //   girilmemiş ödemedir (iki kez sayılmaz, sessizce de düşmez); tahmin yoksa da öyle;
-  // - "Ödendi" denen dönem (vadesinden önce de) bitmiştir: tahmini geri gelmez, kartta da görünmez.
+  // - "Ödendi" denen dönem (vadesinden önce de) bitmiştir: tahmini geri gelmez, kartta da görünmez;
+  // - ertelenmiş kopyanın dönemi asıl gününden (8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür).
   const withheldOf = new Map(input.vat.months.map((m) => [m.month, round100(m.purchases.withheld)]));
-  const vat2Paid = vat2PaidPeriods(input.reminders.filter((r) => classify(r).kind === "kdv2"));
+  const vat2Paid = vat2PaidPeriods(input.paidReminders, new Map(input.reminders.filter((r) => classify(r).kind === "kdv2").map((r) => [r.id, r])));
   const vat2Occs = vat2Rems
-    .flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, period: vatPeriodOf(o.due) })))
+    .flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, period: vatPeriodOf(originalDue(r, o.due)) })))
     .sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
   const vat2Claimed = new Set<string>();
   for (const x of vat2Occs) {

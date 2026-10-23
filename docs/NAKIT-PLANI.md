@@ -47,9 +47,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    - tutarsızsa faturalardan hesaplanan *KDV-2* tahmini hatırlatıcının gününde girer;
    - dönemi başka bir KDV-2 hatırlatıcısı almışsa ya da tahmin yoksa (KDV tahmine katılmıyor, dönemin verisi yok)
      tutarı girilmemiş ödemedir: iki kez sayılmaz, sessizce de düşmez;
-   - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, kartta görünmez. Tek seferlik
-     hatırlatıcıda kendi günü, tekrarlayanda Ödendi'nin geçtiği bir önceki gün; Ödendi dönemin ödeme ayında ya da
-     sonra denmiş olmalı (tarihi elle ileri alınmış seri bir dönemi ödemiş sayılmaz).
+   - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, kartta görünmez. Ödenen gün
+     Ödemeler'in son ödenenlerinden (`payments.recent`, 30 gün) okunur: ödenen gün ile sıradaki gün arasındaki her
+     dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme, tarihi elle değiştirme ya da hatırlatıcıyı kapatma
+     bir dönemi ödemiş saymaz, ödenmişi de geri açmaz; yalnız “Geri al” kaydı siler;
+   - ertelenmiş kopyanın dönemi notundaki asıl gündendir (“Ertelendi · asıl tarih 25.10.2026”): 8 Kasım'a ertelenen
+     Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
    Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o,
    boşsa bu tahmin” yazar.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle

@@ -34,8 +34,6 @@ export interface ReminderRow {
   remindDaysBefore: number;
   note: string | null;
   active: boolean;
-  /** Son "Ödendi" anı (nakit planı KDV-2'nin ödenmiş dönemini bundan bulur); yoksa hiç ödenmedi */
-  lastDoneAt?: Date | string | null;
 }
 
 export interface UnpaidInvoiceRow {
