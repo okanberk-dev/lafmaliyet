@@ -197,7 +197,8 @@ sunucuya gelen yoklamalar 10 dakika aynı yanıtı alır (`cached: true`), verit
 
 **Neon kotası.** Açık panel sekmeleri de veritabanını uyandırır. Sekme yalnız öndeyken sorar; bildirim izni olan
 cihaz 30 dakikada bir, olmayan dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve yakında oturum ya da saatli
-hatırlatıcı yoksa 10 dakikada bir; src/lib/live-poll.ts). Barın ekranında **bildirimlere izin verin**: izin yokken
+hatırlatıcı yoksa 10 dakikada bir; src/lib/live-poll.ts). Karaoke bağlantısı hata verirken (bar ekranında sarı satır)
+öndeki her sekme, satır kalkana kadar dakikada bir sorar. Barın ekranında **bildirimlere izin verin**: izin yokken
 ekran siparişler için 20 saniyede bir sorar ve veritabanı gün boyu uyumaz. Aylık kullanımı Vercel › Storage ›
 lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 CU-saate yaklaşıyorsa ücretli plana geçin.
 

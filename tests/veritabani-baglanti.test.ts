@@ -192,7 +192,9 @@ test("havuzun ayarları ve canlı derlemenin bağlantı denetimi", () => {
   // Komut satırının doğrudan kullandığı istemci sarılmaz (yedek reserve() ve işlemler)
   assert.match(src, /Object\.assign\(db, \{ \$client: client \}\)/);
   const pre = read("scripts/predeploy.ts");
-  assert.match(pre, /await runMigrations\(\);\s*await runSeed\(\);\s*await checkRuntimeConnection\(\);/);
+  // Havuzlu bağlantı migration'dan önce: açılmazsa derleme şemayı değiştirmeden durur (eski sürüm yeni şemayla kalmasın)
+  assert.match(pre, /await checkRuntimeConnection\(\);\s*await runMigrations\(\);\s*await runSeed\(\);/);
+  assert.ok(pre.indexOf("await checkRuntimeConnection();") < pre.indexOf("await runMigrations();"));
   assert.match(pre, /if \(!url \|\| url === migrated\) return;/);
 });
 

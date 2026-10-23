@@ -73,9 +73,10 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 - **Kart:** nereye (sitenin dili: "Masa 4", "Gel-al", "Kurye"), müşterinin adı, sipariş numarası, planlı saat
   ("14:30 için", başka gündeyse "Yarın 09:00 için"), aşama rozeti (**Yeni**, **Hazırlanıyor**, **Teslime hazır**),
   satırlar (adet kalın; ad ve seçenekler sitenin yazdığı gibi), "Ödendi · 7 dk önce" (10 dakikadan uzun bekleyen yeni
-  sipariş turuncu), **Sitede aç** (`laffogato.net/admin/siparisler/<id>`, yeni sekmede; yalnız sitenin kendi
-  adresine giden `/admin/…` yolları bağlanır; iade ve iptal orada) ve kartın altında büyük **aşama düğmeleri**
-  (aşağıda).
+  sipariş turuncu; planlı sipariş ödemeden değil vaktinden sayılır: "45 dk kaldı", "Vakti geldi", geçince "7 dk
+  gecikti", hâlâ yeniyse turuncu; `waitInfo`), **Sitede aç** (`laffogato.net/admin/siparisler/<id>`, yeni
+  sekmede; yalnız sitenin kendi adresine giden `/admin/…` yolları bağlanır; iade ve iptal orada) ve kartın altında
+  büyük **aşama düğmeleri** (aşağıda).
 - **Reçete:** satırın kalemi menü bağlantısıyla bir panel ürününe bağlıysa ([SITE-MENU.md](SITE-MENU.md); `L` → L
   yuvası, `M` ve tek boy → M yuvası) satırın yanında kitap simgesi: Reçete defterini o ürünün adıyla açar (sayfa
   yeniden yüklenmez; ses kilidi açık kalır).
@@ -145,6 +146,12 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
   içinde açılan sayfa o siparişi bir kez daha çalar (barista sesi duysun).
 - Panelin **ilk çekmesi** (hiç liste yokken) hiçbir siparişi yeni saymaz: bağlantı kurulunca o an açık olan
   siparişler için bildirim gitmez.
+- **Planlı sipariş** ("Yarın 09:00 için" gel-al) hâlâ **Yeni**yken vaktine 15 dakika kala bir kez daha çalar:
+  "Planlı sipariş · Gel-al", "09:00 için · 2× Latte" (ad yok), turuncu bildirim 30 saniye. Cihaz başına bir kez
+  (`localStorage` `laf:planli-siparis-zili`); sunucu bu zil için bildirim göndermez, panel o cihazda açık olmalı (sekme
+  arkadaysa ve bildirim izni varsa sistem bildirimiyle). Ekran sonradan açılırsa vakti yaklaşmış ya da en çok 15
+  dakika geçmiş sipariş için çalar; iki dakikadan yeni ödenmiş sipariş için çalmaz (geliş zili az önce çaldı). Sipariş
+  zili kapalı cihazda çalmaz (`src/lib/site-orders/feed.ts` › `dueSoonToRing`, `alert-center.tsx`).
 - **Web Push** konusu `orders`: ilk kez görülen yeni siparişte sunucu bildirim gönderir ("Yeni sipariş · Masa 4",
   "2× Latte, 1× Matcha Latte"; birden çoksa "2 yeni sipariş", "Masa 4 · Gel-al"). **Müşterinin adı bildirimde yok**
   (kilit ekranı). Tercih aboneliğin `orders` sütununda (`drizzle/0019_siparis_bildirimi.sql`); boşsa personelin

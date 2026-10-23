@@ -66,7 +66,7 @@ export const STAFF_ROLE_HINT =
  */
 export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: boolean; paths?: readonly string[] }[] = [
   { label: "Bugün: günün işleri (kasa raporu, açılış ve kapanış listeleri, zayi, ay sonu sayımı)", admin: true, staff: true, paths: ["/panel/bugun"] },
-  { label: "Karaoke ve bar ekranı: uygulama siparişleri, oda sayacı, rezervasyonlar (tutarsız)", admin: true, staff: true, paths: ["/panel/karaoke"] },
+  { label: "Karaoke ve bar ekranı: uygulama siparişleri, oda sayacı, rezervasyonlar (personel tutarları görmez)", admin: true, staff: true, paths: ["/panel/karaoke"] },
   { label: "Gün sonu kasa raporu; Z raporu ve fişler fotoğraftan, kasadan çıkanlar", admin: true, staff: true, paths: ["/panel/kasa"] },
   { label: "Açılış ve kapanış kontrol listeleri", admin: true, staff: true, paths: ["/panel/kontrol"] },
   { label: "Zayi ve ikram kaydı", admin: true, staff: true, paths: ["/panel/zayi"] },

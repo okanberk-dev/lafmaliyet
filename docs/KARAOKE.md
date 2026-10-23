@@ -47,19 +47,22 @@ GET /api/panel/karaoke  ◀─────────────────�
   sonra bir kez daha denenir (`src/lib/ping-work.ts`). İkisi de olmazsa kopyayı açık bir panel sekmesi tazeler: canlı uç
   her soruluşunda (yanıttan sonra) bakar, çekmesi kaybolan bir ping varsa 30 saniye sonra, son çekme hatalıysa iki
   dakikada bir, kopya 30 dakikadan eskiyse site yeniden sorulur (`src/lib/karaoke/freshness.ts`; kimse bakmıyorsa ne
-  panelin ne sitenin veritabanı uyanır). Hızlı sayaç ve uzatma, sitedeki rezervasyonla çakışmayı sormadan önce kopya üç
-  dakikadan eskiyse siteyi sorar. Son çekme başarısızsa bar ekranında sarı satır: "Son kontrol başarısız: … Rezervasyonları
-  sitenin panelinde de kontrol edin." Karaoke sayfası açılınca da en çok beş dakikada bir site sorulur; günlük iş
-  (`/api/cron/gunluk`) bir kez eşitler. Yönetici **Şimdi eşitle** ile elle eşitler.
+  panelin ne sitenin veritabanı uyanır). Son çekme hatalıyken ekran canlı ucu bildirim izni olsa da dakikada bir sorar:
+  site geri gelince yeni rezervasyon ve sarı satırın kalkması iki üç dakika sürer. Hatayı ekran bir sonraki soruluşunda
+  öğrenir; bildirim izni olan cihazda bu en çok 30 dakika (yedek kontrol). Hızlı sayaç ve uzatma, sitedeki
+  rezervasyonla çakışmayı sormadan önce kopya üç dakikadan eskiyse siteyi sorar. Son çekme başarısızsa bar ekranında
+  sarı satır: "Son kontrol başarısız: … Rezervasyonları sitenin panelinde de kontrol edin." Karaoke sayfası açılınca da
+  en çok beş dakikada bir site sorulur; günlük iş (`/api/cron/gunluk`) bir kez eşitler. Yönetici **Şimdi eşitle** ile
+  elle eşitler.
 - **İlk eşitleme** geçmiş kayıtları sessizce alır (eski rezervasyonlar için zil çalmaz). Bitmiş rezervasyonun
   değişikliği bildirilmez. Ödemesi beklenen tutma (sitede ödeme sayfası açık) sessizdir; ödeme tamamlanınca "yeni
   rezervasyon" olarak çalar.
 - **Açık sekmenin istek bütçesi** (`/api/canli`, ETag'li; değişiklik yoksa 304 ve veri okunmaz; `src/lib/live-poll.ts`):
   açılışta, bildirim gelince, sekmeye dönünce, ağ geri gelince; yedek kontrol yalnız sekme öndeyken, bildirim açıkken
   30 dakikada, kapalıyken dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve bir saat içinde oturum ya da saatli
-  hatırlatıcı yoksa 10 dakikada bir); alarm çalarken arka planda da 15 saniyede bir (başka cihazda susturulursa burada
-  da sussun). Panelin veritabanı Neon'un ücretsiz planında: her kontrol onu uyandırır ([BILDIRIMLER.md](BILDIRIMLER.md) ›
-  Neon kotası).
+  hatırlatıcı yoksa 10 dakikada bir); son karaoke çekmesi hatalıyken (sarı satır) bildirim açık olsa da dakikada bir;
+  alarm çalarken arka planda da 15 saniyede bir (başka cihazda susturulursa burada da sussun). Panelin veritabanı
+  Neon'un ücretsiz planında: her kontrol onu uyandırır ([BILDIRIMLER.md](BILDIRIMLER.md) › Neon kotası).
 - **Uzatma** tek yazımda ve SQL'de toplanır: bar ekranı ve bir telefon aynı anda +15'e basarsa ikisi de sayılır.
 - **Sayaç sunucu saatiyle sayar:** tabletin saati yanlış olsa da alarm zamanında çalar. Sekme arka plandayken
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
@@ -227,7 +230,7 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 |-------|------------|
 | Site isteği reddetti (imza) | İki projedeki `KARAOKE_SYNC_SECRET` aynı mı? İkisi de yeniden yayımlandı mı? |
 | Sitede KARAOKE_SYNC_SECRET tanımlı değil | Siteye değişkeni ekleyip yeniden yayımlayın (site 503 `not_configured` dedi) |
-| Sitenin veritabanı şu an okunamıyor | Geçici (site 503 `unavailable`); panel iki dakikada bir kendisi yeniden dener |
+| Sitenin veritabanı şu an okunamıyor | Geçici (site 503 `unavailable`); açık bir panel ekranı oldukça panel iki dakikada bir kendisi yeniden dener |
 | Sitede bağlantı kapalı ya da sitenin veritabanı okunamadı | 503 ama neden yazılmamış: önce biraz bekleyin, sürerse sitedeki anahtara bakın |
 | Sitede panel ucu yok | laffogato.net güncel değil (karaoke bağlantısı yayımlanmamış) |
 | Site 8 saniyede yanıt vermedi / Siteye ulaşılamadı | Geçici; **Şimdi eşitle** ile yeniden deneyin |

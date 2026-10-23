@@ -9,12 +9,13 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
+import { CATCH_UP } from "../src/lib/karaoke/freshness";
 import { LIVE_POLL, livePollDue, livePollMs, type LivePollInput } from "../src/lib/live-poll";
 import { createTtlCache } from "../src/lib/ttl-cache";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
-const base: LivePollInput = { visible: true, ringing: false, pushOn: false, sinceActiveMs: 0, soon: false };
+const base: LivePollInput = { visible: true, ringing: false, pushOn: false, sinceActiveMs: 0, soon: false, failing: false };
 
 test("yedek kontrol: arka planda hiç (alarm çalarken hariç); bildirim açıkken 30 dk", () => {
   assert.equal(livePollMs({ ...base, visible: false }), null, "kimse bakmıyor: veritabanı uyusun");
@@ -34,6 +35,24 @@ test("yedek kontrol: bildirim kapalıyken ekran kullanılıyorsa ya da yakında 
   assert.equal(livePollDue({ ...base, sinceActiveMs: 11 * 60_000 }, now - 9 * 60_000, now), false);
   assert.equal(livePollDue({ ...base, sinceActiveMs: 11 * 60_000 }, now - 10 * 60_000, now), true);
   assert.equal(livePollDue({ ...base, visible: false }, 0, now), false);
+});
+
+test("yedek kontrol: son karaoke çekmesi başarısızken bildirim açık ya da ekran boşta olsa da dakikada bir", () => {
+  // Çekme düşünce yeni rezervasyonun bildirimi gitmez; site yalnız canlı uç sorulunca yeniden denenir (iki dakikada bir)
+  const failing = { ...base, failing: true };
+  assert.equal(livePollMs({ ...failing, pushOn: true }), 60_000, "bildirim açık: 30 dakika beklenmez");
+  assert.equal(livePollMs({ ...failing, sinceActiveMs: 60 * 60_000 }), 60_000, "ekran boşta: 10 dakika beklenmez");
+  assert.equal(livePollMs({ ...failing, pushOn: true, sinceActiveMs: 60 * 60_000 }), 60_000);
+  assert.ok(LIVE_POLL.activeMs < CATCH_UP.errorRetryMs, "sitenin yeniden denenme aralığından sık sorulur: deneme kaçmaz");
+  assert.equal(livePollMs({ ...failing, visible: false, pushOn: true }), null, "kimse bakmıyorsa yine sorulmaz");
+  assert.equal(livePollMs({ ...failing, ringing: true }), 15_000);
+  const now = 1_000_000_000;
+  assert.equal(livePollDue({ ...failing, pushOn: true }, now - 60_000, now), true);
+  assert.equal(livePollDue({ ...base, pushOn: true }, now - 60_000, now), false);
+  // Uyarı motoru durumu canlı yanıttan alır (bar ekranındaki sarı satırla aynı alan)
+  const src = read("src/components/panel/live/alert-center.tsx");
+  assert.match(src, /const failing = Boolean\(data\?\.karaoke\.error\);/);
+  assert.match(src, /soon: p\.soon, failing: p\.failing \}/);
 });
 
 test("uyarı motoru: zamanlayıcı yalnız vaktin gelip gelmediğine bakar; görünürlük ve son soruluş kurala verilir", () => {

@@ -70,8 +70,9 @@ async function notify(title: string, body: string, tag: string, url: string, opt
  *
  * İstek bütçesi (src/lib/live-poll.ts; veritabanı Neon'un ücretsiz planında, her kontrol onu uyandırır): yedek kontrol
  * yalnız sekme öndeyken; bildirim açıkken 30 dakikada, kapalıyken dakikada bir, ekran 10 dakikadır kullanılmıyorsa ve
- * bir saat içinde oturum ya da saatli hatırlatıcı yoksa 10 dakikada bir; alarm çalarken (başka cihazda susturulursa
- * burada da sussun) arka planda da 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
+ * bir saat içinde oturum ya da saatli hatırlatıcı yoksa 10 dakikada bir; son karaoke çekmesi başarısızken (sarı satır)
+ * bildirim açık olsa da dakikada bir (site canlı uç sorulunca yeniden denenir); alarm çalarken (başka cihazda
+ * susturulursa burada da sussun) arka planda da 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
  */
 export function AlertCenter({ role }: { role: Role }) {
   const live = useLive();
@@ -175,10 +176,12 @@ export function AlertCenter({ role }: { role: Role }) {
       const at = dueInstant(r);
       return r.active && at !== null && at > now && at - now < LIVE_POLL.soonMs;
     });
-  const poll = useRef({ pushOn, ringing, soon });
+  // Son karaoke çekmesi düştü: bildirim gelmez, site bu sekmenin sorusuyla yeniden denenir (bildirim açık olsa da sık)
+  const failing = Boolean(data?.karaoke.error);
+  const poll = useRef({ pushOn, ringing, soon, failing });
   useEffect(() => {
-    poll.current = { pushOn, ringing, soon };
-  }, [pushOn, ringing, soon]);
+    poll.current = { pushOn, ringing, soon, failing };
+  }, [pushOn, ringing, soon, failing]);
   useEffect(() => {
     let lastTouch = Date.now();
     let lastAsked = Date.now();
@@ -190,7 +193,7 @@ export function AlertCenter({ role }: { role: Role }) {
     const id = window.setInterval(() => {
       const nowMs = Date.now();
       const p = poll.current;
-      const input = { visible: document.visibilityState === "visible", ringing: p.ringing, pushOn: p.pushOn, sinceActiveMs: nowMs - lastTouch, soon: p.soon };
+      const input = { visible: document.visibilityState === "visible", ringing: p.ringing, pushOn: p.pushOn, sinceActiveMs: nowMs - lastTouch, soon: p.soon, failing: p.failing };
       if (!livePollDue(input, Math.max(lastAsked, getLive().checkedAt), nowMs)) return;
       lastAsked = nowMs;
       void refreshLive();

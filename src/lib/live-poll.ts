@@ -7,6 +7,9 @@
  *
  * - Sekme arka plandaysa hiç (öne gelince hemen sorulur; bildirim izni olan cihaza yenilik zaten bildirimle gelir).
  *   Yalnız süresi dolan oturumun alarmı çalarken sorulur: başka cihazda susturulursa burada da sussun.
+ * - Son karaoke çekmesi başarısızsa (bar ekranında sarı satır) bildirim açık ya da ekran boşta olsa da dakikada bir:
+ *   çekme düşünce yeni rezervasyonun bildirimi gitmez, site de ancak canlı uç sorulunca yeniden denenir (en çok iki
+ *   dakikada bir, src/lib/karaoke/freshness.ts). Site geri gelince rezervasyon ve satırın kalkması birkaç dakikada.
  * - Bildirim açıksa 30 dakikada bir (yeni rezervasyon ve sipariş bildirimle gelir; bu yalnız kaçan bildirim için).
  * - Bildirim kapalıyken dakikada bir; kimse ekranı kullanmıyorsa (son 10 dakikada dokunuş / tuş yok) ve bir saat
  *   içinde karaoke oturumu ya da saatli hatırlatıcı yoksa 10 dakikada bir. Bar ekranı ayrıca siparişler için kendisi
@@ -40,12 +43,15 @@ export interface LivePollInput {
   sinceActiveMs: number;
   /** Bir saat içinde başlayan ya da süren karaoke oturumu, ya da saati yaklaşan hatırlatıcı var */
   soon: boolean;
+  /** Son karaoke çekmesi başarısız (canlı yanıtta `karaoke.error`): bildirim gelmez, yeniden deneme bu soruyla olur */
+  failing: boolean;
 }
 
 /** Yedek kontrolün aralığı (ms); null: bu durumda sorulmaz */
 export function livePollMs(o: LivePollInput): number | null {
   if (o.ringing) return LIVE_POLL.ringingMs;
   if (!o.visible) return null;
+  if (o.failing) return LIVE_POLL.activeMs;
   if (o.pushOn) return LIVE_POLL.pushMs;
   return o.soon || o.sinceActiveMs < LIVE_POLL.idleAfterMs ? LIVE_POLL.activeMs : LIVE_POLL.idleMs;
 }

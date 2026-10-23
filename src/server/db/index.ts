@@ -26,9 +26,9 @@ const isLocal = (url: string) => /localhost|127\.0\.0\.1|\/tmp|host=\//.test(url
  * Bağlantının TLS ayarı. Yerelde ve `sslmode=disable` adreslerde yok. Öteki her adreste (Neon) sunucunun sertifikası
  * ve adı doğrulanır ("verify-full"): Neon'un sertifikası Let's Encrypt'ten (ISRG Root X1), Node'un kök sertifikaları
  * bunu tanır. Önceden "require" idi: şifreli ama sertifikası denetlenmeyen bağlantı, araya giren biri kendi
- * sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme migration'ı (doğrudan adres) ve havuzlu adresi bu ayarla
- * açar (scripts/predeploy.ts): doğrulama tutmazsa derleme durur, yayındaki sürüm değişmez. Acil geri dönüş:
- * `DATABASE_SSL=require` (doğrulamasız; docs/DEPLOY.md § 4).
+ * sertifikasıyla bütün veriyi okuyabilirdi. Canlı derleme önce havuzlu adresi, sonra migration için doğrudan adresi bu
+ * ayarla açar (scripts/predeploy.ts): doğrulama tutmazsa derleme şemaya dokunmadan durur, yayındaki sürüm değişmez.
+ * Acil geri dönüş: `DATABASE_SSL=require` (doğrulamasız; docs/DEPLOY.md § 4).
  */
 export function sslOption(url: string, env: Record<string, string | undefined> = process.env): false | "require" | "verify-full" {
   if (isLocal(url) || url.includes("sslmode=disable")) return false;

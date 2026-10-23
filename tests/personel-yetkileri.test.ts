@@ -30,6 +30,9 @@ test("yetki tablosu: personelin her ekranı personele açık bir satırda; satı
   for (const word of ["kasa raporu", "fotoğraf", "kontrol listeleri", "Zayi", "Listeye ekle", "yeni ürün önerisi", "satış fiyatı", "bar ekranı", "Bugün"]) {
     assert.ok(staffText.toLocaleLowerCase("tr-TR").includes(word.toLocaleLowerCase("tr-TR")), word);
   }
+  // "tutarsız" Türkçede "çelişkili" diye okunur: rezervasyonların tutarını personelin görmediği açıkça yazılır
+  assert.doesNotMatch(staffText, /tutarsız/);
+  assert.match(staffText, /rezervasyonlar \(personel tutarları görmez\)/);
 });
 
 test("rol seçicinin açıklaması ve tablo tek kaynaktan; eski 'yalnız sayım ve reçete' metni kalmadı", () => {

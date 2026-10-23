@@ -54,6 +54,9 @@ test("sunucu: her hata yolu metne çevrilir (ham mesaj ya da JSON yazılmaz); ge
   const history = read("src/server/karaoke/history.ts");
   assert.match(history, /siteErrorText\(res\.status, await errorCodeOf\(res\)\)/);
   assert.match(history, /return explain\(status, code\);/);
+  // Geçmişi siteden al: ağ hatası "Siteye ulaşılamadı (fetch failed)" diye değil, eşitlemenin sözüyle
+  assert.match(history, /error = karaokePullError\(fetchFailure\(e\)\);/);
+  assert.doesNotMatch(history, /Siteye ulaşılamadı \(\$\{/, "ham hata metni ekrana yazılmaz");
 });
 
 // ---------------------------------------------------------------- Kaçan pingin yakalanması

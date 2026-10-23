@@ -19,6 +19,7 @@ import {
   type HistoryWindow,
 } from "@/lib/karaoke/history";
 import { parseSiteResponse, type SiteSnapshot } from "@/lib/karaoke/site";
+import { fetchFailure, karaokePullError } from "@/lib/karaoke/sync-text";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { signedSiteFetch, SITE_TIMEOUT_MS } from "@/server/site-link";
@@ -163,7 +164,12 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
     try {
       snapshot = await fetchWindow(secret, w, opts.deadline);
     } catch (e) {
-      error = e instanceof SiteError ? e.message : e instanceof Error && e.name === "TimeoutError" ? "Site 8 saniyede yanıt vermedi" : `Siteye ulaşılamadı (${(e as Error).message})`;
+      if (e instanceof SiteError) error = e.message;
+      else {
+        // Ağ hatası ve zaman aşımı düzenli eşitlemenin sözleriyle (sync-text.ts); ham metin ("fetch failed") yalnız günlükte
+        error = karaokePullError(fetchFailure(e));
+        console.warn("[karaoke] geçmiş:", e instanceof Error ? e.message : e);
+      }
       break;
     }
     if (!snapshot.complete) {
