@@ -11,6 +11,7 @@ import { listLink, productBreakdowns, productLabel, type BreakdownProduct } from
 import { menuAverages } from "../src/app/panel/urunler/logic";
 import { prepareBreakdown, type BreakdownGroup } from "../src/lib/breakdown";
 import { createModel } from "../src/lib/calc/engine";
+import { soldWithOnline } from "../src/lib/calc/insights";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const data: ExcelData = JSON.parse(readFileSync(join(__dirname, "..", "src/server/db/seed/excel-data.json"), "utf8"));
@@ -21,7 +22,7 @@ const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < 
 
 /** Sayfadaki satırlar (page.tsx ile aynı alanlar) */
 function pageRows(month: string): BreakdownProduct[] {
-  const sold = model.soldByProduct(month);
+  const sold = soldWithOnline(model, month);
   return model.products.map((p) => {
     const qty = sold.get(p.product.id) ?? 0;
     return {

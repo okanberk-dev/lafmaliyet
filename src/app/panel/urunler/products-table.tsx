@@ -918,7 +918,7 @@ export function ProductsTable({
                   )}
                   {head("margin", "Kâr marjı", "Birim kâr ÷ net satış.")}
                   {head("suggestedPrice", "Önerilen fiyat", "Maliyetin hedef orana denk geldiği KDV dahil fiyat, 5 ₺'ye yuvarlanmış. Ok işareti: fiyatınız bunun altında.")}
-                  {head("soldQty", "Adet", "Satış raporundan bu ürünle eşleşen adet.", monthLabel)}
+                  {head("soldQty", "Adet", "Satış raporundan (ModPOS) ve laffogato.net online siparişlerinden bu ürünle eşleşen adet.", monthLabel)}
                   {head("monthProfit", "Brüt kâr", "Birim kâr × satış adedi.", monthLabel)}
                   {col("monthNet") ? head("monthNet", "Net ciro", "Net satış × satış adedi.", monthLabel) : null}
                   {col("fireRate") ? head("fireRate", "Fire", "Zayi / fire oranı. (özel) = reçete kartında bu ürüne özel oran; yoksa Ayarlar'daki genel oran.") : null}

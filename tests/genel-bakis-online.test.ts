@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { createModel } from "../src/lib/calc/engine";
-import { categoryStats, dashboard, menuEngineering, onlineCoverFor, soldWithOnline } from "../src/lib/calc/insights";
+import { buildWorkbook } from "../src/app/api/export/workbook";
+import { categoryStats, dashboard, menuEngineering, onlineCoverFor, productSalesHistory, soldWithOnline } from "../src/lib/calc/insights";
 import { priceLoss } from "../src/lib/calc/price-loss";
 import type { Dataset } from "../src/lib/calc/types";
 import { siteRevenue } from "../src/lib/site-sales/calc";
@@ -145,6 +146,41 @@ test("kategoriler, menü mühendisliği, en çok satanlar ve zam etkisi online a
   close(loss.grossProfit, model.monthSales("2026-09").grossProfit * loss.basis!.scale + model.onlineMonth("2026-09")!.grossProfit * loss.basis!.onlineScale, "zam etkisinin paydası");
 });
 
+test("ürün kartı, Ürünler ve Excel'in Ürün Kârlılık sekmesi online adedi de sayar (Genel bakış ve Claude aracıyla aynı sayı)", () => {
+  const plain = createModel(base);
+  const model = createModel(withOnline());
+  const pos = plain.soldByProduct("2026-09").get(latte.id) ?? 0;
+  // Ürün kartının "Satışlar"ı: satış listesi olan aylar, Eylül'de ModPOS + 100 online
+  const history = productSalesHistory(model, latte.id);
+  assert.deepEqual(
+    history.map((h) => h.month),
+    plain.salesMonths,
+  );
+  assert.equal(history.find((h) => h.month === "2026-09")?.qty, pos + 100);
+  // Satış listesi olmayan ayda yalnız online satılan ürün de kartın geçmişinde görünür; satılmayan ürüne o ay eklenmez
+  const october = createModel(withOnline({ month: "2026-10", closed: false }));
+  assert.deepEqual(productSalesHistory(october, latte.id).at(-1), { month: "2026-10", qty: 100 });
+  const other = model.activeProducts.find((p) => p.product.id !== latte.id)!.product.id;
+  assert.deepEqual(
+    productSalesHistory(october, other).map((h) => h.month),
+    plain.salesMonths,
+  );
+  // Excel'in Ürün Kârlılık sekmesi: Eylül satış adedi ModPOS + online, brüt kâr o adetle
+  const wb = buildWorkbook(model, "2026-09", { investments: [], findings: [], now: new Date("2026-10-20T10:00:00Z") });
+  const uk = wb.getWorksheet("Ürün Kârlılık")!;
+  const header = uk.getRow(1).values as unknown[];
+  const qtyCol = header.indexOf("Eylül 2026 satış adedi");
+  assert.ok(qtyCol > 0, "satış adedi sütunu");
+  const row = [...Array(uk.rowCount).keys()].map((i) => uk.getRow(i + 1)).find((r) => r.getCell(2).value === latte.name && r.getCell(3).value === latte.size)!;
+  assert.equal(row.getCell(qtyCol).value, pos + 100);
+  // Ekranlar aynı yoldan okur
+  assert.match(read("src/app/panel/urunler/page.tsx"), /const sold = soldWithOnline\(model, month\);/);
+  const card = read("src/app/panel/urunler/[id]/page.tsx");
+  assert.match(card, /productSalesHistory\(model, product\.id\)/);
+  assert.match(card, /soldQty=\{soldWithOnline\(model, month\)\.get\(product\.id\) \?\? 0\}/);
+  assert.doesNotMatch(card + read("src/app/api/export/workbook.ts"), /model\.soldByProduct\(/);
+});
+
 test("seçenekler: ekstra shot Extra Shot ürününün reçetesiyle tüketime girer; normal süt sayılmaz, ürünü olmayan seçenek listelenir", () => {
   const model = createModel(withOnline());
   const options = model.siteLines("2026-09").options;
@@ -170,10 +206,14 @@ test("seçenekler: ekstra shot Extra Shot ürününün reçetesiyle tüketime gi
 
 test("ekranlar: Genel bakış, döküm, Excel ve Claude aracı online satırını gösterir; belge cümlesi doğru", () => {
   const page = read("src/app/panel/page.tsx");
-  assert.match(page, /ModPOS \$\{tl\(t\.posNetSales\)\} \+ online \$\{tl\(t\.online\.revenue\)\}/);
+  assert.match(page, /ModPOS \$\{tl\(t\.posNetSales\)\} \+ laffogato\.net \$\{tl\(t\.online\.revenue\)\}/);
+  assert.match(page, /<span className="whitespace-nowrap">laffogato\.net \{tl\(t\.online\.revenue\)\}<\/span>/);
+  // R18: Z raporunun "Online"ı platform satışıdır (ModPOS'un içinde); laffogato.net satışı hiçbir yerde yalın "online" yazmaz
+  assert.doesNotMatch(page, /[+·] online \$\{|"Online satışın|\(online dahil\)/);
   const breakdowns = read("src/app/panel/dashboard-breakdowns.ts");
   assert.match(breakdowns, /label: "Online satış \(laffogato\.net\)"/);
-  assert.match(breakdowns, /label: "Online satışın brüt kârı"/);
+  assert.match(breakdowns, /label: "laffogato\.net online brüt kârı"/);
+  assert.doesNotMatch(breakdowns, /label: "Online satışın brüt kârı|`; online \$\{|− online (satışın )?brüt/);
   assert.match(read("src/app/api/export/workbook.ts"), /laffogato\.net online \(kafe, mağaza, karaoke\)/);
   assert.match(read("src/lib/mcp/answers/month.ts"), /onlineNetSatis/);
   assert.match(read("docs/SITE-SATIS.md"), /## Genel bakış/);

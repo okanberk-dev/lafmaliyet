@@ -9,7 +9,7 @@
 import ExcelJS from "exceljs";
 
 import { fixedMonthly, inRange, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
-import { consistency, dashboard, forecastMonthOf, openBalance, stockVatSummary } from "../../../lib/calc/insights";
+import { consistency, dashboard, forecastMonthOf, openBalance, soldWithOnline, stockVatSummary } from "../../../lib/calc/insights";
 import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/types";
 import { MONTH_FIELDS } from "../../../lib/cash-month";
 import { COUNT_GROUP_VAT_DEFAULT, FIXED_PERIODS, FIXED_SECTIONS, GOODS_CATEGORIES, INVOICE_CATEGORIES, MONTH_NAMES, SEPARATE_CATEGORIES } from "../../../lib/constants";
@@ -246,7 +246,8 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   wb.calcProperties.fullCalcOnLoad = true;
 
   const label = monthLabel(month);
-  const sold = model.soldByProduct(month);
+  // Ürün Kârlılık ve Reçete Kartları: satılan adet ModPOS + laffogato.net online (paneldeki Ürünler ve ürün kartı gibi)
+  const sold = soldWithOnline(model, month);
   const d = dashboard(model, month);
 
   // Excel'deki "Nasıl Kullanılır" gibi ilk sekme; içeriği bütün sekmeler eklendikten sonra yazılır
@@ -452,7 +453,7 @@ function sheetPurpose(name: string, label: string): string {
   if (name.startsWith("Tutarlılık ")) return `${label}: POS ↔ satış listesi, reçete ↔ fatura ↔ sayım karşılaştırması ve bulgular.`;
   if (name.startsWith("Satış ") && name !== "Satış Kayıtları") return `${label} POS ürün satışları: eşleşen ürün, maliyet, kâr, durum ve not; üstte POS ciro, ödenmez, indirim ve ortalama maliyet oranı.`;
   const fixed: Record<string, string> = {
-    "Ürün Kârlılık": `Her ürün ve boy: fiyat, maliyet, birim kâr, marj, önerilen fiyat, ${label} satış adedi. Süzgeç açık.`,
+    "Ürün Kârlılık": `Her ürün ve boy: fiyat, maliyet, birim kâr, marj, önerilen fiyat, ${label} satış adedi (ModPOS + laffogato.net online). Süzgeç açık.`,
     "Reçete Kartları": "Her ürünün malzemeleri, miktarı, birim maliyeti ve KDV dahil tutarı; son satır fire dahil ürün maliyeti.",
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
     Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, durum, kalan borç, vade ve not. Net, KDV ve Ay sütunları formül.",
@@ -574,7 +575,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     k: `${name.toLocaleUpperCase("tr-TR")} NET KÂR / ZARAR (reçeteye göre)`,
     v: t?.netProfit ?? null,
     strong: true,
-    note: `Brüt kâr − indirim − o ayın Gelir-gider sabit giderleri (açık gün oranı ve bu aya özel giderler dahil). SU GİDERİ reçetelerde su + buz olarak sayıldıysa burada ikinci kez düşülmez.${
+    note: `Brüt kâr${t?.online ? " (laffogato.net online satışı dahil)" : ""} − indirim − o ayın Gelir-gider sabit giderleri (gün oranı ve bu aya özel giderler dahil). SU GİDERİ reçetelerde su + buz olarak sayıldıysa burada ikinci kez düşülmez.${
       t?.listPeriod ? ` Satış listesi ayın ${t.listPeriod.of} gününün ${t.listPeriod.days}'ini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
     }`,
   });
@@ -582,7 +583,7 @@ function addOverview(wb: ExcelJS.Workbook, model: Model, month: string, d: Retur
     lines.push({
       k: "Net kâr / zarar (standart sabit giderle – Excel Panel temeli)",
       v: t.netProfitStandard,
-      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: açık gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}${
+      note: `Excel Panel her ay standart sabit gider toplamını düşer (${tl(d.fixedStandardTotal)}). Fark: gün etkisi ${tl(d.fixedMonth.proration)}, Gelir-gider'de düzeltilen tutarlar ${tl(d.fixedMonth.overrides)}, bu aya özel giderler ${tl(d.fixedMonth.manual)}${d.fixedMonth.expenses ? `, aylık harcamalar ${tl(d.fixedMonth.expenses)}` : ""}${
         t.fixedBreakdown.listShare ? `, satış listesinin günleri ${tl(t.fixedBreakdown.listShare.amount)}` : ""
       }.`,
     });
@@ -691,7 +692,8 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
   const fixedById = new Map(model.fixedList.map((f) => [f.id, f]));
   const od = ws.addRow({ l: "AÇIK GÜN SAYISI", ...Object.fromEntries(months.map((m, i) => [m, calcs[i].info?.openDays ?? null])) });
   setFmt(od, months, "0");
-  od.getCell("l").note = "O ay işletmenin açık olduğu gün. Aylık sabit giderler (gün ÷ ayın gün sayısı) oranıyla hesaplanır.";
+  od.getCell("l").note =
+    "O ay işletmenin açık olduğu gün. Aylık sabit giderler gün ÷ ayın gün sayısı oranıyla hesaplanır: açık gün elle yazıldıysa o gün, kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler × açık gün.";
 
   let lastSection = "";
   for (const def of model.pnlRowDefs(months)) {
@@ -1201,7 +1203,7 @@ function addPeople(wb: ExcelJS.Workbook, model: Model, month: string, investment
   }
   const sgt = sg.addRow({ n: "TOPLAM", m: model.fixedStandardTotalFor(month) });
   sgt.font = { bold: true };
-  sgt.getCell("n").note = "Standart bir ayın sabit gider toplamı (Excel SabitGiderToplam). Gelir-gider her ayı açık gün oranıyla hesaplar.";
+  sgt.getCell("n").note = "Standart bir ayın sabit gider toplamı (Excel SabitGiderToplam). Gelir-gider her ayı gün oranıyla hesaplar (Gelir-Gider sekmesinde AÇIK GÜN SAYISI notu).";
 
   sg.addRow({});
   sectionRow(sg, "n", "Tek seferlik yatırımlar (bilgi amaçlı, aylık gidere dahil değil)");

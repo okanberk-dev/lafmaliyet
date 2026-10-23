@@ -1435,6 +1435,8 @@ export function RecipeEditor({
               {active
                 ? "Pasif ürün menü listelerinde ve QR menüde görünmez; geçmiş ayların hesabı olduğu gibi kalır."
                 : "Ürün zaten menüde pasif; geçmiş ayların hesabı olduğu gibi kalır."}
+              {/* Siteye bağlı, sitede "Satışta" ürün: kaydedince sitedeki kalem de "Tükendi" olur (saveRecipe → pushSaleChange) */}
+              {active && showOnMenu && site?.link ? ` laffogato.net'te de ${site.item?.name ?? "bağlı kalem"} “Tükendi” görünür.` : null}
             </>
           }
         />

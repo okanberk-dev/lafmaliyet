@@ -206,12 +206,12 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
           label: "Satışlar (net ciro)",
           value: t.netSales,
           // Tek satıra sığsın (telefonda kesilmesin): KDV hariç olduğu kartın başlığında yazar
-          sub: t.online ? `ModPOS ${tl(t.posNetSales)} + online ${tl(t.online.revenue)}` : "Ürün satışları ÷ (1 + KDV)",
+          sub: t.online ? `ModPOS ${tl(t.posNetSales)} + laffogato.net ${tl(t.online.revenue)}` : "Ürün satışları ÷ (1 + KDV)",
           info: t.online ? "Patron (ModPOS) satış listesi ve laffogato.net online satışı (kafe, mağaza, karaoke; Gelir-gider'deki gibi), KDV hariç." : undefined,
           sign: 1,
         },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
-        { label: "Malzeme + ambalaj", value: -t.material, sub: t.online ? "Satılan her ürün × reçete maliyeti (online dahil)" : "Satılan her ürün × reçete maliyeti", sign: -1 },
+        { label: "Malzeme + ambalaj", value: -t.material, sub: t.online ? "Satılan her ürün × reçete maliyeti (laffogato.net dahil)" : "Satılan her ürün × reçete maliyeti", sign: -1 },
         { label: "Kart / POS komisyonu", value: -t.commission, sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`, sign: -1 },
         ...t.fixedFlow.map((l) => ({
           label: l.label,
@@ -257,8 +257,8 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Reçeteye göre kârın düştüğü sabit gider (süren ayda kısa satış listesinde listenin günlerine düşen pay dahil)
   const fm = t?.fixedBreakdown ?? d.fixedMonth;
   const netTip = t
-    ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (açık gün oranı + bu aya özel giderler), reçeteye göre.${
-        t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve online satış o günlere düşen payla.` : ""
+    ? `Brüt kâr${t.online ? " (laffogato.net online satışı dahil)" : ""} − indirimler (KDV hariç) − o ayın Gelir-gider sabit giderleri (gün oranı + bu aya özel giderler), reçeteye göre.${
+        t.listPeriod ? ` Satış listesi ${listDaysText(t.listPeriod)} günlerini kapsıyor: indirim o günlerin kasa raporlarından, sabit gider ve laffogato.net online satışı o günlere düşen payla.` : ""
       } Excel Panel'i her ay standart aylık sabit gideri düşer; fark olduğunda altta "Excel temeli" yazar. Faturaya göre değer Gelir-gider tablosundan gelir; stok sayımı yoksa alınan malın tamamı gider sayılır.${changeNote(g.net)}`
     : "";
 
@@ -388,7 +388,17 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   }. Kasanıza kalan gerçek gelir.${changeNote(g.netSales)}`}
                   value={<CountUp value={t.netSales} />}
                   badge={<Change g={g.netSales} prevMonth={prevMonth} prevValue={pt?.netSales} />}
-                  sub={t.online ? `ModPOS ${tl(t.posNetSales)} · online ${tl(t.online.revenue)}` : `${tl(d.sales.revenue)} KDV dahil`}
+                  sub={
+                    // Dar kartta iki satıra iner: satır "·"dan kırılır, ad tutarından ayrılmaz
+                    t.online ? (
+                      <>
+                        <span className="whitespace-nowrap">ModPOS {tl(t.posNetSales)}</span> ·{" "}
+                        <span className="whitespace-nowrap">laffogato.net {tl(t.online.revenue)}</span>
+                      </>
+                    ) : (
+                      `${tl(d.sales.revenue)} KDV dahil`
+                    )
+                  }
                 />
               </StatBreakdown>
               <StatBreakdown {...withComparison(grossProfitBreakdown(model, d), { month: prevMonth, value: pt?.grossProfit, growth: g.gross })}>
@@ -396,7 +406,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   compact
                   icon={<Coins />}
                   label="Brüt kâr"
-                  info={`Net satış − malzeme/ambalaj − POS komisyonu${t.online ? " (online satış reçeteye göre malzemesiyle dahil)" : ""}. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
+                  info={`Net satış − malzeme/ambalaj − POS komisyonu${t.online ? " (laffogato.net online satışı reçeteye göre malzemesiyle dahil)" : ""}. Kira ve personel öncesi kâr.${changeNote(g.gross)}`}
                   value={<CountUp value={t.grossProfit} />}
                   badge={<Change g={g.gross} prevMonth={prevMonth} prevValue={pt?.grossProfit} />}
                   sub={`Marj ${pct(t.grossProfit / t.netSales)} · kira ve personel öncesi`}
@@ -468,7 +478,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
               icon={<Target />}
               label="Başabaş günlük ciro"
               info={`Zarar etmemek için gereken günlük ciro (KDV dahil): standart aylık sabit gider ${tl(d.fixedStandardTotal)}${
-                d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""
+                d.onlineCover ? ` − ${monthLabel(d.onlineCover.month)} laffogato.net online satışının brüt kârı ${tl(d.onlineCover.grossProfit)}` : ""
               } ÷ ${d.refMonth ? `${monthLabel(d.refMonth)} ` : ""}brüt kâr oranı (brüt kâr ÷ ciro, ${pct(d.grossRatio)}) ÷ ayda açık gün (${st.acikGun}, Ayarlar).`}
               value={<CountUp value={d.breakEvenDaily} />}
               sub={
@@ -534,7 +544,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                         {pct(d.invoiceCostRatio)}
                         <InfoTip
                           className="ml-1.5 align-middle"
-                          text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
+                          text="Faturayla alınan mal (kahve, süt, gıda, ambalaj; KDV hariç) ÷ net satış (laffogato.net online dahil). Stok sayımı yoksa ay içinde alınan her şey o ayın maliyeti sayılır."
                         />
                       </span>
                     </p>
@@ -607,7 +617,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   description={
                     <span className="inline-flex items-center gap-1.5">
                       Gelir-gider tablosundan, faturaya göre
-                      <InfoTip text="Kira, personel gibi aylık giderler açık gün sayısına göre bölünür. Ciro KDV hariçtir." />
+                      <InfoTip text="Kira, personel gibi aylık giderler ayın gün oranıyla bölünür (kasa raporlarından gelen ayda takvim günüyle: kapalı bir gün kirayı ve maaşı düşürmez). Ciro KDV hariçtir." />
                     </span>
                   }
                   actions={
@@ -691,7 +701,7 @@ function ThirdStat({ d, projected, breakdown }: { d: DashboardData; projected: n
         label="Ay sonu tahmini kâr/zarar"
         info={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
           d.refMonth ? `${monthLabel(d.refMonth)} ` : "son satış ayının "
-        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
+        }brüt kâr oranı${d.forecast?.projectedOnline != null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır.`}
         value={<CountUp value={d.forecast?.projectedProfit ?? null} />}
         tone={!d.forecast ? "default" : projected < 0 ? "bad" : "good"}
         sub={
@@ -900,7 +910,7 @@ function ForecastCard({
             <InfoTip
               text={`Bu tempo sürerse: POS cirosu ÷ açık gün × ayın gün sayısı × ${
                 forecast.refMonth ? `${monthLabel(forecast.refMonth)} ` : "son satış ayının "
-              }brüt kâr oranı${forecast.projectedOnline !== null ? " + online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
+              }brüt kâr oranı${forecast.projectedOnline !== null ? " + laffogato.net online satışın brüt kârı (aynı tempoyla)" : ""} − standart aylık sabit gider (Excel Panel B19). Açık gün sayısı bugüne kadar geçen gün olarak kullanılır; ay bitince gerçek açık gün sayısını yazın.`}
             />
           </span>
         }
@@ -922,7 +932,7 @@ function ForecastCard({
               value={<span className="whitespace-nowrap">{pct(grossRatio)}</span>}
             />
             {forecast.projectedOnline !== null ? (
-              <KeyValue label="Online satışın brüt kârı (ay sonu)" value={<span className="whitespace-nowrap">{tl(forecast.projectedOnline)}</span>} />
+              <KeyValue label="laffogato.net online brüt kârı (ay sonu)" value={<span className="whitespace-nowrap">{tl(forecast.projectedOnline)}</span>} />
             ) : null}
             <KeyValue label="Standart aylık sabit gider" value={<span className="whitespace-nowrap">{tl(fixedStandard)}</span>} />
             <KeyValue

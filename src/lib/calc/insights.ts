@@ -106,6 +106,16 @@ export function soldWithOnline(model: Model, month: string): Map<number, number>
 }
 
 /**
+ * Ürün kartının aylık satışı: satış listesi olan aylar ve ürünün laffogato.net'te satıldığı aylar, soldWithOnline ile.
+ * Kart, Ürünler, Genel bakış ve Claude aracı aynı ürün ve ay için aynı adedi göstersin
+ */
+export function productSalesHistory(model: Model, productId: number): { month: string; qty: number }[] {
+  const months = new Set(model.salesMonths);
+  for (const m of model.siteMonths) if ((model.onlineSold(m).get(productId) ?? 0) > 0) months.add(m);
+  return [...months].sort().map((month) => ({ month, qty: soldWithOnline(model, month).get(productId) ?? 0 }));
+}
+
+/**
  * Kategori satırları. Ortalamalar ve satış ağırlıklı marj reçetesi olan ürünlerden ("Bütün menü" satırı,
  * urunler/logic.ts menuAverages ile aynı kural): reçetesiz ürünün maliyeti 0, marjı ~%98 sayılıp ortalamayı
  * olduğundan iyi göstermesin. Ürün ve satış adedi bütün etkin ürünlerden. Excel'de reçetesiz ürün yok, sonuç aynı.

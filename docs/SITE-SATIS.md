@@ -145,7 +145,9 @@ Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineM
 - **Ay sonu tahmini** online satışın bugüne kadarki brüt kârını aynı tempoyla ekler (÷ geçen gün × ayın gün sayısı).
 - **Adetler:** kategoriler, menü mühendisliği, en kârlı / en çok satan ürünler ve zam etkisinin "ayda …" adetleri
   online satılanı da sayar (`soldWithOnline`, `salesBasis`); zam etkisinin "brüt kârın %X'i" paydası online brüt kârı
-  içerir. Online adet ayın açık günüyle standart aya çevrilir.
+  içerir. Online adet ayın açık günüyle standart aya çevrilir. Ürünler sayfası (adet, brüt kâr), ürün kartı (ayın adedi
+  ve Satışlar geçmişi; yalnız online satılan ay da görünür, `productSalesHistory`) ve Excel'in Ürün Kârlılık / Reçete
+  Kartları sekmeleri de aynı adedi gösterir: Claude aracının açtığı kart aynı sayıyı söyler.
 - Süren ayda satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (Satışlar › "Liste hangi güne kadar?")
   online satış o günlere düşen payla girer (`listShareOf`), sabit gider gibi.
 - Çekilmemiş ayda eskisi gibi yalnız ModPOS.

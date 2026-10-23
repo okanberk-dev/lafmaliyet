@@ -310,4 +310,7 @@ test("ürün silme: satışı, zayi kaydı, fiyat geçmişi ya da online satış
   const history = readFileSync(join(process.cwd(), "src/server/data/product-history.ts"), "utf8");
   assert.match(history, /^import "server-only";/);
   assert.match(history, /ne\(s\.productPrices\.source, "create"\)/);
+  // "Menüde pasif yap" siteye bağlı, sitede satışta üründe laffogato.net'teki kalemi de "Tükendi" yapar: pencere önceden söyler
+  const editor = readFileSync(join(process.cwd(), "src/app/panel/urunler/[id]/recipe-editor.tsx"), "utf8");
+  assert.match(editor, /active && showOnMenu && site\?\.link \? ` laffogato\.net'te de .+ “Tükendi” görünür\.` : null/);
 });

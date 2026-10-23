@@ -22,7 +22,7 @@ import { SiteSalesCard, type SiteSalesCardData } from "./site-sales-card";
 
 export const metadata: Metadata = { title: "Gelir-gider" };
 
-const DESCRIPTION = "Aylık gelir-gider tablosu (KDV hariç). Mal alışları faturalardan, sabit giderler açık gün oranıyla otomatik gelir.";
+const DESCRIPTION = "Aylık gelir-gider tablosu (KDV hariç). Mal alışları faturalardan, sabit giderler ayın gün oranıyla otomatik gelir.";
 
 const SECTION_LABELS: Record<string, string> = {
   mal: "Mal alışları",

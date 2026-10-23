@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
+import { soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel, num, pct } from "@/lib/format";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
@@ -59,7 +60,8 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
   const month = resolveMonth(sp.ay, model);
   // Hammadde zamları (son 30 gün) ve kârı düşen ürünler; genel bakış, zil ve sabah e-postası buraya getirir
   const prices = await loadPriceAlerts(model).catch(() => null);
-  const sold = model.soldByProduct(month);
+  // Satılan adet ModPOS + laffogato.net online: Genel bakış, Analiz, ürün kartı, Excel ve Claude aracıyla aynı sayı
+  const sold = soldWithOnline(model, month);
   const st = model.settings;
   const linkOf = new Map(site.links.map((l) => [l.productId, l]));
   const siteItems = site.snapshot.at ? site.snapshot.items : null;
@@ -216,7 +218,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         </StatBreakdown>
         <StatBreakdown
           title={`${ml} satılan çeşit`}
-          description={`${ml} satış raporunda bir menü ürünüyle eşleşen satırlar, kategori kategori; her ürün ve boy bir çeşit, yanında satılan adet. Eşleşmeyen satış satırları sayılmaz. Ürüne dokununca reçete kartı açılır.`}
+          description={`${ml} satış raporunda ve laffogato.net online siparişlerinde bir menü ürünüyle eşleşen satırlar, kategori kategori; her ürün ve boy bir çeşit, yanında satılan adet. Eşleşmeyen satış satırları sayılmaz. Ürüne dokununca reçete kartı açılır.`}
           groups={bd.sold}
           total={soldRows.length}
           totalLabel="Satılan çeşit"
@@ -235,7 +237,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
         </StatBreakdown>
         <StatBreakdown
           title={`${ml} brüt kâr`}
-          description="Eşleşen ürünlerin birim kârı × satılan adet, kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır."
+          description="Eşleşen ürünlerin birim kârı × satılan adet (ModPOS ve laffogato.net online), kategori kategori (KDV ve komisyon düşülmüş). Eşleşmeyen satış satırları dahil değil. Ürüne dokununca reçete kartı açılır."
           groups={bd.profit}
           total={totalProfit}
           totalLabel="Brüt kâr"
@@ -248,7 +250,7 @@ async function ProductsContent({ searchParams }: { searchParams: PageProps<"/pan
             label={`${ml} brüt kâr`}
             value={<CountUp value={totalProfit} suffix=" ₺" />}
             tone={totalProfit < 0 ? "bad" : "default"}
-            info={`Eşleşen ürünler: satış raporunda bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
+            info={`Eşleşen ürünler: satış raporunda ve laffogato.net online siparişlerinde bir ürünle eşleşen satırların birim kâr × adet toplamı. Eşleşmeyen satırlar dahil değildir. Ağırlıklı marj = brüt kâr ÷ net ciro (çok satan ürün daha çok sayılır); menünün basit ortalama marjı ${pct(avg.margin)}.`}
             sub={totalNet ? `Ağırlıklı marj ${pct(totalProfit / totalNet)}` : "Satış yok"}
           />
         </StatBreakdown>
