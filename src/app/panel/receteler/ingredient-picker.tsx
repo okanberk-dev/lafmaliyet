@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, Plus, SearchX } from "lucide-react";
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,8 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
   function onSearchKey(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      // Arama kutusu listenin içinde: listenin ok tuşu işleyicisi ikinci kez kaydırmasın
+      e.stopPropagation();
       moveFocus(listRef.current, null, 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -140,7 +142,16 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
       footer={
         view === "new" ? (
           <>
-            <Button variant="ghost" onClick={() => setView("list")} disabled={busy} className="max-sm:h-11">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setView("list");
+                // Geri: tıklanan düğme kalkınca odak boşa düşmesin, aramaya döner
+                requestAnimationFrame(() => document.getElementById(searchId)?.focus());
+              }}
+              disabled={busy}
+              className="max-sm:h-11"
+            >
               Geri
             </Button>
             <Button type="submit" form={formId} disabled={busy} className="max-sm:h-11 max-sm:flex-1">
@@ -165,9 +176,11 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
           }}
         />
       ) : (
-        <div className="pb-2" onKeyDown={onListKey} ref={listRef}>
-          {/* Arama kutusu liste kayarken üstte kalır (pencerenin üst boşluğuna taşar, altından kayan satır görünmez) */}
-          <div className="sticky top-0 z-10 -mx-1 -mt-3 bg-surface px-1 pt-3 pb-2">
+        // Yazarken sonuç azalınca pencere boyu zıplamasın: liste alanı en az bu yükseklikte
+        <div className="min-h-[min(26rem,60dvh)] pb-2" onKeyDown={onListKey} ref={listRef}>
+          {/* Arama kutusu liste kayarken üstte kalır; yapışma sınırı pencerenin iç boşluğu kadar yukarıda (-top-3), altından
+              kayan satır boşlukta da görünmez */}
+          <div className="sticky -top-3 z-10 -mx-1 -mt-3 bg-surface px-1 pt-3 pb-2">
             <SearchInput
               id={searchId}
               value={q}
@@ -252,6 +265,11 @@ function NewIngredientForm({
   onPick: (i: Ingredient, created: boolean) => void;
 }) {
   const form = useCountItemForm({ groups: newIngredient.groups, defaultGroup: null, initialName, requireGroup: true, formId });
+  const groupId = form.ids.group;
+  // Görünüm değişince odak, tıklanan "ekle" düğmesiyle birlikte kaybolmasın: ad hazır, sıradaki alan grup
+  useEffect(() => {
+    document.getElementById(groupId)?.focus();
+  }, [groupId]);
   // Sunucunun bulduğu aynı adlı malzeme (sayfa açıldıktan sonra başkası eklediyse)
   const [found, setFound] = useState<Ingredient | null>(null);
   const key = nameKey(form.name);

@@ -69,9 +69,9 @@ export function MyRequests({ requests }: { requests: MyRequest[] }) {
           waiting.length
             ? `${waiting.length} öneriniz yöneticinin onayını bekliyor. ${
                 waitingNew === waiting.length
-                  ? "Yönetici satış fiyatını yazıp onaylayınca ürün eklenir."
+                  ? "Yönetici fiyatını belirleyip onaylayınca ürün eklenir."
                   : waitingNew
-                    ? "Onaylanınca reçete kartı değişir; yeni ürün, yönetici fiyatını yazınca eklenir."
+                    ? "Onaylanınca reçete kartı değişir; yeni ürün, yönetici fiyatını belirleyince eklenir."
                     : "Onaylanınca reçete kartı değişir."
               }`
             : "Son iki haftadaki önerileriniz ve sonuçları."
@@ -96,8 +96,10 @@ export function MyRequests({ requests }: { requests: MyRequest[] }) {
                     </Badge>
                     <span className="tabular">{dateTimeTR(r.updatedAt)}</span>
                     {r.reviewedByName && r.status !== "pending" && r.status !== "withdrawn" ? <span>· {r.reviewedByName}</span> : null}
-                    {isNew && r.status === "pending" && r.proposedPrice !== null ? <span className="tabular">· Önerdiğiniz fiyat {money(r.proposedPrice)}</span> : null}
                   </p>
+                  {isNew && r.status === "pending" && r.proposedPrice !== null ? (
+                    <p className="mt-1 text-[13px] text-ink-mute tabular">Önerdiğiniz satış fiyatı: {money(r.proposedPrice)}</p>
+                  ) : null}
                   {r.reviewNote ? <p className="mt-1.5 rounded-xl bg-surface px-3 py-2 text-[13px] break-words text-ink-soft ring-1 ring-line">Yönetici: {r.reviewNote}</p> : null}
                   {r.message ? <p className="mt-1.5 text-[13px] break-words text-ink-mute">Notunuz: {r.message}</p> : null}
                 </div>

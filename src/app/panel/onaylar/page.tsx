@@ -26,7 +26,7 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Reçete onayları"
         eyebrow="Menü"
-        description="Personelin reçete defterinden önerdiği değişiklikler ve yeni ürünler. Değişiklikte önceki ve önerilen reçeteyi yan yana görün, onaylayınca reçete kartı değişir; yeni üründe satış fiyatını yazıp onaylayınca ürün eklenir. Reddederseniz notunuz personele görünür."
+        description="Personelin reçete defterinden önerdiği değişiklikler ve yeni ürünler. Değişiklikte önceki ve önerilen reçeteyi yan yana görün, onaylayınca reçete kartı değişir; yeni üründe satış fiyatını yazıp (personel önerdiyse dolu gelir) onaylayınca ürün eklenir. Reddederseniz notunuz personele görünür."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">
             <BookOpen size={16} aria-hidden="true" /> Reçete defteri

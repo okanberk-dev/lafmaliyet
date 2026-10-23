@@ -258,7 +258,10 @@ test("personel yeni ürün önerisinde maliyet görmez; satış ve paket fiyatı
   assert.doesNotMatch(read(pickerFile), /money\(|unitPrice/);
   // Önerilerim: yalnız bekleyen yeni ürün önerisinde kişinin kendi yazdığı satış fiyatı (menü fiyatı, maliyet değil)
   const mine = read(mineFile);
-  assert.match(mine, /\{isNew && r\.status === "pending" && r\.proposedPrice !== null \? <span className="tabular">· Önerdiğiniz fiyat \{money\(r\.proposedPrice\)\}<\/span> : null\}/);
+  assert.match(
+    mine,
+    /\{isNew && r\.status === "pending" && r\.proposedPrice !== null \? \(\s+<p className="[^"]*">Önerdiğiniz satış fiyatı: \{money\(r\.proposedPrice\)\}<\/p>\s+\) : null\}/,
+  );
   assert.equal([...mine.matchAll(/money\(/g)].length, 1, "tek tutar: kişinin önerdiği fiyat");
   assert.doesNotMatch(mine, /packagePrice/);
   assert.match(read("src/app/panel/receteler/page.tsx"), /proposedPrice: r\.status === "pending" \? r\.proposedPrice : null,/);
