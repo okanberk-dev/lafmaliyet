@@ -3,7 +3,18 @@ import "server-only";
 import { and, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 
 import { sitePriceRecord } from "@/lib/prices/history";
-import { changeText, planMenuSync, planSummary, type BrokenLink, type LinkedRow, type MenuSyncPlan, type UnlinkedRow } from "@/lib/site-menu/plan";
+import {
+  changeText,
+  freshStamps,
+  planMenuSync,
+  planSummary,
+  staleItemIds,
+  type BrokenLink,
+  type LinkedRow,
+  type MenuSyncPlan,
+  type PushedStamps,
+  type UnlinkedRow,
+} from "@/lib/site-menu/plan";
 import { pullFailureMessage, type PushFailure } from "@/lib/site-menu/push";
 import { parseSiteMenuList, SiteMenuFormatError, type SiteMenuItem, type SiteMenuList } from "@/lib/site-menu/schema";
 import type { SiteMenuSlot } from "@/lib/site-menu/slot";
@@ -54,6 +65,8 @@ export interface MenuSyncState {
   unlinked: (UnlinkedRow & { at: string })[];
   /** Son listedeki kalem sayısı */
   itemCount: number | null;
+  /** Panelin son bir saatte siteye yazdığı kalemlerin sitedeki zamanı: bundan eski liste o kalemi geri almaz */
+  pushed: PushedStamps;
 }
 
 const EMPTY: MenuSyncState = {
@@ -68,6 +81,7 @@ const EMPTY: MenuSyncState = {
   broken: [],
   unlinked: [],
   itemCount: null,
+  pushed: {},
 };
 
 export interface SiteItemsSnapshot {
@@ -228,9 +242,14 @@ export async function applySiteList(tx: Tx, list: SiteMenuList, at: Date, tryAt:
   const last = cur.lastSiteNow ? Date.parse(cur.lastSiteNow) : NaN;
   // Panelin saatinden on dakika ileri bir kayıt bozuktur: çekmeleri sonsuza dek durdurmasın
   if (last > Date.parse(list.now) && last < Date.now() + 10 * 60_000) return null;
-  const plan = planMenuSync(list.items, await loadLinkedRows(tx));
+  // Panelin kendi yazımından önce okunmuş kalemler uygulanmaz; kopyada yazımın hâli kalır (src/lib/site-menu/plan.ts › staleItemIds)
+  const pushed = freshStamps(cur.pushed, Date.now());
+  const stale = staleItemIds(list.items, pushed);
+  const plan = planMenuSync(list.items, (await loadLinkedRows(tx)).filter((r) => !stale.has(r.siteMenuId)));
   await applyPlan(tx, plan, at);
-  await writeSnapshot({ now: list.now, at: at.toISOString(), items: list.items }, tx);
+  const kept = stale.size ? new Map((await readSiteSnapshot(tx)).items.map((i) => [i.id, i])) : null;
+  const items = kept ? list.items.map((i) => (stale.has(i.id) ? (kept.get(i.id) ?? i) : i)) : list.items;
+  await writeSnapshot({ now: list.now, at: at.toISOString(), items }, tx);
   const iso = at.toISOString();
   const key = (b: BrokenLink) => `${b.productId}:${b.siteMenuId}:${b.slot}`;
   const known = new Set(cur.broken.map(key));
@@ -245,6 +264,7 @@ export async function applySiteList(tx: Tx, list: SiteMenuList, at: Date, tryAt:
       broken: plan.broken,
       unlinked: [...plan.unlinked.map((u) => ({ ...u, at: iso })), ...cur.unlinked].slice(0, UNLINKED_KEEP),
       itemCount: list.items.length,
+      pushed,
       ...(changed
         ? {
             lastChangedAt: iso,

@@ -1,0 +1,100 @@
+// Veritabanını boşuna uyandırmamak (Neon ücretsiz plan, ayda 100 CU-saat): açık sekmenin yedek kontrolü yalnız sekme
+// öndeyken ve boştaysa seyrek (src/lib/live-poll.ts); sağlık ucu veritabanını ve işlerin durumunu önbellekten verir;
+// hata ekranının "Tekrar dene"si sayfayı sunucudan yeniden ister, bar ekranında kendiliğinden de dener.
+// Çalıştırma: npx tsx --test tests/canli-yoklama.test.ts
+
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
+import { LIVE_POLL, livePollDue, livePollMs, type LivePollInput } from "../src/lib/live-poll";
+import { createTtlCache } from "../src/lib/ttl-cache";
+
+const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
+
+const base: LivePollInput = { visible: true, ringing: false, pushOn: false, sinceActiveMs: 0, soon: false };
+
+test("yedek kontrol: arka planda hiç (alarm çalarken hariç); bildirim açıkken 30 dk", () => {
+  assert.equal(livePollMs({ ...base, visible: false }), null, "kimse bakmıyor: veritabanı uyusun");
+  assert.equal(livePollMs({ ...base, visible: false, pushOn: true }), null);
+  assert.equal(livePollMs({ ...base, visible: false, ringing: true }), 15_000, "başka cihazda susturulursa burada da sussun");
+  assert.equal(livePollMs({ ...base, ringing: true, pushOn: true }), 15_000);
+  assert.equal(livePollMs({ ...base, pushOn: true }), 30 * 60_000);
+  assert.ok(LIVE_POLL.pushMs > 5 * 60_000 && LIVE_POLL.idleMs > 5 * 60_000, "Neon 5 dk boşta kalınca uyur: seyrek kontrol bundan uzun");
+});
+
+test("yedek kontrol: bildirim kapalıyken ekran kullanılıyorsa ya da yakında bir şey varsa dakikada bir, boşta 10 dk", () => {
+  assert.equal(livePollMs(base), 60_000);
+  assert.equal(livePollMs({ ...base, sinceActiveMs: 9 * 60_000 }), 60_000);
+  assert.equal(livePollMs({ ...base, sinceActiveMs: 10 * 60_000 }), 10 * 60_000);
+  assert.equal(livePollMs({ ...base, sinceActiveMs: 60 * 60_000, soon: true }), 60_000, "bir saat içinde oturum ya da hatırlatıcı");
+  const now = 1_000_000_000;
+  assert.equal(livePollDue({ ...base, sinceActiveMs: 11 * 60_000 }, now - 9 * 60_000, now), false);
+  assert.equal(livePollDue({ ...base, sinceActiveMs: 11 * 60_000 }, now - 10 * 60_000, now), true);
+  assert.equal(livePollDue({ ...base, visible: false }, 0, now), false);
+});
+
+test("uyarı motoru: zamanlayıcı yalnız vaktin gelip gelmediğine bakar; görünürlük ve son soruluş kurala verilir", () => {
+  const src = read("src/components/panel/live/alert-center.tsx");
+  assert.match(src, /livePollDue\(input, Math\.max\(lastAsked, getLive\(\)\.checkedAt\), nowMs\)/);
+  assert.match(src, /visible: document\.visibilityState === "visible"/);
+  assert.match(src, /\}, LIVE_POLL\.tickMs\);/);
+  assert.doesNotMatch(src, /setInterval\(\(\) => void refreshLive\(\), ms\)/, "eski sabit aralıklı kontrol kalmadı");
+  assert.doesNotMatch(src, /10 \* 60_000 : 60_000/);
+});
+
+test("süreli önbellek: süresi içinde aynı değer, sonra yok; temizlenebilir", () => {
+  const c = createTtlCache<number>(5 * 60_000);
+  assert.equal(c.get(0), null);
+  c.set(42, 1000);
+  assert.equal(c.get(1000 + 5 * 60_000 - 1), 42);
+  assert.equal(c.get(1000 + 5 * 60_000), null);
+  c.set(7, 2000);
+  c.clear();
+  assert.equal(c.get(2001), null);
+});
+
+test("sağlık ucu: yanıt veren veritabanı 5, işlerin durumu 10 dakika önbellekte; düşük veritabanı her seferinde denenir", () => {
+  const src = read("src/app/api/health/route.ts");
+  assert.match(src, /const DB_CHECK_TTL_MS = 5 \* 60_000;/);
+  assert.match(src, /const JOBS_CHECK_TTL_MS = 10 \* 60_000;/);
+  assert.ok(src.indexOf("dbCheck.get()") < src.indexOf("getDb().execute(sql`select 1`)"), "önbellek veritabanından önce");
+  assert.ok(src.indexOf("jobsCheck.get()") < src.indexOf("getDb().execute(sql`select 1`)"));
+  assert.match(src, /catch \{\s*dbCheck\.clear\(\);\s*return Response\.json\(\{ ok: false, db: "down" \}, \{ status: 503 \}\);/);
+  assert.match(src, /cached: true/);
+  // Belgeler sık yoklamayı önermez
+  const doc = read("docs/BILDIRIMLER.md");
+  assert.match(doc, /\*\*6 saatte bir\*\*/);
+  assert.doesNotMatch(doc, /1 saatte bir, e-posta uyarısı/);
+});
+
+test("hata ekranı: Tekrar dene sayfayı yeniden ister (retry); bar ekranında 10 sn sonra kendiliğinden, 5 dk'da en çok 3", () => {
+  assert.equal(autoRetryPath("/panel/karaoke"), true);
+  assert.equal(autoRetryPath("/panel/karaoke/doluluk"), false, "biri bakıyordur");
+  assert.equal(autoRetryPath("/panel/kasa"), false);
+  const h: number[] = [];
+  assert.equal(takeAutoRetry(h, 0), true);
+  assert.equal(takeAutoRetry(h, 10_000), true);
+  assert.equal(takeAutoRetry(h, 20_000), true);
+  assert.equal(takeAutoRetry(h, 30_000), false, "döngüye girmez");
+  assert.equal(takeAutoRetry(h, AUTO_RETRY.windowMs + 1), true, "pencere geçince yeniden");
+  assert.equal(AUTO_RETRY.delayMs, 10_000);
+
+  const view = read("src/components/panel/error-view.tsx");
+  assert.match(view, /onClick=\{\(\) => retry\(\)\}/);
+  assert.doesNotMatch(view, /onClick=\{reset\}|\breset\(\)|reset: \(\) => void/, "reset aynı hatalı çıktıyı yeniden çizer");
+  for (const f of ["src/app/panel/error.tsx", "src/app/error.tsx", "src/app/global-error.tsx"]) {
+    assert.ok(existsSync(join(process.cwd(), f)), f);
+    const src = read(f);
+    assert.match(src, /^"use client";/, f);
+    assert.match(src, /retry: \(\) => void/, f);
+    assert.match(src, /<ErrorView error=\{error\} retry=\{retry\}/, f);
+    assert.doesNotMatch(src, /\breset\b/, f);
+  }
+  // Kök düzenin yerine geçen sınır kendi belgesini ve stillerini taşır
+  const global = read("src/app/global-error.tsx");
+  assert.match(global, /import "\.\/globals\.css";/);
+  assert.match(global, /<html lang="tr"/);
+});

@@ -24,7 +24,7 @@ import { getDb, schema as s } from "@/server/db";
 import { signedSiteFetch, SITE_TIMEOUT_MS } from "@/server/site-link";
 
 import { bumpKaraokeVersion } from "./board";
-import { explain, karaokeSecret, siteUrl, syncKaraoke, type SyncResult } from "./sync";
+import { errorCodeOf, explain, karaokeSecret, siteUrl, syncKaraoke, type SyncResult } from "./sync";
 
 /**
  * Karaoke geçmişi (sunucu; kurallar src/lib/karaoke/history.ts): laffogato.net'in geçmiş rezervasyonlarını ay ay alır
@@ -60,11 +60,11 @@ async function updateHistory(change: (st: HistoryState) => HistoryState, tx?: Tx
 
 class SiteError extends Error {}
 
-/** Sitenin hata yanıtının açıklaması: geçmişte 400 tarih penceresinin reddidir */
-function siteErrorText(status: number): string {
+/** Sitenin hata yanıtının açıklaması: geçmişte 400 tarih penceresinin reddidir; 503'te gövdedeki kod (anahtar mı, veritabanı mı) */
+function siteErrorText(status: number, code: string | null): string {
   if (status === 400 || status === 422) return "Site geçmiş tarihleri vermiyor (laffogato.net'in panel ucu güncellenmeli)";
   if (status === 429) return "Site çok sık istek geldiğini söyledi; birkaç dakika sonra yeniden deneyin";
-  return explain(status);
+  return explain(status, code);
 }
 
 /** Bir ayın penceresi; 429'da sitenin söylediği kadar (en çok 10 sn) bekleyip bir kez daha sorar */
@@ -81,7 +81,7 @@ async function fetchWindow(secret: string, w: HistoryWindow, deadline: number): 
         continue;
       }
     }
-    if (!res.ok) throw new SiteError(siteErrorText(res.status));
+    if (!res.ok) throw new SiteError(siteErrorText(res.status, await errorCodeOf(res)));
     try {
       return parseSiteResponse(await res.json());
     } catch (e) {

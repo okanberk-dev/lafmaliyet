@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
-import { ordersToRing, ringMessage } from "@/lib/site-orders/feed";
+import { LIVE_POLL, livePollDue } from "@/lib/live-poll";
+import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
 import { endKaraokeSession, extendKaraokeSession } from "@/server/actions/karaoke";
@@ -19,7 +20,7 @@ import { applyOutput } from "./output-client";
 import { usePrefs } from "./prefs";
 import { pushSupport, registerServiceWorker, subscribeDevice } from "./push-client";
 import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAudioState } from "./sounds";
-import { liveNow, patchLive, refreshLive, useLive } from "./store";
+import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
 
 /** Çalan uyarıların anahtarları (sayfa yenilense de aynı uyarı ikinci kez çalmasın) */
 const FIRED_KEY = "laf:calan-uyarilar";
@@ -27,6 +28,8 @@ const FIRED_KEY = "laf:calan-uyarilar";
 const SEEN_KEY = "laf:duyurulan-olaylar";
 /** Bu cihazın gördüğü laffogato.net siparişleri (aynı yeni sipariş için iki kez zil çalmasın) */
 const SEEN_ORDERS_KEY = "laf:gorulen-siparisler";
+/** Hazırlanma zili bu cihazda çalmış planlı siparişler (vaktine 15 dakika kala bir kez) */
+const DUE_RUNG_KEY = "laf:planli-siparis-zili";
 
 function loadKeys(key: string): Set<string> {
   try {
@@ -65,8 +68,10 @@ async function notify(title: string, body: string, tag: string, url: string, opt
  * rezervasyonda ve laffogato.net'ten gelen yeni uygulama siparişinde (bu cihazda sipariş zili açıksa; masa siparişi
  * daha uzun) zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
  *
- * İstek bütçesi: bildirim açıkken yedek kontrol 10 dakikada bir, kapalıyken dakikada bir; alarm çalarken (başka
- * cihazda susturulursa burada da sussun) 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
+ * İstek bütçesi (src/lib/live-poll.ts; veritabanı Neon'un ücretsiz planında, her kontrol onu uyandırır): yedek kontrol
+ * yalnız sekme öndeyken; bildirim açıkken 30 dakikada, kapalıyken dakikada bir, ekran 10 dakikadır kullanılmıyorsa ve
+ * bir saat içinde oturum ya da saatli hatırlatıcı yoksa 10 dakikada bir; alarm çalarken (başka cihazda susturulursa
+ * burada da sussun) arka planda da 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
  */
 export function AlertCenter({ role }: { role: Role }) {
   const live = useLive();
@@ -80,6 +85,9 @@ export function AlertCenter({ role }: { role: Role }) {
   const fired = useRef<Set<string> | null>(null);
   const seen = useRef<Set<string> | null>(null);
   const seenOrders = useRef<Set<string> | null>(null);
+  const dueRung = useRef<Set<string> | null>(null);
+  /** Sıradaki planlı siparişin zil anı gelince artar (veri değişmeden zilin bakması için) */
+  const [dueTick, setDueTick] = useState(0);
   const bursts = useRef(new Map<string, () => void>());
   const pathRef = useRef(pathname);
   useEffect(() => {
@@ -157,14 +165,42 @@ export function AlertCenter({ role }: { role: Role }) {
     if (publicKey && pushSupport() === "granted") void subscribeDevice(publicKey, false).catch(() => null);
   }, [publicKey]);
 
-  // Yedek kontrol
+  // Yedek kontrol (src/lib/live-poll.ts): zamanlayıcı beş saniyede bir yalnız vaktin gelip gelmediğine bakar; sorulma
+  // anı son başarılı yanıttan (bildirim, sekmeye dönüş ve eylemler de sorar) ya da son yedek isteğinden sayılır
   const pushOn = Boolean(publicKey) && pushSupport() === "granted";
   const ringing = overtime.length > 0;
+  const soon =
+    sessions.some((s) => isLive(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs) ||
+    (data?.reminders ?? []).some((r) => {
+      const at = dueInstant(r);
+      return r.active && at !== null && at > now && at - now < LIVE_POLL.soonMs;
+    });
+  const poll = useRef({ pushOn, ringing, soon });
   useEffect(() => {
-    const ms = ringing ? 15_000 : pushOn ? 10 * 60_000 : 60_000;
-    const id = window.setInterval(() => void refreshLive(), ms);
-    return () => window.clearInterval(id);
-  }, [ringing, pushOn]);
+    poll.current = { pushOn, ringing, soon };
+  }, [pushOn, ringing, soon]);
+  useEffect(() => {
+    let lastTouch = Date.now();
+    let lastAsked = Date.now();
+    const touch = () => {
+      lastTouch = Date.now();
+    };
+    document.addEventListener("pointerdown", touch, { capture: true, passive: true });
+    document.addEventListener("keydown", touch, { capture: true });
+    const id = window.setInterval(() => {
+      const nowMs = Date.now();
+      const p = poll.current;
+      const input = { visible: document.visibilityState === "visible", ringing: p.ringing, pushOn: p.pushOn, sinceActiveMs: nowMs - lastTouch, soon: p.soon };
+      if (!livePollDue(input, Math.max(lastAsked, getLive().checkedAt), nowMs)) return;
+      lastAsked = nowMs;
+      void refreshLive();
+    }, LIVE_POLL.tickMs);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("pointerdown", touch, { capture: true });
+      document.removeEventListener("keydown", touch, { capture: true });
+    };
+  }, []);
 
   // Ses: ilk dokunuşta açılır
   useEffect(() => {
@@ -221,6 +257,27 @@ export function AlertCenter({ role }: { role: Role }) {
     });
     void notify(msg.title, msg.body, `siparis-${ring[0].id}`, "/panel/karaoke", { silent: prefs.sound && audioState() === "ready" });
   }, [data, prefs.orderAlerts, prefs.sound, router]);
+
+  // Planlı sipariş (gel-al, "Yarın 09:00"): vaktine 15 dakika kala bir kez hazırlanma zili; ekran sonradan açılsa da
+  // (src/lib/site-orders/feed.ts › dueSoonToRing). Sıradaki zilin anına zamanlayıcı kurulur.
+  useEffect(() => {
+    if (!data?.orders) return;
+    dueRung.current ??= loadKeys(DUE_RUNG_KEY);
+    const { ring, markRung, nextAt } = dueSoonToRing(data.orders.list, dueRung.current, liveNow());
+    if (markRung.length) {
+      for (const id of markRung) dueRung.current.add(id);
+      saveKeys(DUE_RUNG_KEY, dueRung.current);
+    }
+    if (ring.length && prefs.orderAlerts) {
+      if (prefs.sound) play("ring");
+      const msg = dueRingMessage(ring, liveNow());
+      toast.warning(msg.title, { description: msg.body, duration: 30_000, action: { label: "Gör", onClick: () => router.push("/panel/karaoke") } });
+      void notify(msg.title, msg.body, `planli-${ring[0].id}`, "/panel/karaoke", { silent: prefs.sound && audioState() === "ready" });
+    }
+    if (nextAt === null) return;
+    const id = window.setTimeout(() => setDueTick((n) => n + 1), Math.min(Math.max(1000, nextAt - liveNow()), 2_147_000_000));
+    return () => window.clearTimeout(id);
+  }, [data, dueTick, prefs.orderAlerts, prefs.sound, router]);
 
   const fire = useCallback(
     (a: PlannedAlarm) => {

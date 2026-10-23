@@ -186,11 +186,20 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
-"HTTP(s)" monitörü, 1 saatte bir, e-posta uyarısı) `https://ladmin.laffogato.net/api/health?isler=1` adresini
-ekleyin. Adres giriş istemez, yalnız durum adlarını döner (`{ ok, db, ms, isler: { cronSecret, gunluk, parasut } }`);
-ciddi bir sorun varsa (iş çalışmadı, hata verdi, CRON_SECRET yok) **503** döner ve servis e-posta atar (yedek
-hatırlatması sayılmaz).
-`?isler=1` olmadan `/api/health` yalnız veritabanına bakar (eskisi gibi).
+"HTTP(s)" monitörü, e-posta uyarısı) `https://ladmin.laffogato.net/api/health?isler=1` adresini **6 saatte bir**
+yoklayacak şekilde ekleyin (günde 4 kez yeter: işlerin durumu günde iki kez, sabah değişir). Daha sık yoklamayın:
+panelin veritabanı Neon'un ücretsiz planında, her yoklama onu uyandırır ve beş dakika açık tutar (ayda 100 CU-saat;
+saatte bir yoklama tek başına ayda ~15 CU-saat, kota dolunca veritabanı ay sonuna kadar kapanır). Adres giriş istemez,
+yalnız durum adlarını döner (`{ ok, db, ms, isler: { cronSecret, gunluk, parasut } }`); ciddi bir sorun varsa (iş
+çalışmadı, hata verdi, CRON_SECRET yok) **503** döner ve servis e-posta atar (yedek hatırlatması sayılmaz). Aynı
+sunucuya gelen yoklamalar 10 dakika aynı yanıtı alır (`cached: true`), veritabanı yeniden sorulmaz.
+`?isler=1` olmadan `/api/health` yalnız veritabanına bakar (yanıt veren veritabanı 5 dakika yeniden sorulmaz).
+
+**Neon kotası.** Açık panel sekmeleri de veritabanını uyandırır. Sekme yalnız öndeyken sorar; bildirim izni olan
+cihaz 30 dakikada bir, olmayan dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve yakında oturum ya da saatli
+hatırlatıcı yoksa 10 dakikada bir; src/lib/live-poll.ts). Barın ekranında **bildirimlere izin verin**: izin yokken
+ekran siparişler için 20 saniyede bir sorar ve veritabanı gün boyu uyumaz. Aylık kullanımı Vercel › Storage ›
+lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 CU-saate yaklaşıyorsa ücretli plana geçin.
 
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
 

@@ -9,6 +9,8 @@ type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const VERSION_KEY = "karaoke_version";
+/** Sürüm sayacının anahtarı (canlı uç onu eşitleme durumuyla tek sorguda okur: sync.ts › readKaraokeLive) */
+export const KARAOKE_VERSION_KEY = VERSION_KEY;
 
 /**
  * Karaoke değişim sayacı: her eşitleme ve sayaç işleminde bir artar. Canlı uç (/api/canli) bunu ETag'e koyar; açık
