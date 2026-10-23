@@ -410,8 +410,9 @@ export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">)
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
   // Damga vergisi ayrı ödemedir ("KDV2 damga vergisi", "... damga vergisi ve gecikme zammı"); tahakkuka bağlanarak
-  // yazılan ("KDV2 + damga", "KDV2 ve damga vergisi", "damga dahil") KDV-2'dir
-  const bundled = /(\+|&|\bve\b)\s*damga|damga\s*(vergisi\s*)?dahil/.test(t);
+  // yazılan, hangi sırayla olursa ("KDV2 + damga", "KDV2 ve damga vergisi", "Damga vergisi ve KDV2", "damga dahil")
+  // KDV-2'dir
+  const bundled = /(\+|&|\bve\b)\s*damga|damga\s*(vergisi\s*)?(dahil|(\+|&|\bve\b)\s*(kdv|2\.?\s*(no|numara)|tevkifat|katma|sorumlu))/.test(t);
   if (!VAT_WITHHOLDING.test(t) || (/damga/.test(t) && !bundled)) return false;
   if (/(^|[^a-z])kdv|katma deger/.test(t)) return true;
   // "2 No.lu beyanname" ya da başlığın sonunda "Beyanname (2 No'lu)"; "Beyanname 2 numaralı şube" değil

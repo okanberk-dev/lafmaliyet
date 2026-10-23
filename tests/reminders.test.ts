@@ -224,6 +224,9 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["KDV 2 (damga dahil)", "vergi"],
     ["2 No.lu KDV ve damga vergisi", "vergi"],
     ["KDV2 tahakkuku + damga", "vergi"],
+    ["Damga vergisi ve KDV2", "vergi"],
+    ["Damga + KDV2", "vergi"],
+    ["Damga ve 2 No.lu KDV", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
