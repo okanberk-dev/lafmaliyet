@@ -341,7 +341,20 @@ test("ek kutu: başlık, satırlar (kalın, kırmızı, sönük), bağlantı; ku
 });
 
 test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adres panelin girişine düşer; düğme de", () => {
-  for (const bad of ["/api/foto/12", "https://abc.private.blob.vercel-storage.com/kontrol/1.jpg", "//evil.example/panel", "javascript:alert(1)", "/panelx", "panel/kontrol", ""]) {
+  for (const bad of [
+    "/api/foto/12",
+    "https://abc.private.blob.vercel-storage.com/kontrol/1.jpg",
+    "//evil.example/panel",
+    "javascript:alert(1)",
+    "/panelx",
+    "panel/kontrol",
+    "",
+    "/panel/../api/foto/12",
+    "/panel/%2e%2e/api/foto/12",
+    "/panel/./kontrol",
+    "/panel//evil.example",
+    "/panel/kontrol gecmis",
+  ]) {
     const { html, text } = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: bad } });
     assert.ok(html.includes(`<a href="${APP_URL}/panel" style="color:#9a3412;font-weight:600">Kontrol geçmişi →</a>`), bad);
     assert.ok(html.includes(`<a href="${APP_URL}/panel" style="display:block;`), bad);
@@ -351,7 +364,9 @@ test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adre
   const amp = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: "/panel/kontrol/gecmis?gun=2026-10-21&liste=2" } });
   assert.ok(amp.html.includes(`href="${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&amp;liste=2"`));
   assert.ok(amp.text.endsWith(`Kontrol geçmişi: ${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&liste=2`));
-  assert.ok(renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: "/panel" } }).html.includes(`href="${APP_URL}/panel" style="color:#9a3412`));
+  for (const good of ["/panel", "/panel/", "/panel/komisyonlar?ay=2026-09#trendyol", "/panel/mal-siparisi/kalemler", "/panel/hatirlaticilar#e_posta"]) {
+    assert.ok(renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: good } }).text.endsWith(`Kontrol geçmişi: ${APP_URL}${good}`), good);
+  }
 });
 
 test("konu sırası (R11): ödeme, sistem uyarısı, eşitleme hatası, sabah özeti; ek parçalar hep aynı sırada (fatura, fiyat onayı, zam, komisyon, kontrol)", () => {
@@ -494,18 +509,38 @@ test("ek kutuların toplanması: aynı anda, her biri en çok 4 sn; hata ve sür
     assert.deepEqual(slow, { extras: {}, news: false, logKeys: [], parts: [] });
     assert.ok(errors.mock.calls.some((c) => /\(kontrol\): 0\.03 sn içinde yüklenemedi/.test(String(c.arguments[0]))));
 
-    // Aynı anda: iki 60 ms'lik kaynak ~60 ms sürer
-    const wait = (ms: number, box: DigestBox) => new Promise<{ box: DigestBox; logKeys: string[] }>((res) => setTimeout(() => res({ box, logKeys: [] }), ms));
-    const t1 = Date.now();
-    const both = await collectDigestExtras(
+    // Aynı anda: ikinci kaynak birincisi bitmeden başlar
+    const started: string[] = [];
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const pending = collectDigestExtras(
       [
-        { key: "commission", news: true, load: () => wait(60, com) },
-        { key: "kontrol", news: false, load: () => wait(60, kon) },
+        {
+          key: "commission",
+          news: true,
+          load: async () => {
+            started.push("commission");
+            await gate;
+            return { box: com, logKeys: [] };
+          },
+        },
+        {
+          key: "kontrol",
+          news: false,
+          load: async () => {
+            started.push("kontrol");
+            await gate;
+            return { box: kon, logKeys: [] };
+          },
+        },
       ],
       "2026-10-23",
       { preview: false },
     );
-    assert.ok(Date.now() - t1 < 110, `${Date.now() - t1} ms`);
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(started, ["commission", "kontrol"]);
+    release();
+    const both = await pending;
     // Haber yalnız haber olan kaynaktan; konu parçası da yalnız onun
     assert.equal(both.news, true);
     assert.deepEqual(both.parts, ["Hakediş gecikti: Pluxee (Ekim)"]);

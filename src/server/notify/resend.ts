@@ -2,7 +2,7 @@ import "server-only";
 
 import { postEmail, type EmailMessage, type SendOptions, type SendResult } from "./resend-http";
 
-export { resendErrorText, type SendOptions, type SendResult } from "./resend-http";
+export { resendErrorText, type EmailMessage, type SendOptions, type SendResult } from "./resend-http";
 
 /**
  * Resend HTTP API ile e-posta (laffogato.net sitesiyle aynı hesap ve doğrulanmış alan adı;

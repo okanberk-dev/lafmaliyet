@@ -94,6 +94,25 @@ Resend'e her e-posta içerikten türeyen bir tekil anahtarla (`Idempotency-Key`)
 ve sabah işiyle elle gönderimin çakışması tek e-posta olur. Paraşüt bölümünün anahtarı son Paraşüt bölümlü gönderimin
 anını da içerir; aynı gün ikinci kez "şimdi gönder" denince (aynı sayıda yeni fatura gelse de) anahtar değişir.
 
+Gönderim üç kez denenir (her deneme en çok 15 sn). Sabah işinde gönderim en geç işin 48. saniyesinde kesilir: Resend
+takılırsa iş 60 saniyelik sınırı aşmasın, sonraki adımlar (hatırlatıcı bildirimi, eşitlemeler) çalışsın. Kesilen
+gönderim "Son gönderimler"de hata olarak görünür; ileti yine de ulaşmış olabilir. Aynı gün **Bugünküleri şimdi gönder**
+aynı tekil anahtarla gider: ilk ileti ulaştıysa Resend ikinci kez göndermez.
+
+**Ek kutular (geliştirici notu).** Başka ekranların sabah e-postasına eklediği kutular (komisyon ve hakediş, dünkü
+kontrol listeleri, satış tahmini) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
+satırdır: `{ key, news, load(today, { preview }) }`; kutunun kendisi (`DigestBox`: başlık, satırlar, panel yolu,
+bağlantı metni, konu parçası, başlık) grubun kendi saf modülünde kurulur ve sınanır. Kaynaklar ötekilerle aynı anda,
+her biri en çok 4 saniye yüklenir; hata veren ya da geciken kutu düşer, e-postayı bozmaz. `news: true` kutu e-postayı
+tek başına gönderir; satış tahmini hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya, başlığa ve
+düğmeye girmez). Kutunun anahtarları (`komisyon:<uyarı>`, `kontrol:<gün>`) tekil anahtara girer ve yalnız başarılı
+gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak kendisi eler. Gövdedeki sıra: sistem
+uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme. Konuda kutunun
+parçası zamdan sonra eklenir ("Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik"); ödeme,
+sistem uyarısı, fatura ve fiyat onayı yoksa konu "Sabah özeti: <kutunun parçası>" olur, başlık ve düğme kutunun.
+Kutunun bağlantısı yalnız panelin bir yolu olabilir (fotoğraf ya da depo adresi yazılmaz). Önizleme kutuları yazmadan
+gösterir; liste boşken e-posta öncekinin aynısıdır. Ayrıntı: `docs/planlar/CRITIQUE2.md` R11.
+
 Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet):
 
 - özet satırında açık/kapalı, adres sayısı ve gönderim durumu ("her sabah 08:00", "elle gönderim", "gönderim

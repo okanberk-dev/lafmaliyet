@@ -83,9 +83,10 @@ const retryable = (status: number) => status === 429 || status === 409 || status
 
 export async function postEmail(apiKey: string, msg: EmailMessage, opts: SendOptions = {}, io: SendIo = realIo): Promise<SendResult> {
   if (!msg.to.length) return { ok: false, error: "Bildirim adresi yok." };
+  // Geçersiz sayı (NaN, sonsuz) verilmemiş sayılır
   const attempts = Number.isFinite(opts.attempts) ? Math.max(1, Math.floor(opts.attempts!)) : SEND_DEFAULTS.attempts;
-  const timeoutMs = opts.timeoutMs ?? SEND_DEFAULTS.timeoutMs;
-  const deadlineAt = opts.deadlineAt;
+  const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs! : SEND_DEFAULTS.timeoutMs;
+  const deadlineAt = Number.isFinite(opts.deadlineAt) ? opts.deadlineAt : undefined;
   let failure: { ok: false; error: string } | null = null;
   // Bir deneme iletiyi göndermiş olabilir mi (yukarıdaki `uncertain`)
   let maybeSent = false;
@@ -94,7 +95,10 @@ export async function postEmail(apiKey: string, msg: EmailMessage, opts: SendOpt
     const wait = attemptNo > 0 ? backoffMs(attemptNo) : 0;
     if (deadlineAt !== undefined && deadlineAt - io.now() - wait < MIN_ATTEMPT_MS) break;
     if (wait) await io.sleep(wait);
-    const ms = deadlineAt === undefined ? timeoutMs : Math.min(timeoutMs, deadlineAt - io.now());
+    const ms = Math.floor(deadlineAt === undefined ? timeoutMs : Math.min(timeoutMs, deadlineAt - io.now()));
+    // Süresi olmayan deneme başlamaz (yarıda kesilip iletiyi belirsiz bırakırdı)
+    if (ms < 1) break;
+    const signal = io.timeout(ms);
     const last = attemptNo === attempts - 1;
     try {
       const res = await io.fetch("https://api.resend.com/emails", {
@@ -105,7 +109,7 @@ export async function postEmail(apiKey: string, msg: EmailMessage, opts: SendOpt
           ...(msg.idempotencyKey ? { "Idempotency-Key": msg.idempotencyKey } : {}),
         },
         body: JSON.stringify({ from: msg.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text }),
-        signal: io.timeout(Math.max(1, Math.floor(ms))),
+        signal,
       });
       const body = await res.text();
       if (res.ok) {

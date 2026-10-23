@@ -43,13 +43,13 @@ function fakeIo(answers: Answer[]) {
         throw new Error("The operation was aborted due to timeout");
       }
       if (a instanceof Error) throw a;
-      const { status, body } = typeof a === "number" ? { status: a, body: status200(a) } : a;
+      const { status, body } = typeof a === "number" ? { status: a, body: bodyFor(a) } : a;
       return new Response(body, { status });
     },
   };
   return { io, calls, sleeps, elapsed: () => t - START };
 }
-const status200 = (s: number) => (s === 200 ? '{"id":"em_123"}' : `{"message":"durum ${s}"}`);
+const bodyFor = (s: number) => (s === 200 ? '{"id":"em_123"}' : `{"message":"durum ${s}"}`);
 
 const send = (answers: Answer[], opts?: SendOptions, msg: EmailMessage = MSG) => {
   const f = fakeIo(answers);
@@ -133,9 +133,16 @@ test("seçenekler: deneme sayısı ve deneme başına süre", async () => {
   assert.equal(two.calls.length, 2);
   assert.deepEqual(two.sleeps, [2000]);
   assert.deepEqual(two.calls.map((c) => c.timeoutMs), [4_000, 4_000]);
-  // Geçersiz deneme sayısı varsayılana, 0 bire döner
+  // Geçersiz deneme sayısı varsayılana, 0 bire döner; geçersiz süre ve son an verilmemiş sayılır
   assert.equal((await send([500, 500, 500], { attempts: Number.NaN })).calls.length, 3);
   assert.equal((await send([500], { attempts: 0 })).calls.length, 1);
+  const odd = await send([200], { timeoutMs: Number.NaN, deadlineAt: Number.NaN });
+  assert.deepEqual(odd.r, { ok: true, id: "em_123" });
+  assert.equal(odd.calls[0].timeoutMs, 15_000);
+  // Süresi sıfır ya da eksi deneme hiç başlamaz: gitmediği kesin
+  const zero = await send([200], { timeoutMs: 0 });
+  assert.equal(zero.calls.length, 0);
+  assert.deepEqual(zero.r, { ok: false, error: "Süre yetmedi; e-posta gönderilmedi." });
 });
 
 test("son an: hiçbir deneme sınırı aşmaz; kalan süre 1 sn'den azsa yeni deneme başlamaz", async () => {

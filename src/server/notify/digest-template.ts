@@ -101,7 +101,10 @@ const JOBS_LINK = `${APP_URL}/panel/ayarlar#isler`;
 export interface DigestBox {
   /** Kutunun başlığı, ör. "Komisyon ve hakediş" */
   title: string;
-  /** Satırlar: `strong` kalın ilk satır (varsa metin altına geçer); `tone` satırın rengi (kötü kırmızı, uyarı turuncu, sönük gri ve küçük) */
+  /**
+   * Satırlar: `strong` kalın ilk satır (varsa metin altına geçer); `tone` satırın rengi (kötü kırmızı, uyarı turuncu,
+   * sönük gri ve küçük). Metin sarılır (telefonda taşmaz); tutarı money() / tl() ile yazın: sayı ile ₺ ayrılmaz
+   */
   lines: { strong?: string; text: string; tone?: "bad" | "warn" | "muted" }[];
   /** APP_URL'siz panel yolu (ör. "/panel/komisyonlar"); fotoğraf ya da Blob adresi asla: /panel dışı yol panelin girişine düşer */
   href: string;
@@ -197,8 +200,12 @@ const BOX_TONE: Record<keyof DigestExtras, { bg: string; fg: string }> = {
 };
 const LINE_TONE: Record<NonNullable<DigestBox["lines"][number]["tone"]>, string> = { bad: "#b91c1c", warn: "#c2410c", muted: "#71717a" };
 
-/** Kutunun bağlantısı: yalnız panel yolu; başka bir adres (fotoğraf, Blob, dış site) panelin girişine düşer */
-const boxUrl = (href: string) => `${APP_URL}${/^\/panel(?:[/?#]|$)/.test(href) ? href : "/panel"}`;
+/**
+ * Kutunun bağlantısı: yalnız panelin bir yolu (harf, rakam, tire, alt çizgi; sorgu ve # serbest). Başka her adres
+ * (fotoğraf, Blob, dış site, ".." ya da %2e ile yukarı çıkan yol) panelin girişine düşer.
+ */
+const PANEL_PATH = /^\/panel(?:\/[\w-]+)*\/?(?:[?#]\S*)?$/;
+const boxUrl = (href: string) => `${APP_URL}${PANEL_PATH.test(href) ? href : "/panel"}`;
 
 /** Ek kutunun HTML'i: fiyat onayı kutusu gibi yuvarlak köşeli renkli kutu; uzun metin sarılır (telefonda taşmaz) */
 function boxHtml(b: DigestBox, key: keyof DigestExtras): string {
