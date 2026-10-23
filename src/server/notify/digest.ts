@@ -15,8 +15,9 @@ import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
+import { loadDigestExtras } from "./digest-extras";
 import { invoiceNewsOf, renderDigest, type DigestInvoices, type DigestPrices } from "./digest-template";
-import { isEmailConfigured, resolveFrom, sendEmail } from "./resend";
+import { isEmailConfigured, resolveFrom, sendEmail, sendFailureText } from "./resend";
 import { loadNotifySettings } from "./settings";
 
 export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
@@ -55,7 +56,8 @@ export async function loadUpcoming(today = todayTR()) {
 }
 
 export type DigestResult =
-  | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number; holds?: number }
+  /** `boxes`: haber olan ek kutuların konu parçaları, parçası olmayanın adı (yalnız varsa; digest-extras.ts) */
+  | { status: "sent"; count: number; recipients: number; invoices?: number; prices?: number; syncError?: boolean; system?: number; holds?: number; boxes?: string[] }
   /**
    * `off`: neden gitmedi. "disabled" e-posta kapalı, "nokey" Resend kurulmamış (gönderilecek bir şey olsa da gitmezdi);
    * "norecipient" gönderilecek bir şey vardı ama etkin bildirim adresi yok. Yoksa gönderilecek yeni bir şey yoktu.
@@ -159,16 +161,19 @@ export async function loadDigestPrices(): Promise<DigestPrices | null> {
 
 /**
  * Günlük sabah e-postası: bugün haber verilmesi gereken ve daha önce gitmemiş ödemeler, Paraşüt'ten gelen yeni
- * faturalar, kontrol bekleyenler, eşitleme hatası, yeni hammadde zamları ve (canlıda) günlük işlerin sorunları
- * (dünkü sabah işi, bu sabahki Paraşüt işi) tek iletide. Hiçbiri yoksa e-posta gitmez. `syncedToday`: sabah işi
- * bugün Paraşüt eşitlemesinin yapıldığını biliyorsa (verilmezse sorulur).
+ * faturalar, kontrol bekleyenler, eşitleme hatası, yeni hammadde zamları, ek kutular (digest-extras.ts) ve (canlıda)
+ * günlük işlerin sorunları (dünkü sabah işi, bu sabahki Paraşüt işi) tek iletide. Hiçbiri yoksa e-posta gitmez.
+ * `syncedToday`: sabah işi bugün Paraşüt eşitlemesinin yapıldığını biliyorsa (verilmezse sorulur). `sendDeadlineAt`:
+ * sabah işinin gönderim sınırı (jobStart + 48 sn, src/server/jobs/capped.ts); elle gönderimde yok (bugünkü gibi).
  */
-export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean } = {}): Promise<DigestResult> {
+export async function runReminderDigest(trigger: "cron" | "manual", ctx: { syncedToday?: boolean; sendDeadlineAt?: number } = {}): Promise<DigestResult> {
   const db = getDb();
   const { today, settings, items } = await loadUpcoming();
   if (!settings.emailEnabled) return { status: "skipped", reason: "Hatırlatma e-postaları kapalı.", off: "disabled" };
   if (!isEmailConfigured()) return { status: "skipped", reason: "RESEND_API_KEY tanımlı değil.", off: "nokey" };
 
+  // Ek kutular ötekilerle aynı anda yüklenir (her biri en çok 4 sn; hata fırlatmaz)
+  const extrasP = loadDigestExtras(today);
   const due = dueNotifications(items);
   const sent = due.length ? await db.select({ key: s.notificationLog.key }).from(s.notificationLog).where(inArray(s.notificationLog.key, due.map((d) => d.key))) : [];
   const sentKeys = new Set(sent.map((r) => r.key));
@@ -185,10 +190,11 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
         return [];
       })
     : [];
+  const extras = await extrasP;
   // Kontrol bekleyen ve eski onay bekleyen sayısı tek başına her gün e-posta göndermez; yeni fatura, hata ya da yeni
-  // onaya düşen fiyat varsa bölümde yer alır
+  // onaya düşen fiyat varsa bölümde yer alır. Ek kutulardan yalnız haber olanlar (tahmin değil) e-postayı gönderir
   const invoiceNews = invoiceNewsOf(invoices);
-  if (!fresh.length && !invoiceNews && !prices && !system.length) {
+  if (!fresh.length && !invoiceNews && !prices && !system.length && !extras.news) {
     return {
       status: "skipped",
       reason: due.length ? "Bugünkü hatırlatmalar zaten gönderildi; yeni fatura ya da zam yok." : "Bugün haber verilecek bir ödeme, yeni fatura ya da zam yok.",
@@ -198,7 +204,14 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
   const recipients = await db.select().from(s.notificationRecipients).where(eq(s.notificationRecipients.active, true));
   if (!recipients.length) return { status: "skipped", reason: "Etkin bildirim adresi yok.", off: "norecipient" };
 
-  const { subject, html, text } = renderDigest(fresh, today, invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null, prices, system.length ? { items: system } : null);
+  const { subject, html, text } = renderDigest(
+    fresh,
+    today,
+    invoiceNews || invoices.reviewCount || invoices.priceHolds ? invoices : null,
+    prices,
+    system.length ? { items: system } : null,
+    extras.extras,
+  );
   const to = recipients.map((r) => r.email);
   // Tekil anahtar içerikten: yeniden deneme ve eşzamanlı gönderim tek e-posta olur. Fatura bölümü son gönderimin
   // anını da taşır; yoksa aynı gün aynı sayıda, aynı tarihli yeni fatura gelince anahtar tutar, Resend 409 döner
@@ -208,14 +221,23 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     failedRunKey ?? "",
     prices ? `zam:${prices.changes.map((c) => `${c.name}:${c.after}`).join(",")}` : "",
     system.length ? `sys:${system.map((p) => p.key).join(",")}` : "",
+    // Ek kutuların anahtarları yalnız varsa (yoksa tohum eskisiyle aynı)
+    ...(extras.logKeys.length ? [`ek:${extras.logKeys.join(",")}`] : []),
   ].join("|");
-  const res = await sendEmail({ from: resolveFrom(settings.from), to, subject, html, text, idempotencyKey: `digest-${today}-${createHash("sha256").update(keySeed).digest("hex").slice(0, 40)}` });
+  const res = await sendEmail(
+    { from: resolveFrom(settings.from), to, subject, html, text, idempotencyKey: `digest-${today}-${createHash("sha256").update(keySeed).digest("hex").slice(0, 40)}` },
+    ctx.sendDeadlineAt === undefined ? undefined : { deadlineAt: ctx.sendDeadlineAt },
+  );
   if (!res.ok) {
+    // Belirsiz gönderimde (zaman aşımı, ör. sabah işinin 48. saniyesi; ağ hatası; 409) ileti gitmiş olabilir: Son
+    // gönderimler, bildirim ve Günlük işler bunu Türkçe söyler; ham hata yalnız sunucu günlüğünde
+    const error = sendFailureText(res);
+    if (res.uncertain) console.error("Sabah e-postası gönderimi belirsiz:", res.error);
     await db
       .insert(s.notificationLog)
-      .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error: res.error })
+      .values({ key: `error:${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: false, error })
       .onConflictDoNothing();
-    return { status: "error", error: res.error };
+    return { status: "error", error };
   }
   const logRows = [
     ...fresh.map((f) => ({ key: f.key, subject, recipients: to.join(", "), ok: true })),
@@ -223,6 +245,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     ...(failedRunKey ? [{ key: failedRunKey, subject, recipients: to.join(", "), ok: true }] : []),
     ...(prices ? [{ key: `${PRICE_LOG_PREFIX}${today}:${Date.now()}`, subject, recipients: to.join(", "), ok: true }] : []),
     ...system.map((p) => ({ key: p.key, subject, recipients: to.join(", "), ok: true })),
+    ...extras.logKeys.map((key) => ({ key, subject, recipients: to.join(", "), ok: true })),
   ];
   if (logRows.length) await db.insert(s.notificationLog).values(logRows).onConflictDoNothing();
   await logActivity(null, trigger === "cron" ? "Sabah e-postası (otomatik)" : "Sabah e-postası", `${subject} → ${to.length} adres`);
@@ -235,6 +258,7 @@ export async function runReminderDigest(trigger: "cron" | "manual", ctx: { synce
     syncError: Boolean(invoices.syncError),
     system: system.length,
     holds: invoices.priceHolds?.fresh ?? 0,
+    ...(extras.parts.length ? { boxes: extras.parts } : {}),
   };
 }
 

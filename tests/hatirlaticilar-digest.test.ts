@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { mock, test } from "node:test";
 
 import { SYSTEM_ALERT_HELP } from "../src/lib/job-health";
 import { digestSummary, type UpcomingItem } from "../src/lib/reminders";
-import { APP_URL, invoiceNewsOf, renderDigest, renderSystemAlert, type DigestInvoices, type DigestPrices } from "../src/server/notify/digest-template";
+import {
+  APP_URL,
+  collectDigestExtras,
+  DIGEST_EXTRA_MS,
+  emailLayout,
+  esc,
+  FONT,
+  invoiceNewsOf,
+  renderDigest,
+  renderSystemAlert,
+  type DigestBox,
+  type DigestExtras,
+  type DigestExtraSource,
+  type DigestInvoices,
+  type DigestPrices,
+} from "../src/server/notify/digest-template";
 
 const NBSP = " ";
 
@@ -204,4 +222,434 @@ test("e-posta: yalnız yeni onaya düşen fiyat e-postayı gönderir; özet sat�
   assert.equal(invoiceNewsOf(invoices), true);
   assert.equal(digestSummary({ count: 1, invoices: 2, holds: 1, prices: 1 }), "1 hatırlatma · 2 yeni fatura · 1 fiyat onayı · 1 zam");
   assert.equal(digestSummary({ holds: 0 }), "");
+});
+
+// ---------------------------------------------------------------- Ortak kabuk ve ek kutular (W2.0, CRITIQUE2 R8 / R11)
+
+const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+
+test("e-posta kabuğu: alt not verilmezse bildirim adresleri notu, verilirse o (kaçışlı); esc ve FONT dışa açık", () => {
+  const shell = { subject: "Haftalık özet: 3 konu", preheader: "19–25 Ekim · 3 konu", brandSub: "Haftalık özet", today: "2026-10-26", card: "<p>kart</p>" };
+  const plain = emailLayout(shell);
+  assert.ok(plain.includes(">Bu e-posta ladmin.laffogato.net bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar sayfasından değiştirebilirsiniz.</td>"));
+  assert.ok(plain.includes("<p>kart</p>"));
+  assert.ok(plain.includes("26 Ekim Pazartesi"));
+  assert.ok(plain.includes("<title>Haftalık özet: 3 konu</title>"));
+  const own = emailLayout({ ...shell, footer: "Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet." });
+  assert.ok(own.includes(">Bu özet her pazartesi panel yöneticilerine gider. Kapatmak için: Ödemeler &amp; hatırlatıcılar › E-posta bildirimleri › Haftalık özet.</td>"));
+  assert.ok(!own.includes("bildirim adreslerine gönderildi"));
+  assert.ok(emailLayout({ ...shell, footer: "<script>" }).includes(">&lt;script&gt;</td>"));
+  // Sabah ve bekçi e-postası aynı kabukta, aynı notla
+  assert.ok(renderDigest(rows, "2026-10-20").html.includes("bildirim adreslerine gönderildi. Adresleri Ödemeler &amp; hatırlatıcılar"));
+  assert.ok(renderSystemAlert(system.items, "2026-10-22").html.includes("bildirim adreslerine gönderildi."));
+  assert.equal(esc(`<a href="x">'&'</a>`), "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;");
+  assert.match(FONT, /^-apple-system,.*Geist/);
+});
+
+const com: DigestBox = {
+  title: "Komisyon ve hakediş",
+  lines: [
+    { strong: "Hakediş gecikti: Pluxee (Ekim)", text: "Beklenen ≈ 1.234 ₺; son gün 30 Kasım'dı <not>" },
+    { text: "Yemek kartı oranı %7,2 (sınır %6) olabilir", tone: "bad" },
+  ],
+  href: "/panel/komisyonlar",
+  link: "Komisyon & hakediş'te aç",
+  subjectPart: "Hakediş gecikti: Pluxee (Ekim)",
+  headline: "Hakediş gecikti: Pluxee (Ekim)",
+};
+const kon: DigestBox = {
+  title: "Kontrol listeleri · 21 Ekim Salı",
+  lines: [
+    { strong: "Kapanış", text: "hiç açılmadı" },
+    { text: "Buzdolabı: 6 °C (0–4 °C) · Ayşe: <b>kapı açık</b>", tone: "bad" },
+    { text: "Dün kasa raporu da girilmedi; kafe kapalıysa bu bölümü önemsemeyin.", tone: "muted" },
+  ],
+  href: "/panel/kontrol/gecmis?gun=2026-10-21",
+  link: "Kontrol geçmişi",
+  subjectPart: "dünkü kapanış listesi eksik",
+  headline: "Dünkü kontrol listelerinde eksik var",
+};
+const fc: DigestBox = {
+  title: "Satış tahmini",
+  lines: [{ text: "Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk yüksek · 2 kişi" }, { text: "Hava: MET Norway", tone: "muted" }],
+  href: "/panel/tahmin",
+  link: "Ayrıntı",
+  subjectPart: null,
+  headline: null,
+};
+const one = [{ item: item({ title: "Kira" }), stage: "due" as const }];
+const subj = (r: typeof rows, inv: DigestInvoices | null, pr: DigestPrices | null, sys: typeof system | null, ex: DigestExtras) => renderDigest(r, "2026-10-22", inv, pr, sys, ex).subject;
+
+test("ek kutular: verilmezse ya da boşsa e-posta kutusuz hâliyle birebir aynı (konu, HTML, düz metin)", async () => {
+  const empty = await collectDigestExtras([], "2026-10-22", { preview: false });
+  assert.deepEqual(empty, { extras: {}, news: false, logKeys: [], parts: [] });
+  const invs = [null, invoices, { items: [], reviewCount: 0, syncError: "401" }, { items: [], reviewCount: 3, syncError: null }, holds(0), holds(1)];
+  for (const r of [[], one, rows]) {
+    for (const inv of invs) {
+      for (const pr of [null, prices]) {
+        for (const sys of [null, system]) {
+          const before = renderDigest(r, "2026-10-22", inv, pr, sys);
+          for (const ex of [undefined, null, {}, { commission: null, kontrol: null, forecast: null }, empty.extras]) {
+            assert.deepEqual(renderDigest(r, "2026-10-22", inv, pr, sys, ex), before);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("kutusuz sabah e-postası W2.0 öncesiyle birebir aynı: konu, HTML ve düz metnin özeti 0671969'daki şablonunkiyle aynı", () => {
+  // Şablon bilerek değişirse bu değerler yenilenir; APP_URL ortamdan bağımsız olsun diye yer tutucuya çevrilir
+  const sha = (r: { subject: string; html: string; text: string }) =>
+    createHash("sha256").update([r.subject, r.html, r.text].join("\u0000").replaceAll(APP_URL, "{APP_URL}")).digest("hex").slice(0, 16);
+  assert.equal(sha(renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system)), "e8d6a4e8a1ae42ba");
+  assert.equal(sha(renderDigest([], "2026-10-22", holds(1))), "bb7dbd83bd9f361b");
+  assert.equal(sha(renderDigest([], "2026-10-22", { items: [], reviewCount: 0, syncError: "401" }, prices)), "02b9362fad5fa62a");
+  assert.equal(sha(renderDigest([], "2026-10-22")), "209cf167133b0239");
+});
+
+test("ek kutular: gövde sırası sistem, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme", () => {
+  const all = renderDigest(rows, "2026-10-22", { ...invoices, priceHolds: holds(1).priceHolds }, prices, system, { commission: com, kontrol: kon, forecast: fc });
+  const marks = [
+    "Sistem uyarıları · 2",
+    "Gecikenler · 1",
+    "Paraşüt'ten gelen yeni faturalar · 2",
+    "faturanın kategorisi tahminle yazıldı",
+    "hammadde fiyatı onay bekliyor (",
+    ">Komisyon ve hakediş</div>",
+    ">Kontrol listeleri · 21 Ekim Salı</div>",
+    "Hammadde zamları · 1",
+    ">Satış tahmini</div>",
+    ">Panelde aç</a>",
+  ];
+  const at = marks.map((m) => all.html.indexOf(m));
+  assert.ok(at.every((i) => i > 0), JSON.stringify(at));
+  assert.deepEqual([...at].sort((a, b) => a - b), at);
+  const textMarks = ["Sistem uyarıları (2)", "Gecikenler (1)", "Paraşüt'ten gelen yeni faturalar (2)", "1 fatura kontrol bekliyor:", "2 hammadde fiyatı onay bekliyor (", "Komisyon ve hakediş", "Kontrol listeleri · 21 Ekim Salı", "Hammadde zamları (1)", "Satış tahmini", "Panelde aç:"];
+  const tat = textMarks.map((m) => all.text.indexOf(m));
+  assert.ok(tat.every((i) => i > 0), JSON.stringify(tat));
+  assert.deepEqual([...tat].sort((a, b) => a - b), tat);
+});
+
+test("ek kutu: başlık, satırlar (kalın, kırmızı, sönük), bağlantı; kullanıcı metni kaçışlı; telefonda taşmaz (nowrap yok)", () => {
+  const { html, text } = renderDigest([], "2026-10-22", null, null, null, { commission: com, kontrol: kon });
+  assert.ok(html.includes('background:#fff7ed;border-radius:14px;padding:12px 14px;'));
+  assert.ok(html.includes("<strong>Hakediş gecikti: Pluxee (Ekim)</strong><br>Beklenen ≈ 1.234 ₺; son gün 30 Kasım&#39;dı &lt;not&gt;</div>"));
+  assert.ok(html.includes('<div style="margin-top:6px;color:#b91c1c">Yemek kartı oranı %7,2 (sınır %6) olabilir</div>'));
+  assert.ok(html.includes("Ayşe: &lt;b&gt;kapı açık&lt;/b&gt;"));
+  assert.ok(!html.includes("<b>kapı"));
+  assert.ok(html.includes('<div style="margin-top:6px;color:#71717a;font-size:13px;line-height:18px">Dün kasa raporu da girilmedi;'));
+  assert.ok(html.includes(`<a href="${APP_URL}/panel/komisyonlar" style="color:#9a3412;font-weight:600">Komisyon &amp; hakediş&#39;te aç →</a>`));
+  assert.ok(html.includes(`<a href="${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21" style="color:#9a3412;font-weight:600">Kontrol geçmişi →</a>`));
+  const box = html.slice(html.indexOf(">Komisyon ve hakediş</div>"), html.indexOf("Kontrol geçmişi →"));
+  assert.ok(!box.includes("nowrap"));
+  assert.ok(text.includes(`\n\nKomisyon ve hakediş\n- Hakediş gecikti: Pluxee (Ekim): Beklenen ≈ 1.234 ₺; son gün 30 Kasım'dı <not>\n- Yemek kartı oranı %7,2 (sınır %6) olabilir\nKomisyon & hakediş'te aç: ${APP_URL}/panel/komisyonlar\n`));
+  assert.ok(text.includes(`\n- Kapanış: hiç açılmadı\n`));
+  // Tahmin kutusu gri
+  const f = renderDigest(one, "2026-10-22", null, null, null, { forecast: fc }).html;
+  assert.ok(f.includes('background:#f4f4f5;border-radius:14px;padding:12px 14px;font-family:'));
+  assert.ok(f.includes(`<a href="${APP_URL}/panel/tahmin" style="color:#3f3f46;font-weight:600">Ayrıntı →</a>`));
+});
+
+test("ek kutu bağlantısı yalnız panel yolu: fotoğraf, Blob ya da dış adres panelin girişine düşer; düğme de", () => {
+  for (const bad of [
+    "/api/foto/12",
+    "https://abc.private.blob.vercel-storage.com/kontrol/1.jpg",
+    "//evil.example/panel",
+    "javascript:alert(1)",
+    "/panelx",
+    "panel/kontrol",
+    "",
+    "/panel/../api/foto/12",
+    "/panel/%2e%2e/api/foto/12",
+    "/panel/./kontrol",
+    "/panel//evil.example",
+    "/panel/kontrol gecmis",
+  ]) {
+    const { html, text } = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: bad } });
+    assert.ok(html.includes(`<a href="${APP_URL}/panel" style="color:#9a3412;font-weight:600">Kontrol geçmişi →</a>`), bad);
+    assert.ok(html.includes(`<a href="${APP_URL}/panel" style="display:block;`), bad);
+    assert.ok(!html.includes("/api/foto") && !html.includes("blob.vercel-storage") && !html.includes("evil.example") && !html.includes("javascript:"), bad);
+    assert.ok(text.endsWith(`Kontrol geçmişi: ${APP_URL}/panel`), bad);
+  }
+  const amp = renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: "/panel/kontrol/gecmis?gun=2026-10-21&liste=2" } });
+  assert.ok(amp.html.includes(`href="${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&amp;liste=2"`));
+  assert.ok(amp.text.endsWith(`Kontrol geçmişi: ${APP_URL}/panel/kontrol/gecmis?gun=2026-10-21&liste=2`));
+  for (const good of ["/panel", "/panel/", "/panel/komisyonlar?ay=2026-09#trendyol", "/panel/mal-siparisi/kalemler", "/panel/hatirlaticilar#e_posta"]) {
+    assert.ok(renderDigest([], "2026-10-22", null, null, null, { kontrol: { ...kon, href: good } }).text.endsWith(`Kontrol geçmişi: ${APP_URL}${good}`), good);
+  }
+});
+
+test("konu sırası (R11): ödeme, sistem uyarısı, eşitleme hatası, sabah özeti; ek parçalar hep aynı sırada (fatura, fiyat onayı, zam, komisyon, kontrol)", () => {
+  const withHolds: DigestInvoices = { ...invoices, priceHolds: holds(1).priceHolds };
+  const full = { commission: com, kontrol: kon, forecast: fc };
+  // 1. Ödeme
+  assert.equal(subj(one, null, null, null, { commission: com }), "Ödeme hatırlatması: 1 bugün · Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(
+    subj(rows, withHolds, prices, system, full),
+    "Ödeme hatırlatması: 1 gecikmiş, 1 bugün, 1 yaklaşan · sistem uyarısı · 2 yeni fatura · 2 fiyat onay bekliyor · 1 hammaddeye zam · Hakediş gecikti: Pluxee (Ekim) · dünkü kapanış listesi eksik",
+  );
+  assert.equal(subj(one, null, prices, null, { kontrol: kon }), "Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik");
+  // 2. Sistem uyarısı
+  assert.equal(subj([], null, null, system, { commission: com, kontrol: kon }), "Sistem uyarısı: Dünkü sabah işi çalışmadı (21 Ekim) · Hakediş gecikti: Pluxee (Ekim) · dünkü kapanış listesi eksik");
+  assert.equal(subj([], invoices, prices, system, { kontrol: kon }), "Sistem uyarısı: Dünkü sabah işi çalışmadı (21 Ekim) · 2 yeni fatura · 1 hammaddeye zam · dünkü kapanış listesi eksik");
+  // 3. Yeni faturasız eşitleme hatası
+  assert.equal(subj([], { items: [], reviewCount: 0, syncError: "401" }, null, null, { commission: com }), "Paraşüt eşitlemesi başarısız · Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(
+    subj([], { ...holds(1), syncError: "401" }, prices, null, full),
+    "Paraşüt eşitlemesi başarısız · 2 fiyat onay bekliyor · 1 hammaddeye zam · Hakediş gecikti: Pluxee (Ekim) · dünkü kapanış listesi eksik",
+  );
+  // 4. Sabah özeti: ilk haber yeni fatura, kontrol bekleyen, fiyat onayı, komisyon ya da kontrol; ötekiler kendi sırasında
+  assert.equal(subj([], invoices, prices, null, full), "Sabah özeti: 2 yeni fatura · 1 hammaddeye zam · Hakediş gecikti: Pluxee (Ekim) · dünkü kapanış listesi eksik");
+  assert.equal(subj([], { items: [], reviewCount: 3, syncError: null }, null, null, { commission: com }), "Sabah özeti: 3 fatura kontrol bekliyor · Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(subj([], holds(1), null, null, { kontrol: kon }), "Sabah özeti: 2 fiyat onay bekliyor · dünkü kapanış listesi eksik");
+  assert.equal(subj([], null, null, null, { commission: com }), "Sabah özeti: Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(subj([], null, prices, null, { commission: com }), "Sabah özeti: Hakediş gecikti: Pluxee (Ekim) · 1 hammaddeye zam");
+  assert.equal(subj([], null, null, null, { kontrol: kon }), "Sabah özeti: dünkü kapanış listesi eksik");
+  assert.equal(subj([], null, prices, null, { kontrol: kon }), "Sabah özeti: dünkü kapanış listesi eksik · 1 hammaddeye zam");
+  assert.equal(subj([], null, prices, null, { commission: com, kontrol: kon }), "Sabah özeti: Hakediş gecikti: Pluxee (Ekim) · 1 hammaddeye zam · dünkü kapanış listesi eksik");
+  // Eski onay bekleyen fiyat konuya girmez, kutunun parçası girer
+  assert.equal(subj([], holds(0), null, null, { kontrol: kon }), "Sabah özeti: dünkü kapanış listesi eksik");
+  // 5. Yalnız zam ya da hiçbir şey; tahmin konuya girmez
+  assert.equal(subj([], null, prices, null, { forecast: fc }), "Sabah özeti: 1 hammaddeye zam");
+  assert.equal(subj([], null, null, null, { forecast: fc }), "Sabah özeti: bugün yeni bir şey yok");
+  // Konu parçası olmayan kutu konuya girmez
+  assert.equal(subj([], null, prices, null, { commission: { ...com, subjectPart: null } }), "Sabah özeti: 1 hammaddeye zam");
+  assert.equal(subj(one, null, null, null, { commission: { ...com, subjectPart: null } }), "Ödeme hatırlatması: 1 bugün");
+});
+
+test("başlık ve düğme: kutu fiyat onayından sonra, zamdan önce; yalnız kutu varsa kapanış notu yok; ön metin konunun parçalarıyla", () => {
+  const h1 = (ex: DigestExtras, inv: DigestInvoices | null = null, pr: DigestPrices | null = null) => /<h1[^>]*>([^<]*)<\/h1>/.exec(renderDigest([], "2026-10-22", inv, pr, null, ex).html)?.[1];
+  assert.equal(h1({ commission: com }), "Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(h1({ kontrol: kon }), "Dünkü kontrol listelerinde eksik var");
+  assert.equal(h1({ commission: com, kontrol: kon }), "Hakediş gecikti: Pluxee (Ekim)");
+  assert.equal(h1({ commission: { ...com, headline: null }, kontrol: kon }), "Dünkü kontrol listelerinde eksik var");
+  assert.equal(h1({ kontrol: kon }, null, prices), "Dünkü kontrol listelerinde eksik var");
+  assert.equal(h1({ kontrol: kon }, holds(1)), "2 hammadde fiyatı onay bekliyor");
+  assert.equal(h1({ kontrol: kon }, invoices), "Paraşüt&#39;ten 2 yeni fatura geldi");
+
+  const comOnly = renderDigest([], "2026-10-22", null, null, null, { commission: com });
+  assert.ok(comOnly.html.includes(`<a href="${APP_URL}/panel/komisyonlar" style="display:block;padding:15px 20px;`));
+  assert.ok(comOnly.html.includes(">Komisyon &amp; hakediş&#39;te aç</a>"));
+  assert.ok(comOnly.text.endsWith(`Komisyon & hakediş'te aç: ${APP_URL}/panel/komisyonlar`));
+  assert.ok(!comOnly.html.includes('<p style="margin:12px 0 0;'));
+  // Kontrol, zamdan önce düğmeye geçer; fiyat onayı ve fatura kutudan önce
+  assert.ok(renderDigest([], "2026-10-22", null, prices, null, { kontrol: kon }).html.includes(">Kontrol geçmişi</a>"));
+  assert.ok(renderDigest([], "2026-10-22", holds(1), null, null, { kontrol: kon }).html.includes(">Hammaddeleri aç</a>"));
+  assert.ok(renderDigest([], "2026-10-22", invoices, null, null, { kontrol: kon }).html.includes(">Faturaları aç</a>"));
+  assert.ok(renderDigest(one, "2026-10-22", null, null, null, { kontrol: kon }).html.includes(">Panelde aç</a>"));
+  // Sistem uyarısıyla: düğme kutuya, not sistemin
+  const withSys = renderDigest([], "2026-10-22", null, null, system, { commission: com });
+  assert.ok(withSys.html.includes(">Komisyon &amp; hakediş&#39;te aç</a>"));
+  assert.ok(withSys.html.includes("İş yeniden düzgün çalışınca uyarı kendiliğinden kalkar."));
+  // Fatura ya da zam varsa not eskisi gibi
+  assert.ok(renderDigest([], "2026-10-22", null, prices, null, { kontrol: kon }).html.includes(">Faturalar her sabah Paraşüt'ten kendiliğinden gelir; kategorisi tahmin edilenleri panelde onaylayın.</p>"));
+  // Ön metin: ödemeyle konunun ek parçaları, ödemesizken başlık
+  assert.ok(renderDigest(one, "2026-10-22", null, null, null, { commission: com }).html.includes(`>1 bugün · toplam 25.000${NBSP}₺ · Hakediş gecikti: Pluxee (Ekim)</div>`));
+});
+
+test("başlığı ya da konu parçası olmayan kutu tek içerikse e-posta 'yeni bir şey yok' demez: kutunun parçası, yoksa adı", async () => {
+  const mail = (ex: DigestExtras, pr: DigestPrices | null = null) => {
+    const r = renderDigest([], "2026-10-23", null, pr, null, ex);
+    return {
+      subject: r.subject,
+      h1: /<h1[^>]*>([^<]*)<\/h1>/.exec(r.html)?.[1],
+      pre: /<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">([^<]*)<\/div>/.exec(r.html)?.[1],
+    };
+  };
+  const comNoHead = { ...com, headline: null };
+  const comBare = { ...com, headline: null, subjectPart: null };
+  const konBare = { ...kon, headline: null, subjectPart: null };
+  // Başlıksız: başlık ve ön metin konu parçası
+  assert.deepEqual(mail({ commission: comNoHead }), { subject: "Sabah özeti: Hakediş gecikti: Pluxee (Ekim)", h1: "Hakediş gecikti: Pluxee (Ekim)", pre: "Hakediş gecikti: Pluxee (Ekim)" });
+  // Küçük harfle başlayan parça başlıkta büyük harfle (Türkçe: i → İ)
+  assert.deepEqual(mail({ kontrol: { ...kon, headline: null } }), { subject: "Sabah özeti: dünkü kapanış listesi eksik", h1: "Dünkü kapanış listesi eksik", pre: "Dünkü kapanış listesi eksik" });
+  assert.equal(mail({ kontrol: { ...kon, headline: null, subjectPart: "iki liste eksik" } }).h1, "İki liste eksik");
+  // Başlığı ve parçası yok: konu ve başlık kutunun adı
+  assert.deepEqual(mail({ commission: comBare }), { subject: "Sabah özeti: Komisyon ve hakediş", h1: "Komisyon ve hakediş", pre: "Komisyon ve hakediş" });
+  assert.deepEqual(mail({ kontrol: konBare }), { subject: "Sabah özeti: Kontrol listeleri · 21 Ekim Salı", h1: "Kontrol listeleri · 21 Ekim Salı", pre: "Kontrol listeleri · 21 Ekim Salı" });
+  // Önce parçası olan kutu (konu da onunla başlar), yoksa önce komisyon
+  assert.deepEqual(mail({ commission: comBare, kontrol: { ...kon, headline: null } }), { subject: "Sabah özeti: dünkü kapanış listesi eksik", h1: "Dünkü kapanış listesi eksik", pre: "Dünkü kapanış listesi eksik" });
+  assert.equal(mail({ commission: comBare, kontrol: konBare }).h1, "Komisyon ve hakediş");
+  // Sıra değişmez: başlığı olan kutu ve zam önce gelir; parçası olmayan kutu konuya girmez
+  assert.equal(mail({ commission: comBare, kontrol: kon }).h1, "Dünkü kontrol listelerinde eksik var");
+  assert.deepEqual(mail({ commission: comBare }, prices), { subject: "Sabah özeti: 1 hammaddeye zam", h1: "1 hammaddenin fiyatı arttı", pre: "1 hammaddenin fiyatı arttı" });
+  assert.equal(mail({ commission: comNoHead }, prices).h1, "1 hammaddenin fiyatı arttı");
+  assert.equal(renderDigest(one, "2026-10-23", null, null, null, { commission: comBare }).subject, "Ödeme hatırlatması: 1 bugün");
+  // Tahmin kutusu yine hiçbir şey söylemez
+  assert.deepEqual(mail({ forecast: fc }), { subject: "Sabah özeti: bugün yeni bir şey yok", h1: "Bugün yeni bir şey yok", pre: "Bugün yeni bir şey yok" });
+  assert.deepEqual(mail({ forecast: { ...fc, title: "Tahmin", subjectPart: "tahmin", headline: "Tahmin başlığı" } }), mail({}));
+
+  // Bildirimdeki ve önizlemedeki özet satırı: parçası olmayan haber kutusu adıyla (tek haberse "Bugün: ." olmasın)
+  const r = await collectDigestExtras(
+    [
+      { key: "commission", news: true, load: async () => ({ box: comBare, logKeys: [] }) },
+      { key: "kontrol", news: false, load: async () => ({ box: konBare, logKeys: [] }) },
+    ],
+    "2026-10-23",
+    { preview: true },
+  );
+  assert.equal(r.news, true);
+  assert.deepEqual(r.parts, ["Komisyon ve hakediş"]);
+  assert.equal(digestSummary({ boxes: r.parts }), "Komisyon ve hakediş");
+});
+
+test("tahmin kutusu konuya, başlığa, düğmeye ve habere girmez; yalnız gövdede (zamdan sonra) ve düz metinde", async () => {
+  const sneaky: DigestBox = { ...fc, subjectPart: "tahmin", headline: "Tahmin başlığı" };
+  for (const [r, inv, pr, sys] of [[[], null, null, null], [[], null, prices, null], [one, null, null, null], [[], null, null, system], [[], invoices, null, null]] as const) {
+    const without = renderDigest([...r], "2026-10-22", inv, pr, sys);
+    const withFc = renderDigest([...r], "2026-10-22", inv, pr, sys, { forecast: sneaky });
+    assert.equal(withFc.subject, without.subject);
+    assert.equal(/<h1[^>]*>([^<]*)<\/h1>/.exec(withFc.html)?.[1], /<h1[^>]*>([^<]*)<\/h1>/.exec(without.html)?.[1]);
+    assert.equal(withFc.text.split("\n").at(-1), without.text.split("\n").at(-1));
+    assert.ok(withFc.html.includes(">Satış tahmini</div>"));
+    assert.ok(withFc.text.includes("\nSatış tahmini\n- Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk yüksek · 2 kişi\n- Hava: MET Norway\nAyrıntı: "));
+  }
+  // Haber sayılmaz: kaynak yanlışlıkla news: true dese de
+  const silence = mock.method(console, "error", () => {});
+  try {
+    const src = { key: "forecast", news: true, load: async () => ({ box: sneaky, logKeys: [] }) } as unknown as DigestExtraSource;
+    const r = await collectDigestExtras([src], "2026-10-22", { preview: false });
+    assert.equal(r.news, false);
+    assert.deepEqual(r.parts, []);
+    assert.equal(r.extras.forecast, sneaky);
+  } finally {
+    silence.mock.restore();
+  }
+});
+
+test("ek kutuların toplanması: aynı anda, her biri en çok 4 sn; hata ve süre aşımı kutuyu düşürür; haber, anahtarlar, önizleme", async () => {
+  assert.equal(DIGEST_EXTRA_MS, 4_000);
+  const errors = mock.method(console, "error", () => {});
+  try {
+    const seen: unknown[] = [];
+    const sources: DigestExtraSource[] = [
+      {
+        key: "commission",
+        news: true,
+        load: async (today, ctx) => {
+          seen.push([today, ctx]);
+          return { box: com, logKeys: ["komisyon:gecikti:pluxee:2026-10", "komisyon:gecikti:pluxee:2026-10", ""] };
+        },
+      },
+      { key: "kontrol", news: true, load: async () => Promise.reject(new Error("tablo yok")) },
+      { key: "forecast", news: false, load: async () => ({ box: fc, logKeys: [] }) },
+    ];
+    const r = await collectDigestExtras(sources, "2026-10-23", { preview: true });
+    assert.deepEqual(seen, [["2026-10-23", { preview: true }]]);
+    assert.deepEqual(Object.keys(r.extras), ["commission", "forecast"]);
+    assert.equal(r.news, true);
+    assert.deepEqual(r.logKeys, ["komisyon:gecikti:pluxee:2026-10"]);
+    assert.deepEqual(r.parts, ["Hakediş gecikti: Pluxee (Ekim)"]);
+    assert.equal(errors.mock.callCount(), 1);
+    assert.match(String(errors.mock.calls[0].arguments[0]), /Sabah e-postası ek kutusu \(kontrol\)/);
+
+    // Süresi dolan kaynak beklenmez; zaman uyumlu hata da yakalanır; boş dönen kutu yok sayılır
+    const t0 = Date.now();
+    const slow = await collectDigestExtras(
+      [
+        { key: "kontrol", news: true, load: () => new Promise(() => {}) },
+        {
+          key: "commission",
+          news: true,
+          load: () => {
+            throw new Error("zaman uyumlu");
+          },
+        },
+        { key: "forecast", news: false, load: async () => null },
+      ],
+      "2026-10-23",
+      { preview: false },
+      30,
+    );
+    assert.ok(Date.now() - t0 < 1000);
+    assert.deepEqual(slow, { extras: {}, news: false, logKeys: [], parts: [] });
+    assert.ok(errors.mock.calls.some((c) => /\(kontrol\): 0\.03 sn içinde yüklenemedi/.test(String(c.arguments[0]))));
+
+    // Aynı anda: ikinci kaynak birincisi bitmeden başlar
+    const started: string[] = [];
+    let release = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const pending = collectDigestExtras(
+      [
+        {
+          key: "commission",
+          news: true,
+          load: async () => {
+            started.push("commission");
+            await gate;
+            return { box: com, logKeys: [] };
+          },
+        },
+        {
+          key: "kontrol",
+          news: false,
+          load: async () => {
+            started.push("kontrol");
+            await gate;
+            return { box: kon, logKeys: [] };
+          },
+        },
+      ],
+      "2026-10-23",
+      { preview: false },
+    );
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(started, ["commission", "kontrol"]);
+    release();
+    const both = await pending;
+    // Haber yalnız haber olan kaynaktan; konu parçası da yalnız onun
+    assert.equal(both.news, true);
+    assert.deepEqual(both.parts, ["Hakediş gecikti: Pluxee (Ekim)"]);
+    assert.equal((await collectDigestExtras([{ key: "kontrol", news: false, load: async () => ({ box: kon, logKeys: ["kontrol:2026-10-22"] }) }], "2026-10-23", { preview: false })).news, false);
+
+    // Aynı anahtarlı ikinci kaynak yok sayılır
+    const dup = await collectDigestExtras(
+      [
+        { key: "commission", news: true, load: async () => ({ box: com, logKeys: ["komisyon:a"] }) },
+        { key: "commission", news: true, load: async () => ({ box: { ...com, title: "İkinci" }, logKeys: ["komisyon:b"] }) },
+      ],
+      "2026-10-23",
+      { preview: false },
+    );
+    assert.equal(dup.extras.commission?.title, "Komisyon ve hakediş");
+    assert.deepEqual(dup.logKeys, ["komisyon:a"]);
+  } finally {
+    errors.mock.restore();
+  }
+});
+
+test("sabah e-postası: ek kutular ötekilerle aynı anda yüklenir; haber, tekil anahtar ve günlük satırları yalnız kutu varsa değişir; gönderim sınırı", () => {
+  const extrasSrc = read("src/server/notify/digest-extras.ts");
+  assert.ok(extrasSrc.startsWith('import "server-only";'));
+  assert.match(extrasSrc, /export const DIGEST_EXTRA_SOURCES: DigestExtraSource\[\] = \[/);
+  assert.match(extrasSrc, /return collectDigestExtras\(DIGEST_EXTRA_SOURCES, today, \{ preview: o\.preview \?\? false \}\);/);
+
+  const digest = read("src/server/notify/digest.ts");
+  const run = digest.slice(digest.indexOf("export async function runReminderDigest"), digest.indexOf("/** Son gönderimler"));
+  // Kapalı ya da Resend'siz e-posta kutu yüklemez; yükleme ötekilerle aynı anda başlar
+  assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") > run.indexOf('off: "nokey"'));
+  assert.ok(run.indexOf("const extrasP = loadDigestExtras(today);") < run.indexOf("await loadDigestInvoices()"));
+  assert.match(run, /if \(!fresh\.length && !invoiceNews && !prices && !system\.length && !extras\.news\) \{/);
+  assert.match(run, /system\.length \? \{ items: system \} : null,\s*extras\.extras,\s*\);/);
+  // Tekil anahtarın tohumu kutusuzken eskisiyle aynı (boş dizi yayılır, ayraç eklenmez)
+  assert.match(run, /system\.length \? `sys:\$\{system\.map\(\(p\) => p\.key\)\.join\(","\)\}` : "",\s*\/\/[^\n]*\n\s*\.\.\.\(extras\.logKeys\.length \? \[`ek:\$\{extras\.logKeys\.join\(","\)\}`\] : \[\]\),\s*\]\.join\("\|"\);/);
+  // Günlüğe yalnız başarılı gönderimden sonra
+  assert.ok(run.indexOf("...extras.logKeys.map((key) => ({ key, subject, recipients: to.join(\", \"), ok: true }))") > run.indexOf("if (!res.ok) {"));
+  assert.match(run, /\.\.\.\(extras\.parts\.length \? \{ boxes: extras\.parts \} : \{\}\),/);
+  // Gönderim sınırı yalnız sabah işinden; elle gönderim seçeneksiz (bugünkü gibi)
+  assert.match(run, /ctx\.sendDeadlineAt === undefined \? undefined : \{ deadlineAt: ctx\.sendDeadlineAt \},/);
+
+  // Önizleme kutuları yazmadan yükler; örnek satır yalnız hiç haber yoksa
+  const actions = read("src/server/actions/reminders.ts");
+  const preview = actions.slice(actions.indexOf("export async function previewDigest"), actions.indexOf("export async function runDigestNow"));
+  assert.match(preview, /loadDigestExtras\(today, \{ preview: true \}\)/);
+  assert.match(preview, /const sample = !due\.length && !invoiceNews && !prices && !system\.length && !extras\.news;/);
+  assert.match(preview, /extras\.extras,\s*\);/);
+});
+
+test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından sonra, zamdan önce", () => {
+  assert.equal(digestSummary({ count: 1, holds: 1, prices: 2, boxes: ["Hakediş gecikti: Pluxee (Ekim)", "dünkü kapanış listesi eksik"] }), "1 hatırlatma · 1 fiyat onayı · Hakediş gecikti: Pluxee (Ekim) · dünkü kapanış listesi eksik · 2 zam");
+  assert.equal(digestSummary({ boxes: ["dünkü kapanış listesi eksik"] }), "dünkü kapanış listesi eksik");
+  assert.equal(digestSummary({ count: 1, boxes: [] }), "1 hatırlatma");
 });
