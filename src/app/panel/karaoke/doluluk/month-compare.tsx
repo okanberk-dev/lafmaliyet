@@ -55,8 +55,8 @@ function Bar({ ratio }: { ratio: number | null }) {
 }
 
 /**
- * "Ay ay": son 6 ay, en yeni başta (içinde bulunulan ay dünkü güne kadar), ilk veri ayından eskiye gitmez. Masaüstünde
- * tablo, telefonda ay başına açılır satır (en yenisi açık).
+ * "Ay ay": son 6 ay, en yeni başta (içinde bulunulan ay dünkü güne kadar), ilk veri ayından eskiye gitmez. Geniş
+ * ekranda tablo, daha darda ay başına açılır satır (en yenisi açık).
  */
 export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: Coverage }) {
   const marked = rows.some((r) => r.beforeTimers);
@@ -65,20 +65,20 @@ export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: C
     <Card>
       <CardHeader icon={<CalendarRange />} title="Ay ay" description="Son 6 ay; içinde bulunulan ay dünkü güne kadar." />
 
-      {/* Masaüstü */}
-      <TableWrap className="hidden lg:block">
+      {/* Geniş ekran (xl ve üstü; dokuz sütun daha darda sığmaz): uzun başlıklar iki satıra iner */}
+      <TableWrap className="hidden xl:block">
         <Table>
           <THead>
             <tr>
               <TH>Ay</TH>
               <TH numeric>Doluluk</TH>
-              <TH numeric>Dolu saat</TH>
+              <TH numeric className="whitespace-normal">Dolu saat</TH>
               <TH numeric>Oturum</TH>
-              <TH numeric>Saat başına</TH>
+              <TH numeric className="whitespace-normal">Saat başına</TH>
               <TH numeric>Uzatma</TH>
-              <TH numeric>Son dakika iptal</TH>
-              <TH numeric>Kaç gün önceden</TH>
-              <TH numeric>Ort. kişi</TH>
+              <TH numeric className="whitespace-normal">Son dakika iptal</TH>
+              <TH numeric className="whitespace-normal">Kaç gün önceden</TH>
+              <TH numeric className="whitespace-normal">Ort. kişi</TH>
             </tr>
           </THead>
           <tbody>
@@ -113,8 +113,8 @@ export function MonthCompare({ rows, coverage }: { rows: MonthRow[]; coverage: C
         </Table>
       </TableWrap>
 
-      {/* Telefon ve tablet */}
-      <div className="space-y-2 px-5 pb-5 lg:hidden">
+      {/* Telefon, tablet ve dar masaüstü: ay başına açılır satır */}
+      <div className="space-y-2 px-5 pb-5 xl:hidden">
         {view.map(({ r, c }, i) => (
           <details key={r.month} open={i === 0 || undefined} className="group rounded-2xl bg-surface ring-1 ring-line">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 py-2.5 select-none">

@@ -61,7 +61,7 @@ class SiteError extends Error {}
 /** Sitenin hata yanıtının açıklaması: geçmişte 400 tarih penceresinin reddidir */
 function siteErrorText(status: number): string {
   if (status === 400 || status === 422) return "Site geçmiş tarihleri vermiyor (laffogato.net'in panel ucu güncellenmeli)";
-  if (status === 429) return "Site çok sık istek geldiğini söyledi; birkaç dakika sonra Devam et'e basın";
+  if (status === 429) return "Site çok sık istek geldiğini söyledi; birkaç dakika sonra yeniden deneyin";
   return explain(status);
 }
 
@@ -82,7 +82,9 @@ async function fetchWindow(secret: string, w: HistoryWindow, deadline: number): 
     if (!res.ok) throw new SiteError(siteErrorText(res.status));
     try {
       return parseSiteResponse(await res.json());
-    } catch {
+    } catch (e) {
+      // Gövde okunurken dolan süre zaman aşımıdır (8 sn), bozuk yanıt değil
+      if (e instanceof Error && e.name === "TimeoutError") throw e;
       throw new SiteError("Sitenin yanıtı okunamadı");
     }
   }
