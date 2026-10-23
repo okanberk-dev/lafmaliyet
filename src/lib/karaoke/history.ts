@@ -178,6 +178,17 @@ export function retryAfterMs(v: string | null, now = Date.now()): number | null 
   return Number.isFinite(ms) && ms >= 0 && ms <= 10_000 ? ms : null;
 }
 
+/**
+ * Bir ayın yazımı düşerse yöneticiye gösterilen metin. Drizzle hatanın iletisine sorguyu ve bütün parametreleri koyar
+ * (geçmişin tamamı); asıl neden `cause`'taki veritabanı hatasıdır. İlk satırı, kısaltılmış.
+ */
+export function writeErrorText(e: unknown): string {
+  const cause = e instanceof Error ? (e as { cause?: unknown }).cause : undefined;
+  const raw = cause instanceof Error ? cause.message : e instanceof Error ? e.message : String(e);
+  const line = raw.split("\n")[0].trim() || "bilinmeyen hata";
+  return `Kayıt yazılamadı (${line.length > 120 ? `${line.slice(0, 119)}…` : line})`;
+}
+
 /** Bir çalışmanın sonucu (sunucu eylemi istemciye döner) */
 export interface HistoryRun {
   status: "ok" | "partial" | "error";

@@ -13,12 +13,12 @@ import { dateTimeTR } from "@/lib/format";
 import { historyProgress } from "@/lib/karaoke/history";
 import {
   businessDay,
-  comparable,
   computeOccupancy,
   dayStart,
   KARAOKE_ROOMS,
   monthPeriod,
   monthRows,
+  occupancyDelta,
   previousPeriod,
   recentMonths,
   resolvePeriod,
@@ -162,7 +162,7 @@ async function OccupancyContent({ searchParams }: { searchParams: PageProps<"/pa
   const imported = progress.done && progress.first ? `${progress.first}-01` : null;
   const siteSince = [imported, coverage.firstSiteDay].filter((d): d is string => d !== null).sort()[0] ?? null;
   const since = { siteSince, timerSince: coverage.firstTimerDay };
-  const delta = summary.ratio !== null && before.ratio !== null && before.capacityMin > 0 && comparable(period, prev, since) ? summary.ratio - before.ratio : null;
+  const delta = occupancyDelta({ period, summary }, { period: prev, summary: before }, since);
 
   const heat: HeatmapView = {
     hours: grid.hours.map((h) => ({ hour: h, label: hourLabel(h), short: hourLabel(h).slice(0, 2) })),

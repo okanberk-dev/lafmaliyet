@@ -237,6 +237,27 @@ export function comparable(a: Pick<Period, "from" | "to">, b: Pick<Period, "from
   return side !== "mixed" && side === timerSide(b, c.timerSince);
 }
 
+/** Dönemde odayı kullanan oturum ya da sitede rezervasyon var mı (iptal edilenler dahil) */
+export function hasActivity(s: Pick<OccupancySummary, "sessions" | "cancellations">): boolean {
+  return s.sessions.site + s.sessions.panel + s.cancellations.bookings > 0;
+}
+
+/**
+ * Doluluğun önceki döneme göre puan farkı (oran olarak), gösterilmeyecekse null: önceki dönemde hiç oturum ya da
+ * rezervasyon yoksa (geçmiş alınan ilk ay sitenin ilk rezervasyonundan önce olabilir; boş ayla kıyas "+16 puan" gibi
+ * yanlış bir sıçrama gösterirdi) ya da dönemler karşılaştırılamıyorsa. Doluluk kartı ve ay ay tablosu aynı kuralı kullanır.
+ */
+export function occupancyDelta(
+  cur: { period: Pick<Period, "from" | "to">; summary: OccupancySummary },
+  prev: { period: Pick<Period, "from" | "to">; summary: OccupancySummary },
+  c: Coverage,
+): number | null {
+  const a = cur.summary;
+  const b = prev.summary;
+  if (a.ratio === null || b.ratio === null || b.capacityMin <= 0 || !hasActivity(b)) return null;
+  return comparable(cur.period, prev.period, c) ? a.ratio - b.ratio : null;
+}
+
 /** Haftanın her günü dönemde kaç kez var (pazartesi 0) */
 function weekdayCounts(p: Pick<Period, "from" | "to">): number[] {
   const counts = [0, 0, 0, 0, 0, 0, 0];

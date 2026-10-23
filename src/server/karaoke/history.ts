@@ -12,6 +12,7 @@ import {
   parseHistoryState,
   personalDataCutoff,
   retryAfterMs,
+  writeErrorText,
   type HistoryResult,
   type HistoryState,
   type HistoryWindow,
@@ -169,12 +170,20 @@ export async function importKaraokeHistory(opts: { deadline: number }): Promise<
       break;
     }
     const now = new Date();
-    const r = await getDb().transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('karaoke-sync'))`);
-      const out = await applyWindow(tx, w, snapshot, now);
-      await updateHistory((st) => ({ ...st, months: { ...st.months, [w.month]: { count: out.count, at: now.toISOString() } } }), tx);
-      return out;
-    });
+    // Yazım hatası da (bağlantı koptu, zaman aşımı) aynı yoldan biter: önceki aylar zaten yazıldı, son deneme kaydedilmeli
+    // ve açık sekmeler o satırları görmeli (sürüm artışı). Bu ayın işlemi bütünüyle geri alınır, "Devam et" ondan sürer.
+    let r: Awaited<ReturnType<typeof applyWindow>>;
+    try {
+      r = await getDb().transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('karaoke-sync'))`);
+        const out = await applyWindow(tx, w, snapshot, now);
+        await updateHistory((st) => ({ ...st, months: { ...st.months, [w.month]: { count: out.count, at: now.toISOString() } } }), tx);
+        return out;
+      });
+    } catch (e) {
+      error = writeErrorText(e);
+      break;
+    }
     read.push(w.month);
     reservations += r.count;
     created += r.created;

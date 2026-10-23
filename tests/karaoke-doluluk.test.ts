@@ -21,6 +21,7 @@ import {
   parseHistoryState,
   personalDataCutoff,
   retryAfterMs,
+  writeErrorText,
   type HistoryState,
 } from "../src/lib/karaoke/history";
 import {
@@ -34,6 +35,7 @@ import {
   emptiestBlock,
   monthPeriod,
   monthRows,
+  occupancyDelta,
   occupiedInterval,
   parseRoomHours,
   periodBounds,
@@ -544,6 +546,25 @@ test("puan farkı yalnız karşılaştırılabilir dönemlerde: veriden önce ya
   assert.equal(comparable(p4("2026-12-20"), previousPeriod(p4("2026-12-20")), { siteSince: null, timerSince: null }), false, "veri yok");
 });
 
+test("puan farkı: önceki dönemde hiç oturum ya da rezervasyon yoksa gösterilmez (geçmişin ilk ayı ilk rezervasyondan önce)", () => {
+  // Geçmiş Ocak'tan alındı ama site ilk rezervasyonu Ağustos'ta aldı: Ağustos ↔ Temmuz kıyası boş ayla olurdu
+  const since = { siteSince: "2026-01-01", timerSince: "2026-10-21" };
+  const aug = { period: monthPeriod("2026-08", "2026-10-22"), summary: summaryWith({ ratio: 0.16 }) };
+  const julEmpty = {
+    period: monthPeriod("2026-07", "2026-10-22"),
+    summary: summaryWith({ ratio: 0, sessions: { site: 0, panel: 0 }, cancellations: { bookings: 0, cancelled: 0, late: 0, unknownTime: 0, lateRate: null } }),
+  };
+  assert.equal(occupancyDelta(aug, julEmpty, since), null);
+  // Yalnız iptal edilmiş rezervasyon da veri sayılır
+  const julCancelled = { ...julEmpty, summary: { ...julEmpty.summary, cancellations: { ...julEmpty.summary.cancellations, bookings: 1, cancelled: 1 } } };
+  assert.ok(Math.abs((occupancyDelta(aug, julCancelled, since) ?? NaN) - 0.16) < 1e-9);
+  const jul = { period: monthPeriod("2026-07", "2026-10-22"), summary: summaryWith({ ratio: 0.1 }) };
+  assert.ok(Math.abs((occupancyDelta(aug, jul, since) ?? NaN) - 0.06) < 1e-9);
+  // Karşılaştırılamayan dönem ve kapasitesiz önceki dönem
+  assert.equal(occupancyDelta(aug, jul, { siteSince: "2026-08-01", timerSince: null }), null);
+  assert.equal(occupancyDelta(aug, { ...jul, summary: summaryWith({ ratio: 0.1, capacityMin: 0 }) }, since), null);
+});
+
 test("oda saatleri: geçerli aralık; kapanış açılıştan sonra, en geç 05:00; bozuk değer null", () => {
   assert.deepEqual(parseRoomHours({ open: 10, close: 22, by: "Yönetici" }), { open: 10, close: 22 });
   assert.deepEqual(parseRoomHours({ open: 12, close: 29 }), { open: 12, close: 29 });
@@ -702,4 +723,14 @@ test("yetki ve KVKK: sayfa ve eylemler yalnız yönetici; yükleyici ad ve not o
   assert.match(sync, /bookedAt: siteTime\(r\.createdAt\),/);
   assert.match(sync, /cancelledAt: cancelledAtFor\(prev \?\? null, r, now\),/);
   assert.match(read("src/lib/karaoke/site.ts"), /cancelledAt: z\.string\(\)\.max\(40\)\.optional\(\)\.catch\(undefined\)/);
+});
+
+test("geçmiş alma: yazım hatasının metni veritabanının nedeni; sorgu ve parametreler gösterilmez", () => {
+  const pg = new Error("deneme: yazım hatası");
+  const drizzle = new Error('Failed query: insert into "integration_state" ("key", "value") values ($1, $2)\nparams: karaoke_history,{"months":{}}', { cause: pg });
+  assert.equal(writeErrorText(drizzle), "Kayıt yazılamadı (deneme: yazım hatası)");
+  assert.equal(writeErrorText(new Error("Connection terminated unexpectedly")), "Kayıt yazılamadı (Connection terminated unexpectedly)");
+  const long = writeErrorText(new Error("x".repeat(300)));
+  assert.ok(long.length < 140 && long.endsWith("…)"));
+  assert.equal(writeErrorText("boom"), "Kayıt yazılamadı (boom)");
 });

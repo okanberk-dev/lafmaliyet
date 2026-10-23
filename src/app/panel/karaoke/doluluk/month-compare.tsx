@@ -4,7 +4,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { GrowthPill, KeyValue } from "@/components/ui/misc";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { monthLabel, num, tl } from "@/lib/format";
-import { comparable, type Coverage, type MonthRow } from "@/lib/karaoke/occupancy";
+import { hasActivity, occupancyDelta, type Coverage, type MonthRow } from "@/lib/karaoke/occupancy";
 import { longDayText, percentText, pointsText } from "@/lib/karaoke/occupancy-text";
 import { addDays, dayMonthTR } from "@/lib/reminders";
 
@@ -12,11 +12,9 @@ import { addDays, dayMonthTR } from "@/lib/reminders";
 function cells(r: MonthRow, older: MonthRow | undefined, coverage: Coverage) {
   const s = r.summary;
   const sessions = s.sessions.site + s.sessions.panel;
-  const has = sessions + s.cancellations.bookings > 0;
+  const has = hasActivity(s);
   const dash = "–";
-  const olderHas = older && older.summary.sessions.site + older.summary.sessions.panel + older.summary.cancellations.bookings > 0;
-  const delta =
-    has && olderHas && s.ratio !== null && older.summary.ratio !== null && comparable(r.period, older.period, coverage) ? s.ratio - older.summary.ratio : null;
+  const delta = has && older ? occupancyDelta(r, older, coverage) : null;
   const hours = s.occupiedMin / 60;
   return {
     has,
