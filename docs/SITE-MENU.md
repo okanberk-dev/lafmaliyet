@@ -175,7 +175,7 @@ ve kasaya işlenecekler listesine eklenir; yalnız menü durumu değişen satır
 | Site isteği reddetti (imza …) | İki projedeki `KARAOKE_SYNC_SECRET` aynı mı, ikisi de yeniden yayımlandı mı, sunucu saatleri doğru mu? |
 | Sitede KARAOKE_SYNC_SECRET tanımlı değil ya da sitenin veritabanı okunamadı | Siteye değişkeni ekleyip yeniden yayımlayın; sürüyorsa sitenin günlüğüne bakın |
 | Sitede panel menü ucu yok | laffogato.net güncel değil (menü bağlantısı yayımlanmamış) |
-| Bu ürünün site bağlantısı kopuk … | Sitede kalemin L fiyatı silinmiş: bağlantıyı kaldırın ya da ürünü kalemin tek fiyatına (M) bağlayın |
+| Bu ürünün site bağlantısı kopuk … | Sitede kalemin L fiyatı silinmiş: bağlantıyı kaldırın ya da ürünü kalemin tek fiyatına (M) bağlayın. Panelin kopyası eskiyse site isteği `409 single_size` ile reddeder, mesaj aynıdır (tekrar denemek işe yaramaz) |
 | Site bağlantısı kurulmamış … değiştirilemez | Anahtar yok ama ürün bağlı: anahtarı ekleyin ya da bağlantıyı kaldırın |
 | Sitenin menüsü boş geldi; bağlantılar korunuyor | Sitenin menüsü boş döndü (veritabanı?); hiçbir şey uygulanmadı |
 

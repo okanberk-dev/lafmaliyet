@@ -284,6 +284,11 @@ test("hata metinleri: ağ / zaman aşımı, 404, 400 alanı, imza, kapalı bağl
   assert.equal(pushFailureMessage({ kind: "network" }), "Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene.");
   assert.equal(pushFailureMessage({ kind: "timeout" }), "Siteye ulaşılamadı; fiyat değişmedi. Tekrar dene.");
   assert.equal(pushFailureMessage({ kind: "http", status: 502 }), "Siteye ulaşılamadı (HTTP 502); fiyat değişmedi. Tekrar dene.");
+  // Kopya eskiyken L'ye bağlı ürün tek boy kaleme gitti: site 409 single_size verir; "ulaşılamadı" ve "Tekrar dene" değil
+  const single = pushFailureMessage({ kind: "http", status: 409, field: errorField({ error: "single_size" }) });
+  assert.equal(single, "Bu ürünün site bağlantısı kopuk: kalemin sitede L fiyatı yok; fiyat değişmedi. Bağlantıyı kaldır ya da ürünü kalemin M (tek) fiyatına bağla.");
+  assert.doesNotMatch(single, /ulaşılamadı|Tekrar dene/);
+  assert.match(pushFailureMessage({ kind: "http", status: 409 }, "değişiklikler kaydedilmedi"), /L fiyatı yok; değişiklikler kaydedilmedi\./);
   assert.equal(pushFailureMessage({ kind: "network" }, "değişiklikler kaydedilmedi"), "Siteye ulaşılamadı; değişiklikler kaydedilmedi. Tekrar dene.");
   assert.equal(pushFailureMessage({ kind: "http", status: 404 }), "Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla.");
   assert.match(pushFailureMessage({ kind: "http", status: 400, field: "priceMinor" }), /M fiyatı 0'dan büyük/);
