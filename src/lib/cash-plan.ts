@@ -16,8 +16,8 @@ import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod } from "./calc/types";
 import { GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
-import { vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
 
 export const PLAN_WEEKS = 6;
 /** 42 gün; Ödemeler'in ufkundan (UPCOMING_HORIZON_DAYS, 45) kısa: faturaların hepsi yükleyicinin listesinde (testli) */
@@ -161,11 +161,25 @@ export interface VatRow {
   reminderId: number | null;
 }
 
+/** 2 No.lu KDV (tevkifat): dönemin alış faturalarındaki tevkifat, izleyen ayın 25'inde */
+export interface Vat2Row {
+  /** "kdv2@2026-10-25" */
+  key: string;
+  period: string;
+  date: string;
+  /** 100'e yuvarlı */
+  amount: number;
+  /** Ödemeler'de KDV-2 hatırlatıcısı var: plana o girer, bu satır yalnız kartta */
+  covered: boolean;
+}
+
 export interface CashPlanVat {
   mode: "default" | "reminder" | "excluded";
   /** KDV hatırlatıcısı varken kapatıldıysa "reminder" (yerleşim hatırlatıcının günlerine göre) */
   baseMode: "default" | "reminder";
   rows: VatRow[];
+  /** 2 No.lu KDV (tevkifat) ödemeleri; 1 No.lu beyannamede indirilir, devreden olsa da ödenir */
+  vat2: Vat2Row[];
   anchor: { month: string; amount: number } | null;
   /** Muhasebeci kaydı yokken zincirin başladığı ay (ilk satış ayı) */
   chainFrom: string | null;
@@ -619,6 +633,31 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     }
   }
   vatRows.sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+  // KDV-2 (tevkifat): alış faturalarındaki tevkifat izleyen ayın 25'inde 2 No.lu beyannameyle ödenir; 1 No.lu
+  // beyannamede indirilir (alışların içinde), o ay ödenecek çıkmasa da (Eylül 2026: devreden 121.204,69, KDV-2
+  // 1.800 ₺). Tahminler yarından; Ödemeler'de KDV-2 hatırlatıcısı varsa plana o girer.
+  const vat2Covered = input.reminders.some((r) => r.active && isVatWithholdingReminder(r));
+  const vat2: Vat2Row[] = [];
+  for (const m of input.vat.months) {
+    const date = vat2DueDate(m.month);
+    const amount = round100(m.purchases.withheld);
+    if (date <= today || date > end || amount <= 0) continue;
+    const row: Vat2Row = { key: `kdv2@${date}`, period: m.month, date, amount, covered: vat2Covered };
+    vat2.push(row);
+    if (vatMode === "excluded" || vat2Covered) continue;
+    dated.push({
+      key: row.key,
+      kind: "kdv",
+      direction: "out",
+      title: `KDV-2 (${MONTH_NAMES[Number(m.month.slice(5, 7)) - 1]})`,
+      date,
+      amount,
+      estimated: true,
+      overdue: false,
+      detail: vat2LineDetail(m.month),
+      href: "#kdv",
+    });
+  }
   const vat: CashPlanVat | null =
     !input.vat.months.length && !vatRems.length
       ? null
@@ -626,6 +665,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
           mode: vatMode,
           baseMode: vatBaseMode,
           rows: vatRows,
+          vat2,
           anchor: input.vatAnchor,
           chainFrom: input.vatAnchor ? null : input.vat.firstSalesMonth,
           rates: { kdv: st.kdv, kdvHizmet: st.kdvHizmet },

@@ -156,6 +156,7 @@ export async function loadDataset(): Promise<Dataset> {
       amount: i.amount,
       discount: i.discount,
       payable: i.payable,
+      vat: i.vat,
       unpaid: i.unpaid,
       note: i.note,
       source: i.source,

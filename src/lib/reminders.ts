@@ -383,6 +383,12 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 // olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı
 const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\s*(no|numara)/;
 
+/** 2 No.lu KDV (tevkifat) hatırlatıcısı: plan o dönemin KDV-2 tahminini yazmaz, hatırlatıcı kendi satırıyla girer */
+export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
+  if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
+  return VAT_WITHHOLDING.test(foldTR(r.title));
+}
+
 /**
  * KDV ödemesi hatırlatıcısı (nakit planının KDV tahmini, docs/NAKIT-PLANI.md): başlıkta "KDV" ya da "katma değer".
  * Kira ve maaş türü ("Kira KDV'si"), SGK başlıkları ve KDV tevkifatı ("2 No.lu KDV", "KDV2") KDV ödemesi sayılmaz.

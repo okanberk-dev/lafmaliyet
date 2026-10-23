@@ -185,6 +185,11 @@ export interface Invoice {
   discount: number;
   /** Ödenecek, KDV dahil */
   payable: number;
+  /**
+   * Faturanın KDV toplamı, tevkifat düşülmemiş (Paraşüt `total_vat`). Excel'den gelenlerde 0. KDV tahmini indirilecek
+   * KDV'yi ve 2 No.lu beyannamenin tevkifatını bundan okur (src/lib/kdv.ts)
+   */
+  vat?: number;
   unpaid: boolean;
   note: string | null;
   /** Nereden geldi (hesaplarda kullanılmaz) */
