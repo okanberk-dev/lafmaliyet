@@ -8,11 +8,12 @@ import { countFactor } from "@/lib/calc/engine";
 import { businessDate } from "@/lib/cash-report";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, num } from "@/lib/format";
+import { countQty, quickCountConflicts, receivedAtFor } from "@/lib/reorder/levels";
 import { mobileE164, qtyLabel } from "@/lib/reorder/message";
 import { REORDER_SETTINGS_KEY } from "@/lib/reorder/types";
 import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
-import { loadSupplierIndex, orderSnapshot } from "@/server/data/reorder";
+import { latestCountOf, loadSupplierIndex, orderSnapshot } from "@/server/data/reorder";
 import { getDb, schema as s } from "@/server/db";
 import { matchSupplierOrders } from "@/server/reorder/match";
 
@@ -79,17 +80,15 @@ export async function saveQuickCounts(entries: { ingredientId: number; qty: numb
         const current = new Map(
           (
             await tx
-              .select({ id: q.ingredientId, qty: q.qty })
+              .select({ id: q.ingredientId, qty: q.qty, factor: q.factor })
               .from(q)
               .where(and(eq(q.day, day), inArray(q.ingredientId, checked.map((e) => e.ingredientId))))
-          ).map((r) => [r.id, r.qty]),
+          ).map((r) => [r.id, { qty: r.qty, factor: r.factor }]),
         );
-        const stale = checked.filter((e) => {
-          const cur = current.get(e.ingredientId) ?? null;
-          return cur !== e.base && cur !== e.qty;
-        });
+        // Form bugünkü kaydı sayım biriminde, 3 basamakla gösterir: kayıt da öyle karşılaştırılır
+        const stale = quickCountConflicts(checked, current, (id) => countFactor(ings.get(id)!.countUnit));
         if (stale.length) {
-          const names = stale.map((e) => ings.get(e.ingredientId)!.name);
+          const names = stale.map((id) => ings.get(id)!.name);
           // Form yeni değerleri alsın: dokunulmayan satırlar güncellenir, çakışanlar işaretlenir
           refresh();
           throw new UserError(
@@ -102,10 +101,12 @@ export async function saveQuickCounts(entries: { ingredientId: number; qty: numb
       const filled = data.filter((e) => e.qty !== null);
       for (const e of filled) {
         const factor = countFactor(ings.get(e.ingredientId)!.countUnit);
+        // Formun gösterdiği gibi 3 basamak (countQty): kayıt kutudaki değerle tutsun
+        const qty = countQty(e.qty)!;
         await tx
           .insert(q)
-          .values({ ingredientId: e.ingredientId, day, qty: e.qty!, factor, countedAt: now, countedBy: me.id, countedByName: me.name })
-          .onConflictDoUpdate({ target: [q.ingredientId, q.day], set: { qty: e.qty!, factor, countedAt: now, countedBy: me.id, countedByName: me.name } });
+          .values({ ingredientId: e.ingredientId, day, qty, factor, countedAt: now, countedBy: me.id, countedByName: me.name })
+          .onConflictDoUpdate({ target: [q.ingredientId, q.day], set: { qty, factor, countedAt: now, countedBy: me.id, countedByName: me.name } });
       }
       return { saved: filled.length, removed: gone };
     });
@@ -118,8 +119,10 @@ export async function saveQuickCounts(entries: { ingredientId: number; qty: numb
 
 /**
  * "Geldi": sipariş edilen mal geldi (hızlı sayımdan önce işaretlenir; işaretlenmezse sipariş listesinde ikinci kez
- * "siparişte" sayılır). Personel de işaretler. Geri alma: faturası bağlanmamışsa yönetici her zaman, personel yalnız
- * kendi işaretini 30 dakika içinde.
+ * "siparişte" sayılır). Personel de işaretler. Yazılan an malın geldiği an: siparişin kalemleri gönderildikten sonra
+ * sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa sayımın hemen öncesi (sayılmış mal ikinci kez
+ * "siparişte" sayılmaz; receivedAtFor), değilse dokunuş anı. Geri alma: faturası bağlanmamışsa yönetici her zaman
+ * (Gönderilenler ve Yoldaki siparişler), personel yalnız kendi işaretini 30 dakika içinde.
  */
 export async function markOrderReceived(input: { id: number; received: boolean }) {
   return attempt(async () => {
@@ -131,16 +134,27 @@ export async function markOrderReceived(input: { id: number; received: boolean }
     if (!order) throw new UserError("Sipariş bulunamadı; sayfayı yenileyin.");
     const now = new Date();
     if (received) {
+      const lines = Array.isArray(order.lines) ? order.lines : [];
+      const lastCount = await latestCountOf([...new Set(lines.map((l) => l.ingredientId))], todayTR(now));
+      const receivedAt = receivedAtFor({ sentAt: order.sentAt.toISOString(), expectedOn: order.expectedOn }, lastCount, now);
       const [row] = await db
         .update(o)
-        .set({ receivedAt: now, receivedBy: me.id, receivedByName: me.name, updatedAt: now })
+        .set({ receivedAt, receivedBy: me.id, receivedByName: me.name, updatedAt: now })
         .where(and(eq(o.id, id), eq(o.status, "open"), isNull(o.receivedAt)))
         .returning({ id: o.id });
       if (!row) throw new UserError("Bu sipariş zaten işaretli; sayfayı yenileyin.");
       await logActivity(me, "Mal siparişi geldi", orderRef(order));
     } else {
-      const own = order.receivedBy === me.id && order.receivedAt !== null && now.getTime() - order.receivedAt.getTime() < 30 * 60_000;
-      if (order.status !== "open" || order.invoiceId !== null || !order.receivedAt || (me.role !== "admin" && !own)) throw new UserError("Geri almak için yöneticiye yazın.");
+      // İşaret zaten kalkmış (çift dokunuş, başka ekrandan geri alındı): ekran yenilenir
+      if (!order.receivedAt) {
+        refresh();
+        return null;
+      }
+      // Personelin süresi işaretlediği andan (receivedAt sayımın öncesine yazılmış olabilir)
+      const own = order.receivedBy === me.id && now.getTime() - order.updatedAt.getTime() < 30 * 60_000;
+      if (me.role !== "admin" && (!own || order.status !== "open" || order.invoiceId !== null)) throw new UserError("Geri almak için yöneticiye yazın.");
+      if (order.status !== "open") throw new UserError("Sipariş kapalı; önce yeniden açın.");
+      if (order.invoiceId !== null) throw new UserError("Siparişin faturası bağlı; Geldi işareti geri alınmaz. Fatura yanlışsa Faturayı değiştir'den eşleşmeyi kaldırın.");
       await db
         .update(o)
         .set({ receivedAt: null, receivedBy: null, receivedByName: null, updatedAt: now })
@@ -256,7 +270,10 @@ export async function closeOrder(input: z.input<typeof closeSchema>) {
   });
 }
 
-/** Kapanan (iptal olmayan) siparişi 30 gün içinde yeniden açar; teslim kontrolü hemen yenilenir */
+/**
+ * Kapanan (iptal olmayan) siparişi 30 gün içinde yeniden açar; teslim kontrolü hemen yenilenir. Kapanış anı kalır:
+ * yeniden açılan sipariş eşitlemede yeniden karşılaştırılır ama kendiliğinden kapanmaz (wasReopened); sahibi Kapat der.
+ */
 export async function reopenOrder(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -270,7 +287,7 @@ export async function reopenOrder(id: number) {
     }
     const [row] = await db
       .update(o)
-      .set({ status: "open", closedAt: null, closedByName: null, closeNote: null, updatedAt: now })
+      .set({ status: "open", closedByName: null, closeNote: null, updatedAt: now })
       .where(and(eq(o.id, oid), eq(o.status, "closed")))
       .returning({ id: o.id });
     if (!row) throw new UserError("Sipariş bu arada değişti; sayfayı yenileyin.");

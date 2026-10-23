@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Lock, RotateCcw, Undo2 } from "lucide-react";
+import { FileText, Lock, PackageX, RotateCcw, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -83,7 +83,9 @@ export function OrderCard({ view, filterHref }: OrderCardProps) {
   const open = o.status === "open";
   const run = (fn: () => Promise<{ ok: true } | { ok: false; error: string }>, done: string) =>
     start(async () => {
-      const res = await fn();
+      // Bağlantı yoksa istek reddedilir: sayfa hata ekranına düşmesin, pencere açık kalsın
+      const res = await fn().catch(() => null);
+      if (!res) return void toast.error("Kaydedilemedi: bağlantı yok gibi", { description: "Bağlantı gelince yeniden deneyin." });
       if (!res.ok) return void toast.error(res.error);
       toast.success(done);
       setDialog(null);
@@ -226,6 +228,12 @@ export function OrderCard({ view, filterHref }: OrderCardProps) {
           {open && !o.receivedAt && o.invoiceId === null ? (
             <Button variant="secondary" size="sm" disabled={pending} onClick={() => run(() => markOrderReceived({ id: o.id, received: true }), `${o.supplier} siparişi geldi`)} className="text-ink">
               Geldi
+            </Button>
+          ) : null}
+          {/* Yanlışlıkla denen Geldi (personelin bildirimdeki Geri al'ı kaçtıysa): faturası bağlanmadıkça kalkar */}
+          {open && o.receivedAt && o.invoiceId === null ? (
+            <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => markOrderReceived({ id: o.id, received: false }), "Geldi işareti kaldırıldı")}>
+              <PackageX size={14} aria-hidden="true" /> Geldi&apos;yi geri al
             </Button>
           ) : null}
           {open ? (

@@ -8,7 +8,7 @@ import { phoneE164, whatsappHref, whatsappShareHref } from "@/app/panel/tedarikc
 
 import { num } from "../format";
 import { longDateTR } from "../reminders";
-import { unitWord } from "./levels";
+import { unitWord, type PlanStatus } from "./levels";
 import { DEFAULT_REORDER } from "./types";
 
 /** "2 koli", "2,5 kg": tam sayı ondalıksız, küsurlu en çok iki ondalık; birim Türkçe küçük harf */
@@ -67,4 +67,21 @@ export function countAmount(base: number | null, countFactor: number, countUnit:
 /** Günün adı: "2026-10-22" → "Perşembe" */
 export function dayName(day: string): string {
   return longDateTR(day).split(" ").at(-1) ?? "";
+}
+
+/**
+ * Sipariş listesinde önerisi olmayan kalemlerin (kapalı bölüm) başlığı, her biri kendi sayısıyla: "Yeterli olanlar (2) ·
+ * Sayılmayanlar (1) · Hedefi olmayanlar (1)". Sayılmamış ya da hedefi olmayan kalem "yeterli" diye sayılmaz.
+ */
+export function restLabel(statuses: readonly PlanStatus[]): string {
+  const count = (s: PlanStatus) => statuses.filter((x) => x === s).length;
+  const parts: [string, number][] = [
+    ["Yeterli olanlar", count("yeterli")],
+    ["Sayılmayanlar", count("sayilmadi")],
+    ["Hedefi olmayanlar", count("hedef-yok")],
+  ];
+  return parts
+    .filter(([, n]) => n > 0)
+    .map(([label, n]) => `${label} (${num(n)})`)
+    .join(" · ");
 }

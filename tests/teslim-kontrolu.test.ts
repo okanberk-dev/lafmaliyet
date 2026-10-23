@@ -21,6 +21,7 @@ import {
   rowText,
   sameCheck,
   shouldAutoClose,
+  wasReopened,
   type InvoiceCandidate,
   type InvoiceLineLite,
   type LinkLite,
@@ -295,6 +296,37 @@ test("sameCheck: anı ve anahtar sırası fark etmez; sayı değişince farklı"
   assert.equal(sameCheck(null, null), true);
   assert.equal(sameCheck(a, null), false);
   assert.equal(sameCheck(null, a), false);
+});
+
+test("karşılaştırma fatura kalemlerinin sırasından bağımsız: eşitleme kalemleri yeniden yazınca değişmiş sayılmaz", () => {
+  const kakao: InvoiceLineLite = { productKey: "p-kakao", productName: "KAKAO 1 KG", quantity: 1, unit: "Adet", netTotal: 400 };
+  const kakaoToz: InvoiceLineLite = { productKey: "p-kakao", productName: "KAKAO TOZU", quantity: 0.3, unit: "Adet", netTotal: 130 };
+  const bardak: InvoiceLineLite = { productKey: "p-bardak", productName: "BARDAK 12 OZ", quantity: 3, unit: "Koli", netTotal: 300 };
+  const lines = [sut(0.1), nakliye, kakao, sut(0.7), bardak, kakaoToz, sut(1.2), kremaLine(6)];
+  const a = check([line(), krema()], lines);
+  for (const shuffled of [[...lines].reverse(), [lines[3], lines[5], lines[0], lines[7], lines[1], lines[6], lines[4], lines[2]]]) {
+    const b = check([line(), krema()], shuffled);
+    assert.equal(sameCheck(a, b), true, shuffled.map((l) => l.productName).join(", "));
+    assert.deepEqual(b.rows, a.rows);
+  }
+  // Sipariş satırları siparişin sırasıyla, faturadan gelenler ada göre; ürün adları sıralı
+  assert.deepEqual(
+    a.rows.map((r) => r.name),
+    ["Süt", "Krema", "Kakao", "BARDAK 12 OZ", "NAKLİYE"],
+  );
+  assert.deepEqual(a.rows[2].productNames, ["KAKAO 1 KG", "KAKAO TOZU"]);
+});
+
+test("yeniden açılan sipariş kendiliğinden kapanmaz: fatura tutsa da, 45 gün geçse de", () => {
+  const ok = check([line()], [sut(2)]);
+  const reopened = base({ invoiceId: 77, check: ok, closedAt: "2026-10-29T08:00:00.000Z" });
+  assert.equal(wasReopened(reopened), true);
+  assert.equal(shouldAutoClose(ok, reopened), false);
+  assert.equal(shouldAutoClose(ok, base({ invoiceId: 77 })), true, "hiç kapanmamış");
+  assert.equal(shouldAutoClose(ok), true);
+  assert.equal(wasReopened(base({ status: "closed", closedAt: "2026-10-29T08:00:00.000Z" })), false, "kapalı");
+  assert.equal(wasReopened(base()), false);
+  assert.equal(needsAutoExpire(base({ sentDay: "2026-09-10", closedAt: "2026-10-20T08:00:00.000Z" }), "2026-10-26"), false, "yeniden açılan, 46 gün");
 });
 
 // ---------------------------------------------------------------- Faturanın seçimi

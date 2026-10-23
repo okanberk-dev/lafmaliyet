@@ -52,6 +52,7 @@ const isUnique = (e: unknown) => ((e as { code?: string })?.code ?? (e as { caus
  *   örtüşmedi) eşleşme kalkar, sonraki çalışma yeniden arar; silinen fatura yabancı anahtarla zaten boşalır.
  * - Karşılaştırma yalnız değişince yazılır; kalemler okunup her şey tuttuysa sipariş "Faturayla tuttu" ile kapanır.
  * - Faturası 45 günde gelmeyen açık sipariş kapanır.
+ * - Yeniden açılan sipariş (wasReopened) hiçbir zaman kendiliğinden kapanmaz; karşılaştırması yine yenilenir.
  * Her yazım `status = 'open'` koşuluyla: aynı anda elle kapatılan siparişe dokunulmaz. `until` (epoch ms) geçince
  * kalan siparişler sonraki çalışmaya kalır.
  */
@@ -102,6 +103,7 @@ export async function matchSupplierOrders(opts: { orderIds?: number[]; until?: n
         })
         .from(s.parasutBillLines)
         .where(inArray(s.parasutBillLines.invoiceId, [...invoices.keys()]))
+        .orderBy(asc(s.parasutBillLines.invoiceId), asc(s.parasutBillLines.id))
     : [];
   const links = new Map<string, LinkLite>(linkRows.map((l) => [l.productKey, { ingredientId: l.ingredientId, factor: l.factor, name: l.name, baseUnit: l.unit }]));
   const linesOf = new Map<number, InvoiceLineLite[]>();
@@ -183,7 +185,8 @@ export async function matchSupplierOrders(opts: { orderIds?: number[]; until?: n
       if (!x) continue;
       const check = deliveryCheck(order, { id: x.id, invoiceNo: x.invoiceNo, date: x.date, payable: x.payable, lines: linesOf.get(x.id) ?? [] }, links, now);
       if (sameCheck(order.check, check)) continue;
-      const close = shouldAutoClose(check);
+      // Yeniden açılan sipariş karşılaştırılır ama kendiliğinden kapanmaz (sahibi açtı, sahibi kapatır)
+      const close = shouldAutoClose(check, order);
       await db
         .update(o)
         .set({

@@ -119,7 +119,9 @@ export function looksConsolidated(rows: readonly CheckRow[]): boolean {
  * düşer); fiyat yalnız miktarı ve tutarı artı kalemlerden (bedava gelen miktara sayılır, fiyata girmez). Sipariş satırı:
  * hiç gelmediyse "gelmedi", %98'in altı "eksik", %102'nin üstü "fazla", yoksa "tamam"; fiyat beklenenden ±%3 farklıysa
  * fiyat farkı (beklenen tahminse uyarı yok). Bağlı ama sipariş edilmemiş hammadde "siparişte yoktu"; hiçbir hammaddeye
- * bağlı olmayan ürün (nakliye gibi) "bağlı değil" (kapanmayı engellemez).
+ * bağlı olmayan ürün (nakliye gibi) "bağlı değil" (kapanmayı engellemez). Sipariş satırları siparişin sırasıyla,
+ * faturadan gelen satırlar ve ürün adları ada göre: fatura kalemlerinin okunma sırası (eşitleme her seferinde yeniden
+ * yazar) karşılaştırmayı değiştirmez.
  */
 export function deliveryCheck(
   order: { lines: readonly ReorderLine[] },
@@ -127,9 +129,14 @@ export function deliveryCheck(
   links: ReadonlyMap<string, LinkLite>,
   now: Date,
 ): DeliveryCheck {
+  const byName = (a: string, b: string) => a.localeCompare(b, "tr") || (a < b ? -1 : a > b ? 1 : 0);
+  // Toplamlar da sıradan bağımsız olsun (ondalık toplamanın son basamağı sıraya göre değişebilir)
+  const invoiceLines = [...invoice.lines].sort(
+    (a, b) => byName(a.productKey, b.productKey) || byName(a.productName, b.productName) || a.quantity - b.quantity || a.netTotal - b.netTotal || byName(a.unit ?? "", b.unit ?? ""),
+  );
   const acc = new Map<number, { base: number; net: number; pricedBase: number; names: Set<string>; link: LinkLite }>();
   const unlinked = new Map<string, number>();
-  for (const l of invoice.lines) {
+  for (const l of invoiceLines) {
     const link = links.get(l.productKey);
     if (!link) {
       if (l.quantity > 0) unlinked.set(l.productName, (unlinked.get(l.productName) ?? 0) + l.quantity);
@@ -145,6 +152,7 @@ export function deliveryCheck(
     acc.set(link.ingredientId, a);
   }
 
+  const namesOf = (names: Set<string>) => [...names].sort(byName);
   const rows: CheckRow[] = [];
   const ordered = new Set<number>();
   for (const line of order.lines) {
@@ -160,7 +168,7 @@ export function deliveryCheck(
     rows.push({
       ingredientId: line.ingredientId,
       name: line.name,
-      productNames: a ? [...a.names] : [],
+      productNames: a ? namesOf(a.names) : [],
       ordered: want,
       delivered: got,
       unit: line.unit,
@@ -175,12 +183,12 @@ export function deliveryCheck(
       ratioHint: status === "fazla" || status === "eksik" ? ratioHint(want, got) : null,
     });
   }
-  for (const [id, a] of acc) {
-    if (ordered.has(id) || !(a.base > 0)) continue;
+  const extras = [...acc].filter(([id, a]) => !ordered.has(id) && a.base > 0).sort(([x, a], [y, b]) => byName(a.link.name, b.link.name) || x - y);
+  for (const [id, a] of extras) {
     rows.push({
       ingredientId: id,
       name: a.link.name,
-      productNames: [...a.names],
+      productNames: namesOf(a.names),
       ordered: null,
       delivered: a.base,
       unit: a.link.baseUnit,
@@ -195,7 +203,7 @@ export function deliveryCheck(
       ratioHint: null,
     });
   }
-  for (const [name, quantity] of unlinked) {
+  for (const [name, quantity] of [...unlinked].sort(([a], [b]) => byName(a, b))) {
     rows.push({
       ingredientId: null,
       name,
@@ -238,9 +246,17 @@ export function deliveryCheck(
   };
 }
 
-/** Kalemler okundu ve her şey tuttu: sipariş kendiliğinden kapanır ("Faturayla tuttu") */
-export function shouldAutoClose(check: DeliveryCheck): boolean {
-  return check.linesRead && check.ok;
+/**
+ * Yeniden açılan sipariş: açık ama kapanış anı dolu (Yeniden aç kapanış anını bırakır). Sahibi bir sebeple açtı (hasarlı
+ * mal, eksik kalan): eşitleme onu yeniden karşılaştırır ama kendiliğinden kapatmaz; sahibi Kapat der.
+ */
+export function wasReopened(o: Pick<OrderLite, "status" | "closedAt">): boolean {
+  return o.status === "open" && o.closedAt !== null;
+}
+
+/** Kalemler okundu ve her şey tuttu: sipariş kendiliğinden kapanır ("Faturayla tuttu"); yeniden açılan sipariş hariç */
+export function shouldAutoClose(check: DeliveryCheck, order?: Pick<OrderLite, "status" | "closedAt">): boolean {
+  return check.linesRead && check.ok && !(order && wasReopened(order));
 }
 
 /** Anahtarları sıralı JSON: jsonb anahtar sırasını değiştirir, veritabanından okunan aynı değer aynı metni versin */
@@ -326,9 +342,9 @@ export function orderState(o: Pick<OrderLite, "status" | "check" | "receivedAt" 
   return { key: "yolda", label: `Yolda · ${today === o.expectedOn ? "bugün" : dayName(o.expectedOn)} bekleniyor`, tone: "blue" };
 }
 
-/** Faturası 45 günde gelmeyen açık sipariş kendiliğinden kapanır ("45 günde fatura gelmedi") */
-export function needsAutoExpire(o: Pick<OrderLite, "status" | "invoiceId" | "sentDay">, today: string): boolean {
-  return o.status === "open" && o.invoiceId === null && daysBetween(o.sentDay, today) > AUTO_CLOSE_DAYS;
+/** Faturası 45 günde gelmeyen açık sipariş kendiliğinden kapanır ("45 günde fatura gelmedi"); yeniden açılan hariç */
+export function needsAutoExpire(o: Pick<OrderLite, "status" | "invoiceId" | "sentDay"> & { closedAt?: string | null }, today: string): boolean {
+  return o.status === "open" && o.invoiceId === null && daysBetween(o.sentDay, today) > AUTO_CLOSE_DAYS && !wasReopened({ status: o.status, closedAt: o.closedAt ?? null });
 }
 
 /** Fark var: açık, faturası okundu ve tutmadı */

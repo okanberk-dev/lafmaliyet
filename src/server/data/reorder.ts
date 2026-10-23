@@ -23,6 +23,7 @@ import {
   planLine,
   readySuppliers,
   referencePrice,
+  shownCount,
   suggestedLevels,
   suggestTracked,
   type OnHand,
@@ -185,6 +186,28 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
     if (oh) out.set(id, oh);
   }
   return out;
+}
+
+/**
+ * Kalemlerin en yeni sayımı (eldeki stokla aynı kaynaklar: hızlı sayım ya da bu / geçen ayın ay sonu sayımı), anı ve iş
+ * günü; "Geldi"nin anı buna göre yazılır (receivedAtFor). Hiç sayılmadıysa null. İki küçük sorgu; fiyat okumaz.
+ */
+export async function latestCountOf(ids: number[], today: string): Promise<{ at: string; day: string } | null> {
+  if (!ids.length) return null;
+  const db = getDb();
+  const q = s.quickCounts;
+  const month = today.slice(0, 7);
+  const [[quick], [stock]] = await Promise.all([
+    db.select({ at: q.countedAt, day: q.day }).from(q).where(inArray(q.ingredientId, ids)).orderBy(desc(q.countedAt)).limit(1),
+    db
+      .select({ at: s.stockCounts.updatedAt })
+      .from(s.stockCounts)
+      .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [month, shiftMonth(month, -1)])))
+      .orderBy(desc(s.stockCounts.updatedAt))
+      .limit(1),
+  ]);
+  if (stock && (!quick || stock.at > quick.at)) return { at: stock.at.toISOString(), day: businessDate(stock.at) };
+  return quick ? { at: quick.at.toISOString(), day: quick.day } : null;
 }
 
 // ---------------------------------------------------------------- Gönderilen siparişler
@@ -920,7 +943,8 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
         packageDesc: r.packageDesc,
         countUnit: r.countUnit!,
         last: prev ? { qty: Math.round(prev.qty * 1000) / 1000, day: prev.day } : null,
-        today: t ? { qty: Math.round(((t.qty * t.factor) / f) * 1000) / 1000, by: t.by, at: t.at.toISOString() } : null,
+        // Kaydederken çakışma denetimi bu biçimle karşılaştırır (quickCountConflicts)
+        today: t ? { qty: shownCount(t, f)!, by: t.by, at: t.at.toISOString() } : null,
       },
     };
   });

@@ -25,7 +25,9 @@ görünür.
    **WhatsApp ile gönder** penceresi mesajı gösterir, isteğe bağlı not eklenir, **WhatsApp'ta aç** sohbeti açar ve
    siparişi kaydeder.
 4. **Mal gelir:** personel Hızlı sayım'da (ya da yönetici Gönderilenler'de) **Geldi** der. Fatura Paraşüt'e düşünce
-   sabah eşitlemesi (ya da Şimdi eşitle) siparişi faturayla karşılaştırır (§7).
+   sabah eşitlemesi (ya da Şimdi eşitle) siparişi faturayla karşılaştırır (§7). Yanlışlıkla denen Geldi'yi yönetici
+   Gönderilenler'de ya da Yoldaki siparişler'de **Geldi'yi geri al** ile kaldırır (faturası bağlanmadıkça); personel
+   kendi işaretini bildirimdeki **Geri al** ile kaldırır.
 
 ## 2. Formüller
 
@@ -40,7 +42,8 @@ Bütün miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim); sayım birim
 | **En az** | günlük × teslim × (1 + pay). Eldeki bunun altındaysa satır **Az kaldı**: şimdi verilen sipariş gelmeden bitebilir |
 | **Hedef** | Elle yazılan; yoksa günlük × (teslim + sayım aralığı) × (1 + pay), sayım biriminde yukarı yuvarlı (KG ve LT 0,5'e, ADET ve DİLİM tama). Pay varsayılan %20. Satış verisi yoksa ya da kalem reçetede geçmiyorsa **Hedef yok**: elle yazılır |
 | **Eldeki** | En yeni sayım: hızlı sayım ya da bu / geçen ayın Stok sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Sayıldığı andaki sayım birimi çarpanıyla |
-| **Siparişte** | İptal edilmemiş, son 14 günde gönderilmiş ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra geldi (Geldi işareti ya da eşleşen faturanın günü) |
+| **Siparişte** | İptal edilmemiş, son 14 günde gönderilmiş ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra geldi (Geldi işareti ya da eşleşen faturanın günü). Kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır |
+| **Geldi'nin anı** | Dokunuş anı; ama siparişin kalemleri gönderildikten sonra sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa sayımın hemen öncesi: sayımdan sonra işaretlenen (Hızlı sayım'da Kaydet'ten sonra, Yoldaki siparişler'den, unutulup sonradan) mal büyük olasılıkla sayıldı, siparişte ikinci kez sayılmaz. Sayımın gününden sonra beklenen ya da sayımdan sonra gönderilen siparişte dokunuş anı (mal sayımdan sonra geldi, siparişte sayılır). Gecikip sayımdan sonra gelen mal bir sonraki sayıma kadar eksik sayılabilir |
 | **Gereken** | hedef − eldeki − siparişte |
 | **Önerilen** | gereken ÷ sipariş biriminin içeriği; küsur en az dörtte birse bir birim daha (5.000'lik bardak kolisi ancak gerçekten gerekince). Az kaldı ve gereken varken 0 çıktıysa 1. Gereken yoksa 0 |
 | **Sayım eski** | Son sayım 4 günden eskiyse satır "Sayım eski" der; öneri yine hesaplanır, ekranın başı sayım ister |
@@ -102,7 +105,10 @@ Teşekkürler.
   bunu söyler: telefon yoksa **Telefonu ekle** tedarikçinin sayfasına götürür (Düzenle'den yazılır), sabit hatta
   **Ara** düğmesi çıkar.
 - **Metni kopyala** kaydetmez; bildirimdeki **Gönderildi say** kaydeder (kanal "Kopyalandı"). Kaydedilemezse
-  bildirim **Yeniden dene** der; aynı istek kimliğiyle gider, çift dokunuş ikinci sipariş açmaz.
+  (sunucu reddetti ya da bağlantı yok) bildirim **Yeniden dene** der ve kendiliğinden kapanmaz (WhatsApp'tan dönünce
+  de durur); aynı istek kimliğiyle gider, çift dokunuş ya da yanıtı kaybolan istek ikinci sipariş açmaz.
+- Telefonda bağlantı yoksa hiçbir şey sessizce kaybolmaz: Hızlı sayım'da yazılanlar kutularda kalır ("Kaydedilemedi:
+  bağlantı yok gibi" · **Tekrar dene**), **Geldi** denen sipariş listeye geri döner.
 - Gönderilen siparişin bildirimindeki **Geri al** siparişi iptal eder.
 - Mesajda tutar yoktur; pencerede yönetici için son alış fiyatlarıyla yaklaşık tutar (KDV hariç) yazar.
 
@@ -118,7 +124,9 @@ Teşekkürler.
 | **Kapandı · not** | Kendiliğinden ("Faturayla tuttu", "45 günde fatura gelmedi") ya da elle (Kapat, not isteğe bağlı) |
 | **İptal** | İptal edildi (gönderim bildirimindeki Geri al ya da İptal); siparişte sayılmaz |
 
-Kapanan sipariş 30 gün içinde **Yeniden aç**ılabilir; karşılaştırma hemen yenilenir. Gönderilenler son 90 günü
+Kapanan sipariş 30 gün içinde **Yeniden aç**ılabilir; karşılaştırma hemen yenilenir ve sonraki eşitlemelerde de
+güncellenir, ama yeniden açılan sipariş hiçbir zaman kendiliğinden kapanmaz (ne "Faturayla tuttu" ne 45 gün): sahibi
+açtı, sahibi **Kapat** der (kapanış anı saklı kalır; `wasReopened`). Gönderilenler son 90 günü
 gösterir; süzgeçler Açık · Fark var · Kapanan · Tümü ve tedarikçi (kartındaki **Bu tedarikçinin siparişleri**, adres
 `?tedarikci=<tedarikçi sayfasının adresi>`).
 
@@ -147,8 +155,9 @@ eşitlemeyi bozmaz, eşitlemenin süresi içinde kalır (`src/server/reorder/mat
 - **Siparişte yoktu:** faturada bağlı ama sipariş edilmemiş hammadde. **Hammaddeye bağlı değil:** hiçbir hammaddeye
   bağlı olmayan ürün (nakliye gibi); kapanmayı engellemez.
 - **Kendiliğinden kapanır** ("Faturayla tuttu", kapatan "Sistem"): kalemler okundu, her sipariş kalemi Tamam, fiyat
-  farkı ve siparişte olmayan kalem yok. Yalnız karşılaştırma değişince denenir: elle yeniden açılan sipariş aynı
-  faturayla hemen yeniden kapanmaz.
+  farkı ve siparişte olmayan kalem yok. Yalnız karşılaştırma değişince denenir; yeniden açılan sipariş hiç kapanmaz
+  (§6). Karşılaştırma fatura kalemlerinin okunma sırasına bakmaz (eşitleme kalemleri her seferinde yeniden yazar):
+  sipariş satırları siparişin sırasıyla, faturadan gelenler ada göre.
 - **Toplu fatura:** kalemlerin çoğu siparişin en az 1,8 katıysa kart "birden çok siparişi kapsıyor olabilir" der.
   Gelen miktar siparişin yaklaşık tam katıysa (12 kat gibi) kart, ürün bağlantısının çarpanının yanlış olabileceğini
   söyler: çarpan Paraşüt entegrasyonu › Bağlı ürünler'de düzeltilir, karşılaştırma kendiliğinden yenilenir.
@@ -170,10 +179,10 @@ Genel bakış, sabah e-postası, Faturalar, Tutarlılık ve Stok sayımı deği�
 
 ## 9. Roller
 
-- **Personel:** Hızlı sayım (sayar, Geldi der ya da geri alır). Fiyat, tutar ve sipariş listesi görmez; sayım ekranı
-  ve yükleyicisi fiyat okumaz.
-- **Yönetici:** hepsi: Kalemler ve ayarlar, sipariş listesi ve gönderme, Gönderilenler (Kapat, Faturayı değiştir,
-  İptal, Yeniden aç).
+- **Personel:** Hızlı sayım (sayar, Geldi der; kendi işaretini bildirimdeki Geri al ile kaldırır). Fiyat, tutar ve
+  sipariş listesi görmez; sayım ekranı ve yükleyicisi fiyat okumaz.
+- **Yönetici:** hepsi: Kalemler ve ayarlar, sipariş listesi ve gönderme, Gönderilenler (Geldi ve Geldi'yi geri al,
+  Kapat, Faturayı değiştir, İptal, Yeniden aç).
 
 Her eylem olay kaydına düşer ("Hızlı sayım", "Mal siparişi gönderildi", "Mal siparişi geldi", "Teslim kontrolü", …).
 

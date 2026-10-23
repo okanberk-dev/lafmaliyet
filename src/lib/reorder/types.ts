@@ -144,6 +144,7 @@ export interface OrderLite {
   manualMatch: boolean;
   lines: ReorderLine[];
   check: DeliveryCheck | null;
+  /** Kapanış (ya da iptal) anı; yeniden açılan açık siparişte son kapanışı kalır (kendiliğinden kapanmaz: wasReopened) */
   closedAt: string | null;
   closedByName: string | null;
   closeNote: string | null;

@@ -142,8 +142,9 @@ export function latestOnHand(
 
 /**
  * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş:
- * hiç gelmedi ya da sayımdan sonra geldi ("Geldi" ya da eşleşen faturanın günü). Kalem sipariş biriminde × birimin
- * içeriği.
+ * hiç gelmedi ya da sayımdan sonra geldi ("Geldi" ya da eşleşen faturanın günü). Kapatılan ama "Geldi" denmemiş
+ * sipariş kapandığı anda gelmiş sayılır (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Kalem sipariş biriminde ×
+ * birimin içeriği.
  */
 export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, onHandAt: string | null, today: string): { base: number; orderIds: number[] } {
   const since = addDays(today, -IN_TRANSIT_DAYS);
@@ -152,13 +153,68 @@ export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, o
   const orderIds: number[] = [];
   for (const o of orders) {
     if (o.status === "cancelled" || o.sentDay < since) continue;
-    if (o.receivedAt && countAt !== null && Date.parse(o.receivedAt) <= countAt) continue;
+    const arrived = o.receivedAt ?? (o.status === "closed" ? o.closedAt : null);
+    if (arrived && countAt !== null && Date.parse(arrived) <= countAt) continue;
     const mine = o.lines.filter((l) => l.ingredientId === ingredientId);
     if (!mine.length) continue;
     base += mine.reduce((a, l) => a + l.qty * l.unitSize, 0);
     orderIds.push(o.id);
   }
   return { base, orderIds };
+}
+
+/**
+ * "Geldi"nin yazılan anı (malın geldiği an; dokunuş anı onun üst sınırı). Siparişin kalemleri gönderildikten sonra
+ * sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa, sayımdan sonra dokunulan Geldi (Hızlı sayım'da
+ * Kaydet'ten sonra, sipariş listesinde Yoldaki siparişler'den, unutulup sonradan) büyük olasılıkla sayılmış bir mal
+ * içindir: an sayımın hemen öncesi olur ve mal "siparişte" ikinci kez sayılmaz. Öteki durumlarda (sayımdan sonra
+ * gönderilen ya da sayımdan sonra gelmesi beklenen sipariş) dokunuş anı: mal sayımdan sonra geldi, siparişte sayılır.
+ * `lastCount`: siparişin kalemlerinin en yeni sayımı (hızlı sayım ya da ay sonu), anı ve iş günü.
+ */
+export function receivedAtFor(order: { sentAt: string; expectedOn: string }, lastCount: { at: string; day: string } | null, now: Date): Date {
+  if (!lastCount) return now;
+  const sent = Date.parse(order.sentAt);
+  const at = Date.parse(lastCount.at);
+  if (at > sent && at <= now.getTime() && order.expectedOn <= lastCount.day) return new Date(Math.max(sent, at - 1000));
+  return now;
+}
+
+/**
+ * Sayım miktarı 3 basamağa yuvarlı: kutu en çok 3 basamak gösterir (countText), kaydedilen de o olur (1,2345 yazılırsa
+ * 1,234 ya da 1,235); yoksa kayıttan sonra kutudaki değer kayıtla tutmaz, satır "başkası kaydetti" sanılırdı.
+ */
+export function countQty(v: number | null): number | null {
+  return v === null ? null : Math.round(v * 1000) / 1000;
+}
+
+/** Hızlı sayımın formdaki miktarı: kayıt, bugünkü sayım birimine çevrilip 3 basamağa yuvarlanmış (kutudaki yazım gibi) */
+export function shownCount(row: { qty: number; factor: number } | null, countFactor: number): number | null {
+  if (!row) return null;
+  return countQty((row.qty * row.factor) / (countFactor > 0 ? countFactor : 1));
+}
+
+/**
+ * Hızlı sayımda "başkası kaydetti" denetimi (Stok sayımı'ndaki kural): kişinin formu açtığında gördüğü miktar (`base`,
+ * formdaki biçimde) şimdiki kayda uymuyorsa ve kayıt zaten kaydedilmek istenen değer değilse çakışma. Kayıt formdaki
+ * biçime çevrilerek karşılaştırılır: 1,2345 yazılan ya da aynı gün sayım birimi değişen kalem her kayıtta çakışma
+ * sanılmaz. `base` gönderilmeyen satır denetlenmez. Çakışan kalemlerin kimlikleri döner.
+ */
+export function quickCountConflicts(
+  entries: readonly { ingredientId: number; qty: number | null; base?: number | null }[],
+  current: ReadonlyMap<number, { qty: number; factor: number }>,
+  countFactorOf: (ingredientId: number) => number,
+): number[] {
+  return entries
+    .filter((e) => {
+      if (e.base === undefined) return false;
+      const cur = current.get(e.ingredientId) ?? null;
+      const f = countFactorOf(e.ingredientId);
+      if (shownCount(cur, f) === countQty(e.base)) return false;
+      // Kayıt zaten bu değer (yanıtı kaybolan isteğin yenilenmesi): kaydedildiği gibi (3 basamak), kendi biriminde
+      if (cur === null || e.qty === null) return !(cur === null && e.qty === null);
+      return Math.abs(cur.qty * cur.factor - countQty(e.qty)! * (f > 0 ? f : 1)) > 1e-6;
+    })
+    .map((e) => e.ingredientId);
 }
 
 // ---------------------------------------------------------------- Varsayılanlar (D5, D6)

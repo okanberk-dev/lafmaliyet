@@ -376,7 +376,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             <Path href="/panel/mal-siparisi" /> ekranı her tedarikçi için ne kadar sipariş edileceğini hazırlar (hedef − eldeki − siparişte, koli ya da pakete
             yuvarlanmış); miktarı değiştirip WhatsApp ile gönder&apos;e dokunun. Mesaj tedarikçinin kartındaki cep telefonuna hazır açılır; telefon yoksa ya da sabit
             hatsa WhatsApp&apos;ta kişiyi siz seçersiniz. Gönderilen sipariş kaydedilir ve gelene kadar siparişte sayılır; mal gelince personel Hızlı sayım ekranında Geldi&apos;ye
-            dokunur.
+            dokunur. Yanlışlıkla denen Geldi&apos;yi <Path href="/panel/mal-siparisi/gonderilen" /> ekranında geri alırsınız.
           </>
         ),
         icon: ShoppingBasket,

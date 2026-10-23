@@ -1257,7 +1257,10 @@ export const supplierOrders = pgTable(
     /** Beklenen teslim günü (YYYY-MM-DD): gönderim günü + kalemlerin en uzun teslim süresi */
     expectedOn: text("expected_on").notNull(),
     status: text("status", { enum: ["open", "closed", "cancelled"] }).notNull().default("open"),
-    /** Mal geldi: elle "Geldi" ya da eşleşen faturanın günü; sayımdan sonra gelen sipariş listede "siparişte" sayılır */
+    /**
+     * Mal geldi: elle "Geldi" (dokunuş anı; sayımın gününe kadar beklenen sipariş sayımdan sonra işaretlendiyse sayımın
+     * hemen öncesi) ya da eşleşen faturanın günü; sayımdan sonra gelen sipariş listede "siparişte" sayılır
+     */
     receivedAt: timestamp("received_at", { withTimezone: true }),
     receivedBy: integer("received_by").references(() => users.id, { onDelete: "set null" }),
     receivedByName: text("received_by_name"),
@@ -1268,6 +1271,7 @@ export const supplierOrders = pgTable(
     /** Faturayla karşılaştırmanın sonucu (src/lib/reorder/delivery.ts) */
     deliveryCheck: jsonb("delivery_check").$type<DeliveryCheck>(),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
+    /** Kapanış (iptal) anı; yeniden açılan siparişte son kapanış kalır: eşitleme onu kendiliğinden kapatmaz */
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedByName: text("closed_by_name"),
     closeNote: text("close_note"),

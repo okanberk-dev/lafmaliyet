@@ -21,6 +21,7 @@ import { countStep, dailyOutcome } from "../src/lib/job-health";
 import {
   countOverdue,
   countPushDue,
+  countQty,
   coverDays,
   defaultOrderUnit,
   inheritLeadDays,
@@ -31,15 +32,18 @@ import {
   packsFor,
   planGroups,
   planLine,
+  quickCountConflicts,
   readySuppliers,
+  receivedAtFor,
   referencePrice,
   roundCount,
+  shownCount,
   suggestedLevels,
   suggestTracked,
   trWeekday,
   type PlanItem,
 } from "../src/lib/reorder/levels";
-import { countAmount, dayName, mobileE164, orderLink, orderMessage, qtyLabel } from "../src/lib/reorder/message";
+import { countAmount, dayName, mobileE164, orderLink, orderMessage, qtyLabel, restLabel } from "../src/lib/reorder/message";
 import { DEFAULT_REORDER, parseReorderSettings, type OrderLite, type ReorderDayFacts, type ReorderLine } from "../src/lib/reorder/types";
 import { DAYS_PER_MONTH, monthlyUsage } from "../src/lib/reorder/usage";
 import { canOpen, ROLE_PERMISSIONS, STAFF_PATHS } from "../src/lib/roles";
@@ -206,6 +210,88 @@ test("siparişte (D3): iptal olmayan, son 14 gün, sayımda olmayan (gelmedi ya 
   assert.equal(onOrderFor([order({ invoiceId: 9, receivedAt: "2026-10-24T09:00:00.000Z", status: "closed" })], MILK.id, countAt, today).base, 0);
   assert.equal(onOrderFor([order()], COFFEE.id, countAt, today).base, 0, "başka kalem");
   assert.deepEqual(onOrderFor([order({ id: 4 }), order({ id: 5, lines: [line({ qty: 1 })] })], MILK.id, countAt, today), { base: 36000, orderIds: [4, 5] });
+});
+
+test("siparişte: kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır (14 gün beklemez)", () => {
+  const countAt = "2026-10-26T07:30:00.000Z";
+  const today = "2026-10-26";
+  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, countAt, today).base, 0, "sayımdan önce kapandı");
+  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, countAt, today).base, 24000, "sayımdan sonra kapandı");
+  // Geldi denmişse onun anı (kapanış değil)
+  assert.equal(onOrderFor([order({ status: "closed", receivedAt: "2026-10-24T09:00:00.000Z", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, countAt, today).base, 0);
+  // Yeniden açılan (açık, kapanış anı dolu) gelmemiş sipariş siparişte
+  assert.equal(onOrderFor([order({ closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, countAt, today).base, 24000);
+});
+
+test("Geldi'nin anı: sayımın gününe kadar beklenen sipariş sayımdan sonra işaretlenince sayımın öncesi; liste ikinci kez saymaz", () => {
+  // Ispaş: 19.10 gönderildi, 21.10 bekleniyordu; hızlı sayım 24.10 00:54 (iş günü 23.10), Geldi 12 dakika sonra
+  const ispas = { sentAt: "2026-10-18T21:59:15.146Z", expectedOn: "2026-10-21" };
+  const count = { at: "2026-10-23T21:54:58.950Z", day: "2026-10-23" };
+  const tap = new Date("2026-10-23T22:06:01.593Z");
+  const at = receivedAtFor(ispas, count, tap);
+  assert.equal(at.toISOString(), "2026-10-23T21:54:57.950Z", "sayımdan bir saniye önce");
+  // Vanilya dondurma (1 paket = 5,5 L): eldeki 2 LT, hedef 4,5 LT
+  const sent = order({ id: 4, supplier: "Ispaş", supplierKey: "ispaş", sentAt: ispas.sentAt, sentDay: "2026-10-19", expectedOn: ispas.expectedOn, lines: [line({ qty: 1, unit: "paket", unitSize: 5500 })] });
+  const today = "2026-10-24";
+  const plan = (receivedAt: string) => {
+    const onOrder = onOrderFor([{ ...sent, receivedAt }], MILK.id, count.at, today).base;
+    const onHand = { base: 2000, at: count.at, day: count.day, source: "hizli" as const, by: "Ayşe" };
+    return planLine(item({ supplierKey: "ispaş", supplierName: "Ispaş", parBase: 4500, perDay: null, onHand, onOrder, orderUnit: "paket", orderUnitSize: 5500 }), S, tap);
+  };
+  // Dokunuş anı yazılsaydı: "Yeterli · siparişte 5,5 LT", öneri yok
+  assert.equal(plan(tap.toISOString()).onOrder, 5500);
+  assert.equal(plan(tap.toISOString()).packs, 0);
+  // Sayımın öncesi: gereken 2,5 LT → 1 paket
+  assert.equal(plan(at.toISOString()).onOrder, 0);
+  assert.equal(plan(at.toISOString()).packs, 1);
+  // Sayımın günü beklenen de sayılmış sayılır
+  assert.equal(receivedAtFor({ ...ispas, expectedOn: "2026-10-23" }, count, tap).toISOString(), "2026-10-23T21:54:57.950Z");
+  // Sayımdan sonra gelmesi beklenen: dokunuş anı (sayımdan sonra geldi, siparişte sayılır)
+  assert.equal(receivedAtFor({ ...ispas, expectedOn: "2026-10-24" }, count, tap), tap);
+  // Sayımdan sonra gönderilen: dokunuş anı
+  assert.equal(receivedAtFor({ sentAt: "2026-10-23T22:00:00.000Z", expectedOn: "2026-10-23" }, count, tap), tap);
+  // Hiç sayılmamış, saat kayması (sayım gelecekte)
+  assert.equal(receivedAtFor(ispas, null, tap), tap);
+  assert.equal(receivedAtFor(ispas, { at: "2026-10-23T22:10:00.000Z", day: "2026-10-23" }, tap), tap);
+  // Gönderimden hemen sonraki sayım: gönderimden önceye yazılmaz
+  assert.equal(receivedAtFor({ sentAt: "2026-10-23T21:54:58.500Z", expectedOn: "2026-10-23" }, count, tap).toISOString(), "2026-10-23T21:54:58.500Z");
+});
+
+test("hızlı sayım çakışması: kayıt formdaki biçimle karşılaştırılır (1,2345 ya da aynı gün değişen sayım birimi çakışma değil)", () => {
+  // 1: Su (ADET), 1,2345 kaydedilmiş; 2: önce KG sayılmış, sonra sayım birimi ADET yapılmış; 3: Süt (LT)
+  const factorOf = (id: number) => (id === 3 ? 1000 : 1);
+  const current = new Map([
+    [1, { qty: 1.2345, factor: 1 }],
+    [2, { qty: 2, factor: 1000 }],
+    [3, { qty: 3, factor: 1000 }],
+  ]);
+  const shown = (id: number) => shownCount(current.get(id) ?? null, factorOf(id));
+  assert.equal(shownCount({ qty: 2, factor: 1000 }, 1), 2000);
+  assert.equal(shownCount(null, 1000), null);
+  // Formda görülen değerle yeniden kaydetme ya da silme: çakışma yok
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 1, qty: 2, base: shown(1) }], current, factorOf), []);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 1, qty: null, base: shown(1) }], current, factorOf), []);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 2, qty: 2500, base: 2000 }], current, factorOf), []);
+  // Başkası 3 LT kaydetmiş, kişi 2'yi görmüştü
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 3, qty: 4, base: 2 }], current, factorOf), [3]);
+  // Yanıtı kaybolan kendi kaydı (3 zaten yazılı): yenilemek çakışma değil
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 3, qty: 3, base: 2 }], current, factorOf), []);
+  // Kişi boş görmüştü, başkası yazdı
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 3, qty: 5, base: null }], current, factorOf), [3]);
+  // Başkası sildi
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 4, qty: 4, base: 2 }], current, factorOf), [4]);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 4, qty: null, base: 2 }], current, factorOf), []);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 4, qty: 4, base: null }], current, factorOf), []);
+  // base gönderilmeyen satır denetlenmez
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 3, qty: 9 }], current, factorOf), []);
+  // Kayıt 3 basamakla yazılır (countQty): 1,2345 yazılıp kaydedildiyse aynı isteğin yenilenmesi çakışma değil
+  assert.equal(countQty(2.5), 2.5);
+  assert.equal(countQty(0.0004), 0);
+  assert.equal(countQty(null), null);
+  assert.ok([1.234, 1.235].includes(countQty(1.2345)!), "en çok 3 basamak");
+  const saved = new Map([[5, { qty: countQty(1.2345)!, factor: 1 }]]);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 5, qty: 1.2345, base: null }], saved, () => 1), []);
+  assert.deepEqual(quickCountConflicts([{ ingredientId: 5, qty: 2, base: shownCount(saved.get(5)!, 1) }], saved, () => 1), []);
 });
 
 test("varsayılan sipariş birimi (son fatura kalemi ya da paket) ve teslim süresi (tedarikçinin en çok yazılanı)", () => {
@@ -388,6 +474,14 @@ test("WhatsApp bağlantısı: cep numarası doğrudan; numara yoksa ya da sabit 
   assert.deepEqual(orderLink("0212 123 45 67", "Merhaba"), { href: "https://wa.me/?text=Merhaba", target: "sec", reason: "sabit" });
   assert.equal(mobileE164("0532 123 45 67"), "+905321234567");
   assert.equal(mobileE164("0212 123 45 67"), null);
+});
+
+test("önerisi olmayan kalemlerin başlığı: sayılmayan ve hedefi olmayan 'yeterli' diye sayılmaz", () => {
+  assert.equal(restLabel(["yeterli", "yeterli"]), "Yeterli olanlar (2)");
+  // Tek kalemi sayılmamış tedarikçi: "Yeterli olanlar (1)" değil
+  assert.equal(restLabel(["sayilmadi"]), "Sayılmayanlar (1)");
+  assert.equal(restLabel(["hedef-yok", "yeterli", "sayilmadi", "yeterli"]), "Yeterli olanlar (2) · Sayılmayanlar (1) · Hedefi olmayanlar (1)");
+  assert.equal(restLabel([]), "");
 });
 
 // ---------------------------------------------------------------- Aylık kullanım (Excel verisi)

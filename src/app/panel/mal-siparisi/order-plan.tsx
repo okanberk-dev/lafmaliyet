@@ -13,7 +13,7 @@ import { Field, NumberInput, Textarea } from "@/components/ui/form";
 import { EmptyState, InfoTip } from "@/components/ui/misc";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, num, tl } from "@/lib/format";
-import { countAmount, dayName, orderLink, orderMessage } from "@/lib/reorder/message";
+import { countAmount, dayName, orderLink, orderMessage, restLabel } from "@/lib/reorder/message";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { cancelOrder, markOrderReceived, recordOrderSent } from "@/server/actions/reorder";
@@ -61,20 +61,27 @@ export function OrderPlanClient({ view }: { view: OrderPlanView }) {
     orderMessage({ signature: view.signature, lines: chosenOf(g).map((l) => ({ orderName: l.orderName, qty: qtyOf(l), unit: l.unit })), note });
 
   async function record(g: PlanGroupView, p: Payload) {
-    const res = await recordOrderSent({ ...p, supplierKey: g.key! });
-    if (!res.ok) {
-      return void toast.error(res.error, { action: { label: "Yeniden dene", onClick: () => void record(g, p) } });
+    // Bağlantı yoksa istek reddedilir (yanıt gelmez): mesaj WhatsApp'ta açılmış olabilir, kayıt kaybolmasın
+    const res = await recordOrderSent({ ...p, supplierKey: g.key! }).catch(() => null);
+    if (!res?.ok) {
+      // Aynı istek kimliğiyle yeniden: ilk istek kaydettiyse ikinci sipariş açılmaz. Bildirim kendiliğinden kapanmaz
+      // (WhatsApp'tan dönünce de dursun); ✕ ile kapanır
+      return void toast.error(res ? res.error : `${g.name} siparişi kaydedilemedi: bağlantı yok gibi`, {
+        description: res ? undefined : "Mesajı gönderdiyseniz bağlantı gelince yeniden deneyin; sipariş iki kez kaydedilmez.",
+        duration: Infinity,
+        action: { label: "Yeniden dene", onClick: () => void record(g, p) },
+      });
     }
+    const cancel = async () => {
+      const r = await cancelOrder(res.data.id).catch(() => null);
+      if (!r) return void toast.error("İptal edilemedi: bağlantı yok gibi", { duration: 15_000, action: { label: "Tekrar dene", onClick: () => void cancel() } });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success("Mal siparişi iptal edildi");
+    };
     toast.success(`${g.name} siparişi kaydedildi`, {
       description: "Fatura gelince teslim kontrolü yapılır.",
-      action: {
-        label: "Geri al",
-        onClick: async () => {
-          const r = await cancelOrder(res.data.id);
-          if (!r.ok) return void toast.error(r.error);
-          toast.success("Mal siparişi iptal edildi");
-        },
-      },
+      duration: 10_000,
+      action: { label: "Geri al", onClick: () => void cancel() },
     });
   }
 
@@ -102,19 +109,13 @@ export function OrderPlanClient({ view }: { view: OrderPlanView }) {
     });
   }
 
-  async function arrived(id: number, supplier: string) {
-    const res = await markOrderReceived({ id, received: true });
+  /** Geldi ya da geri alma (Yoldaki siparişler); bağlantı yoksa söyler, yeniden denenir */
+  async function markReceived(id: number, supplier: string, received: boolean) {
+    const res = await markOrderReceived({ id, received }).catch(() => null);
+    if (!res) return void toast.error("Kaydedilemedi: bağlantı yok gibi", { duration: 15_000, action: { label: "Tekrar dene", onClick: () => void markReceived(id, supplier, received) } });
     if (!res.ok) return void toast.error(res.error);
-    toast.success(`${supplier} siparişi geldi`, {
-      action: {
-        label: "Geri al",
-        onClick: async () => {
-          const r = await markOrderReceived({ id, received: false });
-          if (!r.ok) return void toast.error(r.error);
-          toast.success("Geldi işareti kaldırıldı");
-        },
-      },
-    });
+    if (!received) return void toast.success("Geldi işareti kaldırıldı");
+    toast.success(`${supplier} siparişi geldi`, { duration: 10_000, action: { label: "Geri al", onClick: () => void markReceived(id, supplier, false) } });
   }
 
   if (!view.total) {
@@ -162,8 +163,14 @@ export function OrderPlanClient({ view }: { view: OrderPlanView }) {
                   <span className="text-ink-mute"> · {o.state.label}</span>
                 </p>
                 {!o.received && !o.hasInvoice ? (
-                  <Button variant="secondary" size="sm" onClick={() => void arrived(o.id, o.supplier)} className="text-ink">
+                  <Button variant="secondary" size="sm" onClick={() => void markReceived(o.id, o.supplier, true)} className="text-ink">
                     Geldi
+                  </Button>
+                ) : null}
+                {/* Yanlış dokunulan Geldi bildirim kapandıktan sonra da geri alınır (faturası bağlanmadıysa) */}
+                {o.received && !o.hasInvoice ? (
+                  <Button variant="ghost" size="sm" onClick={() => void markReceived(o.id, o.supplier, false)} aria-label={`${o.supplier} siparişinin Geldi işaretini geri al`}>
+                    Geldi&apos;yi geri al
                   </Button>
                 ) : null}
               </li>
@@ -268,7 +275,7 @@ function SupplierCard({
             <span className="mr-2 inline-block transition-transform group-open:rotate-90" aria-hidden="true">
               ›
             </span>
-            Yeterli olanlar ({num(enough.length)}){restNote(enough)}
+            {restLabel(enough.map((l) => l.status))}
           </summary>
           <ul className="divide-y divide-line border-t border-line">{enough.map(row)}</ul>
         </details>
@@ -288,13 +295,6 @@ function SupplierCard({
       ) : null}
     </Card>
   );
-}
-
-/** "Yeterli olanlar"ın altındaki sayılmamış ve hedefsiz kalemler: " · 1 sayılmadı · 1 hedef yok" (yeterli sanılmasın) */
-function restNote(lines: PlanLineView[]): string {
-  const uncounted = lines.filter((l) => l.status === "sayilmadi").length;
-  const noTarget = lines.filter((l) => l.status === "hedef-yok").length;
-  return `${uncounted ? ` · ${num(uncounted)} sayılmadı` : ""}${noTarget ? ` · ${num(noTarget)} hedef yok` : ""}`;
 }
 
 /** Kalem satırı: ad ve rozetler, eldeki / hedef / siparişte, az kaldıysa en az; sağda miktar */

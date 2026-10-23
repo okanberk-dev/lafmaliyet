@@ -3,7 +3,7 @@
 import { ClipboardPen, PackageCheck, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { NumberInput } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTR, num } from "@/lib/format";
+import { countQty } from "@/lib/reorder/levels";
 import { qtyLabel } from "@/lib/reorder/message";
 import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,9 @@ function focusNext(e: KeyboardEvent<HTMLInputElement>) {
 
 const savedValues = (items: QuickCountItem[]) => Object.fromEntries(items.map((i) => [i.id, i.today ? countText(i.today.qty) : ""])) as Record<number, string>;
 
+/** Kutudaki miktar, kaydedileceği gibi 3 basamağa yuvarlı (kayıttan sonra kutu kayıtla tutsun) */
+const readBox = (raw: string, unit: string) => countQty(parseCount(raw, unit, parseNumberTR));
+
 /**
  * Hızlı sayım formu (docs/MAL-SIPARISI.md): kalemler sayım gruplarında (Stok sayımı'nın raf sırası), kutu sayım
  * biriminde. Önce gelen siparişler "Geldi" işaretlenir (işaretlenmezse sipariş listesinde ikinci kez sayılır). Kayıt
@@ -55,7 +59,7 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
   const [synced, setSynced] = useState(sheet);
   if (synced !== sheet) {
     const byId = (s: QuickCountSheet) => new Map(s.groups.flatMap((g) => g.items.map((i) => [i.id, i.today?.qty ?? null] as const)));
-    const merged = mergeCounts(values, byId(synced), byId(sheet), (id, raw) => parseCount(raw, all.find((i) => i.id === id)?.countUnit ?? "", parseNumberTR));
+    const merged = mergeCounts(values, byId(synced), byId(sheet), (id, raw) => readBox(raw, all.find((i) => i.id === id)?.countUnit ?? ""));
     setSynced(sheet);
     setValues(merged.values);
     setConflicts(new Set(merged.conflicts));
@@ -66,7 +70,7 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
   /** "Geldi" denen siparişler (sunucu yanıtı gelene kadar listeden kalkar) */
   const [arrived, setArrived] = useState<ReadonlySet<number>>(() => new Set());
 
-  const qtyOf = (i: QuickCountItem) => parseCount(values[i.id] ?? "", i.countUnit, parseNumberTR);
+  const qtyOf = (i: QuickCountItem) => readBox(values[i.id] ?? "", i.countUnit);
   const savedQty = (i: QuickCountItem) => i.today?.qty ?? null;
   const invalid = all.filter((i) => (values[i.id] ?? "").trim() !== "" && (qtyOf(i) === null || (qtyOf(i) ?? 0) < 0));
   const changed = all.filter((i) => !invalid.includes(i) && qtyOf(i) !== savedQty(i));
@@ -75,43 +79,57 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
   const due = sheet.due.filter((o) => !arrived.has(o.id));
 
   async function save() {
+    if (busy) return;
     if (invalid.length) return void toast.error(`${invalid[0].name}: miktarı sayıyla yazın (ör. 2,5)`);
     if (!changed.length) return;
     setBusy(true);
-    const res = await saveQuickCounts(changed.map((i) => ({ ingredientId: i.id, qty: qtyOf(i), base: savedQty(i) })));
-    setBusy(false);
-    if (!res.ok) return void toast.error(res.error);
-    setSyncingFor(sheet);
-    const { saved, removed } = res.data;
-    const title = saved ? `${num(saved)} kalem kaydedildi` : `Bugünkü ${num(removed)} sayım silindi`;
-    if (admin) toast.success(title, { action: { label: "Sipariş listesi", onClick: () => router.push("/panel/mal-siparisi") } });
-    else toast.success(title, { description: "Teşekkürler; sipariş listesi yöneticide hazır." });
+    try {
+      const res = await saveQuickCounts(changed.map((i) => ({ ingredientId: i.id, qty: qtyOf(i), base: savedQty(i) })));
+      if (!res.ok) return void toast.error(res.error);
+      setSyncingFor(sheet);
+      const { saved, removed } = res.data;
+      const title = saved ? `${num(saved)} kalem kaydedildi` : `Bugünkü ${num(removed)} sayım silindi`;
+      if (admin) toast.success(title, { action: { label: "Sipariş listesi", onClick: () => router.push("/panel/mal-siparisi") } });
+      else toast.success(title, { description: "Teşekkürler; sipariş listesi yöneticide hazır." });
+    } catch {
+      // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar kutularda duruyor (Stok sayımı ile aynı)
+      toast.error("Kaydedilemedi: bağlantı yok gibi", {
+        description: "Yazdıklarınız ekranda duruyor. Bağlantı gelince yeniden deneyin.",
+        duration: 15_000,
+        action: { label: "Tekrar dene", onClick: () => void saveRef.current() },
+      });
+    } finally {
+      setBusy(false);
+    }
   }
+  // "Tekrar dene" o anki kutularla kaydetsin
+  const saveRef = useRef(save);
+  useEffect(() => {
+    saveRef.current = save;
+  });
 
   async function markArrived(o: QuickCountSheet["due"][number]) {
     setArrived((s) => new Set(s).add(o.id));
-    const res = await markOrderReceived({ id: o.id, received: true });
     const unhide = () =>
       setArrived((s) => {
         const next = new Set(s);
         next.delete(o.id);
         return next;
       });
-    if (!res.ok) {
+    // Bağlantı yoksa satır geri gelir: mal "geldi" sanılıp sipariş listesinde yanlış sayılmasın
+    const res = await markOrderReceived({ id: o.id, received: true }).catch(() => null);
+    if (!res?.ok) {
       unhide();
-      return void toast.error(res.error);
+      return void toast.error(res ? res.error : "Kaydedilemedi: bağlantı yok gibi", res ? undefined : { description: "Bağlantı gelince yeniden “Geldi”ye dokunun." });
     }
-    toast.success(`${o.supplier} siparişi geldi`, {
-      action: {
-        label: "Geri al",
-        onClick: async () => {
-          const r = await markOrderReceived({ id: o.id, received: false });
-          if (!r.ok) return void toast.error(r.error);
-          unhide();
-          toast.success("Geldi işareti kaldırıldı");
-        },
-      },
-    });
+    const undo = async () => {
+      const r = await markOrderReceived({ id: o.id, received: false }).catch(() => null);
+      if (!r) return void toast.error("Geri alınamadı: bağlantı yok gibi", { duration: 15_000, action: { label: "Tekrar dene", onClick: () => void undo() } });
+      if (!r.ok) return void toast.error(r.error);
+      unhide();
+      toast.success("Geldi işareti kaldırıldı");
+    };
+    toast.success(`${o.supplier} siparişi geldi`, { duration: 10_000, action: { label: "Geri al", onClick: () => void undo() } });
   }
 
   if (!sheet.total) {
