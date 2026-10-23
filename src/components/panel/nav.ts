@@ -14,9 +14,11 @@ import {
   FileText,
   Gift,
   Globe,
+  Grid3x3,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
+  ListChecks,
   ListTodo,
   MicVocal,
   Package,
@@ -91,7 +93,22 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
       },
       { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
+      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
+      {
+        href: "/panel/karaoke/doluluk",
+        label: "Karaoke doluluğu",
+        icon: Grid3x3,
+        roles: ["admin"],
+        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
+      },
       { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
+      {
+        href: "/panel/kontrol",
+        label: "Kontrol listeleri",
+        icon: ListChecks,
+        roles: ["admin", "staff"],
+        keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
+      },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
@@ -189,6 +206,8 @@ export const NAV_TREE: NavNode[] = [
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
   // Personelde üst düzeyde; yönetici Satış & gider altında görür (aynı ekran)
   { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
+  // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); iki rolde de üst düzeyde
+  { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["admin", "staff"] },
   {
     id: "menu",
     label: "Menü",
@@ -354,6 +373,9 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kullanicilar": "Kullanıcılar",
   "/panel/parasut": "Paraşüt",
   "/panel/onaylar": "Reçete onayları",
+  "/panel/kontrol/gecmis": "Kontrol geçmişi",
+  "/panel/kontrol/duzenle": "Listeleri düzenle",
+  "/panel/karaoke/doluluk": "Doluluk",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

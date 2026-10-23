@@ -9,10 +9,12 @@ import {
   CupSoda,
   FileText,
   Globe,
+  Grid3x3,
   HardDriveDownload,
   Info,
   LayoutList,
   Lightbulb,
+  ListChecks,
   ListTodo,
   Package,
   Palette,
@@ -387,6 +389,24 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ],
       },
       {
+        id: "kontrol",
+        q: "Açılış ve kapanış listeleri",
+        a: (
+          <>
+            Personel sabah açılışta ve gece kapanışta listeyi telefondan <Path href="/panel/kontrol" /> ekranında doldurur: maddeyi işaretler, buzdolabı
+            sıcaklığını yazar, istenen yerde fotoğraf çeker. Her dokunuş hemen kaydedilir; geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Sıcaklık aralık
+            dışındaysa not ister ve size bildirilir. Listeler Bugün ekranında görünür; yapılmayan liste ertesi sabah e-postada çıkar. Maddeleri ve saatleri
+            Kontrol listeleri › Listeler&apos;den, geçmişi Kontrol listeleri › Geçmiş&apos;ten görürsünüz. Fotoğraflar 60 gün saklanır.
+          </>
+        ),
+        icon: ListChecks,
+        links: [
+          { href: "/panel/kontrol", label: "Kontrol listeleri" },
+          { href: "/panel/kontrol/gecmis", label: "Geçmiş" },
+          { href: "/panel/kontrol/duzenle", label: "Listeler" },
+        ],
+      },
+      {
         id: "tedarikci",
         q: "Tedarikçinin bilgileri ve ödemesi",
         a: (
@@ -582,6 +602,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         icon: HardDriveDownload,
         links: [{ href: "/panel/ayarlar#yedek", label: "Yedek" }],
       },
+      {
+        id: "karaoke-doluluk",
+        q: "Karaoke odası ne zaman boş?",
+        a: (
+          <>
+            Karaoke doluluğu ekranı (<Path href="/panel/karaoke" /> › Bu ay › Doluluk haritası) odanın hangi gün ve saatte dolu olduğunu gösterir: son 4 hafta,
+            son 12 hafta ya da bir ay. Hücreye dokununca o saatin ayrıntısı çıkar; üstte doluluk, saat başına gelir, uzatma, son dakika iptal ve rezervasyonların
+            kaç gün önceden yapıldığı, altta ay ay karşılaştırma var. Doluluk oda saatlerine göre hesaplanır (ekranın altındaki Oda saatleri; başta her gün
+            10:00–22:00). İlk kullanımda Geçmişi siteden al ile laffogato.net&apos;teki eski rezervasyonları alın (ad ve not alınmaz); rezervasyonsuz gruplar
+            yalnız bar ekranındaki hızlı sayaçla sayılır. Yalnız yönetici görür.
+          </>
+        ),
+        icon: Grid3x3,
+        links: [{ href: "/panel/karaoke/doluluk", label: "Karaoke doluluğu" }],
+      },
     ],
   },
   {
@@ -592,10 +627,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Bugün ekranında ne var?",
         a: (
           <>
-            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
+            <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, açılış ve kapanış listeleri, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
             faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı ve hatırlatıcılarınız. Her satır ilgili ekranı açar;
             sıradaki iş siyah çerçeveyle öne çıkar, biten işler Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini (kasa
-            raporu, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
+            raporu, kontrol listeleri, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
           </>
         ),
         icon: ListTodo,
@@ -631,7 +666,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Sol üstte L&apos;Affogato adının yanındaki zil (telefonda üst çubukta) bildirimleri başlıklar altında toplar, örneğin{" "}
-            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
+            <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları), <strong className="font-semibold text-ink">Kontrol listeleri</strong>{" "}
+            (geciken ve dünden eksik listeler, aralık dışı değerler), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
             faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
             satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah

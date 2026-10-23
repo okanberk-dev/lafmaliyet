@@ -4,6 +4,7 @@
 // personel için hiç yüklenmez. Satırların kuralları ve yeni satır ekleme: docs/BUGUN.md. Testler: tests/bugun.test.ts.
 
 import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
+import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
@@ -18,11 +19,14 @@ import { COUNT_GRACE_DAYS } from "../sayim/logic";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
- * `liste-dun` ve `liste-{templateId}`, komisyon `komisyon`, siparis `hizli-sayim` ve `mal-siparisi`.
+ * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`, siparis `hizli-sayim` ve `mal-siparisi`.
  */
 export type DayTaskKey =
   | "isler"
   | "kasa-dun"
+  | "liste-dun"
+  | `liste-${number}`
+  | "liste"
   | "odeme"
   | "fatura"
   | "urun"
@@ -100,6 +104,11 @@ export interface DayFacts {
   prices?: { detail: string; href: string; count: number } | null;
   /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı */
   pos?: { count: number; oldest: string | null } | null;
+  /** Dünün (iş günü) kontrol listeleri: tamamlanmayan ve sorunlu olan (docs/KONTROL-LISTELERI.md) */
+  checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;
+  // ---- İkisi (kontrol listeleri)
+  /** Bugünün (iş günü) kontrol listeleri; personelde yalnız personelin doldurabildikleri. null: okunamadı */
+  checklists?: { day: string; lists: ChecklistLite[] } | null;
 }
 
 /** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
@@ -329,6 +338,77 @@ const countMonthEnd: Row = (f, c) => {
   return { ...base, status: "done", detail: `${num(s.total)} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
 };
 
+// ---------------------------------------------------------------- Kontrol listeleri (ikisi)
+
+/** Bugünün listesinin satırı (docs/BUGUN.md › Kontrol listeleri): aralıktan önce sonra, aralıkta yapılacak, son saatten sonra gecikti */
+function listRow(f: DayFacts, day: string, l: ChecklistLite, nowBm: number): DayTask {
+  const admin = f.role === "admin";
+  const run = l.run;
+  const base = { key: `liste-${l.templateId}` as const, title: listTitle(l.name), href: `/panel/kontrol/${l.templateId}` };
+  const state = listState(l, nowBm, false);
+  const started = isStarted(l);
+  const progress = run ? `${num(run.done)} / ${num(run.required)}` : `0 / ${num(l.required)}`;
+  if (state === "done" && run) {
+    const who = [whoText(run.contributors), run.completedAt ? timeTR(run.completedAt) : null].filter(Boolean).join(" · ");
+    const open = run.issues.filter((x) => x.open);
+    if (open.length && admin) {
+      return { ...base, status: "warn", badge: `${num(open.length)} sorun`, detail: clip(`${who} · ${open.map((x) => x.text).join("; ")}`, 140), action: "Listeye bak" };
+    }
+    if (open.length) return { ...base, status: "done", badge: "Tamam", detail: `${who} · ${num(open.length)} sorun bildirildi`, action: "Listeye bak" };
+    const late = lateFinish({ date: day, dueAt: l.dueAt, completedAt: run.completedAt }) ? " · geç" : "";
+    return { ...base, status: "done", badge: "Tamam", detail: `${who}${late}${run.photos ? ` · ${num(run.photos)} fotoğraf` : ""}`, action: "Listeye bak" };
+  }
+  if (state === "overdue") {
+    const detail = started ? `${progress} madde · son saat ${l.dueAt} idi.` : `Henüz başlanmadı · son saat ${l.dueAt} idi.`;
+    return { ...base, status: "warn", badge: "Gecikti", detail: admin ? detail : `${detail} Gün 05:00'te kapanır.`, action: started ? "Devam et" : "Listeyi aç" };
+  }
+  if (started && run) {
+    const left = run.photosLeft ? ` ${num(run.photosLeft)} fotoğraf kaldı.` : "";
+    return { ...base, status: "todo", badge: progress, detail: `${progress} madde · ${whoText(run.contributors)} · son saat ${l.dueAt}.${left}`, action: "Devam et" };
+  }
+  if (state === "before") {
+    return { ...base, status: "later", badge: `${l.opensAt}–${l.dueAt}`, detail: `${itemsText(l)} · ${l.opensAt} – ${l.dueAt} arası.`, action: "Listeyi aç" };
+  }
+  return { ...base, status: "todo", detail: `${itemsText(l)} · son saat ${l.dueAt}.`, action: "Listeyi aç" };
+}
+
+/** Bugünün kontrol listeleri, açılış saatine göre; okunamadıysa tek gri satır */
+const checklistRows: Row = (f) => {
+  const c = f.checklists;
+  if (c === undefined) return null;
+  if (c === null) {
+    return { key: "liste", title: "Kontrol listeleri", status: "later", badge: "Okunamadı", detail: "Kontrol listeleri şu an okunamadı.", href: "/panel/kontrol", action: "Kontrol listeleri" };
+  }
+  const nowBm = nowBusinessMinute(f.now);
+  return [...c.lists].sort((a, b) => opensMinute(a.opensAt) - opensMinute(b.opensAt)).map((l) => listRow(f, c.day, l, nowBm));
+};
+
+/**
+ * Yönetici: dünün listelerinden tamamlanmayan ya da sorunlu (düzeltilmiş ölçüm dahil) olan varsa tek satır. Dünün kasa
+ * raporu da yoksa (kasa kullanılmaya başladıysa) kafe kapalı olabilir: açıklama bunu söyler.
+ */
+const checklistYesterday: Row = (f, c) => {
+  const y = f.checklistsYesterday;
+  if (f.role !== "admin" || !y) return null;
+  const missing = y.lists.filter((l) => !l.run?.complete);
+  const problems = y.lists.flatMap((l) => l.run?.issues ?? []);
+  if (!missing.length && !problems.length) return null;
+  const parts = [
+    ...missing.map((l) => (isStarted(l) && l.run ? `${l.name}: ${num(l.run.required - l.run.done)} madde yapılmadı` : `${l.name}: hiç açılmadı`)),
+    ...problems.map((x) => x.text),
+  ];
+  const cashMissing = f.cash !== null && f.cash.yesterday === null && f.cash.firstDate !== null && f.cash.firstDate <= c.yesterday;
+  return {
+    key: "liste-dun",
+    title: "Dünkü kontrol listeleri",
+    status: "warn",
+    badge: missing.length ? `${num(missing.length)} eksik` : `${num(problems.length)} sorun`,
+    detail: `${clip(parts.join(" · "), 160)}${cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : ""}`,
+    href: `/panel/kontrol/gecmis?gun=${y.day}`,
+    action: "Geçmişe bak",
+  };
+};
+
 // ---------------------------------------------------------------- Yalnız yönetici
 
 /**
@@ -503,7 +583,7 @@ const posRow: Row = (f) => {
 const ADMIN_ROWS: Row[] = [
   systemRow, // isler
   cashYesterday, // kasa-dun
-  // liste-dun (kontrol)
+  checklistYesterday, // liste-dun
   paymentsRow, // odeme
   // komisyon (komisyon)
   invoicesRow, // fatura
@@ -514,7 +594,8 @@ const ADMIN_ROWS: Row[] = [
   pricesRow, // zam
   posRow, // modpos
   countPrevious, // sayim-gecen
-  // liste-{templateId} (kontrol, açılış saatine göre), hizli-sayim ve mal-siparisi (siparis)
+  checklistRows, // liste-{templateId} (açılış saatine göre)
+  // hizli-sayim ve mal-siparisi (siparis)
   cashToday, // kasa
   countMonthEnd, // sayim-son
 ];
@@ -523,7 +604,8 @@ const ADMIN_ROWS: Row[] = [
 const STAFF_ROWS: Row[] = [
   cashYesterday, // kasa-dun
   countPrevious, // sayim-gecen
-  // liste-{templateId} (kontrol), hizli-sayim (siparis)
+  checklistRows, // liste-{templateId} (açılış saatine göre)
+  // hizli-sayim (siparis)
   wasteRow, // zayi
   cashToday, // kasa
   countMonthEnd, // sayim-son

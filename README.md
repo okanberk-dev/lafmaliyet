@@ -41,16 +41,18 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Ekran | Adres | Excel karşılığı |
 |-------|-------|-----------------|
 | Genel bakış | `/panel` | Panel |
-| Bugün: günün işleri ve durumu (dünkü / bugünkü kasa raporu, zayi / ikram, ay sonu sayımı; yöneticiye günlük işlerin sorunları, ödemeler, fatura kontrolü, ürün bağlantıları, fiyatı girilmemiş hammaddeler, reçete ve fiyat onayları, hammadde zammı, kasada değişecek fiyatlar; kasa farkı, açılış ↔ devir ve ertesi gün düzeltme), Hatırlatıcılarım (tamamlandı), Yaklaşan ödemeler (yönetici), Bugün kafede (karaoke, uygulama siparişleri; tutar yok). Personel girişte burada açılır ([docs/BUGUN.md](docs/BUGUN.md)) | `/panel/bugun` | — (yeni) |
+| Bugün: günün işleri ve durumu (dünkü / bugünkü kasa raporu, açılış ve kapanış listeleri, zayi / ikram, ay sonu sayımı; yöneticiye günlük işlerin sorunları, dünkü eksik ya da sorunlu kontrol listeleri, ödemeler, fatura kontrolü, ürün bağlantıları, fiyatı girilmemiş hammaddeler, reçete ve fiyat onayları, hammadde zammı, kasada değişecek fiyatlar; kasa farkı, açılış ↔ devir ve ertesi gün düzeltme), Hatırlatıcılarım (tamamlandı), Yaklaşan ödemeler (yönetici), Bugün kafede (karaoke, uygulama siparişleri; tutar yok). Personel girişte burada açılır ([docs/BUGUN.md](docs/BUGUN.md)) | `/panel/bugun` | — (yeni) |
 | Ürünler, reçete kartı (Hammadde zamları: önerilen fiyat ve zammın ayda kaç lira kâr götürdüğü) | `/panel/urunler`, `/panel/urunler/[id]` | Ürün Kârlılık, Reçete Kartları |
 | Site menüsü: ürünleri laffogato.net menüsündeki kalemlere bağlama (öneriler), bağlantının durumu, Siteyle eşitle ([docs/SITE-MENU.md](docs/SITE-MENU.md)) | `/panel/urunler/site` | — (yeni) |
 | Fiyatlar: toplu değiştir (yüzde, tutar ya da önerilen fiyat; önizleme ve aylık etki), kasaya (ModPOS) işle, fiyat geçmişi ve toplu değişikliği geri alma ([docs/FIYATLAR.md](docs/FIYATLAR.md)) | `/panel/urunler/fiyatlar` | — (yeni) |
 | Hammaddeler: onay bekleyen fiyatlar (Paraşüt faturasında %40'tan büyük değişim onaylanınca uygulanır), tedarikçilere göre fiyat ([docs/PARASUT.md](docs/PARASUT.md) 5b, 5c) | `/panel/hammaddeler` | Hammaddeler |
 | Reçete defteri (barista; personel değişiklik ya da reçetesiyle yeni ürün önerir, yönetici onaylayınca uygulanır) | `/panel/receteler` | — |
 | Reçete onayları (önce / sonra farkı, maliyet etkisi, onayla ya da gerekçeyle reddet; yeni ürün önerisinde satır maliyeti, satış fiyatı ve canlı kâr marjı, "Onayla ve ürünü ekle") | `/panel/onaylar` | — (yeni) |
-| Karaoke (barın ekranı): laffogato.net'ten ödenmiş uygulama siparişleri, sipariş zili ve tek dokunuşla aşama (sitenin aşama ucuna gider; iade ve iptal sitede) ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), oda sayacı, yeni rezervasyon zili, süre dolunca alarm, sitedeki rezervasyonla çakışma uyarısı; yöneticiye ay özeti ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
+| Karaoke (barın ekranı): laffogato.net'ten ödenmiş uygulama siparişleri, sipariş zili ve tek dokunuşla aşama (sitenin aşama ucuna gider; iade ve iptal sitede) ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), oda sayacı, yeni rezervasyon zili, süre dolunca alarm, sitedeki rezervasyonla çakışma uyarısı; yöneticiye ay özeti, doluluk haritası ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
+| Karaoke doluluğu (yönetici): gün × saat ısı haritası, doluluk %, saat başına gelir, uzatma oranı, son dakika iptal, kaç gün önceden; son 4 / 12 hafta ya da ay; ay ay karşılaştırma; oda saatleri ve geçmişi siteden alma (ad ve not olmadan) ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke/doluluk` | — (yeni) |
 | Hatırlatıcılarım (herkesin kendi hatırlatıcıları; saatinde uyarı, tekrar, erteleme) | `/panel/hatirlaticilarim` | — (yeni) |
 | Kasa raporu: her akşam Z raporu ve kasa, eksik / fazla, e-posta ve WhatsApp, günün online satışı (bilgi, kasadan geçmez); Z raporu, POS fişi ve kasadan çıkan fişler fotoğraftan okunur (onaylayınca kaydedilir, [docs/FOTOGRAF.md](docs/FOTOGRAF.md)); açılış ↔ önceki devir denetimi, kasayı sayan, düzeltme geçmişi; yöneticiye günden güne; ayın açık günü, POS cirosu, indirimi, ödenmezi ve kartlı oranı (boş bırakılırsa) kasa raporlarından ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) | `/panel/kasa` | — (yeni) |
+| Kontrol listeleri: fotoğraflı açılış ve kapanış listeleri (tamam / sorun var, fotoğraf, sıcaklık aralığı, kısa not; gün 05:00'te döner, sonradan doldurulmaz), Bugün'de satır, zilde ve sabah e-postasında; yöneticiye geçmiş (kim, ne zaman, eksik, aralık dışı, fotoğraf; fotoğraflar 60 gün) ve liste düzenleme ([docs/KONTROL-LISTELERI.md](docs/KONTROL-LISTELERI.md)) | `/panel/kontrol`, `/panel/kontrol/[id]`, `/panel/kontrol/gecmis`, `/panel/kontrol/duzenle`, `/api/kontrol/foto` (fotoğraflı madde) | — (yeni) |
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
@@ -69,24 +71,24 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Yardım | `/panel/yardim` | Nasıl Kullanılır |
 | Giriş, davetle parola belirleme, QR menü (`/` panele yönlendirir) | `/giris`, `/davet`, `/menu` | — (yeni) |
 | Excel'e aktar / tam yedek / sağlık / menü JSON / fatura belgesi ve kalemleri | `/api/export`, `/api/yedek` (parola onayından sonra verilen iki dakikalık bağlantıyla, yalnız yönetici), `/api/health` (`?isler=1`: günlük işlerin durumu, sorun varsa 503), `/api/menu`, `/api/faturalar/[id]/belge`, `/api/faturalar/[id]/kalemler`, `/api/hammaddeler/[id]/fiyatlar` (tedarikçilere göre fiyat) | — |
-| Günlük işler (Vercel Cron): Paraşüt eşitlemesi, sabah e-postası, hatırlatıcı özeti, karaoke ve site menüsü eşitlemesi, online satışlar; her çalışma `job_runs`'a yazılır, çalışmayan ya da hata veren iş zil, Genel bakış, Bugün ve e-postayla bildirilir (docs/BILDIRIMLER.md › Sistem uyarıları) | `/api/cron/parasut`, `/api/cron/gunluk` | — |
+| Günlük işler (Vercel Cron): Paraşüt eşitlemesi, sabah e-postası, hatırlatıcı özeti, karaoke (3 × 366 günden eski oturum kayıtlarındaki misafir adı ve notu silinir; işlem geçmişi hariç) ve site menüsü eşitlemesi, online satışlar; her çalışma `job_runs`'a yazılır, çalışmayan ya da hata veren iş zil, Genel bakış, Bugün ve e-postayla bildirilir (docs/BILDIRIMLER.md › Sistem uyarıları) | `/api/cron/parasut`, `/api/cron/gunluk` | — |
 | Açık sekmenin canlı verisi (ETag / 304), laffogato.net'in karaoke, menü ve sipariş pingleri, bar ekranının sipariş isteği | `/api/canli`, `/api/karaoke/ping`, `/api/menu/ping`, `/api/orders/ping`, `/api/siparisler` | — |
 
-Menü kenar çubuğunda on öğeye toplandı: Genel bakış · Bugün · Karaoke · Menü (Ürünler, Hammaddeler, Reçete defteri,
+Menü kenar çubuğunda on bir öğeye toplandı: Genel bakış · Bugün · Karaoke · Kontrol listeleri · Menü (Ürünler, Hammaddeler, Reçete defteri,
 Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider, Giderler & personel,
 Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
 Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Bugün · Kasa · Ödemeler · Menü çubuğu var (Satışlar ve
 Faturalar Menü'de). ⌘K
 (Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
-eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini ve fiyat onaylarını, kişisel
+eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler), onay bekleyen reçete önerilerini ve fiyat onaylarını, geciken ve eksik kontrol listelerini ve aralık dışı değerleri, kişisel
 hatırlatıcıları ve uyarıları (kasada değişecek fiyatlar, zammın aylık kâr etkisiyle hammadde zammı, fiyatı girilmemiş hammaddeler, son satış ayının uyarıları) gösterir; profil menüsünde Hesabım ve çıkış
 var.
 
-Personel rolü yalnızca **Bugün** (günün işleri: kasa raporu, zayi / ikram, ay sonu sayımı; yönetici bilgisi yüklenmez),
-**Karaoke**, **Kasa raporu**, **Zayi & ikram**, **Reçete defteri** (değişiklik ya da yeni ürün
+Personel rolü yalnızca **Bugün** (günün işleri: kasa raporu, açılış / kapanış listeleri, zayi / ikram, ay sonu sayımı; yönetici bilgisi yüklenmez),
+**Karaoke**, **Kasa raporu**, **Kontrol listeleri** (açılış ve kapanış; yalnız yöneticinin doldurduğu listeler hariç), **Zayi & ikram**, **Reçete defteri** (değişiklik ya da yeni ürün
 önerir; yönetici onaylayınca uygulanır), **Stok sayımı** (yalnız bu ay ve geçen ay; listeye kalem de ekler), **Hatırlatıcılarım** ve **Hesabım**
-ekranlarını görür; girişte Bugün açılır. Telefonda altta Bugün · Karaoke · Kasa · Zayi · Reçeteler çubuğu var (Stok sayımı
-ve Hatırlatıcılarım üst çubuktaki menüde; ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar). Personelin zili yalnız kendi hatırlatıcılarını, önerilerinin sonucunu ve akşam bekleyen kasa raporunu gösterir.
+ekranlarını görür; girişte Bugün açılır. Telefonda altta Bugün · Karaoke · Kasa · Zayi · Reçeteler çubuğu var (Kontrol listeleri, Stok sayımı
+ve Hatırlatıcılarım üst çubuktaki menüde; açılış / kapanış listesi ve ay sonu sayımı gerektiği gün Bugün'de satır olarak çıkar). Personelin zili yalnız kendi hatırlatıcılarını, önerilerinin sonucunu, akşam bekleyen kasa raporunu ve bekleyen ya da geciken kontrol listesini gösterir.
 Maliyet, maaş, kâr ve karaoke tutarları personele gösterilmez. Hangi rolün hangi ekranı açtığı tek yerde:
 `src/lib/roles.ts` (proxy, giriş sonrası yönlendirme ve menü bunu kullanır).
 
@@ -124,12 +126,12 @@ Uygulama http://localhost:3000 adresinde açılır. Panel girişi `/giris` sayfa
 |-------|----------|
 | `npm run dev` | Geliştirme sunucusu |
 | `npm run build` | Migration'ları uygular, veritabanı boşsa Excel verisini yükler, ardından production build alır (Vercel önizlemesinde bu hazırlık atlanır: önizleme canlının veritabanını kullanır, [DEPLOY.md](docs/DEPLOY.md) § 3) |
-| `npm test` | Bütün testleri çalıştırır (`tests/*.test.ts`): hesaplama motorunu Excel'in değerlerine karşı (129 ürün, 125 satış satırı, panel, gelir-gider, tutarlılık) ve ekran kurallarını. `YEDEK_TEST_DATABASE_URL=postgres://…/postgres` verilirse yedeğin gerçek bir veritabanında alınıp geri yüklenmesi de sınanır ([docs/YEDEK.md](docs/YEDEK.md) § 10); `MCP_TEST_DATABASE_URL=postgres://…/laffogato_…` verilirse Claude bağlantısının veritabanındaki akışı ([docs/CLAUDE-BAGLANTISI.md](docs/CLAUDE-BAGLANTISI.md) § 8) |
+| `npm test` | Bütün testleri çalıştırır (`tests/*.test.ts`): hesaplama motorunu Excel'in değerlerine karşı (129 ürün, 125 satış satırı, panel, gelir-gider, tutarlılık) ve ekran kurallarını. `YEDEK_TEST_DATABASE_URL=postgres://…/postgres` verilirse yedeğin gerçek bir veritabanında alınıp geri yüklenmesi de sınanır ([docs/YEDEK.md](docs/YEDEK.md) § 10); `MCP_TEST_DATABASE_URL=postgres://…/laffogato_…` verilirse Claude bağlantısının veritabanındaki akışı ([docs/CLAUDE-BAGLANTISI.md](docs/CLAUDE-BAGLANTISI.md) § 8); `KONTROL_TEST_DATABASE_URL=postgres://…/laffogato_…` verilirse kontrol listelerinin yanıt yazımı ([docs/KONTROL-LISTELERI.md](docs/KONTROL-LISTELERI.md) § 8) |
 | `npm run lint` | ESLint |
 | `npm run db:generate` | Şema değişince yeni migration üretir (`drizzle/`) |
 | `npm run db:migrate` | Migration'ları uygular ve hepsinin uygulandığını doğrular (atlanan varsa hata; docs/DEPLOY.md § 7) |
-| `npm run db:seed` | Veritabanı boşsa Excel verisini yükler |
-| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri (laffogato.net menü bağlantıları, reçete önerileri, fiyat geçmişi ve kasaya işlenecek fiyatlarla), hammaddeleri (sayımda “Listeye ekle” ile eklenenler ve `sayim_yeni_kalemler` migration'ının eklediği sekiz kalem dahil: yalnız Excel'dekiler geri gelir), satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, fiyat onaylarını, aylık harcama kayıtlarını, bildirim günlüğünü, nakit planının bakiyesini ve tahmin ayarlarını (devreden KDV dahil) siler. **Silmedikleri:** kullanıcılar, aylık harcama kategorileri, hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, laffogato.net'ten çekilen online satış ayları ve açık sipariş listesinin kopyası (sitenin verisi), tedarikçi cari kartları (faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir); fotoğraflar, kasadan çıkanlar ve okuma kayıtları; Claude bağlantıları |
+| `npm run db:seed` | Veritabanı boşsa Excel verisini yükler; hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler (dolu veritabanında da) |
+| `npm run db:reset` | Excel verisini yeniden yükler. Önce ürünleri (laffogato.net menü bağlantıları, reçete önerileri, fiyat geçmişi ve kasaya işlenecek fiyatlarla), hammaddeleri (sayımda “Listeye ekle” ile eklenenler ve `sayim_yeni_kalemler` migration'ının eklediği sekiz kalem dahil: yalnız Excel'dekiler geri gelir), satışları, faturaları (belge ve kalemleriyle), sabit giderleri, personeli, gelir-gider düzeltmelerini, sayımları, ay bilgilerini, ayarları, POS eşleştirmelerini, işlem geçmişini, Paraşüt eşitleme geçmişini ve ürün bağlantılarını, fiyat onaylarını, aylık harcama kayıtlarını, bildirim günlüğünü, nakit planının bakiyesini ve tahmin ayarlarını (devreden KDV dahil) siler. **Silmedikleri:** kullanıcılar, aylık harcama kategorileri, hatırlatıcılar, bildirim alıcıları ve e-posta ayarları, Paraşüt kategori kuralları, laffogato.net'ten çekilen online satış ayları ve açık sipariş listesinin kopyası (sitenin verisi), tedarikçi cari kartları (faturaların ödendi / talep edildi işaretleri faturalarla birlikte silinir); fotoğraflar, kasadan çıkanlar ve okuma kayıtları; Claude bağlantıları; kontrol listeleri ve kayıtları; karaoke oturumları, oda saatleri ve siteden alınan geçmişin durumu |
 | `npm run db:backup` | Tam yedeği bilgisayara alır (`~/laffogato-yedek-….json.gz`; `--belgeler` panelden yüklenen belgelerle, `--cikti <dosya>` başka bir yere). Panelin Ayarlar › Yedek dosyasıyla aynı biçim ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run db:restore -- <dosya>` | Yedeği boş bir veritabanına yükler; `--sil` ile dolu bir veritabanının yerine (önce onun yedeğini dosyanın yanına alır; Neon'da `--onay=<sunucu>`). Parolalar dosyada yok: aynı e-postalı kişi hedefteki parolasını korur, ötekiler davet bekler ([docs/YEDEK.md](docs/YEDEK.md)) |
 | `npm run excel:extract -- "<excel yolu>"` | Excel'den `excel-data.json` ve `tests/golden.json` dosyalarını yeniden üretir (Python 3 + openpyxl gerekir) |
@@ -155,6 +157,8 @@ src/
   lib/photo-rules.ts   fotoğraf türleri, boyut ve ölçü sınırları, saklama süreleri, kim görür (saf, testli)
   lib/photo-compress.ts  fotoğrafı telefonda JPEG'e küçültme (en çok 2576 px / ~3,7 MP, 1,8 MB)
   lib/mcp/             Claude bağlantısı: OAuth kuralları, araç girdileri, araç cevapları (saf, testli; docs/CLAUDE-BAGLANTISI.md)
+  lib/checklists.ts    kontrol listeleri: gün ve saat aralığı, durum, yanıt özeti, kim doldurur ve kim görür, zil ve e-posta kutusu (saf, testli; docs/KONTROL-LISTELERI.md)
+  lib/checklist-seed.ts  hazır açılış ve kapanış listeleri
   lib/calc/            hesaplama motoru: Excel formüllerinin saf TypeScript karşılığı
     engine.ts          hammadde → reçete → ürün → satış → gelir-gider → stok
     insights.ts        panel, uyarılar, tutarlılık, menü mühendisliği, senaryo
@@ -178,6 +182,7 @@ src/
     ai/                Claude istemcisi: fotoğraftan okuma, günlük sınır, maliyet günlüğü (ai_calls)
     photo-read/        fotoğrafı okuyup forma hazırlama, kimin hangi güne fotoğraf ekleyebileceği
     mcp/               Claude bağlantısı: istemciler, kodlar, anahtarlar (yalnız özet), MCP sunucusu ve salt okunur araçlar
+    checklists/        kontrol listelerinin veritabanı tarafı: günün listeleri, doldurma, geçmiş, yanıt yazımı
   proxy.ts             panel sayfaları için oturum kontrolü (Next 16'da middleware'in yeni adı)
 scripts/               migrate (ve migration doğrulaması), seed, predeploy, tam yedek ve geri yükleme, Excel çıkarma betikleri
 tests/                 Excel karşılaştırma testleri ve ekran kuralları

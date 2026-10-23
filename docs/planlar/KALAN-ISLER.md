@@ -1,26 +1,25 @@
-# Kalan işler (23 Ekim 2026, 07:30 UTC itibarıyla)
+# Kalan işler (23 Ekim 2026, 08:00 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
 
 ## 1. Canlıda olanlar
 
-- `main` @ 099dc8a. PR #7 (e10fbb0): **yönetici işlemlerinde parolayla onay** (`adminstepup.md`) ve **günlük işlerin takibi**
-  (`ops.md` §3: `job_runs`, sistem uyarıları, bekçi e-postası, `/api/health?isler=1`, migration `0020_gunluk_isler`)
-  ile **canlı derlemede migration doğrulaması** (`scripts/migration-check.ts`).
-- Daha önce: önizlemeler migration çalıştırmaz (`scripts/predeploy-guard.ts`, PR #6), tedarikçiler, giriş güvenliği,
-  site menüsü eşitlemesi, bar ekranında siparişler; PR #9 (diğer oturum): bar ekranından tek dokunuşla sipariş
-  aşaması, Ayarlar'da "Bağlantıları sına".
+- `main` @ 6ef84f2: dalga 1–4 birleşti (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
+  #10 (ekle, pricing, pompa-mobil), #12 (insight + KDV, fotograf, menu), #13 (kasa, W2.0'ın kalanı, today, mcp).
+  Canlı derleme günlüğü: `✓ Veritabanı şeması güncel (29 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir
+  önizlemenin uyguladığı eski menü migration kaydı; zararsız). **#13'ten geriye Instant Rollback yok**
+  (`docs/DEPLOY.md` §7).
+- Fotoğraftan okuma canlıda açık: özel Vercel Blob deposu `laffogato-foto-panel` (fra1); `BLOB_READ_WRITE_TOKEN` ve
+  `ANTHROPIC_API_KEY` yalnız Production'da. Eski boş `laffogato-foto` deposu kullanılmıyor.
+- Daha önce: PR #7 (yönetici işlemlerinde parolayla onay, günlük işlerin takibi, canlı derlemede migration
+  doğrulaması `scripts/migration-check.ts`), önizlemeler migration çalıştırmaz (`scripts/predeploy-guard.ts`, PR #6),
+  tedarikçiler, giriş güvenliği, site menüsü eşitlemesi, bar ekranında siparişler; PR #9 (diğer oturum): bar
+  ekranından tek dokunuşla sipariş aşaması, Ayarlar'da "Bağlantıları sına".
 - **Paralel çalışan bir oturum daha var** (site ↔ panel işleri): sahiplik, sözleşmeler ve çakışma noktaları
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
-- Canlı derleme günlüğü: `✓ Veritabanı şeması güncel (21 migration)` ve beklenen tek uyarı (21 Eki 22:27 UTC'de bir
-  önizlemenin uyguladığı eski menü migration kaydı; zararsız).
-- **Birleştirilmeyi bekleyen PR'lar:** #8 dalga 1 (ops-backup, vkn; `claude/kalan-isler`, 21. migration'a kadar),
-  #10 dalga 2 (ekle, pricing, pompa-mobil; `claude/kalan-isler-2`, #8'in üstüne; 22–24. migration'lar), #11 taslak
-  (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince
-  açılır), #12 dalga 3 (insight + KDV, fotograf, menu; `claude/kalan-isler-3`, #10'un üstüne; 25–26. migration'lar),
-  dalga 4 PR'ı (kasa, W2.0'ın kalanı, today, mcp; `claude/kalan-isler-4`, #12'nin üstüne; 27–28. migration'lar).
-  Sıra: #8, sonra #10 (tabanı main'e alınır), sonra #12, sonra dalga 4.
+- **Açık PR:** #11 taslak (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da
+  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–7'nin her biri main'e ayrı bir PR'dır.
 
 ## 2. Kalan işler (sırayla)
 
@@ -68,7 +67,8 @@ ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 
-- **main'e doğrudan push yok.** Her dalga bir PR olur; sahibi inceleyip birleştirir.
+- **main'e doğrudan push yok.** Her dalga bir PR olur. Sahip 23 Ekim'de birleştirmeyi oturuma bıraktı: PR squash ile
+  birleşir, ardından canlı derleme günlüğündeki migration sayısı ve çalışma zamanı hataları kontrol edilir.
 - **R2 migration protokolü:** her grup kendi dalında migration üretir ama birleştirmede yeniden üretilir (journal'ı
   tabandan geri al, dalın SQL/snapshot'ını sil, `npm run db:generate -- --name <ad>`); bir seferde bir migration
   birleşir; journal `when` değerleri artan sırada olmalı. Canlı derleme eksik migration'da durur.

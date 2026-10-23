@@ -1,5 +1,7 @@
 import "server-only";
 
+import { loadKontrolDigest } from "@/server/data/checklists";
+
 import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } from "./digest-template";
 
 /**
@@ -17,7 +19,10 @@ import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } 
  *
  * Liste boşken e-posta, konusu, tekil anahtarı ve günlük satırları kutusuz hâliyle birebir aynı.
  */
-export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [];
+export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
+  // Dünkü kontrol listeleri: eksik liste ve sorunlar, günde bir kez (kontrol:<gün>; docs/KONTROL-LISTELERI.md)
+  { key: "kontrol", news: true, load: () => loadKontrolDigest() },
+];
 
 /** Ek kutuları aynı anda yükler (her biri en çok 4 sn); asla hata fırlatmaz. `preview`: yalnız okuyan önizleme */
 export function loadDigestExtras(today: string, o: { preview?: boolean } = {}): Promise<DigestExtrasResult> {

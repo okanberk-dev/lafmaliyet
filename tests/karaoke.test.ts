@@ -22,7 +22,7 @@ import {
   type SiteReservation,
 } from "../src/lib/karaoke/session";
 import { canonicalQuery, sign, signedHeaders, verifySignature } from "../src/lib/karaoke/signature";
-import { parseSiteResponse } from "../src/lib/karaoke/site";
+import { cancelledAtFor, parseSiteResponse, siteTime } from "../src/lib/karaoke/site";
 
 const SECRET = "test-secret-0123456789-abcdefghijklmnop";
 const T = 1760000000;
@@ -102,6 +102,51 @@ test("sitenin yanıtı: bozuk satır atlanır, bilinmeyen durum varsayılana dü
   assert.equal(second.note.length, 300);
   assert.equal(second.firstName, "Mehmet");
   assert.throws(() => parseSiteResponse({ reservations: [] }));
+});
+
+test("sitenin yanıtı: isteğe bağlı iptal anı (site bugün göndermiyor); yoksa ya da bozuksa yok sayılır", () => {
+  const snap = parseSiteResponse({
+    now: "2026-10-21T10:00:00.000Z",
+    from: "2026-10-20",
+    to: "2027-01-18",
+    complete: true,
+    reservations: [site(), site({ id: "krk-0002", cancelledAt: "2026-10-21T08:00:00.000Z" }), site({ id: "krk-0003", cancelledAt: 12 }), site({ id: "krk-0004", cancelledAt: null })],
+  });
+  assert.equal(snap.reservations.length, 4);
+  assert.deepEqual(
+    snap.reservations.map((r) => r.cancelledAt),
+    [undefined, "2026-10-21T08:00:00.000Z", undefined, undefined],
+  );
+  assert.equal(siteTime("2026-10-21T09:00:00.000Z")?.toISOString(), "2026-10-21T09:00:00.000Z");
+  assert.equal(siteTime(""), null);
+  assert.equal(siteTime("bozuk"), null);
+  assert.equal(siteTime(undefined), null);
+});
+
+test("iptal anı (doluluk): geçişi görünce sitenin son değişikliği; bilinen korunur; yeniden açılınca boşalır", () => {
+  const now = new Date("2026-10-21T10:00:00.000Z");
+  const live = { cancelledAt: null, status: "confirmed" as const, paymentStatus: "paid" as const };
+  const cancel = (over: Record<string, unknown> = {}) => site({ status: "cancelled", paymentStatus: "refunding", updatedAt: "2026-10-21T09:30:00.000Z", ...over });
+  // Canlıdan iptale geçiş: updatedAt; o yoksa şimdi; gelecekteki an şimdiye kırpılır
+  assert.equal(cancelledAtFor(live, cancel(), now)?.toISOString(), "2026-10-21T09:30:00.000Z");
+  assert.equal(cancelledAtFor(live, cancel({ updatedAt: "" }), now)?.toISOString(), now.toISOString());
+  assert.equal(cancelledAtFor(live, cancel({ updatedAt: "2026-10-21T11:00:00.000Z" }), now)?.toISOString(), now.toISOString());
+  // Bilinen an korunur (iade adımları updatedAt'i oynatsa da)
+  const known = new Date("2026-10-20T12:00:00.000Z");
+  assert.equal(cancelledAtFor({ cancelledAt: known, status: "cancelled", paymentStatus: "refunding" }, cancel({ paymentStatus: "refunded" }), now), known);
+  // Önceden iptal görülmüş ama anı yok (sütunlardan önce): bilinmez
+  assert.equal(cancelledAtFor({ cancelledAt: null, status: "cancelled", paymentStatus: "refunding" }, cancel({ paymentStatus: "refunded" }), now), null);
+  // Yeniden açılan iptal ve iptal olmayan
+  assert.equal(cancelledAtFor({ cancelledAt: known, status: "cancelled", paymentStatus: "none" }, site({ status: "confirmed", paymentStatus: "none" }), now), null);
+  assert.equal(cancelledAtFor(null, site(), now), null);
+  // Ödeme sayfasında süresi dolan tutma iptal sayılmaz
+  assert.equal(cancelledAtFor(live, site({ status: "cancelled", paymentStatus: "expired" }), now), null);
+  // İlk kez iptal hâlinde görülen: ödeme akışı yoksa updatedAt, iadede bilinmez
+  assert.equal(cancelledAtFor(null, cancel({ paymentStatus: "none" }), now)?.toISOString(), "2026-10-21T09:30:00.000Z");
+  assert.equal(cancelledAtFor(null, cancel({ paymentStatus: "refunded" }), now), null);
+  // Site anı gönderirse o öncelikli
+  assert.equal(cancelledAtFor(live, cancel({ cancelledAt: "2026-10-21T07:00:00.000Z" }), now)?.toISOString(), "2026-10-21T07:00:00.000Z");
+  assert.equal(cancelledAtFor(null, cancel({ cancelledAt: "2026-10-19T07:00:00.000Z" }), now)?.toISOString(), "2026-10-19T07:00:00.000Z");
 });
 
 const prev = (status: "requested" | "confirmed" | "cancelled", paymentStatus: "none" | "pending" | "paid" | "refunded" | "expired" | "refunding", startsAt = "2026-10-24T17:00:00.000Z") => ({
