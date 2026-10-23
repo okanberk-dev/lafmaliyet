@@ -244,7 +244,10 @@ export interface FixedExpense extends MonthRange {
   section: FixedSection;
   /** Taban değerler: ilk tutar değişikliğinden (FixedExpenseVersion) önceki aylarda geçerli */
   period: FixedPeriod;
+  /** KDV hariç */
   amount: number;
+  /** Faturasındaki KDV oranı; boşsa bölümün varsayılanı (constants.ts fixedVatRate). Yalnız nakit planı kullanır */
+  vatRate?: number | null;
   note: string | null;
   /** Geriye dönük uyumluluk: endMonth boş ya da bu aydan sonra → true. Hesap aralığa (MonthRange) bakar. */
   active: boolean;
@@ -266,6 +269,15 @@ export interface PnlEntry {
   amount: number;
   /** Hücre notu (Excel'deki hücre açıklaması) */
   note?: string | null;
+}
+
+/** Hammadde fiyat geçmişinin bir satırı (ingredient_prices): o andan itibaren geçerli paket fiyatı ve boyu */
+export interface IngredientPriceRow {
+  ingredientId: number;
+  packagePrice: number;
+  packageSize: number;
+  /** ISO an */
+  changedAt: string;
 }
 
 export interface StockCount {
@@ -354,6 +366,11 @@ export interface Dataset {
   fixedExpenseVersions?: FixedExpenseVersion[];
   pnlEntries: PnlEntry[];
   stockCounts: StockCount[];
+  /**
+   * Hammadde fiyat geçmişi (yoksa boş: sayımlar bugünkü fiyatla). Sayım, ayın sonunda geçerli fiyatla değerlenir; sonraki
+   * bir zam kapanmış ayın devreden malını ve kârını değiştirmez (engine.ts stockSheet)
+   */
+  ingredientPrices?: IngredientPriceRow[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
@@ -368,4 +385,9 @@ export interface Dataset {
   siteSales?: SiteSalesMonth[];
   /** "Bu ay" (YYYY-MM, Türkiye saati). Listelerdeki güncel tutar bu aya göre gösterilir; yoksa saatten okunur. */
   currentMonth?: string;
+  /**
+   * Süren ayda yüklenen satış listesinin son günü ve o güne kadarki kasa raporları (src/lib/sales-coverage.ts; yoksa
+   * liste ayın tamamıdır). Listeye dayanan hesaplar listenin günleriyle yapılır (engine.ts listPeriod)
+   */
+  salesCoverage?: { month: string; through: string; till: TillMonth | null }[];
 }

@@ -28,6 +28,11 @@ export interface SiteSalesMonthView {
   /** Panelden elle girilen siparişler (KDV dahil): ModPOS'ta olduğu için eklenmedi */
   manualOrders: number;
   manualNet: number;
+  /** Kasada (nakit / kart cihazı) ödenen uygulama ve web siparişleri (KDV dahil): ModPOS'ta da çalındığı için eklenmedi */
+  counterOrders: number;
+  counterNet: number;
+  /** Karaoke iadesi bekleyen (KDV dahil): iptal edilmiş, parası henüz geri ödenmemiş; karaoke tutarının içinde */
+  refundPending: number;
   /** Panel ürününe bağlı olmayan kafe satırı */
   unmapped: number;
 }
@@ -41,7 +46,7 @@ export interface SiteSalesCardData {
   months: SiteSalesMonthView[];
   /** Elle çekilebilecek aylar (bu yılın bu aya kadarki ayları), yeniden eskiye */
   choices: string[];
-  /** "Siteden yenile"nin çektiği aylar: bu ay ve geçen ay */
+  /** "Siteden yenile"nin çektiği aylar: bu ay ve önceki iki ay (günlük işle aynı) */
   refreshMonths: string[];
   sitePanelUrl: string;
   /** Oranı saklı olmayan siparişlere uygulanan KDV (Ayarlar › Oranlar) */
@@ -132,6 +137,8 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
                     <p className="mt-0.5 text-xs leading-5 text-ink-mute">
                       Çekildi {dateTimeTR(m.pulledAt)}
                       {m.manualOrders ? ` · panelden elle girilen ${num(m.manualOrders)} sipariş (${money(m.manualNet)}, KDV dahil) ModPOS'ta olduğu için eklenmedi` : ""}
+                      {m.counterOrders ? ` · kasada ödenen ${num(m.counterOrders)} uygulama siparişi (${money(m.counterNet)}, KDV dahil) ModPOS'ta da çalındığı için eklenmedi` : ""}
+                      {m.refundPending ? ` · karaokede iadesi bekleyen ${money(m.refundPending)} (KDV dahil; geri ödenince tutardan düşer)` : ""}
                       {m.unmapped ? ` · ${num(m.unmapped)} kafe satırı panel ürününe bağlı değil (tutarlılıkta sayılmaz)` : ""}
                     </p>
                   </li>
@@ -139,7 +146,7 @@ export function SiteSalesCard({ data }: { data: SiteSalesCardData }) {
               </ul>
             ) : (
               <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] text-ink-mute ring-1 ring-line">
-                Bu yıl için henüz çekilmedi. Her sabah bu ay (ayın ilk 7 gününde geçen ay da) kendiliğinden çekilir; şimdi çekmek için Siteden yenile.
+                Bu yıl için henüz çekilmedi. Her sabah bu ay ve önceki iki ay (geç gelen iadeler) kendiliğinden çekilir; şimdi çekmek için Siteden yenile.
               </p>
             )}
             {data.choices.length ? (

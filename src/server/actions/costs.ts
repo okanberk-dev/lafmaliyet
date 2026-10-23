@@ -7,7 +7,7 @@ import { z } from "zod";
 import { activeFromRange, currentMonthTR, inRange, planVersionChange, shiftMonth } from "@/lib/calc/engine";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
-import { MONTH_NAMES } from "@/lib/constants";
+import { FIXED_VAT_RATES, MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
@@ -334,6 +334,15 @@ const fixedSchema = z.object({
   section: z.enum(["personel", "faturalar", "kira", "genel"]),
   period: z.enum(["aylik", "gunluk", "haftalik", "yillik"]),
   amount: z.number().finite().min(0),
+  /**
+   * Faturadaki KDV (yalnız nakit planı; gelir-gider KDV hariç kalır). Verilmezse değişmez (yeni kalemde bölümün
+   * varsayılanı); null bölümün varsayılanına döndürür
+   */
+  vatRate: z
+    .number()
+    .refine((v) => FIXED_VAT_RATES.some((r) => Math.abs(r.value - v) < 1e-9), "KDV oranı %0, %1, %10 ya da %20 olabilir")
+    .nullable()
+    .optional(),
   note: zOptText(1000),
   /** Eski kullanım: false → geçen ay sonunda bitir, true → bitiş ayını kaldır. Yeni ekranlar endFixedExpense kullanır. */
   active: z.boolean().optional(),
@@ -372,7 +381,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
       }
       const [before] = await tx.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, id));
       if (!before) throw new UserError("Gider bulunamadı (sayfayı yenileyin)");
-      const set: Partial<typeof s.fixedExpenses.$inferInsert> = { name: data.name, section: data.section, note: data.note };
+      const set: Partial<typeof s.fixedExpenses.$inferInsert> = { name: data.name, section: data.section, note: data.note, ...(data.vatRate !== undefined ? { vatRate: data.vatRate } : {}) };
       const startMonth = startInput !== undefined ? startInput : before.startMonth;
       let endMonth = before.endMonth;
       if (active !== undefined) {
@@ -448,7 +457,7 @@ export async function saveFixedExpense(input: z.input<typeof fixedSchema>) {
     await logActivity(
       me,
       id ? "Sabit gider düzenlendi" : "Sabit gider eklendi",
-      `${data.name}: ${tl(data.amount)} (${data.period})${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
+      `${data.name}: ${tl(data.amount)} (${data.period})${data.vatRate ? ` + %${Math.round(data.vatRate * 100)} KDV` : ""}${mode === "version" && fromMonth ? ` · ${monthLabel(fromMonth)} itibarıyla` : mode === "base" && id ? " · bütün aylar" : ""}`,
     );
     refresh();
     // Kimlik döner: istemci yeni ya da düzenlenen satırı listede vurgulayabilsin

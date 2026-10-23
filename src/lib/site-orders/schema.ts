@@ -11,7 +11,9 @@ import { z } from "zod";
  * boşaltmasın. Ekranda gösterilen metinler kısaltılır; bilinmeyen yeni alanlar atılır (site v1'e alan ekleyebilir).
  *
  * KVKK: panele yalnız müşterinin adı gelir (soyad, telefon, e-posta, adres, kurye notu asla); panel siparişin tutarını
- * kullanmadığı için saklamaz da.
+ * kullanmadığı için saklamaz da. Müşterinin siparişe ve içeceğe yazdığı not (v1'e sonradan eklenen, isteğe bağlı `note`
+ * alanları: "fındık alerjim var", "çok sıcak olmasın") yalnız masa ve gel-al siparişinde gelir ve kartta gösterilir; kurye
+ * siparişinde site göndermez, gönderse de panel atar (kapı kodu, adres tarifi olabilir). Zile, bildirime ve günlüğe girmez.
  */
 
 export const SITE_ORDERS_VERSION = 1;
@@ -34,6 +36,8 @@ export interface SiteOrderLine {
   /** Seçenekler, "M · yulaf · +1 shot"; yoksa "" */
   detail: string;
   qty: number;
+  /** Müşterinin bu içeceğe notu ("çok sıcak olmasın"); yalnız yazıldıysa (en çok 200 karakter) */
+  note?: string;
 }
 
 export interface SiteOrder {
@@ -51,6 +55,11 @@ export interface SiteOrder {
   lines: SiteOrderLine[];
   /** Siparişin sitenin panelindeki sayfası ("/admin/siparisler/ord-0042"); güvenli değilse "" (bağlantı yok) */
   path: string;
+  /**
+   * Müşterinin siparişe notu ("fındık alerjim var, şurupsuz"); yalnız masa ve gel-al siparişinde ve yazıldıysa (en çok
+   * 300 karakter). Kurye siparişinde hiç yok (KVKK: kapı kodu, adres tarifi)
+   */
+  note?: string;
 }
 
 export interface SiteOrderList {
@@ -95,6 +104,8 @@ const lineSchema = z.object({
   size: z.enum(["M", "L", "single"]).catch("single"),
   detail: text(160),
   qty: z.number().int().min(1).max(999),
+  // İsteğe bağlı (eski site göndermez); bozuksa boş sayılır, sipariş atlanmaz
+  note: text(200).optional(),
 });
 
 const orderSchema = z.object({
@@ -111,6 +122,7 @@ const orderSchema = z.object({
   paidAt: iso,
   lines: z.array(lineSchema).min(1).max(SITE_ORDER_LINES_MAX),
   path: z.unknown().transform(safeOrderPath),
+  note: text(300).optional(),
 });
 
 const listSchema = z.object({
@@ -134,7 +146,15 @@ function where(error: z.ZodError): string {
 export function parseSiteOrder(raw: unknown): SiteOrder | null {
   const r = orderSchema.safeParse(raw);
   if (!r.success) return null;
-  return { ...r.data, label: r.data.label || FALLBACK_LABEL[r.data.fulfillment] };
+  const { note, lines, ...rest } = r.data;
+  // Not yalnız yazıldıysa taşınır; kurye siparişinin notu hiç taşınmaz (site göndermese de savunma)
+  const orderNote = rest.fulfillment !== "delivery" && note ? note : "";
+  return {
+    ...rest,
+    label: rest.label || FALLBACK_LABEL[rest.fulfillment],
+    lines: lines.map(({ note: lineNote, ...l }) => (lineNote ? { ...l, note: lineNote } : l)),
+    ...(orderNote ? { note: orderNote } : {}),
+  };
 }
 
 /**

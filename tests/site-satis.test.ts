@@ -17,6 +17,8 @@ import {
   exVatMinor,
   lineSlot,
   mapSiteLines,
+  optionProductId,
+  optionTotals,
   productForLine,
   salesMonthsToPull,
   siteRevenue,
@@ -308,11 +310,17 @@ test("kasa e-postası: online satır bilgi bölümü; kasa farkı ve Z rakamlar�
 
 // ---------------------------------------------------------------- Günlük iş ve sunucu
 
-test("günlük iş: içinde bulunulan ay; ayın ilk 7 gününde geçen ay da (yıl başında Aralık)", () => {
-  assert.deepEqual(salesMonthsToPull("2026-10-22"), ["2026-10"]);
-  assert.deepEqual(salesMonthsToPull("2026-11-07"), ["2026-11", "2026-10"]);
-  assert.deepEqual(salesMonthsToPull("2026-11-08"), ["2026-11"]);
-  assert.deepEqual(salesMonthsToPull("2027-01-01"), ["2027-01", "2026-12"]);
+test("günlük iş: içinde bulunulan ay ve önceki iki ay, her gün (geç gelen iade kapanmış ayı düşürür; yıl başında Kasım ve Aralık)", () => {
+  // Eskiden 8'inden sonra yalnız bu ay çekiliyordu: 15 Kasım'da iade edilen 28 Ekim kolisi Ekim'den hiç düşmüyordu
+  assert.deepEqual(salesMonthsToPull("2026-10-22"), ["2026-10", "2026-09", "2026-08"]);
+  assert.deepEqual(salesMonthsToPull("2026-11-07"), ["2026-11", "2026-10", "2026-09"]);
+  assert.deepEqual(salesMonthsToPull("2026-11-15"), ["2026-11", "2026-10", "2026-09"]);
+  assert.deepEqual(salesMonthsToPull("2026-11-30"), ["2026-11", "2026-10", "2026-09"]);
+  assert.deepEqual(salesMonthsToPull("2027-01-01"), ["2027-01", "2026-12", "2026-11"]);
+  assert.deepEqual(salesMonthsToPull("2027-02-28"), ["2027-02", "2027-01", "2026-12"]);
+  // "Siteden yenile" aynı ayları çeker (en çok 3 ay: sunucu eyleminin sınırı)
+  assert.match(read("src/app/panel/gelir-gider/page.tsx"), /refreshMonths: salesMonthsToPull\(/);
+  assert.match(read("src/server/actions/site-sales.ts"), /\.max\(3\)/);
   const cron = read("src/app/api/cron/gunluk/route.ts");
   assert.match(cron, /syncSiteSales\(\)\.catch\(/, "adım kendi hatasını yakalar, öteki işleri durdurmaz");
   assert.deepEqual(JSON.parse(read("vercel.json")).crons.length, 2, "yeni zamanlanmış iş yok");
@@ -338,4 +346,52 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   const act = read("src/server/actions/site-sales.ts");
   assert.match(act, /const me = await requireAdmin\(\)/);
   assert.doesNotMatch(read("src/server/actions/site-sales.ts"), /^export (async )?function (?!refreshSiteSales)/m, "use server dosyasında yardımcı dışa verilmez");
+});
+
+// ---------------------------------------------------------------- Kasada ödenen siparişler, iadesi bekleyen, seçenekler
+
+test("yanıt: kasada ödenen uygulama siparişleri (counter) isteğe bağlı; eski site göndermezse sıfır, gönderdiyse katı ve ciroya girmez", () => {
+  const old = parseSiteSales(contract(), OCT);
+  assert.deepEqual(old.counter, { orders: 0, grossMinor: 0, netMinor: 0 });
+  const s = parseSiteSales(contract({ counter: { orders: 2, grossMinor: 48_000, netMinor: 48_000 } }), OCT);
+  assert.deepEqual(s.counter, { orders: 2, grossMinor: 48_000, netMinor: 48_000 });
+  assert.throws(() => parseSiteSales(contract({ counter: { orders: 2, grossMinor: -1, netMinor: 0 } }), OCT), /counter\.grossMinor/);
+  // Ciroya girmez (site kafe toplamından ayırır): KDV hariç gelir aynı
+  close(siteRevenue(s, 0.1).total, siteRevenue(old, 0.1).total, "ciro aynı");
+  // Eski kayıt (counter yok) okunur
+  const rec: SiteSalesMonth = { ...old, month: "2026-10", pulledAt: "2026-11-02T09:00:05.000Z" };
+  const { counter: _drop, ...legacy } = rec;
+  void _drop;
+  assert.deepEqual(readSalesRecord(JSON.parse(JSON.stringify(legacy)))!.counter, { orders: 0, grossMinor: 0, netMinor: 0 });
+  // Gelir-gider kartı: elle girilen gibi bilgi satırı; karaokede iadesi bekleyen tutar da
+  const card = read("src/app/panel/gelir-gider/site-sales-card.tsx");
+  assert.match(card, /kasada ödenen \$\{num\(m\.counterOrders\)\} uygulama siparişi/);
+  assert.match(card, /karaokede iadesi bekleyen \$\{money\(m\.refundPending\)\}/);
+  const page = read("src/app/panel/gelir-gider/page.tsx");
+  assert.match(page, /counterOrders: rec!\.counter\?\.orders \?\? 0/);
+  assert.match(page, /refundPending: rec!\.karaoke\.refundPendingMinor \/ 100/);
+});
+
+test("yanıt: satırın seçenekleri (ekstra shot, şurup, süt) isteğe bağlı; gönderildiyse katı; toplamda normal süt sayılmaz", () => {
+  const line = { menuItemId: "mnu-0003", size: "M", name: "Latte", qty: 3, listMinor: 60000 };
+  const parse = (extra: Record<string, unknown>) => parseSiteSales(contract({ cafe: { ...contract().cafe, lines: [{ ...line, ...extra }] } }), OCT).cafe.lines[0];
+  assert.deepEqual(parse({}), line, "eski satır aynen");
+  const l = parse({ extraShots: 2, syrups: { vanilla: 1, caramel: 1 }, milks: { normal: 1, oat: 2 } });
+  assert.equal(l.extraShots, 2);
+  assert.deepEqual(optionTotals([l, parse({})]), { extraShots: 2, syrups: 2, milks: 2 }, "alanı olmayan satır 0");
+  assert.throws(() => parse({ extraShots: 1.5 }), /cafe\.lines\.0\.extraShots/);
+  assert.throws(() => parse({ milks: { oat: -1 } }), /cafe\.lines\.0\.milks/);
+  assert.throws(() => parse({ syrups: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`s${i}`, 1])) }), /cafe\.lines\.0\.syrups/);
+  // Seçeneğin ürünü: önce sitenin menü kalemine bağlı ürün, sonra adı tutan (etkin olan önce)
+  const products = [
+    { id: 1, name: "Extra Shot", active: false },
+    { id: 2, name: "EXTRA SHOT", active: true },
+    { id: 3, name: "Şurup", active: true },
+    { id: 4, name: "Alternatif Süt", active: true },
+  ];
+  assert.equal(optionProductId("extraShots", new Map(), products), 2, "ad, etkin olan");
+  assert.equal(optionProductId("extraShots", buildSiteLinkIndex([{ id: 9, siteMenuId: "mnu-0081", siteMenuSlot: "M" }]), products), 9, "menü bağlantısı önce");
+  assert.equal(optionProductId("syrups", new Map(), products), 3);
+  assert.equal(optionProductId("milks", new Map(), products), 4);
+  assert.equal(optionProductId("milks", new Map(), products.slice(0, 3)), null);
 });

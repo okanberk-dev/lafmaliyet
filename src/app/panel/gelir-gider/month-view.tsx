@@ -246,7 +246,7 @@ export function MonthView({
                   field: "openDays",
                   rowKey: "openDays",
                   label: "Açık gün sayısı",
-                  hint: "Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır.",
+                  hint: "Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır: açık günü elle yazarsanız o gün, kasa raporlarından gelirse raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Süren ayda bugüne kadarki açık gün yazılır.",
                   kind: daysKasa !== null ? "auto" : "manual",
                   format: "days",
                   cell: { value: openDays[i], computed: daysKasa, overridden: daysManual },

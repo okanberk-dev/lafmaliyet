@@ -159,6 +159,23 @@ test("parseNumberTR: 0 ile başlayan noktalı sayı ondalıktır (0.125 → 0,12
   assert.ok(Math.abs((parsePercentInput("0.075") ?? 0) - 0.00075) < 1e-12, "%0,075, %75 değil");
 });
 
+test("parseNumberTR: virgül ve nokta birlikteyse sonuncusu ondalık; bozuk gruplama okunmaz", () => {
+  // İngilizce döküm ve banka POS fişi: "1,250.00" bin değil 1,25 okunuyordu
+  assert.equal(parseNumberTR("1,250.00"), 1250);
+  assert.equal(parseNumberTR("12,345.67"), 12345.67);
+  assert.equal(parseNumberTR("12,975.50 TL"), 12975.5);
+  assert.equal(parseNumberTR("-1,250.50"), -1250.5);
+  // Türkçe yazım eskisi gibi
+  assert.equal(parseNumberTR("1.234,56"), 1234.56);
+  assert.equal(parseNumberTR("1.000.000,50"), 1000000.5);
+  assert.equal(parseNumberTR("51,85"), 51.85);
+  assert.equal(parseNumberTR("1,250"), 1.25, "tek virgül ondalıktır");
+  assert.equal(parseNumberTR("1.250.000"), 1250000);
+  assert.equal(parseNumberTR("1,234,567"), 1234567, "birden çok virgül bin ayıracıdır");
+  // Grupları üçer hane olmayan sayı yanlış okunmaz, okunamaz
+  for (const bad of ["2.000.50", "1,5,6", "1,2.5", "12,5.0", "1.234,5.6"]) assert.equal(parseNumberTR(bad), null, bad);
+});
+
 test("Toplam ile başlayan gerçek ürün adı özet satırı sayılmaz", () => {
   for (const n of ["Toplam Kahve Paketi", "Toplama Kahve"]) assert.equal(isSummaryRow(n), false, n);
   for (const n of ["TOPLAM", "Toplam KDV Dahil", "TOPLAM TUTAR", "Toplam: 437", "Alt Toplam", "Genel Toplam Satış"]) assert.equal(isSummaryRow(n), true, n);

@@ -10,6 +10,7 @@ import {
   ExternalLink,
   HandPlatter,
   LoaderCircle,
+  MessageSquareText,
   PackageCheck,
   RefreshCw,
   ShoppingBag,
@@ -302,6 +303,16 @@ function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now
           {STAGE_LABEL[o.stage]}
         </Badge>
       </div>
+      {o.note ? (
+        // Müşterinin siparişe notu (alerji, şurupsuz…): yalnız masa ve gel-al; zile ve bildirime girmez
+        <p className="flex items-start gap-1.5 rounded-xl bg-warn-soft px-3 py-2 text-[14px] leading-5 font-medium break-words text-warn">
+          <MessageSquareText size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0">
+            <span className="sr-only">Müşterinin notu: </span>
+            {o.note}
+          </span>
+        </p>
+      ) : null}
       <ul className={cn("space-y-1 text-[15px] leading-6", o.stage === "ready" ? "text-ink-mute" : "text-ink")}>
         {o.lines.map((l, i) => {
           const recipe = l.menuItemId ? recipes[`${l.menuItemId}|${lineSlot(l.size)}`] : undefined;
@@ -309,6 +320,8 @@ function OrderCard({ order: o, now, siteBase, recipes }: { order: SiteOrder; now
             <li key={`${l.menuItemId}-${i}`} className="flex items-start justify-between gap-2">
               <span className="min-w-0 break-words">
                 <span className="font-semibold tabular">{l.qty}×</span> {lineLabel(l)}
+                {/* Müşterinin bu içeceğe notu: hazırlayan görmeli */}
+                {l.note ? <span className="mt-0.5 block text-[13px] leading-5 font-medium text-warn">Not: {l.note}</span> : null}
               </span>
               {recipe ? (
                 // İstemci geçişi: sayfa yeniden yüklenmez, ses kilidi ve zil kabukta açık kalır

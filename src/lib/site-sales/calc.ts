@@ -49,14 +49,22 @@ export function siteVat(s: Pick<SiteSales, "cafe" | "shop" | "karaoke">, kdvRate
   return (vat(s.cafe, kdvRate) + vat(s.shop, kdvRate) + vat(s.karaoke, serviceRate)) / 100;
 }
 
-/** Günlük işin çekeceği aylar: içinde bulunulan ay; ayın ilk 7 gününde bir önceki ay da (geç gelen iadeler) */
+/** Çekilen geçmiş ay sayısı: içinde bulunulan ayla birlikte üç ay */
+export const SALES_PULL_BACK = 2;
+
+/**
+ * Günlük işin (ve Gelir-gider'deki "Siteden yenile"nin) çekeceği aylar: içinde bulunulan ay ve önceki iki ay, yeniden
+ * eskiye. Site iadeyi siparişin verildiği aya, karaokeyi parasının alındığı aya yazar: cayma hakkıyla (14 gün) dönen
+ * koli ya da 60 gün sonrasına alınıp iptal edilen karaoke kapanmış bir ayı haftalar sonra düşürür; üç ay her gün
+ * yeniden sorulur (üç küçük imzalı istek, aynı anda)
+ */
 export function salesMonthsToPull(today: string): string[] {
-  const month = today.slice(0, 7);
-  const dayOfMonth = Number(today.slice(8, 10));
-  if (dayOfMonth > 7) return [month];
-  const [y, m] = month.split("-").map(Number);
-  const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
-  return [month, prev];
+  const out = [today.slice(0, 7)];
+  for (let i = 0; i < SALES_PULL_BACK; i++) {
+    const [y, m] = out[out.length - 1].split("-").map(Number);
+    out.push(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`);
+  }
+  return out;
 }
 
 /** Satırın bağlanacağı yuva: L → L, M ve tek boy → M (sitenin `siteMenuSlot` kuralı) */
@@ -94,6 +102,65 @@ export function mapSiteLines<L extends Pick<SiteSalesLine, "menuItemId" | "size"
     else out.mapped.push({ line, productId });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- Seçenekler (ekstra shot, şurup, süt)
+
+/**
+ * Online kafe satırının seçeneklerinin panel ürünü: sitenin menü kalemine bağlı ürün (Ürünler › Site menüsü; kasada
+ * ayrı satır olarak çalınan "Extra Shot", "Syrup") ya da adı tutan ürün (ModPOS'taki ekstra satırı). Ürünün reçetesi
+ * tüketime, maliyeti reçeteye göre kâra girer; ürün yoksa seçenek Tutarlılık'ta eşlenmeyen olarak listelenir.
+ */
+export const OPTION_PRODUCTS = {
+  extraShots: { label: "Ekstra shot", menuItemId: "mnu-0081", names: ["extra shot", "ekstra shot"] },
+  syrups: { label: "Şurup", menuItemId: "mnu-0080", names: ["syrup", "surup"] },
+  milks: { label: "Alternatif süt", menuItemId: null, names: ["alternatif sut"] },
+} as const satisfies Record<string, { label: string; menuItemId: string | null; names: readonly string[] }>;
+
+export type OptionKind = keyof typeof OPTION_PRODUCTS;
+export const OPTION_KINDS = Object.keys(OPTION_PRODUCTS) as OptionKind[];
+
+/** Sayılmayan süt seçimi: normal (inek) süt içeceğin kendi reçetesindedir */
+export const NORMAL_MILK = "normal";
+
+/** Adın karşılaştırma anahtarı: "Alternatif Süt" → "alternatif sut" (Türkçe duyarlı, aksansız) */
+export const optionNameKey = (name: string) =>
+  name
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Satırların seçenek adetleri: ekstra shot, şurup, normal dışı süt (alanları olmayan eski satır 0) */
+export function optionTotals(lines: readonly Pick<SiteSalesLine, "extraShots" | "syrups" | "milks">[]): Record<OptionKind, number> {
+  const out: Record<OptionKind, number> = { extraShots: 0, syrups: 0, milks: 0 };
+  for (const l of lines) {
+    out.extraShots += l.extraShots ?? 0;
+    for (const n of Object.values(l.syrups ?? {})) out.syrups += n;
+    for (const [id, n] of Object.entries(l.milks ?? {})) if (id !== NORMAL_MILK) out.milks += n;
+  }
+  return out;
+}
+
+/**
+ * Seçeneğin panel ürünü (kimlik) ya da null: önce sitenin menü kalemine bağlı ürün (M, yoksa L yuvası), sonra adı
+ * tutan ürün (etkin olan önce, sonra en eski)
+ */
+export function optionProductId(
+  kind: OptionKind,
+  index: ReadonlyMap<string, number>,
+  products: readonly { id: number; name: string; active: boolean }[],
+): number | null {
+  const def = OPTION_PRODUCTS[kind];
+  if (def.menuItemId) {
+    const linked = index.get(linkKey(def.menuItemId, "M")) ?? index.get(linkKey(def.menuItemId, "L"));
+    if (linked !== undefined) return linked;
+  }
+  const names: readonly string[] = def.names;
+  const byName = products.filter((p) => names.includes(optionNameKey(p.name))).sort((a, b) => Number(b.active) - Number(a.active) || a.id - b.id);
+  return byName[0]?.id ?? null;
 }
 
 /** Ekranda boy: "M", "L", tek boyda "" */

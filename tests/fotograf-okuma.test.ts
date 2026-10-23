@@ -90,6 +90,14 @@ test("yazılan tutar yeniden okunur: yıldız, TL, eksi; metin ile sayı tutmazs
   assert.deepEqual(printedAmount({ text: null, value: null, confidence: "low" }), { value: null, confidence: "low", mismatch: false });
   // Metin okunamazsa modelin sayısı
   assert.deepEqual(printedAmount({ text: "?", value: 15, confidence: "medium" }), { value: 15, confidence: "medium", mismatch: false });
+  // Banka POS fişinin İngilizce yazımı modelin sayısıyla tutar
+  assert.deepEqual(printedAmount({ text: "12,975.50", value: 12975.5, confidence: "high" }), { value: 12975.5, confidence: "high", mismatch: false });
+  // Basamak kayması (metin yüzde birinden küçük okunursa): modelin sayısı kalır, alan turuncu olur
+  assert.deepEqual(printedAmount({ text: "12,98", value: 12975.5, confidence: "high" }), { value: 12975.5, confidence: "low", mismatch: true });
+  assert.deepEqual(printedAmount({ text: "12.975.500", value: 12975.5, confidence: "high" }), { value: 12975.5, confidence: "low", mismatch: true });
+  // Sıfır basamak kayması değildir: model 0 yazdıysa metindeki tutar geçer (eskiden 0 kalıyordu); metin 0 ise o geçer
+  assert.deepEqual(printedAmount({ text: "12,50", value: 0, confidence: "high" }), { value: 12.5, confidence: "low", mismatch: true });
+  assert.deepEqual(printedAmount({ text: "0,00", value: 12.5, confidence: "high" }), { value: 0, confidence: "low", mismatch: true });
 });
 
 test("ortak: temizlik, takvim günü, 05:00'ten önce basılan fiş bir önceki güne", () => {

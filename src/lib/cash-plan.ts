@@ -14,7 +14,7 @@
 
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod } from "./calc/types";
-import { GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
+import { fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
 import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
@@ -69,8 +69,17 @@ interface FixedItem {
   id: number;
   name: string;
   period: FixedPeriod;
+  /** KDV hariç (Giderler'de girilen) */
   amount: number;
+  /**
+   * Faturasındaki KDV oranı (constants.ts fixedVatRate; kalemde boşsa bölümün varsayılanı). Plan gideri KDV dahil öder:
+   * kiranın %20'si de bankadan çıkar (KDV tahmini faturası panele gelen giderin KDV'sini zaten indirir)
+   */
+  vatRate?: number;
 }
+
+/** Sabit giderin bankadan çıkan tutarı: KDV hariç tutar × (1 + KDV oranı) */
+const withVat = (f: Pick<FixedItem, "amount" | "vatRate">, amount = f.amount) => amount * (1 + (f.vatRate ?? 0));
 
 export interface CashPlanInput {
   today: string;
@@ -212,7 +221,8 @@ export interface CashPlan {
     /** default: her ayın 1'i / son günü; carrier: tutarsız hatırlatıcının gününde; reminder: hatırlatıcıdaki tutar */
     salaryMode: "default" | "carrier" | "reminder";
     sgkMode: "default" | "carrier" | "reminder";
-    fixedSpread: { count: number; monthly: number };
+    /** Yayılan sabit giderlerin sayısı ve aylık toplamı (KDV dahil); `vat`: KDV'li kalem var */
+    fixedSpread: { count: number; monthly: number; vat: boolean };
     overdueInvoices: number;
   };
   /** Plana girmeyen, tutarı girilmemiş hatırlatıcılar (ad ve ilk tarih) */
@@ -315,7 +325,7 @@ export function planInputFromModel(model: Model, today: string): Pick<CashPlanIn
     const p = model.personnelFor(m);
     months[m] = {
       payroll: { net: p.net + p.extras, sgk: p.deductions + p.employerSgk + p.employerUnemployment, people: p.rows.length },
-      fixed: model.fixedInMonth(m).map((f) => ({ id: f.id, name: f.name, period: f.period, amount: f.amount })),
+      fixed: model.fixedInMonth(m).map((f) => ({ id: f.id, name: f.name, period: f.period, amount: f.amount, vatRate: fixedVatRate(f) })),
     };
   }
   return {
@@ -355,12 +365,12 @@ export function lineLabel(l: Pick<PlanLine, "title" | "estimated">): string {
   return l.title.endsWith(")") ? `${l.title.slice(0, -1)}, tahmini)` : `${l.title} (tahmini)`;
 }
 
-/** Sabit giderin aylık karşılığı (notlar ve Tahmine katılanlar için; günlük gider ayda en çok 30 açık gün) */
-function monthlyOf(f: Pick<FixedItem, "period" | "amount">, acikGun: number): number {
-  if (f.period === "gunluk") return f.amount * Math.min(30, acikGun);
-  if (f.period === "haftalik") return (f.amount * 52) / 12;
-  if (f.period === "yillik") return f.amount / 12;
-  return f.amount;
+/** Sabit giderin aylık karşılığı, KDV dahil (notlar ve Tahmine katılanlar için; günlük gider ayda en çok 30 açık gün) */
+function monthlyOf(f: Pick<FixedItem, "period" | "amount" | "vatRate">, acikGun: number): number {
+  if (f.period === "gunluk") return withVat(f, f.amount * Math.min(30, acikGun));
+  if (f.period === "haftalik") return withVat(f, (f.amount * 52) / 12);
+  if (f.period === "yillik") return withVat(f, f.amount / 12);
+  return withVat(f);
 }
 
 type RemClass = { kind: "fixed"; id: number } | { kind: "salary" } | { kind: "sgk" } | { kind: "kdv" } | { kind: "kdv2" } | { kind: "other" };
@@ -489,8 +499,9 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         if (hasAmount(r)) reminderLine(r, o);
         else if (r.amount === null && !off(`fixed:${c.id}`)) {
           const f = fixedIn(o.due.slice(0, 7)).find((x) => x.id === c.id) ?? fixedIn(o.date.slice(0, 7)).find((x) => x.id === c.id);
-          const amount = f ? (f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount) : 0;
-          if (amount > 0) reminderLine(r, o, { kind: "fixed", amount, estimated: true, detail: "Sabit giderdeki tutar" });
+          const amount = f ? withVat(f, f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount) : 0;
+          const detail = f?.vatRate ? `Sabit giderdeki tutar + %${num(f.vatRate * 100)} KDV` : "Sabit giderdeki tutar";
+          if (amount > 0) reminderLine(r, o, { kind: "fixed", amount, estimated: true, detail });
           else addUnknown(r, o.date);
         }
       }
@@ -702,13 +713,16 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // ------------------------------------------------------------ Sabit giderler (yayılan, tahmini, yarından)
   const fixedOut = dates.map(() => 0);
   const fixedParts = new Map<number, { name: string; perDay: number[] }>();
+  // Faturası KDV'li bir gider yayıldı mı ("Sabit giderler" satırının açıklaması bunu söyler)
+  let fixedVat = false;
   const spreadable = (f: FixedItem) => f.amount > 0 && f.period !== "yillik" && !covered.has(f.id) && !off(`fixed:${f.id}`);
   for (let i = 1; i < N; i++) {
     const m = monthOfDay(i);
     const dim = daysInMonth(m);
     for (const f of fixedIn(m)) {
       if (!spreadable(f)) continue;
-      const v = f.period === "aylik" ? f.amount / dim : f.period === "haftalik" ? f.amount / 7 : f.amount * openRatio;
+      if (f.vatRate) fixedVat = true;
+      const v = withVat(f, f.period === "aylik" ? f.amount / dim : f.period === "haftalik" ? f.amount / 7 : f.amount * openRatio);
       fixedOut[i] += v;
       const part = fixedParts.get(f.id) ?? { name: f.name, perDay: dates.map(() => 0) };
       part.perDay[i] += v;
@@ -720,7 +734,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   for (const m of monthKeys.filter((m) => m >= today.slice(0, 7) && m <= end.slice(0, 7))) for (const f of fixedIn(m)) if (!horizonFixed.has(f.id)) horizonFixed.set(f.id, f);
   const spreadNow = [...horizonFixed.values()].filter(spreadable);
   // Yıllık gider günü bilinmediği için plana girmez (Ödemeler'de hatırlatıcısı varsa onun gününde girer)
-  const notIncluded = [...horizonFixed.values()].filter((f) => f.period === "yillik" && f.amount > 0 && !covered.has(f.id)).map((f) => ({ title: f.name, amount: f.amount, period: f.period }));
+  const notIncluded = [...horizonFixed.values()].filter((f) => f.period === "yillik" && f.amount > 0 && !covered.has(f.id)).map((f) => ({ title: f.name, amount: withVat(f), period: f.period }));
 
   // ------------------------------------------------------------ Mal alımı (yeni faturalar, tahmini)
   const goodsOut = dates.map(() => 0);
@@ -804,7 +818,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         amount: fixedSum,
         estimated: true,
         overdue: false,
-        detail: `Ay içine yayıldı: ${topParts(fixedNamed(), a, b)
+        detail: `Ay içine yayıldı${fixedVat ? " (faturadaki KDV dahil)" : ""}: ${topParts(fixedNamed(), a, b)
           .map((x) => `${x.name} ${tl(x.sum)}`)
           .join(" · ")}${fixedParts.size > 4 ? " …" : ""}`,
       });
@@ -930,7 +944,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       title: f.name,
       monthly: monthlyOf(f, st.acikGun),
       status: st2,
-      note: st2 === "yearly" ? "Yıllık: gününü bilmek için Ödemeler'e ekleyin" : st2 === "covered" ? "Ödemeler'de hatırlatıcısı var" : "ay içine yayılır",
+      note: `${st2 === "yearly" ? "Yıllık: gününü bilmek için Ödemeler'e ekleyin" : st2 === "covered" ? "Ödemeler'de hatırlatıcısı var" : "ay içine yayılır"}${f.vatRate ? ` · %${num(f.vatRate * 100)} KDV dahil` : ""}`,
       direction: "out",
     });
   }
@@ -955,7 +969,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       payroll: payroll.people > 0 ? payroll : null,
       salaryMode,
       sgkMode,
-      fixedSpread: { count: spreadNow.length, monthly: spreadNow.reduce((a, f) => a + monthlyOf(f, st.acikGun), 0) },
+      fixedSpread: { count: spreadNow.length, monthly: spreadNow.reduce((a, f) => a + monthlyOf(f, st.acikGun), 0), vat: spreadNow.some((f) => (f.vatRate ?? 0) > 0) },
       overdueInvoices,
     },
     unknownAmounts,
@@ -1025,7 +1039,7 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     out.push({
       key: "fixed",
       title: "Sabit giderler",
-      text: `Hatırlatıcısı olmayan ${num(b.fixedSpread.count)} sabit gider (ayda ${tl(b.fixedSpread.monthly)}) ay içine eşit yayıldı. Gününü bilmek için Ödemeler'e ekleyin.`,
+      text: `Hatırlatıcısı olmayan ${num(b.fixedSpread.count)} sabit gider (ayda ${tl(b.fixedSpread.monthly)}${b.fixedSpread.vat ? ", faturadaki KDV dahil" : ""}) ay içine eşit yayıldı. Giderler'de KDV hariç girilen tutara kalemin KDV'si eklenir (kira, faturalar ve genel giderler varsayılan %20, personel KDV'siz; kalemde değiştirilir). Gününü bilmek için Ödemeler'e ekleyin.`,
     });
   }
   out.push({

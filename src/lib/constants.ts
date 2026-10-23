@@ -115,6 +115,24 @@ export const FIXED_SECTIONS: { key: FixedSection; label: string }[] = [
   { key: "genel", label: "İşletme genel giderleri" },
 ];
 
+/**
+ * Sabit giderin faturasındaki KDV, bölümün varsayılanı (kalemde boşsa): personel KDV'siz (maaş, yemek), kira, faturalar
+ * ve genel giderler %20. Yalnız nakit planı kullanır (gider KDV dahil ödenir); gelir-gider KDV hariç kalır.
+ */
+export const FIXED_SECTION_VAT: Record<FixedSection, number> = { personel: 0, faturalar: 0.2, kira: 0.2, genel: 0.2 };
+/** Sabit gider formundaki KDV seçenekleri */
+export const FIXED_VAT_RATES: { value: number; label: string }[] = [
+  { value: 0, label: "KDV yok" },
+  { value: 0.01, label: "%1" },
+  { value: 0.1, label: "%10" },
+  { value: 0.2, label: "%20" },
+];
+
+/** Kalemin KDV oranı: girilmişse o, yoksa bölümünün varsayılanı */
+export function fixedVatRate(f: { section: FixedSection; vatRate?: number | null }): number {
+  return f.vatRate ?? FIXED_SECTION_VAT[f.section];
+}
+
 export const FIXED_PERIODS: { key: FixedPeriod; label: string; hint: string }[] = [
   { key: "aylik", label: "Aylık", hint: "Her ay aynı tutar" },
   { key: "gunluk", label: "Günlük", hint: "Açık gün sayısıyla çarpılır" },

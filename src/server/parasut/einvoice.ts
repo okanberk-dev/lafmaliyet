@@ -10,6 +10,7 @@
  * Saf modül: testlerde de kullanılır.
  */
 import type { Resource } from "./jsonapi";
+import { SALES_RETURN } from "./mapping";
 
 export interface EInvoiceAttrs {
   external_id?: string | null;
@@ -17,6 +18,7 @@ export interface EInvoiceAttrs {
   direction?: string | null;
   contact_name?: string | null;
   from_vkn?: string | null;
+  to_vkn?: string | null;
   issue_date?: string | null;
   net_total?: string | number | null;
   total_vat?: string | number | null;
@@ -32,8 +34,12 @@ export interface EInvoiceDraft {
   uuid: string | null;
   invoiceNo: string | null;
   date: string;
+  /** Karşı taraf (`contact_name`): gelende satıcı, gidende alıcı */
   supplier: string;
+  /** Gelende satıcının vergi nosu (`from_vkn`) */
   supplierTaxNo: string | null;
+  /** Gidende alıcının vergi nosu (`to_vkn`; tedarikçiye iade) */
+  receiverTaxNo: string | null;
   /** KDV hariç (iskonto bilgisi gelmez: iskonto sonrası tutar) */
   amount: number;
   vat: number;
@@ -46,7 +52,10 @@ export interface EInvoiceDraft {
   currency: string;
   /** Tevkifatlı faturada Paraşüt'ün toplamları tevkifat sonrası olabilir: tutar kontrol edilmeli */
   withholding: boolean;
-  /** İade faturası: tutarlar eksi */
+  /**
+   * İade faturası (IADE, TEVKIFATIADE): tutarlar eksi. GİB kuralıyla iadeyi malı geri veren alıcı keser: gelen iade
+   * kafenin sattığı bir malın iadesidir (satış iadesi, gider sayılmaz), giden iade kafenin tedarikçiye iadesidir
+   */
   refund: boolean;
   /** İçeri alınmışsa Paraşüt gider faturası kimliği */
   importedBillId: string | null;
@@ -65,7 +74,7 @@ export function eInvoiceToDraft(r: Resource<EInvoiceAttrs>): EInvoiceDraft {
   const inv = r.relationships?.invoice?.data;
   const importedBillId = inv && !Array.isArray(inv) ? inv.id : null;
   const type = String(a.invoice_type_code ?? "").toUpperCase();
-  const refund = type === "IADE";
+  const refund = type === "IADE" || type === "TEVKIFATIADE";
   const sign = refund ? -1 : 1;
   const payable = round2(num(a.net_total));
   const vat = round2(num(a.total_vat));
@@ -77,6 +86,7 @@ export function eInvoiceToDraft(r: Resource<EInvoiceAttrs>): EInvoiceDraft {
     date: String(a.issue_date ?? "").slice(0, 10),
     supplier: a.contact_name?.trim() || PLACEHOLDER_E_SUPPLIER,
     supplierTaxNo: a.from_vkn?.trim() || null,
+    receiverTaxNo: a.to_vkn?.trim() || null,
     amount: sign * round2(payable - vat),
     vat: sign * vat,
     payable: sign * payable,
@@ -105,12 +115,20 @@ export function withholdingVatFill(row: { vat: number | null; payable: number },
 /** Panele gider olarak girmeli mi; girmemeliyse nedeni (mevcut kaydı kaldırırken nota yazılır) */
 export function shouldImportEInvoice(d: EInvoiceDraft): { ok: true } | { ok: false; reason: string } {
   if (!d.inbound) return { ok: false, reason: "giden fatura" };
+  // Gelen iade e-faturası bir müşterinin (sitenin e-Fatura kestiği şirketin) iadesidir: tedarikçi faturası değil
+  if (d.refund) return { ok: false, reason: SALES_RETURN };
   if (d.answered) return { ok: false, reason: "reddedildi" };
   if (d.archived) return { ok: false, reason: "arşivlendi" };
   if (d.currency !== "TRL" && d.currency !== "TRY") return { ok: false, reason: `döviz (${d.currency})` };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { ok: false, reason: "tarih yok" };
   return { ok: true };
 }
+
+/**
+ * Kafenin tedarikçiye iadesi (giden iade e-faturası). Paraşüt bunu satış faturası olarak tutar, panel satış
+ * faturalarını okumaz: tutarı panele girmez, Paraşüt sayfasında listelenir (docs/PARASUT.md §2a)
+ */
+export const isSupplierReturn = (d: Pick<EInvoiceDraft, "inbound" | "refund">) => !d.inbound && d.refund;
 
 /**
  * Yeni faturada kategori tahmini güvenilir mi: kural, tedarikçinin geçmişi ya da komisyon platformu değilse

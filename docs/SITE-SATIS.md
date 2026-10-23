@@ -1,12 +1,13 @@
 # laffogato.net online satışları: kâr-zarar, tüketim ve kasa raporu
 
 Ekranlar: **Gelir-gider** (`/panel/gelir-gider`; "laffogato.net online satışları" kartı ve tablonun Maliyet
-bölümündeki satırlar), **Tutarlılık** (`/panel/tutarlilik`; online tüketim), **Kasa raporu** (`/panel/kasa`; günün
-bilgi satırı) ve **Ayarlar › laffogato.net** (bağlantının durumu).
+bölümündeki satırlar), **Genel bakış** (`/panel`; reçeteye göre kâr, başabaş, tahmin), **Tutarlılık**
+(`/panel/tutarlilik`; online tüketim), **Kasa raporu** (`/panel/kasa`; günün bilgi satırı) ve **Ayarlar ›
+laffogato.net** (bağlantının durumu).
 
-**Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar ve tüketim (hesap motoru,
-`src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`), **Nakit planı › KDV
-tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan `src/lib/kdv.ts`;
+**Kullananlar** (sözleşmeye dokunan bir değişiklik bunların hepsine bakar): kâr-zarar, Genel bakış ve tüketim (hesap
+motoru, `src/lib/calc/engine.ts`), kasa raporunun günlük bilgi satırı (`src/server/site-sales/sync.ts`), **Nakit planı ›
+KDV tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sales/calc.ts`, okuyan `src/lib/kdv.ts`;
 [NAKIT-PLANI.md](NAKIT-PLANI.md)). Sözleşmenin sitedeki kopyası: laffogato deposunda
 `docs/PANEL-SALES.md` (uç, alanlar, KDV kuralı, hata kodları; sitenin kuralı `src/lib/panel/sales-export-core.ts`).
 
@@ -35,10 +36,10 @@ tahmini** (satış KDV'sine sitenin KDV'si de girer: `siteVat` `src/lib/site-sal
 ```
 laffogato.net                                    ladmin.laffogato.net (bu panel)
 ─────────────                                    ──────────────────────────────
-GET /api/panel/sales?month=2026-10  ◀──────────  günlük iş (bu ay; ayın ilk 7 gününde geçen ay da)
-  {now, version:1, from, to, closed,               ya da Gelir-gider › Siteden yenile (bu ay ve geçen ay)
+GET /api/panel/sales?month=2026-10  ◀──────────  günlük iş (bu ay ve önceki iki ay)
+  {now, version:1, from, to, closed,               ya da Gelir-gider › Siteden yenile (aynı üç ay)
    cafe:{…, lines:[…]}, shop:{…},                  ├─ doğrula (sürüm 1, dönem aynı, tamsayı kuruş)
-   karaoke:{…}, manual:{…}}                        └─ integration_state site_sales:2026-10 (üzerine yazar)
+   karaoke:{…}, manual:{…}, counter:{…}}           └─ integration_state site_sales:2026-10 (üzerine yazar)
                                                          └─ hesap motoru: kâr-zarar satırları, online tüketim
 
 GET /api/panel/sales?from=2026-10-21&to=2026-10-21  ◀──  Kasa raporu açılınca / gönderilince / e-postada
@@ -66,16 +67,25 @@ siteden çekildiyse:
   çıkabilir, doğrudur. Site kuruş gönderir, panel TL gösterir.
 - **Hiç çekilmemiş ay boş kalır** (0 değil): o ayın kârı yalnız ModPOS'la hesaplanır. Çekilmiş ama satışsız ay 0'dır.
 - **KÂR / ZARAR** = toplam ciro − giderler; **oranlar** (maliyet oranı, kira oranı, …) toplam ciroya göre. Genel
-  bakışın kârı, yıllık eğilim, ay ay döküm ve Excel'e aktarım aynı toplamı kullanır.
+  bakışın "Faturaya göre" kârı, yıllık eğilim, ay ay döküm ve Excel'e aktarım aynı toplamı kullanır; Genel bakışın
+  reçeteye göre kârı da online satışı içerir (aşağıda "Genel bakış").
 - **Dokunulmayanlar:** AYLIK CİRO (KDV dahil – POS) elle girilen ModPOS cirosu olarak kalır, AYLIK CİRO (KDV hariç)
   yalnız ondan hesaplanır (kasada çalınan karaoke, yani Satışlar'da HİZMET işaretli satırlar, hizmet KDV'siyle: bkz.
   aşağıda "Kasadaki karaoke"); POS komisyonu formülü aynen ModPOS cirosundan. Online satırlar düzenlenemez,
   gelir-gider düzeltmesi almaz (kaynak sitedir).
 - **Kaynak görünür:** satırların açıklaması nereden geldiğini söyler; tablonun üstündeki **laffogato.net online
   satışları** kartı ayı ayı gösterir: kafe / mağaza / karaoke (KDV hariç) ve sipariş sayıları, "Ay kapandı" / "Ay
-  sürüyor" (sitenin `closed`'ı), ne zaman çekildiği, panelden elle girilip eklenmeyen siparişler (KDV dahil), panel
-  ürününe bağlı olmayan satır sayısı, son hata. **Siteden yenile** bu ayı ve geçen ayı, satırdaki ↻ o ayı, **Başka bir
-  ay** bu yılın herhangi bir ayını (Ocak 2026'dan bu aya) çeker. Kartın altında **laffogato.net paneli ↗**.
+  sürüyor" (sitenin `closed`'ı), ne zaman çekildiği, panelden elle girilip eklenmeyen siparişler (KDV dahil), kasada
+  ödenen uygulama siparişleri (`counter`, KDV dahil; aşağıda), karaokede iadesi bekleyen tutar
+  (`karaoke.refundPendingMinor`: iptal edilmiş, parası henüz geri ödenmemiş; karaoke tutarının içindedir, geri
+  ödenince sonraki çekmede düşer), panel ürününe bağlı olmayan satır sayısı, son hata. **Siteden yenile** bu ayı ve
+  önceki iki ayı, satırdaki ↻ o ayı, **Başka bir ay** bu yılın herhangi bir ayını (Ocak 2026'dan bu aya) çeker.
+  Kartın altında **laffogato.net paneli ↗**.
+- **Kasada ödenen uygulama siparişi** (`counter`, v1'e eklenen isteğe bağlı blok): uygulama ya da web siparişi kartla
+  ödenemeyip kasada nakit ya da kasadaki kart cihazıyla ödenirse (sitede "Ödendi olarak işaretle", `manual:nakit` /
+  `manual:kart`) fişi ModPOS'ta çalınır: ciro kasadadır. Site bu siparişleri kafe ve mağaza toplamlarından ve
+  satırlarından ayırıp `counter: {orders, grossMinor, netMinor}` olarak gönderir; panel ciroya, KDV tahminine ve
+  tüketime eklemez (elle girilen `manual` gibi), kartta bilgi olarak yazar. Eski site bloğu göndermez: sıfır sayılır.
 - Telefonda ay özeti "+ online X (laffogato.net)" der.
 - **Karaoke box ile karaoke odası ayrı işlerdir:** Faturalar'daki "Karaoke box" kategorisi MaviBahçe AVM'deki karaoke
   box'ların faturalarıdır (Opera Gayrimenkul; `SEPARATE_CATEGORIES`, [PARASUT.md](PARASUT.md) §6a-1), kafenin
@@ -111,6 +121,43 @@ online satış ModPOS satışını şişirmez):
 - Bağlı olmayan satır varsa zilde uyarı: "N online satış satırı panel ürününe bağlı değil".
 - Ay çekilmediyse kart bunu söyler ve Gelir-gider'e (Siteden yenile) götürür; o ayın beklenen kullanımı yalnız
   ModPOS'tandır.
+- **Seçenekler** (v1'e eklenen, isteğe bağlı satır alanları; eski site göndermez): `extraShots` (satırdaki toplam
+  ekstra shot, adet dahil), `syrups` ve `milks` (seçeneğin kimliğine göre adet; `normal` süt sayılmaz). Kasada bunlar
+  ayrı satır olarak çalınır ("Extra Shot", "Syrup", "Alternatif Süt"): panel online seçenekleri de aynı ürünlere
+  verir. Ürün önce sitenin menü kalemine bağlı olandır (ekstra shot `mnu-0081`, şurup `mnu-0080`; Ürünler › Site
+  menüsü), yoksa adı tutan ürün (`OPTION_PRODUCTS`, `src/lib/site-sales/calc.ts`). O ürünün reçetesi beklenen
+  tüketime, maliyeti reçeteye göre kâra, adedi "ayda …" adetlerine girer. Ürünü olmayan seçenek Online kafe
+  siparişleri kartında "panelde ürünü yok" diye listelenir. Normal süt içeceğin kendi reçetesindedir; alternatif sütün
+  inek sütünü azaltması kasadaki gibi hesaba girmez.
+
+### Genel bakış
+
+Genel bakışın reçeteye göre rakamları da (net satış, brüt kâr, "Para nereye gitti?", başlıktaki **net kâr / zarar**)
+Gelir-gider gibi ModPOS + online'dır (`dashboard().theoretical`, `model.onlineMonth`):
+
+- **Net satış** = ModPOS satış listesi (KDV hariç) + üç online satır (KDV hariç, Gelir-gider'deki tutarlar). Kartın
+  dökümünde ayrı "laffogato.net online" bölümü; "Para nereye gitti?" çubuğunun tabanı ikisinin toplamı.
+- **Malzeme + ambalaj** (online kısmı): ürüne eşlenen kafe satırları ve ürünü olan seçenekler adet × ürünün reçete
+  maliyeti; menüye bağlı olmayan kafe satırları (liste fiyatı) ve mağaza kolileri (kargo ücreti hizmet KDV'siyle
+  düşülerek) KDV hariç tutar × ayın ortalama maliyet oranı (ModPOS'ta eşleşmeyen satırın kuralı; ayın satış listesi
+  yoksa son satış ayınınki). Karaokenin malzemesi yoktur. Online ödemenin komisyonu bu görünümde yok: faturası gelince
+  Gelir-gider'de komisyon olarak.
+- **Brüt kâr** = ModPOS brüt kârı + online (gelir − malzeme); **net kâr** = brüt kâr − indirimler − sabit giderler.
+  Kategoriler kutusunda online ayrı satır.
+- **Başabaş günlük ciro** = (standart aylık sabit gider − online brüt kârı) ÷ brüt kâr oranı ÷ ayda açık gün. Online
+  brüt kârı referans satış ayının, ay kapanmadıysa ondan önceki son kapanmış online ayın (süren ayın yarım online
+  satışı bir ayı karşılamaz); yoksa düşülmez.
+- **Ay sonu tahmini** online satışın bugüne kadarki brüt kârını aynı tempoyla ekler (÷ geçen gün × ayın gün sayısı).
+- **Adetler:** kategoriler, menü mühendisliği, en kârlı / en çok satan ürünler ve zam etkisinin "ayda …" adetleri
+  online satılanı da sayar (`soldWithOnline`, `salesBasis`); zam etkisinin "brüt kârın %X'i" paydası online brüt kârı
+  içerir. Online adet ayın açık günüyle standart aya çevrilir. Ürünler sayfası (adet, brüt kâr), ürün kartı (ayın adedi
+  ve Satışlar geçmişi; yalnız online satılan ay da görünür, `productSalesHistory`) ve Excel'in Ürün Kârlılık / Reçete
+  Kartları sekmeleri de aynı adedi gösterir: Claude aracının açtığı kart aynı sayıyı söyler.
+- Süren ayda satış listesi kasa raporlarından kısa bir dönemi kapsıyorsa (Satışlar › "Liste hangi güne kadar?")
+  online satış o günlere düşen payla girer (`listShareOf`), sabit gider gibi.
+- Çekilmemiş ayda eskisi gibi yalnız ModPOS.
+- **Analiz › Senaryo** ModPOS satış karmasıyla kalır (kartında "online satışı dahil değil" yazar): online satışı
+  zam / adet kaydırıcılarına katmak başabaşın tanımını değiştirirdi (Genel bakış'ta başabaş kasanın cirosudur).
 
 ### Kasa raporu satırı
 
@@ -146,20 +193,37 @@ işlem geçmişine yazılır ("laffogato.net online satışları çekildi · Eki
 
 | Tetikleyici | Aylar |
 |-------------|-------|
-| Günlük iş (`/api/cron/gunluk`, sabah; ayrı ve yalıtılmış bir adım, hata öteki adımları durdurmaz) | Bu ay; ayın ilk 7 gününde geçen ay da (geç gelen iade kapanmış ayı düşürür) |
-| Gelir-gider › **Siteden yenile** | Bu ay ve geçen ay |
+| Günlük iş (`/api/cron/gunluk`, sabah; ayrı ve yalıtılmış bir adım, hata öteki adımları durdurmaz) | Bu ay ve önceki iki ay, her gün (`salesMonthsToPull`) |
+| Gelir-gider › **Siteden yenile** | Aynı üç ay |
 | Ay satırındaki ↻ ya da **Başka bir ay › Siteden çek** | O ay (bu yılın Ocak 2026'dan bu aya kadarki ayları; istek başına en çok 3) |
 
-Aylar aynı anda sorulur: site yavaşsa günlük iş en çok 8 saniye bekler. Elle çekme yalnız yöneticinin
-(`src/server/actions/site-sales.ts`).
+Aylar aynı anda sorulur (üç küçük imzalı istek): site yavaşsa günlük iş en çok 8 saniye bekler. Elle çekme yalnız
+yöneticinin (`src/server/actions/site-sales.ts`).
+
+**Neden üç ay:** site iadeyi siparişin verildiği aya, karaokeyi parasının alındığı aya yazar. 28 Ekim'de verilen,
+3 Kasım'da teslim edilen ve 15 Kasım'da cayma hakkıyla (14 gün) iade edilen koli Ekim'i düşürür; 5 Ekim'de 30 Kasım
+için ödenip 25 Kasım'da iptal edilen karaoke de (rezervasyon 60 gün ileriye alınabilir). Eskiden yalnız ayın ilk 7
+gününde geçen ay çekiliyordu: "Ay kapandı" diyen Ekim kâr-zararı ve KDV tahmini 500 ₺'yi tutmaya devam ederdi. Üç
+aydan eski iade için ayın satırındaki ↻ ya da **Başka bir ay**.
+
+## Sitede yapılacak (v1'e ekleme)
+
+Panel aşağıdaki alanları **isteğe bağlı** okur; site göndermeye başlayınca kendiliğinden kullanılır, göndermezken
+davranış eskisi gibidir. Sitenin `docs/PANEL-SALES.md`'si aynı PR'da güncellenmeli:
+
+1. **`counter: {orders, grossMinor, netMinor}`**: başarılı ödemesi `manual:nakit` ya da `manual:kart` olan uygulama /
+   web siparişleri (kasada ödendi, ModPOS'ta çalındı). Bunlar `cafe` / `shop` toplamlarından ve `cafe.lines`'tan
+   çıkarılır. `manual:havale` ve `manual:diger` online sayılır (kasadan geçmez); kural `PANEL-SALES.md`'de yazılmalı.
+2. **`cafe.lines[].extraShots`** (tamsayı), **`syrups`** ve **`milks`** (`{seçenek: adet}`, en çok 20 seçenek; `normal`
+   süt gönderilmese de olur): satırın `items[].options`'ından, adetle çarpılmış.
 
 ## Kurulum
 
 1. Karaoke bağlantısı kuruluysa ek bir şey gerekmez: aynı `KARAOKE_SYNC_SECRET` ve `LAFFOGATO_URL`
    ([KARAOKE.md](KARAOKE.md) › Kurulum). Migration gerekmez (kayıtlar `integration_state`'te).
 2. Sitenin satış ucu yayında olmalı (laffogato `src/app/api/panel/sales/route.ts`).
-3. Gelir-gider › **Siteden yenile**: bu ay ve geçen ay gelir; önceki aylar için **Başka bir ay**. Tutarlılıkta online
-   tüketim için ürünlerin menüye bağlı olması gerekir (Ürünler › Site menüsü).
+3. Gelir-gider › **Siteden yenile**: bu ay ve önceki iki ay gelir; daha eskiler için **Başka bir ay**. Tutarlılıkta
+   online tüketim için ürünlerin menüye bağlı olması gerekir (Ürünler › Site menüsü).
 
 ## Güvenlik ve kişisel veri
 
@@ -199,4 +263,5 @@ bilgidir; yokluğu raporu etkilemez.
 | `src/app/panel/gelir-gider/site-sales-card.tsx` | laffogato.net online satışları kartı |
 | `src/app/panel/tutarlilik/` | Online tüketim kartı, "ModPOS · online" ayrımı |
 | `src/app/panel/kasa/page.tsx`, `src/server/actions/cash-report.ts`, `src/server/notify/cash-report-template.ts` | Kasa raporu satırı, gönderim, e-posta |
-| `tests/site-satis.test.ts` | Şema, KDV hariç formül, aylar, eşleme, kasa satırının zaman sınırı, motor satırları |
+| `tests/site-satis.test.ts` | Şema, KDV hariç formül, aylar, eşleme, kasa satırının zaman sınırı, motor satırları, kasada ödenen siparişler, seçenekler |
+| `tests/genel-bakis-online.test.ts` | Genel bakış: online satışın reçeteye göre kârı, başabaş, ay sonu tahmini, kategoriler, zam etkisi |

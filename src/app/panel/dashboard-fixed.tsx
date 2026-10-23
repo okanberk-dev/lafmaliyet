@@ -12,15 +12,29 @@ export const differs = (a: number, b: number) => Math.abs(a - b) >= 1;
 /** "+1.234 ₺" / "−1.234 ₺": açıklamalarda farkın yönü görünsün */
 export const signedTl = (v: number) => `${v < 0 ? "−" : "+"}${tl(Math.abs(v))}`;
 
+/**
+ * Gün etkisinin adı: elle girilen açık günde "Açık gün etkisi (23 / 31 gün)"; kasa raporlarından gelen ayda takvim
+ * günü (yalnız süren ayda standarttan farklı): "Ayın geçen günü (16 / 31 gün)"
+ */
+export function prorationLabel(f: Pick<FixedMonthBreakdown, "prorationBasis" | "prorationDays" | "dim">): string {
+  return `${f.prorationBasis === "takvim" ? "Ayın geçen günü" : "Açık gün etkisi"} (${f.prorationDays} / ${f.dim} gün)`;
+}
+
+/** "Satış listesinin günleri (15 / 22 gün)": süren ayda listenin kapsamadığı günlerin sabit gideri düşülmez */
+export function listShareLabel(ls: NonNullable<FixedMonthBreakdown["listShare"]>): string {
+  return `Satış listesinin günleri (${ls.days} / ${ls.of} gün)`;
+}
+
 /** Net kâr ipucu: Excel temeli (standart) ile bu ayın sabit gideri arasındaki fark nereden geliyor */
 export function fixedBreakdownText(f: FixedMonthBreakdown): string {
   const parts = [`Standart aylık sabit gider ${tl(f.standard)}`];
-  if (differs(f.proration, 0)) parts.push(`açık gün etkisi (${f.openDays} / ${f.dim} gün) ${signedTl(f.proration)}`);
+  if (differs(f.proration, 0)) parts.push(`${prorationLabel(f).toLocaleLowerCase("tr-TR")} ${signedTl(f.proration)}`);
   // Kutudaki satırlarla aynı adlar: düzeltilen hücreler ve yalnızca bu aya yazılan satırlar ayrı
   if (differs(f.overrides, 0)) parts.push(`Gelir-gider'de düzeltilen tutarlar ${signedTl(f.overrides)}`);
   if (differs(f.manual, 0)) parts.push(`bu aya özel giderler (Gelir-gider) ${signedTl(f.manual)}`);
   // Harcamalar Excel'de yok: standarda değil, ayrı satıra (yoksa "Excel temeli" ile standart çelişir)
   if (differs(f.expenses, 0)) parts.push(`aylık harcamalar ${signedTl(f.expenses)}`);
+  if (f.listShare && differs(f.listShare.amount, 0)) parts.push(`${listShareLabel(f.listShare).toLocaleLowerCase("tr-TR")} ${signedTl(f.listShare.amount)}`);
   return `${parts.join(" · ")} = bu ay düşülen ${tl(f.total)}. Excel Panel'i her ay standart tutarı düşer; "Excel temeli" o hesaptır.`;
 }
 
@@ -34,13 +48,14 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
   const overrides = differs(f.overrides, 0);
   const manual = differs(f.manual, 0);
   const expenses = differs(f.expenses, 0);
+  const listShare = f.listShare && differs(f.listShare.amount, 0) ? f.listShare : null;
   const water = f.waterExcluded > 0;
   const names = (xs: { label: string }[]) =>
     xs
       .slice(0, 3)
       .map((x) => x.label)
       .join(", ") + (xs.length > 3 ? "…" : "");
-  if (!proration && !overrides && !manual && !expenses) {
+  if (!proration && !overrides && !manual && !expenses && !listShare) {
     return (
       <p className="text-xs leading-5 text-ink-mute">
         Sabit giderler bu ay standart aylık tutarlarla düşüldü ({tl(f.standard)}, Excel Panel ile aynı temel).
@@ -62,17 +77,18 @@ export function FixedReconcile({ f }: { f: FixedMonthBreakdown }) {
     <Well className="px-4 py-2">
       <h3 className="flex items-center gap-1.5 pt-1 text-[13px] font-semibold text-ink">
         Bu ay düşülen sabit gider
-        <InfoTip text="Excel Panel'i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. Panel o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür, Gelir-gider'de elle düzeltilen hücreler, yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) ve Harcamalar sayfasındaki aylık harcamalar eklenir. Fark aşağıda ayrı satırlarda." />
+        <InfoTip text="Excel Panel'i her ay standart aylık sabit gideri (Sabit Giderler + Personel) düşer. Panel o ayın Gelir-gider tutarlarını kullanır: kalemler açık gün oranıyla bölünür (açık günü kasa raporlarından gelen ayda ayın geçen günüyle: kapalı gün kira ve maaşı düşürmez), Gelir-gider'de elle düzeltilen hücreler, yalnızca bu aya yazılan satırlar (doğalgaz, ciro kirası, harici…) ve Harcamalar sayfasındaki aylık harcamalar eklenir. Fark aşağıda ayrı satırlarda." />
       </h3>
       <div className="divide-y divide-line">
         <div className="flex items-baseline justify-between gap-4 py-1.5 text-[13px]">
           <span className="text-ink-mute">Standart aylık sabit gider (Excel)</span>
           <span className="text-ink tabular">{tl(f.standard)}</span>
         </div>
-        {proration ? row(`Açık gün etkisi (${f.openDays} / ${f.dim} gün)`, f.proration) : null}
+        {proration ? row(prorationLabel(f), f.proration) : null}
         {overrides ? row("Gelir-gider'de düzeltilen tutarlar", f.overrides, names(f.overrideRows)) : null}
         {manual ? row("Bu aya özel giderler (Gelir-gider)", f.manual, names(f.manualRows)) : null}
         {expenses ? row("Aylık harcamalar", f.expenses, names(f.lines.filter((l) => l.key.startsWith("expense:") && differs(l.value, 0)))) : null}
+        {listShare ? row(listShareLabel(listShare), listShare.amount, "Süren ayda yapıştırılan satış listesi ayın bugüne kadarki gününün bir kısmını kapsıyor") : null}
         {row("Bu ay düşülen", f.total, undefined, true)}
       </div>
       {water ? (

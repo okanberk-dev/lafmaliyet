@@ -962,7 +962,7 @@ export function PnlGrid({
                   <TD sticky className={cn(STICKY, "py-1.5 font-medium")}>
                     <span className="flex items-center gap-1.5">
                       {OPEN_DAYS_LABEL}
-                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır. Süren ayda bugüne kadarki açık gün yazılır. Kasa raporu girilen aylarda boşsa rapor girilen (satış olan) gün sayılır." />
+                      <InfoTip text="O ay işletmenin açık olduğu gün; en fazla ayın gün sayısı (Eylül 30, Ekim 31). Süren ayda bugüne kadarki açık gün yazılır. Kasa raporu girilen aylarda boşsa rapor girilen (satış olan) gün sayılır. Kira, personel, reklam gibi aylık giderler gün ÷ ayın gün sayısı oranıyla hesaplanır: açık gün elle yazıldıysa o gün, kasa raporlarından geliyorsa raporların kapsadığı takvim günü (kapalı bir gün kirayı ve maaşı düşürmez). Günlük giderler açık günle çarpılır." />
                     </span>
                   </TD>
                   {visibleIdx.map(({ m, i }) => {

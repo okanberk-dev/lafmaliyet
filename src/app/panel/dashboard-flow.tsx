@@ -51,7 +51,9 @@ export function MoneyFlow({ rows, netSales, netProfit }: { rows: FlowRow[]; netS
 
   return (
     <Well className="space-y-4">
-      {base ? <FlowLine label={base.label} amount={base.value} share={share(base.value)} sub={base.sub} swatch="bg-surface ring-1 ring-inset ring-line-strong" /> : null}
+      {base ? (
+        <FlowLine label={base.label} amount={base.value} share={share(base.value)} sub={base.sub} swatch="bg-surface ring-1 ring-inset ring-line-strong" info={base.info} />
+      ) : null}
 
       <div>
         <div className="relative">
