@@ -5,6 +5,7 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
 import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections } from "@/lib/cash-report";
+import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { dateTR, money, monthShort, tl } from "@/lib/format";
@@ -15,6 +16,7 @@ import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
+import { loadChecklistDays } from "@/server/data/checklists";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -36,7 +38,7 @@ export interface PanelNotification {
   unread: boolean;
   href: string;
   /** Zilde hangi başlığın altında durur */
-  group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "odeme" | "fatura" | "uyari";
+  group?: "sistem" | "hatirlatici" | "onay" | "kasa" | "kontrol" | "odeme" | "fatura" | "uyari";
 }
 
 /**
@@ -158,6 +160,26 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
     });
   }
   return out;
+}
+
+/**
+ * Kontrol listeleri (docs/KONTROL-LISTELERI.md): yöneticiye bugün son saati geçen liste, dün tamamlanmayan liste ve
+ * bugünün ve dünün açık sorunları (aralık dışı ölçüm, "Sorun var"); personele yalnız bugün, aralığı açılan ve kendi
+ * doldurabildiği liste ("bekliyor", son saat geçince "gecikti"). Metinler src/lib/checklists.ts checklistBell'de; iki
+ * gün birlikte okunur (şablon, madde, kayıt, yanıt: dört küçük sorgu), maliyet modeli yok.
+ */
+async function checklistNotifications(user: CurrentUser): Promise<PanelNotification[]> {
+  const now = new Date();
+  const day = businessDate(now);
+  const yesterday = addDays(day, -1);
+  const admin = user.role === "admin";
+  const lists = await loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now);
+  return checklistBell({
+    role: user.role,
+    now,
+    today: { day, lists: lists.get(day) ?? [] },
+    yesterday: admin ? { day: yesterday, lists: lists.get(yesterday) ?? [] } : null,
+  }).map((b) => ({ ...b, group: "kontrol" as const }));
 }
 
 /** Kişinin gecikmiş ve bugünkü (saati gelmiş ya da gelecek) hatırlatıcıları */
@@ -382,18 +404,20 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
  * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar, fiyatı girilmemiş
  * hammaddeler, kasada (ModPOS) değişecek fiyatlar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi
- * gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Personel yalnız kendi hatırlatıcılarını ve önerilerinin
- * sonucunu görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
+ * gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Kontrol listeleri kasanın hemen ardından, iki rolde.
+ * Personel kendi hatırlatıcılarını, önerilerinin sonucunu, akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
+ * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
-  const [mine, recipes, cash] = await Promise.all([
+  const [mine, recipes, cash, kontrol] = await Promise.all([
     reminderNotifications(user).catch(() => []),
     recipeNotifications(user).catch(() => []),
     cashNotifications(user).catch(() => []),
+    checklistNotifications(user).catch(() => []),
   ]);
-  if (user.role !== "admin") return [...cash, ...mine, ...recipes];
+  if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes];
   const [model, upcoming, invoices, system, unpriced, holds, pos] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
@@ -451,5 +475,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...holds, ...cash, ...payments, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
 }

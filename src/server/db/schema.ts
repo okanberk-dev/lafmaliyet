@@ -16,6 +16,7 @@ import {
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { CashRevisionData } from "../../lib/cash-report";
+import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
@@ -1208,6 +1209,114 @@ export const aiCalls = pgTable(
     error: text("error"),
   },
   (t) => [index("ai_calls_at_idx").on(t.at), index("ai_calls_photo_idx").on(t.photoId)],
+);
+
+// ---------------------------------------------------------------- Kontrol listeleri
+/**
+ * Kontrol listesi şablonu (Açılış, Kapanış …): seçili günlerde bir kez, saat aralığıyla (iş günü 05:00'te döner,
+ * 22:00–02:00 geçerli). activeFrom / inactiveFrom: bir günün listesi o günün aralığı açılırken etkinse beklenir (bugün
+ * eklenen liste bugün "gecikti" demez). `schedule` "event" ("her seferinde": oda sıfırlama, mal kabul; `seq` ile günde
+ * birden çok kayıt) sonraya ayrıldı; bugün yalnız "daily" yazılır. Ayrıntı: docs/KONTROL-LISTELERI.md.
+ */
+export const checklistTemplates = pgTable(
+  "checklist_templates",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description"),
+    schedule: text("schedule", { enum: ["daily", "event"] }).notNull().default("daily"),
+    /** "HH:MM" Türkiye saati; "event"te boş */
+    opensAt: text("opens_at"),
+    dueAt: text("due_at"),
+    /** İş gününün haftanın günü: 1 = Pazartesi … 7 = Pazar */
+    weekdays: jsonb("weekdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5, 6, 7]),
+    /** Personel doldurabilir (kapalı: yalnız yönetici görür ve doldurur) */
+    staffAllowed: boolean("staff_allowed").notNull().default(true),
+    active: boolean("active").notNull().default(true),
+    activeFrom: timestamp("active_from", { withTimezone: true }).notNull().defaultNow(),
+    inactiveFrom: timestamp("inactive_from", { withTimezone: true }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check("checklist_templates_window_ck", sql`${t.schedule} = 'event' or (${t.opensAt} is not null and ${t.dueAt} is not null)`)],
+);
+
+/** Şablonun maddeleri; kaldırılan madde silinmez, active = false (geçmiş kayıtlar kendi kopyasını taşır) */
+export const checklistItems = pgTable(
+  "checklist_items",
+  {
+    id: serial("id").primaryKey(),
+    templateId: integer("template_id")
+      .notNull()
+      .references(() => checklistTemplates.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    type: text("type", { enum: ["check", "photo", "number", "text"] }).notNull().default("check"),
+    section: text("section"),
+    hint: text("hint"),
+    required: boolean("required").notNull().default(true),
+    /** Sayı maddesinin birimi ve izin verilen aralığı (aralık dışı değer not ister) */
+    unit: text("unit"),
+    min: doublePrecision("min"),
+    max: doublePrecision("max"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("checklist_items_template_idx").on(t.templateId, t.sortOrder)],
+);
+
+/** Bir listenin bir iş günündeki kaydı (`seq` "her seferinde" listeler için ayrıldı; günlük listede 1). İlk yanıtta açılır */
+export const checklistRuns = pgTable(
+  "checklist_runs",
+  {
+    id: serial("id").primaryKey(),
+    templateId: integer("template_id")
+      .notNull()
+      .references(() => checklistTemplates.id, { onDelete: "restrict" }),
+    /** İş günü (YYYY-MM-DD, 05:00'te döner) */
+    date: text("date").notNull(),
+    seq: integer("seq").notNull().default(1),
+    /** Açıldığı andaki ad, aralık ve maddeler: şablon sonradan değişse de kayıt aynı kalır */
+    name: text("name").notNull(),
+    opensAt: text("opens_at"),
+    dueAt: text("due_at"),
+    items: jsonb("items").$type<ChecklistItemSnap[]>().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedBy: integer("completed_by").references(() => users.id, { onDelete: "set null" }),
+    completedByName: text("completed_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("checklist_runs_template_day_uq").on(t.templateId, t.date, t.seq), index("checklist_runs_date_idx").on(t.date)],
+);
+
+/** Maddenin yanıtı (kayıt başına madde başına bir satır); değişince önceki hâli history'ye geçer */
+export const checklistAnswers = pgTable(
+  "checklist_answers",
+  {
+    id: serial("id").primaryKey(),
+    runId: integer("run_id")
+      .notNull()
+      .references(() => checklistRuns.id, { onDelete: "cascade" }),
+    /** runs.items içindeki madde kimliği (madde şablondan kaldırılsa da okunur; yabancı anahtar yok) */
+    itemId: integer("item_id").notNull(),
+    /** ok: yapıldı / değer aralıkta; issue: sorun bildirildi ya da değer aralık dışında (not zorunlu) */
+    status: text("status", { enum: ["ok", "issue"] }).notNull().default("ok"),
+    value: doublePrecision("value"),
+    textValue: text("text_value"),
+    note: text("note"),
+    /** Fotoğraf (photos); saklama süresi (60 gün) dolup silinince boşalır */
+    photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
+    /** Fotoğrafın çekildiği an: fotoğraf silinse de "çekildi" bilgisi kalır */
+    photoAt: timestamp("photo_at", { withTimezone: true }),
+    history: jsonb("history").$type<ChecklistAnswerVersion[]>().notNull().default([]),
+    answeredBy: integer("answered_by").references(() => users.id, { onDelete: "set null" }),
+    answeredByName: text("answered_by_name").notNull(),
+    answeredAt: timestamp("answered_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("checklist_answers_run_item_uq").on(t.runId, t.itemId), index("checklist_answers_photo_idx").on(t.photoId)],
 );
 
 // ---------------------------------------------------------------- Claude bağlantısı (MCP, salt okunur)

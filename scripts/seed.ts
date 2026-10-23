@@ -2,6 +2,7 @@
 // Kullanım:
 //   npm run db:seed              -> veritabanı boşsa yükler
 //   npm run db:seed -- --reset   -> kullanıcılar hariç bütün veriyi silip yeniden yükler
+// İkisi de hazır kontrol listelerini (Açılış, Kapanış) bir kez ekler; dolu veritabanında da (canlıya ilk çıkış).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import { loadEnvConfig } from "@next/env";
 import { count, sql } from "drizzle-orm";
 
 import { normalizePosName } from "../src/lib/calc/engine";
+import { CHECKLIST_SEED_KEY, DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
 import { hashPassword } from "../src/server/auth/password";
 import { createDb, type DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -55,6 +57,48 @@ async function ensureAdmin(db: DB) {
   console.log(`✓ Yönetici hesabı oluşturuldu: ${email}`);
 }
 
+/**
+ * Açılış ve kapanış kontrol listeleri (src/lib/checklist-seed.ts) bir kez eklenir: anahtar (`kontrol.seeded`) yazılıysa
+ * hiçbir şey yapılmaz, silinen liste geri gelmez. Listeler eklendikleri andan etkin: canlıya ilk çıkış öğleden sonraysa
+ * o günün açılışı "gecikti" demez. Anahtar ve listeler tek işlemde; aynı adda liste varsa o atlanır.
+ */
+async function ensureChecklistSeed(db: DB) {
+  const added = await db.transaction(async (tx) => {
+    const [mark] = await tx
+      .insert(s.integrationState)
+      .values({ key: CHECKLIST_SEED_KEY, value: { at: new Date().toISOString(), version: 1 } })
+      .onConflictDoNothing()
+      .returning({ key: s.integrationState.key });
+    if (!mark) return [];
+    const names: string[] = [];
+    for (const [k, t] of DEFAULT_CHECKLISTS.entries()) {
+      const [row] = await tx
+        .insert(s.checklistTemplates)
+        .values({ name: t.name, description: t.description, schedule: "daily", opensAt: t.opensAt, dueAt: t.dueAt, sortOrder: k + 1 })
+        .onConflictDoNothing()
+        .returning({ id: s.checklistTemplates.id });
+      if (!row) continue;
+      await tx.insert(s.checklistItems).values(
+        t.items.map((i, n) => ({
+          templateId: row.id,
+          label: i.label,
+          type: i.type,
+          section: i.section ?? null,
+          hint: i.hint ?? null,
+          required: i.required ?? true,
+          unit: i.unit ?? null,
+          min: i.min ?? null,
+          max: i.max ?? null,
+          sortOrder: n + 1,
+        })),
+      );
+      names.push(t.name);
+    }
+    return names;
+  });
+  if (added.length) console.log(`✓ Kontrol listeleri eklendi: ${added.join(", ")}`);
+}
+
 export async function runSeed({ reset = false } = {}) {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!url) throw new Error("DATABASE_URL tanımlı değil");
@@ -64,6 +108,7 @@ export async function runSeed({ reset = false } = {}) {
     if (n > 0 && !reset) {
       console.log("✓ Veritabanında veri var, seed atlandı (yeniden yüklemek için --reset)");
       await ensureAdmin(db);
+      await ensureChecklistSeed(db);
       return;
     }
 
@@ -160,6 +205,7 @@ export async function runSeed({ reset = false } = {}) {
         `${ds.recipeItems.length} reçete satırı, ${ds.salesLines.length} satış satırı, ${ds.invoices.length} fatura`,
     );
     await ensureAdmin(db);
+    await ensureChecklistSeed(db);
   } finally {
     await db.$client.end();
   }
