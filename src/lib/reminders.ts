@@ -376,31 +376,68 @@ export function reminderCategory(kind: ReminderKind, title: string): ReminderCat
   return kind === "diger" ? "diger" : "odeme";
 }
 
+/**
+ * Ertelenen dönemin notu: "Ertelendi · asıl tarih 25.10.2026 · <eski not>". Tekrar edenin kopyası da, ertelenen tek
+ * seferlik hatırlatıcı da bunu taşır; zaten ertelenmiş olanın notu (ilk asıl tarih) korunur. Nakit planı dönemi
+ * asıl günden bulur (`postponedFrom`): 8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür.
+ */
+export function postponeNote(note: string | null, dueDate: string): string {
+  if (postponedFrom(note)) return note!;
+  const [y, m, d] = dueDate.split("-");
+  return `Ertelendi · asıl tarih ${d}.${m}.${y}${note ? ` · ${note}` : ""}`.slice(0, 500);
+}
+
+/** `postponeNote`'un asıl günü ("YYYY-MM-DD"); ertelenmemişse null */
+export function postponedFrom(note: string | null): string | null {
+  const m = /^Ertelendi · asıl tarih (\d{2})\.(\d{2})\.(\d{4})/.exec(note ?? "");
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
 /** "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı not: Ödemeler'de kaynağı, nakit planında bordro olmadığını gösterir */
 export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 
 // KDV tevkifatı (2 No.lu KDV beyannamesi, "KDV2"): ayrı beyanname ve ödeme. Asıl KDV sayılsa tutarı o ayın kesin KDV'si
 // olur, devredeni sıfırlar ve sonraki dönemi kendi gününe alırdı
-const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\s*(no|numara)/;
+const VAT_WITHHOLDING = /tevkifat|kdv\s*-?\s*2(?![\d.])|(^|\D)2\.?\s*(no|numara)|sorumlu sifat/;
 
 /**
- * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta KDV de geçmeli:
- * "Muhtasar (gelir vergisi tevkifatı)", "Stopaj tevkifat", "Aidat 2 No.lu dükkan" KDV-2 değildir.
+ * Yalnız damga vergisi (katlanmış başlık): damga geçer ama vergiye bağlanmamıştır. "KDV2 damga vergisi", "KDV damga
+ * vergisi", "... damga vergisi ve gecikme zammı" ayrı ödemedir. Tahakkukla birlikte yazılan ("KDV2 + damga", "KDV2
+ * ve damga vergisi", "Damga vergisi ve Eylül KDV2", "damga dahil") ya da damgayı dışarıda bırakan ("damga hariç",
+ * "damga ayrı") vergi hatırlatıcısıdır.
+ */
+function stampOnly(t: string): boolean {
+  if (!/damga/.test(t)) return false;
+  const joined =
+    /(\+|&|\bve\b)\s*damga|damga\s*(vergisi\s*)?(dahil|haric|ayri)|damga\b[^()]*?(\+|&|\bve\b)\s*(\S+\s+){0,2}(kdv|katma|tevkifat|sorumlu|2\.?\s*(no|numara))/;
+  return !joined.test(t);
+}
+
+/**
+ * 2 No.lu KDV (tevkifat) hatırlatıcısı: o dönemin KDV-2'sini plana hatırlatıcı taşır. Başlıkta tevkifat, "2 No.lu"
+ * ya da "sorumlu sıfatıyla" ile birlikte KDV geçmeli; KDV'siz yalnız "2 No.lu beyanname" (panelin kendi sözü) ve
+ * başka bir vergi adı yoksa. Yalnız damga vergisi ayrı bir ödemedir; "Muhtasar (gelir vergisi tevkifatı)", "Stopaj
+ * tevkifat", "Kira tevkifatı beyannamesi" ve "Tevkifat beyannamesi" (muhtasar da böyle anılır) KDV-2 değildir.
  */
 export function isVatWithholdingReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
-  return VAT_WITHHOLDING.test(t) && /(^|[^a-z])kdv|katma deger/.test(t);
+  if (!VAT_WITHHOLDING.test(t) || stampOnly(t)) return false;
+  if (/(^|[^a-z])kdv|katma deger/.test(t)) return true;
+  // "2 No.lu beyanname" ya da başlığın sonunda "Beyanname (2 No'lu)"; "Beyanname 2 numaralı şube" değil
+  const declaration = /(^|\D)2\.?\s*(no|numara)\S*\s+beyan|beyan\S*\s*\(?2\.?\s*(no|numara)\S*\s*$/.test(t);
+  return declaration && !/muhtasar|stopaj|gelir|kurumlar|gecici|kira|serbest meslek/.test(t);
 }
 
 /**
  * KDV ödemesi hatırlatıcısı (nakit planının KDV tahmini, docs/NAKIT-PLANI.md): başlıkta "KDV" ya da "katma değer".
- * Kira ve maaş türü ("Kira KDV'si"), SGK başlıkları ve KDV tevkifatı ("2 No.lu KDV", "KDV2") KDV ödemesi sayılmaz.
+ * Kira ve maaş türü ("Kira KDV'si"), SGK başlıkları, KDV tevkifatı ("2 No.lu KDV", "KDV2") ve yalnız damga vergisi
+ * ("KDV damga vergisi") KDV ödemesi sayılmaz.
  */
 export function isVatReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
   if (r.kind === "kira" || r.kind === "maas" || reminderCategory(r.kind, r.title) === "sgk") return false;
   const t = foldTR(r.title);
-  return !VAT_WITHHOLDING.test(t) && /(^|[^a-z])kdv([^a-z]|$)|katma deger/.test(t);
+  return !VAT_WITHHOLDING.test(t) && !stampOnly(t) && /(^|[^a-z])kdv([^a-z]|$)|katma deger/.test(t);
 }
 
 /**

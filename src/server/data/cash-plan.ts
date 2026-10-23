@@ -6,6 +6,7 @@ import type { Model } from "@/lib/calc/engine";
 import { buildCashPlan, goodsRows, parseCashPlanState, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
 import { addDays } from "@/lib/reminders";
 import { cashReportsBetween, previousCarryOver } from "@/server/data/cash-reports";
+import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadPaidOnDelivery, loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -40,12 +41,13 @@ export interface CashPlanView {
 export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<typeof loadUpcoming>>): Promise<CashPlanView> {
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
-  const [state, reports, termDays, paidOnDelivery, carry] = await Promise.all([
+  const [state, reports, termDays, paidOnDelivery, carry, recentPaid] = await Promise.all([
     loadCashPlanState(),
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
     loadPaidOnDelivery(),
     previousCarryOver(addDays(today, 1)),
+    loadRecentPaid(),
   ]);
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
@@ -58,6 +60,7 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     cashReports: reports.map((r) => ({ date: r.date, zTotal: r.zTotal, card: r.card, mealCard: r.mealCard, online: r.online })),
     invoices: up.items.filter((i) => i.source === "invoice"),
     reminders: up.reminders,
+    paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null })),
     goods: goods.rows,
     goodsSpanDays: goods.spanDays,
     vatAnchor: state.vatCarry ? { month: state.vatCarry.month, amount: state.vatCarry.amount } : null,
