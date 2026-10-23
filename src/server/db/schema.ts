@@ -14,6 +14,9 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+// Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
+import type { CashRevisionData } from "../../lib/cash-report";
+
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
@@ -173,12 +176,19 @@ export const recipeItems = pgTable(
 );
 
 // ---------------------------------------------------------------- Aylar & satışlar
+/**
+ * Ay bilgisi: yalnız elle yazılan değerler. Boş alan kasa raporlarından dolar (src/lib/cash-month.ts; hiçbir şey buraya
+ * kopyalanmaz, model yüklenirken hesaplanır). İndirim ve ödenmez bu yüzden boş bırakılabilir: boş = kasa raporlarından,
+ * 0 elle yazılmış sıfırdır (eski ayların sıfırları elle yazılmış sayılır).
+ */
 export const months = pgTable("months", {
   month: text("month").primaryKey(), // YYYY-MM
   openDays: integer("open_days"),
   posRevenue: doublePrecision("pos_revenue"),
-  discounts: doublePrecision("discounts").notNull().default(0),
-  offRevenue: doublePrecision("off_revenue").notNull().default(0),
+  discounts: doublePrecision("discounts"),
+  offRevenue: doublePrecision("off_revenue"),
+  /** Kartlı satış oranı (0–1), elle; boşsa o ayın kasa raporlarından, o da yoksa Ayarlar › kartlı satış oranı */
+  cardShare: doublePrecision("card_share"),
   note: text("note"),
   updatedAt: updatedAt(),
 });
@@ -959,10 +969,15 @@ export const cashReports = pgTable(
     bankPos: doublePrecision("bank_pos"),
     /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez; panelde kayıtlı ikramla karşılaştırılır) */
     offRevenue: doublePrecision("off_revenue"),
+    /** Z raporundaki indirim toplamı (isteğe bağlı; girilmediyse null: ayın indirimine yalnız girilen günler gider) */
+    discounts: doublePrecision("discounts"),
     note: text("note"),
     cashDiff: doublePrecision("cash_diff").notNull().default(0),
     submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
     submittedByName: text("submitted_by_name").notNull(),
+    /** Çekmeceyi sayan (formda seçilir, varsayılan gönderen) ve adı; eski raporlarda boş: gönderen saymış sayılır */
+    countedBy: integer("counted_by").references(() => users.id, { onDelete: "set null" }),
+    countedByName: text("counted_by_name"),
     revision: integer("revision").notNull().default(1),
     /** Son gönderimin e-postası: gitti, gitmedi (hata metniyle) ya da kapalı */
     emailStatus: text("email_status", { enum: ["sent", "failed", "off"] }),
@@ -972,6 +987,36 @@ export const cashReports = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("cash_reports_date_uq").on(t.date)],
+);
+
+/**
+ * Kasa raporunun önceki sürümleri: rapor yeniden gönderilince yerine yenisi gelen sürümün kopyası (yeniden gönderim
+ * başına bir satır; kopya, rapor satırı kilitliyken aynı işlemde yazılır). Değişiklikler ardışık sürümler
+ * karşılaştırılarak çıkarılır (src/lib/cash-report.ts revisionChanges); iş günü kapandıktan sonra kasa alanı değişen
+ * düzeltme yöneticinin zilinde. Kopya jsonb: bütün formun arşivi, alanına göre sorgulanmaz, forma alan eklenince de
+ * geçerli kalır. Rapor silinince geçmişi de gider (silme, değerleriyle işlem geçmişine yazılır).
+ */
+export const cashReportRevisions = pgTable(
+  "cash_report_revisions",
+  {
+    id: serial("id").primaryKey(),
+    reportId: integer("report_id")
+      .notNull()
+      .references(() => cashReports.id, { onDelete: "cascade" }),
+    /** Raporun iş günü (okuma kolaylığı) */
+    date: text("date").notNull(),
+    /** Yerine yenisi gelen sürümün numarası */
+    revision: integer("revision").notNull(),
+    /** O sürümün alanları, kasa farkı ve sayan */
+    data: jsonb("data").$type<CashRevisionData>().notNull(),
+    submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
+    submittedByName: text("submitted_by_name").notNull(),
+    /** O sürümün gönderildiği an (raporun o andaki updated_at'i) */
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    /** Yerine yenisinin geldiği an */
+    createdAt: createdAt(),
+  },
+  (t) => [index("cash_report_revisions_report_idx").on(t.reportId)],
 );
 
 /**

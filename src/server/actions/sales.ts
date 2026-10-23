@@ -7,8 +7,10 @@ import { z } from "zod";
 import { salesFileProblem } from "@/app/panel/satislar/sales-logic";
 import { daysInMonth } from "@/lib/calc/engine";
 import { createPosMappingIndex, describeSkipped, extractSalesRows, isSummaryRow, posMatchKey, samePosName } from "@/lib/calc/pos-paste";
+import { monthRowEmpty } from "@/lib/cash-month";
 import { monthLabel, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { hasCashReportIn } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -17,20 +19,22 @@ import { attempt, UserError, zMonth, zOptText, zText } from "./util";
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/** Ay satırı açar; alanları boş (indirim ve ödenmez dahil): boş alan kasa raporlarından dolar (src/lib/cash-month.ts) */
 async function ensureMonth(month: string) {
   await getDb().insert(s.months).values({ month }).onConflictDoNothing();
 }
 
 /**
- * Ay satırı tamamen boşsa (ciro, açık gün, indirim, ödenmez, not yok) ve o aya bağlı satış satırı ya da
+ * Ay satırı tamamen boşsa (ciro, açık gün, indirim, ödenmez, kartlı oran, not yok) ve o aya bağlı satış satırı ya da
  * Gelir-gider girişi kalmadıysa satırı siler; böylece yanlışlıkla açılan ay (ör. deneme ayı) ay seçicide kalmaz.
- * Hiçbir değer kaybolmaz: yalnızca içi boş kayıt kalkar.
+ * Hiçbir değer kaybolmaz: yalnızca içi boş kayıt kalkar (kasa raporu olan ay kasadan yine görünür). İndirim ve
+ * ödenmezin 0'ı yalnız ayın kasa raporu yoksa boş sayılır (src/lib/cash-month.ts monthRowEmpty).
  */
 async function dropEmptyMonth(db: Db | Tx, month: string): Promise<boolean> {
   const [row] = await db.select().from(s.months).where(eq(s.months.month, month));
   if (!row) return false;
-  const empty = row.openDays === null && row.posRevenue === null && !row.discounts && !row.offRevenue && !row.note;
-  if (!empty) return false;
+  const zeros = row.discounts === 0 || row.offRevenue === 0;
+  if (!monthRowEmpty(row, zeros && (await hasCashReportIn(month, db)))) return false;
   const [lines] = await db.select({ n: sql<number>`count(*)::int` }).from(s.salesLines).where(eq(s.salesLines.month, month));
   const [pnl] = await db.select({ n: sql<number>`count(*)::int` }).from(s.pnlEntries).where(eq(s.pnlEntries.month, month));
   if ((lines?.n ?? 0) > 0 || (pnl?.n ?? 0) > 0) return false;
@@ -43,8 +47,10 @@ const monthInfoSchema = z
     month: zMonth,
     openDays: z.number().int("Açık gün tam sayı olmalı").min(0, "Açık gün negatif olamaz").nullable(),
     posRevenue: z.number().finite().min(0, "Ciro negatif olamaz").nullable(),
-    discounts: z.number().finite().min(0, "İndirim negatif olamaz"),
-    offRevenue: z.number().finite().min(0, "Ödenmez tutarı negatif olamaz"),
+    // Boş (null): kasa raporlarından; 0 elle yazılmış sıfırdır
+    discounts: z.number().finite().min(0, "İndirim negatif olamaz").nullable(),
+    offRevenue: z.number().finite().min(0, "Ödenmez tutarı negatif olamaz").nullable(),
+    cardShare: z.number().finite().min(0, "Oran negatif olamaz").max(1, "Oran en fazla %100").nullable().default(null),
     note: zOptText(1000),
   })
   .superRefine((d, ctx) => {
@@ -70,16 +76,21 @@ export async function saveMonthInfo(input: z.input<typeof monthInfoSchema>) {
           posRevenue: data.posRevenue,
           discounts: data.discounts,
           offRevenue: data.offRevenue,
+          cardShare: data.cardShare,
           note: data.note,
           updatedAt: new Date(),
         },
       });
     // Bütün alanlar boşaltıldıysa ve ayda başka kayıt yoksa boş ay satırı kalmasın
     const removed = await dropEmptyMonth(db, data.month);
+    // Boş alan, ayın kasa raporu varsa oradan gelir: işlem geçmişi bunu söyler
+    const empty = (await hasCashReportIn(data.month, db)) ? "kasadan" : "boş";
     await logActivity(
       me,
       "Ay bilgisi",
-      removed ? `${monthLabel(data.month)}: bilgiler boşaltıldı` : `${monthLabel(data.month)}: ciro ${tl(data.posRevenue)}, ${data.openDays ?? "–"} gün`,
+      removed
+        ? `${monthLabel(data.month)}: bilgiler boşaltıldı`
+        : `${monthLabel(data.month)}: ciro ${data.posRevenue === null ? empty : tl(data.posRevenue)}, açık gün ${data.openDays ?? empty}`,
     );
     refresh();
     return { removed };
@@ -301,7 +312,8 @@ export async function deleteLine(id: number) {
 }
 
 /**
- * Ayın satış satırlarını siler. withInfo: ay bilgilerini (ciro, açık gün, indirim, ödenmez, not) da siler.
+ * Ayın satış satırlarını siler. withInfo: elle yazılan ay bilgilerini (ciro, açık gün, indirim, ödenmez, kartlı oran,
+ * not) da siler; kasa raporlarından gelenler kalır (raporlar silinmez).
  * Eşleştirme hafızası ve Gelir-gider girişleri kalır. Ay tamamen boşaldıysa ay kaydı da kalkar.
  */
 export async function clearMonthSales(month: string, opts?: { withInfo?: boolean }) {
@@ -314,7 +326,7 @@ export async function clearMonthSales(month: string, opts?: { withInfo?: boolean
     if (withInfo) {
       await db
         .update(s.months)
-        .set({ openDays: null, posRevenue: null, discounts: 0, offRevenue: 0, note: null, updatedAt: new Date() })
+        .set({ openDays: null, posRevenue: null, discounts: null, offRevenue: null, cardShare: null, note: null, updatedAt: new Date() })
         .where(eq(s.months.month, m));
     }
     const monthRemoved = await dropEmptyMonth(db, m);

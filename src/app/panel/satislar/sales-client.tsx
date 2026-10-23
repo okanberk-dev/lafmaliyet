@@ -10,6 +10,7 @@ import {
   Coffee,
   Eraser,
   FileUp,
+  Info,
   ListChecks,
   LoaderCircle,
   Mic,
@@ -24,7 +25,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { startTransition, useMemo, useOptimistic, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { startTransition, useMemo, useOptimistic, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useCalmMotion } from "@/components/ui/motion";
@@ -53,7 +54,10 @@ import {
   suspectTotalRows,
   type SalesParseResult,
 } from "@/lib/calc/pos-paste";
+import type { MonthField, TillMonth } from "@/lib/calc/types";
+import { missingSentence, MONTH_FIELDS, partialSentence } from "@/lib/cash-month";
 import { num, pct, tl } from "@/lib/format";
+import { dayMonthTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import {
   applyLineMatches,
@@ -67,8 +71,14 @@ import {
 } from "@/server/actions/sales";
 
 import {
+  cardShareProblem,
   collectSuggestions,
+  fieldPayload,
+  fieldText,
+  fieldValue,
+  initialModes,
   inMarginScale,
+  kasaHint,
   marginColor,
   marginLevelLabel,
   marginScale,
@@ -80,6 +90,7 @@ import {
   SALES_FILE_MAX_MB,
   salesFileProblem,
   suggestProduct,
+  type FieldMode,
   type MappingLite,
   type MarginScale,
 } from "./sales-logic";
@@ -181,10 +192,21 @@ function AllMonthButton({ dim, onPick }: { dim: number; onPick: () => void }) {
   );
 }
 
+/** Ay bilgisi alanlarının sırası ve kimlikleri (Genel bakış ve Kasa bağlantıları #m-days, #m-pos) */
+const INFO_IDS: Record<MonthField, string> = { posRevenue: "m-pos", openDays: "m-days", discounts: "m-disc", offRevenue: "m-off", cardShare: "m-card" };
+
+/**
+ * Ayın bilgileri: POS cirosu, açık gün, indirim, ödenmez ve kartlı satış oranı. Kasa raporu olan ayda boş bırakılan
+ * alanlar kasa raporlarından dolar (src/lib/cash-month.ts): alan "Kasadan" rozetiyle salt okunur görünür, dokununca
+ * "Elle" kipine geçer; "Kasadakini kullan" geri döndürür. Elle yazılan her zaman geçerlidir. Kaydederken kasa kipindeki
+ * ve boş bırakılan alanlar boş (null) gider: değer bir sonraki raporla kendiliğinden değişir.
+ */
 export function MonthInfoForm({
   month,
   label,
   info,
+  kasa = null,
+  settingsCardShare,
   listTotal,
   currentMonth,
   recordedIkram,
@@ -192,7 +214,12 @@ export function MonthInfoForm({
 }: {
   month: string;
   label: string;
-  info: { openDays: number | null; posRevenue: number | null; discounts: number; offRevenue: number; note: string | null };
+  /** Elle yazılan değerler (kasadan gelenler burada boş) */
+  info: Record<MonthField, number | null> & { note: string | null };
+  /** Ayın kasa raporlarından değerleri (uygulanmayan null) ve kapsamı; raporu yoksa null */
+  kasa?: { values: Record<MonthField, number | null>; till: TillMonth } | null;
+  /** Ayarlar › kartlı satış oranı (bu ay için hiçbir oran yoksa geçer) */
+  settingsCardShare: number;
   listTotal: number;
   /** Türkiye saatine göre bu ay; açık gün açıklaması (devam eden ay / kapanmış ay) buna göre */
   currentMonth: string;
@@ -200,45 +227,70 @@ export function MonthInfoForm({
   recordedIkram?: { count: number; menuValue: number };
   className?: string;
 }) {
-  const [openDays, setOpenDays] = useState(info.openDays === null ? "" : String(info.openDays));
-  const [pos, setPos] = useState(info.posRevenue === null ? "" : num(info.posRevenue, 2));
-  const [disc, setDisc] = useState(num(info.discounts, 2));
-  const [off, setOff] = useState(num(info.offRevenue, 2));
+  const kasaValues = kasa?.values ?? null;
+  const [modes, setModes] = useState<Record<MonthField, FieldMode>>(() => initialModes(info, kasaValues));
+  const [texts, setTexts] = useState<Record<MonthField, string>>(() => ({
+    openDays: fieldText("openDays", info.openDays),
+    posRevenue: fieldText("posRevenue", info.posRevenue),
+    discounts: fieldText("discounts", info.discounts),
+    offRevenue: fieldText("offRevenue", info.offRevenue),
+    cardShare: fieldText("cardShare", info.cardShare),
+  }));
   const [note, setNote] = useState(info.note ?? "");
   const [busy, setBusy] = useState(false);
-  const snapshot = JSON.stringify([openDays, pos, disc, off, note]);
+  const inputs = useRef<Partial<Record<MonthField, HTMLInputElement | null>>>({});
+
+  const kasaOf = (f: MonthField) => kasaValues?.[f] ?? null;
+  const payloadOf = (f: MonthField, m = modes, t = texts) => fieldPayload(f, { mode: m[f], text: t[f], kasa: kasaOf(f), manualBefore: info[f] !== null });
+  const payloads = Object.fromEntries(MONTH_FIELDS.map((f) => [f, payloadOf(f)])) as Record<MonthField, number | null>;
+  // Kaydedilmemiş değişiklik: gidecek değerler açılıştakinden farklı (dokunulup değiştirilmeyen kasa alanı sayılmaz)
+  const snapshot = JSON.stringify([payloads, note.trim()]);
   const [saved, setSaved] = useState(snapshot);
   const dirty = snapshot !== saved;
 
-  const posNum = parseNumberTR(pos);
-  const discNum = parseNumberTR(disc) ?? 0;
+  /** Kasadakini kullanan ya da boş bırakılan alanın geçerli değeri (tutarlılık kutusu ve açıklamalar) */
+  const effective = (f: MonthField) => payloads[f] ?? (modes[f] === "kasa" || !texts[f].trim() ? kasaOf(f) : null);
+  const posNum = effective("posRevenue");
+  const discNum = effective("discounts") ?? 0;
   const diff = posNum !== null && listTotal ? listTotal - discNum - posNum : null;
   const consistent = diff !== null && Math.abs(diff) < 1000;
   const dim = daysInMonth(month);
   const phase = monthPhase(month, currentMonth);
-  const daysError = openDaysProblem(openDays, month);
-  /** Boş değil ama okunamayan tutar; ayın gün sayısından büyük açık gün */
+  const elle = (f: MonthField) => modes[f] === "elle";
+  const daysError = elle("openDays") ? openDaysProblem(texts.openDays, month) : null;
+  const cardError = elle("cardShare") ? cardShareProblem(texts.cardShare) : null;
+  /** Boş değil ama okunamayan tutar; ayın gün sayısından büyük açık gün; 0–100 dışında oran */
+  const unreadable = (f: MonthField) => elle(f) && texts[f].trim() !== "" && fieldValue(f, texts[f]) === null;
   const bad = {
-    pos: pos.trim() !== "" && posNum === null,
-    disc: disc.trim() !== "" && parseNumberTR(disc) === null,
-    off: off.trim() !== "" && parseNumberTR(off) === null,
+    pos: unreadable("posRevenue"),
+    disc: unreadable("discounts"),
+    off: unreadable("offRevenue"),
     days: daysError !== null,
+    card: cardError !== null,
   };
-  const invalid = bad.pos || bad.disc || bad.off || bad.days;
+  const invalid = bad.pos || bad.disc || bad.off || bad.days || bad.card;
+
+  const setText = (f: MonthField, v: string) => setTexts((t) => ({ ...t, [f]: v }));
+  /** Kasa kipindeki alana dokunuldu: elle kipine geçer, kasadaki değer dolu ve seçili (yazılan yerine geçer) */
+  function takeOver(f: MonthField, typed?: string) {
+    setModes((m) => ({ ...m, [f]: "elle" }));
+    setText(f, typed ?? fieldText(f, kasaOf(f)));
+    if (typed === undefined) requestAnimationFrame(() => inputs.current[f]?.select());
+  }
+  /** "Kasadakini kullan": alan kasa kipine döner */
+  const backToKasa = (f: MonthField) => setModes((m) => ({ ...m, [f]: "kasa" }));
+  /** Elle bir değer yazar (Tüm ay, Bunu yaz) */
+  const write = (f: MonthField, text: string) => {
+    setModes((m) => ({ ...m, [f]: "elle" }));
+    setText(f, text);
+  };
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (invalid) return toast.error(daysError ?? "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
+    if (invalid) return toast.error(daysError ?? cardError ?? "Tutarları kontrol edin (ör. 429.698 ya da 11.997,50)");
     setBusy(true);
     keepScroll();
-    const res = await saveMonthInfo({
-      month,
-      openDays: openDays.trim() ? Number(openDays) : null,
-      posRevenue: posNum,
-      discounts: discNum,
-      offRevenue: parseNumberTR(off) ?? 0,
-      note,
-    });
+    const res = await saveMonthInfo({ month, ...payloads, note });
     setBusy(false);
     if (res.ok) {
       setSaved(snapshot);
@@ -248,27 +300,126 @@ export function MonthInfoForm({
     } else toast.error(res.error);
   }
 
+  /** Kipin rozeti (etiket satırının sağında): kasa uygulanan alanda "Kasadan" / "Elle" */
+  const chipOf = (f: MonthField) => (kasaOf(f) === null ? null : elle(f) ? <Badge tone="gray">Elle</Badge> : <Badge tone="blue">Kasadan</Badge>);
+  /** Alanın altındaki satır: kasanın açıklaması (+ Kasadakini kullan), yoksa alanın kendi açıklaması */
+  const hintOf = (f: MonthField, fallback?: ReactNode, extra?: ReactNode): ReactNode => {
+    const k = kasaHint(f, kasa, modes[f], texts[f]);
+    if (!k) return extra ? <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{fallback ? <span>{fallback}</span> : null}{extra}</span> : fallback;
+    return (
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className={elle(f) ? undefined : "text-info"}>{k}</span>
+        {elle(f) ? (
+          <button type="button" onClick={() => backToKasa(f)} className="cursor-pointer font-medium text-ink underline decoration-ink/30 underline-offset-2 hover:decoration-ink pointer-coarse:min-h-11">
+            Kasadakini kullan
+          </button>
+        ) : null}
+        {extra}
+      </span>
+    );
+  };
+  /** Alanın kutusu: kasa kipinde salt okunur ve mavi; dokununca (tıklama, Enter, rakam) elle kipine geçer */
+  const input = (f: MonthField, opts: { invalid: boolean; numeric?: boolean; placeholder?: string; filter?: (v: string) => string }) => {
+    const kasaMode = !elle(f);
+    return (
+      <NumberInput
+        id={INFO_IDS[f]}
+        ref={(el) => {
+          inputs.current[f] = el;
+        }}
+        value={kasaMode ? fieldText(f, kasaOf(f)) : texts[f]}
+        readOnly={kasaMode}
+        onClick={kasaMode ? () => takeOver(f) : undefined}
+        onKeyDown={
+          kasaMode
+            ? (e) => {
+                if (e.metaKey || e.ctrlKey || e.altKey) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  takeOver(f);
+                } else if (e.key === "Backspace" || e.key === "Delete") {
+                  e.preventDefault();
+                  takeOver(f, "");
+                } else if (/^[\d,.%]$/.test(e.key)) {
+                  e.preventDefault();
+                  takeOver(f, e.key);
+                }
+              }
+            : undefined
+        }
+        onChange={kasaMode ? undefined : (e) => setText(f, opts.filter ? opts.filter(e.target.value) : e.target.value)}
+        inputMode={opts.numeric ? "numeric" : "decimal"}
+        placeholder={opts.placeholder}
+        aria-invalid={opts.invalid || undefined}
+        aria-description={kasaMode ? "Kasa raporlarından; değiştirmek için dokunun" : undefined}
+        className={cn(opts.invalid ? undefined : "cell-input", kasaMode && "cursor-pointer bg-info-soft text-info ring-info/25")}
+      />
+    );
+  };
+
+  const t = kasa?.till ?? null;
+  const strip = !t ? null : t.partialFrom ? (
+    { tone: "warn" as const, text: partialSentence(t), link: false }
+  ) : t.missing.length ? (
+    { tone: "warn" as const, text: missingSentence(t), link: true }
+  ) : (
+    {
+      tone: "info" as const,
+      text: `Kasa raporları: ${num(t.reported)} gün raporlu (son: ${dayMonthTR(t.lastDate)}). Boş bıraktığınız alanlar her raporla kendiliğinden dolar.`,
+      link: false,
+    }
+  );
+  const offValue = effective("offRevenue") ?? 0;
+
   return (
     <Card className={className}>
       <CardHeader
         icon={<CalendarDays />}
         title={`${label} bilgileri`}
-        description="Patron > Raporlar > Ciro ekranından. Gelir-gider tablosu bu ciroyu kullanır."
+        description="Patron > Raporlar > Ciro ekranından ya da kasa raporlarından. Gelir-gider tablosu bu ciroyu kullanır."
       />
       <CardContent className="flex flex-1 flex-col">
         {/* Telefonda tek sütun ve 48px alanlar */}
         <form onSubmit={save} className={cn("flex flex-1 flex-col gap-3", BIG_FIELDS)}>
+          {strip ? (
+            <div
+              role="status"
+              className={cn("flex items-start gap-2.5 rounded-2xl px-3 py-2.5 text-xs leading-5", strip.tone === "warn" ? "bg-warn-soft text-warn" : "bg-info-soft text-info")}
+            >
+              {strip.tone === "warn" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" /> : <Info size={15} className="mt-0.5 shrink-0" aria-hidden="true" />}
+              <p className="min-w-0">
+                {strip.text}
+                {strip.link ? (
+                  <>
+                    {" "}
+                    <Link href={`/panel/kasa?ay=${month}`} className="font-semibold underline underline-offset-2 pointer-coarse:inline-block pointer-coarse:py-1">
+                      Kasa raporuna git
+                    </Link>
+                  </>
+                ) : null}
+              </p>
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="POS ciro, KDV dahil (₺)" tip="İndirimler düşülmüş, ödenmezler hariç" htmlFor="m-pos" error={bad.pos ? "Sayı girin" : undefined}>
-              <NumberInput id="m-pos" value={pos} onChange={(e) => setPos(e.target.value)} placeholder="0" aria-invalid={bad.pos || undefined} className={bad.pos ? undefined : "cell-input"} />
+            <Field
+              label="POS ciro, KDV dahil (₺)"
+              aside={chipOf("posRevenue")}
+              tip="İndirimler düşülmüş, ödenmezler hariç"
+              htmlFor="m-pos"
+              error={bad.pos ? "Sayı girin" : undefined}
+              hint={hintOf("posRevenue")}
+            >
+              {input("posRevenue", { invalid: bad.pos, placeholder: "0" })}
             </Field>
             <Field
               label="Açık gün sayısı"
+              aside={chipOf("openDays")}
               tip={
                 <>
                   Sabit giderler açık gün ÷ ayın gün sayısı oranıyla bölünür (Excel Genel Maliyet, 2. satır). Devam eden ayda bu sayı
                   &quot;bugüne kadar geçen gün&quot; olarak da kullanılır: Genel bakış&apos;taki ay sonu tahmini POS cirosu ÷ açık gün × ayın
-                  gün sayısıdır. Ay bitince gerçek açık gün sayısını yazın; kapanmış aylarda tahmin yapılmaz.
+                  gün sayısıdır. Ay bitince gerçek açık gün sayısını yazın; kapanmış aylarda tahmin yapılmaz. Kasa raporu girilen aylarda boşsa
+                  rapor girilen (satış olan) gün sayılır.
                 </>
               }
               htmlFor="m-days"
@@ -277,49 +428,71 @@ export function MonthInfoForm({
                 daysError ? (
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span>{daysError}</span>
-                    {phase !== "running" ? <AllMonthButton dim={dim} onPick={() => setOpenDays(String(dim))} /> : null}
+                    {phase !== "running" ? <AllMonthButton dim={dim} onPick={() => write("openDays", String(dim))} /> : null}
                   </span>
                 ) : undefined
               }
-              hint={
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span>{openDaysHint(openDays, month, currentMonth)}</span>
-                  {phase !== "running" && openDays.trim() !== String(dim) ? <AllMonthButton dim={dim} onPick={() => setOpenDays(String(dim))} /> : null}
-                </span>
-              }
+              hint={hintOf(
+                "openDays",
+                openDaysHint(texts.openDays, month, currentMonth),
+                phase !== "running" && (elle("openDays") ? texts.openDays.trim() : fieldText("openDays", kasaOf("openDays"))) !== String(dim) ? (
+                  <AllMonthButton dim={dim} onPick={() => write("openDays", String(dim))} />
+                ) : null,
+              )}
             >
-              <NumberInput
-                id="m-days"
-                value={openDays}
-                onChange={(e) => setOpenDays(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                inputMode="numeric"
-                placeholder={phase === "running" ? "bugüne kadar" : `ör. ${dim}`}
-                aria-invalid={bad.days || undefined}
-                className={bad.days ? undefined : "cell-input"}
-              />
+              {input("openDays", {
+                invalid: bad.days,
+                numeric: true,
+                placeholder: phase === "running" ? "bugüne kadar" : `ör. ${dim}`,
+                filter: (v) => v.replace(/\D/g, "").slice(0, 2),
+              })}
             </Field>
-            <Field label="Yönetici indirimleri (₺)" tip="KDV dahil (Patron > İndirim)" htmlFor="m-disc" error={bad.disc ? "Sayı girin" : undefined}>
-              <NumberInput id="m-disc" value={disc} onChange={(e) => setDisc(e.target.value)} aria-invalid={bad.disc || undefined} className={bad.disc ? undefined : "cell-input"} />
+            <Field
+              label="Yönetici indirimleri (₺)"
+              aside={chipOf("discounts")}
+              tip="KDV dahil (Patron > İndirim)"
+              htmlFor="m-disc"
+              error={bad.disc ? "Sayı girin" : undefined}
+              hint={hintOf("discounts")}
+            >
+              {input("discounts", { invalid: bad.disc })}
             </Field>
             <Field
               label="Ödenmez / ikram (₺)"
+              aside={chipOf("offRevenue")}
               tip="Ciro dışı: malzemesi harcanan, geliri olmayan satışlar"
               htmlFor="m-off"
               error={bad.off ? "Sayı girin" : undefined}
-              hint={
+              hint={hintOf(
+                "offRevenue",
+                undefined,
                 recordedIkram?.count ? (
-                  <>
+                  <span>
                     Panelde kayıtlı ikram: {num(recordedIkram.count)} kayıt, menü fiyatıyla {tl(recordedIkram.menuValue)}.{" "}
-                    {Math.abs((parseNumberTR(off) ?? 0) - recordedIkram.menuValue) >= 1 ? (
-                      <button type="button" className="cursor-pointer font-medium text-ink-soft underline underline-offset-2 hover:text-ink" onClick={() => setOff(num(recordedIkram.menuValue, 2))}>
+                    {Math.abs(offValue - recordedIkram.menuValue) >= 1 ? (
+                      <button
+                        type="button"
+                        className="cursor-pointer font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+                        onClick={() => write("offRevenue", num(recordedIkram.menuValue, 2))}
+                      >
                         Bunu yaz
                       </button>
                     ) : null}
-                  </>
-                ) : undefined
-              }
+                  </span>
+                ) : null,
+              )}
             >
-              <NumberInput id="m-off" value={off} onChange={(e) => setOff(e.target.value)} aria-invalid={bad.off || undefined} className={bad.off ? undefined : "cell-input"} />
+              {input("offRevenue", { invalid: bad.off })}
+            </Field>
+            <Field
+              label="Kartlı satış oranı (%)"
+              aside={chipOf("cardShare")}
+              tip="Kredi kartı + yemek kartı ÷ Z toplamı. POS komisyonu = ciro × komisyon × bu oran."
+              htmlFor="m-card"
+              error={cardError ?? undefined}
+              hint={hintOf("cardShare", kasaOf("cardShare") === null && !texts.cardShare.trim() ? "Boşsa Ayarlar'daki oran kullanılır" : undefined)}
+            >
+              {input("cardShare", { invalid: bad.card, placeholder: `Ayarlar: ${num(settingsCardShare * 100, 1)}` })}
             </Field>
           </div>
           <Field label="Not" htmlFor="m-note">

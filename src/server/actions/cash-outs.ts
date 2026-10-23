@@ -90,13 +90,13 @@ function logDetail(d: z.output<typeof cashOutSchema>, expense: boolean) {
 async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts: { restore?: boolean } = {}) {
   const admin = me.role === "admin";
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
-  if (!admin && !staffDayOpen(d.date)) throw new UserError(LOCKED);
+  if (!admin && !(await staffDayOpen(d.date))) throw new UserError(LOCKED);
   const harcama = d.kind === "harcama";
   const db = getDb();
   const saved = await db.transaction(async (tx) => {
     const [prev] = d.id ? await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, d.id)).for("update").limit(1) : [];
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
-    if (prev && !admin && !staffDayOpen(prev.date)) throw new UserError(LOCKED);
+    if (prev && !admin && !(await staffDayOpen(prev.date, tx))) throw new UserError(LOCKED);
     const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
     const mode = opts.restore ? "restore" : prev ? "edit" : "new";
     const toExpenses = cashOutWritesExpense({ admin, mode, kind: d.kind, docType: d.docType, requested: d.toExpenses, hasExpense: Boolean(existing) });
@@ -216,7 +216,7 @@ export async function deleteCashOut(id: number) {
     const snap = await getDb().transaction(async (tx) => {
       const [row] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, cid)).for("update").limit(1);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
-      if (me.role !== "admin" && !staffDayOpen(row.date)) throw new UserError(LOCKED);
+      if (me.role !== "admin" && !(await staffDayOpen(row.date, tx))) throw new UserError(LOCKED);
       if (me.role !== "admin") {
         const [cur] = await tx
           .select({ section: s.expenseCategories.section, panelGroup: s.expenseCategories.panelGroup, active: s.expenseCategories.active })

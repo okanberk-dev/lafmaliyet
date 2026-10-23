@@ -44,7 +44,7 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Reçete onayları (önce / sonra farkı, maliyet etkisi, onayla ya da gerekçeyle reddet; yeni ürün önerisinde satır maliyeti, satış fiyatı ve canlı kâr marjı, "Onayla ve ürünü ekle") | `/panel/onaylar` | — (yeni) |
 | Karaoke (barın ekranı): laffogato.net'ten ödenmiş uygulama siparişleri, sipariş zili ve tek dokunuşla aşama (sitenin aşama ucuna gider; iade ve iptal sitede) ([docs/SITE-SIPARIS.md](docs/SITE-SIPARIS.md)), oda sayacı, yeni rezervasyon zili, süre dolunca alarm, sitedeki rezervasyonla çakışma uyarısı; yöneticiye ay özeti ve bağlantı durumu ([docs/KARAOKE.md](docs/KARAOKE.md)) | `/panel/karaoke` | — (yeni) |
 | Hatırlatıcılarım (herkesin kendi hatırlatıcıları; saatinde uyarı, tekrar, erteleme) | `/panel/hatirlaticilarim` | — (yeni) |
-| Kasa raporu: her akşam Z raporu ve kasa, eksik / fazla, e-posta ve WhatsApp, günün online satışı (bilgi, kasadan geçmez); Z raporu, POS fişi ve kasadan çıkan fişler fotoğraftan okunur (onaylayınca kaydedilir, [docs/FOTOGRAF.md](docs/FOTOGRAF.md)); yöneticiye günden güne ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) | `/panel/kasa` | — (yeni) |
+| Kasa raporu: her akşam Z raporu ve kasa, eksik / fazla, e-posta ve WhatsApp, günün online satışı (bilgi, kasadan geçmez); Z raporu, POS fişi ve kasadan çıkan fişler fotoğraftan okunur (onaylayınca kaydedilir, [docs/FOTOGRAF.md](docs/FOTOGRAF.md)); açılış ↔ önceki devir denetimi, kasayı sayan, düzeltme geçmişi; yöneticiye günden güne; ayın açık günü, POS cirosu, indirimi, ödenmezi ve kartlı oranı (boş bırakılırsa) kasa raporlarından ([docs/KASA-RAPORU.md](docs/KASA-RAPORU.md)) | `/panel/kasa` | — (yeni) |
 | Zayi & ikram: atılan ve ödenmeden verilen ürün / malzeme; tutarlılık ve kasa raporuna bağlı ([docs/ZAYI-IKRAM.md](docs/ZAYI-IKRAM.md)) | `/panel/zayi` | — (yeni) |
 | Satışlar | `/panel/satislar` | Satış Raporu |
 | Faturalar (Paraşüt'ten her sabah gelir; karaoke box ve Alp Koç kafe dışı, toplama girmez) | `/panel/faturalar` | Faturalar |
@@ -138,6 +138,7 @@ src/
   lib/site-sales/      laffogato.net online satışları: yanıt şeması, KDV hariç gelir, ürün eşlemesi, kasa satırı (saf)
   lib/backup/          tam yedek: dosya biçimi, yazılmayanlar, şema sürümü, yükleme sırası, giriş bilgileri (saf, testli)
   lib/cash-plan.ts     nakit planı: 6 haftanın gelen, ödenecek ve kalan parası, hatırlatıcı eşleşmesi (saf, testli; docs/NAKIT-PLANI.md)
+  lib/cash-month.ts    kasa raporlarından ay bilgisi: açık gün, POS cirosu, indirim, ödenmez, kartlı oran, eksik günler (saf, testli)
   lib/kdv.ts           KDV tahmini: satışların ve alışların KDV'si, devreden zinciri (saf, testli)
   lib/photo-read/      fotoğraftan okunanın kontrolü: şemalar, istemler, Z / POS / fiş okumasının forma gidecek hâli (saf, testli)
   lib/photo-rules.ts   fotoğraf türleri, boyut ve ölçü sınırları, saklama süreleri, kim görür (saf, testli)

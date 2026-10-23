@@ -7,6 +7,7 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { daysInMonth, shiftMonth, yearMonths, type PnlRowDef } from "@/lib/calc/engine";
+import { manualOf } from "@/lib/cash-month";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
@@ -116,6 +117,9 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   }
 
   const openDays = calcs.map((c) => c.info?.openDays ?? null);
+  // Açık gün kasa raporlarından da gelir: kasanın değeri hesaplanan gibi, elle yazılan onun üzerine yazılmış sayılır
+  const openDaysKasa = calcs.map((c) => c.info?.kasa?.values.openDays ?? null);
+  const openDaysManual = calcs.map((c) => manualOf(c.info, "openDays"));
   // Ay sütunu başlığındaki not (Satışlar'daki ay notuyla aynı alan) ve ayın gün sayısı (açık gün sınırı)
   const monthNotes = calcs.map((c) => c.info?.note ?? null);
   const dims = months.map(daysInMonth);
@@ -273,6 +277,8 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         activeMonths={activeMonths}
         sections={sections}
         openDays={openDays}
+        openDaysKasa={openDaysKasa}
+        openDaysManual={openDaysManual}
         dims={dims}
         monthNotes={monthNotes}
         currentMonth={model.currentMonth}

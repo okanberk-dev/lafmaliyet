@@ -201,7 +201,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
         { label: "Satışlar (net ciro)", value: t.netSales, sub: "Ürün satışları ÷ (1 + KDV)", sign: 1 },
         { label: "İndirimler", value: -t.discountsNet, sub: "Yönetici indirimleri (KDV hariç)", sign: -1 },
         { label: "Malzeme + ambalaj", value: -t.material, sub: "Satılan her ürün × reçete maliyeti", sign: -1 },
-        { label: "Kart / POS komisyonu", value: -t.commission, sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(st.kartOrani * 100, 1)}`, sign: -1 },
+        { label: "Kart / POS komisyonu", value: -t.commission, sub: `Ciro × %${num(st.komisyon * 100, 1)} × kartlı oran %${num(model.cardShareOf(month).rate * 100, 1)}`, sign: -1 },
         ...t.fixedFlow.map((l) => ({
           label: l.label,
           value: -l.amount,
@@ -428,7 +428,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
                   info={g.pos !== null ? changeNote(g.pos).trim() : undefined}
                   value={<CountUp value={d.info?.posRevenue ?? null} />}
                   badge={<Change g={g.pos} prevMonth={prevMonth} prevValue={prev.info?.posRevenue} />}
-                  sub={d.info?.openDays ? `${d.info.openDays} günde` : null}
+                  sub={d.info?.openDays ? `${d.info.openDays} günde${d.info.sources?.posRevenue === "kasa" ? " · kasa raporlarından" : ""}` : null}
                 />
               </StatBreakdown>
               <StatBreakdown {...withComparison(dailyAvgBreakdown(d), { month: prevMonth, value: daily.previous, growth: g.daily, basis: dailyBasis })}>

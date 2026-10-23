@@ -146,7 +146,7 @@ function grossRows(model: Model, d: DashboardData): BreakdownRow[] {
       sub: `Satılan her ürün × reçete maliyeti${d.sales.unmatched.length ? "; eşleşmeyen satırlar ortalama maliyet oranıyla" : ""}`,
       amount: -t.material,
     },
-    { key: "komisyon", label: "Kart / POS komisyonu", sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(st.kartOrani)}`, amount: -t.commission },
+    { key: "komisyon", label: "Kart / POS komisyonu", sub: `Ciro × ${rate(st.komisyon)} × kartlı oran ${rate(model.cardShareOf(d.month).rate)}`, amount: -t.commission },
   ];
 }
 

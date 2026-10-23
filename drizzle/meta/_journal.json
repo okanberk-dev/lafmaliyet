@@ -183,6 +183,13 @@
       "when": 1792709989605,
       "tag": "0025_fotograf_okuma",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792711319039,
+      "tag": "0026_kasa_ay_bilgisi_butunluk",
+      "breakpoints": true
     }
   ]
 }

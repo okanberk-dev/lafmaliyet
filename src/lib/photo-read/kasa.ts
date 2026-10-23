@@ -2,8 +2,8 @@
  * Kasa raporu fotoğrafının okunması: ModPOS Z raporu ve banka POS gün sonu fişi (saf; tests/fotograf-okuma.test.ts).
  * Model rakamları yazıldığı gibi aktarır; toplamlar, denetimler ve forma eşleme burada. Belge beklenen tür değilse
  * hiçbir alan dolmaz (Z bölümüne POS fişi okutulunca kart alt toplamları "kart" ödemesi gibi gelirdi). Okuma formu
- * yalnız boş alanlarda doldurur; personelin yazdığı değer üzerine yazılmaz. Kayıttan sonra kaydedilen değerlerle
- * okunan değerler karşılaştırılır ("Fotoğraftan farklı"). Ayrıntı: docs/FOTOGRAF.md.
+ * yalnız boş alanlarda doldurur (İndirim dahil); personelin yazdığı değer üzerine yazılmaz. Kayıttan sonra kaydedilen
+ * değerlerle okunan değerler karşılaştırılır ("Fotoğraftan farklı"). Ayrıntı: docs/FOTOGRAF.md.
  */
 
 import { parseNumberTR } from "@/lib/calc/expr";
@@ -322,7 +322,7 @@ export interface PrefillPlan {
 /**
  * Okumanın forma uygulanışı: yalnız boş alanlar dolar; yazılmış ve farklı olan değer kalır. Güveni düşük okuma
  * (fotoğrafta tahmin) alana yazılmaz: personel fişe bakıp yazar ya da "Fotoğraftakini yaz"a basar. `current` formdaki
- * alanlar: formda olmayan alan (ör. kasa grubunun İndirim'i gelmeden) atlanır.
+ * alanlar: formda olmayan alan atlanır.
  */
 export function prefillPlan(reading: CashReading, current: Partial<Record<ReadField, string>>): PrefillPlan {
   const plan: PrefillPlan = { fill: [], differs: [], unsure: [], missing: [] };
@@ -383,7 +383,10 @@ export interface PhotoDiff {
 
 export type SavedFields = Partial<Record<ReadField, number | string | null>>;
 
-/** Kaydedilmiş raporun karşılaştırılan alanları (İndirim kasa grubunun alanı gelince eklenir) */
+/**
+ * Kaydedilmiş raporun karşılaştırılan alanları. İndirim yalnız yazıldıysa karşılaştırılır: alan isteğe bağlı ve eski
+ * raporlarda hiç yoktu; boş bırakılan indirim "fotoğraftan farklı" sayılmaz (kasaya giren bir para değil).
+ */
 export function savedFields(f: {
   zTotal: number;
   cash: number;
@@ -392,11 +395,14 @@ export function savedFields(f: {
   online: number;
   other: number;
   offRevenue: number | null;
+  discounts?: number | null;
   zNo: string | null;
   receipts: number | null;
   bankPos: number | null;
 }): SavedFields {
-  return { zTotal: f.zTotal, cash: f.cash, card: f.card, mealCard: f.mealCard, online: f.online, other: f.other, offRevenue: f.offRevenue, zNo: f.zNo, receipts: f.receipts, bankPos: f.bankPos };
+  const out: SavedFields = { zTotal: f.zTotal, cash: f.cash, card: f.card, mealCard: f.mealCard, online: f.online, other: f.other, offRevenue: f.offRevenue, zNo: f.zNo, receipts: f.receipts, bankPos: f.bankPos };
+  if (f.discounts != null) out.discounts = f.discounts;
+  return out;
 }
 
 /**

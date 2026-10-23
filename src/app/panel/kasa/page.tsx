@@ -1,5 +1,6 @@
 import { ArrowLeft, Gift, Globe, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -7,7 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageSkeleton } from "@/components/ui/misc";
-import { businessDate, CASH_TOLERANCE, diffKind, diffText, staffCanReport, whatsappLink, whatsappText } from "@/lib/cash-report";
+import { kasaMonthLine, resolveMonth, tillMonths } from "@/lib/cash-month";
+import {
+  businessDate,
+  carryCheck,
+  carryChecks,
+  CASH_TOLERANCE,
+  computeCash,
+  diffKind,
+  diffText,
+  integrityOf,
+  staffCanReport,
+  staffDayEditable,
+  whatsappLink,
+  whatsappText,
+  type CarryCheck,
+  type CashRevisionRow,
+} from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
@@ -16,7 +33,18 @@ import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
-import { cashReportsBetween, getCashReport, loadCashSettings, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import {
+  cashCounters,
+  cashReportsBetween,
+  cashRevisionsFor,
+  firstCashReportDate,
+  getCashReport,
+  loadCashSettings,
+  loadMonthEntry,
+  nextReportAfter,
+  previousCarryOver,
+  type CashReportDTO,
+} from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
@@ -86,7 +114,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
 
   const settings = await loadCashSettings();
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters] = await Promise.all([
     showForm ? getCashReport(date) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
@@ -94,18 +122,37 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     aiStatus(),
     showForm ? cashOutsOn(date) : Promise.resolve([]),
     showForm ? cashOutCategories(user.role) : Promise.resolve([]),
+    // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
+    showForm ? nextReportAfter(date) : Promise.resolve(null),
+    showForm ? cashCounters() : Promise.resolve([]),
   ]);
+  const revisions = report && report.revision > 1 ? await cashRevisionsFor([report.id]) : [];
+  // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
+  const staffOpen = staffDayEditable(date, { hasReport: Boolean(report), laterReport: next !== null });
+  const canEdit = admin || staffOpen;
   // Personel yalnız kendi seçebildiği kategorilerin adını görür (yöneticinin maaş, kira gibi seçimi adıyla görünmez)
   const staffCats = new Set(categories.map((c) => c.id));
   const dayOuts = admin ? outs : outs.map((o) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o));
-  // Raporun fotoğrafları: yönetici hepsini, personel düzenleyebildiği günü (bu ekranda yalnız bugün ve dün) görür
-  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
+  // Raporun fotoğrafları: yönetici hepsini, personel hâlâ düzenleyebildiği günü görür (fotoğraf erişimiyle aynı kural)
+  const photoInfo = report && canEdit ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
   const whatsapp = report
     ? (() => {
-        const text = whatsappText(report, { by: report.submittedByName, revision: report.revision, waste, ...extrasFrom(photoInfo, outs, report) });
+        const text = whatsappText(report, {
+          by: report.submittedByName,
+          revision: report.revision,
+          waste,
+          ...extrasFrom(photoInfo, outs, report),
+          ...integrityOf(report, carry, next, revisions),
+        });
         return { text, link: whatsappLink(text, settings.whatsapp) };
       })()
     : null;
+  // Kasayı sayan: etkin kullanıcılar; raporda kayıtlı sayan artık pasifse "(pasif)" ekiyle seçili kalır
+  const counterId = report ? (report.countedBy ?? report.submittedBy) : user.id;
+  const counterOptions =
+    report && counterId !== null && !counters.some((c) => c.id === counterId)
+      ? [...counters, { id: counterId, name: `${report.countedByName ?? report.submittedByName} (pasif)` }]
+      : counters;
   const photoUi = { storage: storage.available, reading: ai.state, admin, me: user.name };
   // Günün zayi ve ikramı: kasa raporuyla birlikte gider (ModPOS'ta ödenmez görünen ikramla karşılaştırılır)
   const wasteCard = waste ? (
@@ -148,10 +195,15 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       carry={carry}
       whatsapp={whatsapp}
       recipients={settings.emailEnabled ? settings.recipients.length : 0}
-      canEdit={admin || staffCanReport(date)}
+      canEdit={canEdit}
       photoUi={photoUi}
       saved={report ? (photoInfo ?? { photos: [], readings: [] }) : null}
       cashOuts={dayOuts}
+      next={next}
+      counters={counterOptions}
+      me={{ id: user.id, name: user.name }}
+      revisions={revisions}
+      locked={!admin && Boolean(report) && !staffOpen && next !== null}
     />
   ) : null;
   // Gün içinde kasadan çıkanlar: gün boyunca kullanılan kart (akşam formu boşken de)
@@ -161,7 +213,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       today={date === today}
       lines={dayOuts}
       categories={categories}
-      canEdit={admin || staffCanReport(date)}
+      canEdit={canEdit}
       admin={admin}
       me={user.name}
       storage={storage.available}
@@ -220,8 +272,25 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const [monthReports, monthOuts] = await Promise.all([cashReportsBetween(`${month}-01`, monthEnd), cashOutsBetween(`${month}-01`, monthEnd)]);
+  const [monthReports, monthOuts, before, after, firstEver, entry] = await Promise.all([
+    cashReportsBetween(`${month}-01`, monthEnd),
+    cashOutsBetween(`${month}-01`, monthEnd),
+    // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
+    previousCarryOver(`${month}-01`),
+    nextReportAfter(monthEnd),
+    firstCashReportDate(),
+    loadMonthEntry(month),
+  ]);
   const days = monthDays(month, today, monthReports);
+  const monthRevisions = await cashRevisionsFor(monthReports.filter((r) => r.revision > 1).map((r) => r.id));
+  const checks = carryChecks(monthReports, before);
+  const lastReport = monthReports[0];
+  const afterCheck = after && lastReport ? carryCheck(after.date, after.openingCash, { date: lastReport.date, amount: computeCash(lastReport).carryOver }) : null;
+  const carryByDate: Record<string, CarryCheck> = Object.fromEntries([...checks, ...(afterCheck ? [[after!.date, afterCheck] as const] : [])]);
+  const revisionsById: Record<number, CashRevisionRow[]> = {};
+  for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
+  // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
+  const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths(monthReports, addDays(today, -1), firstEver)[0]));
   const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
   const infos = await cashReportPhotoInfo(monthReports);
@@ -264,12 +333,21 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             whatsappPhone={settings.whatsapp}
             photos={historyPhotos}
             cashOuts={outsByDate}
+            carry={carryByDate}
+            revisions={revisionsById}
+            monthLine={
+              monthLine ? (
+                <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
+                  {monthLine} → Satışlar
+                </Link>
+              ) : null
+            }
           />
         </div>
         <div className="space-y-4">
           {!showForm ? (
             <Card>
-              <CardHeader icon={<ReceiptText />} title="Bugün" description={longDateTR(today)} />
+              <CardHeader icon={<ReceiptText />} title="Bugünün raporu" description={longDateTR(today)} />
               <div className="space-y-3 px-5 pb-5">
                 {todays ? (
                   <p className={cn("text-2xl font-semibold tracking-tight", diffKind(todays.cashDiff) === "short" ? "text-bad" : diffKind(todays.cashDiff) === "over" ? "text-warn" : "text-good")}>

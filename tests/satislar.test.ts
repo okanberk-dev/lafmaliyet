@@ -8,8 +8,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  cardShareProblem,
   collectSuggestions,
+  fieldPayload,
+  fieldText,
+  fieldValue,
+  initialModes,
   inMarginScale,
+  kasaHint,
   marginColor,
   marginLevelLabel,
   marginPosition,
@@ -23,6 +29,7 @@ import {
 } from "../src/app/panel/satislar/sales-logic";
 import { createModel } from "../src/lib/calc/engine";
 import { describeSkipped, parsePastedSales } from "../src/lib/calc/pos-paste";
+import { tillMonths } from "../src/lib/cash-month";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -173,4 +180,65 @@ test("Renk ölçeği ekrandaki duyarlıkla karşılaştırır: %78,5 ile %78,5 z
   assert.equal(marginColor(a, s), marginColor(b, s));
   assert.equal(marginLevelLabel(a, s), marginLevelLabel(b, s));
   assert.equal(marginLevelLabel(b, s), "Bu ayın en düşük marjı");
+});
+
+// ---------------------------------------------------------------- Ay bilgisi: kasa raporlarından
+
+test("ay bilgisi kipleri: kasadan uygulanan ve elle yazılmamış alan 'kasa'da açılır; ötekiler 'elle'", () => {
+  const manual = { openDays: null, posRevenue: 310_000, discounts: null, offRevenue: 0, cardShare: null };
+  const kasa = { openDays: 18, posRevenue: 245_300, discounts: 3_200, offRevenue: null, cardShare: 0.832 };
+  assert.deepEqual(initialModes(manual, kasa), { openDays: "kasa", posRevenue: "elle", discounts: "kasa", offRevenue: "elle", cardShare: "kasa" });
+  assert.deepEqual(initialModes(manual, null), { openDays: "elle", posRevenue: "elle", discounts: "elle", offRevenue: "elle", cardShare: "elle" });
+});
+
+test("ay bilgisi metni ve değeri: oran yüzde, açık gün tam sayı; okunamayan boş", () => {
+  assert.equal(fieldText("cardShare", 0.832), "83,2");
+  assert.equal(fieldText("cardShare", 0.8346), "83,46");
+  assert.equal(fieldText("posRevenue", 245_300.5), "245.300,5");
+  assert.equal(fieldText("openDays", 18), "18");
+  assert.equal(fieldText("discounts", null), "");
+  assert.equal(fieldValue("cardShare", "83,2"), 0.832);
+  assert.equal(fieldValue("cardShare", "%85,6"), 0.856);
+  assert.equal(fieldValue("posRevenue", "245.300,50"), 245_300.5);
+  assert.equal(fieldValue("openDays", "18"), 18);
+  assert.equal(fieldValue("openDays", "1,5"), null);
+  assert.equal(fieldValue("discounts", "  "), null);
+  assert.equal(cardShareProblem(""), null);
+  assert.equal(cardShareProblem("83,2"), null);
+  assert.equal(cardShareProblem("120"), "Oran 0 ile 100 arasında olmalı");
+  assert.equal(cardShareProblem("abc"), "Oranı yüzde olarak yazın (ör. 83,2)");
+});
+
+test("kaydedilecek değer: kasa kipinde ve boşta null; kasadakine dokunup değiştirmemek elle yazmak sayılmaz", () => {
+  assert.equal(fieldPayload("posRevenue", { mode: "kasa", text: "999", kasa: 245_300, manualBefore: false }), null);
+  assert.equal(fieldPayload("posRevenue", { mode: "elle", text: "", kasa: 245_300, manualBefore: true }), null, "boşaltılan elle değer kasaya döner");
+  assert.equal(fieldPayload("posRevenue", { mode: "elle", text: "245.300", kasa: 245_300, manualBefore: false }), null, "dokunuldu ama değişmedi");
+  assert.equal(fieldPayload("posRevenue", { mode: "elle", text: "245.300", kasa: 245_300, manualBefore: true }), 245_300, "önceden elle yazılmış aynı değer elle kalır");
+  assert.equal(fieldPayload("posRevenue", { mode: "elle", text: "250.000", kasa: 245_300, manualBefore: false }), 250_000);
+  assert.equal(fieldPayload("discounts", { mode: "elle", text: "0", kasa: null, manualBefore: false }), 0, "elle yazılan 0");
+  assert.equal(fieldPayload("cardShare", { mode: "elle", text: "83,2", kasa: 0.832, manualBefore: false }), null);
+  assert.equal(fieldPayload("cardShare", { mode: "elle", text: "85", kasa: 0.832, manualBefore: false }), 0.85);
+});
+
+test("kasa açıklaması: kaç günlük rapordan; indirim ve ödenmezde kaç günde girildi; elle kipinde kasadaki", () => {
+  const rows = Array.from({ length: 18 }, (_, i) => ({
+    date: `2026-11-${String(i + 1).padStart(2, "0")}`,
+    zTotal: 10_000,
+    card: 8_000,
+    mealCard: 320,
+    discounts: i < 12 ? 100 : null,
+    offRevenue: i < 15 ? 50 : null,
+  }));
+  const [till] = tillMonths(rows, "2026-11-18");
+  const kasa = { values: { openDays: 18, posRevenue: 180_000, discounts: 1_200, offRevenue: 750, cardShare: till.cardShare }, till };
+  assert.equal(kasaHint("posRevenue", kasa, "kasa", ""), "Kasa raporlarından (18 gün). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("discounts", kasa, "kasa", ""), "Kasa raporlarından (12 / 18 günde girildi). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("offRevenue", kasa, "kasa", ""), "Kasa raporlarından (15 / 18 günde girildi). Değiştirmek için dokunun.");
+  assert.equal(kasaHint("posRevenue", kasa, "elle", "190.000")?.replace(/\u00a0/g, " "), "Elle girildi · kasada 180.000 ₺");
+  assert.equal(kasaHint("openDays", kasa, "elle", "20"), "Elle girildi · kasada 18 gün");
+  assert.equal(kasaHint("cardShare", kasa, "elle", "85"), "Elle girildi · kasada %83,2");
+  assert.equal(kasaHint("posRevenue", kasa, "elle", "")?.replace(/\u00a0/g, " "), "Boş bırakırsanız kasadaki kullanılır (180.000 ₺)");
+  // Kasa bu alana uygulanmıyorsa (ya da ayın raporu yoksa) açıklama yok
+  assert.equal(kasaHint("posRevenue", { ...kasa, values: { ...kasa.values, posRevenue: null } }, "elle", ""), null);
+  assert.equal(kasaHint("posRevenue", null, "elle", ""), null);
 });

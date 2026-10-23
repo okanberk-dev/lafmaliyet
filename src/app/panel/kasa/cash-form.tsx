@@ -8,10 +8,20 @@ import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/pho
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { cashOutCheck, cashOutNoteOf, cashOutsTotal } from "@/lib/cash-outs";
-import { CASH_TOLERANCE, computeCash, diffKind, diffText, type CashReportFields } from "@/lib/cash-report";
+import {
+  CASH_TOLERANCE,
+  carryCheck,
+  carryDiffText,
+  computeCash,
+  diffKind,
+  diffText,
+  openingNeedsNote,
+  type CashReportFields,
+  type CashRevisionRow,
+} from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import {
@@ -27,7 +37,7 @@ import {
   type ReadField,
 } from "@/lib/photo-read/kasa";
 import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/photo-rules";
-import { longDateTR } from "@/lib/reminders";
+import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport, type CashEmailOutcome } from "@/server/actions/cash-report";
 import type { CashOutDTO } from "@/server/data/cash-outs";
@@ -36,9 +46,23 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 
 import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
+import { CashRevisions } from "./cash-revisions";
 import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
 
-type MoneyKey = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos" | "offRevenue";
+type MoneyKey =
+  | "zTotal"
+  | "cash"
+  | "card"
+  | "mealCard"
+  | "online"
+  | "other"
+  | "openingCash"
+  | "cashOut"
+  | "countedCash"
+  | "handedOver"
+  | "bankPos"
+  | "offRevenue"
+  | "discounts";
 type Key = MoneyKey | "zNo" | "receipts" | "cashOutNote" | "note";
 type Values = Record<Key, string>;
 
@@ -57,10 +81,11 @@ const LABELS: Record<MoneyKey, string> = {
   handedOver: "Teslim edilen",
   bankPos: "Banka POS",
   offRevenue: "Ödenmez / ikram",
+  discounts: "İndirim",
 };
 
-/** Formda fotoğraftan dolabilen alanlar (İndirim kasa grubunun alanı gelince eklenir) */
-const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "zNo", "receipts", "bankPos"] as const satisfies readonly (ReadField & Key)[];
+/** Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez) */
+const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos"] as const satisfies readonly (ReadField & Key)[];
 type FormReadField = (typeof READ_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
@@ -83,6 +108,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
       handedOver: report.handedOver ? input(report.handedOver) : "",
       bankPos: input(report.bankPos),
       offRevenue: input(report.offRevenue),
+      discounts: input(report.discounts),
       note: report.note ?? "",
     };
   }
@@ -103,6 +129,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
     handedOver: "",
     bankPos: "",
     offRevenue: "",
+    discounts: "",
     note: "",
   };
 }
@@ -144,6 +171,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     handedOver: a.handedOver ?? 0,
     bankPos: a.bankPos,
     offRevenue: a.offRevenue,
+    discounts: a.discounts,
     note: v.note.trim() || null,
   };
   if (fields.handedOver > fields.countedCash) errors.handedOver = "Teslim edilen, sayılan nakitten fazla olamaz";
@@ -208,7 +236,11 @@ interface PosPrompt {
 /**
  * Gün sonu kasa raporu: personel ModPOS'un Z raporuna ve kasaya bakıp girer. Yazarken olması gereken nakit ve fark
  * (eksik / fazla) anında görünür; gönderince alıcılara e-posta gider ve "WhatsApp ile gönder" ayrıntılı metni açar.
- * Gönderilmiş rapor özet olarak görünür, "Düzenle" ile yeniden gönderilir (güncellendi diye işaretlenir).
+ * Gönderilmiş rapor özet olarak görünür, "Düzenle" ile yeniden gönderilir (güncellendi diye işaretlenir; önceki sürüm
+ * "Değişiklikler"de kalır).
+ *
+ * Açılış önceki raporun devriyle karşılaştırılır (docs/KASA-RAPORU.md › Açılış ve devir): tutmuyorsa turuncu kutu ve
+ * "Devri yaz"; nedeni nota yazılmadan gönderilmez (sunucu da aynı kuralı uygular). Kasayı sayan kişi seçilir.
  *
  * Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar dolar
  * ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar, okunamayan
@@ -224,10 +256,15 @@ export function CashForm({
   photoUi,
   saved,
   cashOuts,
+  next = null,
+  counters = [],
+  me = null,
+  revisions = [],
+  locked = false,
 }: {
   date: string;
   report: CashReportDTO | null;
-  /** Önceki raporun ertesi güne devri (açılış kendiliğinden dolar) */
+  /** Önceki raporun ertesi güne devri (açılış kendiliğinden dolar ve onunla karşılaştırılır) */
   carry: { date: string; amount: number } | null;
   whatsapp: { text: string; link: string } | null;
   /** Kaç adrese e-posta gider (adresler personele gösterilmez) */
@@ -239,9 +276,21 @@ export function CashForm({
   saved: CashPhotoInfo | null;
   /** Günün kasadan çıkan satırları */
   cashOuts: CashOutDTO[];
+  /** Sonraki günün raporu (açılışı bu raporun devriyle karşılaştırılır) */
+  next?: { date: string; openingCash: number } | null;
+  /** "Kasayı sayan" seçenekleri: etkin kullanıcılar (kayıtlı pasif sayan "(pasif)" ekiyle) */
+  counters?: { id: number; name: string }[];
+  /** Formu açan kişi (yeni raporda sayan o) */
+  me?: { id: number; name: string } | null;
+  /** Kayıtlı raporun önceki sürümleri */
+  revisions?: CashRevisionRow[];
+  /** Personel: ertesi günün raporu girildi, bu rapor artık yalnız yöneticide */
+  locked?: boolean;
 }) {
   const [editing, setEditing] = useState(report === null);
   const [values, setValues] = useState<Values>(() => initialValues(report, carry, cashOuts));
+  const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
+  const [counter, setCounter] = useState<number | null>(initialCounter);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useTransition();
   const [resending, setResending] = useState(false);
@@ -284,6 +333,7 @@ export function CashForm({
 
   function edit() {
     setValues(initialValues(report, carry, cashOuts));
+    setCounter(initialCounter);
     setErrors({});
     setPhotos([]);
     setMarks({});
@@ -396,13 +446,26 @@ export function CashForm({
       toast.error("Eksik ya da hatalı alan var", { description: Object.values(errs)[0] });
       return;
     }
+    // Açılış önceki devirle tutmuyorsa nedeni nota (sunucu da reddeder; burada not alanına gidilir)
+    if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: report?.openingCash ?? null, note: fields.note })) {
+      toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
+      document.getElementById("k-note")?.focus();
+      return;
+    }
     start(async () => {
-      const res = await submitCashReport({ ...fields, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
+      const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const e: CashEmailOutcome = res.data.email;
       const head = `Rapor gönderildi · ${diffText(res.data.cashDiff)}`;
       if (e.status === "failed") toast.warning(head, { description: e.error ?? "E-posta gitmedi", duration: 12_000 });
       else toast.success(head, { description: e.status === "sent" ? `E-posta ${e.to} adrese gitti. Şimdi WhatsApp ile gönderebilirsiniz.` : "WhatsApp ile gönderebilirsiniz." });
+      // Düzeltme ertesi günün zincirini bozduysa söylenir (ertesi günün açılışı bu raporun devrine dayanır)
+      if (res.data.next) {
+        toast.warning(`${dayMonthTR(res.data.next.date)} açılışı bu devirle ${res.data.nextBroken ? "artık " : ""}tutmuyor`, {
+          description: "Ertesi günün açılışını ya da bu raporun sayımını kontrol edin.",
+          duration: 12_000,
+        });
+      }
       setEditing(false);
     });
   }
@@ -426,6 +489,10 @@ export function CashForm({
   if (report && !editing) {
     const mail = emailLine(report.emailStatus, report.emailError, recipients);
     const sentAt = new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(report.updatedAt));
+    // Sayan gönderenden farklıysa ikisi de; eski raporlarda sayan yok (gönderen saymış sayılır)
+    const who = report.countedByName && report.countedByName !== report.submittedByName ? `Sayan ${report.countedByName} · gönderen ${report.submittedByName}` : report.submittedByName;
+    const savedCarry = carryCheck(date, report.openingCash, carry);
+    const savedNext = next ? carryCheck(next.date, next.openingCash, { date, amount: computeCash(report).carryOver }) : null;
     const diffs = saved ? photoDiffs(saved.readings, savedFields(report)) : [];
     // Rapordan sonra eklenen kasadan çıkanlar: rapordaki tutar kendiliğinden değişmez (sayılan kasaya bağlı)
     const later = cashOuts.filter((o) => o.createdAt > report.updatedAt);
@@ -435,7 +502,7 @@ export function CashForm({
         <CardHeader
           icon={<ReceiptText />}
           title={`${longDateTR(date)} kasa raporu`}
-          description={`${report.submittedByName} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
+          description={`${who} · ${sentAt}${report.revision > 1 ? " · güncellendi" : ""}`}
           meta={
             <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>
               {diffText(report.cashDiff)}
@@ -473,13 +540,20 @@ export function CashForm({
               </Button>
             ) : null}
           </div>
-          <CashBreakdown report={report} cashOuts={cashOuts} />
+          {locked ? <p className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">Ertesi günün raporu girildi; düzeltme için yöneticiye yazın.</p> : null}
+          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} />
+          <CashRevisions report={report} revisions={revisions} />
         </div>
       </Card>
     );
   }
 
   const kind = live ? live.kind : null;
+  // Açılış ↔ önceki raporun devri (yazarken): tutmuyorsa turuncu kutu, Sonuç'ta satır ve zorunlu not
+  const openingNum = values.openingCash.trim() ? parseNumberTR(values.openingCash) : null;
+  const liveCarry = openingNum !== null ? carryCheck(date, openingNum, carry) : null;
+  const noteRequired = openingNum !== null && openingNeedsNote({ check: liveCarry, openingCash: openingNum, prevOpening: report?.openingCash ?? null, note: values.note });
+  const gap = carry ? Math.max(0, daysBetween(carry.date, date) - 1) : 0;
   const paymentsOff = live && values.zTotal.trim() && Math.abs(live.paymentsDiff) >= CASH_TOLERANCE;
   const cardOff = live && live.cardDiff !== null && Math.abs(live.cardDiff) >= CASH_TOLERANCE;
   const offLine = photoUi.storage ? readingOffText(photoUi.reading, photoUi.admin) : null;
@@ -515,7 +589,7 @@ export function CashForm({
       </span>
     );
   };
-  const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest);
+  const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
 
   const field = (k: MoneyKey, label: string, opts: { hint?: ReactNode; placeholder?: string; autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={`k-${k}`} hint={hintOf(k, opts.hint)} error={errors[k]}>
@@ -581,6 +655,7 @@ export function CashForm({
             {field("online", "Online", { hint: "Yemeksepeti, Getir, Trendyol…" })}
             {field("other", "Diğer", { hint: "havale, cari, ikram…" })}
             {field("offRevenue", "Ödenmez / ikram", { hint: "Z raporunda ciro dışı (isteğe bağlı)" })}
+            {field("discounts", "İndirim", { hint: "Z raporundaki indirim toplamı (isteğe bağlı)" })}
             <Field label={labelOf("receipts", "Fiş sayısı")} htmlFor="k-receipts" hint={hintOf("receipts", "isteğe bağlı")}>
               <Input id="k-receipts" inputMode="numeric" value={values.receipts} onChange={set("receipts")} maxLength={6} autoComplete="off" data-warn={warnOf("receipts") || undefined} />
             </Field>
@@ -594,7 +669,23 @@ export function CashForm({
         <Card>
           <CardHeader icon={<Wallet />} title="Kasa (nakit)" description="Çekmecedeki bütün nakdi sayın; teslim ettiğiniz parayı sayımdan sonra yazın." />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-            {field("openingCash", "Açılış (dünden devir)", { hint: carry ? `Önceki rapordan (${longDateTR(carry.date)}): ${money(carry.amount)}` : "Gün başında kasadaki nakit" })}
+            {field("openingCash", "Açılış (dünden devir)", {
+              hint: liveCarry ? (
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn" role="status">
+                  <span className="min-w-0 flex-1 basis-56">
+                    Önceki raporun devri {money(liveCarry.carry)} ({dayMonthTR(liveCarry.prevDate)}); yazdığınız {carryDiffText(liveCarry)}. Kasaya para kondu ya da
+                    alındıysa nedenini nota yazın.
+                  </span>
+                  <Button size="xs" variant="secondary" onClick={() => setValues((v) => ({ ...v, openingCash: input(liveCarry.carry) }))}>
+                    Devri yaz
+                  </Button>
+                </span>
+              ) : carry ? (
+                `Önceki rapordan (${longDateTR(carry.date)}): ${money(carry.amount)}${gap ? ` · arada rapor girilmemiş ${gap} gün var` : ""}`
+              ) : (
+                "Gün başında kasadaki nakit"
+              ),
+            })}
             {field("countedCash", "Akşam sayılan nakit")}
             {field("cashOut", "Gün içinde kasadan çıkan", {
               hint: cashOuts.length ? (
@@ -620,6 +711,18 @@ export function CashForm({
               <Input id="k-cashOutNote" value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
             </Field>
             {field("handedOver", "Teslim edilen", { hint: "Sayımdan sonra kasadan alınan (patrona, bankaya)" })}
+            {counters.length ? (
+              <Field label="Kasayı sayan" htmlFor="k-counter" hint="Çekmeceyi kim saydı? Siz değilseniz seçin.">
+                <Select id="k-counter" value={counter ?? ""} onChange={(e) => setCounter(e.target.value ? Number(e.target.value) : null)}>
+                  {counter === null ? <option value="">Seçin</option> : null}
+                  {counters.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
             {outsWarning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">{outsWarning}</p> : null}
           </div>
         </Card>
@@ -674,6 +777,7 @@ export function CashForm({
                     <span className="text-ink-mute">Ertesi güne devir</span>
                     <span className="tabular">{money(live.carryOver)}</span>
                   </p>
+                  {liveCarry ? <p className="py-1.5 text-warn">Açılış devirden {carryDiffText(liveCarry)}</p> : null}
                 </div>
               </>
             ) : (
@@ -682,8 +786,14 @@ export function CashForm({
             <Field
               label="Not"
               htmlFor="k-note"
-              hint={kind && kind !== "even" ? "Fark var: nedenini kısaca yazın (ör. bozuk para, iade, yanlış fiş)" : "isteğe bağlı"}
-              className={kind && kind !== "even" && !values.note.trim() ? "[&_label]:text-warn" : undefined}
+              hint={
+                noteRequired
+                  ? "Açılış devirle tutmuyor: nedenini yazın (zorunlu)"
+                  : kind && kind !== "even"
+                    ? "Fark var: nedenini kısaca yazın (ör. bozuk para, iade, yanlış fiş)"
+                    : "isteğe bağlı"
+              }
+              className={(kind && kind !== "even" && !values.note.trim()) || noteRequired ? "[&_label]:text-warn" : undefined}
             >
               <Textarea id="k-note" value={values.note} onChange={set("note")} rows={3} maxLength={1000} />
             </Field>
