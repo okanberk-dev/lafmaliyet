@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, weekdaysText, windowError } from "@/lib/checklists";
+import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, weekdaysText, windowError } from "@/lib/checklists";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { ChecklistError, logAnswerActivity, writeChecklistAnswer } from "@/server/data/checklists";
 import { getDb, schema as s } from "@/server/db";
@@ -125,12 +125,7 @@ export async function createChecklistTemplate(input: z.input<typeof templateSche
   });
 }
 
-/** Etkinlik değişince an yazılır: açılınca bugünden (aralığı geçtiyse yarından) beklenir, kapanınca o andan beklenmez */
-function activity(prev: { active: boolean }, active: boolean, now: Date) {
-  if (prev.active === active) return {};
-  return active ? { active, activeFrom: now, inactiveFrom: null } : { active, inactiveFrom: now };
-}
-
+/** Listeyi düzenler; etkinlik değişince anlar activityChange'ten (kapatılıp aralık açılmadan geri açılan liste hiç kapanmamış sayılır) */
 export async function updateChecklistTemplate(id: number, input: z.input<typeof templateSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -144,7 +139,7 @@ export async function updateChecklistTemplate(id: number, input: z.input<typeof 
     const now = new Date();
     await db
       .update(t)
-      .set({ ...data, ...activity(prev, data.active, now), updatedAt: now })
+      .set({ ...data, ...activityChange(prev, data, now), updatedAt: now })
       .where(eq(t.id, tid));
     const changes = [
       prev.name !== data.name ? `ad ${prev.name} → ${data.name}` : null,
@@ -160,6 +155,7 @@ export async function updateChecklistTemplate(id: number, input: z.input<typeof 
   });
 }
 
+/** Listeler'deki Etkin anahtarı (anlar activityChange'ten: yanlışlıkla kapatılıp hemen açılan liste bugünü ve geçmişi kaybetmez) */
 export async function setChecklistTemplateActive(id: number, active: boolean) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -172,7 +168,7 @@ export async function setChecklistTemplateActive(id: number, active: boolean) {
     const now = new Date();
     await db
       .update(t)
-      .set({ ...activity(prev, on, now), updatedAt: now })
+      .set({ ...activityChange(prev, { active: on, weekdays: prev.weekdays, opensAt: prev.opensAt ?? "08:00" }, now), updatedAt: now })
       .where(eq(t.id, tid));
     if (prev.active !== on) await logActivity(me, on ? "Kontrol listesi etkinleştirildi" : "Kontrol listesi pasife alındı", prev.name);
     refresh();

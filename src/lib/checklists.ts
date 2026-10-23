@@ -253,6 +253,39 @@ export function appliesOn(t: TemplateTiming, day: string): boolean {
   return Date.parse(t.activeFrom) < open && (t.inactiveFrom === null || Date.parse(t.inactiveFrom) > open);
 }
 
+/**
+ * Liste [from, to] arasında, haftanın seçili bir gününde aralığı açıldı mı (sınırlar dahil: tam açılışta kapatılan ya
+ * da açılan liste o gün beklenmez). Bir haftadan uzun aralıkta seçili her günün açılışı geçmiştir.
+ */
+export function openedBetween(t: Pick<TemplateTiming, "weekdays" | "opensAt">, from: Date, to: Date): boolean {
+  if (to.getTime() < from.getTime()) return false;
+  if (to.getTime() - from.getTime() >= 7 * DAY_MIN * MIN_MS) return t.weekdays.some((d) => d >= 1 && d <= 7);
+  for (let day = businessDate(from); day <= businessDate(to); day = addDays(day, 1)) {
+    if (!t.weekdays.includes(weekdayOf(day))) continue;
+    const open = clockInstant(day, t.opensAt).getTime();
+    if (open >= from.getTime() && open <= to.getTime()) return true;
+  }
+  return false;
+}
+
+/**
+ * Etkinlik değişince yazılacak anlar (Listeler'deki anahtar ve listenin sayfası). Kapanan liste o andan beklenmez.
+ * Açılan liste o andan beklenir (bugünün aralığı geçtiyse yarından); ama kapalıyken hiçbir günün aralığı açılmadıysa
+ * (anahtara yanlışlıkla dokunulup hemen geri açıldı) kapanış hiç olmamış sayılır: eski başlangıç kalır, bugünün
+ * listesi ve geçmişteki "yapılmadı"lar yerinde kalır. Saat ve günler `next`ten (aynı kayıtta değişebilirler; günlere
+ * hep şimdiki kuralla bakılır).
+ */
+export function activityChange(
+  prev: { active: boolean; inactiveFrom: Date | null },
+  next: { active: boolean; weekdays: number[]; opensAt: string },
+  now: Date,
+): { active?: boolean; activeFrom?: Date; inactiveFrom?: Date | null } {
+  if (prev.active === next.active) return {};
+  if (!next.active) return { active: false, inactiveFrom: now };
+  if (prev.inactiveFrom && !openedBetween(next, prev.inactiveFrom, now)) return { active: true, inactiveFrom: null };
+  return { active: true, activeFrom: now, inactiveFrom: null };
+}
+
 /** Bugün olmayan listenin nedeni (yönetici ekranında): pasif, haftanın günü seçili değil ya da bugünün aralığından sonra eklendi */
 export function absentReason(t: TemplateTiming & { active: boolean }, day: string): string | null {
   if (!t.active) return "pasif";
@@ -334,6 +367,17 @@ export function nextVersions(prev: (AnswerContent & Pick<AnswerLite, "photoAt" |
     at: prev.at,
   };
   return [...prev.history, version].slice(-MAX_HISTORY);
+}
+
+/**
+ * Fotoğraflı maddenin önceki hâli (geçmiş): bir kayıt ya fotoğrafı yeniden çeker (not aynı kalır) ya da notu değiştirir
+ * (fotoğraf aynı kalır). Sonraki hâlle notu aynıysa fotoğraf değişmiştir ("Başka bir fotoğraf"); değilse aynı
+ * fotoğrafın o zamanki notu (yoksa "notsuz").
+ */
+export function photoVersionText(v: Pick<ChecklistAnswerVersion, "photo" | "note">, next: { note: string | null }): string {
+  if (!v.photo) return "Fotoğrafsız";
+  if ((v.note ?? null) === (next.note ?? null)) return "Başka bir fotoğraf";
+  return v.note ? "Aynı fotoğraf" : "Aynı fotoğraf, notsuz";
 }
 
 /** Madde yanıtlanmış sayılır mı: fotoğraflı maddede fotoğraf çekilmiş olmalı (silinse de çekildi sayılır) */
@@ -550,6 +594,8 @@ export function checklistBell(i: {
       if (!l.staffAllowed) continue;
       const state = listState(l, nowBm, false);
       if (state !== "open" && state !== "overdue") continue;
+      // Önceden başlanan liste "açık" sayılır; zil yine de aralık açılmadan "bekliyor" demez
+      if (state === "open" && nowBm < opensMinute(l.opensAt)) continue;
       const late = state === "overdue";
       out.push({
         id: `kontrol-${late ? "gecikti" : "bekliyor"}-${l.templateId}-${today!.day}`,

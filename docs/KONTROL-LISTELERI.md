@@ -40,12 +40,18 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 - Gün içinde eklenen ya da yeniden etkinleştirilen liste, o günün aralığı çoktan açıldıysa **yarından** beklenir
   (öğleden sonra eklenen Açılış "gecikti" demez; akşamki Kapanış beklenir). Pasife alınan liste o andan beklenmez;
   Bugün'de, zilde ve e-postada görünmez, kayıtları Geçmiş'te kalır.
+- Kapatılıp hiçbir aralığı açılmadan geri açılan liste (anahtara yanlışlıkla dokunuldu) **hiç kapanmamış sayılır**:
+  bugünkü listesi ve Geçmiş'teki "yapılmadı"ları yerinde kalır (`activityChange`). Arada bir aralık açıldıysa liste
+  açıldığı andan başlar; listede tek bir başlangıç anı tutulduğu için önceki günler Geçmiş'te "yapılmadı" göstermez.
 
 ## 3. Kim doldurur, nasıl kaydedilir
 
 - Personel ve yönetici doldurur. Listede **Personel doldurabilir** kapalıysa listeyi yalnız yönetici görür ve doldurur.
 - Aynı listeyi birden çok kişi aynı anda doldurabilir. Her dokunuş hemen yazılır; aynı maddede son yazan geçer, önceki
-  hâli maddenin altında "Önce: 6 °C · 09:12 Ayşe" olarak kalır (en çok 10).
+  hâli maddenin altında "Önce: 6 °C · 09:12 Ayşe" olarak kalır (en çok 10). Fotoğrafta yeniden çekme "Önce: Başka bir
+  fotoğraf", not değişikliği "Önce: Aynı fotoğraf" ve o zamanki not olarak görünür.
+- Bağlantı yoksa işaret geri döner ve "Kaydedilemedi: bağlantı kurulamadı" bildirimi çıkar; yazılan not yerinde kalır,
+  yeniden denenir. Panel bu arada güncellendiyse bildirim "Yenile" önerir.
 - **Sonradan doldurma yok.** Yalnız bugünün listesi doldurulur (yönetici de geçmiş günü dolduramaz). Başlamış (yanıtı
   olan) bir liste yeni gün açıldıktan sonra 30 dakika daha, **05:30'a kadar** bitirilebilir: 05:01'de biten kapanış
   kaybolmaz. Sonra gelen yanıt "Bu günün listesi kapandı" der ve ekran yeni günün listesini açar.

@@ -14,6 +14,7 @@ import { DEFAULT_CHECKLISTS } from "../src/lib/checklist-seed";
 import { businessDate } from "../src/lib/cash-report";
 import {
   absentReason,
+  activityChange,
   appliesOn,
   businessMinuteOfClock,
   canAnswerDay,
@@ -35,9 +36,11 @@ import {
   MAX_PHOTO_ITEMS,
   nextVersions,
   nowBusinessMinute,
+  openedBetween,
   parseClock,
   parseReading,
   photoAccess,
+  photoVersionText,
   PHOTO_PRIVACY_HINT,
   rangeText,
   runSummary,
@@ -500,6 +503,76 @@ test("15. hazır listeler: Açılış 08:00–11:00 ve Kapanış 22:00–02:00, 
   assert.ok(!DEFAULT_CHECKLISTS.some((t) => /Oda sıfırlama|Mal kabul/.test(t.name)));
 });
 
+test("16. zil: aralıktan önce başlanan liste personelin zilinde aralık açılınca çıkar (önce bekliyor, son saatten sonra gecikti)", () => {
+  // Kapanış 13:00'te erkenden 4 maddeyle başlandı
+  const early = { day: "2026-10-22", lists: [list(2, "Kapanış", "22:00", "02:00", { done: 4, required: 15, firstAt: iso("2026-10-22T12:50"), lastAt: iso("2026-10-22T12:55") })] };
+  assert.equal(listState(early.lists[0], bm("2026-10-22T13:00"), false), "open");
+  assert.deepEqual(checklistBell({ role: "staff", now: tr("2026-10-22T13:00"), today: early }), []);
+  assert.deepEqual(checklistBell({ role: "staff", now: tr("2026-10-22T21:59"), today: early }), []);
+  assert.deepEqual(
+    checklistBell({ role: "staff", now: tr("2026-10-22T22:30"), today: early }).map((b) => [b.id, b.kind, b.title, b.body, b.unread]),
+    [["kontrol-bekliyor-2-2026-10-22", "info", "Kapanış listesi bekliyor", "Son saat 02:00 · 4 / 15 madde", false]],
+  );
+  assert.deepEqual(
+    checklistBell({ role: "staff", now: tr("2026-10-23T02:30"), today: early }).map((b) => [b.id, b.unread]),
+    [["kontrol-gecikti-2-2026-10-22", true]],
+  );
+  // Yöneticinin zili zaten yalnız gecikeni söyler
+  assert.deepEqual(checklistBell({ role: "admin", now: tr("2026-10-22T13:00"), today: early }), []);
+});
+
+test("17. yeniden açma: aralığı açılmadan kapatılıp geri açılan liste hiç kapanmamış sayılır (bugünkü liste ve geçmişteki yapılmadılar kalır); arada aralık açıldıysa o andan beklenir", () => {
+  const every = { weekdays: [1, 2, 3, 4, 5, 6, 7], opensAt: "09:00" };
+  // 22 Ekim 13:00'te Listeler'deki anahtar kapatıldı, 13:01'de geri açıldı (aralık 09:00'da açılmıştı)
+  assert.deepEqual(activityChange({ active: true, inactiveFrom: null }, { ...every, active: false }, tr("2026-10-22T13:00")), { active: false, inactiveFrom: tr("2026-10-22T13:00") });
+  assert.deepEqual(activityChange({ active: false, inactiveFrom: tr("2026-10-22T13:00") }, { ...every, active: true }, tr("2026-10-22T13:01")), { active: true, inactiveFrom: null });
+  // Başlangıç anı yerinde kaldı: bugün ve önceki günler (geçmişteki "yapılmadı"lar) yine beklenir
+  const kept = { ...every, activeFrom: iso("2026-10-01T10:00"), inactiveFrom: null };
+  for (const day of ["2026-10-22", "2026-10-21", "2026-10-02"]) assert.equal(appliesOn(kept, day), true, day);
+  // Gece 23:00'te kapatıldı, ertesi sabah aralık (09:00) açıldıktan sonra açıldı: o gün beklenmez, yarından
+  const later = activityChange({ active: false, inactiveFrom: tr("2026-10-22T23:00") }, { ...every, active: true }, tr("2026-10-23T10:00"));
+  assert.deepEqual(later, { active: true, activeFrom: tr("2026-10-23T10:00"), inactiveFrom: null });
+  assert.equal(appliesOn({ ...every, activeFrom: iso("2026-10-23T10:00"), inactiveFrom: null }, "2026-10-23"), false);
+  assert.equal(appliesOn({ ...every, activeFrom: iso("2026-10-23T10:00"), inactiveFrom: null }, "2026-10-24"), true);
+  // Aynı gece açılış saatinden önce (08:30) açılsaydı kapanış hiç olmamış sayılırdı
+  assert.deepEqual(activityChange({ active: false, inactiveFrom: tr("2026-10-22T23:00") }, { ...every, active: true }, tr("2026-10-23T08:30")), { active: true, inactiveFrom: null });
+  // Gece yarısını geçen Kapanış: 23:00'te kapatılıp 23:05'te açıldı (22:00 açılışı kapatılmadan önceydi)
+  assert.deepEqual(activityChange({ active: false, inactiveFrom: tr("2026-10-22T23:00") }, { ...every, opensAt: "22:00", active: true }, tr("2026-10-22T23:05")), { active: true, inactiveFrom: null });
+  // Saat aynı kayıtta değişebilir: yeni saate bakılır (14:00 açılışı henüz gelmedi)
+  assert.deepEqual(activityChange({ active: false, inactiveFrom: tr("2026-10-22T07:00") }, { ...every, opensAt: "14:00", active: true }, tr("2026-10-22T13:00")), { active: true, inactiveFrom: null });
+  // Seçili olmayan günün açılışı sayılmaz: yalnız Pazartesi listesi Cuma kapatılıp Pazar açıldı
+  assert.equal(openedBetween({ weekdays: [1], opensAt: "09:00" }, tr("2026-10-23T13:00"), tr("2026-10-25T20:00")), false);
+  assert.equal(openedBetween({ weekdays: [1], opensAt: "09:00" }, tr("2026-10-23T13:00"), tr("2026-10-26T09:00")), true);
+  // Tam açılışta kapatılan liste o gün beklenmez (appliesOn ile aynı sınır); bir haftadan uzun kapalı kalınca açılış geçmiştir
+  assert.equal(openedBetween(every, tr("2026-10-22T09:00"), tr("2026-10-22T09:00")), true);
+  assert.equal(appliesOn({ ...every, activeFrom: iso("2026-10-01T10:00"), inactiveFrom: iso("2026-10-22T09:00") }, "2026-10-22"), false);
+  assert.equal(openedBetween({ weekdays: [3], opensAt: "09:00" }, tr("2026-10-01T10:00"), tr("2026-10-09T10:00")), true);
+  assert.equal(openedBetween({ weekdays: [], opensAt: "09:00" }, tr("2026-10-01T10:00"), tr("2026-10-20T10:00")), false);
+  // Değişmeyen etkinlik yazılmaz; kapanış anı olmayan pasif liste o andan başlar
+  assert.deepEqual(activityChange({ active: true, inactiveFrom: null }, { ...every, active: true }, tr("2026-10-22T13:00")), {});
+  assert.deepEqual(activityChange({ active: false, inactiveFrom: null }, { ...every, active: true }, tr("2026-10-22T13:00")), { active: true, activeFrom: tr("2026-10-22T13:00"), inactiveFrom: null });
+  // İki yol da (listenin sayfası ve Listeler'deki anahtar) aynı kuralı kullanır
+  const actions = read("src/server/actions/checklists.ts");
+  assert.match(actions, /\.\.\.activityChange\(prev, data, now\)/);
+  assert.match(actions, /\.\.\.activityChange\(prev, \{ active: on, weekdays: prev\.weekdays, opensAt: prev\.opensAt \?\? "08:00" \}, now\)/);
+});
+
+test("18. fotoğrafın önceki hâli: yeniden çekme ile not değişikliği ayrılır", () => {
+  const content = { status: "ok" as const, value: null, textValue: null };
+  // 10:29 çekildi, 10:30 yeniden çekildi (not aynı kalır), 10:31 not eklendi (fotoğraf aynı kalır)
+  const first = answer(5, { photoId: 1, photoAt: iso("2026-10-22T10:29"), at: iso("2026-10-22T10:29") });
+  const retaken = { ...first, photoId: 2, photoAt: iso("2026-10-22T10:30"), at: iso("2026-10-22T10:30"), history: nextVersions(first, { ...content, note: null, photoId: 2 }) };
+  const noted = { ...retaken, note: "sağ köşe ıslak", at: iso("2026-10-22T10:31"), history: nextVersions(retaken, { ...content, note: "sağ köşe ıslak", photoId: 2 }) };
+  assert.deepEqual(
+    noted.history.map((v, i) => photoVersionText(v, noted.history[i + 1] ?? noted)),
+    ["Başka bir fotoğraf", "Aynı fotoğraf, notsuz"],
+  );
+  assert.equal(photoVersionText({ photo: true, note: "kapı açık" }, { note: "kapı kapandı" }), "Aynı fotoğraf");
+  assert.equal(photoVersionText({ photo: true, note: "kapı açık" }, { note: "kapı açık" }), "Başka bir fotoğraf");
+  assert.equal(photoVersionText({ photo: false, note: null }, { note: null }), "Fotoğrafsız");
+  assert.match(read("src/app/panel/kontrol/run-view.tsx"), /versionText\(item, v, a\.history\[i \+ 1\] \?\? a\)/);
+});
+
 // ---------------------------------------------------------------- Kaynak denetimi
 
 function filesUnder(dir: string): string[] {
@@ -527,6 +600,19 @@ test("kaynak: fotoğraf yolu köken, giriş, depo ve yanıt aynı istekte; deği
   assert.match(read("src/server/storage/photo-access.ts"), /kontrol: kontrolPhotoRules,/);
   // Kontrol fotoğrafı ortak yükleme yolundan gelmez
   assert.match(read("src/server/photo-read/rules.ts"), /if \(kind === "kontrol"\) return false;/);
+});
+
+test("kaynak: doldurma ekranı eylem atılırsa (ağ kesik, panel güncellendi) hata ekranına düşmez: işaret geri döner, bildirim çıkar", () => {
+  const src = read("src/app/panel/kontrol/[id]/run-form.tsx");
+  const submit = src.slice(src.indexOf("const submit: Submit"), src.indexOf("const onUploaded"));
+  assert.match(submit, /try \{\s*res = await answerChecklistItem\(/);
+  assert.match(submit, /catch \(e\) \{\s*unreachable\(e\);\s*resolve\(false\);\s*return;/);
+  // Eski sürümün eylemi (panel güncellendi) "Yenile" önerir, gerisi bağlantı hatası
+  assert.match(src, /if \(unstable_isUnrecognizedActionError\(e\)\) \{/);
+  assert.match(src, /action: \{ label: "Yenile", onClick: \(\) => window\.location\.reload\(\) \}/);
+  // Bütün işaretler (Tamam, Sorun var, ölçüm, kısa not, fotoğrafın notu) bu tek yoldan gider
+  assert.equal(src.match(/answerChecklistItem\(/g)?.length, 1);
+  assert.match(read("src/app/panel/kontrol/[id]/photo-item.tsx"), /await submit\(item, \{ op: "note"/);
 });
 
 test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requireUser; 'use server' dosyası yalnız eylem dışa açar", () => {

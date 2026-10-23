@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Camera, CircleCheck, ListChecks, Pencil, Plus, RotateCcw, Thermometer, Trash2, Type } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Camera, CircleCheck, ListChecks, Pencil, Plus, RotateCcw, Thermometer, Trash2, Type } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { Button, IconButton } from "@/components/ui/button";
@@ -163,13 +163,14 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
                 {g.section ? <h3 className="mb-1.5 text-[12px] font-semibold tracking-wide text-ink-mute uppercase">{g.section}</h3> : null}
                 <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
                   {g.items.map((i, k) => (
+                    // Telefonda ad kendi satırında (dört düğmenin yanında bir iki kelimeye sıkışmasın), düğmeler altında
                     <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3">
                       <span className="shrink-0 text-ink-mute">{TYPE_ICON[i.type]}</span>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0">
                         <p className="text-sm font-medium text-pretty text-ink">{i.label}</p>
                         <p className="text-xs text-ink-mute">{itemSub(i)}</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="ml-7 flex shrink-0 items-center gap-1.5 sm:ml-0">
                         <IconButton label="Yukarı taşı" onClick={() => move(i, "up")} disabled={pending || k === 0}>
                           <ArrowUp size={15} />
                         </IconButton>
@@ -237,6 +238,22 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
 /** Sınır alanının metni: "-18", "4" (boş: sınırsız) */
 const boundText = (v: number | null) => (v === null ? "" : String(v).replace(".", ","));
 
+/** Madde penceresinin hatası: alanınınsa alanın altında (alan odaklanır), değilse formun başında */
+type ItemError = { text: string; field: "label" | "min" | "max" | "range" | null };
+
+const FIELD_ID: Record<NonNullable<ItemError["field"]>, string> = { label: "madde-ad", min: "madde-en-az", max: "madde-en-cok", range: "madde-en-az" };
+
+/**
+ * Sunucunun hata metninden alan (fieldOf gibi). Sınırın aralık hatası hangi sınır olduğunu söylemez: -100 – 1000
+ * dışındaki "En az" ise o, değilse "En çok".
+ */
+function itemFieldOf(text: string, lo: number | null): ItemError["field"] {
+  if (/^Madde adı/.test(text)) return "label";
+  if (/en çoktan büyük/.test(text)) return "range";
+  if (/^Sınır|^Sayı yazın/.test(text)) return lo !== null && (lo < -100 || lo > 1000) ? "min" : "max";
+  return null;
+}
+
 /** Madde ekle / düzenle: tür, ad, bölüm, açıklama; sayıda birim ve aralık; zorunlu */
 function ItemDialog({ templateId, item, sections, onClose }: { templateId: number; item: ItemDTO | null; sections: string[]; onClose: () => void }) {
   const [type, setType] = useState<ChecklistItemType>(item?.type ?? "check");
@@ -247,8 +264,17 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
   const [min, setMin] = useState(boundText(item?.min ?? null));
   const [max, setMax] = useState(boundText(item?.max ?? null));
   const [required, setRequired] = useState(item?.required ?? true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ItemError | null>(null);
   const [saving, setSaving] = useState(false);
+  const alertRef = useRef<HTMLParagraphElement>(null);
+
+  // Telefonda form pencerenin içinde kayar ve alttaki hata Kaydet'in arkasında kalırdı: ret gelince alan odaklanır
+  // (pencere ona kayar), genel hata formun başında görünür kılınır
+  useEffect(() => {
+    if (!error) return;
+    if (error.field) document.getElementById(FIELD_ID[error.field])?.focus();
+    else alertRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
 
   const pickType = (next: ChecklistItemType) => {
     // Fotoğraflı maddenin ipucu: fotoğrafta insan olmasın
@@ -262,7 +288,9 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
     e.preventDefault();
     const lo = min.trim() ? parseReading(min) : null;
     const hi = max.trim() ? parseReading(max) : null;
-    if (type === "number" && ((min.trim() && lo === null) || (max.trim() && hi === null))) return setError("Sınırı sayı olarak yazın (ör. -18 ya da 4)");
+    if (type === "number" && ((min.trim() && lo === null) || (max.trim() && hi === null))) {
+      return setError({ text: "Sınırı sayı olarak yazın (ör. -18 ya da 4)", field: min.trim() && lo === null ? "min" : "max" });
+    }
     setSaving(true);
     const res = await saveChecklistItem(
       templateId,
@@ -270,10 +298,13 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
       item?.id ?? null,
     );
     setSaving(false);
-    if (!res.ok) return setError(res.error);
+    if (!res.ok) return setError({ text: res.error, field: itemFieldOf(res.error, lo) });
     toast.success(item ? "Madde kaydedildi" : "Madde eklendi");
     onClose();
   };
+
+  const bad = (...fields: ItemError["field"][]) => (error !== null && fields.includes(error.field) ? true : undefined);
+  const rangeError = error?.field === "min" || error?.field === "max" || error?.field === "range" ? error.text : null;
 
   return (
     <Dialog
@@ -292,6 +323,12 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
       }
     >
       <form id="madde" onSubmit={save} className="space-y-4 pb-1">
+        {error && !error.field ? (
+          <p ref={alertRef} role="alert" className="flex scroll-my-3 items-start gap-2 rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {error.text}
+          </p>
+        ) : null}
         <Field label="Tür">
           <div role="radiogroup" aria-label="Tür" className="grid grid-cols-2 gap-2">
             {ITEM_TYPES.map((k) => (
@@ -312,8 +349,18 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
             ))}
           </div>
         </Field>
-        <Field label="Madde" htmlFor="madde-ad">
-          <Input id="madde-ad" value={label} maxLength={120} placeholder={PLACEHOLDER[type]} onChange={(e) => setLabel(e.target.value)} />
+        <Field label="Madde" htmlFor="madde-ad" error={error?.field === "label" ? error.text : undefined}>
+          <Input
+            id="madde-ad"
+            value={label}
+            maxLength={120}
+            placeholder={PLACEHOLDER[type]}
+            aria-invalid={bad("label")}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              setError(null);
+            }}
+          />
         </Field>
         <Field label="Bölüm" htmlFor="madde-bolum">
           <Input id="madde-bolum" list="madde-bolumler" value={section} maxLength={40} placeholder="ör. Bar, Salon, Karaoke odası" onChange={(e) => setSection(e.target.value)} />
@@ -334,21 +381,50 @@ function ItemDialog({ templateId, item, sections, onClose }: { templateId: numbe
               </Field>
               <Field label="En az" htmlFor="madde-en-az">
                 {/* Eksi yazılabilsin: iOS'un ondalık klavyesinde eksi yok */}
-                <Input id="madde-en-az" inputMode="text" autoComplete="off" value={min} placeholder="ör. 0" onChange={(e) => setMin(e.target.value)} className="text-right tabular" />
+                <Input
+                  id="madde-en-az"
+                  inputMode="text"
+                  autoComplete="off"
+                  value={min}
+                  placeholder="ör. 0"
+                  aria-invalid={bad("min", "range")}
+                  aria-describedby="madde-aralik"
+                  onChange={(e) => {
+                    setMin(e.target.value);
+                    setError(null);
+                  }}
+                  className="text-right tabular"
+                />
               </Field>
               <Field label="En çok" htmlFor="madde-en-cok">
-                <Input id="madde-en-cok" inputMode="text" autoComplete="off" value={max} placeholder="ör. 4" onChange={(e) => setMax(e.target.value)} className="text-right tabular" />
+                <Input
+                  id="madde-en-cok"
+                  inputMode="text"
+                  autoComplete="off"
+                  value={max}
+                  placeholder="ör. 4"
+                  aria-invalid={bad("max", "range")}
+                  aria-describedby="madde-aralik"
+                  onChange={(e) => {
+                    setMax(e.target.value);
+                    setError(null);
+                  }}
+                  className="text-right tabular"
+                />
               </Field>
             </div>
-            <p className="text-xs text-ink-mute">Aralık dışındaki değerde not istenir ve size bildirilir.</p>
+            {rangeError ? (
+              <p id="madde-aralik" className="text-xs text-bad">
+                {rangeError}
+              </p>
+            ) : (
+              <p id="madde-aralik" className="text-xs text-ink-mute">
+                Aralık dışındaki değerde not istenir ve size bildirilir.
+              </p>
+            )}
           </div>
         ) : null}
         <ToggleRow title="Zorunlu" description="Kapalıysa liste bu madde boş da olsa tamam sayılır." checked={required} onChange={setRequired} label="Zorunlu" onText="Evet" offText="Hayır" />
-        {error ? (
-          <p role="alert" className="text-sm text-bad">
-            {error}
-          </p>
-        ) : null}
       </form>
     </Dialog>
   );

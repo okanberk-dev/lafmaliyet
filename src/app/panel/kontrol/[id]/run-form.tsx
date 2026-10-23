@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, CircleCheck, Undo2 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { unstable_isUnrecognizedActionError, useRouter } from "next/navigation";
 import { useMemo, useOptimistic, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -38,6 +38,11 @@ export type Submit = (item: ChecklistItemSnap, op: Op, optimistic?: AnswerLite |
 
 /** Sıcaklık maddesinde aralık dışı ölçümün hazır notları (nota eklenir) */
 const QUICK_NOTES = ["Kapı kapatıldı", "Termostat ayarlandı", "Ürünler başka dolaba alındı", "Servis arandı"];
+
+/** Eylem hiç yanıt vermedi (ağ kesik); fotoğraf yüklemesinin bağlantı hatasıyla aynı söz */
+const OFFLINE_TEXT = "Kaydedilemedi: bağlantı kurulamadı; internetinizi kontrol edip yeniden deneyin.";
+/** Sayfa eski sürümün eylemini çağırdı (bu arada panel güncellendi): yenileyince düzelir */
+const STALE_TEXT = "Panel güncellendi; sayfayı yenileyip yeniden deneyin.";
 
 /**
  * Listeyi doldurma formu. Yanıtlar sunucudan gelir (prop); yerelde yalnız katmanlar durur: işaretlerin iyimser hâli
@@ -90,11 +95,29 @@ export function RunForm({
     if (error === DAY_CLOSED_TEXT || error.startsWith("Liste değişti")) router.refresh();
   };
 
+  // Eylem atılırsa (ağ kesildi, panel güncellendi) hata geçişten taşıp sayfayı hata ekranına düşürmesin: iyimser
+  // işaret geçiş bitince kendiliğinden geri döner, açık not alanları ve bekleyen fotoğraf yerinde kalır. Bildirimler
+  // tek kimlikle: art arda dokunuşlar üst üste yığılmaz.
+  const unreachable = (e: unknown) => {
+    if (unstable_isUnrecognizedActionError(e)) {
+      toast.error(STALE_TEXT, { id: "kontrol-kayit", duration: 30_000, action: { label: "Yenile", onClick: () => window.location.reload() } });
+    } else {
+      toast.error(OFFLINE_TEXT, { id: "kontrol-kayit" });
+    }
+  };
+
   const submit: Submit = (item, op, optimistic) =>
     new Promise((resolve) => {
       start(async () => {
         if (optimistic !== undefined) setShown({ itemId: item.id, answer: optimistic });
-        const res = await answerChecklistItem({ templateId, date: day, itemId: item.id, ...op });
+        let res: Awaited<ReturnType<typeof answerChecklistItem>>;
+        try {
+          res = await answerChecklistItem({ templateId, date: day, itemId: item.id, ...op });
+        } catch (e) {
+          unreachable(e);
+          resolve(false);
+          return;
+        }
         if (!res.ok) {
           refused(res.error);
           resolve(false);

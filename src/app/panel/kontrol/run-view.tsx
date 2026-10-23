@@ -12,6 +12,7 @@ import {
   isAnswered,
   lateFinish,
   listTitle,
+  photoVersionText,
   rangeText,
   runSummary,
   timeTR,
@@ -65,11 +66,14 @@ function whoWithTimes(answers: AnswerLite[]): string {
     .join(", ");
 }
 
-/** Önceki hâlin kısa metni: "6 °C (aralık dışı)", "Tamam", "Sorun: …", "Fotoğraf", yazı */
-function versionText(item: ChecklistItemSnap, v: ChecklistAnswerVersion): string {
+/**
+ * Önceki hâlin kısa metni: "6 °C (aralık dışı)", "Tamam", "Sorun: …", yazı; fotoğrafta yeniden çekme ile not
+ * değişikliği ayrılır ("Başka bir fotoğraf", "Aynı fotoğraf, notsuz"): `next` bu hâlden sonraki hâl
+ */
+function versionText(item: ChecklistItemSnap, v: ChecklistAnswerVersion, next: { note: string | null }): string {
   if (item.type === "number" && v.value !== null) return `${valueText(item, v.value)}${v.status === "issue" ? " (aralık dışı)" : ""}`;
   if (item.type === "check") return v.status === "issue" ? `Sorun: ${v.note ?? ""}` : "Tamam";
-  if (item.type === "photo") return v.photo ? "Fotoğraf" : "Fotoğrafsız";
+  if (item.type === "photo") return photoVersionText(v, next);
   return v.textValue ?? "";
 }
 
@@ -142,7 +146,7 @@ export function RunView(p: RunViewProps) {
                           <Answer item={item} answer={a} today={p.today} photosExpired={p.photosExpired} onPhoto={setViewer} />
                           {a?.history.map((v, i) => (
                             <p key={i} className="text-xs text-pretty break-words text-ink-mute">
-                              Önce: {versionText(item, v)} · {timeTR(v.at)} {v.by}
+                              Önce: {versionText(item, v, a.history[i + 1] ?? a)} · {timeTR(v.at)} {v.by}
                               {v.note && !(item.type === "check" && v.status === "issue") ? ` · Not: ${v.note}` : ""}
                             </p>
                           ))}
