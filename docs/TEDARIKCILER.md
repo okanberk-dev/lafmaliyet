@@ -121,7 +121,8 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
   işaretlersiniz. İade (eksi) faturası borç sayılmaz (ödeme talebinde düşülebilir, aşağıda).
 - **Komisyon faturası** (kategorisi kesin olarak Komisyon: kural, tedarikçinin geçmişi ya da platform listesi —
   Trendyol, Yemek Sepeti, yemek kartları) ödendi gelir (fatura günü): ödenmez, platformun hakedişinden düşülür; kalan
-  borcu şişirmez. Kategori yalnız tahminse ödenmedi gelir.
+  borcu şişirmez. Kategori yalnız tahminse ödenmedi gelir. Hakedişin gelip gelmediği ve gerçek oran: Komisyon &
+  hakediş ([KOMISYON.md](KOMISYON.md)).
 - Eşitleme var olan faturanın ödeme durumunu değiştirmez (tek istisna: adı okunamadan "Paraşüt tedarikçisi" diye
   açılan fatura, adı okununca peşin çalışılan tedarikçinin kartına düşerse ödendi olur). Paraşüt'ün bildirdiği yalnız ipucu olarak saklanır
   (`invoices.parasut_unpaid`, ekranda *Paraşüt'te ödendi*). Paraşüt faturayı kapatınca panelde ödenmedi duran kısmen

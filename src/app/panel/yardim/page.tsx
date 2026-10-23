@@ -451,12 +451,32 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             önce gelir. Aynı numara iki tedarikçide duruyorsa sayfasının üstünde yazar. Sil: faturası olmayan tedarikçi silinir; faturası olan listeden kalkar (faturaları ve giderler yerinde kalır, borcu olan kaldırılamaz). Paraşüt&apos;ten gelen fatura “ödenmedi” gelir: ödediğinizde durum hapına dokunup
             Ödendi&apos;yi seçin (ödeme günü ve şekliyle), birden çok faturayı seçip toplu işaretleyin. Ödeme talebi seçtiğiniz faturaların tutarını, IBAN&apos;ı ve havale
             açıklamasını hazır metin yapar (son iade faturaları seçilirse düşülür); kopyalayın ya da WhatsApp&apos;la gönderin, Talep edildi işaretle ile faturalar “talep
-            edildi” olur. Komisyon faturaları (Trendyol, Yemek Sepeti, yemek kartları) hakedişten düşüldüğü için ödendi gelir; peşin ya da kartla otomatik ödediğiniz
-            tedarikçinin bilgilerinde Faturaları ödendi gelsin&apos;i açın. IBAN değişikliğini tedarikçiyi arayarak teyit edin.
+            edildi” olur. Komisyon faturaları (Trendyol, Yemek Sepeti, yemek kartları) hakedişten düşüldüğü için ödendi gelir; hakedişin gelip gelmediğini Komisyon
+            &amp; hakediş&apos;te işaretleyin. Peşin ya da kartla otomatik ödediğiniz tedarikçinin bilgilerinde Faturaları ödendi gelsin&apos;i açın. IBAN değişikliğini
+            tedarikçiyi arayarak teyit edin.
           </>
         ),
         icon: Wallet,
         links: [{ href: "/panel/tedarikciler", label: "Tedarikçiler" }],
+      },
+      {
+        id: "komisyon",
+        q: "Yemek kartı ve platform komisyonu doğru mu?",
+        a: (
+          <>
+            <Path href="/panel/komisyonlar" /> ekranında her kart ve platformun o ay kestiği her şey (komisyon, erken ödeme, diğer ücretler; KDV hariç) satışa
+            bölünür: gerçek oran. Yemek kartında %6&apos;yı aşan oran, kira / cihaz / destek gibi komisyon dışı ücret ve erken ödeme ücreti işaretlenir;
+            platformda sipariş ve ödeme altyapısı ücreti. Uyarılar faturadaki kalem adlarına bakar, kesin hüküm değildir. Satış, o ay tek yemek kartı (ya da tek
+            platform) faturası varsa kasa raporlarındaki Z toplamından gelir; birden çoksa Z&apos;de tek toplam olduğu için kanalın aylık ekstresindeki satışı
+            Satışı yaz ile girin. Hakediş bankaya gelince Hakediş geldi&apos;ye dokunup günü ve tutarı yazın; son gün (ayın son faturası + Kanallar&apos;daki
+            süre, yemek kartında en çok 30 gün) geçerse zil çalar ve sabah e-postasında yazar.
+          </>
+        ),
+        icon: Percent,
+        links: [
+          { href: "/panel/komisyonlar", label: "Komisyon & hakediş" },
+          { href: "/panel/komisyonlar#kanallar", label: "Kanallar" },
+        ],
       },
       {
         id: "odendi-geri-al",

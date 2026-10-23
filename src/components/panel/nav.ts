@@ -22,6 +22,7 @@ import {
   ListTodo,
   MicVocal,
   Package,
+  Percent,
   Receipt,
   Settings,
   Tags,
@@ -123,6 +124,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: Truck,
         roles: ["admin"],
         keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
+      },
+      // Yemek kartı ve platform komisyonunun gerçek oranı, faturadaki ücretler ve hakediş takibi (docs/KOMISYON.md)
+      {
+        href: "/panel/komisyonlar",
+        label: "Komisyon & hakediş",
+        icon: Percent,
+        roles: ["admin"],
+        keywords: "komisyon hakediş yemek kartı pluxee sodexo multinet edenred setcard metropol yemeksepeti trendyol getir migros oran yüzde 6 erken ödeme kesinti platform",
       },
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
       // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
@@ -231,6 +240,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
+      { id: "komisyonlar", label: "Komisyon & hakediş", href: "/panel/komisyonlar", roles: ["admin"] },
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
       { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
@@ -376,6 +386,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
+  "/panel/komisyonlar": "Komisyonlar",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

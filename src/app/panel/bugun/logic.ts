@@ -5,6 +5,7 @@
 
 import { businessDate, carryChecks, CASH_EVENING_HOUR, DAY_TURN_HOUR, diffKind, diffText, isCashEvening, lateCorrections, type CashRevisionRow } from "@/lib/cash-report";
 import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinute, opensMinute, timeTR, whoText, type ChecklistLite } from "@/lib/checklists";
+import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
@@ -12,7 +13,7 @@ import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessi
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { staleForText } from "@/lib/prices/pos";
 import { pendingSummary } from "@/lib/recipe-change";
-import { addDays, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
+import { addDays, dayMonthTR, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
 
 import type { TaskStatus } from "../dashboard-tasks";
 import { COUNT_GRACE_DAYS } from "../sayim/logic";
@@ -28,6 +29,7 @@ export type DayTaskKey =
   | `liste-${number}`
   | "liste"
   | "odeme"
+  | "komisyon"
   | "fatura"
   | "urun"
   | "fiyat-yok"
@@ -90,6 +92,11 @@ export interface DayFacts {
   system?: { title: string; body: string }[] | null;
   /** Ödemeler & hatırlatıcılar listesi (loadUpcoming); null: okunamadı */
   payments?: UpcomingItem[] | null;
+  /**
+   * Geciken hakedişler (yemek kartı ve platformlar; src/server/data/commission.ts loadOverduePayouts): kanal, satış ayı
+   * ve son gün, en eski son gün önce
+   */
+  commission?: { overdue: { label: string; month: string; due: string }[] } | null;
   /** Kontrol bekleyen faturalar */
   invoices?: { review: number } | null;
   /** Hammaddeye bağlanmayı bekleyen fatura ürünleri */
@@ -482,6 +489,26 @@ const paymentsRow: Row = (f) => {
 };
 
 /**
+ * Hakedişler (docs/KOMISYON.md): ödeme süresi geçen ve "Hakediş geldi" işaretlenmeyen yemek kartı ya da platform
+ * hakedişi varsa; yoksa satır çıkmaz. En eski son gün yazılır.
+ */
+const commissionRow: Row = (f) => {
+  const list = f.role === "admin" ? f.commission?.overdue : null;
+  if (!list?.length) return null;
+  const [first] = list;
+  const month = MONTH_NAMES[Number(first.month.slice(5, 7)) - 1];
+  return {
+    key: "komisyon",
+    title: "Hakedişler",
+    status: "warn",
+    badge: `${num(list.length)} gecikti`,
+    detail: `${first.label} (${month}) · son gün ${dayMonthTR(first.due)}${list.length > 1 ? ` ve ${num(list.length - 1)} hakediş daha` : ""}`,
+    href: "/panel/komisyonlar",
+    action: "Hakedişlere bak",
+  };
+};
+
+/**
  * Faturalar: kontrol bekleyenler. Paraşüt eşitlemesinin hatası burada değil, `isler` satırında (ops'un sistem
  * uyarıları; docs/planlar/CRITIQUE.md §3 today): aynı hata iki satırda yazılmaz.
  */
@@ -585,7 +612,7 @@ const ADMIN_ROWS: Row[] = [
   cashYesterday, // kasa-dun
   checklistYesterday, // liste-dun
   paymentsRow, // odeme
-  // komisyon (komisyon)
+  commissionRow, // komisyon
   invoicesRow, // fatura
   unlinkedRow, // urun
   unpricedRow, // fiyat-yok

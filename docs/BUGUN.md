@@ -32,6 +32,7 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Dünkü kasa raporu (`kasa-dun`) | İkisi | Yönetici: farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam), "Mehmet · Z … · nakit … · kart …", güncellendiyse ve not. **Açılış devirle tutmuyor** ya da **Ertesi gün düzeltildi** satırı "sorun var" yapar. Girilmediyse yapılacak (personel bugün de girebilir). Personel yalnız girilmediyse görür: "Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir." Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa satır yok |
 | Dünkü kontrol listeleri (`liste-dun`) | Yönetici | Dünün tamamlanmayan ya da sorunlu (aralık dışı ölçüm, "Sorun var"; sonradan düzeltilen dahil) listesi varsa sorun var: "Kapanış: 3 madde yapılmadı · Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)", rozet "1 eksik" ya da "2 sorun". Dünün kasa raporu da yoksa (kasa kullanılmaya başladıysa) "Kasa raporu da yok; kafe kapalıysa önemsemeyin." Kontrol geçmişinin o gününe götürür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | Ödemeler (`odeme`) | Yönetici | Geciken sorun var ("Ödendiyse işaretleyin"), bugünkü yapılacak, ikisi de yoksa tamam (yaklaşanlar bilgi) |
+| Hakedişler (`komisyon`) | Yönetici | Yemek kartı ya da platform hakedişinin son günü geçtiyse ve "Hakediş geldi" işaretlenmediyse sorun var: "Pluxee (Eylül) · son gün 20 Ekim ve 1 hakediş daha", rozet "2 gecikti", Komisyon & hakediş'e götürür. Geciken yoksa satır yok ([KOMISYON.md](KOMISYON.md)) |
 | Faturalar (`fatura`) | Yönetici | Kontrol bekleyen fatura varsa yapılacak, yoksa tamam |
 | Ürün bağlantıları (`urun`) | Yönetici | Hammaddeye bağlanmayı bekleyen fatura ürünü varsa |
 | Fiyatı girilmemiş hammaddeler (`fiyat-yok`) | Yönetici | Paket fiyatı 0 olan etkin hammadde varsa (çoğu sayımda "Listeye ekle" ile eklenen) |
@@ -77,8 +78,7 @@ günlüğüne yazılır (`[bugun]`).
    `adminFacts`'te, personele aitse yalnız `staffFacts`'te, ikisine aitse `loadToday`'de yüklenir
    (`src/server/data/today.ts`). Her yükleyici `safe(…)` ile sarılır.
 2. **Fonksiyon:** satırı üreten küçük bir fonksiyon (olgu yoksa ya da sayı 0 ise `null`); `ADMIN_ROWS` /
-   `STAFF_ROWS`'ta yerine. İkinci paketin kalan yuvaları yorum olarak orada: komisyon (`komisyon`), siparis
-   (`hizli-sayim`, `mal-siparisi`).
+   `STAFF_ROWS`'ta yerine. İkinci paketin kalan yuvaları yorum olarak orada: siparis (`hizli-sayim`, `mal-siparisi`).
 3. **Test:** `tests/bugun.test.ts`'e bir senaryo; yönetici yükleyicisiyse kaynak denetimindeki listeye adı.
 
 Satırın saati varsa (ör. açılış listesi 08:00'de açılır) `nextRefreshAt(now, [an])` ekranı o an yeniler.

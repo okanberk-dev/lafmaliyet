@@ -10,6 +10,7 @@ import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { loadChecklistDay } from "@/server/data/checklists";
+import { loadOverduePayouts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -144,7 +145,7 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
   const yesterday = dayContext(now).yesterday;
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday] = await Promise.all([
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday, overdue] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -194,9 +195,11 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     // Dünün kontrol listeleri: tamamlanmayan ve sorunlu olanlar (bugünkü listeler iki rolde loadToday'de)
     safe(loadChecklistDay(yesterday, "admin", now)).then((lists) => (lists ? { day: yesterday, lists } : null)),
+    // Geciken hakedişler (hafif okuma: son 4 ayın Komisyon faturaları ve işaretler; docs/KOMISYON.md)
+    safe(loadOverduePayouts()),
   ]);
   return {
-    facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday },
+    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday },
     cashFlags: flags,
   };
 }

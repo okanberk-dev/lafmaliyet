@@ -239,6 +239,13 @@
       "when": 1792779172582,
       "tag": "0033_sabit_gider_kdv",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792797423476,
+      "tag": "0034_komisyon_hakedis",
+      "breakpoints": true
     }
   ]
 }
