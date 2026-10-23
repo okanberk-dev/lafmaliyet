@@ -1,7 +1,8 @@
 // Eşzamanlı yazımlar, gerçek Postgres'te: bilinen cihazın giriş sayacı (10. hatada kilit, kilitliyken sayılmaz, aynı
 // anda gelen denemeler sınırı aşamaz, geri verme ve silme), iki adımlı kodun ve kurtarma kodunun tek kullanımı (aynı
-// anda iki gönderimden yalnız biri), karaoke uzatması (aynı anda iki +15 ikisi de sayılır, 12 saat sınırı, iptal).
-// Kendi kullanıcısını ve oturumunu açar, sonunda siler.
+// anda iki gönderimden yalnız biri), karaoke uzatması (aynı anda iki +15 ikisi de sayılır, 12 saat sınırı, iptal),
+// kasadan çıkanın geri alınması (satır eski numarasıyla döner; ikinci deneme birincil anahtara takılır).
+// Kendi kullanıcısını, oturumunu ve satırını açar, sonunda siler.
 //
 // BAGLANTI_TEST_DATABASE_URL verilmezse atlanır (migration'ları uygulanmış bir yerel veritabanı).
 // Çalıştırma: BAGLANTI_TEST_DATABASE_URL=postgres://postgres:postgres@localhost/laffogato_baglanti npx tsx --test tests/baglanti-db.test.ts
@@ -118,5 +119,22 @@ describe("Bağlantı ve giriş: veritabanında eşzamanlı yazımlar", { skip: !
     await db.update(s.karaokeSessions).set({ status: "cancelled", extraMinutes: 0 }).where(eq(s.karaokeSessions.id, k.id));
     assert.equal(await addExtraMinutes(db, k.id, 15), null, "iptal edilen uzatılmaz");
     assert.equal(await addExtraMinutes(db, 2_000_000_000, 15), null, "olmayan oturum");
+  });
+
+  test("kasadan çıkanı geri alma: satır eski numarasıyla döner; aynı anda iki deneme tek satır açar", async () => {
+    const values = { date: "2026-10-23", kind: "teslim" as const, amount: 100, store: `Deneme ${tag}`, createdBy: userId, createdByName: `Deneme ${tag}` };
+    const [row] = await db.insert(s.cashOuts).values(values).returning({ id: s.cashOuts.id });
+    await db.delete(s.cashOuts).where(eq(s.cashOuts.id, row.id));
+    // restoreCashOut'un yazımı: { ...values, id: restoreId }; ikincisi birincil anahtara takılır (eylem "zaten geri alındı" der)
+    const tries = await Promise.allSettled([0, 1].map(() => db.insert(s.cashOuts).values({ ...values, id: row.id }).returning({ id: s.cashOuts.id })));
+    try {
+      assert.equal(tries.filter((t) => t.status === "fulfilled").length, 1, "tek satır");
+      const lost = tries.find((t) => t.status === "rejected") as PromiseRejectedResult;
+      const e = lost.reason as { constraint_name?: string; cause?: { constraint_name?: string } };
+      assert.equal(e.constraint_name ?? e.cause?.constraint_name, "cash_outs_pkey", "eylemin baktığı kısıt adı");
+      assert.equal((await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, row.id))).length, 1);
+    } finally {
+      await db.delete(s.cashOuts).where(eq(s.cashOuts.id, row.id));
+    }
   });
 });

@@ -125,8 +125,8 @@ const snap: CashOutSnapshot = {
 
 test("geri alma: yalnız silen kişi, 15 dakika içinde, silinenin aynısı; bozuk ya da başkasının kopyası geçmez", () => {
   const now = Date.parse("2026-10-22T18:00:00Z");
-  const json = cashOutUndoJson(5, snap, now);
-  assert.deepEqual(readCashOutUndo(json, 5, now + 60_000), snap);
+  const json = cashOutUndoJson(5, 41, snap, now);
+  assert.deepEqual(readCashOutUndo(json, 5, now + 60_000), { id: 41, snap });
   assert.equal(readCashOutUndo(json, 6, now), null, "başka kişi");
   assert.equal(readCashOutUndo(json, 5, now + CASH_OUT_UNDO_MS), null, "süresi doldu");
   assert.equal(readCashOutUndo(null, 5, now), null, "mühür açılmadı");
@@ -134,14 +134,20 @@ test("geri alma: yalnız silen kişi, 15 dakika içinde, silinenin aynısı; boz
   const forged = JSON.parse(json) as { snap: Record<string, unknown> };
   forged.snap.docType = "faturalı";
   assert.equal(readCashOutUndo(JSON.stringify(forged), 5, now), null);
+  // Satırın numarası olmayan (eski biçim) kopya geçmez: geri alma satırı kendi numarasıyla açar
+  assert.equal(readCashOutUndo(JSON.stringify({ v: 1, by: 5, exp: now + 60_000, snap }), 5, now), null);
 });
 
-test("geri alma: istemci kopyayı değil mühürlü metni verir; sunucu açar, kişiyi ve süreyi denetler", () => {
+test("geri alma: istemci kopyayı değil mühürlü metni verir; sunucu açar, kişiyi ve süreyi denetler; tek kullanımlık", () => {
   const src = read("src/server/actions/cash-outs.ts");
-  assert.match(src, /return \{ undo: seal\(cashOutUndoJson\(me\.id, snap, Date\.now\(\)\), "cashout-undo"\) \};/);
+  assert.match(src, /return \{ undo: seal\(cashOutUndoJson\(me\.id, cid, snap, Date\.now\(\)\), "cashout-undo"\) \};/);
   assert.match(src, /export async function restoreCashOut\(undo: string\)/);
   assert.match(src, /readCashOutUndo\(open\(sealed\.data, "cashout-undo"\), me\.id, Date\.now\(\)\)/);
-  assert.match(src, /if \(!snap\) throw new UserError\("Geri alma süresi doldu; satırı yeniden ekleyin"\);/);
+  assert.match(src, /if \(!opened\) throw new UserError\("Geri alma süresi doldu; satırı yeniden ekleyin"\);/);
+  // Satır silinmeden önceki numarasıyla geri gelir; ikinci "Geri al" birincil anahtara takılır, kopya açılmaz
+  assert.match(src, /persist\(me, d, \{ restore: true, restoreId: opened\.id \}\)/);
+  assert.match(src, /\.values\(\{ \.\.\.values, \.\.\.\(opts\.restoreId \? \{ id: opts\.restoreId \} : \{\}\), createdBy: me\.id, createdByName: me\.name \}\)/);
+  assert.match(src, /if \(constraintOf\(e\) === "cash_outs_pkey"\) throw new UserError\("Bu satır zaten geri alındı"\);/);
   assert.doesNotMatch(src, /export async function restoreCashOut\(snap: CashOutSnapshot\)/);
   assert.match(read("src/server/secret-box.ts"), /export type SealPurpose = [^;]*"cashout-undo"/);
   assert.match(read("src/app/panel/kasa/cash-out-dialog.tsx"), /restoreCashOut\(res\.data\.undo\)/);

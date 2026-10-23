@@ -1,5 +1,5 @@
 /**
- * İşlem geçmişinde kişi (saf; Ayarlar › İşlem geçmişi ve Hesabım'daki ad değişikliği; tests/islem-gecmisi-kisi.test.ts).
+ * İşlem geçmişinde kişi (saf; Ayarlar › İşlem geçmişi ve Hesabım'daki ad değişikliği; tests/giris-cihaz.test.ts).
  * Kayıttaki ad, işlemin yapıldığı andaki addır ve serbest metindir: kişi Hesabım'dan kendi adını değiştirebilir.
  * Kayıt hesabı da tutar (activity_log.user_id); ad tek başına yanıltabiliyorsa hesabın e-postası yanında yazılır.
  */

@@ -83,8 +83,10 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   "Aylık harcamalar'a da yaz"ı seçer. Personel yalnız alım ve genel gider kategorilerini seçebilir.
 - Akşam raporunun **Gün içinde kasadan çıkan** tutarı ve **Neye çıktı** notu satırlardan dolar ("Fişlerden: 2 kalem ·
   …"). Yazılan tutar satırların toplamından azsa uyarı çıkar (engellemez).
-- Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi geri
-  gelir). Gün personele kapanınca (dünden eskisi) yalnız yönetici ekler ve düzeltir.
+- Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi ve eski
+  numarasıyla geri gelir). Geri al'ın taşıdığı kopya sunucunun mühürüdür (`src/lib/cash-outs.ts` › `cashOutUndoJson`):
+  yalnız silen kişi, 15 dakika içinde ve bir kez kullanır; istemcinin yazdığı bir kopya kabul edilmez. Gün personele
+  kapanınca (dünden eskisi) yalnız yönetici ekler ve düzeltir.
 - Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
   faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
   Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırı personel silemez, türünü ve kategorisini değiştiremez:

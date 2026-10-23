@@ -72,9 +72,9 @@ function logDetail(d: z.output<typeof cashOutSchema>, expense: boolean) {
  * Satırı yazar (yeni ya da düzeltme) ve bağlı harcama kaydını kurar, günceller ya da siler; fiş fotoğrafını bağlar
  * (satırın gününden 400 gün) ya da değiştiyse eskisini bırakır. Hepsi tek işlemde. `restore`: silinen satır geri
  * gelir; harcama kaydı silinmeden önceki gibi kurulur ve satırın kendi fotoğrafı (az önce bırakılmıştı) başkası
- * yüklemiş olsa da yeniden bağlanır.
+ * yüklemiş olsa da yeniden bağlanır ve satır silinmeden önceki numarasını alır (`restoreId`).
  */
-async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts: { restore?: boolean } = {}) {
+async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts: { restore?: boolean; restoreId?: number } = {}) {
   const admin = me.role === "admin";
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
   if (!admin && !(await staffDayOpen(d.date))) throw new UserError(LOCKED);
@@ -131,7 +131,7 @@ async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts:
           .returning()
       : await tx
           .insert(s.cashOuts)
-          .values({ ...values, createdBy: me.id, createdByName: me.name })
+          .values({ ...values, ...(opts.restoreId ? { id: opts.restoreId } : {}), createdBy: me.id, createdByName: me.name })
           .returning();
 
     // Harcama kaydı: tarih fişin tarihi (kasanın gününden en çok 3 gün önceyse), nakit, "Kasadan · 21 Ekim Salı"
@@ -234,21 +234,27 @@ export async function deleteCashOut(id: number) {
     });
     await logActivity(me, "Kasadan çıkan silindi", [longDateTR(snap.date), cashOutLabel(snap), money(snap.amount)].join(" · "));
     refresh();
-    return { undo: seal(cashOutUndoJson(me.id, snap, Date.now()), "cashout-undo") };
+    return { undo: seal(cashOutUndoJson(me.id, cid, snap, Date.now()), "cashout-undo") };
   });
 }
 
+/** Hatanın kırdığı kısıt (sürücünün hatası ya da Drizzle'ın sardığı) */
+const constraintOf = (e: unknown) =>
+  (e as { constraint_name?: string })?.constraint_name ?? (e as { cause?: { constraint_name?: string } })?.cause?.constraint_name;
+
 /**
- * Silineni geri getirir (yeni satır; fotoğraf yeniden bağlanır). Yalnız deleteCashOut'un mühürlü kopyasıyla: aynı kişi,
- * 15 dakika içinde. Harcama kaydı silinmeden önceki gibi: varsa aynı kategori, açıklama, ödeme şekli ve notla geri
- * gelir, yoksa açılmaz (personelde de). İstemcinin yazdığı bir kopya kabul edilmez.
+ * Silineni geri getirir (fotoğraf yeniden bağlanır). Yalnız deleteCashOut'un mühürlü kopyasıyla: aynı kişi, 15 dakika
+ * içinde. Harcama kaydı silinmeden önceki gibi: varsa aynı kategori, açıklama, ödeme şekli ve notla geri gelir, yoksa
+ * açılmaz (personelde de). İstemcinin yazdığı bir kopya kabul edilmez. Satır eski numarasıyla geri gelir: aynı "Geri
+ * al" ikinci kez (çift dokunuş, yeniden gönderilen istek) kopya açmaz.
  */
 export async function restoreCashOut(undo: string) {
   return attempt(async () => {
     const me = await requireUser();
     const sealed = z.string().max(8000).safeParse(undo);
-    const snap: CashOutSnapshot | null = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
-    if (!snap) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");
+    const opened = sealed.success ? readCashOutUndo(open(sealed.data, "cashout-undo"), me.id, Date.now()) : null;
+    if (!opened) throw new UserError("Geri alma süresi doldu; satırı yeniden ekleyin");
+    const snap: CashOutSnapshot = opened.snap;
     const d = cashOutSchema.parse({
       id: null,
       date: snap.date,
@@ -267,6 +273,11 @@ export async function restoreCashOut(undo: string) {
       expenseDescription: snap.expense?.description,
       expensePaymentMethod: snap.expense?.paymentMethod,
     });
-    return persist(me, d, { restore: true });
+    try {
+      return await persist(me, d, { restore: true, restoreId: opened.id });
+    } catch (e) {
+      if (constraintOf(e) === "cash_outs_pkey") throw new UserError("Bu satır zaten geri alındı");
+      throw e;
+    }
   });
 }

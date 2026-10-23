@@ -161,20 +161,27 @@ const snapshotSchema = z.object({
     .nullable(),
 });
 
-const undoSchema = z.object({ v: z.literal(1), by: z.number().int(), exp: z.number(), snap: snapshotSchema });
+const undoSchema = z.object({ v: z.literal(1), by: z.number().int(), id: z.number().int().positive(), exp: z.number(), snap: snapshotSchema });
 
-/**
- * "Geri al"ın içeriği: kim sildi, ne zamana kadar ve silinen satır. Sunucu bunu mühürler (secret-box "cashout-undo");
- * istemci yalnız mühürlü metni geri verir, içini değiştiremez. Önceden kopya istemciden olduğu gibi alınıyordu:
- * personel hiç silmediği bir satırı faturalı, kartla ödenmiş ve istediği notla "geri getirip" Aylık harcamalar'a
- * yazdırabiliyordu (fatura Paraşüt'ten de geldiği için iki kez sayılırdı).
- */
-export function cashOutUndoJson(by: number, snap: CashOutSnapshot, now: number): string {
-  return JSON.stringify({ v: 1, by, exp: now + CASH_OUT_UNDO_MS, snap });
+/** Mühürlü "Geri al": silinen satırın numarası ve kopyası */
+export interface CashOutUndo {
+  id: number;
+  snap: CashOutSnapshot;
 }
 
-/** Mühür açıldıktan sonra: aynı kişi ve süresi geçmemişse silinen satır, değilse null */
-export function readCashOutUndo(json: string | null, by: number, now: number): CashOutSnapshot | null {
+/**
+ * "Geri al"ın içeriği: kim sildi, ne zamana kadar, silinen satırın numarası ve kendisi. Sunucu bunu mühürler
+ * (secret-box "cashout-undo"); istemci yalnız mühürlü metni geri verir, içini değiştiremez. Önceden kopya istemciden
+ * olduğu gibi alınıyordu: personel hiç silmediği bir satırı faturalı, kartla ödenmiş ve istediği notla "geri getirip"
+ * Aylık harcamalar'a yazdırabiliyordu (fatura Paraşüt'ten de geldiği için iki kez sayılırdı). Satır kendi numarasıyla
+ * geri gelir: aynı mühür ikinci kez kopya açamaz.
+ */
+export function cashOutUndoJson(by: number, id: number, snap: CashOutSnapshot, now: number): string {
+  return JSON.stringify({ v: 1, by, id, exp: now + CASH_OUT_UNDO_MS, snap });
+}
+
+/** Mühür açıldıktan sonra: aynı kişi ve süresi geçmemişse silinen satırın numarası ve kopyası, değilse null */
+export function readCashOutUndo(json: string | null, by: number, now: number): CashOutUndo | null {
   if (!json) return null;
   let value: unknown;
   try {
@@ -184,5 +191,5 @@ export function readCashOutUndo(json: string | null, by: number, now: number): C
   }
   const parsed = undoSchema.safeParse(value);
   if (!parsed.success || parsed.data.by !== by || parsed.data.exp <= now) return null;
-  return parsed.data.snap;
+  return { id: parsed.data.id, snap: parsed.data.snap };
 }
