@@ -10,6 +10,7 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  ClipboardPen,
   Coffee,
   FileText,
   Gift,
@@ -24,6 +25,7 @@ import {
   Package,
   Receipt,
   Settings,
+  ShoppingBasket,
   Tags,
   Truck,
   UserRound,
@@ -156,6 +158,21 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         match: ["/panel/tutarlilik"],
         keywords: "envanter tutarlılık fark",
       },
+      // Haftalık kısa sayım ve mal siparişi (docs/MAL-SIPARISI.md); "Sipariş" tek başına uygulama siparişi demek
+      {
+        href: "/panel/hizli-sayim",
+        label: "Hızlı sayım",
+        icon: ClipboardPen,
+        roles: ["admin", "staff"],
+        keywords: "haftalık sayım kritik kalem eldeki stok sipariş öncesi gelen mal geldi",
+      },
+      {
+        href: "/panel/mal-siparisi",
+        label: "Mal siparişi",
+        icon: ShoppingBasket,
+        roles: ["admin"],
+        keywords: "sipariş öneri tedarikçi whatsapp hedef stok en az teslim kontrolü eksik fazla fiyat farkı gönderilenler kalemler",
+      },
       { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
     ],
   },
@@ -181,6 +198,13 @@ export const SECTION_TABS = {
   stok: [
     { href: "/panel/sayim", label: "Sayım" },
     { href: "/panel/tutarlilik", label: "Tutarlılık" },
+  ],
+  // Mal siparişi (docs/MAL-SIPARISI.md); Hızlı sayım personele de açık, sekmeleri yalnız yöneticiye çizilir
+  malSiparisi: [
+    { href: "/panel/mal-siparisi", label: "Sipariş listesi" },
+    { href: "/panel/hizli-sayim", label: "Hızlı sayım" },
+    { href: "/panel/mal-siparisi/gonderilen", label: "Gönderilenler" },
+    { href: "/panel/mal-siparisi/kalemler", label: "Kalemler" },
   ],
 } as const;
 
@@ -243,6 +267,8 @@ export const NAV_TREE: NavNode[] = [
     roles: ["admin", "staff"],
     children: [
       { id: "sayim", label: "Stok sayımı", href: "/panel/sayim", roles: ["admin", "staff"] },
+      { id: "hizli-sayim", label: "Hızlı sayım", href: "/panel/hizli-sayim", roles: ["admin", "staff"] },
+      { id: "mal-siparisi", label: "Mal siparişi", href: "/panel/mal-siparisi", roles: ["admin"] },
       { id: "zayi", label: "Zayi & ikram", href: "/panel/zayi", roles: ["admin", "staff"] },
       { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
     ],
@@ -376,6 +402,9 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
+  "/panel/mal-siparisi": "Mal siparişi",
+  "/panel/mal-siparisi/gonderilen": "Gönderilenler",
+  "/panel/mal-siparisi/kalemler": "Sipariş kalemleri",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

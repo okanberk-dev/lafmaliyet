@@ -12,14 +12,17 @@ import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessi
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
 import { staleForText } from "@/lib/prices/pos";
 import { pendingSummary } from "@/lib/recipe-change";
-import { addDays, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
+import { addDays, isLastDayOfMonth, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
+import { countOverdue, isCountDay } from "@/lib/reorder/levels";
+import type { ReorderDayFacts } from "@/lib/reorder/types";
 
 import type { TaskStatus } from "../dashboard-tasks";
 import { COUNT_GRACE_DAYS } from "../sayim/logic";
 
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
- * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`, siparis `hizli-sayim` ve `mal-siparisi`.
+ * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`; mal siparişi `hizli-sayim` ve
+ * `mal-siparisi`.
  */
 export type DayTaskKey =
   | "isler"
@@ -36,6 +39,8 @@ export type DayTaskKey =
   | "zam"
   | "modpos"
   | "sayim-gecen"
+  | "hizli-sayim"
+  | "mal-siparisi"
   | "zayi"
   | "kasa"
   | "sayim-son";
@@ -109,6 +114,12 @@ export interface DayFacts {
   // ---- İkisi (kontrol listeleri)
   /** Bugünün (iş günü) kontrol listeleri; personelde yalnız personelin doldurabildikleri. null: okunamadı */
   checklists?: { day: string; lists: ChecklistLite[] } | null;
+  // ---- İkisi (mal siparişi; docs/MAL-SIPARISI.md)
+  /**
+   * Hızlı sayımın olguları (takipteki kalem, bugün sayılan, son sayım günü, sayım günleri); yöneticide ayrıca sipariş
+   * hazır tedarikçiler ve teslim kontrolü. Personelinkinde fiyat, model ve sipariş yok
+   */
+  reorder?: ReorderDayFacts | null;
 }
 
 /** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
@@ -336,6 +347,98 @@ const countMonthEnd: Row = (f, c) => {
     return { ...base, status: "todo", badge: progress, detail: `${progress} kalem sayıldı; kalanları da girin.`, action: "Sayıma devam" };
   }
   return { ...base, status: "done", detail: `${num(s.total)} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
+};
+
+// ---------------------------------------------------------------- Mal siparişi (docs/MAL-SIPARISI.md)
+
+/**
+ * Haftalık hızlı sayım (ikisi): sayım günü ya da son sayım sayım aralığı + 1 günden eskiyse (gecikti). Takipte kalem
+ * yoksa ve ayın son günü (ay sonu Stok sayımı yerine geçer) satır yok. Ay sonu sayımında sayılan takip kalemi de
+ * sayılmış sayılır. Gün iş günüdür (05:00'te döner), kayıtlar gibi.
+ */
+const quickCountRow: Row = (f, c) => {
+  const r = f.reorder;
+  if (!r || r.total <= 0 || isLastDayOfMonth(c.day)) return null;
+  const days = { countWeekdays: r.countWeekdays };
+  const countDay = isCountDay(c.day, days);
+  const late = countOverdue(r.lastCountDay, c.day, days);
+  if (!countDay && late === null) return null;
+  const admin = f.role === "admin";
+  const total = num(r.total);
+  const base = { key: "hizli-sayim" as const, title: "Haftalık hızlı sayım", href: "/panel/hizli-sayim" };
+  if (r.countedToday >= r.total) {
+    return admin
+      ? { ...base, status: "done", detail: `${total} kalemin hepsi sayıldı. Sipariş listesi hazır.`, href: "/panel/mal-siparisi", action: "Sipariş listesi" }
+      : { ...base, status: "done", detail: `${total} kalemin hepsi sayıldı.`, action: "Sayımı aç" };
+  }
+  if (r.countedToday > 0) {
+    const progress = `${num(r.countedToday)} / ${total}`;
+    return { ...base, status: "todo", badge: progress, detail: `${progress} kalem sayıldı; kalanları da girin.`, action: "Sayıma devam" };
+  }
+  if (countDay) {
+    return { ...base, status: "todo", badge: "Bugün", detail: `Bugün hızlı sayım günü: ${total} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır.`, action: "Sayıma başla" };
+  }
+  return {
+    ...base,
+    status: "todo",
+    badge: "Gecikti",
+    detail: `Son hızlı sayım ${longDateTR(r.lastCountDay!)} (${num(late!)} gün önce). Sipariş önerisi eski stoka göre.`,
+    action: "Sayıma başla",
+  };
+};
+
+/**
+ * Mal siparişi (yönetici), ilk uyan: teslim kontrolünde fark (sorun var), sipariş hazır (son sayım bugün ya da dün,
+ * siparişi gönderilmemiş önerisi olan tedarikçi), beklenen günde gelmeyen sipariş. Hiçbiri yoksa satır yok.
+ */
+const reorderRow: Row = (f) => {
+  const r = f.reorder;
+  if (f.role !== "admin" || !r) return null;
+  const issues = r.delivery?.issues ?? [];
+  if (issues.length) {
+    const parts = issues
+      .slice(0, 2)
+      .map((x) => `${x.supplier}: ${x.summary}`)
+      .join("; ");
+    return {
+      key: "mal-siparisi",
+      title: "Teslim kontrolü",
+      status: "warn",
+      badge: `${num(issues.length)} sipariş`,
+      detail: `${parts}${issues.length > 2 ? "…" : ""}`,
+      href: "/panel/mal-siparisi/gonderilen?durum=fark",
+      action: "Kontrol et",
+    };
+  }
+  const ready = r.ready;
+  if (ready?.suppliers.length) {
+    // "Kaldi, Sütaş ve Ispaş" ya da "Kaldi, Sütaş, Ispaş ve 2 tedarikçi daha" ("…." gibi çift noktalama olmasın)
+    const shown = ready.suppliers.slice(0, 3);
+    const more = ready.suppliers.length - shown.length;
+    const names = more > 0 ? `${shown.join(", ")} ve ${num(more)} tedarikçi daha` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} ve ${shown.at(-1)}` : shown[0];
+    return {
+      key: "mal-siparisi",
+      title: "Mal siparişi",
+      status: "todo",
+      badge: `${num(ready.suppliers.length)} tedarikçi`,
+      detail: `${names} için ${num(ready.lines)} kalem sipariş öneriliyor. WhatsApp'tan tek dokunuşla gönderin.`,
+      href: "/panel/mal-siparisi",
+      action: "Listeyi aç",
+    };
+  }
+  const late = r.delivery?.late ?? 0;
+  if (late > 0) {
+    return {
+      key: "mal-siparisi",
+      title: "Gelmeyen mal siparişi",
+      status: "todo",
+      badge: num(late),
+      detail: `${num(late)} mal siparişi beklenen günde gelmedi; geldiyse işaretleyin.`,
+      href: "/panel/mal-siparisi/gonderilen",
+      action: "Bak",
+    };
+  }
+  return null;
 };
 
 // ---------------------------------------------------------------- Kontrol listeleri (ikisi)
@@ -595,7 +698,8 @@ const ADMIN_ROWS: Row[] = [
   posRow, // modpos
   countPrevious, // sayim-gecen
   checklistRows, // liste-{templateId} (açılış saatine göre)
-  // hizli-sayim ve mal-siparisi (siparis)
+  quickCountRow, // hizli-sayim
+  reorderRow, // mal-siparisi
   cashToday, // kasa
   countMonthEnd, // sayim-son
 ];
@@ -605,7 +709,7 @@ const STAFF_ROWS: Row[] = [
   cashYesterday, // kasa-dun
   countPrevious, // sayim-gecen
   checklistRows, // liste-{templateId} (açılış saatine göre)
-  // hizli-sayim (siparis)
+  quickCountRow, // hizli-sayim
   wasteRow, // zayi
   cashToday, // kasa
   countMonthEnd, // sayim-son

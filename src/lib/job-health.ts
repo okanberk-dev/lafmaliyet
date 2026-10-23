@@ -235,6 +235,17 @@ export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Recor
   return { status, steps: Object.fromEntries(present.map((k) => [k, steps[k]!.code])), message };
 }
 
+/**
+ * Hızlı sayım bildiriminin adımı (src/server/notify/reorder-push.ts): yalnız sayım günü bildirim gönderilince yazılır
+ * (sayım günü değil, hepsi sayılmış ya da bildirimi açık cihaz yoksa adım yok); hiçbir cihaza gidemediyse hata.
+ */
+export function countStep(r: { status: "sent" | "skip"; sent: number; failed: number } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  if (r.status === "skip") return undefined;
+  if (r.sent) return { code: "sent" };
+  return r.failed ? { code: "error", error: `${r.failed} cihaza gönderilemedi` } : undefined;
+}
+
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */
 export function photosStep(r: { deleted: number; failed: number; off: boolean } | { error: string }): StepResult {
   if ("error" in r) return { code: "error", error: r.error };

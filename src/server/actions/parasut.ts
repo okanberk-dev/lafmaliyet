@@ -12,9 +12,16 @@ import { forgetParasutToken, ParasutClient } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { readEInvoiceLines } from "@/server/parasut/lines";
 import { applyProductLinks, PARASUT_STATE_KEYS, parasutSyncRunning, syncParasut, updateIgnoredProducts } from "@/server/parasut/sync";
+import { matchSupplierOrders } from "@/server/reorder/match";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zDate, zText } from "./util";
+
+/**
+ * Ürün bağlantısı ya da kalemler değişince mal siparişlerinin teslim kontrolü yenilenir (yeni bağlantı "hammaddeye bağlı
+ * değil" satırını gerçek karşılaştırmaya çevirir; docs/MAL-SIPARISI.md). Hatası bağlantıyı bozmaz.
+ */
+const recheckOrders = () => matchSupplierOrders().catch((e) => console.error("[mal-siparisi] teslim kontrolü", e));
 
 function ensureConfigured() {
   if (!isParasutConfigured()) throw new UserError("Paraşüt bağlantı bilgileri tanımlı değil (ortam değişkenleri). Kurulum adımlarına bakın.");
@@ -60,6 +67,7 @@ export async function readParasutLines() {
     client.setDeadline(started + 58_000);
     const r = await readEInvoiceLines(client, { until: started + 45_000 });
     const held = r.months.length ? (await applyProductLinks(r.months)).held : 0;
+    if (r.read) await recheckOrders();
     if (!r.read && !r.failed && r.stoppedBy) throw new UserError(r.stoppedBy);
     if (r.read || r.failed) {
       await logActivity(
@@ -150,6 +158,7 @@ export async function saveProductLink(input: z.input<typeof linkSchema>) {
       .values(data)
       .onConflictDoUpdate({ target: s.parasutProductLinks.productKey, set: { ingredientId: data.ingredientId, factor: data.factor, updatePrice: data.updatePrice, productName: data.productName } });
     const res = await applyProductLinks();
+    await recheckOrders();
     const [ing] = await db.select({ name: s.ingredients.name }).from(s.ingredients).where(eq(s.ingredients.id, data.ingredientId)).limit(1);
     await logActivity(me, "Paraşüt ürünü bağlandı", `${data.productName} → ${ing?.name ?? data.ingredientId} (×${data.factor})`);
     refresh();
@@ -172,6 +181,7 @@ export async function saveProductLinks(input: z.input<typeof linkSchema>[]) {
       }
     });
     const res = await applyProductLinks();
+    await recheckOrders();
     await logActivity(me, "Paraşüt ürünleri topluca bağlandı", `${items.length} ürün: ${items.slice(0, 5).map((i) => i.productName).join(", ")}${items.length > 5 ? "…" : ""}`);
     refresh();
     return { ...res, linked: items.length };
@@ -217,6 +227,7 @@ export async function deleteProductLink(id: number) {
     const me = await requireAdmin();
     const [d] = await getDb().delete(s.parasutProductLinks).where(eq(s.parasutProductLinks.id, z.number().int().positive().parse(id))).returning();
     await applyProductLinks();
+    await recheckOrders();
     if (d) await logActivity(me, "Paraşüt ürün bağlantısı silindi", d.productName);
     refresh();
     return null;

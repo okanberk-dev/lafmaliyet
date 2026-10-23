@@ -17,6 +17,7 @@ import {
   ListChecks,
   ListTodo,
   Package,
+  PackageCheck,
   Palette,
   Pencil,
   Percent,
@@ -26,6 +27,7 @@ import {
   ScanText,
   Search,
   ShieldCheck,
+  ShoppingBasket,
   Sigma,
   Table2,
   Tag,
@@ -364,6 +366,43 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           { href: "/panel/hammaddeler?durum=fiyatsiz", label: "Fiyatı girilmemiş hammaddeler" },
         ],
       },
+      {
+        id: "mal-siparisi",
+        q: "Mal siparişi nasıl verilir?",
+        a: (
+          <>
+            Önce <Path href="/panel/mal-siparisi/kalemler" /> ekranında 10–15 kritik kalem seçin; hedef stok satışlara göre önerilir, isterseniz elle yazın.
+            Sayım gününde (varsayılan Pazartesi) personel ya da siz <Path href="/panel/hizli-sayim" /> ekranında bu kalemleri sayarsınız; ay sonu sayımı ayrıdır.{" "}
+            <Path href="/panel/mal-siparisi" /> ekranı her tedarikçi için ne kadar sipariş edileceğini hazırlar (hedef − eldeki − siparişte, koli ya da pakete
+            yuvarlanmış); miktarı değiştirip WhatsApp ile gönder&apos;e dokunun. Mesaj tedarikçinin kartındaki cep telefonuna hazır açılır; telefon yoksa ya da sabit
+            hatsa WhatsApp&apos;ta kişiyi siz seçersiniz. Gönderilen sipariş kaydedilir ve gelene kadar siparişte sayılır; mal gelince personel Hızlı sayım ekranında Geldi&apos;ye
+            dokunur.
+          </>
+        ),
+        icon: ShoppingBasket,
+        links: [
+          { href: "/panel/mal-siparisi", label: "Mal siparişi" },
+          { href: "/panel/mal-siparisi/kalemler", label: "Sipariş kalemleri" },
+        ],
+      },
+      {
+        id: "teslim",
+        q: "Gelen mal siparişle tutmuyor",
+        a: (
+          <>
+            Paraşüt faturası gelip kalemleri okununca sipariş kalem kalem karşılaştırılır: eksik, fazla, fiyat farkı ve siparişte olmayan kalem{" "}
+            <Path href="/panel/mal-siparisi/gonderilen" /> ekranında ve zilde görünür. Fark yoksa sipariş kendiliğinden kapanır. Tedarikçiyle konuştuktan sonra
+            Kapat&apos;a dokunun (not yazabilirsiniz). Yanlış faturayla eşleştiyse Faturayı değiştir. Miktar 12 kat gibi tuhaf görünüyorsa faturadaki ürünün
+            hammadde bağlantısındaki çarpanı <Path href="/panel/parasut" /> ekranında düzeltin; karşılaştırma kendiliğinden yenilenir. Tahmini fiyatlı kalemde
+            fiyat farkı aranmaz.
+          </>
+        ),
+        icon: PackageCheck,
+        links: [
+          { href: "/panel/mal-siparisi/gonderilen?durum=fark", label: "Farkı olan siparişler" },
+          { href: "/panel/parasut?durum=bagli#urun-baglantilari", label: "Bağlı ürünler" },
+        ],
+      },
     ],
   },
   {
@@ -520,7 +559,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
             Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan), Kontrol listeleri, Zayi &amp; ikram, Reçete
-            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hatırlatıcılarım ve Hesabım
+            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hızlı sayım (haftalık kritik kalemler, gelen mal siparişine Geldi), Hatırlatıcılarım ve Hesabım
             ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google
             Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
           </>
@@ -690,9 +729,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/bugun" /> günün işlerini tek listede toplar: dünkü ve bugünkü kasa raporu, açılış ve kapanış listeleri, gecikmiş ve bugünkü ödemeler, kontrol bekleyen
-            faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı ve hatırlatıcılarınız. Her satır ilgili ekranı açar;
+            faturalar, onay bekleyen reçete ve fiyatlar, kasada değişecek fiyatlar, ay sonu sayımı, hızlı sayım ve mal siparişi, hatırlatıcılarınız. Her satır ilgili ekranı açar;
             sıradaki iş siyah çerçeveyle öne çıkar, biten işler Tamamlananlar&apos;da. Personel girişte bu ekranda açılır ve yalnız kendi işlerini (kasa
-            raporu, kontrol listeleri, zayi, sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
+            raporu, kontrol listeleri, zayi, sayım, hızlı sayım) görür. Telefonda alt menüde Genel bakış, Bugün, Kasa, Ödemeler ve Menü var; Satışlar ve Faturalar Menü&apos;de.
           </>
         ),
         icon: ListTodo,
@@ -731,7 +770,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             <strong className="font-semibold text-ink">Onaylar</strong> (personelin reçete değişiklikleri ve yeni ürün önerileri, faturada şimdikinden %40&apos;tan fazla farklı gelen hammadde fiyatları), <strong className="font-semibold text-ink">Kontrol listeleri</strong>{" "}
             (geciken ve dünden eksik listeler, aralık dışı değerler), <strong className="font-semibold text-ink">Ödemeler</strong>{" "}
             (gecikmiş, bugün ve yakında ödenecekler), <strong className="font-semibold text-ink">Faturalar</strong> (başarısız Paraşüt eşitlemesi, son 24 saatte gelen
-            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
+            faturalar, kontrol bekleyenler, hammaddeye bağlanmayı bekleyen ürünler, mal siparişlerinin teslim farkları ve gelmeyenleri) ve <strong className="font-semibold text-ink">Uyarılar</strong> (hammadde zammı, fiyatı girilmemiş hammaddeler ve son
             satış ayının <Path href="/panel" />&apos;taki &quot;Dikkat edilmesi gerekenler&quot; uyarıları). Günlük işlerden biri (Paraşüt eşitlemesi, sabah
             e-postası) çalışmadıysa ya da hata verdiyse, ya da son yedek 30 günden eskiyse en üstte <strong className="font-semibold text-ink">Sistem</strong>{" "}
             başlığı çıkar. Bir bildirime dokununca

@@ -19,6 +19,7 @@ import {
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { InvoiceReading } from "../../lib/invoice-reading";
+import type { DeliveryCheck, ReorderLine } from "../../lib/reorder/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 /** İkili veri (belge dosyaları); postgres.js Buffer olarak okur ve yazar */
@@ -1177,6 +1178,108 @@ export const wasteEntries = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("waste_entries_date_idx").on(t.date)],
+);
+
+// ---------------------------------------------------------------- Mal siparişi (docs/MAL-SIPARISI.md)
+/**
+ * Hızlı sayımda sayılan ve sipariş önerilen kalemler (10–15 kritik hammadde). Boş alanlar verilerden gelir: hedef
+ * kullanımdan, tedarikçi son alınan Paraşüt faturasından, sipariş birimi ve adı o tedarikçinin son fatura kaleminden
+ * (src/server/data/reorder.ts). Miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim): sayım birimi sonradan
+ * değişse de anlamı değişmez.
+ */
+export const reorderItems = pgTable("reorder_items", {
+  ingredientId: integer("ingredient_id")
+    .primaryKey()
+    .references(() => ingredients.id, { onDelete: "cascade" }),
+  /** Hedef stok (siparişle tamamlanacak miktar); boş = günlük kullanımdan önerilen */
+  parBase: doublePrecision("par_base"),
+  /** Teslim süresi (gün); boş = aynı tedarikçinin diğer kalemleri ya da genel ayar */
+  leadDays: integer("lead_days"),
+  /** Tercih edilen tedarikçinin adı (Tedarikçiler'deki gibi adla eşleşir); boş = son alınan */
+  supplier: text("supplier"),
+  /** Mesajda yazılacak ad (tedarikçinin ürün adı); boş = son fatura kalemi / paket açıklaması */
+  orderName: text("order_name"),
+  /** Sipariş birimi ("koli", "paket") ve 1 biriminin içeriği (kendi biriminde); boş = son faturadaki birim ve çarpan */
+  orderUnit: text("order_unit"),
+  orderUnitSize: doublePrecision("order_unit_size"),
+  updatedBy: text("updated_by"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * Haftalık hızlı sayım (ay sonu stok sayımından ayrı): kalem başına iş günü başına bir satır; aynı gün yeniden
+ * kaydedilince güncellenir. Eldeki stok = en yeni hızlı sayım ya da ay sonu sayımı (hangisi yeniyse). Personel de yazar.
+ */
+export const quickCounts = pgTable(
+  "quick_counts",
+  {
+    id: serial("id").primaryKey(),
+    ingredientId: integer("ingredient_id")
+      .notNull()
+      .references(() => ingredients.id, { onDelete: "cascade" }),
+    /** İş günü (YYYY-MM-DD, Türkiye; 05:00'te döner) */
+    day: text("day").notNull(),
+    /** Sayım birimindeki miktar ve sayıldığı andaki çarpanı (KG/LT = 1000) */
+    qty: doublePrecision("qty").notNull(),
+    factor: doublePrecision("factor").notNull(),
+    countedAt: timestamp("counted_at", { withTimezone: true }).notNull().defaultNow(),
+    countedBy: integer("counted_by").references(() => users.id, { onDelete: "set null" }),
+    countedByName: text("counted_by_name").notNull(),
+  },
+  (t) => [uniqueIndex("quick_counts_ingredient_day_uq").on(t.ingredientId, t.day), index("quick_counts_counted_idx").on(t.countedAt)],
+);
+
+/**
+ * Tedarikçiye gönderilen mal siparişi (WhatsApp ya da kopyalanan metin). Kalemler gönderim anının kopyası (jsonb):
+ * hammadde sonradan değişse de siparişte ne istendiği okunur. Paraşüt faturası gelince eşitleme faturayı bağlar ve
+ * kalem kalem karşılaştırır (delivery_check); fark yoksa sipariş kendiliğinden kapanır. Fiyatlar yalnız yöneticiye
+ * gösterilir.
+ */
+export const supplierOrders = pgTable(
+  "supplier_orders",
+  {
+    id: serial("id").primaryKey(),
+    /** İstemcinin ürettiği istek kimliği (UUID): çift dokunuş ya da yeniden deneme ikinci sipariş açmaz */
+    requestId: text("request_id").notNull(),
+    /** Tedarikçinin adı (gönderim anında; Tedarikçiler'deki gibi adla, varsa vergi noyla eşleşir) */
+    supplier: text("supplier").notNull(),
+    /** Mesajın gittiği numara (E.164, cep); boş: kişi WhatsApp'ta seçildi ya da metin kopyalandı */
+    phone: text("phone"),
+    channel: text("channel", { enum: ["whatsapp", "kopya"] }).notNull(),
+    /** Açılan (ya da kopyalanan) mesajın kendisi */
+    message: text("message").notNull(),
+    note: text("note"),
+    lines: jsonb("lines").$type<ReorderLine[]>().notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    sentBy: integer("sent_by").references(() => users.id, { onDelete: "set null" }),
+    sentByName: text("sent_by_name").notNull(),
+    /** Beklenen teslim günü (YYYY-MM-DD): gönderim günü + kalemlerin en uzun teslim süresi */
+    expectedOn: text("expected_on").notNull(),
+    status: text("status", { enum: ["open", "closed", "cancelled"] }).notNull().default("open"),
+    /** Mal geldi: elle "Geldi" ya da eşleşen faturanın günü; sayımdan sonra gelen sipariş listede "siparişte" sayılır */
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    receivedBy: integer("received_by").references(() => users.id, { onDelete: "set null" }),
+    receivedByName: text("received_by_name"),
+    /** Eşleşen Paraşüt / elle fatura; silinirse boşalır ve eşitleme yeniden arar */
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    /** Fatura elle seçildi ya da eşleşme elle kaldırıldı: eşitleme dokunmaz */
+    manualMatch: boolean("manual_match").notNull().default(false),
+    /** Faturayla karşılaştırmanın sonucu (src/lib/reorder/delivery.ts) */
+    deliveryCheck: jsonb("delivery_check").$type<DeliveryCheck>(),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedByName: text("closed_by_name"),
+    closeNote: text("close_note"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("supplier_orders_request_uq").on(t.requestId),
+    // Bir fatura en çok bir siparişe bağlanır
+    uniqueIndex("supplier_orders_invoice_uq").on(t.invoiceId).where(sql`invoice_id is not null`),
+    index("supplier_orders_status_idx").on(t.status, t.sentAt),
+  ],
 );
 
 // ---------------------------------------------------------------- Fotoğraflar ve fotoğraftan okuma

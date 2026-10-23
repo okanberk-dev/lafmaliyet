@@ -9,7 +9,8 @@ import type { Role } from "./constants";
 /**
  * Personelin girebildiği ekranlar (alt sayfaları dahil). Maliyet, fiyat, kâr, maaş ve ayar ekranları yok; günün
  * işlerini (Bugün; yönetici bilgisi yüklenmez) görür, reçete defterinde değişiklik önerir (yönetici onaylar), karaoke
- * sayacını, gün sonu kasa raporunu, açılış / kapanış kontrol listelerini, zayi / ikram kaydını, stok sayımını ve kendi
+ * sayacını, gün sonu kasa raporunu, açılış / kapanış kontrol listelerini, zayi / ikram kaydını, stok sayımını, haftalık
+ * hızlı sayımı ve gelen mal işaretini ("Geldi"; mal siparişinin listesi ve fiyatları yöneticide) ve kendi
  * hatırlatıcılarını kullanır. Kontrol listelerinin yönetici alt sayfaları (Geçmiş, Listeler) personeli kendileri geri
  * gönderir (requireAdmin; Kasa'nın yönetici görünümleri gibi).
  */
@@ -22,6 +23,7 @@ export const STAFF_PATHS = [
   "/panel/receteler",
   "/panel/hatirlaticilarim",
   "/panel/sayim",
+  "/panel/hizli-sayim",
   "/panel/hesap",
 ] as const;
 
@@ -58,7 +60,7 @@ export function canOpen(role: Role, pathname: string): boolean {
  * açmak" da aynı ekranları sayar; ikisi STAFF_PATHS'le birlikte güncellenir (tests/personel-yetkileri.test.ts).
  */
 export const STAFF_ROLE_HINT =
-  "Bugün, kasa raporu, açılış / kapanış listeleri, zayi ve ikram, stok sayımı, reçete defteri (öneri), karaoke ve bar ekranı; maliyet, maaş ve kâr görmez";
+  "Bugün, kasa raporu, açılış / kapanış listeleri, zayi ve ikram, stok sayımı ve hızlı sayım, reçete defteri (öneri), karaoke ve bar ekranı; maliyet, maaş ve kâr görmez";
 
 /**
  * Kullanıcılar & roller'deki yetki tablosu. `paths`: satırın anlattığı personel ekranları; personelin her ekranı
@@ -72,11 +74,13 @@ export const ROLE_PERMISSIONS: readonly { label: string; admin: boolean; staff: 
   { label: "Zayi ve ikram kaydı", admin: true, staff: true, paths: ["/panel/zayi"] },
   { label: "Reçete defteri; değişiklik ve yeni ürün önerisi, önerirken satış fiyatı (yönetici onaylar)", admin: true, staff: true, paths: ["/panel/receteler"] },
   { label: "Stok sayımı; sayım listesine kalem ekleme (Listeye ekle)", admin: true, staff: true, paths: ["/panel/sayim"] },
+  { label: "Haftalık hızlı sayım ve gelen mal işareti (sipariş listesi ve fiyatlar yöneticide)", admin: true, staff: true, paths: ["/panel/hizli-sayim"] },
   { label: "Kendi hatırlatıcıları ve bildirimleri", admin: true, staff: true, paths: ["/panel/hatirlaticilarim"] },
   { label: "Kendi parolası ve iki adımlı doğrulama", admin: true, staff: true, paths: ["/panel/hesap"] },
   { label: "Reçeteyi doğrudan düzenleme ve önerileri onaylama", admin: true, staff: false },
   { label: "Ürün maliyeti, fiyat ve kârlılık", admin: true, staff: false },
   { label: "Hammadde fiyatları", admin: true, staff: false },
+  { label: "Mal siparişi: sipariş listesi, WhatsApp ile gönderme, teslim kontrolü", admin: true, staff: false },
   { label: "Satış, fatura, gelir-gider, kasa raporlarının geçmişi", admin: true, staff: false },
   { label: "Sabit gider, maaş ve personel", admin: true, staff: false },
   { label: "Ödemeler, hatırlatıcılar, e-posta bildirimleri", admin: true, staff: false },
