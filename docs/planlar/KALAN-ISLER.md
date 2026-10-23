@@ -19,7 +19,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 - **Paralel çalışan bir oturum daha var** (site ↔ panel işleri): sahiplik, sözleşmeler ve çakışma noktaları
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - **Açık PR:** #11 taslak (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da
-  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–7'nin her biri main'e ayrı bir PR'dır.
+  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–8'in her biri main'e ayrı bir PR'dır.
 
 ## 2. Kalan işler (sırayla)
 
@@ -59,7 +59,14 @@ tahmin ∥ haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir; `tahmin.md`'nin 
 Site deposu 22 Ekim'de incelendi (`DIGER-OTURUM.md` sonu): karaoke ucu geçmiş tarihleri zaten veriyor; doluluk site
 değişikliği beklemez. W2.0'ın kalanı (sendEmail seçenekleri, sabah e-postası kutuları ve `DIGEST_EXTRA_SOURCES`,
 ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 4'te. Kalan dalgalar: 5 kontrol ∥ doluluk,
-6 siparis ∥ komisyon, 7 tahmin ∥ haftalik; her biri öncekinin üstüne ayrı PR.
+6 fatura ∥ oneri-fiyat (sahibin 23 Ekim istekleri, aşağıda), 7 siparis ∥ komisyon, 8 tahmin ∥ haftalik; her biri ayrı PR.
+
+### Sahibin 23 Ekim istekleri (dalga 6, ikinci paketten önce)
+
+| Grup | Plan | Ne |
+|---|---|---|
+| fatura | `fatura-okuma.md` | Faturadaki paket boyu addan ("150 AD.") ve PDF'ten (Claude Haiku 5.5) okunur; fiyat onayında kanıtsız "Çarpanı X yap" önerisi kalkar, tahmini fiyat açıkça söylenir. Canlıdaki iki örnek: Yenilebilir bardak (1 Adet = 150 adet, adet başı 20 ₺, %52 ucuz) ve Klips kapak (1,165 ₺ 0023'ün varsayımıydı; Serendi'nin 24.07 faturası 12,02 ₺). **Uygulanıyor** |
+| oneri-fiyat | `oneri-fiyat.md` | Personel yeni ürün önerirken boy başına satış fiyatı yazabilir (yönetici onayda görür, değiştirebilir); reçetede listede olmayan malzemeyi formdan çıkmadan ekler (Listeye ekle kurallarıyla, isteğe bağlı paket fiyatı); Listeye ekle'ye de paket fiyatı |
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
