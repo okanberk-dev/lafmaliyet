@@ -1,0 +1,20 @@
+{
+  "note": "Sentetik okuma (yerelde anahtar yok, canlı istek yapılmadı): ECOLİVİNG 21.10.2026 ECE2026000000031, LİVİ YENİLEBİLİR BARDAK 150 AD. · 1 Adet × 3.000,00 TL. Yalnız AI_REPLAY=1 ile next dev'de ve testlerde kullanılır.",
+  "model": "claude-haiku-5-5",
+  "ms": 1800,
+  "requestId": "kayitli-yanit",
+  "usage": {
+    "input_tokens": 2950,
+    "output_tokens": 420,
+    "iterations": [{ "type": "message", "model": null, "input_tokens": 2950, "output_tokens": 420 }]
+  },
+  "json": {
+    "found": true,
+    "line": { "name": "LİVİ YENİLEBİLİR BARDAK 150 AD.", "quantity": 1, "unit": "Adet", "unitPrice": 3000, "lineTotal": 3000 },
+    "perPackage": { "count": 150, "unit": "adet" },
+    "factor": 150,
+    "confidence": "high",
+    "evidence": "LİVİ YENİLEBİLİR BARDAK 150 AD. · 1 Adet · 3.000,00 TL",
+    "note": null
+  }
+}

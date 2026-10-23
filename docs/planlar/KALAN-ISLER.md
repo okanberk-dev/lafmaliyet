@@ -19,7 +19,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 - **Paralel çalışan bir oturum daha var** (site ↔ panel işleri): sahiplik, sözleşmeler ve çakışma noktaları
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - **Açık PR:** #11 taslak (PR incelemesi için Claude iş akışı; depoya `ANTHROPIC_API_KEY` ya da
-  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–7'nin her biri main'e ayrı bir PR'dır.
+  `CLAUDE_CODE_OAUTH_TOKEN` sırrı eklenince açılır). Dalga 5–8'in her biri main'e ayrı bir PR'dır.
 
 ## 2. Kalan işler (sırayla)
 
@@ -44,13 +44,13 @@ yeniden üretilir (R2); her dalga main'e ayrı bir PR'dır.
 
 | Grup | Plan | Ne |
 |---|---|---|
-| kontrol | `kontrol.md` | Fotoğraflı açılış/kapanış kontrol listeleri, Bugün ekranında. **Uygulanıyor** (dalga 5) |
+| kontrol | `kontrol.md` | Fotoğraflı açılış/kapanış kontrol listeleri, Bugün ekranında. **Bitti:** dalga 5 PR'ı #14 (`0029_kontrol_listeleri`, `docs/KONTROL-LISTELERI.md`; 2. aşama kesildi) |
 | komisyon | `komisyon.md` | Yemek kartı ve platform komisyon/hakediş kontrolü (%6 sınırı, 30 gün; hakediş elle işaretlenir) |
 | fotograf | `fotograf.md` | Z raporu, POS gün sonu ve market fişini fotoğraftan Claude ile okuma; ortak foto deposu ve Claude istemcisi bu grubun. **Bitti:** dalga 3 PR'ı (`0025_fotograf_okuma`, `docs/FOTOGRAF.md`; sahibin 22 Ekim isteğiyle öne alındı; W2.0'ın 1, 2, 3 ve 7. maddeleri de bunda) |
 | siparis | `siparis.md` | Sipariş önerisi, hızlı sayım, tedarikçiye WhatsApp siparişi, teslim kontrolü |
 | mcp | `mcp.md` | Claude uygulamasından panele soru sorma (salt okunur, yalnız yönetici, OAuth). **Bitti:** dalga 4 PR'ı (`0028_claude_baglantisi`, `docs/CLAUDE-BAGLANTISI.md`) |
 | tahmin | `tahmin.md` | 7 günlük satış tahmini, personel ve tatlı önerisi, isabet ölçümü |
-| doluluk | `doluluk.md` | Karaoke doluluk haritası ve göstergeler. **Uygulanıyor** (dalga 5) |
+| doluluk | `doluluk.md` | Karaoke doluluk haritası ve göstergeler. **Bitti:** dalga 5 PR'ı #14 (`0030_karaoke_doluluk`, `docs/KARAOKE.md` › Doluluk; KVKK: 3 × 366 günden eski karaoke adları sabah işinde silinir) |
 | haftalik | `haftalik.md` | Haftalık yönetici özeti (pazartesi e-postası, ₺ etkisine göre en çok 5 madde); diğer planların hepsini tüketir; en son |
 
 **İkinci paketin çapraz eleştirisi `CRITIQUE2.md`'de** (R8–R19 ortak sözleşmeler, zaman bütçesi, güvenlik, kesintiler,
@@ -59,7 +59,14 @@ tahmin ∥ haftalik. Kafe **İstanbul Tuzla, Opera AVM**'dedir; `tahmin.md`'nin 
 Site deposu 22 Ekim'de incelendi (`DIGER-OTURUM.md` sonu): karaoke ucu geçmiş tarihleri zaten veriyor; doluluk site
 değişikliği beklemez. W2.0'ın kalanı (sendEmail seçenekleri, sabah e-postası kutuları ve `DIGEST_EXTRA_SOURCES`,
 ModPOS günlük satış ağzı `loadDailyProductSales`, adım etiketleri) dalga 4'te. Kalan dalgalar: 5 kontrol ∥ doluluk,
-6 siparis ∥ komisyon, 7 tahmin ∥ haftalik; her biri öncekinin üstüne ayrı PR.
+6 fatura ∥ oneri-fiyat (sahibin 23 Ekim istekleri, aşağıda), 7 siparis ∥ komisyon, 8 tahmin ∥ haftalik; her biri ayrı PR.
+
+### Sahibin 23 Ekim istekleri (dalga 6, ikinci paketten önce)
+
+| Grup | Plan | Ne |
+|---|---|---|
+| fatura | `fatura-okuma.md` | Faturadaki paket boyu addan ("150 AD.") ve PDF'ten (Claude Haiku 5.5) okunur; fiyat onayında kanıtsız "Çarpanı X yap" önerisi kalkar, tahmini fiyat açıkça söylenir. Canlıdaki iki örnek: Yenilebilir bardak (1 Adet = 150 adet, adet başı 20 ₺, %52 ucuz) ve Klips kapak (1,165 ₺ 0023'ün varsayımıydı; Serendi'nin 24.07 faturası 12,02 ₺). **Uygulanıyor** |
+| oneri-fiyat | `oneri-fiyat.md` | Personel yeni ürün önerirken boy başına satış fiyatı yazabilir (yönetici onayda görür, değiştirebilir); reçetede listede olmayan malzemeyi formdan çıkmadan ekler (Listeye ekle kurallarıyla, isteğe bağlı paket fiyatı); Listeye ekle'ye de paket fiyatı |
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis

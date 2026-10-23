@@ -1379,12 +1379,24 @@ export async function countUnlinkedProducts(): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı */
+/**
+ * Ekran için: bağlanmamış Paraşüt ürünleri (en çok geçenler önce); `total` kesilmeden önceki sayı. En yeni kalemin
+ * açıklaması ve miktarı paket boyunun kanıtı için (src/lib/product-match.ts packEvidence: "150 AD." 1 adet mi 150 mi)
+ */
 export async function unlinkedProducts(limit = 40) {
   const db = getDb();
   const [lines, links, ignored] = await Promise.all([
     db
-      .select({ productKey: s.parasutBillLines.productKey, productName: s.parasutBillLines.productName, unit: s.parasutBillLines.unit, quantity: s.parasutBillLines.quantity, netTotal: s.parasutBillLines.netTotal, date: s.invoices.date, supplier: s.invoices.supplier })
+      .select({
+        productKey: s.parasutBillLines.productKey,
+        productName: s.parasutBillLines.productName,
+        description: s.parasutBillLines.description,
+        unit: s.parasutBillLines.unit,
+        quantity: s.parasutBillLines.quantity,
+        netTotal: s.parasutBillLines.netTotal,
+        date: s.invoices.date,
+        supplier: s.invoices.supplier,
+      })
       .from(s.parasutBillLines)
       .innerJoin(s.invoices, eq(s.invoices.id, s.parasutBillLines.invoiceId))
       .where(and(isNotNull(s.parasutBillLines.productKey), inArray(s.invoices.category, LINKABLE_CATEGORIES)))
@@ -1394,7 +1406,10 @@ export async function unlinkedProducts(limit = 40) {
   ]);
   // Bağlı ve "hammadde değil" denen ürünler bekleyen sayılmaz
   const linked = new Set([...links.map((l) => l.productKey), ...ignored.map((i) => i.productKey)]);
-  const agg = new Map<string, { productKey: string; productName: string; unit: string | null; count: number; lastDate: string; lastUnitPrice: number; supplier: string }>();
+  const agg = new Map<
+    string,
+    { productKey: string; productName: string; description: string | null; unit: string | null; count: number; lastDate: string; lastQuantity: number; lastUnitPrice: number; supplier: string }
+  >();
   const unitPrice = (l: (typeof lines)[number]) => (l.quantity > 0 && l.netTotal > 0 ? l.netTotal / l.quantity : 0);
   for (const l of lines) {
     if (linked.has(l.productKey)) continue;
@@ -1407,9 +1422,11 @@ export async function unlinkedProducts(limit = 40) {
       agg.set(l.productKey, {
         productKey: l.productKey,
         productName: l.productName,
+        description: l.description,
         unit: l.unit,
         count: 1,
         lastDate: l.date,
+        lastQuantity: l.quantity,
         lastUnitPrice: unitPrice(l),
         supplier: l.supplier,
       });

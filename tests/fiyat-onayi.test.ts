@@ -1,6 +1,6 @@
 // Paraşüt'ten gelen büyük fiyat sıçramasının onayı (src/lib/price-hold.ts): hangi fiyat yazılır, hangisi onaya düşer,
 // çarpan ipucu, ardışık fatura sayısı, geçersiz kalan öneriler ve yeniden değerlendirilmeleri, daha yeni fatura (geri
-// alma ve onay), önceki fatura, maliyet etkisi ve uyarı metni.
+// alma ve onay), önceki fatura, maliyet etkisi ve uyarı metni; kartın önerisi (kanıt, okuma, yalnız geçmişle oran).
 // Çalıştırma: npx tsx --test tests/fiyat-onayi.test.ts
 
 import assert from "node:assert/strict";
@@ -10,23 +10,33 @@ import { test } from "node:test";
 
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
+import { packEvidence } from "../src/lib/product-match";
 import {
   appliedKeyOf,
+  ESTIMATE_BADGE,
+  ESTIMATE_TEXT,
+  evidenceSuggestionText,
   factorHint,
   holdAlert,
   holdImpact,
   holdLogText,
   holdsSummary,
   HOLDS_HREF,
+  holdSuggestion,
   linkChange,
   livePct,
   newerInvoice,
+  perUnitText,
   previousInvoicePrice,
   priceStep,
+  priceWithPct,
   reopenApplied,
   repeatCount,
+  sameProductHistory,
   staleHolds,
   suggestedFactor,
+  unitPriceFor,
+  vsCurrentText,
 } from "../src/lib/price-hold";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -287,4 +297,105 @@ test("holdAlert ve özet: boşta yok, tek, beş öneride 've 2 hammadde daha'", 
   assert.equal(livePct(0.05, 0), null);
   assert.ok(Math.abs(livePct(0.0486, 0.032)! - 0.51875) < 1e-12);
   assert.equal(holdLogText({ name: "Süt", pct: 0.52, supplier: "Sütaş", date: "2026-10-21" }), `Süt +${WJ}%52 (Sütaş 21.10.2026)`);
+});
+
+// ── Kartın önerisi: kanıt önce, oran yalnız aynı ürünün geçmişiyle (docs/planlar/fatura-okuma.md) ──
+
+test("öneri: Yenilebilir bardak (1 Adet × 3.000 ₺, çarpan 1, şimdi 41,65 ₺/adet) → adındaki 150 AD., oran değil", () => {
+  const current = 9996 / 240;
+  const line = { name: "LİVİ YENİLEBİLİR BARDAK 150 AD.", unit: "Adet", quantity: 1 };
+  const hold = { factor: 1, quantity: 1, netTotal: 3000, current, evidence: packEvidence(line, "adet"), reading: null, history: false };
+  // Eski kart: fiyat şimdikinin ~72 katı, "Çarpanı 72 yap" (yazılsa 41,67 ₺: gerçek düşüş kaybolurdu)
+  assert.equal(factorHint(current, 3000)?.times, 72);
+  const s = holdSuggestion(hold);
+  assert.equal(s?.kind, "evidence");
+  assert.equal(s?.factor, 150);
+  assert.equal(s?.unitPrice, 20);
+  assert.ok(s?.pct !== null && Math.abs(s!.pct! - (20 / current - 1)) < 1e-12);
+  assert.equal(
+    evidenceSuggestionText(s!.evidence!, { lineUnit: "Adet", unit: "adet", unitPrice: s!.unitPrice, currentUnit: current }),
+    "Adında “150 AD.” yazıyor: 1 Adet = 150 adet olmalı. Öyle olursa adet başı 20,00\u00a0₺ (şimdikinden %52 ucuz).",
+  );
+  // Okuma da 150 dese kanıt önce gelir (tek düğme); çarpan zaten 150 ise öneri yok
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 150, confidence: "high" } })?.kind, "evidence");
+  assert.equal(holdSuggestion({ ...hold, factor: 150 }), null);
+});
+
+test("öneri: Klips kapak (tahmini 1,165 ₺, faturada 12,02 ₺) → oran düğmesi yok; okuma aynı çarpanı derse de öneri yok", () => {
+  const current = 1165 / 1000;
+  const hold = { factor: 1, quantity: 1000, netTotal: 12020, current, evidence: packEvidence({ name: "PLASTİK KAPAK KLIPS", unit: "Adet", quantity: 1000 }, "adet"), reading: null, history: false };
+  assert.equal(hold.evidence, null);
+  assert.equal(factorHint(current, 12.02)?.times, 10);
+  assert.equal(holdSuggestion(hold), null);
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 1, confidence: "high" } }), null);
+  // Okuma farklı çarpan bulursa (emin ya da büyük olasılıkla) önerir; az eminse önermez
+  assert.deepEqual(holdSuggestion({ ...hold, reading: { factor: 10, confidence: "medium" } }), { kind: "reading", factor: 10, unitPrice: 1.202, pct: 1.202 / current - 1 });
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 10, confidence: "low" } }), null);
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: null, confidence: "high" } }), null);
+  assert.equal(ESTIMATE_TEXT, "Şimdiki fiyat tahmini (varsayım), faturadan gelmedi. Faturadaki fiyat ilk gerçek fiyat olabilir.");
+  assert.equal(ESTIMATE_BADGE, "tahmini fiyata göre");
+});
+
+test("öneri: adında yalnız boyut ('SÜT 1 L', Adet) kanıt değil: doğru koli çarpanına (12.000) '1.000 ml olmalı' denmez", () => {
+  // Tedarikçi 12 × 1 L koliyi "1 Adet" yazıyor, sahibi doğru bağlamış (12.000 ml); fiyat gerçekten %61 arttı
+  const evidence = packEvidence({ name: "SÜT 1 L", unit: "Adet", quantity: 2 }, "ml");
+  assert.equal(evidence, null);
+  const hold = { factor: 12000, quantity: 2, netTotal: 1200, current: 0.031, evidence, reading: null, history: true };
+  assert.equal(holdSuggestion(hold), null);
+  // Okuma gizlenmez: emin okunan farklı çarpan önerilir, aynı çarpan öneri değil
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 6000, confidence: "high" } })?.factor, 6000);
+  assert.equal(holdSuggestion({ ...hold, reading: { factor: 12000, confidence: "high" } }), null);
+});
+
+test("öneri: aynı ürün koli ↔ adet değiştirdi (geçmişi aynı çarpanla şimdiki fiyatta) → oran düğmesi kalır", () => {
+  // SÜT 1 L, çarpan 1000: 1 ve 2 Ekim'de adet başı 31 ₺ (0,031 ₺/ml); 20 Ekim'de aynı ürün Koli (12 × 1 L) 372 ₺
+  const lines = [
+    { invoiceId: 1, productKey: "sut", date: "2026-10-01", supplier: "Sütaş", quantity: 10, netTotal: 310 },
+    { invoiceId: 2, productKey: "sut", date: "2026-10-02", supplier: "Sütaş", quantity: 4, netTotal: 124 },
+    { invoiceId: 3, productKey: "sut", date: "2026-10-20", supplier: "Sütaş", quantity: 2, netTotal: 744 },
+  ];
+  const current = 0.031;
+  const h = { ingredientId: 4, invoiceId: 3, invoiceDate: "2026-10-20", productKey: "sut", factor: 1000 };
+  assert.equal(sameProductHistory(lines, h, current), true);
+  const s = holdSuggestion({ factor: 1000, quantity: 2, netTotal: 744, current, evidence: null, reading: null, history: true });
+  assert.equal(s?.kind, "ratio");
+  assert.equal(s?.factor, 12000);
+  assert.equal(s?.hint?.times, 12);
+  assert.ok(Math.abs(s!.unitPrice! - 0.031) < 1e-12);
+  assert.equal(vsCurrentText(s!.unitPrice!, current), "şimdikiyle aynı");
+  // Geçmiş yoksa (yeni ürün) ya da başka fiyatlıysa oran önerilmez
+  assert.equal(holdSuggestion({ factor: 1000, quantity: 2, netTotal: 744, current, evidence: null, reading: null, history: false }), null);
+  assert.equal(sameProductHistory(lines.slice(2), h, current), false);
+  assert.equal(sameProductHistory([{ ...lines[0], netTotal: 400 }, lines[2]], h, current), false);
+  // Başka ürünün geçmişi sayılmaz; değerlendirilen faturanın kendisi ve sonrası sayılmaz; tahmini (0) fiyata karşı yok
+  assert.equal(sameProductHistory(lines.map((l) => ({ ...l, productKey: l.invoiceId === 3 ? "sut" : "sut-koli" })), h, current), false);
+  assert.equal(sameProductHistory([{ ...lines[0], date: "2026-10-25" }, lines[2]], h, current), false);
+  assert.equal(sameProductHistory(lines, h, 0), false);
+  // ±%10 sınırı
+  assert.equal(sameProductHistory([{ ...lines[0], netTotal: 341 }, lines[2]], h, current), true);
+  assert.equal(sameProductHistory([{ ...lines[0], netTotal: 342 }, lines[2]], h, current), false);
+});
+
+test("öneri metinleri: birim fiyat ve şimdikine göre fark", () => {
+  assert.equal(unitPriceFor({ quantity: 1, netTotal: 3000 }, 150), 20);
+  assert.equal(unitPriceFor({ quantity: 1, netTotal: 0 }, 150), null);
+  assert.equal(unitPriceFor({ quantity: -1, netTotal: -3000 }, 150), null);
+  assert.equal(perUnitText(20, "adet"), "adet başı 20,00\u00a0₺");
+  assert.equal(perUnitText(0.95, "gr"), "kg başı 950,00\u00a0₺");
+  assert.equal(perUnitText(0.031, "ml"), "L başı 31,00\u00a0₺");
+  assert.equal(vsCurrentText(20, 41.65), "şimdikinden %52 ucuz");
+  assert.equal(vsCurrentText(12.02, 1.165), "şimdikinden %932 pahalı");
+  assert.equal(vsCurrentText(3000, 41.65), "şimdikinden %7.103 pahalı");
+  assert.equal(vsCurrentText(10.03, 10), "şimdikiyle aynı");
+  assert.equal(vsCurrentText(10, 0), null);
+  assert.equal(priceWithPct(20, "adet", 0), "adet başı 20,00\u00a0₺");
+  // Ölçü birimi ve açıklama kanıtının başı
+  assert.equal(
+    evidenceSuggestionText({ factor: 1000, source: "unit", text: "kg" }, { lineUnit: "kg", unit: "gr", unitPrice: 0.95, currentUnit: 0.92 }),
+    "Faturadaki birim “kg”: 1 kg = 1.000 gr olmalı. Öyle olursa kg başı 950,00\u00a0₺ (şimdikinden %3 pahalı).",
+  );
+  assert.equal(
+    evidenceSuggestionText({ factor: 150, source: "description", text: "150 ADET" }, { lineUnit: null, unit: "adet", unitPrice: null, currentUnit: 41.65 }),
+    "Açıklamasında “150 ADET” yazıyor: 1 birim = 150 adet olmalı.",
+  );
 });

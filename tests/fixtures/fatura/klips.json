@@ -1,0 +1,20 @@
+{
+  "note": "Sentetik okuma (yerelde anahtar yok, canlı istek yapılmadı): Serendi Ambalaj 24.07.2026 SER2026000000495, PLASTİK KAPAK KLIPS · 1.000 Adet × 12,02 TL. Yalnız AI_REPLAY=1 ile next dev'de ve testlerde kullanılır.",
+  "model": "claude-haiku-5-5",
+  "ms": 1600,
+  "requestId": "kayitli-yanit",
+  "usage": {
+    "input_tokens": 3410,
+    "output_tokens": 380,
+    "iterations": [{ "type": "message", "model": null, "input_tokens": 3410, "output_tokens": 380 }]
+  },
+  "json": {
+    "found": true,
+    "line": { "name": "PLASTİK KAPAK KLIPS", "quantity": 1000, "unit": "Adet", "unitPrice": 12.02, "lineTotal": 12020 },
+    "perPackage": null,
+    "factor": 1,
+    "confidence": "high",
+    "evidence": "PLASTİK KAPAK KLIPS · 1.000 Adet · 12,02 TL",
+    "note": "Birim fiyat tek kapağın fiyatı."
+  }
+}

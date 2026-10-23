@@ -1,6 +1,7 @@
 // Personelin yeni ürün önerisi (Reçete defteri → Reçete onayları): öneri denetimi (src/lib/recipe-change.ts
-// newProductIssue), zil satırları, Türkçe tamlayan eki ve sunucu kuralları (yetki, ortak ürün açma yardımcısı, boş
-// productId'yi her okuyanın karşılaması, personelin fiyat görmemesi).
+// newProductIssue), personelin yazdığı satış fiyatı (readProposedPrice, saklanması, onayda önceden dolu gelmesi), zil
+// satırları, Türkçe tamlayan eki ve sunucu kuralları (yetki, ortak ürün açma yardımcısı, boş productId'yi her okuyanın
+// karşılaması, personelin maliyet görmemesi, fiyatı yalnız yazması).
 // Çalıştırma: npx tsx --test tests/yeni-urun-onerisi.test.ts
 
 import assert from "node:assert/strict";
@@ -8,7 +9,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { genitive, groupNewProposals, newProductIssue, pendingSummary, productSizeLabel, takenIssue } from "../src/lib/recipe-change";
+import {
+  genitive,
+  groupNewProposals,
+  newProductIssue,
+  pendingSummary,
+  productSizeLabel,
+  PROPOSED_PRICE_MAX,
+  readProposedPrice,
+  takenIssue,
+} from "../src/lib/recipe-change";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const products = [
@@ -46,6 +56,22 @@ test("aynı ad + boy: ürün varsa ya da bekleyen öneri varsa (Türkçe büyük
   assert.equal(productSizeLabel("Çilekli Latte", "M"), "Çilekli Latte · Medium");
 });
 
+test("satış fiyatı: boş bırakılabilir; 0'dan büyük ve en çok 10.000 ₺; Türkçe yazılır, kuruşa yuvarlanır", () => {
+  assert.deepEqual(readProposedPrice(""), { value: null, error: null });
+  assert.deepEqual(readProposedPrice("185"), { value: 185, error: null });
+  assert.deepEqual(readProposedPrice("162,50"), { value: 162.5, error: null });
+  assert.deepEqual(readProposedPrice("1.250"), { value: 1250, error: null });
+  assert.deepEqual(readProposedPrice(" 99,999 "), { value: 100, error: null });
+  assert.equal(readProposedPrice("0").error, "Satış fiyatı 0'dan büyük olmalı");
+  assert.equal(readProposedPrice("-10").error, "Satış fiyatı 0'dan büyük olmalı");
+  assert.equal(readProposedPrice("yüz").error, "Satış fiyatını sayıyla yazın");
+  assert.equal(PROPOSED_PRICE_MAX, 10_000);
+  assert.deepEqual(readProposedPrice("10.000"), { value: 10_000, error: null });
+  assert.equal(readProposedPrice("10.000,01").error, "Satış fiyatı çok büyük");
+  // Öneri denetimi fiyattan bağımsız: değişmedi
+  assert.equal(newProductIssue(draft(), products, pending), null);
+});
+
 test("zil: bekleyen yeni ürün önerileri ad ve öneren başına tek satır, boylar sırayla", () => {
   const rows = [
     { id: 7, name: "Çilekli Latte", size: "L" as const, by: "Ayşe", message: null },
@@ -59,6 +85,26 @@ test("zil: bekleyen yeni ürün önerileri ad ve öneren başına tek satır, bo
   assert.equal(g[0].title, "Yeni ürün önerisi: Çilekli Latte · Medium, Large (Ayşe)");
   assert.equal(g[0].message, "müşteriler soruyor");
   assert.equal(g[1].title, "Yeni ürün önerisi: çilekli latte · Medium (Mehmet)");
+  // Fiyat yoksa gövde not ya da ne yapılacağı (eskisi gibi)
+  assert.equal(g[0].body, "Not: müşteriler soruyor");
+  assert.equal(g[1].body, "Satış fiyatını yazıp onaylayın");
+});
+
+test("zil: personelin önerdiği satış fiyatı boy boy gövdede", () => {
+  const [g] = groupNewProposals([
+    { id: 1, name: "Çilekli Matcha", size: "L" as const, by: "Ayşe", message: null, price: 205 },
+    { id: 2, name: "Çilekli Matcha", size: "M" as const, by: "Ayşe", message: "müşteriler soruyor", price: 185.5 },
+  ]);
+  assert.equal(g.body, "Önerilen fiyat: Medium 185,50\u00a0₺, Large 205\u00a0₺ · Not: müşteriler soruyor");
+  // Yalnız bir boyun fiyatı yazıldıysa o
+  const [h] = groupNewProposals([
+    { id: 3, name: "Mango Soda", size: "M" as const, by: "Can", message: null, price: null },
+    { id: 4, name: "Mango Soda", size: "L" as const, by: "Can", message: null, price: 120 },
+  ]);
+  assert.equal(h.body, "Önerilen fiyat: Large 120\u00a0₺");
+  const bell = read("src/server/actions/notifications.ts");
+  assert.match(bell, /price: r\.proposedPrice \}\)\),/);
+  assert.match(bell, /body: g\.body,/);
 });
 
 test("reçete defteri şeridi ve işlem geçmişindeki tamlayan eki", () => {
@@ -137,6 +183,28 @@ test("öneri ve onay: kilit, durum ve aynı ad + boy yeniden denetlenir; formül
   assert.ok(review.indexOf('req.kind === "new"') < review.indexOf("tx.select({ id: s.products.id"), "ürün okunmadan önce ayrılır");
 });
 
+test("satış fiyatı öneride saklanır (eski önerilerde yok), onayda alan onunla dolu gelir; tahmini malzeme işaretli", () => {
+  const propose = body("proposeNewProduct");
+  // Sunucu aynı sınırlar: kuruşa yuvarlanır, 0'dan büyük, en çok PROPOSED_PRICE_MAX; yazılmadıysa null
+  assert.match(actions, /\.pipe\(z\.number\(\)\.positive\("Satış fiyatı 0'dan büyük olmalı"\)\.max\(PROPOSED_PRICE_MAX, "Satış fiyatı çok büyük"\)\)/);
+  assert.match(actions, /items: z\.array\(lineSchema\)\.max\(40, "En fazla 40 malzeme"\), price: zProposedPrice \}/);
+  assert.match(propose, /proposed: \{ name: data\.name, size: sz\.size, categoryId: data\.categoryId, price: sz\.price \},/);
+  // Şemada yalnız tip (migration yok): eski satırların fiyatı yok, okuyan null'a çevirir
+  assert.match(read("src/server/db/schema.ts"), /export type ProposedProduct = \{ name: string; size: "M" \| "L" \| "Tek"; categoryId: number; price\?: number \| null \};/);
+  const data = read("src/server/data/recipe-requests.ts");
+  assert.match(data, /proposedPrice: typeof proposedPrice === "number" && proposedPrice > 0 \? proposedPrice : null,/);
+  // Onay sayfası: fiyat alanı personelin önerisiyle dolu, altında "Personelin önerisi"; onay yine fiyat ister
+  const approvals = read("src/app/panel/onaylar/page.tsx");
+  assert.match(approvals, /proposedPrice: r\.proposedPrice,/);
+  assert.match(approvals, /estimate: !!ing && ing\.isEstimate && !unpriced,/);
+  const list = read("src/app/panel/onaylar/review-list.tsx");
+  assert.match(list, /const \[price, setPrice\] = useState\(proposed !== null \? priceText\(proposed\) : ""\);/);
+  assert.match(list, /Personelin önerisi:\{" "\}/);
+  assert.match(list, /\) : l\.estimate \? \(\s+<Badge tone="amber" dot className="ml-1\.5" title="Paket fiyatı tahmini \(faturadan gelmedi\); maliyet kesin değil">\s+Tahmini/);
+  assert.match(body("approveNewProduct"), /price: data\.price \}/);
+  assert.match(actions, /price: zMoney\.positive\("Satış fiyatını yazın"\)/);
+});
+
 test("productId boş olabilir: okuyan her yer yeni ürün önerisini karşılar", () => {
   const data = read("src/server/data/recipe-requests.ts");
   assert.match(data, /\.leftJoin\(s\.products, eq\(s\.products\.id, s\.recipeChangeRequests\.productId\)\)/);
@@ -160,18 +228,43 @@ test("productId boş olabilir: okuyan her yer yeni ürün önerisini karşılar"
   assert.match(schema, /recipe_change_requests_kind_ck/);
 });
 
-test("personel yeni ürün önerisinde de fiyat ve maliyet görmez", () => {
-  for (const f of [
-    "src/app/panel/receteler/new-product-sheet.tsx",
-    "src/app/panel/receteler/recipe-lines.tsx",
-    "src/app/panel/receteler/my-requests.tsx",
-    "src/app/panel/receteler/change-editor.tsx",
-  ]) {
+test("personel yeni ürün önerisinde maliyet görmez; satış ve paket fiyatını yalnız yazar (geri gösterilmez)", () => {
+  const word = (w: string) => new RegExp(`\\b${w.replace("(", "\\(")}`);
+  /** Açıklamalar çıkarılmış kod */
+  const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const sheetFile = "src/app/panel/receteler/new-product-sheet.tsx";
+  const linesFile = "src/app/panel/receteler/recipe-lines.tsx";
+  const pickerFile = "src/app/panel/receteler/ingredient-picker.tsx";
+  const mineFile = "src/app/panel/receteler/my-requests.tsx";
+  const changeFile = "src/app/panel/receteler/change-editor.tsx";
+  // Maliyet, hedef oran ve tutar biçimi hiçbirinde yok
+  for (const f of [sheetFile, linesFile, pickerFile, mineFile, changeFile]) {
     const src = read(f);
-    for (const word of ["unitCost", "price", "cost", "packagePrice", "hedefMaliyet", "tl("]) {
-      assert.ok(!new RegExp(`\\b${word.replace("(", "\\(")}`).test(src), `${f}: ${word}`);
-    }
+    for (const w of ["unitCost", "cost", "hedefMaliyet", "tl("]) assert.ok(!word(w).test(src), `${f}: ${w}`);
   }
+  // Satır düzenleyicisi ve değişiklik penceresi fiyattan hiç söz etmez (eskisi gibi)
+  for (const f of [linesFile, changeFile]) for (const w of ["price", "packagePrice"]) assert.ok(!word(w).test(read(f)), `${f}: ${w}`);
+  // Sunucudan gelen veride fiyat yok: öneri penceresinin malzeme ve ürün listeleri
+  const lines = read(linesFile);
+  assert.doesNotMatch(code(lines.slice(lines.indexOf("export interface ProposeKit"), lines.indexOf("export interface LineRow"))), /price|cost/i);
+  const sheet = read(sheetFile);
+  assert.doesNotMatch(code(sheet.slice(sheet.indexOf("export interface NewProductKit"), sheet.indexOf("const COPY_FROM"))), /price|cost/i);
+  // Yeni ürün penceresinde satış fiyatı yalnız girdi: boy başına yazılır, okunup gönderilir, gösterilen tutar yok
+  assert.match(sheet, /label="Satış fiyatı \(₺, KDV dahil\)"/);
+  assert.match(sheet, /hint="Biliyorsanız yazın; yönetici onaylarken değiştirebilir\."/);
+  assert.match(sheet, /price: readProposedPrice\(prices\[b\.size\]\)\.value,/);
+  assert.doesNotMatch(sheet, /packagePrice|money\(/);
+  // "Yeni malzeme": paket fiyatı yalnız sunucuya gider, pencere tutar göstermez
+  assert.doesNotMatch(read(pickerFile), /money\(|unitPrice/);
+  // Önerilerim: yalnız bekleyen yeni ürün önerisinde kişinin kendi yazdığı satış fiyatı (menü fiyatı, maliyet değil)
+  const mine = read(mineFile);
+  assert.match(
+    mine,
+    /\{isNew && r\.status === "pending" && r\.proposedPrice !== null \? \(\s+<p className="[^"]*">Önerdiğiniz satış fiyatı: \{money\(r\.proposedPrice\)\}<\/p>\s+\) : null\}/,
+  );
+  assert.equal([...mine.matchAll(/money\(/g)].length, 1, "tek tutar: kişinin önerdiği fiyat");
+  assert.doesNotMatch(mine, /packagePrice/);
+  assert.match(read("src/app/panel/receteler/page.tsx"), /proposedPrice: r\.status === "pending" \? r\.proposedPrice : null,/);
   // Yeni ürünün maliyet ve marjı yalnız yöneticinin onay sayfasında
   assert.match(read("src/app/panel/onaylar/page.tsx"), /await requireAdmin\(\);/);
   // Personelin "Önerilerim"deki reçete listesi maliyetsiz

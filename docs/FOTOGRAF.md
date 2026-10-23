@@ -94,6 +94,8 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 
 ## 5. Claude
 
+- Faturadan paket boyu okuma (Hammaddeler › fiyat onayı, Paraşüt › ürün bağlama) aynı istemciyi, kapıları ve günlük
+  sınırı kullanır ama başka modelle: `claude-haiku-5-5`, PDF belge, yedek model yok ([FATURA-OKUMA.md](FATURA-OKUMA.md)).
 - Model `claude-opus-5-5`, efor `low`, JSON şemalı çıktı (`output_config.format`), base64 görsel. Reddedilen okuma
   Anthropic'in önerdiği yedek modelle sunucuda yeniden denenir (`server-side-fallback-2026-07-01`,
   `fallbacks: "default"`). Deneme başına 20 sn, bir yeniden deneme, toplam en çok 45 sn; `max_tokens` 6000.
@@ -122,11 +124,13 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 | Okumanın maliyet satırı (zaman, tür, kişi, token, tutar) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet kaydı; fotoğraftan ya da fişten bilgi taşımaz) |
 | E-posta ve WhatsApp | yalnız "📷 … fotoğrafı panelde" satırı ve farklı yazılan rakam | fotoğraf ya da adresi hiç gitmez |
 | Kontrol listesinin fotoğrafı (tezgâh, salon, oda) | Vercel Blob (özel depo, Frankfurt); okunmaz, Anthropic'e gitmez | 60 gün (§ 4). Maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der |
+| Faturadan okuma için faturanın PDF'i ya da görseli | Anthropic API (ABD), yalnız o okuma için ([FATURA-OKUMA.md](FATURA-OKUMA.md) § 5) | Anthropic'in politikasına göre. Panelde okunan sonuç (`invoice_readings`) ve PDF'in kendisi: "Faturayı aç"taki gibi faturanın belgesi olarak (`invoice_documents`, okumada ilk kez indirildiyse de; [PARASUT.md](PARASUT.md) 6a) |
 
 Fotoğrafta kasiyerin adı (Z raporu, fiş), satıcının vergi numarası (şahıs şirketinde TC kimlik no olabilir) ya da
 müşteri kartı kullanıldıysa maskeli ad / telefon görünebilir. Okuma, fotoğrafın yurt dışına (Anthropic, ABD)
 gönderilmesi demektir: personele söyleyin; istenmezse **Ayarlar › Fotoğraftan okuma** kapatılır (fotoğraf yine kanıt
-olarak eklenir, yalnız Frankfurt'ta saklanır). Tam yedek o günkü okuma sonuçlarını da içerir (fotoğraf dosyalarını
+olarak eklenir, yalnız Frankfurt'ta saklanır). Aynı anahtar faturadan okumayı da kapatır: şahıs firmasının faturasında
+kişinin adı, TC kimlik numarası ve adresi olur. Tam yedek o günkü okuma sonuçlarını da içerir (fotoğraf dosyalarını
 değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([YEDEK.md](YEDEK.md)).
 
 ## 7. Ortam değişkenleri

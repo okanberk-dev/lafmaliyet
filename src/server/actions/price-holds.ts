@@ -29,10 +29,11 @@ const unitOf = (price: number, size: number) => (size > 0 ? price / size : 0);
 const isUniqueViolation = (e: unknown) => ((e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code) === "23505";
 
 /**
- * Onay bekleyen fiyatı uygular: hammaddenin paket fiyatı ve boyu önerilen olur, "Tahmini" kalkar, fiyat geçmişine
- * "Paraşüt" olarak yazılır (zam uyarısı bundan sonra işler). Hammaddenin fiyatı arada elle değiştiyse önerilen yine
- * yazılır; değiştirilen fiyat "Geri al" için saklanır. Bağlantı öneri anından beri değiştiyse, faturanın kalemi fiyat
- * kapsamından çıktıysa ya da hammaddenin daha yeni bir faturası geldiyse öneri geçersiz sayılır, fiyat yazılmaz.
+ * Onay bekleyen fiyatı uygular: hammaddenin paket fiyatı ve boyu önerilen olur, "Tahmini" kalkar (aynı işlemde: tahmini
+ * fiyatın yerine ilk gerçek fiyat; işlem geçmişine de yazılır), fiyat geçmişine "Paraşüt" olarak yazılır (zam uyarısı
+ * bundan sonra işler). Hammaddenin fiyatı arada elle değiştiyse önerilen yine yazılır; değiştirilen fiyat "Geri al" için
+ * saklanır. Bağlantı öneri anından beri değiştiyse, faturanın kalemi fiyat kapsamından çıktıysa ya da hammaddenin daha
+ * yeni bir faturası geldiyse öneri geçersiz sayılır, fiyat yazılmaz.
  */
 export async function approvePriceHold(id: number) {
   return attempt(async () => {
@@ -98,9 +99,13 @@ export async function approvePriceHold(id: number) {
           prevIsEstimate: ing.isEstimate,
         })
         .where(eq(h.id, cur.id));
-      return { hold: cur, name: ing.name, unit: ing.unit, before: unitOf(ing.packagePrice, ing.packageSize), after: unitOf(cur.packagePrice, cur.packageSize) };
+      return { hold: cur, name: ing.name, unit: ing.unit, before: unitOf(ing.packagePrice, ing.packageSize), after: unitOf(cur.packagePrice, cur.packageSize), wasEstimate: ing.isEstimate };
     });
-    await logActivity(me, "Fiyat onaylandı", `${done.name}: ${bulkPrice(done.before, done.unit)} → ${bulkPrice(done.after, done.unit)} (${sourceText(done.hold)})`);
+    await logActivity(
+      me,
+      "Fiyat onaylandı",
+      `${done.name}: ${bulkPrice(done.before, done.unit)} → ${bulkPrice(done.after, done.unit)} (${sourceText(done.hold)})${done.wasEstimate ? " · tahmini fiyat kalktı" : ""}`,
+    );
     refresh();
     return { name: done.name, unit: done.unit, before: done.before, after: done.after };
   });

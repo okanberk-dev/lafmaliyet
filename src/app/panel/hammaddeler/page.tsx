@@ -10,12 +10,23 @@ import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { ingredientChanges } from "@/lib/calc/price-impact";
 import { num, pct } from "@/lib/format";
-import { factorHint, holdImpact, livePct, suggestedFactor } from "@/lib/price-hold";
+import { readingFits, readingText } from "@/lib/invoice-reading";
+import {
+  evidenceSuggestionText,
+  holdImpact,
+  holdSuggestion,
+  livePct,
+  ratioSuggestionText,
+  sameProductHistory,
+  type HoldSuggestion,
+} from "@/lib/price-hold";
+import { packEvidence } from "@/lib/product-match";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { priceWindowStart } from "@/server/data/price-alerts";
-import { loadPriceHolds } from "@/server/data/price-holds";
+import { loadHoldLines, loadPriceHolds } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
+import { holdReadingState, loadInvoiceReadings, readingKey } from "@/server/invoice-reading/read";
 
 import { waterSource } from "../ayarlar/water-text";
 
@@ -26,6 +37,8 @@ import { ListAnchor } from "./list-anchor";
 import { PriceHolds, type HoldView, type RecentHoldView } from "./price-holds";
 
 export const metadata: Metadata = { title: "Hammaddeler" };
+// Onay bekleyen fiyatın faturasını okuma (belge indirmesi + Claude) bu sayfanın sunucu eylemiyle çalışır
+export const maxDuration = 60;
 
 export default function IngredientsPage() {
   return (
@@ -45,12 +58,17 @@ export default function IngredientsPage() {
 async function IngredientsContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, history, links, holds] = await Promise.all([
+  const [model, history, links, holds, readState] = await Promise.all([
     loadModel(),
     db.select().from(s.ingredientPrices).orderBy(asc(s.ingredientPrices.changedAt), asc(s.ingredientPrices.id)),
     db.select({ id: s.parasutProductLinks.ingredientId, n: count() }).from(s.parasutProductLinks).groupBy(s.parasutProductLinks.ingredientId),
     loadPriceHolds(),
+    holdReadingState(),
   ]);
+  // Bekleyen önerilerin kalemleri (açıklama, aynı ürünün geçmişi) ve saklanan fatura okumaları
+  const [holdLines, readings] = holds.pending.length
+    ? await Promise.all([loadHoldLines([...new Set(holds.pending.map((h) => h.productKey))]), loadInvoiceReadings(holds.pending)])
+    : [[], new Map()];
   const usageMonth = latestSalesMonth(model);
   const usage = usageMonth ? model.ingredientUsage(usageMonth) : new Map<number, number>();
   const histBy = new Map<number, IngredientRow["history"]>();
@@ -78,11 +96,34 @@ async function IngredientsContent() {
     ).map((c) => [c.ingredientId, { pct: c.pct, at: c.changedAt }]),
   );
 
-  // Onay bekleyen fiyatlar: yüzde, çarpan ipucu ve ürün maliyetleri şimdiki fiyata göre (arada elle değişmiş olabilir)
+  // Onay bekleyen fiyatlar: yüzde, öneri ve ürün maliyetleri şimdiki fiyata göre (arada elle değişmiş olabilir). Öneri
+  // kanıttan: adındaki paket boyu, faturanın okunması, ancak aynı ürünün geçmişi varsa çarpan oranı (price-hold.ts)
   const holdViews: HoldView[] = holds.pending.map((h) => {
     const current = h.ingredient.packageSize > 0 ? h.ingredient.packagePrice / h.ingredient.packageSize : 0;
     const proposed = h.packagePrice / h.packageSize;
-    const hint = factorHint(current, proposed);
+    const unit = h.ingredient.unit;
+    const line = holdLines.find((l) => l.invoiceId === h.invoiceId && l.productKey === h.productKey);
+    const evidence = packEvidence({ name: h.productName, description: line?.description ?? null, unit: h.unit, quantity: h.quantity }, unit);
+    const stored = readings.get(readingKey(h.invoiceId, h.productKey)) ?? null;
+    const running = stored?.busy ?? false;
+    const reading = stored?.status === "ok" && stored.result && readingFits(stored.result, unit) ? stored.result : null;
+    const suggestion = holdSuggestion({
+      factor: h.factor,
+      quantity: h.quantity,
+      netTotal: h.netTotal,
+      current,
+      evidence,
+      reading,
+      history: sameProductHistory(holdLines, h, current),
+    });
+    const textCtx = { lineUnit: h.unit, unit, quantity: h.quantity, netTotal: h.netTotal, currentUnit: current };
+    const readingLine = reading ? readingText(reading, textCtx) : null;
+    const suggestionText = (x: HoldSuggestion) =>
+      x.kind === "evidence"
+        ? evidenceSuggestionText(x.evidence!, { lineUnit: h.unit, unit, unitPrice: x.unitPrice, currentUnit: current })
+        : x.kind === "reading"
+          ? readingLine!
+          : ratioSuggestionText(x.hint!, { lineUnit: h.unit, unit, factor: x.factor, unitPrice: x.unitPrice, currentUnit: current });
     return {
       id: h.id,
       ingredientId: h.ingredientId,
@@ -102,8 +143,15 @@ async function IngredientsContent() {
       factor: h.factor,
       last: h.lastUnitPrice !== null && h.lastDate && h.lastSupplier ? { unitPrice: h.lastUnitPrice, date: h.lastDate, supplier: h.lastSupplier } : null,
       impact: holdImpact(model, h.ingredientId, proposed),
-      hint: hint ? { times: hint.times, direction: hint.direction } : null,
-      suggestedFactor: hint ? suggestedFactor(h.factor, hint) : null,
+      estimate: h.ingredient.isEstimate,
+      suggestion: suggestion ? { kind: suggestion.kind, factor: suggestion.factor, text: suggestionText(suggestion) } : null,
+      // Okuma öneri değilse bilgi satırı (aynı çarpanı doğruluyor ya da az emin)
+      reading: readingLine && suggestion?.kind !== "reading" ? { text: readingLine, low: reading!.confidence === "low" } : null,
+      readError: stored?.status === "error" ? stored.error : null,
+      // Kendiliğinden okuma: kanıtı ve okuması olmayan kartta bir kez; başka sekme okuyorsa bekler; okuma kapalıysa düğme yok
+      // Günlük sınırın fotoğraf payına inildiyse kendiliğinden okuma yok, düğme kalır
+      read: readState.state !== "on" ? null : running ? "running" : !stored && !evidence && readState.auto ? "auto" : "manual",
+      hasReading: Boolean(stored && stored.status !== "running"),
     };
   });
   const recentHolds: RecentHoldView[] = holds.recent.map((h) => ({
