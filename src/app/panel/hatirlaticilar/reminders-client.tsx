@@ -1,10 +1,11 @@
 "use client";
 
 import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChartNoAxesColumn, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
-import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import { useMemo, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -107,7 +108,7 @@ export function RemindersClient({
   const [dueFor, setDueFor] = useState<UpcomingItem | null>(null);
   const [removing, setRemoving] = useState<Reminder | null>(null);
   const [day, setDay] = useState<string | null>(null);
-  const [listPending, start] = useTransition();
+  const [listPending, start] = useActionTransition();
   const fabRef = useRef<HTMLButtonElement>(null);
   const fabBlocked = useFabBlocked(fabRef);
 

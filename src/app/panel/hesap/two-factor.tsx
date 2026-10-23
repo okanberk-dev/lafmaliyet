@@ -2,10 +2,11 @@
 
 import { Check, Copy, Download, KeyRound, ShieldCheck, ShieldOff, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { ConfirmPasswordDialog } from "@/components/panel/confirm-password-dialog";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardHeader } from "@/components/ui/card";
@@ -148,7 +149,7 @@ export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; rec
 function SetupDialog({ setup, onClose, onDone }: { setup: Setup; onClose: () => void; onDone: (codes: string[]) => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
 
   function submit(e: FormEvent) {
     e.preventDefault();

@@ -18,13 +18,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useClock } from "@/components/panel/live/clock";
 import { updatePrefs, usePrefs } from "@/components/panel/live/prefs";
 import { pushSupport } from "@/components/panel/live/push-client";
 import { refreshLive, useLive } from "@/components/panel/live/store";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -135,7 +136,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     const r = await pullOrders(0);
     setPulling(false);
     if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: r.error });
-    else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)");
+    else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
   }, []);
 
   const tables = list.filter((o) => o.fulfillment === "table" && o.stage !== "ready").length;
@@ -198,7 +199,7 @@ function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
   if (!data.configured) {
     return (
       <p className="rounded-xl bg-surface px-3 py-2 text-[13px] text-ink-mute ring-1 ring-line">
-        laffogato.net bağlantısı kurulmadı (KARAOKE_SYNC_SECRET): uygulama siparişleri burada görünmez. Karaoke sayacı çalışır.
+        laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez, karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net&apos;ten bakabilir.
       </p>
     );
   }
@@ -244,7 +245,7 @@ async function refreshAfterAction(): Promise<void> {
  * (geçiş başlamadan gelen ikinci dokunuş) gönderilmez. Sonuç bildirimle söylenir, ekran canlı uçtan yenilenir.
  */
 function useStageAction(o: SiteOrder) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [tapped, setTapped] = useState<StageAction | null>(null);
   const busy = useRef(false);
   const advance = (action: StageAction) => {

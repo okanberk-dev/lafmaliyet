@@ -42,7 +42,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { isValidElement, Suspense, type ReactNode } from "react";
 
-import { NAV_FOOTER, NAV_TREE } from "@/components/panel/nav";
+import { NAV_FOOTER, navTreeFor } from "@/components/panel/nav";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
@@ -56,11 +56,15 @@ export const metadata: Metadata = { title: "Yardım" };
 
 // ---------------------------------------------------------------- Menü yolları (kabuktaki adlarla, nav-paths.ts)
 
-/** "Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) · …" */
-const MENU_LAYOUT = NAV_TREE.map((n) => (n.children ? `${n.label} (${n.children.map((c) => c.label).join(", ")})` : n.label)).join(" · ");
-const STAFF_SCREENS = NAV_TREE.flatMap((n): { label: string }[] =>
-  n.children ? n.children.filter((c) => c.roles.includes("staff")) : n.roles.includes("staff") ? [n] : [],
-).map((n) => n.label);
+/**
+ * "Genel bakış · Menü (Ürünler, Hammaddeler, Reçete defteri) · …": kenar çubuğunun rolüne göre gösterdiği ağaç
+ * (navTreeFor), personelin üst düzey "Kasa raporu"su yöneticinin menüsünde sayılmasın
+ */
+const MENU_LAYOUT = navTreeFor("admin")
+  .map((n) => (n.children ? `${n.label} (${n.children.map((c) => c.label).join(", ")})` : n.label))
+  .join(" · ");
+/** Personelin menüsü (tek alt sayfalı grup doğrudan o sayfa) ve profil menüsündeki Hesabım; aynı ekran bir kez */
+const STAFF_SCREENS = [...navTreeFor("staff").flatMap((n): { label: string }[] => n.children ?? [n]).map((n) => n.label), "Hesabım"];
 /** "A, B ve C" */
 const STAFF_LIST = STAFF_SCREENS.length > 1 ? `${STAFF_SCREENS.slice(0, -1).join(", ")} ve ${STAFF_SCREENS.at(-1)}` : (STAFF_SCREENS[0] ?? "");
 
@@ -199,7 +203,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             Bir ürün laffogato.net menüsündeki kalemine bağlıysa satış fiyatı ve menü durumu iki yerde aynı kalır, doğru kaynak sitedir: sitede fiyat değişince ya da kalem
-            “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde göster”i değiştirince önce siteye yazılır, site ulaşılamazsa
+            “Tükendi” olunca panel birkaç saniyede alır; panelde fiyatı, “Menüde aktif”i ya da “QR menüde görünür / gizli” anahtarını değiştirince önce siteye yazılır, site ulaşılamazsa
             kaydedilmez. Eşleştirme <Path href="/panel/urunler" /> › Site menüsü ekranında: ada göre öneriler seçilip bağlanır (hiçbiri kendiliğinden bağlanmaz), bağlanan
             ürün sitenin fiyatını alır. Ad, kategori, reçete ve maliyet eşitlenmez; yeni kalem iki yanda da elle açılır.
           </>
@@ -939,7 +943,7 @@ export default function HelpPage() {
           <CardHeader icon={<Table2 />} title="Excel sayfalarının karşılıkları" description="Menüdeki her ekran ve Excel'deki karşılığı." />
           <CardContent>
             <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-              {NAV_TREE.map((n) => (
+              {navTreeFor("admin").map((n) => (
                 <li key={n.id}>
                   <Well className="h-full px-3 py-2 ring-1 ring-line">
                     <div className="flex min-h-9 items-center gap-3">

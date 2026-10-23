@@ -4,6 +4,7 @@ import { Undo2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -111,6 +112,8 @@ export function ChangeEditor({
         toast.success(`${productName} önerisi geri çekildi`, { description: "Reçete bugünkü hâliyle kaldı." });
       }
       onClose();
+    } catch (e) {
+      toastUnreachable(e);
     } finally {
       setBusy(false);
     }

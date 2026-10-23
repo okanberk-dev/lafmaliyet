@@ -40,9 +40,12 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const model = await loadModel();
   const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
   // Adreste ay yoksa: ayın ilk günlerinde geçen ayın sayımı eksikse geçen ay, değilse bu ay (Türkiye saati)
-  const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) ? ay : defaultCountMonth(new Date(), (m) => model.stockSheet(m).hasData);
-  const prevMonth = shiftMonth(month, -1);
   const isAdmin = user.role === "admin";
+  const requested = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) ? ay : null;
+  // Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir (sunucu da reddeder): başka ay açılıp boşuna sayılmasın
+  const staffMonths = staffCountMonths();
+  const month = requested && (isAdmin || staffMonths.includes(requested)) ? requested : defaultCountMonth(new Date(), (m) => model.stockSheet(m).hasData);
+  const prevMonth = shiftMonth(month, -1);
 
   const counters = await getDb()
     .select({ by: s.stockCounts.countedBy, last: sql<Date | string | null>`max(${s.stockCounts.updatedAt})` })
@@ -100,7 +103,9 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         excel="Sayım"
         description={`${ml} ay sonu sayımı: ayın son günü kapanıştan sonra sayın. Miktarı sayım biriminde yazın (KG, LT, ADET, DİLİM); yarım = 0,5.`}
         // Kaydedilmemiş sayım varken ay geçişi önce sorulur (form ay değişince baştan kurulur)
-        actions={<CountMonthPicker months={[...new Set([...availableMonths(model), model.currentMonth, month])].sort()} value={month} />}
+        actions={
+          <CountMonthPicker months={[...new Set([...(isAdmin ? [...availableMonths(model), model.currentMonth] : staffMonths), month])].sort()} value={month} />
+        }
         tabs={isAdmin ? <SectionTabs section="stok" current="/panel/sayim" /> : undefined}
       />
       <StockCountForm

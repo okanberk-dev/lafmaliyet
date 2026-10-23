@@ -1,10 +1,11 @@
 "use client";
 
 import { ChevronDown, ClipboardList, Undo2 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { RecipeDiff, RecipeList } from "@/components/panel/recipe-diff";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -47,7 +48,7 @@ export const STATUS_TONE: Record<RequestStatus, Tone> = { pending: "amber", appr
 export function MyRequests({ requests }: { requests: MyRequest[] }) {
   const [open, setOpen] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<MyRequest | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
   const waiting = requests.filter((r) => r.status === "pending");
   const waitingNew = waiting.filter((r) => r.kind === "new").length;
 

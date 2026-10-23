@@ -1,9 +1,10 @@
 "use client";
 
 import { CheckCheck, Copy, Store } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -29,7 +30,7 @@ export function PosChecklist({ items }: { items: PosChecklistItem[] }) {
   // yeniden listeye girerse (yeni bir fiyat) yine görünür
   const [done, setDone] = useState<ReadonlyMap<number, string>>(() => new Map());
   const [confirmAll, setConfirmAll] = useState(false);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const visible = useMemo(() => items.filter((i) => done.get(i.productId) !== i.since), [items, done]);
   const groups = groupByCategory(visible);
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { ArrowRight, CheckCircle2, ChevronDown, Eye, Globe, ListChecks, Percent, RotateCcw, SearchX } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, STATUS_TONE } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
@@ -199,7 +200,7 @@ export function BulkEditor({
     });
 
   // Uygulama ve sonuç
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [confirm, setConfirm] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);

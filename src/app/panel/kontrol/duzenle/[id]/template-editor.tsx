@@ -2,9 +2,10 @@
 
 import { AlertTriangle, ArrowDown, ArrowUp, Camera, CircleCheck, ListChecks, Pencil, Plus, RotateCcw, Thermometer, Trash2, Type } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -69,7 +70,7 @@ export function TemplateEditor({ template: t }: { template: TemplateDTO }) {
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState<ItemDTO | "new" | null>(null);
   const [removing, setRemoving] = useState<ItemDTO | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   const save = async (e: FormEvent) => {
     e.preventDefault();

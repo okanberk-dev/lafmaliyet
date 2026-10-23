@@ -9,6 +9,7 @@ import { CommandPaletteKbd } from "@/components/akmanos/command-palette/command-
 import { EASE_OUT, SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { fold } from "@/components/ui/filters";
 import { cn } from "@/lib/utils";
+import { wordHit } from "@/lib/word-hit";
 import type { SearchEntry } from "@/server/data/search";
 
 import { useLocalList } from "./local-list";
@@ -167,7 +168,8 @@ function PaletteDialog({ entries, onClose }: { entries: Entry[]; onClose: () => 
   const { sections, flat, counts, total } = useMemo(() => {
     const q = fold(query).trim().replace(/\s+/g, " ");
     const words = q ? q.split(" ") : [];
-    const hits = words.length ? entries.filter((e) => words.every((w) => e.hay.includes(w))) : entries;
+    // Kısa sözcük yalnız sözcük başında tutar (wordHit): "süt" Paraşüt'ü getirmesin
+    const hits = words.length ? entries.filter((e) => words.every((w) => wordHit(e.hay, w))) : entries;
     const counts: Record<Group, number> = { ekran: 0, urun: 0, hammadde: 0, tedarikci: 0 };
     for (const e of hits) counts[e.group]++;
     const pool = category ? hits.filter((e) => e.group === category) : hits;

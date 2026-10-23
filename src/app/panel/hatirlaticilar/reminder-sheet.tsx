@@ -2,9 +2,10 @@
 
 import { BellRing, Check, ChevronRight, Minus, Plus, Repeat, Sparkles, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useId, useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fold, matches, SearchField } from "@/components/ui/filters";
@@ -250,7 +251,7 @@ function FormSheet({
   onDelete: (r: Reminder) => void;
 }) {
   const formId = useId();
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [title, setTitle] = useState(initial.title);
   const [kind, setKind] = useState<ReminderKind>(initial.kind);
   const [kindTouched, setKindTouched] = useState(Boolean(reminder || initial.preset !== "Özel"));
@@ -484,7 +485,7 @@ function FormSheet({
 const PERIOD_LABEL: Record<string, string> = { aylik: "aylık", haftalik: "haftalık", yillik: "yıllık", gunluk: "günlük" };
 
 function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow[]; today: string; existing: Set<string>; onBack: () => void; onClose: () => void }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [days, setDays] = useState<Record<number, string>>({});
   const [added, setAdded] = useState<Record<number, string>>({});
   const [q, setQ] = useState("");
@@ -604,7 +605,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
 /** Ödenmemiş faturanın vadesi */
 export function DueDateSheet({ item, onClose }: { item: { sourceId: number; title: string; amount: number | null; dueDate: string }; onClose: () => void }) {
   const formId = useId();
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [date, setDate] = useState(item.dueDate);
   return (
     <Sheet

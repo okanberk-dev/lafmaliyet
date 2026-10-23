@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { businessDate } from "@/lib/cash-report";
 import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
@@ -37,6 +38,12 @@ export default function TodayPage() {
   );
 }
 
+/** "23 Ekim Cuma"; gece yarısından 05:00'e kadar iş gününün adıyla: "23 Ekim Cuma gecesi" */
+function dayTitle(now: Date): string {
+  const day = businessDate(now);
+  return day === todayTR(now) ? longDateTR(day) : `${longDateTR(day)} gecesi`;
+}
+
 async function TodayContent() {
   const user = await requireUser();
   const data = await loadToday(user);
@@ -47,7 +54,8 @@ async function TodayContent() {
   const changeAt = data.cafe.karaoke?.changeAt;
   return (
     <>
-      <PageHeader eyebrow="Günlük" title="Bugün" description={`${longDateTR(todayTR(now))} · ${summary.headline}`} />
+      {/* Gece 05:00'e kadar iş günü dündür (kasa, kontrol listeleri, işler ona bakar): başlık da o günü söyler */}
+      <PageHeader eyebrow="Günlük" title="Bugün" description={`${dayTitle(now)} · ${summary.headline}`} />
       {/* Saat sınırları: karaoke oturumu ve kontrol listelerinin açılış / son saati (satır 08:00'de "Yapılacak" olsun) */}
       <TodayRefresh at={nextRefreshAt(now, [...(changeAt ? [changeAt] : []), ...checklistBoundaries(data.facts.checklists)])} renderedAt={data.renderedAt} />
       {/* Geniş ekranda solda Yapılacaklar, sağda kartlar (Kasa sayfasının düzeni); telefonda tek sütun, bu sırayla */}

@@ -32,10 +32,13 @@ export function IngredientPicker({
   kit,
   label,
   className,
+  taken,
 }: {
   value: number | null;
   onChange: (id: number) => void;
   kit: RecipeKit;
+  /** Reçetenin öteki satırlarındaki malzemeler: listede "reçetede var" diye işaretlenir (aynı malzeme iki kez yazılmasın) */
+  taken?: ReadonlySet<number>;
   /** Ekran okuyucu etiketi ("1. satır malzemesi") */
   label: string;
   className?: string;
@@ -61,6 +64,7 @@ export function IngredientPicker({
         <PickerDialog
           kit={kit}
           value={value}
+          taken={taken}
           onPick={(id) => {
             onChange(id);
             setOpen(false);
@@ -82,7 +86,19 @@ function moveFocus(list: HTMLElement | null, from: Element | null, dir: 1 | -1):
   return next ?? null;
 }
 
-function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: number | null; onPick: (id: number) => void; onClose: () => void }) {
+function PickerDialog({
+  kit,
+  value,
+  taken,
+  onPick,
+  onClose,
+}: {
+  kit: RecipeKit;
+  value: number | null;
+  taken?: ReadonlySet<number>;
+  onPick: (id: number) => void;
+  onClose: () => void;
+}) {
   const formId = useId();
   const searchId = useId();
   const [q, setQ] = useState("");
@@ -219,6 +235,7 @@ function PickerDialog({ kit, value, onPick, onClose }: { kit: RecipeKit; value: 
                             <span className="min-w-0 flex-1 break-words">
                               {i.name}
                               {i.active ? "" : " (pasif)"}
+                              {taken?.has(i.id) && !selected ? <span className="ml-1.5 text-xs font-medium text-warn">reçetede var</span> : null}
                             </span>
                             <span className="shrink-0 text-xs text-ink-mute">{i.unit}</span>
                             {selected ? <Check size={15} className="shrink-0 text-ink" aria-hidden="true" /> : null}

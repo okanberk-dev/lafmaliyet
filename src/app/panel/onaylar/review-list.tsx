@@ -3,10 +3,11 @@
 import { AlertTriangle, Check, ChevronDown, ClipboardCheck, ExternalLink, History, Info, PackagePlus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { RecipeDiff, RecipeList } from "@/components/panel/recipe-diff";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -112,7 +113,7 @@ type RejectTarget = { id: number; kind: RequestKind; productName: string; size: 
  * satış fiyatı yazılır, "Onayla ve ürünü ekle" ürünü açar. "Reddet" isteğe bağlı bir notla.
  */
 export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | NewProductItem)[]; recent: RecentItem[]; env: NewProductEnv }) {
-  const [busy, startTransition] = useTransition();
+  const [busy, startTransition] = useActionTransition();
   const [rejecting, setRejecting] = useState<RejectTarget | null>(null);
   const [reason, setReason] = useState("");
   const [conflict, setConflict] = useState<{ item: ReviewItem; current: RecipeSnapshot } | null>(null);

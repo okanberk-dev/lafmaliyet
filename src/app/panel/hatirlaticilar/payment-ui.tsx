@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
+import { toastUnreachable } from "@/components/ui/action-error";
 import { DotList } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
 import { dateTR, money } from "@/lib/format";
@@ -175,6 +176,8 @@ export function usePaymentActions(hide: (key: string) => void) {
     startTransition(async () => {
       try {
         await run();
+      } catch (e) {
+        toastUnreachable(e);
       } finally {
         setInFlight((s) => {
           const next = new Set(s);

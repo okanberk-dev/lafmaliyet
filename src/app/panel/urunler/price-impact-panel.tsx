@@ -2,9 +2,10 @@
 
 import { ChevronDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -53,7 +54,7 @@ export function PriceImpactPanel({
   month: string;
   loss?: PriceLoss | null;
 }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [showRest, setShowRest] = useState(false);
   const ups = changes.filter((c) => c.pct > 0);

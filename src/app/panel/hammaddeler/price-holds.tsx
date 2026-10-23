@@ -3,9 +3,10 @@
 import { ChevronDown, ScanText, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useId, useOptimistic, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -136,7 +137,7 @@ async function undo(id: number, name: string) {
  * kararları altta, geri alınabilir (bildirim kaybolduktan sonra da). Zil, Genel bakış ve sabah e-postası buraya getirir.
  */
 export function PriceHolds({ pending, recent }: { pending: HoldView[]; recent: RecentHoldView[] }) {
-  const [busy, start] = useTransition();
+  const [busy, start] = useActionTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState<HoldView | null>(null);
   const [showRecent, setShowRecent] = useState(false);
@@ -277,7 +278,7 @@ function HoldItem({
   const up = x.pct === null || x.pct > 0;
   const unitLabel = x.lineUnit ?? "birim";
   const top = x.impact.top[0];
-  const [reading, startReading] = useTransition();
+  const [reading, startReading] = useActionTransition();
   const router = useRouter();
   const auto = useSyncExternalStore(
     subscribeAutoReads,
@@ -285,7 +286,7 @@ function HoldItem({
     () => undefined,
   );
   // Okuma bitince sayfa geçişle tazelenir: yeni kart gelene kadar "Fatura okunuyor…" kalır (düğme bir an görünmesin)
-  const [refreshing, startRefresh] = useTransition();
+  const [refreshing, startRefresh] = useActionTransition();
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -302,7 +303,7 @@ function HoldItem({
     autoReadHold(x.id, () => {
       if (mounted.current) startRefresh(() => router.refresh());
     });
-  }, [x.id, x.read, router]);
+  }, [x.id, x.read, router, startRefresh]);
 
   // Başka sekme ya da yönetici okuyorsa (ya da sayfa okuma sürerken yenilendiyse) kart okuma bitene kadar 8 sn'de bir
   // tazelenir; yarıda kalan okuma 90 sn sonra "okunuyor" olmaktan çıkar, tazeleme de durur. Bu sekme okuyorsa gerekmez:

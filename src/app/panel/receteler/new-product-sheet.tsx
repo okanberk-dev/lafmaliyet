@@ -4,6 +4,7 @@ import { Check, Copy, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FilterChip, useQueryState } from "@/components/ui/filters";
@@ -135,6 +136,8 @@ function NewProductSheet({ kit, product, initialCategory, onClose }: { kit: Prop
         description: `${priced ? "Yönetici fiyatı kontrol edip onaylayınca" : "Yönetici satış fiyatını yazıp onaylayınca"} ürün reçete defterine eklenir. Sonucu “Önerilerim”de görürsünüz.`,
       });
       onClose();
+    } catch (e) {
+      toastUnreachable(e);
     } finally {
       setBusy(false);
     }

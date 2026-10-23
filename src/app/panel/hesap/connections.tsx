@@ -2,9 +2,10 @@
 
 import { ChevronDown, Copy, PlugZap } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter, CardHeader, Well } from "@/components/ui/card";
@@ -19,7 +20,7 @@ import { revokeAllConnections, revokeConnection } from "@/server/actions/mcp";
  */
 export function ConnectionsCard({ rows, calls, mcpUrl }: { rows: ConnectionView[]; calls: CallView[]; mcpUrl: string }) {
   const [confirm, setConfirm] = useState<ConnectionView | "all" | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
 
   function run() {
     const target = confirm;

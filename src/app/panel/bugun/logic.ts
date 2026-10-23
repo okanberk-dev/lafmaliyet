@@ -619,14 +619,18 @@ export function dayTasks(f: DayFacts): DayTask[] {
 
 /**
  * Ekrandaki bölümler: Şimdi (sorunlu ve yapılacak), Sonra (zamanı gelmemiş), Tamamlananlar; her biri günün sırasıyla.
- * Sıradaki iş: ilk sorunlu, yoksa ilk yapılacak.
+ * Sıradaki iş: ilk sorunlu, yoksa ilk yapılacak. Açık bir kontrol listesi varken sabahtan beri geciken liste ("Gecikti")
+ * sıradaki iş olmaz: gece kapanışta önce süresi işleyen Kapanış listesi, gecikmiş Açılış listesi arkasından.
  */
 export function splitTasks(tasks: DayTask[]): { now: DayTask[]; later: DayTask[]; done: DayTask[]; next: DayTask | null } {
+  const isList = (t: DayTask) => t.key.startsWith("liste-") && t.key !== "liste-dun";
+  const openList = tasks.find((t) => t.status === "todo" && isList(t));
+  const urgent = tasks.find((t) => t.status === "warn" && !(openList && isList(t) && t.badge === "Gecikti"));
   return {
     now: tasks.filter((t) => t.status === "warn" || t.status === "todo"),
     later: tasks.filter((t) => t.status === "later"),
     done: tasks.filter((t) => t.status === "done"),
-    next: tasks.find((t) => t.status === "warn") ?? tasks.find((t) => t.status === "todo") ?? null,
+    next: urgent ?? openList ?? tasks.find((t) => t.status === "warn") ?? tasks.find((t) => t.status === "todo") ?? null,
   };
 }
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { ChevronDown, Undo2 } from "lucide-react";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { keepScroll } from "@/components/ui/filters";
@@ -20,7 +21,7 @@ import { splitSupplier, type IgnoredBill } from "./rules";
  */
 export function DeletedBills({ bills }: { bills: IgnoredBill[] }) {
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, startTransition] = useActionTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [list, hide] = useOptimistic(bills, (state: IgnoredBill[], id: string) => state.filter((b) => b.externalId !== id));
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { startTransition, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { toastUnreachable } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -211,6 +212,9 @@ export function InvoiceDialog({
         setBusyText("Belge yükleniyor…");
         uploaded = await uploadDocument(res.data.id, attachment);
       }
+    } catch (e) {
+      toastUnreachable(e);
+      return;
     } finally {
       setBusy(false);
       setBusyText(null);

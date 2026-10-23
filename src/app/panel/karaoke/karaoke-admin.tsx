@@ -1,10 +1,10 @@
 "use client";
 
 import { BarChart3, ExternalLink, Grid3x3, History, Plug, RefreshCw } from "lucide-react";
-import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { refreshLive } from "@/components/panel/live/store";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -51,7 +51,7 @@ export function KaraokeAdmin({
   /** Sayfanın çizildiği an ("Bugün", "Dün" etiketleri için) */
   nowMs: number;
 }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const now = nowMs;
 
   function syncNow() {
@@ -116,8 +116,9 @@ export function KaraokeAdmin({
                       href={`${siteAdminBase}/${encodeURIComponent(s.externalId)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-ink-mute hover:text-ink"
-                      aria-label="Sitenin panelinde aç"
+                      // Telefonda parmakla dokunulabilsin (bar ekranındaki düğmenin ölçüsü); ekran okuyucu hangi rezervasyon olduğunu duysun
+                      className="inline-flex items-center justify-center rounded-lg text-ink-mute hover:text-ink pointer-coarse:size-11"
+                      aria-label={`${s.customerName || "Rezervasyonu"} sitenin panelinde aç`}
                       title="Sitenin panelinde aç"
                     >
                       <ExternalLink size={14} />

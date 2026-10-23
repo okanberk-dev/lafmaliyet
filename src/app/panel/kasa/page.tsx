@@ -223,6 +223,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       me={user.name}
       storage={storage.available}
       reading={ai.state}
+      reported={report ? { amount: report.cashOut, note: report.cashOutNote } : null}
     />
   ) : null;
   const yesterday = addDays(today, -1);

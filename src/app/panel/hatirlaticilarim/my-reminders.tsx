@@ -1,11 +1,12 @@
 "use client";
 
 import { AlarmClock, Check, ChevronDown, Clock, MoreHorizontal, Pencil, Plus, Repeat, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { DeviceAlerts } from "@/components/panel/live/device-alerts";
 import { refreshLive } from "@/components/panel/live/store";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -32,7 +33,7 @@ export function MyReminders({ role, open, done }: { role: Role; open: UserRemind
   const [now, setNow] = useState(() => new Date());
   const [editing, setEditing] = useState<UserReminderDTO | "new" | null>(null);
   const [deleting, setDeleting] = useState<UserReminderDTO | null>(null);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [quick, setQuick] = useState("");
   const [quickTime, setQuickTime] = useState("");
   const [quickDay, setQuickDay] = useState<"today" | "tomorrow">("today");

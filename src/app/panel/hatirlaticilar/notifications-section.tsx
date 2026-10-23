@@ -1,9 +1,10 @@
 "use client";
 
 import { BellRing, ChevronDown, Eye, KeyRound, Mail, Plus, Send, Trash2 } from "lucide-react";
-import { useId, useOptimistic, useRef, useState, useTransition } from "react";
+import { useId, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -55,7 +56,7 @@ function dedupeLog(log: LogRow[]): LogRow[] {
  * gönderim ayarları, deneme, e-posta önizlemesi ve son gönderimler.
  */
 export function NotificationsSection({ email, settings, recipients, log, className }: { email: EmailStatus; settings: NotifySettings; recipients: Recipient[]; log: LogRow[]; className?: string }) {
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [addr, setAddr] = useState("");
   const [name, setName] = useState("");
   const [from, setFrom] = useState(settings.from ?? "");

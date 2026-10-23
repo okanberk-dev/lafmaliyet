@@ -44,6 +44,7 @@ export function CashOutsCard({
   me,
   storage,
   reading,
+  reported = null,
 }: {
   date: string;
   today: boolean;
@@ -56,6 +57,8 @@ export function CashOutsCard({
   me: string;
   storage: boolean;
   reading: ReadingState;
+  /** O günün raporunda fişsiz yazılan "Gün içinde çıkan" (varsa): kart "para çıkmadı" demesin */
+  reported?: { amount: number; note: string | null } | null;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   // Her açılış yeni bir pencere (önceki taslak kalmasın); `shown` açık pencerenin anahtarı (kapalıysa null)
@@ -150,7 +153,13 @@ export function CashOutsCard({
           })}
         </ul>
       ) : (
-        <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">{today ? "Bugün kasadan para çıkmadı." : "Bu gün kasadan para çıkmadı."}</p>
+        <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">
+          {reported && reported.amount > 0
+            ? `Fişi eklenmiş çıkış yok; raporda ${money(reported.amount)}${reported.note ? ` (${reported.note})` : ""} yazılı.`
+            : today
+              ? "Bugün kasadan para çıkmadı."
+              : "Bu gün kasadan para çıkmadı."}
+        </p>
       )}
       {canEdit ? (
         <div className="flex flex-wrap gap-2 border-t border-line px-5 py-4">

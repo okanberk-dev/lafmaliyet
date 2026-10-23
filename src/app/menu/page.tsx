@@ -100,7 +100,7 @@ async function MenuContent({ searchParams }: { searchParams: PageProps<"/menu">[
         ) : null}
         {menu.categories.length === 0 ? (
           <p className="py-12 text-center text-ink-mute">
-            Menüde gösterilecek ürün yok. Ürün kartında “QR menüde göster” açık ve ürün aktif olmalı (müşteri bu durumda laffogato.net menüsüne gider).
+            Menüde gösterilecek ürün yok. Ürün kartındaki anahtar “QR menüde görünür” olmalı ve ürün aktif olmalı (müşteri bu durumda laffogato.net menüsüne gider).
           </p>
         ) : null}
         {menu.categories.map((c) => {
