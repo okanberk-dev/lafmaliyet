@@ -171,6 +171,7 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
     ["1 No.lu KDV", "vergi"],
     ["Ekim 2026 KDV", "vergi"],
     ["KDV 2. taksit", "vergi"],
+    ["KDV ve damga vergisi", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), true, title);
   }
@@ -189,6 +190,9 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
     ["Tevkifatlı KDV", "vergi"],
     ["KDV tevkifatı", "diger"],
     ["Sorumlu sıfatıyla KDV beyannamesi", "vergi"],
+    // Beyannamenin yalnız damga vergisi KDV ödemesi değildir
+    ["KDV damga vergisi", "vergi"],
+    ["1 No.lu KDV damga vergisi", "vergi"],
   ] as const) {
     assert.equal(isVatReminder({ title, kind }), false, title);
   }
@@ -227,6 +231,10 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["Damga vergisi ve KDV2", "vergi"],
     ["Damga + KDV2", "vergi"],
     ["Damga ve 2 No.lu KDV", "vergi"],
+    ["Damga vergisi ve Eylül KDV2", "vergi"],
+    // Damgayı dışarıda bırakan tahakkuk
+    ["KDV2 (damga hariç)", "vergi"],
+    ["KDV2 (damga ayrı)", "vergi"],
   ] as const) {
     assert.equal(isVatWithholdingReminder({ title, kind }), true, title);
   }
@@ -249,6 +257,7 @@ test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfat
     ["KDV2 damga vergisi ve gecikme zammı", "vergi"],
     ["KDV2 damga vergisi (gecikme zammı dahil)", "vergi"],
     ["KDV2 damga vergisi Eylül ve Ekim", "vergi"],
+    ["Damga vergisi (KDV2 ve Muhtasar)", "vergi"],
     ["Beyanname 2 numaralı şube", "odeme"],
     ["Aidat 2 No.lu dükkan", "odeme"],
     ["Elektrik 2 numaralı sayaç", "odeme"],

@@ -40,8 +40,10 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
 3. **KDV** (adında “KDV” ya da “katma değer” geçen hatırlatıcı; kira, maaş ve SGK türleri hariç): *KDV tahmini*. KDV
    tevkifatı ayrı bir ödemedir: asıl KDV'nin dönemini almaz, devredeni sıfırlamaz. KDV-2 hatırlatıcısı adında
    “tevkifat”, “2 No.lu”, “KDV2” ya da “sorumlu sıfatıyla” ile birlikte KDV geçen hatırlatıcıdır; KDV'siz yalnız
-   “2 No.lu beyanname”. Yalnız damga vergisi (“KDV2 damga vergisi”) ayrı ödemedir, tahakkukla birlikte yazılan
-   (“KDV2 + damga vergisi”, “damga dahil”) KDV-2'dir; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
+   “2 No.lu beyanname”. Yalnız damga vergisi (“KDV2 damga vergisi”, “KDV damga vergisi”) ayrı ödemedir, ne KDV ne
+   KDV-2 hatırlatıcısıdır; tahakkukla birlikte yazılan (“KDV2 + damga vergisi”, “Damga vergisi ve Eylül KDV2”, “damga
+   dahil”) ya da damgayı dışarıda bırakan (“KDV2 (damga hariç)”) KDV-2'dir. Başlık serbest metindir: en sağlamı
+   tahakkuku “KDV2 Eylül”, damgayı ayrı “KDV2 damga vergisi” diye yazmaktır; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
    beyannamesi”, “Tevkifat beyannamesi” (muhtasar da böyle anılır) ve “2 No.lu dükkan” diğer hatırlatıcıdır.
    KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü), 1 No.lu KDV'deki gibi:
    - tutarı yazılıysa her gününde o tutar girer ve dönemi alır;
