@@ -2,6 +2,7 @@ import {
   ArrowUpRight,
   Bell,
   CalendarCheck,
+  ChartNoAxesColumn,
   ClipboardList,
   Coffee,
   CupSoda,
@@ -24,6 +25,7 @@ import {
   Table2,
   Tag,
   Timer,
+  TrendingUp,
   UserPlus,
   Undo2,
   UserRound,
@@ -155,12 +157,34 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         a: (
           <>
             <Path href="/panel/urunler" /> ekranında satış fiyatı hücresini değiştirip Enter&apos;a basın ya da ürün kartında fiyatı değiştirin. Kartta fiyat simülatörü ile önce
-            deneyebilirsiniz. Ürün laffogato.net menüsüne bağlıysa (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin
-            tarihini güncelleyin, kasadaki (ModPOS) fiyatı da elle değiştirin.
+            deneyebilirsiniz. Birçok ürüne birden zam için <Path href="/panel/urunler" /> › Fiyatlar › Toplu değiştir: kategoriyi ve boyu seçin, yüzde ya da tutar
+            yazın (ör. %10, 5 ₺&apos;ye yukarı yuvarlanır); önizlemede her ürünün yeni fiyatı, maliyet oranı ve ayda kâra etkisi görünür, istemediğinizi çıkarın ya da
+            fiyatını elle yazın. Toplu değişiklik Fiyatlar › Geçmiş&apos;ten geri alınabilir (sonradan değişen ürüne dokunulmaz). Ürün laffogato.net menüsüne bağlıysa
+            (adın yanındaki küre) fiyat önce sitede değişir; sonra sitede Ayarlar › Vergi&apos;den fiyat listesinin tarihini güncelleyin. Kasadaki (ModPOS) fiyatı elle
+            değiştirin: değişen her fiyat Fiyatlar › Kasaya işle listesine girer.
           </>
         ),
         icon: Tag,
-        links: [{ href: "/panel/urunler", label: "Ürünler" }],
+        links: [
+          { href: "/panel/urunler", label: "Ürünler" },
+          { href: "/panel/urunler/fiyatlar", label: "Toplu fiyat" },
+        ],
+      },
+      {
+        id: "kasa-fiyat",
+        q: "Kasadaki (ModPOS) fiyatlar",
+        a: (
+          <>
+            Panelde, toplu ya da laffogato.net&apos;te değişen satış fiyatı ModPOS&apos;a kendiliğinden geçmez. Panel bunu unutmaz: fiyatı değişen her ürün{" "}
+            <Path href="/panel/urunler" /> › Fiyatlar › Kasaya işle listesine kasadaki adı, eski ve yeni fiyatıyla girer; zil de &quot;Kasada değişecek N
+            fiyat&quot; der. Kasada değiştirdikçe işaretleyin, işaretlenen listeden düşer (bildirimdeki Geri al geri getirir); liste açıkken fiyat yeniden
+            değiştiyse işaretlenmez, yeni fiyatıyla listede kalır. Metni kopyala ile listeyi
+            WhatsApp&apos;a yapıştırabilirsiniz. Fiyat kasadaki fiyata geri dönerse (ör. toplu değişiklik geri alındı) kendiliğinden düşer. Yeni ürün listeye girmez;
+            kasaya zaten elle eklenir. Ürün kartının Fiyat geçmişi kartı da kasadaki eski fiyatı gösterir.
+          </>
+        ),
+        icon: Receipt,
+        links: [{ href: "/panel/urunler/fiyatlar?sekme=kasa", label: "Kasaya işle" }],
       },
       {
         id: "site-menusu",
@@ -343,6 +367,23 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/harcamalar", label: "Aylık harcamalar" }],
       },
       {
+        id: "fotograf",
+        q: "Fiş ve Z raporunu fotoğraftan doldurmak",
+        a: (
+          <>
+            <Path href="/panel/kasa" /> ekranında Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Turuncu alanları fişle
+            karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin fotoğrafını çekin: tutar, KDV
+            ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına yaklaşık 0,03 $); aç / kapat
+            ve bu ayın tutarı Ayarlar › Fotoğraftan okuma&apos;da. Fotoğraflar kasa için 6 ay, fiş için 13 ay saklanır.
+          </>
+        ),
+        icon: Receipt,
+        links: [
+          { href: "/panel/kasa", label: "Kasa raporu" },
+          { href: "/panel/ayarlar#foto", label: "Fotoğraftan okuma" },
+        ],
+      },
+      {
         id: "tedarikci",
         q: "Tedarikçinin bilgileri ve ödemesi",
         a: (
@@ -373,6 +414,51 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Undo2,
         links: [{ href: "/panel/hatirlaticilar#son-odenenler", label: "Son ödenenler" }],
+      },
+      {
+        id: "nakit-plani",
+        q: "Önümüzdeki haftalarda param yeter mi?",
+        a: (
+          <>
+            <Path href="/panel/hatirlaticilar" /> ekranının başındaki Nakit planı önümüzdeki 6 haftayı hafta hafta gösterir: gelecek para (son 4 haftanın kasa
+            raporlarından günlük satış, laffogato.net online), vade gününde ödenmemiş faturalar, hatırlatıcılar, maaş, SGK, KDV ve hatırlatıcısı olmayan sabit
+            giderler. Önce Bakiyeyi gir ile bankadaki ve kasadaki paranın bugünkü toplamını yazın; plan bu tutardan başlar, en sıkışık günü ve para
+            yetmeyecekse hangi gün yetmeyeceğini söyler. Bakiye girilmezse bugün elinizde olması gereken en az parayı yazar. Tutarı belli olanlar (fatura,
+            tutarı girilmiş hatırlatıcı) kesindir, ötekiler “tahmini” yazar: bir tahmini kesinleştirmek için Ödemeler&apos;e tutarıyla hatırlatıcı ekleyin, plan
+            onun gününü ve tutarını kullanır. Faturası ayrıca gelen bir sabit gideri Tahmine katılanlar&apos;dan kapatın, iki kez sayılmasın. Her varsayım
+            ekrandaki Nasıl hesaplandı kartında rakamlarıyla yazar.
+          </>
+        ),
+        icon: ChartNoAxesColumn,
+        links: [{ href: "/panel/hatirlaticilar/nakit", label: "Nakit planı" }],
+      },
+      {
+        id: "kdv-tahmini",
+        q: "Bu ay ne kadar KDV ödeyeceğim?",
+        a: (
+          <>
+            Nakit planındaki KDV tahmini kartı, önceki ayın satışlarındaki KDV&apos;den (kafe %10, karaoke %20, laffogato.net) alış faturalarındaki KDV&apos;yi düşer;
+            sonuç ayın 28&apos;inde plana girer. Eksi çıkarsa ödeme beklenmez, fark sonraki aya devreder. Bu bir tahmindir; kesin tutar muhasebecinizin
+            beyannamesindedir. Muhasebeciniz tutarı söyleyince{" "}
+            <Path href="/panel/hatirlaticilar" /> ekranındaki KDV hatırlatıcısına yazın, plan onu kullanır; ödendi deyince tutar silinir, çünkü her ay farklıdır.
+          </>
+        ),
+        icon: Percent,
+        links: [{ href: "/panel/hatirlaticilar/nakit#kdv", label: "KDV tahmini" }],
+      },
+      {
+        id: "zam-etkisi",
+        q: "Zamlar bana ayda kaça mal oluyor?",
+        a: (
+          <>
+            <Path href="/panel/urunler" /> ekranındaki Hammadde zamları kartı, son 30 günde fiyatı artan malzemelerin ayda kaç lira kâr götürdüğünü yazar: her ürünün
+            maliyet artışı (fire payı dahil; Zayi &amp; ikram kayıtları sayılmaz) son satış ayındaki adediyle çarpılır; adetler Ayarlar&apos;daki ayda açık gün
+            sayısına çevrilir. Toplamı Genel bakış&apos;taki uyarıda, zilde ve sabah e-postasında da yazar; ürün kartı o ürünün payını gösterir. Satışlar&apos;a ürün
+            satış raporu yüklenmemişse yalnız birim maliyet farkı görünür; ürüne eşleşmeyen satışlar sayılmaz. Ucuzlayan malzemenin aylık kazancı yeşil yazar.
+          </>
+        ),
+        icon: TrendingUp,
+        links: [{ href: "/panel/urunler#zamlar", label: "Hammadde zamları" }],
       },
       {
         id: "hesap",

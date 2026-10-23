@@ -2,6 +2,7 @@
  * Tarayıcıda belge işleri: fotoğrafı JPEG'e küçültme, POST /api/faturalar/{id}/belge ile yükleme, önizleme için
  * indirme. Kurallar (ne küçültülür, hata metinleri) document-rules.ts'te; burası yalnızca tarayıcı API'lerini kullanır.
  */
+import { compressImage } from "@/lib/photo-compress";
 import type { DocumentMeta } from "@/server/documents";
 
 import {
@@ -9,10 +10,10 @@ import {
   documentKind,
   documentUrl,
   fileNameFromDisposition,
-  fitWithin,
   isRetryable,
   JPEG_QUALITY,
   jpegName,
+  MAX_IMAGE_SIDE,
   sizeError,
   uploadErrorText,
   uploadPlan,
@@ -20,37 +21,8 @@ import {
 
 export type Prepared = { ok: true; file: File; compressed: boolean } | { ok: false; error: string };
 
-/** Görseli çözer; iOS ve Android'de çekilen fotoğrafın yönü (EXIF) tarayıcıda zaten uygulanır */
-async function decodeImage(url: string): Promise<HTMLImageElement> {
-  const img = new Image();
-  img.decoding = "async";
-  img.src = url;
-  await img.decode();
-  return img;
-}
-
-/** En uzun kenarı 2000px'i aşmayan JPEG; saydam alan beyaz olur */
-async function toJpeg(file: Blob): Promise<Blob> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await decodeImage(url);
-    const { width, height } = fitWithin(img.naturalWidth, img.naturalHeight);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("canvas");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
-    if (!blob) throw new Error("toBlob");
-    return blob;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+/** En uzun kenarı 2000px'i aşmayan JPEG (fatura yazısı okunur kalır); saydam alan beyaz olur */
+const toJpeg = (file: Blob) => compressImage(file, { maxEdge: MAX_IMAGE_SIDE, quality: JPEG_QUALITY });
 
 /** Seçilen dosyayı yüklemeye hazırlar: PDF ve küçük JPEG olduğu gibi, diğer fotoğraflar küçültülerek */
 export async function prepareDocument(file: File): Promise<Prepared> {

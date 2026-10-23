@@ -1,5 +1,8 @@
 "use client";
 
+import { Camera } from "lucide-react";
+
+import { cashOutLabel, type CashOutLine } from "@/lib/cash-outs";
 import { CASH_TOLERANCE, computeCash, diffKind, diffText, paymentLines, type CashReportFields } from "@/lib/cash-report";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,8 +29,11 @@ function Line({ label, value, strong, tone, sub }: { label: string; value: strin
   );
 }
 
-/** Raporun dökümü: Z raporu, kasa, kart, not (personelin sonucu ve yöneticinin gün ayrıntısı aynı görünür) */
-export function CashBreakdown({ report }: { report: CashReportFields }) {
+/**
+ * Raporun dökümü: Z raporu, kasa, kart, not (personelin sonucu ve yöneticinin gün ayrıntısı aynı görünür). Günün
+ * kasadan çıkan satırları "Gün içinde çıkan"ın altında (fişli olanlar kamera işaretiyle).
+ */
+export function CashBreakdown({ report, cashOuts = [] }: { report: CashReportFields; cashOuts?: (CashOutLine & { id: number; photoId: number | null })[] }) {
   const c = computeCash(report);
   const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
   return (
@@ -51,7 +57,20 @@ export function CashBreakdown({ report }: { report: CashReportFields }) {
         <h3 className="border-b border-line pb-1 text-[13px] font-semibold text-ink-soft">Kasa (nakit)</h3>
         <Line label="Açılış (devir)" value={money(report.openingCash)} />
         <Line label="+ Nakit satış" value={money(report.cash)} />
-        {report.cashOut ? <Line label="− Gün içinde çıkan" value={money(report.cashOut)} sub={report.cashOutNote} /> : null}
+        {report.cashOut || cashOuts.length ? <Line label="− Gün içinde çıkan" value={money(report.cashOut)} sub={report.cashOutNote} /> : null}
+        {cashOuts.length ? (
+          <ul className="mb-1 space-y-0.5 border-l-2 border-line pl-2.5 text-xs text-ink-mute">
+            {cashOuts.map((o) => (
+              <li key={o.id} className="flex items-baseline justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className="truncate">{cashOutLabel(o)}</span>
+                  {o.photoId ? <Camera size={12} className="shrink-0" aria-label="Fişli" /> : null}
+                </span>
+                <span className="shrink-0 tabular">{money(o.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <Line label="= Olması gereken" value={money(c.expectedCash)} strong />
         <Line label="Sayılan" value={money(report.countedCash)} strong />
         <Line label="Fark" value={diffText(c.cashDiff)} strong tone={c.kind === "short" ? "bad" : c.kind === "over" ? "warn" : "good"} />

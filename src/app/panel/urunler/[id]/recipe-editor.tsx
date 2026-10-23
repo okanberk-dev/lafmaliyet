@@ -58,8 +58,9 @@ import { priceProduct } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import type { Settings, Size } from "@/lib/calc/types";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS, SIZE_LABELS, SIZES } from "@/lib/constants";
-import { num, pct, tl, tlUnit } from "@/lib/format";
-import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
+import { monthLabel as monthTitle, num, pct, tl, tlUnit } from "@/lib/format";
+import { priceReminder } from "@/lib/prices/pos";
+import { monthLocativeTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { createProduct, deleteProduct, saveRecipe } from "@/server/actions/products";
 
@@ -79,6 +80,7 @@ import {
   sameRate,
 } from "../logic";
 import { priceText } from "../price-text";
+import { PriceHistoryCard, type ProductPriceHistoryInfo } from "./price-history-card";
 import { SiteMenuCard, type ProductSiteInfo } from "./site-menu-card";
 
 interface IngredientOption {
@@ -163,6 +165,19 @@ function sliderRange(price: number, suggested: number, trial: number | null) {
   return { min, max };
 }
 
+/**
+ * Zam kutusundaki aylık etki: "Bu zam ayda ≈ 1.240 ₺ kâr götürüyor (Eylül'de 310 adet). " Satış ayı standart aya
+ * ölçeklendiyse (süren ay) adet "ayda" yazılır; satış verisi yoksa boş (price-loss.ts).
+ */
+function impactMonthText(pi: { monthly?: number | null; monthlyQty?: number | null; lossBasis?: { month: string; scale: number } | null; drivers: unknown[] }): string {
+  const b = pi.lossBasis;
+  if (!b || pi.monthly == null || pi.monthlyQty == null) return "";
+  if (!(pi.monthlyQty > 0)) return `${monthLocativeTR(b.month)} satılmadı. `;
+  if (pi.monthly < 1) return "";
+  const qty = b.scale === 1 ? `${monthLocativeTR(b.month)} ${num(pi.monthlyQty)} adet` : `${monthTitle(b.month)} satışlarından ayda ≈ ${num(pi.monthlyQty)} adet`;
+  return `${pi.drivers.length > 1 ? "Bu zamlar" : "Bu zam"} ayda ≈ ${tl(pi.monthly)} kâr götürüyor (${qty}). `;
+}
+
 type SideTab = "dokum" | "dene" | "satis";
 
 export function RecipeEditor({
@@ -180,6 +195,7 @@ export function RecipeEditor({
   water,
   priceImpact = null,
   site = null,
+  priceHistory = null,
 }: {
   product: {
     id: number;
@@ -216,9 +232,16 @@ export function RecipeEditor({
     needsPrice: boolean;
     acknowledged: boolean;
     drivers: { name: string; pct: number }[];
+    /** Zammın bu üründen ayda götürdüğü kâr ve ayda satılan adet (price-loss.ts); satış verisi yoksa null */
+    monthly?: number | null;
+    monthlyQty?: number | null;
+    /** Aylık tutarın satış ayı ve standart aya ölçeği (1: ay olduğu gibi) */
+    lossBasis?: { month: string; scale: number } | null;
   } | null;
   /** laffogato.net menü bağlantısı (docs/SITE-MENU.md); yoksa kart gösterilmez */
   site?: ProductSiteInfo | null;
+  /** Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md); okunamadıysa kart gösterilmez */
+  priceHistory?: ProductPriceHistoryInfo | null;
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
@@ -431,15 +454,16 @@ export function RecipeEditor({
       saved.showOnMenu !== sent.showOnMenu ? `QR menüde göster de ${saved.showOnMenu ? "açıldı" : "kapandı"}` : null,
       saved.active !== sent.active ? `Menüde aktif de ${saved.active ? "açıldı" : "kapandı"}` : null,
     ].filter(Boolean);
-    const siteNote = saved.site
-      ? [
-          saved.site.price ? PRICE_PUSH_REMINDER : null,
-          saved.site.visibility ? `Sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"} oldu.` : null,
-          forced.length ? `${forced.join(", ")} (sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"}; iki yer aynı kalsın diye).` : null,
-        ]
-          .filter(Boolean)
-          .join(" ")
-      : null;
+    // Fiyat değiştiyse elle yapılacaklar: sitede fiyat listesinin tarihi, kasada (ModPOS) fiyat (Fiyatlar › Kasaya işle)
+    const reminder = priceReminder({ site: !!saved.site?.price, posPending: saved.posPending });
+    const siteNote =
+      [
+        reminder,
+        saved.site?.visibility ? `Sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"} oldu.` : null,
+        saved.site && forced.length ? `${forced.join(", ")} (sitede ${saved.active && saved.showOnMenu ? "Satışta" : "Tükendi"}; iki yer aynı kalsın diye).` : null,
+      ]
+        .filter(Boolean)
+        .join(" ") || null;
     toast.success(`${name.trim()} kaydedildi`, {
       description: `${lines.length} malzeme · maliyet ${tl(econ.cost, 2)} · satış ${tl(saved.price, 2)}${
         fireInput.rate !== null ? ` · özel fire ${firePct(fireInput.rate)}` : ""
@@ -617,6 +641,7 @@ export function RecipeEditor({
               {pct(priceImpact.ratioBefore, 0)} → {pct(priceImpact.ratioAfter, 0)}
             </span>
             .{" "}
+            {impactMonthText(priceImpact)}
             {priceImpact.needsPrice
               ? priceImpact.acknowledged
                 ? "Fiyatı korumayı seçtiniz."
@@ -1029,6 +1054,13 @@ export function RecipeEditor({
                 dirty={dirty}
                 onAdopted={adopt}
               />
+            </motion.div>
+          ) : null}
+
+          {/* Satış fiyatı geçmişi; kasada (ModPOS) eski fiyat duruyorsa "Kasada değiştirdim" */}
+          {priceHistory ? (
+            <motion.div {...rise(4, reduce)}>
+              <PriceHistoryCard product={{ id: product.id, name: product.name, size: product.size }} history={priceHistory} />
             </motion.div>
           ) : null}
         </div>

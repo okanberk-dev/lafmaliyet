@@ -2,12 +2,14 @@ import "server-only";
 
 import { and, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 
+import { sitePriceRecord } from "@/lib/prices/history";
 import { changeText, planMenuSync, planSummary, type BrokenLink, type LinkedRow, type MenuSyncPlan, type UnlinkedRow } from "@/lib/site-menu/plan";
 import { pullFailureMessage, type PushFailure } from "@/lib/site-menu/push";
 import { parseSiteMenuList, SiteMenuFormatError, type SiteMenuItem, type SiteMenuList } from "@/lib/site-menu/schema";
 import type { SiteMenuSlot } from "@/lib/site-menu/slot";
 import { logActivity } from "@/server/actions/log";
 import { getDb, schema as s } from "@/server/db";
+import { recordPriceChange } from "@/server/prices/record";
 import { signedSiteFetch, siteLinkSecret, siteUrl } from "@/server/site-link";
 
 /**
@@ -189,15 +191,21 @@ export async function loadLinkedRows(tx: Pick<Tx, "select">): Promise<LinkedRow[
   return rows.flatMap((r) => asLinkedRow(r) ?? []);
 }
 
-/** Planı yazar; yalnız hâlâ aynı kaleme ve yuvaya bağlı satırlara (arada bağlantı değiştiyse dokunulmaz) */
+/**
+ * Planı yazar; yalnız hâlâ aynı kaleme ve yuvaya bağlı satırlara (arada bağlantı değiştiyse dokunulmaz). Sitenin
+ * değiştirdiği fiyat, satıra yazıldıysa, satış fiyatı geçmişine ve kasanın (ModPOS) listesine de girer (docs/FIYATLAR.md).
+ */
 export async function applyPlan(tx: Tx, plan: MenuSyncPlan, now: Date): Promise<void> {
   const same = (productId: number, siteMenuId: string, slot: SiteMenuSlot) =>
     and(eq(s.products.id, productId), eq(s.products.siteMenuId, siteMenuId), eq(s.products.siteMenuSlot, slot));
   for (const c of plan.changes) {
-    await tx
+    const updated = await tx
       .update(s.products)
       .set({ ...c.set, updatedAt: now })
-      .where(same(c.productId, c.siteMenuId, c.slot));
+      .where(same(c.productId, c.siteMenuId, c.slot))
+      .returning({ id: s.products.id });
+    const record = sitePriceRecord(c, updated.length > 0, SITE_ACTOR.name);
+    if (record) await recordPriceChange(tx, record, now);
   }
   for (const u of plan.unlinked) {
     await tx.update(s.products).set({ siteMenuId: null, siteMenuSlot: null, updatedAt: now }).where(same(u.productId, u.siteMenuId, u.slot));

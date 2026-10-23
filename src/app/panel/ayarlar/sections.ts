@@ -1,4 +1,4 @@
-import { Droplets, Globe, HardDriveDownload, History, Percent, QrCode, Ruler, Tags, Timer, Users, type LucideIcon } from "lucide-react";
+import { Droplets, Globe, HardDriveDownload, History, Percent, QrCode, Ruler, ScanText, Tags, Timer, Users, type LucideIcon } from "lucide-react";
 
 /**
  * Ayarlar sayfasının bölümleri: kenardaki gezinme bu sırayla listelenir, her kart `id` olarak bunu taşır.
@@ -17,6 +17,8 @@ export const SETTINGS_SECTIONS = [
   { id: "isler", label: "Günlük işler", icon: Timer },
   // laffogato.net bağlantılarının durumu (karaoke, menü, siparişler, online satışlar) ve sitenin paneli
   { id: "site", label: "laffogato.net", icon: Globe },
+  // Z raporu, POS fişi ve kasadan çıkan fişlerin fotoğraftan okunması (Claude): aç / kapat, günlük sınır, tutar
+  { id: "foto", label: "Fotoğraftan okuma", icon: ScanText },
   { id: "yedek", label: "Yedek", icon: HardDriveDownload },
 ] as const satisfies readonly { id: string; label: string; icon: LucideIcon }[];
 

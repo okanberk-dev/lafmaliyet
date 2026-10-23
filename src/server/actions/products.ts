@@ -13,6 +13,7 @@ import { loadModel, loadSettings } from "@/server/data/dataset";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
 import { insertProduct } from "@/server/data/product-create";
 import { getDb, schema as s } from "@/server/db";
+import { recordPriceChange } from "@/server/prices/record";
 import { applyPushed, pushSaleChange } from "@/server/site-menu/push";
 
 import { logActivity } from "./log";
@@ -26,29 +27,42 @@ const zSize = z.enum(["M", "L", "Tek"], { message: "Boy seçin" });
  * maliyet daha da artarsa uyarı geri gelir (isAcknowledged).
  *
  * Ürün laffogato.net menüsüne bağlıysa fiyat önce siteye yazılır (docs/SITE-MENU.md); site kabul etmezse fiyat
- * değişmez ve hata döner. Dönen `price` yazılan fiyattır (sitenin kuruşu), `site` fiyatın sitede de değiştiği.
+ * değişmez ve hata döner. Dönen `price` yazılan fiyattır (sitenin kuruşu), `site` fiyatın sitede de değiştiği,
+ * `posPending` kasada (ModPOS) değiştirilecek fiyat kaldığı (Fiyatlar › Kasaya işle; docs/FIYATLAR.md).
+ *
+ * `source`: fiyat geçmişindeki kaynak. Hammadde zamları kartındaki "Fiyatı X yap" iki dayanakta da "suggestion"
+ * gönderir: `ackAlert` yalnız "zammın payı"nda verilir, hedef orana çekilen fiyat da öneridir. Fiyat hücresi ve
+ * önerinin Geri al'ı elle ("manual").
  */
-export async function updateProductPrice(id: number, price: number, ackAlert = false) {
+export async function updateProductPrice(id: number, price: number, ackAlert = false, source: "manual" | "suggestion" = "manual") {
   return attempt(async () => {
     const me = await requireAdmin();
     const p = zMoney.min(0, "Fiyat negatif olamaz").parse(price);
     const ack = z.boolean().parse(ackAlert);
+    // Zammın payı her zaman öneridir
+    const from = ack ? "suggestion" : z.enum(["manual", "suggestion"]).parse(source);
     const db = getDb();
     const [before] = await db.select().from(s.products).where(eq(s.products.id, id));
     if (!before) throw new UserError("Ürün bulunamadı");
     const desired = { price: p, active: before.active, showOnMenu: before.showOnMenu };
     const push = await pushSaleChange(me, before, desired, "fiyat değişmedi");
     const now = new Date();
-    let written = desired;
-    if (push.kind === "pushed") {
-      written = await db.transaction(async (tx) => {
-        const final = await applyPushed(tx, push, before, desired, now);
+    // Fiyat, fiyat geçmişi ve kasanın durumu tek işlemde (yerel yazım da: geçmiş fiyatsız kalmasın)
+    const { written, posPending } = await db.transaction(async (tx) => {
+      let final = desired;
+      if (push.kind === "pushed") {
+        final = await applyPushed(tx, push, before, desired, now);
         await tx.update(s.products).set({ ...final, updatedAt: now }).where(eq(s.products.id, id));
-        return final;
-      });
-    } else {
-      await db.update(s.products).set({ price: p, updatedAt: now }).where(eq(s.products.id, id));
-    }
+      } else {
+        await tx.update(s.products).set({ price: p, updatedAt: now }).where(eq(s.products.id, id));
+      }
+      const pos = await recordPriceChange(
+        tx,
+        { productId: id, before: before.price, after: final.price, source: from, onSite: push.kind === "pushed" && push.price, changedBy: me.name },
+        now,
+      );
+      return { written: final, posPending: pos.posPending };
+    });
     if (ack) {
       // Maliyet fiyata bağlı değil: güncellemeden sonra okunması fark etmez
       const cost = (await loadModel()).products.find((x) => x.product.id === id)?.cost;
@@ -61,10 +75,10 @@ export async function updateProductPrice(id: number, price: number, ackAlert = f
     await logActivity(
       me,
       "Satış fiyatı",
-      `${before.name} ${before.size}: ${tl(before.price)} → ${tl(written.price)}${ack ? " (zam önerisi)" : ""}${push.kind === "pushed" ? " (sitede de)" : ""}`,
+      `${before.name} ${before.size}: ${tl(before.price)} → ${tl(written.price)}${from === "suggestion" ? " (zam önerisi)" : ""}${push.kind === "pushed" ? " (sitede de)" : ""}`,
     );
     refresh();
-    return { price: written.price, site: push.kind === "pushed" && push.price };
+    return { price: written.price, site: push.kind === "pushed" && push.price, posPending };
   });
 }
 
@@ -114,9 +128,9 @@ export async function createProduct(input: z.input<typeof productSchema> & { cop
     const me = await requireAdmin();
     const data = productSchema.parse(input);
     const copyFromId = z.number().int().positive().nullish().parse(input.copyFromId) ?? null;
-    // Aynı ad + boy denetimi, kopyalama, kategoriden zayi oranı ve sıra: personelin yeni ürün önerisinin onayıyla
-    // ortak yardımcıda (src/server/data/product-create.ts)
-    const result = await getDb().transaction((tx) => insertProduct(tx, data, { copyFromId }));
+    // Aynı ad + boy denetimi, kopyalama, kategoriden zayi oranı, sıra ve fiyat geçmişinin ilk satırı: personelin yeni
+    // ürün önerisinin onayıyla ortak yardımcıda (src/server/data/product-create.ts)
+    const result = await getDb().transaction((tx) => insertProduct(tx, data, { copyFromId, changedBy: me.name }));
     await logActivity(me, "Yeni ürün", `${data.name} ${data.size}${copyFromId ? ` (${result.lines} malzemelik reçete kopyalandı)` : ""}`);
     refresh();
     /** Kopyalamada neyin geldiği, kopyasızda kategoriden gelen zayi oranı: bildirimde söylenir (sessizce taşınmasın) */
@@ -219,7 +233,13 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
           })),
         );
       }
-      return written;
+      // Fiyat değiştiyse geçmişe ve kasanın (ModPOS) listesine (kuruşu aynıysa yazılmaz)
+      const pos = await recordPriceChange(
+        tx,
+        { productId: data.productId, before: before.price, after: written.price, source: "manual", onSite: push.kind === "pushed" && push.price, changedBy: me.name },
+        now,
+      );
+      return { ...written, posPending: pos.posPending };
     });
     const site = push.kind === "pushed" ? { price: push.price, visibility: push.visibility } : null;
     await logActivity(
@@ -230,7 +250,10 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
       }`,
     );
     refresh();
-    /** Yazılan satış alanları (site "Tükendi" derse QR menüde göster de kapanır) ve sitede neyin değiştiği */
+    /**
+     * Yazılan satış alanları (site "Tükendi" derse QR menüde göster de kapanır), sitede neyin değiştiği ve kasada
+     * (ModPOS) değiştirilecek fiyat kaldığı (posPending; bildirim "Kasaya işle" der)
+     */
     return { ...sale, site };
   });
 }

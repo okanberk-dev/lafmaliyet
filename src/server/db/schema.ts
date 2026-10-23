@@ -143,6 +143,13 @@ export const products = pgTable(
     siteMenuId: text("site_menu_id"),
     /** Bu satır sitedeki hangi fiyat: M = priceMinor (tek boyda tek fiyat), L = priceMinorL */
     siteMenuSlot: text("site_menu_slot", { enum: ["M", "L"] }),
+    /**
+     * Kasada (ModPOS) hâlâ duran eski fiyat: panelde ya da sitede fiyat değişince kasa elle güncellenene kadar dolu kalır
+     * ("Fiyatlar › Kasaya işle"). Boşsa kasa panelle aynı sayılır. Fiyat kasadaki fiyata geri dönerse kendiliğinden boşalır.
+     */
+    posStalePrice: doublePrecision("pos_stale_price"),
+    /** Kasanın panelden geri kaldığı an (işlenmemiş ilk değişiklik) */
+    posStaleSince: timestamp("pos_stale_since", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
   (t) => [
@@ -170,6 +177,34 @@ export const recipeItems = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("recipe_items_product_idx").on(t.productId), index("recipe_items_ingredient_idx").on(t.ingredientId)],
+);
+
+/** Satış fiyatı geçmişi: her fiyat değişikliğinde bir satır (panel, toplu, site, yeni ürün). Ayrıntı: docs/FIYATLAR.md */
+export const productPrices = pgTable(
+  "product_prices",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Önceki fiyat (TL, KDV dahil); yeni üründe boş */
+    priceBefore: doublePrecision("price_before"),
+    price: doublePrecision("price").notNull(),
+    source: text("source", { enum: ["manual", "suggestion", "bulk", "undo", "site", "create"] }).notNull(),
+    /** Panelin değişikliği laffogato.net'e de yazıldı */
+    onSite: boolean("on_site").notNull().default(false),
+    /** Aynı toplu değişikliğin (ve geri almasının) satırları; uuid */
+    batchId: text("batch_id"),
+    /** Toplu kuralın özeti ("+%10 · 5 ₺'ye yukarı · Espresso Bazlı") */
+    note: text("note"),
+    changedBy: text("changed_by"),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("product_prices_product_idx").on(t.productId, t.changedAt),
+    index("product_prices_changed_idx").on(t.changedAt),
+    index("product_prices_batch_idx").on(t.batchId),
+  ],
 );
 
 // ---------------------------------------------------------------- Aylar & satışlar
@@ -445,7 +480,11 @@ export const expenseCategories = pgTable("expense_categories", {
   createdAt: createdAt(),
 });
 
-/** Aylık harcama kayıtları: ödenen tutar gider sayılır (KDV ayrılmaz) */
+/**
+ * Aylık harcama kayıtları: ödenen tutar gider sayılır (KDV ayrılmaz). Kasadan çıkan bir fişten yazılan kayıt o satıra
+ * (`cashOutId`) ve fişin fotoğrafına (`photoId`) bağlıdır; tutarı ve tarihi Kasa raporu'nda düzeltilir. Bağ bu yönde:
+ * db:reset harcama kayıtlarını CASCADE ile boşaltır, kasadan çıkanlar kalır (docs/FOTOGRAF.md).
+ */
 export const expenseEntries = pgTable(
   "expense_entries",
   {
@@ -461,8 +500,19 @@ export const expenseEntries = pgTable(
     createdBy: text("created_by"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Fişin fotoğrafı (kasadan çıkan satırıyla aynı fotoğraf) */
+    photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
+    /** Fişteki toplam KDV: yalnız bilgi (tutar KDV dahil kalır; KDV tahmini perakende fişin KDV'sini düşmez) */
+    vat: doublePrecision("vat"),
+    /** Bu kaydı yazan kasadan çıkan satırı */
+    cashOutId: integer("cash_out_id").references(() => cashOuts.id, { onDelete: "set null" }),
   },
-  (t) => [index("expense_entries_date_idx").on(t.date), index("expense_entries_category_idx").on(t.categoryId)],
+  (t) => [
+    index("expense_entries_date_idx").on(t.date),
+    index("expense_entries_category_idx").on(t.categoryId),
+    uniqueIndex("expense_entries_photo_uq").on(t.photoId),
+    uniqueIndex("expense_entries_cash_out_uq").on(t.cashOutId),
+  ],
 );
 
 /** Gelir-Gider tablosunda elle girilen ya da üzerine yazılan hücreler */
@@ -959,6 +1009,58 @@ export const cashReports = pgTable(
   (t) => [uniqueIndex("cash_reports_date_uq").on(t.date)],
 );
 
+/**
+ * Raporla birlikte gönderilen Z raporu ve banka POS fişi fotoğrafları (kanıt). Yalnız eklenir: rapor yeniden
+ * gönderilince eski fotoğraflar bağlı kalır; rapor silinince bağlar da silinir, fotoğraf 30 gün daha saklanır.
+ */
+export const cashReportPhotos = pgTable(
+  "cash_report_photos",
+  {
+    id: serial("id").primaryKey(),
+    reportId: integer("report_id")
+      .notNull()
+      .references(() => cashReports.id, { onDelete: "cascade" }),
+    photoId: integer("photo_id")
+      .notNull()
+      .references(() => photos.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("cash_report_photos_photo_uq").on(t.photoId), index("cash_report_photos_report_idx").on(t.reportId)],
+);
+
+/**
+ * Gün içinde kasadan çıkan para, satır satır (market fişi, buz, tamirci; patrona ya da bankaya teslim). Rapor akşam
+ * girilmeden önce de eklenir; akşamki raporun "Gün içinde kasadan çıkan" tutarı bunlardan dolar (rapor yine tek toplamı
+ * saklar). Alışveriş satırı Aylık harcamalar'a da yazılabilir: o kayıt expense_entries.cash_out_id ile buna bağlanır.
+ */
+export const cashOuts = pgTable(
+  "cash_outs",
+  {
+    id: serial("id").primaryKey(),
+    /** Kasanın iş günü (YYYY-MM-DD) */
+    date: text("date").notNull(),
+    kind: text("kind", { enum: ["harcama", "teslim"] }).notNull().default("harcama"),
+    /** Kasadan çıkan tutar (> 0, KDV dahil) */
+    amount: doublePrecision("amount").notNull(),
+    /** Alışverişte yer (ör. Migros), teslimde kime */
+    store: text("store"),
+    /** Ne alındı (ör. süt, buz) */
+    description: text("description"),
+    receiptDate: text("receipt_date"),
+    receiptNo: text("receipt_no"),
+    /** Fişteki toplam KDV: yalnız bilgi (KDV tahmini perakende fişin KDV'sini düşmez) */
+    vat: doublePrecision("vat"),
+    docType: text("doc_type", { enum: ["fis", "e_arsiv", "fatura", "yok"] }).notNull().default("yok"),
+    photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("cash_outs_date_idx").on(t.date), uniqueIndex("cash_outs_photo_uq").on(t.photoId)],
+);
+
 // ---------------------------------------------------------------- Zayi ve ikram
 /**
  * Personelin gün içinde girdiği zayi (atılan, dökülen, bozulan) ve ikram (ödenmez: müşteriye, personele, tadım)
@@ -989,4 +1091,76 @@ export const wasteEntries = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("waste_entries_date_idx").on(t.date)],
+);
+
+// ---------------------------------------------------------------- Fotoğraflar ve fotoğraftan okuma
+/**
+ * Panelde çekilen fotoğraflar (Z raporu, banka POS fişi, kasadan çıkan fiş; kontrol listeleri). Dosya özel Vercel
+ * Blob deposunda (yerelde .data/photos) durur, burada yalnız anahtarı: dosya yalnız /api/foto/[id]'den, yetki
+ * denetlenerek verilir; Blob adresi hiçbir yerde görünmez. Her yükleme bağlanmamış başlar ve 2 günde silinir; onu
+ * kullanan kayıt keepPhoto ile bağlar (kasa 180, fiş 400 gün). Süresi dolanları sabah işi siler (docs/FOTOGRAF.md).
+ */
+export const photos = pgTable(
+  "photos",
+  {
+    id: serial("id").primaryKey(),
+    /** "kasa-z" | "kasa-pos" | "fis" | "kontrol" (src/lib/photo-rules.ts; yeni tür migration istemez) */
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "fis", "kontrol"] }).notNull(),
+    /** Depodaki yol, ör. "fis/2026/10/<uuid>.jpg" (rastgele, üzerine yazılmaz) */
+    storageKey: text("storage_key").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** Yükleyenin adı (kullanıcı sonra silinse de okunur) */
+    createdByName: text("created_by_name"),
+    createdAt: createdAt(),
+    /** Bu andan sonra silinir; null: süresiz */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Bir kayda bağlandığı an (null: bağlanmamış; yalnız yükleyen ve yönetici görür) */
+    linkedAt: timestamp("linked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("photos_storage_key_uq").on(t.storageKey),
+    index("photos_expires_idx").on(t.expiresAt),
+    index("photos_created_by_idx").on(t.createdBy, t.createdAt),
+  ],
+);
+
+/**
+ * Fotoğraftan okuma (Claude) çağrıları: maliyet günlüğü, günlük sınırın sayacı ve sunucuda saklanan okuma. `result`
+ * doğrulanmış ham okumadır (yalnız başarılıda); ekrandaki "fotoğraftan farklı" karşılaştırması bundan yapılır, istemcinin
+ * gönderdiği okumaya güvenilmez. Görüntü ve istem saklanmaz; hata metni en çok 300 karakter.
+ */
+export const aiCalls = pgTable(
+  "ai_calls",
+  {
+    id: serial("id").primaryKey(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** "kasa-z" | "kasa-pos" | "fis" */
+    feature: text("feature").notNull(),
+    /** İstenen model */
+    model: text("model").notNull(),
+    /** Yanıtı veren model (yedek model çalıştıysa farklı) */
+    servedModel: text("served_model"),
+    status: text("status", { enum: ["running", "ok", "refusal", "incomplete", "invalid", "error"] }).notNull(),
+    /** src/server/ai/run.ts AiErrorCode */
+    errorCode: text("error_code"),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    /** Yedek model (server-side fallback) çalıştı */
+    fallback: boolean("fallback").notNull().default(false),
+    ms: integer("ms"),
+    stopReason: text("stop_reason"),
+    requestId: text("request_id"),
+    result: jsonb("result"),
+    error: text("error"),
+  },
+  (t) => [index("ai_calls_at_idx").on(t.at), index("ai_calls_photo_idx").on(t.photoId)],
 );

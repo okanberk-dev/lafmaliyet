@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { dailyOutcome, digestStep, reminderStep, type DailyStep, type JobOutcome, type StepResult } from "@/lib/job-health";
+import { dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { capped, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { syncKaraoke } from "@/server/karaoke/sync";
@@ -10,14 +11,17 @@ import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
+import { cleanupPhotos } from "@/server/storage/photos";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
 // Paraşüt'ten gelen yeni faturalar). Paraşüt eşitlemesi bir saat önce ayrı bir işte çalışır (/api/cron/parasut);
 // o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
-// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md). Her çalışma ve adımlarının sonucu job_runs'a yazılır
-// (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler.
+// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md) ve süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md).
+// Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
+// çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: kuyruk en geç 55 sn'de biter
+// (src/server/jobs/capped.ts).
 export const maxDuration = 60;
 
 /** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
@@ -28,6 +32,8 @@ function siteStep(r: { status: string; error?: string; results?: { month: string
 }
 
 export async function GET(request: NextRequest) {
+  // Zaman bütçesinin başı: işlevin 60 sn'si istekle başlar
+  const jobStart = Date.now();
   const denied = await rejectUnlessCron(request);
   if (denied) return denied;
   const runId = await startJobRun("gunluk");
@@ -50,20 +56,31 @@ export async function GET(request: NextRequest) {
   }
   // Kişisel hatırlatıcı bildirimi, karaoke ve menü eşitlemesi, online satışlar sabah e-postasını bekletmez, bozamaz;
   // her biri kendi hatasını yakalar, biri bozulsa öteki çalışır
+  // Süresi dolan fotoğraflar: en çok 100 adet, kendi sınırında (en çok 8 sn, kuyruğun 55 sn'sini aşmadan)
+  const photosTask = () => {
+    const deadlineAt = tailStepDeadline(jobStart);
+    return capped(
+      cleanupPhotos({ limit: 100, deadlineAt }).catch((e: Error) => ({ error: e.message })),
+      deadlineAt - Date.now() + 500,
+      { error: "süre doldu" },
+    );
+  };
   const extras = async () => {
-    const [reminders, karaoke, menu, sales] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       syncKaraoke("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteMenu("cron").catch((e: Error) => ({ status: "error" as const, error: e.message })),
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
+      photosTask(),
     ]);
-    const steps: Record<Exclude<DailyStep, "sync" | "digest">, StepResult> = {
+    const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
       menu: siteStep(menu),
       sales: siteStep(sales),
+      photos: photosStep(photos),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status }, steps };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos }, steps };
   };
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {

@@ -202,9 +202,11 @@ export function usePaymentActions(hide: (key: string) => void) {
       } else {
         const r = await markReminderDone(item.sourceId, item.projected ? item.dueDate : undefined);
         if (!r.ok) return void toast.error(r.error);
-        const { next, prev } = r.data;
+        const { next, prev, amountCleared } = r.data;
+        // Tekrarlı KDV hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi (geri al geri yazar)
+        const nextText = next ? (amountCleared ? `Sıradaki tarih ${dateTR(next)}; KDV tutarı her ay değiştiği için silindi.` : `Sıradaki tarih ${dateTR(next)}.`) : "Tek seferlikti; hatırlatıcı kapandı.";
         toast.success(`${item.title} ödendi`, {
-          description: `${next ? `Sıradaki tarih ${dateTR(next)}.` : "Tek seferlikti; hatırlatıcı kapandı."} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
+          description: `${nextText} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
           duration: 8000,
           action: undo(() => restoreReminder(item.sourceId, prev)),
         });

@@ -20,11 +20,12 @@ import {
   SearchX,
   SlidersHorizontal,
   Sparkles,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -32,7 +33,7 @@ import { useCalmMotion } from "@/components/ui/motion";
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { EASE_OUT, SPRING_SWAP } from "@/components/akmanos/lib/motion-ease";
 import { Badge, StatusBadge } from "@/components/ui/badge";
-import { Button, IconLink } from "@/components/ui/button";
+import { Button, ButtonLink, IconLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { clearQuery, FilterBar, FilterChip, matches, SearchField, useQueryState, useQueryText } from "@/components/ui/filters";
 import { NumberInput, Select } from "@/components/ui/form";
@@ -45,7 +46,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import type { Size } from "@/lib/calc/types";
 import { SIZE_LABELS, SIZES } from "@/lib/constants";
 import { num, pct, tl } from "@/lib/format";
-import { PRICE_PUSH_REMINDER } from "@/lib/site-menu/push";
+import { priceReminder } from "@/lib/prices/pos";
 import type { SiteMarker } from "@/lib/site-menu/view";
 import { cn, slugify } from "@/lib/utils";
 import { updateProductPrice } from "@/server/actions/products";
@@ -53,6 +54,7 @@ import { updateProductPrice } from "@/server/actions/products";
 import { compareBy, LIST_QUERY_KEY, menuAverages, productHref, STATUS_CHIPS, statusChips } from "./logic";
 import { FilterSheet, FilterSheetButton, FilterSummaryLine, SHEET_CHIP, SheetSection, SheetToggle } from "./filter-sheet";
 import { filterSummary } from "./filter-text";
+import { bulkHref, productSearchText } from "./fiyatlar/logic";
 import { NewProductDialog } from "./new-product";
 import { priceText } from "./price-text";
 
@@ -152,8 +154,8 @@ function categoryIcon(category: string): LucideIcon {
 const sizeLabel = (s: string) => SIZE_LABELS[s as Size] ?? s;
 
 // Aramada boyun kodu da (M) tabloda görünen adı da (Medium) eşleşir; ürün notu ("varsayıldı") ve site işareti
-// ("sitede", "bağlı değil") da aranır
-const searchText = (r: ProductRow) => `${r.name} ${r.size} ${sizeLabel(r.size)} ${r.category} ${r.note ?? ""} ${r.site?.text ?? ""}`;
+// ("sitede", "bağlı değil") da aranır. Toplu değiştir de aynı metinde arar: "Toplu fiyat" listenin gösterdiği ürünlerle açılır
+const searchText = (r: ProductRow) => productSearchText({ ...r, siteText: r.site?.text });
 
 /** Site işaretinin rengi ve ikonu: bağlı bilgi mavisi, sorunlu kırmızı / turuncu, bağlı değil soluk */
 const SITE_MARK: Record<SiteMarker["kind"], { icon: LucideIcon; tone: string; badge: "blue" | "gray" | "red" | "amber" }> = {
@@ -297,11 +299,12 @@ function PriceCell({ row, className }: { row: ProductRow; className?: string }) 
     const res = await updateProductPrice(row.id, v);
     setSaving(false);
     if (res.ok) {
-      // Siteye bağlı üründe yazılan fiyat sitenin kuruşudur
+      // Siteye bağlı üründe yazılan fiyat sitenin kuruşudur; kasada (ModPOS) değişecekse Kasaya işle listesine girdi
       const written = res.data.price;
       setLast(written);
       setValue(priceText(written));
-      toast.success(`${row.name} ${row.size}: ${tl(last, 2)} → ${tl(written, 2)}`, res.data.site ? { description: PRICE_PUSH_REMINDER, duration: 12_000 } : undefined);
+      const reminder = priceReminder(res.data);
+      toast.success(`${row.name} ${row.size}: ${tl(last, 2)} → ${tl(written, 2)}`, reminder ? { description: reminder, duration: res.data.site ? 12_000 : 8_000 } : undefined);
     } else {
       toast.error(res.error);
       setValue(priceText(last));
@@ -444,6 +447,7 @@ export function ProductsTable({
   const [creating, setCreating] = useState<string | null>(null);
   // Telefonda süzgeçler alttan açılan pencerede
   const [sheet, setSheet] = useState(false);
+  const router = useRouter();
   // Satırlar yalnızca kullanıcı sayfa ya da sıra değiştirince yumuşakça belirir (ilk çizimde değil)
   const [interacted, setInteracted] = useState(false);
 
@@ -569,6 +573,10 @@ export function ProductsTable({
     showInactive && "Pasifler dahil",
   ]);
   const clearSheet = () => clearQuery(["kategori", "boy", "durum", "pasif"]);
+  // Görünen ürünlerle Fiyatlar › Toplu değiştir (kategori, boy, arama, pasifler; durum süzgeci orada yok). Arama yalnız
+  // pasiflerle eşleştiği için gösterilen pasifler de gider
+  const bulk = bulkHref({ categoryId: category, size, q, includeInactive });
+  const bulkTitle = `Görünen ürünlerin fiyatını birlikte değiştir${statuses.length ? " (durum süzgeci taşınmaz)" : ""}`;
 
   const exportCsv = () => {
     const header = [
@@ -685,6 +693,10 @@ export function ProductsTable({
               <Download size={16} />
               CSV
             </Button>
+            <ButtonLink href={bulk} variant="secondary" title={bulkTitle}>
+              <Tags size={16} aria-hidden="true" />
+              Toplu fiyat
+            </ButtonLink>
           </>
         }
       />
@@ -852,6 +864,18 @@ export function ProductsTable({
           />
           <Button variant="secondary" className="h-11 w-full pointer-coarse:h-11" onClick={exportCsv} disabled={!filtered.length}>
             <Download size={16} /> Görünen listeyi CSV indir
+          </Button>
+          {/* Pencere gezinmeden önce kapanır (açık pencereyle sayfa değişmesin) */}
+          <Button
+            variant="secondary"
+            className="h-11 w-full pointer-coarse:h-11"
+            title={bulkTitle}
+            onClick={() => {
+              setSheet(false);
+              router.push(bulk);
+            }}
+          >
+            <Tags size={16} aria-hidden="true" /> Görünenlere toplu fiyat
           </Button>
         </SheetSection>
       </FilterSheet>

@@ -58,3 +58,15 @@ export function logSummary(entries: { dayLabel: string; time: string; userName: 
   if (!last) return "Henüz işlem yok";
   return `Son işlem: ${last.dayLabel} ${last.time} · ${last.userName ?? "Sistem"}`;
 }
+
+/** Dolar tutarı: "1,24 $" (Anthropic dolar üzerinden faturalar) */
+export function usdText(v: number): string {
+  return `${num(v, 2, 2)} $`;
+}
+
+/** Fotoğraftan okuma: "Açık · bu ay 12 okuma · 0,36 $" / "Kapalı" / "Bu ortamda kurulu değil" */
+export function photoReadingSummary(o: { configured: boolean; enabled: boolean; monthCalls: number; monthUsd: number }): string {
+  if (!o.configured) return "Bu ortamda kurulu değil";
+  if (!o.enabled) return "Kapalı";
+  return `Açık · bu ay ${num(o.monthCalls)} okuma · ${usdText(o.monthUsd)}`;
+}

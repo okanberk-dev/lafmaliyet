@@ -27,6 +27,8 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<ActionResult<T>>
 export class UserError extends Error {}
 
 export const zMoney = z.number({ message: "Sayı girin" }).finite("Geçersiz sayı");
+/** Kasa tutarı: eksi olamaz (kasa raporu, kasadan çıkanlar) */
+export const zAmount = z.number({ message: "Tutar girin" }).finite("Geçersiz tutar").min(0, "Tutar eksi olamaz").max(100_000_000, "Tutar çok büyük");
 export const zRate = z.number({ message: "Oran girin" }).min(0, "Oran negatif olamaz").max(1, "Oran %100'den büyük olamaz");
 export const zMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Geçersiz ay");
 export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Geçersiz tarih");

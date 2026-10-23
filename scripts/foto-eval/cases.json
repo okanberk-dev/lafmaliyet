@@ -1,0 +1,111 @@
+[
+  {
+    "name": "z-raporu",
+    "image": "z-raporu.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0186",
+    "expect": {
+      "documentType": "z_report",
+      "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "online": 0, "other": 0, "discounts": 310, "offRevenue": 245, "zNo": "0187", "receipts": 143 },
+      "noWarn": true
+    }
+  },
+  {
+    "name": "pos-gun-sonu",
+    "image": "pos-gun-sonu.jpg",
+    "feature": "kasa-pos",
+    "day": "2026-10-21",
+    "expect": { "documentType": "bank_pos_end_of_day", "values": { "bankPos": 8915 }, "noWarn": true }
+  },
+  {
+    "name": "market-fisi-soluk",
+    "image": "market-fisi.jpg",
+    "feature": "fis",
+    "day": "2026-10-21",
+    "expect": {
+      "documentType": "purchase_receipt",
+      "values": { "amount": 412.5, "vat": 15.31, "receiptDate": "2026-10-21", "paymentMethod": "nakit", "categoryId": 1 },
+      "issues": ["faded"]
+    }
+  },
+  {
+    "name": "talimatli-fis",
+    "image": "talimatli-fis.jpg",
+    "feature": "fis",
+    "day": "2026-10-22",
+    "expect": {
+      "documentType": "purchase_receipt",
+      "values": { "amount": 155, "vat": 16.42, "receiptDate": "2026-10-22", "paymentMethod": "nakit", "categoryId": 1 },
+      "issues": ["contains_instructions"],
+      "checksInclude": ["alışılmadık yazılar"]
+    }
+  },
+  {
+    "name": "yanlis-belge-pos-z-bolumune",
+    "image": "pos-gun-sonu.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "expect": { "documentType": "bank_pos_end_of_day", "ok": false, "switchTo": "kasa-pos" }
+  },
+  {
+    "name": "z-tutmayan-odeme",
+    "image": "z-tutmayan.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0186",
+    "expect": {
+      "documentType": "z_report",
+      "values": { "zTotal": 12975.5, "cash": 3402.5, "card": 8915, "mealCard": 640 },
+      "checksInclude": ["Ödeme türlerinin toplamı"]
+    }
+  },
+  {
+    "name": "z-cok-bulanik",
+    "image": "z-bulanik.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0186",
+    "expect": {
+      "documentType": "z_report",
+      "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187", "receipts": 143 },
+      "highOnly": true,
+      "unreadableOk": true,
+      "issues": ["blurry"]
+    }
+  },
+  {
+    "name": "kartli-market-fisi",
+    "image": "kartli-fis.jpg",
+    "feature": "fis",
+    "day": "2026-10-21",
+    "expect": {
+      "documentType": "purchase_receipt",
+      "values": { "amount": 412.5, "paymentMethod": "kart" },
+      "checksInclude": ["kartla ödenmiş"]
+    }
+  },
+  {
+    "name": "e-arsiv-fatura",
+    "image": "e-arsiv.jpg",
+    "feature": "fis",
+    "day": "2026-10-21",
+    "expect": {
+      "documentType": "e_archive_invoice",
+      "values": { "amount": 582, "vat": 97, "receiptDate": "2026-10-20", "paymentMethod": "nakit" },
+      "checksInclude": ["e-Arşiv fatura"],
+      "toExpensesDefault": false
+    }
+  },
+  {
+    "name": "z-uzun-tek-fotograf",
+    "image": "z-uzun.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0186",
+    "expect": {
+      "documentType": "z_report",
+      "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187", "receipts": 143 }
+    }
+  }
+]

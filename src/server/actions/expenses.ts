@@ -10,10 +10,13 @@ import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CAT
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
+import { linkedUntil } from "@/lib/photo-rules";
+import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
+import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zMonth, zMoney, zOptText, zText } from "./util";
+import { attempt, UserError, zAmount, zDate, zMonth, zMoney, zOptText, zText } from "./util";
 
 // ---------------------------------------------------------------- Harcama kayıtları
 
@@ -37,6 +40,11 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
     const values = { ...data, description: data.description || null, note: data.note || null };
     let saved: { id: number };
     if (id) {
+      // Kasadan çıkan bir fişten yazılan kaydın tutarı ve tarihi kasada düzeltilir (iki yer ayrışmasın)
+      const [prev] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, id)).limit(1);
+      if (prev?.cashOutId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date)) {
+        throw new UserError("Bu harcama kasadan çıkan bir fişten; tutarı ve tarihi Kasa raporu'nda düzeltin");
+      }
       const [row] = await db.update(s.expenseEntries).set({ ...values, updatedAt: new Date() }).where(eq(s.expenseEntries.id, id)).returning({ id: s.expenseEntries.id });
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
       saved = row;
@@ -56,23 +64,90 @@ export type ExpenseEntrySnapshot = {
   amount: number;
   paymentMethod: "nakit" | "kart" | "havale" | "diger" | null;
   note: string | null;
+  /** Fişli / kasadan çıkan kaydın bağları (geri alınca yeniden kurulur) */
+  photoId?: number | null;
+  vat?: number | null;
+  cashOutId?: number | null;
 };
 
-/** Siler; geri almak için kaydın kopyası döner (restoreExpenseEntry) */
+/**
+ * Siler; geri almak için kaydın kopyası döner (restoreExpenseEntry). Kasadan çıkan bir fişten yazılmışsa kasa satırı
+ * kalır (fotoğrafı da onunla); fotoğrafı başka kayıt kullanmıyorsa 7 gün daha saklanır.
+ */
 export async function deleteExpenseEntry(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const [row] = await getDb().delete(s.expenseEntries).where(eq(s.expenseEntries.id, z.number().int().positive().parse(id))).returning();
-    if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
-    await logActivity(me, "Harcama silindi", `${dateTR(row.date)} · ${tl(row.amount, 2)}${row.description ? ` · ${row.description}` : ""}`);
+    const row = await getDb().transaction(async (tx) => {
+      const [row] = await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.id, z.number().int().positive().parse(id))).returning();
+      if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
+      if (row.photoId) {
+        const [used] = await tx.select({ id: s.cashOuts.id }).from(s.cashOuts).where(eq(s.cashOuts.photoId, row.photoId)).limit(1);
+        if (!used) await releasePhoto(row.photoId, undefined, tx);
+      }
+      return row;
+    });
+    await logActivity(me, "Harcama silindi", `${dateTR(row.date)} · ${tl(row.amount, 2)}${row.description ? ` · ${row.description}` : ""}${row.cashOutId ? " · kasa satırı kalır" : ""}`);
     refresh();
-    const snap: ExpenseEntrySnapshot = { date: row.date, categoryId: row.categoryId, description: row.description, amount: row.amount, paymentMethod: row.paymentMethod, note: row.note };
+    const snap: ExpenseEntrySnapshot = {
+      date: row.date,
+      categoryId: row.categoryId,
+      description: row.description,
+      amount: row.amount,
+      paymentMethod: row.paymentMethod,
+      note: row.note,
+      photoId: row.photoId,
+      vat: row.vat,
+      cashOutId: row.cashOutId,
+    };
     return snap;
   });
 }
 
+const linkSchema = z.object({
+  photoId: z.number().int().positive().nullish(),
+  vat: zAmount.nullish(),
+  cashOutId: z.number().int().positive().nullish(),
+});
+
+/**
+ * Silinen kaydı geri getirir. Kasadan çıkan satırı hâlâ varsa ve başka kayda bağlanmadıysa yeniden bağlanır;
+ * fotoğrafı bırakılmışsa yeniden saklanır. Bağlar kurulamazsa kayıt bağsız döner.
+ */
 export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
-  return saveExpenseEntry({ id: null, ...snap, description: snap.description ?? "", note: snap.note ?? "" });
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const data = entrySchema.omit({ id: true }).parse({ ...snap, description: snap.description ?? "", note: snap.note ?? "" });
+    const link = linkSchema.parse({ photoId: snap.photoId, vat: snap.vat, cashOutId: snap.cashOutId });
+    const db = getDb();
+    const [cat] = await db.select().from(s.expenseCategories).where(eq(s.expenseCategories.id, data.categoryId)).limit(1);
+    if (!cat) throw new UserError("Kategori bulunamadı; sayfayı yenileyin");
+    const saved = await db.transaction(async (tx) => {
+      let cashOutId: number | null = null;
+      let photoId: number | null = null;
+      if (link.cashOutId) {
+        const [out] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, link.cashOutId)).limit(1);
+        const [taken] = await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, link.cashOutId)).limit(1);
+        if (out && !taken) {
+          cashOutId = out.id;
+          photoId = out.photoId;
+        }
+      } else if (link.photoId) {
+        const p = await getPhoto(link.photoId, tx);
+        if (p && p.kind === "fis" && p.linkedAt === null && (p.expiresAt === null || p.expiresAt.getTime() > Date.now())) {
+          photoId = p.id;
+          await keepPhoto(p.id, linkedUntil("fis", data.date, todayTR()), tx);
+        }
+      }
+      const [row] = await tx
+        .insert(s.expenseEntries)
+        .values({ ...data, description: data.description || null, note: data.note || null, createdBy: me.name, photoId, cashOutId, vat: link.vat ?? null })
+        .returning({ id: s.expenseEntries.id });
+      return row;
+    });
+    await logActivity(me, "Harcama eklendi", `${cat.name} · ${dateTR(data.date)} · ${tl(data.amount, 2)}${data.description ? ` · ${data.description}` : ""}`);
+    refresh();
+    return { id: saved.id };
+  });
 }
 
 // ---------------------------------------------------------------- Kategoriler

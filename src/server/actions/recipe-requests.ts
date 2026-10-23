@@ -386,7 +386,7 @@ export async function approveNewProduct(input: z.input<typeof approveNewSchema>)
         }
         return { ingredientId: line.ingredientId, qty, qtyExpr: line.qtyExpr, note: line.note };
       });
-      const created = await insertProduct(tx, { name: data.name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note });
+      const created = await insertProduct(tx, { name: data.name, size, categoryId: data.categoryId, price: data.price }, { items, note: req.after.note, changedBy: me.name });
       const now = new Date();
       await tx
         .update(s.recipeChangeRequests)
