@@ -36,6 +36,14 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(STAFF_HOME, "/panel/bugun");
   assert.ok(canOpen("staff", "/panel/bugun"));
   assert.equal(canOpen("staff", "/panel/bugunler"), false);
+  // Kontrol listeleri: personel bugünün listelerini açar ve doldurur; yönetici alt sayfaları (Geçmiş, Listeler)
+  // proxy'den geçer ama sayfa personeli geri gönderir (requireAdmin)
+  assert.ok(canOpen("staff", "/panel/kontrol"));
+  assert.ok(canOpen("staff", "/panel/kontrol/3"));
+  assert.equal(canOpen("staff", "/panel/kontroller"), false);
+  for (const p of ["src/app/panel/kontrol/gecmis/page.tsx", "src/app/panel/kontrol/duzenle/page.tsx", "src/app/panel/kontrol/duzenle/[id]/page.tsx"]) {
+    assert.match(read(p), /await requireAdmin\(\)/, p);
+  }
 });
 
 test("menüdeki her öğenin rolü erişim kuralıyla aynı (personel menüde gördüğü her ekrana girebilir, başkasını görmez)", () => {

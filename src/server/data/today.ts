@@ -9,6 +9,7 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
+import { loadChecklistDay } from "@/server/data/checklists";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
@@ -142,7 +143,8 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags] = await Promise.all([
+  const yesterday = dayContext(now).yesterday;
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -190,8 +192,13 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         return cashFlags(reports, before, revisions, viewer);
       }),
     ),
+    // Dünün kontrol listeleri: tamamlanmayan ve sorunlu olanlar (bugünkü listeler iki rolde loadToday'de)
+    safe(loadChecklistDay(yesterday, "admin", now)).then((lists) => (lists ? { day: yesterday, lists } : null)),
   ]);
-  return { facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos }, cashFlags: flags };
+  return {
+    facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday },
+    cashFlags: flags,
+  };
 }
 
 /**
@@ -205,13 +212,15 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
   const cashP = safe(cashReportsBetween(c.yesterday, c.day));
-  const [reports, firstDate, stock, due, sessions, orders, own] = await Promise.all([
+  const [reports, firstDate, stock, due, sessions, orders, checklists, own] = await Promise.all([
     cashP,
     safe(firstCashReportDate()),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     safe(loadSessions(range.from, range.to, { admin })),
     configured ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
+    // Kontrol listeleri (iki rol; personel yalnız kendi doldurabildiklerini alır)
+    safe(loadChecklistDay(c.day, user.role, now)),
     admin ? adminFacts(now, user.id, cashP) : staffFacts(c),
   ]);
 
@@ -227,6 +236,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
     now,
     cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
     stock,
+    checklists: checklists ? { day: c.day, lists: checklists } : null,
   };
   return {
     facts,

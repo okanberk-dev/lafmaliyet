@@ -65,12 +65,14 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   başlığını örtmez, dokunulabilir); tablette üst çubuğun altında.
 - Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
   etiketlerini kapatır.
-- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Bugün · Karaoke · Menü (Ürünler, Hammaddeler,
+- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Bugün · Karaoke · Kontrol listeleri · Menü (Ürünler, Hammaddeler,
   Reçete defteri, Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider,
   Giderler & personel, Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım ·
   Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
-  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Personel yalnız kendi ekranlarını görür
+  (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık. Kontrol listeleri üst düzeyde olduğu için bölüm
+  sekmesi yerine kendi sekmelerini taşır (`SegmentedLinks`: Bugün · Geçmiş · Listeler, yalnız yönetici). Personel
+  yalnız kendi ekranlarını görür
   (`src/lib/roles.ts` STAFF_PATHS); ağacının ilk öğesi Bugün, girişte o açılır.
 
 ## 4. Bileşenler

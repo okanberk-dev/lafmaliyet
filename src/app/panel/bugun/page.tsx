@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
+import { checklistBoundaries } from "@/lib/checklists";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
 import { loadToday } from "@/server/data/today";
@@ -47,7 +48,8 @@ async function TodayContent() {
   return (
     <>
       <PageHeader eyebrow="Günlük" title="Bugün" description={`${longDateTR(todayTR(now))} · ${summary.headline}`} />
-      <TodayRefresh at={nextRefreshAt(now, changeAt ? [changeAt] : [])} renderedAt={data.renderedAt} />
+      {/* Saat sınırları: karaoke oturumu ve kontrol listelerinin açılış / son saati (satır 08:00'de "Yapılacak" olsun) */}
+      <TodayRefresh at={nextRefreshAt(now, [...(changeAt ? [changeAt] : []), ...checklistBoundaries(data.facts.checklists)])} renderedAt={data.renderedAt} />
       {/* Geniş ekranda solda Yapılacaklar, sağda kartlar (Kasa sayfasının düzeni); telefonda tek sütun, bu sırayla */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <TodayTasks tasks={tasks} admin={user.role === "admin"} />
