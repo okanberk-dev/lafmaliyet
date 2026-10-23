@@ -1,127 +1,33 @@
 "use server";
 
-import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
-import {
-  BASE_UNIT,
-  cleanName,
-  COUNT_ITEM_NAME_MAX,
-  COUNT_ITEM_NAME_MIN,
-  countFromMonth,
-  duplicateMessage,
-  findDuplicate,
-  formulaStartMessage,
-  groupDefaults,
-  laterCountItem,
-  nextSortOrder,
-  startsLikeFormula,
-} from "@/lib/count-item";
-import { dateTR, monthLabel } from "@/lib/format";
+import { countItemLogDetail } from "@/lib/count-item";
+import { monthLabel } from "@/lib/format";
 import { logActivity } from "@/server/actions/log";
-import { attempt, UserError, zMonth, zOptText, zText } from "@/server/actions/util";
+import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { requireUser } from "@/server/auth/dal";
+import { countItemSchema, createCountItem } from "@/server/data/count-item";
 import { getDb, schema as s } from "@/server/db";
 
-import { planStaffExtras, staffCountMonths, todayTR } from "./logic";
-
-const countItemSchema = z.object({
-  month: zMonth,
-  name: z
-    .string({ message: "Kalemin adını yazın" })
-    .transform(cleanName)
-    .pipe(
-      z
-        .string()
-        .min(COUNT_ITEM_NAME_MIN, `Ad en az ${COUNT_ITEM_NAME_MIN} harf olmalı`)
-        .max(COUNT_ITEM_NAME_MAX, "Ad çok uzun")
-        // Ad ve paket Hammaddeler'in CSV'sine olduğu gibi gider: Excel'de formül diye çalışmasın
-        .refine((v) => !startsLikeFormula(v), formulaStartMessage("Ad")),
-    ),
-  group: zText("Grup", 80),
-  countUnit: z.enum(["KG", "LT", "ADET", "DİLİM"], { message: "Sayım birimini seçin" }),
-  packageDesc: zOptText(160).refine((v) => !v || !startsLikeFormula(v), formulaStartMessage("Paket")),
-  packageSize: z.number({ message: "Paket içeriğini yazın" }).finite("Paket içeriğini yazın").positive("Paket içeriği 0'dan büyük olmalı").max(1_000_000, "Paket içeriği çok büyük"),
-});
+import { planStaffExtras, staffCountMonths } from "./logic";
 
 /**
- * Stok sayımı › "Listeye ekle" (yönetici ve personel): kalemi hemen hammadde olarak açar, onay beklemez; gösterilen
- * aydan itibaren her ay sayım listesinde çıkar (count_from: sayımı bitmiş eski aylar "kalem kaldı" demesin). Fiyatı
- * bilinmediği için paket fiyatı 0 ve "Tahmini"; yönetici Hammaddeler'den girer (zilde "Fiyatı girilmemiş N
- * hammadde"). Fiyat geçmişine 0 yazılmaz: ilk gerçek fiyat zam gibi görünmesin
- * (price-impact.ts ingredientChanges ilk satırı başlangıç sayar). Personel yalnız sayımını değiştirebildiği ayda ekler.
- * Aynı ad (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden; pasif ya da "Sayılmaz" olanlar dahil) varsa eklenmez;
- * kalem listede ama daha sonraki bir aydan itibaren çıkıyorsa gösterilen aydan itibaren de listeye alınır.
+ * Stok sayımı › "Listeye ekle" (yönetici ve personel): kalemi hemen hammadde olarak açar, onay beklemez. Kurallar ortak
+ * çekirdekte (src/server/data/count-item.ts createCountItem; reçete önerisindeki "Yeni malzeme" de onu çağırır):
+ * personel yalnız sayımını değiştirebildiği ayda ekler, aynı ad eklenmez, kalem gösterilen aydan itibaren listede,
+ * paket fiyatı isteğe bağlı (yazılmazsa 0; ikisinde de "Tahmini", fiyat geçmişine yazılmaz).
  */
 export async function addCountItem(input: z.input<typeof countItemSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     const data = countItemSchema.parse(input);
-    const m = data.month;
-    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
-      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımına kalem ekleyebilir; daha eski bir ay için yöneticiye yazın");
-    }
-    const unit = BASE_UNIT[data.countUnit];
-    if (!countUnitsFor(unit).includes(data.countUnit)) throw new UserError("Sayım birimini seçin");
-    const from = countFromMonth(m, currentMonthTR());
-    const created = await getDb().transaction(async (tx) => {
-      // Aynı adı iki kişi aynı anda eklemesin (büyük/küçük harf farkı ad sütununun benzersiz dizininden kaçar)
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sayim-listeye-ekle'))`);
-      const rows = await tx
-        .select({
-          id: s.ingredients.id,
-          name: s.ingredients.name,
-          category: s.ingredients.category,
-          vatRate: s.ingredients.vatRate,
-          active: s.ingredients.active,
-          countUnit: s.ingredients.countUnit,
-          countGroup: s.ingredients.countGroup,
-          countFrom: s.ingredients.countFrom,
-          sortOrder: s.ingredients.sortOrder,
-        })
-        .from(s.ingredients)
-        .orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id));
-      const later = laterCountItem(data.name, rows, from);
-      if (later) {
-        await tx.update(s.ingredients).set({ countFrom: from }).where(eq(s.ingredients.id, later.id));
-        return { id: later.id, name: later.name, group: later.countGroup ?? "DİĞER", existed: true };
-      }
-      const dup = findDuplicate(data.name, rows);
-      if (dup) throw new UserError(duplicateMessage(dup, me.role));
-      if (!rows.some((r) => r.countGroup === data.group)) throw new UserError("Bu sayım grubu bulunamadı; sayfayı yenileyin");
-      const defaults = groupDefaults(rows, data.group);
-      const [row] = await tx
-        .insert(s.ingredients)
-        .values({
-          name: data.name,
-          category: defaults.category,
-          supplier: null,
-          packageDesc: data.packageDesc,
-          packagePrice: 0,
-          packageSize: data.packageSize,
-          unit,
-          vatRate: defaults.vatRate,
-          note: `Sayım listesine ${me.name} ekledi (${dateTR(todayTR())}).`,
-          isEstimate: true,
-          priceSource: "manual",
-          countUnit: data.countUnit,
-          countGroup: data.group,
-          countFrom: from,
-          sortOrder: nextSortOrder(rows),
-          active: true,
-        })
-        .returning({ id: s.ingredients.id, name: s.ingredients.name });
-      return { ...row, group: data.group, existed: false };
-    });
-    await logActivity(
-      me,
-      "Sayım listesine eklendi",
-      created.existed ? `${created.name} · ${monthLabel(from)} sayımından itibaren` : `${created.name} · ${data.group} · ${data.countUnit}`,
-    );
+    const created = await createCountItem(me, data, "sayim");
+    await logActivity(me, "Sayım listesine eklendi", countItemLogDetail({ ...created, countUnit: data.countUnit }));
     refresh();
-    return created;
+    return { id: created.id, name: created.name, group: created.group, existed: created.existed, priced: created.packagePrice !== null };
   });
 }
 

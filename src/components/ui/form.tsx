@@ -12,6 +12,9 @@ const control =
   "aria-invalid:bg-bad-soft aria-invalid:ring-bad/50 data-[warn=true]:bg-warn-soft data-[warn=true]:ring-warn/40 " +
   "disabled:cursor-not-allowed disabled:bg-panel disabled:text-ink-quiet";
 
+/** Alanların görünümü: alan gibi görünmesi gereken düğmeler için (ör. reçete önerisindeki malzeme seçimi) */
+export const fieldControl = control;
+
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(control, "h-9 pointer-coarse:h-11", className)} {...props} />;
 }

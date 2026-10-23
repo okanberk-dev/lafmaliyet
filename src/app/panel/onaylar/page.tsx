@@ -9,7 +9,7 @@ import { priceProduct } from "@/lib/calc/engine";
 import { evaluateExpression } from "@/lib/calc/expr";
 import { PACKAGING_CATEGORY } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
-import { qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
+import { estimateNames, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { loadReviewQueue } from "@/server/data/recipe-requests";
@@ -26,7 +26,7 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Reçete onayları"
         eyebrow="Menü"
-        description="Personelin reçete defterinden önerdiği değişiklikler ve yeni ürünler. Değişiklikte önceki ve önerilen reçeteyi yan yana görün, onaylayınca reçete kartı değişir; yeni üründe satış fiyatını yazıp onaylayınca ürün eklenir. Reddederseniz notunuz personele görünür."
+        description="Personelin reçete defterinden önerdiği değişiklikler ve yeni ürünler. Değişiklikte önceki ve önerilen reçeteyi yan yana görün, onaylayınca reçete kartı değişir; yeni üründe satış fiyatını yazıp (personel önerdiyse dolu gelir) onaylayınca ürün eklenir. Reddederseniz notunuz personele görünür."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">
             <BookOpen size={16} aria-hidden="true" /> Reçete defteri
@@ -86,6 +86,7 @@ async function ApprovalsContent() {
   const pending: (ReviewItem | NewProductItem)[] = queue.pending.map((r): ReviewItem | NewProductItem => {
     if (r.kind === "new" || r.productId === null) {
       // Yeni ürün: maliyet satır satır bugünkü fiyatlarla; satış fiyatı ve marj yöneticinin yazdığı fiyatla tarayıcıda
+      // (personel fiyat yazdıysa alan onunla dolu gelir)
       return {
         kind: "new",
         id: r.id,
@@ -95,8 +96,10 @@ async function ApprovalsContent() {
         requestedByName: r.requestedByName,
         updatedAt: r.updatedAt.toISOString(),
         message: r.message,
+        proposedPrice: r.proposedPrice,
         lines: r.after.items.map((l) => {
           const ing = model.ingById.get(l.ingredientId);
+          const unpriced = !!ing && isUnpriced(ing);
           return {
             name: l.name,
             qtyLabel: qtyLabel({ ...l, qty: lineQty(model, l) }),
@@ -106,7 +109,9 @@ async function ApprovalsContent() {
             vatRate: ing?.vatRate ?? 0,
             isPackaging: ing?.category === PACKAGING_CATEGORY,
             missing: !ing,
-            unpriced: !!ing && isUnpriced(ing),
+            unpriced,
+            // Fiyatı tahmini (öneride "Yeni malzeme" ile açılan ya da faturada bulunmayan): maliyet kesin değil
+            estimate: !!ing && ing.isEstimate && !unpriced,
           };
         }),
       };
@@ -143,6 +148,7 @@ async function ApprovalsContent() {
           }),
         ),
       ],
+      estimates: estimateNames(r.before, r.after, model.ingById),
     };
   });
   const recent: RecentItem[] = queue.recent.map((r) => ({

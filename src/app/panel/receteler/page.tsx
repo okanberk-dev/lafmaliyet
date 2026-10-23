@@ -6,10 +6,13 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { PACKAGING_CATEGORY, RECIPE_PARAMS } from "@/lib/constants";
+import { countGroupOptions } from "@/lib/count-item";
 import { pumpHint } from "@/lib/recipe-pump";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
+
+import { defaultCountMonth } from "../sayim/logic";
 
 import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
@@ -130,11 +133,19 @@ async function RecipeBookContent() {
   let newProduct: NewProductKit | null = null;
   if (!isAdmin) {
     const used = new Set(model.activeProducts.flatMap((p) => p.lines.map((l) => l.item.ingredientId)));
+    // "Yeni malzeme" (listede olmayan malzeme, Stok sayımı › Listeye ekle'nin kuralı): kalem sayım sayfasının açtığı
+    // aydan itibaren listeye girer (ay başında geçen ayın sayımı girilmediyse geçen ay); gruplar sayım listesinin sırasıyla
+    const countMonth = defaultCountMonth(new Date(), (m) => model.stockSheet(m).hasData);
+    const groupOptions = countGroupOptions(
+      model.stockSheet(countMonth).groups.map((g) => g.name),
+      [...model.ds.ingredients].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),
+    );
     propose = {
       ingredients: model.ds.ingredients
         .filter((i) => i.active || used.has(i.id))
         .map((i) => ({ id: i.id, name: i.name, unit: i.unit, category: i.category, active: i.active, packaging: i.category === PACKAGING_CATEGORY })),
       params: RECIPE_PARAMS.map((p) => ({ name: p.name, key: p.key, label: p.label, unit: p.unit, value: Number(model.settings[p.key]) })),
+      newIngredient: groupOptions.length ? { month: countMonth, groups: groupOptions } : null,
     };
     newProduct = {
       categories: model.categories.map((c) => ({ id: c.id, name: c.name })),
@@ -150,6 +161,8 @@ async function RecipeBookContent() {
     productName: r.productName,
     size: r.size,
     status: r.status,
+    // Personelin kendi yazdığı satış fiyatı yalnız öneri beklerken (onaydan sonra menü fiyatını yönetici belirler)
+    proposedPrice: r.status === "pending" ? r.proposedPrice : null,
     before: r.before,
     after: r.after,
     message: r.message,

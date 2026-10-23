@@ -79,7 +79,7 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
     body: (
       <>
         Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
-        personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler, fiyatını yönetici girer. &quot;Geçen aydan doldur&quot; ek
+        personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler (paket fiyatını biliyorsa yazar, yoksa yönetici girer). &quot;Geçen aydan doldur&quot; ek
         kalemleri de taşır. Ayın ilk 10 gününde ekran, sayımı
         girilmemişse geçen ayı açar. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
       </>
@@ -235,9 +235,12 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Personel yeni ürünü nasıl ekler?",
         a: (
           <>
-            Personel <Path href="/panel/receteler" /> ekranında Yeni ürün öner&apos;e dokunur: adı, kategoriyi, boyları ve her boyun reçetesini yazar; fiyat ve maliyet
-            görmez. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada malzemelerin maliyetini satır satır görüp satış fiyatını yazın, kâr marjı hemen
-            hesaplanır; gerekirse adı ve kategoriyi düzeltin. &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
+            Personel <Path href="/panel/receteler" /> ekranında Yeni ürün öner&apos;e dokunur: adı, kategoriyi, boyları ve her boyun reçetesini yazar; biliyorsa boy
+            başına satış fiyatını da yazar, maliyet görmez. Reçetedeki malzeme listede yoksa aramada &quot;Listede yok: … ekle&quot; ile formdan çıkmadan açar (Listeye
+            ekle&apos;nin kuralıyla, sayım listesine de girer; paket fiyatı yazıldıysa Tahmini). Değişiklik önerisinde de tahmini fiyatlı malzeme onay kartında
+            &quot;Tahmini fiyatlı&quot; diye yazar. Öneri <Path href="/panel/onaylar" /> ekranına ve zile düşer. Orada
+            malzemelerin maliyetini satır satır görün (tahmini fiyatlı malzeme işaretli); satış fiyatı personelin önerisiyle dolu gelir, değiştirebilirsiniz, kâr marjı
+            hemen hesaplanır; gerekirse adı ve kategoriyi düzeltin. &quot;Onayla ve ürünü ekle&quot; ürünü reçetesiyle Yeni ürün&apos;deki kuralla açar (zayi oranı
             kategoriden); reddederseniz notunuz personelin Önerilerim listesinde görünür. Yeni ürün laffogato.net menüsüne kendiliğinden bağlanmaz.
           </>
         ),
@@ -343,8 +346,10 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         q: "Sayım listesine nasıl kalem eklenir?",
         a: (
           <>
-            <Path href="/panel/sayim" /> ekranında Listeye ekle: ad, grup, sayım birimi ve isteğe bağlı paket. Personel de ekleyebilir; kalem hemen listeye girer ve
-            bu aydan itibaren her ay sayılır. Fiyatı bilinmediği için 0 ve Tahmini açılır, zil &quot;Fiyatı girilmemiş&quot; der:{" "}
+            <Path href="/panel/sayim" /> ekranında Listeye ekle: ad, grup, sayım birimi, isteğe bağlı paket ve paket fiyatı. Personel de ekleyebilir; kalem hemen
+            listeye girer ve bu aydan itibaren her ay sayılır. Paket fiyatı yazıldıysa o fiyatla Tahmini açılır (yönetici KDV hariç yazar; personel fişteki gibi KDV dahil
+            yazar, KDV düşülüp kaydedilir; Hammaddeler&apos;in Tahmini süzgecinde doğrulayın);
+            yazılmadıysa 0 ve Tahmini açılır, zil &quot;Fiyatı girilmemiş&quot; der:{" "}
             <Path href="/panel/hammaddeler" /> ekranındaki Fiyat yok süzgecinden paket fiyatını girin (ilk fiyat zam sayılmaz). Yalnız bu ay rafta duran tek seferlik bir
             şey için sayımdaki Listede olmayanlar yeter.
           </>
