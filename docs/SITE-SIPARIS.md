@@ -192,14 +192,11 @@ saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran ist
 
 Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bunu durum satırıyla söyler.
 
-## Sitede yapılacak (v1'e ekleme)
+## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
-Panel müşterinin notunu **isteğe bağlı** okur; site göndermezken kart eskisi gibidir. Sitenin `docs/PANEL-ORDERS.md`'si
-(KVKK bölümü dahil) ve `tests/panel-orders-feed.test.ts` aynı PR'da güncellenmeli:
-
-1. `listPanelOpenOrderRows` `"deliveryNote"`'u da okusun; `toPanelOrder` `note`'u yalnız `orderFulfillment(row)` masa ya
-   da gel-al ise, kırpılmış ve en çok 300 karakter göndersin (kuryede hiç: kapı kodu siteden çıkmaz).
-2. Satırlara `items[].options.note`'tan `note` (en çok 200 karakter).
+Müşterinin notu sitede yayında (laffogato #248) ve panel onu isteğe bağlı okur: siparişin `note`'u yalnız masa ve gel-al
+siparişinde, kırpılmış ve en çok 300 karakter (kuryede hiç: o not adres notudur, kapı kodu siteden çıkmaz); satırın
+`note`'u `items[].options.note`'tan, en çok 200 karakter. Kural ve KVKK bölümü sitenin `docs/PANEL-ORDERS.md`'sinde.
 
 ## Kurulum
 

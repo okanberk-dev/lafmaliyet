@@ -24,7 +24,8 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - **PR incelemesi:** #11 birleşti ama iş akışı çalışmıyor: hesabın GitHub Actions dakikaları bitti (iş, çalıştırıcı
   başlamadan düşüyor, `runner_id: 0`); Codex incelemesi de kullanım sınırında. Doğrulama her dalgada yerelde yapılır.
-  Diğer oturumun açık PR'ı: #16 (KDV-2 hatırlatıcısı, taslak). Kalan dalgaların her biri main'e ayrı bir PR'dır.
+  Diğer oturumun #16'sı (KDV-2 hatırlatıcıları) 23 Ekim'de birleşti (17c3e68). Kalan dalgaların her biri main'e ayrı
+  bir PR'dır.
 
 ## 2. Kalan işler (sırayla)
 
@@ -123,9 +124,10 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   (`docs/FOTOGRAF.md`). Anthropic Console'da aylık harcama sınırı koyun (~20 $; beklenen ayda ~4–5 $). Yerelde
   anahtarsız denemek için `AI_REPLAY=1 npx next dev` (kayıtlı yanıtlar); canlı değerlendirme betiği
   `scripts/foto-eval` (lansmandan önce bir kez, ≈ 0,30 $).
-- **Vercel Blob:** `laffogato-foto` (private, fra1) oluşturuldu; projeye **yalnız Production** için bağlanması
-  bekleniyor (Vercel › Storage › laffogato-foto › Connect Project; `BLOB_READ_WRITE_TOKEN`). Bağlanmadan fotoğraf
-  düğmeleri görünmez, personel tutarları bugünkü gibi elle yazar. Hobby kotasını Vercel › Usage'da kontrol edin.
+- **Vercel Blob:** fotoğraflar `laffogato-foto-panel` (private, fra1) deposunda; projeye **yalnız Production** için
+  bağlı (`BLOB_READ_WRITE_TOKEN`, §1). Eski boş `laffogato-foto` kullanılmıyor: projeye **bağlamayın** (Production'ın
+  `BLOB_READ_WRITE_TOKEN`'ı onunkiyle değişirse kayıtlı fotoğraflar okunamaz); silinebilir. Anahtar yoksa fotoğraf
+  düğmeleri görünmez, personel tutarları elle yazar. Hobby kotasını Vercel › Usage'da kontrol edin.
 - mcp: `MCP_DISABLED=1` acil kapatma; önizlemelerde kapalı. Canlıda `APP_URL` = `https://ladmin.laffogato.net` olmalı
   (issuer ve kaynak adresi ondan gelir); Vercel Firewall Anthropic'in çıkış aralığını (`160.79.104.0/21`) engellememeli.
   Bağlanma adımları `docs/CLAUDE-BAGLANTISI.md`'de.

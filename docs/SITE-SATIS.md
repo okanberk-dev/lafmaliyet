@@ -206,16 +206,15 @@ için ödenip 25 Kasım'da iptal edilen karaoke de (rezervasyon 60 gün ileriye 
 gününde geçen ay çekiliyordu: "Ay kapandı" diyen Ekim kâr-zararı ve KDV tahmini 500 ₺'yi tutmaya devam ederdi. Üç
 aydan eski iade için ayın satırındaki ↻ ya da **Başka bir ay**.
 
-## Sitede yapılacak (v1'e ekleme)
+## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
-Panel aşağıdaki alanları **isteğe bağlı** okur; site göndermeye başlayınca kendiliğinden kullanılır, göndermezken
-davranış eskisi gibidir. Sitenin `docs/PANEL-SALES.md`'si aynı PR'da güncellenmeli:
+İki alan sitede yayında ve panel ikisini de okur (isteğe bağlı: alan gelmezse davranış eskisi gibi):
 
-1. **`counter: {orders, grossMinor, netMinor}`**: başarılı ödemesi `manual:nakit` ya da `manual:kart` olan uygulama /
-   web siparişleri (kasada ödendi, ModPOS'ta çalındı). Bunlar `cafe` / `shop` toplamlarından ve `cafe.lines`'tan
-   çıkarılır. `manual:havale` ve `manual:diger` online sayılır (kasadan geçmez); kural `PANEL-SALES.md`'de yazılmalı.
-2. **`cafe.lines[].extraShots`** (tamsayı), **`syrups`** ve **`milks`** (`{seçenek: adet}`, en çok 20 seçenek; `normal`
-   süt gönderilmese de olur): satırın `items[].options`'ından, adetle çarpılmış.
+1. **`counter: {orders, grossMinor, netMinor}`** (laffogato #246): başarılı ödemesi `manual:nakit` ya da `manual:kart`
+   olan uygulama / web siparişleri (kasada ödendi, ModPOS'ta çalındı); `cafe` / `shop` toplamlarından ve `cafe.lines`'tan
+   çıkmış gelir. `manual:havale` ve `manual:diger` online kalır. Kural sitenin `docs/PANEL-SALES.md`'sinde.
+2. **`cafe.lines[].extraShots`**, **`syrups`** ve **`milks`** (laffogato #247): satırın seçenekleri, adetle çarpılmış.
+   Panel bunları "Seçenekler"de yazılan ürünlere işler (alternatif süt inek sütünü azaltmaz).
 
 ## Kurulum
 
