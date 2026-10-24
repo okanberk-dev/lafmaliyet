@@ -11,8 +11,16 @@ import type { OrderLite, ReorderSettings } from "./types";
 
 /** Son sayım bundan eskiyse satır "Sayım eski" der (öneri yine hesaplanır) */
 export const STALE_DAYS = 4;
-/** Bu kadar günden eski sipariş "siparişte" sayılmaz (gelmiş ve sayıma girmiş varsayılır) */
+/**
+ * Bu kadar günden eski sipariş "siparişte" sayılmaz (gelmiş ve sayıma girmiş varsayılır); beklenen günü dünden eski
+ * olmayan hariç (teslim süresi uzun sipariş gelene kadar, IN_TRANSIT_GRACE_DAYS)
+ */
 export const IN_TRANSIT_DAYS = 14;
+/**
+ * Beklenen günden bu kadar gün sonrasına kadar sipariş "siparişte" kalır (14 günden eski olsa da); zilin "gelmedi mi"
+ * sorusu ertesi gün başlar (delivery.ts LATE_GRACE_DAYS ile aynı)
+ */
+export const IN_TRANSIT_GRACE_DAYS = 1;
 /** Son birimin en az bu kadarı gerekiyorsa o birim de sipariş edilir (5.000'lik koli ancak gerçekten gerekince) */
 export const MIN_PACK_FRACTION = 0.25;
 /** "Eklenebilecek kalemler"de en çok bu kadar öneri */
@@ -153,18 +161,19 @@ export function latestOnHand(
 }
 
 /**
- * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş:
- * hiç gelmedi ya da sayımdan sonra geldi ("Geldi" ya da eşleşen faturanın günü). Kapatılan ama "Geldi" denmemiş
- * sipariş kapandığı anda gelmiş sayılır (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Kalem sipariş biriminde ×
- * birimin içeriği.
+ * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen ya da beklenen günü dünden eski olmayan (teslim süresi uzun
+ * sipariş gelene kadar) ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra
+ * geldi ("Geldi" ya da eşleşen faturanın günü). Kapatılan ama "Geldi" denmemiş sipariş kapandığı anda gelmiş sayılır
+ * (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Kalem sipariş biriminde × birimin içeriği.
  */
 export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, onHandAt: string | null, today: string): { base: number; orderIds: number[] } {
   const since = addDays(today, -IN_TRANSIT_DAYS);
+  const expectedSince = addDays(today, -IN_TRANSIT_GRACE_DAYS);
   const countAt = onHandAt ? Date.parse(onHandAt) : null;
   let base = 0;
   const orderIds: number[] = [];
   for (const o of orders) {
-    if (o.status === "cancelled" || o.sentDay < since) continue;
+    if (o.status === "cancelled" || (o.sentDay < since && o.expectedOn < expectedSince)) continue;
     const arrived = o.receivedAt ?? (o.status === "closed" ? o.closedAt : null);
     if (arrived && countAt !== null && Date.parse(arrived) <= countAt) continue;
     const mine = o.lines.filter((l) => l.ingredientId === ingredientId);

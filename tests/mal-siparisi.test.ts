@@ -25,6 +25,7 @@ import {
   countQty,
   coverDays,
   defaultOrderUnit,
+  IN_TRANSIT_GRACE_DAYS,
   inheritLeadDays,
   isCountDay,
   latestOnHand,
@@ -45,6 +46,7 @@ import {
   trWeekday,
   type PlanItem,
 } from "../src/lib/reorder/levels";
+import { LATE_GRACE_DAYS } from "../src/lib/reorder/delivery";
 import { countAmount, dayName, mobileE164, orderLink, orderMessage, qtyLabel, restLabel } from "../src/lib/reorder/message";
 import { DEFAULT_REORDER, parseReorderSettings, type OrderLite, type ReorderDayFacts, type ReorderLine } from "../src/lib/reorder/types";
 import { DAYS_PER_MONTH, monthlyUsage } from "../src/lib/reorder/usage";
@@ -223,7 +225,7 @@ function order(o: Partial<OrderLite> = {}): OrderLite {
   };
 }
 
-test("siparişte (D3): iptal olmayan, son 14 gün, sayımda olmayan (gelmedi ya da sayımdan sonra geldi)", () => {
+test("siparişte (D3): iptal olmayan, son 14 gün ya da beklenen günü geçmemiş, sayımda olmayan (gelmedi ya da sayımdan sonra geldi)", () => {
   const countAt = "2026-10-26T07:30:00.000Z";
   const today = "2026-10-26";
   assert.equal(onOrderFor([order()], MILK.id, countAt, today).base, 24000, "gelmedi: sayılır");
@@ -232,6 +234,12 @@ test("siparişte (D3): iptal olmayan, son 14 gün, sayımda olmayan (gelmedi ya 
   assert.equal(onOrderFor([order({ status: "cancelled" })], MILK.id, countAt, today).base, 0);
   assert.equal(onOrderFor([order({ sentDay: "2026-10-11" })], MILK.id, countAt, today).base, 0, "15 gün önce");
   assert.equal(onOrderFor([order({ sentDay: "2026-10-12" })], MILK.id, countAt, today).base, 24000, "14 gün önce");
+  // Teslim süresi uzun sipariş 14 günden eski olsa da beklenen günün ertesine kadar siparişte (zil ondan sonra sorar)
+  const long = order({ sentAt: "2026-10-05T08:00:00.000Z", sentDay: "2026-10-05", expectedOn: "2026-10-26" });
+  assert.equal(onOrderFor([long], MILK.id, countAt, today).base, 24000, "21 günlük teslim: beklenen gün gelmedi");
+  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-25" }], MILK.id, countAt, today).base, 24000, "beklenen gün dün");
+  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-24" }], MILK.id, countAt, today).base, 0, "beklenen günden 2 gün sonra");
+  assert.equal(IN_TRANSIT_GRACE_DAYS, LATE_GRACE_DAYS, "zilin 'gelmedi mi' sorusuyla aynı gün");
   // Faturayla eşleşen, faturanın günü (öğlen) sayımdan önce: sayımda
   assert.equal(onOrderFor([order({ invoiceId: 9, receivedAt: "2026-10-24T09:00:00.000Z", status: "closed" })], MILK.id, countAt, today).base, 0);
   assert.equal(onOrderFor([order()], COFFEE.id, countAt, today).base, 0, "başka kalem");

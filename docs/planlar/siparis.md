@@ -127,7 +127,7 @@ loaders already separate the price fields (§6.2), so it can be enabled later.
   The month-end count therefore also refreshes the order list.
 - **Siparişte** `onOrder` = Σ base quantity of the item's lines in orders that are:
   - not cancelled;
-  - sent within the last 14 days (`IN_TRANSIT_DAYS`);
+  - sent within the last 14 days (`IN_TRANSIT_DAYS`) or expected no earlier than yesterday (`IN_TRANSIT_GRACE_DAYS`);
   - not yet in the count. That means not received at all, or received (marked "Geldi", or invoice matched) **after**
     `onHand.at`.
 
@@ -812,7 +812,7 @@ export function wasteBetween(model: Model, from: string, to: string): Map<number
 ### 5.3 `src/lib/reorder/levels.ts`
 
 ```ts
-export const STALE_DAYS = 4, IN_TRANSIT_DAYS = 14, MIN_PACK_FRACTION = 0.25, TRACK_SUGGEST_LIMIT = 15;
+export const STALE_DAYS = 4, IN_TRANSIT_DAYS = 14, IN_TRANSIT_GRACE_DAYS = 1, MIN_PACK_FRACTION = 0.25, TRACK_SUGGEST_LIMIT = 15;
 
 export function trWeekday(day: string): number;                       // 1 = Pazartesi … 7 = Pazar
 export function coverDays(weekdays: number[]): number;                // en uzun ara; boş/tek gün → 7
