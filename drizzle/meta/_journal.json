@@ -267,6 +267,13 @@
       "when": 1792844684237,
       "tag": "0037_sayim_kalemi_fiyat_baslangici",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792863334710,
+      "tag": "0038_personel_yetki",
+      "breakpoints": true
     }
   ]
 }

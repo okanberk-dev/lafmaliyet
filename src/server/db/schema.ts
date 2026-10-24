@@ -879,6 +879,11 @@ export const recipeChangeRequests = pgTable(
     after: jsonb("after").$type<RecipeSnapshot>().notNull(),
     /** Personelin yöneticiye notu ("süt az geliyordu") */
     message: text("message"),
+    /**
+     * Personel öneriyi her güncellediğinde artar: yönetici yalnız ekranda gördüğü sürümü onaylar (seenVersion;
+     * docs/ONAYLAR.md). Eski satırlar 1
+     */
+    version: integer("version").notNull().default(1),
     /** Yöneticinin notu (red gerekçesi ya da açıklama) */
     reviewNote: text("review_note"),
     reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
@@ -1007,6 +1012,11 @@ export const pushSubscriptions = pgTable(
      * (personel cihazında açık, yöneticininkinde kapalı); cihazda değiştirilince açık ya da kapalı yazılır.
      */
     orders: boolean("orders"),
+    /**
+     * Onay bildirimleri: yöneticiye personelin onay bekleyen isteği (bu dalgada mal siparişi taslağı), personele kendi
+     * isteğinin sonucu (docs/ONAYLAR.md)
+     */
+    approvals: boolean("approvals").notNull().default(true),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     failures: integer("failures").notNull().default(0),
     createdAt: createdAt(),
@@ -1444,6 +1454,11 @@ export const checklistTemplates = pgTable(
     weekdays: jsonb("weekdays").$type<number[]>().notNull().default([1, 2, 3, 4, 5, 6, 7]),
     /** Personel doldurabilir (kapalı: yalnız yönetici görür ve doldurur) */
     staffAllowed: boolean("staff_allowed").notNull().default(true),
+    /**
+     * Personele son açıldığı an (staffAllowed false → true): personel geçmişte yalnız bu andan sonraki kayıtları görür.
+     * Boş: baştan beri personelin (docs/KONTROL-LISTELERI.md)
+     */
+    staffSince: timestamp("staff_since", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     activeFrom: timestamp("active_from", { withTimezone: true }).notNull().defaultNow(),
     inactiveFrom: timestamp("inactive_from", { withTimezone: true }),
@@ -1669,6 +1684,11 @@ export const specialDays = pgTable(
     note: text("note"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByName: text("created_by_name").notNull(),
+    /** Personel ekledi (/panel/ozel-gunler): etkisi 0 olan personel satırı yalnız nottur, günü tabandan çıkarmaz */
+    byStaff: boolean("by_staff").notNull().default(false),
+    /** Son düzenleyen (ilk kayıtta boş): yöneticinin dokunduğu satırı personel artık değiştiremez */
+    updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedByName: text("updated_by_name"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1717,4 +1737,100 @@ export const forecastSnapshots = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("forecast_snapshots_date_made_uq").on(t.date, t.madeOn), index("forecast_snapshots_made_idx").on(t.madeOn)],
+);
+
+// ---------------------------------------------------------------- Kasaya işle (ModPOS) işaretleri
+/**
+ * "Kasaya işle"nin işaret kaydı: kim, hangi ürünü, hangi fiyatla, ne zaman kasada değiştirdi (personel de işaretler;
+ * docs/FIYATLAR.md). Geri almada saklanan bayat fiyat ve an ürüne geri yazılır (istemciden fiyat alınmaz).
+ */
+export const posMarks = pgTable(
+  "pos_marks",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    /** Kasada işlenen fiyat (TL, KDV dahil) */
+    price: doublePrecision("price").notNull(),
+    /** İşaretlenmeden önce kasada duran fiyat ve kasanın geri kaldığı an (geri almada ürüne yazılır) */
+    stalePrice: doublePrecision("stale_price").notNull(),
+    staleSince: timestamp("stale_since", { withTimezone: true }).notNull(),
+    markedBy: integer("marked_by").references(() => users.id, { onDelete: "set null" }),
+    markedByName: text("marked_by_name").notNull(),
+    markedAt: timestamp("marked_at", { withTimezone: true }).notNull().defaultNow(),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    undoneByName: text("undone_by_name"),
+  },
+  (t) => [
+    index("pos_marks_marked_idx").on(t.markedAt),
+    index("pos_marks_user_idx").on(t.markedBy, t.markedAt),
+    index("pos_marks_product_idx").on(t.productId, t.markedAt),
+  ],
+);
+
+// ---------------------------------------------------------------- Personel istekleri (ortak onay kuyruğu)
+/**
+ * Personelin yöneticinin onayına giden istekleri (docs/ONAYLAR.md): kasa düzeltmesi ve silmesi, geç kasa raporu,
+ * kasadan çıkan, fotoğraf kaldırma, kapalı gün, geç zayi / ikram ve zayi silme, mal siparişi taslağı. Kayıt onaya kadar
+ * değişmez; istek burada bekler, türe özel alanlar `payload` ve `result` içinde (zod ile her okumada çözülür). Kişi
+ * başına konu başına tek bekleyen istek (yenisi onu günceller, `version` artar); yönetici yalnız gördüğü sürümü onaylar,
+ * kimse kendi isteğini onaylayamaz. Reçete önerileri ayrı tablodadır (recipe_change_requests). Türler ve durumlar
+ * src/lib/staff-requests.ts'te; çekirdek src/server/staff-requests/core.ts.
+ */
+export const staffRequests = pgTable(
+  "staff_requests",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind", {
+      enum: ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun", "zayi-gec", "zayi-sil", "mal-taslak"],
+    }).notNull(),
+    /** İsteğin konusu: gun:<D>, cikan:<id>, cikan-yeni:<anahtar>, foto:<id>, zayi:<id>, zayi-yeni:<anahtar>, tedarikci:<anahtar> */
+    subject: text("subject").notNull(),
+    /** Etkilenen iş günü (YYYY-MM-DD); günü olmayan istekte boş */
+    day: text("day"),
+    /** Tutarsız, kişisel veri taşımayan tek satır ("22 Ekim kasa düzeltmesi"): zil, işlem geçmişi, sabah e-postası */
+    title: text("title").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    /** İsteyenin nedeni (en çok 500 karakter) */
+    message: text("message"),
+    status: text("status", {
+      enum: ["pending", "approved", "rejected", "withdrawn", "superseded", "expired", "done", "cancelled", "revoked"],
+    })
+      .notNull()
+      .default("pending"),
+    /** İsteyen her düzenlemede artırır; onay ekranda görülen sürümle yapılır */
+    version: integer("version").notNull().default(1),
+    /** İstemcinin ürettiği istek kimliği: çift dokunuş ya da yeniden deneme ikinci istek açmaz */
+    clientKey: text("client_key"),
+    /** İstek beklerken tutulan fotoğraflar (bağlanmaz, silinmez) */
+    photoIds: integer("photo_ids").array().notNull().default(sql`'{}'::integer[]`),
+    requestedBy: integer("requested_by").references(() => users.id, { onDelete: "set null" }),
+    requestedByName: text("requested_by_name").notNull(),
+    /** Yöneticinin notu (personele görünür; tutar yazılmaz) */
+    reviewNote: text("review_note"),
+    reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedByName: text("reviewed_by_name"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** Onayın ürettiği satır (rapor, gider, zayi, sipariş, özel gün); yabancı anahtar yok */
+    resultId: integer("result_id"),
+    result: jsonb("result").$type<Record<string, unknown>>(),
+    /** Bu andan sonra kendiliğinden "expired" olur (sabah işi; mal siparişi taslağı, kasadan çıkan) */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Zil kimliği: istek güncellenince en çok 10 dakikada bir yenilenir (yeniden okunmamış olur) */
+    bumpedAt: timestamp("bumped_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("staff_requests_status_idx").on(t.status, t.createdAt),
+    index("staff_requests_requester_idx").on(t.requestedBy, t.status, t.updatedAt),
+    index("staff_requests_day_idx").on(t.kind, t.day),
+    index("staff_requests_result_idx").on(t.kind, t.resultId),
+    // Kişi başına konu başına tek bekleyen istek (yenisi onu günceller)
+    uniqueIndex("staff_requests_pending_uq").on(t.kind, t.subject, t.requestedBy).where(sql`status = 'pending'`),
+    // Tedarikçi başına tek canlı mal siparişi taslağı (bekleyen ya da onaylanmış, gönderilmemiş)
+    uniqueIndex("staff_requests_live_draft_uq").on(t.subject).where(sql`kind = 'mal-taslak' and status in ('pending', 'approved')`),
+    uniqueIndex("staff_requests_client_key_uq").on(t.clientKey),
+  ],
 );
