@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import { accuracy, isSameMorning, pastRatios, type Accuracy, type SnapshotLite } from "@/lib/forecast/accuracy";
-import { coverageNote, upcomingCalendar, type SpecialKind } from "@/lib/forecast/calendar";
+import { upcomingCalendar, type SpecialKind } from "@/lib/forecast/calendar";
 import { dessertPlan, effectiveDessertCategories, isDessertCategory, type DessertPlan, type ProductMix } from "@/lib/forecast/desserts";
 import { buildForecast, HISTORY_DAYS, HORIZON_DAYS, type DayTotal, type Forecast, type ForecastDay, type SpecialDay } from "@/lib/forecast/model";
 import { parseForecastSettings, staffFor, type ForecastSettings } from "@/lib/forecast/staffing";
@@ -161,8 +161,6 @@ export interface ForecastPageData extends ForecastCore {
   /** Bütün kategorilerin adları ve tatlı sayılıp sayılmadığı (ayar formu) */
   categories: { name: string; dessert: boolean }[];
   upcoming: { from: string; to: string; name: string }[];
-  coverage: string | null;
-  preview: boolean;
 }
 
 /** /panel/tahmin: çekirdek, tatlı hazırlığı, kadro, kategoriler, önümüzdeki 60 günün takvimi */
@@ -186,8 +184,6 @@ export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
     roster,
     categories: names.map((name) => ({ name, dessert: isDessertCategory(name, chosen) })),
     upcoming: upcomingCalendar(core.today, SPECIAL_AHEAD_DAYS),
-    coverage: coverageNote(core.today),
-    preview: process.env.VERCEL_ENV === "preview",
   };
 }
 
