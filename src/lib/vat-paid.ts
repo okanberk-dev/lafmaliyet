@@ -84,3 +84,20 @@ export function addVatPaid(list: VatPaidEntry[], added: VatPaidEntry, now: strin
 export function removeVatPaid(list: VatPaidEntry[], id: number, fromDue: string): VatPaidEntry[] {
   return list.filter((e) => e.id !== id || e.dueDate < fromDue);
 }
+
+/**
+ * KDV kartındaki "Kaydı kaldır": o türün o dönemi ödenmemiş sayılır (yanlış Ödendi'den sonra hatırlatıcı silindiyse
+ * Geri al yoktur). Dönem kayıtlardan çıkar; ilk dönemse tutar da (tutar ilk döneme aittir); dönemi kalmayan kayıt düşer.
+ */
+export function forgetVatPeriod(list: VatPaidEntry[], kind: VatPaidEntry["kind"], period: string): VatPaidEntry[] {
+  const out: VatPaidEntry[] = [];
+  for (const e of list) {
+    if (e.kind !== kind || !e.periods.includes(period)) {
+      out.push(e);
+      continue;
+    }
+    const periods = e.periods.filter((p) => p !== period);
+    if (periods.length) out.push({ ...e, periods, amount: e.periods[0] === period ? null : e.amount });
+  }
+  return out;
+}

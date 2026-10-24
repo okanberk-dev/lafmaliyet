@@ -2,7 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
-import { addVatPaid, parseVatPaid, removeVatPaid, type VatPaidEntry } from "@/lib/vat-paid";
+import { addVatPaid, forgetVatPeriod, parseVatPaid, removeVatPaid, type VatPaidEntry } from "@/lib/vat-paid";
 import { getDb, schema as s } from "@/server/db";
 
 /** integration_state anahtarı: KDV ve KDV-2 hatırlatıcılarının kalıcı "Ödendi" kaydı (src/lib/vat-paid.ts) */
@@ -34,6 +34,11 @@ export async function rememberVatPaid(entry: Omit<VatPaidEntry, "at">) {
 /** "Geri al": hatırlatıcı `fromDue` gününe döndü */
 export async function forgetVatPaid(id: number, fromDue: string) {
   await update((list) => removeVatPaid(list, id, fromDue));
+}
+
+/** KDV kartındaki "Kaydı kaldır": o türün o dönemi ödenmemiş sayılır */
+export async function forgetVatPaidPeriod(kind: VatPaidEntry["kind"], period: string) {
+  await update((list) => forgetVatPeriod(list, kind, period));
 }
 
 export async function loadVatPaid(): Promise<VatPaidEntry[]> {

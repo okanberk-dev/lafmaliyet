@@ -108,6 +108,12 @@ export async function setReminderActive(id: number, active: boolean) {
     const today = todayTR();
     const dueDate = on && r.repeat !== "none" && r.dueDate < today ? (advancePast(r.dueDate, r.repeat as ReminderRepeat, r.anchorDate, addDaysBack(today)) ?? r.dueDate) : r.dueDate;
     await db.update(s.reminders).set({ active: on, dueDate }).where(eq(s.reminders.id, rid));
+    // Kapalı tek seferliği yeniden açmak Ödendi'sini geri alır (dönemi yeniden beklenir); sonra yeniden kapatmak onu
+    // ödemiş saymaz (kapatma ödeme değildir)
+    if (on && !r.active && r.repeat === "none") {
+      await forgetVatPaid(rid, r.dueDate);
+      await forgetPaid("reminder", [rid]);
+    }
     refresh();
     return null;
   });
