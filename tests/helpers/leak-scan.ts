@@ -1,0 +1,54 @@
+// Personel sızıntı denetimi (plan docs/planlar/personel-yetki.md §6.2): personele giden kaynakta (yükleyici, istemci
+// bileşeni, eylem yanıtı) ya da JSON'da (RSC yükü, eylem yanıtı) maliyet, alış fiyatı, fatura tutarı, maaş, kâr, marj,
+// komisyon ya da karaoke parası anahtarı olmamalı. Her grubun personel yükleyicileri ve istemci bileşenleri bununla
+// taranır (tests/personel-sizinti-*.test.ts); yardımcının kendisi tests/onay-kuyrugu.test.ts'te sınanır.
+
+import assert from "node:assert/strict";
+
+/**
+ * Yasak anahtarlar: nesne anahtarı ya da JSON anahtarı olarak (`cost:`, `"cost":`). Anahtar adın başından eşleşir:
+ * `unitCost` yasak, `isEstimate` (bayrak) değil; düz metindeki sözcük (yorum, Türkçe metin) anahtar sayılmaz.
+ */
+export const COST_KEYS = [
+  "cost",
+  "unitCost",
+  "packagePrice",
+  "packPrice",
+  "expectedUnitPrice",
+  "estimate",
+  "payable",
+  "priceMinor",
+  "priceMinorL",
+  "margin",
+  "costRatio",
+  "commission",
+  "salary",
+  "maas",
+  "prepaid",
+  "karaokeAmount",
+  "invoiceAmount",
+] as const;
+
+const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])"?(${COST_KEYS.join("|")})"?\\s*:`, "gm");
+
+/** Kaynak koddaki yorumlar (satır ve blok): yorumda geçen sözcük anahtar değildir */
+export function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+}
+
+/** Metinde (kaynak ya da JSON) geçen yasak anahtarlar, ilk görünme sırasıyla, tekrarsız */
+export function costKeysIn(sourceOrJson: string): string[] {
+  const text = stripComments(sourceOrJson);
+  return [...new Set([...text.matchAll(KEY_RE)].map((m) => m[1]))];
+}
+
+/** Personele giden kaynakta ya da JSON'da yasak anahtar varsa test düşer; `label` hangi dosya ya da yanıt olduğu */
+export function assertNoCostKeys(sourceOrJson: string, label = "kaynak"): void {
+  const found = costKeysIn(sourceOrJson);
+  assert.deepEqual(found, [], `${label}: personele maliyet / tutar anahtarı gidiyor (${found.join(", ")})`);
+}
+
+/** ₺ yasağı olan personel ekranları için (karaoke, zayi, kontrol geçmişi, hızlı sayım, özel günler, yardım) */
+export function assertNoLira(text: string, label = "metin"): void {
+  assert.doesNotMatch(text, /₺/, `${label}: personel ekranında tutar (₺) var`);
+}

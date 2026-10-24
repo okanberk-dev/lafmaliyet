@@ -285,3 +285,29 @@ test("sabah işi: süresi dolan istekler adımı (yalnız bir istek kapanınca y
   assert.match(seed, /const reset = \{ reviewNote: "Veritabanı sıfırlandı", updatedAt: now \};/);
   assert.match(seed, /\.set\(\{ \.\.\.reset, status: "withdrawn" \}\)\.where\(eq\(s\.staffRequests\.status, "pending"\)\)/);
 });
+
+test("sızıntı denetimi yardımcısı: yasak anahtarları anahtar olarak bulur; sözcük, yorum ve bayrak anahtar sayılmaz", async () => {
+  const { assertNoCostKeys, costKeysIn } = await import("./helpers/leak-scan");
+  assert.deepEqual(costKeysIn(`{ "cost": 12, "name": "Latte" }`), ["cost"]);
+  assert.deepEqual(costKeysIn(`select({ id: s.products.id, unitCost: x, priceMinor: y })`), ["unitCost", "priceMinor"]);
+  assert.deepEqual(costKeysIn(`{"karaokeAmount":1500,"salary" : 3}`), ["karaokeAmount", "salary"]);
+  assert.deepEqual(costKeysIn(`{ isEstimate: true, title: "maliyet yok", costly: 1, recost: 2 }`), []);
+  assert.deepEqual(costKeysIn(`// cost: yalnız yorum\n/* margin: blok */ const a = { name: 1 };`), []);
+  assert.throws(() => assertNoCostKeys(`{ margin: 0.3 }`, "örnek"), /örnek: personele maliyet/);
+  assertNoCostKeys(`{ name: "Latte", price: 205 }`);
+});
+
+test("personele giden Adım 0 yüzeyleri: kendi istekleri, geri çekme yanıtı, Bugün'ün operasyon dalı ve e-posta satırları tutarsız", async () => {
+  const { assertNoCostKeys, assertNoLira } = await import("./helpers/leak-scan");
+  const core = read("src/server/staff-requests/core.ts");
+  const own = core.slice(core.indexOf("export async function ownRequests"));
+  assertNoCostKeys(own, "ownRequests");
+  assert.doesNotMatch(own, /payload/);
+  assertNoCostKeys(read("src/server/actions/staff-requests.ts"), "withdrawStaffRequest");
+  const ops = read("src/server/data/today-ops.ts");
+  assertNoCostKeys(ops.slice(0, ops.indexOf("posPendingSummary().then")), "today-ops personel dalı");
+  assertNoCostKeys(read("src/app/panel/bugun/rows-ops.ts"), "rows-ops");
+  const lines = approvalsDigestLines([{ title: "Kaldi · 5 kalem", requestedByName: "Ayşe", createdAt: NOW }], NOW);
+  assertNoCostKeys(JSON.stringify(lines), "e-posta satırları");
+  assertNoLira(JSON.stringify(lines), "e-posta satırları");
+});
