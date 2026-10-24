@@ -5,7 +5,7 @@ import { and, asc, desc, eq, gt, gte, isNull, lte, or } from "drizzle-orm";
 import { businessDate } from "@/lib/cash-report";
 import { accuracy, isSameMorning, pastRatios, type Accuracy, type SnapshotLite } from "@/lib/forecast/accuracy";
 import { upcomingCalendar, type SpecialKind } from "@/lib/forecast/calendar";
-import { dessertPlan, effectiveDessertCategories, isDessertCategory, type DessertPlan, type ProductMix } from "@/lib/forecast/desserts";
+import { dessertPlan, effectiveDessertCategories, isDessertCategory, type DessertGap, type DessertPlan, type ProductMix } from "@/lib/forecast/desserts";
 import { buildForecast, HISTORY_DAYS, HORIZON_DAYS, type DayTotal, type Forecast, type ForecastDay, type SpecialDay } from "@/lib/forecast/model";
 import { parseForecastSettings, staffFor, type ForecastSettings } from "@/lib/forecast/staffing";
 import { cardFooter, digestForecastBox, staffView, type StaffForecastView } from "@/lib/forecast/text";
@@ -15,7 +15,7 @@ import { loadDailyProductSales } from "@/server/data/daily-sales";
 import { getDb, schema as s } from "@/server/db";
 import type { DigestExtraLoad } from "@/server/notify/digest-template";
 
-import { loadProductMix } from "./mix";
+import { loadDessertMix, loadProductMix } from "./mix";
 
 /**
  * Satış tahmininin okuyucuları (docs/SATIS-TAHMINI.md): sayfa, Bugün'ün yönetici kartı, personelin satırı ve sabah
@@ -166,6 +166,8 @@ export interface ForecastPageData extends ForecastCore {
   /** Özel günler kartının listesi: son 60 günde biten ve bütün yaklaşanlar (tahminin 60 günlük penceresinden bağımsız) */
   specialAll: SpecialDayRow[];
   mix: ProductMix | null;
+  /** Pay yoksa nedeni: satış yok ya da tatlı kategorilerinde satış yok (Tatlı hazırlığı kartının yazısı) */
+  dessertGap: DessertGap | null;
   plan: DessertPlan | null;
   roster: number | null;
   /** Bütün kategorilerin adları ve tatlı sayılıp sayılmadığı (ayar formu) */
@@ -176,7 +178,7 @@ export interface ForecastPageData extends ForecastCore {
 /** /panel/tahmin: çekirdek, özel günler listesi, tatlı hazırlığı, kadro, kategoriler, önümüzdeki 60 günün takvimi */
 export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
   const core = await loadForecastCore(now);
-  const [specialAll, mix, roster, cats] = await Promise.all([
+  const [specialAll, dessert, roster, cats] = await Promise.all([
     // Kaydedilen her özel gün listede görünsün (1 yıl ileriye girilebilir; tahminin penceresi 60 gün)
     getDb()
       .select()
@@ -184,9 +186,9 @@ export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
       .where(gte(s.specialDays.dateTo, addDays(core.today, -SPECIAL_PAST_DAYS)))
       .orderBy(asc(s.specialDays.dateFrom), asc(s.specialDays.id))
       .then((rows) => rows.map(toSpecialRow)),
-    loadProductMix(core.settings, core.today).catch((e) => {
+    loadDessertMix(core.settings, core.today).catch((e) => {
       console.error("[tahmin] tatlı payı", e);
-      return null;
+      return { mix: null, gap: "satis" as const };
     }),
     rosterCount(core.today.slice(0, 7)).catch(() => null),
     getDb().select({ name: s.categories.name }).from(s.categories).orderBy(asc(s.categories.sortOrder), asc(s.categories.name)),
@@ -194,10 +196,12 @@ export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
   const open = core.forecast.days;
   const names = cats.map((c) => c.name);
   const chosen = effectiveDessertCategories(core.settings.dessertCategories, names);
+  const mix = dessert.mix;
   return {
     ...core,
     specialAll,
     mix,
+    dessertGap: dessert.gap,
     plan: mix && open.length ? dessertPlan(open, mix) : null,
     roster,
     categories: names.map((name) => ({ name, dessert: isDessertCategory(name, chosen) })),

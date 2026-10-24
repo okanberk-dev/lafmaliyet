@@ -1,11 +1,12 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { businessDate } from "@/lib/cash-report";
-import { effectiveDessertCategories, isDessertCategory } from "@/lib/forecast/desserts";
+import { rangeTR } from "@/lib/forecast/calendar";
+import { effectiveDessertCategories, foldTR, isDessertCategory } from "@/lib/forecast/desserts";
 import { DEFAULT_FORECAST_SETTINGS, MAX_DESSERT_CATEGORIES, PER_PERSON_MAX, PER_PERSON_MIN, STAFF_MAX, type ForecastSettings } from "@/lib/forecast/staffing";
 import { clockTR, specialSummary } from "@/lib/forecast/text";
 import { money } from "@/lib/format";
@@ -74,6 +75,13 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     const effect = d.kind === "kapali" ? -1 : d.effect;
     const values = { kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo, effect, note: d.note };
     const db = getDb();
+    // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş)
+    const overlapping = await db
+      .select({ id: s.specialDays.id, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
+      .from(s.specialDays)
+      .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, d.dateFrom)));
+    const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title));
+    if (twin) throw new UserError(`Bu günlerde aynı adla bir özel gün var (${rangeTR(twin.dateFrom, twin.dateTo)}); onu düzenleyin`);
     let id: number;
     if (d.id) {
       const [row] = await db

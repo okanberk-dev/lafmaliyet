@@ -14,7 +14,7 @@ import { mobileTitleFor, NAV_GROUPS, NAV_TREE } from "../src/components/panel/na
 import { businessDate } from "../src/lib/cash-report";
 import { accuracy, isSameMorning, pairFor, pastRatios, type SnapshotLite } from "../src/lib/forecast/accuracy";
 import { calendarDay, coverageNote, rangeTR, shortDateTR, TR_CALENDAR, upcomingCalendar, weekdayOf } from "../src/lib/forecast/calendar";
-import { buildMix, dessertPlan, effectiveDessertCategories, foldTR, isDessertCategory, prepLabel } from "../src/lib/forecast/desserts";
+import { buildMix, dessertGap, dessertPlan, effectiveDessertCategories, foldTR, isDessertCategory, prepLabel } from "../src/lib/forecast/desserts";
 import { buildForecast, quantile, robustMean, snapshotDetail, type DayTotal, type ForecastInput, type SpecialDay } from "../src/lib/forecast/model";
 import { DEFAULT_FORECAST_SETTINGS, parseForecastSettings, staffFor } from "../src/lib/forecast/staffing";
 import {
@@ -520,6 +520,26 @@ test("tatlı kategorisi: Türkçe katlama, seçilen adlar kuralı geçer, siline
   assert.equal(prepLabel("Frambuazlı cheesecake"), "Frambuazlı cheesecake");
 });
 
+test("tatlı payı yoksa nedeni: satış yok mu, yoksa tatlı kategorilerinde mi yok (kart Tahmin ayarları'na götürür)", () => {
+  const sep = [{ month: "2026-09", revenue: 429_698 }];
+  assert.equal(dessertGap({ months: sep, lines: LINES, products: PRODUCTS, chosen: null }), null);
+  assert.equal(dessertGap({ months: [], lines: [], products: PRODUCTS, chosen: null }), "satis");
+  assert.equal(dessertGap({ months: sep, lines: [{ productId: null, qty: 50 }], products: PRODUCTS, chosen: null }), "satis");
+  // Satış var, tatlılar "Pastalar" kategorisinde: adında "tatlı" geçen kategori yok
+  const pasta = PRODUCTS.map((p) => (p.categoryName === "Tatlılar" ? { ...p, categoryName: "Pastalar" } : p));
+  assert.equal(buildMix({ months: sep, lines: LINES, products: pasta, recipes: RECIPES, ingredients: INGREDIENTS, chosen: null }), null);
+  assert.equal(dessertGap({ months: sep, lines: LINES, products: pasta, chosen: null }), "kategori");
+  assert.equal(dessertGap({ months: sep, lines: LINES, products: pasta, chosen: ["Pastalar"] }), null);
+  // Yanlış kategori seçilmiş: satışı olmayan
+  assert.equal(dessertGap({ months: sep, lines: LINES, products: PRODUCTS, chosen: ["Soğuk İçecekler"] }), "kategori");
+  // Tatlı satılmış ama ayın cirosu yok: eksik olan satış verisi
+  assert.equal(dessertGap({ months: [{ month: "2026-09", revenue: 0 }], lines: LINES, products: PRODUCTS, chosen: null }), "satis");
+  const card = read("src/app/panel/tahmin/forecast-desserts.tsx");
+  assert.match(card, /data\.dessertGap === "kategori"/);
+  assert.match(card, /href="\/panel\/tahmin#ayarlar"/);
+  assert.match(read("src/app/panel/tahmin/forecast-settings.tsx"), /<Card id="ayarlar"/);
+});
+
 // ---------------------------------------------------------------- 15. Personel
 
 test("personelin görünümü: yalnız yoğunluk, nedenler ve tatlı; tutar, ₺, % ve kişi yok", () => {
@@ -733,6 +753,23 @@ test("kaynak: MET isteği önbelleksiz, kimlikli, 6 sn; önizleme yazmaz; sabah 
   const load = read("src/server/forecast/load.ts");
   const core = bodyOf(load, "loadForecastCore");
   assert.ok(core.indexOf("await Promise.all([loadForecastSettings(), loadWeatherState()])") < core.indexOf("const at = now ?? new Date();"));
+});
+
+test("kaynak: özel günler kartı kaydedilebilen her günü gösterir; aynı adla üst üste binen kayıt reddedilir", () => {
+  const load = read("src/server/forecast/load.ts");
+  // Liste tahminin 60 günlük penceresinden bağımsız: üst sınır yok (1 yıl ileriye girilebilir)
+  assert.match(bodyOf(load, "loadForecastPage"), /\.from\(s\.specialDays\)\s+\.where\(gte\(s\.specialDays\.dateTo, addDays\(core\.today, -SPECIAL_PAST_DAYS\)\)\)/);
+  const list = bodyOf(load, "specialList");
+  assert.match(list, /data\.specialAll\.filter\(\(d\) => d\.dateTo >= data\.today\)/);
+  assert.match(list, /d\.dateTo >= pastFrom/);
+  // Kaydın sınırları listeninkiyle aynı sabitler
+  const save = bodyOf(read("src/server/actions/forecast.ts"), "saveSpecialDay");
+  assert.match(save, /if \(dateTo < addDays\(today, -SPECIAL_PAST_DAYS\)\)/);
+  assert.match(save, /if \(dateTo > addDays\(today, SPECIAL_MAX_AHEAD_DAYS\)\)/);
+  assert.match(save, /r\.id !== d\.id && foldTR\(r\.title\) === foldTR\(d\.title\)/);
+  assert.match(read("src/app/panel/tahmin/page.tsx"), /minDate=\{addDays\(data\.today, -SPECIAL_PAST_DAYS\)\} maxDate=\{addDays\(data\.today, SPECIAL_MAX_AHEAD_DAYS\)\}/);
+  // Aynı yazılı iki etiket ya da açıklama satırı React anahtarında çakışmaz
+  for (const f of ["src/app/panel/tahmin/forecast-days.tsx", "src/app/panel/bugun/today-forecast.tsx"]) assert.doesNotMatch(read(f), /key=\{(c|l)\}/, f);
 });
 
 test("kaynak: Bugün'de tahmin kartı yalnız yöneticide, personel satırı yalnız personelde; personele tutar gitmez", () => {

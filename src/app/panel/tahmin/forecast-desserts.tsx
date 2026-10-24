@@ -17,14 +17,31 @@ export function ForecastDesserts({ data }: { data: ForecastPageData }) {
   const days = data.forecast.days;
   if (!days.length) return null;
   if (!data.mix || !data.plan) {
+    // Satış yüklü ama tatlı kategorilerinde satış yoksa (kategorinin adı "Pasta", ya da yanlış seçilmiş) Satışlar'a
+    // göndermek yanıltır: sorun Tahmin ayarları'nda
+    const byCategory = data.dessertGap === "kategori";
+    const cats = data.categories.filter((c) => c.dessert).map((c) => c.name);
+    const where = cats.length > 3 ? `seçili ${cats.length} kategoride` : `${joinTR(cats)} ${cats.length > 1 ? "kategorilerinde" : "kategorisinde"}`;
     return (
       <Card>
         <CardHeader icon={<CakeSlice />} title="Tatlı hazırlığı" />
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          <p className="min-w-0 flex-[1_1_16rem] text-sm text-ink-mute">Tatlı önerisi için Satışlar&apos;a en az bir ayın ürün satışını yükleyin.</p>
-          <ButtonLink href="/panel/satislar" variant="ghost" size="sm">
-            Satışlar
-          </ButtonLink>
+          <p className="min-w-0 flex-[1_1_16rem] text-sm text-ink-mute">
+            {!byCategory
+              ? "Tatlı önerisi için Satışlar'a en az bir ayın ürün satışını yükleyin."
+              : cats.length
+                ? `Son satış aylarında ${where} satış yok. Tatlıların kategorisini Tahmin ayarları'ndan seçin.`
+                : "Adında “tatlı” geçen bir kategori yok. Tatlıların kategorisini Tahmin ayarları'ndan seçin."}
+          </p>
+          {byCategory ? (
+            <ButtonLink href="/panel/tahmin#ayarlar" variant="ghost" size="sm">
+              Tahmin ayarları
+            </ButtonLink>
+          ) : (
+            <ButtonLink href="/panel/satislar" variant="ghost" size="sm">
+              Satışlar
+            </ButtonLink>
+          )}
         </CardContent>
       </Card>
     );

@@ -101,11 +101,12 @@ Elle tutulan tablo; kaynakları dosyada ve `CALENDAR_SOURCES`'ta.
 ## 4. Özel günler
 
 Derbi / maç, AVM etkinliği, kampanya, kafe kapalı ya da diğer; bir günden 14 güne kadar, 60 gün geriye (tahmin son 60
-günün kasa raporunu okur; daha eski bir gün hiçbir şeyi değiştirmez) ve 1 yıl ileriye. Kart bütün yaklaşanları ve son 60
-günde bitenleri listeler; tahmin önümüzdeki 60 günü okur. Etki: çok artırır (+%30), artırır (+%15), bilmiyorum (yalnız not), azaltır (−%15), çok azaltır (−%30); kafe
-kapalıda tahmin 0. Geçmiş bir gün de işaretlenebilir: o gün normal günlerin ortalamasına katılmaz (derbi gününün üç
-katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki **Geri al** aynı değerlerle yeniden ekler.
-İşlem geçmişine "Özel gün", "Özel gün güncellendi", "Özel gün silindi" yazılır.
+günün kasa raporunu okur; daha eski bir gün hiçbir şeyi değiştirmez) ve 1 yıl ileriye. Kart bütün yaklaşanları ve son
+60 günde bitenleri listeler; tahmin önümüzdeki 60 günü okur. Etki: çok artırır (+%30), artırır (+%15), bilmiyorum
+(yalnız not), azaltır (−%15), çok azaltır (−%30); kafe kapalıda tahmin 0. Aynı adla üst üste binen ikinci kayıt
+reddedilir (etki iki kez çarpılmasın). Geçmiş bir gün de işaretlenebilir: o gün normal günlerin ortalamasına katılmaz
+(derbi gününün üç katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki **Geri al** aynı değerlerle
+yeniden ekler. İşlem geçmişine "Özel gün", "Özel gün güncellendi", "Özel gün silindi" yazılır.
 
 ## 5. Hava durumu: MET Norway
 
@@ -138,7 +139,8 @@ katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki
   adında "tatlı" geçen, ayarlardan; kategori adıyla saklanır) ürünlerinin reçetesindeki ambalaj olmayan, birimi dilim ya
   da adet malzemeler hazırlık kalemidir ("San Sebastian dilim" → San Sebastian, paket 12 dilim → bütün sayısı).
   ml / gr malzeme (dondurma) sayılmaz; böyle malzemesi olmayan tatlı kendi adıyla adet. Oran: birim ÷ ayın cirosu (POS,
-  yoksa satış satırlarının toplamı); günün tatlısı = tahmin × oran. Satışı olmayan yeni tatlı hesapta yok.
+  yoksa satış satırlarının toplamı); günün tatlısı = tahmin × oran. Satışı olmayan yeni tatlı hesapta yok. Satış
+  yüklü ama tatlı kategorilerinde hiç satış yoksa kart Satışlar'a değil Tahmin ayarları'na götürür (`loadDessertMix`).
 - **ModPOS günlük döküm** (`docs/planlar/CRITIQUE2.md` R18): tahmin `loadDailyProductSales` ağzını okur; bugün hep
   boş döner, günlük toplamlar kasa raporlarından, tatlı payı aylık satıştan gelir. Döküm gelince içe aktarma görevi
   raporu olmayan günleri ve hafta gününe göre tatlı oranlarını buraya bağlar (ağız dolu dönerse günlüğe uyarı yazılır).

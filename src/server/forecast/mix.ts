@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 
-import { buildMix, effectiveDessertCategories, isDessertCategory, type ProductMix } from "@/lib/forecast/desserts";
+import { buildMix, dessertGap, effectiveDessertCategories, isDessertCategory, type DessertGap, type MixInput, type ProductMix } from "@/lib/forecast/desserts";
 import type { ForecastSettings } from "@/lib/forecast/staffing";
 import { addDays } from "@/lib/reminders";
 import { loadDailyProductSales } from "@/server/data/daily-sales";
@@ -14,9 +14,12 @@ export const MIX_MONTHS = 3;
 /**
  * Tatlı hazırlığının dayanağı: son (en çok 3) satış ayındaki tatlı satışı ve o ayların POS cirosu (yoksa satış
  * satırlarının toplamı), tatlı ürünlerin reçeteleri. ModPOS'un günlük ürün satışı (R18) bugün hep null; döküm gelince
- * hafta gününe göre oranlar burada kurulacak, o zamana kadar aylık pay. Satış yoksa null.
+ * hafta gününe göre oranlar burada kurulacak, o zamana kadar aylık pay. Pay çıkmazsa mix null, gap nedeni.
  */
-export async function loadProductMix(settings: Pick<ForecastSettings, "dessertCategories">, today: string): Promise<ProductMix | null> {
+export async function loadDessertMix(
+  settings: Pick<ForecastSettings, "dessertCategories">,
+  today: string,
+): Promise<{ mix: ProductMix | null; gap: DessertGap | null }> {
   const db = getDb();
   const [monthRows, daily] = await Promise.all([
     db
@@ -29,7 +32,7 @@ export async function loadProductMix(settings: Pick<ForecastSettings, "dessertCa
   ]);
   if (daily?.length) console.warn("[tahmin] ModPOS günlük ürün satışı var ama tatlı payı henüz aylık (docs/SATIS-TAHMINI.md)");
   const months = monthRows.map((m) => m.month);
-  if (!months.length) return null;
+  if (!months.length) return { mix: null, gap: "satis" };
   const [monthInfo, lines, products] = await Promise.all([
     db.select({ month: s.months.month, posRevenue: s.months.posRevenue }).from(s.months).where(inArray(s.months.month, months)),
     db
@@ -63,7 +66,7 @@ export async function loadProductMix(settings: Pick<ForecastSettings, "dessertCa
   const lineRevenue = new Map<string, number>();
   for (const l of lines) lineRevenue.set(l.month, (lineRevenue.get(l.month) ?? 0) + l.revenue);
   const pos = new Map(monthInfo.map((m) => [m.month, m.posRevenue]));
-  return buildMix({
+  const input: MixInput = {
     months: months.map((month) => {
       const p = pos.get(month);
       return { month, revenue: p != null && p > 0 ? p : (lineRevenue.get(month) ?? 0) };
@@ -73,5 +76,12 @@ export async function loadProductMix(settings: Pick<ForecastSettings, "dessertCa
     recipes: recipes.map((r) => ({ productId: r.productId, ingredientId: r.ingredientId, qty: r.qty })),
     ingredients: [...new Map(recipes.map((r) => [r.ingredientId, { id: r.ingredientId, name: r.name, unit: r.unit, category: r.category, packageSize: r.packageSize }])).values()],
     chosen,
-  });
+  };
+  const mix = buildMix(input);
+  return { mix, gap: mix ? null : (dessertGap(input) ?? "satis") };
+}
+
+/** Tatlı payı (Bugün kartı, personel satırı, sabah e-postası); yoksa null */
+export async function loadProductMix(settings: Pick<ForecastSettings, "dessertCategories">, today: string): Promise<ProductMix | null> {
+  return (await loadDessertMix(settings, today)).mix;
 }

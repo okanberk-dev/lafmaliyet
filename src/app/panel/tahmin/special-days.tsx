@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarHeart, CalendarPlus } from "lucide-react";
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
@@ -80,6 +80,11 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useActionTransition();
   const editing = draft.id !== undefined;
+  const alertRef = useRef<HTMLParagraphElement>(null);
+  // Telefonda form pencerenin içinde kayar: sunucunun reddi (aynı adla kayıt, eski gün) Kaydet'in arkasında kalmasın
+  useEffect(() => {
+    if (error) alertRef.current?.scrollIntoView({ block: "nearest" });
+  }, [error]);
   const set = <K extends keyof Draft>(k: K, value: Draft[K]) => {
     setV((x) => ({ ...x, [k]: value }));
     setError(null);
@@ -199,7 +204,7 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
           <Textarea id="ozel-not" value={v.note} maxLength={200} rows={2} onChange={(e) => set("note", e.target.value)} />
         </Field>
         {error ? (
-          <p role="alert" className="rounded-xl bg-bad-soft px-3 py-2.5 text-sm text-bad">
+          <p ref={alertRef} role="alert" className="scroll-my-3 rounded-xl bg-bad-soft px-3 py-2.5 text-sm text-bad">
             {error}
           </p>
         ) : null}

@@ -37,8 +37,7 @@ function expiresOf(res: Response, now: Date): string {
  * istek atılmaz ("fresh"); son Last-Modified If-Modified-Since olarak gider (304: "not-modified"). 200 / 203'te bugün
  * ve sonrası weather_days'e yazılır (geçmiş günler donar; bugünün satırı yalnız en az onun kadar gün içi adımıyla
  * güncellenir: sabahki istek dünkünün yerine geçer, öğleden sonraki yarım gün sabahın tam gününü ezmez). Başka her
- * durum "error" (yeniden denenmez; 15
- * dakika içinde tekrar istenmez). En çok 6 sn; hiç hata fırlatmaz.
+ * durum "error" (yeniden denenmez; 15 dakika içinde tekrar istenmez). En çok 6 sn; hiç hata fırlatmaz.
  */
 export async function refreshWeather(now: Date = new Date()): Promise<WeatherRefresh> {
   try {

@@ -64,19 +64,21 @@ export function prepLabel(ingredientName: string): string {
   return out || ingredientName.trim();
 }
 
-/**
- * Ürün payından hazırlık oranları. Tatlı ürünler kategorisi isDessertCategory'den geçenler; hazırlık kalemleri
- * reçetelerindeki ambalaj olmayan, birimi dilim ya da adet malzemeler (dondurmanın ml'si gibi gr / ml sayılmaz). Böyle
- * malzemesi olmayan tatlı kendi adıyla "adet" kalemi olur. Tatlı satışı ya da ciro yoksa null.
- */
-export function buildMix(i: {
+export interface MixInput {
   months: { month: string; revenue: number }[];
   lines: { productId: number | null; qty: number }[];
   products: { id: number; name: string; categoryName: string }[];
   recipes: { productId: number; ingredientId: number; qty: number }[];
   ingredients: { id: number; name: string; unit: string; category: string; packageSize: number }[];
   chosen: readonly string[] | null;
-}): ProductMix | null {
+}
+
+/**
+ * Ürün payından hazırlık oranları. Tatlı ürünler kategorisi isDessertCategory'den geçenler; hazırlık kalemleri
+ * reçetelerindeki ambalaj olmayan, birimi dilim ya da adet malzemeler (dondurmanın ml'si gibi gr / ml sayılmaz). Böyle
+ * malzemesi olmayan tatlı kendi adıyla "adet" kalemi olur. Tatlı satışı ya da ciro yoksa null (nedeni dessertGap).
+ */
+export function buildMix(i: MixInput): ProductMix | null {
   const revenue = i.months.reduce((a, m) => a + (m.revenue > 0 ? m.revenue : 0), 0);
   if (!(revenue > 0)) return null;
   const desserts = new Map(i.products.filter((p) => isDessertCategory(p.categoryName, i.chosen)).map((p) => [p.id, p]));
@@ -117,6 +119,21 @@ export function buildMix(i: {
     dessertsPerTL: totalQty / revenue,
     categories,
   };
+}
+
+/** Tatlı payı neden yok: "satis" satış ayı ya da cirosu yok; "kategori" satış var ama tatlı sayılan kategorilerde hiç yok */
+export type DessertGap = "satis" | "kategori";
+
+/**
+ * buildMix'in null nedeni. Satış yüklüyken tatlı kategorilerinde hiç satış yoksa sorun kategori seçimidir (tatlıların
+ * kategorisi "Pasta" adlı, adında "tatlı" yok; ya da yanlış kategori seçilmiş): ekran Satışlar'a değil Tahmin
+ * ayarları'na götürür. Pay çıkıyorsa null.
+ */
+export function dessertGap(i: Pick<MixInput, "months" | "lines" | "products" | "chosen">): DessertGap | null {
+  if (!i.months.length || !i.lines.some((l) => l.productId !== null && l.qty > 0)) return "satis";
+  const desserts = new Set(i.products.filter((p) => isDessertCategory(p.categoryName, i.chosen)).map((p) => p.id));
+  if (!i.lines.some((l) => l.productId !== null && desserts.has(l.productId) && l.qty > 0)) return "kategori";
+  return i.months.some((m) => m.revenue > 0) ? null : "satis";
 }
 
 export interface DessertPlan {
