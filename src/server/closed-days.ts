@@ -40,9 +40,10 @@ export async function isClosedDay(day: string, db: Db | Tx = getDb()): Promise<b
 /**
  * Personelin yazımı (kasadan çıkan, zayi / ikram) onaylı kapalı güne düşüyorsa nedeni; yönetici ve açık gün null
  */
-export async function closedDayRefusal(date: string, role: "admin" | "staff"): Promise<string | null> {
+export async function closedDayRefusal(date: string, role: "admin" | "staff", db: Db | Tx = getDb()): Promise<string | null> {
   void date;
   void role;
+  void db;
   return null;
 }
 

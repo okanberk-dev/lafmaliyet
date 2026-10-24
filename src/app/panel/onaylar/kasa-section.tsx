@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/server/auth/dal";
+import { cashOutCategories } from "@/server/data/cash-outs";
 import { cashCounters } from "@/server/data/cash-reports";
 import { loadCashRequestQueue } from "@/server/data/cash-requests";
 
@@ -11,7 +12,7 @@ import { KasaRequestCards } from "./kasa-cards";
  */
 export async function KasaRequests() {
   await requireAdmin();
-  const [cards, counters] = await Promise.all([loadCashRequestQueue(), cashCounters()]);
+  const [cards, counters, categories] = await Promise.all([loadCashRequestQueue(), cashCounters(), cashOutCategories("admin")]);
   if (!cards.length) return null;
-  return <KasaRequestCards cards={cards} counters={counters} />;
+  return <KasaRequestCards cards={cards} counters={counters} categories={categories.map((c) => ({ id: c.id, name: c.name }))} />;
 }

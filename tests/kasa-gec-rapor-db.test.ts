@@ -304,8 +304,8 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     if (!dates.includes("2030-03-14")) dates.push("2030-03-14");
     // Kasadan çıkan ve harcama yolları da aynı kontrolü yapar
     await refused(core.assertNotHeld(db, z), REQUEST_TEXT.held);
-    const outs = readFileSync(join(process.cwd(), "src/server/actions/cash-outs.ts"), "utf8");
-    assert.match(outs, /p\.kind !== "fis"[\s\S]*?await assertNotHeld\(tx, d\.photoId\);/);
+    const outs = readFileSync(join(process.cwd(), "src/server/cash-outs/write.ts"), "utf8");
+    assert.match(outs, /p\.kind !== "fis"[\s\S]*?await assertNotHeld\(tx, d\.photoId, o\.heldBy\);/);
     assert.match(readFileSync(join(process.cwd(), "src/server/actions/expenses.ts"), "utf8"), /await assertNotHeld\(tx, p\.id\);/);
     // Geri çekilince bırakılır ve bağlanabilir
     await core.withdrawOwn(db, users.ayse, pending.row.id, NOW);

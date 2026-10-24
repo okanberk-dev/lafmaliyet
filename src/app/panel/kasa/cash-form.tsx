@@ -288,6 +288,7 @@ export function CashForm({
   locked = false,
   requests = null,
   proposedBy,
+  photoRemoval,
   mode = "report",
   initial = null,
   late = null,
@@ -324,6 +325,8 @@ export function CashForm({
   requests?: { own: (OwnCorrection | OwnDelete)[]; others: OtherPending[] } | null;
   /** Onaylanan düzeltme önerilerinin önerenleri (sürüme göre; "Değişiklikler") */
   proposedBy?: Record<number, string>;
+  /** Personel: kayıtlı raporun fotoğraflarında kaldırma isteği ("ok" açılabilir, "pending" bekliyor, "blocked" olmaz) */
+  photoRemoval?: Record<number, "ok" | "pending" | "blocked">;
   /** "report" gün sonu raporu; "late" personelin geç raporu; "review" yöneticinin "Düzeltip onayla"sı */
   mode?: "report" | "late" | "review";
   /** Geç rapor ve "Düzeltip onayla": rapor yokken formun ilk değerleri */
@@ -709,7 +712,7 @@ export function CashForm({
               ) : null}
             </div>
           ) : null}
-          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} /> : null}
+          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} /> : null}
           {laterNote ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{laterNote}</p> : null}
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (

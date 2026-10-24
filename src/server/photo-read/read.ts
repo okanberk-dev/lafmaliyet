@@ -29,21 +29,26 @@ async function previousZNo(day: string): Promise<string | null> {
   return row?.zNo ?? null;
 }
 
-/** Aynı fişin ikinci kez eklenmesine karşı: günün ±1 kasadan çıkanları ve ±7 gün harcama kayıtları */
-async function recentReceipts(day: string) {
+/**
+ * Aynı fişin ikinci kez eklenmesine karşı: günün ±1 kasadan çıkanları ve (yöneticide) ±7 gün harcama kayıtları. Personel
+ * için harcama kayıtları okunmaz (yöneticinin maaş, kira gibi kayıtları; tekrar uyarısı personelde genel metindir,
+ * ayrıntılı eşleşme yöneticinin onay kartında)
+ */
+async function recentReceipts(day: string, staff: boolean) {
   const db = getDb();
-  const [outs, entries] = await Promise.all([
-    db
+  const outs = (
+    await db
       .select({ date: s.cashOuts.date, receiptDate: s.cashOuts.receiptDate, amount: s.cashOuts.amount, store: s.cashOuts.store, receiptNo: s.cashOuts.receiptNo })
       .from(s.cashOuts)
-      .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1)))),
-    db
-      .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount, store: s.expenseEntries.description, cashOutId: s.expenseEntries.cashOutId })
-      .from(s.expenseEntries)
-      .where(and(gte(s.expenseEntries.date, addDays(day, -7)), lte(s.expenseEntries.date, addDays(day, 7)))),
-  ]);
+      .where(and(gte(s.cashOuts.date, addDays(day, -1)), lte(s.cashOuts.date, addDays(day, 1))))
+  ).map((o) => ({ date: o.receiptDate ?? o.date, amount: o.amount, store: o.store, receiptNo: o.receiptNo }));
+  if (staff) return outs;
+  const entries = await db
+    .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount, store: s.expenseEntries.description, cashOutId: s.expenseEntries.cashOutId })
+    .from(s.expenseEntries)
+    .where(and(gte(s.expenseEntries.date, addDays(day, -7)), lte(s.expenseEntries.date, addDays(day, 7))));
   return [
-    ...outs.map((o) => ({ date: o.receiptDate ?? o.date, amount: o.amount, store: o.store, receiptNo: o.receiptNo })),
+    ...outs,
     // Kasadan çıkanın harcama kaydı zaten yukarıda (satırın kendisi)
     ...entries.filter((e) => e.cashOutId === null).map((e) => ({ date: e.date, amount: e.amount, store: e.store, receiptNo: null })),
   ];
@@ -70,7 +75,7 @@ export async function readPhotoFor(
     return { reading: normalizePos(res.data, { day: input.day }), readError: null, readCode: null, canRetry: false };
   }
   const staff = input.me.role !== "admin";
-  const [categories, recent] = await Promise.all([cashOutCategories(input.me.role), recentReceipts(input.day)]);
+  const [categories, recent] = await Promise.all([cashOutCategories(input.me.role), recentReceipts(input.day, staff)]);
   const res = await extractImage({ ...base, task: RECEIPT_TASK(input.day, categories), schema: ReceiptRaw, stored: receiptToStore });
   if (!res.ok) return failed(res.code, res.message);
   return { reading: { kind: "fis", ...normalizeReceipt(res.data, { day: input.day, categories, recent, staff }) }, readError: null, readCode: null, canRetry: false };

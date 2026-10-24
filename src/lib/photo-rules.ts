@@ -48,16 +48,23 @@ export function readingOffText(state: ReadingState, admin: boolean): string | nu
 }
 
 /**
+ * Personelin kasadan çıkan isteği ve fişi bu kadar gün geriye açılır (iş günü ile 7 gün öncesi;
+ * src/lib/cash-out-requests.ts REQUEST_DAYS bu sabittir)
+ */
+export const RECEIPT_REQUEST_DAYS = 7;
+
+/**
  * Fotoğraf ekleme kuralı (POST /api/foto ve yeniden okuma; src/server/photo-read/rules.ts canUploadPhoto): gün gerekli
  * ve ileri bir gün değil; kontrol listelerinin kendi yolu var. Yönetici her güne ekler ("yes"). Personel Z ve POS
  * fotoğrafını personelin hâlâ açık günüyle (staffDayOpen) ya da geç kasa raporunun gününe (staffLateDayOpen: dünden
- * eski, son 14 gün, raporu olmayan; "open-or-late"), fişi yalnız açık güne ("open") ekler. Veritabanına bakan kısım
- * çağıranda.
+ * eski, son 14 gün, raporu olmayan; "open-or-late"), fişi kasadan çıkan isteğinin penceresindeki güne (iş günü ile 7
+ * gün öncesi: açık günde doğrudan satır, kapanmış ya da eski günde istek) ekler. Veritabanına bakan kısım çağıranda.
  */
-export function uploadRule(role: "admin" | "staff", kind: PhotoKind, day: string | null, today: string): "no" | "yes" | "open" | "open-or-late" {
+export function uploadRule(role: "admin" | "staff", kind: PhotoKind, day: string | null, today: string): "no" | "yes" | "open-or-late" {
   if (kind === "kontrol" || !day || day > today) return "no";
   if (role === "admin") return "yes";
-  return kind === "fis" ? "open" : "open-or-late";
+  if (kind === "fis") return day >= addDays(today, -RECEIPT_REQUEST_DAYS) ? "yes" : "no";
+  return "open-or-late";
 }
 
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {

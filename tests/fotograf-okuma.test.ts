@@ -409,8 +409,12 @@ test("fiş: kartla ödenmiş, fatura, tekrar, tarih, kategori listede değil, tu
   assert.ok(a.checks.some((c) => c.level === "info" && c.text === "Bu bir e-Arşiv fatura. Paraşüt'e de gelecekse Aylık harcamalar'a eklemeyin."));
   // Personele bu bilgi pencerede ayrıca söylenir
   assert.ok(!normalizeReceipt(archive, ctx()).checks.some((c) => c.level === "info"));
-  const dup = normalizeReceipt(FIS, ctx({ recent: [{ date: "2026-10-21", amount: 412.5, store: "Migros", receiptNo: null }] }));
+  const dup = normalizeReceipt(FIS, ctx({ staff: false, recent: [{ date: "2026-10-21", amount: 412.5, store: "Migros", receiptNo: null }] }));
   assert.ok(dup.checks.some((c) => plain(c.text) === "Bu fiş zaten eklenmiş olabilir: Migros · 412,50 ₺ · 21.10.2026."));
+  // Personele genel metin: eşleşen satır yöneticinin kaydı olabilir (tutar, yer ve gün gitmez; plan §2.7)
+  const staffDup = normalizeReceipt(FIS, ctx({ recent: [{ date: "2026-10-21", amount: 412.5, store: "Migros", receiptNo: null }] }));
+  assert.ok(staffDup.checks.some((c) => c.text === "Bu fiş zaten eklenmiş olabilir; yönetici bakacak."));
+  assert.ok(!staffDup.checks.some((c) => c.text.includes("Migros")));
   // Harcama kaydının açıklaması da mağaza adıyla başlar
   assert.ok(normalizeReceipt(FIS, ctx({ recent: [{ date: "2026-10-20", amount: 412.5, store: "Migros · süt, buz", receiptNo: null }] })).checks.some((c) => c.text.startsWith("Bu fiş zaten")));
   assert.ok(!normalizeReceipt(FIS, ctx({ recent: [{ date: "2026-10-21", amount: 400, store: "Migros", receiptNo: null }] })).checks.some((c) => c.text.startsWith("Bu fiş zaten")));

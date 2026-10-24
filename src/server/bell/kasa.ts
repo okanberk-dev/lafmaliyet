@@ -8,6 +8,7 @@ import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
+import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
 
 /*
@@ -129,7 +130,8 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
 async function requestNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   if (user.role === "admin") {
-    return (await pendingCashBellRows()).map((r) => ({
+    const [rows, outs] = await Promise.all([pendingCashBellRows(), cashOutBellRow(now)]);
+    const out: PanelNotification[] = rows.map((r) => ({
       id: `istek-${r.id}-${r.bumpedAt.getTime()}`,
       kind: "warning" as const,
       title: r.title,
@@ -139,13 +141,27 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
       href: `/panel/onaylar#istek-${r.id}`,
       group: "onay" as const,
     }));
+    // Kasadan çıkan ve fotoğraf kaldırma istekleri tek satır ("3 kasa isteği onay bekliyor")
+    if (outs) {
+      out.push({
+        id: outs.id,
+        kind: "warning",
+        title: `${outs.count} kasa isteği onay bekliyor`,
+        body: outs.text,
+        timeLabel: waitedText(outs.oldestAt, now),
+        unread: true,
+        href: `/panel/onaylar#istek-${outs.firstId}`,
+        group: "onay",
+      });
+    }
+    return out;
   }
   const today = todayTR(now);
   return (await myCashRequests(user.id))
     .filter((r) => r.day && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired"))
     .slice(0, 5)
     .map((r) => {
-      const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired", day: r.day!, note: r.reviewNote });
+      const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired", day: r.day!, note: r.reviewNote, title: r.title });
       const at = todayTR(new Date(r.updatedAt));
       return {
         id: `istek-${r.id}-${r.status}`,

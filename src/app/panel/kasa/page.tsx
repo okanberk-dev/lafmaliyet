@@ -37,6 +37,7 @@ import { requireUser } from "@/server/auth/dal";
 import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
 import { chainNeighbours } from "@/server/cash/late-chain";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
+import { photoRemovalStates, staffCashOutRequests, staffOldCashOutDays } from "@/server/data/cash-out-requests";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
@@ -138,7 +139,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     showForm ? cashCounters() : Promise.resolve([]),
   ]);
-  const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays] = await Promise.all([
+  const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
     report && report.revision > 1 ? proposedByForReports([report.id]) : Promise.resolve(new Map<number, Map<number, string>>()),
     // Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı); yönetici: formdaki bant
@@ -147,6 +148,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     admin ? Promise.resolve([]) : myCashRequests(user.id),
     // Personel: dünden eski, raporu girilmemiş son 14 gün (geç rapor)
     admin ? Promise.resolve([]) : staffLateDays(user),
+    // Personel: bu günün kasadan çıkan istekleri (kendisininki satırın kendisi, başkalarınınki yalnız ad) ve eski günler
+    admin ? Promise.resolve(null) : staffCashOutRequests(date, user),
+    admin ? Promise.resolve([]) : staffOldCashOutDays(),
   ]);
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
@@ -161,6 +165,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // (/api/foto'nun kuralı, staffDayOpen); kapanan günde personel küçük resim yerine fiş simgesini görür (403 olmasın)
   const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
   const showPhotos = canEdit;
+  // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
+  const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
   const whatsapp = report
     ? (() => {
         const text = whatsappText(report, {
@@ -232,6 +238,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       locked={!admin && Boolean(report) && !staffOpen && next !== null}
       requests={dayRequests}
       proposedBy={proposedBy}
+      photoRemoval={removal}
     />
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)
@@ -268,6 +275,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       storage={storage.available}
       reading={ai.state}
       reported={report ? { amount: report.cashOut, note: report.cashOutNote } : null}
+      locked={!admin && !staffOpen}
+      requests={outRequests}
+      oldDays={oldDays}
     />
   ) : null;
   const yesterday = addDays(today, -1);

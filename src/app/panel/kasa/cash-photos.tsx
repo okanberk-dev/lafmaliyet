@@ -1,19 +1,25 @@
 "use client";
 
-import { Info, Trash2, TriangleAlert } from "lucide-react";
+import { ImageMinus, Info, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { PhotoThumb, ReadError } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { useActionTransition } from "@/components/ui/action-error";
+import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Textarea } from "@/components/ui/form";
 import { photoDiffText, type CashPhotoKind, type CashReading, type PhotoDiff, type ReadCheck } from "@/lib/photo-read/kasa";
 import { photoCaption } from "@/lib/photo-rules";
 import { cn } from "@/lib/utils";
+import { requestPhotoRemoval } from "@/server/actions/cash-out-requests";
 import { deleteStoredPhoto } from "@/server/actions/photos";
 import type { CashPhotoDTO } from "@/server/data/cash-photos";
+
+import { newClientKey } from "./cash-requests";
 
 /** Formdaki (henüz gönderilmemiş) fotoğraf ve okuması */
 export interface FormPhoto {
@@ -105,11 +111,16 @@ export function CardPhotos({
 
 /**
  * Gönderilmiş raporun fotoğrafları (görebilene): "Z raporu · 23:52 · Ayşe". Yönetici bir fotoğrafı silebilir; rapor
- * kalır. Kayıtlı değerler net okunmuş bir değerden farklıysa uyarı kutusu.
+ * kalır. Personel yanlış Z / POS fotoğrafının kaldırılmasını isteyebilir (`removal`; yöneticinin onayıyla, fotoğraf 30
+ * gün saklanır): raporun tek Z fotoğrafında ve fotoğraftan farklı yazılan alanda düğme yok, bekleyende "Kaldırma
+ * istendi". Kayıtlı değerler net okunmuş bir değerden farklıysa uyarı kutusu.
  */
-export function SavedPhotos({ photos, diffs, admin }: { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; admin: boolean }) {
+export function SavedPhotos({ photos, diffs, admin, removal }: { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; admin: boolean; removal?: Record<number, "ok" | "pending" | "blocked"> }) {
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const [confirm, setConfirm] = useState<CashPhotoDTO | null>(null);
+  const [ask, setAsk] = useState<CashPhotoDTO | null>(null);
+  const [reason, setReason] = useState("");
+  const [key, setKey] = useState(newClientKey);
   const [pending, start] = useActionTransition();
   if (!photos.length && !diffs.length) return null;
   function remove() {
@@ -122,6 +133,18 @@ export function SavedPhotos({ photos, diffs, admin }: { photos: CashPhotoDTO[]; 
       setConfirm(null);
     });
   }
+  function requestRemoval() {
+    const p = ask;
+    if (!p) return;
+    start(async () => {
+      const res = await requestPhotoRemoval({ photoId: p.id, message: reason.trim() || null, clientKey: key });
+      if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      toast.success("Kaldırma isteği gönderildi", { description: "Yönetici onaylarsa fotoğraf rapordan çıkar." });
+      setAsk(null);
+      setReason("");
+      setKey(newClientKey());
+    });
+  }
   return (
     <div className="space-y-2">
       {photos.length ? (
@@ -130,12 +153,19 @@ export function SavedPhotos({ photos, diffs, admin }: { photos: CashPhotoDTO[]; 
           <div className="grid gap-2.5 sm:grid-cols-2">
             {photos.map((p) => {
               const caption = photoCaption(p.kind, p.createdAt, p.byName);
+              const state = removal?.[p.id];
               return (
                 <div key={p.id} className="flex min-w-0 items-center gap-2">
-                  <PhotoThumb id={p.id} caption={caption} onOpen={() => setViewer({ id: p.id, caption })} className="flex-1" />
+                  <PhotoThumb id={p.id} caption={caption} onOpen={() => setViewer({ id: p.id, caption })} className="flex-1">
+                    {state === "pending" ? <Badge tone="amber">Kaldırma istendi</Badge> : null}
+                  </PhotoThumb>
                   {admin ? (
                     <IconButton label="Fotoğrafı sil" tone="danger" onClick={() => setConfirm(p)} disabled={pending}>
                       <Trash2 size={15} />
+                    </IconButton>
+                  ) : state === "ok" ? (
+                    <IconButton label="Kaldırılmasını iste" onClick={() => setAsk(p)} disabled={pending}>
+                      <ImageMinus size={15} />
                     </IconButton>
                   ) : null}
                 </div>
@@ -160,6 +190,29 @@ export function SavedPhotos({ photos, diffs, admin }: { photos: CashPhotoDTO[]; 
         description="Rapor kalır, yalnız fotoğraf silinir."
         confirmLabel="Sil"
       />
+      <Dialog
+        open={ask !== null}
+        onClose={() => setAsk(null)}
+        title="Fotoğraf kaldırılsın mı?"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAsk(null)} disabled={pending} className="max-sm:bg-panel">
+              Vazgeç
+            </Button>
+            <Button variant="danger" onClick={requestRemoval} disabled={pending}>
+              {pending ? "Gönderiliyor…" : "Kaldırılmasını iste"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-ink-mute">Yönetici onaylarsa rapordan çıkar; fotoğraf 30 gün saklanır.</p>
+          <Field label="Neden? (isteğe bağlı)" htmlFor="foto-kaldir-neden">
+            <Textarea id="foto-kaldir-neden" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={200} placeholder="ör. başka günün fişi" />
+          </Field>
+        </div>
+      </Dialog>
     </div>
   );
 }

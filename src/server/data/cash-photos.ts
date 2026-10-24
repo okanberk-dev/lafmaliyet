@@ -89,6 +89,20 @@ export async function heldPhotoInfo(photoIds: readonly number[], day: string): P
   return info;
 }
 
+/**
+ * Tek fotoğrafın son başarılı okuması (fotoğrafın şimdiki türüyle), raporun gününe göre yeniden kurulur; okunmadıysa
+ * null. Fotoğraf kaldırma isteği ve onayı bununla fotoğrafın okuma farkına bakar.
+ */
+export async function photoReadingOf(db: Pick<ReturnType<typeof getDb>, "select">, photoId: number, kind: CashPhotoKind, day: string): Promise<CashReading | null> {
+  const [call] = await db
+    .select({ result: s.aiCalls.result })
+    .from(s.aiCalls)
+    .where(and(eq(s.aiCalls.photoId, photoId), eq(s.aiCalls.feature, kind), eq(s.aiCalls.status, "ok")))
+    .orderBy(desc(s.aiCalls.at), desc(s.aiCalls.id))
+    .limit(1);
+  return call ? readingOf(kind, call.result, day) : null;
+}
+
 function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReading | null {
   if (kind === "kasa-z") {
     const raw = KasaZRaw.safeParse(result);

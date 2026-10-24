@@ -304,9 +304,11 @@ export function lateApprovalLine(o: { requester: string; requestedAt: Date; appr
 }
 
 /** Personelin kasa isteklerinin türleri (zil ve İsteklerim) */
-export type CashRequestKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec";
+export type CashRequestKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec" | "kasa-cikan" | "foto-kaldir";
 
-const RESULT_HEAD: Record<CashRequestKind, (d: string) => string> = {
+/** Başlığı gün ve türden kurulan istekler (öteki türlerde başlık isteğin kendi başlığıdır) */
+type DayHeadKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec";
+const RESULT_HEAD: Record<DayHeadKind, (d: string) => string> = {
   "kasa-duzeltme": (d) => `${d} kasa düzeltmeniz`,
   "kasa-silme": (d) => `${d} kasa raporunun silinmesi`,
   "kasa-gec": (d) => `${d} kasa raporu`,
@@ -315,17 +317,33 @@ const RESULT_BODY: Record<CashRequestKind, { approved: string; rejected: string 
   "kasa-duzeltme": { approved: "Rapor güncellendi", rejected: "Rapor değişmedi" },
   "kasa-silme": { approved: "Rapor silindi", rejected: "Rapor yerinde kaldı" },
   "kasa-gec": { approved: "Rapor kayda geçti", rejected: "Rapor kaydedilmedi" },
+  "kasa-cikan": { approved: "Kasaya işlendi", rejected: "Kasa değişmedi" },
+  "foto-kaldir": { approved: "Fotoğraf rapordan çıkarıldı", rejected: "Fotoğraf yerinde kaldı" },
 };
 
 /**
  * Personelin zilinde isteğin sonucu: "22 Ekim kasa düzeltmeniz onaylandı" / "… reddedildi" / "… kapandı" / "… süresi
- * doldu"; gövde yöneticinin notu ("Yönetici: …") ya da sonucun kendisi ("Rapor güncellendi", "Rapor değişmedi").
+ * doldu"; kasadan çıkan ve fotoğraf kaldırmada isteğin başlığıyla ("21 Ekim kasadan çıkan ekleme isteğiniz
+ * onaylandı"). Gövde yöneticinin notu ("Yönetici: …") ya da sonucun kendisi ("Rapor güncellendi", "Kasaya işlendi").
  * Kapanan istekte not sistemin nedenidir ("Rapor başka bir istekle düzeltildi").
  */
-export function staffResultBell(o: { kind: CashRequestKind; status: "approved" | "rejected" | "superseded" | "expired"; day: string; note: string | null }): { title: string; body: string } {
-  const head = RESULT_HEAD[o.kind](dayMonthTR(o.day));
+export function staffResultBell(o: {
+  kind: CashRequestKind;
+  status: "approved" | "rejected" | "superseded" | "expired";
+  day: string;
+  note: string | null;
+  /** İsteğin başlığı (kasadan çıkan ve fotoğraf kaldırmada başlık bundan) */
+  title?: string;
+}): { title: string; body: string } {
   const verb = { approved: "onaylandı", rejected: "reddedildi", superseded: "kapandı", expired: "süresi doldu" }[o.status];
-  const title = o.status === "superseded" && o.kind !== "kasa-duzeltme" ? `${head} isteğiniz kapandı` : o.status === "expired" ? `${head} isteğinizin süresi doldu` : `${head} ${verb}`;
+  let title: string;
+  if (o.kind === "kasa-cikan" || o.kind === "foto-kaldir") {
+    const head = o.title ?? dayMonthTR(o.day);
+    title = o.status === "expired" ? `${head} isteğinizin süresi doldu` : `${head} isteğiniz ${verb}`;
+  } else {
+    const head = RESULT_HEAD[o.kind](dayMonthTR(o.day));
+    title = o.status === "superseded" && o.kind !== "kasa-duzeltme" ? `${head} isteğiniz kapandı` : o.status === "expired" ? `${head} isteğinizin süresi doldu` : `${head} ${verb}`;
+  }
   if (o.status === "superseded" || o.status === "expired") return { title, body: o.note ?? RESULT_BODY[o.kind].rejected };
   return { title, body: o.note ? `Yönetici: ${o.note}` : RESULT_BODY[o.kind][o.status] };
 }

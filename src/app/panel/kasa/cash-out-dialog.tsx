@@ -10,18 +10,23 @@ import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, NumberInput, Select } from "@/components/ui/form";
+import { Field, Input, NumberInput, Select, Textarea } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
+import { CASH_OUT_REQUEST_TEXT, type CashOutOp } from "@/lib/cash-out-requests";
 import { cashOutShortLabel, cashOutWritesExpense, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
 import { photoCaption } from "@/lib/photo-rules";
+import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { requestCashOutChange } from "@/server/actions/cash-out-requests";
 import { deleteCashOut, restoreCashOut, saveCashOut } from "@/server/actions/cash-outs";
 import type { CashOutCategory, CashOutDTO } from "@/server/data/cash-outs";
+
+import { newClientKey } from "./cash-requests";
 
 /** Pencerenin taslağı (metin alanları formdaki gibi) */
 interface Draft {
@@ -83,6 +88,21 @@ function applyReceipt(d: Draft, r: ReceiptReading, admin: boolean): { draft: Dra
 export type CashOutDialogMode = { mode: "photo" } | { mode: "plain" } | { mode: "edit"; line: CashOutDTO };
 
 /**
+ * Personelin istek kipi (yöneticinin onayına gider): kapanmış gün ("locked"), açık günde yöneticinin kategorisindeki
+ * satır ("admin") ya da dünden eski güne ekleme ("old"). `pendingOp`: kişinin bu satır için bekleyen isteği
+ */
+export interface CashOutRequestMode {
+  reason: "locked" | "admin" | "old";
+  pendingOp?: CashOutOp | null;
+}
+
+const REQUEST_INFO: Record<CashOutRequestMode["reason"], string> = {
+  locked: CASH_OUT_REQUEST_TEXT.lockedDay,
+  admin: CASH_OUT_REQUEST_TEXT.adminLine,
+  old: "Eski bir güne ekleme yönetici onayıyla; onaylanınca o günün kasasına işlenir.",
+};
+
+/**
  * Kasadan çıkan: fişin fotoğrafından okunan (ya da elle yazılan) tutar, yer, ne alındı, tarih, KDV ve kategori.
  * Okuma yalnız boş alanları doldurur ("Fişten" rozeti); denetimler altta, turuncu olanlar alanı da işaretler. Kaydet'e
  * basılmadan hiçbir şey yazılmaz. Yönetici "Aylık harcamalar'a da yaz"ı seçer; personelin yeni fişi kurala göre
@@ -97,6 +117,7 @@ export function CashOutDialog({
   categories,
   admin,
   me,
+  request = null,
   phase,
   uploaded,
   onRetry,
@@ -108,6 +129,8 @@ export function CashOutDialog({
   categories: CashOutCategory[];
   admin: boolean;
   me: string;
+  /** Personel: değişiklik yöneticinin onayına gider ("Onaya gönder") */
+  request?: CashOutRequestMode | null;
   /** Fotoğrafın yükleme / okuma aşaması (yalnız "photo") */
   phase: PhotoPhase;
   uploaded: PhotoUploadResponse | null;
@@ -121,6 +144,9 @@ export function CashOutDialog({
   const [reading, setReading] = useState<ReceiptReading | null>(null);
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const [pending, start] = useActionTransition();
+  // İstek kipi: yöneticiye not ve çift dokunuşa karşı istemci anahtarı (pencere başına)
+  const [note, setNote] = useState("");
+  const [clientKey] = useState(newClientKey);
 
   // Okuma gelince (yükleme pencere açıkken biter) taslağa bir kez uygulanır; o arada yazılanlar kalır
   const fresh = uploaded && uploaded.reading?.kind === "fis" ? uploaded.reading : null;
@@ -146,6 +172,9 @@ export function CashOutDialog({
   const writes = cashOutWritesExpense({ admin, mode: line ? "edit" : "new", kind: draft.kind, docType: draft.docType, requested: draft.toExpenses, hasExpense: line?.expenseEntryId != null });
   // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
+  // İstekte kategori değiştirilmez (yönetici onayda seçer); kapanmış günün fişi personele görünmez
+  const categoryFixed = locked || (request !== null && line !== null);
+  const hidePhoto = request?.reason === "locked";
   const checks: ReceiptCheck[] = reading?.checks ?? [];
   const warnFields = new Set<ReceiptField>(checks.filter((c) => c.level === "warn").flatMap((c) => c.fields));
   const suggested = reading && reading.confidence.categoryId === "high" ? categories.find((c) => c.id === reading.values.categoryId) : undefined;
@@ -173,6 +202,7 @@ export function CashOutDialog({
     const vat = draft.vat.trim() ? parseNumberTR(draft.vat) : null;
     if (draft.vat.trim() && (vat === null || vat < 0)) return void (toast.error("KDV'yi tutar olarak yazın (ör. 15,31)"), document.getElementById("co-vat")?.focus());
     if (writes && !draft.categoryId) return void (toast.error("Kategori seçin"), document.getElementById("co-cat")?.focus());
+    if (request) return send(amount, vat);
     start(async () => {
       const res = await saveCashOut({
         id: line?.id ?? null,
@@ -192,6 +222,40 @@ export function CashOutDialog({
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
       toast.success(`${line ? "Düzeltildi" : "Eklendi"}: ${label} · ${money(amount)}${res.data.expenseId ? " · Aylık harcamalar'a yazıldı" : ""}`);
+      onClose();
+    });
+  }
+
+  /** İstek kipi: satırı ya da değişikliği yöneticinin onayına gönderir (hiçbir şey yazılmaz) */
+  function send(amount: number, vat: number | null) {
+    const lineInput = {
+      kind: draft.kind,
+      amount,
+      store: draft.store,
+      description: draft.description,
+      receiptDate: harcama && draft.receiptDate ? draft.receiptDate : null,
+      receiptNo: harcama ? draft.receiptNo : null,
+      vat: harcama ? vat : null,
+      docType: harcama ? (photoId ? (draft.docType === "yok" ? "fis" : draft.docType) : draft.docType) : ("yok" as const),
+      categoryId: line ? (line.categoryId ?? null) : writes && draft.categoryId ? Number(draft.categoryId) : null,
+      photoId,
+    };
+    start(async () => {
+      const res = await requestCashOutChange({ op: line ? "duzelt" : "ekle", date: line ? null : date, cashOutId: line?.id ?? null, line: lineInput, message: note, clientKey });
+      if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      const label = cashOutShortLabel({ kind: draft.kind, amount, store: draft.store.trim() || null, description: draft.description.trim() || null });
+      toast.success(`Onaya gönderildi: ${label} · ${money(amount)}`, { description: "Yönetici onaylayınca kasaya işlenir; sonucu zilde görürsünüz." });
+      onClose();
+    });
+  }
+
+  /** İstek kipi: satırın silinmesini ister */
+  function askDelete() {
+    if (!line) return;
+    start(async () => {
+      const res = await requestCashOutChange({ op: "sil", date: null, cashOutId: line.id, line: null, message: note, clientKey });
+      if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      toast.success(`Silme isteği gönderildi: ${cashOutShortLabel(line)} · ${money(line.amount)}`, { description: "Yönetici silene kadar satır yerinde kalır." });
       onClose();
     });
   }
@@ -223,9 +287,15 @@ export function CashOutDialog({
     <Dialog
       open={open}
       onClose={() => !pending && onClose()}
-      title={line ? "Kasadan çıkanı düzelt" : "Kasadan çıkan"}
+      title={request ? (line ? "Düzeltme iste" : "Ekleme iste") : line ? "Kasadan çıkanı düzelt" : "Kasadan çıkan"}
+      description={request && !line && request.reason === "old" ? longDateTR(date) : undefined}
+      footerStartOnPhone={request ? "body" : "footer"}
       footerStart={
-        line && !locked ? (
+        request && line ? (
+          <Button variant="ghost" className="text-bad" onClick={askDelete} disabled={pending}>
+            <Trash2 size={15} /> Silinmesini iste
+          </Button>
+        ) : line && !locked ? (
           <Button variant="ghost" className="text-bad" onClick={remove} disabled={pending}>
             <Trash2 size={15} /> Sil
           </Button>
@@ -237,15 +307,24 @@ export function CashOutDialog({
             Vazgeç
           </Button>
           <Button onClick={save} disabled={pending || busyPhoto}>
-            {pending ? "Kaydediliyor…" : busyPhoto ? "Fotoğraf bekleniyor…" : "Kaydet"}
+            {pending ? (request ? "Gönderiliyor…" : "Kaydediliyor…") : busyPhoto ? "Fotoğraf bekleniyor…" : request ? "Onaya gönder" : "Kaydet"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {request ? (
+          <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
+            <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0">
+              {REQUEST_INFO[request.reason]}
+              {request.pendingOp ? ` ${request.pendingOp === "sil" ? "Silme" : "Düzeltme"} isteğiniz bekliyor; yeniden gönderirseniz güncellenir.` : ""}
+            </span>
+          </p>
+        ) : null}
         {withPhoto ? (
           <div className="space-y-2">
-            {photoId ? <PhotoThumb id={photoId} caption={caption} onOpen={() => setViewer({ id: photoId, caption })} /> : null}
+            {photoId && !hidePhoto ? <PhotoThumb id={photoId} caption={caption} onOpen={() => setViewer({ id: photoId, caption })} /> : null}
             <PhotoStatus phase={phase} />
             {uploaded?.readError ? <ReadError message={uploaded.readError} onRetry={uploaded.canRetry ? () => onRetry(uploaded.photo.id) : undefined} busy={busyPhoto} /> : null}
             {fresh && !fresh.ok && fresh.error ? <p className="text-[13px] leading-5 text-bad">{fresh.error}</p> : null}
@@ -291,7 +370,7 @@ export function CashOutDialog({
           ) : null}
           {writes ? (
             <Field label={chip("categoryId", "Kategori")} htmlFor="co-cat" hint={suggested ? `Önerilen: ${suggested.name}` : undefined} className="sm:col-span-2">
-              <Select id="co-cat" value={draft.categoryId} onChange={set("categoryId")} disabled={locked} data-warn={warn("categoryId")}>
+              <Select id="co-cat" value={draft.categoryId} onChange={set("categoryId")} disabled={categoryFixed} data-warn={warn("categoryId")}>
                 <option value="">Kategori seçin</option>
                 {options.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -308,11 +387,16 @@ export function CashOutDialog({
             Fatura olduğu için Aylık harcamalar&apos;a yazılmadı; yönetici bakar.
           </p>
         ) : null}
-        {locked ? (
+        {locked && !request ? (
           <p className="flex items-start gap-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">
             <Info size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
             Bu satır yöneticinin harcama kaydına bağlı; silmek için yöneticiye haber verin.
           </p>
+        ) : null}
+        {request ? (
+          <Field label="Yöneticiye not" htmlFor="co-note" hint="İsteğe bağlı; neden eklendiğini ya da değiştiğini yazın">
+            <Textarea id="co-note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={200} />
+          </Field>
         ) : null}
         {checks.length ? (
           <ul className="space-y-1.5">

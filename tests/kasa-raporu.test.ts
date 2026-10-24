@@ -437,12 +437,14 @@ test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanl
   assert.match(store, /export async function lockCashReport[\s\S]*?\.for\("update"\)/);
   assert.match(store, /export async function writeCashReport[\s\S]*?lockCashReport\(tx, data\.date\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
   const rules = read("src/server/photo-read/rules.ts");
-  assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}\)/);
+  assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}, now\)/);
   assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date\)/);
   assert.match(rules, /export async function canUploadPhoto[\s\S]*?staffDayOpen\(day\)/);
   for (const route of ["src/app/api/foto/route.ts", "src/app/api/foto/[id]/oku/route.ts"]) assert.match(read(route), /await canUploadPhoto\(/, route);
+  // Kasadan çıkanlar: personelin her yolu tek kapıdan (src/server/cash-outs/guard.ts), kapı staffDayOpen'a sorar
   const outs = read("src/server/actions/cash-outs.ts");
-  assert.equal(outs.match(/await staffDayOpen\(/g)?.length, 3);
+  assert.equal(outs.match(/await staffCashOutGate\(/g)?.length, 3);
+  assert.match(read("src/server/cash-outs/guard.ts"), /staffDayOpen\(date, tx, now\)/);
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /staffDayEditable\(date, \{ hasReport: Boolean\(report\), laterReport: next !== null \}\)/);
   assert.match(page, /const canEdit = admin \|\| staffOpen;/);

@@ -24,6 +24,7 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
 import { CashBreakdown } from "../kasa/cash-summary";
+import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
 
 /**
  * Onaylar › Kasa kartları (yalnız yönetici): personelin kasa raporu düzeltme önerileri ve silme istekleri. Düzeltmede
@@ -32,17 +33,27 @@ import { CashBreakdown } from "../kasa/cash-summary";
  * özeti; geç raporda fotoğraflar, Z no sırası, devir zinciri, ay ve kasadan çıkanlar. Kasa alanı değişen onay ve her
  * silme onay penceresi açar. Not personele görünür (tutar yazılmaz).
  */
-export function KasaRequestCards({ cards, counters }: { cards: CashRequestCard[]; counters: { id: number; name: string }[] }) {
+export function KasaRequestCards({ cards, counters, categories }: { cards: CashRequestCard[]; counters: { id: number; name: string }[]; categories: { id: number; name: string }[] }) {
   return (
     <Card>
       <CardHeader
         icon={<Wallet />}
         title="Kasa"
-        description="Personelin kasa raporu istekleri, en eski gün önce. Onaylayınca rapor yöneticinin girdiği gibi kaydedilir; reddederseniz notunuz personele görünür."
+        description="Personelin kasa istekleri, en eski gün önce. Onaylayınca yöneticinin girdiği gibi kaydedilir; reddederseniz notunuz personele görünür."
       />
       <div className="divide-y divide-line border-t border-line">
         {cards.map((c) =>
-          c.kind === "kasa-duzeltme" ? <CorrectionItem key={c.id} card={c} /> : c.kind === "kasa-silme" ? <DeleteItem key={c.id} card={c} /> : <LateItem key={c.id} card={c} counters={counters} />,
+          c.kind === "kasa-duzeltme" ? (
+            <CorrectionItem key={c.id} card={c} />
+          ) : c.kind === "kasa-silme" ? (
+            <DeleteItem key={c.id} card={c} />
+          ) : c.kind === "kasa-gec" ? (
+            <LateItem key={c.id} card={c} counters={counters} />
+          ) : c.kind === "kasa-cikan" ? (
+            <CashOutItem key={c.id} card={c} categories={categories} />
+          ) : (
+            <PhotoRemovalItem key={c.id} card={c} />
+          ),
         )}
       </div>
     </Card>
@@ -50,7 +61,7 @@ export function KasaRequestCards({ cards, counters }: { cards: CashRequestCard[]
 }
 
 /** Kartın başı: tür ve gün, isteyen, an, bekleme, neden */
-function Head({ card, title, badge }: { card: CashRequestCard; title: string; badge?: ReactNode }) {
+function Head({ card, title, badge }: { card: CorrectionCard | DeleteCard; title: string; badge?: ReactNode }) {
   return (
     <div className="space-y-1">
       <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
@@ -68,7 +79,7 @@ function Head({ card, title, badge }: { card: CashRequestCard; title: string; ba
 type Decided = { revision: number | null; next: { date: string; opening: number } | null; nextBroken: boolean; skippedPhotos: number };
 
 /** Karar: not alanı ve düğmeler; sonuç toast ile. Geç raporda raporun sürümü yok, "Düzeltip onayla" değerleri ve teslim işareti */
-function useDecision(card: CashRequestCard) {
+function useDecision(card: CorrectionCard | DeleteCard | LateCard) {
   const [note, setNote] = useState("");
   const [pending, start] = useActionTransition();
   const decide = (decision: "approve" | "reject" | "close", done: (r: Decided) => void, extra: { fields?: Omit<CashReportFields, "date"> | null; handoverSeen?: boolean } = {}) =>
