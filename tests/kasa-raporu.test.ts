@@ -192,9 +192,12 @@ test("varsayılan alıcılar ortamdan: ayrıştırılır, yoksa boş", () => {
 
 test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticinin; varsayılan alıcılar", () => {
   const src = readFileSync(join(process.cwd(), "src/server/actions/cash-report.ts"), "utf8");
-  assert.match(src, /export async function submitCashReport[\s\S]*?requireUser\(\)[\s\S]*?me\.role !== "admin" && !staffCanReport\(data\.date\)/);
+  assert.match(src, /export async function submitCashReport[\s\S]*?requireUser\(\)[\s\S]*?saveCashReport\(getDb\(\), me, data\)/);
+  // Yazım yolu ayrı (sunucu eylemi olmayan) modülde: personel kuralı ve sürüm denetimi orada
+  const store = readFileSync(join(process.cwd(), "src/server/cash/report-store.ts"), "utf8");
+  assert.match(store, /export async function saveCashReport[\s\S]*?me\.role !== "admin" && !staffCanReport\(data\.date, now\)/);
   // Arada başkası gönderdiyse üzerine yazılmaz
-  assert.match(src, /if \(prev && prev\.revision !== revision\)/);
+  assert.match(store, /if \(prev && prev\.revision !== o\.revision\)/);
   for (const fn of ["deleteCashReport", "updateCashSettings", "sendCashTestEmail"]) {
     assert.match(src, new RegExp(`export async function ${fn}[\\s\\S]*?requireAdmin\\(\\)`), fn);
   }
@@ -420,10 +423,12 @@ test("personelin kilidi: bugün ve dün; günün raporu varken ertesi günün ra
 
 test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanlar ve fotoğraflar (staffDayOpen)", () => {
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
-  const action = read("src/server/actions/cash-report.ts");
-  assert.match(action, /if \(prev && me\.role !== "admin"\) \{\s*const \[later\][\s\S]*?gt\(s\.cashReports\.date, data\.date\)[\s\S]*?yalnız yönetici düzeltebilir/);
+  const store = read("src/server/cash/report-store.ts");
+  assert.match(store, /if \(prev && me\.role !== "admin" && \(await hasLaterReport\(tx, data\.date\)\)\) throw new UserError\("Ertesi günün raporu girildi; bu raporu artık yalnız yönetici düzeltebilir"\)/);
+  assert.match(store, /export async function hasLaterReport[\s\S]*?gt\(s\.cashReports\.date, date\)/);
   // Açılış notu ve önceki sürümün kopyası aynı işlemde, satır kilitliyken
-  assert.match(action, /\.for\("update"\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
+  assert.match(store, /export async function lockCashReport[\s\S]*?\.for\("update"\)/);
+  assert.match(store, /export async function writeCashReport[\s\S]*?lockCashReport\(tx, data\.date\)[\s\S]*?openingNeedsNote\([\s\S]*?tx\.insert\(s\.cashReportRevisions\)/);
   const rules = read("src/server/photo-read/rules.ts");
   assert.match(rules, /export async function staffDayOpen[\s\S]*?staffDayEditable\(day, \{ hasReport: rows\[0\]\?\.date === day, laterReport: rows\.some\(\(r\) => r\.date > day\) \}\)/);
   assert.match(rules, /canView[\s\S]*?await staffDayOpen\(row\.date\)/);

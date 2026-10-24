@@ -340,8 +340,8 @@ test("sunucu: ay başına tek kayıt (üzerine yazılır, eski yanıt yazılmaz)
   assert.match(kasa, /\{admin \? <> · Karaoke ön ödeme/);
   // Gönderim: site isteği kayıtla aynı anda başlar, e-posta en çok 8 saniye bekler
   const actions = read("src/server/actions/cash-report.ts");
-  assert.ok(actions.indexOf("const site = fetchTillOnlineRow(data.date)") < actions.indexOf("db.transaction("));
-  assert.match(actions, /await emailReport\(saved\.id, site\)/);
+  assert.ok(actions.indexOf("const site = fetchTillOnlineRow(data.date)") < actions.indexOf("await saveCashReport("));
+  assert.match(actions, /await emailReport\(saved\.id, \{ site \}\)/);
   // "Siteden yenile" yalnız yöneticinin
   const act = read("src/server/actions/site-sales.ts");
   assert.match(act, /const me = await requireAdmin\(\)/);

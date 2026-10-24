@@ -40,7 +40,8 @@ import {
 import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { resendCashReportEmail, submitCashReport, type CashEmailOutcome } from "@/server/actions/cash-report";
+import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
+import type { CashEmailOutcome } from "@/server/cash/report-email";
 import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoInfo } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
