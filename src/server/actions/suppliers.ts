@@ -1,6 +1,6 @@
 "use server";
 
-import { desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -86,7 +86,7 @@ function cleanCard(input: CardInput) {
 async function conflictMessage(conflict: { name: string; owner: string }) {
   const { groups } = await loadSupplierLedger();
   const owner = groups.find((g) => g.card?.name === conflict.owner);
-  const hidden = Boolean(owner && isHiddenSupplier(owner.card, owner.summary));
+  const hidden = Boolean(owner && isHiddenSupplier(owner.card, owner.summary, { ...owner.account, lastEntry: owner.lastEntry }));
   return `“${conflict.name}” zaten “${conflict.owner}” tedarikçisinde kayıtlı; bir ad iki tedarikçide olamaz.${
     hidden ? " O tedarikçi listeden kaldırılmış: Tedarikçiler listesinin altındaki “Listeden kaldırılanlar”dan geri getirip düzenleyin." : " Önce oradan çıkarın."
   }`;
@@ -331,12 +331,22 @@ export async function restoreSupplier(snapshot: CardInput) {
  * adlarından değilse kartın diğer adlarına eklenir: faturaları bu sayfada toplanır. O ad başka bir tedarikçide
  * kayıtlıysa eklenmez, söylenir. Kartsız tedarikçide ad eklenemez; aynı vergi noyla buraya gelmediyse söylenir.
  */
-export async function importSupplierHistory(input: z.input<typeof targetSchema>) {
+export async function importSupplierHistory(input: z.input<typeof targetSchema> & { confirmDevir?: boolean }) {
   return attempt(async () => {
     const me = await requireAdmin();
     if (!isParasutConfigured()) throw new UserError("Paraşüt bağlantısı kurulu değil.");
     const { g } = await findGroup(input);
     if (g.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; geçmişi tedarikçinin kendi sayfasından alın.");
+    // Eski borç (devir) girilmiş kartta (K22): o günden eski faturalar gelirse aynı borç iki kez sayılır; önce sorulur
+    if (g.card && !z.boolean().optional().parse(input.confirmDevir)) {
+      const [devir] = await getDb()
+        .select({ date: s.supplierEntries.date })
+        .from(s.supplierEntries)
+        .where(and(eq(s.supplierEntries.supplierId, g.card.id), eq(s.supplierEntries.kind, "borc"), eq(s.supplierEntries.costMode, "devir")))
+        .orderBy(asc(s.supplierEntries.date))
+        .limit(1);
+      if (devir) return { needs: "devir" as const, date: devir.date, name: g.name };
+    }
     const own = g.card ? [g.card.name, ...g.card.aliases] : g.names;
     const keys = new Set([g.key, ...own, ...g.names].map(supplierMatchKey));
     const r = await syncSupplierHistory({
@@ -371,7 +381,7 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema>)
     }
     await logActivity(me, "Tedarikçinin geçmiş faturaları alındı", [r.summary, added.length ? `diğer adlara eklendi: ${added.join(", ")}` : null].filter(Boolean).join(" · "));
     refresh();
-    return { fetched: r.fetched, created: r.created, updated: r.updated, removed: r.removed, oldest: r.oldest, partial: r.partial, resumed: r.resumed, added, elsewhere };
+    return { needs: null, fetched: r.fetched, created: r.created, updated: r.updated, removed: r.removed, oldest: r.oldest, partial: r.partial, resumed: r.resumed, added, elsewhere };
   });
 }
 

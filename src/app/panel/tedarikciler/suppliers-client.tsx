@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Copy, EyeOff, Plus, Truck } from "lucide-react";
+import { Banknote, ChevronRight, Copy, EyeOff, Plus, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,7 +8,8 @@ import { toast } from "sonner";
 
 import { AnimatedNumber } from "@/components/akmanos/charts/animated-number";
 import { Badge } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { toastUnreachable } from "@/components/ui/action-error";
+import { Button, buttonClass, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Fab } from "@/components/ui/fab";
@@ -21,6 +22,7 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { dateTR, money, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { dismissCashOut } from "@/server/actions/cari";
 import { unhideSupplier } from "@/server/actions/suppliers";
 
 import { useCopied } from "../kullanicilar/password-field";
@@ -45,6 +47,17 @@ import {
 
 const PAGE_SIZE = 25;
 const FILTER_KEYS = ["ara", "durum", "sirala"];
+
+/** Kasadan tedarikçiye çıkan, hesaba işlenmemiş satır (liste şeridi) */
+export interface KasaPendingRow {
+  id: number;
+  date: string;
+  kind: "harcama" | "teslim";
+  amount: number;
+  store: string | null;
+  slug: string;
+  name: string;
+}
 
 /** Sunucu sayfasının özet rakamları (sayaç); biçim işlevi sunucudan geçemediği için adıyla */
 export function CountUp({ value, format = "tl" }: { value: number; format?: "tl" | "num" }) {
@@ -83,6 +96,7 @@ export function SuppliersClient({
   today,
   defaultTermDays,
   taxIndex,
+  kasa = [],
 }: {
   rows: SupplierListRow[];
   hidden: HiddenSupplierRow[];
@@ -90,6 +104,8 @@ export function SuppliersClient({
   defaultTermDays: number;
   /** Yeni tedarikçi penceresinde yazılan vergi noyla gelecek faturaların önizlemesi */
   taxIndex?: TaxIndex;
+  /** Kasadan tedarikçilere çıkan, hesaba işlenmemiş satırlar (son 60 gün) */
+  kasa?: KasaPendingRow[];
 }) {
   const router = useRouter();
   const [q, setQ] = useQueryText("ara");
@@ -100,6 +116,14 @@ export function SuppliersClient({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  // Zilden gelen ?kasa=1: işlenmemiş kasa ödemeleri penceresi açık gelir
+  const [kasaParam, setKasaParam] = useQueryState<string>("kasa", "");
+  const [kasaOpen, setKasaOpen] = useState(false);
+  const showKasa = (kasaOpen || kasaParam === "1") && kasa.length > 0;
+  const closeKasa = () => {
+    setKasaOpen(false);
+    if (kasaParam) setKasaParam("");
+  };
   const { copied, copy } = useCopied();
 
   const searched = rows.filter((r) => matches(supplierHaystack(r), q));
@@ -162,8 +186,26 @@ export function SuppliersClient({
           {num(r.parasutPaid)} Paraşüt&apos;te ödendi
         </Badge>
       ) : null}
+      {r.debtOpenCount ? (
+        <Badge tone="amber" title="Faturasız ya da elden alım; ödenmedi">
+          Faturasız borç
+        </Badge>
+      ) : null}
+      {(r.credit ?? 0) > 0.005 ? (
+        <Badge tone="green" title="Hesapta sayılmamış ödeme: borçlara sayılınca düşer">
+          Hesapta {money(r.credit ?? 0)}
+        </Badge>
+      ) : null}
+      {r.kasaPending ? (
+        <Badge tone="blue" title="Kasadan bu tedarikçiye çıkan para hesaba işlenmedi">
+          Kasadan işlenmedi
+        </Badge>
+      ) : null}
     </>
   );
+  /** Satırın Kalan borcu; hesaptaki para borcu aşınca alacak */
+  const balanceText = (r: SupplierListRow) =>
+    r.summary.open < -0.005 && (r.credit ?? 0) > 0.005 ? <span className="text-good">Alacak {money(-r.summary.open)}</span> : r.summary.open ? money(r.summary.open) : null;
 
   return (
     <Card id="tedarikci-listesi" className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
@@ -199,6 +241,62 @@ export function SuppliersClient({
           </Button>
         }
       />
+
+      {kasa.length ? (
+        <div className="mx-5 mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info max-sm:mx-4" role="status">
+          <Banknote size={16} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-[14rem] flex-1">
+            Kasadan tedarikçiye {num(kasa.length)} ödeme hesaba işlenmedi ({money(kasa.reduce((a, l) => a + l.amount, 0))}).
+          </span>
+          <Button size="sm" variant="secondary" className="text-ink max-sm:w-full" onClick={() => setKasaOpen(true)}>
+            İşle
+          </Button>
+        </div>
+      ) : null}
+      <Dialog
+        open={showKasa}
+        onClose={closeKasa}
+        title="Kasadan işlenmemiş ödemeler"
+        description="Personelin Kasa'ya Teslim · ödeme olarak girdiği ya da fişsiz alışveriş olarak yazdığı tedarikçi ödemeleri. İşle, ödemeyi tedarikçinin hesabına kasadan girer."
+        footer={
+          <Button variant="ghost" className={SHEET_BTN} onClick={closeKasa}>
+            Kapat
+          </Button>
+        }
+      >
+        <ul className="divide-y divide-line">
+          {kasa.map((l) => (
+            <li key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium break-words text-ink">{l.name}</p>
+                <p className="text-xs text-ink-mute tabular">
+                  {dateTR(l.date)} · {l.kind === "teslim" ? "Teslim" : "fişsiz alışveriş"} · {l.store} · {money(l.amount)}
+                </p>
+              </div>
+              {l.kind === "teslim" ? (
+                <Link href={`${supplierHref(l.slug)}?kasa=${l.id}`} onClick={closeKasa} className={buttonClass("secondary", "sm", "text-ink")}>
+                  İşle
+                </Link>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const r = await dismissCashOut({ cashOutId: l.id });
+                    if (!r.ok) return void toast.error(r.error);
+                    toast.success(l.kind === "teslim" ? "Kasa satırı ayrı tutuldu" : "Ayrı alım olarak işaretlendi", { description: `${l.name} · ${money(l.amount)}` });
+                  } catch (e) {
+                    toastUnreachable(e);
+                  }
+                }}
+              >
+                {l.kind === "teslim" ? "Ayrı tut" : "Ayrı alım"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
 
       {/* Telefon: arama + "Süzgeç"; seçimler alt sayfada */}
       <div role="search" className="space-y-2.5 px-4 pb-3 lg:hidden">
@@ -307,7 +405,7 @@ export function SuppliersClient({
                     </span>
                   </Link>
                   <span className={cn("shrink-0 text-right text-[15px] leading-5 font-semibold tabular", r.summary.open ? "text-ink" : "text-sm font-normal text-ink-quiet")}>
-                    {r.summary.open ? money(r.summary.open) : "Borç yok"}
+                    {balanceText(r) ?? "Borç yok"}
                   </span>
                 </div>
                 <div className="mt-2 flex items-center gap-2 pl-12">
@@ -364,7 +462,7 @@ export function SuppliersClient({
                       {r.summary.openCount ? num(r.summary.openCount) : "–"}
                     </TD>
                     <TD numeric className="font-semibold">
-                      {r.summary.open ? money(r.summary.open) : <span className="font-normal text-ink-quiet">–</span>}
+                      {balanceText(r) ?? <span className="font-normal text-ink-quiet">–</span>}
                       {r.summary.overdue ? <span className="block text-xs font-normal text-bad">{money(r.summary.overdue)} gecikmiş</span> : null}
                     </TD>
                     <TD className="whitespace-nowrap">{r.summary.openCount ? <DueLine row={r} today={today} /> : <span className="text-ink-quiet">–</span>}</TD>

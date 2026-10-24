@@ -7,16 +7,42 @@ import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { paidInMonthOf, type CariAccount } from "@/lib/cari/account";
+import { loadCariIndex } from "@/server/data/cari";
 import { loadSupplierLedger } from "@/server/data/suppliers";
 
-import { listBreakdowns, paidInMonth, SOON_TEXT } from "./breakdowns";
-import { isHiddenSupplier, missingInfo, paidInParasut, sameTaxNames, taxNameIndex, type HiddenSupplierRow, type SupplierListRow } from "./logic";
+import { listBreakdowns, SOON_TEXT } from "./breakdowns";
+import { isHiddenSupplier, matchesSupplierFilter, missingInfo, paidInParasut, sameTaxNames, taxNameIndex, type HiddenSupplierRow, type SupplierListRow, type SupplierSummary } from "./logic";
 import { CountUp, SuppliersClient } from "./suppliers-client";
 
 export const metadata: Metadata = { title: "Tedarikçiler" };
 
 const DESCRIPTION =
   "Tedarikçilerin bilgileri (unvan, vergi no, IBAN, iletişim) ve tedarikçi tedarikçi ödeme takibi. Faturalar Paraşüt'ten her sabah kendiliğinden gelir; ödendi, ödenmedi ya da ödemesi talep edildi işaretini siz koyarsınız.";
+
+/**
+ * Listenin satır özeti: hesap özetinin alanları (dökümler istemciye gitmez); cari kaydı olan tedarikçide Kalan borç
+ * bakiyedir (açık − hesaptaki para). Kayıt yokken bakiye açığın kendisidir.
+ */
+function listSummary(a: CariAccount): SupplierSummary {
+  return {
+    count: a.count,
+    invoiced: a.invoiced,
+    year: a.year,
+    openCount: a.openCount,
+    open: a.balance,
+    requestedCount: a.requestedCount,
+    requested: a.requested,
+    overdueCount: a.overdueCount,
+    overdue: a.overdue,
+    soonCount: a.soonCount,
+    soon: a.soon,
+    nextDue: a.nextDue,
+    nextSoonDue: a.nextSoonDue,
+    lastInvoice: a.lastInvoice,
+    lastPaid: a.lastPaid,
+  };
+}
 
 export default function SuppliersPage() {
   return (
@@ -36,12 +62,18 @@ export default function SuppliersPage() {
 async function SuppliersContent() {
   await requireAdmin();
   const { today, termDays, groups } = await loadSupplierLedger();
+  const index = await loadCariIndex(today);
   const month = today.slice(0, 7);
+  const isHidden = (g: (typeof groups)[number]) => isHiddenSupplier(g.card, g.summary, { ...g.account, lastEntry: g.lastEntry });
   // Listeden kaldırılanlar listede görünmez (borçları yok; isHiddenSupplier); ödemeleri "Bu ay ödenen"de sayılır
-  const shown = groups.filter((g) => !isHiddenSupplier(g.card, g.summary));
+  const shown = groups.filter((g) => !isHidden(g));
   const hidden: HiddenSupplierRow[] = groups.flatMap((g) =>
-    g.card?.hiddenOn && isHiddenSupplier(g.card, g.summary) ? [{ cardId: g.card.id, slug: g.slug, name: g.name, hiddenOn: g.card.hiddenOn, count: g.summary.count }] : [],
+    g.card?.hiddenOn && isHidden(g) ? [{ cardId: g.card.id, slug: g.slug, name: g.name, hiddenOn: g.card.hiddenOn, count: g.summary.count }] : [],
   );
+  // Cari hesap (docs/TEDARIKCILER.md "Hesap hareketleri"): satırın Kalan borcu bakiyedir (açık − hesaptaki para)
+  const kasaBy = new Map<number, number>();
+  for (const l of index.kasaPending) kasaBy.set(l.cardId, (kasaBy.get(l.cardId) ?? 0) + 1);
+  const bySlug = new Map(groups.map((g) => [g.card?.id ?? -1, g]));
   const rows: SupplierListRow[] = shown.map((g) => ({
     key: g.key,
     slug: g.slug,
@@ -60,14 +92,27 @@ async function SuppliersContent() {
     paidOnDelivery: g.card?.paidOnDelivery ?? false,
     missing: missingInfo(g.card, g.taxNumber),
     parasutPaid: g.invoices.filter(paidInParasut).length,
-    summary: g.summary,
+    summary: listSummary(g.account),
+    credit: g.account.credit,
+    debtOpenCount: g.account.debtOpenCount,
+    kasaPending: g.card ? (kasaBy.get(g.card.id) ?? 0) : 0,
   }));
-  const paid = groups.map((g) => ({ slug: g.slug, name: g.name, summary: g.summary, ...paidInMonth(g.invoices, month) }));
+  // Bu ay ödenen: ödeme kayıtları ve faturalardaki ödendi işaretleri (paymentEvents; kayıt yokken bugünkü kural)
+  const owing = (a: CariAccount) => (a.credit > 0.005 ? Math.max(0, a.balance) : a.balance);
+  const paid = groups.map((g) => ({ slug: g.slug, name: g.name, summary: { ...listSummary(g.account), open: owing(g.account) }, ...paidInMonthOf(g.account.events, month) }));
   const breakdown = listBreakdowns(paid.map((p) => ({ ...p, paidThisMonth: p.amount, paidThisMonthCount: p.count })));
   const sum = (f: (r: SupplierListRow) => number) => rows.reduce((a, r) => a + f(r), 0);
-  const open = sum((r) => r.summary.open);
+  // Üstteki Kalan borç: hesabında para olan tedarikçinin fazla ödemesi (alacak) öteki borçlardan düşülmez
+  const open = sum((r) => ((r.credit ?? 0) > 0.005 ? Math.max(0, r.summary.open) : r.summary.open));
   const openCount = sum((r) => r.summary.openCount);
-  const owed = rows.filter((r) => r.summary.openCount > 0).length;
+  const owed = rows.filter((r) => matchesSupplierFilter(r, "borclu")).length;
+  const creditRows = rows.filter((r) => (r.credit ?? 0) > 0.005);
+  const creditTotal = creditRows.reduce((a, r) => a + (r.credit ?? 0), 0);
+  const debtCount = sum((r) => r.debtOpenCount ?? 0);
+  const kasa = index.kasaPending.flatMap((l) => {
+    const g = bySlug.get(l.cardId);
+    return g ? [{ id: l.id, date: l.date, kind: l.kind, amount: l.amount, store: l.store, slug: g.slug, name: g.name }] : [];
+  });
   const overdue = sum((r) => r.summary.overdue);
   const overdueCount = sum((r) => r.summary.overdueCount);
   const soon = sum((r) => r.summary.soon);
@@ -75,6 +120,8 @@ async function SuppliersContent() {
   const requested = sum((r) => r.summary.requested);
   const paidTotal = paid.reduce((a, p) => a + p.amount, 0);
   const paidCount = paid.reduce((a, p) => a + p.count, 0);
+  // Ödeme kaydı varsa sayılan "ödeme"dir (kayıtlar ve faturalardaki işaretler), yoksa bugünkü gibi "fatura"
+  const paidHasEntries = groups.some((g) => g.account.events.some((e) => e.kind === "payment" && e.date.startsWith(month)));
   // "7 gün içinde" kartında pencerede vadesi ilk gelen tedarikçi (gecikmişler hariç)
   const nextSoon = rows.filter((r) => r.summary.nextSoonDue).sort((a, b) => a.summary.nextSoonDue!.localeCompare(b.summary.nextSoonDue!))[0];
 
@@ -90,7 +137,13 @@ async function SuppliersContent() {
             value={<CountUp value={open} />}
             tone={open > 0 ? "warn" : "good"}
             info="KDV dahil. Kısmen ödenmiş Paraşüt faturasında kalan tutar sayılır."
-            sub={openCount ? `${num(openCount)} fatura · ${num(owed)} tedarikçi${requested ? ` · ${tl(requested)} talep edildi` : ""}` : "Ödenmemiş fatura yok"}
+            sub={
+              openCount
+                ? `${num(openCount)} ${debtCount ? "kalem" : "fatura"} · ${num(owed)} tedarikçi${requested ? ` · ${tl(requested)} talep edildi` : ""}${
+                    creditTotal > 0.005 ? ` · hesapta ${tl(creditTotal, 2)} sayılmamış ödeme (${num(creditRows.length)} tedarikçi)` : ""
+                  }`
+                : "Ödenmemiş fatura yok"
+            }
           />
         </StatBreakdown>
         <StatBreakdown title="Vadesi geçen" description="Vadesi geçmiş ödenmemiş faturalar, tedarikçi tedarikçi. Vadesi yazılmamış faturada tahmini vade sayılır." groups={breakdown.overdue} total={overdue} exact empty="Vadesi geçmiş ödeme yok.">
@@ -107,7 +160,7 @@ async function SuppliersContent() {
         </StatBreakdown>
         <StatBreakdown
           title={`${monthLabel(month)} ödenen`}
-          description="Bu ay ödendi işaretlenen faturalar (ödeme gününe göre, KDV dahil), tedarikçi tedarikçi."
+          description="Bu ay girilen ödemeler ve ödendi işaretlenen faturalar (ödeme gününe göre, KDV dahil), tedarikçi tedarikçi."
           groups={breakdown.paid}
           total={paidTotal}
           exact
@@ -117,13 +170,13 @@ async function SuppliersContent() {
             icon={<CircleCheck />}
             label="Bu ay ödenen"
             value={<CountUp value={paidTotal} />}
-            info="Ödeme günü bu ayda olan faturalar. Ödeme günü, ödendi işaretlenirken girilir (varsayılan o gün)."
-            sub={paidCount ? `${num(paidCount)} fatura` : "Henüz yok"}
+            info="Ödeme günü bu ayda olan ödemeler ve faturalar; kısmi ödemeler ve hesaba ödemeler dahil. Ödeme günü, ödendi işaretlenirken girilir (varsayılan o gün)."
+            sub={paidCount ? `${num(paidCount)} ${paidHasEntries ? "ödeme" : "fatura"}` : "Henüz yok"}
           />
         </StatBreakdown>
       </div>
 
-      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} />
+      <SuppliersClient rows={rows} hidden={hidden} today={today} defaultTermDays={termDays} taxIndex={taxNameIndex(groups)} kasa={kasa} />
     </>
   );
 }

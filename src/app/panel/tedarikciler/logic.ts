@@ -783,9 +783,16 @@ export function aliasCandidates(
 /**
  * Listeden kaldırılmış tedarikçi listede gizli mi: kaldırıldığı günden sonraki tarihli faturası gelmediyse ve
  * ödenmemiş faturası yoksa. Borç listeden gizlenmez; yeni fatura tedarikçiyi listeye kendiliğinden geri getirir.
+ * Cari hesap (K23): açık kalemi (faturasız alım dahil), hesapta sayılmamış parası ya da kaldırıldığı günden sonra
+ * tarihli kaydı olan tedarikçi de listeye döner.
  */
-export function isHiddenSupplier(card: { hiddenOn: string | null } | null, summary: Pick<SupplierSummary, "openCount" | "lastInvoice">): boolean {
+export function isHiddenSupplier(
+  card: { hiddenOn: string | null } | null,
+  summary: Pick<SupplierSummary, "openCount" | "lastInvoice">,
+  cari?: { openCount: number; credit: number; lastEntry?: string | null } | null,
+): boolean {
   if (!card?.hiddenOn) return false;
+  if (cari && (cari.openCount > 0 || cari.credit > 0.005 || (cari.lastEntry && cari.lastEntry > card.hiddenOn))) return false;
   return summary.openCount === 0 && !(summary.lastInvoice && summary.lastInvoice > card.hiddenOn);
 }
 
@@ -820,7 +827,14 @@ export interface SupplierListRow {
   missing: MissingInfo[];
   /** Paraşüt'te ödenmiş görünen ama panelde ödenmedi duran fatura sayısı */
   parasutPaid: number;
+  /** Hesap özeti; cari kaydı olan tedarikçide `open` bakiyedir (açık − hesaptaki para) */
   summary: SupplierSummary;
+  /** Hesapta sayılmamış ödeme (cari) */
+  credit?: number;
+  /** Açık faturasız alım sayısı (cari) */
+  debtOpenCount?: number;
+  /** Kasadan bu tedarikçiye çıkan, hesaba işlenmemiş satır sayısı */
+  kasaPending?: number;
 }
 
 /** Adresteki ?durum= değerleri */
@@ -847,8 +861,9 @@ export function parseSupplierSort(raw: string | null | undefined): SupplierSort 
  * Liste süzgeci. "Bilgisi eksik": kartı olup eksiği olan ya da borcu olup bilgisi eksik tedarikçi; kartı açılmamış ve
  * borcu olmayan (tek seferlik alım, pazar yeri) sayılmaz.
  */
-export function matchesSupplierFilter(r: Pick<SupplierListRow, "summary" | "missing" | "hasCard">, f: SupplierFilter): boolean {
-  if (f === "borclu") return r.summary.openCount > 0;
+export function matchesSupplierFilter(r: Pick<SupplierListRow, "summary" | "missing" | "hasCard"> & { credit?: number }, f: SupplierFilter): boolean {
+  // Hesaptaki para borcu karşılıyorsa borçlu sayılmaz (bakiye ≤ 0); para yokken bugünkü kural
+  if (f === "borclu") return r.summary.openCount > 0 && !((r.credit ?? 0) > 0.005 && r.summary.open <= 0.005);
   if (f === "geciken") return r.summary.overdueCount > 0;
   if (f === "eksik") return r.missing.length > 0 && (r.hasCard || r.summary.openCount > 0);
   return true;
@@ -1180,12 +1195,18 @@ export function paymentRequestText(opts: {
   taxNumber?: string | null;
   /** Ödenecek faturalar; eksi tutarlılar ödemeden düşülen iade faturaları */
   lines: readonly RequestLine[];
+  /** Faturasız alımlar (cari borç; kalanları) */
+  purchases?: readonly { date: string; description: string | null; amount: number }[];
+  /** Tedarikçinin hesabında duran, tutardan düşülen ödeme */
+  accountCredit?: number;
   note?: string | null;
 }): string {
   const { card, lines } = opts;
   const debts = lines.filter((l) => l.amount > 0);
   const credits = lines.filter((l) => l.amount < 0);
-  const total = round2(lines.reduce((a, l) => a + l.amount, 0));
+  const purchases = opts.purchases ?? [];
+  const accountCredit = round2(Math.max(0, opts.accountCredit ?? 0));
+  const total = round2(lines.reduce((a, l) => a + l.amount, 0) + purchases.reduce((a, l) => a + l.amount, 0) - accountCredit);
   const recipient = card?.accountHolder?.trim() || card?.legalName?.trim() || opts.name;
   const bank = card?.bankName?.trim() || bankFromIban(card?.iban);
   const credit = round2(credits.reduce((a, l) => a - l.amount, 0));
@@ -1196,8 +1217,8 @@ export function paymentRequestText(opts: {
     card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (girilmemiş)",
     bank ? `Banka: ${bank}` : null,
     taxNumber ? `Vergi no: ${normalizeTaxNumber(taxNumber)}` : null,
-    `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
-    debts.length ? `Açıklama: ${transferNote(debts)}` : null,
+    `Tutar: ${money(total)}${credits.length && !purchases.length && !accountCredit ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
+    debts.length ? `Açıklama: ${transferNote(debts)}` : purchases.length ? `Açıklama: ${purchases.length} faturasız alım` : null,
   ].filter((x): x is string => Boolean(x));
   const byDate = (list: readonly RequestLine[]) => [...list].sort((a, b) => a.date.localeCompare(b.date));
   if (debts.length) {
@@ -1206,10 +1227,15 @@ export function paymentRequestText(opts: {
       out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · ${money(l.amount)}${l.dueDate ? ` · vade ${dateTR(l.dueDate)}` : ""}`);
     }
   }
+  if (purchases.length) {
+    out.push("", `Faturasız alımlar (${purchases.length}):`);
+    for (const l of [...purchases].sort((a, b) => a.date.localeCompare(b.date))) out.push(`• ${dateTR(l.date)} · Faturasız alım${l.description ? ` (${l.description})` : ""} · ${money(l.amount)}`);
+  }
   if (credits.length) {
     out.push("", `Düşülen iadeler (${credits.length}):`);
     for (const l of byDate(credits)) out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · −${money(-l.amount)}`);
   }
+  if (accountCredit > 0.005) out.push("", `Hesaptaki ödeme: −${money(accountCredit)}`);
   const note = opts.note?.trim();
   if (note) out.push("", note);
   // Tutarlardaki bölünmez boşluk (tl) düz metinde de doğru görünür; WhatsApp ve e-posta olduğu gibi gösterir

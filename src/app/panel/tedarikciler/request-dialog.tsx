@@ -27,6 +27,14 @@ export interface RequestInvoice {
   open?: boolean;
 }
 
+/** Talebe girebilecek faturasız alım (cari borç; kalanı) */
+export interface RequestPurchase {
+  id: number;
+  date: string;
+  description: string | null;
+  amount: number;
+}
+
 /**
  * Ödeme talebi: faturalar seçilir, alıcı (unvan / hesap sahibi), IBAN, tutar ve havale açıklamasıyla hazır metin
  * kopyalanır, WhatsApp'ta ya da e-postayla gönderilir (ödemeyi yapacak kişiye ya da bankanın havale ekranına).
@@ -40,6 +48,8 @@ export function RequestDialog({
   taxNumber = null,
   invoices,
   credits = [],
+  purchases = [],
+  accountCredit = 0,
   selected,
   termDays,
   payer,
@@ -55,6 +65,10 @@ export function RequestDialog({
   invoices: RequestInvoice[];
   /** Ödemeden düşülebilecek son iade faturaları (tutar eksi) */
   credits?: RequestInvoice[];
+  /** Faturasız alımlar (kalanlarıyla) */
+  purchases?: RequestPurchase[];
+  /** Tedarikçinin hesabında duran sayılmamış ödeme (tutardan düşülür) */
+  accountCredit?: number;
   /** Açılışta seçili olanlar; boşsa hepsi */
   selected: number[];
   termDays: number;
@@ -68,15 +82,21 @@ export function RequestDialog({
     () => new Set([...(selected.length ? selected : invoices.map((i) => i.id)), ...credits.filter((c) => c.open).map((c) => c.id)]),
   );
   const [note, setNote] = useState("");
+  // Faturasız alımlar: seçili faturalarla açıldıysa (toplu seçim) seçilmez, değilse hepsi
+  const [buys, setBuys] = useState<ReadonlySet<number>>(() => new Set(selected.length ? [] : purchases.map((p) => p.id)));
+  const [useCredit, setUseCredit] = useState(accountCredit > 0.005);
   const { copied, copy } = useCopied();
   const chosen = invoices.filter((i) => ids.has(i.id));
   const chosenCredits = credits.filter((i) => ids.has(i.id));
-  const total = [...chosen, ...chosenCredits].reduce((a, i) => a + i.amount, 0);
+  const chosenBuys = purchases.filter((p) => buys.has(p.id));
+  const gross = [...chosen, ...chosenCredits].reduce((a, i) => a + i.amount, 0) + chosenBuys.reduce((a, p) => a + p.amount, 0);
+  const creditUsed = useCredit ? Math.min(accountCredit, Math.max(0, gross)) : 0;
+  const total = gross - creditUsed;
   const toLine = (i: RequestInvoice) => ({ date: i.date, invoiceNo: i.invoiceNo, amount: i.amount, dueDate: i.dueDate });
   // İadeler faturaları karşılıyorsa ödenecek bir şey yok: tutar ve gönderme kapanır
-  const payable = chosen.length > 0 && total > 0.005;
+  const payable = (chosen.length > 0 || chosenBuys.length > 0) && total > 0.005;
   const lines = chosen.map(toLine);
-  const text = paymentRequestText({ payer, name, card, taxNumber, lines: [...lines, ...chosenCredits.map(toLine)], note });
+  const text = paymentRequestText({ payer, name, card, taxNumber, lines: [...lines, ...chosenCredits.map(toLine)], purchases: chosenBuys, accountCredit: creditUsed, note });
   const subject = `Ödeme talebi: ${card?.legalName?.trim() || name} · ${money(total)}`;
   const toMark = chosen.filter((i) => !i.paymentRequestedAt).map((i) => i.id);
   const toggle = (id: number) =>
@@ -156,6 +176,8 @@ export function RequestDialog({
             <span>
               {chosen.length ? `${num(chosen.length)} fatura seçildi` : "Fatura seçilmedi"}
               {chosenCredits.length ? ` · ${num(chosenCredits.length)} iade düşüldü` : ""}
+              {chosenBuys.length ? ` · ${num(chosenBuys.length)} faturasız alım` : ""}
+              {creditUsed > 0.005 ? " · hesaptaki ödeme düşüldü" : ""}
             </span>
             <span className="font-semibold text-ink">{money(total)}</span>
           </p>
@@ -185,7 +207,47 @@ export function RequestDialog({
           </fieldset>
         ) : null}
 
-        {chosen.length && !payable ? (
+        {purchases.length ? (
+          <fieldset>
+            <legend className="mb-1.5 text-[13px] font-medium text-ink-soft">Faturasız alımlar ({num(purchases.length)})</legend>
+            <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line-strong">
+              {purchases.map((p) => (
+                <li key={p.id}>
+                  <label className="flex min-h-12 cursor-pointer items-center gap-3 px-3.5 py-2">
+                    <input
+                      type="checkbox"
+                      checked={buys.has(p.id)}
+                      onChange={() =>
+                        setBuys((cur) => {
+                          const next = new Set(cur);
+                          if (next.has(p.id)) next.delete(p.id);
+                          else next.add(p.id);
+                          return next;
+                        })
+                      }
+                      className="size-4 shrink-0 cursor-pointer rounded accent-ink pointer-coarse:size-5"
+                    />
+                    <span className="min-w-0 flex-1 text-sm text-ink tabular">
+                      {dateTR(p.date)}
+                      {p.description ? <span className="text-ink-mute"> · {p.description}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-sm font-medium text-ink tabular">{money(p.amount)}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        ) : null}
+
+        {accountCredit > 0.005 ? (
+          <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-2xl bg-surface px-3.5 py-2 ring-1 ring-line-strong">
+            <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} className="size-4 shrink-0 cursor-pointer rounded accent-ink pointer-coarse:size-5" />
+            <span className="min-w-0 flex-1 text-sm text-ink">Hesaptaki ödeme</span>
+            <span className="shrink-0 text-sm font-medium text-good tabular">−{money(accountCredit)}</span>
+          </label>
+        ) : null}
+
+        {(chosen.length || chosenBuys.length) && !payable ? (
           <p className="flex items-start gap-2 rounded-2xl bg-info-soft px-3.5 py-2.5 text-[13px] leading-5 text-info" role="status">
             <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>Seçilen iadeler faturaları karşılıyor; ödenecek tutar yok. İadeyi ya da faturaları değiştirin.</span>
