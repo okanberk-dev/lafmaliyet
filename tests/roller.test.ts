@@ -36,18 +36,28 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   assert.equal(STAFF_HOME, "/panel/bugun");
   assert.ok(canOpen("staff", "/panel/bugun"));
   assert.equal(canOpen("staff", "/panel/bugunler"), false);
-  // Kontrol listeleri: personel bugünün listelerini açar ve doldurur; yönetici alt sayfaları (Geçmiş, Listeler)
-  // proxy'den geçer ama sayfa personeli geri gönderir (requireAdmin)
+  // Kontrol listeleri: personel bugünün listelerini açar ve doldurur, son 7 günü Geçmiş'ten görür; listeleri
+  // düzenlemek yöneticinin (proxy personeli sokmaz, sayfa da requireAdmin)
   assert.ok(canOpen("staff", "/panel/kontrol"));
   assert.ok(canOpen("staff", "/panel/kontrol/3"));
+  assert.ok(canOpen("staff", "/panel/kontrol/gecmis"));
+  assert.equal(canOpen("staff", "/panel/kontrol/duzenle"), false);
+  assert.equal(canOpen("staff", "/panel/kontrol/duzenle/2"), false);
   assert.equal(canOpen("staff", "/panel/kontroller"), false);
-  for (const p of ["src/app/panel/kontrol/gecmis/page.tsx", "src/app/panel/kontrol/duzenle/page.tsx", "src/app/panel/kontrol/duzenle/[id]/page.tsx"]) {
+  for (const p of ["src/app/panel/kontrol/duzenle/page.tsx", "src/app/panel/kontrol/duzenle/[id]/page.tsx"]) {
     assert.match(read(p), /await requireAdmin\(\)/, p);
   }
+  // Özel günler ve personelin Yardım'ı; yöneticinin Yardım'ı ve Onaylar kapalı
+  assert.ok(canOpen("staff", "/panel/ozel-gunler"));
+  assert.ok(canOpen("staff", "/panel/yardim/personel"));
+  assert.equal(canOpen("staff", "/panel/yardim"), false);
+  assert.equal(canOpen("staff", "/panel/yardim/personelx"), false);
+  assert.equal(canOpen("staff", "/panel/onaylar"), false);
+  assert.ok(canOpen("admin", "/panel/yardim/personel"));
 });
 
-test("personel yolunun altındaki yönetici ekranı (Karaoke › Doluluk) personele kapalı", () => {
-  assert.deepEqual([...ADMIN_ONLY_PATHS], ["/panel/karaoke/doluluk"]);
+test("personel yolunun altındaki yönetici ekranları (Karaoke › Doluluk, Kontrol › Listeler) personele kapalı", () => {
+  assert.deepEqual([...ADMIN_ONLY_PATHS], ["/panel/karaoke/doluluk", "/panel/kontrol/duzenle"]);
   assert.equal(canOpen("staff", "/panel/karaoke/doluluk"), false);
   assert.equal(canOpen("staff", "/panel/karaoke/doluluk/x"), false);
   assert.equal(canOpen("staff", "/panel/karaoke"), true);

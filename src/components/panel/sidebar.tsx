@@ -103,14 +103,11 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
   const allowed = (i: NavItem) => i.roles.includes(user.role);
   const pages = [...NAV_GROUPS.flatMap((g) => g.items.filter(allowed)), ...NAV_FOOTER.filter(allowed)];
 
+  // Yardım iki rolde: her rol kendi sayfasına (personelinkinde yönetici bölümleri yok)
   const accountItems: ProfileDropdownItem[] = [
     { id: "hesap", label: "Hesabım", icon: <UserRound className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/hesap") },
-    ...(isAdmin
-      ? [
-          { id: "ayarlar", label: "Ayarlar", icon: <Settings className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/ayarlar") },
-          { id: "yardim", label: "Yardım", icon: <HelpCircle className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/yardim") },
-        ]
-      : []),
+    ...(isAdmin ? [{ id: "ayarlar", label: "Ayarlar", icon: <Settings className="size-4" strokeWidth={1.75} />, onSelect: () => router.push("/panel/ayarlar") }] : []),
+    { id: "yardim", label: "Yardım", icon: <HelpCircle className="size-4" strokeWidth={1.75} />, onSelect: () => router.push(isAdmin ? "/panel/yardim" : "/panel/yardim/personel") },
   ];
   const cafeItems: ProfileDropdownItem[] = [
     { id: "site", label: "laffogato.net", icon: <ExternalLink className="size-4" strokeWidth={1.75} />, onSelect: () => window.open("https://laffogato.net", "_blank", "noopener") },

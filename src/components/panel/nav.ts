@@ -7,6 +7,7 @@ import {
   ChartNoAxesColumn,
   Plug,
   BookOpen,
+  CalendarHeart,
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
@@ -83,7 +84,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
       { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
-      { href: "/panel/onaylar", label: "Reçete onayları", icon: ClipboardCheck, roles: ["admin"], keywords: "onay bekleyen reçete değişikliği personel önerisi" },
     ],
   },
   {
@@ -95,6 +95,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         icon: ListTodo,
         roles: ["admin", "staff"],
         keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
+      },
+      // Personelin onaya giden istekleri ve reçete önerileri (docs/ONAYLAR.md); kenar çubuğunda Bugün'ün altında
+      {
+        href: "/panel/onaylar",
+        label: "Onaylar",
+        icon: ClipboardCheck,
+        roles: ["admin"],
+        keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi mal siparişi kapalı gün",
       },
       { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
       // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
@@ -121,6 +129,8 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
       },
+      // Personelin özel günleri (maç, AVM etkinliği, kampanya; docs/SATIS-TAHMINI.md); yönetici Satış tahmini'nde görür
+      { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
@@ -245,11 +255,15 @@ export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
   // Günün işleri (docs/BUGUN.md); personelde ağacın ilk öğesi ve girişte açılan ekran
   { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun", roles: ["admin", "staff"] },
+  // Personelin istekleri ve reçete önerileri (docs/ONAYLAR.md); yalnız yönetici, Bugün'ün hemen altında
+  { id: "onaylar", label: "Onaylar", icon: ClipboardCheck, href: "/panel/onaylar", roles: ["admin"] },
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["admin", "staff"] },
   // Personelde üst düzeyde; yönetici Satış & gider altında görür (aynı ekran)
   { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
   // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); iki rolde de üst düzeyde
   { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["admin", "staff"] },
+  // Personelin özel günleri; yönetici aynı listeyi Satış tahmini'nde düzenler
+  { id: "ozel-gunler", label: "Özel günler", icon: CalendarHeart, href: "/panel/ozel-gunler", roles: ["staff"] },
   {
     id: "menu",
     label: "Menü",
@@ -259,7 +273,6 @@ export const NAV_TREE: NavNode[] = [
       { id: "urunler", label: "Ürünler", href: "/panel/urunler", roles: ["admin"] },
       { id: "hammaddeler", label: "Hammaddeler", href: "/panel/hammaddeler", roles: ["admin"] },
       { id: "receteler", label: "Reçete defteri", href: "/panel/receteler", roles: ["admin", "staff"] },
-      { id: "onaylar", label: "Reçete onayları", href: "/panel/onaylar", roles: ["admin"] },
     ],
   },
   {
@@ -307,6 +320,8 @@ export const NAV_TREE: NavNode[] = [
     ],
   },
   { id: "yardim", label: "Yardım", icon: HelpCircle, href: "/panel/yardim", roles: ["admin"] },
+  // Personelin kendi Yardım'ı (yönetici bölümleri gönderilmez); ağacın en altında
+  { id: "yardim-personel", label: "Yardım", icon: HelpCircle, href: "/panel/yardim/personel", roles: ["staff"] },
 ];
 
 /** Ağacı role göre süzer; tek alt sayfası kalan grup doğrudan o sayfaya bağlanır */
@@ -418,7 +433,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/tutarlilik": "Tutarlılık",
   "/panel/kullanicilar": "Kullanıcılar",
   "/panel/parasut": "Paraşüt",
-  "/panel/onaylar": "Reçete onayları",
+  "/panel/onaylar": "Onaylar",
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",

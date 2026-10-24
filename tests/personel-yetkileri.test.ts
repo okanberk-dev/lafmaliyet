@@ -32,7 +32,14 @@ test("yetki tablosu: personelin her ekranı personele açık bir satırda; satı
   }
   // "tutarsız" Türkçede "çelişkili" diye okunur: rezervasyonların tutarını personelin görmediği açıkça yazılır
   assert.doesNotMatch(staffText, /tutarsız/);
-  assert.match(staffText, /rezervasyonlar \(personel tutarları görmez\)/);
+  assert.match(staffText, /rezervasyonlar, tükenen ürünü işaretleme \(personel tutarları görmez\)/);
+  // Dalga 10: onaya giden işler ve yeni ekranlar (docs/ONAYLAR.md)
+  for (const word of ["yönetici onaylar", "Kasadaki fiyatlar", "sipariş taslağı", "son 7 gün", "Özel günler", "Yardım"]) {
+    assert.ok(`${staffText} | ${STAFF_ROLE_HINT}`.toLocaleLowerCase("tr-TR").includes(word.toLocaleLowerCase("tr-TR")), word);
+  }
+  assert.ok(ROLE_PERMISSIONS.some((p) => !p.staff && /Onaylar/.test(p.label)));
+  // Personel maliyet, maaş ve kâr görmez: yalnız yöneticinin satırlarında
+  assert.doesNotMatch(staffText, /maliyet|maaş|kâr|komisyon/i);
 });
 
 test("rol seçicinin açıklaması ve tablo tek kaynaktan; eski 'yalnız sayım ve reçete' metni kalmadı", () => {
