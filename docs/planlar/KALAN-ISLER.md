@@ -24,8 +24,10 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   `DIGER-OTURUM.md`'de. İşe başlamadan okuyun.
 - **PR incelemesi:** #11 birleşti ama iş akışı çalışmıyor: hesabın GitHub Actions dakikaları bitti (iş, çalıştırıcı
   başlamadan düşüyor, `runner_id: 0`); Codex incelemesi de kullanım sınırında. Doğrulama her dalgada yerelde yapılır.
-  Diğer oturumun #16'sı (KDV-2 hatırlatıcıları) 23 Ekim'de birleşti (17c3e68). Kalan dalgaların her biri main'e ayrı
-  bir PR'dır.
+  Kalan dalgaların her biri main'e ayrı bir PR'dır.
+- **Sonradan (bu özetin 18:30 UTC anından sonra birleşenler):** #16 (diğer oturum: KDV-2 hatırlatıcıları, 17c3e68),
+  #18 (dalga 7, 514376d), #19 (arayüz taraması, 7b86866), #20 (diğer oturum: sitenin 409 `single_size` yanıtı kopuk
+  bağlantı olarak). Güncel durum için `git log origin/main`.
 
 ## 2. Kalan işler (sırayla)
 
