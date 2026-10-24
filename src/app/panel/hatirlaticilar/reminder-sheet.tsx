@@ -13,9 +13,11 @@ import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { dateTR, num } from "@/lib/format";
+import type { FixedPeriod, FixedSection } from "@/lib/calc/types";
+import { dateTR, monthLabel, num } from "@/lib/format";
 import {
   addDays,
+  fixedReminderText,
   isLastDayOfMonth,
   longDateTR,
   presetAnchor,
@@ -53,9 +55,15 @@ export interface Reminder {
 export interface FixedRow {
   id: number;
   name: string;
+  /** Kalemin taban tutarı ve dönemi (KDV hariç; sürümler bunların üstüne) */
   amount: number;
-  period: string;
-  section: string;
+  basePeriod: FixedPeriod;
+  /** Gelecek ayın (varsayılan ilk ödeme) dönemi: listede günlükler bununla ayrılır */
+  period: FixedPeriod;
+  section: FixedSection;
+  /** Kalemin kendi KDV oranı; boşsa bölümün varsayılanı */
+  vatRate: number | null;
+  versions: { fromMonth: string; period: FixedPeriod; amount: number }[];
 }
 
 /**
@@ -482,7 +490,7 @@ function FormSheet({
   );
 }
 
-const PERIOD_LABEL: Record<string, string> = { aylik: "aylık", haftalik: "haftalık", yillik: "yıllık", gunluk: "günlük" };
+
 
 function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow[]; today: string; existing: Set<string>; onBack: () => void; onClose: () => void }) {
   const [pending, start] = useActionTransition();
@@ -501,7 +509,12 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
       const r = await addFixedExpenseReminder(f.id, days[f.id] ?? defaultFirst);
       if (!r.ok) return void toast.error(r.error);
       setAdded((a) => ({ ...a, [f.id]: r.data.dueDate }));
-      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}` });
+      const what = r.data.changesFrom
+        ? ` · tutar yazılmadı (${monthLabel(r.data.changesFrom)} itibarıyla değişiyor; nakit planı Giderler'deki tutarı izler)`
+        : r.data.amount
+          ? ` · ${money(r.data.amount)}`
+          : "";
+      toast.success(`${f.name} eklendi`, { description: `İlk tarih ${dateTR(r.data.dueDate)}${what}` });
     });
 
   return (
@@ -560,7 +573,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
                           {exists && !added[f.id] ? <Badge tone="gray">Listede var</Badge> : null}
                         </p>
                         <p className="text-[13px] text-ink-mute tabular">
-                          {money(f.amount)} · {PERIOD_LABEL[f.period] ?? f.period}
+                          {fixedReminderText({ amount: f.amount, period: f.basePeriod, section: f.section, vatRate: f.vatRate }, f.versions, (days[f.id] ?? defaultFirst).slice(0, 7))}
                         </p>
                       </div>
                     </div>

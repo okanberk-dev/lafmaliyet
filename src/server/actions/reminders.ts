@@ -11,6 +11,7 @@ import {
   dueNotifications,
   endOfMonthAnchor,
   FIXED_REMINDER_NOTE,
+  fixedReminderAt,
   isLastDayOfMonth,
   isVatReminder,
   isVatWithholdingReminder,
@@ -398,22 +399,29 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
     const db = getDb();
     const [f] = await db.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, zId.parse(fixedExpenseId))).limit(1);
     if (!f) throw new UserError("Sabit gider bulunamadı");
-    if (f.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
-    const repeat = f.period === "yillik" ? "yearly" : f.period === "haftalik" ? "weekly" : "monthly";
+    const versions = await db
+      .select({ fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
+      .from(s.fixedExpenseVersions)
+      .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
+    // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder); sonraki bir aydan
+    // değişiklik girilmişse tutarsız (plan her ayın sürümünü taşır)
+    const at = fixedReminderAt(f, versions, dueDate.slice(0, 7));
+    if (at.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
+    const repeat = at.period === "yillik" ? "yearly" : at.period === "haftalik" ? "weekly" : "monthly";
     const kind = f.section === "kira" ? "kira" : f.section === "personel" ? "maas" : "odeme";
     await db.insert(s.reminders).values({
       title: f.name,
       kind,
-      amount: f.amount > 0 ? f.amount : null,
+      amount: at.amount,
       dueDate,
       anchorDate: dueDate,
       repeat,
       remindDaysBefore: 3,
       note: FIXED_REMINDER_NOTE,
     });
-    await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}`);
+    await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();
-    return { dueDate };
+    return { dueDate, amount: at.amount, changesFrom: at.changesFrom };
   });
 }
 

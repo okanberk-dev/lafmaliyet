@@ -10,6 +10,8 @@ import {
   daysBetween,
   digestSummary,
   dueNotifications,
+  fixedReminderAt,
+  fixedReminderText,
   isVatReminder,
   isVatWithholdingReminder,
   monthGenitiveTR,
@@ -315,4 +317,46 @@ test("ay adının ekleri: bulunma ve tamlayan hâli", () => {
   assert.equal(monthGenitiveTR("2026-09"), "Eylül'ün");
   assert.equal(monthGenitiveTR("2026-07-03"), "Temmuz'un");
   assert.equal(dayLocativeTR("2026-11-01"), "1\u00a0Kasım'da");
+});
+
+test("Sabit giderlerden ekle: tutar ilk ödeme ayındaki sürümden, faturadaki KDV'siyle (nakit planı bunu kesin öder)", () => {
+  const kira = { amount: 150_000, period: "aylik" as const, section: "kira" as const, vatRate: null };
+  // Bölümün varsayılanı %20: plan ayda 180.000 öder, hatırlatıcı da 180.000 taşır (150.000 değil)
+  assert.deepEqual(fixedReminderAt(kira, [], "2026-11"), { period: "aylik", amount: 180_000, gross: 180_000, vatRate: 0.2, changesFrom: null });
+  // Ekim'den geçerli zam: Ekim ve Kasım'daki ilk ödeme zamlı
+  const raise = [{ fromMonth: "2026-10", period: "aylik" as const, amount: 160_000 }];
+  assert.equal(fixedReminderAt(kira, raise, "2026-11").amount, 192_000);
+  assert.equal(fixedReminderAt(kira, raise, "2026-10").amount, 192_000);
+  // Eylül'deki ilk ödemeden sonra zam girilmiş: tutar yazılmaz (plan her ayın sürümünü KDV'siyle taşır)
+  assert.deepEqual(fixedReminderAt(kira, raise, "2026-09"), { period: "aylik", amount: null, gross: 180_000, vatRate: 0.2, changesFrom: "2026-10" });
+  // Birden çok sürümde ayda geçerli olan en son sürüm; sonraki değişikliklerin ilki söylenir; sürüm dönemi de değiştirir
+  const two = [...raise, { fromMonth: "2027-01", period: "yillik" as const, amount: 1_000_000 }, { fromMonth: "2026-12", period: "aylik" as const, amount: 170_000 }];
+  assert.deepEqual(fixedReminderAt(kira, two, "2026-11"), { period: "aylik", amount: null, gross: 192_000, vatRate: 0.2, changesFrom: "2026-12" });
+  assert.deepEqual(fixedReminderAt(kira, two, "2027-03"), { period: "yillik", amount: 1_200_000, gross: 1_200_000, vatRate: 0.2, changesFrom: null });
+  // Tutarı aynı kalan sonraki sürüm değişiklik sayılmaz
+  assert.equal(fixedReminderAt(kira, [{ fromMonth: "2027-01", period: "aylik", amount: 150_000 }], "2026-11").amount, 180_000);
+  // Personel KDV'siz; kalemde girilen oran bölümün önüne geçer (stopajlı şahıs kirası %0)
+  assert.equal(fixedReminderAt({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11").amount, 40_000);
+  assert.equal(fixedReminderAt({ ...kira, vatRate: 0 }, [], "2026-11").amount, 150_000);
+  assert.equal(fixedReminderAt({ ...kira, amount: 1_234.5, vatRate: 0.1 }, [], "2026-11").amount, 1_357.95);
+  // Tutarı 0 olan giderin (ya da o ay 0'a indirilmiş sürümün) hatırlatıcısı tutarsız
+  assert.equal(fixedReminderAt({ ...kira, amount: 0 }, [], "2026-11").amount, null);
+  assert.equal(fixedReminderAt(kira, [{ fromMonth: "2026-11", period: "aylik", amount: 0 }], "2026-11").amount, null);
+});
+
+test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutarsızsa 'KDV dahil' demez", () => {
+  const kira = { amount: 150_000, period: "aylik" as const, section: "kira" as const, vatRate: null };
+  assert.equal(fixedReminderText(kira, [], "2026-11"), "180.000\u00a0₺ (%20 KDV dahil) · aylık");
+  // Seçilen günün ayı: Ekim'de zamsız, Kasım'dan zamlı
+  const raise = [{ fromMonth: "2026-11", period: "aylik" as const, amount: 160_000 }];
+  assert.equal(fixedReminderText(kira, raise, "2026-11"), "192.000\u00a0₺ (%20 KDV dahil) · aylık");
+  assert.equal(fixedReminderText(kira, raise, "2026-10"), "180.000\u00a0₺ (%20 KDV dahil) · aylık · Kasım 2026 itibarıyla değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler");
+  // Ocak zammı (en sık): yılın sonuna ek getirilmez ("2027'dan" yanlış olurdu)
+  assert.match(fixedReminderText(kira, [{ fromMonth: "2027-01", period: "aylik", amount: 170_000 }], "2026-11"), /· Ocak 2027 itibarıyla değişiyor:/);
+  // Dönem sürümden: haftalıkken aylığa geçen kalem aylık yazılır
+  assert.equal(fixedReminderText({ amount: 2_000, period: "haftalik", section: "genel" }, [{ fromMonth: "2026-11", period: "aylik", amount: 8_000 }], "2026-11"), "9.600\u00a0₺ (%20 KDV dahil) · aylık");
+  // O ay 0'a inen kalem: taban tutar "KDV dahil" diye gösterilmez
+  assert.equal(fixedReminderText({ amount: 1_000, period: "aylik", section: "faturalar" }, [{ fromMonth: "2026-11", period: "aylik", amount: 0 }], "2026-11"), "Tutar yazılmaz · aylık");
+  // Personel KDV'siz
+  assert.equal(fixedReminderText({ amount: 40_000, period: "aylik", section: "personel" }, [], "2026-11"), "40.000\u00a0₺ · aylık");
 });
