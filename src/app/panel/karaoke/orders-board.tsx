@@ -139,9 +139,9 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     setPulling(true);
     const r = await pullOrders(0);
     setPulling(false);
-    if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: r.error });
+    if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: role === "admin" ? r.error : "Sorun sürerse yöneticiye haber verin." });
     else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
-  }, []);
+  }, [role]);
 
   const tables = list.filter((o) => o.fulfillment === "table" && o.stage !== "ready").length;
   const fresh = list.filter((o) => o.stage === "new").length;
@@ -171,7 +171,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
         }
       />
       <div className="space-y-3 px-5 pb-5">
-        <StatusLines data={data} now={now} />
+        <StatusLines data={data} now={now} role={role} />
         {data?.configured && !prefs.orderAlerts ? (
           <p className="flex flex-wrap items-center gap-2 rounded-xl bg-surface px-3 py-2 text-[13px] text-ink-mute ring-1 ring-line">
             <BellOff size={14} className="shrink-0" aria-hidden="true" />
@@ -198,7 +198,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
 }
 
 /** Bağlantı kapalı, son çekme başarısız, liste kısa ya da okunamayan sipariş: sessiz bir satır */
-function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
+function StatusLines({ data, now, role }: { data: LiveOrders | null; now: number; role: Role }) {
   if (!data) return null;
   if (!data.configured) {
     return (
@@ -211,7 +211,12 @@ function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
   if (data.error) {
     const ok = data.okAt ? Date.parse(data.okAt) : NaN;
     const since = Number.isFinite(ok) ? ` (son başarılı çekme ${trClock(ok).date === trClock(now).date ? trClock(ok).time : dateTimeTR(data.okAt)})` : "";
-    lines.push(`Son kontrol başarısız: ${data.error}${since}. Siparişleri sitenin panelinde de kontrol edin.`);
+    // Hatanın ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel yöneticiye haber verir
+    lines.push(
+      role === "admin"
+        ? `Son kontrol başarısız: ${data.error}${since}. Siparişleri sitenin panelinde de kontrol edin.`
+        : `Siparişler şu an siteden alınamıyor${since}. Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin.`,
+    );
   }
   if (!data.complete) lines.push("Sitede çok açık sipariş var; en yakın 200'ü gösteriliyor.");
   if (data.skipped) lines.push(`${num(data.skipped)} sipariş okunamadı (panel güncel olmayabilir); sitenin panelinde kontrol edin.`);

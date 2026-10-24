@@ -131,4 +131,16 @@ test("küçük gri metin kart zemininde AA'yı geçer; personel ortam değişken
   const board = read("src/app/panel/karaoke/orders-board.tsx");
   assert.doesNotMatch(board, /bağlantısı kurulmadı \(KARAOKE_SYNC_SECRET\)/);
   assert.doesNotMatch(board, /toast\.error\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
+  // Son çekmenin hatası (anahtar adı, imza, sitenin sürümü) yalnız yöneticinin satırında ve Yenile bildiriminde
+  assert.match(board, /<StatusLines data=\{data\} now=\{now\} role=\{role\} \/>/);
+  assert.match(
+    board,
+    /lines\.push\(\s*role === "admin"\s*\? `Son kontrol başarısız: \$\{data\.error\}\$\{since\}\. Siparişleri sitenin panelinde de kontrol edin\.`\s*: `Siparişler şu an siteden alınamıyor\$\{since\}\. Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin\.`,?\s*\);/,
+  );
+  assert.match(board, /description: role === "admin" \? r\.error : "Sorun sürerse yöneticiye haber verin\."/);
+  const actions = read("src/server/actions/karaoke.ts");
+  const sync = actions.slice(actions.indexOf("export async function syncKaraokeNow"));
+  assert.match(sync, /const me = await requireUser\(\);/);
+  assert.match(sync, /throw new UserError\(me\.role === "admin" \? r\.error : "laffogato\.net'e ulaşılamadı; sorun sürerse yöneticiye haber verin\."\)/);
+  assert.doesNotMatch(sync.slice(0, sync.indexOf("\n}\n")), /throw new UserError\("laffogato\.net bağlantısı kurulmamış \(KARAOKE_SYNC_SECRET\)"\)/);
 });

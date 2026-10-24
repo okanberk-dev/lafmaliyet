@@ -1,6 +1,7 @@
 /**
  * Karaoke çekmesinin hata metinleri (saf; sunucu ve testler paylaşır: tests/karaoke-baglanti.test.ts). Yönetici
- * kartında (Karaoke › Bu ay), Ayarlar › laffogato.net'te ve bar ekranının uyarı satırında görünür; docs/KARAOKE.md ›
+ * kartında (Karaoke › Bu ay), Ayarlar › laffogato.net'te ve bar ekranının uyarı satırında yalnız yöneticiye görünür
+ * (personel kısa sözü görür: freshness.ts karaokeStaleLine); docs/KARAOKE.md ›
  * Sorun giderme ne yapılacağını söyler. Menü ve satış bağlantılarının sözleriyle aynı (src/lib/site-menu/push.ts,
  * src/server/site-sales/sync.ts). Önceden sitenin her 503'ü "KARAOKE_SYNC_SECRET tanımlı değil" sayılıyordu (sitenin
  * veritabanı kısa süre okunamayınca da: yönetici gereksiz yere anahtarı değiştirip siteyi yeniden yayımlardı), ağ ve

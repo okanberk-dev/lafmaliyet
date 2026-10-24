@@ -51,7 +51,9 @@ GET /api/panel/karaoke  ◀─────────────────�
   site geri gelince yeni rezervasyon ve sarı satırın kalkması iki üç dakika sürer. Hatayı ekran bir sonraki soruluşunda
   öğrenir; bildirim izni olan cihazda bu en çok 30 dakika (yedek kontrol). Hızlı sayaç ve uzatma, sitedeki
   rezervasyonla çakışmayı sormadan önce kopya üç dakikadan eskiyse siteyi sorar. Son çekme başarısızsa bar ekranında
-  sarı satır: "Son kontrol başarısız: … Rezervasyonları sitenin panelinde de kontrol edin." Karaoke sayfası açılınca da
+  sarı satır: "Son kontrol başarısız: … Rezervasyonları sitenin panelinde de kontrol edin." (yönetici; personel ayrıntı
+  yerine kısa söz görür: "Rezervasyonlar şu an siteden alınamıyor (son başarılı kontrol 14:05). Yeni rezervasyon burada
+  görünmeyebilir; sorun sürerse yöneticiye haber verin.") Karaoke sayfası açılınca da
   en çok beş dakikada bir site sorulur; günlük iş (`/api/cron/gunluk`) bir kez eşitler. Yönetici **Şimdi eşitle** ile
   elle eşitler.
 - **İlk eşitleme** geçmiş kayıtları sessizce alır (eski rezervasyonlar için zil çalmaz). Bitmiş rezervasyonun
@@ -230,7 +232,8 @@ personele hiç gitmez. Oda hangi gün ve saatte dolu, hangisinde boş:
 
 ## Sorun giderme
 
-"laffogato.net bağlantısı" kartındaki **Hata** açıklamaları:
+"laffogato.net bağlantısı" kartındaki **Hata** açıklamaları. Bu açıklamaları yalnız yönetici görür (bağlantı kartı, bar
+ekranının sarı satırı, Eşitle); personel yöneticiye haber vermesini söyleyen kısa sözü görür.
 
 | Mesaj | Ne yapılır |
 |-------|------------|

@@ -1,3 +1,5 @@
+import type { Role } from "@/lib/constants";
+
 import { trClock } from "./session";
 
 /**
@@ -50,9 +52,10 @@ export function needsCatchUp(m: KaraokeSyncMarks, nowMs: number, rules: CatchUpR
 
 /**
  * Bar ekranının uyarı satırı (son çekme başarısız): "Son kontrol başarısız: Siteye ulaşılamadı (son başarılı kontrol
- * 14:05). Rezervasyonları sitenin panelinde de kontrol edin." Hata yoksa null.
+ * 14:05). Rezervasyonları sitenin panelinde de kontrol edin." Hata yoksa null. Personel hatanın ayrıntısını (anahtar
+ * adı, imza, sitenin sürümü) görmez; o yöneticinin satırında ve Ayarlar › laffogato.net'te kalır.
  */
-export function karaokeStaleLine(error: string | null | undefined, okAt: string | null | undefined, nowMs: number): string | null {
+export function karaokeStaleLine(error: string | null | undefined, okAt: string | null | undefined, nowMs: number, role: Role): string | null {
   if (!error) return null;
   const ok = okAt ? Date.parse(okAt) : NaN;
   let since = "";
@@ -60,5 +63,6 @@ export function karaokeStaleLine(error: string | null | undefined, okAt: string 
     const c = trClock(ok);
     since = ` (son başarılı kontrol ${c.date === trClock(nowMs).date ? c.time : `${c.date.slice(8, 10)}.${c.date.slice(5, 7)} ${c.time}`})`;
   }
+  if (role !== "admin") return `Rezervasyonlar şu an siteden alınamıyor${since}. Yeni rezervasyon burada görünmeyebilir; sorun sürerse yöneticiye haber verin.`;
   return `Son kontrol başarısız: ${error}${since}. Rezervasyonları sitenin panelinde de kontrol edin.`;
 }

@@ -93,9 +93,12 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 - **Durum satırı** (yalnız gerekince, sarı): son çekme başarısız ("Son kontrol başarısız: Siteye ulaşılamadı (son
   başarılı çekme 14:02). Siparişleri sitenin panelinde de kontrol edin."; son doğru liste ekranda kalır), sitenin
   listesi eksik (`complete: false`: "en yakın 200'ü gösteriliyor"), okunamayan sipariş ("2 sipariş okunamadı (panel
-  güncel olmayabilir)").
-- **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı (KARAOKE_SYNC_SECRET): uygulama
-  siparişleri burada görünmez. Karaoke sayacı çalışır."
+  güncel olmayabilir)"). Hatanın ayrıntısını yalnız yönetici görür; personelin satırı: "Siparişler şu an siteden
+  alınamıyor (son başarılı çekme 14:02). Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin."
+  **Yenile** düştüğünde personelin bildirimi de ayrıntı taşımaz ("laffogato.net'e ulaşılamadı" · "Sorun sürerse
+  yöneticiye haber verin.").
+- **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez,
+  karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net'ten bakabilir."
 - Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz." · **Zili aç**.
 
 Aşama sitede değişince (bu ekranın düğmesiyle, sitenin panelinden ya da uygulamadan; ping → çekme) kart güncellenir,
@@ -240,6 +243,9 @@ karakter, her siparişte (kurye dahil). Kural ve KVKK bölümü sitenin `docs/PA
   olursa günlüğe yalnız sipariş kimliği, işlem ve sitenin hata kodu yazılır; ad ve satırlar asla.
 
 ## Sorun giderme
+
+Bu açıklamaları yalnız yönetici görür (bağlantı kartı, bar ekranının sarı satırı, Yenile); personel yöneticiye haber
+vermesini söyleyen kısa sözü görür.
 
 | Mesaj | Ne yapılır |
 |-------|------------|

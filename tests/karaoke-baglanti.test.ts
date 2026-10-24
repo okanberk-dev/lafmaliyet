@@ -1,6 +1,6 @@
 // Karaoke bağlantısının sağlamlığı: çekme hatalarının Türkçe ve doğru metni (sitenin 503'ü anahtar mı veritabanı mı),
 // kaçan pingin yakalanması (canlı uç bakarken kopya tazelenir; sayaç ve uzatma çakışmadan önce tazeler), bar ekranının
-// uyarı satırı, uzatmanın tek yazımı.
+// uyarı satırı (personel kurulum ayrıntısı yerine kısa söz görür), uzatmanın tek yazımı.
 // Çalıştırma: npx tsx --test tests/karaoke-baglanti.test.ts
 
 import assert from "node:assert/strict";
@@ -91,17 +91,41 @@ test("tazeleme kuralı: hatalıyken iki dakikada bir; aynı anda soran sekmeler 
 });
 
 test("bar ekranının uyarı satırı: hata varken, son başarılı kontrolün saatiyle (başka gündeyse tarihle)", () => {
-  assert.equal(karaokeStaleLine(null, iso(0), T0), null);
-  assert.equal(karaokeStaleLine(undefined, undefined, T0), null);
+  assert.equal(karaokeStaleLine(null, iso(0), T0, "admin"), null);
+  assert.equal(karaokeStaleLine(undefined, undefined, T0, "admin"), null);
   assert.equal(
-    karaokeStaleLine("Siteye ulaşılamadı", "2026-10-23T11:05:00Z", T0),
+    karaokeStaleLine("Siteye ulaşılamadı", "2026-10-23T11:05:00Z", T0, "admin"),
     "Son kontrol başarısız: Siteye ulaşılamadı (son başarılı kontrol 14:05). Rezervasyonları sitenin panelinde de kontrol edin.",
   );
   assert.equal(
-    karaokeStaleLine("Site 8 saniyede yanıt vermedi", "2026-10-22T19:30:00Z", T0),
+    karaokeStaleLine("Site 8 saniyede yanıt vermedi", "2026-10-22T19:30:00Z", T0, "admin"),
     "Son kontrol başarısız: Site 8 saniyede yanıt vermedi (son başarılı kontrol 22.10 22:30). Rezervasyonları sitenin panelinde de kontrol edin.",
   );
-  assert.equal(karaokeStaleLine("Siteye ulaşılamadı", null, T0), "Son kontrol başarısız: Siteye ulaşılamadı. Rezervasyonları sitenin panelinde de kontrol edin.");
+  assert.equal(karaokeStaleLine("Siteye ulaşılamadı", null, T0, "admin"), "Son kontrol başarısız: Siteye ulaşılamadı. Rezervasyonları sitenin panelinde de kontrol edin.");
+});
+
+test("personel bar ekranında kurulum ayrıntısı görmez: yöneticiye haber vermesini söyleyen kısa söz", () => {
+  const failures = [
+    { kind: "http", status: 401 },
+    { kind: "http", status: 503, code: "not_configured" },
+    { kind: "http", status: 503 },
+    { kind: "http", status: 404 },
+    { kind: "format" },
+    { kind: "network" },
+    { kind: "timeout" },
+  ] as const;
+  for (const f of failures) {
+    const err = karaokePullError(f);
+    const staff = karaokeStaleLine(err, "2026-10-23T11:05:00Z", T0, "staff");
+    assert.equal(
+      staff,
+      "Rezervasyonlar şu an siteden alınamıyor (son başarılı kontrol 14:05). Yeni rezervasyon burada görünmeyebilir; sorun sürerse yöneticiye haber verin.",
+      JSON.stringify(f),
+    );
+    assert.doesNotMatch(staff ?? "", /KARAOKE_SYNC_SECRET|imza|sitenin panel|güncel değil/, JSON.stringify(f));
+    assert.ok(karaokeStaleLine(err, "2026-10-23T11:05:00Z", T0, "admin")?.includes(err), "yönetici ayrıntıyı görür");
+  }
+  assert.equal(karaokeStaleLine(null, iso(0), T0, "staff"), null);
 });
 
 test("canlı uç: bayat kopyayı yanıttan sonra tazeler (304'ten önce kurulur), hata ve son başarıyı ekrana verir", () => {
@@ -118,7 +142,7 @@ test("canlı uç: bayat kopyayı yanıttan sonra tazeler (304'ten önce kurulur)
   // Hata durumu değişince sürüm artar (304 eski satırı göstermesin); başarılı çekme hatayı kaldırınca da
   assert.match(sync, /if \(state\.lastError !== error\) await bumpKaraokeVersion\(\);/);
   assert.match(sync, /if \(created \|\| updated \|\| removed \|\| curState\.lastError\) await bumpKaraokeVersion\(tx\);/);
-  assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /karaokeStaleLine\(live\.data\?\.karaoke\.error, live\.data\?\.karaoke\.okAt, now\)/);
+  assert.match(read("src/app/panel/karaoke/karaoke-board.tsx"), /karaokeStaleLine\(live\.data\?\.karaoke\.error, live\.data\?\.karaoke\.okAt, now, role\)/);
 });
 
 test("sayaç ve uzatma: çakışmayı sormadan önce kopya tazelenir (onaylı 'yine de' hariç); uzatma tek yazımda", () => {
