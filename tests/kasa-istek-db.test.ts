@@ -60,7 +60,6 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     handedOver: 2_400,
     bankPos: null,
     offRevenue: null,
-    discounts: null,
     // Not dolu: açılış önceki testin devriyle tutmasa da yeni rapor not ister (openingNeedsNote)
     note: "deneme",
     ...o,
@@ -231,6 +230,13 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     assert.deepEqual(b.changes.map((c) => c.key).sort(), ["countedCash", "zTotal"].sort());
     const note = await store.saveCashReport(db, users.ali, { ...fields(day, { zTotal: 10_500, handedOver: 2_040, note: "Z düzeltildi" }), countedBy: null, revision: 2, photos: [] }, now);
     assert.equal(note.kind, "saved");
+    // "Öneriyi düzenle": form önerinin alanlarını raporun şimdiki hâline uygulanmış olarak açar (yöneticinin notu geri alınmaz)
+    const view = await loaders.pendingCashForDay(day, users.ayse);
+    const own = view.own.find((o) => o.kind === "kasa-duzeltme");
+    assert.ok(own && own.kind === "kasa-duzeltme");
+    assert.equal(own.proposed.note, "Z düzeltildi");
+    assert.equal(own.proposed.countedCash, 3_600);
+    assert.equal(own.proposed.zTotal, 10_000);
     await refused(review(users.ali, b.row.id, b.row.version, 2, "approve", now), CASH_REQUEST_TEXT.reviewStale);
     await review(users.ali, b.row.id, b.row.version, 3, "approve", now);
     const r = await reportOf(day);

@@ -84,6 +84,8 @@ test("kapı: bugün doğrudan; ertesi gün kasa alanı ya da sayan istek, metin 
   const gate = (now: Date, o: { hasReport?: boolean; laterReport?: boolean; changes: typeof text }) =>
     staffCashGate({ date: "2026-10-22", now, hasReport: o.hasReport ?? true, laterReport: o.laterReport ?? false, changes: o.changes });
 
+  // Bugünün raporu: her değişiklik doğrudan
+  for (const c of [text, cash, counter]) assert.equal(staffCashGate({ date: "2026-10-22", now: tr("2026-10-22T23:30"), hasReport: true, laterReport: false, changes: c }), "direct");
   // Aynı gece (iş günü kapanmadan, 05:00'ten önce): her şey doğrudan
   const night = tr("2026-10-23T04:59");
   for (const c of [text, cash, counter]) assert.equal(gate(night, { changes: c }), "direct");

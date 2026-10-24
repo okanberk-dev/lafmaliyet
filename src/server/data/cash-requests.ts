@@ -14,6 +14,7 @@ import {
   proposalSummary,
   resultLines,
   type CashRequestKind,
+  type CorrectionPayloadT,
   type ProposedFields,
 } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
@@ -88,18 +89,30 @@ export async function pendingCashForDay(day: string, me: { id: number }): Promis
     .orderBy(asc(s.staffRequests.createdAt));
   const mine = (r: (typeof rows)[number]) => r.requestedBy === me.id;
   const notMine = (r: (typeof rows)[number]) => r.requestedBy !== me.id;
+  // Rapor öneriden sonra değiştiyse "Öneriyi düzenle" önerinin değiştirdiği alanları raporun şimdiki hâline uygular:
+  // arada yöneticinin yaptığı düzeltme formda geri alınmış görünmez (onaydaki birleştirmenin aynısı)
+  const report = rows.some((r) => mine(r) && r.kind === "kasa-duzeltme") ? (await getDb().select().from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1))[0] : undefined;
   const own = rows.filter(mine).flatMap((r): (OwnCorrection | OwnDelete)[] => {
     const common = { id: r.id, version: r.version, createdAt: r.createdAt.toISOString(), message: r.message };
     if (r.kind === "kasa-silme") return [{ ...common, kind: "kasa-silme" }];
     const p = CorrectionPayload.safeParse(r.payload);
     if (!p.success) return [];
     const summary = proposalSummary(p.data.base, p.data.proposed);
-    return [{ ...common, kind: "kasa-duzeltme", gate: p.data.gate, baseRevision: p.data.baseRevision, proposed: p.data.proposed, lines: summary.lines, result: summary.result, carry: summary.carry }];
+    return [{ ...common, kind: "kasa-duzeltme", gate: p.data.gate, baseRevision: p.data.baseRevision, proposed: proposedNow(report, p.data), lines: summary.lines, result: summary.result, carry: summary.carry }];
   });
   return {
     own,
     others: rows.filter(notMine).map((r) => ({ kind: r.kind, requestedByName: r.requestedByName, createdAt: r.createdAt.toISOString() })),
   };
+}
+
+/** Önerinin formdaki hâli: rapor öneriden sonra değiştiyse önerinin değiştirdiği alanlar raporun şimdiki hâlinde */
+function proposedNow(report: typeof s.cashReports.$inferSelect | undefined, p: CorrectionPayloadT): ProposedFields {
+  if (!report || report.revision === p.baseRevision) return p.proposed;
+  const { merged } = mergedOf(report, p);
+  const { date: _date, ...fields } = merged.fields;
+  void _date;
+  return { ...fields, discounts: fields.discounts ?? null, countedBy: merged.countedBy ?? p.proposed.countedBy, countedByName: merged.countedByName ?? p.proposed.countedByName };
 }
 
 /** Yöneticinin formundaki bant: bu gün için bekleyen kasa istekleri (kimlik Onaylar'daki karta götürür) */
