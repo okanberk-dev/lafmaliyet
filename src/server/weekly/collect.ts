@@ -28,12 +28,14 @@ import { loadPosChecklist } from "@/server/data/prices";
 import { getDb, schema as s } from "@/server/db";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
+import { loadUpcoming } from "@/server/notify/digest";
 
 /*
  * Haftalık özetin kaynakları (docs/HAFTALIK-OZET.md). Her kaynak başka bir ekranın dışa açık yükleyicisini okur ve
  * sonucunu src/lib/weekly/items.ts'in dar girdisine çevirir; maddeyi yapıcı kurar. Kaynaklar aynı anda çalışır, her
  * biri kendi sınırında (en çok 4 sn); süresi dolan ya da hata veren kaynak yalnız kendi maddesini düşürür ve dipnota
- * "okunamadı" diye girer. Modeli okuyan beş kaynak tek loadModel()'i paylaşır. Hiçbir kaynak yazmaz, kişi adı okumaz.
+ * "okunamadı" diye girer. Modeli okuyan beş kaynak tek loadModel()'i paylaşır. Hiçbir kaynak yazmaz; kişi adı (raporu
+ * giren, sayan, listeyi dolduran) ve serbest not maddelere taşınmaz.
  */
 
 interface WeeklyCtx {
@@ -86,7 +88,9 @@ const nakit: Collector = {
   source: "nakit",
   timeoutMs: 4_000,
   async run(ctx) {
-    const { plan } = await loadCashPlan(await ctx.model());
+    // Planın bugünü özetin iş günü (sabah işinde aynı gün; ayrıca verilir: tek saat okunsun)
+    const [model, upcoming] = await Promise.all([ctx.model(), loadUpcoming(ctx.today)]);
+    const { plan } = await loadCashPlan(model, upcoming);
     const n = plan.firstNegative;
     return one(
       cashItem({

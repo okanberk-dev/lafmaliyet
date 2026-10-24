@@ -8,7 +8,7 @@ import { requireAdmin } from "@/server/auth/dal";
 import { renderWeekly } from "@/server/notify/weekly-template";
 import { isEmailConfigured } from "@/server/notify/resend";
 import { buildWeekly } from "@/server/weekly/collect";
-import { saveWeeklySettings, sendWeeklySampleTo } from "@/server/weekly/send";
+import { saveWeeklySettings, sendWeeklySampleTo, WEEKLY_ALL_FAILED_TEXT } from "@/server/weekly/send";
 
 import { logActivity } from "./log";
 import { attempt, UserError } from "./util";
@@ -30,14 +30,12 @@ export async function saveWeeklyEnabled(enabled: boolean) {
   });
 }
 
-const ALL_FAILED = "Özet hazırlanamadı: hiçbir bilgi okunamadı. Biraz sonra yeniden deneyin.";
-
 /** Önizleme: pazartesi gidecek e-posta bugünkü verilerle; gönderilmez, hiçbir şey yazılmaz */
 export async function previewWeekly() {
   return attempt(async () => {
     await requireAdmin();
     const { summary, allFailed } = await buildWeekly(new Date(), { budgetMs: 6_000 });
-    if (allFailed) throw new UserError(ALL_FAILED);
+    if (allFailed) throw new UserError(WEEKLY_ALL_FAILED_TEXT);
     const { subject, html } = renderWeekly(summary, { today: summary.week.day });
     return { subject, html, items: summary.items.length, failed: summary.failed.map((f) => SOURCE_LABELS[f]), empty: summary.items.length === 0 };
   });
@@ -49,9 +47,10 @@ export async function sendWeeklySample() {
     const me = await requireAdmin();
     if (!isEmailConfigured()) throw new UserError("E-posta kurulmamış (RESEND_API_KEY); önizleme yine çalışır.");
     const r = await sendWeeklySampleTo(me, new Date());
+    // Gidemeyen örneğin satırı da "Son gönderimler"de görünsün
+    refresh();
     if (!r.ok) throw new UserError(r.error);
     await logActivity(me, "Haftalık özet örneği", `${r.items} madde → ${r.to}`);
-    refresh();
     return { to: r.to, items: r.items };
   });
 }

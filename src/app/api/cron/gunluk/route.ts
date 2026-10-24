@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { countStep, dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
-import { capped, JOB_SEND_DEADLINE_MS, JOB_TAIL_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
+import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
@@ -95,12 +95,12 @@ export async function GET(request: NextRequest) {
       { error: "süre doldu" },
     );
   // Haftalık özet (docs/HAFTALIK-OZET.md): sabah e-postasından sonra (bugün ilk kez bildirileni yinelemesin), kuyruktaki
-  // öteki adımlarla aynı anda; kendi son anı jobStart + 52 sn (okuma 4 sn, gönderim tek deneme 4 sn). Adım yalnız
-  // çalıştığı gün yazılır
+  // öteki adımlarla aynı anda; kendi son anı jobStart + 52 sn (okuma 4 sn, gönderim tek deneme 4 sn), takılan veritabanı
+  // için kuyruğun sınırında (55 sn) bırakılır. Adım yalnız çalıştığı gün yazılır, sonucu yanıtta (body.weekly)
   const weeklyTask = () =>
     capped<WeeklyRunResult>(
       runWeeklyStep(new Date(), { deadlineAt: jobStart + WEEKLY_DEADLINE_MS }).catch((e: Error): WeeklyRunResult => ({ status: "error", weekday: 0, error: e.message })),
-      jobStart + JOB_TAIL_DEADLINE_MS - Date.now(),
+      jobStart + WEEKLY_DEADLINE_MS + 3_000 - Date.now(),
       { status: "error", weekday: 0, error: "süre doldu" },
     );
   const extras = async () => {
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
       ...(countResult ? { count: countResult } : {}),
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, weekly: weekly.status }, steps };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps, weekly: weekly.status };
   };
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {
@@ -134,11 +134,11 @@ export async function GET(request: NextRequest) {
     const result = await runReminderDigest("cron", { syncedToday: alreadySynced || Boolean(sync?.ok), sendDeadlineAt: jobStart + JOB_SEND_DEADLINE_MS });
     const ex = await extras();
     outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps });
-    return NextResponse.json({ ...result, sync, ...ex.body }, { status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, sync, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     const ex = await extras();
     outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps });
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body }, { status: 500 });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body, weekly: ex.weekly }, { status: 500 });
   } finally {
     await finishJobRun(runId, outcome);
   }

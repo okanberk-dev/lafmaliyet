@@ -29,7 +29,6 @@ import {
 import { addDays } from "@/lib/reminders";
 import { weeklyStatusText } from "@/lib/weekly/text";
 import { logActivity } from "@/server/actions/log";
-import { UserError } from "@/server/actions/util";
 import type { CurrentUser } from "@/server/auth/dal";
 import { isPendingInvite } from "@/server/auth/tokens";
 import { getDb, schema as s } from "@/server/db";
@@ -47,6 +46,9 @@ import { buildWeekly } from "./collect";
  * haftalik.gecmis'e de yazılır (db:reset bildirim günlüğünü siler, geçmişi silmez). Resend açıkça reddederse ertesi
  * uygun gün yeniden denenir; gönderim belirsizse (zaman aşımı, ağ, 409) asla.
  */
+
+/** Hiçbir kaynak okunamadığında önizleme ve örneğin iletisi */
+export const WEEKLY_ALL_FAILED_TEXT = "Özet hazırlanamadı: hiçbir bilgi okunamadı. Biraz sonra yeniden deneyin.";
 
 /** Ayar; yoksa ya da bozuksa açık */
 export async function loadWeeklySettings(): Promise<WeeklySettings> {
@@ -185,7 +187,7 @@ export async function runWeeklyStep(now: Date, o: { deadlineAt: number }): Promi
  */
 export async function sendWeeklySampleTo(me: CurrentUser, now: Date): Promise<{ ok: true; to: string; items: number } | { ok: false; error: string }> {
   const { summary, allFailed } = await buildWeekly(now, { budgetMs: 6_000 });
-  if (allFailed) throw new UserError("Özet hazırlanamadı: hiçbir bilgi okunamadı. Biraz sonra yeniden deneyin.");
+  if (allFailed) return { ok: false, error: WEEKLY_ALL_FAILED_TEXT };
   const notify = await loadNotifySettings();
   const { subject, html, text } = renderWeekly(summary, { today: summary.week.day, sample: true });
   const ms = Date.now();

@@ -16,6 +16,7 @@ import {
   Lightbulb,
   ListChecks,
   ListTodo,
+  Newspaper,
   Package,
   PackageCheck,
   Palette,
@@ -698,6 +699,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Timer,
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
+      },
+      {
+        id: "haftalik-ozet",
+        q: "Pazartesi gelen haftalık özet nedir?",
+        a: (
+          <>
+            Her pazartesi sabah 08:00–09:00 arasında yöneticilere kısa bir e-posta gider: geçen haftanın ve bekleyen işlerin en
+            önemli en çok 5 maddesi, kasanıza etkisine göre sıralı (zam, nakit planı, kasa farkı, komisyon, ModPOS fiyatları,
+            zayi, stok farkı; karaoke doluluğu ve kontrol listeleri sonda). Her madde ilgili ekranı açar. Bir bilgi okunamazsa o
+            madde atlanır, e-posta yine gider. Açıp kapatmak, önizlemek ve kendinize örnek göndermek için{" "}
+            <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri › Haftalık özet.
+          </>
+        ),
+        icon: Newspaper,
+        links: [{ href: "/panel/hatirlaticilar", label: "E-posta bildirimleri" }],
       },
       {
         id: "bar-baglanti",
