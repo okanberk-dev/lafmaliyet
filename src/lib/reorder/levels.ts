@@ -6,14 +6,15 @@
  */
 
 import type { Unit } from "../calc/types";
-import { addDays, daysBetween, isLastDayOfMonth, monthEnd } from "../reminders";
+import { addDays, daysBetween, isLastDayOfMonth, monthEnd, todayTR } from "../reminders";
 import type { OrderLite, ReorderSettings } from "./types";
 
 /** Son sayım bundan eskiyse satır "Sayım eski" der (öneri yine hesaplanır) */
 export const STALE_DAYS = 4;
 /**
- * Bu kadar günden eski sipariş "siparişte" sayılmaz (gelmiş ve sayıma girmiş varsayılır); beklenen günü dünden eski
- * olmayan hariç (teslim süresi uzun sipariş gelene kadar, IN_TRANSIT_GRACE_DAYS)
+ * Bu kadar günden eski sipariş "siparişte" sayılmaz (gelmiş ve sayıma girmiş varsayılır): gelmişse gelişinin, gelmemişse
+ * gönderiminin gününden. Gelmemiş ve beklenen günü dünden eski olmayan hariç (teslim süresi uzun sipariş gelene kadar,
+ * IN_TRANSIT_GRACE_DAYS)
  */
 export const IN_TRANSIT_DAYS = 14;
 /**
@@ -173,9 +174,10 @@ export function latestOnHand(
 }
 
 /**
- * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen ya da beklenen günü dünden eski olmayan (teslim süresi uzun
- * sipariş gelene kadar) ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra
- * geldi ("Geldi" ya da eşleşen faturanın günü). Kapatılan ama "Geldi" denmemiş sipariş kapandığı anda gelmiş sayılır
+ * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen (gelmişse son 14 günde gelen) ya da beklenen günü dünden eski
+ * olmayan (teslim süresi uzun sipariş gelene kadar) ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç
+ * gelmedi ya da sayımdan sonra geldi ("Geldi" ya da eşleşen faturanın günü); sayımdan sonra gelen mal sıradaki sayıma
+ * kadar siparişte kalır, teslim süresi uzun olsa da. Kapatılan ama "Geldi" denmemiş sipariş kapandığı anda gelmiş sayılır
  * (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Ay sonu sayımı geç girildiyse (anı ayın son günü, kaydı sonra)
  * arada denen Geldi receivedAtFor'un kuralıyla okunur: sayımdan önce gönderilip sayımın gününe kadar beklenen mal
  * sayımdadır (Geldi'ye sayım girilmeden önce dokunulsa da sonra dokunulsa da aynı sonuç). Kalem sipariş biriminde ×
@@ -189,8 +191,10 @@ export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, c
   let base = 0;
   const orderIds: number[] = [];
   for (const o of orders) {
-    if (o.status === "cancelled" || (o.sentDay < since && o.expectedOn < expectedSince)) continue;
+    if (o.status === "cancelled") continue;
     const arrived = o.receivedAt ?? (o.status === "closed" ? o.closedAt : null);
+    // 14 gün gelmiş malda gelişin, gelmemişte gönderimin gününden (Türkiye günü, toOrderLite'ın sentDay'i gibi)
+    if ((arrived ? todayTR(new Date(arrived)) : o.sentDay) < since && o.expectedOn < expectedSince) continue;
     if (arrived && count && countAt !== null && recordedAt !== null) {
       const t = Date.parse(arrived);
       if (t <= countAt) continue;

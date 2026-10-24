@@ -242,6 +242,22 @@ test("siparişte (D3): iptal olmayan, son 14 gün ya da beklenen günü geçmemi
   assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-25" }], MILK.id, count, today).base, 24000, "beklenen gün dün");
   assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-24" }], MILK.id, count, today).base, 0, "beklenen günden 2 gün sonra");
   assert.equal(IN_TRANSIT_GRACE_DAYS, LATE_GRACE_DAYS, "zilin 'gelmedi mi' sorusuyla aynı gün");
+  // Sayımdan sonra gelen uzun teslimli mal sayılana kadar siparişte: 14 gün gelişin gününden sayılır (gönderimden değil).
+  // 06.10 gönderilen, Salı 27.10 beklenen süt; Pazartesi sayımı 26.10 10:00, mal 27.10 12:00'de geldi, Geldi dendi
+  const monday = { at: "2026-10-26T07:00:00.000Z", day: "2026-10-26" };
+  const sent = { sentAt: "2026-10-06T08:00:00.000Z", expectedOn: "2026-10-27" };
+  const tap = receivedAtFor(sent, monday, new Date("2026-10-27T09:00:00.000Z")).toISOString();
+  assert.equal(tap, "2026-10-27T09:00:00.000Z", "beklenen gün sayımdan sonra: dokunuş anı");
+  const arrived = order({ ...sent, sentDay: "2026-10-06", receivedAt: tap });
+  for (const day of ["2026-10-27", "2026-10-28", "2026-10-29", "2026-11-01", "2026-11-10"]) {
+    assert.equal(onOrderFor([arrived], MILK.id, monday, day).base, 24000, `${day}: gelmiş ama sayılmamış`);
+  }
+  assert.equal(onOrderFor([arrived], MILK.id, monday, "2026-11-11").base, 0, "gelişten 15 gün sonra sayımda varsayılır");
+  // Sıradaki sayım (02.11) malı sayar: siparişten düşer
+  assert.equal(onOrderFor([arrived], MILK.id, { at: "2026-11-02T07:00:00.000Z", day: "2026-11-02" }, "2026-11-02").base, 0);
+  // Kapatılan ama Geldi denmemiş uzun teslimli sipariş de kapanışın gününden
+  const closed = order({ ...sent, sentDay: "2026-10-06", status: "closed", closedAt: "2026-10-27T09:00:00.000Z" });
+  assert.equal(onOrderFor([closed], MILK.id, monday, "2026-10-30").base, 24000);
   // Faturayla eşleşen, faturanın günü (öğlen) sayımdan önce: sayımda
   assert.equal(onOrderFor([order({ invoiceId: 9, receivedAt: "2026-10-24T09:00:00.000Z", status: "closed" })], MILK.id, count, today).base, 0);
   assert.equal(onOrderFor([order()], COFFEE.id, count, today).base, 0, "başka kalem");
