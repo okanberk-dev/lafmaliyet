@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { deleteSupplierEntry, saveSupplierPayment } from "@/server/actions/cari";
 import { loadKasaLines } from "@/server/actions/cari-options";
 
-import { amountText, CARI_UNDO_MS } from "./cari-ui";
+import { amountText, CARI_UNDO_MS, CariPhotoField } from "./cari-ui";
 
 /** Cari kaydının tedarikçisi: kartı varsa kartın kimliği, yoksa grubun anahtarı (sunucu çözer; ad gönderilmez) */
 export type CariTarget = { cardId: number } | { key: string };
@@ -58,6 +58,7 @@ export interface EditPayment {
   cashOutStore: string | null;
   /** Kalemlere sayılmış toplam */
   counted: number;
+  photoId: number | null;
 }
 
 const itemKey = (i: { kind: string; id: number }) => `${i.kind}:${i.id}`;
@@ -210,6 +211,7 @@ export function CariPaymentDialog({
     return m;
   });
   const [note, setNote] = useState(edit?.note ?? "");
+  const [photoId, setPhotoId] = useState<number | null>(edit?.photoId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [pending, run] = useActionTransition();
 
@@ -249,7 +251,7 @@ export function CariPaymentDialog({
         cashOut,
         allocation: { mode: edit ? "none" : mode, lines: plan.lines },
         note: note.trim() || null,
-        photoId: null,
+        photoId,
       });
       if (!r.ok) return void setError(r.error);
       const d = r.data;
@@ -271,7 +273,7 @@ export function CariPaymentDialog({
                 cashOut: null,
                 allocation: { mode: "none", lines: [] },
                 note: edit?.note ?? null,
-                photoId: null,
+                photoId: edit?.photoId ?? null,
               })
           : null;
       toast.success(d.created ? "Ödeme eklendi" : "Ödeme düzeltildi", {
@@ -449,6 +451,7 @@ export function CariPaymentDialog({
         <Field label="Not" htmlFor="cp-note">
           <Textarea id="cp-note" value={note} onChange={(e) => setNote(e.target.value)} rows={1} maxLength={500} className="max-h-28 min-h-11 [field-sizing:content]" />
         </Field>
+        <CariPhotoField label="Fotoğraf (dekont / makbuz)" value={photoId} onChange={setPhotoId} day={date && date < businessDay ? date : businessDay} />
         {error ? (
           <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
             {error}

@@ -22,7 +22,7 @@ import { deleteSupplierEntry, saveSupplierDebt } from "@/server/actions/cari";
 import { loadDebtOptions } from "@/server/actions/cari-options";
 
 import { KasaLinePicker, type CariTarget } from "../cari-payment-dialog";
-import { amountText, CARI_UNDO_MS, PastConfirm } from "../cari-ui";
+import { amountText, CARI_UNDO_MS, CariPhotoField, PastConfirm } from "../cari-ui";
 
 /** Penceredeki harcama kaydı (Aylık harcamalar) */
 type ExpenseOption = ExpenseLite & { categoryName: string; section: string };
@@ -41,6 +41,7 @@ export interface EditDebt {
   counted: number;
   /** "Gideri zaten girildi"de sahiplenilen kayıt */
   adoptedExpenseId: number | null;
+  photoId: number | null;
 }
 
 const MODE_NOTE: Record<CostMode, string> = {
@@ -106,6 +107,7 @@ export function DebtDialog({
   const [adoptOk, setAdoptOk] = useState(false);
   const [dueDate, setDueDate] = useState(edit?.dueDate ?? "");
   const [note, setNote] = useState(edit?.note ?? "");
+  const [photoId, setPhotoId] = useState<number | null>(edit?.photoId ?? null);
   const [useCredit, setUseCredit] = useState(credit > EPS);
   const [paid, setPaid] = useState(false);
   const [paidMethod, setPaidMethod] = useState<CariMethod>(defaultMethod);
@@ -174,7 +176,7 @@ export function DebtDialog({
         adoptExpenseId: mode === "mevcut" ? (adopted?.id ?? null) : null,
         dueDate: dueDate || null,
         note: note.trim() || null,
-        photoId: null,
+        photoId,
         applyCredit: useCredit && credit > EPS,
         paid: paid ? { method: paidMethod, date: paidDate, cashOut: paidMethod === "kasa" ? (line === "new" ? { mode: "new" } : { mode: "existing", id: line as number }) : null } : null,
         confirmPast: pastOk ? past.map((e) => e.month) : [],
@@ -214,7 +216,7 @@ export function DebtDialog({
                 adoptExpenseId: prev.costMode === "mevcut" ? prev.adoptedExpenseId : null,
                 dueDate: prev.dueDate,
                 note: prev.note,
-                photoId: null,
+                photoId: prev.photoId,
                 applyCredit: false,
                 paid: null,
                 confirmPast: [...new Set([...months, prev.date.slice(0, 7), date.slice(0, 7)])].filter((m) => m < today.slice(0, 7)),
@@ -423,6 +425,8 @@ export function DebtDialog({
             <Textarea id="db-note" value={note} maxLength={1000} rows={1} onChange={(e) => setNote(e.target.value)} className="max-h-28 min-h-11 [field-sizing:content]" />
           </Field>
         </div>
+
+        <CariPhotoField label="Fotoğraf (irsaliye / el fişi)" value={photoId} onChange={setPhotoId} day={date && date < businessDay ? date : businessDay} />
 
         {credit > EPS && remaining > EPS ? (
           <ToggleRow

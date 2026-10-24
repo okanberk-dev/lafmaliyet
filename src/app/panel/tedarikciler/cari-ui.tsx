@@ -1,7 +1,10 @@
 "use client";
 
 import { CalendarClock } from "lucide-react";
+import { useState } from "react";
 
+import { PhotoPicker, PhotoStatus, PhotoThumb, usePhotoUpload } from "@/components/panel/photo-picker";
+import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { Checkbox } from "@/components/ui/form";
 import { pastMonthConfirmText, pastMonthText, type MonthEffect } from "@/lib/cari/months";
 import { cn } from "@/lib/utils";
@@ -30,6 +33,34 @@ export function PastConfirm({ effects, checked, onChange, className }: { effects
         <span>{effects.map(pastMonthText).join(" · ")}</span>
       </p>
       <Checkbox checked={checked} onChange={(e) => onChange(e.target.checked)} label={<span className="text-ink">{pastMonthConfirmText(effects)}</span>} className="items-start" />
+    </div>
+  );
+}
+
+/**
+ * Kaydın fotoğrafı (borçta irsaliye ya da el fişi, ödemede dekont ya da makbuz): fiş gibi saklanır (400 gün), yalnız
+ * kanıt olarak; okunmaz. Yükleme kasanın gününden ileri olamaz (ileri tarihli kayıtta bugünün günüyle yüklenir).
+ */
+export function CariPhotoField({ value, onChange, day, label }: { value: number | null; onChange: (id: number | null) => void; day: string; label: string }) {
+  const up = usePhotoUpload();
+  const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
+  return (
+    <div className="space-y-2">
+      <p className="text-[13px] font-medium text-ink-soft">{label}</p>
+      {value ? (
+        <PhotoThumb id={value} caption={label} onOpen={() => setViewer({ id: value, caption: label })} onRemove={() => onChange(null)} />
+      ) : (
+        <PhotoPicker
+          read={false}
+          disabled={up.busy}
+          onPick={async (file) => {
+            const r = await up.upload(file, { kind: "fis", day, read: false });
+            if (r) onChange(r.photo.id);
+          }}
+        />
+      )}
+      <PhotoStatus phase={up.phase} />
+      <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </div>
   );
 }

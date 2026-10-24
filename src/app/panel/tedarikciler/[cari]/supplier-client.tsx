@@ -245,6 +245,7 @@ export function SupplierClient({
     note: d.note ?? null,
     counted: debtCounted(d.id),
     adoptedExpenseId: d.costMode === "mevcut" ? (cari.expenses[d.id]?.id ?? null) : null,
+    photoId: d.photoId,
   });
   const toEditPayment = (p: CardPayment): EditPayment => ({
     id: p.id,
@@ -256,6 +257,7 @@ export function SupplierClient({
     cashOutCreated: p.cashOutCreated,
     cashOutStore: p.cashOutStore ?? null,
     counted: paymentCounted(p.id),
+    photoId: p.photoId,
   });
   // Ödeme ekle: o gün kasada bu tedarikçiye işlenmemiş Teslim satırı varsa Kasadan, satır seçili gelir (R1b)
   const todayKasa = cari.kasa.find((l) => l.kind === "teslim" && l.date === cari.businessDay);
