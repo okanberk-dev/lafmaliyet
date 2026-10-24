@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
+import type { LinkPrev } from "../../lib/cari/account";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { SnapshotDetail } from "../../lib/forecast/model";
@@ -343,6 +344,19 @@ export const invoices = pgTable(
      * Kontrol hanesi tutmayan ya da yer tutucu numara saklanır ama eşleşmede kullanılmaz (taxKey).
      */
     supplierTaxNumber: text("supplier_tax_number"),
+    /**
+     * Bu faturaya sayılan cari ödemelerin toplamı (supplier_allocations; KDV dahil). Yalnız src/server/cari/settle.ts
+     * yazar, her yazışta SUM ile yeniden (docs/TEDARIKCILER.md "Hesap hareketleri")
+     */
+    allocated: doublePrecision("allocated").notNull().default(0),
+    /**
+     * Panel takibi (cari): boşsa kalan bugünkü kuraldır (Paraşüt'ün `outstanding`'i); doluysa kalan = Ödenecek − bu −
+     * `allocated`. Kart ilk ödeme kaydını alınca grubun faturalarına Paraşüt'ün o ana kadar ödendi gösterdiği kısım
+     * yazılır, sonradan gelen faturaya 0 (src/lib/cari/balance.ts openBalance). Eşitleme yazmaz.
+     */
+    ledgerBase: doublePrecision("ledger_base"),
+    /** Faturayı cari ödemelerin dağıtımı kapattı (ödendi): karşılık düşerse defter yeniden açar; elle ✓'ye dokunulmaz */
+    paidByLedger: boolean("paid_by_ledger").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -402,6 +416,97 @@ export const suppliers = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("suppliers_key_uq").on(t.key)],
+);
+
+/**
+ * Cari hesabın elle kayıtları (docs/TEDARIKCILER.md "Hesap hareketleri"): borç (faturasız ya da elden alım, eski borç)
+ * ve ödeme (hesaba, kısmi, toptan, kasadan). Kayıt tedarikçi kartına bağlıdır (kartsız gruba ilk kayıtta görünen
+ * adıyla kart açılır). Ödemenin hangi faturaya ya da borca sayıldığı supplier_allocations'ta; ödeme hiçbir zaman gider
+ * ya da KDV değildir. Borcun gideri `cost_mode`'a göre: fatura gelince fatura, "gider" bir Aylık harcamalar kaydı
+ * (expense_entries.supplier_entry_id), "mevcut" var olan bir kayıt, "devir" hiç.
+ */
+export const supplierEntries = pgTable(
+  "supplier_entries",
+  {
+    id: serial("id").primaryKey(),
+    supplierId: integer("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: ["borc", "odeme"] }).notNull(),
+    /** Alım ya da ödeme günü (YYYY-MM-DD) */
+    date: text("date").notNull(),
+    /** KDV dahil, kuruşa yuvarlanmış (> 0) */
+    amount: doublePrecision("amount").notNull(),
+    /** Borçta ne alındı */
+    description: text("description"),
+    note: text("note"),
+    // borç
+    costMode: text("cost_mode", { enum: ["fatura", "gider", "mevcut", "devir"] }),
+    categoryId: integer("category_id").references(() => expenseCategories.id, { onDelete: "set null" }),
+    dueDate: text("due_date"),
+    /** "Faturası geldi": bağlandığı fatura (n borç → 1 fatura); bağlıyken kalanı 0 */
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+    linkedAt: timestamp("linked_at", { withTimezone: true }),
+    /** Bağlanmadan önceki hâli: bağ kaldırılınca ya da fatura silinince geri gelir */
+    linkPrev: jsonb("link_prev").$type<LinkPrev>(),
+    /** "Faturası 45 gündür gelmedi" uyarısı bu günden sonra (Beklemeye devam) */
+    remindAfter: text("remind_after"),
+    /** "Ayrı alım" denmiş faturalar: bu borcun faturası değil */
+    dismissedInvoiceIds: jsonb("dismissed_invoice_ids").$type<number[]>().notNull().default([]),
+    // ödeme
+    method: text("method", { enum: ["kasa", "elden", "havale", "kart", "cek", "diger"] }),
+    /** Kasadan ödemenin Kasa satırı (Teslim) */
+    cashOutId: integer("cash_out_id").references(() => cashOuts.id, { onDelete: "restrict" }),
+    /** Kasa satırını bu ödeme açtı (silinince o da silinir); değilse var olan satıra bağlandı */
+    cashOutCreated: boolean("cash_out_created").notNull().default(false),
+    // ortak
+    photoId: integer("photo_id").references(() => photos.id, { onDelete: "set null" }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("supplier_entries_supplier_idx").on(t.supplierId, t.date),
+    index("supplier_entries_invoice_idx").on(t.invoiceId),
+    uniqueIndex("supplier_entries_cash_out_uq").on(t.cashOutId),
+    uniqueIndex("supplier_entries_photo_uq").on(t.photoId),
+    check("supplier_entries_amount_ck", sql`${t.amount} > 0`),
+    check(
+      "supplier_entries_kind_ck",
+      sql`(${t.kind} = 'borc' and ${t.costMode} is not null and ${t.method} is null and ${t.cashOutId} is null) or (${t.kind} = 'odeme' and ${t.method} is not null and ${t.costMode} is null and ${t.invoiceId} is null and ${t.dueDate} is null and ${t.categoryId} is null)`,
+    ),
+    check("supplier_entries_kasa_ck", sql`${t.kind} <> 'odeme' or ((${t.method} = 'kasa') = (${t.cashOutId} is not null))`),
+    check("supplier_entries_gider_ck", sql`${t.costMode} is distinct from 'gider' or ${t.categoryId} is not null`),
+  ],
+);
+
+/**
+ * Ödemenin dağıtımı: ödeme kaydının ne kadarı hangi faturaya ya da borca sayıldı. Dağıtılmayan kısım ödemenin
+ * hesabında durur ("hesapta sayılmamış ödeme"). `origin_debt_id`: borca sayılmışken "Faturası geldi" ile faturaya
+ * taşınan dağıtımın borcu (bağ kaldırılınca geri döner). Yalnız src/server/cari/settle.ts yazar.
+ */
+export const supplierAllocations = pgTable(
+  "supplier_allocations",
+  {
+    id: serial("id").primaryKey(),
+    paymentId: integer("payment_id")
+      .notNull()
+      .references(() => supplierEntries.id, { onDelete: "cascade" }),
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
+    debtId: integer("debt_id").references(() => supplierEntries.id, { onDelete: "cascade" }),
+    originDebtId: integer("origin_debt_id").references(() => supplierEntries.id, { onDelete: "set null" }),
+    amount: doublePrecision("amount").notNull(),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("supplier_allocations_payment_idx").on(t.paymentId),
+    index("supplier_allocations_invoice_idx").on(t.invoiceId),
+    index("supplier_allocations_debt_idx").on(t.debtId),
+    check("supplier_allocations_amount_ck", sql`${t.amount} > 0`),
+    check("supplier_allocations_target_ck", sql`num_nonnulls(${t.invoiceId}, ${t.debtId}) = 1`),
+  ],
 );
 
 /**
@@ -547,12 +652,18 @@ export const expenseEntries = pgTable(
     vat: doublePrecision("vat"),
     /** Bu kaydı yazan kasadan çıkan satırı */
     cashOutId: integer("cash_out_id").references(() => cashOuts.id, { onDelete: "set null" }),
+    /**
+     * Kaydın sahibi olan cari borç ("Faturası yok · gider yaz" ya da "Gideri zaten girildi"): tutarı, günü ve kategorisi
+     * Tedarikçiler'de düzeltilir, burada kilitli
+     */
+    supplierEntryId: integer("supplier_entry_id").references(() => supplierEntries.id, { onDelete: "set null" }),
   },
   (t) => [
     index("expense_entries_date_idx").on(t.date),
     index("expense_entries_category_idx").on(t.categoryId),
     uniqueIndex("expense_entries_photo_uq").on(t.photoId),
     uniqueIndex("expense_entries_cash_out_uq").on(t.cashOutId),
+    uniqueIndex("expense_entries_supplier_entry_uq").on(t.supplierEntryId),
   ],
 );
 

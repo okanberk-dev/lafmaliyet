@@ -41,6 +41,8 @@ export async function loadUpcoming(today = todayTR()) {
         dueDate: s.invoices.dueDate,
         payable: s.invoices.payable,
         outstanding: s.invoices.outstanding,
+        allocated: s.invoices.allocated,
+        ledgerBase: s.invoices.ledgerBase,
         supplierTaxNumber: s.invoices.supplierTaxNumber,
       })
       .from(s.invoices)

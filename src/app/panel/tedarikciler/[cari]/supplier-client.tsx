@@ -322,7 +322,7 @@ export function SupplierClient({
   const amountCell = (r: Row) => (
     <>
       <span className="font-semibold">{money(r.payable)}</span>
-      {r.unpaid && isPartiallyPaid(r) ? <span className="block text-xs text-warn">Kalan {money(r.outstanding)}</span> : null}
+      {r.unpaid && isPartiallyPaid(r) ? <span className="block text-xs text-warn">Kalan {money(openBalance(r))}</span> : null}
     </>
   );
 

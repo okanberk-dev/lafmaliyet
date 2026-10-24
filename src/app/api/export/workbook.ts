@@ -1031,7 +1031,8 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   for (const inv of invoices) {
     const r = ws.rowCount + 1;
     const net = inv.amount - inv.discount;
-    const balance = openBalance({ payable: inv.payable, unpaid: inv.unpaid, outstanding: outstanding?.get(inv.id) ?? null });
+    // Cari takipteki faturada panelde sayılan ödemeler düşülür (allocated, ledgerBase; src/lib/cari/balance.ts)
+    const balance = openBalance({ payable: inv.payable, unpaid: inv.unpaid, outstanding: outstanding?.get(inv.id) ?? null, allocated: inv.allocated, ledgerBase: inv.ledgerBase });
     ws.addRow({
       d: excelDate(inv.date),
       s: inv.supplier,

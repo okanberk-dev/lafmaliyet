@@ -6,6 +6,7 @@ import {
   PANEL_GROUP_KEYWORDS,
   type PanelFixedGroup,
 } from "../constants";
+import { isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num } from "../format";
@@ -761,22 +762,11 @@ export function yearTrend(model: Model, year: number) {
 // Faturalar: açık bakiye
 // ============================================================================
 
-type InvoiceBalance = { payable: number; unpaid: boolean; outstanding?: number | null };
+type InvoiceBalance = BalanceInvoice;
 
-/**
- * Ödenmemiş faturanın kalan borcu (KDV dahil). Paraşüt'ten gelen kısmi ödemede `outstanding`
- * (kalan) kullanılır; yoksa ya da 0 ise Ödenecek tutarın tamamı. Ödenmiş fatura için 0.
- * Hatırlatıcılar (lib/reminders.ts) ile aynı kural.
- */
-export function openBalance(inv: InvoiceBalance): number {
-  if (!inv.unpaid) return 0;
-  return inv.outstanding !== null && inv.outstanding !== undefined && inv.outstanding > 0 ? inv.outstanding : inv.payable;
-}
-
-/** Kısmen ödenmiş: kalan > 0 ve Ödenecek'ten az */
-export function isPartiallyPaid(inv: InvoiceBalance): boolean {
-  return inv.unpaid && inv.outstanding !== null && inv.outstanding !== undefined && inv.outstanding > 0 && inv.outstanding < inv.payable - 0.005;
-}
+// Faturanın kalan borcu ve kısmi ödeme: tek kural src/lib/cari/balance.ts'te (Paraşüt'ün kalanı; kart cari ödemeyle
+// takipteyse panelde sayılan). Hatırlatıcılar, Tedarikçiler, Claude ve Excel aynı fonksiyonu kullanır.
+export { isPartiallyPaid, openBalance };
 
 /** Ödenmemiş faturaların sayısı ve kalan borç toplamı */
 export function unpaidSummary(invoices: InvoiceBalance[]) {

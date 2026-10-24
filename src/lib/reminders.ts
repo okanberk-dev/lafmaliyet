@@ -4,6 +4,7 @@
  */
 
 import type { FixedPeriod, FixedSection } from "./calc/types";
+import { openBalance } from "./cari/balance";
 import { fixedVatRate } from "./constants";
 import { money, monthLabel } from "./format";
 
@@ -49,6 +50,9 @@ export interface UnpaidInvoiceRow {
   payable: number;
   /** Kalan borç; kısmen ödenmişse payable yerine bu gösterilir */
   outstanding?: number | null;
+  /** Bu faturaya sayılan cari ödemeler ve panel takibinin tabanı (src/lib/cari/balance.ts openBalance) */
+  allocated?: number | null;
+  ledgerBase?: number | null;
   /** Tedarikçinin cari kartındaki vade (gün): vadesiz faturada genel ayarın yerine geçer */
   termDays?: number | null;
 }
@@ -192,7 +196,8 @@ function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: nu
     kind: "fatura",
     title: inv.supplier,
     detail: [inv.invoiceNo ? `Fatura ${inv.invoiceNo}` : "Ödenmemiş fatura", inv.dueDate ? null : `vade tahmini (${term} gün)`].filter(Boolean).join(" · "),
-    amount: inv.outstanding !== null && inv.outstanding !== undefined && inv.outstanding > 0 ? inv.outstanding : inv.payable,
+    // Kalan borç: Tedarikçiler'le aynı kural (ödenmemiş fatura listesi; cari takipte panelde sayılan düşülür)
+    amount: openBalance({ ...inv, unpaid: true }),
     dueDate: due,
     daysLeft,
     status: statusFor(daysLeft, invoiceDaysBefore),

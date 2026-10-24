@@ -16,6 +16,7 @@ import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Segmented } from "@/components/ui/segmented";
 import { useIsPhone } from "@/components/ui/use-media";
 import { normalizeSupplier } from "@/lib/calc/engine";
+import { isPartiallyPaid, openBalance } from "@/lib/cari/balance";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { formatBytes } from "@/lib/documents";
@@ -654,10 +655,10 @@ function LockedAmounts({ invoice, href }: { invoice: InvoiceRow; href: string | 
             <dd className="tabular text-ink">{v}</dd>
           </div>
         ))}
-        {invoice.unpaid && invoice.outstanding && invoice.outstanding > 0 && invoice.outstanding < invoice.payable - 0.005 ? (
+        {isPartiallyPaid(invoice) ? (
           <div className="min-w-0">
             <dt className="text-xs text-ink-mute">Kalan borç</dt>
-            <dd className="tabular text-warn">{tl(invoice.outstanding, 2)}</dd>
+            <dd className="tabular text-warn">{tl(openBalance(invoice), 2)}</dd>
           </div>
         ) : null}
       </dl>

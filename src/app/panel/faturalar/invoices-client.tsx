@@ -24,7 +24,7 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
-import { isPartiallyPaid } from "@/lib/calc/insights";
+import { isPartiallyPaid, openBalance } from "@/lib/calc/insights";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -514,7 +514,7 @@ export function InvoicesClient({
         </motion.button>
         {isPartiallyPaid(i) ? (
           <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; Paraşüt'e göre kısmen ödendi`}>
-            Kalan {tl(i.outstanding, 2)}
+            Kalan {tl(openBalance(i), 2)}
           </span>
         ) : null}
       </span>
@@ -955,7 +955,7 @@ export function InvoicesClient({
                   </div>
                   {i.unpaid && (isPartiallyPaid(i) || i.dueDate) ? (
                     <p className="mt-0.5 text-right text-xs text-warn tabular">
-                      {isPartiallyPaid(i) ? `Kalan ${tl(i.outstanding, 2)}` : null}
+                      {isPartiallyPaid(i) ? `Kalan ${tl(openBalance(i), 2)}` : null}
                       {isPartiallyPaid(i) && i.dueDate ? " · " : null}
                       {i.dueDate ? `Vade ${dateTR(i.dueDate)}` : null}
                     </p>
