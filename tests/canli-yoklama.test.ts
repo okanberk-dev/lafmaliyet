@@ -73,6 +73,9 @@ test("bildirim açık: uyarı motoru ve bar ekranı yalnız izne değil kayıtl�
   assert.match(alerts, /const pushOn = pushCovers\(\{\s*granted: Boolean\(publicKey\) && pushSupport\(\) === "granted",\s*topics,/);
   const board = read("src/app/panel/karaoke/orders-board.tsx");
   assert.match(board, /pushCovers\(\{\s*granted:/);
+  // Bar ekranının 20 sn'lik döngüsü yalnız siparişe bakar: karaoke konusu kapalı, sipariş bildirimi gelen cihaz sormaz
+  assert.match(board, /pushCovers\(\{ granted: Boolean\(publicKey\) && pushSupport\(\) === "granted", topics, orderAlerts: prefs\.orderAlerts, karaokeAlarms: false \}\)/);
+  assert.equal(pushCovers({ granted: true, topics: { karaoke: false, orders: true }, orderAlerts: true, karaokeAlarms: false }), true);
   assert.match(board, /\}, \[hasOrders, pushOn\]\);/);
   assert.doesNotMatch(board, /const pushOn = Boolean\(publicKey\) && pushSupport\(\) === "granted";/, "izin yetmez");
   const client = read("src/components/panel/live/push-client.ts");

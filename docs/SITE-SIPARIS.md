@@ -182,11 +182,14 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 
 Son çekme hatalıysa ekranın her isteği (beş saniyeden eskiyse) siteyi yeniden dener: site geri gelince liste
 beklemeden gelir. Açık sekmenin canlı veri kontrolü: ekran görünürken, ekranda açık sipariş varken (aşama değişikliği
-çabuk görünsün) ya da bildirim bu cihaza yeni siparişi getirmiyorken (izin yok, abonelik kaydedilemedi ya da Sipariş
-bildirimleri kapalı) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir (kabuğun yedek
-kontrolü). Sekme arka plandayken kabuğun yedek kontrolü, bildirimin ulaşmadığı zil cihazında 10 dakikada bir sorar
-(`src/lib/live-poll.ts`): yeni siparişin zili en geç o kadar gecikir. Her kontrol değişiklik yoksa tek bir anahtar
-okumasıyla 304 alır.
+çabuk görünsün) ya da bu cihazın sipariş zili yeni siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya
+da zil açık ama Sipariş bildirimleri kapalı) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle
+gelir (kabuğun yedek kontrolü). Sipariş zili kapalı cihazda (yöneticinin dizüstü, zili kapatılmış ikinci ekran) boş
+ekrana yeni sipariş kabuğun yedek kontrolüyle gelir: bildirim izni varsa 30 dakikaya, yoksa 1–10 dakikaya kadar; son iki
+saatte sitede sipariş olduysa ekranın üç dakikalık çekmesiyle. Siparişleri izleyen her ekranda sipariş zilini ve
+Sipariş bildirimlerini açık tutun. Sekme arka plandayken kabuğun yedek kontrolü, bildirimin ulaşmadığı zil cihazında 10
+dakikada bir sorar (`src/lib/live-poll.ts`): yeni siparişin zili en geç o kadar gecikir. Her kontrol değişiklik yoksa
+tek bir anahtar okumasıyla 304 alır.
 
 Çekme tek işlemde ve `pg_advisory_xact_lock(hashtext('site-orders'))` ile yazar; uygulanan son listenin site
 saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran isteği listeyi geri almasın). Sonuç

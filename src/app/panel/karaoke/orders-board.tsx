@@ -50,8 +50,9 @@ const QUIET_REPULL_MS = 60 * 60_000;
 /** Son çekme başarısızken yeniden deneme: site geri gelince liste bir dakikada düzelir */
 const ERROR_REPULL_MS = 60_000;
 /**
- * Ekranda açık sipariş varken ya da bu cihazda bildirim kapalıyken canlı veri bu sıklıkta sorulur (ETag; değişiklik
- * yoksa 304). Bildirim açık ve ekran boşken yeni sipariş bildirimle gelir, ek sorgu yapılmaz (veritabanı uyusun).
+ * Ekranda açık sipariş varken ya da bu cihazın sipariş zili yeni siparişi bildirimle almıyorken canlı veri bu sıklıkta
+ * sorulur (ETag; değişiklik yoksa 304). Bildirim açık ve ekran boşken yeni sipariş bildirimle gelir, ek sorgu yapılmaz
+ * (veritabanı uyusun).
  */
 const FAST_REFRESH_MS = 20_000;
 const BUSY_WINDOW_MS = 2 * 3_600_000;
@@ -119,14 +120,17 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     return () => window.clearInterval(id);
   }, [busy, failing]);
 
-  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bildirim bu cihaza yeni siparişi
-  // getirmiyorken (izin yok, abonelik kaydedilemedi ya da Sipariş bildirimleri kapalı) 20 saniyede bir; bildirim açık
-  // ve ekran boşken yeni sipariş bildirimle gelir. Yalnız ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü
-  // sorar (alert-center.tsx, bildirim gelmeyen zil cihazında 10 dakikada bir)
+  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bu cihazın sipariş zili yeni
+  // siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya da zil açık ama Sipariş bildirimleri kapalı) 20
+  // saniyede bir; yalnız siparişe bakar (karaoke konusu bu döngüyü açmaz). Bildirim açık ve ekran boşken yeni sipariş
+  // bildirimle gelir. Sipariş zili kapalı cihazda (yöneticinin dizüstü, ikinci ekran) boş ekrana yeni sipariş kabuğun
+  // yedek kontrolüyle (src/lib/live-poll.ts) ya da son iki saatte sipariş olduysa üç dakikalık çekmeyle gelir. Yalnız
+  // ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü sorar (alert-center.tsx, bildirim gelmeyen zil
+  // cihazında 10 dakikada bir)
   const hasOrders = list.length > 0;
   const publicKey = live.data?.push.publicKey ?? null;
   const topics = useDeviceTopics();
-  const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: prefs.karaokeAlarms });
+  const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: false });
   useEffect(() => {
     if (!hasOrders && pushOn) return;
     const id = window.setInterval(() => {
