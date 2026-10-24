@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { countStep, dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
@@ -15,6 +16,7 @@ import { syncParasut } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
 import { cleanupPhotos } from "@/server/storage/photos";
+import { runWeeklyStep } from "@/server/weekly/send";
 
 // Her sabah 08:00–09:00 (05:00 UTC; Vercel Hobby'de saat esnek, bir saatlik pencere): sabah e-postası (ödemeler +
 // Paraşüt'ten gelen yeni faturalar). Paraşüt eşitlemesi bir saat önce ayrı bir işte çalışır (/api/cron/parasut);
@@ -22,8 +24,9 @@ import { cleanupPhotos } from "@/server/storage/photos";
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
 // ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
-// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md) ve sayım günü hızlı
-// sayım bildirimi (docs/MAL-SIPARISI.md).
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), sayım günü hızlı
+// sayım bildirimi (docs/MAL-SIPARISI.md). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
+// (docs/HAFTALIK-OZET.md).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -91,8 +94,17 @@ export async function GET(request: NextRequest) {
       Math.min(8_000, tailStepDeadline(jobStart) - Date.now()),
       { error: "süre doldu" },
     );
+  // Haftalık özet (docs/HAFTALIK-OZET.md): sabah e-postasından sonra (bugün ilk kez bildirileni yinelemesin), kuyruktaki
+  // öteki adımlarla aynı anda; kendi son anı jobStart + 52 sn (okuma 4 sn, gönderim tek deneme 4 sn), takılan veritabanı
+  // için kuyruğun sınırında (55 sn) bırakılır. Adım yalnız çalıştığı gün yazılır, sonucu yanıtta (body.weekly)
+  const weeklyTask = () =>
+    capped<WeeklyRunResult>(
+      runWeeklyStep(new Date(), { deadlineAt: jobStart + WEEKLY_DEADLINE_MS }).catch((e: Error): WeeklyRunResult => ({ status: "error", weekday: 0, error: e.message })),
+      jobStart + WEEKLY_DEADLINE_MS + 3_000 - Date.now(),
+      { status: "error", weekday: 0, error: "süre doldu" },
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
       dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
@@ -101,8 +113,10 @@ export async function GET(request: NextRequest) {
       photosTask(),
       mcpTask(),
       countTask(),
+      weeklyTask(),
     ]);
     const countResult = countStep(count);
+    const weeklyResult = weeklyStep(weekly);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -110,8 +124,9 @@ export async function GET(request: NextRequest) {
       sales: siteStep(sales),
       photos: photosStep(photos),
       ...(countResult ? { count: countResult } : {}),
+      ...(weeklyResult ? { weekly: weeklyResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps, weekly: weekly.status };
   };
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {
@@ -119,11 +134,11 @@ export async function GET(request: NextRequest) {
     const result = await runReminderDigest("cron", { syncedToday: alreadySynced || Boolean(sync?.ok), sendDeadlineAt: jobStart + JOB_SEND_DEADLINE_MS });
     const ex = await extras();
     outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps });
-    return NextResponse.json({ ...result, sync, ...ex.body }, { status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, sync, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     const ex = await extras();
     outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps });
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body }, { status: 500 });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body, weekly: ex.weekly }, { status: 500 });
   } finally {
     await finishJobRun(runId, outcome);
   }

@@ -12,10 +12,13 @@ import { loadRecentPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { loadUpcoming, recentNotifications } from "@/server/notify/digest";
 import { DEFAULT_FROM, isEmailConfigured, resolveFrom } from "@/server/notify/resend";
+import { loadWeeklyPanel } from "@/server/weekly/send";
 
 import { RemindersClient } from "./reminders-client";
 
 export const metadata: Metadata = { title: "Ödemeler & hatırlatıcılar" };
+// Haftalık özet önizlemesi ve örnek gönderimi (en çok ~16 sn): bu sayfanın sunucu eylemleri sayfanın süresini kullanır
+export const maxDuration = 30;
 
 export default function RemindersPage() {
   return (
@@ -35,7 +38,8 @@ export default function RemindersPage() {
 async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
-  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixedRows, versions, unpaid, recentPaid] = await Promise.all([
+  const now = new Date();
+  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixedRows, versions, unpaid, recentPaid, weekly] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
@@ -50,6 +54,11 @@ async function RemindersContent() {
     // Kaynak etiketi için ("Paraşüt faturası"): yalnız ödenmemiş faturaların kimliği ve kaynağı
     db.select({ id: s.invoices.id, source: s.invoices.source }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
     loadRecentPaid(),
+    // Haftalık özetin satırı; okunamazsa satır gösterilmez, sayfa açılır
+    loadWeeklyPanel(now).catch((e) => {
+      console.error("[haftalik] Ödemeler satırı", e);
+      return null;
+    }),
   ]);
   // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura)
   // gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
@@ -80,6 +89,7 @@ async function RemindersContent() {
         defaultFrom: process.env.EMAIL_FROM?.trim() || DEFAULT_FROM,
       }}
       settings={settings}
+      weekly={weekly}
     />
   );
 }
