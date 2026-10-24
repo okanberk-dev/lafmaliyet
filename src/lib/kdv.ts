@@ -363,18 +363,24 @@ export function vatLineDetail(e: VatEstimate): string {
 /**
  * KDV kartındaki "… kaydını kaldır" onay metni: kaldırılan dönem plana nereden döner (src/lib/cash-plan.ts). 1 No.lu
  * KDV'de hatırlatıcı varsa yalnız bir hatırlatıcının gününde (o dönem için yoksa girmez), hiç yoksa tahmini ayın
- * 28'inde; KDV-2'de o dönemin hatırlatıcısının gününde, yoksa tahmini ayın 25'inde. Tahminler yarından başlar: kart
- * kaldırmayı ödeme gününün kendisinde de sunar, o gün tahmin girmez.
+ * 28'inde; KDV-2'de o dönemin hatırlatıcısının gününde, yoksa tahmini ayın 25'inde (dönemin faturalarında tevkifat
+ * yoksa ödeme beklenmez, satır çıkmaz). KDV tahmine katılmıyorsa (`excluded`) tahmin hiç girmez; hatırlatıcıya
+ * yazılı tutar kendi gününde girer. Tahminler yarından başlar: kart kaldırmayı ödeme gününün kendisinde de sunar, o
+ * gün tahmin girmez.
  */
-export function vatForgetText(item: { kind: "kdv" | "kdv2"; period: string }, baseMode: "default" | "reminder", today: string): string {
+export function vatForgetText(item: { kind: "kdv" | "kdv2"; period: string }, mode: "default" | "reminder" | "excluded", today: string): string {
   const head = "Dönem yeniden ödenecek sayılır";
   const tail = "Hatırlatıcılara dokunulmaz.";
+  if (mode === "excluded") {
+    const what = item.kind === "kdv2" ? "KDV-2" : "KDV";
+    return `${head}. KDV tahmine katılmadığı için dönemin tahmini plana girmez; ${what} hatırlatıcısına tutar yazılıysa o gününde girer. ${tail}`;
+  }
   if (item.kind === "kdv2") {
     return vat2DueDate(item.period) > today
-      ? `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer. ${tail}`
+      ? `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer; dönemin faturalarında tevkifat yoksa ödeme beklenmez. ${tail}`
       : `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde plana girer; yoksa girmez: ödeme günü bugün, tahmin yarından başlar. ${tail}`;
   }
-  if (baseMode === "reminder") {
+  if (mode === "reminder") {
     return `${head}. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. ${tail}`;
   }
   return vatDueDate(item.period) > today

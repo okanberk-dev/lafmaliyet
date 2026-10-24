@@ -1156,8 +1156,17 @@ test("KDV kartı 'kaydını kaldır': onay metni dönemin plana nereden döndü�
   assert.deepEqual(vat2Of(plan2("2026-10-24")), [["2026-09", "2026-10-25"]]);
   assert.equal(
     vatForgetText(kdv2, "default", "2026-10-24"),
-    "Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın 25'inde tahminiyle plana girer. Hatırlatıcılara dokunulmaz.",
+    "Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın 25'inde tahminiyle plana girer; dönemin faturalarında tevkifat yoksa ödeme beklenmez. Hatırlatıcılara dokunulmaz.",
   );
+  // KDV tahmine katılmıyorsa ("Tahmine katılanlar"dan kapalı) tahmin plana girmez; metin de bunu söyler
+  const off = plan2("2026-10-24", { excluded: ["kdv"] });
+  assert.equal(off.vat!.mode, "excluded");
+  assert.deepEqual(lines(off).filter((l) => l.key.startsWith("kdv2@")), []);
+  assert.equal(
+    vatForgetText(kdv2, "excluded", "2026-10-24"),
+    "Dönem yeniden ödenecek sayılır. KDV tahmine katılmadığı için dönemin tahmini plana girmez; KDV-2 hatırlatıcısına tutar yazılıysa o gününde girer. Hatırlatıcılara dokunulmaz.",
+  );
+  assert.match(vatForgetText(sep, "excluded", TODAY), /KDV tahmine katılmadığı için dönemin tahmini plana girmez; KDV hatırlatıcısına/);
   // 25 Ekim (ödeme günü): kart kaldırmayı sunar, ama tahmin girmez; o dönemin hatırlatıcısı ise bugüne girer
   assert.deepEqual(plan2("2026-10-25", { vatPaid: [entry2] }).vat!.paid2, [{ period: "2026-09", amount: 1_800 }]);
   assert.deepEqual(vat2Of(plan2("2026-10-25")), []);
@@ -1176,7 +1185,7 @@ test("KDV kartı 'kaydını kaldır': onay metni dönemin plana nereden döndü�
   // Kart metni tek yerden alır; eski "tahmini ya da hatırlatıcısı plana döner" yok
   const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
   assert.match(card, /<PaidRecords vat=\{vat\} today=\{today\} \/>/);
-  assert.match(card, /description=\{ask \? vatForgetText\(ask, vat\.baseMode, today\) : ""\}/);
+  assert.match(card, /description=\{ask \? vatForgetText\(ask, vat\.mode, today\) : ""\}/);
   assert.doesNotMatch(card, /tahmini ya da hatırlatıcısı plana döner|Dönem yeniden ödenecek sayılır/);
 });
 

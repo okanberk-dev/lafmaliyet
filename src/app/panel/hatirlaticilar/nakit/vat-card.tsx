@@ -286,7 +286,7 @@ function PaidRecords({ vat, today }: { vat: CashPlanVat; today: string }) {
         onClose={() => setAsk(null)}
         title={ask ? `${label(ask)} Ödendi kaydı kaldırılsın mı?` : ""}
         // Dönem nereden döner: kipe ve ödeme gününe göre (KDV'nin varsayılan kipi ayın 28'i, KDV-2 25'i; o gün tahmin yok)
-        description={ask ? vatForgetText(ask, vat.baseMode, today) : ""}
+        description={ask ? vatForgetText(ask, vat.mode, today) : ""}
         confirmLabel="Kaldır"
         pending={pending}
         onConfirm={() =>
