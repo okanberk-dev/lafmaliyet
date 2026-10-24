@@ -674,13 +674,14 @@ export function nameMoveLines(m: NameMoves): string[] {
 /**
  * Kartsız tedarikçi neden listeden kaldırılamaz: kaldırmak onun adıyla (gizli) bir kart açar, ad önce geldiği için
  * o adla gelip vergi nosuyla başka kartlarda duran faturalar da o karta geçerdi (nameMoves). Silme penceresi ve
- * sunucu aynı cümleyi söyler; `here` sayfadaki fatura sayısı.
+ * sunucu aynı cümleyi söyler; `here` sayfadaki fatura sayısı. Kartsız tedarikçiye ilk cari kaydı da aynı kartı açar
+ * (ensureCard): `when` o durumda "bu tedarikçiye borç ya da ödeme girilse".
  */
-export function nameMoveBlock(name: string, m: NameMoves, here: number): string {
+export function nameMoveBlock(name: string, m: NameMoves, here: number, when = "bu tedarikçi listeden kaldırılsa"): string {
   const many = m.count > 1;
   return (
     `“${name}” adıyla gelen ${m.count} fatura daha vergi ${many ? "nolarıyla" : "nosuyla"} ${fromCards(m.cards, "tedarikçisinde", "tedarikçilerinde")} duruyor; ` +
-    `bu tedarikçi listeden kaldırılsa ${many ? "onlar" : "o"} da buraya geçerdi. Buradaki ${here > 1 ? "faturaların" : "faturanın"} tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.`
+    `${when} ${many ? "onlar" : "o"} da buraya geçerdi. Buradaki ${here > 1 ? "faturaların" : "faturanın"} tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.`
   );
 }
 

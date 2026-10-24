@@ -2,7 +2,8 @@ import "server-only";
 
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
-import { supplierResolver } from "@/app/panel/tedarikciler/logic";
+import { supplierMatchKey } from "@/app/panel/faturalar/rules";
+import { groupSuppliers, nameMoveBlock, nameMoves, PLACEHOLDER_SUPPLIER_NAME, supplierResolver, taxNameIndex } from "@/app/panel/tedarikciler/logic";
 import {
   debtLabel,
   dueOf,
@@ -16,8 +17,10 @@ import {
 } from "@/lib/cari/account";
 import { coveredByAllocations, EPS, paidViaOf, round2, trackingBase, type CariMethod } from "@/lib/cari/balance";
 import { dateTR, tl } from "@/lib/format";
+import { todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { UserError } from "@/server/actions/util";
+import { toCard } from "@/server/data/suppliers";
 import { getDb, schema as s, type DB } from "@/server/db";
 
 /**
@@ -42,6 +45,43 @@ export async function lockCard(tx: Tx, cardId: number) {
   const [card] = await tx.select().from(s.suppliers).where(eq(s.suppliers.id, cardId)).for("update").limit(1);
   if (!card) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
   return card;
+}
+
+/** Cari kaydının hedefi: sayfanın kartı ya da kartsız grubun adlarından birinin anahtarı (istemciden ad alınmaz) */
+export type CardTarget = { cardId: number } | { key: string };
+
+/**
+ * Cari kaydının kartı (K2), kilitli. Kartı olan tedarikçide kart kilitlenir. Kartsız tedarikçiye ilk kayıtta yalnız
+ * görünen adıyla bir kart açılır: removeSupplier'ın kuralı. Ad önce geldiği için o adla gelip vergi nosuyla başka
+ * kartlarda duran faturalar da yeni karta geçecekse açılmaz (nameMoves); Paraşüt'ün geçici adına kart açılmaz. Grup
+ * işlemin içinden okunur; aynı grubun iki ilk kaydı aynı kartı bulur (anahtar tekil).
+ */
+export async function ensureCard(tx: Tx, target: CardTarget): Promise<{ card: typeof s.suppliers.$inferSelect; created: boolean }> {
+  if ("cardId" in target) return { card: await lockCard(tx, target.cardId), created: false };
+  const [cards, rows] = await Promise.all([
+    tx.select().from(s.suppliers),
+    tx.select({ id: s.invoices.id, supplier: s.invoices.supplier, supplierTaxNumber: s.invoices.supplierTaxNumber, date: s.invoices.date }).from(s.invoices),
+  ]);
+  // Yalnız adlar ve vergi nosu gerekir: tutar ve ödeme durumu gruplamaya katılmaz
+  const groups = groupSuppliers(
+    rows.map((r) => ({ ...r, payable: 0, unpaid: false })),
+    cards.map(toCard),
+    { today: todayTR(), termDays: 0 },
+  );
+  // Sayfa açıldıktan sonra bu adla bir kart açılmış olabilir: o kart kullanılır
+  const g = groups.find((x) => !x.card && x.keys.includes(target.key)) ?? groups.find((x) => x.card && x.keys.includes(target.key));
+  if (!g) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda değişmiş olabilir. Sayfayı yenileyin.");
+  if (g.card) return { card: await lockCard(tx, g.card.id), created: false };
+  if (g.key === supplierMatchKey(PLACEHOLDER_SUPPLIER_NAME)) {
+    throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; sonraki eşitlemede gerçek tedarikçilerine geçer.");
+  }
+  const moves = nameMoves(taxNameIndex(groups), g.names, null);
+  if (moves.count) throw new UserError(nameMoveBlock(g.name, moves, g.invoices.length, "bu tedarikçiye borç ya da ödeme girilse"));
+  const key = supplierMatchKey(g.name);
+  const [made] = await tx.insert(s.suppliers).values({ name: g.name, key, aliases: [] }).onConflictDoNothing({ target: s.suppliers.key }).returning({ id: s.suppliers.id });
+  const [card] = await tx.select().from(s.suppliers).where(eq(s.suppliers.key, key)).for("update").limit(1);
+  if (!card) throw new UserError("Tedarikçi bulunamadı; başka bir oturumda değişmiş olabilir. Sayfayı yenileyin.");
+  return { card, created: Boolean(made) };
 }
 
 /** Kartlar kimlik sırasıyla kilitlenir (iki kartlı işlem, eşitlemenin son adımları) */

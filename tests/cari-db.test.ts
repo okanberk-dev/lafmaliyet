@@ -2,7 +2,8 @@
 // eşzamanlı ödemenin aynı faturayı aşırı ödememesi, ödeme silinince CASCADE ve `allocated`, defterin ödendi işareti,
 // "Faturası geldi" ve fatura silinmeden önce bağların çözülmesi (borç eski hâline, gider kaydı yeniden, para hesaba),
 // eşitlemeden sonra yeniden dengeleme (tutar düşer / artar), peşin faturaya hesaptaki para, "Ödenmedi" engeli,
-// ✓'nin hesaptaki parayı kullanması ve geri alınması, silinen faturanın bağlarının geri kurulması, db:reset engeli.
+// ✓'nin hesaptaki parayı kullanması ve geri alınması, silinen faturanın bağlarının geri kurulması, kartsız tedarikçiye
+// ilk kayıtta kart (ensureCard), db:reset engeli.
 //
 // CARI_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
 // test kendi geçici veritabanını açar, migration'ları uygular, sonunda siler.
@@ -19,6 +20,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { cariResetBlock } from "../scripts/seed";
+import { supplierMatchKey } from "../src/app/panel/faturalar/rules";
 import { allocateFifo, openItems } from "../src/lib/cari/account";
 import * as s from "../src/server/db/schema";
 
@@ -368,5 +370,33 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     await db.update(s.invoices).set({ allocated: 123 }).where(eq(s.invoices.id, f.id));
     await db.transaction((tx) => settle.recomputeAllocated(tx, [f.id]));
     assert.equal((await inv(f.id)).allocated, 600);
+  });
+
+  test("ilk kayıtta kart: kartsız tedarikçiye görünen adıyla açılır, sonraki kayıt aynı kartı bulur; iki kartta duran ad açılmaz", async () => {
+    await invoice({ payable: 100, supplier: "Sütaş Süt" });
+    const key = supplierMatchKey("Sütaş Süt");
+    const first = await db.transaction((tx) => settle.ensureCard(tx, { key }));
+    assert.equal(first.created, true);
+    assert.deepEqual([first.card.name, first.card.key, first.card.aliases, first.card.hiddenOn], ["Sütaş Süt", key, [], null]);
+    assert.equal((await db.transaction((tx) => settle.cardInvoiceIds(tx, first.card.id))).length, 1, "faturası karta geçti");
+    // Sayfa eski anahtarla gönderse de (kart bu arada açıldı) aynı kart; kartın kimliğiyle de
+    const again = await db.transaction((tx) => settle.ensureCard(tx, { key }));
+    assert.deepEqual([again.created, again.card.id], [false, first.card.id]);
+    assert.equal((await db.transaction((tx) => settle.ensureCard(tx, { cardId: first.card.id }))).card.id, first.card.id);
+    await assert.rejects(db.transaction((tx) => settle.ensureCard(tx, { key: "bambaska" })), /Tedarikçi bulunamadı/);
+
+    // "Su Ltd" adı vergi nolarıyla iki kartta duruyor: kart açılsa onların faturaları da buraya geçerdi
+    const X = "7810030532";
+    const Z = "1122334455";
+    await card("Pruva", { taxNumber: X });
+    await card("Erbak", { taxNumber: Z });
+    await invoice({ payable: 10, supplier: "Su Ltd", supplierTaxNumber: X });
+    await invoice({ payable: 20, supplier: "Su Ltd", supplierTaxNumber: Z });
+    await invoice({ payable: 30, supplier: "Su Ltd" });
+    await assert.rejects(
+      db.transaction((tx) => settle.ensureCard(tx, { key: supplierMatchKey("Su Ltd") })),
+      (e: Error) => e instanceof UserError && /^“Su Ltd” adıyla gelen 2 fatura daha .* bu tedarikçiye borç ya da ödeme girilse onlar da buraya geçerdi\./.test(e.message),
+    );
+    assert.equal((await db.select().from(s.suppliers).where(eq(s.suppliers.key, supplierMatchKey("Su Ltd")))).length, 0, "kart açılmadı");
   });
 });

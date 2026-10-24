@@ -20,6 +20,7 @@ import {
   paidInMonthOf,
   paymentCredit,
   paymentEvents,
+  payableFloorProblem,
   settlePatch,
   validateManual,
   type AccountInvoice,
@@ -333,6 +334,15 @@ test("sığdırma: eskiden yeniye sığan kalır, en yeniden kırpılır", () =>
   assert.deepEqual(fitAllocations(allocs, 5000).trimmed, 0);
   assert.equal(invoiceRoom({ payable: 3000, ledgerBase: 1200, allocated: 1549.5 }), 250.5);
   assert.equal(invoiceRoom({ payable: -200, ledgerBase: 0, allocated: 0 }), 0);
+});
+
+test("elle faturanın tutar sınırı: sayılan (takip öncesi + panelde) altına inemez; takipsiz ve iade serbest", () => {
+  assert.equal(payableFloorProblem({ ledgerBase: 0, allocated: 1549.5 }, 1549.5), null, "tam sayılan kadar olur");
+  assert.equal(payableFloorProblem({ ledgerBase: 0, allocated: 1549.5 }, 1549.496), null, "kuruş altı fark");
+  assert.equal(payableFloorProblem({ ledgerBase: 0, allocated: 1549.5 }, 1500), "Bu faturaya 1.549,50\u00a0₺ ödeme sayılmış; tutar bundan az olamaz");
+  assert.equal(payableFloorProblem({ ledgerBase: 1200, allocated: 349.5 }, 1500), "Bu faturaya 1.549,50\u00a0₺ ödeme sayılmış; tutar bundan az olamaz");
+  assert.equal(payableFloorProblem({ ledgerBase: null, allocated: 0 }, -50), null, "takipsiz iade");
+  assert.equal(payableFloorProblem({ ledgerBase: 0, allocated: 0 }, -50), null, "takipli, sayılmamış iade");
 });
 
 test("borç ve ödeme: kalan ve hesaptaki para; bağlı borç 0", () => {

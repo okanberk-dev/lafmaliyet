@@ -286,7 +286,7 @@ const hasInfo = (r: typeof s.suppliers.$inferSelect) =>
 /**
  * Listeden kaldırılan tedarikçiyi listeye geri getirir. Kartta adından başka bilgi yoksa (kaldırırken yalnız adla
  * açılmış ya da hiç doldurulmamış) kart silinir: tedarikçi eskisi gibi faturalarından görünür, adı başka bir karta
- * diğer ad olarak verilebilir. Bilgisi olan kartın yalnız işareti kalkar.
+ * diğer ad olarak verilebilir. Bilgisi ya da cari kaydı olan kartın yalnız işareti kalkar.
  */
 export async function unhideSupplier(input: { cardId: number }) {
   return attempt(async () => {
@@ -295,7 +295,9 @@ export async function unhideSupplier(input: { cardId: number }) {
     const db = getDb();
     const [row] = await db.select().from(s.suppliers).where(eq(s.suppliers.id, id)).limit(1);
     if (!row) throw new UserError("Tedarikçi bulunamadı; sayfayı yenileyin.");
-    const drop = !hasInfo(row);
+    // Cari kaydı olan kart silinmez (K23): kayıtlar karta bağlı
+    const [entry] = await db.select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(eq(s.supplierEntries.supplierId, id)).limit(1);
+    const drop = !hasInfo(row) && !entry;
     if (drop) await db.delete(s.suppliers).where(eq(s.suppliers.id, id));
     else await db.update(s.suppliers).set({ hiddenOn: null, updatedAt: new Date() }).where(eq(s.suppliers.id, id));
     await logActivity(me, "Tedarikçi listeye geri alındı", row.name);

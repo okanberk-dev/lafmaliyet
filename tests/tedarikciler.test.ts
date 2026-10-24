@@ -870,6 +870,11 @@ test("vergi no: iki kartta duran addan kart açılırsa öteki faturalar da geli
     nameMoveBlock(su.name, moves, su.invoices.length),
     "“Su Ltd” adıyla gelen 2 fatura daha vergi nolarıyla “Erbak”, “Pruva” tedarikçilerinde duruyor; bu tedarikçi listeden kaldırılsa onlar da buraya geçerdi. Buradaki faturanın tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.",
   );
+  // Kartsız tedarikçiye ilk cari kaydı da aynı kartı açar (ensureCard): aynı engel, kendi fiiliyle
+  assert.equal(
+    nameMoveBlock(su.name, moves, su.invoices.length, "bu tedarikçiye borç ya da ödeme girilse"),
+    "“Su Ltd” adıyla gelen 2 fatura daha vergi nolarıyla “Erbak”, “Pruva” tedarikçilerinde duruyor; bu tedarikçiye borç ya da ödeme girilse onlar da buraya geçerdi. Buradaki faturanın tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.",
+  );
   // Kartın kendi faturaları sayılmaz: Pruva'ya diğer ad olarak "Su Ltd" yazılırsa yalnız Erbak'taki gelir
   assert.deepEqual(nameMoves(index, ["Pruva", "su  LTD"], 1), { names: [{ name: "Su Ltd", count: 1 }], cards: ["Erbak"], count: 1 });
   assert.deepEqual(nameMoveLines(nameMoves(index, ["Su Ltd"], 1)), ["“Su Ltd” adıyla gelen 1 fatura “Erbak” tedarikçisinden bu tedarikçiye geçer (ad önce gelir)."]);

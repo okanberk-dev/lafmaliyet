@@ -384,6 +384,16 @@ export function invoiceRoom(i: Pick<BalanceInvoice, "payable" | "ledgerBase" | "
   return round2(Math.max(0, i.payable - (i.ledgerBase ?? 0) - (i.allocated ?? 0)));
 }
 
+/**
+ * Elle faturanın Ödenecek alt sınırı (saveInvoice; Paraşüt'e bağlı faturada tutar zaten kilitli): takip öncesi
+ * Paraşüt'te ödenen ve panelde sayılan toplamından aşağı inemez. Sınır yoksa ya da tutar sığıyorsa null.
+ */
+export function payableFloorProblem(i: Pick<BalanceInvoice, "ledgerBase" | "allocated">, payable: number): string | null {
+  const counted = round2((i.ledgerBase ?? 0) + (i.allocated ?? 0));
+  if (!(counted > EPS) || payable >= counted - EPS) return null;
+  return `Bu faturaya ${tl(counted, 2)} ödeme sayılmış; tutar bundan az olamaz`;
+}
+
 // ---------------------------------------------------------------- Hesap özeti
 
 export interface SupplierSummary {

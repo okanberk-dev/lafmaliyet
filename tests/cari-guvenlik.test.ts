@@ -1,6 +1,6 @@
 // Cari hesabın kaynak taramaları (docs/planlar: cari §9): dağıtım ve saklanan toplam yalnız src/server/cari/settle.ts'te
-// yazılır; "Ödenmedi" engeli dört yazıcıda; fatura silinmeden önce bağlar çözülür; cari eylemleri (varsa) yalnız
-// yöneticiye açık ve dosyada yardımcı dışa aktarım yok.
+// yazılır; "Ödenmedi" engeli dört yazıcıda; fatura silinmeden önce bağlar çözülür; kalan kuralının kopyası yok; kaydı
+// olan kart silinmez; cari eylemleri (varsa) yalnız yöneticiye açık ve dosyada yardımcı dışa aktarım yok.
 // Çalıştırma: npx tsx --test tests/cari-guvenlik.test.ts
 
 import assert from "node:assert/strict";
@@ -60,8 +60,11 @@ test("'Ödenmedi' engeli dört yazıcıda: applyPayment, saveInvoice, restoreInv
   const undo = body(rem, "export async function undoRecentPaid(");
   assert.ok(undo.indexOf("dropAllocations(") >= 0 && undo.indexOf("dropAllocations(") < undo.indexOf("assertNotCovered(db, [rid])"));
   assert.ok(undo.indexOf("assertNotCovered(db, [rid])") < undo.indexOf(".update(s.invoices)"));
-  // Kullanıcının yazdığı ödeme alanları faturayı "defterin kapattığı" saymaz
+  // Kullanıcının yazdığı ödeme alanları faturayı "defterin kapattığı" saymaz; pencerenin her kayıtta gönderdiği aynı
+  // ödeme günü işareti bozmaz. "Geri al" defterin kapattığı faturayı settle.ts'e yeniden kapattırır
   assert.match(body(inv, "async function applyPayment("), /paidByLedger: false/);
+  assert.match(body(inv, "export async function saveInvoice("), /const userPaid = cur\.unpaid !== data\.unpaid \|\| \("paidAt" in written && written\.paidAt !== cur\.paidAt\);/);
+  assert.ok(restore.indexOf(".update(s.invoices)") < restore.indexOf("await resettleInvoices(ledger)"));
 });
 
 test("fatura silinmeden önce cari bağları aynı işlemde çözülür: elle silme, Paraşüt iptali, e-fatura yolu", () => {
@@ -77,6 +80,37 @@ test("fatura silinmeden önce cari bağları aynı işlemde çözülür: elle si
   const common = sync.slice(sync.indexOf("const common = {"), sync.indexOf("let invoiceId: number;"));
   assert.doesNotMatch(common, /allocated|ledgerBase|paidByLedger/);
   assert.match(sync, /const cari = await cariFinalSteps\(ctx\);[\s\S]*cari,\n\s+partial \|\| \(eStats/);
+});
+
+test("kalan kuralı tek yerde (K3): src/lib/cari dışında Paraşüt'ün kalanıyla Ödenecek arasında seçen kopya yok", () => {
+  for (const f of sources) {
+    if (f.path.startsWith("src/lib/cari/")) continue;
+    assert.doesNotMatch(f.text, /outstanding\s*>\s*0/, `${f.path}: kalan kuralının kopyası (openBalance kullanın)`);
+  }
+  // Ödemeler, zil, sabah e-postası, nakit planı ve haftalık özet faturanın kalanını aynı kalemden okur
+  assert.match(read("src/lib/reminders.ts"), /amount: openBalance\(\{ \.\.\.inv, unpaid: true \}\)/);
+  assert.match(read("src/server/weekly/collect.ts"), /loadUpcoming\(ctx\.today\)/);
+  const digest = body(read("src/server/notify/digest.ts"), "export async function loadUpcoming(");
+  assert.match(digest, /allocated: s\.invoices\.allocated,\s*ledgerBase: s\.invoices\.ledgerBase,/);
+});
+
+test("cari kaydı olan kart silinmez (K23): listeden kaldırma ve geri alma kartı yalnız kayıt yokken siler", () => {
+  const sup = read("src/server/actions/suppliers.ts");
+  assert.match(body(sup, "export async function removeSupplier("), /if \(!g\.invoices\.length && !hasEntries\) \{/);
+  const unhide = body(sup, "export async function unhideSupplier(");
+  assert.match(unhide, /\.from\(s\.supplierEntries\)\.where\(eq\(s\.supplierEntries\.supplierId, id\)\)/);
+  assert.match(unhide, /const drop = !hasInfo\(row\) && !entry;/);
+});
+
+test("borcun gider kaydı Aylık harcamalar'da kilitli: tutar, gün ve kategori değişmez, kayıt silinmez", () => {
+  const exp = read("src/server/actions/expenses.ts");
+  const save = body(exp, "export async function saveExpenseEntry(");
+  assert.match(save, /if \(prev\?\.supplierEntryId && \(Math\.abs\(prev\.amount - data\.amount\) >= 0\.005 \|\| prev\.date !== data\.date \|\| prev\.categoryId !== data\.categoryId\)\)/);
+  assert.match(save, /faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin/);
+  const del = body(exp, "export async function deleteExpenseEntry(");
+  assert.ok(del.indexOf("if (owned?.owner) throw new UserError(") < del.indexOf("tx.delete(s.expenseEntries)"), "önce engel");
+  // Yarışta da silinmez: silme koşulu sahipsiz kayıt
+  assert.match(del, /tx\.delete\(s\.expenseEntries\)\.where\(and\(eq\(s\.expenseEntries\.id, entryId\), isNull\(s\.expenseEntries\.supplierEntryId\)\)\)/);
 });
 
 test("cari eylemleri: her dışa aktarım ilk satırda requireAdmin, yardımcı dışa aktarım yok", () => {
