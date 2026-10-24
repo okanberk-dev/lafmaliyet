@@ -37,6 +37,8 @@ export interface ReviewItem {
   createdAt: string;
   updatedAt: string;
   message: string | null;
+  /** Önerinin sürümü: onay ve ret bununla gider (personel arada güncellediyse sunucu reddeder) */
+  version: number;
   before: RecipeSnapshot;
   after: RecipeSnapshot;
   /** Bugünkü reçete; öneriden sonra değiştiyse `changedSince` */
@@ -59,6 +61,8 @@ export interface NewProductItem {
   requestedByName: string;
   updatedAt: string;
   message: string | null;
+  /** Önerinin sürümü (ret bununla gider) */
+  version: number;
   /** Personelin yazdığı satış fiyatı (KDV dahil); fiyat alanı bununla dolu gelir */
   proposedPrice: number | null;
   lines: {
@@ -103,8 +107,8 @@ export interface RecentItem {
   after: RecipeSnapshot;
 }
 
-/** Reddetme penceresinin konusu (iki tür öneri) */
-type RejectTarget = { id: number; kind: RequestKind; productName: string; size: ProductSize };
+/** Reddetme penceresinin konusu (iki tür öneri) ve ekranda görülen sürümü */
+type RejectTarget = { id: number; version: number; kind: RequestKind; productName: string; size: ProductSize };
 
 /**
  * Yöneticinin onay listesi: her öneride kim, ne zaman, neden; önce / sonra farkı; maliyet etkisi (bugünkü hammadde
@@ -121,7 +125,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
 
   function approve(item: ReviewItem, force = false) {
     startTransition(async () => {
-      const res = await reviewRecipeChange({ id: item.id, decision: "approve", force });
+      const res = await reviewRecipeChange({ id: item.id, seenVersion: item.version, decision: "approve", force });
       if (!res.ok) return void toast.error(res.error);
       if (res.data.conflict) return setConflict({ item, current: res.data.current });
       setConflict(null);
@@ -133,7 +137,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
     const item = rejecting;
     if (!item) return;
     startTransition(async () => {
-      const res = await reviewRecipeChange({ id: item.id, decision: "reject", note: reason.trim() || null });
+      const res = await reviewRecipeChange({ id: item.id, seenVersion: item.version, decision: "reject", note: reason.trim() || null });
       if (!res.ok) return void toast.error(res.error);
       setRejecting(null);
       setReason("");
@@ -158,7 +162,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                 env={env}
                 busy={busy}
                 startTransition={startTransition}
-                onReject={() => askReject({ id: item.id, kind: "new", productName: item.name, size: item.size })}
+                onReject={() => askReject({ id: item.id, version: item.version, kind: "new", productName: item.name, size: item.size })}
               />
             ) : (
               <Card key={item.id} id={`oneri-${item.id}`} className="scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">
@@ -199,7 +203,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
                     <Button
                       variant="secondary"
                       disabled={busy}
-                      onClick={() => askReject({ id: item.id, kind: "change", productName: item.productName, size: item.size })}
+                      onClick={() => askReject({ id: item.id, version: item.version, kind: "change", productName: item.productName, size: item.size })}
                       className="max-sm:flex-1"
                     >
                       <X size={16} /> Reddet
@@ -214,7 +218,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
         <Card>
           <EmptyState
             icon={<ClipboardCheck />}
-            title="Onay bekleyen öneri yok"
+            title="Onay bekleyen reçete önerisi yok"
             description="Personel reçete defterinde kalemle değişiklik ya da “Yeni ürün öner” ile ürün önerince burada görünür; zilde de haber verilir."
           />
         </Card>
@@ -222,7 +226,7 @@ export function ReviewList({ pending, recent, env }: { pending: (ReviewItem | Ne
 
       {recent.length ? (
         <Card>
-          <CardHeader icon={<History />} title="Son kararlar" description="Son 30 günde onaylanan, reddedilen ve geri çekilen öneriler." />
+          <CardHeader icon={<History />} title="Reçete: son kararlar" description="Son 30 günde onaylanan, reddedilen ve geri çekilen reçete önerileri." />
           <ul className="divide-y divide-line border-t border-line">
             {recent.map((r) => {
               const expanded = openRecent === r.id;

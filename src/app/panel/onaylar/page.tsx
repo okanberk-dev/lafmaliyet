@@ -11,36 +11,56 @@ import { PACKAGING_CATEGORY } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
 import { estimateNames, qtyLabel, sameRecipe, type RecipeSnapshot } from "@/lib/recipe-change";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadModel } from "@/server/data/dataset";
+import { loadModelOnce } from "@/server/data/model-once";
 import { loadReviewQueue } from "@/server/data/recipe-requests";
 
 import { categoryFireDefault } from "../urunler/logic";
 
+import { KasaRequests } from "./kasa-section";
+import { OpsRequests } from "./ops-section";
+import { RecentDecisions } from "./recent-decisions";
 import { ReviewList, type NewProductEnv, type NewProductItem, type RecentItem, type ReviewItem } from "./review-list";
 
-export const metadata: Metadata = { title: "Reçete onayları" };
+export const metadata: Metadata = { title: "Onaylar" };
 
+/**
+ * Onaylar (docs/ONAYLAR.md): personelin yöneticinin onayına giden istekleri ve önerileri, sırayla kasa, mal siparişi ve
+ * zayi, reçete; en altta personel isteklerinin son kararları. Her bölüm kendi Suspense'inde ve kendi requireAdmin'iyle;
+ * maliyet modeli istek başına bir kez kurulur (loadModelOnce). Kartların çapası `#istek-<id>`, reçete kartlarınınki
+ * `#oneri-<id>`.
+ */
 export default function ApprovalsPage() {
   return (
     <>
       <PageHeader
-        title="Reçete onayları"
-        eyebrow="Menü"
-        description="Personelin reçete defterinden önerdiği değişiklikler ve yeni ürünler. Değişiklikte önceki ve önerilen reçeteyi yan yana görün, onaylayınca reçete kartı değişir; yeni üründe satış fiyatını yazıp (personel önerdiyse dolu gelir) onaylayınca ürün eklenir. Reddederseniz notunuz personele görünür."
+        title="Onaylar"
+        eyebrow="Günlük"
+        description="Personelin onay isteyen önerileri ve istekleri: kasa, mal siparişi, zayi ve ikram, reçete. Reddederseniz notunuz personele görünür; tutar yazmayın."
         actions={
           <ButtonLink href="/panel/receteler" variant="secondary">
             <BookOpen size={16} aria-hidden="true" /> Reçete defteri
           </ButtonLink>
         }
       />
-      <Suspense fallback={<PageSkeleton rows={6} />}>
-        <ApprovalsContent />
-      </Suspense>
+      <div className="space-y-6">
+        <Suspense fallback={null}>
+          <KasaRequests />
+        </Suspense>
+        <Suspense fallback={null}>
+          <OpsRequests />
+        </Suspense>
+        <Suspense fallback={<PageSkeleton rows={6} />}>
+          <ApprovalsContent />
+        </Suspense>
+        <Suspense fallback={null}>
+          <RecentDecisions />
+        </Suspense>
+      </div>
     </>
   );
 }
 
-type Model = Awaited<ReturnType<typeof loadModel>>;
+type Model = Awaited<ReturnType<typeof loadModelOnce>>;
 
 /** Bugünkü reçete (onayda "öneriden sonra değişti mi" diye bakılır) */
 function modelSnapshot(model: Model, productId: number): RecipeSnapshot | null {
@@ -80,9 +100,10 @@ function economics(model: Model, productId: number, snap: RecipeSnapshot) {
   return priceProduct({ price: product.price, fireOverride: product.fireOverride }, lines, model.settings);
 }
 
+/** Reçete önerileri: değişiklikler ve yeni ürünler (bugünkü fiyatlarla maliyet etkisi), reçetenin son kararları */
 async function ApprovalsContent() {
   await requireAdmin();
-  const [model, queue] = await Promise.all([loadModel(), loadReviewQueue()]);
+  const [model, queue] = await Promise.all([loadModelOnce(), loadReviewQueue()]);
   const pending: (ReviewItem | NewProductItem)[] = queue.pending.map((r): ReviewItem | NewProductItem => {
     if (r.kind === "new" || r.productId === null) {
       // Yeni ürün: maliyet satır satır bugünkü fiyatlarla; satış fiyatı ve marj yöneticinin yazdığı fiyatla tarayıcıda
@@ -96,6 +117,7 @@ async function ApprovalsContent() {
         requestedByName: r.requestedByName,
         updatedAt: r.updatedAt.toISOString(),
         message: r.message,
+        version: r.version,
         proposedPrice: r.proposedPrice,
         lines: r.after.items.map((l) => {
           const ing = model.ingById.get(l.ingredientId);
@@ -132,6 +154,7 @@ async function ApprovalsContent() {
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       message: r.message,
+      version: r.version,
       before: r.before,
       after: r.after,
       current,

@@ -23,6 +23,8 @@ export interface RecipeRequestRow {
   before: typeof s.recipeChangeRequests.$inferSelect.before;
   after: typeof s.recipeChangeRequests.$inferSelect.after;
   message: string | null;
+  /** Personel öneriyi her güncellediğinde artar; yönetici gördüğü sürümü onaylar (seenVersion) */
+  version: number;
   reviewNote: string | null;
   reviewedByName: string | null;
   createdAt: Date;
@@ -43,6 +45,7 @@ const columns = {
   before: s.recipeChangeRequests.before,
   after: s.recipeChangeRequests.after,
   message: s.recipeChangeRequests.message,
+  version: s.recipeChangeRequests.version,
   reviewNote: s.recipeChangeRequests.reviewNote,
   reviewedByName: s.recipeChangeRequests.reviewedByName,
   createdAt: s.recipeChangeRequests.createdAt,
