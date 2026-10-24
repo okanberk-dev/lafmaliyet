@@ -165,8 +165,11 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   motoru ve bar ekranı…").
 - **Fiyatıyla eklenen sayım kalemi (B2):** "Listeye ekle" fiyat geçmişine yazmıyordu; sonraki ilk zam kapanmış ayın
   devreden malını ve kârını değiştiriyordu (Eylül 400 → 520 ₺). Kalem açılırken yazılan fiyat geçmişin başlangıcıdır,
-  zam uyarısı onu saymaz; eski kalemler `0037_sayim_kalemi_fiyat_baslangici` ile. Test: `sayim-ekle` ("Listeye
-  fiyatıyla eklenen kalem…", iki migration testi).
+  zam uyarısı onu saymaz; eski kalemler `0037_sayim_kalemi_fiyat_baslangici` ile. Tahmin yanlışsa yöneticinin
+  Hammaddeler'deki düzeltmesi (kalem hâlâ Tahmini, geçmişinde yalnız başlangıç) yeni satır açmaz, başlangıcın yerine
+  geçer: kalemin eklendiği kapanmış ay da düzelir (inceleme bulgusu: düzeltme o aya hiç ulaşmıyordu). Paraşüt faturası
+  tahmini düzeltmez, tarihli fiyattır. Test: `sayim-ekle` ("Listeye fiyatıyla eklenen kalem…", "tahmin
+  düzeltilince…", "Hammaddeler'in fiyat yazımı…", veritabanında düzeltme, iki migration testi).
 - **Tedarikçi geçmişi (B4):** eski faturası Paraşüt'e sorulamayan yeniden içeri alınmış e-fatura kalınan yeri kendi
   sayfasına geri alır, bildirim yeniden basmayı ister. Test: `parasut-esitleme-db` ("tedarikçi geçmişi: eski faturası
   sorulamayan fatura…").

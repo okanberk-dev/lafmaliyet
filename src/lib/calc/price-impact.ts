@@ -10,7 +10,7 @@
  * faturası). Pencereden (ör. son 30 gün) önceki son satır "eski fiyat"tır; pencere içinde değişiklik yoksa
  * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. Excel aktarımı) başlangıçtır. Sayım
  * listesine fiyatıyla eklenen kalemin başlangıç satırı (COUNT_ITEM_PRICE_NOTE; yazılan tahmin) hiç sayılmaz: ilk gerçek
- * fiyat zam görünmesin.
+ * fiyat zam görünmesin. Yöneticinin düzelttiği başlangıç (COUNT_ITEM_PRICE_FIXED_NOTE) doğrulanmış fiyattır, taban olur.
  */
 
 import { COUNT_ITEM_PRICE_NOTE } from "../count-item";

@@ -249,8 +249,9 @@ export function netPackagePrice(typed: number | null, vatRate: number, includesV
 /**
  * Yeni kalemin hammaddeler tablosuna yazılacak değerleri. Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zil "Fiyatı
  * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Yazılan fiyat
- * fiyat geçmişinin başlangıcıdır (countItemPriceRow; zam uyarısı onu taban saymaz). Kategori ve KDV grubun en sık
- * değerinden, sıra en sonda (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
+ * fiyat geçmişinin başlangıcıdır (countItemPriceRow; zam uyarısı onu taban saymaz); yöneticinin düzeltmesi kalem
+ * Tahmini iken onun yerine geçer (correctsCountItemStart). Kategori ve KDV grubun en sık değerinden, sıra en sonda
+ * (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
  */
 export function newCountItemValues(
   draft: CountItemDraft,
@@ -296,6 +297,29 @@ export const COUNT_ITEM_PRICE_NOTE = "Sayım listesine eklenirken yazılan fiyat
 export function countItemPriceRow(ingredientId: number, values: { packagePrice: number; packageSize: number }, changedBy: string) {
   if (!(values.packagePrice > 0)) return null;
   return { ingredientId, packagePrice: values.packagePrice, packageSize: values.packageSize, changedBy, note: COUNT_ITEM_PRICE_NOTE };
+}
+
+/**
+ * Yöneticinin düzelttiği başlangıç satırının notu. Düzeltilen fiyat doğrulanmış fiyattır: zam uyarısının tabanı olur
+ * (COUNT_ITEM_PRICE_NOTE gibi atlanmaz), sonraki zam görünür.
+ */
+export const COUNT_ITEM_PRICE_FIXED_NOTE = "Sayım listesine eklenirken yazılan fiyat (düzeltildi)";
+
+/**
+ * Hammaddeler'de girilen fiyat (ya da paket içeriği) başlangıç satırını düzeltir mi: kalem hâlâ "Tahmini" ve fiyat
+ * geçmişinde yalnız başlangıç satırı var (yazılan tahmin ya da onun düzeltmesi). Öyleyse yeni satır açılmaz, başlangıç
+ * satırı yerinde düzelir (anı kalır): kalemin eklendiği kapanmış ay da düzeltilen fiyatla değerlenir (engine.ts
+ * unitCostAtMonthEnd ilk satırdan önceki ayları ilk satırla değerler); yeni satır olsaydı o ay hep tahminde kalırdı.
+ * Doğrulanmış kalemde ya da geçmişinde başka satır varken yeni satır (zam: kapanmış aya dokunmaz). Paraşüt faturası
+ * bu yoldan geçmez: tarihli fiyattır, hep yeni satır.
+ */
+export function correctsCountItemStart(isEstimate: boolean, history: readonly { note: string | null }[]): boolean {
+  return isEstimate && history.length === 1 && (history[0].note === COUNT_ITEM_PRICE_NOTE || history[0].note === COUNT_ITEM_PRICE_FIXED_NOTE);
+}
+
+/** Düzeltilen başlangıç satırının yeni değerleri (anı kalır) */
+export function correctedCountItemStart(values: { packagePrice: number; packageSize: number }, changedBy: string) {
+  return { packagePrice: values.packagePrice, packageSize: values.packageSize, changedBy, note: COUNT_ITEM_PRICE_FIXED_NOTE };
 }
 
 /**

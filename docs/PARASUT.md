@@ -233,8 +233,13 @@ iki ayın stok sayımı girilince gerçek tüketim (devir + alınan − devreden
 
 Hammadde fiyatı her değiştiğinde fiyat geçmişine yazılır (elle, Excel, Paraşüt faturası). Stok sayımının "Listeye
 ekle"si ve reçete önerisinin "Yeni malzeme"si de yazılan (tahmini) paket fiyatını geçmişin başlangıcı olarak yazar:
-kapanmış ay o fiyatla değerlenir, sonraki zam onu değiştirmez; zam uyarısı bu başlangıç satırını saymaz. Fiyatsız
-eklenen kalemin ilk gerçek fiyatı önceki ayları da değerler. Son 30 günde fiyatı
+kapanmış ay o fiyatla değerlenir, sonraki zam onu değiştirmez; zam uyarısı bu başlangıç satırını saymaz. Tahmin
+yanlışsa (fiyat ya da paket içeriği) yönetici Hammaddeler'den düzeltir: kalem hâlâ **Tahmini** ve geçmişinde yalnız
+başlangıç satırı varken düzeltme yeni satır açmaz, başlangıcın yerine geçer (anı kalır); kalemin eklendiği kapanmış ay
+da düzeltilen fiyatla değerlenir, düzeltilen fiyat zam uyarısının tabanı olur. Tahmini işareti kalkınca sonraki her
+değişiklik zamdır. Paraşüt faturası tahmini düzeltmez: faturanın fiyatı geldiği günden geçerlidir (yeni satır,
+kapanmış aya dokunmaz). Fatura gelmeden yanlış tahmini Hammaddeler'den düzeltin. Fiyatsız eklenen kalemin ilk gerçek
+fiyatı önceki ayları da değerler. Son 30 günde fiyatı
 %5'ten fazla artan hammaddeler ve bu yüzden maliyeti %1'den fazla artan ürünler hesaplanır (`price-impact.ts`):
 eski maliyet, zamlanan hammaddenin pencereden önceki fiyatıyla aynı reçeteden bulunur. Zamdan sonra maliyet oranı
 hedefin üstündeki ürüne fiyat önerilir; öneri şu ikisinin küçüğüdür (5 ₺'ye yukarı): hedef oranı tutturan fiyat

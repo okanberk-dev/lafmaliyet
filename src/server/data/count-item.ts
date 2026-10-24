@@ -104,7 +104,8 @@ export interface CreatedCountItem extends CountItemRef {
  * sayımı bitmiş eski aylar "kalem kaldı" demesin). Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zilde "Fiyatı girilmemiş
  * N hammadde"); iki durumda da "Tahmini", yönetici Hammaddeler'den doğrular. Yazılan fiyat aynı işlemde fiyat geçmişinin
  * başlangıcı olur (countItemPriceRow): kapanmış ay o fiyatla değerlenir, sonraki zam onu değiştirmez; zam uyarısı bu
- * satırı taban saymaz (personelin tahmini taban olsaydı ilk fatura zam ya da indirim gibi görünürdü). Fiyatsız kalem
+ * satırı taban saymaz (personelin tahmini taban olsaydı ilk fatura zam ya da indirim gibi görünürdü). Kalem Tahmini
+ * iken Hammaddeler'deki düzeltme bu satırın yerine geçer (src/server/data/ingredient-prices.ts). Fiyatsız kalem
  * satır yazmaz. Personel yalnız sayımını değiştirebildiği ayda ekler. Aynı ad
  * (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden; pasif ya da "Sayılmaz" olanlar dahil) varsa eklenmez
  * (CountItemExists); kalem listede ama daha sonraki bir aydan itibaren çıkıyorsa gösterilen aydan itibaren de listeye
