@@ -119,6 +119,10 @@ export function pushFailureMessage(failure: PushFailure, consequence = "fiyat de
   switch (failure.status) {
     case 404:
       return "Bu ürünün bağlı olduğu kalem sitede yok; bağlantıyı kaldır ya da yeniden bağla.";
+    case 409:
+      // Sitenin `single_size`'ı: kalem sitede tek boy (L fiyatı 0), L'ye bağlı ürün gönderdi. Panelin kopyası eskiyken
+      // olur (planPush kopyada tek boyu görse göndermezdi); tekrar denemek işe yaramaz
+      return `Bu ürünün site bağlantısı kopuk: kalemin sitede L fiyatı yok; ${consequence}. Bağlantıyı kaldır ya da ürünü kalemin M (tek) fiyatına bağla.`;
     case 400:
       return `Site değeri kabul etmedi (${FIELD_LABEL[failure.field ?? ""] ?? failure.field ?? "geçersiz alan"}); ${consequence}.`;
     case 401:

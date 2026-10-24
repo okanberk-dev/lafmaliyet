@@ -11,7 +11,10 @@ import {
   dueNotifications,
   endOfMonthAnchor,
   FIXED_REMINDER_NOTE,
+  fixedReminderAt,
   isLastDayOfMonth,
+  isVatReminder,
+  isVatWithholdingReminder,
   nextOccurrence,
   postponeDate,
   postponedFrom,
@@ -23,8 +26,10 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { reminderUnchanged } from "@/lib/recent-paid";
+import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
+import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
@@ -104,6 +109,12 @@ export async function setReminderActive(id: number, active: boolean) {
     const today = todayTR();
     const dueDate = on && r.repeat !== "none" && r.dueDate < today ? (advancePast(r.dueDate, r.repeat as ReminderRepeat, r.anchorDate, addDaysBack(today)) ?? r.dueDate) : r.dueDate;
     await db.update(s.reminders).set({ active: on, dueDate }).where(eq(s.reminders.id, rid));
+    // Kapalı tek seferliği yeniden açmak Ödendi'sini geri alır (dönemi yeniden beklenir); sonra yeniden kapatmak onu
+    // ödemiş saymaz (kapatma ödeme değildir)
+    if (on && !r.active && r.repeat === "none") {
+      await forgetVatPaid(rid, r.dueDate);
+      await forgetPaid("reminder", [rid]);
+    }
     refresh();
     return null;
   });
@@ -138,6 +149,12 @@ export async function markReminderDone(id: number, through?: string) {
       .set(next ? { dueDate: next, lastDoneAt: new Date(), ...(clear ? { amount: null } : {}) } : { active: false, lastDoneAt: new Date() })
       .where(eq(s.reminders.id, rid));
     await rememberPaid([{ kind: "reminder", id: rid, title: r.title, amount: r.amount, dueDate: r.dueDate, prev: snapshot(r), next }]);
+    // KDV ve KDV-2: nakit planının kalıcı kaydı (son ödenenler 30 günde düşer, bir sonraki KDV gününden önce)
+    const vatKind = isVatWithholdingReminder(r) ? "kdv2" : isVatReminder(r) ? "kdv" : null;
+    if (vatKind) {
+      const row = { note: r.note, repeat: r.repeat as ReminderRepeat, anchorDate: r.anchorDate };
+      await rememberVatPaid({ id: rid, kind: vatKind, dueDate: r.dueDate, next, periods: paidPeriodsOf(row, r.dueDate, next), amount: r.amount });
+    }
     await logActivity(
       me,
       "Ödeme yapıldı",
@@ -203,6 +220,8 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
     // "Ödendi"nin geri alınması Son ödenenler kaydını siler; ödemeden sonraki "Ertele"nin geri alınması ise
     // hatırlatıcıyı ödendikten sonraki hâline döndürür, o kayıt geri alınabilir kalır
     await forgetChangedReminder({ id: rid, dueDate: snap.dueDate, anchorDate: snap.anchorDate, active: snap.active });
+    // Hatırlatıcı o güne döndü: o günden itibaren "Ödendi"si kalmaz (KDV'nin kalıcı kaydı)
+    await forgetVatPaid(rid, snap.dueDate);
     await logActivity(me, "Hatırlatıcı geri alındı", `${title} · ${dateTR(snap.dueDate)}`);
     refresh();
     return null;
@@ -268,6 +287,7 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
         throw new UserError("Hatırlatıcı bu arada değişti; sayfa yenilendi, yeniden deneyin");
       }
       await forgetPaid("reminder", [rid]);
+      await forgetVatPaid(rid, prev.dueDate);
       await logActivity(me, "Hatırlatıcı geri alındı", `${cur.title} · ${dateTR(prev.dueDate)} · son ödenenlerden`);
     }
     refresh();
@@ -379,22 +399,29 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
     const db = getDb();
     const [f] = await db.select().from(s.fixedExpenses).where(eq(s.fixedExpenses.id, zId.parse(fixedExpenseId))).limit(1);
     if (!f) throw new UserError("Sabit gider bulunamadı");
-    if (f.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
-    const repeat = f.period === "yillik" ? "yearly" : f.period === "haftalik" ? "weekly" : "monthly";
+    const versions = await db
+      .select({ fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
+      .from(s.fixedExpenseVersions)
+      .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
+    // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder); sonraki bir aydan
+    // değişiklik girilmişse tutarsız (plan her ayın sürümünü taşır)
+    const at = fixedReminderAt(f, versions, dueDate.slice(0, 7));
+    if (at.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
+    const repeat = at.period === "yillik" ? "yearly" : at.period === "haftalik" ? "weekly" : "monthly";
     const kind = f.section === "kira" ? "kira" : f.section === "personel" ? "maas" : "odeme";
     await db.insert(s.reminders).values({
       title: f.name,
       kind,
-      amount: f.amount > 0 ? f.amount : null,
+      amount: at.amount,
       dueDate,
       anchorDate: dueDate,
       repeat,
       remindDaysBefore: 3,
       note: FIXED_REMINDER_NOTE,
     });
-    await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}`);
+    await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();
-    return { dueDate };
+    return { dueDate, amount: at.amount, changesFrom: at.changesFrom };
   });
 }
 

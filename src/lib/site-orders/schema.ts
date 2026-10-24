@@ -11,9 +11,10 @@ import { z } from "zod";
  * boşaltmasın. Ekranda gösterilen metinler kısaltılır; bilinmeyen yeni alanlar atılır (site v1'e alan ekleyebilir).
  *
  * KVKK: panele yalnız müşterinin adı gelir (soyad, telefon, e-posta, adres, kurye notu asla); panel siparişin tutarını
- * kullanmadığı için saklamaz da. Müşterinin siparişe ve içeceğe yazdığı not (v1'e sonradan eklenen, isteğe bağlı `note`
- * alanları: "fındık alerjim var", "çok sıcak olmasın") yalnız masa ve gel-al siparişinde gelir ve kartta gösterilir; kurye
- * siparişinde site göndermez, gönderse de panel atar (kapı kodu, adres tarifi olabilir). Zile, bildirime ve günlüğe girmez.
+ * kullanmadığı için saklamaz da. Müşterinin siparişe yazdığı not (v1'e sonradan eklenen, isteğe bağlı `note`: "fındık
+ * alerjim var") yalnız masa ve gel-al siparişinde gelir; kurye siparişinde o alan adres notuyla birleşiktir (kapı kodu,
+ * adres tarifi): site göndermez, gönderse de panel atar. İçeceğe yazılan satır notu ("çok sıcak olmasın") her siparişte
+ * gelir, kurye dahil (içeceğin notudur, adres değil). İkisi kartta gösterilir; zile, bildirime ve günlüğe girmez.
  */
 
 export const SITE_ORDERS_VERSION = 1;
