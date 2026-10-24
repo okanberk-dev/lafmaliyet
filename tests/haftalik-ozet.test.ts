@@ -16,12 +16,16 @@ import { dailyOutcome, stepTexts } from "../src/lib/job-health";
 import {
   claimStateOf,
   isoWeekId,
+  nextWeeklyTry,
   parseWeeklyHistory,
   parseWeeklySettings,
   pruneHistory,
   selectItems,
+  stepReason,
+  weekdayName,
   weekInfo,
   weeklyDecision,
+  weeklyRetryText,
   weeklyStep,
   WEEKLY_DEADLINE_MS,
   type WeeklyItem,
@@ -45,7 +49,7 @@ import {
   zamItem,
   type KomisyonCand,
 } from "../src/lib/weekly/items";
-import { failedText, headlineOf, recipientsText, subjectOf, trendText, weeklyStatusText, weekRangeText } from "../src/lib/weekly/text";
+import { failedText, headlineOf, recipientsText, subjectOf, trendText, weeklyLogText, weeklyStatusText, weekRangeText } from "../src/lib/weekly/text";
 import { APP_URL } from "../src/server/notify/digest-template";
 import { renderWeekly, WEEKLY_FOOTER } from "../src/server/notify/weekly-template";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -184,12 +188,23 @@ test("adım: yalnız çalıştığı gün; kapalı ve Resend yok yalnız pazarte
   assert.equal(weeklyStep({ status: "skip", weekday: 1 }), undefined);
   assert.deepEqual(weeklyStep({ status: "late", weekday: 1 }), { code: "late" });
   assert.deepEqual(weeklyStep({ status: "late", weekday: 3 }), { code: "error", error: "süre yetmedi; bu haftanın özeti gönderilemedi" });
-  assert.deepEqual(weeklyStep({ status: "retry", weekday: 2, error: "Alıcı adresi geçerli biçimde değil." }), { code: "error", error: "Alıcı adresi geçerli biçimde değil.; yarın yeniden denenecek" });
-  assert.deepEqual(weeklyStep({ status: "retry", weekday: 3, error: "Resend şu an yanıt vermiyor" }), { code: "error", error: "Resend şu an yanıt vermiyor; bu hafta gönderilemedi" });
-  assert.deepEqual(weeklyStep({ status: "uncertain", weekday: 1, error: "Resend yanıt vermedi" }), {
+  // Resend'in gerçek iletileri (resendErrorText, sendFailureText): sondaki nokta ve "…yeniden deneyin" öğüdü düşer, sıradaki
+  // deneme günün adıyla (ileti ertesi sabahın e-postasında da okunur, "yarın" kayardı)
+  assert.deepEqual(weeklyStep({ status: "retry", weekday: 1, error: "Resend şu an yanıt vermiyor; biraz sonra yeniden deneyin." }), {
     code: "error",
-    error: "gönderim belirsiz (Resend yanıt vermedi); e-posta gelmediyse Ödemeler'den örneği alın",
+    error: "Resend şu an yanıt vermiyor; salı sabahı yeniden denenecek",
   });
+  assert.deepEqual(weeklyStep({ status: "retry", weekday: 2, error: "Alıcı adresi geçerli biçimde değil." }), { code: "error", error: "Alıcı adresi geçerli biçimde değil; çarşamba sabahı yeniden denenecek" });
+  assert.deepEqual(weeklyStep({ status: "retry", weekday: 3, error: "Resend gönderim kotası doldu; kota yenilenince yeniden deneyin." }), {
+    code: "error",
+    error: "Resend gönderim kotası doldu; bu hafta gönderilemedi",
+  });
+  assert.deepEqual(weeklyStep({ status: "uncertain", weekday: 1, error: "Resend yanıt vermedi; e-posta yine de gitmiş olabilir." }), {
+    code: "error",
+    error: "gönderim belirsiz, e-posta gitmiş olabilir; gelmediyse Ödemeler'den örneği alın",
+  });
+  assert.equal(stepReason("ornek.com alan adı Resend'de doğrulanmamış; bu adresten e-posta çıkmaz. Doğrulanmış bir gönderen adresi yazın."), "ornek.com alan adı Resend'de doğrulanmamış; bu adresten e-posta çıkmaz. Doğrulanmış bir gönderen adresi yazın");
+  assert.deepEqual([1, 2, 3, 0].map(weeklyRetryText), ["salı sabahı yeniden denenecek", "çarşamba sabahı yeniden denenecek", "bu hafta gönderilemedi", "bu hafta gönderilemedi"]);
   assert.deepEqual(weeklyStep({ status: "norecipient", weekday: 1 }), { code: "error", error: "etkin yönetici e-postası yok" });
   // Sabah işinin sonucu: geç kalış iş "Tamam", hata "Kısmen" ve iletisi adımın adıyla
   const core = { sync: { code: "today" }, digest: { code: "sent" }, reminders: { code: "none" }, karaoke: { code: "ok" }, menu: { code: "ok" }, sales: { code: "ok" } };
@@ -328,9 +343,10 @@ test("komisyon: geciken hakediş, %6 aşımı, komisyon dışı ücret; en büy�
   );
   assert.ok(all[0].detail!.endsWith(" · 2 konu daha"));
   assert.equal(all[1].title, `Set Kart Eylül: kesinti %6,4 · sınırın üstünde 240${NB}₺`);
-  assert.equal(all[1].detail, "Yemek kartında yasal üst sınır %6. · 2 konu daha");
+  assert.equal(all[1].detail, "Yemek kartında yasal üst sınır %6 · 2 konu daha");
   assert.equal(all[2].title, `Multinet Ekim: komisyon dışı ücret olabilir · 150${NB}₺`);
   assert.equal(all[2].detail, `“POS Cihaz Kira Bedeli” 150${NB}₺ · 2 konu daha`);
+  assert.equal(commissionItems([three[2], { ...three[2], alertKey: "yasak:multinet:2026-09:3", month: "2026-09", lineText: null }])[1].detail, "Faturada komisyon dışı kalem var · 1 konu daha");
   const group = commissionItem([cand({ alertKey: "oran:yemek-kartlari:2026-10:65", kind: "oran", label: "Yemek kartları", group: true, tl: 300, rate: 0.065 })])!;
   assert.equal(group.title, `Yemek kartları Ekim: ortalama kesinti %6,5 · sınırın üstünde 300${NB}₺`);
 });
@@ -539,24 +555,73 @@ test("e-posta: konu, başlık, bağlantılar, kaçış, alt not, düz metin, oku
 });
 
 test("Ödemeler'deki durum satırı ve alıcılar", () => {
+  // Salı 12:00 (İstanbul): salının sabah işi geçti
   const now = Date.parse("2026-10-27T09:00:00Z");
-  const base = { enabled: true, week: weekInfo("2026-10-27"), row: null, lastSentAt: null, now };
+  const base = { enabled: true, week: weekInfo("2026-10-27"), row: null, lastSentAt: null, now, hourTR: 12 };
   assert.equal(weeklyStatusText({ ...base, enabled: false }), "Kapalı: pazartesi e-postası gitmez.");
   assert.equal(weeklyStatusText({ ...base, row: { ok: true, error: null, sentAt: "2026-10-26T05:04:00Z" } }), "Bu hafta gönderildi · 26.10.2026 08:04");
   assert.equal(weeklyStatusText({ ...base, weekSentAt: "2026-10-26T05:04:00Z" }), "Bu hafta gönderildi · 26.10.2026 08:04");
   const retry = { ok: false, error: "Yeniden denenecek: Alıcı adresi geçerli biçimde değil.", sentAt: "2026-10-26T05:04:00Z" };
-  assert.equal(weeklyStatusText({ ...base, row: retry }), "Bu hafta gönderilemedi; yarın sabah yeniden denenecek.");
-  assert.equal(weeklyStatusText({ ...base, week: weekInfo("2026-10-28"), row: retry }), "Bu hafta gönderilemedi.");
+  // Pazartesi reddedildi, salının işi kayda dokunmadı (süre yetmedi): sıradaki çarşamba
+  assert.equal(weeklyStatusText({ ...base, row: retry, rowDay: "2026-10-26" }), "Pazartesi gönderilemedi; çarşamba sabahı yeniden denenecek.");
+  // Pazartesi öğleden sonra: salı; salı 06:00 (iş günü salı, işten önce): bu sabah; salı 02:00 (iş günü hâlâ pazartesi): salı
+  const mon = { ...base, week: weekInfo("2026-10-26"), row: retry, rowDay: "2026-10-26" };
+  assert.equal(weeklyStatusText({ ...mon, hourTR: 14 }), "Pazartesi gönderilemedi; salı sabahı yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...base, row: retry, rowDay: "2026-10-26", hourTR: 6 }), "Pazartesi gönderilemedi; bu sabah yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...mon, hourTR: 2 }), "Pazartesi gönderilemedi; salı sabahı yeniden denenecek.");
+  // Çarşamba işten önce bir deneme daha var; çarşamba reddedildiyse (ya da 09:00 geçtiyse) bu hafta bitti
+  const wed = { ...base, week: weekInfo("2026-10-28"), row: { ...retry, sentAt: "2026-10-27T05:04:00Z" }, rowDay: "2026-10-27" };
+  assert.equal(weeklyStatusText({ ...wed, hourTR: 7 }), "Salı gönderilemedi; bu sabah yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...wed, hourTR: 10 }), "Bu hafta gönderilemedi.");
+  assert.equal(weeklyStatusText({ ...wed, rowDay: "2026-10-28", hourTR: 8 }), "Bu hafta gönderilemedi.");
+  // Perşembe: aynı haftanın kaydı, deneme kalmadı
+  assert.equal(weeklyStatusText({ ...wed, week: weekInfo("2026-10-29"), rowDay: "2026-10-28", hourTR: 7 }), "Bu hafta gönderilemedi.");
+  // Kayıt yazmadan biten gün (sabah işinin adımı): nedeniyle
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "late" } }), "Pazartesi gönderilemedi (süre yetmedi); çarşamba sabahı yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "late" }, hourTR: 6 }), "Pazartesi gönderilemedi (süre yetmedi); bu sabah yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-27", code: "error" } }), "Salı gönderilemedi; çarşamba sabahı yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...mon, row: null, rowDay: null, lastStep: { day: "2026-10-26", code: "nokey" } }), "Pazartesi gönderilemedi (Resend kurulmadı); salı sabahı yeniden denenecek.");
+  assert.equal(weeklyStatusText({ ...wed, row: null, rowDay: null, lastStep: { day: "2026-10-28", code: "error" }, hourTR: 10 }), "Bu hafta gönderilemedi.");
+  // Gönderim ya da kapalı adım satırı değiştirmez; kaydın durumu adımdan önce gelir
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "off" }, lastSentAt: "2026-10-19T05:03:00Z" }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "toString" } }), "Henüz gönderilmedi · ilk özet pazartesi sabahı gider");
   assert.equal(
-    weeklyStatusText({ ...base, row: { ok: false, error: "Gönderim belirsiz: Resend yanıt vermedi", sentAt: "2026-10-26T05:04:00Z" } }),
+    weeklyStatusText({ ...base, row: { ok: false, error: "Gönderim belirsiz: Resend yanıt vermedi", sentAt: "2026-10-26T05:04:00Z" }, lastStep: { day: "2026-10-26", code: "error" } }),
     "Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz.",
   );
   assert.equal(weeklyStatusText({ ...base, row: { ok: false, error: "Gönderiliyor", sentAt: "2026-10-26T05:04:00Z" } }), "Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz.");
   assert.equal(weeklyStatusText({ ...base, row: { ok: false, error: "Gönderiliyor", sentAt: new Date(now - 60_000).toISOString() } }), "Bu haftaki özet şu an gönderiliyor.");
   assert.equal(weeklyStatusText({ ...base, lastSentAt: "2026-10-19T05:03:00Z" }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
   assert.equal(weeklyStatusText(base), "Henüz gönderilmedi · ilk özet pazartesi sabahı gider");
+  // Sıradaki deneme ve günün adı
+  assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-26", 5), "2026-10-27");
+  assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-26", 9), "2026-10-28");
+  assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-27", 6), "2026-10-28");
+  assert.equal(nextWeeklyTry(weekInfo("2026-10-28"), "2026-10-28", 6), null);
+  assert.deepEqual(["2026-10-26", "2026-10-28", "2026-11-01"].map(weekdayName), ["pazartesi", "çarşamba", "pazar"]);
   assert.equal(recipientsText(["Okan", "Ayşe"]), "Yöneticilere gider: Okan, Ayşe.");
   assert.equal(recipientsText([]), "Etkin yönetici yok.");
+});
+
+test("Son gönderimler: haftalık özetin gidemeyen kaydı adıyla, iç işaretsiz", () => {
+  const row = (key: string, error: string | null, ok = false) => weeklyLogText({ key, ok, error });
+  assert.deepEqual(row("haftalik:2026-W45", "Yeniden denenecek: Resend şu an yanıt vermiyor; biraz sonra yeniden deneyin."), {
+    title: "Haftalık özet gönderilemedi",
+    error: "Resend şu an yanıt vermiyor; biraz sonra yeniden deneyin.",
+  });
+  assert.deepEqual(row("haftalik:2026-W45", "Gönderim belirsiz: Resend yanıt vermedi; e-posta yine de gitmiş olabilir."), {
+    title: "Haftalık özet: gönderim belirsiz",
+    error: "Resend yanıt vermedi; e-posta yine de gitmiş olabilir.",
+  });
+  assert.deepEqual(row("haftalik:2026-W45", "Gönderiliyor"), { title: "Haftalık özet gönderiliyor ya da yarıda kaldı", error: null });
+  assert.deepEqual(row("haftalik-ornek:1761462000000", "Resend API anahtarı geçersiz ya da yetkisiz (RESEND_API_KEY)."), {
+    title: "Haftalık özet örneği gönderilemedi",
+    error: "Resend API anahtarı geçersiz ya da yetkisiz (RESEND_API_KEY).",
+  });
+  assert.equal(row("haftalik:2026-W45", null, true), null);
+  assert.equal(row("digest:2026-10-26", "Alıcı adresi geçerli biçimde değil."), null);
+  // Liste onu kullanır
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/hatirlaticilar/notifications-section.tsx"), "utf8"), /const weekly = weeklyLogText\(l\);[\s\S]*?weekly\?\.title \?\? "Gönderilemedi"/);
 });
 
 // ---------------------------------------------------------------- Kaynak denetimleri

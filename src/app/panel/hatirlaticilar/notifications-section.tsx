@@ -15,6 +15,7 @@ import { parseNumberTR } from "@/lib/calc/expr";
 import { dateTimeTR } from "@/lib/format";
 import { digestSummary } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { weeklyLogText } from "@/lib/weekly/text";
 import { addRecipient, deleteRecipient, previewDigest, runDigestNow, saveNotificationSettings, sendTestNotification, setRecipientActive } from "@/server/actions/reminders";
 import type { NotifySettings } from "@/server/notify/settings";
 
@@ -371,19 +372,24 @@ export function NotificationsSection({
             <p className="mb-1.5 px-1 text-[13px] font-medium text-ink-soft">Son gönderimler</p>
             {log.length ? (
               <ul className="space-y-2 rounded-2xl bg-surface p-3 ring-1 ring-line">
-                {dedupeLog(log).map((l) => (
-                  <li key={l.id} className="flex items-start gap-2 text-[13px]">
-                    <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", l.ok ? "bg-good" : "bg-bad")} aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      <span className="break-words text-ink">{l.ok ? l.subject : "Gönderilemedi"}</span>
-                      <span className="block text-xs break-words text-ink-mute">
-                        {dateTimeTR(l.sentAt)}
-                        {l.ok && l.recipients ? ` · ${l.recipients}` : ""}
-                        {!l.ok && l.error ? ` · ${l.error}` : ""}
+                {dedupeLog(log).map((l) => {
+                  // Haftalık özetin gidemeyen kaydı adıyla, iç işaretleri ("Yeniden denenecek:") olmadan
+                  const weekly = weeklyLogText(l);
+                  const error = weekly ? weekly.error : l.error;
+                  return (
+                    <li key={l.id} className="flex items-start gap-2 text-[13px]">
+                      <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", l.ok ? "bg-good" : "bg-bad")} aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="break-words text-ink">{l.ok ? l.subject : (weekly?.title ?? "Gönderilemedi")}</span>
+                        <span className="block text-xs break-words text-ink-mute">
+                          {dateTimeTR(l.sentAt)}
+                          {l.ok && l.recipients ? ` · ${l.recipients}` : ""}
+                          {!l.ok && error ? ` · ${error}` : ""}
+                        </span>
                       </span>
-                    </span>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="rounded-2xl bg-surface px-3 py-3 text-[13px] text-ink-mute ring-1 ring-line">Henüz gönderim yok.</p>

@@ -77,17 +77,25 @@ kapatmak bunu kapatmaz). Ayar `notify.settings`'e yazılmaz: `saveNotificationSe
 |---|---|
 | Kapalı | Kapalı: pazartesi e-postası gitmez. |
 | Bu hafta gitti | Bu hafta gönderildi · 26.10.2026 08:04 |
-| Resend reddetti, yarın yeniden | Bu hafta gönderilemedi; yarın sabah yeniden denenecek. (çarşamba: Bu hafta gönderilemedi.) |
+| Resend reddetti ya da gün kayıt yazmadan bitti | Pazartesi gönderilemedi (süre yetmedi); salı sabahı yeniden denenecek. / … bu sabah yeniden denenecek. (deneme kalmadıysa: Bu hafta gönderilemedi.) |
 | Belirsiz ya da yarıda kaldı | Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz. |
 | Bu hafta henüz yok | Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı / Henüz gönderilmedi · ilk özet pazartesi sabahı gider |
+
+Gönderilemeyen haftada başarısız günün ve sıradaki denemenin adı yazılır: Resend'in reddinde kaydın günü, süre yetmeyen,
+Resend'i olmayan ya da hiçbir bilgiyi okuyamayan günde (kayıt yazılmaz) o haftanın sabah işindeki `weekly` adımı
+(`job_runs`). İş günü 05:00'te döner; 05:00–09:00 arası günün denemesi henüz yapılmamış sayılır ("bu sabah"), sonrası
+yarına kalır, çarşambadan sonra deneme yoktur (`nextWeeklyTry`).
 
 - **Haftalık özeti önizle:** bu haftanın özeti bugünkü verilerle (gönderilmez, hiçbir şey yazılmaz); okunamayan kaynak
   açıklamada.
 - **Örneği bana gönder:** yalnız tıklayan yöneticinin adresine, konu "Örnek · …"; haftanın asıl gönderimini etkilemez.
   Resend anahtarı yoksa kapalı (önizleme her zaman çalışır).
-- Gönderimler ve örnekler "Son gönderimler"de görünür. Ayarlar › Günlük işler'de adım `Haftalık özet gönderildi`,
-  `Haftalık özet kapalı` / `Resend kurulmadı` (yalnız pazartesi), `süre yetmedi, yarın denenecek`, `gönderilemedi`
-  (iş "Kısmen" olur; zil ve ertesi sabahın e-postası söyler).
+- Gönderimler ve örnekler "Son gönderimler"de görünür; gidemeyen haftalık kayıt "Haftalık özet gönderilemedi" (örnek:
+  "Haftalık özet örneği gönderilemedi") başlığıyla ve kaydın iç işareti olmadan (`weeklyLogText`). Ayarlar › Günlük
+  işler'de adım `Haftalık özet gönderildi`, `Haftalık özet kapalı` / `Resend kurulmadı` (yalnız pazartesi), `süre
+  yetmedi, yarın denenecek`, `gönderilemedi` (iş "Kısmen" olur; zil ve ertesi sabahın e-postası söyler). Hatanın
+  iletisi sıradaki denemeyi günün adıyla söyler ("Haftalık özet: Resend şu an yanıt vermiyor; salı sabahı yeniden
+  denenecek"; ileti ertesi sabahın e-postasında da okunur, "yarın" kayardı).
 
 ## 4. Haftada en çok bir kez
 

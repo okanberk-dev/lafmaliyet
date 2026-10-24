@@ -236,10 +236,10 @@ export function commissionItems(cands: readonly KomisyonCand[]): WeeklyItem[] {
       detail = `${c.due ? `Son gün ${longDateTR(c.due)} · g` : "G"}eldiyse Komisyon & hakediş'te işaretleyin`;
     } else if (c.kind === "oran") {
       title = `${c.label} ${mon}: ${c.group ? "ortalama kesinti" : "kesinti"} ${pct(c.rate)} · sınırın üstünde ${tl(c.tl)}`;
-      detail = "Yemek kartında yasal üst sınır %6.";
+      detail = "Yemek kartında yasal üst sınır %6";
     } else {
       title = `${c.label} ${mon}: komisyon dışı ücret olabilir · ${tl(c.tl)}`;
-      detail = c.lineText ?? "Faturada komisyon dışı kalem var.";
+      detail = c.lineText ?? "Faturada komisyon dışı kalem var";
     }
     return {
       key: `komisyon:${c.alertKey}`,

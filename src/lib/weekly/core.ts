@@ -86,6 +86,12 @@ export const WEEKLY_POS_MIN_DAYS = 3;
 export const WEEKLY_SALES_FULL_DAYS = 6;
 /** "Gönderiliyor" işaretli kayıt bu kadar süre sonra yarıda kalmış sayılır */
 export const WEEKLY_CLAIM_STALE_MS = 5 * 60_000;
+/**
+ * Sabah işi 08:00'de çağrılır (05:00 UTC; Hobby'de o saatin içinde herhangi bir an). İş günü 05:00'te döner: 05:00–09:00
+ * arası günün denemesi henüz yapılmamış olabilir, 09:00'dan sonra geçmiştir.
+ */
+export const WEEKLY_MORNING_FROM_HOUR = 5;
+export const WEEKLY_MORNING_TO_HOUR = 9;
 export const WEEKLY_SETTINGS_KEY = "haftalik.settings";
 export const WEEKLY_HISTORY_KEY = "haftalik.gecmis";
 /** notification_log anahtarı: haftanın kaydı ("haftalik:2026-W44") ve örnekler ("haftalik-ornek:<ms>") */
@@ -166,6 +172,37 @@ export function isoWeekId(monday: string): string {
   const year = Number(thursday.slice(0, 4));
   const dayOfYear = Math.round((utc(thursday) - Date.UTC(year, 0, 1)) / 86_400_000) + 1;
   return `${year}-W${String(Math.floor((dayOfYear - 1) / 7) + 1).padStart(2, "0")}`;
+}
+
+const DAY_NAMES = ["pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi", "pazar"];
+
+/** Günün adı, cümle içinde küçük harfle ("salı") */
+export function weekdayName(day: string): string {
+  return DAY_NAMES[isoWeekday(day) - 1];
+}
+
+/**
+ * Bu haftanın sıradaki denemesi (iş günü) ya da null. `lastTry`: son denemenin iş günü. Bugün henüz denenmediyse ve
+ * sabah işinin saati geçmediyse (05:00–09:00 arası) bugün, değilse yarın; çarşambadan sonra deneme yok. Gece 05:00'ten önce iş
+ * günü dündür ve onun sabahı geçmiştir: sıradaki yarın (takvimde bugün).
+ */
+export function nextWeeklyTry(week: WeekInfo, lastTry: string, hourTR: number): string | null {
+  const pending = lastTry < week.day && hourTR >= WEEKLY_MORNING_FROM_HOUR && hourTR < WEEKLY_MORNING_TO_HOUR;
+  const next = pending ? week.day : addDays(week.day, 1);
+  return next >= week.monday && isoWeekday(next) <= WEEKLY_LAST_WEEKDAY ? next : null;
+}
+
+/** Adımın iletisinin sonu: pazartesi "salı sabahı yeniden denenecek", salı "çarşamba sabahı …", son gün "bu hafta gönderilemedi" */
+export function weeklyRetryText(weekday: number): string {
+  return weekday >= 1 && weekday < WEEKLY_LAST_WEEKDAY ? `${DAY_NAMES[weekday]} sabahı yeniden denenecek` : "bu hafta gönderilemedi";
+}
+
+/**
+ * Resend'in iletisi adımın cümlesinin içinde: sondaki nokta ve "…yeniden deneyin" öğüdü düşer (adım kendisi yeniden
+ * dener; "Resend şu an yanıt vermiyor; biraz sonra yeniden deneyin." → "Resend şu an yanıt vermiyor").
+ */
+export function stepReason(msg: string): string {
+  return msg.replace(/;[^;]*yeniden deneyin\.?\s*$/, "").replace(/[.\s]+$/, "");
 }
 
 /** İş günü (businessDate; gece 05:00'ten önce dün) → ISO haftası ve geçen haftanın aralığı */
@@ -277,10 +314,12 @@ export function weeklyStep(r: WeeklyRunResult): StepResult | undefined {
       return undefined;
     case "late":
       return last ? { code: "error", error: "süre yetmedi; bu haftanın özeti gönderilemedi" } : { code: "late" };
+    // İleti zilde, Günlük işler'de ve ertesi sabahın e-postasında da okunur: "yarın" değil günün adı
     case "retry":
-      return { code: "error", error: `${r.error ?? "Resend iletiyi kabul etmedi"}; ${last ? "bu hafta gönderilemedi" : "yarın yeniden denenecek"}` };
+      return { code: "error", error: `${stepReason(r.error ?? "Resend iletiyi kabul etmedi")}; ${weeklyRetryText(r.weekday)}` };
+    // Belirsizin nedeni hep aynı (sendFailureText): iç içe parantez yerine tek cümle
     case "uncertain":
-      return { code: "error", error: `gönderim belirsiz (${r.error ?? "Resend yanıt vermedi"}); e-posta gelmediyse Ödemeler'den örneği alın` };
+      return { code: "error", error: "gönderim belirsiz, e-posta gitmiş olabilir; gelmediyse Ödemeler'den örneği alın" };
     case "norecipient":
       return { code: "error", error: "etkin yönetici e-postası yok" };
     case "error":

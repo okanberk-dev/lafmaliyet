@@ -1,8 +1,8 @@
 import "server-only";
 
-import { and, desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, gte, like } from "drizzle-orm";
 
-import { businessDate } from "@/lib/cash-report";
+import { businessDate, trHour } from "@/lib/cash-report";
 import {
   CLAIM_RETRY,
   CLAIM_SENDING,
@@ -14,6 +14,7 @@ import {
   pruneHistory,
   weekInfo,
   weeklyDecision,
+  weeklyRetryText,
   WEEKLY_COLLECT_MS,
   WEEKLY_HISTORY_KEY,
   WEEKLY_HISTORY_WEEKS,
@@ -120,8 +121,7 @@ export async function runWeeklyStep(now: Date, o: { deadlineAt: number }): Promi
   if (state === "sent" || state === "busy" || state === "unknown") return { status: "skip", weekday: week.weekday };
 
   const { summary, allFailed } = await buildWeekly(now, { budgetMs: Math.min(WEEKLY_COLLECT_MS, o.deadlineAt - Date.now() - WEEKLY_SEND_MS - 500) });
-  const last = week.weekday >= WEEKLY_LAST_WEEKDAY;
-  if (allFailed) return { status: "error", weekday: week.weekday, error: `hiçbir bilgi okunamadı; ${last ? "bu hafta gönderilemedi" : "yarın yeniden denenecek"}` };
+  if (allFailed) return { status: "error", weekday: week.weekday, error: `hiçbir bilgi okunamadı; ${weeklyRetryText(week.weekday)}` };
   const [recipients, notify] = await Promise.all([weeklyRecipients(), loadNotifySettings()]);
   if (!recipients.length) return { status: "norecipient", weekday: week.weekday };
   // Gönderime yetecek süre kalmadıysa yazmadan bırakılır: yarın yeniden (yarıda kesilen gönderim belirsiz kalırdı)
@@ -205,7 +205,7 @@ export async function sendWeeklySampleTo(me: CurrentUser, now: Date): Promise<{ 
 export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; recipients: string[]; status: string }> {
   const week = weekInfo(businessDate(now));
   const db = getDb();
-  const [settings, recipients, row, [lastOk], history] = await Promise.all([
+  const [settings, recipients, row, [lastOk], history, runs] = await Promise.all([
     loadWeeklySettings(),
     weeklyRecipients(),
     weekRow(week.id),
@@ -216,14 +216,26 @@ export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; re
       .orderBy(desc(s.notificationLog.sentAt))
       .limit(1),
     loadWeeklyHistory(),
+    // Bu haftanın sabah işleri (iş günü pazartesi 05:00'te başlar; İstanbul sabit UTC+3): kayıt yazmadan biten haftalık
+    // adım (süre yetmedi, Resend yok, hiçbir bilgi okunamadı) yalnız burada görünür
+    db
+      .select({ startedAt: s.jobRuns.startedAt, steps: s.jobRuns.steps })
+      .from(s.jobRuns)
+      .where(and(eq(s.jobRuns.job, "gunluk"), gte(s.jobRuns.startedAt, new Date(`${week.monday}T05:00:00+03:00`))))
+      .orderBy(desc(s.jobRuns.startedAt))
+      .limit(10),
   ]);
+  const run = runs.find((r) => r.steps?.weekly);
   const status = weeklyStatusText({
     enabled: settings.enabled,
     week,
     row: asClaim(row),
+    rowDay: row ? businessDate(row.sentAt) : null,
     weekSentAt: history.weeks[week.id]?.at ?? null,
+    lastStep: run ? { day: businessDate(run.startedAt), code: run.steps!.weekly } : null,
     lastSentAt: lastOk?.sentAt.toISOString() ?? Object.values(history.weeks).map((w) => w.at).sort().at(-1) ?? null,
     now: now.getTime(),
+    hourTR: trHour(now),
   });
   return { enabled: settings.enabled, recipients: recipients.map((r) => r.name), status };
 }
