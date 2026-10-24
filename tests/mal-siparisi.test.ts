@@ -6,7 +6,7 @@
 // Çalıştırma: npx tsx --test tests/mal-siparisi.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -782,7 +782,8 @@ test("yedek ve şema: istek kimliği gizli ad taşımaz (request_id); üç tablo
   assert.match(schema, /requestId: text\("request_id"\)\.notNull\(\)/);
   assert.doesNotMatch(schema, /text\("token"\)/);
   assert.match(schema, /uniqueIndex\("supplier_orders_invoice_uq"\)\.on\(t\.invoiceId\)\.where\(sql`invoice_id is not null`\)/);
-  const sqlFile = read("drizzle/0034_mal_siparisi.sql");
+  // Numara birleştirmede yeniden üretilir (R2): dosya adının sonundan bulunur
+  const sqlFile = read(`drizzle/${readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_mal_siparisi.sql"))}`);
   for (const t of ["reorder_items", "quick_counts", "supplier_orders"]) assert.match(sqlFile, new RegExp(`CREATE TABLE "${t}"`));
   assert.doesNotMatch(sqlFile, /ALTER TABLE "(?!quick_counts|reorder_items|supplier_orders)/, "var olan tablolara dokunulmaz");
 });
