@@ -130,14 +130,18 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
             {note ? ` ${note}` : null}
           </p>
         ) : !subscribed ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
-            <BellRing size={18} className="shrink-0 text-ink-mute" aria-hidden="true" />
-            <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-soft">
-              Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.{note ? ` ${note}` : null}
-            </p>
-            <Button onClick={() => void enable()} disabled={busy || !publicKey}>
-              {busy ? "Açılıyor…" : "Bildirimleri aç"}
-            </Button>
+          // Metin dar sütuna sıkışmasın: kart darsa (telefon, karaoke ekranının yan sütunu) düğme alt satıra iner, not ayrı
+          <div className="rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+            <div className="flex flex-wrap items-center gap-3">
+              <BellRing size={18} className="shrink-0 text-ink-mute" aria-hidden="true" />
+              <p className="min-w-0 flex-1 basis-40 text-[13px] leading-5 text-ink-soft">
+                Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.
+              </p>
+              <Button onClick={() => void enable()} disabled={busy || !publicKey}>
+                {busy ? "Açılıyor…" : "Bildirimleri aç"}
+              </Button>
+            </div>
+            {note ? <p className="mt-2 text-[13px] leading-5 text-ink-mute">{note}</p> : null}
           </div>
         ) : (
           <>

@@ -74,6 +74,10 @@ test("bildirim yokken kartın arka plan notu: 10 dakika sözü yalnız arka plan
   const device = read("src/components/panel/live/device-alerts.tsx");
   assert.match(device, /const note = karaoke \? hiddenTabNote\(prefs\) : null;/);
   assert.doesNotMatch(device, /LATE_BELL/);
+  // "Bildirimleri aç" satırında not ayrı paragraf, metin dar sütuna sıkışmaz (basis: dar kartta düğme alt satıra iner;
+  // telefonda ve 380 px'lik yan sütunda tarayıcıda bakıldı)
+  assert.match(device, /<p className="min-w-0 flex-1 basis-40 text-\[13px\] leading-5 text-ink-soft">\s*Sekme kapalı[^<{]*kalır\.\s*<\/p>/);
+  assert.match(device, /<\/Button>\s*<\/div>\s*\{note \? <p className="mt-2 text-\[13px\] leading-5 text-ink-mute">\{note\}<\/p> : null\}/);
 });
 
 test("bildirim açık sayılır: izin, kayıtlı abonelik ve zilin çaldığı konular bu cihazın aboneliğinde açık", () => {
