@@ -2,9 +2,10 @@
 
 import { FileText, Lock, PackageX, RotateCcw, Undo2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -67,7 +68,7 @@ interface OrderCardProps {
 export function OrderCard({ view, filterHref }: OrderCardProps) {
   const o = view.order;
   const c = o.check;
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const [dialog, setDialog] = useState<"kapat" | "fatura" | "iptal" | null>(null);
   // Sayfadan çıkılınca (Activity sayfayı gizler) açık pencere kapanır
   useLayoutEffect(() => () => setDialog(null), []);

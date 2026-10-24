@@ -2,9 +2,10 @@
 
 import { ClipboardPen, Plus, Settings2, Timer, Truck } from "lucide-react";
 import Link from "next/link";
-import { useLayoutEffect, useState, useTransition } from "react";
+import { useLayoutEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -74,7 +75,7 @@ function SettingsCard({ view }: { view: ReorderItemsView }) {
   const [margin, setMargin] = useState(num(s.marginPct * 100, 1));
   const [lead, setLead] = useState(String(s.defaultLeadDays));
   const [signature, setSignature] = useState(s.signature);
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const toggle = (d: number) => setDays((x) => (x.includes(d) ? (x.length > 1 ? x.filter((y) => y !== d) : x) : [...x, d].sort((a, b) => a - b)));
   const marginValue = parseNumberTR(margin);
   const leadValue = readNumber(lead);
@@ -225,7 +226,7 @@ function EditDialog({ item: i, view, onClose }: { item: ItemView; view: ReorderI
   const [unitCount, setUnitCount] = useState(i.saved.orderUnitCount !== null ? num(i.saved.orderUnitCount, 3) : "");
   const [lead, setLead] = useState(i.saved.leadDays !== null ? String(i.saved.leadDays) : "");
   const [par, setPar] = useState(i.saved.parCount !== null ? num(i.saved.parCount, 2) : "");
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const cu = i.countUnit ?? "";
   const amount = (v: number | null) => (v === null ? "–" : `${num(v, 1)} ${cu}`.trim());
 
@@ -421,7 +422,7 @@ function EditDialog({ item: i, view, onClose }: { item: ItemView; view: ReorderI
 
 function LeadDialog({ group, onClose }: { group: ItemGroupView; onClose: () => void }) {
   const [raw, setRaw] = useState(String(group.lead));
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const v = readNumber(raw);
   const bad = v === undefined || v === null || !Number.isInteger(v) || v < 0 || v > 60;
   const save = () =>
@@ -462,7 +463,7 @@ const SEARCH_LIMIT = 8;
 
 function AddCard({ view }: { view: ReorderItemsView }) {
   const [q, setQ] = useState("");
-  const [pending, start] = useTransition();
+  const [pending, start] = useActionTransition();
   const add = (ids: number[]) =>
     start(async () => {
       const res = await trackIngredients(ids);
