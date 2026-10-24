@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, forecastStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
+import { runForecastJob, type ForecastJobResult } from "@/server/forecast/job";
 import { finishJobRun, parasutSyncedToday, startJobRun } from "@/server/jobs/runs";
 import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
@@ -26,11 +27,15 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), sayım günü hızlı
 // sayım bildirimi (docs/MAL-SIPARISI.md). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
-// (docs/HAFTALIK-OZET.md).
+// (docs/HAFTALIK-OZET.md). Satış tahmini (hava durumu ve günün tahmin kaydı; docs/SATIS-TAHMINI.md) Paraşüt'ün
+// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir.
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
 export const maxDuration = 60;
+
+/** Satış tahmininin süresi: hava durumu en çok 6 sn (AbortSignal.timeout) ve 7 günün kaydı */
+const FORECAST_JOB_MS = 7_000;
 
 /** Site eşitlemelerinin sonucu adım koduna (hata metniyle) */
 function siteStep(r: { status: string; error?: string; results?: { month: string; status: string; error?: string }[] }): StepResult {
@@ -45,6 +50,13 @@ export async function GET(request: NextRequest) {
   const denied = await rejectUnlessCron(request);
   if (denied) return denied;
   const runId = await startJobRun("gunluk");
+  // Satış tahmini Paraşüt'ün yeniden denemesiyle aynı anda başlar; e-postadan önce beklenir (kutusu taze havayla ve
+  // kaydedilen sayılarla). Hata fırlatmaz, en çok 7 sn
+  const forecastP = capped<ForecastJobResult>(
+    runForecastJob().catch((e: Error) => ({ status: "error", weather: "error", saved: 0, error: e.message })),
+    FORECAST_JOB_MS,
+    { status: "error", weather: "error", saved: 0, error: "süre doldu" },
+  );
   const configured = isParasutConfigured();
   let alreadySynced = false;
   let sync: { ok: boolean; summary?: string; error?: string } | null = null;
@@ -128,17 +140,19 @@ export async function GET(request: NextRequest) {
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps, weekly: weekly.status };
   };
+  const forecast = await forecastP;
+  const fcStep = { forecast: forecastStep(forecast) };
   let outcome: JobOutcome = { status: "error", steps: {}, message: "İş yarıda kaldı" };
   try {
     // Sistem bölümü (bu sabahki Paraşüt işi) eşitlemenin bugün yapılıp yapılmadığını söyler
     const result = await runReminderDigest("cron", { syncedToday: alreadySynced || Boolean(sync?.ok), sendDeadlineAt: jobStart + JOB_SEND_DEADLINE_MS });
     const ex = await extras();
-    outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps });
-    return NextResponse.json({ ...result, sync, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
+    outcome = dailyOutcome({ sync: syncStep, digest: digestStep(result), ...ex.steps, ...fcStep });
+    return NextResponse.json({ ...result, sync, forecast: forecast.status, ...ex.body, weekly: ex.weekly }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     const ex = await extras();
-    outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps });
-    return NextResponse.json({ status: "error", error: (e as Error).message, sync, ...ex.body, weekly: ex.weekly }, { status: 500 });
+    outcome = dailyOutcome({ sync: syncStep, digest: { code: "error", error: (e as Error).message }, ...ex.steps, ...fcStep });
+    return NextResponse.json({ status: "error", error: (e as Error).message, sync, forecast: forecast.status, ...ex.body, weekly: ex.weekly }, { status: 500 });
   } finally {
     await finishJobRun(runId, outcome);
   }

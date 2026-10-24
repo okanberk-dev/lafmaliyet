@@ -26,6 +26,7 @@ import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadPosChecklist } from "@/server/data/prices";
 import { getDb, schema as s } from "@/server/db";
+import { loadForecastCore } from "@/server/forecast/load";
 import { capped } from "@/server/jobs/capped";
 import { loadOccupancySessions, readKaraokeHours } from "@/server/karaoke/occupancy";
 import { loadUpcoming } from "@/server/notify/digest";
@@ -279,12 +280,9 @@ export function forecastLineInput(core: { forecast: { quality: string; days: rea
   return { quality: core.forecast.quality, days: core.forecast.days.map((d) => ({ date: d.date, amount: d.amount, closed: Boolean(d.closed) })) };
 }
 
-/**
- * Satış tahmini satırının yükleyicisi; null: satır yok. BİRLEŞTİRME (tahmin main'e girince): `import { loadForecastCore }
- * from "@/server/forecast/load";` ve aşağıdaki satır `return (now) => loadForecastCore(now).then(forecastLineInput);`
- */
+/** Satış tahmini satırının yükleyicisi (src/server/forecast/load.ts loadForecastCore; hava ve kayıt sabah işinde yazılır) */
 function forecastLoader(): ((now: Date) => Promise<ReturnType<typeof forecastLineInput>>) | null {
-  return null;
+  return (now) => loadForecastCore(now).then(forecastLineInput);
 }
 
 /** Satış tahmini satırı (tahmin): kalite tam, karma ya da ortalama ise */

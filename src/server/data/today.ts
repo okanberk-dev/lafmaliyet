@@ -4,6 +4,7 @@ import { and, count, eq, exists, isNotNull, isNull, lte, or } from "drizzle-orm"
 
 import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
 import { priceAlert } from "@/lib/calc/price-impact";
+import type { StaffForecastView } from "@/lib/forecast/text";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
@@ -21,6 +22,7 @@ import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
 import { dayWaste } from "@/server/data/waste";
 import { getDb, schema as s } from "@/server/db";
+import { loadForecastCard, loadStaffForecast, type ForecastCardData } from "@/server/forecast/load";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
 import { lastParasutSyncOkAt } from "@/server/jobs/runs";
 import { loadSessions } from "@/server/karaoke/board";
@@ -42,6 +44,11 @@ export interface TodayData {
   /** Yalnız yönetici: Yaklaşan ödemeler kartının listesi (DashboardPayments) */
   payments: UpcomingItem[] | null;
   cafe: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean };
+  /**
+   * Satış tahmini (docs/SATIS-TAHMINI.md): yöneticinin kartı (tutar, aralık, kişi, 7 gün) ve personelin satırı
+   * (yalnız yoğunluk ve tatlı sayısı); her rol yalnız kendininkini yükler
+   */
+  forecast: { admin: ForecastCardData | null; staff: StaffForecastView | null };
   renderedAt: string;
 }
 
@@ -131,6 +138,7 @@ async function stockProgress(month: string, prevMonth: string): Promise<NonNulla
 interface RoleFacts {
   facts: Partial<DayFacts>;
   cashFlags: Map<string, string[]> | null;
+  forecast: TodayData["forecast"];
 }
 
 /**
@@ -138,8 +146,9 @@ interface RoleFacts {
  * (maliyet modeli verilmez: fiyat, sipariş ve teslim kontrolü yüklenmez)
  */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  const [waste, reorder] = await Promise.all([safe(dayWaste(c.day)), safe(loadReorderDay("staff", new Date()))]);
-  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null, reorder }, cashFlags: null };
+  // Satış tahmini: yalnız yoğunluk ve tatlı sayısı (tutar, aralık, kişi önerisi yok; ayar kapalıysa null)
+  const [waste, reorder, busy] = await Promise.all([safe(dayWaste(c.day)), safe(loadReorderDay("staff", new Date())), safe(loadStaffForecast())]);
+  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null, reorder }, cashFlags: null, forecast: { admin: null, staff: busy } };
 }
 
 /**
@@ -151,7 +160,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
   const yesterday = dayContext(now).yesterday;
   // Maliyet modeli bir kez kurulur: zam uyarısı ve mal siparişinin hazır listesi aynı modelle (personelde hiç kurulmaz)
   const modelP = loadModel();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday, overdue, reorder] = await Promise.all([
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday, overdue, reorder, forecast] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -205,10 +214,13 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     safe(loadOverduePayouts()),
     // Mal siparişi: hızlı sayım, sipariş hazır tedarikçiler, teslim kontrolü (docs/MAL-SIPARISI.md)
     safe(modelP.then((model) => loadReorderDay("admin", now, model))),
+    // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
+    safe(loadForecastCard(now)),
   ]);
   return {
     facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday, reorder },
     cashFlags: flags,
+    forecast: { admin: forecast, staff: null },
   };
 }
 
@@ -265,6 +277,7 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
       orders,
       configured,
     },
+    forecast: own.forecast,
     renderedAt: now.toISOString(),
   };
 }
