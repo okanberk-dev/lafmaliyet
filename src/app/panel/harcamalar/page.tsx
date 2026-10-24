@@ -11,6 +11,7 @@ import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CAT
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { expenseExtras } from "@/server/data/expense-extras";
+import { supplierSlugOf } from "@/server/data/suppliers";
 
 import { MonthlyExpenses, type CategoryRow, type EntryRow, type FixedCandidate, type InvoiceItem } from "./monthly-expenses";
 
@@ -83,6 +84,9 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
 
   // Kasadan çıkan fişten yazılan kayıtların fotoğrafı ve kasa günü (veri kümesi dosyalarına dokunmadan)
   const extras = await expenseExtras(month);
+  // Cari borcun gideri: "Cari · Sütaş" rozeti tedarikçinin sayfasına götürür (tutar, gün ve kategori orada düzeltilir)
+  const cariCards = [...new Set([...extras.values()].flatMap((x) => (x.cariCardId !== null ? [x.cariCardId] : [])))];
+  const cariHref = new Map(await Promise.all(cariCards.map(async (id) => [id, await supplierSlugOf(id)] as const)));
   const entries: EntryRow[] = allEntries
     .filter((e) => monthOfDate(e.date) === month)
     .map((e) => {
@@ -99,6 +103,7 @@ async function Content({ searchParams }: { searchParams: PageProps<"/panel/harca
         vat: x?.vat ?? null,
         cashOutId: x?.cashOutId ?? null,
         cashOutDate: x?.cashOutDate ?? null,
+        cari: x?.cariCardId ? { name: x.cariName ?? "", href: cariHref.get(x.cariCardId) ? `/panel/tedarikciler/${cariHref.get(x.cariCardId)}?sekme=hareketler` : null } : null,
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);

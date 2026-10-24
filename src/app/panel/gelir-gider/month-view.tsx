@@ -73,6 +73,7 @@ export function MonthView({
   currentMonth,
   onMonthNote,
   onSave,
+  expectedDebts,
 }: {
   year: number;
   months: string[];
@@ -95,6 +96,8 @@ export function MonthView({
   onMonthNote: (i: number) => void;
   /** Kaydı yapar; hata varsa metnini döndürür */
   onSave: (month: string, field: CellField, rowKey: string, plan: Extract<CellEditPlan, { action: "save" | "clear" }>) => Promise<string | null>;
+  /** Ay → faturası beklenen cari alımlar: Mal alışları'nın altında bilgi satırı (toplamlara katılmaz) */
+  expectedDebts?: Readonly<Record<string, { total: number; href: string | null; name: string }>>;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -361,6 +364,19 @@ export function MonthView({
                   );
                 })}
               </ul>
+            ) : null}
+            {sec.key === "mal" && expectedDebts?.[month]?.total ? (
+              <p className="mx-5 mt-2 text-xs leading-5 text-ink-mute">
+                Faturası beklenen alımlar: {tl(expectedDebts[month].total, 2)} (bu ayın giderinde yok)
+                {expectedDebts[month].href ? (
+                  <>
+                    {" · "}
+                    <Link href={expectedDebts[month].href!} className="font-medium text-info underline-offset-2 hover:underline">
+                      Tedarikçiler
+                    </Link>
+                  </>
+                ) : null}
+              </p>
             ) : null}
           </section>
         );

@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -23,7 +24,8 @@ import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { toastUnreachable } from "@/components/ui/action-error";
 import { DotList } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
-import { dateTR, money } from "@/lib/format";
+import { METHOD_LABEL } from "@/lib/cari/balance";
+import { dateTR, money, tl } from "@/lib/format";
 import {
   CATEGORY_LABEL,
   daysLeftLabel,
@@ -35,7 +37,9 @@ import {
   type ReminderCategory,
   type UpcomingItem,
 } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 import { cn } from "@/lib/utils";
+import { deleteSupplierEntry, payDebt, postponeSupplierDebt, removeAllocations, setSupplierDebtDueDate } from "@/server/actions/cari";
 import { restoreInvoicePayment, setInvoicePaid } from "@/server/actions/invoices";
 import { markReminderDone, postponeInvoice, postponeReminder, restoreReminder, setInvoiceDueDate } from "@/server/actions/reminders";
 
@@ -123,19 +127,41 @@ export function DateTile({ date, daysLeft, size = "md", muted }: { date: string;
 
 // ---------------------------------------------------------------- Kaynak
 
-export type ItemSource = "reminder" | "fixed" | "parasut" | "invoice";
+export type ItemSource = "reminder" | "fixed" | "parasut" | "invoice" | "cari";
 
 export const SOURCE_LABEL: Record<ItemSource, string> = {
   reminder: "Hatırlatıcı",
   fixed: "Sabit gider",
   parasut: "Paraşüt faturası",
   invoice: "Fatura",
+  cari: "Faturasız borç",
 };
 
-/** Hatırlatıcı mı, sabit giderden mi, Paraşüt'ten gelen fatura mı */
+/** Hatırlatıcı mı, sabit giderden mi, Paraşüt'ten gelen fatura mı, faturasız borç mu */
 export function sourceOf(item: UpcomingItem, invoiceSource?: Record<number, string>): ItemSource {
-  if (item.source === "invoice") return invoiceSource?.[item.sourceId] === "parasut" ? "parasut" : "invoice";
-  return item.detail?.startsWith("Sabit giderlerden") ? "fixed" : "reminder";
+  switch (item.source) {
+    case "invoice":
+      return invoiceSource?.[item.sourceId] === "parasut" ? "parasut" : "invoice";
+    case "cari":
+      return "cari";
+    case "reminder":
+      return item.detail?.startsWith("Sabit giderlerden") ? "fixed" : "reminder";
+    default:
+      return unreachable(item.source);
+  }
+}
+
+/** Kartın tür etiketi: faturada ve faturasız borçta kaynak ("Paraşüt faturası"), hatırlatıcıda tür ("Kira") */
+export function itemTypeLabel(item: UpcomingItem, source: ItemSource): string {
+  switch (item.source) {
+    case "invoice":
+    case "cari":
+      return SOURCE_LABEL[source];
+    case "reminder":
+      return CATEGORY_LABEL[categoryOf(item)];
+    default:
+      return unreachable(item.source);
+  }
 }
 
 export const categoryOf = (i: Pick<UpcomingItem, "kind" | "title">) => reminderCategory(i.kind, i.title);
@@ -191,28 +217,64 @@ export function usePaymentActions(hide: (key: string) => void) {
   const pay = (item: UpcomingItem) =>
     start(itemKey(item), async () => {
       hide(itemKey(item));
-      if (item.source === "invoice") {
-        const r = await setInvoicePaid(item.sourceId, true);
-        if (!r.ok) return void toast.error(r.error);
-        // Başka bir yerde zaten ödenmiş (liste eskiydi): geri alınacak bir şey yok
-        if (!r.data.previous.length) return void toast.info(`${item.title} zaten ödenmiş görünüyor`);
-        toast.success(`${item.title} ödendi`, {
-          description: "Fatura ödendi olarak işaretlendi. Sonra da Ödemeler › Son ödenenler'den geri alınabilir.",
-          duration: 8000,
-          // Önceki hâli olduğu gibi döner (ödeme talebi dahil)
-          action: undo(() => restoreInvoicePayment(r.data.previous), "Fatura yeniden ödenmedi"),
-        });
-      } else {
-        const r = await markReminderDone(item.sourceId, item.projected ? item.dueDate : undefined);
-        if (!r.ok) return void toast.error(r.error);
-        const { next, prev, amountCleared } = r.data;
-        // Tekrarlı KDV hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi (geri al geri yazar)
-        const nextText = next ? (amountCleared ? `Sıradaki tarih ${dateTR(next)}; KDV tutarı her ay değiştiği için silindi.` : `Sıradaki tarih ${dateTR(next)}.`) : "Tek seferlikti; hatırlatıcı kapandı.";
-        toast.success(`${item.title} ödendi`, {
-          description: `${nextText} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
-          duration: 8000,
-          action: undo(() => restoreReminder(item.sourceId, prev)),
-        });
+      switch (item.source) {
+        case "invoice": {
+          // Önce tedarikçinin hesabındaki (sayılmamış) ödeme sayılır; kalan ödendi işaretlenir (K6)
+          const r = await setInvoicePaid(item.sourceId, true);
+          if (!r.ok) return void toast.error(r.error);
+          // Başka bir yerde zaten ödenmiş (liste eskiydi): geri alınacak bir şey yok
+          if (!r.data.previous.length) return void toast.info(`${item.title} zaten ödenmiş görünüyor`);
+          const used = r.data.credit?.used ?? 0;
+          const credited = used > 0.005 ? (r.data.credit.closed ? `Hesaptaki ${tl(used, 2)} sayıldı, fatura kapandı. ` : `Hesaptaki ${tl(used, 2)} sayıldı, kalanı ödendi işaretlendi. `) : "";
+          toast.success(`${item.title} ödendi`, {
+            description: `${credited || "Fatura ödendi olarak işaretlendi. "}Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
+            duration: 8000,
+            // Önceki hâli olduğu gibi döner (ödeme talebi ve hesaptan sayılan dahil)
+            action: undo(() => restoreInvoicePayment(r.data.previous), "Fatura yeniden ödenmedi"),
+          });
+          return;
+        }
+        case "cari": {
+          // Faturasız borç: önce hesaptaki para, kalan için bugünkü tarihle kartın ödeme şekliyle ödeme kaydı
+          const r = await payDebt(item.sourceId);
+          if (!r.ok) return void toast.error(r.error);
+          const { paymentId, creditAllocationIds, method } = r.data;
+          const how = [money(r.data.amount), method ? METHOD_LABEL[method] : r.data.credited > 0.005 ? "hesaptaki ödemeden" : null].filter(Boolean).join(" · ");
+          const fix = item.href ? `${item.href}?sekme=hareketler` : null;
+          toast.success(`${item.title} faturasız alım ödendi · ${how}`, {
+            description: "Ödeme Tedarikçiler'de hesap hareketlerine yazıldı; tarihi ya da şekli farklıysa oradan düzeltin.",
+            duration: 8000,
+            // "Düzelt": tedarikçinin Hesap hareketleri (ödemenin günü ve şekli orada değişir)
+            ...(fix ? { cancel: { label: "Düzelt", onClick: () => window.location.assign(fix) } } : {}),
+            action: undo(async () => {
+              if (paymentId) {
+                const d = await deleteSupplierEntry({ id: paymentId });
+                if (!d.ok) return d;
+              }
+              if (creditAllocationIds.length) {
+                const a = await removeAllocations({ allocationIds: creditAllocationIds });
+                if (!a.ok) return a;
+              }
+              return { ok: true as const };
+            }, "Ödeme geri alındı"),
+          });
+          return;
+        }
+        case "reminder": {
+          const r = await markReminderDone(item.sourceId, item.projected ? item.dueDate : undefined);
+          if (!r.ok) return void toast.error(r.error);
+          const { next, prev, amountCleared } = r.data;
+          // Tekrarlı KDV hatırlatıcısının tutarı o döneme aitti: sıradaki dönem için silindi (geri al geri yazar)
+          const nextText = next ? (amountCleared ? `Sıradaki tarih ${dateTR(next)}; KDV tutarı her ay değiştiği için silindi.` : `Sıradaki tarih ${dateTR(next)}.`) : "Tek seferlikti; hatırlatıcı kapandı.";
+          toast.success(`${item.title} ödendi`, {
+            description: `${nextText} Sonra da Ödemeler › Son ödenenler'den geri alınabilir.`,
+            duration: 8000,
+            action: undo(() => restoreReminder(item.sourceId, prev)),
+          });
+          return;
+        }
+        default:
+          unreachable(item.source);
       }
     });
 
@@ -220,24 +282,42 @@ export function usePaymentActions(hide: (key: string) => void) {
     start(itemKey(item), async () => {
       hide(itemKey(item));
       const span = by === "week" ? "1 hafta" : "1 ay";
-      if (item.source === "invoice") {
-        const r = await postponeInvoice(item.sourceId, by);
-        if (!r.ok) return void toast.error(r.error);
-        const { prev } = r.data;
-        toast.success(`${item.title} ${span} ertelendi`, {
-          description: `Yeni vade ${dateTR(r.data.dueDate)}.`,
-          duration: 8000,
-          action: undo(() => setInvoiceDueDate(item.sourceId, prev)),
-        });
-      } else {
-        const r = await postponeReminder(item.sourceId, by);
-        if (!r.ok) return void toast.error(r.error);
-        const { prev, createdId, next, dueDate } = r.data;
-        toast.success(`${item.title} ${span} ertelendi`, {
-          description: next ? `Bu dönem ${dateTR(dueDate)} tarihine alındı; tekrar ${dateTR(next)} tarihinden sürer.` : `Yeni tarih ${dateTR(dueDate)}.`,
-          duration: 8000,
-          action: undo(() => restoreReminder(item.sourceId, prev, createdId)),
-        });
+      switch (item.source) {
+        case "invoice": {
+          const r = await postponeInvoice(item.sourceId, by);
+          if (!r.ok) return void toast.error(r.error);
+          const { prev } = r.data;
+          toast.success(`${item.title} ${span} ertelendi`, {
+            description: `Yeni vade ${dateTR(r.data.dueDate)}.`,
+            duration: 8000,
+            action: undo(() => setInvoiceDueDate(item.sourceId, prev)),
+          });
+          return;
+        }
+        case "cari": {
+          const r = await postponeSupplierDebt(item.sourceId, by);
+          if (!r.ok) return void toast.error(r.error);
+          const { previous } = r.data;
+          toast.success(`${item.title} ${span} ertelendi`, {
+            description: `Yeni vade ${dateTR(r.data.dueDate)}.`,
+            duration: 8000,
+            action: undo(() => setSupplierDebtDueDate(item.sourceId, previous)),
+          });
+          return;
+        }
+        case "reminder": {
+          const r = await postponeReminder(item.sourceId, by);
+          if (!r.ok) return void toast.error(r.error);
+          const { prev, createdId, next, dueDate } = r.data;
+          toast.success(`${item.title} ${span} ertelendi`, {
+            description: next ? `Bu dönem ${dateTR(dueDate)} tarihine alındı; tekrar ${dateTR(next)} tarihinden sürer.` : `Yeni tarih ${dateTR(dueDate)}.`,
+            duration: 8000,
+            action: undo(() => restoreReminder(item.sourceId, prev, createdId)),
+          });
+          return;
+        }
+        default:
+          unreachable(item.source);
       }
     });
 
@@ -420,6 +500,71 @@ export function PaidButton({ onClick, disabled, label, className, compact }: { o
   );
 }
 
+/** Kartın ikinci satırındaki kaynak: hatırlatıcıda "Hatırlatıcı" / "Sabit gider"; faturada ve faturasız borçta yok */
+function sideLabel(item: UpcomingItem, source: ItemSource): string | null {
+  switch (item.source) {
+    case "reminder":
+      return SOURCE_LABEL[source];
+    case "invoice":
+    case "cari":
+      return null;
+    default:
+      return unreachable(item.source);
+  }
+}
+
+/** Hatırlatıcı notu iki satırla sınırlı; faturanın ve faturasız borcun ayrıntısı kısa ve önemli, kesilmez */
+function clampsDetail(item: UpcomingItem): boolean {
+  switch (item.source) {
+    case "reminder":
+      return true;
+    case "invoice":
+    case "cari":
+      return false;
+    default:
+      return unreachable(item.source);
+  }
+}
+
+/**
+ * Kalemin ipucu (docs/TEDARIKCILER.md "Hesap hareketleri"): faturasız alımın faturası olabilir ("Bağla" tedarikçi
+ * sayfasında Faturası geldi'yi açar, "Ayrı alım" adayı kapatır) ya da kasadan ödenmiş olabilir ("İşle" Ödeme ekle'yi
+ * o Kasa satırıyla açar). Satır sarar; bağlantılar dokunmatikte 44 px.
+ */
+export function HintLine({ hint, onSeparate }: { hint: NonNullable<UpcomingItem["hint"]>; onSeparate?: () => void }) {
+  const link = "inline-flex min-h-11 items-center font-medium text-info underline-offset-2 hover:underline sm:pointer-fine:min-h-0";
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs leading-[18px] text-warn">
+      <span className="min-w-0 wrap-anywhere">{hint.text}</span>
+      {(() => {
+        switch (hint.kind) {
+          case "link":
+            return (
+              <>
+                <Link href={hint.href} className={link}>
+                  Bağla
+                </Link>
+                {onSeparate ? (
+                  <button type="button" onClick={onSeparate} className={cn(link, "cursor-pointer")}>
+                    Ayrı alım
+                  </button>
+                ) : null}
+              </>
+            );
+          case "kasa":
+            return (
+              <Link href={hint.href} className={link}>
+                İşle
+              </Link>
+            );
+          default:
+            return unreachable(hint);
+        }
+      })()}
+    </p>
+  );
+}
+
 export function PaymentCard({
   item,
   source,
@@ -429,6 +574,7 @@ export function PaymentCard({
   index = 0,
   anchorDate,
   swipe,
+  onSeparate,
 }: {
   item: UpcomingItem;
   source: ItemSource;
@@ -440,6 +586,8 @@ export function PaymentCard({
   anchorDate?: string | null;
   /** Telefonda sağa kaydırınca ödendi */
   swipe?: boolean;
+  /** İpucundaki "Ayrı alım" (faturasız alımın faturası değil) */
+  onSeparate?: () => void;
 }) {
   const calm = useCalmMotion();
   const category = categoryOf(item);
@@ -516,7 +664,7 @@ export function PaymentCard({
           <p className="text-[15px] leading-5 font-semibold tracking-[-0.01em] text-pretty break-words text-ink">{item.title}</p>
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] leading-5 text-ink-mute">
             <CategoryWell category={category} size="xs" />
-            <span>{item.source === "invoice" ? SOURCE_LABEL[source] : CATEGORY_LABEL[category]}</span>
+            <span>{itemTypeLabel(item, source)}</span>
             {repeat ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-panel px-1.5 py-px text-xs text-ink-soft ring-1 ring-line ring-inset">
                 <Repeat size={11} aria-hidden="true" />
@@ -530,11 +678,11 @@ export function PaymentCard({
               <span className={cn("size-1.5 rounded-full", u.dot)} aria-hidden="true" />
               {daysLeftLabel(item.daysLeft)}
             </span>
-            {item.source === "reminder" ? <span className="text-ink-mute">{SOURCE_LABEL[source]}</span> : null}
+            {sideLabel(item, source) ? <span className="text-ink-mute">{sideLabel(item, source)}</span> : null}
           </DotList>
-          {detail ? (
-            <p className={cn("mt-0.5 text-xs leading-[18px] wrap-anywhere text-ink-mute", item.source === "reminder" && "line-clamp-2")}>{detail}</p>
-          ) : null}
+          {detail ? <p className={cn("mt-0.5 text-xs leading-[18px] wrap-anywhere text-ink-mute", clampsDetail(item) && "line-clamp-2")}>{detail}</p> : null}
+          {item.credited && item.credited > 0.005 ? <p className="mt-0.5 text-xs leading-[18px] text-good">Hesaptaki {tl(item.credited, 2)} düşüldü</p> : null}
+          {item.hint ? <HintLine hint={item.hint} onSeparate={onSeparate} /> : null}
         </div>
         <div className="hidden items-center gap-3 self-center sm:flex">
           <span className="text-[15px] leading-5 font-semibold whitespace-nowrap text-ink tabular">{amount ?? <span className="text-ink-quiet">–</span>}</span>

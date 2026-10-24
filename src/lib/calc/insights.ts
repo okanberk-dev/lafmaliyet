@@ -6,7 +6,7 @@ import {
   PANEL_GROUP_KEYWORDS,
   type PanelFixedGroup,
 } from "../constants";
-import { isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
+import { coveredByAllocations, isPartiallyPaid, openBalance, type BalanceInvoice } from "../cari/balance";
 import { isUnpriced } from "../count-item";
 import { currentMonthTR, daysInMonth, fixedMonthly, shiftMonth, type ListPeriod, type Model, type OnlineMonthCalc, type ProductCalc, type StockSheet } from "./engine";
 import { monthLabel, num } from "../format";
@@ -768,9 +768,16 @@ type InvoiceBalance = BalanceInvoice;
 // takipteyse panelde sayılan). Hatırlatıcılar, Tedarikçiler, Claude ve Excel aynı fonksiyonu kullanır.
 export { isPartiallyPaid, openBalance };
 
+/**
+ * Gerçekten açık fatura: ödenmemiş ve (cari takipte) panelde sayılan ödemeler onu tamamen karşılamıyor. Karşılanan
+ * fatura settle.ts'te kendiliğinden kapanır; arada (eşitleme, sapma) kalanı 0 olan takipli fatura sayılmaz. Cari kaydı
+ * yokken bütün ödenmemişler (bugünkü kural)
+ */
+const isOpenInvoice = (i: InvoiceBalance) => i.unpaid && !coveredByAllocations(i);
+
 /** Ödenmemiş faturaların sayısı ve kalan borç toplamı */
 export function unpaidSummary(invoices: InvoiceBalance[]) {
-  const open = invoices.filter((i) => i.unpaid);
+  const open = invoices.filter(isOpenInvoice);
   return {
     count: open.length,
     total: sum(open.map(openBalance)),
@@ -939,7 +946,7 @@ export function alerts(model: Model, month: string): Alert[] {
       href: `/panel/sayim?ay=${prev}`,
     });
   }
-  const unpaid = model.ds.invoices.filter((i) => i.unpaid);
+  const unpaid = model.ds.invoices.filter(isOpenInvoice);
   if (unpaid.length) {
     out.push({
       level: "warning",

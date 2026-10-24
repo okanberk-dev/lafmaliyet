@@ -6,12 +6,14 @@ import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
 
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
-import { dueNotifications, laterInvoiceItems, todayTR, upcomingItems, type UpcomingItem } from "@/lib/reminders";
+import { upcomingWithCari } from "@/lib/cari/upcoming";
+import { dateTR, tl } from "@/lib/format";
+import { addDays, dueNotifications, todayTR, type UpcomingHint, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { loadTermDays } from "@/server/data/suppliers";
+import { DEBT_INVOICE_WAIT_DAYS, loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
@@ -23,15 +25,17 @@ import { loadNotifySettings } from "./settings";
 export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
 
 /**
- * Etkin hatırlatıcılar + ödenmemiş faturalardan yaklaşan ödemeler. Vadesiz faturanın tahmini vadesi tedarikçinin
- * cari kartındaki vade gününden (Tedarikçiler; kart adla ve vergi noyla bulunur), yoksa genel ayardan. Zil her
- * açılışta çağırır: faturalar tek sorgu, kartın bulunması tek gruplu sorgu (loadTermDays).
+ * Etkin hatırlatıcılar, ödenmemiş faturalar ve tedarikçilerin faturasız borçlarından (cari) yaklaşan ödemeler.
+ * Vadesiz faturanın tahmini vadesi tedarikçinin cari kartındaki vade gününden (Tedarikçiler; kart adla ve vergi noyla
+ * bulunur), yoksa genel ayardan. Tedarikçinin hesabındaki sayılmamış ödeme okuma anında vade sırasıyla düşülür
+ * (src/lib/cari/upcoming.ts; tamamen karşılananlar `covered`). Faturasız alımın faturası olabilecek fatura ve kasadan
+ * ödenmiş olabilecek kalem sessizdir (ipucuyla; sabah e-postası hatırlatmaz). Zil her açılışta çağırır: faturalar tek
+ * sorgu, cari hesap tek okuma (loadCariIndex; kayıt yokken kayıt sorguları boş döner).
  */
 export async function loadUpcoming(today = todayTR()) {
   const db = getDb();
-  const [settings, reminders, rows, termDays] = await Promise.all([
-    loadNotifySettings(),
-    db.select().from(s.reminders).orderBy(asc(s.reminders.dueDate)),
+  // Bir kez çalışan söz (sorgu kurucusu her `then`de yeniden çalışırdı): liste ve cari okuması paylaşır
+  const rowsP = Promise.resolve(
     db
       .select({
         id: s.invoices.id,
@@ -47,15 +51,91 @@ export async function loadUpcoming(today = todayTR()) {
       })
       .from(s.invoices)
       .where(eq(s.invoices.unpaid, true)),
-    loadTermDays(),
+  );
+  const [settings, reminders, rows, index] = await Promise.all([
+    loadNotifySettings(),
+    db.select().from(s.reminders).orderBy(asc(s.reminders.dueDate)),
+    rowsP,
+    loadCariIndex(today, { unpaid: rowsP.then((r) => r.map((i) => ({ date: i.date, supplier: i.supplier, tax: i.supplierTaxNumber }))) }),
   ]);
-  const invoices = rows.map(({ supplierTaxNumber, ...i }) => ({ ...i, termDays: i.dueDate ? null : termDays(i.supplier, supplierTaxNumber) }));
+  const invoices = rows.map(({ supplierTaxNumber, ...i }) => ({
+    ...i,
+    termDays: i.dueDate ? null : index.termDays(i.supplier, supplierTaxNumber),
+    cardId: index.resolveCard(i.supplier, supplierTaxNumber),
+  }));
   const opts = { invoiceDaysBefore: settings.invoiceDaysBefore, invoiceTermDays: settings.invoiceTermDays };
-  const items = upcomingItems(reminders, invoices, today, opts);
-  // Takvim için: vadesi listenin ufkundan sonra olan faturalar (listede ve e-postada yer almaz)
-  const laterInvoices: UpcomingItem[] = laterInvoiceItems(invoices, today, opts);
-  return { today, settings, reminders, items, laterInvoices };
+  const debts = index.openDebts.flatMap((d) => {
+    const card = index.cards.get(d.supplierId);
+    return card ? [{ ...d, supplier: card.name, remaining: d.remaining, cardId: card.id, termDays: card.paymentTermDays }] : [];
+  });
+  const hints = cariHints(index, invoices, debts);
+  const up = upcomingWithCari({ reminders, invoices, debts, credit: index.credit, hints, hrefOf: index.hrefOf }, today, opts);
+  const items = up.items;
+  // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
+  const laterInvoices: UpcomingItem[] = up.later;
+  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index, today) };
 }
+
+/** Kalemlerin ipuçları: faturasız alımın faturası olabilir (güçlü aday, K17) ve kasadan ödenmiş olabilir (K16) */
+function cariHints(
+  index: CariIndex,
+  invoices: readonly { id: number; date: string; invoiceNo: string | null; cardId: number | null }[],
+  debts: readonly { id: number; date: string; cardId: number }[],
+): Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }> {
+  const out = new Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }>();
+  if (!index.strong.length && !index.kasaPending.length) return out;
+  for (const c of index.strong) {
+    const href = index.hrefOf(c.cardId);
+    if (!href || out.has(`invoice:${c.invoiceId}`)) continue;
+    const what = c.debts.map((d) => `${dateTR(d.date).slice(0, 5)} · ${d.description?.trim() || "alım"}`);
+    out.set(`invoice:${c.invoiceId}`, {
+      quiet: "link",
+      hint: { kind: "link", text: `Faturasız alımın faturası olabilir${what.length ? ` (${what.join(", ")})` : ""}`, href: `${href}?bagla=${c.invoiceId}`, invoiceId: c.invoiceId, debtIds: c.debtIds },
+    });
+  }
+  if (!index.kasaPending.length) return out;
+  const items = [
+    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId }] : [])),
+    ...debts.map((d) => ({ ref: `cari:${d.id}`, date: d.date, cardId: d.cardId })),
+  ];
+  for (const it of items) {
+    if (out.has(it.ref)) continue;
+    // Kalemin gününden (aynı gün dahil: teslimatta şoföre ödenen) sonraki, en eski işlenmemiş satır
+    const line = index.kasaPending.find((l) => l.cardId === it.cardId && l.date >= it.date);
+    const href = line ? index.hrefOf(it.cardId) : undefined;
+    if (!line || !href) continue;
+    out.set(it.ref, {
+      quiet: "kasa",
+      hint: {
+        kind: "kasa",
+        text: `Kasadan ödenmiş olabilir: ${dateTR(line.date).slice(0, 5)} ${line.kind === "teslim" ? "Teslim" : "Alışveriş"} · ${line.store ?? ""} ${tl(line.amount, 2)}`,
+        href: `${href}?kasa=${line.id}`,
+        cashOutId: line.id,
+      },
+    });
+  }
+  return out;
+}
+
+/** Ödemeler, zil ve Genel bakış için cari hesabın özeti: açık faturasız borçlar, hesaptaki para, işlenmemiş Kasa satırları, uyarılar */
+function cariSummary(index: CariIndex, today: string) {
+  const lateFrom = addDays(today, -DEBT_INVOICE_WAIT_DAYS);
+  const cardName = (id: number) => index.cards.get(id)?.name ?? "";
+  const late = index.openDebts
+    .filter((d) => d.costMode === "fatura" && d.date <= lateFrom && (!d.remindAfter || d.remindAfter <= today))
+    .map((d) => ({ id: d.id, cardId: d.supplierId, name: cardName(d.supplierId), date: d.date, description: d.description, amount: d.remaining, href: index.hrefOf(d.supplierId) ?? null }));
+  const strong = index.strong.map((c) => ({ cardId: c.cardId, name: cardName(c.cardId), invoiceId: c.invoiceId, debtIds: c.debtIds, href: index.hrefOf(c.cardId) ?? null }));
+  return {
+    debts: index.openDebts.length,
+    debtTotal: Math.round(index.openDebts.reduce((a, d) => a + d.remaining, 0) * 100) / 100,
+    credit: Math.round([...index.credit.values()].reduce((a, v) => a + v, 0) * 100) / 100,
+    kasaPending: { count: index.kasaPending.length, total: Math.round(index.kasaPending.reduce((a, l) => a + l.amount, 0) * 100) / 100 },
+    late,
+    strong,
+  };
+}
+
+export type CariUpcomingSummary = ReturnType<typeof cariSummary>;
 
 export type DigestResult =
   /** `boxes`: haber olan ek kutuların konu parçaları, parçası olmayanın adı (yalnız varsa; digest-extras.ts) */

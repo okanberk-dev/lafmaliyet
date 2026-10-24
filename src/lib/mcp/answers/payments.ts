@@ -1,11 +1,13 @@
 /*
- * odemeler: Ödemeler ekranındaki liste (ödenmemiş faturalar ve hatırlatıcılar; upcomingItems, summarize,
- * inSummaryRange) ve istenirse 6 haftalık nakit planının haftalık özeti (insight: buildCashPlan, planNotes).
- * Hatırlatıcı notları gönderilmez; başlıklar (yöneticinin yazdığı) gider. Saf; tests/claude-araclar.test.ts.
+ * odemeler: Ödemeler ekranındaki liste (ödenmemiş faturalar, tedarikçilerin faturasız borçları ve hatırlatıcılar;
+ * upcomingWithCari, summarize, inSummaryRange) ve istenirse 6 haftalık nakit planının haftalık özeti (insight:
+ * buildCashPlan, planNotes). Hatırlatıcı notları gönderilmez; başlıklar (yöneticinin yazdığı) gider. Saf;
+ * tests/claude-araclar.test.ts.
  */
 
 import { planNotes, rangeText, weekTitle, type CashPlan } from "../../cash-plan";
 import { inSummaryRange, REMINDER_REPEATS, summarize, SUMMARY_RANGES, type SummaryRange, type UpcomingItem } from "../../reminders";
+import { unreachable } from "../../unreachable";
 import type { OdemelerInput } from "../schemas";
 import { cleanName, money, num, panelUrl, r2 } from "./common";
 
@@ -14,7 +16,7 @@ export interface PaymentsAnswer {
   ozet: Record<SummaryRange, { adet: number; toplam: number }>;
   kalemler: {
     baslik: string;
-    tur: "fatura" | "hatırlatıcı";
+    tur: "fatura" | "hatırlatıcı" | "cari borç";
     vade: string;
     kalanGun: number;
     durum: "gecikti" | "bugün" | "yakında" | "sonra";
@@ -40,10 +42,49 @@ const REPEAT = new Map(REMINDER_REPEATS.map((r) => [r.value, r.label]));
 const flat = (s: string) => s.replace(/\u00a0/g, " ");
 
 /**
- * Vadesi yazılmamış faturanın vadesi tahminidir: fatura satırının açıklaması "vade tahmini (N gün)" der
- * (src/lib/reminders.ts invoiceItem; tests/claude-araclar.test.ts bu metni sabitler)
+ * Vadesi yazılmamış faturanın ve faturasız borcun vadesi tahminidir: satırın açıklaması "vade tahmini (N gün)" der
+ * (src/lib/reminders.ts invoiceItem, cariItem; tests/claude-araclar.test.ts bu metni sabitler)
  */
-export const isEstimatedDue = (i: Pick<UpcomingItem, "source" | "detail">) => i.source === "invoice" && /vade tahmini/.test(i.detail ?? "");
+export function isEstimatedDue(i: Pick<UpcomingItem, "source" | "detail">): boolean {
+  switch (i.source) {
+    case "invoice":
+    case "cari":
+      return /vade tahmini/.test(i.detail ?? "");
+    case "reminder":
+      return false;
+    default:
+      return unreachable(i.source);
+  }
+}
+
+/** Kalemin türü (çıktıdaki `tur`) */
+function typeOf(i: Pick<UpcomingItem, "source">): PaymentsAnswer["kalemler"][number]["tur"] {
+  switch (i.source) {
+    case "invoice":
+      return "fatura";
+    case "cari":
+      return "cari borç";
+    case "reminder":
+      return "hatırlatıcı";
+    default:
+      return unreachable(i.source);
+  }
+}
+
+/** Girdideki kaynak süzgecinin kalemi alıp almadığı */
+function inSource(i: Pick<UpcomingItem, "source">, kaynak: OdemelerInput["kaynak"]): boolean {
+  if (kaynak === "hepsi") return true;
+  switch (i.source) {
+    case "invoice":
+      return kaynak === "fatura";
+    case "cari":
+      return kaynak === "cari";
+    case "reminder":
+      return kaynak === "hatirlatici";
+    default:
+      return unreachable(i.source);
+  }
+}
 
 export function upcomingPayments(
   up: { today: string; items: UpcomingItem[]; invoiceTermDays: number },
@@ -52,7 +93,7 @@ export function upcomingPayments(
   ctx: { base: string },
 ): PaymentsAnswer {
   const { today } = up;
-  const items = up.items.filter((i) => input.kaynak === "hepsi" || (input.kaynak === "fatura" ? i.source === "invoice" : i.source === "reminder"));
+  const items = up.items.filter((i) => inSource(i, input.kaynak));
   const sums = summarize(items, today);
   const ozet = Object.fromEntries(SUMMARY_RANGES.map((r) => [r, { adet: sums[r].count, toplam: r2(sums[r].total) }])) as PaymentsAnswer["ozet"];
   const inRange = items.filter((i) => inSummaryRange(i.dueDate, input.aralik, today));
@@ -60,11 +101,12 @@ export function upcomingPayments(
 
   const hesap = SUMMARY_RANGES.map((r) => `${RANGE_LABEL[r]}: ${num(ozet[r].adet)} ödeme, ${money(ozet[r].toplam)}`);
   hesap.push("Bu hafta ve bu ay bugünden başlar; gecikmişler ayrıca sayılır. Faturada tutar kalan borçtur (kısmen ödenmişte kalan).");
+  if (items.some((i) => i.credited)) hesap.push("Tedarikçinin hesabındaki sayılmamış ödeme borçlarından düşüldü (en eski vadeden)");
   if (unknown) hesap.push(`Tutarı girilmemiş ${num(unknown)} hatırlatıcı toplama girmedi`);
   hesap.push(`Vadesi yazılmamış faturanın vadesi: fatura günü + tedarikçinin vade günü (kartta yoksa ${num(up.invoiceTermDays)} gün)`);
 
   let nakitPlani: PaymentsAnswer["nakitPlani"] = undefined;
-  const kaynak = ["Ödemeler ekranındaki liste: ödenmemiş faturalar ve etkin hatırlatıcılar; banka hareketi değil, 'ödendi' panelin işareti"];
+  const kaynak = ["Ödemeler ekranındaki liste: ödenmemiş faturalar, tedarikçilere faturasız borçlar ve etkin hatırlatıcılar; banka hareketi değil, 'ödendi' panelin işareti"];
   if (input.nakitPlani) {
     if (plan) {
       const p = plan.plan;
@@ -96,7 +138,7 @@ export function upcomingPayments(
     ozet,
     kalemler: inRange.map((i) => ({
       baslik: cleanName(i.title),
-      tur: i.source === "invoice" ? "fatura" : "hatırlatıcı",
+      tur: typeOf(i),
       vade: i.dueDate,
       kalanGun: i.daysLeft,
       durum: STATUS[i.status],

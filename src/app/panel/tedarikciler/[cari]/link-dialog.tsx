@@ -1,12 +1,13 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
+import { Search, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/form";
 import { SHEET_BTN } from "@/components/ui/mobile-filters";
 import { debtLabel, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { round2 } from "@/lib/cari/balance";
@@ -17,6 +18,7 @@ import { dateTR, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { linkDebtsToInvoice, unlinkDebts } from "@/server/actions/cari";
+import { searchLinkInvoices } from "@/server/actions/cari-options";
 
 import { CARI_UNDO_MS, PastConfirm } from "../cari-ui";
 
@@ -37,6 +39,9 @@ export interface LinkInvoice {
   discount: number;
   category: string;
 }
+
+/** Başka tedarikçide görünen fatura (R3d): kartsız adda diğer ad önerisi, başka kartta o kartın adı */
+type ForeignInvoice = LinkInvoice & { supplier: string; owner: { cardId: number; name: string } | null; alias: { name: string; count: number } | null };
 
 /**
  * Faturası geldi / Faturaya bağla (§5.2): bir ya da birkaç faturasız alım tek faturaya bağlanır. Önerilen faturalar
@@ -72,6 +77,12 @@ export function LinkDialog({
   const [pastOk, setPastOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, run] = useActionTransition();
+  // Başka faturalar: bütün faturalarda arama; seçilen fatura başka tedarikçide görünüyor
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<ForeignInvoice[] | null>(null);
+  const [foreign, setForeign] = useState<ForeignInvoice | null>(null);
+  const [addAlias, setAddAlias] = useState(true);
+  const [searching, runSearch] = useActionTransition();
 
   const main = debts.filter((d) => d.costMode !== "devir");
   const other = debts.filter((d) => d.costMode === "devir");
@@ -81,7 +92,7 @@ export function LinkDialog({
   const to = dates.length ? addDays(dates[dates.length - 1], LINK_WINDOW.after) : null;
   const suggested = invoices.filter((i) => from && to && i.date >= from && i.date <= to).sort((a, b) => a.date.localeCompare(b.date));
   const rest = invoices.filter((i) => !suggested.includes(i)).sort((a, b) => b.date.localeCompare(a.date));
-  const invoice = invoices.find((i) => i.id === invoiceId) ?? null;
+  const invoice = invoices.find((i) => i.id === invoiceId) ?? (foreign && foreign.id === invoiceId ? foreign : null);
   const debtTotal = round2(selected.reduce((a, d) => a + d.amount, 0));
   const net = invoice ? round2(invoice.amount - invoice.discount) : 0;
   const preview =
@@ -111,8 +122,9 @@ export function LinkDialog({
     if (!invoice) return void setError("Fatura seçin");
     if (past.length && !pastOk) return void setError("Geçmiş ayın değişeceğini onaylayın");
     const debtIds = selected.map((d) => d.id);
+    const alias = Boolean(foreign && foreign.id === invoice.id && foreign.alias && addAlias);
     run(async () => {
-      const r = await linkDebtsToInvoice({ cardId, debtIds, invoiceId: invoice.id, confirmPast: pastOk ? past.map((e) => e.month) : [] });
+      const r = await linkDebtsToInvoice({ cardId, debtIds, invoiceId: invoice.id, addAlias: alias, confirmPast: pastOk ? past.map((e) => e.month) : [] });
       if (!r.ok) return void setError(r.error);
       if (r.data.needs === "past") {
         setPast(r.data.effects);
@@ -120,8 +132,9 @@ export function LinkDialog({
         return;
       }
       const months = r.data.effects.map((e) => e.month);
+      const where = r.data.aliasAdded ? ` · ‘${r.data.aliasAdded}’ diğer ad oldu` : r.data.elsewhere ? ` · fatura ${r.data.elsewhere} tedarikçisinde görünmeye devam eder` : "";
       toast.success("Faturaya bağlandı", {
-        description: `${supplierName} · ${selected.length} alım (${tl(debtTotal, 2)}) → ${invoiceLabel(invoice)} (${tl(invoice.payable, 2)})`,
+        description: `${supplierName} · ${selected.length} alım (${tl(debtTotal, 2)}) → ${invoiceLabel(invoice)} (${tl(invoice.payable, 2)})${where}`,
         duration: CARI_UNDO_MS,
         action: {
           label: "Geri al",
@@ -153,6 +166,15 @@ export function LinkDialog({
       </label>
     </li>
   );
+  const search = () => {
+    if (q.trim().length < 2) return void setError("Aramak için en az iki harf yazın");
+    setError(null);
+    runSearch(async () => {
+      const r = await searchLinkInvoices({ cardId, q });
+      if (!r.ok) return void setError(r.error);
+      setFound(r.data);
+    });
+  };
   const invoiceRow = (i: LinkInvoice) => {
     const on = invoiceId === i.id;
     return (
@@ -161,12 +183,19 @@ export function LinkDialog({
         type="button"
         role="radio"
         aria-checked={on}
-        onClick={() => setInvoiceId(i.id)}
+        onClick={() => {
+          setInvoiceId(i.id);
+          const f = found?.find((x) => x.id === i.id);
+          setForeign(f ?? null);
+        }}
         className={cn("flex min-h-12 w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left text-sm", on ? "bg-panel font-medium text-ink" : "text-ink-soft hover:bg-panel/60")}
       >
         <span className="min-w-0 flex-1 break-words">
           {invoiceLabel(i)}
-          <span className="block text-xs font-normal text-ink-mute tabular">{dateTR(i.date)}</span>
+          <span className="block text-xs font-normal text-ink-mute tabular">
+            {dateTR(i.date)}
+            {"supplier" in i ? ` · ${(i as ForeignInvoice).supplier}` : ""}
+          </span>
         </span>
         <span className="shrink-0 tabular">{tl(i.payable, 2)}</span>
         <span className={cn("size-5 shrink-0 rounded-full", on ? "border-[6px] border-ink bg-surface" : "ring-1 ring-line-strong ring-inset")} aria-hidden="true" />
@@ -217,6 +246,52 @@ export function LinkDialog({
             {rest.length ? <p className="bg-panel/60 px-3.5 py-1.5 text-xs font-medium text-ink-mute">Bu tedarikçinin diğer faturaları</p> : null}
             {rest.map(invoiceRow)}
             {!invoices.length ? <p className="px-3.5 py-3 text-[13px] text-ink-mute">Bağlanabilecek fatura yok.</p> : null}
+          </div>
+          {/* Başka faturalar: fatura başka bir adla (ya da başka tedarikçide) gelmiş olabilir */}
+          <div className="mt-3 space-y-2">
+            <p className="text-[13px] font-medium text-ink-soft">Başka faturalar</p>
+            <div className="flex gap-2">
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    search();
+                  }
+                }}
+                placeholder="Tedarikçi adı ya da fatura no"
+                aria-label="Başka faturalarda ara"
+                className="min-w-0 flex-1"
+              />
+              <Button variant="secondary" onClick={search} disabled={searching} className="shrink-0 max-sm:h-11">
+                <Search size={15} aria-hidden="true" /> Ara
+              </Button>
+            </div>
+            {found ? (
+              found.length ? (
+                <div role="radiogroup" aria-label="Başka faturalar" className="max-h-60 divide-y divide-line overflow-y-auto overscroll-contain rounded-2xl bg-surface ring-1 ring-line-strong">
+                  {found.map(invoiceRow)}
+                </div>
+              ) : (
+                <p className="text-[13px] text-ink-mute">Eşleşen fatura yok.</p>
+              )
+            ) : null}
+            {foreign && foreign.id === invoiceId ? (
+              foreign.alias ? (
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] leading-5 text-ink">
+                  <input type="checkbox" checked={addAlias} onChange={(e) => setAddAlias(e.target.checked)} className="mt-0.5 size-4 shrink-0 cursor-pointer rounded accent-ink pointer-coarse:size-5" />
+                  <span>
+                    ‘{foreign.alias.name}’ {supplierName} için diğer ad olsun (o adla {foreign.alias.count} fatura bu tedarikçiye geçer)
+                  </span>
+                </label>
+              ) : foreign.owner ? (
+                <p className="flex items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn" role="status">
+                  <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>Fatura {foreign.owner.name} tedarikçisinde görünmeye devam eder; ad eklenmez.</span>
+                </p>
+              ) : null
+            ) : null}
           </div>
         </fieldset>
         {preview ? <p className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft tabular">{preview}</p> : null}

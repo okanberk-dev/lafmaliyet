@@ -5,6 +5,7 @@
  */
 import { supplierMatchKey } from "../../app/panel/faturalar/rules";
 import { COMMISSION_CATEGORY, SEPARATE_CATEGORIES } from "../constants";
+import { tl } from "../format";
 import { addDays, daysBetween } from "../reminders";
 import { round2 } from "./balance";
 import type { CariDebt, CostMode } from "./account";
@@ -160,4 +161,49 @@ export const PARASUT_RECENT_DAYS = 90;
 export function defaultCostMode(invoices: readonly { origin?: string | null; date: string }[], today: string): CostMode {
   const since = addDays(today, -PARASUT_RECENT_DAYS);
   return invoices.some((i) => i.origin === "parasut" && i.date >= since && i.date <= today) ? "fatura" : "gider";
+}
+
+// ---------------------------------------------------------------- Genel bakış uyarıları (§6.7)
+
+/** Genel bakış'ın "Dikkat edilmesi gerekenler"i (insights.ts Alert ile aynı biçim) */
+export interface CariAlert {
+  level: "danger" | "warning" | "info";
+  title: string;
+  detail: string;
+  href?: string;
+}
+
+/**
+ * Cari hesabın uyarıları: faturası 45 gündür gelmeyen "Faturası gelecek" alımlar (§5.2; "Beklemeye devam" denmişse
+ * süresi dolana kadar yok) ve faturası gelmiş olabilecek alımlar (güçlü aday; K17). Bağlantı tedarikçinin sayfası.
+ */
+export function cariAlerts(input: {
+  late: readonly { name: string; date: string; description: string | null; amount: number; href: string | null }[];
+  strong: readonly { name: string; href: string | null }[];
+}): CariAlert[] {
+  const out: CariAlert[] = [];
+  const day = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
+  if (input.late.length) {
+    const first = input.late[0];
+    out.push({
+      level: "warning",
+      title: input.late.length === 1 ? "Faturası 45 gündür gelmeyen alım" : `Faturası 45 gündür gelmeyen ${input.late.length} alım`,
+      detail: input.late
+        .slice(0, 3)
+        .map((d) => `${d.name}: ${day(d.date)} · ${d.description?.trim() || "alım"} · ${tl(d.amount, 2)}`)
+        .join(", "),
+      ...(first.href ? { href: `${first.href}?sekme=hareketler` } : {}),
+    });
+  }
+  if (input.strong.length) {
+    const names = [...new Set(input.strong.map((c) => c.name))];
+    const first = input.strong[0];
+    out.push({
+      level: "info",
+      title: input.strong.length === 1 ? "Faturasız alımın faturası gelmiş olabilir" : `${input.strong.length} faturasız alımın faturası gelmiş olabilir`,
+      detail: `${names.slice(0, 3).join(", ")}: bağlanana kadar fatura Ödemeler'de sessiz, nakit planında yok. Tedarikçi sayfasında Bağla ya da Ayrı alım.`,
+      ...(first.href ? { href: first.href } : {}),
+    });
+  }
+  return out;
 }

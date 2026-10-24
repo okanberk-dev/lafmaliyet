@@ -10,25 +10,36 @@ export interface MonthEffect {
   month: string;
   /** Giderin değişimi (artı: artar) */
   delta: number;
+  /** Toplamı değiştirmeden kategoriler arasında yer değiştiren tutar (yalnız kategori değişince) */
+  moved?: number;
 }
 
-/** Gider değişimlerinden bugünün ayından eski ayların etkisi, ay sırasıyla (değişmeyen ay yok) */
-export function pastMonthEffects(changes: readonly { date: string; delta: number }[], today: string): MonthEffect[] {
+/**
+ * Gider değişimlerinden bugünün ayından eski ayların etkisi, ay sırasıyla (değişmeyen ay yok). `moved`: toplamı
+ * değiştirmeyen kategori değişikliği; o ay da geçmiş ay onayı ister (K18: kategori de gider satırını değiştirir)
+ */
+export function pastMonthEffects(changes: readonly { date: string; delta: number; moved?: number }[], today: string): MonthEffect[] {
   const current = today.slice(0, 7);
-  const byMonth = new Map<string, number>();
+  const byMonth = new Map<string, { delta: number; moved: number }>();
   for (const c of changes) {
     const m = c.date.slice(0, 7);
     if (m >= current) continue;
-    byMonth.set(m, (byMonth.get(m) ?? 0) + c.delta);
+    const cur = byMonth.get(m) ?? { delta: 0, moved: 0 };
+    byMonth.set(m, { delta: cur.delta + c.delta, moved: cur.moved + (c.moved ?? 0) });
   }
   return [...byMonth]
-    .map(([month, delta]) => ({ month, delta: round2(delta) }))
-    .filter((e) => Math.abs(e.delta) >= 0.005)
+    .map(([month, v]) => {
+      const delta = round2(v.delta);
+      const moved = round2(v.moved);
+      return Math.abs(delta) < 0.005 && moved >= 0.005 ? { month, delta: 0, moved } : { month, delta };
+    })
+    .filter((e) => Math.abs(e.delta) >= 0.005 || (e.moved ?? 0) >= 0.005)
     .sort((a, b) => a.month.localeCompare(b.month));
 }
 
-/** Önizleme satırı: "Eylül 2026 gideri 1.200,00 ₺ azalır (geçmiş ay)" */
+/** Önizleme satırı: "Eylül 2026 gideri 1.200,00 ₺ azalır (geçmiş ay)"; yalnız kategori değişiyorsa yer değiştirme */
 export function pastMonthText(e: MonthEffect): string {
+  if (Math.abs(e.delta) < 0.005 && e.moved) return `${monthLabel(e.month)} gideri: ${tl(e.moved, 2)} başka kategoriye geçer (geçmiş ay; toplam değişmez)`;
   return `${monthLabel(e.month)} gideri ${tl(Math.abs(e.delta), 2)} ${e.delta < 0 ? "azalır" : "artar"} (geçmiş ay)`;
 }
 

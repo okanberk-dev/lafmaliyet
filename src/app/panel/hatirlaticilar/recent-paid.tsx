@@ -6,13 +6,44 @@ import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
+import { METHOD_LABEL } from "@/lib/cari/balance";
 import { dateTimeTR, dateTR, money, num } from "@/lib/format";
 import { recentPaidKey, RECENT_PAID_DAYS, type RecentPaid } from "@/lib/recent-paid";
+import { unreachable } from "@/lib/unreachable";
 import { undoRecentPaid } from "@/server/actions/reminders";
+
+/** Geri alınınca bildirim: başlık ve açıklama */
+function undoneText(e: RecentPaid): { title: string; description: string } {
+  switch (e.kind) {
+    case "invoice":
+      return { title: `${e.title} yeniden ödenmedi`, description: "Fatura ödenmemişler listesine döndü." };
+    case "reminder":
+      return { title: `${e.title} geri alındı`, description: "Hatırlatıcı ödenmeden önceki tarihine döndü." };
+    case "cari":
+      return { title: `${e.title} ödemesi silindi`, description: "Ödeme sayıldığı kalemlerden çıktı; kapattığı kalemler yeniden açık." };
+    default:
+      return unreachable(e.kind);
+  }
+}
+
+/** Satırın türü: "Fatura", "Hatırlatıcı", "Hesaba ödeme" */
+function kindText(e: RecentPaid): string {
+  switch (e.kind) {
+    case "invoice":
+      return "Fatura";
+    case "reminder":
+      return "Hatırlatıcı";
+    case "cari":
+      return "Hesaba ödeme";
+    default:
+      return unreachable(e.kind);
+  }
+}
 
 /**
  * Son ödenenler: "Ödendi" bildirimindeki 8 saniyelik "Geri al" kaçırıldıysa, yanlışlıkla ödendi denen fatura ya da
- * hatırlatıcı 30 gün boyunca buradan geri alınır (fatura ödenmemişe, hatırlatıcı önceki tarihine döner).
+ * hatırlatıcı 30 gün boyunca buradan geri alınır (fatura ödenmemişe, hatırlatıcı önceki tarihine döner); tedarikçiye
+ * girilen ödeme silinir.
  */
 export function RecentPaidList({ items }: { items: RecentPaid[] }) {
   const [pending, start] = useActionTransition();
@@ -24,9 +55,8 @@ export function RecentPaidList({ items }: { items: RecentPaid[] }) {
       hide(recentPaidKey(e));
       const r = await undoRecentPaid(e.kind, e.id);
       if (!r.ok) return void toast.error(r.error);
-      toast.success(e.kind === "invoice" ? `${e.title} yeniden ödenmedi` : `${e.title} geri alındı`, {
-        description: e.kind === "invoice" ? "Fatura ödenmemişler listesine döndü." : "Hatırlatıcı ödenmeden önceki tarihine döndü.",
-      });
+      const t = undoneText(e);
+      toast.success(t.title, { description: t.description });
     });
 
   return (
@@ -45,12 +75,14 @@ export function RecentPaidList({ items }: { items: RecentPaid[] }) {
             <div className="min-w-0">
               <p className="text-sm font-medium break-words text-ink">{e.title}</p>
               <p className="mt-0.5 text-xs break-words text-ink-mute">
-                {e.kind === "invoice" ? "Fatura" : "Hatırlatıcı"}
+                {kindText(e)}
                 {e.dueDate ? ` · ${dateTR(e.dueDate)}` : ""}
-                {e.amount ? <span className="tabular"> · {money(e.amount)}</span> : null} · ödendi {dateTimeTR(e.at)}
+                {e.amount ? <span className="tabular"> · {money(e.amount)}</span> : null}
+                {e.kind === "cari" && e.method ? ` · ${METHOD_LABEL[e.method]}` : ""}
+                {e.kind === "cari" && e.items ? ` · ${num(e.items)} kalem` : ""} · {e.kind === "cari" ? "girildi" : "ödendi"} {dateTimeTR(e.at)}
               </p>
             </div>
-            <Button size="sm" variant="secondary" disabled={pending} onClick={() => undo(e)} aria-label={`${e.title}: ödendi işaretini geri al`} className="shrink-0">
+            <Button size="sm" variant="secondary" disabled={pending} onClick={() => undo(e)} aria-label={`${e.title}: ${e.kind === "cari" ? "ödemeyi geri al" : "ödendi işaretini geri al"}`} className="shrink-0">
               <RotateCcw size={14} aria-hidden="true" /> Geri al
             </Button>
           </li>

@@ -123,3 +123,35 @@ test("cari eylemleri: her dışa aktarım ilk satırda requireAdmin, yardımcı 
   const guarded = [...text.matchAll(/^export async function (\w+)\([^)]*\)[^{]*\{\n\s+return attempt\(async \(\) => \{\n\s+const me = await requireAdmin\(\);/gm)].length;
   assert.equal(guarded, exports.length, "her eylem yönetici denetimiyle başlar");
 });
+
+test("ödeme kaleminin kaynağı (K25): fatura ve cari dalları switch ile, sonu unreachable; karşılaştırmayla dallanan yer yok", () => {
+  for (const f of sources) {
+    assert.doesNotMatch(f.text, /\bsource\s*[!=]==\s*"(invoice|cari)"/, `${f.path}: kaynağa göre dallanma switch + unreachable ile yazılır`);
+  }
+  // Kaynak dallarının bulunduğu dosyalar (plan §7.5): hepsi tam switch'le kapanır
+  for (const path of [
+    "src/app/panel/hatirlaticilar/payment-ui.tsx",
+    "src/app/panel/hatirlaticilar/reminders-client.tsx",
+    "src/app/panel/hatirlaticilar/calendar-entries.ts",
+    "src/app/panel/hatirlaticilar/recent-paid.tsx",
+    "src/app/panel/dashboard-payments.tsx",
+    "src/lib/cash-plan.ts",
+    "src/server/data/cash-plan.ts",
+    "src/lib/mcp/answers/payments.ts",
+    "src/server/actions/reminders.ts",
+    "src/lib/recent-paid.ts",
+    "src/lib/cari/upcoming.ts",
+  ]) {
+    const text = read(path);
+    assert.match(text, /switch \((item|i|it|e|k|hint)\.?(source|kind)?\)/, `${path}: switch yok`);
+    if (path !== "src/lib/recent-paid.ts" && path !== "src/lib/cari/upcoming.ts") assert.match(text, /unreachable\(/, `${path}: tam switch unreachable ile kapanır`);
+  }
+  // Son ödenenler'in "Geri al"ı cari ödemeyi kilit altında, düzenlenmemişse siler
+  const undo = body(read("src/server/actions/reminders.ts"), "export async function undoRecentPaid(");
+  assert.match(undo, /z\.enum\(\["invoice", "reminder", "cari"\]\)/);
+  assert.ok(undo.indexOf("lockCard(tx") < undo.indexOf("paymentUnchanged(") && undo.indexOf("paymentUnchanged(") < undo.indexOf("deleteEntry(tx"));
+  // Ödemeler listesi cari hesabı tek okumayla alır, mahsubu saf modül yapar
+  const loader = body(read("src/server/notify/digest.ts"), "export async function loadUpcoming(");
+  assert.match(loader, /loadCariIndex\(today/);
+  assert.match(loader, /upcomingWithCari\(/);
+});

@@ -46,6 +46,17 @@ export function isPartiallyPaid(i: BalanceInvoice): boolean {
   return i.unpaid && b > EPS && b < i.payable - EPS;
 }
 
+/**
+ * Paraşüt ipucu (§4.2; yalnız takipli ödenmemiş fatura): Paraşüt'ün kalanı panelin kalanından farklıysa ikisi.
+ * `lower`: Paraşüt daha az kalan gösteriyor (panelde girilmemiş bir ödeme olabilir). Fark yoksa ya da takipsizse null
+ */
+export function parasutDifference(i: BalanceInvoice): { parasut: number; panel: number; lower: boolean } | null {
+  if (!tracked(i) || !i.unpaid || i.outstanding === null || i.outstanding === undefined || !(i.outstanding > EPS)) return null;
+  const panel = openBalance(i);
+  if (Math.abs(i.outstanding - panel) <= EPS) return null;
+  return { parasut: i.outstanding, panel, lower: i.outstanding < panel };
+}
+
 /** Panelde bu faturaya sayılan (takip öncesi Paraşüt'te ödenen hariç) */
 export const paidInPanel = (i: BalanceInvoice) => round2(i.allocated ?? 0);
 

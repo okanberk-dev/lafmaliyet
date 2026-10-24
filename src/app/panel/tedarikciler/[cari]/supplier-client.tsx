@@ -275,6 +275,23 @@ export function SupplierClient({
     setPayFor(null);
     if (kasaRaw) setKasaParam("");
   };
+  // Ödemeler'den gelen "Düzenle" (?borc=<kimlik>) ve "Bağla" (?bagla=<fatura>): Borcu düzenle ya da Faturası geldi
+  // penceresi açık gelir (fatura için güçlü adayın alımları seçili)
+  const [debtRaw, setDebtParam] = useQueryState<string>("borc", "");
+  const [linkRaw, setLinkParam] = useQueryState<string>("bagla", "");
+  const [paramSeen, setParamSeen] = useState("");
+  const paramKey = `${debtRaw}|${linkRaw}`;
+  if ((debtRaw || linkRaw) && paramKey !== paramSeen) {
+    setParamSeen(paramKey);
+    const d = debtRaw ? cari.debts.find((x) => String(x.id) === debtRaw && x.invoiceId === null) : undefined;
+    if (d) setDebtFor({ debt: toEditDebt(d) });
+    const c = linkRaw ? cari.candidates.find((x) => String(x.invoiceId) === linkRaw) : undefined;
+    if (c) setLinkFor({ debtIds: c.debtIds, invoiceId: c.invoiceId });
+  }
+  const clearParams = () => {
+    if (debtRaw) setDebtParam("");
+    if (linkRaw) setLinkParam("");
+  };
 
   /** Bildirimdeki "Geri al" */
   async function undo(fn: () => Promise<{ ok: boolean; error?: string }>, done: string) {
@@ -1239,7 +1256,10 @@ export function SupplierClient({
           unpaidInvoices={unpaid.map((r) => ({ date: r.date, balance: openBalance(r) }))}
           debt={debtFor.debt ?? null}
           initialMode={debtFor.mode}
-          onClose={() => setDebtFor(null)}
+          onClose={() => {
+            setDebtFor(null);
+            clearParams();
+          }}
           onSaved={onCariSaved}
         />
       ) : null}
@@ -1271,7 +1291,10 @@ export function SupplierClient({
             .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, payable: r.payable, amount: r.amount, discount: r.discount, category: r.category }))}
           expenses={cari.expenses}
           preselect={linkFor}
-          onClose={() => setLinkFor(null)}
+          onClose={() => {
+            setLinkFor(null);
+            clearParams();
+          }}
         />
       ) : null}
 

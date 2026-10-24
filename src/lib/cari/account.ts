@@ -84,6 +84,14 @@ export interface AccountInvoice extends BalanceInvoice {
   paidByLedger?: boolean | null;
 }
 
+/** Faturalar penceresinin cari bilgisi: bu faturaya sayılan ödemeler ve bağlı faturasız alımlar (fotoğraflarıyla) */
+export interface InvoiceCariLinks {
+  /** Kartın adı (silme onayında: para bu tedarikçinin hesabına geçer) */
+  card: string | null;
+  payments: { date: string; method: CariMethod; amount: number }[];
+  debts: { id: number; date: string; description: string | null; amount: number; photoId: number | null }[];
+}
+
 // ---------------------------------------------------------------- Vade
 
 /** "Yakında" sayılan gün: vadesi bugünden en çok bu kadar sonra (gecikmişler hariç) */

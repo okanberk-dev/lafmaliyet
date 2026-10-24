@@ -25,10 +25,13 @@ import {
   type ReminderRepeat,
   type UpcomingItem,
 } from "@/lib/reminders";
-import { reminderUnchanged } from "@/lib/recent-paid";
+import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
+import { paymentUnchanged, reminderUnchanged } from "@/lib/recent-paid";
+import { unreachable } from "@/lib/unreachable";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
-import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
+import { deleteEntry } from "@/server/cari/entries";
+import { assertNotCovered, dropAllocations, lockCard } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
@@ -231,12 +234,14 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
 
 /**
  * Ödemeler › Son ödenenler: 30 gün içinde "Ödendi" işaretlenen faturayı ödenmemişe, hatırlatıcıyı ödenmeden önceki
- * tarihine döndürür. Hatırlatıcı o zamandan beri değiştiyse (yeniden ödendi, ertelendi, düzenlendi) eski hâl yazılmaz.
+ * tarihine döndürür; tedarikçiye girilen cari ödemeyi siler (§3.4: dağıtımları kalkar, defterin kapattığı faturalar
+ * yeniden açılır). Hatırlatıcı o zamandan beri değiştiyse (yeniden ödendi, ertelendi, düzenlendi) eski hâl yazılmaz;
+ * ödeme sonradan düzenlendiyse silinmez.
  */
-export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
+export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const k = z.enum(["invoice", "reminder"]).parse(kind);
+    const k = z.enum(["invoice", "reminder", "cari"]).parse(kind);
     const rid = zId.parse(id);
     const entry = (await loadRecentPaid()).find((e) => e.kind === k && e.id === rid);
     // Hata dönen durumlarda da liste yenilenir: geri alınamayan satır ekranda kalmasın (liveRecentPaid gizler)
@@ -245,56 +250,89 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
       throw new UserError("Bu ödeme artık listede yok (geri alınmış ya da 30 günü geçmiş olabilir)");
     }
     const db = getDb();
-    if (k === "invoice") {
-      // ✓ hesaptaki cari ödemesini kullandıysa önce o dağıtımlar silinir; hesaptaki ödemeyle kapanmış fatura ödenmediye
-      // dönmez (K7)
-      const allocationIds = Array.isArray(entry.allocationIds) ? entry.allocationIds.filter((x) => Number.isInteger(x) && x > 0) : [];
-      await dropAllocations(allocationIds, [rid]);
-      await assertNotCovered(db, [rid]);
-      const [row] = await db
-        .update(s.invoices)
-        .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null, paidByLedger: false })
-        .where(eq(s.invoices.id, rid))
-        .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
-      await forgetPaid("invoice", [rid]);
-      if (!row) {
-        refresh();
-        throw new UserError("Fatura bulunamadı (silinmiş olabilir)");
+    switch (k) {
+      case "invoice": {
+        // ✓ hesaptaki cari ödemesini kullandıysa önce o dağıtımlar silinir; hesaptaki ödemeyle kapanmış fatura ödenmediye
+        // dönmez (K7)
+        const allocationIds = Array.isArray(entry.allocationIds) ? entry.allocationIds.filter((x) => Number.isInteger(x) && x > 0) : [];
+        await dropAllocations(allocationIds, [rid]);
+        await assertNotCovered(db, [rid]);
+        const [row] = await db
+          .update(s.invoices)
+          .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null, paidByLedger: false })
+          .where(eq(s.invoices.id, rid))
+          .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
+        await forgetPaid("invoice", [rid]);
+        if (!row) {
+          refresh();
+          throw new UserError("Fatura bulunamadı (silinmiş olabilir)");
+        }
+        await logActivity(me, "Fatura ödenmedi işaretlendi", `${row.supplier} ${tl(row.payable, 2)} · son ödenenlerden geri alındı`);
+        break;
       }
-      await logActivity(me, "Fatura ödenmedi işaretlendi", `${row.supplier} ${tl(row.payable, 2)} · son ödenenlerden geri alındı`);
-    } else {
-      const [cur] = await db.select().from(s.reminders).where(eq(s.reminders.id, rid)).limit(1);
-      if (!cur) {
+      case "reminder": {
+        const [cur] = await db.select().from(s.reminders).where(eq(s.reminders.id, rid)).limit(1);
+        if (!cur) {
+          await forgetPaid("reminder", [rid]);
+          refresh();
+          throw new UserError("Hatırlatıcı bulunamadı (silinmiş olabilir)");
+        }
+        const prev = entry.prev;
+        if (!prev || !reminderUnchanged(entry, cur)) {
+          refresh();
+          throw new UserError("Hatırlatıcı ödendikten sonra değişti (yeniden ödendi, ertelendi ya da düzenlendi); tarihini düzenleyerek düzeltin");
+        }
+        // Ödendi'de silinen KDV tutarı geri yazılır; ödendikten sonra yeni yazılmış tutar ezilmez
+        const amount = prev.amount === null || (typeof prev.amount === "number" && Number.isFinite(prev.amount) && prev.amount >= 0) ? prev.amount : undefined;
+        // Yalnız okunan hâl hâlâ duruyorsa yazılır (okuma ile yazma arasında başka sekmeden ödenmiş / ertelenmiş olabilir)
+        const [done] = await db
+          .update(s.reminders)
+          .set({
+            dueDate: prev.dueDate,
+            anchorDate: prev.anchorDate,
+            active: prev.active,
+            lastDoneAt: prev.lastDoneAt ? new Date(prev.lastDoneAt) : null,
+            ...(amount !== undefined && cur.amount === null ? { amount } : {}),
+          })
+          .where(and(eq(s.reminders.id, rid), eq(s.reminders.dueDate, cur.dueDate), eq(s.reminders.anchorDate, cur.anchorDate), eq(s.reminders.active, cur.active)))
+          .returning({ id: s.reminders.id });
+        if (!done) {
+          refresh();
+          throw new UserError("Hatırlatıcı bu arada değişti; sayfa yenilendi, yeniden deneyin");
+        }
         await forgetPaid("reminder", [rid]);
-        refresh();
-        throw new UserError("Hatırlatıcı bulunamadı (silinmiş olabilir)");
+        await forgetVatPaid(rid, prev.dueDate);
+        await logActivity(me, "Hatırlatıcı geri alındı", `${cur.title} · ${dateTR(prev.dueDate)} · son ödenenlerden`);
+        break;
       }
-      const prev = entry.prev;
-      if (!prev || !reminderUnchanged(entry, cur)) {
-        refresh();
-        throw new UserError("Hatırlatıcı ödendikten sonra değişti (yeniden ödendi, ertelendi ya da düzenlendi); tarihini düzenleyerek düzeltin");
+      case "cari": {
+        // Ödeme silinir (dağıtımları kalkar, defterin kapattığı faturalar yeniden açılır); kaydedildikten sonra
+        // düzenlendiyse silinmez. Kilit sırası kart, sonra kayıt (K24)
+        const r = await db.transaction(async (tx) => {
+          const [peek] = await tx.select({ supplierId: s.supplierEntries.supplierId, kind: s.supplierEntries.kind }).from(s.supplierEntries).where(eq(s.supplierEntries.id, rid)).limit(1);
+          if (!peek || peek.kind !== "odeme") return null;
+          await lockCard(tx, peek.supplierId);
+          const [cur] = await tx.select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, rid)).for("update").limit(1);
+          if (!cur) return null;
+          if (!paymentUnchanged(entry, cur.updatedAt.toISOString())) throw new UserError("Ödeme sonradan düzenlendi; Tedarikçiler'den silin");
+          return deleteEntry(tx, rid, []);
+        });
+        await forgetPaid("cari", [rid]);
+        if (!r) {
+          refresh();
+          throw new UserError("Ödeme bulunamadı (silinmiş olabilir)");
+        }
+        const e = r.snapshot.entry;
+        const after = [r.reopened ? `${r.reopened} fatura yeniden ödenmedi` : "", r.kept ? `${r.kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
+        await logActivity(
+          me,
+          "Cari ödeme silindi",
+          [r.card.name, dateTR(e.date), tl(e.amount, 2), METHOD_LABEL[(e.method ?? "diger") as CariMethod], after, "son ödenenlerden geri alındı"].filter(Boolean).join(" · "),
+        );
+        break;
       }
-      // Ödendi'de silinen KDV tutarı geri yazılır; ödendikten sonra yeni yazılmış tutar ezilmez
-      const amount = prev.amount === null || (typeof prev.amount === "number" && Number.isFinite(prev.amount) && prev.amount >= 0) ? prev.amount : undefined;
-      // Yalnız okunan hâl hâlâ duruyorsa yazılır (okuma ile yazma arasında başka sekmeden ödenmiş / ertelenmiş olabilir)
-      const [done] = await db
-        .update(s.reminders)
-        .set({
-          dueDate: prev.dueDate,
-          anchorDate: prev.anchorDate,
-          active: prev.active,
-          lastDoneAt: prev.lastDoneAt ? new Date(prev.lastDoneAt) : null,
-          ...(amount !== undefined && cur.amount === null ? { amount } : {}),
-        })
-        .where(and(eq(s.reminders.id, rid), eq(s.reminders.dueDate, cur.dueDate), eq(s.reminders.anchorDate, cur.anchorDate), eq(s.reminders.active, cur.active)))
-        .returning({ id: s.reminders.id });
-      if (!done) {
-        refresh();
-        throw new UserError("Hatırlatıcı bu arada değişti; sayfa yenilendi, yeniden deneyin");
-      }
-      await forgetPaid("reminder", [rid]);
-      await forgetVatPaid(rid, prev.dueDate);
-      await logActivity(me, "Hatırlatıcı geri alındı", `${cur.title} · ${dateTR(prev.dueDate)} · son ödenenlerden`);
+      default:
+        unreachable(k);
     }
     refresh();
     return null;

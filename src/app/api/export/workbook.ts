@@ -65,10 +65,30 @@ export interface ExportExtras {
   investments: { name: string; amount: number; date: string | null; note: string | null }[];
   /** Tutarlılık bulguları (Excel Tutarlılık Kontrolü 3–5. bölümler) */
   findings: { section: string; title: string; detail: string | null; resolved: boolean; createdAt?: Date | null }[];
-  /** Kısmen ödenmiş Paraşüt faturasının kalan borcu (fatura kimliği → TL, KDV dahil) */
+  /** Kısmen ödenmiş Paraşüt faturasının kalan borcu (fatura kimliği → TL, KDV dahil); verilmezse faturanın kendi alanı */
   outstanding?: Map<number, number | null>;
+  /** Tedarikçilere elle girilen cari kayıtlar (borç ve ödeme); yoksa "Cari hareketleri" sekmesi yok */
+  cari?: CariExportRow[];
   /** Dosyanın hazırlandığı an (testte sabitlenir) */
   now?: Date;
+}
+
+/** "Cari hareketleri" sekmesinin satırı (src/app/api/export/route.ts kurar; tutarlar KDV dahil) */
+export interface CariExportRow {
+  date: string;
+  supplier: string;
+  /** "Faturasız alım (faturası gelecek)", "Eski borç (devir)", "Ödeme" */
+  movement: string;
+  description: string | null;
+  debt: number | null;
+  payment: number | null;
+  /** Ödemenin şekli ("Havale / EFT", "Kasadan (Teslim · Sütaş)") */
+  method: string | null;
+  /** Ödemenin sayıldığı kalemler ("SUT123 8.450,50 · hesapta 0,00") ya da borca sayılan ("ödenen 600,00") */
+  counted: string | null;
+  /** Borcun bağlandığı fatura */
+  invoice: string | null;
+  note: string | null;
 }
 
 // ---------------------------------------------------------------------------- Yardımcılar
@@ -390,6 +410,7 @@ export function buildWorkbook(model: Model, month: string, extras: ExportExtras)
   hm.autoFilter = { from: "A1", to: `${colLetter(hm.columnCount)}1` };
 
   addInvoices(wb, model, extras.outstanding);
+  if (extras.cari?.length) addCari(wb, extras.cari);
   addPeople(wb, model, month, extras.investments);
 
   // ---------------------------------------------------------------- Ayarlar
@@ -458,6 +479,7 @@ function sheetPurpose(name: string, label: string): string {
     Hammaddeler: "Malzemelerin paket fiyatı, birim maliyeti, alış KDV'si, sayım birimi ve grubu.",
     Faturalar: "Bütün alış faturaları: tarih, kategori, net, KDV, durum, kalan borç, vade ve not. Net, KDV ve Ay sütunları formül.",
     "Aylık Alımlar": "Excel Faturalar'daki 'Aylara göre net alımlar': kategori × ay (formülle Faturalar'dan), TOPLAM ve mal maliyeti.",
+    "Cari hareketleri": "Tedarikçilere elle girilen faturasız alımlar, eski borçlar ve ödemeler: tutar, şekil, ödemenin sayıldığı kalemler ve bağlandığı fatura. Ödeme gider değildir.",
     Personel: `${label} maaş + SGK işveren maliyeti, TOPLAM, SGK oranları; varsa başlangıç / bitiş ve maaş geçmişi.`,
     "Sabit Giderler": `${label} sabit giderleri, aylık karşılığı ve TOPLAM; tek seferlik yatırımlar; varsa tutar geçmişi.`,
     Ayarlar: "KDV, komisyon, kartlı satış, hedef maliyet, fire, gramajlar, SGK oranları ve su + buz birim maliyeti.",
@@ -993,6 +1015,45 @@ function addSales(wb: ExcelJS.Workbook, model: Model, month: string) {
 // ---------------------------------------------------------------------------- Faturalar + Aylık Alımlar
 
 /** Fatura özetinde gösterilen kategoriler: hepsi (Excel gibi, boş olanlar da), sonra listede olmayanlar */
+/** Tedarikçilere elle girilen cari kayıtlar, gün sırasıyla */
+function addCari(wb: ExcelJS.Workbook, rows: readonly CariExportRow[]) {
+  const ws = addSheet(
+    wb,
+    "Cari hareketleri",
+    [
+      { key: "d", header: "Tarih", width: 11, fmt: DATE },
+      { key: "s", header: "Tedarikçi", width: 24 },
+      { key: "h", header: "Hareket", width: 30 },
+      { key: "de", header: "Açıklama", width: 28 },
+      { key: "b", header: "Borç", width: 13, fmt: MONEY },
+      { key: "o", header: "Ödeme", width: 13, fmt: MONEY },
+      { key: "m", header: "Şekil", width: 22 },
+      { key: "c", header: "Sayıldığı", width: 40 },
+      { key: "f", header: "Fatura bağı", width: 18 },
+      { key: "n", header: "Not", width: 32 },
+    ],
+    { y: 1, landscape: true },
+  );
+  const head = headerRow(ws, colHeaders(ws));
+  head.getCell("b").note = "Faturasız alım ya da eski borç (KDV dahil). Faturası gelecek alım ve eski borç gider değildir; faturası yok denen alımın gideri Aylık harcamalar'dadır.";
+  head.getCell("o").note = "Tedarikçiye ödeme. Gider ya da KDV değildir; borçtan düşer.";
+  for (const r of [...rows].sort((a, b) => a.date.localeCompare(b.date) || a.supplier.localeCompare(b.supplier, "tr"))) {
+    ws.addRow({
+      d: excelDate(r.date),
+      s: r.supplier,
+      h: r.movement,
+      de: r.description,
+      b: r.debt,
+      o: r.payment,
+      m: r.method,
+      c: r.counted,
+      f: r.invoice,
+      n: r.note,
+    });
+  }
+  ws.autoFilter = { from: "A1", to: `${colLetter(ws.columnCount)}1` };
+}
+
 export function invoiceCategories(invoices: { category: string }[]): string[] {
   const out = [...INVOICE_CATEGORIES];
   for (const i of invoices) if (!out.includes(i.category)) out.push(i.category);
@@ -1018,6 +1079,7 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       { key: "m", header: "Ay", width: 10, fmt: MONTH_SHORT },
       { key: "u", header: "Durum", width: 10 },
       { key: "ob", header: "Kalan borç", width: 13, fmt: MONEY },
+      { key: "pp", header: "Panelde ödenen", width: 13, fmt: MONEY },
       { key: "due", header: "Vade", width: 11, fmt: DATE },
       { key: "note", header: "Not", width: 40 },
       { key: "src", header: "Kaynak", width: 9 },
@@ -1027,12 +1089,13 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
   const head = headerRow(ws, colHeaders(ws));
   head.getCell("n").note = "Mal/hizmet tutarı − iskonto. Gerçek maliyet budur (KDV indirilebildiği için).";
   head.getCell("m").note = "Faturanın ayı (Aylık Alımlar sekmesi bu sütuna göre toplar).";
-  head.getCell("ob").note = "Ödenmemiş faturanın kalan borcu; kısmen ödenmiş Paraşüt faturasında kalan tutar.";
+  head.getCell("ob").note = "Ödenmemiş faturanın kalan borcu; kısmen ödenmiş Paraşüt faturasında kalan tutar, tedarikçiye panelde ödeme girildiyse sayılan ödemeler düşülmüş.";
+  head.getCell("pp").note = "Bu faturaya sayılan, panelde girilen ödemeler (Tedarikçiler › Hesap hareketleri). Boşsa yok.";
   for (const inv of invoices) {
     const r = ws.rowCount + 1;
     const net = inv.amount - inv.discount;
     // Cari takipteki faturada panelde sayılan ödemeler düşülür (allocated, ledgerBase; src/lib/cari/balance.ts)
-    const balance = openBalance({ payable: inv.payable, unpaid: inv.unpaid, outstanding: outstanding?.get(inv.id) ?? null, allocated: inv.allocated, ledgerBase: inv.ledgerBase });
+    const balance = openBalance({ payable: inv.payable, unpaid: inv.unpaid, outstanding: outstanding?.get(inv.id) ?? inv.outstanding ?? null, allocated: inv.allocated, ledgerBase: inv.ledgerBase });
     ws.addRow({
       d: excelDate(inv.date),
       s: inv.supplier,
@@ -1047,6 +1110,7 @@ function addInvoices(wb: ExcelJS.Workbook, model: Model, outstanding?: Map<numbe
       m: { formula: `DATE(YEAR(A${r}),MONTH(A${r}),1)`, result: excelDate(`${monthOfDate(inv.date)}-01`) },
       u: inv.unpaid ? "Ödenmedi" : "Ödendi",
       ob: inv.unpaid ? balance : null,
+      pp: inv.allocated && inv.allocated > 0.005 ? round2(inv.allocated) : null,
       due: inv.dueDate ? excelDate(inv.dueDate) : null,
       note: inv.note,
       src: inv.source ? (SOURCE_LABEL[inv.source] ?? inv.source) : null,

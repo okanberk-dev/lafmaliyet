@@ -1,11 +1,13 @@
 "use server";
 
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, isNotNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
-import { supplierMatchKey } from "@/app/panel/faturalar/rules";
+import { splitSupplier, supplierMatchKey } from "@/app/panel/faturalar/rules";
+import { COMMISSION_CATEGORY, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { cardResolver } from "@/server/cari/settle";
 import { loadKasaHandled } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 
@@ -82,5 +84,65 @@ export async function loadKasaLines(input: { date: string; names: string[]; paym
       .filter((l) => l.id === keep || !handled.has(l.id))
       .map((l) => ({ ...l, match: Boolean(l.store && keys.has(supplierMatchKey(l.store))) }))
       .sort((a, b) => Number(b.match) - Number(a.match) || a.id - b.id);
+  });
+}
+
+/**
+ * Faturası geldi › Başka faturalar (R3d): bu kartın grubunda olmayan, bağlanabilecek faturalarda arama (tedarikçi
+ * adı ya da fatura no; en yeni önce, en çok 20). Her sonuç faturanın nerede göründüğünü söyler: kartsız adda
+ * `alias` (bu kartın diğer adı olabilir; o adla kaç fatura geçeceği), başka kartta o kartın adı.
+ */
+export async function searchLinkInvoices(input: { cardId: number; q: string }) {
+  return attempt(async () => {
+    await requireAdmin();
+    const cardId = zId.parse(input.cardId);
+    const q = z.string().trim().min(2, "En az iki harf yazın").max(80).parse(input.q);
+    const db = getDb();
+    const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    const [resolve, rows, linked] = await Promise.all([
+      cardResolver(db),
+      db
+        .select({
+          id: s.invoices.id,
+          date: s.invoices.date,
+          invoiceNo: s.invoices.invoiceNo,
+          supplier: s.invoices.supplier,
+          tax: s.invoices.supplierTaxNumber,
+          payable: s.invoices.payable,
+          amount: s.invoices.amount,
+          discount: s.invoices.discount,
+          category: s.invoices.category,
+        })
+        .from(s.invoices)
+        .where(and(gt(s.invoices.payable, 0), or(ilike(s.invoices.supplier, like), ilike(s.invoices.invoiceNo, like))))
+        .orderBy(desc(s.invoices.date), desc(s.invoices.id))
+        .limit(200),
+      db.select({ invoiceId: s.supplierEntries.invoiceId }).from(s.supplierEntries).where(isNotNull(s.supplierEntries.invoiceId)),
+    ]);
+    const taken = new Set(linked.map((r) => r.invoiceId));
+    const hits = rows.filter((r) => !taken.has(r.id) && r.category !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(r.category) && resolve(r.supplier, r.tax) !== cardId).slice(0, 20);
+    if (!hits.length) return [];
+    const owners = [...new Set(hits.flatMap((h) => (resolve(h.supplier, h.tax) !== null ? [resolve(h.supplier, h.tax)!] : [])))];
+    const names = owners.length ? await db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers) : [];
+    const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    // Kartsız adın faturası: o adla (anahtarıyla) kaç fatura bu karta geçer
+    const all = await db.select({ supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices);
+    return hits.map((h) => {
+      const owner = resolve(h.supplier, h.tax);
+      const alias = splitSupplier(h.supplier).base.trim() || h.supplier;
+      const key = supplierMatchKey(alias);
+      return {
+        id: h.id,
+        date: h.date,
+        invoiceNo: h.invoiceNo,
+        supplier: h.supplier,
+        payable: h.payable,
+        amount: h.amount,
+        discount: h.discount,
+        category: h.category,
+        owner: owner === null ? null : { cardId: owner, name: nameOf.get(owner) ?? "" },
+        alias: owner === null ? { name: alias, count: all.filter((x) => resolve(x.supplier, x.tax) === null && supplierMatchKey(x.supplier) === key).length } : null,
+      };
+    });
   });
 }

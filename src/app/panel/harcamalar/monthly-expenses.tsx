@@ -70,6 +70,8 @@ export interface EntryRow {
   /** Bağlı kasadan çıkan satırı ve kasa günü: tutar ve tarih orada düzeltilir */
   cashOutId?: number | null;
   cashOutDate?: string | null;
+  /** Sahibi bir cari borç (faturasız alımın gideri): tedarikçi ve sayfası; tutar, gün ve kategori orada düzeltilir */
+  cari?: { name: string; href: string | null } | null;
 }
 export interface InvoiceItem {
   id: number;
@@ -122,6 +124,8 @@ type EntryDraft = {
   /** Kasadan çıkan fişten: fotoğrafı ve kasa günü (tutar ve tarih orada düzeltilir) */
   photoId?: number | null;
   cashOutDate?: string | null;
+  /** Cari borcun gideri: tutar, tarih ve kategori Tedarikçiler'de düzeltilir */
+  cari?: { name: string; href: string | null } | null;
 };
 
 /**
@@ -383,6 +387,7 @@ export function MonthlyExpenses({
                                   note: e.note ?? "",
                                   photoId: e.photoId ?? null,
                                   cashOutDate: e.cashOutId ? (e.cashOutDate ?? e.date) : null,
+                                  cari: e.cari ?? null,
                                 })
                               }
                               className="flex w-full cursor-pointer items-start justify-between gap-3 py-2 text-left hover:bg-ink/[0.02] pointer-coarse:min-h-11"
@@ -392,6 +397,7 @@ export function MonthlyExpenses({
                                   {e.description || "Harcama"}
                                   {e.photoId ? <Camera size={13} className="shrink-0 text-ink-mute" aria-label="Fişli" role="img" /> : null}
                                   {e.cashOutId ? <Badge tone="gray">Kasadan</Badge> : null}
+                                  {e.cari ? <Badge tone="amber">Cari · {e.cari.name}</Badge> : null}
                                 </span>
                                 <span className="block text-xs text-ink-mute">
                                   {dateTR(e.date)}
@@ -570,7 +576,8 @@ function EntryDialog({
   const set = (p: Partial<EntryDraft>) => onChange({ ...draft, ...p });
   const router = useRouter();
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
-  const linked = Boolean(draft.cashOutDate);
+  const cari = draft.cari ?? null;
+  const linked = Boolean(draft.cashOutDate) || Boolean(cari);
   return (
     <Dialog
       open
@@ -596,7 +603,23 @@ function EntryDialog({
         {draft.photoId ? (
           <PhotoThumb id={draft.photoId} caption="Fişin fotoğrafı" onOpen={() => setViewer({ id: draft.photoId!, caption: "Fişin fotoğrafı" })} className="sm:col-span-2" />
         ) : null}
-        {linked ? (
+        {cari ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn sm:col-span-2">
+            <span className="min-w-0 flex-1">Bu harcama {cari.name} tedarikçisinin faturasız alımından. Tutarını, gününü ve kategorisini Tedarikçiler&apos;de düzeltin.</span>
+            {cari.href ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                onClick={() => {
+                  onClose();
+                  router.push(cari.href!);
+                }}
+              >
+                Tedarikçiye git
+              </Button>
+            ) : null}
+          </div>
+        ) : draft.cashOutDate ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">
             <span className="min-w-0 flex-1">Kasa raporundaki bir fişten ({dateTR(draft.cashOutDate!)}). Tutarı ve tarihi Kasa raporu&apos;nda düzeltin.</span>
             <Button
@@ -613,7 +636,7 @@ function EntryDialog({
           </div>
         ) : null}
         <Field label="Kategori" htmlFor="e-cat" className="sm:col-span-2">
-          <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
+          <Select id="e-cat" value={draft.categoryId} onChange={(e) => set({ categoryId: e.target.value })} disabled={Boolean(cari)}>
             {categories
               .filter((c) => c.active || String(c.id) === draft.categoryId)
               .map((c) => (

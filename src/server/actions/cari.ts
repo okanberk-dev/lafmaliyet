@@ -4,6 +4,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { splitSupplier } from "@/app/panel/faturalar/rules";
+import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
 import { COST_MODE_LABEL, COST_MODES, debtLabel, dueOf, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, methodFromCard, round2, type CariMethod } from "@/lib/cari/balance";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
@@ -24,8 +26,9 @@ import {
   type EntrySnapshot,
   type PaymentResult,
 } from "@/server/cari/entries";
-import { cardInvoiceIds, deleteAllocations, ensureCard, linkDebts, lockCard, lockCards, recomputeAllocated, resettle, unlinkDebt, type CardTarget, type Tx } from "@/server/cari/settle";
+import { cardInvoiceIds, cardResolver, deleteAllocations, ensureCard, linkDebts, lockCard, lockCards, recomputeAllocated, resettle, unlinkDebt, type CardTarget, type Tx } from "@/server/cari/settle";
 import { KASA_AYRI_KEY, KASA_AYRI_LIMIT } from "@/server/data/cari";
+import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { supplierSlugOf } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { loadNotifySettings } from "@/server/notify/settings";
@@ -80,6 +83,16 @@ function allocationText(lines: readonly { closed: boolean }[], left: number): st
 
 const methodText = (m: CariMethod, card: Card) => (m === "kasa" ? `Kasadan (Teslim · ${card.name})` : METHOD_LABEL[m]);
 
+/**
+ * Yeni ödeme Ödemeler › Son ödenenler'e yazılır (30 gün geri alınabilir). Ödemenin o anki düzenlenme anı saklanır:
+ * sonradan düzenlenen ödeme oradan silinmez (Tedarikçiler'den silinir)
+ */
+async function rememberPayment(card: Card, p: { id: number; date: string; amount: number; method: CariMethod; items: number }) {
+  const [row] = await getDb().select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, p.id)).limit(1);
+  if (!row) return;
+  await rememberPaid([{ kind: "cari", id: p.id, title: card.name, amount: p.amount, dueDate: p.date, method: p.method, items: p.items, stamp: row.updatedAt.toISOString() }]);
+}
+
 // ---------------------------------------------------------------- Borç
 
 const debtSchema = z.object({
@@ -133,6 +146,9 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
     } else {
       await logActivity(me, "Cari borç eklendi", [card.name, dateTR(d.date), tl(d.amount, 2), what, mode[d.costMode], ...extra].join(" · ") + suffix);
     }
+    if (written.paid?.created && d.paid) {
+      await rememberPayment(card, { id: written.paid.id, date: d.paid.date, amount: round2(written.paid.lines.reduce((a, l) => a + l.amount, 0) + written.paid.left), method: d.paid.method, items: written.paid.lines.length });
+    }
     refresh();
     return {
       needs: null,
@@ -180,6 +196,7 @@ export async function saveSupplierPayment(input: z.input<typeof paymentSchema>) 
     const detail = [card.name, dateTR(p.date), written.prev && Math.abs(written.prev.amount - p.amount) >= 0.005 ? `${tl(written.prev.amount, 2)} → ${tl(p.amount, 2)}` : tl(p.amount, 2), methodText(p.method, card)];
     if (written.created) await logActivity(me, "Cari ödeme eklendi", [...detail, allocationText(written.lines, written.left)].join(" · "));
     else await logActivity(me, "Cari ödeme düzeltildi", [...detail, `hesapta ${tl(written.left, 2)}`].join(" · "));
+    if (written.created) await rememberPayment(card, { id: written.id, date: p.date, amount: p.amount, method: p.method, items: written.lines.length });
     refresh();
     return {
       id: written.id,
@@ -217,6 +234,7 @@ export async function deleteSupplierEntry(input: { id: number; confirmPast?: str
     } else {
       const after = [reopened ? `${reopened} fatura yeniden ödenmedi` : "", kept ? `${kept} fatura başka biçimde ödendi işaretli, bırakıldı` : ""].filter(Boolean).join("; ");
       await logActivity(me, "Cari ödeme silindi", [card.name, dateTR(e.date), tl(e.amount, 2), methodText((e.method ?? "diger") as CariMethod, card), after].filter(Boolean).join(" · "));
+      await forgetPaid("cari", [e.id]);
     }
     refresh();
     const undo = seal(JSON.stringify({ v: 1, by: me.id, exp: Date.now() + UNDO_MS, snap: snapshot }), UNDO_PURPOSE);
@@ -367,22 +385,47 @@ export async function fixAllocatedDrift(input: { cardId: number }) {
 
 // ---------------------------------------------------------------- Faturası geldi (bağlama)
 
-const linkSchema = z.object({ cardId: zId, debtIds: z.array(zId).min(1, "Alım seçin").max(100), invoiceId: zId, confirmPast: confirmSchema });
+const linkSchema = z.object({ cardId: zId, debtIds: z.array(zId).min(1, "Alım seçin").max(100), invoiceId: zId, addAlias: z.boolean().default(false), confirmPast: confirmSchema });
 
 /**
  * Faturası geldi (§5.2): bir ya da birkaç faturasız alım tek faturaya bağlanır. Borca sayılan ödemeler faturaya geçer,
- * borcun gider kaydı silinir (geçmiş aysa onay), önceki hâli saklanır. Fatura bu tedarikçinin olmalı.
+ * borcun gider kaydı silinir (geçmiş aysa onay), önceki hâli saklanır. Fatura başka bir tedarikçide görünebilir (R3d):
+ * adı kartsızsa `addAlias` ile kartın diğer adı olur (o adla gelen faturalar bu karta geçer); başka bir kartınsa iki
+ * kart kimlik sırasıyla kilitlenir, ad eklenmez, fatura o tedarikçide görünmeye devam eder.
  */
 export async function linkDebtsToInvoice(input: z.input<typeof linkSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const l = linkSchema.parse(input);
     const r = await inTx(async (tx) => {
+      // Faturanın tedarikçisi: bu kart, kartsız ya da başka bir kart (iki kartlı işlemde kartlar kimlik sırasıyla kilitlenir)
+      const [peek] = await tx.select({ supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
+      if (!peek) throw new UserError("Fatura bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+      const owner = (await cardResolver(tx))(peek.supplier, peek.tax);
+      await lockCards(tx, owner !== null && owner !== l.cardId ? [l.cardId, owner] : [l.cardId]);
       const card = await lockCard(tx, l.cardId);
       const debts = await tx.select().from(s.supplierEntries).where(inArray(s.supplierEntries.id, l.debtIds));
       if (debts.length !== new Set(l.debtIds).size || debts.some((d) => d.supplierId !== card.id || d.kind !== "borc")) throw new UserError("Alım bulunamadı; değişmiş olabilir. Sayfayı yenileyin.");
-      const ids = await cardInvoiceIds(tx, card.id);
-      if (!ids.includes(l.invoiceId)) throw new UserError("Fatura bu tedarikçinin değil; önce faturanın tedarikçi adını düzeltin ya da adı diğer adlara ekleyin.");
+      let aliasAdded: string | null = null;
+      let elsewhere: string | null = null;
+      if (owner !== card.id) {
+        if (owner === null && l.addAlias) {
+          const alias = splitSupplier(peek.supplier).base.trim() || peek.supplier.trim();
+          const all = await tx.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
+          const conflict = nameConflict({ id: card.id, name: card.name, aliases: [alias] }, all);
+          if (conflict) throw new UserError(`‘${alias}’ adı ${conflict.owner} tedarikçisinde kayıtlı; diğer ad olarak eklenemez.`);
+          await tx
+            .update(s.suppliers)
+            .set({ aliases: cleanAliases(card.name, [...card.aliases, alias], null), updatedAt: new Date() })
+            .where(eq(s.suppliers.id, card.id));
+          aliasAdded = alias;
+        } else if (owner !== null) {
+          const [o] = await tx.select({ name: s.suppliers.name }).from(s.suppliers).where(eq(s.suppliers.id, owner)).limit(1);
+          elsewhere = o?.name ?? peek.supplier;
+        } else {
+          elsewhere = splitSupplier(peek.supplier).base.trim() || peek.supplier;
+        }
+      }
       const owned = await tx
         .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount })
         .from(s.expenseEntries)
@@ -391,18 +434,20 @@ export async function linkDebtsToInvoice(input: z.input<typeof linkSchema>) {
       const effects = checkPast(owned.map((o) => ({ date: o.date, delta: -o.amount })), l.confirmPast);
       const res = await linkDebts(tx, l.debtIds, l.invoiceId);
       const [inv] = await tx.select({ invoiceNo: s.invoices.invoiceNo, date: s.invoices.date, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
-      return { card, debts, inv, res, effects };
+      return { card, debts, inv, res, effects, aliasAdded, elsewhere };
     });
     if (r.needs) return r;
-    const { card, debts, inv, res, effects } = r.value;
+    const { card, debts, inv, res, effects, aliasAdded, elsewhere } = r.value;
     const total = round2(debts.reduce((a, d) => a + d.amount, 0));
     await logActivity(
       me,
       "Faturasız alım faturaya bağlandı",
-      `${card.name} · ${debts.length} alım (${tl(total, 2)}) → ${inv ? invoiceLabel(inv) : "fatura"} (${tl(inv?.payable ?? 0, 2)}) · fark ${tl(round2((inv?.payable ?? 0) - total), 2)}${res.trimmed > EPS ? ` · ${tl(res.trimmed, 2)} hesaba geçti` : ""}${pastMonthLogSuffix(effects)}`,
+      `${card.name} · ${debts.length} alım (${tl(total, 2)}) → ${inv ? invoiceLabel(inv) : "fatura"} (${tl(inv?.payable ?? 0, 2)}) · fark ${tl(round2((inv?.payable ?? 0) - total), 2)}${res.trimmed > EPS ? ` · ${tl(res.trimmed, 2)} hesaba geçti` : ""}${
+        aliasAdded ? ` · diğer adlara eklendi: ${aliasAdded}` : elsewhere ? ` · fatura ${elsewhere} tedarikçisinde görünüyor` : ""
+      }${pastMonthLogSuffix(effects)}`,
     );
     refresh();
-    return { needs: null, trimmed: res.trimmed, effects };
+    return { needs: null, trimmed: res.trimmed, effects, aliasAdded, elsewhere };
   });
 }
 
@@ -506,8 +551,15 @@ export async function payDebt(debtId: number) {
     });
     const method = r.payment ? methodText(methodFromCard(card.paymentMethod), card) : null;
     await logActivity(me, "Faturasız alım ödendi", [card.name, r.label, tl(r.amount, 2), r.credited > EPS ? `hesaptaki ${tl(r.credited, 2)} sayıldı` : "", method ?? ""].filter(Boolean).join(" · "));
+    if (r.payment) await rememberPayment(card, { id: r.payment.id, date: todayTR(), amount: round2(r.amount - r.credited), method: methodFromCard(card.paymentMethod), items: 1 });
     refresh();
-    return { paymentId: r.payment?.id ?? null, credited: r.credited, amount: r.amount, method: r.payment ? methodFromCard(card.paymentMethod) : null };
+    return {
+      paymentId: r.payment?.id ?? null,
+      creditAllocationIds: r.creditAllocationIds,
+      credited: r.credited,
+      amount: r.amount,
+      method: r.payment ? methodFromCard(card.paymentMethod) : null,
+    };
   });
 }
 

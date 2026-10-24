@@ -380,7 +380,7 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
   // Gider kaydının değişimleri (sıra önemli: borcun kaydı tekil, eskisi önce bırakılır)
   type Op = { op: "delete" | "unown" | "update" | "adopt"; row: ExpenseRow } | { op: "insert" };
   const ops: Op[] = [];
-  const changes: { date: string; delta: number }[] = [];
+  const changes: { date: string; delta: number; moved?: number }[] = [];
   const curMode = cur?.costMode ?? null;
   if (owned) {
     const keep = (input.costMode === "gider" && curMode === "gider") || (input.costMode === "mevcut" && adopt?.id === owned.id);
@@ -395,6 +395,8 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
     if (owned && curMode === "gider") {
       ops.push({ op: "update", row: owned });
       changes.push({ date: owned.date, delta: -owned.amount }, { date: input.date, delta: amount });
+      // Yalnız kategori değişse de geçmiş ayın satırları değişir (K18): toplamı değişmeyen ay da onay ister
+      if (category && owned.categoryId !== category.id) changes.push({ date: owned.date, delta: 0, moved: owned.amount }, { date: input.date, delta: 0, moved: amount });
     } else {
       ops.push({ op: "insert" });
       changes.push({ date: input.date, delta: amount });
@@ -744,13 +746,21 @@ export async function applyCredit(tx: Tx, me: Actor, card: Card, termDays: numbe
  * Ödemeler'deki "Ödendi" (cari kalem): hesaptaki para önce borca sayılır, kalan için ödeme kaydı açılır (bugün, kartın
  * ödeme şekli; "Nakit" kasa dışı elden) ve borca sayılır. Kart çağıranda kilitli.
  */
-export async function payDebtTx(tx: Tx, me: Actor, card: Card, debtId: number, method: CariMethod, termDays: number): Promise<{ credited: number; payment: PaymentResult | null; label: string; amount: number }> {
+export async function payDebtTx(
+  tx: Tx,
+  me: Actor,
+  card: Card,
+  debtId: number,
+  method: CariMethod,
+  termDays: number,
+): Promise<{ credited: number; creditAllocationIds: number[]; payment: PaymentResult | null; label: string; amount: number }> {
   const [d] = await tx.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId)).for("update").limit(1);
   if (!d || d.kind !== "borc" || d.supplierId !== card.id) throw new UserError(GONE);
   if (d.invoiceId !== null) throw new UserError("Bu alım bir faturaya bağlı; faturayı ödendi yapın");
   const room = round2(d.amount - (await debtAllocated(tx, d.id)));
   if (room <= EPS) throw new UserError("Bu alım zaten ödenmiş");
-  const credited = (await spendCredit(tx, card.id, [{ kind: "debt", id: d.id, room }], me.name)).total;
+  const spent = await spendCredit(tx, card.id, [{ kind: "debt", id: d.id, room }], me.name);
+  const credited = spent.total;
   const rest = round2(room - credited);
   const payment =
     rest > EPS
@@ -762,5 +772,5 @@ export async function payDebtTx(tx: Tx, me: Actor, card: Card, debtId: number, m
           termDays,
         )
       : null;
-  return { credited, payment, label: debtLabel(d), amount: room };
+  return { credited, creditAllocationIds: spent.allocationIds, payment, label: debtLabel(d), amount: room };
 }

@@ -73,7 +73,7 @@ export const ODEME_ARALIKLARI = ["gecikmis", "hafta", "ay", "45gun"] as const;
 export const odemelerInput = z
   .object({
     aralik: z.enum(ODEME_ARALIKLARI).default("45gun").describe("gecikmis (vadesi geçmiş), hafta (bu hafta), ay (bu ay), 45gun (gecikenler hariç 45 gün)"),
-    kaynak: z.enum(["hepsi", "fatura", "hatirlatici"]).default("hepsi").describe("hepsi, fatura ya da hatirlatici"),
+    kaynak: z.enum(["hepsi", "fatura", "hatirlatici", "cari"]).default("hepsi").describe("hepsi, fatura, hatirlatici ya da cari (tedarikçiye faturasız borç)"),
     nakitPlani: z.boolean().default(false).describe("true: 6 haftalık nakit planının haftalık özeti de"),
   })
   .strict();

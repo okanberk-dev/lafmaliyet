@@ -564,6 +564,43 @@ const OPEN_DAYS_LABEL = "Açık gün sayısı";
 /** Ciro ve açık gün kasa raporlarından geliyorsa hücrenin hesaplanan değerinin adı */
 const KASA_LABEL = "Kasa raporlarından";
 
+/** Ay → faturası beklenen cari alımlar (Tedarikçiler'de "Faturası gelecek" denen, faturası henüz bağlanmamış alımlar) */
+export type ExpectedDebts = Readonly<Record<string, { total: number; href: string | null; name: string }>>;
+const NO_EXPECTED: ExpectedDebts = {};
+
+/**
+ * Masaüstü tablonun altında: görünen aylarda faturası beklenen alımlar (bu ayların giderinde yok; fatura gelince
+ * fatura gider olur). Yoksa çizilmez.
+ */
+function ExpectedDebtsNote({ months, expected, className }: { months: readonly string[]; expected: ExpectedDebts; className?: string }) {
+  const shown = months.filter((m) => expected[m]?.total);
+  if (!shown.length) return null;
+  return (
+    <p className={cn("px-5 pt-1 pb-3 text-xs leading-5 text-ink-mute", className)}>
+      Faturası beklenen alımlar (bu ayların giderinde yok):{" "}
+      {shown.map((m, i) => {
+        const e = expected[m];
+        return (
+          <span key={m}>
+            {i ? " · " : ""}
+            {monthLabel(m)} {tl(e.total, 2)}
+            {e.href ? (
+              <>
+                {" "}
+                (
+                <Link href={e.href} className="font-medium text-info underline-offset-2 hover:underline">
+                  {e.name}
+                </Link>
+                )
+              </>
+            ) : null}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
 export function PnlGrid({
   year,
   months,
@@ -577,6 +614,7 @@ export function PnlGrid({
   currentMonth,
   strip,
   latestMonth,
+  expectedDebts = NO_EXPECTED,
 }: {
   year: number;
   months: string[];
@@ -595,6 +633,8 @@ export function PnlGrid({
   strip: StripMonth[];
   /** Verisi olan son ay: şeritte çerçevelenir */
   latestMonth?: string;
+  /** Ay → faturası beklenen cari alımlar (bilgi satırı, toplamlara katılmaz; §5.6) */
+  expectedDebts?: ExpectedDebts;
 }) {
   const reduce = useCalmMotion();
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -910,7 +950,9 @@ export function PnlGrid({
         currentMonth={currentMonth}
         onMonthNote={setMonthNoteFor}
         onSave={savePlan}
+        expectedDebts={expectedDebts}
       />
+      <ExpectedDebtsNote months={visibleIdx.map((v) => v.m)} expected={expectedDebts} className="max-md:hidden" />
 
       {shownRows === 0 ? (
         <div className="max-md:hidden">

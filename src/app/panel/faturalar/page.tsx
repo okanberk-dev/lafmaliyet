@@ -15,6 +15,7 @@ import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CAT
 import { monthLabel, monthShort, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadInvoiceCariLinks } from "@/server/data/cari";
 import { loadModel } from "@/server/data/dataset";
 import { loadSupplierCards } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -75,7 +76,7 @@ export default function InvoicesPage() {
 async function InvoicesContent() {
   await requireAdmin();
   const db = getDb();
-  const [model, state, docs, cards, taxRows] = await Promise.all([
+  const [model, state, docs, cards, taxRows, cariLinks] = await Promise.all([
     loadModel(),
     db
       .select()
@@ -86,6 +87,8 @@ async function InvoicesContent() {
     loadSupplierCards(),
     // Tedarikçinin vergi nosu çekirdek veride yok (hesaplar kullanmaz): pencere ve tedarikçi bağlantısı için ayrıca
     db.select({ id: s.invoices.id, supplierTaxNumber: s.invoices.supplierTaxNumber }).from(s.invoices).where(isNotNull(s.invoices.supplierTaxNumber)),
+    // Faturaya sayılan cari ödemeler ve bağlı faturasız alımlar (pencere ve silme onayı); kayıt yokken boş
+    loadInvoiceCariLinks(),
   ]);
   const taxOf = new Map(taxRows.map((r) => [r.id, r.supplierTaxNumber]));
   // Kalan borç (kısmen ödenmiş Paraşüt faturası) çekirdek veriyle gelir: Invoice.outstanding
@@ -198,6 +201,7 @@ async function InvoicesContent() {
         ignoredCount={ignored.length}
         expenseLinks={expenseLinks}
         supplierSlugs={supplierSlugs}
+        cariLinks={cariLinks}
       />
 
       <Card className="mt-6">

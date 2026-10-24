@@ -18,8 +18,9 @@ import { createModel } from "../src/lib/calc/engine";
 import { alerts, unpaidSummary } from "../src/lib/calc/insights";
 import type { Dataset, Invoice } from "../src/lib/calc/types";
 import { accountOf, lastPaymentOf, netCredit, paidInMonthOf, paymentEvents } from "../src/lib/cari/account";
+import { upcomingWithCari } from "../src/lib/cari/upcoming";
 import { buildCashPlan, type CashPlanInput } from "../src/lib/cash-plan";
-import { addDays, daysBetween, laterInvoiceItems, upcomingItems, type UnpaidInvoiceRow } from "../src/lib/reminders";
+import { addDays, daysBetween, dueNotifications, laterInvoiceItems, upcomingItems, type ReminderRow, type UnpaidInvoiceRow } from "../src/lib/reminders";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -190,6 +191,29 @@ test("Ödemeler: fatura kalemlerinin tutarları ve sırası aynı (upcomingItems
       );
       assert.equal(net.covered.length, 0);
       assert.deepEqual(new Map(net.items.map((x) => [x.id, x.net])), new Map(items.map((i) => [i.sourceId, i.amount])));
+    }
+  }
+});
+
+test("Ödemeler (loadUpcoming): cari kaydı yokken liste, takvim ve sabah e-postası upcomingItems + laterInvoiceItems ile aynı", () => {
+  const reminders: ReminderRow[] = [
+    { id: 1, title: "Kira", kind: "kira", amount: 50_000, dueDate: "2026-10-31", anchorDate: "2026-01-31", repeat: "monthly", remindDaysBefore: 3, note: null, active: true },
+    { id: 2, title: "SGK", kind: "vergi", amount: null, dueDate: "2026-09-30", anchorDate: "2026-09-30", repeat: "monthly", remindDaysBefore: 5, note: null, active: true },
+    { id: 3, title: "Sütaş", kind: "odeme", amount: 1_000, dueDate: "2027-03-01", anchorDate: "2027-03-01", repeat: "none", remindDaysBefore: 3, note: null, active: true },
+  ];
+  for (const list of variants()) {
+    const unpaid: UnpaidInvoiceRow[] = list
+      .filter((i) => i.unpaid)
+      .map((i) => ({ id: i.id, supplier: i.supplier, invoiceNo: i.invoiceNo, date: i.date, dueDate: i.dueDate ?? null, payable: i.payable, outstanding: i.outstanding ?? null, termDays: i.id % 3 ? null : 45 }));
+    for (const today of TODAYS) {
+      for (const opts of [{}, { invoiceDaysBefore: 5, invoiceTermDays: 20 }]) {
+        const up = upcomingWithCari({ reminders, invoices: unpaid, credit: new Map() }, today, opts);
+        const items = upcomingItems(reminders, unpaid, today, opts);
+        assert.deepEqual(up.items, items);
+        assert.deepEqual(up.later, laterInvoiceItems(unpaid, today, opts));
+        assert.deepEqual(up.covered, []);
+        assert.deepEqual(dueNotifications(up.items), dueNotifications(items));
+      }
     }
   }
 });

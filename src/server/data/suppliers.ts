@@ -201,7 +201,11 @@ export async function loadSupplierLedger() {
         : undefined;
     const account = accountOf({ invoices: g.invoices, ...(mine ?? {}) }, { today, termDays: g.termDays, quietInvoiceIds: quiet });
     const lastEntry = mine ? [...mine.debts, ...mine.payments].reduce<string | null>((m, e) => (!m || e.date > m ? e.date : m), null) : null;
-    return { ...g, account, lastEntry };
+    // Ödeme kayıtları, en yeni önce (Claude'un tedarikci_ozeti'si: gün, tutar, şekil, sayıldığı kalem sayısı)
+    const cariPayments = (mine?.payments ?? [])
+      .map((p) => ({ date: p.date, amount: p.amount, method: p.method, items: mine!.allocations.filter((a) => a.paymentId === p.id).length }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return { ...g, account, lastEntry, cariPayments };
   });
   return { today, termDays: notify.invoiceTermDays, groups };
 }

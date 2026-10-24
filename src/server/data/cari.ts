@@ -1,14 +1,28 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, ne } from "drizzle-orm";
 
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
-import { supplierResolver } from "@/app/panel/tedarikciler/logic";
-import { accountOf, debtRemaining, paymentCredit, type AccountInvoice, type CariAccount, type CariAllocation } from "@/lib/cari/account";
-import { EPS, round2 } from "@/lib/cari/balance";
+import { groupSuppliers, supplierHref, supplierResolver } from "@/app/panel/tedarikciler/logic";
+import type { CariExportRow } from "@/app/api/export/workbook";
+import {
+  accountOf,
+  debtLabel,
+  debtRemaining,
+  invoiceLabel,
+  paymentCredit,
+  type AccountInvoice,
+  type CariAccount,
+  type CariAllocation,
+  type CostMode,
+  type InvoiceCariLinks,
+} from "@/lib/cari/account";
+import type { CariMethod } from "@/lib/cari/balance";
+import { EPS, METHOD_LABEL, round2 } from "@/lib/cari/balance";
+import { tl } from "@/lib/format";
 import { KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
 import { addDays, todayTR } from "@/lib/reminders";
-import { loadSupplierRefs } from "@/server/data/suppliers";
+import { loadSupplierRefs, supplierSlugOf } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 
 import { loadCardEntries, toDebt, type CardDebt, type CardPayment } from "./cari-entries";
@@ -49,11 +63,23 @@ export interface CariIndex {
   credit: Map<number, number>;
   /** Bağsız, kalanı olan borçlar */
   openDebts: (CardDebt & { remaining: number })[];
-  /** Faturasız alımın faturası olabilecek faturalar (güçlü: Ödemeler'de sessiz; zayıf: yalnız tedarikçi sayfası) */
-  strong: (LinkCandidate & { cardId: number })[];
-  weak: (LinkCandidate & { cardId: number })[];
+  /**
+   * Faturasız alımın faturası olabilecek faturalar (güçlü: Ödemeler'de sessiz; zayıf: yalnız tedarikçi sayfası) ve
+   * alımların günü ile ne alındığı (ödenmiş alım da olabilir: fatura o zaman zaten ödenmiş bir alımın faturasıdır)
+   */
+  strong: (LinkCandidate & { cardId: number; debts: { id: number; date: string; description: string | null }[] })[];
+  weak: (LinkCandidate & { cardId: number; debts: { id: number; date: string; description: string | null }[] })[];
   /** Son 60 günün işlenmemiş, bir kartın adıyla eşleşen Kasa satırları (Teslim ve fişsiz Alışveriş) */
   kasaPending: (KasaLine & { cardId: number })[];
+  /** Kartın tedarikçi sayfası (/panel/tedarikciler/<slug>); yalnız gerektiğinde hesaplanır */
+  hrefOf: (cardId: number) => string | undefined;
+}
+
+/** Ödenmemiş faturanın tedarikçisini bulmaya yeten alanları (Kasa satırlarının "o gün açık kalemi var" kuralı) */
+export interface UnpaidRef {
+  date: string;
+  supplier: string;
+  tax: string | null;
 }
 
 /**
@@ -62,7 +88,7 @@ export interface CariIndex {
  * boş döner ve fatura adayı aranmaz; Kasa satırları kartı olan tedarikçiler için yine aranır (personelin girdiği
  * "Teslim · ödeme" yöneticiye düşsün).
  */
-export async function loadCariIndex(today = todayTR()): Promise<CariIndex> {
+export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<UnpaidRef[]> } = {}): Promise<CariIndex> {
   const db = getDb();
   const [cards, refs, entries] = await Promise.all([
     db
@@ -93,7 +119,20 @@ export async function loadCariIndex(today = todayTR()): Promise<CariIndex> {
     .filter((d) => d.invoiceId === null)
     .map((d) => ({ ...d, remaining: debtRemaining(d, entries.allocations) }))
     .filter((d) => d.remaining > EPS);
-  const out: CariIndex = { resolveCard, termDays, cards: cardMap, tracked, credit, openDebts, strong: [], weak: [], kasaPending: [] };
+  // Adres parçaları Tedarikçiler'deki atamayla aynı (assignSlugs bütün grupların anahtarlarına bakar): ilk istekte bir kez
+  let slugs: Map<number, string> | null = null;
+  const hrefOf = (cardId: number) => {
+    slugs ??= new Map(
+      groupSuppliers(
+        refs.map((r) => ({ ...r, date: r.date ?? "", payable: 0, unpaid: false })),
+        [...cardMap.values()],
+        { today, termDays: 0 },
+      ).flatMap((g) => (g.card ? [[g.card.id, g.slug] as const] : [])),
+    );
+    const slug = slugs.get(cardId);
+    return slug ? supplierHref(slug) : undefined;
+  };
+  const out: CariIndex = { resolveCard, termDays, cards: cardMap, tracked, credit, openDebts, strong: [], weak: [], kasaPending: [], hrefOf };
   if (!cards.length) return out;
 
   // Fatura adayları: bağsız borcu olan kartların penceredeki faturaları
@@ -108,8 +147,13 @@ export async function loadCariIndex(today = todayTR()): Promise<CariIndex> {
     for (const cardId of new Set(candidateDebts.map((d) => d.supplierId))) {
       const own = invoices.filter((i) => resolveCard(i.supplier, i.tax) === cardId);
       const { strong, weak } = linkCandidates([...entries.debts.filter((d) => d.supplierId === cardId), ...linkedDebts.filter((d) => d.supplierId !== cardId)], own);
-      out.strong.push(...strong.map((c) => ({ ...c, cardId })));
-      out.weak.push(...weak.map((c) => ({ ...c, cardId })));
+      const debtsOf = (c: LinkCandidate) =>
+        c.debtIds.flatMap((id) => {
+          const d = entries.debts.find((x) => x.id === id);
+          return d ? [{ id: d.id, date: d.date, description: d.description }] : [];
+        });
+      out.strong.push(...strong.map((c) => ({ ...c, cardId, debts: debtsOf(c) })));
+      out.weak.push(...weak.map((c) => ({ ...c, cardId, debts: debtsOf(c) })));
     }
   }
 
@@ -121,7 +165,7 @@ export async function loadCariIndex(today = todayTR()): Promise<CariIndex> {
       .from(s.cashOuts)
       .where(gte(s.cashOuts.date, since)),
     loadKasaHandled(),
-    db.select({ date: s.invoices.date, supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
+    opts.unpaid ?? db.select({ date: s.invoices.date, supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(eq(s.invoices.unpaid, true)),
   ]);
   const openSince = new Map<number, string>();
   const mark = (cardId: number | null, date: string) => {
@@ -294,10 +338,40 @@ export async function loadExpectedDebts(month: string): Promise<{ total: number;
 }
 
 /**
+ * Gelir-gider bilgi satırı (§5.6), yılın ayları: ayda tarihli bağsız "Faturası gelecek" borçların toplamı ve en çok
+ * borcu olan tedarikçinin sayfası. Satır yalnız bilgi verir, toplamlara katılmaz. Kayıt yokken boş.
+ */
+export async function loadExpectedDebtsInYear(year: number): Promise<Record<string, { total: number; href: string | null; name: string }>> {
+  const rows = await getDb()
+    .select({ supplierId: s.supplierEntries.supplierId, amount: s.supplierEntries.amount, date: s.supplierEntries.date, name: s.suppliers.name })
+    .from(s.supplierEntries)
+    .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+    .where(and(eq(s.supplierEntries.kind, "borc"), eq(s.supplierEntries.costMode, "fatura"), isNull(s.supplierEntries.invoiceId), gte(s.supplierEntries.date, `${year}-01-01`), lte(s.supplierEntries.date, `${year}-12-31`)));
+  const byMonth = new Map<string, Map<number, { name: string; amount: number }>>();
+  for (const r of rows) {
+    const m = r.date.slice(0, 7);
+    const cards = byMonth.get(m) ?? new Map<number, { name: string; amount: number }>();
+    const c = cards.get(r.supplierId) ?? { name: r.name, amount: 0 };
+    c.amount = round2(c.amount + r.amount);
+    cards.set(r.supplierId, c);
+    byMonth.set(m, cards);
+  }
+  const out: Record<string, { total: number; href: string | null; name: string }> = {};
+  const slugs = new Map<number, string | null>();
+  for (const [m, cards] of byMonth) {
+    const [topId, top] = [...cards].sort((a, b) => b[1].amount - a[1].amount || a[1].name.localeCompare(b[1].name, "tr"))[0];
+    if (!slugs.has(topId)) slugs.set(topId, await supplierSlugOf(topId));
+    const slug = slugs.get(topId);
+    out[m] = { total: round2([...cards.values()].reduce((a, c) => a + c.amount, 0)), href: slug ? supplierHref(slug) : null, name: top.name };
+  }
+  return out;
+}
+
+/**
  * Nakit planının mal tahmini için (K19): kart başına açık "Faturası gelecek" borçların kalanı ve kartın ad anahtarları
  * (adı ve diğer adları)
  */
-export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; keys: string[]; amount: number }[]> {
+export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; name: string; keys: string[]; amount: number }[]> {
   const entries = await loadCardEntries();
   const open = entries.debts.filter((d) => d.invoiceId === null && d.costMode === "fatura");
   if (!open.length) return [];
@@ -308,8 +382,96 @@ export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; keys:
   return cards
     .map((c) => ({
       cardId: c.id,
+      name: c.name,
       keys: [c.name, ...(Array.isArray(c.aliases) ? c.aliases : [])].map(supplierMatchKey).filter(Boolean),
       amount: round2(open.filter((d) => d.supplierId === c.id).reduce((a, d) => a + debtRemaining(d, entries.allocations), 0)),
     }))
     .filter((c) => c.amount > EPS);
+}
+
+/**
+ * Excel'in "Cari hareketleri" sekmesi: bütün elle kayıtlar (borç ve ödeme), kartın adı, ödemenin sayıldığı kalemler,
+ * borcun bağlandığı fatura. Kayıt yokken boş (sekme eklenmez).
+ */
+export async function loadCariExport(): Promise<CariExportRow[]> {
+  const entries = await loadCardEntries();
+  if (!entries.debts.length && !entries.payments.length) return [];
+  const db = getDb();
+  const cardIds = [...new Set([...entries.debts, ...entries.payments].map((e) => e.supplierId))];
+  const invoiceIds = [...new Set([...entries.allocations.flatMap((a) => (a.invoiceId !== null ? [a.invoiceId] : [])), ...entries.debts.flatMap((d) => (d.invoiceId !== null ? [d.invoiceId] : []))])];
+  const [cards, invoices] = await Promise.all([
+    db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers).where(inArray(s.suppliers.id, cardIds)),
+    invoiceIds.length ? db.select({ id: s.invoices.id, invoiceNo: s.invoices.invoiceNo, date: s.invoices.date }).from(s.invoices).where(inArray(s.invoices.id, invoiceIds)) : [],
+  ]);
+  const cardName = new Map(cards.map((c) => [c.id, c.name]));
+  const invoiceName = new Map(invoices.map((i) => [i.id, invoiceLabel(i)]));
+  const debtName = new Map(entries.debts.map((d) => [d.id, debtLabel(d)]));
+  const num2 = (v: number) => tl(v, 2).replace(/\s*₺$/u, "");
+  const movement: Record<CostMode, string> = {
+    fatura: "Faturasız alım (faturası gelecek)",
+    gider: "Faturasız alım (gider yazıldı)",
+    mevcut: "Faturasız alım (gideri zaten girildi)",
+    devir: "Eski borç (devir)",
+  };
+  const rows: CariExportRow[] = [];
+  for (const d of entries.debts) {
+    const paid = round2(entries.allocations.filter((a) => a.debtId === d.id || a.originDebtId === d.id).reduce((x, a) => x + a.amount, 0));
+    rows.push({
+      date: d.date,
+      supplier: cardName.get(d.supplierId) ?? "",
+      movement: movement[d.costMode],
+      description: d.description,
+      debt: d.amount,
+      payment: null,
+      method: null,
+      counted: paid > EPS ? `ödenen ${num2(paid)}` : null,
+      invoice: d.invoiceId !== null ? (invoiceName.get(d.invoiceId) ?? null) : null,
+      note: d.note ?? null,
+    });
+  }
+  for (const p of entries.payments) {
+    const mine = entries.allocations.filter((a) => a.paymentId === p.id);
+    const parts = mine.map((a) => `${a.invoiceId !== null ? (invoiceName.get(a.invoiceId) ?? "fatura") : (debtName.get(a.debtId ?? 0) ?? "alım")} ${num2(a.amount)}`);
+    rows.push({
+      date: p.date,
+      supplier: cardName.get(p.supplierId) ?? "",
+      movement: "Ödeme",
+      description: null,
+      debt: null,
+      payment: p.amount,
+      method: p.method === "kasa" ? `Kasadan (Teslim · ${p.cashOutStore ?? cardName.get(p.supplierId) ?? ""})` : METHOD_LABEL[p.method],
+      counted: [...parts, `hesapta ${num2(paymentCredit(p, entries.allocations))}`].join(" · "),
+      invoice: null,
+      note: p.note ?? null,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Faturalar'ın cari bilgisi (§6.4): faturaya sayılan ödemeler (gün, şekil, tutar) ve faturaya bağlanmış faturasız
+ * alımlar (fotoğrafıyla). Yalnız bağı olan faturalar; kayıt yokken boş.
+ */
+export async function loadInvoiceCariLinks(): Promise<Record<number, InvoiceCariLinks>> {
+  const db = getDb();
+  const [allocs, debts] = await Promise.all([
+    db
+      .select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount, date: s.supplierEntries.date, method: s.supplierEntries.method, card: s.suppliers.name })
+      .from(s.supplierAllocations)
+      .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
+      .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+      .where(isNotNull(s.supplierAllocations.invoiceId))
+      .orderBy(asc(s.supplierEntries.date), asc(s.supplierAllocations.id)),
+    db
+      .select({ id: s.supplierEntries.id, invoiceId: s.supplierEntries.invoiceId, date: s.supplierEntries.date, description: s.supplierEntries.description, amount: s.supplierEntries.amount, photoId: s.supplierEntries.photoId, card: s.suppliers.name })
+      .from(s.supplierEntries)
+      .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+      .where(and(eq(s.supplierEntries.kind, "borc"), isNotNull(s.supplierEntries.invoiceId)))
+      .orderBy(asc(s.supplierEntries.date), asc(s.supplierEntries.id)),
+  ]);
+  const out: Record<number, InvoiceCariLinks> = {};
+  const of = (id: number, card: string) => (out[id] ??= { card, payments: [], debts: [] });
+  for (const a of allocs) if (a.invoiceId !== null) of(a.invoiceId, a.card).payments.push({ date: a.date, method: (a.method ?? "diger") as CariMethod, amount: a.amount });
+  for (const d of debts) if (d.invoiceId !== null) of(d.invoiceId, d.card).debts.push({ id: d.id, date: d.date, description: d.description, amount: d.amount, photoId: d.photoId });
+  return out;
 }
