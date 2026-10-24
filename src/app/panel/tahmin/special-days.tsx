@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { rangeTR, shortRangeTR, type SpecialKind } from "@/lib/forecast/calendar";
-import { SPECIAL_KIND_LABEL } from "@/lib/forecast/model";
+import { HISTORY_DAYS, SPECIAL_KIND_LABEL } from "@/lib/forecast/model";
 import { EFFECT_OPTIONS, specialTail } from "@/lib/forecast/text";
 import { cn } from "@/lib/utils";
 import { deleteSpecialDay, saveSpecialDay, type SpecialDayValues } from "@/server/actions/forecast";
@@ -127,7 +127,7 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
       open
       onClose={() => (pending ? undefined : onClose())}
       title={editing ? "Özel günü düzenle" : "Özel gün ekle"}
-      description="Tahmin bu günlerde seçtiğiniz etkiyle değişir. Geçmiş bir günü de işaretleyebilirsiniz: o gün normal günlerin ortalamasına katılmaz."
+      description={`Tahmin bu günlerde seçtiğiniz etkiyle değişir. Son ${HISTORY_DAYS} gün içindeki geçmiş bir günü de işaretleyebilirsiniz: o gün normal günlerin ortalamasına katılmaz.`}
       footerStart={
         editing ? (
           <Button variant="ghost" className="text-bad hover:text-bad" onClick={remove} disabled={pending}>
@@ -175,7 +175,8 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Başlangıç" htmlFor="ozel-bas">
-            <Input id="ozel-bas" type="date" value={v.dateFrom} min={minDate} max={maxDate} onChange={(e) => set("dateFrom", e.target.value)} className="pointer-coarse:h-12" />
+            {/* Düzenlenen kaydın başlangıcı sınırdan eskiyse (bitişi son 60 günde) Enter'la kayıt tarayıcıda takılmasın */}
+            <Input id="ozel-bas" type="date" value={v.dateFrom} min={draft.dateFrom && draft.dateFrom < minDate ? draft.dateFrom : minDate} max={maxDate} onChange={(e) => set("dateFrom", e.target.value)} className="pointer-coarse:h-12" />
           </Field>
           <Field label="Bitiş" htmlFor="ozel-bit" hint="Boşsa aynı gün">
             <Input id="ozel-bit" type="date" value={v.dateTo} min={v.dateFrom || minDate} max={maxDate} onChange={(e) => set("dateTo", e.target.value)} className="pointer-coarse:h-12" />
@@ -253,7 +254,7 @@ function Row({ item, past }: { item: SpecialDayItem; past?: boolean }) {
   );
 }
 
-/** Kart "Özel günler": önümüzdeki 60 gün ve son 30 gün; satıra dokununca düzenlenir */
+/** Kart "Özel günler": bütün yaklaşanlar ve son 60 günde bitenler; satıra dokununca düzenlenir */
 export function SpecialDaysCard({ upcoming, past }: { upcoming: SpecialDayItem[]; past: SpecialDayItem[] }) {
   const { openNew } = useSpecialDay();
   return (
@@ -271,11 +272,11 @@ export function SpecialDaysCard({ upcoming, past }: { upcoming: SpecialDayItem[]
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-ink-mute">{past.length ? "Önümüzdeki 60 günde özel gün yok." : "Henüz özel gün yok. Maç, AVM etkinliği ya da kampanya olacaksa ekleyin."}</p>
+          <p className="text-sm text-ink-mute">{past.length ? "Yaklaşan özel gün yok." : "Henüz özel gün yok. Maç, AVM etkinliği ya da kampanya olacaksa ekleyin."}</p>
         )}
         {past.length ? (
           <div>
-            <p className="mb-1 text-[13px] font-medium text-ink-mute">Geçmiş (son 30 gün)</p>
+            <p className="mb-1 text-[13px] font-medium text-ink-mute">Geçmiş (son {HISTORY_DAYS} gün)</p>
             <ul className="-mx-1">
               {past.map((d) => (
                 <Row key={d.id} item={d} past />

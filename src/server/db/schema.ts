@@ -1690,6 +1690,7 @@ export const weatherDays = pgTable("weather_days", {
   /** Gün içi (09–23) yağış, mm */
   precipMm: doublePrecision("precip_mm"),
   symbol: text("symbol"),
+  /** Gün içi (09:00–22:00 arası başlayan) tahmin adımı; bugünün satırını yalnız en az bu kadar adımlı istek günceller */
   hours: integer("hours").notNull().default(0),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
 });

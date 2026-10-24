@@ -100,8 +100,9 @@ Elle tutulan tablo; kaynakları dosyada ve `CALENDAR_SOURCES`'ta.
 
 ## 4. Özel günler
 
-Derbi / maç, AVM etkinliği, kampanya, kafe kapalı ya da diğer; bir günden 14 güne kadar, 400 gün geriye ve 1 yıl
-ileriye. Etki: çok artırır (+%30), artırır (+%15), bilmiyorum (yalnız not), azaltır (−%15), çok azaltır (−%30); kafe
+Derbi / maç, AVM etkinliği, kampanya, kafe kapalı ya da diğer; bir günden 14 güne kadar, 60 gün geriye (tahmin son 60
+günün kasa raporunu okur; daha eski bir gün hiçbir şeyi değiştirmez) ve 1 yıl ileriye. Kart bütün yaklaşanları ve son 60
+günde bitenleri listeler; tahmin önümüzdeki 60 günü okur. Etki: çok artırır (+%30), artırır (+%15), bilmiyorum (yalnız not), azaltır (−%15), çok azaltır (−%30); kafe
 kapalıda tahmin 0. Geçmiş bir gün de işaretlenebilir: o gün normal günlerin ortalamasına katılmaz (derbi gününün üç
 katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki **Geri al** aynı değerlerle yeniden ekler.
 İşlem geçmişine "Özel gün", "Özel gün güncellendi", "Özel gün silindi" yazılır.
@@ -121,8 +122,9 @@ katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki
 - **Ayrıştırma** (`parseMetCompact`): adımlar Türkiye takvim gününe bölünür (21:00Z ertesi gün). Gün içi 09:00–22:00
   arasında başlayan adımlar: en yüksek sıcaklık bunlardan, en düşük bütün günden; yağış en az 10 saatlik adım varsa
   onların toplamı, yoksa 09:00 ve 15:00'te başlayan 6 saatlik toplamlar; simge 15:00'in.
-- **Saklama:** `weather_days` (gün başına bir satır). Bugün ve sonrası her alışta güncellenir (bugünün satırı yalnız en
-  az onun kadar adımla: öğleden sonraki istek sabahın tam gününü ezmez); geçmiş günler donar. HTTP durumu
+- **Saklama:** `weather_days` (gün başına bir satır; `hours` gün içi, 09:00–22:00 arası başlayan adım sayısı). Bugün ve
+  sonrası her alışta güncellenir (bugünün satırı yalnız en az onun kadar gün içi adımıyla: sabah 08:00'deki istek
+  dünkünün yerine geçer, öğleden sonraki yarım gün sabahın tam gününü ezmez); geçmiş günler donar. HTTP durumu
   `integration_state` › `forecast.weather`.
 - **Bozulunca:** istek 6 saniyede kesilir; hava alınamazsa çarpan 1, ekran nedenini yazar ("Hava durumu alınamadı
   (Bağlantı kurulamadı); tahmin havasız hesaplandı."). Ayardan kapatılabilir.

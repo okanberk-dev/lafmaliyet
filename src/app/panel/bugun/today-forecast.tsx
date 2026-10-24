@@ -76,8 +76,8 @@ export function TodayForecast({ data }: { data: ForecastCardData }) {
             </div>
             {chips.length ? (
               <div className="flex flex-wrap gap-1">
-                {chips.slice(0, CHIPS_SHOWN).map((c) => (
-                  <Badge key={c} tone="gray" className="whitespace-normal">
+                {chips.slice(0, CHIPS_SHOWN).map((c, i) => (
+                  <Badge key={`${i}-${c}`} tone="gray" className="whitespace-normal">
                     {c}
                   </Badge>
                 ))}

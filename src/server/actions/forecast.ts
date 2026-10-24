@@ -13,7 +13,7 @@ import { addDays, daysBetween } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { runForecastJob } from "@/server/forecast/job";
-import { FORECAST_SETTINGS_KEY, loadForecastSettings } from "@/server/forecast/load";
+import { FORECAST_SETTINGS_KEY, loadForecastSettings, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/forecast/load";
 
 import { logActivity } from "./log";
 import { attempt, UserError, type ActionResult } from "./util";
@@ -21,10 +21,8 @@ import { attempt, UserError, type ActionResult } from "./util";
 // Satış tahmini (yalnız yönetici; docs/SATIS-TAHMINI.md): özel günler, tahmin ayarları ve "Güncelle" (hava durumu ve
 // bugünün tahmin kaydı). Personel bu ekranı açamaz; her eylem yöneticiyi ayrıca denetler.
 
-/** Özel gün en çok bu kadar gün sürer, bu kadar geriye ve ileriye girilir */
+/** Özel gün en çok bu kadar gün sürer; geriye ve ileriye sınırlar sayfanın listesiyle aynı (load.ts) */
 const MAX_SPAN_DAYS = 14;
-const MAX_PAST_DAYS = 400;
-const MAX_AHEAD_DAYS = 365;
 
 /** Gerçek bir gün (2026-02-31 değil) */
 const zDay = (empty: string) =>
@@ -59,8 +57,9 @@ export interface SpecialDayValues {
 }
 
 /**
- * Özel gün ekler ya da (id ile) düzenler. Kafe kapalıda etki −1 (tahmin 0). Bitiş boşsa aynı gün; en çok 14 gün, en
- * çok 400 gün geriye (geçmiş gün normal günlerin ortalamasından çıkar) ve 1 yıl ileriye.
+ * Özel gün ekler ya da (id ile) düzenler. Kafe kapalıda etki −1 (tahmin 0). Bitiş boşsa aynı gün; en çok 14 gün. Geriye
+ * bitişi en çok 60 gün önce olan (tahmin 60 günün kasa raporunu okur: geçmiş gün normal günlerin ortalamasından çıkar,
+ * daha eskisi hiçbir şeyi değiştirmez ve listede görünmez), ileriye 1 yıl.
  */
 export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResult<{ id: number; summary: string }>> {
   return attempt(async () => {
@@ -70,8 +69,8 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     if (dateTo < d.dateFrom) throw new UserError("Bitiş başlangıçtan önce olamaz");
     if (daysBetween(d.dateFrom, dateTo) + 1 > MAX_SPAN_DAYS) throw new UserError(`En çok ${MAX_SPAN_DAYS} gün seçilebilir`);
     const today = businessDate();
-    if (d.dateFrom < addDays(today, -MAX_PAST_DAYS)) throw new UserError(`En çok ${MAX_PAST_DAYS} gün geriye işaretlenebilir`);
-    if (dateTo > addDays(today, MAX_AHEAD_DAYS)) throw new UserError("En çok 1 yıl ileriye girilebilir");
+    if (dateTo < addDays(today, -SPECIAL_PAST_DAYS)) throw new UserError(`En çok ${SPECIAL_PAST_DAYS} gün geriye işaretlenebilir`);
+    if (dateTo > addDays(today, SPECIAL_MAX_AHEAD_DAYS)) throw new UserError("En çok 1 yıl ileriye girilebilir");
     const effect = d.kind === "kapali" ? -1 : d.effect;
     const values = { kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo, effect, note: d.note };
     const db = getDb();

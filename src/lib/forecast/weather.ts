@@ -38,7 +38,11 @@ export interface WeatherDay {
   precipMm: number | null;
   /** MET simgesi, _day / _night eki atılmış ("rain", "partlycloudy") */
   symbol: string | null;
-  /** Güne katkı veren tahmin adımı sayısı */
+  /**
+   * Gün içi (09:00–22:00 arası başlayan) tahmin adımı sayısı. Bugünün satırını yalnız en az bu kadar adımlı istek
+   * günceller: dünkü istek bugünü 14 saatlik adımla tam görür, bu sabahki de (08:00'den) öyle; öğleden sonrakinin
+   * yarım günü sabahın tam gününü ezmez. Bütün adımlar sayılsaydı dünkü istek (24) sabahkini (16) hep yenerdi.
+   */
   hours: number;
 }
 
@@ -101,14 +105,15 @@ interface Acc {
   six: number[];
   sym6: Map<number, string>;
   sym1: Map<number, string>;
-  steps: number;
+  daySteps: number;
 }
 
 /**
  * MET yanıtını Türkiye takvim günlerine böler (savunmalı: bozuk yanıt [] verir). Gün içi 09:00–22:00 arasında başlayan
  * adımlar: en yüksek sıcaklık bunlardan, en düşük bütün günden. Yağış: gün içinde en az 10 saatlik adım varsa onların
  * toplamı, yoksa 09:00 ve 15:00'te (06Z, 12Z) başlayan 6 saatlik toplamlar. Simge 15:00'in, yoksa 09:00'un 6 saatlik
- * simgesi, o da yoksa 15:00'in saatlik simgesi. compact'ta garanti olmayan air_temperature_max okunmaz.
+ * simgesi, o da yoksa 15:00'in saatlik simgesi. hours gün içi adım sayısıdır. compact'ta garanti olmayan
+ * air_temperature_max okunmaz.
  */
 export function parseMetCompact(json: unknown): WeatherDay[] {
   const series = (json as { properties?: { timeseries?: unknown } } | null)?.properties?.timeseries;
@@ -124,11 +129,11 @@ export function parseMetCompact(json: unknown): WeatherDay[] {
     const hour = trHour(at);
     let a = days.get(date);
     if (!a) {
-      a = { temps: [], dayTemps: [], hourly: [], six: [], sym6: new Map(), sym1: new Map(), steps: 0 };
+      a = { temps: [], dayTemps: [], hourly: [], six: [], sym6: new Map(), sym1: new Map(), daySteps: 0 };
       days.set(date, a);
     }
-    a.steps++;
     const daytime = hour >= DAY_FROM && hour <= DAY_TO;
+    if (daytime) a.daySteps++;
     const temp = numberOr(s.data?.instant?.details?.air_temperature);
     if (temp !== null) {
       a.temps.push(temp);
@@ -156,7 +161,7 @@ export function parseMetCompact(json: unknown): WeatherDay[] {
       tMin: a.temps.length ? Math.min(...a.temps) : null,
       precipMm: a.hourly.length >= MIN_HOURLY ? sum(a.hourly) : a.six.length ? sum(a.six) : null,
       symbol: a.sym6.get(15) ?? a.sym6.get(9) ?? a.sym1.get(15) ?? null,
-      hours: a.steps,
+      hours: a.daySteps,
     }));
 }
 

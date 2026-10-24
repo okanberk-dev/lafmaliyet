@@ -77,8 +77,9 @@ export function ForecastDays({ data }: { data: ForecastPageData }) {
                     <span className="block text-[15px] leading-5 font-semibold text-ink">{dayTitle(d.date, d.offset)}</span>
                     {chips.length ? (
                       <span className="mt-1 flex flex-wrap gap-1">
-                        {chips.map((c) => (
-                          <Badge key={c} tone="gray" className="whitespace-normal">
+                        {/* Aynı adla iki özel gün aynı yazıyı verir: anahtar sıra */}
+                        {chips.map((c, i) => (
+                          <Badge key={`${i}-${c}`} tone="gray" className="whitespace-normal">
                             {c}
                           </Badge>
                         ))}
@@ -115,8 +116,8 @@ export function ForecastDays({ data }: { data: ForecastPageData }) {
                 <div className="border-t border-line px-3 pt-2.5 pb-2 sm:px-4">
                   <p className="text-[13px] font-medium text-ink-soft">Nasıl hesaplandı</p>
                   <ul className="mt-1 space-y-1 text-[13px] leading-5 text-ink-mute">
-                    {lines.map((l) => (
-                      <li key={l}>{l}</li>
+                    {lines.map((l, i) => (
+                      <li key={`${i}-${l}`}>{l}</li>
                     ))}
                   </ul>
                   <div className="mt-1.5">

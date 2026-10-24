@@ -25,9 +25,13 @@ import { loadProductMix } from "./mix";
 
 export const FORECAST_SETTINGS_KEY = "forecast.settings";
 export const WEATHER_STATE_KEY = "forecast.weather";
-/** Özel günler listesi: geçmiş 30, gelecek 60 gün */
-export const SPECIAL_PAST_DAYS = 30;
+/**
+ * Özel günler: tahmin bugünden 60 gün ileriye kadarını okur. Geçmişte 60 gün (HISTORY_DAYS) geriye girilir ve listede
+ * o kadar görünür (daha eskisi tabana girmez); ileriye 1 yıla kadar girilir ve listede hepsi görünür.
+ */
+export const SPECIAL_PAST_DAYS = HISTORY_DAYS;
 export const SPECIAL_AHEAD_DAYS = 60;
+export const SPECIAL_MAX_AHEAD_DAYS = 365;
 
 export async function loadForecastSettings(): Promise<ForecastSettings> {
   const [row] = await getDb().select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, FORECAST_SETTINGS_KEY)).limit(1);
@@ -78,6 +82,19 @@ export interface ForecastCore {
   special: SpecialDayRow[];
 }
 
+function toSpecialRow(r: typeof s.specialDays.$inferSelect): SpecialDayRow {
+  return {
+    id: r.id,
+    dateFrom: r.dateFrom,
+    dateTo: r.dateTo,
+    kind: r.kind as SpecialKind,
+    title: r.title,
+    effect: r.effect,
+    note: r.note,
+    createdByName: r.createdByName,
+  };
+}
+
 /** Tahminin çekirdeği: kasa raporları, ay bilgisi, özel günler, hava, kayıtlı tahminler ve ayarlar aynı anda okunur */
 export async function loadForecastCore(now?: Date): Promise<ForecastCore> {
   const db = getDb();
@@ -116,16 +133,7 @@ export async function loadForecastCore(now?: Date): Promise<ForecastCore> {
     closed: r.closed,
     createdAt: r.createdAt.toISOString(),
   }));
-  const special: SpecialDayRow[] = specialRows.map((r) => ({
-    id: r.id,
-    dateFrom: r.dateFrom,
-    dateTo: r.dateTo,
-    kind: r.kind as SpecialKind,
-    title: r.title,
-    effect: r.effect,
-    note: r.note,
-    createdByName: r.createdByName,
-  }));
+  const special = specialRows.map(toSpecialRow);
   const weather: WeatherDay[] | null = weatherRows
     ? weatherRows.map((w) => ({ date: w.date, tMax: w.tMax, tMin: w.tMin, precipMm: w.precipMm, symbol: w.symbol, hours: w.hours }))
     : null;
@@ -155,6 +163,8 @@ export function morningSnapshot(snaps: readonly SnapshotLite[], date: string): S
 }
 
 export interface ForecastPageData extends ForecastCore {
+  /** Özel günler kartının listesi: son 60 günde biten ve bütün yaklaşanlar (tahminin 60 günlük penceresinden bağımsız) */
+  specialAll: SpecialDayRow[];
   mix: ProductMix | null;
   plan: DessertPlan | null;
   roster: number | null;
@@ -163,10 +173,17 @@ export interface ForecastPageData extends ForecastCore {
   upcoming: { from: string; to: string; name: string }[];
 }
 
-/** /panel/tahmin: çekirdek, tatlı hazırlığı, kadro, kategoriler, önümüzdeki 60 günün takvimi */
+/** /panel/tahmin: çekirdek, özel günler listesi, tatlı hazırlığı, kadro, kategoriler, önümüzdeki 60 günün takvimi */
 export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
   const core = await loadForecastCore(now);
-  const [mix, roster, cats] = await Promise.all([
+  const [specialAll, mix, roster, cats] = await Promise.all([
+    // Kaydedilen her özel gün listede görünsün (1 yıl ileriye girilebilir; tahminin penceresi 60 gün)
+    getDb()
+      .select()
+      .from(s.specialDays)
+      .where(gte(s.specialDays.dateTo, addDays(core.today, -SPECIAL_PAST_DAYS)))
+      .orderBy(asc(s.specialDays.dateFrom), asc(s.specialDays.id))
+      .then((rows) => rows.map(toSpecialRow)),
     loadProductMix(core.settings, core.today).catch((e) => {
       console.error("[tahmin] tatlı payı", e);
       return null;
@@ -179,6 +196,7 @@ export async function loadForecastPage(now?: Date): Promise<ForecastPageData> {
   const chosen = effectiveDessertCategories(core.settings.dessertCategories, names);
   return {
     ...core,
+    specialAll,
     mix,
     plan: mix && open.length ? dessertPlan(open, mix) : null,
     roster,
@@ -248,11 +266,11 @@ export async function loadForecastDigest(): Promise<DigestExtraLoad | null> {
   return box ? { box, logKeys: [] } : null;
 }
 
-/** Tahminle aynı sırada okunan özel günler (sayfanın listesi): geçmiş 30 gün ve gelecek 60 gün */
-export function specialList(core: Pick<ForecastCore, "special" | "today">): { upcoming: SpecialDayRow[]; past: SpecialDayRow[] } {
-  const pastFrom = addDays(core.today, -SPECIAL_PAST_DAYS);
+/** Sayfanın özel günler listesi: bütün yaklaşanlar (başlangıca göre) ve son 60 günde bitenler (yeniden eskiye) */
+export function specialList(data: Pick<ForecastPageData, "specialAll" | "today">): { upcoming: SpecialDayRow[]; past: SpecialDayRow[] } {
+  const pastFrom = addDays(data.today, -SPECIAL_PAST_DAYS);
   return {
-    upcoming: core.special.filter((d) => d.dateTo >= core.today),
-    past: core.special.filter((d) => d.dateTo < core.today && d.dateTo >= pastFrom).reverse(),
+    upcoming: data.specialAll.filter((d) => d.dateTo >= data.today),
+    past: data.specialAll.filter((d) => d.dateTo < data.today && d.dateTo >= pastFrom).reverse(),
   };
 }

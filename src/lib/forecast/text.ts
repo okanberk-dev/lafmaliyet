@@ -114,7 +114,12 @@ export function explainLines(day: ForecastDay, ctx: ExplainCtx): string[] {
   const wd = WEEKDAY_NAMES[day.weekday];
   const b = day.base;
   if (b.source === "hafta-gunu") {
-    lines.push(`Taban: son ${b.n} ${wd} gününün ortalaması ${tl(b.amount)} (${b.n >= 5 ? "en yüksek ve en düşük gün hariç" : "ortanca"}).`);
+    // robustMean: 5 ve üstünde uçlar atılmış ortalama, 3–4 günde ortanca
+    lines.push(
+      b.n >= 5
+        ? `Taban: son ${b.n} ${wd} gününün ortalaması ${tl(b.amount)} (en yüksek ve en düşük gün hariç).`
+        : `Taban: son ${b.n} ${wd} gününün ortancası ${tl(b.amount)}.`,
+    );
   } else if (b.source === "ortalama" && f.level) {
     lines.push(`Taban: son ${f.level.windowDays} günün ${f.level.n} kasa raporuna göre ortalama gün ${tl(f.level.value)} × ${wd} payı ${sharePct(b.share ?? 1)} (varsayılan) = ${tl(b.amount)}.`);
   } else if (b.source === "ay" && f.level?.month) {

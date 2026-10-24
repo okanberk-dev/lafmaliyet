@@ -285,9 +285,10 @@ test("MET yanıtı: Türkiye gününe bölünür (21:00Z ertesi gün), saatlik y
     ["2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26"],
   );
   const [d22, d23, d24, d25, d26] = w;
-  assert.deepEqual(d22, { date: "2026-10-22", tMax: 24, tMin: 16, precipMm: 0, symbol: "clearsky", hours: 16 });
-  // 2026-10-22T21:00:00Z Türkiye'de 23 Ekim 00:00: 23'ünün 24 saatlik adımı
-  assert.equal(d23.hours, 24);
+  // İstek 08:00'de (05:00Z): 22'sinin gün içi (09–22) 14 saatlik adımı
+  assert.deepEqual(d22, { date: "2026-10-22", tMax: 24, tMin: 16, precipMm: 0, symbol: "clearsky", hours: 14 });
+  // 2026-10-22T21:00:00Z Türkiye'de 23 Ekim 00:00: 23'ünün 24 saatlik adımı, gün içi 14'ü
+  assert.equal(d23.hours, 14);
   assert.deepEqual([d23.tMax, d23.tMin, d23.precipMm, d23.symbol], [19, 12, 6, "rain"]);
   assert.equal(weatherKind(d23), "yagmur");
   assert.equal(weatherText(d23), "Yağmurlu · 6 mm · 19°/12°");
@@ -299,6 +300,25 @@ test("MET yanıtı: Türkiye gününe bölünür (21:00Z ertesi gün), saatlik y
   for (const bad of [{}, null, undefined, "x", { properties: { timeseries: "x" } }, { properties: { timeseries: [null, { time: "yok" }] } }]) {
     assert.deepEqual(parseMetCompact(bad), []);
   }
+});
+
+test("hava: bugünün satırını sabahki istek dünkünün yerine yazar, öğleden sonraki yarım gün ezmez", () => {
+  // Aynı yanıtın belli bir saatten sonraki adımları: o saatte atılmış isteğin gördüğü
+  const since = (iso: string) => ({
+    ...FIXTURE,
+    properties: { ...FIXTURE.properties, timeseries: FIXTURE.properties.timeseries.filter((x: { time: string }) => x.time >= iso) },
+  });
+  const day = (json: unknown) => parseMetCompact(json).find((d) => d.date === "2026-10-23")!;
+  const yesterday = day(FIXTURE); // 22 Ekim 08:00'deki istek: 23'ünün 24 adımı
+  const morning = day(since("2026-10-23T05:00:00Z")); // 23 Ekim 08:00: 16 adım
+  const afternoon = day(since("2026-10-23T12:00:00Z")); // 23 Ekim 15:00: 9 adım
+  assert.deepEqual([yesterday.hours, morning.hours, afternoon.hours], [14, 14, 8]);
+  // Sunucunun kuralı: bugünün satırı excluded.hours >= weather_days.hours ise güncellenir
+  assert.match(read("src/server/forecast/weather.ts"), /excluded\.hours >= \$\{s\.weatherDays\.hours\}/);
+  assert.ok(morning.hours >= yesterday.hours, "sabahki istek dünkü tahminin yerine geçer");
+  assert.ok(afternoon.hours < morning.hours, "öğleden sonraki istek sabahın tam gününü ezmez");
+  // Sabahki istek de günün bütün yağışını saatlik adımlardan toplar
+  assert.equal(morning.precipMm, yesterday.precipMm);
 });
 
 test("hava: eşikler, çarpan, kapalı ayar; istek adresi 4 ondalık, kimlik ve Expires", () => {
@@ -612,7 +632,10 @@ test("metinler: yüzde, gün başlığı, açıklama satırları, veri uyarısı
   assert.match(qualityBanner(ay)!, /^Henüz kasa raporu yok\. Tahmin şimdilik Ekim 2026 ortalamasına \(günde 18\.369 ₺, 16 açık gün\)/);
 
   const tam = buildForecast(input({ today: "2026-10-26", history: days("2026-10-05", "2026-10-25", (d) => (d < "2026-10-12" ? 10_000 : d < "2026-10-19" ? 9_000 : 11_000)) }));
-  assert.equal(explainLines(byDate(tam, "2026-10-26"), { ...ctx, forecast: tam })[0], "Taban: son 3 Pazartesi gününün ortalaması 10.000 ₺ (ortanca).");
+  assert.equal(explainLines(byDate(tam, "2026-10-26"), { ...ctx, forecast: tam })[0], "Taban: son 3 Pazartesi gününün ortancası 10.000 ₺.");
+  // 5 ve üstünde uçlar atılmış ortalama
+  const uzun = buildForecast(input({ today: "2026-10-26", history: days("2026-09-14", "2026-10-25", () => 10_000) }));
+  assert.match(explainLines(byDate(uzun, "2026-10-26"), { ...ctx, forecast: uzun })[0], /^Taban: son 6 Pazartesi gününün ortalaması 10\.000 ₺ \(en yüksek ve en düşük gün hariç\)\.$/);
   const ort = buildForecast(input({ today: "2026-12-14", history: days("2026-12-06", "2026-12-13", () => 10_000) }));
   assert.match(explainLines(byDate(ort, "2026-12-14"), { ...ctx, forecast: ort })[0], /^Taban: son 28 günün 8 kasa raporuna göre ortalama gün .+ × Pazartesi payı %85 \(varsayılan\) = /);
   assert.equal(qualityBanner(ort), "Son 28 günde 8 günlük kasa raporu var. Hafta günü farkları şimdilik varsayılan; her gün için 3 rapor birikince kendi verinizden hesaplanır.");
