@@ -1,6 +1,6 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
+import { Banknote, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -18,8 +18,9 @@ import type { MonthEffect } from "@/lib/cari/months";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { deleteSupplierEntry, saveSupplierDebt } from "@/server/actions/cari";
+import { deleteSupplierEntry, dismissCashOut, saveSupplierDebt } from "@/server/actions/cari";
 import { loadDebtOptions } from "@/server/actions/cari-options";
+import type { KasaFound } from "@/server/cari/kasa";
 
 import { KasaLinePicker, type CariTarget } from "../cari-payment-dialog";
 import { amountText, CARI_UNDO_MS, CariPhotoField, PastConfirm } from "../cari-ui";
@@ -115,6 +116,10 @@ export function DebtDialog({
   const [line, setLine] = useState<number | "new" | null>(null);
   const [past, setPast] = useState<MonthEffect[]>([]);
   const [pastOk, setPastOk] = useState(false);
+  // Kasa denetimi (K15): sunucunun bulduğu satırlar ve seçim ("pesin:<id>", "kapat:<id>", "ayri")
+  const [kasa, setKasa] = useState<KasaFound[] | null>(null);
+  const [kasaPick, setKasaPick] = useState<string | null>(null);
+  const kapat = Boolean(kasaPick?.startsWith("kapat:"));
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<{ date: string; expenses: ExpenseOption[]; digerMal: number | null } | null>(null);
   const [pending, run] = useActionTransition();
@@ -163,7 +168,11 @@ export function DebtDialog({
     if (mode === "mevcut" && !adopted) return void setError("Harcama kaydını seçin");
     if (mode === "mevcut" && adoptDiffers && !adoptOk) return void setError("Kaydın borca eşitlenmesini onaylayın");
     if (past.length && !pastOk) return void setError("Geçmiş ayın değişeceğini onaylayın");
-    if (paid && paidMethod === "kasa" && line === null) return void setError("Kasa satırını seçin ya da kasaya yeni satır ekleyin");
+    if (kasa && !kasaPick) return void setError("Kasadaki satır için bir seçim yapın");
+    if (paid && !kapat && paidMethod === "kasa" && line === null) return void setError("Kasa satırını seçin ya da kasaya yeni satır ekleyin");
+    const seen = kasa?.map((l) => l.id) ?? [];
+    const [action, pickedId] = (kasaPick ?? "").split(":");
+    const kasaChoice = kasa && kasaPick ? (action === "ayri" ? { action: "ayri" as const, seen } : { action: action as "pesin" | "kapat", cashOutId: Number(pickedId), seen }) : null;
     run(async () => {
       const r = await saveSupplierDebt({
         target,
@@ -178,13 +187,40 @@ export function DebtDialog({
         note: note.trim() || null,
         photoId,
         applyCredit: useCredit && credit > EPS,
-        paid: paid ? { method: paidMethod, date: paidDate, cashOut: paidMethod === "kasa" ? (line === "new" ? { mode: "new" } : { mode: "existing", id: line as number }) : null } : null,
+        paid: paid && !kapat ? { method: paidMethod, date: paidDate, cashOut: paidMethod === "kasa" ? (line === "new" ? { mode: "new" } : { mode: "existing", id: line as number }) : null } : null,
         confirmPast: pastOk ? past.map((e) => e.month) : [],
+        kasaChoice,
       });
       if (!r.ok) return void setError(r.error);
       if (r.data.needs === "past") {
         setPast(r.data.effects);
         setPastOk(false);
+        return;
+      }
+      if (r.data.needs === "kasa") {
+        setKasa(r.data.lines);
+        setKasaPick(null);
+        return;
+      }
+      if (r.data.needs === "skipped") {
+        const cashOutId = r.data.cashOutId;
+        toast.success("Borç açılmadı", {
+          description: r.data.hasExpense ? "Kasadaki satır gider olarak duruyor." : "Kasadaki satır peşin alım olarak duruyor.",
+          duration: CARI_UNDO_MS,
+          action: {
+            label: "Geri al",
+            onClick: async () => {
+              try {
+                const u = await dismissCashOut({ cashOutId, undo: true });
+                if (!u.ok) return void toast.error(u.error);
+                toast.success("Kasa satırı yeniden işlenmemiş");
+              } catch (e) {
+                toastUnreachable(e);
+              }
+            },
+          },
+        });
+        onClose();
         return;
       }
       const d = r.data;
@@ -196,12 +232,14 @@ export function DebtDialog({
       const cardTarget = { cardId: d.cardId };
       const undo = d.created
         ? async () => {
-            // Ödendi ile açılan ödeme önce silinir (borç ödemesiz silinir)
+            // Ödendi ile açılan ödeme önce silinir (borç ödemesiz silinir); "Ayrı alım" denen kasa satırları geri döner
             if (d.paymentId) {
               const p = await deleteSupplierEntry({ id: d.paymentId });
               if (!p.ok) return p;
             }
-            return deleteSupplierEntry({ id: d.id, confirmPast: months });
+            const res = await deleteSupplierEntry({ id: d.id, confirmPast: months });
+            if (res.ok) for (const id of d.apart) await dismissCashOut({ cashOutId: id, undo: true });
+            return res;
           }
         : prev
           ? () =>
@@ -277,6 +315,8 @@ export function DebtDialog({
               onChange={(e) => {
                 setDate(e.target.value);
                 setPast([]);
+                setKasa(null);
+                setKasaPick(null);
               }}
               aria-invalid={Boolean(dateError) || undefined}
             />
@@ -439,7 +479,7 @@ export function DebtDialog({
             offText="Sayılmaz"
           />
         ) : null}
-        {remaining > EPS ? (
+        {remaining > EPS && !kapat ? (
           <ToggleRow
             title="Ödendi"
             description={useCredit && credit > EPS ? "Hesaptaki para sayıldıktan sonra kalanı için ödeme kaydı açılır." : "Borç, ödemesi ve tam dağıtım birlikte yazılır."}
@@ -450,7 +490,7 @@ export function DebtDialog({
             offText="Ödenmedi"
           />
         ) : null}
-        {paid ? (
+        {paid && !kapat ? (
           <div className="space-y-4 rounded-2xl bg-panel/60 p-3.5">
             <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
               <Field label="Nasıl ödendi" htmlFor="db-method">
@@ -485,6 +525,7 @@ export function DebtDialog({
           </div>
         ) : null}
 
+        {kasa ? <KasaCheck lines={kasa} amount={value} value={kasaPick} onChange={setKasaPick} /> : null}
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
           <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
@@ -502,5 +543,57 @@ function Warn({ children }: { children: ReactNode }) {
       <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
       <span>{children}</span>
     </p>
+  );
+}
+
+/** "Teslim · Sütaş · 2.200,00 ₺ · Ayşe" (Alışveriş satırında yer) */
+const lineText = (l: KasaFound) => [dateTR(l.date).slice(0, 5), l.kind === "teslim" ? "Teslim" : "Alışveriş", l.store || "adı yazılmamış", tl(l.amount, 2), l.createdByName].join(" · ");
+
+/**
+ * Kasa denetimi (K15): alım gününün ±3 günü içinde kasada bu tedarikçinin adıyla işlenmemiş satır var; kaydetmeden
+ * önce seçilir. Alışveriş satırı peşin alımsa borç açılmaz; Teslim satırı borcu kapatabilir; ya da ayrı alım.
+ */
+function KasaCheck({ lines, amount, value, onChange }: { lines: KasaFound[]; amount: number; value: string | null; onChange: (v: string) => void }) {
+  const options = [
+    ...lines.map((l) =>
+      l.kind === "harcama"
+        ? { key: `pesin:${l.id}`, title: "Kasadan peşin ödendi (borç açma)", note: `${lineText(l)}${l.expense ? " · gider yazılmış" : ""}` }
+        : {
+            key: `kapat:${l.id}`,
+            title: "Borcu aç ve bu satırla kapat",
+            note: `${lineText(l)}${amount > 0 && l.amount > amount + EPS ? ` · ${tl(round2(l.amount - amount), 2)} hesapta kalır` : amount > 0 && l.amount < amount - EPS ? ` · ${tl(round2(amount - l.amount), 2)} borç kalır` : ""}`,
+          },
+    ),
+    { key: "ayri", title: "Ayrı alım", note: lines.length > 1 ? "Borç açılır; kasadaki satırlar ayrı kalır." : "Borç açılır; kasadaki satır ayrı kalır." },
+  ];
+  return (
+    <fieldset className="space-y-2 rounded-2xl bg-info-soft p-3.5">
+      <legend className="sr-only">Kasa denetimi</legend>
+      <p className="flex items-start gap-2 text-[13px] leading-5 text-info">
+        <Banknote size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>Kasada bu tedarikçinin adıyla {lines.length === 1 ? "bir satır" : `${lines.length} satır`} var (alım gününün 3 gün öncesi ve sonrası). Aynı alım olabilir; kaydetmeden önce seçin.</span>
+      </p>
+      <div role="radiogroup" aria-label="Kasadaki satır" className="divide-y divide-line overflow-hidden rounded-2xl bg-surface ring-1 ring-line-strong">
+        {options.map((o) => {
+          const on = value === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => onChange(o.key)}
+              className={cn("flex min-h-12 w-full cursor-pointer items-center gap-3 px-4 py-2 text-left transition-colors", on ? "bg-panel text-ink" : "text-ink-soft hover:bg-panel/60")}
+            >
+              <span className="min-w-0 flex-1">
+                <span className={cn("block text-[15px]", on && "font-medium")}>{o.title}</span>
+                <span className="block text-[13px] leading-5 break-words text-ink-mute tabular">{o.note}</span>
+              </span>
+              <span className={cn("size-5 shrink-0 rounded-full", on ? "border-[6px] border-ink bg-surface" : "ring-1 ring-line-strong ring-inset")} aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }

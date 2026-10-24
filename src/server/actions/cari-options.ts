@@ -62,28 +62,50 @@ export async function loadDebtOptions(input: { date: string; debtId?: number | n
 /**
  * Ödeme ekle › Kasadan: o günün işlenmemiş Teslim satırları (başka ödemeye bağlı değil, "Ayrı tut" denmemiş);
  * tedarikçinin adlarıyla eşleşenler önce. `paymentId`: düzeltilen ödemenin kendi satırı da listede kalır.
+ * `convert`: yeni ödemede Alışveriş satırları da gelir (seçilirse "Ödemeye çevir": gider kaydı silinir, satır Teslim
+ * olur); gider kaydının ayı, kategorisi ve tutarıyla. "Ayrı alım" denmiş alışveriş de seçilebilir.
  */
-export async function loadKasaLines(input: { date: string; names: string[]; paymentId?: number | null }) {
+export async function loadKasaLines(input: { date: string; names: string[]; paymentId?: number | null; convert?: boolean }) {
   return attempt(async () => {
     await requireAdmin();
     const date = zDate.parse(input.date);
     const keys = new Set(z.array(z.string().max(300)).max(40).parse(input.names).map(supplierMatchKey).filter(Boolean));
     const own = zId.nullish().parse(input.paymentId) ?? null;
+    const convert = z.boolean().optional().parse(input.convert) ?? false;
     const db = getDb();
-    const [lines, handled, mine] = await Promise.all([
+    const [lines, handled, linked, mine] = await Promise.all([
       db
-        .select({ id: s.cashOuts.id, date: s.cashOuts.date, amount: s.cashOuts.amount, store: s.cashOuts.store, createdByName: s.cashOuts.createdByName })
+        .select({
+          id: s.cashOuts.id,
+          date: s.cashOuts.date,
+          kind: s.cashOuts.kind,
+          docType: s.cashOuts.docType,
+          amount: s.cashOuts.amount,
+          store: s.cashOuts.store,
+          createdByName: s.cashOuts.createdByName,
+          expenseAmount: s.expenseEntries.amount,
+          expenseDate: s.expenseEntries.date,
+          categoryName: s.expenseCategories.name,
+        })
         .from(s.cashOuts)
-        .where(and(eq(s.cashOuts.date, date), eq(s.cashOuts.kind, "teslim")))
+        .leftJoin(s.expenseEntries, eq(s.expenseEntries.cashOutId, s.cashOuts.id))
+        .leftJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+        .where(convert ? eq(s.cashOuts.date, date) : and(eq(s.cashOuts.date, date), eq(s.cashOuts.kind, "teslim")))
         .orderBy(asc(s.cashOuts.id)),
       loadKasaHandled(),
+      db.select({ id: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(isNotNull(s.supplierEntries.cashOutId)),
       own ? db.select({ cashOutId: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(eq(s.supplierEntries.id, own)).limit(1) : Promise.resolve([]),
     ]);
     const keep = mine[0]?.cashOutId ?? null;
+    const taken = new Set(linked.map((r) => r.id));
     return lines
-      .filter((l) => l.id === keep || !handled.has(l.id))
-      .map((l) => ({ ...l, match: Boolean(l.store && keys.has(supplierMatchKey(l.store))) }))
-      .sort((a, b) => Number(b.match) - Number(a.match) || a.id - b.id);
+      .filter((l) => l.id === keep || (l.kind === "teslim" ? !handled.has(l.id) : !taken.has(l.id)))
+      .map(({ expenseAmount, expenseDate, categoryName, ...l }) => ({
+        ...l,
+        expense: expenseAmount !== null && expenseDate !== null ? { amount: expenseAmount, date: expenseDate, categoryName: categoryName ?? "" } : null,
+        match: Boolean(l.store && keys.has(supplierMatchKey(l.store))),
+      }))
+      .sort((a, b) => Number(b.match) - Number(a.match) || Number(a.kind === "harcama") - Number(b.kind === "harcama") || a.id - b.id);
   });
 }
 

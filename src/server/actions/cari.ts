@@ -9,7 +9,7 @@ import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
 import { COST_MODE_LABEL, COST_MODES, debtLabel, dueOf, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, methodFromCard, round2, type CariMethod } from "@/lib/cari/balance";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
-import { dateTR, tl } from "@/lib/format";
+import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays, postponeDate, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import {
@@ -23,11 +23,12 @@ import {
   writeDebt,
   writePayment,
   type Card,
+  type DebtResult,
   type EntrySnapshot,
   type PaymentResult,
 } from "@/server/cari/entries";
+import { convertCashOut, kasaCheck, keepKasaApart, NeedsKasa, resolveKasaChoice, undoConversion, type ConvertSnapshot, type KasaChoice } from "@/server/cari/kasa";
 import { cardInvoiceIds, cardResolver, deleteAllocations, ensureCard, linkDebts, lockCard, lockCards, recomputeAllocated, resettle, unlinkDebt, type CardTarget, type Tx } from "@/server/cari/settle";
-import { KASA_AYRI_KEY, KASA_AYRI_LIMIT } from "@/server/data/cari";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { supplierSlugOf } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -42,6 +43,7 @@ import { attempt, UserError, zAmount, zDate, zMonth, zOptText, zText } from "./u
 // Yazım src/server/cari/entries.ts ve settle.ts'te; burada ayrıştırma, işlem, işlem geçmişi ve yenileme.
 
 const zId = z.number().int().positive();
+type KasaResolution = Awaited<ReturnType<typeof resolveKasaChoice>>;
 const zPositive = zAmount.refine((v) => v > 0, "Tutar girin");
 const targetSchema = z.union([z.object({ cardId: zId }).strict(), z.object({ key: z.string().trim().min(1).max(300) }).strict()]);
 const cashOutSchema = z.discriminatedUnion("mode", [z.object({ mode: z.literal("existing"), id: zId }), z.object({ mode: z.literal("new") })]);
@@ -110,11 +112,21 @@ const debtSchema = z.object({
   applyCredit: z.boolean(),
   paid: z.object({ method: methodSchema, date: zDate, cashOut: cashOutSchema.nullable() }).nullable(),
   confirmPast: confirmSchema,
+  /** Kasa denetiminin seçimi (K15): pencerenin gördüğü satırlar ve ne yapılacağı */
+  kasaChoice: z
+    .discriminatedUnion("action", [
+      z.object({ action: z.enum(["pesin", "kapat"]), cashOutId: zId, seen: z.array(zId).max(50) }),
+      z.object({ action: z.literal("ayri"), seen: z.array(zId).max(50) }),
+    ])
+    .nullable()
+    .default(null),
 });
 
 /**
  * Borç ekle / Borcu düzenle (§3.1): faturasız ya da elden alım, eski borç. Kartsız tedarikçiye ilk kayıtta kart
  * açılır (K2). Geçmiş ayın giderini değiştirirse `{ needs: "past" }` döner, onaylanan aylarla yeniden gönderilir.
+ * Yeni borçta kasada ±3 gün içinde bu tedarikçinin adıyla işlenmemiş satır varsa `{ needs: "kasa" }` döner (K15);
+ * "Kasadan peşin ödendi" seçilirse borç açılmaz (`{ needs: "skipped" }`).
  */
 export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
   return attempt(async () => {
@@ -124,13 +136,30 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
     if (d.date > addDays(today, 1)) throw new UserError("Alım günü ileri bir tarih olamaz");
     if (d.dueDate && d.dueDate < d.date) throw new UserError("Vade alım gününden önce olamaz");
     if (d.paid && d.paid.date > addDays(today, 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
-    const r = await inTx(async (tx) => {
-      const { card, created } = await ensureCard(tx, d.target as CardTarget);
-      const written = await writeDebt(tx, me, card, { ...d, description: d.description, note: d.note }, await termDaysOf(card));
-      return { card, created, written };
-    });
+    let r: Awaited<ReturnType<typeof inTx<{ card: Card; created: boolean; written: DebtResult | null; kasa: KasaResolution }>>>;
+    try {
+      r = await inTx(async (tx) => {
+        const { card, created } = await ensureCard(tx, d.target as CardTarget);
+        // Kasa denetimi (K15): yalnız yeni borçta
+        const kasa = d.id ? ({ action: "none" } as const) : await resolveKasaChoice(tx, await kasaCheck(tx, card, d.date), d.kasaChoice as KasaChoice | null);
+        if (kasa.action === "pesin") return { card, created, written: null, kasa };
+        const paid = kasa.action === "kapat" ? { method: "kasa" as const, date: kasa.line.date, cashOut: { mode: "existing" as const, id: kasa.line.id }, amount: kasa.line.amount } : d.paid;
+        const written = await writeDebt(tx, me, card, { ...d, paid, description: d.description, note: d.note }, await termDaysOf(card));
+        return { card, created, written, kasa };
+      });
+    } catch (e) {
+      if (e instanceof NeedsKasa) return { needs: "kasa" as const, lines: e.lines };
+      throw e;
+    }
     if (r.needs) return r;
-    const { card, created, written } = r.value;
+    const { card, created, kasa } = r.value;
+    if (kasa.action === "pesin") {
+      const l = kasa.line;
+      await logActivity(me, "Kasa satırı ayrı tutuldu", `${dateTR(l.date).slice(0, 5)} · Alışveriş · ${l.store ?? ""} · ${tl(l.amount, 2)} · kasadan peşin ödendi, borç açılmadı (${card.name})`);
+      refresh();
+      return { needs: "skipped" as const, cashOutId: l.id, hasExpense: l.expense !== null };
+    }
+    const written = r.value.written!;
     const what = d.description;
     const mode: Record<CostMode, string> = {
       fatura: "faturası gelecek",
@@ -138,7 +167,12 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
       mevcut: "gideri zaten girildi",
       devir: "eski borç (devir)",
     };
-    const extra = [written.credited > EPS ? `hesaptaki ${tl(written.credited, 2)} sayıldı` : "", written.paid && d.paid ? `ödendi (${methodText(d.paid.method, card)})` : ""].filter(Boolean);
+    const paidWith = kasa.action === "kapat" ? "kasa" : d.paid?.method;
+    const extra = [
+      written.credited > EPS ? `hesaptaki ${tl(written.credited, 2)} sayıldı` : "",
+      written.paid && paidWith ? `ödendi (${methodText(paidWith, card)})` : "",
+      kasa.action === "ayri" ? "kasadaki satır ayrı alım" : "",
+    ].filter(Boolean);
     const suffix = pastMonthLogSuffix(written.effects);
     if (written.prev) {
       const change = Math.abs(written.prev.amount - d.amount) >= 0.005 ? `${tl(written.prev.amount, 2)} → ${tl(d.amount, 2)}` : tl(d.amount, 2);
@@ -146,8 +180,9 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
     } else {
       await logActivity(me, "Cari borç eklendi", [card.name, dateTR(d.date), tl(d.amount, 2), what, mode[d.costMode], ...extra].join(" · ") + suffix);
     }
-    if (written.paid?.created && d.paid) {
-      await rememberPayment(card, { id: written.paid.id, date: d.paid.date, amount: round2(written.paid.lines.reduce((a, l) => a + l.amount, 0) + written.paid.left), method: d.paid.method, items: written.paid.lines.length });
+    if (written.paid?.created && paidWith) {
+      const payDate = kasa.action === "kapat" ? kasa.line.date : d.paid!.date;
+      await rememberPayment(card, { id: written.paid.id, date: payDate, amount: round2(written.paid.lines.reduce((a, l) => a + l.amount, 0) + written.paid.left), method: paidWith, items: written.paid.lines.length });
     }
     refresh();
     return {
@@ -160,6 +195,8 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
       effects: written.effects,
       slug: created ? await supplierSlugOf(card.id) : null,
       cardId: card.id,
+      /** Kasa denetiminde "Ayrı alım" denen satırlar ("Geri al" onları da geri çevirir) */
+      apart: kasa.action === "ayri" ? ((d.kasaChoice?.seen ?? []) as number[]) : [],
     };
   });
 }
@@ -609,15 +646,93 @@ export async function dismissCashOut(input: { cashOutId: number; undo?: boolean 
     const line = await db.transaction(async (tx) => {
       const [line] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, id)).limit(1);
       if (!line) throw new UserError("Kasa satırı bulunamadı; silinmiş olabilir.");
-      await tx.insert(s.integrationState).values({ key: KASA_AYRI_KEY, value: [] }).onConflictDoNothing();
-      const [state] = await tx.select().from(s.integrationState).where(eq(s.integrationState.key, KASA_AYRI_KEY)).for("update").limit(1);
-      const cur = Array.isArray(state?.value) ? (state.value as unknown[]).filter((x): x is number => Number.isInteger(x)) : [];
-      const next = undo ? cur.filter((x) => x !== id) : [...cur.filter((x) => x !== id), id].slice(-KASA_AYRI_LIMIT);
-      await tx.update(s.integrationState).set({ value: next, updatedAt: new Date() }).where(eq(s.integrationState.key, KASA_AYRI_KEY));
+      await keepKasaApart(tx, [id], undo);
       return line;
     });
     if (!undo) await logActivity(me, "Kasa satırı ayrı tutuldu", `${dateTR(line.date).slice(0, 5)} · ${line.kind === "teslim" ? "Teslim" : "Alışveriş"} · ${line.store ?? ""}`);
     refresh();
     return null;
+  });
+}
+
+// ---------------------------------------------------------------- Ödemeye çevir (K14)
+
+const convertSchema = z.object({
+  target: targetSchema,
+  cashOutId: zId,
+  allocation: allocationSchema,
+  note: zOptText(500),
+  photoId: zId.nullable(),
+  confirmPast: confirmSchema,
+});
+
+const convertUndoSchema = z.object({ v: z.literal(2), t: z.literal("cevir"), by: z.number().int(), exp: z.number(), snap: z.unknown() });
+
+/**
+ * Ödemeye çevir (K14): kasadaki alışveriş satırı aslında tedarikçiye ödemeydi. Satırın gider kaydı silinir (geçmiş
+ * aysa onay, K18), satır Teslim olur ve satıra bağlı Kasadan ödeme açılır (satırın günü ve tutarıyla; neye
+ * sayılacağı Ödeme ekle'deki gibi). Hepsi tek işlem. Geri almak için mühürlü kopya döner.
+ */
+export async function convertCashOutToPayment(input: z.input<typeof convertSchema>) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const c = convertSchema.parse(input);
+    const r = await inTx(async (tx) => {
+      const { card, created } = await ensureCard(tx, c.target as CardTarget);
+      const done = await convertCashOut(tx, me, card, { cashOutId: c.cashOutId, allocation: c.allocation, note: c.note, photoId: c.photoId, confirmPast: c.confirmPast }, await termDaysOf(card));
+      return { card, created, done };
+    });
+    if (r.needs) return r;
+    const { card, created, done } = r.value;
+    const p = done.payment;
+    const gone = done.expense ? `gider kaydı silindi (${monthLabel(done.expense.date.slice(0, 7))} · ${done.expense.categoryName} · ${tl(done.expense.amount, 2)})` : "gider kaydı yoktu";
+    await logActivity(
+      me,
+      "Kasadan çıkan ödemeye çevrildi",
+      [dateTR(done.line.date).slice(0, 5), card.name, tl(done.line.amount, 2), gone, allocationText(p.lines, p.left)].join(" · ") + pastMonthLogSuffix(done.effects),
+    );
+    await rememberPayment(card, { id: p.id, date: done.line.date, amount: done.line.amount, method: "kasa", items: p.lines.length });
+    refresh();
+    const undo = seal(JSON.stringify({ v: 2, t: "cevir", by: me.id, exp: Date.now() + UNDO_MS, snap: done.snapshot }), UNDO_PURPOSE);
+    return {
+      needs: null,
+      id: p.id,
+      lines: p.lines,
+      left: p.left,
+      closed: p.lines.filter((l) => l.closed).length,
+      partial: p.lines.filter((l) => !l.closed).length,
+      expense: done.expense,
+      effects: done.effects,
+      slug: created ? await supplierSlugOf(card.id) : null,
+      cardId: card.id,
+      undo,
+    };
+  });
+}
+
+/** "Ödemeye çevir"in geri alınması: ödeme silinir, satır eski türüne ve gider kaydı yerine döner (15 dakika) */
+export async function undoCashOutConversion(undo: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const sealed = z.string().max(200_000).safeParse(undo);
+    const opened = sealed.success ? open(sealed.data, UNDO_PURPOSE) : null;
+    let parsed: z.infer<typeof convertUndoSchema> | null = null;
+    try {
+      const r = convertUndoSchema.safeParse(opened ? JSON.parse(opened) : null);
+      parsed = r.success ? r.data : null;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || parsed.by !== me.id || parsed.exp <= Date.now()) throw new UserError("Geri alma süresi doldu; ödemeyi Tedarikçiler'den silin");
+    const snap = parsed.snap as ConvertSnapshot;
+    const r = await getDb().transaction((tx) => undoConversion(tx, snap));
+    await logActivity(
+      me,
+      "Ödemeye çevirme geri alındı",
+      [dateTR(r.line.date).slice(0, 5), r.card.name, tl(r.line.amount, 2), r.expenseRestored ? "gider kaydı yeniden yazıldı" : ""].filter(Boolean).join(" · "),
+    );
+    await forgetPaid("cari", [snap.paymentId]);
+    refresh();
+    return { expenseRestored: r.expenseRestored };
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { toastUnreachable, useActionTransition } from "@/components/ui/action-error";
@@ -12,26 +12,33 @@ import { BIG_FIELDS, ChoiceList, SHEET_BTN } from "@/components/ui/mobile-filter
 import { parseNumberTR } from "@/lib/calc/expr";
 import { allocateFifo, allocationPreview, validateManual, type AllocationLine, type OpenItem } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, round2, type CariMethod } from "@/lib/cari/balance";
-import { dateTR, tl } from "@/lib/format";
+import type { MonthEffect } from "@/lib/cari/months";
+import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { deleteSupplierEntry, saveSupplierPayment } from "@/server/actions/cari";
+import { convertCashOutToPayment, deleteSupplierEntry, saveSupplierPayment, undoCashOutConversion } from "@/server/actions/cari";
 import { loadKasaLines } from "@/server/actions/cari-options";
 
-import { amountText, CARI_UNDO_MS, CariPhotoField } from "./cari-ui";
+import { amountText, CARI_UNDO_MS, CariPhotoField, PastConfirm } from "./cari-ui";
 
 /** Cari kaydının tedarikçisi: kartı varsa kartın kimliği, yoksa grubun anahtarı (sunucu çözer; ad gönderilmez) */
 export type CariTarget = { cardId: number } | { key: string };
 
 export type AllocationMode = "auto" | "manual" | "none";
 
-/** Kasadan ödemenin seçilebilen satırı (o günün işlenmemiş Teslim satırı) */
+/**
+ * Kasadan ödemenin seçilebilen satırı: o günün işlenmemiş Teslim satırı ya da (yeni ödemede) Alışveriş satırı; o
+ * seçilirse "Ödemeye çevir" (gider kaydı silinir, satır Teslim olur)
+ */
 export interface KasaOption {
   id: number;
   date: string;
+  kind: "harcama" | "teslim";
   amount: number;
   store: string | null;
   createdByName: string;
+  /** Alışveriş satırının Aylık harcamalar kaydı */
+  expense: { amount: number; date: string; categoryName: string } | null;
   match: boolean;
 }
 
@@ -63,12 +70,17 @@ export interface EditPayment {
 
 const itemKey = (i: { kind: string; id: number }) => `${i.kind}:${i.id}`;
 
-/** "Teslim · Sütaş · 2.200,00 ₺ · Ayşe" */
-export const kasaLineText = (l: Pick<KasaOption, "store" | "amount" | "createdByName">) => ["Teslim", l.store || "Kime yazılmamış", tl(l.amount, 2), l.createdByName].join(" · ");
+/** "Teslim · Sütaş · 2.200,00 ₺ · Ayşe" (Alışveriş satırında "Alışveriş · Sütaş · …") */
+export const kasaLineText = (l: Pick<KasaOption, "store" | "amount" | "createdByName"> & { kind?: KasaOption["kind"] }) =>
+  [l.kind === "harcama" ? "Alışveriş" : "Teslim", l.store || (l.kind === "harcama" ? "yer yazılmamış" : "Kime yazılmamış"), tl(l.amount, 2), l.createdByName].join(" · ");
+
+/** "Ekim · Nakit malzeme alımı −2.200,00 ₺" (Ödemeye çevirde silinecek gider kaydı) */
+export const expenseGoneText = (e: NonNullable<KasaOption["expense"]>) => `${monthLabel(e.date.slice(0, 7)).split(" ")[0]} · ${e.categoryName} −${tl(e.amount, 2)}`;
 
 /**
  * Kasadan ödemenin satırı: o günün işlenmemiş Teslim satırları (tedarikçinin adıyla eşleşenler önce) ya da kasaya yeni
  * Teslim satırı. `amount` verilirse tutarı farklı satır seçilemez (borç ekle'nin "Ödendi"si kalan kadar öder).
+ * `convert`: Alışveriş satırları da listelenir (Ödemeye çevir); `onList` yüklenen listeyi verir.
  */
 export function KasaLinePicker({
   date,
@@ -77,6 +89,8 @@ export function KasaLinePicker({
   value,
   onChange,
   amount,
+  convert = false,
+  onList,
 }: {
   date: string;
   names: string[];
@@ -84,27 +98,31 @@ export function KasaLinePicker({
   value: number | "new" | null;
   onChange: (v: number | "new", line: KasaOption | null) => void;
   amount?: number | null;
+  convert?: boolean;
+  onList?: (list: KasaOption[]) => void;
 }) {
   const [lines, setLines] = useState<{ date: string; list: KasaOption[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(date);
   const namesKey = names.join("|");
+  const reportList = useEffectEvent((list: KasaOption[]) => onList?.(list));
   useEffect(() => {
     if (!valid) return;
     let alive = true;
-    loadKasaLines({ date, names: namesKey.split("|"), paymentId: paymentId ?? null })
+    loadKasaLines({ date, names: namesKey.split("|"), paymentId: paymentId ?? null, convert })
       .then((r) => {
         if (!alive) return;
         if (r.ok) {
           setLines({ date, list: r.data });
           setFailed(null);
+          reportList(r.data);
         } else setFailed(r.error);
       })
       .catch(() => alive && setFailed("Kasa satırları okunamadı; bağlantıyı kontrol edin."));
     return () => {
       alive = false;
     };
-  }, [date, valid, namesKey, paymentId]);
+  }, [date, valid, namesKey, paymentId, convert]);
   const list = lines?.date === date ? lines.list : null;
   return (
     <fieldset>
@@ -128,7 +146,13 @@ export function KasaLinePicker({
               >
                 <span className="min-w-0 flex-1 break-words">
                   {kasaLineText(l)}
-                  {off ? <span className="block text-xs font-normal text-ink-mute">tutar farklı</span> : l.match ? null : <span className="block text-xs font-normal text-ink-mute">adı eşleşmiyor</span>}
+                  {off ? (
+                    <span className="block text-xs font-normal text-ink-mute">tutar farklı</span>
+                  ) : (
+                    <span className="block text-xs font-normal text-ink-mute empty:hidden">
+                      {[l.match ? "" : "adı eşleşmiyor", l.kind === "harcama" ? (l.expense ? "ödemeye çevrilir, gider kaydı silinir" : "ödemeye çevrilir") : ""].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
                 </span>
                 <Radio on={on} />
               </button>
@@ -147,7 +171,7 @@ export function KasaLinePicker({
           <Radio on={value === "new"} />
         </button>
       </div>
-      {list && !list.length ? <p className="mt-1.5 text-xs text-ink-mute">O gün kasada işlenmemiş Teslim satırı yok.</p> : null}
+      {list && !list.length ? <p className="mt-1.5 text-xs text-ink-mute">{convert ? "O gün kasada işlenmemiş satır yok." : "O gün kasada işlenmemiş Teslim satırı yok."}</p> : null}
     </fieldset>
   );
 }
@@ -214,6 +238,13 @@ export function CariPaymentDialog({
   const [photoId, setPhotoId] = useState<number | null>(edit?.photoId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [pending, run] = useActionTransition();
+  // Ödemeye çevir (K14): seçilen Alışveriş satırı, gider kaydının silinmesinin onayı ve geçmiş ay onayı (K18)
+  const [kasaList, setKasaList] = useState<KasaOption[] | null>(null);
+  const [convertOk, setConvertOk] = useState(false);
+  const [past, setPast] = useState<MonthEffect[]>([]);
+  const [pastOk, setPastOk] = useState(false);
+  const chosen = typeof line === "number" ? (kasaList?.find((l) => l.id === line) ?? null) : null;
+  const converting = !edit && method === "kasa" && chosen?.kind === "harcama";
 
   const value = parseNumberTR(amount) ?? 0;
   const stayKasa = Boolean(edit && edit.method === "kasa" && method === "kasa" && edit.cashOutId !== null);
@@ -240,6 +271,9 @@ export function CariPaymentDialog({
     if (!(value > 0)) return void setError("Tutar girin");
     if (method === "kasa" && !stayKasa && line === null) return void setError("Kasa satırını seçin ya da kasaya yeni satır ekleyin");
     if (manualProblem) return void setError(manualProblem);
+    if (converting && chosen?.expense && !convertOk) return void setError("Satırın gider kaydının silineceğini onaylayın");
+    if (past.length && !pastOk) return void setError("Geçmiş ayın değişeceğini onaylayın");
+    if (converting && chosen) return void convert(chosen);
     const cashOut = method === "kasa" && !stayKasa ? (line === "new" ? { mode: "new" as const } : { mode: "existing" as const, id: line as number }) : null;
     run(async () => {
       const r = await saveSupplierPayment({
@@ -301,6 +335,53 @@ export function CariPaymentDialog({
     });
   }
 
+  /** Ödemeye çevir: alışveriş satırı Teslim olur, gider kaydı silinir, satıra bağlı ödeme açılır */
+  function convert(l: KasaOption) {
+    run(async () => {
+      const r = await convertCashOutToPayment({
+        target,
+        cashOutId: l.id,
+        allocation: { mode, lines: plan.lines },
+        note: note.trim() || null,
+        photoId,
+        confirmPast: pastOk ? past.map((e) => e.month) : [],
+      });
+      if (!r.ok) return void setError(r.error);
+      if (r.data.needs === "past") {
+        setPast(r.data.effects);
+        setPastOk(false);
+        return;
+      }
+      const d = r.data;
+      const parts = [
+        supplierName,
+        tl(l.amount, 2),
+        d.expense ? `gider kaydı silindi (${expenseGoneText({ ...d.expense })})` : "",
+        d.lines.length ? `${d.closed ? `${d.closed} kapandı` : ""}${d.closed && d.partial ? ", " : ""}${d.partial ? `${d.partial} kısmen` : ""}` : "hiçbir kaleme sayılmadı",
+        `hesapta ${tl(d.left, 2)}`,
+      ];
+      const undo = d.undo;
+      toast.success("Ödemeye çevrildi", {
+        description: parts.filter(Boolean).join(" · "),
+        duration: CARI_UNDO_MS,
+        action: {
+          label: "Geri al",
+          onClick: async () => {
+            try {
+              const u = await undoCashOutConversion(undo);
+              if (!u.ok) return void toast.error(u.error);
+              toast.success("Kasa satırı eski hâline döndü", { description: u.data.expenseRestored ? "Gider kaydı yeniden yazıldı." : undefined });
+            } catch (e) {
+              toastUnreachable(e);
+            }
+          },
+        },
+      });
+      onClose();
+      onSaved?.({ slug: d.slug });
+    });
+  }
+
   const toggle = (it: OpenItem) =>
     setPicked((m) => {
       const next = new Map(m);
@@ -326,7 +407,7 @@ export function CariPaymentDialog({
             Vazgeç
           </Button>
           <Button onClick={save} disabled={pending || Boolean(dateError || amountError)} className={SHEET_BTN}>
-            {pending ? "Kaydediliyor…" : "Kaydet"}
+            {pending ? "Kaydediliyor…" : converting ? "Ödemeye çevir" : "Kaydet"}
           </Button>
         </>
       }
@@ -370,16 +451,34 @@ export function CariPaymentDialog({
               Kasa satırı: Teslim · {edit?.cashOutStore ?? supplierName}. Günü ve tutarı ödemeyle birlikte değişir.
             </p>
           ) : (
-            <KasaLinePicker
-              date={date}
-              names={names}
-              paymentId={edit?.id ?? null}
-              value={line}
-              onChange={(v, l) => {
-                setLine(v);
-                if (l) setAmount(amountText(l.amount));
-              }}
-            />
+            <>
+              <KasaLinePicker
+                date={date}
+                names={names}
+                paymentId={edit?.id ?? null}
+                value={line}
+                convert={!edit}
+                onList={setKasaList}
+                onChange={(v, l) => {
+                  setLine(v);
+                  setConvertOk(false);
+                  setPast([]);
+                  if (l) setAmount(amountText(l.amount));
+                }}
+              />
+              {converting && chosen ? (
+                chosen.expense ? (
+                  <label className="flex cursor-pointer items-start gap-2 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
+                    <input type="checkbox" checked={convertOk} onChange={(e) => setConvertOk(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-ink pointer-coarse:size-5" />
+                    <span>
+                      Bu satırın gider kaydı silinir (ödeme gider değildir): {expenseGoneText(chosen.expense)}. Satır Kasa&apos;da Teslim · ödeme olur.
+                    </span>
+                  </label>
+                ) : (
+                  <p className="rounded-2xl bg-panel px-3.5 py-2.5 text-[13px] leading-5 text-ink-soft">Satır Kasa&apos;da Teslim · ödeme olur; gider kaydı yok.</p>
+                )
+              ) : null}
+            </>
           )
         ) : edit?.method === "kasa" ? (
           <p className="rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[13px] leading-5 text-warn">
@@ -452,6 +551,7 @@ export function CariPaymentDialog({
           <Textarea id="cp-note" value={note} onChange={(e) => setNote(e.target.value)} rows={1} maxLength={500} className="max-h-28 min-h-11 [field-sizing:content]" />
         </Field>
         <CariPhotoField label="Fotoğraf (dekont / makbuz)" value={photoId} onChange={setPhotoId} day={date && date < businessDay ? date : businessDay} />
+        <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
           <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
             {error}

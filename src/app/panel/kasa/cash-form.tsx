@@ -41,7 +41,7 @@ import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/phot
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport, type CashEmailOutcome } from "@/server/actions/cash-report";
-import type { CashOutDTO } from "@/server/data/cash-outs";
+import type { CashOutView } from "@/server/data/cash-outs";
 import type { CashPhotoInfo } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
 
@@ -91,7 +91,7 @@ type FormReadField = (typeof READ_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
 
-function initialValues(report: CashReportDTO | null, carry: { amount: number } | null, outs: CashOutDTO[]): Values {
+function initialValues(report: CashReportDTO | null, carry: { amount: number } | null, outs: CashOutView[]): Values {
   if (report) {
     return {
       zNo: report.zNo ?? "",
@@ -276,7 +276,7 @@ export function CashForm({
   /** Kayıtlı raporun fotoğrafları (görebilene; kapanmış günde personele boş) ve okumaları ("Fotoğraftan farklı") */
   saved: CashPhotoInfo | null;
   /** Günün kasadan çıkan satırları */
-  cashOuts: CashOutDTO[];
+  cashOuts: CashOutView[];
   /** Sonraki günün raporu (açılışı bu raporun devriyle karşılaştırılır) */
   next?: { date: string; openingCash: number } | null;
   /** "Kasayı sayan" seçenekleri: etkin kullanıcılar (kayıtlı pasif sayan "(pasif)" ekiyle) */

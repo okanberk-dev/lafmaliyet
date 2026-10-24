@@ -11,6 +11,7 @@ import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser, type CurrentUser } from "@/server/auth/dal";
+import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { getDb, schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
 import { open, seal } from "@/server/secret-box";
@@ -81,9 +82,12 @@ async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts:
   const harcama = d.kind === "harcama";
   const db = getDb();
   const saved = await db.transaction(async (tx) => {
+    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel düzeltemez, yöneticide önce kart kilitlenir
+    const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
     const [prev] = d.id ? await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, d.id)).for("update").limit(1) : [];
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
     if (prev && !admin && !(await staffDayOpen(prev.date, tx))) throw new UserError(LOCKED);
+    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin, kind: d.kind, amount: d.amount, date: d.date }) : null;
     const [existing] = prev ? await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, prev.id)).limit(1) : [];
     const mode = opts.restore ? "restore" : prev ? "edit" : "new";
     const toExpenses = cashOutWritesExpense({ admin, mode, kind: d.kind, docType: d.docType, requested: d.toExpenses, hasExpense: Boolean(existing) });
@@ -177,9 +181,9 @@ async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts:
 
     if (d.photoId) await keepPhoto(d.photoId, linkedUntil("fis", d.date, todayTR()), tx);
     if (prev?.photoId && prev.photoId !== d.photoId) await releasePhoto(prev.photoId, RELEASED_DAYS, tx);
-    return { id: row.id, expenseId, updated: Boolean(prev) };
+    return { id: row.id, expenseId, updated: Boolean(prev), supplier };
   });
-  await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null));
+  await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null) + (saved.supplier ? ` · ${saved.supplier} ödemesi de güncellendi` : ""));
   refresh();
   return { id: saved.id, expenseId: saved.expenseId };
 }
@@ -204,6 +208,7 @@ export async function deleteCashOut(id: number) {
     const snap = await getDb().transaction(async (tx) => {
       const [row] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, cid)).for("update").limit(1);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+      await assertCashOutDeletable(tx, cid, me.role === "admin");
       if (me.role !== "admin" && !(await staffDayOpen(row.date, tx))) throw new UserError(LOCKED);
       if (me.role !== "admin") {
         const [cur] = await tx

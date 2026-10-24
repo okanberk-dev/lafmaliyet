@@ -263,12 +263,13 @@ export function SupplierClient({
   const todayKasa = cari.kasa.find((l) => l.kind === "teslim" && l.date === cari.businessDay);
   const openPayment = (initial?: CariPaymentInitial) =>
     setPayFor({ initial: initial ?? (todayKasa ? { method: "kasa", cashOutId: todayKasa.id, amount: todayKasa.amount, date: todayKasa.date } : undefined) });
-  // Listeden gelen "İşle" (?kasa=<satır>): Ödeme ekle Kasadan ve o satırla açılır
+  // Listeden ya da Kasa'dan gelen "İşle" / "Ödemeye çevir" (?kasa=<satır>): Ödeme ekle Kasadan ve o satırla açılır
+  // (fişsiz alışveriş satırı seçiliyken pencere ödemeye çevirir)
   const [kasaRaw, setKasaParam] = useQueryState<string>("kasa", "");
   const [kasaSeen, setKasaSeen] = useState("");
   if (kasaRaw && kasaRaw !== kasaSeen) {
     setKasaSeen(kasaRaw);
-    const l = cari.kasa.find((x) => String(x.id) === kasaRaw && x.kind === "teslim");
+    const l = cari.kasa.find((x) => String(x.id) === kasaRaw);
     if (l) setPayFor({ initial: { method: "kasa", cashOutId: l.id, amount: l.amount, date: l.date } });
   }
   const closePayment = () => {
@@ -826,6 +827,7 @@ export function SupplierClient({
         }}
         onSnooze={(id) => cariAction(() => snoozeDebt({ debtId: id }), () => toast.success("Beklemeye alındı", { description: "Faturası 45 gün sonra yeniden sorulur." }))}
         onProcessKasa={(l) => openPayment({ method: "kasa", cashOutId: l.id, amount: l.amount, date: l.date })}
+        onConvertKasa={(l) => openPayment({ method: "kasa", cashOutId: l.id, amount: l.amount, date: l.date })}
         onKeepApart={(l) =>
           cariAction(
             () => dismissCashOut({ cashOutId: l.id }),

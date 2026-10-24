@@ -155,3 +155,46 @@ test("ödeme kaleminin kaynağı (K25): fatura ve cari dalları switch ile, sonu
   assert.match(loader, /loadCariIndex\(today/);
   assert.match(loader, /upcomingWithCari\(/);
 });
+
+test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı ve tedarikçi kimliği gitmez", async () => {
+  const { STAFF_CASH_OUT_FIELDS, staffCashOutRow, nameKey, supplierNameHint } = await import("../src/lib/cash-outs");
+  assert.deepEqual(
+    [...STAFF_CASH_OUT_FIELDS].sort(),
+    ["amount", "categoryId", "categoryName", "createdAt", "createdByName", "date", "description", "docType", "expenseEntryId", "id", "kind", "photoId", "receiptDate", "receiptNo", "store", "vat"],
+  );
+  const full = Object.fromEntries([...STAFF_CASH_OUT_FIELDS, "createdBy", "updatedAt", "supplierId", "paymentId"].map((k) => [k, k])) as Record<string, string>;
+  const row = staffCashOutRow(full as Record<(typeof STAFF_CASH_OUT_FIELDS)[number], unknown>, true);
+  assert.deepEqual(Object.keys(row).sort(), [...STAFF_CASH_OUT_FIELDS, "locked"].sort());
+  assert.equal(row.locked, true);
+  // Sayfa personelde yalnız staffCashOutRow'dan geçen satırı verir; yöneticinin ipucu personele hiç okunmaz
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.match(page, /const dayOuts: CashOutView\[\] = admin\s+\? outs\s+: outs\.map\(\(o\) => staffCashOutRow\(/);
+  assert.match(page, /admin \? loadKasaCariHints\(ids, today\) : Promise\.resolve\(\{\}\)/);
+  // Ad ipucu faturalardaki eşleşme kuralıyla aynı anahtarı kullanır (pencere fatura kurallarını yüklemez)
+  const { supplierMatchKey } = await import("../src/app/panel/faturalar/rules");
+  for (const n of ["Sütaş", "  SÜTAŞ   SÜT ", "Pınar (şube)", "IŞIK GIDA", "Metro Market (Tuzla)", "", "  "]) assert.equal(nameKey(n), supplierMatchKey(n), n);
+  assert.equal(supplierNameHint("sütaş", ["Pınar", "SÜTAŞ"]), "SÜTAŞ");
+  assert.equal(supplierNameHint("Migros", ["Pınar", "Sütaş"]), null);
+  assert.doesNotMatch(read("src/app/panel/kasa/cash-out-dialog.tsx"), /faturalar\/rules|calc\/engine/);
+});
+
+test("Kasa (§6.8, §8): bağlı satır personele kilitli, yöneticinin düzeltmesi ödemeye geçer, silme reddedilir", () => {
+  const co = read("src/server/actions/cash-outs.ts");
+  const persist = body(co, "async function persist(");
+  // Önce kart (lockCashOutLink), sonra satır kilidi, sonra bağın yeniden denetimi ve ödemeye geçirme; yazımdan önce
+  assert.ok(persist.indexOf("lockCashOutLink(tx, d.id, admin)") < persist.indexOf('.for("update")'));
+  assert.ok(persist.indexOf('.for("update")') < persist.indexOf("syncLinkedCashOut(tx, prev.id, link,"));
+  assert.ok(persist.indexOf("syncLinkedCashOut(") < persist.indexOf(".update(s.cashOuts)"));
+  const del = body(co, "export async function deleteCashOut(");
+  assert.ok(del.indexOf("assertCashOutDeletable(tx, cid,") < del.indexOf("tx.delete(s.cashOuts)"));
+  // Personelin gördüğü mesaj sunucuyla aynı ve tutar içermez
+  const server = read("src/server/cari/kasa.ts").match(/CARI_LOCKED_STAFF = "([^"]+)"/)?.[1];
+  const client = read("src/app/panel/kasa/cash-outs.tsx").match(/LOCKED_TEXT = "([^"]+)"/)?.[1];
+  assert.ok(server && server === client, "aynı sabit mesaj");
+  assert.doesNotMatch(server!, /₺|\d/);
+  // Etiketler ve ipucu
+  const dialog = read("src/app/panel/kasa/cash-out-dialog.tsx");
+  assert.match(dialog, /\{ value: "harcama", label: "Alışveriş" \},\s+\{ value: "teslim", label: "Teslim · ödeme" \}/);
+  assert.match(dialog, /Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz\./);
+  assert.match(dialog, /ör\. patrona, bankaya, tedarikçiye \(Sütaş\)/);
+});

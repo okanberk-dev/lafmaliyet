@@ -23,6 +23,7 @@ import { cariResetBlock } from "../scripts/seed";
 import { supplierMatchKey } from "../src/app/panel/faturalar/rules";
 import { allocateFifo, openItems } from "../src/lib/cari/account";
 import { businessDate } from "../src/lib/cash-report";
+import { addDays } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.CARI_TEST_DATABASE_URL;
@@ -586,5 +587,101 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     const d = await debt(c.id, { amount: 300 });
     const paid = await withCard(c.id, (tx, k) => entries.payDebtTx(tx, me, k, d.id, "elden", 30));
     assert.deepEqual([paid.credited, paid.payment?.lines.map((l) => [l.kind, l.amount, l.closed])], [0, [["debt", 300, true]]]);
+  });
+
+  // ---------------------------------------------------------------- Kasa bağları (src/server/cari/kasa.ts)
+
+  test("Kasa bağları: Borç ekle'nin Kasa denetimi (K15), Ödemeye çevir (K14) ve geri alınması, bağlı satırın Kasa'dan düzeltilmesi ve silinmesi", async () => {
+    await db.execute(sql`DELETE FROM integration_state WHERE key = 'cari.kasa-ayri'`);
+    const kasa = await import("../src/server/cari/kasa");
+    const me = await actor();
+    const c = await card("Sütaş", { aliases: ["SÜTAŞ SÜT"] });
+    const cat = await category();
+    const day = [businessDate(), "2026-10-24"].sort()[0];
+    const month = [day.slice(0, 7)];
+    const out = async (p: Partial<typeof s.cashOuts.$inferInsert> & { amount: number }) =>
+      (await db.insert(s.cashOuts).values({ date: day, kind: "teslim", store: "Sütaş", docType: "yok", createdByName: "Ayşe", ...p }).returning())[0];
+    const l1 = await out({ amount: 905 });
+    const l2 = await out({ amount: 900, kind: "harcama", store: "sütaş süt", date: addDays(day, -2) });
+    await db.insert(s.expenseEntries).values({ date: l2.date, categoryId: cat.id, amount: 900, cashOutId: l2.id, createdBy: "Ayşe" });
+    await out({ amount: 50, kind: "harcama", store: "Migros" });
+    await out({ amount: 700, date: addDays(day, -10) });
+
+    // ±3 gün, adı ya da diğer adı eşleşen, işlenmemiş: tutara bakılmaz
+    const found = await db.transaction((tx) => kasa.kasaCheck(tx, c, day));
+    assert.deepEqual(
+      found.map((l) => [l.id, l.kind, l.expense?.amount ?? null]),
+      [
+        [l2.id, "harcama", 900],
+        [l1.id, "teslim", null],
+      ],
+    );
+    await assert.rejects(db.transaction((tx) => kasa.resolveKasaChoice(tx, found, null)), (e: Error) => e instanceof kasa.NeedsKasa && e.lines.length === 2);
+    await assert.rejects(
+      db.transaction((tx) => kasa.resolveKasaChoice(tx, found, { action: "ayri", seen: [l1.id] })),
+      (e: Error) => e instanceof kasa.NeedsKasa,
+      "pencerenin görmediği satır yeniden sorulur",
+    );
+    await assert.rejects(db.transaction((tx) => kasa.resolveKasaChoice(tx, found, { action: "pesin", cashOutId: l1.id, seen: [l1.id, l2.id] })), /Teslim satırı peşin alım değildir/);
+
+    // "Borcu aç ve bu satırla kapat": ödeme satırın tutarı (905), borca 900 sayılır, 5 hesapta kalır
+    const choice = await db.transaction((tx) => kasa.resolveKasaChoice(tx, found, { action: "kapat", cashOutId: l1.id, seen: [l1.id, l2.id] }));
+    assert.equal(choice.action, "kapat");
+    const b = await withCard(c.id, (tx, k) =>
+      entries.writeDebt(tx, me, k, debtInput({ amount: 900, date: day, confirmPast: month, paid: { method: "kasa", date: l1.date, cashOut: { mode: "existing", id: l1.id }, amount: 905 } }), 30),
+    );
+    assert.deepEqual([b.paid?.lines.map((l) => [l.kind, l.amount, l.closed]), b.paid?.left], [[["debt", 900, true]], 5]);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 5]]);
+    const [pay] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.cashOutId, l1.id));
+    assert.equal(pay.amount, 905);
+
+    // Bağlanan satır artık işlenmiş; "Kasadan peşin ödendi" alışveriş satırını ayrı tutar, borç açılmaz
+    const left = await db.transaction((tx) => kasa.kasaCheck(tx, c, day));
+    assert.deepEqual(left.map((l) => l.id), [l2.id]);
+    await db.transaction((tx) => kasa.resolveKasaChoice(tx, left, { action: "pesin", cashOutId: l2.id, seen: [l2.id] }));
+    assert.deepEqual(await db.transaction((tx) => kasa.kasaCheck(tx, c, day)), []);
+
+    // Ödemeye çevir: alışveriş satırının gideri silinir, satır Teslim olur, ödeme açılır ve borca sayılır
+    const l5 = await out({ amount: 300, kind: "harcama", docType: "yok", description: "peynir" });
+    const [e5] = await db.insert(s.expenseEntries).values({ date: day, categoryId: cat.id, amount: 300, cashOutId: l5.id, createdBy: "Ayşe", note: "Kasadan" }).returning();
+    const d2 = await debt(c.id, { amount: 300, date: addDays(day, -1) });
+    const conv = await withCard(c.id, (tx, k) => kasa.convertCashOut(tx, me, k, { cashOutId: l5.id, allocation: { mode: "auto", lines: [] }, note: null, photoId: null, confirmPast: month }, 30));
+    assert.deepEqual([conv.expense?.amount, conv.payment.lines.map((l) => [l.kind, l.id, l.amount])], [300, [["debt", d2.id, 300]]]);
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, e5.id))).length, 0, "gider kaydı silindi");
+    const [l5now] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, l5.id));
+    assert.deepEqual([l5now.kind, l5now.docType, l5now.amount], ["teslim", "yok", 300]);
+    await assert.rejects(
+      withCard(c.id, (tx, k) => kasa.convertCashOut(tx, me, k, { cashOutId: l5.id, allocation: { mode: "none", lines: [] }, note: null, photoId: null, confirmPast: month }, 30)),
+      /zaten Teslim/,
+    );
+    // Geri al: ödeme silinir, satır alışverişe ve gider kaydı eski kimliğiyle döner, borç yeniden açık
+    const undone = await db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot))));
+    assert.equal(undone.expenseRestored, true);
+    const [l5back] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, l5.id));
+    assert.deepEqual([l5back.kind, l5back.docType], ["harcama", "yok"]);
+    const [e5back] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, l5.id));
+    assert.deepEqual([e5back.id, e5back.amount, e5back.note], [e5.id, 300, "Kasadan"]);
+    assert.equal((await db.select().from(s.supplierAllocations).where(eq(s.supplierAllocations.debtId, d2.id))).length, 0);
+    await assert.rejects(db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot)))), /silindi ya da değişti/);
+    // Geçmiş ayın gideri onaysız silinmez
+    const old = await out({ amount: 80, kind: "harcama", date: "2025-09-10" });
+    await db.insert(s.expenseEntries).values({ date: "2025-09-10", categoryId: cat.id, amount: 80, cashOutId: old.id, createdBy: "Ayşe" });
+    await assert.rejects(
+      withCard(c.id, (tx, k) => kasa.convertCashOut(tx, me, k, { cashOutId: old.id, allocation: { mode: "none", lines: [] }, note: null, photoId: null, confirmPast: [] }, 30)),
+      (e: Error) => e instanceof entries.NeedsPastConfirm && e.effects[0].month === "2025-09",
+    );
+
+    // Bağlı satır: personel düzeltemez ve silemez (sabit mesaj); yönetici tutarı ve günü ödemeye geçirir, türünü değiştiremez
+    await assert.rejects(db.transaction((tx) => kasa.lockCashOutLink(tx, l1.id, false)), (e: Error) => e instanceof UserError && e.message === kasa.CARI_LOCKED_STAFF);
+    await assert.rejects(db.transaction((tx) => kasa.assertCashOutDeletable(tx, l1.id, false)), (e: Error) => e.message === kasa.CARI_LOCKED_STAFF);
+    await assert.rejects(db.transaction((tx) => kasa.assertCashOutDeletable(tx, l1.id, true)), /tedarikçi ödemesine bağlı \(Sütaş/);
+    const sync = (next: { kind: "harcama" | "teslim"; amount: number; date: string }) =>
+      db.transaction(async (tx) => kasa.syncLinkedCashOut(tx, l1.id, await kasa.lockCashOutLink(tx, l1.id, true), { admin: true, ...next }));
+    await assert.rejects(sync({ kind: "harcama", amount: 905, date: day }), /alışverişe çevrilemez/);
+    await assert.rejects(sync({ kind: "teslim", amount: 800, date: day }), /900,00\s₺'si kalemlere sayılmış/);
+    assert.equal(await sync({ kind: "teslim", amount: 950, date: day }), "Sütaş");
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, pay.id)))[0].amount, 950);
+    assert.equal(await db.transaction((tx) => kasa.lockCashOutLink(tx, l2.id, false)), null, "bağsız satır personele açık");
+    await assert.rejects(db.delete(s.cashOuts).where(eq(s.cashOuts.id, l1.id)), "FK de korur");
   });
 });

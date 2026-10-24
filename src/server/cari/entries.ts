@@ -320,8 +320,11 @@ export interface DebtWrite {
   photoId: number | null;
   /** Kartın hesabındaki sayılmamış ödemeyi bu borca say */
   applyCredit: boolean;
-  /** "Ödendi": borç, ödeme ve tam dağıtım tek işlemde */
-  paid: { method: CariMethod; date: string; cashOut: CashOutChoice | null } | null;
+  /**
+   * "Ödendi": borç, ödeme ve tam dağıtım tek işlemde. `amount`: ödemenin tutarı kalandan farklıysa (Kasa denetiminde
+   * "Bu satırla kapat": ödeme satırın tutarıdır, borcun kalanı kadarı sayılır, fazlası hesapta kalır)
+   */
+  paid: { method: CariMethod; date: string; cashOut: CashOutChoice | null; amount?: number } | null;
   /** Onaylanan geçmiş aylar (K18) */
   confirmPast: readonly string[];
 }
@@ -465,7 +468,9 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
   let paid: PaymentResult | null = null;
   if (input.paid) {
     const rest = round2(amount - (await debtAllocated(tx, row.id)));
-    if (rest > EPS) {
+    const payAmount = round2(input.paid.amount ?? rest);
+    const take = round2(Math.min(rest, payAmount));
+    if (payAmount > EPS && (rest > EPS || input.paid.amount !== undefined)) {
       paid = await writePayment(
         tx,
         me,
@@ -473,10 +478,10 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
         {
           id: null,
           date: input.paid.date,
-          amount: rest,
+          amount: payAmount,
           method: input.paid.method,
           cashOut: input.paid.cashOut,
-          allocation: { mode: "manual", lines: [{ kind: "debt", id: row.id, amount: rest }] },
+          allocation: take > EPS ? { mode: "manual", lines: [{ kind: "debt", id: row.id, amount: take }] } : { mode: "none", lines: [] },
           note: null,
           photoId: null,
         },

@@ -14,14 +14,14 @@ import { Field, Input, NumberInput, Select } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
-import { cashOutShortLabel, cashOutWritesExpense, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
+import { cashOutShortLabel, cashOutWritesExpense, supplierNameHint, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
 import { photoCaption } from "@/lib/photo-rules";
 import { cn } from "@/lib/utils";
 import { deleteCashOut, restoreCashOut, saveCashOut } from "@/server/actions/cash-outs";
-import type { CashOutCategory, CashOutDTO } from "@/server/data/cash-outs";
+import type { CashOutCategory, CashOutView } from "@/server/data/cash-outs";
 
 /** Pencerenin taslağı (metin alanları formdaki gibi) */
 interface Draft {
@@ -42,7 +42,7 @@ type DraftField = "amount" | "store" | "description" | "receiptDate" | "vat" | "
 
 const amountText = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
 
-function draftOf(line: CashOutDTO | null, kind: CashOutKind): Draft {
+function draftOf(line: CashOutView | null, kind: CashOutKind): Draft {
   if (!line) return { kind, amount: "", store: "", description: "", receiptDate: "", vat: "", categoryId: "", toExpenses: true, docType: "yok", receiptNo: null };
   return {
     kind: line.kind,
@@ -80,7 +80,7 @@ function applyReceipt(d: Draft, r: ReceiptReading, admin: boolean): { draft: Dra
   return { draft: next, filled };
 }
 
-export type CashOutDialogMode = { mode: "photo" } | { mode: "plain" } | { mode: "edit"; line: CashOutDTO };
+export type CashOutDialogMode = { mode: "photo" } | { mode: "plain" } | { mode: "edit"; line: CashOutView };
 
 /**
  * Kasadan çıkan: fişin fotoğrafından okunan (ya da elle yazılan) tutar, yer, ne alındı, tarih, KDV ve kategori.
@@ -101,6 +101,7 @@ export function CashOutDialog({
   uploaded,
   onRetry,
   onClose,
+  supplierNames = [],
 }: {
   open: boolean;
   mode: CashOutDialogMode;
@@ -113,6 +114,8 @@ export function CashOutDialog({
   uploaded: PhotoUploadResponse | null;
   onRetry: (photoId: number) => void;
   onClose: () => void;
+  /** Tedarikçilerin adları: fişsiz alışverişin Yer'i bir tedarikçiyse "Teslim · ödeme" ipucu (§8) */
+  supplierNames?: string[];
 }) {
   const line = mode.mode === "edit" ? mode.line : null;
   const [draft, setDraft] = useState<Draft>(() => draftOf(line, "harcama"));
@@ -146,6 +149,8 @@ export function CashOutDialog({
   const writes = cashOutWritesExpense({ admin, mode: line ? "edit" : "new", kind: draft.kind, docType: draft.docType, requested: draft.toExpenses, hasExpense: line?.expenseEntryId != null });
   // Kaydı yöneticinin kategorisinde (personelin listesinde yok): personel tutarı düzeltir, silemez ve taşıyamaz
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
+  // Fişsiz alışverişin Yer'i bir tedarikçinin adı: borç ödemesi olabilir (ad listesi borca göre süzülmez; R9d)
+  const supplierHint = !withPhoto && !locked && draft.kind === "harcama" && draft.docType === "yok" ? supplierNameHint(draft.store, supplierNames) : null;
   const checks: ReceiptCheck[] = reading?.checks ?? [];
   const warnFields = new Set<ReceiptField>(checks.filter((c) => c.level === "warn").flatMap((c) => c.fields));
   const suggested = reading && reading.confidence.categoryId === "high" ? categories.find((c) => c.id === reading.values.categoryId) : undefined;
@@ -251,15 +256,15 @@ export function CashOutDialog({
             {fresh && !fresh.ok && fresh.error ? <p className="text-[13px] leading-5 text-bad">{fresh.error}</p> : null}
           </div>
         ) : locked ? null : (
-          <Field label="Ne için">
+          <Field label="Ne için" hint="Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz.">
             <Segmented<CashOutKind>
               label="Ne için"
               stretch
               value={draft.kind}
               onChange={(v) => setDraft((d) => ({ ...d, kind: v }))}
               options={[
-                { value: "harcama", label: "Alışveriş / ödeme" },
-                { value: "teslim", label: "Teslim" },
+                { value: "harcama", label: "Alışveriş" },
+                { value: "teslim", label: "Teslim · ödeme" },
               ]}
             />
           </Field>
@@ -269,8 +274,17 @@ export function CashOutDialog({
             <NumberInput id="co-amount" value={draft.amount} onChange={set("amount")} placeholder="0" enterKeyHint="next" data-warn={warn("amount")} />
           </Field>
           <Field label={chip("store", harcama ? "Yer" : "Kime")} htmlFor="co-store">
-            <Input id="co-store" value={draft.store} onChange={set("store")} maxLength={60} placeholder={harcama ? "ör. Migros" : "ör. patrona, bankaya"} autoComplete="off" data-warn={warn("store")} />
+            <Input id="co-store" value={draft.store} onChange={set("store")} maxLength={60} placeholder={harcama ? "ör. Migros" : "ör. patrona, bankaya, tedarikçiye (Sütaş)"} autoComplete="off" data-warn={warn("store")} />
           </Field>
+          {supplierHint ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info sm:col-span-2">
+              <Info size={14} className="shrink-0" aria-hidden="true" />
+              <span className="min-w-[12rem] flex-1">{supplierHint} tedarikçimiz. Borç ödemesiyse &quot;Teslim · ödeme&quot; seçin; alışverişse böyle kalsın.</span>
+              <Button size="sm" variant="secondary" className="text-ink max-sm:w-full" onClick={() => setDraft((d) => ({ ...d, kind: "teslim" }))}>
+                Teslim · ödeme&apos;ye çevir
+              </Button>
+            </div>
+          ) : null}
           <Field label={chip("description", harcama ? "Ne alındı" : "Açıklama")} htmlFor="co-desc" className="sm:col-span-2">
             <Input id="co-desc" value={draft.description} onChange={set("description")} maxLength={200} placeholder={harcama ? "ör. süt, buz" : "isteğe bağlı"} autoComplete="off" data-warn={warn("summary")} />
           </Field>

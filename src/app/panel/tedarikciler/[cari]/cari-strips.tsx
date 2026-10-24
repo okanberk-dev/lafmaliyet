@@ -68,6 +68,7 @@ export function CariStrips({
   onLateExpense,
   onSnooze,
   onProcessKasa,
+  onConvertKasa,
   onKeepApart,
   onRemoveForeign,
   onFixDrift,
@@ -86,6 +87,8 @@ export function CariStrips({
   onLateExpense: (id: number) => void;
   onSnooze: (id: number) => void;
   onProcessKasa: (l: KasaStrip) => void;
+  /** Fişsiz alışveriş satırı aslında tedarikçiye ödemeydi (K14) */
+  onConvertKasa: (l: KasaStrip) => void;
   onKeepApart: (l: KasaStrip) => void;
   onRemoveForeign: (f: { paymentId: number; allocationIds: number[]; amount: number }) => void;
   onFixDrift: () => void;
@@ -180,12 +183,17 @@ export function CariStrips({
         icon={<Banknote />}
         tone="gray"
         actions={
-          <Button size="sm" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
-            Ayrı alım
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => onConvertKasa(l)} disabled={busy} className="text-ink">
+              Ödemeye çevir
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onKeepApart(l)} disabled={busy}>
+              Ayrı alım
+            </Button>
+          </>
         }
       >
-        Tedarikçi ödemesi miydi? {dateTR(l.date).slice(0, 5)} · fişsiz alışveriş · {l.store} · {tl(l.amount, 2)} · {l.createdByName}. Ödemeyse Kasa&apos;da satırı “Teslim · ödeme” yapıp burada işleyin.
+        Tedarikçi ödemesi miydi? {dateTR(l.date).slice(0, 5)} · fişsiz alışveriş · {l.store} · {tl(l.amount, 2)} · {l.createdByName}
       </Strip>,
     );
   }

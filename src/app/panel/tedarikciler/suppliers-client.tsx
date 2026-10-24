@@ -257,7 +257,7 @@ export function SuppliersClient({
         open={showKasa}
         onClose={closeKasa}
         title="Kasadan işlenmemiş ödemeler"
-        description="Personelin Kasa'ya Teslim · ödeme olarak girdiği ya da fişsiz alışveriş olarak yazdığı tedarikçi ödemeleri. İşle, ödemeyi tedarikçinin hesabına kasadan girer."
+        description="Personelin Kasa'ya Teslim · ödeme olarak girdiği ya da fişsiz alışveriş olarak yazdığı tedarikçi ödemeleri. İşle, ödemeyi tedarikçinin hesabına kasadan girer; Ödemeye çevir, alışverişin gider kaydını silip satırı ödeme yapar."
         footer={
           <Button variant="ghost" className={SHEET_BTN} onClick={closeKasa}>
             Kapat
@@ -273,11 +273,9 @@ export function SuppliersClient({
                   {dateTR(l.date)} · {l.kind === "teslim" ? "Teslim" : "fişsiz alışveriş"} · {l.store} · {money(l.amount)}
                 </p>
               </div>
-              {l.kind === "teslim" ? (
-                <Link href={`${supplierHref(l.slug)}?kasa=${l.id}`} onClick={closeKasa} className={buttonClass("secondary", "sm", "text-ink")}>
-                  İşle
-                </Link>
-              ) : null}
+              <Link href={`${supplierHref(l.slug)}?kasa=${l.id}`} onClick={closeKasa} className={buttonClass("secondary", "sm", "text-ink")}>
+                {l.kind === "teslim" ? "İşle" : "Ödemeye çevir"}
+              </Link>
               <Button
                 variant="ghost"
                 size="sm"

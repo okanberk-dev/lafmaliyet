@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 
-import { staffCategory, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
+import { staffCategory, type CashOutDocType, type CashOutKind, type StaffCashOutField } from "@/lib/cash-outs";
 import { getDb, schema as s } from "@/server/db";
 
 /** Gün içinde kasadan çıkan bir satır (ekranda; bağlı harcama kaydı ve kategorisiyle) */
@@ -27,6 +27,12 @@ export interface CashOutDTO {
   categoryId: number | null;
   categoryName: string | null;
 }
+
+/**
+ * Kasa kartının ve penceresinin satırı: yöneticide bütün satır, personelde yalnız beyaz listedeki alanlar
+ * (staffCashOutRow). `locked`: satır yöneticinin bir tedarikçi ödemesine bağlı (personel düzeltemez, silemez)
+ */
+export type CashOutView = Pick<CashOutDTO, StaffCashOutField> & { locked?: boolean };
 
 const columns = {
   id: s.cashOuts.id,

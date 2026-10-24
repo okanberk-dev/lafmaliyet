@@ -23,7 +23,8 @@ import { tl } from "@/lib/format";
 import { KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs, supplierSlugOf } from "@/server/data/suppliers";
-import { getDb, schema as s } from "@/server/db";
+import type { Tx } from "@/server/cari/settle";
+import { getDb, schema as s, type DB } from "@/server/db";
 
 import { loadCardEntries, toDebt, type CardDebt, type CardPayment } from "./cari-entries";
 
@@ -38,9 +39,8 @@ export const KASA_AYRI_LIMIT = 2000;
 
 export { loadCardEntries, toDebt, toPayment, type CardDebt, type CardPayment } from "./cari-entries";
 
-/** İşlenmiş Kasa satırları: bir ödemeye bağlı olanlar ve "Ayrı tut" denmişler */
-export async function loadKasaHandled(): Promise<Set<number>> {
-  const db = getDb();
+/** İşlenmiş Kasa satırları: bir ödemeye bağlı olanlar ve "Ayrı tut" denmişler (işlemin içinden de okunur) */
+export async function loadKasaHandled(db: DB | Tx = getDb()): Promise<Set<number>> {
   const [linked, [state]] = await Promise.all([
     db.select({ id: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(eq(s.supplierEntries.kind, "odeme")),
     db.select().from(s.integrationState).where(eq(s.integrationState.key, KASA_AYRI_KEY)).limit(1),
@@ -474,4 +474,54 @@ export async function loadInvoiceCariLinks(): Promise<Record<number, InvoiceCari
   for (const a of allocs) if (a.invoiceId !== null) of(a.invoiceId, a.card).payments.push({ date: a.date, method: (a.method ?? "diger") as CariMethod, amount: a.amount });
   for (const d of debts) if (d.invoiceId !== null) of(d.invoiceId, d.card).debts.push({ id: d.id, date: d.date, description: d.description, amount: d.amount, photoId: d.photoId });
   return out;
+}
+
+/** Kasa'da yöneticinin satır ipucu (§6.8): ödemeye bağlı satır, hesaba işlenmemiş Teslim, ödeme olabilecek fişsiz alışveriş */
+export type KasaCariHint =
+  | { kind: "linked"; name: string; href: string | null }
+  | { kind: "teslim"; name: string; href: string | null }
+  | { kind: "fissiz"; name: string; href: string | null };
+
+/**
+ * Kasa'nın gün görünümünde (yalnız yönetici) satırların cari bağı: bir ödemeye bağlı satır o tedarikçinin sayfasına
+ * götürür; işlenmemiş ve adı bir kartla eşleşen Teslim "Hesaba işle", grubun o gün açık kalemi varken fişsiz
+ * Alışveriş "Ödemeye çevir" önerir (Tedarikçiler şeridiyle aynı kural, son 60 gün). Satır yoksa okuma yapılmaz.
+ */
+export async function loadKasaCariHints(lineIds: readonly number[], today = todayTR()): Promise<Record<number, KasaCariHint>> {
+  if (!lineIds.length) return {};
+  const db = getDb();
+  const [linked, index] = await Promise.all([
+    db
+      .select({ cashOutId: s.supplierEntries.cashOutId, cardId: s.supplierEntries.supplierId, name: s.suppliers.name })
+      .from(s.supplierEntries)
+      .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+      .where(inArray(s.supplierEntries.cashOutId, [...lineIds])),
+    loadCariIndex(today),
+  ]);
+  const out: Record<number, KasaCariHint> = {};
+  const ids = new Set(lineIds);
+  for (const l of index.kasaPending) {
+    const card = index.cards.get(l.cardId);
+    if (!ids.has(l.id) || !card || out[l.id]) continue;
+    out[l.id] = { kind: l.kind === "teslim" ? "teslim" : "fissiz", name: card.name, href: index.hrefOf(l.cardId) ?? null };
+  }
+  for (const r of linked) if (r.cashOutId !== null) out[r.cashOutId] = { kind: "linked", name: r.name, href: index.hrefOf(r.cardId) ?? null };
+  return out;
+}
+
+/** Kasa satırlarından bir tedarikçi ödemesine bağlı olanlar (personel düzeltemez ve silemez; §8) */
+export async function loadLinkedCashOuts(lineIds: readonly number[]): Promise<Set<number>> {
+  if (!lineIds.length) return new Set();
+  const rows = await getDb().select({ id: s.supplierEntries.cashOutId }).from(s.supplierEntries).where(inArray(s.supplierEntries.cashOutId, [...lineIds]));
+  return new Set(rows.flatMap((r) => (r.id !== null ? [r.id] : [])));
+}
+
+/**
+ * Kasa penceresinin ad ipucu (§8, R9d): tedarikçi kartlarının adları ve diğer adları. Yalnız adlar; tutar, borç ya da
+ * fatura yok, borca göre süzülmez (personel de görür).
+ */
+export async function loadSupplierNames(): Promise<string[]> {
+  const cards = await getDb().select({ name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers).orderBy(asc(s.suppliers.name));
+  const names = cards.flatMap((c) => [c.name, ...(Array.isArray(c.aliases) ? c.aliases : [])]).map((n) => n.trim()).filter(Boolean);
+  return [...new Set(names)].slice(0, 2000);
 }
