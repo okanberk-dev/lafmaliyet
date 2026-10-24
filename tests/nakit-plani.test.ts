@@ -761,6 +761,12 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
     ["2026-10-25", "KDV-2 (Eylül)", 1_800],
     ["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800],
   ]);
+  // Kartın "kaydını kaldır"ı da buraya döndürür: KDV-2'nin hatırlatıcısız dönemi 25'inde kendiliğinden girer, 1 No.lu
+  // KDV'de ise hatırlatıcı varken yalnız bir hatırlatıcının gününde; onay penceresi bunu söyler
+  const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
+  assert.match(card, /o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın \$\{VAT2_DUE_DAY\}'inde tahminiyle plana girer/);
+  assert.match(card, /KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin/);
+  assert.doesNotMatch(card, /tahmini ya da hatırlatıcısı plana döner/);
   // Geç Ödendi'den (Ağustos, 3 Ekim) sonra Eylül ertelendi: kopya 1 Kasım'da Eylül'ü taşır, seri 25 Kasım'da Ekim'i;
   // erteleme ödeme değildir
   const copy = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-11-01", repeat: "none", note: "Ertelendi · asıl tarih 25.10.2026" });

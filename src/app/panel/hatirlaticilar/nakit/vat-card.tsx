@@ -285,7 +285,13 @@ function PaidRecords({ vat }: { vat: CashPlanVat }) {
         open={ask !== null}
         onClose={() => setAsk(null)}
         title={ask ? `${label(ask)} Ödendi kaydı kaldırılsın mı?` : ""}
-        description="Dönem yeniden ödenecek sayılır: tahmini ya da hatırlatıcısı plana döner. Hatırlatıcılara dokunulmaz."
+        description={
+          // KDV'de hatırlatıcı varsa dönem yalnız bir hatırlatıcının gününde girer; KDV-2'nin karşılanmayan dönemi
+          // kendiliğinden ayın 25'inde (src/lib/cash-plan.ts)
+          ask?.kind === "kdv2"
+            ? `Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer. Hatırlatıcılara dokunulmaz.`
+            : "Dönem yeniden ödenecek sayılır. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. Hatırlatıcılara dokunulmaz."
+        }
         confirmLabel="Kaldır"
         pending={pending}
         onConfirm={() =>
