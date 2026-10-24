@@ -14,6 +14,7 @@ import { linkedUntil } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
+import { assertNotHeld } from "@/server/staff-requests/core";
 
 import { logActivity } from "./log";
 import { attempt, UserError, zAmount, zDate, zMonth, zMoney, zOptText, zText } from "./util";
@@ -134,6 +135,8 @@ export async function restoreExpenseEntry(snap: ExpenseEntrySnapshot) {
       } else if (link.photoId) {
         const p = await getPhoto(link.photoId, tx);
         if (p && p.kind === "fis" && p.linkedAt === null && (p.expiresAt === null || p.expiresAt.getTime() > Date.now())) {
+          // Onay bekleyen bir isteğin tuttuğu fiş harcamaya bağlanmaz
+          await assertNotHeld(tx, p.id);
           photoId = p.id;
           await keepPhoto(p.id, linkedUntil("fis", data.date, todayTR()), tx);
         }

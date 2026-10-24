@@ -195,6 +195,73 @@ kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash
 `src/app/panel/onaylar/kasa-cards.tsx`. Testler: `tests/kasa-duzeltme-istegi.test.ts`, `tests/kasa-istek-db.test.ts`
 (`KASA_ISTEK_TEST_DATABASE_URL`).
 
+## Geç rapor (onaylı)
+
+Personel, dünden eski ve son 14 **takvim** gününe düşen, raporu hiç girilmemiş bir günü Z raporunun fotoğrafı ve Z
+numarasıyla girer. Rapor ayrı tabloda (`staff_requests`, tür `kasa-gec`) **onay bekler** ve onaya kadar hiçbir hesaba
+girmez: ay bilgisi, sabit gider gün sayısı, komisyon, nakit planı, devir zinciri, Bugün, Claude bağlantısı ve e-posta
+değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.md) §2.6), kuyruk [ONAYLAR.md](ONAYLAR.md).
+
+| Gün | Personel |
+|---|---|
+| Bugün ve dün | normal form (doğrudan) |
+| 2–14 gün önce, raporu yok, ilk rapordan sonra, kapalı işaretli değil | **geç rapor** (onaylı) |
+| Daha eski ya da raporu olan gün | yönetici girer ya da düzeltir |
+
+**Personel** (`/panel/kasa`):
+
+- **Girilmemiş günler** kartı: "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." Gün
+  çipleri ("14 Eki Sal", "· onay bekliyor", "· reddedildi"); telefonda 4'ten fazla gün tek çipte ("5 gün") toplanır.
+  Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın".
+- **`/panel/kasa?gun=D`** geç rapor kipinde açılır: Z no ve en az bir Z fotoğrafı zorunlu, zorunlu **Neden geç
+  giriliyor?** (3–300), kasayı sayan isteyendir (seçici yok; başka biri saydıysa nedene yazılır), teslim varsa
+  **Teslim alan** (etkin kullanıcı ya da Banka). Kasadan çıkanlar kartı çizilmez ve "Gün içinde kasadan çıkan" elle
+  yazılır (satırlar personele gitmez); e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
+  Açılış önerisi zincirin önceki **halkasından** gelir: önceki rapor ya da önceki bekleyen geç rapor
+  (`src/server/cash/late-chain.ts`). Düğme **Onaya gönder**; "Onaya gönderildi · 120 ₺ eksik".
+- Gönderdikten sonra kart: "Onay bekliyor", özet, "Neden: …", "2 fotoğraf eklendi", **Düzenle** ("Güncelle ve
+  gönder"; tutulan fotoğraflar yalnız önceki isteğin fotoğraflarından) ve **Geri çek**. Başkasının isteği beklerken
+  "Mehmet bu günü 21 Ekim'de gönderdi; yöneticinin onayını bekliyor."; istek kişi başınadır. Reddedilen istekte
+  "Reddedildi · Ali: …" ve önceki değerlerle dolu form (fotoğraflar yine kişinin kendi küçük resimleri). Aynı gün için
+  iki ret ya da geri çekmeden sonra form yerine "Bu günü yöneticiye yazın". Kişi başına en çok 5 bekleyen geç rapor.
+- **05:00 dönüşü:** dünün formu gönderilirken gün personelin penceresinden çıktıysa sunucu kaydetmez
+  (`{ needsApproval, request: "kasa-gec" }`), form yazılanlarla geç rapora geçer.
+- Zil (İsteklerim): "14 Ekim kasa raporu onaylandı" / "… reddedildi". Bugün'deki dünün satırı: "… raporu girilmedi.
+  Kafe açıktıysa bugün girin; yarından sonra yöneticinin onayıyla girilir."
+
+**Yönetici:**
+
+- **Onaylar › Kasa**, en eski gün önce, kart `#istek-<id>`: "14 Ekim Salı kasa raporu" ve **Geç rapor**, "Ayşe
+  gönderdi · 21 Ekim 10:05 · 7 gün sonra", "Neden geç: …"; fotoğraflar ve okumaları (gün = D ile yeniden kurulur;
+  okuma yoksa "Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin"); **Z no sırası** önceki ve sonraki
+  halkayla (`zNoOrder`; bekleyen halka "onay bekliyor"); döküm ve teslim alan; devir zinciri iki yönde; ay satırı
+  ("Ekim'in açık gün ve POS cirosuna girer" / "… elle yazılmış; bu rapor değiştirmez" / "Kapanmış ay: …"); o güne
+  kayıtlı kasadan çıkanlarla fark ("… (fişsiz)"); "Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten
+  yazılabilir."
+- **Onayla ve kaydet** (teslim varsa "Bu teslimi aldım / bankada gördüm" işaretlenene kadar kapalı), **Düzeltip
+  onayla** (form personelin değerleriyle açılır; personelin hâli 1. sürüm, sizinki 2. sürüm olur), **Reddet**. Aynı
+  aralıkta (önceki rapordan bu yana) daha eski bir bekleyen gün varsa onay kapalı: "Önce 13 Ekim'i karara bağlayın".
+  Gün artık raporluysa: "Bu günün raporu artık var; isteği reddedin".
+- Onayda rapor personelin adıyla girilir (gönderen ve sayan isteyen; devir ve açılış notu denetimleri işlem içinde
+  yeniden), fotoğraflar bağlanır (artık bağlanamayanlar atlanır ve söylenir), aynı günün öteki bekleyen geç raporları
+  kapanır. E-posta **yalnız onayda** gider; başlıkta "Geç rapor · Ayşe 21 Ekim'de girdi, Mehmet onayladı" ("düzeltip
+  onayladı"), anahtar `cash-{gün}-r{sürüm}-gec{istek}`.
+- Kendiniz `?gun=D`'de girerseniz bant: "Ayşe bu günün raporunu 21 Ekim'de onaya gönderdi. Burada girerseniz onun
+  isteği kapanır." Girince istek kapanır ("Yönetici günü kendisi girdi"), fotoğrafları 30 gün kalır.
+- **Kasa › Günden güne:** bekleyen gün "Onay bekliyor · Ayşe girdi · İncele"; onaylanan geç rapor gri **Geç girildi**
+  ve "Ayşe 21 Ekim'de girdi · Mehmet 22 Ekim'de onayladı" (eşleşme `result_id` ile, tarihle değil).
+- Satışlar › ay bilgisi ve Genel bakış görevi: gün eksik sayılmaya devam eder, yanına "(onay bekliyor)" yazılır.
+- Zil (Onaylar): "Geç kasa raporu onay bekliyor", "14 Ekim Salı · Ayşe · Z 12.400 ₺ · 120 ₺ eksik".
+- İşlem geçmişi: "Geç kasa raporu onaya gönderildi", "… geri çekildi", "… onaylandı", "… düzeltilip onaylandı", "…
+  reddedildi".
+
+Fotoğraflar istek beklerken tutulur (silinmez, başka bir kayda bağlanamaz); saklama süreleri [FOTOGRAF.md](FOTOGRAF.md)
+§ 4. Dosyalar: `src/lib/cash-report.ts` (`staffLateDay`, `zNoOrder`, `lateMissingDays`), `src/lib/cash-requests.ts`
+(`LatePayload`, metinler), `src/server/cash/late.ts` (istek ve karar), `src/server/cash/late-chain.ts`,
+`src/server/data/cash-late.ts` (okuyucular), `src/app/panel/kasa/late-report.tsx`, `src/app/panel/onaylar/kasa-cards.tsx`.
+Testler: `tests/kasa-raporu.test.ts`, `tests/kasa-gec-rapor-db.test.ts` (`KASA_GEC_TEST_DATABASE_URL`),
+`tests/foto-altyapi.test.ts` (`uploadRule`).
+
 ## Satış tahmini
 
 Kasa raporlarının Z toplamı satış tahminini besler (son 6 haftanın hafta günleri; [SATIS-TAHMINI.md](SATIS-TAHMINI.md)):

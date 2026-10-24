@@ -43,7 +43,8 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * girildiyse o da sayılır). `firstEver`: ilk raporun günü (verilmezse satırların en eskisi); yalnız bir ayın satırları
  * verilince ay ortasında başlayan ilk ay buna göre tanınır.
  */
-export function tillMonths(rows: TillRow[], through: string, firstEver?: string | null): TillMonth[] {
+export function tillMonths(rows: TillRow[], through: string, firstEver?: string | null, pendingLate?: Iterable<string>): TillMonth[] {
+  const waiting = pendingLate ? new Set(pendingLate) : null;
   if (!rows.length) return [];
   const first = firstEver ?? rows.reduce((a, r) => (r.date < a ? r.date : a), rows[0].date);
   const byMonth = new Map<string, TillRow[]>();
@@ -84,6 +85,7 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
       offDays: off.length,
       cardShare: posRevenue > 0 ? Math.min(1, Math.round((card / posRevenue) * 10_000) / 10_000) : null,
       missing,
+      ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
       partialFrom: first > start && first.slice(0, 7) === month ? first : null,
       lastDate,
     };
@@ -164,19 +166,25 @@ export function monthRowEmpty(row: Omit<MonthEntry, "month">, hasTill: boolean):
   return row.openDays === null && row.posRevenue === null && row.cardShare === null && !row.note && zeroIsEmpty(row.discounts) && zeroIsEmpty(row.offRevenue);
 }
 
-/** Eksik günler: "5, 12, 20 Kasım"; fazlası "… ve 2 gün daha" (ay değişirse her gün kendi ayıyla) */
-export function missingText(days: string[], max = 5): string {
+/**
+ * Eksik günler: "5, 12, 20 Kasım"; fazlası "… ve 2 gün daha" (ay değişirse her gün kendi ayıyla). `pending`: geç raporu
+ * onay bekleyen günler, "12 (onay bekliyor)"
+ */
+export function missingText(days: string[], max = 5, pending: readonly string[] = []): string {
   if (!days.length) return "";
   const shown = days.slice(0, max);
   const sameMonth = shown.every((d) => d.slice(0, 7) === shown[0].slice(0, 7));
   const name = (d: string) => MONTH_NAMES[Number(d.slice(5, 7)) - 1];
-  const list = sameMonth ? `${shown.map((d) => Number(d.slice(8, 10))).join(", ")} ${name(shown[0])}` : shown.map((d) => `${Number(d.slice(8, 10))} ${name(d)}`).join(", ");
+  const mark = (d: string) => (pending.includes(d) ? " (onay bekliyor)" : "");
+  const list = sameMonth
+    ? `${shown.map((d) => `${Number(d.slice(8, 10))}${mark(d)}`).join(", ")} ${name(shown[0])}`
+    : shown.map((d) => `${Number(d.slice(8, 10))} ${name(d)}${mark(d)}`).join(", ");
   return days.length > max ? `${list} ve ${days.length - max} gün daha` : list;
 }
 
 /** "3 gün rapor yok: 5, 12, 20 Kasım. O günler açıksanız ciro ve açık gün eksik kalır." */
-export function missingSentence(t: Pick<TillMonth, "missing">): string {
-  return `${t.missing.length} gün rapor yok: ${missingText(t.missing)}. O günler açıksanız ciro ve açık gün eksik kalır.`;
+export function missingSentence(t: Pick<TillMonth, "missing" | "pending">): string {
+  return `${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. O günler açıksanız ciro ve açık gün eksik kalır.`;
 }
 
 /** "Kasa raporları 20 Ekim'de başladı; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan." */

@@ -13,6 +13,7 @@ import { longDateTR, todayTR } from "@/lib/reminders";
 import { requireUser, type CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
+import { assertNotHeld } from "@/server/staff-requests/core";
 import { open, seal } from "@/server/secret-box";
 import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
@@ -109,6 +110,8 @@ async function persist(me: CurrentUser, d: z.output<typeof cashOutSchema>, opts:
       const expired = !p || (p.expiresAt !== null && p.expiresAt.getTime() <= Date.now());
       const foreign = !admin && p?.createdBy !== me.id && !(opts.restore && justReleased(p?.expiresAt ?? null));
       if (expired || p.kind !== "fis" || p.linkedAt !== null || foreign) throw new UserError(PHOTO_GONE);
+      // Onay bekleyen bir isteğin tuttuğu fotoğraf (geç kasa raporu, kasadan çıkan isteği) satıra bağlanmaz
+      await assertNotHeld(tx, d.photoId);
     }
 
     const values = {

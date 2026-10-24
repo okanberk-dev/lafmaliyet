@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
@@ -47,6 +47,7 @@ export async function loadDataset(): Promise<Dataset> {
     siteSales,
     coverageRow,
     till,
+    lateWaiting,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -92,6 +93,11 @@ export async function loadDataset(): Promise<Dataset> {
     db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
+    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor"
+    db
+      .selectDistinct({ day: s.staffRequests.day })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -157,7 +163,12 @@ export async function loadDataset(): Promise<Dataset> {
         cardShare: m.cardShare,
         note: m.note,
       })),
-      tillMonths(till, through),
+      tillMonths(
+        till,
+        through,
+        undefined,
+        lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
+      ),
     ),
     salesLines: salesLines.map((l) => ({
       id: l.id,

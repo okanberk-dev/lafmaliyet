@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 
-import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
+import { businessDate, carryCheck, CHANGE_LABELS, computeCash, diffText, revisionChanges, type CashRevisionData, type FieldChange } from "@/lib/cash-report";
 import { cashOutsTotal } from "@/lib/cash-outs";
 import {
   correctionBell,
@@ -20,7 +20,8 @@ import {
 import { money } from "@/lib/format";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
-import { mergedOf } from "@/server/cash/requests";
+import { mergedOf, type MergeBase } from "@/server/cash/requests";
+import { lateBellRows, lateCards, type LateCard } from "@/server/data/cash-late";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { nextReportAfter } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
@@ -91,7 +92,7 @@ export async function pendingCashForDay(day: string, me: { id: number }): Promis
   const notMine = (r: (typeof rows)[number]) => r.requestedBy !== me.id;
   // Rapor öneriden sonra değiştiyse "Öneriyi düzenle" önerinin değiştirdiği alanları raporun şimdiki hâline uygular:
   // arada yöneticinin yaptığı düzeltme formda geri alınmış görünmez (onaydaki birleştirmenin aynısı)
-  const report = rows.some((r) => mine(r) && r.kind === "kasa-duzeltme") ? (await getDb().select().from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1))[0] : undefined;
+  const report = rows.some((r) => mine(r) && r.kind === "kasa-duzeltme") ? (await getDb().select(MERGE_COLUMNS).from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1))[0] : undefined;
   const own = rows.filter(mine).flatMap((r): (OwnCorrection | OwnDelete)[] => {
     const common = { id: r.id, version: r.version, createdAt: r.createdAt.toISOString(), message: r.message };
     if (r.kind === "kasa-silme") return [{ ...common, kind: "kasa-silme" }];
@@ -106,8 +107,36 @@ export async function pendingCashForDay(day: string, me: { id: number }): Promis
   };
 }
 
+/** Raporun birleştirmeye giden sütunları (sabit liste; personelin kendi gününün raporu) */
+const MERGE_COLUMNS = {
+  date: s.cashReports.date,
+  zNo: s.cashReports.zNo,
+  receipts: s.cashReports.receipts,
+  zTotal: s.cashReports.zTotal,
+  cash: s.cashReports.cash,
+  card: s.cashReports.card,
+  mealCard: s.cashReports.mealCard,
+  online: s.cashReports.online,
+  other: s.cashReports.other,
+  openingCash: s.cashReports.openingCash,
+  cashOut: s.cashReports.cashOut,
+  cashOutNote: s.cashReports.cashOutNote,
+  countedCash: s.cashReports.countedCash,
+  handedOver: s.cashReports.handedOver,
+  bankPos: s.cashReports.bankPos,
+  offRevenue: s.cashReports.offRevenue,
+  discounts: s.cashReports.discounts,
+  note: s.cashReports.note,
+  cashDiff: s.cashReports.cashDiff,
+  countedBy: s.cashReports.countedBy,
+  countedByName: s.cashReports.countedByName,
+  submittedBy: s.cashReports.submittedBy,
+  submittedByName: s.cashReports.submittedByName,
+  revision: s.cashReports.revision,
+} as const;
+
 /** Önerinin formdaki hâli: rapor öneriden sonra değiştiyse önerinin değiştirdiği alanlar raporun şimdiki hâlinde */
-function proposedNow(report: typeof s.cashReports.$inferSelect | undefined, p: CorrectionPayloadT): ProposedFields {
+function proposedNow(report: MergeBase | undefined, p: CorrectionPayloadT): ProposedFields {
   if (!report || report.revision === p.baseRevision) return p.proposed;
   const { merged } = mergedOf(report, p);
   const { date: _date, ...fields } = merged.fields;
@@ -220,11 +249,16 @@ export interface DeleteCard extends CardBase {
   next: string | null;
 }
 
-/** Kartın rapor alanı yok (rapor silindi): yalnız kapatılır */
-export type CashRequestCard = CorrectionCard | DeleteCard;
+export type CashRequestCard = CorrectionCard | DeleteCard | LateCard;
 
-/** Bekleyen kasa düzeltme ve silme isteklerinin kartları, en eski gün önce (yalnız yönetici) */
+/** Bekleyen kasa isteklerinin kartları (düzeltme, silme, geç rapor), en eski gün önce (yalnız yönetici) */
 export async function loadCashRequestQueue(now = new Date()): Promise<CashRequestCard[]> {
+  const [day, late] = await Promise.all([dayRequestCards(now), lateCards(now)]);
+  return [...day, ...late].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+}
+
+/** Kayıtlı raporun düzeltme ve silme isteklerinin kartları */
+async function dayRequestCards(now: Date): Promise<(CorrectionCard | DeleteCard)[]> {
   const db = getDb();
   const rows = await db
     .select({
@@ -245,7 +279,7 @@ export async function loadCashRequestQueue(now = new Date()): Promise<CashReques
   const reports = days.length ? await db.select().from(s.cashReports).where(inArray(s.cashReports.date, days)) : [];
   const byDate = new Map(reports.map((r) => [r.date, r]));
   const thisMonth = businessDate(now).slice(0, 7);
-  const cards: CashRequestCard[] = [];
+  const cards: (CorrectionCard | DeleteCard)[] = [];
   for (const r of rows) {
     const report = r.day ? byDate.get(r.day) : undefined;
     if (!report || !r.day) continue;
@@ -288,7 +322,12 @@ export async function loadCashRequestQueue(now = new Date()): Promise<CashReques
     const lines = resultLines(current.data, after);
     const threeCols =
       report.revision !== p.baseRevision
-        ? threeColumns(p.base, current.data, after, [...proposalChanges(p.base, p.proposed).map((c) => c.key), ...changes.map((c) => c.key)])
+        ? threeColumns(p.base, current.data, after, [
+            ...proposalChanges(p.base, p.proposed).map((c) => c.key),
+            // Öneriden sonra değişen alanlar da (yöneticinin arada yaptığı düzeltme: onayda korunur)
+            ...revisionChanges(p.base, current.data).map((c) => c.key),
+            ...changes.map((c) => c.key),
+          ])
         : null;
     let receipts: CorrectionCard["receipts"] = null;
     if (changes.some((c) => c.key === "cashOut")) {
@@ -325,8 +364,13 @@ function threeColumns(atProposal: CashRevisionData, now: CashRevisionData, after
 
 // ---------------------------------------------------------------- Zil (yönetici)
 
-/** Yöneticinin zilinde bekleyen kasa düzeltme ve silme istekleri: istek başına satır (başlık ve gövde yükten) */
+/** Yöneticinin zilinde bekleyen kasa istekleri (düzeltme, silme, geç rapor): istek başına satır (başlık ve gövde yükten) */
 export async function pendingCashBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string }[]> {
+  const [day, late] = await Promise.all([dayBellRows(), lateBellRows()]);
+  return [...day, ...late].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+async function dayBellRows(): Promise<{ id: number; bumpedAt: Date; createdAt: Date; title: string; body: string }[]> {
   const rows = await getDb()
     .select({
       id: s.staffRequests.id,

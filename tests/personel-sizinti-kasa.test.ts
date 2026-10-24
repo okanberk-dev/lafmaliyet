@@ -24,6 +24,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/cash-form.tsx",
   "src/app/panel/kasa/cash-requests.tsx",
   "src/app/panel/kasa/cash-revisions.tsx",
+  "src/app/panel/kasa/late-report.tsx",
+  "src/server/data/cash-late.ts",
+  "src/server/cash/late.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -55,6 +58,23 @@ test("kasa: yöneticinin kartları yalnız Onaylar'da; personel sayfası yöneti
   assert.doesNotMatch(page, /loadCashRequestQueue|pendingCashBellRows/);
   assert.match(page, /admin && showForm \? pendingCashForDayAdmin\(date\)/);
   assert.match(page, /!admin && report \? pendingCashForDay\(date, user\)/);
+  const section = read("src/app/panel/onaylar/kasa-section.tsx");
+  assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+});
+
+test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğinden yalnız ad ve an; yönetici kartı personel sayfasında yok", () => {
+  const loader = read("src/server/data/cash-late.ts");
+  assert.match(loader, /^import "server-only";/);
+  const own = loader.slice(loader.indexOf("export async function lateRequestFor"), loader.indexOf("export async function lateRequestsByReport"));
+  assert.doesNotMatch(own, /\.select\(\)/);
+  assert.match(own, /\.where\(and\(eq\(r\.kind, "kasa-gec"\), eq\(r\.subject, `gun:\$\{date\}`\)\)\)/);
+  // Kişinin kendi isteği (requestedBy === me.id) yükten kurulur; başkalarınınki yalnız ad ve an
+  assert.match(own, /const mine = rows\.filter\(\(x\) => x\.requestedBy === me\.id\);/);
+  assert.match(own, /others: rows\.filter\(\(x\) => x\.requestedBy !== me\.id && x\.status === "pending"\)\.map\(\(x\) => \(\{ requestedByName: x\.requestedByName, createdAt: x\.createdAt\.toISOString\(\) \}\)\)/);
+  const days = loader.slice(loader.indexOf("export async function staffLateDays"), loader.indexOf("export interface OwnLate"));
+  assert.doesNotMatch(days, /payload|\.select\(\)/);
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.doesNotMatch(page, /lateCards|lateBellRows/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
   assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
 });

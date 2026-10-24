@@ -31,6 +31,7 @@ import {
   deleteBell,
   deleteTitle,
   mergeProposal,
+  shortDayTR,
   proposalChanges,
   proposalSummary,
   staffResultBell,
@@ -240,8 +241,8 @@ test("eylemler: istekler requireUser ile başlar ve yöneticiyi reddeder, karar 
   const src = read("src/server/actions/cash-requests.ts");
   assert.match(src, /^"use server";/);
   const exported = [...src.matchAll(/^export (?:async )?(?:function|const|let|class) (\w+)/gm)].map((m) => m[1]);
-  assert.deepEqual(exported.sort(), ["requestCashCorrection", "requestCashDelete", "reviewCashRequest"].sort());
-  for (const fn of ["requestCashCorrection", "requestCashDelete"]) {
+  assert.deepEqual(exported.sort(), ["requestCashCorrection", "requestCashDelete", "requestLateCashReport", "reviewCashRequest"].sort());
+  for (const fn of ["requestCashCorrection", "requestCashDelete", "requestLateCashReport"]) {
     const body = fnBody(src, fn);
     assert.match(body, /return attempt\(async \(\) => \{\s*const me = await requireUser\(\);\s*if \(me\.role === "admin"\) throw new UserError\(/, fn);
   }
@@ -275,4 +276,11 @@ test("kasa e-postasına personel adresi yazılamaz; personel yükleyicisi başka
   assert.match(loader, /^import "server-only";/);
   const others = loader.slice(loader.indexOf("export async function pendingCashForDay"));
   assert.match(others, /others: rows\.filter\([^)]*\)\.map\(\(r\) => \(\{ kind: r\.kind, requestedByName: r\.requestedByName, createdAt: r\.createdAt\.toISOString\(\) \}\)\)/);
+});
+
+test("gün çipi: kısa gün adları karışmaz (Paz / Pzt, Cum / Cmt)", () => {
+  assert.deepEqual(
+    ["2026-10-18", "2026-10-19", "2026-10-14", "2026-10-16", "2026-10-17"].map(shortDayTR),
+    ["18 Eki Paz", "19 Eki Pzt", "14 Eki Çar", "16 Eki Cum", "17 Eki Cmt"],
+  );
 });

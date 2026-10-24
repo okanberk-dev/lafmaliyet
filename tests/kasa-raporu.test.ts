@@ -21,8 +21,10 @@ import {
   diffText,
   historyOf,
   isLateEdit,
+  LATE_REPORT_DAYS,
   lastRevision,
   lateCorrections,
+  lateMissingDays,
   nextCheckOf,
   nextWarning,
   openingNeedsNote,
@@ -32,9 +34,11 @@ import {
   revisionDataOf,
   staffCanReport,
   staffDayEditable,
+  staffLateDay,
   waPhone,
   whatsappLink,
   whatsappText,
+  zNoOrder,
   type CashReportFields,
   type CashRevisionData,
 } from "../src/lib/cash-report";
@@ -459,4 +463,98 @@ test("kapanmış gün: personel fotoğrafları görmez (küçük resim ve büyü
   assert.match(outs, /\{o\.photoId && showPhotos \? \([^)]*?<img src=\{photoUrl\(o\.photoId\)\}/);
   assert.match(outs, /\) : o\.photoId && showPhotos \? \(\s*<button\s+type="button"\s+onClick=\{\(\) => setViewer\(/);
   assert.doesNotMatch(outs, /: o\.photoId \? \(/);
+});
+
+// ---------------------------------------------------------------- Geç kasa raporu (dalga 10, plan §2.6)
+
+test("geç rapor penceresi: dünden eski, son 14 takvim günü; bugün, dün ve ileri yok; 05:00 dönüşü", () => {
+  const at = (local: string) => new Date(`${local}:00+03:00`);
+  const now = at("2026-10-24T10:00");
+  assert.equal(LATE_REPORT_DAYS, 14);
+  assert.equal(staffLateDay("2026-10-24", now), false, "bugün");
+  assert.equal(staffLateDay("2026-10-25", now), false, "ileri");
+  assert.equal(staffLateDay("2026-10-23", now), false, "dün: normal form");
+  assert.equal(staffLateDay("2026-10-22", now), true, "2 gün önce");
+  assert.equal(staffLateDay("2026-10-10", now), true, "14 gün önce");
+  assert.equal(staffLateDay("2026-10-09", now), false, "15 gün önce");
+  // Gece 04:59: iş günü hâlâ dün (23 Ekim); 05:00'te döner
+  assert.equal(staffLateDay("2026-10-22", at("2026-10-24T04:59")), false);
+  assert.equal(staffLateDay("2026-10-21", at("2026-10-24T04:59")), true);
+  assert.equal(staffLateDay("2026-10-09", at("2026-10-24T04:59")), true);
+  assert.equal(staffLateDay("2026-10-22", at("2026-10-24T05:00")), true);
+  assert.equal(staffLateDay("2026-10-09", at("2026-10-24T05:00")), false);
+});
+
+test("Z no sırası: önceki ve sonraki halkayla; sayı değilse ya da komşu yoksa yargı yok", () => {
+  const plain = (t: string) => t.replace(/\u00a0/g, " ");
+  const prev = { date: "2026-10-13", zNo: "1203" };
+  const next = { date: "2026-10-15", zNo: "1206", pending: true };
+  const ok = zNoOrder(prev, "1204", next);
+  assert.equal(ok.ok, true);
+  assert.equal(plain(ok.text), "Z no 1204 · önceki 1203 (13 Ekim) · sonraki 1206 (15 Ekim, onay bekliyor)");
+  const low = zNoOrder(prev, "1203", next);
+  assert.equal(low.ok, false);
+  assert.match(plain(low.text), /^Z no sırası tutmuyor: önceki 1203 \(13 Ekim\)/);
+  const high = zNoOrder(prev, "1207", next);
+  assert.equal(high.ok, false);
+  assert.match(plain(high.text), /sonraki 1206 \(15 Ekim, onay bekliyor\)/);
+  // Komşunun Z no'su yoksa o yön denetlenmez; ikisi de yoksa yargı yok
+  assert.equal(zNoOrder({ date: "2026-10-13", zNo: null }, "1204", null).ok, null);
+  assert.equal(zNoOrder(null, "1204", { date: "2026-10-15", zNo: "1206" }).ok, true);
+  assert.equal(zNoOrder(prev, "A-12", next).ok, null, "sayı olmayan Z no denetlenmez");
+  assert.equal(zNoOrder(prev, null, next).ok, null);
+  // Baştaki sıfırlar ve boşluk sayıyı değiştirmez
+  assert.equal(zNoOrder({ date: "2026-10-13", zNo: "0099" }, " 100 ", null).ok, true);
+});
+
+test("girilmemiş günler: ilk rapordan sonra, dünden eski 14 gün; raporlu ve kapalı gün atlanır, bekleyen ve reddedilen işaretli", () => {
+  const now = new Date("2026-10-24T10:00:00+03:00");
+  const reports = ["2026-10-08", "2026-10-12", "2026-10-20", "2026-10-23"];
+  const days = lateMissingDays(reports, "2026-10-08", ["2026-10-14", "2026-10-15"], new Map([["2026-10-18", "pending"], ["2026-10-17", "rejected"]] as const), now);
+  // Pencere 10 Ekim – 22 Ekim (dün normal formda); en yeni önce
+  assert.deepEqual(days, [
+    { date: "2026-10-22", state: "missing" },
+    { date: "2026-10-21", state: "missing" },
+    { date: "2026-10-19", state: "missing" },
+    { date: "2026-10-18", state: "pending" },
+    { date: "2026-10-17", state: "rejected" },
+    { date: "2026-10-16", state: "missing" },
+    { date: "2026-10-13", state: "missing" },
+    { date: "2026-10-11", state: "missing" },
+    { date: "2026-10-10", state: "missing" },
+  ]);
+  // İlk raporun günü ve öncesi listelenmez; hiç rapor yoksa liste boş
+  assert.deepEqual(
+    lateMissingDays(["2026-10-20"], "2026-10-20", [], new Map(), now).map((d) => d.date),
+    ["2026-10-22", "2026-10-21"],
+  );
+  assert.deepEqual(lateMissingDays([], null, [], new Map(), now), []);
+});
+
+test("geç rapor kaynakta: geç kipte kasadan çıkan kartı ve DTO yok; e-posta yalnız onayda ve tek; yazım yolu sunucu eylemi değil", () => {
+  const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
+  // Personelin geç rapor görünümü: kasadan çıkanların kartı ve satırları gitmez, form boş listeyle açılır
+  const page = read("src/app/panel/kasa/page.tsx");
+  const lateView = page.slice(page.indexOf("async function StaffLateDay"), page.indexOf("async function SiteDayRow"));
+  assert.ok(lateView.length > 100);
+  assert.doesNotMatch(lateView, /CashOutsCard|cashOutsOn|CashOutDTO|whatsapp|SiteDayRow|loadCashSettings/);
+  const lateUi = read("src/app/panel/kasa/late-report.tsx");
+  assert.doesNotMatch(lateUi, /CashOutsCard|CashOutDTO/);
+  assert.match(lateUi, /cashOuts=\{\[\]\}/);
+  // E-posta yalnız yöneticinin onayında: istek eyleminde yok, onayda tek çağrı (düzeltip onaylasa da) ve isteğe bağlı anahtarla
+  const actions = read("src/server/actions/cash-requests.ts");
+  const request = actions.slice(actions.indexOf("export async function requestLateCashReport"), actions.indexOf("const reviewSchema"));
+  assert.doesNotMatch(request, /emailReport/);
+  const lateBranch = actions.slice(actions.indexOf('out.kind === "kasa-gec"'), actions.indexOf('} else if (out.status === "rejected")'));
+  assert.equal(lateBranch.match(/emailReport\(/g)?.length, 1);
+  assert.match(lateBranch, /idempotencyKey: `cash-\$\{date\}-r\$\{out\.report\.revision\}-gec\$\{out\.request\.id\}`/);
+  for (const f of ["src/server/cash/late.ts", "src/server/cash/late-chain.ts", "src/server/cash/report-store.ts", "src/server/cash/report-email.ts"]) {
+    assert.match(read(f), /^import "server-only";/, f);
+    assert.doesNotMatch(read(f), /"use server"/, f);
+  }
+  assert.doesNotMatch(actions, /export const reportSchema|export async function emailReport/);
+  // 05:00 dönüşü: personelin dünü artık geç rapor ise kaydetmez, onaya çevirir
+  const store = read("src/server/cash/report-store.ts");
+  assert.match(store, /if \(revision === 0 && staffLateDay\(data\.date, now\)\)[\s\S]*?return \{ kind: "needsApproval", request: "kasa-gec", gate: "gec" \};/);
+  assert.match(store, /supersede\(tx, \{ kinds: \["kasa-gec"\], subject: `gun:\$\{data\.date\}` \}, me\.role === "admin" \? "Yönetici günü kendisi girdi"/);
 });

@@ -9,9 +9,11 @@ import {
   type CashReportFields,
   type CashRevisionData,
   type FieldChange,
+  type LateCashPayload,
 } from "./cash-report";
 import { money } from "./format";
-import { dayMonthTR, longDateTR } from "./reminders";
+import { MAX_REPORT_PHOTOS } from "./photo-rules";
+import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR, monthShortTR, todayTR } from "./reminders";
 
 /**
  * Personelin kasa raporu istekleri (saf; docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği; plan
@@ -76,6 +78,41 @@ export const DeletePayload = z.object({
 });
 export type DeletePayloadT = z.output<typeof DeletePayload>;
 
+/**
+ * `kasa-gec` isteğinin yükü (geç kasa raporu; src/lib/cash-report.ts LateCashPayload): raporun alanları (Z no zorunlu),
+ * teslim alan (etkin bir kullanıcı ya da banka), istekte tutulan fotoğraflar (en az bir Z) ve isteyenin gördüğü kasa
+ * farkı. Kasayı sayan isteyendir.
+ */
+export const LatePayload = CashFieldsSchema.extend({
+  date: day,
+  zNo: z.string().trim().min(1).max(30),
+  handedTo: z
+    .discriminatedUnion("kind", [z.object({ kind: z.literal("user"), id: z.number().int().positive(), name: z.string().min(1).max(200) }), z.object({ kind: z.literal("banka") })])
+    .nullable(),
+  photos: z
+    .array(z.object({ id: z.number().int().positive(), kind: z.enum(["kasa-z", "kasa-pos"]) }))
+    .min(1)
+    .max(MAX_REPORT_PHOTOS)
+    .refine((ps) => ps.some((p) => p.kind === "kasa-z"), "Z raporunun fotoğrafı gerekli"),
+  cashDiff: amount,
+}) satisfies z.ZodType<LateCashPayload, unknown>;
+export type LatePayloadT = z.output<typeof LatePayload>;
+
+/** Geç raporun alanları (yükten; teslim alan, fotoğraflar ve kasa farkı hariç) */
+export function lateFields(p: LatePayloadT): CashReportFields {
+  const { handedTo: _to, photos: _photos, cashDiff: _diff, ...fields } = p;
+  void _to;
+  void _photos;
+  void _diff;
+  return { ...fields, discounts: fields.discounts ?? null };
+}
+
+/** "Mehmet'e", "bankaya" (teslim alan; yöneticinin kartı) */
+export function handedToText(h: LatePayloadT["handedTo"]): string | null {
+  if (!h) return null;
+  return h.kind === "banka" ? "bankaya" : h.name;
+}
+
 /** Eylemlerin ve çekirdeğin metinleri (sunucuda kurulur, personele olduğu gibi gösterilir) */
 export const CASH_REQUEST_TEXT = {
   adminDirect: "Yönetici raporu doğrudan düzeltir",
@@ -87,6 +124,17 @@ export const CASH_REQUEST_TEXT = {
   deletePending: "Silme isteğiniz bekliyor; önce geri çekin",
   reviewStale: "Rapor siz bakarken değişti; yeniden bakın",
   nothingToApply: "Rapor zaten bu hâlde; isteği kapatın",
+  lateWindow: "Bu gün geç rapor penceresinde değil: dünden eski son 14 gün girilir; daha eskisi için yöneticiye yazın",
+  lateReported: "Bu günün raporu girilmiş; sayfayı yenileyin",
+  lateBeforeFirst: "Kasa raporları bu günden sonra başladı; bu gün girilmez",
+  lateClosed: "Bu gün kafe kapalı işaretli; açıksa yöneticiye yazın",
+  lateTwice: "Bu gün için iki isteğiniz kapandı; bu günü yöneticiye yazın",
+  lateStale: "İsteğiniz bu arada değişti ya da karara bağlandı; sayfayı yenileyin",
+  lateZPhoto: "Z raporunun fotoğrafını ekleyin",
+  latePhoto: "Fotoğraf bulunamadı ya da başka bir kayıtta; yeniden çekin",
+  lateHandedTo: "Teslim edileni kimin aldığını seçin",
+  lateExists: "Bu günün raporu artık var; isteği reddedin",
+  lateHandover: "Teslimi aldığınızı ya da bankada gördüğünüzü işaretleyin",
 } as const;
 
 const FIELD_KEYS = [
@@ -213,6 +261,46 @@ export function correctionBell(o: { date: string; by: string; changes: readonly 
 /** Yöneticinin zil satırı: "22 Ekim kasa raporunun silinmesi istendi", gövde "Mehmet: <nedenin ilk 80 karakteri>" */
 export function deleteBell(o: { date: string; by: string; reason: string | null }): { title: string; body: string } {
   return { title: `${dayMonthTR(o.date)} kasa raporunun silinmesi istendi`, body: o.reason ? `${o.by}: ${clip(o.reason.trim(), 80)}` : o.by };
+}
+
+// Ay adının belirtme hâli: "13 Ekim'i" (ünlü uyumu ay ay sabit)
+const MONTHS_ACC_TR = ["Ocak'ı", "Şubat'ı", "Mart'ı", "Nisan'ı", "Mayıs'ı", "Haziran'ı", "Temmuz'u", "Ağustos'u", "Eylül'ü", "Ekim'i", "Kasım'ı", "Aralık'ı"];
+
+/** "Önce 13 Ekim'i karara bağlayın" (daha eski bir bekleyen geç rapor varken onay kapalı) */
+export function olderFirstText(date: string): string {
+  return `Önce ${Number(date.slice(8, 10))}\u00a0${MONTHS_ACC_TR[Number(date.slice(5, 7)) - 1]} karara bağlayın`;
+}
+
+// Haftanın günlerinin kısa adı (pazar 0): Pazar ile Pazartesi, Cuma ile Cumartesi karışmasın
+const WEEKDAY_SHORT_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"] as const;
+
+/** Gün çipi: "14 Eki Çar" (girilmemiş günler, geç raporun sayfası) */
+export function shortDayTR(date: string): string {
+  const weekday = WEEKDAY_SHORT_TR[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  return `${Number(date.slice(8, 10))} ${monthShortTR(date)} ${weekday}`;
+}
+
+/** Geç raporun başlığı (tutarsız): "14 Ekim geç kasa raporu" */
+export const lateTitle = (date: string) => `${dayMonthTR(date)} geç kasa raporu`;
+
+/** Yöneticinin zil satırı: "Geç kasa raporu onay bekliyor", gövde "14 Ekim Salı · Ayşe · Z 12.400 ₺ · 120 ₺ eksik" */
+export function lateBell(o: { date: string; by: string; zTotal: number; cashDiff: number }): { title: string; body: string } {
+  return { title: "Geç kasa raporu onay bekliyor", body: [longDateTR(o.date), o.by, `Z ${money(o.zTotal)}`, diffText(o.cashDiff)].join(" · ") };
+}
+
+/** Kaç gün sonra girildi: "7 gün sonra" (rapor günü ile isteğin günü arası, takvim) */
+export function lateByText(date: string, at: Date): string {
+  return `${daysBetween(date, todayTR(at))} gün sonra`;
+}
+
+/** İşlem geçmişinde geç rapor: "14 Ekim Salı · Z 12.400 ₺ · 120 ₺ eksik · <neden>" */
+export function lateLog(o: { date: string; zTotal: number; cashDiff: number; reason: string | null }): string {
+  return [longDateTR(o.date), `Z ${money(o.zTotal)}`, diffText(o.cashDiff), reasonLog(o.reason) || null].filter(Boolean).join(" · ");
+}
+
+/** E-postanın satırı: "Geç rapor · Ayşe 21 Ekim'de girdi, Mehmet onayladı" ("düzeltip onayladı") */
+export function lateApprovalLine(o: { requester: string; requestedAt: Date; approver: string; corrected: boolean }): string {
+  return `Geç rapor · ${o.requester} ${dayLocativeTR(todayTR(o.requestedAt))} girdi, ${o.approver} ${o.corrected ? "düzeltip onayladı" : "onayladı"}`;
 }
 
 /** Personelin kasa isteklerinin türleri (zil ve İsteklerim) */

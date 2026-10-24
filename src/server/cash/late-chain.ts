@@ -1,0 +1,76 @@
+import "server-only";
+
+import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
+
+import { LatePayload } from "@/lib/cash-requests";
+import { schema as s, type DB } from "@/server/db";
+
+/*
+ * Geç kasa raporunun devir zinciri (docs/KASA-RAPORU.md › Geç rapor): bir günün zincirdeki komşuları, kayıtlı rapor ya
+ * da onay bekleyen geç rapor (staff_requests, tür `kasa-gec`). Personelin açılış önerisi önceki halkanın devrinden
+ * gelir; yöneticinin kartı Z no sırasını ve devri iki yönde bununla gösterir. Onayda zincir işlem içinde yeniden
+ * hesaplanır (daha eski bir bekleyen gün varken onay kapalı: önceki halka hep rapordur).
+ */
+
+type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+/** Zincirin bir halkası */
+export interface ChainLink {
+  /** Kayıtlı rapor ya da onay bekleyen geç rapor */
+  kind: "rapor" | "bekleyen";
+  date: string;
+  zNo: string | null;
+  openingCash: number;
+  /** Ertesi güne devir (sayılan − teslim) */
+  carry: number;
+  /** Bekleyen geç raporun isteği ve isteyeni */
+  requestId: number | null;
+  requestedByName: string | null;
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * En yakın önceki ve sonraki halka. Aynı günde birden çok bekleyen geç rapor varsa `prefer` (isteyen kişi) önce, yoksa
+ * en eski. Rapor ile bekleyen arasında güne en yakın olan seçilir.
+ */
+export async function chainNeighbours(db: DB | Tx, date: string, o: { prefer?: number | null; exceptRequestId?: number } = {}): Promise<{ prev: ChainLink | null; next: ChainLink | null }> {
+  const cols = { date: s.cashReports.date, zNo: s.cashReports.zNo, openingCash: s.cashReports.openingCash, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver };
+  const [[before], [after], pending] = await Promise.all([
+    db.select(cols).from(s.cashReports).where(lt(s.cashReports.date, date)).orderBy(desc(s.cashReports.date)).limit(1),
+    db.select(cols).from(s.cashReports).where(gt(s.cashReports.date, date)).orderBy(asc(s.cashReports.date)).limit(1),
+    db
+      .select({ id: s.staffRequests.id, day: s.staffRequests.day, payload: s.staffRequests.payload, requestedBy: s.staffRequests.requestedBy, requestedByName: s.staffRequests.requestedByName })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending")))
+      .orderBy(asc(s.staffRequests.createdAt), asc(s.staffRequests.id)),
+  ]);
+  const report = (r: typeof before): ChainLink | null =>
+    r ? { kind: "rapor", date: r.date, zNo: r.zNo, openingCash: r.openingCash, carry: r2(r.counted - r.handed), requestId: null, requestedByName: null } : null;
+  const links = new Map<string, ChainLink>();
+  for (const p of pending) {
+    if (!p.day || p.day === date || p.id === o.exceptRequestId) continue;
+    const parsed = LatePayload.safeParse(p.payload);
+    if (!parsed.success) continue;
+    const have = links.get(p.day);
+    // Aynı gün: istenen kişinin isteği önce, yoksa en eskisi
+    if (have && !(o.prefer && p.requestedBy === o.prefer)) continue;
+    links.set(p.day, {
+      kind: "bekleyen",
+      date: p.day,
+      zNo: parsed.data.zNo,
+      openingCash: parsed.data.openingCash,
+      carry: r2(parsed.data.countedCash - parsed.data.handedOver),
+      requestId: p.id,
+      requestedByName: p.requestedByName,
+    });
+  }
+  const days = [...links.keys()];
+  const prevPending = days.filter((d) => d < date).sort().at(-1);
+  const nextPending = days.filter((d) => d > date).sort()[0];
+  const prevReport = report(before);
+  const nextReport = report(after);
+  const prev = prevPending && (!prevReport || prevPending > prevReport.date) ? links.get(prevPending)! : prevReport;
+  const next = nextPending && (!nextReport || nextPending < nextReport.date) ? links.get(nextPending)! : nextReport;
+  return { prev, next };
+}

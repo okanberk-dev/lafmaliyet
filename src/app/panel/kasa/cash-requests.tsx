@@ -192,7 +192,7 @@ export function MyCashRequests({ requests }: { requests: MyCashRequest[] }) {
               </p>
               {r.reviewNote ? (
                 <p className="mt-1 text-[13px] break-words text-ink-soft">
-                  {r.status === "superseded" ? r.reviewNote : `Yönetici${r.reviewedByName ? ` (${r.reviewedByName})` : ""}: ${r.reviewNote}`}
+                  {r.status === "superseded" ? r.reviewNote : `Yönetici: ${r.reviewNote}`}
                 </p>
               ) : null}
             </div>

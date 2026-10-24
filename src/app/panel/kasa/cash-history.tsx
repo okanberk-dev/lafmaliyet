@@ -73,6 +73,8 @@ export function CashHistory({
   carry = {},
   revisions = {},
   proposedBy = {},
+  lateApproved = {},
+  latePending = {},
   monthLine = null,
 }: {
   monthLabel: string;
@@ -90,6 +92,10 @@ export function CashHistory({
   revisions?: Record<number, CashRevisionRow[]>;
   /** Onaylanan düzeltme önerilerinin önerenleri (rapor ve sürüm kimliğine göre) */
   proposedBy?: Record<number, Record<number, string>>;
+  /** Onaylanan geç raporlar (rapor kimliğine göre): "Ayşe 21 Ekim'de girdi · Mehmet 22 Ekim'de onayladı" */
+  lateApproved?: Record<number, string>;
+  /** Onay bekleyen geç raporlar (güne göre) */
+  latePending?: Record<string, { id: number; requestedByName: string }[]>;
   /** Ayın açık gün ve cirosunun nereden geldiği (Satışlar'a bağlantı) */
   monthLine?: ReactNode;
 }) {
@@ -190,13 +196,25 @@ export function CashHistory({
         <ul className="divide-y divide-line border-t border-line">
           {days.map(({ date, report }) => {
             if (!report) {
+              const waiting = latePending[date]?.[0];
               return (
-                <li key={date} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                <li key={date} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm">
                   <span className="w-[7.5rem] shrink-0 font-medium text-ink-mute tabular">{shortDay(date)}</span>
-                  <span className="min-w-0 flex-1 text-ink-mute">Rapor girilmedi</span>
-                  <ButtonLink href={`/panel/kasa?gun=${date}`} variant="ghost" size="xs">
-                    <Pencil size={13} /> Gir
-                  </ButtonLink>
+                  {waiting ? (
+                    <>
+                      <span className="min-w-0 flex-1 text-warn">Onay bekliyor · {waiting.requestedByName} girdi</span>
+                      <ButtonLink href={`/panel/onaylar#istek-${waiting.id}`} variant="ghost" size="xs">
+                        İncele
+                      </ButtonLink>
+                    </>
+                  ) : (
+                    <>
+                      <span className="min-w-0 flex-1 text-ink-mute">Rapor girilmedi</span>
+                      <ButtonLink href={`/panel/kasa?gun=${date}`} variant="ghost" size="xs">
+                        <Pencil size={13} /> Gir
+                      </ButtonLink>
+                    </>
+                  )}
                 </li>
               );
             }
@@ -217,12 +235,14 @@ export function CashHistory({
                     <span className="block text-xs text-ink-mute">
                       {whoOf(report)}
                       {report.revision > 1 ? ` · ${report.revision - 1} kez düzeltildi` : ""}
+                      {lateApproved[report.id] ? ` · ${lateApproved[report.id]}` : ""}
                       {report.emailStatus === "failed" ? " · e-posta gitmedi" : ""}
                       {report.note ? ` · ${report.note.slice(0, 60)}${report.note.length > 60 ? "…" : ""}` : ""}
                     </span>
                   </span>
                   <span className="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5">
                     {photos[report.id]?.photos.length ? <Camera size={14} className="text-ink-mute" aria-label="Fotoğraflı" role="img" /> : null}
+                    {lateApproved[report.id] ? <Badge tone="gray">Geç girildi</Badge> : null}
                     {photos[report.id]?.suspicious.length ? <Badge tone="amber">Fotoğraftan farklı</Badge> : null}
                     {carry[report.date] ? <Badge tone="amber">Açılış ≠ devir</Badge> : null}
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}

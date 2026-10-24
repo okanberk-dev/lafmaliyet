@@ -56,7 +56,10 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 - **Kim görür:** yönetici hepsini; yükleyen kişi henüz kayda bağlanmamış kendi fotoğrafını (formdaki küçük resim);
   personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
   KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını. O günlere fotoğraf eklemek de aynı kuralla
-  (`src/server/photo-read/rules.ts` › `staffDayOpen`). Kapanan günde personel fotoğrafları görmez (kasadan çıkan
+  (`src/server/photo-read/rules.ts` › `staffDayOpen`). Geç kasa raporu için personel dünden eski, raporu girilmemiş
+  son 14 günden birine de Z ve POS fotoğrafı ekler (`staffLateDayOpen`; ilk rapordan sonra, kapalı işaretli olmayan
+  gün; [KASA-RAPORU.md](KASA-RAPORU.md) › Geç rapor). Fiş yalnız açık güne. Kural saf olarak
+  `src/lib/photo-rules.ts` › `uploadRule`. Kapanan günde personel fotoğrafları görmez (kasadan çıkan
   satırında küçük resim yerine fiş simgesi); WhatsApp metnindeki "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı
   yazılan" satırları kalır. Kontrol listelerinin fotoğraflarını personel, personelin doldurduğu listelerin bugünkü ve
   dünkü (iş günü) kayıtlarında görür (`src/lib/checklists.ts` › `photoAccess`, [KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)
@@ -82,8 +85,13 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
 | Kontrol listesinin (açılış, kapanış) | kaydın gününden 60 gün sonra; yeniden çekilenin eskisi hemen |
 | Bağı kalkan (satır silindi, fotoğraf değişti) | 7 gün sonra (Geri al payı) |
 | Silinen kasa raporunun | 30 gün sonra |
+| Onay bekleyen bir istekte tutulan (geç kasa raporu) | istek beklerken silinmez, hiçbir kayda bağlanamaz; onayda raporla bağlanır (180 gün); ret ya da yöneticinin günü kendisi girmesiyle 30 gün, geri çekme ya da istekten çıkarma ile 7 gün sonra |
 
 Geçmiş bir güne sonradan girilen rapor ya da satırın fotoğrafında süre eklendiği günden sayılır.
+
+İstekte tutulan fotoğrafın süresi kalkar (`holdPhoto`: `expires_at` boş, bağlanmamış); yükleyen kişi küçük resmini
+görmeye devam eder. Başka bir istek ya da kayıt onu bağlayamaz: kasa raporu, kasadan çıkan ve harcama yolları
+`assertNotHeld` çağırır ("Bu fotoğraf onay bekleyen bir istekte"; [ONAYLAR.md](ONAYLAR.md)).
 
 Süresi dolanları **sabah işi** (`/api/cron/gunluk`) siler: önce depodan, sonra kaydı; sabah başına en çok 100,
 işin zaman bütçesi içinde (en çok 8 sn). **Ayarlar › Günlük işler**'de adımı "Fotoğraf temizliği": "Eski fotoğraflar

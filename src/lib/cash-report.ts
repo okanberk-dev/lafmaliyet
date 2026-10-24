@@ -300,6 +300,86 @@ export function staffCashGate(o: { date: string; now: Date; hasReport: boolean; 
   return isLateEdit(o.date, o.now) && o.changes.some((c) => c.sensitive) ? "request" : "direct";
 }
 
+// ---------------------------------------------------------------- Geç rapor (onaylı; docs/KASA-RAPORU.md › Geç rapor)
+
+/** Personelin geç rapor penceresi (takvim günü): dünden eski, iş gününden en çok bu kadar önce */
+export const LATE_REPORT_DAYS = 14;
+
+/**
+ * Personel bu günün raporunu geç rapor olarak (yöneticinin onayıyla) girebilir mi: iş gününden 2 ile 14 takvim günü
+ * önce. Dün normal formdadır (staffCanReport); bugün ve ileri günler yok.
+ */
+export function staffLateDay(date: string, now: Date = new Date()): boolean {
+  const day = businessDate(now);
+  return date <= addDays(day, -2) && date >= addDays(day, -LATE_REPORT_DAYS);
+}
+
+/**
+ * Geç raporun yükü (staff_requests.payload, tür `kasa-gec`): raporun alanları (Z no zorunlu), teslim alan, istekte
+ * tutulan fotoğraflar ve isteyenin gördüğü kasa farkı. Kasayı sayan isteyendir; çözümü src/lib/cash-requests.ts LatePayload.
+ */
+export type LateCashPayload = CashReportFields & {
+  zNo: string;
+  handedTo: { kind: "user"; id: number; name: string } | { kind: "banka" } | null;
+  photos: { id: number; kind: "kasa-z" | "kasa-pos" }[];
+  cashDiff: number;
+};
+
+/** Zincirin bir halkası: kayıtlı rapor ya da onay bekleyen geç rapor (`pending`) */
+export interface ZLink {
+  date: string;
+  zNo: string | null;
+  pending?: boolean;
+}
+
+const zNumber = (z: string | null | undefined): number | null => {
+  const t = (z ?? "").trim();
+  return /^\d+$/.test(t) ? Number(t) : null;
+};
+
+/**
+ * Z no sırası (yöneticinin geç rapor kartı): önceki halkanın Z no'su bu rapordan küçük, sonrakininki büyük olmalı.
+ * `ok`: null yargı yok (Z no sayı değil ya da sayılı komşu yok), false sıra tutmuyor. Metin: "Z no 1204 · önceki 1203
+ * (13 Ekim) · sonraki 1206 (15 Ekim, onay bekliyor)" ya da "Z no sırası tutmuyor: …".
+ */
+export function zNoOrder(prev: ZLink | null, zNo: string | null, next: ZLink | null): { ok: boolean | null; text: string } {
+  const n = zNumber(zNo);
+  const label = (l: ZLink) => `${l.zNo?.trim() || "Z no yok"} (${dayMonthTR(l.date)}${l.pending ? ", onay bekliyor" : ""})`;
+  const parts = [prev ? `önceki ${label(prev)}` : null, next ? `sonraki ${label(next)}` : null].filter((x): x is string => Boolean(x));
+  if (n === null) return { ok: null, text: [`Z no ${zNo?.trim() || "yok"}`, ...parts].join(" · ") };
+  const p = zNumber(prev?.zNo);
+  const q = zNumber(next?.zNo);
+  const bad = [p !== null && p >= n ? `önceki ${label(prev!)} bu rapordan büyük ya da eşit` : null, q !== null && q <= n ? `sonraki ${label(next!)} bu rapordan küçük ya da eşit` : null].filter(
+    (x): x is string => Boolean(x),
+  );
+  if (bad.length) return { ok: false, text: `Z no sırası tutmuyor: ${bad.join("; ")} (bu rapor ${zNo!.trim()})` };
+  return { ok: p === null && q === null ? null : true, text: [`Z no ${zNo!.trim()}`, ...parts].join(" · ") };
+}
+
+/**
+ * Personelin "Girilmemiş günler"i: dünden eski geç rapor penceresindeki (staffLateDay), ilk raporun gününden sonraki,
+ * raporu olmayan ve kapalı işaretli olmayan günler, en yeni önce. `pendingByDate`: o gün için onay bekleyen ya da
+ * kişinin reddedilen isteği. Hiç rapor yoksa (kasa kullanılmaya başlamadı) boş.
+ */
+export function lateMissingDays(
+  reportDates: Iterable<string>,
+  firstDate: string | null,
+  closedDays: Iterable<string>,
+  pendingByDate: ReadonlyMap<string, "pending" | "rejected">,
+  now: Date = new Date(),
+): { date: string; state: "missing" | "pending" | "rejected" }[] {
+  if (!firstDate) return [];
+  const reported = new Set(reportDates);
+  const closed = new Set(closedDays);
+  const day = businessDate(now);
+  const out: { date: string; state: "missing" | "pending" | "rejected" }[] = [];
+  for (let d = addDays(day, -2); d >= addDays(day, -LATE_REPORT_DAYS); d = addDays(d, -1)) {
+    if (d <= firstDate || reported.has(d) || closed.has(d)) continue;
+    out.push({ date: d, state: pendingByDate.get(d) ?? "missing" });
+  }
+  return out;
+}
+
 /**
  * Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan). Sayanı boş rapor (bu özellikten önce
  * kaydedilmiş) gönderenin saydığı raporudur: kopyaya o yazılır, yoksa ilk düzeltmede kimsenin yapmadığı "Sayan — → Ayşe"

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, ExternalLink, Trash2, Wallet, X } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink, Pencil, Trash2, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -10,26 +10,40 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, Textarea } from "@/components/ui/form";
-import { changeLine, stampTR } from "@/lib/cash-report";
+import { Checkbox, Field, Textarea } from "@/components/ui/form";
+import { carryDiffText, changeLine, computeCash, diffText, stampTR, zNoOrder, type CashReportFields } from "@/lib/cash-report";
+import { olderFirstText } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { dayMonthTR, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { reviewCashRequest } from "@/server/actions/cash-requests";
+import type { LateCard } from "@/server/data/cash-late";
 import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/cash-requests";
+
+import { CashForm } from "../kasa/cash-form";
+import { SavedPhotos } from "../kasa/cash-photos";
+import { CashBreakdown } from "../kasa/cash-summary";
 
 /**
  * Onaylar › Kasa kartları (yalnız yönetici): personelin kasa raporu düzeltme önerileri ve silme istekleri. Düzeltmede
  * raporun şimdiki hâlinden onaydan sonraki hâline değişenler (kasa alanları kalın ve uyarı renginde), rapor istekten
  * sonra değiştiyse üç sütun, sonuç ve devir, sonraki raporun açılışı, fişler ve geçmiş ay uyarısı; silmede raporun
- * özeti. Kasa alanı değişen onay ve her silme onay penceresi açar. Not personele görünür (tutar yazılmaz).
+ * özeti; geç raporda fotoğraflar, Z no sırası, devir zinciri, ay ve kasadan çıkanlar. Kasa alanı değişen onay ve her
+ * silme onay penceresi açar. Not personele görünür (tutar yazılmaz).
  */
-export function KasaRequestCards({ cards }: { cards: CashRequestCard[] }) {
+export function KasaRequestCards({ cards, counters }: { cards: CashRequestCard[]; counters: { id: number; name: string }[] }) {
   return (
     <Card>
-      <CardHeader icon={<Wallet />} title="Kasa" description="Personelin kasa raporu istekleri, en eski gün önce. Onaylayınca rapor yöneticinin düzeltmesi gibi değişir; reddederseniz notunuz personele görünür." />
+      <CardHeader
+        icon={<Wallet />}
+        title="Kasa"
+        description="Personelin kasa raporu istekleri, en eski gün önce. Onaylayınca rapor yöneticinin girdiği gibi kaydedilir; reddederseniz notunuz personele görünür."
+      />
       <div className="divide-y divide-line border-t border-line">
-        {cards.map((c) => (c.kind === "kasa-duzeltme" ? <CorrectionItem key={c.id} card={c} /> : <DeleteItem key={c.id} card={c} />))}
+        {cards.map((c) =>
+          c.kind === "kasa-duzeltme" ? <CorrectionItem key={c.id} card={c} /> : c.kind === "kasa-silme" ? <DeleteItem key={c.id} card={c} /> : <LateItem key={c.id} card={c} counters={counters} />,
+        )}
       </div>
     </Card>
   );
@@ -51,13 +65,22 @@ function Head({ card, title, badge }: { card: CashRequestCard; title: string; ba
   );
 }
 
-/** Karar: not alanı ve düğmeler; sonuç toast ile */
+type Decided = { revision: number | null; next: { date: string; opening: number } | null; nextBroken: boolean; skippedPhotos: number };
+
+/** Karar: not alanı ve düğmeler; sonuç toast ile. Geç raporda raporun sürümü yok, "Düzeltip onayla" değerleri ve teslim işareti */
 function useDecision(card: CashRequestCard) {
   const [note, setNote] = useState("");
   const [pending, start] = useActionTransition();
-  const decide = (decision: "approve" | "reject" | "close", done: (r: { revision: number | null; next: { date: string; opening: number } | null; nextBroken: boolean }) => void) =>
+  const decide = (decision: "approve" | "reject" | "close", done: (r: Decided) => void, extra: { fields?: Omit<CashReportFields, "date"> | null; handoverSeen?: boolean } = {}) =>
     start(async () => {
-      const res = await reviewCashRequest({ id: card.id, seenVersion: card.version, seenRevision: card.reportRevision, decision, note: note.trim() || null });
+      const res = await reviewCashRequest({
+        id: card.id,
+        seenVersion: card.version,
+        seenRevision: card.kind === "kasa-gec" ? null : card.reportRevision,
+        decision,
+        note: note.trim() || null,
+        ...extra,
+      });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
       done(res.data);
     });
@@ -78,7 +101,7 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
   function approve() {
     setConfirm(false);
     decide("approve", (r) => {
-      toast.success(`${day} kasa raporu güncellendi`, { description: `${card.requestedByName} önerisi onaylandı; rapor alıcılara yeniden gitti.` });
+      toast.success(`${day} kasa raporu güncellendi`, { description: `${genitive(card.requestedByName)} önerisi onaylandı; rapor yeni sürümle kaydedildi.` });
       if (r.next) {
         toast.warning(`${dayMonthTR(r.next.date)} açılışı bu devirle ${r.nextBroken ? "artık " : ""}tutmuyor`, { description: "Ertesi günün açılışını ya da bu raporun sayımını kontrol edin.", duration: 12_000 });
       }
@@ -157,7 +180,7 @@ function CorrectionItem({ card }: { card: CorrectionCard }) {
       <div className="flex flex-wrap justify-end gap-2">
         {card.changes.length ? (
           <>
-            <Button variant="ghost" onClick={() => decide("reject", () => toast.success(`${card.requestedByName} önerisi reddedildi`, { description: "Rapor değişmedi." }))} disabled={pending}>
+            <Button variant="ghost" onClick={() => decide("reject", () => toast.success(`${genitive(card.requestedByName)} önerisi reddedildi`, { description: "Rapor değişmedi." }))} disabled={pending}>
               <X size={15} /> Reddet
             </Button>
             <Button onClick={() => (sensitive.length ? setConfirm(true) : approve())} disabled={pending}>
@@ -213,13 +236,153 @@ function DeleteItem({ card }: { card: DeleteCard }) {
         onClose={() => setConfirm(false)}
         onConfirm={() => {
           setConfirm(false);
-          decide("approve", () => toast.success(`${day} raporu silindi`, { description: `${card.requestedByName} isteği onaylandı.` }));
+          decide("approve", () => toast.success(`${day} raporu silindi`, { description: `${genitive(card.requestedByName)} isteği onaylandı.` }));
         }}
         pending={pending}
         confirmLabel="Sil"
         title={`${day} raporu silinsin mi?`}
         description="Rapor ve önceki sürümleri silinir; personel o günü yeniden girebilir. Gönderilmiş e-posta geri alınmaz."
       />
+    </article>
+  );
+}
+
+/** Zincirin bir halkasının adı: "13 Ekim" ya da "13 Ekim (onay bekliyor)" */
+const linkName = (l: { date: string; kind: "rapor" | "bekleyen" }) => `${dayMonthTR(l.date)}${l.kind === "bekleyen" ? " (onay bekliyor)" : ""}`;
+
+/**
+ * Geç kasa raporu (docs/KASA-RAPORU.md › Geç rapor): personelin girdiği gün, fotoğraflar ve okumalar, Z no sırası,
+ * döküm ve teslim alan, devir zinciri iki yönde, ay satırı, kasadan çıkanlar. "Onayla ve kaydet" teslim varsa işaret
+ * ister; "Düzeltip onayla" formu personelin değerleriyle açar; aynı aralıkta daha eski bekleyen gün ya da artık
+ * raporlu gün varken onay kapalı.
+ */
+function LateItem({ card, counters }: { card: LateCard; counters: { id: number; name: string }[] }) {
+  const { pending, decide, noteField } = useDecision(card);
+  const [seen, setSeen] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const day = longDateTR(card.date);
+  const f = card.fields;
+  const { prev, next, prevCheck, nextCheck } = card.chain;
+  const z = zNoOrder(prev ? { date: prev.date, zNo: prev.zNo, pending: prev.kind === "bekleyen" } : null, f.zNo, next ? { date: next.date, zNo: next.zNo, pending: next.kind === "bekleyen" } : null);
+  const carry = computeCash(f).carryOver;
+  const blocked = card.reported ? "Bu günün raporu artık var; isteği reddedin" : card.olderPending ? olderFirstText(card.olderPending) : null;
+  // Açılış önceki raporun devriyle tutmuyor ve not yok: kayıt kuralı not ister, olduğu gibi onaylanamaz
+  const needsNote = !blocked && prev?.kind === "rapor" && Boolean(prevCheck) && !(f.note ?? "").trim();
+
+  const approved = (r: Decided, corrected: boolean) => {
+    toast.success(`${day} raporu kayda geçti`, {
+      description: `${card.requestedByName} girdi${corrected ? ", siz düzelttiniz" : ""}; rapor kaydedildi.${r.skippedPhotos ? ` ${r.skippedPhotos} fotoğraf bağlanamadı.` : ""}`,
+    });
+    if (r.next) toast.warning(`${dayMonthTR(r.next.date)} açılışı bu devirle tutmuyor`, { description: "Ertesi günün açılışını ya da bu raporun sayımını kontrol edin.", duration: 12_000 });
+  };
+  const handover = f.handedOver > 0;
+
+  return (
+    <article id={`istek-${card.id}`} className="scroll-mt-24 space-y-3 px-5 py-4">
+      <div className="space-y-1">
+        <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
+          <span className="min-w-0 break-words">{day} kasa raporu</span>
+          <Badge tone="amber">Geç rapor</Badge>
+        </h3>
+        <p className="text-[13px] text-ink-mute tabular">
+          {card.requestedByName} gönderdi · {stampTR(card.createdAt)} · {card.lateBy}
+        </p>
+        {card.message ? <p className="text-sm break-words text-ink-soft">Neden geç: {card.message}</p> : null}
+      </div>
+      {card.photos.length ? <SavedPhotos photos={card.photos} diffs={card.diffs} admin={false} /> : null}
+      {card.unread ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin.</p> : null}
+      <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{z.text}</p>
+      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} />
+      {handover ? (
+        <p className="text-sm text-ink">
+          Teslim edilen {money(f.handedOver)}
+          {card.handedTo ? (
+            <span className="text-ink-soft">
+              {" "}
+              · {card.handedTo === "bankaya" ? "bankaya yatırıldı" : `alan: ${card.handedTo}`} ({card.requestedByName} yazdı)
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+      <ul className="space-y-1 text-sm">
+        <li className={prevCheck ? "text-warn" : "text-ink-soft"}>
+          {prev ? `Açılış ${money(f.openingCash)} · ${linkName(prev)} devri ${money(prev.carry)}: ${prevCheck ? carryDiffText(prevCheck) : "tutuyor"}` : "Önceki rapor yok; açılış denetlenemedi"}
+        </li>
+        <li className={nextCheck ? "text-warn" : "text-ink-soft"}>
+          {next ? `${linkName(next)} açılışı ${money(next.openingCash)} · bu raporun devri ${money(carry)}: ${nextCheck ? carryDiffText(nextCheck) : "tutuyor"}` : "Sonraki rapor yok"}
+        </li>
+        <li className="text-ink-soft">{card.monthLine}</li>
+        {card.outs.warning ? <li className="font-medium text-bad">{card.outs.warning}</li> : null}
+        <li className="flex items-start gap-1.5 text-ink-mute">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten yazılabilir.</span>
+        </li>
+      </ul>
+      <p className="text-sm text-ink">
+        Kasa farkı: <span className="font-semibold">{diffText(card.cashDiff)}</span>
+      </p>
+      {blocked ? <p className="rounded-xl bg-panel px-3 py-2 text-sm font-medium text-ink">{blocked}</p> : null}
+      {needsNote ? (
+        <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">
+          Açılış önceki raporun devriyle tutmuyor ve not yazılmamış: olduğu gibi kaydedilemez. Düzeltip onaylayın ve nedeni nota yazın.
+        </p>
+      ) : null}
+      {correcting ? (
+        <CashForm
+          date={card.date}
+          report={null}
+          carry={prev ? { date: prev.date, amount: prev.carry } : null}
+          whatsapp={null}
+          recipients={0}
+          canEdit
+          photoUi={{ storage: false, reading: "off", admin: true, me: "" }}
+          saved={null}
+          cashOuts={[]}
+          counters={counters}
+          mode="review"
+          initial={f}
+          reviewPending={pending}
+          onCancel={() => setCorrecting(false)}
+          onReview={(fields) => {
+            const { date: _d, ...rest } = fields;
+            void _d;
+            if ((handover || fields.handedOver > 0) && !seen) return void toast.error("Teslimi aldığınızı ya da bankada gördüğünüzü işaretleyin");
+            decide(
+              "approve",
+              (r) => {
+                setCorrecting(false);
+                approved(r, true);
+              },
+              { fields: rest, handoverSeen: seen },
+            );
+          }}
+        />
+      ) : null}
+      {noteField}
+      {handover && !blocked ? (
+        <Checkbox
+          checked={seen}
+          onChange={(e) => setSeen(e.target.checked)}
+          label={`Bu teslimi aldım / bankada gördüm (${money(f.handedOver)}${card.handedTo ? `, ${card.handedTo === "bankaya" ? "banka" : card.handedTo}` : ""})`}
+        />
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" onClick={() => decide("reject", () => toast.success("Geç rapor reddedildi", { description: "Rapor kaydedilmedi; fotoğraflar 30 gün saklanır." }))} disabled={pending}>
+          <X size={15} /> Reddet
+        </Button>
+        {!blocked ? (
+          <>
+            {!correcting ? (
+              <Button variant="secondary" onClick={() => setCorrecting(true)} disabled={pending}>
+                <Pencil size={15} /> Düzeltip onayla
+              </Button>
+            ) : null}
+            <Button onClick={() => decide("approve", (r) => approved(r, false), { handoverSeen: seen })} disabled={pending || (handover && !seen) || correcting || needsNote}>
+              <Check size={15} /> Onayla ve kaydet
+            </Button>
+          </>
+        ) : null}
+      </div>
     </article>
   );
 }

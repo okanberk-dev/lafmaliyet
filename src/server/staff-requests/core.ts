@@ -241,14 +241,16 @@ export async function withdrawOwn(db: Tx, me: Actor, id: number, now = new Date(
 
 /**
  * Başka bir yol aynı işi yaptı (rapor başka bir istekle düzeltildi, yönetici günü kendisi girdi, kayıt silindi): eşleşen
- * istekler "superseded" olur, not personele görünür; tutulan fotoğrafları bırakılır. Varsayılan yalnız bekleyenler
- * (mal siparişi taslağında onaylanmış canlı taslak da: `statuses`). Kapanan kimlikler döner.
+ * istekler "superseded" olur, not personele görünür; tutulan fotoğrafları bırakılır (`releaseDays` gün sonra silinir;
+ * geç kasa raporunun Z fotoğrafı kanıttır, 30 gün). Varsayılan yalnız bekleyenler (mal siparişi taslağında onaylanmış
+ * canlı taslak da: `statuses`). Kapanan kimlikler döner.
  */
 export async function supersede(
   tx: Tx,
   f: { kinds: readonly StaffRequestKind[]; subject?: string; day?: string; exceptId?: number; statuses?: readonly StaffRequestStatus[] },
   note: string,
   now = new Date(),
+  releaseDays = RELEASED_DAYS,
 ): Promise<number[]> {
   if (!f.kinds.length) return [];
   const rows = await tx
@@ -267,7 +269,7 @@ export async function supersede(
   await releaseHeld(
     tx,
     rows.flatMap((r) => r.photoIds),
-    RELEASED_DAYS,
+    releaseDays,
     now,
   );
   return rows.map((r) => r.id).sort((a, b) => a - b);

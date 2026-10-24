@@ -13,6 +13,7 @@ import {
   revisionDataOf,
   staffCanReport,
   staffCashGate,
+  staffLateDay,
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
@@ -21,7 +22,7 @@ import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo
 import { todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { schema as s, type DB } from "@/server/db";
-import { supersede } from "@/server/staff-requests/core";
+import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
@@ -137,6 +138,18 @@ export interface WriteOptions {
   submittedBy?: { id: number | null; name: string };
   /** İşlemin içinde kilitlenmiş satır (verilmezse burada kilitlenir; null: rapor yok) */
   prev?: CashReportRow | null;
+  /**
+   * Fotoğrafları tutan istek (geç raporun onayı): o isteğin kendi fotoğrafları bağlanabilir; başka bir bekleyen isteğin
+   * tuttuğu fotoğraf hiçbir zaman bağlanmaz (assertNotHeld)
+   */
+  heldBy?: number;
+  /** Sayan sonradan pasif olsa da kabul edilir (geç raporun onayında sayan isteyendir) */
+  keepCounter?: boolean;
+  /**
+   * Açılış notu denetimi atlanır: yalnız yöneticinin "Düzeltip onayla"sında isteyenin 1. sürümü için (aynı işlemde
+   * yazılan 2. sürüm denetlenir)
+   */
+  skipOpeningNote?: boolean;
 }
 
 export interface WriteResult {
@@ -160,9 +173,10 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   assertRevision(prev, o.revision);
   const submitter = o.submittedBy ?? { id: actor.id, name: actor.name };
   // Kasayı sayan: etkin bir kullanıcı ya da raporda zaten kayıtlı olan (sonradan pasif olsa da)
-  const counter = await resolveCounter(tx, o.countedBy ?? submitter.id ?? actor.id, prev ? (prev.countedBy ?? prev.submittedBy) : null);
+  const counterId = o.countedBy ?? submitter.id ?? actor.id;
+  const counter = await resolveCounter(tx, counterId, prev ? (prev.countedBy ?? prev.submittedBy) : o.keepCounter ? counterId : null);
   // Açılış önceki raporun devriyle tutmuyorsa nedeni nota yazılır (yeni raporda ya da açılış değiştiyse)
-  const check = carryCheck(data.date, data.openingCash, await carryBefore(tx, data.date));
+  const check = o.skipOpeningNote ? null : carryCheck(data.date, data.openingCash, await carryBefore(tx, data.date));
   if (check && openingNeedsNote({ check, openingCash: data.openingCash, prevOpening: prev?.openingCash ?? null, note: data.note })) {
     throw new UserError(`Açılış önceki günün devrinden farklı (${carryDiffText(check)}): nedenini nota yazın`);
   }
@@ -208,6 +222,8 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
       if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
         throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
       }
+      // Onay bekleyen bir isteğin (geç rapor) fotoğrafı başka bir kayda bağlanmaz
+      await assertNotHeld(tx, id, o.heldBy);
       await tx.insert(s.cashReportPhotos).values({ reportId: row.id, photoId: id, kind: p.kind });
       await keepPhoto(id, linkedUntil(p.kind, data.date, todayTR()), tx);
     }
@@ -220,19 +236,31 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   };
 }
 
-export type SaveResult = ({ kind: "saved" } & WriteResult) | { kind: "needsApproval"; request: "kasa-duzeltme"; gate: "kilitli" | "gec" };
+export type SaveResult =
+  | ({ kind: "saved" } & WriteResult)
+  | { kind: "needsApproval"; request: "kasa-duzeltme"; gate: "kilitli" | "gec" }
+  | { kind: "needsApproval"; request: "kasa-gec"; gate: "gec" };
 
 /**
  * Formdan gönderilen raporu kaydeder (personel ve yönetici; submitCashReport). İleri gün yok; personel yalnız bugünü ve
  * dünü girer. Personelin kayıtlı rapordaki değişikliği kapıdan geçer (staffCashGate): ertesi günün raporu girildiyse
  * (kilitli) ya da iş günü kapandıktan sonra kasa alanı veya sayan değiştiyse hiçbir şey yazılmaz, "needsApproval" döner
  * ve form yazılanları koruyarak düzeltme önerisine geçer (src/server/cash/requests.ts). Kendi silme isteği bekleyen
- * raporu personel düzenleyemez.
+ * raporu personel düzenleyemez. Gün bu arada personelin penceresinden çıktıysa (05:00 dönüşü) ve raporu yoksa geç
+ * rapor olur: hiçbir şey yazılmaz, "needsApproval" (kasa-gec) döner, form geç rapora geçer (src/server/cash/late.ts).
+ * Yeni rapor aynı günün bekleyen geç rapor isteklerini kapatır ("Yönetici günü kendisi girdi"; fotoğrafları 30 gün).
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
   const { revision, photos, countedBy, ...data } = input;
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");
-  if (me.role !== "admin" && !staffCanReport(data.date, now)) throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
+  if (me.role !== "admin" && !staffCanReport(data.date, now)) {
+    // 05:00 dönüşü: dünün formu artık geç rapor (yöneticinin onayıyla); yazılanlar formda kalır
+    if (revision === 0 && staffLateDay(data.date, now)) {
+      const [had] = await db.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, data.date)).limit(1);
+      if (!had) return { kind: "needsApproval", request: "kasa-gec", gate: "gec" };
+    }
+    throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
+  }
   return db.transaction(async (tx) => {
     const prev = await lockCashReport(tx, data.date);
     if (prev && me.role !== "admin") {
@@ -248,6 +276,10 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
       if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
     }
     const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev });
+    // Gün artık raporlu: bekleyen geç rapor istekleri kapanır (reddedilmez), Z fotoğrafları kanıt olarak 30 gün kalır
+    if (!prev) {
+      await supersede(tx, { kinds: ["kasa-gec"], subject: `gun:${data.date}` }, me.role === "admin" ? "Yönetici günü kendisi girdi" : "Bu günün raporu girildi", now, DELETED_REPORT_DAYS);
+    }
     return { kind: "saved" as const, ...out };
   });
 }

@@ -20,6 +20,7 @@ import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
+import { reviewLate, type LateReviewOutcome } from "./late";
 import { carryBefore, hasLaterReport, lockCashReport, ownDeletePending, removeCashReport, resolveCounter, writeCashReport, type CashActor, type CashReportRow, type CashTx } from "./report-store";
 
 /*
@@ -123,6 +124,10 @@ export interface ReviewInput {
   seenRevision: number | null;
   decision: "approve" | "reject" | "close";
   note: string | null;
+  /** Geç rapor, "Düzeltip onayla": yöneticinin değerleri (gün hariç) */
+  fields?: Omit<CashReportFields, "date"> | null;
+  /** Geç rapor: teslim varsa yönetici teslimi aldığını ya da bankada gördüğünü işaretler */
+  handoverSeen?: boolean;
 }
 
 export type ReviewOutcome =
@@ -143,10 +148,14 @@ export type ReviewOutcome =
       payload: DeletePayloadT;
       removed: Awaited<ReturnType<typeof removeCashReport>>;
     }
-  | { kind: "kasa-duzeltme" | "kasa-silme"; status: "rejected" | "superseded"; request: StaffRequestRow };
+  | { kind: "kasa-duzeltme" | "kasa-silme"; status: "rejected" | "superseded"; request: StaffRequestRow }
+  | LateReviewOutcome;
 
 /** Raporun şimdiki hâli ve önerinin onunla birleşimi (yöneticinin kartı da aynı hesabı gösterir) */
-export function mergedOf(report: CashReportRow, p: CorrectionPayloadT) {
+/** Birleştirmenin okuduğu rapor sütunları (personelin "Öneriyi düzenle" okuyucusu da yalnız bunları seçer) */
+export type MergeBase = Pick<CashReportRow, keyof CashReportFields | "cashDiff" | "countedBy" | "countedByName" | "submittedBy" | "submittedByName" | "revision">;
+
+export function mergedOf(report: MergeBase, p: CorrectionPayloadT) {
   const current = { data: revisionDataOf(report), countedBy: report.countedBy ?? report.submittedBy };
   const merged = mergeProposal(current, { data: p.base, countedBy: p.baseCountedBy }, p.proposed);
   const mergedData = { ...merged.fields, cashDiff: computeCash(merged.fields).cashDiff, countedByName: merged.countedByName };
@@ -188,7 +197,7 @@ async function reviewDelete(tx: CashTx, me: CashActor, row: StaffRequestRow, inp
  * Yöneticinin kararı (tek işlemde): istek kilitlenir ve denetlenir (bekliyor, başkasının, ekranda görülen sürüm), rapor
  * kilitlenir ve ekranda görülen sürümü olmalı. Düzeltme onayı öneriyi raporun şimdiki hâline uygular (yeni sürüm),
  * aynı günün öteki bekleyen düzeltmeleri kapanır; silme onayı raporu siler, aynı günün öteki istekleri kapanır. Ret
- * yalnız durum ve not yazar. "Kapat": öneri raporu artık değiştirmiyorsa.
+ * yalnız durum ve not yazar. "Kapat": öneri raporu artık değiştirmiyorsa. Geç rapor (kasa-gec) src/server/cash/late.ts.
  */
 export async function reviewCashRequestCore(db: DB, me: CashActor, input: ReviewInput, now = new Date()): Promise<ReviewOutcome> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
@@ -196,6 +205,7 @@ export async function reviewCashRequestCore(db: DB, me: CashActor, input: Review
     const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
     if (row.kind === "kasa-duzeltme") return reviewCorrection(tx, me, row, input, now);
     if (row.kind === "kasa-silme") return reviewDelete(tx, me, row, input, now);
+    if (row.kind === "kasa-gec") return reviewLate(tx, me, row, input, now);
     throw new UserError("Bu istek kasa raporu isteği değil");
   });
 }

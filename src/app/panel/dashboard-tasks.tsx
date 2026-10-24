@@ -62,7 +62,7 @@ export interface MonthTaskFacts {
     openDays: number | null;
     posRevenue: number | null;
     source?: { openDays: FieldSource; posRevenue: FieldSource };
-    till?: { missing: string[]; partialFrom: string | null } | null;
+    till?: { missing: string[]; partialFrom: string | null; pending?: string[] } | null;
   };
   /**
    * count: kafenin faturaları (kafe dışı hariç). review: kontrol bekleyen, henüz onaylanmamış faturalar (Paraşüt
@@ -125,7 +125,7 @@ export function monthTaskFacts(
       openDays: info?.openDays ?? null,
       posRevenue: info?.posRevenue ?? null,
       source: info?.sources ? { openDays: info.sources.openDays, posRevenue: info.sources.posRevenue } : undefined,
-      till: info?.kasa ? { missing: info.kasa.till.missing, partialFrom: info.kasa.till.partialFrom } : null,
+      till: info?.kasa ? { missing: info.kasa.till.missing, partialFrom: info.kasa.till.partialFrom, pending: info.kasa.till.pending ?? [] } : null,
     },
     invoices: { count: invoices.length, goods: model.goodsPurchases(month), review: monthInvoices.filter((i) => i.needsReview).length },
     water: { bill, usedInRecipes, perLiter: model.water.perLiter, costMonth: model.water.month, reason: model.water.reason },
@@ -213,7 +213,7 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         key: "gun",
         title,
         status: "warn",
-        detail: `${missing.length} günün kasa raporu yok (${missingText(missing)}); açık gün ve ciro eksik olabilir.`,
+        detail: `${missing.length} günün kasa raporu yok (${missingText(missing, 5, f.info.till?.pending ?? [])}); açık gün ve ciro eksik olabilir.`,
         href: `/panel/kasa?ay=${m}`,
         action: "Kasaya bak",
       });

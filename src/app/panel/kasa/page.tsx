@@ -20,19 +20,23 @@ import {
   integrityOf,
   staffCanReport,
   staffDayEditable,
+  staffLateDay,
   whatsappLink,
   whatsappText,
   type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { shortDayTR } from "@/lib/cash-requests";
 import { genitive } from "@/lib/recipe-change";
 import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
-import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
+import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
+import { chainNeighbours } from "@/server/cash/late-chain";
+import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
@@ -48,7 +52,9 @@ import {
   type CashReportDTO,
 } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
+import { getDb } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
+import { staffLateDayOpen } from "@/server/photo-read/rules";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { photoStorage } from "@/server/storage/photos";
 
@@ -56,6 +62,7 @@ import { CashForm } from "./cash-form";
 import { CashHistory, type CashHistoryPhotos, type CashMonthTotals } from "./cash-history";
 import { CashOutsCard } from "./cash-outs";
 import { MyCashRequests } from "./cash-requests";
+import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE } from "./cash-summary";
 
@@ -110,7 +117,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const sp = await searchParams;
   const today = businessDate();
   const gun = pick(sp.gun);
-  // Personel bugünü ve dünü girer; yönetici herhangi bir geçmiş günü açar
+  // Personel bugünü ve dünü girer; yönetici herhangi bir geçmiş günü açar. Dünden eski, raporu girilmemiş son 14 gün
+  // personele geç rapor olarak açılır (yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
+  if (!admin && isDay(gun) && staffLateDay(gun) && (await staffLateDayOpen(gun))) return <StaffLateDay date={gun} user={user} />;
   let date = isDay(gun) && gun <= today ? gun : today;
   if (!admin && !staffCanReport(date)) date = today;
   const showForm = !admin || isDay(gun);
@@ -129,13 +138,15 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     showForm ? cashCounters() : Promise.resolve([]),
   ]);
-  const [revisions, proposedMap, dayRequests, adminRequests, myRequests] = await Promise.all([
+  const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
     report && report.revision > 1 ? proposedByForReports([report.id]) : Promise.resolve(new Map<number, Map<number, string>>()),
     // Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı); yönetici: formdaki bant
     !admin && report ? pendingCashForDay(date, user) : Promise.resolve(null),
     admin && showForm ? pendingCashForDayAdmin(date) : Promise.resolve([]),
     admin ? Promise.resolve([]) : myCashRequests(user.id),
+    // Personel: dünden eski, raporu girilmemiş son 14 gün (geç rapor)
+    admin ? Promise.resolve([]) : staffLateDays(user),
   ]);
   const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
@@ -229,7 +240,13 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       {adminRequests.map((r) => (
         <p key={r.id} className="flex flex-wrap items-center gap-x-2">
           <ClipboardCheck size={15} className="shrink-0" aria-hidden="true" />
-          <span className="min-w-0">{r.kind === "kasa-silme" ? `${r.requestedByName} raporun silinmesini istedi` : `${genitive(r.requestedByName)} düzeltme önerisi bekliyor`}</span>
+          <span className="min-w-0">
+            {r.kind === "kasa-silme"
+              ? `${r.requestedByName} raporun silinmesini istedi`
+              : r.kind === "kasa-gec"
+                ? `${r.requestedByName} bu günün raporunu ${dayLocativeTR(todayTR(new Date(r.createdAt)))} onaya gönderdi. Burada girerseniz onun isteği kapanır.`
+                : `${genitive(r.requestedByName)} düzeltme önerisi bekliyor`}
+          </span>
           <Link href={`/panel/onaylar#istek-${r.id}`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
             Onaylar&apos;da bakın
           </Link>
@@ -278,6 +295,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         {form}
         {siteRow}
         {wasteCard}
+        <LateDaysCard days={lateDays} storage={storage.available} />
         <Card>
           <CardHeader icon={<ReceiptText />} title="Son 7 gün" description="Gönderilen raporlar" />
           <ul className="divide-y divide-line border-t border-line">
@@ -317,7 +335,13 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   ]);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
-  const [monthRevisions, monthProposed] = await Promise.all([cashRevisionsFor(revised), proposedByForReports(revised)]);
+  const [monthRevisions, monthProposed, lateApproved, latePending] = await Promise.all([
+    cashRevisionsFor(revised),
+    proposedByForReports(revised),
+    // Geç raporlar: onaylananlar (rapora göre) ve onay bekleyenler (güne göre)
+    lateRequestsByReport(monthReports.map((r) => r.id)),
+    pendingLateByDay(`${month}-01`, monthEnd),
+  ]);
   const checks = carryChecks(monthReports, before);
   const lastReport = monthReports[0];
   const afterCheck = after && lastReport ? carryCheck(after.date, after.openingCash, { date: lastReport.date, amount: computeCash(lastReport).carryOver }) : null;
@@ -372,6 +396,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             carry={carryByDate}
             revisions={revisionsById}
             proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}
+            lateApproved={Object.fromEntries(lateApproved)}
+            latePending={latePending}
             monthLine={
               monthLine ? (
                 <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
@@ -405,6 +431,51 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
           <CashSettingsCard settings={settings} emailConfigured={isEmailConfigured()} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Personelin geç kasa raporu (`/panel/kasa?gun=D`, dünden eski, raporu girilmemiş son 14 gün; docs/KASA-RAPORU.md ›
+ * Geç rapor): kendi isteği ya da formu, açılış önerisi zincirin önceki halkasından (rapor ya da bekleyen geç rapor).
+ * Kasadan çıkanlar, e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
+ */
+async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
+  const today = businessDate();
+  const [request, chain, counters, ai, myRequests] = await Promise.all([lateRequestFor(date, user), chainNeighbours(getDb(), date, { prefer: user.id }), cashCounters(), aiStatus(), myCashRequests(user.id)]);
+  const storage = photoStorage();
+  const yesterday = addDays(today, -1);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
+        {[today, yesterday].map((d) => (
+          <ButtonLink key={d} href={`/panel/kasa?gun=${d}`} variant="secondary" size="sm">
+            {d === today ? "Bugün" : "Dün"} · {longDateTR(d).split(" ").slice(0, 2).join(" ")}
+          </ButtonLink>
+        ))}
+        <ButtonLink href={`/panel/kasa?gun=${date}`} variant="primary" size="sm" aria-current="page">
+          {shortDayTR(date)}
+        </ButtonLink>
+      </div>
+      <LateReport
+        date={date}
+        own={request.own}
+        closedCount={request.closedCount}
+        others={request.others}
+        carry={chain.prev ? { date: chain.prev.date, amount: chain.prev.carry } : null}
+        counters={counters}
+        photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
+      />
+      <Card>
+        <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />
+        <div className="space-y-2 px-5 pb-5 text-sm">
+          <p className="text-ink-mute">Bu günün zayi / ikramı için Zayi &amp; ikram › Önceki gün&apos;den istek gönderin.</p>
+          <ButtonLink href={`/panel/zayi?gun=${date}`} variant="secondary" size="sm">
+            <Gift size={14} /> Zayi &amp; ikram
+          </ButtonLink>
+        </div>
+      </Card>
+      <MyCashRequests requests={myRequests} />
     </div>
   );
 }

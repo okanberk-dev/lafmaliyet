@@ -58,6 +58,37 @@ export async function cashReportPhotoInfo(reports: { id: number; date: string }[
   return out;
 }
 
+/**
+ * İstekte tutulan fotoğraflar (geç kasa raporu; rapora bağlı değil): küçük resim bilgisi ve son başarılı okumaları,
+ * okuma raporun gününe (D) göre yeniden kurulur. Silinmiş ya da süresi dolmuş fotoğraf listede yok. Sıra istekteki gibi.
+ */
+export async function heldPhotoInfo(photoIds: readonly number[], day: string): Promise<CashPhotoInfo> {
+  if (!photoIds.length) return { photos: [], readings: [] };
+  const db = getDb();
+  const now = new Date();
+  const rows = await db
+    .select({ id: s.photos.id, kind: s.photos.kind, createdAt: s.photos.createdAt, byName: s.photos.createdByName, expiresAt: s.photos.expiresAt })
+    .from(s.photos)
+    .where(inArray(s.photos.id, [...photoIds]));
+  const calls = rows.length
+    ? await db
+        .select({ photoId: s.aiCalls.photoId, feature: s.aiCalls.feature, result: s.aiCalls.result })
+        .from(s.aiCalls)
+        .where(and(inArray(s.aiCalls.photoId, rows.map((r) => r.id)), eq(s.aiCalls.status, "ok")))
+        .orderBy(desc(s.aiCalls.at), desc(s.aiCalls.id))
+    : [];
+  const info: CashPhotoInfo = { photos: [], readings: [] };
+  for (const id of photoIds) {
+    const p = rows.find((r) => r.id === id);
+    if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || (p.expiresAt && p.expiresAt.getTime() <= now.getTime())) continue;
+    info.photos.push({ id: p.id, kind: p.kind, createdAt: p.createdAt.toISOString(), byName: p.byName });
+    const call = calls.find((c) => c.photoId === p.id && c.feature === p.kind);
+    const reading = call ? readingOf(p.kind, call.result, day) : null;
+    if (reading) info.readings.push(reading);
+  }
+  return info;
+}
+
 function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReading | null {
   if (kind === "kasa-z") {
     const raw = KasaZRaw.safeParse(result);

@@ -41,7 +41,7 @@ import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/phot
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
-import { requestCashCorrection } from "@/server/actions/cash-requests";
+import { requestCashCorrection, requestLateCashReport } from "@/server/actions/cash-requests";
 import type { CashEmailOutcome } from "@/server/cash/report-email";
 import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoInfo } from "@/server/data/cash-photos";
@@ -95,7 +95,7 @@ type FormReadField = (typeof READ_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
 
-function initialValues(report: CashReportDTO | null, carry: { amount: number } | null, outs: CashOutDTO[]): Values {
+function initialValues(report: CashReportFields | null, carry: { amount: number } | null, outs: CashOutDTO[]): Values {
   if (report) {
     return {
       zNo: report.zNo ?? "",
@@ -113,7 +113,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
       handedOver: report.handedOver ? input(report.handedOver) : "",
       bankPos: input(report.bankPos),
       offRevenue: input(report.offRevenue),
-      discounts: input(report.discounts),
+      discounts: input(report.discounts ?? null),
       note: report.note ?? "",
     };
   }
@@ -238,6 +238,17 @@ interface PosPrompt {
   unsure: string | null;
 }
 
+/** Geç raporun formdaki durumu: kişinin bekleyen isteğinin sürümü (yoksa 0), nedeni, teslim alanı ve fotoğrafları */
+export interface LateFormState {
+  version: number;
+  reason: string;
+  handedTo: { kind: "user"; id: number } | { kind: "banka" } | null;
+  /** Önceki isteğin fotoğrafları (kişinin kendi küçük resimleri; formdan çıkarılabilir) */
+  kept: FormPhoto[];
+  /** Bekleyen istek güncelleniyor ("Güncelle ve gönder") */
+  updating: boolean;
+}
+
 /**
  * Gün sonu kasa raporu: personel ModPOS'un Z raporuna ve kasaya bakıp girer. Yazarken olması gereken nakit ve fark
  * (eksik / fazla) anında görünür; gönderince alıcılara e-posta gider ve "WhatsApp ile gönder" ayrıntılı metni açar.
@@ -254,6 +265,11 @@ interface PosPrompt {
  * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
  * önerisine geçer (fotoğraf yok, "Neden düzeltiyorsunuz?" zorunlu, "Onaya gönder"). Rapor onaya kadar değişmez.
+ *
+ * Geç rapor (`mode="late"`; docs/KASA-RAPORU.md › Geç rapor): dünden eski bir günü personel Z fotoğrafı, Z no ve
+ * nedeniyle onaya gönderir; sayan isteyendir (seçici yok), teslim varsa teslim alan seçilir, gün içinde çıkan elle
+ * yazılır. Dünün formu gönderilirken gün döndüyse (05:00) sunucu geç rapora çevirir, form yazılanlarla geçer.
+ * "Düzeltip onayla" (`mode="review"`): yönetici geç raporu kendi değerleriyle onaylar (fotoğraf, sayan ve neden yok).
  */
 export function CashForm({
   date,
@@ -272,6 +288,13 @@ export function CashForm({
   locked = false,
   requests = null,
   proposedBy,
+  mode = "report",
+  initial = null,
+  late = null,
+  onReview,
+  reviewPending = false,
+  onCancel,
+  onSent,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -301,15 +324,28 @@ export function CashForm({
   requests?: { own: (OwnCorrection | OwnDelete)[]; others: OtherPending[] } | null;
   /** Onaylanan düzeltme önerilerinin önerenleri (sürüme göre; "Değişiklikler") */
   proposedBy?: Record<number, string>;
+  /** "report" gün sonu raporu; "late" personelin geç raporu; "review" yöneticinin "Düzeltip onayla"sı */
+  mode?: "report" | "late" | "review";
+  /** Geç rapor ve "Düzeltip onayla": rapor yokken formun ilk değerleri */
+  initial?: CashReportFields | null;
+  /** Geç rapor: kişinin bekleyen ya da reddedilen isteği (sürüm, neden, teslim alan, önceki fotoğraflar) */
+  late?: LateFormState | null;
+  /** "Düzeltip onayla": yöneticinin değerleri karta gider */
+  onReview?: (fields: CashReportFields) => void;
+  reviewPending?: boolean;
+  /** Geç rapor ve "Düzeltip onayla": Vazgeç */
+  onCancel?: () => void;
+  /** Geç rapor onaya gitti */
+  onSent?: () => void;
 }) {
   const [editing, setEditing] = useState(report === null);
-  const [values, setValues] = useState<Values>(() => initialValues(report, carry, cashOuts));
+  const [values, setValues] = useState<Values>(() => initialValues(report ?? initial, carry, cashOuts));
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
-  const [photos, setPhotos] = useState<FormPhoto[]>([]);
+  const [photos, setPhotos] = useState<FormPhoto[]>(() => late?.kept ?? []);
   const [marks, setMarks] = useState<Marks>({});
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
@@ -318,6 +354,13 @@ export function CashForm({
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [clientKey, setClientKey] = useState(newClientKey);
+  // Geç rapor: "late" kipi ya da 05:00 dönüşünde sunucunun çevirdiği dünün formu
+  const [lateTurn, setLateTurn] = useState(false);
+  const isLate = mode === "late" || lateTurn;
+  const review = mode === "review";
+  const [lateReason, setLateReason] = useState(late?.reason ?? "");
+  const [handedTo, setHandedTo] = useState<string>(late?.handedTo ? (late.handedTo.kind === "banka" ? "banka" : `user:${late.handedTo.id}`) : "");
+  const [handedError, setHandedError] = useState<string | null>(null);
   const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
   const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
   const zUp = usePhotoUpload();
@@ -498,6 +541,62 @@ export function CashForm({
       el?.focus({ preventScroll: true });
       return;
     }
+    if (review) {
+      if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
+        toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
+        document.getElementById("k-note")?.focus();
+        return;
+      }
+      onReview?.(fields);
+      return;
+    }
+    if (isLate) {
+      // Geç rapor: Z no, Z fotoğrafı, neden ve (teslim varsa) teslim alan zorunlu; açılış zincirin önceki halkasıyla
+      const focus = (id: string) => {
+        const el = document.getElementById(id);
+        el?.scrollIntoView({ block: "center" });
+        el?.focus({ preventScroll: true });
+      };
+      if (!fields.zNo) {
+        setErrors((x) => ({ ...x, zNo: "Z no gerekli (Z raporunun üstünde)" }));
+        toast.error("Z no gerekli");
+        return focus("k-zNo");
+      }
+      if (!photos.some((p) => p.kind === "kasa-z")) {
+        toast.error("Z raporunun fotoğrafını ekleyin", { description: "Geç rapor Z raporunun fotoğrafıyla onaya gider." });
+        return document.getElementById("k-z-photos")?.scrollIntoView({ block: "center" });
+      }
+      const why = lateReason.trim();
+      if (why.length < 3) {
+        setReasonError("Geç girme nedenini yazın");
+        return focus("k-reason");
+      }
+      const to = handedTo === "banka" ? ({ kind: "banka" } as const) : handedTo.startsWith("user:") ? ({ kind: "user", id: Number(handedTo.slice(5)) } as const) : null;
+      if (fields.handedOver > 0 && !to) {
+        setHandedError("Teslim edileni kimin aldığını seçin");
+        return focus("k-handedTo");
+      }
+      if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
+        toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
+        return focus("k-note");
+      }
+      start(async () => {
+        const res = await requestLateCashReport({
+          ...fields,
+          zNo: fields.zNo ?? "",
+          reason: why,
+          requestVersion: late?.version ?? 0,
+          photoIds: photos.map((p) => p.id),
+          handedTo: fields.handedOver > 0 ? to : null,
+          clientKey,
+        });
+        if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+        toast.success(`Onaya gönderildi · ${diffText(res.data.cashDiff)}`, { description: "Yönetici onaylayınca kayda geçer; sonucu zilde görürsünüz." });
+        setClientKey(newClientKey());
+        onSent?.();
+      });
+      return;
+    }
     if (proposal && report) {
       // Düzeltme önerisi: neden zorunlu; açılış devirle tutmuyorsa ve not boşsa neden nota da yazılır (sunucuda)
       const why = reason.trim();
@@ -529,6 +628,13 @@ export function CashForm({
     start(async () => {
       const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
+      if (res.data.needsApproval && res.data.request === "kasa-gec") {
+        setLateTurn(true);
+        setClientKey(newClientKey());
+        toast.info("Gün döndü: bu rapor artık yöneticinin onayıyla girilir", { description: "Yazdıklarınız yerinde; Z fotoğrafını ve nedenini ekleyip onaya gönderin." });
+        return;
+      }
       // Ertesi gün kasa alanı ya da sayan, kilitli gün: hiçbir şey kaydedilmedi; yazılanlar yerinde, öneriye geçilir
       if (res.data.needsApproval) {
         setProposal({ gate: res.data.gate, fromSubmit: true });
@@ -706,8 +812,8 @@ export function CashForm({
   const busy = zUp.busy || posUp.busy;
   const photoBlock = (k: CashPhotoKind) => {
     const up = k === "kasa-z" ? zUp : posUp;
-    return photoUi.storage && !proposal ? (
-      <div className="space-y-2.5 sm:col-span-2">
+    return photoUi.storage && !proposal && !review ? (
+      <div id={k === "kasa-z" ? "k-z-photos" : undefined} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
         <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={busy} />
         <PhotoStatus phase={up.phase} />
         {offLine ? <p className="text-[13px] leading-5 text-ink-mute">{offLine}</p> : null}
@@ -727,6 +833,12 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {isLate && !review ? (
+          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+            <p className="font-semibold">{longDateTR(date)} · Geç rapor</p>
+            <p className="mt-0.5">Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın.</p>
+          </div>
+        ) : null}
         {proposal ? (
           <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
             <p className="font-semibold">{dayMonthTR(date)} kasa raporu · düzeltme önerisi</p>
@@ -745,16 +857,18 @@ export function CashForm({
             icon={<ReceiptText />}
             title="Z raporu (ModPOS)"
             description={
-              photoUi.storage && reading
-                ? "ModPOS'ta gün sonu Z raporunu alın; fotoğrafını çekin, rakamlar dolar. Ya da elle yazın."
-                : "ModPOS'ta gün sonu Z raporunu alın; toplam satışı ve ödeme türlerini yazın."
+              isLate
+                ? "Z raporunun fotoğrafı zorunlu; rakamlar fotoğraftan dolar ya da elle yazın."
+                : photoUi.storage && reading
+                  ? "ModPOS'ta gün sonu Z raporunu alın; fotoğrafını çekin, rakamlar dolar. Ya da elle yazın."
+                  : "ModPOS'ta gün sonu Z raporunu alın; toplam satışı ve ödeme türlerini yazın."
             }
           />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
             {photoBlock("kasa-z")}
             {field("zTotal", "Toplam satış (Z)", { autoFocus: !report && !photoUi.storage })}
-            <Field label={labelOf("zNo", "Z no")} htmlFor="k-zNo" hint={hintOf("zNo", "isteğe bağlı")}>
-              <Input id="k-zNo" inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" data-warn={warnOf("zNo") || undefined} />
+            <Field label={labelOf("zNo", "Z no")} htmlFor="k-zNo" hint={hintOf("zNo", isLate ? "zorunlu" : "isteğe bağlı")} error={errors.zNo}>
+              <Input id="k-zNo" inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" aria-invalid={Boolean(errors.zNo)} data-warn={warnOf("zNo") || undefined} />
             </Field>
             {field("cash", "Nakit")}
             {field("card", "Kredi / banka kartı")}
@@ -818,7 +932,28 @@ export function CashForm({
               <Input id="k-cashOutNote" value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
             </Field>
             {field("handedOver", "Teslim edilen", { hint: "Sayımdan sonra kasadan alınan (patrona, bankaya)" })}
-            {counters.length ? (
+            {isLate && !review && (parseNumberTR(values.handedOver) ?? 0) > 0 ? (
+              <Field label="Teslim alan" htmlFor="k-handedTo" hint="Teslim edileni kim aldı ya da bankaya mı yatırıldı?" error={handedError ?? undefined}>
+                <Select
+                  id="k-handedTo"
+                  value={handedTo}
+                  onChange={(e) => {
+                    setHandedTo(e.target.value);
+                    setHandedError(null);
+                  }}
+                  aria-invalid={Boolean(handedError)}
+                >
+                  <option value="">Seçin</option>
+                  {counters.map((c) => (
+                    <option key={c.id} value={`user:${c.id}`}>
+                      {c.name}
+                    </option>
+                  ))}
+                  <option value="banka">Banka</option>
+                </Select>
+              </Field>
+            ) : null}
+            {counters.length && !isLate && !review ? (
               <Field label="Kasayı sayan" htmlFor="k-counter" hint="Çekmeceyi kim saydı? Siz değilseniz seçin.">
                 <Select id="k-counter" value={counter ?? ""} onChange={(e) => setCounter(e.target.value ? Number(e.target.value) : null)}>
                   {counter === null ? <option value="">Seçin</option> : null}
@@ -873,7 +1008,15 @@ export function CashForm({
           <CardHeader
             icon={<Calculator />}
             title="Sonuç"
-            description={proposal ? `${longDateTR(date)} · önerinin sonucu; rapor onaya kadar değişmez` : `${longDateTR(date)} · gönderince yöneticiye e-posta gider`}
+            description={
+              review
+                ? `${longDateTR(date)} · sizin değerleriniz; personelin girdiği 1. sürüm olarak kalır`
+                : isLate
+                  ? `${longDateTR(date)} · onaya gider; yönetici onaylayınca kayda geçer`
+                  : proposal
+                    ? `${longDateTR(date)} · önerinin sonucu; rapor onaya kadar değişmez`
+                    : `${longDateTR(date)} · gönderince yöneticiye e-posta gider`
+            }
           />
           <div className="space-y-3 px-5 pb-5">
             {live ? (
@@ -925,8 +1068,38 @@ export function CashForm({
                 />
               </Field>
             ) : null}
-            <Button size="lg" className="w-full" onClick={submit} disabled={pending || busy}>
-              <Send size={16} /> {pending ? "Gönderiliyor…" : busy ? "Fotoğraf bekleniyor…" : proposal ? "Onaya gönder" : report ? "Raporu güncelle" : "Raporu gönder"}
+            {isLate && !review ? (
+              <Field label="Neden geç giriliyor?" htmlFor="k-reason" hint="Yönetici görür; başka biri saydıysa buraya yazın" error={reasonError ?? undefined} className={reasonError ? undefined : "[&_label]:text-warn"}>
+                <Textarea
+                  id="k-reason"
+                  value={lateReason}
+                  onChange={(e) => {
+                    setLateReason(e.target.value);
+                    setReasonError(null);
+                  }}
+                  rows={3}
+                  maxLength={300}
+                  placeholder="ör. akşam sistem kapalıydı, Z ertesi gün alındı"
+                />
+              </Field>
+            ) : null}
+            <Button size="lg" className="w-full" onClick={submit} disabled={pending || busy || reviewPending}>
+              <Send size={16} />{" "}
+              {pending || reviewPending
+                ? "Gönderiliyor…"
+                : busy
+                  ? "Fotoğraf bekleniyor…"
+                  : review
+                    ? "Düzeltip onayla"
+                    : isLate
+                      ? late?.updating
+                        ? "Güncelle ve gönder"
+                        : "Onaya gönder"
+                      : proposal
+                        ? "Onaya gönder"
+                        : report
+                          ? "Raporu güncelle"
+                          : "Raporu gönder"}
             </Button>
             {report ? (
               <Button
@@ -938,6 +1111,10 @@ export function CashForm({
                 }}
                 disabled={pending}
               >
+                Vazgeç
+              </Button>
+            ) : onCancel ? (
+              <Button variant="ghost" className="w-full" onClick={onCancel} disabled={pending || reviewPending}>
                 Vazgeç
               </Button>
             ) : null}

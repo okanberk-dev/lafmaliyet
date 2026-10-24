@@ -132,6 +132,11 @@ export interface TillMonth {
   cardShare: number | null;
   /** [from, to] içinde raporu olmayan günler */
   missing: string[];
+  /**
+   * Eksik günlerden personelin geç raporu onay bekleyenler (yalnız yükleyici verdiyse; docs/KASA-RAPORU.md › Geç rapor):
+   * gün eksik sayılmaya devam eder, yanına "onay bekliyor" yazılır
+   */
+  pending?: string[];
   /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
   partialFrom: string | null;
   /** Son raporun günü */
