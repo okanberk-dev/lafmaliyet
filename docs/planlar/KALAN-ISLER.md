@@ -128,10 +128,13 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 
 - **Ay sonu sayımının anı:** geç girilen ya da sonradan düzeltilen ay sonu sayımı ayın son gününün sayımıdır
   (`monthEndCountAt`, en geç ertesi ayın 1'i 05:00); arada gelen mal siparişte kalır, girildiği gün Bugün'de "sayıldı"
-  demez, "Gecikti" ve "Sayım eski" ayın son gününden sayılır.
+  demez, "Gecikti" ve "Sayım eski" ayın son gününden sayılır. Sayım girilmeden önce denen Geldi de sayımın gününe kadar
+  beklenen malı sayımda sayar (`OnHand.recordedAt`; inceleme: Geldi'nin sayımdan önce mi sonra mı dendiği sonucu
+  değiştiriyordu, süt iki kez "siparişte" sayılıyordu).
 - **Teslim süresi uzun sipariş:** 14 günden eski olsa da beklenen günün ertesine kadar "siparişte" kalır
   (`IN_TRANSIT_GRACE_DAYS`, zilin "gelmedi mi" sorusuyla aynı gün); kalem yeniden önerilmez, Bugün "Sipariş hazır"
-  demez. Sonraya: fatura eşleşmesi (gönderimden 10 gün) ve kendiliğinden kapanış (45 gün) hâlâ gönderim gününden
+  demez. Sayımdan sonra gelen uzun teslimli mal sıradaki sayıma kadar siparişte kalır: gelmiş siparişte 14 gün gelişin
+  gününden sayılır (inceleme: beklenen günden iki gün sonra düşüyor, gelmiş mal yeniden öneriliyordu). Sonraya: fatura eşleşmesi (gönderimden 10 gün) ve kendiliğinden kapanış (45 gün) hâlâ gönderim gününden
   sayılır; teslim süresi 10 günden uzun siparişin faturası elle bağlanır (Faturayı değiştir, 30 güne kadar), 45 günden
   uzun sipariş gelmeden "45 günde fatura gelmedi" diye kapanır.
 - **Erken gelen mal:** Hızlı sayım'ın "Gelen mal var mı?" kartı beklenen günü henüz gelmemiş açık siparişleri de
@@ -162,7 +165,10 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   açık" yalnız izin değil, kayıtlı abonelik ve zilin konuları da açık demek (`pushCovers`). Bildirimi olan ve zili
   olmayan cihaz (yöneticinin dizüstü) arka planda yine sormaz. Testler: `canli-yoklama` ("bildirim gelmeyen, zili açık
   cihazda arka plandaki sekme 10 dakikada bir sorar", "zil cihazı", "bildirim açık sayılır", "bildirim açık: uyarı
-  motoru ve bar ekranı…").
+  motoru ve bar ekranı…"). İnceleme düzeltmeleri: bar ekranının 20 sn'lik döngüsü yalnız sipariş zilinin bildirimine
+  bakar (karaoke konusu açmaz); "Bu cihazda uyarılar" kartı 10 dakika sözünü yalnız arka planda soracak cihaza verir,
+  ötekine "ancak öne gelince duyurur" der (`hiddenTabNote`); "Bildirimleri aç" satırında not ayrı paragraf, metin
+  telefonda ve 380 px'lik yan sütunda dar sütuna sıkışmaz.
 - **Fiyatıyla eklenen sayım kalemi (B2):** "Listeye ekle" fiyat geçmişine yazmıyordu; sonraki ilk zam kapanmış ayın
   devreden malını ve kârını değiştiriyordu (Eylül 400 → 520 ₺). Kalem açılırken yazılan fiyat geçmişin başlangıcıdır,
   zam uyarısı onu saymaz; eski kalemler `0037_sayim_kalemi_fiyat_baslangici` ile. Tahmin yanlışsa yöneticinin
@@ -171,8 +177,9 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   tahmini düzeltmez, tarihli fiyattır. Test: `sayim-ekle` ("Listeye fiyatıyla eklenen kalem…", "tahmin
   düzeltilince…", "Hammaddeler'in fiyat yazımı…", veritabanında düzeltme, iki migration testi).
 - **Tedarikçi geçmişi (B4):** eski faturası Paraşüt'e sorulamayan yeniden içeri alınmış e-fatura kalınan yeri kendi
-  sayfasına geri alır, bildirim yeniden basmayı ister. Test: `parasut-esitleme-db` ("tedarikçi geçmişi: eski faturası
-  sorulamayan fatura…").
+  sayfasına geri alır, bildirim yeniden basmayı ister: "1 fatura yazılamadı (eski faturası Paraşüt'e sorulamadı);
+  düğmeye yeniden basınca denenir." ("Süre doldu" yalnız süre dolunca; `historyNotice`). Testler: `parasut-esitleme-db`
+  ("tedarikçi geçmişi: eski faturası sorulamayan fatura…"), `tedarikciler` ("Geçmiş faturaları al bildirimi…").
 - **Personel kurulum ayrıntısı görmez (B5):** bar ekranının sarı satırı, siparişlerin Yenile'si ve karaokenin
   Eşitle'si personele `KARAOKE_SYNC_SECRET`, imza ya da "site güncel değil" yerine "sorun sürerse yöneticiye haber
   verin" der. Testler: `karaoke-baglanti` ("personel bar ekranında kurulum ayrıntısı görmez"), `arayuz-duzeltmeleri`.
@@ -194,6 +201,10 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
      yalnız bar ekranı bildirimsiz çalışmak zorundaysa.
   4. B3 sağlamlaştırması: yeniden denetimin `SHOW_INCLUDE`'una tedarikçi (desteklenmezse geri düşerek); sahte
      Paraşüt `include`'a uysun.
+  5. Sahibin kararı: sipariş zili kapalı cihazda (yöneticinin dizüstü, zili kapatılmış ikinci ekran) boş bar ekranına
+     yeni sipariş kabuğun yedek kontrolüyle gelir (bildirim izni varsa 30 dakikaya kadar; son iki saatte sipariş
+     olduysa 3 dakikada). O cihazlar da görünürken 20 saniyede bir sorsun mu? Sorarsa `/panel/karaoke` önde açık kaldıkça
+     veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
