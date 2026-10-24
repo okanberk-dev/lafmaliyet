@@ -448,7 +448,7 @@ Teşekkürler.
   faturası gelince kalem kalem karşılaştırılır; fark yoksa sipariş kendiliğinden kapanır."`, tabs "siparis".
 - Filter (`Segmented`, query `?durum=`): **Açık ({n})** (default) · **Fark var ({k})** · **Kapanan** · **Tümü**.
   `?tedarikci={slug}` narrows to one supplier, with a chip `"{supplier} ×"`.
-- The list shows the last 90 days, newest first. **Order card** (`OrderCard`, a client component shared with the
+- The list shows the last 90 days plus every open order, newest first. **Order card** (`OrderCard`, a client component shared with the
   supplier page; `id="siparis-{id}"`). The hash anchor uses the `ListAnchor` pattern from `hammaddeler/list-anchor.tsx`.
   - Header: `{supplier}` (link) · `{dateTimeTR(sentAt)}` · `{sentByName}`. Right: state badge:
     - `Yolda · {dayName(expectedOn)} bekleniyor` (blue)
@@ -1166,7 +1166,7 @@ Not touched: `src/lib/calc/*` (engine, insights, price-impact), `src/server/data
 27. **Performance**:
     - Hızlı sayım (staff): 4 small queries, no model.
     - Mal siparişi: `loadModel` + ledger + one lines query + counts + orders (about 8 queries, parallel).
-    - Bell: one query on `supplier_orders` (open, 60 days).
+    - Bell: one query on `supplier_orders` (open, any age).
     - Sync: one query when there are no open orders.
 
 ---

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, notInArray, or, sql } from "drizzle-orm";
 
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { groupSuppliers, supplierResolver, type SupplierCard } from "@/app/panel/tedarikciler/logic";
@@ -249,14 +249,18 @@ export function toOrderLite(r: OrderRow): OrderLite {
   };
 }
 
-/** Son `sinceDays` günde gönderilen siparişler (en yeni önce); `status` verilirse yalnız onlar */
+/**
+ * Son `sinceDays` günde gönderilen siparişler ve yaşı ne olursa olsun açık olanlar (en yeni önce); `status` verilirse
+ * yalnız onlar. Açık sipariş (fark var, kâğıt faturanın kalemleri bekleniyor, yeniden açılan) kendiliğinden kapanmaz:
+ * kapanana kadar zilde, Bugün'de, Yoldaki siparişler'de ve Gönderilenler'de kalır.
+ */
 export async function loadOrders(opts: { sinceDays: number; status?: OrderLite["status"][] }): Promise<OrderLite[]> {
   const o = s.supplierOrders;
   const since = new Date(Date.now() - opts.sinceDays * 86_400_000);
   const rows = await getDb()
     .select()
     .from(o)
-    .where(and(gte(o.sentAt, since), opts.status?.length ? inArray(o.status, opts.status) : undefined))
+    .where(and(or(gte(o.sentAt, since), eq(o.status, "open")), opts.status?.length ? inArray(o.status, opts.status) : undefined))
     .orderBy(desc(o.sentAt), desc(o.id));
   return rows.map(toOrderLite);
 }
@@ -1001,7 +1005,7 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
 
 export type HistoryFilter = "acik" | "fark" | "kapanan" | "tumu";
 export const HISTORY_FILTERS: readonly HistoryFilter[] = ["acik", "fark", "kapanan", "tumu"];
-/** Gönderilenler son bu kadar günü gösterir */
+/** Gönderilenler son bu kadar günü ve kapanmamış bütün siparişleri gösterir */
 export const HISTORY_DAYS = 90;
 
 export interface InvoiceOption {

@@ -132,6 +132,10 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   uzun sipariş gelmeden "45 günde fatura gelmedi" diye kapanır.
 - **Erken gelen mal:** Hızlı sayım'ın "Gelen mal var mı?" kartı beklenen günü henüz gelmemiş açık siparişleri de
   gösterir ("27.10.2026 bekleniyor"); erken gelen mal geldiği gün işaretlenir, sayımda ikinci kez sayılmaz.
+- **Açık sipariş kapanana kadar görünür:** farkı çözülmemiş ya da yeniden açılan sipariş kendiliğinden kapanmaz; 60.
+  günde zilden ve Bugün'den, 90. günde Gönderilenler'den (Kapat'ın tek yeri) düşüyordu. Artık yaşı ne olursa olsun
+  okunur (`loadOrders`). Eşleşme ise hâlâ son 60 günün açık siparişlerine bakar; daha eskisi Faturayı değiştir ya da
+  Yeniden aç ile yeniden karşılaştırılır.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis

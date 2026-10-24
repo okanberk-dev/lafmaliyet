@@ -7,7 +7,7 @@ altında, Stok sayımı'ndan sonra.
 Haftada bir 10–15 kritik kalem (süt, espresso çekirdeği, krema, bardak…) telefondan sayılır; panel her tedarikçi için
 ne kadar sipariş edileceğini hazırlar, yönetici tek dokunuşla WhatsApp'tan gönderir. Paraşüt faturası gelince sipariş
 kalem kalem karşılaştırılır: tutuyorsa kendiliğinden kapanır, tutmuyorsa fark Gönderilenler'de, zilde ve Bugün'de
-görünür.
+görünür (sipariş kapanana kadar).
 
 **Adlar.** Yalın "sipariş" laffogato.net'in uygulama siparişidir (bar ekranı, [SITE-SIPARIS.md](SITE-SIPARIS.md)). Bu
 özellik arayüzde **Mal siparişi**, kodda `reorder`.
@@ -129,9 +129,9 @@ Teşekkürler.
 
 Kapanan sipariş 30 gün içinde **Yeniden aç**ılabilir; karşılaştırma hemen yenilenir ve sonraki eşitlemelerde de
 güncellenir, ama yeniden açılan sipariş hiçbir zaman kendiliğinden kapanmaz (ne "Faturayla tuttu" ne 45 gün): sahibi
-açtı, sahibi **Kapat** der (kapanış anı saklı kalır; `wasReopened`). Gönderilenler son 90 günü
-gösterir; süzgeçler Açık · Fark var · Kapanan · Tümü ve tedarikçi (kartındaki **Bu tedarikçinin siparişleri**, adres
-`?tedarikci=<tedarikçi sayfasının adresi>`).
+açtı, sahibi **Kapat** der (kapanış anı saklı kalır; `wasReopened`). Gönderilenler son 90 günü ve kapanmamış bütün
+siparişleri gösterir; süzgeçler Açık · Fark var · Kapanan · Tümü ve tedarikçi (kartındaki **Bu tedarikçinin
+siparişleri**, adres `?tedarikci=<tedarikçi sayfasının adresi>`).
 
 ## 7. Teslim kontrolü (faturayla karşılaştırma)
 
@@ -174,7 +174,7 @@ Eşitlemenin özeti "3 mal siparişi faturayla karşılaştırıldı · 2 kendil
 | Yer | Ne |
 |-----|----|
 | **Bugün** | `hizli-sayim` (iki rol): sayım günü "Bugün", yarım kaldıysa "5 / 14", gecikmişse "Gecikti"; hepsi sayılınca tamamlandı. `mal-siparisi` (yönetici), ilk uyan: teslim farkı (sorun), sipariş hazır (son sayım bugün ya da dün ve siparişi gönderilmemiş öneri var), beklenen günde gelmeyen ([BUGUN.md](BUGUN.md)) |
-| **Zil** (yönetici, Faturalar) | "Teslim kontrolü: Sütaş" (fark değişince yeniden okunmamış olur) ve "Mal siparişi gelmedi mi: Kaldi" (beklenen günden 2 gün sonra hâlâ gelmediyse); en çok 5 ([BILDIRIMLER.md](BILDIRIMLER.md)) |
+| **Zil** (yönetici, Faturalar) | "Teslim kontrolü: Sütaş" (fark değişince yeniden okunmamış olur) ve "Mal siparişi gelmedi mi: Kaldi" (beklenen günden 2 gün sonra hâlâ gelmediyse); açık sipariş kapanana kadar (yaşı ne olursa olsun); en çok 5 ([BILDIRIMLER.md](BILDIRIMLER.md)) |
 | **Telefon bildirimi** | Sayım günü sabahı (§3) |
 | **Paraşüt eşitlemesi** | Özetteki karşılaştırma satırı ([PARASUT.md](PARASUT.md)) |
 

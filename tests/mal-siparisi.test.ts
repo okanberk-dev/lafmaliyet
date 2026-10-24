@@ -823,6 +823,14 @@ test("kaynak: Gelen mal var mı? erken gelen siparişi de gösterir (beklenen g�
   assert.match(form, /bekleniyor/);
 });
 
+test("kaynak: açık sipariş yaşı ne olursa olsun okunur (zil, Bugün, Yoldaki siparişler, Gönderilenler)", () => {
+  const src = read("src/server/data/reorder.ts");
+  assert.match(bodyOf(src, "loadOrders"), /or\(gte\(o\.sentAt, since\), eq\(o\.status, "open"\)\)/);
+  // Zil ve Bugün yalnız açık siparişleri okur
+  assert.match(bodyOf(src, "reorderNotifications"), /status: \["open"\]/);
+  assert.match(bodyOf(src, "loadReorderDay"), /status: \["open"\]/);
+});
+
 test("kaynak: eylemlerin yetkisi (hızlı sayım ve Geldi iki rolde, ötekiler yönetici)", () => {
   const src = read("src/server/actions/reorder.ts");
   assert.match(src, /^"use server";/);
