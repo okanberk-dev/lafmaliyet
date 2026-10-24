@@ -43,6 +43,7 @@ import { itemKey, PaymentCard, sourceOf, usePaymentActions, type MenuAction } fr
 import { RecentPaidList } from "./recent-paid";
 import { DueDateSheet, ReminderSheet, type FixedRow, type Reminder } from "./reminder-sheet";
 import { Sheet } from "./sheet";
+import { WeeklyRow, type WeeklyPanel } from "./weekly-row";
 
 /** Adresteki süzgeç değerleri (?kaynak=fatura&aralik=gecikmis&gorunum=takvim&ay=2026-11) */
 type Source = "tumu" | "hatirlatici" | "fatura";
@@ -79,6 +80,7 @@ export function RemindersClient({
   settings,
   invoiceSource,
   recentPaid = NO_RECENT,
+  weekly = null,
 }: {
   today: string;
   items: UpcomingItem[];
@@ -93,6 +95,8 @@ export function RemindersClient({
   invoiceSource: Record<number, string>;
   /** Son 30 günde "Ödendi" işaretlenenler (geri alınabilir) */
   recentPaid?: RecentPaid[];
+  /** Haftalık özetin satırı (E-posta bildirimleri içinde); okunamadıysa null */
+  weekly?: WeeklyPanel | null;
 }) {
   const [sourceRaw, setSource] = useQueryState<Source>("kaynak", "tumu");
   const source = oneOf(sourceRaw, SOURCES, "tumu");
@@ -394,7 +398,14 @@ export function RemindersClient({
           </CardContent>
         </Card>
 
-        <NotificationsSection email={email} settings={settings} recipients={recipients} log={log} className="xl:col-span-4" />
+        <NotificationsSection
+          email={email}
+          settings={settings}
+          recipients={recipients}
+          log={log}
+          weekly={weekly ? <WeeklyRow weekly={weekly} emailConfigured={email.configured} /> : null}
+          className="xl:col-span-4"
+        />
       </div>
 
       <div className="mt-4">

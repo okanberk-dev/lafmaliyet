@@ -12,6 +12,7 @@ import { loadToday } from "@/server/data/today";
 import { DashboardPayments } from "../dashboard-payments";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
 import { TodayCafe } from "./today-cafe";
+import { TodayForecast } from "./today-forecast";
 import { TodayRefresh } from "./today-refresh";
 import { TodayReminders } from "./today-reminders";
 import { TodayTasks } from "./today-tasks";
@@ -50,7 +51,8 @@ async function TodayContent() {
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
-  const cafe = cafeLines(data.cafe, now.getTime());
+  // Personelde satış tahmininin yoğunluk ve tatlı satırları başta (yöneticinin kendi kartı var)
+  const cafe = cafeLines(data.cafe, now.getTime(), data.forecast.staff);
   const changeAt = data.cafe.karaoke?.changeAt;
   return (
     <>
@@ -64,6 +66,7 @@ async function TodayContent() {
         <div className="min-w-0 space-y-4">
           <TodayReminders items={data.reminders} renderedAt={data.renderedAt} />
           {data.payments ? <DashboardPayments items={data.payments} /> : null}
+          {data.forecast.admin ? <TodayForecast data={data.forecast.admin} /> : null}
           {cafe.length ? <TodayCafe lines={cafe} /> : null}
         </div>
       </div>

@@ -16,6 +16,7 @@ import {
   Lightbulb,
   ListChecks,
   ListTodo,
+  Newspaper,
   Package,
   PackageCheck,
   Palette,
@@ -548,6 +549,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/hatirlaticilar/nakit", label: "Nakit planı" }],
       },
       {
+        id: "satis-tahmini",
+        q: "Önümüzdeki hafta ne kadar satarız, kaç kişi çalışmalı?",
+        a: (
+          <>
+            <Path href="/panel/tahmin" /> her sabah önümüzdeki 7 günün satışını (Z toplamı) kasa raporlarından, hafta gününden, bayram ve tatillerden, Ramazan ve
+            okul tatilinden, hava durumundan (Tuzla, MET Norway) ve sizin girdiğiniz özel günlerden (derbi, AVM etkinliği, kampanya, kapalı gün) hesaplar. Kaç kişi
+            önerisi &apos;bir kişinin günde karşıladığı satış&apos; ayarından, tatlı önerisi son satış aylarındaki tatlı payından gelir. Her sabahki tahmin kaydedilir ve
+            gerçekleşen Z toplamıyla karşılaştırılır; ilk haftalarda veri az olduğu için aralık geniştir. Personel Bugün ekranında yalnız yoğunluğu ve tatlı sayısını
+            görür, tutarı görmez.
+          </>
+        ),
+        icon: TrendingUp,
+        links: [{ href: "/panel/tahmin", label: "Satış tahmini" }],
+      },
+      {
         id: "kdv-tahmini",
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
@@ -698,6 +714,22 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Timer,
         links: [{ href: "/panel/ayarlar#isler", label: "Günlük işler" }],
+      },
+      {
+        id: "haftalik-ozet",
+        q: "Pazartesi gelen haftalık özet nedir?",
+        a: (
+          <>
+            Her pazartesi sabah 08:00–09:00 arasında yöneticilere kısa bir e-posta gider: geçen haftanın ve bekleyen işlerin en
+            önemli en çok 5 maddesi, kasanıza etkisine göre sıralı (zam, nakit planı, kasa farkı, komisyon, ModPOS fiyatları,
+            zayi, stok farkı; karaoke doluluğu ve kontrol listeleri sonda). Her madde ilgili ekranı açar. Maddelerin üstünde geçen
+            haftanın kasa cirosu ve satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı yazar. Bir bilgi
+            okunamazsa o madde atlanır, e-posta yine gider. Açıp kapatmak, önizlemek ve kendinize örnek göndermek için{" "}
+            <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri › Haftalık özet.
+          </>
+        ),
+        icon: Newspaper,
+        links: [{ href: "/panel/hatirlaticilar", label: "E-posta bildirimleri" }],
       },
       {
         id: "bar-baglanti",

@@ -246,6 +246,16 @@ export function countStep(r: { status: "sent" | "skip"; sent: number; failed: nu
   return r.failed ? { code: "error", error: `${r.failed} cihaza gönderilemedi` } : undefined;
 }
 
+/**
+ * Satış tahmininin adımı (src/server/forecast/job.ts runForecastJob): kaydedilemediyse hata (iş "kısmen" olur, e-posta
+ * yine gider); tahmin için veri yoksa "nodata", hava alınamadıysa "noweather" (ikisi de sorun sayılmaz).
+ */
+export function forecastStep(r: { status: "ok" | "skipped" | "error"; weather: string; error?: string }): StepResult {
+  if (r.status === "error") return { code: "error", error: r.error ?? null };
+  if (r.status === "skipped") return { code: "nodata" };
+  return { code: r.weather === "error" ? "noweather" : "ok" };
+}
+
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */
 export function photosStep(r: { deleted: number; failed: number; off: boolean } | { error: string }): StepResult {
   if ("error" in r) return { code: "error", error: r.error };

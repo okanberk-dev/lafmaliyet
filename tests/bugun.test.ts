@@ -862,6 +862,31 @@ test("11b. kafe satırları: oda, günün sayısı, sıradaki, siparişler; eski
   );
 });
 
+test("11c. kafe satırları: personelde satış tahmininin yoğunluğu ve tatlı sayısı başta; tutar yok", () => {
+  const now = tr("2026-10-29T10:00").getTime();
+  const busy = { level: "yuksek" as const, reasons: ["Cumhuriyet Bayramı"], desserts: { today: 8, top: ["San Sebastian", "Marlenka"] }, closed: false };
+  const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-29", now), orders: null, configured: true }, now, busy);
+  assert.deepEqual(
+    lines.map((l) => [l.key, l.text, l.tone]),
+    [
+      ["yogunluk", "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı", "warn"],
+      ["tatli", "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)", "info"],
+      ["karaoke", "Bugün karaoke rezervasyonu yok", "info"],
+    ],
+  );
+  for (const l of lines) assert.doesNotMatch(l.text, /₺|%/);
+  // Karaoke bağlı değilken de kart tahmin satırlarıyla çizilir; kapalı gün tek satır
+  assert.deepEqual(
+    cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "normal", reasons: [], desserts: null, closed: false }).map((l) => l.text),
+    ["Bugün yoğunluk: Normal"],
+  );
+  assert.deepEqual(
+    cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "kapali", reasons: [], desserts: null, closed: true }).map((l) => l.text),
+    ["Bugün kafe kapalı olarak işaretli."],
+  );
+  assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now, null), []);
+});
+
 // ---------------------------------------------------------------- Saatler
 
 test("12. kendiliğinden yenileme: 14:00 → 20:00, 20:30 → 00:00, 00:30 → 05:00 (Türkiye); daha yakın ek an önce", () => {
@@ -939,6 +964,7 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "previousCarryOver(",
     "cashRevisionsFor(",
     "loadOverduePayouts(",
+    "loadForecastCard(",
     "needsReview",
   ];
   for (const name of ADMIN_ONLY) {
@@ -946,6 +972,9 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     assert.ok(!outside.replace(/^import .*$/gm, "").includes(name), `${name} adminFacts dışında`);
   }
   assert.ok(staffBody.includes("dayWaste("));
+  // Satış tahmini: personel yalnız tutarsız görünümü yükler
+  assert.ok(staffBody.includes("loadStaffForecast("));
+  assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("loadStaffForecast("), "loadStaffForecast staffFacts dışında");
   assert.ok(!src.replace(staffBody, "").replace(/^import .*$/gm, "").includes("dayWaste("), "dayWaste staffFacts dışında");
   // Rol seçimi: personel yalnız staffFacts'i çağırır
   assert.match(src, /admin \? adminFacts\(now, user\.id, cashP\) : staffFacts\(c\)/);
@@ -986,6 +1015,8 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadUnpricedIngredients(",
     "loadChecklistDay(",
     "loadOverduePayouts(",
+    "loadForecastCard(",
+    "loadStaffForecast(",
   ]) {
     assert.ok(src.includes(`safe(${call}`), `${call} safe() ile değil`);
   }

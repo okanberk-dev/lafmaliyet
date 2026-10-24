@@ -78,6 +78,11 @@ e-postası**, bildirim adreslerine gider. İçinde:
   maliyet artışına fire payı dahildir, Zayi & ikram kayıtları sayılmaz (`src/lib/calc/price-loss.ts`). Satış ayı
   yoksa ya da tutar 1 ₺'den azsa yazılmaz. Genel bakış'taki ve zildeki "Hammadde zammı" uyarısının sonuna da aynı
   toplam eklenir ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor."; orada son 30 günün bütün zamları);
+- **satış tahmini** (en altta, düğmeden önce; Satış tahmini › Tahmin ayarları'nda "Sabah e-postasına tahmin satırı"
+  açıkken): bugünün tahmini, aralığı, yoğunluğu, kaç kişi ve nedenleri ("Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk
+  yüksek · 2 kişi · Cumhuriyet Bayramı arifesi, yağmur"), dünün tahmini ve gerçekleşeni, haftanın en yoğun günü ve
+  7 günün tatlısı, MET Norway kaynağı; Satış tahmini bağlantısıyla. **Yalnız zaten giden e-postaya eklenir**: tahmin
+  için ayrıca e-posta gitmez, konu, başlık ve düğme değişmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
@@ -147,6 +152,16 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
   yazar: "2 hatırlatma · 4 yeni fatura · 1 zam";
 - gönderen adresi ve gün ayarları (Gönderim ayarları › Kaydet).
 
+## Haftalık özet (pazartesi)
+
+Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş
+e-postaları; bildirim adresleri almaz) kısa bir e-posta gider: kasanıza etkisine göre sıralı en çok 5 madde (nakit
+planında para yetmeyecek gün, zam etkisi, kasa eksikleri, komisyon ve hakediş, ModPOS'ta eski fiyat, zayi ve ikram, stok
+farkı; karaoke doluluğu ve kontrol listeleri sonda), her biri ilgili ekranı açar; üstte geçen haftanın kasa cirosu ve
+satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)).
+Sabah e-postasıyla aynı kabuk, ayrı anahtar: E-posta bildirimleri › **Haftalık özet** (aç / kapa, önizle, örneği bana
+gönder). Haftada en çok bir kez (`haftalik:<hafta>`). Ayrıntı: [HAFTALIK-OZET.md](HAFTALIK-OZET.md).
+
 ## Sistem uyarıları (günlük işler)
 
 Her sabah iki zamanlanmış iş çalışır (`vercel.json`, Vercel Cron, yalnız canlıda): 07:00–08:00 **Paraşüt eşitlemesi**
@@ -191,6 +206,10 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
   bildirim açık cihaz yok"; bildirim hiçbir cihaza gidemediyse adım hata. Sabah e-postası "E-posta kapalı", "Resend
   kurulmadı" ya da "gitmedi: bildirim adresi yok" (gönderilecek bir şey vardı ama etkin adres yok; iş "Kısmen" sayılır,
   zilde turuncu).
+- Haftalık özetin adımı (`weekly`) yalnız çalıştığı gün yazılır: "Haftalık özet gönderildi"; pazartesi "Haftalık özet
+  kapalı" ya da "Haftalık özet: Resend kurulmadı"; "Haftalık özet: süre yetmedi, yarın denenecek"; "Haftalık özet
+  gönderilemedi" (Resend reddetti, gönderim belirsiz, etkin yönetici yok ya da hiçbir bilgi okunamadı; iş "Kısmen"
+  sayılır). Perşembe–pazar ve haftanın özeti gittikten sonra adım yok.
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,

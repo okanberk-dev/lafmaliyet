@@ -8,6 +8,7 @@ import { isStarted, itemsText, lateFinish, listState, listTitle, nowBusinessMinu
 import { MONTH_NAMES } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
 import { money, monthLabel, num } from "@/lib/format";
+import { staffForecastLines, type StaffForecastView } from "@/lib/forecast/text";
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
@@ -840,17 +841,18 @@ export interface OrdersLite {
 export const ORDERS_FRESH_MS = 30 * 60_000;
 
 export interface CafeLine {
-  key: "oda" | "karaoke" | "siradaki" | "siparis";
+  key: "yogunluk" | "tatli" | "oda" | "karaoke" | "siradaki" | "siparis";
   text: string;
   tone: "info" | "warn";
 }
 
 /**
  * "Bugün kafede" kartının satırları. laffogato.net bağlantısı kurulu değilse ve bugün oturum yoksa karaoke satırı
- * yazılmaz; liste boşsa kart çizilmez. Tutar hiçbir rolde yazılmaz.
+ * yazılmaz; liste boşsa kart çizilmez. Tutar hiçbir rolde yazılmaz. `busy`: personelin satış tahmini görünümü
+ * (yoğunluk ve tatlı sayısı, tutarsız; docs/SATIS-TAHMINI.md); verilirse satırları başta.
  */
-export function cafeLines(i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean }, nowMs: number): CafeLine[] {
-  const out: CafeLine[] = [];
+export function cafeLines(i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean }, nowMs: number, busy?: StaffForecastView | null): CafeLine[] {
+  const out: CafeLine[] = busy ? staffForecastLines(busy) : [];
   const k = i.karaoke;
   const any = k ? k.reservations + k.walkIns > 0 : false;
   if (k && (i.configured || any)) {
