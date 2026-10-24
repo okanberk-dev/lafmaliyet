@@ -483,11 +483,12 @@ export function isVatReminder(r: Pick<ReminderRow, "kind" | "title">): boolean {
 }
 
 /**
- * Tekrarlı KDV hatırlatıcısının tutarı yalnız o döneme aittir (her ay başka): "Ödendi" ve ertelemede seriden silinir,
- * geri al geri yazar. Silinmezse Eylül'ün tutarı Kasım'da da kesin görünürdü.
+ * Tekrarlı KDV ve KDV-2 (tevkifat) hatırlatıcısının tutarı yalnız o döneme aittir (her ay o ayın satışından ve
+ * faturalarından): "Ödendi" ve ertelemede seriden silinir, geri al geri yazar. Silinmezse Eylül'ün tutarı Kasım'da da
+ * kesin görünür, o dönemin tahminini de kapatırdı. Yalnız damga vergisi ikisi de değildir, tutarı kalır.
  */
 export function vatAmountTravels(r: Pick<ReminderRow, "kind" | "title" | "amount" | "repeat">): boolean {
-  return r.repeat !== "none" && r.amount !== null && isVatReminder(r);
+  return r.repeat !== "none" && r.amount !== null && (isVatReminder(r) || isVatWithholdingReminder(r));
 }
 
 /** Zaman çizelgesi grupları: geciken, bugün, bu hafta (pazara kadar), bu ay, daha sonra */

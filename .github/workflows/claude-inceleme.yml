@@ -74,13 +74,15 @@ jobs:
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
 
   # PR'daki "@claude …" yorumlarına yanıt (yeniden inceleme ya da soru). Yalnız yazma yetkisi olanlar tetikler
-  # (eylemin varsayılanı); kod değiştirmez. Yanıtlar sıraya girer, birbirini iptal etmez.
+  # (eylemin varsayılanı); kod değiştirmez. Her yorum kendi eşzamanlılık grubunda (yorum kimliği) çalışır: yanıtlar
+  # aynı anda sürebilir, hiçbiri iptal edilmez. Grup PR numarası olsaydı GitHub grupta en çok bir bekleyen iş tuttuğu
+  # için üçüncü "@claude" yorumu sırada bekleyen ikincisini iptal ederdi.
   yanit:
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
     concurrency:
-      group: claude-yanit-${{ github.event.pull_request.number || github.event.issue.number }}
+      group: claude-yanit-${{ github.event.comment.id }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 30

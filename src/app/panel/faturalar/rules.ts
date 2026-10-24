@@ -46,6 +46,16 @@ export function lockedChanges(stored: LockedValues, input: LockedValues): Locked
   return out;
 }
 
+/**
+ * Formdan gelen tutar, iskonto ya da ödenecek kayıtlıdan farklı mı (kuruş altı fark sayılmaz). Paraşüt bağı çözülmüş
+ * kayıtta (iptal, silinmiş; sync.ts retire) eşitlemeden kalan KDV toplamı (`vat`) yalnız eski tutarlarla geçerlidir:
+ * tutarlar değişince saveInvoice onu 0 yazar, KDV ödenecek − net olur (pencerede görünen). Kalsaydı fark tevkifat
+ * sanılır, olmayan bir KDV-2 çıkardı (src/lib/kdv.ts purchaseWithheld).
+ */
+export function amountsChanged(stored: LockedValues, input: LockedValues): boolean {
+  return lockedChanges(stored, input).some((k) => k === "amount" || k === "discount" || k === "payable");
+}
+
 /** "tarih ve iskonto", "tarih, tutar ve iskonto" */
 export function joinTR(words: string[]): string {
   if (words.length <= 1) return words.join("");

@@ -116,7 +116,9 @@ Bağlanan kaydın **kategorisi, tedarikçi adı ve ödeme durumu korunur**; tuta
 Paraşüt'te vade yoksa paneldeki vade korunur. Fatura numarası eşleşmesi yalnızca **aynı tedarikçide** ve ±31 gün içinde geçerlidir (farklı firmalar aynı
 e-fatura önekini kullanabilir). Paraşüt'te **iptal edilen ya da silinen** fatura, panelde Paraşüt'ten açılmışsa
 kaldırılır; elle/Excel'le girilmiş bir kayda bağlıysa silinmez, bağı çözülür ve notuna "Paraşüt'te iptal — kontrol
-edin" düşülür. Kayıt **gelen bir e-faturaya da bağlıysa** silinmez (e-fatura duruyor, borç da): yalnız gider
+edin" düşülür. Bağı çözülen kaydın tutarları yeniden düzenlenebilir; tutar, iskonto ya da ödenecek değişince
+eşitlemeden kalan KDV toplamı silinir, KDV tahmini ödenecek − net'i sayar ([NAKIT-PLANI.md](NAKIT-PLANI.md)).
+Kayıt **gelen bir e-faturaya da bağlıysa** silinmez (e-fatura duruyor, borç da): yalnız gider
 faturasının bağı ve kalemleri kalkar; ödeme durumu, kategori, vade ve not kalır, kalemler e-fatura belgesinden yeniden
 okunur. E-fatura Paraşüt'te **yeniden içeri alınırsa** (eski gider faturası silinip yenisi açılır) aynı kayıt yeni gider
 faturasına geçer; eski fatura Paraşüt'e sorulur, hâlâ duruyorsa yeni fatura ayrı açılır ama "aynı e-fatura başka bir

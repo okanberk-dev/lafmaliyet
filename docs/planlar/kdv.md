@@ -331,6 +331,8 @@ Yeni satır `{ key: "kdv", title: "KDV tahmini", monthly, status, note }`:
   - Bildirim metni değişmez.
 - Bugün ekranı `markReminderDone`'ı çağırıyorsa kural orada da geçerlidir. Dönüşteki `amountCleared` alanı ektir;
   onu okumayan çağıran bozulmaz.
+- 24 Ekim 2026'dan beri KDV-2 (2 No.lu) serisi de aynı kurala tabidir (`vatAmountTravels` ⊇
+  `isVatWithholdingReminder`): Ödendi ve Ertele tutarı seriden siler, plan yazılı tutarı yalnız kayıtlı gününde kullanır.
 
 ### 4.7 Yardım (`src/app/panel/yardim/page.tsx`, “Gider, ödeme ve ekip” grubu, insight'ın nakit planı sorusundan sonra)
 

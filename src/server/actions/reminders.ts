@@ -129,7 +129,7 @@ function addDaysBack(day: string) {
 
 /**
  * Ödendi: tekrar edenler bir sonraki döneme ilerler, tek seferlikler kapanır. `through` verilirse (gecikmiş
- * dönemden sonraki öngörülen dönem ödendiğinde) o tarihe kadarki bütün dönemler kapanır. Tekrarlı KDV
+ * dönemden sonraki öngörülen dönem ödendiğinde) o tarihe kadarki bütün dönemler kapanır. Tekrarlı KDV ve KDV-2
  * hatırlatıcısının tutarı o döneme aittir (her ay başka): sıradaki döneme geçerken silinir (`amountCleared`), geri al
  * geri yazar; yoksa nakit planı Eylül'ün tutarını Kasım'da da kesin sayardı (docs/NAKIT-PLANI.md).
  */
@@ -337,7 +337,7 @@ export async function postponeReminder(id: number, by: "week" | "month") {
             note: postponeNote(postponedFrom(r.note) ? null : r.note, r.dueDate),
           })
           .returning({ id: s.reminders.id });
-        // KDV tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al geri yazar)
+        // KDV ve KDV-2 tutarı ertelenen döneme aittir: kopyada kalır, seriden silinir (geri al geri yazar)
         await tx
           .update(s.reminders)
           .set({ dueDate: next, ...(vatAmountTravels(r) ? { amount: null } : {}) })

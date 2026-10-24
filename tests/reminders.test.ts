@@ -207,7 +207,12 @@ test("KDV hatırlatıcısı: başlıkta KDV ya da katma değer; kira, maaş, SGK
   assert.equal(vatAmountTravels({ ...vat, repeat: "none" }), false);
   assert.equal(vatAmountTravels({ ...vat, amount: null }), false);
   assert.equal(vatAmountTravels({ ...vat, title: "Kira", kind: "kira" }), false);
-  assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), false);
+  // KDV-2 (tevkifat) de: o ayın faturalarındaki tevkifattır; yalnız damga vergisinin tutarı kalır
+  assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat" }), true);
+  assert.equal(vatAmountTravels({ ...vat, title: "2 No.lu beyanname", repeat: "quarterly" }), true);
+  assert.equal(vatAmountTravels({ ...vat, title: "KDV2 tevkifat", repeat: "none" }), false);
+  assert.equal(vatAmountTravels({ ...vat, title: "KDV2 damga vergisi" }), false);
+  assert.equal(vatAmountTravels({ ...vat, title: "Muhtasar (gelir vergisi tevkifatı)" }), false);
 });
 
 test("KDV-2 hatırlatıcısı: başlıkta tevkifat, 2 No.lu ya da sorumlu sıfatıyla ile birlikte KDV, ya da \"2 No.lu beyanname\"; muhtasar, stopaj, damga ve 2 No.lu dükkan değil", () => {
