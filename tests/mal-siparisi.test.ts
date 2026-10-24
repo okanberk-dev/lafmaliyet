@@ -317,6 +317,22 @@ test("Ekim sayımı 3 Kasım'da girilince: arada gelen süt siparişte kalır, a
   assert.equal(latestOnHand({ ...quick, qty: 20, countedAt: "2026-11-16T07:30:00.000Z", day: "2026-11-16" }, { ...oct, at: fixed.toISOString(), day: businessDate(fixed) })?.source, "hizli");
 });
 
+test("erken gelen mal: sayımdan önce Geldi denirse siparişte sayılmaz; denmezse ya da sayımdan sonra denirse sayılır", () => {
+  // Cumartesi gönderilen, Salı beklenen süt Pazartesi sabah erken geldi; sayım 10:15
+  const early = order({ sentAt: "2026-10-24T10:00:00.000Z", sentDay: "2026-10-24", expectedOn: "2026-10-27" });
+  const countAt = "2026-10-26T07:15:00.000Z";
+  const today = "2026-10-26";
+  assert.equal(onOrderFor([early], MILK.id, countAt, today).base, 24000, "işaretlenmedi: siparişte");
+  // Sayımdan önce Geldi (son sayım geçen haftanın): dokunuş anı, mal sayımda
+  const before = receivedAtFor(early, { at: "2026-10-19T07:30:00.000Z", day: "2026-10-19" }, new Date("2026-10-26T06:50:00Z"));
+  assert.equal(before.toISOString(), "2026-10-26T06:50:00.000Z");
+  assert.equal(onOrderFor([{ ...early, receivedAt: before.toISOString() }], MILK.id, countAt, today).base, 0);
+  // Sayımdan sonra Geldi: beklenen gün sayımdan sonra, dokunuş anı kalır, mal sayımdan sonra geldi
+  const after = receivedAtFor(early, { at: countAt, day: today }, new Date("2026-10-26T08:00:00Z"));
+  assert.equal(after.toISOString(), "2026-10-26T08:00:00.000Z");
+  assert.equal(onOrderFor([{ ...early, receivedAt: after.toISOString() }], MILK.id, countAt, today).base, 24000);
+});
+
 test("hızlı sayım çakışması: kayıt formdaki biçimle karşılaştırılır (1,2345 ya da aynı gün değişen sayım birimi çakışma değil)", () => {
   // 1: Su (ADET), 1,2345 kaydedilmiş; 2: önce KG sayılmış, sonra sayım birimi ADET yapılmış; 3: Süt (LT)
   const factorOf = (id: number) => (id === 3 ? 1000 : 1);
@@ -795,6 +811,16 @@ test("kaynak: ay sonu sayımının anı monthEndCountAt'ten (kayıt anı değil)
   assert.doesNotMatch(bodyOf(src, "countFacts"), /gte\(s\.stockCounts\.updatedAt/);
   // Sayım eski uyarısı son sayımın iş gününden (sınırlanmış an 1'i gösterirdi)
   assert.match(bodyOf(src, "loadOrderPlan"), /staleDays: d\.lastCountDay \?/);
+});
+
+test("kaynak: Gelen mal var mı? erken gelen siparişi de gösterir (beklenen gün süzgeci yok)", () => {
+  const body = bodyOf(read("src/server/data/reorder.ts"), "loadQuickCountSheet");
+  assert.doesNotMatch(body, /expectedOn\}\s*<=/);
+  assert.match(body, /sql`\$\{o\.receivedAt\} is null`, sql`\$\{o\.invoiceId\} is null`/);
+  assert.match(body, /expectedOn: x\.expectedOn/);
+  const form = read("src/app/panel/hizli-sayim/quick-count-form.tsx");
+  assert.match(form, /o\.expectedOn > sheet\.day/);
+  assert.match(form, /bekleniyor/);
 });
 
 test("kaynak: eylemlerin yetkisi (hızlı sayım ve Geldi iki rolde, ötekiler yönetici)", () => {

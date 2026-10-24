@@ -182,6 +182,7 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold break-words text-ink">
                       {o.supplier} · {dateTR(o.sentDay)} siparişi
+                      {o.expectedOn > sheet.day ? <span className="font-normal text-ink-mute"> · {dateTR(o.expectedOn)} bekleniyor</span> : null}
                     </p>
                     <p className="mt-0.5 text-xs break-words text-ink-mute">
                       {shown.join(", ")}

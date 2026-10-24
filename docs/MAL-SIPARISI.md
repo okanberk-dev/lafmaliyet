@@ -19,8 +19,10 @@ görünür.
    süresi varsayılanla gelir (§4); hedef stok satışlardan önerilir, istenirse elle yazılır.
 2. **Sayım günü** (varsayılan Pazartesi): Bugün'de iki rolde "Haftalık hızlı sayım" satırı çıkar, "Sabah özeti"
    bildirimi açık telefonlara bildirim gider. Personel ya da yönetici **Hızlı sayım**'da miktarları sayım biriminde
-   (KG, LT, ADET, DİLİM; yarım = 0,5) yazar. Ekranın başındaki **Gelen mal var mı?** yoldaki siparişleri gösterir:
-   sayımdan önce gelene **Geldi** denir, yoksa o mal sipariş listesinde ikinci kez sayılır.
+   (KG, LT, ADET, DİLİM; yarım = 0,5) yazar. Ekranın başındaki **Gelen mal var mı?** yoldaki siparişleri gösterir
+   (Geldi denmemiş, faturası bağlanmamış; beklenen günü henüz gelmemiş olanlar da, satırda "27.10.2026 bekleniyor"
+   yazar: erken gelen mal geldiği gün işaretlenir): sayımdan önce gelene **Geldi** denir, yoksa o mal sipariş
+   listesinde ikinci kez sayılır.
 3. **Mal siparişi** (yönetici): tedarikçi tedarikçi öneri listesi. Miktar − / + ile ya da dokunup yazılarak değişir;
    **WhatsApp ile gönder** penceresi mesajı gösterir, isteğe bağlı not eklenir, **WhatsApp'ta aç** sohbeti açar ve
    siparişi kaydeder.

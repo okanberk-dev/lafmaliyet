@@ -880,8 +880,18 @@ export interface QuickCountSheet {
   groups: { name: string; items: QuickCountItem[] }[];
   total: number;
   last: { day: string; by: string } | null;
-  /** Gelmesi beklenen, gelmedi işaretlenmemiş, faturası olmayan siparişler (yalnız kalem adı ve miktar) */
-  due: { id: number; supplier: string; sentDay: string; lines: { orderName: string; qty: number; unit: string }[] }[];
+  /**
+   * Yoldaki siparişler: açık, Geldi denmemiş, faturası bağlanmamış; beklenen günü henüz gelmemiş olanlar da (erken gelen
+   * mal geldiği gün işaretlenir). Yalnız kalem adı ve miktar
+   */
+  due: {
+    id: number;
+    supplier: string;
+    sentDay: string;
+    /** Beklenen gün (Türkiye); bugünden sonraysa satır "… bekleniyor" der */
+    expectedOn: string;
+    lines: { orderName: string; qty: number; unit: string }[];
+  }[];
 }
 
 /**
@@ -905,10 +915,11 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
       .where(and(eq(i.active, true), isNotNull(i.countUnit), sql`${i.priceSource} <> 'water'`))
       .orderBy(asc(i.sortOrder), asc(i.id)),
     db
-      .select({ id: o.id, supplier: o.supplier, sentAt: o.sentAt, lines: o.lines })
+      .select({ id: o.id, supplier: o.supplier, sentAt: o.sentAt, expectedOn: o.expectedOn, lines: o.lines })
       .from(o)
-      .where(and(eq(o.status, "open"), sql`${o.receivedAt} is null`, sql`${o.invoiceId} is null`, sql`${o.expectedOn} <= ${today}`))
-      .orderBy(asc(o.sentAt)),
+      .where(and(eq(o.status, "open"), sql`${o.receivedAt} is null`, sql`${o.invoiceId} is null`))
+      // Günü gelen ve geciken önce
+      .orderBy(asc(o.expectedOn), asc(o.sentAt)),
   ]);
   const ids = rows.map((r) => r.id);
   const [todays, before, monthEnd, lastAny] = ids.length
@@ -980,6 +991,7 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
       id: x.id,
       supplier: x.supplier,
       sentDay: todayTR(x.sentAt),
+      expectedOn: x.expectedOn,
       lines: (Array.isArray(x.lines) ? x.lines : []).map((l) => ({ orderName: l.orderName, qty: l.qty, unit: l.unit })),
     })),
   };

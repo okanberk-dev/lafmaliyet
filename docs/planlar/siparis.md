@@ -35,7 +35,7 @@ Concretely:
    from the data: usage from sales × recipes + recorded zayi/ikram, the supplier last bought from via the Paraşüt
    product links, and the unit and product name of that supplier's last invoice line.
 2. **Hızlı sayım** (staff and admin, phone first): the tracked items only, in count units (KG, LT, ADET, DİLİM), separate
-   from the month-end Stok sayımı. Before counting, staff answer "Gelen mal var mı?" for orders that are due.
+   from the month-end Stok sayımı. Before counting, staff answer "Gelen mal var mı?" for open orders (due or early).
 3. **Mal siparişi** (admin): the order list grouped by supplier. Suggested quantity = Hedef − Eldeki − Siparişte,
    rounded to the order unit. Quantities can be edited. **WhatsApp ile gönder** opens `wa.me` with the message for the
    phone on the supplier's card. A missing or landline phone is handled. The order is saved: sent at, lines, status.
@@ -302,12 +302,13 @@ Suspense fallback: the same header with description "Yükleniyor…" and `PageSk
    - `Son sayım: {longDateTR(day)} · {name}` or `Henüz hızlı sayım yok`.
    - On the month's last day: `Bugün ay sonu: Stok sayımı bu sayımın yerine geçer.` with a link "Stok sayımı →"
      (`/panel/sayim`).
-2. **"Gelen mal var mı?"** card. It is shown only when open orders exist with `expectedOn ≤ today`, not received and
-   not matched.
+2. **"Gelen mal var mı?"** card. It is shown for open orders that are not received and not matched, whatever their
+   `expectedOn` (an early delivery is marked the day it arrives), sorted by `expectedOn`, then `sentAt`.
    - Icon `PackageCheck`, title "Gelen mal var mı?".
    - Description: `"Sayımdan önce gelenleri işaretleyin; işaretlenmezse sipariş listesinde ikinci kez sayılır."`
    - One row per order:
-     - `{supplier} · {dateTR(sentDay)} siparişi` (bold);
+     - `{supplier} · {dateTR(sentDay)} siparişi` (bold), plus a muted ` · {dateTR(expectedOn)} bekleniyor` when
+       `expectedOn > today`;
      - under it (xs): `{orderName} {qtyLabel}` joined with ", " (at most 3, then " ve {k} kalem daha");
      - right: secondary `Button` **Geldi**, 44 px on phones.
    - Tap: optimistic remove, `markOrderReceived({ id, received: true })`, toast `"{supplier} siparişi geldi"` with
