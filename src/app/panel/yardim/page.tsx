@@ -722,8 +722,9 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             Her pazartesi sabah 08:00–09:00 arasında yöneticilere kısa bir e-posta gider: geçen haftanın ve bekleyen işlerin en
             önemli en çok 5 maddesi, kasanıza etkisine göre sıralı (zam, nakit planı, kasa farkı, komisyon, ModPOS fiyatları,
-            zayi, stok farkı; karaoke doluluğu ve kontrol listeleri sonda). Her madde ilgili ekranı açar. Bir bilgi okunamazsa o
-            madde atlanır, e-posta yine gider. Açıp kapatmak, önizlemek ve kendinize örnek göndermek için{" "}
+            zayi, stok farkı; karaoke doluluğu ve kontrol listeleri sonda). Her madde ilgili ekranı açar. Maddelerin üstünde geçen
+            haftanın kasa cirosu ve satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı yazar. Bir bilgi
+            okunamazsa o madde atlanır, e-posta yine gider. Açıp kapatmak, önizlemek ve kendinize örnek göndermek için{" "}
             <Path href="/panel/hatirlaticilar" /> › E-posta bildirimleri › Haftalık özet.
           </>
         ),

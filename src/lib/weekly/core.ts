@@ -189,7 +189,8 @@ export function weekdayName(day: string): string {
 export function nextWeeklyTry(week: WeekInfo, lastTry: string, hourTR: number): string | null {
   const pending = lastTry < week.day && hourTR >= WEEKLY_MORNING_FROM_HOUR && hourTR < WEEKLY_MORNING_TO_HOUR;
   const next = pending ? week.day : addDays(week.day, 1);
-  return next >= week.monday && isoWeekday(next) <= WEEKLY_LAST_WEEKDAY ? next : null;
+  // Pazardan sonraki pazartesi öbür haftanındır
+  return next <= addDays(week.monday, WEEKLY_LAST_WEEKDAY - 1) ? next : null;
 }
 
 /** Adımın iletisinin sonu: pazartesi "salı sabahı yeniden denenecek", salı "çarşamba sabahı …", son gün "bu hafta gönderilemedi" */

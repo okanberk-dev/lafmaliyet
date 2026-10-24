@@ -273,26 +273,15 @@ const kontrol: Collector = {
 };
 
 /**
- * Satış tahmininin yükleyicisinden bağlam satırının girdisi (tahmin grubu, src/server/forecast/load.ts
- * loadForecastCore). Tür yapısal: modül yokken de derlenir
+ * Satış tahmini satırı (tahmin; docs/SATIS-TAHMINI.md): tahminin yükleyicisi (src/server/forecast/load.ts
+ * loadForecastCore) yalnız okur, hava ve kayıt sabah işinde yazılır. Kalite tam, karma ya da ortalama ise
  */
-export function forecastLineInput(core: { forecast: { quality: string; days: readonly { date: string; amount: number; closed: unknown }[] } }) {
-  return { quality: core.forecast.quality, days: core.forecast.days.map((d) => ({ date: d.date, amount: d.amount, closed: Boolean(d.closed) })) };
-}
-
-/** Satış tahmini satırının yükleyicisi (src/server/forecast/load.ts loadForecastCore; hava ve kayıt sabah işinde yazılır) */
-function forecastLoader(): ((now: Date) => Promise<ReturnType<typeof forecastLineInput>>) | null {
-  return (now) => loadForecastCore(now).then(forecastLineInput);
-}
-
-/** Satış tahmini satırı (tahmin): kalite tam, karma ya da ortalama ise */
 const tahmin: Collector = {
   source: "satir",
   timeoutMs: 3_000,
   async run(ctx) {
-    const load = forecastLoader();
-    if (!load) return {};
-    const line = forecastLine(await load(ctx.now));
+    const { forecast } = await loadForecastCore(ctx.now);
+    const line = forecastLine({ quality: forecast.quality, days: forecast.days.map((d) => ({ date: d.date, amount: d.amount, closed: Boolean(d.closed) })) });
     return { lines: line ? [line] : [] };
   },
 };

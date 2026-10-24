@@ -170,6 +170,9 @@ yeniden ekler. İşlem geçmişine "Özel gün", "Özel gün güncellendi", "Öz
 - **Sabah e-postası:** "Satış tahmini" kutusu (zamdan sonra): bugün, dünün tahmini ve gerçekleşeni, haftanın en yoğun
   günü, MET Norway kaynağı. Yalnız zaten giden e-postaya eklenir; konuya, başlığa, düğmeye girmez, e-postayı tek başına
   göndermez ([BILDIRIMLER.md](BILDIRIMLER.md)).
+- **Haftalık özet (pazartesi):** maddelerin üstünde bir satır, kasa cirosunun altında: "Önümüzdeki 7 gün beklenen
+  satış ≈ 72.000 ₺ · en yoğun gün Cumartesi". Yalnız kalite tam, karma ya da ortalamayken; kapalı günler toplanmaz,
+  okunamazsa satır düşer ([HAFTALIK-OZET.md](HAFTALIK-OZET.md)).
 - **Günlük işler:** sabah işinin `forecast` adımı: "Tahmin kaydedildi", "Tahmin kaydedildi, hava alınamadı", "Tahmin:
   veri yok", "Tahmin hata". Paraşüt'ün yeniden denemesiyle aynı anda başlar, e-postadan önce beklenir (en çok 7 sn);
   yalnız hata işi "kısmen" yapar.

@@ -582,22 +582,54 @@ test("Ödemeler'deki durum satırı ve alıcılar", () => {
   assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-27", code: "error" } }), "Salı gönderilemedi; çarşamba sabahı yeniden denenecek.");
   assert.equal(weeklyStatusText({ ...mon, row: null, rowDay: null, lastStep: { day: "2026-10-26", code: "nokey" } }), "Pazartesi gönderilemedi (Resend kurulmadı); salı sabahı yeniden denenecek.");
   assert.equal(weeklyStatusText({ ...wed, row: null, rowDay: null, lastStep: { day: "2026-10-28", code: "error" }, hourTR: 10 }), "Bu hafta gönderilemedi.");
+  // Pazartesi reddedildi, salının işi kayıt yazmadan bitti: salı 08:30'da "bu sabah" değil, salının nedeni ve çarşamba
+  assert.equal(
+    weeklyStatusText({ ...base, row: retry, rowDay: "2026-10-26", lastStep: { day: "2026-10-27", code: "late" }, hourTR: 8 }),
+    "Salı gönderilemedi (süre yetmedi); çarşamba sabahı yeniden denenecek.",
+  );
+  assert.equal(
+    weeklyStatusText({ ...base, row: retry, rowDay: "2026-10-26", lastStep: { day: "2026-10-27", code: "nokey" }, hourTR: 12 }),
+    "Salı gönderilemedi (Resend kurulmadı); çarşamba sabahı yeniden denenecek.",
+  );
+  assert.equal(weeklyStatusText({ ...wed, row: retry, rowDay: "2026-10-26", lastStep: { day: "2026-10-28", code: "error" }, hourTR: 8 }), "Bu hafta gönderilemedi.");
+  // Reddin kendi adımı (aynı gün) kaydın gününü değiştirmez
+  assert.equal(weeklyStatusText({ ...wed, lastStep: { day: "2026-10-27", code: "error" }, hourTR: 7 }), "Salı gönderilemedi; bu sabah yeniden denenecek.");
+  // Pazar (ve pazartesi 05:00'ten önce, iş günü hâlâ pazar): sıradaki pazartesi öbür haftanın
+  const sun = { ...wed, week: weekInfo("2026-11-01"), rowDay: "2026-10-28" };
+  assert.equal(weeklyStatusText({ ...sun, hourTR: 14 }), "Bu hafta gönderilemedi.");
+  assert.equal(weeklyStatusText({ ...sun, hourTR: 2 }), "Bu hafta gönderilemedi.");
   // Gönderim ya da kapalı adım satırı değiştirmez; kaydın durumu adımdan önce gelir
-  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "off" }, lastSentAt: "2026-10-19T05:03:00Z" }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
-  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "toString" } }), "Henüz gönderilmedi · ilk özet pazartesi sabahı gider");
+  assert.equal(weeklyStatusText({ ...base, lastStep: { day: "2026-10-26", code: "toString" } }), "Henüz gönderilmedi · ilk özet çarşamba sabahı gider");
   assert.equal(
     weeklyStatusText({ ...base, row: { ok: false, error: "Gönderim belirsiz: Resend yanıt vermedi", sentAt: "2026-10-26T05:04:00Z" }, lastStep: { day: "2026-10-26", code: "error" } }),
     "Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz.",
   );
   assert.equal(weeklyStatusText({ ...base, row: { ok: false, error: "Gönderiliyor", sentAt: "2026-10-26T05:04:00Z" } }), "Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz.");
   assert.equal(weeklyStatusText({ ...base, row: { ok: false, error: "Gönderiliyor", sentAt: new Date(now - 60_000).toISOString() } }), "Bu haftaki özet şu an gönderiliyor.");
-  assert.equal(weeklyStatusText({ ...base, lastSentAt: "2026-10-19T05:03:00Z" }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
-  assert.equal(weeklyStatusText(base), "Henüz gönderilmedi · ilk özet pazartesi sabahı gider");
+  // Bu hafta henüz yok: sıradaki sabah bu haftanın özeti gider (hafta içinde açıldı ya da o gün denenmedi)
+  const sent = "2026-10-19T05:03:00Z";
+  assert.equal(weeklyStatusText({ ...base, lastSentAt: sent }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti çarşamba sabahı gider");
+  assert.equal(weeklyStatusText(base), "Henüz gönderilmedi · ilk özet çarşamba sabahı gider");
+  // Pazartesinin işi kapalı buldu ("off"), sonra açıldı: pazartesi 14:00 salı, salı 14:00 çarşamba, çarşamba 14:00 gelecek pazartesi
+  const off = { ...base, lastStep: { day: "2026-10-26", code: "off" }, lastSentAt: sent, hourTR: 14 };
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-26") }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti salı sabahı gider");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-27") }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti çarşamba sabahı gider");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-28") }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-26"), lastSentAt: null }), "Henüz gönderilmedi · ilk özet salı sabahı gider");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-28"), lastSentAt: null }), "Henüz gönderilmedi · ilk özet pazartesi sabahı gider");
+  // Sabah penceresinde: bugünün işi kapalı bulduysa yarın, bugün henüz denenmediyse bu sabah
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-26"), hourTR: 8 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti salı sabahı gider");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-27"), hourTR: 7 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti bu sabah gider");
+  assert.equal(weeklyStatusText({ ...base, week: weekInfo("2026-10-26"), lastSentAt: sent, hourTR: 6 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti bu sabah gider");
+  // Perşembe ve pazar: bu hafta deneme yok
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-29") }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
+  assert.equal(weeklyStatusText({ ...base, week: weekInfo("2026-11-01"), lastSentAt: sent, hourTR: 2 }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
   // Sıradaki deneme ve günün adı
   assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-26", 5), "2026-10-27");
   assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-26", 9), "2026-10-28");
   assert.equal(nextWeeklyTry(weekInfo("2026-10-27"), "2026-10-27", 6), "2026-10-28");
   assert.equal(nextWeeklyTry(weekInfo("2026-10-28"), "2026-10-28", 6), null);
+  assert.equal(nextWeeklyTry(weekInfo("2026-11-01"), "2026-10-28", 14), null);
   assert.deepEqual(["2026-10-26", "2026-10-28", "2026-11-01"].map(weekdayName), ["pazartesi", "çarşamba", "pazar"]);
   assert.equal(recipientsText(["Okan", "Ayşe"]), "Yöneticilere gider: Okan, Ayşe.");
   assert.equal(recipientsText([]), "Etkin yönetici yok.");
@@ -650,6 +682,13 @@ test("kaynak: sunucu dosyaları server-only, şablon değil; alıcılar etkin y�
   assert.match(route, /\.\.\.\(weeklyResult \? \{ weekly: weeklyResult \} : \{\}\)/);
   // Saf modüller sunucuya uzanmaz
   for (const f of readdirSync(join(process.cwd(), "src/lib/weekly"))) assert.doesNotMatch(read(`src/lib/weekly/${f}`), /from "@\/server/, f);
+  // Anahtar açılırken gösterilen satır sunucunun açıkken kuralıyla hesaplanır (hafta içinde açılan özet)
+  assert.match(send, /onStatus: weeklyStatusText\(\{ \.\.\.input, enabled: true \}\)/);
+  const row = read("src/app/panel/hatirlaticilar/weekly-row.tsx");
+  assert.match(row, /enabled === weekly\.enabled \? weekly\.status : enabled \? weekly\.onStatus : "Kapalı: pazartesi e-postası gitmez\."/);
+  assert.doesNotMatch(row, /sıradaki pazartesi/);
+  // Satış tahmini satırı tahminin yükleyicisini doğrudan okur
+  assert.match(read("src/server/weekly/collect.ts"), /const \{ forecast \} = await loadForecastCore\(ctx\.now\);/);
   // Ödemeler sayfası: saat requireAdmin'den sonra; önizleme ve örnek için süre
   const page = read("src/app/panel/hatirlaticilar/page.tsx");
   assert.match(page, /export const maxDuration = 30;/);

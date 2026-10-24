@@ -770,6 +770,11 @@ test("kaynak: özel günler kartı kaydedilebilen her günü gösterir; aynı ad
   assert.match(read("src/app/panel/tahmin/page.tsx"), /minDate=\{addDays\(data\.today, -SPECIAL_PAST_DAYS\)\} maxDate=\{addDays\(data\.today, SPECIAL_MAX_AHEAD_DAYS\)\}/);
   // Aynı yazılı iki etiket ya da açıklama satırı React anahtarında çakışmaz
   for (const f of ["src/app/panel/tahmin/forecast-days.tsx", "src/app/panel/bugun/today-forecast.tsx"]) assert.doesNotMatch(read(f), /key=\{(c|l)\}/, f);
+  // Kapalı günün rozeti adı (en çok 60 karakter) taşır: dar sütunda satır kırar, 390 px'te sayfa yana kaymaz
+  assert.match(
+    read("src/app/panel/tahmin/forecast-days.tsx"),
+    /<Badge tone=\{LEVEL_TONE\[d\.level\]\} dot=\{d\.level !== "kapali"\} className=\{d\.closed \? "max-w-\[8rem\] rounded-lg text-right break-words whitespace-normal" : undefined\}>\s+\{d\.closed \? d\.closed\.title : levelLabel\(d\.level\)\}/,
+  );
 });
 
 test("kaynak: Bugün'de tahmin kartı yalnız yöneticide, personel satırı yalnız personelde; personele tutar gitmez", () => {

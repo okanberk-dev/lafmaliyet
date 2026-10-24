@@ -107,7 +107,8 @@ export function ForecastDays({ data }: { data: ForecastPageData }) {
                         </span>
                       </>
                     )}
-                    <Badge tone={LEVEL_TONE[d.level]} dot={d.level !== "kapali"}>
+                    {/* Kapalı günün adı 60 karaktere kadar: rozet dar sütunda satır kırar, sayfa yana kaymasın */}
+                    <Badge tone={LEVEL_TONE[d.level]} dot={d.level !== "kapali"} className={d.closed ? "max-w-[8rem] rounded-lg text-right break-words whitespace-normal" : undefined}>
                       {d.closed ? d.closed.title : levelLabel(d.level)}
                     </Badge>
                     <ChevronDown size={16} aria-hidden="true" className="text-ink-quiet transition-transform group-open:rotate-180" />

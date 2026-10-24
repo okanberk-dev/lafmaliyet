@@ -157,7 +157,8 @@ Ekrandan (sağdaki **E-posta bildirimleri** kutusu; kapalıyken tek satır özet
 Her pazartesi 08:00–09:00 (gönderilemezse salı, sonra çarşamba) **yöneticilere** (etkin yönetici hesaplarının giriş
 e-postaları; bildirim adresleri almaz) kısa bir e-posta gider: kasanıza etkisine göre sıralı en çok 5 madde (nakit
 planında para yetmeyecek gün, zam etkisi, kasa eksikleri, komisyon ve hakediş, ModPOS'ta eski fiyat, zayi ve ikram, stok
-farkı; karaoke doluluğu ve kontrol listeleri sonda), her biri ilgili ekranı açar; üstte geçen haftanın kasa cirosu.
+farkı; karaoke doluluğu ve kontrol listeleri sonda), her biri ilgili ekranı açar; üstte geçen haftanın kasa cirosu ve
+satış tahmini kendi verisiyle çalışıyorsa önümüzdeki 7 günün beklenen satışı ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)).
 Sabah e-postasıyla aynı kabuk, ayrı anahtar: E-posta bildirimleri › **Haftalık özet** (aç / kapa, önizle, örneği bana
 gönder). Haftada en çok bir kez (`haftalik:<hafta>`). Ayrıntı: [HAFTALIK-OZET.md](HAFTALIK-OZET.md).
 
