@@ -334,6 +334,18 @@ girmez; onay bekleyen fiyatın faturası da gerçek bir alım olarak listededir.
 - Bedava kalem ve iade fiyata girmez, altta sayısı yazar. Yanlış çarpan ₺/kg'ı burada da bozar; çarpanı düzeltmek ikisini
   birden düzeltir.
 
+### 5d. Teslim kontrolü (mal siparişi)
+
+Eşitleme ürün bağlantılarını uyguladıktan sonra panelden gönderilen açık mal siparişlerini (son 60 gün) gelen
+faturalarla karşılaştırır ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 7; `src/server/reorder/match.ts`). Fatura aynı
+tedarikçiden, mal alışı ya da Diğer kategorisinde, sipariş gününden en çok 10 gün sonra kesilmiş olmalı; kalemleri
+okunmuşsa en az bir sipariş kalemini içermeli, kalemsizse 3 gün bekler. Kalemler hammadde bağlantısının çarpanıyla
+karşılaştırılır (±%2 miktar, ±%3 fiyat); fark yoksa sipariş kendiliğinden kapanır, varsa Gönderilenler'de, zilde ve
+Bugün'de görünür. Eşitlemenin süresi içinde ve kendi `try`'ında çalışır: hatası eşitlemeyi bozmaz, yetişmeyen
+siparişler sonraki eşitlemeye kalır. Özette "3 mal siparişi faturayla karşılaştırıldı · 2 kendiliğinden kapandı"
+yazar. Ürün bağlantısı kaydedilince ya da silinince ve **Kalemleri şimdi oku**'dan sonra da yenilenir: yanlış
+çarpanı düzeltmek karşılaştırmayı da düzeltir.
+
 ## 6. Gelen e-faturalar ("içeri al" gerekmez)
 
 Paraşüt'e e-Fatura ağından gelen faturalar Paraşüt'te *Giderler → Gelen e-Faturalar* ekranında bekler; Paraşüt'te

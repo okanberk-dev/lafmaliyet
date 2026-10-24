@@ -13,6 +13,7 @@ import { logActivity } from "@/server/actions/log";
 import { supersedeHolds } from "@/server/data/price-holds";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
+import { matchSummary, matchSupplierOrders, type ReorderMatchResult } from "@/server/reorder/match";
 
 import { PAGE_SIZE, ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "./client";
 import { MANAGED_QTY_NOTE } from "./constants";
@@ -799,6 +800,16 @@ export async function syncParasut(
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     const returns = await saveReturns(ctx, today);
     const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
+    // Mal siparişlerinin teslim kontrolü (docs/MAL-SIPARISI.md): yeni gelen ya da kalemleri okunan fatura açık siparişle
+    // karşılaştırılır. Sürenin içinde; hatası eşitlemeyi bozmaz, kalan siparişler sonraki eşitlemeye kalır
+    let reorder: ReorderMatchResult | null = null;
+    if (Date.now() - started < deadline - 3_000) {
+      try {
+        reorder = await matchSupplierOrders({ until: started + deadline - 1_000 });
+      } catch (err) {
+        console.error("[mal-siparisi] teslim kontrolü", err);
+      }
+    }
     if (partial && !reachedEnd) {
       // Hiç sayfa yazılamadıysa kalınan yer değişmez
       if (!keepStoredResume && processedUntilPage >= startPage) {
@@ -829,6 +840,7 @@ export async function syncParasut(
       returns.sales ? `${returns.sales} satış iadesi gider sayılmadı` : "",
       returns.supplier ? `${returns.supplier} tedarikçiye iade panele girmedi (Paraşüt sayfasında)` : "",
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      matchSummary(reorder),
       partial || (eStats && !eStats.complete) ? "süre doldu, kalanı sonraki eşitlemede sürecek" : "",
       eError ? `e-faturalar okunamadı: ${eError}` : "",
     ].filter(Boolean);
@@ -1017,6 +1029,15 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     await saveReturns(ctx, todayTR());
     const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
     await setState(HISTORY_KEY, progress);
+    // Mal siparişlerinin teslim kontrolü (günlük eşitlemedeki gibi; hatası geçmiş okumayı bozmaz)
+    let reorder: ReorderMatchResult | null = null;
+    if (Date.now() - started < deadline - 3_000) {
+      try {
+        reorder = await matchSupplierOrders({ until: started + deadline - 1_000 });
+      } catch (err) {
+        console.error("[mal-siparisi] teslim kontrolü", err);
+      }
+    }
 
     const written = new Set(drafts.map((d) => d.externalId));
     const rows = ctx.existing.filter((e) => e.externalId && written.has(e.externalId));
@@ -1030,6 +1051,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       `${updated} güncellendi`,
       removed ? `${removed} kaldırıldı (Paraşüt'te iptal)` : "",
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
+      matchSummary(reorder),
       partial ? "süre doldu, kalanı için yeniden basın" : "",
     ]
       .filter(Boolean)

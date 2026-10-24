@@ -27,6 +27,9 @@ yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("g
 ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye komisyon ve hakediş uyarıları da
 durur: geciken hakediş, yemek kartında kesin %6 aşımı, komisyon dışı ücret olabilecek kalem (en çok 5; Komisyon &
 hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8).
+Başlığın sonunda mal siparişlerinin teslim kontrolü durur: faturayla tutmayan sipariş ("Teslim kontrolü: Sütaş", fark
+değişince yeniden okunmamış olur) ve beklenen günden 2 gün sonra hâlâ gelmeyen ("Mal siparişi gelmedi mi: Kaldi"); en
+çok 5, Gönderilenler'deki siparişe götürür ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 8).
 
 ## Son ödenenler (geri alma)
 
@@ -219,7 +222,9 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
   cihazda sekme arka plandayken sistem bildirimi olarak gelir. Zil, bugünkü ve gecikmiş hatırlatıcıları gösterir.
 - **Sabah özeti:** günlük iş (`/api/cron/gunluk`, 08:00–09:00), bugün ya da önceden kalmış açık hatırlatıcısı olan
-  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var").
+  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Hızlı sayım günü
+  aynı iş, takipte kalem varsa ve hepsi sayılmadıysa sabah özeti açık bütün cihazlara bir de "Bugün hızlı sayım günü"
+  gönderir (Hızlı sayım'ı açar; ayın son günü gitmez; [MAL-SIPARISI.md](MAL-SIPARISI.md) § 3).
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
