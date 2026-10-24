@@ -255,7 +255,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Lightbulb,
         links: [
-          { href: "/panel/onaylar", label: "Reçete onayları" },
+          { href: "/panel/onaylar", label: "Onaylar" },
           { href: "/panel/receteler", label: "Reçete defteri" },
         ],
       },

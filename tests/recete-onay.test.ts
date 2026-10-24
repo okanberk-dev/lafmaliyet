@@ -103,6 +103,13 @@ test("onay eylemi: reçete öneriden sonra değiştiyse önce bugünkü hâl dö
   assert.match(src, /eq\(s\.recipeChangeRequests\.requestedBy, me\.id\), eq\(s\.recipeChangeRequests\.status, "pending"\)/);
   // Onay fiyat, ad, fire gibi alanlara dokunmaz: products'ta yalnız not yazılır
   assert.match(src, /tx\.update\(s\.products\)\.set\(\{ note: req\.after\.note, updatedAt: new Date\(\) \}\)/);
+  // Dalga 10: yönetici yalnız ekranda gördüğü sürümü onaylar; personelin güncellemesi sürümü artırır, karara
+  // bağlanmış öneriyi güncellemez (yenisi açılır)
+  assert.match(src, /if \(req\.version !== data\.seenVersion\) throw new UserError\("Öneri siz bakarken değişti; yeniden bakın"\)/);
+  assert.match(src, /\.where\(and\(eq\(s\.recipeChangeRequests\.id, pending\.id\), eq\(s\.recipeChangeRequests\.status, "pending"\)\)\)/);
+  // Onay sayfasının adı ve reçete bölümünün son kararları
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/onaylar/page.tsx"), "utf8"), /title="Onaylar"/);
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/onaylar/review-list.tsx"), "utf8"), /title="Reçete: son kararlar"/);
 });
 
 test("personelin reçete defteri verisinde fiyat ve maliyet yok", () => {

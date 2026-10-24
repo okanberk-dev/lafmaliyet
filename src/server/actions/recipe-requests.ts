@@ -282,7 +282,7 @@ const newProductSchema = z.object({
 
 /**
  * Personel (yönetici de olabilir) menüde olmayan bir ürünü reçetesiyle önerir; boy başına bir öneri satırı açılır
- * (kind 'new', ürün yok). Ürün ancak yönetici Reçete onayları'nda satış fiyatını yazıp onaylayınca açılır: fiyatı 0
+ * (kind 'new', ürün yok). Ürün ancak yönetici Onaylar'da satış fiyatını yazıp onaylayınca açılır: fiyatı 0
  * bir ürün kârlılığı, uyarıları ve analizleri bozardı. Personelin yazdığı satış fiyatı (boy başına, isteğe bağlı)
  * öneride saklanır (`proposed.price`): onayda fiyat alanı onunla dolu gelir, yönetici değiştirebilir. Denetim sayfayla
  * aynı (newProductIssue): aynı ad + boyda ürün ya da bekleyen öneri varsa gönderilmez. Formüllü miktar sunucuda
