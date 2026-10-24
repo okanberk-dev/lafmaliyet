@@ -360,6 +360,28 @@ export function vatLineDetail(e: VatEstimate): string {
   return `${arithmetic(e)}.${from} ${VAT_DISCLAIMER}`;
 }
 
+/**
+ * KDV kartındaki "… kaydını kaldır" onay metni: kaldırılan dönem plana nereden döner (src/lib/cash-plan.ts). 1 No.lu
+ * KDV'de hatırlatıcı varsa yalnız bir hatırlatıcının gününde (o dönem için yoksa girmez), hiç yoksa tahmini ayın
+ * 28'inde; KDV-2'de o dönemin hatırlatıcısının gününde, yoksa tahmini ayın 25'inde. Tahminler yarından başlar: kart
+ * kaldırmayı ödeme gününün kendisinde de sunar, o gün tahmin girmez.
+ */
+export function vatForgetText(item: { kind: "kdv" | "kdv2"; period: string }, baseMode: "default" | "reminder", today: string): string {
+  const head = "Dönem yeniden ödenecek sayılır";
+  const tail = "Hatırlatıcılara dokunulmaz.";
+  if (item.kind === "kdv2") {
+    return vat2DueDate(item.period) > today
+      ? `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer. ${tail}`
+      : `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde plana girer; yoksa girmez: ödeme günü bugün, tahmin yarından başlar. ${tail}`;
+  }
+  if (baseMode === "reminder") {
+    return `${head}. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. ${tail}`;
+  }
+  return vatDueDate(item.period) > today
+    ? `${head}; tahmini ayın ${VAT_DUE_DAY}'inde plana girer. ${tail}`
+    : `${head}. Ödeme günü bugün: tahmin yarından başladığı için plana girmez. ${tail}`;
+}
+
 /** "Nasıl hesaplandı" kartındaki KDV satırı; oranlar Ayarlar'dan */
 export function vatNote(mode: "default" | "reminder" | "excluded", ok: boolean, rates: { kdv: number; kdvHizmet: number }, hasSite: boolean): string {
   if (mode === "excluded") return "KDV tahmini plana katılmıyor (Tahmine katılanlar'dan açın).";

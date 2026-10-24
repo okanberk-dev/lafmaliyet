@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { CashPlanState, CashPlanVat, Vat2Row, VatRow } from "@/lib/cash-plan";
 import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, money, num, tl } from "@/lib/format";
-import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
+import { round100, VAT2_DUE_DAY, VAT_DISCLAIMER, vatForgetText, vatPeriodTitle, vatProgressText, vatSubText, type VatEstimate } from "@/lib/kdv";
 import { daysBetween, monthGenitiveTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { forgetVatPayment } from "@/server/actions/cash-plan";
@@ -73,7 +73,7 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
         ) : null}
         <div className="space-y-2 border-t border-line pt-3 text-xs leading-5 text-ink-mute">
           {vat.paid.length && !noRows ? <p>{paidText} KDV&apos;si ödendi (Ödemeler&apos;de Ödendi); plana girmez.</p> : null}
-          <PaidRecords vat={vat} />
+          <PaidRecords vat={vat} today={today} />
           <p>{VAT_DISCLAIMER}</p>
           {vat.baseMode === "reminder" ? (
             <p>Muhasebeciniz tutarı söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın; plan onu kullanır.</p>
@@ -265,7 +265,7 @@ function Breakdown({ e, row, vat }: { e: VatEstimate; row: VatRow; vat: CashPlan
  * Ödendi kaydı yanlışsa (Ödendi'den sonra hatırlatıcı silindi, Geri al artık yok) kaydı kaldırır: dönem yeniden
  * beklenir. Hatırlatıcıya dokunmaz.
  */
-function PaidRecords({ vat }: { vat: CashPlanVat }) {
+function PaidRecords({ vat, today }: { vat: CashPlanVat; today: string }) {
   const [pending, start] = useActionTransition();
   const [ask, setAsk] = useState<{ kind: "kdv" | "kdv2"; period: string } | null>(null);
   const items = [...vat.paid.map((p) => ({ kind: "kdv" as const, ...p })), ...vat.paid2.map((p) => ({ kind: "kdv2" as const, ...p }))];
@@ -285,13 +285,8 @@ function PaidRecords({ vat }: { vat: CashPlanVat }) {
         open={ask !== null}
         onClose={() => setAsk(null)}
         title={ask ? `${label(ask)} Ödendi kaydı kaldırılsın mı?` : ""}
-        description={
-          // KDV'de hatırlatıcı varsa dönem yalnız bir hatırlatıcının gününde girer; KDV-2'nin karşılanmayan dönemi
-          // kendiliğinden ayın 25'inde (src/lib/cash-plan.ts)
-          ask?.kind === "kdv2"
-            ? `Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer. Hatırlatıcılara dokunulmaz.`
-            : "Dönem yeniden ödenecek sayılır. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. Hatırlatıcılara dokunulmaz."
-        }
+        // Dönem nereden döner: kipe ve ödeme gününe göre (KDV'nin varsayılan kipi ayın 28'i, KDV-2 25'i; o gün tahmin yok)
+        description={ask ? vatForgetText(ask, vat.baseMode, today) : ""}
         confirmLabel="Kaldır"
         pending={pending}
         onConfirm={() =>

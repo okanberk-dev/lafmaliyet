@@ -72,8 +72,9 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
      döndüğü günden itibaren ödenenleri siler (aynı seride ikinci Ödendi geri alınınca ilki kalır); hatırlatıcıyı
      silmek ödemeyi silmez. Yanlış Ödendi'den sonra hatırlatıcı silindiyse KDV kartındaki “… kaydını kaldır” kaydı
      siler, dönem yeniden beklenir: o dönem için bir KDV-2 hatırlatıcısı varsa onun gününde, yoksa tahmini ayın
-     25'inde plana girer. 24 Ekim 2026'ya kadar yalnız son ödenenler okunuyordu: 30 gün ya da 30 kayıt (faturalarla
-     ortak) sonra düşen kayıt dönemin tahminini geri getiriyordu;
+     25'inde plana girer (kart kaldırmayı 25'inin kendisinde de sunar; o gün tahmin girmez, tahminler yarından, onay
+     penceresi bunu söyler). 24 Ekim 2026'ya kadar yalnız son ödenenler okunuyordu: 30 gün ya da 30 kayıt
+     (faturalarla ortak) sonra düşen kayıt dönemin tahminini geri getiriyordu;
    - ertelenen dönemin notu asıl günü taşır (“Ertelendi · asıl tarih 25.10.2026”, tekrar edenin kopyası da ertelenen
      tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
    Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: bu dönemin tutarı
@@ -160,8 +161,11 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
   kalır). 23 Ekim 2026'ya kadar yalnız KDV-2'de böyleydi: önceden ödenen tek seferlik “KDV Eylül” 28'inde tahmin
   olarak ikinci kez düşülüyordu. Kartın altında ödenmiş her dönem için “… kaydını kaldır” (onaylı; hatırlatıcılara
   dokunmaz): dönem yeniden ödenecek sayılır. KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana
-  girer, o dönem için hatırlatıcı yoksa girmez (onay penceresi eklemeyi söyler); hiç KDV hatırlatıcısı yoksa
-  ayın 28'inde. 24 Ekim 2026'ya kadar onay penceresi “tahmini ya da hatırlatıcısı plana döner” diyordu.
+  girer, o dönem için hatırlatıcı yoksa girmez (onay penceresi eklemeyi söyler); hiç KDV hatırlatıcısı yoksa tahmini
+  ayın 28'inde kendiliğinden girer (pencere hatırlatıcı eklemeyi söylemez: tek seferlik bir “KDV Eylül” planı
+  hatırlatıcı kipine geçirir, sonraki dönemin 28'i plandan düşer). Kart kaldırmayı ödeme gününün kendisinde de sunar;
+  o gün tahmin girmez (tahminler yarından), pencere bunu söyler. Metin `vatForgetText`'ten (`src/lib/kdv.ts`). 24 Ekim
+  2026'ya kadar onay penceresi “tahmini ya da hatırlatıcısı plana döner” diyordu.
 - Tahmin ≤ 0 ise satır yok (kartta “Ödeme beklenmez”). Satış verisi olmayan dönemde tahmin yok. KDV hatırlatıcısının
   sıradaki günü 6 haftanın dışındaysa kartta satır olmaz (“bu dönemde KDV ödemesi yok”).
 - Tahmine katılanlar'dan **KDV** kapatılırsa kesin tutarlar yine yazılır, tahminler plana girmez (kart gri, “Plana

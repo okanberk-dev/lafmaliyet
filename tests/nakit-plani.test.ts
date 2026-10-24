@@ -27,7 +27,7 @@ import {
 import { createModel } from "../src/lib/calc/engine";
 import { addVatPaid, forgetVatPeriod, paidPeriodsOf, parseVatPaid, removeVatPaid, type VatPaidEntry } from "../src/lib/vat-paid";
 import type { Dataset } from "../src/lib/calc/types";
-import { vatMonthInputs } from "../src/lib/kdv";
+import { vatForgetText, vatMonthInputs } from "../src/lib/kdv";
 import {
   addDays,
   daysBetween,
@@ -761,12 +761,7 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
     ["2026-10-25", "KDV-2 (Eylül)", 1_800],
     ["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800],
   ]);
-  // Kartın "kaydını kaldır"ı da buraya döndürür: KDV-2'nin hatırlatıcısız dönemi 25'inde kendiliğinden girer, 1 No.lu
-  // KDV'de ise hatırlatıcı varken yalnız bir hatırlatıcının gününde; onay penceresi bunu söyler
-  const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
-  assert.match(card, /o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın \$\{VAT2_DUE_DAY\}'inde tahminiyle plana girer/);
-  assert.match(card, /KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin/);
-  assert.doesNotMatch(card, /tahmini ya da hatırlatıcısı plana döner/);
+  // Kartın "kaydını kaldır"ı da buraya döndürür (onay metni: "KDV kartı 'kaydını kaldır'" testi)
   // Geç Ödendi'den (Ağustos, 3 Ekim) sonra Eylül ertelendi: kopya 1 Kasım'da Eylül'ü taşır, seri 25 Kasım'da Ekim'i;
   // erteleme ödeme değildir
   const copy = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: null, dueDate: "2026-11-01", repeat: "none", note: "Ertelendi · asıl tarih 25.10.2026" });
@@ -1097,6 +1092,92 @@ test("KDV: ufuktaki tek ödeme günü ödenmiş dönemse kart, not ve Tahmine ka
   );
   // Ufkun dışındaki eski ödenmiş dönemler listelenmez
   assert.deepEqual(withVat({ vatAnchor: { month: "2026-08", amount: 0 }, vatPaid: [{ id: 5, kind: "kdv", dueDate: "2026-09-28", next: null, periods: ["2026-08"], amount: 9_000, at: "2026-09-20T09:00:00.000Z" }] }).vat!.paid, []);
+});
+
+test("KDV kartı 'kaydını kaldır': onay metni dönemin plana nereden döndüğünü kipe ve ödeme gününe göre söyler", () => {
+  const anchor = { month: "2026-08", amount: 0 };
+  const rowsOf = (p: CashPlan) => p.vat!.rows.map((r) => [r.period, r.date]);
+  const sep = { kind: "kdv" as const, period: "2026-09" };
+  // Varsayılan kip: tek seferlik "KDV Eylül"e yanlışlıkla Ödendi denmiş, sonra silinmiş; başka KDV hatırlatıcısı yok
+  const entry: VatPaidEntry = { id: 999, kind: "kdv", dueDate: "2026-10-28", next: null, periods: ["2026-09"], amount: null, at: "2026-10-20T09:00:00.000Z" };
+  const recorded = withVat({ vatAnchor: anchor, vatPaid: [entry] });
+  assert.equal(recorded.vat!.baseMode, "default");
+  assert.deepEqual(recorded.vat!.paid, [{ period: "2026-09", amount: null }]);
+  // Kayıt kalkınca Eylül 28 Ekim'de kendiliğinden döner; pencere bunu söyler, hatırlatıcı eklemeyi söylemez
+  assert.deepEqual(rowsOf(withVat({ vatAnchor: anchor })), [
+    ["2026-09", "2026-10-28"],
+    ["2026-10", "2026-11-28"],
+  ]);
+  assert.equal(vatForgetText(sep, "default", TODAY), "Dönem yeniden ödenecek sayılır; tahmini ayın 28'inde plana girer. Hatırlatıcılara dokunulmaz.");
+  // (eklenen tek seferlik "KDV Eylül" planı hatırlatıcı kipine geçirirdi: Ekim'in 28 Kasım'ı sessizce düşerdi)
+  const oneOff = rem({ title: "KDV Eylül", kind: "vergi", amount: null, dueDate: "2026-10-28", repeat: "none" });
+  assert.deepEqual(rowsOf(withVat({ vatAnchor: anchor, reminders: [oneOff] })), [["2026-09", "2026-10-28"]]);
+  // Ödeme günü bugünse (28 Ekim) kart kaldırmayı yine sunar, ama tahmin yarından başlar: Eylül plana girmez
+  const due = "2026-10-28";
+  const vDue = vatMonthInputs(model, due);
+  assert.deepEqual(buildCashPlan(input({ today: due, vat: vDue, vatAnchor: anchor, vatPaid: [entry] })).vat!.paid, [{ period: "2026-09", amount: null }]);
+  assert.deepEqual(
+    buildCashPlan(input({ today: due, vat: vDue, vatAnchor: anchor })).vat!.rows.map((r) => r.period),
+    ["2026-10"],
+  );
+  assert.equal(vatForgetText(sep, "default", due), "Dönem yeniden ödenecek sayılır. Ödeme günü bugün: tahmin yarından başladığı için plana girmez. Hatırlatıcılara dokunulmaz.");
+
+  // Hatırlatıcı kipi: Eylül'ün tek seferliği silinmiş, seri Ekim'de (28 Kasım). Eylül yalnız bir hatırlatıcının gününde
+  // girer: kaldırınca girmez, tek seferlik eklenince onun gününde (ödeme günü bugün olsa da)
+  const series = kdvRem({ dueDate: "2026-11-28", anchorDate: "2026-10-28" });
+  const reminderText =
+    "Dönem yeniden ödenecek sayılır. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. Hatırlatıcılara dokunulmaz.";
+  assert.equal(withVat({ vatAnchor: anchor, reminders: [series], vatPaid: [entry] }).vat!.baseMode, "reminder");
+  assert.deepEqual(rowsOf(withVat({ vatAnchor: anchor, reminders: [series] })), [["2026-10", "2026-11-28"]]);
+  assert.deepEqual(rowsOf(withVat({ vatAnchor: anchor, reminders: [series, oneOff] })), [
+    ["2026-09", "2026-10-28"],
+    ["2026-10", "2026-11-28"],
+  ]);
+  assert.equal(vatForgetText(sep, "reminder", TODAY), reminderText);
+  assert.deepEqual(
+    buildCashPlan(input({ today: due, vat: vDue, vatAnchor: anchor, reminders: [series, oneOff] })).vat!.rows.map((r) => [r.period, r.date]),
+    [
+      ["2026-09", "2026-10-28"],
+      ["2026-10", "2026-11-28"],
+    ],
+  );
+  assert.equal(vatForgetText(sep, "reminder", due), reminderText);
+
+  // KDV-2: Eylül faturasında 1.800 ₺ tevkifat; KDV-2 hatırlatıcısı silinmiş, Ödendi kaydı duruyor
+  const sepBill = ds.invoices.find((i) => i.date === "2026-09-17" && i.amount === 30_000)!;
+  const withheldModel = createModel({ ...ds, invoices: ds.invoices.map((i) => (i === sepBill ? { ...i, vat: 6_000 } : i)) });
+  const kdv2 = { kind: "kdv2" as const, period: "2026-09" };
+  const entry2: VatPaidEntry = { id: 998, kind: "kdv2", dueDate: "2026-10-25", next: null, periods: ["2026-09"], amount: 1_800, at: "2026-10-20T09:00:00.000Z" };
+  const plan2 = (today: string, over: Partial<CashPlanInput> = {}) =>
+    buildCashPlan(input({ today, vat: vatMonthInputs(withheldModel, today), vatAnchor: { month: "2026-09", amount: 121_204.69 }, ...over }));
+  const vat2Of = (p: CashPlan) => p.vat!.vat2.map((r) => [r.period, r.date]);
+  // 24 Ekim: kaldırınca Eylül 25 Ekim'de tahminiyle girer
+  assert.deepEqual(plan2("2026-10-24", { vatPaid: [entry2] }).vat!.paid2, [{ period: "2026-09", amount: 1_800 }]);
+  assert.deepEqual(vat2Of(plan2("2026-10-24")), [["2026-09", "2026-10-25"]]);
+  assert.equal(
+    vatForgetText(kdv2, "default", "2026-10-24"),
+    "Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın 25'inde tahminiyle plana girer. Hatırlatıcılara dokunulmaz.",
+  );
+  // 25 Ekim (ödeme günü): kart kaldırmayı sunar, ama tahmin girmez; o dönemin hatırlatıcısı ise bugüne girer
+  assert.deepEqual(plan2("2026-10-25", { vatPaid: [entry2] }).vat!.paid2, [{ period: "2026-09", amount: 1_800 }]);
+  assert.deepEqual(vat2Of(plan2("2026-10-25")), []);
+  const kdv2Once = rem({ title: "KDV2 Eylül", kind: "vergi", amount: null, dueDate: "2026-10-25", repeat: "none" });
+  assert.deepEqual(
+    lines(plan2("2026-10-25", { reminders: [kdv2Once] }))
+      .filter((l) => l.key.startsWith("reminder:"))
+      .map((l) => [l.date, l.title, l.amount]),
+    [["2026-10-25", "KDV2 Eylül (Eylül)", 1_800]],
+  );
+  const dueText =
+    "Dönem yeniden ödenecek sayılır. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde plana girer; yoksa girmez: ödeme günü bugün, tahmin yarından başlar. Hatırlatıcılara dokunulmaz.";
+  assert.equal(vatForgetText(kdv2, "default", "2026-10-25"), dueText);
+  assert.equal(vatForgetText(kdv2, "reminder", "2026-10-25"), dueText);
+
+  // Kart metni tek yerden alır; eski "tahmini ya da hatırlatıcısı plana döner" yok
+  const card = read("src/app/panel/hatirlaticilar/nakit/vat-card.tsx");
+  assert.match(card, /<PaidRecords vat=\{vat\} today=\{today\} \/>/);
+  assert.match(card, /description=\{ask \? vatForgetText\(ask, vat\.baseMode, today\) : ""\}/);
+  assert.doesNotMatch(card, /tahmini ya da hatırlatıcısı plana döner|Dönem yeniden ödenecek sayılır/);
 });
 
 test("KDV'nin kalıcı Ödendi kaydı: dönemler, ekleme, 24 ay, geri alma, bozuk kayıt", () => {
