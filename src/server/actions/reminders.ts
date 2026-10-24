@@ -26,12 +26,12 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
-import { paymentUnchanged, reminderUnchanged } from "@/lib/recent-paid";
+import { reminderUnchanged } from "@/lib/recent-paid";
 import { unreachable } from "@/lib/unreachable";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
-import { deleteEntry } from "@/server/cari/entries";
-import { assertNotCovered, dropAllocations, lockCard } from "@/server/cari/settle";
+import { deleteRecentPayment } from "@/server/cari/entries";
+import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
@@ -308,15 +308,7 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
       case "cari": {
         // Ödeme silinir (dağıtımları kalkar, defterin kapattığı faturalar yeniden açılır); kaydedildikten sonra
         // düzenlendiyse silinmez. Kilit sırası kart, sonra kayıt (K24)
-        const r = await db.transaction(async (tx) => {
-          const [peek] = await tx.select({ supplierId: s.supplierEntries.supplierId, kind: s.supplierEntries.kind }).from(s.supplierEntries).where(eq(s.supplierEntries.id, rid)).limit(1);
-          if (!peek || peek.kind !== "odeme") return null;
-          await lockCard(tx, peek.supplierId);
-          const [cur] = await tx.select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, rid)).for("update").limit(1);
-          if (!cur) return null;
-          if (!paymentUnchanged(entry, cur.updatedAt.toISOString())) throw new UserError("Ödeme sonradan düzenlendi; Tedarikçiler'den silin");
-          return deleteEntry(tx, rid, []);
-        });
+        const r = await db.transaction((tx) => deleteRecentPayment(tx, rid, entry));
         await forgetPaid("cari", [rid]);
         if (!r) {
           refresh();

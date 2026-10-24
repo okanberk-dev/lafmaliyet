@@ -4,8 +4,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { splitSupplier } from "@/app/panel/faturalar/rules";
-import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
 import { COST_MODE_LABEL, COST_MODES, debtLabel, dueOf, invoiceLabel, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, methodFromCard, round2, type CariMethod } from "@/lib/cari/balance";
 import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
@@ -16,6 +14,7 @@ import {
   applyCredit,
   checkPast,
   deleteEntry,
+  linkToInvoice,
   NeedsPastConfirm,
   payDebtTx,
   restoreEntry,
@@ -28,7 +27,7 @@ import {
   type PaymentResult,
 } from "@/server/cari/entries";
 import { convertCashOut, kasaCheck, keepKasaApart, NeedsKasa, resolveKasaChoice, undoConversion, type ConvertSnapshot, type KasaChoice } from "@/server/cari/kasa";
-import { cardInvoiceIds, cardResolver, deleteAllocations, ensureCard, linkDebts, lockCard, lockCards, recomputeAllocated, resettle, unlinkDebt, type CardTarget, type Tx } from "@/server/cari/settle";
+import { cardInvoiceIds, deleteAllocations, ensureCard, lockCard, lockCards, recomputeAllocated, resettle, unlinkDebt, type CardTarget, type Tx } from "@/server/cari/settle";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { supplierSlugOf } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
@@ -434,45 +433,7 @@ export async function linkDebtsToInvoice(input: z.input<typeof linkSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
     const l = linkSchema.parse(input);
-    const r = await inTx(async (tx) => {
-      // Faturanın tedarikçisi: bu kart, kartsız ya da başka bir kart (iki kartlı işlemde kartlar kimlik sırasıyla kilitlenir)
-      const [peek] = await tx.select({ supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
-      if (!peek) throw new UserError("Fatura bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
-      const owner = (await cardResolver(tx))(peek.supplier, peek.tax);
-      await lockCards(tx, owner !== null && owner !== l.cardId ? [l.cardId, owner] : [l.cardId]);
-      const card = await lockCard(tx, l.cardId);
-      const debts = await tx.select().from(s.supplierEntries).where(inArray(s.supplierEntries.id, l.debtIds));
-      if (debts.length !== new Set(l.debtIds).size || debts.some((d) => d.supplierId !== card.id || d.kind !== "borc")) throw new UserError("Alım bulunamadı; değişmiş olabilir. Sayfayı yenileyin.");
-      let aliasAdded: string | null = null;
-      let elsewhere: string | null = null;
-      if (owner !== card.id) {
-        if (owner === null && l.addAlias) {
-          const alias = splitSupplier(peek.supplier).base.trim() || peek.supplier.trim();
-          const all = await tx.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
-          const conflict = nameConflict({ id: card.id, name: card.name, aliases: [alias] }, all);
-          if (conflict) throw new UserError(`‘${alias}’ adı ${conflict.owner} tedarikçisinde kayıtlı; diğer ad olarak eklenemez.`);
-          await tx
-            .update(s.suppliers)
-            .set({ aliases: cleanAliases(card.name, [...card.aliases, alias], null), updatedAt: new Date() })
-            .where(eq(s.suppliers.id, card.id));
-          aliasAdded = alias;
-        } else if (owner !== null) {
-          const [o] = await tx.select({ name: s.suppliers.name }).from(s.suppliers).where(eq(s.suppliers.id, owner)).limit(1);
-          elsewhere = o?.name ?? peek.supplier;
-        } else {
-          elsewhere = splitSupplier(peek.supplier).base.trim() || peek.supplier;
-        }
-      }
-      const owned = await tx
-        .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount })
-        .from(s.expenseEntries)
-        .where(inArray(s.expenseEntries.supplierEntryId, l.debtIds));
-      // Bağlama borçların gider kayıtlarını siler
-      const effects = checkPast(owned.map((o) => ({ date: o.date, delta: -o.amount })), l.confirmPast);
-      const res = await linkDebts(tx, l.debtIds, l.invoiceId);
-      const [inv] = await tx.select({ invoiceNo: s.invoices.invoiceNo, date: s.invoices.date, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
-      return { card, debts, inv, res, effects, aliasAdded, elsewhere };
-    });
+    const r = await inTx((tx) => linkToInvoice(tx, l));
     if (r.needs) return r;
     const { card, debts, inv, res, effects, aliasAdded, elsewhere } = r.value;
     const total = round2(debts.reduce((a, d) => a + d.amount, 0));

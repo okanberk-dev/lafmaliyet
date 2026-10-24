@@ -684,4 +684,94 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.equal(await db.transaction((tx) => kasa.lockCashOutLink(tx, l2.id, false)), null, "bağsız satır personele açık");
     await assert.rejects(db.delete(s.cashOuts).where(eq(s.cashOuts.id, l1.id)), "FK de korur");
   });
+
+  test("Faturası geldi başka addaki faturaya (R3d): kartsız ad diğer ad olur; başka kartın faturası ad eklemeden, iki kart kilitlenerek bağlanır", async () => {
+    const c = await card("Sütaş");
+    const other = await card("Pınar");
+    const b1 = await debt(c.id, { amount: 500, description: "süt" });
+    const b2 = await debt(c.id, { amount: 300, description: "ayran" });
+    const b3 = await debt(c.id, { amount: 200, description: "yoğurt" });
+    const link = (debtIds: number[], invoiceId: number, addAlias: boolean) => db.transaction((tx) => entries.linkToInvoice(tx, { cardId: c.id, debtIds, invoiceId, addAlias, confirmPast: [] }));
+    const groupOf = async (cardId: number) => db.transaction((tx) => settle.cardInvoiceIds(tx, cardId));
+
+    // Kartsız ad, addAlias: kartın diğer adı olur (parantezdeki not atılır), fatura bu kartın grubuna geçer
+    const f1 = await invoice({ payable: 500, supplier: "Sütaş Bölge Dağıtım (Tuzla)", invoiceNo: "SB1", ledgerBase: 0 });
+    assert.deepEqual(await groupOf(c.id), []);
+    const r1 = await link([b1.id], f1.id, true);
+    assert.deepEqual([r1.aliasAdded, r1.elsewhere], ["Sütaş Bölge Dağıtım", null]);
+    assert.deepEqual((await db.select().from(s.suppliers).where(eq(s.suppliers.id, c.id)))[0].aliases, ["Sütaş Bölge Dağıtım"]);
+    assert.deepEqual(await groupOf(c.id), [f1.id]);
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, b1.id)))[0].invoiceId, f1.id);
+
+    // Başka bir kartın faturası: ad eklenmez (addAlias yok sayılır), fatura o tedarikçide kalır; o kart da kilitlenir
+    const f2 = await invoice({ payable: 300, supplier: "Pınar", invoiceNo: "P1", ledgerBase: 0 });
+    let released = 0;
+    const hold = db.transaction(async (tx) => {
+      await settle.lockCard(tx, other.id);
+      await new Promise((r) => setTimeout(r, 300));
+      released = Date.now();
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const linked = db.transaction(async (tx) => {
+      const r = await entries.linkToInvoice(tx, { cardId: c.id, debtIds: [b2.id], invoiceId: f2.id, addAlias: true, confirmPast: [] });
+      return { r, at: Date.now() };
+    });
+    const [, { r: r2, at }] = await Promise.all([hold, linked]);
+    assert.ok(released > 0 && at >= released, "Pınar'ın kartı serbest kalana kadar bekledi");
+    assert.deepEqual([r2.aliasAdded, r2.elsewhere], [null, "Pınar"]);
+    const cards = await db.select({ id: s.suppliers.id, aliases: s.suppliers.aliases }).from(s.suppliers).orderBy(asc(s.suppliers.id));
+    assert.deepEqual(cards.map((x) => x.aliases), [["Sütaş Bölge Dağıtım"], []]);
+    assert.deepEqual(await groupOf(other.id), [f2.id], "fatura Pınar'da kaldı");
+
+    // Kartsız ad, addAlias yok: bağlanır, ad eklenmez
+    const f3 = await invoice({ payable: 200, supplier: "Ege Gıda", invoiceNo: "E1", ledgerBase: 0 });
+    const r3 = await link([b3.id], f3.id, false);
+    assert.deepEqual([r3.aliasAdded, r3.elsewhere], [null, "Ege Gıda"]);
+    assert.deepEqual((await db.select().from(s.suppliers).where(eq(s.suppliers.id, c.id)))[0].aliases, ["Sütaş Bölge Dağıtım"]);
+
+    // Başka kartın borcu bu karttan bağlanamaz
+    const foreign = await debt(other.id, { amount: 100 });
+    const f4 = await invoice({ payable: 100, invoiceNo: "SUT200", ledgerBase: 0 });
+    await assert.rejects(link([foreign.id], f4.id, false), (e: Error) => e instanceof UserError && /Alım bulunamadı/.test(e.message));
+  });
+
+  test("Son ödenenler'den geri al (cari): düzenlenmemiş ödeme silinir ve faturası açılır; sonradan düzenlenen silinmez", async () => {
+    const me = await actor();
+    const c = await card("Sütaş", { paymentTermDays: 30 });
+    const f = await invoice({ payable: 1000, invoiceNo: "SUT300" });
+    const recorded = async (id: number) => {
+      const [row] = await db.select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, id));
+      return { at: new Date().toISOString(), stamp: row.updatedAt.toISOString() };
+    };
+    const p1 = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 1000 }), 30));
+    assert.deepEqual([(await inv(f.id)).unpaid, (await inv(f.id)).paidByLedger], [false, true]);
+    const rec1 = await recorded(p1.id);
+
+    // Ödeme sonradan düzenlendi (not): "Geri al" silmez
+    const p2 = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 50, allocation: { mode: "none", lines: [] } }), 30));
+    const rec2 = await recorded(p2.id);
+    await new Promise((r) => setTimeout(r, 5));
+    await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ id: p2.id, amount: 50, note: "dekont geldi" }), 30));
+    await assert.rejects(
+      db.transaction((tx) => entries.deleteRecentPayment(tx, p2.id, rec2)),
+      (e: Error) => e instanceof UserError && e.message === "Ödeme sonradan düzenlendi; Tedarikçiler'den silin",
+    );
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, p2.id))).length, 1);
+    // Damgasız eski kayıt: kaydın anından sonra düzenlenen ödeme de silinmez
+    await assert.rejects(db.transaction((tx) => entries.deleteRecentPayment(tx, p2.id, { at: rec2.stamp })), /sonradan düzenlendi/);
+
+    // Düzenlenmemiş ödeme silinir: dağıtımı kalkar, defterin kapattığı fatura yeniden ödenmedi olur
+    const r = await db.transaction((tx) => entries.deleteRecentPayment(tx, p1.id, rec1));
+    assert.ok(r);
+    assert.deepEqual([r.card.id, r.reopened, r.kept, r.snapshot.entry.amount], [c.id, 1, 0, 1000]);
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, p1.id))).length, 0);
+    assert.equal((await db.select().from(s.supplierAllocations).where(eq(s.supplierAllocations.paymentId, p1.id))).length, 0);
+    const now = await inv(f.id);
+    assert.deepEqual([now.unpaid, now.allocated, now.paidByLedger, now.paidAt], [true, 0, false, null]);
+
+    // Silinmiş ödeme ya da borç: null (eylem "bulunamadı" der)
+    assert.equal(await db.transaction((tx) => entries.deleteRecentPayment(tx, p1.id, rec1)), null);
+    const d = await debt(c.id, { amount: 10 });
+    assert.equal(await db.transaction((tx) => entries.deleteRecentPayment(tx, d.id, rec1)), null);
+  });
 });

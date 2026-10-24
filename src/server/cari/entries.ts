@@ -2,6 +2,8 @@ import "server-only";
 
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 
+import { splitSupplier } from "@/app/panel/faturalar/rules";
+import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
 import {
   allocateFifo,
   debtLabel,
@@ -19,6 +21,7 @@ import { missingPastConfirm, pastMonthEffects, type MonthEffect } from "@/lib/ca
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, tl } from "@/lib/format";
 import { linkedUntil, RELEASED_DAYS } from "@/lib/photo-rules";
+import { paymentUnchanged, type RecentPaid } from "@/lib/recent-paid";
 import { daysBetween, todayTR } from "@/lib/reminders";
 import { UserError } from "@/server/actions/util";
 import { toDebt } from "@/server/data/cari";
@@ -27,8 +30,11 @@ import { getPhoto, keepPhoto, releasePhoto } from "@/server/storage/photos";
 
 import {
   cardInvoiceIds,
+  cardResolver,
   deleteAllocations,
+  linkDebts,
   lockCard,
+  lockCards,
   lockInvoices,
   paymentCredits,
   recomputeAllocated,
@@ -778,4 +784,76 @@ export async function payDebtTx(
         )
       : null;
   return { credited, creditAllocationIds: spent.allocationIds, payment, label: debtLabel(d), amount: room };
+}
+
+// ---------------------------------------------------------------- Faturası geldi ve Son ödenenler
+
+export interface LinkWrite {
+  cardId: number;
+  debtIds: readonly number[];
+  invoiceId: number;
+  /** Faturanın adı kartsızsa kartın diğer adı olsun (R3d) */
+  addAlias: boolean;
+  confirmPast: readonly string[];
+}
+
+/**
+ * Faturası geldi (§5.2): bir ya da birkaç faturasız alım tek faturaya bağlanır (dağıtımlar settle.ts'te). Fatura başka
+ * bir tedarikçide görünebilir (R3d): adı kartsızsa `addAlias` ile kartın diğer adı olur (o adla gelen faturalar bu
+ * karta geçer); başka bir kartınsa iki kart kimlik sırasıyla kilitlenir (K24), ad eklenmez, fatura o tedarikçide
+ * görünmeye devam eder. Borçların gider kayıtları silinir (geçmiş aysa onay, NeedsPastConfirm).
+ */
+export async function linkToInvoice(tx: Tx, l: LinkWrite) {
+  // Faturanın tedarikçisi: bu kart, kartsız ya da başka bir kart (iki kartlı işlemde kartlar kimlik sırasıyla kilitlenir)
+  const [peek] = await tx.select({ supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
+  if (!peek) throw new UserError("Fatura bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+  const owner = (await cardResolver(tx))(peek.supplier, peek.tax);
+  await lockCards(tx, owner !== null && owner !== l.cardId ? [l.cardId, owner] : [l.cardId]);
+  const card = await lockCard(tx, l.cardId);
+  const debts = await tx.select().from(s.supplierEntries).where(inArray(s.supplierEntries.id, [...l.debtIds]));
+  if (debts.length !== new Set(l.debtIds).size || debts.some((d) => d.supplierId !== card.id || d.kind !== "borc")) throw new UserError("Alım bulunamadı; değişmiş olabilir. Sayfayı yenileyin.");
+  let aliasAdded: string | null = null;
+  let elsewhere: string | null = null;
+  if (owner !== card.id) {
+    if (owner === null && l.addAlias) {
+      const alias = splitSupplier(peek.supplier).base.trim() || peek.supplier.trim();
+      const all = await tx.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases }).from(s.suppliers);
+      const conflict = nameConflict({ id: card.id, name: card.name, aliases: [alias] }, all);
+      if (conflict) throw new UserError(`‘${alias}’ adı ${conflict.owner} tedarikçisinde kayıtlı; diğer ad olarak eklenemez.`);
+      await tx
+        .update(s.suppliers)
+        .set({ aliases: cleanAliases(card.name, [...card.aliases, alias], null), updatedAt: new Date() })
+        .where(eq(s.suppliers.id, card.id));
+      aliasAdded = alias;
+    } else if (owner !== null) {
+      const [o] = await tx.select({ name: s.suppliers.name }).from(s.suppliers).where(eq(s.suppliers.id, owner)).limit(1);
+      elsewhere = o?.name ?? peek.supplier;
+    } else {
+      elsewhere = splitSupplier(peek.supplier).base.trim() || peek.supplier;
+    }
+  }
+  const owned = await tx
+    .select({ date: s.expenseEntries.date, amount: s.expenseEntries.amount })
+    .from(s.expenseEntries)
+    .where(inArray(s.expenseEntries.supplierEntryId, [...l.debtIds]));
+  // Bağlama borçların gider kayıtlarını siler
+  const effects = checkPast(owned.map((o) => ({ date: o.date, delta: -o.amount })), l.confirmPast);
+  const res = await linkDebts(tx, l.debtIds, l.invoiceId);
+  const [inv] = await tx.select({ invoiceNo: s.invoices.invoiceNo, date: s.invoices.date, payable: s.invoices.payable }).from(s.invoices).where(eq(s.invoices.id, l.invoiceId)).limit(1);
+  return { card, debts, inv, res, effects, aliasAdded, elsewhere };
+}
+
+/**
+ * Ödemeler › Son ödenenler'in "Geri al"ı (cari ödeme): kart, sonra kayıt kilitlenir (K24); ödeme kaydedildikten sonra
+ * düzenlendiyse silinmez (Tedarikçiler'den silinir), düzenlenmediyse deleteEntry ile silinir. Kayıt yoksa ya da ödeme
+ * değilse null.
+ */
+export async function deleteRecentPayment(tx: Tx, id: number, recorded: Pick<RecentPaid, "at" | "stamp">): Promise<(DeleteResult & { card: Card }) | null> {
+  const [peek] = await tx.select({ supplierId: s.supplierEntries.supplierId, kind: s.supplierEntries.kind }).from(s.supplierEntries).where(eq(s.supplierEntries.id, id)).limit(1);
+  if (!peek || peek.kind !== "odeme") return null;
+  await lockCard(tx, peek.supplierId);
+  const [cur] = await tx.select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, id)).for("update").limit(1);
+  if (!cur) return null;
+  if (!paymentUnchanged(recorded, cur.updatedAt.toISOString())) throw new UserError("Ödeme sonradan düzenlendi; Tedarikçiler'den silin");
+  return deleteEntry(tx, id, []);
 }

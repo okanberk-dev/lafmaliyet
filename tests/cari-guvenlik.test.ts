@@ -149,7 +149,9 @@ test("ödeme kaleminin kaynağı (K25): fatura ve cari dalları switch ile, sonu
   // Son ödenenler'in "Geri al"ı cari ödemeyi kilit altında, düzenlenmemişse siler
   const undo = body(read("src/server/actions/reminders.ts"), "export async function undoRecentPaid(");
   assert.match(undo, /z\.enum\(\["invoice", "reminder", "cari"\]\)/);
-  assert.ok(undo.indexOf("lockCard(tx") < undo.indexOf("paymentUnchanged(") && undo.indexOf("paymentUnchanged(") < undo.indexOf("deleteEntry(tx"));
+  assert.match(undo, /db\.transaction\(\(tx\) => deleteRecentPayment\(tx, rid, entry\)\)/);
+  const del = body(read("src/server/cari/entries.ts"), "export async function deleteRecentPayment(");
+  assert.ok(del.indexOf("lockCard(tx") > 0 && del.indexOf("lockCard(tx") < del.indexOf("paymentUnchanged(") && del.indexOf("paymentUnchanged(") < del.indexOf("deleteEntry(tx"));
   // Ödemeler listesi cari hesabı tek okumayla alır, mahsubu saf modül yapar
   const loader = body(read("src/server/notify/digest.ts"), "export async function loadUpcoming(");
   assert.match(loader, /loadCariIndex\(today/);
