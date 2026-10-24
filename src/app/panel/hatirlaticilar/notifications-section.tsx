@@ -1,7 +1,7 @@
 "use client";
 
 import { BellRing, ChevronDown, Eye, KeyRound, Mail, Plus, Send, Trash2 } from "lucide-react";
-import { useId, useOptimistic, useRef, useState } from "react";
+import { useId, useOptimistic, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -53,9 +53,24 @@ function dedupeLog(log: LogRow[]): LogRow[] {
 
 /**
  * E-posta bildirimleri: kapalıyken tek satırlık özet (açık/kapalı, Resend yoksa uyarı, adres sayısı); açınca adresler,
- * gönderim ayarları, deneme, e-posta önizlemesi ve son gönderimler.
+ * gönderim ayarları, deneme, e-posta önizlemesi ve son gönderimler. `weekly`: hatırlatma e-postalarının satırının altında
+ * Haftalık özet satırı (weekly-row.tsx).
  */
-export function NotificationsSection({ email, settings, recipients, log, className }: { email: EmailStatus; settings: NotifySettings; recipients: Recipient[]; log: LogRow[]; className?: string }) {
+export function NotificationsSection({
+  email,
+  settings,
+  recipients,
+  log,
+  weekly,
+  className,
+}: {
+  email: EmailStatus;
+  settings: NotifySettings;
+  recipients: Recipient[];
+  log: LogRow[];
+  weekly?: ReactNode;
+  className?: string;
+}) {
   const [pending, start] = useActionTransition();
   const [addr, setAddr] = useState("");
   const [name, setName] = useState("");
@@ -155,6 +170,7 @@ export function NotificationsSection({ email, settings, recipients, log, classNa
             </div>
             <Switch checked={enabled} showText onText="Açık" offText="Kapalı" label="Hatırlatma e-postaları" disabled={pending} className="pointer-coarse:h-11" onChange={toggle} />
           </div>
+          {weekly}
 
           {missing.length ? (
             <div role="note" className="flex gap-2.5 rounded-2xl bg-info-soft px-3.5 py-3 text-[13px] leading-5 text-ink-soft">
