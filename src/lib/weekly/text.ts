@@ -101,6 +101,8 @@ export function weeklyStatusText(i: {
   rowDay?: string | null;
   weekSentAt?: string | null;
   lastStep?: { day: string; code: string } | null;
+  /** Bu haftanın son sabah işinin günü (haftalık adım yazmasa da: kapalıyken salı / çarşamba işi adım yazmaz) */
+  lastRunDay?: string | null;
   lastSentAt: string | null;
   now: number;
   hourTR: number;
@@ -116,15 +118,17 @@ export function weeklyStatusText(i: {
   const step = i.lastStep && STEP_REASONS.has(i.lastStep.code) && (state === "free" || (rowDay && i.lastStep.day > rowDay)) ? i.lastStep : null;
   const failedDay = step?.day ?? rowDay;
   const morning = (day: string) => (day === i.week.day ? "bu sabah" : `${weekdayName(day)} sabahı`);
+  // Sıradaki deneme, son denenen günden sonra: o günün sabah işi özeti kapalı bulduysa da gün geçmiştir
+  const after = (day: string) => (i.lastRunDay && i.lastRunDay > day ? i.lastRunDay : day);
   if (failedDay) {
     const reason = step && STEP_REASONS.get(step.code) ? ` (${STEP_REASONS.get(step.code)})` : "";
-    const next = nextWeeklyTry(i.week, failedDay, i.hourTR);
+    const next = nextWeeklyTry(i.week, after(failedDay), i.hourTR);
     if (!next) return `Bu hafta gönderilemedi${reason}.`;
     return `${capital(weekdayName(failedDay))} gönderilemedi${reason}; ${morning(next)} yeniden denenecek.`;
   }
-  // Hafta içinde açılan özet (pazartesi kapalıydı) bu haftanın sıradaki sabahında gider; son deneme günü bilinmiyorsa
+  // Hafta içinde açılan özet (pazartesi kapalıydı) bu haftanın sıradaki sabahında gider; bu haftanın sabah işi yoksa
   // bugün henüz denenmemiş sayılır
-  const next = nextWeeklyTry(i.week, i.lastStep?.day ?? addDays(i.week.day, -1), i.hourTR);
+  const next = nextWeeklyTry(i.week, after(i.lastStep?.day ?? addDays(i.week.day, -1)), i.hourTR);
   if (i.lastSentAt) return `Son gönderim ${dateTimeTR(i.lastSentAt)} · ${next ? `bu haftanın özeti ${morning(next)} gider` : "sıradaki pazartesi sabahı"}`;
   return `Henüz gönderilmedi · ilk özet ${next ? morning(next) : "pazartesi sabahı"} gider`;
 }

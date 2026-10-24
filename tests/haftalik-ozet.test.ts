@@ -621,6 +621,17 @@ test("Ödemeler'deki durum satırı ve alıcılar", () => {
   assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-26"), hourTR: 8 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti salı sabahı gider");
   assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-27"), hourTR: 7 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti bu sabah gider");
   assert.equal(weeklyStatusText({ ...base, week: weekInfo("2026-10-26"), lastSentAt: sent, hourTR: 6 }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti bu sabah gider");
+  // Salı ya da çarşamba 08:00'den sonra açıldı: o sabahın işi özeti kapalı bulmuş ve adım yazmamıştır (kapalı adımı
+  // yalnız pazartesi yazılır); son iş günü bugün olduğundan sıradaki deneme yarın
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-27"), hourTR: 8, lastRunDay: "2026-10-27" }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti çarşamba sabahı gider");
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-28"), hourTR: 8, lastRunDay: "2026-10-28" }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
+  // Bugünün işi henüz yokken (07:00, son iş dün) yine bu sabah
+  assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-27"), hourTR: 7, lastRunDay: "2026-10-26" }), "Son gönderim 19.10.2026 08:03 · bu haftanın özeti bu sabah gider");
+  // Pazartesi reddedildi, salı işi özeti kapalı buldu, 08:30'da yeniden açıldı: yeniden deneme çarşamba
+  assert.equal(
+    weeklyStatusText({ ...base, week: weekInfo("2026-10-27"), row: retry, rowDay: "2026-10-26", hourTR: 8, lastRunDay: "2026-10-27" }),
+    "Pazartesi gönderilemedi; çarşamba sabahı yeniden denenecek.",
+  );
   // Perşembe ve pazar: bu hafta deneme yok
   assert.equal(weeklyStatusText({ ...off, week: weekInfo("2026-10-29") }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");
   assert.equal(weeklyStatusText({ ...base, week: weekInfo("2026-11-01"), lastSentAt: sent, hourTR: 2 }), "Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı");

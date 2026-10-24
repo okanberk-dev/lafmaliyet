@@ -232,6 +232,7 @@ export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; re
     rowDay: row ? businessDate(row.sentAt) : null,
     weekSentAt: history.weeks[week.id]?.at ?? null,
     lastStep: run ? { day: businessDate(run.startedAt), code: run.steps!.weekly } : null,
+    lastRunDay: runs[0] ? businessDate(runs[0].startedAt) : null,
     lastSentAt: lastOk?.sentAt.toISOString() ?? Object.values(history.weeks).map((w) => w.at).sort().at(-1) ?? null,
     now: now.getTime(),
     hourTR: trHour(now),
