@@ -61,8 +61,8 @@ maddeyi düşer (komisyonda sıradaki uyarı geçer). Ertesi pazartesi hâlâ a�
   kasadan geçmez). Geçen hafta ve önceki dört haftanın en az ikisi tam (6+ raporlu gün) ise karşılaştırılır, %2'den az
   farkta "önceki 4 haftayla aynı"; değilse `(5 gün raporlu)`; rapor yoksa satır yok.
 - `Önümüzdeki 7 gün beklenen satış ≈ 72.000 ₺ · en yoğun gün Cumartesi` (satış tahmini kendi verisiyle çalışıyorsa:
-  kalite tam, karma ya da ortalama; kapalı günler toplanmaz). Satış tahmini birleşince bağlanır (`collect.ts`
-  `forecastLoader`).
+  kalite tam, karma ya da ortalama; kapalı günler toplanmaz). Satış tahmininin yükleyicisini okur (`loadForecastCore`,
+  [SATIS-TAHMINI.md](SATIS-TAHMINI.md)); okunamazsa satır düşer, dipnota girmez.
 
 Kişi adı yazılmaz: kasa raporunu giren ya da sayan, kontrol listesini dolduran, "Sorun var" notu (serbest metin)
 e-postaya girmez; yalnız ürün, hammadde, kanal, liste ve madde adları.
@@ -79,12 +79,15 @@ kapatmak bunu kapatmaz). Ayar `notify.settings`'e yazılmaz: `saveNotificationSe
 | Bu hafta gitti | Bu hafta gönderildi · 26.10.2026 08:04 |
 | Resend reddetti ya da gün kayıt yazmadan bitti | Pazartesi gönderilemedi (süre yetmedi); salı sabahı yeniden denenecek. / … bu sabah yeniden denenecek. (deneme kalmadıysa: Bu hafta gönderilemedi.) |
 | Belirsiz ya da yarıda kaldı | Bu haftaki gönderim yarıda kaldı; e-posta gelmediyse “Örneği bana gönder” ile alabilirsiniz. |
-| Bu hafta henüz yok | Son gönderim 19.10.2026 08:03 · sıradaki pazartesi sabahı / Henüz gönderilmedi · ilk özet pazartesi sabahı gider |
+| Bu hafta henüz yok | Son gönderim 19.10.2026 08:03 · bu haftanın özeti salı sabahı gider / Henüz gönderilmedi · ilk özet salı sabahı gider (bu haftanın sıradaki sabahı; çarşambadan sonra "· sıradaki pazartesi sabahı" ve "ilk özet pazartesi sabahı gider") |
 
 Gönderilemeyen haftada başarısız günün ve sıradaki denemenin adı yazılır: Resend'in reddinde kaydın günü, süre yetmeyen,
 Resend'i olmayan ya da hiçbir bilgiyi okuyamayan günde (kayıt yazılmaz) o haftanın sabah işindeki `weekly` adımı
-(`job_runs`). İş günü 05:00'te döner; 05:00–09:00 arası günün denemesi henüz yapılmamış sayılır ("bu sabah"), sonrası
-yarına kalır, çarşambadan sonra deneme yoktur (`nextWeeklyTry`).
+(`job_runs`); reddedilen kayıttan sonraki bir gün kayıt yazmadan bittiyse o gün ve nedeni. İş günü 05:00'te döner;
+05:00–09:00 arası günün denemesi henüz yapılmamış sayılır ("bu sabah"), sonrası yarına kalır, çarşambadan sonra deneme
+yoktur (`nextWeeklyTry`). Aynı kural hafta içinde açılan özete de uygulanır: pazartesi kapalıydı, salı öğlen açıldıysa
+bu haftanın özeti çarşamba sabahı gider ve satır bunu söyler (anahtar açılırken, sunucunun yanıtından önce de);
+çarşamba sabahından sonra açılan özet gelecek pazartesi gider.
 
 - **Haftalık özeti önizle:** bu haftanın özeti bugünkü verilerle (gönderilmez, hiçbir şey yazılmaz); okunamayan kaynak
   açıklamada.

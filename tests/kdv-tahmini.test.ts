@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { amountsChanged, isParasutLinked } from "../src/app/panel/faturalar/rules";
 import { createModel } from "../src/lib/calc/engine";
 import type { Dataset } from "../src/lib/calc/types";
 import {
@@ -131,6 +132,39 @@ test("alış KDV'si: KDV toplamı (tevkifat dahil), yoksa ödenecek − (tutar �
   assert.ok(excelInv);
   assert.ok(purchaseVat(excelInv) > 0);
   assert.equal(purchaseWithheld(excelInv), 0);
+});
+
+test("Paraşüt bağı çözülen kayıt: tutar, iskonto ya da ödenecek değişince eski KDV silinir, olmayan KDV-2 çıkmaz", () => {
+  // Excel kaydı Paraşüt'e bağlandı (eşitleme vat 2.000 yazdı), fatura Paraşüt'te iptal edildi: retire bağı çözdü, vat kaldı
+  const retired = { date: "2026-10-10", invoiceNo: "ABC2026000000001", amount: 10_000, discount: 0, payable: 12_000, vat: 2_000, source: "excel", externalId: null };
+  assert.equal(isParasutLinked(retired), false);
+  // saveInvoice'un bağsız dalı: formdaki alanlar yazılır, tutarlar değiştiyse vat 0
+  const edit = (input: Partial<typeof retired>) => {
+    const data = { ...retired, ...input };
+    return { ...data, vat: amountsChanged(retired, data) ? 0 : retired.vat };
+  };
+  // Yalnız ödenecek düzeltildi (12.000 → 11.800): KDV penceredeki gibi 1.800, tevkifat yok (eskiden 2.000 indirilir,
+  // 25'inde 200 ₺ KDV-2 çıkardı)
+  const payable = edit({ payable: 11_800 });
+  assert.equal(payable.vat, 0);
+  assert.equal(purchaseVat(payable), 1_800);
+  assert.equal(purchaseWithheld(payable), 0);
+  // Oran düzeltmesi (%20 → %10, Hesapla) ve tutar artışı: #15'in %20 sınırı bunları yakalamıyordu
+  const rate = edit({ payable: 11_000 });
+  assert.deepEqual([purchaseVat(rate), purchaseWithheld(rate)], [1_000, 0]);
+  const up = edit({ amount: 12_000, payable: 13_200 });
+  assert.deepEqual([purchaseVat(up), purchaseWithheld(up)], [1_200, 0]);
+  const discount = edit({ discount: 500, payable: 11_400 });
+  assert.deepEqual([purchaseVat(discount), purchaseWithheld(discount)], [1_900, 0]);
+  // Tutarlara dokunmayan düzenleme (tarih, kategori, not, ödeme durumu) KDV'yi korur: tevkifatlı faturanın KDV-2'si
+  // kalır (Eylül'ün reklam faturası: 30.000 + 6.000, 3/10 tevkifat)
+  const ad = { ...retired, amount: 30_000, payable: 34_200, vat: 6_000 };
+  assert.equal(amountsChanged(ad, { ...ad, date: "2026-09-30", invoiceNo: "X1" }), false);
+  assert.equal(purchaseWithheld(ad), 1_800);
+  // Pencere tutarları kuruşa yuvarlar: kuruş altı fark değişiklik sayılmaz
+  assert.equal(amountsChanged({ ...ad, payable: 34_200.004 }, ad), false);
+  // Eylem bu kuralı bağsız dalda kullanır (Paraşüt'e bağlı kayıtta tutarlar zaten yazılmaz)
+  assert.match(read("src/server/actions/invoices.ts"), /\.\.\.\(amountsChanged\(cur, data\) \? \{ vat: 0 \} : \{\}\)/);
 });
 
 // ---------------------------------------------------------------- Muhasebecinin beyannameleri (Temmuz–Eylül 2026)

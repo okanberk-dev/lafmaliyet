@@ -71,9 +71,9 @@ type PurchaseVatInput = Pick<Invoice, "amount" | "discount" | "payable"> & { vat
 const MAX_VAT_RATE = 0.2;
 
 /**
- * Kayıttaki KDV toplamı, tutarlar onu taşıyabiliyorsa (net tutarın en çok %20'si). Paraşüt bağı kopan (iptal) ve
- * tutarları sonra elle değiştirilen kayıtta eski `vat` kalır; ona güvenilse olmayan KDV indirilir ve fark tevkifat
- * sanılırdı.
+ * Kayıttaki KDV toplamı, tutarlar onu taşıyabiliyorsa (net tutarın en çok %20'si). Paraşüt bağı kopan (iptal) kayıtta
+ * tutarlar panelde değişince `vat` 0 yazılır (saveInvoice, rules.ts amountsChanged); bu sınır ondan önce (24 Ekim
+ * 2026) tutarı düşürülmüş kayıtlar içindir: eski `vat`'a güvenilse olmayan KDV indirilir, fark tevkifat sanılırdı.
  */
 function storedVat(inv: PurchaseVatInput): number | null {
   const vat = inv.vat ?? 0;
@@ -358,6 +358,34 @@ export function vatLineDetail(e: VatEstimate): string {
   const m = monthName(e.period);
   const from = e.basis.posFrom ? ` ${m} cirosu yok: ${monthGenitiveTR(e.basis.posFrom)} günlük ortalamasıyla.` : e.basis.inProgress && e.projected ? ` ${m} bitmedi, ay sonuna tamamlandı.` : "";
   return `${arithmetic(e)}.${from} ${VAT_DISCLAIMER}`;
+}
+
+/**
+ * KDV kartındaki "… kaydını kaldır" onay metni: kaldırılan dönem plana nereden döner (src/lib/cash-plan.ts). 1 No.lu
+ * KDV'de hatırlatıcı varsa yalnız bir hatırlatıcının gününde (o dönem için yoksa girmez), hiç yoksa tahmini ayın
+ * 28'inde; KDV-2'de o dönemin hatırlatıcısının gününde, yoksa tahmini ayın 25'inde (dönemin faturalarında tevkifat
+ * yoksa ödeme beklenmez, satır çıkmaz). KDV tahmine katılmıyorsa (`excluded`) tahmin hiç girmez; hatırlatıcıya
+ * yazılı tutar kendi gününde girer. Tahminler yarından başlar: kart kaldırmayı ödeme gününün kendisinde de sunar, o
+ * gün tahmin girmez.
+ */
+export function vatForgetText(item: { kind: "kdv" | "kdv2"; period: string }, mode: "default" | "reminder" | "excluded", today: string): string {
+  const head = "Dönem yeniden ödenecek sayılır";
+  const tail = "Hatırlatıcılara dokunulmaz.";
+  if (mode === "excluded") {
+    const what = item.kind === "kdv2" ? "KDV-2" : "KDV";
+    return `${head}. KDV tahmine katılmadığı için dönemin tahmini plana girmez; ${what} hatırlatıcısına tutar yazılıysa o gününde girer. ${tail}`;
+  }
+  if (item.kind === "kdv2") {
+    return vat2DueDate(item.period) > today
+      ? `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde, yoksa ayın ${VAT2_DUE_DAY}'inde tahminiyle plana girer; dönemin faturalarında tevkifat yoksa ödeme beklenmez. ${tail}`
+      : `${head}. Ödemeler'de o dönem için KDV-2 hatırlatıcısı varsa onun gününde plana girer; yoksa girmez: ödeme günü bugün, tahmin yarından başlar. ${tail}`;
+  }
+  if (mode === "reminder") {
+    return `${head}. Ödemeler'de KDV hatırlatıcısı varsa dönem yalnız bir hatırlatıcının gününde plana girer; o dönem için hatırlatıcı yoksa ekleyin. ${tail}`;
+  }
+  return vatDueDate(item.period) > today
+    ? `${head}; tahmini ayın ${VAT_DUE_DAY}'inde plana girer. ${tail}`
+    : `${head}. Ödeme günü bugün: tahmin yarından başladığı için plana girmez. ${tail}`;
 }
 
 /** "Nasıl hesaplandı" kartındaki KDV satırı; oranlar Ayarlar'dan */

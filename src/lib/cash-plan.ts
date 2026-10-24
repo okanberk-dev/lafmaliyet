@@ -723,9 +723,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // KDV-2 (tevkifat): alış faturalarındaki tevkifat izleyen ayın 25'inde 2 No.lu beyannameyle ödenir; 1 No.lu
   // beyannamede indirilir (alışların içinde), o ay ödenecek çıkmasa da (Eylül 2026: devreden 121.204,69, KDV-2
   // 1.800 ₺). Tahminler yarından. Ödemeler'deki KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (KDV'deki gibi):
-  // - yazılı tutarı her gününde kesindir ve o dönemi alır;
-  // - tutarsızsa dönemin tahmini hatırlatıcının gününde girer; dönemi başka bir KDV-2 hatırlatıcısı almışsa tutarı
-  //   girilmemiş ödemedir (iki kez sayılmaz, sessizce de düşmez); tahmin yoksa da öyle;
+  // - yazılı tutarı yalnız kayıtlı (sıradaki ya da geciken) gününde kesindir ve o dönemi alır: tevkifat her ay o ayın
+  //   faturalarındandır, Eylül'ün tutarı Ekim'e yazılmaz;
+  // - öteki günlerinde (ya da tutarsızsa) dönemin tahmini hatırlatıcının gününde girer; dönemi başka bir KDV-2
+  //   hatırlatıcısı almışsa tutarı girilmemiş ödemedir (iki kez sayılmaz, sessizce de düşmez); tahmin yoksa da öyle;
   // - "Ödendi" denen dönem (vadesinden önce de) bitmiştir: tahmini geri gelmez, kartta da görünmez;
   // - ertelenmiş kopyanın dönemi asıl gününden (8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür).
   const withheldOf = new Map(input.vat.months.map((m) => [m.month, round100(m.purchases.withheld)]));
@@ -734,13 +735,16 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     .flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, period: vatPeriodOf(originalDue(r, o.due)) })))
     .sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
   const vat2Claimed = new Set<string>();
+  // Yazılı tutar yalnız hatırlatıcının kayıtlı gününe (1 No.lu'daki `first` gibi)
+  const written = (x: (typeof vat2Occs)[number]) => (x.o.due === x.r.dueDate ? x.r.amount : null);
   for (const x of vat2Occs) {
-    if (x.r.amount === null) continue;
-    if (x.r.amount > 0) reminderLine(x.r, x.o);
+    const amount = written(x);
+    if (amount === null) continue;
+    if (amount > 0) reminderLine(x.r, x.o);
     vat2Claimed.add(x.period);
   }
   for (const x of vat2Occs) {
-    if (x.r.amount !== null || vat2Paid.has(x.period)) continue;
+    if (written(x) !== null || vat2Paid.has(x.period)) continue;
     const amount = withheldOf.get(x.period);
     if (vat2Claimed.has(x.period) || vatMode === "excluded" || amount === undefined) {
       addUnknown(x.r, x.o.date);

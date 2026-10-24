@@ -19,6 +19,8 @@ export interface WeeklyPanel {
   recipients: string[];
   /** Bu haftanın durumu (src/lib/weekly/text.ts weeklyStatusText) */
   status: string;
+  /** Açıkken durum: anahtar açılırken, sunucunun yanıtından önce gösterilir */
+  onStatus: string;
 }
 
 type Preview = { subject: string; html: string; items: number; failed: string[]; empty: boolean };
@@ -73,7 +75,7 @@ export function WeeklyRow({ weekly, emailConfigured }: { weekly: WeeklyPanel; em
         </div>
         <Switch checked={enabled} showText onText="Açık" offText="Kapalı" label="Haftalık özet" disabled={pending} className="pointer-coarse:h-11" onChange={toggle} />
       </div>
-      <p className="mt-2 text-xs leading-5 break-words text-ink-soft">{enabled === weekly.enabled ? weekly.status : enabled ? "Açık: sıradaki pazartesi sabahı gider." : "Kapalı: pazartesi e-postası gitmez."}</p>
+      <p className="mt-2 text-xs leading-5 break-words text-ink-soft">{enabled === weekly.enabled ? weekly.status : enabled ? weekly.onStatus : "Kapalı: pazartesi e-postası gitmez."}</p>
       <div className="mt-3 grid gap-2 @lg:flex @lg:flex-wrap">
         <Button variant="secondary" disabled={pending} onClick={openPreview} className="max-sm:h-12 max-sm:justify-start">
           <Eye size={15} /> {pending && which === "preview" ? "Hazırlanıyor…" : "Haftalık özeti önizle"}

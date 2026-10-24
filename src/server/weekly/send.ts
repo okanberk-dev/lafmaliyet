@@ -202,7 +202,7 @@ export async function sendWeeklySampleTo(me: CurrentUser, now: Date): Promise<{ 
 }
 
 /** Ödemeler › E-posta bildirimleri › Haftalık özet satırı: açık mı, kime gider, bu haftanın durumu */
-export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; recipients: string[]; status: string }> {
+export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; recipients: string[]; status: string; onStatus: string }> {
   const week = weekInfo(businessDate(now));
   const db = getDb();
   const [settings, recipients, row, [lastOk], history, runs] = await Promise.all([
@@ -226,16 +226,22 @@ export async function loadWeeklyPanel(now: Date): Promise<{ enabled: boolean; re
       .limit(10),
   ]);
   const run = runs.find((r) => r.steps?.weekly);
-  const status = weeklyStatusText({
-    enabled: settings.enabled,
+  const input = {
     week,
     row: asClaim(row),
     rowDay: row ? businessDate(row.sentAt) : null,
     weekSentAt: history.weeks[week.id]?.at ?? null,
     lastStep: run ? { day: businessDate(run.startedAt), code: run.steps!.weekly } : null,
+    lastRunDay: runs[0] ? businessDate(runs[0].startedAt) : null,
     lastSentAt: lastOk?.sentAt.toISOString() ?? Object.values(history.weeks).map((w) => w.at).sort().at(-1) ?? null,
     now: now.getTime(),
     hourTR: trHour(now),
-  });
-  return { enabled: settings.enabled, recipients: recipients.map((r) => r.name), status };
+  };
+  return {
+    enabled: settings.enabled,
+    recipients: recipients.map((r) => r.name),
+    status: weeklyStatusText({ ...input, enabled: settings.enabled }),
+    // Anahtar açılırken gösterilen satır (sunucunun yanıtından önce): açıkken aynı kural
+    onStatus: weeklyStatusText({ ...input, enabled: true }),
+  };
 }
