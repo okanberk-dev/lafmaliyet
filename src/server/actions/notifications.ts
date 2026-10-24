@@ -4,24 +4,23 @@ import { and, count, desc, eq, gt, ne } from "drizzle-orm";
 
 import { alerts, latestSalesMonth } from "@/lib/calc/insights";
 import { priceAlert } from "@/lib/calc/price-impact";
-import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections } from "@/lib/cash-report";
+import { businessDate } from "@/lib/cash-report";
 import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
-import { dateTR, money, monthShort, tl } from "@/lib/format";
+import { dateTR, monthShort, tl } from "@/lib/format";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
-import { agoLabel } from "@/lib/prices/pos";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
-import { addDays, daysLeftLabel, longDateTR, todayTR } from "@/lib/reminders";
+import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
 import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
-import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
+import { kasaBell } from "@/server/bell/kasa";
+import { opsBell } from "@/server/bell/ops";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { posPendingSummary } from "@/server/data/prices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { reorderNotifications } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
@@ -60,108 +59,6 @@ async function systemNotifications(): Promise<PanelNotification[]> {
     href: a.href,
     group: "sistem" as const,
   }));
-}
-
-/**
- * Gün sonu kasa raporu: personele akşam (20:00'den sonra) bugünün raporu girilmediyse hatırlatma; yöneticiye dünün
- * raporu girilmediyse, son raporda kasa farkı varsa (eksik kırmızı, fazla turuncu), açılış devirle tutmuyorsa ve rapor
- * ertesi gün kasa alanı değiştirilerek düzeltildiyse.
- */
-async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]> {
-  const now = new Date();
-  const day = businessDate(now);
-  const reports = await cashReportsBetween(addDays(day, -6), day);
-  if (user.role !== "admin") {
-    if (!isCashEvening(now) || reports.some((r) => r.date === day)) return [];
-    return [
-      {
-        id: `kasa-bekliyor-${day}`,
-        kind: "warning",
-        title: "Bugünün kasa raporu bekliyor",
-        body: "Kapanışta ModPOS'un Z raporunu ve kasayı girin",
-        timeLabel: "Bugün",
-        unread: true,
-        href: "/panel/kasa",
-        group: "kasa",
-      },
-    ];
-  }
-  const out: PanelNotification[] = [];
-  const yesterday = addDays(day, -1);
-  if (!reports.some((r) => r.date === yesterday)) {
-    out.push({
-      id: `kasa-yok-${yesterday}`,
-      kind: "warning",
-      title: "Dünkü kasa raporu girilmedi",
-      body: longDateTR(yesterday),
-      timeLabel: "Dün",
-      unread: true,
-      href: `/panel/kasa?gun=${yesterday}`,
-      group: "kasa",
-    });
-  }
-  const last = reports[0];
-  if (last && diffKind(last.cashDiff) !== "even") {
-    out.push({
-      // Rapor güncellenince yeniden okunmamış olur
-      id: `kasa-fark-${last.date}-r${last.revision}`,
-      kind: last.cashDiff < 0 ? "danger" : "warning",
-      title: `Kasa: ${diffText(last.cashDiff)}`,
-      body: [longDateTR(last.date), last.submittedByName, last.note].filter(Boolean).join(" · "),
-      timeLabel: dateTR(last.date),
-      unread: true,
-      href: `/panel/kasa?gun=${last.date}`,
-      group: "kasa",
-    });
-  }
-  // Bütünlük uyarıları ayrı: okunamazsa yukarıdaki kasa bildirimleri yine görünür
-  out.push(...(await cashIntegrityNotifications(reports, day, user.id).catch(() => [])));
-  return out;
-}
-
-/**
- * Yönetici: kasanın bütünlüğü (docs/KASA-RAPORU.md › Açılış ve devir, Düzeltmeler). Bugünün ve dünün raporunda açılış
- * önceki devirle tutmuyorsa (kimlik raporun sürümünden: yeniden gönderilince yeniden okunmamış olur); son 7 günün bir
- * raporu iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildiyse (src/lib/cash-report.ts lateCorrections:
- * bütün geç düzeltmeler, bakan yöneticinin kendileri hariç; kimlik en yeni geç düzeltmeden). İki küçük sorgu.
- */
-async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cashReportsBetween>>, day: string, viewer: number): Promise<PanelNotification[]> {
-  if (!reports.length) return [];
-  const oldest = reports[reports.length - 1];
-  const [before, revisions] = await Promise.all([previousCarryOver(oldest.date), cashRevisionsFor(reports.filter((r) => r.revision > 1).map((r) => r.id))]);
-  const checks = carryChecks(reports, before);
-  const yesterday = addDays(day, -1);
-  const timeLabel = (date: string) => (date === day ? "Bugün" : date === yesterday ? "Dün" : dateTR(date));
-  const out: PanelNotification[] = [];
-  for (const r of reports) {
-    const c = checks.get(r.date);
-    if (!c || (r.date !== day && r.date !== yesterday)) continue;
-    out.push({
-      id: `kasa-acilis-${r.date}-r${r.revision}`,
-      kind: "warning",
-      title: "Kasa açılışı devirle tutmuyor",
-      body: [`${longDateTR(r.date)} · açılış ${money(c.opening)}, önceki devir ${money(c.carry)} (${carryDiffText(c)})`, r.note].filter(Boolean).join(" · "),
-      timeLabel: timeLabel(r.date),
-      unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
-      group: "kasa",
-    });
-  }
-  for (const r of reports) {
-    const late = r.revision > 1 ? lateCorrections(r, revisions.filter((x) => x.reportId === r.id), viewer) : null;
-    if (!late) continue;
-    out.push({
-      id: `kasa-duzeltme-${r.date}-r${late.revision}`,
-      kind: "warning",
-      title: "Kasa raporu ertesi gün değişti",
-      body: [longDateTR(r.date), late.by.join(", "), changesText(late.changes)].join(" · "),
-      timeLabel: timeLabel(r.date),
-      unread: true,
-      href: `/panel/kasa?gun=${r.date}`,
-      group: "kasa",
-    });
-  }
-  return out;
 }
 
 /**
@@ -320,27 +217,6 @@ async function holdNotifications(): Promise<PanelNotification[]> {
   ];
 }
 
-/**
- * Yönetici: kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; docs/FIYATLAR.md). Kimlik
- * sayıdan ve en yeni değişiklikten: yeni bir fiyat listeye girince yeniden okunmamış olur. Zaman en eskisinden.
- */
-async function posNotifications(): Promise<PanelNotification[]> {
-  const p = await posPendingSummary();
-  if (!p.count) return [];
-  return [
-    {
-      id: `kasa-fiyat-${p.count}-${p.newest?.getTime() ?? 0}`,
-      kind: "info",
-      title: `Kasada değişecek ${p.count} fiyat`,
-      body: "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin",
-      timeLabel: p.oldest ? agoLabel(p.oldest) : "",
-      unread: true,
-      href: "/panel/urunler/fiyatlar?sekme=kasa",
-      group: "uyari",
-    },
-  ];
-}
-
 /** Faturalar: kontrol bekleyenler, son 24 saatte Paraşüt'ten gelenler, başarısız son eşitleme, bağlanmayı bekleyen ürünler */
 async function invoiceNotifications(): Promise<PanelNotification[]> {
   const db = getDb();
@@ -425,31 +301,33 @@ async function commissionNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
- * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
- * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar, fiyatı girilmemiş
- * hammaddeler, kasada (ModPOS) değişecek fiyatlar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi
- * gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir. Kontrol listeleri kasanın hemen ardından, iki rolde.
- * Personel kendi hatırlatıcılarını, önerilerinin sonucunu, akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
+ * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve onaylar
+ * (reçete önerileri ve personel istekleri), sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında),
+ * faturalar, operasyonun satırları (kasada (ModPOS) değişecek fiyatlar …), fiyatı girilmemiş hammaddeler ve son satış
+ * ayının uyarıları (Genel bakış'taki "Dikkat edilmesi gerekenler" ile aynı kaynak). Kabuk açılınca bir kez istenir.
+ * Kontrol listeleri kasanın hemen ardından, iki rolde. Alanların satırlarını kendi modülleri üretir ve iki rol dalında
+ * da çağrılır: kasa (src/server/bell/kasa.ts) ve operasyon (src/server/bell/ops.ts). Personel kendi hatırlatıcılarını,
+ * önerilerinin ve isteklerinin sonucunu ("İsteklerim"), akşam bekleyen kasa raporunu ve bekleyen kontrol listesini
  * görür; maliyet, ödeme, fatura ve sistem bilgisi ona gitmez.
  */
 export async function loadPanelNotifications(): Promise<PanelNotification[]> {
   const user = await getCurrentUser();
   if (!user) return [];
-  const [mine, recipes, cash, kontrol] = await Promise.all([
+  const [mine, recipes, cash, kontrol, ops] = await Promise.all([
     reminderNotifications(user).catch(() => []),
     recipeNotifications(user).catch(() => []),
-    cashNotifications(user).catch(() => []),
+    kasaBell(user).catch(() => []),
     checklistNotifications(user).catch(() => []),
+    opsBell(user).catch(() => []),
   ]);
-  if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes];
-  const [model, upcoming, invoiceItems, system, unpriced, holds, pos, commission, reorder] = await Promise.all([
+  if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes, ...ops];
+  const [model, upcoming, invoiceItems, system, unpriced, holds, commission, reorder] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
     systemNotifications().catch(() => []),
     unpricedNotifications().catch(() => []),
     holdNotifications().catch(() => []),
-    posNotifications().catch(() => []),
     commissionNotifications().catch(() => []),
     // Mal siparişinin teslim kontrolü: fark ve gelmeyen sipariş (Faturalar grubu, en çok 5; tek sorgu, model yok)
     reorderNotifications().catch(() => []),
@@ -504,5 +382,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...ops, ...priceNote, ...unpriced, ...warnings];
 }

@@ -1054,7 +1054,9 @@ test("kaynak: uygulama siparişlerinin tazeliği son başarılı çekmeden (kopy
 });
 
 test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride ve çıkınca yenilenir", () => {
-  const bell = read("src/server/actions/notifications.ts");
+  // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
+  const bell = read("src/server/bell/kasa.ts");
+  assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
   assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
   assert.doesNotMatch(bell, /hour < 20/);
   assert.match(read("src/components/panel/live/alert-center.tsx"), /p\.startsWith\("\/panel\/bugun"\)\) router\.refresh\(\)/);

@@ -15,11 +15,11 @@ import { useLocalList } from "./local-list";
 
 /**
  * AkmanOS "Notification Dropdown" görünümünde zil: yöneticide en üstte günlük işlerin sorunları ("Sistem": sabah işi ya
- * da Paraşüt işi çalışmadı, hata verdi), sonra kişinin kendi hatırlatıcıları ve reçete onayları (yöneticide
- * onay bekleyen öneriler, personelde önerilerinin sonucu), kasa, kontrol listeleri (geciken ya da dünden eksik liste,
- * aralık dışı ölçüm; personelde bekleyen liste), sonra zamanı gelen ödemeler, faturalar (Paraşüt'ten yeni gelenler,
- * kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının uyarıları. Personel hatırlatıcılarını, önerilerini,
- * kasayı ve kontrol listelerini görür.
+ * da Paraşüt işi çalışmadı, hata verdi), sonra kişinin kendi hatırlatıcıları ve onaylar (yöneticide onay bekleyen
+ * öneriler ve personel istekleri; personelde "İsteklerim": önerilerinin ve isteklerinin sonucu), kasa, kontrol
+ * listeleri (geciken ya da dünden eksik liste, aralık dışı ölçüm; personelde bekleyen liste), sonra zamanı gelen
+ * ödemeler, faturalar (Paraşüt'ten yeni gelenler, kontrol bekleyenler, eşitleme hatası), en sonda son satış ayının
+ * uyarıları. Personel hatırlatıcılarını, önerilerini ve isteklerini, kasayı ve kontrol listelerini görür.
  * Okunanlar bu tarayıcıda hatırlanır (sayfa yenilenince yeniden "okunmamış" olmaz); uyarının metni değişirse
  * (ör. düşük kârlı ürün sayısı) yeni bildirim sayılır. Her açılışta liste arka planda tazelenir.
  */
@@ -77,7 +77,8 @@ export function NotificationMenu({
   const groups = [
     { id: "sistem", label: "Sistem", items: visible.filter((n) => n.group === "sistem") },
     { id: "hatirlatici", label: "Hatırlatıcılarım", items: visible.filter((n) => n.group === "hatirlatici") },
-    { id: "onay", label: role === "admin" ? "Onaylar" : "Önerilerim", items: visible.filter((n) => n.group === "onay") },
+    // Yöneticide onay bekleyen öneri ve istekler; personelde önerilerinin ve isteklerinin sonucu (docs/ONAYLAR.md)
+    { id: "onay", label: role === "admin" ? "Onaylar" : "İsteklerim", items: visible.filter((n) => n.group === "onay") },
     { id: "kasa", label: "Kasa", items: visible.filter((n) => n.group === "kasa") },
     { id: "kontrol", label: "Kontrol listeleri", items: visible.filter((n) => n.group === "kontrol") },
     { id: "odeme", label: "Ödemeler", items: visible.filter((n) => n.group === "odeme") },
@@ -220,7 +221,7 @@ export function NotificationMenu({
                     ? "Okunmamış bildirim yok."
                     : role === "admin"
                       ? "Dikkat isteyen bir şey yok. Gecikmiş ödeme ya da uyarı olunca burada görünür."
-                      : "Dikkat isteyen bir şey yok. Hatırlatıcılarınız ve önerilerinizin sonucu burada görünür."}
+                      : "Dikkat isteyen bir şey yok. Hatırlatıcılarınız, önerilerinizin ve isteklerinizin sonucu burada görünür."}
                 </p>
               ) : (
                 groups.map((g) => (

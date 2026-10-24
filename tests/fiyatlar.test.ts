@@ -746,12 +746,15 @@ test("eylemler yöneticinin; zil öğesi yalnız yöneticide; yeni ürün kasaya
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = await requireAdmin\(\);/, name);
   }
+  // Zilin satırı operasyonun modülünde (src/server/bell/ops.ts; dalga 10 Adım 0): toplayıcı iki rolde çağırır
   const bell = read("src/server/actions/notifications.ts");
-  const staffReturn = bell.indexOf('if (user.role !== "admin") return');
-  assert.ok(staffReturn > 0 && staffReturn < bell.indexOf("posNotifications().catch"), "personel dalı kasa fiyatlarını görmez");
-  // Yönetici dizisinin sırası korunur, kasa öğesi uyarıların başında (sayim-ekle testi sonu sabitler)
-  assert.match(bell, /\.\.\.invoices, \.\.\.pos, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
-  const pos = bell.slice(bell.indexOf("async function posNotifications"), bell.indexOf("async function invoiceNotifications"));
+  assert.match(bell, /opsBell\(user\)\.catch\(\(\) => \[\]\)/);
+  const ops = read("src/server/bell/ops.ts");
+  const staffReturn = ops.indexOf('if (user.role !== "admin") return');
+  assert.ok(staffReturn > 0 && staffReturn < ops.indexOf("posNotifications().catch"), "personel dalı kasa fiyatlarını görmez");
+  // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
+  assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
+  const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));
   assert.match(pos, /await posPendingSummary\(\)/);
   assert.match(pos, /href: "\/panel\/urunler\/fiyatlar\?sekme=kasa"/);
   assert.match(pos, /group: "uyari"/);

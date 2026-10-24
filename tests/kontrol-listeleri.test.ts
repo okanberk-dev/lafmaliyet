@@ -658,7 +658,10 @@ test("kaynak: kontrol listelerinde para ve maliyet modeli yok; istemci bileşenl
 test("kaynak: zil kontrol grubu kasadan sonra, iki rolde; personel dalı ilk Promise.all'da", () => {
   const src = read("src/server/actions/notifications.ts");
   assert.match(src, /group\?: "sistem" \| "hatirlatici" \| "onay" \| "kasa" \| "kontrol" \| "odeme" \| "fatura" \| "uyari";/);
-  assert.match(src, /checklistNotifications\(user\)\.catch\(\(\) => \[\]\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes\];/);
+  assert.match(
+    src,
+    /checklistNotifications\(user\)\.catch\(\(\) => \[\]\),\n {4}opsBell\(user\)\.catch\(\(\) => \[\]\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes, \.\.\.ops\];/,
+  );
   assert.match(src, /\.\.\.cash, \.\.\.kontrol, \.\.\.payments,/);
   assert.doesNotMatch(src, /export async function checklistNotifications/);
   const ui = read("src/components/panel/notifications.tsx");

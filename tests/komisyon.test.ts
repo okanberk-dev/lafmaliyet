@@ -1009,7 +1009,7 @@ test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafi
   const staffReturn = bell.indexOf('if (user.role !== "admin") return');
   assert.ok(staffReturn > 0);
   assert.ok(bell.indexOf("commissionNotifications().catch(() => [])") > staffReturn, "komisyon zili yalnız yönetici dalında");
-  assert.match(bell, /\.\.\.payments, \.\.\.commission, \.\.\.invoices, \.\.\.pos,/);
+  assert.match(bell, /\.\.\.payments, \.\.\.commission, \.\.\.invoices, \.\.\.ops,/);
   assert.match(bell, /group: "fatura" as const/);
 
   const data = read("src/server/data/commission.ts");
