@@ -1,8 +1,9 @@
 // Stok sayımı › "Listeye ekle" (src/lib/count-item.ts, ortak çekirdek src/server/data/count-item.ts; eylemler
 // src/app/panel/sayim/actions.ts addCountItem ve reçete önerisindeki "Yeni malzeme" addProposalIngredient) ve sekiz yeni
 // kalemin migration'ı (drizzle/*_sayim_yeni_kalemler.sql): Türkçe ad anahtarı ve aynı ad kuralı, sayım biriminden malzeme
-// birimi, grubun varsayılanları, kalemin listeye girdiği ay (count_from), isteğe bağlı paket fiyatı (Tahmini kalır, fiyat
-// geçmişine yazılmaz), fiyatı 0 kalemin ilk fiyatının zam sayılmaması, personelin ay kuralı, personelin fiyatı yalnız
+// birimi, grubun varsayılanları, kalemin listeye girdiği ay (count_from), isteğe bağlı paket fiyatı (Tahmini kalır; yazılan
+// fiyat geçmişin başlangıcıdır: sonraki zam kapanmış ayı değiştirmez, zam uyarısı onu saymaz), fiyatı 0 kalemin ilk
+// fiyatının zam sayılmaması, personelin ay kuralı, personelin fiyatı yalnız
 // yazması (görmemesi), CSV'de formül gibi başlayan adın kabul edilmemesi.
 // Migration'ın veritabanı denemesi EKLE_TEST_DATABASE_URL verilince çalışır (işlem geri alınır; migrate edilmiş bir
 // yerel kopya verin, ör. postgres://postgres:postgres@localhost:5432/laffogato_ekle).
@@ -24,11 +25,13 @@ import {
   BASE_UNIT,
   cleanName,
   COUNT_ITEM_PRICE_MAX,
+  COUNT_ITEM_PRICE_NOTE,
   countFromMonth,
   countGroupOptions,
   countItemLogDetail,
   countItemMonthIssue,
   countItemNote,
+  countItemPriceRow,
   defaultPackageSize,
   duplicateMessage,
   findDuplicate,
@@ -476,12 +479,55 @@ test("fiyatı 0 eklenen kalemin ilk fiyatı zam sayılmaz (zil, Genel bakış, s
   assert.equal(unpriced.unitCost.get(newId) ?? 0, 0);
 });
 
-test("eylem ve yazım yolları: Listeye ekle fiyat geçmişine yazmaz; ilk elle / Paraşüt fiyatı geçmişe tek satır yazar", () => {
+test("Listeye fiyatıyla eklenen kalem: sonraki zam kapanmış ayın devreden malını ve kârını değiştirmez; ilk gerçek fiyat zam sayılmaz", () => {
+  const data: ExcelData = JSON.parse(read("src/server/db/seed/excel-data.json"));
+  const base: Dataset = { ...excelToDataset(data), currentMonth: "2026-10" };
+  const id = Math.max(...base.ingredients.map((i) => i.id)) + 1;
+  const item = {
+    ...base.ingredients.find((i) => i.name === "Toffeenut şurubu")!,
+    id,
+    name: "Çilek şurubu",
+    packagePrice: 100,
+    packageSize: 750,
+    isEstimate: true,
+    priceSource: "manual" as const,
+    countFrom: "2026-09",
+    sortOrder: 2000,
+  };
+  const stockCounts = [...base.stockCounts, { month: "2026-09", ingredientId: id, qty: 3, factor: 1000 }];
+  // Eylül'de 100 ₺'yle listeye eklendi (başlangıç satırı), 10 Ekim'de fatura 130 ₺ getirdi
+  const start = { ...countItemPriceRow(id, item, "Personel")!, changedAt: "2026-09-20T09:00:00.000Z" };
+  const raise: PriceHistoryRow = { ingredientId: id, packagePrice: 130, packageSize: 750, changedAt: "2026-10-10T09:00:00.000Z", changedBy: "Yönetici", note: null };
+  const before = createModel({ ...base, ingredients: [...base.ingredients, item], stockCounts, ingredientPrices: [start] });
+  const after = createModel({ ...base, ingredients: [...base.ingredients, { ...item, packagePrice: 130 }], stockCounts, ingredientPrices: [start, raise] });
+  assert.equal(after.pnlMonth("2026-09").closing, before.pnlMonth("2026-09").closing, "Eylül'ün devreden malı aynı");
+  assert.equal(after.pnlMonth("2026-09").profit, before.pnlMonth("2026-09").profit, "Eylül'ün kârı aynı");
+  assert.equal(after.unitCostAtMonthEnd(id, "2026-09") * 750, 100, "Eylül eklenirken yazılan fiyatla");
+  assert.equal(after.unitCostAtMonthEnd(id, "2026-10") * 750, 130, "Ekim yeni fiyatla");
+  // Başlangıç satırı zam uyarısının tabanı değil: ilk gerçek fiyat (130) zam görünmez
+  const ings = [{ ...item, packagePrice: 130, active: true }];
+  assert.equal(ingredientChanges(ings, [start, raise], "2026-09-01T00:00:00.000Z").length, 0, "ikisi de pencerede");
+  assert.equal(ingredientChanges(ings, [start, raise], "2026-09-25T00:00:00.000Z").length, 0, "başlangıç pencereden önce");
+  // Sonraki gerçek değişiklik zamdır
+  const later = ingredientChanges([{ ...ings[0], packagePrice: 150 }], [start, raise, { ...raise, packagePrice: 150, changedAt: "2026-10-20T09:00:00.000Z" }], "2026-10-01T00:00:00.000Z");
+  assert.equal(later.length, 1);
+  assert.ok(Math.abs(later[0].pct - (150 / 130 - 1)) < 1e-9);
+  // Fiyatsız kalem satır yazmaz (ilk gerçek fiyatı önceki ayları da değerler)
+  assert.equal(countItemPriceRow(id, { packagePrice: 0, packageSize: 750 }, "Personel"), null);
+  assert.equal(start.note, COUNT_ITEM_PRICE_NOTE);
+  assert.notEqual(COUNT_ITEM_PRICE_NOTE, "Sayım listesine eklendi (tahmini fiyat)", "sekiz kalemin migration satırları zam tabanı kalır");
+});
+
+test("eylem ve yazım yolları: Listeye ekle yalnız yazılan fiyatı başlangıç olarak yazar; ilk elle / Paraşüt fiyatı geçmişe tek satır yazar", () => {
   const actions = read("src/app/panel/sayim/actions.ts");
   const add = actions.slice(actions.indexOf("export async function addCountItem"));
   assert.doesNotMatch(add, /ingredientPrices/);
-  // Ortak çekirdek ve reçete önerisinin eylemi de yazmaz (paket fiyatı yazılsa da: tahmin başlangıç olmasın)
-  assert.doesNotMatch(read(CORE), /ingredientPrices/);
+  // Ortak çekirdek kalemi açtığı işlemde yazılan fiyatı geçmişin başlangıcı yazar (fiyatsız kalem yazmaz); reçete
+  // önerisinin eylemi kendisi yazmaz
+  const core = fnBody(CORE, "createCountItem");
+  const insert = core.indexOf(".insert(s.ingredients)");
+  const start = core.search(/const start = countItemPriceRow\(row\.id, values, me\.name\);\s+if \(start\) await tx\.insert\(s\.ingredientPrices\)\.values\(start\);/);
+  assert.ok(insert > 0 && start > insert, "başlangıç satırı kalemden sonra, aynı işlemde");
   assert.doesNotMatch(fnBody("src/server/actions/recipe-requests.ts", "addProposalIngredient"), /ingredientPrices|\.insert\(s\.ingredients\)/);
   assert.doesNotMatch(add, /\.insert\(s\.ingredients\)/, "kalemi yalnız çekirdek açar");
   const values = (packagePrice: number | null) =>

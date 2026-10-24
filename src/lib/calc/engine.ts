@@ -962,7 +962,8 @@ export function createModel(ds: Dataset) {
   // Kapanmış ayın devreden malı o ayın sonundaki fiyatla değerlenir: sonraki bir zam (Paraşüt faturası, elle) geçmiş
   // ayın kârını değiştirmez. Fiyat geçmişindeki ay sonundan önceki son kayıt geçerlidir; ondan sonra değişiklik yoksa
   // bugünkü fiyat (aynısı). İlk kayıttan önceki ay (Excel aktarımı ya da fiyatsız eklenen kalem, kayıt sonradan) bilinen
-  // ilk fiyatla. Su ve buz su faturasından gelir (geçmişi yok).
+  // ilk fiyatla. Sayımdan fiyatıyla eklenen kalemin geçmişi eklendiği anki fiyatla başlar (count-item.ts
+  // countItemPriceRow). Su ve buz su faturasından gelir (geçmişi yok).
   const priceHistory = new Map<number, { at: number; unit: number }[]>();
   for (const r of ds.ingredientPrices ?? []) {
     const at = Date.parse(r.changedAt);

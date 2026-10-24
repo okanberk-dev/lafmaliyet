@@ -248,10 +248,9 @@ export function netPackagePrice(typed: number | null, vatRate: number, includesV
 
 /**
  * Yeni kalemin hammaddeler tablosuna yazılacak değerleri. Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zil "Fiyatı
- * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Fiyat geçmişine
- * satır yazılmaz (çekirdek yazmaz): yazılan tahmin başlangıç olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü
- * (price-impact.ts ingredientChanges ilk satırı başlangıç sayar). Kategori ve KDV grubun en sık değerinden, sıra en
- * sonda (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
+ * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Yazılan fiyat
+ * fiyat geçmişinin başlangıcıdır (countItemPriceRow; zam uyarısı onu taban saymaz). Kategori ve KDV grubun en sık
+ * değerinden, sıra en sonda (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
  */
 export function newCountItemValues(
   draft: CountItemDraft,
@@ -279,6 +278,24 @@ export function newCountItemValues(
     sortOrder: nextSortOrder(rows),
     active: true,
   };
+}
+
+/**
+ * Listeye fiyatıyla eklenen kalemin fiyat geçmişindeki başlangıç satırının notu. Zam uyarısı bu satırı taban saymaz
+ * (price-impact.ts ingredientChanges): yazılan tahmin taban olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü.
+ * Sekiz kalemin migration'ındaki satırlardan ("Sayım listesine eklendi (tahmini fiyat)") ayrı: onlar taban kalır.
+ */
+export const COUNT_ITEM_PRICE_NOTE = "Sayım listesine eklenirken yazılan fiyat (tahmini)";
+
+/**
+ * Kalem fiyatıyla açılınca fiyat geçmişine yazılacak başlangıç satırı; fiyat yazılmadıysa (0) null. Geçmişi olmayan
+ * kalemin kapanmış ayları ilk geçmiş satırının fiyatıyla değerlenir (engine.ts unitCostAtMonthEnd): satır olmasa
+ * sonraki ilk zam (fatura, elle) kapanmış ayın devreden malını ve kârını değiştirirdi. Fiyatsız kalemin ilk gerçek
+ * fiyatı önceki ayları da değerler.
+ */
+export function countItemPriceRow(ingredientId: number, values: { packagePrice: number; packageSize: number }, changedBy: string) {
+  if (!(values.packagePrice > 0)) return null;
+  return { ingredientId, packagePrice: values.packagePrice, packageSize: values.packageSize, changedBy, note: COUNT_ITEM_PRICE_NOTE };
 }
 
 /**

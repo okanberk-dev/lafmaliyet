@@ -18,7 +18,8 @@ import { planStaffExtras, staffCountMonths } from "./logic";
  * Stok sayımı › "Listeye ekle" (yönetici ve personel): kalemi hemen hammadde olarak açar, onay beklemez. Kurallar ortak
  * çekirdekte (src/server/data/count-item.ts createCountItem; reçete önerisindeki "Yeni malzeme" de onu çağırır):
  * personel yalnız sayımını değiştirebildiği ayda ekler, aynı ad eklenmez, kalem gösterilen aydan itibaren listede,
- * paket fiyatı isteğe bağlı (yazılmazsa 0; ikisinde de "Tahmini", fiyat geçmişine yazılmaz).
+ * paket fiyatı isteğe bağlı (yazılmazsa 0; ikisinde de "Tahmini"; yazılan fiyat fiyat geçmişinin başlangıcı olur, zam
+ * uyarısı onu taban saymaz).
  */
 export async function addCountItem(input: z.input<typeof countItemSchema>) {
   return attempt(async () => {
