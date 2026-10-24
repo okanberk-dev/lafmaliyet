@@ -890,7 +890,7 @@ export type HistoryOk = {
   /** Okunan faturaların bu eşitlemenin verdiği tedarikçi adları (kartın diğer adlarına eklenebilir) */
   names: string[];
   oldest: string | null;
-  /** Süre doldu, okunacak sayfa kaldı (yeniden basınca sürer) */
+  /** Süre doldu ya da Paraşüt'e sorulamayan fatura sonraya kaldı: yeniden basınca kaldığı yerden sürer */
   partial: boolean;
   /** Önceki yarım kalan okumanın devamı (ilk sayfalar bu sefer okunmadı) */
   resumed: boolean;
@@ -949,8 +949,9 @@ const HISTORY_DONE = -1;
  * görünmeyen fatura kaldırılmaz, imleç ve yarım tur kaydı değişmez, gelen e-fatura kutusu okunmaz (o liste tedarikçiye
  * göre süzülemiyor). Kayıt "history" türüyle düşer: günlük eşitlemenin sağlığına (zil, sabah e-postası, yeniden
  * deneme) sayılmaz. Faturalar eskiden yeniye okunur; süre dolarsa okunan sayfalar yazılır ve kalınan sayfa saklanır,
- * yeniden basınca oradan sürer. Paraşüt süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir
- * şey yazılmaz.
+ * yeniden basınca oradan sürer. Yazılamayan fatura (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e
+ * sorulamadı) kalınan yeri kendi sayfasına geri alır; o sayfadan yeniden denenip yine yazılamazsa geçilir, sonraki tam
+ * okumada denenir. Paraşüt süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir şey yazılmaz.
  */
 export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: { deadlineMs?: number } = {}): Promise<HistoryOk | SyncErr> {
   const started = Date.now();
@@ -974,22 +975,25 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
     // Bütün kişileri bitmişse baştan; yoksa bitenler atlanır, kalanlar kaldığı sayfadan sürer
     if (contacts.every((c) => progress[c.id] === HISTORY_DONE)) for (const c of contacts) delete progress[c.id];
     const resumed = contacts.some((c) => (progress[c.id] ?? 1) !== 1);
-    const drafts: BillDraft[] = [];
+    const drafts: (BillDraft & { contactId: string; page: number })[] = [];
+    /** Bu basışta her kişinin okumaya başladığı sayfa */
+    const startPages = new Map<string, number>();
     let partial = false;
     let include = INCLUDES[0];
     for (const contact of contacts) {
       if (progress[contact.id] === HISTORY_DONE) continue;
       const startPage = Math.max(1, progress[contact.id] ?? 1);
+      startPages.set(contact.id, startPage);
       let next = startPage;
       for (let i = INCLUDES.indexOf(include); ; i++) {
-        const got: BillDraft[] = [];
+        const got: (BillDraft & { contactId: string; page: number })[] = [];
         next = startPage;
         try {
           for await (const res of client.pages<Record<string, unknown>>("purchase_bills", { "filter[supplier_id]": contact.id, sort: "id", include }, 400, startPage)) {
             for (const bill of res.data) {
               const d = billToDraft(bill, res.included);
               if (d.supplierId !== contact.id) throw new FilterIgnoredError();
-              got.push(d);
+              got.push({ ...d, contactId: contact.id, page: res.page });
             }
             next = res.page + 1;
             const total = res.meta?.total_pages;
@@ -1014,7 +1018,6 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       progress[contact.id] = next;
       if (partial) break;
     }
-    if (contacts.every((c) => progress[c.id] === HISTORY_DONE)) for (const c of contacts) delete progress[c.id];
 
     client.setDeadline(started + deadline);
     const cache = (await getState<ContactCache>(CONTACTS_KEY)) ?? {};
@@ -1024,7 +1027,23 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       drafts.map((d) => d.externalId),
       client,
     );
-    for (const d of drafts) await applyDraft(d, ctx);
+    // Yazılamayan fatura (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı): kalınan yer o faturanın
+    // sayfasına geri alınır, yeniden basınca oradan denenir. Yalnız bu basışın başladığı sayfadan sonrasına: kalınan
+    // yer her basışta ilerler, okuma hep biter. Başladığı sayfada yine yazılamayan fatura geçilir, sonraki tam okumada
+    // denenir (geç girilenlerin LATE_HOLD_RUNS'ı gibi). Para etkilenmez: e-faturanın kaydı yerinde kalır, çift kayıt açılmaz
+    let deferred = 0;
+    let held = false;
+    for (const d of drafts) {
+      if ((await applyDraft(d, ctx)) !== "deferred") continue;
+      deferred++;
+      const at = progress[d.contactId];
+      if (d.page > (startPages.get(d.contactId) ?? 1) && (at === HISTORY_DONE || d.page < at)) {
+        progress[d.contactId] = d.page;
+        held = true;
+      }
+    }
+    // Bütün kişiler bittiyse kayıt silinir, sonraki basış baştan okur (geri alınan yer bitmiş kişiye yazılmasın diye burada)
+    if (contacts.every((c) => progress[c.id] === HISTORY_DONE)) for (const c of contacts) delete progress[c.id];
     if (ctx.dueDirty) await setState(DUE_KEY, ctx.dueSeen);
     await saveReturns(ctx, todayTR());
     const linked = ctx.touchedMonths.size ? await applyProductLinks([...ctx.touchedMonths]) : null;
@@ -1052,7 +1071,8 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       removed ? `${removed} kaldırıldı (Paraşüt'te iptal)` : "",
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
       matchSummary(reorder),
-      partial ? "süre doldu, kalanı için yeniden basın" : "",
+      deferred ? `${deferred} fatura yazılamadı (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı)` : "",
+      partial ? "süre doldu, kalanı için yeniden basın" : held ? "yeniden basınca o fatura yeniden denenir" : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -1060,7 +1080,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       .update(s.parasutSyncRuns)
       .set({ status: "ok", finishedAt: new Date(), fetched: drafts.length, created, updated, removed, message: `Tedarikçi geçmişi · ${summary}` })
       .where(eq(s.parasutSyncRuns.id, runId));
-    return { ok: true, summary, contacts, fetched: drafts.length, created, updated, removed, names, oldest, partial, resumed };
+    return { ok: true, summary, contacts, fetched: drafts.length, created, updated, removed, names, oldest, partial: partial || held, resumed };
   } catch (e) {
     const error =
       e instanceof FilterIgnoredError

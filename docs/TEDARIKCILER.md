@@ -73,6 +73,10 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 - Paraşüt süzgeci uygulamazsa (liste başka tedarikçinin faturasını getirirse) hiçbir şey yazılmaz.
 - Süre dolarsa (yaklaşık 30 sn okuma) okunanlar yazılır, kalınan sayfa saklanır (`parasut.supplierHistory`); düğmeye
   yeniden basınca oradan sürer.
+- Paraşüt'te yeniden içeri alınan e-faturanın yeni gider faturası, eski faturası Paraşüt'e sorulamazsa (ağ, zaman
+  aşımı) o basışta yazılmaz; paneldeki kayıt yerinde kalır, çift kayıt açılmaz. Kalınan yer o faturanın sayfasına
+  geri alınır ve bildirim yeniden basmanızı ister ("1 fatura yazılamadı …"). O sayfadan yeniden denenip yine
+  sorulamazsa fatura geçilir, okuma biter; sonraki tam okumada (ya da günlük eşitlemede) yeniden denenir.
 - Eşitlemenin bu faturalara verdiği ad (Paraşüt'teki kişi adı, ör. vergi nosuyla bulunan tam unvan) tedarikçinin
   adlarından değilse diğer adlara eklenir (başka bir tedarikçide kayıtlıysa eklenmez, söylenir). Kartsız tedarikçide
   ad eklenmez; o adla gelen faturalar aynı vergi noyla zaten buraya düştüyse bir şey söylenmez.

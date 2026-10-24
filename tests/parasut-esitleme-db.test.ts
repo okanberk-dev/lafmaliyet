@@ -8,6 +8,7 @@
 // - sitenin satış iadesi (müşteri kartı, LAF- ürünü) ve gelen iade e-faturası gider sayılmaz, eskiden alınmışsa kalkar;
 //   tedarikçiye iade (giden iade e-faturası) panele girmez, listelenir;
 // - tarihi pencereden eski, sonradan girilmiş fatura kimlik sırasıyla yakalanır;
+// - tedarikçi geçmişinde eski faturası sorulamayan yeniden içeri alınmış e-fatura sonraki basışta kendi sayfasından denenir;
 // - 429'da yeniden denenir; yenileme belirteci reddedilince parolayla girilir.
 //
 // PARASUT_TEST_DATABASE_URL verilmezse atlanır. Bir Postgres sunucusunun adresi (veritabanı oluşturabilen kullanıcı):
@@ -497,6 +498,54 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.deepEqual(await mark().then((m) => [m.id, m.scan]), [422, undefined], "tarama bitti, yeni sınır en büyük kimlik");
     const third = await run();
     assert.doesNotMatch(third.summary, /geç girilmiş/, "aynı faturalar her sabah yeniden sayılmaz");
+  });
+
+  test("tedarikçi geçmişi: eski faturası sorulamayan fatura sonraki basışta kendi sayfasından yeniden denenir, kalınan yer takılı kalmaz", async () => {
+    const id = await linkedAndPaid();
+    fake.bills.delete("101");
+    // Sahte Paraşüt kimliğe göre sıralar, sayfa 25: 1. sayfa 1…25, 2. sayfa 26…30 ve yeniden içeri alınan 102
+    for (let n = 1; n <= 30; n++) fake.bills.set(String(n), bill(String(n), { date: daysAgo(400 - n) }));
+    fake.bills.set("102", bill("102", { eInvoiceId: "801" }));
+    fake.eInvoices.get("801")!.importedBillId = "102";
+    const target = { label: "SÜTAŞ", billIds: ["1"], taxNumber: null, names: [], match: () => null };
+    const progress = async () => {
+      const [m] = await db.select().from(s.integrationState).where(eq(s.integrationState.key, "parasut.supplierHistory"));
+      return (m?.value ?? {}) as Record<string, number>;
+    };
+    const press = async () => {
+      const r = await sync.syncSupplierHistory(target);
+      assert.ok(r.ok, JSON.stringify(r));
+      return r;
+    };
+
+    // 1. basış: eski fatura (101) sorulamaz; 102 yazılmaz, kalınan yer 102'nin sayfasına döner, yeniden basmak istenir
+    fake.failures.set("purchase_bills/101", 1);
+    const first = await press();
+    let rec = (await rows()).find((x) => x.id === id)!;
+    assert.equal(rec.externalId, "101", "kayıt yerinde kalır, çift kayıt açılmaz");
+    assert.equal(first.partial, true, "yeniden basmak istenir");
+    assert.match(first.summary, /1 fatura yazılamadı/);
+    assert.deepEqual(await progress(), { c1: 2 }, "kalınan yer 102'nin sayfası");
+
+    // 2. basış kendi sayfasından başlar; eski fatura yine sorulamazsa geçilir (kalınan yer takılı kalmaz), tur biter
+    fake.failures.set("purchase_bills/101", 1);
+    const second = await press();
+    assert.equal(second.fetched, 6, "yalnız 2. sayfa okundu");
+    rec = (await rows()).find((x) => x.id === id)!;
+    assert.equal(rec.externalId, "101");
+    assert.equal(second.partial, false);
+    assert.deepEqual(await progress(), {}, "tur bitti, sonraki basış baştan okur");
+
+    // 3. basış baştan okur: eski fatura silinmiş görülür, kayıt yeni faturaya geçer (ödemesi ve notu korunur)
+    const third = await press();
+    assert.equal(third.fetched, 31);
+    const list = await rows();
+    assert.equal(list.length, 31, "30 eski fatura ve tek e-fatura kaydı");
+    rec = list.find((x) => x.id === id)!;
+    assert.equal(rec.externalId, "102");
+    assert.equal(rec.eInvoiceId, "801");
+    assert.equal(rec.unpaid, false);
+    assert.equal(rec.note, "Havaleyle ödendi");
   });
 
   test("istemci: 429'da yeniden dener; yenileme belirteci reddedilince parolayla girer", async () => {
