@@ -29,8 +29,10 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
   const [carryOpen, setCarryOpen] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const muted = vat.mode === "excluded";
-  // Satır yoksa KDV hatırlatıcısının sıradaki günü 6 haftanın dışındadır (varsayılan kipte her 42 günde bir 28'i var)
+  // Satır yoksa ya dönem ödendi (Ödendi) ya da KDV hatırlatıcısının sıradaki günü 6 haftanın dışındadır (varsayılan
+  // kipte her 42 günde bir 28'i var)
   const noRows = !vat.rows.length;
+  const paidText = vat.paid.map((p) => `${monthName(p.period)}${p.amount ? ` (${money(p.amount)})` : ""}`).join(", ");
   const noData = !noRows && vat.rows.every((r) => r.amount === null);
   const anchorAmount = vat.anchor?.amount ?? null;
   const carries = vat.rows.some((r) => (r.estimate?.carryIn ?? 0) > 0);
@@ -39,7 +41,11 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
       <CardHeader icon={<Receipt />} title="KDV tahmini" description="Satışların KDV'si eksi alışların KDV'si" meta={muted ? <Badge tone="gray">Plana katılmıyor</Badge> : null} />
       <CardContent className="space-y-3">
         {noRows ? (
-          <p className="rounded-2xl bg-surface p-4 text-sm text-ink-soft">KDV hatırlatıcısının sıradaki günü önümüzdeki 6 haftanın dışında; bu dönemde KDV ödemesi yok.</p>
+          <p className="rounded-2xl bg-surface p-4 text-sm text-ink-soft">
+            {vat.paid.length
+              ? `${paidText} KDV'si ödendi (Ödemeler'de Ödendi); önümüzdeki 6 haftada başka KDV ödemesi yok.`
+              : "KDV hatırlatıcısının sıradaki günü önümüzdeki 6 haftanın dışında; bu dönemde KDV ödemesi yok."}
+          </p>
         ) : noData ? (
           <div className="space-y-3 rounded-2xl bg-surface p-4 text-sm text-ink-soft">
             <p>Satış verisi yok; KDV tahmin edilemedi. Satışlar&apos;a ayın cirosunu ya da kasa raporu girin.</p>
@@ -62,6 +68,7 @@ export function VatCard({ vat, carry, today }: { vat: CashPlanVat; carry: CashPl
           </ul>
         ) : null}
         <div className="space-y-2 border-t border-line pt-3 text-xs leading-5 text-ink-mute">
+          {vat.paid.length && !noRows ? <p>{paidText} KDV&apos;si ödendi (Ödemeler&apos;de Ödendi); plana girmez.</p> : null}
           <p>{VAT_DISCLAIMER}</p>
           {vat.baseMode === "reminder" ? (
             <p>Muhasebeciniz tutarı söyleyince Ödemeler&apos;deki KDV hatırlatıcısına yazın; plan onu kullanır.</p>
