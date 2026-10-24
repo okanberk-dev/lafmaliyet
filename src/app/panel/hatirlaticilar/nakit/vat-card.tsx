@@ -116,7 +116,7 @@ function Vat2RowItem({ row: r, today, muted }: { row: Vat2Row; today: string; mu
           <span className={cn("shrink-0 text-sm font-semibold tabular", muted ? "text-ink-mute" : "text-ink")}>≈ {tl(r.amount)}</span>
         </span>
         <span className="mt-0.5 block text-xs leading-[18px] text-ink-mute">
-          {r.covered ? "Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o, boşsa bu tahmin" : `Faturalardaki tevkifat, ayın ${VAT2_DUE_DAY}'inde; 1 No.lu beyannamede indirilir`}
+          {r.covered ? "Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: bu dönemin tutarı yazılıysa o, yoksa bu tahmin" : `Faturalardaki tevkifat, ayın ${VAT2_DUE_DAY}'inde; 1 No.lu beyannamede indirilir`}
         </span>
       </span>
     </li>

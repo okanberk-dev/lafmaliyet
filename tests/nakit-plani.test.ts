@@ -28,7 +28,19 @@ import { createModel } from "../src/lib/calc/engine";
 import { addVatPaid, forgetVatPeriod, paidPeriodsOf, parseVatPaid, removeVatPaid, type VatPaidEntry } from "../src/lib/vat-paid";
 import type { Dataset } from "../src/lib/calc/types";
 import { vatMonthInputs } from "../src/lib/kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, fixedReminderAt, postponeNote, UPCOMING_HORIZON_DAYS, type ReminderRow, type UpcomingItem } from "../src/lib/reminders";
+import {
+  addDays,
+  daysBetween,
+  FIXED_REMINDER_NOTE,
+  fixedReminderAt,
+  nextOccurrence,
+  postponeNote,
+  postponePlan,
+  UPCOMING_HORIZON_DAYS,
+  vatAmountTravels,
+  type ReminderRow,
+  type UpcomingItem,
+} from "../src/lib/reminders";
 import { canOpen } from "../src/lib/roles";
 import type { SiteSalesMonth } from "../src/lib/site-sales/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
@@ -721,7 +733,7 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
     ["2026-10-25", "KDV2 beyannamesi (Eylül)", 1_800],
     ["2026-11-25", "KDV2 beyannamesi (Ekim)", 1_800],
   ]);
-  // Tutarlı seri de: ödenen Eylül geri gelmez, Ekim'e yazılı tutar
+  // Ödendi'den sonra Ekim'in tutarı yazılan seri de: ödenen Eylül geri gelmez, Ekim'e yazılı tutar
   const paidAmount = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: 2_591, dueDate: "2026-11-25" });
   assert.deepEqual(kdv2Lines(plan([paidAmount], [{ id: paidAmount.id, dueDate: "2026-10-25", next: "2026-11-25" }])), [["2026-11-25", "KDV2 beyannamesi", 2_591]]);
   // Tek seferlik hatırlatıcı Ödendi ile kapanır (pasif): dönemi yine ödenmiştir
@@ -836,6 +848,62 @@ test("KDV-2: Ödendi denen dönemin tahmini geri gelmez; aynı döneme ikinci ha
       ["KDV2 damga vergisi", 791],
     ],
   );
+});
+
+test("KDV-2 serisinin yazılı tutarı yalnız kayıtlı dönemine aittir: sonraki dönem tahminle; Ödendi ve erteleme tutarı seriden siler", () => {
+  // Eylül'ün tevkifatı 1.800 (tahakkuk fişi 2.591: 1.800 + 791 damga), Ekim'inki 3.000 (50.000 + 10.000 KDV, 3/10)
+  const sepBill = ds.invoices.find((i) => i.date === "2026-09-17" && i.amount === 30_000)!;
+  const octBill = { ...sepBill, id: 990_003, date: "2026-10-10", amount: 50_000, discount: 0, payable: 57_000, vat: 10_000 };
+  const data = createModel({ ...ds, invoices: [...ds.invoices.map((i) => (i === sepBill ? { ...i, vat: 6_000 } : i)), octBill] });
+  const base = { vat: vatMonthInputs(data, TODAY), vatAnchor: { month: "2026-09", amount: 121_204.69 } };
+  const kdv2Lines = (p: CashPlan) =>
+    lines(p)
+      .filter((l) => l.kind === "kdv" || l.key.startsWith("reminder:"))
+      .map((l) => [l.date, l.title, l.amount, l.estimated]);
+  const plan = (reminders: ReminderRow[], over: Partial<CashPlanInput> = {}) => buildCashPlan(input({ ...base, reminders, ...over }));
+  // Eylül'ün tutarı yazılı aylık seri: 25 Ekim'de kesin 2.591; 25 Kasım'a Eylül'ün tutarı değil Ekim'in tahmini
+  const series = rem({ title: "KDV2 beyannamesi", kind: "vergi", amount: 2_591, dueDate: "2026-10-25" });
+  const p = plan([series]);
+  assert.deepEqual(kdv2Lines(p), [
+    ["2026-10-25", "KDV2 beyannamesi", 2_591, false],
+    ["2026-11-25", "KDV2 beyannamesi (Ekim)", 3_000, true],
+  ]);
+  assert.deepEqual(
+    p.vat!.vat2.map((r) => [r.period, r.amount, r.covered]),
+    [
+      ["2026-09", 1_800, true],
+      ["2026-10", 3_000, true],
+    ],
+  );
+  // Geciken dönem (26 Ekim, Ödendi denmedi): tutar bugüne, Ekim yine tahminle
+  assert.deepEqual(kdv2Lines(plan([series], { today: "2026-10-26", vat: vatMonthInputs(data, "2026-10-26") })), [
+    ["2026-10-26", "KDV2 beyannamesi", 2_591, false],
+    ["2026-11-25", "KDV2 beyannamesi (Ekim)", 3_000, true],
+  ]);
+  // KDV tahmine katılmıyorsa Eylül'ün tutarı yine kesin, Ekim tutarı girilmemiş ödemedir
+  const off = plan([series], { excluded: ["kdv"] });
+  assert.deepEqual(kdv2Lines(off), [["2026-10-25", "KDV2 beyannamesi", 2_591, false]]);
+  assert.deepEqual(
+    off.unknownAmounts.map((u) => [u.reminderId, u.date]),
+    [[series.id, "2026-11-25"]],
+  );
+  // Ödendi (markReminderDone): seri 25 Kasım'a tutarsız geçer; Ekim tahminle, tevkifatsız Ekim'de satır yok
+  const next = nextOccurrence(series.dueDate, series.repeat, series.anchorDate)!;
+  const paid = { ...series, dueDate: next, ...(vatAmountTravels(series) ? { amount: null } : {}) };
+  const record = [{ id: series.id, dueDate: series.dueDate, next }];
+  assert.deepEqual(kdv2Lines(plan([paid], { paidReminders: record })), [["2026-11-25", "KDV2 beyannamesi (Ekim)", 3_000, true]]);
+  const noOct = vatMonthInputs(createModel({ ...ds, invoices: ds.invoices.map((i) => (i === sepBill ? { ...i, vat: 6_000 } : i)) }), TODAY);
+  const quiet = plan([paid], { paidReminders: record, vat: noOct });
+  assert.deepEqual(kdv2Lines(quiet), []);
+  assert.equal(quiet.unknownAmounts.length, 0);
+  // 1 hafta ertelendi (postponeReminder): tutar Eylül'ü taşıyan kopyada (1 Kasım), seriden silinir; iki kez 2.591 değil
+  const pp = postponePlan({ dueDate: series.dueDate, repeat: series.repeat, anchorDate: series.anchorDate }, "week", TODAY);
+  const copy = rem({ title: series.title, kind: series.kind, amount: series.amount, dueDate: pp.target, repeat: "none", note: postponeNote(null, series.dueDate) });
+  const rest = { ...series, dueDate: pp.next!, ...(vatAmountTravels(series) ? { amount: null } : {}) };
+  assert.deepEqual(kdv2Lines(plan([copy, rest])), [
+    ["2026-11-01", "KDV2 beyannamesi", 2_591, false],
+    ["2026-11-25", "KDV2 beyannamesi (Ekim)", 3_000, true],
+  ]);
 });
 
 test("KDV: 8'inden sonraya ertelenen dönem asıl gününün dönemindedir (kopya ve tek seferlik)", () => {
@@ -1104,16 +1172,14 @@ test("KDV: gecikmiş hatırlatıcı bugüne önceki dönemle; ertelenmiş kopya 
   );
 });
 
-test("KDV tevkifatı (KDV2, 2 No.lu) asıl KDV değildir: tutarı her dönemiyle kesin; asıl KDV'nin dönemini almaz, devredeni sıfırlamaz", () => {
+test("KDV tevkifatı (KDV2, 2 No.lu) asıl KDV değildir: tutarı kayıtlı döneminde kesin; asıl KDV'nin dönemini almaz, devredeni sıfırlamaz", () => {
   const main = kdvRem();
   const kdv2 = rem({ title: "KDV2 tevkifat", kind: "vergi", amount: 3_000, dueDate: "2026-10-26" });
   const p = withVat({ reminders: [main, kdv2] });
+  // 26 Kasım Ekim'indir: tevkifatsız Ekim'de (Excel verisi) ödeme yok, Eylül'ün 3.000'i oraya yazılmaz
   assert.deepEqual(
     lineAt(p, `reminder:${kdv2.id}@`).map((l) => [l.date, l.amount, l.estimated]),
-    [
-      ["2026-10-26", 3_000, false],
-      ["2026-11-26", 3_000, false],
-    ],
+    [["2026-10-26", 3_000, false]],
   );
   // Asıl KDV hatırlatıcısı iki dönemi de tahminle taşır; otomatik zincirde (Excel) ikisinde de ödeme beklenmez
   assert.deepEqual(

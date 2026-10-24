@@ -54,8 +54,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    tahakkuku “KDV2 Eylül”, damgayı ayrı “KDV2 damga vergisi” diye yazmaktır; “Muhtasar (gelir vergisi tevkifatı)”, “Stopaj”, “Kira tevkifatı
    beyannamesi”, “Tevkifat beyannamesi” (muhtasar da böyle anılır) ve “2 No.lu dükkan” diğer hatırlatıcıdır.
    KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (25 Ekim günü Eylül'ü), 1 No.lu KDV'deki gibi:
-   - tutarı yazılıysa her gününde o tutar girer ve dönemi alır;
-   - tutarsızsa faturalardan hesaplanan *KDV-2* tahmini hatırlatıcının gününde girer;
+   - yazılı tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) gününe aittir: o gün kesin girer ve dönemi
+     alır. Tevkifat her ay o ayın faturalarındandır; tekrarlı seride **Ödendi** ve **Ertele** tutarı seriden siler
+     (ertelemede kopyada kalır, Geri al geri yazar), 1 No.lu KDV'deki gibi. Yalnız damga vergisi hatırlatıcısı KDV-2
+     değildir, tutarı her ay kalır. 24 Ekim 2026'ya kadar seri tutarı her gününe kesin yazılıyor, Ödendi ve Ertele onu
+     silmiyordu: o tarihten önce Ödendi denmiş tutarlı KDV-2 serisinin tutarı geçen dönemindir, silin ya da düzeltin;
+   - serinin öteki günlerinde ya da tutarsızsa faturalardan hesaplanan *KDV-2* tahmini hatırlatıcının gününde girer;
    - dönemi başka bir KDV-2 hatırlatıcısı almışsa ya da tahmin yoksa (KDV tahmine katılmıyor, dönemin verisi yok)
      tutarı girilmemiş ödemedir: iki kez sayılmaz, sessizce de düşmez;
    - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, satırı olmaz. Ödenen dönemler
@@ -71,8 +75,8 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
      (faturalarla ortak) sonra düşen kayıt dönemin tahminini geri getiriyordu;
    - ertelenen dönemin notu asıl günü taşır (“Ertelendi · asıl tarih 25.10.2026”, tekrar edenin kopyası da ertelenen
      tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
-   Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o,
-   boşsa bu tahmin” yazar.
+   Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: bu dönemin tutarı
+   yazılıysa o, yoksa bu tahmin” yazar.
 4. **Diğer:** tutarlıysa kesin; tutarsızsa plana girmez, **Tutarı girilmemiş ödemeler** kartında adı ve ilk tarihiyle
    görünür (“Ödemeler'de tutar girin”).
 
