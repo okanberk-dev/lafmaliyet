@@ -35,7 +35,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   const [rev, setRev] = useState(0);
   const support = useSyncExternalStore<PushSupport>(noopSubscribe, pushSupport, () => "unsupported");
   const [endpoint, setEndpoint] = useState<string | null>(null);
-  const [topics, setTopics] = useState<{ karaoke: boolean; reminders: boolean; orders: boolean } | null>(null);
+  const [topics, setTopics] = useState<{ karaoke: boolean; reminders: boolean; orders: boolean; approvals: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const audio = useAudioState();
 
@@ -47,7 +47,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     if (!publicKey || pushSupport() !== "granted") return;
     void subscribeDevice(publicKey, false).then(async (res) => {
       if (!res.ok) return;
-      setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders });
+      setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders, approvals: res.approvals });
       setEndpoint(await currentEndpoint());
     });
   }, [publicKey]);
@@ -59,7 +59,7 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     setBusy(false);
     setRev((r) => r + 1);
     if (!res.ok) return void toast.error(res.error);
-    setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders });
+    setTopics({ karaoke: res.karaoke, reminders: res.reminders, orders: res.orders, approvals: res.approvals });
     setEndpoint(await currentEndpoint());
     toast.success("Bildirimler bu cihazda açık", { description: "Sekme kapalıyken de yeni rezervasyon, sipariş ve hatırlatmalar gelir." });
   }
@@ -73,9 +73,9 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     toast.success("Bu cihazda bildirimler kapatıldı");
   }
 
-  async function changeTopic(key: "karaoke" | "reminders" | "orders", value: boolean) {
+  async function changeTopic(key: "karaoke" | "reminders" | "orders" | "approvals", value: boolean) {
     if (!endpoint) return;
-    const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", [key]: value };
+    const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", approvals: topics?.approvals ?? true, [key]: value };
     setTopics(next);
     const res = await setPushTopics(endpoint, next);
     if (res.ok) noteDeviceTopics(next);
@@ -163,6 +163,13 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
                 onChange={(v) => void changeTopic("orders", v)}
               />
             ) : null}
+            <ToggleRow
+              title="Onay bildirimleri"
+              description={role === "admin" ? "Personelin onay bekleyen isteği (mal siparişi taslağı)" : "Onaya gönderdiğiniz isteğin sonucu"}
+              label="Onay bildirimleri"
+              checked={topics?.approvals ?? true}
+              onChange={(v) => void changeTopic("approvals", v)}
+            />
             <ToggleRow
               title="Sabah hatırlatma özeti"
               description="Bugün yapılacak kişisel hatırlatıcılarınız, her sabah"

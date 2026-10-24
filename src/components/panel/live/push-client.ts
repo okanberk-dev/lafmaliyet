@@ -49,6 +49,8 @@ export interface DeviceTopics {
   karaoke: boolean;
   reminders: boolean;
   orders: boolean;
+  /** Onay bildirimleri (docs/ONAYLAR.md) */
+  approvals: boolean;
 }
 
 let deviceTopics: DeviceTopics | null = null;
@@ -88,16 +90,16 @@ export function deviceLabel(): string {
 export async function subscribeDevice(
   publicKey: string,
   ask: boolean,
-): Promise<{ ok: true; karaoke: boolean; reminders: boolean; orders: boolean } | { ok: false; error: string }> {
+): Promise<({ ok: true } & DeviceTopics) | { ok: false; error: string }> {
   const res = await subscribeOnce(publicKey, ask);
-  noteDeviceTopics(res.ok ? { karaoke: res.karaoke, reminders: res.reminders, orders: res.orders } : null);
+  noteDeviceTopics(res.ok ? { karaoke: res.karaoke, reminders: res.reminders, orders: res.orders, approvals: res.approvals } : null);
   return res;
 }
 
 async function subscribeOnce(
   publicKey: string,
   ask: boolean,
-): Promise<{ ok: true; karaoke: boolean; reminders: boolean; orders: boolean } | { ok: false; error: string }> {
+): Promise<({ ok: true } & DeviceTopics) | { ok: false; error: string }> {
   if (pushSupport() === "unsupported") return { ok: false, error: "Bu tarayıcı bildirim desteklemiyor" };
   let permission = Notification.permission;
   if (permission === "default" && ask) permission = await Notification.requestPermission();

@@ -230,3 +230,17 @@ test("reçete onayı ekranda görülen sürümle: öneri güncellenince sürüm 
   assert.match(list, /reviewRecipeChange\(\{ id: item\.id, seenVersion: item\.version, decision: "approve", force \}\)/);
   assert.match(list, /reviewRecipeChange\(\{ id: item\.id, seenVersion: item\.version, decision: "reject"/);
 });
+
+test("push: onay bildirimleri ayrı konu (cihazda anahtarı var, varsayılan açık); yalnız açık aboneliklere gider", () => {
+  const send = read("src/server/push/send.ts");
+  assert.match(send, /kind: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test";/);
+  assert.match(send, /topic: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test",/);
+  assert.match(send, /if \(topic === "approvals"\) conditions\.push\(eq\(s\.pushSubscriptions\.approvals, true\)\);/);
+  const actions = read("src/server/actions/push.ts");
+  assert.match(actions, /approvals: z\.boolean\(\)\.optional\(\)/);
+  assert.match(actions, /approvals: row\.approvals \}/);
+  const device = read("src/components/panel/live/device-alerts.tsx");
+  assert.match(device, /title="Onay bildirimleri"/);
+  assert.match(device, /onChange=\{\(v\) => void changeTopic\("approvals", v\)\}/);
+  assert.equal(staffRequests.kind.enumValues.length, 9);
+});
