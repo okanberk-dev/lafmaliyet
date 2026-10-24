@@ -1,6 +1,6 @@
 "use server";
 
-import { desc, eq, isNotNull, or } from "drizzle-orm";
+import { desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -8,6 +8,7 @@ import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import {
   cleanAliases,
   formatIban,
+  supplierResolver,
   ibanProblem,
   INFO_FIELDS,
   mergeInfo,
@@ -26,7 +27,9 @@ import {
 } from "@/app/panel/tedarikciler/logic";
 import { dateTR, money, num } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
-import { loadSupplierLedger, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
+import { accountOf } from "@/lib/cari/account";
+import { loadCardEntries } from "@/server/data/cari";
+import { loadSupplierLedger, loadSupplierRefs, supplierSlugOf, supplierSlugOfKey } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { ParasutAuthError, ParasutClient, ParasutDeadlineError, ParasutError } from "@/server/parasut/client";
 import { isParasutConfigured } from "@/server/parasut/config";
@@ -96,6 +99,41 @@ async function hasInvoicesNamed(key: string): Promise<boolean> {
 }
 
 /**
+ * Kartın adı, diğer adları ya da vergi nosu değişince gruptan çıkacak faturalar (eski ve yeni eşleşme): içlerinde
+ * bu kartın ödemesi sayılmış (`allocated` > 0) ya da faturasız alımı bağlı olan varsa kayıt reddedilir (K23). Kart
+ * kimliği değişmez; para gruplar arasında sessizce dağılmasın.
+ */
+async function assertNoCariMove(
+  all: readonly { id: number; name: string; aliases: string[] | null; taxNumber: string | null }[],
+  next: { id: number; name: string; aliases: string[]; taxNumber: string | null },
+) {
+  const db = getDb();
+  const [counted, linked] = await Promise.all([
+    db.select({ id: s.invoices.id, supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(gt(s.invoices.allocated, 0)),
+    db.selectDistinct({ id: s.supplierEntries.invoiceId }).from(s.supplierEntries).where(isNotNull(s.supplierEntries.invoiceId)),
+  ]);
+  const linkedIds = linked.map((r) => r.id).filter((x): x is number => x !== null);
+  const extra = linkedIds.length
+    ? await db.select({ id: s.invoices.id, supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber }).from(s.invoices).where(inArray(s.invoices.id, linkedIds))
+    : [];
+  const watched = [...new Map([...counted, ...extra].map((r) => [r.id, r])).values()];
+  if (!watched.length) return;
+  const refs = await loadSupplierRefs();
+  const cards = all.map((c) => ({ ...c, aliases: c.aliases ?? [] }));
+  const before = supplierResolver(cards, refs).resolve;
+  const after = supplierResolver(
+    cards.map((c) => (c.id === next.id ? { ...c, name: next.name, aliases: next.aliases, taxNumber: next.taxNumber } : c)),
+    refs,
+  ).resolve;
+  const leaving = watched.filter((r) => before(r.supplier, r.tax).card?.id === next.id && after(r.supplier, r.tax).card?.id !== next.id);
+  if (!leaving.length) return;
+  const names = [...new Set(leaving.map((r) => r.supplier))];
+  throw new UserError(
+    `${names.map((n) => `‘${n}’`).join(", ")} adıyla ${num(leaving.length)} faturaya bu tedarikçinin ödemesi sayılmış ya da faturasız alımı bağlı; adı kaldırmak onları başka tedarikçiye taşır. Önce ödemeden çıkarın ya da bağı kaldırın.`,
+  );
+}
+
+/**
  * Cari kartını ekler ya da günceller. Faturalar adla eşleşir: kartın adı ve diğer adları başka bir kartta olamaz.
  * Ad değiştiyse ve eski adla faturalar duruyorsa eski ad diğer adlara eklenir (faturalar kartta kalır). Aynı vergi
  * no başka bir kartta da yazılıysa kayıt durmaz (aynı kişinin iki dükkânı olabilir), adları döner: numara eşleşmede
@@ -116,6 +154,8 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     const aliases = cleanAliases(data.name, data.aliases, renamed);
     const conflict = nameConflict({ id, name: data.name, aliases }, all);
     if (conflict) throw new UserError(await conflictMessage(conflict));
+    // Cari (K23): ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka tedarikçiye taşıyan ad değişikliği olmaz
+    if (cur) await assertNoCariMove(all, { id: cur.id, name: data.name, aliases, taxNumber: data.taxNumber });
     const values = { ...data, aliases, key: supplierMatchKey(data.name), updatedAt: new Date() };
     let savedId: number;
     if (cur) {
@@ -170,7 +210,15 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
       throw new UserError("Bunlar Paraşüt'te adı okunamayan faturalar; sonraki eşitlemede gerçek tedarikçilerine geçer.");
     }
     const db = getDb();
-    if (!g.invoices.length) {
+    // Cari (K23): kaydı olan kart silinmez, yalnız listeden kalkar; açık borcu ya da hesapta parası olan kalkmaz
+    const cari = g.card ? await loadCardEntries([g.card.id]) : null;
+    const hasEntries = Boolean(cari && (cari.debts.length || cari.payments.length));
+    if (cari && hasEntries) {
+      const acc = accountOf({ invoices: [], ...cari }, { today, termDays: 0 });
+      if (acc.credit > 0.005) throw new UserError(`${g.name}: hesapta ${money(acc.credit)} sayılmamış ödeme var; önce borçlara sayın ya da ödemeyi silin.`);
+      if (acc.debtOpenCount) throw new UserError(`${g.name}: ${num(acc.debtOpenCount)} açık faturasız borcu var (${money(acc.debtOpen)}). Borcu olan tedarikçi listeden kaldırılamaz.`);
+    }
+    if (!g.invoices.length && !hasEntries) {
       if (!g.card) throw new UserError("Tedarikçi bulunamadı; sayfayı yenileyin.");
       const [row] = await db.delete(s.suppliers).where(eq(s.suppliers.id, g.card.id)).returning();
       if (!row) throw new UserError("Tedarikçi bulunamadı; zaten silinmiş olabilir.");
@@ -222,7 +270,7 @@ export async function removeSupplier(input: z.input<typeof targetSchema>) {
         .returning({ id: s.suppliers.id });
       id = row.id;
     }
-    await logActivity(me, "Tedarikçi listeden kaldırıldı", `${g.name} · ${num(g.invoices.length)} faturası Faturalar'da duruyor`);
+    await logActivity(me, "Tedarikçi listeden kaldırıldı", `${g.name} · ${num(g.invoices.length)} faturası Faturalar'da duruyor${hasEntries ? ` · ${num((cari?.debts.length ?? 0) + (cari?.payments.length ?? 0))} cari kaydı kartta` : ""}`);
     refresh();
     return { mode: "hidden" as const, cardId: id };
   });

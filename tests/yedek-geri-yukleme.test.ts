@@ -136,6 +136,21 @@ describe("geri yükleme provası (gerçek veritabanı)", { skip: ADMIN_URL ? fal
         SELECT (SELECT min(id) FROM products), id, 'Ayşe', '{"note":null,"items":[]}', '{"note":"x","items":[]}' FROM users WHERE email = 'ayse@ornek.com';
       INSERT INTO cash_reports (date, z_total, cash, submitted_by, submitted_by_name)
         SELECT '2026-10-21', 1000.5, 400.25, id, 'Ayşe' FROM users WHERE email = 'ayse@ornek.com';
+      -- Cari: kart, faturasız alım (gideri borcun), ödeme ve iki dağıtım (borca ve faturaya); allocated sütun değeriyle gelir
+      INSERT INTO expense_categories (name, section) VALUES ('Cari deneme', 'mal');
+      INSERT INTO suppliers (name, key) VALUES ('Cari Deneme', 'cari deneme');
+      INSERT INTO supplier_entries (supplier_id, kind, date, amount, description, cost_mode, category_id, created_by_name)
+        SELECT s.id, 'borc', '2026-10-20', 600, 'beyaz peynir', 'gider', c.id, 'Okan' FROM suppliers s, expense_categories c WHERE s.key = 'cari deneme' AND c.name = 'Cari deneme';
+      INSERT INTO supplier_entries (supplier_id, kind, date, amount, method, created_by_name)
+        SELECT id, 'odeme', '2026-10-22', 2000, 'havale', 'Okan' FROM suppliers WHERE key = 'cari deneme';
+      INSERT INTO expense_entries (date, category_id, description, amount, supplier_entry_id)
+        SELECT '2026-10-20', category_id, 'Cari Deneme · beyaz peynir', 600, id FROM supplier_entries WHERE kind = 'borc';
+      INSERT INTO supplier_allocations (payment_id, debt_id, amount, created_by_name)
+        SELECT p.id, d.id, 600, 'Okan' FROM supplier_entries p, supplier_entries d WHERE p.kind = 'odeme' AND d.kind = 'borc';
+      UPDATE invoices SET ledger_base = 0, allocated = 300 WHERE id = (SELECT min(id) FROM invoices);
+      INSERT INTO supplier_allocations (payment_id, invoice_id, amount, created_by_name)
+        SELECT id, (SELECT min(id) FROM invoices), 300, 'Okan' FROM supplier_entries WHERE kind = 'odeme';
+      INSERT INTO integration_state (key, value) VALUES ('cari.kasa-ayri', '[]');
     `);
     fileA = join(dir, "laffogato-yedek-a.json.gz");
     await writeBackupFile(sqlA, fileA, { documents: true, createdBy: "Okan", app: "test", now: new Date("2026-10-22T06:15:00Z") });

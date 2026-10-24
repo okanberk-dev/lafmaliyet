@@ -180,7 +180,12 @@ Hedef: localhost/laffogato_prova (bu bilgisayar)
   fotoğrafın satırı geri gelir ama dosyası yoktur ("Fotoğraf bulunamadı"); sabah işi süresi gelince satırı da siler.
 - **Son yedek:** Ayarlar › Yedek'teki "Son yedek" dosyadaki hâline döner (dosyayı alan indirme kendisinden öncekini
   gösterir); yeni bir yedek alınca düzelir.
-- `npm run db:reset` (Excel verisini yeniden yükleme) bununla ilgisizdir ve değişmedi.
+- `npm run db:reset` (Excel verisini yeniden yükleme) bununla ilgisizdir. Tek farkı cari hareketleridir (Tedarikçiler'de
+  elle girilen borç ve ödeme, `supplier_entries` / `supplier_allocations`): varsa db:reset tam yedeği aldıktan sonra
+  durur ("Cari hareketleri var (N kayıt) … Yedek alındı: <dosya>"). TRUNCATE … CASCADE onları da silerdi; Kasa
+  satırları kalır, faturalar ödenmemiş geri gelir ve iki kez ödenir. Yine de silmek için
+  `npm run db:reset -- --cari-sil` (cari tabloları ve "Ayrı tut" listesi `cari.kasa-ayri` de silinir). Yedek ve geri
+  yükleme yeni tabloları kendiliğinden taşır; `invoices.allocated` sütun değeriyle gelir.
 
 ## 7. Belgeler (büyük belgeli yedek)
 

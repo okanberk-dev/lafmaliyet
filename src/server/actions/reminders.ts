@@ -28,6 +28,7 @@ import {
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
+import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
@@ -245,9 +246,14 @@ export async function undoRecentPaid(kind: "invoice" | "reminder", id: number) {
     }
     const db = getDb();
     if (k === "invoice") {
+      // ✓ hesaptaki cari ödemesini kullandıysa önce o dağıtımlar silinir; hesaptaki ödemeyle kapanmış fatura ödenmediye
+      // dönmez (K7)
+      const allocationIds = Array.isArray(entry.allocationIds) ? entry.allocationIds.filter((x) => Number.isInteger(x) && x > 0) : [];
+      await dropAllocations(allocationIds, [rid]);
+      await assertNotCovered(db, [rid]);
       const [row] = await db
         .update(s.invoices)
-        .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null })
+        .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null, paidByLedger: false })
         .where(eq(s.invoices.id, rid))
         .returning({ supplier: s.invoices.supplier, payable: s.invoices.payable });
       await forgetPaid("invoice", [rid]);

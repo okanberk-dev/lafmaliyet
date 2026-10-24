@@ -132,11 +132,43 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 - **Peşin çalışılan tedarikçi:** kartında **Faturaları ödendi gelsin** işaretliyse yeni faturası ödendi gelir (fatura
   günü, kartın ödeme şekliyle). Peşin tedarikçide IBAN eksik sayılmaz.
 - Bu özellikten önce gelmiş faturaların durumu olduğu gibi kalır.
+- **Cari takipteki kart (üç istisna):** kart ilk elle ödeme kaydını alınca (Hesap hareketleri, aşağıda) eşitleme
+  yalnız şunları yazar: peşin çalışılan kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  tutarı değişen faturanın sayılan ödemeleri yeniden dengelenir (tutar düştüyse fazlası hesaba geçer, arttıysa
+  ödemelerin kapattığı fatura yeniden ödenmedi olur); Paraşüt'te iptal edilen fatura silinmeden önce bağları çözülür
+  (bağlı faturasız alım eski hâline döner, ödeme borca ya da hesaba geçer). Özet satırında "Cari: …" olarak görünür.
 - **Geçmiş faturalar:** ödeme takibi ilk eşitlemeden 30 gün öncesinden başlar (`integration_state` ›
   `payments.since`). Bundan eski bir fatura yeni gelirse (Tarihten eşitle'yle geçmişi doldururken) yüzlerce eski fatura
   "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır: gider faturasında Paraşüt'ün ödeme kaydı, e-faturada
   (ödeme bilgisi yok) ödendi; belgedeki vadesi henüz gelmemiş e-fatura ödenmedi olur. `npm run db:reset` faturaları
   (ödeme işaretleriyle) yeniden yüklediği için başlangıcı da siler; sonraki eşitleme yeniden belirler.
+
+## Hesap hareketleri: elle borç ve ödeme (cari)
+
+Tedarikçinin hesabına faturadan başka kayıt girilir: **borç** (elden, veresiye ya da faturasız alım; panelden önceki
+eski borç) ve **ödeme** (hesaba, kısmi, toptan, kasadan). Ekranlar sonraki adımlarda gelir; çekirdek kurallar:
+
+- Kayıtlar `supplier_entries`'te, karta bağlı (kart silinemez, yalnız listeden kalkar; açık borcu ya da hesapta parası
+  olan kart kalkmaz). Ödemenin hangi faturaya ya da borca sayıldığı `supplier_allocations`'ta. Ödeme hiçbir zaman gider
+  ya da KDV değildir.
+- **Kalan borç** (`src/lib/cari/balance.ts`): kartın ilk ödemesiyle takip başlar; grubun her faturasına Paraşüt'ün o
+  ana kadar ödendi gösterdiği kısım yazılır (`invoices.ledger_base`), sonradan gelen faturaya 0. Takipli faturanın
+  kalanı = Ödenecek − bu taban − panelde sayılan (`invoices.allocated`); Paraşüt'ün kalanı yalnız ipucudur. Takipsiz
+  fatura bugünkü kuralla (Paraşüt'ün kalanı). Hiç kayıt yokken bütün rakamlar eskisiyle aynıdır
+  (`tests/cari-sabit.test.ts`).
+- **Ödendi işareti:** sayılan ödemeler faturayı tamamen karşılarsa fatura ödendi olur (gün ve şekil son ödemeden,
+  `invoices.paid_by_ledger`); karşılık düşerse yalnız böyle kapanan fatura yeniden açılır, elle konan ✓'ye dokunulmaz.
+  Tamamen karşılanmış faturada "Ödenmedi" ve "Talep edildi" reddedilir: önce Hesap hareketleri'nde ödemeden çıkarılır.
+- **Önce hesaptaki para:** ✓, toplu "Ödendi yap", Ödemeler'deki **Ödendi** ve fatura penceresi faturayı ödendiye
+  geçirirken kartın hesabında duran (hiçbir kaleme sayılmamış) para önce o faturaya sayılır; kalanı bugünkü gibi
+  işaretlenir. "Geri al" önce bu dağıtımları siler.
+- Fatura silinmeden önce bağları çözülür (elle silme, Paraşüt iptali): bağlı faturasız alım eski hâline döner, gider
+  kaydı yeniden yazılır, faturaya sayılan para ödemenin hesabına geçer. Elle silinen faturayı "Geri al" bağlarıyla
+  geri getirir (para hâlâ hesaptaysa).
+- Kalan borç, dağıtım ve ödendi işaretini yalnız `src/server/cari/settle.ts` yazar (kart satırı kilitlenir: aynı
+  kartın iki ödemesi sırayla çalışır). Saf kurallar `src/lib/cari/` (`account.ts` hesap ve mahsup, `statement.ts`
+  ekstre, `match.ts` fatura adayı ve Kasa eşleşmesi, `months.ts` geçmiş ay onayı). `npm run db:reset` cari kaydı
+  varken durur ([YEDEK.md](YEDEK.md)).
 
 ## Vade
 
@@ -257,6 +289,9 @@ eşleşir. Ad karşılaştırmasında büyük / küçük harf, Türkçe ı/i, fa
 - `src/server/data/suppliers.ts` (ekranın verisi, kartın vade günü, peşin çalışılan tedarikçiler)
 - `src/server/parasut/mapping.ts` (`newInvoicePayment`, `contactInfo`), `ubl.ts` (`partyInfo`)
 - `src/server/parasut/tax-backfill.ts`, `tax-backfill-pass.ts` (eski faturaların vergi nosunun tamamlanması)
+- `src/lib/cari/` (cari hesabın saf kuralları), `src/server/cari/settle.ts` (dağıtım ve ödendi işaretini yazan tek yer),
+  `src/server/data/cari.ts` (cari okumaları)
 - Tablo `suppliers`, faturada `paid_at`, `paid_via`, `payment_requested_at` (`drizzle/0016_tedarikciler.sql`),
-  `supplier_tax_number` (`drizzle/0021_fatura_vergi_no.sql`)
-- Test: `tests/tedarikciler.test.ts`, `tests/parasut-vergi.test.ts`
+  `supplier_tax_number` (`drizzle/0021_fatura_vergi_no.sql`); `supplier_entries`, `supplier_allocations`, faturada
+  `allocated`, `ledger_base`, `paid_by_ledger`, harcamada `supplier_entry_id` (`drizzle/0037_cari_hareket.sql`)
+- Test: `tests/tedarikciler.test.ts`, `tests/parasut-vergi.test.ts`, `tests/cari-*.test.ts`

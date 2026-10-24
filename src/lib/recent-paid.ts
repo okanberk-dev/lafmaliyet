@@ -32,6 +32,8 @@ export interface RecentPaid {
   next?: string | null;
   /** Fatura: ödenmeden önceki ödeme talebi günü (geri alınca "talep edildi" geri gelir) */
   requestedAt?: string | null;
+  /** Fatura: ✓'nin hesaptaki cari ödemesinden yazdığı dağıtımlar (geri alınca önce bunlar silinir) */
+  allocationIds?: number[];
 }
 
 /** Hatırlatıcının şimdiki hâli (geri alınabilir mi diye bakılan alanlar) */

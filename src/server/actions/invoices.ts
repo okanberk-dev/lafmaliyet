@@ -7,10 +7,21 @@ import { z } from "zod";
 import { amountsChanged, DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
+import { round2 } from "@/lib/cari/balance";
 import { dateTR, tl } from "@/lib/format";
 import { crossesSeparate, separateMoveMonths } from "@/lib/invoice-linking";
 import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import {
+  assertNotCovered,
+  creditFirstForInvoices,
+  dropAllocations,
+  ledgerBaseForNew,
+  reattachInvoiceLinks,
+  releaseInvoiceLinks,
+  resettleInvoices,
+  type CreditUse,
+} from "@/server/cari/settle";
 import { forgetPaid, rememberPaid } from "@/server/data/recent-paid";
 import { getDb, schema as s } from "@/server/db";
 import { applyProductLinks, IGNORE_KEY } from "@/server/parasut/sync";
@@ -67,9 +78,11 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     if (paidAt && paidAt > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
     const db = getDb();
     if (!id) {
+      // Cari takipteki kartın yeni faturası panelde sayılır (taban 0; src/lib/cari/balance.ts)
+      const ledgerBase = await ledgerBaseForNew(data.supplier, null);
       const [row] = await db
         .insert(s.invoices)
-        .values({ ...data, paidAt: data.unpaid ? null : (paidAt ?? null) })
+        .values({ ...data, paidAt: data.unpaid ? null : (paidAt ?? null), ledgerBase })
         .returning({ id: s.invoices.id });
       await logActivity(me, "Fatura eklendi", `${dateTR(data.date)} ${data.supplier}: ${tl(data.amount - data.discount, 2)} (KDV hariç)`);
       refresh();
@@ -77,10 +90,22 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     }
     const [cur] = await db.select().from(s.invoices).where(eq(s.invoices.id, id)).limit(1);
     if (!cur) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
+    // Cari ödemesi sayılmış faturanın tutarı sayılandan aşağı inemez (Paraşüt'e bağlıda tutar kilitli)
+    const counted = round2((cur.ledgerBase ?? 0) + cur.allocated);
+    if (!isParasutLinked(cur) && cur.allocated > 0 && data.payable < counted - 0.005) {
+      throw new UserError(`Bu faturaya ${tl(counted, 2)} ödeme sayılmış; tutar bundan az olamaz`);
+    }
+    // Ödenmedi: hesaptaki ödemeyle kapanmış fatura ödemeden çıkarılmadan açılamaz
+    if (!cur.unpaid && data.unpaid) await assertNotCovered(db, [id]);
     let kept: LockedField[] = [];
+    // Ödendiye geçerken önce kartın hesabındaki para sayılır; tamamen karşılanırsa fatura defterle kapanır, ödeme
+    // alanları defterinkidir
+    const credit: CreditUse = cur.unpaid && !data.unpaid ? await creditFirstForInvoices([id], me.name) : { allocationIds: [], used: new Map(), closed: [] };
+    const closedByLedger = credit.closed.includes(id);
     // Ödeme günü: ödendiye geçerken gönderilmediyse bugün (null: bilinmiyor), ödeme talebi kapanır; ödenmediye dönünce
-    // silinir (ödeme şekliyle); ödendi kalan faturada gönderildiyse düzeltilir
-    const payment = data.unpaid
+    // silinir (ödeme şekliyle); ödendi kalan faturada gönderildiyse düzeltilir. Ödeme alanlarını kullanıcı yazınca
+    // fatura defterin kapattığı fatura sayılmaz
+    const written = data.unpaid
       ? cur.unpaid
         ? {}
         : { paidAt: null, paidVia: null }
@@ -89,6 +114,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
         : paidAt !== undefined
           ? { paidAt }
           : {};
+    const payment = closedByLedger ? {} : Object.keys(written).length ? { ...written, paidByLedger: false } : {};
     if (isParasutLinked(cur)) {
       kept = lockedChanges(cur, data);
       // Kilitli alanlar atılır; kalanlar (kategori, tedarikçi adı, açıklama, not, vade, ödeme durumu) yazılır
@@ -102,15 +128,28 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
         .update(s.invoices)
         .set({ ...data, ...payment, ...(amountsChanged(cur, data) ? { vat: 0 } : {}), needsReview: false })
         .where(eq(s.invoices.id, id));
+      // Ödenecek arttıysa defterin kapattığı fatura yeniden açılır
+      if (cur.allocated > 0 && data.payable !== cur.payable) await resettleInvoices([id]);
     }
     // Pencereden "Ödendi" yapılan fatura da Ödemeler › Son ödenenler'den geri alınabilir
     if (cur.unpaid && !data.unpaid)
-      await rememberPaid([{ kind: "invoice", id, title: data.supplier, amount: cur.payable, dueDate: data.dueDate ?? cur.dueDate ?? cur.date, requestedAt: cur.paymentRequestedAt }]);
+      await rememberPaid([
+        {
+          kind: "invoice",
+          id,
+          title: data.supplier,
+          amount: cur.payable,
+          dueDate: data.dueDate ?? cur.dueDate ?? cur.date,
+          requestedAt: cur.paymentRequestedAt,
+          ...(credit.allocationIds.length ? { allocationIds: credit.allocationIds } : {}),
+        },
+      ]);
     else if (!cur.unpaid && data.unpaid) await forgetPaid("invoice", [id]);
     // Kalem yalnız Paraşüt'e bağlı faturada olur (bağı çözülünce silinir); tarihi kilitli, kalemler kayıtlı ayda
     if (isParasutLinked(cur)) await recomputeSeparateMoves([{ id, date: cur.date, from: cur.category, to: data.category }]);
     const net = isParasutLinked(cur) ? cur.amount - cur.discount : data.amount - data.discount;
-    await logActivity(me, "Fatura düzenlendi", `${dateTR(isParasutLinked(cur) ? cur.date : data.date)} ${data.supplier}: ${tl(net, 2)} (KDV hariç)`);
+    const usedText = creditText(credit, [id]);
+    await logActivity(me, "Fatura düzenlendi", `${dateTR(isParasutLinked(cur) ? cur.date : data.date)} ${data.supplier}: ${tl(net, 2)} (KDV hariç)${usedText}`);
     refresh();
     const fields = joinTR(kept.map((k) => LOCKED_LABELS[k]));
     const message = kept.length
@@ -119,6 +158,12 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       : null;
     return { id, kept, message };
   });
+}
+
+/** İşlem geçmişinin eki: " · hesaptaki 99,50 ₺ sayıldı" (hesaptaki para kullanılmadıysa boş) */
+function creditText(credit: CreditUse, ids: readonly number[]): string {
+  const used = ids.reduce((a, id) => a + (credit.used.get(id) ?? 0), 0);
+  return used > 0.005 ? ` · hesaptaki ${tl(round2(used), 2)} sayıldı` : "";
 }
 
 const categoryChangesSchema = z
@@ -230,6 +275,8 @@ const paymentStateSchema = z.object({
   paidAt: zDate.nullable(),
   paidVia: zMethod.nullable(),
   paymentRequestedAt: zDate.nullable(),
+  /** ✓'nin hesaptaki paradan yazdığı dağıtımlar: "Geri al" önce bunları siler (yalnız cari takipte) */
+  allocationIds: z.array(zId).max(1000).optional(),
 });
 export type InvoicePaymentState = z.infer<typeof paymentStateSchema>;
 
@@ -247,7 +294,7 @@ type PaymentScope = "changing" | "open" | "all";
  * 30 gün geri alınır), ödendiden geri dönen oradan düşer. Önceki durumlar döner: "Geri al" restoreInvoicePayment ile
  * geri yazar.
  */
-async function applyPayment(ids: number[], change: PaymentChange, scope: PaymentScope) {
+async function applyPayment(ids: number[], change: PaymentChange, scope: PaymentScope, opts: { by: string; separately?: boolean }) {
   const db = getDb();
   const before = await db
     .select({
@@ -262,34 +309,59 @@ async function applyPayment(ids: number[], change: PaymentChange, scope: Payment
   const paid = change.status === "paid";
   const targets =
     scope === "changing" ? before.filter((r) => r.unpaid === paid) : scope === "open" && change.status !== "unpaid" ? before.filter((r) => r.unpaid) : before;
-  if (!targets.length) return { rows: [], previous: [] as InvoicePaymentState[], missing: ids.length - before.length };
+  const none: CreditUse = { allocationIds: [], used: new Map(), closed: [] };
+  if (!targets.length) return { rows: [], previous: [] as InvoicePaymentState[], missing: ids.length - before.length, credit: none };
+  // Ödenmedi / Talep edildi: hesaptaki ödemeyle kapanmış fatura önce ödemeden çıkarılır (K7)
+  if (!paid) await assertNotCovered(db, targets.map((r) => r.id));
+  // Ödendi: önce kartın hesabındaki para (K6); tamamen karşılanan fatura defterle kapanır, kalanı bugünkü gibi
+  // işaretlenir. "Ayrıca ödendi" seçilirse hesaptaki para kullanılmaz
+  const credit = paid && !opts.separately ? await creditFirstForInvoices(targets.filter((r) => r.unpaid).map((r) => r.id), opts.by) : none;
+  const closed = new Set(credit.closed);
   const today = todayTR();
+  // Ödeme alanlarını kullanıcı yazdı: fatura defterin kapattığı fatura sayılmaz
   const set =
     change.status === "paid"
-      ? { unpaid: false, paidAt: change.date === undefined ? today : change.date, paidVia: change.via ?? null, paymentRequestedAt: null }
+      ? { unpaid: false, paidAt: change.date === undefined ? today : change.date, paidVia: change.via ?? null, paymentRequestedAt: null, paidByLedger: false }
       : change.status === "requested"
-        ? { unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: change.date ?? today }
-        : { unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: null };
-  const rows = await db
-    .update(s.invoices)
-    .set(set)
-    .where(inArray(s.invoices.id, targets.map((r) => r.id)))
-    .returning({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable, date: s.invoices.date, dueDate: s.invoices.dueDate });
+        ? { unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: change.date ?? today, paidByLedger: false }
+        : { unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: null, paidByLedger: false };
+  const returning = { id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable, date: s.invoices.date, dueDate: s.invoices.dueDate };
+  const open = targets.filter((r) => !closed.has(r.id));
+  const written = open.length ? await db.update(s.invoices).set(set).where(inArray(s.invoices.id, open.map((r) => r.id))).returning(returning) : [];
+  const ledger = closed.size ? await db.select(returning).from(s.invoices).where(inArray(s.invoices.id, [...closed])) : [];
+  const rows = [...written, ...ledger];
   const wasUnpaid = new Set(targets.filter((r) => r.unpaid).map((r) => r.id));
   const requested = new Map(targets.map((r) => [r.id, r.paymentRequestedAt]));
+  // Fatura → ✓'nin hesaptaki paradan yazdığı dağıtımlar ("Geri al" önce bunları siler)
+  const allocationsOf = new Map<number, number[]>();
+  if (credit.allocationIds.length) {
+    const rowsA = await db
+      .select({ id: s.supplierAllocations.id, invoiceId: s.supplierAllocations.invoiceId })
+      .from(s.supplierAllocations)
+      .where(inArray(s.supplierAllocations.id, credit.allocationIds));
+    for (const a of rowsA) if (a.invoiceId !== null) allocationsOf.set(a.invoiceId, [...(allocationsOf.get(a.invoiceId) ?? []), a.id]);
+  }
   if (paid) {
     // Yalnız durumu gerçekten değişenler "son ödenenler"e yazılır (zaten ödenmiş fatura geri alınacaklara girmesin);
     // ödeme talebi günü de saklanır: oradan geri alınınca "talep edildi" geri gelir
     await rememberPaid(
       rows
         .filter((r) => wasUnpaid.has(r.id))
-        .map((r) => ({ kind: "invoice" as const, id: r.id, title: r.supplier, amount: r.payable, dueDate: r.dueDate ?? r.date, requestedAt: requested.get(r.id) ?? null })),
+        .map((r) => ({
+          kind: "invoice" as const,
+          id: r.id,
+          title: r.supplier,
+          amount: r.payable,
+          dueDate: r.dueDate ?? r.date,
+          requestedAt: requested.get(r.id) ?? null,
+          ...(allocationsOf.has(r.id) ? { allocationIds: allocationsOf.get(r.id) } : {}),
+        })),
     );
   } else {
     await forgetPaid("invoice", rows.map((r) => r.id));
   }
-  const previous = targets.map((r) => paymentStateSchema.parse(r));
-  return { rows, previous, missing: ids.length - before.length };
+  const previous = targets.map((r) => paymentStateSchema.parse({ ...r, ...(allocationsOf.has(r.id) ? { allocationIds: allocationsOf.get(r.id) } : {}) }));
+  return { rows, previous, missing: ids.length - before.length, credit };
 }
 
 const PAYMENT_LOG: Record<PaymentChange["status"], [one: string, many: string]> = {
@@ -298,14 +370,18 @@ const PAYMENT_LOG: Record<PaymentChange["status"], [one: string, many: string]> 
   unpaid: ["Fatura ödenmedi işaretlendi", "Faturalar ödenmedi işaretlendi"],
 };
 
-async function logPayment(me: { name: string }, change: PaymentChange, rows: { supplier: string; payable: number }[]) {
+async function logPayment(me: { name: string }, change: PaymentChange, rows: { id: number; supplier: string; payable: number }[], credit?: CreditUse) {
   if (!rows.length) return;
   const [one, many] = PAYMENT_LOG[change.status];
   const when = change.status === "paid" && change.date ? ` · ${dateTR(change.date)}` : "";
   const via = change.status === "paid" && change.via ? ` · ${methodLabel(change.via)}` : "";
-  if (rows.length === 1) await logActivity(me, one, `${rows[0].supplier} ${tl(rows[0].payable, 2)}${when}${via}`);
-  else await logActivity(me, many, `${rows.length} fatura · ${tl(rows.reduce((a, r) => a + r.payable, 0), 2)}${when}${via}`);
+  const used = credit ? creditText(credit, rows.map((r) => r.id)) : "";
+  if (rows.length === 1) await logActivity(me, one, `${rows[0].supplier} ${tl(rows[0].payable, 2)}${when}${via}${used}`);
+  else await logActivity(me, many, `${rows.length} fatura · ${tl(rows.reduce((a, r) => a + r.payable, 0), 2)}${when}${via}${used}`);
 }
+
+/** Bildirim için: hesaptaki paradan sayılan toplam ve defterle kapanan fatura sayısı */
+const creditSummary = (credit: CreditUse) => ({ used: round2([...credit.used.values()].reduce((a, v) => a + v, 0)), closed: credit.closed.length });
 
 /**
  * Bir ya da birçok faturayı ödendi / ödenmedi işaretler (Faturalar, Ödemeler). Ödendi işaretlenene ödeme günü olarak
@@ -317,10 +393,10 @@ export async function setInvoicePaid(id: number | number[], paid: boolean) {
     const me = await requireAdmin();
     const ids = zIds.parse(Array.isArray(id) ? id : [id]);
     const change: PaymentChange = z.boolean().parse(paid) ? { status: "paid" } : { status: "unpaid" };
-    const { rows, previous } = await applyPayment(ids, change, "changing");
-    await logPayment(me, change, rows);
+    const { rows, previous, credit } = await applyPayment(ids, change, "changing", { by: me.name });
+    await logPayment(me, change, rows, credit);
     refresh();
-    return { changed: rows.length, previous };
+    return { changed: rows.length, previous, credit: creditSummary(credit) };
   });
 }
 
@@ -330,31 +406,46 @@ export async function setInvoicePaid(id: number | number[], paid: boolean) {
  * "Ödendi yap": ekranda ödenmemiş görünen faturalar) ödendi / talep edildi yalnız ödenmemişlere yazılır, başka bir
  * oturumda ödenmiş faturanın ödeme günü ezilmez. Önceki durumlar "Geri al" için döner.
  */
-export async function setInvoicePayment(ids: number[], change: z.input<typeof paymentChangeSchema>, opts: { onlyOpen?: boolean } = {}) {
+export async function setInvoicePayment(ids: number[], change: z.input<typeof paymentChangeSchema>, opts: { onlyOpen?: boolean; separately?: boolean } = {}) {
   return attempt(async () => {
     const me = await requireAdmin();
     const list = zIds.parse(ids);
     const c = paymentChangeSchema.parse(change);
     if (c.status === "paid" && c.date && c.date > addDays(todayTR(), 1)) throw new UserError("Ödeme günü ileri bir tarih olamaz");
-    const { rows, previous, missing } = await applyPayment(list, c, list.length > 1 || z.boolean().optional().parse(opts.onlyOpen) ? "open" : "all");
+    // separately: "Ayrıca ödendi" (hesaptaki cari ödemesi kullanılmaz)
+    const { rows, previous, missing, credit } = await applyPayment(list, c, list.length > 1 || z.boolean().optional().parse(opts.onlyOpen) ? "open" : "all", {
+      by: me.name,
+      separately: z.boolean().optional().parse(opts.separately),
+    });
     if (missing === list.length) throw new UserError("Faturalar bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
     if (!rows.length) {
       // Başka bir oturumda ödenmiş: ekran yenilenir, satır güncel hâliyle görünür
       refresh();
       throw new UserError("Seçilen faturalar zaten ödenmiş; değişiklik yapılmadı.");
     }
-    await logPayment(me, c, rows);
+    await logPayment(me, c, rows, credit);
     refresh();
-    return { changed: rows.length, previous, missing };
+    return { changed: rows.length, previous, missing, credit: creditSummary(credit) };
   });
 }
 
-/** "Geri al": faturaların ödeme alanlarını setInvoicePayment'tan önceki hâline döndürür */
+/**
+ * "Geri al": faturaların ödeme alanlarını setInvoicePayment'tan önceki hâline döndürür. ✓ hesaptaki cari ödemesini
+ * kullandıysa önce o dağıtımlar silinir (para hesaba döner); hesaptaki ödemeyle kapanmış fatura ödenmediye dönmez.
+ */
 export async function restoreInvoicePayment(states: z.input<typeof paymentStateSchema>[]) {
   return attempt(async () => {
     const me = await requireAdmin();
     const list = z.array(paymentStateSchema).min(1, "Geri alınacak değişiklik yok").max(1000).parse(states);
     const db = getDb();
+    await dropAllocations(
+      list.flatMap((x) => x.allocationIds ?? []),
+      list.map((x) => x.id),
+    );
+    await assertNotCovered(
+      db,
+      list.filter((x) => x.unpaid).map((x) => x.id),
+    );
     const current = await db
       .select({ id: s.invoices.id, unpaid: s.invoices.unpaid })
       .from(s.invoices)
@@ -362,10 +453,10 @@ export async function restoreInvoicePayment(states: z.input<typeof paymentStateS
     const wasUnpaid = new Set(current.filter((r) => r.unpaid).map((r) => r.id));
     const rows = await db.transaction(async (tx) => {
       const out: { id: number; supplier: string; payable: number; date: string; dueDate: string | null }[] = [];
-      for (const { id, ...state } of list) {
+      for (const { id, unpaid, paidAt, paidVia, paymentRequestedAt } of list) {
         const [r] = await tx
           .update(s.invoices)
-          .set(state)
+          .set({ unpaid, paidAt, paidVia, paymentRequestedAt, paidByLedger: false })
           .where(eq(s.invoices.id, id))
           .returning({ id: s.invoices.id, supplier: s.invoices.supplier, payable: s.invoices.payable, date: s.invoices.date, dueDate: s.invoices.dueDate });
         if (r) out.push(r);
@@ -418,6 +509,8 @@ function snapshotOf(r: InvoiceRow) {
     paidVia: r.paidVia,
     paymentRequestedAt: r.paymentRequestedAt,
     supplierTaxNumber: r.supplierTaxNumber,
+    ledgerBase: r.ledgerBase,
+    paidByLedger: r.paidByLedger,
   };
 }
 
@@ -454,6 +547,18 @@ const snapshotSchema = z.object({
   paymentRequestedAt: zDate.nullable().optional(),
   // Tedarikçinin vergi nosu da sonradan eklendi (eski kopya boş geri gelir); saklanan biçimde (yalnız rakam) yazılır
   supplierTaxNumber: z.string().max(20).nullable().optional().transform((v) => cleanTaxNumber(v)),
+  // Cari takip (sonradan eklendi; eski kopyada yok): taban ve defterin kapattığı fatura. Sayılan toplam (allocated)
+  // kopyada durmaz, dağıtımlar yeniden yazılınca hesaplanır
+  ledgerBase: z.number().finite().min(0).nullable().optional(),
+  paidByLedger: z.boolean().optional(),
+});
+
+/** Silinen faturanın cari bağları (releaseInvoiceLinks): geri alınınca yeniden kurulur, sığmayan para hesapta kalır */
+const cariLinksSchema = z.object({
+  allocations: z
+    .array(z.object({ paymentId: zId, amount: z.number().finite().positive(), originDebtId: zId.nullable() }))
+    .max(500),
+  debtIds: z.array(zId).max(500),
 });
 type Snapshot = z.infer<typeof snapshotSchema>;
 type DeletedEntry = {
@@ -462,6 +567,8 @@ type DeletedEntry = {
   deletedBy: string;
   row: Snapshot;
   lines: Omit<BillLineRow, "id" | "invoiceId">[];
+  /** Silinirken cari ödemesi sayılmış ya da faturasız alım bağlıydı (geri alınınca bağlar gelmez, söylenir) */
+  hadCari?: boolean;
 };
 
 /** Kalemin yeniden yazılabilir kopyası (satır ve fatura kimliği hariç) */
@@ -506,6 +613,10 @@ export async function deleteInvoice(id: number) {
     const invoiceId = zId.parse(id);
     const db = getDb();
     const result = await db.transaction(async (tx) => {
+      // Önce cari bağları (K11): bağlı faturasız alımlar eski hâline döner, borçtan gelen ödemeler borca geri taşınır;
+      // faturaya sayılan öteki ödemeler fatura silinince hesaba geçer
+      const links = await releaseInvoiceLinks(tx, invoiceId, me.name);
+      const hadCari = links.allocations.length > 0 || links.debtIds.length > 0;
       const lines = await tx.select().from(s.parasutBillLines).where(eq(s.parasutBillLines.invoiceId, invoiceId));
       const [d] = await tx.delete(s.invoices).where(eq(s.invoices.id, invoiceId)).returning();
       if (!d) return null;
@@ -520,10 +631,11 @@ export async function deleteInvoice(id: number) {
           deletedBy: me.name,
           row: snapshotOf(d),
           lines: lines.map(lineCopy),
+          ...(hadCari ? { hadCari } : {}),
         };
         await writeState(tx, DELETED_BILLS_KEY, [...deleted, entry].slice(-DELETED_BILLS_LIMIT));
       }
-      return { d, lines: lines.length };
+      return { d, lines: lines.length, links: hadCari ? { allocations: links.allocations, debtIds: links.debtIds } : null };
     });
     if (!result) throw new UserError("Fatura bulunamadı; başka bir oturumda silinmiş olabilir. Sayfayı yenileyin.");
     const { d } = result;
@@ -531,27 +643,47 @@ export async function deleteInvoice(id: number) {
     if (result.lines) await applyProductLinks([d.date.slice(0, 7)]);
     // Silinen fatura Ödemeler › Son ödenenler'de kalmasın ("Geri al" bulamayacağı bir satır olurdu)
     await forgetPaid("invoice", [invoiceId]);
-    await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`.trim());
+    const cari = result.links
+      ? ` · ${[
+          result.links.allocations.length ? `${tl(round2(result.links.allocations.reduce((a, x) => a + x.amount, 0)), 2)} ödeme hesaba geçti` : "",
+          result.links.debtIds.length ? `${result.links.debtIds.length} faturasız alım yeniden açık` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}`
+      : "";
+    await logActivity(me, "Fatura silindi", `${dateTR(d.date)} ${d.supplier} ${d.invoiceNo ?? ""}`.trim() + cari);
     refresh();
     return {
       externalId: parasutKeyOf(d),
-      /** Elle/Excel faturası için geri alma kopyası; Paraşüt faturası sunucuda saklanır */
-      snapshot: parasutKeyOf(d) ? null : snapshotOf(d),
+      /** Elle/Excel faturası için geri alma kopyası (cari bağlarıyla); Paraşüt faturası sunucuda saklanır */
+      snapshot: parasutKeyOf(d) ? null : { ...snapshotOf(d), ...(result.links ? { cari: result.links } : {}) },
       quantitiesRecomputed: result.lines > 0,
     };
   });
 }
 
-/** Az önce silinen elle/Excel faturasını geri yazar (bildirimdeki "Geri al"). Paraşüt faturası için unignoreParasutBill. */
-export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema>) {
+/**
+ * Az önce silinen elle/Excel faturasını geri yazar (bildirimdeki "Geri al"). Paraşüt faturası için unignoreParasutBill.
+ * Cari bağları varsa yeniden kurulur ve yeniden doğrulanır: bağsız kalmış alım yeniden bağlanır, ödemenin hesabında
+ * hâlâ duran para yeniden sayılır; sığmayan hesapta kalır.
+ */
+export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & { cari?: z.input<typeof cariLinksSchema> }) {
   return attempt(async () => {
     const me = await requireAdmin();
     const row = snapshotSchema.parse(snapshot);
+    const links = snapshot.cari ? cariLinksSchema.parse(snapshot.cari) : null;
     if (row.externalId || row.eInvoiceId) throw new UserError("Paraşüt faturası “Silinen Paraşüt faturaları” listesinden geri alınır.");
-    const [r] = await getDb().insert(s.invoices).values(row).returning({ id: s.invoices.id });
-    await logActivity(me, "Silinen fatura geri alındı", `${dateTR(row.date)} ${row.supplier} ${row.invoiceNo ?? ""}`.trim());
+    const db = getDb();
+    const out = await db.transaction(async (tx) => {
+      const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
+      if (!links) return { id: r.id, lost: 0 };
+      const res = await reattachInvoiceLinks(tx, r.id, links, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null });
+      return { id: r.id, lost: res.lost };
+    });
+    const lost = out.lost > 0.005 ? ` · ${tl(out.lost, 2)} ödeme yeniden sayılamadı, hesapta kaldı` : "";
+    await logActivity(me, "Silinen fatura geri alındı", `${dateTR(row.date)} ${row.supplier} ${row.invoiceNo ?? ""}`.trim() + lost);
     refresh();
-    return { id: r.id };
+    return { id: out.id };
   });
 }
 
@@ -578,7 +710,9 @@ export async function unignoreParasutBill(externalId: string) {
         .where(ext.startsWith("ei:") ? eq(s.invoices.eInvoiceId, ext.slice(3)) : eq(s.invoices.externalId, ext))
         .limit(1);
       if (existing) return { status: "exists" as const, entry, lines: 0 };
-      const row = snapshotSchema.parse(entry.row);
+      // Cari ödemeleri bu faturaya yeniden sayılmaz (silinirken hesaba geçtiler): defterin kapattığı fatura ödenmemiş döner
+      const parsed = snapshotSchema.parse(entry.row);
+      const row = parsed.paidByLedger ? { ...parsed, unpaid: true, paidAt: null, paidVia: null, paidByLedger: false } : parsed;
       const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
       let lines = 0;
       if (entry.lines?.length) {
@@ -602,9 +736,10 @@ export async function unignoreParasutBill(externalId: string) {
     const label = out.entry ? `${dateTR(out.entry.row.date)} ${splitSupplier(out.entry.row.supplier).base}` : `Paraşüt #${ext}`;
     await logActivity(me, "Silinen Paraşüt faturası geri alındı", label);
     refresh();
+    const cariNote = out.entry?.hadCari ? " Ödemeler bu faturaya yeniden sayılmadı; Tedarikçiler'den Borçlara say." : "";
     const message =
       out.status === "restored"
-        ? `${label} listeye geri döndü. Sonraki eşitleme tutarları Paraşüt'ten günceller.`
+        ? `${label} listeye geri döndü. Sonraki eşitleme tutarları Paraşüt'ten günceller.${cariNote}`
         : out.status === "exists"
           ? `${label} zaten listede; yok sayma kaldırıldı.`
           : "Yok sayma kaldırıldı. Fatura sonraki Paraşüt eşitlemesinde yeniden alınır; eski bir faturaysa Paraşüt sayfasından o tarihten eşitleyin.";

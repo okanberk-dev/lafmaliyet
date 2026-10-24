@@ -499,6 +499,52 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.doesNotMatch(third.summary, /geç girilmiş/, "aynı faturalar her sabah yeniden sayılmaz");
   });
 
+  test("cari: takipli kartın yeni faturası taban 0 alır; tutarı düşen faturanın fazlası hesaba geçer; iptalde bağlar çözülür", async () => {
+    const settle = await import("../src/server/cari/settle");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      // Kartın ilk ödemesi: kart takipte (eşitleme yeni faturaya 0 yazar)
+      const [pay] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 500, method: "havale", createdByName: "Test" }).returning();
+      fake.bills.set("301", bill("301", { amount: 1000, vat: 100 }));
+      await run();
+      const [f] = await rows();
+      assert.equal(f.ledgerBase, 0, "takipli kartın yeni faturası");
+      assert.equal(f.allocated, 0);
+      // Faturasız alım bu faturaya bağlanır (ödemesi faturaya geçer), ödemenin 100'ü de doğrudan faturaya sayılır
+      const [debt] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "borc", date: daysAgo(6), amount: 300, costMode: "fatura", description: "süt", createdByName: "Test" }).returning();
+      await db.transaction(async (tx) => {
+        await settle.writeAllocations(tx, pay.id, [{ kind: "debt", id: debt.id, amount: 300 }], "Test");
+        await settle.linkDebts(tx, [debt.id], f.id);
+        await settle.writeAllocations(tx, pay.id, [{ kind: "invoice", id: f.id, amount: 100 }], "Test");
+        await settle.recomputeAllocated(tx, [f.id]);
+      });
+      assert.equal((await rows())[0].allocated, 400);
+      // Paraşüt'te tutar düşer (330 ödenecek): sayılan 400'ün 70'i hesaba geçer
+      fake.bills.get("301")!.amount = 300;
+      fake.bills.get("301")!.vat = 30;
+      const r = await run();
+      const [g] = await rows();
+      assert.equal(g.payable, 330);
+      assert.equal(g.allocated, 330);
+      assert.equal(g.paidByLedger, true, "tamamen karşılandı: defterle kapandı");
+      assert.match(r.summary, /Cari: 1 faturada ödeme hesaba geçti/);
+      // Paraşüt'te iptal: fatura silinir, önce bağlar çözülür (borç bağsız, borçtan gelen 300 borca döner, 30 hesaba)
+      fake.bills.get("301")!.itemType = "cancelled";
+      await run();
+      assert.equal((await rows()).length, 0);
+      const [d] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.deepEqual([d.invoiceId, d.costMode, d.linkPrev], [null, "fatura", null]);
+      const allocs = await db.select().from(s.supplierAllocations);
+      assert.deepEqual(allocs.map((a) => [a.debtId, a.invoiceId, a.amount]), [[debt.id, null, 300]]);
+      assert.deepEqual([...(await settle.cardsWithCredit())], [[card.id, 200]]);
+      const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Sistem · Paraşüt'te silinen fatura"));
+      assert.match(log.detail ?? "", /1 faturasız alım yeniden açık/);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
   test("istemci: 429'da yeniden dener; yenileme belirteci reddedilince parolayla girer", async () => {
     fake.bills.set("401", bill("401"));
     fake.throttle = 2;
