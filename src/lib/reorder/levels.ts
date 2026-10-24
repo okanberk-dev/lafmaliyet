@@ -6,7 +6,7 @@
  */
 
 import type { Unit } from "../calc/types";
-import { addDays, daysBetween, isLastDayOfMonth } from "../reminders";
+import { addDays, daysBetween, isLastDayOfMonth, monthEnd } from "../reminders";
 import type { OrderLite, ReorderSettings } from "./types";
 
 /** Son sayım bundan eskiyse satır "Sayım eski" der (öneri yine hesaplanır) */
@@ -127,15 +127,27 @@ export interface OnHand {
 }
 
 /**
- * Eldeki stok: en yeni hızlı sayım ya da ay sonu sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Miktar
- * sayıldığı andaki çarpanla kendi birimine çevrilir (sayım birimi sonradan değişse de).
+ * Ay sonu sayımının anı (`month`: YYYY-MM). Ay sonu sayımı ayın son günü kapanıştan sonra yapılır; çoğu zaman ertesi
+ * sabah ya da günler sonra girilir, geçen ayınki ay boyu düzeltilebilir. An kayıt anıdır, ama en geç ertesi ayın 1'i
+ * 05:00'ten 1 ms önce: ayın son iş gününün sonu (businessDate, DAY_TURN_HOUR). Arada yapılan hızlı sayım onu geçer;
+ * arada gelen mal siparişte kalır. Bitmemiş ayın sayımı kayıt anıyla kalır.
+ */
+export function monthEndCountAt(month: string, updatedAt: Date): Date {
+  const end = Date.parse(`${addDays(monthEnd(`${month}-01`), 1)}T05:00:00+03:00`) - 1;
+  return updatedAt.getTime() > end ? new Date(end) : updatedAt;
+}
+
+/**
+ * Eldeki stok: en yeni hızlı sayım ya da ay sonu sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Ay sonu
+ * sayımının anı monthEndCountAt'ten (kayıt anı değil); eşitlikte hızlı sayım. Miktar sayıldığı andaki çarpanla kendi
+ * birimine çevrilir (sayım birimi sonradan değişse de).
  */
 export function latestOnHand(
   quick: { qty: number; factor: number; countedAt: string; day: string; by: string } | null,
-  monthEnd: { qty: number; factor: number; updatedAt: string; day: string; by: string | null } | null,
+  monthEnd: { qty: number; factor: number; at: string; day: string; by: string | null } | null,
 ): OnHand | null {
   const q = quick ? { base: quick.qty * quick.factor, at: quick.countedAt, day: quick.day, source: "hizli" as const, by: quick.by } : null;
-  const m = monthEnd ? { base: monthEnd.qty * monthEnd.factor, at: monthEnd.updatedAt, day: monthEnd.day, source: "ay-sonu" as const, by: monthEnd.by } : null;
+  const m = monthEnd ? { base: monthEnd.qty * monthEnd.factor, at: monthEnd.at, day: monthEnd.day, source: "ay-sonu" as const, by: monthEnd.by } : null;
   if (!q || !m) return q ?? m;
   return Date.parse(m.at) > Date.parse(q.at) ? m : q;
 }

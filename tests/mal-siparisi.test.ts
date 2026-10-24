@@ -17,6 +17,7 @@ import { createModel } from "../src/lib/calc/engine";
 import { latestSalesMonth } from "../src/lib/calc/insights";
 import { salesBasis } from "../src/lib/calc/price-loss";
 import type { Dataset } from "../src/lib/calc/types";
+import { businessDate } from "../src/lib/cash-report";
 import { countStep, dailyOutcome } from "../src/lib/job-health";
 import {
   countOverdue,
@@ -27,6 +28,7 @@ import {
   inheritLeadDays,
   isCountDay,
   latestOnHand,
+  monthEndCountAt,
   nextCountDay,
   onOrderFor,
   packsFor,
@@ -140,13 +142,37 @@ test("önerilen birim: küsur dörtte birse bir birim daha; az kaldıysa en az b
 
 test("eldeki: hangisi yeniyse (hızlı ya da ay sonu), miktar × çarpan; ikisi de yoksa null", () => {
   const quick = { qty: 6, factor: 1000, countedAt: "2026-10-26T07:30:00.000Z", day: "2026-10-26", by: "Ayşe" };
-  const monthEnd = { qty: 9, factor: 1000, updatedAt: "2026-10-01T06:00:00.000Z", day: "2026-10-01", by: "Mehmet" };
+  const monthEnd = { qty: 9, factor: 1000, at: "2026-10-01T06:00:00.000Z", day: "2026-10-01", by: "Mehmet" };
   assert.deepEqual(latestOnHand(quick, monthEnd), { base: 6000, at: quick.countedAt, day: "2026-10-26", source: "hizli", by: "Ayşe" });
-  const newer = { ...monthEnd, updatedAt: "2026-10-27T06:00:00.000Z", day: "2026-10-27" };
+  const newer = { ...monthEnd, at: "2026-10-27T06:00:00.000Z", day: "2026-10-27" };
   assert.equal(latestOnHand(quick, newer)?.source, "ay-sonu");
   assert.equal(latestOnHand(quick, newer)?.base, 9000);
   assert.equal(latestOnHand(null, null), null);
   assert.equal(latestOnHand(null, monthEnd)?.base, 9000);
+  // Eylül sayımı 27 Ekim'de düzeltildi: anı 30 Eylül'ün sonu, 26 Ekim'in hızlı sayımı daha yeni
+  const sepAt = monthEndCountAt("2026-09", new Date("2026-10-27T06:00:00Z"));
+  assert.equal(latestOnHand(quick, { ...monthEnd, at: sepAt.toISOString(), day: businessDate(sepAt) })?.source, "hizli");
+});
+
+test("ay sonu sayımının anı: kayıt anı, en geç ayın son iş gününün sonu; sonradan girilen ya da düzeltilen ayın son günüdür", () => {
+  const at = (month: string, iso: string) => monthEndCountAt(month, new Date(iso)).toISOString();
+  // Ekim sayımı 3 Kasım'da girildi: 31 Ekim'in iş gününün sonu (1 Kasım 05:00'ten 1 ms önce, Türkiye)
+  assert.equal(at("2026-10", "2026-11-03T08:00:00Z"), "2026-11-01T01:59:59.999Z");
+  assert.equal(businessDate(new Date("2026-11-01T01:59:59.999Z")), "2026-10-31");
+  // Aynı gece (02:30, iş günü hâlâ 31 Ekim) girilen: kayıt anı
+  assert.equal(at("2026-10", "2026-10-31T23:30:00Z"), "2026-10-31T23:30:00.000Z");
+  assert.equal(at("2026-10", "2026-11-01T02:00:00Z"), "2026-11-01T01:59:59.999Z", "05:00'te iş günü döner");
+  // Bu ayın sayımı (ay bitmedi): kayıt anı
+  assert.equal(at("2026-11", "2026-11-03T08:00:00Z"), "2026-11-03T08:00:00.000Z");
+  // Yıl dönümü ve artık yıl
+  assert.equal(at("2026-12", "2027-01-05T09:00:00Z"), "2027-01-01T01:59:59.999Z");
+  const feb = monthEndCountAt("2028-02", new Date("2028-03-02T09:00:00Z"));
+  assert.equal(feb.toISOString(), "2028-03-01T01:59:59.999Z");
+  assert.equal(businessDate(feb), "2028-02-29");
+  // Sınır iş gününün dönüşüyle aynı (DAY_TURN_HOUR): 1 ms sonrası ertesi ayın 1'i
+  const end = monthEndCountAt("2026-10", new Date("2027-01-01T00:00:00Z"));
+  assert.equal(businessDate(end), "2026-10-31");
+  assert.equal(businessDate(new Date(end.getTime() + 1)), "2026-11-01");
 });
 
 /** Sipariş satırı (Süt, 1 koli = 12 LT) */
@@ -255,6 +281,32 @@ test("Geldi'nin anı: sayımın gününe kadar beklenen sipariş sayımdan sonra
   assert.equal(receivedAtFor(ispas, { at: "2026-10-23T22:10:00.000Z", day: "2026-10-23" }, tap), tap);
   // Gönderimden hemen sonraki sayım: gönderimden önceye yazılmaz
   assert.equal(receivedAtFor({ sentAt: "2026-10-23T21:54:58.500Z", expectedOn: "2026-10-23" }, count, tap).toISOString(), "2026-10-23T21:54:58.500Z");
+});
+
+test("Ekim sayımı 3 Kasım'da girilince: arada gelen süt siparişte kalır, arada yapılan hızlı sayım geçer", () => {
+  // 26.10 hızlı sayım 9 LT; 30.10 gönderilen 2 koli süt 02.11 geldi (Geldi 09:05); Ekim'in ay sonu sayımı (31.10
+  // kapanıştan sonra 6 LT) 03.11 11:00'de girildi
+  const quick = { qty: 9, factor: 1000, countedAt: "2026-10-26T07:30:00.000Z", day: "2026-10-26", by: "Ayşe" };
+  const octAt = monthEndCountAt("2026-10", new Date("2026-11-03T08:00:00Z"));
+  const oct = { qty: 6, factor: 1000, at: octAt.toISOString(), day: businessDate(octAt), by: "Sahip" };
+  const sent = { sentAt: "2026-10-30T15:00:00.000Z", expectedOn: "2026-11-02" };
+  const receivedAt = receivedAtFor(sent, { at: quick.countedAt, day: quick.day }, new Date("2026-11-02T06:05:00Z")).toISOString();
+  const o = order({ ...sent, sentDay: "2026-10-30", receivedAt });
+  const onHand = latestOnHand(quick, oct)!;
+  assert.deepEqual([onHand.source, onHand.day, onHand.base], ["ay-sonu", "2026-10-31", 6000]);
+  // Kayıt anı (03.11) yazılsaydı süt sayımda sayılır, 2 koli yeniden önerilirdi
+  assert.equal(onOrderFor([o], MILK.id, onHand.at, "2026-11-03").base, 24000);
+  const l = planLine(item({ onHand, onOrder: onOrderFor([o], MILK.id, onHand.at, "2026-11-03").base }), S, new Date("2026-11-03T08:30:00Z"));
+  assert.equal(l.packs, 0);
+  assert.equal(l.status, "yeterli");
+  assert.deepEqual(readySuppliers(planGroups([l]), [o], onHand.at), [], "Bugün'de 'Sipariş hazır' yok");
+  // Geldi 04.11'de geç dokunulursa: sipariş ayın son gününden sonra bekleniyordu, dokunuş anı kalır
+  assert.equal(receivedAtFor(sent, { at: onHand.at, day: onHand.day }, new Date("2026-11-04T06:00:00Z")).toISOString(), "2026-11-04T06:00:00.000Z");
+  // 02.11'in hızlı sayımı (28 LT) Ekim'in sonradan girilen sayımını geçer
+  assert.equal(latestOnHand({ ...quick, qty: 28, countedAt: "2026-11-02T07:30:00.000Z", day: "2026-11-02" }, oct)?.source, "hizli");
+  // Ekim sayımı 20.11'de düzeltildi: 16.11'in hızlı sayımı yine daha yeni
+  const fixed = monthEndCountAt("2026-10", new Date("2026-11-20T12:00:00Z"));
+  assert.equal(latestOnHand({ ...quick, qty: 20, countedAt: "2026-11-16T07:30:00.000Z", day: "2026-11-16" }, { ...oct, at: fixed.toISOString(), day: businessDate(fixed) })?.source, "hizli");
 });
 
 test("hızlı sayım çakışması: kayıt formdaki biçimle karşılaştırılır (1,2345 ya da aynı gün değişen sayım birimi çakışma değil)", () => {
@@ -725,6 +777,16 @@ test("kaynak: hızlı sayım iki role açık ve fiyatsız (sayfa, istemci, yükl
   for (const p of ["src/app/panel/mal-siparisi/page.tsx", "src/app/panel/mal-siparisi/gonderilen/page.tsx", "src/app/panel/mal-siparisi/kalemler/page.tsx"]) {
     assert.match(read(p), /await requireAdmin\(\)/, p);
   }
+});
+
+test("kaynak: ay sonu sayımının anı monthEndCountAt'ten (kayıt anı değil)", () => {
+  const src = read("src/server/data/reorder.ts");
+  for (const name of ["loadOnHand", "latestCountOf", "countFacts", "loadQuickCountSheet"]) assert.match(bodyOf(src, name), /monthEndCountAt\(/, name);
+  assert.doesNotMatch(bodyOf(src, "loadOnHand"), /businessDate\(mr\.updatedAt\)/);
+  assert.doesNotMatch(bodyOf(src, "latestCountOf"), /orderBy\(desc\(s\.stockCounts\.updatedAt\)\)/);
+  assert.doesNotMatch(bodyOf(src, "countFacts"), /gte\(s\.stockCounts\.updatedAt/);
+  // Sayım eski uyarısı son sayımın iş gününden (sınırlanmış an 1'i gösterirdi)
+  assert.match(bodyOf(src, "loadOrderPlan"), /staleDays: d\.lastCountDay \?/);
 });
 
 test("kaynak: eylemlerin yetkisi (hızlı sayım ve Geldi iki rolde, ötekiler yönetici)", () => {

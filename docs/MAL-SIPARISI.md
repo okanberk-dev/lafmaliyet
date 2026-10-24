@@ -41,7 +41,7 @@ Bütün miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim); sayım birim
 | **Teslim süresi** | Kalemde yazılan; yoksa aynı tedarikçinin takipteki kalemlerinde en çok yazılan (eşitlikte uzun olan); yoksa Ayarlar'daki (varsayılan 2 gün) |
 | **En az** | günlük × teslim × (1 + pay). Eldeki bunun altındaysa satır **Az kaldı**: şimdi verilen sipariş gelmeden bitebilir |
 | **Hedef** | Elle yazılan; yoksa günlük × (teslim + sayım aralığı) × (1 + pay), sayım biriminde yukarı yuvarlı (KG ve LT 0,5'e, ADET ve DİLİM tama). Pay varsayılan %20. Satış verisi yoksa ya da kalem reçetede geçmiyorsa **Hedef yok**: elle yazılır |
-| **Eldeki** | En yeni sayım: hızlı sayım ya da bu / geçen ayın Stok sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Sayıldığı andaki sayım birimi çarpanıyla |
+| **Eldeki** | En yeni sayım: hızlı sayım ya da bu / geçen ayın Stok sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Ay sonu sayımı ayın son günü kapanıştan sonra yapılır: ertesi gün ya da günler sonra girilse, sonradan düzeltilse de ayın son gününün sayımıdır (en geç ertesi ayın 1'i 05:00). Arada yapılan hızlı sayım onu geçer, arada gelen mal siparişte kalır. Sayıldığı andaki sayım birimi çarpanıyla |
 | **Siparişte** | İptal edilmemiş, son 14 günde gönderilmiş ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra geldi (Geldi işareti ya da eşleşen faturanın günü). Kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır |
 | **Geldi'nin anı** | Dokunuş anı; ama siparişin kalemleri gönderildikten sonra sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa sayımın hemen öncesi: sayımdan sonra işaretlenen (Hızlı sayım'da Kaydet'ten sonra, Yoldaki siparişler'den, unutulup sonradan) mal büyük olasılıkla sayıldı, siparişte ikinci kez sayılmaz. Sayımın gününden sonra beklenen ya da sayımdan sonra gönderilen siparişte dokunuş anı (mal sayımdan sonra geldi, siparişte sayılır). Gecikip sayımdan sonra gelen mal bir sonraki sayıma kadar eksik sayılabilir |
 | **Gereken** | hedef − eldeki − siparişte |
@@ -67,7 +67,8 @@ hesaplanır; ekranlar değişmez.
   daha kısa bir aralığa yeter, hedefler küçülür.
 - Gün 05:00'te döner (kasa raporu gibi): gece 01:00'de girilen sayım önceki günün sayımıdır.
 - **Ayın son günü hızlı sayım istenmez**: o gün ay sonu Stok sayımı yapılır ve eldeki olarak okunur. Bugün satırı ve
-  bildirim çıkmaz.
+  bildirim çıkmaz. Ay sonu sayımı geç girilse de o günün sayımıdır: girildiği gün Bugün'de "sayıldı" saymaz; "Gecikti"
+  ve "Sayım eski" ayın son gününden sayılır.
 - **Gecikti:** son sayım sayım aralığı + 1 günden eskiyse (haftada birde 8 gün) Bugün satırı her gün "Gecikti" der.
 - **Bildirim:** sayım günü sabah işinde (08:00–09:00), takipte kalem varsa ve hepsi sayılmadıysa "Sabah özeti" açık
   cihazlara "Bugün hızlı sayım günü" bildirimi gider (`src/server/notify/reorder-push.ts`; `job_runs` adımı `count`,

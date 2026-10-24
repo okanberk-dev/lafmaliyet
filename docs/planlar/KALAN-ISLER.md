@@ -120,6 +120,12 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.
 
+### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
+
+- **Ay sonu sayımının anı:** geç girilen ya da sonradan düzeltilen ay sonu sayımı ayın son gününün sayımıdır
+  (`monthEndCountAt`, en geç ertesi ayın 1'i 05:00); arada gelen mal siparişte kalır, girildiği gün Bugün'de "sayıldı"
+  demez, "Gecikti" ve "Sayım eski" ayın son gününden sayılır.
+
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
@@ -166,6 +172,11 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 5. Sahibin verdiği cevaplar: kurye yok; Paraşüt'te banka hesapları bağlı değil (hakediş/ödeme elle işaretlenir);
    ModPOS günlük döküm yolda.
 6. CRITIQUE.md §6'daki sorular (varsayılanlar uygulanır).
+7. Mal siparişi: Paraşüt faturası siparişle eşleşince Geldi'nin anı **faturanın günü 12:00** yazılır
+   (`docs/MAL-SIPARISI.md` §2, §7). Fatura sevkte kesildiyse sipariş erken gelmiş sayılır (fazla öneri), sayımdan
+   sonraki bir güne tarihliyse geç (eksik öneri); saklanan hiçbir değer ikisini birden düzeltmiyor. Kalıcı çözüm
+   (faturası bağlanan siparişte de Geldi'yi açık tutmak ya da sevki ayrıca kaydetmek) eylemi, Hızlı sayım listesini ve
+   sipariş kartını değiştirir. Varsayılan: kural olduğu gibi kalır.
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 

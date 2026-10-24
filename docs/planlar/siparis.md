@@ -120,7 +120,9 @@ loaders already separate the price fields (§6.2), so it can be enabled later.
   - When perDay is unknown or 0 and nothing is typed, the status is "Hedef yok".
 - **Eldeki** `onHand` = the newest of:
   - the latest Hızlı sayım row (`quick_counts`, `qty × factor`, at `countedAt`);
-  - the current or previous month's Stok sayımı row (`stock_counts`, `qty × factor`, at `updatedAt`).
+  - the current or previous month's Stok sayımı row (`stock_counts`, `qty × factor`, at `monthEndCountAt(month,
+    updatedAt)`: `updatedAt`, but no later than next month's 1st 05:00 TR − 1 ms; a newer quick count wins, deliveries
+    after it stay Siparişte).
 
   The month-end count therefore also refreshes the order list.
 - **Siparişte** `onOrder` = Σ base quantity of the item's lines in orders that are:
@@ -577,7 +579,7 @@ Positions:
 
 | Key | Role | Rule → status, title, badge, detail, href, action |
 |---|---|---|
-| `hizli-sayim` | Both | Shown only if `total > 0` and the day is not the month's last day, and either it is a count day **or** the count is overdue (`lastCountDay` older than `coverDays + 1` days). Title "Haftalık hızlı sayım". `countedToday ≥ total` → `done`, `"{T} kalemin hepsi sayıldı."` (admin adds `" Sipariş listesi hazır."`); admin `/panel/siparis` "Sipariş listesi", staff `/panel/hizli-sayim` "Sayımı aç". `0 < n < T` → `todo`, badge `"{n} / {T}"`, `"{n} / {T} kalem sayıldı; kalanları da girin."`, `/panel/hizli-sayim`, "Sayıma devam". `n = 0` on a count day → `todo`, badge "Bugün", `"Bugün hızlı sayım günü: {T} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır."`, "Sayıma başla". `n = 0` and overdue → `todo`, badge "Gecikti", `"Son hızlı sayım {longDateTR(last)} ({k} gün önce). Sipariş önerisi eski stoka göre."`, "Sayıma başla". `countedToday` also counts tracked items whose `stock_counts.updatedAt` falls on today's business day |
+| `hizli-sayim` | Both | Shown only if `total > 0` and the day is not the month's last day, and either it is a count day **or** the count is overdue (`lastCountDay` older than `coverDays + 1` days). Title "Haftalık hızlı sayım". `countedToday ≥ total` → `done`, `"{T} kalemin hepsi sayıldı."` (admin adds `" Sipariş listesi hazır."`); admin `/panel/siparis` "Sipariş listesi", staff `/panel/hizli-sayim` "Sayımı aç". `0 < n < T` → `todo`, badge `"{n} / {T}"`, `"{n} / {T} kalem sayıldı; kalanları da girin."`, `/panel/hizli-sayim`, "Sayıma devam". `n = 0` on a count day → `todo`, badge "Bugün", `"Bugün hızlı sayım günü: {T} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır."`, "Sayıma başla". `n = 0` and overdue → `todo`, badge "Gecikti", `"Son hızlı sayım {longDateTR(last)} ({k} gün önce). Sipariş önerisi eski stoka göre."`, "Sayıma başla". `countedToday` also counts tracked items whose month-end instant (`monthEndCountAt`) falls on today's business day; a previous month's row typed today does not count |
 | `siparis` | Admin | The first that applies. (1) Delivery differences → `warn`, "Teslim kontrolü", badge `"{n} sipariş"`, detail `"{supplier}: {checkSummary}"` for the first two joined with "; " + `"…"`, `/panel/siparis/gonderilen`, "Kontrol et". (2) Ready list → `todo`, "Mal siparişi", badge `"{s} tedarikçi"`, `"{lines} kalem sipariş öneriliyor: {first 3 suppliers}{…}. WhatsApp'tan tek dokunuşla gönderin."`, `/panel/siparis`, "Listeyi aç". (3) Late deliveries → `todo`, "Gelmeyen sipariş", badge `"{n}"`, `"{n} sipariş beklenen günde gelmedi; geldiyse işaretleyin."`, `/panel/siparis/gonderilen`, "Bak". Otherwise no row. "Ready" means: the last count is from today or yesterday, and there are suppliers with `packs > 0` that have had no order sent since that count |
 
 ### 3.9 Count-day push (daily job)
@@ -824,8 +826,9 @@ export function suggestedLevels(i: { perDay: number | null; leadDays: number; co
 export function packsFor(need: number, unitSize: number, critical: boolean): number;
 
 export interface OnHand { base: number; at: string; day: string; source: "hizli" | "ay-sonu"; by: string | null }
+export function monthEndCountAt(month: string, updatedAt: Date): Date;   // updatedAt, capped at next month's 1st 05:00 TR − 1 ms
 export function latestOnHand(quick: { qty: number; factor: number; countedAt: string; day: string; by: string } | null,
-  monthEnd: { qty: number; factor: number; updatedAt: string; by: string | null } | null): OnHand | null;
+  monthEnd: { qty: number; factor: number; at: string; day: string; by: string | null } | null): OnHand | null;
 
 export interface OrderLite { id: number; supplier: string; sentAt: string; sentDay: string; expectedOn: string; status: "open" | "closed" | "cancelled";
   receivedAt: string | null; invoiceId: number | null; manualMatch: boolean; lines: ReorderLine[]; check: DeliveryCheck | null;
@@ -961,7 +964,7 @@ export async function loadReorderSettings(): Promise<ReorderSettings>;   // inte
 export async function loadTracked(): Promise<TrackedRow[]>;             // reorder_items ⋈ ingredients (active, countUnit)
 export async function loadOnHand(ids: number[]): Promise<Map<number, OnHand>>;
 //   select distinct on (ingredient_id) … from quick_counts where ingredient_id = any($1) order by ingredient_id, counted_at desc
-//   + stock_counts for current and previous month (updatedAt, countedBy)
+//   + stock_counts for current and previous month (month, updatedAt → monthEndCountAt, countedBy)
 export async function loadOrders(opts: { sinceDays: number; status?: ("open" | "closed" | "cancelled")[] }): Promise<OrderLite[]>;
 export async function loadUsage(model: Model, today: string): Promise<UsageEstimate | null>;
 //   pickUsage(dailyUsage(model, await loadDailyProductSales(addDays(today, -28), today), { today }), monthlyUsage(model, latestSalesMonth(model)))
