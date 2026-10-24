@@ -681,7 +681,13 @@ test("Bugün › hızlı sayım: gecikince her gün; taze sayımda sayım günü
   const late = row(dayTasks(facts("staff", tr("2026-10-27T10:00"), rf({ lastCountDay: "2026-10-15" }))), "hizli-sayim")!;
   assert.equal(late.status, "todo");
   assert.equal(late.badge, "Gecikti");
-  assert.equal(late.detail, "Son hızlı sayım 15 Ekim Perşembe (12 gün önce). Sipariş önerisi eski stoka göre.");
+  assert.equal(late.detail, "Son sayım 15 Ekim Perşembe (12 gün önce). Sipariş önerisi eski stoka göre.");
+  // Son sayım ay sonu sayımıysa da "Son sayım" (hızlı sayım değil); Mal siparişi'nin "Son sayım … gün önce" uyarısı gibi
+  const monthEndLate = row(dayTasks(facts("staff", tr("2026-10-09T10:00"), rf({ lastCountDay: "2026-09-30" }))), "hizli-sayim")!;
+  assert.equal(monthEndLate.badge, "Gecikti");
+  assert.equal(monthEndLate.status, "todo");
+  assert.equal(monthEndLate.detail, "Son sayım 30 Eylül Çarşamba (9 gün önce). Sipariş önerisi eski stoka göre.");
+  assert.doesNotMatch(monthEndLate.detail, /hızlı sayım/);
   assert.equal(row(dayTasks(facts("staff", tr("2026-10-27T10:00"), rf())), "hizli-sayim"), undefined);
   assert.equal(row(dayTasks(facts("staff", tr("2026-08-31T10:00"), rf({ lastCountDay: "2026-08-01" }))), "hizli-sayim"), undefined, "ay sonu");
   assert.equal(row(dayTasks(facts("staff", tr("2026-10-26T10:00"), rf({ total: 0 }))), "hizli-sayim"), undefined, "takip yok");

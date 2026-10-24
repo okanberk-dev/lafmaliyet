@@ -360,9 +360,9 @@ const countMonthEnd: Row = (f, c) => {
 // ---------------------------------------------------------------- Mal siparişi (docs/MAL-SIPARISI.md)
 
 /**
- * Haftalık hızlı sayım (ikisi): sayım günü ya da son sayım sayım aralığı + 1 günden eskiyse (gecikti). Takipte kalem
- * yoksa ve ayın son günü (ay sonu Stok sayımı yerine geçer) satır yok. Ay sonu sayımında sayılan takip kalemi de
- * sayılmış sayılır. Gün iş günüdür (05:00'te döner), kayıtlar gibi.
+ * Haftalık hızlı sayım (ikisi): sayım günü ya da son sayım (hızlı ya da ay sonu) sayım aralığı + 1 günden eskiyse
+ * (gecikti). Takipte kalem yoksa ve ayın son günü (ay sonu Stok sayımı yerine geçer) satır yok. Ay sonu sayımında
+ * sayılan takip kalemi de sayılmış sayılır. Gün iş günüdür (05:00'te döner), kayıtlar gibi.
  */
 const quickCountRow: Row = (f, c) => {
   const r = f.reorder;
@@ -390,7 +390,7 @@ const quickCountRow: Row = (f, c) => {
     ...base,
     status: "todo",
     badge: "Gecikti",
-    detail: `Son hızlı sayım ${longDateTR(r.lastCountDay!)} (${num(late!)} gün önce). Sipariş önerisi eski stoka göre.`,
+    detail: `Son sayım ${longDateTR(r.lastCountDay!)} (${num(late!)} gün önce). Sipariş önerisi eski stoka göre.`,
     action: "Sayıma başla",
   };
 };
@@ -594,19 +594,22 @@ const paymentsRow: Row = (f) => {
 
 /**
  * Hakedişler (docs/KOMISYON.md): ödeme süresi geçen ve "Hakediş geldi" işaretlenmeyen yemek kartı ya da platform
- * hakedişi varsa; yoksa satır çıkmaz. En eski son gün yazılır.
+ * hakedişi varsa; yoksa satır çıkmaz. En eski son gün yazılır. Ay, Komisyon & hakediş'teki gibi hakedişin satış ayıdır
+ * (platformda son gün 90 güne kadar sonra); bu yıldan değilse yılıyla.
  */
-const commissionRow: Row = (f) => {
+const commissionRow: Row = (f, c) => {
   const list = f.role === "admin" ? f.commission?.overdue : null;
   if (!list?.length) return null;
   const [first] = list;
-  const month = MONTH_NAMES[Number(first.month.slice(5, 7)) - 1];
+  const name = MONTH_NAMES[Number(first.month.slice(5, 7)) - 1];
+  const month = first.month.slice(0, 4) === c.today.slice(0, 4) ? name : monthLabel(first.month);
+  const more = list.length > 1 ? ` ${num(list.length - 1)} hakediş daha gecikti.` : "";
   return {
     key: "komisyon",
     title: "Hakedişler",
     status: "warn",
     badge: `${num(list.length)} gecikti`,
-    detail: `${first.label} (${month}) · son gün ${dayMonthTR(first.due)}${list.length > 1 ? ` ve ${num(list.length - 1)} hakediş daha` : ""}`,
+    detail: `${first.label} hakedişi (${month} satışları): son gün ${dayMonthTR(first.due)}.${more} Geldiyse işaretleyin.`,
     href: "/panel/komisyonlar",
     action: "Hakedişlere bak",
   };

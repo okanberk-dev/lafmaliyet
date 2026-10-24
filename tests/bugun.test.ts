@@ -389,7 +389,7 @@ test("komisyon: geciken hakediş varsa 'sorun var' (en eski son gün), yoksa sat
   assert.equal(one.status, "warn");
   assert.equal(one.title, "Hakedişler");
   assert.equal(one.badge, "1 gecikti");
-  assert.equal(one.detail.replaceAll("\u00a0", " "), "Pluxee (Eylül) · son gün 20 Ekim");
+  assert.equal(one.detail.replaceAll("\u00a0", " "), "Pluxee hakedişi (Eylül satışları): son gün 20 Ekim. Geldiyse işaretleyin.");
   assert.equal(one.href, "/panel/komisyonlar");
   assert.equal(one.action, "Hakedişlere bak");
   const two = row([
@@ -397,7 +397,20 @@ test("komisyon: geciken hakediş varsa 'sorun var' (en eski son gün), yoksa sat
     { label: "Pluxee", month: "2026-09", due: "2026-10-20" },
   ]);
   assert.equal(two.badge, "2 gecikti");
-  assert.equal(two.detail.replaceAll("\u00a0", " "), "Trendyol Go (Eylül) · son gün 14 Ekim ve 1 hakediş daha");
+  assert.equal(two.detail.replaceAll("\u00a0", " "), "Trendyol Go hakedişi (Eylül satışları): son gün 14 Ekim. 1 hakediş daha gecikti. Geldiyse işaretleyin.");
+  // Ay, hakedişin satış ayı (son gün değil): platformda son gün 90 güne kadar sonra
+  const platform = row([{ label: "Yemeksepeti", month: "2026-07", due: "2026-10-21" }]);
+  assert.equal(platform.detail.replaceAll("\u00a0", " "), "Yemeksepeti hakedişi (Temmuz satışları): son gün 21 Ekim. Geldiyse işaretleyin.");
+  // Pencere 13 ay: geçen yılın aynı adlı ayı yılıyla yazılır
+  const lastYear = row([{ label: "Pluxee", month: "2025-10", due: "2025-11-30" }]);
+  assert.equal(lastYear.detail.replaceAll("\u00a0", " "), "Pluxee hakedişi (Ekim 2025 satışları): son gün 30 Kasım. Geldiyse işaretleyin.");
+  const three = row([
+    { label: "Trendyol Go", month: "2026-09", due: "2026-10-14" },
+    { label: "Pluxee", month: "2026-09", due: "2026-10-20" },
+    { label: "Multinet", month: "2026-09", due: "2026-10-21" },
+  ]);
+  assert.equal(three.badge, "3 gecikti");
+  assert.equal(three.detail.replaceAll("\u00a0", " "), "Trendyol Go hakedişi (Eylül satışları): son gün 14 Ekim. 2 hakediş daha gecikti. Geldiyse işaretleyin.");
   // Geciken yok, okunamadı ya da olgu yok: satır çıkmaz
   for (const commission of [{ overdue: [] }, null, undefined]) assert.ok(!keys(dayTasks(admin(NOON, { commission }))).includes("komisyon"));
 });
