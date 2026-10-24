@@ -1,15 +1,17 @@
 import "server-only";
 
-import { and, asc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, ne } from "drizzle-orm";
 
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { supplierResolver } from "@/app/panel/tedarikciler/logic";
-import { accountOf, debtRemaining, paymentCredit, type AccountInvoice, type CariAccount, type CariAllocation, type CariDebt, type CariPayment } from "@/lib/cari/account";
-import { EPS, round2, type CariMethod } from "@/lib/cari/balance";
+import { accountOf, debtRemaining, paymentCredit, type AccountInvoice, type CariAccount, type CariAllocation } from "@/lib/cari/account";
+import { EPS, round2 } from "@/lib/cari/balance";
 import { KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
+
+import { loadCardEntries, toDebt, type CardDebt, type CardPayment } from "./cari-entries";
 
 /**
  * Cari hesabın okumaları (docs/TEDARIKCILER.md "Hesap hareketleri"): kayıtlar ve dağıtımlar, kart başına hesaptaki
@@ -20,88 +22,7 @@ import { getDb, schema as s } from "@/server/db";
 export const KASA_AYRI_KEY = "cari.kasa-ayri";
 export const KASA_AYRI_LIMIT = 2000;
 
-type EntryRow = typeof s.supplierEntries.$inferSelect;
-
-export type CardDebt = CariDebt & { supplierId: number; photoId: number | null; createdByName: string; updatedAt: Date };
-export type CardPayment = CariPayment & { supplierId: number; cashOutCreated: boolean; photoId: number | null; createdByName: string; updatedAt: Date };
-
-export function toDebt(r: EntryRow): CardDebt {
-  return {
-    id: r.id,
-    supplierId: r.supplierId,
-    date: r.date,
-    amount: r.amount,
-    description: r.description,
-    note: r.note,
-    costMode: r.costMode ?? "fatura",
-    categoryId: r.categoryId,
-    dueDate: r.dueDate,
-    invoiceId: r.invoiceId,
-    remindAfter: r.remindAfter,
-    dismissedInvoiceIds: Array.isArray(r.dismissedInvoiceIds) ? r.dismissedInvoiceIds.filter((x): x is number => Number.isInteger(x)) : [],
-    photoId: r.photoId,
-    createdByName: r.createdByName,
-    updatedAt: r.updatedAt,
-  };
-}
-
-export function toPayment(r: EntryRow, cashOutStore: string | null = null): CardPayment {
-  return {
-    id: r.id,
-    supplierId: r.supplierId,
-    date: r.date,
-    amount: r.amount,
-    method: (r.method ?? "diger") as CariMethod,
-    note: r.note,
-    cashOutId: r.cashOutId,
-    cashOutStore,
-    cashOutCreated: r.cashOutCreated,
-    photoId: r.photoId,
-    createdByName: r.createdByName,
-    updatedAt: r.updatedAt,
-  };
-}
-
-/** Kartların (verilmezse bütün kartların) kayıtları ve kayıtların dağıtımları */
-export async function loadCardEntries(cardIds?: readonly number[]): Promise<{ debts: CardDebt[]; payments: CardPayment[]; allocations: CariAllocation[] }> {
-  const db = getDb();
-  if (cardIds && !cardIds.length) return { debts: [], payments: [], allocations: [] };
-  const rows = await db
-    .select({ e: s.supplierEntries, store: s.cashOuts.store })
-    .from(s.supplierEntries)
-    .leftJoin(s.cashOuts, eq(s.supplierEntries.cashOutId, s.cashOuts.id))
-    .where(cardIds ? inArray(s.supplierEntries.supplierId, [...cardIds]) : undefined)
-    .orderBy(asc(s.supplierEntries.date), asc(s.supplierEntries.id));
-  if (!rows.length) return { debts: [], payments: [], allocations: [] };
-  const ids = rows.map((r) => r.e.id);
-  const allocs = await db
-    .select()
-    .from(s.supplierAllocations)
-    .where(inArray(s.supplierAllocations.paymentId, ids))
-    .orderBy(asc(s.supplierAllocations.id));
-  // Bu kartların borçlarına başka kartların ödemesinden sayılanlar da (ad değişikliğinden kalan eski veri)
-  const debtIds = rows.filter((r) => r.e.kind === "borc").map((r) => r.e.id);
-  const foreign = debtIds.length
-    ? await db
-        .select()
-        .from(s.supplierAllocations)
-        .where(inArray(s.supplierAllocations.debtId, debtIds))
-    : [];
-  const seen = new Set(allocs.map((a) => a.id));
-  const allocations: CariAllocation[] = [...allocs, ...foreign.filter((a) => !seen.has(a.id))].map((a) => ({
-    id: a.id,
-    paymentId: a.paymentId,
-    invoiceId: a.invoiceId,
-    debtId: a.debtId,
-    originDebtId: a.originDebtId,
-    amount: a.amount,
-  }));
-  return {
-    debts: rows.filter((r) => r.e.kind === "borc").map((r) => toDebt(r.e)),
-    payments: rows.filter((r) => r.e.kind === "odeme").map((r) => toPayment(r.e, r.store)),
-    allocations,
-  };
-}
+export { loadCardEntries, toDebt, toPayment, type CardDebt, type CardPayment } from "./cari-entries";
 
 /** İşlenmiş Kasa satırları: bir ödemeye bağlı olanlar ve "Ayrı tut" denmişler */
 export async function loadKasaHandled(): Promise<Set<number>> {
@@ -220,21 +141,138 @@ export async function loadCariIndex(today = todayTR()): Promise<CariIndex> {
   return out;
 }
 
-/** Tedarikçi sayfasının hesabı: kayıtlar, dağıtımlar, özet ve `allocated` sapması (K12) */
-export async function loadSupplierAccount<I extends AccountInvoice>(
-  group: { card: { id: number } | null; invoices: readonly I[] },
+/** Faturası 45 gündür gelmeyen alım (§5.2): bağsız "Faturası gelecek" borç bu kadar gün açık kalınca uyarı */
+export const DEBT_INVOICE_WAIT_DAYS = 45;
+
+/** Borç penceresinin kategorileri: etkin harcama kategorileri (mal bölümü önce) */
+export interface DebtCategory {
+  id: number;
+  name: string;
+  section: string;
+}
+
+/** Varsayılan kategorinin adı (K9): yeni kategori açılmaz, var olan kullanılır */
+export const NAKIT_MALZEME = "Nakit malzeme alımı";
+
+/** Tedarikçi sayfasının cari verisi: hesap, kayıtlar, şeritler ve pencerelerin seçenekleri */
+export interface SupplierCari {
+  debts: CardDebt[];
+  payments: CardPayment[];
+  allocations: CariAllocation[];
+  account: CariAccount;
+  /** `invoices.allocated` dağıtım toplamını tutmayan faturalar (K12; "Düzelt") */
+  drift: number[];
+  strong: LinkCandidate[];
+  weak: LinkCandidate[];
+  /** Faturası 45 gündür gelmeyen alımlar */
+  late: number[];
+  /** Kasadan bu tedarikçiye çıkan, hesaba işlenmemiş satırlar (son 60 gün) */
+  kasa: (KasaLine & { createdByName: string })[];
+  /** Kartın ödemelerinden başka tedarikçide görünen faturalara sayılan (eski veri; "Ödemeden çıkar") */
+  foreign: { paymentId: number; allocationIds: number[]; amount: number }[];
+  /** Borçların gider kayıtları ("gider" ve "mevcut") */
+  expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
+  categories: DebtCategory[];
+  defaultCategoryId: number | null;
+}
+
+/**
+ * Tedarikçi sayfasının cari okuması: kartın kayıtları ve dağıtımları, hesap özeti (güçlü fatura adayı mahsuptan
+ * atlanır), `allocated` sapması (K12), fatura adayları, 45 gün uyarısı, işlenmemiş Kasa satırları, başka gruptaki
+ * faturaya sayılanlar ve Borç ekle'nin kategorileri. Kartsız tedarikçide kayıt yoktur; hesap faturalardan ibarettir.
+ */
+export async function loadSupplierCari<I extends AccountInvoice & { category: string }>(
+  group: { card: { id: number; name: string; aliases: readonly string[] } | null; invoices: readonly I[] },
   opts: { today: string; termDays: number },
-): Promise<{ debts: CardDebt[]; payments: CardPayment[]; allocations: CariAllocation[]; account: CariAccount; drift: number[] }> {
+): Promise<SupplierCari> {
+  const db = getDb();
   const cardId = group.card?.id ?? null;
   const entries = cardId === null ? { debts: [], payments: [], allocations: [] } : await loadCardEntries([cardId]);
-  // Faturalara doğrudan sayılanlar (başka kartın ödemesinden de olabilir): sapma denetimi
   const ids = group.invoices.map((i) => i.id);
-  const onInvoices = ids.length ? await getDb().select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount }).from(s.supplierAllocations).where(inArray(s.supplierAllocations.invoiceId, ids)) : [];
+  const [onInvoices, categories, otherLinked] = await Promise.all([
+    ids.length ? db.select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount }).from(s.supplierAllocations).where(inArray(s.supplierAllocations.invoiceId, ids)) : [],
+    db
+      .select({ id: s.expenseCategories.id, name: s.expenseCategories.name, section: s.expenseCategories.section, active: s.expenseCategories.active, sortOrder: s.expenseCategories.sortOrder })
+      .from(s.expenseCategories)
+      .orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.name)),
+    ids.length && cardId !== null
+      ? db.select().from(s.supplierEntries).where(and(inArray(s.supplierEntries.invoiceId, ids), ne(s.supplierEntries.supplierId, cardId)))
+      : [],
+  ]);
   const sums = new Map<number, number>();
   for (const a of onInvoices) if (a.invoiceId !== null) sums.set(a.invoiceId, (sums.get(a.invoiceId) ?? 0) + a.amount);
   const drift = group.invoices.filter((i) => Math.abs(round2(sums.get(i.id) ?? 0) - round2(i.allocated ?? 0)) > EPS).map((i) => i.id);
-  const account = accountOf({ invoices: group.invoices, debts: entries.debts, payments: entries.payments, allocations: entries.allocations }, opts);
-  return { ...entries, account, drift };
+
+  const { strong, weak } = entries.debts.length
+    ? linkCandidates([...entries.debts, ...otherLinked.map(toDebt)], group.invoices.map((i) => ({ id: i.id, date: i.date, payable: i.payable, category: i.category })))
+    : { strong: [], weak: [] };
+  const quiet = new Set(strong.map((c) => c.invoiceId));
+  const account = accountOf({ invoices: group.invoices, debts: entries.debts, payments: entries.payments, allocations: entries.allocations }, { ...opts, quietInvoiceIds: quiet });
+
+  const lateFrom = addDays(opts.today, -DEBT_INVOICE_WAIT_DAYS);
+  const late = entries.debts
+    .filter((d) => d.invoiceId === null && d.costMode === "fatura" && d.date <= lateFrom && (!d.remindAfter || d.remindAfter <= opts.today) && debtRemaining(d, entries.allocations) > EPS)
+    .map((d) => d.id);
+  // Kart ödemelerinin bu grubun dışındaki faturalara sayılan kısmı
+  const own = new Set(ids);
+  const foreignBy = new Map<number, { paymentId: number; allocationIds: number[]; amount: number }>();
+  for (const a of entries.allocations) {
+    if (a.invoiceId === null || own.has(a.invoiceId) || !entries.payments.some((p) => p.id === a.paymentId)) continue;
+    const f = foreignBy.get(a.paymentId) ?? { paymentId: a.paymentId, allocationIds: [], amount: 0 };
+    f.allocationIds.push(a.id);
+    f.amount = round2(f.amount + a.amount);
+    foreignBy.set(a.paymentId, f);
+  }
+
+  // Borçların gider kayıtları
+  const expenses: SupplierCari["expenses"] = {};
+  const debtIds = entries.debts.map((d) => d.id);
+  if (debtIds.length) {
+    const rows = await db
+      .select({ id: s.expenseEntries.id, owner: s.expenseEntries.supplierEntryId, date: s.expenseEntries.date, amount: s.expenseEntries.amount, categoryId: s.expenseEntries.categoryId, categoryName: s.expenseCategories.name })
+      .from(s.expenseEntries)
+      .innerJoin(s.expenseCategories, eq(s.expenseCategories.id, s.expenseEntries.categoryId))
+      .where(inArray(s.expenseEntries.supplierEntryId, debtIds));
+    for (const r of rows) if (r.owner !== null) expenses[r.owner] = { id: r.id, date: r.date, amount: r.amount, categoryId: r.categoryId, categoryName: r.categoryName };
+  }
+
+  // İşlenmemiş Kasa satırları: Teslim ve (grubun o gün açık kalemi varken) fişsiz Alışveriş
+  let kasa: SupplierCari["kasa"] = [];
+  if (group.card) {
+    const since = addDays(opts.today, -KASA_LOOKBACK_DAYS);
+    const [lines, handled] = await Promise.all([
+      db
+        .select({ id: s.cashOuts.id, date: s.cashOuts.date, kind: s.cashOuts.kind, store: s.cashOuts.store, docType: s.cashOuts.docType, amount: s.cashOuts.amount, createdByName: s.cashOuts.createdByName })
+        .from(s.cashOuts)
+        .where(gte(s.cashOuts.date, since)),
+      loadKasaHandled(),
+    ]);
+    const keys = [group.card.name, ...group.card.aliases].map(supplierMatchKey).filter(Boolean);
+    const openSince = [...group.invoices.filter((i) => i.unpaid).map((i) => i.date), ...entries.debts.filter((d) => d.invoiceId === null && debtRemaining(d, entries.allocations) > EPS).map((d) => d.date)].sort()[0];
+    const days = new Set(openSince ? lines.filter((l) => l.date >= openSince).map((l) => l.date) : []);
+    kasa = kasaMatches(lines, { keys, handled, from: since, to: opts.today, kinds: ["teslim", "harcama"], receiptless: true, harcamaDays: days });
+  }
+
+  const usedCategories = new Set([...entries.debts.map((d) => d.categoryId), ...Object.values(expenses).map((e) => e.categoryId)]);
+  const shown = categories.filter((c) => c.active || usedCategories.has(c.id)).sort((a, b) => Number(b.section === "mal") - Number(a.section === "mal"));
+  // Varsayılan (K9): kartın son "Faturası yok" borcunun kategorisi, yoksa "Nakit malzeme alımı", o da yoksa ilk mal kategorisi
+  const lastGider = [...entries.debts].reverse().find((d) => d.costMode === "gider" && d.categoryId !== null && categories.some((c) => c.id === d.categoryId && c.active));
+  const nakit = categories.find((c) => c.active && c.name.toLocaleLowerCase("tr") === NAKIT_MALZEME.toLocaleLowerCase("tr"));
+  const defaultCategoryId = lastGider?.categoryId ?? nakit?.id ?? categories.find((c) => c.active && c.section === "mal")?.id ?? categories.find((c) => c.active)?.id ?? null;
+
+  return {
+    ...entries,
+    account,
+    drift,
+    strong,
+    weak,
+    late,
+    kasa,
+    foreign: [...foreignBy.values()],
+    expenses,
+    categories: shown.map((c) => ({ id: c.id, name: c.name, section: c.section })),
+    defaultCategoryId,
+  };
 }
 
 /** Gelir-gider bilgi satırı (§5.6): o ayda tarihli bağsız "Faturası gelecek" borçlar, kart kart */

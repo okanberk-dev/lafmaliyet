@@ -90,7 +90,7 @@ export async function lockCards(tx: Tx, cardIds: Iterable<number>) {
 }
 
 /** Faturaları kimlik sırasıyla kilitler ve okur */
-async function lockInvoices(tx: Tx, ids: Iterable<number>) {
+export async function lockInvoices(tx: Tx, ids: Iterable<number>) {
   const list = uniq(ids);
   if (!list.length) return [];
   return tx.select().from(s.invoices).where(inArray(s.invoices.id, list)).orderBy(asc(s.invoices.id)).for("update");
@@ -154,6 +154,68 @@ export async function writeAllocations(tx: Tx, paymentId: number, lines: readonl
     )
     .returning({ id: s.supplierAllocations.id });
   return rows.map((r) => r.id);
+}
+
+/** Silinen dağıtımın alanları ("Geri al" ve işlem geçmişi) */
+export interface RemovedAllocation {
+  id: number;
+  paymentId: number;
+  invoiceId: number | null;
+  debtId: number | null;
+  originDebtId: number | null;
+  amount: number;
+}
+
+/**
+ * Dağıtımları siler: verilen kimlikler ya da bir ödemenin bütün dağıtımları (Ödemeden çıkar, Neye sayıldı'nın yeniden
+ * yazımı, Borçlara say'ın geri alınması). Para ödemenin hesabına döner. Toplamları çağıran recomputeAllocated +
+ * resettle ile tazeler; kart(lar) çağıranda kilitli olmalı.
+ */
+export async function deleteAllocations(tx: Tx, where: { ids: readonly number[] } | { paymentId: number }): Promise<RemovedAllocation[]> {
+  if ("ids" in where && !where.ids.length) return [];
+  const cond = "ids" in where ? inArray(s.supplierAllocations.id, uniq(where.ids)) : eq(s.supplierAllocations.paymentId, where.paymentId);
+  return tx.delete(s.supplierAllocations).where(cond).returning({
+    id: s.supplierAllocations.id,
+    paymentId: s.supplierAllocations.paymentId,
+    invoiceId: s.supplierAllocations.invoiceId,
+    debtId: s.supplierAllocations.debtId,
+    originDebtId: s.supplierAllocations.originDebtId,
+    amount: s.supplierAllocations.amount,
+  });
+}
+
+/** Hesaptaki paranın sayılabileceği kalem ve yeri (kalan) */
+export interface CreditTarget {
+  kind: "invoice" | "debt";
+  id: number;
+  room: number;
+}
+
+/**
+ * Kartın hesabındaki parayı, en eski ödemeden başlayarak, verilen kalemlere verilen sırayla kalanlarına kadar sayar
+ * (Borçlara say, Borç ekle'nin "Hesaptaki ödemeyi say"ı, Ödemeler'in "Ödendi"si). Kart kilitli olmalı; toplamları
+ * çağıran tazeler. Döner: yazılan dağıtımlar ve kalem başına sayılan.
+ */
+export async function spendCredit(tx: Tx, cardId: number, targets: readonly CreditTarget[], by: string): Promise<{ allocationIds: number[]; used: Map<string, number>; total: number }> {
+  const out = { allocationIds: [] as number[], used: new Map<string, number>(), total: 0 };
+  const credits = (await paymentCredits(tx, cardId)).filter((p) => p.credit > EPS);
+  if (!credits.length) return out;
+  for (const t of targets) {
+    let room = round2(t.room);
+    for (const p of credits) {
+      if (room <= EPS) break;
+      if (p.credit <= EPS) continue;
+      const take = round2(Math.min(room, p.credit));
+      const [id] = await writeAllocations(tx, p.id, [{ kind: t.kind, id: t.id, amount: take }], by);
+      if (id !== undefined) out.allocationIds.push(id);
+      const k = `${t.kind}:${t.id}`;
+      out.used.set(k, round2((out.used.get(k) ?? 0) + take));
+      out.total = round2(out.total + take);
+      p.credit = round2(p.credit - take);
+      room = round2(room - take);
+    }
+  }
+  return out;
 }
 
 /** `invoices.allocated`'ı dağıtımların toplamıyla yeniden yazar (K12: saklanan tek toplam, yalnız burada) */

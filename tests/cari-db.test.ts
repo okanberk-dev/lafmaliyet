@@ -22,6 +22,7 @@ import postgres from "postgres";
 import { cariResetBlock } from "../scripts/seed";
 import { supplierMatchKey } from "../src/app/panel/faturalar/rules";
 import { allocateFifo, openItems } from "../src/lib/cari/account";
+import { businessDate } from "../src/lib/cash-report";
 import * as s from "../src/server/db/schema";
 
 const SERVER_URL = process.env.CARI_TEST_DATABASE_URL;
@@ -46,6 +47,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
   let admin: postgres.Sql;
   let db: import("../src/server/db").DB;
   let settle: typeof import("../src/server/cari/settle");
+  let entries: typeof import("../src/server/cari/entries");
   let UserError: typeof import("../src/server/actions/util").UserError;
 
   before(async () => {
@@ -63,6 +65,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
     settle = await import("../src/server/cari/settle");
+    entries = await import("../src/server/cari/entries");
     UserError = (await import("../src/server/actions/util")).UserError;
   });
 
@@ -398,5 +401,190 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
       (e: Error) => e instanceof UserError && /^“Su Ltd” adıyla gelen 2 fatura daha .* bu tedarikçiye borç ya da ödeme girilse onlar da buraya geçerdi\./.test(e.message),
     );
     assert.equal((await db.select().from(s.suppliers).where(eq(s.suppliers.key, supplierMatchKey("Su Ltd")))).length, 0, "kart açılmadı");
+  });
+
+  // ---------------------------------------------------------------- eylemlerin çekirdeği (src/server/cari/entries.ts)
+
+  async function actor() {
+    await db.insert(s.users).values({ email: "cari-test@example.com", name: "Test", passwordHash: "x", role: "admin" }).onConflictDoNothing();
+    const [u] = await db.select().from(s.users).where(eq(s.users.email, "cari-test@example.com"));
+    return { id: u.id, name: u.name };
+  }
+  const OCT = ["2026-10"];
+  const debtInput = (p: Partial<import("../src/server/cari/entries").DebtWrite>): import("../src/server/cari/entries").DebtWrite => ({
+    id: null,
+    date: "2026-10-20",
+    amount: 100,
+    description: "süt",
+    costMode: "fatura",
+    categoryId: null,
+    adoptExpenseId: null,
+    dueDate: null,
+    note: null,
+    photoId: null,
+    applyCredit: false,
+    paid: null,
+    confirmPast: OCT,
+    ...p,
+  });
+  const payInput = (p: Partial<import("../src/server/cari/entries").PaymentWrite>): import("../src/server/cari/entries").PaymentWrite => ({
+    id: null,
+    date: "2026-10-22",
+    amount: 100,
+    method: "havale",
+    cashOut: null,
+    allocation: { mode: "auto", lines: [] },
+    note: null,
+    photoId: null,
+    ...p,
+  });
+  const withCard = <T>(cardId: number, fn: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], c: typeof s.suppliers.$inferSelect) => Promise<T>) =>
+    db.transaction(async (tx) => fn(tx, await settle.lockCard(tx, cardId)));
+
+  test("Sütaş örneği (§4.9) eylemlerin çekirdeğiyle: borçlar, gider kaydı, en eski borçtan ödeme, kasadan ödeme, Borçlara say", async () => {
+    const me = await actor();
+    const c = await card("Sütaş", { paymentTermDays: 30, paymentMethod: "havale" });
+    const cat = await category();
+    const f1 = await invoice({ payable: 4000, date: "2026-10-01", unpaid: false, paidAt: "2026-10-10", paidVia: "havale", invoiceNo: "SUT098" });
+    const f2 = await invoice({ payable: 8450.5, date: "2026-10-12", invoiceNo: "SUT123" });
+    const f3 = await invoice({ payable: 3000, date: "2026-10-18", outstanding: 1800, invoiceNo: "SUT140", origin: "parasut", source: "parasut", externalId: "T-140" });
+    const b1 = await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ amount: 1250, description: "süt, irsaliye 4411", date: "2026-10-20" }), 30));
+    const b2 = await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ amount: 600, description: "beyaz peynir", date: "2026-10-21", costMode: "gider", categoryId: cat.id }), 30));
+    assert.deepEqual([b1.created, b2.categoryName], [true, "Nakit malzeme alımı"]);
+    const [exp] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.supplierEntryId, b2.id));
+    assert.deepEqual([exp.amount, exp.date, exp.categoryId, exp.description, exp.note, exp.vat], [600, "2026-10-21", cat.id, "Sütaş · beyaz peynir", "Cari · faturasız", null]);
+
+    const p1 = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 10000, date: "2026-10-22" }), 30));
+    assert.deepEqual(
+      p1.lines.map((l) => [l.label, l.amount, l.closed]),
+      [
+        ["SUT123", 8450.5, true],
+        ["SUT140", 1549.5, false],
+      ],
+    );
+    assert.equal(p1.left, 0);
+    assert.deepEqual([(await inv(f1.id)).ledgerBase, (await inv(f3.id)).ledgerBase], [0, 1200]);
+    const f2now = await inv(f2.id);
+    assert.deepEqual([f2now.unpaid, f2now.paidByLedger, f2now.paidAt, f2now.paidVia], [false, true, "2026-10-22", "havale"]);
+
+    // Kasadan, kasaya yeni Teslim satırı: F3'ün kalanı, B1 ve B2 kapanır, 99,50 hesapta
+    const kasaDay = [businessDate(), "2026-10-24"].sort()[0];
+    const p2 = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 2200, date: kasaDay, method: "kasa", cashOut: { mode: "new" } }), 30));
+    assert.deepEqual(
+      p2.lines.map((l) => [l.label, l.amount, l.closed]),
+      [
+        ["SUT140", 250.5, true],
+        ["süt, irsaliye 4411", 1250, true],
+        ["beyaz peynir", 600, true],
+      ],
+    );
+    assert.equal(p2.left, 99.5);
+    const [line] = await db.select().from(s.cashOuts);
+    assert.deepEqual([line.kind, line.amount, line.store, line.date, p2.cashOut?.created], ["teslim", 2200, "Sütaş", kasaDay, true]);
+    assert.equal((await db.select().from(s.expenseEntries)).length, 1, "kasadan ödeme gider yazmaz");
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 99.5]]);
+
+    // Yeni fatura gelir; Borçlara say hesaptaki parayı ona sayar
+    const f5 = await invoice({ payable: 3100, date: "2026-10-30", invoiceNo: "SUT151", ledgerBase: 0 });
+    const applied = await withCard(c.id, (tx, k) => entries.applyCredit(tx, me, k, 30));
+    assert.deepEqual([applied.total, applied.lines], [99.5, [{ label: "SUT151", amount: 99.5 }]]);
+    assert.equal((await inv(f5.id)).allocated, 99.5);
+    assert.deepEqual([...(await settle.cardsWithCredit())], []);
+
+    // Ödeme silinir: dağıtımları kalkar, defterin kapattığı SUT123 ve SUT140 yeniden açılır; geri alma aynı dağıtımı kurar
+    const del = await db.transaction((tx) => entries.deleteEntry(tx, p1.id, []));
+    assert.deepEqual([del.reopened, del.kept], [2, 0]);
+    assert.deepEqual([(await inv(f2.id)).unpaid, (await inv(f3.id)).unpaid], [true, true]);
+    assert.equal((await inv(f3.id)).allocated, 250.5);
+    const back = await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot))));
+    assert.equal(back.lost, 0);
+    assert.deepEqual([(await inv(f2.id)).unpaid, (await inv(f2.id)).paidByLedger, (await inv(f3.id)).allocated, (await inv(f3.id)).unpaid], [false, true, 1800, false]);
+    const [again] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, p1.id));
+    assert.equal(again.amount, 10000, "aynı kimlikle");
+    await assert.rejects(
+      db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)))),
+      /zaten geri alındı/,
+    );
+
+    // Kasadan ödemenin silinmesi açtığı satırı da siler; geri alınca satır aynı kimlikle döner
+    const delKasa = await db.transaction((tx) => entries.deleteEntry(tx, p2.id, []));
+    assert.equal((await db.select().from(s.cashOuts)).length, 0);
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(delKasa.snapshot))));
+    const [line2] = await db.select().from(s.cashOuts);
+    assert.deepEqual([line2.id, line2.amount], [line.id, 2200]);
+  });
+
+  test("borç düzeltme ve silme: gider kaydı izler, sayılan ödemenin altına inilmez, gider → faturası gelecek kaydı siler", async () => {
+    const me = await actor();
+    const c = await card();
+    const cat = await category();
+    const b = await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ amount: 600, costMode: "gider", categoryId: cat.id }), 30));
+    await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 650, date: "2026-10-21", costMode: "gider", categoryId: cat.id }), 30));
+    const [e1] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.supplierEntryId, b.id));
+    assert.deepEqual([e1.amount, e1.date], [650, "2026-10-21"]);
+    await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 400, allocation: { mode: "manual", lines: [{ kind: "debt", id: b.id, amount: 400 }] } }), 30));
+    await assert.rejects(
+      withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 300, costMode: "gider", categoryId: cat.id }), 30)),
+      /400,00\s₺ ödeme sayılmış/,
+    );
+    await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 650, costMode: "fatura" }), 30));
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0, "faturası gelecek: gider kaydı silindi");
+
+    // "Gideri zaten girildi": var olan kayıt borca eşitlenip sahiplenilir; silinince bırakılır
+    const [own] = await db.insert(s.expenseEntries).values({ date: "2026-10-19", categoryId: cat.id, amount: 640, createdBy: "Test" }).returning();
+    await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, debtInput({ id: b.id, amount: 650, date: "2026-10-21", costMode: "mevcut", adoptExpenseId: own.id }), 30));
+    const [adopted] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
+    assert.deepEqual([adopted.amount, adopted.date, adopted.supplierEntryId], [650, "2026-10-21", b.id]);
+    // Borç silinince ödemesi hesaba geçer, sahiplenilen kayıt durur
+    const del = await db.transaction((tx) => entries.deleteEntry(tx, b.id, []));
+    assert.equal(del.snapshot.allocations.length, 1);
+    const [kept] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id));
+    assert.equal(kept.supplierEntryId, null);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 400]]);
+    // Geri alma: borç, sahiplenme ve dağıtım geri gelir
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot))));
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id)))[0].supplierEntryId, b.id);
+    assert.deepEqual([...(await settle.cardsWithCredit())], []);
+  });
+
+  test("geçmiş ay onayı: geçmiş ayın giderini değiştiren borç onaysız yazılmaz", async () => {
+    const me = await actor();
+    const c = await card();
+    const cat = await category();
+    const input = debtInput({ date: "2025-09-15", amount: 1200, costMode: "gider", categoryId: cat.id, confirmPast: [] });
+    await assert.rejects(
+      withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, input, 30)),
+      (e: Error) => e instanceof entries.NeedsPastConfirm && e.effects.length === 1 && e.effects[0].month === "2025-09" && e.effects[0].delta === 1200,
+    );
+    assert.equal((await db.select().from(s.supplierEntries)).length, 0, "hiçbir şey yazılmadı");
+    const ok = await withCard(c.id, (tx, k) => entries.writeDebt(tx, me, k, { ...input, confirmPast: ["2025-09"] }, 30));
+    assert.deepEqual(ok.effects, [{ month: "2025-09", delta: 1200 }]);
+    // Silmek de onay ister
+    await assert.rejects(db.transaction((tx) => entries.deleteEntry(tx, ok.id, [])), (e: Error) => e instanceof entries.NeedsPastConfirm);
+    await db.transaction((tx) => entries.deleteEntry(tx, ok.id, ["2025-09"]));
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0);
+  });
+
+  test("dağıtımın yeniden yazılması ve elle dağıtımın denetimi; 'Ödendi' borcu hesaptaki parayla önce öder", async () => {
+    const me = await actor();
+    const c = await card();
+    const f1 = await invoice({ payable: 500, date: "2026-10-01", invoiceNo: "A1" });
+    const f2 = await invoice({ payable: 700, date: "2026-10-02", invoiceNo: "A2" });
+    const p = await withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 600, allocation: { mode: "none", lines: [] } }), 30));
+    assert.equal(p.left, 600);
+    await assert.rejects(
+      withCard(c.id, (tx, k) => entries.writePayment(tx, me, k, payInput({ amount: 100, allocation: { mode: "manual", lines: [{ kind: "invoice", id: f1.id, amount: 600 }] } }), 30)),
+      /A1 kalanı 500,00\s₺/,
+    );
+    const r = await withCard(c.id, (tx, k) => entries.rewriteAllocation(tx, me, k, p.id, { mode: "manual", lines: [{ kind: "invoice", id: f2.id, amount: 600 }] }, 30));
+    assert.deepEqual([r.previous, r.left], [[], 0]);
+    assert.deepEqual([(await inv(f2.id)).allocated, (await inv(f2.id)).unpaid], [600, true]);
+    const back = await withCard(c.id, (tx, k) => entries.rewriteAllocation(tx, me, k, p.id, { mode: "auto", lines: [] }, 30));
+    assert.deepEqual(back.previous, [{ kind: "invoice", id: f2.id, amount: 600 }]);
+    assert.deepEqual([(await inv(f1.id)).unpaid, (await inv(f2.id)).allocated], [false, 100]);
+    // Faturasız alımın "Ödendi"si: önce hesaptaki para (yok), kalanı için ödeme
+    const d = await debt(c.id, { amount: 300 });
+    const paid = await withCard(c.id, (tx, k) => entries.payDebtTx(tx, me, k, d.id, "elden", 30));
+    assert.deepEqual([paid.credited, paid.payment?.lines.map((l) => [l.kind, l.amount, l.closed])], [0, [["debt", 300, true]]]);
   });
 });
