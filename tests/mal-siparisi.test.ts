@@ -837,6 +837,16 @@ test("kaynak: açık sipariş yaşı ne olursa olsun okunur (zil, Bugün, Yoldak
   assert.match(bodyOf(src, "loadReorderDay"), /status: \["open"\]/);
 });
 
+test("kaynak: tedarikçi kartının düğmeleri telefonda alt alta, tam genişlikte; WhatsApp üstte, ikonlar daralmaz", () => {
+  const plan = read("src/app/panel/mal-siparisi/order-plan.tsx");
+  // 320-414 px'te iki sütunda ikon 0 px'e iniyor, yazı taşıyordu
+  assert.match(plan, /<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">\s+<Button variant="secondary" onClick=\{onCopy\}/);
+  assert.doesNotMatch(plan, /grid grid-cols-2 gap-2 sm:flex/);
+  assert.doesNotMatch(plan, /max-\[380px\]:hidden/);
+  assert.match(plan, /<Copy size=\{16\} aria-hidden="true" className="shrink-0" \/> Metni kopyala/);
+  assert.match(plan, /<MessageCircle size=\{16\} aria-hidden="true" className="shrink-0" \/> WhatsApp ile gönder/);
+});
+
 test("kaynak: eylemlerin yetkisi (hızlı sayım ve Geldi iki rolde, ötekiler yönetici)", () => {
   const src = read("src/server/actions/reorder.ts");
   assert.match(src, /^"use server";/);

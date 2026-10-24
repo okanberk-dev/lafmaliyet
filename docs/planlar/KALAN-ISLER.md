@@ -147,6 +147,8 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   ayları `komisyon.since`'e kadar okuyan ikinci bir sorgu ya da sınırsız pencere); (2) zil en çok 5 uyarı gösterir ve
   en yeniyi önce alır: geciken hakedişler birikirse en eskisi zilden düşer (Bugün sayısını ve en eskisini yine
   gösterir); gecikenler en eski son gün önce sıralanmalı (teslim farklarının zildeki sırasını da değiştirir).
+- **Mal siparişi telefonda:** tedarikçi kartının iki düğmesi alt alta ve tam genişlikte, WhatsApp ile gönder üstte;
+  320–414 px'te ikon kayboluyor, 375 px'in altında yazı taşıyordu (tarayıcıda 320, 360, 375, 390, 414 ve 1440 px).
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
