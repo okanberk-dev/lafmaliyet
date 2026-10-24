@@ -6,7 +6,8 @@ import { trClock } from "./session";
  * ekranı rezervasyonu görmez, zil çalmaz, hızlı sayacın çakışma uyarısı eski kopyaya bakar. Bu yüzden:
  *
  * - Açık bir panel sekmesi canlı ucu (/api/canli) her sorduğunda, yanıttan sonra bu kurala bakılır ve gerekiyorsa site
- *   yeniden sorulur. Kimse bakmıyorsa ne panelin ne sitenin veritabanı uyanır (Neon'un ücretsiz kotası).
+ *   yeniden sorulur. Kimse bakmıyorsa (arka planda yalnız bildirim gelmeyen zil cihazı 10 dakikada bir sorar) ne
+ *   panelin ne sitenin veritabanı uyanır (Neon'un ücretsiz kotası).
  * - Hızlı sayaç ve uzatma, sitedeki rezervasyonla çakışmayı sormadan önce kopya birkaç dakikadan eskiyse tazeler.
  */
 export const CATCH_UP = {

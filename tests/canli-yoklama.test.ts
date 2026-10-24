@@ -1,5 +1,6 @@
-// Veritabanını boşuna uyandırmamak (Neon ücretsiz plan, ayda 100 CU-saat): açık sekmenin yedek kontrolü yalnız sekme
-// öndeyken ve boştaysa seyrek (src/lib/live-poll.ts); sağlık ucu veritabanını ve işlerin durumunu önbellekten verir;
+// Veritabanını boşuna uyandırmamak (Neon ücretsiz plan, ayda 100 CU-saat): açık sekmenin yedek kontrolü öndeyken
+// (boştaysa seyrek); arka planda yalnız bildirimi gelmeyen zil cihazında 10 dakikada bir (src/lib/live-poll.ts); sağlık
+// ucu veritabanını ve işlerin durumunu önbellekten verir;
 // hata ekranının "Tekrar dene"si sayfayı sunucudan yeniden ister, bar ekranında kendiliğinden de dener.
 // Çalıştırma: npx tsx --test tests/canli-yoklama.test.ts
 
@@ -8,22 +9,52 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { defaultPrefs } from "../src/components/panel/live/prefs";
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
 import { CATCH_UP } from "../src/lib/karaoke/freshness";
-import { LIVE_POLL, livePollDue, livePollMs, type LivePollInput } from "../src/lib/live-poll";
+import { LIVE_POLL, listensForAlerts, livePollDue, livePollMs, type LivePollInput } from "../src/lib/live-poll";
 import { createTtlCache } from "../src/lib/ttl-cache";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
-const base: LivePollInput = { visible: true, ringing: false, pushOn: false, sinceActiveMs: 0, soon: false, failing: false };
+const base: LivePollInput = { visible: true, ringing: false, pushOn: false, sinceActiveMs: 0, soon: false, failing: false, listening: false };
 
-test("yedek kontrol: arka planda hiç (alarm çalarken hariç); bildirim açıkken 30 dk", () => {
-  assert.equal(livePollMs({ ...base, visible: false }), null, "kimse bakmıyor: veritabanı uyusun");
+test("yedek kontrol: arka planda bildirim gelen ya da zili olmayan cihazda hiç (alarm çalarken hariç); bildirim açıkken 30 dk", () => {
+  assert.equal(livePollMs({ ...base, visible: false }), null, "zili olmayan cihaz (yöneticinin dizüstü): veritabanı uyusun");
   assert.equal(livePollMs({ ...base, visible: false, pushOn: true }), null);
+  assert.equal(livePollMs({ ...base, visible: false, pushOn: true, listening: true }), null, "bildirim yeniliği getirir");
   assert.equal(livePollMs({ ...base, visible: false, ringing: true }), 15_000, "başka cihazda susturulursa burada da sussun");
   assert.equal(livePollMs({ ...base, ringing: true, pushOn: true }), 15_000);
   assert.equal(livePollMs({ ...base, pushOn: true }), 30 * 60_000);
-  assert.ok(LIVE_POLL.pushMs > 5 * 60_000 && LIVE_POLL.idleMs > 5 * 60_000, "Neon 5 dk boşta kalınca uyur: seyrek kontrol bundan uzun");
+  assert.ok(
+    LIVE_POLL.pushMs > 5 * 60_000 && LIVE_POLL.idleMs > 5 * 60_000 && LIVE_POLL.hiddenMs > 5 * 60_000,
+    "Neon 5 dk boşta kalınca uyur: seyrek kontrol bundan uzun",
+  );
+});
+
+test("yedek kontrol: bildirim gelmeyen, zili açık cihazda arka plandaki sekme 10 dakikada bir sorar (bar ekranı; PR #18 hiç sormuyordu)", () => {
+  const bar: LivePollInput = { ...base, visible: false, listening: true };
+  assert.equal(livePollMs(bar), 600_000, "yeni sipariş / rezervasyon en geç 10 dakikada çalar");
+  assert.equal(livePollMs({ ...bar, soon: true }), 600_000, "arka planda sıklaşmaz");
+  assert.equal(livePollMs({ ...bar, failing: true }), 600_000, "arka planda sıklaşmaz");
+  assert.equal(livePollMs({ ...bar, pushOn: true }), null, "bildirim yeniliği getirir");
+  assert.equal(livePollMs({ ...bar, listening: false }), null, "zili olmayan cihaz");
+  assert.equal(livePollMs({ ...bar, ringing: true }), 15_000);
+  const now = 1_000_000_000;
+  assert.equal(livePollDue(bar, now - 9 * 60_000, now), false);
+  assert.equal(livePollDue(bar, now - 10 * 60_000, now), true);
+  // Uyarı motoru zil cihazını tercihlerden ve sesin açılmasından bilir, zamanlayıcıya verir
+  const src = read("src/components/panel/live/alert-center.tsx");
+  assert.match(src, /const listening = listensForAlerts\(prefs, audio === "ready"\);/);
+  assert.match(src, /failing: p\.failing, listening: p\.listening \}/);
+});
+
+test("zil cihazı: personelin varsayılanı dinler, yöneticininki dinlemez; ses kapalı ya da açılmamışsa dinlemez", () => {
+  assert.equal(listensForAlerts(defaultPrefs("staff"), true), true);
+  assert.equal(listensForAlerts(defaultPrefs("staff"), false), false, "ses açılmamış sekme zaten çalamaz");
+  assert.equal(listensForAlerts(defaultPrefs("admin"), true), false);
+  assert.equal(listensForAlerts({ ...defaultPrefs("staff"), sound: false }, true), false);
+  assert.equal(listensForAlerts({ ...defaultPrefs("admin"), karaokeAlarms: true }, true), true);
 });
 
 test("yedek kontrol: bildirim kapalıyken ekran kullanılıyorsa ya da yakında bir şey varsa dakikada bir, boşta 10 dk", () => {
@@ -52,7 +83,7 @@ test("yedek kontrol: son karaoke çekmesi başarısızken bildirim açık ya da 
   // Uyarı motoru durumu canlı yanıttan alır (bar ekranındaki sarı satırla aynı alan)
   const src = read("src/components/panel/live/alert-center.tsx");
   assert.match(src, /const failing = Boolean\(data\?\.karaoke\.error\);/);
-  assert.match(src, /soon: p\.soon, failing: p\.failing \}/);
+  assert.match(src, /soon: p\.soon, failing: p\.failing, listening: p\.listening \}/);
 });
 
 test("uyarı motoru: zamanlayıcı yalnız vaktin gelip gelmediğine bakar; görünürlük ve son soruluş kurala verilir", () => {

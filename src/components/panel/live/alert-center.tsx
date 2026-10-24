@@ -9,7 +9,7 @@ import { toastUnreachable } from "@/components/ui/action-error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
-import { LIVE_POLL, livePollDue } from "@/lib/live-poll";
+import { LIVE_POLL, listensForAlerts, livePollDue } from "@/lib/live-poll";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
@@ -75,11 +75,13 @@ async function notify(title: string, body: string, tag: string, url: string, opt
  * rezervasyonda ve laffogato.net'ten gelen yeni uygulama siparişinde (bu cihazda sipariş zili açıksa; masa siparişi
  * daha uzun) zil çalar, süre dolunca "Haber verdim" denene kadar alarmı sürdürür ve üstte şerit gösterir.
  *
- * İstek bütçesi (src/lib/live-poll.ts; veritabanı Neon'un ücretsiz planında, her kontrol onu uyandırır): yedek kontrol
- * yalnız sekme öndeyken; bildirim açıkken 30 dakikada, kapalıyken dakikada bir, ekran 10 dakikadır kullanılmıyorsa ve
- * bir saat içinde oturum ya da saatli hatırlatıcı yoksa 10 dakikada bir; son karaoke çekmesi başarısızken (sarı satır)
- * bildirim açık olsa da dakikada bir (site canlı uç sorulunca yeniden denenir); alarm çalarken (başka cihazda
- * susturulursa burada da sussun) arka planda da 15 saniyede bir. Hepsi ETag'li; değişiklik yoksa 304.
+ * İstek bütçesi (src/lib/live-poll.ts; veritabanı Neon'un ücretsiz planında, her kontrol onu uyandırır): sekme öndeyken
+ * bildirim açıkken 30 dakikada, kapalıyken dakikada bir, ekran 10 dakikadır kullanılmıyorsa ve bir saat içinde oturum
+ * ya da saatli hatırlatıcı yoksa 10 dakikada bir; son karaoke çekmesi başarısızken (sarı satır) bildirim açık olsa da
+ * dakikada bir (site canlı uç sorulunca yeniden denenir); arka planda yalnız bildirim gelmeyen ve zili açık cihaz (bar
+ * ekranı) 10 dakikada bir sorar (yeni sipariş ve rezervasyon zili en geç ~10 dakikada); alarm çalarken (başka cihazda
+ * susturulursa burada da sussun) 15 saniyede bir. "Bildirim açık": izin, kayıtlı abonelik ve zili açık konular
+ * (pushCovers). Hepsi ETag'li; değişiklik yoksa 304.
  */
 export function AlertCenter({ role }: { role: Role }) {
   const live = useLive();
@@ -185,10 +187,12 @@ export function AlertCenter({ role }: { role: Role }) {
     });
   // Son karaoke çekmesi düştü: bildirim gelmez, site bu sekmenin sorusuyla yeniden denenir (bildirim açık olsa da sık)
   const failing = Boolean(data?.karaoke.error);
-  const poll = useRef({ pushOn, ringing, soon, failing });
+  // Bu cihaz yeni sipariş / rezervasyonda zil çalar: bildirim gelmiyorsa arka planda da seyrek sorar (bar ekranı)
+  const listening = listensForAlerts(prefs, audio === "ready");
+  const poll = useRef({ pushOn, ringing, soon, failing, listening });
   useEffect(() => {
-    poll.current = { pushOn, ringing, soon, failing };
-  }, [pushOn, ringing, soon, failing]);
+    poll.current = { pushOn, ringing, soon, failing, listening };
+  }, [pushOn, ringing, soon, failing, listening]);
   useEffect(() => {
     let lastTouch = Date.now();
     let lastAsked = Date.now();
@@ -200,7 +204,7 @@ export function AlertCenter({ role }: { role: Role }) {
     const id = window.setInterval(() => {
       const nowMs = Date.now();
       const p = poll.current;
-      const input = { visible: document.visibilityState === "visible", ringing: p.ringing, pushOn: p.pushOn, sinceActiveMs: nowMs - lastTouch, soon: p.soon, failing: p.failing };
+      const input = { visible: document.visibilityState === "visible", ringing: p.ringing, pushOn: p.pushOn, sinceActiveMs: nowMs - lastTouch, soon: p.soon, failing: p.failing, listening: p.listening };
       if (!livePollDue(input, Math.max(lastAsked, getLive().checkedAt), nowMs)) return;
       lastAsked = nowMs;
       void refreshLive();
