@@ -78,9 +78,11 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
   sekmede; yalnız sitenin kendi adresine giden `/admin/…` yolları bağlanır; iade ve iptal orada) ve kartın altında
   büyük **aşama düğmeleri** (aşağıda).
 - **Müşterinin notu:** siparişe yazılan not ("Fındık alerjim var, şurupsuz lütfen") kartın üstünde turuncu kutuda,
-  içeceğe yazılan not ("çok sıcak olmasın") satırın altında "Not: …" olarak. Yalnız **masa** ve **gel-al**
-  siparişinde gelir (v1'e eklenen, isteğe bağlı `note` alanları; sipariş notu en çok 300, satır notu 200 karakter).
-  Kurye siparişinin notu adres notuyla aynı alanda durur (kapı kodu, tarif): site göndermez, gönderse de panel atar.
+  içeceğe yazılan not ("çok sıcak olmasın") satırın altında "Not: …" olarak (v1'e eklenen, isteğe bağlı `note`
+  alanları; sipariş notu en çok 300, satır notu 200 karakter). Sipariş notu yalnız **masa** ve **gel-al** siparişinde
+  gelir: kurye siparişinde o alan adres notuyla birleşiktir ("[adres notu] · [not]", kapı kodu, tarif); site
+  göndermez, gönderse de panel atar (üyenin kurye siparişine yazdığı not da bu yüzden gelmez). Satır notu her
+  siparişte gelir, kurye dahil (içeceğe yazılan nottur, adres değil).
   Not zile, telefon bildirimine ve günlüğe girmez; not değişince kart yenilenir.
 - **Reçete:** satırın kalemi menü bağlantısıyla bir panel ürününe bağlıysa ([SITE-MENU.md](SITE-MENU.md); `L` → L
   yuvası, `M` ve tek boy → M yuvası) satırın yanında kitap simgesi: Reçete defterini o ürünün adıyla açar (sayfa
@@ -195,8 +197,9 @@ Siteye ulaşılamazsa son doğru liste kalır, yalnız hata yazılır; ekran bun
 ## Sitede yapıldı (v1'e ekleme, 23 Ekim 2026)
 
 Müşterinin notu sitede yayında (laffogato #248) ve panel onu isteğe bağlı okur: siparişin `note`'u yalnız masa ve gel-al
-siparişinde, kırpılmış ve en çok 300 karakter (kuryede hiç: o not adres notudur, kapı kodu siteden çıkmaz); satırın
-`note`'u `items[].options.note`'tan, en çok 200 karakter. Kural ve KVKK bölümü sitenin `docs/PANEL-ORDERS.md`'sinde.
+siparişinde, kırpılmış ve en çok 300 karakter (kuryede hiç: o alan adres notunu da taşır, "[adres notu] · [not]"; kapı
+kodu siteden çıkmaz, üyenin kurye siparişindeki notu da gelmez); satırın `note`'u `items[].options.note`'tan, en çok 200
+karakter, her siparişte (kurye dahil). Kural ve KVKK bölümü sitenin `docs/PANEL-ORDERS.md`'sinde.
 
 ## Kurulum
 
@@ -222,8 +225,9 @@ siparişinde, kırpılmış ve en çok 300 karakter (kuryede hiç: o not adres n
   değil"); kullanılan alanlar sıkı (kimlik, aşama, nereye, ödeme anı, satırlar), bozuk ya da iki kez geçen sipariş
   atlanır ve sayılır; metinler kısaltılır, bilinmeyen alanlar atılır (site yeni alan eklese de panel bozulmaz).
   `path` yalnız `/admin/…` olabilir.
-- Panele gelen kişisel veri yalnız müşterinin **adıdır** (gel-al'da seslenmek için) ve masa / gel-al siparişinde
-  müşterinin kendi yazdığı **not** (alerji, istek; sitenin personel e-postasındaki "MÜŞTERİNİN NOTU" kuralı). Ad ve
+- Panele gelen kişisel veri yalnız müşterinin **adıdır** (gel-al'da seslenmek için), masa / gel-al siparişinde
+  müşterinin kendi yazdığı sipariş **notu** (alerji, istek; sitenin personel e-postasındaki "MÜŞTERİNİN NOTU" kuralı) ve
+  her siparişte içeceğe yazılan satır notu. Ad ve
   not ekranda ve son listenin kopyasında durur; günlüğe, işlem geçmişine ve bildirime yazılmaz. Kurye notu (adres
   tarifi, kapı kodu) hiç gelmez; gelirse panel atar (`parseSiteOrder`). Liste her çekmede üzerine yazılır, çıkan
   sipariş panelden de çıkar. Tutar (`totalMinor`) saklanmaz.

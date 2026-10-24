@@ -84,7 +84,8 @@ siteden çekildiyse:
 - **Kasada ödenen uygulama siparişi** (`counter`, v1'e eklenen isteğe bağlı blok): uygulama ya da web siparişi kartla
   ödenemeyip kasada nakit ya da kasadaki kart cihazıyla ödenirse (sitede "Ödendi olarak işaretle", `manual:nakit` /
   `manual:kart`) fişi ModPOS'ta çalınır: ciro kasadadır. Site bu siparişleri kafe ve mağaza toplamlarından ve
-  satırlarından ayırıp `counter: {orders, grossMinor, netMinor}` olarak gönderir; panel ciroya, KDV tahminine ve
+  satırlarından ayırıp `counter` olarak gönderir (sitede `cafe` / `shop` ile aynı sekiz alan; panel `orders`,
+  `grossMinor`, `netMinor`'ı okur); panel ciroya, KDV tahminine ve
   tüketime eklemez (elle girilen `manual` gibi), kartta bilgi olarak yazar. Eski site bloğu göndermez: sıfır sayılır.
 - Telefonda ay özeti "+ online X (laffogato.net)" der.
 - **Karaoke box ile karaoke odası ayrı işlerdir:** Faturalar'daki "Karaoke box" kategorisi MaviBahçe AVM'deki karaoke
@@ -210,7 +211,8 @@ aydan eski iade için ayın satırındaki ↻ ya da **Başka bir ay**.
 
 İki alan sitede yayında ve panel ikisini de okur (isteğe bağlı: alan gelmezse davranış eskisi gibi):
 
-1. **`counter: {orders, grossMinor, netMinor}`** (laffogato #246): başarılı ödemesi `manual:nakit` ya da `manual:kart`
+1. **`counter`** (laffogato #246; sitede `cafe` / `shop` ile aynı sekiz alan, panel `orders`, `grossMinor`,
+   `netMinor`'ı okur): başarılı ödemesi `manual:nakit` ya da `manual:kart`
    olan uygulama / web siparişleri (kasada ödendi, ModPOS'ta çalındı); `cafe` / `shop` toplamlarından ve `cafe.lines`'tan
    çıkmış gelir. `manual:havale` ve `manual:diger` online kalır. Kural sitenin `docs/PANEL-SALES.md`'sinde.
 2. **`cafe.lines[].extraShots`**, **`syrups`** ve **`milks`** (laffogato #247): satırın seçenekleri, adetle çarpılmış.
