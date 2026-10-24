@@ -98,6 +98,9 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 - Giderler'de her sabit giderin "Faturadaki KDV"sini kontrol edin (varsayılanlar: kira, faturalar, genel %20; personel
   %0; stopajlı şahıs kirası %0 olmalı).
 - `npm run db:reset` uzak veritabanında `-- --onay=<sunucu>` ister ve önce tam yedek alır.
+- Bir kez: Ayarlar › Paraşüt entegrasyonu › **Tarihten eşitle** (yılın başından ya da `PARASUT_SYNC_FROM`'dan). #18'den
+  önce gider olarak (eksi tutarla) alınmış, 75 günden eski müşteri iadeleri böyle kalkar; günlük eşitleme yalnız son
+  75 güne bakar.
 - Site tarafı (laffogato oturumu): çift sayımı önleyen `counter`, seçenek sayıları, sipariş notları, menü listesinde
   `now`'ın okumadan önce alınması, karaoke oda saatleri ve PANEL-KARAOKE belgesi; panel hepsini isteğe bağlı okur.
 
@@ -150,6 +153,44 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   gösterir); gecikenler en eski son gün önce sıralanmalı (teslim farklarının zildeki sırasını da değiştirir).
 - **Mal siparişi telefonda:** tedarikçi kartının iki düğmesi alt alta ve tam genişlikte, WhatsApp ile gönder üstte;
   320–414 px'te ikon kayboluyor, 375 px'in altında yazı taşıyordu (tarayıcıda 320, 360, 375, 390, 414 ve 1440 px).
+
+### Dalga 7'nin bot bulguları (PR #18)
+
+- **Bar ekranı arka planda (B1):** PR #18 arka plandaki her sekmenin yedek kontrolünü durdurmuştu; bildirimin
+  ulaşmadığı bar ekranı sekme arkadayken yeni sipariş ve rezervasyonu hiç duymuyordu. Artık zili açık (ses açılmış,
+  sipariş zili ya da karaoke alarmları açık) ve bildirim gelmeyen cihaz arka planda 10 dakikada bir sorar; "bildirim
+  açık" yalnız izin değil, kayıtlı abonelik ve zilin konuları da açık demek (`pushCovers`). Bildirimi olan ve zili
+  olmayan cihaz (yöneticinin dizüstü) arka planda yine sormaz. Testler: `canli-yoklama` ("bildirim gelmeyen, zili açık
+  cihazda arka plandaki sekme 10 dakikada bir sorar", "zil cihazı", "bildirim açık sayılır", "bildirim açık: uyarı
+  motoru ve bar ekranı…").
+- **Fiyatıyla eklenen sayım kalemi (B2):** "Listeye ekle" fiyat geçmişine yazmıyordu; sonraki ilk zam kapanmış ayın
+  devreden malını ve kârını değiştiriyordu (Eylül 400 → 520 ₺). Kalem açılırken yazılan fiyat geçmişin başlangıcıdır,
+  zam uyarısı onu saymaz; eski kalemler `0037_sayim_kalemi_fiyat_baslangici` ile. Test: `sayim-ekle` ("Listeye
+  fiyatıyla eklenen kalem…", iki migration testi).
+- **Tedarikçi geçmişi (B4):** eski faturası Paraşüt'e sorulamayan yeniden içeri alınmış e-fatura kalınan yeri kendi
+  sayfasına geri alır, bildirim yeniden basmayı ister. Test: `parasut-esitleme-db` ("tedarikçi geçmişi: eski faturası
+  sorulamayan fatura…").
+- **Personel kurulum ayrıntısı görmez (B5):** bar ekranının sarı satırı, siparişlerin Yenile'si ve karaokenin
+  Eşitle'si personele `KARAOKE_SYNC_SECRET`, imza ya da "site güncel değil" yerine "sorun sürerse yöneticiye haber
+  verin" der. Testler: `karaoke-baglanti` ("personel bar ekranında kurulum ayrıntısı görmez"), `arayuz-duzeltmeleri`.
+- **Düzeltilmedi (B3):** önerilen değişiklik bulguyu düzeltmiyordu: yeniden denetim faturayı tedarikçisiz okur (kişi
+  kimliği yalnız `include` edilince gelir), önbellek o yolda hiç okunmaz; ayrıca iadeler ödenmiş açılır, yeniden
+  denetim yalnız ödenmemişe bakar. Asıl açık kod istemiyor: #18'den önce gider sayılmış, 75 günden eski müşteri
+  iadeleri bir kez "Tarihten eşitle" ile kalkar (Sahibe notlar, dalga 7).
+- **Düzeltilmedi (B6, reçete düzenleyicide pasife alma):** bulgunun senaryosu oluşmuyor: kaydedilmemiş değişiklik
+  varken anahtar yalnız kapanır ve "Kaydet'e basın" der, kaydetmez; doğrulama duraklarının hepsi kaydedilmemiş
+  değişiklik sayılır. Kaydetmeye inen iki kenar durum (kayıtlı fiyatı 0 iken silinen fiyat, kayıtlı miktarı 0 satırda
+  "=") alana özel uyarı gösterir.
+- Açık kalanlar:
+  1. Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler: eylem fırlatırsa (ağ
+     yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
+     `setSaving` / `setDeleting` ile düzeltilmeli.
+  2. Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir (`src/lib/site-orders/stage.ts`
+     86, 118, 128).
+  3. İsteğe bağlı: Postgres dışında ucuz bir değişiklik işareti (Vercel Runtime Cache ya da Edge Config sürüm sayacı);
+     yalnız bar ekranı bildirimsiz çalışmak zorundaysa.
+  4. B3 sağlamlaştırması: yeniden denetimin `SHOW_INCLUDE`'una tedarikçi (desteklenmezse geri düşerek); sahte
+     Paraşüt `include`'a uysun.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
