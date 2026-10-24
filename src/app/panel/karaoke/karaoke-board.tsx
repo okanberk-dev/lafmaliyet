@@ -128,7 +128,7 @@ export function KaraokeBoard({
   }, []);
 
   // Son çekme düştüyse (ping kaçmış olabilir) ekran söyler; panel kopyayı kendisi yeniden dener (src/lib/karaoke/freshness.ts)
-  const stale = configured ? karaokeStaleLine(live.data?.karaoke.error, live.data?.karaoke.okAt, now) : null;
+  const stale = configured ? karaokeStaleLine(live.data?.karaoke.error, live.data?.karaoke.okAt, now, role) : null;
   const running = sessions.filter((s) => ["active", "overtime"].includes(phase(s, now)));
   const todays = sessions.filter((s) => s.date === today || (sessionStart(s) < now && sessionEnd(s) > now - 3_600_000));
   const next = sessions.find((s) => phase(s, now) === "upcoming" && isLive(s));

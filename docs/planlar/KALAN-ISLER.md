@@ -90,13 +90,17 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 
 **Sahibe notlar (dalga 7):**
 - Neon Free planı (ayda 100 CU-saat): Vercel › Storage › kullanım tahmini 100'ü aşıyorsa ücretli plana geçin; bar
-  tabletine bildirim izni verin (izin yoksa açık siparişte 20 saniyede bir sorulur).
+  tabletine bildirim izni verin (bildirim yokken öndeki ekran 20 saniyede bir sorar ve veritabanı uyumaz; arka
+  plandaki sekmede zil 10 dakikaya kadar gecikir; Sipariş bildirimleri açık kalsın).
 - Dış izleyici `/api/health?isler=1`'i saatte bir değil 6 saatte bir çağırsın.
 - Vercel Preview ortamından gizli anahtarları (AUTH_SECRET, ADMIN_PASSWORD, CRON_SECRET, KARAOKE_SYNC_SECRET,
   PARASUT_*, RESEND_API_KEY, ANTHROPIC_API_KEY, BLOB) kaldırın (`docs/DEPLOY.md` §4); önizlemeye giriş yapılamaz olur.
 - Giderler'de her sabit giderin "Faturadaki KDV"sini kontrol edin (varsayılanlar: kira, faturalar, genel %20; personel
   %0; stopajlı şahıs kirası %0 olmalı).
 - `npm run db:reset` uzak veritabanında `-- --onay=<sunucu>` ister ve önce tam yedek alır.
+- Bir kez: Ayarlar › Paraşüt entegrasyonu › **Tarihten eşitle** (yılın başından ya da `PARASUT_SYNC_FROM`'dan). #18'den
+  önce gider olarak (eksi tutarla) alınmış, 75 günden eski müşteri iadeleri böyle kalkar; günlük eşitleme yalnız son
+  75 güne bakar.
 - Site tarafı (laffogato oturumu): çift sayımı önleyen `counter`, seçenek sayıları, sipariş notları, menü listesinde
   `now`'ın okumadan önce alınması, karaoke oda saatleri ve PANEL-KARAOKE belgesi; panel hepsini isteğe bağlı okur.
 
@@ -119,6 +123,88 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 - Haftalık özet: pazartesi sabahı etkin yöneticilere gider (gönderilemezse salı, çarşamba yeniden denenir).
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.
+
+### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
+
+- **Ay sonu sayımının anı:** geç girilen ya da sonradan düzeltilen ay sonu sayımı ayın son gününün sayımıdır
+  (`monthEndCountAt`, en geç ertesi ayın 1'i 05:00); arada gelen mal siparişte kalır, girildiği gün Bugün'de "sayıldı"
+  demez, "Gecikti" ve "Sayım eski" ayın son gününden sayılır. Sayım girilmeden önce denen Geldi de sayımın gününe kadar
+  beklenen malı sayımda sayar (`OnHand.recordedAt`; inceleme: Geldi'nin sayımdan önce mi sonra mı dendiği sonucu
+  değiştiriyordu, süt iki kez "siparişte" sayılıyordu).
+- **Teslim süresi uzun sipariş:** 14 günden eski olsa da beklenen günün ertesine kadar "siparişte" kalır
+  (`IN_TRANSIT_GRACE_DAYS`, zilin "gelmedi mi" sorusuyla aynı gün); kalem yeniden önerilmez, Bugün "Sipariş hazır"
+  demez. Sayımdan sonra gelen uzun teslimli mal sıradaki sayıma kadar siparişte kalır: gelmiş siparişte 14 gün gelişin
+  gününden sayılır (inceleme: beklenen günden iki gün sonra düşüyor, gelmiş mal yeniden öneriliyordu). Sonraya: fatura eşleşmesi (gönderimden 10 gün) ve kendiliğinden kapanış (45 gün) hâlâ gönderim gününden
+  sayılır; teslim süresi 10 günden uzun siparişin faturası elle bağlanır (Faturayı değiştir, 30 güne kadar), 45 günden
+  uzun sipariş gelmeden "45 günde fatura gelmedi" diye kapanır.
+- **Erken gelen mal:** Hızlı sayım'ın "Gelen mal var mı?" kartı beklenen günü henüz gelmemiş açık siparişleri de
+  gösterir ("27.10.2026 bekleniyor"); erken gelen mal geldiği gün işaretlenir, sayımda ikinci kez sayılmaz.
+- **Açık sipariş kapanana kadar görünür:** farkı çözülmemiş ya da yeniden açılan sipariş kendiliğinden kapanmaz; 60.
+  günde zilden ve Bugün'den, 90. günde Gönderilenler'den (Kapat'ın tek yeri) düşüyordu. Artık yaşı ne olursa olsun
+  okunur (`loadOrders`). Eşleşme ise hâlâ son 60 günün açık siparişlerine bakar; daha eskisi Faturayı değiştir ya da
+  Yeniden aç ile yeniden karşılaştırılır.
+- **Bugün metinleri:** gecikmiş sayım satırı "Son sayım 30 Eylül Çarşamba (9 gün önce)" der (son sayım ay sonu sayımı
+  da olabilir); Hakedişler satırı ayın satış ayı olduğunu söyler ("Pluxee hakedişi (Eylül satışları): son gün 20 Ekim.
+  … Geldiyse işaretleyin."), bu yıldan değilse yılıyla. Sonraya: zil ve e-posta başlığında ("Hakediş gecikti: Pluxee
+  (Ekim)") yıl yok; 12 aydan uzun geciken hakediş bu ayla aynı adı taşıyınca karışır (Ekim 2027'den önce olamaz).
+- **Geciken hakediş işaretlenene kadar uyarır:** zil, Bugün ve sabah e-postası ekranla aynı 13 ayı okur
+  (`reportWindow`); 4 aylık pencere satış ayı pencereden çıkınca uyarıyı düşürüyordu, 90 günlük platformda çoğu ay hiç
+  göstermiyordu. Haftalık özetin komisyon maddesi de aynı pencereyi okur. Sonraya: (1) 13 aydan eski satış ayı ekranda
+  da yok; takip 24–25 Ekim 2026'da başladığı için bu en erken **Ekim 2027**'de olur (o zamana kadar işaretlenmemiş eski
+  ayları `komisyon.since`'e kadar okuyan ikinci bir sorgu ya da sınırsız pencere); (2) zil en çok 5 uyarı gösterir ve
+  en yeniyi önce alır: geciken hakedişler birikirse en eskisi zilden düşer (Bugün sayısını ve en eskisini yine
+  gösterir); gecikenler en eski son gün önce sıralanmalı (teslim farklarının zildeki sırasını da değiştirir).
+- **Mal siparişi telefonda:** tedarikçi kartının iki düğmesi alt alta ve tam genişlikte, WhatsApp ile gönder üstte;
+  320–414 px'te ikon kayboluyor, 375 px'in altında yazı taşıyordu (tarayıcıda 320, 360, 375, 390, 414 ve 1440 px).
+
+### Dalga 7'nin bot bulguları (PR #18)
+
+- **Bar ekranı arka planda (B1):** PR #18 arka plandaki her sekmenin yedek kontrolünü durdurmuştu; bildirimin
+  ulaşmadığı bar ekranı sekme arkadayken yeni sipariş ve rezervasyonu hiç duymuyordu. Artık zili açık (ses açılmış,
+  sipariş zili ya da karaoke alarmları açık) ve bildirim gelmeyen cihaz arka planda 10 dakikada bir sorar; "bildirim
+  açık" yalnız izin değil, kayıtlı abonelik ve zilin konuları da açık demek (`pushCovers`). Bildirimi olan ve zili
+  olmayan cihaz (yöneticinin dizüstü) arka planda yine sormaz. Testler: `canli-yoklama` ("bildirim gelmeyen, zili açık
+  cihazda arka plandaki sekme 10 dakikada bir sorar", "zil cihazı", "bildirim açık sayılır", "bildirim açık: uyarı
+  motoru ve bar ekranı…"). İnceleme düzeltmeleri: bar ekranının 20 sn'lik döngüsü yalnız sipariş zilinin bildirimine
+  bakar (karaoke konusu açmaz); "Bu cihazda uyarılar" kartı 10 dakika sözünü yalnız arka planda soracak cihaza verir,
+  ötekine "ancak öne gelince duyurur" der (`hiddenTabNote`); "Bildirimleri aç" satırında not ayrı paragraf, metin
+  telefonda ve 380 px'lik yan sütunda dar sütuna sıkışmaz.
+- **Fiyatıyla eklenen sayım kalemi (B2):** "Listeye ekle" fiyat geçmişine yazmıyordu; sonraki ilk zam kapanmış ayın
+  devreden malını ve kârını değiştiriyordu (Eylül 400 → 520 ₺). Kalem açılırken yazılan fiyat geçmişin başlangıcıdır,
+  zam uyarısı onu saymaz; eski kalemler `0037_sayim_kalemi_fiyat_baslangici` ile. Tahmin yanlışsa yöneticinin
+  Hammaddeler'deki düzeltmesi (kalem hâlâ Tahmini, geçmişinde yalnız başlangıç) yeni satır açmaz, başlangıcın yerine
+  geçer: kalemin eklendiği kapanmış ay da düzelir (inceleme bulgusu: düzeltme o aya hiç ulaşmıyordu). Paraşüt faturası
+  tahmini düzeltmez, tarihli fiyattır. Test: `sayim-ekle` ("Listeye fiyatıyla eklenen kalem…", "tahmin
+  düzeltilince…", "Hammaddeler'in fiyat yazımı…", veritabanında düzeltme, iki migration testi).
+- **Tedarikçi geçmişi (B4):** eski faturası Paraşüt'e sorulamayan yeniden içeri alınmış e-fatura kalınan yeri kendi
+  sayfasına geri alır, bildirim yeniden basmayı ister: "1 fatura yazılamadı (eski faturası Paraşüt'e sorulamadı);
+  düğmeye yeniden basınca denenir." ("Süre doldu" yalnız süre dolunca; `historyNotice`). Testler: `parasut-esitleme-db`
+  ("tedarikçi geçmişi: eski faturası sorulamayan fatura…"), `tedarikciler` ("Geçmiş faturaları al bildirimi…").
+- **Personel kurulum ayrıntısı görmez (B5):** bar ekranının sarı satırı, siparişlerin Yenile'si ve karaokenin
+  Eşitle'si personele `KARAOKE_SYNC_SECRET`, imza ya da "site güncel değil" yerine "sorun sürerse yöneticiye haber
+  verin" der. Testler: `karaoke-baglanti` ("personel bar ekranında kurulum ayrıntısı görmez"), `arayuz-duzeltmeleri`.
+- **Düzeltilmedi (B3):** önerilen değişiklik bulguyu düzeltmiyordu: yeniden denetim faturayı tedarikçisiz okur (kişi
+  kimliği yalnız `include` edilince gelir), önbellek o yolda hiç okunmaz; ayrıca iadeler ödenmiş açılır, yeniden
+  denetim yalnız ödenmemişe bakar. Asıl açık kod istemiyor: #18'den önce gider sayılmış, 75 günden eski müşteri
+  iadeleri bir kez "Tarihten eşitle" ile kalkar (Sahibe notlar, dalga 7).
+- **Düzeltilmedi (B6, reçete düzenleyicide pasife alma):** bulgunun senaryosu oluşmuyor: kaydedilmemiş değişiklik
+  varken anahtar yalnız kapanır ve "Kaydet'e basın" der, kaydetmez; doğrulama duraklarının hepsi kaydedilmemiş
+  değişiklik sayılır. Kaydetmeye inen iki kenar durum (kayıtlı fiyatı 0 iken silinen fiyat, kayıtlı miktarı 0 satırda
+  "=") alana özel uyarı gösterir.
+- Açık kalanlar:
+  1. Reçete düzenleyicinin `save()` / `remove()`'u sunucu eylemini `try`/`finally`'siz bekler: eylem fırlatırsa (ağ
+     yok, eski yayın) "Kaydediliyor…" takılı kalır, uyarı çıkmaz. `toastUnreachable` ve `finally`'de
+     `setSaving` / `setDeleting` ile düzeltilmeli.
+  2. Aşama düğmelerinin hata bildirimleri personele hâlâ `KARAOKE_SYNC_SECRET` gösterir (`src/lib/site-orders/stage.ts`
+     86, 118, 128).
+  3. İsteğe bağlı: Postgres dışında ucuz bir değişiklik işareti (Vercel Runtime Cache ya da Edge Config sürüm sayacı);
+     yalnız bar ekranı bildirimsiz çalışmak zorundaysa.
+  4. B3 sağlamlaştırması: yeniden denetimin `SHOW_INCLUDE`'una tedarikçi (desteklenmezse geri düşerek); sahte
+     Paraşüt `include`'a uysun.
+  5. Sahibin kararı: sipariş zili kapalı cihazda (yöneticinin dizüstü, zili kapatılmış ikinci ekran) boş bar ekranına
+     yeni sipariş kabuğun yedek kontrolüyle gelir (bildirim izni varsa 30 dakikaya kadar; son iki saatte sipariş
+     olduysa 3 dakikada). O cihazlar da görünürken 20 saniyede bir sorsun mu? Sorarsa `/panel/karaoke` önde açık kaldıkça
+     veritabanı uyumaz (Neon kotası). Varsayılan: sormaz; siparişleri izleyen ekranda zil ve Sipariş bildirimleri açık.
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
@@ -166,6 +252,11 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 5. Sahibin verdiği cevaplar: kurye yok; Paraşüt'te banka hesapları bağlı değil (hakediş/ödeme elle işaretlenir);
    ModPOS günlük döküm yolda.
 6. CRITIQUE.md §6'daki sorular (varsayılanlar uygulanır).
+7. Mal siparişi: Paraşüt faturası siparişle eşleşince Geldi'nin anı **faturanın günü 12:00** yazılır
+   (`docs/MAL-SIPARISI.md` §2, §7). Fatura sevkte kesildiyse sipariş erken gelmiş sayılır (fazla öneri), sayımdan
+   sonraki bir güne tarihliyse geç (eksik öneri); saklanan hiçbir değer ikisini birden düzeltmiyor. Kalıcı çözüm
+   (faturası bağlanan siparişte de Geldi'yi açık tutmak ya da sevki ayrıca kaydetmek) eylemi, Hızlı sayım listesini ve
+   sipariş kartını değiştirir. Varsayılan: kural olduğu gibi kalır.
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 

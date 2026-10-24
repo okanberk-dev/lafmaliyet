@@ -17,7 +17,7 @@ Telefonda tek sütun, bu sırayla; geniş ekranda kanal kartları iki sütun.
 
 | Bölüm | İçerik |
 |---|---|
-| **Bekleyen hakedişler** | Bütün aylardan gelmesi gereken para: gecikti (kırmızı), eksik geldi, son günü 7 gün içinde (Bu hafta). En acil önce; **Geldi** penceresi açar, ad kanalın kartına götürür. Yoksa kart yok |
+| **Bekleyen hakedişler** | Son 13 ayın gelmesi gereken parası: gecikti (kırmızı), eksik geldi, son günü 7 gün içinde (Bu hafta). En acil önce; **Geldi** penceresi açar, ad kanalın kartına götürür. Yoksa kart yok |
 | Karolar | **Kesilen (KDV hariç)**: seçilen ayın bütün kanal faturaları · **Yemek kartı oranı**: yemek kartlarının toplam oranı (%6'nın üstü kırmızı; altında Z'deki yemek kartı, kasa raporu olan ayda 0 da, ya da "Satış bilinmiyor") · **Bekleyen hakediş**: açık hakedişlerin tutarı bilinen toplamı; altında geciken sayısı, gecikme yoksa tutarı bilinmeyenlerin sayısı |
 | **Yemek kartları** | Önce **Yemek kartları (toplam)** (o ay Z'de yemek kartı ya da yemek kartı faturası varsa): Z'deki yemek kartı (raporlu gün sayısı ya da eksik gün), kesilen ve kaç şirket, ortalama oran, beklenen hakediş ve gelen. Sonra seçilen ayda ya da önceki beş ayda faturası ya da işareti olan her kartın kartı |
 | **Platformlar** | "Z'deki online (platformlar): …" satırı (Z'nin online alanı platform satışıdır; laffogato.net'in online satışı kasadan geçmez, [SITE-SATIS.md](SITE-SATIS.md)); kasa raporu olan ayda tutar 0 da yazılır ("0 ₺ · 31 / 31 gün raporlu"), "Kasa raporu yok" yalnız o ay hiç rapor yoksa. Sonra her platformun kartı |
@@ -191,16 +191,21 @@ raporunun kartlı satış payı (banka POS komisyonu için) değişmedi: (kart +
   aşımı ("Yemek kartları Ekim: ortalama kesinti %6,3"). Oran ve ücret yalnız ayın son faturası 45 günden yeniyse. Önce
   gecikenler, sonra en yeni; en çok beş. Kimlik uyarının anahtarından: yeni oran ya da yeni fatura yeniden okunmamış
   olur. Bağlantı `?ay=…#kanal`.
-- **Bugün** (yönetici): geciken hakediş varsa Ödemeler'in ardından **Hakedişler** satırı, "sorun var": "Pluxee (Eylül) ·
-  son gün 20 Ekim ve 1 hakediş daha", **Hakedişlere bak** ([BUGUN.md](BUGUN.md)).
+- **Bugün** (yönetici): geciken hakediş varsa Ödemeler'in ardından **Hakedişler** satırı, "sorun var": "Pluxee hakedişi
+  (Eylül satışları): son gün 20 Ekim. 1 hakediş daha gecikti. Geldiyse işaretleyin.", **Hakedişlere bak**
+  ([BUGUN.md](BUGUN.md)). Ay hakedişin satış ayıdır; bu yıldan değilse yılıyla ("Ekim 2025 satışları").
 - **Sabah e-postası:** "Komisyon ve hakediş" kutusu (fiyat onayından sonra, kontrol listelerinden önce): zilin
   uyarılarından daha önce e-postayla bildirilmemiş olanlar, her biri bir kez (`notification_log` › `komisyon:<uyarı>`,
   ör. `komisyon:gecikti:pluxee:2026-10`, `komisyon:oran:pluxee:2026-10:62`), en çok beş; bağlantı Komisyon & hakediş.
   Konuya giden parça: tek gecikme "Hakediş gecikti: Pluxee (Ekim)", birden çoğu "2 hakediş gecikti", gecikme yoksa
   "komisyon uyarısı". Kutu e-postayı tek başına gönderir; önizleme hiçbir şey yazmaz ([BILDIRIMLER.md](BILDIRIMLER.md)).
-- Zil, Bugün ve e-posta **hafif yoldan** okur: son 4 ayın Komisyon faturaları ve kalemleri, hakediş işaretleri, kanal
-  ayarları ve ayların Z'deki yemek kartı / online toplamı (dört küçük sorgu, maliyet modeli yok); adı bir kanala
-  bağlanmayan fatura varsa tedarikçi kartları da (§2). Biri bozulursa yalnız kendisi düşer.
+- Zil, Bugün ve e-posta **hafif yoldan** okur: ekranla aynı 13 ayın (bu ay dahil, `reportWindow`) Komisyon faturaları
+  ve kalemleri, hakediş işaretleri, kanal ayarları ve ayların Z'deki yemek kartı / online toplamı (dört küçük sorgu,
+  maliyet modeli yok); adı bir kanala bağlanmayan fatura varsa tedarikçi kartları da (§2). Ekrandan tek farkı kanalın
+  adla bulunması. Biri bozulursa yalnız kendisi düşer.
+- **Geciken hakediş işaretlenene kadar** zilde ve Bugün'de kalır; ay dönünce düşmez (ilk sürümün 4 aylık penceresi
+  satış ayı pencereden çıkınca uyarıyı düşürüyordu, ödeme süresi 90 gün olan platformda çoğu ay hiç göstermiyordu).
+  E-posta her gecikmeyi yine bir kez gönderir. 13 aydan eski satış ayı ekranda da yoktur.
 
 ## 9. Yasal dayanak
 
@@ -247,7 +252,8 @@ metni mevzuat.gov.tr'den denetleyin; "Kurallar ve hesap" kartındaki cümleler o
 | `src/server/notify/digest-extras.ts`, `src/server/actions/notifications.ts`, `src/server/data/today.ts`, `src/app/panel/bugun/logic.ts` | Sabah e-postası kutusu, zil, Bugün satırı |
 
 Testler: `tests/komisyon.test.ts` (kanallar, kalemler, ay, satışın kaynağı ve sonraki ayda kesilen fatura, oran ve
-uyarılar, ay sonunda kesilmeyen fatura, toplam, Z'de 0, hakediş, uyarı sırası ve anahtarları, e-posta kutusu, konu ve
+uyarılar, ay sonunda kesilmeyen fatura, toplam, Z'de 0, hakediş, geciken hakedişin ay dönünce uyarıdan düşmemesi (13
+aylık tek pencere, 90 günlük platform), uyarı sırası ve anahtarları, e-posta kutusu, konu ve
 daha önce gönderilenler, Excel'deki 10 faturalık veri, ekran metinleri, kaydın farkı ve Geri al, sorgunun satırları,
 kaynak denetimi),
 `tests/bugun.test.ts` (Hakedişler satırı), `tests/mobile-nav.test.ts`, `tests/yardim.test.ts`.

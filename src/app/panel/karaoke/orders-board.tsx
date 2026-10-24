@@ -23,7 +23,7 @@ import { toast } from "sonner";
 
 import { useClock } from "@/components/panel/live/clock";
 import { updatePrefs, usePrefs } from "@/components/panel/live/prefs";
-import { pushSupport } from "@/components/panel/live/push-client";
+import { pushSupport, useDeviceTopics } from "@/components/panel/live/push-client";
 import { refreshLive, useLive } from "@/components/panel/live/store";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ import type { Role } from "@/lib/constants";
 import { dateTimeTR, num } from "@/lib/format";
 import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
+import { pushCovers } from "@/lib/live-poll";
 import { lineLabel, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitInfo } from "@/lib/site-orders/feed";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
 import { stageButtons, type StageAction, type StageButton } from "@/lib/site-orders/stage";
@@ -49,8 +50,9 @@ const QUIET_REPULL_MS = 60 * 60_000;
 /** Son çekme başarısızken yeniden deneme: site geri gelince liste bir dakikada düzelir */
 const ERROR_REPULL_MS = 60_000;
 /**
- * Ekranda açık sipariş varken ya da bu cihazda bildirim kapalıyken canlı veri bu sıklıkta sorulur (ETag; değişiklik
- * yoksa 304). Bildirim açık ve ekran boşken yeni sipariş bildirimle gelir, ek sorgu yapılmaz (veritabanı uyusun).
+ * Ekranda açık sipariş varken ya da bu cihazın sipariş zili yeni siparişi bildirimle almıyorken canlı veri bu sıklıkta
+ * sorulur (ETag; değişiklik yoksa 304). Bildirim açık ve ekran boşken yeni sipariş bildirimle gelir, ek sorgu yapılmaz
+ * (veritabanı uyusun).
  */
 const FAST_REFRESH_MS = 20_000;
 const BUSY_WINDOW_MS = 2 * 3_600_000;
@@ -118,26 +120,32 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     return () => window.clearInterval(id);
   }, [busy, failing]);
 
-  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bu cihazda bildirim kapalıyken
-  // (yeni sipariş bildirimle gelemez) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir
+  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bu cihazın sipariş zili yeni
+  // siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya da zil açık ama Sipariş bildirimleri kapalı) 20
+  // saniyede bir; yalnız siparişe bakar (karaoke konusu bu döngüyü açmaz). Bildirim açık ve ekran boşken yeni sipariş
+  // bildirimle gelir. Sipariş zili kapalı cihazda (yöneticinin dizüstü, ikinci ekran) boş ekrana yeni sipariş kabuğun
+  // yedek kontrolüyle (src/lib/live-poll.ts) ya da son iki saatte sipariş olduysa üç dakikalık çekmeyle gelir. Yalnız
+  // ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü sorar (alert-center.tsx, bildirim gelmeyen zil
+  // cihazında 10 dakikada bir)
   const hasOrders = list.length > 0;
   const publicKey = live.data?.push.publicKey ?? null;
+  const topics = useDeviceTopics();
+  const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: false });
   useEffect(() => {
-    const pushOn = Boolean(publicKey) && pushSupport() === "granted";
     if (!hasOrders && pushOn) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshLive();
     }, FAST_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [hasOrders, publicKey]);
+  }, [hasOrders, pushOn]);
 
   const manual = useCallback(async () => {
     setPulling(true);
     const r = await pullOrders(0);
     setPulling(false);
-    if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: r.error });
+    if (r?.status === "error") toast.error("laffogato.net'e ulaşılamadı", { description: role === "admin" ? r.error : "Sorun sürerse yöneticiye haber verin." });
     else if (r?.status === "off") toast.error("laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
-  }, []);
+  }, [role]);
 
   const tables = list.filter((o) => o.fulfillment === "table" && o.stage !== "ready").length;
   const fresh = list.filter((o) => o.stage === "new").length;
@@ -167,7 +175,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
         }
       />
       <div className="space-y-3 px-5 pb-5">
-        <StatusLines data={data} now={now} />
+        <StatusLines data={data} now={now} role={role} />
         {data?.configured && !prefs.orderAlerts ? (
           <p className="flex flex-wrap items-center gap-2 rounded-xl bg-surface px-3 py-2 text-[13px] text-ink-mute ring-1 ring-line">
             <BellOff size={14} className="shrink-0" aria-hidden="true" />
@@ -194,7 +202,7 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
 }
 
 /** Bağlantı kapalı, son çekme başarısız, liste kısa ya da okunamayan sipariş: sessiz bir satır */
-function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
+function StatusLines({ data, now, role }: { data: LiveOrders | null; now: number; role: Role }) {
   if (!data) return null;
   if (!data.configured) {
     return (
@@ -207,7 +215,12 @@ function StatusLines({ data, now }: { data: LiveOrders | null; now: number }) {
   if (data.error) {
     const ok = data.okAt ? Date.parse(data.okAt) : NaN;
     const since = Number.isFinite(ok) ? ` (son başarılı çekme ${trClock(ok).date === trClock(now).date ? trClock(ok).time : dateTimeTR(data.okAt)})` : "";
-    lines.push(`Son kontrol başarısız: ${data.error}${since}. Siparişleri sitenin panelinde de kontrol edin.`);
+    // Hatanın ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel yöneticiye haber verir
+    lines.push(
+      role === "admin"
+        ? `Son kontrol başarısız: ${data.error}${since}. Siparişleri sitenin panelinde de kontrol edin.`
+        : `Siparişler şu an siteden alınamıyor${since}. Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin.`,
+    );
   }
   if (!data.complete) lines.push("Sitede çok açık sipariş var; en yakın 200'ü gösteriliyor.");
   if (data.skipped) lines.push(`${num(data.skipped)} sipariş okunamadı (panel güncel olmayabilir); sitenin panelinde kontrol edin.`);

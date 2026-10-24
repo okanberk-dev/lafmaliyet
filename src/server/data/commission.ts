@@ -14,22 +14,24 @@ import {
   groupInvoiceRows,
   overduePayouts,
   parseCommissionSettings,
+  reportWindow,
   type ChannelMonthIn,
   type CommissionAlert,
   type CommissionInput,
   type CommissionReport,
 } from "@/lib/commission/report";
 import { COMMISSION_CATEGORY } from "@/lib/constants";
-import { addDays, shiftMonth, todayTR } from "@/lib/reminders";
+import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import type { DigestExtraCtx, DigestExtraLoad } from "@/server/notify/digest-template";
 
 /**
- * Komisyon ve hakediş verisi (src/lib/commission/report.ts; docs/KOMISYON.md). İki yol:
- * - ekran (`loadCommissionReport`): 13 ay; faturanın kanalı tedarikçi kartının adı ve diğer adlarıyla da aranır (vergi
- *   noyla eşleşme, Tedarikçiler'in kuralı; loadSupplierRefs bütün faturaları okur, yalnız burada);
- * - hafif yol (zil, Bugün, sabah e-postası): 4 ay, faturadaki adın öneki; dört küçük sorgu aynı anda. Adı bir kanala
+ * Komisyon ve hakediş verisi (src/lib/commission/report.ts; docs/KOMISYON.md). İki yol, aynı 13 ay (`reportWindow`:
+ * geciken hakediş işaretlenene kadar zilde, Bugün'de kalır, ay dönünce düşmez):
+ * - ekran (`loadCommissionReport`): faturanın kanalı tedarikçi kartının adı ve diğer adlarıyla da aranır (vergi noyla
+ *   eşleşme, Tedarikçiler'in kuralı; loadSupplierRefs bütün faturaları okur, yalnız burada);
+ * - hafif yol (zil, Bugün, sabah e-postası): faturadaki adın öneki; dört küçük sorgu aynı anda. Adı bir kanala
  *   bağlanmayan fatura varsa (ör. "Diğer adlar"a eklenen unvan) bir küçük sorgu daha: tedarikçi kartlarının adları ve
  *   kartta yazılı vergi no; öteki faturalar üzerinden vergi no eşleşmesi yalnız ekranda.
  * Okuyan yollar hiçbir şey yazmaz; takibin başladığı gün (`komisyon.since`) yalnız yazma yollarında kaydedilir.
@@ -40,21 +42,18 @@ export const COMMISSION_SETTINGS_KEY = "komisyon.ayar";
 /** Hakediş takibinin başladığı gün (YYYY-MM-DD): öncesinde son günü geçen hakediş gecikme sayılmaz */
 export const COMMISSION_SINCE_KEY = "komisyon.since";
 
-const SCREEN_MONTHS = 13;
-const LIGHT_MONTHS = 4;
-
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Raporun girdisi. `months`: pencere (bu ay dahil); `resolveNames` (ekran): kanal baştan tedarikçi kartının adlarıyla
- * da aranır, vergi no öteki faturalar üzerinden de bağlanır; hafif yolda kartlara yalnız adı bir kanala bağlanmayan
- * fatura varsa bakılır. `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği okuduktan sonra).
+ * Raporun girdisi, pencere `reportWindow` (bu ay dahil 13 ay; iki yolda aynı). `resolveNames` (ekran): kanal baştan
+ * tedarikçi kartının adlarıyla da aranır, vergi no öteki faturalar üzerinden de bağlanır; hafif yolda kartlara yalnız
+ * adı bir kanala bağlanmayan fatura varsa bakılır. `today` verilmezse Türkiye'de bugün (çağıran oturumu ya da isteği
+ * okuduktan sonra).
  */
-export async function loadCommissionInput(opts: { months: number; resolveNames: boolean; today?: string }): Promise<CommissionInput> {
+export async function loadCommissionInput(opts: { resolveNames: boolean; today?: string }): Promise<CommissionInput> {
   const db = getDb();
   const today = opts.today ?? todayTR();
-  const fromMonth = shiftMonth(today.slice(0, 7), -(opts.months - 1));
-  const fromDay = `${fromMonth}-01`;
+  const { fromMonth, fromDay } = reportWindow(today);
   const [invoiceRows, marks, state, till, pageNames] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
@@ -144,14 +143,14 @@ async function supplierNames(withRefs: boolean): Promise<(supplier: string, taxN
   };
 }
 
-/** Ekranın raporu: 13 ay, kanal tedarikçi kartının adlarıyla da aranır */
+/** Ekranın raporu: kanal tedarikçi kartının adlarıyla da aranır */
 export async function loadCommissionReport(): Promise<CommissionReport> {
-  return buildCommissionReport(await loadCommissionInput({ months: SCREEN_MONTHS, resolveNames: true }));
+  return buildCommissionReport(await loadCommissionInput({ resolveNames: true }));
 }
 
-/** Hafif rapor (zil, Bugün, sabah e-postası): 4 ay, faturadaki adın öneki (bağlanmazsa kartın adları) */
+/** Hafif rapor (zil, Bugün, sabah e-postası): ekranın ayları, faturadaki adın öneki (bağlanmazsa kartın adları) */
 async function loadLightReport(today?: string): Promise<CommissionReport> {
-  return buildCommissionReport(await loadCommissionInput({ months: LIGHT_MONTHS, resolveNames: false, today }));
+  return buildCommissionReport(await loadCommissionInput({ resolveNames: false, today }));
 }
 
 /** Zilin uyarıları (Faturalar başlığı, yalnız yönetici): geciken hakediş, %6 aşımı, komisyon dışı ücret; en çok beş */

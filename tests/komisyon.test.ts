@@ -43,6 +43,7 @@ import {
   overduePayouts,
   parseCommissionSettings,
   payoutOf,
+  reportWindow,
   rowOf,
   shownChannels,
   type ChannelMonth,
@@ -585,6 +586,50 @@ test("hakediş: beklenen = satış − faturalar; son gün = son fatura + süre;
   );
 });
 
+/**
+ * loadCommissionInput'un penceresi bellekteki satırlarda (src/server/data/commission.ts'in üç süzgeci): faturalar ve
+ * kasa raporları pencerenin ilk gününden, hakediş işaretleri ilk ayından
+ */
+function windowed(all: CommissionInput, today: string): CommissionInput {
+  const { fromMonth, fromDay } = reportWindow(today);
+  return {
+    ...all,
+    today,
+    fromMonth,
+    invoices: all.invoices.filter((i) => i.date >= fromDay),
+    till: all.till.filter((t) => t.date >= fromDay),
+    marks: all.marks.filter((m) => m.month >= fromMonth),
+  };
+}
+
+test("geciken hakediş işaretlenene kadar zilde, Bugün'de ve e-postada: ay dönünce pencereden düşmez (90 günlük platform da)", () => {
+  nextId = 1;
+  const base = { through: "2026-07-31", since: "2026-07-01", firstReport: null, till: [], settings: { trendyol: { payDays: 90 } } };
+  const pluxee: CommissionInput = { ...base, today: "2026-07-31", fromMonth: "2026-07", invoices: [inv("Pluxee", "2026-07-31", 558)], marks: [mark("pluxee", "2026-07", { sales: 9300 })] };
+  const both: CommissionInput = {
+    ...pluxee,
+    invoices: [...pluxee.invoices, inv("Trendyol Go", "2026-12-31", 2000)],
+    marks: [...pluxee.marks, mark("trendyol", "2026-12", { sales: 40000 })],
+  };
+  const late = (all: CommissionInput, today: string) => {
+    const r = buildCommissionReport(windowed(all, today));
+    return {
+      bell: commissionAlerts(r, today, Infinity).filter((a) => a.kind === "gecikti").map((a) => a.key),
+      today: overduePayouts(r).map((x) => `${x.channel}:${x.month}:${x.payout.daysOverdue}`),
+    };
+  };
+  // Pluxee Temmuz, 30 gün: son gün 30 Ağustos. 4 aylık pencere 1 Kasım'da Ağustos'tan başlıyor, gecikme düşüyordu
+  assert.deepEqual(late(pluxee, "2026-10-31"), { bell: ["gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:62"] });
+  assert.deepEqual(late(pluxee, "2026-11-01"), { bell: ["gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:63"] });
+  assert.deepEqual(late(pluxee, "2027-03-15"), { bell: ["gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:197"] });
+  // Trendyol Aralık, 90 gün: son gün 31 Mart 2027; ertesi gün Aralık 4 aylık pencerenin dışındaydı, hiç uyarmıyordu
+  assert.deepEqual(late(both, "2027-03-31").bell, ["gecikti:pluxee:2026-07"]);
+  assert.deepEqual(late(both, "2027-04-01"), { bell: ["gecikti:trendyol:2026-12", "gecikti:pluxee:2026-07"], today: ["pluxee:2026-07:214", "trendyol:2026-12:1"] });
+  // Ekranla aynı pencere (13 ay): Temmuz 2026 Ağustos 2027'de ekrandan da zilden de birlikte çıkar
+  assert.deepEqual(late(both, "2027-07-31").bell, ["gecikti:trendyol:2026-12", "gecikti:pluxee:2026-07"]);
+  assert.deepEqual(late(both, "2027-08-01").bell, ["gecikti:trendyol:2026-12"]);
+});
+
 test("ayarlar: varsayılan 30 gün; yemek kartında en çok 30, platformda en çok 90", () => {
   const s = effectiveSettings({ pluxee: { payDays: 45 }, trendyol: { payDays: 120 }, getir: { payDays: 14 }, multinet: { payDays: Number.NaN } });
   assert.equal(s.pluxee.payDays, 30);
@@ -984,6 +1029,13 @@ test("kaynak: ekran ve eylemler yalnız yönetici; zil yalnız yöneticide, hafi
   // Okuyan yollar yazmaz: takibin başlangıcı yalnız e-postanın gönderiminde (önizlemede değil)
   const reads = data.slice(data.indexOf("export async function loadCommissionInput"), data.indexOf("export async function ensureCommissionSince"));
   assert.doesNotMatch(reads, /\.insert\(|\.update\(|\.delete\(|ensureCommissionSince\(/);
+  // Tek pencere (reportWindow, 13 ay): hafif yol ekranın aylarını okur; geciken hakediş ay dönünce zilden, Bugün'den ve
+  // e-postadan düşmez. Üç süzgeç testteki windowed() ile aynı
+  assert.match(reads, /const \{ fromMonth, fromDay \} = reportWindow\(today\);/);
+  assert.doesNotMatch(data, /LIGHT_MONTHS|months:/);
+  assert.match(reads, /gte\(s\.invoices\.date, fromDay\)/);
+  assert.match(reads, /gte\(s\.commissionMonths\.month, fromMonth\)/);
+  assert.match(reads, /gte\(s\.cashReports\.date, fromDay\)/);
   assert.match(data, /if \(!ctx\.preview\) await ensureCommissionSince\(\);/);
 
   const extras = read("src/server/notify/digest-extras.ts");

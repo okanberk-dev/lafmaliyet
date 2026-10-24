@@ -14,9 +14,9 @@ import { ordersVersion, readOrdersSnapshot, readOrdersState } from "@/server/sit
  * Açık panel sekmesinin canlı verisi: bugünün ve yarının karaoke oturumları, laffogato.net'in açık kafe siparişleri (bar
  * ekranı; son çekmenin listesi, docs/SITE-SIPARIS.md), kişinin yarına kadarki hatırlatıcıları, sunucu saati (sayaç
  * cihaz saatine değil buna göre sayar) ve bildirim anahtarı. Sekme bunu sürekli sormaz: açılışta, bildirim gelince,
- * sekmeye dönünce ve seyrek bir yedek kontrolde ister (yalnız sekme görünürken; src/lib/live-poll.ts). ETag üç ucuz
- * işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların değişim işareti) ve günden oluşur; değişiklik yoksa veri
- * okunmadan 304 döner.
+ * sekmeye dönünce ve seyrek bir yedek kontrolde ister (sekme öndeyken; arka planda yalnız bildirim gelmeyen zil cihazı,
+ * 10 dakikada bir; src/lib/live-poll.ts). ETag üç ucuz işaretten (karaoke ve sipariş sayaçları, hatırlatıcıların
+ * değişim işareti) ve günden oluşur; değişiklik yoksa veri okunmadan 304 döner.
  *
  * Karaoke kopyası bayatsa (ping kaçtı, son çekme düştü) yanıttan sonra site yeniden sorulur
  * (src/lib/karaoke/freshness.ts): kaçan rezervasyonu, kimse bakmazken veritabanını uyandırmadan, bakan ilk sekme getirir.

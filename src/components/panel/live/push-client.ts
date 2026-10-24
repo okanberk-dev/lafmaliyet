@@ -1,5 +1,7 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
+
 import { deletePushSubscription, savePushSubscription } from "@/server/actions/push";
 
 /**
@@ -42,6 +44,34 @@ function sameKey(sub: PushSubscription, publicKey: string): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+/** Bu cihazın sunucuya kayıtlı aboneliğinin konuları; null: abonelik yok ya da kaydedilemedi */
+export interface DeviceTopics {
+  karaoke: boolean;
+  reminders: boolean;
+  orders: boolean;
+}
+
+let deviceTopics: DeviceTopics | null = null;
+const topicListeners = new Set<() => void>();
+
+/** Abonelik kaydedilince, konu değişince ya da abonelik kapanınca: uyarı motoru ve bar ekranı bildirimin neyi getirdiğini bilsin */
+export function noteDeviceTopics(t: DeviceTopics | null): void {
+  deviceTopics = t;
+  for (const fn of topicListeners) fn();
+}
+
+function subscribeTopics(fn: () => void) {
+  topicListeners.add(fn);
+  return () => {
+    topicListeners.delete(fn);
+  };
+}
+
+/** Bu cihazın kayıtlı abonelik konuları (src/lib/live-poll.ts pushCovers); kayıt yoksa null */
+export function useDeviceTopics(): DeviceTopics | null {
+  return useSyncExternalStore(subscribeTopics, () => deviceTopics, () => null);
+}
+
 /** "Chrome · Windows", "Safari · iPhone" */
 export function deviceLabel(): string {
   const ua = navigator.userAgent;
@@ -52,9 +82,19 @@ export function deviceLabel(): string {
 
 /**
  * Bu cihazı bildirimlere abone eder (izin yoksa önce sorar; `ask` false ise sormaz, yalnız izin verilmişse yeniler).
- * Sunucunun anahtarı değiştiyse eski abonelik bırakılıp yenisi alınır. Sonuç: abonelik tercihleri ya da hata metni.
+ * Sunucunun anahtarı değiştiyse eski abonelik bırakılıp yenisi alınır. Sonuç: abonelik tercihleri ya da hata metni;
+ * kayıtlı konular (ya da kaydın olmadığı) useDeviceTopics'e de yazılır.
  */
 export async function subscribeDevice(
+  publicKey: string,
+  ask: boolean,
+): Promise<{ ok: true; karaoke: boolean; reminders: boolean; orders: boolean } | { ok: false; error: string }> {
+  const res = await subscribeOnce(publicKey, ask);
+  noteDeviceTopics(res.ok ? { karaoke: res.karaoke, reminders: res.reminders, orders: res.orders } : null);
+  return res;
+}
+
+async function subscribeOnce(
   publicKey: string,
   ask: boolean,
 ): Promise<{ ok: true; karaoke: boolean; reminders: boolean; orders: boolean } | { ok: false; error: string }> {
@@ -91,6 +131,7 @@ export async function currentEndpoint(): Promise<string | null> {
 export async function unsubscribeDevice(): Promise<void> {
   const reg = await registerServiceWorker();
   const sub = await reg?.pushManager.getSubscription();
+  noteDeviceTopics(null);
   if (!sub) return;
   await deletePushSubscription(sub.endpoint).catch(() => null);
   await sub.unsubscribe().catch(() => false);

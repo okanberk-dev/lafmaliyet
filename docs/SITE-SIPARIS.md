@@ -93,9 +93,12 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 - **Durum satırı** (yalnız gerekince, sarı): son çekme başarısız ("Son kontrol başarısız: Siteye ulaşılamadı (son
   başarılı çekme 14:02). Siparişleri sitenin panelinde de kontrol edin."; son doğru liste ekranda kalır), sitenin
   listesi eksik (`complete: false`: "en yakın 200'ü gösteriliyor"), okunamayan sipariş ("2 sipariş okunamadı (panel
-  güncel olmayabilir)").
-- **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı (KARAOKE_SYNC_SECRET): uygulama
-  siparişleri burada görünmez. Karaoke sayacı çalışır."
+  güncel olmayabilir)"). Hatanın ayrıntısını yalnız yönetici görür; personelin satırı: "Siparişler şu an siteden
+  alınamıyor (son başarılı çekme 14:02). Yeni sipariş burada görünmeyebilir; sorun sürerse yöneticiye haber verin."
+  **Yenile** düştüğünde personelin bildirimi de ayrıntı taşımaz ("laffogato.net'e ulaşılamadı" · "Sorun sürerse
+  yöneticiye haber verin.").
+- **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez,
+  karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net'ten bakabilir."
 - Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz." · **Zili aç**.
 
 Aşama sitede değişince (bu ekranın düğmesiyle, sitenin panelinden ya da uygulamadan; ping → çekme) kart güncellenir,
@@ -178,9 +181,15 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 | Günlük iş | Yok: Vercel'in cron kotası dolu, ping ve ekran yeter |
 
 Son çekme hatalıysa ekranın her isteği (beş saniyeden eskiyse) siteyi yeniden dener: site geri gelince liste
-beklemeden gelir. Açık sekmenin canlı veri kontrolü: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya
-da cihazda bildirim kapalıyken 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir (kabuğun
-yedek kontrolü). Her kontrol değişiklik yoksa tek bir anahtar okumasıyla 304 alır.
+beklemeden gelir. Açık sekmenin canlı veri kontrolü: ekran görünürken, ekranda açık sipariş varken (aşama değişikliği
+çabuk görünsün) ya da bu cihazın sipariş zili yeni siparişi bildirimle almıyorken (izin yok, abonelik kaydedilemedi ya
+da zil açık ama Sipariş bildirimleri kapalı) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle
+gelir (kabuğun yedek kontrolü). Sipariş zili kapalı cihazda (yöneticinin dizüstü, zili kapatılmış ikinci ekran) boş
+ekrana yeni sipariş kabuğun yedek kontrolüyle gelir: bildirim izni varsa 30 dakikaya, yoksa 1–10 dakikaya kadar; son iki
+saatte sitede sipariş olduysa ekranın üç dakikalık çekmesiyle. Siparişleri izleyen her ekranda sipariş zilini ve
+Sipariş bildirimlerini açık tutun. Sekme arka plandayken kabuğun yedek kontrolü, bildirimin ulaşmadığı zil cihazında 10
+dakikada bir sorar (`src/lib/live-poll.ts`): yeni siparişin zili en geç o kadar gecikir. Her kontrol değişiklik yoksa
+tek bir anahtar okumasıyla 304 alır.
 
 Çekme tek işlemde ve `pg_advisory_xact_lock(hashtext('site-orders'))` ile yazar; uygulanan son listenin site
 saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran isteği listeyi geri almasın). Sonuç
@@ -237,6 +246,9 @@ karakter, her siparişte (kurye dahil). Kural ve KVKK bölümü sitenin `docs/PA
   olursa günlüğe yalnız sipariş kimliği, işlem ve sitenin hata kodu yazılır; ad ve satırlar asla.
 
 ## Sorun giderme
+
+Bu açıklamaları yalnız yönetici görür (bağlantı kartı, bar ekranının sarı satırı, Yenile); personel yöneticiye haber
+vermesini söyleyen kısa sözü görür.
 
 | Mesaj | Ne yapılır |
 |-------|------------|

@@ -283,12 +283,13 @@ function SupplierCard({
       {assigned ? (
         <div className="border-t border-line px-5 py-3.5">
           {!chosen.length ? <p className="mb-2 text-xs text-ink-mute">Gönderilecek kalem yok.</p> : null}
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+          {/* Telefonda alt alta, tam genişlikte, asıl düğme üstte (yan yana iki sütunda ikon kayboluyor, yazı taşıyordu) */}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="secondary" onClick={onCopy} disabled={!chosen.length} className="text-ink">
-              <Copy size={16} aria-hidden="true" /> Metni kopyala
+              <Copy size={16} aria-hidden="true" className="shrink-0" /> Metni kopyala
             </Button>
             <Button onClick={onSend} disabled={!chosen.length}>
-              <MessageCircle size={16} aria-hidden="true" className="max-[380px]:hidden" /> WhatsApp ile gönder
+              <MessageCircle size={16} aria-hidden="true" className="shrink-0" /> WhatsApp ile gönder
             </Button>
           </div>
         </div>

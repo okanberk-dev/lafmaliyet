@@ -7,6 +7,7 @@ import { z } from "zod";
 import { countFactor, countUnitsFor } from "@/lib/calc/engine";
 import { tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
+import { recordIngredientPrice } from "@/server/data/ingredient-prices";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -32,10 +33,14 @@ const ingredientSchema = z.object({
   active: z.boolean(),
 });
 
+/** İşlem geçmişinde: sayım kaleminin tahmini düzeltildi (recordIngredientPrice "start") */
+const FIXED_START_LOG = " · sayımdaki tahmin düzeltildi, eklendiği ay da bu fiyatla değerlenir";
+
 /**
  * Hammaddeyi kaydeder. Sayım birimi malzeme birimine uymalı (gr → KG, ml → LT, adet → ADET, dilim → DİLİM ya da ADET);
  * yoksa stok değeri 1000 kat yanlış çıkar. Sayım birimi (ya da malzeme birimi) değişirse eski sayımlar kendi
- * birimleriyle kalır; dönüşte `warning` bunu kullanıcıya söylemek içindir.
+ * birimleriyle kalır; dönüşte `warning` bunu kullanıcıya söylemek içindir. Değişen fiyat geçmişe recordIngredientPrice
+ * ile yazılır: sayım listesinden eklenip hâlâ Tahmini olan kalemde tahminin düzeltmesidir (kapanmış ay da düzelir).
  */
 export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
   return attempt(async () => {
@@ -49,6 +54,8 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
     const warnings: string[] = [];
     /** Kaydedilen paket fiyatı ve içeriği (günlük için) */
     const saved = { packagePrice: data.packagePrice, packageSize: data.packageSize };
+    /** Sayım kaleminin tahmini düzeltildi (başlangıç satırı yerinde) */
+    let fixedStart = false;
     const id = await db.transaction(async (tx) => {
       const [dup] = await tx
         .select({ id: s.ingredients.id })
@@ -79,12 +86,8 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
         }
         await tx.update(s.ingredients).set({ ...rest, updatedAt: new Date() }).where(eq(s.ingredients.id, data.id));
         if (before.packagePrice !== rest.packagePrice || before.packageSize !== rest.packageSize) {
-          await tx.insert(s.ingredientPrices).values({
-            ingredientId: data.id,
-            packagePrice: rest.packagePrice,
-            packageSize: rest.packageSize,
-            changedBy: me.name,
-          });
+          const written = await recordIngredientPrice(tx, { id: data.id, isEstimate: before.isEstimate }, { packagePrice: rest.packagePrice, packageSize: rest.packageSize, changedBy: me.name });
+          fixedStart = written === "start";
         }
         return data.id;
       }
@@ -105,7 +108,11 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       });
       return created.id;
     });
-    await logActivity(me, data.id ? "Hammadde güncellendi" : "Yeni hammadde", `${data.name}: ${tl(saved.packagePrice, 2)} / ${saved.packageSize} ${data.unit}`);
+    await logActivity(
+      me,
+      data.id ? "Hammadde güncellendi" : "Yeni hammadde",
+      `${data.name}: ${tl(saved.packagePrice, 2)} / ${saved.packageSize} ${data.unit}${fixedStart ? FIXED_START_LOG : ""}`,
+    );
     refresh();
     // warning: sayım birimi değiştiyse eski sayımların durumu (istemci bilgi olarak gösterir), yoksa null
     return { id, warning: warnings[0] ?? null };
@@ -115,7 +122,8 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
 /**
  * Tablodan hızlı paket fiyatı güncelleme (yeni fatura geldiğinde). clearEstimate=false: "Tahmini" işareti kalır
  * (varsayım fiyatla değil paket içeriği ya da ürün eşleştirmesiyle ilgili olabilir; kullanıcı ayrıca kaldırır).
- * Dönüş: malzemenin kayıttan sonraki Tahmini durumu.
+ * Geçmişe recordIngredientPrice ile yazılır (Tahmini sayım kaleminde tahminin düzeltmesi). Dönüş: malzemenin kayıttan
+ * sonraki Tahmini durumu.
  */
 export async function updateIngredientPrice(id: number, packagePrice: number, clearEstimate = true) {
   return attempt(async () => {
@@ -126,14 +134,14 @@ export async function updateIngredientPrice(id: number, packagePrice: number, cl
     if (!before) throw new UserError("Malzeme bulunamadı");
     if (before.priceSource === "water") throw new UserError("Su ve buz fiyatı su faturasından hesaplanır");
     if (Math.abs(before.packagePrice - price) < 0.0001) return { isEstimate: before.isEstimate };
-    await db.transaction(async (tx) => {
+    const written = await db.transaction(async (tx) => {
       await tx
         .update(s.ingredients)
         .set({ packagePrice: price, isEstimate: clearEstimate ? false : before.isEstimate, updatedAt: new Date() })
         .where(eq(s.ingredients.id, id));
-      await tx.insert(s.ingredientPrices).values({ ingredientId: id, packagePrice: price, packageSize: before.packageSize, changedBy: me.name });
+      return recordIngredientPrice(tx, { id, isEstimate: before.isEstimate }, { packagePrice: price, packageSize: before.packageSize, changedBy: me.name });
     });
-    await logActivity(me, "Hammadde fiyatı", `${before.name}: ${tl(before.packagePrice, 2)} → ${tl(price, 2)}`);
+    await logActivity(me, "Hammadde fiyatı", `${before.name}: ${tl(before.packagePrice, 2)} → ${tl(price, 2)}${written === "start" ? FIXED_START_LOG : ""}`);
     refresh();
     return { isEstimate: clearEstimate ? false : before.isEstimate };
   });
