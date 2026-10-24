@@ -34,9 +34,12 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
 1. **Adı bir sabit giderle aynıysa** (büyük/küçük harf ve Türkçe karakter farkı gözetilmez; Ödemeler'deki “Listede var”
    eşleşmesi) o giderin yerine geçer: gider ay içine yayılmaz. Hatırlatıcı tutarlıysa kendi tutarı, tutarsızsa giderin
    KDV dahil tutarı onun günlerine “tahmini” yazılır. “Sabit giderlerden ekle” hatırlatıcıya ilk ödeme ayındaki
-   sürümün tutarını faturadaki KDV'siyle yazar (160.000 ₺ kira → 192.000 ₺; o aydan geçerli zam dahil; ekranda “%20
-   KDV dahil”). 23 Ekim 2026'ya kadar kalemin taban tutarını KDV'siz yazıyordu: bu yolla açılmış tutarlı
-   hatırlatıcıların tutarı elle düzeltilmelidir (plan onu kesin sayar).
+   sürümün tutarını faturadaki KDV'siyle yazar (160.000 ₺ kira → 192.000 ₺; o aydan geçerli zam dahil; listede seçilen
+   günün ayındaki tutar ve dönem, “%20 KDV dahil”). Giderler'de sonraki bir aydan zam ya da dönem değişikliği zaten
+   girilmişse tutar yazılmaz (“Aralık 2026'dan değişiyor: tutar yazılmaz”): plan her ayın sürümünü KDV'siyle taşır.
+   Hatırlatıcı eklendikten sonra girilen zam tutarlı hatırlatıcıya geçmez; tutarını da güncelleyin. 23 Ekim 2026'ya
+   kadar kalemin taban tutarını KDV'siz yazıyordu: bu yolla açılmış tutarlı hatırlatıcıların tutarı elle
+   düzeltilmelidir (plan onu kesin sayar).
 2. **Maaş** ve **SGK** (Ödemeler'deki türü ya da adı): yukarıdaki maaş ve SGK kuralı. “Sabit giderlerden ekle” ile
    açılan hatırlatıcı (personel bölümündeki kalem maaş türüyle açılır: Muhasebeci, Part-time çalışan) gideri silinse ya
    da adı değişse de bordro sayılmaz: maaşı ve SGK'yı kapatmaz, diğer hatırlatıcıdır.

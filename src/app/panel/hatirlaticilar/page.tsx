@@ -54,15 +54,12 @@ async function RemindersContent() {
   // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura)
   // gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
   const undoable = liveRecentPaid(recentPaid, reminders, unpaid.map((i) => i.id));
-  // "Sabit giderlerden ekle"nin göstereceği tutar: varsayılan ilk ödeme ayında (gelecek ay) hatırlatıcıya yazılacak olan
+  // "Sabit giderlerden ekle": kalem, sürümleri ve gelecek ayın (varsayılan ilk ödeme) dönemi; sayfa seçilen günün
+  // ayındaki tutarı fixedReminderAt ile kendisi hesaplar (eylemin yazacağıyla aynı)
   const firstMonth = shiftMonth(today.slice(0, 7), 1);
   const fixed = fixedRows.map((f) => {
-    const at = fixedReminderAt(
-      f,
-      versions.filter((v) => v.fixedExpenseId === f.id),
-      firstMonth,
-    );
-    return { id: f.id, name: f.name, amount: f.amount, period: f.period, section: f.section, reminderAmount: at.amount, vatRate: at.vatRate };
+    const own = versions.filter((v) => v.fixedExpenseId === f.id).map((v) => ({ fromMonth: v.fromMonth, period: v.period, amount: v.amount }));
+    return { id: f.id, name: f.name, amount: f.amount, basePeriod: f.period, period: fixedReminderAt(f, own, firstMonth).period, section: f.section, vatRate: f.vatRate, versions: own };
   });
 
   return (

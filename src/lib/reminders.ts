@@ -5,6 +5,7 @@
 
 import type { FixedPeriod, FixedSection } from "./calc/types";
 import { fixedVatRate } from "./constants";
+import { money, monthLabel } from "./format";
 
 export type ReminderKind = "odeme" | "vergi" | "kira" | "maas" | "fatura" | "diger";
 export type ReminderRepeat = "none" | "weekly" | "monthly" | "quarterly" | "yearly";
@@ -402,18 +403,39 @@ export const FIXED_REMINDER_NOTE = "Sabit giderlerden";
 /**
  * "Sabit giderlerden ekle"nin hatırlatıcıya yazdığı dönem ve tutar: ilk ödeme ayında geçerli sürümden (o aydan
  * geçerli zam dahil), tutar faturadaki KDV'siyle (nakit planı sabit gideri KDV dahil öder; hatırlatıcının tutarı
- * bankadan çıkan paradır, plan onu olduğu gibi kesin sayar). Tutar 0 ise null.
+ * bankadan çıkan paradır, plan onu olduğu gibi kesin sayar). `gross` o ayın KDV dahil tutarı.
+ *
+ * Giderler'de sonraki bir aydan geçerli değişiklik (zam, dönem) zaten girilmişse (`changesFrom`) tutar yazılmaz:
+ * tutarsız hatırlatıcıya plan her ayın sürümünü KDV'siyle taşır, sabit bir tutar zamdan sonraki ayları eksik
+ * gösterirdi. Tutar 0 ise de yazılmaz.
  */
 export function fixedReminderAt(
   f: { amount: number; period: FixedPeriod; section: FixedSection; vatRate?: number | null },
   versions: readonly { fromMonth: string; period: FixedPeriod; amount: number }[],
   month: string,
-): { period: FixedPeriod; amount: number | null; vatRate: number } {
+): { period: FixedPeriod; amount: number | null; gross: number; vatRate: number; changesFrom: string | null } {
   let at: { fromMonth: string; period: FixedPeriod; amount: number } = { fromMonth: "", period: f.period, amount: f.amount };
   for (const v of versions) if (v.fromMonth <= month && v.fromMonth >= at.fromMonth) at = v;
+  const changesFrom =
+    versions
+      .filter((v) => v.fromMonth > month && (v.amount !== at.amount || v.period !== at.period))
+      .map((v) => v.fromMonth)
+      .sort()[0] ?? null;
   const vatRate = fixedVatRate(f);
-  const amount = Math.round(at.amount * (1 + vatRate) * 100) / 100;
-  return { period: at.period, amount: amount > 0 ? amount : null, vatRate };
+  const gross = Math.round(at.amount * (1 + vatRate) * 100) / 100;
+  return { period: at.period, amount: gross > 0 && !changesFrom ? gross : null, gross, vatRate, changesFrom };
+}
+
+const FIXED_PERIOD_LABEL: Record<FixedPeriod, string> = { aylik: "aylık", haftalik: "haftalık", yillik: "yıllık", gunluk: "günlük" };
+
+/** "Sabit giderlerden ekle" listesindeki satır: seçilen ilk ödeme ayında hatırlatıcıya yazılacak olan (eylemle aynı) */
+export function fixedReminderText(...args: Parameters<typeof fixedReminderAt>): string {
+  const at = fixedReminderAt(...args);
+  const period = FIXED_PERIOD_LABEL[at.period];
+  const vat = at.vatRate > 0 ? ` (%${Math.round(at.vatRate * 100)} KDV dahil)` : "";
+  if (at.changesFrom) return `${money(at.gross)}${vat} · ${period} · ${monthLabel(at.changesFrom)}'dan değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler`;
+  if (at.amount === null) return `Tutar yazılmaz · ${period}`;
+  return `${money(at.amount)}${vat} · ${period}`;
 }
 
 // KDV tevkifatı (2 No.lu KDV beyannamesi, "KDV2"): ayrı beyanname ve ödeme. Asıl KDV sayılsa tutarı o ayın kesin KDV'si

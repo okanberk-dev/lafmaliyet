@@ -384,7 +384,8 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
       .select({ fromMonth: s.fixedExpenseVersions.fromMonth, period: s.fixedExpenseVersions.period, amount: s.fixedExpenseVersions.amount })
       .from(s.fixedExpenseVersions)
       .where(eq(s.fixedExpenseVersions.fixedExpenseId, f.id));
-    // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder)
+    // İlk ödeme ayındaki sürüm, KDV dahil (nakit planı hatırlatıcının tutarını olduğu gibi öder); sonraki bir aydan
+    // değişiklik girilmişse tutarsız (plan her ayın sürümünü taşır)
     const at = fixedReminderAt(f, versions, dueDate.slice(0, 7));
     if (at.period === "gunluk") throw new UserError("Günlük giderler için hatırlatıcı oluşturulmaz");
     const repeat = at.period === "yillik" ? "yearly" : at.period === "haftalik" ? "weekly" : "monthly";
@@ -401,7 +402,7 @@ export async function addFixedExpenseReminder(fixedExpenseId: number, firstDate:
     });
     await logActivity(me, "Hatırlatıcı eklendi", `${f.name} · ${dateTR(dueDate)}${at.amount ? ` · ${tl(at.amount)}` : ""}`);
     refresh();
-    return { dueDate, amount: at.amount };
+    return { dueDate, amount: at.amount, changesFrom: at.changesFrom };
   });
 }
 
