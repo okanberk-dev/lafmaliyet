@@ -17,9 +17,11 @@ sonra" ya da "Bugünün işleri tamam".
 | **Yapılacaklar** | İkisi | Üç bölüm: **Şimdi** (sorunlu ve yapılacak işler), **Sonra** (zamanı gelmemiş), kapalı **Tamamlananlar**. İlk sorunlu iş (yoksa ilk yapılacak) **sıradaki**dir: siyah çerçeve ve "Sıradaki: Raporu gir →" hapı. Yöneticide altta "Bu ayın işleri Genel bakış'ta →" |
 | **Hatırlatıcılarım** | İkisi | Geciken ve bugünkü hatırlatıcılar (en çok 6; fazlası "Tümü (14)"). ✓ ile tamamlanır, bildirimde "Geri al" |
 | **Yaklaşan ödemeler** | Yönetici | Genel bakış'taki kartın aynısı: geciken ve 7 gün içindekiler, tek dokunuşla "Ödendi" |
-| **Bugün kafede** | İkisi | Karaoke odası (süren oturum ya da "Süre doldu", iş gününün rezervasyonları ve rezervasyonsuz oturumları, sıradaki; ödenmemiş tutma ve iptal sayılmaz) ve uygulama siparişleri ("2 açık uygulama siparişi · 1 teslime hazır"; yalnız sayı, liste son 30 dakikada siteden doğrulanmadıysa yazılmaz: bağlantı kopmuş olabilir); "Bar ekranı" düğmesi. Tutar ve sipariş sahibinin adı yazmaz. laffogato.net bağlı değilse ve bugün oturum yoksa görünmez |
+| **Satış tahmini** | Yönetici | Bugünün tahmini (Z toplamı, ≈ 18.500 ₺) ve aralığı, yoğunluk (Yüksek / Normal / Düşük), kaç kişi ("3 kişi · yoğunsa 4"), kaç tatlı, en çok üç etiket ("Cumhuriyet Bayramı +%20"), 7 günün çubukları (rakamsız; dokununca Satış tahmini'nde o gün) ve altta "Dün: tahmin …, gerçekleşen …" (bugünün raporu girildiyse bugünün sonucu). Kaba tahminde "Kaba tahmin: kasa raporu biriktikçe netleşir."; kapalı işaretli günde "Bugün kafe kapalı olarak işaretli (Tadilat)." Okunamazsa kart çizilmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
+| **Bugün kafede** | İkisi | Personelde önce satış tahmininin satırları (Satış tahmini › Tahmin ayarları'nda "Personel bugünün yoğunluğunu görsün" açıkken): "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı, yağmur" ve "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)"; tutar, aralık ve kişi önerisi personele hiç gitmez. Sonra karaoke odası (süren oturum ya da "Süre doldu", iş gününün rezervasyonları ve rezervasyonsuz oturumları, sıradaki; ödenmemiş tutma ve iptal sayılmaz) ve uygulama siparişleri ("2 açık uygulama siparişi · 1 teslime hazır"; yalnız sayı, liste son 30 dakikada siteden doğrulanmadıysa yazılmaz: bağlantı kopmuş olabilir); "Bar ekranı" düğmesi. Tutar ve sipariş sahibinin adı yazmaz. laffogato.net bağlı değilse ve bugün oturum yoksa görünmez |
 
-Geniş ekranda (xl) solda Yapılacaklar, sağda öteki kartlar; telefonda tek sütun, bu sırayla.
+Geniş ekranda (xl) solda Yapılacaklar, sağda öteki kartlar (Hatırlatıcılarım, Yaklaşan ödemeler, Satış tahmini, Bugün
+kafede); telefonda tek sütun, bu sırayla.
 
 ## Satırlar
 

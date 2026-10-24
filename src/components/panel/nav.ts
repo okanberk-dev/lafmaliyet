@@ -28,6 +28,7 @@ import {
   Settings,
   ShoppingBasket,
   Tags,
+  TrendingUp,
   Truck,
   UserRound,
   Users,
@@ -112,6 +113,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin", "staff"],
         keywords: "açılış kapanış kontrol listesi checklist temizlik hijyen buzdolabı sıcaklık derece haccp denetim fotoğraf mikrofon",
       },
+      // Önümüzdeki 7 günün satışı, kaç kişi, kaç tatlı (docs/SATIS-TAHMINI.md); kenar çubuğunda Satış & gider altında
+      {
+        href: "/panel/tahmin",
+        label: "Satış tahmini",
+        icon: TrendingUp,
+        roles: ["admin"],
+        keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
+      },
       { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
@@ -189,7 +198,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
 
 /** Kenar çubuğunun altındaki sistem bağlantıları */
 export const NAV_FOOTER: NavItem[] = [
-  { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma" },
+  { href: "/panel/hatirlaticilar", label: "Ödemeler & hatırlatıcılar", icon: BellRing, roles: ["admin"], keywords: "ödeme vade kira vergi kdv sgk maaş bildirim e-posta hatırlatma haftalık özet" },
   { href: "/panel/parasut", label: "Paraşüt entegrasyonu", icon: Plug, roles: ["admin"], keywords: "parasut fatura eşitleme muhasebe e-fatura" },
   { href: "/panel/ayarlar", label: "Ayarlar", icon: Settings, excel: "Ayarlar", roles: ["admin"], keywords: "kdv komisyon qr menü yedek kategori laffogato.net bağlantı" },
   { href: "/panel/kullanicilar", label: "Kullanıcılar & roller", icon: Users, roles: ["admin"], keywords: "kullanıcı rol yetki personel yönetici parola iki adımlı 2fa güvenlik" },
@@ -261,6 +270,7 @@ export const NAV_TREE: NavNode[] = [
     children: [
       // Ekran personele de açık; personel bu grubu görmez, kendi üst düzey "Kasa raporu" öğesinden girer
       { id: "kasa-raporlari", label: "Kasa raporları", href: "/panel/kasa", roles: ["admin", "staff"] },
+      { id: "tahmin", label: "Satış tahmini", href: "/panel/tahmin", roles: ["admin"] },
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },

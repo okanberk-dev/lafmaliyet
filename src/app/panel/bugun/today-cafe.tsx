@@ -1,4 +1,4 @@
-import { CalendarClock, MicVocal, ShoppingBag, TimerOff } from "lucide-react";
+import { CakeSlice, CalendarClock, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { ButtonLink } from "@/components/ui/button";
@@ -9,6 +9,9 @@ import type { CafeLine } from "./logic";
 
 /** Satırın ikonu ve karo rengi (ActivityItem: 0 yeşil, 1 turuncu, 2 mavi, 3 kırmızı, 4 mor) */
 function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
+  // Satış tahmininin satırları (personel): yoğun gün turuncu, değilse mavi
+  if (line.key === "yogunluk") return { icon: <TrendingUp />, tone: line.tone === "warn" ? 1 : 2 };
+  if (line.key === "tatli") return { icon: <CakeSlice />, tone: 4 };
   if (line.tone === "warn") return { icon: <TimerOff />, tone: 3 };
   switch (line.key) {
     case "oda":
@@ -23,7 +26,8 @@ function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
 }
 
 /**
- * Bugün · "Bugün kafede": karaoke odası (süren oturum, günün rezervasyonları, sıradaki) ve açık uygulama siparişleri.
+ * Bugün · "Bugün kafede": personelde önce satış tahmininin yoğunluğu ve tatlı sayısı (tutarsız), karaoke odası (süren
+ * oturum, günün rezervasyonları, sıradaki) ve açık uygulama siparişleri.
  * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya götürür. Tutar yok.
  */
 export function TodayCafe({ lines }: { lines: CafeLine[] }) {
@@ -42,7 +46,19 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
         <ActivityList>
           {lines.map((l) => {
             const { icon, tone } = look(l);
-            return <ActivityItem key={l.key} icon={icon} tone={tone} title={l.text} href="/panel/karaoke" dot={l.tone === "warn" ? "danger" : undefined} wrap />;
+            // Tahmin satırlarının ekranı personele kapalı: bağlantısız, uyarı noktasız
+            const forecast = l.key === "yogunluk" || l.key === "tatli";
+            return (
+              <ActivityItem
+                key={l.key}
+                icon={icon}
+                tone={tone}
+                title={l.text}
+                href={forecast ? undefined : "/panel/karaoke"}
+                dot={l.tone === "warn" && !forecast ? "danger" : undefined}
+                wrap
+              />
+            );
           })}
         </ActivityList>
       </CardContent>

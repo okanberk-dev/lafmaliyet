@@ -2,6 +2,7 @@ import "server-only";
 
 import { loadKontrolDigest } from "@/server/data/checklists";
 import { loadCommissionDigest } from "@/server/data/commission";
+import { loadForecastDigest } from "@/server/forecast/load";
 
 import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } from "./digest-template";
 
@@ -25,6 +26,8 @@ export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
   { key: "kontrol", news: true, load: () => loadKontrolDigest() },
   // Komisyon ve hakediş: geciken hakediş, %6 aşımı, komisyon dışı ücret; her uyarı bir kez (komisyon:<uyarı>; docs/KOMISYON.md)
   { key: "commission", news: true, load: (today, ctx) => loadCommissionDigest(today, ctx) },
+  // Satış tahmini: bugünün tahmini, dünün tutturması, haftanın en yoğun günü; hiçbir zaman haber değil (docs/SATIS-TAHMINI.md)
+  { key: "forecast", news: false, load: () => loadForecastDigest() },
 ];
 
 /** Ek kutuları aynı anda yükler (her biri en çok 4 sn); asla hata fırlatmaz. `preview`: yalnız okuyan önizleme */
