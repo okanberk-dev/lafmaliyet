@@ -76,7 +76,9 @@ Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md
 Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (market, buz, tamirci, gün ortası teslim).
 
 - **Fiş ekle** fişin fotoğrafını çeker; tutar, yer, ne alındığı, fiş tarihi, KDV ve kategori okunup pencereye dolar
-  (**Fişten** yazar), personel bakıp **Kaydet**'e basar. **Fişsiz ekle**: Alışveriş / ödeme ya da Teslim (kime).
+  (**Fişten** yazar), personel bakıp **Kaydet**'e basar. **Fişsiz ekle**: **Alışveriş** ya da **Teslim · ödeme**
+  (kime; yer tutucu "ör. patrona, bankaya, tedarikçiye (Sütaş)"). Seçimin altındaki ipucu: "Tedarikçinin şoförüne
+  verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz."
 - Personelin alışveriş satırı (fiş ya da fişsiz) **Aylık harcamalar**'a da yazılır: not "Kasadan · 21 Ekim Çarşamba",
   ödeme şekli nakit, harcama tarihi fişin tarihi (kasa gününden en çok 3 gün önceyse). Fatura ya da e-Arşiv fatura
   yazılmaz (Paraşüt'ten de gelir, iki kez sayılmasın; yönetici bakar); teslim hiçbir zaman. Yönetici her satırda
@@ -93,6 +95,33 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
   "yöneticiye haber verin".
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
+
+### Tedarikçiye kasadan ödeme (Teslim · ödeme)
+
+Tedarikçinin şoförüne kasadan verilen borç ödemesi **Teslim · ödeme**'dir (Kime: tedarikçinin adı): gider yazmaz,
+akşamki "Gün içinde kasadan çıkan" toplamına girer. Yönetici satırı Tedarikçiler'de o tedarikçinin hesabına ödeme
+olarak işler ([TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*); gider ve KDV değişmez.
+
+- **Ad ipucu (personel ve yönetici):** fişsiz alışverişte Yer bir tedarikçinin adı ya da diğer adıysa pencere "Sütaş
+  tedarikçimiz. Borç ödemesiyse 'Teslim · ödeme' seçin; alışverişse böyle kalsın." der ve **Teslim · ödeme'ye çevir**
+  düğmesini gösterir. Ad listesi yalnız adlardır (tutar, borç ya da fatura gitmez) ve borca göre süzülmez.
+- **Yöneticinin satır ipuçları** (gün görünümü; son 60 gün):
+  - ödemeye bağlı satırda **Sütaş ödemesi** (tedarikçinin sayfasına gider);
+  - işlenmemiş, adı bir tedarikçiyle eşleşen Teslim satırında "Tedarikçiye ödeme mi (Sütaş)? · **Hesaba işle**"
+    (Ödeme ekle, Kasadan ve bu satırla açılır);
+  - fişsiz alışverişte, tedarikçinin o gün açık kalemi varken "Tedarikçi ödemesi miydi (Sütaş)? · **Ödemeye çevir** ·
+    **Ayrı alım**". Ödemeye çevir satırın gider kaydını siler (ödeme gider değildir; geçmiş aysa ay onayı), satırı
+    Teslim · ödeme yapar ve satıra bağlı ödemeyi açar; Geri al satırı ve gider kaydını eski hâline getirir.
+  - Aynı satırlar Tedarikçiler listesinin "Kasadan işlenmemiş ödemeler" şeridinde ve zilde de durur.
+- **Ödemeye bağlı satır:**
+  - Personel düzeltemez ve silemez; satırda kilit simgesi, dokununca "Bu satır yöneticinin kaydına bağlı; düzeltmek için
+    yöneticiye haber verin." (tutar ve tedarikçi söylenmez). Sunucu da reddeder.
+  - Yönetici tutarı ve günü düzeltince ödeme de değişir (ödemenin kalemlere sayılan toplamının altına inemez); satır
+    alışverişe çevrilemez ("önce Tedarikçiler'de ödemeyi silin"). Kasa'dan silinmez: ödeme Tedarikçiler'den silinir,
+    kasaya kendi açtığı satırsa o da silinir, var olan satıra bağlıysa satır durur ve işlenmemişe döner.
+- **Personelin verisi:** Kasa sayfası personelin satırlarını beyaz listeyle kurar (`STAFF_CASH_OUT_FIELDS`,
+  `src/lib/cash-outs.ts`); ödeme bağı, tedarikçi kimliği ve dağıtımlar personele gitmez, yalnız `locked`.
+- Akşam raporunun metni ve WhatsApp satırı değişmez: "Teslim (Sütaş) 2.200 ₺".
 
 ## laffogato.net satırı (bilgi)
 

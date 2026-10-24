@@ -163,6 +163,10 @@ eşitlemeyi bozmaz, eşitlemenin süresi içinde kalır (`src/server/reorder/mat
   söyler: çarpan Paraşüt entegrasyonu › Bağlı ürünler'de düzeltilir, karşılaştırma kendiliğinden yenilenir.
 - Eşleşen ya da kalemleri okunan siparişte Geldi denmemişse mal faturanın günü 12:00'de gelmiş sayılır.
 - **45 gün** faturası gelmeyen açık sipariş "45 günde fatura gelmedi" notuyla kapanır.
+- **"Fatura yok" ile kapanan sipariş para yazmaz:** ne gider ne borç. Mal elden ya da faturasız geldiyse borcu
+  Tedarikçiler › tedarikçinin sayfası › **Borç ekle** ile girin (faturası gelecekse "Faturası gelecek", hiç
+  gelmeyecekse "Faturası yok · gider yaz"; [TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*). Mal siparişiyle
+  cari borç arasında bağ yoktur; teslim kontrolü elle borçları görmez.
 
 Eşitlemenin özeti "3 mal siparişi faturayla karşılaştırıldı · 2 kendiliğinden kapandı" der.
 

@@ -73,6 +73,21 @@ Değişkenleri ekledikten sonra yeniden deploy edin. Panelde **Bağlantıyı den
   (peşin) tedarikçinin faturası ödendi gelir; takip başlamadan önceki tarihli fatura geçmişi yeniden alırken
   Paraşüt'teki durumuyla gelir. Ödenmemiş
   faturalar **Ödemeler & hatırlatıcılar**'a ve hatırlatma e-postasına düşer.
+- **Cari takipteki tedarikçi** (Tedarikçiler'de elle ödeme girilmiş kart, [TEDARIKCILER.md](TEDARIKCILER.md) *Hesap
+  hareketleri*): takip başlayınca grubun faturalarına Paraşüt'ün o ana kadar ödendi gösterdiği kısım yazılır
+  (`invoices.ledger_base`); bu karta sonradan gelen fatura 0 ile açılır. Takipli faturanın kalanı panelde sayılır
+  (Ödenecek − taban − panelde sayılan); Paraşüt'ün kalanı yalnız ipucudur ("Paraşüt'te kalan 2.000,00 ₺; panelde
+  2.500,00 ₺"). Eşitleme `ledger_base`, `allocated` ve `paid_by_ledger`'a dokunmaz (`common` nesnesinde yoklar).
+  Çalışmanın sonunda, `matchSupplierOrders`'ın yanında üç son adım koşar (her kart için ayrı kısa işlem, "Sistem"
+  adıyla işlem geçmişine düşer):
+  - tutarı değişen ve ödeme sayılmış faturalar yeniden dengelenir: tutar düştüyse fazla sayılan para hesaba geçer,
+    arttıysa ödemelerin kapattığı fatura yeniden ödenmedi olur;
+  - peşin çalışılan ve takipli kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  - Paraşüt'te iptal edilen (ve e-fatura yolunda silinen) fatura silinmeden önce aynı işlemde bağları çözülür: bağlı
+    faturasız alım eski hâline döner (gider kaydı yeniden yazılır), ödemeler borca ya da hesaba geçer.
+  Özet satırında "Cari: 1 faturada ödeme hesaba geçti, 1 peşin faturaya hesaptaki ödeme sayıldı". `findExisting` elle
+  borçları hiç görmez: faturasız alımla fatura arasında kendiliğinden bağ kurulmaz, bağ her zaman Tedarikçiler'de
+  bilinçli bir tıklamadır.
 
 ## 2a. İadeler
 

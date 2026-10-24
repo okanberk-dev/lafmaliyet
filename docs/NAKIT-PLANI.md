@@ -16,11 +16,12 @@ açamaz (`requireAdmin`), ⌘K'da da görmez.
 | **Satışlar** (`sales`) | gelen, tahmini | Son 28 günün kasa raporları (`zTotal > 0`). **En az 7 rapor** varsa günlük = Z toplamı ÷ rapor sayısı, kart payı = (kart + yemek kartı) ÷ Z. Yoksa bu aya kadarki, açık günü ve POS cirosu girilmiş son ay (Satışlar): günlük = ciro ÷ açık gün, kart payı Ayarlar'dan. Kartla ödenen pay için Ayarlar'daki banka komisyonu düşülür, günlük tutar `ayda açık gün ÷ 30` ile takvim gününe çevrilir. Z'deki **online platform** ödemeleri (Yemeksepeti, Getir…) Z toplamının içindedir, aynı gün ve kesintisiz sayılır (payı notta yazar). Hiçbiri yoksa satış satırı yok. |
 | **laffogato.net online** (`online`) | gelen, tahmini | Site satış kaydının bu aya kadarki son ayı: kafe + mağaza + karaoke net tutarı (KDV dahil, iadeler düşülmüş) ÷ gün. Biten ayda gün = ayın gün sayısı; süren ayda kaydın çekildiği günün dünü (7 günden azsa bir önceki ay). **Kasadan geçmez**, Z'deki online platformlardan ayrıdır. Ödeme kuruluşunun kesintisi ve aktarım günü düşülmez. |
 | **Faturalar** | ödenecek, kesin | Ödemeler'in listesindeki ödenmemiş faturalar: kalan borç, vade gününde. Vadesizse tedarikçinin vadesi, o da yoksa bildirim ayarındaki gün. Gecikmiş fatura **bugüne** “Gecikmiş” rozetiyle yazılır. Kafe dışı (Karaoke box, Alp Koç) faturalar da girer (Ödemeler gibi). |
+| **Faturasız borçlar** (`cari:<id>`) | ödenecek, kesin | Tedarikçiler › Borç ekle ile girilen, bir faturaya bağlanmamış borçların kalanı ([TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*), faturayla aynı vade kuralıyla: “Sütaş · faturasız alım”, “Sütaş · fatura bekleniyor”, “Sütaş · eski borç”. Gecikmiş olan bugüne. |
 | **Hatırlatıcılar** | ödenecek, kesin | Etkin hatırlatıcının plan içindeki her tekrarı; geciken dönem bugüne. **Tutarı > 0** olan kesindir. Tutarsız olan aşağıdaki eşleşmeye bakar. |
 | **Maaşlar** (`salary`) | ödenecek, tahmini | Personel: net maaş + ek ödemeler. Ödeme ayın 1–15'indeyse önceki ayın bordrosu, sonrasındaysa o ayınki. Gün: maaş hatırlatıcısı yoksa **her ayın 1'i**. Maaş hatırlatıcıları var ama hiçbirinde tutar yoksa kimliği en küçük olanın günlerinde (“taşıyıcı”). Tutarlı maaş hatırlatıcısı varsa tahmin yapılmaz. |
 | **SGK primi** (`sgk`) | ödenecek, tahmini | Önceki ayın işçi ve işveren SGK + işsizlik payları. Gün: SGK hatırlatıcısı yoksa **ayın son günü**; varsa maaştaki kural. Gelir ve damga vergisi dahil değil. |
 | **Sabit giderler** (`fixed:<id>`) | ödenecek, tahmini | Hatırlatıcısı olmayan her sabit gider ay içine eşit yayılır (o ayın sürümlü tutarı): aylık ÷ ayın gün sayısı, haftalık ÷ 7, günlük × `ayda açık gün ÷ 30`. Giderler'de KDV hariç girilen tutara **faturadaki KDV** eklenir: kalemin “Faturadaki KDV” alanı (KDV yok, %1, %10, %20), boşsa bölümün varsayılanı (kira, faturalar, genel giderler %20; personel KDV'siz). 160.000 ₺ kira bankadan 192.000 ₺ çıkar. Gelir-gider KDV hariç tutarla kalır. **Yıllık** plana girmez (“Dahil değil”de adıyla yazar). |
-| **Mal alımı** (`goods`) | ödenecek, tahmini | Son 8 haftanın mal faturaları (kafe dışı, demirbaş ve komisyon girmez; geçmiş kısaysa en eski mal faturasından bu yana, **14 günden kısaysa tahmin yok**). Her fatura günlük orana bölünür ve tedarikçinin gecikmesiyle ödenir: peşin çalışılan tedarikçide 0, değilse kartındaki vade, o da yoksa bildirim ayarındaki gün. Böylece bugünden sonra kesilecek faturalar vadelerinde ödenmiş olur; bugünkü ödenmemiş faturalarla çakışmaz. Tedarikçi adla bulunur (gelecek faturanın vergi nosu yok). |
+| **Mal alımı** (`goods`) | ödenecek, tahmini | Son 8 haftanın mal faturaları (kafe dışı, demirbaş ve komisyon girmez; geçmiş kısaysa en eski mal faturasından bu yana, **14 günden kısaysa tahmin yok**). Her fatura günlük orana bölünür ve tedarikçinin gecikmesiyle ödenir: peşin çalışılan tedarikçide 0, değilse kartındaki vade, o da yoksa bildirim ayarındaki gün. Böylece bugünden sonra kesilecek faturalar vadelerinde ödenmiş olur; bugünkü ödenmemiş faturalarla çakışmaz. Tedarikçi adla bulunur (gelecek faturanın vergi nosu yok). Bir tedarikçinin açık “Faturası gelecek” borçları varsa onun tahmini o tutar kadar düşürülür (haftalık irsaliyenin aylık faturası hem tahminde hem kesin kalemde sayılmasın): notta “Sütaş tahmini, faturası beklenen 1.250 ₺ kadar düşürüldü”. Elle borç ve ödeme mal tahminine girmez (yalnız faturalar okunur). |
 | **KDV** (`kdv`) | ödenecek, tahmini | Aşağıda *KDV tahmini*. |
 
 **Bugün kuralı:** girilen bakiye bugünü kapsar. Bu yüzden bugüne (gün 0) yalnız fatura ve hatırlatıcı yazılır (gecikmişler
@@ -104,11 +105,19 @@ sayılmasın. Ödemeler'de hatırlatıcısı olan ve yıllık kalemler değişti
 Ödemeler'i açar.
 
 **Dahil değil** (ekranda yazar): tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'daki fatura dışı
-ödemeler, yıllık giderler, yatırım ve kredi. Kart, yemek kartı ve online platform tahsilatı satış günü sayılır (bankaya
-geçiş gecikmesi yok).
+ödemeler (cari borçların gider kayıtları dahil), yıllık giderler, yatırım ve kredi. Kart, yemek kartı ve online
+platform tahsilatı satış günü sayılır (bankaya geçiş gecikmesi yok).
 
 **Çift sayım:** aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası
-ayrıca gelen sabit gideri Tahmine katılanlar'dan çıkarın.
+ayrıca gelen sabit gideri Tahmine katılanlar'dan çıkarın. Faturasız borçlar kesin kalemdir; faturası beklenenler kadar
+mal tahmini düşürülür. Faturasız alımın faturası olabilecek fatura (tutarı alımınkine en çok max(1 ₺, %2) uzak, alımdan
+7 gün önce ile 45 gün sonra arasında) bağlanana ya da “Ayrı alım” denene kadar plana girmez: aynı mal iki kez
+ödenmesin.
+
+**Hesaptaki ödeme (mahsup):** tedarikçinin hesabında hiçbir kaleme sayılmamış ödeme varsa (Tedarikçiler › Ödeme ekle,
+“Hesapta beklesin” ya da fazla ödeme) o para tedarikçinin kesin kalemlerinden en eski vadeden başlayarak düşülür;
+tamamen karşılanan kalem plana girmez. Ödemeler'le aynı hesap; veritabanına bir şey yazmaz (kalıcı dağıtım için
+Tedarikçiler'de **Borçlara say**). Notta “Hesaptaki ödeme” satırı çıkar.
 
 ## Genel bakış kartı
 
