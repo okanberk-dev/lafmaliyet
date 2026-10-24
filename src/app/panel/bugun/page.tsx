@@ -11,6 +11,7 @@ import { loadToday } from "@/server/data/today";
 
 import { DashboardPayments } from "../dashboard-payments";
 import { cafeLines, dayTasks, daySummary, nextRefreshAt } from "./logic";
+import { soldOutLine } from "./rows-ops";
 import { TodayCafe } from "./today-cafe";
 import { TodayForecast } from "./today-forecast";
 import { TodayRefresh } from "./today-refresh";
@@ -51,8 +52,9 @@ async function TodayContent() {
   const now = data.facts.now;
   const tasks = dayTasks(data.facts);
   const summary = daySummary(tasks, data.reminders?.length ?? 0);
-  // Personelde satış tahmininin yoğunluk ve tatlı satırları başta (yöneticinin kendi kartı var)
-  const cafe = cafeLines(data.cafe, now.getTime(), data.forecast.staff);
+  // Personelde satış tahmininin yoğunluk ve tatlı satırları başta (yöneticinin kendi kartı var); tükenen ürünler sonda
+  const soldOut = soldOutLine(data.facts);
+  const cafe = cafeLines(data.cafe, now.getTime(), data.forecast.staff, soldOut ? [soldOut] : []);
   const changeAt = data.cafe.karaoke?.changeAt;
   return (
     <>

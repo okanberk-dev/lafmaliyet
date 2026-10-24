@@ -1,4 +1,4 @@
-import { CakeSlice, CalendarClock, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
+import { CakeSlice, CalendarClock, CircleSlash, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { ButtonLink } from "@/components/ui/button";
@@ -22,13 +22,16 @@ function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
       return { icon: <CalendarClock />, tone: 2 };
     case "siparis":
       return { icon: <ShoppingBag />, tone: 1 };
+    case "tukendi":
+      return { icon: <CircleSlash />, tone: 3 };
   }
 }
 
 /**
  * Bugün · "Bugün kafede": personelde önce satış tahmininin yoğunluğu ve tatlı sayısı (tutarsız), karaoke odası (süren
- * oturum, günün rezervasyonları, sıradaki) ve açık uygulama siparişleri.
- * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya götürür. Tutar yok.
+ * oturum, günün rezervasyonları, sıradaki), açık uygulama siparişleri ve tükenen ürünler.
+ * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya (ya da satırın kendi adresine,
+ * ör. Tükenenler) götürür. Tutar yok.
  */
 export function TodayCafe({ lines }: { lines: CafeLine[] }) {
   return (
@@ -54,7 +57,7 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
                 icon={icon}
                 tone={tone}
                 title={l.text}
-                href={forecast ? undefined : "/panel/karaoke"}
+                href={forecast ? undefined : (l.href ?? "/panel/karaoke")}
                 dot={l.tone === "warn" && !forecast ? "danger" : undefined}
                 wrap
               />

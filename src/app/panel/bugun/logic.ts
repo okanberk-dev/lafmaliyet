@@ -12,19 +12,22 @@ import { staffForecastLines, type StaffForecastView } from "@/lib/forecast/text"
 import { JOBS_HREF, systemAlerts, type JobHealth, type JobKey } from "@/lib/job-health";
 import { isPlayable, phase, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { holdAlert, HOLDS_HREF } from "@/lib/price-hold";
-import { staleForText } from "@/lib/prices/pos";
 import { pendingSummary } from "@/lib/recipe-change";
 import { addDays, dayMonthTR, isLastDayOfMonth, longDateTR, shiftMonth, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { countOverdue, isCountDay } from "@/lib/reorder/levels";
 import type { ReorderDayFacts } from "@/lib/reorder/types";
+import { KIND_COUNT_LABEL, waitedText, type StaffRequestKind } from "@/lib/staff-requests";
 
 import type { TaskStatus } from "../dashboard-tasks";
 import { COUNT_GRACE_DAYS } from "../sayim/logic";
 
+import { checklistYesterday, draftRow, posRow } from "./rows-ops";
+import type { OpsDayFacts } from "./rows-ops";
+
 /**
  * Satırların anahtarları. İkinci paketin grupları kendi satırlarını ekler (docs/planlar/CRITIQUE2.md R14): kontrol
  * `liste-dun`, `liste-{templateId}` ve okunamazsa `liste`; komisyon `komisyon`; mal siparişi `hizli-sayim` ve
- * `mal-siparisi`.
+ * `mal-siparisi`. Dalga 10: personelin onaylanmış mal siparişi taslağı `mal-taslak` (rows-ops.ts).
  */
 export type DayTaskKey =
   | "isler"
@@ -44,6 +47,7 @@ export type DayTaskKey =
   | "sayim-gecen"
   | "hizli-sayim"
   | "mal-siparisi"
+  | "mal-taslak"
   | "zayi"
   | "kasa"
   | "sayim-son";
@@ -109,17 +113,20 @@ export interface DayFacts {
   unlinked?: number | null;
   /** Fiyatı girilmemiş hammaddeler (ilk birkaç ad) */
   unpriced?: { count: number; names: string[] } | null;
-  /** Onay bekleyen reçete değişiklikleri ve yeni ürün önerileri (ürün başına bir), ürün adları */
-  approvals?: { changes: number; newProducts: number; names: string[] } | null;
+  /**
+   * Onay bekleyenler: reçete değişiklikleri ve yeni ürün önerileri (ürün başına bir) ve ürün adları; personel
+   * istekleri türüne göre (staff_requests) ve hepsinin en eskisinin anı (docs/ONAYLAR.md)
+   */
+  approvals?: { changes: number; newProducts: number; names: string[]; requests?: { kind: StaffRequestKind; count: number }[]; oldestAt?: string | null } | null;
   /** Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatları */
   holds?: { count: number; items: { name: string; pct: number | null }[] } | null;
   /** Hammadde zammı uyarısı (priceAlert; Genel bakış ve zille aynı metin) ve fiyatına bakılacak ürün sayısı */
   prices?: { detail: string; href: string; count: number } | null;
-  /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı */
+  /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı (operasyonun yükleyicisi, src/server/data/today-ops.ts) */
   pos?: { count: number; oldest: string | null } | null;
-  /** Dünün (iş günü) kontrol listeleri: tamamlanmayan ve sorunlu olan (docs/KONTROL-LISTELERI.md) */
-  checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;
   // ---- İkisi (kontrol listeleri)
+  /** Dünün (iş günü) kontrol listeleri: tamamlanmayan ve sorunlu olan (docs/KONTROL-LISTELERI.md); personelde kendininkiler */
+  checklistsYesterday?: { day: string; lists: ChecklistLite[] } | null;
   /** Bugünün (iş günü) kontrol listeleri; personelde yalnız personelin doldurabildikleri. null: okunamadı */
   checklists?: { day: string; lists: ChecklistLite[] } | null;
   // ---- İkisi (mal siparişi; docs/MAL-SIPARISI.md)
@@ -128,6 +135,14 @@ export interface DayFacts {
    * hazır tedarikçiler ve teslim kontrolü. Personelinkinde fiyat, model ve sipariş yok
    */
   reorder?: ReorderDayFacts | null;
+  // ---- İkisi (dalga 10; docs/planlar/personel-yetki.md)
+  /** Operasyonun olguları (Tükendi, kasaya işle, mal siparişi taslağı): tipi ve satırları rows-ops.ts'te */
+  ops?: OpsDayFacts | null;
+  /**
+   * Dün kafe kapalı mıydı: yöneticinin onayladığı ya da personelin bildirdiği, onay bekleyen kapalı gün (özel günün
+   * `kapali` satırı; src/server/closed-days.ts). Yoksa null
+   */
+  closed?: { yesterday: { state: "approved" | "pending"; by: string; requestId: number | null } | null } | null;
 }
 
 /** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
@@ -177,7 +192,9 @@ const sentence = (s: string) => (/[.!?…]$/.test(s.trim()) ? s.trim() : `${s.tr
 /** Gece 05:00'ten önce iş günü dündür: kasa ve zayi açıklaması hangi güne baktığını tarihle söyler */
 const dated = (c: DayContext, date: string, text: string) => (c.day !== c.today ? `${longDateTR(date)} · ${text}` : text);
 
-type Row = (f: DayFacts, c: DayContext) => DayTask | DayTask[] | null;
+/** Bir satırın kuralı: olgulardan satır (ya da satırlar), çıkmazsa null. Operasyonun satırları rows-ops.ts'te */
+export type DayRow = (f: DayFacts, c: DayContext) => DayTask | DayTask[] | null;
+type Row = DayRow;
 
 // ---------------------------------------------------------------- Kasa
 
@@ -494,32 +511,6 @@ const checklistRows: Row = (f) => {
   return [...c.lists].sort((a, b) => opensMinute(a.opensAt) - opensMinute(b.opensAt)).map((l) => listRow(f, c.day, l, nowBm));
 };
 
-/**
- * Yönetici: dünün listelerinden tamamlanmayan ya da sorunlu (düzeltilmiş ölçüm dahil) olan varsa tek satır. Dünün kasa
- * raporu da yoksa (kasa kullanılmaya başladıysa) kafe kapalı olabilir: açıklama bunu söyler.
- */
-const checklistYesterday: Row = (f, c) => {
-  const y = f.checklistsYesterday;
-  if (f.role !== "admin" || !y) return null;
-  const missing = y.lists.filter((l) => !l.run?.complete);
-  const problems = y.lists.flatMap((l) => l.run?.issues ?? []);
-  if (!missing.length && !problems.length) return null;
-  const parts = [
-    ...missing.map((l) => (isStarted(l) && l.run ? `${l.name}: ${num(l.run.required - l.run.done)} madde yapılmadı` : `${l.name}: hiç açılmadı`)),
-    ...problems.map((x) => x.text),
-  ];
-  const cashMissing = f.cash !== null && f.cash.yesterday === null && f.cash.firstDate !== null && f.cash.firstDate <= c.yesterday;
-  return {
-    key: "liste-dun",
-    title: "Dünkü kontrol listeleri",
-    status: "warn",
-    badge: missing.length ? `${num(missing.length)} eksik` : `${num(problems.length)} sorun`,
-    detail: `${clip(parts.join(" · "), 160)}${cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : ""}`,
-    href: `/panel/kontrol/gecmis?gun=${y.day}`,
-    action: "Geçmişe bak",
-  };
-};
-
 // ---------------------------------------------------------------- Yalnız yönetici
 
 /**
@@ -665,20 +656,39 @@ const unpricedRow: Row = (f) => {
   };
 };
 
+/** Onay satırında türlerin sırası: kasa istekleri, reçete önerileri, zayi istekleri, mal siparişi taslağı */
+const KASA_KINDS: StaffRequestKind[] = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun"];
+const OPS_KINDS: StaffRequestKind[] = ["zayi-gec", "zayi-sil", "mal-taslak"];
+
+/**
+ * Onaylar (yönetici): reçete önerileri ve personel istekleri. İstek yoksa reçete metni ("Personelin önerdiği 2 reçete
+ * değişikliği … onay bekliyor: Latte, …"); varsa türler tek satırda ve en eskisinin beklediği ("1 kasa düzeltmesi ·
+ * 2 reçete değişikliği · 1 mal siparişi taslağı · en eskisi 2 gündür"). Tutar yok.
+ */
 const approvalsRow: Row = (f) => {
-  const a = f.approvals;
-  const n = (a?.changes ?? 0) + (a?.newProducts ?? 0);
+  const a = f.role === "admin" ? f.approvals : null;
+  const requests = (a?.requests ?? []).filter((r) => r.count > 0);
+  const asked = requests.reduce((n, r) => n + r.count, 0);
+  const n = (a?.changes ?? 0) + (a?.newProducts ?? 0) + asked;
   if (!a || n <= 0) return null;
-  const names = a.names.slice(0, 3).join(", ");
-  return {
-    key: "onay",
-    title: "Reçete onayları",
-    status: "todo",
-    badge: `${num(n)} bekliyor`,
-    detail: `Personelin önerdiği ${pendingSummary(a.changes, a.newProducts)}${names ? `: ${names}${a.names.length > 3 ? "…" : ""}` : "."}`,
-    href: "/panel/onaylar",
-    action: "İncele",
-  };
+  const base = { key: "onay" as const, title: "Onaylar", status: "todo" as const, badge: `${num(n)} bekliyor`, href: "/panel/onaylar", action: "İncele" };
+  if (!asked) {
+    const names = a.names.slice(0, 3).join(", ");
+    return { ...base, detail: `Personelin önerdiği ${pendingSummary(a.changes, a.newProducts)}${names ? `: ${names}${a.names.length > 3 ? "…" : ""}` : "."}` };
+  }
+  const count = (kinds: StaffRequestKind[]) =>
+    kinds.flatMap((k) => {
+      const c = requests.filter((r) => r.kind === k).reduce((x, r) => x + r.count, 0);
+      return c ? [`${num(c)} ${KIND_COUNT_LABEL[k]}`] : [];
+    });
+  const parts = [
+    ...count(KASA_KINDS),
+    ...(a.changes ? [`${num(a.changes)} reçete değişikliği`] : []),
+    ...(a.newProducts ? [`${num(a.newProducts)} yeni ürün önerisi`] : []),
+    ...count(OPS_KINDS),
+  ];
+  const oldest = a.oldestAt ? ` · en eskisi ${waitedText(new Date(a.oldestAt), f.now)}` : "";
+  return { ...base, detail: `${parts.join(" · ")}${oldest}` };
 };
 
 /** Onay bekleyen hammadde fiyatları (Genel bakış'taki uyarıyla aynı metin) */
@@ -693,21 +703,6 @@ const pricesRow: Row = (f) => {
   const p = f.prices;
   if (!p) return null;
   return { key: "zam", title: "Hammadde zammı", status: "todo", badge: `${num(p.count)} ürün`, detail: p.detail, href: p.href, action: "Fiyatlara bak" };
-};
-
-/** Kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; zil ile aynı metin) */
-const posRow: Row = (f) => {
-  const p = f.pos;
-  if (!p || p.count <= 0) return null;
-  return {
-    key: "modpos",
-    title: "Kasadaki fiyatlar",
-    status: "todo",
-    badge: `${num(p.count)} fiyat`,
-    detail: `Kasada değişecek ${num(p.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${p.oldest ? ` En eskisi ${staleForText(p.oldest, f.now)} bekliyor.` : ""}`,
-    href: "/panel/urunler/fiyatlar?sekme=kasa",
-    action: "Kasaya işle",
-  };
 };
 
 /**
@@ -735,12 +730,18 @@ const ADMIN_ROWS: Row[] = [
   countMonthEnd, // sayim-son
 ];
 
-/** Personelin satır sırası; yönetici satırları burada hiç yok */
+/**
+ * Personelin satır sırası; yönetici satırları burada hiç yok. Operasyonun satırları (rows-ops.ts) personelin olgusu
+ * gelince çıkar: dünün listeleri, kasadaki fiyatlar ve onaylanmış mal siparişi taslağı
+ */
 const STAFF_ROWS: Row[] = [
   cashYesterday, // kasa-dun
+  checklistYesterday, // liste-dun
   countPrevious, // sayim-gecen
   checklistRows, // liste-{templateId} (açılış saatine göre)
   quickCountRow, // hizli-sayim
+  posRow, // modpos
+  draftRow, // mal-taslak
   wasteRow, // zayi
   cashToday, // kasa
   countMonthEnd, // sayim-son
@@ -755,17 +756,21 @@ export function dayTasks(f: DayFacts): DayTask[] {
 /**
  * Ekrandaki bölümler: Şimdi (sorunlu ve yapılacak), Sonra (zamanı gelmemiş), Tamamlananlar; her biri günün sırasıyla.
  * Sıradaki iş: ilk sorunlu, yoksa ilk yapılacak. Açık bir kontrol listesi varken sabahtan beri geciken liste ("Gecikti")
- * sıradaki iş olmaz: gece kapanışta önce süresi işleyen Kapanış listesi, gecikmiş Açılış listesi arkasından.
+ * sıradaki iş olmaz: gece kapanışta önce süresi işleyen Kapanış listesi, gecikmiş Açılış listesi arkasından. Dünün
+ * kontrol listeleri (`liste-dun`; geçmişe bakmak) başka yapılacak ya da sorunlu satır varken sıradaki olmaz (iki rolde).
  */
 export function splitTasks(tasks: DayTask[]): { now: DayTask[]; later: DayTask[]; done: DayTask[]; next: DayTask | null } {
   const isList = (t: DayTask) => t.key.startsWith("liste-") && t.key !== "liste-dun";
-  const openList = tasks.find((t) => t.status === "todo" && isList(t));
-  const urgent = tasks.find((t) => t.status === "warn" && !(openList && isList(t) && t.badge === "Gecikti"));
+  const open = (t: DayTask) => t.status === "warn" || t.status === "todo";
+  const othersOpen = tasks.some((t) => open(t) && t.key !== "liste-dun");
+  const eligible = tasks.filter((t) => !(t.key === "liste-dun" && othersOpen));
+  const openList = eligible.find((t) => t.status === "todo" && isList(t));
+  const urgent = eligible.find((t) => t.status === "warn" && !(openList && isList(t) && t.badge === "Gecikti"));
   return {
-    now: tasks.filter((t) => t.status === "warn" || t.status === "todo"),
+    now: tasks.filter(open),
     later: tasks.filter((t) => t.status === "later"),
     done: tasks.filter((t) => t.status === "done"),
-    next: urgent ?? openList ?? tasks.find((t) => t.status === "warn") ?? tasks.find((t) => t.status === "todo") ?? null,
+    next: urgent ?? openList ?? eligible.find((t) => t.status === "warn") ?? eligible.find((t) => t.status === "todo") ?? null,
   };
 }
 
@@ -844,17 +849,25 @@ export interface OrdersLite {
 export const ORDERS_FRESH_MS = 30 * 60_000;
 
 export interface CafeLine {
-  key: "yogunluk" | "tatli" | "oda" | "karaoke" | "siradaki" | "siparis";
+  key: "yogunluk" | "tatli" | "oda" | "karaoke" | "siradaki" | "siparis" | "tukendi";
   text: string;
   tone: "info" | "warn";
+  /** Satırın götürdüğü adres; verilmezse bar ekranı (tahmin satırları bağlantısız) */
+  href?: string;
 }
 
 /**
  * "Bugün kafede" kartının satırları. laffogato.net bağlantısı kurulu değilse ve bugün oturum yoksa karaoke satırı
  * yazılmaz; liste boşsa kart çizilmez. Tutar hiçbir rolde yazılmaz. `busy`: personelin satış tahmini görünümü
- * (yoğunluk ve tatlı sayısı, tutarsız; docs/SATIS-TAHMINI.md); verilirse satırları başta.
+ * (yoğunluk ve tatlı sayısı, tutarsız; docs/SATIS-TAHMINI.md); verilirse satırları başta. `extra`: operasyonun
+ * satırları (Tükendi; rows-ops.ts soldOutLine), sonda.
  */
-export function cafeLines(i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean }, nowMs: number, busy?: StaffForecastView | null): CafeLine[] {
+export function cafeLines(
+  i: { karaoke: KaraokeToday | null; orders: OrdersLite | null; configured: boolean },
+  nowMs: number,
+  busy?: StaffForecastView | null,
+  extra: CafeLine[] = [],
+): CafeLine[] {
   const out: CafeLine[] = busy ? staffForecastLines(busy) : [];
   const k = i.karaoke;
   const any = k ? k.reservations + k.walkIns > 0 : false;
@@ -870,7 +883,7 @@ export function cafeLines(i: { karaoke: KaraokeToday | null; orders: OrdersLite 
     const text = o.open > 0 ? `${num(o.open)} açık uygulama siparişi${o.ready > 0 ? ` · ${num(o.ready)} teslime hazır` : ""}` : `${num(o.ready)} uygulama siparişi teslime hazır`;
     out.push({ key: "siparis", text, tone: "info" });
   }
-  return out;
+  return [...out, ...extra];
 }
 
 // ---------------------------------------------------------------- Kendiliğinden yenileme

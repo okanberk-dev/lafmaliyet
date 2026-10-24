@@ -792,5 +792,6 @@ test("kaynak: Bugün'de tahmin kartı yalnız yöneticide, personel satırı yal
   assert.match(staff, /if \(!settings\.staffSeesLevel\) return null;/);
   const page = read("src/app/panel/bugun/page.tsx");
   assert.match(page, /\{data\.payments \? <DashboardPayments items=\{data\.payments\} \/> : null\}\s+\{data\.forecast\.admin \? <TodayForecast data=\{data\.forecast\.admin\} \/> : null\}\s+\{cafe\.length \? <TodayCafe lines=\{cafe\} \/> : null\}/);
-  assert.match(page, /cafeLines\(data\.cafe, now\.getTime\(\), data\.forecast\.staff\)/);
+  // Dalga 10: tükenen ürünlerin satırı sonda (rows-ops.ts soldOutLine)
+  assert.match(page, /cafeLines\(data\.cafe, now\.getTime\(\), data\.forecast\.staff, soldOut \? \[soldOut\] : \[\]\)/);
 });
