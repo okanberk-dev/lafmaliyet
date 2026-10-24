@@ -50,12 +50,17 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    - tutarsızsa faturalardan hesaplanan *KDV-2* tahmini hatırlatıcının gününde girer;
    - dönemi başka bir KDV-2 hatırlatıcısı almışsa ya da tahmin yoksa (KDV tahmine katılmıyor, dönemin verisi yok)
      tutarı girilmemiş ödemedir: iki kez sayılmaz, sessizce de düşmez;
-   - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, kartta görünmez. Ödenen gün
-     Ödemeler'in son ödenenlerinden (`payments.recent`, 30 gün) okunur: ödenen gün ile sıradaki gün arasındaki her
-     dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme ya da hatırlatıcıyı kapatma bir dönemi ödemiş saymaz,
-     ödenmişi de geri açmaz. Tarihi geri alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler. “Geri al”
-     ve hatırlatıcıyı silmek kaydı siler; kayıt hatırlatıcı başına bir tanedir, aynı seride ikinci (yanlış) Ödendi geri
-     alınınca ilki de gider ve dönemin tahmini 25'ine kadar geri gelir;
+   - “Ödendi” denen dönem bitmiştir, vadesinden önce denmişse de: tahmini geri gelmez, satırı olmaz. Ödenen dönemler
+     KDV ve KDV-2 hatırlatıcılarının kalıcı Ödendi kaydından (`payments.vat-paid`, 24 ay, `src/lib/vat-paid.ts`; her
+     Ödendi ayrı kayıt, dönemleri ödenirken yazılır) ve Ödemeler'in son ödenenlerinden (`payments.recent`) okunur:
+     ödenen gün ile sıradaki gün arasındaki her dönem (“tarihe kadar ödendi” birkaçını kapatır). Erteleme ya da
+     hatırlatıcıyı kapatma bir dönemi ödemiş saymaz, ödenmişi de geri açmaz; tarihi başka döneme taşımak da (28'i
+     Cumartesi diye 27'ye alınan seri) açmaz. Şimdiki dönemi ödenenlerden olan etkin hatırlatıcı (tarihi geri alınan
+     seri) o dönemi yine bekler. Kapalı tek seferliği yeniden açmak Ödendi'sini geri alır. “Geri al” hatırlatıcının
+     döndüğü günden itibaren ödenenleri siler (aynı seride ikinci Ödendi geri alınınca ilki kalır); hatırlatıcıyı
+     silmek ödemeyi silmez. Yanlış Ödendi'den sonra hatırlatıcı silindiyse KDV kartındaki “… kaydını kaldır” kaydı
+     siler, dönem yeniden beklenir. 24 Ekim 2026'ya kadar yalnız son ödenenler okunuyordu: 30 gün ya da 30 kayıt
+     (faturalarla ortak) sonra düşen kayıt dönemin tahminini geri getiriyordu;
    - ertelenen dönemin notu asıl günü taşır (“Ertelendi · asıl tarih 25.10.2026”, tekrar edenin kopyası da ertelenen
      tek seferlik de): 8 ya da 9 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür, Ekim'inkini almaz.
    Kartta hatırlatıcının taşıdığı dönem için “Plana Ödemeler'deki KDV-2 hatırlatıcısı girer: tutarı yazılıysa o,
@@ -119,7 +124,7 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
 | Alış KDV'si | Faturanın **KDV toplamı** (`vat`, Paraşüt'ün `total_vat`'ı, tevkifat düşülmemiş); `vat` yoksa (Excel'den gelenlerde 0) ya da net tutarın %20'sinden fazlaysa (Paraşüt bağı kopup tutarı elle değişmiş kayıt) **ödenecek − (tutar − iskonto)**. Tevkifatlı faturada KDV'nin tamamı indirilir: beyannamede tedarikçiye ödenen kısmı “yurtiçi alımlara ilişkin KDV”, tevkif edilen kısmı “sorumlu sıfatıyla beyan edilerek ödenen KDV” olarak (23 Ekim 2026'ya kadar yalnız ilki sayılıyordu; Eylül 2026'da 1.800 ₺ eksik indirildi). İadede eksi (fark; tevkifatın iadesi 2 No.lu beyannamede düzeltilir). Kontrol bekleyen faturalar sayılır. **Kafe dışı** (Karaoke box, Alp Koç) sayılmaz. Süren ayda yalnız bugüne kadar gelen faturalar (ay sonuna tamamlanmaz; tahmin yüksek tarafta kalır). |
 | KDV-2 (tevkifat) | Dönemin kafe faturalarındaki tevkifat: `vat` − (ödenecek − net), 100 ₺'ye yuvarlı (`purchaseWithheld`). **2 No.lu beyannameyle izleyen ayın 25'inde** ödenir (Eylül 2026 tahakkuk fişi: vade 25.10.2026), 1 No.lu beyannamede aynı dönemde indirilir. 1 No.lu ödenecek sıfır ya da devreden olsa da ödenir. Beyannamenin damga vergisi (Eylül 2026 KDV2'sinde 791 ₺) sayılmaz. |
 | Devreden | **Otomatik:** cirosu olan ilk aydan (yoksa ilk site kaydının ayından; en çok 24 ay geriden) ay ay zincir. İlk satış ayından önceki faturalar sayılmaz. Verisiz ay zinciri bozmaz. **Muhasebeciden:** “Devreden KDV'yi gir” penceresi (ay + “sonraki döneme devreden KDV”); zincir o ayın ertesinden başlar. O ayın kendi ödemesi devreden > 0 ise 0'dır (“Beyannamede devreden …”). |
-| Ödemeler'deki tutar | KDV hatırlatıcısına yazılan tutar (0 dahil) **o dönemin kesin tutarıdır**, tahminin önüne geçer; > 0 ise sonraki aya devreden sıfırlanır. Tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir: **Ödendi** deyince ve tekrarlı seri ertelenince tutar silinir (Geri al geri getirir). |
+| Ödemeler'deki tutar | KDV hatırlatıcısına yazılan tutar (0 dahil) **o dönemin kesin tutarıdır**, tahminin önüne geçer; > 0 ise sonraki aya devreden sıfırlanır. Tutar yalnız hatırlatıcının kayıtlı (sıradaki ya da geciken) dönemine aittir: **Ödendi** deyince ve tekrarlı seri ertelenince tutar silinir (Geri al geri getirir). Ödenen tutar (Ödendi anında hatırlatıcıdaki, > 0) kalıcı Ödendi kaydından (`payments.vat-paid`, 24 ay) o dönemin kesin tutarı olarak okunur: ödemeden sonra da devredeni sıfırlar. Tutarsız Ödendi zinciri değiştirmez (beyanname devreden göstermiş olabilir). |
 | Yuvarlama | Kasa, online ve alış KDV'si ile muhasebecinin tutarı ayrı ayrı en yakın **100 ₺**'ye yuvarlanır (yarım yukarı, işaret korunur); ödenecek ve devreden bunlardan çıkar, ekrandaki çıkarma birebir tutar. Ödemeler'deki tutar ve muhasebecinin tutarı olduğu gibi yazılır. |
 | Dahil değil | İkram ve ödenmez (Z dışı), Karaoke box'ın (MaviBahçe) satışları, Aylık harcamalar'daki fatura dışı ödemeler ve faturası panele gelmeyen giderlerin KDV'si (bilinmez; tahmin bu yüzden yüksek kalır). |
 
@@ -133,6 +138,14 @@ satışların KDV'si, alışların KDV'si, devreden ve sonuç açılır.
   ya da tek seferlik) dönemi notundaki asıl gündendir (“Ertelendi · asıl tarih 28.10.2026”): 10 Kasım'a ertelenen Eylül
   KDV'si Eylül'ündür. Notsuz bir günün ayın 1–7'si iki ay önceki dönemdir. Aynı döneme ikinci bir KDV hatırlatıcısı
   “Tutarı girilmemiş”e düşer. “Geri al” ertelemenin yazdığı notu da geri alır.
+- **Ödendi** denen dönem (vadesinden önce de) bitmiştir, hatırlatıcı olsun olmasın: 28'inde tahmin olarak geri gelmez,
+  satırı olmaz (KDV-2'deki kural ve kalıcı kayıt: ödenen gün ile sıradaki gün arasındaki her dönem; tek seferliğin
+  Ödendi'si onu kapatır, ödendikten sonra kapatılan ya da silinen hatırlatıcının ödemesi durur; “Geri al”, tarihi geri
+  alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler). Kart ödenen dönemi yazar (“Eylül (27.200 ₺)
+  KDV'si ödendi”); ufuktaki tek 28'i ödenmişse “önümüzdeki 6 haftada başka 1 No.lu KDV ödemesi yok” der (KDV-2 satırı
+  ayrıca görünür), Tahmine katılanlar “Ekim ödendi; 6 hafta içinde başka 1 No.lu KDV günü yok” (KDV anahtarı açık
+  kalır). Kartın altında ödenmiş her dönem için “… kaydını kaldır” (onaylı; hatırlatıcılara dokunmaz). 23 Ekim 2026'ya kadar yalnız KDV-2'de böyleydi: önceden ödenen tek
+  seferlik “KDV Eylül” 28'inde tahmin olarak ikinci kez düşülüyordu.
 - Tahmin ≤ 0 ise satır yok (kartta “Ödeme beklenmez”). Satış verisi olmayan dönemde tahmin yok. KDV hatırlatıcısının
   sıradaki günü 6 haftanın dışındaysa kartta satır olmaz (“bu dönemde KDV ödemesi yok”).
 - Tahmine katılanlar'dan **KDV** kapatılırsa kesin tutarlar yine yazılır, tahminler plana girmez (kart gri, “Plana
@@ -189,7 +202,7 @@ ek iş yok.
 
 ## Saklama
 
-Tablo yok: `integration_state` tablosunda tek anahtar, **`cashflow.plan`**:
+Tablo yok: `integration_state` tablosunda iki anahtar. **`cashflow.plan`**:
 
 ```ts
 {
@@ -200,6 +213,11 @@ Tablo yok: `integration_state` tablosunda tek anahtar, **`cashflow.plan`**:
   vatCarry: { month: string; amount: number; date: string; by: string } | null; // muhasebecinin devreden KDV'si
 }
 ```
+
+**`payments.vat-paid`** (KDV ve KDV-2 hatırlatıcılarının kalıcı Ödendi kaydı, `src/lib/vat-paid.ts`): `{ id, kind:
+"kdv" | "kdv2", dueDate, next, periods, amount, at }[]`, 24 ay. `markReminderDone` yazar; `restoreReminder`,
+`undoRecentPaid`, kapalı tek seferliği yeniden açmak ve KDV kartındaki "kaydını kaldır" siler. `db:reset` bırakır
+(hatırlatıcı kimlikleri yeniden başlamaz), tam yedeğe girer; bozuk kayıt okunurken atılır.
 
 - Bozuk ya da eksik alan varsayılana düşer; silinmiş sabit giderin `fixed:<id>` anahtarı yok sayılır.
 - Eylemler (`src/server/actions/cash-plan.ts`: `saveCashBalance`, `saveCashPlanExcluded`, `saveVatCarry`) yalnız
@@ -215,7 +233,9 @@ Tablo yok: `integration_state` tablosunda tek anahtar, **`cashflow.plan`**:
 |---|---|
 | `src/lib/cash-plan.ts` | `buildCashPlan`, `planInputFromModel`, `goodsRows`, `reminderOccurrences`, `planNotes` (saf) |
 | `src/lib/kdv.ts` | `vatMonthInputs`, `vatEstimates`, `vatDueDate`, `vatPeriodOf`, metinler (saf) |
+| `src/lib/vat-paid.ts` | KDV / KDV-2 Ödendi kaydının kuralları: `paidPeriodsOf`, `addVatPaid`, `removeVatPaid`, `forgetVatPeriod` (saf) |
 | `src/server/data/cash-plan.ts` | `loadCashPlan(model, upcoming?)`, `loadCashPlanState` |
+| `src/server/data/vat-paid.ts` | `payments.vat-paid`'in okunması ve yazılması |
 | `src/server/actions/cash-plan.ts` | bakiye, tahmin ayarı, devreden KDV |
 | `src/app/panel/hatirlaticilar/nakit/` | ekran, bakiye ve devreden KDV pencereleri, Tahmine katılanlar, KDV kartı |
 | `src/app/panel/dashboard-cash-plan.tsx` | Genel bakış kartı |

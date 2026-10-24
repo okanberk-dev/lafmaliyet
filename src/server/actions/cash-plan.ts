@@ -1,15 +1,18 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { shiftMonth } from "@/lib/calc/engine";
 import { EXCLUDABLE_KEY, parseCashPlanState, type CashPlanState } from "@/lib/cash-plan";
 import { money, monthLabel } from "@/lib/format";
-import { todayTR } from "@/lib/reminders";
+import { isVatReminder, isVatWithholdingReminder, todayTR, type ReminderRepeat } from "@/lib/reminders";
+import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { CASH_PLAN_KEY } from "@/server/data/cash-plan";
+import { forgetPaid, loadRecentPaid } from "@/server/data/recent-paid";
+import { forgetVatPaidPeriod } from "@/server/data/vat-paid";
 import { getDb, schema as s } from "@/server/db";
 
 import { logActivity } from "./log";
@@ -76,6 +79,49 @@ export async function saveVatCarry(input: { month: string; amount: number } | nu
     const carry = data ? { month: data.month, amount: Math.round(data.amount * 100) / 100, date: todayTR(), by: me.name } : null;
     await updateState((st) => ({ ...st, vatCarry: carry }));
     await logActivity(me, "Nakit planı: devreden KDV", carry ? `${monthLabel(carry.month)} beyannamesi · ${money(carry.amount)}` : "kaldırıldı");
+    refresh();
+    return null;
+  });
+}
+
+/**
+ * KDV kartı: yanlış "Ödendi" kaydını kaldırır (Ödendi'den sonra hatırlatıcı silindiyse ya da Geri al'ın 30 günü
+ * geçtiyse başka yolu yok). Dönem kalıcı kayıttan çıkar; o dönemi kapatan son ödenenler kaydı da silinir (yoksa 30 gün
+ * daha ödenmiş sayılırdı). Hatırlatıcılara dokunulmaz.
+ */
+export async function forgetVatPayment(kind: "kdv" | "kdv2", period: string) {
+  return attempt(async () => {
+    const me = await requireAdmin();
+    const k = z.enum(["kdv", "kdv2"]).parse(kind);
+    const p = z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Geçersiz dönem")
+      .parse(period);
+    await forgetVatPaidPeriod(k, p);
+    const recent = (await loadRecentPaid()).filter((e) => e.kind === "reminder" && e.dueDate);
+    if (recent.length) {
+      const rows = await getDb()
+        .select()
+        .from(s.reminders)
+        .where(
+          inArray(
+            s.reminders.id,
+            recent.map((e) => e.id),
+          ),
+        );
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const covering = recent.filter((e) => {
+        const r = byId.get(e.id);
+        if (!r) return false;
+        const rk = isVatWithholdingReminder(r) ? "kdv2" : isVatReminder(r) ? "kdv" : null;
+        return rk === k && paidPeriodsOf({ note: r.note, repeat: r.repeat as ReminderRepeat, anchorDate: r.anchorDate }, e.dueDate!, e.next ?? null).includes(p);
+      });
+      await forgetPaid(
+        "reminder",
+        covering.map((e) => e.id),
+      );
+    }
+    await logActivity(me, "Nakit planı: Ödendi kaydı kaldırıldı", `${monthLabel(p)} ${k === "kdv2" ? "KDV-2" : "KDV"}`);
     refresh();
     return null;
   });
