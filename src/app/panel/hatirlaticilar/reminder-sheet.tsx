@@ -510,7 +510,7 @@ function FixedSheet({ rows, today, existing, onBack, onClose }: { rows: FixedRow
       if (!r.ok) return void toast.error(r.error);
       setAdded((a) => ({ ...a, [f.id]: r.data.dueDate }));
       const what = r.data.changesFrom
-        ? ` · tutar yazılmadı (${monthLabel(r.data.changesFrom)}'dan değişiyor; nakit planı Giderler'deki tutarı izler)`
+        ? ` · tutar yazılmadı (${monthLabel(r.data.changesFrom)} itibarıyla değişiyor; nakit planı Giderler'deki tutarı izler)`
         : r.data.amount
           ? ` · ${money(r.data.amount)}`
           : "";

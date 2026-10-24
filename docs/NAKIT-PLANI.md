@@ -36,7 +36,9 @@ Her etkin hatırlatıcı bir sınıfa girer, sırayla:
    KDV dahil tutarı onun günlerine “tahmini” yazılır. “Sabit giderlerden ekle” hatırlatıcıya ilk ödeme ayındaki
    sürümün tutarını faturadaki KDV'siyle yazar (160.000 ₺ kira → 192.000 ₺; o aydan geçerli zam dahil; listede seçilen
    günün ayındaki tutar ve dönem, “%20 KDV dahil”). Giderler'de sonraki bir aydan zam ya da dönem değişikliği zaten
-   girilmişse tutar yazılmaz (“Aralık 2026'dan değişiyor: tutar yazılmaz”): plan her ayın sürümünü KDV'siyle taşır.
+   girilmişse tutar yazılmaz (“Aralık 2026 itibarıyla değişiyor: tutar yazılmaz”): plan her ayın sürümünü KDV'siyle,
+   hatırlatıcının dönemine çevirerek taşır (aylıktan yıllığa geçen giderin aylık hatırlatıcısına her ay yıllık tutarın
+   tamamı değil, on ikide biri).
    Hatırlatıcı eklendikten sonra girilen zam tutarlı hatırlatıcıya geçmez; tutarını da güncelleyin. 23 Ekim 2026'ya
    kadar kalemin taban tutarını KDV'siz yazıyordu: bu yolla açılmış tutarlı hatırlatıcıların tutarı elle
    düzeltilmelidir (plan onu kesin sayar).

@@ -382,6 +382,10 @@ type RemClass = { kind: "fixed"; id: number } | { kind: "salary" } | { kind: "sg
 
 const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amount > 0;
 
+/** Hatırlatıcının bir dönemi kaç aylıktır; sabit giderin aynı dönemi */
+const REPEAT_PER_MONTH: Record<Exclude<ReminderRow["repeat"], "none">, number> = { weekly: 12 / 52, monthly: 1, quarterly: 3, yearly: 12 };
+const CADENCE_OF: Record<Exclude<ReminderRow["repeat"], "none">, FixedPeriod | null> = { weekly: "haftalik", monthly: "aylik", quarterly: null, yearly: "yillik" };
+
 /**
  * Ertelenmiş kopyanın asıl günü ("Ertelendi · asıl tarih 25.10.2026", postponeReminder): kopyanın dönemi ondan
  * bulunur. 8 Kasım'a ertelenen Eylül KDV-2'si Ekim'in değildir.
@@ -536,8 +540,12 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
         if (hasAmount(r)) reminderLine(r, o);
         else if (r.amount === null && !off(`fixed:${c.id}`)) {
           const f = fixedIn(o.due.slice(0, 7)).find((x) => x.id === c.id) ?? fixedIn(o.date.slice(0, 7)).find((x) => x.id === c.id);
-          const amount = f ? withVat(f, f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount) : 0;
-          const detail = f?.vatRate ? `Sabit giderdeki tutar + %${num(f.vatRate * 100)} KDV` : "Sabit giderdeki tutar";
+          // O ayın sürümü hatırlatıcının dönemine çevrilir: dönemi sonradan değişen gider (aylık → yıllık) her ayda
+          // yıllık tutarı göstermesin; dönemler aynıysa tutar giderinkidir (günlük, aylık hatırlatıcıda ayda açık gün)
+          const rep = r.repeat === "none" ? null : r.repeat;
+          const converted = f !== undefined && rep !== null && f.period !== CADENCE_OF[rep] && !(f.period === "gunluk" && rep === "monthly");
+          const amount = !f ? 0 : converted && rep !== null ? monthlyOf(f, st.acikGun) * REPEAT_PER_MONTH[rep] : withVat(f, f.period === "gunluk" ? f.amount * Math.min(30, st.acikGun) : f.amount);
+          const detail = `Sabit giderdeki tutar${converted ? ", hatırlatıcının dönemine çevrildi" : ""}${f?.vatRate ? ` + %${num(f.vatRate * 100)} KDV` : ""}`;
           if (amount > 0) reminderLine(r, o, { kind: "fixed", amount, estimated: true, detail });
           else addUnknown(r, o.date);
         }

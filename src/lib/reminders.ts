@@ -433,7 +433,7 @@ export function fixedReminderText(...args: Parameters<typeof fixedReminderAt>): 
   const at = fixedReminderAt(...args);
   const period = FIXED_PERIOD_LABEL[at.period];
   const vat = at.vatRate > 0 ? ` (%${Math.round(at.vatRate * 100)} KDV dahil)` : "";
-  if (at.changesFrom) return `${money(at.gross)}${vat} · ${period} · ${monthLabel(at.changesFrom)}'dan değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler`;
+  if (at.changesFrom) return `${money(at.gross)}${vat} · ${period} · ${monthLabel(at.changesFrom)} itibarıyla değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler`;
   if (at.amount === null) return `Tutar yazılmaz · ${period}`;
   return `${money(at.amount)}${vat} · ${period}`;
 }

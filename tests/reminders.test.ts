@@ -350,7 +350,9 @@ test("Sabit giderlerden ekle listesi: seçilen ayın tutarı ve dönemi; tutars�
   // Seçilen günün ayı: Ekim'de zamsız, Kasım'dan zamlı
   const raise = [{ fromMonth: "2026-11", period: "aylik" as const, amount: 160_000 }];
   assert.equal(fixedReminderText(kira, raise, "2026-11"), "192.000\u00a0₺ (%20 KDV dahil) · aylık");
-  assert.equal(fixedReminderText(kira, raise, "2026-10"), "180.000\u00a0₺ (%20 KDV dahil) · aylık · Kasım 2026'dan değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler");
+  assert.equal(fixedReminderText(kira, raise, "2026-10"), "180.000\u00a0₺ (%20 KDV dahil) · aylık · Kasım 2026 itibarıyla değişiyor: tutar yazılmaz, nakit planı Giderler'deki tutarı izler");
+  // Ocak zammı (en sık): yılın sonuna ek getirilmez ("2027'dan" yanlış olurdu)
+  assert.match(fixedReminderText(kira, [{ fromMonth: "2027-01", period: "aylik", amount: 170_000 }], "2026-11"), /· Ocak 2027 itibarıyla değişiyor:/);
   // Dönem sürümden: haftalıkken aylığa geçen kalem aylık yazılır
   assert.equal(fixedReminderText({ amount: 2_000, period: "haftalik", section: "genel" }, [{ fromMonth: "2026-11", period: "aylik", amount: 8_000 }], "2026-11"), "9.600\u00a0₺ (%20 KDV dahil) · aylık");
   // O ay 0'a inen kalem: taban tutar "KDV dahil" diye gösterilmez
