@@ -130,9 +130,17 @@ export interface OnHand {
   /** Sayımın anı (ISO) ve iş günü */
   at: string;
   day: string;
+  /**
+   * Sayımın kaydedildiği an (ISO): hızlı sayımda `at`; geç girilen ya da düzeltilen ay sonu sayımında `at`'ten sonra
+   * (onOrderFor). Yoksa `at`.
+   */
+  recordedAt?: string;
   source: "hizli" | "ay-sonu";
   by: string | null;
 }
+
+/** "Siparişte"nin baktığı sayım: anı, iş günü ve kaydedildiği an (OnHand) */
+export type CountRef = Pick<OnHand, "at" | "day" | "recordedAt">;
 
 /**
  * Ay sonu sayımının anı (`month`: YYYY-MM). Ay sonu sayımı ayın son günü kapanıştan sonra yapılır; çoğu zaman ertesi
@@ -147,15 +155,19 @@ export function monthEndCountAt(month: string, updatedAt: Date): Date {
 
 /**
  * Eldeki stok: en yeni hızlı sayım ya da ay sonu sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Ay sonu
- * sayımının anı monthEndCountAt'ten (kayıt anı değil); eşitlikte hızlı sayım. Miktar sayıldığı andaki çarpanla kendi
- * birimine çevrilir (sayım birimi sonradan değişse de).
+ * sayımının anı monthEndCountAt'ten (kayıt anı değil; kayıt anı `recordedAt`'te kalır); eşitlikte hızlı sayım. Miktar
+ * sayıldığı andaki çarpanla kendi birimine çevrilir (sayım birimi sonradan değişse de).
  */
 export function latestOnHand(
   quick: { qty: number; factor: number; countedAt: string; day: string; by: string } | null,
-  monthEnd: { qty: number; factor: number; at: string; day: string; by: string | null } | null,
+  monthEnd: { qty: number; factor: number; at: string; day: string; recordedAt?: string; by: string | null } | null,
 ): OnHand | null {
-  const q = quick ? { base: quick.qty * quick.factor, at: quick.countedAt, day: quick.day, source: "hizli" as const, by: quick.by } : null;
-  const m = monthEnd ? { base: monthEnd.qty * monthEnd.factor, at: monthEnd.at, day: monthEnd.day, source: "ay-sonu" as const, by: monthEnd.by } : null;
+  const q = quick
+    ? { base: quick.qty * quick.factor, at: quick.countedAt, day: quick.day, recordedAt: quick.countedAt, source: "hizli" as const, by: quick.by }
+    : null;
+  const m = monthEnd
+    ? { base: monthEnd.qty * monthEnd.factor, at: monthEnd.at, day: monthEnd.day, recordedAt: monthEnd.recordedAt ?? monthEnd.at, source: "ay-sonu" as const, by: monthEnd.by }
+    : null;
   if (!q || !m) return q ?? m;
   return Date.parse(m.at) > Date.parse(q.at) ? m : q;
 }
@@ -164,18 +176,26 @@ export function latestOnHand(
  * "Siparişte" (D3): iptal olmayan, son 14 günde gönderilen ya da beklenen günü dünden eski olmayan (teslim süresi uzun
  * sipariş gelene kadar) ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra
  * geldi ("Geldi" ya da eşleşen faturanın günü). Kapatılan ama "Geldi" denmemiş sipariş kapandığı anda gelmiş sayılır
- * (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Kalem sipariş biriminde × birimin içeriği.
+ * (Kapat işi bitirir; gelmeyen sipariş iptal edilir). Ay sonu sayımı geç girildiyse (anı ayın son günü, kaydı sonra)
+ * arada denen Geldi receivedAtFor'un kuralıyla okunur: sayımdan önce gönderilip sayımın gününe kadar beklenen mal
+ * sayımdadır (Geldi'ye sayım girilmeden önce dokunulsa da sonra dokunulsa da aynı sonuç). Kalem sipariş biriminde ×
+ * birimin içeriği.
  */
-export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, onHandAt: string | null, today: string): { base: number; orderIds: number[] } {
+export function onOrderFor(orders: readonly OrderLite[], ingredientId: number, count: CountRef | null, today: string): { base: number; orderIds: number[] } {
   const since = addDays(today, -IN_TRANSIT_DAYS);
   const expectedSince = addDays(today, -IN_TRANSIT_GRACE_DAYS);
-  const countAt = onHandAt ? Date.parse(onHandAt) : null;
+  const countAt = count ? Date.parse(count.at) : null;
+  const recordedAt = count ? Date.parse(count.recordedAt ?? count.at) : null;
   let base = 0;
   const orderIds: number[] = [];
   for (const o of orders) {
     if (o.status === "cancelled" || (o.sentDay < since && o.expectedOn < expectedSince)) continue;
     const arrived = o.receivedAt ?? (o.status === "closed" ? o.closedAt : null);
-    if (arrived && countAt !== null && Date.parse(arrived) <= countAt) continue;
+    if (arrived && count && countAt !== null && recordedAt !== null) {
+      const t = Date.parse(arrived);
+      if (t <= countAt) continue;
+      if (t <= recordedAt && o.expectedOn <= count.day && Date.parse(o.sentAt) < countAt) continue;
+    }
     const mine = o.lines.filter((l) => l.ingredientId === ingredientId);
     if (!mine.length) continue;
     base += mine.reduce((a, l) => a + l.qty * l.unitSize, 0);

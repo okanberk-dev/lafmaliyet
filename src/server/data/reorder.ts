@@ -150,8 +150,8 @@ export const isTrackable = (i: Pick<Ingredient, "active" | "countUnit" | "priceS
 
 /**
  * Kalem başına eldeki: en yeni hızlı sayım ya da bu ayın / geçen ayın ay sonu sayımı (hangisi yeniyse; latestOnHand).
- * Ay sonu sayımının anı monthEndCountAt'ten: geç girilen ya da düzeltilen geçen ayın sayımı ayın son gününündür. İki
- * sorgu. `today` sayımın ayları için (takvim günü, Türkiye).
+ * Ay sonu sayımının anı monthEndCountAt'ten: geç girilen ya da düzeltilen geçen ayın sayımı ayın son gününündür (kayıt
+ * anı `recordedAt`: arada denen Geldi'yi onOrderFor okur). İki sorgu. `today` sayımın ayları için (takvim günü, Türkiye).
  */
 export async function loadOnHand(ids: number[], today: string, countUnits: Map<number, string | null>): Promise<Map<number, OnHand>> {
   if (!ids.length) return new Map();
@@ -177,11 +177,11 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
       .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [month, shiftMonth(month, -1)]))),
   ]);
   const quickBy = new Map(quick.map((r) => [r.ingredientId, r]));
-  const monthBy = new Map<number, { qty: number; factor: number | null; by: string | null; at: Date }>();
+  const monthBy = new Map<number, { qty: number; factor: number | null; by: string | null; at: Date; recordedAt: Date }>();
   for (const r of monthEnd) {
     const at = monthEndCountAt(r.month, r.updatedAt);
     const cur = monthBy.get(r.ingredientId);
-    if (!cur || at > cur.at) monthBy.set(r.ingredientId, { qty: r.qty, factor: r.factor, by: r.by, at });
+    if (!cur || at > cur.at) monthBy.set(r.ingredientId, { qty: r.qty, factor: r.factor, by: r.by, at, recordedAt: r.updatedAt });
   }
   const out = new Map<number, OnHand>();
   for (const id of ids) {
@@ -189,7 +189,16 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
     const mr = monthBy.get(id);
     const oh = latestOnHand(
       qr ? { qty: qr.qty, factor: qr.factor, countedAt: qr.countedAt.toISOString(), day: qr.day, by: qr.by } : null,
-      mr ? { qty: mr.qty, factor: mr.factor ?? countFactor(countUnits.get(id) ?? null), at: mr.at.toISOString(), day: businessDate(mr.at), by: mr.by } : null,
+      mr
+        ? {
+            qty: mr.qty,
+            factor: mr.factor ?? countFactor(countUnits.get(id) ?? null),
+            at: mr.at.toISOString(),
+            day: businessDate(mr.at),
+            recordedAt: mr.recordedAt.toISOString(),
+            by: mr.by,
+          }
+        : null,
     );
     if (oh) out.set(id, oh);
   }
@@ -469,7 +478,7 @@ export async function loadReorderData(model?: Model): Promise<ReorderData> {
             parBase: row.parBase,
             perDay: u ? u.perDay : null,
             onHand: oh,
-            onOrder: onOrderFor(orders, ing.id, oh?.at ?? null, today).base,
+            onOrder: onOrderFor(orders, ing.id, oh, today).base,
             expectedUnitPrice: price?.unitPrice ?? null,
             priceEstimated: price?.estimated ?? false,
           },

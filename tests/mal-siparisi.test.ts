@@ -145,12 +145,13 @@ test("önerilen birim: küsur dörtte birse bir birim daha; az kaldıysa en az b
 test("eldeki: hangisi yeniyse (hızlı ya da ay sonu), miktar × çarpan; ikisi de yoksa null", () => {
   const quick = { qty: 6, factor: 1000, countedAt: "2026-10-26T07:30:00.000Z", day: "2026-10-26", by: "Ayşe" };
   const monthEnd = { qty: 9, factor: 1000, at: "2026-10-01T06:00:00.000Z", day: "2026-10-01", by: "Mehmet" };
-  assert.deepEqual(latestOnHand(quick, monthEnd), { base: 6000, at: quick.countedAt, day: "2026-10-26", source: "hizli", by: "Ayşe" });
+  assert.deepEqual(latestOnHand(quick, monthEnd), { base: 6000, at: quick.countedAt, day: "2026-10-26", recordedAt: quick.countedAt, source: "hizli", by: "Ayşe" });
   const newer = { ...monthEnd, at: "2026-10-27T06:00:00.000Z", day: "2026-10-27" };
   assert.equal(latestOnHand(quick, newer)?.source, "ay-sonu");
   assert.equal(latestOnHand(quick, newer)?.base, 9000);
   assert.equal(latestOnHand(null, null), null);
   assert.equal(latestOnHand(null, monthEnd)?.base, 9000);
+  assert.equal(latestOnHand(null, monthEnd)?.recordedAt, monthEnd.at, "kayıt anı verilmezse sayımın anı");
   // Eylül sayımı 27 Ekim'de düzeltildi: anı 30 Eylül'ün sonu, 26 Ekim'in hızlı sayımı daha yeni
   const sepAt = monthEndCountAt("2026-09", new Date("2026-10-27T06:00:00Z"));
   assert.equal(latestOnHand(quick, { ...monthEnd, at: sepAt.toISOString(), day: businessDate(sepAt) })?.source, "hizli");
@@ -228,33 +229,35 @@ function order(o: Partial<OrderLite> = {}): OrderLite {
 test("siparişte (D3): iptal olmayan, son 14 gün ya da beklenen günü geçmemiş, sayımda olmayan (gelmedi ya da sayımdan sonra geldi)", () => {
   const countAt = "2026-10-26T07:30:00.000Z";
   const today = "2026-10-26";
-  assert.equal(onOrderFor([order()], MILK.id, countAt, today).base, 24000, "gelmedi: sayılır");
-  assert.equal(onOrderFor([order({ receivedAt: "2026-10-24T09:00:00.000Z" })], MILK.id, countAt, today).base, 0, "sayımdan önce geldi");
-  assert.equal(onOrderFor([order({ receivedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, countAt, today).base, 24000, "sayımdan sonra geldi");
-  assert.equal(onOrderFor([order({ status: "cancelled" })], MILK.id, countAt, today).base, 0);
-  assert.equal(onOrderFor([order({ sentDay: "2026-10-11" })], MILK.id, countAt, today).base, 0, "15 gün önce");
-  assert.equal(onOrderFor([order({ sentDay: "2026-10-12" })], MILK.id, countAt, today).base, 24000, "14 gün önce");
+  const count = { at: countAt, day: today };
+  assert.equal(onOrderFor([order()], MILK.id, count, today).base, 24000, "gelmedi: sayılır");
+  assert.equal(onOrderFor([order({ receivedAt: "2026-10-24T09:00:00.000Z" })], MILK.id, count, today).base, 0, "sayımdan önce geldi");
+  assert.equal(onOrderFor([order({ receivedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, count, today).base, 24000, "sayımdan sonra geldi");
+  assert.equal(onOrderFor([order({ status: "cancelled" })], MILK.id, count, today).base, 0);
+  assert.equal(onOrderFor([order({ sentDay: "2026-10-11" })], MILK.id, count, today).base, 0, "15 gün önce");
+  assert.equal(onOrderFor([order({ sentDay: "2026-10-12" })], MILK.id, count, today).base, 24000, "14 gün önce");
   // Teslim süresi uzun sipariş 14 günden eski olsa da beklenen günün ertesine kadar siparişte (zil ondan sonra sorar)
   const long = order({ sentAt: "2026-10-05T08:00:00.000Z", sentDay: "2026-10-05", expectedOn: "2026-10-26" });
-  assert.equal(onOrderFor([long], MILK.id, countAt, today).base, 24000, "21 günlük teslim: beklenen gün gelmedi");
-  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-25" }], MILK.id, countAt, today).base, 24000, "beklenen gün dün");
-  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-24" }], MILK.id, countAt, today).base, 0, "beklenen günden 2 gün sonra");
+  assert.equal(onOrderFor([long], MILK.id, count, today).base, 24000, "21 günlük teslim: beklenen gün gelmedi");
+  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-25" }], MILK.id, count, today).base, 24000, "beklenen gün dün");
+  assert.equal(onOrderFor([{ ...long, expectedOn: "2026-10-24" }], MILK.id, count, today).base, 0, "beklenen günden 2 gün sonra");
   assert.equal(IN_TRANSIT_GRACE_DAYS, LATE_GRACE_DAYS, "zilin 'gelmedi mi' sorusuyla aynı gün");
   // Faturayla eşleşen, faturanın günü (öğlen) sayımdan önce: sayımda
-  assert.equal(onOrderFor([order({ invoiceId: 9, receivedAt: "2026-10-24T09:00:00.000Z", status: "closed" })], MILK.id, countAt, today).base, 0);
-  assert.equal(onOrderFor([order()], COFFEE.id, countAt, today).base, 0, "başka kalem");
-  assert.deepEqual(onOrderFor([order({ id: 4 }), order({ id: 5, lines: [line({ qty: 1 })] })], MILK.id, countAt, today), { base: 36000, orderIds: [4, 5] });
+  assert.equal(onOrderFor([order({ invoiceId: 9, receivedAt: "2026-10-24T09:00:00.000Z", status: "closed" })], MILK.id, count, today).base, 0);
+  assert.equal(onOrderFor([order()], COFFEE.id, count, today).base, 0, "başka kalem");
+  assert.deepEqual(onOrderFor([order({ id: 4 }), order({ id: 5, lines: [line({ qty: 1 })] })], MILK.id, count, today), { base: 36000, orderIds: [4, 5] });
 });
 
 test("siparişte: kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır (14 gün beklemez)", () => {
   const countAt = "2026-10-26T07:30:00.000Z";
   const today = "2026-10-26";
-  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, countAt, today).base, 0, "sayımdan önce kapandı");
-  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, countAt, today).base, 24000, "sayımdan sonra kapandı");
+  const count = { at: countAt, day: today };
+  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, count, today).base, 0, "sayımdan önce kapandı");
+  assert.equal(onOrderFor([order({ status: "closed", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, count, today).base, 24000, "sayımdan sonra kapandı");
   // Geldi denmişse onun anı (kapanış değil)
-  assert.equal(onOrderFor([order({ status: "closed", receivedAt: "2026-10-24T09:00:00.000Z", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, countAt, today).base, 0);
+  assert.equal(onOrderFor([order({ status: "closed", receivedAt: "2026-10-24T09:00:00.000Z", closedAt: "2026-10-26T09:00:00.000Z" })], MILK.id, count, today).base, 0);
   // Yeniden açılan (açık, kapanış anı dolu) gelmemiş sipariş siparişte
-  assert.equal(onOrderFor([order({ closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, countAt, today).base, 24000);
+  assert.equal(onOrderFor([order({ closedAt: "2026-10-25T09:00:00.000Z" })], MILK.id, count, today).base, 24000);
 });
 
 test("Geldi'nin anı: sayımın gününe kadar beklenen sipariş sayımdan sonra işaretlenince sayımın öncesi; liste ikinci kez saymaz", () => {
@@ -268,7 +271,7 @@ test("Geldi'nin anı: sayımın gününe kadar beklenen sipariş sayımdan sonra
   const sent = order({ id: 4, supplier: "Ispaş", supplierKey: "ispaş", sentAt: ispas.sentAt, sentDay: "2026-10-19", expectedOn: ispas.expectedOn, lines: [line({ qty: 1, unit: "paket", unitSize: 5500 })] });
   const today = "2026-10-24";
   const plan = (receivedAt: string) => {
-    const onOrder = onOrderFor([{ ...sent, receivedAt }], MILK.id, count.at, today).base;
+    const onOrder = onOrderFor([{ ...sent, receivedAt }], MILK.id, count, today).base;
     const onHand = { base: 2000, at: count.at, day: count.day, source: "hizli" as const, by: "Ayşe" };
     return planLine(item({ supplierKey: "ispaş", supplierName: "Ispaş", parBase: 4500, perDay: null, onHand, onOrder, orderUnit: "paket", orderUnitSize: 5500 }), S, tap);
   };
@@ -296,15 +299,16 @@ test("Ekim sayımı 3 Kasım'da girilince: arada gelen süt siparişte kalır, a
   // kapanıştan sonra 6 LT) 03.11 11:00'de girildi
   const quick = { qty: 9, factor: 1000, countedAt: "2026-10-26T07:30:00.000Z", day: "2026-10-26", by: "Ayşe" };
   const octAt = monthEndCountAt("2026-10", new Date("2026-11-03T08:00:00Z"));
-  const oct = { qty: 6, factor: 1000, at: octAt.toISOString(), day: businessDate(octAt), by: "Sahip" };
+  const oct = { qty: 6, factor: 1000, at: octAt.toISOString(), day: businessDate(octAt), recordedAt: "2026-11-03T08:00:00.000Z", by: "Sahip" };
   const sent = { sentAt: "2026-10-30T15:00:00.000Z", expectedOn: "2026-11-02" };
   const receivedAt = receivedAtFor(sent, { at: quick.countedAt, day: quick.day }, new Date("2026-11-02T06:05:00Z")).toISOString();
   const o = order({ ...sent, sentDay: "2026-10-30", receivedAt });
   const onHand = latestOnHand(quick, oct)!;
   assert.deepEqual([onHand.source, onHand.day, onHand.base], ["ay-sonu", "2026-10-31", 6000]);
-  // Kayıt anı (03.11) yazılsaydı süt sayımda sayılır, 2 koli yeniden önerilirdi
-  assert.equal(onOrderFor([o], MILK.id, onHand.at, "2026-11-03").base, 24000);
-  const l = planLine(item({ onHand, onOrder: onOrderFor([o], MILK.id, onHand.at, "2026-11-03").base }), S, new Date("2026-11-03T08:30:00Z"));
+  // Kayıt anı (03.11) yazılsaydı süt sayımda sayılır, 2 koli yeniden önerilirdi; Geldi kayıttan önce denmiş olsa da süt
+  // ayın son gününden sonra bekleniyordu, sayımda değil
+  assert.equal(onOrderFor([o], MILK.id, onHand, "2026-11-03").base, 24000);
+  const l = planLine(item({ onHand, onOrder: onOrderFor([o], MILK.id, onHand, "2026-11-03").base }), S, new Date("2026-11-03T08:30:00Z"));
   assert.equal(l.packs, 0);
   assert.equal(l.status, "yeterli");
   assert.deepEqual(readySuppliers(planGroups([l]), [o], onHand.at), [], "Bugün'de 'Sipariş hazır' yok");
@@ -317,20 +321,53 @@ test("Ekim sayımı 3 Kasım'da girilince: arada gelen süt siparişte kalır, a
   assert.equal(latestOnHand({ ...quick, qty: 20, countedAt: "2026-11-16T07:30:00.000Z", day: "2026-11-16" }, { ...oct, at: fixed.toISOString(), day: businessDate(fixed) })?.source, "hizli");
 });
 
+test("Geldi önce, geçen ayın sayımı sonra girilince: ayın son gününe kadar beklenen mal sayımdadır, siparişte ikinci kez sayılmaz", () => {
+  // Süt 27.09 gönderildi, 29.09 (Salı) geldi ama Geldi denmedi; 30.09 kapanışta Eylül sayımı yapıldı (süt dahil 6 LT).
+  // 01.10 10:00'da yönetici Yoldaki siparişler'den Geldi'ye dokundu (son sayım 28.09'un hızlı sayımı); Eylül sayımı
+  // 01.10 15:00'te girildi
+  const quick = { qty: 20, factor: 1000, countedAt: "2026-09-28T07:00:00.000Z", day: "2026-09-28", by: "Ayşe" };
+  const sent = { sentAt: "2026-09-27T08:00:00.000Z", expectedOn: "2026-09-29" };
+  const tap = new Date("2026-10-01T07:00:00Z");
+  assert.equal(receivedAtFor(sent, { at: quick.countedAt, day: quick.day }, tap), tap, "dokunuşta son sayım 28.09'unki; sipariş ondan sonra bekleniyordu");
+  const entered = new Date("2026-10-01T12:00:00Z");
+  const sepAt = monthEndCountAt("2026-09", entered);
+  const onHand = latestOnHand(quick, { qty: 6, factor: 1000, at: sepAt.toISOString(), day: businessDate(sepAt), recordedAt: entered.toISOString(), by: "Sahip" })!;
+  assert.deepEqual([onHand.source, onHand.day, onHand.base, onHand.recordedAt], ["ay-sonu", "2026-09-30", 6000, entered.toISOString()]);
+  const o = order({ ...sent, sentDay: "2026-09-27", receivedAt: tap.toISOString() });
+  for (const today of ["2026-10-01", "2026-10-02", "2026-10-04"]) assert.equal(onOrderFor([o], MILK.id, onHand, today).base, 0, `${today}: sayımda`);
+  const l = planLine(item({ onHand, onOrder: onOrderFor([o], MILK.id, onHand, "2026-10-01").base }), S, new Date("2026-10-01T13:00:00Z"));
+  assert.equal(l.packs, 2, "2 koli süt yine önerilir");
+  // Sıra sonucu değiştirmez: sayım önce girilip Geldi sonra denince de (receivedAtFor sayımın öncesini yazar)
+  const after = receivedAtFor(sent, { at: onHand.at, day: onHand.day }, new Date("2026-10-01T13:00:00Z"));
+  assert.equal(onOrderFor([{ ...o, receivedAt: after.toISOString() }], MILK.id, onHand, "2026-10-01").base, 0);
+  // Ayın son gününden sonra beklenen mal (01.10'da geldi) sayımda değil: siparişte kalır
+  assert.equal(onOrderFor([{ ...o, expectedOn: "2026-10-01" }], MILK.id, onHand, "2026-10-01").base, 24000);
+  // Sayım girildikten sonra denen Geldi, sayımın gününe kadar beklenmeyen sipariş: dokunuş anı, siparişte
+  assert.equal(onOrderFor([{ ...o, expectedOn: "2026-10-01", receivedAt: "2026-10-01T13:00:00.000Z" }], MILK.id, onHand, "2026-10-01").base, 24000);
+  // Sayımın sınırından sonra gönderilen sipariş sayımda olamaz
+  const late = order({ sentAt: "2026-10-01T03:00:00.000Z", sentDay: "2026-10-01", expectedOn: "2026-09-30", receivedAt: tap.toISOString() });
+  assert.equal(onOrderFor([late], MILK.id, onHand, "2026-10-01").base, 24000);
+  // Hızlı sayımın kayıt anı sayımın anıdır: ondan sonra denen Geldi siparişte (kural değişmedi)
+  const q = latestOnHand({ ...quick, countedAt: "2026-09-29T09:00:00.000Z", day: "2026-09-29" }, null)!;
+  assert.equal(q.recordedAt, q.at);
+  assert.equal(onOrderFor([{ ...o, receivedAt: "2026-09-29T10:00:00.000Z" }], MILK.id, q, "2026-09-30").base, 24000);
+});
+
 test("erken gelen mal: sayımdan önce Geldi denirse siparişte sayılmaz; denmezse ya da sayımdan sonra denirse sayılır", () => {
   // Cumartesi gönderilen, Salı beklenen süt Pazartesi sabah erken geldi; sayım 10:15
   const early = order({ sentAt: "2026-10-24T10:00:00.000Z", sentDay: "2026-10-24", expectedOn: "2026-10-27" });
   const countAt = "2026-10-26T07:15:00.000Z";
   const today = "2026-10-26";
-  assert.equal(onOrderFor([early], MILK.id, countAt, today).base, 24000, "işaretlenmedi: siparişte");
+  const count = { at: countAt, day: today };
+  assert.equal(onOrderFor([early], MILK.id, count, today).base, 24000, "işaretlenmedi: siparişte");
   // Sayımdan önce Geldi (son sayım geçen haftanın): dokunuş anı, mal sayımda
   const before = receivedAtFor(early, { at: "2026-10-19T07:30:00.000Z", day: "2026-10-19" }, new Date("2026-10-26T06:50:00Z"));
   assert.equal(before.toISOString(), "2026-10-26T06:50:00.000Z");
-  assert.equal(onOrderFor([{ ...early, receivedAt: before.toISOString() }], MILK.id, countAt, today).base, 0);
+  assert.equal(onOrderFor([{ ...early, receivedAt: before.toISOString() }], MILK.id, count, today).base, 0);
   // Sayımdan sonra Geldi: beklenen gün sayımdan sonra, dokunuş anı kalır, mal sayımdan sonra geldi
   const after = receivedAtFor(early, { at: countAt, day: today }, new Date("2026-10-26T08:00:00Z"));
   assert.equal(after.toISOString(), "2026-10-26T08:00:00.000Z");
-  assert.equal(onOrderFor([{ ...early, receivedAt: after.toISOString() }], MILK.id, countAt, today).base, 24000);
+  assert.equal(onOrderFor([{ ...early, receivedAt: after.toISOString() }], MILK.id, count, today).base, 24000);
 });
 
 test("hızlı sayım çakışması: kayıt formdaki biçimle karşılaştırılır (1,2345 ya da aynı gün değişen sayım birimi çakışma değil)", () => {
