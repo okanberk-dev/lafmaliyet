@@ -9,7 +9,7 @@ import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { emailReport } from "@/server/cash/report-email";
-import { removeCashReport, reportSchema, saveCashReport } from "@/server/cash/report-store";
+import { removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, cashReportsBetween, getCashReport, loadCashSettings, nextReportAfter, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -26,7 +26,11 @@ import { attempt, UserError, zDate } from "./util";
 // güncellenir. Gönderilince kasa raporu alıcılarına e-posta gider; WhatsApp metni ekranda hazırlanır (docs/KASA-RAPORU.md).
 // Yazım yolu src/server/cash/report-store.ts, e-posta src/server/cash/report-email.ts; bu dosyada yalnız uçlar.
 
-/** Raporu kaydeder (yoksa ekler, varsa günceller), alıcılara e-postalar; WhatsApp metnini ve bağlantısını döner */
+/**
+ * Raporu kaydeder (yoksa ekler, varsa günceller), alıcılara e-postalar; WhatsApp metnini ve bağlantısını döner.
+ * Personelin değişikliği yöneticinin onayını gerektiriyorsa (ertesi gün kasa alanı ya da sayan, kilitli gün) hiçbir şey
+ * yazılmaz, `needsApproval` döner: form yazılanları korur ve "Onaya gönder"e geçer (requestCashCorrection).
+ */
 export async function submitCashReport(input: z.input<typeof reportSchema>) {
   return attempt(async () => {
     const me = await requireUser();
@@ -34,7 +38,9 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     // laffogato.net'in o günkü online satışı e-postaya bilgi satırı olarak girer: istek kayıtla aynı anda başlar, site
     // yavaşsa e-posta en çok 8 saniye bekler, ulaşılamazsa satırsız gider (kasa rakamlarına hiç girmez)
     const site = fetchTillOnlineRow(data.date);
-    const { row: saved, changes, prevCarry } = await saveCashReport(getDb(), me, data);
+    const out = await saveCashReport(getDb(), me, data);
+    if (out.kind === "needsApproval") return { needsApproval: true as const, request: out.request, gate: out.gate };
+    const { row: saved, changes, prevCarry } = out;
     const cashDiff = saved.cashDiff;
     const email = await emailReport(saved.id, { site });
     await logActivity(
@@ -53,6 +59,7 @@ export async function submitCashReport(input: z.input<typeof reportSchema>) {
     ]);
     const text = whatsappText(dto, { by: me.name, revision: saved.revision, waste, ...extras, ...integrity });
     return {
+      needsApproval: false as const,
       id: saved.id,
       revision: saved.revision,
       cashDiff,
@@ -112,6 +119,8 @@ export async function updateCashSettings(input: z.input<typeof settingsSchema>) 
     if (invalid.length) throw new UserError(`Geçersiz e-posta: ${invalid.slice(0, 3).join(", ")}`);
     if (valid.length > 10) throw new UserError("En çok 10 adres girilebilir");
     if (data.emailEnabled && !valid.length) throw new UserError("E-posta açıkken en az bir adres girin");
+    // Kasa e-postasında karaoke ön ödemesi var: personel tutarları görmez, adresi alıcı olamaz
+    if ((await staffEmailsIn(getDb(), valid)).length) throw new UserError("Bu adres bir personel hesabının; kasa e-postasında karaoke ön ödemesi var.");
     const whatsapp = data.whatsapp.trim() ? waPhone(data.whatsapp) : null;
     if (data.whatsapp.trim() && !whatsapp) throw new UserError("WhatsApp numarası geçersiz (ör. 0532 123 45 67)");
     await saveCashSettings({ recipients: valid, emailEnabled: data.emailEnabled, whatsapp });

@@ -1,4 +1,4 @@
-import { ArrowLeft, Gift, Globe, ReceiptText } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Gift, Globe, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -26,6 +26,7 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { genitive } from "@/lib/recipe-change";
 import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
+import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
   cashCounters,
   cashReportsBetween,
@@ -53,6 +55,7 @@ import { photoStorage } from "@/server/storage/photos";
 import { CashForm } from "./cash-form";
 import { CashHistory, type CashHistoryPhotos, type CashMonthTotals } from "./cash-history";
 import { CashOutsCard } from "./cash-outs";
+import { MyCashRequests } from "./cash-requests";
 import { CashSettingsCard } from "./cash-settings";
 import { DIFF_TONE } from "./cash-summary";
 
@@ -126,7 +129,15 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     showForm ? cashCounters() : Promise.resolve([]),
   ]);
-  const revisions = report && report.revision > 1 ? await cashRevisionsFor([report.id]) : [];
+  const [revisions, proposedMap, dayRequests, adminRequests, myRequests] = await Promise.all([
+    report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
+    report && report.revision > 1 ? proposedByForReports([report.id]) : Promise.resolve(new Map<number, Map<number, string>>()),
+    // Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı); yönetici: formdaki bant
+    !admin && report ? pendingCashForDay(date, user) : Promise.resolve(null),
+    admin && showForm ? pendingCashForDayAdmin(date) : Promise.resolve([]),
+    admin ? Promise.resolve([]) : myCashRequests(user.id),
+  ]);
+  const proposedBy = report ? Object.fromEntries(proposedMap.get(report.id) ?? []) : undefined;
   // Personel bugünü ve dünü düzenler; ertesi günün raporu girildiyse o gün kapanır (kasadan çıkanlar ve fotoğraflar da)
   const staffOpen = staffDayEditable(date, { hasReport: Boolean(report), laterReport: next !== null });
   const canEdit = admin || staffOpen;
@@ -208,7 +219,23 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       me={{ id: user.id, name: user.name }}
       revisions={revisions}
       locked={!admin && Boolean(report) && !staffOpen && next !== null}
+      requests={dayRequests}
+      proposedBy={proposedBy}
     />
+  ) : null;
+  // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)
+  const adminBand = adminRequests.length ? (
+    <div role="note" className="space-y-1 rounded-2xl bg-warn-soft px-4 py-3 text-sm leading-5 text-warn">
+      {adminRequests.map((r) => (
+        <p key={r.id} className="flex flex-wrap items-center gap-x-2">
+          <ClipboardCheck size={15} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0">{r.kind === "kasa-silme" ? `${r.requestedByName} raporun silinmesini istedi` : `${genitive(r.requestedByName)} düzeltme önerisi bekliyor`}</span>
+          <Link href={`/panel/onaylar#istek-${r.id}`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
+            Onaylar&apos;da bakın
+          </Link>
+        </p>
+      ))}
+    </div>
   ) : null;
   // Gün içinde kasadan çıkanlar: gün boyunca kullanılan kart (akşam formu boşken de)
   const outsCard = showForm ? (
@@ -271,6 +298,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             )}
           </ul>
         </Card>
+        <MyCashRequests requests={myRequests} />
       </div>
     );
   }
@@ -288,7 +316,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     loadMonthEntry(month),
   ]);
   const days = monthDays(month, today, monthReports);
-  const monthRevisions = await cashRevisionsFor(monthReports.filter((r) => r.revision > 1).map((r) => r.id));
+  const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
+  const [monthRevisions, monthProposed] = await Promise.all([cashRevisionsFor(revised), proposedByForReports(revised)]);
   const checks = carryChecks(monthReports, before);
   const lastReport = monthReports[0];
   const afterCheck = after && lastReport ? carryCheck(after.date, after.openingCash, { date: lastReport.date, amount: computeCash(lastReport).carryOver }) : null;
@@ -322,6 +351,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       {showForm ? (
         <>
           {dayChips}
+          {adminBand}
           {outsCard}
           {form}
           {siteRow}
@@ -341,6 +371,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             cashOuts={outsByDate}
             carry={carryByDate}
             revisions={revisionsById}
+            proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}
             monthLine={
               monthLine ? (
                 <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">

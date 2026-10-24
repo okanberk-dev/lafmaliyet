@@ -197,7 +197,8 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
   const store = readFileSync(join(process.cwd(), "src/server/cash/report-store.ts"), "utf8");
   assert.match(store, /export async function saveCashReport[\s\S]*?me\.role !== "admin" && !staffCanReport\(data\.date, now\)/);
   // Arada başkası gönderdiyse üzerine yazılmaz
-  assert.match(store, /if \(prev && prev\.revision !== o\.revision\)/);
+  assert.match(store, /export function assertRevision[\s\S]*?if \(prev && prev\.revision !== revision\)/);
+  assert.match(store, /export async function writeCashReport[\s\S]*?assertRevision\(prev, o\.revision\)/);
   for (const fn of ["deleteCashReport", "updateCashSettings", "sendCashTestEmail"]) {
     assert.match(src, new RegExp(`export async function ${fn}[\\s\\S]*?requireAdmin\\(\\)`), fn);
   }
@@ -267,7 +268,8 @@ test("düzeltmeler: değişen alanlar, tutar biçimi, boş, metin alanı içerik
       ["bankPos", "Banka POS", "8.150 ₺", "—", false],
       ["zNo", "Z no", "1234", "1235", false],
       ["note", "Not", "", "", false],
-      ["countedByName", "Sayan", "Ayşe", "Mehmet", false],
+      // Sayan da kasa alanı sayılır (dalga 10): ertesi gün değişirse yönetici uyarılır, personel onayla değiştirir
+      ["countedByName", "Sayan", "Ayşe", "Mehmet", true],
     ],
   );
   assert.equal(plain(changeLine(changes[0])), "Sayılan nakit: 3.430 ₺ → 3.530 ₺");
@@ -424,7 +426,8 @@ test("personelin kilidi: bugün ve dün; günün raporu varken ertesi günün ra
 test("kilit her yerde aynı kural: rapor eylemi, kasa sayfası, kasadan çıkanlar ve fotoğraflar (staffDayOpen)", () => {
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
   const store = read("src/server/cash/report-store.ts");
-  assert.match(store, /if \(prev && me\.role !== "admin" && \(await hasLaterReport\(tx, data\.date\)\)\) throw new UserError\("Ertesi günün raporu girildi; bu raporu artık yalnız yönetici düzeltebilir"\)/);
+  // Ertesi günün raporu girildiyse (kilitli) personelin değişikliği onaya döner (staffCashGate; dalga 10)
+  assert.match(store, /if \(prev && me\.role !== "admin"\) \{[\s\S]*?const laterReport = await hasLaterReport\(tx, data\.date\);[\s\S]*?staffCashGate\(\{ date: data\.date, now, hasReport: true, laterReport, changes \}\)/);
   assert.match(store, /export async function hasLaterReport[\s\S]*?gt\(s\.cashReports\.date, date\)/);
   // Açılış notu ve önceki sürümün kopyası aynı işlemde, satır kilitliyken
   assert.match(store, /export async function lockCashReport[\s\S]*?\.for\("update"\)/);

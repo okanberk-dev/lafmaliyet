@@ -72,6 +72,7 @@ export function CashHistory({
   cashOuts = {},
   carry = {},
   revisions = {},
+  proposedBy = {},
   monthLine = null,
 }: {
   monthLabel: string;
@@ -87,6 +88,8 @@ export function CashHistory({
   carry?: Record<string, CarryCheck>;
   /** Raporların önceki sürümleri (rapor kimliğine göre) */
   revisions?: Record<number, CashRevisionRow[]>;
+  /** Onaylanan düzeltme önerilerinin önerenleri (rapor ve sürüm kimliğine göre) */
+  proposedBy?: Record<number, Record<number, string>>;
   /** Ayın açık gün ve cirosunun nereden geldiği (Satışlar'a bağlantı) */
   monthLine?: ReactNode;
 }) {
@@ -275,7 +278,7 @@ export function CashHistory({
             {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
             <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} carry={openCarry} next={openNext} />
-            <CashRevisions report={open} revisions={revisions[open.id] ?? []} />
+            <CashRevisions report={open} revisions={revisions[open.id] ?? []} proposedBy={proposedBy[open.id]} />
           </div>
         ) : null}
       </Dialog>

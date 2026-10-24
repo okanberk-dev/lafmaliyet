@@ -229,8 +229,11 @@ export const CHANGE_LABELS: Record<ChangeKey, string> = {
   countedByName: "Sayan",
 };
 
-/** Kasadaki nakdi değiştiren alanlar: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır */
-export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver"];
+/**
+ * Kasadaki nakdi değiştiren alanlar ve kasayı sayan: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır,
+ * personel ertesi gün yalnız yönetici onayıyla değiştirir (staffCashGate)
+ */
+export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver", "countedByName"];
 
 const TEXT_FIELDS: readonly ChangeKey[] = ["cashOutNote", "note"];
 const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "countedByName"];
@@ -285,6 +288,19 @@ export function isLateEdit(date: string, submittedAt: Date): boolean {
 }
 
 /**
+ * Personelin kayıtlı rapordaki değişikliği nasıl kaydedilir (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği):
+ * "direct" doğrudan, "request" yöneticinin onayına giden istek, "closed" personele kapalı. Rapor yoksa (unutulan dünü
+ * girmek) doğrudan. Ertesi günün raporu girildiyse (kilitli gün) her değişiklik istek; iş günü kapandıktan sonra
+ * (ertesi gün 05:00'ten sonra) kasa alanı ya da sayan değişirse istek; metin ve Z alanları doğrudan.
+ */
+export function staffCashGate(o: { date: string; now: Date; hasReport: boolean; laterReport: boolean; changes: readonly Pick<FieldChange, "sensitive">[] }): "direct" | "request" | "closed" {
+  if (!staffCanReport(o.date, o.now)) return "closed";
+  if (!o.hasReport) return "direct";
+  if (o.laterReport) return o.changes.length ? "request" : "direct";
+  return isLateEdit(o.date, o.now) && o.changes.some((c) => c.sensitive) ? "request" : "direct";
+}
+
+/**
  * Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan). Sayanı boş rapor (bu özellikten önce
  * kaydedilmiş) gönderenin saydığı raporudur: kopyaya o yazılır, yoksa ilk düzeltmede kimsenin yapmadığı "Sayan — → Ayşe"
  * değişikliği görünür.
@@ -335,6 +351,8 @@ export interface RevisionEntry {
   at: string;
   by: string;
   byId: number | null;
+  /** Sürüm personelin onaylanan düzeltme önerisiyse öneren (gönderen onaylayan yöneticidir); değilse null */
+  proposedBy: string | null;
   changes: FieldChange[];
   /** İş günü kapandıktan sonra ve kasa alanı değişti */
   late: boolean;
@@ -343,7 +361,8 @@ export interface RevisionEntry {
 /**
  * Raporun düzeltme geçmişi, en yeni önce: kayıtlı sürümler sırayla birbiriyle, sonuncusu raporun şimdiki hâliyle
  * karşılaştırılır. `first`: ilk gönderim (raporun açıldığı an; gönderen yalnız 1. sürümün kopyası varsa bilinir).
- * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar.
+ * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar. `proposedBy`: onaylanan düzeltme önerilerinin
+ * sürüme göre önerenleri (src/server/data/cash-requests.ts proposedByForReports).
  */
 export function historyOf(
   report: CashReportFields & {
@@ -356,6 +375,7 @@ export function historyOf(
     updatedAt: string;
   },
   revisions: CashRevisionRow[],
+  proposedBy?: ReadonlyMap<number, string>,
 ): { entries: RevisionEntry[]; first: { at: string; by: string | null } } {
   const snaps = [...revisions].filter((r) => r.revision < report.revision).sort((a, b) => a.revision - b.revision);
   const versions = [
@@ -366,7 +386,15 @@ export function historyOf(
   for (let i = 1; i < versions.length; i++) {
     const v = versions[i];
     const changes = revisionChanges(versions[i - 1].data, v.data);
-    entries.push({ revision: v.revision, at: v.at, by: v.by, byId: v.byId, changes, late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive) });
+    entries.push({
+      revision: v.revision,
+      at: v.at,
+      by: v.by,
+      byId: v.byId,
+      proposedBy: proposedBy?.get(v.revision) ?? null,
+      changes,
+      late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive),
+    });
   }
   const knownFirst = snaps[0]?.revision === 1 ? snaps[0].submittedByName : report.revision === 1 ? report.submittedByName : null;
   return { entries: entries.reverse(), first: { at: report.createdAt, by: knownFirst } };
@@ -413,20 +441,21 @@ export function lastRevision(
  * Zilin "Kasa raporu ertesi gün değişti" bildirimi: iş günü kapandıktan sonra kasa alanı değişen bütün düzeltmeler,
  * yalnız sonuncusu değil (ardından not için yeniden gönderilen rapor uyarıyı kapatmaz). Bakan yöneticinin kendi
  * düzeltmeleri sayılmaz (`viewer`). `revision`: en yeni geç düzeltmenin sürümü (bildirimin kimliği; yalnız yeni bir geç
- * düzeltme yeniden okunmamış yapar), `by`: düzeltenler, `changes`: o düzeltmelerde değişen kasa alanları, eskiden
- * yeniye. Yoksa null.
+ * düzeltme yeniden okunmamış yapar), `by`: düzeltenler (onaylanan öneride "Mehmet önerdi · Ayşe onayladı"),
+ * `changes`: o düzeltmelerde değişen kasa alanları, eskiden yeniye. Yoksa null.
  */
 export function lateCorrections(
   report: Parameters<typeof historyOf>[0],
   revisions: CashRevisionRow[],
   viewer: number | null,
+  proposedBy?: ReadonlyMap<number, string>,
 ): { revision: number; by: string[]; changes: FieldChange[] } | null {
-  const late = historyOf(report, revisions).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
+  const late = historyOf(report, revisions, proposedBy).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
   if (!late.length) return null;
   const oldestFirst = [...late].reverse();
   return {
     revision: late[0].revision,
-    by: [...new Set(oldestFirst.map((e) => e.by))],
+    by: [...new Set(oldestFirst.map((e) => (e.proposedBy ? `${e.proposedBy} önerdi · ${e.by} onayladı` : e.by)))],
     changes: oldestFirst.flatMap((e) => e.changes.filter((c) => c.sensitive)),
   };
 }

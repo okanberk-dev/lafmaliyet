@@ -41,13 +41,16 @@ import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/phot
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
+import { requestCashCorrection } from "@/server/actions/cash-requests";
 import type { CashEmailOutcome } from "@/server/cash/report-email";
 import type { CashOutDTO } from "@/server/data/cash-outs";
 import type { CashPhotoInfo } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
+import type { OtherPending, OwnCorrection, OwnDelete } from "@/server/data/cash-requests";
 
 import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
+import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
 import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
 
@@ -247,6 +250,10 @@ interface PosPrompt {
  * Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar dolar
  * ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar, okunamayan
  * alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla saklanır.
+ *
+ * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
+ * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
+ * önerisine geçer (fotoğraf yok, "Neden düzeltiyorsunuz?" zorunlu, "Onaya gönder"). Rapor onaya kadar değişmez.
  */
 export function CashForm({
   date,
@@ -263,6 +270,8 @@ export function CashForm({
   me = null,
   revisions = [],
   locked = false,
+  requests = null,
+  proposedBy,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -286,8 +295,12 @@ export function CashForm({
   me?: { id: number; name: string } | null;
   /** Kayıtlı raporun önceki sürümleri */
   revisions?: CashRevisionRow[];
-  /** Personel: ertesi günün raporu girildi, bu rapor artık yalnız yöneticide */
+  /** Personel: ertesi günün raporu girildi, bu rapor yönetici onayıyla düzeltilir ("Düzeltme öner") */
   locked?: boolean;
+  /** Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı) */
+  requests?: { own: (OwnCorrection | OwnDelete)[]; others: OtherPending[] } | null;
+  /** Onaylanan düzeltme önerilerinin önerenleri (sürüme göre; "Değişiklikler") */
+  proposedBy?: Record<number, string>;
 }) {
   const [editing, setEditing] = useState(report === null);
   const [values, setValues] = useState<Values>(() => initialValues(report, carry, cashOuts));
@@ -299,6 +312,14 @@ export function CashForm({
   const [photos, setPhotos] = useState<FormPhoto[]>([]);
   const [marks, setMarks] = useState<Marks>({});
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
+  // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
+  // gönderim (`fromSubmit`: yazılanlar korunur, şerit nedenini söyler)
+  const [proposal, setProposal] = useState<{ gate: "kilitli" | "gec"; fromSubmit: boolean } | null>(null);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [clientKey, setClientKey] = useState(newClientKey);
+  const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
+  const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
   const zUp = usePhotoUpload();
   const posUp = usePhotoUpload();
   const live = preview(values);
@@ -340,8 +361,32 @@ export function CashForm({
     setPhotos([]);
     setMarks({});
     setPosPrompt(null);
+    setProposal(null);
+    setReason("");
+    setReasonError(null);
     setEditing(true);
   }
+
+  /** Düzeltme önerisi: kayıtlı rapordan (kilitli gün) ya da bekleyen önerinin değerlerinden ("Öneriyi düzenle") */
+  function propose(from: OwnCorrection | null) {
+    if (!report) return;
+    edit();
+    if (from) {
+      setValues(initialValues({ ...report, ...from.proposed }, carry, cashOuts));
+      setCounter(from.proposed.countedBy);
+      setReason(from.message ?? "");
+    }
+    setProposal({ gate: from?.gate ?? "kilitli", fromSubmit: false });
+    setClientKey(newClientKey());
+  }
+
+  // Öneriye geçilince neden alanına gidilir (telefonda düğme formun altında; alan ekranın dışında kalmasın)
+  useEffect(() => {
+    if (!proposal?.fromSubmit) return;
+    const el = document.getElementById("k-reason");
+    el?.scrollIntoView({ block: "center" });
+    el?.focus({ preventScroll: true });
+  }, [proposal]);
 
   /** Okumayı forma uygular: yalnız boş alanlar dolar; yeşil özet satırını döner */
   function applyReading(photoId: number, r: CashReading): string | null {
@@ -453,6 +498,28 @@ export function CashForm({
       el?.focus({ preventScroll: true });
       return;
     }
+    if (proposal && report) {
+      // Düzeltme önerisi: neden zorunlu; açılış devirle tutmuyorsa ve not boşsa neden nota da yazılır (sunucuda)
+      const why = reason.trim();
+      if (why.length < 5) {
+        setReasonError("Nedeni en az 5 karakterle yazın");
+        const el = document.getElementById("k-reason");
+        el?.scrollIntoView({ block: "center" });
+        el?.focus({ preventScroll: true });
+        return;
+      }
+      const { date: _day, ...rest } = fields;
+      void _day;
+      start(async () => {
+        const res = await requestCashCorrection({ date, baseRevision: report.revision, fields: rest, countedBy: counter, message: why, clientKey });
+        if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+        toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
+        setProposal(null);
+        setClientKey(newClientKey());
+        setEditing(false);
+      });
+      return;
+    }
     // Açılış önceki devirle tutmuyorsa nedeni nota (sunucu da reddeder; burada not alanına gidilir)
     if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: report?.openingCash ?? null, note: fields.note })) {
       toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
@@ -462,6 +529,13 @@ export function CashForm({
     start(async () => {
       const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      // Ertesi gün kasa alanı ya da sayan, kilitli gün: hiçbir şey kaydedilmedi; yazılanlar yerinde, öneriye geçilir
+      if (res.data.needsApproval) {
+        setProposal({ gate: res.data.gate, fromSubmit: true });
+        setClientKey(newClientKey());
+        toast.info("Bu değişiklik yöneticinin onayıyla olur", { description: "Yazdıklarınız yerinde; nedenini yazıp onaya gönderin." });
+        return;
+      }
       const e: CashEmailOutcome = res.data.email;
       // Kayıtlı raporun düzeltmesi "gönderildi" değil (e-posta yalnız ilk gönderimde gider)
       const head = `${report ? "Rapor güncellendi" : "Rapor gönderildi"} · ${diffText(res.data.cashDiff)}`;
@@ -543,14 +617,26 @@ export function CashForm({
               </Button>
             ) : null}
             {canEdit ? (
-              <Button variant="ghost" size="lg" onClick={edit}>
+              <Button variant="ghost" size="lg" onClick={edit} disabled={Boolean(ownDelete)}>
                 <Pencil size={16} /> Düzenle
               </Button>
             ) : null}
+            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} label={`${longDateTR(date)} kasa raporu`} /> : null}
           </div>
-          {locked ? <p className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">Ertesi günün raporu girildi; düzeltme için yöneticiye yazın.</p> : null}
+          {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
+          {locked ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">
+              <span className="min-w-0 flex-1 basis-56">Ertesi günün raporu girildi; bu raporu yönetici onayıyla düzeltirsiniz.</span>
+              {!ownCorrection && !ownDelete ? (
+                <Button size="sm" variant="secondary" onClick={() => propose(null)}>
+                  <Pencil size={14} /> Düzeltme öner
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
           <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} />
-          <CashRevisions report={report} revisions={revisions} />
+          <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
     );
@@ -620,7 +706,7 @@ export function CashForm({
   const busy = zUp.busy || posUp.busy;
   const photoBlock = (k: CashPhotoKind) => {
     const up = k === "kasa-z" ? zUp : posUp;
-    return photoUi.storage ? (
+    return photoUi.storage && !proposal ? (
       <div className="space-y-2.5 sm:col-span-2">
         <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={busy} />
         <PhotoStatus phase={up.phase} />
@@ -641,6 +727,19 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {proposal ? (
+          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+            <p className="font-semibold">{dayMonthTR(date)} kasa raporu · düzeltme önerisi</p>
+            {proposal.fromSubmit ? (
+              <p className="mt-0.5">
+                {proposal.gate === "kilitli"
+                  ? "Ertesi günün raporu girildi; bu değişiklik yöneticinin onayıyla olur. Nedenini yazıp onaya gönderin."
+                  : "Kasa alanlarını ertesi gün değiştirmek yöneticinin onayıyla olur; nedenini yazıp onaya gönderin."}
+              </p>
+            ) : null}
+            <p className="mt-0.5">Yönetici onaylayınca rapora işlenir; o zamana kadar rapor değişmez.</p>
+          </div>
+        ) : null}
         <Card>
           <CardHeader
             icon={<ReceiptText />}
@@ -771,7 +870,11 @@ export function CashForm({
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         <Card>
-          <CardHeader icon={<Calculator />} title="Sonuç" description={`${longDateTR(date)} · gönderince yöneticiye e-posta gider`} />
+          <CardHeader
+            icon={<Calculator />}
+            title="Sonuç"
+            description={proposal ? `${longDateTR(date)} · önerinin sonucu; rapor onaya kadar değişmez` : `${longDateTR(date)} · gönderince yöneticiye e-posta gider`}
+          />
           <div className="space-y-3 px-5 pb-5">
             {live ? (
               <>
@@ -795,7 +898,9 @@ export function CashForm({
               label="Not"
               htmlFor="k-note"
               hint={
-                noteRequired
+                noteRequired && proposal
+                  ? "Açılış devirle tutmuyor: boş bırakırsanız düzeltmenin nedeni buraya da yazılır"
+                  : noteRequired
                   ? "Açılış devirle tutmuyor: nedenini yazın (zorunlu)"
                   : kind && kind !== "even"
                     ? "Fark var: nedenini kısaca yazın (ör. bozuk para, iade, yanlış fiş)"
@@ -805,11 +910,34 @@ export function CashForm({
             >
               <Textarea id="k-note" value={values.note} onChange={set("note")} rows={3} maxLength={1000} />
             </Field>
+            {proposal ? (
+              <Field label="Neden düzeltiyorsunuz?" htmlFor="k-reason" hint="Yönetici görür; onaylayınca rapora işlenir" error={reasonError ?? undefined} className={reasonError ? undefined : "[&_label]:text-warn"}>
+                <Textarea
+                  id="k-reason"
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReasonError(null);
+                  }}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="ör. teslim edilen yanlış yazılmış"
+                />
+              </Field>
+            ) : null}
             <Button size="lg" className="w-full" onClick={submit} disabled={pending || busy}>
-              <Send size={16} /> {pending ? "Gönderiliyor…" : busy ? "Fotoğraf bekleniyor…" : report ? "Raporu güncelle" : "Raporu gönder"}
+              <Send size={16} /> {pending ? "Gönderiliyor…" : busy ? "Fotoğraf bekleniyor…" : proposal ? "Onaya gönder" : report ? "Raporu güncelle" : "Raporu gönder"}
             </Button>
             {report ? (
-              <Button variant="ghost" className="w-full" onClick={() => setEditing(false)} disabled={pending}>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setProposal(null);
+                  setEditing(false);
+                }}
+                disabled={pending}
+              >
                 Vazgeç
               </Button>
             ) : null}

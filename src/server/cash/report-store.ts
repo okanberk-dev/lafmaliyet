@@ -1,6 +1,6 @@
 import "server-only";
 
-import { count, desc, eq, gt, lt } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -12,13 +12,16 @@ import {
   revisionChanges,
   revisionDataOf,
   staffCanReport,
+  staffCashGate,
   type CashReportFields,
   type FieldChange,
 } from "@/lib/cash-report";
+import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { schema as s, type DB } from "@/server/db";
+import { supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
@@ -26,7 +29,7 @@ import { UserError } from "@/server/user-error";
  * Kasa raporunun yazım yolu (docs/KASA-RAPORU.md): formun şeması, raporun kaydı (yeni ya da yeni sürüm) ve silinmesi.
  * Personelin ve yöneticinin gönderimi (submitCashReport) ve yöneticinin onayları (src/server/actions/cash-requests.ts)
  * aynı işlevlerden geçer: devir, açılış notu, teslim, sayan ve fotoğraf denetimleri tek yerde. Sunucu eylemi değil
- * ("use server" yok): dışarıdan çağrılan uç yok; oturum ve rol denetimi eylemlerde. Veritabanını ya da işlemi parametre
+ * (dışarıdan çağrılan uç yok); oturum ve rol denetimi eylemlerde. Veritabanını ya da işlemi parametre
  * alır (tests/kasa-istek-db.test.ts doğrudan çalıştırır).
  */
 
@@ -105,6 +108,24 @@ export async function carryBefore(tx: CashTx, date: string): Promise<{ date: str
   return before ? { date: before.date, amount: Math.round((before.counted - before.handed) * 100) / 100 } : null;
 }
 
+/** Ekranda görülen sürüm hâlâ raporun sürümü mü (arada başkası gönderdiyse üzerine yazılmaz) */
+export function assertRevision(prev: CashReportRow | null, revision: number): void {
+  if (prev && prev.revision !== revision) {
+    throw new UserError(`Bu günün raporunu az önce ${prev.submittedByName} gönderdi; sayfayı yenileyip onun girdiklerini kontrol edin`);
+  }
+  if (!prev && revision !== 0) throw new UserError("Rapor bu arada silinmiş; sayfayı yenileyin");
+}
+
+/** Kişinin bu günün raporu için bekleyen silme isteği var mı (varken raporu düzenleyemez ve düzeltme öneremez) */
+export async function ownDeletePending(tx: CashTx, userId: number, date: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: s.staffRequests.id })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kasa-silme"), eq(s.staffRequests.subject, `gun:${date}`), eq(s.staffRequests.requestedBy, userId), eq(s.staffRequests.status, "pending")))
+    .limit(1);
+  return Boolean(row);
+}
+
 export interface WriteOptions {
   /** Formun açıldığı andaki sürüm (0: yeni rapor) */
   revision: number;
@@ -136,10 +157,7 @@ export interface WriteResult {
 export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashReportFields, o: WriteOptions): Promise<WriteResult> {
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   const prev = o.prev === undefined ? await lockCashReport(tx, data.date) : o.prev;
-  if (prev && prev.revision !== o.revision) {
-    throw new UserError(`Bu günün raporunu az önce ${prev.submittedByName} gönderdi; sayfayı yenileyip onun girdiklerini kontrol edin`);
-  }
-  if (!prev && o.revision !== 0) throw new UserError("Rapor bu arada silinmiş; sayfayı yenileyin");
+  assertRevision(prev, o.revision);
   const submitter = o.submittedBy ?? { id: actor.id, name: actor.name };
   // Kasayı sayan: etkin bir kullanıcı ya da raporda zaten kayıtlı olan (sonradan pasif olsa da)
   const counter = await resolveCounter(tx, o.countedBy ?? submitter.id ?? actor.id, prev ? (prev.countedBy ?? prev.submittedBy) : null);
@@ -202,11 +220,14 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   };
 }
 
-export type SaveResult = { kind: "saved" } & WriteResult;
+export type SaveResult = ({ kind: "saved" } & WriteResult) | { kind: "needsApproval"; request: "kasa-duzeltme"; gate: "kilitli" | "gec" };
 
 /**
  * Formdan gönderilen raporu kaydeder (personel ve yönetici; submitCashReport). İleri gün yok; personel yalnız bugünü ve
- * dünü girer, ertesi günün raporu girildiyse kayıtlı raporu düzeltemez (staffDayEditable).
+ * dünü girer. Personelin kayıtlı rapordaki değişikliği kapıdan geçer (staffCashGate): ertesi günün raporu girildiyse
+ * (kilitli) ya da iş günü kapandıktan sonra kasa alanı veya sayan değiştiyse hiçbir şey yazılmaz, "needsApproval" döner
+ * ve form yazılanları koruyarak düzeltme önerisine geçer (src/server/cash/requests.ts). Kendi silme isteği bekleyen
+ * raporu personel düzenleyemez.
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
   const { revision, photos, countedBy, ...data } = input;
@@ -214,19 +235,43 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
   if (me.role !== "admin" && !staffCanReport(data.date, now)) throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
   return db.transaction(async (tx) => {
     const prev = await lockCashReport(tx, data.date);
-    // Ertesi günün raporu girildiyse personel bu raporu düzeltemez: ertesi günün açılışı bu raporun devrine dayanır
-    // (staffDayEditable). Eksik bir günü sonradan girmek serbest (rapor yok)
-    if (prev && me.role !== "admin" && (await hasLaterReport(tx, data.date))) throw new UserError("Ertesi günün raporu girildi; bu raporu artık yalnız yönetici düzeltebilir");
+    if (prev && me.role !== "admin") {
+      assertRevision(prev, revision);
+      if (await ownDeletePending(tx, me.id, data.date)) throw new UserError(CASH_REQUEST_TEXT.deletePending);
+      // Ertesi günün raporu girildiyse (ertesi günün açılışı bu raporun devrine dayanır) ya da iş günü kapandıktan sonra
+      // kasa alanı ya da sayan değiştiyse personel doğrudan kaydetmez: yöneticinin onayına gider
+      const laterReport = await hasLaterReport(tx, data.date);
+      const counter = await resolveCounter(tx, countedBy ?? me.id, prev.countedBy ?? prev.submittedBy);
+      const changes = revisionChanges(revisionDataOf(prev), { ...data, discounts: data.discounts ?? null, cashDiff: computeCash(data).cashDiff, countedByName: counter.name });
+      const gate = staffCashGate({ date: data.date, now, hasReport: true, laterReport, changes });
+      if (gate === "closed") throw new UserError(CASH_REQUEST_TEXT.closed);
+      if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
+    }
     const out = await writeCashReport(tx, me, data, { revision, countedBy, photos, prev });
     return { kind: "saved" as const, ...out };
   });
 }
 
 /**
- * Raporu siler (işlemin içinde; yönetici): fotoğrafların bağı kalkar, 30 gün daha saklanır; önceki sürümleri raporla
- * gider (cascade). Silinen raporun değerleri dönüşte (işlem geçmişine yazılır).
+ * Kasa e-postasının alıcılarından personel hesaplarına ait olanlar (küçük harfle): kasa e-postasında karaoke ön ödemesi
+ * var, personel tutarları görmez (updateCashSettings reddeder)
  */
-export async function removeCashReport(tx: CashTx, id: number) {
+export async function staffEmailsIn(db: DB | CashTx, emails: readonly string[]): Promise<string[]> {
+  if (!emails.length) return [];
+  const rows = await db
+    .select({ email: s.users.email })
+    .from(s.users)
+    .where(and(eq(s.users.role, "staff"), inArray(sql`lower(${s.users.email})`, emails.map((e) => e.toLocaleLowerCase("en")))));
+  return rows.map((r) => r.email.toLocaleLowerCase("en"));
+}
+
+/**
+ * Raporu siler (işlemin içinde; yönetici): fotoğrafların bağı kalkar, 30 gün daha saklanır; önceki sürümleri raporla
+ * gider (cascade). Aynı günün bekleyen düzeltme, silme ve fotoğraf kaldırma istekleri kapanır ("Rapor silindi";
+ * reddedilmez), silmeyi onaylanan istek (`exceptRequestId`) hariç. Silinen raporun değerleri dönüşte (işlem
+ * geçmişine yazılır).
+ */
+export async function removeCashReport(tx: CashTx, id: number, o: { exceptRequestId?: number } = {}) {
   const links = await tx.select({ photoId: s.cashReportPhotos.photoId }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, id));
   for (const l of links) await releasePhoto(l.photoId, DELETED_REPORT_DAYS, tx);
   const [row] = await tx.delete(s.cashReports).where(eq(s.cashReports.id, id)).returning({
@@ -238,5 +283,6 @@ export async function removeCashReport(tx: CashTx, id: number) {
     countedByName: s.cashReports.countedByName,
   });
   if (!row) throw new UserError("Rapor bulunamadı");
-  return { row, photos: links.length };
+  const superseded = await supersede(tx, { kinds: ["kasa-duzeltme", "kasa-silme", "foto-kaldir"], day: row.date, exceptId: o.exceptRequestId }, "Rapor silindi");
+  return { row, photos: links.length, superseded };
 }

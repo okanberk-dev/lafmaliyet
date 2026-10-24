@@ -114,7 +114,7 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
   ne zaman ("22 Ekim 10:05 · Mehmet") ve hangi alan neyden neye ("Sayılan nakit: 2.880 ₺ → 2.980 ₺"). Not ve "neye
   çıktı" metni yazılmaz, yalnız "Not değişti". En altta ilk gönderim.
 - İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) kasadaki nakdi değiştiren bir alan (açılış, nakit satış, gün
-  içinde çıkan, sayılan nakit, teslim edilen) değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
+  içinde çıkan, sayılan nakit, teslim edilen) ya da kasayı sayan değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
   **Ertesi gün düzeltildi** rozeti, yöneticinin zilinde "Kasa raporu ertesi gün değişti" (son 7 gün; kim ve ne
   değişti). Yalnız Z, kart ya da not düzeltmesi uyarı vermez; ardından yapılan bir not düzeltmesi uyarıyı da kapatmaz.
   Yöneticinin kendi düzeltmesi kendi zilinde görünmez.
@@ -123,6 +123,77 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
   sayılan, fark, sayan, fotoğraf sayısı) yazılır.
 - Bu özellikten önce düzeltilmiş raporların geçmişi ilk yeni düzeltmeden başlar. Bu özellikten önce kaydedilen
   raporlarda sayan boştur: kasayı gönderen saymış sayılır (ilk düzeltmede "Sayan" değişmiş görünmez).
+
+## Sonradan düzeltme ve silme isteği
+
+Personel açabildiği raporlarda (bugün ve dün) üç tür değişikliği doğrudan kaydetmez, **onaya gönderir**: ertesi gün
+yapılan kasa alanı ya da sayan değişikliği, kilitli güne (ertesi günün raporu girilmiş) yapılan her değişiklik ve
+raporun silinmesi. Rapor onaya kadar değişmez; onaylanan düzeltme yöneticinin kendi düzeltmesi gibi yeni bir sürüm
+olur (devir, açılış notu, teslim ve sayan denetimleri yeniden). Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.md)
+§2.3), kuyruk [ONAYLAR.md](ONAYLAR.md).
+
+**Kapı kuralı** (`staffCashGate`, personelin kayıtlı rapordaki değişikliği):
+
+| Durum | Metin, Z, kart | Kasa alanı ya da sayan |
+|---|---|---|
+| Rapor yok (unutulan dünü girmek) | doğrudan | doğrudan |
+| Aynı gece (iş günü kapanmadan, 05:00'ten önce) | doğrudan | doğrudan |
+| Ertesi gün, kilitsiz | doğrudan | **onaya** |
+| Kilitli gün (ertesi günün raporu girildi) | **onaya** | **onaya** |
+| Personelin penceresi geçti (dünden eski) | kapalı | kapalı |
+
+Örnek: 22 Ekim'in raporu 23 Ekim'in raporu girilince kilitlenir. Personelin penceresi 23 Ekim iş günü boyunca açıktır,
+24 Ekim 05:00'te kapanır. 23 Ekim 10:00'da 22 Ekim'in "Teslim edilen"ini değiştirmek onaya gider, yalnız notu
+değiştirmek doğrudan kaydedilir.
+
+**Personel** (`/panel/kasa`):
+
+- **Kilitli gün:** "Ertesi günün raporu girildi; bu raporu yönetici onayıyla düzeltirsiniz." ve **Düzeltme öner**.
+  Aynı form "düzeltme önerisi" olarak açılır: bütün alanlar kayıtlı rapordan dolu, Sonuç kartı çalışır, fotoğraf yok,
+  en altta zorunlu **Neden düzeltiyorsunuz?** (5–500 karakter), düğme **Onaya gönder**. Açılış devirle tutmuyor ve not
+  boşsa neden nota da yazılır.
+- **Kilitsiz dün:** normal **Düzenle**; kasa alanı ya da sayan değiştiyse sunucu kaydetmez, form yazılanları korur ve
+  şerit çıkar: "Kasa alanlarını ertesi gün değiştirmek yöneticinin onayıyla olur; nedenini yazıp onaya gönderin."
+  Aynı yol 05:00 dönüşünde ve bu arada ertesi günün raporu girildiğinde de çalışır.
+- **Bekleyen öneri:** düğmelerin altında "Düzeltme öneriniz onay bekliyor · 23 Ekim 10:05", değişen satırlar
+  ("Teslim edilen: 2.400 ₺ → 2.040 ₺") ve sonuç ("Kasa farkı: 120 ₺ eksik → Kasa tutuyor"); **Öneriyi düzenle**
+  (aynı istek, sürümü artar) ve **Geri çek**. Başkasının isteği yalnız adıyla görünür ("Mehmet'in düzeltme önerisi onay
+  bekliyor"); istek kişi başınadır, kimse kimseyi engellemez.
+- **Silinmesini iste:** açılabilen her raporda; zorunlu neden. Kendi silme isteği bekleyen rapor düzenlenmez
+  ("Silme isteğiniz bekliyor; önce geri çekin").
+- **İsteklerim** (`#isteklerim`, sayfanın altında): son 7 günün kasa istekleri, durum ve yöneticinin notu; bekleyende
+  **Geri çek**. Zilde (İsteklerim) "22 Ekim kasa düzeltmeniz onaylandı" / "… reddedildi"; gün hâlâ açıksa rapora,
+  değilse İsteklerim'e götürür.
+
+**Yönetici:**
+
+- **Onaylar › Kasa**, istek başına kart (`#istek-<id>`), en eski gün önce. Düzeltmede "Değişecek" listesi raporun
+  şimdiki hâlinden onaydan sonraki hâline (kasa alanları kalın ve uyarı renginde); rapor istekten sonra değiştiyse üç
+  sütun (öneri anı / şimdi / onaydan sonra; önerinin yalnız değiştirdiği alanlar uygulanır, arada yapılan yönetici
+  düzeltmesi ezilmez); kasa farkı ve devir satırları; sonraki raporun açılışı bu devirle tutacak mı; "Gün içinde
+  çıkan" değişiyorsa fişlerin sayısı ve toplamı, fişlerden 1 ₺'den fazla aşan kısım kırmızı **Fişsiz çıkış**; ayı
+  geçmiş raporda uyarı. Kasa alanı değişiyorsa **Onayla** onay penceresi açar. Öneri artık bir şey değiştirmiyorsa
+  "Rapor zaten bu hâlde; isteği kapatın" ve **Kapat**. Silmede raporun özeti ve sonraki raporun açılışının bu devre
+  dayandığı; **Onayla ve sil** onay penceresi açar.
+- Onay yalnız ekranda görülen istek sürümüyle ve raporun görülen sürümüyle olur; kimse kendi isteğini onaylayamaz.
+  Bir düzeltme onaylanınca aynı günün öteki bekleyen düzeltmeleri kapanır ("Rapor başka bir istekle düzeltildi");
+  rapor silinince (onaylı ya da yöneticinin kendisi) aynı günün bekleyen istekleri kapanır ("Rapor silindi"),
+  reddedilmez. Yöneticinin kendi düzeltmesi istekleri kapatmaz (bir kısmını düzeltmiş olabilir; kart farkı gösterir).
+- Yöneticinin formunda bant: "Mehmet'in düzeltme önerisi bekliyor · Onaylar'da bakın".
+- Onaylanan düzeltmenin e-postasında "Yönetici onayıyla düzeltildi: Mehmet önerdi, Ayşe onayladı."; Değişiklikler'de
+  "23 Ekim 10:05 · Ayşe · Mehmet'in önerisi"; ertesi gün zilinde "Mehmet önerdi · Ayşe onayladı".
+- **Zil** (Onaylar): "22 Ekim kasa raporu: düzeltme önerisi" (Mehmet · Teslim edilen 2.400 ₺ → 2.040 ₺ · kasa farkı
+  120 ₺ eksik → tutuyor) ve "22 Ekim kasa raporunun silinmesi istendi". "Kasa: X eksik" zili istek beklerken de
+  susmaz.
+- **İşlem geçmişi:** "Kasa düzeltmesi önerildi", "Kasa raporunun silinmesi istendi", "… geri çekildi"; "Kasa
+  düzeltmesi onaylandı / reddedildi", "Kasa raporu silindi … · Mehmet istedi".
+- **Kasa e-postasının alıcıları** arasına personel hesabının adresi yazılamaz: e-postada karaoke ön ödemesi var.
+
+Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
+kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),
+`src/server/data/cash-requests.ts` (okuyucular), `src/app/panel/kasa/cash-requests.tsx`,
+`src/app/panel/onaylar/kasa-cards.tsx`. Testler: `tests/kasa-duzeltme-istegi.test.ts`, `tests/kasa-istek-db.test.ts`
+(`KASA_ISTEK_TEST_DATABASE_URL`).
 
 ## Satış tahmini
 
@@ -205,6 +276,7 @@ silinen rapor ayın rakamını hemen değiştirir.
   E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).
 
 Dosyalar: `src/lib/cash-report.ts` (hesap, açılış ↔ devir, düzeltme geçmişi, WhatsApp metni; `tests/kasa-raporu.test.ts`),
-`src/server/actions/cash-report.ts`, `src/server/notify/cash-report-template.ts` (e-posta), `src/app/panel/kasa/`; ay
+`src/server/actions/cash-report.ts` (uçlar), `src/server/cash/report-store.ts` (yazım yolu ve silme; onay yolları da
+buradan), `src/server/cash/report-email.ts` ve `src/server/notify/cash-report-template.ts` (e-posta), `src/app/panel/kasa/`; ay
 bilgisine aktarım `src/lib/cash-month.ts` (`tests/kasa-ay-bilgisi.test.ts`); fotoğraftan okuma `src/lib/photo-read/`
 (`tests/fotograf-okuma.test.ts`), kasadan çıkanlar `src/lib/cash-outs.ts` ve `src/server/actions/cash-outs.ts`.
