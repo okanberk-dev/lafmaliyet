@@ -5,7 +5,7 @@ import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import type { AllocationLine } from "@/lib/cari/account";
 import { EPS, round2 } from "@/lib/cari/balance";
-import { KASA_DEBT_DAYS, kasaMatches } from "@/lib/cari/match";
+import { KASA_DEBT_DAYS, kasaMatches, type KasaFound } from "@/lib/cari/match";
 import type { MonthEffect } from "@/lib/cari/months";
 import { dateTR, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
@@ -15,6 +15,8 @@ import { schema as s } from "@/server/db";
 
 import { checkPast, deleteEntry, writePayment, type Actor, type Card, type PaymentResult } from "./entries";
 import { lockCard, type Tx } from "./settle";
+
+export type { KasaFound };
 
 /**
  * Cari hesabın Kasa bağları (docs/TEDARIKCILER.md "Hesap hareketleri", docs/KASA-RAPORU.md): Borç ekle'nin Kasa
@@ -43,19 +45,6 @@ export async function keepKasaApart(tx: Tx, ids: readonly number[], undo = false
 }
 
 // ---------------------------------------------------------------- Borç ekle'nin Kasa denetimi (K15)
-
-/** Borç ekle'de bulunan Kasa satırı (pencere seçimi gösterir) */
-export interface KasaFound {
-  id: number;
-  date: string;
-  kind: "harcama" | "teslim";
-  amount: number;
-  store: string | null;
-  docType: "fis" | "e_arsiv" | "fatura" | "yok";
-  createdByName: string;
-  /** Alışveriş satırının Aylık harcamalar kaydı (varsa) */
-  expense: { categoryName: string; amount: number; date: string } | null;
-}
 
 /** Kasa denetimi seçimi gerekiyor: kayıt yapılmadı, pencere bulunan satırları gösterip seçim ister */
 export class NeedsKasa extends Error {

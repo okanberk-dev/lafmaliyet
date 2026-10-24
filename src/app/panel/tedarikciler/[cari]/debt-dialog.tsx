@@ -13,14 +13,13 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COST_MODE_LABEL, type CostMode } from "@/lib/cari/account";
 import { CARI_METHODS, EPS, METHOD_LABEL, round2, type CariMethod } from "@/lib/cari/balance";
-import { adoptCandidates, expenseDuplicates, type ExpenseLite } from "@/lib/cari/match";
+import { adoptCandidates, expenseDuplicates, type ExpenseLite, type KasaFound } from "@/lib/cari/match";
 import type { MonthEffect } from "@/lib/cari/months";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { deleteSupplierEntry, dismissCashOut, saveSupplierDebt } from "@/server/actions/cari";
 import { loadDebtOptions } from "@/server/actions/cari-options";
-import type { KasaFound } from "@/server/cari/kasa";
 
 import { KasaLinePicker, type CariTarget } from "../cari-payment-dialog";
 import { amountText, CARI_UNDO_MS, CariPhotoField, PastConfirm } from "../cari-ui";

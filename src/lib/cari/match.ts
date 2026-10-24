@@ -110,6 +110,19 @@ export function kasaMatches<L extends KasaLine>(
     .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
 }
 
+/** Borç ekle'nin Kasa denetiminde bulunan satır (sunucu bulur, pencere seçimi gösterir; K15) */
+export interface KasaFound {
+  id: number;
+  date: string;
+  kind: "harcama" | "teslim";
+  amount: number;
+  store: string | null;
+  docType: "fis" | "e_arsiv" | "fatura" | "yok";
+  createdByName: string;
+  /** Alışveriş satırının Aylık harcamalar kaydı (varsa) */
+  expense: { categoryName: string; amount: number; date: string } | null;
+}
+
 /** Borç ekle'nin Kasa denetimi: alım gününün ±3 günü */
 export const KASA_DEBT_DAYS = 3;
 /** Kalem ipucu, liste şeridi ve zil: son 60 gün */
