@@ -17,7 +17,8 @@ import type { FixedPeriod } from "./calc/types";
 import { fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
-import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, postponedFrom, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { originalDue, paidPeriodsOf, type VatPaidEntry } from "./vat-paid";
 
 export const PLAN_WEEKS = 6;
 /** 42 gün; Ödemeler'in ufkundan (UPCOMING_HORIZON_DAYS, 45) kısa: faturaların hepsi yükleyicinin listesinde (testli) */
@@ -97,10 +98,15 @@ export interface CashPlanInput {
   invoices: readonly UpcomingItem[];
   reminders: readonly ReminderRow[];
   /**
-   * Son 30 günde Ödemeler'de "Ödendi" denen hatırlatıcılar (`payments.recent`; geri alınan düşer): ödenen gün ve
-   * sıradaki gün. KDV-2'nin ödenmiş dönemi bundan bulunur. Yoksa boş.
+   * Son 30 günde Ödemeler'de "Ödendi" denen hatırlatıcılar (`payments.recent`; geri alınan düşer): ödenen gün,
+   * sıradaki gün ve ödenirken hatırlatıcıdaki tutar. KDV ve KDV-2'nin ödenmiş dönemi bundan bulunur. Yoksa boş.
    */
-  paidReminders?: readonly { id: number; dueDate: string | null; next?: string | null }[];
+  paidReminders?: readonly { id: number; dueDate: string | null; next?: string | null; amount?: number | null }[];
+  /**
+   * KDV ve KDV-2 hatırlatıcılarının kalıcı "Ödendi" kaydı (`payments.vat-paid`, 24 ay; src/lib/vat-paid.ts): son
+   * ödenenler listesi 30 gün / 30 kayıtla sınırlı, bir sonraki KDV gününden önce düşer. Yoksa boş.
+   */
+  vatPaid?: readonly VatPaidEntry[];
   /** Son 8 haftanın mal faturaları ve tedarikçinin ödeme gecikmesi (peşinde 0) */
   goods: readonly { supplier: string; date: string; payable: number; lagDays: number }[];
   /** Mal faturalarının ortalama aralığı; 0 = yetersiz geçmiş */
@@ -201,6 +207,10 @@ export interface CashPlanVat {
   hasSite: boolean;
   /** En az bir dönem tahmin edilebildi */
   ok: boolean;
+  /** "Ödendi" denmiş, ödeme günü (ayın 28'i) bugünden ufkun sonuna kadar olan asıl KDV dönemleri: satırları yoktur */
+  paid: { period: string; amount: number | null }[];
+  /** Aynısı KDV-2 için (ödeme günü izleyen ayın 25'i) */
+  paid2: { period: string; amount: number | null }[];
 }
 
 export interface CashPlan {
@@ -386,33 +396,39 @@ const hasAmount = (r: Pick<ReminderRow, "amount">) => r.amount !== null && r.amo
 const REPEAT_PER_MONTH: Record<Exclude<ReminderRow["repeat"], "none">, number> = { weekly: 12 / 52, monthly: 1, quarterly: 3, yearly: 12 };
 const CADENCE_OF: Record<Exclude<ReminderRow["repeat"], "none">, FixedPeriod | null> = { weekly: "haftalik", monthly: "aylik", quarterly: null, yearly: "yillik" };
 
-/**
- * Ertelenmiş kopyanın asıl günü ("Ertelendi · asıl tarih 25.10.2026", postponeReminder): kopyanın dönemi ondan
- * bulunur. 8 Kasım'a ertelenen Eylül KDV-2'si Ekim'in değildir.
- */
-export function originalDue(r: Pick<ReminderRow, "note" | "repeat">, due: string): string {
-  return (r.repeat === "none" ? postponedFrom(r.note) : null) ?? due;
-}
+export { originalDue } from "./vat-paid";
 
 /**
- * KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler (`payments.recent`): ödenen gün ile sıradaki gün arasındaki her
- * gün ("tarihe kadar ödendi" birkaç dönem kapatır). Erteleme ve hatırlatıcıyı kapatma bunu değiştirmez; tarihi geri
- * alınan seri ya da yeniden açılan tek seferlik dönemini yine bekler. "Geri al" ve hatırlatıcıyı silmek kaydı siler
- * (kayıt hatırlatıcı başına bir tane: aynı seride ikinci Ödendi geri alınınca ilki de gider).
+ * KDV ve KDV-2 hatırlatıcılarında "Ödendi" denmiş dönemler ve ödenen tutar (> 0 ise; ilk döneme aittir, yoksa null).
+ * Kaynak son ödenenler (`payments.recent`: ödenen gün ile sıradaki gün arasındaki her gün, "tarihe kadar ödendi"
+ * birkaç dönem kapatır) ve kalıcı kayıt (`payments.vat-paid`: dönemleri ödenirken yazılmış). `byId` bu türün
+ * hatırlatıcıları; `allIds` bütün hatırlatıcılar. Erteleme ve hatırlatıcıyı kapatma bunu değiştirmez; şimdiki dönemi
+ * ödenenlerden olan etkin hatırlatıcı (tarihi geri alınan seri, yeniden açılan tek seferlik) o dönemi yine bekler.
+ * Silinmiş hatırlatıcının kalıcı kaydı ödenmiş sayılır (türü ödenirkenki); KDV kartındaki "Kaydı kaldır" siler.
  */
-export function vat2PaidPeriods(paid: CashPlanInput["paidReminders"], byId: ReadonlyMap<number, ReminderRow>): Set<string> {
-  const out = new Set<string>();
+export function paidVatPeriods(
+  paid: readonly { id: number; dueDate: string | null; next?: string | null; amount?: number | null; periods?: readonly string[]; kind?: VatPaidEntry["kind"] }[] | undefined,
+  byId: ReadonlyMap<number, ReminderRow>,
+  kind?: VatPaidEntry["kind"],
+  allIds?: ReadonlySet<number>,
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
   for (const e of paid ?? []) {
+    if (!e.dueDate) continue;
     const r = byId.get(e.id);
-    if (!r || !e.dueDate) continue;
-    // Yeniden açılmış ödeme sayılmaz: tarihi geri alınmış seri ya da yeniden açılmış tek seferlik dönemini yine bekler
-    if (r.active && (r.repeat === "none" || (e.next && r.dueDate < e.next))) continue;
-    let d: string | null = e.dueDate;
-    for (let guard = 0; d && guard < 24; guard++) {
-      out.add(vatPeriodOf(originalDue(r, d)));
-      if (r.repeat === "none" || !e.next) break;
-      d = nextOccurrence(d, r.repeat, r.anchorDate);
-      if (d && d >= e.next) break;
+    let periods: readonly string[];
+    if (r) {
+      periods = e.periods ?? paidPeriodsOf(r, e.dueDate, e.next ?? null);
+      // Yeniden açılmış ödeme sayılmaz: etkin hatırlatıcının şimdiki dönemi ödenenlerdense (tarihi geri alınmış seri,
+      // yeniden açılmış tek seferlik) o dönemi yine bekler. Tarihi başka döneme taşınmış (28'i Cumartesi diye 27'ye
+      // alınan seri, ertesi aya yeniden kullanılan tek seferlik) hatırlatıcı ödemeyi geri açmaz
+      if (r.active && periods.includes(vatPeriodOf(originalDue(r, r.dueDate)))) continue;
+    } else if (e.periods && e.kind !== undefined && e.kind === kind && !allIds?.has(e.id)) periods = e.periods;
+    else continue;
+    let amount = e.amount !== undefined && e.amount !== null && e.amount > 0 ? e.amount : null;
+    for (const period of periods) {
+      if (!out.has(period) || (out.get(period) === null && amount !== null)) out.set(period, amount);
+      amount = null;
     }
   }
   return out;
@@ -622,6 +638,11 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const claimed = new Set<string>();
   const knownRows: VatRow[] = [];
   const placements: { period: string; date: string; due: string; overdue: boolean; reminder: ReminderRow | null }[] = [];
+  // "Ödendi" denen dönem (vadesinden önce de) bitmiştir: tahmini geri gelmez, kartta da görünmez. Ödenen tutar o dönemin
+  // kesin tutarı olarak kalır (Ödendi hatırlatıcıdaki tutarı siler): > 0 ise sonraki aya devreden yine sıfırlanır.
+  const allIds = new Set(input.reminders.map((r) => r.id));
+  const paidRecords = [...(input.paidReminders ?? []), ...(input.vatPaid ?? [])];
+  const vatPaid = paidVatPeriods(paidRecords, new Map(input.reminders.filter((r) => classify(r).kind === "kdv").map((r) => [r.id, r])), "kdv", allIds);
   if (vatBaseMode === "reminder") {
     // Ertelenmiş kopyanın ve tek seferliğin dönemi asıl gününden (8'inden sonraya ertelenen Eylül KDV'si Ekim'in değildir)
     const occs = vatRems.flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, first: o.due === r.dueDate, period: vatPeriodOf(originalDue(r, o.due)) })));
@@ -635,6 +656,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     }
     const rest = occs.filter((x) => !(x.first && x.r.amount !== null)).sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
     for (const x of rest) {
+      if (vatPaid.has(x.period)) continue;
       if (claimed.has(x.period)) addUnknown(x.r, x.o.date);
       else {
         claimed.add(x.period);
@@ -645,9 +667,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     // Hatırlatıcı yok: her dönem ayın 28'inde, yarından itibaren (bugünkü ödeme elinizdeki paradan)
     for (let p = shiftMonth(today.slice(0, 7), -2); vatDueDate(p) <= end; p = shiftMonth(p, 1)) {
       const due = vatDueDate(p);
-      if (due > today) placements.push({ period: p, date: due, due, overdue: false, reminder: null });
+      if (due > today && !vatPaid.has(p)) placements.push({ period: p, date: due, due, overdue: false, reminder: null });
     }
   }
+  for (const [period, amount] of vatPaid) if (amount !== null && !known.has(period)) known.set(period, amount);
   const vatPeriods = [...new Set([...placements.map((p) => p.period), ...known.keys()])].sort();
   const estimates = vatEstimates({
     today,
@@ -693,6 +716,10 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     }
   }
   vatRows.sort((a, b) => a.date.localeCompare(b.date) || a.period.localeCompare(b.period));
+  const vatPaidInWindow = [...vatPaid]
+    .filter(([period]) => vatDueDate(period) >= today && vatDueDate(period) <= end)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, amount]) => ({ period, amount }));
   // KDV-2 (tevkifat): alış faturalarındaki tevkifat izleyen ayın 25'inde 2 No.lu beyannameyle ödenir; 1 No.lu
   // beyannamede indirilir (alışların içinde), o ay ödenecek çıkmasa da (Eylül 2026: devreden 121.204,69, KDV-2
   // 1.800 ₺). Tahminler yarından. Ödemeler'deki KDV-2 hatırlatıcısı günlerinin dönemlerini karşılar (KDV'deki gibi):
@@ -702,7 +729,7 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   // - "Ödendi" denen dönem (vadesinden önce de) bitmiştir: tahmini geri gelmez, kartta da görünmez;
   // - ertelenmiş kopyanın dönemi asıl gününden (8 Kasım'a ertelenen Eylül KDV-2'si Eylül'ündür).
   const withheldOf = new Map(input.vat.months.map((m) => [m.month, round100(m.purchases.withheld)]));
-  const vat2Paid = vat2PaidPeriods(input.paidReminders, new Map(input.reminders.filter((r) => classify(r).kind === "kdv2").map((r) => [r.id, r])));
+  const vat2Paid = paidVatPeriods(paidRecords, new Map(input.reminders.filter((r) => classify(r).kind === "kdv2").map((r) => [r.id, r])), "kdv2", allIds);
   const vat2Occs = vat2Rems
     .flatMap((r) => reminderOccurrences(r, today, end).map((o) => ({ r, o, period: vatPeriodOf(originalDue(r, o.due)) })))
     .sort((a, b) => a.o.date.localeCompare(b.o.date) || a.r.id - b.r.id);
@@ -763,7 +790,13 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
           chainFrom: input.vatAnchor ? null : input.vat.firstSalesMonth,
           rates: { kdv: st.kdv, kdvHizmet: st.kdvHizmet },
           hasSite: input.vat.hasSite,
-          ok: vatRows.some((r) => r.estimate?.status === "ok"),
+          // Satır yalnız ödendiği için yoksa tahmin "edilemedi" sayılmaz
+          ok: vatRows.some((r) => r.estimate?.status === "ok") || (!vatRows.length && vatPaidInWindow.length > 0),
+          paid: vatPaidInWindow,
+          paid2: [...vat2Paid]
+            .filter(([period]) => vat2DueDate(period) >= today && vat2DueDate(period) <= end)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([period, amount]) => ({ period, amount })),
         };
 
   // ------------------------------------------------------------ Sabit giderler (yayılan, tahmini, yarından)
@@ -982,12 +1015,24 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
     const m = last ? MONTH_NAMES[Number(last.period.slice(5, 7)) - 1] : "";
     const when = vat.baseMode === "reminder" ? "KDV hatırlatıcısının gününde" : "Ayın 28'inde";
     // Satır yoksa KDV hatırlatıcısının sıradaki günü 6 haftanın dışındadır
-    const what = !last ? (vat.rows.length ? "Ödemeler'deki tutarla" : "6 hafta içinde ödeme günü yok") : last.amount === null ? `${m} için hesaplanamadı` : last.amount > 0 ? `${m} için ≈ ${tl(last.amount)}` : `${m} için ödeme beklenmez`;
+    const paidNames = vat.paid.map((p) => MONTH_NAMES[Number(p.period.slice(5, 7)) - 1]).join(", ");
+    const what = !last
+      ? vat.rows.length
+        ? "Ödemeler'deki tutarla"
+        : vat.paid.length
+          ? `${paidNames} ödendi; 6 hafta içinde başka 1 No.lu KDV günü yok`
+          : "6 hafta içinde ödeme günü yok"
+      : last.amount === null
+        ? `${m} için hesaplanamadı`
+        : last.amount > 0
+          ? `${m} için ≈ ${tl(last.amount)}`
+          : `${m} için ödeme beklenmez`;
     estimatesRows.push({
       key: "kdv",
       title: "KDV tahmini",
       monthly: last?.amount ?? 0,
-      status: vat.mode === "excluded" ? "off" : estRows.length ? "on" : "covered",
+      // Hatırlatıcısız kipte dönem yalnız ödendiği için satırsızsa tahmin yine açıktır (anahtar kapatılabilir kalır)
+      status: vat.mode === "excluded" ? "off" : estRows.length || (vat.baseMode === "default" && vat.paid.length) ? "on" : "covered",
       note: `${when} · ${what}`,
       direction: "out",
     });
