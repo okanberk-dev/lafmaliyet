@@ -244,3 +244,25 @@ test("push: onay bildirimleri ayrı konu (cihazda anahtarı var, varsayılan aç
   assert.match(device, /onChange=\{\(v\) => void changeTopic\("approvals", v\)\}/);
   assert.equal(staffRequests.kind.enumValues.length, 9);
 });
+
+test("sabah e-postası: Onay bekleyenler kutusu haberdir (konu, başlık, düğme Onaylar'a); yoksa e-posta kutusuz hâliyle aynı", async () => {
+  const { renderDigest } = await import("../src/server/notify/digest-template");
+  const now = tr("2026-10-24T08:30");
+  const lines = approvalsDigestLines([{ title: "22 Ekim kasa düzeltmesi", requestedByName: "Mehmet", createdAt: tr("2026-10-22T09:00") }], now);
+  const box = { title: "Onay bekleyenler", lines, href: "/panel/onaylar", link: "Onaylar'da aç", subjectPart: "1 istek onay bekliyor", headline: "1 personel isteği onay bekliyor" };
+  const out = renderDigest([], "2026-10-24", null, null, null, { approvals: box });
+  assert.equal(out.subject, "Sabah özeti: 1 istek onay bekliyor");
+  assert.match(out.html, /1 personel isteği onay bekliyor/);
+  assert.match(out.html, /22 Ekim kasa düzeltmesi \(Mehmet\)/);
+  assert.match(out.html, /\/panel\/onaylar/);
+  assert.match(out.text, /Onaylar'da aç: .*\/panel\/onaylar/);
+  assert.doesNotMatch(`${out.html}${out.text}`, /₺/);
+  // Kutu yoksa (null) kutusuz e-postanın aynısı
+  assert.deepEqual(renderDigest([], "2026-10-24", null, null, null, { approvals: null }), renderDigest([], "2026-10-24", null, null, null, {}));
+  // Kaynak listede, haber olarak; yükleyici yalnız başlık ve ad yazar (yük okumaz)
+  const extras = read("src/server/notify/digest-extras.ts");
+  assert.match(extras, /\{ key: "approvals", news: true, load: \(\) => loadApprovalsDigest\(\) \}/);
+  const digest = read("src/server/staff-requests/digest.ts");
+  assert.match(digest, /pendingRequests\(getDb\(\), \{ now \}\)/);
+  assert.doesNotMatch(digest, /payload/);
+});
