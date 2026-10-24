@@ -173,6 +173,11 @@ export function supplierSummary(
     }
     if (s.overdueCount) hesap.push(`Geciken ${num(s.overdueCount)} fatura = ${money(s.overdue)}`);
     const acc = accountOf(g);
+    // Son ödeme (§4.7): en yeni ödeme olayı; faturada işaretli ödeme ya da dönemdeki cari ödeme kaydı (defterin kapattığı
+    // fatura olay sayılmaz, parası ödeme kaydında)
+    const invoicePaid = s.lastPaid?.slice(0, 10) ?? null;
+    const cariPaid = (g.cariPayments ?? []).reduce<string | null>((m, p) => (p.date >= input.baslangic && p.date <= input.bitis && (!m || p.date > m) ? p.date : m), null);
+    const lastPaid = cariPaid && (!invoicePaid || cariPaid > invoicePaid) ? cariPaid : invoicePaid;
     if (r2(acc.open) !== r2(s.open)) hesap.push(`Dönem dışındakiler dahil bütün açık borç ${money(acc.open)}`);
     if (acc.debtOpenCount) hesap.push(`Faturasız borç ${num(acc.debtOpenCount)} alım = ${money(acc.debtOpen)} (elle girilen; açık borca dahil)`);
     if (acc.credit > 0.005) {
@@ -203,7 +208,7 @@ export function supplierSummary(
         gecikenSayisi: s.overdueCount,
         yakinda7Gun: r2(s.soon),
         sonFatura: s.lastInvoice,
-        sonOdeme: s.lastPaid?.slice(0, 10) ?? null,
+        sonOdeme: lastPaid,
         toplamAcikBorc: r2(acc.open),
         faturasizBorc: { adet: acc.debtOpenCount, tutar: r2(acc.debtOpen) },
         hesaptakiOdeme: r2(acc.credit),

@@ -79,7 +79,8 @@ panelde elle girilir, banka bağlı değil.
 `tedarikci_ozeti` tek tedarikçide `faturasizBorc` (açık faturasız borçların adedi ve tutarı), `hesaptakiOdeme` (hiçbir
 kaleme sayılmamış ödeme), `netBakiye` (bütün açık borç − hesaptaki ödeme; eksiyse alacak) ve `sonOdemeler` (en çok
 10: gün, tutar, şekil, sayıldığı kalem sayısı) alanlarını da verir; `toplamAcikBorc` faturasız borçları içerir, "borç"
-sıralaması onu kullanır. Bütün tedarikçiler listesinde satır başına `toplamAcikBorc`, `hesaptakiOdeme`, `netBakiye`.
+sıralaması onu kullanır. `sonOdeme` en yeni ödeme günüdür: faturada işaretli ödeme ya da dönemdeki elle ödeme kaydı
+(Tedarikçiler'deki "Son ödeme" kartının kuralı). Bütün tedarikçiler listesinde satır başına `toplamAcikBorc`, `hesaptakiOdeme`, `netBakiye`.
 `odemeler`'in `kaynak` girdisi `"cari"` da alır (yalnız faturasız borçlar); çıktıda bu kalemler `tur: "cari borç"`,
 tahmini vadeleri faturalarla aynı kuralla işaretlenir. Hiç elle kayıt yokken cevaplar eskisiyle aynıdır (alanlar 0).
 

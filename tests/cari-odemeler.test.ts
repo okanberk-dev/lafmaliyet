@@ -620,6 +620,19 @@ test("Claude odemeler: kaynak 'cari', tür 'cari borç', mahsup notu; tedarikci_
   assert.deepEqual(one.ozet.faturasizBorc, { adet: 0, tutar: 0 });
   assert.equal(one.ozet.hesaptakiOdeme, 99.5);
   assert.equal(one.ozet.netBakiye, 3000.5);
+  // Son ödeme: dönemdeki cari ödeme kaydı da ödeme olayıdır (§4.7); dönem dışındaki sayılmaz
+  assert.equal(one.ozet.sonOdeme, "2026-10-24");
+  const before = supplierSummary(
+    { today: TODAY, groups: [group] },
+    { tedarikci: "Sütaş", baslangic: "2026-01-01", bitis: "2026-10-23", limit: 20 },
+    ctx,
+  );
+  assert.ok("ozet" in before);
+  if ("ozet" in before) assert.equal(before.ozet.sonOdeme, "2026-10-22");
+  const paidInvoice = { ...group, invoices: [...group.invoices, { supplier: "Sütaş", date: "2026-10-26", payable: 500, unpaid: false, paidAt: "2026-10-27", invoiceNo: "SUT150", category: "Hammadde & İçecek" }] };
+  const later = supplierSummary({ today: TODAY, groups: [paidInvoice] }, { tedarikci: "Sütaş", baslangic: "2026-01-01", bitis: "2026-10-31", limit: 20 }, ctx);
+  assert.ok("ozet" in later);
+  if ("ozet" in later) assert.equal(later.ozet.sonOdeme, "2026-10-27", "faturada işaretli daha yeni ödeme");
   assert.deepEqual(one.sonOdemeler[0], {
     tarih: "2026-10-24",
     tutar: 2200,
