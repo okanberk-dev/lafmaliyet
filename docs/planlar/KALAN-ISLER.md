@@ -140,6 +140,13 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   da olabilir); Hakedişler satırı ayın satış ayı olduğunu söyler ("Pluxee hakedişi (Eylül satışları): son gün 20 Ekim.
   … Geldiyse işaretleyin."), bu yıldan değilse yılıyla. Sonraya: zil ve e-posta başlığında ("Hakediş gecikti: Pluxee
   (Ekim)") yıl yok; 12 aydan uzun geciken hakediş bu ayla aynı adı taşıyınca karışır (Ekim 2027'den önce olamaz).
+- **Geciken hakediş işaretlenene kadar uyarır:** zil, Bugün ve sabah e-postası ekranla aynı 13 ayı okur
+  (`reportWindow`); 4 aylık pencere satış ayı pencereden çıkınca uyarıyı düşürüyordu, 90 günlük platformda çoğu ay hiç
+  göstermiyordu. Haftalık özetin komisyon maddesi de aynı pencereyi okur. Sonraya: (1) 13 aydan eski satış ayı ekranda
+  da yok; takip 24–25 Ekim 2026'da başladığı için bu en erken **Ekim 2027**'de olur (o zamana kadar işaretlenmemiş eski
+  ayları `komisyon.since`'e kadar okuyan ikinci bir sorgu ya da sınırsız pencere); (2) zil en çok 5 uyarı gösterir ve
+  en yeniyi önce alır: geciken hakedişler birikirse en eskisi zilden düşer (Bugün sayısını ve en eskisini yine
+  gösterir); gecikenler en eski son gün önce sıralanmalı (teslim farklarının zildeki sırasını da değiştirir).
 
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis

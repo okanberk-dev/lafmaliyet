@@ -210,7 +210,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     // Dünün kontrol listeleri: tamamlanmayan ve sorunlu olanlar (bugünkü listeler iki rolde loadToday'de)
     safe(loadChecklistDay(yesterday, "admin", now)).then((lists) => (lists ? { day: yesterday, lists } : null)),
-    // Geciken hakedişler (hafif okuma: son 4 ayın Komisyon faturaları ve işaretler; docs/KOMISYON.md)
+    // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
     safe(loadOverduePayouts()),
     // Mal siparişi: hızlı sayım, sipariş hazır tedarikçiler, teslim kontrolü (docs/MAL-SIPARISI.md)
     safe(modelP.then((model) => loadReorderDay("admin", now, model))),

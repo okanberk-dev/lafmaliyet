@@ -407,8 +407,9 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 
 /**
  * Yönetici: komisyon ve hakediş (Faturalar başlığı; docs/KOMISYON.md): geciken hakediş, yemek kartında %6 aşımı ve
- * komisyon dışı ücret olabilecek kalem, en çok beş. Hafif okuma (son 4 ayın Komisyon faturaları, hakediş işaretleri ve
- * Z toplamları; maliyet modeli yok). Kimlik uyarının anahtarından: yeni oran ya da yeni fatura yeniden okunmamış olur.
+ * komisyon dışı ücret olabilecek kalem, en çok beş. Hafif okuma (ekranın 13 ayının Komisyon faturaları, hakediş
+ * işaretleri ve Z toplamları; maliyet modeli yok). Kimlik uyarının anahtarından: yeni oran ya da yeni fatura yeniden
+ * okunmamış olur.
  */
 async function commissionNotifications(): Promise<PanelNotification[]> {
   return (await loadCommissionAlerts()).map((a) => ({

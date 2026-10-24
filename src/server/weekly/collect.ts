@@ -159,12 +159,12 @@ function commissionCand(report: CommissionReport, a: CommissionAlert): KomisyonC
   return { ...base, label: r.label, tl: r.fees.yasak, lineText: a.body };
 }
 
-/** Komisyon ve hakediş (komisyon): hafif rapor (4 ay; yalnız okur, takibin başlangıcını yazmaz) */
+/** Komisyon ve hakediş (komisyon): hafif rapor (ekranın 13 ayı, `reportWindow`; yalnız okur, takibin başlangıcını yazmaz) */
 const komisyon: Collector = {
   source: "komisyon",
   timeoutMs: 3_000,
   async run(ctx) {
-    const report = buildCommissionReport(await loadCommissionInput({ months: 4, resolveNames: false, today: ctx.today }));
+    const report = buildCommissionReport(await loadCommissionInput({ resolveNames: false, today: ctx.today }));
     const cands = commissionAlerts(report, ctx.today, Infinity)
       .map((a) => commissionCand(report, a))
       .filter((c): c is KomisyonCand => c !== null);
