@@ -5,7 +5,8 @@
 // fiyat geçmişin başlangıcıdır: sonraki zam kapanmış ayı değiştirmez, zam uyarısı onu saymaz), fiyatı 0 kalemin ilk
 // fiyatının zam sayılmaması, personelin ay kuralı, personelin fiyatı yalnız
 // yazması (görmemesi), CSV'de formül gibi başlayan adın kabul edilmemesi.
-// Migration'ın veritabanı denemesi EKLE_TEST_DATABASE_URL verilince çalışır (işlem geri alınır; migrate edilmiş bir
+// Fiyatıyla eklenmiş eski kalemlere başlangıç satırı yazan migration (drizzle/*_sayim_kalemi_fiyat_baslangici.sql) da.
+// Migration'ların veritabanı denemesi EKLE_TEST_DATABASE_URL verilince çalışır (işlem geri alınır; migrate edilmiş bir
 // yerel kopya verin, ör. postgres://postgres:postgres@localhost:5432/laffogato_ekle).
 // Çalıştırma: npx tsx --test tests/sayim-ekle.test.ts
 
@@ -774,4 +775,67 @@ test("migration veritabanında: boşta 0, doluda 8 (her biri fiyat satırı, ken
   } finally {
     await db.end();
   }
+});
+
+// ---------------------------------------------------------------- Başlangıç satırı (migration)
+
+const startMigration = readdirSync(join(process.cwd(), "drizzle")).find((f) => f.endsWith("_sayim_kalemi_fiyat_baslangici.sql"));
+
+test("migration: fiyatıyla eklenmiş, geçmişi olmayan sayım kalemlerine başlangıç satırı; notu uygulamanınkiyle aynı", () => {
+  assert.ok(startMigration, "sayim_kalemi_fiyat_baslangici migration'ı yok");
+  const sql = read(`drizzle/${startMigration}`);
+  assert.ok(sql.includes(`'${COUNT_ITEM_PRICE_NOTE}'`), "zam uyarısı satırı notundan tanır");
+  assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "ingredient_prices" p WHERE p\."ingredient_id" = i\."id"\)/, "geçmişi olan kaleme yazmaz (yeniden çalışırsa da)");
+  assert.match(sql, /i\."package_price" > 0/, "fiyatsız kalem satır almaz");
+  assert.match(sql, /i\."count_from" IS NOT NULL/, "yalnız sayım listesinden eklenen");
+  assert.match(sql, /i\."price_source" = 'manual'/);
+  assert.doesNotMatch(sql, /statement-breakpoint/);
+});
+
+test("migration veritabanında: fiyatı yazılmış ve geçmişi olmayan kaleme tek satır; fiyatsıza ve geçmişi olana yok; ikinci kez 0", { skip: process.env.EKLE_TEST_DATABASE_URL ? false : "EKLE_TEST_DATABASE_URL yok" }, async () => {
+  const db = postgres(process.env.EKLE_TEST_DATABASE_URL!, { max: 1, onnotice: () => {} });
+  const migration = read(`drizzle/${startMigration}`);
+  const ROLLBACK = new Error("geri al");
+  let result: { first: { name: string; package_price: number; note: string; changed_by: string }[]; second: number; existing: number } | null = null;
+  try {
+    await db
+      .begin(async (tx) => {
+        // Bu veritabanı migrate edildiyse migration zaten çalıştı: eskiden eklenmiş kalemleri yeniden kurar
+        const [{ id: before }] = await tx`select coalesce(max(id), 0) as id from ingredient_prices`;
+        const add = (name: string, price: number) =>
+          tx`insert into ingredients (name, category, unit, package_price, package_size, price_source, count_unit, count_group, count_from, is_estimate)
+             values (${name}, 'Sos & Şurup', 'ml', ${price}, 750, 'manual', 'LT', 'SOS / ŞURUP / PÜRE', '2026-10', true) returning id`;
+        const [a] = await add("Deneme fiyatlı (a)", 760);
+        await add("Deneme fiyatsız (b)", 0);
+        const [c] = await add("Deneme geçmişli (c)", 760);
+        await tx`insert into ingredient_prices (ingredient_id, package_price, package_size, note, changed_by) values (${c.id}, 760, 750, 'İlk kayıt', 'Yönetici')`;
+        await tx.unsafe(migration);
+        const first = await tx<{ name: string; package_price: number; note: string; changed_by: string }[]>`
+          select i.name, p.package_price, p.note, p.changed_by from ingredient_prices p join ingredients i on i.id = p.ingredient_id
+          where p.id > ${before} and i.name like 'Deneme %' order by p.id`;
+        const [{ n: existing }] = await tx`select count(*)::int as n from ingredient_prices where ingredient_id = ${c.id}`;
+        const [{ id: mid }] = await tx`select coalesce(max(id), 0) as id from ingredient_prices`;
+        await tx.unsafe(migration);
+        const [{ n: second }] = await tx`select count(*)::int as n from ingredient_prices where id > ${mid}`;
+        assert.ok(a.id);
+        result = { first: [...first], second, existing };
+        throw ROLLBACK;
+      })
+      .catch((e) => {
+        if (e !== ROLLBACK) throw e;
+      });
+  } finally {
+    await db.end();
+  }
+  const r = result!;
+  assert.deepEqual(
+    r.first.map((x) => [x.name, x.note, x.changed_by]),
+    [
+      ["Deneme geçmişli (c)", "İlk kayıt", "Yönetici"],
+      ["Deneme fiyatlı (a)", COUNT_ITEM_PRICE_NOTE, "Sistem"],
+    ],
+    "yalnız (a) satır aldı",
+  );
+  assert.equal(r.existing, 1, "geçmişi olan kaleme ikinci satır yazılmaz");
+  assert.equal(r.second, 0, "ikinci kez çalışınca bir şey eklemez");
 });

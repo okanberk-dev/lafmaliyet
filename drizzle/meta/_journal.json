@@ -260,6 +260,13 @@
       "when": 1792823729240,
       "tag": "0036_satis_tahmini",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792844684237,
+      "tag": "0037_sayim_kalemi_fiyat_baslangici",
+      "breakpoints": true
     }
   ]
 }
