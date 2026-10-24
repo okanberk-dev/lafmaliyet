@@ -74,6 +74,18 @@ export function listensForAlerts(p: { sound: boolean; orderAlerts: boolean; kara
 }
 
 /**
+ * Bildirim yokken karaoke sayfasındaki "Bu cihazda uyarılar" kartının arka plan notu. 10 dakika sözü yalnız arka planda
+ * soracak cihaza (listensForAlerts; sesin açılmasını kartın ses satırı anlatır); ötekinde (yöneticinin varsayılanı, sesi
+ * ya da iki zili kapalı cihaz) arka plandaki sekme hiç sormaz, yeniliği öne gelince duyurur. Telefonda (iOS'ta ana
+ * ekrana eklenmemiş Safari) arka plandaki sekme durdurulur.
+ */
+export function hiddenTabNote(p: { sound: boolean; orderAlerts: boolean; karaokeAlarms: boolean }): string {
+  return listensForAlerts(p, true)
+    ? "Bildirim yokken bilgisayarda arka plandaki sekmede yeni sipariş ve rezervasyon zili 10 dakikaya kadar gecikebilir; telefonda arka plandaki sekme çalmaz."
+    : "Bildirim yokken arka plandaki sekme yeni rezervasyonu ve siparişi ancak öne gelince duyurur.";
+}
+
+/**
  * Yenilik bu cihaza bildirimle gelir mi: izin verilmiş, abonelik sunucuya kaydedilmiş (`topics` kayıttan gelir) ve bu
  * cihazda zili açık olan konular aboneliğinde de açık. Yalnız izin yetmez: abonelik kaydedilememiş (gizli pencere, ağ
  * engeli) ya da sipariş bildirimi kapatılmış (yöneticide varsayılan kapalı) olabilir; o cihaz yeniliği ancak sorarak

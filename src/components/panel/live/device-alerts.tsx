@@ -10,6 +10,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import type { Role } from "@/lib/constants";
+import { hiddenTabNote } from "@/lib/live-poll";
 import { sendTestPush, setPushTopics } from "@/server/actions/push";
 
 import { OutputPicker } from "./output-picker";
@@ -19,12 +20,6 @@ import { play, unlockAudio, useAudioState } from "./sounds";
 import { useLive } from "./store";
 
 const noopSubscribe = () => () => {};
-
-/**
- * Bildirim yokken bar ekranının arka plandaki sekmesi canlı veriyi 10 dakikada bir sorar (src/lib/live-poll.ts); telefonda
- * (iOS'ta ana ekrana eklenmemiş Safari) arka plandaki sekme durdurulur, hiç çalmaz.
- */
-const LATE_BELL = "Bildirim yokken bilgisayarda arka plandaki sekmede yeni sipariş ve rezervasyon zili 10 dakikaya kadar gecikebilir; telefonda arka plandaki sekme çalmaz.";
 
 /**
  * "Bu cihazda uyarılar": bildirim izni ve aboneliği (sekme kapalıyken bile yeni rezervasyon, yeni uygulama siparişi ve
@@ -96,6 +91,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   }
 
   const subscribed = support === "granted" && Boolean(endpoint);
+  // Bildirim yokken arka plandaki sekmenin ne yaptığı (karaoke sayfasında; bu cihazın zil tercihlerine göre)
+  const note = karaoke ? hiddenTabNote(prefs) : null;
   const status =
     support === "unsupported"
       ? { tone: "gray" as const, text: "Desteklenmiyor" }
@@ -125,18 +122,18 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
         {support === "unsupported" ? (
           <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] leading-5 text-ink-mute ring-1 ring-line">
             Bu tarayıcı bildirim desteklemiyor. Bilgisayarda Chrome ya da Edge kullanın; iPhone&apos;da paneli Paylaş › Ana Ekrana Ekle ile uygulama gibi açınca
-            bildirim gelir. Sekme açıkken sesli uyarılar yine çalışır.{karaoke ? ` ${LATE_BELL}` : null}
+            bildirim gelir. Sekme açıkken sesli uyarılar yine çalışır.{note ? ` ${note}` : null}
           </p>
         ) : support === "denied" ? (
           <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] leading-5 text-bad">
             Bildirim izni kapalı. Adres çubuğundaki site ayarları simgesinden (kilit) Bildirimler&apos;i “İzin ver” yapın, sonra sayfayı yenileyin.
-            {karaoke ? ` ${LATE_BELL}` : null}
+            {note ? ` ${note}` : null}
           </p>
         ) : !subscribed ? (
           <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
             <BellRing size={18} className="shrink-0 text-ink-mute" aria-hidden="true" />
             <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-soft">
-              Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.{karaoke ? ` ${LATE_BELL}` : null}
+              Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.{note ? ` ${note}` : null}
             </p>
             <Button onClick={() => void enable()} disabled={busy || !publicKey}>
               {busy ? "Açılıyor…" : "Bildirimleri aç"}

@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { defaultPrefs } from "../src/components/panel/live/prefs";
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
 import { CATCH_UP } from "../src/lib/karaoke/freshness";
-import { LIVE_POLL, listensForAlerts, livePollDue, livePollMs, pushCovers, type LivePollInput } from "../src/lib/live-poll";
+import { hiddenTabNote, LIVE_POLL, listensForAlerts, livePollDue, livePollMs, pushCovers, type LivePollInput } from "../src/lib/live-poll";
 import { createTtlCache } from "../src/lib/ttl-cache";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -55,6 +55,25 @@ test("zil cihazı: personelin varsayılanı dinler, yöneticininki dinlemez; ses
   assert.equal(listensForAlerts(defaultPrefs("admin"), true), false);
   assert.equal(listensForAlerts({ ...defaultPrefs("staff"), sound: false }, true), false);
   assert.equal(listensForAlerts({ ...defaultPrefs("admin"), karaokeAlarms: true }, true), true);
+});
+
+test("bildirim yokken kartın arka plan notu: 10 dakika sözü yalnız arka planda soracak cihaza, ötekine öne gelince", () => {
+  assert.match(hiddenTabNote(defaultPrefs("staff")), /zili 10 dakikaya kadar gecikebilir; telefonda arka plandaki sekme çalmaz\.$/);
+  // Yöneticinin varsayılanında arka plandaki sekme sormaz: rezervasyon zili sekme öne gelince çalar
+  assert.equal(hiddenTabNote(defaultPrefs("admin")), "Bildirim yokken arka plandaki sekme yeni rezervasyonu ve siparişi ancak öne gelince duyurur.");
+  const cases = [
+    defaultPrefs("staff"),
+    defaultPrefs("admin"),
+    { ...defaultPrefs("staff"), sound: false },
+    { ...defaultPrefs("staff"), orderAlerts: false, karaokeAlarms: false },
+    { ...defaultPrefs("admin"), orderAlerts: true },
+    { ...defaultPrefs("admin"), karaokeAlarms: true },
+  ];
+  // Söz, arka planda sormanın kuralıyla aynı (ses açıldıktan sonra; ses satırı açılmayı ayrıca anlatır)
+  for (const p of cases) assert.equal(/10 dakika/.test(hiddenTabNote(p)), listensForAlerts(p, true), JSON.stringify(p));
+  const device = read("src/components/panel/live/device-alerts.tsx");
+  assert.match(device, /const note = karaoke \? hiddenTabNote\(prefs\) : null;/);
+  assert.doesNotMatch(device, /LATE_BELL/);
 });
 
 test("bildirim açık sayılır: izin, kayıtlı abonelik ve zilin çaldığı konular bu cihazın aboneliğinde açık", () => {
