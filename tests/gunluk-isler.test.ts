@@ -13,6 +13,7 @@ import {
   digestStep,
   emailProblems,
   expectedDay,
+  forecastStep,
   jobHealth,
   jobsSummary,
   parasutOutcome,
@@ -480,4 +481,21 @@ test("sabah işi: e-postanın gönderimi en geç jobStart + 48 sn'de kesilir; el
   // Elle gönderim ve önizleme sınır vermez
   const actions = readFileSync(join(process.cwd(), "src/server/actions/reminders.ts"), "utf8");
   assert.match(actions, /runReminderDigest\("manual"\)/);
+});
+
+test("satış tahmininin adımı: kaydedilemezse kısmen (e-posta yine gider), veri yoksa ve hava alınamazsa sorun değil", () => {
+  assert.deepEqual(forecastStep({ status: "ok", weather: "fetched", saved: 7 } as never), { code: "ok" });
+  assert.deepEqual(forecastStep({ status: "ok", weather: "off" }), { code: "ok" });
+  assert.deepEqual(forecastStep({ status: "ok", weather: "error" }), { code: "noweather" });
+  assert.deepEqual(forecastStep({ status: "skipped", weather: "fresh" }), { code: "nodata" });
+  assert.deepEqual(forecastStep({ status: "error", weather: "error", error: "süre doldu" }), { code: "error", error: "süre doldu" });
+  const ok = { code: "ok" };
+  const base = { sync: { code: "today" }, digest: { code: "sent" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
+  const bad = dailyOutcome({ ...base, forecast: forecastStep({ status: "error", weather: "error", error: "bağlantı yok" }) });
+  assert.equal(bad.status, "partial");
+  assert.equal(bad.message, "Satış tahmini: bağlantı yok");
+  for (const r of [{ status: "ok" as const, weather: "error" }, { status: "skipped" as const, weather: "off" }]) {
+    assert.equal(dailyOutcome({ ...base, forecast: forecastStep(r) }).status, "ok");
+  }
+  assert.deepEqual(stepTexts({ forecast: forecastStep({ status: "ok", weather: "not-modified" }).code }), ["Tahmin kaydedildi"]);
 });

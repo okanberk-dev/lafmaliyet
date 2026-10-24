@@ -18,6 +18,7 @@ import {
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
+import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
 import type { DeliveryCheck, ReorderLine } from "../../lib/reorder/types";
 
@@ -1648,4 +1649,71 @@ export const mcpCalls = pgTable(
     chars: integer("chars"),
   },
   (t) => [index("mcp_calls_at_idx").on(t.at), index("mcp_calls_user_idx").on(t.userId, t.at)],
+);
+
+// ---------------------------------------------------------------- Satış tahmini
+/**
+ * Yöneticinin tahmine eklediği özel günler (derbi, AVM etkinliği, kampanya, kafe kapalı). effect −0,30 … +0,30
+ * (kapalı −1). Geçmiş günler de girilebilir: o gün normal günlerin ortalamasına katılmaz. Ayrıntı: docs/SATIS-TAHMINI.md.
+ */
+export const specialDays = pgTable(
+  "special_days",
+  {
+    id: serial("id").primaryKey(),
+    /** İş günü (YYYY-MM-DD), iki uç dahil */
+    dateFrom: text("date_from").notNull(),
+    dateTo: text("date_to").notNull(),
+    kind: text("kind", { enum: ["derbi", "avm", "kampanya", "kapali", "diger"] }).notNull(),
+    title: text("title").notNull(),
+    effect: doublePrecision("effect").notNull().default(0),
+    note: text("note"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("special_days_from_idx").on(t.dateFrom),
+    check("special_days_range_ck", sql`${t.dateFrom} <= ${t.dateTo}`),
+    check("special_days_effect_ck", sql`${t.effect} >= -1 and ${t.effect} <= 1`),
+  ],
+);
+
+/**
+ * MET Norway'in günlük özeti (Türkiye takvim günü). Sabah işi bugün ve sonrasını günceller; geçmiş günler donar (o
+ * günün havası olarak kalır).
+ */
+export const weatherDays = pgTable("weather_days", {
+  date: text("date").primaryKey(),
+  tMax: doublePrecision("t_max"),
+  tMin: doublePrecision("t_min"),
+  /** Gün içi (09–23) yağış, mm */
+  precipMm: doublePrecision("precip_mm"),
+  symbol: text("symbol"),
+  hours: integer("hours").notNull().default(0),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+});
+
+/**
+ * Her sabah kaydedilen tahmin (hedef gün × yapıldığı gün; ilk yazan kalır, önizlemeler yazmaz). Tutturma bununla
+ * ölçülür. Tutarlar TL, Z toplamı.
+ */
+export const forecastSnapshots = pgTable(
+  "forecast_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    /** Tahmin edilen iş günü */
+    date: text("date").notNull(),
+    /** Tahminin yapıldığı iş günü (date − madeOn: 0…6) */
+    madeOn: text("made_on").notNull(),
+    amount: doublePrecision("amount").notNull(),
+    low: doublePrecision("low").notNull(),
+    high: doublePrecision("high").notNull(),
+    closed: boolean("closed").notNull().default(false),
+    /** Önerilen kişi sayısı */
+    staff: integer("staff"),
+    detail: jsonb("detail").$type<SnapshotDetail>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("forecast_snapshots_date_made_uq").on(t.date, t.madeOn), index("forecast_snapshots_made_idx").on(t.madeOn)],
 );

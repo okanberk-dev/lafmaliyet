@@ -124,6 +124,12 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
 - Bu özellikten önce düzeltilmiş raporların geçmişi ilk yeni düzeltmeden başlar. Bu özellikten önce kaydedilen
   raporlarda sayan boştur: kasayı gönderen saymış sayılır (ilk düzeltmede "Sayan" değişmiş görünmez).
 
+## Satış tahmini
+
+Kasa raporlarının Z toplamı satış tahminini besler (son 6 haftanın hafta günleri; [SATIS-TAHMINI.md](SATIS-TAHMINI.md)):
+0 girilen gün kapalı sayılır, raporu girilmeyen gün yok sayılır; her sabahki tahmin gerçekleşen Z toplamıyla
+karşılaştırılır.
+
 ## Ay bilgisine aktarım
 
 Satışlar › **Ay bilgileri** (açık gün, POS cirosu, indirim, ödenmez, kartlı satış oranı) boş bırakılırsa kasa

@@ -253,6 +253,13 @@
       "when": 1792822455597,
       "tag": "0035_mal_siparisi",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792823729240,
+      "tag": "0036_satis_tahmini",
+      "breakpoints": true
     }
   ]
 }

@@ -653,3 +653,27 @@ test("bildirim özeti: haber olan ek kutuların parçaları fiyat onayından son
   assert.equal(digestSummary({ boxes: ["dünkü kapanış listesi eksik"] }), "dünkü kapanış listesi eksik");
   assert.equal(digestSummary({ count: 1, boxes: [] }), "1 hatırlatma");
 });
+
+test("satış tahmininin gerçek kutusu (src/lib/forecast/text.ts): gövdede ve düz metinde; konu, başlık ve düğme kutusuz hâliyle aynı", async () => {
+  const { buildForecast } = await import("../src/lib/forecast/model");
+  const { accuracy } = await import("../src/lib/forecast/accuracy");
+  const { DEFAULT_FORECAST_SETTINGS } = await import("../src/lib/forecast/staffing");
+  const { digestForecastBox } = await import("../src/lib/forecast/text");
+  const today = "2026-10-28";
+  const forecast = buildForecast({ today, history: [], months: [{ month: "2026-10", openDays: 16, posRevenue: 293_909 }], special: [], weather: null, pastRatios: [] });
+  const box = digestForecastBox({ forecast, settings: DEFAULT_FORECAST_SETTINGS, plan: null, snapshots: [], actuals: new Map(), accuracy: accuracy([], new Map(), today), yesterday: "2026-10-27", weatherUsed: true })!;
+  for (const r of [[], one]) {
+    const without = renderDigest(r, today, null, prices, null);
+    const withFc = renderDigest(r, today, null, prices, null, { forecast: box });
+    assert.equal(withFc.subject, without.subject);
+    assert.equal(/<h1[^>]*>([^<]*)<\/h1>/.exec(withFc.html)?.[1], /<h1[^>]*>([^<]*)<\/h1>/.exec(without.html)?.[1]);
+    assert.ok(withFc.html.includes(">Satış tahmini</div>"));
+    assert.ok(withFc.html.includes("Bugün ≈ 18.200"));
+    assert.ok(withFc.html.includes("yoğunluk normal · 2 kişi (yoğunsa 3) · Cumhuriyet Bayramı arifesi"));
+    assert.ok(withFc.html.includes("Hava durumu: MET Norway verisi (CC BY 4.0)"));
+    assert.ok(withFc.text.includes("\nSatış tahmini\n- Bugün ≈ 18.200"));
+    assert.ok(withFc.text.includes(`Ayrıntı: ${APP_URL}/panel/tahmin`));
+    // Gövde sırası: zam, tahmin, düğme
+    assert.ok(withFc.html.indexOf("Hammadde zamları") < withFc.html.indexOf(">Satış tahmini</div>"));
+  }
+});

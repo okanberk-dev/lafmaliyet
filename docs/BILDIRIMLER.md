@@ -78,6 +78,11 @@ e-postası**, bildirim adreslerine gider. İçinde:
   maliyet artışına fire payı dahildir, Zayi & ikram kayıtları sayılmaz (`src/lib/calc/price-loss.ts`). Satış ayı
   yoksa ya da tutar 1 ₺'den azsa yazılmaz. Genel bakış'taki ve zildeki "Hammadde zammı" uyarısının sonuna da aynı
   toplam eklenir ("Bu zamlar ayda ≈ 1.240 ₺ kâr götürüyor."; orada son 30 günün bütün zamları);
+- **satış tahmini** (en altta, düğmeden önce; Satış tahmini › Tahmin ayarları'nda "Sabah e-postasına tahmin satırı"
+  açıkken): bugünün tahmini, aralığı, yoğunluğu, kaç kişi ve nedenleri ("Bugün ≈ 18.500 ₺ (16.000–21.000) · yoğunluk
+  yüksek · 2 kişi · Cumhuriyet Bayramı arifesi, yağmur"), dünün tahmini ve gerçekleşeni, haftanın en yoğun günü ve
+  7 günün tatlısı, MET Norway kaynağı; Satış tahmini bağlantısıyla. **Yalnız zaten giden e-postaya eklenir**: tahmin
+  için ayrıca e-posta gitmez, konu, başlık ve düğme değişmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 

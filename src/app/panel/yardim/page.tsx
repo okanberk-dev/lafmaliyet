@@ -548,6 +548,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         links: [{ href: "/panel/hatirlaticilar/nakit", label: "Nakit planı" }],
       },
       {
+        id: "satis-tahmini",
+        q: "Önümüzdeki hafta ne kadar satarız, kaç kişi çalışmalı?",
+        a: (
+          <>
+            <Path href="/panel/tahmin" /> her sabah önümüzdeki 7 günün satışını (Z toplamı) kasa raporlarından, hafta gününden, bayram ve tatillerden, Ramazan ve
+            okul tatilinden, hava durumundan (Tuzla, MET Norway) ve sizin girdiğiniz özel günlerden (derbi, AVM etkinliği, kampanya, kapalı gün) hesaplar. Kaç kişi
+            önerisi &apos;bir kişinin günde karşıladığı satış&apos; ayarından, tatlı önerisi son satış aylarındaki tatlı payından gelir. Her sabahki tahmin kaydedilir ve
+            gerçekleşen Z toplamıyla karşılaştırılır; ilk haftalarda veri az olduğu için aralık geniştir. Personel Bugün ekranında yalnız yoğunluğu ve tatlı sayısını
+            görür, tutarı görmez.
+          </>
+        ),
+        icon: TrendingUp,
+        links: [{ href: "/panel/tahmin", label: "Satış tahmini" }],
+      },
+      {
         id: "kdv-tahmini",
         q: "Bu ay ne kadar KDV ödeyeceğim?",
         a: (
