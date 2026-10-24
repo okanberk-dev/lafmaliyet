@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
+import { amountsChanged, DELETED_BILLS_KEY, DELETED_BILLS_LIMIT, isParasutLinked, joinTR, LOCKED_LABELS, lockedChanges, splitSupplier, type LockedField } from "@/app/panel/faturalar/rules";
 import { cleanTaxNumber, methodLabel, PAYMENT_METHOD_VALUES } from "@/app/panel/tedarikciler/logic";
 import { INVOICE_CATEGORIES } from "@/lib/constants";
 import { dateTR, tl } from "@/lib/format";
@@ -96,7 +96,12 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       // Kaydetmek faturayı kontrol edilmiş sayar
       await db.update(s.invoices).set({ ...free, ...payment, needsReview: false }).where(eq(s.invoices.id, id));
     } else {
-      await db.update(s.invoices).set({ ...data, ...payment, needsReview: false }).where(eq(s.invoices.id, id));
+      // Bağı çözülmüş kaydın eşitlemeden kalan KDV toplamı tutarlar değişince silinir: KDV ödenecek − net olur
+      // (pencerede görünen), fark tevkifat sanılmaz (rules.ts amountsChanged)
+      await db
+        .update(s.invoices)
+        .set({ ...data, ...payment, ...(amountsChanged(cur, data) ? { vat: 0 } : {}), needsReview: false })
+        .where(eq(s.invoices.id, id));
     }
     // Pencereden "Ödendi" yapılan fatura da Ödemeler › Son ödenenler'den geri alınabilir
     if (cur.unpaid && !data.unpaid)

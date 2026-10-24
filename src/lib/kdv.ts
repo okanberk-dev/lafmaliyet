@@ -71,9 +71,9 @@ type PurchaseVatInput = Pick<Invoice, "amount" | "discount" | "payable"> & { vat
 const MAX_VAT_RATE = 0.2;
 
 /**
- * Kayıttaki KDV toplamı, tutarlar onu taşıyabiliyorsa (net tutarın en çok %20'si). Paraşüt bağı kopan (iptal) ve
- * tutarları sonra elle değiştirilen kayıtta eski `vat` kalır; ona güvenilse olmayan KDV indirilir ve fark tevkifat
- * sanılırdı.
+ * Kayıttaki KDV toplamı, tutarlar onu taşıyabiliyorsa (net tutarın en çok %20'si). Paraşüt bağı kopan (iptal) kayıtta
+ * tutarlar panelde değişince `vat` 0 yazılır (saveInvoice, rules.ts amountsChanged); bu sınır ondan önce (24 Ekim
+ * 2026) tutarı düşürülmüş kayıtlar içindir: eski `vat`'a güvenilse olmayan KDV indirilir, fark tevkifat sanılırdı.
  */
 function storedVat(inv: PurchaseVatInput): number | null {
   const vat = inv.vat ?? 0;
