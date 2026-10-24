@@ -890,8 +890,12 @@ export type HistoryOk = {
   /** Okunan faturaların bu eşitlemenin verdiği tedarikçi adları (kartın diğer adlarına eklenebilir) */
   names: string[];
   oldest: string | null;
-  /** Süre doldu ya da Paraşüt'e sorulamayan fatura sonraya kaldı: yeniden basınca kaldığı yerden sürer */
+  /** Süre doldu, okunacak sayfa kaldı: yeniden basınca kaldığı yerden sürer */
   partial: boolean;
+  /** Yazılamayan fatura (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı) */
+  deferred: number;
+  /** Yazılamayan fatura kalınan yeri kendi sayfasına geri aldı: yeniden basınca denenir (yoksa sonraki tam okumada) */
+  held: boolean;
   /** Önceki yarım kalan okumanın devamı (ilk sayfalar bu sefer okunmadı) */
   resumed: boolean;
 };
@@ -1072,7 +1076,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       linked?.held ? `${linked.held} fiyat onaya düştü (%40'tan fazla fark)` : "",
       matchSummary(reorder),
       deferred ? `${deferred} fatura yazılamadı (yeniden içeri alınan e-faturanın eski faturası Paraşüt'e sorulamadı)` : "",
-      partial ? "süre doldu, kalanı için yeniden basın" : held ? "yeniden basınca o fatura yeniden denenir" : "",
+      partial ? "süre doldu, kalanı için yeniden basın" : held ? "yeniden basınca denenir" : deferred ? "sonraki tam okumada denenir" : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -1080,7 +1084,7 @@ export async function syncSupplierHistory(target: SupplierHistoryTarget, opts: {
       .update(s.parasutSyncRuns)
       .set({ status: "ok", finishedAt: new Date(), fetched: drafts.length, created, updated, removed, message: `Tedarikçi geçmişi · ${summary}` })
       .where(eq(s.parasutSyncRuns.id, runId));
-    return { ok: true, summary, contacts, fetched: drafts.length, created, updated, removed, names, oldest, partial: partial || held, resumed };
+    return { ok: true, summary, contacts, fetched: drafts.length, created, updated, removed, names, oldest, partial, deferred, held, resumed };
   } catch (e) {
     const error =
       e instanceof FilterIgnoredError

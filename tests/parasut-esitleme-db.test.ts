@@ -523,8 +523,9 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     const first = await press();
     let rec = (await rows()).find((x) => x.id === id)!;
     assert.equal(rec.externalId, "101", "kayıt yerinde kalır, çift kayıt açılmaz");
-    assert.equal(first.partial, true, "yeniden basmak istenir");
-    assert.match(first.summary, /1 fatura yazılamadı/);
+    assert.equal(first.partial, false, "süre dolmadı");
+    assert.deepEqual([first.deferred, first.held], [1, true], "yeniden basmak istenir");
+    assert.match(first.summary, /1 fatura yazılamadı .* · yeniden basınca denenir$/);
     assert.deepEqual(await progress(), { c1: 2 }, "kalınan yer 102'nin sayfası");
 
     // 2. basış kendi sayfasından başlar; eski fatura yine sorulamazsa geçilir (kalınan yer takılı kalmaz), tur biter
@@ -534,6 +535,8 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     rec = (await rows()).find((x) => x.id === id)!;
     assert.equal(rec.externalId, "101");
     assert.equal(second.partial, false);
+    assert.deepEqual([second.deferred, second.held], [1, false]);
+    assert.match(second.summary, /1 fatura yazılamadı .* · sonraki tam okumada denenir$/);
     assert.deepEqual(await progress(), {}, "tur bitti, sonraki basış baştan okur");
 
     // 3. basış baştan okur: eski fatura silinmiş görülür, kayıt yeni faturaya geçer (ödemesi ve notu korunur)
