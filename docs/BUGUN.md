@@ -32,6 +32,7 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Dünkü kasa raporu (`kasa-dun`) | İkisi | Yönetici: farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam), "Mehmet · Z … · nakit … · kart …", güncellendiyse ve not. **Açılış devirle tutmuyor** ya da **Ertesi gün düzeltildi** satırı "sorun var" yapar. Girilmediyse yapılacak (personel bugün de girebilir). Personel yalnız girilmediyse görür: "Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir." Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa satır yok |
 | Dünkü kontrol listeleri (`liste-dun`) | Yönetici | Dünün tamamlanmayan ya da sorunlu (aralık dışı ölçüm, "Sorun var"; sonradan düzeltilen dahil) listesi varsa sorun var: "Kapanış: 3 madde yapılmadı · Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)", rozet "1 eksik" ya da "2 sorun". Dünün kasa raporu da yoksa (kasa kullanılmaya başladıysa) "Kasa raporu da yok; kafe kapalıysa önemsemeyin." Kontrol geçmişinin o gününe götürür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
 | Ödemeler (`odeme`) | Yönetici | Geciken sorun var ("Ödendiyse işaretleyin"), bugünkü yapılacak, ikisi de yoksa tamam (yaklaşanlar bilgi) |
+| Hakedişler (`komisyon`) | Yönetici | Yemek kartı ya da platform hakedişinin son günü geçtiyse ve "Hakediş geldi" işaretlenmediyse sorun var: "Pluxee (Eylül) · son gün 20 Ekim ve 1 hakediş daha", rozet "2 gecikti", Komisyon & hakediş'e götürür. Geciken yoksa satır yok ([KOMISYON.md](KOMISYON.md)) |
 | Faturalar (`fatura`) | Yönetici | Kontrol bekleyen fatura varsa yapılacak, yoksa tamam |
 | Ürün bağlantıları (`urun`) | Yönetici | Hammaddeye bağlanmayı bekleyen fatura ürünü varsa |
 | Fiyatı girilmemiş hammaddeler (`fiyat-yok`) | Yönetici | Paket fiyatı 0 olan etkin hammadde varsa (çoğu sayımda "Listeye ekle" ile eklenen) |
@@ -41,6 +42,8 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Kasadaki fiyatlar (`modpos`) | Yönetici | "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler |
 | Geçen ayın stok sayımı (`sayim-gecen`) | İkisi | Ayın ilk 10 gününde geçen ayın sayımı yoksa ("Girilmedi") ya da yarım kaldıysa ("12 / 40", "Sayıma devam"). Geçen aya götürür: Stok sayımı ekranı, sayılmaya başlanmış geçen ayı değil bu ayı açar |
 | Kontrol listesi (`liste-{şablon}`) | İkisi | Bugün beklenen her liste ayrı satır, açılış saatine göre (personelde yalnız "Personel doldurabilir" listeler; pasif liste yok). Aralıktan önce sonra ("08:00–11:00"), aralıkta yapılacak (başladıysa "3 / 13 madde · Ayşe · son saat 11:00" ve kalan fotoğraf), son saatten sonra sorun var ("Gecikti"; personele "Gün 05:00'te kapanır."), bitince tamam (kim, saat, geç bittiyse "geç", fotoğraf sayısı). Yöneticide açık sorunu olan bitmiş liste "1 sorun" (sorun var). Okunamazsa tek gri "Kontrol listeleri · Okunamadı" satırı |
+| Haftalık hızlı sayım (`hizli-sayim`) | İkisi | Takipte kalem varken sayım günü (varsayılan Pazartesi) ya da son sayım sayım aralığı + 1 günden eskiyse ("Gecikti": "Son hızlı sayım 12 Ekim Pazartesi (9 gün önce). Sipariş önerisi eski stoka göre."). Başlamadıysa "Bugün" ve "Sayıma başla", yarıdaysa "5 / 14", bittiyse tamam (yöneticide "Sipariş listesi hazır.", Mal siparişi'ne götürür). Bugün ay sonu sayımında sayılan takip kalemi de sayılmış sayılır. Ayın son günü satır yok (ay sonu sayımı yerine geçer) ([MAL-SIPARISI.md](MAL-SIPARISI.md)) |
+| Mal siparişi (`mal-siparisi`) | Yönetici | İlk uyan: faturayla tutmayan sipariş (sorun var, "Teslim kontrolü", "Kaldi: 1 eksik; Sütaş: 1 fazla", Gönderilenler › Fark var); sipariş hazır (son sayım bugün ya da dün ve sayımdan sonra siparişi gönderilmemiş önerisi olan tedarikçi: "Kaldi ve Sütaş için 6 kalem sipariş öneriliyor.", Listeyi aç); beklenen günden 2 gün sonra hâlâ gelmeyen sipariş ("Gelmeyen mal siparişi", Bak). Hiçbiri yoksa satır yok |
 | Zayi & ikram (`zayi`) | Personel | Gün içinde "Gün içinde" (bilgi), akşam rapor gönderilmeden "Rapordan önce" (yapılacak), rapor gönderilince tamam. Günün kayıt sayısı ve özeti |
 | Kasa raporu (`kasa`) | İkisi | Gündüz "Akşam" (sonra), 20:00'den sonra yapılacak, gönderilince personelde "Gönderildi" (tamam), yöneticide farkı ve bütünlüğü (dünkü gibi) |
 | Ay sonu stok sayımı (`sayim-son`) | İkisi | Ayın son günü: başlamadıysa "Sayıma başla", yarıdaysa "12 / 40", bittiyse tamam (sayım formundaki "kalem sayıldı" ile aynı kural) |
@@ -77,8 +80,7 @@ günlüğüne yazılır (`[bugun]`).
    `adminFacts`'te, personele aitse yalnız `staffFacts`'te, ikisine aitse `loadToday`'de yüklenir
    (`src/server/data/today.ts`). Her yükleyici `safe(…)` ile sarılır.
 2. **Fonksiyon:** satırı üreten küçük bir fonksiyon (olgu yoksa ya da sayı 0 ise `null`); `ADMIN_ROWS` /
-   `STAFF_ROWS`'ta yerine. İkinci paketin kalan yuvaları yorum olarak orada: komisyon (`komisyon`), siparis
-   (`hizli-sayim`, `mal-siparisi`).
+   `STAFF_ROWS`'ta yerine (mal siparişi: `hizli-sayim`, `mal-siparisi`; komisyon: `komisyon`).
 3. **Test:** `tests/bugun.test.ts`'e bir senaryo; yönetici yükleyicisiyse kaynak denetimindeki listeye adı.
 
 Satırın saati varsa (ör. açılış listesi 08:00'de açılır) `nextRefreshAt(now, [an])` ekranı o an yeniler.

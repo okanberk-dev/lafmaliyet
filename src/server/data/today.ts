@@ -10,11 +10,13 @@ import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { loadChecklistDay } from "@/server/data/checklists";
+import { loadOverduePayouts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { posPendingSummary } from "@/server/data/prices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
+import { loadReorderDay } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
 import { dayWaste } from "@/server/data/waste";
@@ -131,10 +133,13 @@ interface RoleFacts {
   cashFlags: Map<string, string[]> | null;
 }
 
-/** Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) */
+/**
+ * Yalnız personel: iş gününün zayi / ikram özeti (ikramın menü fiyatıyla değeri gösterilmez) ve hızlı sayımın olguları
+ * (maliyet modeli verilmez: fiyat, sipariş ve teslim kontrolü yüklenmez)
+ */
 async function staffFacts(c: DayContext): Promise<RoleFacts> {
-  const waste = await safe(dayWaste(c.day));
-  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null }, cashFlags: null };
+  const [waste, reorder] = await Promise.all([safe(dayWaste(c.day)), safe(loadReorderDay("staff", new Date()))]);
+  return { facts: { waste: waste ? { count: waste.count, zayi: waste.zayi, ikram: waste.ikram } : null, reorder }, cashFlags: null };
 }
 
 /**
@@ -144,7 +149,9 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
   const yesterday = dayContext(now).yesterday;
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday] = await Promise.all([
+  // Maliyet modeli bir kez kurulur: zam uyarısı ve mal siparişinin hazır listesi aynı modelle (personelde hiç kurulmaz)
+  const modelP = loadModel();
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday, overdue, reorder] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -175,7 +182,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     // Hammadde zammı: Genel bakış ve zil ile aynı metin (ayda TL etkisiyle); personelde model hiç kurulmaz
     safe(
       (async () => {
-        const pa = await loadPriceAlerts(await loadModel());
+        const pa = await loadPriceAlerts(await modelP);
         const alert = priceAlert(pa.changes, pa.actionable, pa.loss.totalLoss);
         return alert ? { detail: alert.detail, href: alert.href, count: pa.actionable.length } : null;
       })(),
@@ -194,9 +201,13 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     // Dünün kontrol listeleri: tamamlanmayan ve sorunlu olanlar (bugünkü listeler iki rolde loadToday'de)
     safe(loadChecklistDay(yesterday, "admin", now)).then((lists) => (lists ? { day: yesterday, lists } : null)),
+    // Geciken hakedişler (hafif okuma: son 4 ayın Komisyon faturaları ve işaretler; docs/KOMISYON.md)
+    safe(loadOverduePayouts()),
+    // Mal siparişi: hızlı sayım, sipariş hazır tedarikçiler, teslim kontrolü (docs/MAL-SIPARISI.md)
+    safe(modelP.then((model) => loadReorderDay("admin", now, model))),
   ]);
   return {
-    facts: { system, payments: upcoming?.items ?? null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday },
+    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday, reorder },
     cashFlags: flags,
   };
 }

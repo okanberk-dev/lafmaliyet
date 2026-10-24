@@ -10,6 +10,7 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  ClipboardPen,
   Coffee,
   FileText,
   Gift,
@@ -22,8 +23,10 @@ import {
   ListTodo,
   MicVocal,
   Package,
+  Percent,
   Receipt,
   Settings,
+  ShoppingBasket,
   Tags,
   Truck,
   UserRound,
@@ -124,6 +127,14 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "cari hesap kart unvan vergi no vkn vergi dairesi iban banka telefon borç bakiye ödeme talebi ödendi ödenmedi vade",
       },
+      // Yemek kartı ve platform komisyonunun gerçek oranı, faturadaki ücretler ve hakediş takibi (docs/KOMISYON.md)
+      {
+        href: "/panel/komisyonlar",
+        label: "Komisyon & hakediş",
+        icon: Percent,
+        roles: ["admin"],
+        keywords: "komisyon hakediş yemek kartı pluxee sodexo multinet edenred setcard metropol yemeksepeti trendyol getir migros oran yüzde 6 erken ödeme kesinti platform",
+      },
       { href: "/panel/gelir-gider", label: "Gelir-gider", icon: CalendarRange, excel: "Genel Maliyet", roles: ["admin"], keywords: "aylık tablo kâr zarar online satış laffogato.net site uygulama ciro" },
       // Ödemeler'in alt ekranı (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur)
       {
@@ -156,6 +167,21 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         match: ["/panel/tutarlilik"],
         keywords: "envanter tutarlılık fark",
       },
+      // Haftalık kısa sayım ve mal siparişi (docs/MAL-SIPARISI.md); "Sipariş" tek başına uygulama siparişi demek
+      {
+        href: "/panel/hizli-sayim",
+        label: "Hızlı sayım",
+        icon: ClipboardPen,
+        roles: ["admin", "staff"],
+        keywords: "haftalık sayım kritik kalem eldeki stok sipariş öncesi gelen mal geldi",
+      },
+      {
+        href: "/panel/mal-siparisi",
+        label: "Mal siparişi",
+        icon: ShoppingBasket,
+        roles: ["admin"],
+        keywords: "sipariş öneri tedarikçi whatsapp hedef stok en az teslim kontrolü eksik fazla fiyat farkı gönderilenler kalemler",
+      },
       { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
     ],
   },
@@ -181,6 +207,13 @@ export const SECTION_TABS = {
   stok: [
     { href: "/panel/sayim", label: "Sayım" },
     { href: "/panel/tutarlilik", label: "Tutarlılık" },
+  ],
+  // Mal siparişi (docs/MAL-SIPARISI.md); Hızlı sayım personele de açık, sekmeleri yalnız yöneticiye çizilir
+  malSiparisi: [
+    { href: "/panel/mal-siparisi", label: "Sipariş listesi" },
+    { href: "/panel/hizli-sayim", label: "Hızlı sayım" },
+    { href: "/panel/mal-siparisi/gonderilen", label: "Gönderilenler" },
+    { href: "/panel/mal-siparisi/kalemler", label: "Kalemler" },
   ],
 } as const;
 
@@ -231,6 +264,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "satislar", label: "Satışlar", href: "/panel/satislar", roles: ["admin"] },
       { id: "faturalar", label: "Faturalar", href: "/panel/faturalar", roles: ["admin"] },
       { id: "tedarikciler", label: "Tedarikçiler", href: "/panel/tedarikciler", roles: ["admin"] },
+      { id: "komisyonlar", label: "Komisyon & hakediş", href: "/panel/komisyonlar", roles: ["admin"] },
       { id: "gelir-gider", label: "Gelir-gider", href: "/panel/gelir-gider", roles: ["admin"] },
       { id: "giderler", label: "Giderler & personel", href: "/panel/giderler", roles: ["admin"], match: ["/panel/personel", "/panel/harcamalar"] },
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
@@ -243,6 +277,8 @@ export const NAV_TREE: NavNode[] = [
     roles: ["admin", "staff"],
     children: [
       { id: "sayim", label: "Stok sayımı", href: "/panel/sayim", roles: ["admin", "staff"] },
+      { id: "hizli-sayim", label: "Hızlı sayım", href: "/panel/hizli-sayim", roles: ["admin", "staff"] },
+      { id: "mal-siparisi", label: "Mal siparişi", href: "/panel/mal-siparisi", roles: ["admin"] },
       { id: "zayi", label: "Zayi & ikram", href: "/panel/zayi", roles: ["admin", "staff"] },
       { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
     ],
@@ -376,6 +412,10 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
+  "/panel/komisyonlar": "Komisyonlar",
+  "/panel/mal-siparisi": "Mal siparişi",
+  "/panel/mal-siparisi/gonderilen": "Gönderilenler",
+  "/panel/mal-siparisi/kalemler": "Sipariş kalemleri",
 };
 
 /** Üst çubuk başlığı: en uzun eşleşen yol kazanır (/panel/urunler/12 → "Ürünler") */

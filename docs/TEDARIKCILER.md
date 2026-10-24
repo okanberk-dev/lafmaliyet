@@ -52,6 +52,8 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
   Ödemeler & hatırlatıcılar › Son ödenenler'den geri alınır ([BILDIRIMLER.md](BILDIRIMLER.md)).
 - **Geçmiş faturaları al** (Paraşüt bağlıysa, Faturalar bölümünün başında): tedarikçinin Paraşüt'teki bütün gider
   faturaları tarih sınırı olmadan gelir (aşağıda *Geçmiş faturalar*).
+- Tedarikçiye gönderilen **mal siparişleri** bu sayfada değil, Stok › Mal siparişi › Gönderilenler'dedir; sipariş
+  kartındaki *Bu tedarikçinin siparişleri* listeyi bu tedarikçiye süzer (`?tedarikci=<bu sayfanın adresi>`).
 
 ## Geçmiş faturalar
 
@@ -121,7 +123,8 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
   işaretlersiniz. İade (eksi) faturası borç sayılmaz (ödeme talebinde düşülebilir, aşağıda).
 - **Komisyon faturası** (kategorisi kesin olarak Komisyon: kural, tedarikçinin geçmişi ya da platform listesi —
   Trendyol, Yemek Sepeti, yemek kartları) ödendi gelir (fatura günü): ödenmez, platformun hakedişinden düşülür; kalan
-  borcu şişirmez. Kategori yalnız tahminse ödenmedi gelir.
+  borcu şişirmez. Kategori yalnız tahminse ödenmedi gelir. Hakedişin gelip gelmediği ve gerçek oran: Komisyon &
+  hakediş ([KOMISYON.md](KOMISYON.md)).
 - Eşitleme var olan faturanın ödeme durumunu değiştirmez (tek istisna: adı okunamadan "Paraşüt tedarikçisi" diye
   açılan fatura, adı okununca peşin çalışılan tedarikçinin kartına düşerse ödendi olur). Paraşüt'ün bildirdiği yalnız ipucu olarak saklanır
   (`invoices.parasut_unpaid`, ekranda *Paraşüt'te ödendi*). Paraşüt faturayı kapatınca panelde ödenmedi duran kısmen
@@ -183,7 +186,9 @@ Cuma gününe kadar
 - **Banka:** IBAN (TR + 24 hane, kontrol hanesi denetlenir; banka adı IBAN'dan bulunur ve boşsa yazılır), banka,
   hesap sahibi. Kayıtlı IBAN değiştirilirken teyit uyarısı çıkar (sahte "IBAN'ımız değişti" bildirimi yaygın bir
   dolandırıcılıktır; tedarikçiyi bildiğiniz numaradan arayın); değişiklik eski ve yeni IBAN'la işlem geçmişine yazılır.
-- **İletişim:** yetkili, telefon (cep telefonuysa WhatsApp düğmesi çıkar), e-posta, adres.
+- **İletişim:** yetkili, telefon (cep telefonuysa WhatsApp düğmesi çıkar), e-posta, adres. Mal siparişi WhatsApp'ta
+  bu numarayla açılır: cep telefonu olmalı; yoksa ya da sabit hatsa kişi WhatsApp'ta elle seçilir
+  ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 5).
 - **Ödeme:** vade (gün, 0–365), genelde nasıl ödenir (ödendi penceresinde önce bu seçili gelir), *Faturaları ödendi
   gelsin* (peşin).
 - **Faturalarda geçen diğer adlar:** aynı tedarikçinin faturalarda farklı yazılan adları ("SÜTAŞ SÜT ÜRÜNLERİ A.Ş.");

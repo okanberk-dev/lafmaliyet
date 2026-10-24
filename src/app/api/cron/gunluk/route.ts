@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
 import { getDb } from "@/server/db";
@@ -9,6 +9,7 @@ import { dailyKaraoke } from "@/server/karaoke/history";
 import { pruneMcp } from "@/server/mcp/store";
 import { runReminderDigest } from "@/server/notify/digest";
 import { pushReminderSummaries } from "@/server/notify/reminder-push";
+import { pushCountDay } from "@/server/notify/reorder-push";
 import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
@@ -20,8 +21,9 @@ import { cleanupPhotos } from "@/server/storage/photos";
 // o iş bu sabah başarıyla çalışmadıysa (atlandı, hata verdi) e-postadan önce burada bir kez daha denenir. Ardından
 // kişisel hatırlatıcıların sabah bildirimi, karaoke rezervasyonlarının ve laffogato.net menüsünün (fiyat, Satışta /
 // Tükendi; docs/SITE-MENU.md) günlük yedek eşitlemesi (ping kaçtıysa) ve laffogato.net'in online satışları (bu ay;
-// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md) ve
-// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md).
+// ayın ilk 7 gününde geçen ay da; docs/SITE-SATIS.md), süresi dolan fotoğrafların silinmesi (docs/FOTOGRAF.md),
+// Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md) ve sayım günü hızlı
+// sayım bildirimi (docs/MAL-SIPARISI.md).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -81,8 +83,16 @@ export async function GET(request: NextRequest) {
       Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
       "süre doldu" as const,
     );
+  // Hızlı sayım günü bildirimi (docs/MAL-SIPARISI.md): en çok 8 sn, kuyruğun 55 sn'sini aşmadan; adım yalnız sayım
+  // günü bildirim gönderilince yazılır
+  const countTask = () =>
+    capped(
+      pushCountDay().catch((e: Error) => ({ error: e.message })),
+      Math.min(8_000, tailStepDeadline(jobStart) - Date.now()),
+      { error: "süre doldu" },
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
       dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
@@ -90,13 +100,16 @@ export async function GET(request: NextRequest) {
       syncSiteSales().catch((e: Error) => ({ status: "error" as const, error: e.message })),
       photosTask(),
       mcpTask(),
+      countTask(),
     ]);
+    const countResult = countStep(count);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
       menu: siteStep(menu),
       sales: siteStep(sales),
       photos: photosStep(photos),
+      ...(countResult ? { count: countResult } : {}),
     };
     return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps };
   };

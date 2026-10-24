@@ -17,11 +17,13 @@ import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
 import { loadChecklistDays } from "@/server/data/checklists";
+import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { posPendingSummary } from "@/server/data/prices";
 import { countPendingRequests, loadMyRequests, loadReviewQueue } from "@/server/data/recipe-requests";
+import { reorderNotifications } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders } from "@/server/data/user-reminders";
 import { getDb, schema as s } from "@/server/db";
@@ -404,6 +406,24 @@ async function invoiceNotifications(): Promise<PanelNotification[]> {
 }
 
 /**
+ * Yönetici: komisyon ve hakediş (Faturalar başlığı; docs/KOMISYON.md): geciken hakediş, yemek kartında %6 aşımı ve
+ * komisyon dışı ücret olabilecek kalem, en çok beş. Hafif okuma (son 4 ayın Komisyon faturaları, hakediş işaretleri ve
+ * Z toplamları; maliyet modeli yok). Kimlik uyarının anahtarından: yeni oran ya da yeni fatura yeniden okunmamış olur.
+ */
+async function commissionNotifications(): Promise<PanelNotification[]> {
+  return (await loadCommissionAlerts()).map((a) => ({
+    id: `komisyon-${a.key.replace(/:/g, "-")}`,
+    kind: a.level,
+    title: a.title,
+    body: a.body,
+    timeLabel: dateTR(a.date),
+    unread: true,
+    href: a.href,
+    group: "fatura" as const,
+  }));
+}
+
+/**
  * Kenar çubuğundaki zil: (yalnız yönetici) önce günlük işlerin sorunları, sonra kişinin hatırlatıcıları ve reçete
  * onayları, sonra (yalnız yönetici) zamanı gelen ödemeler (gecikmiş, bugün, yakında), faturalar, fiyatı girilmemiş
  * hammaddeler, kasada (ModPOS) değişecek fiyatlar ve son satış ayının uyarıları (Genel bakış'taki "Dikkat edilmesi
@@ -421,7 +441,7 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     checklistNotifications(user).catch(() => []),
   ]);
   if (user.role !== "admin") return [...cash, ...kontrol, ...mine, ...recipes];
-  const [model, upcoming, invoices, system, unpriced, holds, pos] = await Promise.all([
+  const [model, upcoming, invoiceItems, system, unpriced, holds, pos, commission, reorder] = await Promise.all([
     loadModel(),
     loadUpcoming().catch(() => null),
     invoiceNotifications().catch(() => []),
@@ -429,7 +449,12 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
     unpricedNotifications().catch(() => []),
     holdNotifications().catch(() => []),
     posNotifications().catch(() => []),
+    commissionNotifications().catch(() => []),
+    // Mal siparişinin teslim kontrolü: fark ve gelmeyen sipariş (Faturalar grubu, en çok 5; tek sorgu, model yok)
+    reorderNotifications().catch(() => []),
   ]);
+  // Faturalar grubu: faturaların ardından mal siparişinin teslim kontrolü
+  const invoices = [...invoiceItems, ...reorder];
 
   const payments: PanelNotification[] = (upcoming?.items ?? [])
     .filter((i) => i.status !== "later")
@@ -478,5 +503,5 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
           },
         ]
       : [];
-  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
+  return [...system, ...mine, ...recipes, ...holds, ...cash, ...kontrol, ...payments, ...commission, ...invoices, ...pos, ...priceNote, ...unpriced, ...warnings];
 }

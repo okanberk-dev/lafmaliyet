@@ -24,7 +24,12 @@ başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişe
 `docs/FIYATLAR.md`). **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
-([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6).
+([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye komisyon ve hakediş uyarıları da
+durur: geciken hakediş, yemek kartında kesin %6 aşımı, komisyon dışı ücret olabilecek kalem (en çok 5; Komisyon &
+hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8).
+Başlığın sonunda mal siparişlerinin teslim kontrolü durur: faturayla tutmayan sipariş ("Teslim kontrolü: Sütaş", fark
+değişince yeniden okunmamış olur) ve beklenen günden 2 gün sonra hâlâ gelmeyen ("Mal siparişi gelmedi mi: Kaldi"); en
+çok 5, Gönderilenler'deki siparişe götürür ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 8).
 
 ## Son ödenenler (geri alma)
 
@@ -57,6 +62,9 @@ e-postası**, bildirim adreslerine gider. İçinde:
   fazla farklı gelen, onay bekleyen fiyatlar (`docs/PARASUT.md` 5b), Hammaddeler › Onay bekleyen fiyatlar bağlantısıyla.
   Bekledikçe bölümde görünür; e-postayı yalnız son Paraşüt bölümlü e-postadan beri onaya düşen fiyat gönderir;
 - son Paraşüt eşitlemesi başarısızsa uyarı (aynı hata bir kez bildirilir);
+- **komisyon ve hakediş** (fiyat onayından sonra): geciken hakediş, yemek kartında %6 aşımı ve komisyon dışı ücret
+  olabilecek kalem; her uyarı bir kez (`komisyon:<uyarı>`), en çok 5, Komisyon & hakediş bağlantısıyla. Konuya "Hakediş
+  gecikti: Pluxee (Ekim)", "2 hakediş gecikti" ya da "komisyon uyarısı" eklenir ([KOMISYON.md](KOMISYON.md) § 8);
 - **dünkü kontrol listeleri** (eksik ya da sorun varsa): tamamlanmayan listeler ("3 / 13 madde; yapılmayan: …" ya da
   "hiç açılmadı"), aralık dışı değerler ve "Sorun var" notları (en çok 5), o gün kasa raporu da yoksa "kafe kapalıysa
   önemsemeyin"; her gün için bir kez (`kontrol:{gün}`), Kontrol listeleri › Geçmiş bağlantısıyla
@@ -73,7 +81,7 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı ya da dünkü kontrol listelerinin kutusu yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı ya da dünkü kontrol listelerinin kutusu yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay
@@ -214,7 +222,9 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
   cihazda sekme arka plandayken sistem bildirimi olarak gelir. Zil, bugünkü ve gecikmiş hatırlatıcıları gösterir.
 - **Sabah özeti:** günlük iş (`/api/cron/gunluk`, 08:00–09:00), bugün ya da önceden kalmış açık hatırlatıcısı olan
-  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var").
+  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Hızlı sayım günü
+  aynı iş, takipte kalem varsa ve hepsi sayılmadıysa sabah özeti açık bütün cihazlara bir de "Bugün hızlı sayım günü"
+  gönderir (Hızlı sayım'ı açar; ayın son günü gitmez; [MAL-SIPARISI.md](MAL-SIPARISI.md) § 3).
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
