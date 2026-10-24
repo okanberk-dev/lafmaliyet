@@ -266,3 +266,22 @@ test("sabah e-postası: Onay bekleyenler kutusu haberdir (konu, başlık, düğm
   assert.match(digest, /pendingRequests\(getDb\(\), \{ now \}\)/);
   assert.doesNotMatch(digest, /payload/);
 });
+
+test("sabah işi: süresi dolan istekler adımı (yalnız bir istek kapanınca ya da hatada yazılır); db:reset bekleyenleri geri çeker", async () => {
+  const { requestsStep, stepTexts, dailyOutcome } = await import("../src/lib/job-health");
+  assert.equal(requestsStep({ expired: 0 }), undefined);
+  assert.deepEqual(requestsStep({ expired: 3 }), { code: "ok" });
+  assert.deepEqual(requestsStep({ error: "süre doldu" }), { code: "error", error: "süre doldu" });
+  assert.deepEqual(stepTexts({ requests: "ok" }), ["Süresi dolan personel istekleri kapandı"]);
+  const ok = { code: "ok" };
+  const base = { sync: { code: "today" }, digest: { code: "sent" }, reminders: ok, karaoke: ok, menu: ok, sales: ok };
+  const bad = dailyOutcome({ ...base, requests: { code: "error", error: "bağlantı" } });
+  assert.equal(bad.status, "partial");
+  assert.equal(bad.message, "Personel istekleri: bağlantı");
+  const route = read("src/app/api/cron/gunluk/route.ts");
+  assert.match(route, /expireStaffRequests\(getDb\(\), new Date\(\)\)/);
+  assert.match(route, /\.\.\.\(requestsResult \? \{ requests: requestsResult \} : \{\}\)/);
+  const seed = read("scripts/seed.ts");
+  assert.match(seed, /const reset = \{ reviewNote: "Veritabanı sıfırlandı", updatedAt: now \};/);
+  assert.match(seed, /\.set\(\{ \.\.\.reset, status: "withdrawn" \}\)\.where\(eq\(s\.staffRequests\.status, "pending"\)\)/);
+});

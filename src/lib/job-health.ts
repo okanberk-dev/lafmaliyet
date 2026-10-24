@@ -151,6 +151,7 @@ const STEP_NAMES: Record<string, string> = {
   photos: "Fotoğraf temizliği",
   count: "Hızlı sayım bildirimi",
   weekly: "Haftalık özet",
+  requests: "Personel istekleri",
   watchdog: "Sistem uyarısı e-postası",
 };
 
@@ -179,6 +180,7 @@ export const STEP_LABELS: Record<string, Record<string, string>> = {
     late: "Haftalık özet: süre yetmedi, yarın denenecek",
     error: "Haftalık özet gönderilemedi",
   },
+  requests: { ok: "Süresi dolan personel istekleri kapandı", error: "Personel istekleri hata" },
   watchdog: { sent: "Sistem uyarısı e-postası gitti", error: "Sistem uyarısı e-postası gönderilemedi" },
 };
 
@@ -194,8 +196,11 @@ const cut = (v: string, n: number) => (v.length > n ? `${v.slice(0, n - 1)}…` 
 
 /** Sabah işinin her gün yazılan adımları */
 export type CoreStep = "sync" | "digest" | "reminders" | "karaoke" | "menu" | "sales";
-/** Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, hızlı sayım, haftalık özet */
-export type OptionalStep = "forecast" | "photos" | "count" | "weekly";
+/**
+ * Yalnız çalıştığı gün yazılan adımlar (yoksa hiçbir şey yazılmaz): satış tahmini, fotoğraf temizliği, hızlı sayım,
+ * haftalık özet, süresi dolan personel istekleri
+ */
+export type OptionalStep = "forecast" | "photos" | "count" | "weekly" | "requests";
 export type DailyStep = CoreStep | OptionalStep;
 export type StepResult = { code: string; error?: string | null };
 
@@ -227,7 +232,7 @@ const stepFailed = (k: DailyStep, s: StepResult) => s.code === "error" || (k ===
  * İsteğe bağlı adım verilmediyse hiç yazılmaz (o gün çalışmadı).
  */
 export function dailyOutcome(steps: Record<CoreStep, StepResult> & Partial<Record<OptionalStep, StepResult>>): JobOutcome {
-  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "photos", "count", "weekly"];
+  const order: DailyStep[] = ["digest", "sync", "reminders", "karaoke", "menu", "sales", "forecast", "photos", "count", "weekly", "requests"];
   const present = order.filter((k) => steps[k] !== undefined);
   const failed = present.filter((k) => stepFailed(k, steps[k]!));
   const status = steps.digest.code === "error" ? "error" : failed.length ? "partial" : "ok";
@@ -254,6 +259,15 @@ export function forecastStep(r: { status: "ok" | "skipped" | "error"; weather: s
   if (r.status === "error") return { code: "error", error: r.error ?? null };
   if (r.status === "skipped") return { code: "nodata" };
   return { code: r.weather === "error" ? "noweather" : "ok" };
+}
+
+/**
+ * Süresi dolan personel isteklerinin adımı (src/server/staff-requests/core.ts expireStaffRequests; docs/ONAYLAR.md):
+ * yalnız bir istek kapandıysa ya da hata verdiyse yazılır (kapanacak istek yoksa adım yok)
+ */
+export function requestsStep(r: { expired: number } | { error: string }): StepResult | undefined {
+  if ("error" in r) return { code: "error", error: r.error };
+  return r.expired ? { code: "ok" } : undefined;
 }
 
 /** Fotoğraf temizliğinin adımı (src/server/storage/photos.ts cleanupPhotos) */

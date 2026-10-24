@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { loadEnvConfig } from "@next/env";
-import { count, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 
 import { backupFileName, backupSummaryText, databaseTarget } from "../src/lib/backup/format";
 import { normalizePosName } from "../src/lib/calc/engine";
@@ -191,6 +191,20 @@ export async function runSeed({ reset = false, confirm = null, ask = null, now =
         // Nakit planının tahmin ayarı sabit gider kimliklerine bağlı (fixed:<id>), kimlikler baştan sayar: başka bir
         // gideri kapatmasın. Bakiye zaten kısa ömürlü; devreden KDV kaydı da gider (docs/NAKIT-PLANI.md)
         await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'cashflow.plan'`));
+        // Personel istekleri ürün, hammadde ve kayıt kimliklerine bağlı (docs/ONAYLAR.md): bekleyenler geri çekilir,
+        // onaylanmış ama gönderilmemiş mal siparişi taslağı süresi dolmuş sayılır; tuttukları fotoğraflar 7 gün sonra
+        // silinmek üzere bırakılır. İstekler kaydıyla kalır (işlem geçmişi gibi), not personele görünür
+        await tx.execute(
+          sql.raw(
+            `UPDATE photos SET expires_at = now() + interval '7 days' WHERE linked_at IS NULL AND id IN (SELECT unnest(photo_ids) FROM staff_requests WHERE status = 'pending')`,
+          ),
+        );
+        const reset = { reviewNote: "Veritabanı sıfırlandı", updatedAt: now };
+        await tx.update(s.staffRequests).set({ ...reset, status: "withdrawn" }).where(eq(s.staffRequests.status, "pending"));
+        await tx
+          .update(s.staffRequests)
+          .set({ ...reset, status: "expired" })
+          .where(and(eq(s.staffRequests.kind, "mal-taslak"), eq(s.staffRequests.status, "approved")));
       }
 
       await tx.insert(s.settings).values(

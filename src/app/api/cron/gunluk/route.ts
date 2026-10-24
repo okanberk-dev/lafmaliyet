@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { countStep, dailyOutcome, digestStep, forecastStep, photosStep, reminderStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
+import { countStep, dailyOutcome, digestStep, forecastStep, photosStep, reminderStep, requestsStep, type CoreStep, type JobOutcome, type OptionalStep, type StepResult } from "@/lib/job-health";
 import { weeklyStep, WEEKLY_DEADLINE_MS, type WeeklyRunResult } from "@/lib/weekly/core";
 import { capped, JOB_SEND_DEADLINE_MS, tailStepDeadline } from "@/server/jobs/capped";
 import { rejectUnlessCron } from "@/server/jobs/cron-auth";
@@ -16,6 +16,7 @@ import { isParasutConfigured } from "@/server/parasut/config";
 import { syncParasut } from "@/server/parasut/sync";
 import { syncSiteMenu } from "@/server/site-menu/sync";
 import { syncSiteSales } from "@/server/site-sales/sync";
+import { expireStaffRequests } from "@/server/staff-requests/core";
 import { cleanupPhotos } from "@/server/storage/photos";
 import { runWeeklyStep } from "@/server/weekly/send";
 
@@ -28,7 +29,8 @@ import { runWeeklyStep } from "@/server/weekly/send";
 // Claude bağlantısının eski kod, anahtar ve kayıtlarının temizliği (docs/CLAUDE-BAGLANTISI.md), sayım günü hızlı
 // sayım bildirimi (docs/MAL-SIPARISI.md). Pazartesi (gönderilemezse salı, çarşamba) yöneticilere haftalık özet
 // (docs/HAFTALIK-OZET.md). Satış tahmini (hava durumu ve günün tahmin kaydı; docs/SATIS-TAHMINI.md) Paraşüt'ün
-// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir.
+// yeniden denemesiyle aynı anda çalışır, sabah e-postasından önce beklenir. Süresi dolan personel istekleri (mal
+// siparişi taslağı, kasadan çıkan) kapanır ve tuttukları fotoğraflar bırakılır (docs/ONAYLAR.md).
 // Her çalışma ve adımlarının sonucu job_runs'a yazılır (Ayarlar › Günlük işler); e-posta gidemezse ya da iş hiç
 // çalışmazsa ertesi sabah Paraşüt işinin bekçisi söyler. Zaman bütçesi jobStart'tan: sabah e-postasının gönderimi en
 // geç 48 sn'de kesilir (takılan Resend işlevi bitirmesin), kuyruk en geç 55 sn'de biter (src/server/jobs/capped.ts).
@@ -115,8 +117,16 @@ export async function GET(request: NextRequest) {
       jobStart + WEEKLY_DEADLINE_MS + 3_000 - Date.now(),
       { status: "error", weekday: 0, error: "süre doldu" },
     );
+  // Personel istekleri (docs/ONAYLAR.md): süresi dolan bekleyen ve onaylanmış istekler "Süresi doldu" olur; en çok 3 sn,
+  // kuyruğun 55 sn'sini aşmadan. Adım yalnız bir istek kapanınca ya da hata verince yazılır
+  const requestsTask = () =>
+    capped(
+      expireStaffRequests(getDb(), new Date()).catch((e: Error) => ({ error: e.message })),
+      Math.min(3_000, tailStepDeadline(jobStart) - Date.now()),
+      { error: "süre doldu" },
+    );
   const extras = async () => {
-    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly] = await Promise.all([
+    const [reminders, karaoke, menu, sales, photos, mcp, count, weekly, requests] = await Promise.all([
       pushReminderSummaries().catch((e: Error) => ({ error: e.message })),
       // Karaoke eşitlemesi ve KVKK: 3 × 366 günden eski oturumların adı ve notu silinir (docs/KARAOKE.md › KVKK)
       dailyKaraoke().catch((e: Error) => ({ status: "error" as const, error: e.message })),
@@ -126,9 +136,11 @@ export async function GET(request: NextRequest) {
       mcpTask(),
       countTask(),
       weeklyTask(),
+      requestsTask(),
     ]);
     const countResult = countStep(count);
     const weeklyResult = weeklyStep(weekly);
+    const requestsResult = requestsStep(requests);
     const steps: Record<Exclude<CoreStep, "sync" | "digest">, StepResult> & Partial<Record<OptionalStep, StepResult>> = {
       reminders: reminderStep(reminders),
       karaoke: siteStep(karaoke),
@@ -137,8 +149,9 @@ export async function GET(request: NextRequest) {
       photos: photosStep(photos),
       ...(countResult ? { count: countResult } : {}),
       ...(weeklyResult ? { weekly: weeklyResult } : {}),
+      ...(requestsResult ? { requests: requestsResult } : {}),
     };
-    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp }, steps, weekly: weekly.status };
+    return { body: { reminders, karaoke: karaoke.status, menu: menu.status, sales: sales.status, photos, mcp, requests }, steps, weekly: weekly.status };
   };
   const forecast = await forecastP;
   const fcStep = { forecast: forecastStep(forecast) };
