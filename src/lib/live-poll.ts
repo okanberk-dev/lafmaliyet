@@ -73,6 +73,16 @@ export function listensForAlerts(p: { sound: boolean; orderAlerts: boolean; kara
   return p.sound && audioReady && (p.orderAlerts || p.karaokeAlarms);
 }
 
+/**
+ * Yenilik bu cihaza bildirimle gelir mi: izin verilmiş, abonelik sunucuya kaydedilmiş (`topics` kayıttan gelir) ve bu
+ * cihazda zili açık olan konular aboneliğinde de açık. Yalnız izin yetmez: abonelik kaydedilememiş (gizli pencere, ağ
+ * engeli) ya da sipariş bildirimi kapatılmış (yöneticide varsayılan kapalı) olabilir; o cihaz yeniliği ancak sorarak
+ * öğrenir.
+ */
+export function pushCovers(o: { granted: boolean; topics: { karaoke: boolean; orders: boolean } | null; orderAlerts: boolean; karaokeAlarms: boolean }): boolean {
+  return o.granted && o.topics !== null && (!o.orderAlerts || o.topics.orders) && (!o.karaokeAlarms || o.topics.karaoke);
+}
+
 /** Kontrolün vakti geldi mi: son soruluşu (başarılı yanıt ya da gönderilen istek) aralığından eskiyse */
 export function livePollDue(o: LivePollInput, lastAskedAt: number, nowMs: number): boolean {
   const ms = livePollMs(o);

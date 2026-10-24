@@ -9,7 +9,7 @@ import { toastUnreachable } from "@/components/ui/action-error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
-import { LIVE_POLL, listensForAlerts, livePollDue } from "@/lib/live-poll";
+import { LIVE_POLL, listensForAlerts, livePollDue, pushCovers } from "@/lib/live-poll";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ import { completeUserReminder } from "@/server/actions/user-reminders";
 import { useClock } from "./clock";
 import { applyOutput } from "./output-client";
 import { usePrefs } from "./prefs";
-import { pushSupport, registerServiceWorker, subscribeDevice } from "./push-client";
+import { pushSupport, registerServiceWorker, subscribeDevice, useDeviceTopics } from "./push-client";
 import { alarmRinging, audioState, play, scheduleBurst, startAlarm, stopAlarm, unlockAudio, useAudioState } from "./sounds";
 import { getLive, liveNow, patchLive, refreshLive, useLive } from "./store";
 
@@ -176,8 +176,10 @@ export function AlertCenter({ role }: { role: Role }) {
   }, [publicKey]);
 
   // Yedek kontrol (src/lib/live-poll.ts): zamanlayıcı beş saniyede bir yalnız vaktin gelip gelmediğine bakar; sorulma
-  // anı son başarılı yanıttan (bildirim, sekmeye dönüş ve eylemler de sorar) ya da son yedek isteğinden sayılır
-  const pushOn = Boolean(publicKey) && pushSupport() === "granted";
+  // anı son başarılı yanıttan (bildirim, sekmeye dönüş ve eylemler de sorar) ya da son yedek isteğinden sayılır.
+  // Bildirim açık: izin, kayıtlı abonelik (yukarıdaki tazeleme yazar) ve zili açık konular aboneliğinde de açık.
+  const topics = useDeviceTopics();
+  const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: prefs.karaokeAlarms });
   const ringing = overtime.length > 0;
   const soon =
     sessions.some((s) => isLive(s) && !s.endedAt && sessionEnd(s) > now && sessionStart(s) - now < LIVE_POLL.soonMs) ||

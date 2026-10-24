@@ -23,7 +23,7 @@ import { toast } from "sonner";
 
 import { useClock } from "@/components/panel/live/clock";
 import { updatePrefs, usePrefs } from "@/components/panel/live/prefs";
-import { pushSupport } from "@/components/panel/live/push-client";
+import { pushSupport, useDeviceTopics } from "@/components/panel/live/push-client";
 import { refreshLive, useLive } from "@/components/panel/live/store";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge, type Tone } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ import type { Role } from "@/lib/constants";
 import { dateTimeTR, num } from "@/lib/format";
 import { trClock } from "@/lib/karaoke/session";
 import type { LiveOrders } from "@/lib/live";
+import { pushCovers } from "@/lib/live-poll";
 import { lineLabel, scheduleLabel, siteOrderUrl, sortForScreen, STAGE_LABEL, waitInfo } from "@/lib/site-orders/feed";
 import type { OrderStage, SiteOrder } from "@/lib/site-orders/schema";
 import { stageButtons, type StageAction, type StageButton } from "@/lib/site-orders/stage";
@@ -118,18 +119,21 @@ export function OrdersBoard({ role, siteBase, recipes, serverNow }: { role: Role
     return () => window.clearInterval(id);
   }, [busy, failing]);
 
-  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bu cihazda bildirim kapalıyken
-  // (yeni sipariş bildirimle gelemez) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir
+  // Canlı veri: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya da bildirim bu cihaza yeni siparişi
+  // getirmiyorken (izin yok, abonelik kaydedilemedi ya da Sipariş bildirimleri kapalı) 20 saniyede bir; bildirim açık
+  // ve ekran boşken yeni sipariş bildirimle gelir. Yalnız ekran görünürken: arka plandaki sekmeyi kabuğun yedek kontrolü
+  // sorar (alert-center.tsx, bildirim gelmeyen zil cihazında 10 dakikada bir)
   const hasOrders = list.length > 0;
   const publicKey = live.data?.push.publicKey ?? null;
+  const topics = useDeviceTopics();
+  const pushOn = pushCovers({ granted: Boolean(publicKey) && pushSupport() === "granted", topics, orderAlerts: prefs.orderAlerts, karaokeAlarms: prefs.karaokeAlarms });
   useEffect(() => {
-    const pushOn = Boolean(publicKey) && pushSupport() === "granted";
     if (!hasOrders && pushOn) return;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") void refreshLive();
     }, FAST_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [hasOrders, publicKey]);
+  }, [hasOrders, pushOn]);
 
   const manual = useCallback(async () => {
     setPulling(true);

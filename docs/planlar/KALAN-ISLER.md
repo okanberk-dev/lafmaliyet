@@ -90,7 +90,8 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 
 **Sahibe notlar (dalga 7):**
 - Neon Free planı (ayda 100 CU-saat): Vercel › Storage › kullanım tahmini 100'ü aşıyorsa ücretli plana geçin; bar
-  tabletine bildirim izni verin (izin yoksa açık siparişte 20 saniyede bir sorulur).
+  tabletine bildirim izni verin (bildirim yokken öndeki ekran 20 saniyede bir sorar ve veritabanı uyumaz; arka
+  plandaki sekmede zil 10 dakikaya kadar gecikir; Sipariş bildirimleri açık kalsın).
 - Dış izleyici `/api/health?isler=1`'i saatte bir değil 6 saatte bir çağırsın.
 - Vercel Preview ortamından gizli anahtarları (AUTH_SECRET, ADMIN_PASSWORD, CRON_SECRET, KARAOKE_SYNC_SECRET,
   PARASUT_*, RESEND_API_KEY, ANTHROPIC_API_KEY, BLOB) kaldırın (`docs/DEPLOY.md` §4); önizlemeye giriş yapılamaz olur.

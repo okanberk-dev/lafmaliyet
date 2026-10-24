@@ -221,12 +221,18 @@ yalnız durum adlarını döner (`{ ok, db, ms, isler: { cronSecret, gunluk, par
 sunucuya gelen yoklamalar 10 dakika aynı yanıtı alır (`cached: true`), veritabanı yeniden sorulmaz.
 `?isler=1` olmadan `/api/health` yalnız veritabanına bakar (yanıt veren veritabanı 5 dakika yeniden sorulmaz).
 
-**Neon kotası.** Açık panel sekmeleri de veritabanını uyandırır. Sekme yalnız öndeyken sorar; bildirim izni olan
-cihaz 30 dakikada bir, olmayan dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve yakında oturum ya da saatli
-hatırlatıcı yoksa 10 dakikada bir; src/lib/live-poll.ts). Karaoke bağlantısı hata verirken (bar ekranında sarı satır)
-öndeki her sekme, satır kalkana kadar dakikada bir sorar. Barın ekranında **bildirimlere izin verin**: izin yokken
-ekran siparişler için 20 saniyede bir sorar ve veritabanı gün boyu uyumaz. Aylık kullanımı Vercel › Storage ›
-lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 CU-saate yaklaşıyorsa ücretli plana geçin.
+**Neon kotası.** Açık panel sekmeleri de veritabanını uyandırır (src/lib/live-poll.ts). Öndeki sekme bildirim açıksa
+30 dakikada bir, kapalıysa dakikada bir sorar (ekran 10 dakikadır kullanılmıyorsa ve yakında oturum ya da saatli
+hatırlatıcı yoksa 10 dakikada bir). Arka plandaki sekme sormaz; yalnız bildirimin ulaşmadığı zil cihazı (bar ekranı:
+ses açılmış, sipariş zili ya da karaoke alarmları açık) 10 dakikada bir sorar, yeni sipariş ve rezervasyon zili en geç
+o kadar gecikir. Bu, arka planda geçen her saat için en çok ~0,125 CU-saattir (günde 14 saat arka planda ayda ~52).
+"Bildirim açık": izin verilmiş, abonelik kaydedilmiş ve çalan zillerin konuları (Sipariş / Karaoke bildirimleri) bu
+cihazın aboneliğinde açık. Yöneticinin cihazında çalan karaoke zili bu hesaba girmez: bildirim yokken arka plandaki
+yönetici sekmesi sormaz, yeni rezervasyonu öne gelince duyar. Karaoke bağlantısı hata verirken (bar ekranında sarı
+satır) öndeki her sekme, satır kalkana kadar dakikada bir sorar. Barın ekranında **bildirimlere izin verin** ve
+Sipariş / Karaoke bildirimlerini açık tutun: bildirim yokken öndeki ekran siparişler için 20 saniyede bir sorar ve
+veritabanı gün boyu uyumaz (ayda ~105 CU-saat), arka plandaki sekmede zil 10 dakikaya kadar gecikir. Aylık kullanımı
+Vercel › Storage › lafmaliyet-db › Usage'da (ya da Neon'da) izleyin; 100 CU-saate yaklaşıyorsa ücretli plana geçin.
 
 ## Kişisel hatırlatıcılar ve cihaz bildirimleri
 

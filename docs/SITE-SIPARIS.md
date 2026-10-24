@@ -178,9 +178,12 @@ masa **Masaya götürüldü**, kurye **Kuryeye verildi** (ikisi de kartı ekrand
 | Günlük iş | Yok: Vercel'in cron kotası dolu, ping ve ekran yeter |
 
 Son çekme hatalıysa ekranın her isteği (beş saniyeden eskiyse) siteyi yeniden dener: site geri gelince liste
-beklemeden gelir. Açık sekmenin canlı veri kontrolü: ekranda açık sipariş varken (aşama değişikliği çabuk görünsün) ya
-da cihazda bildirim kapalıyken 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir (kabuğun
-yedek kontrolü). Her kontrol değişiklik yoksa tek bir anahtar okumasıyla 304 alır.
+beklemeden gelir. Açık sekmenin canlı veri kontrolü: ekran görünürken, ekranda açık sipariş varken (aşama değişikliği
+çabuk görünsün) ya da bildirim bu cihaza yeni siparişi getirmiyorken (izin yok, abonelik kaydedilemedi ya da Sipariş
+bildirimleri kapalı) 20 saniyede bir; bildirim açık ve ekran boşken yeni sipariş bildirimle gelir (kabuğun yedek
+kontrolü). Sekme arka plandayken kabuğun yedek kontrolü, bildirimin ulaşmadığı zil cihazında 10 dakikada bir sorar
+(`src/lib/live-poll.ts`): yeni siparişin zili en geç o kadar gecikir. Her kontrol değişiklik yoksa tek bir anahtar
+okumasıyla 304 alır.
 
 Çekme tek işlemde ve `pg_advisory_xact_lock(hashtext('site-orders'))` ile yazar; uygulanan son listenin site
 saatinden (`now`) eski bir yanıt uygulanmaz (aynı anda gelen ping ve ekran isteği listeyi geri almasın). Sonuç

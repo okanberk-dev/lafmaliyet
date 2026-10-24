@@ -14,7 +14,7 @@ import { sendTestPush, setPushTopics } from "@/server/actions/push";
 
 import { OutputPicker } from "./output-picker";
 import { updatePrefs, usePrefs, WARN_CHOICES } from "./prefs";
-import { currentEndpoint, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
+import { currentEndpoint, noteDeviceTopics, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
 import { play, unlockAudio, useAudioState } from "./sounds";
 import { useLive } from "./store";
 
@@ -83,7 +83,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", [key]: value };
     setTopics(next);
     const res = await setPushTopics(endpoint, next);
-    if (!res.ok) toast.error(res.error);
+    if (res.ok) noteDeviceTopics(next);
+    else toast.error(res.error);
   }
 
   async function test() {

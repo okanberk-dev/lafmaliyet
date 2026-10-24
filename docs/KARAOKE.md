@@ -58,11 +58,15 @@ GET /api/panel/karaoke  ◀─────────────────�
   değişikliği bildirilmez. Ödemesi beklenen tutma (sitede ödeme sayfası açık) sessizdir; ödeme tamamlanınca "yeni
   rezervasyon" olarak çalar.
 - **Açık sekmenin istek bütçesi** (`/api/canli`, ETag'li; değişiklik yoksa 304 ve veri okunmaz; `src/lib/live-poll.ts`):
-  açılışta, bildirim gelince, sekmeye dönünce, ağ geri gelince; yedek kontrol yalnız sekme öndeyken, bildirim açıkken
+  açılışta, bildirim gelince, sekmeye dönünce, ağ geri gelince; yedek kontrol sekme öndeyken, bildirim açıkken
   30 dakikada, kapalıyken dakikada bir (ekran 10 dakikadır kullanılmıyorsa ve bir saat içinde oturum ya da saatli
-  hatırlatıcı yoksa 10 dakikada bir); son karaoke çekmesi hatalıyken (sarı satır) bildirim açık olsa da dakikada bir;
-  alarm çalarken arka planda da 15 saniyede bir (başka cihazda susturulursa burada da sussun). Panelin veritabanı
-  Neon'un ücretsiz planında: her kontrol onu uyandırır ([BILDIRIMLER.md](BILDIRIMLER.md) › Neon kotası).
+  hatırlatıcı yoksa 10 dakikada bir); son karaoke çekmesi hatalıyken (sarı satır) bildirim açık olsa da dakikada bir.
+  Arka plandaki sekme yalnız bildirimin ulaşmadığı zil cihazındaysa (bar ekranı: ses açılmış, sipariş zili ya da
+  karaoke alarmları açık) 10 dakikada bir sorar: yeni sipariş ve rezervasyon zili en geç o kadar gecikir. Alarm
+  çalarken arka planda da 15 saniyede bir (başka cihazda susturulursa burada da sussun). "Bildirim açık": izin
+  verilmiş, abonelik kaydedilmiş ve çalan zillerin konuları (Sipariş / Karaoke bildirimleri) bu cihazın aboneliğinde
+  açık. Panelin veritabanı Neon'un ücretsiz planında: her kontrol onu uyandırır ([BILDIRIMLER.md](BILDIRIMLER.md) ›
+  Neon kotası).
 - **Uzatma** tek yazımda ve SQL'de toplanır: bar ekranı ve bir telefon aynı anda +15'e basarsa ikisi de sayılır.
 - **Sayaç sunucu saatiyle sayar:** tabletin saati yanlış olsa da alarm zamanında çalar. Sekme arka plandayken
   tarayıcı zamanlayıcıları yavaşlatsa da bitiş sesi önceden ses saatine kurulur.
@@ -108,7 +112,9 @@ Kural tek yerde: `src/lib/karaoke/overlap.ts` (ekran ve sunucu eylemi aynı fonk
 4. Yönetici olarak **Karaoke** ekranını açın: "laffogato.net bağlantısı" kartı **Bağlı** göstermeli (kartta
    **laffogato.net paneli ↗**: sitenin yönetim paneli, yeni sekmede).
 5. Kasadaki cihazda personel hesabıyla **Karaoke**'yi açın ve **Bu cihazda uyarılar** kartından:
-   - **Bildirimleri aç** (Chrome izin sorar): sekme arka plandayken ya da kapalıyken de bildirim gelir;
+   - **Bildirimleri aç** (Chrome izin sorar): sekme arka plandayken ya da kapalıyken de bildirim gelir. Bildirim
+     yokken arka plandaki sekmede zil 10 dakikaya kadar gecikebilir, öndeki ekran da 20 saniyede bir sorar (veritabanı
+     uyumaz); **Sipariş bildirimleri** ve **Karaoke bildirimleri** açık kalsın;
    - ekrana bir kez dokunun (tarayıcı ilk dokunuştan önce ses çaldırmaz; gerekirse sağ altta "Sesli uyarılar için
      dokunun" düğmesi çıkar);
    - **Ekran açık kalsın**'ı açın (personelde varsayılan açık);

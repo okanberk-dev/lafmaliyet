@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { defaultPrefs } from "../src/components/panel/live/prefs";
 import { AUTO_RETRY, autoRetryPath, takeAutoRetry } from "../src/lib/error-retry";
 import { CATCH_UP } from "../src/lib/karaoke/freshness";
-import { LIVE_POLL, listensForAlerts, livePollDue, livePollMs, type LivePollInput } from "../src/lib/live-poll";
+import { LIVE_POLL, listensForAlerts, livePollDue, livePollMs, pushCovers, type LivePollInput } from "../src/lib/live-poll";
 import { createTtlCache } from "../src/lib/ttl-cache";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
@@ -55,6 +55,31 @@ test("zil cihazı: personelin varsayılanı dinler, yöneticininki dinlemez; ses
   assert.equal(listensForAlerts(defaultPrefs("admin"), true), false);
   assert.equal(listensForAlerts({ ...defaultPrefs("staff"), sound: false }, true), false);
   assert.equal(listensForAlerts({ ...defaultPrefs("admin"), karaokeAlarms: true }, true), true);
+});
+
+test("bildirim açık sayılır: izin, kayıtlı abonelik ve zilin çaldığı konular bu cihazın aboneliğinde açık", () => {
+  const dev = { granted: true, topics: { karaoke: true, orders: true }, orderAlerts: true, karaokeAlarms: true };
+  assert.equal(pushCovers(dev), true);
+  assert.equal(pushCovers({ ...dev, granted: false }), false, "izin yok");
+  assert.equal(pushCovers({ ...dev, topics: null }), false, "abonelik kaydedilemedi (gizli pencere, ağ engeli)");
+  assert.equal(pushCovers({ ...dev, topics: { karaoke: true, orders: false } }), false, "Sipariş bildirimleri kapalı");
+  assert.equal(pushCovers({ ...dev, topics: { karaoke: false, orders: true } }), false, "Karaoke bildirimleri kapalı");
+  assert.equal(pushCovers({ ...dev, orderAlerts: false, topics: { karaoke: true, orders: false } }), true, "sipariş zili kapalı cihaz o konuyu beklemez");
+});
+
+test("bildirim açık: uyarı motoru ve bar ekranı yalnız izne değil kayıtlı aboneliğe ve konulara bakar", () => {
+  const alerts = read("src/components/panel/live/alert-center.tsx");
+  assert.match(alerts, /const topics = useDeviceTopics\(\);/);
+  assert.match(alerts, /const pushOn = pushCovers\(\{\s*granted: Boolean\(publicKey\) && pushSupport\(\) === "granted",\s*topics,/);
+  const board = read("src/app/panel/karaoke/orders-board.tsx");
+  assert.match(board, /pushCovers\(\{\s*granted:/);
+  assert.match(board, /\}, \[hasOrders, pushOn\]\);/);
+  assert.doesNotMatch(board, /const pushOn = Boolean\(publicKey\) && pushSupport\(\) === "granted";/, "izin yetmez");
+  const client = read("src/components/panel/live/push-client.ts");
+  assert.match(client, /noteDeviceTopics\(res\.ok \? \{ karaoke: res\.karaoke, reminders: res\.reminders, orders: res\.orders \} : null\)/);
+  assert.match(client, /noteDeviceTopics\(null\);/);
+  const device = read("src/components/panel/live/device-alerts.tsx");
+  assert.match(device, /if \(res\.ok\) noteDeviceTopics\(next\);/);
 });
 
 test("yedek kontrol: bildirim kapalıyken ekran kullanılıyorsa ya da yakında bir şey varsa dakikada bir, boşta 10 dk", () => {
