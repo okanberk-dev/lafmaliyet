@@ -257,7 +257,7 @@ test("zil metni: nereye ve ne; müşterinin adı bildirime yazılmaz (kilit ekra
   assert.equal(ringMessage([order({ lines })]).body, "1× Ürün 0, 1× Ürün 1, 1× Ürün 2 +2");
 });
 
-test("müşterinin notu: masa ve gel-al siparişinin ve içeceğin notu kartta; kurye notu asla; zile girmez, değişince liste değişir", () => {
+test("müşterinin notu: masa ve gel-al siparişinin notu ve her siparişte içeceğin notu kartta; kurye siparişinin notu asla; zile girmez, değişince liste değişir", () => {
   const withNotes = (over: Record<string, unknown> = {}) =>
     contractOrder({
       note: "  Fındık alerjim var,   şurupsuz lütfen ",
@@ -272,6 +272,8 @@ test("müşterinin notu: masa ve gel-al siparişinin ve içeceğin notu kartta; 
   // Kurye: site göndermez; gönderse de panel atar (kapı kodu, adres tarifi)
   const [delivery] = parseSiteOrders(list([withNotes({ fulfillment: "delivery", label: "Kurye", note: "Kapı kodu 1234" })])).orders;
   assert.ok(!("note" in delivery));
+  // İçeceğin notu kurye siparişinde de gelir (adres değil; site her siparişte gönderir, laffogato #248)
+  assert.equal(delivery.lines[0].note, "çok sıcak olmasın");
   // Not yoksa ya da bozuksa alan yok, sipariş atlanmaz; uzun not kısaltılır
   const [plain] = parseSiteOrders(list([contractOrder()])).orders;
   assert.ok(!("note" in plain) && !("note" in plain.lines[0]));
