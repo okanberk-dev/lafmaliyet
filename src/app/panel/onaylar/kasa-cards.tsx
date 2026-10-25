@@ -24,6 +24,7 @@ import type { CashRequestCard, CorrectionCard, DeleteCard } from "@/server/data/
 import { CashForm } from "../kasa/cash-form";
 import { SavedPhotos } from "../kasa/cash-photos";
 import { CashBreakdown } from "../kasa/cash-summary";
+import { ClosedDayItem } from "./kasa-closed-cards";
 import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
 
 /**
@@ -33,7 +34,18 @@ import { CashOutItem, PhotoRemovalItem } from "./kasa-out-cards";
  * özeti; geç raporda fotoğraflar, Z no sırası, devir zinciri, ay ve kasadan çıkanlar. Kasa alanı değişen onay ve her
  * silme onay penceresi açar. Not personele görünür (tutar yazılmaz).
  */
-export function KasaRequestCards({ cards, counters, categories }: { cards: CashRequestCard[]; counters: { id: number; name: string }[]; categories: { id: number; name: string }[] }) {
+export function KasaRequestCards({
+  cards,
+  counters,
+  categories,
+  siteSlots = {},
+}: {
+  cards: CashRequestCard[];
+  counters: { id: number; name: string }[];
+  categories: { id: number; name: string }[];
+  /** Kapalı gün kartlarının site sayıları (sunucuda, kart başına ayrı Suspense) */
+  siteSlots?: Record<number, ReactNode>;
+}) {
   return (
     <Card>
       <CardHeader
@@ -51,6 +63,8 @@ export function KasaRequestCards({ cards, counters, categories }: { cards: CashR
             <LateItem key={c.id} card={c} counters={counters} />
           ) : c.kind === "kasa-cikan" ? (
             <CashOutItem key={c.id} card={c} categories={categories} />
+          ) : c.kind === "kapali-gun" ? (
+            <ClosedDayItem key={c.id} card={c} site={siteSlots[c.id]} />
           ) : (
             <PhotoRemovalItem key={c.id} card={c} />
           ),

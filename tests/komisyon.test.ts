@@ -311,7 +311,7 @@ test("öteki kanalın bu aya ait faturası sonraki ayın 1–15'inde kesildiyse 
 
 test("kasa raporunun günleri: eksik günler ay başından düne kadar, ay ortasında başlayan ilk ay yarım", () => {
   const t = channelTill(days("2026-10-01", "2026-10-22", undefined, ["2026-10-05"]), "2026-10", "2026-10-22", "2026-08-01");
-  assert.deepEqual(t, { meal: 10500, online: 8400, reportDays: 21, missing: ["2026-10-05"], partialFrom: null });
+  assert.deepEqual(t, { meal: 10500, online: 8400, reportDays: 21, missing: ["2026-10-05"], closed: [], partialFrom: null });
   // Süren ayda bugünün raporu girildiyse o da sayılır, yarın eksik sayılmaz
   assert.deepEqual(channelTill(days("2026-10-01", "2026-10-23"), "2026-10", "2026-10-22", null).missing, []);
   assert.equal(channelTill(days("2026-10-16", "2026-10-31"), "2026-10", "2026-11-30", "2026-10-16").partialFrom, "2026-10-16");

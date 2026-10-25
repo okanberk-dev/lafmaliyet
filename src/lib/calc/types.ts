@@ -137,6 +137,11 @@ export interface TillMonth {
    * gün eksik sayılmaya devam eder, yanına "onay bekliyor" yazılır
    */
   pending?: string[];
+  /**
+   * Kapalı işaretli günler (özel günlerin `kapali` satırı, raporu olmayan; dalga 10 §2.9): eksik sayılmaz, ayrı bir
+   * cümleyle yazılır ("2 gün kapalı işaretli: 3, 4 Kasım"). Yalnız yükleyici verdiyse
+   */
+  closed?: string[];
   /** İlk rapor bu ayın 1'inden sonra girildiyse o gün: toplamlar ayın yalnız bir kısmını kapsar, uygulanmaz */
   partialFrom: string | null;
   /** Son raporun günü */

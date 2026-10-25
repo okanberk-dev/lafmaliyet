@@ -116,6 +116,8 @@ export interface CommissionInput {
   till: TillDayIn[];
   /** İlk kasa raporunun günü: ay ortasında başlayan ayda Z toplamı ayın yalnız bir kısmıdır */
   firstReport: string | null;
+  /** Kapalı işaretli günler (özel günlerin `kapali` satırı; dalga 10 §2.9): eksik rapor sayılmaz, ayrı yazılır */
+  closed?: readonly string[];
   marks: ChannelMonthIn[];
   settings: Partial<Record<ChannelKey, Partial<ChannelSettings>>>;
 }
@@ -209,6 +211,8 @@ export interface GroupMonth {
   zTotal: number | null;
   reportDays: number;
   missing: string[];
+  /** Kapalı işaretli, raporsuz günler (eksik sayılmaz) */
+  closed: string[];
   /** Kasa raporlarının ay ortasında başladığı gün (o ay Z toplamı eksiktir) */
   partialFrom: string | null;
   invoiceCount: number;
@@ -343,8 +347,10 @@ export interface ChannelTill {
   meal: number;
   online: number;
   reportDays: number;
-  /** Raporu olmayan günler (ayın başı ya da ilk rapor → ayın sonu ya da dün) */
+  /** Raporu olmayan günler (ayın başı ya da ilk rapor → ayın sonu ya da dün); kapalı işaretliler hariç */
   missing: string[];
+  /** Kapalı işaretli, raporsuz günler */
+  closed: string[];
   partialFrom: string | null;
 }
 
@@ -353,9 +359,9 @@ export interface ChannelTill {
  * (src/lib/cash-month.ts tillMonths): eksik günler ayın başından (ya da ilk rapordan) ayın sonuna ya da düne kadar
  * aranır, ilk rapor ayın ortasındaysa o ay yarımdır.
  */
-export function channelTill(rows: readonly TillDayIn[], month: string, through: string, firstReport: string | null): ChannelTill {
+export function channelTill(rows: readonly TillDayIn[], month: string, through: string, firstReport: string | null, closedDays: readonly string[] = []): ChannelTill {
   const list = rows.filter((r) => r.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
-  if (!list.length) return { meal: 0, online: 0, reportDays: 0, missing: [], partialFrom: null };
+  if (!list.length) return { meal: 0, online: 0, reportDays: 0, missing: [], closed: [], partialFrom: null };
   const start = `${month}-01`;
   const end = monthEnd(start);
   const first = firstReport ?? list[0].date;
@@ -364,13 +370,16 @@ export function channelTill(rows: readonly TillDayIn[], month: string, through: 
   const upto = through > lastDate ? through : lastDate;
   const to = upto < end ? upto : end;
   const have = new Set(list.map((r) => r.date));
+  const shut = new Set(closedDays);
   const missing: string[] = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) missing.push(d);
+  const closed: string[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut.has(d) ? closed : missing).push(d);
   return {
     meal: r2(list.reduce((a, r) => a + r.mealCard, 0)),
     online: r2(list.reduce((a, r) => a + r.online, 0)),
     reportDays: have.size,
     missing,
+    closed,
     partialFrom: first > start && first.slice(0, 7) === month ? first : null,
   };
 }
@@ -601,7 +610,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
   for (const m of input.marks) if (isChannelKey(m.channel) && inWindow.has(m.month)) slot(m.channel, m.month).mark = m;
 
   // 2. Ay ay kasa raporları
-  const tills = new Map(months.map((m) => [m, channelTill(input.till, m, through, input.firstReport)]));
+  const tills = new Map(months.map((m) => [m, channelTill(input.till, m, through, input.firstReport, input.closed)]));
   // Etkin kanallar. Bir kanalın bu ayın satışları için faturası sonraki ayın ilk yarısında kesilebilir (ilk ayı, kayan
   // fatura): o kanal da sayılır, yoksa Z'deki toplamın tamamı öteki kanala yazılırdı (`tek`)
   const graceDay = String(INVOICE_GRACE_DAY).padStart(2, "0");
@@ -715,6 +724,7 @@ export function buildCommissionReport(input: CommissionInput): CommissionReport 
         zTotal,
         reportDays: till.reportDays,
         missing: till.missing,
+        closed: till.closed,
         partialFrom: till.partialFrom,
         invoiceCount,
         feesTotal,

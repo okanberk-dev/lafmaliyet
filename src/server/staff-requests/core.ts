@@ -33,6 +33,9 @@ import type { DB } from "../db";
 import * as s from "../db/schema";
 import { UserError } from "../user-error";
 
+/** Kapalı gün bildiriminin geri çekme sınırı (src/lib/closed-days.ts CLOSED_TEXT.withdrawOnce ile aynı) */
+const CLOSED_WITHDRAW_ONCE = "Kapalı gün bildirimi günde bir kez geri çekilebilir";
+
 /** Veritabanı ya da açık bir işlem */
 export type Tx = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
 
@@ -228,6 +231,16 @@ export async function decide(
  */
 export async function withdrawOwn(db: Tx, me: Actor, id: number, now = new Date()): Promise<StaffRequestRow> {
   return db.transaction(async (tx) => {
+    // Kapalı gün bildirimi kişi başına iş gününde bir kez geri çekilir (bildir, geri çek, yeniden bildir döngüsü olmasın)
+    const [cur] = await tx.select({ kind: s.staffRequests.kind }).from(s.staffRequests).where(eq(s.staffRequests.id, id)).limit(1);
+    if (cur?.kind === "kapali-gun") {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`personel-istek:${me.id}`}))`);
+      const [done] = await tx
+        .select({ n: count() })
+        .from(s.staffRequests)
+        .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.requestedBy, me.id), eq(s.staffRequests.status, "withdrawn"), gte(s.staffRequests.updatedAt, requestDayStart(now))));
+      if ((done?.n ?? 0) >= 1) throw new UserError(CLOSED_WITHDRAW_ONCE);
+    }
     const [row] = await tx
       .update(s.staffRequests)
       .set({ status: "withdrawn", updatedAt: now })

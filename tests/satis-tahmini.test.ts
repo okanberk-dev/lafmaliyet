@@ -767,7 +767,7 @@ test("kaynak: özel günler kartı kaydedilebilen her günü gösterir; aynı ad
   assert.match(save, /if \(dateTo < addDays\(today, -SPECIAL_PAST_DAYS\)\)/);
   assert.match(save, /if \(dateTo > addDays\(today, SPECIAL_MAX_AHEAD_DAYS\)\)/);
   assert.match(save, /r\.id !== d\.id && foldTR\(r\.title\) === foldTR\(d\.title\)/);
-  assert.match(read("src/app/panel/tahmin/page.tsx"), /minDate=\{addDays\(data\.today, -SPECIAL_PAST_DAYS\)\} maxDate=\{addDays\(data\.today, SPECIAL_MAX_AHEAD_DAYS\)\}/);
+  assert.match(read("src/app/panel/tahmin/page.tsx"), /minDate=\{addDays\(data\.today, -SPECIAL_PAST_DAYS\)\}\s+maxDate=\{addDays\(data\.today, SPECIAL_MAX_AHEAD_DAYS\)\}/);
   // Aynı yazılı iki etiket ya da açıklama satırı React anahtarında çakışmaz
   for (const f of ["src/app/panel/tahmin/forecast-days.tsx", "src/app/panel/bugun/today-forecast.tsx"]) assert.doesNotMatch(read(f), /key=\{(c|l)\}/, f);
   // Kapalı günün rozeti adı (en çok 60 karakter) taşır: dar sütunda satır kırar, 390 px'te sayfa yana kaymaz

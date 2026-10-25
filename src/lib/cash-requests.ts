@@ -11,6 +11,7 @@ import {
   type FieldChange,
   type LateCashPayload,
 } from "./cash-report";
+import { closedBellTitle } from "./closed-days";
 import { money } from "./format";
 import { MAX_REPORT_PHOTOS } from "./photo-rules";
 import { dayLocativeTR, dayMonthTR, daysBetween, longDateTR, monthShortTR, todayTR } from "./reminders";
@@ -304,7 +305,7 @@ export function lateApprovalLine(o: { requester: string; requestedAt: Date; appr
 }
 
 /** Personelin kasa isteklerinin türleri (zil ve İsteklerim) */
-export type CashRequestKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec" | "kasa-cikan" | "foto-kaldir";
+export type CashRequestKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec" | "kasa-cikan" | "foto-kaldir" | "kapali-gun";
 
 /** Başlığı gün ve türden kurulan istekler (öteki türlerde başlık isteğin kendi başlığıdır) */
 type DayHeadKind = "kasa-duzeltme" | "kasa-silme" | "kasa-gec";
@@ -319,6 +320,7 @@ const RESULT_BODY: Record<CashRequestKind, { approved: string; rejected: string 
   "kasa-gec": { approved: "Rapor kayda geçti", rejected: "Rapor kaydedilmedi" },
   "kasa-cikan": { approved: "Kasaya işlendi", rejected: "Kasa değişmedi" },
   "foto-kaldir": { approved: "Fotoğraf rapordan çıkarıldı", rejected: "Fotoğraf yerinde kaldı" },
+  "kapali-gun": { approved: "Eksik rapor ve liste uyarıları kalktı", rejected: "Raporu girin" },
 };
 
 /**
@@ -329,12 +331,19 @@ const RESULT_BODY: Record<CashRequestKind, { approved: string; rejected: string 
  */
 export function staffResultBell(o: {
   kind: CashRequestKind;
-  status: "approved" | "rejected" | "superseded" | "expired";
+  status: "approved" | "rejected" | "superseded" | "expired" | "revoked";
   day: string;
   note: string | null;
   /** İsteğin başlığı (kasadan çıkan ve fotoğraf kaldırmada başlık bundan) */
   title?: string;
 }): { title: string; body: string } {
+  // Kapalı gün: "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı"
+  if (o.kind === "kapali-gun") {
+    const title = closedBellTitle(shortDayTR(o.day), o.status);
+    if (o.status === "approved" || o.status === "rejected") return { title, body: o.note ? `Yönetici: ${o.note}` : RESULT_BODY[o.kind][o.status] };
+    return { title, body: o.note ?? (o.status === "revoked" ? "Kapalı işareti kalktı; raporu yönetici girecek" : RESULT_BODY[o.kind].rejected) };
+  }
+  if (o.status === "revoked") return { title: `${o.title ?? dayMonthTR(o.day)} geri alındı`, body: o.note ?? "" };
   const verb = { approved: "onaylandı", rejected: "reddedildi", superseded: "kapandı", expired: "süresi doldu" }[o.status];
   let title: string;
   if (o.kind === "kasa-cikan" || o.kind === "foto-kaldir") {

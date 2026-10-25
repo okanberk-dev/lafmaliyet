@@ -44,6 +44,9 @@ export const posRow: DayRow = (f) => {
 export const checklistYesterday: DayRow = (f, c) => {
   const y = f.checklistsYesterday;
   if (f.role !== "admin" || !y) return null;
+  // Dün kafe kapalıydı (dalga 10 §2.9; kasa grubunun olgusu): onaylıysa açılmamış listeler eksik sayılmaz
+  const closed = f.closed?.yesterday ?? null;
+  if (closed?.state === "approved" && !y.lists.some((l) => l.run)) return null;
   const missing = y.lists.filter((l) => !l.run?.complete);
   const problems = y.lists.flatMap((l) => l.run?.issues ?? []);
   if (!missing.length && !problems.length) return null;
@@ -57,9 +60,10 @@ export const checklistYesterday: DayRow = (f, c) => {
     title: "Dünkü kontrol listeleri",
     status: "warn",
     badge: missing.length ? `${num(missing.length)} eksik` : `${num(problems.length)} sorun`,
-    detail: `${clip(parts.join(" · "), 160)}${cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : ""}`,
-    href: `/panel/kontrol/gecmis?gun=${y.day}`,
-    action: "Geçmişe bak",
+    detail: `${clip(parts.join(" · "), 160)}${closed?.state === "pending" ? " · Personel kapalıydık dedi (onay bekliyor)" : cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : ""}`,
+    ...(closed?.state === "pending"
+      ? { href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar", action: "Onaya bak" }
+      : { href: `/panel/kontrol/gecmis?gun=${y.day}`, action: "Geçmişe bak" }),
   };
 };
 

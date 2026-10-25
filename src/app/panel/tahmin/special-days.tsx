@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { STAFF_EFFECTS, STAFF_SPECIAL_KINDS } from "@/lib/closed-days";
 import { rangeTR, shortRangeTR, type SpecialKind } from "@/lib/forecast/calendar";
 import { HISTORY_DAYS, SPECIAL_KIND_LABEL } from "@/lib/forecast/model";
 import { EFFECT_OPTIONS, specialTail } from "@/lib/forecast/text";
 import { cn } from "@/lib/utils";
-import { deleteSpecialDay, saveSpecialDay, type SpecialDayValues } from "@/server/actions/forecast";
+import type { SpecialDayInput, SpecialDayValues } from "@/server/actions/forecast";
+import type { ActionResult } from "@/server/actions/util";
 
 /** Sayfaya giden özel gün (tahminin çekirdeğinden) */
 export interface SpecialDayItem {
@@ -24,6 +26,17 @@ export interface SpecialDayItem {
   dateTo: string;
   effect: number;
   note: string | null;
+  /** Personelin satırında ekleyenin adı ("Ahmet ekledi") */
+  addedBy?: string | null;
+}
+
+/**
+ * Pencerenin eylemleri (sayfa enjekte eder): yöneticide Satış tahmini'nin eylemleri, personelde
+ * src/server/actions/special-days-staff.ts. Silme önceki değerleri dönerse bildirimde "Geri al" çıkar.
+ */
+export interface SpecialDayActions {
+  saveAction: (input: SpecialDayInput & { id?: number }) => Promise<ActionResult<unknown>>;
+  deleteAction: (id: number) => Promise<ActionResult<SpecialDayValues | null>>;
 }
 
 type Effect = SpecialDayValues["effect"];
@@ -48,7 +61,7 @@ interface Ctx {
 }
 const SpecialDayContext = createContext<Ctx | null>(null);
 
-function useSpecialDay(): Ctx {
+export function useSpecialDay(): Ctx {
   const ctx = useContext(SpecialDayContext);
   if (!ctx) throw new Error("SpecialDayProvider yok");
   return ctx;
@@ -58,9 +71,18 @@ function useSpecialDay(): Ctx {
  * Özel gün penceresini sayfanın her yerinden açar (başlıktaki "Özel gün ekle", günün "Bu güne özel gün ekle"si,
  * listedeki satır). Pencere bir yere gitmez: kayıttan sonra sayfa sunucu eylemiyle yenilenir.
  */
-export function SpecialDayProvider({ today, minDate, maxDate, children }: { today: string; minDate: string; maxDate: string; children: ReactNode }) {
+export function SpecialDayProvider({
+  today,
+  minDate,
+  maxDate,
+  mode = "admin",
+  saveAction,
+  deleteAction,
+  children,
+}: { today: string; minDate: string; maxDate: string; mode?: "admin" | "staff"; children: ReactNode } & SpecialDayActions) {
   const [draft, setDraft] = useState<Draft | null>(null);
-  const openNew = useCallback((date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? today, dateTo: "", effect: 0.15, note: "" }), [today]);
+  // Personel yarından itibaren girer (minDate yarın)
+  const openNew = useCallback((date?: string) => setDraft({ kind: "derbi", title: "", dateFrom: date ?? (mode === "staff" ? minDate : today), dateTo: "", effect: 0.15, note: "" }), [today, minDate, mode]);
   const openEdit = useCallback(
     (d: SpecialDayItem) =>
       setDraft({ id: d.id, kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo: d.dateTo === d.dateFrom ? "" : d.dateTo, effect: effectOf(d.effect), note: d.note ?? "" }),
@@ -70,12 +92,34 @@ export function SpecialDayProvider({ today, minDate, maxDate, children }: { toda
   return (
     <SpecialDayContext.Provider value={value}>
       {children}
-      {draft ? <SpecialDayDialog key={draft.id ?? `yeni-${draft.dateFrom}`} draft={draft} minDate={minDate} maxDate={maxDate} onClose={() => setDraft(null)} /> : null}
+      {draft ? (
+        <SpecialDayDialog
+          key={draft.id ?? `yeni-${draft.dateFrom}`}
+          draft={draft}
+          minDate={minDate}
+          maxDate={maxDate}
+          mode={mode}
+          saveAction={saveAction}
+          deleteAction={deleteAction}
+          onClose={() => setDraft(null)}
+        />
+      ) : null}
     </SpecialDayContext.Provider>
   );
 }
 
-function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; minDate: string; maxDate: string; onClose: () => void }) {
+function SpecialDayDialog({
+  draft,
+  minDate,
+  maxDate,
+  mode,
+  saveAction,
+  deleteAction,
+  onClose,
+}: { draft: Draft; minDate: string; maxDate: string; mode: "admin" | "staff"; onClose: () => void } & SpecialDayActions) {
+  const staff = mode === "staff";
+  const kinds = staff ? (STAFF_SPECIAL_KINDS as readonly SpecialKind[]) : KINDS;
+  const effects = staff ? EFFECT_OPTIONS.filter((o) => (STAFF_EFFECTS as readonly number[]).includes(o.value)) : EFFECT_OPTIONS;
   const [v, setV] = useState<Draft>(draft);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useActionTransition();
@@ -94,7 +138,7 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
     if (!v.title.trim()) return setError("Ad gerekli");
     if (!v.dateFrom) return setError("Başlangıç gününü seçin");
     start(async () => {
-      const r = await saveSpecialDay({ id: v.id, kind: v.kind, title: v.title, dateFrom: v.dateFrom, dateTo: v.dateTo || null, effect: v.kind === "kapali" ? 0 : v.effect, note: v.note });
+      const r = await saveAction({ id: v.id, kind: v.kind, title: v.title, dateFrom: v.dateFrom, dateTo: v.dateTo || null, effect: v.kind === "kapali" ? 0 : v.effect, note: v.note });
       if (!r.ok) return void setError(r.error);
       onClose();
       toast.success(editing ? "Özel gün güncellendi" : `Özel gün eklendi: ${rangeTR(v.dateFrom, v.dateTo || v.dateFrom)} · ${v.title.trim()}`);
@@ -105,17 +149,18 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
     if (!v.id) return;
     const id = v.id;
     start(async () => {
-      const r = await deleteSpecialDay(id);
+      const r = await deleteAction(id);
       if (!r.ok) return void setError(r.error);
       onClose();
       const prev = r.data;
+      if (!prev) return void toast.success("Özel gün silindi");
       toast.success("Özel gün silindi", {
         duration: 10_000,
         action: {
           label: "Geri al",
           onClick: async () => {
             try {
-              const x = await saveSpecialDay({ ...prev, dateTo: prev.dateTo });
+              const x = await saveAction({ ...prev, dateTo: prev.dateTo });
               if (x.ok) toast.success("Özel gün geri alındı");
               else toast.error(x.error);
             } catch (e) {
@@ -132,7 +177,11 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
       open
       onClose={() => (pending ? undefined : onClose())}
       title={editing ? "Özel günü düzenle" : "Özel gün ekle"}
-      description={`Tahmin bu günlerde seçtiğiniz etkiyle değişir. Son ${HISTORY_DAYS} gün içindeki geçmiş bir günü de işaretleyebilirsiniz: o gün normal günlerin ortalamasına katılmaz.`}
+      description={
+        staff
+          ? "Tahmin ve tatlı sayısı bu günlere göre ayarlanır. Yarından 60 gün ileriye, en çok 3 gün; ad bütün ekibe görünür."
+          : `Tahmin bu günlerde seçtiğiniz etkiyle değişir. Son ${HISTORY_DAYS} gün içindeki geçmiş bir günü de işaretleyebilirsiniz: o gün normal günlerin ortalamasına katılmaz.`
+      }
       footerStart={
         editing ? (
           <Button variant="ghost" className="text-bad hover:text-bad" onClick={remove} disabled={pending}>
@@ -161,14 +210,14 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
       >
         <Field label="Ne var?" htmlFor="ozel-tur">
           <Select id="ozel-tur" value={v.kind} onChange={(e) => set("kind", e.target.value as SpecialKind)} className="pointer-coarse:h-12">
-            {KINDS.map((k) => (
+            {kinds.map((k) => (
               <option key={k} value={k}>
                 {SPECIAL_KIND_LABEL[k]}
               </option>
             ))}
           </Select>
         </Field>
-        <Field label="Ad" htmlFor="ozel-ad">
+        <Field label="Ad" htmlFor="ozel-ad" hint={staff ? undefined : "Ad personele görünür; müşteri adı ya da tutar yazmayın."}>
           <Input
             id="ozel-ad"
             value={v.title}
@@ -192,7 +241,7 @@ function SpecialDayDialog({ draft, minDate, maxDate, onClose }: { draft: Draft; 
         ) : (
           <Field label="Satışa etkisi" htmlFor="ozel-etki">
             <Select id="ozel-etki" value={String(v.effect)} onChange={(e) => set("effect", Number(e.target.value) as Effect)} className="pointer-coarse:h-12">
-              {EFFECT_OPTIONS.map((o) => (
+              {effects.map((o) => (
                 <option key={o.value} value={String(o.value)}>
                   {o.label}
                 </option>
@@ -238,6 +287,7 @@ export function AddSpecialDayButton({ date }: { date: string }) {
 }
 
 function Row({ item, past }: { item: SpecialDayItem; past?: boolean }) {
+  // Personelin satırı "Ahmet ekledi" (yöneticinin listesinde)
   const { openEdit } = useSpecialDay();
   return (
     <li>
@@ -253,6 +303,7 @@ function Row({ item, past }: { item: SpecialDayItem; past?: boolean }) {
         <span className="text-sm font-medium break-words text-ink">{item.title}</span>
         <span className="text-[13px] text-ink-mute">
           {shortRangeTR(item.dateFrom, item.dateTo)} · {specialTail(item)}
+          {item.addedBy ? ` · ${item.addedBy} ekledi` : ""}
         </span>
       </button>
     </li>
@@ -263,7 +314,7 @@ function Row({ item, past }: { item: SpecialDayItem; past?: boolean }) {
 export function SpecialDaysCard({ upcoming, past }: { upcoming: SpecialDayItem[]; past: SpecialDayItem[] }) {
   const { openNew } = useSpecialDay();
   return (
-    <Card>
+    <Card id="ozel-gunler" className="scroll-mt-24">
       <CardHeader
         icon={<CalendarHeart />}
         title="Özel günler"

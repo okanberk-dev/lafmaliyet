@@ -76,6 +76,10 @@ export interface SpecialDay {
   title: string;
   effect: number;
   note?: string | null;
+  /** Personel ekledi (/panel/ozel-gunler; dalga 10 §2.9): etkisi 0 olan personel satırı yalnız nottur, günü tabandan çıkarmaz */
+  byStaff?: boolean;
+  /** Personelin satırında ekleyenin adı (yöneticinin nedenlerinde "(Ahmet ekledi)") */
+  addedBy?: string | null;
 }
 
 /** Ayın elle yazılan ya da Excel'den gelen bilgisi: POS cirosu ve açık gün (months) */
@@ -284,6 +288,9 @@ export function buildForecast(input: ForecastInput): Forecast {
   const useWeather = input.weather !== null;
   const weatherBy = new Map((input.weather ?? []).map((w) => [w.date, w]));
   const coveredBy = (date: string) => input.special.filter((s) => covers(s, date));
+  // Taban: personelin "Bilmiyorum" girdisi (etkisi 0) yalnız nottur, günü normal günlerden çıkarmaz. Yöneticinin
+  // "Bilmiyorum"u çıkarmaya devam eder (Dalga 9'un kararı)
+  const markedBy = (date: string) => coveredBy(date).filter((s) => !(s.byStaff && s.effect === 0));
 
   // 1. Geçmiş (bugün ve sonrası yok sayılır)
   const from = addDays(today, -HISTORY_DAYS);
@@ -294,7 +301,7 @@ export function buildForecast(input: ForecastInput): Forecast {
     .map(([date, total]) => {
       const cal = calendarDay(date);
       const wf = useWeather ? weatherFactor(weatherKind(weatherBy.get(date))) : null;
-      const normal = total > 0 && !cal.event && !coveredBy(date).length;
+      const normal = total > 0 && !cal.event && !markedBy(date).length;
       return { date, weekday: cal.weekday, total, normal, v: total / (product(seasonFactors(cal)) * (wf?.value ?? 1)) };
     });
   const normal = annotated.filter((a) => a.normal);

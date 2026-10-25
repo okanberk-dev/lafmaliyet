@@ -34,6 +34,15 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/cash-outs.tsx",
   "src/app/panel/kasa/cash-out-dialog.tsx",
   "src/app/panel/kasa/cash-photos.tsx",
+  "src/server/closed-days.ts",
+  "src/server/closed-day-requests.ts",
+  "src/server/actions/closed-days.ts",
+  "src/server/actions/special-days-staff.ts",
+  "src/server/forecast/staff-special.ts",
+  "src/lib/closed-days.ts",
+  "src/app/panel/kasa/closed-day.tsx",
+  "src/app/panel/ozel-gunler/page.tsx",
+  "src/app/panel/ozel-gunler/staff-special-days.tsx",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -111,4 +120,23 @@ test("kasadan çıkan istekleri: personelin okuyucuları sabit sütunla; kendi i
   }
   const attach = actions.slice(actions.indexOf("export async function attachCashOutReceipt"), actions.indexOf("const removalSchema"));
   assert.match(attach, /return null;/);
+});
+
+test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yalnız special_days ve staff_requests", () => {
+  const src = read("src/server/closed-days.ts");
+  const state = src.slice(src.indexOf("export async function staffClosedState"), src.indexOf("export async function ownClosedRequests"));
+  assert.doesNotMatch(state, /\.select\(\)/);
+  assert.match(state, /\.select\(\{ id: s\.staffRequests\.id, status: s\.staffRequests\.status, requestedBy: s\.staffRequests\.requestedBy, requestedByName: s\.staffRequests\.requestedByName, reviewNote: s\.staffRequests\.reviewNote \}\)/);
+  const own = src.slice(src.indexOf("export async function ownClosedRequests"), src.indexOf("export interface ClosedDayCard"));
+  assert.match(own, /\.select\(\{ id: s\.staffRequests\.id, day: s\.staffRequests\.day, status: s\.staffRequests\.status, reviewNote: s\.staffRequests\.reviewNote, createdAt: s\.staffRequests\.createdAt \}\)/);
+  assert.match(own, /eq\(s\.staffRequests\.requestedBy, me\.id\)/);
+  const list = read("src/server/forecast/staff-special.ts");
+  const loader = list.slice(list.indexOf("export async function staffSpecialList"));
+  for (const t of loader.matchAll(/\.from\(s\.(\w+)\)/g)) assert.equal(t[1], "specialDays");
+  // Yöneticinin kartları (kanıt) personel sayfasında çağrılmaz
+  for (const f of ["src/app/panel/kasa/page.tsx", "src/app/panel/ozel-gunler/page.tsx"]) assert.doesNotMatch(read(f), /closedDayCards|pendingClosedRows|closedInfoRows/);
+  // Kasa sayfasında kanıt yalnız yönetici dalında okunur
+  const page = read("src/app/panel/kasa/page.tsx");
+  const bar = page.slice(page.indexOf("async function closedBarFor"));
+  assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
 });

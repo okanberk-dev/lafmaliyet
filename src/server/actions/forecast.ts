@@ -12,6 +12,7 @@ import { clockTR, specialSummary } from "@/lib/forecast/text";
 import { money } from "@/lib/format";
 import { addDays, daysBetween } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { lockSpecialDays, revokeClosedRequests } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import { runForecastJob } from "@/server/forecast/job";
 import { FORECAST_SETTINGS_KEY, loadForecastSettings, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS } from "@/server/forecast/load";
@@ -74,30 +75,32 @@ export async function saveSpecialDay(input: SpecialDayInput): Promise<ActionResu
     if (dateTo > addDays(today, SPECIAL_MAX_AHEAD_DAYS)) throw new UserError("En çok 1 yıl ileriye girilebilir");
     const effect = d.kind === "kapali" ? -1 : d.effect;
     const values = { kind: d.kind, title: d.title, dateFrom: d.dateFrom, dateTo, effect, note: d.note };
-    const db = getDb();
-    // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş)
-    const overlapping = await db
-      .select({ id: s.specialDays.id, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
-      .from(s.specialDays)
-      .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, d.dateFrom)));
-    const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title));
-    if (twin) throw new UserError(`Bu günlerde aynı adla bir özel gün var (${rangeTR(twin.dateFrom, twin.dateTo)}); onu düzenleyin`);
-    let id: number;
-    if (d.id) {
-      const [row] = await db
-        .update(s.specialDays)
-        .set({ ...values, updatedAt: new Date() })
-        .where(eq(s.specialDays.id, d.id))
-        .returning({ id: s.specialDays.id });
-      if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
-      id = row.id;
-    } else {
-      const [row] = await db
+    // Personelin yazımlarıyla aynı danışma kilidi (src/server/closed-days.ts lockSpecialDays): çakışma ve sınırlar yarışmaz
+    const id = await getDb().transaction(async (tx) => {
+      await lockSpecialDays(tx);
+      // Aynı adla üst üste binen ikinci kayıt etkiyi iki kez çarpar (aynı maç yanlışlıkla iki kez girilmiş)
+      const overlapping = await tx
+        .select({ id: s.specialDays.id, title: s.specialDays.title, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
+        .from(s.specialDays)
+        .where(and(lte(s.specialDays.dateFrom, dateTo), gte(s.specialDays.dateTo, d.dateFrom)));
+      const twin = overlapping.find((r) => r.id !== d.id && foldTR(r.title) === foldTR(d.title));
+      if (twin) throw new UserError(`Bu günlerde aynı adla bir özel gün var (${rangeTR(twin.dateFrom, twin.dateTo)}); onu düzenleyin`);
+      if (d.id) {
+        // Son düzenleyen yazılır: yöneticinin dokunduğu personel satırını personel artık değiştiremez
+        const [row] = await tx
+          .update(s.specialDays)
+          .set({ ...values, updatedBy: me.id, updatedByName: me.name, updatedAt: new Date() })
+          .where(eq(s.specialDays.id, d.id))
+          .returning({ id: s.specialDays.id });
+        if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
+        return row.id;
+      }
+      const [row] = await tx
         .insert(s.specialDays)
         .values({ ...values, createdBy: me.id, createdByName: me.name })
         .returning({ id: s.specialDays.id });
-      id = row.id;
-    }
+      return row.id;
+    });
     const summary = specialSummary(values);
     await logActivity(me, d.id ? "Özel gün güncellendi" : "Özel gün", summary);
     refresh();
@@ -110,8 +113,14 @@ export async function deleteSpecialDay(id: number): Promise<ActionResult<Special
   return attempt(async () => {
     const me = await requireAdmin();
     const key = z.number().int().positive().parse(id);
-    const [row] = await getDb().delete(s.specialDays).where(eq(s.specialDays.id, key)).returning();
-    if (!row) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
+    const row = await getDb().transaction(async (tx) => {
+      await lockSpecialDays(tx);
+      const [gone] = await tx.delete(s.specialDays).where(eq(s.specialDays.id, key)).returning();
+      if (!gone) throw new UserError("Özel gün bulunamadı (sayfayı yenileyin)");
+      // Onaylanmış kapalı gün bildiriminin satırı: istek "geri alındı" olur, eksik rapor uyarıları geri gelir
+      if (gone.kind === "kapali") await revokeClosedRequests(tx, gone.id, "Yönetici kapalı işaretini kaldırdı");
+      return gone;
+    });
     const values: SpecialDayValues = {
       kind: row.kind,
       title: row.title,

@@ -43,8 +43,10 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
  * girildiyse o da sayılır). `firstEver`: ilk raporun günü (verilmezse satırların en eskisi); yalnız bir ayın satırları
  * verilince ay ortasında başlayan ilk ay buna göre tanınır.
  */
-export function tillMonths(rows: TillRow[], through: string, firstEver?: string | null, pendingLate?: Iterable<string>): TillMonth[] {
+export function tillMonths(rows: TillRow[], through: string, firstEver?: string | null, pendingLate?: Iterable<string>, closedDays?: Iterable<string>): TillMonth[] {
   const waiting = pendingLate ? new Set(pendingLate) : null;
+  // Kapalı işaretli günler eksik sayılmaz, ayrı yazılır (raporu olan gün zaten eksik değil)
+  const shut = closedDays ? new Set(closedDays) : null;
   if (!rows.length) return [];
   const first = firstEver ?? rows.reduce((a, r) => (r.date < a ? r.date : a), rows[0].date);
   const byMonth = new Map<string, TillRow[]>();
@@ -64,7 +66,8 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
     const to = upto < end ? upto : end;
     const have = new Set(list.map((r) => r.date));
     const missing: string[] = [];
-    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) missing.push(d);
+    const closed: string[] = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) if (!have.has(d)) (shut?.has(d) ? closed : missing).push(d);
     const sum = (xs: TillRow[], f: (r: TillRow) => number) => r2(xs.reduce((a, r) => a + f(r), 0));
     const posRevenue = sum(list, (r) => r.zTotal);
     const disc = list.filter((r) => r.discounts != null);
@@ -86,6 +89,7 @@ export function tillMonths(rows: TillRow[], through: string, firstEver?: string 
       cardShare: posRevenue > 0 ? Math.min(1, Math.round((card / posRevenue) * 10_000) / 10_000) : null,
       missing,
       ...(waiting ? { pending: missing.filter((d) => waiting.has(d)) } : {}),
+      ...(shut ? { closed } : {}),
       partialFrom: first > start && first.slice(0, 7) === month ? first : null,
       lastDate,
     };
@@ -182,9 +186,20 @@ export function missingText(days: string[], max = 5, pending: readonly string[] 
   return days.length > max ? `${list} ve ${days.length - max} gün daha` : list;
 }
 
-/** "3 gün rapor yok: 5, 12, 20 Kasım. O günler açıksanız ciro ve açık gün eksik kalır." */
-export function missingSentence(t: Pick<TillMonth, "missing" | "pending">): string {
-  return `${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. O günler açıksanız ciro ve açık gün eksik kalır.`;
+/**
+ * "3 gün rapor yok: 5, 12, 20 Kasım. O günler açıksanız ciro ve açık gün eksik kalır." Kapalı işaretli günler ayrı
+ * cümle: "2 gün kapalı işaretli: 3, 4 Kasım." (eksik gün yoksa yalnız o)
+ */
+export function missingSentence(t: Pick<TillMonth, "missing" | "pending" | "closed">): string {
+  const parts: string[] = [];
+  if (t.missing.length) parts.push(`${t.missing.length} gün rapor yok: ${missingText(t.missing, 5, t.pending)}. O günler açıksanız ciro ve açık gün eksik kalır.`);
+  if (t.closed?.length) parts.push(closedSentence(t.closed));
+  return parts.join(" ");
+}
+
+/** "2 gün kapalı işaretli: 3, 4 Kasım." */
+export function closedSentence(days: readonly string[]): string {
+  return `${days.length} gün kapalı işaretli: ${missingText([...days])}.`;
 }
 
 /** "Kasa raporları 20 Ekim'de başladı; bu ayın ciro, açık gün, indirim ve ödenmezi elle girilir. Kartlı oran kasadan." */

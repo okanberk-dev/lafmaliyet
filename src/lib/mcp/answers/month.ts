@@ -185,7 +185,7 @@ export function monthSummary(model: Model, month: string, ctx: { base: string })
 
   // Kaynaklar: ay bilgisi elle mi kasa raporlarından mı (kasa grubu: Month.sources, Month.kasa.till)
   kaynak.push(kasaMonthLine(info) ?? "Ciro ve açık gün: Satışlar'a girilen ay bilgisi");
-  if (info?.kasa?.till.missing.length) kaynak.push(missingSentence(info.kasa.till));
+  if (info?.kasa?.till.missing.length || info?.kasa?.till.closed?.length) kaynak.push(missingSentence(info.kasa.till));
   kaynak.push("Giderler: faturalar (Paraşüt ve elle girilen), sabit giderler ve personel açık güne göre, aylık harcamalar (Gelir-gider)");
   kaynak.push(pm.site ? `laffogato.net online satışı ${monthLabel(month)} için çekildi` : "laffogato.net online satışı bu ay için yok");
   if (d.refMonth && d.refMonth !== month) kaynak.push(`Brüt kâr oranı ${monthLabel(d.refMonth)} satış listesinden`);

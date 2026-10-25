@@ -127,11 +127,13 @@ export function openPayoutsSub(o: ReturnType<typeof openPayouts>): { text: strin
 }
 
 /** Z toplamının alt satırı: "31 / 31 gün raporlu", "3 gün rapor yok", "kasa raporları 16 Ekim'de başladı", "kasa raporu yok" */
-export function tillSub(g: Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> | null): string {
+export function tillSub(g: (Pick<GroupMonth, "zTotal" | "reportDays" | "missing" | "partialFrom"> & { closed?: readonly string[] }) | null): string {
   if (!g || g.zTotal === null) return "kasa raporu yok";
   if (g.partialFrom) return `kasa raporları ${dayLocativeTR(g.partialFrom)} başladı`;
-  if (g.missing.length) return `${g.missing.length} gün rapor yok`;
-  return `${g.reportDays} / ${g.reportDays} gün raporlu`;
+  // Kapalı işaretli günler eksik sayılmaz ama sessizce düşmez: "2 gün kapalı"
+  const closed = g.closed?.length ? `${g.closed.length} gün kapalı` : null;
+  if (g.missing.length) return [`${g.missing.length} gün rapor yok`, closed].filter(Boolean).join(" · ");
+  return [`${g.reportDays} / ${g.reportDays + (g.closed?.length ?? 0)} gün raporlu`, closed].filter(Boolean).join(" · ");
 }
 
 /** Platformlar bölümünün satırı: "Z'deki online (platformlar): 0 ₺ · 31 / 31 gün raporlu"; o ay kasa raporu yoksa "Kasa raporu yok" */

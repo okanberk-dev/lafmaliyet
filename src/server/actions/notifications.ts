@@ -16,6 +16,7 @@ import { dueGroup, whenLabel } from "@/lib/user-reminders";
 import { getCurrentUser, type CurrentUser } from "@/server/auth/dal";
 import { kasaBell } from "@/server/bell/kasa";
 import { opsBell } from "@/server/bell/ops";
+import { isClosedDay } from "@/server/closed-days";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadCommissionAlerts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
@@ -72,12 +73,14 @@ async function checklistNotifications(user: CurrentUser): Promise<PanelNotificat
   const day = businessDate(now);
   const yesterday = addDays(day, -1);
   const admin = user.role === "admin";
-  const lists = await loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now);
+  const [lists, closedYesterday] = await Promise.all([loadChecklistDays(admin ? [day, yesterday] : [day], user.role, now), admin ? isClosedDay(yesterday) : false]);
+  // Dün onaylı kapalıysa (dalga 10 §2.9) hiç açılmamış listeler eksik sayılmaz
+  const yLists = (lists.get(yesterday) ?? []).filter((l) => !closedYesterday || l.run);
   return checklistBell({
     role: user.role,
     now,
     today: { day, lists: lists.get(day) ?? [] },
-    yesterday: admin ? { day: yesterday, lists: lists.get(yesterday) ?? [] } : null,
+    yesterday: admin ? { day: yesterday, lists: yLists } : null,
   }).map((b) => ({ ...b, group: "kontrol" as const }));
 }
 

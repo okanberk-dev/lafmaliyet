@@ -1,18 +1,31 @@
 import "server-only";
 
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm";
 
 import type { DayFacts } from "@/app/panel/bugun/logic";
-import { addDays } from "@/lib/reminders";
+import { businessDate, DAY_TURN_HOUR } from "@/lib/cash-report";
+import {
+  CLOSED_TEXT,
+  ClosedDayPayload,
+  closedDaysIn,
+  closedSpecialTitle,
+  EMPTY_EVIDENCE,
+  isEvidenceAction,
+  openingText,
+  zGapOf,
+  type ClosedEvidence,
+} from "@/lib/closed-days";
+import { addDays, longDateTR } from "@/lib/reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
 
 /*
- * Kapalı gün (plan docs/planlar/personel-yetki.md §2.9): Dalga 9'un özel günlerindeki `kapali` satırı ve personelin
- * "Dün kafe kapalıydı" bildirimi (staff_requests, tür `kapali-gun`). Kasa grubunun modülü; operasyon grubu
- * closedDayRefusal'ı çağırır (zayi). Kapalı günlerin okuyucusu geç kasa raporunda kullanılır (girilmemiş günler
- * listesinden düşer, personel o güne geç rapor açamaz); bildirim ve onay kuralı maddesiyle (§2.9) gelir, o zamana kadar
- * closedDayRefusal hiçbir yazımı reddetmez ve Bugün'e olgu vermez.
+ * Kapalı gün (plan docs/planlar/personel-yetki.md §2.9; docs/KASA-RAPORU.md › Kafe kapalıydı): Dalga 9'un özel
+ * günlerindeki `kapali` satırı ve personelin "Dün kafe kapalıydı" bildirimi (staff_requests, tür `kapali-gun`). Kapalı
+ * günlerin okuyucuları (geç rapor, eksik günler, ay bilgisi, komisyon), personelin kapalı güne yazamaması
+ * (closedDayRefusal; kasadan çıkan ve zayi), günün kanıtı (closedDayEvidence), raporun gelişiyle işaretin kalkması
+ * (onReportSaved, onNextReport) ve Bugün'ün olgusu (closedYesterday). Bir `kapali` satırı yalnız yöneticinin yazımıdır
+ * (Satış tahmini, Kasa'daki "Kafe kapalıydı", bildirimin onayı): satırın varlığı onaydır.
  */
 
 type Db = ReturnType<typeof getDb>;
@@ -22,14 +35,10 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export async function closedDaysBetween(from: string, to: string, db: Db | Tx = getDb()): Promise<string[]> {
   if (from > to) return [];
   const rows = await db
-    .select({ from: s.specialDays.dateFrom, to: s.specialDays.dateTo })
+    .select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo })
     .from(s.specialDays)
     .where(and(eq(s.specialDays.kind, "kapali"), lte(s.specialDays.dateFrom, to), gte(s.specialDays.dateTo, from)));
-  const days = new Set<string>();
-  for (const r of rows) {
-    for (let d = r.from < from ? from : r.from; d <= r.to && d <= to; d = addDays(d, 1)) days.add(d);
-  }
-  return [...days].sort();
+  return closedDaysIn(rows, from, to);
 }
 
 /** Bu gün kapalı işaretli mi (tek gün) */
@@ -38,18 +47,344 @@ export async function isClosedDay(day: string, db: Db | Tx = getDb()): Promise<b
 }
 
 /**
- * Personelin yazımı (kasadan çıkan, zayi / ikram) onaylı kapalı güne düşüyorsa nedeni; yönetici ve açık gün null
+ * Personelin yazımı (kasadan çıkan, zayi / ikram) kapalı işaretli güne düşüyorsa nedeni; yönetici ve açık gün null.
+ * Kapalı satırı yalnız yöneticinin yazımıdır (onaylı).
  */
 export async function closedDayRefusal(date: string, role: "admin" | "staff", db: Db | Tx = getDb()): Promise<string | null> {
-  void date;
-  void role;
-  void db;
-  return null;
+  if (role === "admin") return null;
+  return (await isClosedDay(date, db)) ? CLOSED_TEXT.refusal : null;
 }
 
-/** Bugün'ün olgusu: dün kafe kapalı mıydı (onaylı ya da personelin bildirdiği, onay bekleyen); yoksa null */
+/** İş gününün penceresi: [D 05:00, D+1 05:00), Türkiye */
+export function dayWindow(date: string): { from: Date; to: Date } {
+  const hh = String(DAY_TURN_HOUR).padStart(2, "0");
+  return { from: new Date(`${date}T${hh}:00:00+03:00`), to: new Date(`${addDays(date, 1)}T${hh}:00:00+03:00`) };
+}
+
+/** Günü kapsayan `kapali` satırları */
+async function coveringRows(db: Db | Tx, date: string) {
+  return db
+    .select()
+    .from(s.specialDays)
+    .where(and(eq(s.specialDays.kind, "kapali"), lte(s.specialDays.dateFrom, date), gte(s.specialDays.dateTo, date)))
+    .orderBy(asc(s.specialDays.id));
+}
+
+/**
+ * Bir günün paneldeki izleri (tutar yok): kasa raporu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke
+ * (iş günü penceresinde başlayan, iptal edilmemiş), personelin işlem geçmişi yazımları (aynı pencerede; hesap ve
+ * hatırlatıcı hariç, silme kayıtları dahil), Z no sürekliliği ve açılış sürekliliği. Site ayrı (siteDayCounts).
+ */
+export async function closedDayEvidence(db: Db | Tx, date: string): Promise<ClosedEvidence> {
+  const w = dayWindow(date);
+  const [[report], [outs], [waste], [lists], [karaoke], logs, [prev], [next]] = await Promise.all([
+    db.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1),
+    db.select({ n: count() }).from(s.cashOuts).where(eq(s.cashOuts.date, date)),
+    db.select({ n: count() }).from(s.wasteEntries).where(eq(s.wasteEntries.date, date)),
+    db.select({ n: count() }).from(s.checklistRuns).where(eq(s.checklistRuns.date, date)),
+    db
+      .select({ n: count() })
+      .from(s.karaokeSessions)
+      .where(and(gte(s.karaokeSessions.startsAt, w.from), lt(s.karaokeSessions.startsAt, w.to), ne(s.karaokeSessions.status, "cancelled"))),
+    db
+      .select({ action: s.activityLog.action })
+      .from(s.activityLog)
+      .innerJoin(s.users, eq(s.users.id, s.activityLog.userId))
+      .where(and(gte(s.activityLog.at, w.from), lt(s.activityLog.at, w.to), eq(s.users.role, "staff"))),
+    db
+      .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
+      .from(s.cashReports)
+      .where(lt(s.cashReports.date, date))
+      .orderBy(desc(s.cashReports.date))
+      .limit(1),
+    db
+      .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, opening: s.cashReports.openingCash })
+      .from(s.cashReports)
+      .where(gt(s.cashReports.date, date))
+      .orderBy(asc(s.cashReports.date))
+      .limit(1),
+  ]);
+  // Z boşluğu: arada (önceki ile sonraki rapor arasında) bu günden başka raporsuz ve kapalı işaretsiz kaç gün var
+  let others = 0;
+  if (prev && next) {
+    const shut = new Set(await closedDaysBetween(addDays(prev.date, 1), addDays(next.date, -1), db));
+    for (let d = addDays(prev.date, 1); d < next.date; d = addDays(d, 1)) if (d !== date && !shut.has(d)) others++;
+  }
+  return {
+    report: Boolean(report),
+    cashOuts: outs?.n ?? 0,
+    waste: waste?.n ?? 0,
+    checklists: lists?.n ?? 0,
+    karaoke: karaoke?.n ?? 0,
+    staffWrites: logs.filter((l) => isEvidenceAction(l.action)).length,
+    zGap: zGapOf(date, prev ?? null, next ?? null, others),
+    opening: openingText(prev ? { date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 } : null, next ? { date: next.date, opening: next.opening } : null),
+  };
+}
+
+/** İşlem geçmişine (işlemin içinde; sistemin ya da yazanın adıyla) */
+async function logIn(tx: Tx, who: { id: number | null; name: string } | null, action: string, detail: string) {
+  await tx.insert(s.activityLog).values({ userName: who?.name ?? "Sistem", userId: who?.id ?? null, action, detail: detail.slice(0, 500) });
+}
+
+/** Satırı onaylayan isteği kaldırıldı yapar (`revoked`, not personele görünür) */
+async function revokeFor(tx: Tx, specialId: number, note: string, now: Date) {
+  await tx
+    .update(s.staffRequests)
+    .set({ status: "revoked", reviewNote: note, updatedAt: now })
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "approved"), eq(s.staffRequests.resultId, specialId)));
+}
+
+/**
+ * Kapalı satırı silinince (Satış tahmini'nde yönetici sildi ya da kanıt geldi): onu onaylayan istek `revoked` olur,
+ * uyarılar geri gelir. Satış tahmini'nin silme eylemi çağırır.
+ */
+export async function revokeClosedRequests(tx: Tx, specialId: number, note: string, now = new Date()): Promise<void> {
+  await revokeFor(tx, specialId, note, now);
+}
+
+/** Özel günlerin danışma kilidi: yönetici ve personel yazımları sıraya girer (çakışma ve sınırlar yarışmaz) */
+export async function lockSpecialDays(tx: Tx): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ozel-gun'))`);
+}
+
+/**
+ * Günü kapalı işaretler (yönetici; işlemin içinde, danışma kilidi altında): günü kapsayan `kapali` satırı yoksa tek
+ * günlük satır yazılır, `createdBy` yazan yönetici. Varsa onun kimliği döner (`created` false).
+ */
+export async function writeClosedDay(tx: Tx, admin: { id: number; name: string }, date: string, reason: string | null): Promise<{ id: number; created: boolean }> {
+  await lockSpecialDays(tx);
+  const [have] = await coveringRows(tx, date);
+  if (have) return { id: have.id, created: false };
+  const [row] = await tx
+    .insert(s.specialDays)
+    .values({ dateFrom: date, dateTo: date, kind: "kapali", title: closedSpecialTitle(reason), effect: -1, note: null, createdBy: admin.id, createdByName: admin.name })
+    .returning({ id: s.specialDays.id });
+  return { id: row.id, created: true };
+}
+
+/** Kapalı işaret kanıtla kalktı: tek günlük satır silinir, onu onaylayan istek `revoked` olur, işlem geçmişine yazılır */
+async function dropClosedMark(tx: Tx, row: { id: number; dateFrom: string; dateTo: string }, why: string, now: Date) {
+  await tx.delete(s.specialDays).where(eq(s.specialDays.id, row.id));
+  await revokeFor(tx, row.id, why, now);
+  await logIn(tx, null, "Kapalı gün işareti kaldırıldı (kanıt geldi)", `${longDateTR(row.dateFrom)} · ${why}`);
+}
+
+/**
+ * Bir günün raporu ilk kez girildi (writeCashReport, işlemin içinde): aynı günün bekleyen kapalı gün bildirimi kapanır
+ * ("Kasa raporu girildi"). Günü kapsayan tek günlük kapalı satırı silinir (istek `revoked`, yöneticinin zilinde); çok
+ * günlük aralıkta yalnız zil: "Kapalı aralığın içindeki 3 Kas'a rapor girildi; …".
+ */
+export async function onReportSaved(tx: Tx, date: string, now = new Date()): Promise<void> {
+  await tx
+    .update(s.staffRequests)
+    .set({ status: "superseded", reviewNote: "Kasa raporu girildi", reviewedAt: now, updatedAt: now })
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), eq(s.staffRequests.day, date)));
+  for (const row of await coveringRows(tx, date)) {
+    if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, "kasa raporu girildi", now);
+    else await logIn(tx, null, "Kapalı aralığa rapor girildi", `Kapalı aralığın içindeki ${longDateTR(date)} gününe rapor girildi; Satış tahmini › Özel günler'den aralığı düzeltin`);
+  }
+}
+
+/**
+ * Sonraki günün raporu girildi (writeCashReport, işlemin içinde): önceki gün kapalı işaretliyse Z no sürekliliği
+ * denetlenir. O güne bir Z düşmüşse (boşluk, arada başka raporsuz gün yok) tek günlük işaret kalkar; açılış devirle
+ * tutmuyorsa yalnız zil (işlem geçmişi).
+ */
+export async function onNextReport(tx: Tx, report: { date: string; zNo: string | null; openingCash: number }, now = new Date()): Promise<void> {
+  const day = addDays(report.date, -1);
+  const rows = await coveringRows(tx, day);
+  if (!rows.length) return;
+  const [prev] = await tx
+    .select({ date: s.cashReports.date, zNo: s.cashReports.zNo, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver })
+    .from(s.cashReports)
+    .where(lt(s.cashReports.date, day))
+    .orderBy(desc(s.cashReports.date))
+    .limit(1);
+  if (!prev) return;
+  // Önceki rapor ile bu gün arasındaki öteki raporsuz, kapalı işaretsiz günler
+  const shut = new Set(await closedDaysBetween(addDays(prev.date, 1), addDays(day, -1), tx));
+  let others = 0;
+  for (let d = addDays(prev.date, 1); d < day; d = addDays(d, 1)) if (!shut.has(d)) others++;
+  const gap = zGapOf(day, prev, { date: report.date, zNo: report.zNo }, others);
+  if (gap?.level === "red") {
+    for (const row of rows) {
+      if (row.dateFrom === row.dateTo) await dropClosedMark(tx, row, `Z no boşluğu: ${gap.text}`, now);
+      else await logIn(tx, null, "Kapalı aralığa rapor girildi", `${longDateTR(day)} kapalı işaretli ama ${gap.text}; Satış tahmini › Özel günler'den aralığı düzeltin`);
+    }
+    return;
+  }
+  const opening = openingText({ date: prev.date, carry: Math.round((prev.counted - prev.handed) * 100) / 100 }, { date: report.date, opening: report.openingCash });
+  if (opening && !opening.ok) await logIn(tx, null, "Kapalı gün: açılış devirle tutmuyor", `${longDateTR(day)} kapalı işaretli; ${opening.text}`);
+}
+
+// ---------------------------------------------------------------- Okuyucular
+
+/** Kapalı gün bildirimlerinin sabit sütunları (yük yalnız tarih ve neden; tutar yok) */
+const requestCols = {
+  id: s.staffRequests.id,
+  day: s.staffRequests.day,
+  status: s.staffRequests.status,
+  version: s.staffRequests.version,
+  payload: s.staffRequests.payload,
+  requestedBy: s.staffRequests.requestedBy,
+  requestedByName: s.staffRequests.requestedByName,
+  reviewNote: s.staffRequests.reviewNote,
+  reviewedByName: s.staffRequests.reviewedByName,
+  createdAt: s.staffRequests.createdAt,
+  updatedAt: s.staffRequests.updatedAt,
+};
+
+/** Bugün'ün olgusu: dün kafe kapalı mıydı (onaylı satır, bekleyen ya da reddedilen bildirim); yoksa `yesterday` null */
 export async function closedYesterday(user: CurrentUser, now: Date): Promise<DayFacts["closed"]> {
   void user;
-  void now;
-  return null;
+  const y = addDays(businessDate(now), -1);
+  const db = getDb();
+  const [rows, reqs] = await Promise.all([
+    coveringRows(db, y),
+    db
+      .select(requestCols)
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.day, y), ne(s.staffRequests.status, "withdrawn")))
+      .orderBy(desc(s.staffRequests.createdAt)),
+  ]);
+  if (rows.length) {
+    const approved = reqs.find((r) => r.status === "approved");
+    return { yesterday: { state: "approved", by: approved?.requestedByName ?? rows[0].createdByName, requestId: approved?.id ?? null } };
+  }
+  const pending = reqs.find((r) => r.status === "pending");
+  if (pending) return { yesterday: { state: "pending", by: pending.requestedByName, requestId: pending.id } };
+  const last = reqs[0];
+  if (last?.status === "rejected") return { yesterday: { state: "rejected", by: last.requestedByName, requestId: last.id, note: last.reviewNote } };
+  return { yesterday: null };
+}
+
+/** Personelin kasa sayfası: dünün kapalı gün durumu ve "Kafe kapalıydı" düğmesi görünür mü */
+export interface StaffClosedState {
+  /** Bekleyen bildirim (kimin olursa): ad ve kişinin kendisininse kimlik ("Geri çek") */
+  pending: { id: number; by: string; mine: boolean } | null;
+  /** Reddedildi (yöneticinin notu; bütün personele görünür) */
+  rejected: { note: string | null } | null;
+  /** Düğme görünür: bekleyen ya da reddedilen yok, kişinin son 30 günde 3'ten az bildirimi var */
+  canAsk: boolean;
+}
+
+export async function staffClosedState(date: string, me: { id: number }, now = new Date()): Promise<StaffClosedState> {
+  const db = getDb();
+  const since = new Date(now.getTime() - 30 * 86_400_000);
+  const [reqs, [mine]] = await Promise.all([
+    db
+      .select({ id: s.staffRequests.id, status: s.staffRequests.status, requestedBy: s.staffRequests.requestedBy, requestedByName: s.staffRequests.requestedByName, reviewNote: s.staffRequests.reviewNote })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.day, date), inArray(s.staffRequests.status, ["pending", "rejected"])))
+      .orderBy(desc(s.staffRequests.createdAt)),
+    db
+      .select({ n: count() })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.requestedBy, me.id), ne(s.staffRequests.status, "withdrawn"), gte(s.staffRequests.createdAt, since))),
+  ]);
+  const p = reqs.find((r) => r.status === "pending");
+  const r = reqs.find((x) => x.status === "rejected");
+  return {
+    pending: p ? { id: p.id, by: p.requestedByName, mine: p.requestedBy === me.id } : null,
+    rejected: r ? { note: r.reviewNote } : null,
+    canAsk: !p && !r && (mine?.n ?? 0) < 3,
+  };
+}
+
+/** "Kapalı gün bildirimlerim" (/panel/ozel-gunler#bildirimlerim): kişinin son 30 günün bildirimleri; tarih, durum, not */
+export async function ownClosedRequests(me: { id: number }, now = new Date()) {
+  const since = new Date(now.getTime() - 30 * 86_400_000);
+  const rows = await getDb()
+    .select({ id: s.staffRequests.id, day: s.staffRequests.day, status: s.staffRequests.status, reviewNote: s.staffRequests.reviewNote, createdAt: s.staffRequests.createdAt })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.requestedBy, me.id), gte(s.staffRequests.createdAt, since)))
+    .orderBy(desc(s.staffRequests.createdAt));
+  return rows.flatMap((r) => (r.day ? [{ id: r.id, day: r.day, status: r.status, reviewNote: r.reviewNote, createdAt: r.createdAt.toISOString() }] : []));
+}
+
+/** Yöneticinin kartı: bekleyen bildirim, günün kanıtı (canlı), üst üste günlerin grubu */
+export interface ClosedDayCard {
+  kind: "kapali-gun";
+  id: number;
+  version: number;
+  date: string;
+  requestedByName: string;
+  createdAt: string;
+  message: string | null;
+  reason: string | null;
+  evidence: ClosedEvidence;
+  /** Aynı kişinin ya da başkasının üst üste kapalı bildirdiği / işaretli günlerle birlikte kaç gün */
+  run: { from: string; to: string; days: number } | null;
+}
+
+/** Bekleyen kapalı gün bildirimlerinin kartları (yalnız yönetici; loadCashRequestQueue toplar) */
+export async function closedDayCards(): Promise<ClosedDayCard[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ ...requestCols, message: s.staffRequests.message })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), isNotNull(s.staffRequests.day)))
+    .orderBy(asc(s.staffRequests.day), asc(s.staffRequests.createdAt));
+  if (!rows.length) return [];
+  const days = rows.map((r) => r.day!);
+  const from = addDays(days[0], -7);
+  const to = addDays(days[days.length - 1], 7);
+  // Üst üste günler: bekleyen bildirimler ve zaten kapalı işaretli günler birlikte
+  const marked = await closedDaysBetween(from, to, db);
+  const all = new Set([...days, ...marked]);
+  const runOf = (d: string) => {
+    let a = d;
+    let b = d;
+    while (all.has(addDays(a, -1))) a = addDays(a, -1);
+    while (all.has(addDays(b, 1))) b = addDays(b, 1);
+    return a === b ? null : { from: a, to: b, days: [...all].filter((x) => x >= a && x <= b).length };
+  };
+  const out: ClosedDayCard[] = [];
+  for (const r of rows) {
+    const p = ClosedDayPayload.safeParse(r.payload);
+    out.push({
+      kind: "kapali-gun",
+      id: r.id,
+      version: r.version,
+      date: r.day!,
+      requestedByName: r.requestedByName,
+      createdAt: r.createdAt.toISOString(),
+      message: r.message,
+      reason: p.success ? p.data.reason : null,
+      evidence: await closedDayEvidence(db, r.day!).catch(() => EMPTY_EVIDENCE),
+      run: runOf(r.day!),
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- Zil (yönetici)
+
+/** Bekleyen kapalı gün bildirimleri (yöneticinin zili; tutar yok) */
+export async function pendingClosedRows(): Promise<{ id: number; day: string; requestedByName: string; bumpedAt: Date; createdAt: Date }[]> {
+  const rows = await getDb()
+    .select({ id: s.staffRequests.id, day: s.staffRequests.day, requestedByName: s.staffRequests.requestedByName, bumpedAt: s.staffRequests.bumpedAt, createdAt: s.staffRequests.createdAt })
+    .from(s.staffRequests)
+    .where(and(eq(s.staffRequests.kind, "kapali-gun"), eq(s.staffRequests.status, "pending"), isNotNull(s.staffRequests.day)))
+    .orderBy(asc(s.staffRequests.createdAt));
+  return rows.map((r) => ({ ...r, day: r.day! }));
+}
+
+/** Kapalı işaretin kanıtla kalkması, kapalı aralığa gelen rapor ve açılış uyarısı (işlem geçmişinden; yöneticinin zili) */
+export const CLOSED_BELL_ACTIONS = ["Kapalı gün işareti kaldırıldı (kanıt geldi)", "Kapalı aralığa rapor girildi", "Kapalı gün: açılış devirle tutmuyor"] as const;
+
+/**
+ * Yöneticinin bilgi zili: son günlerin kapalı gün olayları ve personelin özel gün eklemeleri, düzeltmeleri ve silmeleri
+ * ("Ahmet özel gün ekledi: 25 Eki · Derbi · +%15")
+ */
+export async function closedInfoRows(since: Date): Promise<{ id: number; at: Date; userName: string | null; action: string; detail: string | null; staff: boolean }[]> {
+  const rows = await getDb()
+    .select({ id: s.activityLog.id, at: s.activityLog.at, userName: s.activityLog.userName, action: s.activityLog.action, detail: s.activityLog.detail, role: s.users.role })
+    .from(s.activityLog)
+    .leftJoin(s.users, eq(s.users.id, s.activityLog.userId))
+    .where(and(gte(s.activityLog.at, since), sql`(${s.activityLog.action} in (${sql.join(CLOSED_BELL_ACTIONS.map((a) => sql`${a}`), sql`, `)}) or (${s.activityLog.action} like 'Özel gün%' and ${s.users.role} = 'staff'))`))
+    .orderBy(desc(s.activityLog.at))
+    .limit(10);
+  return rows.map((r) => ({ id: r.id, at: r.at, userName: r.userName, action: r.action, detail: r.detail, staff: r.role === "staff" }));
 }

@@ -142,7 +142,7 @@ export interface DayFacts {
    * Dün kafe kapalı mıydı: yöneticinin onayladığı ya da personelin bildirdiği, onay bekleyen kapalı gün (özel günün
    * `kapali` satırı; src/server/closed-days.ts). Yoksa null
    */
-  closed?: { yesterday: { state: "approved" | "pending"; by: string; requestId: number | null } | null } | null;
+  closed?: { yesterday: { state: "approved" | "pending" | "rejected"; by: string; requestId: number | null; note?: string | null } | null } | null;
 }
 
 /** Günün saatleri: takvim günü, iş günü (05:00'te döner), akşam, ayın günü ve sayımın ayları */
@@ -259,6 +259,42 @@ const cashYesterday: Row = (f, c) => {
   if (r) return admin ? { key: "kasa-dun", title, status: cashStatus(r), badge: cashBadge(r), detail: dated(c, r.date, cashDetail(r, true)), href, action: "Rapora bak" } : null;
   // Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa dünün raporu beklenmez (kurulum sakin açılır)
   if (!f.cash.firstDate || c.yesterday < f.cash.firstDate) return null;
+  // Dün kafe kapalıydı (dalga 10 §2.9): onaylıysa satır yok; bildirim bekliyorsa yöneticiye "Onaya bak", personele
+  // "Onayda"; reddedildiyse personele yöneticinin notu
+  const closed = f.closed?.yesterday ?? null;
+  if (closed?.state === "approved") return null;
+  if (closed?.state === "pending") {
+    return admin
+      ? {
+          key: "kasa-dun",
+          title,
+          status: "todo",
+          badge: "Onay bekliyor",
+          detail: `${closed.by} ${longDateTR(c.yesterday)} için kafe kapalıydı dedi. Onaylamadan önce o günün ModPOS / banka POS'una bakın.`,
+          href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar",
+          action: "Onaya bak",
+        }
+      : {
+          key: "kasa-dun",
+          title,
+          status: "todo",
+          badge: "Onayda",
+          detail: `${closed.by} kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından sonra yöneticinin onayıyla girilir.`,
+          href,
+          action: "Dünü gir",
+        };
+  }
+  if (closed?.state === "rejected" && !admin) {
+    return {
+      key: "kasa-dun",
+      title,
+      status: "todo",
+      badge: "Girilmedi",
+      detail: `Yönetici bildirimi reddetti${closed.note ? `: ${clip(closed.note, 120)}` : ""}. Raporu bugün girin.`,
+      href,
+      action: "Dünü gir",
+    };
+  }
   return admin
     ? {
         key: "kasa-dun",
@@ -275,7 +311,7 @@ const cashYesterday: Row = (f, c) => {
         status: "todo",
         badge: "Girilmedi",
         // Yarından sonra geç rapor (Z fotoğrafıyla, yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
-        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa bugün girin; yarından sonra yöneticinin onayıyla girilir.`,
+        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından sonra yöneticinin onayıyla girilir.`,
         href,
         action: "Dünü gir",
       };
@@ -869,7 +905,8 @@ export function cafeLines(
   busy?: StaffForecastView | null,
   extra: CafeLine[] = [],
 ): CafeLine[] {
-  const out: CafeLine[] = busy ? staffForecastLines(busy) : [];
+  // Yoğunluk satırı personelin Özel günler ekranına götürür (maç, AVM etkinliği, kampanya; dalga 10 §2.9)
+  const out: CafeLine[] = busy ? staffForecastLines(busy).map((l) => (l.key === "yogunluk" ? { ...l, href: "/panel/ozel-gunler" } : l)) : [];
   const k = i.karaoke;
   const any = k ? k.reservations + k.walkIns > 0 : false;
   if (k && (i.configured || any)) {

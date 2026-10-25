@@ -90,7 +90,7 @@ test("2. dünün raporu yok: kasa kullanılmaya başladıysa 'Dünkü kasa rapor
   assert.equal(t.status, "todo");
   assert.equal(t.href, "/panel/kasa?gun=2026-10-21");
   assert.equal(t.action, "Dünü gir");
-  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; yarından sonra yöneticinin onayıyla girilir\.$/);
+  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin\. Yarından sonra yöneticinin onayıyla girilir\.$/);
   assert.equal(splitTasks(tasks).next?.key, "kasa-dun");
   // İlk rapor bugün (ya da hiç yok): dün beklenmez
   for (const firstDate of ["2026-10-22", null]) {

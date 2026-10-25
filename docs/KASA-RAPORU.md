@@ -133,6 +133,48 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
   `src/server/cash-outs/write.ts`, istekler `src/server/cash-outs/requests.ts`, uçlar
   `src/server/actions/cash-out-requests.ts`.
 
+## Kafe kapalıydı
+
+Tek kavram: Satış tahmini'ndeki özel günlerin `kapali` satırı ([SATIS-TAHMINI.md](SATIS-TAHMINI.md) § 4). Satırı
+yalnız yönetici yazar; satırın varlığı onaydır. Kapalı işaretli gün eksik rapor ve kontrol listesi uyarılarına girmez,
+ay bilgisinde ve komisyonda eksik sayılmaz ("2 gün kapalı işaretli: 3, 4 Kasım"), geç rapor listesine girmez ve
+personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayıt girilemez").
+
+- **Personel, Kasa raporu › Dün (rapor yokken):** formun üstünde "Dün kafe kapalı mıydı?" ve **Kafe kapalıydı**.
+  Pencere: "Yönetici onaylayınca … için eksik kasa raporu ve kontrol listesi uyarıları kalkar. Kafe açıktıysa bunun yerine
+  raporu girin.", "Neden? (isteğe bağlı)" (60 karakter), **Yöneticiye gönder**. Düğme yalnız dün için, o gün için
+  bekleyen ya da reddedilen bildirim yokken ve kişinin son 30 günde 3'ten az bildirimi varken görünür. O gün panelde iz
+  varsa (kasa raporu, kasadan çıkan, zayi / ikram, açılan kontrol listesi, karaoke, personelin işlem geçmişi kaydı, Z no
+  boşluğu) istek açılmaz: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin."
+  Bekleyen durumda "Kapalıydı dediniz · onay bekliyor" ve **Geri çek** (kişi başına günde bir); form yerinde kalır.
+- **Kanıt** (`src/server/closed-days.ts` › `closedDayEvidence`, canlı): iş günü penceresi [D 05:00, D+1 05:00).
+  Karaoke `starts_at` ile, personelin işlem geçmişinde hesap, parola, iki adımlı, kurtarma, diğer cihazlar, oturum,
+  bildirim ayarı, hatırlatıcı, özel gün ve kapalı gün işlemleri hariç her yazım (silme kayıtları dahil; kanıtı silmek işe
+  yaramaz). Z no sürekliliği: önceki ve sonraki raporun Z no'ları arasındaki boşluk arada başka raporsuz gün yokken
+  kırmızıdır. Açılış sürekliliği yalnız uyarıdır ("25 Eki açılışı 23 Eki devriyle tutmuyor: 600 ₺ az"). Sitenin o günkü
+  kafe, elle girilen ve kasada ödenen sipariş sayıları yöneticinin kartında ayrı bir Suspense'te sorulur (tutar yok;
+  mağaza kolisi yalnız bilgi; site okunamazsa onayı kapatmaz).
+- **Onaylar › Kasa › Kapalı gün** kartı: kanıt listesi (kırmızı varsa **Onayla** kapalı), üst üste günler "3 gün üst
+  üste kapalı bildirimi", ipucu "Onaylamadan önce o günün ModPOS / banka POS'una bakın; satış varsa reddedin.", not
+  "Not (bütün personele görünür; tutar yazmayın)". Onayda kanıt yeniden sayılır; satır onaylayan yöneticinin adıyla
+  yazılır.
+- **Yönetici, Kasa › raporsuz gün (`?gun=`):** **Kafe kapalıydı**, onaysız; pencerede o günün izleri uyarı olarak.
+  Aynı günün bekleyen bildirimi onaylanmış olur. Raporu olan gün işaretlenmez.
+- **Rapor gelince:** günün ilk raporu girilince bekleyen bildirim kapanır ("Kasa raporu girildi"), günü kapsayan tek
+  günlük kapalı satırı silinir ve onu onaylayan bildirim "geri alındı" olur (yöneticinin zilinde "Kapalı gün işareti
+  kaldırıldı (kanıt geldi)"); çok günlük aralıkta yalnız zil. Ertesi günün raporu gelince Z no boşluğu varsa işaret
+  kalkar; açılış farkı varsa yalnız zil.
+- **Bugün:** personelin `kasa-dun` satırı bekleyende "Onayda", onaylandıysa yok, reddedildiyse "Yönetici bildirimi
+  reddetti{: not}. Raporu bugün girin."; yöneticinin `kasa-dun` ve `liste-dun` satırları "Onaya bak". Zil: yöneticide
+  "Kapalı gün onayı bekliyor" ve "Dünkü kasa raporu girilmedi · Personel: kapalıydık dedi (onay bekliyor)"; personelde
+  "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Sabah e-postasında onaylı kapalı gün kontrol kutusuna
+  girmez; bekleyen bildirim "Onay bekleyenler"de karar verilene kadar listelenir.
+- **İşlem geçmişi:** "Kapalı gün bildirildi", "Kapalı gün bildirimi geri çekildi", "Kapalı gün onaylandı", "Kapalı gün
+  reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
+- Kod: saf kurallar `src/lib/closed-days.ts`, kanıt ve kancalar `src/server/closed-days.ts`, istek ve karar
+  `src/server/closed-day-requests.ts`, uçlar `src/server/actions/closed-days.ts`. Testler `tests/kapali-gun.test.ts`,
+  `tests/kapali-gun-db.test.ts`.
+
 ## laffogato.net satırı (bilgi)
 
 Formun altında, site bağlıysa o günün online satışı tek satır olarak görünür:

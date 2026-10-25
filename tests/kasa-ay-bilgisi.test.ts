@@ -346,7 +346,7 @@ test("kapanmış veri ayları: açık günü kasa raporlarından gelen ay da say
 test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalardan sonra", () => {
   const src = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
   // Kasa raporları ve onay bekleyen geç raporların günleri okumaların sonunda (dalga 10: eksik gün "onay bekliyor")
-  assert.match(src, /tillRows\(\),[\s\S]{0,400}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\),\s*\]\);/);
+  assert.match(src, /tillRows\(\),[\s\S]{0,400}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\),\s*\/\/ Kapalı işaretli günler[\s\S]{0,300}?eq\(s\.specialDays\.kind, "kapali"\)\),\s*\]\);/);
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
   assert.ok(src.indexOf("const through = addDays(businessDate(), -1)") > src.indexOf("tillRows(),"));
   assert.match(src, /months: resolveMonths\(/);

@@ -21,6 +21,7 @@ import { money } from "@/lib/format";
 import { dayMonthTR, monthTitleTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestKind, type StaffRequestStatus } from "@/lib/staff-requests";
 import { mergedOf, type MergeBase } from "@/server/cash/requests";
+import { closedDayCards, type ClosedDayCard } from "@/server/closed-days";
 import { lateBellRows, lateCards, type LateCard } from "@/server/data/cash-late";
 import { cashOutCards, type CashOutCard, type PhotoRemovalCard } from "@/server/data/cash-out-requests";
 import { cashOutsOn } from "@/server/data/cash-outs";
@@ -38,7 +39,7 @@ import { ownRequests } from "@/server/staff-requests/core";
 /** Personelin kasa sayfasındaki istek türleri (bu gün için bekleyenler) */
 const DAY_KINDS = ["kasa-duzeltme", "kasa-silme"] as const;
 /** İsteklerim kartındaki türler */
-export const MY_CASH_KINDS: readonly CashRequestKind[] = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir"];
+export const MY_CASH_KINDS: readonly CashRequestKind[] = ["kasa-duzeltme", "kasa-silme", "kasa-gec", "kasa-cikan", "foto-kaldir", "kapali-gun"];
 
 /** Personelin kendi bekleyen düzeltme önerisi: kendi yazdığı alanlar ve özeti */
 export interface OwnCorrection {
@@ -250,15 +251,15 @@ export interface DeleteCard extends CardBase {
   next: string | null;
 }
 
-export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCard | PhotoRemovalCard;
+export type CashRequestCard = CorrectionCard | DeleteCard | LateCard | CashOutCard | PhotoRemovalCard | ClosedDayCard;
 
 /**
  * Bekleyen kasa isteklerinin kartları (düzeltme, silme, geç rapor, kasadan çıkan, fotoğraf kaldırma), en eski gün önce
  * (yalnız yönetici)
  */
 export async function loadCashRequestQueue(now = new Date()): Promise<CashRequestCard[]> {
-  const [day, late, outs] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now)]);
-  return [...day, ...late, ...outs].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  const [day, late, outs, closed] = await Promise.all([dayRequestCards(now), lateCards(now), cashOutCards(now), closedDayCards()]);
+  return [...day, ...late, ...outs, ...closed].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
 }
 
 /** Kayıtlı raporun düzeltme ve silme isteklerinin kartları */

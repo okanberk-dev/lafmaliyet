@@ -105,8 +105,34 @@ günün kasa raporunu okur; daha eski bir gün hiçbir şeyi değiştirmez) ve 1
 60 günde bitenleri listeler; tahmin önümüzdeki 60 günü okur. Etki: çok artırır (+%30), artırır (+%15), bilmiyorum
 (yalnız not), azaltır (−%15), çok azaltır (−%30); kafe kapalıda tahmin 0. Aynı adla üst üste binen ikinci kayıt
 reddedilir (etki iki kez çarpılmasın). Geçmiş bir gün de işaretlenebilir: o gün normal günlerin ortalamasına katılmaz
-(derbi gününün üç katı satış tabanı şişirmez). Yalnız yönetici girer. Silince bildirimdeki **Geri al** aynı değerlerle
-yeniden ekler. İşlem geçmişine "Özel gün", "Özel gün güncellendi", "Özel gün silindi" yazılır.
+(derbi gününün üç katı satış tabanı şişirmez). Yönetici her türü girer; personel ileri tarihli maç, AVM etkinliği,
+kampanya ve diğerini girer (aşağıda). Silince bildirimdeki **Geri al** aynı değerlerle yeniden ekler. İşlem geçmişine
+"Özel gün", "Özel gün güncellendi", "Özel gün silindi" yazılır. Yöneticinin penceresinde adın ipucu: "Ad personele
+görünür; müşteri adı ya da tutar yazmayın." Kart `#ozel-gunler` çapasındadır (personelin ekranı yöneticiyi oraya
+yönlendirir).
+
+### Personelin özel günleri (dalga 10 §2.9)
+
+- **`/panel/ozel-gunler`** (Günlük altında, yalnız personel; Bugün'ün yoğunluk satırı buraya götürür): "Yaklaşan"
+  listesi (bugün ile 60 gün), satır "25 Eki Cmt · Derbi / maç · +%15 · Ahmet ekledi"; başkasının notu gönderilmez,
+  tahmin tutarı ve gerçekleşen etki yüklenmez (`src/server/forecast/staff-special.ts` › `staffSpecialList`, yalnız
+  `special_days`, sabit sütunlar).
+- **Onaysız, sınırlı** (`src/lib/closed-days.ts` › `staffSpecialCheck`): türler Derbi / maç, AVM etkinliği,
+  Kampanya, Diğer; etki +%15, Bilmiyorum (yalnız not), −%15. Başlangıç yarından, en geç +60 gün; en çok 3 gün; kişinin
+  gelecekte kapsadığı günler toplamı en çok 14; günde en çok 20 yazım; başka bir özel günle çakışamaz. Kişi yalnız kendi
+  girdiği, başlamamış ve yöneticinin dokunmadığı satırı değiştirir ya da siler ("Başlamış ya da yöneticinin düzenlediği
+  özel gün değiştirilemez"). Yöneticinin düzenlemesi `updated_by` yazar.
+- Pencere Satış tahmini'ninkidir (`SpecialDayDialog`, `mode="staff"`, eylemler sayfadan enjekte edilir:
+  `src/server/actions/special-days-staff.ts`). Yazımlar yöneticininkilerle aynı danışma kilidini alır
+  (`pg_advisory_xact_lock(hashtext('ozel-gun'))`).
+- **Model:** personelin "Bilmiyorum" satırı (etki 0) yalnız nottur, günü tabandan çıkarmaz; yöneticinin "Bilmiyorum"u
+  çıkarmaya devam eder (`by_staff`).
+- **Yönetici:** personel satırları listede "Ahmet ekledi", 7 günün nedenlerinde "(Ahmet ekledi)"; personel özel gün
+  ekleyince, düzeltince ya da silince bilgi zili ("Ayşe özel gün ekledi", gövdede özet).
+- **Kapalı gün** satırını personel yazamaz: dün için "Kafe kapalıydı" bildirir, yönetici onaylarsa satır onaylayan
+  yöneticinin adıyla yazılır ([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). Kapalı satırı Satış tahmini'nden
+  silinirse bildirim "geri alındı" olur ve eksik rapor uyarıları geri gelir.
+- Testler: `tests/kapali-gun.test.ts`, `tests/kapali-gun-db.test.ts` (`KAPALI_TEST_DATABASE_URL`).
 
 ## 5. Hava durumu: MET Norway
 

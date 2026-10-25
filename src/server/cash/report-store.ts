@@ -21,6 +21,7 @@ import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
 import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
 import { todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
+import { onNextReport, onReportSaved } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -211,6 +212,12 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
         .where(eq(s.cashReports.id, prev.id))
         .returning()
     : await tx.insert(s.cashReports).values(values).returning();
+  // Yeni rapor: gün açık demektir (kapalı işareti ve bildirimi kalkar); önceki gün kapalı işaretliyse Z no ve açılış
+  // sürekliliği denetlenir (src/server/closed-days.ts)
+  if (!prev) {
+    await onReportSaved(tx, row.date);
+    await onNextReport(tx, row);
+  }
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
   // (geçmiş bir güne sonradan eklenen bugünden)
   const ids = [...new Set(o.photos ?? [])];

@@ -9,6 +9,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
 import * as store from "@/server/checklists/store";
+import { isClosedDay } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 import type { DigestExtraLoad } from "@/server/notify/digest-template";
@@ -120,6 +121,8 @@ export async function loadKontrolDigest(now: Date = new Date()): Promise<DigestE
   if (sent) return null;
   const [lists, reports, first] = await Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate()]);
   const cashMissing = !reports.length && first !== null && first <= day;
+  // Onaylı kapalı gün (dalga 10 §2.9): hiç açılmamış listeler eksik sayılmaz, kutu yok
+  if (cashMissing && !lists.some((l) => l.run) && (await isClosedDay(day))) return null;
   const box = kontrolDigestBox(day, lists, cashMissing);
   return box ? { box, logKeys: [key] } : null;
 }

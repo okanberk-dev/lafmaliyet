@@ -8,6 +8,7 @@ import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
+import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
 
@@ -44,12 +45,14 @@ async function cashNotifications(user: CurrentUser): Promise<PanelNotification[]
   }
   const out: PanelNotification[] = [];
   const yesterday = addDays(day, -1);
-  if (!reports.some((r) => r.date === yesterday)) {
+  // Dün onaylı kapalıysa zil yok; personel kapalıydık dediyse (onay bekliyor) gövdesine eklenir (dalga 10 §2.9)
+  const closed = reports.some((r) => r.date === yesterday) ? null : ((await closedYesterday(user, now).catch(() => null))?.yesterday ?? null);
+  if (!reports.some((r) => r.date === yesterday) && closed?.state !== "approved") {
     out.push({
       id: `kasa-yok-${yesterday}`,
       kind: "warning",
       title: "Dünkü kasa raporu girilmedi",
-      body: longDateTR(yesterday),
+      body: `${longDateTR(yesterday)}${closed?.state === "pending" ? " · Personel: kapalıydık dedi (onay bekliyor)" : ""}`,
       timeLabel: "Dün",
       unread: true,
       href: `/panel/kasa?gun=${yesterday}`,
@@ -130,7 +133,12 @@ async function cashIntegrityNotifications(reports: Awaited<ReturnType<typeof cas
 async function requestNotifications(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
   if (user.role === "admin") {
-    const [rows, outs] = await Promise.all([pendingCashBellRows(), cashOutBellRow(now)]);
+    const [rows, outs, closedRows, info] = await Promise.all([
+      pendingCashBellRows(),
+      cashOutBellRow(now),
+      pendingClosedRows(),
+      closedInfoRows(new Date(now.getTime() - 3 * 86_400_000)).catch(() => []),
+    ]);
     const out: PanelNotification[] = rows.map((r) => ({
       id: `istek-${r.id}-${r.bumpedAt.getTime()}`,
       kind: "warning" as const,
@@ -154,20 +162,48 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
         group: "onay",
       });
     }
+    // Kapalı gün bildirimleri: "Kapalı gün onayı bekliyor"
+    for (const r of closedRows) {
+      out.push({
+        id: `istek-${r.id}-${r.bumpedAt.getTime()}`,
+        kind: "warning",
+        title: "Kapalı gün onayı bekliyor",
+        body: `${longDateTR(r.day)} · ${r.requestedByName}`,
+        timeLabel: waitedText(r.createdAt, now),
+        unread: true,
+        href: `/panel/onaylar#istek-${r.id}`,
+        group: "onay",
+      });
+    }
+    // Bilgi: kapalı işaret kanıtla kalktı, kapalı aralığa rapor girildi; personel özel gün ekledi / düzeltti / sildi
+    for (const r of info) {
+      const verb = r.action === "Özel gün" ? "ekledi" : r.action === "Özel gün güncellendi" ? "düzeltti" : r.action === "Özel gün silindi" ? "sildi" : null;
+      out.push({
+        id: `kapali-bilgi-${r.id}`,
+        kind: "info",
+        title: verb ? `${r.userName ?? "Personel"} özel gün ${verb}` : r.action,
+        body: r.detail ?? "",
+        timeLabel: todayTR(r.at) === todayTR(now) ? "Bugün" : dateTR(todayTR(r.at)),
+        unread: true,
+        href: verb ? "/panel/tahmin#ozel-gunler" : "/panel/kasa",
+        group: "uyari",
+      });
+    }
     return out;
   }
   const today = todayTR(now);
   return (await myCashRequests(user.id))
-    .filter((r) => r.day && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired"))
+    .filter((r) => r.day && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired" || r.status === "revoked"))
     .slice(0, 5)
     .map((r) => {
-      const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired", day: r.day!, note: r.reviewNote, title: r.title });
+      const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired" | "revoked", day: r.day!, note: r.reviewNote, title: r.title });
       const at = todayTR(new Date(r.updatedAt));
       return {
         id: `istek-${r.id}-${r.status}`,
         kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
         title: t.title,
-        body: t.body,
+        // Reddedilen ya da geri alınan kapalı gün bildiriminde gün personele kapandıysa raporu yönetici girer
+        body: r.kind === "kapali-gun" && r.status !== "approved" && !staffCanReport(r.day!, now) ? "Raporu yönetici girecek; Z raporunu yöneticiye iletin." : t.body,
         timeLabel: at === today ? "Bugün" : dateTR(at),
         unread: true,
         // Sonuç çoğu zaman sabah gelir: gün hâlâ personele açıksa rapora, değilse İsteklerim'e

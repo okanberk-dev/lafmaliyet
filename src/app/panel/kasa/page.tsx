@@ -32,10 +32,12 @@ import { genitive } from "@/lib/recipe-change";
 import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
+import { closedEvidenceText } from "@/lib/closed-days";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
 import { chainNeighbours } from "@/server/cash/late-chain";
+import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
 import { photoRemovalStates, staffCashOutRequests, staffOldCashOutDays } from "@/server/data/cash-out-requests";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
@@ -60,6 +62,7 @@ import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { photoStorage } from "@/server/storage/photos";
 
 import { CashForm } from "./cash-form";
+import { ClosedDayBar } from "./closed-day";
 import { CashHistory, type CashHistoryPhotos, type CashMonthTotals } from "./cash-history";
 import { CashOutsCard } from "./cash-outs";
 import { MyCashRequests } from "./cash-requests";
@@ -281,6 +284,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     />
   ) : null;
   const yesterday = addDays(today, -1);
+  // Raporsuz geçmiş gün: "Kafe kapalıydı" (personel yalnız dün için, yöneticinin onayıyla; yönetici doğrudan)
+  const closedBar = showForm && !report && date < today ? await closedBarFor(date, admin, user, yesterday) : null;
   const dayChips = (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Rapor günü">
       {admin && isDay(gun) ? (
@@ -301,6 +306,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     return (
       <div className="space-y-4">
         {dayChips}
+        {closedBar}
         {outsCard}
         {form}
         {siteRow}
@@ -386,6 +392,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
         <>
           {dayChips}
           {adminBand}
+          {closedBar}
           {outsCard}
           {form}
           {siteRow}
@@ -511,4 +518,20 @@ async function SiteDayRow({ date, admin }: { date: string; admin: boolean }) {
       </p>
     </div>
   );
+}
+
+/**
+ * Raporsuz geçmiş günün "Kafe kapalıydı" çubuğu: gün kapalı işaretliyse yalnız bilgi; personelde yalnız dün için
+ * (bekleyen ya da reddedilen bildirim, düğme), yöneticide pencerede o günün izleri uyarı olarak
+ */
+async function closedBarFor(date: string, admin: boolean, user: { id: number }, yesterday: string) {
+  if (!admin && date !== yesterday) return null;
+  const marked = await isClosedDay(date);
+  if (admin) {
+    const evidence = marked ? null : await closedDayEvidence(getDb(), date);
+    const lines = evidence ? closedEvidenceText(evidence) : { red: [], warn: [], info: [] };
+    return <ClosedDayBar role="admin" date={date} marked={marked} warnings={[...lines.red, ...lines.warn]} />;
+  }
+  const state = await staffClosedState(date, user);
+  return <ClosedDayBar role="staff" date={date} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
 }

@@ -21,7 +21,13 @@ Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zi
 bekleyen reçete önerileri, onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) ve personelin onay bekleyen
 istekleri durur (istek başına bir satır, `/panel/onaylar#istek-<id>`'e götürür; satır istek güncellenince en çok 10
 dakikada bir yeniden okunmamış olur; [ONAYLAR.md](ONAYLAR.md)). Personelde aynı başlığın adı **İsteklerim**: reçete
-önerilerinin ve isteklerinin sonucu ("22 Ekim kasa düzeltmeniz onaylandı", "Yönetici: <not>"). **Uyarılar** başlığının
+önerilerinin ve isteklerinin sonucu ("22 Ekim kasa düzeltmeniz onaylandı", "Yönetici: <not>"). Kasadan çıkan ve
+fotoğraf kaldırma istekleri yöneticide tek satırdır ("3 kasa isteği onay bekliyor"); kapalı gün bildirimi istek başına
+"Kapalı gün onayı bekliyor", personelde sonucu "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Personel
+kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
+([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
