@@ -4,6 +4,8 @@
  */
 
 import type { FixedPeriod, FixedSection } from "./calc/types";
+import type { CostMode } from "./cari/account";
+import { openBalance } from "./cari/balance";
 import { fixedVatRate } from "./constants";
 import { money, monthLabel } from "./format";
 
@@ -49,18 +51,30 @@ export interface UnpaidInvoiceRow {
   payable: number;
   /** Kalan borç; kısmen ödenmişse payable yerine bu gösterilir */
   outstanding?: number | null;
+  /** Bu faturaya sayılan cari ödemeler ve panel takibinin tabanı (src/lib/cari/balance.ts openBalance) */
+  allocated?: number | null;
+  ledgerBase?: number | null;
   /** Tedarikçinin cari kartındaki vade (gün): vadesiz faturada genel ayarın yerine geçer */
   termDays?: number | null;
 }
 
 export type UpcomingStatus = "overdue" | "today" | "soon" | "later";
 
+/**
+ * Ödeme kaleminin altındaki ipucu (docs/TEDARIKCILER.md "Hesap hareketleri"): faturasız alımın faturası olabilir
+ * ("Bağla" · "Ayrı alım") ya da kasadan ödenmiş olabilir ("İşle"). `href` tedarikçinin sayfası, ilgili pencere açık.
+ */
+export type UpcomingHint =
+  | { kind: "link"; text: string; href: string; invoiceId: number; debtIds: number[] }
+  | { kind: "kasa"; text: string; href: string; cashOutId: number };
+
 export interface UpcomingItem {
-  /** "reminder:4", tekrarın öngörülen dönemi için "reminder:4@2026-11-28", fatura için "invoice:12" */
+  /** "reminder:4", tekrarın öngörülen dönemi için "reminder:4@2026-11-28", fatura için "invoice:12", faturasız borç için "cari:7" */
   ref: string;
   /** Tekrar eden hatırlatıcının geciken döneminden sonraki, henüz kaydedilmemiş dönem */
   projected?: boolean;
-  source: "reminder" | "invoice";
+  /** Hatırlatıcı, ödenmemiş fatura ya da tedarikçinin faturasız (elle girilen) borcu. Dallar `switch` + unreachable */
+  source: "reminder" | "invoice" | "cari";
   sourceId: number;
   kind: ReminderKind;
   title: string;
@@ -71,6 +85,35 @@ export interface UpcomingItem {
   status: UpcomingStatus;
   remindDaysBefore: number;
   repeat: ReminderRepeat;
+  /** Fatura ve faturasız borç: tedarikçinin cari kartı (kartsızda yok) */
+  supplierId?: number;
+  /** Hesaptaki (sayılmamış) ödemeden bu kaleme düşülen; `amount` düşüldükten sonraki tutardır (okuma anında mahsup) */
+  credited?: number;
+  /**
+   * Sessiz kalem: "link" faturasız alımın faturası olabilir (bağlanana kadar sabah e-postasında ve nakit planında yok),
+   * "kasa" kalanı işlenmemiş bir Kasa satırını tutuyor, kasadan ödenmiş olabilir (sabah e-postası hatırlatmaz; satır
+   * başına bir kalem). Tutmayan satırın ipucu kalemi sessize almaz
+   */
+  quiet?: "link" | "kasa";
+  hint?: UpcomingHint;
+  /** Faturasız borcun gideri (Faturası gelecek, faturası yok, eski borç) */
+  costMode?: CostMode;
+  /** Faturasız borç: tedarikçinin sayfası ("Düzenle") */
+  href?: string;
+}
+
+/** Faturasız borcun (cari kayıt) ödeme satırı için alanları; kalanı (`remaining`) sayılan ödemeler düşülmüş */
+export interface CariDebtRow {
+  id: number;
+  /** Tedarikçinin (kartın) adı */
+  supplier: string;
+  date: string;
+  dueDate: string | null;
+  description: string | null;
+  costMode: CostMode;
+  remaining: number;
+  /** Kartın vade günü (vadesiz borçta genel ayarın yerine geçer) */
+  termDays?: number | null;
 }
 
 /** Türkiye'de bugünün tarihi (Vercel UTC'de çalışır) */
@@ -175,13 +218,14 @@ export function upcomingItems(
   return out.sort(byDueThenTitle);
 }
 
-const byDueThenTitle = (a: UpcomingItem, b: UpcomingItem) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "tr");
+/** Ödemeler listesinin sırası: vade, sonra başlık */
+export const byDueThenTitle = (a: UpcomingItem, b: UpcomingItem) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, "tr");
 
 /**
  * Ödenmemiş faturanın ödeme satırı; vadesizse fatura tarihinden sonraki tahmini vade: tedarikçinin kartındaki vade
  * günü (`termDays`), yoksa `invoiceTermDays`
  */
-function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: number, invoiceTermDays: number): UpcomingItem {
+export function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: number, invoiceTermDays: number): UpcomingItem {
   const term = inv.termDays ?? invoiceTermDays;
   const due = inv.dueDate ?? addDays(inv.date, term);
   const daysLeft = daysBetween(today, due);
@@ -192,12 +236,45 @@ function invoiceItem(inv: UnpaidInvoiceRow, today: string, invoiceDaysBefore: nu
     kind: "fatura",
     title: inv.supplier,
     detail: [inv.invoiceNo ? `Fatura ${inv.invoiceNo}` : "Ödenmemiş fatura", inv.dueDate ? null : `vade tahmini (${term} gün)`].filter(Boolean).join(" · "),
-    amount: inv.outstanding !== null && inv.outstanding !== undefined && inv.outstanding > 0 ? inv.outstanding : inv.payable,
+    // Kalan borç: Tedarikçiler'le aynı kural (ödenmemiş fatura listesi; cari takipte panelde sayılan düşülür)
+    amount: openBalance({ ...inv, unpaid: true }),
     dueDate: due,
     daysLeft,
     status: statusFor(daysLeft, invoiceDaysBefore),
     remindDaysBefore: invoiceDaysBefore,
     repeat: "none",
+  };
+}
+
+/** Faturasız borcun ayrıntı etiketi: "Faturasız alım · süt", "Fatura bekleniyor · süt", "Eski borç" */
+export function cariDetailLabel(d: Pick<CariDebtRow, "costMode" | "description">): string {
+  const what = d.description?.trim();
+  const head = d.costMode === "fatura" ? "Fatura bekleniyor" : d.costMode === "devir" ? "Eski borç" : "Faturasız alım";
+  return what ? `${head} · ${what}` : head;
+}
+
+/**
+ * Faturasız borcun (cari kayıt) ödeme satırı: faturanınki gibi; vadesizse alım gününden kartın vade günü, yoksa
+ * `invoiceTermDays` sonra. Tutar borcun kalanı (sayılan ödemeler düşülmüş)
+ */
+export function cariItem(d: CariDebtRow, today: string, invoiceDaysBefore: number, invoiceTermDays: number): UpcomingItem {
+  const term = d.termDays ?? invoiceTermDays;
+  const due = d.dueDate ?? addDays(d.date, term);
+  const daysLeft = daysBetween(today, due);
+  return {
+    ref: `cari:${d.id}`,
+    source: "cari",
+    sourceId: d.id,
+    kind: "odeme",
+    title: d.supplier,
+    detail: [cariDetailLabel(d), d.dueDate ? null : `vade tahmini (${term} gün)`].filter(Boolean).join(" · "),
+    amount: d.remaining,
+    dueDate: due,
+    daysLeft,
+    status: statusFor(daysLeft, invoiceDaysBefore),
+    remindDaysBefore: invoiceDaysBefore,
+    repeat: "none",
+    costMode: d.costMode,
   };
 }
 
@@ -220,13 +297,16 @@ export type NotifyStage = "before" | "due" | "overdue";
 
 /**
  * Bugün e-postayla haber verilmesi gerekenler. Her aşama (önceden / gününde / gecikti) bir kez gider;
- * `key` bildirim günlüğünde tekil anahtardır (`kaynak:kimlik:vade:aşama`). Gecikmiş olanlar ilk 14 gün içinde bir
- * kez hatırlatılır. Anahtar ref'ten değil kaynak + kimlikten kurulur: geciken dönemin yanındaki öngörülen dönem
- * (`reminder:4@2026-11-01`), geciken ödenince gerçek kayda (`reminder:4`) döner ve aynı e-posta ikinci kez gitmez.
+ * `key` bildirim günlüğünde tekil anahtardır (`kaynak:kimlik:vade:aşama`; faturasız borçta `cari:<kimlik>:…`).
+ * Gecikmiş olanlar ilk 14 gün içinde bir kez hatırlatılır. Anahtar ref'ten değil kaynak + kimlikten kurulur: geciken
+ * dönemin yanındaki öngörülen dönem (`reminder:4@2026-11-01`), geciken ödenince gerçek kayda (`reminder:4`) döner ve
+ * aynı e-posta ikinci kez gitmez. Sessiz kalemler (faturasız alımın faturası olabilecek fatura, kasadan ödenmiş
+ * olabilecek kalem) hatırlatılmaz.
  */
 export function dueNotifications(items: UpcomingItem[]): { item: UpcomingItem; stage: NotifyStage; key: string }[] {
   const out: { item: UpcomingItem; stage: NotifyStage; key: string }[] = [];
   for (const item of items) {
+    if (item.quiet) continue;
     let stage: NotifyStage | null = null;
     if (item.daysLeft < 0 && item.daysLeft >= -14) stage = "overdue";
     else if (item.daysLeft === 0) stage = "due";

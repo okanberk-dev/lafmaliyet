@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { startTransition, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { PhotoThumb } from "@/components/panel/photo-picker";
+import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { toastUnreachable } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
@@ -16,6 +18,8 @@ import { BIG_FIELDS, SHEET_BTN } from "@/components/ui/mobile-filters";
 import { Segmented } from "@/components/ui/segmented";
 import { useIsPhone } from "@/components/ui/use-media";
 import { normalizeSupplier } from "@/lib/calc/engine";
+import type { InvoiceCariLinks } from "@/lib/cari/account";
+import { isPartiallyPaid, METHOD_LABEL, openBalance } from "@/lib/cari/balance";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { formatBytes } from "@/lib/documents";
@@ -84,6 +88,7 @@ export function InvoiceDialog({
   onOpenDocuments,
   expenseLinks,
   supplierHref,
+  cari,
 }: {
   invoice: InvoiceRow | null;
   suppliers: string[];
@@ -103,6 +108,8 @@ export function InvoiceDialog({
    * vergi noyla bulunur: aynı vergi noyla başka adla gelen fatura da birleşik tedarikçiye gider
    */
   supplierHref?: (invoice: { supplier: string; supplierTaxNumber?: string | null }) => string | null;
+  /** Bu faturaya sayılan cari ödemeler ve bağlı faturasız alımlar (salt okunur; Tedarikçiler'de değişir) */
+  cari?: InvoiceCariLinks;
 }) {
   const [f, setF] = useState(() => blankForm(invoice));
   const [busy, setBusy] = useState(false);
@@ -222,8 +229,11 @@ export function InvoiceDialog({
     if (!res.ok) return toast.error(res.error);
     const shown = locked && invoice ? invoice.payable : payableToSave;
     const withDoc = uploaded?.ok ? " · belge eklendi" : "";
+    // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir
+    const used = res.data.credit?.used ?? 0;
+    const withCredit = used > 0.005 ? ` · hesaptaki ${tl(used, 2)} sayıldı` : "";
     if (res.data.message) toast.warning("Fatura kaydedildi", { description: res.data.message, duration: 8000 });
-    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withDoc}` });
+    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
       keepScroll();
@@ -499,6 +509,8 @@ export function InvoiceDialog({
 
         {invoice && (invoice.eInvoiceId || invoice.externalId) ? <InvoiceLines invoiceId={invoice.id} invoiceNet={invoice.amount - invoice.discount} category={invoice.category} /> : null}
 
+        {cari && (cari.payments.length || cari.debts.length) ? <InvoiceCari cari={cari} href={cariHref} /> : null}
+
         <Field label="Ödeme durumu">
           <Segmented<"paid" | "unpaid">
             label="Ödeme durumu"
@@ -613,6 +625,60 @@ function DocumentField({
 }
 
 /** Paraşüt faturasının tutarları: salt okunur özet + nerede düzeltileceği */
+/**
+ * Faturanın cari bağları (§6.4; salt okunur): sayılan ödemeler (gün, şekil, tutar) ve bağlı faturasız alımlar,
+ * fotoğraflarıyla (irsaliye ya da el fişi). Değiştirmek için tedarikçinin Hesap hareketleri.
+ */
+function InvoiceCari({ cari, href }: { cari: InvoiceCariLinks; href: string | null }) {
+  const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
+  return (
+    <section className="space-y-3 rounded-2xl bg-panel p-4 text-sm sm:col-span-2" aria-label="Cari bağları">
+      {cari.payments.length ? (
+        <div>
+          <p className="text-[13px] font-medium text-ink-soft">Bu faturaya sayılan ödemeler</p>
+          <ul className="mt-1 space-y-0.5 text-ink tabular">
+            {cari.payments.map((p, i) => (
+              <li key={i}>
+                {dateTR(p.date).slice(0, 5)} · {METHOD_LABEL[p.method]} · {tl(p.amount, 2)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {cari.debts.length ? (
+        <div>
+          <p className="text-[13px] font-medium text-ink-soft">Bağlı faturasız alımlar</p>
+          <ul className="mt-1 space-y-2">
+            {cari.debts.map((d) => {
+              const caption = `İrsaliye fotoğrafı · ${dateTR(d.date).slice(0, 5)} · ${d.description?.trim() || "alım"}`;
+              return (
+                <li key={d.id} className="space-y-1.5">
+                  <p className="text-ink tabular">
+                    {dateTR(d.date).slice(0, 5)} · {d.description?.trim() || "alım"} · {tl(d.amount, 2)}
+                  </p>
+                  {d.photoId ? <PhotoThumb id={d.photoId} caption={caption} size="sm" onOpen={() => setViewer({ id: d.photoId!, caption })} /> : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      <p className="text-xs text-ink-mute">
+        Değiştirmek için tedarikçinin{" "}
+        {href ? (
+          <Link href={`${href}?sekme=hareketler`} className="font-medium text-info underline-offset-2 hover:underline">
+            Hesap hareketlerini açın
+          </Link>
+        ) : (
+          "Hesap hareketlerini açın"
+        )}
+        .
+      </p>
+      <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
+    </section>
+  );
+}
+
 function LockedAmounts({ invoice, href }: { invoice: InvoiceRow; href: string | null }) {
   const net = invoice.amount - invoice.discount;
   const rows: [string, string][] = [
@@ -654,10 +720,10 @@ function LockedAmounts({ invoice, href }: { invoice: InvoiceRow; href: string | 
             <dd className="tabular text-ink">{v}</dd>
           </div>
         ))}
-        {invoice.unpaid && invoice.outstanding && invoice.outstanding > 0 && invoice.outstanding < invoice.payable - 0.005 ? (
+        {isPartiallyPaid(invoice) ? (
           <div className="min-w-0">
             <dt className="text-xs text-ink-mute">Kalan borç</dt>
-            <dd className="tabular text-warn">{tl(invoice.outstanding, 2)}</dd>
+            <dd className="tabular text-warn">{tl(openBalance(invoice), 2)}</dd>
           </div>
         ) : null}
       </dl>

@@ -9,9 +9,24 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DotList } from "@/components/ui/misc";
 import { money } from "@/lib/format";
 import { CATEGORY_LABEL, daysLeftLabel, type UpcomingItem } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 import { cn } from "@/lib/utils";
 
 import { CategoryWell, categoryOf, DateTile, itemKey, PaidButton, URGENCY, urgencyOf, usePaymentActions } from "./hatirlaticilar/payment-ui";
+
+/** Kartın tür etiketi: "Fatura", "Faturasız borç" ya da hatırlatıcının türü */
+function typeLabel(i: UpcomingItem): string {
+  switch (i.source) {
+    case "invoice":
+      return "Fatura";
+    case "cari":
+      return "Faturasız borç";
+    case "reminder":
+      return CATEGORY_LABEL[categoryOf(i)];
+    default:
+      return unreachable(i.source);
+  }
+}
 
 /**
  * Genel bakış: gecikmiş ve 7 gün içindeki ödemeler (Ödemeler & hatırlatıcılar'dan; liste sayfada bir kez
@@ -67,7 +82,7 @@ export function DashboardPayments({ items, className }: { items: UpcomingItem[];
                     </span>
                     <span className="inline-flex items-center gap-1 text-ink-mute">
                       <CategoryWell category={category} size="xs" />
-                      {i.source === "invoice" ? "Fatura" : CATEGORY_LABEL[category]}
+                      {typeLabel(i)}
                     </span>
                   </DotList>
                 </Link>

@@ -1,10 +1,13 @@
 "use client";
 
-import { Plus, Receipt } from "lucide-react";
+import { Banknote, Lock, Plus, Receipt } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState, type ChangeEvent } from "react";
+import { toast } from "sonner";
 
 import { usePhotoUpload } from "@/components/panel/photo-picker";
 import { PhotoViewer } from "@/components/panel/photo-viewer";
+import { useActionTransition } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { cashOutLabel, cashOutsTotal } from "@/lib/cash-outs";
@@ -12,14 +15,19 @@ import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import { photoCaption, photoUrl, type ReadingState } from "@/lib/photo-rules";
 import { longDateTR } from "@/lib/reminders";
-import type { CashOutCategory, CashOutDTO } from "@/server/data/cash-outs";
+import { dismissCashOut } from "@/server/actions/cari";
+import type { KasaCariHint } from "@/server/data/cari";
+import type { CashOutCategory, CashOutView } from "@/server/data/cash-outs";
 
 import { CashOutDialog, type CashOutDialogMode } from "./cash-out-dialog";
 
 const time = (iso: string) => new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
+/** Personelin, yöneticinin tedarikçi ödemesine bağladığı satırda gördüğü sabit mesaj (tutar ve tedarikçi yok) */
+const LOCKED_TEXT = "Bu satır yöneticinin kaydına bağlı; düzeltmek için yöneticiye haber verin.";
+
 /** Satırın ikinci satırı: "14:32 · Ayşe · Nakit malzeme alımı" (harcamaya yazılmadıysa nedeni) */
-function rowSub(o: CashOutDTO): string {
+function rowSub(o: CashOutView): string {
   const tail =
     o.kind === "teslim"
       ? null
@@ -45,10 +53,12 @@ export function CashOutsCard({
   storage,
   reading,
   reported = null,
+  supplierNames = [],
+  hints = {},
 }: {
   date: string;
   today: boolean;
-  lines: CashOutDTO[];
+  lines: CashOutView[];
   categories: CashOutCategory[];
   canEdit: boolean;
   /** Fiş fotoğraflarını görebilir mi: yönetici ya da personelin hâlâ düzenleyebildiği gün (/api/foto'nun kuralı) */
@@ -59,6 +69,10 @@ export function CashOutsCard({
   reading: ReadingState;
   /** O günün raporunda fişsiz yazılan "Gün içinde çıkan" (varsa): kart "para çıkmadı" demesin */
   reported?: { amount: number; note: string | null } | null;
+  /** Tedarikçilerin adları (pencerenin "Teslim · ödeme" ipucu; yalnız adlar) */
+  supplierNames?: string[];
+  /** Yalnız yönetici: satırların cari bağı ve önerisi (ödemeye bağlı, Hesaba işle, Ödemeye çevir) */
+  hints?: Record<number, KasaCariHint>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   // Her açılış yeni bir pencere (önceki taslak kalmasın); `shown` açık pencerenin anahtarı (kapalıysa null)
@@ -70,6 +84,13 @@ export function CashOutsCard({
   const [viewer, setViewer] = useState<{ id: number; caption: string } | null>(null);
   const total = cashOutsTotal(lines);
   const read = reading === "on";
+  const [hintBusy, runHint] = useActionTransition();
+  const keepApart = (id: number, label: string) =>
+    runHint(async () => {
+      const r = await dismissCashOut({ cashOutId: id });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success("Ayrı alım olarak işaretlendi", { description: label });
+    });
 
   const open = (mode: CashOutDialogMode) => {
     // Süren yükleme sıfırlanmaz: "Fiş ekle" o bitene kadar kapalı kalır
@@ -128,12 +149,18 @@ export function CashOutsCard({
                   <span className="block truncate text-sm text-ink">{label}</span>
                   <span className="block truncate text-xs text-ink-mute">{rowSub(o)}</span>
                 </span>
+                {o.locked ? <Lock size={14} className="shrink-0 text-ink-mute" aria-label="Yöneticinin kaydına bağlı" /> : null}
                 <span className="shrink-0 text-sm font-medium text-ink tabular">{money(o.amount)}</span>
               </>
             );
+            const hint = hints[o.id];
             return (
               <li key={o.id}>
-                {canEdit ? (
+                {canEdit && o.locked ? (
+                  <button type="button" onClick={() => toast.info(LOCKED_TEXT)} className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left hover:bg-panel/60 pointer-coarse:min-h-11">
+                    {body}
+                  </button>
+                ) : canEdit ? (
                   <button type="button" onClick={() => open({ mode: "edit", line: o })} className="flex w-full cursor-pointer items-center gap-3 px-5 py-2.5 text-left hover:bg-panel/60 pointer-coarse:min-h-11">
                     {body}
                   </button>
@@ -148,6 +175,7 @@ export function CashOutsCard({
                 ) : (
                   <div className="flex items-center gap-3 px-5 py-2.5">{body}</div>
                 )}
+                {hint ? <CariHintRow hint={hint} id={o.id} busy={hintBusy} onApart={() => keepApart(o.id, `${cashOutLabel(o)} · ${money(o.amount)}`)} /> : null}
               </li>
             );
           })}
@@ -193,9 +221,54 @@ export function CashOutsCard({
           uploaded={dialog.mode.mode === "photo" ? uploaded : null}
           onRetry={(id) => void retry(id)}
           onClose={close}
+          supplierNames={supplierNames}
         />
       ) : null}
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />
     </Card>
+  );
+}
+
+/**
+ * Yöneticinin satır ipucu (docs/KASA-RAPORU.md, §6.8): ödemeye bağlı satır tedarikçinin sayfasına götürür; işlenmemiş
+ * Teslim "Hesaba işle", ödeme olabilecek fişsiz alışveriş "Ödemeye çevir" ya da "Ayrı alım" der. Pencereler
+ * tedarikçinin sayfasında açılır.
+ */
+function CariHintRow({ hint, id, busy, onApart }: { hint: KasaCariHint; id: number; busy: boolean; onApart: () => void }) {
+  const link = "font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5";
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-5 pb-2.5 pl-[4.5rem] text-[13px] leading-5 text-info">
+      <Banknote size={14} className="shrink-0" aria-hidden="true" />
+      {hint.kind === "linked" ? (
+        hint.href ? (
+          <Link href={hint.href} className={link}>
+            {hint.name} ödemesi
+          </Link>
+        ) : (
+          <span>{hint.name} ödemesi</span>
+        )
+      ) : hint.kind === "teslim" ? (
+        <>
+          <span>Tedarikçiye ödeme mi ({hint.name})?</span>
+          {hint.href ? (
+            <Link href={`${hint.href}?kasa=${id}`} className={link}>
+              Hesaba işle
+            </Link>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <span>Tedarikçi ödemesi miydi ({hint.name})?</span>
+          {hint.href ? (
+            <Link href={`${hint.href}?kasa=${id}`} className={link}>
+              Ödemeye çevir
+            </Link>
+          ) : null}
+          <button type="button" onClick={onApart} disabled={busy} className={`${link} cursor-pointer disabled:opacity-50`}>
+            Ayrı alım
+          </button>
+        </>
+      )}
+    </div>
   );
 }

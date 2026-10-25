@@ -124,6 +124,38 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.
 
+### Dalga 11: cari (elle borç ve ödeme)
+
+Sahibin isteği: "cari hesaplarda biz de borç ödeme girebilelim; belki elden almışızdır, fatura yok da olabilir".
+Plan `cari.md` (ledger, minimal ve cashflow tasarımlarından çıktı). Dal `claude/dalga-11-cari`, migration
+`0038_cari_hareket` (birleştirmede yeniden üretildi). Belgeler: `docs/TEDARIKCILER.md` › *Hesap hareketleri*,
+`NAKIT-PLANI`, `KASA-RAPORU`, `BILDIRIMLER`, `PARASUT`, `CLAUDE-BAGLANTISI`, `YEDEK`, `MAL-SIPARISI` §7. Kasa'daki
+değişiklik küçük ve ayrı tutuldu (iki etiket, ipucu, ad ipucu, bağlı satırın kilidi; `src/server/cari/kasa.ts`):
+dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/panel/kasa/*` ve
+`src/server/actions/cash-outs.ts` elle birleştirilir.
+
+**Bu planın dışında kalanlar (v2):**
+- Personelin Kasa'da "Tedarikçiye ödeme" türü: ad listesinden seçici ve "Listede yok" serbest metni, yönetici onayına
+  kadar "onay bekliyor", `/panel/onaylar`'da "Kasadan ödemeler" sekmesi, personelin "Veresiye aldık" önerisi (dalga
+  10'dan sonra; veri modeli `status` sütunuyla kaldırır).
+- Tedarikçiden nakit iade ve faturasız iade (alacak dekontu); şimdilik Faturalar'da eksi fatura.
+- Panelden önceki alacak ("açılış alacağı").
+- Mal siparişinden "Cariye borç yaz".
+- Faturasız alımdan miktar ya da hammadde fiyatı okumak.
+- Paraşüt'e ödeme yazmak.
+- Tedarikçinin kendi ekstresiyle otomatik mutabakat (yerine "Ekstreyi kopyala").
+- Kasa'dan Ödeme ekle penceresini tedarikçi seçiciyle açmak (bugün "Hesaba işle" ve "Ödemeye çevir" tedarikçinin
+  sayfasında açılır).
+
+**Sahibe notlar (dalga 11):**
+- Elle kayıt girilmedikçe bütün rakamlar eskisiyle aynıdır. Bir tedarikçiye ilk elle ödeme girilince o tedarikçinin
+  faturaları panelde takip edilir: Paraşüt'ün "kalan"ı yalnız ipucu olur.
+- Faturasız alımların gideri var olan **Nakit malzeme alımı** kategorisine yazılır (ad değişmedi; isterseniz
+  Ayarlar'dan "Faturasız malzeme alımı" yapın, personel de bu adı görür).
+- Personel tedarikçiye kasadan verdiği parayı **Teslim · ödeme** olarak girer; siz Tedarikçiler şeridinden, zilden ya da
+  Kasa'daki **Hesaba işle**'den ödemeye bağlarsınız.
+- `npm run db:reset` cari kaydı varken durur (`-- --cari-sil` ile silinir).
+
 ### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
 
 - **Ay sonu sayımının anı:** geç girilen ya da sonradan düzeltilen ay sonu sayımı ayın son gününün sayımıdır
@@ -257,6 +289,9 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
    sonraki bir güne tarihliyse geç (eksik öneri); saklanan hiçbir değer ikisini birden düzeltmiyor. Kalıcı çözüm
    (faturası bağlanan siparişte de Geldi'yi açık tutmak ya da sevki ayrıca kaydetmek) eylemi, Hızlı sayım listesini ve
    sipariş kartını değiştirir. Varsayılan: kural olduğu gibi kalır.
+8. Cari: faturasız alımların kategorisinin adı **değişmez** ("Nakit malzeme alımı").
+9. Cari: personelin listeden tedarikçi seçip onaylı ödeme girmesi **yok** (v2); personel Teslim · ödeme girer,
+   yönetici Hesaba işle ile bağlar.
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 

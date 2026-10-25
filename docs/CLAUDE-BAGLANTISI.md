@@ -72,7 +72,17 @@ ay laffogato.net online satışı olsa da. Claude'a giden yönerge bunları ceva
 "kâr kaybettiren" gibi belirsiz sorularda iki anlamı (zam etkisi / en az kâr bırakan ürünler) ayırmasını söyler.
 
 Satış adetleri ModPOS'un aylık ürün satış listesinden gelir: ayın listesi yoksa önceki son ayın adetleri kullanılır ve
-cevap bunu söyler. "Ödendi" bilgisi paneldeki ya da Paraşüt'teki işarettir, banka hareketi değildir.
+cevap bunu söyler. "Ödendi" bilgisi paneldeki ya da Paraşüt'teki işarettir, banka hareketi değildir: ödemeler
+panelde elle girilir, banka bağlı değil.
+
+**Cari hesap** (Tedarikçiler'de elle girilen borç ve ödeme, [TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*):
+`tedarikci_ozeti` tek tedarikçide `faturasizBorc` (açık faturasız borçların adedi ve tutarı), `hesaptakiOdeme` (hiçbir
+kaleme sayılmamış ödeme), `netBakiye` (bütün açık borç − hesaptaki ödeme; eksiyse alacak) ve `sonOdemeler` (en çok
+10: gün, tutar, şekil, sayıldığı kalem sayısı) alanlarını da verir; `toplamAcikBorc` faturasız borçları içerir, "borç"
+sıralaması onu kullanır. `sonOdeme` en yeni ödeme günüdür: faturada işaretli ödeme ya da dönemdeki elle ödeme kaydı
+(Tedarikçiler'deki "Son ödeme" kartının kuralı). Bütün tedarikçiler listesinde satır başına `toplamAcikBorc`, `hesaptakiOdeme`, `netBakiye`.
+`odemeler`'in `kaynak` girdisi `"cari"` da alır (yalnız faturasız borçlar); çıktıda bu kalemler `tur: "cari borç"`,
+tahmini vadeleri faturalarla aynı kuralla işaretlenir. Hiç elle kayıt yokken cevaplar eskisiyle aynıdır (alanlar 0).
 
 ## 4. Kaldırmak ve yeniden bağlanmak
 

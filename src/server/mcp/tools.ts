@@ -100,7 +100,7 @@ export const TOOLS = [
     name: "tedarikci_ozeti",
     title: "Tedarikçi: faturalar ve ödemeler",
     description:
-      "Bir tedarikçinin (ya da bütün tedarikçilerin) dönemdeki faturaları, ödendi işaretli tutar, kalan borç, geciken ve vadesi yaklaşanlar. Banka bağlı değil: 'ödendi' paneldeki ya da Paraşüt'teki işarettir. Örnek: 'Bu yıl Kaldi'ye ne ödedik?', 'En çok kime borcumuz var?'" +
+      "Bir tedarikçinin (ya da bütün tedarikçilerin) dönemdeki faturaları, ödendi işaretli tutar, kalan borç, geciken ve vadesi yaklaşanlar; faturasız borçlar, hesapta sayılmamış ödeme, net bakiye ve son ödemeler. Ödemeler panelde elle girilir; banka bağlı değil. Örnek: 'Bu yıl Kaldi'ye ne ödedik?', 'En çok kime borcumuz var?'" +
       DESCRIPTION_TAIL,
     inputSchema: tedarikciOzetiInput,
     run: async (args, ctx) => {
@@ -114,7 +114,7 @@ export const TOOLS = [
     name: "odemeler",
     title: "Ödenmemiş ve yaklaşan ödemeler",
     description:
-      "Ödemeler ekranındaki liste: geciken, bu hafta, bu ay ve 45 gün içindeki fatura ve hatırlatıcı ödemeleri; istenirse 6 haftalık nakit planının haftalık özeti. Örnek: 'Bu hafta ne ödeyeceğiz?', 'Geciken ödeme var mı?'" +
+      "Ödemeler ekranındaki liste: geciken, bu hafta, bu ay ve 45 gün içindeki fatura, faturasız borç (cari) ve hatırlatıcı ödemeleri; istenirse 6 haftalık nakit planının haftalık özeti. Örnek: 'Bu hafta ne ödeyeceğiz?', 'Geciken ödeme var mı?'" +
       DESCRIPTION_TAIL,
     inputSchema: odemelerInput,
     run: async (args, ctx) => {

@@ -24,7 +24,9 @@ import { Pagination, usePaged } from "@/components/ui/pagination";
 import { Switch } from "@/components/ui/switch";
 import { SortButton, Table, TableWrap, TD, TFootRow, TH, THead, TR } from "@/components/ui/table";
 import { ToggleRow } from "@/components/ui/toggle-row";
-import { isPartiallyPaid } from "@/lib/calc/insights";
+import { isPartiallyPaid, openBalance } from "@/lib/calc/insights";
+import type { InvoiceCariLinks } from "@/lib/cari/account";
+import { parasutDifference } from "@/lib/cari/balance";
 import { COMMISSION_CATEGORY, GOODS_CATEGORIES, INVOICE_CATEGORIES, SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTR, monthLabel, num, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -100,6 +102,7 @@ const UNDO_MS = 10000;
 const FILTER_KEYS = ["ara", "durum", "kategori", "ay", "kaynak"];
 
 /** Belgesi olmayan fatura için sabit boş liste (her çizimde yeni dizi olmasın) */
+const NO_CARI: Record<number, InvoiceCariLinks> = {};
 const NO_DOCS: DocumentMeta[] = [];
 
 type SortKey = "tarih" | "tedarikci" | "net" | "odenecek";
@@ -172,6 +175,7 @@ export function InvoicesClient({
   ignoredCount = 0,
   expenseLinks,
   supplierSlugs,
+  cariLinks = NO_CARI,
 }: {
   invoices: InvoiceRow[];
   /** Fatura kimliği → saklanan belgeler (Paraşüt PDF kopyası, yüklenen fotoğraf / PDF); yalnız bilgileri */
@@ -186,6 +190,8 @@ export function InvoicesClient({
   expenseLinks?: Record<string, string>;
   /** (Ad, vergi no) çifti (supplierPairKey) → Tedarikçiler'deki sayfasının adres parçası (pencerede tedarikçi bağlantısı) */
   supplierSlugs?: Record<string, string>;
+  /** Fatura kimliği → sayılan cari ödemeler ve bağlı faturasız alımlar (pencere ve silme onayı) */
+  cariLinks?: Record<number, InvoiceCariLinks>;
 }) {
   const reduce = useCalmMotion();
   useSettleScroll(invoices);
@@ -338,10 +344,14 @@ export function InvoicesClient({
         return;
       }
       const changed = targets.filter((i) => ids.includes(i.id));
-      const description =
-        changed.length === 1
-          ? `${splitSupplier(changed[0].supplier).base} · ${tl(changed[0].payable, 2)}`
-          : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`;
+      // Önce hesaptaki cari ödemesi kullanılır (K6): ne kadarının sayıldığı söylenir
+      const used = res.data.credit?.used ?? 0;
+      const description = [
+        changed.length === 1 ? `${splitSupplier(changed[0].supplier).base} · ${tl(changed[0].payable, 2)}` : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`,
+        used > 0.005 ? `hesaptaki ${tl(used, 2)} sayıldı` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       toast.success(paid ? "Ödendi olarak işaretlendi" : "Ödenmedi olarak işaretlendi", {
         description,
         action: { label: "Geri al", onClick: () => undoPaid(res.data.previous, !paid) },
@@ -513,10 +523,11 @@ export function InvoicesClient({
           )}
         </motion.button>
         {isPartiallyPaid(i) ? (
-          <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; Paraşüt'e göre kısmen ödendi`}>
-            Kalan {tl(i.outstanding, 2)}
+          <span className="text-xs whitespace-nowrap text-warn tabular" title={`Ödenecek ${tl(i.payable, 2)}; ${i.ledgerBase != null ? "panelde kısmen ödendi" : "Paraşüt'e göre kısmen ödendi"}`}>
+            Kalan {tl(openBalance(i), 2)}
           </span>
         ) : null}
+        {parasutDiff(i) ? <span className="text-xs whitespace-nowrap text-ink-mute tabular">{parasutDiff(i)}</span> : null}
       </span>
     ) : (
       <motion.span
@@ -955,11 +966,12 @@ export function InvoicesClient({
                   </div>
                   {i.unpaid && (isPartiallyPaid(i) || i.dueDate) ? (
                     <p className="mt-0.5 text-right text-xs text-warn tabular">
-                      {isPartiallyPaid(i) ? `Kalan ${tl(i.outstanding, 2)}` : null}
+                      {isPartiallyPaid(i) ? `Kalan ${tl(openBalance(i), 2)}` : null}
                       {isPartiallyPaid(i) && i.dueDate ? " · " : null}
                       {i.dueDate ? `Vade ${dateTR(i.dueDate)}` : null}
                     </p>
                   ) : null}
+                  {parasutDiff(i) ? <p className="mt-0.5 text-right text-xs text-ink-mute tabular">{parasutDiff(i)}</p> : null}
                 </li>
               );
             })}
@@ -1373,6 +1385,7 @@ export function InvoicesClient({
           documents={editing === "new" ? NO_DOCS : docsOf(editing.id)}
           onOpenDocuments={editing === "new" ? undefined : () => setDocFor(editing.id)}
           expenseLinks={expenseLinks}
+          cari={editing === "new" ? undefined : cariLinks[editing.id]}
           supplierHref={(i) => {
             const slug = supplierSlugs?.[supplierPairKey(i.supplier, i.supplierTaxNumber)];
             return slug ? `/panel/tedarikciler/${slug}` : null;
@@ -1387,7 +1400,7 @@ export function InvoicesClient({
         onConfirm={confirmDelete}
         title="Fatura silinsin mi?"
         confirmLabel="Faturayı sil"
-        description={deleting ? <DeleteSummary invoice={deleting} ignoredCount={ignoredCount} /> : null}
+        description={deleting ? <DeleteSummary invoice={deleting} ignoredCount={ignoredCount} cari={cariLinks[deleting.id]} /> : null}
       />
     </Card>
   );
@@ -1466,15 +1479,30 @@ function CategoryPill({ value, onClick, label }: { value: string; onClick: () =>
   );
 }
 
+/**
+ * Paraşüt ipucu (§4.2): tedarikçiye panelde ödeme girildiyse (takipli fatura) kalan paneldendir; Paraşüt'ün kalanı
+ * farklıysa yalnız bilgi olarak söylenir ("Paraşüt'te açık görünüyor" tedarikçi sayfasında)
+ */
+function parasutDiff(i: InvoiceRow): string | null {
+  const d = parasutDifference(i);
+  if (!d) return null;
+  return d.lower ? `Paraşüt'te kalan ${tl(d.parasut, 2)}; panelde girilmemiş ödeme olabilir` : `Paraşüt'te kalan ${tl(d.parasut, 2)} (ödememiz henüz işlenmemiş olabilir)`;
+}
+
 /** Onay penceresindeki özet (ConfirmDialog açıklamayı <p> içine koyar; burada yalnızca satır içi öğeler) */
-function DeleteSummary({ invoice, ignoredCount }: { invoice: InvoiceRow; ignoredCount: number }) {
+function DeleteSummary({ invoice, ignoredCount, cari }: { invoice: InvoiceRow; ignoredCount: number; cari?: InvoiceCariLinks }) {
   const linked = isParasutLinked(invoice);
+  // Cari bağları (§6.4): sayılan ödemeler tedarikçinin hesabına geçer, bağlı faturasız alımlar yeniden açılır
+  const counted = (cari?.payments ?? []).reduce((a, p) => a + p.amount, 0);
+  const debts = cari?.debts.length ?? 0;
   return (
     <>
       Gelir-gider tablosu yeniden hesaplanır. Bildirimdeki “Geri al” ile hemen geri alabilirsiniz.
       {linked
         ? ` Paraşüt'ten gelen fatura sonraki eşitlemelerde geri gelmez; sonradan sayfanın altındaki “Silinen Paraşüt faturaları”ndan${ignoredCount ? ` (şu an ${ignoredCount})` : ""} geri alınabilir.`
         : ""}
+      {counted > 0.005 ? ` Bu faturaya ${tl(counted, 2)} ödeme sayılmış; silinirse para tedarikçinin hesabına geçer${cari?.card ? ` (${cari.card})` : ""}.` : ""}
+      {debts ? ` Bağlı ${debts} faturasız alım yeniden açılır.` : ""}
       <span className="mt-3 flex items-center gap-3 rounded-2xl bg-panel p-3">
         <Avatar name={splitSupplier(invoice.supplier).base} />
         <span className="min-w-0">

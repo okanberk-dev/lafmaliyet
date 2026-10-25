@@ -1,6 +1,7 @@
 "use client";
 
-import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChartNoAxesColumn, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
+import { AlarmClock, BellRing, CalendarClock, CalendarDays, CalendarRange, ChartNoAxesColumn, ChevronDown, ClockArrowUp, List, Pencil, Plus, Trash2, Wallet, X, type LucideIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useOptimistic, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,7 +14,7 @@ import { fold, useQueryState } from "@/components/ui/filters";
 import { Fab } from "@/components/ui/fab";
 import { EmptyState } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/segmented";
-import { dateTR, money, num } from "@/lib/format";
+import { dateTR, money, num, tl } from "@/lib/format";
 import type { RecentPaid } from "@/lib/recent-paid";
 import {
   inSummaryRange,
@@ -30,7 +31,9 @@ import {
   type TimelineGroup,
   type UpcomingItem,
 } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 import { cn } from "@/lib/utils";
+import { applySupplierCredit, dismissLinkCandidate } from "@/server/actions/cari";
 import { deleteReminder, setReminderActive } from "@/server/actions/reminders";
 import type { NotifySettings } from "@/server/notify/settings";
 
@@ -45,10 +48,30 @@ import { DueDateSheet, ReminderSheet, type FixedRow, type Reminder } from "./rem
 import { Sheet } from "./sheet";
 import { WeeklyRow, type WeeklyPanel } from "./weekly-row";
 
-/** Adresteki süzgeç değerleri (?kaynak=fatura&aralik=gecikmis&gorunum=takvim&ay=2026-11) */
-type Source = "tumu" | "hatirlatici" | "fatura";
-const SOURCES = ["tumu", "hatirlatici", "fatura"] as const;
-const SOURCE_OF: Record<Exclude<Source, "tumu">, UpcomingItem["source"]> = { hatirlatici: "reminder", fatura: "invoice" };
+/** Adresteki süzgeç değerleri (?kaynak=fatura&aralik=gecikmis&gorunum=takvim&ay=2026-11; faturasız borç: ?kaynak=cari) */
+type Source = "tumu" | "hatirlatici" | "fatura" | "cari";
+const SOURCES = ["tumu", "hatirlatici", "fatura", "cari"] as const;
+const SOURCE_OF: Record<Exclude<Source, "tumu">, UpcomingItem["source"]> = { hatirlatici: "reminder", fatura: "invoice", cari: "cari" };
+
+/** Hatırlatıcının çapa tarihi (tekrar rozeti); fatura ve faturasız borçta yok */
+function anchorOf(item: UpcomingItem, byId: ReadonlyMap<number, { anchorDate: string }>): string | null {
+  switch (item.source) {
+    case "reminder":
+      return byId.get(item.sourceId)?.anchorDate ?? null;
+    case "invoice":
+    case "cari":
+      return null;
+    default:
+      return unreachable(item.source);
+  }
+}
+
+/** Kaynak başına kalem sayısı (süzgeç sekmeleri) */
+function countBySource(items: readonly UpcomingItem[]): Record<UpcomingItem["source"], number> {
+  const out: Record<UpcomingItem["source"], number> = { reminder: 0, invoice: 0, cari: 0 };
+  for (const i of items) out[i.source]++;
+  return out;
+}
 type View = "liste" | "takvim";
 const VIEWS = ["liste", "takvim"] as const;
 
@@ -63,6 +86,13 @@ const RANGE_LABEL: Record<SummaryRange, string> = { gecikmis: "Gecikmiş", hafta
 const GROUP_DOT: Record<TimelineGroup, string> = { overdue: "bg-bad", today: "bg-brass-500", week: "bg-brass-300", month: "bg-ink-quiet", later: "bg-ink-quiet/50" };
 
 const NO_ITEMS: UpcomingItem[] = [];
+
+const EMPTY_TITLE: Record<Source, string> = {
+  tumu: "Yaklaşan ödeme yok",
+  hatirlatici: "Yaklaşan hatırlatıcı yok",
+  fatura: "Yaklaşan fatura ödemesi yok",
+  cari: "Yaklaşan faturasız borç yok",
+};
 const NO_RECENT: RecentPaid[] = [];
 
 type ItemHide = { key: string } | { reminderId: number };
@@ -72,6 +102,7 @@ export function RemindersClient({
   today,
   items,
   laterInvoices = NO_ITEMS,
+  covered = NO_ITEMS,
   reminders,
   recipients,
   log,
@@ -84,8 +115,10 @@ export function RemindersClient({
 }: {
   today: string;
   items: UpcomingItem[];
-  /** Vadesi 45 günden sonra olan ödenmemiş faturalar (yalnız takvimde) */
+  /** Vadesi 45 günden sonra olan ödenmemiş faturalar ve faturasız borçlar (yalnız takvimde) */
   laterInvoices?: UpcomingItem[];
+  /** Tedarikçinin hesabındaki sayılmamış ödemeyle tamamen karşılananlar (listede yok; altta kapalı kutuda) */
+  covered?: UpcomingItem[];
   reminders: Reminder[];
   recipients: Recipient[];
   log: LogRow[];
@@ -113,6 +146,7 @@ export function RemindersClient({
   const [removing, setRemoving] = useState<Reminder | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [listPending, start] = useActionTransition();
+  const router = useRouter();
   const fabRef = useRef<HTMLButtonElement>(null);
   const fabBlocked = useFabBlocked(fabRef);
 
@@ -141,42 +175,59 @@ export function RemindersClient({
   const sums = summarize(shown, today);
   const filtered = range ? shown.filter((i) => inSummaryRange(i.dueDate, range, today)) : shown;
   const sum = (l: { amount: number | null }[]) => l.reduce((a, i) => a + (i.amount ?? 0), 0);
-  const invoiceCount = visible.filter((i) => i.source === "invoice").length;
+  const counts = countBySource(visible);
+  const invoiceCount = counts.invoice;
+  const cariCount = counts.cari;
 
   const actionsFor = (item: UpcomingItem): MenuAction[] => {
     const out: MenuAction[] = [];
     // Gecikmiş ödeme bugünden ertelenir (eski vadeden sayılsa yine gecikmiş kalırdı)
     const week = postponeDate(item.dueDate, "week", today);
     const monthLater = postponeDate(item.dueDate, "month", today);
-    if (item.source === "reminder") {
-      const r = byId.get(item.sourceId);
-      if (r) out.push({ key: "edit", label: "Düzenle", icon: Pencil, onSelect: () => setEditing({ reminder: r }) });
-      if (!item.projected) {
-        const keep = item.repeat !== "none" ? " · tekrar aynı günden sürer" : "";
-        // Tekrar edende yeni tarih sıradaki dönemin günü ya da sonrası olursa (aylıkta "1 ay", haftalıkta "1 hafta")
-        // aynı ödeme o gün iki kez görünür, iki kez ödenebilirdi: seçenek kapalı, nedeni altında yazar
-        const step = (by: "week" | "month", label: string, icon: typeof ClockArrowUp) => {
-          const plan = r ? postponePlan(r, by, today) : { target: by === "week" ? week : monthLater, next: null, conflict: false };
-          out.push({
-            key: by,
-            label,
-            hint: plan.conflict && plan.next ? `Sıradaki dönemle çakışır (${dateTR(plan.next)})` : `${dateTR(plan.target)}${keep}`,
-            icon,
-            disabled: plan.conflict,
-            onSelect: () => postpone(item, by),
-          });
-        };
-        step("week", "1 hafta ertele", ClockArrowUp);
-        step("month", "1 ay ertele", CalendarClock);
+    switch (item.source) {
+      case "reminder": {
+        const r = byId.get(item.sourceId);
+        if (r) out.push({ key: "edit", label: "Düzenle", icon: Pencil, onSelect: () => setEditing({ reminder: r }) });
+        if (!item.projected) {
+          const keep = item.repeat !== "none" ? " · tekrar aynı günden sürer" : "";
+          // Tekrar edende yeni tarih sıradaki dönemin günü ya da sonrası olursa (aylıkta "1 ay", haftalıkta "1 hafta")
+          // aynı ödeme o gün iki kez görünür, iki kez ödenebilirdi: seçenek kapalı, nedeni altında yazar
+          const step = (by: "week" | "month", label: string, icon: typeof ClockArrowUp) => {
+            const plan = r ? postponePlan(r, by, today) : { target: by === "week" ? week : monthLater, next: null, conflict: false };
+            out.push({
+              key: by,
+              label,
+              hint: plan.conflict && plan.next ? `Sıradaki dönemle çakışır (${dateTR(plan.next)})` : `${dateTR(plan.target)}${keep}`,
+              icon,
+              disabled: plan.conflict,
+              onSelect: () => postpone(item, by),
+            });
+          };
+          step("week", "1 hafta ertele", ClockArrowUp);
+          step("month", "1 ay ertele", CalendarClock);
+        }
+        if (r) out.push({ key: "delete", label: "Sil", icon: Trash2, tone: "danger", onSelect: () => setRemoving(r) });
+        break;
       }
-      if (r) out.push({ key: "delete", label: "Sil", icon: Trash2, tone: "danger", onSelect: () => setRemoving(r) });
-    } else {
-      const parasut = invoiceSource[item.sourceId] === "parasut";
-      out.push({ key: "due", label: "Vade tarihi", hint: item.detail?.includes("vade tahmini") ? "Şu an tahmini vade" : dateTR(item.dueDate), icon: CalendarDays, onSelect: () => setDueFor(item) });
-      // Eşitleme ertelenen vadeyi korur; yalnız Paraşüt'te vade değişirse o gelir (sync.ts, syncedDueDate)
-      const note = parasut ? " · Paraşüt'te vade değişirse o geçer" : "";
-      out.push({ key: "week", label: "Vadeyi 1 hafta ertele", hint: `${dateTR(week)}${note}`, icon: ClockArrowUp, onSelect: () => postpone(item, "week") });
-      out.push({ key: "month", label: "Vadeyi 1 ay ertele", hint: `${dateTR(monthLater)}${note}`, icon: CalendarClock, onSelect: () => postpone(item, "month") });
+      case "invoice": {
+        const parasut = invoiceSource[item.sourceId] === "parasut";
+        out.push({ key: "due", label: "Vade tarihi", hint: item.detail?.includes("vade tahmini") ? "Şu an tahmini vade" : dateTR(item.dueDate), icon: CalendarDays, onSelect: () => setDueFor(item) });
+        // Eşitleme ertelenen vadeyi korur; yalnız Paraşüt'te vade değişirse o gelir (sync.ts, syncedDueDate)
+        const note = parasut ? " · Paraşüt'te vade değişirse o geçer" : "";
+        out.push({ key: "week", label: "Vadeyi 1 hafta ertele", hint: `${dateTR(week)}${note}`, icon: ClockArrowUp, onSelect: () => postpone(item, "week") });
+        out.push({ key: "month", label: "Vadeyi 1 ay ertele", hint: `${dateTR(monthLater)}${note}`, icon: CalendarClock, onSelect: () => postpone(item, "month") });
+        break;
+      }
+      case "cari": {
+        // Faturasız borç: düzenleme tedarikçinin sayfasında (Borcu düzenle), vade ertelenir
+        const href = item.href;
+        if (href) out.push({ key: "edit", label: "Düzenle", hint: "Tedarikçinin sayfasında", icon: Pencil, onSelect: () => router.push(`${href}?borc=${item.sourceId}`) });
+        out.push({ key: "week", label: "Vadeyi 1 hafta ertele", hint: dateTR(week), icon: ClockArrowUp, onSelect: () => postpone(item, "week") });
+        out.push({ key: "month", label: "Vadeyi 1 ay ertele", hint: dateTR(monthLater), icon: CalendarClock, onSelect: () => postpone(item, "month") });
+        break;
+      }
+      default:
+        unreachable(item.source);
     }
     return out;
   };
@@ -187,19 +238,61 @@ export function RemindersClient({
       item={item}
       index={i}
       source={sourceOf(item, invoiceSource)}
-      anchorDate={item.source === "reminder" ? byId.get(item.sourceId)?.anchorDate : null}
+      anchorDate={anchorOf(item, byId)}
       pending={pendingFor(item)}
       onPaid={() => pay(item)}
       actions={actionsFor(item)}
+      onSeparate={item.hint?.kind === "link" ? () => separate(item) : undefined}
       swipe
     />
   );
+
+  // İpucundaki "Ayrı alım": fatura bu faturasız alımların faturası değil (aday bir daha önerilmez; geri alınabilir)
+  const separate = (item: UpcomingItem) => {
+    const h = item.hint;
+    if (h?.kind !== "link") return;
+    start(async () => {
+      const r = await dismissLinkCandidate({ debtIds: h.debtIds, invoiceId: h.invoiceId });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success("Ayrı alım işaretlendi", {
+        description: `${item.title} faturası artık faturasız alımla eşleştirilmiyor.`,
+        duration: 8000,
+        action: {
+          label: "Geri al",
+          onClick: () =>
+            start(async () => {
+              const u = await dismissLinkCandidate({ debtIds: h.debtIds, invoiceId: h.invoiceId, undo: true });
+              if (!u.ok) toast.error(u.error);
+            }),
+        },
+      });
+    });
+  };
+
+  // Hesaptaki ödemeyle karşılananlar: "Borçlara say" parayı kalıcı olarak sayar (rakamlar değişmez)
+  const coveredBy = useMemo(() => {
+    const m = new Map<number, { cardId: number; title: string; items: UpcomingItem[] }>();
+    for (const i of covered) {
+      if (i.supplierId === undefined) continue;
+      const g = m.get(i.supplierId) ?? { cardId: i.supplierId, title: i.title, items: [] };
+      g.items.push(i);
+      m.set(i.supplierId, g);
+    }
+    return [...m.values()];
+  }, [covered]);
+  const applyCredit = (cardId: number, title: string) =>
+    start(async () => {
+      const r = await applySupplierCredit({ cardId });
+      if (!r.ok) return void toast.error(r.error);
+      toast.success(`${title}: hesaptaki ${tl(r.data.total, 2)} borçlara sayıldı`, { description: r.data.lines.map((l) => `${l.label} ${tl(l.amount, 2)}`).join(" · ") });
+    });
 
   // Takvim: listedeki ödemeler, ufuktan (45 gün) sonraki şimdiki dönemler ve tekrar edenlerin ileriki dönemleri
   // (yalnız bilgi). Ay toplamı ve gün sayfası da bundan.
   const entries = useMemo(() => {
     const laterShown = source === "tumu" ? visibleLater : visibleLater.filter((i) => i.source === SOURCE_OF[source]);
-    return calendarEntries(month, today, [...shown, ...laterShown], list, source !== "fatura");
+    // Tekrar eden hatırlatıcıların ileriki dönemleri yalnız hatırlatıcılar gösterilirken
+    return calendarEntries(month, today, [...shown, ...laterShown], list, source === "tumu" || source === "hatirlatici");
   }, [month, shown, visibleLater, list, source, today]);
   const dayEntries = day ? entries.filter((e) => e.date === day) : [];
 
@@ -315,15 +408,16 @@ export function RemindersClient({
                 },
               ]}
             />
-            {invoiceCount ? (
+            {invoiceCount || cariCount ? (
               <Segmented<Source>
                 label="Kaynak"
                 value={source}
                 onChange={setSource}
                 options={[
                   { value: "tumu", label: "Tümü", count: visible.length },
-                  { value: "hatirlatici", label: "Hatırlatıcı", count: visible.length - invoiceCount },
-                  { value: "fatura", label: "Fatura", count: invoiceCount },
+                  { value: "hatirlatici", label: "Hatırlatıcı", count: counts.reminder },
+                  ...(invoiceCount ? [{ value: "fatura" as const, label: "Fatura", count: invoiceCount }] : []),
+                  ...(cariCount ? [{ value: "cari" as const, label: "Faturasız borç", count: cariCount }] : []),
                 ]}
               />
             ) : null}
@@ -354,7 +448,7 @@ export function RemindersClient({
               />
             ) : filtered.length === 0 ? (
               <EmptyState
-                title={range ? `${RANGE_LABEL[range]}: ödeme yok` : source === "fatura" ? "Yaklaşan fatura ödemesi yok" : "Yaklaşan hatırlatıcı yok"}
+                title={range ? `${RANGE_LABEL[range]}: ödeme yok` : EMPTY_TITLE[source]}
                 description={range ? "Bu aralıkta son günü gelen ödeme görünmüyor." : `Bu kaynakta önümüzdeki ${UPCOMING_HORIZON_DAYS} gün içinde ödeme görünmüyor.`}
                 action={
                   <Button
@@ -394,6 +488,33 @@ export function RemindersClient({
                 </p>
               </div>
             )}
+            {coveredBy.length ? (
+              <details className="group/c mt-4 rounded-2xl bg-surface ring-1 ring-line">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-2xl px-4 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/30 [&::-webkit-details-marker]:hidden">
+                  <Wallet size={16} className="shrink-0 text-ink-mute" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-ink">Hesaptaki ödemeyle karşılananlar · {num(covered.length)}</span>
+                    <span className="block text-xs text-ink-mute">Tedarikçiye önceden yapılan ödeme bu kalemleri karşılıyor; listeye ve toplamlara girmez.</span>
+                  </span>
+                  <ChevronDown size={16} className="shrink-0 text-ink-quiet transition-transform group-open/c:rotate-180" aria-hidden="true" />
+                </summary>
+                <ul className="divide-y divide-ink/[0.06] px-4 pb-1.5">
+                  {coveredBy.map((g) => (
+                    <li key={g.cardId} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium break-words text-ink">{g.title}</p>
+                        <p className="mt-0.5 text-xs break-words text-ink-mute tabular">
+                          {g.items.map((i) => `${i.detail ?? ""} ${tl(i.credited ?? 0, 2)}`.trim()).join(" · ")}
+                        </p>
+                      </div>
+                      <Button size="sm" variant="secondary" disabled={pending} onClick={() => applyCredit(g.cardId, g.title)} className="shrink-0 pointer-coarse:h-11">
+                        Borçlara say
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
             {recentPaid.length ? <RecentPaidList items={recentPaid} /> : null}
           </CardContent>
         </Card>
@@ -468,6 +589,7 @@ export function RemindersClient({
                     source={sourceOf(e.item, invoiceSource)}
                     anchorDate={e.anchorDate}
                     pending={pendingFor(e.item)}
+                    onSeparate={e.item.hint?.kind === "link" ? () => separate(e.item) : undefined}
                     onPaid={() => {
                       setDay(null);
                       pay(e.item);

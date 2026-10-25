@@ -193,3 +193,61 @@ export function readCashOutUndo(json: string | null, by: number, now: number): C
   if (!parsed.success || parsed.data.by !== by || parsed.data.exp <= now) return null;
   return { id: parsed.data.id, snap: parsed.data.snap };
 }
+
+/**
+ * Personelin Kasa'da gördüğü satır alanları (beyaz liste; docs/planlar cari §8, R9b). Ödeme bağı, tedarikçi kimliği ve
+ * dağıtımlar personele gitmez; yalnız satırın bir yönetici kaydına bağlı olduğu (`locked`) söylenir. Yeni bir alan
+ * eklenirse burada açıkça eklenir (tests/cari-guvenlik.test.ts anahtar kümesini sabitler).
+ */
+export const STAFF_CASH_OUT_FIELDS = [
+  "id",
+  "date",
+  "kind",
+  "amount",
+  "store",
+  "description",
+  "receiptDate",
+  "receiptNo",
+  "vat",
+  "docType",
+  "photoId",
+  "createdByName",
+  "createdAt",
+  "expenseEntryId",
+  "categoryId",
+  "categoryName",
+] as const;
+
+export type StaffCashOutField = (typeof STAFF_CASH_OUT_FIELDS)[number];
+
+/** Personelin satırı: yalnız beyaz listedeki alanlar ve kilit (yöneticinin ödemesine bağlı satır) */
+export function staffCashOutRow<T extends Record<StaffCashOutField, unknown>>(row: T, locked: boolean): Pick<T, StaffCashOutField> & { locked: boolean } {
+  const out: Partial<Pick<T, StaffCashOutField>> = {};
+  for (const k of STAFF_CASH_OUT_FIELDS) out[k] = row[k];
+  return { ...(out as Pick<T, StaffCashOutField>), locked };
+}
+
+/**
+ * Adın eşleşme anahtarı: faturalardaki supplierMatchKey ile aynı kural (sondaki parantez atılır, tek boşluk, Türkçe
+ * küçük harf, ı → i). Kasa penceresi fatura kurallarını (ve hesap motorunu) yüklemesin diye burada; ikisinin aynı
+ * kaldığını tests/cari-guvenlik.test.ts denetler.
+ */
+export function nameKey(name: string): string {
+  return name
+    .replace(/\s*\(.*\)\s*$/, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i");
+}
+
+/**
+ * Kasa penceresinin ad ipucu (§8): Alışveriş satırının Yer'i bir tedarikçinin adıyla (ya da diğer adıyla) eşleşiyorsa
+ * o ad; personel borç ödemesini Teslim · ödeme olarak girsin diye
+ */
+export function supplierNameHint(store: string, names: readonly string[]): string | null {
+  const key = nameKey(store);
+  if (!key) return null;
+  return names.find((n) => nameKey(n) === key) ?? null;
+}

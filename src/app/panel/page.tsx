@@ -52,6 +52,7 @@ import { loadCashPlan } from "@/server/data/cash-plan";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
 import { getDb, schema as s } from "@/server/db";
+import { cariAlerts } from "@/lib/cari/match";
 import { loadUpcoming } from "@/server/notify/digest";
 import { isParasutConfigured } from "@/server/parasut/config";
 
@@ -76,7 +77,7 @@ import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
-import { monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { debtFacts, monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
@@ -182,7 +183,9 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   const zam = priceAlerts ? priceAlert(priceAlerts.changes, priceAlerts.actionable, priceAlerts.loss.totalLoss) : null;
   // Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen fiyatlar (Hammaddeler › Onay bekleyen fiyatlar)
   const hold = holdAlert((await pendingHoldSummary().catch(() => null))?.items ?? []);
-  const alertItems = [...(hold ? [hold] : []), ...(zam ? [zam] : []), ...alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href))];
+  // Cari hesap: faturası 45 gündür gelmeyen alımlar ve faturası gelmiş olabilecek faturasız alımlar (§6.7)
+  const cari = upcoming ? cariAlerts(upcoming.cari) : [];
+  const alertItems = [...(hold ? [hold] : []), ...(zam ? [zam] : []), ...cari, ...alerts(model, month).filter((a) => !a.href || !/durum=(eslesmeyen|odenmedi)/.test(a.href))];
   const year = Number(month.slice(0, 4));
   const yearMonths = yearTrend(model, year);
   const trend = yearMonths.filter((x) => x.active);
@@ -249,7 +252,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Bu ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım, ödemeler
   const tasks = monthTasks(
     monthTaskFacts(model, month, d.monthState, d.refMonth, {
-      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices)) : null,
+      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null,
       parasut,
     }),
   );

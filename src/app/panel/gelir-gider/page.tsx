@@ -12,6 +12,7 @@ import { MONTH_NAMES } from "@/lib/constants";
 import { monthLabel, pct, tl } from "@/lib/format";
 import { salesMonthsToPull } from "@/lib/site-sales/calc";
 import { requireAdmin } from "@/server/auth/dal";
+import { loadExpectedDebtsInYear } from "@/server/data/cari";
 import { loadModel } from "@/server/data/dataset";
 import { siteLinkSecret, siteUrl } from "@/server/site-link";
 import { readSalesState, SITE_SALES_FIRST_MONTH } from "@/server/site-sales/sync";
@@ -69,6 +70,11 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const year = yilParam && /^\d{4}$/.test(yilParam) ? Number(yilParam) : latestYear;
   const months = yearMonths(year);
   const calcs = months.map((m) => model.pnlMonth(m));
+  // Faturası beklenen cari alımlar (bilgi satırı; gidere girmez, fatura gelince fatura gider olur). Okunamazsa satır yok
+  const expected = await loadExpectedDebtsInYear(year).catch((e) => {
+    console.error("[gelir-gider] faturası beklenen alımlar", e);
+    return {};
+  });
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 
@@ -290,6 +296,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         currentMonth={model.currentMonth}
         strip={strip}
         latestMonth={latestMonth}
+        expectedDebts={expected}
       />
     </>
   );

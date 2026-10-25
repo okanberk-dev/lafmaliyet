@@ -12,12 +12,14 @@
  *   Tutarsız hatırlatıcı eşleştiği tahminin tutarını taşır; eşleşmeyeni "Tutarı girilmemiş ödemeler"e girer.
  */
 
+import { supplierMatchKey } from "../app/panel/faturalar/rules";
 import { daysInMonth, shiftMonth, type Model } from "./calc/engine";
 import type { FixedPeriod } from "./calc/types";
 import { fixedVatRate, GOODS_CATEGORIES, MONTH_NAMES } from "./constants";
 import { monthLabel, num, pct, tl } from "./format";
 import { round100, vat2DueDate, vat2LineDetail, vatDueDate, vatEstimates, vatLineDetail, vatMonthInputs, vatNote, vatPeriodOf, type VatEstimate, type VatMonthInput } from "./kdv";
 import { addDays, daysBetween, FIXED_REMINDER_NOTE, isVatReminder, isVatWithholdingReminder, monthEnd, nextOccurrence, reminderCategory, todayTR, type ReminderRow, type UpcomingItem } from "./reminders";
+import { unreachable } from "./unreachable";
 import { originalDue, paidPeriodsOf, type VatPaidEntry } from "./vat-paid";
 
 export const PLAN_WEEKS = 6;
@@ -94,7 +96,10 @@ export interface CashPlanInput {
   /** Bu aya kadarki, açık günü ve POS cirosu girilmiş son ay (kasa raporu yetmezse) */
   posMonth: { month: string; posRevenue: number; openDays: number } | null;
   online: { month: string; perDay: number } | null;
-  /** Ödemeler'in listesi (source "invoice" olanlar kullanılır) */
+  /**
+   * Ödemeler'in listesi: faturalar ve faturasız borçlar (cari) kesin kalem, hatırlatıcılar `reminders`'tan. Tutar
+   * hesaptaki ödeme düşüldükten sonraki kalan; faturasız alımın faturası olabilecek fatura ("link") girmez
+   */
   invoices: readonly UpcomingItem[];
   reminders: readonly ReminderRow[];
   /**
@@ -109,6 +114,11 @@ export interface CashPlanInput {
   vatPaid?: readonly VatPaidEntry[];
   /** Son 8 haftanın mal faturaları ve tedarikçinin ödeme gecikmesi (peşinde 0) */
   goods: readonly { supplier: string; date: string; payable: number; lagDays: number }[];
+  /**
+   * Faturası beklenen ("Faturası gelecek") açık cari borçlar, kart kart (K19): kartın ad anahtarları (adı ve diğer
+   * adları), tutar. O tedarikçinin mal tahmini bu kadar düşürülür (borç kesin kalemde zaten). Yoksa boş
+   */
+  expectedDebts?: readonly { name: string; keys: readonly string[]; amount: number }[];
   /** Mal faturalarının ortalama aralığı; 0 = yetersiz geçmiş */
   goodsSpanDays: number;
   /** Önceki aylardan ufkun son ayına kadar: bordro ve o ayın sabit giderleri */
@@ -232,6 +242,10 @@ export interface CashPlan {
       | { kind: "none" };
     online: { month: string; perDay: number } | null;
     goods: { spanDays: number; weekly: number; top: { supplier: string; weekly: number; lagDays: number }[] } | null;
+    /** Mal tahmini faturası beklenen cari borçlar kadar düşürülen tedarikçiler (K19) */
+    goodsReduced: { name: string; amount: number }[];
+    /** Faturasız borçlar (cari) kesin kalem sayısı; hesaptaki ödemesi düşülen kalem var mı */
+    cari: { count: number; credited: boolean };
     payroll: { people: number; net: number; sgk: number } | null;
     /** default: her ayın 1'i / son günü; carrier: tutarsız hatırlatıcının gününde; reminder: hatırlatıcıdaki tutar */
     salaryMode: "default" | "carrier" | "reminder";
@@ -496,25 +510,51 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
   const salesIn = dates.map((_, i) => (i >= 1 && !off("sales") ? salesPerDay : 0));
   const onlineIn = dates.map((_, i) => (i >= 1 && input.online && !off("online") ? input.online.perDay : 0));
 
-  // ------------------------------------------------------------ Faturalar (kesin)
+  // ------------------------------------------------------------ Faturalar ve faturasız borçlar (kesin)
   let overdueInvoices = 0;
+  let cariCount = 0;
+  let credited = false;
   for (const it of input.invoices) {
-    if (it.source !== "invoice") continue;
+    // Faturasız alımın faturası olabilecek fatura bağlanana kadar plana girmez (borç kesin kalemde; K17)
+    if (it.quiet === "link") continue;
+    let key: string;
+    let title: string;
+    let href: string;
+    let cari = false;
+    switch (it.source) {
+      case "invoice":
+        key = `invoice:${it.sourceId}`;
+        title = it.title;
+        href = "/panel/hatirlaticilar?kaynak=fatura";
+        break;
+      case "cari":
+        cari = true;
+        key = `cari:${it.sourceId}`;
+        title = `${it.title} · ${it.costMode === "fatura" ? "fatura bekleniyor" : it.costMode === "devir" ? "eski borç" : "faturasız alım"}`;
+        href = "/panel/hatirlaticilar?kaynak=cari";
+        break;
+      case "reminder":
+        continue;
+      default:
+        unreachable(it.source);
+    }
     const d = daysBetween(today, it.dueDate);
     if (d > N - 1) continue;
-    if (d < 0) overdueInvoices++;
+    if (d < 0 && !cari) overdueInvoices++;
+    if (cari) cariCount++;
+    if (it.credited) credited = true;
     dated.push({
-      key: `invoice:${it.sourceId}`,
+      key,
       kind: "invoice",
       direction: "out",
-      title: it.title,
+      title,
       date: d < 0 ? today : it.dueDate,
       ...(d < 0 ? { due: it.dueDate } : {}),
       amount: it.amount ?? 0,
       estimated: false,
       overdue: d < 0,
       detail: it.detail ?? undefined,
-      href: "/panel/hatirlaticilar?kaynak=fatura",
+      href,
     });
   }
 
@@ -845,6 +885,25 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       }
     }
   }
+  // Faturası beklenen cari borçlar (K19): tedarikçinin ufuktaki tahmini (T) borcun kalanı (X) kadar küçülür, oranla:
+  // tahmin × (1 − min(T, X) / T). Borç kesin kalemde zaten; haftalık irsaliyenin aylık faturası iki kez sayılmasın
+  const goodsReduced: { name: string; amount: number }[] = [];
+  for (const e of input.expectedDebts ?? []) {
+    if (!(e.amount > 0) || off("goods")) continue;
+    const keys = new Set(e.keys);
+    const parts = [...goodsParts].filter(([supplier]) => keys.has(supplierMatchKey(supplier))).map(([, part]) => part);
+    const total = parts.reduce((a, part) => a + part.reduce((x, v) => x + v, 0), 0);
+    if (!(total > 0)) continue;
+    const share = Math.min(total, e.amount) / total;
+    for (const part of parts) {
+      for (let i = 0; i < N; i++) {
+        const cut = part[i] * share;
+        goodsOut[i] -= cut;
+        part[i] -= cut;
+      }
+    }
+    goodsReduced.push({ name: e.name, amount: Math.min(total, e.amount) });
+  }
   let goodsBasis: CashPlan["basis"]["goods"] = null;
   if (goodsOk) {
     const bySupplier = new Map<string, { total: number; lagDays: number }>();
@@ -1071,6 +1130,8 @@ export function buildCashPlan(input: CashPlanInput): CashPlan {
       sales,
       online: input.online,
       goods: goodsBasis,
+      goodsReduced,
+      cari: { count: cariCount, credited },
       payroll: payroll.people > 0 ? payroll : null,
       salaryMode,
       sgkMode,
@@ -1117,8 +1178,13 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
   out.push({
     key: "invoices",
     title: "Faturalar",
-    text: `Ödenmemiş faturaların kalan borcu, vade gününde. Vadesi yazılmamışsa tedarikçinin vadesi, yoksa ${num(opts.invoiceTermDays)} gün.${b.overdueInvoices ? ` Gecikmiş ${num(b.overdueInvoices)} fatura bugüne yazıldı.` : ""}`,
+    text: `Ödenmemiş faturaların kalan borcu, vade gününde. Vadesi yazılmamışsa tedarikçinin vadesi, yoksa ${num(opts.invoiceTermDays)} gün.${b.overdueInvoices ? ` Gecikmiş ${num(b.overdueInvoices)} fatura bugüne yazıldı.` : ""}${
+      b.cari.count ? ` Tedarikçilere faturasız borçlar (${num(b.cari.count)}) da kesin kalem, aynı kuralla.` : ""
+    }`,
   });
+  if (b.cari.credited) {
+    out.push({ key: "credit", title: "Hesaptaki ödeme", text: "Tedarikçinin hesabındaki sayılmamış ödeme borcundan düşüldü (en eski vadeden başlayarak)." });
+  }
   out.push({ key: "reminders", title: "Hatırlatıcılar", text: "Ödemeler'deki hatırlatıcılar, her tekrarıyla." });
   if (b.payroll) {
     out.push({
@@ -1153,20 +1219,24 @@ export function planNotes(plan: CashPlan, opts: { komisyon: number; acikGun: num
     text: off("goods")
       ? "Yeni mal faturaları tahmine katılmıyor (Tahmine katılanlar'dan açın)."
       : b.goods
-        ? `Son ${num(b.goods.spanDays)} günün mal faturalarına göre haftada ${tl(b.goods.weekly)}. Yeni faturalar tedarikçinin vadesinde ödenir, peşin çalışılanlar hemen.`
+        ? `Son ${num(b.goods.spanDays)} günün mal faturalarına göre haftada ${tl(b.goods.weekly)}. Yeni faturalar tedarikçinin vadesinde ödenir, peşin çalışılanlar hemen.${
+            b.goodsReduced.length ? ` ${b.goodsReduced.map((r) => `${r.name} tahmini, faturası beklenen ${tl(r.amount)} kadar düşürüldü`).join("; ")}.` : ""
+          }`
         : "Mal alımı tahmini için en az 2 haftalık fatura gerekir.",
   });
   if (plan.vat) out.push({ key: "kdv", title: "KDV", text: vatNote(plan.vat.mode, plan.vat.ok, plan.vat.rates, plan.vat.hasSite) });
   out.push({
     key: "double",
     title: "Çift sayım",
-    text: "Aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası ayrıca gelen sabit gideri “Tahmine katılanlar”dan çıkarın.",
+    text: `Aynı ödeme hem hatırlatıcı hem fatura olarak duruyorsa iki kez sayılır (Ödemeler'deki gibi). Faturası ayrıca gelen sabit gideri “Tahmine katılanlar”dan çıkarın.${
+      b.cari.count || b.goodsReduced.length ? " Faturasız borçlar kesin kalemde; faturası beklenenler kadar mal tahmini düşürüldü, faturası gelmiş olabilecek fatura bağlanana kadar plana girmez." : ""
+    }`,
   });
   const yearly = plan.notIncluded.map((n) => n.title);
   out.push({
     key: "excluded",
     title: "Dahil değil",
-    text: `Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'daki fatura dışı ödemeler, yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
+    text: `Tutarı girilmemiş vergiler (muhtasar, geçici vergi vb.), Aylık harcamalar'daki fatura dışı ödemeler (cari borçların gider kayıtları dahil), yıllık giderler${yearly.length ? ` (${yearly.join(", ")})` : ""}, yatırım ve kredi.`,
   });
   return out;
 }

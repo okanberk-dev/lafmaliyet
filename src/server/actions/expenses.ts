@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -30,6 +30,17 @@ const entrySchema = z.object({
   note: zOptText(500),
 });
 
+/** Cari borcun tedarikçisi, iyelik ekiyle ("Sütaş tedarikçisinin") */
+async function ownerName(supplierEntryId: number): Promise<string> {
+  const [r] = await getDb()
+    .select({ name: s.suppliers.name })
+    .from(s.supplierEntries)
+    .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+    .where(eq(s.supplierEntries.id, supplierEntryId))
+    .limit(1);
+  return r ? `${r.name} tedarikçisinin` : "bir tedarikçinin";
+}
+
 export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -44,6 +55,10 @@ export async function saveExpenseEntry(input: z.input<typeof entrySchema>) {
       const [prev] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, id)).limit(1);
       if (prev?.cashOutId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date)) {
         throw new UserError("Bu harcama kasadan çıkan bir fişten; tutarı ve tarihi Kasa raporu'nda düzeltin");
+      }
+      // Cari borcun gideri: tutarı, günü ve kategorisi borçla birlikte Tedarikçiler'de değişir (açıklama ve not serbest)
+      if (prev?.supplierEntryId && (Math.abs(prev.amount - data.amount) >= 0.005 || prev.date !== data.date || prev.categoryId !== data.categoryId)) {
+        throw new UserError(`Bu harcama ${await ownerName(prev.supplierEntryId)} faturasız alımından; tutarını, gününü ve kategorisini Tedarikçiler'de düzeltin`);
       }
       const [row] = await db.update(s.expenseEntries).set({ ...values, updatedAt: new Date() }).where(eq(s.expenseEntries.id, id)).returning({ id: s.expenseEntries.id });
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
@@ -77,8 +92,12 @@ export type ExpenseEntrySnapshot = {
 export async function deleteExpenseEntry(id: number) {
   return attempt(async () => {
     const me = await requireAdmin();
+    const entryId = z.number().int().positive().parse(id);
+    // Cari borcun gideri burada silinmez: borç silinince ya da "Faturası gelecek" yapılınca kalkar
+    const [owned] = await getDb().select({ owner: s.expenseEntries.supplierEntryId }).from(s.expenseEntries).where(eq(s.expenseEntries.id, entryId)).limit(1);
+    if (owned?.owner) throw new UserError(`Bu harcama ${await ownerName(owned.owner)} faturasız alımının gideri; orada silin ya da 'Faturası gelecek' yapın`);
     const row = await getDb().transaction(async (tx) => {
-      const [row] = await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.id, z.number().int().positive().parse(id))).returning();
+      const [row] = await tx.delete(s.expenseEntries).where(and(eq(s.expenseEntries.id, entryId), isNull(s.expenseEntries.supplierEntryId))).returning();
       if (!row) throw new UserError("Harcama bulunamadı; silinmiş olabilir");
       if (row.photoId) {
         const [used] = await tx.select({ id: s.cashOuts.id }).from(s.cashOuts).where(eq(s.cashOuts.photoId, row.photoId)).limit(1);

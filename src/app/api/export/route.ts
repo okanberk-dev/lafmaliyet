@@ -2,6 +2,7 @@ import { asc, desc } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { getCurrentUser } from "@/server/auth/dal";
+import { loadCariExport } from "@/server/data/cari";
 import { loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
@@ -20,17 +21,19 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
-    const [model, investments, findings] = await Promise.all([
+    const [model, investments, findings, cari] = await Promise.all([
       loadModel(),
       db.select().from(s.investments).orderBy(asc(s.investments.id)),
       db.select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id)),
+      // Tedarikçilere elle girilen borç ve ödemeler ("Cari hareketleri" sekmesi; kayıt yokken sekme yok)
+      loadCariExport(),
     ]);
     const month = resolveMonth(request.nextUrl.searchParams.get("ay") ?? undefined, model);
     const wb = buildWorkbook(model, month, {
       investments,
       findings,
-      // Kısmen ödenmiş Paraşüt faturasının kalan borcu (Invoice.outstanding)
-      outstanding: new Map(model.ds.invoices.map((i) => [i.id, i.outstanding ?? null])),
+      // Faturanın kalan borcu faturanın kendisinden (Paraşüt'ün kalanı ve panelde sayılan ödemeler; openBalance)
+      cari,
     });
     const buffer = await wb.xlsx.writeBuffer();
     return new Response(buffer as ArrayBuffer, {

@@ -123,8 +123,19 @@ export function resetCheck(
   return { ok: false, warning: `Bu veritabanındaki ürünler, faturalar, satışlar, sayımlar ve ayarlar silinip Excel verisi yüklenecek: ${target.label}.` };
 }
 
+/**
+ * db:reset'in cari engeli (K28): elle girilmiş cari kayıtları (borç, ödeme) varsa silmeden durur. TRUNCATE … CASCADE
+ * onları da silerdi; Kasa satırları kalır, faturalar ödenmemiş geri gelir ve iki kez ödenir. `--cari-sil` ile silinir.
+ */
+export function cariResetBlock(entries: number, wipe: boolean, backupFile: string): string | null {
+  if (!entries || wipe) return null;
+  return `Cari hareketleri var (${entries} kayıt). db:reset onları siler, Kasa satırları kalır ve faturalar ödenmemiş geri gelir. Yedek alındı: ${backupFile}. Yine de silmek için: npm run db:reset -- --cari-sil`;
+}
+
 export interface SeedOptions {
   reset?: boolean;
+  /** db:reset: elle girilmiş cari kayıtları da silinsin (`--cari-sil`; yoksa varken durur) */
+  wipeCari?: boolean;
   /** db:reset için `--onay=<sunucu>` */
   confirm?: string | null;
   /** Etkileşimli terminalde soru (yoksa onay yalnız --onay ile) */
@@ -132,7 +143,7 @@ export interface SeedOptions {
   now?: Date;
 }
 
-export async function runSeed({ reset = false, confirm = null, ask = null, now = new Date() }: SeedOptions = {}) {
+export async function runSeed({ reset = false, wipeCari = false, confirm = null, ask = null, now = new Date() }: SeedOptions = {}) {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
   if (!url) throw new Error("DATABASE_URL tanımlı değil");
   if (reset) {
@@ -166,6 +177,10 @@ export async function runSeed({ reset = false, confirm = null, ask = null, now =
       const file = join(homedir(), backupFileName(now, { host: target.host }));
       const b = await writeBackupFile(db.$client, file, { documents: true, createdBy: "db:reset öncesi", app: appVersion(), now });
       console.log(`✓ Silmeden önce yedek: ${file} · ${backupSummaryText({ tables: Object.keys(b.tables).length, rows: b.rows, bytes: b.bytes, documents: b.documents, docCount: b.docCount })}`);
+      // Cari kayıtları (elle borç ve ödeme) varsa durur: --cari-sil verilmeden silinmez
+      const [{ entries }] = await db.select({ entries: count() }).from(s.supplierEntries);
+      const block = cariResetBlock(entries, wipeCari, file);
+      if (block) throw new Error(block);
     }
 
     await db.transaction(async (tx) => {
@@ -177,9 +192,12 @@ export async function runSeed({ reset = false, confirm = null, ask = null, now =
           sql.raw(
             `TRUNCATE ${SERIAL_TABLES.filter((t) => t !== "users")
               .concat(["settings", "months", "pos_mappings", "notification_log", "parasut_sync_runs", "expense_entries"])
+              .concat(wipeCari ? ["supplier_allocations", "supplier_entries"] : [])
               .join(", ")} RESTART IDENTITY CASCADE`,
           ),
         );
+        // Cari kayıtları silindiyse "Ayrı tut" denmiş Kasa satırlarının listesi de gider
+        if (wipeCari) await tx.execute(sql.raw(`DELETE FROM integration_state WHERE key = 'cari.kasa-ayri'`));
         // Paraşüt imleci, fiyat tarihleri ve kişi önbelleği eski kimliklere bağlı; baştan okunsun. Son ödenenler de
         // fatura kimliklerine bağlı: kimlikler baştan sayınca "Geri al" başka bir faturayı ödenmedi yapardı. Ödeme
         // takibinin başlangıcı da silinir: faturalar (ödeme işaretleriyle) yeniden yüklenince sonraki eşitleme yeniden
@@ -273,7 +291,7 @@ if (process.argv[1]?.endsWith("seed.ts")) {
   const args = process.argv.slice(2);
   const onay = args.find((a) => a.startsWith("--onay="))?.slice("--onay=".length) ?? null;
   const rl = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : null;
-  runSeed({ reset: args.includes("--reset"), confirm: onay, ask: rl ? (q) => rl.question(q) : null })
+  runSeed({ reset: args.includes("--reset"), wipeCari: args.includes("--cari-sil"), confirm: onay, ask: rl ? (q) => rl.question(q) : null })
     .then(() => rl?.close())
     .catch((e) => {
       rl?.close();

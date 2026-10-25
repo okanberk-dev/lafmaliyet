@@ -4,7 +4,9 @@ import { eq } from "drizzle-orm";
 
 import type { Model } from "@/lib/calc/engine";
 import { buildCashPlan, goodsRows, parseCashPlanState, planInputFromModel, SALES_LOOKBACK_DAYS, type CashPlan, type CashPlanState } from "@/lib/cash-plan";
-import { addDays } from "@/lib/reminders";
+import { addDays, type UpcomingItem } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
+import { loadExpectedDebtsByCard } from "@/server/data/cari";
 import { cashReportsBetween, previousCarryOver } from "@/server/data/cash-reports";
 import { loadRecentPaid } from "@/server/data/recent-paid";
 import { loadVatPaid } from "@/server/data/vat-paid";
@@ -34,6 +36,19 @@ export interface CashPlanView {
   invoiceTermDays: number;
 }
 
+/** Planın kesin kalemi olan ödeme: fatura ve faturasız borç (hatırlatıcılar planın kendi kuralıyla, `reminders`'tan) */
+function isPayable(i: UpcomingItem): boolean {
+  switch (i.source) {
+    case "invoice":
+    case "cari":
+      return true;
+    case "reminder":
+      return false;
+    default:
+      return unreachable(i.source);
+  }
+}
+
 /**
  * Önümüzdeki 6 haftanın planı. Genel bakış zaten okuduğu `upcoming`'i (Ödemeler listesi) ve modeli paylaşır; mal
  * faturaları modelden gelir (ek sorgu yok). Yeni mal faturasının ödeme gecikmesi: peşin çalışılan tedarikçide 0, değilse
@@ -42,7 +57,7 @@ export interface CashPlanView {
 export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<typeof loadUpcoming>>): Promise<CashPlanView> {
   const up = upcoming ?? (await loadUpcoming());
   const today = up.today;
-  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, vatPaid] = await Promise.all([
+  const [state, reports, termDays, paidOnDelivery, carry, recentPaid, vatPaid, expectedDebts] = await Promise.all([
     loadCashPlanState(),
     cashReportsBetween(addDays(today, -SALES_LOOKBACK_DAYS), addDays(today, -1)),
     loadTermDays(),
@@ -50,6 +65,8 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     previousCarryOver(addDays(today, 1)),
     loadRecentPaid(),
     loadVatPaid(),
+    // Faturası beklenen cari borçlar: o tedarikçinin mal tahmini bu kadar düşer (K19); kayıt yokken boş
+    loadExpectedDebtsByCard(),
   ]);
   const termOf = (supplier: string) => (paidOnDelivery(supplier) ? 0 : (termDays(supplier) ?? up.settings.invoiceTermDays));
   const goods = goodsRows(model.ds.invoices, today, termOf);
@@ -60,12 +77,13 @@ export async function loadCashPlan(model: Model, upcoming?: Awaited<ReturnType<t
     excluded: state.excluded,
     invoiceTermDays: up.settings.invoiceTermDays,
     cashReports: reports.map((r) => ({ date: r.date, zTotal: r.zTotal, card: r.card, mealCard: r.mealCard, online: r.online })),
-    invoices: up.items.filter((i) => i.source === "invoice"),
+    invoices: up.items.filter(isPayable),
     reminders: up.reminders,
     paidReminders: recentPaid.filter((e) => e.kind === "reminder").map((e) => ({ id: e.id, dueDate: e.dueDate, next: e.next ?? null, amount: e.amount })),
     vatPaid,
     goods: goods.rows,
     goodsSpanDays: goods.spanDays,
+    expectedDebts,
     vatAnchor: state.vatCarry ? { month: state.vatCarry.month, amount: state.vatCarry.amount } : null,
   });
   return { plan, state, carry, invoiceTermDays: up.settings.invoiceTermDays };

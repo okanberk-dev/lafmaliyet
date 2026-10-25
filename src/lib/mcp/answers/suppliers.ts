@@ -1,13 +1,15 @@
 /*
  * tedarikci_ozeti: bir tedarikçinin (ya da hepsinin) dönemdeki faturaları, ödendi işaretli tutar, kalan borç, geciken
- * ve yaklaşanlar. Gruplama Tedarikçiler ekranınınki (groupSuppliers; vergi numarasıyla eşleşme dahil), toplamlar
- * summarize ile. Banka bağlı değil: "ödendi" panelin / Paraşüt'ün işaretidir. IBAN, vergi no, telefon, e-posta,
- * adres, yetkili kişi, not ve fatura açıklaması gönderilmez. Saf; tests/claude-araclar.test.ts.
+ * ve yaklaşanlar; cari hesabı (faturasız borçlar, hesaptaki sayılmamış ödeme, net bakiye, son ödemeler). Gruplama
+ * Tedarikçiler ekranınınki (groupSuppliers; vergi numarasıyla eşleşme dahil), toplamlar summarize ve accountOf ile.
+ * Ödemeler panelde elle girilir; banka bağlı değil. IBAN, vergi no, telefon, e-posta, adres, yetkili kişi, not, fatura
+ * ve kayıt açıklaması gönderilmez. Saf; tests/claude-araclar.test.ts.
  */
 
 import { supplierMatchKey } from "../../../app/panel/faturalar/rules";
 import { supplierHref, summarize, dueOf, methodLabel, payState, type LedgerInvoice, type PaymentMethod } from "../../../app/panel/tedarikciler/logic";
 import { openBalance } from "../../calc/insights";
+import { METHOD_LABEL, type CariMethod } from "../../cari/balance";
 import { dateTR } from "../../format";
 import { checkRange, cleanName, foldName, money, nameMatches, num, panelUrl, r2 } from "./common";
 
@@ -22,6 +24,10 @@ export interface LedgerGroupLike {
   card: { paidOnDelivery: boolean; paymentMethod: PaymentMethod | null } | null;
   invoices: (LedgerInvoice & { invoiceNo: string | null; category: string })[];
   summary: { open: number };
+  /** Cari hesap (faturalar ve elle kayıtlar; kayıt yokken açık = faturaların açığı, hesaptaki para 0) */
+  account?: { open: number; balance: number; credit: number; debtOpen: number; debtOpenCount: number };
+  /** Ödeme kayıtları, en yeni önce */
+  cariPayments?: { date: string; amount: number; method: CariMethod; items: number }[];
 }
 
 export type SupplierAnswer =
@@ -40,9 +46,17 @@ export type SupplierAnswer =
         yakinda7Gun: number;
         sonFatura: string | null;
         sonOdeme: string | null;
-        /** Tarihi dönemin dışında kalanlar dahil bütün açık borç */
+        /** Tarihi dönemin dışında kalanlar dahil bütün açık borç (faturalar ve faturasız borçlar) */
         toplamAcikBorc: number;
+        /** Açık faturasız borçlar (elle girilen alımlar; tarih süzgeci yok) */
+        faturasizBorc: { adet: number; tutar: number };
+        /** Hesapta duran, hiçbir kaleme sayılmamış ödeme */
+        hesaptakiOdeme: number;
+        /** Bütün açık borç − hesaptaki ödeme; eksiyse alacak (fazla ödeme) */
+        netBakiye: number;
       };
+      /** Son ödeme kayıtları (en çok 10, en yeni önce) */
+      sonOdemeler: { tarih: string; tutar: number; sekil: string; sayildigiKalem: number }[];
       faturalar: {
         tarih: string;
         no: string | null;
@@ -62,8 +76,27 @@ export type SupplierAnswer =
   | { birdenFazla: true; aranan: string; adaylar: { ad: string; faturaSayisi: number }[]; panelAdresi: string }
   | {
       donem: { baslangic: string; bitis: string };
-      tedarikciler: { ad: string; faturaSayisi: number; faturaToplamiKdvDahil: number; odendiIsaretli: number; acikBorc: number; geciken: number; toplamAcikBorc: number }[];
-      toplam: { tedarikciSayisi: number; faturaSayisi: number; faturaToplamiKdvDahil: number; odendiIsaretli: number; acikBorc: number; geciken: number; toplamAcikBorc: number };
+      tedarikciler: {
+        ad: string;
+        faturaSayisi: number;
+        faturaToplamiKdvDahil: number;
+        odendiIsaretli: number;
+        acikBorc: number;
+        geciken: number;
+        toplamAcikBorc: number;
+        hesaptakiOdeme: number;
+        netBakiye: number;
+      }[];
+      toplam: {
+        tedarikciSayisi: number;
+        faturaSayisi: number;
+        faturaToplamiKdvDahil: number;
+        odendiIsaretli: number;
+        acikBorc: number;
+        geciken: number;
+        toplamAcikBorc: number;
+        hesaptakiOdeme: number;
+      };
       hesap: string[];
       kaynak: string[];
       panelAdresi: string;
@@ -73,8 +106,12 @@ const STATE = { paid: "ödendi", unpaid: "ödenmedi", requested: "ödemesi isten
 
 const KAYNAK = [
   "Faturalar Paraşüt'ten ve elle girilenlerden; 'ödendi' bilgisi panel/Paraşüt işareti, banka hareketi değil.",
+  "Ödemeler panelde elle girilir; banka bağlı değil. Faturasız borçlar (elden ya da veresiye alım, eski borç) da elle girilir.",
   "Ödeme günü girilmemiş faturalarda ödeme tarihi bilinmiyor.",
 ];
+
+/** Tedarikçinin cari hesabı (kayıt yokken faturaların açığı ve sıfırlar) */
+const accountOf = (g: LedgerGroupLike) => g.account ?? { open: g.summary.open, balance: g.summary.open, credit: 0, debtOpen: 0, debtOpenCount: 0 };
 
 /** Aranan adla eşleşen tedarikçiler: önce ad anahtarı birebir, sonra adın bir parçası */
 export function matchSuppliers<G extends Pick<LedgerGroupLike, "name" | "names" | "keys">>(groups: readonly G[], q: string): { exact: G[]; partial: G[] } {
@@ -135,7 +172,19 @@ export function supplierSummary(
       hesap.push("Dönemde ödenmemiş fatura yok");
     }
     if (s.overdueCount) hesap.push(`Geciken ${num(s.overdueCount)} fatura = ${money(s.overdue)}`);
-    if (r2(g.summary.open) !== r2(s.open)) hesap.push(`Dönem dışındakiler dahil bütün açık borç ${money(g.summary.open)}`);
+    const acc = accountOf(g);
+    // Son ödeme (§4.7): en yeni ödeme olayı; faturada işaretli ödeme ya da dönemdeki cari ödeme kaydı (defterin kapattığı
+    // fatura olay sayılmaz, parası ödeme kaydında)
+    const invoicePaid = s.lastPaid?.slice(0, 10) ?? null;
+    const cariPaid = (g.cariPayments ?? []).reduce<string | null>((m, p) => (p.date >= input.baslangic && p.date <= input.bitis && (!m || p.date > m) ? p.date : m), null);
+    const lastPaid = cariPaid && (!invoicePaid || cariPaid > invoicePaid) ? cariPaid : invoicePaid;
+    if (r2(acc.open) !== r2(s.open)) hesap.push(`Dönem dışındakiler dahil bütün açık borç ${money(acc.open)}`);
+    if (acc.debtOpenCount) hesap.push(`Faturasız borç ${num(acc.debtOpenCount)} alım = ${money(acc.debtOpen)} (elle girilen; açık borca dahil)`);
+    if (acc.credit > 0.005) {
+      hesap.push(
+        `Hesapta sayılmamış ödeme ${money(acc.credit)}; net bakiye ${acc.balance < 0 ? `${money(-acc.balance)} alacak (fazla ödeme)` : money(acc.balance)} (açık borç − hesaptaki ödeme)`,
+      );
+    }
     return {
       tedarikci: {
         ad: cleanName(g.name),
@@ -159,9 +208,13 @@ export function supplierSummary(
         gecikenSayisi: s.overdueCount,
         yakinda7Gun: r2(s.soon),
         sonFatura: s.lastInvoice,
-        sonOdeme: s.lastPaid?.slice(0, 10) ?? null,
-        toplamAcikBorc: r2(g.summary.open),
+        sonOdeme: lastPaid,
+        toplamAcikBorc: r2(acc.open),
+        faturasizBorc: { adet: acc.debtOpenCount, tutar: r2(acc.debtOpen) },
+        hesaptakiOdeme: r2(acc.credit),
+        netBakiye: r2(acc.balance),
       },
+      sonOdemeler: (g.cariPayments ?? []).slice(0, 10).map((p) => ({ tarih: p.date, tutar: r2(p.amount), sekil: METHOD_LABEL[p.method], sayildigiKalem: p.items })),
       faturalar: list.slice(0, input.limit).map((i) => {
         const balance = openBalance(i);
         return {
@@ -190,12 +243,12 @@ export function supplierSummary(
       const paid = list.filter((i) => !i.unpaid).reduce((a, i) => a + i.payable, 0);
       return { g, s, paid };
     })
-    .filter((x) => x.s.count > 0 || x.g.summary.open > 0)
+    .filter((x) => x.s.count > 0 || accountOf(x.g).open > 0 || accountOf(x.g).credit > 0.005)
     // "En çok kime borcumuz var?": borç sırası bütün açık borca göre (dönem dışındakiler dahil)
     .sort((a, b) =>
       input.siralama === "borc"
-        ? b.g.summary.open - a.g.summary.open || b.s.invoiced - a.s.invoiced
-        : b.s.invoiced - a.s.invoiced || b.g.summary.open - a.g.summary.open,
+        ? accountOf(b.g).open - accountOf(a.g).open || b.s.invoiced - a.s.invoiced
+        : b.s.invoiced - a.s.invoiced || accountOf(b.g).open - accountOf(a.g).open,
     );
   const sum = (f: (x: (typeof rows)[number]) => number) => r2(rows.reduce((a, x) => a + f(x), 0));
   const toplam = {
@@ -205,7 +258,8 @@ export function supplierSummary(
     odendiIsaretli: sum((x) => x.paid),
     acikBorc: sum((x) => x.s.open),
     geciken: sum((x) => x.s.overdue),
-    toplamAcikBorc: sum((x) => x.g.summary.open),
+    toplamAcikBorc: sum((x) => accountOf(x.g).open),
+    hesaptakiOdeme: sum((x) => accountOf(x.g).credit),
   };
   return {
     donem,
@@ -216,13 +270,16 @@ export function supplierSummary(
       odendiIsaretli: r2(x.paid),
       acikBorc: r2(x.s.open),
       geciken: r2(x.s.overdue),
-      toplamAcikBorc: r2(x.g.summary.open),
+      toplamAcikBorc: r2(accountOf(x.g).open),
+      hesaptakiOdeme: r2(accountOf(x.g).credit),
+      netBakiye: r2(accountOf(x.g).balance),
     })),
     toplam,
     hesap: [
       `Dönemde ${num(toplam.tedarikciSayisi)} tedarikçiden ${num(toplam.faturaSayisi)} fatura, toplam ${money(toplam.faturaToplamiKdvDahil)} (KDV dahil)`,
       `Ödendi işaretli ${money(toplam.odendiIsaretli)}; dönemin kalan borcu ${money(toplam.acikBorc)}, geciken ${money(toplam.geciken)}`,
-      `Dönem dışındakiler dahil bütün açık borç ${money(toplam.toplamAcikBorc)} (toplamAcikBorc)`,
+      `Dönem dışındakiler dahil bütün açık borç ${money(toplam.toplamAcikBorc)} (toplamAcikBorc; faturasız borçlar dahil)`,
+      ...(toplam.hesaptakiOdeme > 0.005 ? [`Hesaplarda sayılmamış ödeme ${money(toplam.hesaptakiOdeme)} (netBakiye = açık borç − hesaptaki ödeme)`] : []),
       input.siralama === "borc" ? "Sıra: bütün açık borç büyükten küçüğe" : "Sıra: dönemdeki fatura toplamı büyükten küçüğe",
     ],
     kaynak: KAYNAK,

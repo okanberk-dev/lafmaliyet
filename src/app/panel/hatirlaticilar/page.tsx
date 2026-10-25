@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
@@ -39,7 +39,7 @@ async function RemindersContent() {
   await requireAdmin();
   const db = getDb();
   const now = new Date();
-  const [{ today, settings, reminders, items, laterInvoices }, recipients, log, fixedRows, versions, unpaid, recentPaid, weekly] = await Promise.all([
+  const [{ today, settings, reminders, items, laterInvoices, covered }, recipients, log, fixedRows, versions, unpaid, recentPaid, weekly] = await Promise.all([
     loadUpcoming(),
     db.select().from(s.notificationRecipients).orderBy(asc(s.notificationRecipients.createdAt)),
     recentNotifications(10),
@@ -60,9 +60,18 @@ async function RemindersContent() {
       return null;
     }),
   ]);
-  // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura)
-  // gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
-  const undoable = liveRecentPaid(recentPaid, reminders, unpaid.map((i) => i.id));
+  // Son ödenenler: geri alınamayanlar (silinmiş ya da ödendikten sonra değişmiş hatırlatıcı, yeniden ödenmemiş fatura,
+  // silinmiş ya da düzenlenmiş cari ödeme) gösterilmez; kayıt durur, ertelemenin geri alınmasıyla yeniden geçerli olabilir
+  const paymentIds = recentPaid.filter((e) => e.kind === "cari").map((e) => e.id);
+  const payments = paymentIds.length
+    ? await db.select({ id: s.supplierEntries.id, updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(inArray(s.supplierEntries.id, paymentIds))
+    : [];
+  const undoable = liveRecentPaid(
+    recentPaid,
+    reminders,
+    unpaid.map((i) => i.id),
+    new Map(payments.map((p) => [p.id, p.updatedAt.toISOString()])),
+  );
   // "Sabit giderlerden ekle": kalem, sürümleri ve gelecek ayın (varsayılan ilk ödeme) dönemi; sayfa seçilen günün
   // ayındaki tutarı fixedReminderAt ile kendisi hesaplar (eylemin yazacağıyla aynı)
   const firstMonth = shiftMonth(today.slice(0, 7), 1);
@@ -76,12 +85,13 @@ async function RemindersContent() {
       today={today}
       items={items}
       laterInvoices={laterInvoices}
+      covered={covered}
       reminders={reminders.map((r) => ({ ...r, lastDoneAt: r.lastDoneAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
       recipients={recipients.map((r) => ({ id: r.id, email: r.email, name: r.name, active: r.active }))}
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
-      recentPaid={undoable}
+      recentPaid={undoable.map(({ conversion, ...e }) => (conversion ? { ...e, converted: true } : e))}
       email={{
         configured: isEmailConfigured(),
         cron: Boolean(process.env.CRON_SECRET),
