@@ -4,6 +4,7 @@
  */
 import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
 import { openBalance } from "@/lib/calc/insights";
+import { invoiceLabel as cariInvoiceLabel, type CariAccount } from "@/lib/cari/account";
 import { dateTR, monthLabel, num } from "@/lib/format";
 import { daysBetween } from "@/lib/reminders";
 
@@ -101,6 +102,89 @@ export function supplierBreakdowns(invoices: readonly BreakdownInvoice[], opts: 
           .sort((a, b) => b[0].localeCompare(a[0]))
           .slice(0, 12)
           .map(([d, x]) => ({ key: d, label: dateTR(d), sub: count(x.n), amount: x.amount })),
+      },
+    ],
+  };
+}
+
+/** Cari hesabın dökümü için faturasız alım (bağsız borç) */
+export interface BreakdownDebt {
+  id: number;
+  date: string;
+  description: string | null;
+  amount: number;
+  costMode: "fatura" | "gider" | "mevcut" | "devir";
+  invoiceId: number | null;
+  dueDate: string | null;
+}
+
+/**
+ * Tedarikçi sayfasının kart dökümleri, elle kayıtlarla (docs/TEDARIKCILER.md "Hesap hareketleri"): Kalan borç
+ * faturalar, faturasız alımlar ve hesaptaki ödeme (eksi) bölümleriyle; Vadesi geçen mahsuptan sonra borçlar dahil;
+ * yıl alımları faturasız alımlar dahil (eski borç hariç); Ödemeler ödeme olaylarından. Kayıt yokken
+ * supplierBreakdowns'un aynısı.
+ */
+export function accountBreakdowns(
+  invoices: readonly BreakdownInvoice[],
+  cari: { debts: readonly BreakdownDebt[]; account: CariAccount; remaining: (id: number) => number },
+  opts: { today: string; termDays: number; rowHref: (id: number) => string; debtHref: (id: number) => string },
+): SupplierBreakdowns {
+  const base = supplierBreakdowns(invoices, opts);
+  const { account } = cari;
+  if (!cari.debts.length && !account.events.some((e) => e.kind === "payment")) return base;
+  const year = opts.today.slice(0, 4);
+  const dueSub = (date: string, dueDate: string | null) => {
+    const due = dueOf({ date, dueDate }, opts.termDays);
+    return `${due.estimated ? "tahmini vade" : "vade"} ${dateTR(due.date)} · ${dueWhen(due.date, opts.today)}`;
+  };
+  const open = cari.debts.filter((d) => d.invoiceId === null && cari.remaining(d.id) > 0.005);
+  const debtLabel = (d: BreakdownDebt) => `${dateTR(d.date)} · ${d.description?.trim() || "faturasız alım"}`;
+  const openGroups: BreakdownGroup[] = [
+    { key: "borc", label: "Faturalar", rows: base.open[0].rows },
+    { key: "alim", label: "Faturasız alımlar", rows: open.map((d) => ({ key: `b${d.id}`, label: debtLabel(d), sub: dueSub(d.date, d.dueDate), amount: cari.remaining(d.id), href: opts.debtHref(d.id) })) },
+    ...(account.credit > 0.005 ? [{ key: "hesap", label: "Hesaptaki ödeme", rows: [{ key: "hesap", label: "Hesapta sayılmamış ödeme", amount: -account.credit }] }] : []),
+  ].filter((g) => g.rows.length);
+  const byId = new Map(invoices.map((i) => [i.id, i]));
+  const debtById = new Map(cari.debts.map((d) => [d.id, d]));
+  const overdueRows: BreakdownRow[] = account.items
+    .filter((it) => it.net > 0 && daysBetween(opts.today, it.due) < 0)
+    .map((it) => {
+      const sub = `${it.dueEstimated ? "tahmini vade" : "vade"} ${dateTR(it.due)} · ${dueWhen(it.due, opts.today)}${it.credited > 0.005 ? " · hesaptaki ödeme düşüldü" : ""}`;
+      if (it.kind === "invoice") {
+        const inv = byId.get(it.id);
+        return { key: String(it.id), label: inv ? invoiceLabel(inv) : cariInvoiceLabel({ invoiceNo: null, date: it.date }), sub, amount: it.net, href: opts.rowHref(it.id) };
+      }
+      const d = debtById.get(it.id);
+      return { key: `b${it.id}`, label: d ? debtLabel(d) : it.label, sub, amount: it.net, href: opts.debtHref(it.id) };
+    });
+  const months = new Map<string, { amount: number; n: number; buys: number }>();
+  for (const i of invoices) {
+    if (!i.date.startsWith(year)) continue;
+    const x = months.get(i.date.slice(0, 7)) ?? { amount: 0, n: 0, buys: 0 };
+    months.set(i.date.slice(0, 7), { ...x, amount: x.amount + i.payable, n: x.n + 1 });
+  }
+  for (const d of cari.debts) {
+    if (d.invoiceId !== null || d.costMode === "devir" || !d.date.startsWith(year)) continue;
+    const x = months.get(d.date.slice(0, 7)) ?? { amount: 0, n: 0, buys: 0 };
+    months.set(d.date.slice(0, 7), { ...x, amount: x.amount + d.amount, buys: x.buys + 1 });
+  }
+  const days = new Map<string, { amount: number; invoices: number; payments: number }>();
+  for (const e of account.events) {
+    const x = days.get(e.date) ?? { amount: 0, invoices: 0, payments: 0 };
+    days.set(e.date, { amount: x.amount + e.amount, invoices: x.invoices + (e.kind === "invoice" ? 1 : 0), payments: x.payments + (e.kind === "payment" ? 1 : 0) });
+  }
+  const parts = (n: number, buys: number, nounA: string, nounB: string) => [n ? `${num(n)} ${nounA}` : "", buys ? `${num(buys)} ${nounB}` : ""].filter(Boolean).join(" · ");
+  return {
+    open: openGroups,
+    overdue: [{ key: "geciken", rows: overdueRows }],
+    year: [{ key: "yil", rows: [...months].sort((a, b) => b[0].localeCompare(a[0])).map(([m, x]) => ({ key: m, label: monthLabel(m), sub: parts(x.n, x.buys, "fatura", "faturasız alım"), amount: x.amount })) }],
+    paid: [
+      {
+        key: "odemeler",
+        rows: [...days]
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .slice(0, 12)
+          .map(([d, x]) => ({ key: d, label: dateTR(d), sub: parts(x.invoices, x.payments, "fatura", "ödeme"), amount: x.amount })),
       },
     ],
   };

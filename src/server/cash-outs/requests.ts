@@ -22,6 +22,7 @@ import { staffCategory, staffToExpenses, type CashOutSnapshot } from "@/lib/cash
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
+import { cashOutPayment } from "@/server/cari/kasa";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -30,6 +31,9 @@ import { UserError } from "@/server/user-error";
 
 import { staffCashOutGate } from "./guard";
 import { attachReceiptPhoto, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutRow, type CashOutTx } from "./write";
+
+/** Onayda: satır istekten sonra yöneticinin bir tedarikçi ödemesine bağlandı */
+const CASH_OUT_LINKED_REVIEW = "Bu satır istekten sonra bir tedarikçi ödemesine bağlandı; isteği reddedin, değişikliği Tedarikçiler'den yapın.";
 
 /*
  * Kasadan çıkan istekleri ve fotoğraf kaldırma (docs/KASA-RAPORU.md › Kasadan çıkan: kapanmış gün, yöneticinin satırı;
@@ -286,6 +290,8 @@ export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: 
     }
     const cur = await lockCashOut(tx, payload.cashOutId!);
     if (!cur) throw new UserError("Satır silinmiş; isteği reddedin");
+    // İstekten sonra bir tedarikçi ödemesine bağlanan satır buradan değişmez (docs/TEDARIKCILER.md "Hesap hareketleri")
+    if (await cashOutPayment(tx, cur.id)) throw new UserError(CASH_OUT_LINKED_REVIEW);
     if (!input.force) {
       const now2 = await beforeOf(tx, cur);
       if (cashOutChanged(payload.before!, { row: now2, expense: now2.expense })) throw new UserError(CASH_OUT_REQUEST_TEXT.changed);

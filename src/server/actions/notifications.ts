@@ -8,7 +8,7 @@ import { businessDate } from "@/lib/cash-report";
 import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
-import { dateTR, monthShort, tl } from "@/lib/format";
+import { dateTR, money, monthShort, num, tl } from "@/lib/format";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
@@ -345,12 +345,27 @@ export async function loadPanelNotifications(): Promise<PanelNotification[]> {
       id: `odeme-${i.ref}-${i.dueDate}`,
       kind: i.status === "overdue" ? "danger" : i.status === "today" ? "warning" : "info",
       title: `${i.title}${i.amount !== null ? ` · ${tl(i.amount)}` : ""}`,
-      body: [`Son ödeme ${dateTR(i.dueDate)}`, i.detail].filter(Boolean).join(" · "),
+      body: [`Son ödeme ${dateTR(i.dueDate)}`, i.detail, i.hint?.text].filter(Boolean).join(" · "),
       timeLabel: daysLeftLabel(i.daysLeft),
       unread: i.status !== "soon",
       href: "/panel/hatirlaticilar",
       group: "odeme" as const,
     }));
+  // Personelin kasadan tedarikçiye verdiği, hesaba işlenmemiş paralar (Teslim · ödeme; yalnız yönetici). Kimlik sayı ve
+  // toplamdan: yeni satır gelince yeniden okunmamış olur
+  const kasa = upcoming?.cari.kasaPending;
+  if (kasa?.count) {
+    payments.push({
+      id: `odeme-kasa-${kasa.count}-${kasa.total}`,
+      kind: "info",
+      title: `Kasadan tedarikçiye ${num(kasa.count)} ödeme hesaba işlenmedi (${tl(kasa.total, 2)})`,
+      body: "Tedarikçinin hesabına ödeme olarak işleyin ya da ayrı tutun.",
+      timeLabel: "",
+      unread: true,
+      href: "/panel/tedarikciler?kasa=1",
+      group: "odeme",
+    });
+  }
 
   const month = latestSalesMonth(model);
   const warnings: PanelNotification[] = month

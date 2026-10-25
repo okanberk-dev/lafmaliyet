@@ -56,6 +56,8 @@ interface FakeBill {
   amount: number;
   vat: number;
   unpaid: boolean;
+  /** Paraşüt'te kısmen ödenmiş: kalan (verilmezse ödenmemişte tamamı, ödenmişte 0) */
+  remaining?: number;
   eInvoiceId?: string;
   lines: FakeLine[];
 }
@@ -139,8 +141,8 @@ class FakeParasut {
         net_total: String(net),
         total_discount: "0",
         total_invoice_discount: "0",
-        remaining: b.unpaid ? String(net) : "0",
-        payment_status: b.unpaid ? "unpaid" : "paid",
+        remaining: b.remaining !== undefined ? String(b.remaining) : b.unpaid ? String(net) : "0",
+        payment_status: b.remaining !== undefined ? "partially_paid" : b.unpaid ? "unpaid" : "paid",
         archived: false,
       },
       relationships: {
@@ -498,6 +500,136 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     assert.deepEqual(await mark().then((m) => [m.id, m.scan]), [422, undefined], "tarama bitti, yeni sınır en büyük kimlik");
     const third = await run();
     assert.doesNotMatch(third.summary, /geç girilmiş/, "aynı faturalar her sabah yeniden sayılmaz");
+  });
+
+  test("cari: takipli kartın yeni faturası taban 0 alır; tutarı düşen faturanın fazlası hesaba geçer; iptalde bağlar çözülür", async () => {
+    const settle = await import("../src/server/cari/settle");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      // Kartın ilk ödemesi: kart takipte (eşitleme yeni faturaya 0 yazar)
+      const [pay] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 500, method: "havale", createdByName: "Test" }).returning();
+      fake.bills.set("301", bill("301", { amount: 1000, vat: 100 }));
+      await run();
+      const [f] = await rows();
+      assert.equal(f.ledgerBase, 0, "takipli kartın yeni faturası");
+      assert.equal(f.allocated, 0);
+      // Faturasız alım bu faturaya bağlanır (ödemesi faturaya geçer), ödemenin 100'ü de doğrudan faturaya sayılır
+      const [debt] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "borc", date: daysAgo(6), amount: 300, costMode: "fatura", description: "süt", createdByName: "Test" }).returning();
+      await db.transaction(async (tx) => {
+        await settle.writeAllocations(tx, pay.id, [{ kind: "debt", id: debt.id, amount: 300 }], "Test");
+        await settle.linkDebts(tx, [debt.id], f.id);
+        await settle.writeAllocations(tx, pay.id, [{ kind: "invoice", id: f.id, amount: 100 }], "Test");
+        await settle.recomputeAllocated(tx, [f.id]);
+      });
+      assert.equal((await rows())[0].allocated, 400);
+      // Paraşüt'te tutar düşer (330 ödenecek): sayılan 400'ün 70'i hesaba geçer
+      fake.bills.get("301")!.amount = 300;
+      fake.bills.get("301")!.vat = 30;
+      const r = await run();
+      const [g] = await rows();
+      assert.equal(g.payable, 330);
+      assert.equal(g.allocated, 330);
+      assert.equal(g.paidByLedger, true, "tamamen karşılandı: defterle kapandı");
+      assert.match(r.summary, /Cari: 1 faturada ödeme hesaba geçti/);
+      // Paraşüt'te iptal: fatura silinir, önce bağlar çözülür (borç bağsız, borçtan gelen 300 borca döner, 30 hesaba)
+      fake.bills.get("301")!.itemType = "cancelled";
+      await run();
+      assert.equal((await rows()).length, 0);
+      const [d] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.deepEqual([d.invoiceId, d.costMode, d.linkPrev], [null, "fatura", null]);
+      const allocs = await db.select().from(s.supplierAllocations);
+      assert.deepEqual(allocs.map((a) => [a.debtId, a.invoiceId, a.amount]), [[debt.id, null, 300]]);
+      assert.deepEqual([...(await settle.cardsWithCredit())], [[card.id, 200]]);
+      const [log] = await db.select().from(s.activityLog).where(eq(s.activityLog.action, "Sistem · Paraşüt'te silinen fatura"));
+      assert.match(log.detail ?? "", /1 faturasız alım yeniden açık/);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
+  test("cari: iptalde bağlar çözülemezse fatura silinmez (bağlı alım gidersiz kalmaz); sonraki eşitleme siler", async () => {
+    const settle = await import("../src/server/cari/settle");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      const [pay] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 600, method: "havale", createdByName: "Test" }).returning();
+      fake.bills.set("302", bill("302", { amount: 545.45, vat: 54.55 }));
+      await run();
+      const [f] = await rows();
+      const [debt] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "borc", date: daysAgo(6), amount: 600, costMode: "fatura", description: "peynir", createdByName: "Test" }).returning();
+      await db.transaction(async (tx) => {
+        await settle.writeAllocations(tx, pay.id, [{ kind: "debt", id: debt.id, amount: 600 }], "Test");
+        await settle.linkDebts(tx, [debt.id], f.id);
+      });
+      await db.execute(sql`CREATE FUNCTION cari_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'deadlock' USING ERRCODE = '40P01'; END $$ LANGUAGE plpgsql`);
+      await db.execute(sql`CREATE TRIGGER cari_fail BEFORE UPDATE ON supplier_allocations FOR EACH ROW EXECUTE FUNCTION cari_fail()`);
+      fake.bills.get("302")!.itemType = "cancelled";
+      try {
+        await run();
+      } finally {
+        await db.execute(sql`DROP TRIGGER cari_fail ON supplier_allocations`);
+        await db.execute(sql`DROP FUNCTION cari_fail()`);
+      }
+      assert.equal((await rows()).length, 1, "fatura silinmedi");
+      const [d1] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.equal(d1.invoiceId, f.id, "borç hâlâ bağlı");
+      await run();
+      assert.equal((await rows()).length, 0, "sonraki eşitleme siler");
+      const [d2] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.deepEqual([d2.invoiceId, d2.costMode], [null, "fatura"]);
+      assert.deepEqual((await db.select().from(s.supplierAllocations)).map((a) => [a.debtId, a.amount]), [[debt.id, 600]]);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
+  test("cari: takip başlamadan önceki tarihli fatura sonradan gelirse Paraşüt'te ödenen kısmı taban olur (Geçmiş faturaları al, geç girilmiş fatura); takip günü ve sonrasınınki 0", async () => {
+    const bal = await import("../src/lib/cari/balance");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      fake.bills.set("301", bill("301", { date: daysAgo(3) }));
+      await run();
+      // Takip kartın ilk ödemesinin günüyle başlar (iki gün önce); sonraki ödemenin günü başlangıcı değiştirmez
+      await db.insert(s.supplierEntries).values([
+        { supplierId: card.id, kind: "odeme", date: daysAgo(1), amount: 200, method: "havale", createdByName: "Test" },
+        { supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 500, method: "havale", createdByName: "Test" },
+      ]);
+      const view = (x: typeof s.invoices.$inferSelect) => ({ ledgerBase: x.ledgerBase, open: bal.openBalance(x), hint: bal.parasutDifference(x) });
+      const byId = async (id: string) => {
+        const r = (await rows()).find((x) => x.externalId === id);
+        assert.ok(r, `${id} panelde`);
+        return r;
+      };
+
+      // Geçmiş faturaları al: 2026-05'in faturası takip başlamadan Paraşüt'te kısmen ödenmiş (1.100'ün 600'ü kalmış)
+      fake.bills.set("201", bill("201", { date: daysAgo(160), remaining: 600 }));
+      const h = await sync.syncSupplierHistory({ label: "Sütaş", billIds: ["301"], taxNumber: SUTAS.taxNumber, names: ["Sütaş"], match: () => "same" });
+      assert.ok(h.ok, JSON.stringify(h));
+      const old = await byId("201");
+      assert.equal(old.unpaid, true);
+      assert.deepEqual(view(old), { ledgerBase: 500, open: 600, hint: null }, "Paraşüt'te takipten önce ödenen 500 sayılır, mor ipucu yok");
+      assert.equal(bal.isPartiallyPaid(old), true);
+      assert.equal((await byId("301")).ledgerBase, null, "var olan satırın tabanına eşitleme dokunmaz");
+
+      // Kimlik sırasıyla yakalanan geç girilmiş eski fatura (330'un 130'u kalmış) da aynı kuralla
+      fake.bills.set("302", bill("302", { date: daysAgo(200), invoiceNo: "KAGIT-0042", amount: 300, vat: 30, remaining: 130 }));
+      // Takip günü ve sonrasının faturası: Paraşüt'ün kısmi ödemesi panelin ödemesi olabilir, yalnız panel sayar (taban 0)
+      fake.bills.set("303", bill("303", { date: daysAgo(2), remaining: 600 }));
+      fake.bills.set("304", bill("304", { date: daysAgo(1), remaining: 600 }));
+      // E-faturada ödeme bilgisi yok: takipten önceki tarihli olsa da taban 0
+      fake.eInvoices.set("805", eInvoice("805", { date: daysAgo(10) }));
+      const r = await run();
+      assert.match(r.summary, /1 geç girilmiş eski fatura alındı/);
+      assert.deepEqual(view(await byId("302")), { ledgerBase: 200, open: 130, hint: null });
+      for (const id of ["303", "304"]) assert.deepEqual(view(await byId(id)), { ledgerBase: 0, open: 1100, hint: { parasut: 600, panel: 1100, lower: true } }, id);
+      const e = (await rows()).find((x) => x.eInvoiceId === "805" && x.externalId === null);
+      assert.ok(e, "e-fatura panelde");
+      assert.deepEqual([e.date, e.ledgerBase, e.unpaid], [daysAgo(10), 0, true]);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
   });
 
   test("tedarikçi geçmişi: eski faturası sorulamayan fatura sonraki basışta kendi sayfasından yeniden denenir, kalınan yer takılı kalmaz", async () => {

@@ -10,9 +10,9 @@
  * numarayı taşıyan öteki faturaların adlarıyla (supplierResolver). Kartı olmayan ad kendi başına bir tedarikçidir
  * (aynı vergi nolu adlar birlikte); kart, bilgi girilince açılır.
  */
-import { openBalance } from "@/lib/calc/insights";
+import { accountOf, SOON_DAYS, type SupplierSummary } from "@/lib/cari/account";
 import { dateTR, money, num } from "@/lib/format";
-import { addDays, daysBetween } from "@/lib/reminders";
+import { daysBetween } from "@/lib/reminders";
 
 import { splitSupplier, supplierMatchKey } from "../faturalar/rules";
 
@@ -314,8 +314,8 @@ export function supplierResolver<C extends CardNames & { taxNumber?: string | nu
 
 // ---------------------------------------------------------------- Vade ve ödeme durumu
 
-/** "Yakında" sayılan gün: vadesi bugünden en çok bu kadar sonra (gecikmişler hariç) */
-export const SOON_DAYS = 7;
+// Vade ve hesap özeti cari hesabın saf modülünde (src/lib/cari/account.ts): faturalar ve elle kayıtlar aynı kuralla
+export { dueOf, SOON_DAYS, type Due, type SupplierSummary } from "@/lib/cari/account";
 
 /** Kalan borcu ve ödeme durumunu hesaplamak için gereken fatura alanları */
 export interface LedgerInvoice {
@@ -326,22 +326,17 @@ export interface LedgerInvoice {
   unpaid: boolean;
   /** Paraşüt'ün bildirdiği kalan (kısmen ödenmişte) */
   outstanding?: number | null;
+  /** Bu faturaya sayılan cari ödemeler (src/lib/cari/balance.ts) */
+  allocated?: number | null;
+  /** Panel takibinin tabanı; boşsa takipsiz (bugünkü kural) */
+  ledgerBase?: number | null;
+  /** Defterin (cari ödemelerin) kapattığı fatura */
+  paidByLedger?: boolean | null;
   dueDate?: string | null;
   paidAt?: string | null;
   paymentRequestedAt?: string | null;
   /** Paraşüt'ten gelen tedarikçi vergi nosu (elle ve Excel'den girilende yok) */
   supplierTaxNumber?: string | null;
-}
-
-export interface Due {
-  date: string;
-  /** Faturada vade yok: fatura tarihi + vade günü */
-  estimated: boolean;
-}
-
-/** Faturanın vadesi; yazılmamışsa fatura tarihi + vade günü (kartta yoksa Ödemeler'deki genel ayar) tahminidir */
-export function dueOf(i: Pick<LedgerInvoice, "date" | "dueDate">, termDays: number): Due {
-  return i.dueDate ? { date: i.dueDate, estimated: false } : { date: addDays(i.date, termDays), estimated: true };
 }
 
 /** Ödenmedi → (isteğe bağlı) ödemesi istendi → ödendi. Durumu kullanıcı koyar. */
@@ -371,81 +366,29 @@ export function dueTone(date: string, today: string): "bad" | "warn" | "ok" {
 
 // ---------------------------------------------------------------- Hesap özeti
 
-export interface SupplierSummary {
-  count: number;
-  /** Bütün faturaların KDV dahil toplamı (iade eksi) */
-  invoiced: number;
-  /** Bugünün yılındaki faturalar, KDV dahil */
-  year: number;
-  openCount: number;
-  /** Kalan borç, KDV dahil (kısmen ödenmişte kalan tutar) */
-  open: number;
-  requestedCount: number;
-  requested: number;
-  overdueCount: number;
-  overdue: number;
-  /** Vadesi bugün ya da 7 gün içinde olanlar (gecikmişler hariç) */
-  soonCount: number;
-  soon: number;
-  /** Ödenmemişlerin en erken vadesi (gecikmiş olabilir) */
-  nextDue: Due | null;
-  /** "7 gün içinde"kilerin en erken vadesi (gecikmişler hariç) */
-  nextSoonDue: string | null;
-  lastInvoice: string | null;
-  lastPaid: string | null;
-}
-
-export function summarize(invoices: readonly LedgerInvoice[], opts: { today: string; termDays: number }): SupplierSummary {
-  const year = opts.today.slice(0, 4);
-  const s: SupplierSummary = {
-    count: 0,
-    invoiced: 0,
-    year: 0,
-    openCount: 0,
-    open: 0,
-    requestedCount: 0,
-    requested: 0,
-    overdueCount: 0,
-    overdue: 0,
-    soonCount: 0,
-    soon: 0,
-    nextDue: null,
-    nextSoonDue: null,
-    lastInvoice: null,
-    lastPaid: null,
+/**
+ * Faturaların hesap özeti (elle kayıt olmadan): cari hesabın özetiyle aynı kural (accountOf; kayıt yokken bugünküyle
+ * birebir aynı, tests/cari-sabit.test.ts)
+ */
+export function summarize(invoices: readonly (LedgerInvoice & { id?: number })[], opts: { today: string; termDays: number }): SupplierSummary {
+  const a = accountOf({ invoices: invoices.map((i, k) => ({ ...i, id: i.id ?? -(k + 1) })) }, opts);
+  return {
+    count: a.count,
+    invoiced: a.invoiced,
+    year: a.year,
+    openCount: a.openCount,
+    open: a.open,
+    requestedCount: a.requestedCount,
+    requested: a.requested,
+    overdueCount: a.overdueCount,
+    overdue: a.overdue,
+    soonCount: a.soonCount,
+    soon: a.soon,
+    nextDue: a.nextDue,
+    nextSoonDue: a.nextSoonDue,
+    lastInvoice: a.lastInvoice,
+    lastPaid: a.lastPaid,
   };
-  for (const i of invoices) {
-    s.count++;
-    s.invoiced += i.payable;
-    if (i.date.startsWith(year)) s.year += i.payable;
-    if (!s.lastInvoice || i.date > s.lastInvoice) s.lastInvoice = i.date;
-    if (!i.unpaid) {
-      if (i.paidAt && (!s.lastPaid || i.paidAt > s.lastPaid)) s.lastPaid = i.paidAt;
-      continue;
-    }
-    const balance = openBalance(i);
-    s.openCount++;
-    s.open += balance;
-    if (i.paymentRequestedAt) {
-      s.requestedCount++;
-      s.requested += balance;
-    }
-    // Vade yalnız borçta: ödenmemiş duran iade (eksi) faturası vadeye ve gecikmeye girmez
-    if (balance <= 0) continue;
-    const due = dueOf(i, opts.termDays);
-    const left = daysBetween(opts.today, due.date);
-    if (left < 0) {
-      s.overdueCount++;
-      s.overdue += balance;
-    } else if (left <= SOON_DAYS) {
-      s.soonCount++;
-      s.soon += balance;
-      if (!s.nextSoonDue || due.date < s.nextSoonDue) s.nextSoonDue = due.date;
-    }
-    if (!s.nextDue || due.date < s.nextDue.date) s.nextDue = due;
-  }
-  for (const k of ["invoiced", "year", "open", "requested", "overdue", "soon"] as const) s[k] = round2(s[k]);
-  return s;
 }
 
 // ---------------------------------------------------------------- Tedarikçiler (gruplar)
@@ -731,13 +674,14 @@ export function nameMoveLines(m: NameMoves): string[] {
 /**
  * Kartsız tedarikçi neden listeden kaldırılamaz: kaldırmak onun adıyla (gizli) bir kart açar, ad önce geldiği için
  * o adla gelip vergi nosuyla başka kartlarda duran faturalar da o karta geçerdi (nameMoves). Silme penceresi ve
- * sunucu aynı cümleyi söyler; `here` sayfadaki fatura sayısı.
+ * sunucu aynı cümleyi söyler; `here` sayfadaki fatura sayısı. Kartsız tedarikçiye ilk cari kaydı da aynı kartı açar
+ * (ensureCard): `when` o durumda "bu tedarikçiye borç ya da ödeme girilse".
  */
-export function nameMoveBlock(name: string, m: NameMoves, here: number): string {
+export function nameMoveBlock(name: string, m: NameMoves, here: number, when = "bu tedarikçi listeden kaldırılsa"): string {
   const many = m.count > 1;
   return (
     `“${name}” adıyla gelen ${m.count} fatura daha vergi ${many ? "nolarıyla" : "nosuyla"} ${fromCards(m.cards, "tedarikçisinde", "tedarikçilerinde")} duruyor; ` +
-    `bu tedarikçi listeden kaldırılsa ${many ? "onlar" : "o"} da buraya geçerdi. Buradaki ${here > 1 ? "faturaların" : "faturanın"} tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.`
+    `${when} ${many ? "onlar" : "o"} da buraya geçerdi. Buradaki ${here > 1 ? "faturaların" : "faturanın"} tedarikçi adını Faturalar'dan doğru firmanın adıyla değiştirin.`
   );
 }
 
@@ -839,9 +783,16 @@ export function aliasCandidates(
 /**
  * Listeden kaldırılmış tedarikçi listede gizli mi: kaldırıldığı günden sonraki tarihli faturası gelmediyse ve
  * ödenmemiş faturası yoksa. Borç listeden gizlenmez; yeni fatura tedarikçiyi listeye kendiliğinden geri getirir.
+ * Cari hesap (K23): açık kalemi (faturasız alım dahil), hesapta sayılmamış parası ya da kaldırıldığı günden sonra
+ * tarihli kaydı olan tedarikçi de listeye döner.
  */
-export function isHiddenSupplier(card: { hiddenOn: string | null } | null, summary: Pick<SupplierSummary, "openCount" | "lastInvoice">): boolean {
+export function isHiddenSupplier(
+  card: { hiddenOn: string | null } | null,
+  summary: Pick<SupplierSummary, "openCount" | "lastInvoice">,
+  cari?: { openCount: number; credit: number; lastEntry?: string | null } | null,
+): boolean {
   if (!card?.hiddenOn) return false;
+  if (cari && (cari.openCount > 0 || cari.credit > 0.005 || (cari.lastEntry && cari.lastEntry > card.hiddenOn))) return false;
   return summary.openCount === 0 && !(summary.lastInvoice && summary.lastInvoice > card.hiddenOn);
 }
 
@@ -876,7 +827,14 @@ export interface SupplierListRow {
   missing: MissingInfo[];
   /** Paraşüt'te ödenmiş görünen ama panelde ödenmedi duran fatura sayısı */
   parasutPaid: number;
+  /** Hesap özeti; cari kaydı olan tedarikçide `open` bakiyedir (açık − hesaptaki para) */
   summary: SupplierSummary;
+  /** Hesapta sayılmamış ödeme (cari) */
+  credit?: number;
+  /** Açık faturasız alım sayısı (cari) */
+  debtOpenCount?: number;
+  /** Kasadan bu tedarikçiye çıkan, hesaba işlenmemiş satır sayısı */
+  kasaPending?: number;
 }
 
 /** Adresteki ?durum= değerleri */
@@ -903,8 +861,9 @@ export function parseSupplierSort(raw: string | null | undefined): SupplierSort 
  * Liste süzgeci. "Bilgisi eksik": kartı olup eksiği olan ya da borcu olup bilgisi eksik tedarikçi; kartı açılmamış ve
  * borcu olmayan (tek seferlik alım, pazar yeri) sayılmaz.
  */
-export function matchesSupplierFilter(r: Pick<SupplierListRow, "summary" | "missing" | "hasCard">, f: SupplierFilter): boolean {
-  if (f === "borclu") return r.summary.openCount > 0;
+export function matchesSupplierFilter(r: Pick<SupplierListRow, "summary" | "missing" | "hasCard"> & { credit?: number }, f: SupplierFilter): boolean {
+  // Hesaptaki para borcu karşılıyorsa borçlu sayılmaz (bakiye ≤ 0); para yokken bugünkü kural
+  if (f === "borclu") return r.summary.openCount > 0 && !((r.credit ?? 0) > 0.005 && r.summary.open <= 0.005);
   if (f === "geciken") return r.summary.overdueCount > 0;
   if (f === "eksik") return r.missing.length > 0 && (r.hasCard || r.summary.openCount > 0);
   return true;
@@ -1236,12 +1195,18 @@ export function paymentRequestText(opts: {
   taxNumber?: string | null;
   /** Ödenecek faturalar; eksi tutarlılar ödemeden düşülen iade faturaları */
   lines: readonly RequestLine[];
+  /** Faturasız alımlar (cari borç; kalanları) */
+  purchases?: readonly { date: string; description: string | null; amount: number }[];
+  /** Tedarikçinin hesabında duran, tutardan düşülen ödeme */
+  accountCredit?: number;
   note?: string | null;
 }): string {
   const { card, lines } = opts;
   const debts = lines.filter((l) => l.amount > 0);
   const credits = lines.filter((l) => l.amount < 0);
-  const total = round2(lines.reduce((a, l) => a + l.amount, 0));
+  const purchases = opts.purchases ?? [];
+  const accountCredit = round2(Math.max(0, opts.accountCredit ?? 0));
+  const total = round2(lines.reduce((a, l) => a + l.amount, 0) + purchases.reduce((a, l) => a + l.amount, 0) - accountCredit);
   const recipient = card?.accountHolder?.trim() || card?.legalName?.trim() || opts.name;
   const bank = card?.bankName?.trim() || bankFromIban(card?.iban);
   const credit = round2(credits.reduce((a, l) => a - l.amount, 0));
@@ -1252,8 +1217,8 @@ export function paymentRequestText(opts: {
     card?.iban ? `IBAN: ${formatIban(card.iban)}` : "IBAN: (girilmemiş)",
     bank ? `Banka: ${bank}` : null,
     taxNumber ? `Vergi no: ${normalizeTaxNumber(taxNumber)}` : null,
-    `Tutar: ${money(total)}${credits.length ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
-    debts.length ? `Açıklama: ${transferNote(debts)}` : null,
+    `Tutar: ${money(total)}${credits.length && !purchases.length && !accountCredit ? ` (faturalar ${money(round2(total + credit))} − iade ${money(credit)})` : ""}`,
+    debts.length ? `Açıklama: ${transferNote(debts)}` : purchases.length ? `Açıklama: ${purchases.length} faturasız alım` : null,
   ].filter((x): x is string => Boolean(x));
   const byDate = (list: readonly RequestLine[]) => [...list].sort((a, b) => a.date.localeCompare(b.date));
   if (debts.length) {
@@ -1262,10 +1227,15 @@ export function paymentRequestText(opts: {
       out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · ${money(l.amount)}${l.dueDate ? ` · vade ${dateTR(l.dueDate)}` : ""}`);
     }
   }
+  if (purchases.length) {
+    out.push("", `Faturasız alımlar (${purchases.length}):`);
+    for (const l of [...purchases].sort((a, b) => a.date.localeCompare(b.date))) out.push(`• ${dateTR(l.date)} · Faturasız alım${l.description ? ` (${l.description})` : ""} · ${money(l.amount)}`);
+  }
   if (credits.length) {
     out.push("", `Düşülen iadeler (${credits.length}):`);
     for (const l of byDate(credits)) out.push(`• ${dateTR(l.date)}${l.invoiceNo ? ` · ${l.invoiceNo}` : ""} · −${money(-l.amount)}`);
   }
+  if (accountCredit > 0.005) out.push("", `Hesaptaki ödeme: −${money(accountCredit)}`);
   const note = opts.note?.trim();
   if (note) out.push("", note);
   // Tutarlardaki bölünmez boşluk (tl) düz metinde de doğru görünür; WhatsApp ve e-posta olduğu gibi gösterir

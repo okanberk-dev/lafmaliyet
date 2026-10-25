@@ -16,6 +16,22 @@ Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlatic
   kontrol edin, tarihi düzenleyebilirsiniz.
 - **Sabit giderlerden:** Giderler & personel'deki aylık/haftalık/yıllık giderlerden, ilk ödeme tarihi seçilerek;
   gider döneminde tekrar eder.
+- **Faturasız borçlar** (kaynak sekmesi **Faturasız borç**, `?kaynak=cari`): Tedarikçiler › Borç ekle ile girilen,
+  faturaya bağlanmamış borçlar ([TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*): "Faturasız alım · süt",
+  "Fatura bekleniyor · süt", "Eski borç". **Ödendi** önce tedarikçinin hesabındaki parayı sayar, kalanı için kartın
+  ödeme şekliyle bugün ödeme açar (bildirimde **Geri al** ve **Düzelt**); **Ertele** borcun vadesini öteler.
+
+**Hesaptaki ödeme (mahsup):** tedarikçinin hesabında hiçbir kaleme sayılmamış ödeme varsa listedeki tutarlar ondan
+sonraki kalandır (en eski vadeden; "hesaptaki 99,50 ₺ düşüldü"). Tamamen karşılanan kalemler listenin altındaki kapalı
+**Hesaptaki ödemeyle karşılananlar** kutusundadır (tedarikçi başına **Borçlara say**). Zil, sabah e-postası, Bugün,
+Genel bakış ve nakit planı aynı hesabı kullanır. Fatura kaleminin **Ödendi**'si de hesaptaki parayı önce sayar.
+
+**İpuçları** (kalemin altında): faturasız alımın faturası olabilecek fatura "Faturasız alımın faturası olabilir (20.10
+· süt) · Bağla" der ve sessizdir (sabah e-postası ve nakit planı onu hatırlatmaz, aynı mal iki kez ödenmesin); kalemin
+gününden sonra kasadan o tedarikçiye işlenmemiş bir çıkış varsa "Kasadan ödenmiş olabilir: 24.10 Teslim · Sütaş
+2.200,00 ₺ · İşle". Bir çıkış en çok bir kalemi sessize alır (e-posta o kalemi hatırlatmaz): kalanı çıkışın tutarını
+en çok max(1 ₺, %2) farkla tutan, gününe en yakın kalem. Tutarı hiçbir kalemi tutmayan çıkış (ör. 300 ₺ fişsiz Metro
+alışverişi) yalnız ipucudur; e-posta kalemleri yine hatırlatır.
 
 Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
 bekleyen reçete önerileri, onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) ve personelin onay bekleyen
@@ -48,6 +64,9 @@ hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8).
 Başlığın sonunda mal siparişlerinin teslim kontrolü durur: faturayla tutmayan sipariş ("Teslim kontrolü: Sütaş", fark
 değişince yeniden okunmamış olur) ve beklenen günden 2 gün sonra hâlâ gelmeyen ("Mal siparişi gelmedi mi: Kaldi"); en
 çok 5, Gönderilenler'deki siparişe götürür ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 8).
+Yöneticinin zilinde (ödemeler başlığında) kasadan tedarikçiye çıkan ama hesaba işlenmemiş satırlar da durur:
+"Kasadan tedarikçiye 2 ödeme hesaba işlenmedi (3.800,00 ₺)" (son 60 gün; Tedarikçiler'de işlenmemiş kasa ödemeleri
+penceresine götürür, `?kasa=1`). Personelin zili ve Bugün'ü ödeme göstermez, değişmedi.
 
 ## Son ödenenler (geri alma)
 
@@ -58,7 +77,12 @@ altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odene
   ekranından, Faturalar'da tek tek / toplu "Ödendi"den, fatura penceresinde ödenmedi → ödendi kaydedilince ve
   Tedarikçiler'deki ödeme penceresi, ✓ ve toplu işlemle dolar.
 - **Fatura** için Geri al, faturayı yeniden "ödenmedi" yapar (ödemesi talep edilmişse "talep edildi"); ödeme
-  listesine ve sabah e-postasına döner.
+  listesine ve sabah e-postasına döner. ✓ tedarikçinin hesabındaki parayı kullandıysa önce o dağıtımlar silinir.
+- **Hesaba ödeme** (Tedarikçiler'de elle girilen ödeme, tür `cari`): "Hesaba ödeme · Sütaş · 10.000,00 ₺ · Havale / EFT
+  · 2 kalem". Geri al ödemeyi siler (dağıtımları kalkar, ödemenin kapattığı faturalar yeniden açılır, kasaya açtığı
+  satır silinir). Ödeme sonradan düzenlendiyse reddedilir: "Ödeme sonradan düzenlendi; Tedarikçiler'den silin".
+  Ödemeye çevir'le açılan ödemede satır alışverişe, gider kaydı yerine döner; kayıt geçmiş bir aya dönüyorsa pencere
+  o ayı adıyla sorar ("Eylül 2026'nın kapanmış rakamlarının değişeceğini biliyorum"), onaysız yazılmaz.
 - **Hatırlatıcı** için Geri al, ödenmeden önceki hâline döndürür (tarih, tekrar günü, açık/kapalı, son ödeme):
   tekrar eden kira 01.11'den 01.10'a geri gelir, kapanan tek seferlik yeniden açılır.
 - Hatırlatıcı ödendikten sonra değiştiyse (yeniden ödendi, ertelendi, kapatıldı, tarihi düzenlendi) eski hâl yazılmaz;
@@ -128,7 +152,9 @@ görünür (ör. Ekim KDV gecikti, Kasım KDV 4 gün kaldı); sonraki dönemde "
 Kapatılıp yeniden açılan tekrarlı hatırlatıcı bugünden sonraki ilk döneme geçer.
 
 Aynı hatırlatmanın ikinci kez gitmemesi `notification_log` tablosundaki tekil anahtarla sağlanır
-(`kaynak:kimlik:vade:aşama`, ör. `reminder:4:2026-10-28:before`, `invoice:23:2026-10-31:due`). Geciken dönemin
+(`kaynak:kimlik:vade:aşama`, ör. `reminder:4:2026-10-28:before`, `invoice:23:2026-10-31:due`, faturasız borçta
+`cari:7:2026-11-19:before`). Sessiz kalemler (faturası olabilecek fatura, kasadan ödenmiş olabilecek kalem) e-postaya
+girmez; metin değişmez, yalnız faturasız borcun ayrıntı etiketi yenidir. Geciken dönemin
 yanında görünen sonraki dönem de aynı anahtarı kullanır: Ekim kirası gecikmişken Kasım için "yaklaşıyor" gittiyse,
 Ekim ödenip Kasım gerçek döneme dönünce aynı e-posta ikinci kez gitmez. Gönderim başarısız olursa anahtar yazılmaz,
 ertesi sabah yeniden denenir; hata ekrandaki "Son gönderimler"de görünür.

@@ -3,6 +3,7 @@
  */
 
 import { daysBetween, monthGrid, projectedOccurrences, statusFor, type ReminderRow, type UpcomingItem } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 
 /** Yaklaşan bir ödemenin tekil anahtarı (tekrarlı hatırlatıcı ödenince aynı ref yeni tarihle döner) */
 export const itemKey = (i: UpcomingItem) => `${i.ref}|${i.dueDate}`;
@@ -30,12 +31,24 @@ export function calendarEntries(month: string, today: string, actual: UpcomingIt
   const to = grid[grid.length - 1][6];
   const byId = new Map(reminders.map((r) => [r.id, r]));
   const inGrid = actual.filter((i) => i.dueDate >= from && i.dueDate <= to);
+  // Tekrar rozeti hatırlatıcının çapa gününden; fatura ve faturasız borçta yok
+  const anchorOf = (i: UpcomingItem): string | null | undefined => {
+    switch (i.source) {
+      case "reminder":
+        return byId.get(i.sourceId)?.anchorDate;
+      case "invoice":
+      case "cari":
+        return null;
+      default:
+        return unreachable(i.source);
+    }
+  };
   const real: CalendarEntry[] = inGrid.map((i) => ({
     key: itemKey(i),
     date: i.dueDate,
     item: i,
     forecast: false,
-    anchorDate: i.source === "reminder" ? byId.get(i.sourceId)?.anchorDate : null,
+    anchorDate: anchorOf(i),
   }));
   const byDate = (a: CalendarEntry, b: CalendarEntry) => a.date.localeCompare(b.date) || a.item.title.localeCompare(b.item.title, "tr");
   if (!forecast) return real.sort(byDate);

@@ -10,6 +10,7 @@ import { missingText } from "@/lib/cash-month";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 
 /**
  * - done: yapıldı
@@ -40,6 +41,11 @@ export interface PaymentFacts {
   soonTotal: number;
   unpaidInvoices: number;
   unpaidTotal: number;
+  /**
+   * Tedarikçilere açık faturasız borçlar (cari; debtFacts: mahsuptan sonraki net tutar) ve bunlardan gecikmiş ya da
+   * yaklaşan listede zaten sayılanlar; yoksa alan yok
+   */
+  debts?: { count: number; total: number; overdue: number; soon: number };
 }
 
 export interface ParasutFacts {
@@ -79,11 +85,34 @@ export interface MonthTaskFacts {
   expenses?: { missing: string[]; entered: number; total: number };
 }
 
-/** Ödemeler & hatırlatıcılar listesinden (loadUpcoming) ve ödenmemiş faturalardan özet */
-export function paymentFacts(items: UpcomingItem[], unpaid: { count: number; total: number }): PaymentFacts {
+/** Ödemeler kalemi faturasız borç mu (cari kayıt) */
+function isDebt(i: UpcomingItem): boolean {
+  switch (i.source) {
+    case "cari":
+      return true;
+    case "invoice":
+    case "reminder":
+      return false;
+    default:
+      return unreachable(i.source);
+  }
+}
+
+/**
+ * Faturasız borçların sayısı ve toplamı, Ödemeler listesinin kalemlerinden (loadUpcoming: items + laterInvoices):
+ * hesaptaki parayla mahsuptan sonraki net tutar; tamamen karşılananlar listede olmadığı için sayılmaz
+ */
+export function debtFacts(items: readonly UpcomingItem[]): { count: number; total: number } {
+  const cari = items.filter((i) => isDebt(i) && (i.amount ?? 0) > 0.005);
+  return { count: cari.length, total: Math.round(cari.reduce((s, i) => s + (i.amount ?? 0), 0) * 100) / 100 };
+}
+
+/** Ödemeler & hatırlatıcılar listesinden (loadUpcoming), ödenmemiş faturalardan ve faturasız borçlardan özet */
+export function paymentFacts(items: UpcomingItem[], unpaid: { count: number; total: number }, debts: { count: number; total: number } = { count: 0, total: 0 }): PaymentFacts {
   const overdue = items.filter((i) => i.status === "overdue");
   const soon = items.filter((i) => i.status === "today" || i.status === "soon");
   const total = (xs: UpcomingItem[]) => xs.reduce((s, i) => s + (i.amount ?? 0), 0);
+  const cari = (xs: UpcomingItem[]) => xs.filter(isDebt).length;
   return {
     overdue: overdue.length,
     overdueTotal: total(overdue),
@@ -91,6 +120,7 @@ export function paymentFacts(items: UpcomingItem[], unpaid: { count: number; tot
     soonTotal: total(soon),
     unpaidInvoices: unpaid.count,
     unpaidTotal: unpaid.total,
+    ...(debts.count ? { debts: { ...debts, overdue: cari(overdue), soon: cari(soon) } } : {}),
   };
 }
 
@@ -383,6 +413,10 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
     const href = "/panel/hatirlaticilar";
     const title = "Ödemeler · bugün";
     const p = f.payments;
+    // Faturasız borçlar (cari): gecikmiş ve yaklaşan listede zaten sayılanlar "dahil" diye söylenir (iki kez sayılmaz);
+    // geciken ya da yaklaşan yoksa ek olarak "· 2 faturasız borç"
+    const debtCount = p?.debts?.count ? `${num(p.debts.count)} faturasız borç (${money(p.debts.total)})` : "";
+    const inside = (n: number | undefined) => (n ? `, ${num(n)} faturasız borç dahil` : "");
     if (!p) {
       out.push({ key: "odeme", title, status: "later", detail: "Ödeme listesi şu an okunamadı.", href, action: "Ödemeler" });
     } else if (p.overdue) {
@@ -390,22 +424,22 @@ export function monthTasks(f: MonthTaskFacts): MonthTask[] {
         key: "odeme",
         title,
         status: "warn",
-        detail: `${num(p.overdue)} ödeme gecikti (${money(p.overdueTotal)}). Ödendiyse işaretleyin.${p.soon ? ` Yaklaşan: ${num(p.soon)}.` : ""}`,
+        detail: `${num(p.overdue)} ödeme gecikti (${money(p.overdueTotal)}${inside(p.debts?.overdue)}). Ödendiyse işaretleyin.${p.soon ? ` Yaklaşan: ${num(p.soon)}.` : ""}`,
         href,
         action: "Ödemelere bak",
       });
     } else if (p.soon) {
-      out.push({ key: "odeme", title, status: "todo", detail: `Yaklaşan ${num(p.soon)} ödeme (${money(p.soonTotal)}); geciken yok.`, href, action: "Ödemelere bak" });
+      out.push({ key: "odeme", title, status: "todo", detail: `Yaklaşan ${num(p.soon)} ödeme (${money(p.soonTotal)}${inside(p.debts?.soon)}); geciken yok.`, href, action: "Ödemelere bak" });
     } else {
       out.push({
         key: "odeme",
         title,
         status: "done",
         detail: p.unpaidInvoices
-          ? `Geciken ya da yaklaşan ödeme yok · ${num(p.unpaidInvoices)} fatura ödenmemiş, kalan ${money(p.unpaidTotal)}.`
-          : "Geciken ya da yaklaşan ödeme yok.",
-        href: p.unpaidInvoices ? "/panel/faturalar?durum=odenmedi" : href,
-        action: p.unpaidInvoices ? "Ödenmemiş faturalar" : "Ödemeler",
+          ? `Geciken ya da yaklaşan ödeme yok · ${num(p.unpaidInvoices)} fatura ödenmemiş, kalan ${money(p.unpaidTotal)}${debtCount ? ` · ${debtCount}` : ""}.`
+          : `Geciken ya da yaklaşan ödeme yok${debtCount ? ` · ${debtCount}` : ""}.`,
+        href: p.unpaidInvoices ? "/panel/faturalar?durum=odenmedi" : p.debts?.count ? "/panel/hatirlaticilar?kaynak=cari" : href,
+        action: p.unpaidInvoices ? "Ödenmemiş faturalar" : p.debts?.count ? "Faturasız borçlar" : "Ödemeler",
       });
     }
   }

@@ -26,6 +26,7 @@ import {
   type CarryCheck,
   type CashRevisionRow,
 } from "@/lib/cash-report";
+import { staffCashOutRow } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { shortDayTR } from "@/lib/cash-requests";
 import { genitive } from "@/lib/recipe-change";
@@ -35,11 +36,12 @@ import { cn } from "@/lib/utils";
 import { closedEvidenceText } from "@/lib/closed-days";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
-import { cashOutCategories, cashOutsBetween, cashOutsOn } from "@/server/data/cash-outs";
 import { chainNeighbours } from "@/server/cash/late-chain";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
+import { loadKasaCariHints, loadLinkedCashOuts, loadSupplierNames } from "@/server/data/cari";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
 import { photoRemovalStates, staffCashOutRequests, staffOldCashOutDays } from "@/server/data/cash-out-requests";
+import { cashOutCategories, cashOutsBetween, cashOutsOn, type CashOutView } from "@/server/data/cash-outs";
 import { cashReportPhotoInfo, extrasFrom } from "@/server/data/cash-photos";
 import { myCashRequests, pendingCashForDay, pendingCashForDayAdmin, proposedByForReports } from "@/server/data/cash-requests";
 import {
@@ -161,7 +163,15 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const canEdit = admin || staffOpen;
   // Personel yalnız kendi seçebildiği kategorilerin adını görür (yöneticinin maaş, kira gibi seçimi adıyla görünmez)
   const staffCats = new Set(categories.map((c) => c.id));
-  const dayOuts = admin ? outs : outs.map((o) => (o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o));
+  // Tedarikçi ödemesine bağlı satırlar (docs/TEDARIKCILER.md "Hesap hareketleri"): yönetici satırda tedarikçiyi ve
+  // önerileri görür, personel yalnız kilidi; personelin satır verisi beyaz listeyle kurulur (ödeme bağı gitmez)
+  const ids = outs.map((o) => o.id);
+  const [linked, supplierNames, cariHints] = showForm
+    ? await Promise.all([admin ? Promise.resolve(new Set<number>()) : loadLinkedCashOuts(ids), loadSupplierNames(), admin ? loadKasaCariHints(ids, today) : Promise.resolve({})])
+    : [new Set<number>(), [], {}];
+  const dayOuts: CashOutView[] = admin
+    ? outs
+    : outs.map((o) => staffCashOutRow(o.categoryId !== null && !staffCats.has(o.categoryId) ? { ...o, categoryName: null } : o, linked.has(o.id)));
   // Raporun fotoğraf bilgisi: WhatsApp metninin "📷 … fotoğrafı panelde" ve "Fotoğraftan farklı yazılan" satırları
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
   // kendisini (küçük resim, büyütme) yalnız görebilen görür: yönetici ya da personelin hâlâ düzenleyebildiği gün
@@ -281,6 +291,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       locked={!admin && !staffOpen}
       requests={outRequests}
       oldDays={oldDays}
+      supplierNames={supplierNames}
+      hints={cariHints}
     />
   ) : null;
   const yesterday = addDays(today, -1);

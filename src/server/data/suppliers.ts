@@ -4,8 +4,12 @@ import { asc, desc, eq, sql } from "drizzle-orm";
 
 import { groupSuppliers, supplierResolver, type PaymentMethod, type SupplierCard, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { addDays, todayTR } from "@/lib/reminders";
+import { accountOf } from "@/lib/cari/account";
+import { candidateOf, linkCandidates } from "@/lib/cari/match";
 import { getDb, schema as s } from "@/server/db";
 import { loadNotifySettings } from "@/server/notify/settings";
+
+import { loadCardEntries } from "./cari-entries";
 
 type SupplierRow = typeof s.suppliers.$inferSelect;
 
@@ -122,9 +126,14 @@ const LEDGER_COLUMNS = {
   amount: s.invoices.amount,
   discount: s.invoices.discount,
   payable: s.invoices.payable,
+  /** KDV toplamı (Faturası geldi önizlemesi: KDV tahmininin saydığı) */
+  vat: s.invoices.vat,
   unpaid: s.invoices.unpaid,
   note: s.invoices.note,
   outstanding: s.invoices.outstanding,
+  allocated: s.invoices.allocated,
+  ledgerBase: s.invoices.ledgerBase,
+  paidByLedger: s.invoices.paidByLedger,
   dueDate: s.invoices.dueDate,
   paidAt: s.invoices.paidAt,
   paidVia: s.invoices.paidVia,
@@ -176,8 +185,38 @@ async function slugGroups() {
  * vade günü. Bugün Türkiye saatine göre.
  */
 export async function loadSupplierLedger() {
-  const [cards, invoices, notify] = await Promise.all([loadSupplierCards(), loadLedgerInvoices(), loadNotifySettings()]);
+  const [cards, invoices, notify, entries] = await Promise.all([loadSupplierCards(), loadLedgerInvoices(), loadNotifySettings(), loadCardEntries()]);
   const today = todayTR();
-  const groups = groupSuppliers(invoices, cards, { today, termDays: notify.invoiceTermDays });
+  // Cari hesap (docs/TEDARIKCILER.md "Hesap hareketleri"): kartın elle kayıtları faturalarıyla birlikte; kayıt yokken
+  // `account` faturaların özetiyle aynı
+  const groups = groupSuppliers(invoices, cards, { today, termDays: notify.invoiceTermDays }).map((g) => {
+    const mine = g.card ? cardEntries(entries, g.card.id) : null;
+    // Faturasız alımın faturası olabilecek fatura (güçlü aday) mahsuptan atlanır (tedarikçi sayfasıyla aynı)
+    const quiet =
+      g.card && mine?.debts.some((d) => d.invoiceId === null)
+        ? new Set(
+            linkCandidates(
+              [...mine.debts, ...entries.debts.filter((d) => d.invoiceId !== null && d.supplierId !== g.card!.id)],
+              g.invoices.map(candidateOf),
+            ).strong.map((c) => c.invoiceId),
+          )
+        : undefined;
+    const account = accountOf({ invoices: g.invoices, ...(mine ?? {}) }, { today, termDays: g.termDays, quietInvoiceIds: quiet });
+    const lastEntry = mine ? [...mine.debts, ...mine.payments].reduce<string | null>((m, e) => (!m || e.date > m ? e.date : m), null) : null;
+    // Ödeme kayıtları, en yeni önce (Claude'un tedarikci_ozeti'si: gün, tutar, şekil, sayıldığı kalem sayısı)
+    const cariPayments = (mine?.payments ?? [])
+      .map((p) => ({ date: p.date, amount: p.amount, method: p.method, items: mine!.allocations.filter((a) => a.paymentId === p.id).length }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return { ...g, account, lastEntry, cariPayments };
+  });
   return { today, termDays: notify.invoiceTermDays, groups };
+}
+
+/** Kartın kayıtları ve onlara (ya da onlardan) yazılan dağıtımlar */
+function cardEntries(all: Awaited<ReturnType<typeof loadCardEntries>>, cardId: number) {
+  const debts = all.debts.filter((d) => d.supplierId === cardId);
+  const payments = all.payments.filter((p) => p.supplierId === cardId);
+  if (!debts.length && !payments.length) return null;
+  const ids = new Set([...debts.map((d) => d.id), ...payments.map((p) => p.id)]);
+  return { debts, payments, allocations: all.allocations.filter((a) => ids.has(a.paymentId) || (a.debtId !== null && ids.has(a.debtId))) };
 }

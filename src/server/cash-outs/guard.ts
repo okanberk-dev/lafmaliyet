@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { staffCanReport } from "@/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT, cashOutNeedsApproval, requestDayAllowed, type CashOutOp } from "@/lib/cash-out-requests";
 import { staffExpenseLocked } from "@/lib/cash-outs";
+import { CARI_LOCKED_STAFF, cashOutPayment } from "@/server/cari/kasa";
 import { closedDayRefusal } from "@/server/closed-days";
 import { schema as s } from "@/server/db";
 import { staffDayOpen } from "@/server/photo-read/rules";
@@ -41,7 +42,11 @@ async function adminCategoryOf(tx: CashOutTx, cashOutId: number): Promise<boolea
 export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: CashOutTarget, now: Date = new Date()): Promise<"direct" | "request"> {
   if (me.role === "admin") return "direct";
   const date = target.op === "ekle" ? target.date : target.row.date;
-  const [dayOpen, adminCategory] = await Promise.all([staffDayOpen(date, tx, now), target.op === "ekle" ? false : adminCategoryOf(tx, target.row.id)]);
+  const [dayOpen, adminCategory, payment] = await Promise.all([
+    staffDayOpen(date, tx, now),
+    target.op === "ekle" ? false : adminCategoryOf(tx, target.row.id),
+    target.op === "ekle" ? null : cashOutPayment(tx, target.row.id),
+  ]);
   // Kapalı işaretli güne (yöneticinin onayladığı "Kafe kapalıydı") personel kasadan çıkan yazamaz
   const closed = target.op === "ekle" || target.op === "duzelt" ? await closedDayRefusal(date, me.role, tx) : null;
   if (closed) throw new UserError(closed);
@@ -52,9 +57,11 @@ export async function staffCashOutGate(tx: CashOutTx, me: CashOutActor, target: 
     canReport: staffCanReport(date, now),
     inWindow: requestDayAllowed(date, now),
     adminCategory,
-    // Satırın kilidi (yöneticinin bir kayda bağladığı satır) buraya gelir; şimdilik böyle bir bağ yok
-    rowLocked: false,
+    // Satırın kilidi: yöneticinin bir tedarikçi ödemesine bağladığı satır (docs/TEDARIKCILER.md "Hesap hareketleri");
+    // personel düzeltemez, silemez, istek de açamaz (tutarıyla görünür)
+    rowLocked: payment !== null,
   });
+  if (gate === "closed" && payment !== null) throw new UserError(CARI_LOCKED_STAFF);
   if (gate === "closed") throw new UserError(target.op === "ekle" ? CASH_OUT_REQUEST_TEXT.window : target.op === "fis" ? CASH_OUT_REQUEST_TEXT.receiptDay : CASH_OUT_REQUEST_TEXT.closed);
   return gate;
 }

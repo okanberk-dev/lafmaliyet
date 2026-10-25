@@ -1,4 +1,4 @@
-# Kalan işler (23 Ekim 2026, 18:30 UTC itibarıyla)
+# Kalan işler (25 Ekim 2026, 13:00 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
@@ -30,6 +30,23 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   bağlantı olarak). Güncel durum için `git log origin/main`.
 
 ## 2. Kalan işler (sırayla)
+
+### Süren işler (25 Ekim 2026)
+
+| İş | Plan | Durum |
+|---|---|---|
+| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` (dal `claude/dalga-10-personel`) | Uygulanıyor; Kasa maddeleri ve 2.5, 2.2 bitti, B grubunun kalanı sürüyor. Migration birleştirmede `0039_personel_yetki` olur. |
+| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | Plan hazır. 1. adım (yanlış bölüme çekilen fotoğraf alan doldurmaz, başlıklar) fotoğrafsız yapılabilir; 2. adım sahibin 5–8 günlük Z fotoğraflarını ve sorularının yanıtını bekler. Dalga 10'dan sonra (aynı Kasa dosyaları). |
+| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır; muhasebeciye sorulacak 8 madde planın sonunda. Dalga 13'ten sonra (gelir dayanağı mali Z). |
+| Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. |
+| Genel denetim: sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | 19 açık madde (4 hatalı, 2 yapılmadı, 5 kısmen, 8 sahibe bağlı); düzeltmeler son dalgada, her biri testiyle. |
+
+**Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
+- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02).
+- K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
+- Personel panelden açılan karaoke sayacını onaysız siliyor: ilk 10 dakika serbest, sonrası silme isteği (denetim D-03; `personel-yetki.md` §5.1).
+- Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06).
+- Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1).
 
 ### Birinci paket (planlar hazır; kurallar ve birleştirme sırası `CRITIQUE.md`)
 
@@ -123,6 +140,38 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 - Haftalık özet: pazartesi sabahı etkin yöneticilere gider (gönderilemezse salı, çarşamba yeniden denenir).
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.
+
+### Dalga 11: cari (elle borç ve ödeme)
+
+Sahibin isteği: "cari hesaplarda biz de borç ödeme girebilelim; belki elden almışızdır, fatura yok da olabilir".
+Plan `cari.md` (ledger, minimal ve cashflow tasarımlarından çıktı). Dal `claude/dalga-11-cari`, migration
+`0038_cari_hareket` (birleştirmede yeniden üretildi). Belgeler: `docs/TEDARIKCILER.md` › *Hesap hareketleri*,
+`NAKIT-PLANI`, `KASA-RAPORU`, `BILDIRIMLER`, `PARASUT`, `CLAUDE-BAGLANTISI`, `YEDEK`, `MAL-SIPARISI` §7. Kasa'daki
+değişiklik küçük ve ayrı tutuldu (iki etiket, ipucu, ad ipucu, bağlı satırın kilidi; `src/server/cari/kasa.ts`):
+dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/panel/kasa/*` ve
+`src/server/actions/cash-outs.ts` elle birleştirilir.
+
+**Bu planın dışında kalanlar (v2):**
+- Personelin Kasa'da "Tedarikçiye ödeme" türü: ad listesinden seçici ve "Listede yok" serbest metni, yönetici onayına
+  kadar "onay bekliyor", `/panel/onaylar`'da "Kasadan ödemeler" sekmesi, personelin "Veresiye aldık" önerisi (dalga
+  10'dan sonra; veri modeli `status` sütunuyla kaldırır).
+- Tedarikçiden nakit iade ve faturasız iade (alacak dekontu); şimdilik Faturalar'da eksi fatura.
+- Panelden önceki alacak ("açılış alacağı").
+- Mal siparişinden "Cariye borç yaz".
+- Faturasız alımdan miktar ya da hammadde fiyatı okumak.
+- Paraşüt'e ödeme yazmak.
+- Tedarikçinin kendi ekstresiyle otomatik mutabakat (yerine "Ekstreyi kopyala").
+- Kasa'dan Ödeme ekle penceresini tedarikçi seçiciyle açmak (bugün "Hesaba işle" ve "Ödemeye çevir" tedarikçinin
+  sayfasında açılır).
+
+**Sahibe notlar (dalga 11):**
+- Elle kayıt girilmedikçe bütün rakamlar eskisiyle aynıdır. Bir tedarikçiye ilk elle ödeme girilince o tedarikçinin
+  faturaları panelde takip edilir: Paraşüt'ün "kalan"ı yalnız ipucu olur.
+- Faturasız alımların gideri var olan **Nakit malzeme alımı** kategorisine yazılır (ad değişmedi; isterseniz
+  Ayarlar'dan "Faturasız malzeme alımı" yapın, personel de bu adı görür).
+- Personel tedarikçiye kasadan verdiği parayı **Teslim · ödeme** olarak girer; siz Tedarikçiler şeridinden, zilden ya da
+  Kasa'daki **Hesaba işle**'den ödemeye bağlarsınız.
+- `npm run db:reset` cari kaydı varken durur (`-- --cari-sil` ile silinir).
 
 ### Dalga 8'in inceleme düzeltmeleri (PR #24'ün bulguları)
 
@@ -257,6 +306,9 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
    sonraki bir güne tarihliyse geç (eksik öneri); saklanan hiçbir değer ikisini birden düzeltmiyor. Kalıcı çözüm
    (faturası bağlanan siparişte de Geldi'yi açık tutmak ya da sevki ayrıca kaydetmek) eylemi, Hızlı sayım listesini ve
    sipariş kartını değiştirir. Varsayılan: kural olduğu gibi kalır.
+8. Cari: faturasız alımların kategorisinin adı **değişmez** ("Nakit malzeme alımı").
+9. Cari: personelin listeden tedarikçi seçip onaylı ödeme girmesi **yok** (v2); personel Teslim · ödeme girer,
+   yönetici Hesaba işle ile bağlar.
 
 ## 6. Bu oturumda kullanılan çalışma düzeni (öneri)
 

@@ -15,8 +15,19 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
   açılır ya da **Listeye geri al** ile geri gelir (aşağıda *Silme*).
 - Özet kartları: **Kalan borç**, **Vadesi geçen**, **7 gün içinde** (vadesi gelecek), **Bu ay ödenen** (ödeme günü bu
   ayda). Karta dokununca tedarikçi tedarikçi döküm açılır.
+  - **Kalan borç** tedarikçinin bakiyesidir: ödenmemiş faturaların kalanı + faturasız borçlar − hesapta duran (hiçbir
+    kaleme sayılmamış) ödeme. Üstteki toplamda bir tedarikçinin fazla ödemesi öteki borçlardan düşülmez; alt satır
+    "hesapta 99,50 ₺ sayılmamış ödeme (1 tedarikçi)" der.
+  - **Bu ay ödenen:** ödeme günü bu ayda olan elle ödemeler (Hesap hareketleri; kısmi ödeme ve hesaba ödeme dahil) ve
+    ödendi işaretli faturalar. Ödemelerin kapattığı fatura ikinci kez sayılmaz. Hiç ödeme kaydı yokken eskisi gibi
+    yalnız ✓'lenen faturaların tamamı.
 - Satırda: son fatura, ödenmemiş fatura sayısı, kalan borç, en yakın vade, IBAN (dokununca kopyalanır). Rozetler:
-  *Peşin*, *IBAN yok* (borcu varsa), *N talep edildi*, *N Paraşüt'te ödendi*.
+  *Peşin*, *IBAN yok* (borcu varsa), *N talep edildi*, *N Paraşüt'te ödendi*, *Faturasız borç*, *Hesapta 99,50 ₺*,
+  *Kasadan işlenmedi*.
+- **Kasadan işlenmemiş ödemeler** şeridi: personelin Kasa'ya Teslim · ödeme olarak girdiği ya da fişsiz alışveriş
+  olarak yazdığı tedarikçi ödemeleri (son 60 gün, adı bir tedarikçiyle eşleşen). Pencerede her satırda **İşle**
+  (Teslim; Ödeme ekle Kasadan ve o satırla açılır) ya da **Ödemeye çevir** (fişsiz alışveriş) ve **Ayrı tut** / **Ayrı
+  alım**. Zil de söyler (`?kasa=1`).
 - Arama (ad, diğer adlar, unvan, vergi no — kartta yazılı ve faturalarda geçen —, IBAN, telefon, yetkili, e-posta),
   süzgeç (**Borcu olanlar**, **Vadesi geçen**, **Bilgisi eksik**) ve sıralama (kalan borç, en yakın vade, son fatura,
   ad) adreste durur (`?ara=`, `?durum=`, `?sirala=`). Faturalardan tek bir vergi no biliniyorsa vergi no eksik
@@ -25,7 +36,8 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
 
 ## Tedarikçi sayfası (`/panel/tedarikciler/<ad>`)
 
-- Üstte **Düzenle** (bilgiler, ad, diğer adlar) ve **Sil** (aşağıda *Silme*).
+- Üstte **Ödeme ekle**, **Borç ekle** (aşağıda *Hesap hareketleri*), **Düzenle** (bilgiler, ad, diğer adlar) ve **Sil**
+  (aşağıda *Silme*). Telefonda ilk ikisi başlığın altında iki sütundur.
 - **Tedarikçi bilgileri:** IBAN (kopyala), **Ara** / **WhatsApp** / **E-posta**, unvan, vergi no ve dairesi, yetkili,
   adres, vade, ödeme şekli, faturalarda geçen diğer adlar, not. Eksik önemli bilgi (IBAN, vergi no, telefon /
   e-posta) altta yazar.
@@ -42,7 +54,14 @@ kendiliğinden gelir ([PARASUT.md](PARASUT.md)); **ödendi / ödenmedi'yi siz i�
   (en çok 3, fazlası sayıyla). Birleştirme düğmesi yok; satır ne yapılabileceğini söyler: kartsız adı Düzenle'den
   diğer adlara eklemek, faturası olmayan kartı silip adını ötekinin diğer adlarına eklemek. İki kartın ikisinin de
   faturası varsa yalnız bilgi verir (faturası olan kart silinince listeden kalkar ama adını tutar).
-- Özet kartları: **Kalan borç**, **Vadesi geçen**, **bu yılın alımları** (ay ay), **Son ödeme** (son 12 ödeme günü).
+- Özet kartları: **Kalan borç** (bakiye; fazla ödemede **Alacak (fazla ödeme)**), **Vadesi geçen** (hesaptaki para
+  düşüldükten sonra, faturasız borçlar dahil), **bu yılın alımları** (ay ay; faturasız alımlar dahil, eski borç
+  hariç), **Son ödeme** (son 12 ödeme günü; elle ödemeler ve ödendi işaretleri).
+- Kartların altındaki şeritler: hesapta sayılmamış ödeme (**Borçlara say**), faturası gelmiş olabilecek alım
+  (**Bağla** · Ayrı alım), faturası 45 gündür gelmeyen alım (**Gider olarak yaz** · Beklemeye devam), kasadan
+  işlenmemiş ödeme (**İşle** · Ayrı tut; fişsiz alışverişte **Ödemeye çevir** · Ayrı alım), başka tedarikçideki
+  faturaya sayılı ödeme (**Ödemeden çıkar**), dağıtım toplamı tutmayan fatura (**Düzelt**).
+- İki sekme: **Faturalar** ve **Hesap hareketleri** (`?sekme=hareketler`; aşağıda).
 - **Faturalar:** Ödenmemiş / Tümü / Ödendi. Her faturada vade (yoksa tahmini vade), durum, belge (PDF) ve
   Faturalar'da açma. Durum hapına dokununca ödeme penceresi açılır; ✓ tek dokunuşla bugün ödendi yapar (kartın
   ödeme şekliyle).
@@ -113,6 +132,7 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 | **Ödenmedi** | Borç duruyor | Kalan borç, Ödemeler & hatırlatıcılar, zil, sabah e-postası |
 | **Talep edildi** | Ödemesi istendi (ödeme talebi gönderildi), henüz ödenmedi | Ödenmedi gibi sayılır; mavi *Talep edildi* rozeti (Faturalar'da da) |
 | **Ödendi** | Ödendi; **ödeme günü** ve **şekli** (havale / EFT, nakit, kart, çek / senet, diğer) kaydedilir | Bu ay ödenen, Son ödeme |
+| **Hesaptaki ödemeden sayıldı** | Elle girilen ödemeler faturayı tamamen karşıladı; ödendi olur (gün ve şekil son ödemeden). Kısmen karşılanan fatura ödenmedi kalır, kalanı azalır: "Kısmen ödendi · kalan 250,50 ₺" | Hesap hareketleri, ödeme penceresindeki "Bu faturaya sayılan ödemeler" |
 
 - Ödeme günü bugünden ileri olamaz (en çok yarın). Bilinmiyorsa boş bırakılır. Ödendi işaretlenen faturanın ödeme
   talebi kapanır.
@@ -138,11 +158,129 @@ faturaları al** bir tedarikçinin daha eskilerini de getirir (`syncSupplierHist
 - **Peşin çalışılan tedarikçi:** kartında **Faturaları ödendi gelsin** işaretliyse yeni faturası ödendi gelir (fatura
   günü, kartın ödeme şekliyle). Peşin tedarikçide IBAN eksik sayılmaz.
 - Bu özellikten önce gelmiş faturaların durumu olduğu gibi kalır.
+- **Cari takipteki kart (üç istisna):** kart ilk elle ödeme kaydını alınca (Hesap hareketleri, aşağıda) eşitleme
+  yalnız şunları yazar: peşin çalışılan kartın hesabında para varken gelen yeni faturaya önce o para sayılır (bir kez);
+  tutarı değişen faturanın sayılan ödemeleri yeniden dengelenir (tutar düştüyse fazlası hesaba geçer, arttıysa
+  ödemelerin kapattığı fatura yeniden ödenmedi olur; takip öncesi kısma inen fatura kapanır); Paraşüt'te iptal edilen
+  fatura silinmeden önce bağları çözülür (bağlı faturasız alım eski hâline döner, ödeme borca ya da hesaba geçer; bağlar
+  çözülemezse fatura silinmez, sonraki eşitleme yeniden dener). Özet satırında "Cari: …" olarak görünür.
 - **Geçmiş faturalar:** ödeme takibi ilk eşitlemeden 30 gün öncesinden başlar (`integration_state` ›
   `payments.since`). Bundan eski bir fatura yeni gelirse (Tarihten eşitle'yle geçmişi doldururken) yüzlerce eski fatura
   "ödenmedi" yığılmasın diye Paraşüt'teki durumuyla açılır: gider faturasında Paraşüt'ün ödeme kaydı, e-faturada
   (ödeme bilgisi yok) ödendi; belgedeki vadesi henüz gelmemiş e-fatura ödenmedi olur. `npm run db:reset` faturaları
   (ödeme işaretleriyle) yeniden yüklediği için başlangıcı da siler; sonraki eşitleme yeniden belirler.
+
+## Hesap hareketleri: elle borç ve ödeme (cari)
+
+Tedarikçinin hesabına faturadan başka kayıt girilir: **borç** (elden, veresiye ya da faturasız alım; panelden önceki
+eski borç) ve **ödeme** (hesaba, kısmi, toptan, kasadan). Yalnız yönetici; kartsız tedarikçiye ilk kayıtta görünen
+adıyla kart açılır.
+
+**Borç ekle** (alım günü, KDV dahil tutar, ne alındı, vade, not, irsaliye / el fişi fotoğrafı). Gider dört seçenekten
+biri:
+
+| Seçenek | Gider |
+|---|---|
+| **Faturası gelecek** | Şimdi yok; fatura gelince fatura gider olur. Son 90 günde Paraşüt faturası olan tedarikçide varsayılan. Gelir-gider'de "Faturası beklenen alımlar" bilgi satırı çıkar (toplama girmez). |
+| **Faturası yok · gider yaz** | Aylık harcamalar'a tek bir kayıt (alım günü, KDV dahil tutarla, KDV ayrılmadan; varsayılan kategori "Nakit malzeme alımı"). Kayıt borcundur: Aylık harcamalar'da tutarı, günü, kategorisi kilitli, silinemez ("Cari · Sütaş"). |
+| **Gideri zaten girildi** | Aylık harcamalar'daki var olan kayıt seçilir (±31 gün, Kasa'dan yazılmamış); tutarı ve günü borca eşitlenir, borcun olur. Eski günü ve tutarı saklanır (`adopt_prev`): borç silinince (eklemenin "Geri al"ı dahil) ya da kip veya kayıt değişince kayıt eski hâline döner (geçmiş aysa onayla). |
+| **Eski borç (devir)** | Hiçbir zaman gider değil. O tarihten önce ödenmemiş fatura varsa uyarır. |
+
+- Kopya uyarıları (engellemez): Aylık harcamalar'da ±3 gün ve ±1 ₺ içinde benzer kayıt, o ayın Gelir-gider › DİĞER
+  hücresi dolu.
+- **Kasa denetimi:** yeni borçta kasada alım gününün 3 gün öncesi ile sonrası arasında bu tedarikçinin adıyla (diğer
+  adları da) işlenmemiş satır varsa kaydetmeden önce seçim istenir (tutara bakılmaz): alışveriş satırında **Kasadan
+  peşin ödendi (borç açma)** (borç açılmaz, satır "Ayrı tut"a geçer), Teslim satırında **Borcu aç ve bu satırla kapat**
+  (borç, satıra bağlı Kasadan ödeme ve tam dağıtım birlikte; önce satırın ödemesi sayılır, kalan varsa hesaptaki para;
+  satır borçtan büyükse fark hesapta kalır), ya da **Ayrı alım** (borç açılır; alışveriş satırı ayrı tutulur, Teslim
+  satırı tedarikçiye gerçek bir ödeme olduğu için işlenmemiş kalır ve Ödeme ekle › Kasadan'dan bağlanabilir; bu borç
+  için ayrı sayılır: Ödemeler'de borcu, borç faturasına bağlanınca da faturasını "Kasadan ödenmiş olabilir" diye
+  sessize almaz, sabah e-postası hatırlatır).
+  Kime alanı ekle yazılsa da eşleşir ("Sütaş'a", "tedarikçiye (Sütaş)").
+- **Hesaptaki ödemeyi say** (hesapta para varsa; yeni borçta açık gelir, düzeltmede kapalı) ve **Ödendi** (borç,
+  ödemesi ve dağıtımı birlikte). Düzeltmede sayılan para "Geri al"la ödemeden çıkar.
+
+**Ödeme ekle** (ödeme günü, tutar, nasıl ödendi, not, dekont fotoğrafı):
+
+- Şekiller: **Kasadan**, **Elden (kasa dışı)**, **Havale / EFT**, **Kart**, **Çek / senet**, **Diğer**. Varsayılan:
+  o gün kasada bu tedarikçinin işlenmemiş Teslim satırı varsa Kasadan (satır seçili), yoksa kartın ödeme şekli
+  ("Nakit" → Elden), o da yoksa Havale / EFT.
+- **Kasadan ödeme her zaman bir Kasa satırıdır:** o günün işlenmemiş Teslim satırı seçilir (tutar satırınki) ya da
+  "Bu ayrı bir ödeme, kasaya yeni satır ekle" ile Teslim satırı açılır (Kime: tedarikçinin adı). Teslim satırı gider
+  yazmaz, akşam kasasının "Gün içinde çıkan"ına girer. Yeni satır personelin Kasa'sında da "Teslim · Sütaş" ve
+  tutarıyla (kilitli) görünür: kasayı sayan personel çıkan parayı görür. Listede o günün alışveriş satırları da durur; seçilirse
+  **Ödemeye çevir**: satırın gider kaydı silinir (onayla; geçmiş aysa ay onayı da), satır Teslim · ödeme olur.
+- **Neye sayılsın:** **En eski borçtan** (vadesi en yakın kalemden; faturası gelmiş olabilecek fatura atlanır),
+  **Seçerek** (kalem ve tutar) ya da **Hesapta beklesin** (avans, toptan). Canlı önizleme: "Kapanacak: SUT123
+  8.450,50 ₺ · Kısmen: SUT140 1.549,50 / 1.800,00 ₺ · Hesapta kalacak: 0,00 ₺". Sayılmayan kısım hesapta kalır;
+  okuyan her ekran (Ödemeler, plan, zil, e-posta) onu en eski vadeden mahsup eder, kalıcı dağıtım için **Borçlara
+  say**.
+- Fatura satırının menüsündeki **Kısmi ödeme** pencereyi o fatura seçili açar.
+
+**Faturası geldi:** bir ya da birkaç faturasız alım tek faturaya bağlanır: borca sayılan ödemeler faturaya geçer,
+borcun gider kaydı silinir, önceki hâli (kaydın kimliği, ödeme şekli ve yazanıyla) saklanır; bağ kaldırılınca geri
+gelir. Komisyon ve kafe dışı (Karaoke box, Alp Koç) faturaya bağlanmaz: kafenin mal alışına girmezler, gider sessizce
+düşerdi. Önizleme gider ve KDV tahmininin saydığı KDV'yi (tevkifat ayrıca) söyler; kategorisi Gelir-gider'de hiçbir
+kaleme bağlı olmayan faturada giderin düşeceğini uyarır. Alımın tutarına yakın fatura (tek alım ya da penceredeki
+alımların toplamı, en çok max(1 ₺, %2) fark) gelince "Faturası gelmiş olabilir" şeridi çıkar; Ödemeler'de o fatura
+sessizdir, e-postaya ve nakit planına girmez. Bir alımın tek faturası olur: aynı tutarda birkaç fatura varsa yalnız
+gününe en yakını sessize alınır. Zayıf aday (tutar tutmuyor) yalnız ödenmemiş faturada ve güçlü adayı olmayan alımda
+çıkar. **Faturası 45 gündür gelmedi** uyarısı ödeme durumuna bakmaz: teslimde ödenmiş alımın faturası gelmezse de
+çıkar (tutarı alımın tutarı).
+
+**Hesap hareketleri** (ekstre): faturalar, iadeler, Paraşüt'te ödenen kısım, faturada işaretli ödemeler (gri; menüsü
+yok), faturasız alımlar, eski borçlar ve ödemeler (neye sayıldığıyla) gün sırasıyla, satır satır bakiyeyle. Süzgeç Son
+3 ay / Bu yıl / Tümü ("Devreden bakiye"). Satır menüsü: borçta Düzenle, Sil, Faturası geldi, Bağı kaldır; ödemede
+Düzenle, Sil, **Neye sayıldı** (dağıtımı değiştirir, "Ödemeden çıkar"). **Ekstreyi kopyala** WhatsApp'a uygun hesap
+özeti verir (günü bilinmeyen ödeme "gün bilinmiyor" yazar; alımların iç notu tedarikçiye gitmez). Grubun faturasına
+başka bir kartın ödemesinden sayılan para da ödeme satırı olarak görünür (metinde "Ödeme (havale) · PNR1"; öteki kartın
+adı yalnız ekranda); son satır her zaman Kalan borçtur. Telefonda
+liste görünümü.
+
+**Geri al ve geçmiş ay:** her ekleme, düzeltme, dağıtım, bağlama ve çevirme bildirimdeki **Geri al** ile geri alınır;
+yeni ödemeler 30 gün Son ödenenler'de durur (Ödemeye çevir'le açılan ödeme oradan geri alınınca Kasa satırı alışverişe,
+gider kaydı yerine döner). Geçmiş bir ayın giderini değiştiren işlem (gider yazan borç, kip
+değişimi, silme ve silinen kaydın geri alınması, bağlama, Ödemeye çevir ve geri alınması) o ayı adıyla sorar; onaysız
+yazılmaz, işlem geçmişine "geçmiş ay değişti" düşer. Bildirimdeki Geri al işlemin kendi onayıyla geri alır (aynı kayıt
+aynı aya döner; başka bir geçmiş ay değişecekse geri almaz); Son ödenenler ayı yeniden sorar.
+
+**Kasa bağı** ([KASA-RAPORU.md](KASA-RAPORU.md)): ödemeye bağlı Kasa satırını personel düzeltemez ve silemez
+("Bu satır yöneticinin kaydına bağlı…"; tutar söylenmez). Yönetici satırın tutarını ve gününü düzeltince ödeme de
+değişir (sayılan toplamın altına inemez); satır alışverişe çevrilemez ve Kasa'dan silinmez, ödeme Tedarikçiler'den
+silinir (kasaya açtığı satırsa o da silinir).
+
+Çekirdek kurallar:
+
+- Kayıtlar `supplier_entries`'te, karta bağlı (kart silinemez, yalnız listeden kalkar; açık borcu ya da hesapta parası
+  olan kart kalkmaz). Ödemenin hangi faturaya ya da borca sayıldığı `supplier_allocations`'ta. Ödeme hiçbir zaman gider
+  ya da KDV değildir.
+- **Kalan borç** (`src/lib/cari/balance.ts`): kartın ilk ödemesiyle takip başlar; grubun her faturasına Paraşüt'ün o
+  ana kadar ödendi gösterdiği kısım yazılır (`invoices.ledger_base`), sonradan gelen faturaya 0. Sonradan gelen fatura
+  takip başlamadan önceki tarihliyse ("Geçmiş faturaları al", geç girilmiş eski fatura; takip kartın en eski ödeme
+  kaydının günüyle başlar) ona da Paraşüt'te ödenen kısım yazılır, kalanı Paraşüt'ünkiyle başlar. Takipli faturanın
+  kalanı = Ödenecek − bu taban − panelde sayılan (`invoices.allocated`); Paraşüt'ün kalanı yalnız ipucudur. Takipsiz
+  fatura bugünkü kuralla (Paraşüt'ün kalanı). Hiç kayıt yokken bütün rakamlar eskisiyle aynıdır
+  (`tests/cari-sabit.test.ts`).
+- **Ödendi işareti:** sayılan ödemeler faturayı tamamen karşılarsa fatura ödendi olur (gün ve şekil son ödemeden,
+  `invoices.paid_by_ledger`); karşılık düşerse yalnız böyle kapanan fatura yeniden açılır, elle konan ✓'ye dokunulmaz.
+  Tamamen karşılanmış faturada "Ödenmedi" ve "Talep edildi" reddedilir: önce Hesap hareketleri'nde ödemeden çıkarılır.
+- **Önce hesaptaki para:** ✓, toplu "Ödendi yap", Ödemeler'deki **Ödendi** ve fatura penceresi (yeni fatura
+  Ödendi eklenirken de; tutar aynı kayıtta değişince yeni tutara göre) faturayı ödendiye geçirirken kartın hesabında
+  duran (hiçbir kaleme sayılmamış) para önce o faturaya sayılır; kalanı bugünkü gibi işaretlenir, bildirim ne kadarının
+  sayıldığını söyler. "Geri al" önce bu dağıtımları siler. "Ödendi" yazımı yalnız hâlâ ödenmemiş faturaya gider:
+  aynı anda iki ✓ ya da değişiklik yapmadan Kaydet defterin kapanışını elle ödendiye çevirmez. Ödemeler'de faturasız
+  alımın **Ödendi**si hesaptaki paradan yalnız satırın gösterdiği payı kullanır.
+- Fatura silinmeden önce bağları çözülür (elle silme, Paraşüt iptali): bağlı faturasız alım eski hâline döner, gider
+  kaydı yeniden yazılır, faturaya sayılan para ödemenin hesabına geçer. Elle silinen faturayı "Geri al" bağlarıyla
+  geri getirir (para hâlâ hesaptaysa); silinen Paraşüt faturası geri alınınca bağlı alımlar (hâlâ bağsızsa) yeniden
+  bağlanır, ödemeler hesapta kalır. Alım hangi kartın olursa olsun yeniden bağlanır (fatura başka tedarikçide
+  görünebilir); bu arada değişen alım bağlanamazsa bildirim söyler.
+- Ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka karta taşıyan değişiklik reddedilir: kartın adı, diğer
+  adları, vergi nosu (hangi kart düzenlenirse düzenlensin), yeni kart ve Faturalar'da faturanın tedarikçi adı.
+- Kalan borç, dağıtım ve ödendi işaretini yalnız `src/server/cari/settle.ts` yazar (kart satırı kilitlenir: aynı
+  kartın iki ödemesi sırayla çalışır). Saf kurallar `src/lib/cari/` (`account.ts` hesap ve mahsup, `statement.ts`
+  ekstre, `match.ts` fatura adayı ve Kasa eşleşmesi, `months.ts` geçmiş ay onayı). `npm run db:reset` cari kaydı
+  varken durur ([YEDEK.md](YEDEK.md)).
 
 ## Vade
 
@@ -263,6 +401,10 @@ eşleşir. Ad karşılaştırmasında büyük / küçük harf, Türkçe ı/i, fa
 - `src/server/data/suppliers.ts` (ekranın verisi, kartın vade günü, peşin çalışılan tedarikçiler)
 - `src/server/parasut/mapping.ts` (`newInvoicePayment`, `contactInfo`), `ubl.ts` (`partyInfo`)
 - `src/server/parasut/tax-backfill.ts`, `tax-backfill-pass.ts` (eski faturaların vergi nosunun tamamlanması)
+- `src/lib/cari/` (cari hesabın saf kuralları), `src/server/cari/settle.ts` (dağıtım ve ödendi işaretini yazan tek yer),
+  `src/server/cari/entries.ts` (borç ve ödeme kaydı), `src/server/cari/kasa.ts` (Kasa denetimi, Ödemeye çevir, bağlı
+  satır), `src/server/data/cari.ts` (cari okumaları), `src/server/actions/cari.ts` (eylemler; hepsi yönetici)
 - Tablo `suppliers`, faturada `paid_at`, `paid_via`, `payment_requested_at` (`drizzle/0016_tedarikciler.sql`),
-  `supplier_tax_number` (`drizzle/0021_fatura_vergi_no.sql`)
-- Test: `tests/tedarikciler.test.ts`, `tests/parasut-vergi.test.ts`
+  `supplier_tax_number` (`drizzle/0021_fatura_vergi_no.sql`); `supplier_entries`, `supplier_allocations`, faturada
+  `allocated`, `ledger_base`, `paid_by_ledger`, harcamada `supplier_entry_id` (`drizzle/0038_cari_hareket.sql`)
+- Test: `tests/tedarikciler.test.ts`, `tests/parasut-vergi.test.ts`, `tests/cari-*.test.ts`

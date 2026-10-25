@@ -210,6 +210,12 @@ export interface Invoice {
   dueDate?: string | null;
   /** Kalan borç (Paraşüt kısmi ödeme; yoksa ödenmemişse ödenecek tutarın tamamı) */
   outstanding?: number | null;
+  /** Bu faturaya sayılan cari ödemeler (src/lib/cari/balance.ts; kalan borcu openBalance hesaplar) */
+  allocated?: number;
+  /** Panel takibinin tabanı (cari); boşsa takipsiz: kalan Paraşüt'ün kalanı */
+  ledgerBase?: number | null;
+  /** Fatura cari ödemelerin dağıtımıyla kapandı */
+  paidByLedger?: boolean;
   /** Paraşüt'teki gelen e-fatura kimliği (içeri alınmamış e-faturalar da buradan gelir; belge PDF'i için) */
   eInvoiceId?: string | null;
   /** Eşitlemenin kategorisini tahmin ettiği, kullanıcının henüz onaylamadığı fatura */

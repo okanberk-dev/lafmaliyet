@@ -9,6 +9,7 @@ import { cashOutLabel, cashOutUndoJson, readCashOutUndo, type CashOutSnapshot } 
 import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireUser } from "@/server/auth/dal";
+import { assertCashOutDeletable, lockCashOutLink, syncLinkedCashOut } from "@/server/cari/kasa";
 import { staffCashOutGate } from "@/server/cash-outs/guard";
 import { cashOutSchema, lockCashOut, removeCashOut, writeCashOut, type CashOutActor, type CashOutData, type CashOutInput } from "@/server/cash-outs/write";
 import { getDb } from "@/server/db";
@@ -39,17 +40,21 @@ function logDetail(d: CashOutData, expense: boolean) {
  */
 async function persist(me: CashOutActor, d: CashOutData, opts: { restore?: boolean; restoreId?: number } = {}) {
   if (d.date > businessDate()) throw new UserError("İleri bir günün kasasına eklenemez");
+  const admin = me.role === "admin";
   const saved = await getDb().transaction(async (tx) => {
+    // Tedarikçi ödemesine bağlı satır (src/server/cari/kasa.ts): personel düzeltemez, yöneticide önce kart kilitlenir
+    const link = d.id ? await lockCashOutLink(tx, d.id, admin) : null;
     const prev = d.id ? await lockCashOut(tx, d.id) : null;
     if (d.id && !prev) throw new UserError("Satır bulunamadı; silinmiş olabilir");
-    if (me.role !== "admin") {
+    if (!admin) {
       const gate = await staffCashOutGate(tx, me, prev ? { op: "duzelt", row: prev } : { op: "ekle", date: d.date });
       const moved = prev && prev.date !== d.date ? await staffCashOutGate(tx, me, { op: "ekle", date: d.date }) : "direct";
       if (gate === "request" || moved === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
     }
-    return writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId });
+    const supplier = prev ? await syncLinkedCashOut(tx, prev.id, link, { admin, kind: d.kind, amount: d.amount, date: d.date }) : null;
+    return { ...(await writeCashOut(tx, me, d, { prev, restore: opts.restore, restoreId: opts.restoreId })), supplier };
   });
-  await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null));
+  await logActivity(me, saved.updated ? "Kasadan çıkan düzeltildi" : "Kasadan çıkan", logDetail(d, saved.expenseId !== null) + (saved.supplier ? ` · ${saved.supplier} ödemesi de güncellendi` : ""));
   refresh();
   return { id: saved.id, expenseId: saved.expenseId };
 }
@@ -74,6 +79,7 @@ export async function deleteCashOut(id: number) {
     const snap = await getDb().transaction(async (tx) => {
       const row = await lockCashOut(tx, cid);
       if (!row) throw new UserError("Satır bulunamadı; silinmiş olabilir");
+      await assertCashOutDeletable(tx, cid, me.role === "admin");
       if (me.role !== "admin" && (await staffCashOutGate(tx, me, { op: "sil", row })) === "request") throw new UserError(CASH_OUT_REQUEST_TEXT.needsApproval);
       return removeCashOut(tx, row);
     });
