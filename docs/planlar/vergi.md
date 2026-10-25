@@ -1428,7 +1428,7 @@ varlık yok, beyanname matrahı yok (gelir "yönetim verisi"). Bordro kural tabl
 | Personel (bordro, yasal oranlar) | 85.990,86 | 85.990,86 | 85.990,86 | 257.972,58 |
 | Sonuç | −114.469,96 | 288.109,34 | 101.908,60 | **275.547,98** |
 | Sayılmayan: sınıflandırılmamış sabit giderler | 218.889,64 | 295.025,17 | 294.695,17 | 808.609,97 |
-| Sayılmayan: demirbaş olabilir (Aria Yazılım 39.780; Beyza Karaman 30.000) | 39.780,00 | 0 | 30.000,00 | 69.780,00 |
+| Sayılmayan: demirbaş olabilir (Aria Yazılım 39.780; bir şahsın reklam faturası 30.000) | 39.780,00 | 0 | 30.000,00 | 69.780,00 |
 | Sayılmayan: Kuruluş & Demirbaş (varlık yok) | 948.680,41 | 2.750,00 | 0 | 951.430,41 |
 
 Kafenin geçici vergi katkısı 2026/3:
@@ -1646,7 +1646,7 @@ işaretlenmedikçe çip "Muhasebeciye sorulacaklar: n / 8" kalır. Metinler ekra
 | M2 `sgk_oran` | Temel | Vergi ve nakit planı 2026 standart oranını (işveren %19,75 + %2) kullanıyor; Ayarlar'da %15,75 yazıyor | Bordroda işveren SGK oranı kaç? Emekli çalışan var mı (oranlar farklı)? 6111, 7103 gibi bir teşvikten yararlanıyor musunuz? |
 | M3 `bordro` | Temel | 2 kişi, net 30.000 ₺, net üzerinden anlaşılmış; brüt 35.314,52, gelir vergisi 0, damga 17,34; aylar tam | Eylül 2026 bordrosunun brüt, gelir vergisi, damga vergisi ve SGK toplamları; işe giriş günleri; Temmuz tam ay mı? Part-time çalışan bordroda mı? |
 | M5 `kira` | Temel | Kiraya veren şirket (stopaj yok, %20 KDV). Giderler'deki 160.000 ₺ ile faturalardaki 35.000 ₺ + KDV farklı | Kirayı kime ödüyoruz (şirket mi, şahıs mı), aylık gerçek kira ne, ciro kirası var mı? Kira sözleşmesinin damga vergisi (Faturalar'da 793,80 ₺) ödendi mi? |
-| M6 `stopaj` | Temel | Reklam, influencer ve muhasebecilik ödemelerinin stopajı bilinmiyor; muhtasar "en az" yazıyor | Instagram reklamı (30.000 ₺/ay) Türkiye'deki bir ajansa mı, doğrudan Meta'ya mı ödeniyor? Eylül'deki 30.000 ₺'lik reklam faturası (Beyza Karaman) şahıs mı; internet reklamıysa %15 stopaj gerekir mi? Influencer ödemeleri (50.000 ₺/ay) serbest meslek makbuzuyla mı, influencer istisnasıyla (banka kesintisi) mı? Muhasebecilik ücreti şahıs makbuzuyla mı, şirket faturasıyla mı? Eylül muhtasarının tahakkuk fişindeki tutar? |
+| M6 `stopaj` | Temel | Reklam, influencer ve muhasebecilik ödemelerinin stopajı bilinmiyor; muhtasar "en az" yazıyor | Instagram reklamı (30.000 ₺/ay) Türkiye'deki bir ajansa mı, doğrudan Meta'ya mı ödeniyor? Eylül'deki 30.000 ₺'lik reklam faturası (bir şahıs adına kesilmiş) şahıs mı; internet reklamıysa %15 stopaj gerekir mi? Influencer ödemeleri (50.000 ₺/ay) serbest meslek makbuzuyla mı, influencer istisnasıyla (banka kesintisi) mı? Muhasebecilik ücreti şahıs makbuzuyla mı, şirket faturasıyla mı? Eylül muhtasarının tahakkuk fişindeki tutar? |
 | M7 `demirbas` | Temel | XND faturaları (948.680 ₺) ve öteki demirbaşlar listede yok, amortisman 0; ModPOS lisansı (39.780 ₺) "demirbaş olabilir"; amortisman kalan çeyreklere eşit dağıtılıyor | Hangi kısım demirbaş, hangisi kiralanan yere yapılan dekorasyon (özel maliyet, kira süresine göre)? Faydalı ömürler? Geçici vergide amortismanı nasıl dağıtıyorsunuz? ModPOS lisansı ve ışıklı tabela demirbaş mı? 12.000 ₺ altı doğrudan gider |
 | M8 `gecici_2026` | Temel | 2026/2 kaydı yok; 2026/3 için şirketin rakamı bilinmiyor (kafenin katkısı en çok ≈ 68.900 ₺, taslak) | 2026/2 geçici vergi beyannamesi (17 Ağustos) verildi mi, matrahı ve vergisi? 2026/3 rakamını Kasım'ın ilk haftası isteyin (son gün 17 Kasım). Ödenen geçici vergileri Ödemeler'de "Ödendi" işaretleyin: ödenmeyen yıllık beyannamede mahsup edilemez |
 | M11 `kafe_disi` | Temel | Kafe dışı gelir ve gider yok sayıldı | Şirketin kafe dışı işleri (yazılım, karaoke box MaviBahçe, ortağın işleri) var mı, gelir ve giderleri nasıl? Eylül KDV beyannamesindeki %20'lik 335.000 ₺ satış nedir? Aylık KDV beyannamelerindeki satışların kafe dışı kısmı ne kadar? |
@@ -1744,7 +1744,7 @@ durumdadır (yükleyici bağlanmadan).
      - XND'nin üç faturası ayrı ayrı varlık olarak eklenir, ömür boş bırakılır: uyarı çıkar.
      - Ömür 5 yapılınca 2026 amortismanı 189.736,09 olur; Q3'e 94.868,05, Q4'e 94.868,04 düşer; ayar "Kümülatif ay ÷ 12"
        yapılınca Q3 142.302,07; geçici vergi değişir.
-     - İmge "Sütlük" (2.750 ₺) "Doğrudan gider" olur. Aria Yazılım faturası "Gider (demirbaş değil)" olur.
+     - "Sütlük" faturası (2.750 ₺) "Doğrudan gider" olur. Aria Yazılım faturası "Gider (demirbaş değil)" olur.
   5. **Muhasebeci kaydı.** Geçici vergi 2026/3'e yalnız "Ödenecek" ve damga girilir, "Ödemeler'e de yaz" işaretli:
      kartta "Muhasebeci" rozeti, "matrah girilmedi" notu; nakit planındaki satır kesinleşir ve Ödemeler'deki geçici
      vergi hatırlatıcısında tutar görünür. Kayıt kaldırılınca takvim yine "Tutarı bilinmiyor" der.

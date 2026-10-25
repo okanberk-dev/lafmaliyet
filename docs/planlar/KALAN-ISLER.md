@@ -46,6 +46,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 - K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
 - Personel panelden açılan karaoke sayacını onaysız siliyor: ilk 10 dakika serbest, sonrası silme isteği (denetim D-03; `personel-yetki.md` §5.1).
 - Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06).
+- Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1).
 
 ### Birinci paket (planlar hazır; kurallar ve birleştirme sırası `CRITIQUE.md`)
 

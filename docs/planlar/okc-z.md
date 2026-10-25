@@ -28,8 +28,8 @@ başlayabilir; eşgüdüm §13'te.
   - `02-guides/server-actions.md`.
 - `docs/KASA-RAPORU.md`, `docs/FOTOGRAF.md`, `docs/planlar/fotograf.md` (§10 canlı denemeler), `docs/planlar/kasa.md`,
   dalga 10'un `docs/planlar/personel-yetki.md`'si (§2.3, §2.6, §2.7).
-- Araştırma notları (depoda değil): yazarkasa Z biçimi, kimlikler ve yanlış okuma tuzakları
-  `/tmp/claude-0/-home-user/96380d97-d5e6-5fba-be4a-02c854f741af/scratchpad/okcz/fmt.md` (§2 düzen, §3 etiketler, §4 kimlikler, §5 tuzaklar, §6 banka gün sonu fişi).
+- Araştırma notları: yazarkasa Z biçimi, kimlikler ve yanlış okuma tuzakları
+  `docs/planlar/okc-z-notlar.md` (§2 düzen, §3 etiketler, §4 kimlikler, §5 tuzaklar, §6 banka gün sonu fişi).
   Uygulayıcı bunun özetini `docs/YAZARKASA-Z.md` olarak depoya koyar (§14).
 
 **Kurallar:** `CRITIQUE.md` R1–R7 ve `KALAN-ISLER.md` §3 geçerlidir. Bu dalga:
