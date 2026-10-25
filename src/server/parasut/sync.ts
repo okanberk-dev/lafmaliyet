@@ -267,9 +267,9 @@ const billLinesOf = (invoiceId: number) => and(eq(s.parasutBillLines.invoiceId, 
 
 /**
  * Paraşüt'ten açılmış kaydı siler; önce cari bağları aynı işlemde çözülür (K11): bağlı faturasız alımlar eski hâline
- * döner, borçtan gelen ödemeler borca, öteki ödemeler hesaba geçer. Bağı yoksa yalnız silinir.
+ * döner, borçtan gelen ödemeler borca, öteki ödemeler hesaba geçer. Bağı yoksa yalnız silinir. Döner: silindi mi.
  */
-async function deleteWithLinks(match: Existing) {
+async function deleteWithLinks(match: Existing): Promise<boolean> {
   const db = getDb();
   let links: Awaited<ReturnType<typeof releaseInvoiceLinks>>;
   try {
@@ -279,14 +279,13 @@ async function deleteWithLinks(match: Existing) {
       return l;
     });
   } catch (err) {
-    // Bağlar çözülemezse eşitleme durmaz: fatura yine silinir (dağıtımlar CASCADE ile kalkar, para hesaba geçer;
-    // bağlı alım bağsız kalır), hata kaydedilir
+    // Bağlar çözülemezse (kilit zaman aşımı, bağlantı kopması) fatura silinmez: bağsız silinirse bağlı alımın gider
+    // kaydı geri gelmez ve borcun ödemesi kaybolurdu. Eşitleme durmaz; sonraki çalışma yeniden dener
     console.error("[cari] Paraşüt'te silinen faturanın bağları çözülemedi", match.id, err);
-    await db.delete(s.invoices).where(eq(s.invoices.id, match.id));
-    await logActivity(null, "Sistem · Paraşüt'te silinen fatura", `${match.supplier} · ${match.invoiceNo ?? match.date} · cari bağları çözülemedi, Tedarikçiler'den kontrol edin`);
-    return;
+    await logActivity(null, "Sistem · Paraşüt'te silinen fatura", `${match.supplier} · ${match.invoiceNo ?? match.date} · cari bağları çözülemedi; fatura silinmedi, sonraki eşitleme yeniden dener`);
+    return false;
   }
-  if (!links.allocations.length && !links.debtIds.length) return;
+  if (!links.allocations.length && !links.debtIds.length) return true;
   const money = links.allocations.reduce((a, x) => a + x.amount, 0);
   const detail = [
     `${match.supplier} · ${match.invoiceNo ?? match.date}`,
@@ -294,6 +293,7 @@ async function deleteWithLinks(match: Existing) {
     links.debtIds.length ? `${links.debtIds.length} faturasız alım yeniden açık` : "",
   ].filter(Boolean);
   await logActivity(null, "Sistem · Paraşüt'te silinen fatura", detail.join(" · "));
+  return true;
 }
 
 /**
@@ -323,7 +323,7 @@ async function retire(match: Existing, reason: string, ctx: Ctx, billOnly = fals
     return;
   }
   if (match.origin === "parasut") {
-    await deleteWithLinks(match);
+    if (!(await deleteWithLinks(match))) return;
     const i = ctx.existing.indexOf(match);
     if (i >= 0) ctx.existing.splice(i, 1);
     ctx.counts.removed++;
@@ -1320,7 +1320,7 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
     if (match && match.eInvoiceId === d.eInvoiceId) {
       ctx.touchedMonths.add(match.date.slice(0, 7));
       if (match.origin === "parasut" && !match.externalId) {
-        await deleteWithLinks(match);
+        if (!(await deleteWithLinks(match))) return "skipped";
         ctx.existing.splice(ctx.existing.indexOf(match), 1);
         ctx.counts.removed++;
         return "removed";

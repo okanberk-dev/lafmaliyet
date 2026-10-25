@@ -545,6 +545,42 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
     }
   });
 
+  test("cari: iptalde bağlar çözülemezse fatura silinmez (bağlı alım gidersiz kalmaz); sonraki eşitleme siler", async () => {
+    const settle = await import("../src/server/cari/settle");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      const [pay] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 600, method: "havale", createdByName: "Test" }).returning();
+      fake.bills.set("302", bill("302", { amount: 545.45, vat: 54.55 }));
+      await run();
+      const [f] = await rows();
+      const [debt] = await db.insert(s.supplierEntries).values({ supplierId: card.id, kind: "borc", date: daysAgo(6), amount: 600, costMode: "fatura", description: "peynir", createdByName: "Test" }).returning();
+      await db.transaction(async (tx) => {
+        await settle.writeAllocations(tx, pay.id, [{ kind: "debt", id: debt.id, amount: 600 }], "Test");
+        await settle.linkDebts(tx, [debt.id], f.id);
+      });
+      await db.execute(sql`CREATE FUNCTION cari_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'deadlock' USING ERRCODE = '40P01'; END $$ LANGUAGE plpgsql`);
+      await db.execute(sql`CREATE TRIGGER cari_fail BEFORE UPDATE ON supplier_allocations FOR EACH ROW EXECUTE FUNCTION cari_fail()`);
+      fake.bills.get("302")!.itemType = "cancelled";
+      try {
+        await run();
+      } finally {
+        await db.execute(sql`DROP TRIGGER cari_fail ON supplier_allocations`);
+        await db.execute(sql`DROP FUNCTION cari_fail()`);
+      }
+      assert.equal((await rows()).length, 1, "fatura silinmedi");
+      const [d1] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.equal(d1.invoiceId, f.id, "borç hâlâ bağlı");
+      await run();
+      assert.equal((await rows()).length, 0, "sonraki eşitleme siler");
+      const [d2] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
+      assert.deepEqual([d2.invoiceId, d2.costMode], [null, "fatura"]);
+      assert.deepEqual((await db.select().from(s.supplierAllocations)).map((a) => [a.debtId, a.amount]), [[debt.id, 600]]);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
   test("istemci: 429'da yeniden dener; yenileme belirteci reddedilince parolayla girer", async () => {
     fake.bills.set("401", bill("401"));
     fake.throttle = 2;

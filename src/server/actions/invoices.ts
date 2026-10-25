@@ -629,8 +629,13 @@ type DeletedEntry = {
   deletedBy: string;
   row: Snapshot;
   lines: Omit<BillLineRow, "id" | "invoiceId">[];
-  /** Silinirken cari ödemesi sayılmış ya da faturasız alım bağlıydı (geri alınınca bağlar gelmez, söylenir) */
+  /** Silinirken cari ödemesi sayılmış ya da faturasız alım bağlıydı (eski kopyalar; yenilerde `cari`) */
   hadCari?: boolean;
+  /**
+   * Silinirken bağlı faturasız alımlar (geri alınınca hâlâ bağsızsa yeniden bağlanır) ve faturaya doğrudan sayılmış
+   * ödemelerin toplamı (hesaba geçti; yeniden sayılmaz, söylenir)
+   */
+  cari?: { debtIds: number[]; paid: number };
 };
 
 /** Kalemin yeniden yazılabilir kopyası (satır ve fatura kimliği hariç) */
@@ -693,7 +698,7 @@ export async function deleteInvoice(id: number) {
           deletedBy: me.name,
           row: snapshotOf(d),
           lines: lines.map(lineCopy),
-          ...(hadCari ? { hadCari } : {}),
+          ...(hadCari ? { hadCari, cari: { debtIds: links.debtIds, paid: round2(links.allocations.reduce((a, x) => a + x.amount, 0)) } } : {}),
         };
         await writeState(tx, DELETED_BILLS_KEY, [...deleted, entry].slice(-DELETED_BILLS_LIMIT));
       }
@@ -776,6 +781,12 @@ export async function unignoreParasutBill(externalId: string) {
       const parsed = snapshotSchema.parse(entry.row);
       const row = parsed.paidByLedger ? { ...parsed, unpaid: true, paidAt: null, paidVia: null, paidByLedger: false } : parsed;
       const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
+      // Silinirken bağlı faturasız alımlar hâlâ bağsızsa yeniden bağlanır (silme gider kayıtlarını yeniden yazmıştı;
+      // bağlanmazsa alım hem faturada hem Aylık harcamalar'da gider olurdu)
+      const debtIds = (entry.cari?.debtIds ?? []).filter((x) => Number.isInteger(x) && x > 0);
+      const relinked = debtIds.length
+        ? (await reattachInvoiceLinks(tx, r.id, { allocations: [], debtIds }, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null })).relinked
+        : 0;
       let lines = 0;
       if (entry.lines?.length) {
         // Aynı Paraşüt kalemi bu arada başka satıra yazıldıysa (benzersiz kimlik) o kalem atlanır
@@ -791,14 +802,20 @@ export async function unignoreParasutBill(externalId: string) {
         if (fresh.length) await tx.insert(s.parasutBillLines).values(fresh.map((l) => ({ ...l, invoiceId: r.id })));
         lines = fresh.length;
       }
-      return { status: "restored" as const, entry, lines };
+      return { status: "restored" as const, entry, lines, relinked };
     });
     if (out.status === "missing") throw new UserError("Bu Paraşüt faturası yok sayılanlar listesinde değil; sayfayı yenileyin.");
     if (out.lines && out.entry) await applyProductLinks([out.entry.row.date.slice(0, 7)]);
     const label = out.entry ? `${dateTR(out.entry.row.date)} ${splitSupplier(out.entry.row.supplier).base}` : `Paraşüt #${ext}`;
     await logActivity(me, "Silinen Paraşüt faturası geri alındı", label);
     refresh();
-    const cariNote = out.entry?.hadCari ? " Ödemeler bu faturaya yeniden sayılmadı; Tedarikçiler'den Borçlara say." : "";
+    const relinked = out.status === "restored" ? out.relinked : 0;
+    const paidBack = out.entry?.cari ? out.entry.cari.paid > 0.005 : Boolean(out.entry?.hadCari);
+    const cariNote = [
+      relinked ? ` ${relinked} faturasız alım faturaya yeniden bağlandı.` : "",
+      out.status === "restored" && out.entry?.cari && out.entry.cari.debtIds.length > relinked ? " Bağlı alımlardan bazıları bu arada değişti; Tedarikçiler'den Faturası geldi ile bağlayın." : "",
+      paidBack ? " Ödemeler bu faturaya yeniden sayılmadı; Tedarikçiler'den Borçlara say." : "",
+    ].join("");
     const message =
       out.status === "restored"
         ? `${label} listeye geri döndü. Sonraki eşitleme tutarları Paraşüt'ten günceller.${cariNote}`

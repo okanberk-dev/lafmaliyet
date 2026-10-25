@@ -532,6 +532,26 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     ok(await suppliers.saveSupplier({ id: null, name: "Metro", ...blank }));
     ok(await invoices.saveInvoice(invoiceForm(x, { supplier: "Sütaş" })));
   });
+
+  test("silinen Paraşüt faturası geri alınınca bağlı faturasız alım yeniden bağlanır (gider iki kez sayılmaz)", async () => {
+    const c = await card();
+    const cat = await category();
+    const today = todayTR();
+    const d = await addDebt(c.id, { amount: 1300, date: today, costMode: "gider", categoryId: cat.id, description: "süt" });
+    const debtId = (d.ok ? (d.data as { id: number }).id : 0);
+    const f = await invoice({ payable: 1250, date: today, invoiceNo: "SUT149", source: "parasut", origin: "parasut", externalId: "149" });
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: f.id }));
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0);
+    ok(await invoices.deleteInvoice(f.id));
+    assert.equal((await db.select().from(s.expenseEntries)).length, 1, "silme gider kaydını yeniden yazar");
+    const r = ok(await invoices.unignoreParasutBill("149"));
+    assert.equal(r.status, "restored");
+    assert.match(r.message, /1 faturasız alım faturaya yeniden bağlandı/);
+    assert.doesNotMatch(r.message, /Ödemeler bu faturaya yeniden sayılmadı/);
+    const [debtRow] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId));
+    assert.notEqual(debtRow.invoiceId, null);
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0, "gider yalnız faturada");
+  });
 });
 
 // Kullanılmayan içe aktarmalar sonraki testler için
