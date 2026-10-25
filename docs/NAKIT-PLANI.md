@@ -112,7 +112,8 @@ platform tahsilatı satış günü sayılır (bankaya geçiş gecikmesi yok).
 ayrıca gelen sabit gideri Tahmine katılanlar'dan çıkarın. Faturasız borçlar kesin kalemdir; faturası beklenenler kadar
 mal tahmini düşürülür. Faturasız alımın faturası olabilecek fatura (tutarı alımınkine en çok max(1 ₺, %2) uzak, alımdan
 7 gün önce ile 45 gün sonra arasında) bağlanana ya da “Ayrı alım” denene kadar plana girmez: aynı mal iki kez
-ödenmesin.
+ödenmesin. Bir alım yalnız gününe en yakın faturayı sessize alır (haftalık aynı tutarlı faturalar planda kalır).
+Faturası beklenen alımın tahmini düşürmesi tedarikçinin vergi noyla karta düşen fatura adlarını da kapsar.
 
 **Hesaptaki ödeme (mahsup):** tedarikçinin hesabında hiçbir kaleme sayılmamış ödeme varsa (Tedarikçiler › Ödeme ekle,
 “Hesapta beklesin” ya da fazla ödeme) o para tedarikçinin kesin kalemlerinden en eski vadeden başlayarak düşülür;
