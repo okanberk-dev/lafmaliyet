@@ -434,8 +434,11 @@ export function CariPaymentDialog({
             id="cp-method"
             value={method}
             onChange={(e) => {
-              setMethod(e.target.value as CariMethod);
+              const m = e.target.value as CariMethod;
+              setMethod(m);
               setLine(null);
+              // Kasanın günü gece yarısından sonra da dünün günü: Kasadan seçilince ödeme günü ona çekilir
+              if (m === "kasa" && date > businessDay) setDate(businessDay);
             }}
           >
             {CARI_METHODS.map((m) => (

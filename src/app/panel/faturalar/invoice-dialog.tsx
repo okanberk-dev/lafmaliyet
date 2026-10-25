@@ -664,15 +664,14 @@ function InvoiceCari({ cari, href }: { cari: InvoiceCariLinks; href: string | nu
         </div>
       ) : null}
       <p className="text-xs text-ink-mute">
-        Değiştirmek için tedarikçinin Hesap hareketleri
+        Değiştirmek için tedarikçinin{" "}
         {href ? (
-          <>
-            {": "}
-            <Link href={`${href}?sekme=hareketler`} className="font-medium text-info underline-offset-2 hover:underline">
-              aç
-            </Link>
-          </>
-        ) : null}
+          <Link href={`${href}?sekme=hareketler`} className="font-medium text-info underline-offset-2 hover:underline">
+            Hesap hareketlerini açın
+          </Link>
+        ) : (
+          "Hesap hareketlerini açın"
+        )}
         .
       </p>
       <PhotoViewer photo={viewer} onClose={() => setViewer(null)} />

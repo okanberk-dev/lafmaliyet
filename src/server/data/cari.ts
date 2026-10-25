@@ -418,22 +418,34 @@ export async function loadExpectedDebtsInYear(year: number): Promise<Record<stri
 }
 
 /**
- * Nakit planının mal tahmini için (K19): kart başına açık "Faturası gelecek" borçların kalanı ve kartın ad anahtarları
- * (adı ve diğer adları)
+ * Nakit planının mal tahmini için (K19): kart başına açık "Faturası gelecek" borçların kalanı ve kartın ad anahtarları:
+ * adı, diğer adları ve faturalarda vergi noyla bu karta düşen adlar (Paraşüt'ten tüzel adıyla gelen faturalar;
+ * tahmin faturanın adını okur)
  */
 export async function loadExpectedDebtsByCard(): Promise<{ cardId: number; name: string; keys: string[]; amount: number }[]> {
   const entries = await loadCardEntries();
   const open = entries.debts.filter((d) => d.invoiceId === null && d.costMode === "fatura");
   if (!open.length) return [];
-  const cards = await getDb()
-    .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases })
-    .from(s.suppliers)
-    .where(inArray(s.suppliers.id, [...new Set(open.map((d) => d.supplierId))]));
+  const db = getDb();
+  const [cards, allCards, refs] = await Promise.all([
+    db
+      .select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases })
+      .from(s.suppliers)
+      .where(inArray(s.suppliers.id, [...new Set(open.map((d) => d.supplierId))])),
+    db.select({ id: s.suppliers.id, name: s.suppliers.name, aliases: s.suppliers.aliases, taxNumber: s.suppliers.taxNumber }).from(s.suppliers),
+    loadSupplierRefs(),
+  ]);
+  const { resolve } = supplierResolver(allCards.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases : [] })), refs);
+  const invoiceNames = new Map<number, string[]>();
+  for (const r of refs) {
+    const id = resolve(r.supplier, r.supplierTaxNumber).card?.id;
+    if (id !== undefined) invoiceNames.set(id, [...(invoiceNames.get(id) ?? []), r.supplier]);
+  }
   return cards
     .map((c) => ({
       cardId: c.id,
       name: c.name,
-      keys: [c.name, ...(Array.isArray(c.aliases) ? c.aliases : [])].map(supplierMatchKey).filter(Boolean),
+      keys: [...new Set([c.name, ...(Array.isArray(c.aliases) ? c.aliases : []), ...(invoiceNames.get(c.id) ?? [])].map(supplierMatchKey).filter(Boolean))],
       amount: round2(open.filter((d) => d.supplierId === c.id).reduce((a, d) => a + debtRemaining(d, entries.allocations), 0)),
     }))
     .filter((c) => c.amount > EPS);

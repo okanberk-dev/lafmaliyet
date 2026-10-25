@@ -17,7 +17,6 @@ import { asc, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-import { openBalance } from "../src/lib/cari/balance";
 import { addDays, todayTR } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
 
@@ -28,12 +27,9 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
   let admin: postgres.Sql;
   let db: import("../src/server/db").DB;
   let settle: typeof import("../src/server/cari/settle");
-  let entries: typeof import("../src/server/cari/entries");
-  let kasa: typeof import("../src/server/cari/kasa");
   let cari: typeof import("../src/server/actions/cari");
   let invoices: typeof import("../src/server/actions/invoices");
   let data: typeof import("../src/server/data/cari");
-  let me: { id: number; name: string };
 
   before(async () => {
     admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
@@ -54,11 +50,8 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     db = dbModule.getDb();
     await migrate(db, { migrationsFolder: "drizzle" });
     const [u] = await db.insert(s.users).values({ email: "test@laffogato.net", name: "Test", passwordHash: "x", role: "admin" }).returning();
-    me = { id: u.id, name: u.name };
     stub(require.resolve("../src/server/auth/dal"), { requireAdmin: async () => ({ ...u, role: "admin" }), requireUser: async () => ({ ...u, role: "admin" }) });
     settle = await import("../src/server/cari/settle");
-    entries = await import("../src/server/cari/entries");
-    kasa = await import("../src/server/cari/kasa");
     cari = await import("../src/server/actions/cari");
     invoices = await import("../src/server/actions/invoices");
     data = await import("../src/server/data/cari");
@@ -552,9 +545,14 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.notEqual(debtRow.invoiceId, null);
     assert.equal((await db.select().from(s.expenseEntries)).length, 0, "gider yalnız faturada");
   });
-});
 
-// Kullanılmayan içe aktarmalar sonraki testler için
-void openBalance;
-void addDays;
-void todayTR;
+  test("nakit planı K19: faturası gelecek borcun kartı vergi noyla bağlanan tüzel addaki faturaların tahminini de düşürür", async () => {
+    const VKN = "1234567808";
+    const c = await card("Sütaş", { taxNumber: VKN });
+    await invoice({ payable: 1000, supplier: "SÜTAŞ SÜT ÜRÜNLERİ A.Ş.", supplierTaxNumber: VKN });
+    await addDebt(c.id, { amount: 1250 });
+    const [row] = await data.loadExpectedDebtsByCard();
+    assert.equal(row.amount, 1250);
+    assert.ok(row.keys.includes("sütaş süt ürünleri a.ş."), row.keys.join(", "));
+  });
+});

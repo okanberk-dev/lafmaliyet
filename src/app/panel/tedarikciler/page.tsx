@@ -146,8 +146,15 @@ async function SuppliersContent() {
             }
           />
         </StatBreakdown>
-        <StatBreakdown title="Vadesi geçen" description="Vadesi geçmiş ödenmemiş faturalar, tedarikçi tedarikçi. Vadesi yazılmamış faturada tahmini vade sayılır." groups={breakdown.overdue} total={overdue} exact empty="Vadesi geçmiş ödeme yok.">
-          <Stat icon={<AlarmClock />} label="Vadesi geçen" value={<CountUp value={overdue} />} tone={overdue > 0 ? "bad" : "good"} sub={overdueCount ? `${num(overdueCount)} fatura` : "Geciken yok"} />
+        <StatBreakdown
+          title="Vadesi geçen"
+          description={`Vadesi geçmiş ödenmemiş ${debtCount ? "faturalar ve faturasız borçlar" : "faturalar"}, tedarikçi tedarikçi. Vadesi yazılmamış kalemde tahmini vade sayılır.`}
+          groups={breakdown.overdue}
+          total={overdue}
+          exact
+          empty="Vadesi geçmiş ödeme yok."
+        >
+          <Stat icon={<AlarmClock />} label="Vadesi geçen" value={<CountUp value={overdue} />} tone={overdue > 0 ? "bad" : "good"} sub={overdueCount ? `${num(overdueCount)} ${debtCount ? "kalem" : "fatura"}` : "Geciken yok"} />
         </StatBreakdown>
         <StatBreakdown title="7 gün içinde" description={`${SOON_TEXT}, tedarikçi tedarikçi.`} groups={breakdown.soon} total={soon} exact empty="Önümüzdeki 7 günde vadesi gelen yok.">
           <Stat
@@ -155,7 +162,7 @@ async function SuppliersContent() {
             label="7 gün içinde"
             value={<CountUp value={soon} />}
             info={SOON_TEXT}
-            sub={soonCount ? `${num(soonCount)} fatura${nextSoon?.summary.nextSoonDue ? ` · ilki ${nextSoon.name} ${dateTR(nextSoon.summary.nextSoonDue)}` : ""}` : "Yakın vade yok"}
+            sub={soonCount ? `${num(soonCount)} ${debtCount ? "kalem" : "fatura"}${nextSoon?.summary.nextSoonDue ? ` · ilki ${nextSoon.name} ${dateTR(nextSoon.summary.nextSoonDue)}` : ""}` : "Yakın vade yok"}
           />
         </StatBreakdown>
         <StatBreakdown

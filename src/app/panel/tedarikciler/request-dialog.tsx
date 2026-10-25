@@ -113,7 +113,7 @@ export function RequestDialog({
       onClose={onClose}
       size="lg"
       title="Ödeme talebi"
-      description={`${name} · ${num(invoices.length)} ödenmemiş fatura. Seçin, metni kopyalayın ya da gönderin; ödeyince “Ödendi” işaretleyin.`}
+      description={`${name} · ${[invoices.length ? `${num(invoices.length)} ödenmemiş fatura` : "", purchases.length ? `${num(purchases.length)} faturasız alım` : ""].filter(Boolean).join(", ") || "ödenmemiş kalem yok"}. Seçin, metni kopyalayın ya da gönderin; ödeyince “Ödendi” işaretleyin.`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} className={SHEET_BTN}>
