@@ -1,43 +1,34 @@
 import "server-only";
 
-import { agoLabel } from "@/lib/prices/pos";
+import { posBell } from "@/lib/prices/pos";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
+import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import type { DigestBox } from "@/server/notify/digest-template";
 
 /*
  * Zilin operasyon satırları (src/server/actions/notifications.ts toplar; docs/BILDIRIMLER.md). Operasyon grubunun
  * modülü: kasada (ModPOS) değişecek fiyatlar ve sonra Tükendi, mal siparişi taslağı ve zayi isteklerinin satırları
- * (plan docs/planlar/personel-yetki.md §2.1, §2.2, §2.4, §2.8). İki rol dalında da çağrılır; bugün personele bir şey
- * döndürmez (personelin satırları maddeleriyle gelir).
+ * (plan docs/planlar/personel-yetki.md §2.1, §2.2, §2.4, §2.8). İki rol dalında da çağrılır; personelin satırları
+ * yalnız personelin yükleyicilerinden (tutar ve maliyet yok).
  */
 
 /**
- * Yönetici: kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; docs/FIYATLAR.md). Kimlik
- * sayıdan ve en yeni değişiklikten: yeni bir fiyat listeye girince yeniden okunmamış olur. Zaman en eskisinden.
+ * Kasada (ModPOS) elle değiştirilecek fiyatlar (docs/FIYATLAR.md; posBell). Yönetici bütün ürünlerden, Fiyatlar ›
+ * Kasaya işle'ye (Uyarılar); personel kendi sabit sütunlu özetinden (yalnız etkin ürünler), Kasadaki fiyatlar'a (Kasa).
+ * Kimlik en yeni geri kalıştan: işaret zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar.
  */
-async function posNotifications(): Promise<PanelNotification[]> {
-  const p = await posPendingSummary();
-  if (!p.count) return [];
-  return [
-    {
-      id: `kasa-fiyat-${p.count}-${p.newest?.getTime() ?? 0}`,
-      kind: "info",
-      title: `Kasada değişecek ${p.count} fiyat`,
-      body: "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin",
-      timeLabel: p.oldest ? agoLabel(p.oldest) : "",
-      unread: true,
-      href: "/panel/urunler/fiyatlar?sekme=kasa",
-      group: "uyari",
-    },
-  ];
+async function posNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  const summary = user.role === "admin" ? await posPendingSummary() : await staffPosSummary();
+  const item = posBell(user.role, summary, now);
+  return item ? [item] : [];
 }
 
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
-  if (user.role !== "admin") return [];
-  return posNotifications().catch(() => []);
+  const now = new Date();
+  return posNotifications(user, now).catch(() => []);
 }
 
 /**

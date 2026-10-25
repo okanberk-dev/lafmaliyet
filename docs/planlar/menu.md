@@ -463,7 +463,7 @@ Manual check (`run` skill, local Postgres):
 
 | # | Question | Default |
 |---|----------|---------|
-| D1 | Can staff see and tick the "Kasaya işle" list (it shows names and prices only, no costs)? | **No**, admin only. Opening it later means adding a staff route outside `/panel/urunler`, which is not in scope. |
+| D1 | Can staff see and tick the "Kasaya işle" list (it shows names and prices only, no costs)? | **No**, admin only. Opening it later means adding a staff route outside `/panel/urunler`, which is not in scope. **24 Ekim 2026: personel işaretler, onaysız** (dalga 10 §2.2: `/panel/kasa/fiyatlar`, `pos_marks`, geri alma; docs/FIYATLAR.md). |
 | D2 | Bell item for pending ModPOS prices? Morning e-mail line? | **Bell yes** (shown while ≥ 1 is pending). **E-mail no.** |
 | D3 | Should a new product appear in the ModPOS list? | **No**: only price changes of existing products. |
 | D4 | Default rounding | **5 ₺ up** for an increase and **5 ₺ down** for a decrease; all current prices are multiples of 5. |

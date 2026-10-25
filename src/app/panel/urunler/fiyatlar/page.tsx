@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Suspense, type ReactNode } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
+import { PosChecklist } from "@/components/panel/pos-checklist";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
@@ -12,13 +13,13 @@ import type { BulkRow } from "@/lib/prices/bulk";
 import { siteMarker } from "@/lib/site-menu/view";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { loadPosChecklist, loadPriceHistory, posPendingSummary } from "@/server/data/prices";
+import { loadPosChecklist, loadPriceHistory, loadRecentPosMarks, posPendingSummary } from "@/server/data/prices";
 import { loadSiteLinks } from "@/server/site-menu/view";
 
 import { BulkEditor } from "./bulk-editor";
 import { tabHref, tabOf, type FiyatlarTab } from "./logic";
-import { PosChecklist } from "./pos-checklist";
 import { PriceHistory } from "./price-history";
+import { RecentPosMarks } from "./recent-marks";
 
 export const metadata: Metadata = { title: "Fiyatlar" };
 // Toplu değişiklik ve geri alması siteye bağlı ürünleri tek tek yazar (en çok 40 sn; batch.ts): bu sayfanın sunucu
@@ -84,11 +85,15 @@ async function PricesContent({ searchParams }: { searchParams: PageProps<"/panel
   const header = <Header tabs={<SegmentedLinks label="Fiyatlar" value={tab} options={options} />} />;
 
   if (tab === "kasa") {
-    const items = await loadPosChecklist();
+    const now = new Date();
+    const [items, marks] = await Promise.all([loadPosChecklist(), loadRecentPosMarks({ days: 14, now })]);
     return (
       <>
         {header}
-        <PosChecklist items={items} />
+        <div className="space-y-4">
+          <PosChecklist items={items} />
+          <RecentPosMarks marks={marks} now={now.toISOString()} />
+        </div>
       </>
     );
   }

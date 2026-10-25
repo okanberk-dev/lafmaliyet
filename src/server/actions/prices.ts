@@ -1,17 +1,13 @@
 "use server";
 
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { tl } from "@/lib/format";
 import { numPossessive } from "@/lib/prices/bulk";
 import { nothingToUndoText, undoPlan } from "@/lib/prices/history";
-import { splitPosDone } from "@/lib/prices/pos";
 import { toMinor } from "@/lib/site-menu/slot";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadBatch } from "@/server/data/prices";
-import { getDb, schema as s } from "@/server/db";
 import { applyPriceBatch, type BatchResult } from "@/server/prices/batch";
 
 import { logActivity } from "./log";
@@ -23,13 +19,6 @@ import { attempt, UserError, zMoney } from "./util";
  */
 
 const zId = z.number().int().positive();
-/** Kasada işaretlenen ürünler; `price` listede (ya da ürün kartında) görülen, kasaya yazılan fiyat */
-const zPosDone = z
-  .array(z.object({ productId: zId, price: zMoney.min(0) }))
-  .min(1, "Ürün seçin")
-  .max(500, "Bir seferde en çok 500 ürün")
-  .refine((items) => new Set(items.map((i) => i.productId)).size === items.length, "Aynı ürün iki kez seçilmiş");
-
 const bulkSchema = z.object({
   items: z
     .array(z.object({ productId: zId, from: zMoney.min(0), to: zMoney.positive("Yeni fiyat 0'dan büyük olmalı") }))

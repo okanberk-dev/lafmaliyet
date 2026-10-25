@@ -279,3 +279,46 @@ export function posMarksText(marks: readonly { by: string; count: number; at: st
 
 /** Personelin son işaretleri penceresi (Bugün'deki "son 48 saat") */
 export const POS_MARKS_RECENT_MS = 48 * 60 * 60_000;
+
+/** Yöneticinin "Son işaretlenenler" kartının satırı (Fiyatlar › Kasaya işle; loadRecentPosMarks) */
+export interface RecentPosMark {
+  markId: number;
+  productId: number;
+  name: string;
+  size: string;
+  /** Kasada işlenen satış fiyatı ve işaretten önce kasada duran */
+  price: number;
+  stalePrice: number;
+  /** İşaretleyenin hesabı (gruplama) ve İşlem geçmişindeki gibi adı (logPerson: o anki ad, gerekirse e-postasıyla) */
+  byId: number | null;
+  by: string;
+  /** ISO */
+  markedAt: string;
+  undoneAt: string | null;
+  undoneBy: string | null;
+  /** Yönetici geri alamıyorsa nedeni (posUndoRefusal); geri alınmışta null ("Geri alındı · Ali" yazılır) */
+  refusal: string | null;
+}
+
+export interface PosMarkGroup {
+  key: string;
+  by: string;
+  /** Türkiye günü (YYYY-MM-DD) ve "bugün", "dün", "3 gün önce" */
+  day: string;
+  dayLabel: string;
+  marks: RecentPosMark[];
+}
+
+/** Son işaretlenenler kişi ve gün başına (Türkiye günü), en yeni önce: "Ayşe · dün · 34 fiyat" */
+export function groupPosMarks(marks: readonly RecentPosMark[], now: Date): PosMarkGroup[] {
+  const groups = new Map<string, PosMarkGroup>();
+  const sorted = [...marks].sort((a, b) => b.markedAt.localeCompare(a.markedAt) || b.markId - a.markId);
+  for (const m of sorted) {
+    const day = todayTR(new Date(m.markedAt));
+    const key = `${m.byId ?? m.by}|${day}`;
+    const g = groups.get(key);
+    if (g) g.marks.push(m);
+    else groups.set(key, { key, by: m.by, day, dayLabel: agoLabel(m.markedAt, now).toLocaleLowerCase("tr-TR"), marks: [m] });
+  }
+  return [...groups.values()];
+}

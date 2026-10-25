@@ -1,9 +1,11 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, inArray, isNotNull, max, min, notInArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, max, min, notInArray } from "drizzle-orm";
 
+import { logPerson } from "@/lib/activity-person";
 import type { HistoryRow, PriceSource } from "@/lib/prices/history";
-import type { PosItem } from "@/lib/prices/pos";
+import { POS_MARKS_RECENT_MS, posUndoRefusal, type PosItem, type RecentPosMark } from "@/lib/prices/pos";
+import { todayTR } from "@/lib/reminders";
 import { getDb, schema as s } from "@/server/db";
 
 /**
@@ -94,6 +96,88 @@ export async function loadPosChecklist(): Promise<PosChecklistItem[]> {
       changedAt: last?.changedAt.toISOString() ?? null,
     };
   });
+}
+
+/**
+ * Yönetici: Fiyatlar › Kasaya işle › "Son işaretlenenler" (son `days` gün, en yeni önce, en çok 500). Herkesin işareti
+ * (yöneticininki de); kişi İşlem geçmişindeki gibi (logPerson). Geri alınamayanın nedeni yöneticinin kuralıyla
+ * (posUndoRefusal): ürünün son işareti değilse, ürün listeye yeniden girdiyse ya da fiyat kasadakine döndüyse.
+ */
+export async function loadRecentPosMarks({ days = 14, now }: { days?: number; now: Date }): Promise<RecentPosMark[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: s.posMarks.id,
+      productId: s.posMarks.productId,
+      price: s.posMarks.price,
+      stalePrice: s.posMarks.stalePrice,
+      markedBy: s.posMarks.markedBy,
+      markedByName: s.posMarks.markedByName,
+      markedAt: s.posMarks.markedAt,
+      undoneAt: s.posMarks.undoneAt,
+      undoneByName: s.posMarks.undoneByName,
+      name: s.products.name,
+      size: s.products.size,
+      current: s.products.price,
+      currentStale: s.products.posStalePrice,
+    })
+    .from(s.posMarks)
+    .innerJoin(s.products, eq(s.products.id, s.posMarks.productId))
+    .where(gt(s.posMarks.markedAt, new Date(now.getTime() - days * 86_400_000)))
+    .orderBy(desc(s.posMarks.markedAt), desc(s.posMarks.id))
+    .limit(500);
+  if (!rows.length) return [];
+  const ids = [...new Set(rows.map((r) => r.productId))];
+  const [latest, accounts] = await Promise.all([
+    db
+      .selectDistinctOn([s.posMarks.productId], { productId: s.posMarks.productId, id: s.posMarks.id })
+      .from(s.posMarks)
+      .where(inArray(s.posMarks.productId, ids))
+      .orderBy(s.posMarks.productId, desc(s.posMarks.id)),
+    db.select({ id: s.users.id, name: s.users.name, email: s.users.email }).from(s.users),
+  ]);
+  const latestOf = new Map(latest.map((l) => [l.productId, l.id]));
+  const accountOf = new Map(accounts.map((a) => [a.id, a]));
+  return rows.map((r) => {
+    const mark = { id: r.id, markedBy: r.markedBy, markedAt: r.markedAt, undoneAt: r.undoneAt, price: r.price, stalePrice: r.stalePrice };
+    const refusal = r.undoneAt ? null : posUndoRefusal({ role: "admin", meId: 0, now }, mark, { price: r.current, posStalePrice: r.currentStale }, latestOf.get(r.productId) ?? null);
+    return {
+      markId: r.id,
+      productId: r.productId,
+      name: r.name,
+      size: r.size,
+      price: r.price,
+      stalePrice: r.stalePrice,
+      byId: r.markedBy,
+      by: logPerson(r.markedByName, (r.markedBy !== null && accountOf.get(r.markedBy)) || null, accounts).label,
+      markedAt: r.markedAt.toISOString(),
+      undoneAt: r.undoneAt?.toISOString() ?? null,
+      undoneBy: r.undoneByName,
+      refusal,
+    };
+  });
+}
+
+/**
+ * Yöneticinin Bugün satırı: personelin son 48 saatte kasada işaretledikleri, kişi ve Türkiye günü başına (en yeni önce;
+ * `at` o günün son işareti). Geri alınanlar ve yöneticilerin işaretleri sayılmaz. Ad işaretin anındaki ad.
+ */
+export async function staffPosMarksRecent(now: Date): Promise<{ by: string; count: number; at: string }[]> {
+  const rows = await getDb()
+    .select({ by: s.posMarks.markedBy, name: s.posMarks.markedByName, at: s.posMarks.markedAt })
+    .from(s.posMarks)
+    .innerJoin(s.users, eq(s.users.id, s.posMarks.markedBy))
+    .where(and(eq(s.users.role, "staff"), gt(s.posMarks.markedAt, new Date(now.getTime() - POS_MARKS_RECENT_MS)), isNull(s.posMarks.undoneAt)))
+    .orderBy(desc(s.posMarks.markedAt))
+    .limit(500);
+  const groups = new Map<string, { by: string; count: number; at: string }>();
+  for (const r of rows) {
+    const key = `${r.by}|${todayTR(r.at)}`;
+    const g = groups.get(key);
+    if (g) g.count += 1;
+    else groups.set(key, { by: r.name, count: 1, at: r.at.toISOString() });
+  }
+  return [...groups.values()];
 }
 
 const historyColumns = {

@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { dayTasks, splitTasks, type DayFacts, type DayTask } from "../src/app/panel/bugun/logic";
-import { posBell, posMarksText } from "../src/lib/prices/pos";
+import { mobileTitleFor } from "../src/components/panel/nav";
+import { groupPosMarks, posBell, posMarksText, type RecentPosMark } from "../src/lib/prices/pos";
 
 const tr = (local: string) => new Date(`${local}:00+03:00`);
 const NOON = tr("2026-10-22T14:00");
@@ -106,4 +107,41 @@ test("4. zil: kimlik iki rolde en yeni geri kalıştan (işaret yeniden okunmam�
   // Yeni bir fiyat girdi: kimlik değişir
   assert.notEqual(posBell("admin", { ...summary, count: 4, newest: tr("2026-10-22T13:00") }, NOON)?.id, a?.id);
   assert.equal(posBell("staff", { count: 0, oldest: null, newest: null }, NOON), null);
+});
+
+test("5. Son işaretlenenler: kişi ve Türkiye günü başına, en yeni önce; telefonun başlığı", () => {
+  const mark = (markId: number, byId: number, by: string, at: string, undoneAt: string | null = null): RecentPosMark => ({
+    markId,
+    productId: markId,
+    name: "Latte",
+    size: "M",
+    price: 205,
+    stalePrice: 195,
+    byId,
+    by,
+    markedAt: tr(at).toISOString(),
+    undoneAt,
+    undoneBy: undoneAt ? "Yönetici" : null,
+    refusal: null,
+  });
+  const groups = groupPosMarks(
+    [
+      mark(1, 2, "Ayşe", "2026-10-21T22:10"),
+      mark(2, 2, "Ayşe", "2026-10-22T01:30"),
+      mark(3, 3, "Mehmet", "2026-10-22T09:00"),
+      mark(4, 2, "Ayşe", "2026-10-21T23:59", tr("2026-10-22T08:00").toISOString()),
+    ],
+    NOON,
+  );
+  // 22 Ekim 01:30 Türkiye günüyle 22 Ekim (UTC'de 21 Ekim 22:30)
+  assert.deepEqual(
+    groups.map((g) => [g.by, g.day, g.dayLabel, g.marks.map((m) => m.markId)]),
+    [
+      ["Mehmet", "2026-10-22", "bugün", [3]],
+      ["Ayşe", "2026-10-22", "bugün", [2]],
+      ["Ayşe", "2026-10-21", "dün", [4, 1]],
+    ],
+  );
+  assert.equal(mobileTitleFor("/panel/kasa/fiyatlar"), "Kasadaki fiyatlar");
+  assert.equal(mobileTitleFor("/panel/kasa"), "Kasa raporu");
 });

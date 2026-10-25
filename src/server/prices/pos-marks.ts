@@ -21,9 +21,6 @@ import type { DB } from "../db";
 import * as s from "../db/schema";
 import { UserError } from "../user-error";
 
-/** Veritabanı ya da açık bir işlem */
-type Db = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
-
 export interface PosMarkUser {
   id: number;
   name: string;
@@ -64,7 +61,7 @@ export async function markPos(db: DB, user: PosMarkUser, items: readonly { produ
     const done: MarkPosResult["done"] = [];
     if (split.done.length) {
       await tx
-        .update(p)
+        .update(s.products)
         .set({ posStalePrice: null, posStaleSince: null })
         .where(inArray(p.id, split.done.map((r) => r.id)));
       const marks = await tx
@@ -124,7 +121,7 @@ export async function undoPos(db: DB, user: PosMarkUser, markIds: readonly numbe
         out.refused.push({ markId: mark.id, label: name, reason });
         continue;
       }
-      await tx.update(p).set({ posStalePrice: mark.stalePrice, posStaleSince: mark.staleSince }).where(eq(p.id, mark.productId));
+      await tx.update(s.products).set({ posStalePrice: mark.stalePrice, posStaleSince: mark.staleSince }).where(eq(p.id, mark.productId));
       await tx
         .update(m)
         .set({ undoneAt: now, undoneByName: user.name })

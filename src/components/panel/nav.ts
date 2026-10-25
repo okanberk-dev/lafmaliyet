@@ -435,6 +435,7 @@ const SHORT_TITLES: Record<string, string> = {
   "/panel/parasut": "Paraşüt",
   "/panel/onaylar": "Onaylar",
   "/panel/kontrol/gecmis": "Kontrol geçmişi",
+  "/panel/kasa/fiyatlar": "Kasadaki fiyatlar",
   "/panel/kontrol/duzenle": "Listeleri düzenle",
   "/panel/karaoke/doluluk": "Doluluk",
   "/panel/komisyonlar": "Komisyonlar",

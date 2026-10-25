@@ -569,12 +569,15 @@ test("personelin olgusuna yönetici bilgisi yanlışlıkla gelse de hiçbir yön
     approvals: { changes: 2, newProducts: 0, names: ["Latte"] },
     holds: { count: 1, items: [{ name: "Süt", pct: 0.5 }] },
     prices: { detail: "…", href: "/panel/urunler#zamlar", count: 3 },
+    // Kasadaki fiyatlar artık personelin de satırı (dalga 10 §2.2): kendi listesine götürür, yönetici metni yok
     pos: { count: 2, oldest: null },
     commission: { overdue: [{ label: "Pluxee", month: "2026-09", due: "2026-10-20" }] },
     cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.carry] }), firstDate: "2026-10-01" },
   });
   const tasks = dayTasks(facts);
-  assert.deepEqual(keys(tasks), ["zayi", "kasa"]);
+  assert.deepEqual(keys(tasks), ["modpos", "zayi", "kasa"]);
+  assert.equal(byKey(tasks).modpos.href, "/panel/kasa/fiyatlar");
+  assert.doesNotMatch(byKey(tasks).modpos.detail, /Fiyatlar ›|₺/);
   // Kasa bütünlüğü personelde satırı değiştirmez
   const sent = dayTasks({ ...facts, cash: { today: report("2026-10-22", { flags: [CASH_FLAGS.carry] }), yesterday: null, firstDate: "2026-10-01" } });
   assert.equal(byKey(sent).kasa.status, "done");
@@ -1167,7 +1170,8 @@ test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okumas
   const ops = read("src/server/data/today-ops.ts");
   assert.match(ops, /^import "server-only";/);
   assert.match(ops, /safe\(\s*posPendingSummary\(/);
-  // Personel dalı bugün yönetici olgusu yüklemez (kasa fiyatları personelde 2.2 ile gelir)
+  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2)
   const staffAt = ops.indexOf('if (user.role !== "admin")');
   assert.ok(staffAt > 0 && staffAt < ops.indexOf("posPendingSummary("));
+  assert.match(ops.slice(staffAt, ops.indexOf("posPendingSummary(")), /safe\(staffPosSummary\(\)/);
 });

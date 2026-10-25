@@ -6,7 +6,7 @@
 
 import { isStarted } from "@/lib/checklists";
 import { num } from "@/lib/format";
-import { staleForText } from "@/lib/prices/pos";
+import { posMarksText, staleForText } from "@/lib/prices/pos";
 
 import { clip, type CafeLine, type DayFacts, type DayRow } from "./logic";
 
@@ -16,21 +16,46 @@ export interface OpsDayFacts {
    * Sitede "Tükendi" olan ürünler (§2.1): adlar ve kayıtlar (kim, ne zaman; `staff` personelin kapattığı). Fiyat yok
    */
   soldOut?: { names: string[]; items: { name: string; by: string; at: string; staff: boolean }[] } | null;
+  /**
+   * Yönetici (§2.2): personelin son 48 saatte kasada işaretledikleri, kişi ve gün başına (en yeni önce; `at` o günün
+   * son işareti, ISO). Geri alınanlar sayılmaz. Personelin olgusunda yok
+   */
+  posMarks?: { by: string; count: number; at: string }[] | null;
 }
 
 /**
- * Kasada (ModPOS) elle değiştirilecek fiyatlar (Ürünler › Fiyatlar › Kasaya işle; zil ile aynı metin). Bugün yalnız
- * yönetici; personelin satırı (Kasadaki fiyatlar listesi) §2.2 ile gelir.
+ * Kasada (ModPOS) elle değiştirilecek fiyatlar (§2.2; zil ile aynı metin). Personel: Kasadaki fiyatlar listesine
+ * ("Listeyi aç"). Yönetici: Fiyatlar › Kasaya işle'ye; son 48 saatte personel kasada işaretlediyse açıklamanın sonuna
+ * "Ayşe dün 3 fiyatı kasada işaretledi." eklenir, bekleyen fiyat kalmadıysa satır Tamamlananlar'a düşer ve Son
+ * işaretlenenler kartına götürür (işaret onaysızdır; yönetici oradan geri alır).
  */
 export const posRow: DayRow = (f) => {
   const p = f.pos;
-  if (f.role !== "admin" || !p || p.count <= 0) return null;
+  const pending = p && p.count > 0 ? p : null;
+  const oldest = pending?.oldest ? ` En eskisi ${staleForText(pending.oldest, f.now)} bekliyor.` : "";
+  if (f.role !== "admin") {
+    if (!pending) return null;
+    return {
+      key: "modpos",
+      title: "Kasadaki fiyatlar",
+      status: "todo",
+      badge: `${num(pending.count)} fiyat`,
+      detail: `ModPOS'ta değişecek ${num(pending.count)} fiyat; değiştirdikçe işaretleyin.${oldest}`,
+      href: "/panel/kasa/fiyatlar",
+      action: "Listeyi aç",
+    };
+  }
+  const marks = posMarksText(f.ops?.posMarks ?? [], f.now);
+  if (!pending) {
+    if (!marks) return null;
+    return { key: "modpos", title: "Kasadaki fiyatlar", status: "done", detail: marks, href: "/panel/urunler/fiyatlar?sekme=kasa#son-isaretlenenler", action: "Son işaretlenenler" };
+  }
   return {
     key: "modpos",
     title: "Kasadaki fiyatlar",
     status: "todo",
-    badge: `${num(p.count)} fiyat`,
-    detail: `Kasada değişecek ${num(p.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${p.oldest ? ` En eskisi ${staleForText(p.oldest, f.now)} bekliyor.` : ""}`,
+    badge: `${num(pending.count)} fiyat`,
+    detail: `Kasada değişecek ${num(pending.count)} fiyat: ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin.${oldest}${marks ? ` ${marks}` : ""}`,
     href: "/panel/urunler/fiyatlar?sekme=kasa",
     action: "Kasaya işle",
   };
