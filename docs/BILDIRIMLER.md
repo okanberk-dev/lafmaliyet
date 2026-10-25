@@ -57,7 +57,7 @@ ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da
 kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış yapar, ürün satışa açılınca satır kalkar;
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, zayi istekleri, Tükendi; mal siparişi taslağı dalga 10'un kalanıyla) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri, Tükendi, mal siparişi taslağı) `src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
@@ -309,9 +309,10 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
 siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de. Onay bildirimlerinin konusu (`approvals`, varsayılan açık) abonelikte hazır, ama bu
-dalgada ona push gönderen bir yol yok: "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b) iki rolde de görünür
-([ONAYLAR.md](ONAYLAR.md)).
+güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık; iki
+rolde anahtarı var): yöneticiye personelin onay bekleyen mal siparişi taslağı (taslak güncellenirse en çok 15 dakikada
+bir) ve geri alınan gönderim, personele kendi taslağının sonucu ("Kaldi siparişi onaylandı", "… reddedildi"); etiket
+`istek-<id>`, metinde tutar yok ([ONAYLAR.md](ONAYLAR.md), [MAL-SIPARISI.md](MAL-SIPARISI.md) § 11).
 
 ## Resend kurulumu
 

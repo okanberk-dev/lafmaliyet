@@ -23,6 +23,11 @@ export interface OpsDayFacts {
    * son işareti, ISO). Geri alınanlar sayılmaz. Personelin olgusunda yok
    */
   posMarks?: { by: string; count: number; at: string }[] | null;
+  /**
+   * Personel (§2.4): yöneticinin onayladığı, gönderilmeyi bekleyen mal siparişi taslakları (yalnız tedarikçi adı; tutar
+   * yok). Yöneticinin olgusunda yok: bekleyen taslaklar genel Onaylar satırında sayılır
+   */
+  drafts?: { id: number; supplier: string }[] | null;
 }
 
 /**
@@ -102,8 +107,24 @@ export const checklistYesterday: DayRow = (f, c) => {
   };
 };
 
-/** Personel: onaylanmış, gönderilmeyi bekleyen mal siparişi taslağı (`mal-taslak`; §2.4). Olgusu maddesiyle gelir */
-export const draftRow: DayRow = () => null;
+/**
+ * Personel: onaylanmış, gönderilmeyi bekleyen mal siparişi taslağı (`mal-taslak`; §2.4): "Onaylanan sipariş bekliyor:
+ * Kaldi", eylem "Gönder" (taslak sayfasına). Yöneticide yok (Onaylar satırı sayar).
+ */
+export const draftRow: DayRow = (f) => {
+  const list = f.ops?.drafts ?? [];
+  if (f.role === "admin" || !list.length) return null;
+  const names = list.map((d) => d.supplier);
+  return {
+    key: "mal-taslak",
+    title: `Onaylanan sipariş bekliyor: ${clip(names.join(", "), 60)}`,
+    status: "todo",
+    ...(list.length > 1 ? { badge: `${num(list.length)} tedarikçi` } : {}),
+    detail: "Yönetici onayladı; WhatsApp'tan tek dokunuşla gönderin (önce kayıt, sonra mesaj).",
+    href: "/panel/hizli-sayim/siparis",
+    action: "Gönder",
+  };
+};
 
 /**
  * "Bugün kafede"nin Tükendi satırı (iki rol; §2.1): "Tükendi: Tiramisu, Cheesecake", bar ekranının Tükenenler

@@ -186,8 +186,9 @@ Genel bakış, sabah e-postası, Faturalar, Tutarlılık ve Stok sayımı deği�
 
 ## 9. Roller
 
-- **Personel:** Hızlı sayım (sayar, Geldi der; kendi işaretini bildirimdeki Geri al ile kaldırır). Fiyat, tutar ve
-  sipariş listesi görmez; sayım ekranı ve yükleyicisi fiyat okumaz.
+- **Personel:** Hızlı sayım (sayar, Geldi der; kendi işaretini bildirimdeki Geri al ile kaldırır) ve fiyatsız sipariş
+  taslağı (yönetici onaylar, personel gönderir; §11). Fiyat, tutar ve sipariş listesi görmez; sayım ve taslak ekranları
+  fiyat göstermez.
 - **Yönetici:** hepsi: Kalemler ve ayarlar, sipariş listesi ve gönderme, Gönderilenler (Geldi ve Geldi'yi geri al,
   Kapat, Faturayı değiştir, İptal, Yeniden aç).
 
@@ -205,6 +206,66 @@ Her eylem olay kaydına düşer ("Hızlı sayım", "Mal siparişi gönderildi", 
 `db:reset` üç tabloyu boşaltır (hammaddeler ve faturalarla birlikte), `reorder.settings`'e dokunmaz. Yedek üç tabloyu
 da alır ([YEDEK.md](YEDEK.md)).
 
+## 11. Personelin sipariş taslağı
+
+Dalga 10 §2.4 (`docs/planlar/personel-yetki.md`). Personel hızlı sayımdan sonra **fiyatsız** bir taslak hazırlar ve
+onaya gönderir; yönetici tahmini tutarı görür, gerekirse miktarları değiştirir ve onaylar; onaylanan taslağı personel
+tek dokunuşla gönderir. Taslak harcama sözüdür, bu yüzden onaylıdır; gönderim onaydan sonra onaysızdır (satırlar,
+tedarikçi, mesaj ve numara sunucuda sabit).
+
+- **Nerede:** `/panel/hizli-sayim/siparis` ("Sipariş taslağı"; personelin yolu `STAFF_PATHS`'teki Hızlı sayım'ın
+  altında). Girişler: Hızlı sayım'ın üst bilgisindeki "Sipariş taslağı", sayım kaydedilince bildirimin "Sipariş
+  taslağı" eylemi, Bugün'deki "Onaylanan sipariş bekliyor" satırı. Yönetici bu adrese gelirse Mal siparişi'ne yönlenir.
+- **Kart başına tedarikçi** (başlıkta ad, "Teslim 2 gün"): sipariş adı, "Eldeki 3 LT", varsa "Az kaldı"; − / +
+  adımlayıcı (44 px, sipariş biriminde, öneriyle dolu); önerisi 0 olanlar kapalı "Yeterli olanlar (n)" bölümünde;
+  "Tedarikçiye not (isteğe bağlı)"; "Onaya gönder". Hiçbir yerde ₺, tutar, hedef ya da günlük kullanım yok.
+- **Kart durumları:** kartta cep numarası yoksa "Bu tedarikçiye yönetici gönderir"; miktarı olan bir satırın son
+  sayımı dünden eskiyse "Önce hızlı sayım yapın" ve "Sayıma git"; son sayımdan sonra o tedarikçiye sipariş gittiyse "Bu
+  tedarikçiye bugün 09:15'te sipariş gönderildi"; **onay bekliyor** ("Ayşe · 09:42"; hazırlayan "Geri çek" görür,
+  başkası salt okur; 30 dakika geçtiyse ya da gönderimde hiçbir yönetici cihazında onay bildirimi açık değilse
+  "Yöneticiye WhatsApp'tan haber ver": kasa raporunun WhatsApp numarasına tutarsız bir metin, "Mal siparişi taslağı onay
+  bekliyor: Kaldi (5 kalem). …/panel/onaylar#istek-12"); **onaylandı** ("Ali onayladı · 10:05", miktar değiştiyse
+  "Yönetici miktarları değiştirdi", not varsa "Yönetici: …"; satırlar salt okunur; birincil düğme "WhatsApp'ta aç";
+  "Metni kopyala" yok); **gönderildi** ("Ayşe · 10:12"; gönderen 10 dakika "WhatsApp'ta yeniden aç" (aynı sipariş,
+  yeni kayıt yok) ve "Geri al" görür); **geri alındı** ("tedarikçiye iptal yazın"; yeni taslak ve yeni onay gerekir);
+  **reddedildi** ("Yönetici: …" ve "Yeniden hazırla"); **süresi doldu**; **yönetici kendisi gönderdi** ("Ali 10:20").
+- **Gönderim önce kayıttır:** "WhatsApp'ta aç" sunucuda siparişi yazar (`supplier_orders`, istek kimliği
+  `taslak:<id>`, ikinci kez açılmaz; satırlar onaylanan miktarlarla sunucunun güncel verisinden, `orderSnapshot`), taslak
+  "tamamlandı" olur, ancak sonra WhatsApp bağlantısı döner (yalnız cep numarasına). Sayfa verisinde bağlantı, mesaj ve
+  numara yoktur. Tedarikçi kartı değiştiyse ya da numara artık cep değilse taslak düşer ("Tedarikçi değişti; yeniden
+  hazırlayın"); taslaktan sonra o tedarikçiye sipariş gittiyse kapanır.
+- **Mesaj:** yöneticinin onayında kurulur ve sonuçta saklanır; kalemler onaylanan miktarlarla, "Tedarikçiye not"
+  (personelin yazdığı, yöneticinin düzenlediği) ve "Teşekkürler."den önce **"Onay no: #12"** satırı. Yöneticinin
+  personele notu mesaja asla girmez.
+- **Yönetici, Onaylar › Mal siparişi:** taslak başına kapalı bir kart (`#istek-<id>`): "Kaldi · 5 kalem", "Ayşe
+  hazırladı · 25 Eki 09:42 · Sayım 25 Eki 09:30 (Ayşe)"; satırda işaretler ("Öneriden fazla", "Öneri yoktu", "Sayım
+  beklenenden düşük": eldeki, önceki sayımdan günlük kullanımla beklenenin yarısından az; "Sayım taslaktan 4 dk önce
+  değişti": satır günün öteki sayımlarından en az 30 dakika sonra ve taslaktan en çok 15 dakika önce sayıldı), "Öneri 2
+  koli · Eldeki 3 LT · Geçen 12 LT · 20.10 · beklenen ≈ 6", adımlayıcı ve "≈ 850 ₺"; yoldaki siparişler; "Tahmini tutar ≈
+  4.250 ₺ (KDV hariç, son fatura fiyatıyla)"; taslaktan sonra yeniden sayım varsa şerit; tedarikçiye gidecek mesajın tam
+  metni ve düzenlenebilir "Tedarikçiye not"; "Not (personele görünür; tutar yazmayın)", retle zorunlu; Reddet / Onayla.
+  Bölümün başında **"İşaretsizleri onayla"**: yalnız hiç işareti olmayan ve önerinin aynısı olan taslaklar, her biri ayrı.
+- **Mal siparişi listesi:** tedarikçinin kartında "Taslak onayda · Ayşe" (ya da "Taslak onaylandı"); yönetici o
+  tedarikçiye kendisi gönderirse canlı taslak aynı işlemde "Yönetici kendisi gönderdi" ile kapanır (aynı danışma kilidi).
+  Gönderilenler'de "· onaylayan Ali · personel gönderdi" ve "Personel gönderdi" rozeti.
+- **Bildirimler:** taslak gelince etkin yöneticilere push (`approvals`, etiket `istek-<id>`; güncellenirse en çok 15
+  dakikada bir); zil (Onaylar) "Mal siparişi onay bekliyor: Kaldi", en çok 5. Personele zil ("İsteklerim") ve push:
+  "Kaldi siparişi onaylandı; WhatsApp'tan gönderin" ya da "… reddedildi". Personel gönderimi geri alınca yöneticilere
+  zil ve push. Bugün (personel) "Onaylanan sipariş bekliyor: Kaldi", eylem "Gönder"; yöneticide genel Onaylar satırı ve
+  sabah e-postasının onay kutusu. Metinlerde tutar yok.
+- **Kurallar:** tedarikçi başına tek canlı taslak (kısmi benzersiz dizin; başkasınınki varken yenisi açılmaz, kendi
+  bekleyeni güncellenir ve sürümü artar); yönetici yalnız ekranda gördüğü sürümü onaylar, kimse kendi taslağını onaylamaz;
+  onaylanan satırlar taslağın kalemlerinden olmalı ve hâlâ o tedarikçinin listesinde durmalı. Süre: hazırlandığı ya da
+  onaylandığı iş günü D ise D+2 günü 05:00; sabah işi süresi geçen bekleyen ve onaylı taslakları kapatır. Geri alma: yalnız
+  gönderen, 10 dakika içinde, mal gelmeden ve faturası bağlanmadan; sipariş iptal, taslak "Geri alındı" (son durum).
+  İsteyen başına tedarikçi başına günde en çok 3 taslak (ortak kuyruğun konu sınırı).
+- **İşlem geçmişi:** "Mal siparişi taslağı" (Kaldi: 5 kalem · onaya gönderildi), "Mal siparişi taslağı geri çekildi",
+  "… onaylandı" / "… reddedildi" (miktar değişti · not), "Mal siparişi gönderildi" (Kaldi: 5 kalem · WhatsApp · Ali
+  onayladı), "Mal siparişi geri alındı".
+- **Veri:** ortak onay kuyruğu (`staff_requests`, tür `mal-taslak`, konu `tedarikci:<anahtar>`; [ONAYLAR.md](ONAYLAR.md)).
+  Yük fiyatsızdır (kalem, sipariş adı ve birimi, miktar, öneri, eldeki, önceki sayım, beklenen, sayım anı, tedarikçiye
+  not); sonuç onaylanan satırlar, not ve mesaj; `result_id` gönderilen siparişin kimliği.
+
 ## Dosyalar
 
 - `src/lib/reorder/` (`types.ts` ayarlar ve tipler, `usage.ts` günlük kullanım, `levels.ts` hedef / öneri / liste,
@@ -213,4 +274,8 @@ da alır ([YEDEK.md](YEDEK.md)).
   (eylemler), `src/server/reorder/match.ts` (faturayla eşleştirme), `src/server/notify/reorder-push.ts`
 - `src/app/panel/hizli-sayim/`, `src/app/panel/mal-siparisi/` (sipariş listesi, `gonderilen/`, `kalemler/`)
 - Tablolar `drizzle/0034_mal_siparisi.sql`
-- Test: `tests/mal-siparisi.test.ts`, `tests/teslim-kontrolu.test.ts`
+- Personelin taslağı: `src/lib/reorder/draft.ts` (kurallar), `src/server/order-drafts/core.ts` (çekirdek),
+  `src/server/data/order-drafts.ts` (yükleyiciler), `src/server/actions/order-drafts.ts` (eylemler),
+  `src/app/panel/hizli-sayim/siparis/`, `src/app/panel/onaylar/draft-cards.tsx`
+- Test: `tests/mal-siparisi.test.ts`, `tests/teslim-kontrolu.test.ts`, `tests/mal-siparisi-taslak.test.ts`,
+  `tests/mal-siparisi-taslak-db.test.ts` (`TASLAK_TEST_DATABASE_URL`)

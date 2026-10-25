@@ -153,6 +153,8 @@ export interface OrderLite {
   message: string;
   note: string | null;
   sentByName: string;
+  /** Personelin onaylı taslağından gönderildiyse taslağın kimliği (istek kimliği `taslak:<id>`; docs/MAL-SIPARISI.md) */
+  draftId?: number | null;
 }
 
 // ---------------------------------------------------------------- Bugün

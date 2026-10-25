@@ -59,13 +59,15 @@ interface OrderCardProps {
   view: OrderView;
   /** Gönderilenler'i bu tedarikçiye süzen adres (liste süzülmemişken) */
   filterHref?: string;
+  /** Personelin onaylı taslağından gönderildiyse onaylayan yönetici (docs/MAL-SIPARISI.md › Personelin sipariş taslağı) */
+  approvedBy?: string | null;
 }
 
 /**
  * Gönderilen bir mal siparişi (Gönderilenler): durum, kalemler ya da faturayla karşılaştırma, gönderilen mesaj ve
  * eylemler (Geldi, Kapat, Faturayı değiştir, İptal, Yeniden aç). Adresteki çapa (#siparis-12) zilden gelir.
  */
-export function OrderCard({ view, filterHref }: OrderCardProps) {
+export function OrderCard({ view, filterHref, approvedBy = null }: OrderCardProps) {
   const o = view.order;
   const c = o.check;
   const [pending, start] = useActionTransition();
@@ -110,6 +112,7 @@ export function OrderCard({ view, filterHref }: OrderCardProps) {
           </h2>
           <p className="mt-0.5 text-[13px] text-ink-mute tabular">
             {dateTimeTR(o.sentAt)} · {o.sentByName} · {o.channel === "whatsapp" ? "WhatsApp" : "Kopyalandı"}
+            {o.draftId ? ` · onaylayan ${approvedBy ?? "yönetici"} · personel gönderdi` : ""}
             {filterHref ? (
               <>
                 <span className="max-sm:hidden"> · </span>
@@ -121,9 +124,12 @@ export function OrderCard({ view, filterHref }: OrderCardProps) {
             ) : null}
           </p>
         </div>
-        <Badge tone={view.state.tone} dot className="max-w-full whitespace-normal">
-          {view.state.label}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {o.draftId ? <Badge tone="blue">Personel gönderdi</Badge> : null}
+          <Badge tone={view.state.tone} dot className="max-w-full whitespace-normal">
+            {view.state.label}
+          </Badge>
+        </div>
       </div>
 
       {c ? (

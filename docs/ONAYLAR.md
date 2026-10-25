@@ -17,8 +17,8 @@ ve geri almadır.
 Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse ötekiler açılır) ve kendi yönetici denetimiyle:
 
 1. **Kasa:** kasa düzeltmesi ve silmesi, geç kasa raporu, kasadan çıkan, fotoğraf kaldırma, kapalı gün.
-2. **Mal siparişi, Zayi ve ikram:** geç zayi / ikram, zayi silme. Mal siparişi taslağı dalga 10'un kalanıyla gelir
-   (§2.4), henüz yok.
+2. **Mal siparişi, Zayi ve ikram:** mal siparişi taslağı (işaretler, tahmini tutar, tedarikçiye gidecek mesaj,
+   "İşaretsizleri onayla"; [MAL-SIPARISI.md](MAL-SIPARISI.md) § 11), geç zayi / ikram, zayi silme.
 3. **Reçete önerileri:** değişiklik ve yeni ürün (eskisi gibi; önce / sonra farkı, maliyet etkisi, "Reçete: son
    kararlar").
 4. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
@@ -39,7 +39,7 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 | `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |
-| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı (dalga 10'un kalanı: tür ve durumlar şemada, akışı henüz yok) | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
+| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı; onaydan sonra personel gönderir (`done`), gönderimi geri alabilir (`cancelled`), yönetici kendisi gönderirse `superseded` ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11) | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
 
 Türe özel alanlar `payload` (istek) ve `result` (karar) içinde, her okumada zod ile çözülür. `title` tutarsız ve kişisel
 veri taşımayan tek satırdır ("22 Ekim kasa düzeltmesi", "Latte M ×2 · 15 Eki"); zil, işlem geçmişi,

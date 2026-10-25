@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { SegmentedLinks } from "@/components/ui/segmented";
 import { requireAdmin } from "@/server/auth/dal";
+import { draftApprovers } from "@/server/data/order-drafts";
 import { loadOrderHistory, type HistoryFilter } from "@/server/data/reorder";
 
 import { OrderCard } from "../order-card";
@@ -41,6 +42,8 @@ async function SentOrdersContent({ searchParams }: { searchParams: PageProps<"/p
   await requireAdmin();
   const sp = await searchParams;
   const view = await loadOrderHistory({ durum: pick(sp.durum), tedarikci: pick(sp.tedarikci) });
+  // Personelin taslağından gönderilenlerin onaylayanı (okunamazsa yalnız "personel gönderdi")
+  const approvers = await draftApprovers(view.orders.flatMap((o) => (o.order.draftId ? [o.order.draftId] : []))).catch(() => new Map<number, string | null>());
   const href = (durum: HistoryFilter, tedarikci = view.supplier?.slug) => {
     const q = new URLSearchParams();
     if (durum !== "acik") q.set("durum", durum);
@@ -75,7 +78,12 @@ async function SentOrdersContent({ searchParams }: { searchParams: PageProps<"/p
       {view.orders.length ? (
         <div className="space-y-4">
           {view.orders.map((o) => (
-            <OrderCard key={o.order.id} view={o} filterHref={!view.supplier && o.slug ? href(view.filter, o.slug) : undefined} />
+            <OrderCard
+              key={o.order.id}
+              view={o}
+              filterHref={!view.supplier && o.slug ? href(view.filter, o.slug) : undefined}
+              approvedBy={o.order.draftId ? (approvers.get(o.order.draftId) ?? null) : null}
+            />
           ))}
         </div>
       ) : (
