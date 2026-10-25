@@ -11,8 +11,10 @@ import { productSalesHistory, soldWithOnline } from "@/lib/calc/insights";
 import { monthLabel } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
 import { suggestLinks } from "@/lib/site-menu/names";
+import { soldOutWhen } from "@/lib/site-menu/sold-out";
 import { requireAdmin } from "@/server/auth/dal";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
+import { soldOutNoteFor } from "@/server/data/menu-status";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { loadProductPriceHistory } from "@/server/data/prices";
 import { syncSiteMenu } from "@/server/site-menu/sync";
@@ -106,7 +108,12 @@ async function RecipeContent({
   const pc = model.computeProduct(product);
   const month = resolveMonth(sp.ay, model);
   // Fiyat geçmişi kartı (son 20 değişiklik ve kasanın durumu) okunamazsa kart görünmez, reçete kartı açılır
-  const [prices, priceHistory] = await Promise.all([loadPriceAlerts(model).catch(() => null), loadProductPriceHistory(product.id).catch(() => null)]);
+  // Bar ekranının Tükenenler kartıyla kapatıldıysa kim ve ne zaman (dalga 10 §2.1; okunamazsa not yok)
+  const [prices, priceHistory, soldOut] = await Promise.all([
+    loadPriceAlerts(model).catch(() => null),
+    loadProductPriceHistory(product.id).catch(() => null),
+    soldOutNoteFor(link?.siteMenuId ?? null).catch(() => null),
+  ]);
   const impact = prices?.impacts.find((i) => i.productId === product.id) ?? null;
 
   // Satılan adet ModPOS + laffogato.net online: Ürünler, Genel bakış ve Claude aracının (panelAdresi) sayısıyla aynı
@@ -187,6 +194,7 @@ async function RecipeContent({
             : null,
       }}
       priceHistory={priceHistory}
+      soldOutNote={soldOut ? `${soldOut.staff ? "Personel tükendi yaptı" : "Bar ekranında tükendi yapıldı"} · ${soldOut.by} ${soldOutWhen(soldOut.at, new Date())}` : null}
       priceImpact={
         impact
           ? {

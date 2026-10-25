@@ -737,7 +737,7 @@ test("satış fiyatını yazan her yol geçmişe ve kasanın durumuna yazar", ()
   const walk = (dir: string): string[] =>
     readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));
   const updaters = walk("src").filter((f) => read(f).includes(".update(s.products)"));
-  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/prices/record.ts", "src/server/prices/pos-marks.ts"];
+  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/prices/record.ts", "src/server/prices/pos-marks.ts", "src/server/site-menu/sold-out-core.ts"];
   for (const f of updaters) {
     if (noPrice.includes(f)) {
       for (const m of read(f).matchAll(/\.update\(s\.products\)\s*\.set\(\{([^}]*)\}/g)) assert.doesNotMatch(m[1], /\bprice\b|\.\.\./, `${f}: fiyat yazıyor`);

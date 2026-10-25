@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { PageSkeleton } from "@/components/ui/misc";
 import { isLive, sessionEnd, sessionStart, trClock, type KaraokeSessionDTO } from "@/lib/karaoke/session";
 import { requireUser } from "@/server/auth/dal";
+import { loadSoldOut } from "@/server/data/menu-status";
 import { getDb, schema as s } from "@/server/db";
 import { loadSessions } from "@/server/karaoke/board";
 import { karaokeSecret, readSyncState, siteUrl, syncKaraoke } from "@/server/karaoke/sync";
@@ -14,6 +15,7 @@ import { karaokeSecret, readSyncState, siteUrl, syncKaraoke } from "@/server/kar
 import { KaraokeAdmin, type MonthStats } from "./karaoke-admin";
 import { KaraokeBoard } from "./karaoke-board";
 import { OrdersBoard } from "./orders-board";
+import { SoldOutCard } from "./sold-out-card";
 
 export const metadata: Metadata = { title: "Karaoke" };
 // Siparişin aşama düğmesi bu sayfanın sunucu eylemiyle siteye gider (en çok 8 saniye), ardından listeyi siteden
@@ -69,7 +71,7 @@ async function KaraokeContent() {
   const [y, m] = monthStart.split("-").map(Number);
   const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`;
   const trMidnight = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) - 3 * 3_600_000);
-  const [upcoming, month, history, sync, devices, linked] = await Promise.all([
+  const [upcoming, month, history, sync, devices, linked, soldOut] = await Promise.all([
     loadSessions(new Date(now - 12 * 3_600_000), new Date(now + (admin ? 45 : 8) * DAY_MS), { admin }),
     admin ? loadSessions(trMidnight(monthStart), trMidnight(nextMonth), { admin }) : Promise.resolve([]),
     admin ? loadSessions(new Date(now - 30 * DAY_MS), new Date(now), { admin }) : Promise.resolve([]),
@@ -86,11 +88,17 @@ async function KaraokeContent() {
       .select({ name: s.products.name, siteMenuId: s.products.siteMenuId, siteMenuSlot: s.products.siteMenuSlot })
       .from(s.products)
       .where(and(isNotNull(s.products.siteMenuId), eq(s.products.active, true))),
+    // Tükenenler kartı (dalga 10 §2.1): site bağlantısı yoksa kart yok; okunamazsa kart çizilmez, ekran açılır
+    loadSoldOut().catch((e: unknown) => {
+      console.error("[tukendi] kart", e);
+      return null;
+    }),
   ]);
   const recipes = Object.fromEntries(linked.filter((p) => p.siteMenuId && p.siteMenuSlot).map((p) => [`${p.siteMenuId}|${p.siteMenuSlot}`, p.name]));
   return (
     <div className="space-y-6">
       <OrdersBoard role={user.role} siteBase={siteUrl()} recipes={recipes} serverNow={now} />
+      {soldOut?.configured ? <SoldOutCard role={user.role} entries={soldOut.entries} serverNow={now} /> : null}
       <KaraokeBoard role={user.role} upcoming={upcoming} siteAdminBase={admin ? `${siteUrl()}/admin/mobil/karaoke` : null} configured={Boolean(karaokeSecret())} serverNow={now} />
       {admin ? (
         <KaraokeAdmin
