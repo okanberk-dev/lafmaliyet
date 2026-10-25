@@ -22,6 +22,7 @@ import {
   replaceSnapshotItem,
   SiteRequestError,
 } from "./sync";
+import { carrySoldOutMarker } from "./sold-out-store";
 
 /**
  * Panel → site: bağlı bir ürünün fiyatı ya da menü durumu panelde değişince önce sitenin yazma ucuna gidilir
@@ -49,12 +50,18 @@ export type PushOutcome =
 /**
  * Değişiklik siteyi ilgilendiriyorsa siteye yazar. `consequence`: hata metninde panelde ne olmadığı ("fiyat
  * değişmedi", "değişiklikler kaydedilmedi"). Kopuk bağlantı, 0 fiyat, kapalı bağlantı ve sitenin her hatası
- * UserError'dur.
+ * UserError'dur. `db`: kopyanın okunduğu bağlantı (çağıran bir işlemin içindeyse onun bağlantısı).
  */
-export async function pushSaleChange(user: { name: string }, row: SaleRow, after: SaleValues, consequence: string): Promise<PushOutcome> {
+export async function pushSaleChange(
+  user: { name: string },
+  row: SaleRow,
+  after: SaleValues,
+  consequence: string,
+  db?: Pick<ReturnType<typeof getDb>, "select">,
+): Promise<PushOutcome> {
   const link = row.siteMenuId && row.siteMenuSlot ? { siteMenuId: row.siteMenuId, slot: row.siteMenuSlot } : null;
   if (!link) return { kind: "local" };
-  const snapshot = await readSiteSnapshot();
+  const snapshot = await readSiteSnapshot(db);
   const plan = planPush({
     link,
     before: row,
@@ -104,6 +111,12 @@ export async function applyPushed(tx: Tx, outcome: Extract<PushOutcome, { kind: 
       .where(and(eq(s.products.siteMenuId, item.id), ne(s.products.id, row.id)))
   ).flatMap((r) => asLinkedRow(r) ?? []);
   if (siblings.length) await applyPlan(tx, planMenuSync([item], siblings, { partial: true }), at);
+  // Yalnız fiyat yazımı Tükenenler kartının kaydını yeni damgaya taşır (kopyadaki eski damga yenilenmeden önce
+  // okunur; src/server/site-menu/sold-out-store.ts): panelin kendi fiyat değişikliği personelin kaydını düşürmez
+  if (!outcome.visibility) {
+    const prev = (await readSiteSnapshot(tx)).items.find((i) => i.id === item.id)?.updatedAt ?? null;
+    await carrySoldOutMarker(tx, prev, item);
+  }
   await replaceSnapshotItem(tx, item);
   // Site saati ilerler: bu yazımdan önce alınmış liste artık uygulanmaz. Panelin saatinden bir dakikadan ileri bir
   // zaman (sitede bozuk bir updatedAt) sayılmaz, sonraki bütün çekmeleri durdurmasın. Kalemin kendi zamanı da saklanır:

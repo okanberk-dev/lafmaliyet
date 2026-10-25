@@ -90,7 +90,7 @@ export function QuickCountForm({ sheet, admin }: { sheet: QuickCountSheet; admin
       const { saved, removed } = res.data;
       const title = saved ? `${num(saved)} kalem kaydedildi` : `Bugünkü ${num(removed)} sayım silindi`;
       if (admin) toast.success(title, { action: { label: "Sipariş listesi", onClick: () => router.push("/panel/mal-siparisi") } });
-      else toast.success(title, { description: "Teşekkürler; sipariş listesi yöneticide hazır." });
+      else toast.success(title, { action: { label: "Sipariş taslağı", onClick: () => router.push("/panel/hizli-sayim/siparis") } });
     } catch {
       // Ağ kesildi ya da sunucu o an yanıt vermedi: yazılanlar kutularda duruyor (Stok sayımı ile aynı)
       toast.error("Kaydedilemedi: bağlantı yok gibi", {

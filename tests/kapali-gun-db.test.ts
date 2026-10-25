@@ -25,6 +25,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL = process.env.KAPALI_TEST_DATABASE_URL;
 const tr = (local: string) => new Date(`${local}:00+03:00`);
 /** D gününün ertesi sabahı (iş günü D+1): "dün" D */
@@ -344,6 +346,24 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     assert.equal(mine.editable, false);
     assert.equal(mine.addedBy, "Ayşe");
     await db.delete(s.specialDays).where(eq(s.specialDays.id, mark.id));
+  });
+
+  test("kilit sırası: yöneticinin doğrudan işareti, aynı anda verilen onayla kilitlenmez (günün kilidi, sonra istek)", async () => {
+    const D = "2027-07-10";
+    dates.push(D);
+    await report("2027-07-09");
+    const now = morningAfter(D);
+    const out = await ask(users.ayse, D, now);
+    const [approve, mark] = await raceOnRequest(
+      URL!,
+      out.row.id,
+      () => review(out.row.id, out.row.version, "approve", now),
+      () => reqs.markClosedDayCore(db, users.ali, { date: D, note: null }, now),
+    );
+    assert.equal(approve.status, "fulfilled");
+    assert.equal(mark.status, "fulfilled");
+    assert.equal((await closedRows(D)).length, 1, "tek kapalı satırı");
+    assert.equal((await requestOf(out.row.id)).status, "approved");
   });
 });
 

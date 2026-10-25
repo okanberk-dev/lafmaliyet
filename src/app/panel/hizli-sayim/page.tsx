@@ -16,7 +16,8 @@ export const metadata: Metadata = { title: "Hızlı sayım" };
 
 /**
  * Hızlı sayım (docs/MAL-SIPARISI.md): mal siparişi için haftalık kısa sayım, telefondan. Personel de sayar ve gelen
- * malı işaretler; ekranda fiyat, tutar ya da sipariş listesi yok (yönetici Mal siparişi'nde görür).
+ * malı işaretler; ekranda fiyat, tutar ya da sipariş listesi yok (yönetici Mal siparişi'nde görür). Personel sayımdan
+ * sonra "Sipariş taslağı"na geçer (fiyatsız, yöneticinin onayıyla).
  */
 export default function QuickCountPage() {
   return (
@@ -49,7 +50,12 @@ async function QuickCountContent() {
             <ButtonLink href="/panel/mal-siparisi" variant="secondary">
               <ShoppingBasket size={16} aria-hidden="true" /> Sipariş listesi
             </ButtonLink>
-          ) : undefined
+          ) : (
+            // Personel: sayımdan sonra fiyatsız sipariş taslağı, yöneticinin onayına (docs/MAL-SIPARISI.md)
+            <ButtonLink href="/panel/hizli-sayim/siparis" variant="secondary">
+              <ShoppingBasket size={16} aria-hidden="true" /> Sipariş taslağı
+            </ButtonLink>
+          )
         }
         tabs={admin ? <SectionTabs section="malSiparisi" current="/panel/hizli-sayim" /> : undefined}
       />

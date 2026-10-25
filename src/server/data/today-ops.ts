@@ -2,6 +2,8 @@ import "server-only";
 
 import type { DayFacts } from "@/app/panel/bugun/logic";
 import type { CurrentUser } from "@/server/auth/dal";
+import { soldOutFacts } from "@/server/data/menu-status";
+import { staffApprovedDrafts } from "@/server/data/order-drafts";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary, staffPosMarksRecent } from "@/server/data/prices";
 
@@ -16,11 +18,14 @@ import { safe } from "./today-safe";
 export async function opsFacts(user: CurrentUser, now: Date): Promise<Pick<DayFacts, "pos" | "ops">> {
   const lite = (p: { count: number; oldest: Date | null }) => ({ count: p.count, oldest: p.oldest?.toISOString() ?? null });
   // Personel: kendi sabit sütunlu yükleyicileri (kasadaki fiyatlar yalnız etkin ürünlerden; §2.2)
+  // Tükenenler (§2.1; iki rolde, "Bugün kafede"nin satırı): kartla kapatılıp kaydı geçerli ürünler, fiyatsız
+  const soldOutP = safe(soldOutFacts());
   if (user.role !== "admin") {
-    const pos = await safe(staffPosSummary().then(lite));
-    return { pos, ops: {} };
+    // Onaylanan mal siparişi taslakları (§2.4): hafif, modelsiz; yalnız tedarikçi adı
+    const [pos, soldOut, drafts] = await Promise.all([safe(staffPosSummary().then(lite)), soldOutP, safe(staffApprovedDrafts(now))]);
+    return { pos, ops: { soldOut, drafts } };
   }
   // Yönetici: kasada bekleyen bütün fiyatlar ve personelin son 48 saatteki işaretleri (Tamamlananlar satırı)
-  const [pos, posMarks] = await Promise.all([safe(posPendingSummary().then(lite)), safe(staffPosMarksRecent(now))]);
-  return { pos, ops: { posMarks } };
+  const [pos, posMarks, soldOut] = await Promise.all([safe(posPendingSummary().then(lite)), safe(staffPosMarksRecent(now)), soldOutP]);
+  return { pos, ops: { posMarks, soldOut } };
 }

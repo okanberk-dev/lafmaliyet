@@ -29,13 +29,18 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
  *
  *     Not: Perşembe sabah 10'dan önce
  *     Teşekkürler.
+ *
+ * Personelin taslağında (`ref`, docs/MAL-SIPARISI.md › Personelin sipariş taslağı) "Teşekkürler."den önce "Onay no:
+ * #42" satırı.
  */
-export function orderMessage(o: { signature: string; lines: readonly { orderName: string; qty: number; unit: string }[]; note?: string | null }): string {
+export function orderMessage(o: { signature: string; lines: readonly { orderName: string; qty: number; unit: string }[]; note?: string | null; ref?: number | null }): string {
   // İmzadaki WhatsApp biçim işaretleri kalınlığı bozmasın
   const sig = oneLine(o.signature.replace(/[*_~`]/g, "")) || DEFAULT_REORDER.signature;
   const items = o.lines.filter((l) => l.qty > 0).map((l) => `• ${oneLine(l.orderName)}: ${qtyLabel(l.qty, l.unit)}`);
   const note = o.note?.trim().replace(/\n{3,}/g, "\n\n");
-  return [`Merhaba, *${sig}* siparişimiz:`, "", ...items, "", ...(note ? [`Not: ${note}`] : []), "Teşekkürler."].join("\n");
+  // Personelin gönderdiği (yöneticinin onayladığı) taslakta onay numarası: tedarikçi siparişin onaylı olduğunu görür
+  const ref = o.ref ? [`Onay no: #${o.ref}`] : [];
+  return [`Merhaba, *${sig}* siparişimiz:`, "", ...items, "", ...(note ? [`Not: ${note}`] : []), ...ref, "Teşekkürler."].join("\n");
 }
 
 /**

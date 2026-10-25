@@ -9,7 +9,7 @@ onayına giden istekleri ve reçete önerileri tek yerde. Karar: dalga 10, sahib
 İşlemin sonucu geçmiş bir kasa, stok farkı ya da gider kaydını değiştiriyorsa, bir kanıtı siliyorsa, para harcama
 sözü veriyorsa ya da bir uyarıyı susturuyorsa personel doğrudan kaydetmez, **istek** gönderir. Anında yapılması
 gereken, para taşımayan, geri alınabilen ve kimin yaptığı görünen işler onaysızdır (kasaya işle, ileri tarihli özel
-gün, geçmiş kontrol listelerine bakmak; dalga 10'un kalanıyla Tükendi); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
+gün, geçmiş kontrol listelerine bakmak, bar ekranında Tükendi / Satışa aç); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
 ve geri almadır.
 
 ## Ekran
@@ -17,8 +17,8 @@ ve geri almadır.
 Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse ötekiler açılır) ve kendi yönetici denetimiyle:
 
 1. **Kasa:** kasa düzeltmesi ve silmesi, geç kasa raporu, kasadan çıkan, fotoğraf kaldırma, kapalı gün.
-2. **Mal siparişi, Zayi ve ikram:** geç zayi / ikram, zayi silme. Mal siparişi taslağı dalga 10'un kalanıyla gelir
-   (§2.4), henüz yok.
+2. **Mal siparişi, Zayi ve ikram:** mal siparişi taslağı (işaretler, tahmini tutar, tedarikçiye gidecek mesaj,
+   "İşaretsizleri onayla"; [MAL-SIPARISI.md](MAL-SIPARISI.md) § 11), geç zayi / ikram, zayi silme.
 3. **Reçete önerileri:** değişiklik ve yeni ürün (eskisi gibi; önce / sonra farkı, maliyet etkisi, "Reçete: son
    kararlar").
 4. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
@@ -39,7 +39,7 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 | `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |
-| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı (dalga 10'un kalanı: tür ve durumlar şemada, akışı henüz yok) | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
+| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı; onaydan sonra personel gönderir (`done`), gönderimi geri alabilir (`cancelled`), yönetici kendisi gönderirse `superseded` ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11) | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
 
 Türe özel alanlar `payload` (istek) ve `result` (karar) içinde, her okumada zod ile çözülür. `title` tutarsız ve kişisel
 veri taşımayan tek satırdır ("22 Ekim kasa düzeltmesi", "Latte M ×2 · 15 Eki"); zil, işlem geçmişi,
@@ -95,9 +95,12 @@ sabah e-postası ve Son kararlar bunu yazar.
   reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür" ([BUGUN.md](BUGUN.md)).
 - **Sabah e-postası:** "Onay bekleyenler" kutusu: "2 istek onay bekliyor", en eskisinin beklediği ve istek başına
   başlık ile isteyenin adı; karar verilene kadar her sabah.
-- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık) ve tercihi kaydeden eylem hazır, ama bu
-  dalgada bu konuya push gönderen bir yol yok; cihazdaki "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b)
-  görünür. Gelince etiket `istek-<id>`, metinde tutar yok.
+- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık). Dalga 10b'den beri mal siparişi taslağı
+  bu konuyla gider: yöneticilere yeni ve güncellenen taslak ile geri alınan gönderim, personele kendi taslağının sonucu
+  ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11). Öteki istekler push göndermez (zil, Bugün ve sabah e-postası). Etiket
+  `istek-<id>`, metinde tutar yok. Cihazdaki "Onay bildirimleri" anahtarı Hatırlatıcılarım'daki ve Karaoke'deki **Bu
+  cihazda uyarılar** kartında. Panel sekmesi öndeyken sistem bildirimi çıkmaz: sekme bildirimi kendisi gösterir, zili
+  tazeler, Onaylar ve taslak sayfasını yeniler (`alert-center.tsx`, `src/lib/live-poll.ts` › `refreshesScreen`).
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
   çekme "Kasa düzeltmesi geri çekildi", "Geç zayi / ikram isteği geri çekildi" gibi türün adıyla yazılır.
 
@@ -111,10 +114,19 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
 - Saf kurallar: `src/lib/staff-requests.ts` (türler, durumlar, etiketler, sınırlar, `reviewRefusal`, `nextBump`,
   `isExpired`, e-posta satırları).
 - Çekirdek: `src/server/staff-requests/core.ts` (`server-only` ve `"use server"` değil; veritabanını ya da işlemi
-  parametre alır): `createOrUpdateRequest` (kişinin danışma kilidi altında), `lockForReview` → `decide`, `withdrawOwn`,
-  `supersede`, `assertNotHeld`, `releaseHeld`, `expireStaffRequests`; okuyucular `countPendingByKind`,
-  `pendingRequests`, `recentDecisions`, `ownRequests` (ham yük yok). Kullanıcıya gösterilen hatalar `UserError`
-  (`src/server/user-error.ts`).
+  parametre alır): `createOrUpdateRequest` (kişinin danışma kilidi altında), `peekForReview` → `lockForReview` →
+  `decide`, `withdrawOwn`, `supersede`, `assertNotHeld`, `releaseHeld`, `expireStaffRequests`; okuyucular
+  `countPendingByKind`, `pendingRequests`, `recentDecisions`, `ownRequests` (ham yük yok). Kullanıcıya gösterilen
+  hatalar `UserError` (`src/server/user-error.ts`).
+- **Kilit sırası: önce konu, sonra istek.** İsteği açan ve güncelleyen yol konu nesnesini kilitleyip
+  `createOrUpdateRequest`'e geçer: kasadan çıkan satırı, kasa raporu, günün danışma kilidi (`kasa-gec:<gün>`,
+  `kapali-gun:<gün>`), zayi kaydı, tedarikçinin kilidi (`mal-taslak:<anahtar>`). Doğrudan yazımlar da (satırı ya da
+  kaydı silmek, günü doğrudan girmek ya da kapalı işaretlemek) konu nesnesini kilitleyip bekleyen istekleri öyle kapatır.
+  Karar aynı sırayla: `peekForReview` kilitsiz okur, konu nesnesi kilitlenir, sonra `lockForReview(…, { peeked })`
+  bütün denetimleri kilit altında yeniden yapar. Ters sıra, personelin güncellemesiyle aynı anda verilen onayı
+  kilitlenmeye (40P01, "İşlem tamamlanamadı") düşürür. Yeni bir karar çekirdeği de bu sırayla yazılır; kaynak testi
+  (`tests/onay-kuyrugu.test.ts`) her `lockForReview` çağrısında `peeked` ister, veritabanı testleri yarışı
+  `tests/helpers/lock-race.ts` ile kurar (üçüncü bir bağlantı istek satırını tutar, iki yol sırayla beklemeye girer).
 - Genel eylem: `src/server/actions/staff-requests.ts` → `withdrawStaffRequest` (tek export). İstek ve karar eylemleri
   her alanın kendi `"use server"` dosyasında; her biri kendi oturum ve rol denetimini yapar (`requireUser` /
   `requireAdmin`).
@@ -122,4 +134,6 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
   `WITHDRAW_LOG`, `STAFF_APPROVAL_KINDS` (personel Yardım'ı); Onaylar'da kartı, zilde satırı.
 - Testler: `tests/onay-kuyrugu.test.ts` (saf kurallar ve kaynak denetimleri), `tests/onay-kuyrugu-db.test.ts`
   (`ONAY_TEST_DATABASE_URL`; tek bekleyen, istemci anahtarı, sürüm, kendini onaylama, geri çekme ile onay yarışı,
-  sınırlar, supersede, fotoğraf tutma, süre dolması).
+  sınırlar, supersede, fotoğraf tutma, süre dolması). Kilit sırası yarışları her alanın kendi veritabanı testinde
+  ("kilit sırası: …"): kasadan çıkan ve fotoğraf kaldırma, kasa düzeltme ve silme, geç rapor (yöneticinin doğrudan
+  girişi dahil), zayi silme, kapalı gün, mal siparişi taslağı.

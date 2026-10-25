@@ -137,8 +137,10 @@ export interface CashOutSnapshot {
   expense: { categoryId: number; note: string | null; description?: string | null; paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null } | null;
 }
 
-/** "Geri al" bu kadar süre geçerli (bildirim 8 sn görünür; fotoğrafı az önce bırakılmış sayma penceresiyle aynı) */
+/** "Geri al" bu kadar süre geçerli (bildirim CASH_OUT_UNDO_TOAST_MS görünür; fotoğrafı az önce bırakılmış sayma penceresiyle aynı) */
 export const CASH_OUT_UNDO_MS = 15 * 60_000;
+/** Silinen satırın "Geri al" bildirimi bu kadar görünür (kasadan çıkan penceresi ve personel Yardım'ı aynı sayıyı kullanır) */
+export const CASH_OUT_UNDO_TOAST_MS = 8_000;
 
 const snapshotSchema = z.object({
   date: z.string(),

@@ -33,7 +33,10 @@ type Payload = { requestId: string; lines: { ingredientId: number; qty: number }
  * ikinci kayıt açmaz). Gönderilen tedarikçinin düzenlemeleri yeni öneriyle düşer, ötekiler kalır; başka sayfaya geçip
  * dönünce (Activity) düzenlemeler durur, açık pencere kapanır.
  */
-export function OrderPlanClient({ view }: { view: OrderPlanView }) {
+/** Tedarikçinin personel taslağı (Onaylar'da; docs/MAL-SIPARISI.md › Personelin sipariş taslağı) */
+export type DraftBadge = { status: "pending" | "approved"; by: string; id: number };
+
+export function OrderPlanClient({ view, drafts = {} }: { view: OrderPlanView; drafts?: Record<string, DraftBadge> }) {
   /** Elle değiştirilen miktarlar (sipariş biriminde); yoksa öneri */
   const [edits, setEdits] = useState<Record<number, number>>({});
   const [synced, setSynced] = useState(view);
@@ -142,6 +145,7 @@ export function OrderPlanClient({ view }: { view: OrderPlanView }) {
           key={g.key ?? "atanmamis"}
           g={g}
           today={view.today}
+          draft={g.key ? (drafts[g.key] ?? null) : null}
           qtyOf={qtyOf}
           setQty={setQty}
           onEdit={setEditing}
@@ -221,6 +225,7 @@ function contactLine(g: PlanGroupView, today: string): string {
 function SupplierCard({
   g,
   today,
+  draft,
   qtyOf,
   setQty,
   onEdit,
@@ -229,6 +234,7 @@ function SupplierCard({
 }: {
   g: PlanGroupView;
   today: string;
+  draft: DraftBadge | null;
   qtyOf: (l: PlanLineView) => number;
   setQty: (l: PlanLineView, q: number) => void;
   onEdit: (l: PlanLineView) => void;
@@ -266,7 +272,18 @@ function SupplierCard({
             </>
           ) : undefined
         }
-        actions={g.sentAt ? <Badge tone="green">Gönderildi {hhmm(g.sentAt)}</Badge> : undefined}
+        actions={
+          g.sentAt || draft ? (
+            <>
+              {draft ? (
+                <Link href={`/panel/onaylar#istek-${draft.id}`} className="pointer-coarse:py-2">
+                  <Badge tone={draft.status === "pending" ? "amber" : "blue"}>{`Taslak ${draft.status === "pending" ? "onayda" : "onaylandı"} · ${draft.by}`}</Badge>
+                </Link>
+              ) : null}
+              {g.sentAt ? <Badge tone="green">Gönderildi {hhmm(g.sentAt)}</Badge> : null}
+            </>
+          ) : undefined
+        }
       />
       {suggested.length ? <ul className="divide-y divide-line border-t border-line">{suggested.map(row)}</ul> : null}
       {enough.length ? (

@@ -37,20 +37,25 @@ import {
   UserPlus,
   Undo2,
   UserRound,
+  UsersRound,
   Wallet,
   Wifi,
   type LucideIcon,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { isValidElement, Suspense, type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { NAV_FOOTER, navTreeFor } from "@/components/panel/nav";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
+import { PageSkeleton } from "@/components/ui/misc";
+import { requireAdmin } from "@/server/auth/dal";
 
+import { buildFaq, type FaqItem, type PathText } from "./faq-build";
 import { HelpFaq, HelpFaqFallback, type FaqGroup } from "./faq-search";
 import { excelFor, pathOf, tabsOf } from "./nav-paths";
 import { RoutineSteps } from "./routine-steps";
@@ -158,10 +163,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
   },
 ];
 
-type Faq = { id: string; q: string; a: ReactNode; icon: LucideIcon; links?: { href: string; label: string }[] };
-
 /** Sık sorulanlar, konuya göre gruplu; her grup kendi yaylı akordeonu */
-const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
+const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
   {
     title: "Menü ve reçete",
     items: [
@@ -599,14 +602,21 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan), Kontrol listeleri, Zayi &amp; ikram, Reçete
-            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hızlı sayım (haftalık kritik kalemler, gelen mal siparişine Geldi), Hatırlatıcılarım ve Hesabım
-            ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google
-            Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
+            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı, Tükendi / Satışa aç), Kasa raporu (Z raporu ve fişler fotoğraftan, kasadaki satış
+            fiyatları), Kontrol listeleri (son 7 günün geçmişiyle), Zayi &amp; ikram, Reçete defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı
+            yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hızlı sayım (haftalık kritik kalemler, sipariş taslağı, gelen mal siparişine Geldi), Özel
+            günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Geçmiş kasa, silme, geç
+            kayıt, kapalı gün ve sipariş taslağı gibi önemli işler isteğe döner, kararı siz <Path href="/panel/onaylar" /> ekranında verirsiniz. Personelin
+            Yardım&apos;ı (bu sayfanın başlığındaki düğme) yalnız onun ekranlarını anlatır; hesabı açınca ona gösterin. Her kullanıcı Hesabım&apos;dan parolasını
+            değiştirip iki adımlı doğrulamayı (Google Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
           </>
         ),
         icon: UserPlus,
-        links: [{ href: "/panel/kullanicilar", label: "Kullanıcılar & roller" }, { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" }],
+        links: [
+          { href: "/panel/kullanicilar", label: "Kullanıcılar & roller" },
+          { href: "/panel/hesap", label: "Hesabım (iki adımlı doğrulama)" },
+          { href: "/panel/yardim/personel", label: "Personelin Yardım'ı" },
+        ],
       },
       {
         id: "claude",
@@ -883,58 +893,21 @@ const FORMULAS = [
 
 // ---------------------------------------------------------------- Sayfa
 
-function GoLinks({ links }: { links: { href: string; label: string }[] }) {
-  return (
-    <span className="mt-1.5 flex flex-wrap gap-x-4">
-      {links.map((l) => (
-        <Link key={l.href} href={l.href} className="inline-flex min-h-9 items-center pointer-coarse:min-h-11 gap-1 text-[13px] font-medium text-ink hover:underline">
-          {l.label}
-          <ArrowUpRight size={13} className="text-ink-quiet" aria-hidden="true" />
-        </Link>
-      ))}
-    </span>
-  );
-}
+/** Yöneticinin cevaplarındaki <Path>'in arama metni: kenar çubuğundaki adlarla */
+const adminPathText: PathText = (el) => (el.type === Path && el.props.href ? pathOf(el.props.href).join(" ") : undefined);
 
-/** Cevaptaki düz metin (arama için): menü yolları kenar çubuğundaki adlarıyla okunur */
-function textOf(node: ReactNode): string {
-  if (node === null || node === undefined || typeof node === "boolean") return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(textOf).join(" ");
-  if (isValidElement<{ href?: string; children?: ReactNode }>(node)) {
-    if (node.type === Path && node.props.href) return pathOf(node.props.href).join(" ");
-    return textOf(node.props.children);
-  }
-  return "";
-}
-
-const FAQ: FaqGroup[] = FAQ_GROUPS.map((g) => ({
-  title: g.title,
-  items: g.items.map((f) => ({
-    id: f.id,
-    title: f.q,
-    text: `${textOf(f.a)} ${f.links?.map((l) => l.label).join(" ") ?? ""}`,
-    icon: (
-      <IconTile size="sm" tone={toneFor(f.q)}>
-        <f.icon />
-      </IconTile>
-    ),
-    description: (
-      <>
-        <span className="block">{f.a}</span>
-        {f.links ? <GoLinks links={f.links} /> : null}
-      </>
-    ),
-  })),
-}));
+const FAQ: FaqGroup[] = buildFaq(FAQ_GROUPS, adminPathText);
 
 function ExcelValue({ value }: { value: string | undefined }) {
   return value ? <span className="text-right text-xs text-ink-mute">{value}</span> : <Badge tone="blue">yeni</Badge>;
 }
 
+/**
+ * Yöneticinin Yardım'ı. Başlık hemen çizilir; içerik (FAQ, FAQ_GROUPS, ROUTINE, FORMULAS, MENU_LAYOUT) yalnız iç
+ * bileşende, yönetici denetiminden sonra: personel bu adrese gelse de (proxy zaten Bugün'e döndürür) yöneticinin
+ * bölümleri sayfa verisine hiç girmez. Personelin kendi Yardım'ı /panel/yardim/personel (plan personel-yetki.md §2.10).
+ */
 export default function HelpPage() {
-  // Profil menüsündeki Hesabım da bir ekran; kenar çubuğu ağacından sonra listelenir
-  const account = NAV_FOOTER.find((i) => i.href === "/panel/hesap");
   return (
     <>
       <PageHeader
@@ -942,7 +915,25 @@ export default function HelpPage() {
         eyebrow="Sistem"
         excel="Nasıl Kullanılır"
         description="Sistemin nasıl çalıştığı, her ay ne yapmanız gerektiği ve Excel'deki sayfaların karşılıkları."
+        actions={
+          <ButtonLink href="/panel/yardim/personel" variant="secondary">
+            <UsersRound size={16} aria-hidden="true" /> Personelin Yardım&apos;ı
+          </ButtonLink>
+        }
       />
+      <Suspense fallback={<PageSkeleton rows={6} />}>
+        <HelpContent />
+      </Suspense>
+    </>
+  );
+}
+
+async function HelpContent() {
+  await requireAdmin();
+  // Profil menüsündeki Hesabım da bir ekran; kenar çubuğu ağacından sonra listelenir
+  const account = NAV_FOOTER.find((i) => i.href === "/panel/hesap");
+  return (
+    <>
       <div className="space-y-4">
         <Card>
           <CardHeader

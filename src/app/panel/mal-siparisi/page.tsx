@@ -11,6 +11,7 @@ import { monthLabel, num } from "@/lib/format";
 import { STALE_DAYS } from "@/lib/reorder/levels";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
+import { liveDraftBadges } from "@/server/data/order-drafts";
 import { loadOrderPlan } from "@/server/data/reorder";
 
 import { OrderPlanClient } from "./order-plan";
@@ -41,7 +42,8 @@ export default function OrderPlanPage() {
 
 async function OrderPlanContent() {
   await requireAdmin();
-  const view = await loadOrderPlan();
+  // Personelin taslağı onayda ya da onaylı tedarikçiler ("Taslak onayda · Ayşe"); okunamazsa rozet yok
+  const [view, drafts] = await Promise.all([loadOrderPlan(), liveDraftBadges().catch(() => new Map())]);
   const q = view.lastQuick;
   const stale = view.staleDays !== null && view.staleDays > STALE_DAYS;
   return (
@@ -79,7 +81,7 @@ async function OrderPlanContent() {
           </Link>
         </p>
       ) : null}
-      <OrderPlanClient view={view} />
+      <OrderPlanClient view={view} drafts={Object.fromEntries(drafts)} />
     </>
   );
 }

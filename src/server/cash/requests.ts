@@ -9,6 +9,7 @@ import {
   correctionTitle,
   DeletePayload,
   deleteTitle,
+  LatePayload,
   mergeProposal,
   proposalChanges,
   type CorrectionPayloadT,
@@ -17,11 +18,23 @@ import {
 } from "@/lib/cash-requests";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
-import { createOrUpdateRequest, decide, lockForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
+import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 import { reviewLate, type LateReviewOutcome } from "./late";
-import { carryBefore, hasLaterReport, lockCashReport, ownDeletePending, removeCashReport, resolveCounter, writeCashReport, type CashActor, type CashReportRow, type CashTx } from "./report-store";
+import {
+  carryBefore,
+  hasLaterReport,
+  lockCashReport,
+  lockLateDay,
+  ownDeletePending,
+  removeCashReport,
+  resolveCounter,
+  writeCashReport,
+  type CashActor,
+  type CashReportRow,
+  type CashTx,
+} from "./report-store";
 
 /*
  * Personelin kasa raporu istekleri ve yöneticinin kararı (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği; plan
@@ -193,6 +206,13 @@ async function reviewDelete(tx: CashTx, me: CashActor, row: StaffRequestRow, inp
   return { kind: "kasa-silme", status: "approved", request, payload, removed };
 }
 
+/** Kararın konu nesnesi, istek satırından önce: düzeltmede günün raporu, silmede istenen rapor, geç raporda günün kilidi */
+async function lockSubject(tx: CashTx, row: StaffRequestRow): Promise<void> {
+  if (row.kind === "kasa-duzeltme") await lockCashReport(tx, CorrectionPayload.parse(row.payload).date);
+  else if (row.kind === "kasa-silme") await tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.id, DeletePayload.parse(row.payload).reportId)).for("update");
+  else if (row.kind === "kasa-gec") await lockLateDay(tx, LatePayload.parse(row.payload).date);
+}
+
 /**
  * Yöneticinin kararı (tek işlemde): istek kilitlenir ve denetlenir (bekliyor, başkasının, ekranda görülen sürüm), rapor
  * kilitlenir ve ekranda görülen sürümü olmalı. Düzeltme onayı öneriyi raporun şimdiki hâline uygular (yeni sürüm),
@@ -202,7 +222,10 @@ async function reviewDelete(tx: CashTx, me: CashActor, row: StaffRequestRow, inp
 export async function reviewCashRequestCore(db: DB, me: CashActor, input: ReviewInput, now = new Date()): Promise<ReviewOutcome> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
   return db.transaction(async (tx) => {
-    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
+    // Kilit sırası isteği açan yolla aynı: önce raporun satırı (düzeltme, silme) ya da günün kilidi (geç rapor), sonra istek
+    const peeked = await peekForReview(tx, me, input.id);
+    if (input.decision !== "reject") await lockSubject(tx, peeked);
+    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     if (row.kind === "kasa-duzeltme") return reviewCorrection(tx, me, row, input, now);
     if (row.kind === "kasa-silme") return reviewDelete(tx, me, row, input, now);
     if (row.kind === "kasa-gec") return reviewLate(tx, me, row, input, now);

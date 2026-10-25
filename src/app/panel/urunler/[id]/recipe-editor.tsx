@@ -197,6 +197,7 @@ export function RecipeEditor({
   priceImpact = null,
   site = null,
   priceHistory = null,
+  soldOutNote = null,
 }: {
   product: {
     id: number;
@@ -245,6 +246,8 @@ export function RecipeEditor({
   site?: ProductSiteInfo | null;
   /** Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (docs/FIYATLAR.md); okunamadıysa kart gösterilmez */
   priceHistory?: ProductPriceHistoryInfo | null;
+  /** Bar ekranının Tükenenler kartıyla kapatıldıysa: "Personel tükendi yaptı · Selin 21:40" (dalga 10 §2.1) */
+  soldOutNote?: string | null;
 }) {
   const router = useRouter();
   const reduce = useCalmMotion();
@@ -436,6 +439,9 @@ export function RecipeEditor({
       note,
       active: activeValue,
       showOnMenu,
+      // Kart açılırken görülenler: dokunulmayan anahtar sunucudaki güncel değeri korur (personel bu arada Tükendi yapmış olabilir)
+      seenActive: product.active,
+      seenShowOnMenu: product.showOnMenu,
       items: lines.map((l) => ({ ingredientId: l.row.ingredientId!, qty: l.qty, qtyExpr: l.expr, note: l.row.note })),
     });
     setSaving(false);
@@ -1050,6 +1056,7 @@ export function RecipeEditor({
                     onText="QR menüde görünür"
                     offText="QR menüde gizli"
                   />
+                  {soldOutNote ? <p className="w-full text-[13px] text-ink-mute">{soldOutNote}</p> : null}
                 </div>
               </CardContent>
               {/* Kalıcı silme nadir ve geri alınamaz: başlıkta değil, ürün bilgilerinin sonunda */}

@@ -10,6 +10,7 @@ import { ProfileDropdown, type ProfileDropdownItem } from "@/components/akmanos/
 import { SPRING_PANEL } from "@/components/akmanos/lib/motion-ease";
 import { LafTile } from "@/components/brand";
 import { ROLES } from "@/lib/constants";
+import { ALERTS_REFRESH_EVENT } from "@/lib/live-poll";
 import { homeFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { logoutAction } from "@/server/actions/auth";
@@ -78,9 +79,12 @@ export function Sidebar({ user, index = [] }: { user: User; index?: SearchEntry[
       if (document.visibilityState === "visible" && Date.now() - fetchedAt.current > ALERTS_STALE_MS) refreshAlerts();
     };
     document.addEventListener("visibilitychange", onVisible);
+    // Onay bildirimi öndeki sekmeye geldi (sistem bildirimi çıkmadı): zil hemen tazelenir (alert-center.tsx)
+    window.addEventListener(ALERTS_REFRESH_EVENT, refreshAlerts);
     return () => {
       alive = false;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(ALERTS_REFRESH_EVENT, refreshAlerts);
     };
   }, [refreshAlerts]);
 

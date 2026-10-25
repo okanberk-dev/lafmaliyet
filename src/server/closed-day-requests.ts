@@ -8,7 +8,7 @@ import { addDays } from "@/lib/reminders";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { closedDayEvidence, isClosedDay, writeClosedDay } from "@/server/closed-days";
 import { schema as s, type DB } from "@/server/db";
-import { createOrUpdateRequest, decide, lockForReview, type Actor, type StaffRequestRow } from "@/server/staff-requests/core";
+import { createOrUpdateRequest, decide, lockForReview, peekForReview, type Actor, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 /*
@@ -65,9 +65,9 @@ export async function proposeClosedDay(db: DB, me: Actor, input: { date: string;
 }
 
 /**
- * Yöneticinin kararı (tek işlemde): istek kilitlenir ve denetlenir (bekliyor, başkasının, ekranda görülen sürüm). Onayda
- * kanıt yeniden sayılır (panel; site sayıları eylemden gelir): kırmızı varsa ret. Kapalı satırı onaylayan yöneticinin
- * adıyla yazılır (danışma kilidi altında). Not bütün personele görünür.
+ * Yöneticinin kararı (tek işlemde): onayda önce günün danışma kilidi, sonra istek kilitlenir ve denetlenir (bekliyor,
+ * başkasının, ekranda görülen sürüm). Onayda kanıt yeniden sayılır (panel; site sayıları eylemden gelir): kırmızı varsa
+ * ret. Kapalı satırı onaylayan yöneticinin adıyla yazılır. Not bütün personele görünür.
  */
 export async function reviewClosedDayCore(
   db: DB,
@@ -77,11 +77,13 @@ export async function reviewClosedDayCore(
 ): Promise<{ status: "approved" | "rejected"; request: StaffRequestRow; payload: ClosedDayPayloadT; specialId: number | null }> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
   return db.transaction(async (tx) => {
-    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
-    if (row.kind !== "kapali-gun") throw new UserError("Bu istek kapalı gün bildirimi değil");
+    // Kilit sırası bildirimle ve yöneticinin doğrudan işaretiyle aynı (günün kilidi, sonra istek): onayda önce gün
+    const peeked = await peekForReview(tx, me, input.id);
+    if (peeked.kind !== "kapali-gun") throw new UserError("Bu istek kapalı gün bildirimi değil");
+    if (input.decision === "approve") await lockDay(tx, ClosedDayPayload.parse(peeked.payload).date);
+    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     const payload = ClosedDayPayload.parse(row.payload);
     if (input.decision === "reject") return { status: "rejected" as const, payload, specialId: null, request: await decide(tx, row, me, "rejected", { note: input.note }, now) };
-    await lockDay(tx, payload.date);
     const evidence = { ...(await closedDayEvidence(tx, payload.date)), site: input.site ?? null };
     if (closedEvidenceText(evidence).red.length) throw new UserError(CLOSED_TEXT.red);
     const special = await writeClosedDay(tx, me, payload.date, payload.reason);

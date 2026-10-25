@@ -3,11 +3,15 @@ import "server-only";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num } from "@/lib/format";
 import { posBell } from "@/lib/prices/pos";
+import { isDraftExpired, undoneBellBody } from "@/lib/reorder/draft";
+import { soldOutBell, soldOutDigestLine } from "@/lib/site-menu/sold-out";
 import { addDays, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText } from "@/lib/waste-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
+import { soldOutFacts } from "@/server/data/menu-status";
+import { draftBellRows } from "@/server/data/order-drafts";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
@@ -87,18 +91,107 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
   return [...results, ...notices];
 }
 
+/**
+ * Tükendi (§2.1; yalnız yönetici, grup Uyarılar): personelin bar ekranında kapattığı ve hâlâ satışta olmayan ürünler
+ * ("Tükendi: Tiramisu, Cheesecake"; kim ve saat). Bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da
+ * daha çok ürün kapattıysa uyarı. Ürün satışa açılınca satır kalkar; push yok. Fiyat yok.
+ */
+async function soldOutNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  if (user.role !== "admin") return [];
+  const facts = await soldOutFacts();
+  const bell = soldOutBell(facts?.items ?? [], now);
+  if (!bell) return [];
+  return [{ ...bell, timeLabel: "", unread: true, group: "uyari" }];
+}
+
+/** "Kaldi · 5 kalem" → ["Kaldi", "5 kalem"] */
+const splitTitle = (t: string): [string, string] => {
+  const i = t.lastIndexOf(" · ");
+  return i < 0 ? [t, ""] : [t.slice(0, i), t.slice(i + 3)];
+};
+
+/**
+ * Mal siparişi taslakları (§2.4; grup Onaylar, push ayrı: src/server/order-drafts/notify.ts). Yönetici: bekleyen taslak
+ * başına "Mal siparişi onay bekliyor: Kaldi" (en çok 5; kimlik zil anından, taslak güncellenince yeniden okunmamış) ve
+ * son 24 saatte personelin geri aldığı gönderim. Personel ("İsteklerim"): kendi taslağının sonucu: onaylandı (gönderilene
+ * kadar), reddedildi (7 gün). Tutar yok.
+ */
+async function draftNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  const today = todayTR(now);
+  const when = (d: Date) => (todayTR(d) === today ? "Bugün" : dateTR(todayTR(d)));
+  if (user.role === "admin") {
+    const rows = await draftBellRows({ since: new Date(now.getTime() - 86_400_000) });
+    const pending = rows
+      .filter((r) => r.status === "pending" && !isDraftExpired(r, now))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, 5)
+      .map((r): PanelNotification => {
+        const [supplier, count] = splitTitle(r.title);
+        return {
+          id: `taslak-${r.id}-${r.bumpedAt.getTime()}`,
+          kind: "warning",
+          title: `Mal siparişi onay bekliyor: ${supplier}`,
+          body: `${count} · ${r.requestedByName} hazırladı`,
+          timeLabel: waitedText(r.createdAt, now),
+          unread: true,
+          href: `/panel/onaylar#istek-${r.id}`,
+          group: "onay",
+        };
+      });
+    const undone = rows
+      .filter((r) => r.status === "cancelled")
+      .slice(0, 3)
+      .map((r): PanelNotification => ({
+        id: `taslak-geri-${r.id}`,
+        kind: "info",
+        title: `${splitTitle(r.title)[0]} siparişi geri alındı`,
+        body: undoneBellBody(r),
+        timeLabel: when(r.updatedAt),
+        unread: true,
+        href: "/panel/mal-siparisi/gonderilen?durum=kapanan",
+        group: "onay",
+      }));
+    return [...pending, ...undone];
+  }
+  const rows = await draftBellRows({ userId: user.id, since: new Date(now.getTime() - 7 * 86_400_000) });
+  return rows
+    .filter((r) => (r.status === "approved" && !isDraftExpired(r, now)) || r.status === "rejected")
+    .slice(0, 5)
+    .map((r): PanelNotification => {
+      const supplier = splitTitle(r.title)[0];
+      const approved = r.status === "approved";
+      return {
+        id: `istek-${r.id}-${r.status}`,
+        kind: approved ? "info" : "warning",
+        title: approved ? `${supplier} siparişi onaylandı; WhatsApp'tan gönderin` : `${supplier} siparişi reddedildi`,
+        body: approved ? `${r.reviewedByName ?? "Yönetici"} onayladı${r.reviewNote ? ` · Yönetici: ${r.reviewNote}` : ""}` : `Yönetici: ${r.reviewNote ?? "not yok"}`,
+        timeLabel: when(r.updatedAt),
+        unread: true,
+        href: "/panel/hizli-sayim/siparis",
+        group: "onay",
+      };
+    });
+}
+
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste] = await Promise.all([posNotifications(user, now).catch(() => []), wasteRequestNotifications(user, now).catch(() => [])]);
-  return [...waste, ...pos];
+  const [pos, waste, soldOut, drafts] = await Promise.all([
+    posNotifications(user, now).catch(() => []),
+    wasteRequestNotifications(user, now).catch(() => []),
+    soldOutNotifications(user, now).catch(() => []),
+    draftNotifications(user, now).catch(() => []),
+  ]);
+  return [...drafts, ...waste, ...soldOut, ...pos];
 }
 
 /**
- * Sabah e-postasının "Onay bekleyenler" kutusuna operasyonun bilgi satırları (src/server/notify/digest-extras.ts; ör.
- * personelin tükendi yaptığı ürünler, yalnız ad ve süre). Tutar yazılmaz. Satır yoksa boş.
+ * Sabah e-postasının "Onay bekleyenler" kutusuna operasyonun bilgi satırları (src/server/notify/digest-extras.ts):
+ * personelin tükendi yaptığı ürünler, yalnız ad, kişi ve süre ("Tiramisu (Selin, 2 gündür)"). Tutar yazılmaz. Satır
+ * yoksa boş.
  */
 export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
-  void now;
-  return [];
+  const facts = await soldOutFacts().catch(() => null);
+  const line = soldOutDigestLine(facts?.items ?? [], now);
+  return line ? [{ text: line, tone: "warn" }] : [];
 }

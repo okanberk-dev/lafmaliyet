@@ -255,6 +255,7 @@ export function toOrderLite(r: OrderRow): OrderLite {
     message: r.message,
     note: r.note,
     sentByName: r.sentByName,
+    draftId: /^taslak:\d+$/.test(r.requestId) ? Number(r.requestId.slice(7)) : null,
   };
 }
 

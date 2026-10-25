@@ -25,7 +25,7 @@ import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { schema as s, type DB } from "@/server/db";
-import { createOrUpdateRequest, decide, lockForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
+import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/photos";
 import { UserError } from "@/server/user-error";
 
@@ -186,13 +186,26 @@ async function linkOf(tx: CashOutTx, photoId: number) {
   return link ?? null;
 }
 
+/** Raporun satırı (FOR UPDATE): fotoğraf kaldırma isteği ve onayı bununla sıraya girer; yoksa null */
+async function lockReport(tx: CashOutTx, reportId: number) {
+  const [report] = await tx.select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).for("update").limit(1);
+  return report ?? null;
+}
+
 /**
  * Fotoğrafı rapordan çıkarmak olur mu (null: evet): raporun tek Z fotoğrafı ve fotoğraftan farklı yazılan (net okunmuş)
  * alanı olan fotoğraf kaldırılmaz. İstek ve onay aynı denetimi yapar. Okuma farkları da döner (işlem geçmişine).
  */
 async function removalCheck(tx: CashOutTx, photoId: number, kind: "kasa-z" | "kasa-pos", reportId: number) {
-  const [report] = await tx.select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).for("update").limit(1);
+  const report = await lockReport(tx, reportId);
   if (!report) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report: null };
+  // Bağ kilit altında yeniden: önceki okuma kilitsizdi, arada onaylanan kaldırma bağı silmiş olabilir (istek açan yol)
+  const [linked] = await tx
+    .select({ photoId: s.cashReportPhotos.photoId })
+    .from(s.cashReportPhotos)
+    .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.photoId, photoId), eq(s.cashReportPhotos.kind, kind)))
+    .limit(1);
+  if (!linked) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report };
   if (kind === "kasa-z") {
     const [{ n }] = await tx
       .select({ n: count() })
@@ -271,8 +284,12 @@ export type CashOutReviewOutcome =
 export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: CashOutReviewInput, now = new Date()): Promise<CashOutReviewOutcome> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
   return db.transaction(async (tx) => {
-    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
-    if (row.kind !== "kasa-cikan") throw new UserError("Bu istek kasadan çıkan isteği değil");
+    // Kilit sırası isteği açan yolla aynı (proposeCashOutChange: satır, sonra istek): düzeltme ve silme onayında önce satır
+    const peeked = await peekForReview(tx, me, input.id);
+    if (peeked.kind !== "kasa-cikan") throw new UserError("Bu istek kasadan çıkan isteği değil");
+    const target = CashOutRequestPayload.parse(peeked.payload).cashOutId;
+    if (input.decision === "approve" && target !== null) await lockCashOut(tx, target);
+    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     const payload = CashOutRequestPayload.parse(row.payload);
     if (input.decision === "reject") return { status: "rejected" as const, payload, request: await decide(tx, row, me, "rejected", { note: input.note }, now) };
     const author = { id: row.requestedBy, name: row.requestedByName };
@@ -331,8 +348,11 @@ export async function reviewPhotoRemovalCore(
 ): Promise<{ status: "approved" | "rejected"; request: StaffRequestRow; payload: PhotoRemovalPayloadT; diffs: string[] }> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
   return db.transaction(async (tx) => {
-    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
-    if (row.kind !== "foto-kaldir") throw new UserError("Bu istek fotoğraf kaldırma isteği değil");
+    // Kilit sırası isteği açan yolla aynı (proposePhotoRemoval: rapor, sonra istek): onayda önce rapor
+    const peeked = await peekForReview(tx, me, input.id);
+    if (peeked.kind !== "foto-kaldir") throw new UserError("Bu istek fotoğraf kaldırma isteği değil");
+    if (input.decision === "approve") await lockReport(tx, PhotoRemovalPayload.parse(peeked.payload).reportId);
+    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     const payload = PhotoRemovalPayload.parse(row.payload);
     if (input.decision === "reject") return { status: "rejected" as const, payload, diffs: [], request: await decide(tx, row, me, "rejected", { note: input.note, releaseDays: null }, now) };
     const link = await linkOf(tx, payload.photoId);

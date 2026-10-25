@@ -77,6 +77,15 @@ export const reportSchema = z.object({
 
 export type ReportInput = z.output<typeof reportSchema>;
 
+/**
+ * Günün kilidi (danışma kilidi, işlemin sonuna kadar): aynı günün geç rapor isteği (late.ts), onayı ve yöneticinin
+ * doğrudan girişi (saveCashReport) sıraya girer. Raporun satırından ve istek satırından önce alınır: raporu henüz olmayan
+ * günde satır kilidi yoktur, onay ile doğrudan giriş aynı günü yazarken birbirini ters sırayla beklemesin.
+ */
+export async function lockLateDay(tx: CashTx, date: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kasa-gec:${date}`}))`);
+}
+
 /** Günün raporunu kilitleyerek okur (FOR UPDATE); yoksa null */
 export async function lockCashReport(tx: CashTx, date: string): Promise<CashReportRow | null> {
   const [row] = await tx.select().from(s.cashReports).where(eq(s.cashReports.date, date)).for("update").limit(1);
@@ -269,6 +278,7 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
     throw new UserError("Personel yalnız bugünün ve dünün raporunu girebilir; daha eskisi için yöneticiye yazın");
   }
   return db.transaction(async (tx) => {
+    await lockLateDay(tx, data.date);
     const prev = await lockCashReport(tx, data.date);
     if (prev && me.role !== "admin") {
       assertRevision(prev, revision);

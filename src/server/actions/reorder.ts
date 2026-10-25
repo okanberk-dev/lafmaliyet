@@ -15,6 +15,7 @@ import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { latestCountOf, loadSupplierIndex, orderSnapshot } from "@/server/data/reorder";
 import { getDb, schema as s } from "@/server/db";
+import { lockSupplier, supersedeLiveDraft } from "@/server/order-drafts/core";
 import { matchSupplierOrders } from "@/server/reorder/match";
 
 import { logActivity } from "./log";
@@ -183,7 +184,8 @@ const sentSchema = z.object({
 /**
  * Gönderilen siparişi kaydeder (WhatsApp'ta aç ya da "Gönderildi say"). Aynı istek kimliği ikinci sipariş açmaz (çift
  * dokunuş, yeniden deneme). Satırlar sunucudaki güncel veriden kurulur (ad, birim, teslim süresi, öneri, eldeki, hedef,
- * beklenen fiyat); istemciden yalnız miktar alınır. Numara yalnız WhatsApp'la ve cep numarasıysa saklanır.
+ * beklenen fiyat); istemciden yalnız miktar alınır. Numara yalnız WhatsApp'la ve cep numarasıysa saklanır. Tedarikçinin
+ * personel taslağı (docs/MAL-SIPARISI.md › Personelin sipariş taslağı) aynı işlemde ve kilitte kapanır.
  */
 export async function recordOrderSent(input: z.input<typeof sentSchema>) {
   return attempt(async () => {
@@ -200,29 +202,46 @@ export async function recordOrderSent(input: z.input<typeof sentSchema>) {
     );
     if ("error" in snap) throw new UserError(snap.error);
     const now = new Date();
-    const [row] = await db
-      .insert(o)
-      .values({
-        requestId: data.requestId,
-        supplier: snap.supplier.name,
-        phone: data.channel === "whatsapp" ? mobileE164(snap.supplier.card?.phone) : null,
-        channel: data.channel,
-        message: data.message,
-        note: data.note,
-        lines: snap.lines,
-        sentAt: now,
-        sentBy: me.id,
-        sentByName: me.name,
-        expectedOn: addDays(todayTR(now), snap.maxLead),
-      })
-      .onConflictDoNothing({ target: o.requestId })
-      .returning({ id: o.id });
+    // Personelin taslağıyla aynı danışma kilidi (src/server/order-drafts/core.ts): tedarikçinin canlı taslağı (bekleyen ya
+    // da onaylı) aynı işlemde "Yönetici kendisi gönderdi" ile kapanır; personel aynı anda ikinci siparişi gönderemez
+    let row: { id: number } | undefined;
+    let closedDrafts: number[] = [];
+    try {
+      [row, closedDrafts] = await db.transaction(async (tx) => {
+        await lockSupplier(tx, data.supplierKey);
+        const [inserted] = await tx
+          .insert(o)
+          .values({
+            requestId: data.requestId,
+            supplier: snap.supplier.name,
+            phone: data.channel === "whatsapp" ? mobileE164(snap.supplier.card?.phone) : null,
+            channel: data.channel,
+            message: data.message,
+            note: data.note,
+            lines: snap.lines,
+            sentAt: now,
+            sentBy: me.id,
+            sentByName: me.name,
+            expectedOn: addDays(todayTR(now), snap.maxLead),
+          })
+          .onConflictDoNothing({ target: o.requestId })
+          .returning({ id: o.id });
+        return [inserted, inserted ? await supersedeLiveDraft(tx, data.supplierKey, me, now) : []] as const;
+      });
+    } catch (e) {
+      if (((e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code) === "23505") throw new UserError("Bu sipariş az önce başka bir yoldan kaydedildi; sayfayı yenileyin.");
+      throw e;
+    }
     if (!row) {
       const [again] = await db.select({ id: o.id }).from(o).where(eq(o.requestId, data.requestId)).limit(1);
       if (again) return { id: again.id };
       throw new UserError("Sipariş kaydedilemedi; yeniden deneyin.");
     }
-    await logActivity(me, "Mal siparişi gönderildi", `${snap.supplier.name}: ${num(snap.lines.length)} kalem · ${data.channel === "whatsapp" ? "WhatsApp" : "kopyalandı"}`);
+    await logActivity(
+      me,
+      "Mal siparişi gönderildi",
+      `${snap.supplier.name}: ${num(snap.lines.length)} kalem · ${data.channel === "whatsapp" ? "WhatsApp" : "kopyalandı"}${closedDrafts.length ? " · personelin taslağı kapandı" : ""}`,
+    );
     refresh();
     return { id: row.id };
   });

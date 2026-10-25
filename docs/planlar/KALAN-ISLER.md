@@ -35,7 +35,7 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 
 | İş | Plan | Durum |
 |---|---|---|
-| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **10a main'de** (dal `claude/dalga-10a-personel`, migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. **Kalan** (dal `claude/dalga-10-personel`, WIP 2.1): 2.1 Tükendi, 2.4 mal siparişi taslağı, 2.10 Yardım, sızıntı betiği, plan §6 doğrulaması. Birleştirmede dalın `0038_personel_yetki` dosyaları silinir (main'de 0039). |
+| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` | **10a main'de** (dal `claude/dalga-10a-personel`, migration `0039_personel_yetki`): ortak onay kuyruğu ve Onaylar, 2.2 kasadaki fiyatlar, 2.3 / 2.6 geç rapor ve sonradan düzeltme, 2.5 kontrol geçmişi, 2.7 kasadan çıkan istekleri, 2.8 geç zayi ve silme isteği, 2.9 özel günler ve kafe kapalıydı. Tedarikçi ödemesine bağlı kasa satırına personel istek de açamaz. **10b bitti** (dal `claude/dalga-10b-personel`, migration yok; main'e PR bekliyor): 2.1 Tükendi / Satışa aç, 2.4 mal siparişi taslağı, 2.10 personelin Yardım'ı (`/panel/yardim/personel`), sızıntı betiği `scripts/personel-sizinti.ts` (çalışan sunucuya karşı, CI'da koşmaz), 10a incelemesinden kilit sırası (karar çekirdekleri önce konuyu, sonra isteği kilitler; `docs/ONAYLAR.md` › Geliştirici notu), plan §6 doğrulaması. Sahibe notlar aşağıda, "Dalga 10". Birleştirmeden sonra canlıda personel hesabıyla `/panel/yardim/personel` ve `/panel/hizli-sayim/siparis` açılır. |
 | Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | Plan hazır. 1. adım (yanlış bölüme çekilen fotoğraf alan doldurmaz, başlıklar) fotoğrafsız yapılabilir; 2. adım sahibin 5–8 günlük Z fotoğraflarını ve sorularının yanıtını bekler. Dalga 10'dan sonra (aynı Kasa dosyaları). |
 | Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır; muhasebeciye sorulacak 8 madde planın sonunda. Dalga 13'ten sonra (gelir dayanağı mali Z). |
 | Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. |
@@ -44,7 +44,8 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
 **Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
 - K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02).
 - K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
-- Personel panelden açılan karaoke sayacını onaysız siliyor: ilk 10 dakika serbest, sonrası silme isteği (denetim D-03; `personel-yetki.md` §5.1).
+- **Ayrı PR, dalga 10'dan sonra:** personel panelden açılan karaoke sayacını onaysız siliyor (gerçek açık; denetim D-03, `personel-yetki.md` §5.1 `karaoke-sayac-silme-daralt`). Önerilen sertleştirme: ilk 10 dakika serbest, sonrası silme isteği (`staff_requests`'e yeni tür: migration, Onaylar kartı, zil satırı, personel Yardım'ında satır; kilit sırası önce sayaç, sonra istek). Bu bir daraltmadır, dalga 10'un konusu değildi. 2.9'un kanıt denetimi silme kaydını İşlem geçmişinden zaten görür.
+- **Site tarafı, ayrı laffogato PR'ı (ek alan):** `POST /api/panel/menu` yanıtına `changed: boolean` (`setMenuItemSaleFields` yazdıysa true, "değişmedi" yolunda false). Panel Tükendi kaydını şimdi istekten hemen önceki canlı listeye ve yanıtın damgasına bakarak yazıyor (10b incelemesi); sahip sitede ya da yönetici ürün kartından tam bu gidiş-dönüş içinde kapatırsa personelin kaydı yine yazılabilir. Alan gelince panel kaydı yalnız `changed === true`'da yazar (`docs/SITE-MENU.md` › Kayıt).
 - Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06).
 - Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1).
 
@@ -140,6 +141,25 @@ yapıldı; panel bulguları iki grupta düzeltildi, site bulguları laffogato ot
 - Haftalık özet: pazartesi sabahı etkin yöneticilere gider (gönderilemezse salı, çarşamba yeniden denenir).
   Ödemeler & hatırlatıcılar › E-posta bildirimleri › Haftalık özet satırından kapatılır, önizlenir, örneği size
   gönderilir.
+
+### Dalga 10: personel yetkileri
+
+Plan `personel-yetki.md`. 10a main'de (#30, migration `0039_personel_yetki`); 10b dalı `claude/dalga-10b-personel`
+(migration yok). Belgeler: `docs/ONAYLAR.md`, `KASA-RAPORU`, `ZAYI-IKRAM`, `KONTROL-LISTELERI`, `FIYATLAR`,
+`SITE-MENU` (Tükendi), `MAL-SIPARISI` § 11, `BUGUN`, `BILDIRIMLER`; personelin kendi anlatımı `/panel/yardim/personel`.
+
+**Sahibe notlar (dalga 10):**
+- **Daralan üç kural** (plan §0.5): sabah vardiyası dünün kasa alanlarını (açılış, nakit satış, gün içinde çıkan,
+  sayılan, teslim) ya da Sayan'ı artık onayla değiştirir; açık günde sizin kategorinizdeki (maaş, avans) kasadan çıkan
+  satırı personel onayla düzeltir ya da siler; düne zayi / ikram, bugünün kasa raporu girilince onaya düşer.
+- **Telefonda bildirim:** Hatırlatıcılarım › Bu cihazda uyarılar'daki "Onay bildirimleri"ni açık tutun (varsayılan
+  açık); personelin mal siparişi taslağı bununla gelir. Öteki istekler zilde, Bugün'de ve sabah e-postasında.
+- **Tedarikçiler:** "personelden gelen siparişte onay numarası yazar" diye haber verin. Personelin gönderebilmesi için
+  tedarikçi kartında cep numarası gerekir.
+- **Kasa e-postası:** alıcılarına personel adresi yazılamaz (e-postada karaoke ön ödemesi var).
+- **Personelin Yardım'ı:** Yardım başlığındaki "Personelin Yardım'ı" düğmesi; hesabını açtığınız personele gösterin.
+- **Açık soru, bu dalgada değil:** personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor; yönetici
+  onayına bağlansın mı (plan §5.1 `fis-harcama-onayi`; yukarıda "Ayrı PR / sahibe soru").
 
 ### Dalga 11: cari (elle borç ve ödeme)
 

@@ -17,6 +17,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { businessDate } from "../src/lib/cash-report";
 import { addDays, todayTR } from "../src/lib/reminders";
 import * as s from "../src/server/db/schema";
 
@@ -393,7 +394,8 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
 
   test("Kasa denetimi 'Bu satırla kapat': önce satırın ödemesi borca sayılır, kalan hesaptaki paradan", async () => {
     const c = await card();
-    const today = todayTR();
+    // Kasanın günü (05:00'te döner): gece yarısından sonra takvim günü kasanın gününden ileridir, kasadan ödeme reddedilir
+    const today = businessDate();
     await pay(c.id, 1500, { mode: "none", date: addDays(today, -5) });
     const line = await cashOut({ amount: 400, date: today });
     const r = await cari.saveSupplierDebt({
@@ -545,7 +547,8 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
   test("Son ödenenler'den Ödemeye çevir'in geri alınması Kasa satırını alışverişe ve gider kaydını yerine döndürür", async () => {
     const c = await card();
     const cat = await category();
-    const today = todayTR();
+    // Kasanın günü (05:00'te döner), takvim günü değil: gece yarısından sonra da geçer
+    const today = businessDate();
     const line = await cashOut({ amount: 300, kind: "harcama", store: "sütaş · şoföre", date: today });
     await db.insert(s.expenseEntries).values({ date: today, categoryId: cat.id, description: "şoföre", amount: 300, cashOutId: line.id, createdBy: "Ayşe" });
     const r = await cari.convertCashOutToPayment({ target: { cardId: c.id }, cashOutId: line.id, allocation: { mode: "none", lines: [] }, note: null, photoId: null, confirmPast: [] });

@@ -23,6 +23,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL = process.env.KASA_ISTEK_TEST_DATABASE_URL;
 /** Türkiye saatiyle an */
 const tr = (local: string) => new Date(`${local}:00+03:00`);
@@ -305,5 +307,38 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     // Gönderim anında: ayar kaydedildikten sonra personel olan adres düşer, ötekiler sırasıyla kalır
     assert.deepEqual(await store.cashEmailRecipients(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [admin, "dis@ornek.com"]);
     assert.deepEqual(await store.cashEmailRecipients(db, [staff]), []);
+  });
+
+  test("kilit sırası: önerisini ya da silme isteğini güncelleyen personel, aynı anda verilen onayla kilitlenmez (rapor, sonra istek)", async () => {
+    const day = "2038-01-10";
+    await report(day);
+    const now = tr("2038-01-11T10:00");
+    const out = await propose(users.ayse, day, 1, { handedOver: 2_040 }, now);
+    const [approve, edit] = await raceOnRequest(
+      URL!,
+      out.row.id,
+      () => review(users.ali, out.row.id, out.row.version, 1, "approve", now),
+      () => propose(users.ayse, day, 1, { handedOver: 2_000 }, now, "Teslim yine yanlış"),
+    );
+    assert.equal(approve.status, "fulfilled");
+    assert.equal((await reportOf(day)).handedOver, 2_040);
+    // Güncelleme onaylanan sürümün üstüne yazılmaz: ekrandaki sürüm bayat
+    assert.equal(edit.status, "rejected");
+    assert.equal(((edit as PromiseRejectedResult).reason as Error).message, CASH_REQUEST_TEXT.stale);
+
+    const day2 = "2038-02-10";
+    await report(day2);
+    const now2 = tr("2038-02-11T10:00");
+    const del = await requests.proposeCashDelete(db, users.ayse, { date: day2, baseRevision: 1, message: "İki kez girildi", clientKey: null }, now2);
+    const [approve2, edit2] = await raceOnRequest(
+      URL!,
+      del.row.id,
+      () => review(users.ali, del.row.id, del.row.version, 1, "approve", now2),
+      () => requests.proposeCashDelete(db, users.ayse, { date: day2, baseRevision: 1, message: "Yanlış gün", clientKey: null }, now2),
+    );
+    assert.equal(approve2.status, "fulfilled");
+    assert.equal(await reportOf(day2), undefined, "rapor silindi");
+    assert.equal(edit2.status, "rejected");
+    assert.equal(((edit2 as PromiseRejectedResult).reason as Error).message, CASH_REQUEST_TEXT.noReport);
   });
 });

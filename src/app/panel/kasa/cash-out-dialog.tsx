@@ -15,7 +15,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Switch } from "@/components/ui/switch";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { CASH_OUT_REQUEST_TEXT, type CashOutOp } from "@/lib/cash-out-requests";
-import { cashOutShortLabel, cashOutWritesExpense, supplierNameHint, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
+import { CASH_OUT_UNDO_TOAST_MS, cashOutShortLabel, cashOutWritesExpense, supplierNameHint, type CashOutDocType, type CashOutKind } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import type { ReceiptCheck, ReceiptField, ReceiptReading } from "@/lib/photo-read/receipt";
@@ -272,7 +272,7 @@ export function CashOutDialog({
       if (!res.ok) return void toast.error(res.error);
       onClose();
       toast.success(`Silindi: ${cashOutShortLabel(line)} · ${money(line.amount)}`, {
-        duration: 8000,
+        duration: CASH_OUT_UNDO_TOAST_MS,
         action: {
           label: "Geri al",
           onClick: () =>

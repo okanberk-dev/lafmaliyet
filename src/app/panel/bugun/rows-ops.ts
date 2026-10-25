@@ -7,20 +7,27 @@
 import { isStarted } from "@/lib/checklists";
 import { num } from "@/lib/format";
 import { posMarksText, staleForText } from "@/lib/prices/pos";
+import { soldOutLineText, type SoldOutFact } from "@/lib/site-menu/sold-out";
 
 import { clip, type CafeLine, type DayFacts, type DayRow } from "./logic";
 
 /** Operasyonun Bugün olguları (DayFacts.ops); alanları maddeleriyle gelir, hepsi isteğe bağlı */
 export interface OpsDayFacts {
   /**
-   * Sitede "Tükendi" olan ürünler (§2.1): adlar ve kayıtlar (kim, ne zaman; `staff` personelin kapattığı). Fiyat yok
+   * Bar ekranının Tükenenler kartıyla kapatılıp hâlâ geçerli kaydı olan ürünler (§2.1): adlar ve kayıtlar (kalem, kim,
+   * ne zaman; `staff` personelin kapattığı), en eskisi önce. Fiyat yok
    */
-  soldOut?: { names: string[]; items: { name: string; by: string; at: string; staff: boolean }[] } | null;
+  soldOut?: { names: string[]; items: SoldOutFact[] } | null;
   /**
    * Yönetici (§2.2): personelin son 48 saatte kasada işaretledikleri, kişi ve gün başına (en yeni önce; `at` o günün
    * son işareti, ISO). Geri alınanlar sayılmaz. Personelin olgusunda yok
    */
   posMarks?: { by: string; count: number; at: string }[] | null;
+  /**
+   * Personel (§2.4): yöneticinin onayladığı, gönderilmeyi bekleyen mal siparişi taslakları (yalnız tedarikçi adı; tutar
+   * yok). Yöneticinin olgusunda yok: bekleyen taslaklar genel Onaylar satırında sayılır
+   */
+  drafts?: { id: number; supplier: string }[] | null;
 }
 
 /**
@@ -100,16 +107,31 @@ export const checklistYesterday: DayRow = (f, c) => {
   };
 };
 
-/** Personel: onaylanmış, gönderilmeyi bekleyen mal siparişi taslağı (`mal-taslak`; §2.4). Olgusu maddesiyle gelir */
-export const draftRow: DayRow = () => null;
+/**
+ * Personel: onaylanmış, gönderilmeyi bekleyen mal siparişi taslağı (`mal-taslak`; §2.4): "Onaylanan sipariş bekliyor:
+ * Kaldi", eylem "Gönder" (taslak sayfasına). Yöneticide yok (Onaylar satırı sayar).
+ */
+export const draftRow: DayRow = (f) => {
+  const list = f.ops?.drafts ?? [];
+  if (f.role === "admin" || !list.length) return null;
+  const names = list.map((d) => d.supplier);
+  return {
+    key: "mal-taslak",
+    title: `Onaylanan sipariş bekliyor: ${clip(names.join(", "), 60)}`,
+    status: "todo",
+    ...(list.length > 1 ? { badge: `${num(list.length)} tedarikçi` } : {}),
+    detail: "Yönetici onayladı; WhatsApp'tan tek dokunuşla gönderin (önce kayıt, sonra mesaj).",
+    href: "/panel/hizli-sayim/siparis",
+    action: "Gönder",
+  };
+};
 
 /**
  * "Bugün kafede"nin Tükendi satırı (iki rol; §2.1): "Tükendi: Tiramisu, Cheesecake", bar ekranının Tükenenler
- * kartına götürür. Olgu yoksa satır yok.
+ * kartına götürür. Personelin kaydı 16 saatten eskiyse uyarı rengi: "Tiramisu 2 gündür tükendi: geldiyse satışa açın"
+ * (src/lib/site-menu/sold-out.ts › soldOutLineText). Olgu yoksa satır yok.
  */
 export function soldOutLine(f: DayFacts): CafeLine | null {
-  const names = f.ops?.soldOut?.names ?? [];
-  if (!names.length) return null;
-  const shown = names.slice(0, 3).join(", ");
-  return { key: "tukendi", text: `Tükendi: ${shown}${names.length > 3 ? "…" : ""}`, tone: "info", href: "/panel/karaoke#tukenenler" };
+  const line = soldOutLineText(f.ops?.soldOut?.items ?? [], f.now);
+  return line ? { key: "tukendi", ...line, href: "/panel/karaoke#tukenenler" } : null;
 }

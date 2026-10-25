@@ -1,0 +1,184 @@
+// Personelin Yardım'ı (plan docs/planlar/personel-yetki.md §2.10): erişim, personelin menü yolları (staffPathOf),
+// yöneticinin Yardım'ından yalıtım, bağlantılar, kapsam (her personel ekranı ve onaya giden her tür), yasak sözcükler
+// ve yönetici etiketleri. Çalıştırma: npx tsx --test tests/yardim-personel.test.ts
+
+import assert from "node:assert/strict";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+
+import { textOf } from "../src/app/panel/yardim/faq-build";
+import { staffPathOf } from "../src/app/panel/yardim/nav-paths";
+import { STAFF_FAQ_GROUPS, STAFF_ROUTINE, staffPathText } from "../src/app/panel/yardim/personel/content";
+import { BOTTOM_NAV, NAV_FOOTER, NAV_GROUPS, NAV_TREE, SECTION_TABS, mobileTitleFor } from "../src/components/panel/nav";
+import { canOpen, STAFF_PATHS } from "../src/lib/roles";
+import { CHANGE_LABELS, SENSITIVE } from "../src/lib/cash-report";
+import { STAFF_APPROVAL_KINDS } from "../src/lib/staff-requests";
+
+const DIR = join(process.cwd(), "src/app/panel/yardim");
+const read = (p: string) => readFileSync(join(DIR, p), "utf8");
+const STAFF_PAGE = read("personel/page.tsx");
+const CONTENT = read("personel/content.tsx");
+const BUILD = read("faq-build.tsx");
+const ADMIN_PAGE = read("page.tsx");
+
+const fold = (s: string) => s.toLocaleLowerCase("tr-TR");
+
+/** Her sorunun ve her adımın düz metni (StaffPath menüdeki adlarla) */
+const FAQ_TEXTS = STAFF_FAQ_GROUPS.flatMap((g) =>
+  g.items.map((f) => ({ group: g.title, id: f.id, text: `${g.title} ${f.q} ${textOf(f.a, staffPathText)} ${f.links?.map((l) => l.label).join(" ") ?? ""}` })),
+);
+const ROUTINE_TEXTS = STAFF_ROUTINE.map((r) => `${r.title} ${textOf(r.body, staffPathText)}`);
+const ALL_TEXT = [...FAQ_TEXTS.map((t) => t.text), ...ROUTINE_TEXTS].join("\n");
+
+/** Sayfanın ve içeriğin bütün iç bağlantıları: StaffPath, adım ve soru bağlantıları */
+const HREFS = [
+  ...new Set([
+    ...[...CONTENT.matchAll(/<StaffPath href="([^"]+)"/g)].map((m) => m[1]),
+    ...[...CONTENT.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]),
+    ...STAFF_ROUTINE.map((r) => r.href),
+    ...STAFF_FAQ_GROUPS.flatMap((g) => g.items.flatMap((f) => f.links?.map((l) => l.href) ?? [])),
+  ]),
+];
+
+test("erişim: personel kendi Yardım'ını açar, yöneticinin Yardım'ını açamaz; yönetici ikisini de", () => {
+  assert.ok(canOpen("staff", "/panel/yardim/personel"));
+  assert.equal(canOpen("staff", "/panel/yardim"), false);
+  assert.ok(canOpen("admin", "/panel/yardim/personel"));
+  assert.ok(canOpen("admin", "/panel/yardim"));
+});
+
+test("staffPathOf: personelin menüsündeki adlar; ?sorgu ve #çapa atılır; yönetici ekranı boş", () => {
+  assert.deepEqual(staffPathOf("/panel/bugun"), ["Bugün"]);
+  assert.deepEqual(staffPathOf("/panel/kasa"), ["Kasa raporu"]);
+  assert.deepEqual(staffPathOf("/panel/kasa?gun=2026-10-20#isteklerim"), ["Kasa raporu"]);
+  // Menü grubunda personele tek alt sayfa kalır: grup doğrudan o sayfa
+  assert.deepEqual(staffPathOf("/panel/receteler"), ["Reçete defteri"]);
+  assert.deepEqual(staffPathOf("/panel/hizli-sayim"), ["Stok", "Hızlı sayım"]);
+  assert.deepEqual(staffPathOf("/panel/hizli-sayim/siparis"), ["Stok", "Hızlı sayım", "Sipariş taslağı"]);
+  assert.deepEqual(staffPathOf("/panel/kontrol/gecmis"), ["Kontrol listeleri", "Geçmiş"]);
+  assert.deepEqual(staffPathOf("/panel/kasa/fiyatlar"), ["Bugün", "Kasadaki fiyatlar"]);
+  assert.deepEqual(staffPathOf("/panel/hesap"), ["Hesabım"]);
+  assert.deepEqual(staffPathOf("/panel/yardim/personel"), ["Yardım"]);
+  for (const admin of ["/panel", "/panel/onaylar", "/panel/urunler", "/panel/mal-siparisi", "/panel/yardim", "/panel/tahmin", "/panel/kontrol/duzenle"]) {
+    assert.deepEqual(staffPathOf(admin), [], admin);
+  }
+});
+
+test("kaynak yalıtımı: personelin sayfası yöneticinin Yardım'ını almaz, yönetici denetimi yok, içerik oturumdan sonra", () => {
+  for (const src of [STAFF_PAGE, CONTENT]) {
+    assert.doesNotMatch(src, /from "\.\.\/page"|from "\.\/\.\.\/page"|yardim\/page/);
+    assert.doesNotMatch(src, /requireAdmin/);
+    assert.doesNotMatch(src, /\bFAQ_GROUPS\b|\bROUTINE\b|\bFORMULAS\b|\bMENU_LAYOUT\b|\bpathOf\b/);
+    assert.doesNotMatch(src, /@\/server\/(?!auth\/dal)/, "sunucu verisi okunmaz");
+  }
+  assert.doesNotMatch(BUILD, /FAQ_GROUPS|STAFF_FAQ_GROUPS|ROUTINE|from "\.\/page"|from "\.\/personel/);
+  // İçerik bir Suspense çocuğunda, requireUser'dan sonra
+  assert.match(STAFF_PAGE, /<Suspense[\s\S]*<StaffHelpContent \/>/);
+  assert.match(STAFF_PAGE, /async function StaffHelpContent\(\) \{\s*await requireUser\(\);/);
+  // Yöneticinin sayfası içeriği requireAdmin ile başlayan iç bileşende çizer; sabitler yalnız orada kullanılır
+  assert.match(ADMIN_PAGE, /async function HelpContent\(\) \{\s*await requireAdmin\(\);/);
+  const outer = ADMIN_PAGE.slice(ADMIN_PAGE.indexOf("export default function HelpPage"), ADMIN_PAGE.indexOf("async function HelpContent"));
+  assert.ok(outer.length > 0);
+  for (const name of ["FAQ", "FAQ_GROUPS", "ROUTINE", "FORMULAS", "MENU_LAYOUT"]) assert.doesNotMatch(outer, new RegExp(`\\b${name}\\b`), name);
+  assert.match(outer, /<Suspense fallback=\{<PageSkeleton/);
+  assert.match(outer, /href="\/panel\/yardim\/personel"/, "başlıkta Personelin Yardım'ı");
+  for (const name of ["FAQ_GROUPS", "ROUTINE", "FORMULAS", "MENU_LAYOUT", "FAQ"]) assert.doesNotMatch(ADMIN_PAGE, new RegExp(`export const ${name}\\b`), `${name} dışarı açılmaz`);
+});
+
+test("Yardım klasöründe sarmalayıcı dosya yok (layout, template, loading, error)", () => {
+  const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [e.name]));
+  const files = walk(DIR);
+  for (const f of files) assert.doesNotMatch(f, /^(layout|template|loading|error|not-found)\.(t|j)sx?$/, f);
+});
+
+test("bağlantılar: her yol personelin açabildiği, var olan ve menüde yolu çözülen bir ekran", () => {
+  assert.ok(HREFS.length > 15);
+  for (const h of HREFS) {
+    const path = h.replace(/[?#].*$/, "");
+    assert.ok(canOpen("staff", path), `${h} personele kapalı`);
+    assert.ok(existsSync(join(process.cwd(), "src/app", path, "page.tsx")), `${h} ekranı yok`);
+    assert.ok(staffPathOf(h).length, `${h} personelin menüsünde yok`);
+  }
+});
+
+test("kapsam: her personel ekranı ve onaya giden her tür Yardım'da geçer", () => {
+  for (const p of STAFF_PATHS) assert.ok(HREFS.some((h) => h.replace(/[?#].*$/, "") === p), `${p} anlatılmıyor`);
+  for (const sub of ["/panel/kasa/fiyatlar", "/panel/kontrol/gecmis", "/panel/hizli-sayim/siparis"]) assert.ok(HREFS.includes(sub), sub);
+  const approvals = FAQ_TEXTS.find((t) => t.id === "onaya-gidenler")?.text ?? "";
+  for (const a of STAFF_APPROVAL_KINDS) assert.ok(approvals.includes(a.text), a.kind);
+  // Liste koddan kurulur, elle yazılmaz
+  assert.match(CONTENT, /STAFF_APPROVAL_KINDS\.map/);
+});
+
+test("sayılar koddan gelir (elle yazılmaz)", () => {
+  for (const name of ["DAY_TURN_HOUR", "CASH_EVENING_HOUR", "CASH_OUT_UNDO_TOAST_MS", "STAFF_HISTORY_DAYS", "LATE_REPORT_DAYS"]) {
+    assert.match(CONTENT, new RegExp(`\\{[^}]*\\b${name}\\b[^}]*\\}`), name);
+  }
+  assert.match(ALL_TEXT, /05:00/);
+  assert.match(ALL_TEXT, /20:00/);
+  assert.match(ALL_TEXT, /8 saniye/);
+  // Metin parçaları birleşirken sayının iki yanına boşluk düşer
+  assert.match(ALL_TEXT, /son\s+7\s+gün/);
+  assert.match(ALL_TEXT, /son\s+14\s+gün/);
+  // Kasadan çıkan penceresi aynı sabitle (Geri al'ın bildirimi)
+  assert.match(readFileSync(join(process.cwd(), "src/app/panel/kasa/cash-out-dialog.tsx"), "utf8"), /duration: CASH_OUT_UNDO_TOAST_MS/);
+});
+
+test("metinler: tutar, maliyet ve para sözcüğü yok (tr-TR katlamalı); fiyat yalnız satış ve paket fiyatı", () => {
+  // \btl\b Türkçe harfleri sözcük saymaz ("kayıtlı"): sınır harf sınıfıyla
+  const banned =
+    /maliyet|maaş|komisyon|hakediş|kâr|kârlılık|marj|ciro|kira|sgk|fatura|₺|(?<!\p{L})tl(?!\p{L})|lira|kuruş|\$|gelir|gider|zarar|borç|alış|birim fiyat|iban|ödeme talebi/u;
+  for (const t of [...FAQ_TEXTS.map((x) => x.text), ...ROUTINE_TEXTS]) {
+    const m = fold(t).match(banned);
+    assert.equal(m, null, `"${m?.[0]}" geçiyor: ${t.slice(0, 80)}`);
+  }
+  // Ekranın adı ("Kasadaki fiyatlar") dışında fiyat yalnız "satış fiyatı" ve "paket fiyatı" olarak
+  const rest = fold(ALL_TEXT).replaceAll("kasadaki fiyatlar", "").replace(/(satış|paket) fiyat/g, "");
+  assert.doesNotMatch(rest, /fiyat/);
+  // Karaoke ve bar ekranının cevaplarında tutar yok
+  for (const t of FAQ_TEXTS.filter((x) => x.group === "Bar ekranı ve karaoke")) assert.doesNotMatch(fold(t.text), /tutar|\d+\s*₺/, t.id);
+});
+
+test("yöneticinin ekran adları ve adresleri personelin Yardım'ında yok", () => {
+  // Yönetici etiketleri: personelin açamadığı ekranların menü, sekme ve kısa başlık adları (büyük-küçük harfe duyarlı, tam
+  // ifade); genel tek kelimeler hariç (Personel bu sayfanın bağlam satırı, Yardım iki rolde de var)
+  const GENERIC = new Set(["Personel", "Yardım"]);
+  const labels = new Map<string, string>();
+  for (const i of [...NAV_GROUPS.flatMap((g) => g.items), ...NAV_FOOTER]) labels.set(i.label, i.href);
+  for (const n of NAV_TREE) {
+    if (n.href) labels.set(n.label, n.href);
+    else if (!n.roles.includes("staff")) labels.set(n.label, "/panel/__grup");
+    for (const c of n.children ?? []) labels.set(c.label, c.href);
+  }
+  for (const tabs of Object.values(SECTION_TABS)) for (const t of tabs) labels.set(t.label, t.href);
+  for (const href of ["/panel/urunler/fiyatlar", "/panel/hatirlaticilar/nakit", "/panel/karaoke/doluluk", "/panel/kontrol/duzenle", "/panel/mal-siparisi/kalemler"]) {
+    labels.set(mobileTitleFor(href), href);
+  }
+  const adminOnly = [...labels].filter(([label, href]) => !canOpen("staff", href) && !GENERIC.has(label)).map(([label]) => label);
+  assert.ok(adminOnly.includes("Onaylar") && adminOnly.includes("Mal siparişi") && adminOnly.includes("Satış tahmini"));
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const label of adminOnly) assert.doesNotMatch(ALL_TEXT, new RegExp(`(^|[^\\p{L}])${escape(label)}([^\\p{L}]|$)`, "u"), label);
+  // Kaynakta yönetici adresi yok
+  for (const m of CONTENT.matchAll(/["'](\/panel[^"'?#\s]*)/g)) assert.ok(canOpen("staff", m[1]), m[1]);
+  // Personelin alt menüsünde olmayan yönetici sekmesi yok
+  assert.ok(BOTTOM_NAV.staff.every((i) => !i.href || canOpen("staff", i.href)));
+});
+
+test("soru kimlikleri benzersiz, her grupta soru var", () => {
+  const ids = STAFF_FAQ_GROUPS.flatMap((g) => g.items.map((f) => f.id));
+  assert.equal(new Set(ids).size, ids.length);
+  for (const g of STAFF_FAQ_GROUPS) assert.ok(g.items.length > 0, g.title);
+  assert.equal(STAFF_ROUTINE.length, 6);
+});
+
+test("kasa düzeltmesi: ertesi gün onaya giden her alan (SENSITIVE) yanıtta; saatlerin eki okunuşa göre", () => {
+  const text = fold(FAQ_TEXTS.find((t) => t.id === "kasa-duzelt")!.text);
+  for (const key of SENSITIVE) assert.ok(text.includes(fold(CHANGE_LABELS[key])), `"${CHANGE_LABELS[key]}" kasa düzeltmesi yanıtında yok`);
+  // "Ertesi gün Z … doğrudan" bütün Z bölümünü kapsıyordu (Nakit satış Z kartında ama onaya gider)
+  assert.doesNotMatch(text, /ertesi gün z, kart ve not alanları/);
+  const flat = ALL_TEXT.replace(/\s+/g, " ");
+  assert.ok(flat.includes("20:00'den sonra"));
+  assert.doesNotMatch(flat, /\d\d:\d\d'dan sonra/);
+  assert.doesNotMatch(CONTENT, /\}&apos;(?:te|ten|da|dan|de|den|ta|tan)\b/);
+});

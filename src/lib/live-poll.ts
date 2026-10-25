@@ -100,3 +100,16 @@ export function livePollDue(o: LivePollInput, lastAskedAt: number, nowMs: number
   const ms = livePollMs(o);
   return ms !== null && nowMs - lastAskedAt >= ms;
 }
+
+/** Zilin yeniden okunması için pencere olayı (alert-center yayar, kenar çubuğu dinler) */
+export const ALERTS_REFRESH_EVENT = "laf:zil-yenile";
+
+/**
+ * Bildirim gelince açık ekran (sunucu bileşenleri) yenilensin mi: karaoke, hatırlatıcılar ve Bugün her bildirimde; onay
+ * bildiriminde (mal siparişi taslağı) ayrıca Onaylar ve personelin taslak sayfası. Panel sekmesi öndeyken sistem
+ * bildirimi gösterilmez (public/sw.js): sayfa güncel olmalı
+ */
+export function refreshesScreen(path: string, kind: string | undefined): boolean {
+  if (path.startsWith("/panel/karaoke") || path.startsWith("/panel/hatirlaticilarim") || path.startsWith("/panel/bugun")) return true;
+  return kind === "approvals" && (path.startsWith("/panel/onaylar") || path.startsWith("/panel/hizli-sayim/siparis"));
+}

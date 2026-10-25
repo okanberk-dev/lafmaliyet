@@ -8,8 +8,9 @@
  *
  * - createOrUpdateRequest: kişinin istekleri tek sırada (danışma kilidi); aynı istemci anahtarı var olanı döner, aynı
  *   konudaki bekleyen istek güncellenir (sürüm artar), yoksa sınırlar denetlenip yeni satır açılır.
- * - lockForReview → decide: yönetici satırı kilitler, yalnız ekranda gördüğü sürümü ve başkasının isteğini karara
- *   bağlar; karar koşullu yazılır.
+ * - peekForReview → konu nesnesinin kilidi → lockForReview → decide: kilit sırası isteği açan yolla aynı (önce konu,
+ *   sonra istek); yönetici satırı kilitler, yalnız ekranda gördüğü sürümü ve başkasının isteğini karara bağlar; karar
+ *   koşullu yazılır.
  * - withdrawOwn: personel kendi bekleyen isteğini geri çeker (koşullu, onayla yarışta tek sonuç).
  * - supersede, assertNotHeld, expireStaffRequests; okuyucular (sayılar, son kararlar, kişinin istekleri) sabit sütunla,
  *   ham yük (payload) olmadan.
@@ -179,15 +180,33 @@ export async function createOrUpdateRequest(tx: Tx, me: Actor, input: RequestInp
 }
 
 /**
- * Yöneticinin kararından önce: satır kilitlenir (FOR UPDATE), karar reddi denetlenir (bekliyor, başkasının, süresi
- * dolmamış, ekranda görülen sürüm). Karar aynı işlemde decide ile yazılır.
+ * Kararın ilk adımı, kilitsiz: isteğin türü ve yükü, yani hangi konu nesnesinin kilitleneceği. Kilit sırası her yolda
+ * aynıdır: önce konu nesnesi (kasadan çıkan satırı, kasa raporu, günün danışma kilidi, zayi kaydı, tedarikçi), sonra
+ * istek satırı. İsteği açan ve güncelleyen yollar konu nesnesini kilitleyip createOrUpdateRequest'e öyle geçer; doğrudan
+ * yazımlar (satırı silmek, günü kapalı işaretlemek) konu nesnesini kilitleyip bekleyen istekleri öyle kapatır. Karar da
+ * önce bunu okur, sonra konu nesnesini kilitler, sonra lockForReview (`peeked` ile). Ters sıra (önce istek, sonra konu)
+ * personelin güncellemesiyle aynı anda verilen onayı kilitlenmeye (40P01, "İşlem tamamlanamadı") düşürürdü
+ * (tests/helpers/lock-race.ts). Okunan hâl yalnız kilit seçmek içindir; denetimlerin hepsi lockForReview'da, kilit altında.
  */
-export async function lockForReview(tx: Tx, me: Actor, o: { id: number; seenVersion: number }, now = new Date()): Promise<StaffRequestRow> {
+export async function peekForReview(tx: Tx, me: Actor, id: number): Promise<StaffRequestRow> {
+  if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
+  const [row] = await tx.select().from(s.staffRequests).where(eq(s.staffRequests.id, id)).limit(1);
+  if (!row) throw new UserError(REQUEST_TEXT.notFound);
+  return row;
+}
+
+/**
+ * Yöneticinin kararından önce: satır kilitlenir (FOR UPDATE), karar reddi denetlenir (bekliyor, başkasının, süresi
+ * dolmamış, ekranda görülen sürüm). Karar aynı işlemde decide ile yazılır. `peeked` (peekForReview'un okuduğu hâl)
+ * verildiyse kilitli satır onunla aynı sürümde ve aynı konuda olmalı: konu nesnesi o hâle göre kilitlendi.
+ */
+export async function lockForReview(tx: Tx, me: Actor, o: { id: number; seenVersion: number; peeked?: StaffRequestRow }, now = new Date()): Promise<StaffRequestRow> {
   if (me.role !== "admin") throw new UserError(REQUEST_TEXT.adminOnly);
   const [row] = await tx.select().from(s.staffRequests).where(eq(s.staffRequests.id, o.id)).for("update");
   if (!row) throw new UserError(REQUEST_TEXT.notFound);
   const refusal = reviewRefusal(row, me, o.seenVersion, now);
   if (refusal) throw new UserError(refusal);
+  if (o.peeked && (row.version !== o.peeked.version || row.kind !== o.peeked.kind || row.subject !== o.peeked.subject)) throw new UserError(REQUEST_TEXT.changed);
   return row;
 }
 

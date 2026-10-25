@@ -27,6 +27,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL = process.env.KASA_GEC_TEST_DATABASE_URL;
 /** Türkiye saatiyle an */
 const tr = (local: string) => new Date(`${local}:00+03:00`);
@@ -347,5 +349,41 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
       [users.ayse, pc],
     ] as const)
       await core.withdrawOwn(db, who, p.row.id, now);
+  });
+
+  test("kilit sırası: geç raporunu güncelleyen personel ya da günü doğrudan giren yönetici, aynı anda verilen onayla kilitlenmez (günün kilidi, sonra istek)", async () => {
+    // Kendi aralığı: 1 Mayıs raporu, 10 Mayıs geç rapor ("bugün" 15 Mayıs); arada bekleyen geç rapor yok
+    const BASE = "2030-05-01";
+    const DAY = "2030-05-10";
+    const AT = tr("2030-05-15T10:00");
+    await report(BASE);
+    const z = await photo(users.ayse);
+    const out = await propose(users.ayse, DAY, { photoIds: [z], now: AT });
+    const [approve, edit] = await raceOnRequest(
+      URL!,
+      out.row.id,
+      () => review(users.ali, out.row.id, out.row.version, "approve", { now: AT }),
+      () => propose(users.ayse, DAY, { photoIds: [z], version: out.row.version, fields: { handedOver: 2_000 }, now: AT }),
+    );
+    assert.equal(approve.status, "fulfilled");
+    assert.equal((await reportOf(DAY)).handedOver, 2_400);
+    // Gün artık raporlu: güncelleme temiz bir hatayla düşer
+    assert.equal(edit.status, "rejected");
+    assert.equal(((edit as PromiseRejectedResult).reason as Error).message, CASH_REQUEST_TEXT.lateReported);
+
+    // Yönetici aynı günü doğrudan girerken (günün kilidi, rapor, sonra günün geç raporları kapanır) başka bir sekmede geç
+    // raporu onaylıyor: raporu henüz olmayan günde satır kilidi yok, ikisi günün kilidinde sıraya girer
+    const DAY2 = "2030-05-12";
+    const z2 = await photo(users.ayse);
+    const out2 = await propose(users.ayse, DAY2, { photoIds: [z2], now: AT });
+    const [approve2, direct] = await raceOnRequest(
+      URL!,
+      out2.row.id,
+      () => review(users.ali, out2.row.id, out2.row.version, "approve", { now: AT }),
+      () => store.saveCashReport(db, users.veli, { ...fields(DAY2, { note: "deneme" }), countedBy: null, revision: 0, photos: [] }, AT),
+    );
+    assert.equal(approve2.status, "fulfilled");
+    assert.equal(direct.status, "rejected", "gün onayla raporlanmıştı");
+    assert.equal((await reportOf(DAY2)).submittedByName, "Ayşe");
   });
 });
