@@ -1,7 +1,9 @@
 // Personelin mal siparişi taslağı (plan docs/planlar/personel-yetki.md §2.4; src/lib/reorder/draft.ts): personelin
 // görünümü beyaz listeden (fiyat, tutar, hedef, mesaj yok), süre (D+2 05:00), yöneticinin dört işareti, temiz taslak,
 // mesajdaki onay numarası, Bugün satırı; kaynak denetimleri: eylemlerin rolleri, sayfa verisinde bağlantı ve mesaj yok,
-// gönderim sunucunun kopyasıyla, yöneticinin doğrudan gönderimi işlem ve kilitle, push metinlerinde tutar yok.
+// gönderim sunucunun kopyasıyla, yöneticinin doğrudan gönderimi işlem ve kilitle, push metinlerinde tutar yok; son
+// gönderim anı, sipariş birimi karşılaştırması, geri alanın zil metni, açık sayfada "haber ver", düzenlenen kartın toplu
+// onaya girmemesi, öndeki sekmede onay bildirimi, saatin eki.
 // Çalıştırma: npx tsx --test tests/mal-siparisi-taslak.test.ts
 
 import assert from "node:assert/strict";
@@ -13,18 +15,26 @@ import { test } from "node:test";
 import { clip, type DayFacts } from "../src/app/panel/bugun/logic";
 import { draftRow } from "../src/app/panel/bugun/rows-ops";
 import {
+  draftCardEdited,
   draftClean,
   draftDeadline,
   draftEdited,
   draftFlags,
+  DRAFT_NUDGE_MS,
+  draftNudge,
+  draftSubmittedAt,
   draftTitle,
   expectedOnHand,
   firstCountAt,
   isDraftExpired,
   nudgeText,
+  sameOrderUnit,
   staffDraftView,
+  undoneBellBody,
   type DraftLineT,
 } from "../src/lib/reorder/draft";
+import { refreshesScreen } from "../src/lib/live-poll";
+import { clockSuffixTR } from "../src/lib/reminders";
 import { orderMessage } from "../src/lib/reorder/message";
 
 import { assertNoCostKeys, assertNoLira, stripComments } from "./helpers/leak-scan";
@@ -258,4 +268,94 @@ test("Bugün ve zil: personelin olgusu modelsiz; zil iki rolde; push metinlerind
   assert.match(read("src/server/bell/ops.ts"), /draftNotifications\(user, now\)\.catch\(\(\) => \[\]\)/);
   for (const f of ["src/server/order-drafts/notify.ts", "src/server/actions/order-drafts.ts"]) assertNoLira(stripComments(read(f)), f);
   assert.match(read("src/server/order-drafts/notify.ts"), /sendPush\("approvals", \{ kind: "approvals", [^}]*tag: `istek-\$\{id\}` \}/);
+});
+
+test("son gönderim anı: yükteki submittedAt, eski yükte satırın açıldığı an; işaretler ona göre", () => {
+  const created = new Date("2026-10-26T05:05:00.000Z");
+  assert.equal(draftSubmittedAt({ createdAt: created }, { submittedAt: null }).getTime(), created.getTime());
+  assert.equal(draftSubmittedAt({ createdAt: created }, { submittedAt: "2026-10-26T05:41:00.000Z" }).toISOString(), "2026-10-26T05:41:00.000Z");
+  assert.equal(draftSubmittedAt({ createdAt: created }, { submittedAt: "bozuk" }).getTime(), created.getTime());
+  // 08:00'de sayıldı, 08:05'te açıldı; Süt 08:40'ta yeniden sayıldı, 08:41'de güncellendi
+  const lines = [line({ ingredientId: 1, countedAt: "2026-10-26T05:40:00.000Z" }), line({ ingredientId: 2, countedAt: "2026-10-26T05:00:00.000Z" })];
+  assert.equal(draftClean({ lines }, created), true);
+  assert.equal(draftClean({ lines }, new Date("2026-10-26T05:41:00.000Z")), false);
+});
+
+test("sipariş birimi: ad, birim ve 1 birimin içeriği aynı olmalı", () => {
+  const a = { orderName: "SÜT 1 L", unit: "koli", unitSize: 12_000 };
+  assert.equal(sameOrderUnit(a, { ...a }), true);
+  assert.equal(sameOrderUnit(a, { ...a, unit: "LT" }), false);
+  assert.equal(sameOrderUnit(a, { ...a, unitSize: 6000 }), false);
+  assert.equal(sameOrderUnit(a, { ...a, orderName: "SÜT 1 L TAM YAĞLI" }), false);
+});
+
+test("zil: geri alınan gönderimde geri alan; hazırlayandan farklıysa ikisi", () => {
+  assert.equal(undoneBellBody({ requestedByName: "Ayşe", undoneByName: "Selin" }), "Selin gönderimi geri aldı (Ayşe hazırlamıştı); tedarikçiye iptal yazılmalı.");
+  assert.equal(undoneBellBody({ requestedByName: "Ayşe", undoneByName: "Ayşe" }), "Ayşe gönderimi geri aldı; tedarikçiye iptal yazılmalı.");
+  assert.equal(undoneBellBody({ requestedByName: "Ayşe", undoneByName: null }), "Ayşe gönderimi geri aldı; tedarikçiye iptal yazılmalı.");
+  const bell = read("src/server/bell/ops.ts");
+  assert.match(bell, /body: undoneBellBody\(r\)/);
+  assert.match(read("src/server/data/order-drafts.ts"), /leftJoin\(so, eq\(so\.id, r\.resultId\)\)/);
+});
+
+test("'Yöneticiye haber ver': yöneticiye ulaşılamadıysa hemen, yoksa 30 dakika sonra; açık sayfada saatle", () => {
+  const view = { mine: true, notified: true, createdAt: "2026-10-26T06:00:00.000Z" };
+  const t = Date.parse(view.createdAt);
+  assert.equal(draftNudge(view, t + DRAFT_NUDGE_MS - 1), false);
+  assert.equal(draftNudge(view, t + DRAFT_NUDGE_MS), true);
+  // Saat henüz yok (ilk çizim)
+  assert.equal(draftNudge(view, 0), false);
+  assert.equal(draftNudge({ ...view, notified: false }, 0), true);
+  assert.equal(draftNudge({ ...view, mine: false }, t + DRAFT_NUDGE_MS), false);
+  const sheet = read("src/app/panel/hizli-sayim/siparis/draft-sheet.tsx");
+  assert.match(sheet, /useClock\(60_000\)/);
+  assert.match(sheet, /card\.nudge \|\| draftNudge\(draft, clock\)/);
+  assert.match(read("src/server/data/order-drafts.ts"), /draftNudge\(view, now\.getTime\(\)\)/);
+});
+
+test("İşaretsizleri onayla: açılıp değiştirilen kart (miktar ya da not) toplu onaya girmez; hiçbiri onaylanmazsa uyarı", () => {
+  const card = { lines: [{ ingredientId: 1, qty: 4 }, { ingredientId: 2, qty: 1 }], supplierNote: "Perşembe" };
+  assert.equal(draftCardEdited(card, { 1: 4, 2: 1 }, "Perşembe"), false);
+  assert.equal(draftCardEdited(card, { 1: 4, 2: 1 }, "  Perşembe "), false);
+  assert.equal(draftCardEdited(card, { 1: 2, 2: 1 }, "Perşembe"), true);
+  assert.equal(draftCardEdited(card, { 1: 4, 2: 1 }, "Cuma"), true);
+  assert.equal(draftCardEdited({ ...card, supplierNote: null }, { 1: 4, 2: 1 }, ""), false);
+  const ui = read("src/app/panel/onaylar/draft-cards.tsx");
+  assert.match(ui, /cards\.filter\(\(c\) => c\.clean && !edited\.has\(c\.id\)\)/);
+  assert.match(ui, /if \(!res\.data\.approved\) return void toast\.warning\(/);
+  assert.match(ui, /onEdited\(card\.id, draftCardEdited\(card, next, supplierNote\)\)/);
+});
+
+test("onay bildirimi öndeki sekmede: bildirim, zil ve Onaylar / taslak sayfası yenilenir", () => {
+  assert.equal(refreshesScreen("/panel/onaylar", "approvals"), true);
+  assert.equal(refreshesScreen("/panel/hizli-sayim/siparis", "approvals"), true);
+  assert.equal(refreshesScreen("/panel/bugun", "approvals"), true);
+  assert.equal(refreshesScreen("/panel/onaylar", "karaoke"), false);
+  assert.equal(refreshesScreen("/panel/hizli-sayim", "approvals"), false);
+  assert.equal(refreshesScreen("/panel/karaoke", undefined), true);
+  const center = read("src/components/panel/live/alert-center.tsx");
+  const branch = center.slice(center.indexOf('if (msg.kind === "approvals")'), center.indexOf("void refreshLive().then(() => refreshScreen(msg.kind))"));
+  assert.ok(branch.length > 0, "approvals dalı yok");
+  assert.match(branch, /refreshScreen\(msg\.kind\)/);
+  assert.match(branch, /dispatchEvent\(new Event\(ALERTS_REFRESH_EVENT\)\)/);
+  assert.match(branch, /toast\.info\(msg\.title/);
+  assert.match(read("src/components/panel/sidebar.tsx"), /addEventListener\(ALERTS_REFRESH_EVENT, refreshAlerts\)/);
+});
+
+test("saatin eki okunuşa göre: 09:42'de, 09:40'ta, 20:00'den; taslak ve ret metninde sabit 'te yok", () => {
+  assert.equal(clockSuffixTR("09:42"), "09:42'de");
+  assert.equal(clockSuffixTR("09:43"), "09:43'te");
+  assert.equal(clockSuffixTR("09:40"), "09:40'ta");
+  assert.equal(clockSuffixTR("09:30"), "09:30'da");
+  assert.equal(clockSuffixTR("09:50"), "09:50'de");
+  assert.equal(clockSuffixTR("09:46"), "09:46'da");
+  assert.equal(clockSuffixTR("10:00"), "10:00'da");
+  assert.equal(clockSuffixTR("05:00"), "05:00'te");
+  assert.equal(clockSuffixTR("00:00"), "00:00'da");
+  assert.equal(clockSuffixTR("20:00", "abl"), "20:00'den");
+  assert.equal(clockSuffixTR("05:00", "abl"), "05:00'ten");
+  assert.equal(clockSuffixTR("24 Eki 10:05"), "24 Eki 10:05'te");
+  assert.equal(clockSuffixTR("dün"), "dün");
+  assert.doesNotMatch(read("src/app/panel/hizli-sayim/siparis/draft-sheet.tsx"), /&apos;te sipariş gönderildi/);
+  assert.doesNotMatch(read("src/server/order-drafts/core.ts"), /'te sipariş gönderildi/);
 });

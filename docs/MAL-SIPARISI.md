@@ -240,23 +240,32 @@ tedarikçi, mesaj ve numara sunucuda sabit).
 - **Yönetici, Onaylar › Mal siparişi:** taslak başına kapalı bir kart (`#istek-<id>`): "Kaldi · 5 kalem", "Ayşe
   hazırladı · 25 Eki 09:42 · Sayım 25 Eki 09:30 (Ayşe)"; satırda işaretler ("Öneriden fazla", "Öneri yoktu", "Sayım
   beklenenden düşük": eldeki, önceki sayımdan günlük kullanımla beklenenin yarısından az; "Sayım taslaktan 4 dk önce
-  değişti": satır günün öteki sayımlarından en az 30 dakika sonra ve taslaktan en çok 15 dakika önce sayıldı), "Öneri 2
+  değişti": satır günün öteki sayımlarından en az 30 dakika sonra ve taslağın son gönderiminden en çok 15 dakika önce
+  sayıldı; güncellenen taslakta son gönderim sayılır, yükteki `submittedAt`), "Öneri 2
   koli · Eldeki 3 LT · Geçen 12 LT · 20.10 · beklenen ≈ 6", adımlayıcı ve "≈ 850 ₺"; yoldaki siparişler; "Tahmini tutar ≈
   4.250 ₺ (KDV hariç, son fatura fiyatıyla)"; taslaktan sonra yeniden sayım varsa şerit; tedarikçiye gidecek mesajın tam
   metni ve düzenlenebilir "Tedarikçiye not"; "Not (personele görünür; tutar yazmayın)", retle zorunlu; Reddet / Onayla.
-  Bölümün başında **"İşaretsizleri onayla"**: yalnız hiç işareti olmayan ve önerinin aynısı olan taslaklar, her biri ayrı.
+  Bölümün başında **"İşaretsizleri onayla"**: yalnız hiç işareti olmayan ve önerinin aynısı olan taslaklar, her biri ayrı;
+  kaydedilen yükü onaylar, bu yüzden açıp miktarını ya da notunu değiştirdiğiniz kart ona girmez ("Değiştirdiğiniz 1
+  taslak toplu onaya girmez; kendi Onayla düğmesiyle onaylayın."). Hiçbiri onaylanmazsa uyarı, başarı değil.
 - **Mal siparişi listesi:** tedarikçinin kartında "Taslak onayda · Ayşe" (ya da "Taslak onaylandı"); yönetici o
   tedarikçiye kendisi gönderirse canlı taslak aynı işlemde "Yönetici kendisi gönderdi" ile kapanır (aynı danışma kilidi).
   Gönderilenler'de "· onaylayan Ali · personel gönderdi" ve "Personel gönderdi" rozeti.
 - **Bildirimler:** taslak gelince etkin yöneticilere push (`approvals`, etiket `istek-<id>`; güncellenirse en çok 15
   dakikada bir); zil (Onaylar) "Mal siparişi onay bekliyor: Kaldi", en çok 5. Personele zil ("İsteklerim") ve push:
   "Kaldi siparişi onaylandı; WhatsApp'tan gönderin" ya da "… reddedildi". Personel gönderimi geri alınca yöneticilere
-  zil ve push. Bugün (personel) "Onaylanan sipariş bekliyor: Kaldi", eylem "Gönder"; yöneticide genel Onaylar satırı ve
-  sabah e-postasının onay kutusu. Metinlerde tutar yok.
+  zil ve push (zil geri alanı yazar: "Selin gönderimi geri aldı (Ayşe hazırlamıştı)"). Bugün (personel) "Onaylanan
+  sipariş bekliyor: Kaldi", eylem "Gönder"; yöneticide genel Onaylar satırı ve sabah e-postasının onay kutusu. Panel
+  sekmesi öndeyken sistem bildirimi çıkmaz (`public/sw.js`): sekme bildirimi kendisi gösterir ("Gör" ile ilgili ekrana),
+  zili tazeler ve Onaylar ile taslak sayfasını yeniler. "Yöneticiye WhatsApp'tan haber ver" açık kalan sayfada da 30
+  dakika dolunca çıkar (sayfa dakikada bir bakar). Metinlerde tutar yok.
 - **Kurallar:** tedarikçi başına tek canlı taslak (kısmi benzersiz dizin; başkasınınki varken yenisi açılmaz, kendi
   bekleyeni güncellenir ve sürümü artar); yönetici yalnız ekranda gördüğü sürümü onaylar, kimse kendi taslağını onaylamaz;
-  onaylanan satırlar taslağın kalemlerinden olmalı ve hâlâ o tedarikçinin listesinde durmalı. Süre: hazırlandığı ya da
-  onaylandığı iş günü D ise D+2 günü 05:00; sabah işi süresi geçen bekleyen ve onaylı taslakları kapatır. Geri alma: yalnız
+  onaylanan satırlar taslağın kalemlerinden olmalı, hâlâ o tedarikçinin listesinde ve aynı sipariş adı, birimi ve
+  içeriğiyle durmalı (Kalemler'de değiştiyse onay reddedilir; onaylı taslak gönderilirken "Kalemler değişti; yeniden
+  hazırlayın" ile kapanır: mesaj "2 koli", kayıt başka miktar demesin). Süre: hazırlandığı ya da onaylandığı iş günü D
+  ise D+2 günü 05:00; sabah işi süresi geçen bekleyen ve onaylı taslakları kapatır, ama beklenmez: o tedarikçiye yeni
+  taslak açılırken ya da gönderim denenirken süresi geçen taslak hemen kapanır. Geri alma: yalnız
   gönderen, 10 dakika içinde, mal gelmeden ve faturası bağlanmadan; sipariş iptal, taslak "Geri alındı" (son durum).
   İsteyen başına tedarikçi başına günde en çok 3 taslak (ortak kuyruğun konu sınırı).
 - **İşlem geçmişi:** "Mal siparişi taslağı" (Kaldi: 5 kalem · onaya gönderildi), "Mal siparişi taslağı geri çekildi",

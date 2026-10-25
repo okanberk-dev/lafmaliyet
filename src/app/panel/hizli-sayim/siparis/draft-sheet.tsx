@@ -4,6 +4,7 @@ import { ClipboardPen, MessageCircle, Minus, Plus, Send, Truck, Undo2 } from "lu
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
+import { useClock } from "@/components/panel/live/clock";
 import { useActionTransition } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -12,9 +13,9 @@ import { Field, Textarea } from "@/components/ui/form";
 import { EmptyState } from "@/components/ui/misc";
 import { stampTR, whatsappLink } from "@/lib/cash-report";
 import { num } from "@/lib/format";
-import { DRAFT_NOTE_MAX, nudgeText, type StaffDraftView } from "@/lib/reorder/draft";
+import { DRAFT_NOTE_MAX, draftNudge, nudgeText, type StaffDraftView } from "@/lib/reorder/draft";
 import { qtyLabel } from "@/lib/reorder/message";
-import { todayTR } from "@/lib/reminders";
+import { clockSuffixTR, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { sendApprovedDraft, submitOrderDraft, undoDraftSend } from "@/server/actions/order-drafts";
 import { withdrawStaffRequest } from "@/server/actions/staff-requests";
@@ -77,7 +78,7 @@ function SupplierDraftCard({ card, sheet }: { card: DraftSheetCard; sheet: Draft
         ) : null}
         {card.state === "sent" ? (
           <Note>
-            Bu tedarikçiye {card.sentAt && todayTR(new Date(card.sentAt)) === todayTR() ? "bugün" : "son sayımdan sonra"} {card.sentAt ? when(card.sentAt) : ""}&apos;te sipariş gönderildi.
+            Bu tedarikçiye {card.sentAt && todayTR(new Date(card.sentAt)) === todayTR() ? "bugün" : "son sayımdan sonra"} {card.sentAt ? clockSuffixTR(when(card.sentAt)) : ""} sipariş gönderildi.
             {d?.status === "superseded" && d.reviewedByName && d.reviewedAt ? ` Yönetici kendisi gönderdi · ${d.reviewedByName} ${when(d.reviewedAt)}` : ""}
           </Note>
         ) : null}
@@ -119,6 +120,9 @@ function ReadLines({ lines }: { lines: { ingredientId: number; orderName: string
 
 function PendingDraft({ draft, card, sheet }: { draft: StaffDraftView; card: DraftSheetCard; sheet: DraftSheet }) {
   const [pending, run] = useActionTransition();
+  // Açık kalan sayfada da 30 dakika dolunca çıkar (sunucunun çizimi o anı bilmez)
+  const clock = useClock(60_000);
+  const showNudge = card.nudge || draftNudge(draft, clock);
   const n = draft.lines.filter((l) => l.qty > 0).length;
   const nudge = whatsappLink(nudgeText(card.name, n, `${sheet.approvalsUrl}#istek-${draft.id}`), sheet.adminWhatsapp);
   return (
@@ -144,7 +148,7 @@ function PendingDraft({ draft, card, sheet }: { draft: StaffDraftView; card: Dra
           >
             Geri çek
           </Button>
-          {card.nudge ? (
+          {showNudge ? (
             <a href={nudge} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium text-ink ring-1 ring-line-strong ring-inset hover:bg-panel">
               <MessageCircle size={16} aria-hidden="true" className="shrink-0" /> Yöneticiye WhatsApp&apos;tan haber ver
             </a>

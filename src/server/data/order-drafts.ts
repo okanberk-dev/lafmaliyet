@@ -6,10 +6,11 @@ import type { Model } from "@/lib/calc/engine";
 import { qtyLabel } from "@/lib/reorder/message";
 import {
   DRAFT_KIND,
-  DRAFT_NUDGE_MS,
   draftClean,
   draftFlags,
+  draftNudge,
   draftSubject,
+  draftSubmittedAt,
   firstCountAt,
   isDraftExpired,
   parseDraftPayload,
@@ -244,7 +245,7 @@ export async function loadDraftSheet(user: Pick<CurrentUser, "id">): Promise<Dra
         : [];
     // Formun üstünde yalnız son sonucun notu (yeniden hazırlamaya götürür); geri çekilen gösterilmez
     const shownDraft = state === "no-phone" ? null : view && (state !== "form" || ["rejected", "expired", "cancelled", "superseded"].includes(view.status)) ? view : null;
-    const nudge = state === "pending" && view !== null && view.mine && (!view.notified || now.getTime() - Date.parse(view.createdAt) >= DRAFT_NUDGE_MS);
+    const nudge = state === "pending" && view !== null && draftNudge(view, now.getTime());
     return { key: sup.key, slug: sup.slug, name: sup.name, lead: g.lead, state, sentAt, lines, draft: shownDraft, nudge };
   });
   // Önerisi olan ve işi süren kartlar önce
@@ -314,6 +315,8 @@ export async function loadDraftQueue(model: Model, now = new Date()): Promise<Dr
     const p = parseDraftPayload(row.payload);
     if (!p) return [];
     const first = firstCountAt(p.lines);
+    // İşaretler son gönderime göre: güncellenen taslağın yeni sayımı da "taslaktan … önce değişti" olur
+    const draftAt = draftSubmittedAt(row, p);
     const lines: DraftQueueLine[] = p.lines.map((l) => {
       const it = byIng.get(l.ingredientId);
       const plan = it?.plan ?? null;
@@ -329,7 +332,7 @@ export async function loadDraftQueue(model: Model, now = new Date()): Promise<Dr
         prevCount: l.prevCount,
         prevCountDay: l.prevCountDay,
         expectedOnHand: l.expectedOnHand,
-        flags: draftFlags(l, { draftAt: row.createdAt, firstCountAt: first }),
+        flags: draftFlags(l, { draftAt, firstCountAt: first }),
         packPrice: plan?.expectedUnitPrice != null ? plan.expectedUnitPrice * l.unitSize : null,
         priceEstimated: plan?.priceEstimated ?? false,
         inPlan: plan?.supplierKey === p.supplierKey,
@@ -360,7 +363,7 @@ export async function loadDraftQueue(model: Model, now = new Date()): Promise<Dr
         newerCount,
         supplierNote: p.supplierNote,
         signature: d.settings.signature,
-        clean: draftClean(p, row.createdAt),
+        clean: draftClean(p, draftAt),
         ref: row.id,
       },
     ];
@@ -383,9 +386,13 @@ export async function staffApprovedDrafts(now = new Date()): Promise<{ id: numbe
   });
 }
 
-/** Zilin taslak satırlarının olguları (yük okunmaz; başlık, isteyen, durum, karar veren) */
+/**
+ * Zilin taslak satırlarının olguları (yük okunmaz; başlık, isteyen, durum, karar veren). `undoneByName`: geri alınan
+ * gönderimde geri alan (siparişi kapatan; gönderen hazırlayan olmayabilir), yoksa gönderen
+ */
 export async function draftBellRows(o: { userId?: number; since: Date }) {
   const r = s.staffRequests;
+  const so = s.supplierOrders;
   return getDb()
     .select({
       id: r.id,
@@ -400,8 +407,10 @@ export async function draftBellRows(o: { userId?: number; since: Date }) {
       updatedAt: r.updatedAt,
       expiresAt: r.expiresAt,
       subject: r.subject,
+      undoneByName: sql<string | null>`coalesce(${so.closedByName}, ${so.sentByName})`,
     })
     .from(r)
+    .leftJoin(so, eq(so.id, r.resultId))
     .where(and(eq(r.kind, DRAFT_KIND), o.userId !== undefined ? eq(r.requestedBy, o.userId) : undefined, or(eq(r.status, "pending"), eq(r.status, "approved"), gte(r.updatedAt, o.since))))
     .orderBy(desc(r.updatedAt), desc(r.id))
     .limit(30);

@@ -1069,7 +1069,9 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
   assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
   assert.doesNotMatch(bell, /hour < 20/);
-  assert.match(read("src/components/panel/live/alert-center.tsx"), /p\.startsWith\("\/panel\/bugun"\)\) router\.refresh\(\)/);
+  // Bildirim gelince Bugün yenilenir (kural src/lib/live-poll.ts › refreshesScreen)
+  assert.match(read("src/components/panel/live/alert-center.tsx"), /if \(refreshesScreen\(pathRef\.current, kind\)\) router\.refresh\(\)/);
+  assert.match(read("src/lib/live-poll.ts"), /path\.startsWith\("\/panel\/bugun"\)\) return true;/);
   assert.match(read("src/components/panel/sidebar.tsx"), /prev\.startsWith\("\/panel\/bugun"\)/);
   // Ekran kendisi de yenilenir: saat sınırında, sekme uzun gizli kalınca ve geri tuşuyla dönülünce (Activity korunan
   // eski çizimi gösterir)

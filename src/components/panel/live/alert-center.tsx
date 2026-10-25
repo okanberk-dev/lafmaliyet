@@ -9,7 +9,7 @@ import { toastUnreachable } from "@/components/ui/action-error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Role } from "@/lib/constants";
 import { alarmPlan, eventMessage, isLive, phase, sessionEnd, sessionStart, timeRange, trClock, type KaraokeSessionDTO, type PlannedAlarm } from "@/lib/karaoke/session";
-import { LIVE_POLL, listensForAlerts, livePollDue, pushCovers } from "@/lib/live-poll";
+import { ALERTS_REFRESH_EVENT, LIVE_POLL, listensForAlerts, livePollDue, pushCovers, refreshesScreen } from "@/lib/live-poll";
 import { dueRingMessage, dueSoonToRing, ordersToRing, ringMessage } from "@/lib/site-orders/feed";
 import { dueInstant } from "@/lib/user-reminders";
 import { cn } from "@/lib/utils";
@@ -111,11 +111,16 @@ export function AlertCenter({ role }: { role: Role }) {
   const overtime = prefs.karaokeAlarms && now ? sessions.filter((s) => phase(s, now) === "overtime") : [];
   const overtimeKey = overtime.map((s) => s.id).join(",");
 
-  /** Karaoke, hatırlatıcı ya da Bugün ekranındaysa sunucu bileşenleri de yenilensin (Bugün ikisini de gösterir) */
-  const refreshScreen = useCallback(() => {
-    const p = pathRef.current;
-    if (p.startsWith("/panel/karaoke") || p.startsWith("/panel/hatirlaticilarim") || p.startsWith("/panel/bugun")) router.refresh();
-  }, [router]);
+  /**
+   * Karaoke, hatırlatıcı ya da Bugün ekranındaysa sunucu bileşenleri de yenilensin (Bugün ikisini de gösterir); onay
+   * bildiriminde Onaylar ve taslak sayfası da (src/lib/live-poll.ts › refreshesScreen)
+   */
+  const refreshScreen = useCallback(
+    (kind?: string) => {
+      if (refreshesScreen(pathRef.current, kind)) router.refresh();
+    },
+    [router],
+  );
 
   // Açılışta ve sekmeye dönünce, ağ gelince canlı veri
   useEffect(() => {
@@ -139,7 +144,7 @@ export function AlertCenter({ role }: { role: Role }) {
     if (pushSupport() === "unsupported") return;
     void registerServiceWorker();
     const onMessage = (e: MessageEvent) => {
-      const msg = e.data as { type?: string; kind?: string; title?: string; body?: string; ring?: boolean } | null;
+      const msg = e.data as { type?: string; kind?: string; title?: string; body?: string; url?: string; ring?: boolean } | null;
       if (msg?.type !== "laf:push") return;
       // Servis çalışanına yanıt: sesi bu sekme (seçilen hoparlörden) çalacaksa sistem bildirimi sessiz gösterilir
       const willRing =
@@ -147,7 +152,23 @@ export function AlertCenter({ role }: { role: Role }) {
         audioState() === "ready" &&
         (msg.kind === "test" || (msg.kind === "karaoke" && (prefs.karaokeAlarms || role === "admin")) || (msg.kind === "orders" && prefs.orderAlerts));
       e.ports[0]?.postMessage({ willRing });
-      void refreshLive().then(refreshScreen);
+      if (msg.kind === "approvals") {
+        // Onay (mal siparişi taslağı): canlı veride yok. Sekme öndeyken sistem bildirimi çıkmaz (sw.js): bildirim burada,
+        // zil ve açık ekran yenilenir
+        refreshScreen(msg.kind);
+        window.dispatchEvent(new Event(ALERTS_REFRESH_EVENT));
+        if (document.visibilityState === "visible" && msg.title) {
+          const url = msg.url;
+          toast.info(msg.title, {
+            id: `onay-${url ?? msg.title}`,
+            description: msg.body,
+            duration: 10_000,
+            action: url && pathRef.current !== url.split("#")[0] ? { label: "Gör", onClick: () => router.push(url) } : undefined,
+          });
+        }
+        return;
+      }
+      void refreshLive().then(() => refreshScreen(msg.kind));
       if (msg.kind === "test") {
         if (prefs.sound) play("test");
         toast.success(msg.title ?? "Deneme bildirimi", { description: msg.body });
@@ -155,7 +176,7 @@ export function AlertCenter({ role }: { role: Role }) {
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [prefs.sound, prefs.karaokeAlarms, prefs.orderAlerts, role, refreshScreen]);
+  }, [prefs.sound, prefs.karaokeAlarms, prefs.orderAlerts, role, refreshScreen, router]);
 
   // Ses çıkışı: bu cihazda seçilen hoparlör (Bluetooth hoparlörde müzik çalarken uyarılar bilgisayardan gelsin);
   // hoparlör takılıp çıkınca yeniden uygulanır
@@ -360,7 +381,7 @@ export function AlertCenter({ role }: { role: Role }) {
                   onClick: () =>
                     void completeUserReminder(r.id).then((res) => {
                       if (!res.ok) toast.error(res.error);
-                      void refreshLive().then(refreshScreen);
+                      void refreshLive().then(() => refreshScreen());
                     }),
                 },
               });
@@ -423,7 +444,7 @@ export function AlertCenter({ role }: { role: Role }) {
     } finally {
       setBusy(null);
     }
-    void refreshLive().then(refreshScreen);
+    void refreshLive().then(() => refreshScreen());
   }
 
   async function extend(s: KaraokeSessionDTO, minutes: number, force = false) {
@@ -449,7 +470,7 @@ export function AlertCenter({ role }: { role: Role }) {
       }));
       toast.success(`${sessionName(s)}: +${minutes} dk`, { description: `Yeni bitiş ${trClock(sessionEnd(s) + minutes * 60_000).time}` });
     } else toast.error(res.error);
-    void refreshLive().then(refreshScreen);
+    void refreshLive().then(() => refreshScreen());
   }
 
   const timedReminderToday = (data?.reminders ?? []).some((r) => {

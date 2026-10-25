@@ -2,7 +2,9 @@
 // Postgres'te: gönder → miktar değiştirerek onayla → gönder; aynı istemci anahtarı ikinci taslak açmaz; `taslak:<id>`
 // ikinci sipariş açmaz; tedarikçi başına ikinci canlı taslak reddedilir; geri çekme ile onay yarışında tek sonuç;
 // süresi geçmiş taslak gönderilmez; yöneticinin doğrudan gönderimi taslağı kapatır; geri alma (gelmiş ya da faturalı
-// siparişte, başkasında ve 10 dakikadan sonra ret); bayat sürüm ve kendi taslağını onaylama reddedilir.
+// siparişte, başkasında ve 10 dakikadan sonra ret); bayat sürüm ve kendi taslağını onaylama reddedilir. Güncellenen
+// taslağın işaretleri son gönderime göre; sipariş birimi değişen kalem onaylanmaz ve gönderilmez; süresi dolmuş canlı
+// taslak günlük işi beklemeden yerini yenisine bırakır; zil geri alanı yazar.
 //
 // Tedarikçinin planı (öneri, sayım, kart, numara) sahte `deps` ile gelir: maliyet modeli kurulmaz. Kendi kullanıcılarını
 // açar; her test kendi tedarikçi anahtarıyla çalışır (konu başına günlük sınır), sonunda bütün satırlarını siler.
@@ -18,7 +20,7 @@ import { after, before, describe, test } from "node:test";
 import { and, eq, inArray, like } from "drizzle-orm";
 
 import { businessDate } from "../src/lib/cash-report";
-import { DRAFT_TEXT, draftSubject, parseDraftResult } from "../src/lib/reorder/draft";
+import { draftClean, draftDeadline, DRAFT_TEXT, draftSubject, draftSubmittedAt, parseDraftResult, undoneBellBody } from "../src/lib/reorder/draft";
 import type { ReorderLine } from "../src/lib/reorder/types";
 import { REQUEST_TEXT } from "../src/lib/staff-requests";
 import type { DB } from "../src/server/db";
@@ -33,6 +35,8 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
   let db: DB;
   let core: typeof import("../src/server/order-drafts/core");
   let queue: typeof import("../src/server/staff-requests/core");
+  let data: typeof import("../src/server/data/order-drafts");
+  let closeShared: () => Promise<void> = async () => {};
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
   const users: Record<"ali" | "ayse" | "mehmet", Who> = {
@@ -56,6 +60,10 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
     countDay: businessDate(now),
     /** Planda olmayan kalemler (listeden çıkarıldı) */
     missing: new Set<number>(),
+    /** Kaleme göre son sayımın anı (yeniden sayılan satır) */
+    countAtFor: new Map<number, string>(),
+    /** Kaleme göre sipariş adı, birimi ve içeriği (Kalemler'de değişti) */
+    unitFor: new Map<number, { orderName?: string; unit?: string; unitSize?: number }>(),
   };
   const ING = { sut: 910_001, kahve: 910_002, bardak: 910_003 };
   const planLines = () =>
@@ -63,7 +71,9 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
       { ingredientId: ING.sut, name: "Süt", orderName: "SÜT 1 L", unit: "koli", unitSize: 12_000, countUnit: "LT", countFactor: 1000, suggested: 2, onHand: { base: 3000, at: state.countAt, day: state.countDay }, prevCount: { base: 12_000, day: "2026-10-01" }, perDay: 2000 },
       { ingredientId: ING.kahve, name: "Kahve", orderName: "ESPRESSO 1 KG", unit: "paket", unitSize: 1000, countUnit: "KG", countFactor: 1000, suggested: 1, onHand: { base: 500, at: state.countAt, day: state.countDay }, prevCount: null, perDay: null },
       { ingredientId: ING.bardak, name: "Bardak", orderName: "BARDAK 12 OZ", unit: "koli", unitSize: 1000, countUnit: "ADET", countFactor: 1, suggested: 0, onHand: { base: 900, at: state.countAt, day: state.countDay }, prevCount: null, perDay: null },
-    ].filter((l) => !state.missing.has(l.ingredientId));
+    ]
+      .filter((l) => !state.missing.has(l.ingredientId))
+      .map((l) => ({ ...l, ...state.unitFor.get(l.ingredientId), onHand: { ...l.onHand, at: state.countAtFor.get(l.ingredientId) ?? l.onHand.at } }));
   const deps = {
     plan: async (key: string) => ({
       supplier: { key, name: SUPPLIER, cardId: state.cardId, phone: state.phone },
@@ -88,6 +98,8 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
     state.countAt = hourAgo;
     state.countDay = businessDate(now);
     state.missing.clear();
+    state.countAtFor.clear();
+    state.unitFor.clear();
   };
 
   const refused = (p: Promise<unknown>, text: string | RegExp) =>
@@ -123,6 +135,9 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
     db = dbModule.createDb(URL_!, 4);
     core = await import("../src/server/order-drafts/core");
     queue = await import("../src/server/staff-requests/core");
+    // Zilin okuyucusu paylaşılan bağlantıyla (getDb, DATABASE_URL)
+    data = await import("../src/server/data/order-drafts");
+    closeShared = () => dbModule.getDb().$client.end();
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db.insert(s.users).values({ email: `taslak-${k}-${tag}@ornek.com`, name: users[k].name, passwordHash: "x", role: users[k].role }).returning({ id: s.users.id });
       users[k].id = u.id;
@@ -139,6 +154,7 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
       await db.delete(s.users).where(inArray(s.users.id, uids));
     }
     await db.$client.end();
+    await closeShared();
   });
 
   test("gönder → miktar değiştirerek onayla → gönder: önce kayıt, mesajda onay numarası, onaylanan miktarlar", async () => {
@@ -360,6 +376,114 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
     const r = await core.reviewDraftCore(db, users.ali, { id: a.row.id, seenVersion: b.row.version, decision: "reject", lines: null, supplierNote: null, note: "Bu hafta süt gerekmiyor" }, deps, now);
     assert.equal(r.status, "rejected");
     assert.equal((await reqRow(a.row.id)).reviewNote, "Bu hafta süt gerekmiyor");
+  });
+
+  test("güncellenen taslağın işaretleri son gönderime göre: taslaktan sonra yeniden sayılan satır işaretlenir, İşaretsizleri onayla almaz", async () => {
+    reset();
+    const key = newKey();
+    const lines = [
+      { ingredientId: ING.sut, qty: 2 },
+      { ingredientId: ING.kahve, qty: 1 },
+    ];
+    const at = (minAgo: number) => new Date(now.getTime() - minAgo * 60_000);
+    state.countAt = at(60).toISOString();
+    const a = await core.submitDraftCore(db, users.mehmet, { clientKey: null, supplierKey: key, lines, supplierNote: null }, deps, at(50));
+    // Süt 55 dakika sonra yeniden sayıldı (daha az), taslak 3 dakika sonra başka bir sekmeden yeniden gönderildi
+    state.countAtFor.set(ING.sut, at(5).toISOString());
+    const b = await core.submitDraftCore(db, users.mehmet, { clientKey: `ck-${tag}-${key}-2`, supplierKey: key, lines, supplierNote: null }, deps, at(2));
+    assert.equal(b.row.id, a.row.id);
+    assert.equal(b.row.createdAt.getTime(), at(50).getTime(), "satırın açıldığı an değişmez");
+    assert.equal(b.payload.submittedAt, at(2).toISOString());
+    assert.equal(draftSubmittedAt(b.row, b.payload).getTime(), at(2).getTime());
+    // Açıldığı ana göre temiz görünürdü; son gönderime göre "Sayım taslaktan 3 dk önce değişti"
+    assert.equal(draftClean(b.payload, b.row.createdAt), true);
+    assert.equal(draftClean(b.payload, draftSubmittedAt(b.row, b.payload)), false);
+    const out = await core.approveCleanCore(db, users.ali, [{ id: a.row.id, seenVersion: b.row.version }], deps, now);
+    assert.deepEqual(out.approved, []);
+    assert.deepEqual(out.skipped, [{ id: a.row.id, reason: "İşaretli ya da öneriden farklı" }]);
+    assert.equal((await reqRow(a.row.id)).status, "pending");
+    await queue.withdrawOwn(db, users.mehmet, a.row.id, now);
+  });
+
+  test("kalemin sipariş birimi ya da adı taslaktan sonra değiştiyse: onaylanmaz, onaylıysa gönderilmez ve taslak kapanır", async () => {
+    reset();
+    const key = newKey();
+    const a = await submit(users.mehmet, key);
+    await approve(users.ali, a.row.id, a.row.version, [{ ingredientId: ING.sut, qty: 2 }]);
+    // Yönetici Kalemler'de Süt'ün sipariş birimini koliden LT'ye çevirdi: mesaj "2 koli", kayıt 2 LT derdi
+    state.unitFor.set(ING.sut, { unit: "LT", unitSize: 1000 });
+    await refused(core.sendDraftCore(db, users.mehmet, { id: a.row.id }, deps, now), DRAFT_TEXT.linesChanged);
+    const row = await reqRow(a.row.id);
+    assert.equal(row.status, "expired");
+    assert.equal(row.reviewNote, DRAFT_TEXT.linesChanged);
+    assert.equal((await ordersOf(a.row.id)).length, 0);
+    // Yalnız içerik (koli 12 LT → 6 LT) de değişiklik sayılır
+    reset();
+    const b = await submit(users.mehmet, newKey());
+    await approve(users.ali, b.row.id, b.row.version, [{ ingredientId: ING.sut, qty: 2 }]);
+    state.unitFor.set(ING.sut, { unitSize: 6000 });
+    await refused(core.sendDraftCore(db, users.mehmet, { id: b.row.id }, deps, now), DRAFT_TEXT.linesChanged);
+    // Onayda: adı değişen kalem onaylanmaz, değişmeyen onaylanır
+    reset();
+    const c = await submit(users.mehmet, newKey());
+    state.unitFor.set(ING.sut, { orderName: "SÜT 1 L TAM YAĞLI" });
+    await refused(approve(users.ali, c.row.id, c.row.version, [{ ingredientId: ING.sut, qty: 2 }]), `Süt: ${DRAFT_TEXT.unitChanged}`);
+    const ok = await approve(users.ali, c.row.id, c.row.version, [
+      { ingredientId: ING.sut, qty: 0 },
+      { ingredientId: ING.kahve, qty: 1 },
+    ]);
+    assert.equal(ok.status, "approved");
+    const sent = await core.sendDraftCore(db, users.mehmet, { id: c.row.id }, deps, now);
+    assert.equal(sent.lineCount, 1);
+  });
+
+  test("süresi dolmuş canlı taslak günlük işi beklemez: gönderim denemesi kapatır, hazırlayan da başkası da yeni taslak açar", async () => {
+    reset();
+    const later = new Date(draftDeadline(now).getTime() + 60_000);
+    // Onaylı taslağın son anı geçti; günlük iş (expireStaffRequests) henüz çalışmadı
+    const key = newKey();
+    const a = await submit(users.ayse, key);
+    await approve(users.ali, a.row.id, a.row.version, [{ ingredientId: ING.sut, qty: 2 }]);
+    await refused(core.sendDraftCore(db, users.ayse, { id: a.row.id }, deps, later), DRAFT_TEXT.expired);
+    assert.equal((await reqRow(a.row.id)).status, "expired");
+    // O günün sayımı
+    state.countDay = businessDate(later);
+    state.countAt = new Date(later.getTime() - 60_000).toISOString();
+    const again = await core.submitDraftCore(db, users.ayse, { clientKey: null, supplierKey: key, lines: [{ ingredientId: ING.sut, qty: 2 }], supplierNote: null }, deps, later);
+    assert.equal(again.created, true);
+    await queue.withdrawOwn(db, users.ayse, again.row.id, later);
+    // Başkasının süresi dolmuş, onaylı ve gönderilmemiş taslağı (kimse göndermeyi denemedi)
+    reset();
+    const key2 = newKey();
+    const b = await submit(users.ayse, key2);
+    await approve(users.ali, b.row.id, b.row.version, [{ ingredientId: ING.sut, qty: 2 }]);
+    state.countDay = businessDate(later);
+    state.countAt = new Date(later.getTime() - 60_000).toISOString();
+    const other = await core.submitDraftCore(db, users.mehmet, { clientKey: null, supplierKey: key2, lines: [{ ingredientId: ING.sut, qty: 2 }], supplierNote: null }, deps, later);
+    assert.equal(other.created, true);
+    assert.equal((await reqRow(b.row.id)).status, "expired");
+    // Süresi dolmamış taslak yine yerini korur
+    reset();
+    const key3 = newKey();
+    await submit(users.ayse, key3);
+    await refused(submit(users.mehmet, key3), /onay bekliyor \(Ayşe\)/);
+    await queue.withdrawOwn(db, users.mehmet, other.row.id, later);
+  });
+
+  test("zil (yönetici): geri alınan gönderimde geri alan yazılır, hazırlayan değil", async () => {
+    reset();
+    const key = newKey();
+    const a = await submit(users.ayse, key);
+    await approve(users.ali, a.row.id, a.row.version, [{ ingredientId: ING.sut, qty: 2 }]);
+    // Bugün satırından Mehmet gönderdi ve geri aldı
+    await core.sendDraftCore(db, users.mehmet, { id: a.row.id }, deps, now);
+    await core.undoDraftSendCore(db, users.mehmet, { id: a.row.id }, now);
+    const rows = await data.draftBellRows({ since: new Date(now.getTime() - 86_400_000) });
+    const row = rows.find((r) => r.id === a.row.id);
+    assert.ok(row);
+    assert.equal(row.status, "cancelled");
+    assert.equal(row.undoneByName, "Mehmet");
+    assert.equal(undoneBellBody(row), "Mehmet gönderimi geri aldı (Ayşe hazırlamıştı); tedarikçiye iptal yazılmalı.");
   });
 
   test("personelin taslağı: yönetici açamaz; cep numarası, taze sayım ve son sayımdan sonra sipariş yok koşulları", async () => {

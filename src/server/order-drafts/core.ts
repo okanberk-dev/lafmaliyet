@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, lte, sql } from "drizzle-orm";
 
 import { businessDate } from "@/lib/cash-report";
 import {
@@ -12,18 +12,20 @@ import {
   DRAFT_TEXT,
   DRAFT_UNDO_MS,
   draftSubject,
+  draftSubmittedAt,
   draftTitle,
   expectedOnHand,
   isDraftExpired,
   parseDraftPayload,
   parseDraftResult,
+  sameOrderUnit,
   type DraftLineT,
   type DraftPayloadT,
   type DraftResultT,
 } from "@/lib/reorder/draft";
 import { isMobile, mobileE164, orderLink, orderMessage } from "@/lib/reorder/message";
 import type { ReorderLine } from "@/lib/reorder/types";
-import { addDays, daysBetween, todayTR } from "@/lib/reminders";
+import { addDays, clockSuffixTR, daysBetween, todayTR } from "@/lib/reminders";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, type Actor, type StaffRequestRow, type Tx } from "@/server/staff-requests/core";
@@ -87,6 +89,18 @@ const hhmm = (d: Date | string) => new Date(d).toLocaleTimeString("tr-TR", { hou
 /** Tedarikçinin danışma kilidi (işlemin sonuna kadar) */
 export async function lockSupplier(tx: Tx, supplierKey: string): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`mal-taslak:${supplierKey}`}))`);
+}
+
+/**
+ * Tedarikçinin süresi dolmuş canlı taslağını kapatır (tedarikçinin kilidi altında): günlük iş (expireStaffRequests,
+ * 08:00'den sonra) beklenmeden yeni taslak açılabilsin. Aynı koşul o işinkiyle, tek tedarikçide.
+ */
+async function expireLiveDraft(tx: Tx, supplierKey: string, now: Date): Promise<void> {
+  const r = s.staffRequests;
+  await tx
+    .update(r)
+    .set({ status: "expired", updatedAt: now })
+    .where(and(eq(r.kind, DRAFT_KIND), eq(r.subject, draftSubject(supplierKey)), sql`${r.status} in ('pending', 'approved')`, lte(r.expiresAt, now)));
 }
 
 /** Tedarikçinin canlı (bekleyen ya da onaylı) taslağı */
@@ -175,11 +189,12 @@ export async function submitDraftCore(
   }
   const lastCount = plan.lines.map((l) => l.onHand?.at ?? "").sort().at(-1) || null;
   if (plan.lastSentAt && lastCount && Date.parse(plan.lastSentAt) > Date.parse(lastCount)) {
-    throw new UserError(`Bu tedarikçiye ${todayTR(new Date(plan.lastSentAt)) === todayTR(now) ? "bugün" : "son sayımdan sonra"} ${hhmm(plan.lastSentAt)}'te sipariş gönderildi`);
+    throw new UserError(`Bu tedarikçiye ${todayTR(new Date(plan.lastSentAt)) === todayTR(now) ? "bugün" : "son sayımdan sonra"} ${clockSuffixTR(hhmm(plan.lastSentAt))} sipariş gönderildi`);
   }
   const notified = await adminsReachable(db);
   return db.transaction(async (tx) => {
     await lockSupplier(tx, input.supplierKey);
+    await expireLiveDraft(tx, input.supplierKey, now);
     const live = await liveDraft(tx, input.supplierKey);
     if (live && live.requestedBy !== me.id) {
       throw new UserError(`Bu tedarikçinin taslağı ${live.status === "pending" ? "onay bekliyor" : "onaylandı"} (${live.requestedByName}); yeni taslak açılamaz`);
@@ -195,6 +210,7 @@ export async function submitDraftCore(
       supplierNote: input.supplierNote?.trim() || null,
       notified,
       pushedAt: pushDue ? now.toISOString() : (prev?.pushedAt ?? null),
+      submittedAt: now.toISOString(),
     };
     const { row, created } = await createOrUpdateRequest(
       tx,
@@ -262,9 +278,15 @@ export async function reviewDraftCore(
     for (const l of lines) if (!own.has(l.ingredientId)) throw new UserError("Taslakta olmayan bir kalem onaylanamaz; sayfayı yenileyin");
     const plan = await deps.plan(payload.supplierKey);
     if (!plan) throw new UserError(DRAFT_TEXT.supplierChanged);
-    const inPlan = new Set(plan.lines.map((l) => l.ingredientId));
+    const inPlan = new Map(plan.lines.map((l) => [l.ingredientId, l]));
     const approved = lines.map((l) => ({ ingredientId: l.ingredientId, qty: round2(l.qty) }));
-    for (const a of approved) if (a.qty > 0 && !inPlan.has(a.ingredientId)) throw new UserError(`${own.get(a.ingredientId)!.name} artık bu tedarikçinin listesinde değil`);
+    for (const a of approved) {
+      if (a.qty <= 0) continue;
+      const cur = inPlan.get(a.ingredientId);
+      if (!cur) throw new UserError(`${own.get(a.ingredientId)!.name} artık bu tedarikçinin listesinde değil`);
+      // Mesaj taslağın birimiyle kurulur: kalemin birimi ya da adı sonradan değiştiyse onay başka miktar söylerdi
+      if (!sameOrderUnit(own.get(a.ingredientId)!, cur)) throw new UserError(`${own.get(a.ingredientId)!.name}: ${DRAFT_TEXT.unitChanged}`);
+    }
     const supplierNote = input.supplierNote?.trim() || null;
     const message = orderMessage({
       signature: plan.signature,
@@ -305,7 +327,7 @@ export async function approveCleanCore(
   for (const it of items) {
     try {
       const { row, payload } = await peek(db, it.id);
-      if (!draftClean(payload, row.createdAt)) {
+      if (!draftClean(payload, draftSubmittedAt(row, payload))) {
         skipped.push({ id: it.id, reason: "İşaretli ya da öneriden farklı" });
         continue;
       }
@@ -366,7 +388,11 @@ export async function sendDraftCore(db: DB, me: Actor, input: { id: number }, de
   }
   if (row.status === "superseded") throw new UserError(DRAFT_TEXT.superseded);
   if (row.status !== "approved") throw new UserError(row.status === "expired" ? DRAFT_TEXT.expired : DRAFT_TEXT.notApproved);
-  if (isDraftExpired(row, now)) throw new UserError(DRAFT_TEXT.expired);
+  if (isDraftExpired(row, now)) {
+    // Günlük işi beklemeden kapanır: tedarikçiye yeni taslak açılabilsin
+    await closeDraft(db, row.id, "expired", DRAFT_TEXT.expired, now);
+    throw new UserError(DRAFT_TEXT.expired);
+  }
   const result = parseDraftResult(row.result);
   if (!result) throw new UserError(DRAFT_TEXT.notApproved);
   const plan = await deps.plan(payload.supplierKey);
@@ -380,7 +406,10 @@ export async function sendDraftCore(db: DB, me: Actor, input: { id: number }, de
   }
   const wanted = result.approvedLines.filter((l) => l.qty > 0);
   const snap = await deps.snapshot(payload.supplierKey, wanted);
-  if ("error" in snap) {
+  // Satırlar sunucunun güncel verisinden, mesaj onaydaki: kalemin sipariş birimi, içeriği ya da adı taslaktan sonra
+  // değiştiyse ikisi başka miktar söylerdi (mesajda "2 koli", kayıtta 2 LT)
+  const own = new Map(payload.lines.map((l) => [l.ingredientId, l]));
+  if ("error" in snap || snap.lines.some((l) => !own.has(l.ingredientId) || !sameOrderUnit(own.get(l.ingredientId)!, l))) {
     await closeDraft(db, row.id, "expired", DRAFT_TEXT.linesChanged, now);
     throw new UserError(DRAFT_TEXT.linesChanged);
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, CheckCheck, Minus, Plus, ShoppingBasket, X } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { useActionTransition } from "@/components/ui/action-error";
@@ -11,7 +11,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Textarea } from "@/components/ui/form";
 import { stampTR } from "@/lib/cash-report";
 import { dateTR, money, num } from "@/lib/format";
-import { DRAFT_NOTE_MAX } from "@/lib/reorder/draft";
+import { draftCardEdited, DRAFT_NOTE_MAX } from "@/lib/reorder/draft";
 import { orderMessage, qtyLabel } from "@/lib/reorder/message";
 import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
@@ -23,11 +23,25 @@ import type { DraftQueueCard, DraftQueueLine } from "@/server/data/order-drafts"
  * gelen bir kart (#istek-<id>): satırların işaretleri (öneriden fazla, öneri yoktu, sayım beklenenden düşük, sayım
  * taslaktan hemen önce değişti), öneri, eldeki, geçen sayım ve beklenen; adımlayıcı ve tahmini tutar; yoldaki
  * siparişler; tedarikçiye gidecek mesajın tam metni (tedarikçiye not düzenlenir); personele not (retle zorunlu).
- * Bölüm başında "İşaretsizleri onayla". Tutar yalnız burada görünür.
+ * Bölüm başında "İşaretsizleri onayla": kaydedilmiş yükü onaylar; açıp miktarını ya da notunu değiştirdiğiniz kart
+ * ona girmez (kendi "Onayla"sıyla onaylanır). Tutar yalnız burada görünür.
  */
 
 export function DraftQueueCards({ cards }: { cards: DraftQueueCard[] }) {
-  const clean = cards.filter((c) => c.clean);
+  const [edited, setEdited] = useState<ReadonlySet<number>>(() => new Set());
+  const onEdited = useCallback(
+    (id: number, on: boolean) =>
+      setEdited((s) => {
+        if (s.has(id) === on) return s;
+        const next = new Set(s);
+        if (on) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
+    [],
+  );
+  const clean = cards.filter((c) => c.clean && !edited.has(c.id));
+  const held = cards.filter((c) => c.clean && edited.has(c.id)).length;
   const [pending, run] = useActionTransition();
   return (
     <Card>
@@ -36,18 +50,20 @@ export function DraftQueueCards({ cards }: { cards: DraftQueueCard[] }) {
         title="Mal siparişi"
         description="Personelin hızlı sayımdan sonra hazırladığı taslaklar. Onaylayınca personel WhatsApp'tan gönderir; reddederseniz notunuz personele görünür (tutar yazmayın)."
         actions={
-          clean.length ? (
+          clean.length || held ? (
             <Button
               variant="secondary"
               size="sm"
-              disabled={pending}
+              disabled={pending || !clean.length}
               className="pointer-coarse:h-11"
               onClick={() =>
                 run(async () => {
                   const res = await approveCleanDrafts({ items: clean.map((c) => ({ id: c.id, seenVersion: c.version })) });
                   if (!res.ok) return void toast.error(res.error);
                   const skipped = res.data.skipped.length;
-                  toast.success(`${num(res.data.approved)} taslak onaylandı`, skipped ? { description: `${num(skipped)} taslak atlandı: ${res.data.skipped[0].reason}` } : undefined);
+                  const why = skipped ? { description: `${num(skipped)} taslak atlandı: ${res.data.skipped[0].reason}` } : undefined;
+                  if (!res.data.approved) return void toast.warning("Hiçbir taslak onaylanmadı", why);
+                  toast.success(`${num(res.data.approved)} taslak onaylandı`, why);
                 })
               }
             >
@@ -56,9 +72,14 @@ export function DraftQueueCards({ cards }: { cards: DraftQueueCard[] }) {
           ) : undefined
         }
       />
+      {held ? (
+        <p className="border-t border-line px-5 py-2.5 text-[13px] text-ink-soft">
+          Değiştirdiğiniz {num(held)} taslak toplu onaya girmez; kendi <span className="font-medium text-ink">Onayla</span> düğmesiyle onaylayın.
+        </p>
+      ) : null}
       <div className="divide-y divide-line border-t border-line">
         {cards.map((c) => (
-          <DraftItem key={c.id} card={c} />
+          <DraftItem key={c.id} card={c} onEdited={onEdited} />
         ))}
       </div>
     </Card>
@@ -67,9 +88,19 @@ export function DraftQueueCards({ cards }: { cards: DraftQueueCard[] }) {
 
 const amount = (v: number | null, unit: string | null) => (v === null ? "–" : `${num(v, 1)} ${unit ?? ""}`.trim());
 
-function DraftItem({ card }: { card: DraftQueueCard }) {
+function DraftItem({ card, onEdited }: { card: DraftQueueCard; onEdited: (id: number, edited: boolean) => void }) {
   const [qty, setQty] = useState<Record<number, number>>(() => Object.fromEntries(card.lines.map((l) => [l.ingredientId, l.qty])));
   const [supplierNote, setSupplierNote] = useState(card.supplierNote ?? "");
+  const dirty = draftCardEdited(card, qty, supplierNote);
+  function changeQty(id: number, v: number) {
+    const next = { ...qty, [id]: Math.max(0, Math.min(9999, Math.round(v * 100) / 100)) };
+    setQty(next);
+    onEdited(card.id, draftCardEdited(card, next, supplierNote));
+  }
+  function changeNote(v: string) {
+    setSupplierNote(v);
+    onEdited(card.id, draftCardEdited(card, qty, v));
+  }
   const [note, setNote] = useState("");
   const [pending, run] = useActionTransition();
   const q = (l: DraftQueueLine) => qty[l.ingredientId] ?? 0;
@@ -105,7 +136,7 @@ function DraftItem({ card }: { card: DraftQueueCard }) {
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
             {card.title}
-            {flagged ? <Badge tone="amber">İşaretli</Badge> : card.clean ? <Badge tone="green">Öneriyle aynı</Badge> : null}
+            {flagged ? <Badge tone="amber">İşaretli</Badge> : card.clean && !dirty ? <Badge tone="green">Öneriyle aynı</Badge> : null}
           </span>
           <span className="block text-[13px] text-ink-mute tabular">
             {card.requestedByName} hazırladı · {stampTR(card.createdAt)}
@@ -117,7 +148,7 @@ function DraftItem({ card }: { card: DraftQueueCard }) {
         {card.newerCount ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">Taslaktan sonra bu kalemlerden biri yeniden sayıldı; miktarları kontrol edin.</p> : null}
         <ul className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
           {card.lines.map((l) => (
-            <DraftQueueRow key={l.ingredientId} l={l} qty={q(l)} onQty={(v) => setQty((x) => ({ ...x, [l.ingredientId]: Math.max(0, Math.min(9999, Math.round(v * 100) / 100)) }))} />
+            <DraftQueueRow key={l.ingredientId} l={l} qty={q(l)} onQty={(v) => changeQty(l.ingredientId, v)} />
           ))}
         </ul>
         {card.onOrder.length ? (
@@ -133,7 +164,7 @@ function DraftItem({ card }: { card: DraftQueueCard }) {
           </p>
         ) : null}
         <Field label="Tedarikçiye not (mesaja girer)" htmlFor={`taslak-tnot-${card.id}`}>
-          <Textarea id={`taslak-tnot-${card.id}`} rows={2} maxLength={DRAFT_NOTE_MAX} value={supplierNote} onChange={(e) => setSupplierNote(e.target.value)} />
+          <Textarea id={`taslak-tnot-${card.id}`} rows={2} maxLength={DRAFT_NOTE_MAX} value={supplierNote} onChange={(e) => changeNote(e.target.value)} />
         </Field>
         <section aria-label="Tedarikçiye gidecek mesaj">
           <p className="mb-1 text-[13px] font-medium text-ink-soft">Tedarikçiye gidecek mesaj</p>

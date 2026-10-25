@@ -3,7 +3,7 @@ import "server-only";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num } from "@/lib/format";
 import { posBell } from "@/lib/prices/pos";
-import { isDraftExpired } from "@/lib/reorder/draft";
+import { isDraftExpired, undoneBellBody } from "@/lib/reorder/draft";
 import { soldOutBell, soldOutDigestLine } from "@/lib/site-menu/sold-out";
 import { addDays, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
@@ -145,7 +145,7 @@ async function draftNotifications(user: CurrentUser, now: Date): Promise<PanelNo
         id: `taslak-geri-${r.id}`,
         kind: "info",
         title: `${splitTitle(r.title)[0]} siparişi geri alındı`,
-        body: `${r.requestedByName} gönderimi geri aldı; tedarikçiye iptal yazılmalı.`,
+        body: undoneBellBody(r),
         timeLabel: when(r.updatedAt),
         unread: true,
         href: "/panel/mal-siparisi/gonderilen?durum=kapanan",

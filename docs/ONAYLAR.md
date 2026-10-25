@@ -99,7 +99,8 @@ sabah e-postası ve Son kararlar bunu yazar.
   bu konuyla gider: yöneticilere yeni ve güncellenen taslak ile geri alınan gönderim, personele kendi taslağının sonucu
   ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11). Öteki istekler push göndermez (zil, Bugün ve sabah e-postası). Etiket
   `istek-<id>`, metinde tutar yok. Cihazdaki "Onay bildirimleri" anahtarı Hatırlatıcılarım'daki ve Karaoke'deki **Bu
-  cihazda uyarılar** kartında.
+  cihazda uyarılar** kartında. Panel sekmesi öndeyken sistem bildirimi çıkmaz: sekme bildirimi kendisi gösterir, zili
+  tazeler, Onaylar ve taslak sayfasını yeniler (`alert-center.tsx`, `src/lib/live-poll.ts` › `refreshesScreen`).
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
   çekme "Kasa düzeltmesi geri çekildi", "Geç zayi / ikram isteği geri çekildi" gibi türün adıyla yazılır.
 

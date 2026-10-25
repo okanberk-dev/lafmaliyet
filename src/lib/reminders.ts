@@ -771,6 +771,23 @@ export function monthLocativeTR(month: string): string {
   return MONTHS_LOC_TR[Number(month.slice(5, 7)) - 1];
 }
 
+// Saatin eki okunuşun son sözcüğüne göre (ünlü uyumu ve sertleşme): birler bir, iki, üç, dört, beş, altı, yedi,
+// sekiz, dokuz; onlar sıfır, on, yirmi, otuz, kırk, elli
+const CLOCK_UNIT_LOC = ["", "de", "de", "te", "te", "te", "da", "de", "de", "da"];
+const CLOCK_TENS_LOC = ["da", "da", "de", "da", "ta", "de"];
+
+/**
+ * Saatin bulunma ("09:42'de", "05:00'te") ya da ayrılma ("20:00'den") hâli, okunuşuna göre: dakika 00 ise saat, değilse
+ * dakika okunur. Metin "24 Eki 09:42" gibi bir saatle bitebilir; saatle bitmiyorsa olduğu gibi döner.
+ */
+export function clockSuffixTR(text: string, kind: "loc" | "abl" = "loc"): string {
+  const m = /(\d{1,2})[:.](\d{2})$/.exec(text);
+  if (!m) return text;
+  const n = Number(m[2]) || Number(m[1]);
+  const loc = n % 10 ? CLOCK_UNIT_LOC[n % 10] : (CLOCK_TENS_LOC[Math.floor(n / 10)] ?? "de");
+  return `${text}'${loc}${kind === "abl" ? "n" : ""}`;
+}
+
 /** Ayın tamlayan hâli: "2026-09" → "Eylül'ün" */
 export function monthGenitiveTR(month: string): string {
   return MONTHS_GEN_TR[Number(month.slice(5, 7)) - 1];

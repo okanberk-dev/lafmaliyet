@@ -77,6 +77,11 @@ export const DraftPayload = z.object({
   notified: z.boolean().default(false),
   /** Yöneticilere son push'un anı (ISO; taslak güncellenince en çok 15 dakikada bir) */
   pushedAt: z.string().nullable().default(null),
+  /**
+   * Son gönderimin anı (ISO): her gönderimde ve güncellemede yeniden yazılır. İşaretler ("Sayım taslaktan … önce
+   * değişti") ve "İşaretsizleri onayla" buna göre; eski yüklerde yok (null: satırın açıldığı an)
+   */
+  submittedAt: z.string().nullable().default(null),
 });
 export type DraftPayloadT = z.infer<typeof DraftPayload>;
 
@@ -105,6 +110,8 @@ export const DRAFT_TEXT = {
   notApproved: "Bu taslak onaylı değil; sayfayı yenileyin",
   undoGone: "Geri alınamaz: 10 dakika geçti, mal geldi, faturası bağlandı ya da sipariş kapandı. Yöneticiye yazın.",
   undoNotYours: "Siparişi yalnız gönderen kişi geri alır",
+  /** Yönetici onaylarken: kalemin sipariş birimi ya da adı taslaktan sonra değişti */
+  unitChanged: "sipariş birimi ya da adı taslaktan sonra değişti; taslağı reddedin, personel yeniden hazırlasın",
   superseded: "Yönetici siparişi kendisi gönderdi",
 } as const;
 
@@ -294,6 +301,26 @@ export function draftFlags(line: Pick<DraftLineT, "qty" | "suggested" | "onHand"
   return out;
 }
 
+/** Taslağın son gönderim anı (işaretlerin dayanağı): yükteki `submittedAt`, eski yükte satırın açıldığı an */
+export function draftSubmittedAt(row: { createdAt: Date }, p: Pick<DraftPayloadT, "submittedAt">): Date {
+  const t = p.submittedAt ? Date.parse(p.submittedAt) : NaN;
+  return Number.isFinite(t) ? new Date(t) : row.createdAt;
+}
+
+/**
+ * Taslağın satırı ile sipariş anındaki kalem aynı birimde mi (sipariş adı, birimi ve 1 birimin içeriği): değiştiyse
+ * onaylanan mesaj ("2 koli") ile kaydedilen sipariş başka miktar söyler
+ */
+export function sameOrderUnit(a: Pick<DraftLineT, "orderName" | "unit" | "unitSize">, b: Pick<DraftLineT, "orderName" | "unit" | "unitSize">): boolean {
+  return a.orderName === b.orderName && a.unit === b.unit && Math.abs(a.unitSize - b.unitSize) < 1e-9;
+}
+
+/** Zil (yönetici): geri alınan gönderimin metni; geri alan hazırlayandan farklıysa ikisi de yazılır */
+export function undoneBellBody(r: { requestedByName: string; undoneByName: string | null }): string {
+  const by = r.undoneByName ?? r.requestedByName;
+  return `${by} gönderimi geri aldı${by !== r.requestedByName ? ` (${r.requestedByName} hazırlamıştı)` : ""}; tedarikçiye iptal yazılmalı.`;
+}
+
 /** Taslağın satırlarının o günkü (son sayımın günü) ilk sayımı: gec-sayim işaretinin dayanağı */
 export function firstCountAt(lines: readonly Pick<DraftLineT, "countedAt">[]): string | null {
   const at = lines.map((l) => (l.countedAt ? Date.parse(l.countedAt) : NaN)).filter(Number.isFinite);
@@ -316,6 +343,26 @@ export function draftEdited(lines: readonly Pick<DraftLineT, "ingredientId" | "q
 export function expectedOnHand(prevCount: number | null, perDayCount: number | null, days: number | null): number | null {
   if (prevCount === null || perDayCount === null || days === null || days <= 0) return null;
   return Math.max(0, Math.round((prevCount - perDayCount * days) * 10) / 10);
+}
+
+/**
+ * "Yöneticiye WhatsApp'tan haber ver" görünsün mü (bekleyen, kendi taslağı): hiçbir yönetici cihazına ulaşılamadıysa
+ * hemen, yoksa 30 dakika sonra. Sunucu çizimde, sayfa açık kaldıkça dakikada bir (`nowMs` 0: saat henüz yok)
+ */
+export function draftNudge(view: Pick<StaffDraftView, "mine" | "notified" | "createdAt">, nowMs: number): boolean {
+  return view.mine && (!view.notified || (nowMs > 0 && nowMs - Date.parse(view.createdAt) >= DRAFT_NUDGE_MS));
+}
+
+/**
+ * Yöneticinin açık kartta yaptığı, henüz onaylanmamış değişiklik (miktar ya da tedarikçiye not): "İşaretsizleri
+ * onayla" kaydedilen yükü onaylar, o kartı almaz
+ */
+export function draftCardEdited(
+  card: { lines: readonly { ingredientId: number; qty: number }[]; supplierNote: string | null },
+  qty: Readonly<Record<number, number>>,
+  supplierNote: string,
+): boolean {
+  return card.lines.some((l) => (qty[l.ingredientId] ?? 0) !== l.qty) || (supplierNote.trim() || null) !== (card.supplierNote ?? null);
 }
 
 /** "Yöneticiye haber ver" mesajı (tutarsız): "Mal siparişi taslağı onay bekliyor: Kaldi (5 kalem). <adres>" */
