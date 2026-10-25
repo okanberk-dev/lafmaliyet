@@ -8,7 +8,7 @@ import { businessDate } from "@/lib/cash-report";
 import { checklistBell } from "@/lib/checklists";
 import { SIZE_LABELS } from "@/lib/constants";
 import { unpricedNotice } from "@/lib/count-item";
-import { dateTR, money, monthShort, num, tl } from "@/lib/format";
+import { dateTR, monthShort, num, tl } from "@/lib/format";
 import { holdsSummary, HOLDS_HREF } from "@/lib/price-hold";
 import { groupNewProposals, REQUEST_STATUS_LABEL } from "@/lib/recipe-change";
 import { addDays, daysLeftLabel, todayTR } from "@/lib/reminders";
