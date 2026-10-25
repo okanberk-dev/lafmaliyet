@@ -27,6 +27,12 @@ const STAFF_SOURCES = [
   // Kontrol geçmişi (§2.5)
   "src/app/panel/kontrol/gecmis/page.tsx",
   "src/app/panel/kontrol/run-view.tsx",
+  // Geç zayi / ikram ve silme isteği (§2.8)
+  "src/lib/waste-requests.ts",
+  "src/server/waste/core.ts",
+  "src/server/actions/waste.ts",
+  "src/app/panel/zayi/waste-board.tsx",
+  "src/app/panel/zayi/day-picker.tsx",
 ];
 
 test("operasyon: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -51,4 +57,19 @@ test("kasadaki fiyatlar: personel sayfası yalnız personelin yükleyicisinden; 
 test("kontrol geçmişi: personel sayfasında tutar yok", () => {
   assertNoLira(stripComments(read("src/app/panel/kontrol/gecmis/page.tsx")), "kontrol geçmişi");
   assertNoLira(stripComments(read("src/app/panel/kontrol/run-view.tsx")), "kontrol geçmişi satırı");
+});
+
+test("zayi: personelin okuyucuları, eylem yanıtları ve sayfasının personel dalı tutarsız; ekranda ₺ yok", () => {
+  const loader = read("src/server/data/waste-requests.ts");
+  const staffPart = loader.slice(0, loader.indexOf("// ---------------------------------------------------------------- Yönetici"));
+  assert.ok(staffPart.includes("export async function myWasteRequests") && staffPart.includes("export async function wasteDayMarks"));
+  assertNoCostKeys(staffPart, "zayi isteklerinin personel okuyucuları");
+  const actions = read("src/server/actions/waste-requests.ts");
+  assertNoCostKeys(actions.slice(0, actions.indexOf("export async function reviewWasteRequest")), "zayi istek eylemleri");
+  // Sayfa: personel dalı yönetici özetinden (WasteMonth, maliyet) önce döner; formda ve günde ₺ yok
+  const page = read("src/app/panel/zayi/page.tsx");
+  const content = page.slice(page.indexOf("async function WasteContent"), page.indexOf("/** Yöneticinin ay özeti"));
+  assertNoCostKeys(content, "zayi sayfası");
+  assertNoLira(stripComments(content), "zayi sayfası");
+  for (const f of ["src/app/panel/zayi/waste-board.tsx", "src/app/panel/zayi/day-picker.tsx", "src/lib/waste-requests.ts"]) assertNoLira(stripComments(read(f)), f);
 });

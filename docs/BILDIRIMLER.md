@@ -23,7 +23,10 @@ istekleri durur (istek başına bir satır, `/panel/onaylar#istek-<id>`'e götü
 dakikada bir yeniden okunmamış olur; [ONAYLAR.md](ONAYLAR.md)). Personelde aynı başlığın adı **İsteklerim**: reçete
 önerilerinin ve isteklerinin sonucu ("22 Ekim kasa düzeltmeniz onaylandı", "Yönetici: <not>"). Kasadan çıkan ve
 fotoğraf kaldırma istekleri yöneticide tek satırdır ("3 kasa isteği onay bekliyor"); kapalı gün bildirimi istek başına
-"Kapalı gün onayı bekliyor", personelde sonucu "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Personel
+"Kapalı gün onayı bekliyor", personelde sonucu "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Geç zayi /
+ikram ve zayi silme istekleri yöneticide tek satırdır ("3 zayi / ikram isteği onay bekliyor"); personelde sonucu "Geç
+kayıt onaylandı: 2× Latte M (15 Eki)", "Silme reddedildi: …", kaydı başkasının isteğiyle silinen kişiye "Kaydınız
+silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)). Personel
 kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
 bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
 kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur

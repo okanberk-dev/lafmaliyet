@@ -1,6 +1,6 @@
 "use client";
 
-import { Gift, Plus, Search, Trash2, X } from "lucide-react";
+import { Gift, Plus, Search, Send, Trash2, Undo2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -9,33 +9,55 @@ import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Field, Input, NumberInput } from "@/components/ui/form";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Input, NumberInput, Textarea } from "@/components/ui/form";
 import { Segmented } from "@/components/ui/segmented";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { matchesChoice, qtyText, WASTE_KIND_LABEL, WASTE_REASONS, type WasteChoice, type WasteKind } from "@/lib/waste";
+import { WASTE_REQUEST_TEXT as T, type WasteDeleteMode } from "@/lib/waste-requests";
+import { withdrawStaffRequest } from "@/server/actions/staff-requests";
 import { addWasteEntry, deleteWasteEntry } from "@/server/actions/waste";
+import { requestLateWaste, requestWasteDelete } from "@/server/actions/waste-requests";
 import type { WasteEntryDTO } from "@/server/data/waste";
 
 const MAX_RESULTS = 8;
 
+/** Kişinin bu güne bekleyen geç kayıt isteği (listenin başında soluk satır) */
+export interface PendingLate {
+  id: number;
+  item: string;
+  reason: string | null;
+}
+
 /**
  * Zayi / ikram girişi ve günün listesi. Ürün ya da hammadde aranıp seçilir (ürün adetle, hammadde sayım biriminde),
- * neden tek dokunuşla; kayıt anında listeye düşer. Personel kendi kaydını o gün siler, yönetici her kaydı.
+ * neden tek dokunuşla; kayıt anında listeye düşer. İstek kipinde (personel, kilitli dün ve önceki 14 gün; dalga 10
+ * §2.8) kart "Geç kayıt isteği" olur: yöneticiye açıklama zorunlu, kayıt onaya kadar listeye girmez. Satırın silme
+ * kipi sunucuda hesaplanır (deleteModes): doğrudan (çöp kutusu), istek ("Silinmesini iste") ya da yok. Tutar yok.
  */
 export function WasteBoard({
   date,
   choices,
   entries,
-  meId,
-  admin,
+  mode,
+  deleteModes,
+  deleteAsks,
+  lateBadges,
+  pendingLate,
 }: {
   date: string;
   choices: WasteChoice[];
   entries: WasteEntryDTO[];
-  meId: number;
-  admin: boolean;
+  /** Bu güne yazım: doğrudan ya da istek (personel) */
+  mode: "direct" | "request";
+  deleteModes: Record<number, WasteDeleteMode>;
+  /** Silinmesi istenen kayıtlar: isteyenin adı; `mine` ise "Geri çek" */
+  deleteAsks: Record<number, { requestId: number; by: string; mine: boolean }[]>;
+  /** Onayla giren geç kayıtların rozeti: "Geç kayıt · Mehmet onayladı 24 Eki" */
+  lateBadges: Record<number, string>;
+  pendingLate: PendingLate[];
 }) {
   const [kind, setKind] = useState<WasteKind>("zayi");
   const [query, setQuery] = useState("");
@@ -43,8 +65,14 @@ export function WasteBoard({
   const [qty, setQty] = useState("1");
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [message, setMessage] = useState("");
   const [pending, start] = useActionTransition();
   const [removing, setRemoving] = useState<WasteEntryDTO | null>(null);
+  const [asking, setAsking] = useState<WasteEntryDTO | null>(null);
+  const [askReason, setAskReason] = useState("");
+  // Çift dokunuşa karşı istemci anahtarı: başarılı gönderimden sonra yenilenir
+  const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
+  const late = mode === "request";
 
   const results = query.trim() ? choices.filter((c) => matchesChoice(c, query)).slice(0, MAX_RESULTS) : [];
   // Son girilen kalemler: aynı şey çoğu gün tekrar eder (bir dokunuşla seçilsin)
@@ -64,23 +92,54 @@ export function WasteBoard({
     if (!picked) return void toast.error("Önce ürün ya da hammadde seçin");
     const n = parseNumberTR(qty);
     if (n === null || n <= 0) return void (toast.error("Miktarı yazın (ör. 1 ya da 0,5)"), document.getElementById("zi-miktar")?.focus());
+    if (late && message.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-aciklama")?.focus());
+    const input = {
+      date,
+      kind,
+      productId: picked.type === "product" ? picked.id : null,
+      ingredientId: picked.type === "ingredient" ? picked.id : null,
+      qty: n,
+      reason,
+      note: note.trim() || null,
+    };
     start(async () => {
-      const res = await addWasteEntry({
-        date,
-        kind,
-        productId: picked.type === "product" ? picked.id : null,
-        ingredientId: picked.type === "ingredient" ? picked.id : null,
-        qty: n,
-        reason,
-        note: note.trim() || null,
-      });
-      // Sunucu miktarı reddettiyse ("Ürün adetle girilir") düzeltilecek alan miktar
-      if (!res.ok) return void (toast.error(res.error), document.getElementById("zi-miktar")?.focus());
-      toast.success(`${WASTE_KIND_LABEL[kind]}: ${res.data.name} ${qtyText(n, res.data.unit)}`);
+      if (late) {
+        const res = await requestLateWaste({ ...input, message: message.trim(), clientKey });
+        if (!res.ok) return void toast.error(res.error);
+        toast.success(`Onaya gönderildi: ${picked.name} ${qtyText(n, picked.type === "product" ? "adet" : picked.unit)}`);
+        setClientKey(crypto.randomUUID());
+        setMessage("");
+      } else {
+        const res = await addWasteEntry(input);
+        // Sunucu miktarı reddettiyse ("Ürün adetle girilir") düzeltilecek alan miktar
+        if (!res.ok) return void (toast.error(res.error), document.getElementById("zi-miktar")?.focus());
+        toast.success(`${WASTE_KIND_LABEL[kind]}: ${res.data.name} ${qtyText(n, res.data.unit)}`);
+      }
       setPicked(null);
       setQty("1");
       setNote("");
       setReason(null);
+    });
+  }
+
+  function askDelete() {
+    if (!asking) return;
+    if (askReason.trim().length < 3) return void (toast.error(T.messageShort), document.getElementById("zi-sil-neden")?.focus());
+    const target = asking;
+    start(async () => {
+      const res = await requestWasteDelete({ id: target.id, message: askReason.trim(), clientKey: crypto.randomUUID() });
+      if (!res.ok) return void toast.error(res.error);
+      toast.success(`Silme isteği gönderildi: ${target.name} ${qtyText(target.qty, target.unit)}`);
+      setAsking(null);
+      setAskReason("");
+    });
+  }
+
+  function withdraw(id: number) {
+    start(async () => {
+      const res = await withdrawStaffRequest(id);
+      if (!res.ok) return void toast.error(res.error);
+      toast.success("İstek geri çekildi");
     });
   }
 
@@ -99,7 +158,11 @@ export function WasteBoard({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <Card>
-        <CardHeader icon={<Gift />} title="Yeni kayıt" description={`${longDateTR(date)} · ödenmeyen ve atılan her şey`} />
+        <CardHeader
+          icon={late ? <Send /> : <Gift />}
+          title={late ? T.lateTitle : "Yeni kayıt"}
+          description={late ? `${longDateTR(date)} · ${T.lateHint}` : `${longDateTR(date)} · ödenmeyen ve atılan her şey`}
+        />
         <div className="space-y-4 px-5 pb-5">
           <Segmented<WasteKind>
             label="Kayıt türü"
@@ -216,8 +279,21 @@ export function WasteBoard({
               </button>
             ))}
           </div>
+          {late ? (
+            <Field label={T.messageLabel} htmlFor="zi-aciklama" hint="zorunlu">
+              <Textarea
+                id="zi-aciklama"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={2}
+                maxLength={300}
+                placeholder="ör. akşam girmeyi unuttum, kapanışta döküldü"
+              />
+            </Field>
+          ) : null}
           <Button size="lg" className="w-full" onClick={submit} disabled={pending || !picked}>
-            <Plus size={16} /> {pending ? "Kaydediliyor…" : `${WASTE_KIND_LABEL[kind]} olarak kaydet`}
+            {late ? <Send size={16} /> : <Plus size={16} />}{" "}
+            {pending ? (late ? "Gönderiliyor…" : "Kaydediliyor…") : late ? T.send : `${WASTE_KIND_LABEL[kind]} olarak kaydet`}
           </Button>
         </div>
       </Card>
@@ -227,12 +303,26 @@ export function WasteBoard({
           title={longDateTR(date)}
           description={entries.length ? `${counts.zayi} zayi · ${counts.ikram} ikram` : "Bu gün kayıt yok"}
         />
-        {entries.length ? (
+        {entries.length || pendingLate.length ? (
           <ul className="divide-y divide-line border-t border-line">
+            {pendingLate.map((r) => (
+              <li key={`istek-${r.id}`} className="flex items-start gap-3 px-5 py-3 opacity-70">
+                <Badge tone="amber">{T.pending}</Badge>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium break-words text-ink">{r.item}</p>
+                  <p className="text-xs break-words text-ink-mute">{["Geç kayıt isteği", r.reason].filter(Boolean).join(" · ")}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => withdraw(r.id)} disabled={pending} className="min-h-11 sm:min-h-8">
+                  <Undo2 size={14} /> {T.withdraw}
+                </Button>
+              </li>
+            ))}
             {entries.map((e) => {
-              const canDelete = admin || e.createdBy === meId;
+              const del = deleteModes[e.id] ?? "none";
+              const asks = deleteAsks[e.id] ?? [];
+              const mineAsk = asks.find((a) => a.mine);
               return (
-                <li key={e.id} className="flex items-start gap-3 px-5 py-3">
+                <li key={e.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
                   <Badge tone={e.kind === "zayi" ? "red" : "blue"}>{WASTE_KIND_LABEL[e.kind]}</Badge>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium break-words text-ink">
@@ -243,11 +333,29 @@ export function WasteBoard({
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
+                    {lateBadges[e.id] || asks.length ? (
+                      <p className="mt-1 flex flex-wrap gap-1.5">
+                        {lateBadges[e.id] ? <Badge tone="gray">{lateBadges[e.id]}</Badge> : null}
+                        {asks.map((a) => (
+                          <Badge key={a.requestId} tone="amber">
+                            {a.by} silinmesini istedi
+                          </Badge>
+                        ))}
+                      </p>
+                    ) : null}
                   </div>
-                  {canDelete ? (
+                  {mineAsk ? (
+                    <Button size="sm" variant="ghost" onClick={() => withdraw(mineAsk.requestId)} disabled={pending} className="min-h-11 sm:min-h-8">
+                      <Undo2 size={14} /> {T.withdraw}
+                    </Button>
+                  ) : del === "direct" ? (
                     <IconButton label={`${e.name} kaydını sil`} tone="danger" onClick={() => setRemoving(e)} disabled={pending}>
                       <Trash2 size={15} />
                     </IconButton>
+                  ) : del === "request" ? (
+                    <Button size="sm" variant="secondary" onClick={() => setAsking(e)} disabled={pending} className="min-h-11">
+                      {T.deleteAsk}
+                    </Button>
                   ) : null}
                 </li>
               );
@@ -266,6 +374,29 @@ export function WasteBoard({
         description="Yanlış girildiyse silin; stok tutarlılığından da çıkar."
         confirmLabel="Sil"
       />
+      <Dialog
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={asking ? `${asking.name} kaydının silinmesini isteyin` : T.deleteAsk}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setAsking(null)} disabled={pending} className="max-sm:bg-panel">
+              Vazgeç
+            </Button>
+            <Button variant="danger" onClick={askDelete} disabled={pending}>
+              {pending ? "Gönderiliyor…" : T.deleteAsk}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-ink-mute">Yönetici onaylarsa kayıt silinir; o zamana kadar listede kalır.</p>
+          <Field label={T.reasonLabel} htmlFor="zi-sil-neden" hint="zorunlu">
+            <Textarea id="zi-sil-neden" value={askReason} onChange={(e) => setAskReason(e.target.value)} rows={2} maxLength={300} placeholder="ör. iki kez girilmiş" />
+          </Field>
+        </div>
+      </Dialog>
     </div>
   );
 }
