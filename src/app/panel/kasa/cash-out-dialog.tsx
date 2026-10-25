@@ -334,7 +334,7 @@ export function CashOutDialog({
             {uploaded?.readError ? <ReadError message={uploaded.readError} onRetry={uploaded.canRetry ? () => onRetry(uploaded.photo.id) : undefined} busy={busyPhoto} /> : null}
             {fresh && !fresh.ok && fresh.error ? <p className="text-[13px] leading-5 text-bad">{fresh.error}</p> : null}
             {/* İstekte fişli satırın türü salt okunur (fişli satır alışveriştir; fiş bu yoldan değişmez) */}
-            {request && line ? <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş / ödeme" : "Teslim"}</p> : null}
+            {request && line ? <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş" : "Teslim · ödeme"}</p> : null}
           </div>
         ) : locked && !request ? null : (
           <Field label="Ne için" hint="Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz.">

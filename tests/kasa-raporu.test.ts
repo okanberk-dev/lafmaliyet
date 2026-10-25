@@ -561,3 +561,18 @@ test("geç rapor kaynakta: geç kipte kasadan çıkan kartı ve DTO yok; e-posta
   assert.match(store, /if \(revision === 0 && staffLateDay\(data\.date, now\)\)[\s\S]*?return \{ kind: "needsApproval", request: "kasa-gec", gate: "gec" \};/);
   assert.match(store, /supersede\(tx, \{ kinds: \["kasa-gec"\], subject: `gun:\$\{data\.date\}` \}, me\.role === "admin" \? "Yönetici günü kendisi girdi"/);
 });
+
+test("geç rapor kartı: düzeltirken teslim işareti de görünür (personel 0, yönetici teslim yazınca onaylanabilsin); vazgeçince sıfırlanır", () => {
+  const src = readFileSync(join(process.cwd(), "src/app/panel/onaylar/kasa-cards.tsx"), "utf8");
+  const item = src.slice(src.indexOf("function LateItem"));
+  assert.match(item, /\{\(handover \|\| correcting\) && !blocked \? \(\s*<Checkbox/);
+  // Düzeltirken etiket personelin eski tutarını yazmaz
+  const label = item.slice(item.indexOf("<Checkbox"), item.indexOf("/>", item.indexOf("<Checkbox")));
+  assert.match(label, /correcting\s*\?\s*handover\s*\?\s*"Teslimi aldım \/ bankada gördüm \(formdaki Teslim edilen tutar\)"/);
+  assert.doesNotMatch(label.slice(label.indexOf("correcting"), label.indexOf("`Bu teslimi")), /money\(|f\.handedOver/);
+  assert.match(item, /onCancel=\{\(\) => \{\s*setCorrecting\(false\);\s*setSeen\(false\);\s*\}\}/);
+  // İstemci ve sunucu denetimi kalır
+  assert.match(item, /if \(\(handover \|\| fields\.handedOver > 0\) && !seen\) return void toast\.error/);
+  const late = readFileSync(join(process.cwd(), "src/server/cash/late.ts"), "utf8");
+  assert.match(late, /if \(\(requested\.handedOver > 0 \|\| finalFields\.handedOver > 0\) && !input\.handoverSeen\) throw new UserError\(CASH_REQUEST_TEXT\.lateHandover\)/);
+});

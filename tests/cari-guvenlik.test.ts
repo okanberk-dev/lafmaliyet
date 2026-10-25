@@ -216,5 +216,8 @@ test("Kasa (§6.8, §8): bağlı satır personele kilitli, yöneticinin düzeltm
   const dialog = read("src/app/panel/kasa/cash-out-dialog.tsx");
   assert.match(dialog, /\{ value: "harcama", label: "Alışveriş" \},\s+\{ value: "teslim", label: "Teslim · ödeme" \}/);
   assert.match(dialog, /Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz\./);
+  // İstek kipindeki salt okunur satır da aynı adlarla
+  assert.match(dialog, /Ne için: \{draft\.kind === "harcama" \? "Alışveriş" : "Teslim · ödeme"\}/);
+  assert.doesNotMatch(dialog, /Alışveriş \/ ödeme/);
   assert.match(dialog, /ör\. patrona, bankaya, tedarikçiye \(Sütaş\)/);
 });

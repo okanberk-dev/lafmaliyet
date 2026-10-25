@@ -32,9 +32,14 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /**
  * En yakın önceki ve sonraki halka. Aynı günde birden çok bekleyen geç rapor varsa `prefer` (isteyen kişi) önce, yoksa
- * en eski. Rapor ile bekleyen arasında güne en yakın olan seçilir.
+ * en eski. Rapor ile bekleyen arasında güne en yakın olan seçilir. `prevReportDate`: günden önceki son kayıtlı rapor
+ * (önceki halka bekleyen geç rapor olsa da); "aynı aralık" onu sınır alır (onaydaki reviewLate gibi).
  */
-export async function chainNeighbours(db: DB | Tx, date: string, o: { prefer?: number | null; exceptRequestId?: number } = {}): Promise<{ prev: ChainLink | null; next: ChainLink | null }> {
+export async function chainNeighbours(
+  db: DB | Tx,
+  date: string,
+  o: { prefer?: number | null; exceptRequestId?: number } = {},
+): Promise<{ prev: ChainLink | null; next: ChainLink | null; prevReportDate: string | null }> {
   const cols = { date: s.cashReports.date, zNo: s.cashReports.zNo, openingCash: s.cashReports.openingCash, counted: s.cashReports.countedCash, handed: s.cashReports.handedOver };
   const [[before], [after], pending] = await Promise.all([
     db.select(cols).from(s.cashReports).where(lt(s.cashReports.date, date)).orderBy(desc(s.cashReports.date)).limit(1),
@@ -72,5 +77,5 @@ export async function chainNeighbours(db: DB | Tx, date: string, o: { prefer?: n
   const nextReport = report(after);
   const prev = prevPending && (!prevReport || prevPending > prevReport.date) ? links.get(prevPending)! : prevReport;
   const next = nextPending && (!nextReport || nextPending < nextReport.date) ? links.get(nextPending)! : nextReport;
-  return { prev, next };
+  return { prev, next, prevReportDate: before?.date ?? null };
 }

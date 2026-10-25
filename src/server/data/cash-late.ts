@@ -242,8 +242,9 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     const carry = Math.round((fields.countedCash - fields.handedOver) * 100) / 100;
     const prevCheck = chain.prev ? carryCheck(date, fields.openingCash, { date: chain.prev.date, amount: chain.prev.carry }) : null;
     const nextCheck = chain.next ? carryCheck(chain.next.date, chain.next.openingCash, { date, amount: carry }) : null;
-    // Aynı aralıkta (önceki rapordan bu yana) daha eski bekleyen gün: onay kapalı
-    const prevReportDate = chain.prev?.kind === "rapor" ? chain.prev.date : null;
+    // Aynı aralıkta (önceki kayıtlı rapordan bu yana; önceki halka bekleyen geç rapor olsa da) daha eski bekleyen gün:
+    // onay kapalı. Sınır onaydakiyle (reviewLate) aynı: aralığın dışındaki eski bir bekleyen gün adı geçmez
+    const { prevReportDate } = chain;
     const older = rows.find((o) => o.id !== x.id && o.day && o.day < date && (!prevReportDate || o.day > prevReportDate) && !reportedDays.has(o.day));
     const outsTotal = cashOutsTotal(outs);
     const outsGap = Math.round((fields.cashOut - outsTotal) * 100) / 100;
@@ -264,7 +265,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
       diffs: photoDiffs(photos.readings, savedFields(fields)),
       unread: !photos.readings.length,
       readings: photos.readings,
-      chain: { ...chain, prevCheck, nextCheck },
+      chain: { prev: chain.prev, next: chain.next, prevCheck, nextCheck },
       monthLine: monthLineOf(date, today, first?.date ?? null, entry),
       outs: {
         count: outs.length,

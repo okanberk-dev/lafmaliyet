@@ -38,6 +38,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
   let late: typeof import("../src/server/cash/late");
   let requests: typeof import("../src/server/cash/requests");
   let chain: typeof import("../src/server/cash/late-chain");
+  let cards: typeof import("../src/server/data/cash-late");
   let core: typeof import("../src/server/staff-requests/core");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
@@ -135,6 +136,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     late = await import("../src/server/cash/late");
     requests = await import("../src/server/cash/requests");
     chain = await import("../src/server/cash/late-chain");
+    cards = await import("../src/server/data/cash-late");
     core = await import("../src/server/staff-requests/core");
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
@@ -318,5 +320,32 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     // Geri çekilince bırakılır ve bağlanabilir
     await core.withdrawOwn(db, users.ayse, pending.row.id, NOW);
     await core.assertNotHeld(db, z);
+  });
+
+  test("kart 'önce … karara bağlayın' der: önceki halka bekleyen geç rapor olsa da sınır önceki kayıtlı rapor (onaydaki gibi)", async () => {
+    // Haziran: 3'ü bekliyor, 5'i raporlu, 7'si ve 8'i bekliyor; "bugün" 15 Haziran. 8'inin kartı 7'sini adlandırır, 3'ünü değil
+    const now = tr("2030-06-15T10:00");
+    const [a, r, b, c] = ["2030-06-03", "2030-06-05", "2030-06-07", "2030-06-08"];
+    const note = { note: "zincir dışı açılış" };
+    const pa = await propose(users.ayse, a, { photoIds: [await photo(users.ayse)], fields: note, now });
+    await report(r, {}, tr(`${r}T22:00`));
+    const pb = await propose(users.mehmet, b, { photoIds: [await photo(users.mehmet)], fields: note, now });
+    const pc = await propose(users.ayse, c, { photoIds: [await photo(users.ayse)], fields: note, now });
+    const n = await chain.chainNeighbours(db, c, { exceptRequestId: pc.row.id });
+    assert.equal(n.prev?.kind, "bekleyen");
+    assert.equal(n.prev?.date, b);
+    assert.equal(n.prevReportDate, r);
+    const all = await cards.lateCards(now);
+    const card = (id: number) => all.find((x) => x.id === id);
+    assert.equal(card(pc.row.id)?.olderPending, b, "aralıktaki daha eski bekleyen gün");
+    assert.equal(card(pb.row.id)?.olderPending, null, "rapordan önceki bekleyen gün aralığın dışında");
+    // Onay da aynı günü adlandırır
+    await refused(review(users.ali, pc.row.id, pc.row.version, "approve", { now }), olderFirstText(b));
+    for (const [who, p] of [
+      [users.ayse, pa],
+      [users.mehmet, pb],
+      [users.ayse, pc],
+    ] as const)
+      await core.withdrawOwn(db, who, p.row.id, now);
   });
 });

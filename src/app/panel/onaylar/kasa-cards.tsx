@@ -367,7 +367,10 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           mode="review"
           initial={f}
           reviewPending={pending}
-          onCancel={() => setCorrecting(false)}
+          onCancel={() => {
+            setCorrecting(false);
+            setSeen(false);
+          }}
           onReview={(fields) => {
             const { date: _d, ...rest } = fields;
             void _d;
@@ -384,11 +387,18 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
         />
       ) : null}
       {noteField}
-      {handover && !blocked ? (
+      {/* Düzeltirken de: personel teslim 0 yazmış, yönetici teslim yazıyorsa onay işaret ister (sunucu da) */}
+      {(handover || correcting) && !blocked ? (
         <Checkbox
           checked={seen}
           onChange={(e) => setSeen(e.target.checked)}
-          label={`Bu teslimi aldım / bankada gördüm (${money(f.handedOver)}${card.handedTo ? `, ${card.handedTo === "bankaya" ? "banka" : card.handedTo}` : ""})`}
+          label={
+            correcting
+              ? handover
+                ? "Teslimi aldım / bankada gördüm (formdaki Teslim edilen tutar)"
+                : "Teslim yazdıysanız: teslimi aldım / bankada gördüm (formdaki tutar)"
+              : `Bu teslimi aldım / bankada gördüm (${money(f.handedOver)}${card.handedTo ? `, ${card.handedTo === "bankaya" ? "banka" : card.handedTo}` : ""})`
+          }
         />
       ) : null}
       <div className="flex flex-wrap justify-end gap-2">
@@ -398,7 +408,15 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
         {!blocked ? (
           <>
             {!correcting ? (
-              <Button variant="secondary" onClick={() => setCorrecting(true)} disabled={pending}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // Personelin tutarı için verilen işaret düzeltilen tutara geçmez
+                  setSeen(false);
+                  setCorrecting(true);
+                }}
+                disabled={pending}
+              >
                 <Pencil size={15} /> Düzeltip onayla
               </Button>
             ) : null}

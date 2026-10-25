@@ -192,7 +192,8 @@ export function MyCashRequests({ requests }: { requests: MyCashRequest[] }) {
               </p>
               {r.reviewNote ? (
                 <p className="mt-1 text-[13px] break-words text-ink-soft">
-                  {r.status === "superseded" ? r.reviewNote : `Yönetici: ${r.reviewNote}`}
+                  {/* Yalnız kararın notu yöneticinin; kapanma, kaldırılma ve sıfırlama notları sistemin */}
+                  {r.status === "approved" || r.status === "rejected" ? `Yönetici: ${r.reviewNote}` : r.reviewNote}
                 </p>
               ) : null}
             </div>

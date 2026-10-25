@@ -95,6 +95,8 @@ test("kapı: bugün doğrudan; ertesi gün kasa alanı ya da sayan istek, metin 
     assert.equal(gate(now, { changes: text }), "direct");
     assert.equal(gate(now, { changes: cash }), "request");
     assert.equal(gate(now, { changes: counter }), "request");
+    // Yalnız fotoğraf eklemek alan değiştirmez: doğrudan (öneriye dönen düzenlemenin fotoğrafı bu yoldan eklenir)
+    assert.equal(gate(now, { changes: [] }), "direct");
   }
   // Kilitli gün (ertesi günün raporu girildi): her değişiklik istek; değişiklik yoksa doğrudan (yeniden gönderim)
   const morning = tr("2026-10-23T10:00");
@@ -293,4 +295,21 @@ test("gün çipi: kısa gün adları karışmaz (Paz / Pzt, Cum / Cmt)", () => {
     ["2026-10-18", "2026-10-19", "2026-10-14", "2026-10-16", "2026-10-17"].map(shortDayTR),
     ["18 Eki Paz", "19 Eki Pzt", "14 Eki Çar", "16 Eki Cum", "17 Eki Cmt"],
   );
+});
+
+test("düzenleme öneriye dönünce eklenen fotoğraf sessizce düşmez: bildirim ve şerit söyler, metin kapıya göre", () => {
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  assert.match(form, /setProposal\(\{ gate: res\.data\.gate, fromSubmit: true, dropped: photos\.length \}\);/);
+  assert.match(form, /const dropped = photos\.length \? ` \$\{droppedPhotoText\(res\.data\.gate\)\}` : "";/);
+  assert.match(form, /\{proposal\.dropped \? <p className="mt-0\.5 font-medium">\{droppedPhotoText\(proposal\.gate\)\}<\/p> : null\}/);
+  assert.match(form, /gate === "gec"\s*\? "Eklediğiniz fotoğraf öneriye gitmez\. Öneriyi gönderdikten sonra Düzenle ile yalnız fotoğrafı ekleyin; onay gerekmez\."/);
+  // Kilitli günde personel o güne fotoğraf ekleyemez (staffDayOpen): metin "Düzenle" demez
+  assert.match(form, /: "Eklediğiniz fotoğraf öneriye gitmez; ertesi günün raporu girildiği için bu güne fotoğrafı artık yönetici ekler\."/);
+});
+
+test("İsteklerim: 'Yönetici:' yalnız onay ve red notunda; kapanma, kaldırılma ve sıfırlama notu olduğu gibi", () => {
+  const ui = read("src/app/panel/kasa/cash-requests.tsx");
+  const list = ui.slice(ui.indexOf("export function MyCashRequests"));
+  assert.match(list, /\{r\.status === "approved" \|\| r\.status === "rejected" \? `Yönetici: \$\{r\.reviewNote\}` : r\.reviewNote\}/);
+  assert.doesNotMatch(list, /r\.status === "superseded" \? r\.reviewNote : `Yönetici:/);
 });
