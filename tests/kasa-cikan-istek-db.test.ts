@@ -305,6 +305,32 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.equal((await requestOf(fix.row.id)).status, "superseded");
   });
 
+  test("tedarikçi ödemesine bağlı satır: personel istek açamaz; istekten sonra bağlanan satırın isteği onaylanmaz", async () => {
+    const { CARI_LOCKED_STAFF } = await import("../src/server/cari/kasa");
+    const [sup] = await db.insert(s.suppliers).values({ name: `Test tedarikçi ${tag}`, key: `test-tedarikci-${tag}` }).returning({ id: s.suppliers.id });
+    const link = (cashOutId: number, amount: number) =>
+      db.insert(s.supplierEntries).values({ supplierId: sup.id, kind: "odeme", date: YESTERDAY, amount, method: "kasa", cashOutId, createdByName: "Ali" });
+    try {
+      // Bağlı satır: düzeltme ve silme isteği açılmaz (kapanmış günde de), mesaj tutar ve tedarikçi söylemez
+      const linked = await adminRow(YESTERDAY, { amount: 300, categoryId: null });
+      await link(linked, 300);
+      await refused(propose(users.ayse, { op: "sil", cashOutId: linked, clientKey: key() }), CARI_LOCKED_STAFF);
+      await refused(propose(users.ayse, { op: "duzelt", cashOutId: linked, line: line({ amount: 310, categoryId: null }), clientKey: key() }), CARI_LOCKED_STAFF);
+      // İstek açıldıktan sonra bağlanan satır: onay satırı silmez, istek bekler (yönetici reddeder)
+      const later = await adminRow(YESTERDAY, { amount: 320, categoryId: null });
+      const del = await propose(users.ayse, { op: "sil", cashOutId: later, clientKey: key() });
+      await link(later, 320);
+      await refused(review(users.ali, del.row.id, del.row.version, "approve"), /tedarikçi ödemesine bağlandı/);
+      assert.ok(await outOf(later));
+      assert.equal((await requestOf(del.row.id)).status, "pending");
+      const r = await review(users.ali, del.row.id, del.row.version, "reject");
+      assert.equal(r.status, "rejected");
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, sup.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, sup.id));
+    }
+  });
+
   test("açık günde yöneticinin kategorisindeki satır: her değişiklik ve silme istek olur; fiş ekleme onaysız", async () => {
     const id = await adminRow(OPEN_DAY, { amount: 1_500, categoryId: cats.admin });
     const row = (await outOf(id))!;
