@@ -391,13 +391,19 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
   const ops: Op[] = [];
   const changes: { date: string; delta: number; moved?: number }[] = [];
   const curMode = cur?.costMode ?? null;
+  // "Gideri zaten girildi"nin bıraktığı kayıt sahiplenmeden önceki gününe ve tutarına döner (adopt_prev)
+  const prevOf = (row: ExpenseRow) => (cur?.adoptPrev && cur.adoptPrev.id === row.id ? cur.adoptPrev : null);
   if (owned) {
     const keep = (input.costMode === "gider" && curMode === "gider") || (input.costMode === "mevcut" && adopt?.id === owned.id);
     if (!keep) {
       if (curMode === "gider") {
         ops.push({ op: "delete", row: owned });
         changes.push({ date: owned.date, delta: -owned.amount });
-      } else ops.push({ op: "unown", row: owned });
+      } else {
+        ops.push({ op: "unown", row: owned });
+        const back = prevOf(owned);
+        if (back) changes.push({ date: owned.date, delta: -owned.amount }, { date: back.date, delta: back.amount });
+      }
     }
   }
   if (input.costMode === "gider") {
@@ -428,6 +434,8 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
     categoryId: category?.id ?? null,
     dueDate: input.dueDate,
     photoId: input.photoId,
+    // Sahiplenilen kaydın eski günü ve tutarı: aynı kayıt kaldıkça ilk sahiplenmedeki değerler
+    adoptPrev: adopt ? (prevOf(adopt) ?? { id: adopt.id, date: adopt.date, amount: adopt.amount }) : null,
   };
   const [row] = cur
     ? await tx
@@ -444,7 +452,13 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
   const now = new Date();
   for (const o of ops) {
     if (o.op === "delete") await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.id, o.row.id));
-    else if (o.op === "unown") await tx.update(s.expenseEntries).set({ supplierEntryId: null, updatedAt: now }).where(eq(s.expenseEntries.id, o.row.id));
+    else if (o.op === "unown") {
+      const back = prevOf(o.row);
+      await tx
+        .update(s.expenseEntries)
+        .set({ supplierEntryId: null, ...(back ? { date: back.date, amount: back.amount } : {}), updatedAt: now })
+        .where(eq(s.expenseEntries.id, o.row.id));
+    }
     else if (o.op === "update")
       await tx
         .update(s.expenseEntries)
@@ -545,7 +559,12 @@ export async function deleteEntry(tx: Tx, id: number, confirmPast: readonly stri
   if (e.kind === "borc") {
     if (e.invoiceId !== null) throw new UserError("Faturaya bağlı alım silinemez; önce bağı kaldırın");
     const [owned] = await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.supplierEntryId, e.id)).for("update").limit(1);
-    out.effects = checkPast(owned && e.costMode === "gider" ? [{ date: owned.date, delta: -owned.amount }] : [], confirmPast);
+    // "Gideri zaten girildi": kayıt durur, sahiplenmeden önceki gününe ve tutarına döner (borç eklemenin "Geri al"ı dahil)
+    const back = owned && e.costMode !== "gider" && e.adoptPrev?.id === owned.id ? e.adoptPrev : null;
+    out.effects = checkPast(
+      owned && e.costMode === "gider" ? [{ date: owned.date, delta: -owned.amount }] : back ? [{ date: owned!.date, delta: -owned!.amount }, { date: back.date, delta: back.amount }] : [],
+      confirmPast,
+    );
     out.snapshot.allocations = (await tx.select().from(s.supplierAllocations).where(eq(s.supplierAllocations.debtId, e.id)).orderBy(asc(s.supplierAllocations.id))).map(toAllocation) as RemovedAllocation[];
     if (owned) {
       if (e.costMode === "gider") {
@@ -553,7 +572,10 @@ export async function deleteEntry(tx: Tx, id: number, confirmPast: readonly stri
         await tx.delete(s.expenseEntries).where(eq(s.expenseEntries.id, owned.id));
       } else {
         out.snapshot.expense = { mode: "adopted", id: owned.id };
-        await tx.update(s.expenseEntries).set({ supplierEntryId: null, updatedAt: new Date() }).where(eq(s.expenseEntries.id, owned.id));
+        await tx
+          .update(s.expenseEntries)
+          .set({ supplierEntryId: null, ...(back ? { date: back.date, amount: back.amount } : {}), updatedAt: new Date() })
+          .where(eq(s.expenseEntries.id, owned.id));
       }
     }
     if (e.photoId) await releasePhoto(e.photoId, RELEASED_DAYS, tx);
@@ -627,6 +649,7 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Prom
     ...e,
     costMode,
     categoryId: e.kind === "borc" ? categoryId : null,
+    adoptPrev: costMode === "mevcut" ? (e.adoptPrev ?? null) : null,
     linkedAt: e.linkedAt ? new Date(e.linkedAt) : null,
     // Fotoğraf bu arada başka bir kayda bağlandıysa kayıt fotoğrafsız döner
     photoId: null,
@@ -646,7 +669,8 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Prom
     if (exists) await tx.insert(s.expenseEntries).values({ ...values, id: undefined });
     else await tx.insert(s.expenseEntries).values(values);
   }
-  if (adoptId !== null) await tx.update(s.expenseEntries).set({ supplierEntryId: e.id, updatedAt: new Date() }).where(eq(s.expenseEntries.id, adoptId));
+  // Yeniden sahiplenilen kayıt borca eşitlenir (silinirken eski gününe ve tutarına dönmüştü)
+  if (adoptId !== null) await tx.update(s.expenseEntries).set({ supplierEntryId: e.id, date: e.date, amount: e.amount, updatedAt: new Date() }).where(eq(s.expenseEntries.id, adoptId));
 
   // Dağıtımlar yeniden doğrulanır: hedef duruyor, aynı kartın ve yeri var; ödemenin parası yetiyor
   let lost = 0;

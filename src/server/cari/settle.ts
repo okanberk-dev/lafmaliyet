@@ -16,6 +16,7 @@ import {
   type LinkPrev,
 } from "@/lib/cari/account";
 import { coveredByAllocations, EPS, paidViaOf, round2, trackingBase, type CariMethod } from "@/lib/cari/balance";
+import { linkableInvoice } from "@/lib/cari/match";
 import { dateTR, tl } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
@@ -453,6 +454,10 @@ export async function linkDebts(tx: Tx, debtIds: readonly number[], invoiceId: n
   const out: LinkResult = { removedExpenses: [], trimmed: 0 };
   const [inv] = await lockInvoices(tx, [invoiceId]);
   if (!inv) throw new UserError("Fatura bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
+  // Kafe dışı ve komisyon faturası kafenin mal alışına girmez: bağlama borcun gider kaydını siler, gider sessizce düşerdi
+  if (!linkableInvoice(inv)) {
+    throw new UserError(inv.payable > 0 ? `${inv.category} faturası kafenin mal alışına girmez; faturasız alım ona bağlanamaz.` : "İade faturasına faturasız alım bağlanamaz.");
+  }
   const debts = await tx.select().from(s.supplierEntries).where(inArray(s.supplierEntries.id, uniq(debtIds))).orderBy(asc(s.supplierEntries.id)).for("update");
   if (debts.length !== new Set(debtIds).size) throw new UserError("Alım bulunamadı; silinmiş olabilir. Sayfayı yenileyin.");
   for (const d of debts) {
@@ -466,7 +471,9 @@ export async function linkDebts(tx: Tx, debtIds: readonly number[], invoiceId: n
     const prev: LinkPrev = {
       costMode: d.costMode ?? "fatura",
       categoryId: d.categoryId,
-      expense: exp ? { categoryId: exp.categoryId, description: exp.description, note: exp.note, amount: exp.amount, date: exp.date } : null,
+      expense: exp
+        ? { categoryId: exp.categoryId, description: exp.description, note: exp.note, amount: exp.amount, date: exp.date, id: exp.id, paymentMethod: exp.paymentMethod, createdBy: exp.createdBy }
+        : null,
     };
     await tx.update(s.supplierEntries).set({ invoiceId: inv.id, linkedAt: now, linkPrev: prev, updatedAt: now }).where(eq(s.supplierEntries.id, d.id));
     if (exp) {
@@ -514,16 +521,34 @@ async function releaseDebt(tx: Tx, debt: typeof s.supplierEntries.$inferSelect, 
   );
   const categoryId = prev?.categoryId != null && alive.has(prev.categoryId) ? prev.categoryId : null;
   let expense: { date: string; amount: number; categoryId: number } | null = null;
+  let adoptPrev = debt.adoptPrev ?? null;
   if (prev?.expense && (costMode === "gider" || costMode === "mevcut") && alive.has(prev.expense.categoryId)) {
     const e = prev.expense;
-    await tx.insert(s.expenseEntries).values({ date: e.date, categoryId: e.categoryId, description: e.description, amount: e.amount, note: e.note, createdBy: by, supplierEntryId: debt.id });
+    // Kayıt eski kimliğiyle (boştaysa), ödeme şekli ve yazanıyla geri gelir: Aylık harcamalar'daki bağlantılar bozulmasın
+    const [taken] = e.id ? await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.id, e.id)).limit(1) : [];
+    const [row] = await tx
+      .insert(s.expenseEntries)
+      .values({
+        ...(e.id && !taken ? { id: e.id } : {}),
+        date: e.date,
+        categoryId: e.categoryId,
+        description: e.description,
+        amount: e.amount,
+        note: e.note,
+        paymentMethod: e.paymentMethod ?? null,
+        createdBy: e.createdBy ?? by,
+        supplierEntryId: debt.id,
+      })
+      .returning({ id: s.expenseEntries.id });
     expense = { date: e.date, amount: e.amount, categoryId: e.categoryId };
+    // "Gideri zaten girildi": sahiplenilen kayıt yeni kimlikle döndüyse eski değerleri ona bağlı kalır
+    if (adoptPrev && e.id && adoptPrev.id === e.id && row.id !== e.id) adoptPrev = { ...adoptPrev, id: row.id };
   }
   // Gideri geri gelmeyen "gider" ya da "mevcut" kipi (kategori ya da kayıt yok) faturası gelecek sayılır: CHECK kategori ister
   const mode = (costMode === "gider" && categoryId === null) || (costMode === "mevcut" && !expense) ? "fatura" : costMode;
   await tx
     .update(s.supplierEntries)
-    .set({ invoiceId: null, linkedAt: null, linkPrev: null, costMode: mode, categoryId, updatedAt: new Date() })
+    .set({ invoiceId: null, linkedAt: null, linkPrev: null, costMode: mode, categoryId, adoptPrev: mode === "mevcut" ? adoptPrev : null, updatedAt: new Date() })
     .where(eq(s.supplierEntries.id, debt.id));
   return expense;
 }

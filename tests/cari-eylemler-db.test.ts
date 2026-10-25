@@ -278,6 +278,85 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     const page = await data.loadSupplierCari({ card: { id: c.id, name: c.name, aliases: [] }, invoices: groupInvoices }, { today, termDays: 30 });
     assert.equal(page.late.length, 2);
   });
+
+  // ---------------------------------------------------------------- "Gideri zaten girildi" ve bağlama
+
+  test("Gideri zaten girildi: borcun Geri al'ı ve kip değişimi kaydın eski gününü ve tutarını geri yazar (geçmiş ay onayıyla)", async () => {
+    const c = await card();
+    const cat = await category();
+    const today = todayTR();
+    const lastMonthDay = addDays(`${today.slice(0, 7)}-01`, -1);
+    const [e] = await db.insert(s.expenseEntries).values({ date: lastMonthDay, categoryId: cat.id, description: "Nakit malzeme alımı", amount: 900, paymentMethod: "nakit", createdBy: "Ayşe" }).returning();
+    const past = [lastMonthDay.slice(0, 7)];
+    const add = await addDebt(c.id, { amount: 905, date: today, description: "kaşar", costMode: "mevcut", adoptExpenseId: e.id });
+    assert.ok(add.ok && add.data.needs === "past", "geçmiş ay onayı istenir");
+    const r = await addDebt(c.id, { amount: 905, date: today, description: "kaşar", costMode: "mevcut", adoptExpenseId: e.id, confirmPast: past });
+    assert.ok(r.ok && r.data.needs === null);
+    const debtId = (r.data as { id: number }).id;
+    let x = (await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, e.id)))[0];
+    assert.deepEqual([x.date, x.amount, x.supplierEntryId], [today, 905, debtId]);
+    // Bildirimdeki Geri al: borç silinir, kayıt eski hâline döner (onay olmadan istenir)
+    const del0 = await cari.deleteSupplierEntry({ id: debtId });
+    assert.ok(del0.ok && del0.data.needs === "past");
+    const del = await cari.deleteSupplierEntry({ id: debtId, confirmPast: past });
+    assert.ok(del.ok && del.data.needs === null);
+    x = (await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, e.id)))[0];
+    assert.deepEqual([x.date, x.amount, x.supplierEntryId], [lastMonthDay, 900, null]);
+    // Silmenin Geri al'ı kaydı yeniden borca eşitler
+    ok(await cari.restoreSupplierEntry((del.data as { undo: string }).undo));
+    x = (await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, e.id)))[0];
+    assert.deepEqual([x.date, x.amount, x.supplierEntryId], [today, 905, debtId]);
+    // Kip değişimi (Faturası gelecek): kayıt yine eski hâline
+    const edit = await addDebt(c.id, { id: debtId, amount: 905, date: today, description: "kaşar", costMode: "fatura", confirmPast: past });
+    assert.ok(edit.ok && edit.data.needs === null);
+    x = (await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, e.id)))[0];
+    assert.deepEqual([x.date, x.amount, x.supplierEntryId], [lastMonthDay, 900, null]);
+  });
+
+  test("bağ kaldırılınca sahiplenilen kayıt eski kimliği, ödeme şekli ve yazanıyla geri gelir", async () => {
+    const c = await card();
+    const cat = await category();
+    const today = todayTR();
+    const [e] = await db.insert(s.expenseEntries).values({ date: today, categoryId: cat.id, description: "market", amount: 900, paymentMethod: "kart", createdBy: "Ayşe", note: "elle" }).returning();
+    const r = await addDebt(c.id, { amount: 900, date: today, costMode: "mevcut", adoptExpenseId: e.id });
+    assert.ok(r.ok && r.data.needs === null);
+    const debtId = (r.data as { id: number }).id;
+    const f = await invoice({ payable: 900, date: today, invoiceNo: "SUT149" });
+    const l = await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: f.id });
+    assert.ok(l.ok && l.data.needs === null);
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0);
+    const u = await cari.unlinkDebts({ debtIds: [debtId] });
+    assert.ok(u.ok && u.data.needs === null);
+    const [back] = await db.select().from(s.expenseEntries);
+    assert.deepEqual([back.id, back.paymentMethod, back.createdBy, back.note, back.supplierEntryId], [e.id, "kart", "Ayşe", "elle", debtId]);
+  });
+
+  test("kafe dışı ya da komisyon faturasına faturasız alım bağlanmaz (gider sessizce düşmesin)", async () => {
+    const c = await card("Pruva");
+    const cat = await category();
+    const r = await addDebt(c.id, { amount: 600, date: todayTR(), costMode: "gider", categoryId: cat.id });
+    assert.ok(r.ok && r.data.needs === null);
+    const debtId = (r.data as { id: number }).id;
+    for (const category of ["Alp Koç", "Karaoke box", "Komisyon"]) {
+      const f = await invoice({ payable: 600, supplier: "Pruva", category, date: todayTR() });
+      const l = await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: f.id });
+      assert.ok(!l.ok, category);
+    }
+    assert.equal((await db.select().from(s.expenseEntries)).length, 1, "gider kaydı duruyor");
+  });
+
+  test("bağlı 'gider' borcun kategorisi silinebilir; bağ kalkınca borç faturası gelecek olur", async () => {
+    const c = await card();
+    const cat = await category("Süt alımı");
+    const r = await addDebt(c.id, { amount: 500, date: todayTR(), costMode: "gider", categoryId: cat.id });
+    const debtId = (r.ok ? (r.data as { id: number }).id : 0);
+    const f = await invoice({ payable: 500, date: todayTR() });
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: f.id }));
+    await db.delete(s.expenseCategories).where(eq(s.expenseCategories.id, cat.id));
+    ok(await cari.unlinkDebts({ debtIds: [debtId] }));
+    const [d] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId));
+    assert.deepEqual([d.costMode, d.categoryId, d.invoiceId], ["fatura", null, null]);
+  });
 });
 
 // Kullanılmayan içe aktarmalar sonraki testler için

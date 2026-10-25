@@ -90,8 +90,12 @@ const signed = (v: number) => `${v < 0 ? "−" : "+"}${tl(Math.abs(v), 2)}`;
 export interface LinkPreviewInput {
   /** Bağlamanın sildiği gider kayıtları ("gider" ve "mevcut" borçların kayıtları) */
   removed: readonly { date: string; amount: number; categoryName: string }[];
-  /** Fatura: gün, KDV hariç net, KDV, Ödenecek; `goods` mal alışı (mal kategorileri) */
-  invoice: { date: string; net: number; vat: number; payable: number; goods: boolean };
+  /**
+   * Fatura: gün, KDV hariç net, KDV (KDV tahmininin saydığı indirilecek KDV), Ödenecek; `goods` mal alışı (mal
+   * kategorileri); `withheld` KDV tevkifatı (2 No.lu beyannameye); `counted: false` kategorisi Gelir-gider'de hiçbir
+   * kaleme bağlı değil (fatura kafenin giderinde sayılmıyor)
+   */
+  invoice: { date: string; net: number; vat: number; payable: number; goods: boolean; withheld?: number; counted?: boolean };
   /** Bağlanan borçların toplamı */
   debtTotal: number;
   today: string;
@@ -114,10 +118,14 @@ export function linkPreview(p: LinkPreviewInput): string {
     .sort((a, b) => a.month.localeCompare(b.month) || a.category.localeCompare(b.category, "tr"))
     .map((g) => `${monthName(g.month, p.today)} gideri −${tl(round2(g.amount), 2)} (${g.category})`);
   const im = monthName(p.invoice.date.slice(0, 7), p.today);
-  const invoice = `${im} ${p.invoice.goods ? "mal alışı" : "gideri"} faturada ${tl(round2(p.invoice.net), 2)} (KDV hariç; zaten sayılıyor)`;
+  const invoice =
+    p.invoice.counted === false && !p.invoice.goods
+      ? `${im} faturası ${tl(round2(p.invoice.net), 2)} (KDV hariç) Gelir-gider'de hiçbir kalemde sayılmıyor; bağlarsanız bu alımın gideri düşer`
+      : `${im} ${p.invoice.goods ? "mal alışı" : "gideri"} faturada ${tl(round2(p.invoice.net), 2)} (KDV hariç; zaten sayılıyor)`;
+  const withheld = round2(p.invoice.withheld ?? 0);
   return [
     [...removed, invoice].join(", "),
-    `KDV tahmini ${im} ${signed(round2(p.invoice.vat))}`,
+    `KDV tahmini ${im} ${signed(round2(p.invoice.vat))}${withheld > 0.005 ? ` (tevkifat ${tl(withheld, 2)}, 2 No.lu beyannamede)` : ""}`,
     `fark faturada ${signed(round2(p.invoice.payable - p.debtTotal))}`,
   ].join(" · ");
 }

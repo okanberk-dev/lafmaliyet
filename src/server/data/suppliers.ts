@@ -126,6 +126,8 @@ const LEDGER_COLUMNS = {
   amount: s.invoices.amount,
   discount: s.invoices.discount,
   payable: s.invoices.payable,
+  /** KDV toplamı (Faturası geldi önizlemesi: KDV tahmininin saydığı) */
+  vat: s.invoices.vat,
   unpaid: s.invoices.unpaid,
   note: s.invoices.note,
   outstanding: s.invoices.outstanding,

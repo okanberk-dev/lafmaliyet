@@ -84,3 +84,29 @@ test("Faturası geldi önizlemesi (§5.2 metni aynen)", () => {
     "Aralık 2025 gideri −150,00 ₺ (Nakit malzeme alımı), Ocak gideri faturada 136,36 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Ocak +13,64 ₺ · fark faturada +0,00 ₺",
   );
 });
+
+test("Faturası geldi önizlemesi: KDV tahmininin saydığı KDV (tevkifatlı faturada) ve giderde sayılmayan kategori", () => {
+  // Hizmet faturası: net 1.000, KDV 200, 5/10 tevkifat, Ödenecek 1.100
+  assert.equal(
+    plain(
+      linkPreview({
+        removed: [],
+        invoice: { date: "2026-10-28", net: 1000, vat: 200, withheld: 100, payable: 1100, goods: false, counted: true },
+        debtTotal: 1100,
+        today: "2026-10-28",
+      }),
+    ),
+    "Ekim gideri faturada 1.000,00 ₺ (KDV hariç; zaten sayılıyor) · KDV tahmini Ekim +200,00 ₺ (tevkifat 100,00 ₺, 2 No.lu beyannamede) · fark faturada +0,00 ₺",
+  );
+  assert.equal(
+    plain(
+      linkPreview({
+        removed: [{ date: "2026-10-05", amount: 600, categoryName: "Nakit malzeme alımı" }],
+        invoice: { date: "2026-10-20", net: 545.45, vat: 54.55, payable: 600, goods: false, counted: false },
+        debtTotal: 600,
+        today: "2026-10-28",
+      }),
+    ),
+    "Ekim gideri −600,00 ₺ (Nakit malzeme alımı), Ekim faturası 545,45 ₺ (KDV hariç) Gelir-gider'de hiçbir kalemde sayılmıyor; bağlarsanız bu alımın gideri düşer · KDV tahmini Ekim +54,55 ₺ · fark faturada +0,00 ₺",
+  );
+});

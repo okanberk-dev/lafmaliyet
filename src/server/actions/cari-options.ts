@@ -4,7 +4,7 @@ import { and, asc, desc, eq, gt, gte, ilike, isNotNull, lte, or } from "drizzle-
 import { z } from "zod";
 
 import { splitSupplier, supplierMatchKey } from "@/app/panel/faturalar/rules";
-import { COMMISSION_CATEGORY, SEPARATE_CATEGORIES } from "@/lib/constants";
+import { linkableInvoice } from "@/lib/cari/match";
 import { addDays } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import { cardResolver } from "@/server/cari/settle";
@@ -133,6 +133,7 @@ export async function searchLinkInvoices(input: { cardId: number; q: string }) {
           payable: s.invoices.payable,
           amount: s.invoices.amount,
           discount: s.invoices.discount,
+          vat: s.invoices.vat,
           category: s.invoices.category,
         })
         .from(s.invoices)
@@ -142,7 +143,7 @@ export async function searchLinkInvoices(input: { cardId: number; q: string }) {
       db.select({ invoiceId: s.supplierEntries.invoiceId }).from(s.supplierEntries).where(isNotNull(s.supplierEntries.invoiceId)),
     ]);
     const taken = new Set(linked.map((r) => r.invoiceId));
-    const hits = rows.filter((r) => !taken.has(r.id) && r.category !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(r.category) && resolve(r.supplier, r.tax) !== cardId).slice(0, 20);
+    const hits = rows.filter((r) => !taken.has(r.id) && linkableInvoice(r) && resolve(r.supplier, r.tax) !== cardId).slice(0, 20);
     if (!hits.length) return [];
     const owners = [...new Set(hits.flatMap((h) => (resolve(h.supplier, h.tax) !== null ? [resolve(h.supplier, h.tax)!] : [])))];
     const names = owners.length ? await db.select({ id: s.suppliers.id, name: s.suppliers.name }).from(s.suppliers) : [];
@@ -161,6 +162,7 @@ export async function searchLinkInvoices(input: { cardId: number; q: string }) {
         payable: h.payable,
         amount: h.amount,
         discount: h.discount,
+        vat: h.vat,
         category: h.category,
         owner: owner === null ? null : { cardId: owner, name: nameOf.get(owner) ?? "" },
         alias: owner === null ? { name: alias, count: all.filter((x) => resolve(x.supplier, x.tax) === null && supplierMatchKey(x.supplier) === key).length } : null,

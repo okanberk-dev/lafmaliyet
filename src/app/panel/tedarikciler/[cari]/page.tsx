@@ -186,6 +186,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     drift: data.drift.length,
     expenses: data.expenses,
     categories: data.categories,
+    countedCategories: data.countedCategories,
     defaultCategoryId: data.defaultCategoryId,
     defaultCostMode: defaultCostMode(g.invoices, today),
     businessDay: businessDate(),

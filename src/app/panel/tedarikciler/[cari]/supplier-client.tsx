@@ -43,6 +43,7 @@ import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { openBalance, isPartiallyPaid } from "@/lib/calc/insights";
 import { allocateFifo, allocationPreview, compareOpenItems, debtLabel, debtRemaining, invoiceLabel, type CariAllocation, type CostMode, type OpenItem } from "@/lib/cari/account";
 import { coveredByAllocations, EPS, METHOD_LABEL, methodFromCard, round2 } from "@/lib/cari/balance";
+import { linkableInvoice } from "@/lib/cari/match";
 import type { ForeignCredit } from "@/lib/cari/statement";
 import { dateTR, money, num } from "@/lib/format";
 import { daysBetween } from "@/lib/reminders";
@@ -156,6 +157,8 @@ export interface CariData {
   drift: number;
   expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
   categories: { id: number; name: string; section: string }[];
+  /** Gelir-gider'de bir harcama kalemine bağlı fatura kategorileri (Faturası geldi önizlemesi) */
+  countedCategories: string[];
   defaultCategoryId: number | null;
   defaultCostMode: CostMode;
   /** Kasanın bugünkü günü */
@@ -1293,9 +1296,10 @@ export function SupplierClient({
           today={today}
           debts={cari.debts.filter((d) => d.invoiceId === null)}
           invoices={list
-            .filter((r) => r.payable > 0 && !cari.debts.some((d) => d.invoiceId === r.id))
-            .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, payable: r.payable, amount: r.amount, discount: r.discount, category: r.category }))}
+            .filter((r) => linkableInvoice(r) && !cari.debts.some((d) => d.invoiceId === r.id))
+            .map((r) => ({ id: r.id, date: r.date, invoiceNo: r.invoiceNo, payable: r.payable, amount: r.amount, discount: r.discount, category: r.category, vat: r.vat }))}
           expenses={cari.expenses}
+          countedCategories={cari.countedCategories}
           preselect={linkFor}
           onClose={() => {
             setLinkFor(null);

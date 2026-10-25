@@ -243,6 +243,8 @@ export interface SupplierCari {
   /** Borçların gider kayıtları ("gider" ve "mevcut") */
   expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
   categories: DebtCategory[];
+  /** Gelir-gider'de bir harcama kalemine bağlı fatura kategorileri (mal dışı faturanın gideri orada sayılır) */
+  countedCategories: string[];
   defaultCategoryId: number | null;
 }
 
@@ -269,7 +271,14 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
           .where(inArray(s.supplierAllocations.invoiceId, ids))
       : [],
     db
-      .select({ id: s.expenseCategories.id, name: s.expenseCategories.name, section: s.expenseCategories.section, active: s.expenseCategories.active, sortOrder: s.expenseCategories.sortOrder })
+      .select({
+        id: s.expenseCategories.id,
+        name: s.expenseCategories.name,
+        section: s.expenseCategories.section,
+        active: s.expenseCategories.active,
+        sortOrder: s.expenseCategories.sortOrder,
+        invoiceCategory: s.expenseCategories.invoiceCategory,
+      })
       .from(s.expenseCategories)
       .orderBy(asc(s.expenseCategories.sortOrder), asc(s.expenseCategories.name)),
     ids.length && cardId !== null
@@ -355,6 +364,7 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
     foreignIn: [...foreignInBy.values()],
     expenses,
     categories: shown.map((c) => ({ id: c.id, name: c.name, section: c.section })),
+    countedCategories: [...new Set(categories.flatMap((c) => (c.invoiceCategory ? [c.invoiceCategory] : [])))],
     defaultCategoryId,
   };
 }

@@ -14,6 +14,7 @@ import { round2 } from "@/lib/cari/balance";
 import { LINK_WINDOW } from "@/lib/cari/match";
 import { linkPreview, type MonthEffect } from "@/lib/cari/months";
 import { GOODS_CATEGORIES } from "@/lib/constants";
+import { purchaseVat, purchaseWithheld } from "@/lib/kdv";
 import { dateTR, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,8 @@ export interface LinkInvoice {
   amount: number;
   discount: number;
   category: string;
+  /** KDV toplamı (tevkifat düşülmemiş; KDV tahmininin saydığı) */
+  vat?: number;
 }
 
 /** Başka tedarikçide görünen fatura (R3d): kartsız adda diğer ad önerisi, başka kartta o kartın adı */
@@ -55,6 +58,7 @@ export function LinkDialog({
   debts,
   invoices,
   expenses,
+  countedCategories,
   preselect,
   onClose,
 }: {
@@ -67,6 +71,8 @@ export function LinkDialog({
   invoices: LinkInvoice[];
   /** Borçların gider kayıtları (bağlayınca silinir) */
   expenses: Record<number, { date: string; amount: number; categoryName: string }>;
+  /** Gelir-gider'de bir harcama kalemine bağlı (mal dışı) fatura kategorileri: ötekiler kafenin giderinde sayılmaz */
+  countedCategories: readonly string[];
   preselect: { debtIds: number[]; invoiceId: number | null };
   onClose: () => void;
 }) {
@@ -102,7 +108,15 @@ export function LinkDialog({
             const e = (d.costMode === "gider" || d.costMode === "mevcut") && expenses[d.id];
             return e ? [{ date: e.date, amount: e.amount, categoryName: e.categoryName }] : [];
           }),
-          invoice: { date: invoice.date, net, vat: round2(invoice.payable - net), payable: invoice.payable, goods: GOODS_CATEGORIES.includes(invoice.category) },
+          invoice: {
+            date: invoice.date,
+            net,
+            vat: round2(purchaseVat(invoice)),
+            withheld: round2(purchaseWithheld(invoice)),
+            payable: invoice.payable,
+            goods: GOODS_CATEGORIES.includes(invoice.category),
+            counted: countedCategories.includes(invoice.category),
+          },
           debtTotal,
           today,
         })
