@@ -495,7 +495,8 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     const DAY = "2028-09-20";
     const AT = tr(`${DAY}T22:30`);
     const rep = await report(DAY);
-    const zs = [await photo(users.ayse, "kasa-z"), await photo(users.ayse, "kasa-z")];
+    // Üç Z fotoğrafı: onaydan sonra da iki tane kalır, ret "tek Z" kuralından değil bağın kilit altındaki denetiminden
+    const zs = [await photo(users.ayse, "kasa-z"), await photo(users.ayse, "kasa-z"), await photo(users.ayse, "kasa-z")];
     for (const p of zs) {
       await db.insert(s.cashReportPhotos).values({ reportId: rep.id, photoId: p, kind: "kasa-z" });
       await db.update(s.photos).set({ linkedAt: AT, expiresAt: null }).where(eq(s.photos.id, p));
@@ -508,9 +509,15 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
       () => reqs.proposePhotoRemoval(db, users.ayse, { photoId: zs[1], message: "Yanlış fotoğraf", clientKey: null }, AT),
     );
     assert.equal(approve.status, "fulfilled");
-    // Fotoğraf rapordan çıktı: güncelleme temiz bir hatayla düşer
+    // Fotoğraf rapordan çıktı: güncelleme temiz bir hatayla düşer, rapora bağlı olmayan fotoğrafa yeni istek açılmaz
     assert.equal(edit.status, "rejected");
+    assert.equal(((edit as PromiseRejectedResult).reason as Error).message, CASH_OUT_REQUEST_TEXT.photoNotLinked);
+    const open = await db
+      .select({ id: s.staffRequests.id })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.subject, `foto:${zs[1]}`), eq(s.staffRequests.status, "pending")));
+    assert.deepEqual(open, []);
     const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
-    assert.deepEqual(links.map((l) => l.photoId), [zs[0]]);
+    assert.deepEqual(links.map((l) => l.photoId).sort((a, b) => a - b), [zs[0], zs[2]].sort((a, b) => a - b));
   });
 });

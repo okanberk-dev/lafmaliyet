@@ -35,6 +35,7 @@ import { CASH_OUT_UNDO_TOAST_MS } from "@/lib/cash-outs";
 import { ANSWER_GRACE_MIN, STAFF_HISTORY_DAYS } from "@/lib/checklists";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { POS_UNDO_WINDOW_MS } from "@/lib/prices/pos";
+import { clockSuffixTR } from "@/lib/reminders";
 import { DRAFT_NUDGE_MS, DRAFT_UNDO_MS } from "@/lib/reorder/draft";
 import { STAFF_SOLD_OUT_MAX } from "@/lib/site-menu/sold-out";
 import { STAFF_APPROVAL_KINDS } from "@/lib/staff-requests";
@@ -123,7 +124,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Akşam kasa raporu",
     body: (
       <>
-        Kapanışta ModPOS&apos;tan Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. {hour(CASH_EVENING_HOUR)}&apos;dan sonra
+        Kapanışta ModPOS&apos;tan Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
     ),
@@ -134,7 +135,7 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Kapanış listesi",
     body: (
       <>
-        Kapatırken kapanış listesini doldurun. Gün gece {hour(DAY_TURN_HOUR)}&apos;te döner: gece yarısından sonra doldurulan liste ve girilen rapor bir önceki güne yazılır.
+        Kapatırken kapanış listesini doldurun. Gün gece {clockSuffixTR(hour(DAY_TURN_HOUR))} döner: gece yarısından sonra doldurulan liste ve girilen rapor bir önceki güne yazılır.
       </>
     ),
     href: "/panel/kontrol",
@@ -204,8 +205,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Kasa raporunu düzeltmek",
         a: (
           <>
-            Aynı gece ({hour(DAY_TURN_HOUR)}&apos;ten önce) raporu <B>Düzenle</B> ile doğrudan düzeltirsiniz. Ertesi gün Z, kart ve not alanları yine doğrudan
-            düzelir; açılış, gün içinde çıkan, sayılan, teslim edilen ya da kasayı sayan değişirse rapor kaydedilmez, yazdıklarınız yerinde kalır ve nedenini yazıp{" "}
+            Aynı gece ({clockSuffixTR(hour(DAY_TURN_HOUR), "abl")} önce) raporu <B>Düzenle</B> ile doğrudan düzeltirsiniz. Ertesi gün toplam satış, kart ve
+            Z&apos;nin öteki tutarları, fiş sayısı ve not yine doğrudan düzelir; açılış, nakit satış, gün içinde çıkan, sayılan nakit, teslim edilen ya da
+            kasayı sayan değişirse rapor kaydedilmez, yazdıklarınız yerinde kalır ve nedenini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basarsınız. Düzeltme yöneticiye eski hâliyle görünür; onaylanınca rapor yeni sürüm olur. Rapor kilitliyse (ertesi günün
             raporu girildi) <B>Düzeltme öner</B>; yönetici yoksa ertesi günün raporunun notuna yazın. Bekleyen önerinizi <B>Öneriyi düzenle</B> ile değiştirir,{" "}
             <B>Geri çek</B> ile kaldırırsınız. Yanlış girilmiş bir raporun silinmesini <B>Silinmesini iste</B> ile istersiniz.
@@ -328,7 +330,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <StaffPath href="/panel/kontrol" /> ekranında maddeyi işaretleyin, buzdolabı sıcaklığını yazın, istenen yerde fotoğraf çekin; her dokunuş hemen kaydedilir.
             Sıcaklık aralık dışındaysa ne yaptığınızı nota yazın; sorun kaydı silinmez, düzelince yeni hâlini işaretleyin. Fotoğrafta müşteri ya da ekipten kimse
-            görünmesin. Gün {hour(DAY_TURN_HOUR)}&apos;te döner; başlamış liste {graceEnd}&apos;a kadar bitirilebilir. Geçmiş bir gün sonradan doldurulamaz.
+            görünmesin. Gün {clockSuffixTR(hour(DAY_TURN_HOUR))} döner; başlamış liste {graceEnd}&apos;a kadar bitirilebilir. Geçmiş bir gün sonradan doldurulamaz.
           </>
         ),
         icon: ListChecks,

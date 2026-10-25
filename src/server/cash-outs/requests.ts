@@ -199,6 +199,13 @@ async function lockReport(tx: CashOutTx, reportId: number) {
 async function removalCheck(tx: CashOutTx, photoId: number, kind: "kasa-z" | "kasa-pos", reportId: number) {
   const report = await lockReport(tx, reportId);
   if (!report) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report: null };
+  // Bağ kilit altında yeniden: önceki okuma kilitsizdi, arada onaylanan kaldırma bağı silmiş olabilir (istek açan yol)
+  const [linked] = await tx
+    .select({ photoId: s.cashReportPhotos.photoId })
+    .from(s.cashReportPhotos)
+    .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.photoId, photoId), eq(s.cashReportPhotos.kind, kind)))
+    .limit(1);
+  if (!linked) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report };
   if (kind === "kasa-z") {
     const [{ n }] = await tx
       .select({ n: count() })

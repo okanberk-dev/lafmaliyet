@@ -12,6 +12,7 @@ import { staffPathOf } from "../src/app/panel/yardim/nav-paths";
 import { STAFF_FAQ_GROUPS, STAFF_ROUTINE, staffPathText } from "../src/app/panel/yardim/personel/content";
 import { BOTTOM_NAV, NAV_FOOTER, NAV_GROUPS, NAV_TREE, SECTION_TABS, mobileTitleFor } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
+import { CHANGE_LABELS, SENSITIVE } from "../src/lib/cash-report";
 import { STAFF_APPROVAL_KINDS } from "../src/lib/staff-requests";
 
 const DIR = join(process.cwd(), "src/app/panel/yardim");
@@ -169,4 +170,15 @@ test("soru kimlikleri benzersiz, her grupta soru var", () => {
   assert.equal(new Set(ids).size, ids.length);
   for (const g of STAFF_FAQ_GROUPS) assert.ok(g.items.length > 0, g.title);
   assert.equal(STAFF_ROUTINE.length, 6);
+});
+
+test("kasa düzeltmesi: ertesi gün onaya giden her alan (SENSITIVE) yanıtta; saatlerin eki okunuşa göre", () => {
+  const text = fold(FAQ_TEXTS.find((t) => t.id === "kasa-duzelt")!.text);
+  for (const key of SENSITIVE) assert.ok(text.includes(fold(CHANGE_LABELS[key])), `"${CHANGE_LABELS[key]}" kasa düzeltmesi yanıtında yok`);
+  // "Ertesi gün Z … doğrudan" bütün Z bölümünü kapsıyordu (Nakit satış Z kartında ama onaya gider)
+  assert.doesNotMatch(text, /ertesi gün z, kart ve not alanları/);
+  const flat = ALL_TEXT.replace(/\s+/g, " ");
+  assert.ok(flat.includes("20:00'den sonra"));
+  assert.doesNotMatch(flat, /\d\d:\d\d'dan sonra/);
+  assert.doesNotMatch(CONTENT, /\}&apos;(?:te|ten|da|dan|de|den|ta|tan)\b/);
 });
