@@ -25,7 +25,7 @@ import { dashboard } from "../src/lib/calc/insights";
 import { parasutDifference } from "../src/lib/cari/balance";
 import { cariAlerts } from "../src/lib/cari/match";
 import { pastMonthEffects, pastMonthText } from "../src/lib/cari/months";
-import { upcomingWithCari } from "../src/lib/cari/upcoming";
+import { cariHints, upcomingWithCari } from "../src/lib/cari/upcoming";
 import {
   buildCashPlan,
   planNotes,
@@ -246,6 +246,34 @@ test("sabah e-postası: sessiz kalemler (link, kasa) hatırlatılmaz; faturasız
     out.map((o) => o.key),
     [`cari:5:${TODAY}:due`],
   );
+});
+
+test("kasadan ödenmiş olabilir (K16): bir Kasa satırı en çok bir kalemi sessize alır, kalanı tutanı ve en yakın günlüsünü; tutmayan satır yalnız ipucu", () => {
+  const METRO = 3;
+  const inv = (id: number, date: string, payable: number) => ({ id, supplier: "Metro", invoiceNo: `M${id}`, date, dueDate: "2026-10-29", payable, outstanding: null, allocated: 0, ledgerBase: 0, termDays: 30, cardId: METRO });
+  const invoices = [inv(1, "2026-10-01", 1000), inv(2, "2026-10-10", 300), inv(3, "2026-10-14", 300), inv(4, "2026-10-20", 300)];
+  const debts = [{ id: 5, supplier: "Metro", date: "2026-10-12", dueDate: "2026-10-29", description: "kaşar", costMode: "gider" as const, remaining: 305, cardId: METRO, termDays: 30 }];
+  const line = (id: number, date: string, amount: number, kind: "harcama" | "teslim" = "harcama") => ({ id, date, kind, store: "Metro", docType: "yok" as const, amount, cardId: METRO });
+  const index = (lines: ReturnType<typeof line>[]) => ({ strong: [], kasaPending: lines, kasaApartByInvoice: new Map<number, number[]>(), hrefOf: () => "/panel/tedarikciler/metro" });
+  const run = (lines: ReturnType<typeof line>[]) => upcomingWithCari({ reminders: [], invoices, debts, credit: new Map(), hints: cariHints(index(lines), invoices, debts) }, TODAY).items;
+  const quiet = (items: UpcomingItem[]) => items.filter((i) => i.quiet).map((i) => i.ref);
+  const hinted = (items: UpcomingItem[]) => items.filter((i) => i.hint?.kind === "kasa").map((i) => `${i.ref}@${i.hint?.kind === "kasa" ? i.hint.cashOutId : ""}`);
+
+  // Fişsiz 300 ₺ (16.10): kalanı tutan kalemlerden gününe en yakını (14.10) sessiz; ötekiler e-postada kalır
+  const one = run([line(70, "2026-10-16", 300)]);
+  assert.deepEqual(quiet(one), ["invoice:3"]);
+  assert.deepEqual(hinted(one), ["invoice:3@70"]);
+  assert.deepEqual(
+    dueNotifications(one).map((n) => n.item.ref).sort(),
+    ["cari:5", "invoice:1", "invoice:2", "invoice:4"],
+  );
+  // İkinci 300 ₺ (18.10; %2 içinde 305 ₺ alım da tutar): kalan en yakın kalem, 12.10'daki alım
+  assert.deepEqual(quiet(run([line(70, "2026-10-16", 300), line(71, "2026-10-18", 300)])).sort(), ["cari:5", "invoice:3"]);
+  // Hiçbir kalemi tutmayan 2.200 ₺ Teslim: hiçbir kalem sessiz değil, gününe kadarki kalemlerde yalnız ipucu
+  const none = run([line(72, "2026-10-16", 2200, "teslim")]);
+  assert.deepEqual(quiet(none), []);
+  assert.deepEqual(hinted(none).sort(), ["cari:5@72", "invoice:1@72", "invoice:2@72", "invoice:3@72"]);
+  assert.equal(dueNotifications(none).length, dueNotifications(run([])).length);
 });
 
 test("Son ödenenler: cari ödeme kaydı; ödeme silindiyse ya da sonradan düzenlendiyse geri alınamaz", () => {

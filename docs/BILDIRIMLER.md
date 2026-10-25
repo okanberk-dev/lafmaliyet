@@ -29,7 +29,9 @@ Genel bakış ve nakit planı aynı hesabı kullanır. Fatura kaleminin **Ödend
 **İpuçları** (kalemin altında): faturasız alımın faturası olabilecek fatura "Faturasız alımın faturası olabilir (20.10
 · süt) · Bağla" der ve sessizdir (sabah e-postası ve nakit planı onu hatırlatmaz, aynı mal iki kez ödenmesin); kalemin
 gününden sonra kasadan o tedarikçiye işlenmemiş bir çıkış varsa "Kasadan ödenmiş olabilir: 24.10 Teslim · Sütaş
-2.200,00 ₺ · İşle" (e-posta o kalemi hatırlatmaz).
+2.200,00 ₺ · İşle". Bir çıkış en çok bir kalemi sessize alır (e-posta o kalemi hatırlatmaz): kalanı çıkışın tutarını
+en çok max(1 ₺, %2) farkla tutan, gününe en yakın kalem. Tutarı hiçbir kalemi tutmayan çıkış (ör. 300 ₺ fişsiz Metro
+alışverişi) yalnız ipucudur; e-posta kalemleri yine hatırlatır.
 
 Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
 bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur. **Uyarılar** başlığının

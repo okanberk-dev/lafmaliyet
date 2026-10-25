@@ -6,9 +6,8 @@ import { and, asc, count, desc, eq, gt, inArray, like, ne } from "drizzle-orm";
 
 import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
-import { upcomingWithCari } from "@/lib/cari/upcoming";
-import { dateTR, tl } from "@/lib/format";
-import { dueNotifications, todayTR, type UpcomingHint, type UpcomingItem } from "@/lib/reminders";
+import { cariHints, upcomingWithCari } from "@/lib/cari/upcoming";
+import { dueNotifications, todayTR, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
@@ -28,9 +27,9 @@ export { APP_URL, invoiceNewsOf, renderDigest } from "./digest-template";
  * Etkin hatırlatıcılar, ödenmemiş faturalar ve tedarikçilerin faturasız borçlarından (cari) yaklaşan ödemeler.
  * Vadesiz faturanın tahmini vadesi tedarikçinin cari kartındaki vade gününden (Tedarikçiler; kart adla ve vergi noyla
  * bulunur), yoksa genel ayardan. Tedarikçinin hesabındaki sayılmamış ödeme okuma anında vade sırasıyla düşülür
- * (src/lib/cari/upcoming.ts; tamamen karşılananlar `covered`). Faturasız alımın faturası olabilecek fatura ve kasadan
- * ödenmiş olabilecek kalem sessizdir (ipucuyla; sabah e-postası hatırlatmaz). Zil her açılışta çağırır: faturalar tek
- * sorgu, cari hesap tek okuma (loadCariIndex; kayıt yokken kayıt sorguları boş döner).
+ * (src/lib/cari/upcoming.ts; tamamen karşılananlar `covered`). Faturasız alımın faturası olabilecek fatura ve kalanı bir
+ * Kasa satırını tutan kalem (satır başına bir kalem) sessizdir (ipucuyla; sabah e-postası hatırlatmaz; cariHints). Zil
+ * her açılışta çağırır: faturalar tek sorgu, cari hesap tek okuma (loadCariIndex; kayıt yokken kayıt sorguları boş döner).
  */
 export async function loadUpcoming(today = todayTR()) {
   const db = getDb();
@@ -74,50 +73,6 @@ export async function loadUpcoming(today = todayTR()) {
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
   const laterInvoices: UpcomingItem[] = up.later;
   return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index) };
-}
-
-/** Kalemlerin ipuçları: faturasız alımın faturası olabilir (güçlü aday, K17) ve kasadan ödenmiş olabilir (K16) */
-function cariHints(
-  index: CariIndex,
-  invoices: readonly { id: number; date: string; invoiceNo: string | null; cardId: number | null }[],
-  debts: readonly { id: number; date: string; cardId: number; dismissedCashOutIds?: readonly number[] }[],
-): Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }> {
-  const out = new Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }>();
-  if (!index.strong.length && !index.kasaPending.length) return out;
-  for (const c of index.strong) {
-    const href = index.hrefOf(c.cardId);
-    if (!href || out.has(`invoice:${c.invoiceId}`)) continue;
-    const what = c.debts.map((d) => `${dateTR(d.date).slice(0, 5)} · ${d.description?.trim() || "alım"}`);
-    out.set(`invoice:${c.invoiceId}`, {
-      quiet: "link",
-      hint: { kind: "link", text: `Faturasız alımın faturası olabilir${what.length ? ` (${what.join(", ")})` : ""}`, href: `${href}?bagla=${c.invoiceId}`, invoiceId: c.invoiceId, debtIds: c.debtIds },
-    });
-  }
-  if (!index.kasaPending.length) return out;
-  const none: readonly number[] = [];
-  const items = [
-    // Borç ekle'de "Ayrı alım" denen Teslim satırı o borcun ödemesi değil (satır başka kalem için işlenmemiş kalır);
-    // borç faturasına bağlanınca faturanın da (faturaya bağlı borçların satırları)
-    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId, apart: index.kasaApartByInvoice.get(i.id) ?? none }] : [])),
-    ...debts.map((d) => ({ ref: `cari:${d.id}`, date: d.date, cardId: d.cardId, apart: d.dismissedCashOutIds ?? none })),
-  ];
-  for (const it of items) {
-    if (out.has(it.ref)) continue;
-    // Kalemin gününden (aynı gün dahil: teslimatta şoföre ödenen) sonraki, en eski işlenmemiş satır
-    const line = index.kasaPending.find((l) => l.cardId === it.cardId && l.date >= it.date && !it.apart.includes(l.id));
-    const href = line ? index.hrefOf(it.cardId) : undefined;
-    if (!line || !href) continue;
-    out.set(it.ref, {
-      quiet: "kasa",
-      hint: {
-        kind: "kasa",
-        text: `Kasadan ödenmiş olabilir: ${dateTR(line.date).slice(0, 5)} ${line.kind === "teslim" ? "Teslim" : "Alışveriş"} · ${line.store ?? ""} ${tl(line.amount, 2)}`,
-        href: `${href}?kasa=${line.id}`,
-        cashOutId: line.id,
-      },
-    });
-  }
-  return out;
 }
 
 /** Ödemeler, zil ve Genel bakış için cari hesabın özeti: açık faturasız borçlar, hesaptaki para, işlenmemiş Kasa satırları, uyarılar */

@@ -91,7 +91,8 @@ export interface UpcomingItem {
   credited?: number;
   /**
    * Sessiz kalem: "link" faturasız alımın faturası olabilir (bağlanana kadar sabah e-postasında ve nakit planında yok),
-   * "kasa" kasadan ödenmiş olabilir (sabah e-postası hatırlatmaz)
+   * "kasa" kalanı işlenmemiş bir Kasa satırını tutuyor, kasadan ödenmiş olabilir (sabah e-postası hatırlatmaz; satır
+   * başına bir kalem). Tutmayan satırın ipucu kalemi sessize almaz
    */
   quiet?: "link" | "kasa";
   hint?: UpcomingHint;

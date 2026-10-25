@@ -18,9 +18,9 @@ import { createModel } from "../src/lib/calc/engine";
 import { alerts, unpaidSummary } from "../src/lib/calc/insights";
 import type { Dataset, Invoice } from "../src/lib/calc/types";
 import { accountOf, lastPaymentOf, netCredit, paidInMonthOf, paymentEvents } from "../src/lib/cari/account";
-import { upcomingWithCari } from "../src/lib/cari/upcoming";
+import { cariHints, upcomingWithCari } from "../src/lib/cari/upcoming";
 import { buildCashPlan, type CashPlanInput } from "../src/lib/cash-plan";
-import { addDays, daysBetween, dueNotifications, laterInvoiceItems, upcomingItems, type ReminderRow, type UnpaidInvoiceRow } from "../src/lib/reminders";
+import { addDays, daysBetween, dueNotifications, laterInvoiceItems, upcomingItems, type ReminderRow, type UnpaidInvoiceRow, type UpcomingItem } from "../src/lib/reminders";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
 const root = join(__dirname, "..");
@@ -214,6 +214,43 @@ test("Ödemeler (loadUpcoming): cari kaydı yokken liste, takvim ve sabah e-post
         assert.deepEqual(up.covered, []);
         assert.deepEqual(dueNotifications(up.items), dueNotifications(items));
       }
+    }
+  }
+});
+
+test("Ödemeler (loadUpcoming): cari kaydı yokken kartın işlenmemiş Kasa satırı sabah e-postasını değiştirmez; tutarı tutan satır en çok bir kalemi sessize alır", () => {
+  const keys = (items: UpcomingItem[]) => dueNotifications(items).map((n) => n.key);
+  for (const list of variants()) {
+    const unpaid = list
+      .filter((i) => i.unpaid)
+      .map((i) => ({ id: i.id, supplier: i.supplier, invoiceNo: i.invoiceNo, date: i.date, dueDate: i.dueDate ?? null, payable: i.payable, outstanding: i.outstanding ?? null, termDays: null }));
+    const names = [...new Set(unpaid.map((i) => i.supplier))].sort();
+    const invoices = unpaid.map((i) => ({ ...i, cardId: names.indexOf(i.supplier) + 1 }));
+    const open = new Map(invoices.map((i) => [i.id, oldInvoiceAmount(i)]));
+    const hits = (cardId: number, amount: number) => invoices.some((i) => i.cardId === cardId && Math.abs(open.get(i.id)! - amount) <= Math.max(1, 0.02 * Math.abs(open.get(i.id)!)));
+    for (const today of TODAYS) {
+      const base = upcomingItems([], unpaid, today);
+      // Her kartta bugün fişsiz bir alışveriş (ör. 16.10 Metro 300 ₺; tutarı kartın hiçbir kalemini tutmuyor)
+      const lines = names.map((_, k) => {
+        let amount = 300;
+        while (hits(k + 1, amount)) amount += 1000;
+        return { id: 100 + k, date: today, kind: "harcama" as const, store: "Metro", docType: "yok" as const, amount, cardId: k + 1 };
+      });
+      const index = { strong: [], kasaPending: lines, kasaApartByInvoice: new Map<number, number[]>(), hrefOf: () => "/panel/tedarikciler/x" };
+      const up = upcomingWithCari({ reminders: [], invoices, credit: new Map(), hints: cariHints(index, invoices, []) }, today);
+      assert.deepEqual(keys(up.items), keys(base), `${today}: sabah e-postası aynı`);
+      assert.deepEqual(up.items.map((i) => [i.ref, i.amount]), base.map((i) => [i.ref, i.amount]));
+      assert.equal(up.items.filter((i) => i.quiet).length, 0, "hiçbir kalem sessiz değil");
+      // Kalemin kalanını tutan satır yalnız bir kalemi sessize alır (aynı tutarda başka kalem olsa da)
+      const target = base.find((i) => (i.amount ?? 0) > 1 && invoices.find((x) => x.id === i.sourceId)!.date <= today);
+      if (!target) continue;
+      const cardId = invoices.find((x) => x.id === target.sourceId)!.cardId;
+      const line = { id: 999, date: today, kind: "teslim" as const, store: "Tedarikçi", docType: "yok" as const, amount: target.amount!, cardId };
+      const one = upcomingWithCari({ reminders: [], invoices, credit: new Map(), hints: cariHints({ ...index, kasaPending: [line] }, invoices, []) }, today);
+      const quiet = one.items.filter((i) => i.quiet);
+      assert.equal(quiet.length, 1, `${today}: tek kalem sessiz`);
+      assert.ok(Math.abs((quiet[0].amount ?? 0) - line.amount) <= Math.max(1, 0.02 * line.amount));
+      assert.deepEqual(keys(one.items), keys(base).filter((k) => !k.startsWith(`invoice:${quiet[0].sourceId}:`)));
     }
   }
 });

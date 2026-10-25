@@ -583,10 +583,10 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     );
     assert.equal(r.needs, null);
     const debtId = (r as { id: number }).id;
-    // Kasa denetiminden geçmeden yazılmış başka bir borç: ipucu onda kalır
+    // Kasa denetiminden geçmeden yazılmış başka bir borç (tutarı satırınki): ipucu ve sessizlik onda
     const [other] = await db
       .insert(s.supplierEntries)
-      .values({ supplierId: c.id, kind: "borc", date: today, amount: 400, description: "kaymak", costMode: "fatura", createdByName: "Test" })
+      .values({ supplierId: c.id, kind: "borc", date: today, amount: 2200, description: "kaymak", costMode: "fatura", createdByName: "Test" })
       .returning();
     const digest = await import("../src/server/notify/digest");
     const up = await digest.loadUpcoming(today);
@@ -626,8 +626,8 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     );
     const debtId = (r as { id: number }).id;
     const sts1 = await invoice({ payable: 1300, date: today, dueDate: today, invoiceNo: "STS1" });
-    // Aynı günün bağsız faturası: "Ayrı alım" onun için denmedi, ipucu onda kalır
-    const sts2 = await invoice({ payable: 500, date: today, dueDate: today, invoiceNo: "STS2" });
+    // Aynı günün bağsız faturası (tutarı satırınki): "Ayrı alım" onun için denmedi, ipucu onda kalır
+    const sts2 = await invoice({ payable: 2200, date: today, dueDate: today, invoiceNo: "STS2" });
     assert.equal(ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: sts1.id })).needs, null);
     const digest = await import("../src/server/notify/digest");
     const { dueNotifications } = await import("../src/lib/reminders");
