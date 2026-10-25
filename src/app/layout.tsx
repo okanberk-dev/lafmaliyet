@@ -26,7 +26,8 @@ export const metadata: Metadata = {
   },
   description: "L'Affogato maliyet, kârlılık ve stok yönetim paneli",
   applicationName: "L'Affogato Yönetim",
-  // Panel arama motorlarına kapalı (ayrıca robots.txt ve X-Robots-Tag başlığı)
+  // Panel arama motorlarında görünmez (ayrıca her yanıtta X-Robots-Tag başlığı; robots.txt taramayı açık bırakır ki
+  // Google bu noindex'i görsün)
   robots: {
     index: false,
     follow: false,
