@@ -26,6 +26,7 @@ import {
   fillFromInfo,
   formatPhone,
   groupSuppliers,
+  historyNotice,
   ibanProblem,
   ibansInText,
   isHiddenSupplier,
@@ -1051,4 +1052,29 @@ test("vergi no: listede adın altında aynı vergi noyla toplanan öteki adlar",
   assert.deepEqual(of("KALDI KAHVE TİC. A.Ş."), ["Kaldi"], "kartsızda görünen addan başkası");
   assert.deepEqual(of("Sütaş"), ["SÜTAŞ SÜT ÜRÜNLERİ A.Ş."], "kartlıda yalnız vergi noyla gelen (diğer ad değil)");
   assert.deepEqual(of("Erbak"), []);
+});
+
+test("Geçmiş faturaları al bildirimi: Süre doldu yalnız süre dolunca; yazılamayan faturalar sayısıyla ve ne zaman deneneceğiyle", () => {
+  const base = { fetched: 31, created: 0, removed: 0, oldest: null, partial: false, resumed: false, deferred: 0, held: false, added: [], elsewhere: [] };
+  // Süre dolmadı, eski faturası Paraşüt'e sorulamayan bir fatura kalınan yeri kendi sayfasına geri aldı
+  const held = historyNotice({ ...base, created: 3, deferred: 1, held: true });
+  assert.equal(held.title, "3 eski fatura eklendi");
+  assert.equal(held.description, "Paraşüt'te 31 fatura okundu. 1 fatura yazılamadı (eski faturası Paraşüt'e sorulamadı); düğmeye yeniden basınca denenir.");
+  assert.doesNotMatch(held.description, /Süre doldu/);
+  assert.equal(held.long, true);
+  assert.equal(historyNotice({ ...base, deferred: 2, held: true }).title, "Okuma sürüyor");
+  // Kendi sayfasından yeniden denenip yine yazılamadı: geçilir, okuma biter
+  const passed = historyNotice({ ...base, fetched: 6, deferred: 2, resumed: true });
+  assert.equal(passed.title, "Okuma bitti");
+  assert.match(passed.description, /2 fatura yazılamadı \(eski faturası Paraşüt'e sorulamadı\); sonraki tam okumada denenir\.$/);
+  // Süre gerçekten doldu
+  const timeout = historyNotice({ ...base, partial: true });
+  assert.equal(timeout.title, "Okuma sürüyor");
+  assert.match(timeout.description, /Süre doldu: kalanı için düğmeye yeniden basın\.$/);
+  // Olağan sonuçlar değişmedi
+  assert.deepEqual(historyNotice(base), { title: "Yeni fatura yok: hepsi zaten panelde", description: "Paraşüt'te 31 fatura okundu.", long: false });
+  assert.equal(historyNotice({ ...base, fetched: 0 }).title, "Paraşüt'te bu tedarikçinin faturası yok");
+  // Ekran bildirimi bu işlevden kurar; eylem sonucu ona taşır
+  assert.match(readFileSync(join(root, "src/app/panel/tedarikciler/[cari]/supplier-client.tsx"), "utf8"), /const n = historyNotice\(r\.data\);/);
+  assert.match(readFileSync(join(root, "src/server/actions/suppliers.ts"), "utf8"), /deferred: r\.deferred,\s+held: r\.held,/);
 });

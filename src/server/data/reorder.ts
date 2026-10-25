@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, notInArray, or, sql } from "drizzle-orm";
 
 import { supplierMatchKey } from "@/app/panel/faturalar/rules";
 import { groupSuppliers, supplierResolver, type SupplierCard } from "@/app/panel/tedarikciler/logic";
@@ -17,6 +17,7 @@ import {
   inheritLeadDays,
   isCountDay,
   latestOnHand,
+  monthEndCountAt,
   nextCountDay,
   onOrderFor,
   planGroups,
@@ -149,7 +150,8 @@ export const isTrackable = (i: Pick<Ingredient, "active" | "countUnit" | "priceS
 
 /**
  * Kalem başına eldeki: en yeni hızlı sayım ya da bu ayın / geçen ayın ay sonu sayımı (hangisi yeniyse; latestOnHand).
- * İki sorgu. `today` sayımın ayları için (takvim günü, Türkiye).
+ * Ay sonu sayımının anı monthEndCountAt'ten: geç girilen ya da düzeltilen geçen ayın sayımı ayın son gününündür (kayıt
+ * anı `recordedAt`: arada denen Geldi'yi onOrderFor okur). İki sorgu. `today` sayımın ayları için (takvim günü, Türkiye).
  */
 export async function loadOnHand(ids: number[], today: string, countUnits: Map<number, string | null>): Promise<Map<number, OnHand>> {
   if (!ids.length) return new Map();
@@ -163,15 +165,23 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
       .where(inArray(q.ingredientId, ids))
       .orderBy(q.ingredientId, desc(q.countedAt)),
     db
-      .select({ ingredientId: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor, updatedAt: s.stockCounts.updatedAt, by: s.stockCounts.countedBy })
+      .select({
+        ingredientId: s.stockCounts.ingredientId,
+        month: s.stockCounts.month,
+        qty: s.stockCounts.qty,
+        factor: s.stockCounts.factor,
+        updatedAt: s.stockCounts.updatedAt,
+        by: s.stockCounts.countedBy,
+      })
       .from(s.stockCounts)
       .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [month, shiftMonth(month, -1)]))),
   ]);
   const quickBy = new Map(quick.map((r) => [r.ingredientId, r]));
-  const monthBy = new Map<number, (typeof monthEnd)[number]>();
+  const monthBy = new Map<number, { qty: number; factor: number | null; by: string | null; at: Date; recordedAt: Date }>();
   for (const r of monthEnd) {
+    const at = monthEndCountAt(r.month, r.updatedAt);
     const cur = monthBy.get(r.ingredientId);
-    if (!cur || r.updatedAt > cur.updatedAt) monthBy.set(r.ingredientId, r);
+    if (!cur || at > cur.at) monthBy.set(r.ingredientId, { qty: r.qty, factor: r.factor, by: r.by, at, recordedAt: r.updatedAt });
   }
   const out = new Map<number, OnHand>();
   for (const id of ids) {
@@ -180,7 +190,14 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
     const oh = latestOnHand(
       qr ? { qty: qr.qty, factor: qr.factor, countedAt: qr.countedAt.toISOString(), day: qr.day, by: qr.by } : null,
       mr
-        ? { qty: mr.qty, factor: mr.factor ?? countFactor(countUnits.get(id) ?? null), updatedAt: mr.updatedAt.toISOString(), day: businessDate(mr.updatedAt), by: mr.by }
+        ? {
+            qty: mr.qty,
+            factor: mr.factor ?? countFactor(countUnits.get(id) ?? null),
+            at: mr.at.toISOString(),
+            day: businessDate(mr.at),
+            recordedAt: mr.recordedAt.toISOString(),
+            by: mr.by,
+          }
         : null,
     );
     if (oh) out.set(id, oh);
@@ -189,24 +206,26 @@ export async function loadOnHand(ids: number[], today: string, countUnits: Map<n
 }
 
 /**
- * Kalemlerin en yeni sayımı (eldeki stokla aynı kaynaklar: hızlı sayım ya da bu / geçen ayın ay sonu sayımı), anı ve iş
- * günü; "Geldi"nin anı buna göre yazılır (receivedAtFor). Hiç sayılmadıysa null. İki küçük sorgu; fiyat okumaz.
+ * Kalemlerin en yeni sayımı (eldeki stokla aynı kaynaklar: hızlı sayım ya da bu / geçen ayın ay sonu sayımı, anı
+ * monthEndCountAt'ten), anı ve iş günü; "Geldi"nin anı buna göre yazılır (receivedAtFor). Hiç sayılmadıysa null. İki
+ * küçük sorgu; fiyat okumaz.
  */
 export async function latestCountOf(ids: number[], today: string): Promise<{ at: string; day: string } | null> {
   if (!ids.length) return null;
   const db = getDb();
   const q = s.quickCounts;
   const month = today.slice(0, 7);
-  const [[quick], [stock]] = await Promise.all([
+  const [[quick], stock] = await Promise.all([
     db.select({ at: q.countedAt, day: q.day }).from(q).where(inArray(q.ingredientId, ids)).orderBy(desc(q.countedAt)).limit(1),
+    // Ay başına en yeni kayıt (en çok iki satır) yeter: sınır kayıt anıyla birlikte ilerler
     db
-      .select({ at: s.stockCounts.updatedAt })
+      .selectDistinctOn([s.stockCounts.month], { month: s.stockCounts.month, updatedAt: s.stockCounts.updatedAt })
       .from(s.stockCounts)
       .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [month, shiftMonth(month, -1)])))
-      .orderBy(desc(s.stockCounts.updatedAt))
-      .limit(1),
+      .orderBy(s.stockCounts.month, desc(s.stockCounts.updatedAt)),
   ]);
-  if (stock && (!quick || stock.at > quick.at)) return { at: stock.at.toISOString(), day: businessDate(stock.at) };
+  const stockAt = stock.map((r) => monthEndCountAt(r.month, r.updatedAt)).sort((a, b) => b.getTime() - a.getTime())[0];
+  if (stockAt && (!quick || stockAt > quick.at)) return { at: stockAt.toISOString(), day: businessDate(stockAt) };
   return quick ? { at: quick.at.toISOString(), day: quick.day } : null;
 }
 
@@ -239,14 +258,18 @@ export function toOrderLite(r: OrderRow): OrderLite {
   };
 }
 
-/** Son `sinceDays` günde gönderilen siparişler (en yeni önce); `status` verilirse yalnız onlar */
+/**
+ * Son `sinceDays` günde gönderilen siparişler ve yaşı ne olursa olsun açık olanlar (en yeni önce); `status` verilirse
+ * yalnız onlar. Açık sipariş (fark var, kâğıt faturanın kalemleri bekleniyor, yeniden açılan) kendiliğinden kapanmaz:
+ * kapanana kadar zilde, Bugün'de, Yoldaki siparişler'de ve Gönderilenler'de kalır.
+ */
 export async function loadOrders(opts: { sinceDays: number; status?: OrderLite["status"][] }): Promise<OrderLite[]> {
   const o = s.supplierOrders;
   const since = new Date(Date.now() - opts.sinceDays * 86_400_000);
   const rows = await getDb()
     .select()
     .from(o)
-    .where(and(gte(o.sentAt, since), opts.status?.length ? inArray(o.status, opts.status) : undefined))
+    .where(and(or(gte(o.sentAt, since), eq(o.status, "open")), opts.status?.length ? inArray(o.status, opts.status) : undefined))
     .orderBy(desc(o.sentAt), desc(o.id));
   return rows.map(toOrderLite);
 }
@@ -455,7 +478,7 @@ export async function loadReorderData(model?: Model): Promise<ReorderData> {
             parBase: row.parBase,
             perDay: u ? u.perDay : null,
             onHand: oh,
-            onOrder: onOrderFor(orders, ing.id, oh?.at ?? null, today).base,
+            onOrder: onOrderFor(orders, ing.id, oh, today).base,
             expectedUnitPrice: price?.unitPrice ?? null,
             priceEstimated: price?.estimated ?? false,
           },
@@ -618,7 +641,7 @@ export async function loadOrderPlan(): Promise<OrderPlanView> {
     today: d.today,
     total: liveIds.length,
     lastQuick,
-    staleDays: d.lastCountAt ? daysBetween(todayTR(new Date(d.lastCountAt)), d.today) : null,
+    staleDays: d.lastCountDay ? daysBetween(d.lastCountDay, d.today) : null,
     basis: basisMonth ? { month: basisMonth, label: d.usage!.basis.label, old: basisMonth < shiftMonth(d.today.slice(0, 7), -2) } : null,
     groups,
     openOrders: d.orders
@@ -870,8 +893,18 @@ export interface QuickCountSheet {
   groups: { name: string; items: QuickCountItem[] }[];
   total: number;
   last: { day: string; by: string } | null;
-  /** Gelmesi beklenen, gelmedi işaretlenmemiş, faturası olmayan siparişler (yalnız kalem adı ve miktar) */
-  due: { id: number; supplier: string; sentDay: string; lines: { orderName: string; qty: number; unit: string }[] }[];
+  /**
+   * Yoldaki siparişler: açık, Geldi denmemiş, faturası bağlanmamış; beklenen günü henüz gelmemiş olanlar da (erken gelen
+   * mal geldiği gün işaretlenir). Yalnız kalem adı ve miktar
+   */
+  due: {
+    id: number;
+    supplier: string;
+    sentDay: string;
+    /** Beklenen gün (Türkiye); bugünden sonraysa satır "… bekleniyor" der */
+    expectedOn: string;
+    lines: { orderName: string; qty: number; unit: string }[];
+  }[];
 }
 
 /**
@@ -895,10 +928,11 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
       .where(and(eq(i.active, true), isNotNull(i.countUnit), sql`${i.priceSource} <> 'water'`))
       .orderBy(asc(i.sortOrder), asc(i.id)),
     db
-      .select({ id: o.id, supplier: o.supplier, sentAt: o.sentAt, lines: o.lines })
+      .select({ id: o.id, supplier: o.supplier, sentAt: o.sentAt, expectedOn: o.expectedOn, lines: o.lines })
       .from(o)
-      .where(and(eq(o.status, "open"), sql`${o.receivedAt} is null`, sql`${o.invoiceId} is null`, sql`${o.expectedOn} <= ${today}`))
-      .orderBy(asc(o.sentAt)),
+      .where(and(eq(o.status, "open"), sql`${o.receivedAt} is null`, sql`${o.invoiceId} is null`))
+      // Günü gelen ve geciken önce
+      .orderBy(asc(o.expectedOn), asc(o.sentAt)),
   ]);
   const ids = rows.map((r) => r.id);
   const [todays, before, monthEnd, lastAny] = ids.length
@@ -913,7 +947,7 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
           .where(and(lt(q.day, day), inArray(q.ingredientId, ids)))
           .orderBy(q.ingredientId, desc(q.countedAt)),
         db
-          .select({ id: s.stockCounts.ingredientId, qty: s.stockCounts.qty, factor: s.stockCounts.factor, at: s.stockCounts.updatedAt })
+          .select({ id: s.stockCounts.ingredientId, month: s.stockCounts.month, qty: s.stockCounts.qty, factor: s.stockCounts.factor, at: s.stockCounts.updatedAt })
           .from(s.stockCounts)
           .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [today.slice(0, 7), shiftMonth(today.slice(0, 7), -1)]))),
         db.select({ day: q.day, by: q.countedByName }).from(q).where(inArray(q.ingredientId, ids)).orderBy(desc(q.countedAt)).limit(1),
@@ -924,10 +958,13 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
   const items: { group: string; item: QuickCountItem }[] = rows.map((r) => {
     const f = countFactor(r.countUnit);
     const t = todayBy.get(r.id);
-    // "Geçen": bugünden önceki son hızlı sayım ya da (daha yeniyse) ay sonu sayımı, bugünkü sayım biriminde
+    // "Geçen": bugünden önceki son hızlı sayım ya da (daha yeniyse) ay sonu sayımı, bugünkü sayım biriminde; ay sonu
+    // sayımının anı monthEndCountAt'ten (geç girilen geçen ayın sayımı ayın son günündür)
     const b = beforeBy.get(r.id);
     const m = monthEnd
-      .filter((x) => x.id === r.id && businessDate(x.at) < day)
+      .filter((x) => x.id === r.id)
+      .map((x) => ({ ...x, at: monthEndCountAt(x.month, x.at) }))
+      .filter((x) => businessDate(x.at) < day)
       .sort((a, z) => z.at.getTime() - a.at.getTime())[0];
     const prev =
       b && (!m || b.at >= m.at)
@@ -967,6 +1004,7 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
       id: x.id,
       supplier: x.supplier,
       sentDay: todayTR(x.sentAt),
+      expectedOn: x.expectedOn,
       lines: (Array.isArray(x.lines) ? x.lines : []).map((l) => ({ orderName: l.orderName, qty: l.qty, unit: l.unit })),
     })),
   };
@@ -976,7 +1014,7 @@ export async function loadQuickCountSheet(): Promise<QuickCountSheet> {
 
 export type HistoryFilter = "acik" | "fark" | "kapanan" | "tumu";
 export const HISTORY_FILTERS: readonly HistoryFilter[] = ["acik", "fark", "kapanan", "tumu"];
-/** Gönderilenler son bu kadar günü gösterir */
+/** Gönderilenler son bu kadar günü ve kapanmamış bütün siparişleri gösterir */
 export const HISTORY_DAYS = 90;
 
 export interface InvoiceOption {
@@ -1083,19 +1121,20 @@ async function countFacts(day: string): Promise<Pick<ReorderDayFacts, "total" | 
   if (!ids.length) return { total: 0, countedToday: 0, lastCountDay: null };
   const { from, to } = businessDayBounds(day);
   // Ay sonu sayımından yalnız bu ayın ve geçen ayınki eldeki sayılır (loadOnHand gibi): eski bir ayın düzeltilmesi
-  // "bugün sayıldı" demesin
-  const months = inArray(s.stockCounts.month, [day.slice(0, 7), shiftMonth(day.slice(0, 7), -1)]);
-  const [quickToday, stockToday, lastQuick, lastStock] = await Promise.all([
+  // "bugün sayıldı" demesin. Geçen ayınki ayın son gününde sayılmış sayılır (monthEndCountAt): sonradan girilmesi ya da
+  // düzeltilmesi "bugün sayıldı" demez, son sayımın gününü ileri almaz
+  const [quickToday, lastQuick, stock] = await Promise.all([
     db.selectDistinct({ id: s.quickCounts.ingredientId }).from(s.quickCounts).where(and(eq(s.quickCounts.day, day), inArray(s.quickCounts.ingredientId, ids))),
-    db
-      .selectDistinct({ id: s.stockCounts.ingredientId })
-      .from(s.stockCounts)
-      .where(and(inArray(s.stockCounts.ingredientId, ids), months, gte(s.stockCounts.updatedAt, from), lt(s.stockCounts.updatedAt, to))),
     db.select({ day: s.quickCounts.day }).from(s.quickCounts).where(inArray(s.quickCounts.ingredientId, ids)).orderBy(desc(s.quickCounts.day)).limit(1),
-    db.select({ at: s.stockCounts.updatedAt }).from(s.stockCounts).where(and(inArray(s.stockCounts.ingredientId, ids), months)).orderBy(desc(s.stockCounts.updatedAt)).limit(1),
+    db
+      .select({ id: s.stockCounts.ingredientId, month: s.stockCounts.month, updatedAt: s.stockCounts.updatedAt })
+      .from(s.stockCounts)
+      .where(and(inArray(s.stockCounts.ingredientId, ids), inArray(s.stockCounts.month, [day.slice(0, 7), shiftMonth(day.slice(0, 7), -1)]))),
   ]);
-  const counted = new Set([...quickToday.map((r) => r.id), ...stockToday.map((r) => r.id)]);
-  const days = [lastQuick[0]?.day ?? null, lastStock[0] ? businessDate(lastStock[0].at) : null].filter((d): d is string => d !== null).sort();
+  const stockAt = stock.map((r) => ({ id: r.id, at: monthEndCountAt(r.month, r.updatedAt) }));
+  const counted = new Set([...quickToday.map((r) => r.id), ...stockAt.filter((r) => r.at >= from && r.at < to).map((r) => r.id)]);
+  const lastStock = stockAt.reduce<Date | null>((a, r) => (!a || r.at > a ? r.at : a), null);
+  const days = [lastQuick[0]?.day ?? null, lastStock ? businessDate(lastStock) : null].filter((d): d is string => d !== null).sort();
   return { total: ids.length, countedToday: counted.size, lastCountDay: days.at(-1) ?? null };
 }
 

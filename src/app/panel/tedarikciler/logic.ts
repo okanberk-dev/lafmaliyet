@@ -11,8 +11,8 @@
  * (aynı vergi nolu adlar birlikte); kart, bilgi girilince açılır.
  */
 import { accountOf, SOON_DAYS, type SupplierSummary } from "@/lib/cari/account";
-import { dateTR, money } from "@/lib/format";
-import { daysBetween } from "@/lib/reminders";
+import { dateTR, money, num } from "@/lib/format";
+import { addDays, daysBetween } from "@/lib/reminders";
 
 import { splitSupplier, supplierMatchKey } from "../faturalar/rules";
 
@@ -1240,4 +1240,49 @@ export function paymentRequestText(opts: {
   if (note) out.push("", note);
   // Tutarlardaki bölünmez boşluk (tl) düz metinde de doğru görünür; WhatsApp ve e-posta olduğu gibi gösterir
   return out.join("\n");
+}
+
+/** "Geçmiş faturaları al"ın sonucu (src/server/actions/suppliers.ts importSupplierHistory) */
+export interface HistoryResult {
+  fetched: number;
+  created: number;
+  removed: number;
+  oldest: string | null;
+  /** Süre doldu */
+  partial: boolean;
+  resumed: boolean;
+  /** Yazılamayan fatura (eski faturası Paraşüt'e sorulamadı) ve yeniden basınca denenip denenmeyeceği */
+  deferred: number;
+  held: boolean;
+  added: readonly string[];
+  elsewhere: readonly string[];
+}
+
+/**
+ * "Geçmiş faturaları al"ın bildirimi: başlık, açıklama ve uzun kalıp kalmayacağı. "Süre doldu" yalnız süre gerçekten
+ * dolunca; yazılamayan faturalar sayısıyla ve ne zaman yeniden deneneceğiyle söylenir (kalınan yer onlarda kaldıysa
+ * yeniden basınca, kalmadıysa sonraki tam okumada).
+ */
+export function historyNotice(d: HistoryResult): { title: string; description: string; long: boolean } {
+  const parts = [
+    `Paraşüt'te ${num(d.fetched)} fatura okundu.`,
+    d.oldest ? `En eski fatura ${dateTR(d.oldest)}.` : null,
+    d.removed ? `${num(d.removed)} fatura Paraşüt'te iptal edildiği için kaldırıldı.` : null,
+    d.added.length ? `Paraşüt'teki adı (${d.added.join(", ")}) diğer adlara eklendi.` : null,
+    d.elsewhere.length ? `“${d.elsewhere.join("”, “")}” adıyla gelenler başka bir tedarikçide görünür; aynı firmaysa Düzenle'den diğer adlara ekleyin.` : null,
+    d.deferred
+      ? `${num(d.deferred)} fatura yazılamadı (eski faturası Paraşüt'e sorulamadı); ${d.held ? "düğmeye yeniden basınca denenir" : "sonraki tam okumada denenir"}.`
+      : null,
+    d.partial ? "Süre doldu: kalanı için düğmeye yeniden basın." : null,
+  ].filter(Boolean);
+  const title = d.created
+    ? `${num(d.created)} eski fatura eklendi`
+    : d.partial || d.held
+      ? "Okuma sürüyor"
+      : d.deferred
+        ? "Okuma bitti"
+        : d.fetched || d.resumed
+          ? "Yeni fatura yok: hepsi zaten panelde"
+          : "Paraşüt'te bu tedarikçinin faturası yok";
+  return { title, description: parts.join(" "), long: d.partial || d.deferred > 0 || d.elsewhere.length > 0 };
 }

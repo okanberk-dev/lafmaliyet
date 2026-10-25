@@ -14,6 +14,7 @@ import {
   countFromMonth,
   countItemMonthIssue,
   countItemNote,
+  countItemPriceRow,
   duplicateMessage,
   findDuplicate,
   formulaStartMessage,
@@ -101,9 +102,11 @@ export interface CreatedCountItem extends CountItemRef {
 /**
  * Kalemi hemen hammadde olarak açar, onay beklemez; gösterilen aydan itibaren her ay sayım listesinde çıkar (count_from:
  * sayımı bitmiş eski aylar "kalem kaldı" demesin). Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zilde "Fiyatı girilmemiş
- * N hammadde"); iki durumda da "Tahmini", yönetici Hammaddeler'den doğrular. Fiyat geçmişine yazılmaz: ilk gerçek fiyat
- * zam gibi görünmesin (price-impact.ts ingredientChanges ilk satırı başlangıç sayar; personelin tahmini başlangıç
- * olsaydı ilk fatura zam ya da indirim gibi görünürdü). Personel yalnız sayımını değiştirebildiği ayda ekler. Aynı ad
+ * N hammadde"); iki durumda da "Tahmini", yönetici Hammaddeler'den doğrular. Yazılan fiyat aynı işlemde fiyat geçmişinin
+ * başlangıcı olur (countItemPriceRow): kapanmış ay o fiyatla değerlenir, sonraki zam onu değiştirmez; zam uyarısı bu
+ * satırı taban saymaz (personelin tahmini taban olsaydı ilk fatura zam ya da indirim gibi görünürdü). Kalem Tahmini
+ * iken Hammaddeler'deki düzeltme bu satırın yerine geçer (src/server/data/ingredient-prices.ts). Fiyatsız kalem
+ * satır yazmaz. Personel yalnız sayımını değiştirebildiği ayda ekler. Aynı ad
  * (Türkçe büyük/küçük harf ve boşluk farkı gözetmeden; pasif ya da "Sayılmaz" olanlar dahil) varsa eklenmez
  * (CountItemExists); kalem listede ama daha sonraki bir aydan itibaren çıkıyorsa gösterilen aydan itibaren de listeye
  * alınır.
@@ -159,6 +162,9 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
       .insert(s.ingredients)
       .values(values)
       .returning({ id: s.ingredients.id, name: s.ingredients.name, unit: s.ingredients.unit, category: s.ingredients.category });
+    // Başlangıç satırı hammaddeye yazılan (KDV hariç) fiyatla
+    const start = countItemPriceRow(row.id, values, me.name);
+    if (start) await tx.insert(s.ingredientPrices).values(start);
     return { ...row, group: data.group, existed: false, from, packagePrice: data.packagePrice !== null ? values.packagePrice : null };
   });
 }

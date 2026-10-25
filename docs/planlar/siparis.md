@@ -35,7 +35,7 @@ Concretely:
    from the data: usage from sales × recipes + recorded zayi/ikram, the supplier last bought from via the Paraşüt
    product links, and the unit and product name of that supplier's last invoice line.
 2. **Hızlı sayım** (staff and admin, phone first): the tracked items only, in count units (KG, LT, ADET, DİLİM), separate
-   from the month-end Stok sayımı. Before counting, staff answer "Gelen mal var mı?" for orders that are due.
+   from the month-end Stok sayımı. Before counting, staff answer "Gelen mal var mı?" for open orders (due or early).
 3. **Mal siparişi** (admin): the order list grouped by supplier. Suggested quantity = Hedef − Eldeki − Siparişte,
    rounded to the order unit. Quantities can be edited. **WhatsApp ile gönder** opens `wa.me` with the message for the
    phone on the supplier's card. A missing or landline phone is handled. The order is saved: sent at, lines, status.
@@ -120,12 +120,14 @@ loaders already separate the price fields (§6.2), so it can be enabled later.
   - When perDay is unknown or 0 and nothing is typed, the status is "Hedef yok".
 - **Eldeki** `onHand` = the newest of:
   - the latest Hızlı sayım row (`quick_counts`, `qty × factor`, at `countedAt`);
-  - the current or previous month's Stok sayımı row (`stock_counts`, `qty × factor`, at `updatedAt`).
+  - the current or previous month's Stok sayımı row (`stock_counts`, `qty × factor`, at `monthEndCountAt(month,
+    updatedAt)`: `updatedAt`, but no later than next month's 1st 05:00 TR − 1 ms; a newer quick count wins, deliveries
+    after it stay Siparişte).
 
   The month-end count therefore also refreshes the order list.
 - **Siparişte** `onOrder` = Σ base quantity of the item's lines in orders that are:
   - not cancelled;
-  - sent within the last 14 days (`IN_TRANSIT_DAYS`);
+  - sent within the last 14 days (`IN_TRANSIT_DAYS`) or expected no earlier than yesterday (`IN_TRANSIT_GRACE_DAYS`);
   - not yet in the count. That means not received at all, or received (marked "Geldi", or invoice matched) **after**
     `onHand.at`.
 
@@ -300,12 +302,13 @@ Suspense fallback: the same header with description "Yükleniyor…" and `PageSk
    - `Son sayım: {longDateTR(day)} · {name}` or `Henüz hızlı sayım yok`.
    - On the month's last day: `Bugün ay sonu: Stok sayımı bu sayımın yerine geçer.` with a link "Stok sayımı →"
      (`/panel/sayim`).
-2. **"Gelen mal var mı?"** card. It is shown only when open orders exist with `expectedOn ≤ today`, not received and
-   not matched.
+2. **"Gelen mal var mı?"** card. It is shown for open orders that are not received and not matched, whatever their
+   `expectedOn` (an early delivery is marked the day it arrives), sorted by `expectedOn`, then `sentAt`.
    - Icon `PackageCheck`, title "Gelen mal var mı?".
    - Description: `"Sayımdan önce gelenleri işaretleyin; işaretlenmezse sipariş listesinde ikinci kez sayılır."`
    - One row per order:
-     - `{supplier} · {dateTR(sentDay)} siparişi` (bold);
+     - `{supplier} · {dateTR(sentDay)} siparişi` (bold), plus a muted ` · {dateTR(expectedOn)} bekleniyor` when
+       `expectedOn > today`;
      - under it (xs): `{orderName} {qtyLabel}` joined with ", " (at most 3, then " ve {k} kalem daha");
      - right: secondary `Button` **Geldi**, 44 px on phones.
    - Tap: optimistic remove, `markOrderReceived({ id, received: true })`, toast `"{supplier} siparişi geldi"` with
@@ -445,7 +448,7 @@ Teşekkürler.
   faturası gelince kalem kalem karşılaştırılır; fark yoksa sipariş kendiliğinden kapanır."`, tabs "siparis".
 - Filter (`Segmented`, query `?durum=`): **Açık ({n})** (default) · **Fark var ({k})** · **Kapanan** · **Tümü**.
   `?tedarikci={slug}` narrows to one supplier, with a chip `"{supplier} ×"`.
-- The list shows the last 90 days, newest first. **Order card** (`OrderCard`, a client component shared with the
+- The list shows the last 90 days plus every open order, newest first. **Order card** (`OrderCard`, a client component shared with the
   supplier page; `id="siparis-{id}"`). The hash anchor uses the `ListAnchor` pattern from `hammaddeler/list-anchor.tsx`.
   - Header: `{supplier}` (link) · `{dateTimeTR(sentAt)}` · `{sentByName}`. Right: state badge:
     - `Yolda · {dayName(expectedOn)} bekleniyor` (blue)
@@ -577,7 +580,7 @@ Positions:
 
 | Key | Role | Rule → status, title, badge, detail, href, action |
 |---|---|---|
-| `hizli-sayim` | Both | Shown only if `total > 0` and the day is not the month's last day, and either it is a count day **or** the count is overdue (`lastCountDay` older than `coverDays + 1` days). Title "Haftalık hızlı sayım". `countedToday ≥ total` → `done`, `"{T} kalemin hepsi sayıldı."` (admin adds `" Sipariş listesi hazır."`); admin `/panel/siparis` "Sipariş listesi", staff `/panel/hizli-sayim` "Sayımı aç". `0 < n < T` → `todo`, badge `"{n} / {T}"`, `"{n} / {T} kalem sayıldı; kalanları da girin."`, `/panel/hizli-sayim`, "Sayıma devam". `n = 0` on a count day → `todo`, badge "Bugün", `"Bugün hızlı sayım günü: {T} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır."`, "Sayıma başla". `n = 0` and overdue → `todo`, badge "Gecikti", `"Son hızlı sayım {longDateTR(last)} ({k} gün önce). Sipariş önerisi eski stoka göre."`, "Sayıma başla". `countedToday` also counts tracked items whose `stock_counts.updatedAt` falls on today's business day |
+| `hizli-sayim` | Both | Shown only if `total > 0` and the day is not the month's last day, and either it is a count day **or** the count is overdue (`lastCountDay` older than `coverDays + 1` days). Title "Haftalık hızlı sayım". `countedToday ≥ total` → `done`, `"{T} kalemin hepsi sayıldı."` (admin adds `" Sipariş listesi hazır."`); admin `/panel/siparis` "Sipariş listesi", staff `/panel/hizli-sayim` "Sayımı aç". `0 < n < T` → `todo`, badge `"{n} / {T}"`, `"{n} / {T} kalem sayıldı; kalanları da girin."`, `/panel/hizli-sayim`, "Sayıma devam". `n = 0` on a count day → `todo`, badge "Bugün", `"Bugün hızlı sayım günü: {T} kritik kalemi sayın; sipariş listesi sayıma göre hazırlanır."`, "Sayıma başla". `n = 0` and overdue → `todo`, badge "Gecikti", `"Son hızlı sayım {longDateTR(last)} ({k} gün önce). Sipariş önerisi eski stoka göre."`, "Sayıma başla". `countedToday` also counts tracked items whose month-end instant (`monthEndCountAt`) falls on today's business day; a previous month's row typed today does not count |
 | `siparis` | Admin | The first that applies. (1) Delivery differences → `warn`, "Teslim kontrolü", badge `"{n} sipariş"`, detail `"{supplier}: {checkSummary}"` for the first two joined with "; " + `"…"`, `/panel/siparis/gonderilen`, "Kontrol et". (2) Ready list → `todo`, "Mal siparişi", badge `"{s} tedarikçi"`, `"{lines} kalem sipariş öneriliyor: {first 3 suppliers}{…}. WhatsApp'tan tek dokunuşla gönderin."`, `/panel/siparis`, "Listeyi aç". (3) Late deliveries → `todo`, "Gelmeyen sipariş", badge `"{n}"`, `"{n} sipariş beklenen günde gelmedi; geldiyse işaretleyin."`, `/panel/siparis/gonderilen`, "Bak". Otherwise no row. "Ready" means: the last count is from today or yesterday, and there are suppliers with `packs > 0` that have had no order sent since that count |
 
 ### 3.9 Count-day push (daily job)
@@ -810,7 +813,7 @@ export function wasteBetween(model: Model, from: string, to: string): Map<number
 ### 5.3 `src/lib/reorder/levels.ts`
 
 ```ts
-export const STALE_DAYS = 4, IN_TRANSIT_DAYS = 14, MIN_PACK_FRACTION = 0.25, TRACK_SUGGEST_LIMIT = 15;
+export const STALE_DAYS = 4, IN_TRANSIT_DAYS = 14, IN_TRANSIT_GRACE_DAYS = 1, MIN_PACK_FRACTION = 0.25, TRACK_SUGGEST_LIMIT = 15;
 
 export function trWeekday(day: string): number;                       // 1 = Pazartesi … 7 = Pazar
 export function coverDays(weekdays: number[]): number;                // en uzun ara; boş/tek gün → 7
@@ -824,8 +827,9 @@ export function suggestedLevels(i: { perDay: number | null; leadDays: number; co
 export function packsFor(need: number, unitSize: number, critical: boolean): number;
 
 export interface OnHand { base: number; at: string; day: string; source: "hizli" | "ay-sonu"; by: string | null }
+export function monthEndCountAt(month: string, updatedAt: Date): Date;   // updatedAt, capped at next month's 1st 05:00 TR − 1 ms
 export function latestOnHand(quick: { qty: number; factor: number; countedAt: string; day: string; by: string } | null,
-  monthEnd: { qty: number; factor: number; updatedAt: string; by: string | null } | null): OnHand | null;
+  monthEnd: { qty: number; factor: number; at: string; day: string; by: string | null } | null): OnHand | null;
 
 export interface OrderLite { id: number; supplier: string; sentAt: string; sentDay: string; expectedOn: string; status: "open" | "closed" | "cancelled";
   receivedAt: string | null; invoiceId: number | null; manualMatch: boolean; lines: ReorderLine[]; check: DeliveryCheck | null;
@@ -961,7 +965,7 @@ export async function loadReorderSettings(): Promise<ReorderSettings>;   // inte
 export async function loadTracked(): Promise<TrackedRow[]>;             // reorder_items ⋈ ingredients (active, countUnit)
 export async function loadOnHand(ids: number[]): Promise<Map<number, OnHand>>;
 //   select distinct on (ingredient_id) … from quick_counts where ingredient_id = any($1) order by ingredient_id, counted_at desc
-//   + stock_counts for current and previous month (updatedAt, countedBy)
+//   + stock_counts for current and previous month (month, updatedAt → monthEndCountAt, countedBy)
 export async function loadOrders(opts: { sinceDays: number; status?: ("open" | "closed" | "cancelled")[] }): Promise<OrderLite[]>;
 export async function loadUsage(model: Model, today: string): Promise<UsageEstimate | null>;
 //   pickUsage(dailyUsage(model, await loadDailyProductSales(addDays(today, -28), today), { today }), monthlyUsage(model, latestSalesMonth(model)))
@@ -1162,7 +1166,7 @@ Not touched: `src/lib/calc/*` (engine, insights, price-impact), `src/server/data
 27. **Performance**:
     - Hızlı sayım (staff): 4 small queries, no model.
     - Mal siparişi: `loadModel` + ledger + one lines query + counts + orders (about 8 queries, parallel).
-    - Bell: one query on `supplier_orders` (open, 60 days).
+    - Bell: one query on `supplier_orders` (open, any age).
     - Sync: one query when there are no open orders.
 
 ---

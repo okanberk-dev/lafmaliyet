@@ -8,9 +8,12 @@
  *
  * Hammadde fiyatı her değiştiğinde ingredient_prices'a bir satır yazılır (elle, Excel aktarımı, Paraşüt
  * faturası). Pencereden (ör. son 30 gün) önceki son satır "eski fiyat"tır; pencere içinde değişiklik yoksa
- * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. Excel aktarımı) başlangıçtır.
+ * hammadde zamlanmış sayılmaz. Bütün geçmiş pencerenin içindeyse ilk satır (ör. Excel aktarımı) başlangıçtır. Sayım
+ * listesine fiyatıyla eklenen kalemin başlangıç satırı (COUNT_ITEM_PRICE_NOTE; yazılan tahmin) hiç sayılmaz: ilk gerçek
+ * fiyat zam görünmesin. Yöneticinin düzelttiği başlangıç (COUNT_ITEM_PRICE_FIXED_NOTE) doğrulanmış fiyattır, taban olur.
  */
 
+import { COUNT_ITEM_PRICE_NOTE } from "../count-item";
 import { tl } from "../format";
 import { ceilTo, priceProduct, type Model, type ProductStatus } from "./engine";
 
@@ -90,6 +93,7 @@ export function ingredientChanges(
 ): IngredientChange[] {
   const byIng = new Map<number, PriceHistoryRow[]>();
   for (const h of [...history].sort((a, b) => a.changedAt.localeCompare(b.changedAt))) {
+    if (h.note === COUNT_ITEM_PRICE_NOTE) continue; // Sayıma fiyatıyla eklenen kalemin başlangıç satırı zam tabanı değildir
     const list = byIng.get(h.ingredientId) ?? [];
     list.push(h);
     byIng.set(h.ingredientId, list);

@@ -248,10 +248,10 @@ export function netPackagePrice(typed: number | null, vatRate: number, includesV
 
 /**
  * Yeni kalemin hammaddeler tablosuna yazılacak değerleri. Paket fiyatı yazıldıysa o, yazılmadıysa 0 (zil "Fiyatı
- * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Fiyat geçmişine
- * satır yazılmaz (çekirdek yazmaz): yazılan tahmin başlangıç olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü
- * (price-impact.ts ingredientChanges ilk satırı başlangıç sayar). Kategori ve KDV grubun en sık değerinden, sıra en
- * sonda (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
+ * girilmemiş" der); iki durumda da "Tahmini" ve elle fiyatlı açılır, yönetici ya da ilk fatura doğrular. Yazılan fiyat
+ * fiyat geçmişinin başlangıcıdır (countItemPriceRow; zam uyarısı onu taban saymaz); yöneticinin düzeltmesi kalem
+ * Tahmini iken onun yerine geçer (correctsCountItemStart). Kategori ve KDV grubun en sık değerinden, sıra en sonda
+ * (sayım listesinde grubunun sonuna düşer), listeye `from` ayından itibaren girer.
  */
 export function newCountItemValues(
   draft: CountItemDraft,
@@ -279,6 +279,47 @@ export function newCountItemValues(
     sortOrder: nextSortOrder(rows),
     active: true,
   };
+}
+
+/**
+ * Listeye fiyatıyla eklenen kalemin fiyat geçmişindeki başlangıç satırının notu. Zam uyarısı bu satırı taban saymaz
+ * (price-impact.ts ingredientChanges): yazılan tahmin taban olsaydı ilk gerçek fiyat zam ya da indirim gibi görünürdü.
+ * Sekiz kalemin migration'ındaki satırlardan ("Sayım listesine eklendi (tahmini fiyat)") ayrı: onlar taban kalır.
+ */
+export const COUNT_ITEM_PRICE_NOTE = "Sayım listesine eklenirken yazılan fiyat (tahmini)";
+
+/**
+ * Kalem fiyatıyla açılınca fiyat geçmişine yazılacak başlangıç satırı; fiyat yazılmadıysa (0) null. Geçmişi olmayan
+ * kalemin kapanmış ayları ilk geçmiş satırının fiyatıyla değerlenir (engine.ts unitCostAtMonthEnd): satır olmasa
+ * sonraki ilk zam (fatura, elle) kapanmış ayın devreden malını ve kârını değiştirirdi. Fiyatsız kalemin ilk gerçek
+ * fiyatı önceki ayları da değerler.
+ */
+export function countItemPriceRow(ingredientId: number, values: { packagePrice: number; packageSize: number }, changedBy: string) {
+  if (!(values.packagePrice > 0)) return null;
+  return { ingredientId, packagePrice: values.packagePrice, packageSize: values.packageSize, changedBy, note: COUNT_ITEM_PRICE_NOTE };
+}
+
+/**
+ * Yöneticinin düzelttiği başlangıç satırının notu. Düzeltilen fiyat doğrulanmış fiyattır: zam uyarısının tabanı olur
+ * (COUNT_ITEM_PRICE_NOTE gibi atlanmaz), sonraki zam görünür.
+ */
+export const COUNT_ITEM_PRICE_FIXED_NOTE = "Sayım listesine eklenirken yazılan fiyat (düzeltildi)";
+
+/**
+ * Hammaddeler'de girilen fiyat (ya da paket içeriği) başlangıç satırını düzeltir mi: kalem hâlâ "Tahmini" ve fiyat
+ * geçmişinde yalnız başlangıç satırı var (yazılan tahmin ya da onun düzeltmesi). Öyleyse yeni satır açılmaz, başlangıç
+ * satırı yerinde düzelir (anı kalır): kalemin eklendiği kapanmış ay da düzeltilen fiyatla değerlenir (engine.ts
+ * unitCostAtMonthEnd ilk satırdan önceki ayları ilk satırla değerler); yeni satır olsaydı o ay hep tahminde kalırdı.
+ * Doğrulanmış kalemde ya da geçmişinde başka satır varken yeni satır (zam: kapanmış aya dokunmaz). Paraşüt faturası
+ * bu yoldan geçmez: tarihli fiyattır, hep yeni satır.
+ */
+export function correctsCountItemStart(isEstimate: boolean, history: readonly { note: string | null }[]): boolean {
+  return isEstimate && history.length === 1 && (history[0].note === COUNT_ITEM_PRICE_NOTE || history[0].note === COUNT_ITEM_PRICE_FIXED_NOTE);
+}
+
+/** Düzeltilen başlangıç satırının yeni değerleri (anı kalır) */
+export function correctedCountItemStart(values: { packagePrice: number; packageSize: number }, changedBy: string) {
+  return { packagePrice: values.packagePrice, packageSize: values.packageSize, changedBy, note: COUNT_ITEM_PRICE_FIXED_NOTE };
 }
 
 /**

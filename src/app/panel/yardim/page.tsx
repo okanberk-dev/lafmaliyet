@@ -738,7 +738,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
           <>
             <Path href="/panel/karaoke" /> ekranı yeni rezervasyon ve siparişleri laffogato.net&apos;ten alır. Site ulaşılamazsa sarı satırda son başarılı
             kontrolün saati yazar; ekran açık kaldıkça panel kendisi yeniden dener (karaokede iki dakikada, siparişlerde dakikada bir), o arada
-            yenileri sitenin panelinde de kontrol edin. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
+            yenileri sitenin panelinde de kontrol edin. Personel bu satırda hatanın ayrıntısı yerine size haber vermesini söyleyen kısa sözü görür. Barın tabletinde ekrandaki Bu cihazda uyarılar kartından bildirimlere izin verin: yeni rezervasyon
             ve sipariş anında gelir, ekran panelin veritabanını daha seyrek sorar (ücretsiz planın aylık süresi bitmesin).
           </>
         ),

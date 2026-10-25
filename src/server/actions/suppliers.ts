@@ -386,7 +386,20 @@ export async function importSupplierHistory(input: z.input<typeof targetSchema> 
     }
     await logActivity(me, "Tedarikçinin geçmiş faturaları alındı", [r.summary, added.length ? `diğer adlara eklendi: ${added.join(", ")}` : null].filter(Boolean).join(" · "));
     refresh();
-    return { needs: null, fetched: r.fetched, created: r.created, updated: r.updated, removed: r.removed, oldest: r.oldest, partial: r.partial, resumed: r.resumed, added, elsewhere };
+    return {
+      needs: null,
+      fetched: r.fetched,
+      created: r.created,
+      updated: r.updated,
+      removed: r.removed,
+      oldest: r.oldest,
+      partial: r.partial,
+      deferred: r.deferred,
+      held: r.held,
+      resumed: r.resumed,
+      added,
+      elsewhere,
+    };
   });
 }
 

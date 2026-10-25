@@ -79,6 +79,7 @@ import {
   dueWhen,
   formatIban,
   formatPhone,
+  historyNotice,
   mailtoHref,
   methodLabel,
   missingInfo,
@@ -707,21 +708,8 @@ export function SupplierClient({
         return;
       }
       const d = r.data;
-      const parts = [
-        d.oldest ? `En eski fatura ${dateTR(d.oldest)}.` : null,
-        d.removed ? `${num(d.removed)} fatura Paraşüt'te iptal edildiği için kaldırıldı.` : null,
-        d.added.length ? `Paraşüt'teki adı (${d.added.join(", ")}) diğer adlara eklendi.` : null,
-        d.elsewhere.length ? `“${d.elsewhere.join("”, “")}” adıyla gelenler başka bir tedarikçide görünür; aynı firmaysa Düzenle'den diğer adlara ekleyin.` : null,
-        d.partial ? "Süre doldu: kalanı için düğmeye yeniden basın." : null,
-      ].filter(Boolean);
-      const title = d.created
-        ? `${num(d.created)} eski fatura eklendi`
-        : d.partial
-          ? "Okuma sürüyor"
-          : d.fetched || d.resumed
-            ? "Yeni fatura yok: hepsi zaten panelde"
-            : "Paraşüt'te bu tedarikçinin faturası yok";
-      toast.success(title, { id: toastId, description: [`Paraşüt'te ${num(d.fetched)} fatura okundu.`, ...parts].join(" "), duration: d.partial || d.elsewhere.length ? 15000 : 8000 });
+      const n = historyNotice(r.data);
+      toast.success(n.title, { id: toastId, description: n.description, duration: n.long ? 15000 : 8000 });
       if (d.created && status !== "tumu" && window.location.pathname === path) setStatus("tumu");
     } catch (e) {
       toastUnreachable(e, toastId);

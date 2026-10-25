@@ -10,11 +10,12 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import type { Role } from "@/lib/constants";
+import { hiddenTabNote } from "@/lib/live-poll";
 import { sendTestPush, setPushTopics } from "@/server/actions/push";
 
 import { OutputPicker } from "./output-picker";
 import { updatePrefs, usePrefs, WARN_CHOICES } from "./prefs";
-import { currentEndpoint, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
+import { currentEndpoint, noteDeviceTopics, pushSupport, subscribeDevice, unsubscribeDevice, type PushSupport } from "./push-client";
 import { play, unlockAudio, useAudioState } from "./sounds";
 import { useLive } from "./store";
 
@@ -77,7 +78,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
     const next = { karaoke: topics?.karaoke ?? true, reminders: topics?.reminders ?? true, orders: topics?.orders ?? role === "staff", [key]: value };
     setTopics(next);
     const res = await setPushTopics(endpoint, next);
-    if (!res.ok) toast.error(res.error);
+    if (res.ok) noteDeviceTopics(next);
+    else toast.error(res.error);
   }
 
   async function test() {
@@ -89,6 +91,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
   }
 
   const subscribed = support === "granted" && Boolean(endpoint);
+  // Bildirim yokken arka plandaki sekmenin ne yaptığı (karaoke sayfasında; bu cihazın zil tercihlerine göre)
+  const note = karaoke ? hiddenTabNote(prefs) : null;
   const status =
     support === "unsupported"
       ? { tone: "gray" as const, text: "Desteklenmiyor" }
@@ -118,19 +122,26 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
         {support === "unsupported" ? (
           <p className="rounded-2xl bg-surface px-4 py-3 text-[13px] leading-5 text-ink-mute ring-1 ring-line">
             Bu tarayıcı bildirim desteklemiyor. Bilgisayarda Chrome ya da Edge kullanın; iPhone&apos;da paneli Paylaş › Ana Ekrana Ekle ile uygulama gibi açınca
-            bildirim gelir. Sekme açıkken sesli uyarılar yine çalışır.
+            bildirim gelir. Sekme açıkken sesli uyarılar yine çalışır.{note ? ` ${note}` : null}
           </p>
         ) : support === "denied" ? (
           <p className="rounded-2xl bg-bad-soft px-4 py-3 text-[13px] leading-5 text-bad">
             Bildirim izni kapalı. Adres çubuğundaki site ayarları simgesinden (kilit) Bildirimler&apos;i “İzin ver” yapın, sonra sayfayı yenileyin.
+            {note ? ` ${note}` : null}
           </p>
         ) : !subscribed ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
-            <BellRing size={18} className="shrink-0 text-ink-mute" aria-hidden="true" />
-            <p className="min-w-0 flex-1 text-[13px] leading-5 text-ink-soft">Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.</p>
-            <Button onClick={() => void enable()} disabled={busy || !publicKey}>
-              {busy ? "Açılıyor…" : "Bildirimleri aç"}
-            </Button>
+          // Metin dar sütuna sıkışmasın: kart darsa (telefon, karaoke ekranının yan sütunu) düğme alt satıra iner, not ayrı
+          <div className="rounded-2xl bg-surface px-4 py-3 ring-1 ring-line">
+            <div className="flex flex-wrap items-center gap-3">
+              <BellRing size={18} className="shrink-0 text-ink-mute" aria-hidden="true" />
+              <p className="min-w-0 flex-1 basis-40 text-[13px] leading-5 text-ink-soft">
+                Sekme kapalı ya da küçültülmüşken de bildirim gelsin; yeni rezervasyon bildirimi siz kapatana kadar ekranda kalır.
+              </p>
+              <Button onClick={() => void enable()} disabled={busy || !publicKey}>
+                {busy ? "Açılıyor…" : "Bildirimleri aç"}
+              </Button>
+            </div>
+            {note ? <p className="mt-2 text-[13px] leading-5 text-ink-mute">{note}</p> : null}
           </div>
         ) : (
           <>

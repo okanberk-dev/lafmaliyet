@@ -7,7 +7,7 @@ altında, Stok sayımı'ndan sonra.
 Haftada bir 10–15 kritik kalem (süt, espresso çekirdeği, krema, bardak…) telefondan sayılır; panel her tedarikçi için
 ne kadar sipariş edileceğini hazırlar, yönetici tek dokunuşla WhatsApp'tan gönderir. Paraşüt faturası gelince sipariş
 kalem kalem karşılaştırılır: tutuyorsa kendiliğinden kapanır, tutmuyorsa fark Gönderilenler'de, zilde ve Bugün'de
-görünür.
+görünür (sipariş kapanana kadar).
 
 **Adlar.** Yalın "sipariş" laffogato.net'in uygulama siparişidir (bar ekranı, [SITE-SIPARIS.md](SITE-SIPARIS.md)). Bu
 özellik arayüzde **Mal siparişi**, kodda `reorder`.
@@ -19,8 +19,10 @@ görünür.
    süresi varsayılanla gelir (§4); hedef stok satışlardan önerilir, istenirse elle yazılır.
 2. **Sayım günü** (varsayılan Pazartesi): Bugün'de iki rolde "Haftalık hızlı sayım" satırı çıkar, "Sabah özeti"
    bildirimi açık telefonlara bildirim gider. Personel ya da yönetici **Hızlı sayım**'da miktarları sayım biriminde
-   (KG, LT, ADET, DİLİM; yarım = 0,5) yazar. Ekranın başındaki **Gelen mal var mı?** yoldaki siparişleri gösterir:
-   sayımdan önce gelene **Geldi** denir, yoksa o mal sipariş listesinde ikinci kez sayılır.
+   (KG, LT, ADET, DİLİM; yarım = 0,5) yazar. Ekranın başındaki **Gelen mal var mı?** yoldaki siparişleri gösterir
+   (Geldi denmemiş, faturası bağlanmamış; beklenen günü henüz gelmemiş olanlar da, satırda "27.10.2026 bekleniyor"
+   yazar: erken gelen mal geldiği gün işaretlenir): sayımdan önce gelene **Geldi** denir, yoksa o mal sipariş
+   listesinde ikinci kez sayılır.
 3. **Mal siparişi** (yönetici): tedarikçi tedarikçi öneri listesi. Miktar − / + ile ya da dokunup yazılarak değişir;
    **WhatsApp ile gönder** penceresi mesajı gösterir, isteğe bağlı not eklenir, **WhatsApp'ta aç** sohbeti açar ve
    siparişi kaydeder.
@@ -41,9 +43,9 @@ Bütün miktarlar malzemenin kendi biriminde (gr, ml, adet, dilim); sayım birim
 | **Teslim süresi** | Kalemde yazılan; yoksa aynı tedarikçinin takipteki kalemlerinde en çok yazılan (eşitlikte uzun olan); yoksa Ayarlar'daki (varsayılan 2 gün) |
 | **En az** | günlük × teslim × (1 + pay). Eldeki bunun altındaysa satır **Az kaldı**: şimdi verilen sipariş gelmeden bitebilir |
 | **Hedef** | Elle yazılan; yoksa günlük × (teslim + sayım aralığı) × (1 + pay), sayım biriminde yukarı yuvarlı (KG ve LT 0,5'e, ADET ve DİLİM tama). Pay varsayılan %20. Satış verisi yoksa ya da kalem reçetede geçmiyorsa **Hedef yok**: elle yazılır |
-| **Eldeki** | En yeni sayım: hızlı sayım ya da bu / geçen ayın Stok sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Sayıldığı andaki sayım birimi çarpanıyla |
-| **Siparişte** | İptal edilmemiş, son 14 günde gönderilmiş ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra geldi (Geldi işareti ya da eşleşen faturanın günü). Kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır |
-| **Geldi'nin anı** | Dokunuş anı; ama siparişin kalemleri gönderildikten sonra sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa sayımın hemen öncesi: sayımdan sonra işaretlenen (Hızlı sayım'da Kaydet'ten sonra, Yoldaki siparişler'den, unutulup sonradan) mal büyük olasılıkla sayıldı, siparişte ikinci kez sayılmaz. Sayımın gününden sonra beklenen ya da sayımdan sonra gönderilen siparişte dokunuş anı (mal sayımdan sonra geldi, siparişte sayılır). Gecikip sayımdan sonra gelen mal bir sonraki sayıma kadar eksik sayılabilir |
+| **Eldeki** | En yeni sayım: hızlı sayım ya da bu / geçen ayın Stok sayımı (hangisi yeniyse; ay sonu sayımı da listeyi tazeler). Ay sonu sayımı ayın son günü kapanıştan sonra yapılır: ertesi gün ya da günler sonra girilse, sonradan düzeltilse de ayın son gününün sayımıdır (en geç ertesi ayın 1'i 05:00). Arada yapılan hızlı sayım onu geçer, arada gelen mal siparişte kalır. Sayıldığı andaki sayım birimi çarpanıyla |
+| **Siparişte** | İptal edilmemiş, son 14 günde gönderilmiş (gelmişse son 14 günde gelmiş) ya da beklenen günü dünden eski olmayan (teslim süresi uzun sipariş gelene kadar) ve sayıma girmemiş siparişlerin bu kalemi. Sayıma girmemiş: hiç gelmedi ya da sayımdan sonra geldi (Geldi işareti ya da eşleşen faturanın günü); sayımdan sonra gelen mal, teslim süresi uzun olsa da, sıradaki sayıma kadar siparişte kalır. Kapatılan ama Geldi denmemiş sipariş kapandığı anda gelmiş sayılır |
+| **Geldi'nin anı** | Dokunuş anı; ama siparişin kalemleri gönderildikten sonra sayıldıysa ve sipariş o sayımın gününe kadar bekleniyorduysa sayımın hemen öncesi: sayımdan sonra işaretlenen (Hızlı sayım'da Kaydet'ten sonra, Yoldaki siparişler'den, unutulup sonradan) mal büyük olasılıkla sayıldı, siparişte ikinci kez sayılmaz. Sayımın gününden sonra beklenen ya da sayımdan sonra gönderilen siparişte dokunuş anı (mal sayımdan sonra geldi, siparişte sayılır). Gecikip sayımdan sonra gelen mal bir sonraki sayıma kadar eksik sayılabilir. Ay sonu sayımı geç girildiyse, girilmeden önce denen Geldi de aynı kuralla okunur: sayımdan önce gönderilip ayın son gününe kadar beklenen mal sayımdadır, siparişte sayılmaz (Geldi önce de sonra da dense sonuç aynı) |
 | **Gereken** | hedef − eldeki − siparişte |
 | **Önerilen** | gereken ÷ sipariş biriminin içeriği; küsur en az dörtte birse bir birim daha (5.000'lik bardak kolisi ancak gerçekten gerekince). Az kaldı ve gereken varken 0 çıktıysa 1. Gereken yoksa 0 |
 | **Sayım eski** | Son sayım 4 günden eskiyse satır "Sayım eski" der; öneri yine hesaplanır, ekranın başı sayım ister |
@@ -67,7 +69,8 @@ hesaplanır; ekranlar değişmez.
   daha kısa bir aralığa yeter, hedefler küçülür.
 - Gün 05:00'te döner (kasa raporu gibi): gece 01:00'de girilen sayım önceki günün sayımıdır.
 - **Ayın son günü hızlı sayım istenmez**: o gün ay sonu Stok sayımı yapılır ve eldeki olarak okunur. Bugün satırı ve
-  bildirim çıkmaz.
+  bildirim çıkmaz. Ay sonu sayımı geç girilse de o günün sayımıdır: girildiği gün Bugün'de "sayıldı" saymaz; "Gecikti"
+  ve "Sayım eski" ayın son gününden sayılır.
 - **Gecikti:** son sayım sayım aralığı + 1 günden eskiyse (haftada birde 8 gün) Bugün satırı her gün "Gecikti" der.
 - **Bildirim:** sayım günü sabah işinde (08:00–09:00), takipte kalem varsa ve hepsi sayılmadıysa "Sabah özeti" açık
   cihazlara "Bugün hızlı sayım günü" bildirimi gider (`src/server/notify/reorder-push.ts`; `job_runs` adımı `count`,
@@ -126,9 +129,9 @@ Teşekkürler.
 
 Kapanan sipariş 30 gün içinde **Yeniden aç**ılabilir; karşılaştırma hemen yenilenir ve sonraki eşitlemelerde de
 güncellenir, ama yeniden açılan sipariş hiçbir zaman kendiliğinden kapanmaz (ne "Faturayla tuttu" ne 45 gün): sahibi
-açtı, sahibi **Kapat** der (kapanış anı saklı kalır; `wasReopened`). Gönderilenler son 90 günü
-gösterir; süzgeçler Açık · Fark var · Kapanan · Tümü ve tedarikçi (kartındaki **Bu tedarikçinin siparişleri**, adres
-`?tedarikci=<tedarikçi sayfasının adresi>`).
+açtı, sahibi **Kapat** der (kapanış anı saklı kalır; `wasReopened`). Gönderilenler son 90 günü ve kapanmamış bütün
+siparişleri gösterir; süzgeçler Açık · Fark var · Kapanan · Tümü ve tedarikçi (kartındaki **Bu tedarikçinin
+siparişleri**, adres `?tedarikci=<tedarikçi sayfasının adresi>`).
 
 ## 7. Teslim kontrolü (faturayla karşılaştırma)
 
@@ -175,7 +178,7 @@ Eşitlemenin özeti "3 mal siparişi faturayla karşılaştırıldı · 2 kendil
 | Yer | Ne |
 |-----|----|
 | **Bugün** | `hizli-sayim` (iki rol): sayım günü "Bugün", yarım kaldıysa "5 / 14", gecikmişse "Gecikti"; hepsi sayılınca tamamlandı. `mal-siparisi` (yönetici), ilk uyan: teslim farkı (sorun), sipariş hazır (son sayım bugün ya da dün ve siparişi gönderilmemiş öneri var), beklenen günde gelmeyen ([BUGUN.md](BUGUN.md)) |
-| **Zil** (yönetici, Faturalar) | "Teslim kontrolü: Sütaş" (fark değişince yeniden okunmamış olur) ve "Mal siparişi gelmedi mi: Kaldi" (beklenen günden 2 gün sonra hâlâ gelmediyse); en çok 5 ([BILDIRIMLER.md](BILDIRIMLER.md)) |
+| **Zil** (yönetici, Faturalar) | "Teslim kontrolü: Sütaş" (fark değişince yeniden okunmamış olur) ve "Mal siparişi gelmedi mi: Kaldi" (beklenen günden 2 gün sonra hâlâ gelmediyse); açık sipariş kapanana kadar (yaşı ne olursa olsun); en çok 5 ([BILDIRIMLER.md](BILDIRIMLER.md)) |
 | **Telefon bildirimi** | Sayım günü sabahı (§3) |
 | **Paraşüt eşitlemesi** | Özetteki karşılaştırma satırı ([PARASUT.md](PARASUT.md)) |
 

@@ -264,8 +264,15 @@
     {
       "idx": 37,
       "version": "7",
-      "when": 1792902570556,
-      "tag": "0037_cari_hareket",
+      "when": 1792844684237,
+      "tag": "0037_sayim_kalemi_fiyat_baslangici",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792912447408,
+      "tag": "0038_cari_hareket",
       "breakpoints": true
     }
   ]

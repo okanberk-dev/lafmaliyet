@@ -110,7 +110,7 @@ export interface CommissionInput {
   through: string;
   /** Hakediş takibinin başladığı gün; öncesindeki son günler "takip öncesi" kalır, hiç alarm vermez */
   since: string;
-  /** Pencerenin ilk ayı (ekranda 13 ay, zilde ve e-postada 4 ay) */
+  /** Pencerenin ilk ayı (`reportWindow`: 13 ay; ekran, zil, Bugün ve sabah e-postası aynı) */
   fromMonth: string;
   invoices: CommissionInvoiceIn[];
   till: TillDayIn[];
@@ -273,12 +273,27 @@ export const INVOICE_GRACE_DAY = 15;
 export const MEAL_PREVIOUS_MONTH_DAYS = 5;
 /** Bekleyen hakedişler kartı: son günü bu kadar gün içinde olanlar da */
 export const PENDING_SOON_DAYS = 7;
+/**
+ * Raporun penceresi, bu ay dahil: ekran, zil, Bugün ve sabah e-postası aynı ayları okur. Geciken hakediş işaretlenene
+ * kadar gecikmiştir; zil, Bugün ve e-posta daha kısa bir pencere okursa satış ayı pencereden çıkınca (ay dönünce) uyarı
+ * düşer, ödeme süresi 90 gün olan platformda hiç gelmezdi. Pencereden çıkan ay ekranda da yoktur.
+ */
+export const REPORT_MONTHS = 13;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const monthName = (month: string) => MONTH_NAMES[Number(month.slice(5, 7)) - 1];
 const overLimit = (rate: number | null) => rate !== null && rate > MEAL_LIMIT + LIMIT_TOLERANCE;
 /** Satışı bilinmeyen ayın her nedeninin sonu: kanalın kendi ekranındaki satış yazılınca oran çıkar */
 const TYPE_HINT = " Kanalın ekstresindeki satışı yazarsanız oran hesaplanır.";
+
+/**
+ * Pencerenin ilk ayı ve ilk günü (src/server/data/commission.ts loadCommissionInput): komisyon faturaları ve kasa
+ * raporları `fromDay`'den, hakediş işaretleri `fromMonth`'tan okunur
+ */
+export function reportWindow(today: string): { fromMonth: string; fromDay: string } {
+  const fromMonth = shiftMonth(today.slice(0, 7), -(REPORT_MONTHS - 1));
+  return { fromMonth, fromDay: `${fromMonth}-01` };
+}
 
 /** [from, to] ayları */
 export function monthRange(from: string, to: string): string[] {

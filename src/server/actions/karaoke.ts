@@ -207,10 +207,11 @@ export async function deleteKaraokeTimer(id: number) {
 /** "Şimdi eşitle": siteden hemen çeker */
 export async function syncKaraokeNow() {
   return attempt(async () => {
-    await requireUser();
+    const me = await requireUser();
     const r = await syncKaraoke("manual");
-    if (r.status === "off") throw new UserError("laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)");
-    if (r.status === "error") throw new UserError(r.error);
+    // Kurulum ayrıntısı (anahtar adı, imza, sitenin sürümü) yalnız yöneticiye; personel Eşitle'de kısa söz görür
+    if (r.status === "off") throw new UserError(me.role === "admin" ? "laffogato.net bağlantısı kurulmamış (KARAOKE_SYNC_SECRET)" : "laffogato.net bağlantısı kurulmamış; yönetici Ayarlar'dan bakabilir");
+    if (r.status === "error") throw new UserError(me.role === "admin" ? r.error : "laffogato.net'e ulaşılamadı; sorun sürerse yöneticiye haber verin.");
     refresh();
     return r;
   });
