@@ -100,17 +100,23 @@ interface Context {
   record: SoldOutRecord;
 }
 
-async function context(me: Actor, id: string, now: Date): Promise<Context> {
-  const [snapshot, record] = await Promise.all([readSiteSnapshot(), readMarkers()]);
+async function context(id: string): Promise<Context> {
+  // Önce kayıt, sonra kopya (ikisi aynı işlemde yazılır): öteki baristanın yazımı arada biterse kopya onu gösterir ve
+  // "zaten tükendi" denir; kayıt yeni, kopya eski kalıp "Az önce değişti" denmez
+  const record = await readMarkers();
+  const snapshot = await readSiteSnapshot();
   const snap = snapshot.items.find((i) => i.id === id);
   const rows = await itemRows(id, snap);
   if (!snap || !rows.length) throw new UserError(SOLD_OUT_TEXT.missing);
-  if (me.role !== "admin") {
-    const refusal = toggleRefusal({ calls: await recentCalls(me.id, now), lastAt: record.toggles[id], now: now.getTime() });
-    if (refusal) throw new UserError(refusal);
-  }
   const name = rows.find((r) => r.active)?.name ?? rows[0].name;
   return { id, name, rows, snap, snapshotItems: snapshot.items, record };
+}
+
+/** Personelin hız sınırı; yalnız siteye gidecek bir işlemden önce ("zaten tükendi" gibi yanıtlar sayılmaz) */
+async function assertPace(me: Actor, c: Context, now: Date): Promise<void> {
+  if (me.role === "admin") return;
+  const refusal = toggleRefusal({ calls: await recentCalls(me.id, now), lastAt: c.record.toggles[c.id], now: now.getTime() });
+  if (refusal) throw new UserError(refusal);
 }
 
 /**
@@ -167,7 +173,7 @@ async function closeOnSite(me: Actor, c: Context, now: Date, marker: boolean): P
 export async function setSoldOutCore(me: Actor, input: { siteMenuId: string; soldOut: boolean }, now: Date = new Date()): Promise<SoldOutResult> {
   const secret = siteLinkSecret();
   if (!secret) throw new UserError(SOLD_OUT_TEXT.off);
-  const c = await context(me, input.siteMenuId, now);
+  const c = await context(input.siteMenuId);
   const where = "laffogato.net, uygulama ve QR menü";
   if (input.soldOut) {
     // Kopyada zaten kapalı: siteye gidilmez (kartla kapatıldıysa "zaten tükendi", değilse yönetici açar)
@@ -175,6 +181,7 @@ export async function setSoldOutCore(me: Actor, input: { siteMenuId: string; sol
       const card = c.record.items[c.id]?.siteUpdatedAt === c.snap.updatedAt;
       return { changed: false, name: c.name, message: card ? `${c.name} zaten tükendi` : `${c.name} zaten tükendi (sitede kapatılmış; yönetici açar)` };
     }
+    await assertPace(me, c, now);
     const r = await closeOnSite(me, c, now, true);
     if (r.written || r.capHit) await logActivity(me, SOLD_OUT_ACTIONS.close, `${c.name}${sizesText(c.rows)} · ${where}${r.capHit ? " (Tükenenler listesi dolu)" : ""}`);
     if (r.written) return { changed: true, name: c.name, message: `${c.name} tükendi` };
@@ -184,6 +191,7 @@ export async function setSoldOutCore(me: Actor, input: { siteMenuId: string; sol
   }
 
   // Satışa aç: sitenin canlı listesi (kopya eski olabilir; sahibin sitede yaptığı değişiklik damgayı değiştirir)
+  await assertPace(me, c, now);
   let live: SiteMenuItem | undefined;
   try {
     live = (await fetchSiteMenu(secret)).items.find((i) => i.id === c.id);
@@ -229,7 +237,7 @@ export async function setSoldOutCore(me: Actor, input: { siteMenuId: string; sol
  */
 export async function holdSoldOutCore(me: Actor, input: { siteMenuId: string }, now: Date = new Date()): Promise<SoldOutResult> {
   if (!siteLinkSecret()) throw new UserError(SOLD_OUT_TEXT.off);
-  const c = await context(me, input.siteMenuId, now);
+  const c = await context(input.siteMenuId);
   if (c.snap.isActive) {
     await closeOnSite(me, c, now, false);
   } else {

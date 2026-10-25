@@ -50,10 +50,14 @@ kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklem
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
-fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Personelin tükendi yaptığı ürünlerin
-satırı (dalga 10 §2.1) dalga 10'un kalanıyla gelir, henüz yok. Zilin
+fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Yöneticinin **Uyarılar** başlığında
+personelin bar ekranında tükendi yaptığı ve hâlâ satışta olmayan ürünler: "Tükendi: Tiramisu, Cheesecake" (en çok 3
+ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada ve QR menüde satışta değil.", bar
+ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
+kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış yapar, ürün satışa açılınca satır kalkar;
+push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, zayi istekleri; Tükendi ve mal siparişi taslağı dalga 10'un kalanıyla) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri, Tükendi; mal siparişi taslağı dalga 10'un kalanıyla) `src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
@@ -127,12 +131,12 @@ e-postası**, bildirim adreslerine gider. İçinde:
 - **onay bekleyenler** (kontrol listelerinden sonra): personelin onay bekleyen istekleri, "2 istek onay bekliyor" ve en
   eskisinin ne zamandan beri beklediği, istek başına yalnız başlık ve isteyenin adı ("22 Ekim kasa düzeltmesi
   (Mehmet)", "Latte M ×2 · 15 Eki (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
-  listelenir. Kutunun sonunda operasyonun bilgi satırlarına yer ayrılmış (personelin tükendi yaptığı ürünler, dalga 10'un
-  kalanıyla; henüz yok). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
+  listelenir. Kutunun sonunda operasyonun bilgi satırı: "Personelin tükendi yaptığı ürünler: Tiramisu (Selin, 2 gündür)"
+  (yalnız ad, kişi ve süre). Bekleyen istek yokken bu satır kutuyu tek başına "Personelden" başlığıyla açar. Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu ya da onay bekleyen personel isteği yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu onay bekleyen personel isteği ya da personelin tükendi yaptığı ürün yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay

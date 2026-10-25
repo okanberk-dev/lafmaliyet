@@ -102,7 +102,7 @@ export function SoldOutCard({ role, entries, serverNow }: { role: Role; entries:
   }
 
   const button = (
-    <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+    <Button variant="secondary" size="sm" className="pointer-coarse:h-11" onClick={() => setOpen(true)}>
       Tükendi işaretle
     </Button>
   );
@@ -133,11 +133,11 @@ export function SoldOutCard({ role, entries, serverNow }: { role: Role; entries:
                 <p className="truncate text-[13px] text-ink-mute">{soldOutMeta(e, now)}</p>
               </div>
               {admin ? (
-                <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => hold(e)}>
+                <Button variant="ghost" size="sm" className="pointer-coarse:min-h-11" disabled={busy !== null} onClick={() => hold(e)}>
                   Kapalı tut
                 </Button>
               ) : null}
-              <Button variant="secondary" size="sm" disabled={busy !== null || locked.has(e.id)} onClick={() => toggle(e, false)}>
+              <Button variant="secondary" size="sm" className="min-h-11" disabled={busy !== null || locked.has(e.id)} onClick={() => toggle(e, false)}>
                 {busy === e.id ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> : null}
                 Satışa aç
               </Button>
