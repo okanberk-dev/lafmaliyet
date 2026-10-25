@@ -19,7 +19,7 @@ import {
   type UpcomingItem,
 } from "../reminders";
 import { netCredit, type NetItem } from "./account";
-import { EPS } from "./balance";
+import { coveredByAllocations, EPS } from "./balance";
 
 export interface UpcomingCariInput {
   reminders: ReminderRow[];
@@ -75,6 +75,9 @@ export function upcomingWithCari(
   const dates = new Map<string, string>();
   const payables: UpcomingItem[] = [];
   for (const inv of input.invoices) {
+    // Takip öncesi kısım ve panelde sayılanlar tamamen karşılıyorsa (kalan 0) kalem yok; ödendi işareti yeniden
+    // dengelemede yazılır (Genel bakış'ın açık fatura kuralıyla aynı)
+    if (coveredByAllocations({ ...inv, unpaid: true })) continue;
     const item = invoiceItem(inv, today, invoiceDaysBefore, invoiceTermDays);
     if (inv.cardId !== null && inv.cardId !== undefined)
       item.supplierId = inv.cardId;

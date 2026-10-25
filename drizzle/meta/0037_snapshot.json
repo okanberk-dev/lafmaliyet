@@ -1,5 +1,5 @@
 {
-  "id": "cee4aba0-d266-431a-b1f3-6c087bd8c074",
+  "id": "dab47863-1d3d-4b55-aa6d-c72ed503d49c",
   "prevId": "9d6a6958-6df9-4b78-aa90-48549c72093a",
   "version": "7",
   "dialect": "postgresql",
@@ -7200,6 +7200,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "adopt_prev": {
+          "name": "adopt_prev",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "remind_after": {
           "name": "remind_after",
           "type": "text",
@@ -7431,7 +7437,7 @@
         },
         "supplier_entries_gider_ck": {
           "name": "supplier_entries_gider_ck",
-          "value": "\"supplier_entries\".\"cost_mode\" is distinct from 'gider' or \"supplier_entries\".\"category_id\" is not null"
+          "value": "\"supplier_entries\".\"cost_mode\" is distinct from 'gider' or \"supplier_entries\".\"category_id\" is not null or \"supplier_entries\".\"invoice_id\" is not null"
         }
       },
       "isRLSEnabled": false

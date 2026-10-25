@@ -820,3 +820,17 @@ test("Genel bakış: gecikmiş faturasız borç görev satırında iki kez sayı
   );
   assert.equal(paymentFacts(covered.items, { count: 0, total: 0 }, debtFacts([...covered.items, ...covered.later])).debts, undefined);
 });
+
+test("Ödemeler: kalanı 0 olan takipli fatura (tutar takip öncesi kısma indi) listede 0 ₺ kalem olmaz", () => {
+  const up = upcomingWithCari(
+    {
+      reminders: [],
+      invoices: [
+        { id: 7, supplier: "Sütaş", date: "2026-10-18", dueDate: "2026-10-27", payable: 1200, invoiceNo: "SUT140", outstanding: 1800, ledgerBase: 1200, allocated: 0, cardId: 1 },
+        { id: 8, supplier: "Sütaş", date: "2026-10-18", dueDate: "2026-10-27", payable: 1250, invoiceNo: "SUT141", outstanding: null, ledgerBase: 0, allocated: 0, cardId: 1 },
+      ],
+    },
+    "2026-10-25",
+  );
+  assert.deepEqual(up.items.map((i) => [i.sourceId, i.amount]), [[8, 1250]]);
+});

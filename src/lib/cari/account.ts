@@ -31,8 +31,28 @@ export const COST_MODE_LABEL: Record<CostMode, string> = {
 export interface LinkPrev {
   costMode: CostMode;
   categoryId: number | null;
-  /** Bağlarken silinen gider kaydı (gider ve mevcut kipte) */
-  expense?: { categoryId: number; description: string | null; note: string | null; amount: number; date: string } | null;
+  /**
+   * Bağlarken silinen gider kaydı (gider ve mevcut kipte); kimliği, ödeme şekli ve yazanı sonradan eklendi (eski
+   * kayıtta yok)
+   */
+  expense?: {
+    categoryId: number;
+    description: string | null;
+    note: string | null;
+    amount: number;
+    date: string;
+    id?: number;
+    paymentMethod?: "nakit" | "kart" | "havale" | "diger" | null;
+    createdBy?: string | null;
+  } | null;
+}
+
+/** "Gideri zaten girildi": sahiplenilen kaydın sahiplenmeden önceki günü ve tutarı (sahiplik kalkınca geri yazılır) */
+export interface AdoptPrev {
+  /** Aylık harcamalar kaydı */
+  id: number;
+  date: string;
+  amount: number;
 }
 
 export interface CariDebt {

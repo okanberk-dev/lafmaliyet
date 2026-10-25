@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 // Yalnız tip (derlemede silinir): drizzle-kit'in okuduğu şemaya uygulama kodu girmez
-import type { LinkPrev } from "../../lib/cari/account";
+import type { AdoptPrev, LinkPrev } from "../../lib/cari/account";
 import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { SnapshotDetail } from "../../lib/forecast/model";
@@ -449,6 +449,11 @@ export const supplierEntries = pgTable(
     linkedAt: timestamp("linked_at", { withTimezone: true }),
     /** Bağlanmadan önceki hâli: bağ kaldırılınca ya da fatura silinince geri gelir */
     linkPrev: jsonb("link_prev").$type<LinkPrev>(),
+    /**
+     * "Gideri zaten girildi": sahiplenilen Aylık harcamalar kaydının sahiplenmeden önceki günü ve tutarı (kayıt borca
+     * eşitlenir; sahiplik kalkınca bu değerler geri yazılır)
+     */
+    adoptPrev: jsonb("adopt_prev").$type<AdoptPrev>(),
     /** "Faturası 45 gündür gelmedi" uyarısı bu günden sonra (Beklemeye devam) */
     remindAfter: text("remind_after"),
     /** "Ayrı alım" denmiş faturalar: bu borcun faturası değil */
@@ -477,7 +482,9 @@ export const supplierEntries = pgTable(
       sql`(${t.kind} = 'borc' and ${t.costMode} is not null and ${t.method} is null and ${t.cashOutId} is null) or (${t.kind} = 'odeme' and ${t.method} is not null and ${t.costMode} is null and ${t.invoiceId} is null and ${t.dueDate} is null and ${t.categoryId} is null)`,
     ),
     check("supplier_entries_kasa_ck", sql`${t.kind} <> 'odeme' or ((${t.method} = 'kasa') = (${t.cashOutId} is not null))`),
-    check("supplier_entries_gider_ck", sql`${t.costMode} is distinct from 'gider' or ${t.categoryId} is not null`),
+    // Faturaya bağlı borcun gider kaydı silinmiştir (önceki hâli link_prev'de): kategorisi silinebilir, bağ kalkınca
+    // borç "Faturası gelecek" olur
+    check("supplier_entries_gider_ck", sql`${t.costMode} is distinct from 'gider' or ${t.categoryId} is not null or ${t.invoiceId} is not null`),
   ],
 );
 

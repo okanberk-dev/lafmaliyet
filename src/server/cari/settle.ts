@@ -663,7 +663,15 @@ export async function resettleAfterSync(changes: readonly { id: number; from: nu
   const cards = await allocationCards(db, changes.map((c) => c.id));
   for (const c of changes) {
     const cardIds = cards.get(c.id);
-    if (!cardIds?.length) continue;
+    if (!cardIds?.length) {
+      // Dağıtımı olmayan takipli fatura: tutar takip öncesi kısma indiyse (kalan 0) kapanır, ödenmedi görünmesin
+      const settled = await db.transaction(async (tx) => {
+        const [inv] = await lockInvoices(tx, [c.id]);
+        return inv && inv.ledgerBase !== null ? resettle(tx, [c.id]) : null;
+      });
+      if (settled?.closed.length) out.invoices++;
+      continue;
+    }
     const r = await db.transaction(async (tx) => {
       await lockCards(tx, cardIds);
       const trimmed = (await trimToFit(tx, [c.id])).get(c.id) ?? 0;
@@ -792,13 +800,19 @@ export async function dropAllocations(allocationIds: readonly number[], invoiceI
   });
 }
 
-/** Tutarı değişen elle faturanın dağıtımları ve ödendi işareti (Ödenecek arttıysa defterin kapattığı açılır) */
+/**
+ * Tutarı değişen elle faturanın dağıtımları ve ödendi işareti: sığmayan dağıtım en yeniden kırpılıp hesaba geçer,
+ * Ödenecek arttıysa defterin kapattığı fatura açılır, takip öncesi kısım ve dağıtımlar tamamen karşılıyorsa kapanır.
+ * Dağıtımı olmayan takipli fatura da dengelenir (yalnız fatura kilitlenir). Takipsiz faturada iş yok.
+ */
 export async function resettleInvoices(invoiceIds: readonly number[]) {
-  const cards = await allocationCards(getDb(), uniq(invoiceIds));
-  if (!cards.size) return;
+  const ids = uniq(invoiceIds);
+  if (!ids.length) return;
+  const cards = await allocationCards(getDb(), ids);
   await getDb().transaction(async (tx) => {
     await lockCards(tx, [...cards.values()].flat());
-    await recomputeAllocated(tx, cards.keys());
-    await resettle(tx, cards.keys());
+    await trimToFit(tx, cards.keys());
+    await recomputeAllocated(tx, ids);
+    await resettle(tx, ids);
   });
 }

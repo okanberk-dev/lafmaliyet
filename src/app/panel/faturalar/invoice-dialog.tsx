@@ -229,8 +229,11 @@ export function InvoiceDialog({
     if (!res.ok) return toast.error(res.error);
     const shown = locked && invoice ? invoice.payable : payableToSave;
     const withDoc = uploaded?.ok ? " · belge eklendi" : "";
+    // Ödendi yapılan fatura önce tedarikçinin hesabındaki cari ödemesini kullanır (K6): ne kadarı sayıldı söylenir
+    const used = res.data.credit?.used ?? 0;
+    const withCredit = used > 0.005 ? ` · hesaptaki ${tl(used, 2)} sayıldı` : "";
     if (res.data.message) toast.warning("Fatura kaydedildi", { description: res.data.message, duration: 8000 });
-    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withDoc}` });
+    else toast.success(invoice ? "Fatura güncellendi" : "Fatura eklendi", { description: `${f.supplier.trim()} · ${tl(shown, 2)}${withCredit}${withDoc}` });
     if (uploaded) {
       // Kayıt eylemi listeyi yeniledi ama belge ondan sonra eklendi: satırın belge simgesi için bir kez daha
       keepScroll();

@@ -344,10 +344,14 @@ export function InvoicesClient({
         return;
       }
       const changed = targets.filter((i) => ids.includes(i.id));
-      const description =
-        changed.length === 1
-          ? `${splitSupplier(changed[0].supplier).base} · ${tl(changed[0].payable, 2)}`
-          : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`;
+      // Önce hesaptaki cari ödemesi kullanılır (K6): ne kadarının sayıldığı söylenir
+      const used = res.data.credit?.used ?? 0;
+      const description = [
+        changed.length === 1 ? `${splitSupplier(changed[0].supplier).base} · ${tl(changed[0].payable, 2)}` : `${changed.length} fatura · ${tl(changed.reduce((a, i) => a + i.payable, 0), 2)}`,
+        used > 0.005 ? `hesaptaki ${tl(used, 2)} sayıldı` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       toast.success(paid ? "Ödendi olarak işaretlendi" : "Ödenmedi olarak işaretlendi", {
         description,
         action: { label: "Geri al", onClick: () => undoPaid(res.data.previous, !paid) },

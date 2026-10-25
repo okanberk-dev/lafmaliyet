@@ -713,6 +713,8 @@ export async function rewriteAllocation(
   const removed = await deleteAllocations(tx, { paymentId });
   const before = removed.flatMap((a) => (a.invoiceId !== null ? [a.invoiceId] : []));
   await recomputeAllocated(tx, before);
+  // Ödemenin kapattığı faturalar açılır: açık kalemler onların kalanlarıyla okunur (pencerenin seçenekleri gibi)
+  await resettle(tx, before);
   const { items } = await lockAccount(tx, card.id, termDays);
   let lines: AllocationLine[] = [];
   if (allocation.mode === "auto") lines = allocateFifo(items.filter((i) => i.quiet !== "link"), p.amount).lines;

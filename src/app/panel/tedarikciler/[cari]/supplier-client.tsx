@@ -518,6 +518,7 @@ export function SupplierClient({
       apply({ patches: ids.map((id) => [id, patch]) });
       const r = await setInvoicePayment(ids, choice, { onlyOpen, separately: opts.separately });
       if (!r.ok) return void toast.error(r.error);
+      if (!r.data.changed) return void toast.info("Değişiklik yok; ödeme günü ve şekli aynı.");
       const total = rows.reduce((a, x) => a + (x.unpaid ? openBalance(x) : x.payable), 0);
       const what = rows.length === 1 ? `${dateTR(rows[0].date)}${rows[0].invoiceNo ? ` · ${rows[0].invoiceNo}` : ""}` : `${num(rows.length)} fatura`;
       const title =

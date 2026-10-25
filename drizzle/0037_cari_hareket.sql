@@ -25,6 +25,7 @@ CREATE TABLE "supplier_entries" (
 	"invoice_id" integer,
 	"linked_at" timestamp with time zone,
 	"link_prev" jsonb,
+	"adopt_prev" jsonb,
 	"remind_after" text,
 	"dismissed_invoice_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"method" text,
@@ -38,7 +39,7 @@ CREATE TABLE "supplier_entries" (
 	CONSTRAINT "supplier_entries_amount_ck" CHECK ("supplier_entries"."amount" > 0),
 	CONSTRAINT "supplier_entries_kind_ck" CHECK (("supplier_entries"."kind" = 'borc' and "supplier_entries"."cost_mode" is not null and "supplier_entries"."method" is null and "supplier_entries"."cash_out_id" is null) or ("supplier_entries"."kind" = 'odeme' and "supplier_entries"."method" is not null and "supplier_entries"."cost_mode" is null and "supplier_entries"."invoice_id" is null and "supplier_entries"."due_date" is null and "supplier_entries"."category_id" is null)),
 	CONSTRAINT "supplier_entries_kasa_ck" CHECK ("supplier_entries"."kind" <> 'odeme' or (("supplier_entries"."method" = 'kasa') = ("supplier_entries"."cash_out_id" is not null))),
-	CONSTRAINT "supplier_entries_gider_ck" CHECK ("supplier_entries"."cost_mode" is distinct from 'gider' or "supplier_entries"."category_id" is not null)
+	CONSTRAINT "supplier_entries_gider_ck" CHECK ("supplier_entries"."cost_mode" is distinct from 'gider' or "supplier_entries"."category_id" is not null or "supplier_entries"."invoice_id" is not null)
 );
 --> statement-breakpoint
 ALTER TABLE "expense_entries" ADD COLUMN "supplier_entry_id" integer;--> statement-breakpoint
