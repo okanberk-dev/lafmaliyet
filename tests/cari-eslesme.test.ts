@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { CariDebt } from "../src/lib/cari/account";
-import { adoptCandidates, defaultCostMode, expenseDuplicates, kasaMatches, linkCandidates, type ExpenseLite, type KasaLine } from "../src/lib/cari/match";
+import { adoptCandidates, cariAlerts, defaultCostMode, expenseDuplicates, kasaMatches, kasaStoreKeys, linkCandidates, type ExpenseLite, type KasaLine } from "../src/lib/cari/match";
 
 const debt = (p: Partial<CariDebt> & { id: number; date: string; amount: number }): CariDebt => ({ description: null, costMode: "fatura", dueDate: null, invoiceId: null, ...p });
 const inv = (id: number, date: string, payable: number, category = "Hammadde & İçecek") => ({ id, date, payable, category });
@@ -101,4 +101,48 @@ test("varsayılan gider: son 90 günde Paraşüt faturası varsa 'Faturası gele
   assert.equal(defaultCostMode([{ origin: "parasut", date: "2026-07-25" }], today), "gider", "91 gün önce");
   assert.equal(defaultCostMode([{ origin: "manual", date: "2026-10-20" }, { origin: "excel", date: "2026-10-01" }], today), "gider");
   assert.equal(defaultCostMode([], today), "gider");
+});
+
+test("fatura adayı: bir alımın tek güçlü faturası (haftalık aynı tutarlı faturalar susmaz), zayıf yalnız açık faturada ve güçlü adayı olmayan alımda", () => {
+  // 20.10 süt 1.250; haftalık faturalar 28.10, 04.11, 11.11, 25.11 hep 1.250: yalnız gününe en yakını güçlü
+  const d = debt({ id: 1, date: "2026-10-20", amount: 1250 });
+  const weekly = [inv(149, "2026-10-28", 1250), inv(155, "2026-11-04", 1250), inv(161, "2026-11-11", 1250), inv(170, "2026-11-25", 1250)];
+  const r = linkCandidates([d], weekly);
+  assert.deepEqual(r.strong, [{ invoiceId: 149, debtIds: [1], diff: 0 }]);
+  assert.deepEqual(r.weak, [], "güçlü adayı olan alım başka faturanın zayıf adayı olmaz");
+  // Eşit uzaklıkta önce sonra gelen fatura, sonra tutarı yakın olan
+  assert.deepEqual(linkCandidates([d], [inv(9, "2026-10-13", 1250), inv(10, "2026-10-27", 1250)]).strong.map((c) => c.invoiceId), [10]);
+  assert.deepEqual(linkCandidates([d], [inv(9, "2026-10-27", 1260), inv(10, "2026-10-27", 1250)]).strong.map((c) => c.invoiceId), [10]);
+  // İki alım, iki fatura: her alım kendi faturasına
+  const two = linkCandidates([d, debt({ id: 2, date: "2026-11-03", amount: 1250 })], weekly);
+  assert.deepEqual(two.strong.map((c) => [c.invoiceId, c.debtIds]), [[149, [1]], [155, [2]]]);
+  // Toplam (b): başka faturanın güçlü adayı olan borç toplama girmez
+  const sum = linkCandidates([debt({ id: 1, date: "2026-10-01", amount: 500 }), debt({ id: 2, date: "2026-10-08", amount: 700 }), debt({ id: 3, date: "2026-10-15", amount: 500 })], [inv(20, "2026-10-03", 500), inv(21, "2026-10-31", 1200)]);
+  assert.deepEqual(sum.strong.map((c) => [c.invoiceId, c.debtIds]), [[20, [1]], [21, [2, 3]]]);
+  // Zayıf aday ödenmiş faturada çıkmaz
+  const paid = linkCandidates([d], [{ ...inv(140, "2026-10-18", 3000), open: false }, { ...inv(119, "2026-10-14", 7484.34), open: false }]);
+  assert.deepEqual([paid.strong, paid.weak], [[], []]);
+  assert.deepEqual(linkCandidates([d], [{ ...inv(140, "2026-10-18", 3000), open: true }]).weak.map((c) => c.invoiceId), [140]);
+});
+
+test("Kasa satırı: Kime yönelme ekiyle ya da 'tedarikçiye (Sütaş)' biçiminde yazılsa da eşleşir", () => {
+  const opts = { keys: ["sütaş", "ali usta"], handled: new Set<number>(), from: "2026-10-01", to: "2026-10-31", kinds: ["teslim", "harcama"] as const };
+  const lines = [
+    line({ id: 1, date: "2026-10-20", store: "Sütaş'a" }),
+    line({ id: 2, date: "2026-10-20", store: "SÜTAŞ’A" }),
+    line({ id: 3, date: "2026-10-20", store: "tedarikçiye (Sütaş)" }),
+    line({ id: 4, date: "2026-10-20", store: "Ali Usta'ya" }),
+    line({ id: 5, date: "2026-10-20", store: "patrona" }),
+    line({ id: 6, date: "2026-10-20", store: "tedarikçiye" }),
+    line({ id: 7, date: "2026-10-20", store: "Sütaşçı" }),
+  ];
+  assert.deepEqual(kasaMatches(lines, opts).map((l) => l.id), [1, 2, 3, 4]);
+  assert.deepEqual(kasaStoreKeys("tedarikçiye (Sütaş)"), ["tedarikçiye", "sütaş"]);
+});
+
+test("Genel bakış uyarısı: aday fatura sayısı değil alım sayısı", () => {
+  const one = cariAlerts({ late: [], strong: [{ name: "Sütaş", href: null, debtIds: [1] }, { name: "Sütaş", href: null, debtIds: [1] }] });
+  assert.equal(one[0].title, "Faturasız alımın faturası gelmiş olabilir");
+  const two = cariAlerts({ late: [], strong: [{ name: "Sütaş", href: null, debtIds: [1] }, { name: "Pınar", href: null, debtIds: [2, 3] }] });
+  assert.equal(two[0].title, "3 faturasız alımın faturası gelmiş olabilir");
 });

@@ -16,7 +16,7 @@ import {
   type OpenItem,
 } from "@/lib/cari/account";
 import { EPS, round2, type CariMethod } from "@/lib/cari/balance";
-import { linkCandidates } from "@/lib/cari/match";
+import { candidateOf, linkCandidates } from "@/lib/cari/match";
 import { missingPastConfirm, pastMonthEffects, type MonthEffect } from "@/lib/cari/months";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, tl } from "@/lib/format";
@@ -127,7 +127,7 @@ export async function lockAccount(tx: Tx, cardId: number, termDays: number): Pro
   const cariDebts = debts.map(toDebt);
   const { strong } = linkCandidates(
     [...cariDebts, ...others.map(toDebt)],
-    invoices.map((i) => ({ id: i.id, date: i.date, payable: i.payable, category: i.category })),
+    invoices.map(candidateOf),
   );
   const quiet = new Set(strong.map((c) => c.invoiceId));
   const items = openItems({ invoices, debts: cariDebts, allocations }, termDays).map((it) => (it.kind === "invoice" && quiet.has(it.id) ? { ...it, quiet: "link" as const } : it));

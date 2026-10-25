@@ -7,7 +7,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import type { AccountInvoice, CariAllocation, CariDebt, CariPayment } from "@/lib/cari/account";
-import { statementRows, statementText, type StatementRow } from "@/lib/cari/statement";
+import { statementFooter, statementRows, statementText, type ForeignCredit, type StatementRow } from "@/lib/cari/statement";
 import { dateTR, tl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ function rangeFrom(range: Range, today: string): string | null {
 }
 
 /** Bakiyeyi etkilemeyen ya da elle girilmemiş (faturadan çıkan) satırlar gri */
-const IMPLICIT = new Set<StatementRow["kind"]>(["isaretli", "parasut-kismi", "iade-dusuldu"]);
+const IMPLICIT = new Set<StatementRow["kind"]>(["isaretli", "parasut-kismi", "iade-dusuldu", "baska-odeme"]);
 
 export type StatementAction = { type: "debt"; action: "edit" | "delete" | "link" | "unlink"; id: number } | { type: "payment"; action: "edit" | "delete" | "allocate"; id: number };
 
@@ -41,6 +41,7 @@ export function StatementPanel({
   debts,
   payments,
   allocations,
+  foreign,
   onAction,
 }: {
   name: string;
@@ -49,11 +50,13 @@ export function StatementPanel({
   debts: readonly CariDebt[];
   payments: readonly CariPayment[];
   allocations: readonly CariAllocation[];
+  /** Başka kartların ödemelerinden bu tedarikçinin faturalarına sayılanlar */
+  foreign: readonly ForeignCredit[];
   onAction: (a: StatementAction) => void;
 }) {
   const [range, setRange] = useState<Range>("uc-ay");
   const from = rangeFrom(range, today);
-  const st = useMemo(() => statementRows({ invoices, debts, payments, allocations }, { from }), [invoices, debts, payments, allocations, from]);
+  const st = useMemo(() => statementRows({ invoices, debts, payments, allocations, foreign }, { from }), [invoices, debts, payments, allocations, foreign, from]);
   const { copied, copy } = useCopied();
   const rows = st.rows;
   const closing = st.closing;
@@ -204,7 +207,7 @@ export function StatementPanel({
 
       {!st.rows.length ? <p className="border-t border-line px-5 py-6 text-center text-sm text-ink-mute">Bu dönemde hareket yok.</p> : null}
       <p className={cn("border-t border-line px-5 py-3 text-right text-sm font-semibold tabular max-sm:px-4", closing < -0.005 ? "text-good" : "text-ink")}>
-        {closing < -0.005 ? `${tl(-closing, 2)} alacak (hesapta)` : `Bakiye ${tl(closing, 2)} (borcumuz)`}
+        {statementFooter(closing)}
       </p>
     </div>
   );

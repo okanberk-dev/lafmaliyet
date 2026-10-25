@@ -19,8 +19,9 @@ import {
 } from "@/lib/cari/account";
 import type { CariMethod } from "@/lib/cari/balance";
 import { EPS, METHOD_LABEL, round2 } from "@/lib/cari/balance";
+import type { ForeignCredit } from "@/lib/cari/statement";
 import { tl } from "@/lib/format";
-import { KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
+import { candidateOf, KASA_LOOKBACK_DAYS, kasaMatches, linkCandidates, type KasaLine, type LinkCandidate } from "@/lib/cari/match";
 import { addDays, todayTR } from "@/lib/reminders";
 import { loadSupplierRefs, supplierSlugOf } from "@/server/data/suppliers";
 import type { Tx } from "@/server/cari/settle";
@@ -63,6 +64,8 @@ export interface CariIndex {
   credit: Map<number, number>;
   /** Bağsız, kalanı olan borçlar */
   openDebts: (CardDebt & { remaining: number })[];
+  /** Faturası 45 gündür gelmeyen alımlar (ödenmiş olsa da; lateDebts) */
+  lateDebts: CardDebt[];
   /**
    * Faturasız alımın faturası olabilecek faturalar (güçlü: Ödemeler'de sessiz; zayıf: yalnız tedarikçi sayfası) ve
    * alımların günü ile ne alındığı (ödenmiş alım da olabilir: fatura o zaman zaten ödenmiş bir alımın faturasıdır)
@@ -132,7 +135,7 @@ export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<
     const slug = slugs.get(cardId);
     return slug ? supplierHref(slug) : undefined;
   };
-  const out: CariIndex = { resolveCard, termDays, cards: cardMap, tracked, credit, openDebts, strong: [], weak: [], kasaPending: [], hrefOf };
+  const out: CariIndex = { resolveCard, termDays, cards: cardMap, tracked, credit, openDebts, lateDebts: lateDebts(entries.debts, today), strong: [], weak: [], kasaPending: [], hrefOf };
   if (!cards.length) return out;
 
   // Fatura adayları: bağsız borcu olan kartların penceredeki faturaları
@@ -140,12 +143,23 @@ export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<
   if (candidateDebts.length) {
     const from = addDays(candidateDebts.reduce((m, d) => (d.date < m ? d.date : m), candidateDebts[0].date), -7);
     const invoices = await db
-      .select({ id: s.invoices.id, date: s.invoices.date, payable: s.invoices.payable, category: s.invoices.category, supplier: s.invoices.supplier, tax: s.invoices.supplierTaxNumber })
+      .select({
+        id: s.invoices.id,
+        date: s.invoices.date,
+        payable: s.invoices.payable,
+        category: s.invoices.category,
+        supplier: s.invoices.supplier,
+        tax: s.invoices.supplierTaxNumber,
+        unpaid: s.invoices.unpaid,
+        outstanding: s.invoices.outstanding,
+        allocated: s.invoices.allocated,
+        ledgerBase: s.invoices.ledgerBase,
+      })
       .from(s.invoices)
       .where(gte(s.invoices.date, from));
     const linkedDebts = entries.debts.filter((d) => d.invoiceId !== null);
     for (const cardId of new Set(candidateDebts.map((d) => d.supplierId))) {
-      const own = invoices.filter((i) => resolveCard(i.supplier, i.tax) === cardId);
+      const own = invoices.filter((i) => resolveCard(i.supplier, i.tax) === cardId).map(candidateOf);
       const { strong, weak } = linkCandidates([...entries.debts.filter((d) => d.supplierId === cardId), ...linkedDebts.filter((d) => d.supplierId !== cardId)], own);
       const debtsOf = (c: LinkCandidate) =>
         c.debtIds.flatMap((id) => {
@@ -188,6 +202,16 @@ export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<
 /** Faturası 45 gündür gelmeyen alım (§5.2): bağsız "Faturası gelecek" borç bu kadar gün açık kalınca uyarı */
 export const DEBT_INVOICE_WAIT_DAYS = 45;
 
+/**
+ * Faturası 45 gündür gelmeyen alımlar: bağsız "Faturası gelecek" borç, alım günü 45 günden eski, "Beklemeye devam"
+ * süresi dolmuş. Ödeme durumuna bakılmaz (§4.6: ödeme vadesiyle ilgisi yok): teslimde ödenmiş alımın faturası hiç
+ * gelmezse gideri de hiç yazılmaz, uyarı onu söyler.
+ */
+export function lateDebts<D extends Pick<CardDebt, "invoiceId" | "costMode" | "date" | "remindAfter">>(debts: readonly D[], today: string): D[] {
+  const lateFrom = addDays(today, -DEBT_INVOICE_WAIT_DAYS);
+  return debts.filter((d) => d.invoiceId === null && d.costMode === "fatura" && d.date <= lateFrom && (!d.remindAfter || d.remindAfter <= today));
+}
+
 /** Borç penceresinin kategorileri: etkin harcama kategorileri (mal bölümü önce) */
 export interface DebtCategory {
   id: number;
@@ -214,6 +238,8 @@ export interface SupplierCari {
   kasa: (KasaLine & { createdByName: string })[];
   /** Kartın ödemelerinden başka tedarikçide görünen faturalara sayılan (eski veri; "Ödemeden çıkar") */
   foreign: { paymentId: number; allocationIds: number[]; amount: number }[];
+  /** Başka kartların ödemelerinden bu grubun faturalarına sayılanlar (ekstrenin ödeme satırları) */
+  foreignIn: ForeignCredit[];
   /** Borçların gider kayıtları ("gider" ve "mevcut") */
   expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
   categories: DebtCategory[];
@@ -234,7 +260,14 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   const entries = cardId === null ? { debts: [], payments: [], allocations: [] } : await loadCardEntries([cardId]);
   const ids = group.invoices.map((i) => i.id);
   const [onInvoices, categories, otherLinked] = await Promise.all([
-    ids.length ? db.select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount }).from(s.supplierAllocations).where(inArray(s.supplierAllocations.invoiceId, ids)) : [],
+    ids.length
+      ? db
+          .select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount, paymentId: s.supplierAllocations.paymentId, date: s.supplierEntries.date, cardId: s.supplierEntries.supplierId, card: s.suppliers.name })
+          .from(s.supplierAllocations)
+          .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
+          .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
+          .where(inArray(s.supplierAllocations.invoiceId, ids))
+      : [],
     db
       .select({ id: s.expenseCategories.id, name: s.expenseCategories.name, section: s.expenseCategories.section, active: s.expenseCategories.active, sortOrder: s.expenseCategories.sortOrder })
       .from(s.expenseCategories)
@@ -246,17 +279,23 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   const sums = new Map<number, number>();
   for (const a of onInvoices) if (a.invoiceId !== null) sums.set(a.invoiceId, (sums.get(a.invoiceId) ?? 0) + a.amount);
   const drift = group.invoices.filter((i) => Math.abs(round2(sums.get(i.id) ?? 0) - round2(i.allocated ?? 0)) > EPS).map((i) => i.id);
+  // Başka kartların ödemelerinden grubun faturalarına sayılanlar (ekstrede ödeme satırı; yoksa son bakiye Kalan borçtan sapar)
+  const foreignInBy = new Map<string, ForeignCredit>();
+  for (const a of onInvoices) {
+    if (a.invoiceId === null || a.cardId === cardId) continue;
+    const k = `${a.paymentId}:${a.invoiceId}`;
+    const f = foreignInBy.get(k) ?? { invoiceId: a.invoiceId, paymentId: a.paymentId, date: a.date, card: a.card, amount: 0 };
+    f.amount = round2(f.amount + a.amount);
+    foreignInBy.set(k, f);
+  }
 
   const { strong, weak } = entries.debts.length
-    ? linkCandidates([...entries.debts, ...otherLinked.map(toDebt)], group.invoices.map((i) => ({ id: i.id, date: i.date, payable: i.payable, category: i.category })))
+    ? linkCandidates([...entries.debts, ...otherLinked.map(toDebt)], group.invoices.map(candidateOf))
     : { strong: [], weak: [] };
   const quiet = new Set(strong.map((c) => c.invoiceId));
   const account = accountOf({ invoices: group.invoices, debts: entries.debts, payments: entries.payments, allocations: entries.allocations }, { ...opts, quietInvoiceIds: quiet });
 
-  const lateFrom = addDays(opts.today, -DEBT_INVOICE_WAIT_DAYS);
-  const late = entries.debts
-    .filter((d) => d.invoiceId === null && d.costMode === "fatura" && d.date <= lateFrom && (!d.remindAfter || d.remindAfter <= opts.today) && debtRemaining(d, entries.allocations) > EPS)
-    .map((d) => d.id);
+  const late = lateDebts(entries.debts, opts.today).map((d) => d.id);
   // Kart ödemelerinin bu grubun dışındaki faturalara sayılan kısmı
   const own = new Set(ids);
   const foreignBy = new Map<number, { paymentId: number; allocationIds: number[]; amount: number }>();
@@ -313,6 +352,7 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
     late,
     kasa,
     foreign: [...foreignBy.values()],
+    foreignIn: [...foreignInBy.values()],
     expenses,
     categories: shown.map((c) => ({ id: c.id, name: c.name, section: c.section })),
     defaultCategoryId,

@@ -177,10 +177,12 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
     candidates,
     late: data.late.flatMap((id) => {
       const d = debtById.get(id);
-      return d ? [{ id, date: d.date, label: debtLabel(d), amount: remaining(id) }] : [];
+      // Faturası gelmeyen alımın tutarı (ödenmiş olsa da: gideri yazılmadı; §5.2)
+      return d ? [{ id, date: d.date, label: debtLabel(d), amount: d.amount }] : [];
     }),
     kasa: data.kasa,
     foreign: data.foreign,
+    foreignIn: data.foreignIn,
     drift: data.drift.length,
     expenses: data.expenses,
     categories: data.categories,

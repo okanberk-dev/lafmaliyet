@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { accountOf, type AccountInvoice } from "../src/lib/cari/account";
-import { statementRows, statementText } from "../src/lib/cari/statement";
+import { statementFooter, statementRows, statementText } from "../src/lib/cari/statement";
 
 const plain = (s: string) => s.replace(/ /g, " ");
 
@@ -114,7 +114,7 @@ test("Ekstreyi kopyala: başlık, devreden, satırlar, bakiye ve imza", () => {
       "15.09.2026 · İade faturası I2 · −100,00 ₺",
       "01.10.2026 · İade düşüldü · 100,00 ₺",
       "02.10.2026 · Fatura · 400,00 ₺",
-      "02.10.2026 · Ödeme · −400,00 ₺",
+      "02.10.2026 · Ödeme (gün bilinmiyor) · −400,00 ₺",
       "Bakiye: 200,00 ₺ (borcumuz)",
       "L'Affogato",
     ].join("\n"),
@@ -122,4 +122,53 @@ test("Ekstreyi kopyala: başlık, devreden, satırlar, bakiye ve imza", () => {
   const credit = statementRows({ invoices: [], payments: [{ id: 1, date: "2026-10-24", amount: 99.5, method: "kasa", cashOutStore: "Sütaş" }] });
   assert.match(plain(statementText("Sütaş", credit, { from: "2026-10-01", to: "2026-10-30" })), /24\.10\.2026 · Ödeme \(nakit\) · −99,50 ₺\nBakiye: 99,50 ₺ \(alacağımız\)/);
   assert.doesNotMatch(statementText("Sütaş", st, { from: "2026-08-01", to: "2026-10-30" }), /—/, "uzun tire yok");
+});
+
+test("Ekstreyi kopyala: işaretli ödemenin bilinmeyen günü söylenir, faturasız alımın iç notu yazılmaz", () => {
+  const st = statementRows({
+    invoices: [{ id: 21, date: "2026-08-13", invoiceNo: "SUT050", payable: 3742.17, unpaid: false, paidAt: null, paidVia: "havale" }],
+    debts: [
+      { id: 1, date: "2026-10-21", amount: 600, description: "beyaz peynir", costMode: "gider", dueDate: null, invoiceId: null },
+      { id: 2, date: "2026-10-22", amount: 100, description: "kaymak", costMode: "mevcut", dueDate: null, invoiceId: null },
+      { id: 3, date: "2026-10-23", amount: 50, description: "süt", costMode: "fatura", dueDate: null, invoiceId: null },
+    ],
+  });
+  const text = plain(statementText("Sütaş", st, { from: "2026-08-01", to: "2026-10-30" }));
+  assert.match(text, /13\.08\.2026 · Ödeme \(havale, gün bilinmiyor\) · −3\.742,17 ₺/);
+  assert.match(text, /21\.10\.2026 · Faturasız alım · beyaz peynir · 600,00 ₺/);
+  assert.match(text, /22\.10\.2026 · Faturasız alım · kaymak · 100,00 ₺/);
+  assert.doesNotMatch(text, /gider yazıldı|gideri zaten girildi|faturası gelecek/);
+  // Ekranda iç not durur
+  assert.equal(plain(st.rows.find((r) => r.ref.type === "debt" && r.ref.id === 1)!.label), "Faturasız alım · beyaz peynir (gider yazıldı)");
+});
+
+test("grubun faturasına başka kartın ödemesinden sayılan para ekstrede ödeme satırı: son bakiye Kalan borçla aynı", () => {
+  // Sütaş'ın ödemesi Pınar'da görünen PNR1'e (1.250) ve PNR2'ye 600 sayıldı (R3d bağlama)
+  const invoicesP: AccountInvoice[] = [
+    { id: 31, date: "2026-10-20", invoiceNo: "PNR1", payable: 1250, unpaid: false, paidAt: "2026-10-24", paidVia: "havale", ledgerBase: 0, allocated: 1250, paidByLedger: true },
+    { id: 32, date: "2026-10-21", invoiceNo: "PNR2", payable: 1250, unpaid: true, ledgerBase: 0, allocated: 600 },
+  ];
+  const foreign = [
+    { invoiceId: 31, paymentId: 2, date: "2026-10-24", card: "Sütaş", amount: 1250 },
+    { invoiceId: 32, paymentId: 4, date: "2026-10-25", card: "Sütaş", amount: 600 },
+  ];
+  const st = statementRows({ invoices: invoicesP, foreign });
+  const balance = accountOf({ invoices: invoicesP }, { today: "2026-10-30", termDays: 30 }).balance;
+  assert.equal(balance, 650);
+  assert.equal(st.closing, balance);
+  assert.deepEqual(
+    st.rows.filter((r) => r.kind === "baska-odeme").map((r) => [r.date, plain(r.label), r.credit]),
+    [
+      ["2026-10-24", "Sütaş ödemesinden sayılan · PNR1", 1250],
+      ["2026-10-25", "Sütaş ödemesinden sayılan · PNR2", 600],
+    ],
+  );
+  assert.match(plain(statementText("Pınar", st, { from: "2026-10-01", to: "2026-10-30" })), /24\.10\.2026 · Sütaş ödemesinden sayılan · PNR1 · −1\.250,00 ₺[\s\S]*Bakiye: 650,00 ₺ \(borcumuz\)/);
+});
+
+test("ekstrenin alt satırı: bakiye 0'da ek yok, eksi alacak, artı borcumuz", () => {
+  assert.equal(plain(statementFooter(0)), "Bakiye 0,00 ₺");
+  assert.equal(plain(statementFooter(0.004)), "Bakiye 0,00 ₺");
+  assert.equal(plain(statementFooter(1250)), "Bakiye 1.250,00 ₺ (borcumuz)");
+  assert.equal(plain(statementFooter(-99.5)), "99,50 ₺ alacak (hesapta)");
 });

@@ -77,7 +77,7 @@ import { Meter, MoneyFlow, type FlowRow } from "./dashboard-flow";
 import { CountUp } from "./dashboard-number";
 import { DashboardPayments } from "./dashboard-payments";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
-import { monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
+import { debtFacts, monthTaskFacts, monthTasks, paymentFacts, type ParasutFacts } from "./dashboard-tasks";
 import { SystemBanner } from "./system-banner";
 import { menuAverages, productHref } from "./urunler/logic";
 
@@ -252,7 +252,7 @@ async function DashboardContent({ searchParams }: { searchParams: PageProps<"/pa
   // Bu ayın işleri: satış raporu, ay bilgileri, faturalar, su, sayım, ödemeler
   const tasks = monthTasks(
     monthTaskFacts(model, month, d.monthState, d.refMonth, {
-      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), { count: upcoming.cari.debts, total: upcoming.cari.debtTotal }) : null,
+      payments: upcoming ? paymentFacts(upcoming.items, unpaidSummary(model.ds.invoices), debtFacts([...upcoming.items, ...upcoming.laterInvoices])) : null,
       parasut,
     }),
   );

@@ -5,7 +5,7 @@ import { asc, desc, eq, sql } from "drizzle-orm";
 import { groupSuppliers, supplierResolver, type PaymentMethod, type SupplierCard, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { addDays, todayTR } from "@/lib/reminders";
 import { accountOf } from "@/lib/cari/account";
-import { linkCandidates } from "@/lib/cari/match";
+import { candidateOf, linkCandidates } from "@/lib/cari/match";
 import { getDb, schema as s } from "@/server/db";
 import { loadNotifySettings } from "@/server/notify/settings";
 
@@ -195,7 +195,7 @@ export async function loadSupplierLedger() {
         ? new Set(
             linkCandidates(
               [...mine.debts, ...entries.debts.filter((d) => d.invoiceId !== null && d.supplierId !== g.card!.id)],
-              g.invoices.map((i) => ({ id: i.id, date: i.date, payable: i.payable, category: i.category })),
+              g.invoices.map(candidateOf),
             ).strong.map((c) => c.invoiceId),
           )
         : undefined;

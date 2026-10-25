@@ -14,6 +14,7 @@ import {
   type CariExportRow,
 } from "../src/app/api/export/workbook";
 import {
+  debtFacts,
   monthTaskFacts,
   monthTasks,
   paymentFacts,
@@ -469,7 +470,7 @@ test("nakit planı K19: faturası beklenen borç kadar tedarikçinin mal tahmini
 
 test("Genel bakış: görev satırı faturasız borçları söyler; 45 gün ve faturası gelmiş olabilir uyarıları", () => {
   const p = paymentFacts([], { count: 0, total: 0 }, { count: 2, total: 1850 });
-  assert.deepEqual(p.debts, { count: 2, total: 1850 });
+  assert.deepEqual(p.debts, { count: 2, total: 1850, overdue: 0, soon: 0 });
   assert.equal(
     paymentFacts([], { count: 0, total: 0 }).debts,
     undefined,
@@ -787,4 +788,35 @@ test("Faturalar'ın Paraşüt ipucu: takipli faturada Paraşüt'ün kalanı pane
   assert.deepEqual(parasutDifference({ ...f, outstanding: 1800 }), { parasut: 1800, panel: 250.5, lower: false });
   assert.equal(parasutDifference({ payable: 3000, unpaid: true, outstanding: 1800 }), null, "takipsiz: kalan zaten Paraşüt'ün");
   assert.equal(parasutDifference({ ...f, unpaid: false, outstanding: 100 }), null);
+});
+
+test("Genel bakış: gecikmiş faturasız borç görev satırında iki kez sayılmaz; tutar mahsuptan sonraki (net)", () => {
+  // Sütaş: 10.10 tarihli, vadesi 20.10, 5.000 ₺ faturası gelecek borç ve 300 ₺ alım; hesapta 1.600 ₺; Metro faturası gecikmiş
+  const up = upcomingWithCari(
+    {
+      reminders: [],
+      invoices: [{ id: 1, supplier: "Metro", date: "2026-09-01", dueDate: "2026-10-01", payable: 11516.77, invoiceNo: "M1", outstanding: null, termDays: null, cardId: null }],
+      debts: [
+        { id: 1, supplier: "Sütaş", date: "2026-10-10", dueDate: "2026-10-20", remaining: 5000, description: "süt", costMode: "fatura", cardId: 7, termDays: 30 },
+        { id: 2, supplier: "Sütaş", date: "2026-10-24", dueDate: null, remaining: 300, description: "krema", costMode: "fatura", cardId: 7, termDays: 30 },
+      ],
+      credit: new Map([[7, 1600]]),
+    },
+    "2026-10-25",
+  );
+  const all = [...up.items, ...up.later];
+  const p = paymentFacts(up.items, { count: 1, total: 11516.77 }, debtFacts(all));
+  assert.deepEqual(p.debts, { count: 2, total: 3700, overdue: 1, soon: 0 }, "net: 3.400 + 300");
+  const model = createModel({ ...seed(), currentMonth: "2026-10" });
+  const d = dashboard(model, "2026-09");
+  const odeme = monthTasks(monthTaskFacts(model, "2026-09", d.monthState, d.refMonth, { payments: p, parasut: null })).find((t) => t.key === "odeme")!;
+  const text = odeme.detail.replace(/ /g, " ");
+  assert.doesNotMatch(text, /Ayrıca/);
+  assert.match(text, /^2 ödeme gecikti \(14\.916,77 ₺, 1 faturasız borç dahil\)\./);
+  // Borçlar hesaptaki parayla tamamen karşılanınca görev satırı onları söylemez
+  const covered = upcomingWithCari(
+    { reminders: [], invoices: [], debts: [{ id: 1, supplier: "Sütaş", date: "2026-10-10", dueDate: "2026-10-20", remaining: 5000, description: "süt", costMode: "fatura", cardId: 7, termDays: 30 }], credit: new Map([[7, 6000]]) },
+    "2026-10-25",
+  );
+  assert.equal(paymentFacts(covered.items, { count: 0, total: 0 }, debtFacts([...covered.items, ...covered.later])).debts, undefined);
 });

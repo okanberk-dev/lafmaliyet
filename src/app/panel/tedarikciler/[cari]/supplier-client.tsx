@@ -43,6 +43,7 @@ import { Table, TableWrap, TD, TH, THead, TR } from "@/components/ui/table";
 import { openBalance, isPartiallyPaid } from "@/lib/calc/insights";
 import { allocateFifo, allocationPreview, compareOpenItems, debtLabel, debtRemaining, invoiceLabel, type CariAllocation, type CostMode, type OpenItem } from "@/lib/cari/account";
 import { coveredByAllocations, EPS, METHOD_LABEL, methodFromCard, round2 } from "@/lib/cari/balance";
+import type { ForeignCredit } from "@/lib/cari/statement";
 import { dateTR, money, num } from "@/lib/format";
 import { daysBetween } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
@@ -149,6 +150,8 @@ export interface CariData {
   late: { id: number; date: string; label: string; amount: number }[];
   kasa: KasaStrip[];
   foreign: { paymentId: number; allocationIds: number[]; amount: number }[];
+  /** Başka kartların ödemelerinden bu tedarikçinin faturalarına sayılanlar (ekstre) */
+  foreignIn: ForeignCredit[];
   /** `allocated` toplamı tutmayan fatura sayısı */
   drift: number;
   expenses: Record<number, { id: number; date: string; amount: number; categoryId: number; categoryName: string }>;
@@ -876,7 +879,7 @@ export function SupplierClient({
               title="Hesap hareketleri"
               description="Faturalar, faturasız alımlar ve ödemeler gün sırasıyla; bakiye satır satır yürür. Gri satırlar faturalardaki ödendi işaretleri ve Paraşüt'te ödenen kısımlardır."
             />
-            <StatementPanel name={supplier.name} today={today} invoices={list} debts={cari.debts} payments={cari.payments} allocations={cari.allocations} onAction={onStatement} />
+            <StatementPanel name={supplier.name} today={today} invoices={list} debts={cari.debts} payments={cari.payments} allocations={cari.allocations} foreign={cari.foreignIn} onAction={onStatement} />
           </Card>
         ) : (
           <Card id="faturalar" className="min-w-0 scroll-mt-[calc(var(--mobile-top-h)+1.5rem)]">

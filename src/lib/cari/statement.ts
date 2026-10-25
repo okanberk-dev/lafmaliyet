@@ -8,7 +8,7 @@ import { dateTR, tl } from "../format";
 import { round2, METHOD_LABEL, type CariMethod } from "./balance";
 import { debtLabel, invoiceLabel, type AccountInvoice, type CariAllocation, type CariDebt, type CariPayment } from "./account";
 
-export type StatementKind = "fatura" | "iade" | "iade-dusuldu" | "parasut-kismi" | "isaretli" | "alim" | "devir" | "bagli" | "odeme" | "baska";
+export type StatementKind = "fatura" | "iade" | "iade-dusuldu" | "parasut-kismi" | "isaretli" | "alim" | "devir" | "bagli" | "odeme" | "baska" | "baska-odeme";
 
 export interface StatementRow {
   key: string;
@@ -31,6 +31,19 @@ export interface StatementRow {
   left?: number;
   /** Faturada işaretli ödemenin ya da ödemenin şekli (ekstre metni) */
   method?: PaymentMethod | CariMethod | null;
+  /** Tedarikçiye giden metindeki ad (iç not olmadan; ekranda `label`) */
+  textLabel?: string;
+}
+
+/** Grubun faturasına başka bir kartın ödemesinden sayılan (ör. faturası başka tedarikçide görünen alım bağlandı, R3d) */
+export interface ForeignCredit {
+  invoiceId: number;
+  paymentId: number;
+  /** Ödemenin günü */
+  date: string;
+  /** Ödemenin kartı */
+  card: string;
+  amount: number;
 }
 
 export interface StatementInput {
@@ -38,6 +51,8 @@ export interface StatementInput {
   debts?: readonly CariDebt[];
   payments?: readonly CariPayment[];
   allocations?: readonly CariAllocation[];
+  /** Başka kartların ödemelerinden bu grubun faturalarına sayılanlar (yoksa faturanın bu kısmı ekstrede ödenmemiş görünürdü) */
+  foreign?: readonly ForeignCredit[];
 }
 
 const MODE_NOTE: Record<CariDebt["costMode"], string> = {
@@ -99,7 +114,12 @@ export function statementRows(input: StatementInput, range: { from?: string | nu
       const target = inv ? invoiceLabel(inv) : "faturaya";
       rows.push({ key: `b:${d.id}`, date: d.date, kind: "bagli", label: `Faturasız alım · ${what} → ${inv ? `${target} faturasına` : target} bağlandı`, debit: d.amount, credit: 0, muted: true, ref });
     } else if (d.costMode === "devir") rows.push({ key: `b:${d.id}`, date: d.date, kind: "devir", label: `Eski borç (devir) · ${what}`, debit: d.amount, credit: 0, ref });
-    else rows.push({ key: `b:${d.id}`, date: d.date, kind: "alim", label: `Faturasız alım · ${what} (${MODE_NOTE[d.costMode]})`, debit: d.amount, credit: 0, ref });
+    else rows.push({ key: `b:${d.id}`, date: d.date, kind: "alim", label: `Faturasız alım · ${what} (${MODE_NOTE[d.costMode]})`, textLabel: `Faturasız alım · ${what}`, debit: d.amount, credit: 0, ref });
+  }
+  for (const f of input.foreign ?? []) {
+    const inv = invoiceById.get(f.invoiceId);
+    if (!inv || !(f.amount > 0.005)) continue;
+    rows.push({ key: `fx:${f.paymentId}:${f.invoiceId}`, date: f.date, kind: "baska-odeme", label: `${f.card} ödemesinden sayılan · ${invoiceLabel(inv)}`, debit: 0, credit: round2(f.amount), ref: { type: "invoice", id: f.invoiceId } });
   }
   for (const p of payments) {
     const mine = allocations.filter((a) => a.paymentId === p.id).sort((a, b) => a.id - b.id);
@@ -161,13 +181,20 @@ export function statementText(name: string, st: { opening: number | null; rows: 
     if (r.muted) continue;
     const day = dateTR(r.date);
     if (r.kind === "isaretli" || r.kind === "odeme") {
-      const m = r.method ? SHORT_METHOD[r.method] : null;
-      lines.push(`${day} · Ödeme${m ? ` (${m})` : ""} · ${minus(r.credit)}`);
-    } else if (r.credit > 0) lines.push(`${day} · ${r.label} · ${minus(r.credit)}`);
-    else lines.push(`${day} · ${r.label} · ${tl(r.debit, 2)}`);
+      // Günü bilinmeyen işaretli ödeme fatura gününde yazılır: tedarikçi o günde ödeme aramasın
+      const note = [r.method ? SHORT_METHOD[r.method] : null, r.unknownDay ? "gün bilinmiyor" : null].filter(Boolean).join(", ");
+      lines.push(`${day} · Ödeme${note ? ` (${note})` : ""} · ${minus(r.credit)}`);
+    } else if (r.credit > 0) lines.push(`${day} · ${r.textLabel ?? r.label} · ${minus(r.credit)}`);
+    else lines.push(`${day} · ${r.textLabel ?? r.label} · ${tl(r.debit, 2)}`);
   }
   const c = st.closing;
   lines.push(`Bakiye: ${tl(Math.abs(c), 2)}${c > 0.005 ? " (borcumuz)" : c < -0.005 ? " (alacağımız)" : ""}`);
   lines.push("L'Affogato");
   return lines.join("\n");
+}
+
+/** Ekstrenin alt satırı: "Bakiye 3.000,50 ₺ (borcumuz)", "99,50 ₺ alacak (hesapta)", sıfırda ek yok */
+export function statementFooter(closing: number): string {
+  if (closing < -0.005) return `${tl(-closing, 2)} alacak (hesapta)`;
+  return closing > 0.005 ? `Bakiye ${tl(closing, 2)} (borcumuz)` : `Bakiye ${tl(0, 2)}`;
 }

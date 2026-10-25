@@ -8,12 +8,12 @@ import { latestSalesMonth } from "@/lib/calc/insights";
 import { priceLoss } from "@/lib/calc/price-loss";
 import { upcomingWithCari } from "@/lib/cari/upcoming";
 import { dateTR, tl } from "@/lib/format";
-import { addDays, dueNotifications, todayTR, type UpcomingHint, type UpcomingItem } from "@/lib/reminders";
+import { dueNotifications, todayTR, type UpcomingHint, type UpcomingItem } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { DEBT_INVOICE_WAIT_DAYS, loadCariIndex, type CariIndex } from "@/server/data/cari";
+import { loadCariIndex, type CariIndex } from "@/server/data/cari";
 import { getDb, schema as s } from "@/server/db";
 import { isProductionRuntime, loadEmailProblems } from "@/server/jobs/alerts";
 
@@ -73,7 +73,7 @@ export async function loadUpcoming(today = todayTR()) {
   const items = up.items;
   // Takvim için: vadesi listenin ufkundan sonra olan faturalar ve faturasız borçlar (listede ve e-postada yer almaz)
   const laterInvoices: UpcomingItem[] = up.later;
-  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index, today) };
+  return { today, settings, reminders, items, laterInvoices, covered: up.covered, cari: cariSummary(index) };
 }
 
 /** Kalemlerin ipuçları: faturasız alımın faturası olabilir (güçlü aday, K17) ve kasadan ödenmiş olabilir (K16) */
@@ -118,12 +118,10 @@ function cariHints(
 }
 
 /** Ödemeler, zil ve Genel bakış için cari hesabın özeti: açık faturasız borçlar, hesaptaki para, işlenmemiş Kasa satırları, uyarılar */
-function cariSummary(index: CariIndex, today: string) {
-  const lateFrom = addDays(today, -DEBT_INVOICE_WAIT_DAYS);
+function cariSummary(index: CariIndex) {
   const cardName = (id: number) => index.cards.get(id)?.name ?? "";
-  const late = index.openDebts
-    .filter((d) => d.costMode === "fatura" && d.date <= lateFrom && (!d.remindAfter || d.remindAfter <= today))
-    .map((d) => ({ id: d.id, cardId: d.supplierId, name: cardName(d.supplierId), date: d.date, description: d.description, amount: d.remaining, href: index.hrefOf(d.supplierId) ?? null }));
+  // Faturası gelmeyen alım: tutarı alımın kendisi (ödenmiş olsa da gideri yazılmadı)
+  const late = index.lateDebts.map((d) => ({ id: d.id, cardId: d.supplierId, name: cardName(d.supplierId), date: d.date, description: d.description, amount: d.amount, href: index.hrefOf(d.supplierId) ?? null }));
   const strong = index.strong.map((c) => ({ cardId: c.cardId, name: cardName(c.cardId), invoiceId: c.invoiceId, debtIds: c.debtIds, href: index.hrefOf(c.cardId) ?? null }));
   return {
     debts: index.openDebts.length,

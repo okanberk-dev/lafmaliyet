@@ -7,7 +7,7 @@ import { supplierMatchKey } from "../../app/panel/faturalar/rules";
 import { COMMISSION_CATEGORY, SEPARATE_CATEGORIES } from "../constants";
 import { tl } from "../format";
 import { addDays, daysBetween } from "../reminders";
-import { round2 } from "./balance";
+import { EPS, openBalance, round2, type BalanceInvoice } from "./balance";
 import type { CariDebt, CostMode } from "./account";
 
 // ---------------------------------------------------------------- Fatura adayları (K17)
@@ -20,6 +20,8 @@ export interface CandidateInvoice {
   date: string;
   payable: number;
   category: string;
+  /** Kalanı var (ödenmemiş); verilmezse açık sayılır. Zayıf aday yalnız açık faturada */
+  open?: boolean;
 }
 
 export interface LinkCandidate {
@@ -32,36 +34,87 @@ export interface LinkCandidate {
 /** Güçlü adayın toleransı: max(1 ₺, Ödenecek'in %2'si) */
 export const linkTolerance = (payable: number) => Math.max(1, 0.02 * payable);
 
+/**
+ * Faturasız alımın bağlanabileceği fatura: Ödenecek > 0, komisyon ve kafe dışı (karaoke box, Alp Koç) değil. Bağlama
+ * borcun gider kaydını siler; bu kategorilerdeki fatura kafenin mal alışına girmez, gider sessizce düşerdi (aday, Faturası
+ * geldi penceresi ve sunucu aynı kuralı kullanır)
+ */
+export const linkableInvoice = (i: { payable: number; category: string }) => i.payable > 0 && i.category !== COMMISSION_CATEGORY && !SEPARATE_CATEGORIES.includes(i.category);
+
+/** Faturanın aday alanları (kalanı varsa açık) */
+export const candidateOf = (i: BalanceInvoice & { id: number; date: string; category: string }): CandidateInvoice => ({
+  id: i.id,
+  date: i.date,
+  payable: i.payable,
+  category: i.category,
+  open: openBalance(i) > EPS,
+});
+
 const inWindow = (debtDate: string, invoiceDate: string) => invoiceDate >= addDays(debtDate, -LINK_WINDOW.before) && invoiceDate <= addDays(debtDate, LINK_WINDOW.after);
 
 /**
- * Faturası gelmiş olabilecek faturasız alımlar. Faturalar: Ödenecek > 0, komisyon ve kafe dışı (karaoke box, Alp Koç)
- * değil, henüz bir borç bağlanmamış. Borçlar: bağsız, gideri "fatura", "gider" ya da "mevcut". Pencere: fatura borcun
- * gününden 7 gün önce ile 45 gün sonra arasında; "Ayrı alım" denmiş çift atlanır.
- * - Güçlü (a): tek borç, |A − P| ≤ max(1, %2·P)
- * - Güçlü (b): penceredeki en az iki borcun toplamı aynı toleransla (alt küme aranmaz, hepsi alınır)
- * - Zayıf: pencerede bağsız bir "Faturası gelecek" borcu var ama güçlü kural tutmuyor
+ * Faturası gelmiş olabilecek faturasız alımlar. Faturalar: bağlanabilir (linkableInvoice), henüz bir borç bağlanmamış.
+ * Borçlar: bağsız, gideri "fatura", "gider" ya da "mevcut". Pencere: fatura borcun gününden 7 gün önce ile 45 gün sonra
+ * arasında; "Ayrı alım" denmiş çift atlanır.
+ * - Güçlü (a): tek borç, |A − P| ≤ max(1, %2·P). Bir alımın tek faturası olur: aynı tutarda birden çok fatura (haftalık
+ *   faturalar) borcun güçlü adayı olsa da yalnız gününe en yakını güçlü sayılır (eşitse sonra gelen, sonra tutarı
+ *   yakın), ötekiler sessize alınmaz (gerçek borç e-postadan ve plandan düşmesin)
+ * - Güçlü (b): penceredeki, başka faturanın güçlü adayı olmayan en az iki borcun toplamı aynı toleransla (alt küme
+ *   aranmaz, hepsi alınır)
+ * - Zayıf: açık (ödenmemiş) faturanın penceresinde güçlü adayı olmayan bağsız bir "Faturası gelecek" borcu var
  */
 export function linkCandidates(debts: readonly CariDebt[], invoices: readonly CandidateInvoice[]): { strong: LinkCandidate[]; weak: LinkCandidate[] } {
   const linked = new Set(debts.map((d) => d.invoiceId).filter((x): x is number => x !== null));
   const open = debts.filter((d) => d.invoiceId === null && (d.costMode === "fatura" || d.costMode === "gider" || d.costMode === "mevcut"));
-  const strong: LinkCandidate[] = [];
-  const weak: LinkCandidate[] = [];
-  for (const inv of invoices) {
-    if (!(inv.payable > 0) || inv.category === COMMISSION_CATEGORY || SEPARATE_CATEGORIES.includes(inv.category) || linked.has(inv.id)) continue;
-    const window = open.filter((d) => inWindow(d.date, inv.date) && !(d.dismissedInvoiceIds ?? []).includes(inv.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
-    if (!window.length) continue;
-    const tol = linkTolerance(inv.payable);
-    const singles = window.filter((d) => Math.abs(d.amount - inv.payable) <= tol);
-    for (const d of singles) strong.push({ invoiceId: inv.id, debtIds: [d.id], diff: round2(inv.payable - d.amount) });
-    if (singles.length) continue;
-    const total = window.reduce((a, d) => a + d.amount, 0);
-    if (window.length >= 2 && Math.abs(total - inv.payable) <= tol) {
-      strong.push({ invoiceId: inv.id, debtIds: window.map((d) => d.id), diff: round2(inv.payable - total) });
-      continue;
+  const wins = invoices
+    .filter((inv) => linkableInvoice(inv) && !linked.has(inv.id))
+    .map((inv) => ({
+      inv,
+      tol: linkTolerance(inv.payable),
+      window: open.filter((d) => inWindow(d.date, inv.date) && !(d.dismissedInvoiceIds ?? []).includes(inv.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id),
+    }))
+    .filter((w) => w.window.length)
+    .sort((a, b) => a.inv.date.localeCompare(b.inv.date) || a.inv.id - b.inv.id);
+  // (a) Her borç gününe en yakın tek faturaya
+  const rank = (d: CariDebt, inv: CandidateInvoice) => [Math.abs(daysBetween(d.date, inv.date)), inv.date < d.date ? 1 : 0, Math.abs(d.amount - inv.payable), inv.id];
+  const better = (x: number[], y: number[]) => {
+    for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return x[k] < y[k];
+    return false;
+  };
+  const best = new Map<number, { invoiceId: number; rank: number[] }>();
+  for (const w of wins) {
+    for (const d of w.window) {
+      if (Math.abs(d.amount - w.inv.payable) > w.tol) continue;
+      const r = rank(d, w.inv);
+      const cur = best.get(d.id);
+      if (!cur || better(r, cur.rank)) best.set(d.id, { invoiceId: w.inv.id, rank: r });
     }
-    const expected = window.filter((d) => d.costMode === "fatura");
-    if (expected.length) weak.push({ invoiceId: inv.id, debtIds: expected.map((d) => d.id), diff: round2(inv.payable - expected.reduce((a, d) => a + d.amount, 0)) });
+  }
+  const used = new Set(best.keys());
+  const strongInvoices = new Set<number>();
+  const strong: LinkCandidate[] = [];
+  for (const w of wins) {
+    const singles = w.window.filter((d) => best.get(d.id)?.invoiceId === w.inv.id);
+    for (const d of singles) strong.push({ invoiceId: w.inv.id, debtIds: [d.id], diff: round2(w.inv.payable - d.amount) });
+    if (singles.length) strongInvoices.add(w.inv.id);
+  }
+  // (b) Toplam: başka faturanın güçlü adayı olmayan borçlar
+  for (const w of wins) {
+    if (strongInvoices.has(w.inv.id)) continue;
+    const rest = w.window.filter((d) => !used.has(d.id));
+    const total = rest.reduce((a, d) => a + d.amount, 0);
+    if (rest.length >= 2 && Math.abs(total - w.inv.payable) <= w.tol) {
+      strong.push({ invoiceId: w.inv.id, debtIds: rest.map((d) => d.id), diff: round2(w.inv.payable - total) });
+      strongInvoices.add(w.inv.id);
+      for (const d of rest) used.add(d.id);
+    }
+  }
+  // Zayıf: yalnız açık fatura, güçlü adayı olmayan "Faturası gelecek" borçlar
+  const weak: LinkCandidate[] = [];
+  for (const w of wins) {
+    if (strongInvoices.has(w.inv.id) || w.inv.open === false) continue;
+    const expected = w.window.filter((d) => d.costMode === "fatura" && !used.has(d.id));
+    if (expected.length) weak.push({ invoiceId: w.inv.id, debtIds: expected.map((d) => d.id), diff: round2(w.inv.payable - expected.reduce((a, d) => a + d.amount, 0)) });
   }
   return { strong, weak };
 }
@@ -78,7 +131,28 @@ export interface KasaLine {
 }
 
 /**
- * Tedarikçinin adlarıyla eşleşen işlenmemiş Kasa satırları (Kime / Yer alanı, `supplierMatchKey`). İşlenmemiş: bir
+ * Kasa satırının Kime / Yer metninin eşleşme anahtarları (`supplierMatchKey`): yazıldığı gibi, kesme işaretinden
+ * sonraki ek atılarak ("Sütaş'a", "Metro’dan") ve parantez içindeki ad ("tedarikçiye (Sütaş)"; baştaki "tedarikçiye"
+ * sözü atılır). Kime alanı doğal olarak yönelme ekiyle yazılır; ek yüzünden satır yöneticinin önüne hiç gelmezdi.
+ */
+export function kasaStoreKeys(store: string): string[] {
+  const parts = [store, ...[...store.matchAll(/\(([^)]*)\)/gu)].map((m) => m[1])];
+  const out = new Set<string>();
+  for (const p of parts) {
+    out.add(supplierMatchKey(p));
+    const words = supplierMatchKey(p)
+      .split(" ")
+      .map((w) => w.replace(/['’].*$/u, ""))
+      .filter(Boolean);
+    if (words.length && /^tedarik[çc]i/u.test(words[0])) words.shift();
+    out.add(words.join(" "));
+  }
+  out.delete("");
+  return [...out];
+}
+
+/**
+ * Tedarikçinin adlarıyla eşleşen işlenmemiş Kasa satırları (Kime / Yer alanı, kasaStoreKeys). İşlenmemiş: bir
  * cari ödemeye bağlı değil ve "Ayrı tut" denmemiş (`handled`). Tutara bakılmaz (900 ile 905 aynı alım olabilir).
  * - `kinds`: Teslim ve / veya Alışveriş
  * - `receiptless`: Alışveriş yalnız fişsizse (belge "yok")
@@ -100,7 +174,7 @@ export function kasaMatches<L extends KasaLine>(
   return lines
     .filter((l) => {
       if (opts.handled.has(l.id) || l.date < opts.from || l.date > opts.to || !opts.kinds.includes(l.kind)) return false;
-      if (!l.store || !keys.has(supplierMatchKey(l.store))) return false;
+      if (!l.store || !kasaStoreKeys(l.store).some((k) => keys.has(k))) return false;
       if (l.kind === "harcama") {
         if (opts.receiptless && l.docType !== "yok") return false;
         if (opts.harcamaDays && !opts.harcamaDays.has(l.date)) return false;
@@ -192,7 +266,7 @@ export interface CariAlert {
  */
 export function cariAlerts(input: {
   late: readonly { name: string; date: string; description: string | null; amount: number; href: string | null }[];
-  strong: readonly { name: string; href: string | null }[];
+  strong: readonly { name: string; href: string | null; debtIds?: readonly number[] }[];
 }): CariAlert[] {
   const out: CariAlert[] = [];
   const day = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}`;
@@ -211,9 +285,12 @@ export function cariAlerts(input: {
   if (input.strong.length) {
     const names = [...new Set(input.strong.map((c) => c.name))];
     const first = input.strong[0];
+    // Alım sayısı (bir alımın birden çok aday faturası olabilir; aday yoksa fatura başına)
+    const ids = input.strong.flatMap((c) => c.debtIds ?? []);
+    const count = ids.length ? new Set(ids).size : input.strong.length;
     out.push({
       level: "info",
-      title: input.strong.length === 1 ? "Faturasız alımın faturası gelmiş olabilir" : `${input.strong.length} faturasız alımın faturası gelmiş olabilir`,
+      title: count === 1 ? "Faturasız alımın faturası gelmiş olabilir" : `${count} faturasız alımın faturası gelmiş olabilir`,
       detail: `${names.slice(0, 3).join(", ")}: bağlanana kadar fatura Ödemeler'de sessiz, nakit planında yok. Tedarikçi sayfasında Bağla ya da Ayrı alım.`,
       ...(first.href ? { href: first.href } : {}),
     });
