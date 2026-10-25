@@ -85,7 +85,7 @@ export const STAFF_APPROVAL_KINDS: readonly { kind: StaffRequestKind | "recete" 
   { kind: "kapali-gun", text: "Dün kafe kapalıydı" },
   { kind: "zayi-gec", text: "Geç zayi / ikram (14 gün)" },
   { kind: "zayi-sil", text: "Başkasının zayi kaydını sildirmek" },
-  { kind: "mal-taslak", text: "Mal siparişi taslağı" },
+  { kind: "mal-taslak", text: "Hızlı sayımdan sonra sipariş taslağı" },
   { kind: "recete", text: "Reçete değişikliği" },
   { kind: "yeni-urun", text: "Yeni ürün önerisi" },
 ];
