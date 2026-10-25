@@ -13,6 +13,8 @@ import { loadNotifySettings } from "@/server/notify/settings";
 import { fetchTillOnlineRow } from "@/server/site-sales/sync";
 import { UserError } from "@/server/user-error";
 
+import { cashEmailRecipients } from "./report-store";
+
 /*
  * Kasa raporunun e-postası (docs/KASA-RAPORU.md › Gönderince): rapor her kaydedildiğinde (gönderim, düzeltme,
  * yöneticinin onayı) alıcılara gider. Sunucu eylemi değil: rapor eylemleri ve onay eylemleri çağırır.
@@ -33,8 +35,10 @@ export async function emailReport(
   const [row] = await getDb().select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).limit(1);
   if (!row) throw new UserError("Rapor bulunamadı");
   const settings = await loadCashSettings();
+  // Personel hesabına ait adres (ayar kaydedildikten sonra personel olan) gönderim anında düşer; kalmazsa e-posta kapalı
+  const recipients = settings.emailEnabled ? await cashEmailRecipients(getDb(), settings.recipients) : [];
   let outcome: CashEmailOutcome;
-  if (!settings.emailEnabled || !settings.recipients.length) {
+  if (!settings.emailEnabled || !recipients.length) {
     outcome = { status: "off", error: null, to: 0 };
   } else if (!isEmailConfigured()) {
     outcome = { status: "failed", error: "E-posta kurulmamış (RESEND_API_KEY); rapor kaydedildi, WhatsApp ile gönderebilirsiniz.", to: 0 };
@@ -56,11 +60,11 @@ export async function emailReport(
       ...integrity,
     });
     const notify = await loadNotifySettings();
-    const res = await sendEmail({ from: resolveFrom(notify.from), to: settings.recipients, ...msg, idempotencyKey: o.idempotencyKey ?? `cash-${row.date}-r${row.revision}` });
-    outcome = res.ok ? { status: "sent", error: null, to: settings.recipients.length } : { status: "failed", error: res.error, to: 0 };
+    const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, idempotencyKey: o.idempotencyKey ?? `cash-${row.date}-r${row.revision}` });
+    outcome = res.ok ? { status: "sent", error: null, to: recipients.length } : { status: "failed", error: res.error, to: 0 };
     await getDb()
       .insert(s.notificationLog)
-      .values({ key: `cash:${row.date}:r${row.revision}`, channel: "email", subject: msg.subject, recipients: settings.recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
+      .values({ key: `cash:${row.date}:r${row.revision}`, channel: "email", subject: msg.subject, recipients: recipients.join(", "), ok: res.ok, error: res.ok ? null : res.error })
       .onConflictDoUpdate({ target: s.notificationLog.key, set: { ok: res.ok, error: res.ok ? null : res.error, sentAt: new Date() } });
   }
   await getDb()

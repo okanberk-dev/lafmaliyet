@@ -301,7 +301,9 @@ değiştirmek doğrudan kaydedilir.
   susmaz.
 - **İşlem geçmişi:** "Kasa düzeltmesi önerildi", "Kasa raporunun silinmesi istendi", "… geri çekildi"; "Kasa
   düzeltmesi onaylandı / reddedildi", "Kasa raporu silindi … · Mehmet istedi".
-- **Kasa e-postasının alıcıları** arasına personel hesabının adresi yazılamaz: e-postada karaoke ön ödemesi var.
+- **Kasa e-postasının alıcıları** arasına personel hesabının adresi yazılamaz: e-postada karaoke ön ödemesi var. Kural
+  gönderim anında da uygulanır (`cashEmailRecipients`): ayarlar kaydedildikten sonra personele indirilen ya da personel
+  hesabı açılan adres raporu ve deneme e-postasını almaz; adres kalmazsa e-posta kapalı sayılır.
 
 Dosyalar: `src/lib/cash-requests.ts` (yük, birleştirme, metinler), `src/server/cash/report-store.ts` (yazım yolu,
 kapı), `src/server/cash/requests.ts` (istek ve karar), `src/server/actions/cash-requests.ts` (uçlar),

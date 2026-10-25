@@ -253,14 +253,23 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     assert.equal(reportAfter.cashOut, reportBefore.cashOut);
   });
 
-  test("ret fişi 7 gün tutar; eski güne ekleme isteği de onaylanabilir", async () => {
+  test("ret fişi 7 gün tutar; aynı anahtarla tekrar reddedilir, fişi yeniden tutmaz; eski güne ekleme isteği de onaylanabilir", async () => {
     const p = await photo(users.ayse);
-    const out = await propose(users.ayse, { date: OLD, line: line({ photoId: p, docType: "fis" }), clientKey: key() });
+    const k = key();
+    const out = await propose(users.ayse, { date: OLD, line: line({ photoId: p, docType: "fis" }), clientKey: k });
+    // Çift dokunuş (istek beklerken): aynı satır döner
+    const twice = await propose(users.ayse, { date: OLD, line: line({ photoId: p, docType: "fis" }), clientKey: k });
+    assert.equal(twice.row.id, out.row.id);
+    assert.equal(twice.created, false);
     const r = await review(users.ali, out.row.id, out.row.version, "reject");
     assert.equal(r.status, "rejected");
     const released = await photoOf(p);
     assert.equal(released.linkedAt, null);
     assert.equal(released.expiresAt?.getTime(), NOW.getTime() + 7 * DAY_MS);
+    // Eski sayfadan aynı anahtarla tekrar: "Onaya gönderildi" denmez, fiş süresiz tutulmaz
+    await refused(propose(users.ayse, { date: OLD, line: line({ photoId: p, docType: "fis" }), clientKey: k }), REQUEST_TEXT.keyClosed);
+    assert.equal((await photoOf(p)).expiresAt?.getTime(), NOW.getTime() + 7 * DAY_MS);
+    assert.equal((await requestOf(out.row.id)).status, "rejected");
     const out2 = await propose(users.ayse, { date: OLD, line: line({ amount: 30 }), clientKey: key() });
     const r2 = await review(users.ali, out2.row.id, out2.row.version, "approve");
     assert.ok(r2.status === "approved" && r2.op === "ekle");

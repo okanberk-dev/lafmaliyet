@@ -212,7 +212,8 @@ test("yetki: personel bugünü ve dünü gönderir, silme ve ayarlar yöneticini
   assert.match(data, /: defaultCashRecipients\(process\.env\)/);
   // Personel alıcı adreslerini görmez (yalnız sayısı gider)
   const page = readFileSync(join(process.cwd(), "src/app/panel/kasa/page.tsx"), "utf8");
-  assert.match(page, /recipients=\{settings\.emailEnabled \? settings\.recipients\.length : 0\}/);
+  assert.match(page, /const mailTo = settings\.emailEnabled && showForm \? \(await cashEmailRecipients\(getDb\(\), settings\.recipients\)\)\.length : 0;/);
+  assert.match(page, /recipients=\{mailTo\}/);
 });
 
 // ---------------------------------------------------------------- Kasa bütünlüğü: açılış ↔ devir, düzeltmeler, kilit

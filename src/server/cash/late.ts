@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, staffLateDay, type CashReportFields } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
 import { DELETED_REPORT_DAYS, MAX_REPORT_PHOTOS, RELEASED_DAYS } from "@/lib/photo-rules";
+import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
 import { createOrUpdateRequest, decide, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -64,10 +65,14 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
     await lockLateDay(tx, date);
     const subject = `gun:${date}`;
     const r = s.staffRequests;
-    // Çift dokunuş ya da yeniden deneme: aynı istemci anahtarı var olan isteği döner (sürüm denetiminden önce)
+    // Çift dokunuş ya da yeniden deneme: aynı istemci anahtarı var olan bekleyen isteği döner (sürüm denetiminden önce);
+    // istek bu arada karara bağlandıysa ya da kapandıysa eski sayfadan gelen tekrar reddedilir (createOrUpdateRequest gibi)
     if (input.clientKey) {
       const [same] = await tx.select().from(r).where(eq(r.clientKey, input.clientKey)).limit(1);
-      if (same && same.requestedBy === me.id && same.kind === "kasa-gec" && same.subject === subject) return { row: same, created: false, cashDiff: computeCash(fields).cashDiff };
+      if (same && same.requestedBy === me.id && same.kind === "kasa-gec" && same.subject === subject) {
+        if (same.status !== "pending") throw new UserError(REQUEST_TEXT.keyClosed);
+        return { row: same, created: false, cashDiff: computeCash(fields).cashDiff };
+      }
     }
     const [[report], [first]] = await Promise.all([
       tx.select({ id: s.cashReports.id }).from(s.cashReports).where(eq(s.cashReports.date, date)).limit(1),

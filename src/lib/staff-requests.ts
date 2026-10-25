@@ -127,6 +127,8 @@ export const REQUEST_TEXT = {
   adminOnly: "Yalnız yönetici karar verir",
   held: "Bu fotoğraf onay bekleyen bir istekte",
   keyTaken: "Bu istek başka bir hesaptan gönderilmiş; sayfayı yenileyin",
+  /** Aynı istemci anahtarıyla yeniden gönderilen istek artık beklemede değil (karara bağlandı, geri çekildi, kapandı) */
+  keyClosed: "Bu istek zaten karara bağlandı ya da kapandı; sayfayı yenileyin",
 } as const;
 
 /**

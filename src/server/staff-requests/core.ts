@@ -99,8 +99,9 @@ export async function assertNotHeld(tx: Tx, photoId: number, exceptRequestId?: n
 
 /**
  * Personelin isteğini açar ya da günceller (işlemin içinde çağrılır; kişinin istekleri danışma kilidiyle sıraya
- * girer). Yönetici reddedilir (doğrudan yapar). Aynı istemci anahtarı var olan satırı olduğu gibi döner (çift dokunuş,
- * yeniden deneme). Kişinin aynı tür ve konudaki bekleyen isteği varsa o güncellenir: sürüm artar, zil kimliği en çok
+ * girer). Yönetici reddedilir (doğrudan yapar). Aynı istemci anahtarı var olan bekleyen satırı olduğu gibi döner (çift
+ * dokunuş, yeniden deneme); satır artık beklemede değilse (karara bağlandı, geri çekildi, kapandı) UserError: eski sayfadan
+ * gelen tekrar "Onaya gönderildi" demesin, çağıran fotoğrafını yeniden tutmasın. Kişinin aynı tür ve konudaki bekleyen isteği varsa o güncellenir: sürüm artar, zil kimliği en çok
  * 10 dakikada bir yenilenir. Yoksa sınırlar (açık istek, iş günü, konu) denetlenip yeni satır açılır. Yeni tutulan
  * fotoğraf başka bir bekleyen istekte olamaz.
  */
@@ -114,6 +115,7 @@ export async function createOrUpdateRequest(tx: Tx, me: Actor, input: RequestInp
     const [same] = await tx.select().from(r).where(eq(r.clientKey, input.clientKey)).limit(1);
     if (same) {
       if (same.requestedBy !== me.id) throw new UserError(REQUEST_TEXT.keyTaken);
+      if (same.status !== "pending") throw new UserError(REQUEST_TEXT.keyClosed);
       return { row: same, created: false };
     }
   }
@@ -289,19 +291,21 @@ export async function supersede(
 }
 
 /**
- * Sabah işinin adımı ("Personel istekleri"): süresi geçen bekleyen ve onaylanmış (gönderilmemiş mal siparişi taslağı)
- * istekler "expired" olur, tutulan fotoğrafları bırakılır.
+ * Sabah işinin adımı ("Personel istekleri"): süresi geçen bekleyen istekler ve onaylanmış ama gönderilmemiş mal siparişi
+ * taslakları "expired" olur, tutulan fotoğrafları bırakılır. Öteki onaylanmış istekler kayda geçmiştir (kasadan çıkan,
+ * geç rapor …): süreleri dolsa da onaylı kalır.
  */
 export async function expireStaffRequests(db: Tx, now = new Date()): Promise<{ expired: number }> {
   return db.transaction(async (tx) => {
+    const r = s.staffRequests;
     const rows = await tx
-      .update(s.staffRequests)
+      .update(r)
       .set({ status: "expired", updatedAt: now })
-      .where(and(inArray(s.staffRequests.status, ["pending", "approved"]), lte(s.staffRequests.expiresAt, now)))
-      .returning({ id: s.staffRequests.id, photoIds: s.staffRequests.photoIds });
+      .where(and(lte(r.expiresAt, now), or(eq(r.status, "pending"), and(eq(r.status, "approved"), eq(r.kind, "mal-taslak")))))
+      .returning({ id: r.id, photoIds: r.photoIds });
     await releaseHeld(
       tx,
-      rows.flatMap((r) => r.photoIds),
+      rows.flatMap((x) => x.photoIds),
       RELEASED_DAYS,
       now,
     );

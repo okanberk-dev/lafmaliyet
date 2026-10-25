@@ -296,11 +296,14 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     assert.equal(r.reviewNote, "Rapor silindi");
   });
 
-  test("kasa e-postasına personel adresi yazılamaz (büyük-küçük harf fark etmez); yöneticinin adresi yazılır", async () => {
+  test("kasa e-postasına personel adresi yazılamaz ve gönderimde düşer (büyük-küçük harf fark etmez); yöneticinin adresi yazılır", async () => {
     const staff = `kasa-istek-ayse-${tag}@ornek.com`;
     const admin = `kasa-istek-ali-${tag}@ornek.com`;
     assert.deepEqual(await store.staffEmailsIn(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [staff]);
     assert.deepEqual(await store.staffEmailsIn(db, [admin]), []);
     assert.deepEqual(await store.staffEmailsIn(db, []), []);
+    // Gönderim anında: ayar kaydedildikten sonra personel olan adres düşer, ötekiler sırasıyla kalır
+    assert.deepEqual(await store.cashEmailRecipients(db, [staff.toUpperCase(), admin, "dis@ornek.com"]), [admin, "dis@ornek.com"]);
+    assert.deepEqual(await store.cashEmailRecipients(db, [staff]), []);
   });
 });

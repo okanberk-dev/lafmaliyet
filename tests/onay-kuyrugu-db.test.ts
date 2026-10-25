@@ -248,7 +248,7 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
     assert.ok(ph.expiresAt && ph.expiresAt.getTime() > Date.now() + 6 * 86_400_000, "7 gün sonra silinir");
   });
 
-  test("süresi dolan bekleyen ve onaylanmış istek kapanır, fotoğrafı bırakılır; süresi gelmemiş ve süresiz dokunulmaz", async () => {
+  test("süresi dolan bekleyen istek ve onaylanmış taslak kapanır, fotoğrafı bırakılır; onaylanmış öteki istek, süresi gelmemiş ve süresiz dokunulmaz", async () => {
     const now = new Date();
     const p = await photo(users.mehmet.id);
     const past = new Date(now.getTime() - 60_000);
@@ -256,12 +256,18 @@ describe("Onay kuyruğu: veritabanında istek, karar ve sınırlar", { skip: !UR
     const expiring = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:sure"), expiresAt: past, photoIds: [p] });
     const draft = await create(users.mehmet, { kind: "mal-taslak", subject: subj("tedarikci:sure"), expiresAt: past });
     await db.update(s.staffRequests).set({ status: "approved" }).where(eq(s.staffRequests.id, draft.row.id));
+    // Onaylanmış kasadan çıkan isteği kayda geçmiştir: 14 günlük süresi dolsa da onaylı kalır (zil "süresi doldu" demez)
+    const approved = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:onayli"), expiresAt: future });
+    const decided = await db.transaction(async (tx) => decide(tx, await lockForReview(tx, users.admin, { id: approved.row.id, seenVersion: 1 }, now), users.admin, "approved", {}, now));
+    assert.equal(decided.status, "approved");
+    await db.update(s.staffRequests).set({ expiresAt: past }).where(eq(s.staffRequests.id, approved.row.id));
     const fresh = await create(users.mehmet, { kind: "kasa-cikan", subject: subj("cikan-yeni:taze"), expiresAt: future });
     const forever = await create(users.mehmet, { kind: "kasa-silme", subject: subj("gun:suresiz") });
     const r = await expireStaffRequests(db, now);
     assert.ok(r.expired >= 2);
     assert.equal(await statusOf(expiring.row.id), "expired");
     assert.equal(await statusOf(draft.row.id), "expired");
+    assert.equal(await statusOf(approved.row.id), "approved");
     assert.equal(await statusOf(fresh.row.id), "pending");
     assert.equal(await statusOf(forever.row.id), "pending");
     const [ph] = await db.select({ expiresAt: s.photos.expiresAt }).from(s.photos).where(eq(s.photos.id, p));

@@ -37,6 +37,7 @@ import { closedEvidenceText } from "@/lib/closed-days";
 import { aiStatus } from "@/server/ai/claude";
 import { requireUser } from "@/server/auth/dal";
 import { chainNeighbours } from "@/server/cash/late-chain";
+import { cashEmailRecipients } from "@/server/cash/report-store";
 import { closedDayEvidence, isClosedDay, staffClosedState } from "@/server/closed-days";
 import { loadKasaCariHints, loadLinkedCashOuts, loadSupplierNames } from "@/server/data/cari";
 import { lateRequestFor, lateRequestsByReport, pendingLateByDay, staffLateDays } from "@/server/data/cash-late";
@@ -131,6 +132,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const showForm = !admin || isDay(gun);
 
   const settings = await loadCashSettings();
+  // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
+  const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
   const [report, carry, recent, waste, ai, outs, categories, next, counters] = await Promise.all([
     showForm ? getCashReport(date) : Promise.resolve(null),
@@ -239,7 +242,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       report={report}
       carry={carry}
       whatsapp={whatsapp}
-      recipients={settings.emailEnabled ? settings.recipients.length : 0}
+      recipients={mailTo}
       canEdit={canEdit}
       photoUi={photoUi}
       saved={report ? { photos: showPhotos ? (photoInfo?.photos ?? []) : [], readings: photoInfo?.readings ?? [] } : null}

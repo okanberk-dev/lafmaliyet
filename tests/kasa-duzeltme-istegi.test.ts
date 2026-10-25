@@ -268,10 +268,20 @@ test("yazım yolu sunucu eylemi değil; gönderim kapıdan 'request' dönerse hi
   assert.match(remove, /supersede\(tx, \{ kinds: \[[^\]]*"kasa-duzeltme"[^\]]*"kasa-silme"[^\]]*\], day: row\.date, exceptId: o\.exceptRequestId \}, "Rapor silindi"\)/);
 });
 
-test("kasa e-postasına personel adresi yazılamaz; personel yükleyicisi başkasının isteğinin yalnız türünü, adını ve anını verir", () => {
+test("kasa e-postasına personel adresi yazılamaz ve gönderimde düşer; personel yükleyicisi başkasının isteğinin yalnız türünü, adını ve anını verir", () => {
   const settings = fnBody(read("src/server/actions/cash-report.ts"), "updateCashSettings");
   assert.match(settings, /await staffEmailsIn\(getDb\(\), valid\)/);
   assert.match(settings, /Bu adres bir personel hesabının; kasa e-postasında karaoke ön ödemesi var\./);
+  // Gönderim anında da süzülür: ayar kaydedildikten sonra personel olan adres kasa e-postasını (ve denemesini) almaz
+  const email = fnBody(read("src/server/cash/report-email.ts"), "emailReport");
+  assert.match(email, /const recipients = settings\.emailEnabled \? await cashEmailRecipients\(getDb\(\), settings\.recipients\) : \[\];/);
+  assert.match(email, /if \(!settings\.emailEnabled \|\| !recipients\.length\)/);
+  assert.match(email, /to: recipients,/);
+  assert.match(email, /recipients: recipients\.join\(", "\)/);
+  const test = fnBody(read("src/server/actions/cash-report.ts"), "sendCashTestEmail");
+  assert.match(test, /const recipients = await cashEmailRecipients\(getDb\(\), settings\.recipients\);/);
+  assert.match(test, /to: recipients,/);
+  for (const body of [email, test]) assert.doesNotMatch(body, /to: settings\.recipients/);
   const loader = read("src/server/data/cash-requests.ts");
   assert.match(loader, /^import "server-only";/);
   const others = loader.slice(loader.indexOf("export async function pendingCashForDay"));

@@ -101,13 +101,17 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     assert.equal(r.kind, "saved");
     return r;
   }
-  function propose(who: Who, date: string, o: { fields?: Partial<CashReportFields>; photoIds: number[]; version?: number; handedTo?: { kind: "user"; id: number } | { kind: "banka" } | null; now?: Date }) {
+  function propose(
+    who: Who,
+    date: string,
+    o: { fields?: Partial<CashReportFields>; photoIds: number[]; version?: number; handedTo?: { kind: "user"; id: number } | { kind: "banka" } | null; now?: Date; clientKey?: string },
+  ) {
     if (!dates.includes(date)) dates.push(date);
     const f = fields(date, o.fields);
     return late.proposeLateReport(
       db,
       who,
-      { fields: f, reason: "Akşam sistem kapalıydı", requestVersion: o.version ?? 0, photoIds: o.photoIds, handedTo: o.handedTo === undefined ? (f.handedOver > 0 ? { kind: "banka" } : null) : o.handedTo, clientKey: null },
+      { fields: f, reason: "Akşam sistem kapalıydı", requestVersion: o.version ?? 0, photoIds: o.photoIds, handedTo: o.handedTo === undefined ? (f.handedOver > 0 ? { kind: "banka" } : null) : o.handedTo, clientKey: o.clientKey ?? null },
       o.now ?? NOW,
     );
   }
@@ -283,13 +287,17 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     assert.equal(kept.linkedAt, null);
     assert.ok(Math.abs(kept.expiresAt!.getTime() - (NOW.getTime() + 30 * DAY_MS)) < 5_000, "30 gün");
     const z2 = await photo(users.mehmet);
-    const d2 = await propose(users.mehmet, D2, { photoIds: [z2] });
+    const k2 = randomUUID();
+    const d2 = await propose(users.mehmet, D2, { photoIds: [z2], clientKey: k2 });
     const out = await review(users.ali, d2.row.id, d2.row.version, "reject");
     assert.equal(out.status, "rejected");
     assert.equal((await requestOf(d2.row.id)).status, "rejected");
     const released = await photoOf(z2);
     assert.ok(Math.abs(released.expiresAt!.getTime() - (NOW.getTime() + 30 * DAY_MS)) < 5_000, "ret: 30 gün");
     assert.equal(await reportOf(D2), undefined);
+    // Eski sayfadan aynı anahtarla tekrar: reddedilen istek "gönderildi" diye dönmez
+    await refused(propose(users.mehmet, D2, { photoIds: [z2], clientKey: k2 }), REQUEST_TEXT.keyClosed);
+    assert.equal((await photoOf(z2)).expiresAt?.getTime(), released.expiresAt?.getTime());
   });
 
   test("tutulan fotoğraf kasa raporuna ve kasadan çıkan satırına bağlanmaz", async () => {

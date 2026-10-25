@@ -154,7 +154,8 @@ export async function proposeCashOutChange(db: DB, me: CashOutActor, input: Cash
       },
       now,
     );
-    for (const id of photoIds) await holdPhoto(tx, id);
+    // Yalnız bekleyen isteğin gerçekten tuttuğu fotoğraf tutulur (aynı anahtarla tekrar var olan satırı döner)
+    for (const id of out.row.photoIds) await holdPhoto(tx, id);
     return { ...out, payload };
   });
 }

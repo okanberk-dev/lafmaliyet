@@ -305,6 +305,16 @@ export async function staffEmailsIn(db: DB | CashTx, emails: readonly string[]):
 }
 
 /**
+ * Kasa e-postasının gönderim anındaki alıcıları: kayıtlı adreslerden personel hesaplarına ait olanlar düşer (ayarlar
+ * kaydedildikten sonra personele indirilen ya da personel hesabı açılan adres: kasa e-postasında karaoke ön ödemesi
+ * var). Kural ayarı kaydederken de denetlenir (updateCashSettings); gönderim ona güvenmez. Sıra korunur.
+ */
+export async function cashEmailRecipients(db: DB | CashTx, emails: readonly string[]): Promise<string[]> {
+  const staff = new Set(await staffEmailsIn(db, emails));
+  return emails.filter((e) => !staff.has(e.toLocaleLowerCase("en")));
+}
+
+/**
  * Raporu siler (işlemin içinde; yönetici): fotoğrafların bağı kalkar, 30 gün daha saklanır; önceki sürümleri raporla
  * gider (cascade). Aynı günün bekleyen düzeltme, silme ve fotoğraf kaldırma istekleri kapanır ("Rapor silindi";
  * reddedilmez), silmeyi onaylanan istek (`exceptRequestId`) hariç. Silinen raporun değerleri dönüşte (işlem

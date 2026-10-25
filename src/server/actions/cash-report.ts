@@ -9,7 +9,7 @@ import { money } from "@/lib/format";
 import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { emailReport } from "@/server/cash/report-email";
-import { removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
+import { cashEmailRecipients, removeCashReport, reportSchema, saveCashReport, staffEmailsIn } from "@/server/cash/report-store";
 import { cashReportExtras } from "@/server/data/cash-photos";
 import { cashReportIntegrity, cashReportsBetween, getCashReport, loadCashSettings, nextReportAfter, saveCashSettings, toCashDTO } from "@/server/data/cash-reports";
 import { dayWaste } from "@/server/data/waste";
@@ -136,6 +136,9 @@ export async function sendCashTestEmail() {
     await requireAdmin();
     const settings = await loadCashSettings();
     if (!settings.recipients.length) throw new UserError("Önce bir adres girin");
+    // Personel hesabına ait adres (ayar kaydedildikten sonra personel olan) deneme e-postasını da almaz
+    const recipients = await cashEmailRecipients(getDb(), settings.recipients);
+    if (!recipients.length) throw new UserError("Kayıtlı adreslerin hepsi personel hesabının; kasa e-postasında karaoke ön ödemesi var. Yöneticinin adresini girin.");
     if (!isEmailConfigured()) throw new UserError("E-posta kurulmamış: Vercel'de RESEND_API_KEY tanımlı değil");
     const [last] = await cashReportsBetween("2000-01-01", businessDate());
     const sample: CashReportFields = last ?? {
@@ -160,9 +163,9 @@ export async function sendCashTestEmail() {
     };
     const msg = renderCashReport(sample, { by: last?.submittedByName ?? "Örnek", revision: 1, submittedAt: new Date() });
     const notify = await loadNotifySettings();
-    const res = await sendEmail({ from: resolveFrom(notify.from), to: settings.recipients, ...msg, subject: `[Deneme] ${msg.subject}` });
+    const res = await sendEmail({ from: resolveFrom(notify.from), to: recipients, ...msg, subject: `[Deneme] ${msg.subject}` });
     if (!res.ok) throw new UserError(res.error);
-    return { to: settings.recipients.length };
+    return { to: recipients.length };
   });
 }
 

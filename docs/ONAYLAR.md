@@ -64,7 +64,9 @@ sabah e-postası ve Son kararlar bunu yazar.
   aynı denetimlerle geçer.
 - **Kişi başına konu başına tek bekleyen istek:** aynı kişi aynı konuya yeniden gönderince bekleyen isteği güncellenir,
   sürümü (`version`) artar. İki personelin istekleri birbirini engellemez.
-- **Çift dokunuş:** istemcinin ürettiği anahtar (`client_key`) ikinci istek açmaz, var olanı döner.
+- **Çift dokunuş:** istemcinin ürettiği anahtar (`client_key`) ikinci istek açmaz, bekleyen isteği döner. İstek bu
+  arada karara bağlandıysa ya da kapandıysa aynı anahtarla tekrar reddedilir ("Bu istek zaten karara bağlandı ya da
+  kapandı; sayfayı yenileyin"): eski sayfa "Onaya gönderildi" demez, fotoğraf yeniden tutulmaz.
 - **Yönetici yalnız gördüğü sürümü onaylar:** kart sürümü taşır; istek arada güncellendiyse "İstek siz bakarken
   değişti; yeniden bakın". Aynısı reçete önerileri için de geçerlidir (`recipe_change_requests.version`).
 - **Kimse kendi isteğini onaylayamaz** (sonradan yönetici yapılan hesap da). Yönetici istek açmaz; doğrudan yapar.
@@ -77,7 +79,8 @@ sabah e-postası ve Son kararlar bunu yazar.
   döner.
 - **Zil kimliği** (`bumped_at`) istek güncellenince en çok 10 dakikada bir yenilenir.
 - **Süre:** mal siparişi taslağı hazırlanma ya da onay iş günü D ise D+2 05:00'e, kasadan çıkan isteği 14 güne kadar
-  canlıdır; sabah işinin "Personel istekleri" adımı süresi geçenleri kapatır.
+  canlıdır; sabah işinin "Personel istekleri" adımı süresi geçen bekleyen istekleri ve onaylanmış ama gönderilmemiş mal
+  siparişi taslaklarını kapatır. Onaylanmış öteki istekler kayda geçmiştir; süreleri dolsa da onaylı kalır.
 - **KVKK:** personel hiçbir yerde (ekran, sayfa verisi, eylem yanıtı, zil, push, e-posta) maliyet, alış fiyatı, fatura
   tutarı, maaş, kâr, marj, komisyon ya da karaoke parası görmez; personelin okuyucuları sabit sütunla yazılır ve
   kaynak testiyle sabitlenir (`tests/helpers/leak-scan.ts`).
