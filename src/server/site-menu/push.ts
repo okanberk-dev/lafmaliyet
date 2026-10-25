@@ -22,6 +22,7 @@ import {
   replaceSnapshotItem,
   SiteRequestError,
 } from "./sync";
+import { carrySoldOutMarker } from "./sold-out-store";
 
 /**
  * Panel → site: bağlı bir ürünün fiyatı ya da menü durumu panelde değişince önce sitenin yazma ucuna gidilir
@@ -104,6 +105,12 @@ export async function applyPushed(tx: Tx, outcome: Extract<PushOutcome, { kind: 
       .where(and(eq(s.products.siteMenuId, item.id), ne(s.products.id, row.id)))
   ).flatMap((r) => asLinkedRow(r) ?? []);
   if (siblings.length) await applyPlan(tx, planMenuSync([item], siblings, { partial: true }), at);
+  // Yalnız fiyat yazımı Tükenenler kartının kaydını yeni damgaya taşır (kopyadaki eski damga yenilenmeden önce
+  // okunur; src/server/site-menu/sold-out-store.ts): panelin kendi fiyat değişikliği personelin kaydını düşürmez
+  if (!outcome.visibility) {
+    const prev = (await readSiteSnapshot(tx)).items.find((i) => i.id === item.id)?.updatedAt ?? null;
+    await carrySoldOutMarker(tx, prev, item);
+  }
   await replaceSnapshotItem(tx, item);
   // Site saati ilerler: bu yazımdan önce alınmış liste artık uygulanmaz. Panelin saatinden bir dakikadan ileri bir
   // zaman (sitede bozuk bir updatedAt) sayılmaz, sonraki bütün çekmeleri durdurmasın. Kalemin kendi zamanı da saklanır:

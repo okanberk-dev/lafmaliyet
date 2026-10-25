@@ -7,15 +7,17 @@
 import { isStarted } from "@/lib/checklists";
 import { num } from "@/lib/format";
 import { posMarksText, staleForText } from "@/lib/prices/pos";
+import { soldOutLineText, type SoldOutFact } from "@/lib/site-menu/sold-out";
 
 import { clip, type CafeLine, type DayFacts, type DayRow } from "./logic";
 
 /** Operasyonun Bugün olguları (DayFacts.ops); alanları maddeleriyle gelir, hepsi isteğe bağlı */
 export interface OpsDayFacts {
   /**
-   * Sitede "Tükendi" olan ürünler (§2.1): adlar ve kayıtlar (kim, ne zaman; `staff` personelin kapattığı). Fiyat yok
+   * Bar ekranının Tükenenler kartıyla kapatılıp hâlâ geçerli kaydı olan ürünler (§2.1): adlar ve kayıtlar (kalem, kim,
+   * ne zaman; `staff` personelin kapattığı), en eskisi önce. Fiyat yok
    */
-  soldOut?: { names: string[]; items: { name: string; by: string; at: string; staff: boolean }[] } | null;
+  soldOut?: { names: string[]; items: SoldOutFact[] } | null;
   /**
    * Yönetici (§2.2): personelin son 48 saatte kasada işaretledikleri, kişi ve gün başına (en yeni önce; `at` o günün
    * son işareti, ISO). Geri alınanlar sayılmaz. Personelin olgusunda yok
@@ -105,11 +107,10 @@ export const draftRow: DayRow = () => null;
 
 /**
  * "Bugün kafede"nin Tükendi satırı (iki rol; §2.1): "Tükendi: Tiramisu, Cheesecake", bar ekranının Tükenenler
- * kartına götürür. Olgu yoksa satır yok.
+ * kartına götürür. Personelin kaydı 16 saatten eskiyse uyarı rengi: "Tiramisu 2 gündür tükendi: geldiyse satışa açın"
+ * (src/lib/site-menu/sold-out.ts › soldOutLineText). Olgu yoksa satır yok.
  */
 export function soldOutLine(f: DayFacts): CafeLine | null {
-  const names = f.ops?.soldOut?.names ?? [];
-  if (!names.length) return null;
-  const shown = names.slice(0, 3).join(", ");
-  return { key: "tukendi", text: `Tükendi: ${shown}${names.length > 3 ? "…" : ""}`, tone: "info", href: "/panel/karaoke#tukenenler" };
+  const line = soldOutLineText(f.ops?.soldOut?.items ?? [], f.now);
+  return line ? { key: "tukendi", ...line, href: "/panel/karaoke#tukenenler" } : null;
 }

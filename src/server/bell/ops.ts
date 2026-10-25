@@ -3,11 +3,13 @@ import "server-only";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num } from "@/lib/format";
 import { posBell } from "@/lib/prices/pos";
+import { soldOutBell, soldOutDigestLine } from "@/lib/site-menu/sold-out";
 import { addDays, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS, staffWasteResult, wasteDeletedNotice, wasteItemText } from "@/lib/waste-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
+import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
@@ -87,18 +89,37 @@ async function wasteRequestNotifications(user: CurrentUser, now: Date): Promise<
   return [...results, ...notices];
 }
 
+/**
+ * Tükendi (§2.1; yalnız yönetici, grup Uyarılar): personelin bar ekranında kapattığı ve hâlâ satışta olmayan ürünler
+ * ("Tükendi: Tiramisu, Cheesecake"; kim ve saat). Bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da
+ * daha çok ürün kapattıysa uyarı. Ürün satışa açılınca satır kalkar; push yok. Fiyat yok.
+ */
+async function soldOutNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  if (user.role !== "admin") return [];
+  const facts = await soldOutFacts();
+  const bell = soldOutBell(facts?.items ?? [], now);
+  if (!bell) return [];
+  return [{ ...bell, timeLabel: "", unread: true, group: "uyari" }];
+}
+
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste] = await Promise.all([posNotifications(user, now).catch(() => []), wasteRequestNotifications(user, now).catch(() => [])]);
-  return [...waste, ...pos];
+  const [pos, waste, soldOut] = await Promise.all([
+    posNotifications(user, now).catch(() => []),
+    wasteRequestNotifications(user, now).catch(() => []),
+    soldOutNotifications(user, now).catch(() => []),
+  ]);
+  return [...waste, ...soldOut, ...pos];
 }
 
 /**
- * Sabah e-postasının "Onay bekleyenler" kutusuna operasyonun bilgi satırları (src/server/notify/digest-extras.ts; ör.
- * personelin tükendi yaptığı ürünler, yalnız ad ve süre). Tutar yazılmaz. Satır yoksa boş.
+ * Sabah e-postasının "Onay bekleyenler" kutusuna operasyonun bilgi satırları (src/server/notify/digest-extras.ts):
+ * personelin tükendi yaptığı ürünler, yalnız ad, kişi ve süre ("Tiramisu (Selin, 2 gündür)"). Tutar yazılmaz. Satır
+ * yoksa boş.
  */
 export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
-  void now;
-  return [];
+  const facts = await soldOutFacts().catch(() => null);
+  const line = soldOutDigestLine(facts?.items ?? [], now);
+  return line ? [{ text: line, tone: "warn" }] : [];
 }

@@ -9,6 +9,7 @@ import { tl } from "@/lib/format";
 import { productDeleteBlocker } from "@/lib/product-delete";
 import type { PriceAck } from "@/lib/calc/price-impact";
 import { panelIsActive } from "@/lib/site-menu/slot";
+import { keepSeen } from "@/lib/site-menu/sold-out";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadModel, loadSettings } from "@/server/data/dataset";
 import { PRICE_ACK_KEY } from "@/server/data/price-alerts";
@@ -150,6 +151,13 @@ const recipeSchema = z.object({
   note: zOptText(),
   active: z.boolean(),
   showOnMenu: z.boolean(),
+  /**
+   * Kart açılırken görülen menü anahtarları. Kullanıcı anahtara dokunmadıysa (gönderilen = görülen) veritabanındaki
+   * güncel değer yazılır: açık kalmış kart, personelin bu arada Tükendi yaptığı ürünü sessizce yeniden açmaz (dalga 10
+   * §2.1; src/lib/site-menu/sold-out.ts › keepSeen). Eski istemci göndermez.
+   */
+  seenActive: z.boolean().optional(),
+  seenShowOnMenu: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -202,7 +210,11 @@ export async function saveRecipe(input: z.input<typeof recipeSchema>) {
     const [before] = await db.select().from(s.products).where(eq(s.products.id, data.productId));
     if (!before) throw new UserError("Ürün bulunamadı; sayfayı yenileyin");
     await checkRecipe(db, data);
-    const desired = { price: data.price, active: data.active, showOnMenu: data.showOnMenu };
+    const desired = {
+      price: data.price,
+      active: keepSeen(data.active, data.seenActive, before.active),
+      showOnMenu: keepSeen(data.showOnMenu, data.seenShowOnMenu, before.showOnMenu),
+    };
     const push = await pushSaleChange(me, before, desired, "değişiklikler kaydedilmedi");
     const now = new Date();
     const sale = await db.transaction(async (tx) => {

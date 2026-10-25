@@ -100,6 +100,9 @@ de ekrandaki öteki işler (sayaç, uzatma) sıraya girmez.
 - **Bağlantı kurulmadıysa** tek gri satır: "laffogato.net bağlantısı kurulmadı: uygulama siparişleri burada görünmez,
   karaoke sayacı çalışır. Yönetici Ayarlar › laffogato.net'ten bakabilir."
 - Bu cihazda sipariş zili kapalıysa: "Bu cihazda sipariş zili kapalı; yeni sipariş gelince ses çalmaz." · **Zili aç**.
+- Kartın hemen altında **Tükenenler**: biten ürün personelce onaysız "Tükendi" yapılır (sitede, uygulamada ve QR
+  menüde; M ve L birlikte), gelince "Satışa aç" (dalga 10 §2.1; [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi /
+  Satışa aç).
 
 Aşama sitede değişince (bu ekranın düğmesiyle, sitenin panelinden ya da uygulamadan; ping → çekme) kart güncellenir,
 sipariş sitenin listesinden çıkınca (masaya / kuryeye gitti, teslim edildi, iade, 24 saatlik unutulmuş sipariş kuralı)

@@ -33,6 +33,12 @@ const STAFF_SOURCES = [
   "src/server/actions/waste.ts",
   "src/app/panel/zayi/waste-board.tsx",
   "src/app/panel/zayi/day-picker.tsx",
+  // Tükendi / Satışa aç (§2.1)
+  "src/lib/site-menu/sold-out.ts",
+  "src/server/data/menu-status.ts",
+  "src/server/site-menu/sold-out-core.ts",
+  "src/server/actions/menu-status.ts",
+  "src/app/panel/karaoke/sold-out-card.tsx",
 ];
 
 test("operasyon: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -72,4 +78,14 @@ test("zayi: personelin okuyucuları, eylem yanıtları ve sayfasının personel 
   assertNoCostKeys(content, "zayi sayfası");
   assertNoLira(stripComments(content), "zayi sayfası");
   for (const f of ["src/app/panel/zayi/waste-board.tsx", "src/app/panel/zayi/day-picker.tsx", "src/lib/waste-requests.ts"]) assertNoLira(stripComments(read(f)), f);
+});
+
+test("tükendi: bar ekranının kartı ve okuyucusu fiyatsız, kartta ₺ yok; eylem yanıtında yalnız değişti mi, metin ve ad", () => {
+  assertNoLira(stripComments(read("src/app/panel/karaoke/sold-out-card.tsx")), "Tükenenler kartı");
+  assertNoLira(stripComments(read("src/lib/site-menu/sold-out.ts")), "Tükendi metinleri");
+  const actions = read("src/server/actions/menu-status.ts");
+  for (const m of actions.matchAll(/return \{([^}]*)\};/g)) assert.equal(m[1].trim(), "changed: r.changed, message: r.message, name: r.name");
+  // Sayfa kartı okuyucunun fiyatsız görünümüyle çizer
+  const page = read("src/app/panel/karaoke/page.tsx");
+  assert.match(page, /<SoldOutCard role=\{user\.role\} entries=\{soldOut\.entries\} serverNow=\{now\} \/>/);
 });

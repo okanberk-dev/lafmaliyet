@@ -118,6 +118,52 @@ kullanır (sitede toplu uç yok): bağlı ürünler site kalemine göre gruplan�
 aşımı, kurulmamış bağlantı, imza reddi, 5xx) sıradakiler gönderilmez, 40 saniyeden sonra yeni ürün gönderilmez
 (sayfanın `maxDuration`'ı 60). Bağlı olmayanlar tek işlemde, önce danışma kilidi alınarak yazılır.
 
+### Personel: Tükendi / Satışa aç
+
+Dalga 10 §2.1 (`docs/planlar/personel-yetki.md`). Biten ürünü hemen "Tükendi" yapmak gerekir: onay beklenirse
+uygulamadan ödenmiş sipariş gelmeye devam eder ve iade gerekir. Bu yüzden onaysızdır; para, fiyat, stok ve kasa
+taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
+
+- **Nerede:** bar ekranında (`/panel/karaoke`) "Uygulama siparişleri"nin altındaki **Tükenenler** kartı
+  (`#tukenenler`). Site bağlantısı (`KARAOKE_SYNC_SECRET`) yoksa kart çizilmez. Boşken tek satır: "Biten ürün yok." ve
+  "Tükendi işaretle". Doluyken yalnız bu kartla kapatılıp kaydı hâlâ geçerli ürünler: ad, altında "M · L · Selin,
+  21:40" (dünden kalanda "dün 21:40"), sağda "Satışa aç". Başarılı dokunuştan sonra satırın düğmesi 1,5 sn kapalı.
+- **"Tükendi işaretle" penceresi yalnız kapatır.** Açıklaması "Sitede boy boy durum yok: M ve L birlikte kapanır.";
+  arama panel ve sitedeki adda (ad farklıysa "sitede: …"); satırlar sitenin kategorisine göre. Rozetler: "Satışta"
+  (Tükendi düğmesi), "Tükendi · Selin 21:40", "Kapalı · yönetici açar", "Selin tükendi yaptı; sonra sitede değişti ·
+  yönetici açar". Kopuk, sitede olmayan, bağlanmamış ve bütün boyları pasif ürün listede yok.
+- **Yazım:** her zaman yukarıdaki panel → site yolundan (`pushSaleChange` → imzalı `POST /api/panel/menu`, `actor`
+  kişinin adı: sitenin olay kaydında "Panel · Selin"; site kabul edince `applyPushed`). Panelde yalnız `showOnMenu`
+  yazılır; fiyat ve "Menüde aktif" hiç yazılmaz. Satışa açma sitenin **canlı** listesini okur (`fetchSiteMenu`).
+- **Kayıt** (`integration_state` › `menu_sold_out`): kalem başına kim (`byId`, `by`, `byRole`), ne zaman ve sitenin
+  kapattıktan sonraki `updatedAt` damgası (`siteUpdatedAt`); `toggles` kalemin son işlem anı. Kayıt yalnız site bu
+  yazımla kapattıysa yazılır (yanıtın damgası isteğin başından yeni); sitenin "değişmedi" yanıtı eski damgayla döner,
+  o zaman "… zaten tükendi (sitede kapatılmış; yönetici açar)" denir. Kayıt, kalem sitede kapalıyken ve damgası
+  aynıyken geçerlidir: sahibin sitenin panelinden yaptığı her değişiklik kalemi yöneticiye bırakır. Panelin kendi
+  fiyat yazımları (fiyat hücresi, ürün kartı, toplu Fiyatlar) kaydı yeni damgaya taşır (`carrySoldOutMarker`).
+- **Kim açar:** kayıt geçerliyse her personel (kapatan olmak gerekmez). Yöneticinin ürün kartından, sitenin
+  panelinden ya da "Kapalı tut" ile kapattığı ürün personele kilitli: "Bu ürünü yönetici kapattı; satışa yönetici
+  açar." Bir boyu pasif ürünü kimse buradan açamaz (açmak o boyu da açardı).
+- **Sınırlar (personel):** geçerli kayıtların toplamı en çok 10 (bütün personel birlikte, yöneticininki sayılmaz);
+  kişi başına 10 dakikada en çok 20 işlem (İşlem geçmişinden); aynı kalemde iki işlem arasında en az 3 sn.
+- **Yönetici:** aynı kartı sınırsız kullanır; "Kapalı tut" ürünü kapalı bırakıp kaydı düşürür (satışa artık yalnız
+  yönetici açar); pencerede kayıtsız kapalı ürüne "Satışa aç". Ürün kartında "QR menüde göster"in altında "Personel
+  tükendi yaptı · Selin 21:40". Zil (Uyarılar; push yok): "Tükendi: Tiramisu, Cheesecake", "Personel kapattı: Selin
+  21:40 · Ali 22:05. …"; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ürün kapattıysa uyarı. Sabah
+  e-postası: "Personelin tükendi yaptığı ürünler: Tiramisu (Selin, 2 gündür)". Bugün › "Bugün kafede" (iki rolde):
+  "Tükendi: Tiramisu, Cheesecake"; personelin kaydı 16 saatten eskiyse uyarı rengi.
+- **Açık kalmış ürün kartı:** reçete kartı açılırken gördüğü "Menüde aktif" ve "QR menüde göster" değerlerini de
+  gönderir (`seenActive`, `seenShowOnMenu`); dokunulmayan anahtar veritabanındaki güncel değeri yazar
+  (`keepSeen`), bu arada tükendi yapılan ürün sessizce yeniden açılmaz.
+- **Hatalar** sunucuda kurulur: bağlantıyla ilgili nedenlerde (kapalı bağlantı, 400 / 401 / 404 / 409) metnin sonunda
+  "Yöneticiye haber verin."; site yazdı ama panel yazamadıysa "Sitede tükendi oldu ama panele yazılamadı; yöneticiye
+  haber verin." Aynı anda iki barista: tek kayıt kalır, ikincisi "… zaten tükendi" görür.
+- **Kişisel veri ve tutar:** okuyucu (`src/server/data/menu-status.ts`) ürünlerden yalnız kimlik, ad, boy, bağlantı
+  ve "Menüde aktif" okur, sitenin kalemini fiyatsız kopyaya indirir; eylem yalnız ad ve metin döner; zil yalnız
+  yöneticiye; e-postada ad ve süre.
+- **İşlem geçmişi:** "Tükendi" (Tiramisu (M, L) · laffogato.net, uygulama ve QR menü), "Satışa açıldı", "Tükendi:
+  kapalı tutuldu".
+
 ### Panel ne zaman çeker
 
 Sitenin pingi (`/api/menu/ping`), Ürünler sayfaları açılınca (liste, kart ve eşleştirme ekranı; son denemeden beş
@@ -134,6 +180,7 @@ hâli getirir (`src/lib/site-menu/plan.ts` › `staleItemIds`). Sitenin `now`'ı
 |---------|--------|
 | `menu_sync` | `lastPullAt` (son deneme), `lastOkAt` (son başarılı), `lastError`, `lastPingAt`, `lastSiteNow`, `changedRows`, `lastChangedAt` + `lastChanges` (son değişiklikler), `broken` (kopuk bağlantılar), `unlinked` (sitede silindiği için kaldırılanlar, son 20), `itemCount`, `pushed` (panelin son bir saatte yazdığı kalemler: kalem kimliği → sitedeki `updatedAt` ve yazım anı) |
 | `menu_site_items` | Son listenin kopyası (`now`, `at`, `items`): ekranlar siteye gitmeden kalemin adını, fiyatını ve durumunu gösterir |
+| `menu_sold_out` | Tükenenler kartının kaydı: `items` (kalem → kim, ne zaman, sitenin damgası) ve `toggles` (kalemin son işlem anı); yukarıda "Personel: Tükendi / Satışa aç" |
 
 Site kaynaklı değişiklikler işlem geçmişine "laffogato.net" adıyla düşer ("Site menüsünden güncellendi", "Site
 bağlantısı kaldırıldı", "Site bağlantısı koptu"); bağlama ve kaldırma yöneticinin adıyla. Sitenin değiştirdiği fiyat
@@ -198,6 +245,11 @@ de sayfa açılışı ve günlük iş eşitler).
 | `src/server/site-menu/link.ts`, `view.ts` | Bağlama / kaldırma; ekranlar için bağlantılar |
 | `src/server/actions/site-menu.ts` | Siteyle eşitle, bağlama penceresinin listesi, bağla, önerileri bağla, kaldır |
 | `src/server/actions/products.ts` | `updateProductPrice`, `saveRecipe`: bağlı üründe önce site |
+| `src/lib/site-menu/sold-out.ts` | Tükenenler: tahta, kaydın geçerliliği, açma kuralı, tavan, hız sınırı, Bugün / zil / e-posta metinleri (saf) |
+| `src/server/site-menu/sold-out-store.ts`, `sold-out-core.ts` | Tükenenler kaydı (satır kilidi, fiyat yazımında taşıma); Tükendi / Satışa aç / Kapalı tut |
+| `src/server/data/menu-status.ts` | Tükenenler kartının fiyatsız okuyucusu, Bugün / zil olgusu, ürün kartının notu |
+| `src/server/actions/menu-status.ts` | `setSoldOut` (personel ve yönetici), `holdSoldOut` (yönetici) |
+| `src/app/panel/karaoke/sold-out-card.tsx` | Bar ekranının Tükenenler kartı ve "Tükendi işaretle" penceresi |
 | `src/server/prices/*` | Satış fiyatı geçmişi ve kasanın (ModPOS) durumu (`recordPriceChange`; `applyPlan` da çağırır), toplu değişikliğin kalem kalem site yazımı ([FIYATLAR.md](FIYATLAR.md)) |
 | `src/app/api/menu/ping/route.ts` | Sitenin pingi |
 | `src/app/panel/urunler/site/` | Eşleştirme ekranı |
