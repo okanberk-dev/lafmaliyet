@@ -49,7 +49,8 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
         <ActivityList>
           {lines.map((l) => {
             const { icon, tone } = look(l);
-            // Tahmin satırlarının ekranı personele kapalı: bağlantısız, uyarı noktasız
+            // Tahmin satırlarının ekranı (Satış tahmini) personele kapalı: satırın kendi adresi yoksa bağlantısız (yoğunluk
+            // satırı personelin Özel günler'ine gider), uyarı noktasız
             const forecast = l.key === "yogunluk" || l.key === "tatli";
             return (
               <ActivityItem
@@ -57,7 +58,7 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
                 icon={icon}
                 tone={tone}
                 title={l.text}
-                href={forecast ? undefined : (l.href ?? "/panel/karaoke")}
+                href={l.href ?? (forecast ? undefined : "/panel/karaoke")}
                 dot={l.tone === "warn" && !forecast ? "danger" : undefined}
                 wrap
               />

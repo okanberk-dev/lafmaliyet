@@ -50,11 +50,10 @@ kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklem
 başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
 Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
 e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
-fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Yöneticinin **Uyarılar** başlığında
-personelin tükendi yaptığı ürünler de durur ("Tükendi: Tiramisu, Cheesecake", bar ekranının Tükenenler kartına; bir
-kayıt 24 saatten eskiyse ya da son bir saatte 3 ürün kapandıysa uyarı rengi; push yok; dalga 10 §2.1). Zilin
+fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Personelin tükendi yaptığı ürünlerin
+satırı (dalga 10 §2.1) dalga 10'un kalanıyla gelir, henüz yok. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, Tükendi, mal siparişi taslağı, zayi istekleri) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri; Tükendi ve mal siparişi taslağı dalga 10'un kalanıyla) `src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
@@ -127,9 +126,9 @@ e-postası**, bildirim adreslerine gider. İçinde:
   için ayrıca e-posta gitmez, konu, başlık ve düğme değişmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md));
 - **onay bekleyenler** (kontrol listelerinden sonra): personelin onay bekleyen istekleri, "2 istek onay bekliyor" ve en
   eskisinin ne zamandan beri beklediği, istek başına yalnız başlık ve isteyenin adı ("22 Ekim kasa düzeltmesi
-  (Mehmet)", "Kaldi · 5 kalem (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
-  listelenir. Aynı kutunun sonunda operasyonun bilgi satırları durur (personelin tükendi yaptığı ürünler: "Tiramisu
-  (Selin, 2 gündür)"; yalnız ad ve süre). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
+  (Mehmet)", "Latte M ×2 · 15 Eki (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
+  listelenir. Kutunun sonunda operasyonun bilgi satırlarına yer ayrılmış (personelin tükendi yaptığı ürünler, dalga 10'un
+  kalanıyla; henüz yok). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
@@ -305,10 +304,10 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
-siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), **onay bildirimleri** (varsayılan açık; yöneticiye personelin onay
-bekleyen mal siparişi taslağı, personele isteğinin sonucu; etiket `istek-<id>`, metinde tutar yok;
-[ONAYLAR.md](ONAYLAR.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de.
+siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
+güvenliği [KARAOKE.md](KARAOKE.md)'de. Onay bildirimlerinin konusu (`approvals`, varsayılan açık) abonelikte hazır, ama bu
+dalgada ona push gönderen bir yol yok: "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b) iki rolde de görünür
+([ONAYLAR.md](ONAYLAR.md)).
 
 ## Resend kurulumu
 

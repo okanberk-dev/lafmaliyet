@@ -6,6 +6,8 @@ import {
   computeCash,
   diffText,
   revisionChanges,
+  staffCanReport,
+  staffLateDay,
   type CashReportFields,
   type CashRevisionData,
   type FieldChange,
@@ -341,7 +343,7 @@ export function staffResultBell(o: {
   if (o.kind === "kapali-gun") {
     const title = closedBellTitle(shortDayTR(o.day), o.status);
     if (o.status === "approved" || o.status === "rejected") return { title, body: o.note ? `Yönetici: ${o.note}` : RESULT_BODY[o.kind][o.status] };
-    return { title, body: o.note ?? (o.status === "revoked" ? "Kapalı işareti kalktı; raporu yönetici girecek" : RESULT_BODY[o.kind].rejected) };
+    return { title, body: o.note ?? (o.status === "revoked" ? "Kapalı işareti kalktı; raporu girin" : RESULT_BODY[o.kind].rejected) };
   }
   if (o.status === "revoked") return { title: `${o.title ?? dayMonthTR(o.day)} geri alındı`, body: o.note ?? "" };
   const verb = { approved: "onaylandı", rejected: "reddedildi", superseded: "kapandı", expired: "süresi doldu" }[o.status];
@@ -355,6 +357,23 @@ export function staffResultBell(o: {
   }
   if (o.status === "superseded" || o.status === "expired") return { title, body: o.note ?? RESULT_BODY[o.kind].rejected };
   return { title, body: o.note ? `Yönetici: ${o.note}` : RESULT_BODY[o.kind][o.status] };
+}
+
+/** Reddedilen ya da kaldırılan kapalı gün bildiriminden sonra raporun yolu, gün personelde değilse (personelin zili) */
+export const CLOSED_FOLLOW_UP_TEXT = {
+  late: "Kafe açıktıysa raporu Z fotoğrafıyla geç rapor olarak girin; yönetici onaylar.",
+  admin: "Raporu yönetici girecek; Z raporunu yöneticiye iletin.",
+} as const;
+
+/**
+ * Reddedilen ya da kaldırılan kapalı gün bildiriminden sonra o günün raporu kimde: "staff" gün raporlu ya da hâlâ
+ * personelde (bugün, dün; zil staffResultBell'in metnini yazar, Kasa'daki güne götürür); "late" geç rapor penceresinde
+ * (dünden eski, son 14 gün: personel Z fotoğrafıyla girer, yönetici onaylar; docs/KASA-RAPORU.md › Geç rapor);
+ * "admin" ikisi de değil, raporu yönetici girer.
+ */
+export function closedFollowUp(day: string, now: Date, reported: boolean): "staff" | "late" | "admin" {
+  if (reported || staffCanReport(day, now)) return "staff";
+  return staffLateDay(day, now) ? "late" : "admin";
 }
 
 /** İşlem geçmişinde neden: ilk 200 karakter */

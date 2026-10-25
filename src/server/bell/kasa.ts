@@ -1,13 +1,13 @@
 import "server-only";
 
 import { businessDate, carryChecks, carryDiffText, changesText, diffKind, diffText, isCashEvening, lateCorrections, staffCanReport } from "@/lib/cash-report";
-import { staffResultBell } from "@/lib/cash-requests";
+import { closedFollowUp, CLOSED_FOLLOW_UP_TEXT, staffResultBell } from "@/lib/cash-requests";
 import { dateTR, money } from "@/lib/format";
 import { addDays, longDateTR, todayTR } from "@/lib/reminders";
 import { waitedText } from "@/lib/staff-requests";
 import type { PanelNotification } from "@/server/actions/notifications";
 import type { CurrentUser } from "@/server/auth/dal";
-import { cashReportsBetween, cashRevisionsFor, previousCarryOver } from "@/server/data/cash-reports";
+import { cashReportsBetween, cashRevisionsFor, previousCarryOver, reportedDays } from "@/server/data/cash-reports";
 import { closedInfoRows, closedYesterday, pendingClosedRows } from "@/server/closed-days";
 import { cashOutBellRow } from "@/server/data/cash-out-requests";
 import { myCashRequests, pendingCashBellRows, proposedByForReports } from "@/server/data/cash-requests";
@@ -192,25 +192,30 @@ async function requestNotifications(user: CurrentUser): Promise<PanelNotificatio
     return out;
   }
   const today = todayTR(now);
-  return (await myCashRequests(user.id))
+  const rows = (await myCashRequests(user.id))
     .filter((r) => r.day && (r.status === "approved" || r.status === "rejected" || r.status === "superseded" || r.status === "expired" || r.status === "revoked"))
-    .slice(0, 5)
-    .map((r) => {
-      const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired" | "revoked", day: r.day!, note: r.reviewNote, title: r.title });
-      const at = todayTR(new Date(r.updatedAt));
-      return {
-        id: `istek-${r.id}-${r.status}`,
-        kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
-        title: t.title,
-        // Reddedilen ya da geri alınan kapalı gün bildiriminde gün personele kapandıysa raporu yönetici girer
-        body: r.kind === "kapali-gun" && r.status !== "approved" && !staffCanReport(r.day!, now) ? "Raporu yönetici girecek; Z raporunu yöneticiye iletin." : t.body,
-        timeLabel: at === today ? "Bugün" : dateTR(at),
-        unread: true,
-        // Sonuç çoğu zaman sabah gelir: gün hâlâ personele açıksa rapora, değilse İsteklerim'e
-        href: staffCanReport(r.day!, now) ? `/panel/kasa?gun=${r.day}` : "/panel/kasa#isteklerim",
-        group: "onay" as const,
-      };
-    });
+    .slice(0, 5);
+  // Reddedilen ya da kaldırılan kapalı gün bildirimi: o günün raporu girildi mi (yalnız tarih)
+  const closedDays = rows.flatMap((r) => (r.kind === "kapali-gun" && r.status !== "approved" ? [r.day!] : []));
+  const reported = closedDays.length ? await reportedDays(closedDays) : new Set<string>();
+  return rows.map((r) => {
+    const t = staffResultBell({ kind: r.kind, status: r.status as "approved" | "rejected" | "superseded" | "expired" | "revoked", day: r.day!, note: r.reviewNote, title: r.title });
+    const at = todayTR(new Date(r.updatedAt));
+    // Kapalı gün bildirimi reddedildi ya da kaldırıldı ve gün personele kapandı: geç rapor penceresindeyse personel Z
+    // fotoğrafıyla geç rapor girer (yönetici onaylar), değilse raporu yönetici girer
+    const follow = r.kind === "kapali-gun" && r.status !== "approved" ? closedFollowUp(r.day!, now, reported.has(r.day!)) : "staff";
+    return {
+      id: `istek-${r.id}-${r.status}`,
+      kind: r.status === "approved" ? ("info" as const) : ("warning" as const),
+      title: t.title,
+      body: follow === "staff" ? t.body : CLOSED_FOLLOW_UP_TEXT[follow],
+      timeLabel: at === today ? "Bugün" : dateTR(at),
+      unread: true,
+      // Sonuç çoğu zaman sabah gelir: gün hâlâ personele açıksa (ya da geç rapor girilecekse) o güne, değilse İsteklerim'e
+      href: follow === "late" || staffCanReport(r.day!, now) ? `/panel/kasa?gun=${r.day}` : "/panel/kasa#isteklerim",
+      group: "onay" as const,
+    };
+  });
 }
 
 /** Zilin kasa satırları, iki rolde (loadPanelNotifications iki dalda çağırır) */

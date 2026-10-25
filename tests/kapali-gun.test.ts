@@ -12,6 +12,7 @@ import { test } from "node:test";
 
 import { dayTasks, type DayFacts, type DayTask } from "../src/app/panel/bugun/logic";
 import { missingSentence, tillMonths } from "../src/lib/cash-month";
+import { CLOSED_FOLLOW_UP_TEXT, closedFollowUp, staffResultBell } from "../src/lib/cash-requests";
 import {
   closedBellTitle,
   closedDaysIn,
@@ -92,7 +93,7 @@ test("Bugün › dünkü kasa raporu: bildirim yok, bekliyor, onaylandı, redded
   const sp1 = row(dayTasks(staff({ closed: closed("pending") })), "kasa-dun")!;
   assert.equal(sp1.status, "todo");
   assert.equal(sp1.badge, "Onayda");
-  assert.equal(sp1.detail, "Ahmet kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından sonra yöneticinin onayıyla girilir.");
+  assert.equal(sp1.detail, "Ahmet kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından itibaren yöneticinin onayıyla girilir.");
   const ad1 = row(dayTasks(admin({ closed: closed("pending") })), "kasa-dun")!;
   assert.equal(ad1.badge, "Onay bekliyor");
   assert.equal(ad1.action, "Onaya bak");
@@ -258,4 +259,24 @@ test("kaynak: /panel/ozel-gunler prop'larında kindHistory, tutar ve gerçekleş
   // Başkasının notu gitmez
   assert.match(list, /note: own \? r\.note : null/);
   assert.match(read("src/app/panel/tahmin/special-days.tsx"), /<Card id="ozel-gunler"/);
+});
+
+test("zil: reddedilen ya da geri alınan kapalı gün bildirimi; gün personelde, geç rapor penceresinde ya da yalnız yöneticide", () => {
+  // 25 Ekim Cumartesi 10:00: dün 24'ü (personelde), 22'si geç rapor penceresinde (dünden eski, son 14 gün), 10'u dışında
+  const now = tr("2026-10-25T10:00");
+  assert.equal(closedFollowUp("2026-10-24", now, false), "staff");
+  assert.equal(closedFollowUp("2026-10-22", now, false), "late");
+  assert.equal(closedFollowUp("2026-10-11", now, false), "late");
+  assert.equal(closedFollowUp("2026-10-10", now, false), "admin");
+  // Gün raporlu (işaret rapor girildiği için kalktı): girilecek rapor yok, zil kendi metnini yazar
+  assert.equal(closedFollowUp("2026-10-22", now, true), "staff");
+  assert.equal(closedFollowUp("2026-10-10", now, true), "staff");
+  assert.equal(CLOSED_FOLLOW_UP_TEXT.late, "Kafe açıktıysa raporu Z fotoğrafıyla geç rapor olarak girin; yönetici onaylar.");
+  assert.equal(CLOSED_FOLLOW_UP_TEXT.admin, "Raporu yönetici girecek; Z raporunu yöneticiye iletin.");
+  // Notsuz geri alma: gün personeldeyken metin "raporu yönetici girecek" demez
+  assert.equal(staffResultBell({ kind: "kapali-gun", status: "revoked", day: "2026-10-24", note: null }).body, "Kapalı işareti kalktı; raporu girin");
+  const bell = read("src/server/bell/kasa.ts");
+  assert.match(bell, /const follow = r\.kind === "kapali-gun" && r\.status !== "approved" \? closedFollowUp\(r\.day!, now, reported\.has\(r\.day!\)\) : "staff";/);
+  assert.match(bell, /body: follow === "staff" \? t\.body : CLOSED_FOLLOW_UP_TEXT\[follow\],/);
+  assert.match(bell, /href: follow === "late" \|\| staffCanReport\(r\.day!, now\) \? `\/panel\/kasa\?gun=\$\{r\.day\}` : "\/panel\/kasa#isteklerim",/);
 });

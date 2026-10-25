@@ -6,7 +6,7 @@
 // Çalıştırma: npx tsx --test tests/onay-kuyrugu.test.ts
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -231,7 +231,7 @@ test("reçete onayı ekranda görülen sürümle: öneri güncellenince sürüm 
   assert.match(list, /reviewRecipeChange\(\{ id: item\.id, seenVersion: item\.version, decision: "reject"/);
 });
 
-test("push: onay bildirimleri ayrı konu (cihazda anahtarı var, varsayılan açık); yalnız açık aboneliklere gider", () => {
+test("push: onay bildirimleri ayrı konu (varsayılan açık, yalnız açık aboneliklere); cihazdaki anahtar ancak gönderen varken", () => {
   const send = read("src/server/push/send.ts");
   assert.match(send, /kind: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test";/);
   assert.match(send, /topic: "karaoke" \| "orders" \| "reminders" \| "approvals" \| "test",/);
@@ -240,8 +240,16 @@ test("push: onay bildirimleri ayrı konu (cihazda anahtarı var, varsayılan aç
   assert.match(actions, /approvals: z\.boolean\(\)\.optional\(\)/);
   assert.match(actions, /approvals: row\.approvals \}/);
   const device = read("src/components/panel/live/device-alerts.tsx");
-  assert.match(device, /title="Onay bildirimleri"/);
-  assert.match(device, /onChange=\{\(v\) => void changeTopic\("approvals", v\)\}/);
+  // Anahtar bildirim vaat eder: yalnız "approvals" konusuna gerçekten gönderen bir yol varken görünür (bu dalgada yok;
+  // gönderen dalga 10b'de). Tesisat kalır: öteki konular değişince değer korunur
+  const walk = (dir: string): string[] =>
+    readdirSync(join(process.cwd(), dir), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : [],
+    );
+  const senders = walk("src").filter((f) => /sendPush\(\s*"approvals"/.test(read(f)));
+  if (senders.length) assert.match(device, /title="Onay bildirimleri"/, senders.join(", "));
+  else assert.doesNotMatch(device, /title="Onay bildirimleri"|changeTopic\("approvals"/);
+  assert.match(device, /approvals: topics\?\.approvals \?\? true, \[key\]: value/);
   assert.equal(staffRequests.kind.enumValues.length, 9);
 });
 

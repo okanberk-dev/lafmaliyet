@@ -8,8 +8,8 @@ onayına giden istekleri ve reçete önerileri tek yerde. Karar: dalga 10, sahib
 
 İşlemin sonucu geçmiş bir kasa, stok farkı ya da gider kaydını değiştiriyorsa, bir kanıtı siliyorsa, para harcama
 sözü veriyorsa ya da bir uyarıyı susturuyorsa personel doğrudan kaydetmez, **istek** gönderir. Anında yapılması
-gereken, para taşımayan, geri alınabilen ve kimin yaptığı görünen işler onaysızdır (Tükendi, kasaya işle, ileri tarihli
-özel gün, geçmiş kontrol listelerine bakmak); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
+gereken, para taşımayan, geri alınabilen ve kimin yaptığı görünen işler onaysızdır (kasaya işle, ileri tarihli özel
+gün, geçmiş kontrol listelerine bakmak; dalga 10'un kalanıyla Tükendi); onların korumaları görünürlük (işlem geçmişi, yöneticiye satır), sınır
 ve geri almadır.
 
 ## Ekran
@@ -17,7 +17,8 @@ ve geri almadır.
 Bölümler sırasıyla, her biri kendi yükleme alanında (biri düşerse ötekiler açılır) ve kendi yönetici denetimiyle:
 
 1. **Kasa:** kasa düzeltmesi ve silmesi, geç kasa raporu, kasadan çıkan, fotoğraf kaldırma, kapalı gün.
-2. **Mal siparişi, Zayi ve ikram:** mal siparişi taslağı, geç zayi / ikram, zayi silme.
+2. **Mal siparişi, Zayi ve ikram:** geç zayi / ikram, zayi silme. Mal siparişi taslağı dalga 10'un kalanıyla gelir
+   (§2.4), henüz yok.
 3. **Reçete önerileri:** değişiklik ve yeni ürün (eskisi gibi; önce / sonra farkı, maliyet etkisi, "Reçete: son
    kararlar").
 4. **Son kararlar:** personel isteklerinin son 30 günü: tür, başlık, isteyen, karar veren, not, durum.
@@ -38,10 +39,10 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 | `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |
-| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
+| `mal-taslak` | Hızlı sayımdan sonra fiyatsız mal siparişi taslağı (dalga 10'un kalanı: tür ve durumlar şemada, akışı henüz yok) | `tedarikci:<anahtar>` | D+2 05:00 | §2.4 |
 
 Türe özel alanlar `payload` (istek) ve `result` (karar) içinde, her okumada zod ile çözülür. `title` tutarsız ve kişisel
-veri taşımayan tek satırdır ("22 Ekim kasa düzeltmesi", "Kaldi · 5 kalem", "Latte M ×2 · 15 Eki"); zil, işlem geçmişi,
+veri taşımayan tek satırdır ("22 Ekim kasa düzeltmesi", "Latte M ×2 · 15 Eki"); zil, işlem geçmişi,
 sabah e-postası ve Son kararlar bunu yazar.
 
 ## Durumlar
@@ -91,13 +92,14 @@ sabah e-postası ve Son kararlar bunu yazar.
   başlığın adı **İsteklerim**: kendi isteklerinin ve reçete önerilerinin sonucu. Satırları alanların modülleri üretir
   (`src/server/bell/kasa.ts`, `src/server/bell/ops.ts`; [BILDIRIMLER.md](BILDIRIMLER.md)).
 - **Bugün:** yöneticinin **Onaylar** satırı reçete önerilerini ve istekleri birlikte sayar: "1 kasa düzeltmesi · 2
-  reçete değişikliği · 1 mal siparişi taslağı · en eskisi 2 gündür" ([BUGUN.md](BUGUN.md)).
+  reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür" ([BUGUN.md](BUGUN.md)).
 - **Sabah e-postası:** "Onay bekleyenler" kutusu: "2 istek onay bekliyor", en eskisinin beklediği ve istek başına
   başlık ile isteyenin adı; karar verilene kadar her sabah.
-- **Push:** konu `approvals` (cihazda "Onay bildirimleri", varsayılan açık); bu dalgada yalnız mal siparişi taslağı
-  kullanır, etiket `istek-<id>`, metinde tutar yok.
+- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık) ve tercihi kaydeden eylem hazır, ama bu
+  dalgada bu konuya push gönderen bir yol yok; cihazdaki "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b)
+  görünür. Gelince etiket `istek-<id>`, metinde tutar yok.
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
-  çekme "Kasa düzeltmesi geri çekildi", "Mal siparişi taslağı geri çekildi" gibi türün adıyla yazılır.
+  çekme "Kasa düzeltmesi geri çekildi", "Geç zayi / ikram isteği geri çekildi" gibi türün adıyla yazılır.
 
 ## db:reset
 

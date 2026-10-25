@@ -163,13 +163,8 @@ export function DeviceAlerts({ role, karaoke = false }: { role: Role; karaoke?: 
                 onChange={(v) => void changeTopic("orders", v)}
               />
             ) : null}
-            <ToggleRow
-              title="Onay bildirimleri"
-              description={role === "admin" ? "Personelin onay bekleyen isteği (mal siparişi taslağı)" : "Onaya gönderdiğiniz isteğin sonucu"}
-              label="Onay bildirimleri"
-              checked={topics?.approvals ?? true}
-              onChange={(v) => void changeTopic("approvals", v)}
-            />
+            {/* "Onay bildirimleri" anahtarı yok: bu dalgada "approvals" konusuna push gönderen bir yol yok (gönderen dalga
+                10b'de gelir). Konunun tesisatı (abonelik sütunu, setPushTopics, changeTopic) kalır; değer korunur. */}
             <ToggleRow
               title="Sabah hatırlatma özeti"
               description="Bugün yapılacak kişisel hatırlatıcılarınız, her sabah"

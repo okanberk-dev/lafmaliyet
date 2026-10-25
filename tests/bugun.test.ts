@@ -90,7 +90,7 @@ test("2. dünün raporu yok: kasa kullanılmaya başladıysa 'Dünkü kasa rapor
   assert.equal(t.status, "todo");
   assert.equal(t.href, "/panel/kasa?gun=2026-10-21");
   assert.equal(t.action, "Dünü gir");
-  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin\. Yarından sonra yöneticinin onayıyla girilir\.$/);
+  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin\. Yarından itibaren yöneticinin onayıyla girilir\.$/);
   assert.equal(splitTasks(tasks).next?.key, "kasa-dun");
   // İlk rapor bugün (ya da hiç yok): dün beklenmez
   for (const firstDate of ["2026-10-22", null]) {
@@ -895,6 +895,9 @@ test("11c. kafe satırları: personelde satış tahmininin yoğunluğu ve tatlı
     ],
   );
   for (const l of lines) assert.doesNotMatch(l.text, /₺|%/);
+  // Yoğunluk satırı personelin Özel günler'ine gider; kart satırın kendi adresini kullanır (tatlı satırı bağlantısız)
+  assert.equal(lines.find((l) => l.key === "yogunluk")?.href, "/panel/ozel-gunler");
+  assert.equal(lines.find((l) => l.key === "tatli")?.href, undefined);
   // Karaoke bağlı değilken de kart tahmin satırlarıyla çizilir; kapalı gün tek satır
   assert.deepEqual(
     cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "normal", reasons: [], desserts: null, closed: false }).map((l) => l.text),
@@ -1158,7 +1161,8 @@ test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kend
   // Ek satır yokken eskisinin aynısı
   assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now), []);
   const cafe = read("src/app/panel/bugun/today-cafe.tsx");
-  assert.match(cafe, /href=\{forecast \? undefined : \(l\.href \?\? "\/panel\/karaoke"\)\}/);
+  // Satırın kendi adresi önce (yoğunluk satırının Özel günler'i de); tahmin satırı adressizse bağlantısız
+  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : "\/panel\/karaoke"\)\}/);
 });
 
 test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okuması operasyonun yükleyicisinde", () => {

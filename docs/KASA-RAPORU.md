@@ -200,7 +200,10 @@ personel o güne kasadan çıkan yazamaz ("Bu gün kafe kapalı işaretli; kayı
 - **Bugün:** personelin `kasa-dun` satırı bekleyende "Onayda", onaylandıysa yok, reddedildiyse "Yönetici bildirimi
   reddetti{: not}. Raporu bugün girin."; yöneticinin `kasa-dun` ve `liste-dun` satırları "Onaya bak". Zil: yöneticide
   "Kapalı gün onayı bekliyor" ve "Dünkü kasa raporu girilmedi · Personel: kapalıydık dedi (onay bekliyor)"; personelde
-  "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Sabah e-postasında onaylı kapalı gün kontrol kutusuna
+  "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı"; reddedilen ya da geri alınan bildirimde gün personele
+  kapandıysa ve raporu yoksa geç rapor penceresinde "Kafe açıktıysa raporu Z fotoğrafıyla geç rapor olarak girin;
+  yönetici onaylar." (o güne götürür), pencere de geçtiyse "Raporu yönetici girecek; Z raporunu yöneticiye iletin."
+  (`closedFollowUp`). Sabah e-postasında onaylı kapalı gün kontrol kutusuna
   girmez; bekleyen bildirim "Onay bekleyenler"de karar verilene kadar listelenir.
 - **İşlem geçmişi:** "Kapalı gün bildirildi", "Kapalı gün bildirimi geri çekildi", "Kapalı gün onaylandı", "Kapalı gün
   reddedildi", "Kapalı gün işaretlendi" (yönetici), "Kapalı gün işareti kaldırıldı (kanıt geldi)".
@@ -343,7 +346,7 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 - **05:00 dönüşü:** dünün formu gönderilirken gün personelin penceresinden çıktıysa sunucu kaydetmez
   (`{ needsApproval, request: "kasa-gec" }`), form yazılanlarla geç rapora geçer.
 - Zil (İsteklerim): "14 Ekim kasa raporu onaylandı" / "… reddedildi". Bugün'deki dünün satırı: "… raporu girilmedi.
-  Kafe açıktıysa bugün girin; yarından sonra yöneticinin onayıyla girilir."
+  Kafe açıktıysa bugün girin; yarından itibaren yöneticinin onayıyla girilir."
 
 **Yönetici:**
 

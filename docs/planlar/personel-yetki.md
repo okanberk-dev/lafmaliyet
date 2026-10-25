@@ -853,7 +853,7 @@ staffCashGate({ date, now, hasReport, laterReport, changes }): "direct" | "reque
 - Başka bir personelin isteği beklerken: "Mehmet bu günü 21 Ekim'de gönderdi; yöneticinin onayını bekliyor." Kendi formu yine açılır; istek kişi başınadır.
 - **Reddedilmiş istek:** uyarı bandı "Reddedildi · Mehmet: …" ve önceki isteğin değerleriyle dolu form. Fotoğraflar serbest bırakıldıktan sonra yine kişinin kendi küçük resimleridir. Aynı gün için iki ret ya da geri çekmeden sonra form yerine "Bu günü yöneticiye yazın" yazar.
 - **05:00 dönüşü:** normal formdaki gönderim sunucuda `staffCanReport` dışında kalırsa sunucu `{ needsApproval: true, gate: "gec" }` döner ve form geç kipe değerleriyle geçer. Fotoğraf ve neden yine zorunludur.
-- **Bugün**, personelin `kasa-dun` metni: "{dün} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından sonra yöneticinin onayıyla girilir."
+- **Bugün**, personelin `kasa-dun` metni: "{dün} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından itibaren yöneticinin onayıyla girilir."
 - **Zil** (personel): "14 Ekim kasa raporu onaylandı" / "… reddedildi".
 
 **Yönetici ekranı**
@@ -1214,10 +1214,10 @@ staffCashGate({ date, now, hasReport, laterReport, changes }): "direct" | "reque
   - Kanıt bulunursa hata: "O gün panelde kayıt var; kafe açık görünüyor. Raporu girin ya da yöneticiye söyleyin." (yalnız tür, tutar yok).
   - Bekleyen durumda: "Kapalıydı dediniz · onay bekliyor" ve "Geri çek". Form yerinde kalır.
 - **Bugün, personelin `kasa-dun` satırı:**
-  - Bekliyorsa: `todo`, rozet "Onayda", "Ahmet kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından sonra yöneticinin onayıyla girilir."
+  - Bekliyorsa: `todo`, rozet "Onayda", "Ahmet kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından itibaren yöneticinin onayıyla girilir."
   - Onaylandıysa: satır yok.
   - Reddedildiyse ve gün hâlâ personele açıksa: "Yönetici bildirimi reddetti{: not}. Raporu bugün girin."
-  - Pencere geçtiyse (zil): "Raporu yönetici girecek; Z raporunu yöneticiye iletin."
+  - Pencere geçtiyse (zil): geç rapor penceresindeyse "Kafe açıktıysa raporu Z fotoğrafıyla geç rapor olarak girin; yönetici onaylar." (o güne götürür, §2.6), o da geçtiyse "Raporu yönetici girecek; Z raporunu yöneticiye iletin."
 - **Zil** (personel, grup `onay`): "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı".
 
 **Yönetici ekranı**

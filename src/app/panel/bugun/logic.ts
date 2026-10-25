@@ -279,7 +279,7 @@ const cashYesterday: Row = (f, c) => {
           title,
           status: "todo",
           badge: "Onayda",
-          detail: `${closed.by} kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından sonra yöneticinin onayıyla girilir.`,
+          detail: `${closed.by} kapalıydı dedi (onay bekliyor). Kafe açıktıysa raporu bugün girin; yarından itibaren yöneticinin onayıyla girilir.`,
           href,
           action: "Dünü gir",
         };
@@ -310,8 +310,8 @@ const cashYesterday: Row = (f, c) => {
         title,
         status: "todo",
         badge: "Girilmedi",
-        // Yarından sonra geç rapor (Z fotoğrafıyla, yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
-        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından sonra yöneticinin onayıyla girilir.`,
+        // Yarından itibaren geç rapor (Z fotoğrafıyla, yöneticinin onayıyla; docs/KASA-RAPORU.md › Geç rapor)
+        detail: `${longDateTR(c.yesterday)} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından itibaren yöneticinin onayıyla girilir.`,
         href,
         action: "Dünü gir",
       };
