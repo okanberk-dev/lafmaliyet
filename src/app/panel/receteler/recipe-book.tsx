@@ -97,7 +97,7 @@ const QUERY_KEYS = ["ara", "kategori", "eksik"];
  * Barda telefonla kullanılan reçete defteri: üstte yapışkan arama, kategori çipleri ve ambalaj anahtarı;
  * altta ürün başına boyları yan yana gösteren reçete kartları. Süzgeçler adreste durur (paylaşılabilir).
  * Yönetici kalemle reçete kartını açar (doğrudan düzenler); personel kalemle değişiklik önerir, öneri yöneticinin
- * onayına düşer (Reçete onayları) ve sonucu "Önerilerim"de görünür.
+ * onayına düşer (Onaylar) ve sonucu "Önerilerim"de görünür.
  */
 export function RecipeBook({
   groups,

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, overdueCount } from "../src/components/panel/nav";
+import { badgeText, BOTTOM_NAV, bottomNavActive, mobileTitleFor, NAV_TREE, navTreeFor, overdueCount } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 
 test("yönetici alt menüsü: Genel bakış, Bugün, Kasa, Ödemeler, Menü (Satışlar ve Faturalar çekmecede)", () => {
@@ -34,10 +34,11 @@ test("personel alt menüsü günün işleri; hepsi personelin açabildiği ekran
   for (const item of BOTTOM_NAV.staff) assert.ok(canOpen("staff", item.href!), item.href);
   // Alt menüde olmayanlar: Hatırlatıcılarım (çekmece menü ve zil), Hesabım (profil menüsü), Sayım (çekmece; ay sonunda
   // Bugün'de satır), Kontrol listeleri (çekmece; açılış ve kapanış Bugün'de satır, zilde "bekliyor"), Hızlı sayım
-  // (çekmece; sayım günü Bugün'de satır ve telefon bildirimi)
+  // (çekmece; sayım günü Bugün'de satır ve telefon bildirimi), Özel günler (çekmece; Bugün'ün yoğunluk satırı), Yardım
+  // (çekmecenin en altı ve profil menüsü)
   assert.deepEqual(
     STAFF_PATHS.filter((p) => !BOTTOM_NAV.staff.some((i) => i.href === p)).sort(),
-    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/hizli-sayim", "/panel/kontrol", "/panel/sayim"],
+    ["/panel/hatirlaticilarim", "/panel/hesap", "/panel/hizli-sayim", "/panel/kontrol", "/panel/ozel-gunler", "/panel/sayim", "/panel/yardim/personel"],
   );
   // Beş öğe: 390 px'te hücre başına 78 px
   assert.equal(BOTTOM_NAV.staff.length, 5);
@@ -134,7 +135,9 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/ayarlar"), "Ayarlar");
   assert.equal(mobileTitleFor("/panel/karaoke"), "Karaoke");
   assert.equal(mobileTitleFor("/panel/hatirlaticilarim"), "Hatırlatıcılarım");
-  assert.equal(mobileTitleFor("/panel/onaylar"), "Reçete onayları");
+  assert.equal(mobileTitleFor("/panel/onaylar"), "Onaylar");
+  assert.equal(mobileTitleFor("/panel/ozel-gunler"), "Özel günler");
+  assert.equal(mobileTitleFor("/panel/yardim/personel"), "Yardım");
   assert.equal(mobileTitleFor("/panel/bugun"), "Bugün");
   // Kontrol listeleri: liste sayfası menünün adını alır, yönetici alt sayfaları kısa adını
   assert.equal(mobileTitleFor("/panel/kontrol"), "Kontrol listeleri");
@@ -143,4 +146,17 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/kontrol/duzenle"), "Listeleri düzenle");
   assert.equal(mobileTitleFor("/panel/kontrol/duzenle/2"), "Listeleri düzenle");
   assert.equal(mobileTitleFor("/panel/bilinmeyen"), "L'Affogato");
+});
+
+test("Onaylar yöneticide üst düzeyde, Bugün'ün hemen altında; personelin Özel günler ve Yardım'ı çekmecede, Yardım en altta", () => {
+  const adminIds = navTreeFor("admin").map((n) => n.id);
+  assert.equal(adminIds.indexOf("onaylar"), adminIds.indexOf("bugun") + 1);
+  // Menü grubunda artık yok (tek yerde)
+  assert.ok(!NAV_TREE.find((n) => n.id === "menu")?.children?.some((c) => c.href === "/panel/onaylar"));
+  const staffTree = navTreeFor("staff");
+  assert.ok(!staffTree.some((n) => n.href === "/panel/onaylar"));
+  assert.equal(staffTree.at(-1)?.href, "/panel/yardim/personel");
+  assert.ok(staffTree.some((n) => n.href === "/panel/ozel-gunler"));
+  // Yöneticinin ağacında personelin Yardım'ı ve Özel günler yok (yönetici Satış tahmini'nde görür)
+  assert.ok(!navTreeFor("admin").some((n) => n.href === "/panel/yardim/personel" || n.href === "/panel/ozel-gunler"));
 });

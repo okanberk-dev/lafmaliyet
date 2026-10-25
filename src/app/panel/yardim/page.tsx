@@ -255,7 +255,7 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
         ),
         icon: Lightbulb,
         links: [
-          { href: "/panel/onaylar", label: "Reçete onayları" },
+          { href: "/panel/onaylar", label: "Onaylar" },
           { href: "/panel/receteler", label: "Reçete defteri" },
         ],
       },
@@ -469,7 +469,8 @@ const FAQ_GROUPS: { title: string; items: Faq[] }[] = [
             Personel sabah açılışta ve gece kapanışta listeyi telefondan <Path href="/panel/kontrol" /> ekranında doldurur: maddeyi işaretler, buzdolabı
             sıcaklığını yazar, istenen yerde fotoğraf çeker. Her dokunuş hemen kaydedilir; geçmiş bir gün sonradan doldurulamaz (gün 05:00&apos;te döner). Sıcaklık aralık
             dışındaysa not ister ve size bildirilir. Listeler Bugün ekranında görünür; yapılmayan liste ertesi sabah e-postada çıkar. Maddeleri ve saatleri
-            Kontrol listeleri › Listeler&apos;den, geçmişi Kontrol listeleri › Geçmiş&apos;ten görürsünüz. Fotoğraflar 60 gün saklanır.
+            Kontrol listeleri › Listeler&apos;den, geçmişi Kontrol listeleri › Geçmiş&apos;ten görürsünüz. Personel de son 7 günü Geçmiş&apos;ten görür; geçmiş gün
+            doldurulamaz. Fotoğraflar 60 gün saklanır.
           </>
         ),
         icon: ListChecks,

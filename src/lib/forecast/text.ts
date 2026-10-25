@@ -46,9 +46,11 @@ export function dayTitle(date: string, offset: number): string {
  * takvim olayı (hafta sonuna düşen resmî tatil, Kurban Bayramı) ve etkisi bilinmeyen özel gün yalnız adıyla.
  */
 export function reasonChips(day: ForecastDay): string[] {
-  const out = day.factors.map((f) => `${f.chip} ${signedPct(f.value - 1)}`);
+  // Personelin girdiği özel gün: "(Ahmet ekledi)" (yalnız yöneticinin nedenlerinde; personelin satırı adı yazmaz)
+  const by = (s: SpecialDay | undefined) => (s?.byStaff && s.addedBy ? ` (${s.addedBy} ekledi)` : "");
+  const out = day.factors.map((f) => `${f.chip} ${signedPct(f.value - 1)}${f.key.startsWith("ozel:") ? by(day.special.find((s) => `ozel:${s.id}` === f.key)) : ""}`);
   if (day.calendar.event && !day.factors.some((f) => f.key === day.calendar.event!.kind)) out.unshift(day.calendar.event.short);
-  for (const s of day.special) if (s.kind !== "kapali" && !s.effect) out.push(s.title);
+  for (const s of day.special) if (s.kind !== "kapali" && !s.effect) out.push(`${s.title}${by(s)}`);
   return out;
 }
 

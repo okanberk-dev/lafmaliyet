@@ -34,10 +34,27 @@ en çok max(1 ₺, %2) farkla tutan, gününe en yakın kalem. Tutarı hiçbir k
 alışverişi) yalnız ipucudur; e-posta kalemleri yine hatırlatır.
 
 Gecikmiş ve yaklaşan ödemeler kenar çubuğundaki **zilde** de görünür. Zilin **Onaylar** başlığında yöneticiye onay
-bekleyen reçete önerileri ve onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) durur. **Uyarılar** başlığının
-başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (yalnız yönetici;
-**Ürünler › Fiyatlar › Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur; e-postaya girmez,
-`docs/FIYATLAR.md`). **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
+bekleyen reçete önerileri, onay bekleyen hammadde fiyatları (`docs/PARASUT.md` 5b) ve personelin onay bekleyen
+istekleri durur (istek başına bir satır, `/panel/onaylar#istek-<id>`'e götürür; satır istek güncellenince en çok 10
+dakikada bir yeniden okunmamış olur; [ONAYLAR.md](ONAYLAR.md)). Personelde aynı başlığın adı **İsteklerim**: reçete
+önerilerinin ve isteklerinin sonucu ("22 Ekim kasa düzeltmeniz onaylandı", "Yönetici: <not>"). Kasadan çıkan ve
+fotoğraf kaldırma istekleri yöneticide tek satırdır ("3 kasa isteği onay bekliyor"); kapalı gün bildirimi istek başına
+"Kapalı gün onayı bekliyor", personelde sonucu "23 Eki Per: kapalı gün onaylandı / reddedildi / geri alındı". Geç zayi /
+ikram ve zayi silme istekleri yöneticide tek satırdır ("3 zayi / ikram isteği onay bekliyor"); personelde sonucu "Geç
+kayıt onaylandı: 2× Latte M (15 Eki)", "Silme reddedildi: …", kaydı başkasının isteğiyle silinen kişiye "Kaydınız
+silindi: Süt 1,5 LT (15 Eki) · Ayşe istedi" ([ZAYI-IKRAM.md](ZAYI-IKRAM.md)). Personel
+kapalıydık dediyse yöneticinin "Dünkü kasa raporu girilmedi" satırının gövdesine "· Personel: kapalıydık dedi (onay
+bekliyor)" eklenir; dün onaylı kapalıysa satır çıkmaz. Yöneticinin **Uyarılar** başlığında bilgi olarak kapalı işaretin
+kanıtla kalkması, kapalı aralığa giren rapor ve personelin özel gün eklemesi ("Ayşe özel gün ekledi") son 3 gün durur
+([KASA-RAPORU.md](KASA-RAPORU.md) › Kafe kapalıydı). **Uyarılar** başlığının
+başında, kasada (ModPOS) elle değiştirilecek fiyat varken **"Kasada değişecek N fiyat"** durur (**Ürünler › Fiyatlar ›
+Kasaya işle**'ye götürür, listeye yeni fiyat girince yeniden okunmamış olur, işaret onu yeniden okunmamış yapmaz;
+e-postaya girmez, `docs/FIYATLAR.md`); personelde aynı satır **Kasa** başlığında, "ModPOS'ta değiştirip Kasadaki
+fiyatlar'da işaretleyin" diye **Kasadaki fiyatlar**'a götürür (dalga 10 §2.2). Personelin tükendi yaptığı ürünlerin
+satırı (dalga 10 §2.1) dalga 10'un kalanıyla gelir, henüz yok. Zilin
+satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
+(kasadaki fiyatlar, zayi istekleri; Tükendi ve mal siparişi taslağı dalga 10'un kalanıyla) `src/server/bell/ops.ts`; toplayıcı
+`src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
 ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye komisyon ve hakediş uyarıları da
@@ -107,10 +124,15 @@ e-postası**, bildirim adreslerine gider. İçinde:
   yüksek · 2 kişi · Cumhuriyet Bayramı arifesi, yağmur"), dünün tahmini ve gerçekleşeni, haftanın en yoğun günü ve
   7 günün tatlısı, MET Norway kaynağı; Satış tahmini bağlantısıyla. **Yalnız zaten giden e-postaya eklenir**: tahmin
   için ayrıca e-posta gitmez, konu, başlık ve düğme değişmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md));
+- **onay bekleyenler** (kontrol listelerinden sonra): personelin onay bekleyen istekleri, "2 istek onay bekliyor" ve en
+  eskisinin ne zamandan beri beklediği, istek başına yalnız başlık ve isteyenin adı ("22 Ekim kasa düzeltmesi
+  (Mehmet)", "Latte M ×2 · 15 Eki (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
+  listelenir. Kutunun sonunda operasyonun bilgi satırlarına yer ayrılmış (personelin tükendi yaptığı ürünler, dalga 10'un
+  kalanıyla; henüz yok). Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı ya da dünkü kontrol listelerinin kutusu yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu ya da onay bekleyen personel isteği yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay
@@ -148,14 +170,15 @@ yalnız Vercel günlüğündedir. Aynı gün **Bugünküleri şimdi gönder** ay
 Resend ikinci kez göndermez.
 
 **Ek kutular (geliştirici notu).** Başka ekranların sabah e-postasına eklediği kutular (komisyon ve hakediş, dünkü
-kontrol listeleri, satış tahmini) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
+kontrol listeleri, onay bekleyenler, satış tahmini) `src/server/notify/digest-extras.ts` › `DIGEST_EXTRA_SOURCES` listesinde birer
 satırdır: `{ key, news, load(today, { preview }) }`; kutunun kendisi (`DigestBox`: başlık, satırlar, panel yolu,
 bağlantı metni, konu parçası, başlık) grubun kendi saf modülünde kurulur ve sınanır. Kaynaklar ötekilerle aynı anda,
 her biri en çok 4 saniye yüklenir; hata veren ya da geciken kutu düşer, e-postayı bozmaz. `news: true` kutu e-postayı
 tek başına gönderir; satış tahmini hiçbir zaman haber değildir (yalnız zaten giden e-postaya eklenir; konuya, başlığa ve
 düğmeye girmez). Kutunun anahtarları (`komisyon:<uyarı>`, `kontrol:<gün>`) tekil anahtara girer ve yalnız başarılı
-gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak kendisi eler. Gövdedeki sıra: sistem
-uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat onayı, komisyon, kontrol, zam, tahmin, düğme. Konuda kutunun
+gönderimden sonra `notification_log`'a yazılır; daha önce bildirileni kaynak kendisi eler (onay bekleyenlerin anahtarı
+yok: karar verilene kadar her sabah). Gövdedeki sıra: sistem uyarıları, ödemeler, faturalar, kontrol bekleyen, fiyat
+onayı, komisyon, kontrol, onay bekleyenler, zam, tahmin, düğme. Konuda kutunun
 parçası zamdan sonra eklenir ("Ödeme hatırlatması: 1 bugün · 1 hammaddeye zam · dünkü kapanış listesi eksik"); ödeme,
 sistem uyarısı, fatura ve fiyat onayı yoksa konu "Sabah özeti: <kutunun parçası>" olur, başlık ve düğme kutunun.
 Konu parçası ya da başlığı olmayan kutu e-postanın tek içeriğiyse konu ve başlık kutunun parçasını, o da yoksa adını
@@ -236,6 +259,8 @@ Pencere sonundan 30 dakika sonra (Hobby planında saat esnek) o günün çalış
   kapalı" ya da "Haftalık özet: Resend kurulmadı"; "Haftalık özet: süre yetmedi, yarın denenecek"; "Haftalık özet
   gönderilemedi" (Resend reddetti, gönderim belirsiz, etkin yönetici yok ya da hiçbir bilgi okunamadı; iş "Kısmen"
   sayılır). Perşembe–pazar ve haftanın özeti gittikten sonra adım yok.
+- Personel isteklerinin adımı (`requests`, [ONAYLAR.md](ONAYLAR.md)) yalnız süresi dolan bir istek kapandığında ("Süresi
+  dolan personel istekleri kapandı") ya da adım hata verdiğinde yazılır ("Personel istekleri hata"; iş "Kısmen").
 
 **İki iş birden durursa** (Vercel Cron hiç tetiklemiyor) e-posta da gidemez; panel zil ve Genel bakış'ta yine söyler
 ama panel açılmazsa kimse görmez. Bunun için isteğe bağlı dış izleme: ücretsiz bir uptime servisine (ör. UptimeRobot,
@@ -280,7 +305,9 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
 siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de.
+güvenliği [KARAOKE.md](KARAOKE.md)'de. Onay bildirimlerinin konusu (`approvals`, varsayılan açık) abonelikte hazır, ama bu
+dalgada ona push gönderen bir yol yok: "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b) iki rolde de görünür
+([ONAYLAR.md](ONAYLAR.md)).
 
 ## Resend kurulumu
 

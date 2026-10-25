@@ -1,24 +1,29 @@
 import { Badge } from "@/components/ui/badge";
 import { changeLine, historyOf, stampTR, type CashReportFields, type CashRevisionRow } from "@/lib/cash-report";
+import { genitive } from "@/lib/recipe-change";
 import { cn } from "@/lib/utils";
 
 /**
  * Raporun düzeltme geçmişi ("Değişiklikler"), en yeni önce: her gönderimde kim, ne zaman, hangi alan neyden neye.
  * İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) kasa alanı değişen düzeltme "Ertesi gün" rozetiyle. Not gibi
  * metin alanlarının içeriği yazılmaz ("Not değişti"). Önceki sürüm yoksa (hiç düzeltilmemiş ya da bu özellikten önceki
- * rapor) görünmez. Saf bileşen: personelin kayıtlı raporunda ve yöneticinin gün ayrıntısında aynı.
+ * rapor) görünmez. Personelin onaylanan düzeltme önerisi "23 Ekim 10:05 · Ayşe · Mehmet'in önerisi" diye görünür
+ * (`proposedBy`: sürüme göre önerenler). Saf bileşen: personelin kayıtlı raporunda ve yöneticinin gün ayrıntısında aynı.
  */
 export function CashRevisions({
   report,
   revisions,
+  proposedBy,
   className,
 }: {
   report: CashReportFields & { revision: number; cashDiff: number; countedByName: string | null; submittedByName: string; createdAt: string; updatedAt: string };
   revisions: CashRevisionRow[];
+  /** Onaylanan düzeltme önerilerinin önerenleri, sürüme göre */
+  proposedBy?: Record<number, string>;
   className?: string;
 }) {
   if (report.revision <= 1 || !revisions.length) return null;
-  const h = historyOf(report, revisions);
+  const h = historyOf(report, revisions, proposedBy ? new Map(Object.entries(proposedBy).map(([k, v]) => [Number(k), v])) : undefined);
   if (!h.entries.length) return null;
   return (
     <section aria-label="Değişiklikler" className={className}>
@@ -29,6 +34,7 @@ export function CashRevisions({
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
               <span className="font-medium text-ink tabular">
                 {stampTR(e.at)} · {e.by}
+                {e.proposedBy ? ` · ${genitive(e.proposedBy)} önerisi` : ""}
               </span>
               {e.late ? <Badge tone="amber">Ertesi gün</Badge> : null}
             </p>

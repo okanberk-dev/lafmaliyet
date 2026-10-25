@@ -3,12 +3,13 @@ import "server-only";
 import { loadKontrolDigest } from "@/server/data/checklists";
 import { loadCommissionDigest } from "@/server/data/commission";
 import { loadForecastDigest } from "@/server/forecast/load";
+import { loadApprovalsDigest } from "@/server/staff-requests/digest";
 
 import { collectDigestExtras, type DigestExtrasResult, type DigestExtraSource } from "./digest-template";
 
 /**
  * Sabah e-postasının ek kutularının kaynakları (docs/planlar/CRITIQUE2.md R11): komisyon ve hakediş (komisyon grubu),
- * dünkü kontrol listeleri (kontrol), satış tahmini (tahmin). Her grup kutusunu kendi saf modülünde kurup sınar ve buraya
+ * dünkü kontrol listeleri (kontrol), satış tahmini (tahmin), onay bekleyen personel istekleri (dalga 10). Her grup kutusunu kendi saf modülünde kurup sınar ve buraya
  * bir satır ekler; e-postanın konusu, başlığı, düğmesi, gövdedeki yeri ve tekil anahtarı digest-template.ts'te tek
  * yerde. Kurallar:
  *
@@ -28,6 +29,9 @@ export const DIGEST_EXTRA_SOURCES: DigestExtraSource[] = [
   { key: "commission", news: true, load: (today, ctx) => loadCommissionDigest(today, ctx) },
   // Satış tahmini: bugünün tahmini, dünün tutturması, haftanın en yoğun günü; hiçbir zaman haber değil (docs/SATIS-TAHMINI.md)
   { key: "forecast", news: false, load: () => loadForecastDigest() },
+  // Onay bekleyenler: personel istekleri (başlık ve isteyenin adı, tutarsız) ve operasyonun bilgi satırları (Tükendi);
+  // karar verilene kadar her sabah (docs/ONAYLAR.md)
+  { key: "approvals", news: true, load: () => loadApprovalsDigest() },
 ];
 
 /** Ek kutuları aynı anda yükler (her biri en çok 4 sn); asla hata fırlatmaz. `preview`: yalnız okuyan önizleme */

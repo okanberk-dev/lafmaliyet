@@ -14,7 +14,7 @@ import { historyWhen, PRICE_SOURCE_LABEL, type HistoryRow } from "@/lib/prices/h
 import { posChangedText, staleForText } from "@/lib/prices/pos";
 import { todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { markPosDone, restorePosPending } from "@/server/actions/prices";
+import { markPosDone, undoPosMarks } from "@/server/actions/pos-marks";
 
 /** Ürün kartının fiyat geçmişi ve kasanın (ModPOS) durumu (loadProductPriceHistory) */
 export interface ProductPriceHistoryInfo {
@@ -59,8 +59,10 @@ export function PriceHistoryCard({ product, history }: { product: { id: number; 
           label: "Geri al",
           onClick: () => {
             setDoneSince(null);
-            void restorePosPending([{ productId: d.productId, stalePrice: d.stalePrice, since: d.since }]).then((u) => {
-              if (!u.ok) toast.error(u.error);
+            start(async () => {
+              const u = await undoPosMarks([d.markId]);
+              if (!u.ok) return void toast.error(u.error);
+              if (u.data.refused.length) toast.warning(u.data.refused[0].reason);
             });
           },
         },

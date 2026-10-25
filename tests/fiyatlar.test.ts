@@ -43,7 +43,11 @@ import {
   posAfterPriceChange,
   posChangedText,
   posChecklistText,
+  posMarkMax,
   POS_PRICE_REMINDER,
+  POS_UNDO_TEXT,
+  POS_UNDO_WINDOW_MS,
+  posUndoRefusal,
   priceReminder,
   splitPosDone,
   type PosItem,
@@ -52,6 +56,7 @@ import { planMenuSync, type LinkedRow } from "../src/lib/site-menu/plan";
 import { PRICE_PUSH_REMINDER } from "../src/lib/site-menu/push";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
+import { assertNoCostKeys } from "./helpers/leak-scan";
 
 const root = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -452,6 +457,39 @@ test("kasada işaretleme: yalnız fiyatı hâlâ görülen fiyat olan işaretlen
   assert.equal(posChangedText([]), null);
 });
 
+test("kasaya işle işaretinin geri alınması (dalga 10 §2.2): personel yalnız kendi işaretini 30 dakika içinde; son işaret; listeye dönen ya da fiyatı kasadakine dönen ürün", () => {
+  assert.equal(POS_UNDO_WINDOW_MS, 30 * 60_000);
+  assert.equal(posMarkMax("staff"), 1);
+  assert.equal(posMarkMax("admin"), 500);
+  const at = new Date("2026-10-22T11:00:00Z");
+  const mark = { id: 7, markedBy: 2, markedAt: at.toISOString(), undoneAt: null, price: 205, stalePrice: 195 };
+  const product = { price: 205, posStalePrice: null };
+  const staff = (min: number, meId = 2) => ({ role: "staff" as const, meId, now: new Date(at.getTime() + min * 60_000) });
+  const admin = (min: number) => ({ role: "admin" as const, meId: 1, now: new Date(at.getTime() + min * 60_000) });
+  // Kendi işareti, 29 dakika: geri alınır; 30 dakika ve sonrası yöneticiye
+  assert.equal(posUndoRefusal(staff(29), mark, product, 7), null);
+  assert.equal(posUndoRefusal(staff(30), mark, product, 7), POS_UNDO_TEXT.late);
+  // Başkasının işareti
+  assert.equal(posUndoRefusal(staff(1, 3), mark, product, 7), POS_UNDO_TEXT.notMine);
+  // Yönetici: süre ve kişi sınırı yok
+  assert.equal(posUndoRefusal(admin(60 * 24 * 10), mark, product, 7), null);
+  // Zaten geri alınmış (önce bu söylenir)
+  assert.equal(posUndoRefusal(staff(40, 3), { ...mark, undoneAt: at.toISOString() }, product, 7), POS_UNDO_TEXT.undone);
+  assert.equal(posUndoRefusal(admin(1), { ...mark, undoneAt: at.toISOString() }, product, 7), POS_UNDO_TEXT.undone);
+  // Ürün listeye yeniden girdi (yeni fiyat): geri alınmaz, yeni fiyat işaretlenir
+  assert.equal(posUndoRefusal(admin(1), mark, { price: 215, posStalePrice: 205 }, 7), POS_UNDO_TEXT.relisted);
+  // Fiyat kasadaki eski fiyata döndü
+  assert.equal(posUndoRefusal(admin(1), mark, { price: 195, posStalePrice: null }, 7), POS_UNDO_TEXT.reverted);
+  // Sonra yeniden işaretlendi (M1 → fiyat değişti → M2): M1 geri alınmaz; güncel fiyat işaretin fiyatı değilse de
+  assert.equal(posUndoRefusal(admin(1), mark, product, 9), POS_UNDO_TEXT.notLatest);
+  assert.equal(posUndoRefusal(admin(1), mark, { price: 210, posStalePrice: null }, 7), POS_UNDO_TEXT.notLatest);
+  assert.equal(POS_UNDO_TEXT.notLatest, "Bu ürün sonra yeniden işaretlendi; son işareti geri alın");
+  // Ürün silinmiş
+  assert.equal(posUndoRefusal(admin(1), mark, null, null), POS_UNDO_TEXT.gone);
+  // Metinlerde tutar yok
+  for (const t of Object.values(POS_UNDO_TEXT)) assert.doesNotMatch(t, /₺/);
+});
+
 const posItem = (over: Partial<PosItem> & Pick<PosItem, "productId" | "name">): PosItem => ({
   size: "M",
   category: "Espresso Bazlı",
@@ -699,7 +737,7 @@ test("satış fiyatını yazan her yol geçmişe ve kasanın durumuna yazar", ()
   const walk = (dir: string): string[] =>
     readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));
   const updaters = walk("src").filter((f) => read(f).includes(".update(s.products)"));
-  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/prices/record.ts"];
+  const noPrice = ["src/server/actions/recipe-requests.ts", "src/server/site-menu/link.ts", "src/server/actions/prices.ts", "src/server/prices/record.ts", "src/server/prices/pos-marks.ts"];
   for (const f of updaters) {
     if (noPrice.includes(f)) {
       for (const m of read(f).matchAll(/\.update\(s\.products\)\s*\.set\(\{([^}]*)\}/g)) assert.doesNotMatch(m[1], /\bprice\b|\.\.\./, `${f}: fiyat yazıyor`);
@@ -738,21 +776,81 @@ test("toplu değişiklik: menü kilidi önce, iyimser denetim, kaleme göre sır
   assert.match(read("src/app/panel/urunler/fiyatlar/page.tsx"), /export const maxDuration = 60;/);
 });
 
-test("eylemler yöneticinin; zil öğesi yalnız yöneticide; yeni ürün kasaya girmez (D3)", () => {
+test("eylemler: toplu fiyat yöneticinin; kasaya işle iki rolde (requireUser); zil iki rolde, personelinki kendi özetinden; yeni ürün kasaya girmez (D3)", () => {
   const actions = read("src/server/actions/prices.ts");
   const exported = [...actions.matchAll(/^export async function (\w+)/gm)].map((m) => m[1]);
-  assert.deepEqual(exported.sort(), ["applyBulkPrices", "markPosDone", "restorePosPending", "undoPriceBatch"]);
+  assert.deepEqual(exported.sort(), ["applyBulkPrices", "undoPriceBatch"]);
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = await requireAdmin\(\);/, name);
   }
+  // Kasaya işle (dalga 10 §2.2): ayrı eylem dosyası, yalnız iki eylem, ikisi de oturumu kendisi denetler
+  const marks = read("src/server/actions/pos-marks.ts");
+  assert.ok(marks.startsWith('"use server";'));
+  const markExports = [...marks.matchAll(/^export (async function|const|function|class|let|type|interface) (\w+)/gm)];
+  assert.deepEqual(markExports.map((m) => `${m[1]} ${m[2]}`).sort(), ["async function markPosDone", "async function undoPosMarks"]);
+  for (const [, , name] of markExports) {
+    const body = marks.slice(marks.indexOf(`export async function ${name}`));
+    assert.match(body.slice(0, 300), /return attempt\(async \(\) => \{\s+const me = await requireUser\(\);/, name);
+  }
+  // Geri alma istemciden fiyat almaz: yalnız işaretin kimliği
+  const undoSchema = marks.slice(marks.indexOf("const zUndo"), marks.indexOf(";", marks.indexOf("const zUndo")));
+  assert.doesNotMatch(undoSchema, /stalePrice|price|since/);
+  assert.match(undoSchema, /z\.array\(zId\)/);
+  // Eylemlerin dönüşünde maliyet yok (personel de çağırır)
+  assertNoCostKeys(marks);
+  // Zilin satırı operasyonun modülünde (src/server/bell/ops.ts; dalga 10 Adım 0): toplayıcı iki rolde çağırır
   const bell = read("src/server/actions/notifications.ts");
-  const staffReturn = bell.indexOf('if (user.role !== "admin") return');
-  assert.ok(staffReturn > 0 && staffReturn < bell.indexOf("posNotifications().catch"), "personel dalı kasa fiyatlarını görmez");
-  // Yönetici dizisinin sırası korunur, kasa öğesi uyarıların başında (sayim-ekle testi sonu sabitler)
-  assert.match(bell, /\.\.\.invoices, \.\.\.pos, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
-  const pos = bell.slice(bell.indexOf("async function posNotifications"), bell.indexOf("async function invoiceNotifications"));
-  assert.match(pos, /await posPendingSummary\(\)/);
-  assert.match(pos, /href: "\/panel\/urunler\/fiyatlar\?sekme=kasa"/);
-  assert.match(pos, /group: "uyari"/);
+  assert.match(bell, /opsBell\(user\)\.catch\(\(\) => \[\]\)/);
+  const ops = read("src/server/bell/ops.ts");
+  // Personel dalı kendi sabit sütunlu özetinden okur (yalnız etkin ürünler), yönetici posPendingSummary'den
+  const pos = ops.slice(ops.indexOf("async function posNotifications"), ops.indexOf("export async function opsBell"));
+  assert.match(pos, /user\.role === "admin" \? await posPendingSummary\(\) : await staffPosSummary\(\)/);
+  assert.match(pos, /posBell\(user\.role, summary, now\)/);
+  // Yönetici dizisinin sırası korunur, operasyonun öğeleri uyarıların başında (sayim-ekle testi sonu sabitler)
+  assert.match(bell, /\.\.\.invoices, \.\.\.ops, \.\.\.priceNote, \.\.\.unpriced, \.\.\.warnings\]/);
+});
+
+test("kaynak: personelin kasaya işle yükleyicisi sabit sütunlu (beyaz liste), yalnız etkin ürünler; sayfa yönetici okuyucularına uzanmaz", () => {
+  const src = read("src/server/data/pos-staff.ts");
+  assert.match(src, /^import "server-only";/);
+  // Seçilen sütunlar tam olarak beyaz liste
+  const selects = [...src.matchAll(/\.select(?:DistinctOn\([^)]*\),\s*)?\(\{([^}]*)\}\)/g)].map((m) => m[1]);
+  assert.ok(selects.length >= 3, `${selects.length} select`);
+  const columns = new Set(selects.flatMap((body) => [...body.matchAll(/s\.(\w+)\.(\w+)/g)].map((m) => `${m[1]}.${m[2]}`)));
+  const allowed = new Set([
+    "products.id",
+    "products.name",
+    "products.size",
+    "products.price",
+    "products.posStalePrice",
+    "products.posStaleSince",
+    "products.sortOrder",
+    "products.active",
+    "categories.name",
+    "categories.sortOrder",
+    "posMappings.posName",
+    "posMappings.productId",
+    "posMarks.id",
+    "posMarks.productId",
+    "posMarks.price",
+    "posMarks.markedAt",
+  ]);
+  for (const c of columns) assert.ok(allowed.has(c), `beyaz listede yok: ${c}`);
+  // Yalnız etkin ürünler
+  assert.ok((src.match(/eq\(s\.products\.active, true\)/g) ?? []).length >= 3, "etkin süzgeci");
+  // Fiyat geçmişi, kaynak, not, site, reçete ve maliyet yok
+  assert.doesNotMatch(src, /productPrices|recipe|siteMenu|\.note\b|cost|unitCost|packagePrice/);
+  assertNoCostKeys(src);
+  const page = read("src/app/panel/kasa/fiyatlar/page.tsx");
+  // Personel sayfası yönetici okuyucularından ve Ürünler'den değer almaz
+  assert.doesNotMatch(page, /from "@\/server\/data\/prices"|from "@\/app\/panel\/urunler/);
+  assert.match(page, /const me = await requireUser\(\);/);
+  assert.match(page, /if \(me\.role === "admin"\) redirect\("\/panel\/urunler\/fiyatlar\?sekme=kasa"\);/);
+  // Ortak bileşen yönetici yükleyicisinden yalnız tip alır
+  const comp = read("src/components/panel/pos-checklist.tsx");
+  assert.ok(comp.startsWith('"use client";'));
+  assert.doesNotMatch(comp.replace(/^import type .*$/gm, ""), /@\/server\/data\/prices/);
+  assert.match(comp, /^import type \{[^}]*\} from "@\/server\/data\/prices";$/m);
+  assert.match(comp, /staff: true/);
 });

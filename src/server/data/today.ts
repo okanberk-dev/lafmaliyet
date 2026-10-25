@@ -10,12 +10,12 @@ import type { UpcomingItem } from "@/lib/reminders";
 import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
-import { loadChecklistDay } from "@/server/data/checklists";
+import { closedYesterday } from "@/server/closed-days";
+import { loadChecklistDays } from "@/server/data/checklists";
 import { loadOverduePayouts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
 import { loadPriceAlerts } from "@/server/data/price-alerts";
 import { pendingHoldSummary } from "@/server/data/price-holds";
-import { posPendingSummary } from "@/server/data/prices";
 import { countPendingRequests, loadReviewQueue } from "@/server/data/recipe-requests";
 import { loadReorderDay } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
@@ -30,12 +30,18 @@ import { karaokeSecret } from "@/server/karaoke/sync";
 import { loadUpcoming } from "@/server/notify/digest";
 import { countUnlinkedProducts } from "@/server/parasut/sync";
 import { readOrdersSnapshot, readOrdersState, type OrdersSnapshot, type OrdersSyncState } from "@/server/site-orders/sync";
+import { countPendingByKind } from "@/server/staff-requests/core";
+
+import { opsFacts } from "./today-ops";
+import { safe } from "./today-safe";
 
 /**
  * Bugün ekranının verisi (src/app/panel/bugun; satırların kuralları bugun/logic.ts, docs/BUGUN.md). İki rol için ortak
- * olgular (kasa, sayım, hatırlatıcılar, karaoke, uygulama siparişleri) ve rolün kendi olguları ayrı fonksiyonlarda:
- * personel için yalnız staffFacts çalışır, yöneticinin olguları (ödemeler, faturalar, maliyet modeli, fiyatlar, kasanın
- * bütünlüğü, günlük işler) ona hiç yüklenmez (tests/bugun.test.ts kaynaktan denetler).
+ * olgular (kasa, sayım, hatırlatıcılar, karaoke, uygulama siparişleri, bugünün ve dünün kontrol listeleri, kapalı gün)
+ * ve rolün kendi olguları ayrı fonksiyonlarda: personel için yalnız staffFacts çalışır, yöneticinin olguları (ödemeler,
+ * faturalar, maliyet modeli, fiyatlar, kasanın bütünlüğü, onaylar, günlük işler) ona hiç yüklenmez (tests/bugun.test.ts
+ * kaynaktan denetler). Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak) src/server/data/today-ops.ts'te, iki
+ * rolde; o dosyanın personel dalı yalnız personelin yükleyicilerini okur.
  */
 export interface TodayData {
   facts: DayFacts;
@@ -50,17 +56,6 @@ export interface TodayData {
    */
   forecast: { admin: ForecastCardData | null; staff: StaffForecastView | null };
   renderedAt: string;
-}
-
-/**
- * Bir kaynak düşerse sayfa yine açılır: ilgili satır "okunamadı" der ya da hiç çıkmaz, hata sunucu günlüğüne yazılır.
- * Her yükleyici bundan geçer (ikinci paketin satırları da).
- */
-export function safe<T>(p: Promise<T>): Promise<T | null> {
-  return p.catch((e: unknown) => {
-    console.error("[bugun]", e);
-    return null;
-  });
 }
 
 /**
@@ -157,10 +152,9 @@ async function staffFacts(c: DayContext): Promise<RoleFacts> {
  */
 async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO[] | null>): Promise<RoleFacts> {
   const db = getDb();
-  const yesterday = dayContext(now).yesterday;
   // Maliyet modeli bir kez kurulur: zam uyarısı ve mal siparişinin hazır listesi aynı modelle (personelde hiç kurulmaz)
   const modelP = loadModel();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, pos, flags, checklistsYesterday, overdue, reorder, forecast] = await Promise.all([
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, reorder, forecast] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -177,14 +171,29 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     ),
     safe(countUnlinkedProducts()),
     safe(loadUnpricedIngredients()),
-    // Onay bekleyen öneriler: değişiklikler ve yeni ürünler (boyları tek öneri), ilk ürün adları
+    // Onay bekleyenler: reçete değişiklikleri ve yeni ürünler (boyları tek öneri), ilk ürün adları; personel istekleri
+    // türüne göre (docs/ONAYLAR.md) ve hepsinin en eskisi
     safe(
       (async () => {
-        if (!(await countPendingRequests())) return { changes: 0, newProducts: 0, names: [] };
-        const { pending } = await loadReviewQueue(0);
-        const changes = pending.filter((r) => r.kind === "change");
-        const proposals = groupNewProposals(pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })));
-        return { changes: changes.length, newProducts: proposals.length, names: [...new Set([...changes.map((r) => r.productName), ...proposals.map((p) => p.name)])] };
+        const [recipe, requests] = await Promise.all([
+          (async () => {
+            if (!(await countPendingRequests())) return { changes: 0, newProducts: 0, names: [] as string[], oldest: null };
+            const { pending } = await loadReviewQueue(0);
+            const changes = pending.filter((r) => r.kind === "change");
+            const proposals = groupNewProposals(pending.filter((r) => r.kind === "new").map((r) => ({ id: r.id, name: r.productName, size: r.size, by: r.requestedByName, message: r.message })));
+            const names = [...new Set([...changes.map((r) => r.productName), ...proposals.map((p) => p.name)])];
+            return { changes: changes.length, newProducts: proposals.length, names, oldest: pending[0]?.createdAt ?? null };
+          })(),
+          countPendingByKind(db, now),
+        ]);
+        const oldest = [recipe.oldest, ...requests.map((r) => r.oldestAt)].filter((d): d is Date => d !== null).sort((a, b) => a.getTime() - b.getTime())[0];
+        return {
+          changes: recipe.changes,
+          newProducts: recipe.newProducts,
+          names: recipe.names,
+          requests: requests.map(({ kind, count }) => ({ kind, count })),
+          oldestAt: oldest?.toISOString() ?? null,
+        };
       })(),
     ),
     safe(pendingHoldSummary().then((h) => ({ count: h.count, items: h.items.map(({ name, pct }) => ({ name, pct })) }))),
@@ -196,7 +205,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         return alert ? { detail: alert.detail, href: alert.href, count: pa.actionable.length } : null;
       })(),
     ),
-    safe(posPendingSummary().then((p) => ({ count: p.count, oldest: p.oldest?.toISOString() ?? null }))),
     // Kasanın bütünlüğü (kasa'nın kuralları, zil ile aynı; bugun/logic.ts cashFlags): açılış önceki devirle tutmuyor;
     // rapor iş günü kapandıktan sonra kasa alanı değiştirilerek düzeltildi. Zincir listenin en eski gününden önceki son
     // rapordan başlar (en eski gün sıraya güvenmeden bulunur)
@@ -208,8 +216,6 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
         return cashFlags(reports, before, revisions, viewer);
       }),
     ),
-    // Dünün kontrol listeleri: tamamlanmayan ve sorunlu olanlar (bugünkü listeler iki rolde loadToday'de)
-    safe(loadChecklistDay(yesterday, "admin", now)).then((lists) => (lists ? { day: yesterday, lists } : null)),
     // Geciken hakedişler (hafif okuma: ekranın 13 ayının Komisyon faturaları ve işaretler; docs/KOMISYON.md)
     safe(loadOverduePayouts()),
     // Mal siparişi: hızlı sayım, sipariş hazır tedarikçiler, teslim kontrolü (docs/MAL-SIPARISI.md)
@@ -218,7 +224,7 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     safe(loadForecastCard(now)),
   ]);
   return {
-    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, pos, checklistsYesterday, reorder },
+    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, reorder },
     cashFlags: flags,
     forecast: { admin: forecast, staff: null },
   };
@@ -235,15 +241,19 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   const range = businessDayRange(c.day);
   const configured = Boolean(karaokeSecret());
   const cashP = safe(cashReportsBetween(c.yesterday, c.day));
-  const [reports, firstDate, stock, due, sessions, orders, checklists, own] = await Promise.all([
+  const [reports, firstDate, stock, due, sessions, orders, checklists, closed, ops, own] = await Promise.all([
     cashP,
     safe(firstCashReportDate()),
     safe(stockProgress(c.month, c.prevMonth)),
     safe(loadDueReminders(user.id, c.today)),
     safe(loadSessions(range.from, range.to, { admin })),
     configured ? safe(Promise.all([readOrdersSnapshot(), readOrdersState()]).then(([snapshot, state]) => ordersLite(snapshot, state))) : Promise.resolve(null),
-    // Kontrol listeleri (iki rol; personel yalnız kendi doldurabildiklerini alır)
-    safe(loadChecklistDay(c.day, user.role, now)),
+    // Bugünün ve dünün kontrol listeleri tek okumada (iki rol; personel yalnız kendi doldurabildiklerini alır)
+    safe(loadChecklistDays([c.day, c.yesterday], user.role, now)),
+    // Dün kafe kapalı mıydı (onaylı ya da onay bekleyen bildirim; kasa ve liste satırları buna bakar)
+    safe(closedYesterday(user, now)),
+    // Operasyonun olguları (kasadaki fiyatlar, Tükendi, taslak): iki rolde, rolün kendi yükleyicileriyle
+    opsFacts(user, now),
     admin ? adminFacts(now, user.id, cashP) : staffFacts(c),
   ]);
 
@@ -255,11 +265,14 @@ export async function loadToday(user: CurrentUser): Promise<TodayData> {
   };
   const facts: DayFacts = {
     ...own.facts,
+    ...ops,
     role: user.role,
     now,
     cash: reports ? { today: lite(c.day), yesterday: lite(c.yesterday), firstDate } : null,
     stock,
-    checklists: checklists ? { day: c.day, lists: checklists } : null,
+    checklists: checklists ? { day: c.day, lists: checklists.get(c.day) ?? [] } : null,
+    checklistsYesterday: checklists ? { day: c.yesterday, lists: checklists.get(c.yesterday) ?? [] } : null,
+    closed,
   };
   return {
     facts,

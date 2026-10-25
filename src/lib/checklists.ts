@@ -542,15 +542,80 @@ export function canAnswerDay(date: string, now: Date, runExists: boolean): boole
   return runExists && date === addDays(today, -1) && nowBusinessMinute(now) < ANSWER_GRACE_MIN;
 }
 
+/** Personelin geçmişi: bugün dahil son 7 iş günü (amaç "dün gece ne oldu"; KVKK veri azaltımı, dalga 10 §2.5) */
+export const STAFF_HISTORY_DAYS = 7;
+/** Yöneticinin geçmişinde bir sayfadaki gün */
+export const HISTORY_PAGE_DAYS = 14;
+
+/** Personelin görebildiği ilk gün (bugün dahil son 7 gün): 22 Ekim → 16 Ekim */
+export function staffHistoryFloor(today: string): string {
+  return addDays(today, -(STAFF_HISTORY_DAYS - 1));
+}
+
 /**
- * Kontrol fotoğrafını kim görür: yönetici hepsini; personel yalnız personelin doldurduğu bir listenin bugünkü ya da
- * dünkü (iş günü) kaydındaki fotoğrafı; bir yanıta bağlı olmayan fotoğrafı yalnız yükleyen. Fotoğraf yolunun ilk
- * adımları (süresi dolan hayır, yönetici evet, yükleyen bağlanmamışı görür) src/lib/photo-rules.ts photoViewDecision'da.
+ * Personel bu listenin bu günkü kaydını görür mü: liste "Personel doldurabilir" olmalı ve gün listenin personele
+ * açıldığı iş gününden eski olmamalı (`staffSince` boş: baştan beri açık). Yöneticinin listesi personele açılınca eski
+ * kayıtları (yöneticinin notları, fotoğrafları) görünmez.
  */
-export function photoAccess(i: { role: "admin" | "staff"; userId: number; createdBy: number | null; run: { date: string; staffAllowed: boolean } | null; now: Date }): boolean {
+export function staffSeesRun(t: { staffAllowed: boolean; staffSince: string | null }, runDate: string): boolean {
+  return t.staffAllowed && (!t.staffSince || runDate >= businessDate(new Date(t.staffSince)));
+}
+
+/** "Personel doldurabilir" kapalıyken açılınca o an yazılır (yeni liste: `prev` false); öteki geçişler yazmaz */
+export function staffSinceChange(prev: boolean, next: boolean, now: Date): { staffSince?: Date } {
+  return !prev && next ? { staffSince: now } : {};
+}
+
+/** Geçmiş ekranının görünümü: bir günün ayrıntısı ya da günler listesi (`older`: "Daha eski günler"in bitişi) */
+export type HistoryRange =
+  | { kind: "day"; day: string; prev: string | null; next: string | null }
+  | { kind: "days"; from: string; to: string; older: string | null };
+
+/** "2026-10-22" biçiminde gerçek bir gün mü ("2026-13-01" ve "2026-02-30" değil) */
+function isDayText(v: string | undefined): v is string {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+}
+
+/**
+ * Kontrol geçmişinin aralığı (?gun=, ?bitis=). Yönetici: ilk kayıttan bugüne, 14 günlük sayfalar, "Daha eski günler";
+ * ayrıntı ilk günden bugüne. Personel: bugün dahil son 7 gün, daha eskisi yok; ?bitis= yok sayılır, pencere dışı ya da
+ * bozuk ?gun= 7 günlük listeye döner. Pencere sunucuda uygulanır; fotoğraf yolu aynı sınırı kullanır (photoAccess).
+ */
+export function historyRange(i: { role: "admin" | "staff"; today: string; first: string; gun?: string; bitis?: string }): HistoryRange {
+  const staff = i.role !== "admin";
+  const floor = staff && staffHistoryFloor(i.today) > i.first ? staffHistoryFloor(i.today) : i.first;
+  const gun = isDayText(i.gun) ? i.gun : undefined;
+  if (gun && gun <= i.today && (!staff || gun >= floor)) {
+    const prev = addDays(gun, -1);
+    const next = addDays(gun, 1);
+    return { kind: "day", day: gun, prev: prev >= floor ? prev : null, next: next <= i.today ? next : null };
+  }
+  if (staff) return { kind: "days", from: floor, to: i.today, older: null };
+  const bitis = isDayText(i.bitis) ? i.bitis : undefined;
+  const to = bitis && bitis <= i.today ? bitis : i.today;
+  const start = addDays(to, -(HISTORY_PAGE_DAYS - 1));
+  const from = start < floor ? floor : start;
+  return { kind: "days", from, to, older: from > floor ? addDays(from, -1) : null };
+}
+
+/**
+ * Kontrol fotoğrafını kim görür: yönetici hepsini; personel yalnız personelin doldurduğu bir listenin son 7 gündeki
+ * (iş günü, bugün dahil) kaydındaki fotoğrafı, liste personele açıldıktan sonraki günlerden; bir yanıta bağlı olmayan
+ * fotoğrafı yalnız yükleyen. Fotoğraf yolunun ilk adımları (süresi dolan hayır, yönetici evet, yükleyen bağlanmamışı
+ * görür) src/lib/photo-rules.ts photoViewDecision'da.
+ */
+export function photoAccess(i: {
+  role: "admin" | "staff";
+  userId: number;
+  createdBy: number | null;
+  run: { date: string; staffAllowed: boolean; staffSince?: string | null } | null;
+  now: Date;
+}): boolean {
   if (i.role === "admin") return true;
   if (!i.run) return i.createdBy !== null && i.createdBy === i.userId;
-  return i.run.staffAllowed && i.run.date >= addDays(businessDate(i.now), -1);
+  return i.run.date >= staffHistoryFloor(businessDate(i.now)) && staffSeesRun({ staffAllowed: i.run.staffAllowed, staffSince: i.run.staffSince ?? null }, i.run.date);
 }
 
 // ---------------------------------------------------------------- Zil

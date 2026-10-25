@@ -126,6 +126,16 @@ export async function previousCarryOver(date: string): Promise<{ date: string; a
   return row ? { date: row.date, amount: Math.round((row.counted - row.handed) * 100) / 100 } : null;
 }
 
+/** Raporu girilmiş günler (yalnız tarih; personelin zili kapalı gün bildiriminin sonucunda bakar) */
+export async function reportedDays(days: readonly string[]): Promise<Set<string>> {
+  if (!days.length) return new Set();
+  const rows = await getDb()
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(inArray(s.cashReports.date, [...new Set(days)]));
+  return new Set(rows.map((r) => r.date));
+}
+
 /** Raporu en çok bu kadar geride olan ilk gün (ay seçicisi için) */
 export async function firstCashReportDate(): Promise<string | null> {
   const [row] = await getDb().select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1);

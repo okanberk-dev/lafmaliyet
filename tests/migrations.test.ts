@@ -76,3 +76,27 @@ test("derleme migration'dan sonra doğrular", () => {
   assert.match(src, /await migrate\(db, \{ migrationsFolder: "drizzle" \}\);\s*await verifyMigrations\(db\);/);
   assert.match(src, /if \(report\.error\) throw new Error\(report\.error\)/);
 });
+
+test("dalga 10 (personel yetkileri): tek migration; ortak onay kuyruğu, kasaya işle işaretleri ve eklenen sütunlar", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_personel_yetki"));
+  assert.ok(entry, "personel_yetki migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
+  for (const re of [
+    /CREATE TABLE "staff_requests"/,
+    /CREATE TABLE "pos_marks"/,
+    /"photo_ids" integer\[\] DEFAULT '\{\}'::integer\[\] NOT NULL/,
+    /ALTER TABLE "recipe_change_requests" ADD COLUMN "version" integer DEFAULT 1 NOT NULL/,
+    /ALTER TABLE "checklist_templates" ADD COLUMN "staff_since" timestamp with time zone/,
+    /ALTER TABLE "push_subscriptions" ADD COLUMN "approvals" boolean DEFAULT true NOT NULL/,
+    /ALTER TABLE "special_days" ADD COLUMN "by_staff" boolean DEFAULT false NOT NULL/,
+    /ALTER TABLE "special_days" ADD COLUMN "updated_by" integer/,
+    /ALTER TABLE "special_days" ADD COLUMN "updated_by_name" text/,
+    /CREATE UNIQUE INDEX "staff_requests_pending_uq" ON "staff_requests" USING btree \("kind","subject","requested_by"\) WHERE status = 'pending'/,
+    /CREATE UNIQUE INDEX "staff_requests_live_draft_uq" ON "staff_requests" USING btree \("subject"\) WHERE kind = 'mal-taslak' and status in \('pending', 'approved'\)/,
+    /CREATE UNIQUE INDEX "staff_requests_client_key_uq"/,
+  ]) {
+    assert.match(sql, re);
+  }
+  // Elle yazılmış SQL yok: yalnız drizzle-kit'in ürettiği ifadeler
+  assert.doesNotMatch(sql, /(^|--> statement-breakpoint\n?)\s*(UPDATE|INSERT INTO|DELETE FROM) /m);
+});

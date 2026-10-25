@@ -63,6 +63,9 @@ export async function loadDailyTotals(from: string, to: string): Promise<DayTota
 export interface SpecialDayRow extends SpecialDay {
   note: string | null;
   createdByName: string;
+  byStaff: boolean;
+  /** Son düzenleyen (yönetici düzenlediyse personel artık değiştiremez) */
+  updatedByName: string | null;
 }
 
 export interface ForecastCore {
@@ -92,6 +95,9 @@ function toSpecialRow(r: typeof s.specialDays.$inferSelect): SpecialDayRow {
     effect: r.effect,
     note: r.note,
     createdByName: r.createdByName,
+    byStaff: r.byStaff,
+    addedBy: r.byStaff ? r.createdByName : null,
+    updatedByName: r.updatedByName,
   };
 }
 

@@ -45,7 +45,7 @@ export function ProposeProductButton({ kit, product }: { kit: ProposeKit; produc
 /**
  * Personelin yeni ürün önerisi: ad, kategori, boylar, boy başına isteğe bağlı satış fiyatı, her boyun reçetesi (malzeme
  * satırları "Değişiklik öner" ile aynı düzenleyici; listede olmayan malzeme oradan eklenir), yöneticiye not. Maliyet
- * yok; satış fiyatı yalnız yazılır: yönetici Reçete onayları'nda önceden dolu görür, değiştirip onaylayınca ürün açılır.
+ * yok; satış fiyatı yalnız yazılır: yönetici Onaylar'da önceden dolu görür, değiştirip onaylayınca ürün açılır.
  * Telefonda alttan açılan sayfa.
  */
 function NewProductSheet({ kit, product, initialCategory, onClose }: { kit: ProposeKit; product: NewProductKit; initialCategory: number | null; onClose: () => void }) {

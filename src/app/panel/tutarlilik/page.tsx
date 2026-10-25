@@ -18,6 +18,7 @@ import { dateTimeTR, monthLabel, num, tl } from "@/lib/format";
 import { sizeLabel } from "@/lib/site-sales/calc";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/dal";
+import { pendingWasteSummary } from "@/server/data/waste-requests";
 import { availableMonths, loadModel, resolveMonth } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 import { siteLinkSecret } from "@/server/site-link";
@@ -58,6 +59,8 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
   const sp = await searchParams;
   const [model, findings] = await Promise.all([loadModel(), getDb().select().from(s.findings).orderBy(desc(s.findings.createdAt), desc(s.findings.id))]);
   const month = resolveMonth(sp.ay, model);
+  // Bu aya düşen, onay bekleyen geç zayi / ikram ve silme istekleri (dalga 10 §2.8): onaylanırsa tutarlılık değişir
+  const waiting = await pendingWasteSummary({ month }).catch(() => null);
   const c = consistency(model, month);
   const autos = alerts(model, month);
   const st = model.settings;
@@ -115,6 +118,15 @@ async function ConsistencyContent({ searchParams }: { searchParams: PageProps<"/
         actions={<MonthPicker months={availableMonths(model)} value={month} />}
         tabs={<SectionTabs section="stok" current="/panel/tutarlilik" />}
       />
+
+      {waiting?.count ? (
+        <p className="mb-4 rounded-xl bg-warn-soft px-4 py-2.5 text-sm text-warn">
+          Bu ay için onay bekleyen {num(waiting.count)} zayi / ikram isteği ·{" "}
+          <Link href={`/panel/onaylar#istek-${waiting.firstId}`} className="font-medium underline underline-offset-2">
+            Onaylar
+          </Link>
+        </p>
+      ) : null}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatBreakdown

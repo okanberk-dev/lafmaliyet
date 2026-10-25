@@ -9,6 +9,7 @@ import { addDays, longDateTR } from "@/lib/reminders";
 import { logActivity } from "@/server/actions/log";
 import type { CurrentUser } from "@/server/auth/dal";
 import * as store from "@/server/checklists/store";
+import { isClosedDay } from "@/server/closed-days";
 import { cashReportsBetween, firstCashReportDate } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 import type { DigestExtraLoad } from "@/server/notify/digest-template";
@@ -51,8 +52,9 @@ export function loadRunView(templateId: number, day: string, now: Date = new Dat
   return store.loadRunView(getDb(), templateId, day, ctxOf(now));
 }
 
-export function loadChecklistHistory(from: string, to: string, now: Date = new Date()) {
-  return store.loadHistory(getDb(), from, to, ctxOf(now));
+/** Geçmiş: personel yalnız kendi doldurabildiği listeleri, listenin personele açıldığı günden görür (aralık çağıranın) */
+export function loadChecklistHistory(from: string, to: string, role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadHistory(getDb(), from, to, role, ctxOf(now));
 }
 
 export function firstChecklistDay() {
@@ -97,7 +99,8 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
 
 /**
  * Kontrol fotoğrafını personel görür mü (yönetici ve bağlanmamış fotoğrafın yükleyeni buraya gelmez,
- * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin bugünkü ya da dünkü kaydındaki fotoğraf.
+ * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin son 7 gündeki kaydındaki fotoğraf, liste
+ * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS).
  */
 export const kontrolPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.kontrol,
@@ -120,6 +123,8 @@ export async function loadKontrolDigest(now: Date = new Date()): Promise<DigestE
   if (sent) return null;
   const [lists, reports, first] = await Promise.all([loadChecklistDay(day, "admin", now), cashReportsBetween(day, day), firstCashReportDate()]);
   const cashMissing = !reports.length && first !== null && first <= day;
+  // Onaylı kapalı gün (dalga 10 §2.9): hiç açılmamış listeler eksik sayılmaz, kutu yok
+  if (cashMissing && !lists.some((l) => l.run) && (await isClosedDay(day))) return null;
   const box = kontrolDigestBox(day, lists, cashMissing);
   return box ? { box, logKeys: [key] } : null;
 }

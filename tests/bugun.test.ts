@@ -90,7 +90,7 @@ test("2. dünün raporu yok: kasa kullanılmaya başladıysa 'Dünkü kasa rapor
   assert.equal(t.status, "todo");
   assert.equal(t.href, "/panel/kasa?gun=2026-10-21");
   assert.equal(t.action, "Dünü gir");
-  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir\.$/);
+  assert.match(t.detail, /^21 Ekim Çarşamba raporu girilmedi\. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin\. Yarından itibaren yöneticinin onayıyla girilir\.$/);
   assert.equal(splitTasks(tasks).next?.key, "kasa-dun");
   // İlk rapor bugün (ya da hiç yok): dün beklenmez
   for (const firstDate of ["2026-10-22", null]) {
@@ -103,7 +103,7 @@ test("2. dünün raporu yok: kasa kullanılmaya başladıysa 'Dünkü kasa rapor
   assert.equal(a.status, "todo");
   assert.equal(a.badge, "Girilmedi");
   assert.equal(a.action, "Raporu gir");
-  assert.match(a.detail, /personel bugün de girebilir; daha sonra yalnız siz girersiniz/);
+  assert.match(a.detail, /personel bugün de girebilir; daha sonra yalnız sizin onayınızla girilir/);
 });
 
 test("3. personel 21:00: zayi 'Rapordan önce' ve kasa yapılacak, sıradaki zayi; rapor gönderilince ikisi de tamam", () => {
@@ -511,6 +511,7 @@ test("9. ürün bağlantısı, fiyatı girilmemiş hammadde, reçete onayı, fiy
   assert.equal(t["fiyat-yok"].badge, "5 hammadde");
   assert.equal(t["fiyat-yok"].detail, "Çilek şurubu, Böğürtlen püre, Klips kapak ve 2 hammadde daha · Hammaddeler'den paket fiyatını girin.");
   assert.equal(t["fiyat-yok"].href, "/panel/hammaddeler?durum=fiyatsiz");
+  assert.equal(t.onay.title, "Onaylar");
   assert.equal(t.onay.badge, "3 bekliyor");
   assert.equal(t.onay.detail, "Personelin önerdiği 2 reçete değişikliği ve 1 yeni ürün önerisi onay bekliyor: Latte, Mocha, Çilekli Latte…");
   assert.equal(t.onay.href, "/panel/onaylar");
@@ -568,12 +569,15 @@ test("personelin olgusuna yönetici bilgisi yanlışlıkla gelse de hiçbir yön
     approvals: { changes: 2, newProducts: 0, names: ["Latte"] },
     holds: { count: 1, items: [{ name: "Süt", pct: 0.5 }] },
     prices: { detail: "…", href: "/panel/urunler#zamlar", count: 3 },
+    // Kasadaki fiyatlar artık personelin de satırı (dalga 10 §2.2): kendi listesine götürür, yönetici metni yok
     pos: { count: 2, oldest: null },
     commission: { overdue: [{ label: "Pluxee", month: "2026-09", due: "2026-10-20" }] },
     cash: { today: null, yesterday: report("2026-10-21", { flags: [CASH_FLAGS.carry] }), firstDate: "2026-10-01" },
   });
   const tasks = dayTasks(facts);
-  assert.deepEqual(keys(tasks), ["zayi", "kasa"]);
+  assert.deepEqual(keys(tasks), ["modpos", "zayi", "kasa"]);
+  assert.equal(byKey(tasks).modpos.href, "/panel/kasa/fiyatlar");
+  assert.doesNotMatch(byKey(tasks).modpos.detail, /Fiyatlar ›|₺/);
   // Kasa bütünlüğü personelde satırı değiştirmez
   const sent = dayTasks({ ...facts, cash: { today: report("2026-10-22", { flags: [CASH_FLAGS.carry] }), yesterday: null, firstDate: "2026-10-01" } });
   assert.equal(byKey(sent).kasa.status, "done");
@@ -695,7 +699,7 @@ test("kontrol 3. tamam: kim ve saat, geç ve fotoğraf sayısı; açık sorun y�
   assert.ok(byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: long })))["liste-1"].detail.length <= 140);
 });
 
-test("kontrol 4. dünkü listeler yalnız yöneticide, yalnız eksik ya da sorun varken; dünün kasa raporu da yoksa kafe kapalı olabilir", () => {
+test("kontrol 4. dünkü listeler yalnız eksik ya da sorun varken (personelde yapılacak, tests/kontrol-gecmis.test.ts); dünün kasa raporu da yoksa kafe kapalı olabilir", () => {
   const yesterday = { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 }), checklist(2, "Kapanış", "22:00", "02:00", { done: 13, required: 16 })] };
   const row = byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday, cash: { today: null, yesterday: report("2026-10-21"), firstDate: "2026-10-01" } })))["liste-dun"];
   assert.equal(row.status, "warn");
@@ -721,8 +725,11 @@ test("kontrol 4. dünkü listeler yalnız yöneticide, yalnız eksik ya da sorun
   // Hepsi tamam ve sorunsuz: satır yok; kasa hiç kullanılmadıysa not yok
   assert.ok(!keys(dayTasks(admin(NOON, { checklistsYesterday: { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 })] } }))).includes("liste-dun"));
   assert.doesNotMatch(byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday })))["liste-dun"].detail, /Kasa raporu/);
-  // Personelde hiç yok
-  assert.ok(!keys(dayTasks(staff(NOON, { checklistsYesterday: yesterday }))).includes("liste-dun"));
+  // Personelde (dalga 10 §2.5) sorun değil yapılacak, son 7 günün geçmişine götürür
+  const staffRow = byKey(dayTasks(staff(NOON, { checklistsYesterday: yesterday })))["liste-dun"];
+  assert.equal(staffRow.status, "todo");
+  assert.equal(staffRow.detail, "Kapanış: 3 madde yapılmadı");
+  assert.equal(staffRow.action, "Geçmişe bak");
 });
 
 test("kontrol 5. okunamadı: tek gri satır; olgu yoksa (eski olgular) satır yok", () => {
@@ -888,6 +895,9 @@ test("11c. kafe satırları: personelde satış tahmininin yoğunluğu ve tatlı
     ],
   );
   for (const l of lines) assert.doesNotMatch(l.text, /₺|%/);
+  // Yoğunluk satırı personelin Özel günler'ine gider; kart satırın kendi adresini kullanır (tatlı satırı bağlantısız)
+  assert.equal(lines.find((l) => l.key === "yogunluk")?.href, "/panel/ozel-gunler");
+  assert.equal(lines.find((l) => l.key === "tatli")?.href, undefined);
   // Karaoke bağlı değilken de kart tahmin satırlarıyla çizilir; kapalı gün tek satır
   assert.deepEqual(
     cafeLines({ karaoke: null, orders: null, configured: false }, now, { level: "normal", reasons: [], desserts: null, closed: false }).map((l) => l.text),
@@ -970,8 +980,8 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
     "countPendingRequests(",
     "loadReviewQueue(",
     "pendingHoldSummary(",
-    "posPendingSummary(",
     "loadUnpricedIngredients(",
+    "countPendingByKind(",
     "loadJobsOverview(",
     "lastParasutSyncOkAt(",
     "previousCarryOver(",
@@ -1003,13 +1013,14 @@ test("kaynak: sayfa iki role açık (requireUser); yönetici olguları yalnız a
   assert.match(admin, /cashFlags\(reports, before, revisions, viewer\)/);
 });
 
-test("kaynak: kontrol listeleri iki rolde (personel yalnız kendininkiler), dünkü listeler yalnız yöneticide; ekran liste saatlerinde yenilenir", () => {
+test("kaynak: bugünün ve dünün kontrol listeleri iki rolde tek okumada (personel yalnız kendininkiler); ekran liste saatlerinde yenilenir", () => {
   const src = read("src/server/data/today.ts");
   const adminBody = bodyOf(src, "adminFacts");
   const load = bodyOf(src, "loadToday");
-  assert.match(load, /safe\(loadChecklistDay\(c\.day, user\.role, now\)\)/);
-  assert.match(load, /checklists: checklists \? \{ day: c\.day, lists: checklists \} : null,/);
-  assert.match(adminBody, /safe\(loadChecklistDay\(yesterday, "admin", now\)\)/);
+  assert.match(load, /safe\(loadChecklistDays\(\[c\.day, c\.yesterday\], user\.role, now\)\)/);
+  assert.match(load, /checklists: checklists \? \{ day: c\.day, lists: checklists\.get\(c\.day\) \?\? \[\] \} : null,/);
+  assert.match(load, /checklistsYesterday: checklists \? \{ day: c\.yesterday, lists: checklists\.get\(c\.yesterday\) \?\? \[\] \} : null,/);
+  assert.doesNotMatch(adminBody, /loadChecklistDay/);
   assert.doesNotMatch(bodyOf(src, "staffFacts"), /loadChecklistDay/);
   assert.match(read("src/app/panel/bugun/page.tsx"), /checklistBoundaries\(data\.facts\.checklists\)/);
 });
@@ -1026,7 +1037,7 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
     "loadUpcoming(",
     "countUnlinkedProducts(",
     "loadUnpricedIngredients(",
-    "loadChecklistDay(",
+    "loadChecklistDays(",
     "loadOverduePayouts(",
     "loadForecastCard(",
     "loadStaffForecast(",
@@ -1036,7 +1047,6 @@ test("kaynak: her yükleyici safe() ile; bir kaynak düşerse sayfa açılır", 
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const call of [
     "pendingHoldSummary(",
-    "posPendingSummary(",
     "Promise.all([loadJobsOverview(now), lastParasutSyncOkAt()])",
     "cash.then(",
     "Promise.all([readOrdersSnapshot(), readOrdersState()])",
@@ -1054,7 +1064,9 @@ test("kaynak: uygulama siparişlerinin tazeliği son başarılı çekmeden (kopy
 });
 
 test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride ve çıkınca yenilenir", () => {
-  const bell = read("src/server/actions/notifications.ts");
+  // Kasa satırları kasa modülünde (src/server/bell/kasa.ts), toplayıcı iki rolde çağırır
+  const bell = read("src/server/bell/kasa.ts");
+  assert.match(read("src/server/actions/notifications.ts"), /kasaBell\(user\)\.catch\(\(\) => \[\]\)/);
   assert.match(bell, /if \(!isCashEvening\(now\) \|\| reports\.some\(\(r\) => r\.date === day\)\) return \[\];/);
   assert.doesNotMatch(bell, /hour < 20/);
   assert.match(read("src/components/panel/live/alert-center.tsx"), /p\.startsWith\("\/panel\/bugun"\)\) router\.refresh\(\)/);
@@ -1063,4 +1075,107 @@ test("kaynak: zil Bugün ile aynı akşam kuralına bakar; Bugün canlı veride 
   // eski çizimi gösterir)
   const refresh = read("src/app/panel/bugun/today-refresh.tsx");
   for (const re of [/at - liveNow\(\)/, /visibilitychange/, /shownAgain/]) assert.match(refresh, re);
+});
+
+// ---------------------------------------------------------------- Dalga 10 Adım 0 (docs/planlar/personel-yetki.md §4.2)
+
+test("onay satırı: personel istekleri de sayılır; türler tek satırda, reçete arada, en eskisinin beklediği; tutar yok", () => {
+  const now = tr("2026-10-24T10:00");
+  const t = byKey(
+    dayTasks(
+      admin(now, {
+        approvals: {
+          changes: 2,
+          newProducts: 0,
+          names: ["Latte"],
+          requests: [
+            { kind: "mal-taslak", count: 1 },
+            { kind: "kasa-duzeltme", count: 1 },
+          ],
+          oldestAt: tr("2026-10-22T09:00").toISOString(),
+        },
+      }),
+    ),
+  );
+  assert.equal(t.onay.title, "Onaylar");
+  assert.equal(t.onay.status, "todo");
+  assert.equal(t.onay.badge, "4 bekliyor");
+  assert.equal(t.onay.detail, "1 kasa düzeltmesi · 2 reçete değişikliği · 1 mal siparişi taslağı · en eskisi 2 gündür");
+  assert.equal(t.onay.href, "/panel/onaylar");
+  assert.doesNotMatch(t.onay.detail, /₺/);
+  // Yalnız istek (reçete yok)
+  const only = byKey(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [{ kind: "zayi-gec", count: 3 }], oldestAt: now.toISOString() } })));
+  assert.equal(only.onay.badge, "3 bekliyor");
+  assert.equal(only.onay.detail, "3 geç zayi / ikram · en eskisi bugünden beri");
+  // İstek yoksa satır eskisi gibi (reçete metni), hiçbir şey yoksa satır yok
+  assert.ok(!keys(dayTasks(admin(now, { approvals: { changes: 0, newProducts: 0, names: [], requests: [], oldestAt: null } }))).includes("onay"));
+  // Personelde hiç yok
+  assert.ok(!keys(dayTasks(staff(now, { approvals: { changes: 1, newProducts: 0, names: ["Latte"], requests: [{ kind: "kasa-gec", count: 1 }], oldestAt: null } }))).includes("onay"));
+});
+
+test("sıradaki iş: başka yapılacak ya da sorunlu satır varken dünün kontrol listeleri sıradaki olmaz (iki rolde)", () => {
+  const t = (key: DayTask["key"], status: DayTask["status"]): DayTask => ({ key, status, title: key, detail: "", href: "/", action: "" });
+  assert.equal(splitTasks([t("liste-dun", "warn"), t("odeme", "todo")]).next?.key, "odeme");
+  assert.equal(splitTasks([t("kasa-dun", "todo"), t("liste-dun", "warn")]).next?.key, "kasa-dun");
+  assert.equal(splitTasks([t("liste-dun", "todo"), t("liste-1", "todo")]).next?.key, "liste-1");
+  // Tek açık satır oysa sıradaki odur
+  assert.equal(splitTasks([t("liste-dun", "warn"), t("fatura", "done"), t("kasa", "later")]).next?.key, "liste-dun");
+  // Başka bir sorunlu satır önce gelir
+  assert.equal(splitTasks([t("liste-dun", "warn"), t("komisyon", "warn")]).next?.key, "komisyon");
+});
+
+test("satır sırası: personelde dünün listeleri ve kasadaki fiyatlar, onaylı taslak yerleri; olgusu yokken satır yok", () => {
+  const now = tr("2026-11-03T21:00");
+  const staffTasks = dayTasks(
+    staff(now, {
+      cash: { today: null, yesterday: null, firstDate: "2026-10-01" },
+      stock: { month: "2026-11", counted: 0, total: 40, prevMonth: "2026-10", prevHasData: false, prevCounted: 0, prevTotal: 40 },
+      ops: {},
+      closed: null,
+    }),
+  );
+  assert.deepEqual(keys(staffTasks), ["kasa-dun", "sayim-gecen", "zayi", "kasa"]);
+  // Yöneticinin kasa fiyatları satırı rows-ops.ts'ten, eskisinin aynısı
+  const t = byKey(dayTasks(admin(NOON, { pos: { count: 2, oldest: null } })));
+  assert.equal(t.modpos.href, "/panel/urunler/fiyatlar?sekme=kasa");
+  // Logic, satırların listelerini tek yerde tutar: personel sırası
+  const logic = read("src/app/panel/bugun/logic.ts");
+  const staffRows = logic.slice(logic.indexOf("const STAFF_ROWS"), logic.indexOf("];", logic.indexOf("const STAFF_ROWS")));
+  const order = [...staffRows.matchAll(/\/\/ ([A-Za-z0-9{}-]+)/g)].map((m) => m[1]);
+  assert.deepEqual(order, ["kasa-dun", "liste-dun", "sayim-gecen", "liste-{templateId}", "hizli-sayim", "modpos", "mal-taslak", "zayi", "kasa", "sayim-son"]);
+  // Taşınan satırlar operasyon modülünde
+  const ops = read("src/app/panel/bugun/rows-ops.ts");
+  for (const fn of ["posRow", "checklistYesterday", "draftRow", "soldOutLine"]) assert.match(ops, new RegExp(`export (const|function) ${fn}\\b`), fn);
+  assert.match(logic, /import type \{ OpsDayFacts \} from "\.\/rows-ops";/);
+});
+
+test("kafe satırları: ek satırlar (tükendi) sonda, bağlantılı satır kendi adresiyle", () => {
+  const now = tr("2026-10-24T10:00").getTime();
+  const extra = [{ key: "tukendi" as const, text: "Tükendi: Tiramisu", tone: "info" as const, href: "/panel/karaoke#tukenenler" }];
+  const lines = cafeLines({ karaoke: karaokeToday([], "2026-10-24", now), orders: null, configured: true }, now, null, extra);
+  assert.deepEqual(
+    lines.map((l) => l.key),
+    ["karaoke", "tukendi"],
+  );
+  assert.equal(lines[1].href, "/panel/karaoke#tukenenler");
+  // Ek satır yokken eskisinin aynısı
+  assert.deepEqual(cafeLines({ karaoke: null, orders: null, configured: false }, now), []);
+  const cafe = read("src/app/panel/bugun/today-cafe.tsx");
+  // Satırın kendi adresi önce (yoğunluk satırının Özel günler'i de); tahmin satırı adressizse bağlantısız
+  assert.match(cafe, /href=\{l\.href \?\? \(forecast \? undefined : "\/panel\/karaoke"\)\}/);
+});
+
+test("kaynak: operasyon ve kapalı gün olguları iki rolde; kasa fiyatı okuması operasyonun yükleyicisinde", () => {
+  const src = read("src/server/data/today.ts");
+  const load = bodyOf(src, "loadToday");
+  assert.match(load, /opsFacts\(user, now\)/);
+  assert.match(load, /safe\(closedYesterday\(user, now\)\)/);
+  assert.doesNotMatch(src, /posPendingSummary/);
+  const ops = read("src/server/data/today-ops.ts");
+  assert.match(ops, /^import "server-only";/);
+  assert.match(ops, /safe\(\s*posPendingSummary\(/);
+  // Personel dalı yönetici olgusu yüklemez: kasa fiyatları personelin sabit sütunlu özetinden (§2.2)
+  const staffAt = ops.indexOf('if (user.role !== "admin")');
+  assert.ok(staffAt > 0 && staffAt < ops.indexOf("posPendingSummary("));
+  assert.match(ops.slice(staffAt, ops.indexOf("posPendingSummary(")), /safe\(staffPosSummary\(\)/);
 });

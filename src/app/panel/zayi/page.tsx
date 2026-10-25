@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3 } from "lucide-react";
+import { ArrowLeft, BarChart3, CalendarX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -7,15 +7,20 @@ import { PageHeader } from "@/components/panel/page-header";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
-import { PageSkeleton, Stat } from "@/components/ui/misc";
-import { businessDate, staffCanReport } from "@/lib/cash-report";
+import { EmptyState, PageSkeleton, Stat } from "@/components/ui/misc";
+import { businessDate } from "@/lib/cash-report";
 import { num, tl } from "@/lib/format";
-import { addDays, longDateTR, monthTitleTR, shiftMonth } from "@/lib/reminders";
+import { addDays, longDateTR, monthShortTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { qtyText, WASTE_KIND_LABEL, type WasteKind } from "@/lib/waste";
+import { lateWasteDays, staffDeleteMode, staffWasteMode, WASTE_REQUEST_TEXT, wasteDayLabel, wasteItemText, type WasteDeleteMode } from "@/lib/waste-requests";
 import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
-import { wasteChoices, wasteEntriesBetween, type WasteEntryDTO } from "@/server/data/waste";
+import { wasteChoices, wasteEntriesBetween } from "@/server/data/waste";
+import { myWasteRequests, pendingWasteSummary, wasteDayMarks } from "@/server/data/waste-requests";
+import { getDb } from "@/server/db";
+import { wasteLock } from "@/server/waste/core";
 
+import { WasteDayStrip } from "./day-picker";
 import { WasteBoard } from "./waste-board";
 
 export const metadata: Metadata = { title: "Zayi & ikram" };
@@ -41,31 +46,77 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const user = await requireUser();
   const admin = user.role === "admin";
   const sp = await searchParams;
-  const today = businessDate();
+  const now = new Date();
+  const today = businessDate(now);
   const gun = pick(sp.gun);
-  let date = gun && /^\d{4}-\d{2}-\d{2}$/.test(gun) && gun <= today ? gun : today;
-  if (!admin && !staffCanReport(date)) date = today;
+  const date = gun && /^\d{4}-\d{2}-\d{2}$/.test(gun) && gun <= today ? gun : today;
   const yesterday = addDays(today, -1);
-  const [choices, entries] = await Promise.all([wasteChoices(), wasteEntriesBetween(date, date)]);
-
-  const days = (
-    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Gün">
-      {[today, yesterday].map((d) => (
-        <ButtonLink key={d} href={`/panel/zayi?gun=${d}`} variant={d === date ? "primary" : "secondary"} size="sm" aria-current={d === date ? "page" : undefined}>
-          {d === today ? "Bugün" : "Dün"} · {longDateTR(d).split(" ").slice(0, 2).join(" ")}
-        </ButtonLink>
-      ))}
-      {admin && date !== today && date !== yesterday ? <Badge tone="blue">{longDateTR(date)}</Badge> : null}
+  const short = (d: string) => `${Number(d.slice(8, 10))} ${monthShortTR(d)}`;
+  const strip = (
+    <div className="flex flex-wrap items-center gap-2">
+      <WasteDayStrip
+        date={date}
+        today={{ day: today, label: short(today) }}
+        yesterday={{ day: yesterday, label: short(yesterday) }}
+        days={lateWasteDays(now).map((d) => ({ day: d, label: wasteDayLabel(d) }))}
+      />
+      {admin && date < addDays(today, -14) ? <Badge tone="blue">{longDateTR(date)}</Badge> : null}
       <ButtonLink href="/panel/kasa" variant="ghost" size="sm" className="ml-auto">
         Kasa raporu
       </ButtonLink>
     </div>
   );
-  const board = <WasteBoard key={date} date={date} choices={choices} entries={entries} meId={user.id} admin={admin} />;
+  // Personel: günün kipi (doğrudan / istek / kapalı) ve satırların silme kipi sunucuda (kasanın kilidiyle)
+  const lock = admin ? null : await wasteLock(getDb(), date);
+  const mode = lock ? staffWasteMode(date, now, lock) : "direct";
+  if (mode === "closed") {
+    return (
+      <div className="space-y-4">
+        {strip}
+        <EmptyState
+          icon={<CalendarX />}
+          title={WASTE_REQUEST_TEXT.windowOld}
+          description={`${longDateTR(date)} için kaydı yönetici girer.`}
+          action={
+            <ButtonLink href="/panel/zayi" variant="secondary">
+              {WASTE_REQUEST_TEXT.backToday}
+            </ButtonLink>
+          }
+        />
+      </div>
+    );
+  }
+  const [choices, entries, marks, mine, waiting] = await Promise.all([
+    wasteChoices(),
+    wasteEntriesBetween(date, date),
+    wasteDayMarks(date),
+    admin ? Promise.resolve([]) : myWasteRequests(user.id, now),
+    admin ? pendingWasteSummary({ day: date }) : Promise.resolve(null),
+  ]);
+  const deleteModes: Record<number, WasteDeleteMode> = Object.fromEntries(entries.map((e) => [e.id, lock ? staffDeleteMode(e, user, now, lock) : "direct"]));
+  const deleteAsks: Record<number, { requestId: number; by: string; mine: boolean }[]> = {};
+  for (const a of marks.deleteAsks) (deleteAsks[a.entryId] ??= []).push({ requestId: a.requestId, by: a.by, mine: a.byId === user.id });
+  const lateBadges = Object.fromEntries(marks.lateApprovals.map((a) => [a.entryId, `Geç kayıt · ${a.by} onayladı ${short(todayTR(new Date(a.at)))}`]));
+  const pendingLate = mine
+    .filter((r) => r.kind === "zayi-gec" && r.status === "pending" && r.day === date && r.item)
+    .map((r) => ({ id: r.id, item: wasteItemText(r.item!), reason: r.item!.reason }));
+  const board = (
+    <WasteBoard
+      key={date}
+      date={date}
+      choices={choices}
+      entries={entries}
+      mode={mode}
+      deleteModes={deleteModes}
+      deleteAsks={deleteAsks}
+      lateBadges={lateBadges}
+      pendingLate={pendingLate}
+    />
+  );
   if (!admin) {
     return (
       <div className="space-y-4">
-        {days}
+        {strip}
         {board}
       </div>
     );
@@ -75,7 +126,15 @@ async function WasteContent({ searchParams }: { searchParams: PageProps<"/panel/
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   return (
     <div className="space-y-6">
-      {days}
+      {strip}
+      {waiting?.count ? (
+        <p className="rounded-xl bg-warn-soft px-4 py-2.5 text-sm text-warn">
+          Bu gün için {num(waiting.count)} istek onay bekliyor ·{" "}
+          <Link href={`/panel/onaylar#istek-${waiting.firstId}`} className="font-medium underline underline-offset-2">
+            Onaylar
+          </Link>
+        </p>
+      ) : null}
       {board}
       <WasteMonth month={month} today={today} />
     </div>
@@ -89,16 +148,11 @@ async function WasteMonth({ month, today }: { month: string; today: string }) {
   const sum = model.wasteSummary(month);
   // Kalem başına: adet / miktar ve malzeme maliyeti (ürün: reçetenin malzeme toplamı, fire payı olmadan)
   const rows = new Map<string, { kind: WasteKind; name: string; unit: string; qty: number; cost: number; count: number }>();
-  const costOf = (e: WasteEntryDTO) => {
-    const product = e.productId !== null ? model.productById.get(e.productId) : undefined;
-    if (product) return model.computeProduct(product).ingredientTotal * e.qty;
-    return e.ingredientId !== null ? (model.unitCost.get(e.ingredientId) ?? 0) * e.qty * e.factor : 0;
-  };
   for (const e of entries) {
     const key = `${e.kind}|${e.name}|${e.unit}`;
     const r = rows.get(key) ?? { kind: e.kind, name: e.name, unit: e.unit, qty: 0, cost: 0, count: 0 };
     r.qty += e.qty;
-    r.cost += costOf(e);
+    r.cost += model.wasteCost(e);
     r.count += 1;
     rows.set(key, r);
   }

@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
 import { qualityBanner } from "@/lib/forecast/text";
 import { addDays } from "@/lib/reminders";
+import { deleteSpecialDay, saveSpecialDay } from "@/server/actions/forecast";
 import { requireAdmin } from "@/server/auth/dal";
 import { loadForecastPage, SPECIAL_MAX_AHEAD_DAYS, SPECIAL_PAST_DAYS, specialList } from "@/server/forecast/load";
 
@@ -53,7 +54,13 @@ async function ForecastContent() {
   const specialCard = <SpecialDaysCard upcoming={upcoming} past={past} />;
   const settingsCard = <ForecastSettingsCard settings={data.settings} categories={data.categories} />;
   return (
-    <SpecialDayProvider today={data.today} minDate={addDays(data.today, -SPECIAL_PAST_DAYS)} maxDate={addDays(data.today, SPECIAL_MAX_AHEAD_DAYS)}>
+    <SpecialDayProvider
+      today={data.today}
+      minDate={addDays(data.today, -SPECIAL_PAST_DAYS)}
+      maxDate={addDays(data.today, SPECIAL_MAX_AHEAD_DAYS)}
+      saveAction={saveSpecialDay}
+      deleteAction={deleteSpecialDay}
+    >
       <Header actions={<ForecastActions />} />
       {banner ? (
         <p role="status" className="mb-4 rounded-2xl bg-info-soft px-4 py-3 text-sm text-info">

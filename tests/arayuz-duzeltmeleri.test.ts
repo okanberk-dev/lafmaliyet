@@ -88,7 +88,10 @@ test("kasa: rapor yokken 'Rapor yok', eksik/fazla alt satırda, fişsiz çıkı�
   assert.match(read("src/app/panel/kasa/cash-outs.tsx"), /Fişi eklenmiş çıkış yok; raporda \$\{money\(reported\.amount\)\}/);
   assert.match(read("src/app/panel/kasa/page.tsx"), /reported=\{report \? \{ amount: report\.cashOut, note: report\.cashOutNote \} : null\}/);
   const form = read("src/app/panel/kasa/cash-form.tsx");
-  assert.match(form, /document\.getElementById\(`k-\$\{first\}`\)/);
+  assert.match(form, /document\.getElementById\(fid\(first\)\)/);
+  // Kimlikler form başına (useId): Onaylar'da iki "Düzeltip onayla" formu birbirinin alanına gitmez
+  assert.match(form, /const uid = useId\(\);\s*const fid = \(name: string\) => `\$\{uid\}k-\$\{name\}`;/);
+  assert.doesNotMatch(form, /(?:id|htmlFor)="k-|getElementById\("k-|focus\("k-|`k-\$\{/);
   assert.match(form, /`\$\{report \? "Rapor güncellendi" : "Rapor gönderildi"\} · /);
   assert.match(read("src/app/panel/kasa/cash-out-dialog.tsx"), /document\.getElementById\("co-amount"\)\?\.focus\(\)/);
 });

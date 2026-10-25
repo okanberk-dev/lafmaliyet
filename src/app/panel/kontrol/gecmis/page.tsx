@@ -8,11 +8,11 @@ import { Badge, type Tone } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageSkeleton } from "@/components/ui/misc";
-import { checklistDay, isStarted, lateFinish, listState, nowBusinessMinute, timeTR, type ChecklistLite } from "@/lib/checklists";
+import { checklistDay, historyRange, isStarted, lateFinish, listState, nowBusinessMinute, STAFF_HISTORY_DAYS, timeTR, type ChecklistLite, type HistoryRange } from "@/lib/checklists";
 import { num } from "@/lib/format";
 import { keepUntil } from "@/lib/photo-rules";
-import { addDays, longDateTR } from "@/lib/reminders";
-import { requireAdmin } from "@/server/auth/dal";
+import { longDateTR } from "@/lib/reminders";
+import { requireUser } from "@/server/auth/dal";
 import { firstChecklistDay, loadChecklistHistory, type HistoryList } from "@/server/data/checklists";
 
 import { RunView } from "../run-view";
@@ -22,16 +22,19 @@ export const metadata: Metadata = { title: "Kontrol geçmişi" };
 
 const DESCRIPTION =
   "Hangi gün hangi liste, kim, ne zaman doldurdu; eksik maddeler, aralık dışı değerler ve fotoğraflar. Fotoğraflar 60 gün saklanır, kayıtlar silinmez.";
-/** Gün listesinde bir sayfada gösterilen gün */
-const PAGE_DAYS = 14;
+const STAFF_DESCRIPTION = `Son ${STAFF_HISTORY_DAYS} gün: hangi listeyi kim, ne zaman doldurdu; eksik maddeler ve sorunlar. Geçmiş gün doldurulamaz.`;
 
-/** Kontrol geçmişi (yalnız yönetici): son 14 günün listeleri ya da bir günün ayrıntısı (?gun=YYYY-MM-DD) */
+/**
+ * Kontrol geçmişi: günlerin listeleri ya da bir günün ayrıntısı (?gun=YYYY-MM-DD). Yönetici ilk kayda kadar geriye 14
+ * günlük sayfalarla gider; personel (dalga 10 §2.5) yalnız doldurabildiği listelerin son 7 gününü görür, salt okunur,
+ * "Erken dolduruldu" rozeti olmadan. Pencere sunucuda (historyRange); fotoğraf yolu aynı sınırı uygular.
+ */
 export default function ChecklistHistoryPage({ searchParams }: PageProps<"/panel/kontrol/gecmis">) {
   return (
     <Suspense
       fallback={
         <>
-          <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" description={DESCRIPTION} />
+          <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" />
           <PageSkeleton rows={6} />
         </>
       }
@@ -42,17 +45,17 @@ export default function ChecklistHistoryPage({ searchParams }: PageProps<"/panel
 }
 
 const pick = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-const isDay = (v: string | undefined): v is string => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)));
 
 async function HistoryContent({ searchParams }: { searchParams: PageProps<"/panel/kontrol/gecmis">["searchParams"] }) {
-  await requireAdmin();
+  const user = await requireUser();
+  const admin = user.role === "admin";
   const sp = await searchParams;
   const now = new Date();
   const today = checklistDay(now);
   const first = await firstChecklistDay();
-  const gun = pick(sp.gun);
-  const bitis = pick(sp.bitis);
-  const header = <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/gecmis" />} />;
+  const header = (
+    <PageHeader eyebrow="Kontrol listeleri" title="Geçmiş" description={admin ? DESCRIPTION : STAFF_DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol/gecmis" role={user.role} />} />
+  );
   if (!first) {
     return (
       <>
@@ -61,17 +64,16 @@ async function HistoryContent({ searchParams }: { searchParams: PageProps<"/pane
       </>
     );
   }
-  if (isDay(gun) && gun <= today) {
+  const range = historyRange({ role: user.role, today, first, gun: pick(sp.gun), bitis: pick(sp.bitis) });
+  if (range.kind === "day") {
     return (
       <>
         {header}
-        <DayDetail day={gun} today={today} first={first} now={now} />
+        <DayDetail range={range} today={today} now={now} role={user.role} />
       </>
     );
   }
-  const end = isDay(bitis) && bitis <= today ? bitis : today;
-  const from = addDays(end, -(PAGE_DAYS - 1)) < first ? first : addDays(end, -(PAGE_DAYS - 1));
-  const days = end < first ? [] : await loadChecklistHistory(from, end, now);
+  const days = range.to < range.from ? [] : await loadChecklistHistory(range.from, range.to, user.role, now);
   return (
     <>
       {header}
@@ -86,9 +88,9 @@ async function HistoryContent({ searchParams }: { searchParams: PageProps<"/pane
         ) : (
           <p className="border-t border-line px-5 py-4 text-sm text-ink-mute">Bu aralıkta kayıt yok.</p>
         )}
-        {from > first ? (
+        {range.older ? (
           <CardFooter>
-            <ButtonLink href={`/panel/kontrol/gecmis?bitis=${addDays(from, -1)}`} variant="ghost" size="sm">
+            <ButtonLink href={`/panel/kontrol/gecmis?bitis=${range.older}`} variant="ghost" size="sm">
               <ChevronLeft size={14} aria-hidden="true" /> Daha eski günler
             </ButtonLink>
           </CardFooter>
@@ -126,7 +128,8 @@ function DayRow({ day, lists, today, now }: { day: string; lists: HistoryList[];
         className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 outline-none hover:bg-surface/60 focus-visible:bg-surface/60 focus-visible:ring-2 focus-visible:ring-ink/20 focus-visible:ring-inset max-sm:py-3.5"
       >
         <span className="w-36 shrink-0 text-sm font-medium text-ink">{longDateTR(day)}</span>
-        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+        {/* Telefonda çipler kendi satırına iner: tarih ve sorun rozetleri üstte, çipler altta (üst üste binmez) */}
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1.5 max-sm:order-last max-sm:basis-full">
           {lists.length ? (
             lists.map((l) => {
               const c = chip(l.lite, day, today, now);
@@ -140,7 +143,7 @@ function DayRow({ day, lists, today, now }: { day: string; lists: HistoryList[];
             <span className="text-[13px] text-ink-mute">Liste yok</span>
           )}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {ranges ? <Badge tone="red">{num(ranges)} aralık dışı</Badge> : null}
           {others ? <Badge tone="amber">{num(others)} sorun</Badge> : null}
           <ChevronRight size={16} className="text-ink-quiet" aria-hidden="true" />
@@ -150,13 +153,20 @@ function DayRow({ day, lists, today, now }: { day: string; lists: HistoryList[];
   );
 }
 
-async function DayDetail({ day, today, first, now }: { day: string; today: string; first: string; now: Date }) {
-  const [entry] = await loadChecklistHistory(day, day, now);
+async function DayDetail({ range, today, now, role }: { range: Extract<HistoryRange, { kind: "day" }>; today: string; now: Date; role: "admin" | "staff" }) {
+  const day = range.day;
+  const admin = role === "admin";
+  const [entry] = await loadChecklistHistory(day, day, role, now);
   const lists = entry?.lists ?? [];
-  const prev = addDays(day, -1);
-  const next = addDays(day, 1);
+  const nowBm = nowBusinessMinute(now);
   // Fotoğraflar günün 60. gününde silinir (src/lib/photo-rules.ts keepUntil)
   const photosExpired = now.getTime() >= keepUntil("kontrol", day).getTime();
+  // Bugün: başlamış ya da aralığı açılmış liste hâlâ doldurulur (geçmiş gün doldurulamaz)
+  const openHref = (l: HistoryList) => {
+    if (day !== today || !l.template.active) return null;
+    const state = listState(l.lite, nowBm, false);
+    return isStarted(l.lite) || state === "open" || state === "overdue" ? `/panel/kontrol/${l.template.id}` : null;
+  };
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Gün">
@@ -165,13 +175,13 @@ async function DayDetail({ day, today, first, now }: { day: string; today: strin
         </ButtonLink>
         <Badge tone="blue">{longDateTR(day)}</Badge>
         <span className="ml-auto flex gap-2">
-          {prev >= first ? (
-            <ButtonLink href={`/panel/kontrol/gecmis?gun=${prev}`} variant="secondary" size="sm">
+          {range.prev ? (
+            <ButtonLink href={`/panel/kontrol/gecmis?gun=${range.prev}`} variant="secondary" size="sm">
               <ChevronLeft size={14} aria-hidden="true" /> Önceki gün
             </ButtonLink>
           ) : null}
-          {next <= today ? (
-            <ButtonLink href={`/panel/kontrol/gecmis?gun=${next}`} variant="secondary" size="sm">
+          {range.next ? (
+            <ButtonLink href={`/panel/kontrol/gecmis?gun=${range.next}`} variant="secondary" size="sm">
               Sonraki gün <ChevronRight size={14} aria-hidden="true" />
             </ButtonLink>
           ) : null}
@@ -191,6 +201,8 @@ async function DayDetail({ day, today, first, now }: { day: string; today: strin
             items={l.items}
             answers={l.answers}
             photosExpired={photosExpired}
+            audit={admin}
+            openHref={openHref(l)}
           />
         ))
       ) : (

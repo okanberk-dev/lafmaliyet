@@ -689,7 +689,8 @@ test("kaynak: sunucu dosyaları server-only, şablon değil; alıcılar etkin y�
   }
   const route = read("src/app/api/cron/gunluk/route.ts");
   assert.match(route, /runWeeklyStep\(new Date\(\), \{ deadlineAt: jobStart \+ WEEKLY_DEADLINE_MS \}\)/);
-  assert.match(route, /await Promise\.all\(\[[\s\S]*?countTask\(\),\s+weeklyTask\(\),\s+\]\)/);
+  // Dalga 10: süresi dolan personel istekleri haftalık özetten sonra, aynı kuyrukta
+  assert.match(route, /await Promise\.all\(\[[\s\S]*?countTask\(\),\s+weeklyTask\(\),\s+requestsTask\(\),\s+\]\)/);
   assert.match(route, /\.\.\.\(weeklyResult \? \{ weekly: weeklyResult \} : \{\}\)/);
   // Saf modüller sunucuya uzanmaz
   for (const f of readdirSync(join(process.cwd(), "src/lib/weekly"))) assert.doesNotMatch(read(`src/lib/weekly/${f}`), /from "@\/server/, f);

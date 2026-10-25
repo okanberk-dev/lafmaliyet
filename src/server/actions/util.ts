@@ -3,6 +3,8 @@ import "server-only";
 import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 
+import { UserError } from "@/server/user-error";
+
 export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; error: string };
 
 /** Eylemi çalıştırır; yönlendirme hatalarını geçirir, diğer hataları kullanıcıya uygun mesaja çevirir. */
@@ -23,8 +25,8 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<ActionResult<T>>
   }
 }
 
-/** Kullanıcıya olduğu gibi gösterilecek hata */
-export class UserError extends Error {}
+/** Kullanıcıya olduğu gibi gösterilecek hata (testli çekirdekler de fırlatır: src/server/user-error.ts) */
+export { UserError } from "@/server/user-error";
 
 export const zMoney = z.number({ message: "Sayı girin" }).finite("Geçersiz sayı");
 /** Kasa tutarı: eksi olamaz (kasa raporu, kasadan çıkanlar) */

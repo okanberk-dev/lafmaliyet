@@ -274,6 +274,13 @@
       "when": 1792912447408,
       "tag": "0038_cari_hareket",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792933773471,
+      "tag": "0039_personel_yetki",
+      "breakpoints": true
     }
   ]
 }

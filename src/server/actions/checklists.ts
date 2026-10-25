@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, weekdaysText, windowError } from "@/lib/checklists";
+import { activityChange, listTitle, MAX_ITEMS, MAX_PHOTO_ITEMS, NOTE_MAX, rangeText, staffSinceChange, weekdaysText, windowError } from "@/lib/checklists";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { ChecklistError, logAnswerActivity, writeChecklistAnswer } from "@/server/data/checklists";
 import { getDb, schema as s } from "@/server/db";
@@ -117,7 +117,7 @@ export async function createChecklistTemplate(input: z.input<typeof templateSche
     const now = new Date();
     const [row] = await db
       .insert(t)
-      .values({ ...data, schedule: "daily", sortOrder: (last ?? 0) + 1, activeFrom: now, inactiveFrom: data.active ? null : now })
+      .values({ ...data, ...staffSinceChange(false, data.staffAllowed, now), schedule: "daily", sortOrder: (last ?? 0) + 1, activeFrom: now, inactiveFrom: data.active ? null : now })
       .returning({ id: t.id });
     await logActivity(me, "Kontrol listesi eklendi", `${data.name} · ${weekdaysText(data.weekdays)} · ${windowText(data)}`);
     refresh();
@@ -139,7 +139,8 @@ export async function updateChecklistTemplate(id: number, input: z.input<typeof 
     const now = new Date();
     await db
       .update(t)
-      .set({ ...data, ...activityChange(prev, data, now), updatedAt: now })
+      // Personele açılınca an yazılır: personel geçmişte bundan önceki kayıtları görmez (dalga 10 §2.5)
+      .set({ ...data, ...activityChange(prev, data, now), ...staffSinceChange(prev.staffAllowed, data.staffAllowed, now), updatedAt: now })
       .where(eq(t.id, tid));
     const changes = [
       prev.name !== data.name ? `ad ${prev.name} → ${data.name}` : null,

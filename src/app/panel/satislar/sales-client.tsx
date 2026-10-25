@@ -369,8 +369,8 @@ export function MonthInfoForm({
   const t = kasa?.till ?? null;
   const strip = !t ? null : t.partialFrom ? (
     { tone: "warn" as const, text: partialSentence(t), link: false }
-  ) : t.missing.length ? (
-    { tone: "warn" as const, text: missingSentence(t), link: true }
+  ) : t.missing.length || t.closed?.length ? (
+    { tone: t.missing.length ? ("warn" as const) : ("info" as const), text: missingSentence(t), link: true }
   ) : (
     {
       tone: "info" as const,

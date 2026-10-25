@@ -1,12 +1,13 @@
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { activeFromRange, createModel, currentMonthTR } from "@/lib/calc/engine";
 import { defaultMonthOf } from "@/lib/calc/insights";
 import type { Dataset, Settings } from "@/lib/calc/types";
 import { resolveMonths, tillMonths } from "@/lib/cash-month";
 import { businessDate } from "@/lib/cash-report";
+import { closedDaysIn } from "@/lib/closed-days";
 import { settingsFromRows } from "@/lib/constants";
 import { addDays } from "@/lib/reminders";
 import { parseCoverage, SALES_COVERAGE_KEY } from "@/lib/sales-coverage";
@@ -47,6 +48,8 @@ export async function loadDataset(): Promise<Dataset> {
     siteSales,
     coverageRow,
     till,
+    lateWaiting,
+    closedRows,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -92,6 +95,13 @@ export async function loadDataset(): Promise<Dataset> {
     db.select({ value: s.integrationState.value }).from(s.integrationState).where(eq(s.integrationState.key, SALES_COVERAGE_KEY)).limit(1),
     // Kasa raporlarının ay bilgisine giden sütunları (src/lib/cash-month.ts)
     tillRows(),
+    // Personelin onay bekleyen geç kasa raporlarının günleri: ay bilgisinde eksik sayılmaya devam eder, "onay bekliyor"
+    db
+      .selectDistinct({ day: s.staffRequests.day })
+      .from(s.staffRequests)
+      .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
+    // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
+    db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -157,7 +167,13 @@ export async function loadDataset(): Promise<Dataset> {
         cardShare: m.cardShare,
         note: m.note,
       })),
-      tillMonths(till, through),
+      tillMonths(
+        till,
+        through,
+        undefined,
+        lateWaiting.flatMap((r) => (r.day ? [r.day] : [])),
+        closedDaysIn(closedRows, "2000-01-01", through, till.map((r) => r.date)),
+      ),
     ),
     salesLines: salesLines.map((l) => ({
       id: l.id,

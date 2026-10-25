@@ -1,8 +1,9 @@
 # Menü fiyatları: toplu değişiklik, kasaya işle, fiyat geçmişi
 
 Ekran: **Ürünler › Fiyatlar** (`/panel/urunler/fiyatlar`), üç sekme: **Toplu değiştir**, **Kasaya işle**
-(`?sekme=kasa`) ve **Geçmiş** (`?sekme=gecmis`). Ürün kartında (`/panel/urunler/[id]`) **Fiyat geçmişi** kartı. Yalnız
-yönetici (personel fiyat görmez; sahibin kararı D1). Ürünler başlığındaki **Fiyatlar** düğmesi kasada bekleyen fiyat
+(`?sekme=kasa`) ve **Geçmiş** (`?sekme=gecmis`). Ürün kartında (`/panel/urunler/[id]`) **Fiyat geçmişi** kartı. Bu
+ekranlar yönetici içindir; personel yalnız kasada değişecek satış fiyatlarını **Kasadaki fiyatlar**'da
+(`/panel/kasa/fiyatlar`) görür ve işaretler (dalga 10, aşağıda). Ürünler başlığındaki **Fiyatlar** düğmesi kasada bekleyen fiyat
 varken "Kasa 12" der ve doğrudan o listeyi açar; ürün listesinin **Toplu fiyat** düğmesi (telefonda süzgeç penceresinde
 "Görünenlere toplu fiyat") listenin süzgeçleriyle Toplu değiştir'i açar. ⌘K'da "Fiyatlar".
 
@@ -120,7 +121,7 @@ tutar (`src/lib/prices/pos.ts`, `posAfterPriceChange`):
 | Fiyat kasadaki fiyata geri döndü (ör. toplu değişiklik kasa değişmeden geri alındı) | Kendiliğinden boşalır |
 | Kuruşu aynı fiyat | Hiçbir şey |
 | Yeni ürün | Listeye girmez (kasaya zaten elle eklenir; D3) |
-| İşaretlendi ("Kasada değiştirdim", satırdaki kutu, Hepsini işaretle) | Boşalır; bildirimdeki **Geri al** eski hâline getirir (bu arada listeye yeniden girmediyse ve fiyat hâlâ kasadakinden farklıysa). Yalnız fiyatı hâlâ listede (kartta) görülen fiyatsa: liste açıldıktan sonra fiyat yeniden değiştiyse kasaya eskimiş fiyat yazılmıştır, ürün işaretlenmez, bugünkü fiyatıyla listede kalır ("… işaretlenmedi: fiyatı bu sırada 280 ₺ oldu") |
+| İşaretlendi ("Kasada değiştirdim", satırdaki kutu, Hepsini işaretle; personelde Kasadaki fiyatlar'daki kutu) | Boşalır ve bir işaret kaydı (`pos_marks`) yazılır; bildirimdeki **Geri al** ya da Son işaretlenenler eski hâline getirir (geri alma kuralları aşağıda). Yalnız fiyatı hâlâ listede (kartta) görülen fiyatsa: liste açıldıktan sonra fiyat yeniden değiştiyse kasaya eskimiş fiyat yazılmıştır, ürün işaretlenmez, bugünkü fiyatıyla listede kalır ("… işaretlenmedi: fiyatı bu sırada 280 ₺ oldu") |
 | Ürün silindi | Satırla birlikte gider |
 
 Yayından önce bütün fiyatların kasayla aynı olduğu varsayılır; eski işlem geçmişinden geriye dönük doldurma yok (D6).
@@ -140,9 +141,48 @@ Tatlılar
 
 Tek fiyat değişikliğinden sonra bildirim kasayı söyler: bağlı olmayan üründe "Kasadaki (ModPOS) fiyatı da değiştir;
 Fiyatlar › Kasaya işle listesine eklendi.", bağlı üründe sitenin hatırlatmasıyla birlikte; fiyat kasadakine döndüyse
-kasa yazılmaz. **Zil** (yalnız yönetici, Uyarılar): "Kasada değişecek N fiyat", Kasaya işle'ye götürür; listeye yeni
-fiyat girince yeniden okunmamış olur. Sabah e-postasına girmez (D2). Sayı ve en eski / en yeni an tek sorguyla
-`posPendingSummary()`'den (Ürünler başlığı, sekme, zil ve Bugün ekranının "Kasadaki fiyatlar" satırı).
+kasa yazılmaz. **Zil** (iki rolde): "Kasada değişecek N fiyat"; yöneticide Uyarılar'da, Kasaya işle'ye götürür,
+personelde Kasa grubunda, Kasadaki fiyatlar'a. Kimlik iki rolde `kasa-fiyat-<en yeni geri kalış>`: bir fiyatın
+işaretlenmesi zili yeniden okunmamış yapmaz, listeye yeni bir fiyat girmesi yapar. Sabah e-postasına girmez (D2). Sayı
+ve en eski / en yeni an tek sorguyla `posPendingSummary()`'den (Ürünler başlığı, sekme, zil ve Bugün ekranının
+"Kasadaki fiyatlar" satırı); personelinki `staffPosSummary()`'den (yalnız etkin ürünler).
+
+### Personel: Kasadaki fiyatlar ve işaret kaydı (dalga 10 §2.2)
+
+Fiyatı ModPOS'ta zaten personel değiştirir; onay ModPOS'u denetleyemez, yalnız listeyi bekletirdi. Bu yüzden personel
+onaysız işaretler, her işaret kişinin adıyla kayıtlıdır ve geri alınabilir. Tek tek işaretleme bir sürtünmedir,
+denetim değildir: denetim satır satır kayıt (`pos_marks`, İşlem geçmişi) ve yöneticinin Bugün'deki Tamamlananlar
+satırıdır. Kalan risk: personel ModPOS'ta değiştirmeden işaretleyebilir; bu görünür ve geri alınır (panelden ModPOS
+görünmez, onay da bunu yakalayamazdı).
+
+- **Ekran** (`/panel/kasa/fiyatlar`; yönetici açarsa Kasaya işle'ye gider): kategori kategori "Latte · Medium
+  ~~195 ₺~~ → 205 ₺", altında "Kasada: LATTE MEDİUM · 2 gündür" (ya da "Kasada adı bilinmiyor"). Kaynak, değiştiren
+  kişi ve not yazılmaz; yalnız etkin ürünler. Dokununca satır gizlenir, bildirim 10 sn "Latte Medium kasada 205 ₺
+  olarak işaretlendi" ve **Geri al**. Son 30 dakikanın işaretleri listenin **üstünde** ("Son işaretledikleriniz",
+  Geri al). "Metni kopyala" var, "Hepsini işaretle" yok (bir seferde bir ürün, `posMarkMax`). Boşken "Kasa güncel".
+- **Girişler:** Bugün'de personel satırı "Kasadaki fiyatlar" (hızlı sayımdan sonra, "Listeyi aç"), zil.
+- **Yükleyici** `src/server/data/pos-staff.ts`: sabit sütun beyaz listesi (ürünün kimliği, adı, boyu, satış fiyatı,
+  kasadaki eski fiyat ve anı, sırası, etkinliği; kategorinin adı ve sırası; ModPOS adı; kişinin kendi işaretleri).
+  Fiyat geçmişi, kaynak, not, site alanları, reçete ve maliyet okunmaz (`tests/fiyatlar.test.ts` sabitler).
+- **İşaret kaydı** `pos_marks`: ürün, kasaya yazılan fiyat, işaretten önce kasada duran fiyat ve anı, işaretleyen
+  (hesap ve o anki adı), an; geri alınınca an ve geri alanın adı. Yöneticinin işaretleri de yazılır.
+- **Geri alma** (`posUndoRefusal`; istemciden fiyat alınmaz, saklanan eski fiyat ve an ürüne geri yazılır):
+  - personel yalnız kendi işaretini, 30 dakika içinde (`POS_UNDO_WINDOW_MS`); sonrası yöneticiye;
+  - zaten geri alınmış, ürün silinmiş, ürün listeye yeniden girmiş (yeni fiyat işaretlenir) ya da fiyat kasadakine
+    dönmüşse alınmaz;
+  - yalnız ürünün **son** işareti ve güncel fiyat işaretin fiyatıyken: "Bu ürün sonra yeniden işaretlendi; son işareti
+    geri alın" (M1 → fiyat değişti → M2 → M1'i geri almak kasaya yazılmış M2'yi kaybettirirdi).
+- **Çekirdek** `src/server/prices/pos-marks.ts` (`markPos`, `undoPos`; veritabanını parametre alır): ürünler kimlik
+  sırasıyla FOR UPDATE; geri almada önce işaretler, sonra ürünler, ürünün son işareti aynı kilit altında okunur.
+  Personelde ürün etkin olmalı; eşzamanlı iki işaretten biri "zaten işaretlenmiş" olur (yalnız kimlik döner).
+- **Yönetici:** Kasaya işle'nin altında **Son işaretlenenler** kartı (`#son-isaretlenenler`, son 14 gün; kişi ve gün
+  başına "Ayşe · dün · 34 fiyat", açılır; telefonda kapalı gelir). Satır "Latte · Medium 195 → 205 ₺", altında kişi
+  (İşlem geçmişindeki gibi: o anki ad, gerekirse e-postası), saat ve **Geri al**; geri alınamıyorsa nedeni, geri
+  alınmışsa soluk "Geri alındı · Ali". Bugün'de bekleyen fiyat varken satırın sonuna "Ayşe dün 3 fiyatı kasada
+  işaretledi." (son 48 saatin personel işaretleri); bekleyen yoksa satır Tamamlananlar'a düşer ve bu karta götürür.
+  Onaylar'a kart eklenmez.
+- **İşlem geçmişi:** "Kasaya işlendi" · Ayşe · "Latte M 205 ₺"; "Kasaya işlendi geri alındı" · Ali · "Latte M 205 ₺
+  (Ayşe'nin işareti)".
 
 ## Geçmiş
 
@@ -190,9 +230,14 @@ kapsar.
 | `src/server/prices/record.ts` | `recordPriceChange`: geçmiş ve kasa durumu, çağıranın işleminde |
 | `src/server/prices/write.ts` | `writeSalePrice`: tek ürünün fiyatı (bağlıysa önce site), toplu değişikliğin bağlı satırları için |
 | `src/server/prices/batch.ts` | `applyPriceBatch`: yerel satırlar tek işlemde, bağlılar kaleme göre sırayla ve dörder, devre kesici, süre |
-| `src/server/data/prices.ts` | `posPendingSummary`, kasa listesi, menünün ve ürünün fiyat geçmişi, toplu değişikliğin satırları |
-| `src/server/actions/prices.ts` | `applyBulkPrices`, `undoPriceBatch`, `markPosDone`, `restorePosPending` (yönetici) |
-| `src/app/panel/urunler/fiyatlar/` | Sayfa (`maxDuration = 60`), Toplu değiştir, Kasaya işle, Geçmiş, süzgeç yardımcıları |
+| `src/server/data/prices.ts` | `posPendingSummary`, kasa listesi, Son işaretlenenler (`loadRecentPosMarks`), Bugün'ün personel işaretleri (`staffPosMarksRecent`), menünün ve ürünün fiyat geçmişi, toplu değişikliğin satırları |
+| `src/server/data/pos-staff.ts` | Personelin Kasadaki fiyatlar okumaları (sabit sütunlar, yalnız etkin ürünler) |
+| `src/server/prices/pos-marks.ts` | `markPos`, `undoPos`: işaret kaydı ve geri alma (kilit sırası, son işaret kuralı) |
+| `src/server/actions/prices.ts` | `applyBulkPrices`, `undoPriceBatch` (yönetici) |
+| `src/server/actions/pos-marks.ts` | `markPosDone`, `undoPosMarks` (iki rol, `requireUser`) |
+| `src/components/panel/pos-checklist.tsx` | Kasaya işle listesi, iki yüz (yönetici; personel `staff`) |
+| `src/app/panel/kasa/fiyatlar/` | Personelin Kasadaki fiyatlar sayfası |
+| `src/app/panel/urunler/fiyatlar/` | Sayfa (`maxDuration = 60`), Toplu değiştir, Kasaya işle ve Son işaretlenenler, Geçmiş, süzgeç yardımcıları |
 | `src/app/panel/urunler/[id]/price-history-card.tsx` | Ürün kartındaki Fiyat geçmişi |
 | `src/server/actions/products.ts`, `src/server/data/product-create.ts`, `src/server/site-menu/sync.ts` | Var olan yazım yolları geçmişe yazar (`updateProductPrice`, `saveRecipe`, `insertProduct`, `applyPlan`) |
 | `tests/fiyatlar.test.ts` | Kural ve yuvarlama, ekonominin `priceProduct`'la eşitliği, engeller, önizleme, metinler, siteye yazım sırası (sahte yazımla), kasa ve işaretleme, geçmiş, geri alma, süzgeçler, kaynak kuralları |

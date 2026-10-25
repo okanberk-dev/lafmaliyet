@@ -160,6 +160,19 @@ export async function keepPhoto(id: number, until: Date | null, tx?: Tx): Promis
   await (tx ?? getDb()).update(s.photos).set({ linkedAt: new Date(), expiresAt: until }).where(eq(s.photos.id, id));
 }
 
+/**
+ * Onay bekleyen bir isteğin tuttuğu fotoğraf (geç kasa raporu, kasadan çıkan isteği): bağlanmaz, süresi kalkar
+ * (expires_at boş; istek beklerken silinmez). İstek karara bağlanınca ya onayda bağlanır ya da bırakılır (releasePhoto).
+ * Bağlanmış fotoğrafa dokunulmaz. Tutulan fotoğraf başka bir isteğe ya da kayda bağlanamaz: her bağlama yolu
+ * src/server/staff-requests/core.ts assertNotHeld çağırır.
+ */
+export async function holdPhoto(tx: Tx, id: number): Promise<void> {
+  await tx
+    .update(s.photos)
+    .set({ expiresAt: null })
+    .where(and(eq(s.photos.id, id), isNull(s.photos.linkedAt)));
+}
+
 /** Bağı kalkan fotoğraf: `days` gün sonra silinir (geri alma payı), yeniden bağlanabilir */
 export async function releasePhoto(id: number, days = RELEASED_DAYS, tx?: Tx): Promise<void> {
   await (tx ?? getDb()).update(s.photos).set({ linkedAt: null, expiresAt: daysFrom(new Date(), days) }).where(eq(s.photos.id, id));

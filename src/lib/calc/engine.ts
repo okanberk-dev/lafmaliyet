@@ -1038,13 +1038,21 @@ export function createModel(ds: Dataset) {
   /**
    * Ayın zayi ve ikram özeti: malzeme maliyeti (KDV hariç; ürün reçetesinin malzeme toplamı, fire payı olmadan;
    * hammadde birim maliyetiyle) ve ikramın menü fiyatıyla değeri (KDV dahil; ModPOS'un ödenmez tutarıyla
-   * karşılaştırılır). Malzeme maliyeti zaten sayım farkının içindedir: gelir-gidere ayrıca gider yazılmaz.
+   * karşılaştırılır). Malzeme maliyeti zaten sayım farkının içindedir: gelir-gidere ayrıca gider yazılmaz. Bir kaydın
+   * malzeme maliyeti wasteCost (ay özeti, zayi sayfasının kalemleri ve Onaylar'daki geç kayıt kartı aynı fonksiyonu
+   * kullanır; bugünkü fiyatlarla).
    */
+  function wasteCost(w: Pick<WasteEntry, "productId" | "ingredientId" | "qty" | "factor">): number {
+    const product = w.productId !== null ? productById.get(w.productId) : undefined;
+    if (product) return computeProduct(product).ingredientTotal * w.qty;
+    return w.ingredientId !== null ? (unitCost.get(w.ingredientId) ?? 0) * w.qty * w.factor : 0;
+  }
+
   function wasteSummary(month: string) {
     const out = { zayi: { count: 0, cost: 0 }, ikram: { count: 0, cost: 0, menuValue: 0 } };
     for (const w of wasteByMonth.get(month) ?? []) {
       const product = w.productId !== null ? productById.get(w.productId) : undefined;
-      const cost = product ? computeProduct(product).ingredientTotal * w.qty : w.ingredientId !== null ? (unitCost.get(w.ingredientId) ?? 0) * w.qty * w.factor : 0;
+      const cost = wasteCost(w);
       out[w.kind].count += 1;
       out[w.kind].cost += cost;
       if (w.kind === "ikram" && product) out.ikram.menuValue += product.price * w.qty;
@@ -1773,6 +1781,7 @@ export function createModel(ds: Dataset) {
     soldByProduct,
     ingredientUsage,
     recordedUsage,
+    wasteCost,
     wasteSummary,
     /** laffogato.net online satışları: ayın kaydı, ürünlere eşlenen satırlar, tüketim ve KDV hariç gelir */
     siteSales: siteSalesOf,

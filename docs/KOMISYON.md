@@ -97,6 +97,9 @@ satışı (KDV dahil, müşterinin o kanaldan ödediği), sırayla:
   beklenen hakedişi yüksek görünürdü; ayın ilk 5 gününde kesilen yemek kartı faturası zaten önceki aya sayılır (§5).
 - **Yarım ilk ay:** ilk kasa raporu ayın ortasındaysa (Kasa raporu ekranının `partialFrom` kuralı) Z toplamı ayın bir
   kısmıdır, kullanılmaz; canlıda Ekim 2026 böyle, ilk tam ay Kasım 2026.
+- **Kapalı işaretli günler** (özel günlerin `kapali` satırı, raporu olmayan; dalga 10 §2.9) eksik sayılmaz ama
+  sessizce düşmez: alt satır "29 / 31 gün raporlu · 2 gün kapalı" ya da "1 gün rapor yok · 2 gün kapalı"
+  (`channelTill`, `closed`).
 - **Eksik günler** (ayın başından ya da ilk rapordan ayın sonuna ya da düne kadar raporu olmayan gün) Z toplamını
   durdurmaz; *kasa-eksik* bilgisini ekler ve Z toplamıyla bulunan %6 aşımını kırmızıdan turuncuya indirir.
 - **Yemek kartlarının toplamı** her zaman hesaplanır: Z'deki yemek kartı (yarım ayda yok) ÷ bütün yemek kartı

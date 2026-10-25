@@ -166,7 +166,14 @@ export function normalizeReceipt(raw: Receipt, ctx: ReceiptContext): ReceiptRead
         Math.abs(dayDiff(r.date, date)) <= 1 &&
         ((receiptNo !== null && r.receiptNo !== null && r.receiptNo.trim() === receiptNo) || sameStore(r.store, store)),
     );
-    if (dup) checks.push({ fields: ["amount"], level: "warn", text: `Bu fiş zaten eklenmiş olabilir: ${dup.store ?? store ?? "fiş"} · ${money(dup.amount)} · ${dateTR(dup.date)}.` });
+    // Personele genel metin: eşleşen satır başkasının (yöneticinin) kaydı olabilir; ayrıntı yöneticinin kartında
+    if (dup) {
+      checks.push({
+        fields: ["amount"],
+        level: "warn",
+        text: ctx.staff ? "Bu fiş zaten eklenmiş olabilir; yönetici bakacak." : `Bu fiş zaten eklenmiş olabilir: ${dup.store ?? store ?? "fiş"} · ${money(dup.amount)} · ${dateTR(dup.date)}.`,
+      });
+    }
   }
 
   // Fotoğrafın sorunları: görüntü sorunu güveni "high" olmayan alanları turuncu yapar

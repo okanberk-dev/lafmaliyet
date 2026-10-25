@@ -123,12 +123,16 @@ export async function proposeRecipeChanges(input: z.input<typeof proposalSchema>
           .from(s.recipeChangeRequests)
           .where(and(eq(s.recipeChangeRequests.productId, product.id), eq(s.recipeChangeRequests.requestedBy, me.id), eq(s.recipeChangeRequests.status, "pending")))
           .limit(1);
-        if (pending) {
-          await tx
-            .update(s.recipeChangeRequests)
-            .set({ before, after, message: data.message, requestedByName: me.name, updatedAt: new Date() })
-            .where(eq(s.recipeChangeRequests.id, pending.id));
-        } else {
+        // Güncellenen öneri yeni bir sürüm: yönetici eskisini görüp onaylayamaz (reviewRecipeChange seenVersion ister).
+        // Koşullu: öneri bu arada karara bağlandıysa güncellenmez, yenisi açılır
+        const [updated] = pending
+          ? await tx
+              .update(s.recipeChangeRequests)
+              .set({ before, after, message: data.message, requestedByName: me.name, version: sql`${s.recipeChangeRequests.version} + 1`, updatedAt: new Date() })
+              .where(and(eq(s.recipeChangeRequests.id, pending.id), eq(s.recipeChangeRequests.status, "pending")))
+              .returning({ id: s.recipeChangeRequests.id })
+          : [];
+        if (!updated) {
           await tx.insert(s.recipeChangeRequests).values({ productId: product.id, requestedBy: me.id, requestedByName: me.name, before, after, message: data.message });
         }
         submitted++;
@@ -163,6 +167,8 @@ export async function withdrawRecipeChange(id: number) {
 
 const reviewSchema = z.object({
   id: zId,
+  /** Yöneticinin ekranda gördüğü öneri sürümü: öneri arada güncellendiyse karar verilmez */
+  seenVersion: z.number().int().positive(),
   decision: z.enum(["approve", "reject"]),
   note: zOptText(500),
   /** Reçete öneriden sonra değiştiyse yönetici yine de uygulamayı seçti */
@@ -172,8 +178,9 @@ const reviewSchema = z.object({
 export type ReviewResult = { conflict: false } | { conflict: true; current: RecipeSnapshot };
 
 /**
- * Yönetici onaylar ya da reddeder. Onayda reçete önerilen hâline getirilir (satırlar ve hazırlama notu); fiyat, ad,
- * fire ve diğer alanlara dokunulmaz. Reçete öneri anından sonra değiştiyse (`before` ≠ bugünkü) önce bugünkü hâl
+ * Yönetici onaylar ya da reddeder; yalnız ekranda gördüğü sürümü (seenVersion: personel öneriyi arada güncellediyse
+ * karar verilmez). Onayda reçete önerilen hâline getirilir (satırlar ve hazırlama notu); fiyat, ad, fire ve diğer
+ * alanlara dokunulmaz. Reçete öneri anından sonra değiştiyse (`before` ≠ bugünkü) önce bugünkü hâl
  * döner (`conflict`), yönetici farkı görüp `force` ile uygular. Formüller bugünkü ayarlarla yeniden hesaplanır.
  */
 export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
@@ -183,10 +190,11 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
     const db = getDb();
     const settings = data.decision === "approve" ? await loadSettings() : null;
     const outcome = await db.transaction(async (tx) => {
-      // Aynı öneriyi iki yönetici aynı anda karara bağlamasın
+      // Aynı öneriyi iki yönetici aynı anda karara bağlamasın; personel aynı anda güncelleyemesin
       const [req] = await tx.select().from(s.recipeChangeRequests).where(eq(s.recipeChangeRequests.id, data.id)).for("update");
       if (!req) throw new UserError("Öneri bulunamadı (ürün silinmiş olabilir)");
       if (req.status !== "pending") throw new UserError("Bu öneri zaten karara bağlanmış; sayfayı yenileyin");
+      if (req.version !== data.seenVersion) throw new UserError("Öneri siz bakarken değişti; yeniden bakın");
       const decided = { reviewNote: data.note, reviewedBy: me.id, reviewedByName: me.name, reviewedAt: new Date(), updatedAt: new Date() };
       if (req.kind === "new") {
         // Yeni ürün önerisi satış fiyatıyla onaylanır (approveNewProduct); burada yalnızca reddedilir, ürün açılmaz
@@ -274,7 +282,7 @@ const newProductSchema = z.object({
 
 /**
  * Personel (yönetici de olabilir) menüde olmayan bir ürünü reçetesiyle önerir; boy başına bir öneri satırı açılır
- * (kind 'new', ürün yok). Ürün ancak yönetici Reçete onayları'nda satış fiyatını yazıp onaylayınca açılır: fiyatı 0
+ * (kind 'new', ürün yok). Ürün ancak yönetici Onaylar'da satış fiyatını yazıp onaylayınca açılır: fiyatı 0
  * bir ürün kârlılığı, uyarıları ve analizleri bozardı. Personelin yazdığı satış fiyatı (boy başına, isteğe bağlı)
  * öneride saklanır (`proposed.price`): onayda fiyat alanı onunla dolu gelir, yönetici değiştirebilir. Denetim sayfayla
  * aynı (newProductIssue): aynı ad + boyda ürün ya da bekleyen öneri varsa gönderilmez. Formüllü miktar sunucuda

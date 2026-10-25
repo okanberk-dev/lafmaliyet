@@ -24,6 +24,7 @@ import {
   clockInstant,
   earlyStart,
   groupBySection,
+  historyRange,
   inRange,
   isStarted,
   kontrolDigestBox,
@@ -46,6 +47,10 @@ import {
   runSummary,
   signMode,
   snapshotItems,
+  STAFF_HISTORY_DAYS,
+  staffHistoryFloor,
+  staffSeesRun,
+  staffSinceChange,
   timeTR,
   valueText,
   weekdayOf,
@@ -301,19 +306,30 @@ test("8. hangi gün doldurulur: bugün; açılmış dünkü kayıt 05:30'a kadar
   assert.equal(canAnswerDay("2026-10-23", tr("2026-10-22T14:00"), false), false);
 });
 
-test("9. fotoğrafı kim görür: yönetici hepsini; personel bugünün ve dünün kaydını, yönetici listesini değil; bağlanmamışı yalnız yükleyen", () => {
+test("9. fotoğrafı kim görür: yönetici hepsini; personel son 7 günün kaydını (listenin personele açıldığı günden), yönetici listesini değil; bağlanmamışı yalnız yükleyen", () => {
   const now = tr("2026-10-22T14:00");
-  const run = (date: string, staffAllowed = true) => ({ date, staffAllowed });
+  const run = (date: string, staffAllowed = true, staffSince: string | null = null) => ({ date, staffAllowed, staffSince });
   assert.equal(photoAccess({ role: "admin", userId: 1, createdBy: 9, run: run("2026-01-01"), now }), true);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-22"), now }), true);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-21"), now }), true);
-  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-20"), now }), false);
+  // Son 7 gün (bugün dahil): 16 Ekim izinli, 15 Ekim yasak
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-16"), now }), true);
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-15"), now }), false);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-22", false), now }), false);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 2, run: null, now }), true);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 3, run: null, now }), false);
   assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: null, run: null, now }), false);
-  // Gece 01:00: iş günü dün; "dün" bir önceki gün
-  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-21"), now: tr("2026-10-23T01:00") }), true);
+  // Gün 05:00'te döner: 23 Ekim 04:59'da iş günü hâlâ 22 Ekim (16 Ekim izinli), 05:00'te 23 Ekim (16 Ekim yasak)
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-16"), now: tr("2026-10-23T04:59") }), true);
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-16"), now: tr("2026-10-23T05:00") }), false);
+  // Liste personele 20 Ekim 14:00'te açıldı: o günden eskisi personele görünmez (o günün kaydı görünür)
+  const since = iso("2026-10-20T14:00");
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-20", true, since), now }), true);
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-19", true, since), now }), false);
+  // Gece 02:00'de açıldıysa iş günü önceki gün: o günün (19 Ekim) kaydı görünür
+  assert.equal(photoAccess({ role: "staff", userId: 2, createdBy: 9, run: run("2026-10-19", true, iso("2026-10-20T02:00")), now }), true);
+  // Yönetici için staffSince önemsiz
+  assert.equal(photoAccess({ role: "admin", userId: 1, createdBy: 9, run: run("2026-10-01", false, since), now }), true);
 });
 
 test("10. metinler: listenin adı, Türkçe küçük harf, kimler", () => {
@@ -582,6 +598,52 @@ function filesUnder(dir: string): string[] {
   });
 }
 
+test("19. personelin geçmişi: son 7 gün (bugün dahil); listenin personele açıldığı günden; ?gun= pencere dışıysa ve ?bitis= yok sayılır", () => {
+  assert.equal(STAFF_HISTORY_DAYS, 7);
+  assert.equal(staffHistoryFloor("2026-10-22"), "2026-10-16");
+  // Ay sınırı
+  assert.equal(staffHistoryFloor("2026-11-03"), "2026-10-28");
+  // staffSeesRun: personel doldurabilir olmalı; açıldığı iş gününden itibaren
+  assert.equal(staffSeesRun({ staffAllowed: false, staffSince: null }, "2026-10-22"), false);
+  assert.equal(staffSeesRun({ staffAllowed: true, staffSince: null }, "2026-01-01"), true);
+  assert.equal(staffSeesRun({ staffAllowed: true, staffSince: iso("2026-10-20T14:00") }, "2026-10-20"), true);
+  assert.equal(staffSeesRun({ staffAllowed: true, staffSince: iso("2026-10-20T14:00") }, "2026-10-19"), false);
+  assert.equal(staffSeesRun({ staffAllowed: true, staffSince: iso("2026-10-20T02:00") }, "2026-10-19"), true);
+
+  // Liste personele açılınca an yazılır (öncesi personele görünmez); kapatma ya da değişmeyen anahtar yazmaz
+  const at = tr("2026-10-22T14:00");
+  assert.deepEqual(staffSinceChange(false, true, at), { staffSince: at });
+  assert.deepEqual(staffSinceChange(true, true, at), {});
+  assert.deepEqual(staffSinceChange(true, false, at), {});
+  assert.deepEqual(staffSinceChange(false, false, at), {});
+
+  const base = { today: "2026-10-22", first: "2026-09-01" };
+  // Personel: 7 günlük liste; daha eski günler düğmesi yok; bitis yok sayılır
+  assert.deepEqual(historyRange({ ...base, role: "staff" }), { kind: "days", from: "2026-10-16", to: "2026-10-22", older: null });
+  assert.deepEqual(historyRange({ ...base, role: "staff", bitis: "2026-10-01" }), { kind: "days", from: "2026-10-16", to: "2026-10-22", older: null });
+  assert.deepEqual(historyRange({ ...base, role: "staff", bitis: "2026-10-20" }), { kind: "days", from: "2026-10-16", to: "2026-10-22", older: null });
+  // Personel ayrıntısı: penceredeki gün; önceki gün pencerenin içindeyse
+  assert.deepEqual(historyRange({ ...base, role: "staff", gun: "2026-10-16" }), { kind: "day", day: "2026-10-16", prev: null, next: "2026-10-17" });
+  assert.deepEqual(historyRange({ ...base, role: "staff", gun: "2026-10-22" }), { kind: "day", day: "2026-10-22", prev: "2026-10-21", next: null });
+  // 7 günden eski, ileri ya da bozuk gün: 7 günlük liste
+  for (const gun of ["2026-10-15", "2026-09-01", "2026-10-23", "2026-13-01", "dün"]) {
+    assert.deepEqual(historyRange({ ...base, role: "staff", gun }), { kind: "days", from: "2026-10-16", to: "2026-10-22", older: null }, gun);
+  }
+  // İlk kayıt pencereden yeniyse liste ilk günden başlar
+  assert.deepEqual(historyRange({ today: "2026-10-22", first: "2026-10-20", role: "staff" }), { kind: "days", from: "2026-10-20", to: "2026-10-22", older: null });
+  assert.deepEqual(historyRange({ today: "2026-10-22", first: "2026-10-20", role: "staff", gun: "2026-10-20" }), { kind: "day", day: "2026-10-20", prev: null, next: "2026-10-21" });
+  assert.deepEqual(historyRange({ today: "2026-10-22", first: "2026-10-20", role: "staff", gun: "2026-10-18" }), { kind: "days", from: "2026-10-20", to: "2026-10-22", older: null });
+
+  // Yönetici: 14 günlük sayfa, daha eski günler; bitis ile geriye; ayrıntı ilk güne kadar
+  assert.deepEqual(historyRange({ ...base, role: "admin" }), { kind: "days", from: "2026-10-09", to: "2026-10-22", older: "2026-10-08" });
+  assert.deepEqual(historyRange({ ...base, role: "admin", bitis: "2026-10-08" }), { kind: "days", from: "2026-09-25", to: "2026-10-08", older: "2026-09-24" });
+  assert.deepEqual(historyRange({ ...base, role: "admin", bitis: "2026-09-10" }), { kind: "days", from: "2026-09-01", to: "2026-09-10", older: null });
+  assert.deepEqual(historyRange({ ...base, role: "admin", bitis: "2026-10-30" }), { kind: "days", from: "2026-10-09", to: "2026-10-22", older: "2026-10-08" });
+  assert.deepEqual(historyRange({ ...base, role: "admin", gun: "2026-09-02" }), { kind: "day", day: "2026-09-02", prev: "2026-09-01", next: "2026-09-03" });
+  assert.deepEqual(historyRange({ ...base, role: "admin", gun: "2026-09-01" }), { kind: "day", day: "2026-09-01", prev: null, next: "2026-09-02" });
+  assert.deepEqual(historyRange({ ...base, role: "admin", gun: "2026-10-23" }), { kind: "days", from: "2026-10-09", to: "2026-10-22", older: "2026-10-08" });
+});
+
 test("kaynak: fotoğraf yolu köken, giriş, depo ve yanıt aynı istekte; değişen fotoğraf yanıttan sonra silinir", () => {
   const route = read("src/app/api/kontrol/foto/route.ts");
   for (const s of ["sameOrigin(request)", "getCurrentUser()", "savePhoto(", "checkPhotoTarget(", "writeChecklistAnswer(", "recentUploads(me.id)", "after(() => deletePhoto(old)"]) {
@@ -616,7 +678,14 @@ test("kaynak: doldurma ekranı eylem atılırsa (ağ kesik, panel güncellendi) 
 });
 
 test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requireUser; 'use server' dosyası yalnız eylem dışa açar", () => {
-  assert.match(read("src/app/panel/kontrol/gecmis/page.tsx"), /await requireAdmin\(\)/);
+  // Geçmiş iki rolde açık (dalga 10 §2.5): personel son 7 günü görür, pencere sunucuda (historyRange)
+  const history = read("src/app/panel/kontrol/gecmis/page.tsx");
+  assert.match(history, /const user = await requireUser\(\);/);
+  assert.doesNotMatch(history, /requireAdmin/);
+  assert.match(history, /historyRange\(\{ role: user\.role,/);
+  assert.match(history, /<KontrolTabs current="\/panel\/kontrol\/gecmis" role=\{user\.role\} \/>/);
+  // Personelde "Erken dolduruldu" rozeti yok
+  assert.match(history, /audit=\{admin\}/);
   assert.match(read("src/app/panel/kontrol/duzenle/page.tsx"), /await requireAdmin\(\)/);
   assert.match(read("src/app/panel/kontrol/duzenle/[id]/page.tsx"), /await requireAdmin\(\)/);
   assert.match(read("src/app/panel/kontrol/page.tsx"), /await requireUser\(\)/);
@@ -635,6 +704,23 @@ test("kaynak: yönetici sayfaları ve eylemleri requireAdmin; işaretleme requir
       assert.match(body, /await requireAdmin\(\)/, `${name} requireAdmin`);
     }
   }
+  // Personele açılış anı iki yazım yolunda da (yeni liste, düzenleme)
+  const actions = read("src/server/actions/checklists.ts");
+  assert.match(actions, /\.\.\.staffSinceChange\(false, data\.staffAllowed, now\)/);
+  assert.match(actions, /\.\.\.staffSinceChange\(prev\.staffAllowed, data\.staffAllowed, now\)/);
+  // Sekmeler: personelde Listeler yok
+  const tabs = read("src/app/panel/kontrol/tabs.tsx");
+  assert.match(tabs, /role === "admin" \? KONTROL_TABS : KONTROL_TABS\.filter\(\(t\) => t\.href !== "\/panel\/kontrol\/duzenle"\)/);
+  assert.match(read("src/app/panel/kontrol/page.tsx"), /tabs=\{<KontrolTabs current="\/panel\/kontrol" role=\{user\.role\} \/>\}/);
+  // RunView: audit kapalıyken erken rozeti hiç kurulmaz
+  const runView = read("src/app/panel/kontrol/run-view.tsx");
+  assert.match(runView, /audit\?: boolean;/);
+  assert.match(runView, /p\.audit !== false && started && earlyStart\(/);
+  // Geçmiş SQL'de süzülür: personelde yönetici listelerinin kaydı ve personele açılmadan önceki kayıt okunmaz
+  const store = read("src/server/checklists/store.ts");
+  assert.match(store, /export async function loadHistory\(db: Db, from: string, to: string, role: "admin" \| "staff", ctx: DayCtx\)/);
+  assert.match(store, /const visible = templates\.filter\(\(t\) => role === "admin" \|\| t\.staffAllowed\);/);
+  assert.match(store, /inArray\(r\.templateId, visible\.map\(\(t\) => t\.id\)\)/);
   // Personel: yalnız "Personel doldurabilir" listeler, yönetici sayfaları geri gönderir
   assert.match(read("src/server/checklists/store.ts"), /if \(me\.role !== "admin" && !tpl\.staffAllowed\) throw new ChecklistError\("Bu listeyi yalnız yönetici doldurur\.", 403\);/);
   assert.match(read("src/app/panel/kontrol/[id]/page.tsx"), /if \(!admin && !view\.template\.staffAllowed\) redirect\("\/panel\/kontrol"\);/);
@@ -658,7 +744,10 @@ test("kaynak: kontrol listelerinde para ve maliyet modeli yok; istemci bileşenl
 test("kaynak: zil kontrol grubu kasadan sonra, iki rolde; personel dalı ilk Promise.all'da", () => {
   const src = read("src/server/actions/notifications.ts");
   assert.match(src, /group\?: "sistem" \| "hatirlatici" \| "onay" \| "kasa" \| "kontrol" \| "odeme" \| "fatura" \| "uyari";/);
-  assert.match(src, /checklistNotifications\(user\)\.catch\(\(\) => \[\]\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes\];/);
+  assert.match(
+    src,
+    /checklistNotifications\(user\)\.catch\(\(\) => \[\]\),\n {4}opsBell\(user\)\.catch\(\(\) => \[\]\),\n {2}\]\);\n {2}if \(user\.role !== "admin"\) return \[\.\.\.cash, \.\.\.kontrol, \.\.\.mine, \.\.\.recipes, \.\.\.ops\];/,
+  );
   assert.match(src, /\.\.\.cash, \.\.\.kontrol, \.\.\.payments,/);
   assert.doesNotMatch(src, /export async function checklistNotifications/);
   const ui = read("src/components/panel/notifications.tsx");

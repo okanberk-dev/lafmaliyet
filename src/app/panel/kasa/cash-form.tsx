@@ -1,7 +1,7 @@
 "use client";
 
 import { Calculator, Copy, CreditCard, MessageCircle, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { PhotoPicker, PhotoStatus, usePhotoUpload } from "@/components/panel/photo-picker";
@@ -40,13 +40,17 @@ import {
 import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { resendCashReportEmail, submitCashReport, type CashEmailOutcome } from "@/server/actions/cash-report";
+import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
+import { requestCashCorrection, requestLateCashReport } from "@/server/actions/cash-requests";
+import type { CashEmailOutcome } from "@/server/cash/report-email";
 import type { CashOutView } from "@/server/data/cash-outs";
 import type { CashPhotoInfo } from "@/server/data/cash-photos";
 import type { CashReportDTO } from "@/server/data/cash-reports";
+import type { OtherPending, OwnCorrection, OwnDelete } from "@/server/data/cash-requests";
 
 import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
+import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
 import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
 
@@ -91,7 +95,7 @@ type FormReadField = (typeof READ_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
 
-function initialValues(report: CashReportDTO | null, carry: { amount: number } | null, outs: CashOutView[]): Values {
+function initialValues(report: CashReportFields | null, carry: { amount: number } | null, outs: CashOutView[]): Values {
   if (report) {
     return {
       zNo: report.zNo ?? "",
@@ -109,7 +113,7 @@ function initialValues(report: CashReportDTO | null, carry: { amount: number } |
       handedOver: report.handedOver ? input(report.handedOver) : "",
       bankPos: input(report.bankPos),
       offRevenue: input(report.offRevenue),
-      discounts: input(report.discounts),
+      discounts: input(report.discounts ?? null),
       note: report.note ?? "",
     };
   }
@@ -235,6 +239,27 @@ interface PosPrompt {
 }
 
 /**
+ * Düzenleme öneriye dönünce eklenen fotoğrafın durumu. Ertesi gün (gate "gec") yalnız fotoğraf eklemek doğrudan
+ * kaydedilir (değişiklik yok: staffCashGate "direct"); kilitli günde fotoğrafı artık yönetici ekler (staffDayOpen).
+ */
+function droppedPhotoText(gate: "kilitli" | "gec"): string {
+  return gate === "gec"
+    ? "Eklediğiniz fotoğraf öneriye gitmez. Öneriyi gönderdikten sonra Düzenle ile yalnız fotoğrafı ekleyin; onay gerekmez."
+    : "Eklediğiniz fotoğraf öneriye gitmez; ertesi günün raporu girildiği için bu güne fotoğrafı artık yönetici ekler.";
+}
+
+/** Geç raporun formdaki durumu: kişinin bekleyen isteğinin sürümü (yoksa 0), nedeni, teslim alanı ve fotoğrafları */
+export interface LateFormState {
+  version: number;
+  reason: string;
+  handedTo: { kind: "user"; id: number } | { kind: "banka" } | null;
+  /** Önceki isteğin fotoğrafları (kişinin kendi küçük resimleri; formdan çıkarılabilir) */
+  kept: FormPhoto[];
+  /** Bekleyen istek güncelleniyor ("Güncelle ve gönder") */
+  updating: boolean;
+}
+
+/**
  * Gün sonu kasa raporu: personel ModPOS'un Z raporuna ve kasaya bakıp girer. Yazarken olması gereken nakit ve fark
  * (eksik / fazla) anında görünür; gönderince alıcılara e-posta gider ve "WhatsApp ile gönder" ayrıntılı metni açar.
  * Gönderilmiş rapor özet olarak görünür, "Düzenle" ile yeniden gönderilir (güncellendi diye işaretlenir; önceki sürüm
@@ -246,6 +271,15 @@ interface PosPrompt {
  * Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar dolar
  * ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar, okunamayan
  * alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla saklanır.
+ *
+ * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
+ * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
+ * önerisine geçer (fotoğraf yok, "Neden düzeltiyorsunuz?" zorunlu, "Onaya gönder"). Rapor onaya kadar değişmez.
+ *
+ * Geç rapor (`mode="late"`; docs/KASA-RAPORU.md › Geç rapor): dünden eski bir günü personel Z fotoğrafı, Z no ve
+ * nedeniyle onaya gönderir; sayan isteyendir (seçici yok), teslim varsa teslim alan seçilir, gün içinde çıkan elle
+ * yazılır. Dünün formu gönderilirken gün döndüyse (05:00) sunucu geç rapora çevirir, form yazılanlarla geçer.
+ * "Düzeltip onayla" (`mode="review"`): yönetici geç raporu kendi değerleriyle onaylar (fotoğraf, sayan ve neden yok).
  */
 export function CashForm({
   date,
@@ -262,6 +296,16 @@ export function CashForm({
   me = null,
   revisions = [],
   locked = false,
+  requests = null,
+  proposedBy,
+  photoRemoval,
+  mode = "report",
+  initial = null,
+  late = null,
+  onReview,
+  reviewPending = false,
+  onCancel,
+  onSent,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -285,19 +329,58 @@ export function CashForm({
   me?: { id: number; name: string } | null;
   /** Kayıtlı raporun önceki sürümleri */
   revisions?: CashRevisionRow[];
-  /** Personel: ertesi günün raporu girildi, bu rapor artık yalnız yöneticide */
+  /** Personel: ertesi günün raporu girildi, bu rapor yönetici onayıyla düzeltilir ("Düzeltme öner") */
   locked?: boolean;
+  /** Personel: bu raporun bekleyen istekleri (kendisininki tam, başkalarınınki yalnız adı) */
+  requests?: { own: (OwnCorrection | OwnDelete)[]; others: OtherPending[] } | null;
+  /** Onaylanan düzeltme önerilerinin önerenleri (sürüme göre; "Değişiklikler") */
+  proposedBy?: Record<number, string>;
+  /** Personel: kayıtlı raporun fotoğraflarında kaldırma isteği ("ok" açılabilir, "pending" bekliyor, "blocked" olmaz) */
+  photoRemoval?: Record<number, "ok" | "pending" | "blocked">;
+  /** "report" gün sonu raporu; "late" personelin geç raporu; "review" yöneticinin "Düzeltip onayla"sı */
+  mode?: "report" | "late" | "review";
+  /** Geç rapor ve "Düzeltip onayla": rapor yokken formun ilk değerleri */
+  initial?: CashReportFields | null;
+  /** Geç rapor: kişinin bekleyen ya da reddedilen isteği (sürüm, neden, teslim alan, önceki fotoğraflar) */
+  late?: LateFormState | null;
+  /** "Düzeltip onayla": yöneticinin değerleri karta gider */
+  onReview?: (fields: CashReportFields) => void;
+  reviewPending?: boolean;
+  /** Geç rapor ve "Düzeltip onayla": Vazgeç */
+  onCancel?: () => void;
+  /** Geç rapor onaya gitti */
+  onSent?: () => void;
 }) {
+  // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
+  // öteki karta gitmesin
+  const uid = useId();
+  const fid = (name: string) => `${uid}k-${name}`;
   const [editing, setEditing] = useState(report === null);
-  const [values, setValues] = useState<Values>(() => initialValues(report, carry, cashOuts));
+  const [values, setValues] = useState<Values>(() => initialValues(report ?? initial, carry, cashOuts));
   const initialCounter = report?.countedBy ?? report?.submittedBy ?? me?.id ?? null;
   const [counter, setCounter] = useState<number | null>(initialCounter);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [pending, start] = useActionTransition();
   const [resending, setResending] = useState(false);
-  const [photos, setPhotos] = useState<FormPhoto[]>([]);
+  const [photos, setPhotos] = useState<FormPhoto[]>(() => late?.kept ?? []);
   const [marks, setMarks] = useState<Marks>({});
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
+  // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
+  // gönderim (`fromSubmit`: yazılanlar korunur, şerit nedenini söyler)
+  // `dropped`: düzenlemede eklenen ve öneriye gitmeyen fotoğraf sayısı (şerit ve bildirim söyler)
+  const [proposal, setProposal] = useState<{ gate: "kilitli" | "gec"; fromSubmit: boolean; dropped: number } | null>(null);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [clientKey, setClientKey] = useState(newClientKey);
+  // Geç rapor: "late" kipi ya da 05:00 dönüşünde sunucunun çevirdiği dünün formu
+  const [lateTurn, setLateTurn] = useState(false);
+  const isLate = mode === "late" || lateTurn;
+  const review = mode === "review";
+  const [lateReason, setLateReason] = useState(late?.reason ?? "");
+  const [handedTo, setHandedTo] = useState<string>(late?.handedTo ? (late.handedTo.kind === "banka" ? "banka" : `user:${late.handedTo.id}`) : "");
+  const [handedError, setHandedError] = useState<string | null>(null);
+  const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
+  const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
   const zUp = usePhotoUpload();
   const posUp = usePhotoUpload();
   const live = preview(values);
@@ -339,8 +422,32 @@ export function CashForm({
     setPhotos([]);
     setMarks({});
     setPosPrompt(null);
+    setProposal(null);
+    setReason("");
+    setReasonError(null);
     setEditing(true);
   }
+
+  /** Düzeltme önerisi: kayıtlı rapordan (kilitli gün) ya da bekleyen önerinin değerlerinden ("Öneriyi düzenle") */
+  function propose(from: OwnCorrection | null) {
+    if (!report) return;
+    edit();
+    if (from) {
+      setValues(initialValues({ ...report, ...from.proposed }, carry, cashOuts));
+      setCounter(from.proposed.countedBy);
+      setReason(from.message ?? "");
+    }
+    setProposal({ gate: from?.gate ?? "kilitli", fromSubmit: false, dropped: 0 });
+    setClientKey(newClientKey());
+  }
+
+  // Öneriye geçilince neden alanına gidilir (telefonda düğme formun altında; alan ekranın dışında kalmasın)
+  useEffect(() => {
+    if (!proposal?.fromSubmit) return;
+    const el = document.getElementById(`${uid}k-reason`);
+    el?.scrollIntoView({ block: "center" });
+    el?.focus({ preventScroll: true });
+  }, [proposal, uid]);
 
   /** Okumayı forma uygular: yalnız boş alanlar dolar; yeşil özet satırını döner */
   function applyReading(photoId: number, r: CashReading): string | null {
@@ -447,20 +554,114 @@ export function CashForm({
       toast.error("Eksik ya da hatalı alan var", { description: Object.values(errs)[0] });
       // Telefonda düğme formun altında: hatalı ilk alana gidilir (yoksa uyarı ekranın dışında kalır)
       const first = Object.keys(errs)[0];
-      const el = first ? document.getElementById(`k-${first}`) : null;
+      const el = first ? document.getElementById(fid(first)) : null;
       el?.scrollIntoView({ block: "center" });
       el?.focus({ preventScroll: true });
+      return;
+    }
+    if (review) {
+      if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
+        toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
+        document.getElementById(fid("note"))?.focus();
+        return;
+      }
+      onReview?.(fields);
+      return;
+    }
+    if (isLate) {
+      // Geç rapor: Z no, Z fotoğrafı, neden ve (teslim varsa) teslim alan zorunlu; açılış zincirin önceki halkasıyla
+      const focus = (id: string) => {
+        const el = document.getElementById(id);
+        el?.scrollIntoView({ block: "center" });
+        el?.focus({ preventScroll: true });
+      };
+      if (!fields.zNo) {
+        setErrors((x) => ({ ...x, zNo: "Z no gerekli (Z raporunun üstünde)" }));
+        toast.error("Z no gerekli");
+        return focus(fid("zNo"));
+      }
+      if (!photos.some((p) => p.kind === "kasa-z")) {
+        toast.error("Z raporunun fotoğrafını ekleyin", { description: "Geç rapor Z raporunun fotoğrafıyla onaya gider." });
+        return document.getElementById(fid("z-photos"))?.scrollIntoView({ block: "center" });
+      }
+      const why = lateReason.trim();
+      if (why.length < 3) {
+        setReasonError("Geç girme nedenini yazın");
+        return focus(fid("reason"));
+      }
+      const to = handedTo === "banka" ? ({ kind: "banka" } as const) : handedTo.startsWith("user:") ? ({ kind: "user", id: Number(handedTo.slice(5)) } as const) : null;
+      if (fields.handedOver > 0 && !to) {
+        setHandedError("Teslim edileni kimin aldığını seçin");
+        return focus(fid("handedTo"));
+      }
+      if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: null, note: fields.note })) {
+        toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
+        return focus(fid("note"));
+      }
+      start(async () => {
+        const res = await requestLateCashReport({
+          ...fields,
+          zNo: fields.zNo ?? "",
+          reason: why,
+          requestVersion: late?.version ?? 0,
+          photoIds: photos.map((p) => p.id),
+          handedTo: fields.handedOver > 0 ? to : null,
+          clientKey,
+        });
+        if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+        toast.success(`Onaya gönderildi · ${diffText(res.data.cashDiff)}`, { description: "Yönetici onaylayınca kayda geçer; sonucu zilde görürsünüz." });
+        setClientKey(newClientKey());
+        onSent?.();
+      });
+      return;
+    }
+    if (proposal && report) {
+      // Düzeltme önerisi: neden zorunlu; açılış devirle tutmuyorsa ve not boşsa neden nota da yazılır (sunucuda)
+      const why = reason.trim();
+      if (why.length < 5) {
+        setReasonError("Nedeni en az 5 karakterle yazın");
+        const el = document.getElementById(fid("reason"));
+        el?.scrollIntoView({ block: "center" });
+        el?.focus({ preventScroll: true });
+        return;
+      }
+      const { date: _day, ...rest } = fields;
+      void _day;
+      start(async () => {
+        const res = await requestCashCorrection({ date, baseRevision: report.revision, fields: rest, countedBy: counter, message: why, clientKey });
+        if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+        toast.success("Düzeltme onaya gönderildi", { description: "Yönetici onaylayınca rapora işlenir; sonucu zilde görürsünüz." });
+        setProposal(null);
+        setClientKey(newClientKey());
+        setEditing(false);
+      });
       return;
     }
     // Açılış önceki devirle tutmuyorsa nedeni nota (sunucu da reddeder; burada not alanına gidilir)
     if (openingNeedsNote({ check: carryCheck(date, fields.openingCash, carry), openingCash: fields.openingCash, prevOpening: report?.openingCash ?? null, note: fields.note })) {
       toast.error("Açılış önceki günün devrinden farklı: nedenini nota yazın");
-      document.getElementById("k-note")?.focus();
+      document.getElementById(fid("note"))?.focus();
       return;
     }
     start(async () => {
       const res = await submitCashReport({ ...fields, countedBy: counter, revision: report?.revision ?? 0, photos: photos.map((p) => p.id) });
       if (!res.ok) return void toast.error(res.error, { duration: 10_000 });
+      // Gün döndü (05:00): dünün raporu artık geç rapor; yazılanlar ve fotoğraflar yerinde, geç rapora geçilir
+      if (res.data.needsApproval && res.data.request === "kasa-gec") {
+        setLateTurn(true);
+        setClientKey(newClientKey());
+        toast.info("Gün döndü: bu rapor artık yöneticinin onayıyla girilir", { description: "Yazdıklarınız yerinde; Z fotoğrafını ve nedenini ekleyip onaya gönderin." });
+        return;
+      }
+      // Ertesi gün kasa alanı ya da sayan, kilitli gün: hiçbir şey kaydedilmedi; yazılanlar yerinde, öneriye geçilir.
+      // Öneri fotoğraf taşımaz: düzenlemede eklenen fotoğraf varsa söylenir
+      if (res.data.needsApproval) {
+        setProposal({ gate: res.data.gate, fromSubmit: true, dropped: photos.length });
+        setClientKey(newClientKey());
+        const dropped = photos.length ? ` ${droppedPhotoText(res.data.gate)}` : "";
+        toast.info("Bu değişiklik yöneticinin onayıyla olur", { description: `Yazdıklarınız yerinde; nedenini yazıp onaya gönderin.${dropped}`, duration: photos.length ? 12_000 : undefined });
+        return;
+      }
       const e: CashEmailOutcome = res.data.email;
       // Kayıtlı raporun düzeltmesi "gönderildi" değil (e-posta yalnız ilk gönderimde gider)
       const head = `${report ? "Rapor güncellendi" : "Rapor gönderildi"} · ${diffText(res.data.cashDiff)}`;
@@ -528,7 +729,7 @@ export function CashForm({
               ) : null}
             </div>
           ) : null}
-          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} /> : null}
+          {saved ? <SavedPhotos photos={saved.photos} diffs={diffs} admin={photoUi.admin} removal={photoRemoval} /> : null}
           {laterNote ? <p className="rounded-xl bg-info-soft px-3 py-2 text-[13px] leading-5 text-info">{laterNote}</p> : null}
           <div className="flex flex-wrap gap-2">
             {whatsapp ? (
@@ -542,14 +743,26 @@ export function CashForm({
               </Button>
             ) : null}
             {canEdit ? (
-              <Button variant="ghost" size="lg" onClick={edit}>
+              <Button variant="ghost" size="lg" onClick={edit} disabled={Boolean(ownDelete)}>
                 <Pencil size={16} /> Düzenle
               </Button>
             ) : null}
+            {requests && !ownDelete ? <DeleteRequestButton date={date} revision={report.revision} label={`${longDateTR(date)} kasa raporu`} /> : null}
           </div>
-          {locked ? <p className="rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">Ertesi günün raporu girildi; düzeltme için yöneticiye yazın.</p> : null}
+          {ownDelete && canEdit ? <p className="text-[13px] leading-5 text-ink-mute">Silme isteğiniz bekliyor; önce geri çekin.</p> : null}
+          {locked ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-panel px-3 py-2 text-[13px] leading-5 text-ink-mute">
+              <span className="min-w-0 flex-1 basis-56">Ertesi günün raporu girildi; bu raporu yönetici onayıyla düzeltirsiniz.</span>
+              {!ownCorrection && !ownDelete ? (
+                <Button size="sm" variant="secondary" onClick={() => propose(null)}>
+                  <Pencil size={14} /> Düzeltme öner
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
           <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} />
-          <CashRevisions report={report} revisions={revisions} />
+          <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
     );
@@ -599,9 +812,9 @@ export function CashForm({
   const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
 
   const field = (k: MoneyKey, label: string, opts: { hint?: ReactNode; placeholder?: string; autoFocus?: boolean } = {}) => (
-    <Field label={labelOf(k, label)} htmlFor={`k-${k}`} hint={hintOf(k, opts.hint)} error={errors[k]}>
+    <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
       <NumberInput
-        id={`k-${k}`}
+        id={fid(k)}
         inputMode="decimal"
         value={values[k]}
         onChange={set(k)}
@@ -619,8 +832,8 @@ export function CashForm({
   const busy = zUp.busy || posUp.busy;
   const photoBlock = (k: CashPhotoKind) => {
     const up = k === "kasa-z" ? zUp : posUp;
-    return photoUi.storage ? (
-      <div className="space-y-2.5 sm:col-span-2">
+    return photoUi.storage && !proposal && !review ? (
+      <div id={k === "kasa-z" ? fid("z-photos") : undefined} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
         <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={busy} />
         <PhotoStatus phase={up.phase} />
         {offLine ? <p className="text-[13px] leading-5 text-ink-mute">{offLine}</p> : null}
@@ -640,21 +853,43 @@ export function CashForm({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-4">
+        {isLate && !review ? (
+          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+            <p className="font-semibold">{longDateTR(date)} · Geç rapor</p>
+            <p className="mt-0.5">Yöneticinin onayıyla kayda geçer. Z raporunun fotoğrafı ve Z no zorunlu; gün içinde kasadan çıkanı elle yazın.</p>
+          </div>
+        ) : null}
+        {proposal ? (
+          <div role="note" className="rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+            <p className="font-semibold">{dayMonthTR(date)} kasa raporu · düzeltme önerisi</p>
+            {proposal.fromSubmit ? (
+              <p className="mt-0.5">
+                {proposal.gate === "kilitli"
+                  ? "Ertesi günün raporu girildi; bu değişiklik yöneticinin onayıyla olur. Nedenini yazıp onaya gönderin."
+                  : "Kasa alanlarını ertesi gün değiştirmek yöneticinin onayıyla olur; nedenini yazıp onaya gönderin."}
+              </p>
+            ) : null}
+            <p className="mt-0.5">Yönetici onaylayınca rapora işlenir; o zamana kadar rapor değişmez.</p>
+            {proposal.dropped ? <p className="mt-0.5 font-medium">{droppedPhotoText(proposal.gate)}</p> : null}
+          </div>
+        ) : null}
         <Card>
           <CardHeader
             icon={<ReceiptText />}
             title="Z raporu (ModPOS)"
             description={
-              photoUi.storage && reading
-                ? "ModPOS'ta gün sonu Z raporunu alın; fotoğrafını çekin, rakamlar dolar. Ya da elle yazın."
-                : "ModPOS'ta gün sonu Z raporunu alın; toplam satışı ve ödeme türlerini yazın."
+              isLate
+                ? "Z raporunun fotoğrafı zorunlu; rakamlar fotoğraftan dolar ya da elle yazın."
+                : photoUi.storage && reading
+                  ? "ModPOS'ta gün sonu Z raporunu alın; fotoğrafını çekin, rakamlar dolar. Ya da elle yazın."
+                  : "ModPOS'ta gün sonu Z raporunu alın; toplam satışı ve ödeme türlerini yazın."
             }
           />
           <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
             {photoBlock("kasa-z")}
             {field("zTotal", "Toplam satış (Z)", { autoFocus: !report && !photoUi.storage })}
-            <Field label={labelOf("zNo", "Z no")} htmlFor="k-zNo" hint={hintOf("zNo", "isteğe bağlı")}>
-              <Input id="k-zNo" inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" data-warn={warnOf("zNo") || undefined} />
+            <Field label={labelOf("zNo", "Z no")} htmlFor={fid("zNo")} hint={hintOf("zNo", isLate ? "zorunlu" : "isteğe bağlı")} error={errors.zNo}>
+              <Input id={fid("zNo")} inputMode="numeric" value={values.zNo} onChange={set("zNo")} maxLength={30} autoComplete="off" aria-invalid={Boolean(errors.zNo)} data-warn={warnOf("zNo") || undefined} />
             </Field>
             {field("cash", "Nakit")}
             {field("card", "Kredi / banka kartı")}
@@ -663,8 +898,8 @@ export function CashForm({
             {field("other", "Diğer", { hint: "havale, cari, ikram…" })}
             {field("offRevenue", "Ödenmez / ikram", { hint: "Z raporunda ciro dışı (isteğe bağlı)" })}
             {field("discounts", "İndirim", { hint: "Z raporundaki indirim toplamı (isteğe bağlı)" })}
-            <Field label={labelOf("receipts", "Fiş sayısı")} htmlFor="k-receipts" hint={hintOf("receipts", "isteğe bağlı")}>
-              <Input id="k-receipts" inputMode="numeric" value={values.receipts} onChange={set("receipts")} maxLength={6} autoComplete="off" data-warn={warnOf("receipts") || undefined} />
+            <Field label={labelOf("receipts", "Fiş sayısı")} htmlFor={fid("receipts")} hint={hintOf("receipts", "isteğe bağlı")}>
+              <Input id={fid("receipts")} inputMode="numeric" value={values.receipts} onChange={set("receipts")} maxLength={6} autoComplete="off" data-warn={warnOf("receipts") || undefined} />
             </Field>
             {paymentsOff && live ? (
               <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">
@@ -714,13 +949,34 @@ export function CashForm({
                 "Kasadan ödenen harcama, gün içinde teslim edilen"
               ),
             })}
-            <Field label="Neye çıktı" htmlFor="k-cashOutNote" hint="isteğe bağlı">
-              <Input id="k-cashOutNote" value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
+            <Field label="Neye çıktı" htmlFor={fid("cashOutNote")} hint="isteğe bağlı">
+              <Input id={fid("cashOutNote")} value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
             </Field>
             {field("handedOver", "Teslim edilen", { hint: "Sayımdan sonra kasadan alınan (patrona, bankaya)" })}
-            {counters.length ? (
-              <Field label="Kasayı sayan" htmlFor="k-counter" hint="Çekmeceyi kim saydı? Siz değilseniz seçin.">
-                <Select id="k-counter" value={counter ?? ""} onChange={(e) => setCounter(e.target.value ? Number(e.target.value) : null)}>
+            {isLate && !review && (parseNumberTR(values.handedOver) ?? 0) > 0 ? (
+              <Field label="Teslim alan" htmlFor={fid("handedTo")} hint="Teslim edileni kim aldı ya da bankaya mı yatırıldı?" error={handedError ?? undefined}>
+                <Select
+                  id={fid("handedTo")}
+                  value={handedTo}
+                  onChange={(e) => {
+                    setHandedTo(e.target.value);
+                    setHandedError(null);
+                  }}
+                  aria-invalid={Boolean(handedError)}
+                >
+                  <option value="">Seçin</option>
+                  {counters.map((c) => (
+                    <option key={c.id} value={`user:${c.id}`}>
+                      {c.name}
+                    </option>
+                  ))}
+                  <option value="banka">Banka</option>
+                </Select>
+              </Field>
+            ) : null}
+            {counters.length && !isLate && !review ? (
+              <Field label="Kasayı sayan" htmlFor={fid("counter")} hint="Çekmeceyi kim saydı? Siz değilseniz seçin.">
+                <Select id={fid("counter")} value={counter ?? ""} onChange={(e) => setCounter(e.target.value ? Number(e.target.value) : null)}>
                   {counter === null ? <option value="">Seçin</option> : null}
                   {counters.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -770,7 +1026,19 @@ export function CashForm({
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         <Card>
-          <CardHeader icon={<Calculator />} title="Sonuç" description={`${longDateTR(date)} · gönderince yöneticiye e-posta gider`} />
+          <CardHeader
+            icon={<Calculator />}
+            title="Sonuç"
+            description={
+              review
+                ? `${longDateTR(date)} · sizin değerleriniz; personelin girdiği 1. sürüm olarak kalır`
+                : isLate
+                  ? `${longDateTR(date)} · onaya gider; yönetici onaylayınca kayda geçer`
+                  : proposal
+                    ? `${longDateTR(date)} · önerinin sonucu; rapor onaya kadar değişmez`
+                    : `${longDateTR(date)} · gönderince yöneticiye e-posta gider`
+            }
+          />
           <div className="space-y-3 px-5 pb-5">
             {live ? (
               <>
@@ -792,9 +1060,11 @@ export function CashForm({
             )}
             <Field
               label="Not"
-              htmlFor="k-note"
+              htmlFor={fid("note")}
               hint={
-                noteRequired
+                noteRequired && proposal
+                  ? "Açılış devirle tutmuyor: boş bırakırsanız düzeltmenin nedeni buraya da yazılır"
+                  : noteRequired
                   ? "Açılış devirle tutmuyor: nedenini yazın (zorunlu)"
                   : kind && kind !== "even"
                     ? "Fark var: nedenini kısaca yazın (ör. bozuk para, iade, yanlış fiş)"
@@ -802,13 +1072,70 @@ export function CashForm({
               }
               className={(kind && kind !== "even" && !values.note.trim()) || noteRequired ? "[&_label]:text-warn" : undefined}
             >
-              <Textarea id="k-note" value={values.note} onChange={set("note")} rows={3} maxLength={1000} />
+              <Textarea id={fid("note")} value={values.note} onChange={set("note")} rows={3} maxLength={1000} />
             </Field>
-            <Button size="lg" className="w-full" onClick={submit} disabled={pending || busy}>
-              <Send size={16} /> {pending ? "Gönderiliyor…" : busy ? "Fotoğraf bekleniyor…" : report ? "Raporu güncelle" : "Raporu gönder"}
+            {proposal ? (
+              <Field label="Neden düzeltiyorsunuz?" htmlFor={fid("reason")} hint="Yönetici görür; onaylayınca rapora işlenir" error={reasonError ?? undefined} className={reasonError ? undefined : "[&_label]:text-warn"}>
+                <Textarea
+                  id={fid("reason")}
+                  value={reason}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setReasonError(null);
+                  }}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="ör. teslim edilen yanlış yazılmış"
+                />
+              </Field>
+            ) : null}
+            {isLate && !review ? (
+              <Field label="Neden geç giriliyor?" htmlFor={fid("reason")} hint="Yönetici görür; başka biri saydıysa buraya yazın" error={reasonError ?? undefined} className={reasonError ? undefined : "[&_label]:text-warn"}>
+                <Textarea
+                  id={fid("reason")}
+                  value={lateReason}
+                  onChange={(e) => {
+                    setLateReason(e.target.value);
+                    setReasonError(null);
+                  }}
+                  rows={3}
+                  maxLength={300}
+                  placeholder="ör. akşam sistem kapalıydı, Z ertesi gün alındı"
+                />
+              </Field>
+            ) : null}
+            <Button size="lg" className="w-full" onClick={submit} disabled={pending || busy || reviewPending}>
+              <Send size={16} />{" "}
+              {pending || reviewPending
+                ? "Gönderiliyor…"
+                : busy
+                  ? "Fotoğraf bekleniyor…"
+                  : review
+                    ? "Düzeltip onayla"
+                    : isLate
+                      ? late?.updating
+                        ? "Güncelle ve gönder"
+                        : "Onaya gönder"
+                      : proposal
+                        ? "Onaya gönder"
+                        : report
+                          ? "Raporu güncelle"
+                          : "Raporu gönder"}
             </Button>
             {report ? (
-              <Button variant="ghost" className="w-full" onClick={() => setEditing(false)} disabled={pending}>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setProposal(null);
+                  setEditing(false);
+                }}
+                disabled={pending}
+              >
+                Vazgeç
+              </Button>
+            ) : onCancel ? (
+              <Button variant="ghost" className="w-full" onClick={onCancel} disabled={pending || reviewPending}>
                 Vazgeç
               </Button>
             ) : null}

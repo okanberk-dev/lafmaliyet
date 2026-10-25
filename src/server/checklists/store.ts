@@ -10,6 +10,7 @@ import {
   absentReason,
   appliesOn,
   canAnswerDay,
+  staffSeesRun,
   DAY_CLOSED_TEXT,
   inRange,
   LIST_CHANGED_TEXT,
@@ -65,6 +66,8 @@ export interface TemplateDTO {
   dueAt: string;
   weekdays: number[];
   staffAllowed: boolean;
+  /** "Personel doldurabilir"in açıldığı an (ISO); boş: baştan beri. Personel bundan önceki günleri görmez */
+  staffSince: string | null;
   active: boolean;
   activeFrom: string;
   inactiveFrom: string | null;
@@ -160,6 +163,7 @@ export async function loadTemplates(db: Db, o: { ids?: number[]; runs?: boolean 
       dueAt: r.dueAt ?? "11:00",
       weekdays: r.weekdays,
       staffAllowed: r.staffAllowed,
+      staffSince: r.staffSince?.toISOString() ?? null,
       active: r.active,
       activeFrom: r.activeFrom.toISOString(),
       inactiveFrom: r.inactiveFrom?.toISOString() ?? null,
@@ -232,7 +236,9 @@ export async function loadChecklistDays(db: Db, days: string[], role: "admin" | 
     .where(and(inArray(r.date, days), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id))));
   const answers = runs.length ? (await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id)))).map((a) => ({ runId: a.runId, a: answerLite(a) })) : [];
   for (const day of out.keys()) {
+    // Personel: liste personele açılmadan önceki günler (dünkü kayıt, Bugün'ün dünkü listeler satırı) görünmez
     const lists = visible.flatMap((t) => {
+      if (role !== "admin" && !staffSeesRun(t, day)) return [];
       const run = runs.find((x) => x.templateId === t.id && x.date === day);
       if (!run && !expectedOn(t, day, ctx.today)) return [];
       return [liteOf(t, run, run ? answers.filter((x) => x.runId === run.id).map((x) => x.a) : [], ctx.photos)];
@@ -300,17 +306,28 @@ export interface HistoryList {
 
 /**
  * Geçmiş: [from, to] günlerinin listeleri, en yeni gün önce. Her gün o gün beklenen ve kaydı olan listeler; kaydı
- * olmayan günün maddeleri şablonun bugünkü maddeleridir (yaklaşık: haftanın günleri de bugünkü seçimden).
+ * olmayan günün maddeleri şablonun bugünkü maddeleridir (yaklaşık: haftanın günleri de bugünkü seçimden). Pasif liste
+ * de listelenir (kaydı geçmişte kalır). Personel (dalga 10 §2.5) yalnız "Personel doldurabilir" listeleri, listenin
+ * personele açıldığı günden itibaren görür: yönetici listelerinin kaydı SQL'de süzülür, hiç okunmaz. Pencere (son 7
+ * gün) çağıranın aralığıdır (historyRange).
  */
-export async function loadHistory(db: Db, from: string, to: string, ctx: DayCtx): Promise<{ day: string; lists: HistoryList[] }[]> {
+export async function loadHistory(db: Db, from: string, to: string, role: "admin" | "staff", ctx: DayCtx): Promise<{ day: string; lists: HistoryList[] }[]> {
   const templates = await loadTemplates(db);
+  const visible = templates.filter((t) => role === "admin" || t.staffAllowed);
   const r = s.checklistRuns;
-  const runs = templates.length ? await db.select().from(r).where(and(gte(r.date, from), lte(r.date, to), eq(r.seq, 1))) : [];
-  const answers = runs.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, runs.map((x) => x.id))) : [];
+  const runs = visible.length
+    ? await db
+        .select()
+        .from(r)
+        .where(and(gte(r.date, from), lte(r.date, to), eq(r.seq, 1), inArray(r.templateId, visible.map((t) => t.id))))
+    : [];
+  const shown = runs.filter((x) => role === "admin" || staffSeesRun(visible.find((t) => t.id === x.templateId)!, x.date));
+  const answers = shown.length ? await db.select().from(s.checklistAnswers).where(inArray(s.checklistAnswers.runId, shown.map((x) => x.id))) : [];
   const out: { day: string; lists: HistoryList[] }[] = [];
   for (let day = to; day >= from; day = addDays(day, -1)) {
-    const lists = templates.flatMap((t): HistoryList[] => {
-      const run = runs.find((x) => x.templateId === t.id && x.date === day);
+    const lists = visible.flatMap((t): HistoryList[] => {
+      if (role !== "admin" && !staffSeesRun(t, day)) return [];
+      const run = shown.find((x) => x.templateId === t.id && x.date === day);
       if (!run && !expectedOn(t, day, ctx.today)) return [];
       const mine = run ? answers.filter((a) => a.runId === run.id).map(answerLite) : [];
       const lite = liteOf(t, run, mine, ctx.photos);
@@ -564,14 +581,17 @@ export async function checkPhotoTarget(db: Db, me: Me, target: { templateId: num
   if (item.type !== "photo") throw new ChecklistError("Bu madde bu şekilde işaretlenemez.", 400);
 }
 
-/** Fotoğrafın bağlı olduğu kaydın günü ve listenin personele açık olup olmadığı (fotoğrafı kim görür); bağlı değilse null */
-export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean } | null> {
+/**
+ * Fotoğrafın bağlı olduğu kaydın günü, listenin personele açık olup olmadığı ve açıldığı an (fotoğrafı kim görür);
+ * bağlı değilse null
+ */
+export async function photoRun(db: Db, photoId: number): Promise<{ date: string; staffAllowed: boolean; staffSince: string | null } | null> {
   const [row] = await db
-    .select({ date: s.checklistRuns.date, staffAllowed: s.checklistTemplates.staffAllowed })
+    .select({ date: s.checklistRuns.date, staffAllowed: s.checklistTemplates.staffAllowed, staffSince: s.checklistTemplates.staffSince })
     .from(s.checklistAnswers)
     .innerJoin(s.checklistRuns, eq(s.checklistRuns.id, s.checklistAnswers.runId))
     .innerJoin(s.checklistTemplates, eq(s.checklistTemplates.id, s.checklistRuns.templateId))
     .where(eq(s.checklistAnswers.photoId, photoId))
     .limit(1);
-  return row ?? null;
+  return row ? { date: row.date, staffAllowed: row.staffAllowed, staffSince: row.staffSince?.toISOString() ?? null } : null;
 }

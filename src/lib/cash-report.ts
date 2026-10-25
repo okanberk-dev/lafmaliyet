@@ -229,8 +229,11 @@ export const CHANGE_LABELS: Record<ChangeKey, string> = {
   countedByName: "Sayan",
 };
 
-/** Kasadaki nakdi değiştiren alanlar: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır */
-export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver"];
+/**
+ * Kasadaki nakdi değiştiren alanlar ve kasayı sayan: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır,
+ * personel ertesi gün yalnız yönetici onayıyla değiştirir (staffCashGate)
+ */
+export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver", "countedByName"];
 
 const TEXT_FIELDS: readonly ChangeKey[] = ["cashOutNote", "note"];
 const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "countedByName"];
@@ -285,6 +288,99 @@ export function isLateEdit(date: string, submittedAt: Date): boolean {
 }
 
 /**
+ * Personelin kayıtlı rapordaki değişikliği nasıl kaydedilir (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği):
+ * "direct" doğrudan, "request" yöneticinin onayına giden istek, "closed" personele kapalı. Rapor yoksa (unutulan dünü
+ * girmek) doğrudan. Ertesi günün raporu girildiyse (kilitli gün) her değişiklik istek; iş günü kapandıktan sonra
+ * (ertesi gün 05:00'ten sonra) kasa alanı ya da sayan değişirse istek; metin ve Z alanları doğrudan.
+ */
+export function staffCashGate(o: { date: string; now: Date; hasReport: boolean; laterReport: boolean; changes: readonly Pick<FieldChange, "sensitive">[] }): "direct" | "request" | "closed" {
+  if (!staffCanReport(o.date, o.now)) return "closed";
+  if (!o.hasReport) return "direct";
+  if (o.laterReport) return o.changes.length ? "request" : "direct";
+  return isLateEdit(o.date, o.now) && o.changes.some((c) => c.sensitive) ? "request" : "direct";
+}
+
+// ---------------------------------------------------------------- Geç rapor (onaylı; docs/KASA-RAPORU.md › Geç rapor)
+
+/** Personelin geç rapor penceresi (takvim günü): dünden eski, iş gününden en çok bu kadar önce */
+export const LATE_REPORT_DAYS = 14;
+
+/**
+ * Personel bu günün raporunu geç rapor olarak (yöneticinin onayıyla) girebilir mi: iş gününden 2 ile 14 takvim günü
+ * önce. Dün normal formdadır (staffCanReport); bugün ve ileri günler yok.
+ */
+export function staffLateDay(date: string, now: Date = new Date()): boolean {
+  const day = businessDate(now);
+  return date <= addDays(day, -2) && date >= addDays(day, -LATE_REPORT_DAYS);
+}
+
+/**
+ * Geç raporun yükü (staff_requests.payload, tür `kasa-gec`): raporun alanları (Z no zorunlu), teslim alan, istekte
+ * tutulan fotoğraflar ve isteyenin gördüğü kasa farkı. Kasayı sayan isteyendir; çözümü src/lib/cash-requests.ts LatePayload.
+ */
+export type LateCashPayload = CashReportFields & {
+  zNo: string;
+  handedTo: { kind: "user"; id: number; name: string } | { kind: "banka" } | null;
+  photos: { id: number; kind: "kasa-z" | "kasa-pos" }[];
+  cashDiff: number;
+};
+
+/** Zincirin bir halkası: kayıtlı rapor ya da onay bekleyen geç rapor (`pending`) */
+export interface ZLink {
+  date: string;
+  zNo: string | null;
+  pending?: boolean;
+}
+
+const zNumber = (z: string | null | undefined): number | null => {
+  const t = (z ?? "").trim();
+  return /^\d+$/.test(t) ? Number(t) : null;
+};
+
+/**
+ * Z no sırası (yöneticinin geç rapor kartı): önceki halkanın Z no'su bu rapordan küçük, sonrakininki büyük olmalı.
+ * `ok`: null yargı yok (Z no sayı değil ya da sayılı komşu yok), false sıra tutmuyor. Metin: "Z no 1204 · önceki 1203
+ * (13 Ekim) · sonraki 1206 (15 Ekim, onay bekliyor)" ya da "Z no sırası tutmuyor: …".
+ */
+export function zNoOrder(prev: ZLink | null, zNo: string | null, next: ZLink | null): { ok: boolean | null; text: string } {
+  const n = zNumber(zNo);
+  const label = (l: ZLink) => `${l.zNo?.trim() || "Z no yok"} (${dayMonthTR(l.date)}${l.pending ? ", onay bekliyor" : ""})`;
+  const parts = [prev ? `önceki ${label(prev)}` : null, next ? `sonraki ${label(next)}` : null].filter((x): x is string => Boolean(x));
+  if (n === null) return { ok: null, text: [`Z no ${zNo?.trim() || "yok"}`, ...parts].join(" · ") };
+  const p = zNumber(prev?.zNo);
+  const q = zNumber(next?.zNo);
+  const bad = [p !== null && p >= n ? `önceki ${label(prev!)} bu rapordan büyük ya da eşit` : null, q !== null && q <= n ? `sonraki ${label(next!)} bu rapordan küçük ya da eşit` : null].filter(
+    (x): x is string => Boolean(x),
+  );
+  if (bad.length) return { ok: false, text: `Z no sırası tutmuyor: ${bad.join("; ")} (bu rapor ${zNo!.trim()})` };
+  return { ok: p === null && q === null ? null : true, text: [`Z no ${zNo!.trim()}`, ...parts].join(" · ") };
+}
+
+/**
+ * Personelin "Girilmemiş günler"i: dünden eski geç rapor penceresindeki (staffLateDay), ilk raporun gününden sonraki,
+ * raporu olmayan ve kapalı işaretli olmayan günler, en yeni önce. `pendingByDate`: o gün için onay bekleyen ya da
+ * kişinin reddedilen isteği. Hiç rapor yoksa (kasa kullanılmaya başlamadı) boş.
+ */
+export function lateMissingDays(
+  reportDates: Iterable<string>,
+  firstDate: string | null,
+  closedDays: Iterable<string>,
+  pendingByDate: ReadonlyMap<string, "pending" | "rejected">,
+  now: Date = new Date(),
+): { date: string; state: "missing" | "pending" | "rejected" }[] {
+  if (!firstDate) return [];
+  const reported = new Set(reportDates);
+  const closed = new Set(closedDays);
+  const day = businessDate(now);
+  const out: { date: string; state: "missing" | "pending" | "rejected" }[] = [];
+  for (let d = addDays(day, -2); d >= addDays(day, -LATE_REPORT_DAYS); d = addDays(d, -1)) {
+    if (d <= firstDate || reported.has(d) || closed.has(d)) continue;
+    out.push({ date: d, state: pendingByDate.get(d) ?? "missing" });
+  }
+  return out;
+}
+
+/**
  * Bir sürümün kopyası (kayıtlı rapor satırından ya da rapor DTO'sundan). Sayanı boş rapor (bu özellikten önce
  * kaydedilmiş) gönderenin saydığı raporudur: kopyaya o yazılır, yoksa ilk düzeltmede kimsenin yapmadığı "Sayan — → Ayşe"
  * değişikliği görünür.
@@ -335,6 +431,8 @@ export interface RevisionEntry {
   at: string;
   by: string;
   byId: number | null;
+  /** Sürüm personelin onaylanan düzeltme önerisiyse öneren (gönderen onaylayan yöneticidir); değilse null */
+  proposedBy: string | null;
   changes: FieldChange[];
   /** İş günü kapandıktan sonra ve kasa alanı değişti */
   late: boolean;
@@ -343,7 +441,8 @@ export interface RevisionEntry {
 /**
  * Raporun düzeltme geçmişi, en yeni önce: kayıtlı sürümler sırayla birbiriyle, sonuncusu raporun şimdiki hâliyle
  * karşılaştırılır. `first`: ilk gönderim (raporun açıldığı an; gönderen yalnız 1. sürümün kopyası varsa bilinir).
- * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar.
+ * Bu özellikten önceki raporların geçmişi ilk düzeltmeden sonra başlar. `proposedBy`: onaylanan düzeltme önerilerinin
+ * sürüme göre önerenleri (src/server/data/cash-requests.ts proposedByForReports).
  */
 export function historyOf(
   report: CashReportFields & {
@@ -356,6 +455,7 @@ export function historyOf(
     updatedAt: string;
   },
   revisions: CashRevisionRow[],
+  proposedBy?: ReadonlyMap<number, string>,
 ): { entries: RevisionEntry[]; first: { at: string; by: string | null } } {
   const snaps = [...revisions].filter((r) => r.revision < report.revision).sort((a, b) => a.revision - b.revision);
   const versions = [
@@ -366,7 +466,15 @@ export function historyOf(
   for (let i = 1; i < versions.length; i++) {
     const v = versions[i];
     const changes = revisionChanges(versions[i - 1].data, v.data);
-    entries.push({ revision: v.revision, at: v.at, by: v.by, byId: v.byId, changes, late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive) });
+    entries.push({
+      revision: v.revision,
+      at: v.at,
+      by: v.by,
+      byId: v.byId,
+      proposedBy: proposedBy?.get(v.revision) ?? null,
+      changes,
+      late: isLateEdit(report.date, new Date(v.at)) && changes.some((c) => c.sensitive),
+    });
   }
   const knownFirst = snaps[0]?.revision === 1 ? snaps[0].submittedByName : report.revision === 1 ? report.submittedByName : null;
   return { entries: entries.reverse(), first: { at: report.createdAt, by: knownFirst } };
@@ -413,20 +521,21 @@ export function lastRevision(
  * Zilin "Kasa raporu ertesi gün değişti" bildirimi: iş günü kapandıktan sonra kasa alanı değişen bütün düzeltmeler,
  * yalnız sonuncusu değil (ardından not için yeniden gönderilen rapor uyarıyı kapatmaz). Bakan yöneticinin kendi
  * düzeltmeleri sayılmaz (`viewer`). `revision`: en yeni geç düzeltmenin sürümü (bildirimin kimliği; yalnız yeni bir geç
- * düzeltme yeniden okunmamış yapar), `by`: düzeltenler, `changes`: o düzeltmelerde değişen kasa alanları, eskiden
- * yeniye. Yoksa null.
+ * düzeltme yeniden okunmamış yapar), `by`: düzeltenler (onaylanan öneride "Mehmet önerdi · Ayşe onayladı"),
+ * `changes`: o düzeltmelerde değişen kasa alanları, eskiden yeniye. Yoksa null.
  */
 export function lateCorrections(
   report: Parameters<typeof historyOf>[0],
   revisions: CashRevisionRow[],
   viewer: number | null,
+  proposedBy?: ReadonlyMap<number, string>,
 ): { revision: number; by: string[]; changes: FieldChange[] } | null {
-  const late = historyOf(report, revisions).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
+  const late = historyOf(report, revisions, proposedBy).entries.filter((e) => e.late && (viewer === null || e.byId !== viewer));
   if (!late.length) return null;
   const oldestFirst = [...late].reverse();
   return {
     revision: late[0].revision,
-    by: [...new Set(oldestFirst.map((e) => e.by))],
+    by: [...new Set(oldestFirst.map((e) => (e.proposedBy ? `${e.proposedBy} önerdi · ${e.by} onayladı` : e.by)))],
     changes: oldestFirst.flatMap((e) => e.changes.filter((c) => c.sensitive)),
   };
 }

@@ -2,27 +2,30 @@ import "server-only";
 
 import { asc, eq, gte } from "drizzle-orm";
 
-import { businessDate, staffCanReport, staffDayEditable } from "@/lib/cash-report";
-import { KEEP_DAYS, type PhotoKind } from "@/lib/photo-rules";
+import { businessDate, staffCanReport, staffDayEditable, staffLateDay } from "@/lib/cash-report";
+import { KEEP_DAYS, uploadRule, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
+import { isClosedDay } from "@/server/closed-days";
 import { getDb, schema as s } from "@/server/db";
 import type { PhotoKindRules } from "@/server/storage/photo-access";
 
 /*
  * Kasa ve fiş fotoğraflarının personel kuralları. Personel yalnız hâlâ düzenleyebildiği günlerin fotoğraflarını görür
  * ve o günlere fotoğraf ve kasadan çıkan satırı ekler; kasa raporunun kuralıyla aynı (staffDayEditable): bugün ve dün,
- * ama günün raporu varken ertesi günün raporu da girildiyse o gün kapanır. Daha eskisini yalnız yönetici.
+ * ama günün raporu varken ertesi günün raporu da girildiyse o gün kapanır. Daha eskisini yalnız yönetici; geç kasa
+ * raporu (raporu olmayan, son 14 günden biri) için personel o güne Z ve POS fotoğrafı, kasadan çıkan isteği için son 7
+ * güne fiş ekler (bağlanmadan bekler; kendi yüklediğini görür).
  */
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /** Personel bu günün kasasına (rapor, kasadan çıkanlar, fotoğraflar) hâlâ dokunabilir mi; bir sorgu */
-export async function staffDayOpen(day: string, db: Db | Tx = getDb()): Promise<boolean> {
-  if (!staffCanReport(day)) return false;
+export async function staffDayOpen(day: string, db: Db | Tx = getDb(), now: Date = new Date()): Promise<boolean> {
+  if (!staffCanReport(day, now)) return false;
   // Bu gün ve sonrası en çok iki rapor: günün raporu var mı, ondan sonra bir rapor var mı
   const rows = await db.select({ date: s.cashReports.date }).from(s.cashReports).where(gte(s.cashReports.date, day)).orderBy(asc(s.cashReports.date)).limit(2);
-  return staffDayEditable(day, { hasReport: rows[0]?.date === day, laterReport: rows.some((r) => r.date > day) });
+  return staffDayEditable(day, { hasReport: rows[0]?.date === day, laterReport: rows.some((r) => r.date > day) }, now);
 }
 
 export const cashPhotoRules: PhotoKindRules = {
@@ -49,9 +52,31 @@ export const receiptPhotoRules: PhotoKindRules = {
   },
 };
 
-/** Fotoğraf ekleme kuralı (POST /api/foto): gün gerekli ve ileri bir gün değil; personel yalnız açık günlere */
+/**
+ * Personel bu güne geç kasa raporu (yöneticinin onayıyla) girebilir mi: geç rapor penceresinde (dünden eski, son 14
+ * takvim günü; staffLateDay), ilk raporun gününden sonra, o gün raporu yok ve gün kapalı işaretli değil. Fotoğraf
+ * ekleme ve geç rapor isteği aynı kurala bakar (docs/KASA-RAPORU.md › Geç rapor).
+ */
+export async function staffLateDayOpen(day: string, db: Db | Tx = getDb()): Promise<boolean> {
+  if (!staffLateDay(day)) return false;
+  const [[first], [same]] = await Promise.all([
+    db.select({ date: s.cashReports.date }).from(s.cashReports).orderBy(asc(s.cashReports.date)).limit(1),
+    db.select({ date: s.cashReports.date }).from(s.cashReports).where(eq(s.cashReports.date, day)).limit(1),
+  ]);
+  if (!first || first.date >= day || same) return false;
+  return !(await isClosedDay(day, db));
+}
+
+/**
+ * Fotoğraf ekleme kuralı (POST /api/foto ve yeniden okuma; src/lib/photo-rules.ts uploadRule): gün gerekli ve ileri bir
+ * gün değil; personel Z ve POS fotoğrafını açık güne ya da geç rapor gününe, fişi son 7 güne (kapanmış ya da eski günde
+ * kasadan çıkan isteğine; fiş bağlanmadan bekler)
+ */
 export async function canUploadPhoto(me: CurrentUser, kind: PhotoKind, day: string | null): Promise<boolean> {
   if (kind === "kontrol") return false; // kontrol listelerinin kendi yolu var
-  if (!day || day > businessDate()) return false;
-  return me.role === "admin" || staffDayOpen(day);
+  const rule = uploadRule(me.role, kind, day, businessDate());
+  if (rule === "no" || !day) return false;
+  if (rule === "yes") return true;
+  if (await staffDayOpen(day)) return true;
+  return rule === "open-or-late" && staffLateDayOpen(day);
 }

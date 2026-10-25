@@ -90,7 +90,7 @@ export function diffRecipe(before: RecipeSnapshot, after: RecipeSnapshot): Recip
 
 /**
  * Değişiklik önerisinde maliyet farkını taşıyan satırların (eklenen ya da miktarı değişen) paket fiyatı tahmini olan
- * malzemeleri: öneride "Yeni malzeme" ile personelin yazdığı ya da faturadan gelmemiş fiyat. Reçete onayları kartı
+ * malzemeleri: öneride "Yeni malzeme" ile personelin yazdığı ya da faturadan gelmemiş fiyat. Onaylar'daki reçete kartı
  * "Tahmini fiyatlı" diye söyler; fiyatı hiç girilmemiş olanlar (isUnpriced) ayrı uyarıdadır.
  */
 export function estimateNames(
@@ -192,7 +192,7 @@ export const PROPOSED_PRICE_MAX = 10_000;
 
 /**
  * "Satış fiyatı (₺, KDV dahil)": personel boy başına yazabilir, boş bırakabilir. Yazılan fiyat bir ipucudur: yönetici
- * Reçete onayları'nda önceden dolu görür, onaylarken değiştirebilir. Sunucu aynı sınırları zod ile uygular.
+ * Onaylar'da önceden dolu görür, onaylarken değiştirebilir. Sunucu aynı sınırları zod ile uygular.
  */
 export function readProposedPrice(text: string): MoneyRead {
   return readMoneyText(text, { label: "Satış fiyatı", accusative: "Satış fiyatını", max: PROPOSED_PRICE_MAX });

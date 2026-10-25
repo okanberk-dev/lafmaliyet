@@ -1,4 +1,4 @@
-// Personelin yeni ürün önerisi (Reçete defteri → Reçete onayları): öneri denetimi (src/lib/recipe-change.ts
+// Personelin yeni ürün önerisi (Reçete defteri → Onaylar): öneri denetimi (src/lib/recipe-change.ts
 // newProductIssue), personelin yazdığı satış fiyatı (readProposedPrice, saklanması, onayda önceden dolu gelmesi), zil
 // satırları, Türkçe tamlayan eki ve sunucu kuralları (yetki, ortak ürün açma yardımcısı, boş productId'yi her okuyanın
 // karşılaması, personelin maliyet görmemesi, fiyatı yalnız yazması).

@@ -4,6 +4,7 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import { supplierResolver, type SupplierRef } from "@/app/panel/tedarikciler/logic";
 import { businessDate } from "@/lib/cash-report";
+import { closedDaysIn } from "@/lib/closed-days";
 import { channelOf, isChannelKey } from "@/lib/commission/channels";
 import {
   buildCommissionReport,
@@ -54,7 +55,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
   const db = getDb();
   const today = opts.today ?? todayTR();
   const { fromMonth, fromDay } = reportWindow(today);
-  const [invoiceRows, marks, state, till, pageNames] = await Promise.all([
+  const [invoiceRows, marks, state, till, pageNames, closedRows] = await Promise.all([
     // Komisyon faturaları ve kalemleri tek sorguda (kalemsiz fatura bir satır)
     db
       .select({
@@ -101,6 +102,8 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
       .from(s.cashReports)
       .where(gte(s.cashReports.date, fromDay)),
     opts.resolveNames ? supplierNames(true) : Promise.resolve(null),
+    // Kapalı işaretli günler (eksik rapor sayılmaz; dalga 10 §2.9)
+    db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(and(eq(s.specialDays.kind, "kapali"), gte(s.specialDays.dateTo, fromDay))),
   ]);
   // Hafif yol: faturadaki adı bir kanala bağlanmayan fatura varsa kartların adları da aranır (Kanalı bulunamayan
   // faturalar kartının "Diğer adlar" önerisi zilde, Bugün'de ve e-postada da geçerli olsun)
@@ -117,6 +120,7 @@ export async function loadCommissionInput(opts: { resolveNames: boolean; today?:
     invoices: groupInvoiceRows(invoiceRows, names),
     till: till.map(({ date, mealCard, online }) => ({ date, mealCard, online })),
     firstReport: till[0]?.first ?? null,
+    closed: closedDaysIn(closedRows, fromDay, addDays(businessDate(), -1), till.map((r) => r.date)),
     marks: marks.filter((m): m is ChannelMonthIn => isChannelKey(m.channel)),
     settings: parseCommissionSettings(stored.get(COMMISSION_SETTINGS_KEY)),
   };

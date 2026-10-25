@@ -9,6 +9,7 @@ import { longDateTR } from "@/lib/reminders";
 import { saveAiSettings } from "@/server/ai/claude";
 import { requireAdmin } from "@/server/auth/dal";
 import { getDb, schema as s } from "@/server/db";
+import { supersede } from "@/server/staff-requests/core";
 import { deletePhoto, getPhoto, PhotoError } from "@/server/storage/photos";
 
 import { logActivity } from "./log";
@@ -42,6 +43,8 @@ export async function deleteStoredPhoto(id: number) {
       if (e instanceof PhotoError) throw new UserError(e.message);
       throw e;
     }
+    // Fotoğrafın bekleyen kaldırma isteği kapanır (reddedilmez)
+    await supersede(getDb(), { kinds: ["foto-kaldir"], subject: `foto:${pid}` }, "Fotoğraf silindi");
     await logActivity(me, "Fotoğraf silindi", [PHOTO_KIND_LABEL[photo.kind], day ? longDateTR(day) : null].filter(Boolean).join(" · "));
     refresh();
     return null;

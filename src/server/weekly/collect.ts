@@ -261,7 +261,7 @@ const kontrol: Collector = {
   source: "kontrol",
   timeoutMs: 3_000,
   async run(ctx) {
-    const [history, first, reports] = await Promise.all([loadChecklistHistory(ctx.week.lastFrom, ctx.week.lastTo, ctx.now), firstCashReportDate(), ctx.cashWeeks()]);
+    const [history, first, reports] = await Promise.all([loadChecklistHistory(ctx.week.lastFrom, ctx.week.lastTo, "admin", ctx.now), firstCashReportDate(), ctx.cashWeeks()]);
     const reported = new Set(reports.map((r) => r.date));
     return one(
       checklistItem({

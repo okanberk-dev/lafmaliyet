@@ -345,9 +345,21 @@ test("kapanmış veri ayları: açık günü kasa raporlarından gelen ay da say
 
 test("yükleyici: etkin ay bilgisi kasa raporlarıyla birleşir; saat okumalardan sonra", () => {
   const src = readFileSync(join(root, "src/server/data/dataset.ts"), "utf8");
-  assert.match(src, /tillRows\(\),\s*\]\);/);
+  // Kasa raporları ve onay bekleyen geç raporların günleri okumaların sonunda (dalga 10: eksik gün "onay bekliyor")
+  assert.match(src, /tillRows\(\),[\s\S]{0,400}?eq\(s\.staffRequests\.kind, "kasa-gec"\), eq\(s\.staffRequests\.status, "pending"\)\)\),\s*\/\/ Kapalı işaretli günler[\s\S]{0,300}?eq\(s\.specialDays\.kind, "kapali"\)\),\s*\]\);/);
   // cacheComponents: saat (businessDate) veritabanı okumalarından sonra okunur
   assert.ok(src.indexOf("const through = addDays(businessDate(), -1)") > src.indexOf("tillRows(),"));
   assert.match(src, /months: resolveMonths\(/);
-  assert.match(src, /tillMonths\(till, through\)/);
+  assert.match(src, /tillMonths\(\s*till,\s*through,\s*undefined,\s*lateWaiting\./);
+});
+
+test("geç rapor: onay bekleyen gün eksik sayılmaya devam eder, yanına 'onay bekliyor' yazılır", () => {
+  const rows = [row("2026-11-01"), row("2026-11-02"), row("2026-11-05")];
+  const [nov] = tillMonths(rows, "2026-11-06", null, ["2026-11-04", "2026-10-30"]);
+  assert.deepEqual(nov.missing, ["2026-11-03", "2026-11-04", "2026-11-06"]);
+  assert.deepEqual(nov.pending, ["2026-11-04"]);
+  assert.equal(missingSentence(nov), "3 gün rapor yok: 3, 4 (onay bekliyor), 6 Kasım. O günler açıksanız ciro ve açık gün eksik kalır.");
+  // Yükleyici vermezse alan yok (eski davranış)
+  assert.equal("pending" in tillMonths(rows, "2026-11-06")[0], false);
+  assert.equal(missingText(["2026-10-31", "2026-11-04"], 5, ["2026-11-04"]), "31 Ekim, 4 Kasım (onay bekliyor)");
 });

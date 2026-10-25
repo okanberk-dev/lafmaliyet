@@ -21,6 +21,7 @@ import {
   photoUrl,
   photoViewDecision,
   readingOffText,
+  uploadRule,
   sizeProblem,
   uploadErrorText,
 } from "../src/lib/photo-rules";
@@ -365,4 +366,33 @@ test("kaynak: Claude isteğinde düşünme / sıcaklık / ön doldurma yok; Blob
       `beklenmeyen çağıran: ${f}`,
     );
   }
+});
+
+test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da geç rapor gününe, fişi son 7 güne; ileri gün ve kontrol yok", () => {
+  const today = "2026-10-24";
+  // Yönetici: geçmiş ve bugün serbest, ileri gün ve gün yoksa hayır
+  assert.equal(uploadRule("admin", "kasa-z", "2026-09-01", today), "yes");
+  assert.equal(uploadRule("admin", "fis", today, today), "yes");
+  assert.equal(uploadRule("admin", "kasa-z", "2026-10-25", today), "no");
+  assert.equal(uploadRule("admin", "kasa-pos", null, today), "no");
+  // Kontrol listelerinin kendi yolu var
+  assert.equal(uploadRule("admin", "kontrol", today, today), "no");
+  assert.equal(uploadRule("staff", "kontrol", today, today), "no");
+  // Personel: Z ve POS fotoğrafı açık güne ya da geç rapor gününe (staffDayOpen || staffLateDayOpen); fiş kasadan çıkan
+  // isteğinin penceresine (iş günü ile 7 gün öncesi; kapanmış ve eski güne istekle)
+  for (const kind of ["kasa-z", "kasa-pos"] as const) {
+    assert.equal(uploadRule("staff", kind, today, today), "open-or-late");
+    assert.equal(uploadRule("staff", kind, "2026-10-14", today), "open-or-late");
+  }
+  assert.equal(uploadRule("staff", "fis", today, today), "yes");
+  assert.equal(uploadRule("staff", "fis", "2026-10-17", today), "yes");
+  assert.equal(uploadRule("staff", "fis", "2026-10-16", today), "no");
+  assert.equal(uploadRule("staff", "fis", "2026-10-14", today), "no");
+  assert.equal(uploadRule("staff", "fis", "2026-10-25", today), "no");
+  assert.equal(uploadRule("staff", "kasa-z", "2026-10-25", today), "no");
+  assert.equal(uploadRule("staff", "kasa-z", null, today), "no");
+  // Kural kaynakta: personelin geç günü yalnız Z / POS'ta, staffLateDayOpen pencereye, ilk rapora, raporsuz ve kapalı olmayan güne bakar
+  const rules = readFileSync(join(process.cwd(), "src/server/photo-read/rules.ts"), "utf8");
+  assert.match(rules, /return rule === "open-or-late" && staffLateDayOpen\(day\);/);
+  assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db\)/);
 });

@@ -14,11 +14,11 @@ sonra" ya da "Bugünün işleri tamam".
 
 | Kart | Kimde | İçerik |
 |------|-------|--------|
-| **Yapılacaklar** | İkisi | Üç bölüm: **Şimdi** (sorunlu ve yapılacak işler), **Sonra** (zamanı gelmemiş), kapalı **Tamamlananlar**. İlk sorunlu iş (yoksa ilk yapılacak) **sıradaki**dir: siyah çerçeve ve "Sıradaki: Raporu gir →" hapı. Yöneticide altta "Bu ayın işleri Genel bakış'ta →" |
+| **Yapılacaklar** | İkisi | Üç bölüm: **Şimdi** (sorunlu ve yapılacak işler), **Sonra** (zamanı gelmemiş), kapalı **Tamamlananlar**. İlk sorunlu iş (yoksa ilk yapılacak) **sıradaki**dir: siyah çerçeve ve "Sıradaki: Raporu gir →" hapı. Dünkü kontrol listeleri (`liste-dun`) başka yapılacak ya da sorunlu satır varken hiçbir rolde sıradaki olmaz (geçmişe bakmaktır). Yöneticide altta "Bu ayın işleri Genel bakış'ta →" |
 | **Hatırlatıcılarım** | İkisi | Geciken ve bugünkü hatırlatıcılar (en çok 6; fazlası "Tümü (14)"). ✓ ile tamamlanır, bildirimde "Geri al" |
 | **Yaklaşan ödemeler** | Yönetici | Genel bakış'taki kartın aynısı: geciken ve 7 gün içindekiler, tek dokunuşla "Ödendi" |
 | **Satış tahmini** | Yönetici | Bugünün tahmini (Z toplamı, ≈ 18.500 ₺) ve aralığı, yoğunluk (Yüksek / Normal / Düşük), kaç kişi ("3 kişi · yoğunsa 4"), kaç tatlı, en çok üç etiket ("Cumhuriyet Bayramı +%20"), 7 günün çubukları (rakamsız; dokununca Satış tahmini'nde o gün) ve altta "Dün: tahmin …, gerçekleşen …" (bugünün raporu girildiyse bugünün sonucu). Kaba tahminde "Kaba tahmin: kasa raporu biriktikçe netleşir."; kapalı işaretli günde "Bugün kafe kapalı olarak işaretli (Tadilat)." Okunamazsa kart çizilmez ([SATIS-TAHMINI.md](SATIS-TAHMINI.md)) |
-| **Bugün kafede** | İkisi | Personelde önce satış tahmininin satırları (Satış tahmini › Tahmin ayarları'nda "Personel bugünün yoğunluğunu görsün" açıkken): "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı, yağmur" ve "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)"; tutar, aralık ve kişi önerisi personele hiç gitmez. Sonra karaoke odası (süren oturum ya da "Süre doldu", iş gününün rezervasyonları ve rezervasyonsuz oturumları, sıradaki; ödenmemiş tutma ve iptal sayılmaz) ve uygulama siparişleri ("2 açık uygulama siparişi · 1 teslime hazır"; yalnız sayı, liste son 30 dakikada siteden doğrulanmadıysa yazılmaz: bağlantı kopmuş olabilir); "Bar ekranı" düğmesi. Tutar ve sipariş sahibinin adı yazmaz. laffogato.net bağlı değilse ve bugün oturum yoksa görünmez |
+| **Bugün kafede** | İkisi | Personelde önce satış tahmininin satırları (Satış tahmini › Tahmin ayarları'nda "Personel bugünün yoğunluğunu görsün" açıkken): "Bugün yoğunluk: Yüksek · Cumhuriyet Bayramı, yağmur" ve "Tatlı: bugün ≈ 8 satılır (en çok San Sebastian, Marlenka)"; tutar, aralık ve kişi önerisi personele hiç gitmez. Sonra karaoke odası (süren oturum ya da "Süre doldu", iş gününün rezervasyonları ve rezervasyonsuz oturumları, sıradaki; ödenmemiş tutma ve iptal sayılmaz) ve uygulama siparişleri ("2 açık uygulama siparişi · 1 teslime hazır"; yalnız sayı, liste son 30 dakikada siteden doğrulanmadıysa yazılmaz: bağlantı kopmuş olabilir). Satırın kendi adresi varsa ona götürür (yoğunluk satırı personelin Özel günler'ine), yoksa bar ekranına; tatlı satırı bağlantısız. Sitede tükenen ürünlerin satırı ("Tükendi: …", dalga 10 §2.1) dalga 10'un kalanıyla gelir, henüz yok. "Bar ekranı" düğmesi. Tutar ve sipariş sahibinin adı yazmaz. laffogato.net bağlı değilse ve bugün oturum yoksa görünmez |
 
 Geniş ekranda (xl) solda Yapılacaklar, sağda öteki kartlar (Hatırlatıcılarım, Yaklaşan ödemeler, Satış tahmini, Bugün
 kafede); telefonda tek sütun, bu sırayla.
@@ -31,17 +31,18 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Satır | Kimde | Kural |
 |-------|-------|-------|
 | Günlük işler (`isler`) | Yönetici | Yalnız canlıda: sabah işi çalışmadı / hata verdi / yarıda kesildi, Paraşüt işi hata verdi / yarıda kesildi, CRON_SECRET yok (Genel bakış şeridinin "ciddi" uyarıları, `src/server/jobs/alerts.ts`) → sorun var, en üstte, Ayarlar › Günlük işler. Paraşüt eşitlemesinin hatası burada söylenir (Faturalar satırında değil; zildeki gibi ayrı bir "Paraşüt eşitlemesi başarısız" satırı yok): Paraşüt işinin hatası, sonradan başarılı bir eşitleme olana kadar görünür. Sabah işi eşitlemeyi yeniden dener; o ya da Paraşüt › Şimdi eşitle başarılı olunca satır kalkar |
-| Dünkü kasa raporu (`kasa-dun`) | İkisi | Yönetici: farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam), "Mehmet · Z … · nakit … · kart …", güncellendiyse ve not. **Açılış devirle tutmuyor** ya da **Ertesi gün düzeltildi** satırı "sorun var" yapar. Girilmediyse yapılacak (personel bugün de girebilir). Personel yalnız girilmediyse görür: "Kafe açıktıysa bugün girin; yarın yalnız yönetici girebilir." Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa satır yok |
-| Dünkü kontrol listeleri (`liste-dun`) | Yönetici | Dünün tamamlanmayan ya da sorunlu (aralık dışı ölçüm, "Sorun var"; sonradan düzeltilen dahil) listesi varsa sorun var: "Kapanış: 3 madde yapılmadı · Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)", rozet "1 eksik" ya da "2 sorun". Dünün kasa raporu da yoksa (kasa kullanılmaya başladıysa) "Kasa raporu da yok; kafe kapalıysa önemsemeyin." Kontrol geçmişinin o gününe götürür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
+| Dünkü kasa raporu (`kasa-dun`) | İkisi | Yönetici: farkı (eksik sorun, fazla yapılacak, tutuyorsa tamam), "Mehmet · Z … · nakit … · kart …", güncellendiyse ve not. **Açılış devirle tutmuyor** ya da **Ertesi gün düzeltildi** satırı "sorun var" yapar. Girilmediyse yapılacak (personel bugün de girebilir); personel "kafe kapalıydı" dediyse "Onay bekliyor", eylem "Onaya bak" (dalga 10 §2.9). Personel yalnız girilmediyse görür: "{dün} raporu girilmedi. Kafe açıktıysa bugün girin; kapalıysa raporun sayfasında “Kafe kapalıydı” deyin. Yarından itibaren yöneticinin onayıyla girilir." (§2.6). Kapalı bildirimi beklerken rozet "Onayda" ve "Ahmet kapalıydı dedi (onay bekliyor). …"; onaylandıysa satır yok; reddedildiyse ve gün hâlâ açıksa "Yönetici bildirimi reddetti{: not}. Raporu bugün girin." (§2.9). Kasa hiç kullanılmadıysa ya da ilk rapor dünden sonraysa satır yok |
+| Dünkü kontrol listeleri (`liste-dun`) | İkisi | Yönetici: dünün tamamlanmayan ya da sorunlu (aralık dışı ölçüm, "Sorun var"; sonradan düzeltilen dahil) listesi varsa sorun var: "Kapanış: 3 madde yapılmadı · Bar buzdolabı sıcaklığı: 6 °C (0–4 °C)", rozet "1 eksik" ya da "2 sorun". Dünün kasa raporu da yoksa (kasa kullanılmaya başladıysa) "Kasa raporu da yok; kafe kapalıysa önemsemeyin." Kontrol geçmişinin o gününe götürür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)). Personel (dalga 10 §2.5): yapılacak (sorun değil), yalnız açık sorunlar ve başlamış listelerin eksik maddeleri; hiç açılmamış liste yalnız dünün kasa raporu varken (kafe açıktı) yazılır; eylem "Geçmişe bak" (son 7 gün). Dün onaylı kapalıysa ve liste açılmadıysa satır yok; kapalı bildirimi beklerken açıklamanın sonunda "Personel kapalıydık dedi (onay bekliyor)" |
 | Ödemeler (`odeme`) | Yönetici | Geciken sorun var ("Ödendiyse işaretleyin"), bugünkü yapılacak, ikisi de yoksa tamam (yaklaşanlar bilgi) |
 | Hakedişler (`komisyon`) | Yönetici | Yemek kartı ya da platform hakedişinin son günü geçtiyse ve "Hakediş geldi" işaretlenmediyse sorun var: "Pluxee hakedişi (Eylül satışları): son gün 20 Ekim. 1 hakediş daha gecikti. Geldiyse işaretleyin.", rozet "2 gecikti", Komisyon & hakediş'e götürür. Ay hakedişin satış ayıdır (ayın 1–5'inde kesilen yemek kartı faturası önceki ayındır; platformda son gün 90 güne kadar sonra), bu yıldan değilse yılıyla yazılır ("Ekim 2025 satışları"). Geciken yoksa satır yok ([KOMISYON.md](KOMISYON.md)) |
 | Faturalar (`fatura`) | Yönetici | Kontrol bekleyen fatura varsa yapılacak, yoksa tamam |
 | Ürün bağlantıları (`urun`) | Yönetici | Hammaddeye bağlanmayı bekleyen fatura ürünü varsa |
 | Fiyatı girilmemiş hammaddeler (`fiyat-yok`) | Yönetici | Paket fiyatı 0 olan etkin hammadde varsa (çoğu sayımda "Listeye ekle" ile eklenen) |
-| Reçete onayları (`onay`) | Yönetici | Personelin önerdiği değişiklik ya da yeni ürün varsa |
+| Onaylar (`onay`) | Yönetici | Onay bekleyen reçete önerisi ya da personel isteği varsa ([ONAYLAR.md](ONAYLAR.md)): rozet "4 bekliyor". Yalnız reçete önerisi varken "Personelin önerdiği 2 reçete değişikliği ve 1 yeni ürün önerisi onay bekliyor: Latte, Mocha…"; personel isteği de varsa türler tek satırda ve en eskisinin beklediği: "1 kasa düzeltmesi · 2 reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür". Tutar yok. Onaylar'a götürür |
 | Fiyat onayı (`fiyat-onay`) | Yönetici | Paraşüt faturasında %40'tan fazla farklı gelen, onay bekleyen hammadde fiyatı varsa (Hammaddeler › Onay bekleyen fiyatlar) |
 | Hammadde zammı (`zam`) | Yönetici | Fiyatı önerilenin altında kalan ürün varsa; metin Genel bakış ve zil ile aynı (zammın ayda kaç lira kâr götürdüğü) |
-| Kasadaki fiyatlar (`modpos`) | Yönetici | "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler |
+| Kasadaki fiyatlar (`modpos`) | İkisi | Yönetici: "Kasada değişecek 3 fiyat": ModPOS'ta elle değiştirilip Fiyatlar › Kasaya işle'de işaretlenecekler; son 48 saatte personel işaretlediyse sonuna "Ayşe dün 3 fiyatı kasada işaretledi." Bekleyen yok ama personel işareti varsa satır tamam olur ve "Son işaretlenenler"e götürür (dalga 10 §2.2). Personel (§2.2): "ModPOS'ta değişecek 3 fiyat; değiştirdikçe işaretleyin. En eskisi 2 gündür bekliyor.", eylem "Listeyi aç", `/panel/kasa/fiyatlar`; hızlı sayımdan sonra gelir |
+| Onaylanan sipariş (`mal-taslak`) | Personel | Dalga 10'un kalanı (§2.4), henüz yok: satırın yeri ayrılmış, satır çizilmez. Gelince: yönetici onayladığı mal siparişi taslağı gönderilmeyi bekliyorsa "Onaylanan sipariş bekliyor: Kaldi", eylem "Gönder" |
 | Geçen ayın stok sayımı (`sayim-gecen`) | İkisi | Ayın ilk 10 gününde geçen ayın sayımı yoksa ("Girilmedi") ya da yarım kaldıysa ("12 / 40", "Sayıma devam"). Geçen aya götürür: Stok sayımı ekranı, sayılmaya başlanmış geçen ayı değil bu ayı açar |
 | Kontrol listesi (`liste-{şablon}`) | İkisi | Bugün beklenen her liste ayrı satır, açılış saatine göre (personelde yalnız "Personel doldurabilir" listeler; pasif liste yok). Aralıktan önce sonra ("08:00–11:00"), aralıkta yapılacak (başladıysa "3 / 13 madde · Ayşe · son saat 11:00" ve kalan fotoğraf), son saatten sonra sorun var ("Gecikti"; personele "Gün 05:00'te kapanır."), bitince tamam (kim, saat, geç bittiyse "geç", fotoğraf sayısı). Yöneticide açık sorunu olan bitmiş liste "1 sorun" (sorun var). Okunamazsa tek gri "Kontrol listeleri · Okunamadı" satırı |
 | Haftalık hızlı sayım (`hizli-sayim`) | İkisi | Takipte kalem varken sayım günü (varsayılan Pazartesi) ya da son sayım sayım aralığı + 1 günden eskiyse ("Gecikti": "Son sayım 12 Ekim Pazartesi (9 gün önce). Sipariş önerisi eski stoka göre."; son sayım hızlı ya da ay sonu sayımıdır, Mal siparişi'nin "Son sayım … gün önce" uyarısı gibi). Başlamadıysa "Bugün" ve "Sayıma başla", yarıdaysa "5 / 14", bittiyse tamam (yöneticide "Sipariş listesi hazır.", Mal siparişi'ne götürür). Ayın son gününün ay sonu sayımında sayılan takip kalemi de o gün sayılmış sayılır; geçen ayın sayımını sonradan girmek ya da düzeltmek "bugün sayıldı" saymaz. Ayın son günü satır yok (ay sonu sayımı yerine geçer) ([MAL-SIPARISI.md](MAL-SIPARISI.md)) |
@@ -50,10 +51,17 @@ bu sırayla yazılır; bölümler sırayı korur.
 | Kasa raporu (`kasa`) | İkisi | Gündüz "Akşam" (sonra), 20:00'den sonra yapılacak, gönderilince personelde "Gönderildi" (tamam), yöneticide farkı ve bütünlüğü (dünkü gibi) |
 | Ay sonu stok sayımı (`sayim-son`) | İkisi | Ayın son günü: başlamadıysa "Sayıma başla", yarıdaysa "12 / 40", bittiyse tamam (sayım formundaki "kalem sayıldı" ile aynı kural) |
 
-Yöneticiye zayi satırı gösterilmez (zayi ve ikram kasa raporu e-postasında gelir). Personel maliyet, ödeme, fatura,
-fiyat ve karaoke tutarı görmez; kasa farkı personelin Kasa ekranında zaten gördüğü bilgidir. Yöneticinin olguları
-personel için hiç yüklenmez (`adminFacts` / `staffFacts`; `tests/bugun.test.ts` kaynaktan denetler), satır mantığı da
-rolü ayrıca denetler.
+Personelin satır sırası: `kasa-dun`, `liste-dun`, `sayim-gecen`, `liste-*`, `hizli-sayim`, `modpos`, `mal-taslak`,
+`zayi`, `kasa`, `sayim-son`. Yöneticiye zayi satırı gösterilmez (zayi ve ikram kasa raporu e-postasında gelir).
+Personel maliyet, alış fiyatı, ödeme, fatura ve karaoke tutarı görmez; kasa farkı personelin Kasa ekranında zaten
+gördüğü bilgidir, menünün satış fiyatı herkese açıktır. Yöneticinin olguları personel için hiç yüklenmez (`adminFacts` /
+`staffFacts`; `tests/bugun.test.ts` kaynaktan denetler), satır mantığı da rolü ayrıca denetler.
+
+Dalga 10 (personel yetkileri, [planlar/personel-yetki.md](planlar/personel-yetki.md)) satırları iki dosyaya böler:
+kasa ve ortak satırlar `logic.ts`'te, operasyonun satırları (kasadaki fiyatlar, dünkü kontrol listeleri; onaylanan
+sipariş ve Tükendi dalga 10'un kalanıyla gelir, yerleri ayrılmış) `rows-ops.ts`'te; olguları `src/server/data/today-ops.ts` iki rolde toplar (personelin dalı yalnız
+sabit sütunlu personel yükleyicilerini okur). Dünün kapalı gün durumu `closed` olgusundan
+(`src/server/closed-days.ts`). Bugünün ve dünün kontrol listeleri iki rolde tek okumada gelir.
 
 ## Saatler (Türkiye)
 
@@ -80,12 +88,14 @@ günlüğüne yazılır (`[bugun]`).
 
 1. **Olgu:** `DayFacts`'e isteğe bağlı bir alan (`src/app/panel/bugun/logic.ts`). Yöneticiye aitse yalnız
    `adminFacts`'te, personele aitse yalnız `staffFacts`'te, ikisine aitse `loadToday`'de yüklenir
-   (`src/server/data/today.ts`). Her yükleyici `safe(…)` ile sarılır.
+   (`src/server/data/today.ts`). Operasyonun olguları `ops` alanında (`OpsDayFacts`, `rows-ops.ts`), yükleyicisi
+   `src/server/data/today-ops.ts`. Her yükleyici `safe(…)` ile sarılır (`src/server/data/today-safe.ts`).
 2. **Fonksiyon:** satırı üreten küçük bir fonksiyon (olgu yoksa ya da sayı 0 ise `null`); `ADMIN_ROWS` /
    `STAFF_ROWS`'ta yerine (mal siparişi: `hizli-sayim`, `mal-siparisi`; komisyon: `komisyon`).
 3. **Test:** `tests/bugun.test.ts`'e bir senaryo; yönetici yükleyicisiyse kaynak denetimindeki listeye adı.
 
 Satırın saati varsa (ör. açılış listesi 08:00'de açılır) `nextRefreshAt(now, [an])` ekranı o an yeniler.
 
-Dosyalar: `src/app/panel/bugun/` (sayfa, `logic.ts`, kartlar), `src/server/data/today.ts`, durum görünümü
+Dosyalar: `src/app/panel/bugun/` (sayfa, `logic.ts`, `rows-ops.ts`, kartlar), `src/server/data/today.ts` ve
+`today-ops.ts`, durum görünümü
 `src/app/panel/task-style.tsx` (Genel bakış'ın "Bu ayın işleri" ile ortak). Test: `tests/bugun.test.ts`.

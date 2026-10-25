@@ -188,12 +188,25 @@ test("Kasa (§8): personelin satır verisi beyaz listeyle kurulur; ödeme bağı
 test("Kasa (§6.8, §8): bağlı satır personele kilitli, yöneticinin düzeltmesi ödemeye geçer, silme reddedilir", () => {
   const co = read("src/server/actions/cash-outs.ts");
   const persist = body(co, "async function persist(");
-  // Önce kart (lockCashOutLink), sonra satır kilidi, sonra bağın yeniden denetimi ve ödemeye geçirme; yazımdan önce
-  assert.ok(persist.indexOf("lockCashOutLink(tx, d.id, admin)") < persist.indexOf('.for("update")'));
-  assert.ok(persist.indexOf('.for("update")') < persist.indexOf("syncLinkedCashOut(tx, prev.id, link,"));
-  assert.ok(persist.indexOf("syncLinkedCashOut(") < persist.indexOf(".update(s.cashOuts)"));
+  // Önce kart (lockCashOutLink), sonra satır kilidi (lockCashOut: FOR UPDATE), sonra bağın yeniden denetimi ve ödemeye
+  // geçirme; yazımdan (writeCashOut) önce
+  const at = (s: string) => {
+    const i = persist.indexOf(s);
+    assert.ok(i >= 0, s);
+    return i;
+  };
+  assert.ok(at("lockCashOutLink(tx, d.id, admin)") < at("lockCashOut(tx, d.id)"));
+  assert.ok(at("lockCashOut(tx, d.id)") < at("syncLinkedCashOut(tx, prev.id, link,"));
+  assert.ok(at("syncLinkedCashOut(") < at("writeCashOut(tx, me, d,"));
+  assert.match(body(read("src/server/cash-outs/write.ts"), "export async function lockCashOut("), /\.for\("update"\)/);
   const del = body(co, "export async function deleteCashOut(");
-  assert.ok(del.indexOf("assertCashOutDeletable(tx, cid,") < del.indexOf("tx.delete(s.cashOuts)"));
+  assert.ok(del.indexOf("assertCashOutDeletable(tx, cid,") >= 0 && del.indexOf("assertCashOutDeletable(tx, cid,") < del.indexOf("removeCashOut(tx, row)"));
+  // Personelin istek yolu da kapalı: kapı bağlı satırı kilitler, onay da bağlanmış satırı değiştirmez
+  const gate = body(read("src/server/cash-outs/guard.ts"), "export async function staffCashOutGate(");
+  assert.match(gate, /rowLocked: payment !== null/);
+  assert.match(gate, /throw new UserError\(CARI_LOCKED_STAFF\)/);
+  const review = body(read("src/server/cash-outs/requests.ts"), "export async function reviewCashOutRequestCore(");
+  assert.ok(review.indexOf("cashOutPayment(tx, cur.id)") >= 0 && review.indexOf("cashOutPayment(tx, cur.id)") < review.indexOf("removeCashOut(tx, cur"));
   // Personelin gördüğü mesaj sunucuyla aynı ve tutar içermez
   const server = read("src/server/cari/kasa.ts").match(/CARI_LOCKED_STAFF = "([^"]+)"/)?.[1];
   const client = read("src/app/panel/kasa/cash-outs.tsx").match(/LOCKED_TEXT = "([^"]+)"/)?.[1];
@@ -203,5 +216,8 @@ test("Kasa (§6.8, §8): bağlı satır personele kilitli, yöneticinin düzeltm
   const dialog = read("src/app/panel/kasa/cash-out-dialog.tsx");
   assert.match(dialog, /\{ value: "harcama", label: "Alışveriş" \},\s+\{ value: "teslim", label: "Teslim · ödeme" \}/);
   assert.match(dialog, /Tedarikçinin şoförüne verilen borç ödemesi Teslim · ödeme'dir; gidere yazılmaz\./);
+  // İstek kipindeki salt okunur satır da aynı adlarla
+  assert.match(dialog, /Ne için: \{draft\.kind === "harcama" \? "Alışveriş" : "Teslim · ödeme"\}/);
+  assert.doesNotMatch(dialog, /Alışveriş \/ ödeme/);
   assert.match(dialog, /ör\. patrona, bankaya, tedarikçiye \(Sütaş\)/);
 });

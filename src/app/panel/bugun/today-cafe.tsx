@@ -1,4 +1,4 @@
-import { CakeSlice, CalendarClock, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
+import { CakeSlice, CalendarClock, CircleSlash, MicVocal, ShoppingBag, TimerOff, TrendingUp } from "lucide-react";
 
 import { ActivityItem, ActivityList } from "@/components/ui/activity";
 import { ButtonLink } from "@/components/ui/button";
@@ -22,13 +22,16 @@ function look(line: CafeLine): { icon: React.ReactNode; tone: PastelTone } {
       return { icon: <CalendarClock />, tone: 2 };
     case "siparis":
       return { icon: <ShoppingBag />, tone: 1 };
+    case "tukendi":
+      return { icon: <CircleSlash />, tone: 3 };
   }
 }
 
 /**
  * Bugün · "Bugün kafede": personelde önce satış tahmininin yoğunluğu ve tatlı sayısı (tutarsız), karaoke odası (süren
- * oturum, günün rezervasyonları, sıradaki) ve açık uygulama siparişleri.
- * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya götürür. Tutar yok.
+ * oturum, günün rezervasyonları, sıradaki), açık uygulama siparişleri ve tükenen ürünler.
+ * Statik özet: sayaç, alarm ve siparişin aşaması bar ekranında kalır; satırlar oraya (ya da satırın kendi adresine,
+ * ör. Tükenenler) götürür. Tutar yok.
  */
 export function TodayCafe({ lines }: { lines: CafeLine[] }) {
   return (
@@ -46,7 +49,8 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
         <ActivityList>
           {lines.map((l) => {
             const { icon, tone } = look(l);
-            // Tahmin satırlarının ekranı personele kapalı: bağlantısız, uyarı noktasız
+            // Tahmin satırlarının ekranı (Satış tahmini) personele kapalı: satırın kendi adresi yoksa bağlantısız (yoğunluk
+            // satırı personelin Özel günler'ine gider), uyarı noktasız
             const forecast = l.key === "yogunluk" || l.key === "tatli";
             return (
               <ActivityItem
@@ -54,7 +58,7 @@ export function TodayCafe({ lines }: { lines: CafeLine[] }) {
                 icon={icon}
                 tone={tone}
                 title={l.text}
-                href={forecast ? undefined : "/panel/karaoke"}
+                href={l.href ?? (forecast ? undefined : "/panel/karaoke")}
                 dot={l.tone === "warn" && !forecast ? "danger" : undefined}
                 wrap
               />

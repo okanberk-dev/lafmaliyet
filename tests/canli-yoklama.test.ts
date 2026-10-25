@@ -102,7 +102,7 @@ test("bildirim açık: uyarı motoru ve bar ekranı yalnız izne değil kayıtl�
   assert.match(board, /\}, \[hasOrders, pushOn\]\);/);
   assert.doesNotMatch(board, /const pushOn = Boolean\(publicKey\) && pushSupport\(\) === "granted";/, "izin yetmez");
   const client = read("src/components/panel/live/push-client.ts");
-  assert.match(client, /noteDeviceTopics\(res\.ok \? \{ karaoke: res\.karaoke, reminders: res\.reminders, orders: res\.orders \} : null\)/);
+  assert.match(client, /noteDeviceTopics\(res\.ok \? \{ karaoke: res\.karaoke, reminders: res\.reminders, orders: res\.orders, approvals: res\.approvals \} : null\)/);
   assert.match(client, /noteDeviceTopics\(null\);/);
   const device = read("src/components/panel/live/device-alerts.tsx");
   assert.match(device, /if \(res\.ok\) noteDeviceTopics\(next\);/);

@@ -160,3 +160,165 @@ export function posChecklistText(items: readonly PosItem[], date: string): strin
   }
   return lines.join("\n");
 }
+
+// ---------------------------------------------------------------- İşaret kaydı ve geri alma (dalga 10 §2.2)
+
+/** Personel kendi işaretini bu kadar süre geri alabilir; sonrası yöneticinin (Fiyatlar › Kasaya işle › Son işaretlenenler) */
+export const POS_UNDO_WINDOW_MS = 30 * 60_000;
+
+/** Bir seferde işaretlenebilen ürün: personel tek tek işaretler (390 px'te kazara toplu işaret olmasın), yönetici "Hepsini işaretle" */
+export function posMarkMax(role: "admin" | "staff"): number {
+  return role === "admin" ? 500 : 1;
+}
+
+/** Geri almanın ret metinleri (tutar yok) */
+export const POS_UNDO_TEXT = {
+  undone: "Bu işaret zaten geri alındı",
+  notMine: "Bu işareti başkası yaptı; geri almak için yöneticiye yazın",
+  late: "30 dakika geçti; geri almak için yöneticiye yazın",
+  gone: "Ürün silinmiş",
+  relisted: "Ürün kasaya işle listesine yeniden girdi; yeni fiyatı işaretleyin",
+  reverted: "Fiyat kasadaki eski fiyata döndü; geri almaya gerek yok",
+  notLatest: "Bu ürün sonra yeniden işaretlendi; son işareti geri alın",
+} as const;
+
+/** Kasaya işle işareti (pos_marks satırı; anlar Date ya da ISO) */
+export interface PosMarkLite {
+  id: number;
+  markedBy: number | null;
+  markedAt: Date | string;
+  undoneAt: Date | string | null;
+  /** Kasada işlenen fiyat */
+  price: number;
+  /** İşaretten önce kasada duran fiyat (geri almada ürüne yazılır) */
+  stalePrice: number;
+}
+
+/**
+ * İşaret geri alınabilir mi; alınamıyorsa nedeni. Sırayla: zaten geri alındı; personel yalnız kendi işaretini, 30
+ * dakika içinde; ürün silinmiş; ürün listeye yeniden girdi (yeni fiyat); fiyat kasadaki eski fiyata döndü; işaret ürünün
+ * son işareti değil ya da güncel fiyat işaretin fiyatı değil (M1 → fiyat değişti → M2: M1 geri alınırsa kasaya M2'nin
+ * fiyatı yazılmış olduğu kaybolur). `latestMarkId`: ürünün en son işareti (geri alınmışlar dahil).
+ */
+export function posUndoRefusal(
+  me: { role: "admin" | "staff"; meId: number; now: Date },
+  mark: PosMarkLite,
+  product: { price: number; posStalePrice: number | null } | null,
+  latestMarkId: number | null,
+): string | null {
+  if (mark.undoneAt) return POS_UNDO_TEXT.undone;
+  if (me.role !== "admin") {
+    if (mark.markedBy !== me.meId) return POS_UNDO_TEXT.notMine;
+    if (me.now.getTime() - new Date(mark.markedAt).getTime() >= POS_UNDO_WINDOW_MS) return POS_UNDO_TEXT.late;
+  }
+  if (!product) return POS_UNDO_TEXT.gone;
+  if (product.posStalePrice !== null) return POS_UNDO_TEXT.relisted;
+  if (toMinor(product.price) === toMinor(mark.stalePrice)) return POS_UNDO_TEXT.reverted;
+  if (latestMarkId !== mark.id || toMinor(product.price) !== toMinor(mark.price)) return POS_UNDO_TEXT.notLatest;
+  return null;
+}
+
+/** Personelin Kasadaki fiyatlar listesinin satırı: kaynak, değiştiren kişi ve not yok (StaffPosItem ≠ PosChecklistItem) */
+export interface StaffPosItem extends PosItem {
+  /** Kasanın geri kaldığı an (ISO) */
+  since: string;
+}
+
+/** Personelin son 30 dakikada işaretledikleri ("Son işaretledikleriniz"; geri alınabilir) */
+export interface MyPosMark {
+  markId: number;
+  productId: number;
+  name: string;
+  size: string;
+  /** Kasada işlenen satış fiyatı */
+  price: number;
+  /** ISO */
+  markedAt: string;
+}
+
+/** Kasada bekleyen fiyatların özeti (zil ve Bugün): sayı, en eski ve en yeni geri kalış */
+export interface PosSummaryLite {
+  count: number;
+  oldest: Date | null;
+  newest: Date | null;
+}
+
+/** Zilin kasaya işle satırı (src/server/bell/ops.ts PanelNotification'a olduğu gibi gider) */
+export interface PosBellItem {
+  id: string;
+  kind: "info";
+  title: string;
+  body: string;
+  timeLabel: string;
+  unread: true;
+  href: string;
+  group: "kasa" | "uyari";
+}
+
+/**
+ * Zil: kasada değişecek fiyatlar. Kimlik iki rolde en yeni geri kalıştan: bir fiyatın işaretlenmesi zili yeniden okunmamış
+ * yapmaz, listeye yeni bir fiyat girmesi yapar. Personel Kasadaki fiyatlar'a (Kasa grubu), yönetici Fiyatlar › Kasaya
+ * işle'ye (Uyarılar). Bekleyen yoksa satır yok.
+ */
+export function posBell(role: "admin" | "staff", p: PosSummaryLite, now: Date): PosBellItem | null {
+  if (!p.count) return null;
+  const base = { id: `kasa-fiyat-${p.newest?.getTime() ?? 0}`, kind: "info" as const, title: `Kasada değişecek ${num(p.count)} fiyat`, timeLabel: p.oldest ? agoLabel(p.oldest, now) : "", unread: true as const };
+  return role === "admin"
+    ? { ...base, body: "ModPOS'ta elle değiştirip Fiyatlar › Kasaya işle'de işaretleyin", href: "/panel/urunler/fiyatlar?sekme=kasa", group: "uyari" }
+    : { ...base, body: "ModPOS'ta değiştirip Kasadaki fiyatlar'da işaretleyin", href: "/panel/kasa/fiyatlar", group: "kasa" };
+}
+
+/**
+ * Yöneticinin Bugün satırına personelin son 48 saatteki işaretleri: "Ayşe dün 3 fiyatı kasada işaretledi.", birden çok
+ * kişide "Mehmet bugün 1 fiyatı, Ayşe dün 34 fiyatı kasada işaretledi." (verilen sırayla). Yoksa null.
+ */
+export function posMarksText(marks: readonly { by: string; count: number; at: string }[], now: Date): string | null {
+  if (!marks.length) return null;
+  return `${marks.map((m) => `${m.by} ${agoLabel(m.at, now).toLocaleLowerCase("tr-TR")} ${num(m.count)} fiyatı`).join(", ")} kasada işaretledi.`;
+}
+
+/** Personelin son işaretleri penceresi (Bugün'deki "son 48 saat") */
+export const POS_MARKS_RECENT_MS = 48 * 60 * 60_000;
+
+/** Yöneticinin "Son işaretlenenler" kartının satırı (Fiyatlar › Kasaya işle; loadRecentPosMarks) */
+export interface RecentPosMark {
+  markId: number;
+  productId: number;
+  name: string;
+  size: string;
+  /** Kasada işlenen satış fiyatı ve işaretten önce kasada duran */
+  price: number;
+  stalePrice: number;
+  /** İşaretleyenin hesabı (gruplama) ve İşlem geçmişindeki gibi adı (logPerson: o anki ad, gerekirse e-postasıyla) */
+  byId: number | null;
+  by: string;
+  /** ISO */
+  markedAt: string;
+  undoneAt: string | null;
+  undoneBy: string | null;
+  /** Yönetici geri alamıyorsa nedeni (posUndoRefusal); geri alınmışta null ("Geri alındı · Ali" yazılır) */
+  refusal: string | null;
+}
+
+export interface PosMarkGroup {
+  key: string;
+  by: string;
+  /** Türkiye günü (YYYY-MM-DD) ve "bugün", "dün", "3 gün önce" */
+  day: string;
+  dayLabel: string;
+  marks: RecentPosMark[];
+}
+
+/** Son işaretlenenler kişi ve gün başına (Türkiye günü), en yeni önce: "Ayşe · dün · 34 fiyat" */
+export function groupPosMarks(marks: readonly RecentPosMark[], now: Date): PosMarkGroup[] {
+  const groups = new Map<string, PosMarkGroup>();
+  const sorted = [...marks].sort((a, b) => b.markedAt.localeCompare(a.markedAt) || b.markId - a.markId);
+  for (const m of sorted) {
+    const day = todayTR(new Date(m.markedAt));
+    const key = `${m.byId ?? m.by}|${day}`;
+    const g = groups.get(key);
+    if (g) g.marks.push(m);
+    else groups.set(key, { key, by: m.by, day, dayLabel: agoLabel(m.markedAt, now).toLocaleLowerCase("tr-TR"), marks: [m] });
+  }
+  return [...groups.values()];
+}
