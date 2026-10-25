@@ -30,7 +30,7 @@ ekranda toplayan Bugün ([docs/BUGUN.md](docs/BUGUN.md)) ve Claude uygulamasınd
   (**Hesabım**); 5 hatalı denemede 15 dakika kilit; parola, rol ya da erişim değişince eski oturumlar kapanır;
   yönetici hesaplarını etkileyen işlemler (yönetici ekleme ya da yapma, bir yöneticinin parolası, e-postası, iki
   adımlısı, bağlantısı, pasif yapma, silme) işlemi yapanın kendi parolasıyla onaylanır
-- **Gizlilik:** arama motorlarına kapalı (`robots.txt` Disallow, her yanıtta `X-Robots-Tag: noindex`), güvenlik
+- **Gizlilik:** arama motorlarında görünmez (her yanıtta `X-Robots-Tag: noindex`, sayfalarda `noindex`; `robots.txt` taramayı açık bırakır ki Google noindex'i görsün), güvenlik
   başlıkları `next.config.ts`'te; `lafmaliyet.vercel.app` panelin tek adresine (`ladmin.laffogato.net`) yönlenir
 
 Geliştirilmiş prompt, görev planı, Excel analizi ve bulunan tutarsızlıklar [docs/PROMPT-VE-PLAN.md](docs/PROMPT-VE-PLAN.md)

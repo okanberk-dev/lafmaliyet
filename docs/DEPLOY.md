@@ -106,8 +106,10 @@ Panel `ladmin.laffogato.net` alt alan adında çalışıyor; kafenin sitesi `laf
 alan adı `lafmaliyet` projesine eklendi (`vercel domains add ladmin.laffogato.net`), sertifika otomatik çıktı.
 `/` adresi panele (giriş yapılmamışsa giriş sayfasına) yönlendirir; QR menü `ladmin.laffogato.net/menu`.
 
-Panel arama motorlarına kapalıdır: `robots.txt` her şeyi engeller, her yanıtta `X-Robots-Tag: noindex, nofollow`
-başlığı ve sayfalarda `noindex` etiketi vardır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
+Panel arama motorlarında görünmez: her yanıtta `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex`
+başlığı ve sayfalarda `noindex` etiketi vardır. `robots.txt` taramayı bilerek açık bırakır: her şeyi engelleseydi
+Google sayfaları açamaz, noindex'i göremez ve başka yerden bağlantı alan adresi "açıklama yok" diye listeleyebilirdi.
+Adres daha önce dizine girdiyse Search Console › Kaldırmalar'dan hemen gizlenir; noindex kalıcı olarak çıkarır. `lafmaliyet.vercel.app` adresi sayfalar için `ladmin.laffogato.net`'e
 yönlenir (`/api` hariç; zamanlanmış işler yönlendirme izlemez).
 
 ## 6a. Kullanıcılar ve iki adımlı doğrulama
