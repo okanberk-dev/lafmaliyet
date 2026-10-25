@@ -88,10 +88,23 @@ const methodText = (m: CariMethod, card: Card) => (m === "kasa" ? `Kasadan (Tesl
  * Yeni ödeme Ödemeler › Son ödenenler'e yazılır (30 gün geri alınabilir). Ödemenin o anki düzenlenme anı saklanır:
  * sonradan düzenlenen ödeme oradan silinmez (Tedarikçiler'den silinir)
  */
-async function rememberPayment(card: Card, p: { id: number; date: string; amount: number; method: CariMethod; items: number }) {
+async function rememberPayment(card: Card, p: { id: number; date: string; amount: number; method: CariMethod; items: number; conversion?: ConvertSnapshot }) {
   const [row] = await getDb().select({ updatedAt: s.supplierEntries.updatedAt }).from(s.supplierEntries).where(eq(s.supplierEntries.id, p.id)).limit(1);
   if (!row) return;
-  await rememberPaid([{ kind: "cari", id: p.id, title: card.name, amount: p.amount, dueDate: p.date, method: p.method, items: p.items, stamp: row.updatedAt.toISOString() }]);
+  await rememberPaid([
+    {
+      kind: "cari",
+      id: p.id,
+      title: card.name,
+      amount: p.amount,
+      dueDate: p.date,
+      method: p.method,
+      items: p.items,
+      stamp: row.updatedAt.toISOString(),
+      // Ödemeye çevrilen Kasa satırı: Son ödenenler'den geri alınınca satır ve gider kaydı da döner
+      ...(p.conversion ? { conversion: p.conversion } : {}),
+    },
+  ]);
 }
 
 // ---------------------------------------------------------------- Borç
@@ -661,7 +674,7 @@ export async function convertCashOutToPayment(input: z.input<typeof convertSchem
       "Kasadan çıkan ödemeye çevrildi",
       [dateTR(done.line.date).slice(0, 5), card.name, tl(done.line.amount, 2), gone, allocationText(p.lines, p.left)].join(" · ") + pastMonthLogSuffix(done.effects),
     );
-    await rememberPayment(card, { id: p.id, date: done.line.date, amount: done.line.amount, method: "kasa", items: p.lines.length });
+    await rememberPayment(card, { id: p.id, date: done.line.date, amount: done.line.amount, method: "kasa", items: p.lines.length, conversion: done.snapshot });
     refresh();
     const undo = seal(JSON.stringify({ v: 2, t: "cevir", by: me.id, exp: Date.now() + UNDO_MS, snap: done.snapshot }), UNDO_PURPOSE);
     return {

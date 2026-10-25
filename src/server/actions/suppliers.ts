@@ -99,13 +99,14 @@ async function hasInvoicesNamed(key: string): Promise<boolean> {
 }
 
 /**
- * Kartın adı, diğer adları ya da vergi nosu değişince gruptan çıkacak faturalar (eski ve yeni eşleşme): içlerinde
- * bu kartın ödemesi sayılmış (`allocated` > 0) ya da faturasız alımı bağlı olan varsa kayıt reddedilir (K23). Kart
- * kimliği değişmez; para gruplar arasında sessizce dağılmasın.
+ * Kart eklenince ya da adı, diğer adları veya vergi nosu değişince başka gruba geçecek faturalar (eski ve yeni
+ * eşleşme, bütün kartlarda): içlerinde cari ödemesi sayılmış (`allocated` > 0) ya da faturasız alımı bağlı olup bir
+ * karttan çıkan varsa kayıt reddedilir (K23). Yalnız düzenlenen kartın değil, başka bir kartın faturasını bu karta
+ * (ya da kartsız bir gruba) çeken değişiklik de; yeni kart da denetlenir. Para gruplar arasında sessizce dağılmasın.
  */
 async function assertNoCariMove(
   all: readonly { id: number; name: string; aliases: string[] | null; taxNumber: string | null }[],
-  next: { id: number; name: string; aliases: string[]; taxNumber: string | null },
+  next: { id: number | null; name: string; aliases: string[]; taxNumber: string | null },
 ) {
   const db = getDb();
   const [counted, linked] = await Promise.all([
@@ -121,15 +122,19 @@ async function assertNoCariMove(
   const refs = await loadSupplierRefs();
   const cards = all.map((c) => ({ ...c, aliases: c.aliases ?? [] }));
   const before = supplierResolver(cards, refs).resolve;
-  const after = supplierResolver(
-    cards.map((c) => (c.id === next.id ? { ...c, name: next.name, aliases: next.aliases, taxNumber: next.taxNumber } : c)),
-    refs,
-  ).resolve;
-  const leaving = watched.filter((r) => before(r.supplier, r.tax).card?.id === next.id && after(r.supplier, r.tax).card?.id !== next.id);
+  // Yeni kart eşleşmede geçici bir kimlikle yer alır
+  const edited = { id: next.id ?? -1, name: next.name, aliases: next.aliases, taxNumber: next.taxNumber };
+  const after = supplierResolver(next.id === null ? [...cards, edited] : cards.map((c) => (c.id === next.id ? { ...c, ...edited } : c)), refs).resolve;
+  const leaving = watched.flatMap((r) => {
+    const from = before(r.supplier, r.tax).card;
+    const to = after(r.supplier, r.tax).card;
+    return from && from.id !== (to?.id ?? null) ? [{ ...r, from: from.name }] : [];
+  });
   if (!leaving.length) return;
   const names = [...new Set(leaving.map((r) => r.supplier))];
+  const owners = [...new Set(leaving.map((r) => r.from))];
   throw new UserError(
-    `${names.map((n) => `‘${n}’`).join(", ")} adıyla ${num(leaving.length)} faturaya bu tedarikçinin ödemesi sayılmış ya da faturasız alımı bağlı; adı kaldırmak onları başka tedarikçiye taşır. Önce ödemeden çıkarın ya da bağı kaldırın.`,
+    `${names.map((n) => `‘${n}’`).join(", ")} adıyla ${num(leaving.length)} faturaya ${owners.join(", ")} tedarikçisinin ödemesi sayılmış ya da faturasız alımı bağlı; bu değişiklik onları başka tedarikçiye taşır. Önce ödemeden çıkarın ya da bağı kaldırın.`,
   );
 }
 
@@ -155,7 +160,7 @@ export async function saveSupplier(input: CardInput & { id: number | null }) {
     const conflict = nameConflict({ id, name: data.name, aliases }, all);
     if (conflict) throw new UserError(await conflictMessage(conflict));
     // Cari (K23): ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka tedarikçiye taşıyan ad değişikliği olmaz
-    if (cur) await assertNoCariMove(all, { id: cur.id, name: data.name, aliases, taxNumber: data.taxNumber });
+    await assertNoCariMove(all, { id: cur?.id ?? null, name: data.name, aliases, taxNumber: data.taxNumber });
     const values = { ...data, aliases, key: supplierMatchKey(data.name), updatedAt: new Date() };
     let savedId: number;
     if (cur) {

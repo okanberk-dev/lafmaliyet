@@ -91,7 +91,7 @@ async function RemindersContent() {
       log={log.map((l) => ({ id: l.id, key: l.key, subject: l.subject, recipients: l.recipients, ok: l.ok, error: l.error, sentAt: l.sentAt.toISOString() }))}
       fixedExpenses={fixed}
       invoiceSource={Object.fromEntries(unpaid.map((i) => [i.id, i.source]))}
-      recentPaid={undoable}
+      recentPaid={undoable.map(({ conversion, ...e }) => (conversion ? { ...e, converted: true } : e))}
       email={{
         configured: isEmailConfigured(),
         cron: Boolean(process.env.CRON_SECRET),

@@ -42,6 +42,13 @@ export interface RecentPaid {
   items?: number;
   /** Cari ödeme: kaydedildiği andaki son düzenlenme anı (ISO; veritabanının saati). Değiştiyse geri alınmaz */
   stamp?: string;
+  /**
+   * Cari ödeme "Ödemeye çevir"le açıldıysa çevirmenin kopyası (yalnız sunucuda; src/server/cari/kasa.ts
+   * ConvertSnapshot): geri alınınca Kasa satırı eski türüne, gider kaydı yerine döner. Ekrana gitmez
+   */
+  conversion?: unknown;
+  /** Ekranda: ödeme Kasa satırının çevrilmesiyle açıldı (geri alınınca satır alışverişe döner) */
+  converted?: boolean;
 }
 
 /** Hatırlatıcının şimdiki hâli (geri alınabilir mi diye bakılan alanlar) */

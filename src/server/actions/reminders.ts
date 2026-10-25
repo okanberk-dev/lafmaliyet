@@ -31,6 +31,7 @@ import { unreachable } from "@/lib/unreachable";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { deleteRecentPayment } from "@/server/cari/entries";
+import { undoConversion, type ConvertSnapshot } from "@/server/cari/kasa";
 import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
@@ -306,6 +307,19 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
         break;
       }
       case "cari": {
+        // "Ödemeye çevir"le açılan ödeme: çevirme geri alınır (ödeme silinir, Kasa satırı eski türüne ve gider kaydı
+        // yerine döner); sonradan düzenlendiyse yapılmaz
+        if (entry.conversion) {
+          const snap = entry.conversion as ConvertSnapshot;
+          const u = await db.transaction((tx) => undoConversion(tx, snap));
+          await forgetPaid("cari", [rid]);
+          await logActivity(
+            me,
+            "Ödemeye çevirme geri alındı",
+            [dateTR(u.line.date).slice(0, 5), u.card.name, tl(u.line.amount, 2), u.expenseRestored ? "gider kaydı yeniden yazıldı" : "", "son ödenenlerden geri alındı"].filter(Boolean).join(" · "),
+          );
+          break;
+        }
         // Ödeme silinir (dağıtımları kalkar, defterin kapattığı faturalar yeniden açılır); kaydedildikten sonra
         // düzenlendiyse silinmez. Kilit sırası kart, sonra kayıt (K24)
         const r = await db.transaction((tx) => deleteRecentPayment(tx, rid, entry));

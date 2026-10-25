@@ -15,6 +15,7 @@ import { addDays, todayTR } from "@/lib/reminders";
 import { requireAdmin } from "@/server/auth/dal";
 import {
   assertNotCovered,
+  cardResolver,
   creditFirstForInvoices,
   dropAllocations,
   ledgerBaseForNew,
@@ -107,6 +108,8 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
     if (floor) throw new UserError(floor);
     // Ödenmedi: hesaptaki ödemeyle kapanmış fatura ödemeden çıkarılmadan açılamaz
     if (!cur.unpaid && data.unpaid) await assertNotCovered(db, [id]);
+    // Cari (K23): ödemesi sayılmış ya da faturasız alımı bağlı faturanın tedarikçi adı onu başka tedarikçiye taşımaz
+    if (data.supplier !== cur.supplier) await assertInvoiceStays(cur, data.supplier);
     const kept: LockedField[] = isParasutLinked(cur) ? lockedChanges(cur, data) : [];
     // Kilitli alanlar (Paraşüt'e bağlıda tarih, no, tutarlar) atılır; kalanlar yazılır. Kaydetmek faturayı kontrol
     // edilmiş sayar. Bağı çözülmüş kaydın eşitlemeden kalan KDV toplamı tutarlar değişince silinir: KDV ödenecek − net
@@ -169,6 +172,20 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
       : null;
     return { id, kept, message, credit: creditSummary(credit) };
   });
+}
+
+/**
+ * Tedarikçi adı değişen faturada cari ödemesi sayılmışsa ya da faturasız alımı bağlıysa fatura aynı kartta kalmalı:
+ * yoksa para iki tedarikçi sayfasına bölünür (K23)
+ */
+async function assertInvoiceStays(cur: { id: number; supplier: string; supplierTaxNumber: string | null; allocated: number }, supplier: string) {
+  const db = getDb();
+  const [linked] = await db.select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(eq(s.supplierEntries.invoiceId, cur.id)).limit(1);
+  if (!(cur.allocated > 0) && !linked) return;
+  const resolve = await cardResolver(db);
+  const from = resolve(cur.supplier, cur.supplierTaxNumber);
+  if (from === null || from === resolve(supplier, cur.supplierTaxNumber)) return;
+  throw new UserError("Bu faturaya tedarikçinin cari ödemesi sayılmış ya da faturasız alımı bağlı; tedarikçi adını değiştirmek onu başka tedarikçiye taşır. Önce Hesap hareketleri'nde ödemeden çıkarın ya da bağı kaldırın.");
 }
 
 /** İşlem geçmişinin eki: " · hesaptaki 99,50 ₺ sayıldı" (hesaptaki para kullanılmadıysa boş) */

@@ -492,6 +492,46 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.equal(row.dueDate, null);
     ok(await cari.setSupplierDebtDueDate(debtId, "2026-11-01"));
   });
+
+  test("Son ödenenler'den Ödemeye çevir'in geri alınması Kasa satırını alışverişe ve gider kaydını yerine döndürür", async () => {
+    const c = await card();
+    const cat = await category();
+    const today = todayTR();
+    const line = await cashOut({ amount: 300, kind: "harcama", store: "sütaş · şoföre", date: today });
+    await db.insert(s.expenseEntries).values({ date: today, categoryId: cat.id, description: "şoföre", amount: 300, cashOutId: line.id, createdBy: "Ayşe" });
+    const r = await cari.convertCashOutToPayment({ target: { cardId: c.id }, cashOutId: line.id, allocation: { mode: "none", lines: [] }, note: null, photoId: null, confirmPast: [] });
+    assert.ok(r.ok && r.data.needs === null);
+    const paymentId = (r.data as { id: number }).id;
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0);
+    const reminders = await import("../src/server/actions/reminders");
+    ok(await reminders.undoRecentPaid("cari", paymentId));
+    const [l] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, line.id));
+    assert.equal(l.kind, "harcama");
+    const exps = await db.select().from(s.expenseEntries);
+    assert.deepEqual(exps.map((e) => [e.cashOutId, e.amount]), [[line.id, 300]]);
+    assert.equal((await db.select().from(s.supplierEntries)).length, 0);
+  });
+
+  test("K23: ödemesi sayılmış faturayı başka karta taşıyan diğer ad, vergi no, yeni kart ve faturanın tedarikçi adı reddedilir", async () => {
+    const suppliers = await import("../src/server/actions/suppliers");
+    const blank = { aliases: [] as string[], legalName: "", taxNumber: "", taxOffice: "", iban: "", bankName: "", accountHolder: "", contactName: "", phone: "", email: "", address: "", paymentTermDays: null, paymentMethod: null, paidOnDelivery: false, note: "" };
+    const VKN = "1234567808";
+    const sutas = await card("Sütaş", { taxNumber: VKN });
+    const pinar = await card("Pınar");
+    const f = await invoice({ payable: 3000, supplier: "SÜTAŞ SÜT ÜRÜNLERİ A.Ş.", supplierTaxNumber: VKN, invoiceNo: "SUT140" });
+    await pay(sutas.id, 1549.5, { mode: "manual", lines: [{ kind: "invoice", id: f.id, amount: 1549.5 }] });
+    const rejected = async (r: Promise<{ ok: boolean }>, what: string) => assert.equal((await r).ok, false, what);
+    await rejected(suppliers.saveSupplier({ id: sutas.id, name: "Sütaş", ...blank, taxNumber: "" }), "kendi vergi nosunu silmek");
+    await rejected(suppliers.saveSupplier({ id: pinar.id, name: "Pınar", ...blank, aliases: ["SÜTAŞ SÜT ÜRÜNLERİ A.Ş."] }), "başka karta diğer ad");
+    await rejected(suppliers.saveSupplier({ id: pinar.id, name: "Pınar", ...blank, taxNumber: VKN }), "başka karta aynı vergi no");
+    await rejected(suppliers.saveSupplier({ id: null, name: "Sütaş Ege", ...blank, aliases: ["SÜTAŞ SÜT ÜRÜNLERİ A.Ş."] }), "yeni kart");
+    const x = await inv(f.id);
+    await rejected(invoices.saveInvoice(invoiceForm(x, { supplier: "Pınar" })), "faturanın tedarikçi adı");
+    // Faturaya dokunmayan değişiklikler geçer
+    ok(await suppliers.saveSupplier({ id: pinar.id, name: "Pınar", ...blank, aliases: ["Pınar Süt"] }));
+    ok(await suppliers.saveSupplier({ id: null, name: "Metro", ...blank }));
+    ok(await invoices.saveInvoice(invoiceForm(x, { supplier: "Sütaş" })));
+  });
 });
 
 // Kullanılmayan içe aktarmalar sonraki testler için

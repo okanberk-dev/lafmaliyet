@@ -20,7 +20,9 @@ function undoneText(e: RecentPaid): { title: string; description: string } {
     case "reminder":
       return { title: `${e.title} geri alındı`, description: "Hatırlatıcı ödenmeden önceki tarihine döndü." };
     case "cari":
-      return { title: `${e.title} ödemesi silindi`, description: "Ödeme sayıldığı kalemlerden çıktı; kapattığı kalemler yeniden açık." };
+      return e.converted
+        ? { title: `${e.title} ödemesi silindi`, description: "Kasa satırı eski türüne, gider kaydı yerine döndü; kapattığı kalemler yeniden açık." }
+        : { title: `${e.title} ödemesi silindi`, description: "Ödeme sayıldığı kalemlerden çıktı; kapattığı kalemler yeniden açık." };
     default:
       return unreachable(e.kind);
   }
