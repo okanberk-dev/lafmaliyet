@@ -24,7 +24,7 @@ import { EASE_OUT } from "@/components/akmanos/lib/motion-ease";
 import { toastUnreachable } from "@/components/ui/action-error";
 import { DotList } from "@/components/ui/misc";
 import { useCalmMotion } from "@/components/ui/motion";
-import { METHOD_LABEL } from "@/lib/cari/balance";
+import { METHOD_LABEL, round2 } from "@/lib/cari/balance";
 import { dateTR, money, tl } from "@/lib/format";
 import {
   CATEGORY_LABEL,
@@ -239,7 +239,10 @@ export function usePaymentActions(hide: (key: string) => void) {
           const r = await payDebt(item.sourceId);
           if (!r.ok) return void toast.error(r.error);
           const { paymentId, creditAllocationIds, method } = r.data;
-          const how = [money(r.data.amount), method ? METHOD_LABEL[method] : r.data.credited > 0.005 ? "hesaptaki ödemeden" : null].filter(Boolean).join(" · ");
+          // Hesaptaki paradan sayılan ve ödeme kaydıyla ödenen ayrı söylenir (ödeme kaydı yalnız kalan kadar)
+          const credited = r.data.credited > 0.005 ? `hesaptaki ${tl(r.data.credited, 2)} sayıldı` : null;
+          const paidPart = round2(r.data.amount - r.data.credited);
+          const how = [credited, method && paidPart > 0.005 ? `${tl(paidPart, 2)} ${METHOD_LABEL[method]}` : null].filter(Boolean).join(" · ") || tl(r.data.amount, 2);
           const fix = item.href ? `${item.href}?sekme=hareketler` : null;
           toast.success(`${item.title} faturasız alım ödendi · ${how}`, {
             description: "Ödeme Tedarikçiler'de hesap hareketlerine yazıldı; tarihi ya da şekli farklıysa oradan düzeltin.",

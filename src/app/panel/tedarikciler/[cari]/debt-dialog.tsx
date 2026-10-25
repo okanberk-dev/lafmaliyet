@@ -18,7 +18,7 @@ import type { MonthEffect } from "@/lib/cari/months";
 import { dateTR, monthLabel, tl } from "@/lib/format";
 import { addDays } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
-import { deleteSupplierEntry, dismissCashOut, saveSupplierDebt } from "@/server/actions/cari";
+import { deleteSupplierEntry, dismissCashOut, removeAllocations, saveSupplierDebt } from "@/server/actions/cari";
 import { loadDebtOptions } from "@/server/actions/cari-options";
 
 import { KasaLinePicker, type CariTarget } from "../cari-payment-dialog";
@@ -46,12 +46,20 @@ export interface EditDebt {
 
 const MODE_NOTE: Record<CostMode, string> = {
   fatura: "Şimdi gider yazılmaz; fatura gelince fatura gider olur.",
-  gider: "Aylık harcamalar'a tek bir kayıt yazılır (KDV dahil, KDV'siz).",
+  gider: "Aylık harcamalar'a tek bir kayıt yazılır (KDV dahil tutarla, KDV ayrılmadan).",
   mevcut: "Alımı Aylık harcamalar'a zaten yazdıysanız o kaydı seçin.",
   devir: "Panelden önceki borç; hiçbir zaman gider sayılmaz.",
 };
 
 const MODES: CostMode[] = ["fatura", "gider", "mevcut", "devir"];
+
+/** Bildirimde kipin ne yaptığı (seçeneğin emir kipli adı değil) */
+const MODE_DONE: Record<CostMode, string> = {
+  fatura: "faturası gelecek",
+  gider: "faturası yok · gidere yazıldı",
+  mevcut: "gideri zaten girildi",
+  devir: "eski borç (devir)",
+};
 
 /**
  * Borç ekle / Borcu düzenle (§3.1): faturasız ya da elden alınan mal veya hizmet, eski borç. Gider dört seçenekten
@@ -108,7 +116,8 @@ export function DebtDialog({
   const [dueDate, setDueDate] = useState(edit?.dueDate ?? "");
   const [note, setNote] = useState(edit?.note ?? "");
   const [photoId, setPhotoId] = useState<number | null>(edit?.photoId ?? null);
-  const [useCredit, setUseCredit] = useState(credit > EPS);
+  // Hesaptaki para yeni borçta sayılır; düzeltmede kendiliğinden sayılmaz (yalnız not değiştirmek para dağıtmasın)
+  const [useCredit, setUseCredit] = useState(!debt && credit > EPS);
   const [paid, setPaid] = useState(false);
   const [paidMethod, setPaidMethod] = useState<CariMethod>(defaultMethod);
   const [paidDate, setPaidDate] = useState(today);
@@ -223,7 +232,7 @@ export function DebtDialog({
         return;
       }
       const d = r.data;
-      const parts = [supplierName, `${dateTR(date).slice(0, 5)} · ${description.trim()}`, tl(value, 2), COST_MODE_LABEL[mode].toLocaleLowerCase("tr")];
+      const parts = [supplierName, `${dateTR(date).slice(0, 5)} · ${description.trim()}`, tl(value, 2), MODE_DONE[mode]];
       if (d.credited > EPS) parts.push(`hesaptaki ${tl(d.credited, 2)} sayıldı`);
       if (d.paidAmount > EPS) parts.push(`${tl(d.paidAmount, 2)} ödendi`);
       const months = d.effects.map((e) => e.month);
@@ -241,8 +250,13 @@ export function DebtDialog({
             return res;
           }
         : prev
-          ? () =>
-              saveSupplierDebt({
+          ? async () => {
+              // Bu düzeltmede hesaptaki paradan sayılan önce ödemeden çıkar (para hesaba döner)
+              if (d.creditAllocationIds.length) {
+                const x = await removeAllocations({ allocationIds: d.creditAllocationIds });
+                if (!x.ok) return x;
+              }
+              return saveSupplierDebt({
                 target: cardTarget,
                 id: prev.id,
                 date: prev.date,
@@ -257,7 +271,8 @@ export function DebtDialog({
                 applyCredit: false,
                 paid: null,
                 confirmPast: [...new Set([...months, prev.date.slice(0, 7), date.slice(0, 7)])].filter((m) => m < today.slice(0, 7)),
-              })
+              });
+            }
           : null;
       toast.success(d.created ? "Borç eklendi" : "Borç düzeltildi", {
         description: parts.join(" · "),
@@ -497,8 +512,11 @@ export function DebtDialog({
                   id="db-method"
                   value={paidMethod}
                   onChange={(e) => {
-                    setPaidMethod(e.target.value as CariMethod);
+                    const m = e.target.value as CariMethod;
+                    setPaidMethod(m);
                     setLine(null);
+                    // Kasanın günü gece yarısından sonra da dünün günü: Kasadan seçilince ödeme günü ona çekilir
+                    if (m === "kasa" && paidDate > businessDay) setPaidDate(businessDay);
                   }}
                 >
                   {CARI_METHODS.map((m) => (
@@ -524,7 +542,7 @@ export function DebtDialog({
           </div>
         ) : null}
 
-        {kasa ? <KasaCheck lines={kasa} amount={value} value={kasaPick} onChange={setKasaPick} /> : null}
+        {kasa ? <KasaCheck lines={kasa} amount={value} credit={useCredit ? credit : 0} value={kasaPick} onChange={setKasaPick} /> : null}
         <PastConfirm effects={past} checked={pastOk} onChange={setPastOk} />
         {error ? (
           <p className="rounded-2xl bg-bad-soft px-3.5 py-2.5 text-[13px] leading-5 text-bad" role="alert">
@@ -552,18 +570,33 @@ const lineText = (l: KasaFound) => [dateTR(l.date).slice(0, 5), l.kind === "tesl
  * Kasa denetimi (K15): alım gününün ±3 günü içinde kasada bu tedarikçinin adıyla işlenmemiş satır var; kaydetmeden
  * önce seçilir. Alışveriş satırı peşin alımsa borç açılmaz; Teslim satırı borcu kapatabilir; ya da ayrı alım.
  */
-function KasaCheck({ lines, amount, value, onChange }: { lines: KasaFound[]; amount: number; value: string | null; onChange: (v: string) => void }) {
+function KasaCheck({ lines, amount, credit, value, onChange }: { lines: KasaFound[]; amount: number; credit: number; value: string | null; onChange: (v: string) => void }) {
+  // Satır borçtan azsa kalan önce hesaptaki ödemeden ("Hesaptaki ödemeyi say" açıksa), sonra borç olarak kalır
+  const rest = (l: KasaFound) => {
+    if (!(amount > 0)) return "";
+    if (l.amount > amount + EPS) return ` · ${tl(round2(l.amount - amount), 2)} hesapta kalır`;
+    if (l.amount >= amount - EPS) return "";
+    const short = round2(amount - l.amount);
+    const fromCredit = round2(Math.min(credit, short));
+    const left = round2(short - fromCredit);
+    return [fromCredit > EPS ? ` · hesaptaki ${tl(fromCredit, 2)} sayılır` : "", left > EPS ? ` · ${tl(left, 2)} borç kalır` : ""].join("");
+  };
+  const shops = lines.filter((l) => l.kind === "harcama").length;
+  const apart =
+    shops === lines.length
+      ? lines.length > 1
+        ? "Borç açılır; kasadaki satırlar ayrı kalır."
+        : "Borç açılır; kasadaki satır ayrı kalır."
+      : shops
+        ? "Borç açılır; alışveriş satırı ayrı kalır, Teslim satırı başka bir ödeme olarak işlenmemiş kalır."
+        : "Borç açılır; kasadaki ödeme bu alım için değil, işlenmemiş kalır.";
   const options = [
     ...lines.map((l) =>
       l.kind === "harcama"
         ? { key: `pesin:${l.id}`, title: "Kasadan peşin ödendi (borç açma)", note: `${lineText(l)}${l.expense ? " · gider yazılmış" : ""}` }
-        : {
-            key: `kapat:${l.id}`,
-            title: "Borcu aç ve bu satırla kapat",
-            note: `${lineText(l)}${amount > 0 && l.amount > amount + EPS ? ` · ${tl(round2(l.amount - amount), 2)} hesapta kalır` : amount > 0 && l.amount < amount - EPS ? ` · ${tl(round2(amount - l.amount), 2)} borç kalır` : ""}`,
-          },
+        : { key: `kapat:${l.id}`, title: "Borcu aç ve bu satırla kapat", note: `${lineText(l)}${rest(l)}` },
     ),
-    { key: "ayri", title: "Ayrı alım", note: lines.length > 1 ? "Borç açılır; kasadaki satırlar ayrı kalır." : "Borç açılır; kasadaki satır ayrı kalır." },
+    { key: "ayri", title: "Ayrı alım", note: apart },
   ];
   return (
     <fieldset className="space-y-2 rounded-2xl bg-info-soft p-3.5">

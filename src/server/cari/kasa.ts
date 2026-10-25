@@ -14,7 +14,7 @@ import { KASA_AYRI_KEY, KASA_AYRI_LIMIT, loadKasaHandled } from "@/server/data/c
 import { schema as s } from "@/server/db";
 
 import { checkPast, deleteEntry, writePayment, type Actor, type Card, type PaymentResult } from "./entries";
-import { lockCard, type Tx } from "./settle";
+import { lockCard, resettle, type Tx } from "./settle";
 
 export type { KasaFound };
 
@@ -98,14 +98,14 @@ export async function kasaCheck(tx: Tx, card: Pick<Card, "name" | "aliases">, da
 
 /**
  * Kasa denetiminin sonucu: satır yoksa seçim gerekmez. Satır varken seçim yoksa ya da pencerenin görmediği bir satır
- * çıktıysa NeedsKasa. "Ayrı alım": görülen satırlar ayrı tutulur, borç açılır. "Kasadan peşin ödendi": seçilen
+ * çıktıysa NeedsKasa. "Ayrı alım": görülen alışveriş satırları ayrı tutulur (Teslim işlenmemiş kalır), borç açılır. "Kasadan peşin ödendi": seçilen
  * alışveriş satırı ayrı tutulur, borç açılmaz. "Bu satırla kapat": borç açılır ve seçilen Teslim satırıyla ödenir.
  */
 export async function resolveKasaChoice(
   tx: Tx,
   found: readonly KasaFound[],
   choice: KasaChoice | null,
-): Promise<{ action: "none" | "ayri" } | { action: "pesin" | "kapat"; line: KasaFound }> {
+): Promise<{ action: "none" } | { action: "ayri"; apart: number[] } | { action: "pesin" | "kapat"; line: KasaFound }> {
   if (choice && choice.action !== "ayri" && !found.some((l) => l.id === choice.cashOutId)) {
     if (found.length) throw new NeedsKasa([...found]);
     throw new UserError("Kasa satırı bu arada işlendi ya da silindi; yeniden kaydedin.");
@@ -114,11 +114,11 @@ export async function resolveKasaChoice(
   const seen = new Set(choice?.seen ?? []);
   if (!choice || found.some((l) => !seen.has(l.id))) throw new NeedsKasa([...found]);
   if (choice.action === "ayri") {
-    await keepKasaApart(
-      tx,
-      found.map((l) => l.id),
-    );
-    return { action: "ayri" };
+    // Yalnız alışveriş satırı ayrı tutulur: Teslim satırı tedarikçiye gerçek bir ödemedir (bu alım için değilse de),
+    // işlenmemiş kalır ve Ödeme ekle › Kasadan, şerit ve zilden ödemeye bağlanabilir
+    const apart = found.filter((l) => l.kind === "harcama").map((l) => l.id);
+    await keepKasaApart(tx, apart);
+    return { action: "ayri", apart };
   }
   const line = found.find((l) => l.id === choice.cashOutId)!;
   if (choice.action === "pesin") {
@@ -287,6 +287,9 @@ export async function syncLinkedCashOut(
   if (amount < total - EPS) throw new UserError(`Bu satırın ödemesinin ${tl(total, 2)}'si kalemlere sayılmış; tutar bundan az olamaz. Önce Tedarikçiler'de 'Neye sayıldı'dan azaltın.`);
   if (p && (Math.abs(p.amount - amount) > EPS || p.date !== next.date)) {
     await tx.update(s.supplierEntries).set({ amount, date: next.date, updatedAt: new Date() }).where(eq(s.supplierEntries.id, link.id));
+    // Ödemenin kapattığı faturaların ödeme günü ödemeyi izler
+    const mine = await tx.select({ invoiceId: s.supplierAllocations.invoiceId }).from(s.supplierAllocations).where(eq(s.supplierAllocations.paymentId, link.id));
+    await resettle(tx, mine.flatMap((a) => (a.invoiceId !== null ? [a.invoiceId] : [])));
   }
   return card?.name ?? "";
 }

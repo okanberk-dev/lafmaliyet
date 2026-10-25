@@ -272,7 +272,11 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
       [sut149.id, null, b2.id, 600],
     ]);
     const [lb2] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, b2.id));
-    assert.deepEqual(lb2.linkPrev, { costMode: "gider", categoryId: cat.id, expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21" } });
+    assert.deepEqual(lb2.linkPrev, {
+      costMode: "gider",
+      categoryId: cat.id,
+      expense: { categoryId: cat.id, description: "Sütaş · beyaz peynir", note: null, amount: 600, date: "2026-10-21", id: 1, paymentMethod: null, createdBy: null },
+    });
     // Fatura (kalan 350'ye elle ✓ değil) silinir: bağlar önce çözülür
     const links = await db.transaction(async (tx) => {
       const l = await settle.releaseInvoiceLinks(tx, sut149.id, "Test");

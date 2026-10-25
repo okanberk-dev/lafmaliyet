@@ -357,6 +357,141 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     const [d] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId));
     assert.deepEqual([d.costMode, d.categoryId, d.invoiceId], ["fatura", null, null]);
   });
+
+  // ---------------------------------------------------------------- Kasa, borç düzeltme, Ödemeler
+
+  async function cashOut(p: Partial<typeof s.cashOuts.$inferInsert> & { amount: number }) {
+    const [r] = await db.insert(s.cashOuts).values({ date: todayTR(), kind: "teslim", store: "Sütaş", docType: "yok", createdByName: "Ayşe", ...p }).returning();
+    return r;
+  }
+
+  test("Kasa denetimi 'Ayrı alım': Teslim satırı işlenmemiş kalır (Kasadan seçilebilir), alışveriş satırı ayrı tutulur", async () => {
+    const c = await card();
+    const today = todayTR();
+    const teslim = await cashOut({ amount: 2200, date: addDays(today, -1) });
+    const shop = await cashOut({ amount: 300, kind: "harcama", date: today });
+    const first = await addDebt(c.id, { amount: 1250, date: today });
+    assert.ok(first.ok && first.data.needs === "kasa");
+    const r = await cari.saveSupplierDebt({
+      target: { cardId: c.id },
+      id: null,
+      date: today,
+      amount: 1250,
+      description: "süt",
+      costMode: "fatura",
+      categoryId: null,
+      adoptExpenseId: null,
+      dueDate: null,
+      note: null,
+      photoId: null,
+      applyCredit: false,
+      paid: null,
+      confirmPast: [],
+      kasaChoice: { action: "ayri", seen: [teslim.id, shop.id] },
+    });
+    assert.ok(r.ok && r.data.needs === null);
+    assert.deepEqual((r.data as { apart: number[] }).apart, [shop.id]);
+    const handled = await data.loadKasaHandled();
+    assert.equal(handled.has(teslim.id), false, "Teslim işlenmemiş");
+    assert.equal(handled.has(shop.id), true);
+    const index = await data.loadCariIndex(today);
+    assert.deepEqual(index.kasaPending.map((l) => l.id), [teslim.id]);
+  });
+
+  test("Kasa denetimi 'Bu satırla kapat': önce satırın ödemesi borca sayılır, kalan hesaptaki paradan", async () => {
+    const c = await card();
+    const today = todayTR();
+    await pay(c.id, 1500, { mode: "none", date: addDays(today, -5) });
+    const line = await cashOut({ amount: 400, date: today });
+    const r = await cari.saveSupplierDebt({
+      target: { cardId: c.id },
+      id: null,
+      date: today,
+      amount: 450,
+      description: "süt",
+      costMode: "fatura",
+      categoryId: null,
+      adoptExpenseId: null,
+      dueDate: null,
+      note: null,
+      photoId: null,
+      applyCredit: true,
+      paid: null,
+      confirmPast: [],
+      kasaChoice: { action: "kapat", cashOutId: line.id, seen: [line.id] },
+    });
+    assert.ok(r.ok && r.data.needs === null);
+    const kasaPay = (await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.cashOutId, line.id)))[0];
+    const rows = await allocs();
+    assert.deepEqual(rows.find((a) => a.paymentId === kasaPay.id && a.debtId !== null)?.amount, 400, "kasa satırının ödemesi borca");
+    assert.equal((r.data as { credited: number }).credited, 50, "kalan 50 hesaptaki paradan");
+  });
+
+  test("Borcu düzenle: hesaptaki para kendiliğinden sayılmaz; sayıldıysa Geri al dağıtımı da kaldırır", async () => {
+    const c = await card();
+    const d = await addDebt(c.id, { amount: 200, date: todayTR(), description: "krema" });
+    const debtId = (d.ok ? (d.data as { id: number }).id : 0);
+    await pay(c.id, 1600, { mode: "none" });
+    // Pencere düzenlemede anahtarı kapalı gönderir; açıkça açılırsa sayılır ve kimlikleri döner
+    const e = await addDebt(c.id, { id: debtId, amount: 200, date: todayTR(), description: "krema", note: "not", applyCredit: true });
+    assert.ok(e.ok && e.data.needs === null);
+    const ids = (e.data as { creditAllocationIds: number[] }).creditAllocationIds;
+    assert.equal(ids.length, 1);
+    ok(await cari.removeAllocations({ allocationIds: ids }));
+    assert.equal((await allocs()).length, 0);
+  });
+
+  test("Ödemeler'de faturasız alımın Ödendi'si: hesaptaki paradan yalnız satırın mahsubu, ödeme kaydı satırdaki tutar", async () => {
+    const c = await card("Sütaş", { paymentMethod: "havale" });
+    // A faturası daha erken vadeli: hesaptaki 100 ona düşer, borcun satırı 500 gösterir
+    await invoice({ payable: 300, date: "2026-09-28", dueDate: "2026-10-28", invoiceNo: "A" });
+    await pay(c.id, 100, { mode: "none" });
+    const d = await addDebt(c.id, { amount: 500, date: "2026-10-06", description: "devir", costMode: "devir" });
+    const debtId = (d.ok ? (d.data as { id: number }).id : 0);
+    await db.update(s.supplierEntries).set({ dueDate: "2026-11-05" }).where(eq(s.supplierEntries.id, debtId));
+    const r = ok(await cari.payDebt(debtId));
+    assert.deepEqual([r.credited, r.amount], [0, 500]);
+    const p = (await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, r.paymentId!)))[0];
+    assert.equal(p.amount, 500, "bankadan giden 500");
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 100]], "hesaptaki 100 yerinde");
+  });
+
+  test("silinen ödemenin Geri al'ı bu arada elle ödendi yapılan faturaya para yazmaz (hesapta kalır)", async () => {
+    const c = await card();
+    const a = await invoice({ payable: 300, invoiceNo: "A" });
+    const p = await pay(c.id, 300);
+    assert.equal((await inv(a.id)).paidByLedger, true);
+    const del = await cari.deleteSupplierEntry({ id: p.id });
+    assert.ok(del.ok && del.data.needs === null);
+    assert.equal((await inv(a.id)).unpaid, true);
+    // Başka sekmede "Ayrıca ödendi" (nakit)
+    ok(await invoices.setInvoicePayment([a.id], { status: "paid", date: todayTR(), via: "nakit" }, { separately: true }));
+    const r = ok(await cari.restoreSupplierEntry((del.data as { undo: string }).undo));
+    assert.equal(r.lost, 300);
+    const now = await inv(a.id);
+    assert.deepEqual([now.allocated, now.paidVia, now.paidByLedger], [0, "nakit", false]);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 300]]);
+  });
+
+  test("ödemenin günü ve şekli düzeltilince kapattığı faturanın ödeme günü ve şekli de değişir", async () => {
+    const c = await card();
+    const f = await invoice({ payable: 1000, invoiceNo: "SUT123" });
+    const p = await pay(c.id, 1000, { date: "2026-10-22" });
+    assert.deepEqual([(await inv(f.id)).paidAt, (await inv(f.id)).paidVia], ["2026-10-22", "havale"]);
+    ok(await cari.saveSupplierPayment({ target: { cardId: c.id }, id: p.id, date: "2026-10-21", amount: 1000, method: "elden", cashOut: null, allocation: { mode: "none", lines: [] }, note: null, photoId: null }));
+    assert.deepEqual([(await inv(f.id)).paidAt, (await inv(f.id)).paidVia, (await inv(f.id)).paidByLedger], ["2026-10-21", "nakit", true]);
+  });
+
+  test("Ertele'nin Geri al'ı alım gününden önceki vadeyi yazmaz", async () => {
+    const c = await card();
+    const d = await addDebt(c.id, { amount: 100, date: "2026-10-20" });
+    const debtId = (d.ok ? (d.data as { id: number }).id : 0);
+    const r = await cari.setSupplierDebtDueDate(debtId, "2026-01-05");
+    assert.ok(!r.ok);
+    const [row] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId));
+    assert.equal(row.dueDate, null);
+    ok(await cari.setSupplierDebtDueDate(debtId, "2026-11-01"));
+  });
 });
 
 // Kullanılmayan içe aktarmalar sonraki testler için

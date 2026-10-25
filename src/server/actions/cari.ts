@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -194,8 +194,10 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
       effects: written.effects,
       slug: created ? await supplierSlugOf(card.id) : null,
       cardId: card.id,
-      /** Kasa denetiminde "Ayrı alım" denen satırlar ("Geri al" onları da geri çevirir) */
-      apart: kasa.action === "ayri" ? ((d.kasaChoice?.seen ?? []) as number[]) : [],
+      /** Kasa denetiminde "Ayrı alım" ile ayrı tutulan satırlar ("Geri al" onları da geri çevirir) */
+      apart: kasa.action === "ayri" ? kasa.apart : [],
+      /** Hesaptaki paradan bu kayıtta yazılan dağıtımlar (düzeltmenin "Geri al"ı önce bunları siler) */
+      creditAllocationIds: written.creditAllocationIds,
     };
   });
 }
@@ -586,9 +588,16 @@ export async function setSupplierDebtDueDate(debtId: number, due: string | null)
     const me = await requireAdmin();
     const id = zId.parse(debtId);
     const date = zDate.nullable().parse(due);
-    const [row] = await getDb().update(s.supplierEntries).set({ dueDate: date, updatedAt: new Date() }).where(and(eq(s.supplierEntries.id, id), eq(s.supplierEntries.kind, "borc"))).returning();
-    if (!row) throw new UserError("Alım bulunamadı; sayfayı yenileyin.");
-    if (row.dueDate && row.dueDate < row.date) throw new UserError("Vade alım gününden önce olamaz");
+    // Denetim yazımdan önce (yazım tek ifadede ve koşullu: bu arada alım günü değiştiyse reddedilen değer yazılmaz)
+    const [row] = await getDb()
+      .update(s.supplierEntries)
+      .set({ dueDate: date, updatedAt: new Date() })
+      .where(and(eq(s.supplierEntries.id, id), eq(s.supplierEntries.kind, "borc"), date ? lte(s.supplierEntries.date, date) : undefined))
+      .returning();
+    if (!row) {
+      const [exists] = await getDb().select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(and(eq(s.supplierEntries.id, id), eq(s.supplierEntries.kind, "borc"))).limit(1);
+      throw new UserError(exists ? "Vade alım gününden önce olamaz" : "Alım bulunamadı; sayfayı yenileyin.");
+    }
     await logActivity(me, "Faturasız alımın vadesi değişti", `${debtLabel(row)} · ${date ? dateTR(date) : "tahmini vade"}`);
     refresh();
     return null;

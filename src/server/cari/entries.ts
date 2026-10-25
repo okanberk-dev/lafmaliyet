@@ -8,6 +8,8 @@ import {
   allocateFifo,
   debtLabel,
   invoiceLabel,
+  invoiceRoom,
+  netCredit,
   openItems,
   validateManual,
   type AllocationLine,
@@ -292,6 +294,11 @@ export async function writePayment(tx: Tx, me: Actor, card: Card, input: Payment
     await recomputeAllocated(tx, touched);
     await resettle(tx, touched);
   }
+  if (cur) {
+    // Düzeltilen ödemenin (gün, şekil) kapattığı faturaların ödeme günü ve şekli ödemeyi izler
+    const mine = await tx.select({ invoiceId: s.supplierAllocations.invoiceId }).from(s.supplierAllocations).where(eq(s.supplierAllocations.paymentId, cur.id));
+    await resettle(tx, mine.flatMap((a) => (a.invoiceId !== null ? [a.invoiceId] : [])));
+  }
   const byKey = new Map(items.map((i) => [`${i.kind}:${i.id}`, i]));
   const used = round2(lines.reduce((a, l) => a + l.amount, 0));
   const left = round2(Math.max(0, amount - (cur ? counted : used)));
@@ -338,8 +345,9 @@ export interface DebtWrite {
 export interface DebtResult {
   id: number;
   created: boolean;
-  /** Hesaptaki paradan bu borca sayılan */
+  /** Hesaptaki paradan bu borca sayılan ve yazılan dağıtımlar (düzeltmenin "Geri al"ı siler) */
   credited: number;
+  creditAllocationIds: number[];
   paid: PaymentResult | null;
   effects: MonthEffect[];
   prev: { amount: number; date: string; costMode: CostMode } | null;
@@ -479,12 +487,20 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
   }
   await linkPhoto(tx, input.photoId, cur?.photoId ?? null, input.date);
 
-  // Hesaptaki para önce, sonra "Ödendi"nin ödemesi (kalan kadar)
+  // Hesaptaki para önce, sonra "Ödendi"nin ödemesi (kalan kadar). Kasa denetiminde "Bu satırla kapat" (ödemenin tutarı
+  // satırın tutarı): önce satırın ödemesi sayılır, kalan varsa hesaptaki para
   let credited = 0;
-  if (input.applyCredit) {
+  const creditAllocationIds: number[] = [];
+  const spend = async () => {
+    if (!input.applyCredit) return;
     const room = round2(amount - (await debtAllocated(tx, row.id)));
-    if (room > EPS) credited = (await spendCredit(tx, card.id, [{ kind: "debt", id: row.id, room }], me.name)).total;
-  }
+    if (room <= EPS) return;
+    const r = await spendCredit(tx, card.id, [{ kind: "debt", id: row.id, room }], me.name);
+    credited = r.total;
+    creditAllocationIds.push(...r.allocationIds);
+  };
+  const kasaFirst = input.paid?.amount !== undefined;
+  if (!kasaFirst) await spend();
   let paid: PaymentResult | null = null;
   if (input.paid) {
     const rest = round2(amount - (await debtAllocated(tx, row.id)));
@@ -509,10 +525,12 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
       );
     }
   }
+  if (kasaFirst) await spend();
   return {
     id: row.id,
     created: !cur,
     credited,
+    creditAllocationIds,
     paid,
     effects,
     prev: cur ? { amount: cur.amount, date: cur.date, costMode: cur.costMode ?? "fatura" } : null,
@@ -681,7 +699,8 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Prom
       let room = 0;
       if (a.invoiceId !== null) {
         const [inv] = await lockInvoices(tx, [a.invoiceId]);
-        if (inv && inv.payable > 0) room = round2(Math.max(0, inv.payable - (inv.ledgerBase ?? 0) - inv.allocated));
+        // Bu arada elle ödendi işaretlenen faturaya para yazılmaz (orada yer yok; sığmayan hesapta kalır)
+        if (inv && (inv.unpaid || inv.paidByLedger)) room = invoiceRoom(inv);
       } else if (a.debtId !== null) {
         const [d] = await tx.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, a.debtId)).for("update").limit(1);
         if (d && d.kind === "borc" && d.supplierId === card.id && d.invoiceId === null) room = round2(Math.max(0, d.amount - (await debtAllocated(tx, d.id))));
@@ -791,12 +810,19 @@ export async function payDebtTx(
   method: CariMethod,
   termDays: number,
 ): Promise<{ credited: number; creditAllocationIds: number[]; payment: PaymentResult | null; label: string; amount: number }> {
+  // Kilit sırası (K24): kartın faturaları ve borçları, sonra bu borç
+  const { items } = await lockAccount(tx, card.id, termDays);
   const [d] = await tx.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId)).for("update").limit(1);
   if (!d || d.kind !== "borc" || d.supplierId !== card.id) throw new UserError(GONE);
   if (d.invoiceId !== null) throw new UserError("Bu alım bir faturaya bağlı; faturayı ödendi yapın");
   const room = round2(d.amount - (await debtAllocated(tx, d.id)));
   if (room <= EPS) throw new UserError("Bu alım zaten ödenmiş");
-  const spent = await spendCredit(tx, card.id, [{ kind: "debt", id: d.id, room }], me.name);
+  // Hesaptaki paradan yalnız bu kaleme düşen pay (Ödemeler'deki satırın gösterdiği mahsup: para önce daha erken
+  // vadeli kalemlere düşer); ödeme kaydı satırda görünen kalan kadar açılır
+  const credit = round2((await paymentCredits(tx, card.id)).reduce((a, p) => a + p.credit, 0));
+  const net = netCredit(items, credit);
+  const share = round2(Math.min(room, [...net.items, ...net.covered].find((i) => i.kind === "debt" && i.id === d.id)?.credited ?? 0));
+  const spent = share > EPS ? await spendCredit(tx, card.id, [{ kind: "debt", id: d.id, room: share }], me.name) : { total: 0, allocationIds: [] as number[] };
   const credited = spent.total;
   const rest = round2(room - credited);
   const payment =
