@@ -34,7 +34,7 @@ işlemlerinde). Maliyet modeli istek başına bir kez kurulur (`loadModelOnce`).
 | `kasa-silme` | Kasa raporunu sildirmek | `gun:<D>` | yok | §2.3 |
 | `kasa-gec` | Unutulan eski günün kasa raporu (14 gün; Z fotoğrafı ve Z no ile) | `gun:<D>` | yok | §2.6 |
 | `kasa-cikan` | Kapanmış ya da eski güne kasadan çıkan; yöneticinin kategorisindeki satırı değiştirmek | `cikan:<id>`, `cikan-yeni:<anahtar>` | 14 gün | §2.7 |
-| `foto-kaldir` | Yanlış Z / POS fotoğrafını rapordan kaldırtmak | `foto:<id>` | yok | §2.7 |
+| `foto-kaldir` | Yanlış Z / POS fotoğrafını rapordan kaldırtmak (okuma farkı olan ve raporun tek Z fotoğrafı hariç) | `foto:<id>` | yok | §2.7 |
 | `kapali-gun` | Dün kafe kapalıydı | `gun:<D>` | yok | §2.9 |
 | `zayi-gec` | 14 güne kadar geç zayi / ikram | `zayi-yeni:<anahtar>` | yok | §2.8 |
 | `zayi-sil` | Başkasının ya da kilitli günün zayi kaydını sildirmek | `zayi:<id>` | yok | §2.8 |

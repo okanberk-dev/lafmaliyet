@@ -86,13 +86,52 @@ Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (marke
 - Satıra dokununca düzeltilir ya da silinir (Geri al 8 saniye; satır harcama kaydıyla birlikte, olduğu gibi ve eski
   numarasıyla geri gelir). Geri al'ın taşıdığı kopya sunucunun mühürüdür (`src/lib/cash-outs.ts` › `cashOutUndoJson`):
   yalnız silen kişi, 15 dakika içinde ve bir kez kullanır; istemcinin yazdığı bir kopya kabul edilmez. Gün personele
-  kapanınca (dünden eskisi) yalnız yönetici ekler ve düzeltir.
+  kapanınca (ertesi günün raporu girildi ya da dünden eskisi) personelin eklemesi ve düzeltmesi yöneticinin onayına
+  gider (aşağıda).
 - Personelin düzeltmesi Aylık harcamalar kaydını açmaz ve silmez: yöneticinin oradan sildiği kayıt geri gelmez,
   faturaya açtığı kayıt kalır; tutar ve tarih kayda yansır, yöneticinin yazdığı açıklama, ödeme şekli ve not kalır.
-  Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırı personel silemez, türünü ve kategorisini değiştiremez:
-  "yöneticiye haber verin".
+  Kaydı yöneticinin kategorisindeki (maaş, kira gibi) satırın her değişikliği ve silinmesi yöneticinin onayıyla
+  (aşağıda); kategoriyi yalnız yönetici değiştirir.
 - Aylık harcamalar'da bu kayıtlarda fotoğraf simgesi ve **Kasadan** rozeti görünür; tutarı ve tarihi Kasa raporu'nda
   düzeltilir. Aylık harcamalar'dan silinen kayıt kasa satırını silmez.
+
+## Kasadan çıkan: kapanmış gün, yöneticinin satırı
+
+Kapanmış ya da eski bir güne yazılan kasadan çıkan beklenen nakdi düşürür ve açığı örtebilir; yöneticinin
+kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin onayına gider ([ONAYLAR.md](ONAYLAR.md), tür
+`kasa-cikan`); istek onaya kadar hiçbir yere yazmaz.
+
+| Personel ne yapar | Nasıl |
+|---|---|
+| Açık günde (bugün, dün; ertesi günün raporu girilmemiş) kendi kategorisindeki satırı eklemek, düzeltmek, silmek | Doğrudan (değişmedi) |
+| Kilitli düne eklemek, satırını düzeltmek ya da silinmesini istemek | **Onaya gönder** ("Ekleme iste", "Düzeltme iste", "Silinmesini iste"); satırın fotoğrafı gizli kalır |
+| Dünden eski 6 güne (D−2 … D−7) eklemek | **Eski bir güne ekle**: önce gün çipi, sonra kamera ya da form; o günün satırları gösterilmez, yalnız ekleme |
+| Açık günde yöneticinin kategorisindeki satırın tutarını, metnini ya da türünü değiştirmek, silmek | Onaya gönder; kategori değiştirme isteği açılmaz, fişli satırın türü salt okunur |
+| Fotoğrafsız alışveriş satırına fiş eklemek (bugün ve dün, kilitli dün dahil) | **Fiş fotoğrafı ekle**, onaysız: tutar, tür ve kategori değişmez; işlem geçmişinde "Kasadan çıkan: fiş eklendi" |
+| Kayıtlı raporun yanlış Z ya da POS fotoğrafını kaldırtmak (açık günde) | Fotoğrafın yanındaki **Kaldırılmasını iste**; okuma farkı olan fotoğrafta ve raporun tek Z fotoğrafında düğme yok |
+
+- İstek penceresi bugün ile 7 gün öncesidir (`src/lib/cash-out-requests.ts` › `requestDayAllowed`); istek 14 gün sonra
+  kendiliğinden kapanır ("Süresi doldu", personelin zilinde görünür). Fiş istek beklerken tutulur, başka bir isteğe ya
+  da satıra bağlanamaz; onayda satıra bağlanır, retle 7 gün sonra silinir. Personel fişi bu 7 güne yükleyebilir.
+- Kapanmış güne kasadan çıkan eklenmesini yöneticinin kategorisi seçilerek istemek olmaz: kategori personelin
+  kategorilerinden biridir, yönetici onayda değiştirebilir.
+- **Onaylar › Kasa** kartı: satır ve fişi, düzeltmede değişecekler ve bağlı gider; bağlam olarak günün kasa farkı, o
+  günün bütün satırları ("satırlar onaydan sonra …"), olası tekrar (aynı tutar, ±1 gün), kırmızı işaretler (tutar
+  günün açığına ±1 ₺ eşit; kapanmış güne teslim ya da fişsiz çıkış) ve gider ayı bu ay değilse uyarı. Eklemede ve
+  düzeltmede "Aylık harcamalar'a da yaz" ve kategori (bütün etkin kategoriler). İstekten sonra satır, fişi ya da bağlı
+  gider kaydı değiştiyse amber "İstekten sonra değişti" ve **Yine de uygula**. Fiş belgeli işaretlenen satırın fotoğrafı
+  yoksa onay reddedilir. Onay satırı isteyenin adıyla yazar ve kasa raporunu **asla** değiştirmez: rapordaki fark kartta
+  görünür, rapor normal yoldan düzeltilir.
+- **Fotoğraf kaldırma kartı:** küçük resim, okuma farkları ve neden. Onayda okuma farkı işlem geçmişine yazılır
+  ("Fotoğraf rapordan çıkarıldı · … · okuma: …"), fotoğrafın rapor bağı silinir ve fotoğraf 30 gün saklanır; okumanın
+  kendisi kalır. Yönetici fotoğrafı doğrudan silerse bekleyen kaldırma isteği kapanır.
+- İşlem geçmişi: "Kasadan çıkan isteği" (personel), "Kasadan çıkan … · Ayşe'nin isteği" (onay), "Kasa isteği
+  reddedildi", "Fotoğraf kaldırma istendi", "Fotoğraf rapordan çıkarıldı", "Fotoğraf kaldırma reddedildi".
+- Kod: kural `cashOutNeedsApproval` (saf), kapı `src/server/cash-outs/guard.ts` › `staffCashOutGate` (personelin
+  doğrudan ekleme, düzeltme, silme, fiş ekleme ve istek yollarının hepsi buradan geçer; bir satırın personele
+  kapanması gerekirse, ör. yöneticinin bir ödemeye bağladığı satır, `rowLocked` burada tek yerde açılır), yazım yolu
+  `src/server/cash-outs/write.ts`, istekler `src/server/cash-outs/requests.ts`, uçlar
+  `src/server/actions/cash-out-requests.ts`.
 
 ## laffogato.net satırı (bilgi)
 

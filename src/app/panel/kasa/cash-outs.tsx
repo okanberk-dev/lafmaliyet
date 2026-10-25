@@ -101,6 +101,8 @@ export function CashOutsCard({
   const [oldOpen, setOldOpen] = useState(false);
   const [oldDay, setOldDay] = useState<string | null>(null);
   const [receiptFor, setReceiptFor] = useState<CashOutDTO | null>(null);
+  // "Fiş ekle"nin günü (kartın günü ya da seçilen eski gün): dosya seçilince yükleme o güne yapılır
+  const uploadDay = useRef(date);
   const [pending, start] = useActionTransition();
   const total = cashOutsTotal(lines);
   const read = reading === "on";
@@ -136,7 +138,7 @@ export function CashOutsCard({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const day = oldDay ?? date;
+    const day = uploadDay.current;
     const key = open({ mode: "photo" }, day, addRequest(day));
     const res = await up.upload(file, { kind: "fis", day, read });
     if (res && shown.current === key) setUploaded(res);
@@ -176,7 +178,14 @@ export function CashOutsCard({
   const addButtons = (day: string, stacked: boolean) =>
     storage ? (
       <>
-        <Button onClick={() => fileRef.current?.click()} disabled={up.busy} className={cn("flex-1 max-sm:min-h-12", stacked ? "w-full" : "sm:flex-none")}>
+        <Button
+          onClick={() => {
+            uploadDay.current = day;
+            fileRef.current?.click();
+          }}
+          disabled={up.busy}
+          className={cn("flex-1 max-sm:min-h-12", stacked ? "w-full" : "sm:flex-none")}
+        >
           <Receipt size={16} aria-hidden="true" /> Fiş ekle
         </Button>
         <Button variant="secondary" onClick={() => open({ mode: "plain" }, day, addRequest(day))} className={cn("flex-1 max-sm:min-h-12", stacked ? "w-full" : "sm:flex-none")}>

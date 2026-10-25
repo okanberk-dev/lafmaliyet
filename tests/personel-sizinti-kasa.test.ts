@@ -27,6 +27,13 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/late-report.tsx",
   "src/server/data/cash-late.ts",
   "src/server/cash/late.ts",
+  "src/server/data/cash-out-requests.ts",
+  "src/server/actions/cash-out-requests.ts",
+  "src/server/cash-outs/requests.ts",
+  "src/lib/cash-out-requests.ts",
+  "src/app/panel/kasa/cash-outs.tsx",
+  "src/app/panel/kasa/cash-out-dialog.tsx",
+  "src/app/panel/kasa/cash-photos.tsx",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -77,4 +84,31 @@ test("geç rapor: personelin okuyucuları sabit sütunla; başkasının isteğin
   assert.doesNotMatch(page, /lateCards|lateBellRows/);
   const section = read("src/app/panel/onaylar/kasa-section.tsx");
   assert.match(section, /export async function KasaRequests\(\) \{\s*await requireAdmin\(\);/);
+});
+
+test("kasadan çıkan istekleri: personelin okuyucuları sabit sütunla; kendi isteğinden yalnız satır, başkasınınkinden yalnız satırın kimliği ve ad", () => {
+  const loader = read("src/server/data/cash-out-requests.ts");
+  assert.match(loader, /^import "server-only";/);
+  const own = loader.slice(loader.indexOf("export async function staffCashOutRequests"), loader.indexOf("export async function photoRemovalStates"));
+  assert.doesNotMatch(own, /\.select\(\)/);
+  assert.match(own, /\.select\(\{\s*id: r\.id,\s*version: r\.version,\s*createdAt: r\.createdAt,\s*message: r\.message,\s*payload: r\.payload,\s*requestedBy: r\.requestedBy,\s*requestedByName: r\.requestedByName,\s*\}\)/);
+  // Kişinin kendi isteği staffCashOutView'dan (kategori, önceki hâl, gider kaydı yok); başkasınınki yalnız kimlik ve ad
+  assert.match(own, /view: staffCashOutView\(p\.data\)/);
+  assert.match(own, /others\.push\(\{ cashOutId: p\.data\.cashOutId, requestedByName: x\.requestedByName \}\)/);
+  assert.doesNotMatch(own, /before|categoryId|expense/);
+  // Fotoğraf kaldırma durumları: yalnız bekleyen isteğin konusu okunur
+  const removal = loader.slice(loader.indexOf("export async function photoRemovalStates"), loader.indexOf("export async function staffOldCashOutDays"));
+  assert.match(removal, /\.select\(\{ subject: r\.subject \}\)/);
+  // Yöneticinin kartları ve zil satırı personel sayfasında çağrılmaz
+  const page = read("src/app/panel/kasa/page.tsx");
+  assert.doesNotMatch(page, /cashOutCards|cashOutBellRow/);
+  assert.match(page, /admin \? Promise\.resolve\(null\) : staffCashOutRequests\(date, user\)/);
+  // Eylemlerin personele dönüşü yalnız kimlik ve sürüm (fiş eklemede hiçbir şey)
+  const actions = read("src/server/actions/cash-out-requests.ts");
+  for (const name of ["requestCashOutChange", "requestPhotoRemoval"]) {
+    const body = actions.slice(actions.indexOf(`export async function ${name}`));
+    assert.match(body.slice(0, 1200), /return \{ id: out\.row\.id, version: out\.row\.version \};/);
+  }
+  const attach = actions.slice(actions.indexOf("export async function attachCashOutReceipt"), actions.indexOf("const removalSchema"));
+  assert.match(attach, /return null;/);
 });

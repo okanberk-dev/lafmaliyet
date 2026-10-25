@@ -174,7 +174,7 @@ export function CashOutDialog({
   const locked = !admin && line !== null && line.expenseEntryId !== null && !categories.some((c) => c.id === line.categoryId);
   // İstekte kategori değiştirilmez (yönetici onayda seçer); kapanmış günün fişi personele görünmez
   const categoryFixed = locked || (request !== null && line !== null);
-  const hidePhoto = request?.reason === "locked";
+  const hidePhoto = request?.reason === "locked" && line !== null;
   const checks: ReceiptCheck[] = reading?.checks ?? [];
   const warnFields = new Set<ReceiptField>(checks.filter((c) => c.level === "warn").flatMap((c) => c.fields));
   const suggested = reading && reading.confidence.categoryId === "high" ? categories.find((c) => c.id === reading.values.categoryId) : undefined;
@@ -328,8 +328,10 @@ export function CashOutDialog({
             <PhotoStatus phase={phase} />
             {uploaded?.readError ? <ReadError message={uploaded.readError} onRetry={uploaded.canRetry ? () => onRetry(uploaded.photo.id) : undefined} busy={busyPhoto} /> : null}
             {fresh && !fresh.ok && fresh.error ? <p className="text-[13px] leading-5 text-bad">{fresh.error}</p> : null}
+            {/* İstekte fişli satırın türü salt okunur (fişli satır alışveriştir; fiş bu yoldan değişmez) */}
+            {request && line ? <p className="text-[13px] text-ink-mute">Ne için: {draft.kind === "harcama" ? "Alışveriş / ödeme" : "Teslim"}</p> : null}
           </div>
-        ) : locked ? null : (
+        ) : locked && !request ? null : (
           <Field label="Ne için">
             <Segmented<CashOutKind>
               label="Ne için"

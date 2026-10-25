@@ -307,7 +307,7 @@ export async function reviewCashOutRequestCore(db: DB, me: CashOutActor, input: 
     );
     await supersede(tx, { kinds: ["kasa-cikan"], subject: row.subject, exceptId: row.id }, "Satır başka bir istekle düzeltildi", now);
     const request = await decide(tx, row, me, "approved", { note: input.note, resultId: cur.id }, now);
-    return { status: "approved" as const, op: "duzelt" as const, request, payload, cashOutId: out.id, expenseId: out.expenseId, line, date: cur.date };
+    return { status: "approved" as const, op: "duzelt" as const, request, payload, cashOutId: out.id, expenseId: out.expenseId, line: { ...line, photoId: cur.photoId }, date: cur.date };
   });
 }
 
