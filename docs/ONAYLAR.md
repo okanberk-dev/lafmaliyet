@@ -95,9 +95,11 @@ sabah e-postası ve Son kararlar bunu yazar.
   reçete değişikliği · 1 geç zayi / ikram · en eskisi 2 gündür" ([BUGUN.md](BUGUN.md)).
 - **Sabah e-postası:** "Onay bekleyenler" kutusu: "2 istek onay bekliyor", en eskisinin beklediği ve istek başına
   başlık ile isteyenin adı; karar verilene kadar her sabah.
-- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık) ve tercihi kaydeden eylem hazır, ama bu
-  dalgada bu konuya push gönderen bir yol yok; cihazdaki "Onay bildirimleri" anahtarı gönderen gelince (dalga 10b)
-  görünür. Gelince etiket `istek-<id>`, metinde tutar yok.
+- **Push:** konu `approvals` (aboneliğin `approvals` sütunu, varsayılan açık). Dalga 10b'den beri mal siparişi taslağı
+  bu konuyla gider: yöneticilere yeni ve güncellenen taslak ile geri alınan gönderim, personele kendi taslağının sonucu
+  ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 11). Öteki istekler push göndermez (zil, Bugün ve sabah e-postası). Etiket
+  `istek-<id>`, metinde tutar yok. Cihazdaki "Onay bildirimleri" anahtarı Hatırlatıcılarım'daki ve Karaoke'deki **Bu
+  cihazda uyarılar** kartında.
 - **İşlem geçmişi:** eylem adları her türün kendi maddesinde; ayrıntıda nedenin yalnız ilk 200 karakteri. Genel geri
   çekme "Kasa düzeltmesi geri çekildi", "Geç zayi / ikram isteği geri çekildi" gibi türün adıyla yazılır.
 
