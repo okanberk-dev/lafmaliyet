@@ -743,14 +743,16 @@ export async function restoreInvoice(snapshot: z.input<typeof snapshotSchema> & 
     const db = getDb();
     const out = await db.transaction(async (tx) => {
       const [r] = await tx.insert(s.invoices).values(row).returning({ id: s.invoices.id });
-      if (!links) return { id: r.id, lost: 0 };
+      if (!links) return { id: r.id, lost: 0, missed: 0 };
       const res = await reattachInvoiceLinks(tx, r.id, links, me.name, { supplier: row.supplier, taxNumber: row.supplierTaxNumber ?? null });
-      return { id: r.id, lost: res.lost };
+      return { id: r.id, lost: res.lost, missed: new Set(links.debtIds).size - res.relinked };
     });
     const lost = out.lost > 0.005 ? ` · ${tl(out.lost, 2)} ödeme yeniden sayılamadı, hesapta kaldı` : "";
-    await logActivity(me, "Silinen fatura geri alındı", `${dateTR(row.date)} ${row.supplier} ${row.invoiceNo ?? ""}`.trim() + lost);
+    // Bu arada değişen (başka faturaya bağlanan, silinen) alım yeniden bağlanmaz: söylenir (gideri Aylık harcamalar'da)
+    const missed = out.missed > 0 ? `${out.missed} faturasız alım yeniden bağlanamadı (bu arada değişti); Tedarikçiler'den Faturası geldi ile bağlayın.` : "";
+    await logActivity(me, "Silinen fatura geri alındı", `${dateTR(row.date)} ${row.supplier} ${row.invoiceNo ?? ""}`.trim() + lost + (missed ? ` · ${missed}` : ""));
     refresh();
-    return { id: out.id };
+    return missed ? { id: out.id, message: `${splitSupplier(row.supplier).base} · ${dateTR(row.date)}. ${missed}` } : { id: out.id };
   });
 }
 

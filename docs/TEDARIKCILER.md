@@ -272,7 +272,8 @@ silinir (kasaya açtığı satırsa o da silinir).
 - Fatura silinmeden önce bağları çözülür (elle silme, Paraşüt iptali): bağlı faturasız alım eski hâline döner, gider
   kaydı yeniden yazılır, faturaya sayılan para ödemenin hesabına geçer. Elle silinen faturayı "Geri al" bağlarıyla
   geri getirir (para hâlâ hesaptaysa); silinen Paraşüt faturası geri alınınca bağlı alımlar (hâlâ bağsızsa) yeniden
-  bağlanır, ödemeler hesapta kalır.
+  bağlanır, ödemeler hesapta kalır. Alım hangi kartın olursa olsun yeniden bağlanır (fatura başka tedarikçide
+  görünebilir); bu arada değişen alım bağlanamazsa bildirim söyler.
 - Ödemesi sayılmış ya da faturasız alımı bağlı faturayı başka karta taşıyan değişiklik reddedilir: kartın adı, diğer
   adları, vergi nosu (hangi kart düzenlenirse düzenlensin), yeni kart ve Faturalar'da faturanın tedarikçi adı.
 - Kalan borç, dağıtım ve ödendi işaretini yalnız `src/server/cari/settle.ts` yazar (kart satırı kilitlenir: aynı

@@ -755,6 +755,44 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.equal((await db.select().from(s.expenseEntries)).length, 0, "gider yalnız faturada");
   });
 
+  test("silinen fatura geri alınınca başka kartın ya da kartsız tedarikçinin faturasına bağlı alım da yeniden bağlanır; bağlanamayan söylenir", async () => {
+    const c = await card();
+    await card("Pınar");
+    const cat = await category();
+    const today = todayTR();
+    const debt = async (amount: number, description: string) => (ok(await addDebt(c.id, { amount, date: today, costMode: "gider", categoryId: cat.id, description })) as { id: number }).id;
+    const expensesOf = async (debtId: number) => (await db.select().from(s.expenseEntries)).filter((e) => e.supplierEntryId === debtId).length;
+    const linkedTo = async (debtId: number) => (await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debtId)))[0].invoiceId;
+    // Kartsız tedarikçinin faturası (ad eklenmeden) ve başka kartın faturası
+    const d1 = await debt(1000, "süt");
+    const f1 = await invoice({ payable: 1000, date: today, supplier: "Bakkal Bey", invoiceNo: "BB1" });
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [d1], invoiceId: f1.id }));
+    const d2 = await debt(500, "kaymak");
+    const f2 = await invoice({ payable: 500, date: today, supplier: "Pınar", invoiceNo: "PN1" });
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [d2], invoiceId: f2.id }));
+    let restored = 0;
+    for (const [f, d] of [
+      [f1, d1],
+      [f2, d2],
+    ] as const) {
+      assert.equal(await expensesOf(d), 0);
+      const del = ok(await invoices.deleteInvoice(f.id));
+      assert.equal(await expensesOf(d), 1, "silme gider kaydını yeniden yazar");
+      const r = ok(await invoices.restoreInvoice(del.snapshot!));
+      assert.equal(await linkedTo(d), r.id, `${f.invoiceNo}: alım yeniden bağlandı`);
+      assert.equal(await expensesOf(d), 0, `${f.invoiceNo}: gider yalnız faturada (iki kez sayılmaz)`);
+      assert.equal("message" in r, false);
+      if (f === f1) restored = r.id;
+    }
+    // Bu arada başka faturaya bağlanan alım yeniden bağlanamaz: geri alma bunu söyler
+    const del = ok(await invoices.deleteInvoice(restored));
+    const f3 = await invoice({ payable: 1000, date: today, invoiceNo: "SUT9" });
+    ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [d1], invoiceId: f3.id }));
+    const r = ok(await invoices.restoreInvoice(del.snapshot!));
+    assert.equal(await linkedTo(d1), f3.id);
+    assert.match(r.message ?? "", /1 faturasız alım yeniden bağlanamadı/);
+  });
+
   test("nakit planı K19: faturası gelecek borcun kartı vergi noyla bağlanan tüzel addaki faturaların tahminini de düşürür", async () => {
     const VKN = "1234567808";
     const c = await card("Sütaş", { taxNumber: VKN });

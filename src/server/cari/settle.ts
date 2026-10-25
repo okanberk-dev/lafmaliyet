@@ -633,8 +633,10 @@ export async function releaseInvoiceLinks(tx: Tx, invoiceId: number, by = "Siste
 }
 
 /**
- * Silinen fatura geri gelince (yeni kimlikle) bağları yeniden kurulur: borç hâlâ bağsızsa yeniden bağlanır, ödemenin
- * hesabında yer varsa dağıtım yeniden yazılır; yoksa para hesapta kalır. Döner: yeniden yazılamayan tutar.
+ * Silinen fatura geri gelince (yeni kimlikle) bağları yeniden kurulur: borç hâlâ bağsızsa yeniden bağlanır (kartı ne
+ * olursa olsun: alım başka kartın ya da kartsız tedarikçinin faturasına bağlanabilir, R3d), ödemenin hesabında yer
+ * varsa dağıtım yeniden yazılır; yoksa para hesapta kalır. Döner: yeniden bağlanan alım sayısı (çağıran kopyadaki
+ * sayıyla karşılaştırıp bağlanamayanı söyler) ve yeniden yazılamayan tutar.
  */
 export async function reattachInvoiceLinks(
   tx: Tx,
@@ -644,26 +646,24 @@ export async function reattachInvoiceLinks(
   owner: { supplier: string; taxNumber: string | null },
 ): Promise<{ relinked: number; lost: number }> {
   let lost = 0;
-  // Yalnız faturanın kartının kayıtları (kopya istemciden gelir: yeniden doğrulanır, başka kartın parası sayılmaz)
+  // Ödemeler yalnız faturanın kartının (kopya istemciden gelir: yeniden doğrulanır, başka kartın parası sayılmaz).
+  // Borçlar silinirken bu faturaya bağlı olanlar, kartı ne olursa olsun; her borcun kendi kartı kilitlenir
   const cardId = (await cardResolver(tx))(owner.supplier, owner.taxNumber);
-  const mine = <R extends { card: number }>(rows: R[]) => rows.filter((r) => cardId !== null && r.card === cardId);
   const payments = links.allocations.length
-    ? mine(
+    ? (
         await tx
           .select({ id: s.supplierEntries.id, card: s.supplierEntries.supplierId })
           .from(s.supplierEntries)
-          .where(and(inArray(s.supplierEntries.id, uniq(links.allocations.map((a) => a.paymentId))), eq(s.supplierEntries.kind, "odeme"))),
-      )
+          .where(and(inArray(s.supplierEntries.id, uniq(links.allocations.map((a) => a.paymentId))), eq(s.supplierEntries.kind, "odeme")))
+      ).filter((r) => cardId !== null && r.card === cardId)
     : [];
   const debts = links.debtIds.length
-    ? mine(
-        await tx
-          .select({ id: s.supplierEntries.id, card: s.supplierEntries.supplierId, invoiceId: s.supplierEntries.invoiceId, kind: s.supplierEntries.kind })
-          .from(s.supplierEntries)
-          .where(inArray(s.supplierEntries.id, uniq(links.debtIds))),
-      )
+    ? await tx
+        .select({ id: s.supplierEntries.id, card: s.supplierEntries.supplierId, invoiceId: s.supplierEntries.invoiceId, kind: s.supplierEntries.kind })
+        .from(s.supplierEntries)
+        .where(inArray(s.supplierEntries.id, uniq(links.debtIds)))
     : [];
-  await lockCards(tx, [...payments.map((p) => p.card), ...debts.map((d) => d.card)]);
+  await lockCards(tx, [...payments.map((p) => p.card), ...debts.map((d) => d.card), ...(cardId !== null && debts.length ? [cardId] : [])]);
   const free = debts.filter((d) => d.kind === "borc" && d.invoiceId === null).map((d) => d.id);
   if (free.length) await linkDebts(tx, free, invoiceId);
   const credits = new Map<number, number>();
