@@ -11,8 +11,8 @@ const PHOTO_CACHE = "private, no-cache";
 
 /**
  * Fotoğrafın kendisi (GET /api/foto/{id}): panelde fotoğrafın tek adresi. Giriş, sonra türün kuralı (yönetici hepsini,
- * personel yalnız hâlâ düzenleyebildiği günleri görür), sonra baytlar. Blob'a hiçbir zaman yönlendirmez. Tür koklanmaz,
- * belge olarak açılırsa hiçbir şey çalıştırmaz (CSP sandbox).
+ * personel kasada yalnız hâlâ düzenleyebildiği günleri, kontrol listelerinde son 7 günü görür), sonra baytlar. Blob'a
+ * hiçbir zaman yönlendirmez. Tür koklanmaz, belge olarak açılırsa hiçbir şey çalıştırmaz (CSP sandbox).
  *
  * Tarayıcı kopyayı tutar ama her gösterişte sunucuya sorar ("no-cache" + ETag): ortak bar ya da kasa bilgisayarında
  * yönetici çıkış yaptıktan sonra personel geçmişten açsa da yetki yeniden denetlenir (önceden bir saat sorulmadan

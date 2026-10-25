@@ -95,6 +95,9 @@ and who did it when, with photos for the visible states. Today nothing is record
     raise "Açılış gecikti" the same day.
 13. **Staff never see costs** — the feature has no money at all. Staff see only lists with `staffAllowed`, only today's
     business day, and only photos of today's and yesterday's runs. Staff never see the history or the editor.
+    *Note (24 Oct 2026, wave 10 §2.5, `docs/planlar/personel-yetki.md`):* staff now see a read-only history of the last
+    7 days (`/panel/kontrol/gecmis`) of the lists they can fill, from the day a list was opened to staff
+    (`staff_since`), and the photos of those runs; the editor stays admin-only (`ADMIN_ONLY_PATHS`).
 14. **Routes.** `/panel/kontrol` (today's lists, both roles), `/panel/kontrol/[id]` (fill one list, both roles),
     `/panel/kontrol/gecmis` and `/panel/kontrol/duzenle[/id]` (admin; `requireAdmin()` in the page). `STAFF_PATHS`
     gains `/panel/kontrol`, so the proxy lets staff reach the admin sub-URLs, and the pages redirect them — the same

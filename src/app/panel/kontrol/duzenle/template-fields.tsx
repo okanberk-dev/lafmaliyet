@@ -87,7 +87,7 @@ export function TemplateFields({
       </Field>
       <ToggleRow
         title="Personel doldurabilir"
-        description="Kapalıysa listeyi yalnız yöneticiler görür ve doldurur."
+        description="Açıksa personel bu listeyi doldurur ve açtığınız andan sonraki kayıtların son 7 gününü (notlar, değerler, fotoğraflar) görür."
         checked={v.staffAllowed}
         onChange={(x) => set("staffAllowed", x)}
         label="Personel doldurabilir"

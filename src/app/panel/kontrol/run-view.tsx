@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 
 import { PhotoViewer } from "@/components/panel/photo-viewer";
 import { Badge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import {
   earlyStart,
@@ -47,6 +48,13 @@ export interface RunViewProps {
   answers: AnswerLite[];
   /** Fotoğrafların 60 günlük saklaması bu gün için doldu mu (sunucu hesaplar) */
   photosExpired: boolean;
+  /**
+   * Yöneticinin denetim işaretleri ("Erken dolduruldu"): personelin geçmişinde kapalı, eşik öğrenilmesin (dalga 10
+   * §2.5). Verilmezse açık
+   */
+  audit?: boolean;
+  /** Bugünün listesi hâlâ doldurulabiliyorsa doldurma ekranının adresi ("Listeyi aç") */
+  openHref?: string | null;
 }
 
 /** "Ayşe 08:51–09:12, Mehmet 09:40": kişi başına ilk ve son yanıtın saati */
@@ -97,7 +105,7 @@ export function RunView(p: RunViewProps) {
         ? { tone: "gray" as const, text: "Başlanmadı" }
         : { tone: "red" as const, text: "Yapılmadı" };
   const flags = [
-    started && earlyStart({ date: p.day, opensAt: p.opensAt, firstAt: summary.firstAt }) && summary.firstAt ? `Erken dolduruldu (${timeTR(summary.firstAt)})` : null,
+    p.audit !== false && started && earlyStart({ date: p.day, opensAt: p.opensAt, firstAt: summary.firstAt }) && summary.firstAt ? `Erken dolduruldu (${timeTR(summary.firstAt)})` : null,
     summary.complete && lateFinish({ date: p.day, dueAt: p.dueAt, completedAt: p.completedAt }) && p.completedAt ? `Geç tamamlandı (${timeTR(p.completedAt)})` : null,
   ].filter((f): f is string => Boolean(f));
   return (
@@ -115,6 +123,11 @@ export function RunView(p: RunViewProps) {
                 {f}
               </Badge>
             ))}
+            {p.openHref ? (
+              <ButtonLink href={p.openHref} variant="secondary" size="sm" className="pointer-coarse:h-11">
+                Listeyi aç
+              </ButtonLink>
+            ) : null}
           </>
         }
       />

@@ -182,7 +182,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     const noted = await write("staff", { op: "note", itemId: item.photo, note: "sağ köşe ıslak" });
     assert.equal(noted.answer?.note, "sağ köşe ıslak");
     assert.equal(noted.answer?.photoId, second);
-    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true });
+    assert.deepEqual(await photoRun(db, second), { date: DAY, staffAllowed: true, staffSince: null });
     assert.equal(await photoRun(db, foreign), null);
     // Tamam geri alınınca liste eksilir, yeniden işaretlenince tamamlanır
     const undo = await write("staff", { op: "clear", itemId: item.check });
@@ -212,7 +212,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     await refused(write("staff", { op: "ok", itemId: item.check }), /kapalı/);
     // Pasif liste günün listelerinde yok (Bugün, zil, e-posta), kaydı geçmişte kalır
     assert.ok(!(await loadChecklistDay(db, DAY, "admin", { today: DAY, photos: true })).some((l) => l.templateId === tid));
-    assert.ok((await loadHistory(db, DAY, DAY, { today: DAY, photos: true }))[0].lists.some((l) => l.template.id === tid && l.run !== null));
+    assert.ok((await loadHistory(db, DAY, DAY, "admin", { today: DAY, photos: true }))[0].lists.some((l) => l.template.id === tid && l.run !== null));
     await db.update(s.checklistTemplates).set({ active: true, inactiveFrom: null }).where(eq(s.checklistTemplates.id, tid));
   });
 
@@ -239,7 +239,7 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     assert.deepEqual(both.get(DAY), adminDay);
     assert.deepEqual(both.get("2026-10-21"), await loadChecklistDay(db, "2026-10-21", "admin", { today: DAY, photos: true }));
 
-    const history = await loadHistory(db, "2026-10-21", DAY, { today: DAY, photos: true });
+    const history = await loadHistory(db, "2026-10-21", DAY, "admin", { today: DAY, photos: true });
     assert.deepEqual(
       history.map((h) => h.day),
       [DAY, "2026-10-21"],
@@ -250,5 +250,35 @@ describe("Kontrol listeleri: veritabanında yanıt yazımı", { skip: !URL && "K
     // Dün beklenen ama açılmamış liste geçmişte kayıtsız görünür
     assert.equal(history[1].lists.find((l) => l.template.id === tid)?.run, null);
     assert.ok((await firstChecklistDay(db))! <= DAY);
+  });
+  test("personelin geçmişi (dalga 10 §2.5): yalnız personel listeleri; bugün personele açılan listenin eski kaydı görünmez; pasif personel listesinin geçmişi görünür", async () => {
+    const ctx = { today: DAY, photos: true };
+    const [adminItem] = await db.select({ id: s.checklistItems.id }).from(s.checklistItems).where(eq(s.checklistItems.templateId, adminOnly)).limit(1);
+    // Yönetici listesine dün kayıt
+    await writeAnswer(db, users.admin, { templateId: adminOnly, date: "2026-10-21", itemId: adminItem.id, op: "ok" }, tr("2026-10-21T14:00"), deps);
+    const adminHistory = await loadHistory(db, "2026-10-21", DAY, "admin", ctx);
+    assert.ok(adminHistory[1].lists.some((l) => l.template.id === adminOnly && l.run !== null));
+    const staffHistory = await loadHistory(db, "2026-10-21", DAY, "staff", ctx);
+    assert.ok(staffHistory.every((d) => !d.lists.some((l) => l.template.id === adminOnly)));
+    assert.ok(staffHistory[0].lists.some((l) => l.template.id === tid && l.run !== null));
+
+    // Bugün 10:00'da personele açıldı: bugünün listesi görünür, dünkü kaydı görünmez (ne geçmişte ne günün listelerinde)
+    await db.update(s.checklistTemplates).set({ staffAllowed: true, staffSince: tr("2026-10-22T10:00") }).where(eq(s.checklistTemplates.id, adminOnly));
+    const opened = await loadHistory(db, "2026-10-21", DAY, "staff", ctx);
+    assert.ok(opened[0].lists.some((l) => l.template.id === adminOnly));
+    assert.ok(!opened[1].lists.some((l) => l.template.id === adminOnly));
+    const days = await loadChecklistDays(db, [DAY, "2026-10-21"], "staff", ctx);
+    assert.ok(days.get(DAY)!.some((l) => l.templateId === adminOnly));
+    assert.ok(!days.get("2026-10-21")!.some((l) => l.templateId === adminOnly));
+    // Yönetici yine hepsini görür
+    assert.ok((await loadHistory(db, "2026-10-21", DAY, "admin", ctx))[1].lists.some((l) => l.template.id === adminOnly && l.run !== null));
+
+    // Pasif personel listesinin geçmişi görünür (günün listelerinde değil)
+    await db.update(s.checklistTemplates).set({ active: false, inactiveFrom: tr("2026-10-22T13:00") }).where(eq(s.checklistTemplates.id, tid));
+    const inactive = await loadHistory(db, DAY, DAY, "staff", ctx);
+    assert.ok(inactive[0].lists.some((l) => l.template.id === tid && l.run !== null));
+    assert.ok(!(await loadChecklistDay(db, DAY, "staff", ctx)).some((l) => l.templateId === tid));
+    await db.update(s.checklistTemplates).set({ active: true, inactiveFrom: null }).where(eq(s.checklistTemplates.id, tid));
+    await db.update(s.checklistTemplates).set({ staffAllowed: false, staffSince: null }).where(eq(s.checklistTemplates.id, adminOnly));
   });
 });

@@ -47,6 +47,9 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 ## 3. Kim doldurur, nasıl kaydedilir
 
 - Personel ve yönetici doldurur. Listede **Personel doldurabilir** kapalıysa listeyi yalnız yönetici görür ve doldurur.
+  Açılınca o an `checklist_templates.staff_since`'e yazılır (dalga 10 §2.5): personel Geçmiş'te bu listenin yalnız
+  o günden sonraki kayıtlarını görür; yöneticinin eski notları ve fotoğrafları personele açılmaz. Boş değer "baştan
+  beri" demektir (dalgadan önce personele açık olan listeler).
 - Aynı listeyi birden çok kişi aynı anda doldurabilir. Her dokunuş hemen yazılır; aynı maddede son yazan geçer, önceki
   hâli maddenin altında "Önce: 6 °C · 09:12 Ayşe" olarak kalır (en çok 10). Fotoğrafta yeniden çekme "Önce: Başka bir
   fotoğraf", not değişikliği "Önce: Aynı fotoğraf" ve o zamanki not olarak görünür.
@@ -68,7 +71,9 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 - **60 gün saklanır** (kaydın gününden). Süresi dolan fotoğrafı sabah işi siler (fotoğrafların ortak temizliği,
   [FOTOGRAF.md](FOTOGRAF.md) § 4); madde "Fotoğraf çekildi · 60 günden eski olduğu için silindi" der, kaydın kendisi
   kalır. Yeniden çekilen fotoğrafın eskisi hemen silinir.
-- **Kim görür:** yönetici hepsini; personel yalnız personelin doldurduğu listelerin bugünkü ve dünkü fotoğraflarını.
+- **Kim görür:** yönetici hepsini; personel yalnız personelin doldurduğu listelerin son 7 gündeki (iş günü, bugün
+  dahil) fotoğraflarını, liste personele açıldıktan sonraki günlerden (`photoAccess`; Geçmiş'le aynı pencere,
+  `STAFF_HISTORY_DAYS`). Gün 05:00'te döner: 23 Ekim 04:59'da 16 Ekim görünür, 05:00'te görünmez.
   Fotoğraf panelin kendi adresinden, oturumla açılır (`/api/foto/[id]`); e-postaya ve zile fotoğraf adresi yazılmaz.
 - Fotoğraflar mekânın içindir: maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der (KVKK).
 - Fotoğraf deposu (Vercel Blob) bağlı değilse fotoğraflı maddeler yeni kayıtlara girmez; Listeler ekranı ve doldurma
@@ -78,9 +83,9 @@ Maddeler bölümlere ayrılır (Bar, Salon, Karaoke odası…); maddenin açıkl
 
 | Ekran | Kimde | İçerik |
 |-------|-------|--------|
-| **Bugün** (`/panel/kontrol`) | İkisi | Bugünün listeleri açılış saatine göre: durum (Sonra, Yapılacak, Gecikti, Tamam), ilerleme ("3 / 13 madde · 1 fotoğraf kaldı"), dolduranlar; sıradaki liste vurgulu. Yöneticide sekmeler ve "Bugün olmayan listeler" satırı (pasif, günü değil, yarından) |
+| **Bugün** (`/panel/kontrol`) | İkisi | Bugünün listeleri açılış saatine göre: durum (Sonra, Yapılacak, Gecikti, Tamam), ilerleme ("3 / 13 madde · 1 fotoğraf kaldı"), dolduranlar; sıradaki liste vurgulu. Sekmeler: yöneticide Bugün · Geçmiş · Listeler, personelde Bugün · Geçmiş. Yöneticide "Bugün olmayan listeler" satırı (pasif, günü değil, yarından) |
 | **Doldurma** (`/panel/kontrol/[id]`) | İkisi | Maddeler bölüm bölüm; üstte yapışkan ilerleme çubuğu; bitince "Liste tamam · 09:12 · Ayşe ve Mehmet". 05:00–05:30 arasında başlanmış ama bitmemiş dünkü liste açılır |
-| **Geçmiş** (`/panel/kontrol/gecmis`) | Yönetici | Son 14 gün (her gün listelerin durumu, eksik, sorun), "Daha eski günler". Gün açılınca her liste: kim ne zaman (kişi başına ilk ve son yanıt), erken / geç işareti, maddeler, önceki hâller, aralık dışı değerler, fotoğraflar (dokununca büyür) |
+| **Geçmiş** (`/panel/kontrol/gecmis`) | İkisi | Yönetici: son 14 gün (her gün listelerin durumu, eksik, sorun), "Daha eski günler". Gün açılınca her liste: kim ne zaman (kişi başına ilk ve son yanıt), erken / geç işareti, maddeler, önceki hâller, aralık dışı değerler, fotoğraflar (dokununca büyür). Personel (dalga 10 §2.5): yalnız doldurabildiği listelerin **son 7 günü**, salt okunur; "Daha eski günler" yok, 7 günden eski `?gun=` ve her `?bitis=` yok sayılır (7 günlük liste gösterilir); "Erken dolduruldu" rozeti gösterilmez (eşik öğrenilmesin). İki rolde bugünün ayrıntısında başlamış ya da aralığı açılmış listenin yanında "Listeyi aç" |
 | **Listeler** (`/panel/kontrol/duzenle`) | Yönetici | Yeni liste; ad, açıklama, saat aralığı (son saat 02:00 olabilir), günler, Personel doldurabilir, Etkin. Maddeler: ekle, düzenle, bölüm içinde yukarı / aşağı, kaldır (kaldırılan geçmişte kalır, "Kaldırılan maddeler"den geri eklenir). Kaydı olan liste silinmez, pasife alınır |
 
 Ekran liste saatlerinde ve sekmeye geri dönülünce kendiliğinden yenilenir.
@@ -91,7 +96,10 @@ Ekran liste saatlerinde ve sekmeye geri dönülünce kendiliğinden yenilenir.
 "Sonra", aralıkta "Yapılacak" (başladıysa "3 / 13 madde · Ayşe · son saat 11:00"), son saatten sonra "Gecikti",
 bitince "Tamam" (kim, saat, fotoğraf sayısı; yöneticide açık sorun varsa "1 sorun"). Yöneticiye ayrıca dünün
 tamamlanmayan ya da sorunlu listeleri tek satır (`liste-dun`, Geçmiş'in o gününe götürür); o gün kasa raporu da
-yoksa "kafe kapalıysa önemsemeyin" der.
+yoksa "kafe kapalıysa önemsemeyin" der. Personelde de aynı satır (dalga 10 §2.5) ama sorun değil yapılacaktır: yalnız
+açık sorunlar ve başlamış listelerin eksik maddeleri yazılır; hiç açılmamış liste yalnız dünün kasa raporu varken
+(kafe açıktı) yazılır. Rozet "1 eksik" / "2 sorun", eylem "Geçmişe bak", `kasa-dun`'dan hemen sonra gelir ve başka
+yapılacak satır varken sıradaki iş olmaz. Dün onaylı kapalıysa (§2.9) ve liste açılmadıysa satır yok.
 
 **Zil** (Kontrol listeleri başlığı, kasanın ardından):
 

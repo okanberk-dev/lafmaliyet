@@ -56,7 +56,7 @@ async function ChecklistsContent() {
   });
   return (
     <>
-      <PageHeader eyebrow="Günlük" title={TITLE} description={DESCRIPTION} tabs={admin ? <KontrolTabs current="/panel/kontrol" /> : undefined} />
+      <PageHeader eyebrow="Günlük" title={TITLE} description={DESCRIPTION} tabs={<KontrolTabs current="/panel/kontrol" role={user.role} />} />
       <TodayRefresh at={nextRefreshAt(now, checklistBoundaries({ day, lists }))} renderedAt={now.toISOString()} />
       {lists.length ? (
         <div className="grid gap-4 lg:grid-cols-2">

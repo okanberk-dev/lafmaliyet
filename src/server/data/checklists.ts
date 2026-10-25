@@ -52,8 +52,9 @@ export function loadRunView(templateId: number, day: string, now: Date = new Dat
   return store.loadRunView(getDb(), templateId, day, ctxOf(now));
 }
 
-export function loadChecklistHistory(from: string, to: string, now: Date = new Date()) {
-  return store.loadHistory(getDb(), from, to, ctxOf(now));
+/** Geçmiş: personel yalnız kendi doldurabildiği listeleri, listenin personele açıldığı günden görür (aralık çağıranın) */
+export function loadChecklistHistory(from: string, to: string, role: "admin" | "staff", now: Date = new Date()) {
+  return store.loadHistory(getDb(), from, to, role, ctxOf(now));
 }
 
 export function firstChecklistDay() {
@@ -98,7 +99,8 @@ export async function logAnswerActivity(me: CurrentUser, r: store.WriteResult): 
 
 /**
  * Kontrol fotoğrafını personel görür mü (yönetici ve bağlanmamış fotoğrafın yükleyeni buraya gelmez,
- * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin bugünkü ya da dünkü kaydındaki fotoğraf.
+ * src/lib/photo-rules.ts photoViewDecision): personelin doldurduğu listenin son 7 gündeki kaydındaki fotoğraf, liste
+ * personele açıldıktan sonraki günlerden (Kontrol geçmişiyle aynı pencere, STAFF_HISTORY_DAYS).
  */
 export const kontrolPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.kontrol,

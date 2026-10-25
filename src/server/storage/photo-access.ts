@@ -24,7 +24,7 @@ export const PHOTO_RULES: Record<PhotoKind, PhotoKindRules> = {
   "kasa-z": cashPhotoRules,
   "kasa-pos": cashPhotoRules,
   fis: receiptPhotoRules,
-  // Kontrol listeleri: personel yalnız kendi doldurabildiği listenin bugünkü ve dünkü fotoğraflarını (src/lib/checklists.ts photoAccess)
+  // Kontrol listeleri: personel yalnız kendi doldurabildiği listenin son 7 günkü fotoğraflarını (src/lib/checklists.ts photoAccess)
   kontrol: kontrolPhotoRules,
 };
 

@@ -696,7 +696,7 @@ test("kontrol 3. tamam: kim ve saat, geç ve fotoğraf sayısı; açık sorun y�
   assert.ok(byKey(dayTasks(admin(tr("2026-10-22T12:00"), { checklists: long })))["liste-1"].detail.length <= 140);
 });
 
-test("kontrol 4. dünkü listeler yalnız yöneticide, yalnız eksik ya da sorun varken; dünün kasa raporu da yoksa kafe kapalı olabilir", () => {
+test("kontrol 4. dünkü listeler yalnız eksik ya da sorun varken (personelde yapılacak, tests/kontrol-gecmis.test.ts); dünün kasa raporu da yoksa kafe kapalı olabilir", () => {
   const yesterday = { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 }), checklist(2, "Kapanış", "22:00", "02:00", { done: 13, required: 16 })] };
   const row = byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday, cash: { today: null, yesterday: report("2026-10-21"), firstDate: "2026-10-01" } })))["liste-dun"];
   assert.equal(row.status, "warn");
@@ -722,8 +722,11 @@ test("kontrol 4. dünkü listeler yalnız yöneticide, yalnız eksik ya da sorun
   // Hepsi tamam ve sorunsuz: satır yok; kasa hiç kullanılmadıysa not yok
   assert.ok(!keys(dayTasks(admin(NOON, { checklistsYesterday: { day: "2026-10-21", lists: [checklist(1, "Açılış", "08:00", "11:00", { complete: true, done: 11 })] } }))).includes("liste-dun"));
   assert.doesNotMatch(byKey(dayTasks(admin(NOON, { checklistsYesterday: yesterday })))["liste-dun"].detail, /Kasa raporu/);
-  // Personelde hiç yok
-  assert.ok(!keys(dayTasks(staff(NOON, { checklistsYesterday: yesterday }))).includes("liste-dun"));
+  // Personelde (dalga 10 §2.5) sorun değil yapılacak, son 7 günün geçmişine götürür
+  const staffRow = byKey(dayTasks(staff(NOON, { checklistsYesterday: yesterday })))["liste-dun"];
+  assert.equal(staffRow.status, "todo");
+  assert.equal(staffRow.detail, "Kapanış: 3 madde yapılmadı");
+  assert.equal(staffRow.action, "Geçmişe bak");
 });
 
 test("kontrol 5. okunamadı: tek gri satır; olgu yoksa (eski olgular) satır yok", () => {

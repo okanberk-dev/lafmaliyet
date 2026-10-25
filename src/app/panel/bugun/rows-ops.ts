@@ -37,31 +37,39 @@ export const posRow: DayRow = (f) => {
 };
 
 /**
- * Yönetici: dünün listelerinden tamamlanmayan ya da sorunlu (düzeltilmiş ölçüm dahil) olan varsa tek satır. Dünün kasa
- * raporu da yoksa (kasa kullanılmaya başladıysa) kafe kapalı olabilir: açıklama bunu söyler. Personelin satırı (son 7
- * günün geçmişi) §2.5 ile gelir.
+ * Dünün kontrol listeleri (`liste-dun`). Yönetici: tamamlanmayan ya da sorunlu (düzeltilmiş ölçüm dahil) liste varsa
+ * sorunlu satır; dünün kasa raporu da yoksa (kasa kullanılmaya başladıysa) kafe kapalı olabilir, açıklama bunu söyler.
+ * Personel (dalga 10 §2.5): yapılacak satır (sorun değil), yalnız açık sorunlar ve başlamış listelerin eksik maddeleri;
+ * hiç açılmamış liste yalnız dünün kasa raporu varken (kafe açıktı) yazılır. İkisi de son günlerin geçmişine götürür
+ * ("Geçmişe bak"; personelde son 7 gün). Dün onaylı kapalıysa (§2.9) ve liste açılmadıysa satır yok; kapalı bildirimi
+ * beklerken açıklamanın sonunda not, yöneticiyi Onaylar'a götürür.
  */
 export const checklistYesterday: DayRow = (f, c) => {
   const y = f.checklistsYesterday;
-  if (f.role !== "admin" || !y) return null;
+  if (!y) return null;
+  const admin = f.role === "admin";
   // Dün kafe kapalıydı (dalga 10 §2.9; kasa grubunun olgusu): onaylıysa açılmamış listeler eksik sayılmaz
   const closed = f.closed?.yesterday ?? null;
   if (closed?.state === "approved" && !y.lists.some((l) => l.run)) return null;
-  const missing = y.lists.filter((l) => !l.run?.complete);
-  const problems = y.lists.flatMap((l) => l.run?.issues ?? []);
+  const cashMissing = f.cash !== null && f.cash.yesterday === null && f.cash.firstDate !== null && f.cash.firstDate <= c.yesterday;
+  // Personel: açılmamış liste yalnız kafe açıkken (dünün raporu var) yazılır; düzeltilmiş sorun yazılmaz
+  const cashThere = f.cash !== null && f.cash.yesterday !== null;
+  const missing = y.lists.filter((l) => !l.run?.complete && (admin || isStarted(l) || cashThere));
+  const problems = y.lists.flatMap((l) => l.run?.issues ?? []).filter((x) => admin || x.open);
   if (!missing.length && !problems.length) return null;
   const parts = [
     ...missing.map((l) => (isStarted(l) && l.run ? `${l.name}: ${num(l.run.required - l.run.done)} madde yapılmadı` : `${l.name}: hiç açılmadı`)),
     ...problems.map((x) => x.text),
   ];
-  const cashMissing = f.cash !== null && f.cash.yesterday === null && f.cash.firstDate !== null && f.cash.firstDate <= c.yesterday;
+  const pending = closed?.state === "pending";
+  const note = pending ? " · Personel kapalıydık dedi (onay bekliyor)" : admin && cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : "";
   return {
     key: "liste-dun",
     title: "Dünkü kontrol listeleri",
-    status: "warn",
+    status: admin ? "warn" : "todo",
     badge: missing.length ? `${num(missing.length)} eksik` : `${num(problems.length)} sorun`,
-    detail: `${clip(parts.join(" · "), 160)}${closed?.state === "pending" ? " · Personel kapalıydık dedi (onay bekliyor)" : cashMissing ? " · Kasa raporu da yok; kafe kapalıysa önemsemeyin." : ""}`,
-    ...(closed?.state === "pending"
+    detail: `${clip(parts.join(" · "), 160)}${note}`,
+    ...(pending && admin
       ? { href: closed.requestId ? `/panel/onaylar#istek-${closed.requestId}` : "/panel/onaylar", action: "Onaya bak" }
       : { href: `/panel/kontrol/gecmis?gun=${y.day}`, action: "Geçmişe bak" }),
   };
