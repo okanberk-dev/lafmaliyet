@@ -630,9 +630,10 @@ export async function deleteEntry(tx: Tx, id: number, confirmPast: readonly stri
  * Silinen kaydı aynı kimlikle geri yazar ("Geri al"). Kopya yeniden doğrulanır (R4b): dağıtımlar ancak hedef hâlâ
  * duruyorsa ve yeri varsa yazılır, sığmayan para hesapta kalır; ödemenin açtığı Kasa satırı aynı kimlikle geri gelir,
  * bağlandığı var olan satır başka bir ödemeye geçtiyse ya da silindiyse kayıt geri alınmaz. Borcun kendi gider kaydı
- * yeniden yazılır (kategorisi duruyorsa), sahiplendiği kayıt hâlâ boştaysa yeniden sahiplenilir. Döner: hesapta kalan.
+ * yeniden yazılır (kategorisi duruyorsa), sahiplendiği kayıt hâlâ boştaysa yeniden sahiplenilir; geçmiş ayın gideri
+ * değişiyorsa o ay onaylanmış olmalı (K18; yoksa NeedsPastConfirm, hiçbir şey yazılmaz). Döner: hesapta kalan.
  */
-export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Promise<{ card: Card; lost: number }> {
+export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot, confirmPast: readonly string[]): Promise<{ card: Card; lost: number; effects: MonthEffect[] }> {
   const card = await lockCard(tx, snap.entry.supplierId);
   const [taken] = await tx.select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(eq(s.supplierEntries.id, snap.entry.id)).limit(1);
   if (taken) throw new UserError("Bu kayıt zaten geri alındı");
@@ -653,14 +654,23 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Prom
   }
   let adoptId: number | null = null;
   let ownedRow: Omit<ExpenseRow, "createdAt" | "updatedAt"> | null = null;
+  // Gider değişimleri (geçmiş ay onayı): yeniden yazılan kendi kaydı, borca yeniden eşitlenen sahiplenilmiş kayıt
+  const changes: { date: string; delta: number }[] = [];
   if (e.kind === "borc" && snap.expense?.mode === "adopted") {
     const [x] = await tx.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, snap.expense.id)).for("update").limit(1);
-    if (x && x.supplierEntryId === null) adoptId = x.id;
+    if (x && x.supplierEntryId === null) {
+      adoptId = x.id;
+      changes.push({ date: x.date, delta: -x.amount }, { date: e.date, delta: e.amount });
+    }
   } else if (e.kind === "borc" && snap.expense?.mode === "owned") {
     const r = snap.expense.row;
     const [cat] = await tx.select({ id: s.expenseCategories.id }).from(s.expenseCategories).where(eq(s.expenseCategories.id, r.categoryId)).limit(1);
-    if (cat) ownedRow = r;
+    if (cat) {
+      ownedRow = r;
+      changes.push({ date: r.date, delta: r.amount });
+    }
   }
+  const effects = checkPast(changes, confirmPast);
   if ((costMode === "gider" && (categoryId === null || !ownedRow)) || (costMode === "mevcut" && adoptId === null)) {
     costMode = "fatura";
     categoryId = null;
@@ -735,7 +745,7 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot): Prom
     await recomputeAllocated(tx, touched);
     await resettle(tx, touched);
   }
-  return { card, lost };
+  return { card, lost, effects };
 }
 
 // ---------------------------------------------------------------- Dağıtım

@@ -96,8 +96,9 @@ function cariHints(
   if (!index.kasaPending.length) return out;
   const none: readonly number[] = [];
   const items = [
-    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId, apart: none }] : [])),
-    // Borç ekle'de "Ayrı alım" denen Teslim satırı o borcun ödemesi değil (satır başka kalem için işlenmemiş kalır)
+    // Borç ekle'de "Ayrı alım" denen Teslim satırı o borcun ödemesi değil (satır başka kalem için işlenmemiş kalır);
+    // borç faturasına bağlanınca faturanın da (faturaya bağlı borçların satırları)
+    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId, apart: index.kasaApartByInvoice.get(i.id) ?? none }] : [])),
     ...debts.map((d) => ({ ref: `cari:${d.id}`, date: d.date, cardId: d.cardId, apart: d.dismissedCashOutIds ?? none })),
   ];
   for (const it of items) {

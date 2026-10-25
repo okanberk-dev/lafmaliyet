@@ -266,11 +266,12 @@ export async function saveSupplierPayment(input: z.input<typeof paymentSchema>) 
 
 // ---------------------------------------------------------------- Silme ve geri alma
 
-const undoSchema = z.object({ v: z.literal(1), by: z.number().int(), exp: z.number(), snap: z.unknown() });
+/** `months`: silmede onaylanan geçmiş aylar (Geri al aynı gider kaydını aynı aya geri yazar; K18) */
+const undoSchema = z.object({ v: z.literal(1), by: z.number().int(), exp: z.number(), snap: z.unknown(), months: confirmSchema });
 
 /**
  * Kaydı siler (§3.4). Geri almak için mühürlü kopya döner (`undo`; istemci okuyamaz ve değiştiremez, 15 dakika). Borcun
- * kendi gider kaydı geçmiş aydaysa önce onay istenir.
+ * kendi gider kaydı geçmiş aydaysa önce onay istenir; onaylanan aylar kopyaya mühürlenir.
  */
 export async function deleteSupplierEntry(input: { id: number; confirmPast?: string[] }) {
   return attempt(async () => {
@@ -289,12 +290,15 @@ export async function deleteSupplierEntry(input: { id: number; confirmPast?: str
       await forgetPaid("cari", [e.id]);
     }
     refresh();
-    const undo = seal(JSON.stringify({ v: 1, by: me.id, exp: Date.now() + UNDO_MS, snap: snapshot }), UNDO_PURPOSE);
+    const undo = seal(JSON.stringify({ v: 1, by: me.id, exp: Date.now() + UNDO_MS, snap: snapshot, months: effects.map((x) => x.month) }), UNDO_PURPOSE);
     return { needs: null, undo, kind: e.kind, reopened, kept };
   });
 }
 
-/** Silinen kaydı aynı kimlikle geri getirir; kopya yeniden doğrulanır, sığmayan dağıtım hesapta kalır (R4b) */
+/**
+ * Silinen kaydı aynı kimlikle geri getirir; kopya yeniden doğrulanır, sığmayan dağıtım hesapta kalır (R4b). Geçmiş
+ * ayın gider kaydı yalnız silmede onaylanan aya geri yazılır (K18); başka bir geçmiş ay değişecekse yazılmaz.
+ */
 export async function restoreSupplierEntry(undo: string) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -309,12 +313,16 @@ export async function restoreSupplierEntry(undo: string) {
     }
     if (!parsed || parsed.by !== me.id || parsed.exp <= Date.now()) throw new UserError("Geri alma süresi doldu; kaydı yeniden girin");
     const snap = parsed.snap as EntrySnapshot;
-    const { card, lost } = await getDb().transaction((tx) => restoreEntry(tx, me, snap));
+    const months = parsed.months;
+    const r = await inTx((tx) => restoreEntry(tx, me, snap, months));
+    if (r.needs) throw new UserError(`Geri almak ${r.effects.map((x) => monthLabel(x.month)).join(", ")} giderini değiştiriyor (geçmiş ay); kaydı yeniden girin.`);
+    const { card, lost, effects } = r.value;
     const e = snap.entry;
     await logActivity(
       me,
       "Cari kaydı geri alındı",
-      [card.name, e.kind === "borc" ? "borç" : "ödeme", dateTR(e.date), tl(e.amount, 2), lost > EPS ? `${tl(lost, 2)} yeniden sayılamadı, hesapta` : ""].filter(Boolean).join(" · "),
+      [card.name, e.kind === "borc" ? "borç" : "ödeme", dateTR(e.date), tl(e.amount, 2), lost > EPS ? `${tl(lost, 2)} yeniden sayılamadı, hesapta` : ""].filter(Boolean).join(" · ") +
+        pastMonthLogSuffix(effects),
     );
     refresh();
     return { lost };

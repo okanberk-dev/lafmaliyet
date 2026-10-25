@@ -188,7 +188,8 @@ biri:
   (borç, satıra bağlı Kasadan ödeme ve tam dağıtım birlikte; önce satırın ödemesi sayılır, kalan varsa hesaptaki para;
   satır borçtan büyükse fark hesapta kalır), ya da **Ayrı alım** (borç açılır; alışveriş satırı ayrı tutulur, Teslim
   satırı tedarikçiye gerçek bir ödeme olduğu için işlenmemiş kalır ve Ödeme ekle › Kasadan'dan bağlanabilir; bu borç
-  için ayrı sayılır: Ödemeler'de borcu "Kasadan ödenmiş olabilir" diye sessize almaz, sabah e-postası hatırlatır).
+  için ayrı sayılır: Ödemeler'de borcu, borç faturasına bağlanınca da faturasını "Kasadan ödenmiş olabilir" diye
+  sessize almaz, sabah e-postası hatırlatır).
   Kime alanı ekle yazılsa da eşleşir ("Sütaş'a", "tedarikçiye (Sütaş)").
 - **Hesaptaki ödemeyi say** (hesapta para varsa; yeni borçta açık gelir, düzeltmede kapalı) ve **Ödendi** (borç,
   ödemesi ve dağıtımı birlikte). Düzeltmede sayılan para "Geri al"la ödemeden çıkar.
@@ -232,9 +233,9 @@ liste görünümü.
 **Geri al ve geçmiş ay:** her ekleme, düzeltme, dağıtım, bağlama ve çevirme bildirimdeki **Geri al** ile geri alınır;
 yeni ödemeler 30 gün Son ödenenler'de durur (Ödemeye çevir'le açılan ödeme oradan geri alınınca Kasa satırı alışverişe,
 gider kaydı yerine döner). Geçmiş bir ayın giderini değiştiren işlem (gider yazan borç, kip
-değişimi, silme, bağlama, Ödemeye çevir ve geri alınması) o ayı adıyla sorar; onaysız yazılmaz, işlem geçmişine "geçmiş
-ay değişti" düşer. Bildirimdeki Geri al işlemin kendi onayıyla geri alır (aynı kayıt aynı aya döner); Son ödenenler ayı
-yeniden sorar.
+değişimi, silme ve silinen kaydın geri alınması, bağlama, Ödemeye çevir ve geri alınması) o ayı adıyla sorar; onaysız
+yazılmaz, işlem geçmişine "geçmiş ay değişti" düşer. Bildirimdeki Geri al işlemin kendi onayıyla geri alır (aynı kayıt
+aynı aya döner; başka bir geçmiş ay değişecekse geri almaz); Son ödenenler ayı yeniden sorar.
 
 **Kasa bağı** ([KASA-RAPORU.md](KASA-RAPORU.md)): ödemeye bağlı Kasa satırını personel düzeltemez ve silemez
 ("Bu satır yöneticinin kaydına bağlı…"; tutar söylenmez). Yönetici satırın tutarını ve gününü düzeltince ödeme de

@@ -501,20 +501,20 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.deepEqual([del.reopened, del.kept], [2, 0]);
     assert.deepEqual([(await inv(f2.id)).unpaid, (await inv(f3.id)).unpaid], [true, true]);
     assert.equal((await inv(f3.id)).allocated, 250.5);
-    const back = await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot))));
+    const back = await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), []));
     assert.equal(back.lost, 0);
     assert.deepEqual([(await inv(f2.id)).unpaid, (await inv(f2.id)).paidByLedger, (await inv(f3.id)).allocated, (await inv(f3.id)).unpaid], [false, true, 1800, false]);
     const [again] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, p1.id));
     assert.equal(again.amount, 10000, "aynı kimlikle");
     await assert.rejects(
-      db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)))),
+      db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), [])),
       /zaten geri alındı/,
     );
 
     // Kasadan ödemenin silinmesi açtığı satırı da siler; geri alınca satır aynı kimlikle döner
     const delKasa = await db.transaction((tx) => entries.deleteEntry(tx, p2.id, []));
     assert.equal((await db.select().from(s.cashOuts)).length, 0);
-    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(delKasa.snapshot))));
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(delKasa.snapshot)), []));
     const [line2] = await db.select().from(s.cashOuts);
     assert.deepEqual([line2.id, line2.amount], [line.id, 2200]);
   });
@@ -547,7 +547,7 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.equal(kept.supplierEntryId, null);
     assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 400]]);
     // Geri alma: borç, sahiplenme ve dağıtım geri gelir
-    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot))));
+    await db.transaction((tx) => entries.restoreEntry(tx, me, JSON.parse(JSON.stringify(del.snapshot)), []));
     assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.id, own.id)))[0].supplierEntryId, b.id);
     assert.deepEqual([...(await settle.cardsWithCredit())], []);
   });

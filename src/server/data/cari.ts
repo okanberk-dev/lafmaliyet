@@ -74,6 +74,11 @@ export interface CariIndex {
   weak: (LinkCandidate & { cardId: number; debts: { id: number; date: string; description: string | null }[] })[];
   /** Son 60 günün işlenmemiş, bir kartın adıyla eşleşen Kasa satırları (Teslim ve fişsiz Alışveriş) */
   kasaPending: (KasaLine & { cardId: number })[];
+  /**
+   * Fatura → faturaya bağlı borçlarda Borç ekle'nin Kasa denetiminde "Ayrı alım" denmiş Teslim satırları (borcun
+   * `dismissedCashOutIds` birleşimi): alım faturasına bağlanınca fatura da o satırla sessize alınmaz
+   */
+  kasaApartByInvoice: Map<number, number[]>;
   /** Kartın tedarikçi sayfası (/panel/tedarikciler/<slug>); yalnız gerektiğinde hesaplanır */
   hrefOf: (cardId: number) => string | undefined;
 }
@@ -135,7 +140,25 @@ export async function loadCariIndex(today = todayTR(), opts: { unpaid?: Promise<
     const slug = slugs.get(cardId);
     return slug ? supplierHref(slug) : undefined;
   };
-  const out: CariIndex = { resolveCard, termDays, cards: cardMap, tracked, credit, openDebts, lateDebts: lateDebts(entries.debts, today), strong: [], weak: [], kasaPending: [], hrefOf };
+  const kasaApartByInvoice = new Map<number, number[]>();
+  for (const d of entries.debts) {
+    if (d.invoiceId === null || !d.dismissedCashOutIds.length) continue;
+    kasaApartByInvoice.set(d.invoiceId, [...new Set([...(kasaApartByInvoice.get(d.invoiceId) ?? []), ...d.dismissedCashOutIds])]);
+  }
+  const out: CariIndex = {
+    resolveCard,
+    termDays,
+    cards: cardMap,
+    tracked,
+    credit,
+    openDebts,
+    lateDebts: lateDebts(entries.debts, today),
+    strong: [],
+    weak: [],
+    kasaPending: [],
+    kasaApartByInvoice,
+    hrefOf,
+  };
   if (!cards.length) return out;
 
   // Fatura adayları: bağsız borcu olan kartların penceredeki faturaları

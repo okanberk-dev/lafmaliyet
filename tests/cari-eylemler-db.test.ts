@@ -601,6 +601,89 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.deepEqual(index.kasaPending.map((l) => l.id), [teslim.id], "satır Ödeme ekle › Kasadan için işlenmemiş kalır");
   });
 
+  test("Kasa denetimi 'Ayrı alım': borç faturasına bağlanınca fatura da aynı Teslim satırıyla sessize alınmaz (sabah e-postası hatırlatır)", async () => {
+    const c = await card();
+    const today = todayTR();
+    const teslim = await cashOut({ amount: 2200, date: today });
+    const r = ok(
+      await cari.saveSupplierDebt({
+        target: { cardId: c.id },
+        id: null,
+        date: today,
+        amount: 1250,
+        description: "süt",
+        costMode: "fatura",
+        categoryId: null,
+        adoptExpenseId: null,
+        dueDate: null,
+        note: null,
+        photoId: null,
+        applyCredit: false,
+        paid: null,
+        confirmPast: [],
+        kasaChoice: { action: "ayri", seen: [teslim.id] },
+      }),
+    );
+    const debtId = (r as { id: number }).id;
+    const sts1 = await invoice({ payable: 1300, date: today, dueDate: today, invoiceNo: "STS1" });
+    // Aynı günün bağsız faturası: "Ayrı alım" onun için denmedi, ipucu onda kalır
+    const sts2 = await invoice({ payable: 500, date: today, dueDate: today, invoiceNo: "STS2" });
+    assert.equal(ok(await cari.linkDebtsToInvoice({ cardId: c.id, debtIds: [debtId], invoiceId: sts1.id })).needs, null);
+    const digest = await import("../src/server/notify/digest");
+    const { dueNotifications } = await import("../src/lib/reminders");
+    const up = await digest.loadUpcoming(today);
+    const linked = up.items.find((i) => i.ref === `invoice:${sts1.id}`);
+    assert.ok(linked, "fatura listede");
+    assert.equal(linked.quiet, undefined, "alımda ayrı denen satır faturasını sessize almaz");
+    assert.equal(linked.hint, undefined);
+    assert.ok(dueNotifications(up.items).some((n) => n.item.ref === `invoice:${sts1.id}`), "sabah e-postası hatırlatır");
+    const other = up.items.find((i) => i.ref === `invoice:${sts2.id}`);
+    assert.equal(other?.quiet, "kasa");
+    assert.equal(other?.hint?.kind === "kasa" ? other.hint.cashOutId : null, teslim.id);
+  });
+
+  test("K18: silinen borcun Geri al'ı geçmiş ayın giderini silmenin onayıyla yazar, onaylanmamış ayı yazmaz; işlem geçmişine düşer", async () => {
+    const c = await card();
+    const cat = await category();
+    const today = todayTR();
+    const past = addDays(`${today.slice(0, 8)}01`, -3);
+    const month = past.slice(0, 7);
+    const lastLog = async () => (await db.select().from(s.activityLog).orderBy(asc(s.activityLog.id))).at(-1)!;
+    const gider = async () => {
+      const r = ok(await addDebt(c.id, { amount: 300, date: past, description: "kaşar", costMode: "gider", categoryId: cat.id, confirmPast: [month] }));
+      assert.equal(r.needs, null);
+      return (r as { id: number }).id;
+    };
+
+    // Bildirimdeki Geri al: silmede onaylanan ay mühürde, gider kaydı aynı aya döner
+    const a = await gider();
+    assert.equal(ok(await cari.deleteSupplierEntry({ id: a })).needs, "past");
+    const del = ok(await cari.deleteSupplierEntry({ id: a, confirmPast: [month] }));
+    assert.equal(del.needs, null);
+    assert.equal((await db.select().from(s.expenseEntries)).length, 0);
+    ok(await cari.restoreSupplierEntry((del as { undo: string }).undo));
+    assert.deepEqual((await db.select().from(s.expenseEntries)).map((e) => [e.supplierEntryId, e.date, e.amount]), [[a, past, 300]]);
+    assert.match((await lastLog()).detail ?? "", /^Sütaş · borç · .* · geçmiş ay değişti: /);
+
+    // Mühürde ay yoksa (ör. eski kopya ya da silme ayın son günü, geri alma ertesi ay) sunucu yazmaz
+    const b = await gider();
+    const entries = await import("../src/server/cari/entries");
+    const removed = await db.transaction((tx) => entries.deleteEntry(tx, b, [month]));
+    const snap = JSON.parse(JSON.stringify(removed.snapshot)) as import("../src/server/cari/entries").EntrySnapshot;
+    await assert.rejects(
+      db.transaction((tx) => entries.restoreEntry(tx, { id: 1, name: "Test" }, snap, [])),
+      (e) => e instanceof entries.NeedsPastConfirm,
+    );
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, b))).length, 0, "borç geri yazılmadı");
+    assert.equal((await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.supplierEntryId, b))).length, 0, "gider yazılmadı");
+    const { seal } = await import("../src/server/secret-box");
+    const [me] = await db.select().from(s.users).limit(1);
+    const old = seal(JSON.stringify({ v: 1, by: me.id, exp: Date.now() + 60_000, snap }), "cari-undo");
+    const refused = await cari.restoreSupplierEntry(old);
+    assert.ok(!refused.ok && /geçmiş ay/.test(refused.error), "eski kopya ayı onaylamadan geri yazmaz");
+    assert.equal((await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, b))).length, 0);
+  });
+
   test("K23: ödemesi sayılmış faturayı başka karta taşıyan diğer ad, vergi no, yeni kart ve faturanın tedarikçi adı reddedilir", async () => {
     const suppliers = await import("../src/server/actions/suppliers");
     const blank = { aliases: [] as string[], legalName: "", taxNumber: "", taxOffice: "", iban: "", bankName: "", accountHolder: "", contactName: "", phone: "", email: "", address: "", paymentTermDays: null, paymentMethod: null, paidOnDelivery: false, note: "" };
