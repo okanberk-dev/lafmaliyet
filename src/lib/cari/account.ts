@@ -481,6 +481,12 @@ export interface AccountInput<I extends AccountInvoice> {
 }
 
 /**
+ * Tedarikçi kartında "Alacak (fazla ödeme)": hesapta sayılmamış para var ve bakiye eksi (Tedarikçiler listesiyle aynı
+ * kural). Ödemesi olmayan ödenmemiş iade faturasının eksi bakiyesi alacak değildir: "Kalan borç −500 ₺" kalır.
+ */
+export const showsCredit = (a: Pick<CariAccount, "balance" | "credit">) => a.credit > EPS && a.balance < -EPS;
+
+/**
  * Tedarikçinin hesap özeti. Faturalar bugünkü kuralla (summarize bunu çağırır); kayıt varsa borçlar açığa eklenir,
  * hesaptaki para vade sırasıyla düşülür (Vadesi geçen ve 7 gün mahsuptan sonra). `quietInvoiceIds`: faturasız
  * alımın faturası olabilecek faturalar (mahsup atlar, bakiyede kalır).

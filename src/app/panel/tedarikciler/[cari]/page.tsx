@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/panel/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton, Stat } from "@/components/ui/misc";
 import { StatBreakdown } from "@/components/ui/stat-breakdown";
-import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel } from "@/lib/cari/account";
+import { compareOpenItems, debtLabel, debtRemaining, invoiceLabel, showsCredit } from "@/lib/cari/account";
 import { defaultCostMode } from "@/lib/cari/match";
 import { businessDate } from "@/lib/cash-report";
 import { dateTR, num, tl } from "@/lib/format";
@@ -88,7 +88,7 @@ async function SupplierContent({ params }: { params: PageProps<"/panel/tedarikci
   };
   const breakdown = accountBreakdowns(g.invoices, { debts: data.debts, account: a, remaining }, { today, termDays: g.termDays, rowHref, debtHref });
   const year = today.slice(0, 4);
-  const credit = a.balance < -0.005;
+  const credit = showsCredit(a);
   const invoiceOpen = g.invoices.filter((i) => i.unpaid).length;
   const openSub = hasCari
     ? [invoiceOpen ? `${num(invoiceOpen)} fatura` : "", a.debtOpenCount ? `${num(a.debtOpenCount)} faturasız alım` : "", a.credit > 0.005 ? `hesapta ${tl(a.credit, 2)}` : ""].filter(Boolean).join(" · ") || "Borç yok"

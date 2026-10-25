@@ -22,6 +22,7 @@ import {
   paymentEvents,
   payableFloorProblem,
   settlePatch,
+  showsCredit,
   validateManual,
   type AccountInvoice,
   type CariAllocation,
@@ -225,6 +226,18 @@ test("Sütaş örneği: her adımın Kalan borcu, kapanan faturalar, Ekim'de öd
 // ---------------------------------------------------------------- Parça parça
 
 const item = (p: Partial<OpenItem> & { kind: OpenItem["kind"]; id: number }): OpenItem => ({ date: "2026-10-01", due: "2026-10-31", dueEstimated: true, balance: 100, label: `K${p.id}`, ...p });
+
+test("tedarikçi kartı 'Alacak (fazla ödeme)' yalnız hesapta sayılmamış para varken; yalnız ödenmemiş iade faturası 'Kalan borç −500 ₺'", () => {
+  const opts = { today: "2026-10-24", termDays: 30 };
+  const refund: AccountInvoice = { id: 1, date: "2026-10-10", invoiceNo: "I1", payable: -500, unpaid: true };
+  const onlyRefund = accountOf({ invoices: [refund] }, opts);
+  assert.deepEqual([onlyRefund.balance, onlyRefund.credit, showsCredit(onlyRefund)], [-500, 0, false]);
+  const prepaid = accountOf({ invoices: [], payments: [{ id: 9, date: "2026-10-20", amount: 300, method: "havale" }] }, opts);
+  assert.deepEqual([prepaid.balance, prepaid.credit, showsCredit(prepaid)], [-300, 300, true]);
+  // Hesaptaki para açıktan azsa borç kalır
+  const owing = accountOf({ invoices: [{ id: 2, date: "2026-10-10", invoiceNo: "A1", payable: 1000, unpaid: true }], payments: [{ id: 9, date: "2026-10-20", amount: 300, method: "havale" }] }, opts);
+  assert.deepEqual([owing.balance, showsCredit(owing)], [700, false]);
+});
 
 test("dağıtım sırası: vade, sonra gün, sonra önce faturalar, sonra kimlik; sayılamayan hesapta kalır", () => {
   const items = [
