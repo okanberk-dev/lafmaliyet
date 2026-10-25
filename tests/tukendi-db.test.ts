@@ -3,7 +3,8 @@
 // sahte anahtarla doğrulanır). Sitenin "değişmedi" yanıtı ve eski kopyayla sahibin kapattığı kalem kayıt bırakmaz;
 // personelin kaydı başka bir personelce açılır, canlı damga farklıysa açılmaz; panelin yalnız fiyat yazımı kaydı taşır;
 // açık kalmış reçete kartı ürünü yeniden açmaz; hız sınırı ve ortak tavan; "Kapalı tut"tan sonra personel açamaz; aynı
-// anda iki barista tek kayıt bırakır. Fiyat ve "Menüde aktif" hiç yazılmaz.
+// anda iki barista tek kayıt bırakır; "Kapalı tut" ile personelin "Satışa aç"ı aynı anda koşunca (kalemin kilidi)
+// yöneticinin kararı kalır. Fiyat ve "Menüde aktif" hiç yazılmaz.
 //
 // Kendi kullanıcılarını, kategorisini ve ürünlerini açar; integration_state'teki menü satırlarını (kopya, durum,
 // Tükenenler kaydı) başta saklar ve sonda geri yazar.
@@ -16,7 +17,8 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import postgres from "postgres";
 
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from "../src/lib/karaoke/signature";
 import type { SiteMenuItem } from "../src/lib/site-menu/schema";
@@ -51,6 +53,15 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
   // ------------------------------------------------ Sahte site
   const site = new Map<string, SiteMenuItem>();
   let posts: { id: string; isActive?: boolean; priceMinor?: number; actor: string }[] = [];
+  /** Sıradaki GET'i yanıtlamadan bekletir (yarış testleri): `arrived` istek gelince, `release` ile yanıt döner */
+  let getGate: { arrived: () => void; wait: Promise<void> } | null = null;
+  function pauseNextGet() {
+    let arrived!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((r) => (arrived = r));
+    getGate = { arrived, wait: new Promise<void>((r) => (release = r)) };
+    return { reached, release };
+  }
   let stampMs = Date.now();
   /** Sitenin damgası: her değişiklikte ilerler (aynı milisaniyeye düşmesin) */
   const stamp = () => new Date((stampMs = Math.max(stampMs + 1, Date.now()))).toISOString();
@@ -63,6 +74,12 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     const ok = verifySignature(SECRET, { method: init?.method ?? "GET", url, body, timestamp: headers[TIMESTAMP_HEADER] ?? null, signature: headers[SIGNATURE_HEADER] ?? null });
     if (!ok) return json(401, { error: "unauthorized" });
     if (url.pathname !== "/api/panel/menu") return json(404, { error: "not_found" });
+    if ((init?.method ?? "GET") === "GET" && getGate) {
+      const g = getGate;
+      getGate = null;
+      g.arrived();
+      await g.wait;
+    }
     if ((init?.method ?? "GET") === "GET") return json(200, { version: 1, now: new Date().toISOString(), items: [...site.values()] });
     const req = JSON.parse(body) as { id: string; isActive?: boolean; priceMinor?: number; priceMinorL?: number; actor: string };
     posts.push(req);
@@ -111,6 +128,18 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
   const refused = (p: Promise<unknown>, text: string | RegExp) =>
     assert.rejects(p, (e: unknown) => e instanceof UserError && (typeof text === "string" ? e.message === text : text.test(e.message)));
   const set = (who: Who, id: string, soldOut: boolean) => core.setSoldOutCore(who, { siteMenuId: id, soldOut });
+  /** Kalemin kilidini (sold-out-core › withItemLock) bekleyen bir bağlantı olana dek */
+  async function waitForItemLock(id: string) {
+    const until = Date.now() + 5_000;
+    for (;;) {
+      const rows = await db.execute<{ n: number }>(
+        sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted and objsubid = 1 and objid::bigint = (hashtext(${`tukendi:${id}`})::bigint & 4294967295)`,
+      );
+      if (rows[0]?.n) return;
+      if (Date.now() > until) throw new Error("kalemin kilidini bekleyen yok");
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
   /** Aynı kalemde 3 saniye kuralı: kaydın son işlem anı geri alınır (testi beklemeden sürdürmek için) */
   async function forgetToggles() {
     const r = await record();
@@ -328,6 +357,90 @@ describe("Tükendi / Satışa aç: sitenin sahte ucuyla", { skip: !URL_ && "TUKE
     assert.equal((await productRow(prod.brownie)).showOnMenu, false);
     const log = await db.select().from(s.activityLog).where(and(eq(s.activityLog.userId, users.ali.id), eq(s.activityLog.action, "Tükendi: kapalı tutuldu")));
     assert.equal(log.length, 2);
+  });
+
+  test("sahip sitede az önce (5 sn içinde) kapattı, kopya eski: canlı damga aynı kalır, kayıt yazılmaz; personel açamaz", async () => {
+    // Sahip iki saniye önce sitede kapattı (ping henüz gelmedi): sitenin "değişmedi" yanıtı onun yeni damgasıyla döner
+    ownerEdit(ids.tira, { isActive: false }, 2_000);
+    const r = await set(users.ayse, ids.tira, true);
+    assert.equal(r.changed, false);
+    assert.equal(r.message, `Tiramisu ${tag} zaten tükendi (sitede kapatılmış; yönetici açar)`);
+    assert.equal((await record()).items[ids.tira], undefined, "kayıt yok");
+    assert.equal((await productRow(prod.tira)).showOnMenu, false);
+    await forgetToggles();
+    await refused(set(users.mehmet, ids.tira, false), SOLD_OUT_TEXT.adminClosed);
+    const log = await db.select().from(s.activityLog).where(and(eq(s.activityLog.userId, users.ayse.id), eq(s.activityLog.action, "Tükendi")));
+    assert.equal(log.length, 0);
+  });
+
+  test("Kapalı tut, personelin Satışa aç'ı canlı listeyi beklerken: sırayla koşar, kalem yeniden kapanır", async () => {
+    await set(users.ayse, ids.cake, true);
+    await forgetToggles();
+    posts = [];
+    const gate = pauseNextGet();
+    const open = set(users.mehmet, ids.cake, false);
+    await gate.reached;
+    const hold = core.holdSoldOutCore(users.ali, { siteMenuId: ids.cake });
+    // Yönetici kalemin kilidinde bekler (eskiden kaydı düşürüp "kapalı tutuluyor" derdi, açma ardından yine açardı)
+    await waitForItemLock(ids.cake);
+    gate.release();
+    const [o, h] = await Promise.all([open, hold]);
+    assert.equal(o.changed, true);
+    assert.equal(h.message, `Cheesecake ${tag} kapalı tutuluyor; satışa yalnız yönetici açar`);
+    assert.deepEqual(
+      posts.map((p) => p.isActive),
+      [true, false],
+      "önce açıldı, Kapalı tut yeniden kapattı",
+    );
+    assert.equal(site.get(ids.cake)!.isActive, false);
+    assert.equal((await record()).items[ids.cake], undefined);
+    assert.equal((await productRow(prod.cake)).showOnMenu, false);
+    await forgetToggles();
+    await refused(set(users.mehmet, ids.cake, false), SOLD_OUT_TEXT.adminClosed);
+  });
+
+  test("Kapalı tut önce başladıysa personelin Satışa aç'ı onu bekler ve açamaz (kayıt kilit altında okunur)", async () => {
+    await set(users.ayse, ids.brownie, true);
+    await forgetToggles();
+    posts = [];
+    // Üçüncü bir bağlantı Tükenenler kaydını kilitler: Kapalı tut kalemin kilidini alır, kayıtta bekler
+    const other = postgres(URL_!, { max: 1, prepare: false, onnotice: () => {} });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let holding!: (pid: number) => void;
+    const held = new Promise<number>((r) => (holding = r));
+    const blocker = other.begin(async (tx) => {
+      const [me] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`;
+      await tx`select key from integration_state where key = ${SOLD_OUT_KEY} for update`;
+      holding(me.pid);
+      await gate;
+    });
+    try {
+      const pid = await held;
+      const hold = core.holdSoldOutCore(users.ali, { siteMenuId: ids.brownie });
+      for (const until = Date.now() + 5_000; ; ) {
+        const rows = await db.execute<{ n: number }>(sql`select count(*)::int as n from pg_stat_activity where ${pid} = any(pg_blocking_pids(pid))`);
+        if (rows[0]?.n) break;
+        if (Date.now() > until) throw new Error("Kapalı tut kayıtta beklemiyor");
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      // Personel şimdi açmayı dener: eskiden kaydı kilitsiz okuyup (henüz duruyordu) siteye "açık" yazardı
+      const open = set(users.mehmet, ids.brownie, false);
+      await waitForItemLock(ids.brownie);
+      release();
+      await blocker;
+      const [h, o] = await Promise.allSettled([hold, open]);
+      assert.equal(h.status, "fulfilled");
+      assert.equal(o.status, "rejected");
+      assert.ok(o.status === "rejected" && o.reason instanceof UserError && o.reason.message === SOLD_OUT_TEXT.adminClosed, String(o.status === "rejected" && o.reason));
+      assert.equal(posts.length, 0, "siteye açma gitmedi");
+      assert.equal(site.get(ids.brownie)!.isActive, false);
+      assert.equal((await record()).items[ids.brownie], undefined);
+    } finally {
+      release();
+      await blocker.catch(() => {});
+      await other.end();
+    }
   });
 
   test("aynı anda iki barista: tek kayıt, ikincisi 'zaten tükendi'", async () => {

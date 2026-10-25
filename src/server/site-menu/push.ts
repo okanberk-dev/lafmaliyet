@@ -50,12 +50,18 @@ export type PushOutcome =
 /**
  * Değişiklik siteyi ilgilendiriyorsa siteye yazar. `consequence`: hata metninde panelde ne olmadığı ("fiyat
  * değişmedi", "değişiklikler kaydedilmedi"). Kopuk bağlantı, 0 fiyat, kapalı bağlantı ve sitenin her hatası
- * UserError'dur.
+ * UserError'dur. `db`: kopyanın okunduğu bağlantı (çağıran bir işlemin içindeyse onun bağlantısı).
  */
-export async function pushSaleChange(user: { name: string }, row: SaleRow, after: SaleValues, consequence: string): Promise<PushOutcome> {
+export async function pushSaleChange(
+  user: { name: string },
+  row: SaleRow,
+  after: SaleValues,
+  consequence: string,
+  db?: Pick<ReturnType<typeof getDb>, "select">,
+): Promise<PushOutcome> {
   const link = row.siteMenuId && row.siteMenuSlot ? { siteMenuId: row.siteMenuId, slot: row.siteMenuSlot } : null;
   if (!link) return { kind: "local" };
-  const snapshot = await readSiteSnapshot();
+  const snapshot = await readSiteSnapshot(db);
   const plan = planPush({
     link,
     before: row,

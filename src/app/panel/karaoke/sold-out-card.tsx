@@ -16,10 +16,11 @@ import { num } from "@/lib/format";
 import { SOLD_OUT_TEXT, STAFF_TOGGLE_LIMIT, soldOutMeta, soldOutWhen, type SoldOutEntry } from "@/lib/site-menu/sold-out";
 import { holdSoldOut, setSoldOut } from "@/server/actions/menu-status";
 
+import { siteNameDiffers, soldOutHits } from "./sold-out-search";
+
 /** Başarılı bir dokunuştan sonra satırın düğmesi bu kadar kapalı kalır (çift dokunuş açıp kapatmasın) */
 const ROW_LOCK_MS = 1_500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const fold = (v: string) => v.toLocaleLowerCase("tr");
 
 /**
  * Bar ekranının "Tükenenler" kartı (dalga 10 §2.1; docs/SITE-MENU.md › Personel: Tükendi / Satışa aç). Biten ürün
@@ -183,8 +184,7 @@ function SoldOutDialog({
 }) {
   const [query, setQuery] = useState("");
   const groups = useMemo(() => {
-    const q = fold(query.trim());
-    const hits = q ? entries.filter((e) => fold(e.name).includes(q) || fold(e.siteName).includes(q)) : entries;
+    const hits = soldOutHits(entries, query);
     const map = new Map<string, SoldOutEntry[]>();
     for (const e of hits) map.set(e.category || "Diğer", [...(map.get(e.category || "Diğer") ?? []), e]);
     return [...map];
@@ -206,7 +206,7 @@ function SoldOutDialog({
                         {e.name}
                         {e.sizes.length > 1 ? <span className="ml-1.5 text-[13px] font-normal text-ink-mute">{e.sizes.join(" · ")}</span> : null}
                       </p>
-                      {fold(e.siteName) !== fold(e.name) ? <p className="truncate text-[13px] text-ink-mute">sitede: {e.siteName}</p> : null}
+                      {siteNameDiffers(e) ? <p className="truncate text-[13px] text-ink-mute">sitede: {e.siteName}</p> : null}
                       <div className="mt-1">{stateBadge(e, now)}</div>
                     </div>
                     {e.state === "on" ? (

@@ -14,6 +14,7 @@ import { test } from "node:test";
 // logic.ts önce: rows-ops.ts onu döngüsel içe aktarır (satır listeleri logic.ts'te kurulur)
 import { cafeLines, type DayFacts } from "../src/app/panel/bugun/logic";
 import { soldOutLine } from "../src/app/panel/bugun/rows-ops";
+import { siteNameDiffers, soldOutHits } from "../src/app/panel/karaoke/sold-out-search";
 import {
   capRefusal,
   keepSeen,
@@ -326,6 +327,14 @@ test("çekirdek: fiyat ve active yazılmaz; kayıt damga koşuluna bağlı; açm
   assert.match(tx, /capRefusal\(/);
   // Hız sınırı İşlem geçmişinden, yalnız personel
   assert.match(core, /SOLD_OUT_ACTIONS\.close, SOLD_OUT_ACTIONS\.open/);
+  // Kayıt yalnız canlı listede az önce satıştaysa ve yanıtın damgası o andakinden farklıysa
+  assert.match(core, /opts\.liveBefore\?\.isActive && push\.kind === "pushed" && push\.item\?\.updatedAt !== opts\.liveBefore\.updatedAt/);
+  // Aynı kalemde Tükendi, Satışa aç ve Kapalı tut sırayla (kalemin danışma kilidi; okuma kilit altında)
+  assert.match(core, /pg_advisory_xact_lock\(hashtext\(\$\{`tukendi:\$\{id\}`\}\)\)/);
+  for (const fn of ["export async function setSoldOutCore", "export async function holdSoldOutCore"]) {
+    const body = core.slice(core.indexOf(fn), core.indexOf("\n}\n", core.indexOf(fn)));
+    assert.match(body, /withItemLock\(input\.siteMenuId/, `${fn} kilitsiz`);
+  }
 });
 
 test("okuyucu ve kart: fiyat alanı yok; kart yalnız okuyucunun tipini alır", () => {
@@ -346,6 +355,33 @@ test("okuyucu ve kart: fiyat alanı yok; kart yalnız okuyucunun tipini alır", 
   assert.match(card, /id="tukenenler"/);
   const lib = read("src/lib/site-menu/sold-out.ts");
   assertNoCostKeys(lib, "sold-out.ts");
+});
+
+test("Tükendi işaretle araması: Türkçe harf ve aksan duyarsız, panel ve sitedeki adda (ortak fold)", () => {
+  const list = [
+    { name: "Ice Latte", siteName: "Iced Caffè Latte" },
+    { name: "Sütlü Tatlı", siteName: "Sütlü Tatlı" },
+    { name: "Tiramisu", siteName: "Tiramisù" },
+    { name: "Çay", siteName: "Çay" },
+  ];
+  const names = (q: string) => soldOutHits(list, q).map((e) => e.name);
+  // Türkçe küçültme "I"yı "ı" yapardı: "ice" Ice Latte'yi bulmazdı
+  assert.deepEqual(names("ice"), ["Ice Latte"]);
+  assert.deepEqual(names("İce"), ["Ice Latte"]);
+  assert.deepEqual(names("ICED"), ["Ice Latte"]);
+  assert.deepEqual(names("caffe"), ["Ice Latte"]);
+  assert.deepEqual(names("sut"), ["Sütlü Tatlı"]);
+  assert.deepEqual(names("sutlu tatli"), ["Sütlü Tatlı"]);
+  assert.deepEqual(names("TİRAMİSU"), ["Tiramisu"]);
+  assert.deepEqual(names("cay"), ["Çay"]);
+  assert.deepEqual(names("  "), list.map((e) => e.name));
+  assert.deepEqual(names("kahve"), []);
+  // Sitedeki ad yalnız harf ya da aksanla ayrılıyorsa ikinci satır yok
+  assert.equal(siteNameDiffers(list[2]), false);
+  assert.equal(siteNameDiffers(list[0]), true);
+  const card = read("src/app/panel/karaoke/sold-out-card.tsx");
+  assert.doesNotMatch(card, /toLocaleLowerCase/);
+  assert.match(card, /soldOutHits\(entries, query\)/);
 });
 
 test("zil satırı yalnız yönetici dalında; Bugün olgusu iki rolde; sabah e-postası opsDigestLines'tan", () => {

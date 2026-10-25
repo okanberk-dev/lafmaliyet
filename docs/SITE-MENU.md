@@ -129,16 +129,23 @@ taşımaz, geri alınır, sınırlıdır ve yöneticiye görünür.
   "Tükendi işaretle". Doluyken yalnız bu kartla kapatılıp kaydı hâlâ geçerli ürünler: ad, altında "M · L · Selin,
   21:40" (dünden kalanda "dün 21:40"), sağda "Satışa aç". Başarılı dokunuştan sonra satırın düğmesi 1,5 sn kapalı.
 - **"Tükendi işaretle" penceresi yalnız kapatır.** Açıklaması "Sitede boy boy durum yok: M ve L birlikte kapanır.";
-  arama panel ve sitedeki adda (ad farklıysa "sitede: …"); satırlar sitenin kategorisine göre. Rozetler: "Satışta"
+  arama panel ve sitedeki adda, panelin ortak Türkçe harf ve aksan duyarsız eşleşmesiyle ("ice" → Ice Latte, "sut" →
+  Sütlü …; ad farklıysa "sitede: …"); satırlar sitenin kategorisine göre. Rozetler: "Satışta"
   (Tükendi düğmesi), "Tükendi · Selin 21:40", "Kapalı · yönetici açar", "Selin tükendi yaptı; sonra sitede değişti ·
   yönetici açar". Kopuk, sitede olmayan, bağlanmamış ve bütün boyları pasif ürün listede yok.
 - **Yazım:** her zaman yukarıdaki panel → site yolundan (`pushSaleChange` → imzalı `POST /api/panel/menu`, `actor`
   kişinin adı: sitenin olay kaydında "Panel · Selin"; site kabul edince `applyPushed`). Panelde yalnız `showOnMenu`
-  yazılır; fiyat ve "Menüde aktif" hiç yazılmaz. Satışa açma sitenin **canlı** listesini okur (`fetchSiteMenu`).
+  yazılır; fiyat ve "Menüde aktif" hiç yazılmaz. Tükendi ve Satışa aç sitenin **canlı** listesini okur
+  (`fetchSiteMenu`). Aynı kalemdeki Tükendi, Satışa aç ve Kapalı tut sırayla koşar (kalem başına danışma kilidi, siteye
+  istek de kilit altında; 10 sn'den uzun bekleyen "Az önce değişti" görür): yöneticinin "Kapalı tut"u personelin aynı
+  anda verdiği "Satışa aç"tan önce biterse personel açamaz, sonra gelirse ürünü yeniden kapatır.
 - **Kayıt** (`integration_state` › `menu_sold_out`): kalem başına kim (`byId`, `by`, `byRole`), ne zaman ve sitenin
   kapattıktan sonraki `updatedAt` damgası (`siteUpdatedAt`); `toggles` kalemin son işlem anı. Kayıt yalnız site bu
-  yazımla kapattıysa yazılır (yanıtın damgası isteğin başından yeni); sitenin "değişmedi" yanıtı eski damgayla döner,
-  o zaman "… zaten tükendi (sitede kapatılmış; yönetici açar)" denir. Kayıt, kalem sitede kapalıyken ve damgası
+  yazımla kapattıysa yazılır: istekten hemen önce canlı listede satışta, yanıtın damgası o andakinden farklı ve isteğin
+  başından yeni. Sitenin "değişmedi" yanıtı eski damgayla döner (sahip sitede ya da yönetici ürün kartından birkaç
+  saniye önce kapattıysa onunki), o zaman "… zaten tükendi (sitede kapatılmış; yönetici açar)" denir. Kalan pencere
+  canlı okuma ile yazım arasındaki gidiş-dönüş kadar; sitenin yanıtı "değişti mi" alanını taşıyınca kapanır (site
+  tarafında ayrı iş, `docs/planlar/KALAN-ISLER.md`). Kayıt, kalem sitede kapalıyken ve damgası
   aynıyken geçerlidir: sahibin sitenin panelinden yaptığı her değişiklik kalemi yöneticiye bırakır. Panelin kendi
   fiyat yazımları (fiyat hücresi, ürün kartı, toplu Fiyatlar) kaydı yeni damgaya taşır (`carrySoldOutMarker`).
 - **Kim açar:** kayıt geçerliyse her personel (kapatan olmak gerekmez). Yöneticinin ürün kartından, sitenin
