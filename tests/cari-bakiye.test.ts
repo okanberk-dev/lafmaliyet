@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { openBalance as insightsOpenBalance } from "../src/lib/calc/insights";
-import { coveredByAllocations, EPS, isPartiallyPaid, methodFromCard, openBalance, paidViaOf, trackingBase, CARI_METHODS } from "../src/lib/cari/balance";
+import { arrivalBase, coveredByAllocations, EPS, isPartiallyPaid, methodFromCard, openBalance, paidViaOf, trackingBase, CARI_METHODS } from "../src/lib/cari/balance";
 
 /** Planın tabanındaki (main @ 48a984c) kural, harfi harfine: karşılaştırma için */
 type Old = { payable: number; unpaid: boolean; outstanding?: number | null };
@@ -113,6 +113,19 @@ test("takip tabanı: ödenmemiş ve Paraşüt'te kısmen ödenmişte Ödenecek �
   ]) {
     assert.equal(openBalance({ ...f, ledgerBase: trackingBase(f), allocated: 0 }), openBalance(f), JSON.stringify(f));
   }
+});
+
+test("takipli karta sonradan gelen faturanın tabanı: takip gününden önceki tarihlide takip tabanı, o gün ve sonrasında 0", () => {
+  const f = { payable: 1100, unpaid: true, outstanding: 600 };
+  assert.equal(arrivalBase({ ...f, date: "2026-05-18" }, "2026-10-22"), 500, "takip öncesi: Paraşüt'te ödenen kısım");
+  assert.equal(arrivalBase({ ...f, date: "2026-10-21" }, "2026-10-22"), 500);
+  assert.equal(arrivalBase({ ...f, date: "2026-10-22" }, "2026-10-22"), 0, "takip günü: yalnız panel sayar");
+  assert.equal(arrivalBase({ ...f, date: "2026-10-28" }, "2026-10-22"), 0);
+  assert.equal(arrivalBase({ payable: 1100, unpaid: true, outstanding: null, date: "2026-05-18" }, "2026-10-22"), 0, "ödeme bilgisi yok (e-fatura)");
+  assert.equal(arrivalBase({ payable: 1100, unpaid: false, outstanding: 0, date: "2026-05-18" }, "2026-10-22"), 0, "ödenmiş gelir");
+  // Takip öncesi faturanın kalanı Paraşüt'ünkiyle aynı (takip başlarken panelde olsaydı olacağı gibi)
+  const old = { ...f, date: "2026-05-18" };
+  assert.equal(openBalance({ ...old, ledgerBase: arrivalBase(old, "2026-10-22"), allocated: 0 }), openBalance(f));
 });
 
 test("ödeme şekli: kasa ve elden nakittir; kartın şeklinden varsayılan", () => {

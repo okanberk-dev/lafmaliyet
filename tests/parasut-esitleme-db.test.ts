@@ -55,6 +55,8 @@ interface FakeBill {
   amount: number;
   vat: number;
   unpaid: boolean;
+  /** Paraşüt'te kısmen ödenmiş: kalan (verilmezse ödenmemişte tamamı, ödenmişte 0) */
+  remaining?: number;
   eInvoiceId?: string;
   lines: FakeLine[];
 }
@@ -138,8 +140,8 @@ class FakeParasut {
         net_total: String(net),
         total_discount: "0",
         total_invoice_discount: "0",
-        remaining: b.unpaid ? String(net) : "0",
-        payment_status: b.unpaid ? "unpaid" : "paid",
+        remaining: b.remaining !== undefined ? String(b.remaining) : b.unpaid ? String(net) : "0",
+        payment_status: b.remaining !== undefined ? "partially_paid" : b.unpaid ? "unpaid" : "paid",
         archived: false,
       },
       relationships: {
@@ -575,6 +577,54 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
       const [d2] = await db.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, debt.id));
       assert.deepEqual([d2.invoiceId, d2.costMode], [null, "fatura"]);
       assert.deepEqual((await db.select().from(s.supplierAllocations)).map((a) => [a.debtId, a.amount]), [[debt.id, 600]]);
+    } finally {
+      await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
+      await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
+    }
+  });
+
+  test("cari: takip başlamadan önceki tarihli fatura sonradan gelirse Paraşüt'te ödenen kısmı taban olur (Geçmiş faturaları al, geç girilmiş fatura); takip günü ve sonrasınınki 0", async () => {
+    const bal = await import("../src/lib/cari/balance");
+    const [card] = await db.insert(s.suppliers).values({ name: "Sütaş", key: "sütaş", taxNumber: SUTAS.taxNumber }).returning();
+    try {
+      fake.bills.set("301", bill("301", { date: daysAgo(3) }));
+      await run();
+      // Takip kartın ilk ödemesinin günüyle başlar (iki gün önce); sonraki ödemenin günü başlangıcı değiştirmez
+      await db.insert(s.supplierEntries).values([
+        { supplierId: card.id, kind: "odeme", date: daysAgo(1), amount: 200, method: "havale", createdByName: "Test" },
+        { supplierId: card.id, kind: "odeme", date: daysAgo(2), amount: 500, method: "havale", createdByName: "Test" },
+      ]);
+      const view = (x: typeof s.invoices.$inferSelect) => ({ ledgerBase: x.ledgerBase, open: bal.openBalance(x), hint: bal.parasutDifference(x) });
+      const byId = async (id: string) => {
+        const r = (await rows()).find((x) => x.externalId === id);
+        assert.ok(r, `${id} panelde`);
+        return r;
+      };
+
+      // Geçmiş faturaları al: 2026-05'in faturası takip başlamadan Paraşüt'te kısmen ödenmiş (1.100'ün 600'ü kalmış)
+      fake.bills.set("201", bill("201", { date: daysAgo(160), remaining: 600 }));
+      const h = await sync.syncSupplierHistory({ label: "Sütaş", billIds: ["301"], taxNumber: SUTAS.taxNumber, names: ["Sütaş"], match: () => "same" });
+      assert.ok(h.ok, JSON.stringify(h));
+      const old = await byId("201");
+      assert.equal(old.unpaid, true);
+      assert.deepEqual(view(old), { ledgerBase: 500, open: 600, hint: null }, "Paraşüt'te takipten önce ödenen 500 sayılır, mor ipucu yok");
+      assert.equal(bal.isPartiallyPaid(old), true);
+      assert.equal((await byId("301")).ledgerBase, null, "var olan satırın tabanına eşitleme dokunmaz");
+
+      // Kimlik sırasıyla yakalanan geç girilmiş eski fatura (330'un 130'u kalmış) da aynı kuralla
+      fake.bills.set("302", bill("302", { date: daysAgo(200), invoiceNo: "KAGIT-0042", amount: 300, vat: 30, remaining: 130 }));
+      // Takip günü ve sonrasının faturası: Paraşüt'ün kısmi ödemesi panelin ödemesi olabilir, yalnız panel sayar (taban 0)
+      fake.bills.set("303", bill("303", { date: daysAgo(2), remaining: 600 }));
+      fake.bills.set("304", bill("304", { date: daysAgo(1), remaining: 600 }));
+      // E-faturada ödeme bilgisi yok: takipten önceki tarihli olsa da taban 0
+      fake.eInvoices.set("805", eInvoice("805", { date: daysAgo(10) }));
+      const r = await run();
+      assert.match(r.summary, /1 geç girilmiş eski fatura alındı/);
+      assert.deepEqual(view(await byId("302")), { ledgerBase: 200, open: 130, hint: null });
+      for (const id of ["303", "304"]) assert.deepEqual(view(await byId(id)), { ledgerBase: 0, open: 1100, hint: { parasut: 600, panel: 1100, lower: true } }, id);
+      const e = (await rows()).find((x) => x.eInvoiceId === "805" && x.externalId === null);
+      assert.ok(e, "e-fatura panelde");
+      assert.deepEqual([e.date, e.ledgerBase, e.unpaid], [daysAgo(10), 0, true]);
     } finally {
       await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
       await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));

@@ -376,7 +376,7 @@ export const coveredByAllocations = (i: BalanceInvoice) =>
 
 **Takipli karta sonradan gelen fatura:**
 
-- **Paraşüt eşitlemesi:** yeni satırın kartı takipliyse (`ctx.trackedCard(supplier, tax)`) `ledger_base = 0` yazılır. Takipli kart demek, `supplier_entries`'te ödeme kaydı olan kart demek; liste çalışmanın başında bir kez okunur.
+- **Paraşüt eşitlemesi:** yeni satırın kartı takipliyse (`ctx.trackedCard(supplier, tax)`) `ledger_base = 0` yazılır. Takipli kart demek, `supplier_entries`'te ödeme kaydı olan kart demek; liste çalışmanın başında bir kez okunur. Fatura takip başlamadan önceki tarihliyse ("Geçmiş faturaları al" ya da geç girilmiş eski fatura; takibin başladığı gün kartın en eski ödeme kaydının günüdür) 0 yerine takip başlarken panelde olsaydı alacağı değer yazılır, yani Paraşüt'te o ana kadar ödenen kısım (`arrivalLedgerBase`, para-8).
 - **Elle ve Excel'den eklenen fatura:** kart aynı çözümle bulunur, 0 yazılır.
 - **Dağıtım yazılırken** `ledger_base` hâlâ boşsa o an yukarıdaki kuralla doldurulur. Örnek: fatura sonradan diğer ad eklenerek gruba girmiş.
 

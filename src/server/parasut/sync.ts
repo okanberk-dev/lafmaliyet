@@ -11,7 +11,7 @@ import { addDays, syncedDueDate, todayTR } from "@/lib/reminders";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { logActivity } from "@/server/actions/log";
 import { supersedeHolds } from "@/server/data/price-holds";
-import { applyCreditOnArrival, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver } from "@/server/cari/settle";
+import { applyCreditOnArrival, arrivalLedgerBase, releaseInvoiceLinks, resettleAfterSync, trackedCardResolver, type TrackedCard } from "@/server/cari/settle";
 import { loadPaidOnDelivery, loadPaymentsSince, type PaidOnDelivery } from "@/server/data/suppliers";
 import { getDb, schema as s } from "@/server/db";
 import { matchSummary, matchSupplierOrders, type ReorderMatchResult } from "@/server/reorder/match";
@@ -205,10 +205,11 @@ interface Ctx {
   /** Bu çalışmada görülen, panele girmeyen iadeler (kimliğe göre) */
   returns: { sales: Map<string, Omit<ReturnEntry, "seenAt">>; supplier: Map<string, Omit<ReturnEntry, "seenAt">> };
   /**
-   * Cari (docs/TEDARIKCILER.md "Hesap hareketleri"): faturanın kartı takipliyse (ödeme kaydı var) kartın kimliği;
-   * yeni faturası `ledger_base = 0` alır. Liste çalışmanın başında bir kez okunur
+   * Cari (docs/TEDARIKCILER.md "Hesap hareketleri"): faturanın kartı takipliyse (ödeme kaydı var) kart ve takibin
+   * başladığı gün; yeni faturası takip gününden önceki tarihliyse Paraşüt'te ödenen kısmı, değilse 0 taban alır
+   * (arrivalLedgerBase). Liste çalışmanın başında bir kez okunur
    */
-  trackedCard: (supplier: string, taxNumber?: string | null) => number | null;
+  trackedCard: (supplier: string, taxNumber?: string | null) => TrackedCard | null;
   /** Tutarı değişen faturalar: çalışmanın sonunda dağıtımları yeniden dengelenir (resettleAfterSync) */
   payableChanged: { id: number; from: number; to: number }[];
   /** Peşin ve takipli kartın yeni faturaları: çalışmanın sonunda hesaptaki para sayılır (applyCreditOnArrival) */
@@ -467,7 +468,8 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
       ctx.paymentsSince,
     );
     const supplierTaxNumber = cleanTaxNumber(taxRaw);
-    // Cari takipteki kartın yeni faturası panelde sayılır (taban 0)
+    // Cari takipteki kartın yeni faturası panelde sayılır: taban 0, takip başlamadan önceki tarihliyse (geçmişi alırken,
+    // geç girilmiş fatura) Paraşüt'te o güne kadar ödenen kısım
     const trackedCard = ctx.trackedCard(supplier, taxRaw);
     // Aynı e-fatura başka bir (hâlâ duran) gider faturasında ya da kişisi müşteri kartı: kayıt kontrol bekler
     const doubt = [
@@ -487,11 +489,11 @@ async function applyDraft(d: BillDraft, ctx: Ctx): Promise<"deferred" | undefine
         description: d.description,
         needsReview: categoryNeedsReview(reason) || doubt.length > 0,
         note: [`Paraşüt'ten alındı · kategori: ${reason}`, ...doubt].join(" · "),
-        ledgerBase: trackedCard !== null ? 0 : null,
+        ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: d.outstanding }),
       })
       .returning({ id: s.invoices.id });
     // Peşin çalışılan takipli kart: hesaptaki para çalışmanın sonunda faturaya sayılır (K21)
-    if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, taxRaw)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard });
+    if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, taxRaw)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
     if (twin) console.warn("Paraşüt: aynı e-fatura iki gider faturasında", { eInvoiceId, bills: [twin.externalId, d.externalId] });
     invoiceId = row.id;
     if (supplierTaxNumber) ctx.taxFilled++;
@@ -1425,10 +1427,11 @@ async function applyEInvoice(d: EInvoiceDraft, ctx: Ctx): Promise<"created" | "l
       syncedAt: now,
       needsReview: categoryNeedsReview(reason) || d.withholding,
       note,
-      ledgerBase: trackedCard !== null ? 0 : null,
+      // E-faturada ödeme bilgisi yok (kalan boş): taban 0
+      ledgerBase: arrivalLedgerBase(trackedCard, { date: d.date, payable: d.payable, unpaid: pay.unpaid, outstanding: null }),
     })
     .returning({ id: s.invoices.id });
-  if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard });
+  if (trackedCard !== null && !pay.unpaid && ctx.paidOnDelivery(supplier, d.supplierTaxNo)) ctx.pesinTracked.push({ id: row.id, cardId: trackedCard.id });
   if (supplierTaxNumber) ctx.taxFilled++;
   ctx.existing.push({
     id: row.id,

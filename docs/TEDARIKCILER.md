@@ -248,7 +248,9 @@ silinir (kasaya açtığı satırsa o da silinir).
   olan kart kalkmaz). Ödemenin hangi faturaya ya da borca sayıldığı `supplier_allocations`'ta. Ödeme hiçbir zaman gider
   ya da KDV değildir.
 - **Kalan borç** (`src/lib/cari/balance.ts`): kartın ilk ödemesiyle takip başlar; grubun her faturasına Paraşüt'ün o
-  ana kadar ödendi gösterdiği kısım yazılır (`invoices.ledger_base`), sonradan gelen faturaya 0. Takipli faturanın
+  ana kadar ödendi gösterdiği kısım yazılır (`invoices.ledger_base`), sonradan gelen faturaya 0. Sonradan gelen fatura
+  takip başlamadan önceki tarihliyse ("Geçmiş faturaları al", geç girilmiş eski fatura; takip kartın en eski ödeme
+  kaydının günüyle başlar) ona da Paraşüt'te ödenen kısım yazılır, kalanı Paraşüt'ünkiyle başlar. Takipli faturanın
   kalanı = Ödenecek − bu taban − panelde sayılan (`invoices.allocated`); Paraşüt'ün kalanı yalnız ipucudur. Takipsiz
   fatura bugünkü kuralla (Paraşüt'ün kalanı). Hiç kayıt yokken bütün rakamlar eskisiyle aynıdır
   (`tests/cari-sabit.test.ts`).

@@ -15,7 +15,7 @@ import {
   type LastAllocation,
   type LinkPrev,
 } from "@/lib/cari/account";
-import { coveredByAllocations, EPS, paidViaOf, round2, trackingBase, type CariMethod } from "@/lib/cari/balance";
+import { arrivalBase, coveredByAllocations, EPS, paidViaOf, round2, trackingBase, type CariMethod } from "@/lib/cari/balance";
 import { linkableInvoice } from "@/lib/cari/match";
 import { dateTR, tl } from "@/lib/format";
 import { todayTR } from "@/lib/reminders";
@@ -341,24 +341,48 @@ export async function cardsWithCredit(db: DB | Tx = getDb()): Promise<Map<number
   return out;
 }
 
+/** Takipli kart ve takibin başladığı gün (kartın ilk ödeme kaydının günü, YYYY-MM-DD) */
+export interface TrackedCard {
+  id: number;
+  since: string;
+}
+
 /**
- * Eşitlemenin yeni faturası için: faturanın kartı takipliyse (ödeme kaydı var) kartın kimliği, değilse null. Kart
- * kayıt yokken hiç sorgulanmaz.
+ * Eşitlemenin yeni faturası için: faturanın kartı takipliyse (ödeme kaydı var) kart ve takibin başladığı gün, değilse
+ * null. Kart kayıt yokken hiç sorgulanmaz.
  */
-export async function trackedCardResolver(db: DB | Tx = getDb()): Promise<(supplier: string, taxNumber?: string | null) => number | null> {
-  const tracked = await trackedCardIds(db);
+export async function trackedCardResolver(db: DB | Tx = getDb()): Promise<(supplier: string, taxNumber?: string | null) => TrackedCard | null> {
+  const tracked = await trackedCards(db);
   if (!tracked.size) return () => null;
   const resolve = await cardResolver(db);
   return (supplier, taxNumber) => {
     const c = resolve(supplier, taxNumber);
-    return c !== null && tracked.has(c) ? c : null;
+    const since = c !== null ? tracked.get(c) : undefined;
+    return c !== null && since !== undefined ? { id: c, since } : null;
   };
 }
 
-/** Takipli kartlar: ödeme kaydı olan kartlar (yeni gelen fatura `ledger_base = 0` alır) */
+/**
+ * Eşitlemenin takipli karta getirdiği yeni faturanın tabanı (§4.2, arrivalBase): takip başlamadan önceki tarihli
+ * fatura Paraşüt'te o ana kadar ödenen kısmı alır, takip günü ve sonrasınınki 0; kart takipsizse boş
+ */
+export function arrivalLedgerBase(card: TrackedCard | null, i: { date: string; payable: number; unpaid: boolean; outstanding: number | null }): number | null {
+  return card === null ? null : arrivalBase(i, card.since);
+}
+
+/** Takipli kartlar (ödeme kaydı olan kartlar) ve takibin başladığı gün: kartın en eski ödeme kaydının günü */
+async function trackedCards(db: DB | Tx): Promise<Map<number, string>> {
+  const rows = await db
+    .select({ id: s.supplierEntries.supplierId, since: sql<string>`min(${s.supplierEntries.date})` })
+    .from(s.supplierEntries)
+    .where(eq(s.supplierEntries.kind, "odeme"))
+    .groupBy(s.supplierEntries.supplierId);
+  return new Map(rows.map((r) => [r.id, r.since]));
+}
+
+/** Takipli kartlar: ödeme kaydı olan kartlar (elle eklenen yeni fatura `ledger_base = 0` alır) */
 export async function trackedCardIds(db: DB | Tx = getDb()): Promise<Set<number>> {
-  const rows = await db.selectDistinct({ id: s.supplierEntries.supplierId }).from(s.supplierEntries).where(eq(s.supplierEntries.kind, "odeme"));
-  return new Set(rows.map((r) => r.id));
+  return new Set((await trackedCards(db)).keys());
 }
 
 export interface CreditUse {

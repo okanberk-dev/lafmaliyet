@@ -42,7 +42,7 @@ test("dağıtım (supplier_allocations) ve saklanan toplam (invoices.allocated) 
     // Saf kural (src/lib/cari) yamayı üretir, yalnız settle.ts uygular
     if (f.path.startsWith("src/lib/cari/")) continue;
     assert.doesNotMatch(f.text, /paidByLedger:\s*true/, `${f.path}: defterin kapattığı işaretini yalnız settle.ts koyar`);
-    assert.doesNotMatch(f.text, /\btrackingBase\(/, `${f.path}: takip tabanını yalnız settle.ts yazar`);
+    assert.doesNotMatch(f.text, /\b(trackingBase|arrivalBase)\(/, `${f.path}: takip tabanını yalnız settle.ts yazar`);
   }
   const settle = read(SETTLE);
   assert.doesNotMatch(settle, /^"use server"/m, "settle.ts eylem dosyası değil (her export bir POST ucu olurdu)");

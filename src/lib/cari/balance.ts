@@ -74,6 +74,16 @@ export function trackingBase(i: Pick<BalanceInvoice, "payable" | "unpaid" | "out
   return 0;
 }
 
+/**
+ * Takipli karta sonradan gelen faturanın tabanı (§4.2). Takip başlamadan (`since`: kartın ilk ödeme kaydının günü)
+ * önceki tarihli fatura ("Geçmiş faturaları al", geç girilmiş eski fatura) takip başlarken panelde olsaydı alacağı
+ * tabanı alır (trackingBase: Paraşüt'te ödenen kısım); o gün ve sonrasının faturasında Paraşüt'ün kısmi ödemesi
+ * panelin ödemesi olabilir: 0, yalnız panel sayar
+ */
+export function arrivalBase(i: Pick<BalanceInvoice, "payable" | "unpaid" | "outstanding"> & { date: string }, since: string): number {
+  return i.date < since ? trackingBase(i) : 0;
+}
+
 // ---------------------------------------------------------------- Ödeme şekli
 
 /** Cari ödemenin şekli (supplier_entries.method) */

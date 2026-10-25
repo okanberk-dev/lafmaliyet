@@ -181,8 +181,13 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
     assert.equal(await settle.ledgerBaseForNew("SÜTAŞ", null), 0, "takipli kartın yeni faturası");
     assert.equal(await settle.ledgerBaseForNew("Pınar", null), null);
     const resolve = await settle.trackedCardResolver();
-    assert.equal(resolve("sütaş"), c.id);
+    assert.deepEqual(resolve("sütaş"), { id: c.id, since: "2026-10-22" }, "takip ilk ödemenin günüyle başlar");
     assert.equal(resolve("Pınar"), null);
+    // Eşitlemenin yeni faturası: takip gününden önceki tarihli Paraşüt'te ödenen kısmı taban alır, sonrası 0
+    const arriving = { payable: 1100, unpaid: true, outstanding: 600 };
+    assert.equal(settle.arrivalLedgerBase(resolve("sütaş"), { ...arriving, date: "2026-05-18" }), 500);
+    assert.equal(settle.arrivalLedgerBase(resolve("sütaş"), { ...arriving, date: "2026-10-22" }), 0);
+    assert.equal(settle.arrivalLedgerBase(resolve("Pınar"), { ...arriving, date: "2026-05-18" }), null, "takipsiz kart");
   });
 
   test("ödeme silinince dağıtımlar CASCADE ile kalkar; defterin kapattığı açılır, elle ✓ kalır", async () => {
