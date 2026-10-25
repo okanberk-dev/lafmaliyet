@@ -496,6 +496,32 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.equal((await inv(f.id)).allocated, 300);
   });
 
+  test("✓'nin Geri al'ı reddedilince (fatura başka ödemeyle karşılanmış) hesaptaki paradan sayılanlar silinmez: bildirim ve Son ödenenler", async () => {
+    const c = await card();
+    const f = await invoice({ payable: 1000, invoiceNo: "F1" });
+    await pay(c.id, 300, { mode: "none" });
+    const marked = ok(await invoices.setInvoicePaid(f.id, true));
+    const before = (await allocs()).filter((a) => a.invoiceId === f.id).map((a) => a.id);
+    assert.equal(before.length, 1, "✓ hesaptaki 300'ü saydı");
+    // Fatura bu arada başka bir ödemeyle tamamen karşılandı (ör. silinip geri alınan ödeme)
+    const p2 = await pay(c.id, 1000, { mode: "none" });
+    await db.transaction(async (tx) => {
+      await settle.lockCard(tx, c.id);
+      await settle.writeAllocations(tx, p2.id, [{ kind: "invoice", id: f.id, amount: 1000 }], "Test");
+      await settle.recomputeAllocated(tx, [f.id]);
+    });
+    const all = (await allocs()).filter((a) => a.invoiceId === f.id).map((a) => a.id);
+    const refused = await invoices.restoreInvoicePayment(marked.previous);
+    assert.ok(!refused.ok && /sayılmış/.test(refused.error), "Ödenmedi engeli");
+    assert.deepEqual((await allocs()).filter((a) => a.invoiceId === f.id).map((a) => a.id), all, "✓'nin dağıtımı yerinde");
+    assert.equal((await inv(f.id)).allocated, 1300);
+    const reminders = await import("../src/server/actions/reminders");
+    const refused2 = await reminders.undoRecentPaid("invoice", f.id);
+    assert.ok(!refused2.ok && /sayılmış/.test(refused2.error), "Son ödenenler'de de engel");
+    assert.deepEqual((await allocs()).filter((a) => a.invoiceId === f.id).map((a) => a.id), all, "Son ödenenler'den de silinmez");
+    assert.equal((await inv(f.id)).unpaid, false);
+  });
+
   test("ödemenin günü ve şekli düzeltilince kapattığı faturanın ödeme günü ve şekli de değişir", async () => {
     const c = await card();
     const f = await invoice({ payable: 1000, invoiceNo: "SUT123" });

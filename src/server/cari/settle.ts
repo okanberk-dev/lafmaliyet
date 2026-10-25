@@ -431,7 +431,8 @@ export async function creditFirst(tx: Tx, cardId: number, invoiceIds: readonly n
 /**
  * Tamamen karşılanmış (dağıtımla kapanmış ya da kapanacak) faturada "Ödenmedi" ve "Talep edildi" reddedilir: ödeme
  * kaydının parası faturada durur. Kısmen sayılmış faturada izin verilir (yalnız işaretli kısım kalkar). Dört yazıcı
- * çağırır: applyPayment, saveInvoice, restoreInvoicePayment, undoRecentPaid.
+ * çağırır: applyPayment, saveInvoice, restoreInvoicePayment ve undoRecentPaid (son ikisi dropAllocations'ın içinden,
+ * ✓'nin dağıtımlarını silen işlemde).
  */
 export async function assertNotCovered(db: DB | Tx, invoiceIds: readonly number[]) {
   const ids = uniq(invoiceIds);
@@ -829,23 +830,29 @@ export async function ledgerBaseForNew(supplier: string, taxNumber: string | nul
 
 /**
  * "Geri al": ✓'nin hesaptaki paradan yazdığı dağıtımlar silinir (yalnız verilen faturalarınkiler), faturalar yeniden
- * dengelenir. Ödemenin parası hesaba döner.
+ * dengelenir. Ödemenin parası hesaba döner. `notCovered`: ödenmediye dönecek faturalar; "Ödenmedi" engeli
+ * (assertNotCovered) aynı işlemde, silmeden sonra denetlenir: reddedilirse dağıtımlar yerinde kalır (para boşta kalmaz).
  */
-export async function dropAllocations(allocationIds: readonly number[], invoiceIds: readonly number[]) {
+export async function dropAllocations(allocationIds: readonly number[], invoiceIds: readonly number[], notCovered: readonly number[] = []) {
   const ids = uniq(allocationIds);
-  if (!ids.length || !invoiceIds.length) return;
+  const drop = ids.length > 0 && invoiceIds.length > 0;
+  if (!drop && !notCovered.length) return;
   await getDb().transaction(async (tx) => {
-    const rows = await tx
-      .select({ id: s.supplierAllocations.id, invoiceId: s.supplierAllocations.invoiceId, card: s.supplierEntries.supplierId })
-      .from(s.supplierAllocations)
-      .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
-      .where(and(inArray(s.supplierAllocations.id, ids), inArray(s.supplierAllocations.invoiceId, uniq(invoiceIds))));
-    if (!rows.length) return;
-    await lockCards(tx, rows.map((r) => r.card));
-    await tx.delete(s.supplierAllocations).where(inArray(s.supplierAllocations.id, rows.map((r) => r.id)));
-    const touched = rows.map((r) => r.invoiceId!).filter((x) => x !== null);
-    await recomputeAllocated(tx, touched);
-    await resettle(tx, touched);
+    const rows = drop
+      ? await tx
+          .select({ id: s.supplierAllocations.id, invoiceId: s.supplierAllocations.invoiceId, card: s.supplierEntries.supplierId })
+          .from(s.supplierAllocations)
+          .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
+          .where(and(inArray(s.supplierAllocations.id, ids), inArray(s.supplierAllocations.invoiceId, uniq(invoiceIds))))
+      : [];
+    if (rows.length) {
+      await lockCards(tx, rows.map((r) => r.card));
+      await tx.delete(s.supplierAllocations).where(inArray(s.supplierAllocations.id, rows.map((r) => r.id)));
+      const touched = rows.map((r) => r.invoiceId!).filter((x) => x !== null);
+      await recomputeAllocated(tx, touched);
+      await resettle(tx, touched);
+    }
+    await assertNotCovered(tx, notCovered);
   });
 }
 

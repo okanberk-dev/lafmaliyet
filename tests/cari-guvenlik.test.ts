@@ -53,13 +53,18 @@ test("'Ödenmedi' engeli dört yazıcıda: applyPayment, saveInvoice, restoreInv
   const inv = read("src/server/actions/invoices.ts");
   assert.match(body(inv, "async function applyPayment("), /if \(!paid\) await assertNotCovered\(db, targets\.map/);
   assert.match(body(inv, "export async function saveInvoice("), /if \(!cur\.unpaid && data\.unpaid\) await assertNotCovered\(db, \[id\]\)/);
+  // Geri al: ✓'nin dağıtımları silinir ve engel aynı işlemde denetlenir (dropAllocations'ın üçüncü argümanı;
+  // reddedilirse dağıtımlar yerinde kalır), sonra yazım
   const restore = body(inv, "export async function restoreInvoicePayment(");
-  assert.ok(restore.indexOf("dropAllocations(") < restore.indexOf("assertNotCovered("), "önce ✓'nin dağıtımları silinir");
-  assert.ok(restore.indexOf("assertNotCovered(") < restore.indexOf(".update(s.invoices)"), "sonra engel, sonra yazım");
+  assert.match(restore, /dropAllocations\([^;]*list\.map\(\(x\) => x\.id\),\s*list\.filter\(\(x\) => x\.unpaid\)\.map\(\(x\) => x\.id\),\s*\)/);
+  assert.ok(restore.indexOf("dropAllocations(") < restore.indexOf(".update(s.invoices)"), "önce engel, sonra yazım");
+  assert.doesNotMatch(restore, /assertNotCovered\(/, "ayrı işlemde engel yok");
   const rem = read("src/server/actions/reminders.ts");
   const undo = body(rem, "export async function undoRecentPaid(");
-  assert.ok(undo.indexOf("dropAllocations(") >= 0 && undo.indexOf("dropAllocations(") < undo.indexOf("assertNotCovered(db, [rid])"));
-  assert.ok(undo.indexOf("assertNotCovered(db, [rid])") < undo.indexOf(".update(s.invoices)"));
+  assert.ok(undo.indexOf("dropAllocations(allocationIds, [rid], [rid])") >= 0 && undo.indexOf("dropAllocations(allocationIds, [rid], [rid])") < undo.indexOf(".update(s.invoices)"));
+  assert.doesNotMatch(undo, /assertNotCovered\(/, "ayrı işlemde engel yok");
+  const drop = body(read(SETTLE), "export async function dropAllocations(");
+  assert.ok(drop.indexOf("tx.delete(s.supplierAllocations)") >= 0 && drop.indexOf("tx.delete(s.supplierAllocations)") < drop.indexOf("await assertNotCovered(tx, notCovered)"), "engel silmeyle aynı işlemde");
   // Kullanıcının yazdığı ödeme alanları faturayı "defterin kapattığı" saymaz; pencerenin her kayıtta gönderdiği aynı
   // ödeme günü işareti bozmaz. "Geri al" defterin kapattığı faturayı settle.ts'e yeniden kapattırır
   assert.match(body(inv, "async function applyPayment("), /paidByLedger: false/);

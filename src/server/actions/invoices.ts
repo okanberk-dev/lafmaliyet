@@ -495,12 +495,10 @@ export async function restoreInvoicePayment(states: z.input<typeof paymentStateS
     const me = await requireAdmin();
     const list = z.array(paymentStateSchema).min(1, "Geri alınacak değişiklik yok").max(1000).parse(states);
     const db = getDb();
+    // ✓'nin dağıtımları ve "Ödenmedi" engeli tek işlemde: reddedilirse dağıtımlar silinmez
     await dropAllocations(
       list.flatMap((x) => x.allocationIds ?? []),
       list.map((x) => x.id),
-    );
-    await assertNotCovered(
-      db,
       list.filter((x) => x.unpaid).map((x) => x.id),
     );
     const current = await db

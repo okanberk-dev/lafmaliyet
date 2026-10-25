@@ -33,7 +33,7 @@ import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
 import { deleteRecentPayment, NeedsPastConfirm } from "@/server/cari/entries";
 import { undoConversion, type ConvertSnapshot } from "@/server/cari/kasa";
-import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
+import { dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
 import { forgetVatPaid, rememberVatPaid } from "@/server/data/vat-paid";
 import { loadTermDays } from "@/server/data/suppliers";
@@ -257,10 +257,9 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
     switch (k) {
       case "invoice": {
         // ✓ hesaptaki cari ödemesini kullandıysa önce o dağıtımlar silinir; hesaptaki ödemeyle kapanmış fatura ödenmediye
-        // dönmez (K7)
+        // dönmez (K7; engel aynı işlemde: reddedilirse dağıtımlar silinmez)
         const allocationIds = Array.isArray(entry.allocationIds) ? entry.allocationIds.filter((x) => Number.isInteger(x) && x > 0) : [];
-        await dropAllocations(allocationIds, [rid]);
-        await assertNotCovered(db, [rid]);
+        await dropAllocations(allocationIds, [rid], [rid]);
         const [row] = await db
           .update(s.invoices)
           .set({ unpaid: true, paidAt: null, paidVia: null, paymentRequestedAt: entry.requestedAt ?? null, paidByLedger: false })
