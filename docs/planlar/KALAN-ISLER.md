@@ -1,4 +1,4 @@
-# Kalan işler (23 Ekim 2026, 18:30 UTC itibarıyla)
+# Kalan işler (25 Ekim 2026, 13:00 UTC itibarıyla)
 
 Bu klasör, panel için hazırlanan uygulama planlarını ve kalan işlerin durumunu tutar. Yeni bir oturum işe buradan
 başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlarda birebir verilir.
@@ -30,6 +30,23 @@ başlar. Planlar İngilizce yazıldı; arayüz metinleri Türkçedir ve planlard
   bağlantı olarak). Güncel durum için `git log origin/main`.
 
 ## 2. Kalan işler (sırayla)
+
+### Süren işler (25 Ekim 2026)
+
+| İş | Plan | Durum |
+|---|---|---|
+| Dalga 10: personele açılan yetkiler (onaylı / onaysız), ortak onay kuyruğu | `personel-yetki.md` (dal `claude/dalga-10-personel`) | Uygulanıyor; Kasa maddeleri ve 2.5, 2.2 bitti, B grubunun kalanı sürüyor. Migration birleştirmede `0039_personel_yetki` olur. |
+| Dalga 13: Kasa raporunda yazarkasa-POS mali Z raporu (ModPOS Z'den ayrı) ve doğru okuma | `okc-z.md` | Plan hazır. 1. adım (yanlış bölüme çekilen fotoğraf alan doldurmaz, başlıklar) fotoğrafsız yapılabilir; 2. adım sahibin 5–8 günlük Z fotoğraflarını ve sorularının yanıtını bekler. Dalga 10'dan sonra (aynı Kasa dosyaları). |
+| Dalga 12: Vergi bölümü (gelir-gider, kurumlar ve geçici vergi, KDV, muhtasar, damga, SGK; tahmini ve kaynaklı) | `vergi.md` | Plan hazır; muhasebeciye sorulacak 8 madde planın sonunda. Dalga 13'ten sonra (gelir dayanağı mali Z). |
+| Senkron: panel ↔ laffogato.net ↔ uygulama | `senkron.md` | Plan hazır. Faz 1: S1, S2 (site), M1 (uygulama), P1, P2 (panel), M2. Sahibe soru A (sitenin Neon planı), 7, 10. |
+| Genel denetim: sahibin 22 Ekim'den beri istekleri ile yapılanlar | `denetim-listesi.md` | 19 açık madde (4 hatalı, 2 yapılmadı, 5 kısmen, 8 sahibe bağlı); düzeltmeler son dalgada, her biri testiyle. |
+
+**Ayrı PR / sahibe soru (dalga 11 ve denetimden):**
+- K21: teslimde ödenen (peşin) takipli kartta "Geçmiş faturaları al" ile gelen takip öncesi faturaya hesaptaki para sayılıyor; takip başlangıcından önceki faturalar `applyCreditOnArrival`'a gönderilmemeli (denetim D-02).
+- K4 "2A": takip öncesi tarihli faturaya muhasebeci panel ödemesini Paraşüt'te de işlediyse ödeme iki kez sayılır (dar pencere; `docs/TEDARIKCILER.md` › Kalan borç).
+- Personel panelden açılan karaoke sayacını onaysız siliyor: ilk 10 dakika serbest, sonrası silme isteği (denetim D-03; `personel-yetki.md` §5.1).
+- Sohbete yapıştırılan hediye Anthropic anahtarı Console'da iptal edilip yenilenmeli (denetim D-06).
+- Sahibe soru: personelin fişli harcaması bugün Aylık harcamalar'a doğrudan yazılıyor (sahibin kararı, CRITIQUE2). Yönetici onayına bağlansın mı? Bu bir yetki daraltmasıdır, dalga 10'un konusu değil (denetim D-19; `personel-yetki.md` §5.1).
 
 ### Birinci paket (planlar hazır; kurallar ve birleştirme sırası `CRITIQUE.md`)
 
