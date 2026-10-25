@@ -207,7 +207,8 @@ biri:
   ("Nakit" → Elden), o da yoksa Havale / EFT.
 - **Kasadan ödeme her zaman bir Kasa satırıdır:** o günün işlenmemiş Teslim satırı seçilir (tutar satırınki) ya da
   "Bu ayrı bir ödeme, kasaya yeni satır ekle" ile Teslim satırı açılır (Kime: tedarikçinin adı). Teslim satırı gider
-  yazmaz, akşam kasasının "Gün içinde çıkan"ına girer. Listede o günün alışveriş satırları da durur; seçilirse
+  yazmaz, akşam kasasının "Gün içinde çıkan"ına girer. Yeni satır personelin Kasa'sında da "Teslim · Sütaş" ve
+  tutarıyla (kilitli) görünür: kasayı sayan personel çıkan parayı görür. Listede o günün alışveriş satırları da durur; seçilirse
   **Ödemeye çevir**: satırın gider kaydı silinir (onayla; geçmiş aysa ay onayı da), satır Teslim · ödeme olur.
 - **Neye sayılsın:** **En eski borçtan** (vadesi en yakın kalemden; faturası gelmiş olabilecek fatura atlanır),
   **Seçerek** (kalem ve tutar) ya da **Hesapta beklesin** (avans, toptan). Canlı önizleme: "Kapanacak: SUT123
