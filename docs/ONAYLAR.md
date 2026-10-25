@@ -111,10 +111,19 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
 - Saf kurallar: `src/lib/staff-requests.ts` (türler, durumlar, etiketler, sınırlar, `reviewRefusal`, `nextBump`,
   `isExpired`, e-posta satırları).
 - Çekirdek: `src/server/staff-requests/core.ts` (`server-only` ve `"use server"` değil; veritabanını ya da işlemi
-  parametre alır): `createOrUpdateRequest` (kişinin danışma kilidi altında), `lockForReview` → `decide`, `withdrawOwn`,
-  `supersede`, `assertNotHeld`, `releaseHeld`, `expireStaffRequests`; okuyucular `countPendingByKind`,
-  `pendingRequests`, `recentDecisions`, `ownRequests` (ham yük yok). Kullanıcıya gösterilen hatalar `UserError`
-  (`src/server/user-error.ts`).
+  parametre alır): `createOrUpdateRequest` (kişinin danışma kilidi altında), `peekForReview` → `lockForReview` →
+  `decide`, `withdrawOwn`, `supersede`, `assertNotHeld`, `releaseHeld`, `expireStaffRequests`; okuyucular
+  `countPendingByKind`, `pendingRequests`, `recentDecisions`, `ownRequests` (ham yük yok). Kullanıcıya gösterilen
+  hatalar `UserError` (`src/server/user-error.ts`).
+- **Kilit sırası: önce konu, sonra istek.** İsteği açan ve güncelleyen yol konu nesnesini kilitleyip
+  `createOrUpdateRequest`'e geçer: kasadan çıkan satırı, kasa raporu, günün danışma kilidi (`kasa-gec:<gün>`,
+  `kapali-gun:<gün>`), zayi kaydı, tedarikçinin kilidi (`mal-taslak:<anahtar>`). Doğrudan yazımlar da (satırı ya da
+  kaydı silmek, günü doğrudan girmek ya da kapalı işaretlemek) konu nesnesini kilitleyip bekleyen istekleri öyle kapatır.
+  Karar aynı sırayla: `peekForReview` kilitsiz okur, konu nesnesi kilitlenir, sonra `lockForReview(…, { peeked })`
+  bütün denetimleri kilit altında yeniden yapar. Ters sıra, personelin güncellemesiyle aynı anda verilen onayı
+  kilitlenmeye (40P01, "İşlem tamamlanamadı") düşürür. Yeni bir karar çekirdeği de bu sırayla yazılır; kaynak testi
+  (`tests/onay-kuyrugu.test.ts`) her `lockForReview` çağrısında `peeked` ister, veritabanı testleri yarışı
+  `tests/helpers/lock-race.ts` ile kurar (üçüncü bir bağlantı istek satırını tutar, iki yol sırayla beklemeye girer).
 - Genel eylem: `src/server/actions/staff-requests.ts` → `withdrawStaffRequest` (tek export). İstek ve karar eylemleri
   her alanın kendi `"use server"` dosyasında; her biri kendi oturum ve rol denetimini yapar (`requireUser` /
   `requireAdmin`).
@@ -122,4 +131,6 @@ siparişi taslağını süresi dolmuş sayar; tuttukları fotoğraflar 7 gün so
   `WITHDRAW_LOG`, `STAFF_APPROVAL_KINDS` (personel Yardım'ı); Onaylar'da kartı, zilde satırı.
 - Testler: `tests/onay-kuyrugu.test.ts` (saf kurallar ve kaynak denetimleri), `tests/onay-kuyrugu-db.test.ts`
   (`ONAY_TEST_DATABASE_URL`; tek bekleyen, istemci anahtarı, sürüm, kendini onaylama, geri çekme ile onay yarışı,
-  sınırlar, supersede, fotoğraf tutma, süre dolması).
+  sınırlar, supersede, fotoğraf tutma, süre dolması). Kilit sırası yarışları her alanın kendi veritabanı testinde
+  ("kilit sırası: …"): kasadan çıkan ve fotoğraf kaldırma, kasa düzeltme ve silme, geç rapor (yöneticinin doğrudan
+  girişi dahil), zayi silme, kapalı gün, mal siparişi taslağı.

@@ -26,6 +26,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL = process.env.ZAYI_ISTEK_TEST_DATABASE_URL;
 /** Türkiye saatiyle an */
 const tr = (local: string) => new Date(`${local}:00+03:00`);
@@ -289,5 +291,39 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     await refused(core.addWaste(db, users.ayse, item({ date: CLOSED_TODAY }), CLOSED_NOW), CLOSED_TEXT.refusal);
     const admin = await core.addWaste(db, users.ali, item({ date: CLOSED_TODAY }), CLOSED_NOW);
     assert.ok(admin.id > 0);
+  });
+
+  test("kilit sırası: silme isteğini güncelleyen personel ya da kaydı doğrudan silen yönetici, aynı anda verilen onayla kilitlenmez (kayıt, sonra istek)", async () => {
+    const entry = async () =>
+      (
+        await db
+          .insert(s.wasteEntries)
+          .values({ date: "2029-03-06", kind: "zayi", productId: latte, name: `Latte ${tag} M`, qty: 1, unit: "adet", createdBy: users.mehmet.id, createdByName: "Mehmet" })
+          .returning({ id: s.wasteEntries.id })
+      )[0].id;
+    const e1 = await entry();
+    const a = await askDelete(users.ayse, e1);
+    const [approve, edit] = await raceOnRequest(
+      URL!,
+      a.row.id,
+      () => review(users.ali, a.row.id, a.row.version, "approve"),
+      () => core.proposeWasteDelete(db, users.ayse, { id: e1, message: "Yine yanlış", clientKey: key() }, NOW),
+    );
+    assert.equal(approve.status, "fulfilled");
+    // Kayıt onayla silindi: güncelleme temiz bir hatayla düşer
+    assert.equal(edit.status, "rejected");
+    assert.equal((await db.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, e1))).length, 0);
+
+    const e2 = await entry();
+    const b = await askDelete(users.ayse, e2);
+    const [approve2, removed] = await raceOnRequest(
+      URL!,
+      b.row.id,
+      () => review(users.ali, b.row.id, b.row.version, "approve"),
+      () => core.removeWaste(db, users.veli, e2, NOW),
+    );
+    assert.equal(approve2.status, "fulfilled");
+    assert.equal(removed.status, "rejected", "kayıt onayla silinmişti");
+    assert.equal((await requestOf(b.row.id)).status, "approved");
   });
 });

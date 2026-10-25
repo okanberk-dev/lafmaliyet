@@ -22,7 +22,7 @@ import {
 import { closedDayRefusal } from "@/server/closed-days";
 import { resolveWasteTarget } from "@/server/data/waste";
 import { schema as s, type DB } from "@/server/db";
-import { createOrUpdateRequest, decide, lockForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
+import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
 import { UserError } from "@/server/user-error";
 
 /*
@@ -161,7 +161,8 @@ export async function proposeWasteDelete(
   const message = input.message.trim();
   if (message.length < 3) throw new UserError(WASTE_REQUEST_TEXT.messageShort);
   return db.transaction(async (tx) => {
-    const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).limit(1);
+    // Kayıt kilitlenir (kayıt, sonra istek): aynı anda verilen onay ya da doğrudan silmeyle sıraya girer, silinmiş kayda istek açılmaz
+    const [row] = await tx.select().from(s.wasteEntries).where(eq(s.wasteEntries.id, input.id)).for("update");
     if (!row) throw new UserError("Kayıt bulunamadı");
     const mode = staffDeleteMode(row, me, now, await wasteLock(tx, row.date));
     if (mode === "direct") throw new UserError(WASTE_REQUEST_TEXT.deleteDirect);
@@ -209,7 +210,12 @@ export async function reviewWasteRequestCore(
   now = new Date(),
 ): Promise<WasteReviewResult> {
   return db.transaction(async (tx) => {
-    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
+    // Kilit sırası isteği açan ve kaydı doğrudan silen yollarla aynı (kayıt, sonra istek): silme onayında önce kayıt
+    const peeked = await peekForReview(tx, me, input.id);
+    if (peeked.kind === "zayi-sil" && input.decision === "approve") {
+      await tx.select({ id: s.wasteEntries.id }).from(s.wasteEntries).where(eq(s.wasteEntries.id, WasteDeletePayload.parse(peeked.payload).entryId)).for("update");
+    }
+    const row = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     if (row.kind !== "zayi-gec" && row.kind !== "zayi-sil") throw new UserError(REQUEST_TEXT.notFound);
     const kind = row.kind;
     if (input.decision === "reject") {

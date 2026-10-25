@@ -181,6 +181,35 @@ test("çekirdek sunucu eylemi değil; veritabanını parametre alır (testli, se
   assert.match(withdraw, /eq\(s\.staffRequests\.status, "pending"\), eq\(s\.staffRequests\.requestedBy, me\.id\)/);
 });
 
+test("kilit sırası: her karar istek satırından önce konu nesnesini kilitler (peekForReview, kilit, lockForReview peeked ile)", () => {
+  // İsteği açan yollar konu nesnesini kilitleyip createOrUpdateRequest'e geçer; karar ters sırayla kilitlerse personelin
+  // güncellemesiyle aynı anda verilen onay 40P01'e düşer (veritabanı testleri: tests/helpers/lock-race.ts)
+  const walk = (dir: string): string[] =>
+    readdirSync(join(process.cwd(), dir), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : [],
+    );
+  const callers = walk("src/server").filter((f) => !f.endsWith("staff-requests/core.ts") && /lockForReview\(/.test(read(f)));
+  assert.deepEqual(callers.sort(), [
+    "src/server/cash-outs/requests.ts",
+    "src/server/cash/requests.ts",
+    "src/server/closed-day-requests.ts",
+    "src/server/order-drafts/core.ts",
+    "src/server/waste/core.ts",
+  ]);
+  for (const f of callers) {
+    const src = read(f);
+    const calls = [...src.matchAll(/await lockForReview\(tx, me, \{([^}]*)\}/g)];
+    assert.ok(calls.length > 0, f);
+    for (const c of calls) {
+      assert.match(c[1], /\bpeeked\b/, `${f}: lockForReview peeked olmadan`);
+      // Aynı işlevde, kilitten önce kilitsiz okuma (peekForReview ya da taslağın peek'i)
+      const before = src.slice(0, c.index);
+      const fnStart = before.lastIndexOf("export async function");
+      assert.match(before.slice(fnStart), /await (peekForReview|peek)\(/, `${f}: kilitten önce okuma yok`);
+    }
+  }
+});
+
 test("genel eylem dosyası: tek eylem (withdrawStaffRequest), önce oturum; başka hiçbir şey dışa açık değil", () => {
   const src = read("src/server/actions/staff-requests.ts");
   assert.ok(src.startsWith('"use server";'));

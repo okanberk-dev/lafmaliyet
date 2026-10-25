@@ -25,6 +25,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL_ = process.env.TASLAK_TEST_DATABASE_URL;
 
 describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TASLAK_TEST_DATABASE_URL yok" }, () => {
@@ -238,6 +240,23 @@ describe("Mal siparişi taslağı: gerçek veritabanıyla", { skip: !URL_ && "TA
     assert.equal([w, r].filter((x) => x.status === "fulfilled").length, 1);
     const row = await reqRow(a.row.id);
     assert.equal(row.status, w.status === "fulfilled" ? "withdrawn" : "approved");
+  });
+
+  test("kilit sırası: taslağını güncelleyen personel, aynı anda verilen onayla kilitlenmez (tedarikçinin kilidi, sonra istek)", async () => {
+    reset();
+    const key = newKey();
+    const a = await submit(users.ayse, key);
+    const [r, edit] = await raceOnRequest(
+      URL_!,
+      a.row.id,
+      () => approve(users.ali, a.row.id, a.row.version, [{ ingredientId: ING.sut, qty: 2 }]),
+      () => submit(users.ayse, key, { clientKey: `ck-${tag}-${key}-yarış`, lines: [{ ingredientId: ING.sut, qty: 5 }] }),
+    );
+    assert.equal(r.status, "fulfilled");
+    // Onaylanmış taslak güncellenmez: temiz bir hatayla düşer
+    assert.equal(edit.status, "rejected");
+    assert.equal(((edit as PromiseRejectedResult).reason as Error).message, DRAFT_TEXT.ownApproved);
+    assert.equal((await reqRow(a.row.id)).status, "approved");
   });
 
   test("süresi geçmiş taslak gönderilmez; tedarikçi kartı değiştiyse taslak düşer; bu arada sipariş gittiyse kapanır", async () => {

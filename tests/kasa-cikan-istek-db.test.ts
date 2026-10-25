@@ -27,6 +27,8 @@ import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
 import { UserError } from "../src/server/user-error";
 
+import { raceOnRequest } from "./helpers/lock-race";
+
 const URL = process.env.KASA_ISTEK_TEST_DATABASE_URL;
 /** Türkiye saatiyle an */
 const tr = (local: string) => new Date(`${local}:00+03:00`);
@@ -448,5 +450,67 @@ describe("Kasadan çıkan istekleri: veritabanında istek, karar, fiş ve fotoğ
     const only = await photo(users.ayse, "kasa-z");
     await db.insert(s.cashReportPhotos).values({ reportId: rep2.id, photoId: only, kind: "kasa-z" });
     await refused(reqs.proposePhotoRemoval(db, users.ayse, { photoId: only, message: null, clientKey: null }, AT), CASH_OUT_REQUEST_TEXT.photoOnlyZ);
+  });
+
+  test("kilit sırası: düzeltmesini güncelleyen personel ya da satırı doğrudan silen yönetici, aynı anda verilen onayla kilitlenmez (satır, sonra istek)", async () => {
+    // Personel bekleyen düzeltmesini güncellerken yönetici onaylıyor
+    const id = await adminRow(YESTERDAY, { amount: 500 });
+    const out = await propose(users.ayse, { op: "duzelt", cashOutId: id, line: line({ amount: 510, store: "Bim", description: "buz" }), clientKey: key() });
+    const [approve, edit] = await raceOnRequest(
+      URL!,
+      out.row.id,
+      () => review(users.ali, out.row.id, out.row.version, "approve"),
+      () => propose(users.ayse, { op: "duzelt", cashOutId: id, line: line({ amount: 520, store: "Bim", description: "buz" }), clientKey: key() }),
+    );
+    assert.equal(approve.status, "fulfilled");
+    assert.equal((await outOf(id)).amount, 510);
+    // Güncelleme onaydan sonra sıraya girdi: satırın onaylanmış hâline yeni bir öneri olur
+    assert.equal(edit.status, "fulfilled");
+    const again = (edit as PromiseFulfilledResult<Awaited<ReturnType<typeof propose>>>).value;
+    assert.notEqual(again.row.id, out.row.id);
+    assert.equal(again.payload.before?.amount, 510);
+    await review(users.ali, again.row.id, again.row.version, "reject");
+
+    // Yönetici satırı doğrudan silerken (satır, sonra satırın istekleri kapanır) başka bir sekmede silme isteğini onaylıyor
+    const id2 = await adminRow(YESTERDAY, { amount: 60 });
+    const del = await propose(users.ayse, { op: "sil", cashOutId: id2, clientKey: key() });
+    const [approve2, removed] = await raceOnRequest(
+      URL!,
+      del.row.id,
+      () => review(users.ali, del.row.id, del.row.version, "approve"),
+      () =>
+        db.transaction(async (tx) => {
+          const row = await write.lockCashOut(tx, id2);
+          if (!row) throw new UserError("Satır bulunamadı");
+          return write.removeCashOut(tx, row);
+        }),
+    );
+    assert.equal(approve2.status, "fulfilled");
+    assert.equal(removed.status, "rejected", "satır onayla silinmişti");
+    assert.equal(await outOf(id2), undefined);
+    assert.equal((await requestOf(del.row.id)).status, "approved");
+  });
+
+  test("kilit sırası: fotoğraf kaldırma isteğini güncelleyen personel, aynı anda verilen onayla kilitlenmez (rapor, sonra istek)", async () => {
+    const DAY = "2028-09-20";
+    const AT = tr(`${DAY}T22:30`);
+    const rep = await report(DAY);
+    const zs = [await photo(users.ayse, "kasa-z"), await photo(users.ayse, "kasa-z")];
+    for (const p of zs) {
+      await db.insert(s.cashReportPhotos).values({ reportId: rep.id, photoId: p, kind: "kasa-z" });
+      await db.update(s.photos).set({ linkedAt: AT, expiresAt: null }).where(eq(s.photos.id, p));
+    }
+    const out = await reqs.proposePhotoRemoval(db, users.ayse, { photoId: zs[1], message: "Başka günün Z'si", clientKey: null }, AT);
+    const [approve, edit] = await raceOnRequest(
+      URL!,
+      out.row.id,
+      () => reqs.reviewPhotoRemovalCore(db, users.ali, { id: out.row.id, seenVersion: out.row.version, decision: "approve", note: null }, AT),
+      () => reqs.proposePhotoRemoval(db, users.ayse, { photoId: zs[1], message: "Yanlış fotoğraf", clientKey: null }, AT),
+    );
+    assert.equal(approve.status, "fulfilled");
+    // Fotoğraf rapordan çıktı: güncelleme temiz bir hatayla düşer
+    assert.equal(edit.status, "rejected");
+    const links = await db.select().from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, rep.id));
+    assert.deepEqual(links.map((l) => l.photoId), [zs[0]]);
   });
 });

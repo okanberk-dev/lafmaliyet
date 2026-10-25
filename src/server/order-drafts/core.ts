@@ -250,7 +250,7 @@ export async function reviewDraftCore(
   deps: DraftDeps,
   now = new Date(),
 ): Promise<{ status: "approved" | "rejected"; row: StaffRequestRow; payload: DraftPayloadT; result: DraftResultT | null }> {
-  const { payload } = await peek(db, input.id);
+  const { row: peeked, payload } = await peek(db, input.id);
   const note = input.note?.trim() || null;
   if (input.decision === "reject" && !note) throw new UserError(DRAFT_TEXT.rejectNote);
   let result: DraftResultT | null = null;
@@ -275,8 +275,9 @@ export async function reviewDraftCore(
     result = { approvedLines: approved, supplierNote, message, edited: draftEdited(payload.lines, approved) };
   }
   return db.transaction(async (tx) => {
+    // Kilit sırası taslağı açan yolla aynı (submitDraftCore: tedarikçinin kilidi, sonra istek)
     await lockSupplier(tx, payload.supplierKey);
-    const locked = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion }, now);
+    const locked = await lockForReview(tx, me, { id: input.id, seenVersion: input.seenVersion, peeked }, now);
     if (locked.kind !== DRAFT_KIND) throw new UserError(REQUEST_TEXT.notFound);
     if (input.decision === "reject") {
       const row = await decide(tx, locked, me, "rejected", { note }, now);

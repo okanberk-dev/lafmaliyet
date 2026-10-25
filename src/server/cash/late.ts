@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gt, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, staffLateDay, type CashReportFields } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
@@ -13,7 +13,7 @@ import { getPhoto, holdPhoto, linkable, releasePhoto } from "@/server/storage/ph
 import { UserError } from "@/server/user-error";
 
 import { chainNeighbours } from "./late-chain";
-import { lockCashReport, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
+import { lockCashReport, lockLateDay, writeCashReport, type CashActor, type CashReportRow, type CashTx, type WriteResult } from "./report-store";
 
 /*
  * Geç kasa raporu (docs/KASA-RAPORU.md › Geç rapor; plan docs/planlar/personel-yetki.md §2.6): personel dünden eski, son
@@ -23,11 +23,6 @@ import { lockCashReport, writeCashReport, type CashActor, type CashReportRow, ty
  * yazılır (writeCashReport, aynı denetimler); "Düzeltip onayla"da isteyenin hâli 1. sürüm, yöneticinin değerleri 2.
  * sürüm olur. Sunucu eylemi değil: src/server/actions/cash-requests.ts oturumu ve rolü denetleyip çağırır.
  */
-
-/** Günün kilidi: aynı günün isteği, onayı ve yöneticinin doğrudan girişi sıraya girer */
-async function lockLateDay(tx: CashTx, date: string): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kasa-gec:${date}`}))`);
-}
 
 export interface LateInput {
   /** Raporun alanları (Z no zorunlu); sayan isteyendir */
