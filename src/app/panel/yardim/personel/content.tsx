@@ -35,7 +35,7 @@ import { CASH_OUT_UNDO_TOAST_MS } from "@/lib/cash-outs";
 import { ANSWER_GRACE_MIN, STAFF_HISTORY_DAYS } from "@/lib/checklists";
 import { STAFF_SPECIAL_LIMITS } from "@/lib/closed-days";
 import { POS_UNDO_WINDOW_MS } from "@/lib/prices/pos";
-import { DRAFT_UNDO_MS } from "@/lib/reorder/draft";
+import { DRAFT_NUDGE_MS, DRAFT_UNDO_MS } from "@/lib/reorder/draft";
 import { STAFF_SOLD_OUT_MAX } from "@/lib/site-menu/sold-out";
 import { STAFF_APPROVAL_KINDS } from "@/lib/staff-requests";
 import { LATE_WINDOW_DAYS } from "@/lib/waste-requests";
@@ -418,8 +418,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             Sayımdan sonra <StaffPath href="/panel/hizli-sayim/siparis" /> her tedarikçi için önerilen miktarlarla açılır; − / + ile değiştirin, isterseniz
             tedarikçiye not yazın ve <B>Onaya gönder</B>. Yönetici miktarları değiştirebilir. Onaylanınca <B>WhatsApp&apos;ta aç</B>: sipariş önce kaydedilir, sonra
-            mesaj tedarikçiye hazır açılır. Yanlış gönderdiyseniz {minutes(DRAFT_UNDO_MS)} içinde <B>Geri al</B> ve tedarikçiye iptal yazın. Yönetici uzun süre
-            bakmadıysa <B>Yöneticiye WhatsApp&apos;tan haber ver</B>.
+            mesaj tedarikçiye hazır açılır. Yanlış gönderdiyseniz {minutes(DRAFT_UNDO_MS)} içinde <B>Geri al</B> ve tedarikçiye iptal yazın. Taslak{" "}
+            {minutes(DRAFT_NUDGE_MS)} içinde onaylanmazsa <B>Yöneticiye WhatsApp&apos;tan haber ver</B> çıkar.
           </>
         ),
         icon: ShoppingBasket,

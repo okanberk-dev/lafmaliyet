@@ -49,10 +49,9 @@ import { Suspense, type ReactNode } from "react";
 import { NAV_FOOTER, navTreeFor } from "@/components/panel/nav";
 import { PageHeader } from "@/components/panel/page-header";
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
-
-import { ButtonLink } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/ui/misc";
 import { requireAdmin } from "@/server/auth/dal";
 
@@ -603,11 +602,13 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           <>
             <Path href="/panel/kullanicilar" /> › Kullanıcı ekle: giriş e-postasını siz yazarsınız, rol: Personel. Parolayı siz belirleyebilir ya da davet bağlantısı
             gönderebilirsiniz: kişi parolasını 72 saat geçerli bağlantıdan kendisi belirler; bağlantıyı kopyalayın, WhatsApp&apos;ta ya da e-postayla paylaşın. Personel
-            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı), Kasa raporu (Z raporu ve fişler fotoğraftan), Kontrol listeleri, Zayi &amp; ikram, Reçete
-            defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hızlı sayım (haftalık kritik kalemler, gelen mal siparişine Geldi, sipariş taslağı), Özel günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım
-            ekranlarını görür; önemli düzeltmeler isteğe döner, <Path href="/panel/onaylar" /> ekranında karar verirsiniz. Personelin Yardım&apos;ı
-            (Yardım başlığındaki Personelin Yardım&apos;ı düğmesi) yalnız onun ekranlarını anlatır; hesabı açtıktan sonra ona gösterin. maliyet, maaş, kâr ve karaoke tutarlarını görmez. Her kullanıcı Hesabım&apos;dan parolasını değiştirip iki adımlı doğrulamayı (Google
-            Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
+            Bugün, Karaoke (bar ekranı: uygulama siparişleri, oda sayacı, Tükendi / Satışa aç), Kasa raporu (Z raporu ve fişler fotoğraftan, kasadaki satış
+            fiyatları), Kontrol listeleri (son 7 günün geçmişiyle), Zayi &amp; ikram, Reçete defteri (değişiklik ve yeni ürün önerir, önerirken satış fiyatı
+            yazabilir), Stok sayımı (Listeye ekle ile kalem ekler), Hızlı sayım (haftalık kritik kalemler, sipariş taslağı, gelen mal siparişine Geldi), Özel
+            günler, Hatırlatıcılarım, kendi Yardım&apos;ı ve Hesabım ekranlarını görür; maliyet, maaş, kâr ve karaoke tutarlarını görmez. Geçmiş kasa, silme, geç
+            kayıt, kapalı gün ve sipariş taslağı gibi önemli işler isteğe döner, kararı siz <Path href="/panel/onaylar" /> ekranında verirsiniz. Personelin
+            Yardım&apos;ı (bu sayfanın başlığındaki düğme) yalnız onun ekranlarını anlatır; hesabı açınca ona gösterin. Her kullanıcı Hesabım&apos;dan parolasını
+            değiştirip iki adımlı doğrulamayı (Google Authenticator vb.) açabilir. Yönetici eklerken ya da bir yöneticinin rolünü, parolasını, e-postasını değiştirirken kendi parolanız sorulur.
           </>
         ),
         icon: UserPlus,
