@@ -113,8 +113,9 @@ export function statementRows(input: StatementInput, range: { from?: string | nu
     const what = debtLabel(d);
     if (d.invoiceId !== null) {
       const inv = invoiceById.get(d.invoiceId);
-      const target = inv ? invoiceLabel(inv) : "faturaya";
-      rows.push({ key: `b:${d.id}`, date: d.date, kind: "bagli", label: `Faturasız alım · ${what} → ${inv ? `${target} faturasına` : target} bağlandı`, debit: d.amount, credit: 0, muted: true, ref });
+      // "SUT149 faturasına", numarasızda "20.10.2026 faturasına" (invoiceLabel'ın "… faturası" eki iki kez yazılmasın)
+      const target = inv ? `${inv.invoiceNo?.trim() || dateTR(inv.date)} faturasına` : "faturaya";
+      rows.push({ key: `b:${d.id}`, date: d.date, kind: "bagli", label: `Faturasız alım · ${what} → ${target} bağlandı`, debit: d.amount, credit: 0, muted: true, ref });
     } else if (d.costMode === "devir") rows.push({ key: `b:${d.id}`, date: d.date, kind: "devir", label: `Eski borç (devir) · ${what}`, debit: d.amount, credit: 0, ref });
     else rows.push({ key: `b:${d.id}`, date: d.date, kind: "alim", label: `Faturasız alım · ${what} (${MODE_NOTE[d.costMode]})`, textLabel: `Faturasız alım · ${what}`, debit: d.amount, credit: 0, ref });
   }

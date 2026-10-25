@@ -82,6 +82,17 @@ test("borçlar, bağlı borç (gri) ve ödeme: aynı günde önce borç, sonra �
   assert.equal(st.closing, 750, "devir 900 − hesapta 150");
 });
 
+test("numarasız faturaya bağlı borç: 'faturası faturasına' değil, '20.10.2026 faturasına bağlandı'", () => {
+  const st = statementRows({
+    invoices: [{ id: 7, date: "2026-10-20", invoiceNo: null, payable: 1250, unpaid: true, ledgerBase: 0 }],
+    debts: [{ id: 1, date: "2026-10-18", amount: 1250, description: "süt", costMode: "fatura", dueDate: null, invoiceId: 7 }],
+  });
+  assert.equal(plain(st.rows.find((r) => r.kind === "bagli")!.label), "Faturasız alım · süt → 20.10.2026 faturasına bağlandı");
+  // Fatura okunamıyorsa (başka tedarikçide): "faturaya bağlandı"
+  const away = statementRows({ invoices: [], debts: [{ id: 1, date: "2026-10-18", amount: 1250, description: "süt", costMode: "fatura", dueDate: null, invoiceId: 99 }] });
+  assert.equal(plain(away.rows.find((r) => r.kind === "bagli")!.label), "Faturasız alım · süt → faturaya bağlandı");
+});
+
 test("başka tedarikçide görünen faturaya sayılan kısım ekstrede ayrı satır: son bakiye hesapla aynı", () => {
   const input = {
     invoices: [] as AccountInvoice[],
