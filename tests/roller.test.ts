@@ -47,6 +47,9 @@ test("personel yalnız kendi ekranlarını açar; yol parçası sınırında eş
   for (const p of ["src/app/panel/kontrol/duzenle/page.tsx", "src/app/panel/kontrol/duzenle/[id]/page.tsx"]) {
     assert.match(read(p), /await requireAdmin\(\)/, p);
   }
+  // Kasadaki fiyatlar (dalga 10 §2.2): personel kasanın altında işaretler; Ürünler › Fiyatlar kapalı
+  assert.ok(canOpen("staff", "/panel/kasa/fiyatlar"));
+  assert.equal(canOpen("staff", "/panel/urunler/fiyatlar"), false);
   // Özel günler ve personelin Yardım'ı; yöneticinin Yardım'ı ve Onaylar kapalı
   assert.ok(canOpen("staff", "/panel/ozel-gunler"));
   assert.ok(canOpen("staff", "/panel/yardim/personel"));
