@@ -6,7 +6,9 @@ import { splitSupplier } from "@/app/panel/faturalar/rules";
 import { cleanAliases, nameConflict } from "@/app/panel/tedarikciler/logic";
 import {
   allocateFifo,
+  compareOpenItems,
   debtLabel,
+  dueOf,
   invoiceLabel,
   invoiceRoom,
   netCredit,
@@ -550,6 +552,11 @@ export interface EntrySnapshot {
   expense: { mode: "owned"; row: Omit<ExpenseRow, "createdAt" | "updatedAt"> } | { mode: "adopted"; id: number } | null;
   /** Ödemenin açtığı (onunla silinen) Kasa satırı */
   cashOut: Omit<CashOutRow, "createdAt" | "updatedAt"> | null;
+  /**
+   * Ödemenin sayıldığı ve silinirken elle ödendi işaretli kalan faturalar (✓ hesaptaki bu parayı saymıştı) ve işaretleri:
+   * Geri al işaret değişmediyse payı aynen geri yazar (eski kopyalarda yok)
+   */
+  kept?: { id: number; paidAt: string | null; paidVia: string | null }[];
 }
 
 export interface DeleteResult {
@@ -622,13 +629,16 @@ export async function deleteEntry(tx: Tx, id: number, confirmPast: readonly stri
   await recomputeAllocated(tx, invoiceIds);
   out.reopened = (await resettle(tx, invoiceIds)).reopened.length;
   // Elle ödendi işaretli (defterin kapatmadığı) ve bu ödemenin sayıldığı fatura olduğu gibi kalır
-  out.kept = invs.filter((i) => !i.unpaid && !i.paidByLedger).length;
+  const kept = invs.filter((i) => !i.unpaid && !i.paidByLedger);
+  out.kept = kept.length;
+  out.snapshot.kept = kept.map((i) => ({ id: i.id, paidAt: i.paidAt, paidVia: i.paidVia }));
   return { ...out, card };
 }
 
 /**
  * Silinen kaydı aynı kimlikle geri yazar ("Geri al"). Kopya yeniden doğrulanır (R4b): dağıtımlar ancak hedef hâlâ
- * duruyorsa ve yeri varsa yazılır, sığmayan para hesapta kalır; ödemenin açtığı Kasa satırı aynı kimlikle geri gelir,
+ * duruyorsa ve yeri varsa yazılır, sığmayan para hesapta kalır (silinirken elle ödendi işaretli kalan faturanın payı,
+ * işaret değişmediyse aynen geri gelir; bu arada elle ödendi yapılana yazılmaz); ödemenin açtığı Kasa satırı aynı kimlikle geri gelir,
  * bağlandığı var olan satır başka bir ödemeye geçtiyse ya da silindiyse kayıt geri alınmaz. Borcun kendi gider kaydı
  * yeniden yazılır (kategorisi duruyorsa), sahiplendiği kayıt hâlâ boştaysa yeniden sahiplenilir; geçmiş ayın gideri
  * değişiyorsa o ay onaylanmış olmalı (K18; yoksa NeedsPastConfirm, hiçbir şey yazılmaz). Döner: hesapta kalan.
@@ -707,12 +717,16 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot, confi
   const touched = new Set<number>();
   if (e.kind === "odeme") {
     let rest = round2(e.amount);
+    const kept = new Map((snap.kept ?? []).map((k) => [k.id, k]));
     for (const a of snap.allocations) {
       let room = 0;
       if (a.invoiceId !== null) {
         const [inv] = await lockInvoices(tx, [a.invoiceId]);
-        // Bu arada elle ödendi işaretlenen faturaya para yazılmaz (orada yer yok; sığmayan hesapta kalır)
-        if (inv && (inv.unpaid || inv.paidByLedger)) room = invoiceRoom(inv);
+        // Silinirken elle ödendi işaretli kalan fatura (✓ bu ödemenin parasını saymıştı), işareti değişmediyse payını
+        // aynen geri alır; bu arada elle ödendi işaretlenen faturaya para yazılmaz (orada yer yok; hesapta kalır)
+        const k = inv ? kept.get(inv.id) : undefined;
+        const sameMark = Boolean(inv && k && !inv.unpaid && !inv.paidByLedger && inv.paidAt === k.paidAt && inv.paidVia === k.paidVia);
+        if (inv && (inv.unpaid || inv.paidByLedger || sameMark)) room = invoiceRoom(inv);
       } else if (a.debtId !== null) {
         const [d] = await tx.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, a.debtId)).for("update").limit(1);
         if (d && d.kind === "borc" && d.supplierId === card.id && d.invoiceId === null) room = round2(Math.max(0, d.amount - (await debtAllocated(tx, d.id))));
@@ -752,7 +766,8 @@ export async function restoreEntry(tx: Tx, me: Actor, snap: EntrySnapshot, confi
 
 /**
  * Ödemenin dağıtımını baştan yazar (Neye sayıldı; geri almada önceki küme): eski dağıtımlar silinir, toplamlar
- * tazelenir, yeni satırlar açık kalemlere göre denetlenir (ödemenin kendi parası serbest kalmış olarak). Kart çağıranda
+ * tazelenir, yeni satırlar açık kalemlere göre denetlenir (ödemenin kendi parası serbest kalmış olarak; elle ödendi
+ * işaretli faturadaki eski payı kadar o fatura da seçenek). Kart çağıranda
  * kilitli. Döner: önceki satırlar ("Geri al").
  */
 export async function rewriteAllocation(
@@ -770,7 +785,19 @@ export async function rewriteAllocation(
   await recomputeAllocated(tx, before);
   // Ödemenin kapattığı faturalar açılır: açık kalemler onların kalanlarıyla okunur (pencerenin seçenekleri gibi)
   await resettle(tx, before);
-  const { items } = await lockAccount(tx, card.id, termDays);
+  const { items: open, invoices } = await lockAccount(tx, card.id, termDays);
+  // Elle ödendi işaretli faturadaki payı (✓ hesaptaki bu parayı saymıştı; işaret kalır) da seçenektir, payı kadar yerle
+  // (pencere de öyle gösterir); yoksa para hesaba geçer, aynı ödeme hem ödeme hem işaretli kısım olarak sayılırdı
+  const held = new Map<number, number>();
+  for (const a of removed) if (a.invoiceId !== null) held.set(a.invoiceId, round2((held.get(a.invoiceId) ?? 0) + a.amount));
+  const items: OpenItem[] = [...open];
+  for (const i of invoices) {
+    const balance = round2(Math.min(held.get(i.id) ?? 0, invoiceRoom(i)));
+    if (i.unpaid || i.paidByLedger || !(balance > EPS)) continue;
+    const due = dueOf(i, termDays);
+    items.push({ kind: "invoice", id: i.id, date: i.date, due: due.date, dueEstimated: due.estimated, balance, label: invoiceLabel(i) });
+  }
+  items.sort(compareOpenItems);
   let lines: AllocationLine[] = [];
   if (allocation.mode === "auto") lines = allocateFifo(items.filter((i) => i.quiet !== "link"), p.amount).lines;
   else if (allocation.mode === "manual") {

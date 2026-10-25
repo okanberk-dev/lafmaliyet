@@ -466,6 +466,36 @@ describe("cari eylemleri: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DAT
     assert.deepEqual([...(await settle.cardsWithCredit())], [[c.id, 300]]);
   });
 
+  test("silinen ödemenin Geri al'ı elle ✓'li faturaya (✓ hesaptaki bu parayı saymıştı) payını aynen geri yazar; Neye sayıldı ona yer verir", async () => {
+    const c = await card();
+    const f = await invoice({ payable: 1000, invoiceNo: "F1", date: "2026-10-05" });
+    const p = await pay(c.id, 300, { mode: "none", date: "2026-10-04" });
+    // ✓: önce hesaptaki 300 (K6), kalan 700 elle
+    ok(await invoices.setInvoicePaid(f.id, true));
+    const paid = await inv(f.id);
+    assert.deepEqual([paid.unpaid, paid.paidByLedger, paid.allocated], [false, false, 300]);
+    const del = ok(await cari.deleteSupplierEntry({ id: p.id }));
+    assert.ok(del.needs === null && del.kept === 1, "elle ✓ kalır");
+    assert.deepEqual([(await inv(f.id)).unpaid, (await inv(f.id)).allocated], [false, 0]);
+    const r = ok(await cari.restoreSupplierEntry(del.undo));
+    assert.equal(r.lost, 0, "pay geri yazıldı");
+    const back = await inv(f.id);
+    assert.deepEqual([back.unpaid, back.paidByLedger, back.allocated, back.paidAt], [false, false, 300, paid.paidAt]);
+    assert.deepEqual([...(await settle.cardsWithCredit())], [], "hesapta para kalmadı");
+    // Bu ay ödenen: 300 (ödeme) + 700 (işaretli kısım), 1.300 değil
+    const { paymentEvents } = await import("../src/lib/cari/account");
+    const events = paymentEvents([await inv(f.id)], (await data.loadCardEntries([c.id])).payments);
+    assert.equal(Math.round(events.reduce((a, e) => a + e.amount, 0) * 100) / 100, 1000);
+    // Neye sayıldı · En eski borçtan: elle ✓'li faturadaki pay seçenektir (pencerenin önizlemesi gibi), hesaba geçmez
+    const r2 = ok(await cari.setPaymentAllocation({ paymentId: p.id, mode: "auto", lines: [] }));
+    assert.deepEqual(r2.lines.map((l) => [l.id, l.amount]), [[f.id, 300]]);
+    assert.equal(r2.left, 0);
+    assert.equal((await inv(f.id)).allocated, 300);
+    // Seçerek de aynı satırla kaydedilir (Geri al'ın yolu)
+    ok(await cari.setPaymentAllocation({ paymentId: p.id, mode: "manual", lines: [{ kind: "invoice", id: f.id, amount: 300 }] }));
+    assert.equal((await inv(f.id)).allocated, 300);
+  });
+
   test("ödemenin günü ve şekli düzeltilince kapattığı faturanın ödeme günü ve şekli de değişir", async () => {
     const c = await card();
     const f = await invoice({ payable: 1000, invoiceNo: "SUT123" });
