@@ -630,6 +630,8 @@ describe("Paraşüt eşitlemesi: veritabanında akış (sahte Paraşüt)", { ski
       await db.delete(s.supplierEntries).where(eq(s.supplierEntries.supplierId, card.id));
       await db.delete(s.suppliers).where(eq(s.suppliers.id, card.id));
     }
+  });
+
   test("tedarikçi geçmişi: eski faturası sorulamayan fatura sonraki basışta kendi sayfasından yeniden denenir, kalınan yer takılı kalmaz", async () => {
     const id = await linkedAndPaid();
     fake.bills.delete("101");

@@ -12,7 +12,7 @@
  */
 import { accountOf, SOON_DAYS, type SupplierSummary } from "@/lib/cari/account";
 import { dateTR, money, num } from "@/lib/format";
-import { addDays, daysBetween } from "@/lib/reminders";
+import { daysBetween } from "@/lib/reminders";
 
 import { splitSupplier, supplierMatchKey } from "../faturalar/rules";
 
