@@ -10,6 +10,7 @@ import { missingText } from "@/lib/cash-month";
 import { SEPARATE_CATEGORIES } from "@/lib/constants";
 import { dateTimeTR, money, monthLabel, num, tl } from "@/lib/format";
 import type { UpcomingItem } from "@/lib/reminders";
+import { unreachable } from "@/lib/unreachable";
 
 /**
  * - done: yapıldı
@@ -84,12 +85,25 @@ export interface MonthTaskFacts {
   expenses?: { missing: string[]; entered: number; total: number };
 }
 
+/** Ödemeler kalemi faturasız borç mu (cari kayıt) */
+function isDebt(i: UpcomingItem): boolean {
+  switch (i.source) {
+    case "cari":
+      return true;
+    case "invoice":
+    case "reminder":
+      return false;
+    default:
+      return unreachable(i.source);
+  }
+}
+
 /**
  * Faturasız borçların sayısı ve toplamı, Ödemeler listesinin kalemlerinden (loadUpcoming: items + laterInvoices):
  * hesaptaki parayla mahsuptan sonraki net tutar; tamamen karşılananlar listede olmadığı için sayılmaz
  */
 export function debtFacts(items: readonly UpcomingItem[]): { count: number; total: number } {
-  const cari = items.filter((i) => i.source === "cari" && (i.amount ?? 0) > 0.005);
+  const cari = items.filter((i) => isDebt(i) && (i.amount ?? 0) > 0.005);
   return { count: cari.length, total: Math.round(cari.reduce((s, i) => s + (i.amount ?? 0), 0) * 100) / 100 };
 }
 
@@ -98,7 +112,7 @@ export function paymentFacts(items: UpcomingItem[], unpaid: { count: number; tot
   const overdue = items.filter((i) => i.status === "overdue");
   const soon = items.filter((i) => i.status === "today" || i.status === "soon");
   const total = (xs: UpcomingItem[]) => xs.reduce((s, i) => s + (i.amount ?? 0), 0);
-  const cari = (xs: UpcomingItem[]) => xs.filter((i) => i.source === "cari").length;
+  const cari = (xs: UpcomingItem[]) => xs.filter(isDebt).length;
   return {
     overdue: overdue.length,
     overdueTotal: total(overdue),

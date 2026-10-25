@@ -178,7 +178,7 @@ export async function saveInvoice(input: z.input<typeof invoiceSchema>) {
  * Tedarikçi adı değişen faturada cari ödemesi sayılmışsa ya da faturasız alımı bağlıysa fatura aynı kartta kalmalı:
  * yoksa para iki tedarikçi sayfasına bölünür (K23)
  */
-async function assertInvoiceStays(cur: { id: number; supplier: string; supplierTaxNumber: string | null; allocated: number }, supplier: string) {
+async function assertInvoiceStays(cur: Pick<typeof s.invoices.$inferSelect, "id" | "supplier" | "supplierTaxNumber" | "allocated">, supplier: string) {
   const db = getDb();
   const [linked] = await db.select({ id: s.supplierEntries.id }).from(s.supplierEntries).where(eq(s.supplierEntries.invoiceId, cur.id)).limit(1);
   if (!(cur.allocated > 0) && !linked) return;
