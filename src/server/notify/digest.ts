@@ -80,7 +80,7 @@ export async function loadUpcoming(today = todayTR()) {
 function cariHints(
   index: CariIndex,
   invoices: readonly { id: number; date: string; invoiceNo: string | null; cardId: number | null }[],
-  debts: readonly { id: number; date: string; cardId: number }[],
+  debts: readonly { id: number; date: string; cardId: number; dismissedCashOutIds?: readonly number[] }[],
 ): Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }> {
   const out = new Map<string, { quiet: "link" | "kasa"; hint: UpcomingHint }>();
   if (!index.strong.length && !index.kasaPending.length) return out;
@@ -94,14 +94,16 @@ function cariHints(
     });
   }
   if (!index.kasaPending.length) return out;
+  const none: readonly number[] = [];
   const items = [
-    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId }] : [])),
-    ...debts.map((d) => ({ ref: `cari:${d.id}`, date: d.date, cardId: d.cardId })),
+    ...invoices.flatMap((i) => (i.cardId !== null ? [{ ref: `invoice:${i.id}`, date: i.date, cardId: i.cardId, apart: none }] : [])),
+    // Borç ekle'de "Ayrı alım" denen Teslim satırı o borcun ödemesi değil (satır başka kalem için işlenmemiş kalır)
+    ...debts.map((d) => ({ ref: `cari:${d.id}`, date: d.date, cardId: d.cardId, apart: d.dismissedCashOutIds ?? none })),
   ];
   for (const it of items) {
     if (out.has(it.ref)) continue;
     // Kalemin gününden (aynı gün dahil: teslimatta şoföre ödenen) sonraki, en eski işlenmemiş satır
-    const line = index.kasaPending.find((l) => l.cardId === it.cardId && l.date >= it.date);
+    const line = index.kasaPending.find((l) => l.cardId === it.cardId && l.date >= it.date && !it.apart.includes(l.id));
     const href = line ? index.hrefOf(it.cardId) : undefined;
     if (!line || !href) continue;
     out.set(it.ref, {

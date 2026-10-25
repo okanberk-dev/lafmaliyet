@@ -659,14 +659,14 @@ describe("cari: veritabanında", { skip: !SERVER_URL && "CARI_TEST_DATABASE_URL 
       /zaten Teslim/,
     );
     // Geri al: ödeme silinir, satır alışverişe ve gider kaydı eski kimliğiyle döner, borç yeniden açık
-    const undone = await db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot))));
+    const undone = await db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot)), month));
     assert.equal(undone.expenseRestored, true);
     const [l5back] = await db.select().from(s.cashOuts).where(eq(s.cashOuts.id, l5.id));
     assert.deepEqual([l5back.kind, l5back.docType], ["harcama", "yok"]);
     const [e5back] = await db.select().from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, l5.id));
     assert.deepEqual([e5back.id, e5back.amount, e5back.note], [e5.id, 300, "Kasadan"]);
     assert.equal((await db.select().from(s.supplierAllocations).where(eq(s.supplierAllocations.debtId, d2.id))).length, 0);
-    await assert.rejects(db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot)))), /silindi ya da değişti/);
+    await assert.rejects(db.transaction((tx) => kasa.undoConversion(tx, JSON.parse(JSON.stringify(conv.snapshot)), month)), /silindi ya da değişti/);
     // Geçmiş ayın gideri onaysız silinmez
     const old = await out({ amount: 80, kind: "harcama", date: "2025-09-10" });
     await db.insert(s.expenseEntries).values({ date: "2025-09-10", categoryId: cat.id, amount: 80, cashOutId: old.id, createdBy: "Ayşe" });

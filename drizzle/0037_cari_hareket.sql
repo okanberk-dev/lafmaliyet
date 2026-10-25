@@ -28,6 +28,7 @@ CREATE TABLE "supplier_entries" (
 	"adopt_prev" jsonb,
 	"remind_after" text,
 	"dismissed_invoice_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"dismissed_cash_out_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"method" text,
 	"cash_out_id" integer,
 	"cash_out_created" boolean DEFAULT false NOT NULL,

@@ -26,11 +26,12 @@ import {
   type UpcomingItem,
 } from "@/lib/reminders";
 import { METHOD_LABEL, type CariMethod } from "@/lib/cari/balance";
+import { pastMonthLogSuffix, type MonthEffect } from "@/lib/cari/months";
 import { reminderUnchanged } from "@/lib/recent-paid";
 import { unreachable } from "@/lib/unreachable";
 import { paidPeriodsOf } from "@/lib/vat-paid";
 import { requireAdmin } from "@/server/auth/dal";
-import { deleteRecentPayment } from "@/server/cari/entries";
+import { deleteRecentPayment, NeedsPastConfirm } from "@/server/cari/entries";
 import { undoConversion, type ConvertSnapshot } from "@/server/cari/kasa";
 import { assertNotCovered, dropAllocations } from "@/server/cari/settle";
 import { forgetChangedReminder, forgetPaid, loadRecentPaid, rememberPaid } from "@/server/data/recent-paid";
@@ -43,7 +44,7 @@ import { loadDigestExtras } from "@/server/notify/digest-extras";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings } from "@/server/notify/settings";
 
 import { logActivity } from "./log";
-import { attempt, UserError, zDate, zOptText, zText } from "./util";
+import { attempt, UserError, zDate, zMonth, zOptText, zText } from "./util";
 
 const zId = z.number().int().positive();
 
@@ -237,13 +238,15 @@ export async function restoreReminder(id: number, prev: z.input<typeof snapshotS
  * Ödemeler › Son ödenenler: 30 gün içinde "Ödendi" işaretlenen faturayı ödenmemişe, hatırlatıcıyı ödenmeden önceki
  * tarihine döndürür; tedarikçiye girilen cari ödemeyi siler (§3.4: dağıtımları kalkar, defterin kapattığı faturalar
  * yeniden açılır). Hatırlatıcı o zamandan beri değiştiyse (yeniden ödendi, ertelendi, düzenlendi) eski hâl yazılmaz;
- * ödeme sonradan düzenlendiyse silinmez.
+ * ödeme sonradan düzenlendiyse silinmez. Ödemeye çevir'in geri alınması gider kaydını geçmiş bir aya yazacaksa
+ * `{ needs: "past" }` döner, onaylanan aylarla (`confirmPast`) yeniden gönderilir (K18).
  */
-export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: number) {
-  return attempt(async () => {
+export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: number, confirmPast?: string[]) {
+  return attempt(async (): Promise<{ needs: "past"; effects: MonthEffect[] } | { needs: null }> => {
     const me = await requireAdmin();
     const k = z.enum(["invoice", "reminder", "cari"]).parse(kind);
     const rid = zId.parse(id);
+    const months = z.array(zMonth).max(60).parse(confirmPast ?? []);
     const entry = (await loadRecentPaid()).find((e) => e.kind === k && e.id === rid);
     // Hata dönen durumlarda da liste yenilenir: geri alınamayan satır ekranda kalmasın (liveRecentPaid gizler)
     if (!entry) {
@@ -311,12 +314,20 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
         // yerine döner); sonradan düzenlendiyse yapılmaz
         if (entry.conversion) {
           const snap = entry.conversion as ConvertSnapshot;
-          const u = await db.transaction((tx) => undoConversion(tx, snap));
+          let u: Awaited<ReturnType<typeof undoConversion>>;
+          try {
+            u = await db.transaction((tx) => undoConversion(tx, snap, months));
+          } catch (e) {
+            // Gider kaydı geçmiş aya dönecek: ay adıyla sorulur, hiçbir şey yazılmadı (K18)
+            if (e instanceof NeedsPastConfirm) return { needs: "past", effects: e.effects };
+            throw e;
+          }
           await forgetPaid("cari", [rid]);
           await logActivity(
             me,
             "Ödemeye çevirme geri alındı",
-            [dateTR(u.line.date).slice(0, 5), u.card.name, tl(u.line.amount, 2), u.expenseRestored ? "gider kaydı yeniden yazıldı" : "", "son ödenenlerden geri alındı"].filter(Boolean).join(" · "),
+            [dateTR(u.line.date).slice(0, 5), u.card.name, tl(u.line.amount, 2), u.expenseRestored ? "gider kaydı yeniden yazıldı" : "", "son ödenenlerden geri alındı"].filter(Boolean).join(" · ") +
+              pastMonthLogSuffix(u.effects),
           );
           break;
         }
@@ -341,7 +352,7 @@ export async function undoRecentPaid(kind: "invoice" | "reminder" | "cari", id: 
         unreachable(k);
     }
     refresh();
-    return null;
+    return { needs: null };
   });
 }
 

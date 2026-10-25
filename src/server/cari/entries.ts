@@ -340,6 +340,8 @@ export interface DebtWrite {
   paid: { method: CariMethod; date: string; cashOut: CashOutChoice | null; amount?: number } | null;
   /** Onaylanan geçmiş aylar (K18) */
   confirmPast: readonly string[];
+  /** Yeni borçta Kasa denetiminin "Ayrı alım"ı: bu alımın ödemesi olmayan Teslim satırları */
+  kasaApart?: readonly number[];
 }
 
 export interface DebtResult {
@@ -453,7 +455,7 @@ export async function writeDebt(tx: Tx, me: Actor, card: Card, input: DebtWrite,
         .returning()
     : await tx
         .insert(s.supplierEntries)
-        .values({ ...values, createdBy: me.id, createdByName: me.name })
+        .values({ ...values, dismissedCashOutIds: [...(input.kasaApart ?? [])], createdBy: me.id, createdByName: me.name })
         .returning();
 
   const expenseDescription = `${card.name} · ${description}`.slice(0, 200);

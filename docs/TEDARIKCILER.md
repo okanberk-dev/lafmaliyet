@@ -187,7 +187,8 @@ biri:
   peşin ödendi (borç açma)** (borç açılmaz, satır "Ayrı tut"a geçer), Teslim satırında **Borcu aç ve bu satırla kapat**
   (borç, satıra bağlı Kasadan ödeme ve tam dağıtım birlikte; önce satırın ödemesi sayılır, kalan varsa hesaptaki para;
   satır borçtan büyükse fark hesapta kalır), ya da **Ayrı alım** (borç açılır; alışveriş satırı ayrı tutulur, Teslim
-  satırı tedarikçiye gerçek bir ödeme olduğu için işlenmemiş kalır ve Ödeme ekle › Kasadan'dan bağlanabilir).
+  satırı tedarikçiye gerçek bir ödeme olduğu için işlenmemiş kalır ve Ödeme ekle › Kasadan'dan bağlanabilir; bu borç
+  için ayrı sayılır: Ödemeler'de borcu "Kasadan ödenmiş olabilir" diye sessize almaz, sabah e-postası hatırlatır).
   Kime alanı ekle yazılsa da eşleşir ("Sütaş'a", "tedarikçiye (Sütaş)").
 - **Hesaptaki ödemeyi say** (hesapta para varsa; yeni borçta açık gelir, düzeltmede kapalı) ve **Ödendi** (borç,
   ödemesi ve dağıtımı birlikte). Düzeltmede sayılan para "Geri al"la ödemeden çıkar.
@@ -224,14 +225,16 @@ yok), faturasız alımlar, eski borçlar ve ödemeler (neye sayıldığıyla) g�
 3 ay / Bu yıl / Tümü ("Devreden bakiye"). Satır menüsü: borçta Düzenle, Sil, Faturası geldi, Bağı kaldır; ödemede
 Düzenle, Sil, **Neye sayıldı** (dağıtımı değiştirir, "Ödemeden çıkar"). **Ekstreyi kopyala** WhatsApp'a uygun hesap
 özeti verir (günü bilinmeyen ödeme "gün bilinmiyor" yazar; alımların iç notu tedarikçiye gitmez). Grubun faturasına
-başka bir kartın ödemesinden sayılan para da ödeme satırı olarak görünür; son satır her zaman Kalan borçtur. Telefonda
+başka bir kartın ödemesinden sayılan para da ödeme satırı olarak görünür (metinde "Ödeme (havale) · PNR1"; öteki kartın
+adı yalnız ekranda); son satır her zaman Kalan borçtur. Telefonda
 liste görünümü.
 
 **Geri al ve geçmiş ay:** her ekleme, düzeltme, dağıtım, bağlama ve çevirme bildirimdeki **Geri al** ile geri alınır;
 yeni ödemeler 30 gün Son ödenenler'de durur (Ödemeye çevir'le açılan ödeme oradan geri alınınca Kasa satırı alışverişe,
 gider kaydı yerine döner). Geçmiş bir ayın giderini değiştiren işlem (gider yazan borç, kip
-değişimi, silme, bağlama, Ödemeye çevir) o ayı adıyla sorar; onaysız yazılmaz, işlem geçmişine "geçmiş ay değişti"
-düşer.
+değişimi, silme, bağlama, Ödemeye çevir ve geri alınması) o ayı adıyla sorar; onaysız yazılmaz, işlem geçmişine "geçmiş
+ay değişti" düşer. Bildirimdeki Geri al işlemin kendi onayıyla geri alır (aynı kayıt aynı aya döner); Son ödenenler ayı
+yeniden sorar.
 
 **Kasa bağı** ([KASA-RAPORU.md](KASA-RAPORU.md)): ödemeye bağlı Kasa satırını personel düzeltemez ve silemez
 ("Bu satır yöneticinin kaydına bağlı…"; tutar söylenmez). Yönetici satırın tutarını ve gününü düzeltince ödeme de

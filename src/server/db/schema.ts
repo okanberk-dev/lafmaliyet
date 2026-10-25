@@ -458,6 +458,11 @@ export const supplierEntries = pgTable(
     remindAfter: text("remind_after"),
     /** "Ayrı alım" denmiş faturalar: bu borcun faturası değil */
     dismissedInvoiceIds: jsonb("dismissed_invoice_ids").$type<number[]>().notNull().default([]),
+    /**
+     * Borç ekle'nin Kasa denetiminde "Ayrı alım" denmiş Teslim satırları: bu alımın ödemesi değil (satır işlenmemiş
+     * kalır, Ödeme ekle › Kasadan seçilebilir; yalnız bu borcu "Kasadan ödenmiş olabilir" diye sessize almaz)
+     */
+    dismissedCashOutIds: jsonb("dismissed_cash_out_ids").$type<number[]>().notNull().default([]),
     // ödeme
     method: text("method", { enum: ["kasa", "elden", "havale", "kart", "cek", "diger"] }),
     /** Kasadan ödemenin Kasa satırı (Teslim) */

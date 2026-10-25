@@ -13,13 +13,15 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 /**
  * Cari kaydını silme ya da bağını kaldırma onayı: eylem geçmiş ayın giderini değiştiriyorsa sunucu ayları döndürür,
- * pencere onları gösterip onay kutusu işaretlenince yeniden gönderir (K18).
+ * pencere onları gösterip onay kutusu işaretlenince yeniden gönderir (K18). `initialPast`: sunucunun zaten döndürdüğü
+ * aylar (Son ödenenler'in Geri al'ı); pencere onlarla açılır.
  */
 export function EntryConfirm<R extends { needs: "past"; effects: MonthEffect[] } | { needs: null }>({
   title,
   description,
   confirmLabel,
   tone = "danger",
+  initialPast = [],
   run,
   onDone,
   onClose,
@@ -28,11 +30,12 @@ export function EntryConfirm<R extends { needs: "past"; effects: MonthEffect[] }
   description: ReactNode;
   confirmLabel: string;
   tone?: "danger" | "primary";
+  initialPast?: MonthEffect[];
   run: (confirmPast: string[]) => Promise<Result<R>>;
   onDone: (data: Extract<R, { needs: null }>) => void;
   onClose: () => void;
 }) {
-  const [past, setPast] = useState<MonthEffect[]>([]);
+  const [past, setPast] = useState<MonthEffect[]>(initialPast);
   const [pastOk, setPastOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useActionTransition();

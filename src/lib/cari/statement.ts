@@ -41,9 +41,11 @@ export interface ForeignCredit {
   paymentId: number;
   /** Ödemenin günü */
   date: string;
-  /** Ödemenin kartı */
+  /** Ödemenin kartı (yalnız ekranda; tedarikçiye giden metne yazılmaz) */
   card: string;
   amount: number;
+  /** Ödemenin şekli (ekstre metninde "Ödeme (havale)") */
+  method?: CariMethod | null;
 }
 
 export interface StatementInput {
@@ -119,7 +121,18 @@ export function statementRows(input: StatementInput, range: { from?: string | nu
   for (const f of input.foreign ?? []) {
     const inv = invoiceById.get(f.invoiceId);
     if (!inv || !(f.amount > 0.005)) continue;
-    rows.push({ key: `fx:${f.paymentId}:${f.invoiceId}`, date: f.date, kind: "baska-odeme", label: `${f.card} ödemesinden sayılan · ${invoiceLabel(inv)}`, debit: 0, credit: round2(f.amount), ref: { type: "invoice", id: f.invoiceId } });
+    // Öteki kartın adı iç nottur: ekranda durur, tedarikçiye giden metinde satır "Ödeme (havale) · PNR1" olur
+    rows.push({
+      key: `fx:${f.paymentId}:${f.invoiceId}`,
+      date: f.date,
+      kind: "baska-odeme",
+      label: `${f.card} ödemesinden sayılan · ${invoiceLabel(inv)}`,
+      textLabel: invoiceLabel(inv),
+      debit: 0,
+      credit: round2(f.amount),
+      ref: { type: "invoice", id: f.invoiceId },
+      method: f.method ?? null,
+    });
   }
   for (const p of payments) {
     const mine = allocations.filter((a) => a.paymentId === p.id).sort((a, b) => a.id - b.id);
@@ -180,10 +193,12 @@ export function statementText(name: string, st: { opening: number | null; rows: 
   for (const r of st.rows) {
     if (r.muted) continue;
     const day = dateTR(r.date);
-    if (r.kind === "isaretli" || r.kind === "odeme") {
-      // Günü bilinmeyen işaretli ödeme fatura gününde yazılır: tedarikçi o günde ödeme aramasın
+    if (r.kind === "isaretli" || r.kind === "odeme" || r.kind === "baska-odeme") {
+      // Günü bilinmeyen işaretli ödeme fatura gününde yazılır: tedarikçi o günde ödeme aramasın. Başka kartın
+      // ödemesinden sayılan para da ödemedir; hangi faturaya sayıldığı yazılır, kartın adı yazılmaz
       const note = [r.method ? SHORT_METHOD[r.method] : null, r.unknownDay ? "gün bilinmiyor" : null].filter(Boolean).join(", ");
-      lines.push(`${day} · Ödeme${note ? ` (${note})` : ""} · ${minus(r.credit)}`);
+      const what = r.kind === "baska-odeme" && r.textLabel ? ` · ${r.textLabel}` : "";
+      lines.push(`${day} · Ödeme${note ? ` (${note})` : ""}${what} · ${minus(r.credit)}`);
     } else if (r.credit > 0) lines.push(`${day} · ${r.textLabel ?? r.label} · ${minus(r.credit)}`);
     else lines.push(`${day} · ${r.textLabel ?? r.label} · ${tl(r.debit, 2)}`);
   }

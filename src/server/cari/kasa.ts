@@ -98,14 +98,16 @@ export async function kasaCheck(tx: Tx, card: Pick<Card, "name" | "aliases">, da
 
 /**
  * Kasa denetiminin sonucu: satır yoksa seçim gerekmez. Satır varken seçim yoksa ya da pencerenin görmediği bir satır
- * çıktıysa NeedsKasa. "Ayrı alım": görülen alışveriş satırları ayrı tutulur (Teslim işlenmemiş kalır), borç açılır. "Kasadan peşin ödendi": seçilen
- * alışveriş satırı ayrı tutulur, borç açılmaz. "Bu satırla kapat": borç açılır ve seçilen Teslim satırıyla ödenir.
+ * çıktıysa NeedsKasa. "Ayrı alım": görülen alışveriş satırları ayrı tutulur, borç açılır; Teslim satırları işlenmemiş
+ * kalır ama yalnız bu borç için ayrı sayılır (`teslim`, borcun `dismissed_cash_out_ids`'i: bu borcu "Kasadan ödenmiş
+ * olabilir" diye sessize almaz). "Kasadan peşin ödendi": seçilen alışveriş satırı ayrı tutulur, borç açılmaz. "Bu
+ * satırla kapat": borç açılır ve seçilen Teslim satırıyla ödenir.
  */
 export async function resolveKasaChoice(
   tx: Tx,
   found: readonly KasaFound[],
   choice: KasaChoice | null,
-): Promise<{ action: "none" } | { action: "ayri"; apart: number[] } | { action: "pesin" | "kapat"; line: KasaFound }> {
+): Promise<{ action: "none" } | { action: "ayri"; apart: number[]; teslim: number[] } | { action: "pesin" | "kapat"; line: KasaFound }> {
   if (choice && choice.action !== "ayri" && !found.some((l) => l.id === choice.cashOutId)) {
     if (found.length) throw new NeedsKasa([...found]);
     throw new UserError("Kasa satırı bu arada işlendi ya da silindi; yeniden kaydedin.");
@@ -118,7 +120,7 @@ export async function resolveKasaChoice(
     // işlenmemiş kalır ve Ödeme ekle › Kasadan, şerit ve zilden ödemeye bağlanabilir
     const apart = found.filter((l) => l.kind === "harcama").map((l) => l.id);
     await keepKasaApart(tx, apart);
-    return { action: "ayri", apart };
+    return { action: "ayri", apart, teslim: found.filter((l) => l.kind === "teslim").map((l) => l.id) };
   }
   const line = found.find((l) => l.id === choice.cashOutId)!;
   if (choice.action === "pesin") {
@@ -209,35 +211,43 @@ export async function convertCashOut(
 
 /**
  * Ödemeye çevirmeyi geri alır: ödeme silinir (dağıtımları kalkar, defterin kapattığı faturalar yeniden açılır), satır
- * eski türüne ve fiş alanlarına döner, gider kaydı (kategorisi duruyorsa) eski kimliğiyle yeniden yazılır. Ödeme
- * sonradan düzenlendiyse ya da satır silindiyse yapılmaz.
+ * eski türüne ve fiş alanlarına döner, gider kaydı (kategorisi duruyorsa) eski kimliğiyle yeniden yazılır. Gider kaydı
+ * geçmiş aya dönüyorsa o ay onaylanmış olmalı (K18; yoksa NeedsPastConfirm, hiçbir şey yazılmaz). Ödeme sonradan
+ * düzenlendiyse ya da satır silindiyse yapılmaz.
  */
-export async function undoConversion(tx: Tx, snap: ConvertSnapshot): Promise<{ card: Card; line: CashOutRow; expenseRestored: boolean }> {
+export async function undoConversion(
+  tx: Tx,
+  snap: ConvertSnapshot,
+  confirmPast: readonly string[],
+): Promise<{ card: Card; line: CashOutRow; expenseRestored: boolean; effects: MonthEffect[] }> {
   const card = await lockCard(tx, snap.cardId);
   const [p] = await tx.select().from(s.supplierEntries).where(eq(s.supplierEntries.id, snap.paymentId)).for("update").limit(1);
   if (!p || p.cashOutId !== snap.cashOutId) throw new UserError("Ödeme bu arada silindi ya da değişti; Tedarikçiler'den düzeltin.");
   if (snap.stamp && p.updatedAt.toISOString() !== snap.stamp) throw new UserError("Ödeme sonradan düzenlendi; Tedarikçiler'den silin.");
-  await deleteEntry(tx, p.id, []);
   const [line] = await tx.select().from(s.cashOuts).where(eq(s.cashOuts.id, snap.cashOutId)).for("update").limit(1);
   if (!line) throw new UserError("Kasa satırı silinmiş; geri alınamaz.");
+  // Gider kaydı ancak kategorisi duruyor ve satıra bu arada başka kayıt yazılmamışsa geri gelir; geçmiş aya geliyorsa
+  // ay sorulur (yazımdan önce)
+  let restore: ConvertSnapshot["expense"] = null;
+  if (snap.expense) {
+    const [cat] = await tx.select({ id: s.expenseCategories.id }).from(s.expenseCategories).where(eq(s.expenseCategories.id, snap.expense.categoryId)).limit(1);
+    const [busy] = await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, line.id)).limit(1);
+    if (cat && !busy) restore = snap.expense;
+  }
+  const effects = checkPast(restore ? [{ date: restore.date, delta: restore.amount }] : [], confirmPast);
+  await deleteEntry(tx, p.id, []);
   const [restored] = await tx
     .update(s.cashOuts)
     .set({ ...snap.line, updatedAt: new Date() })
     .where(eq(s.cashOuts.id, line.id))
     .returning();
-  let expenseRestored = false;
-  if (snap.expense) {
-    const [cat] = await tx.select({ id: s.expenseCategories.id }).from(s.expenseCategories).where(eq(s.expenseCategories.id, snap.expense.categoryId)).limit(1);
-    const [busy] = await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.cashOutId, line.id)).limit(1);
-    if (cat && !busy) {
-      const [exists] = await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.id, snap.expense.id)).limit(1);
-      const values = { ...snap.expense, cashOutId: line.id, supplierEntryId: null };
-      if (exists) await tx.insert(s.expenseEntries).values({ ...values, id: undefined });
-      else await tx.insert(s.expenseEntries).values(values);
-      expenseRestored = true;
-    }
+  if (restore) {
+    const [exists] = await tx.select({ id: s.expenseEntries.id }).from(s.expenseEntries).where(eq(s.expenseEntries.id, restore.id)).limit(1);
+    const values = { ...restore, cashOutId: line.id, supplierEntryId: null };
+    if (exists) await tx.insert(s.expenseEntries).values({ ...values, id: undefined });
+    else await tx.insert(s.expenseEntries).values(values);
   }
-  return { card, line: restored, expenseRestored };
+  return { card, line: restored, expenseRestored: restore !== null, effects };
 }
 
 // ---------------------------------------------------------------- Kasa'dan bağlı satır (§6.8, §8)

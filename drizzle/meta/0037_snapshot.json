@@ -1,5 +1,5 @@
 {
-  "id": "dab47863-1d3d-4b55-aa6d-c72ed503d49c",
+  "id": "4ecc03b8-1923-4bb4-b336-74620ddd03de",
   "prevId": "9d6a6958-6df9-4b78-aa90-48549c72093a",
   "version": "7",
   "dialect": "postgresql",
@@ -7214,6 +7214,13 @@
         },
         "dismissed_invoice_ids": {
           "name": "dismissed_invoice_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "dismissed_cash_out_ids": {
+          "name": "dismissed_cash_out_ids",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,

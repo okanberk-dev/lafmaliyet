@@ -112,7 +112,7 @@ olarak işler ([TEDARIKCILER.md](TEDARIKCILER.md) *Hesap hareketleri*); gider ve
   - fişsiz alışverişte, tedarikçinin o gün açık kalemi varken "Tedarikçi ödemesi miydi (Sütaş)? · **Ödemeye çevir** ·
     **Ayrı alım**". Ödemeye çevir satırın gider kaydını siler (ödeme gider değildir; geçmiş aysa ay onayı), satırı
     Teslim · ödeme yapar ve satıra bağlı ödemeyi açar; Geri al (bildirimden ya da Ödemeler › Son ödenenler'den) satırı
-    ve gider kaydını eski hâline getirir.
+    ve gider kaydını eski hâline getirir (kayıt geçmiş aya dönüyorsa Son ödenenler ayı sorar).
   - Kime / Yer alanı ekle yazılsa da tedarikçiyle eşleşir ("Sütaş'a", "tedarikçiye (Sütaş)").
   - Aynı satırlar Tedarikçiler listesinin "Kasadan işlenmemiş ödemeler" şeridinde ve zilde de durur.
 - **Ödemeye bağlı satır:**

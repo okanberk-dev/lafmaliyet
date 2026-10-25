@@ -10,7 +10,16 @@ import { getDb, schema as s } from "@/server/db";
 
 type EntryRow = typeof s.supplierEntries.$inferSelect;
 
-export type CardDebt = CariDebt & { supplierId: number; photoId: number | null; createdByName: string; updatedAt: Date };
+export type CardDebt = CariDebt & {
+  supplierId: number;
+  photoId: number | null;
+  createdByName: string;
+  updatedAt: Date;
+  /** Borç ekle'nin Kasa denetiminde "Ayrı alım" denmiş Teslim satırları (bu borcun ödemesi değil) */
+  dismissedCashOutIds: number[];
+};
+
+const ids = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x)) : []);
 export type CardPayment = CariPayment & { supplierId: number; cashOutCreated: boolean; photoId: number | null; createdByName: string; updatedAt: Date };
 
 export function toDebt(r: EntryRow): CardDebt {
@@ -26,7 +35,8 @@ export function toDebt(r: EntryRow): CardDebt {
     dueDate: r.dueDate,
     invoiceId: r.invoiceId,
     remindAfter: r.remindAfter,
-    dismissedInvoiceIds: Array.isArray(r.dismissedInvoiceIds) ? r.dismissedInvoiceIds.filter((x): x is number => Number.isInteger(x)) : [],
+    dismissedInvoiceIds: ids(r.dismissedInvoiceIds),
+    dismissedCashOutIds: ids(r.dismissedCashOutIds),
     photoId: r.photoId,
     createdByName: r.createdByName,
     updatedAt: r.updatedAt,

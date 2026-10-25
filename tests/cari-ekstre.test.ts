@@ -149,7 +149,7 @@ test("grubun faturasına başka kartın ödemesinden sayılan para ekstrede öde
     { id: 32, date: "2026-10-21", invoiceNo: "PNR2", payable: 1250, unpaid: true, ledgerBase: 0, allocated: 600 },
   ];
   const foreign = [
-    { invoiceId: 31, paymentId: 2, date: "2026-10-24", card: "Sütaş", amount: 1250 },
+    { invoiceId: 31, paymentId: 2, date: "2026-10-24", card: "Sütaş", amount: 1250, method: "havale" as const },
     { invoiceId: 32, paymentId: 4, date: "2026-10-25", card: "Sütaş", amount: 600 },
   ];
   const st = statementRows({ invoices: invoicesP, foreign });
@@ -163,7 +163,10 @@ test("grubun faturasına başka kartın ödemesinden sayılan para ekstrede öde
       ["2026-10-25", "Sütaş ödemesinden sayılan · PNR2", 600],
     ],
   );
-  assert.match(plain(statementText("Pınar", st, { from: "2026-10-01", to: "2026-10-30" })), /24\.10\.2026 · Sütaş ödemesinden sayılan · PNR1 · −1\.250,00 ₺[\s\S]*Bakiye: 650,00 ₺ \(borcumuz\)/);
+  // Tedarikçiye giden metinde öteki kartın adı (iç not) yok: ödeme satırı, şekliyle ve sayıldığı faturayla
+  const text = plain(statementText("Pınar", st, { from: "2026-10-01", to: "2026-10-30" }));
+  assert.match(text, /24\.10\.2026 · Ödeme \(havale\) · PNR1 · −1\.250,00 ₺\n25\.10\.2026 · Ödeme · PNR2 · −600,00 ₺[\s\S]*Bakiye: 650,00 ₺ \(borcumuz\)/);
+  assert.doesNotMatch(text, /Sütaş|sayılan/);
 });
 
 test("ekstrenin alt satırı: bakiye 0'da ek yok, eksi alacak, artı borcumuz", () => {

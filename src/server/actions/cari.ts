@@ -156,7 +156,8 @@ export async function saveSupplierDebt(input: z.input<typeof debtSchema>) {
         const kasa = d.id ? ({ action: "none" } as const) : await resolveKasaChoice(tx, await kasaCheck(tx, card, d.date), d.kasaChoice as KasaChoice | null);
         if (kasa.action === "pesin") return { card, created, written: null, kasa };
         const paid = kasa.action === "kapat" ? { method: "kasa" as const, date: kasa.line.date, cashOut: { mode: "existing" as const, id: kasa.line.id }, amount: kasa.line.amount } : d.paid;
-        const written = await writeDebt(tx, me, card, { ...d, paid, description: d.description, note: d.note }, await termDaysOf(card));
+        const kasaApart = kasa.action === "ayri" ? kasa.teslim : [];
+        const written = await writeDebt(tx, me, card, { ...d, paid, description: d.description, note: d.note, kasaApart }, await termDaysOf(card));
         return { card, created, written, kasa };
       });
     } catch (e) {
@@ -649,7 +650,8 @@ const convertSchema = z.object({
   confirmPast: confirmSchema,
 });
 
-const convertUndoSchema = z.object({ v: z.literal(2), t: z.literal("cevir"), by: z.number().int(), exp: z.number(), snap: z.unknown() });
+/** `months`: çevirmede onaylanan geçmiş aylar (bildirimdeki Geri al aynı gider kaydını aynı aya geri yazar) */
+const convertUndoSchema = z.object({ v: z.literal(2), t: z.literal("cevir"), by: z.number().int(), exp: z.number(), snap: z.unknown(), months: confirmSchema });
 
 /**
  * Ödemeye çevir (K14): kasadaki alışveriş satırı aslında tedarikçiye ödemeydi. Satırın gider kaydı silinir (geçmiş
@@ -676,7 +678,8 @@ export async function convertCashOutToPayment(input: z.input<typeof convertSchem
     );
     await rememberPayment(card, { id: p.id, date: done.line.date, amount: done.line.amount, method: "kasa", items: p.lines.length, conversion: done.snapshot });
     refresh();
-    const undo = seal(JSON.stringify({ v: 2, t: "cevir", by: me.id, exp: Date.now() + UNDO_MS, snap: done.snapshot }), UNDO_PURPOSE);
+    const months = done.effects.map((e) => e.month);
+    const undo = seal(JSON.stringify({ v: 2, t: "cevir", by: me.id, exp: Date.now() + UNDO_MS, snap: done.snapshot, months }), UNDO_PURPOSE);
     return {
       needs: null,
       id: p.id,
@@ -693,7 +696,11 @@ export async function convertCashOutToPayment(input: z.input<typeof convertSchem
   });
 }
 
-/** "Ödemeye çevir"in geri alınması: ödeme silinir, satır eski türüne ve gider kaydı yerine döner (15 dakika) */
+/**
+ * "Ödemeye çevir"in geri alınması: ödeme silinir, satır eski türüne ve gider kaydı yerine döner (15 dakika). Gider
+ * kaydı yalnız çevirmede onaylanan geçmiş aya geri yazılır (K18); başka bir geçmiş ay değişecekse yazılmaz, Son
+ * ödenenler ayı sorarak geri alır.
+ */
 export async function undoCashOutConversion(undo: string) {
   return attempt(async () => {
     const me = await requireAdmin();
@@ -708,11 +715,14 @@ export async function undoCashOutConversion(undo: string) {
     }
     if (!parsed || parsed.by !== me.id || parsed.exp <= Date.now()) throw new UserError("Geri alma süresi doldu; ödemeyi Tedarikçiler'den silin");
     const snap = parsed.snap as ConvertSnapshot;
-    const r = await getDb().transaction((tx) => undoConversion(tx, snap));
+    const months = parsed.months;
+    const u = await inTx((tx) => undoConversion(tx, snap, months));
+    if (u.needs) throw new UserError("Geri almak geçmiş ayın giderini değiştiriyor; Ödemeler › Son ödenenler'den ayı onaylayarak geri alın.");
+    const r = u.value;
     await logActivity(
       me,
       "Ödemeye çevirme geri alındı",
-      [dateTR(r.line.date).slice(0, 5), r.card.name, tl(r.line.amount, 2), r.expenseRestored ? "gider kaydı yeniden yazıldı" : ""].filter(Boolean).join(" · "),
+      [dateTR(r.line.date).slice(0, 5), r.card.name, tl(r.line.amount, 2), r.expenseRestored ? "gider kaydı yeniden yazıldı" : ""].filter(Boolean).join(" · ") + pastMonthLogSuffix(r.effects),
     );
     await forgetPaid("cari", [snap.paymentId]);
     refresh();

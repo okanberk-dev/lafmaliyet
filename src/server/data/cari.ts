@@ -264,7 +264,15 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   const [onInvoices, categories, otherLinked] = await Promise.all([
     ids.length
       ? db
-          .select({ invoiceId: s.supplierAllocations.invoiceId, amount: s.supplierAllocations.amount, paymentId: s.supplierAllocations.paymentId, date: s.supplierEntries.date, cardId: s.supplierEntries.supplierId, card: s.suppliers.name })
+          .select({
+            invoiceId: s.supplierAllocations.invoiceId,
+            amount: s.supplierAllocations.amount,
+            paymentId: s.supplierAllocations.paymentId,
+            date: s.supplierEntries.date,
+            method: s.supplierEntries.method,
+            cardId: s.supplierEntries.supplierId,
+            card: s.suppliers.name,
+          })
           .from(s.supplierAllocations)
           .innerJoin(s.supplierEntries, eq(s.supplierAllocations.paymentId, s.supplierEntries.id))
           .innerJoin(s.suppliers, eq(s.supplierEntries.supplierId, s.suppliers.id))
@@ -293,7 +301,7 @@ export async function loadSupplierCari<I extends AccountInvoice & { category: st
   for (const a of onInvoices) {
     if (a.invoiceId === null || a.cardId === cardId) continue;
     const k = `${a.paymentId}:${a.invoiceId}`;
-    const f = foreignInBy.get(k) ?? { invoiceId: a.invoiceId, paymentId: a.paymentId, date: a.date, card: a.card, amount: 0 };
+    const f = foreignInBy.get(k) ?? { invoiceId: a.invoiceId, paymentId: a.paymentId, date: a.date, card: a.card, amount: 0, method: a.method };
     f.amount = round2(f.amount + a.amount);
     foreignInBy.set(k, f);
   }

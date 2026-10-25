@@ -61,6 +61,8 @@ altındaki **Son ödenenler** bölümünden (kapalı açılır kutu; `#son-odene
 - **Hesaba ödeme** (Tedarikçiler'de elle girilen ödeme, tür `cari`): "Hesaba ödeme · Sütaş · 10.000,00 ₺ · Havale / EFT
   · 2 kalem". Geri al ödemeyi siler (dağıtımları kalkar, ödemenin kapattığı faturalar yeniden açılır, kasaya açtığı
   satır silinir). Ödeme sonradan düzenlendiyse reddedilir: "Ödeme sonradan düzenlendi; Tedarikçiler'den silin".
+  Ödemeye çevir'le açılan ödemede satır alışverişe, gider kaydı yerine döner; kayıt geçmiş bir aya dönüyorsa pencere
+  o ayı adıyla sorar ("Eylül 2026'nın kapanmış rakamlarının değişeceğini biliyorum"), onaysız yazılmaz.
 - **Hatırlatıcı** için Geri al, ödenmeden önceki hâline döndürür (tarih, tekrar günü, açık/kapalı, son ödeme):
   tekrar eden kira 01.11'den 01.10'a geri gelir, kapanan tek seferlik yeniden açılır.
 - Hatırlatıcı ödendikten sonra değiştiyse (yeniden ödendi, ertelendi, kapatıldı, tarihi düzenlendi) eski hâl yazılmaz;
