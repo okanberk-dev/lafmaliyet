@@ -8,12 +8,14 @@
 // adresleri personel çereziyle Bugün'e dönmelidir. Bir şey tutmazsa çıkış kodu 1.
 //
 // Çalıştırma:
-//   PERSONEL_COOKIE='panel_session=…' npx tsx scripts/personel-sizinti.ts [http://localhost:3176]
+//   PERSONEL_COOKIE='laf_session=…' npx tsx scripts/personel-sizinti.ts [http://localhost:3176]
 // Çerez: personel hesabıyla girişten sonra tarayıcının geliştirici araçlarında (Application › Cookies) panelin
-// çerezleri; "ad=değer; ad=değer" biçiminde hepsi verilebilir.
+// çerezleri (yerelde laf_session, https'te __Host-laf_session); "ad=değer; ad=değer" biçiminde hepsi verilebilir.
+// Anlamlı bir tarama için ekranlarda veri olmalı: bekleyen istekler, taslak, tükenen ürün, kasa raporları, zayi.
 
+import { businessDate } from "../src/lib/cash-report";
+import { addDays } from "../src/lib/reminders";
 import { COST_KEYS } from "../tests/helpers/leak-scan";
-import { addDays, businessDate } from "../src/lib/cash-report";
 
 const BASE = (process.argv[2] ?? process.env.BASE_URL ?? "http://localhost:3176").replace(/\/+$/, "");
 const COOKIE = process.env.PERSONEL_COOKIE ?? "";
@@ -61,7 +63,17 @@ function around(body: string, re: RegExp): string {
 async function fetchPage(path: string, rsc: boolean): Promise<Response> {
   const headers: Record<string, string> = { cookie: COOKIE };
   if (rsc) headers.RSC = "1";
-  return fetch(BASE + path, { headers, redirect: "manual" });
+  const res = await fetch(BASE + path, { headers, redirect: "manual" });
+  // RSC isteği `_rsc` önbellek anahtarı olmadan gelirse Next aynı adrese `?_rsc=<özet>` ile 307 döner
+  // (node_modules/next/dist/docs/01-app/02-guides/cdn-caching.md); yalnız o yönlendirme bir kez izlenir.
+  const to = res.headers.get("location");
+  if (rsc && res.status === 307 && to) {
+    const next = new URL(to, BASE);
+    if (next.pathname === new URL(path, BASE).pathname && next.searchParams.has("_rsc")) {
+      return fetch(next.href, { headers, redirect: "manual" });
+    }
+  }
+  return res;
 }
 
 async function main() {
