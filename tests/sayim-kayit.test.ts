@@ -190,6 +190,11 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   assert.match(ops, /if \(user\.role !== "admin"\) return \[\];\s+const day = businessDate\(now\);/);
   assert.match(ops, /pastCountNotifications\(user, now\)\.catch\(\(\) => \[\]\),/);
   assert.match(ops, /const count = prev \? pastCountReminder\(day, prev\) : null;/);
+  // Sabah e-postası: personelden gelmeyen satır "Personelden" başlığıyla açılmaz (inceleme notu)
+  const digest = read("src/server/staff-requests/digest.ts");
+  assert.match(digest, /pastCountDigestLines\(now\)/);
+  assert.match(digest, /\{ title: "Stok sayımı", lines, href: count\.href \?\? "\/panel\/sayim", link: "Sayımı aç"/);
+  assert.match(digest, /title: count\.lines\.length \? "Operasyon" : "Personelden"/);
   // Bugün, zil ve bildirim aynı sayım ilerlemesini okur
   assert.match(read("src/server/data/today.ts"), /import \{ countProgress \} from "@\/server\/data\/count-progress";/);
 });

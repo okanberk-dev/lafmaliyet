@@ -207,13 +207,20 @@ export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
  * yoksa boş.
  */
 export async function opsDigestLines(now: Date): Promise<DigestBox["lines"]> {
-  const day = businessDate(now);
-  const [facts, prev] = await Promise.all([
-    soldOutFacts().catch(() => null),
-    Number(day.slice(8, 10)) <= 10 ? countProgress(shiftMonth(day.slice(0, 7), -1)).catch(() => null) : null,
-  ]);
+  const facts = await soldOutFacts().catch(() => null);
   const line = soldOutDigestLine(facts?.items ?? [], now);
-  // Geçen ayın sayımı yarım ya da yok (ilk 10 gün): zildeki satırla aynı metin
+  return line ? [{ text: line, tone: "warn" }] : [];
+}
+
+/**
+ * Sabah e-postasının aynı kutusuna geçen ayın stok sayımı (ilk 10 gün, yarım ya da yok): zildeki satırla aynı metin
+ * (pastCountReminder) ve o ayın sayımının adresi. Personelden gelmez; kutu yalnız bununla açılırsa başlığı "Stok
+ * sayımı" olur (src/server/staff-requests/digest.ts). Tutar yok.
+ */
+export async function pastCountDigestLines(now: Date): Promise<{ lines: DigestBox["lines"]; href: string | null }> {
+  const day = businessDate(now);
+  if (Number(day.slice(8, 10)) > 10) return { lines: [], href: null };
+  const prev = await countProgress(shiftMonth(day.slice(0, 7), -1)).catch(() => null);
   const count = prev ? pastCountReminder(day, prev) : null;
-  return [...(line ? [{ text: line, tone: "warn" as const }] : []), ...(count ? [{ text: `${count.title}. ${count.body}`, tone: "warn" as const }] : [])];
+  return count ? { lines: [{ text: `${count.title}. ${count.body}`, tone: "warn" }], href: count.href } : { lines: [], href: null };
 }

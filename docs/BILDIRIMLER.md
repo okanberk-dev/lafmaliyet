@@ -135,11 +135,13 @@ e-postası**, bildirim adreslerine gider. İçinde:
   eskisinin ne zamandan beri beklediği, istek başına yalnız başlık ve isteyenin adı ("22 Ekim kasa düzeltmesi
   (Mehmet)", "Latte M ×2 · 15 Eki (Ayşe)"; en çok 8), Onaylar bağlantısıyla; tutar yok. Karar verilene kadar her sabah
   listelenir. Kutunun sonunda operasyonun bilgi satırı: "Personelin tükendi yaptığı ürünler: Tiramisu (Selin, 2 gündür)"
-  (yalnız ad, kişi ve süre). Bekleyen istek yokken bu satır kutuyu tek başına "Personelden" başlığıyla açar. Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
+  (yalnız ad, kişi ve süre); ilk 10 günde geçen ayın stok sayımı yarımsa ya da yoksa onun satırı. Bekleyen istek yokken
+  bu satırlar kutuyu tek başına açar: yalnız tükendi satırı "Personelden", yalnız sayım satırı "Stok sayımı" (o ayın
+  sayımına götürür), ikisi birden "Operasyon" başlığıyla. Konuya "2 istek onay bekliyor" eklenir ([ONAYLAR.md](ONAYLAR.md));
 - en üstte **Sistem uyarıları**: dünkü sabah işi çalışmadıysa ya da hata verdiyse, bu sabahki Paraşüt işi
   çalışmadıysa (aşağıda "Sistem uyarıları"; yalnız canlıda).
 
-Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu onay bekleyen personel isteği ya da personelin tükendi yaptığı ürün yoksa e-posta gitmez. Konu öncelik
+Ödeme, yeni fatura, eşitleme hatası, yeni fiyat onayı, yeni zam, sistem uyarısı, yeni komisyon uyarısı, dünkü kontrol listelerinin kutusu onay bekleyen personel isteği, personelin tükendi yaptığı ürün ya da (ilk 10 günde) geçen ayın yarım sayımı yoksa e-posta gitmez. Konu öncelik
 sırasıyla: ödeme varsa "Ödeme hatırlatması: …" (sonuna " · sistem uyarısı", yeni fatura, yeni fiyat onayı, zam eklenir);
 yoksa sistem uyarısı varsa "Sistem uyarısı: <ilk sorun>"; yoksa yeni faturasız eşitleme hatası "Paraşüt eşitlemesi
 başarısız"; yoksa yeni fatura, kontrol bekleyen ya da yeni fiyat onayı "Sabah özeti: …" (ör. "Sabah özeti: 2 fiyat onay
