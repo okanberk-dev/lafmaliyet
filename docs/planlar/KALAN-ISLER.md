@@ -278,6 +278,7 @@ dalga 10 (personel yetkileri) de Kasa'ya dokunuyor, birleştirmede `src/app/pane
 ### Bekleyen dış girdi
 - **ModPOS günlük ürün satış dökümü:** ModPOS hazırlıyor. Örnek dosya gelince içe aktarma yazılacak. tahmin, siparis
   ve doluluk planlarında bunun için bir giriş noktası (seam) var; o zamana kadar aylık veriyle çalışırlar.
+  **26 Ekim:** ağzı LafPOS'un gün sonu doldurur (`docs/LAFPOS.md`); okuyanların günlük veriye geçişi ayrı iş.
 
 ## 3. Kurallar (kısaca; tamamı CRITIQUE.md §1)
 

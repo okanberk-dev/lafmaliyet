@@ -91,6 +91,7 @@ export function CashBreakdown({
           subWarn
         />
         <Line label="+ Nakit satış" value={money(report.cash)} />
+        {report.cashIn ? <Line label="+ Gün içinde giren" value={money(report.cashIn)} /> : null}
         {report.cashOut || cashOuts.length ? <Line label="− Gün içinde çıkan" value={money(report.cashOut)} sub={report.cashOutNote} /> : null}
         {cashOuts.length ? (
           <ul className="mb-1 space-y-0.5 border-l-2 border-line pl-2.5 text-xs text-ink-mute">

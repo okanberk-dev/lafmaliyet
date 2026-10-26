@@ -14,9 +14,9 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, test } from "node:test";
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
-import type { CashReportFields } from "../src/lib/cash-report";
+import { historyOf, type CashReportFields } from "../src/lib/cash-report";
 import { CASH_REQUEST_TEXT } from "../src/lib/cash-requests";
 import { REQUEST_TEXT } from "../src/lib/staff-requests";
 import type { DB } from "../src/server/db";
@@ -34,6 +34,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
   let store: typeof import("../src/server/cash/report-store");
   let requests: typeof import("../src/server/cash/requests");
   let loaders: typeof import("../src/server/data/cash-requests");
+  let reports: typeof import("../src/server/data/cash-reports");
   const tag = `${process.pid}-${randomBytes(3).toString("hex")}`;
   type Who = { id: number; name: string; role: "admin" | "staff" };
   const users: Record<"ali" | "veli" | "ayse" | "mehmet" | "donen", Who> = {
@@ -56,6 +57,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     online: 0,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3_500,
@@ -99,6 +101,7 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     store = await import("../src/server/cash/report-store");
     requests = await import("../src/server/cash/requests");
     loaders = await import("../src/server/data/cash-requests");
+    reports = await import("../src/server/data/cash-reports");
     for (const k of Object.keys(users) as (keyof typeof users)[]) {
       const [u] = await db
         .insert(s.users)
@@ -340,5 +343,40 @@ describe("Kasa istekleri: veritabanında düzeltme ve silme isteği, karar", { s
     assert.equal(await reportOf(day2), undefined, "rapor silindi");
     assert.equal(edit2.status, "rejected");
     assert.equal(((edit2 as PromiseRejectedResult).reason as Error).message, CASH_REQUEST_TEXT.noReport);
+  });
+
+  // Son test: günü (2039) öteki testlerin günlerinden sonra; önceki testlerin "sonraki rapor" denetimini değiştirmez
+  test("gün içinde giren: saklanır ve farka girer, sürüm kopyasında; ertesi gün değişirse onaya döner, onayla rapora geçer", async () => {
+    const day = "2039-01-10";
+    // Yönetici: giren yok, 500 + 3.000 = 3.500 sayıldı
+    const first = await report(day, { countedCash: 3_500 });
+    assert.deepEqual([first.cashIn, first.cashDiff], [0, 0]);
+    // Aynı gece personel 300 ₺ bozuk parayı yazar, sayılan 3.800: 500 + 3.000 + 300 = 3.800, kasa tutuyor (doğrudan)
+    const night = await store.saveCashReport(db, users.ayse, { ...fields(day, { cashIn: 300, countedCash: 3_800 }), countedBy: users.ali.id, revision: 1, photos: [] }, tr(`${day}T23:30`));
+    assert.equal(night.kind, "saved");
+    if (night.kind !== "saved") return;
+    assert.deepEqual([night.row.cashIn, night.row.cashDiff, night.row.revision], [300, 0, 2]);
+    assert.deepEqual(night.changes.map((c) => [c.key, c.sensitive]), [["cashIn", true], ["countedCash", true]]);
+    const [snap] = await db.select().from(s.cashReportRevisions).where(eq(s.cashReportRevisions.reportId, first.id));
+    assert.equal(snap.data.cashIn, 0, "önceki sürümün kopyası gireni taşır");
+    // Alan gelmeden önceki kopya (gireni yok) 0 sayılır: geçmişte "— → 300 ₺" değil "0 ₺ → 300 ₺"
+    await db.execute(sql`update cash_report_revisions set data = data - 'cashIn' where report_id = ${first.id}`);
+    const revs = await reports.cashRevisionsFor([first.id]);
+    assert.ok(!("cashIn" in revs[0].data));
+    const entry = historyOf(reports.toCashDTO(night.row), revs).entries[0];
+    assert.deepEqual(entry.changes.map((c) => [c.key, c.from.replace(/\u00a0/g, " ")]), [["cashIn", "0 ₺"], ["countedCash", "3.500 ₺"]]);
+    // Ertesi gün gireni değiştirmek kasa alanı değişikliği: hiçbir şey yazılmaz, onaya döner
+    const now = tr("2039-01-11T10:00");
+    const direct = await store.saveCashReport(db, users.ayse, { ...fields(day, { cashIn: 0, countedCash: 3_800 }), countedBy: users.ali.id, revision: 2, photos: [] }, now);
+    assert.deepEqual(direct, { kind: "needsApproval", request: "kasa-duzeltme", gate: "gec" });
+    assert.equal((await reportOf(day)).cashIn, 300);
+    // Öneri: giren yanlış yazılmış (300 → 0); yükte giren, onaylanınca rapora geçer ve fark onunla
+    const { row, changes } = await propose(users.ayse, day, 2, { cashIn: 0, countedCash: 3_800 }, now, "Bozuk para kasaya konmamış");
+    assert.deepEqual(changes.map((c) => c.key), ["cashIn"]);
+    assert.equal((row.payload as { proposed: { cashIn: number } }).proposed.cashIn, 0);
+    const out = await review(users.veli, row.id, row.version, 2, "approve", now);
+    assert.equal(out.status, "approved");
+    const after = await reportOf(day);
+    assert.deepEqual([after.cashIn, after.cashDiff, after.revision], [0, 300, 3], "500 + 3.000 − 0 = 3.500 beklenir, 3.800 sayıldı: 300 fazla");
   });
 });

@@ -30,6 +30,7 @@ import {
   DeletePayload,
   deleteBell,
   deleteTitle,
+  LatePayload,
   mergeProposal,
   shortDayTR,
   proposalChanges,
@@ -56,6 +57,7 @@ const fields: CashReportFields = {
   online: 0,
   other: 0,
   openingCash: 500,
+  cashIn: 0,
   cashOut: 0,
   cashOutNote: null,
   countedCash: 3_380,
@@ -227,6 +229,35 @@ test("isteğin yükü: yalnız raporun alanları; karaoke, site satırı, maliye
   assert.doesNotMatch(JSON.stringify(d), /karaoke/);
   assert.throws(() => CorrectionPayload.parse({ ...raw, gate: "baska" }));
   assert.deepEqual(revisionDataOf({ ...fields, cashDiff: 0, countedByName: null, submittedByName: "Ayşe" }).countedByName, "Ayşe");
+});
+
+test("gün içinde giren: kasa alanı gibi (ertesi gün onaya gider), öneriyle rapora geçer, sonucu hesaba girer; eski yükte yok, 0", () => {
+  // Ertesi gün gireni değiştirmek gün içinde çıkanı değiştirmek gibi onaya gider
+  const changes = revisionChanges(base, { ...base, cashIn: 300 });
+  assert.deepEqual(changes.map((c) => [c.key, c.sensitive]), [["cashIn", true]]);
+  assert.ok(SENSITIVE.includes("cashIn") && SENSITIVE.includes("cashOut"));
+  assert.equal(staffCashGate({ date: "2026-10-22", now: tr("2026-10-23T10:00"), hasReport: true, laterReport: false, changes }), "request");
+  // Öneri: 300 ₺ bozuk para kasaya kondu (sayılan 3.380 → 3.680): kasa farkı aynı kalır, devir 300 artar
+  const proposed = proposedOf({ cashIn: 300, countedCash: 3_680 });
+  const summary = proposalSummary(base, proposed);
+  assert.deepEqual(summary.lines.map(n), ["Gün içinde giren: 0 ₺ → 300 ₺", "Sayılan nakit: 3.380 ₺ → 3.680 ₺"]);
+  assert.equal(summary.result, null, "giren sayılanla birlikte yazıldı: fark değişmez");
+  assert.equal(n(summary.carry), "Ertesi güne devir: 980 ₺ → 1.280 ₺");
+  // Yalnız giren yazılırsa olması gereken artar, eksik görünür
+  assert.equal(n(proposalSummary(base, proposedOf({ cashIn: 300 })).result), "Kasa farkı: 120 ₺ eksik → 420 ₺ eksik");
+  // Birleştirmede önerinin değiştirdiği giren alınır, arada yöneticinin düzelttiği giren korunur
+  const current = { data: { ...base, cashIn: 50 }, countedBy: 1 };
+  assert.equal(mergeProposal(current, { data: base, countedBy: 2 }, proposedOf({ cashIn: 300 })).fields.cashIn, 300);
+  assert.equal(mergeProposal(current, { data: base, countedBy: 2 }, proposedOf({ handedOver: 2_040 })).fields.cashIn, 50);
+  // Alan gelmeden önce açılmış istek: yükte giren yok, çözümde 0 (taban, öneri ve silme kopyası)
+  const strip = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([k]) => k !== "cashIn"));
+  const old = CorrectionPayload.parse({ date: "2026-10-22", reportId: 5, baseRevision: 1, base: strip(base), baseCountedBy: 2, proposed: strip(proposedOf({ handedOver: 2_040 })), gate: "gec" });
+  assert.equal(old.base.cashIn, 0);
+  assert.equal(old.proposed.cashIn, 0);
+  assert.deepEqual(proposalChanges(old.base, old.proposed).map((c) => c.key), ["handedOver"], "eski yükte giren değişmiş görünmez");
+  assert.equal(DeletePayload.parse({ date: "2026-10-22", reportId: 5, baseRevision: 2, snapshot: strip(base), photos: 0 }).snapshot.cashIn, 0);
+  const late = LatePayload.parse({ ...strip(fields), zNo: "1204", handedTo: null, photos: [{ id: 1, kind: "kasa-z" }], cashDiff: -120 });
+  assert.equal(late.cashIn, 0, "bekleyen geç rapor");
 });
 
 // ---------------------------------------------------------------- Kaynak denetimleri

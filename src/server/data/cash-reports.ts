@@ -77,6 +77,7 @@ export function toCashDTO(r: Row): CashReportDTO {
     online: r.online,
     other: r.other,
     openingCash: r.openingCash,
+    cashIn: r.cashIn,
     cashOut: r.cashOut,
     cashOutNote: r.cashOutNote,
     countedCash: r.countedCash,

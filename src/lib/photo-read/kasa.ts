@@ -73,14 +73,22 @@ export interface CashReading {
   checks: ReadCheck[];
 }
 
+/** Kasa bölümünün alanları: fotoğrafta yok, yalnız LafPOS'un gün sonu doldurur */
+export type TillField = "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver";
+/** Ön doldurmanın yazabildiği alanlar: Z alanları (fotoğraf, LafPOS) ve kasa alanları (LafPOS) */
+export type PrefillField = ReadField | TillField;
+
 /**
- * ModPOS günlük dökümü geldiğinde Z toplamları ondan da dolabilsin diye form bu biçimi uygular (fotoğraf o zaman
- * yalnız kanıt olur). Bugün tek kaynak fotoğraf.
+ * Forma uygulanan ön doldurma: fotoğraf okuması ya da LafPOS'un gün sonu (`lafpos`, docs/LAFPOS.md; ModPOS'un günlük
+ * dökümü hiç gelmedi, yerini LafPOS aldı). Okuma da bu biçimdedir (değerler, denetimler, eksikler); form ikisini aynı
+ * kuralla uygular (prefillPlan): yalnız boş alanlar dolar, yazılmış ve farklı olanın altında öneri çıkar.
  */
 export interface CashPrefill {
-  source: "photo" | "modpos";
-  values: CashReading["values"];
+  source: "photo" | "modpos" | "lafpos";
+  values: Partial<Record<PrefillField, ReadValue>>;
   checks: ReadCheck[];
+  /** Kaynakta olması gerekirken olmayanlar (formda boşsa turuncu) */
+  missing?: PrefillField[];
 }
 
 const PAYMENT_FIELD = { cash: "cash", card: "card", meal_card: "mealCard", online: "online", other: "other" } as const;
@@ -299,14 +307,14 @@ export function normalizePos(raw: KasaPos, ctx: { day: string }): CashReading {
 }
 
 /** Formdaki metin: tutar "12975,5" (form böyle gösterir), Z no olduğu gibi, fiş sayısı tam sayı */
-export function fieldText(field: ReadField, value: number | string): string {
+export function fieldText(field: PrefillField, value: number | string): string {
   if (field === "zNo") return String(value);
   if (field === "receipts") return String(Math.round(Number(value)));
   return String(round2(Number(value))).replace(".", ",");
 }
 
 /** Formdaki değer okunanla aynı mı (tutarlar 0,005 hassasiyetle; Z no baştaki sıfırlar sayılmadan) */
-export function sameValue(field: ReadField, typed: string, value: number | string): boolean {
+export function sameValue(field: PrefillField, typed: string, value: number | string): boolean {
   if (field === "zNo") return normalizeZNo(typed) === normalizeZNo(String(value));
   const n = parseNumberTR(typed);
   return n !== null && Math.abs(n - Number(value)) < 0.005;
@@ -315,8 +323,8 @@ export function sameValue(field: ReadField, typed: string, value: number | strin
 const normalizeZNo = (s: string) => s.trim().replace(/^0+(?=\d)/, "");
 
 /** Alanın turuncu nedeni: önce uyarı metni, yoksa güveni orta */
-export function fieldWarnings(reading: CashReading): Partial<Record<ReadField, string>> {
-  const out: Partial<Record<ReadField, string>> = {};
+export function fieldWarnings(reading: Pick<CashReading, "checks">): Partial<Record<PrefillField, string>> {
+  const out: Partial<Record<PrefillField, string>> = {};
   for (const c of reading.checks) if (c.level === "warn") for (const f of c.fields) out[f] ??= c.text;
   return out;
 }
@@ -325,26 +333,26 @@ export const UNSURE_TEXT = "Fotoğrafta net değil; fişle karşılaştırın.";
 export const MISSING_TEXT = "Fotoğrafta okunamadı; fişten yazın.";
 
 export interface PrefillPlan {
-  /** Boş alanlara yazılacaklar; `warn` turuncu nedeni (yoksa yalnız "Fotoğraftan") */
-  fill: { field: ReadField; text: string; warn: string | null }[];
-  /** Yazılanla farklı olanlar: değer kalır, "Fotoğrafta …" ve "Fotoğraftakini yaz" görünür */
-  differs: { field: ReadField; photo: number | string; text: string }[];
+  /** Boş alanlara yazılacaklar; `warn` turuncu nedeni (yoksa yalnız "Fotoğraftan" ya da "LafPOS'tan") */
+  fill: { field: PrefillField; text: string; warn: string | null }[];
+  /** Yazılanla farklı olanlar: değer kalır, "Fotoğrafta …" ve "Fotoğraftakini yaz" (LafPOS'ta: "LafPOS'takini yaz") görünür */
+  differs: { field: PrefillField; photo: number | string; text: string }[];
   /** Güveni düşük (tahmin): doldurulmaz, turuncu "fişten yazın" ve "Fotoğraftakini yaz" görünür */
-  unsure: { field: ReadField; photo: number | string; text: string }[];
-  /** Fişte olması gerekirken okunamayanlar (boşsa turuncu) */
-  missing: ReadField[];
+  unsure: { field: PrefillField; photo: number | string; text: string }[];
+  /** Fişte (kaynakta) olması gerekirken okunamayanlar (boşsa turuncu) */
+  missing: PrefillField[];
 }
 
 /**
- * Okumanın forma uygulanışı: yalnız boş alanlar dolar; yazılmış ve farklı olan değer kalır. Güveni düşük okuma
- * (fotoğrafta tahmin) alana yazılmaz: personel fişe bakıp yazar ya da "Fotoğraftakini yaz"a basar. `current` formdaki
- * alanlar: formda olmayan alan atlanır.
+ * Okumanın (ya da LafPOS'un gün sonunun, CashPrefill) forma uygulanışı: yalnız boş alanlar dolar; yazılmış ve farklı
+ * olan değer kalır. Güveni düşük okuma (fotoğrafta tahmin) alana yazılmaz: personel fişe bakıp yazar ya da
+ * "Fotoğraftakini yaz"a basar. `current` formdaki alanlar: formda olmayan alan atlanır.
  */
-export function prefillPlan(reading: CashReading, current: Partial<Record<ReadField, string>>): PrefillPlan {
+export function prefillPlan(reading: CashReading | CashPrefill, current: Partial<Record<PrefillField, string>>): PrefillPlan {
   const plan: PrefillPlan = { fill: [], differs: [], unsure: [], missing: [] };
-  if (!reading.ok) return plan;
+  if ("ok" in reading && !reading.ok) return plan;
   const warns = fieldWarnings(reading);
-  for (const [field, v] of Object.entries(reading.values) as [ReadField, ReadValue][]) {
+  for (const [field, v] of Object.entries(reading.values) as [PrefillField, ReadValue][]) {
     if (!(field in current)) continue;
     const typed = (current[field] ?? "").trim();
     const text = fieldText(field, v.value);
@@ -355,7 +363,8 @@ export function prefillPlan(reading: CashReading, current: Partial<Record<ReadFi
     if (v.confidence === "low") plan.unsure.push({ field, photo: v.value, text });
     else plan.fill.push({ field, text, warn: warns[field] ?? (v.confidence === "medium" ? UNSURE_TEXT : null) });
   }
-  plan.missing = reading.missing.filter((f) => f in current && !(current[f] ?? "").trim());
+  const missing: readonly PrefillField[] = reading.missing ?? [];
+  plan.missing = missing.filter((f) => f in current && !(current[f] ?? "").trim());
   return plan;
 }
 

@@ -168,8 +168,8 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Banka POS&apos;a
             yazarkasanın Z raporundaki K.KARTI (kredi kartı) satırını yazın, Z&apos;nin toplamını değil. Turuncu alanları fişle karşılaştırın; hiçbir şey
             kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
-            yazın. Kasa farkı yazarken hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki
-            güne yazılır.
+            yazın. Satış dışında kasaya para konduysa (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile yazın. Kasa farkı yazarken
+            hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır.
           </>
         ),
         icon: Banknote,
@@ -207,7 +207,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Aynı gece ({clockSuffixTR(hour(DAY_TURN_HOUR), "abl")} önce) raporu <B>Düzenle</B> ile doğrudan düzeltirsiniz. Ertesi gün toplam satış, kart ve
-            Z&apos;nin öteki tutarları, fiş sayısı ve not yine doğrudan düzelir; açılış, nakit satış, gün içinde çıkan, sayılan nakit, teslim edilen ya da
+            Z&apos;nin öteki tutarları, fiş sayısı ve not yine doğrudan düzelir; açılış, nakit satış, gün içinde giren, gün içinde çıkan, sayılan nakit, teslim edilen ya da
             kasayı sayan değişirse rapor kaydedilmez, yazdıklarınız yerinde kalır ve nedenini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basarsınız. Düzeltme yöneticiye eski hâliyle görünür; onaylanınca rapor yeni sürüm olur. Rapor kilitliyse (ertesi günün
             raporu girildi) <B>Düzeltme öner</B>; yönetici yoksa ertesi günün raporunun notuna yazın. Bekleyen önerinizi <B>Öneriyi düzenle</B> ile değiştirir,{" "}

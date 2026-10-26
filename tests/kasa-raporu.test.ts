@@ -58,6 +58,7 @@ const day: CashReportFields = {
   online: 500,
   other: 0,
   openingCash: 500,
+  cashIn: 0,
   cashOut: 150,
   cashOutNote: "süt, buz",
   countedCash: 3_430,
@@ -67,7 +68,7 @@ const day: CashReportFields = {
   note: "Bir müşteri bozuk para eksik verdi",
 };
 
-test("kasa: olması gereken = açılış + nakit satış − gün içinde çıkan; fark sayılandan; devir teslimden sonra kalan", () => {
+test("kasa: olması gereken = açılış + nakit satış − gün içinde çıkan (giren yokken); fark sayılandan; devir teslimden sonra kalan", () => {
   const c = computeCash(day);
   assert.equal(c.expectedCash, 3_550);
   assert.equal(c.cashDiff, -120);
@@ -82,6 +83,42 @@ test("kasa: olması gereken = açılış + nakit satış − gün içinde çıka
   assert.equal(computeCash({ ...day, bankPos: null }).cardDiff, null);
   assert.equal(computeCash({ ...day, bankPos: 8_050 }).cardDiff, -100);
   assert.equal(computeCash({ ...day, mealCard: 650 }).paymentsDiff, 50);
+});
+
+test("kasa: gün içinde giren olması gerekene eklenir (açılış + nakit satış + giren − çıkan); devir yine sayılan − teslim", () => {
+  // Gün içinde 200 ₺ bozuk para ve 100 ₺ nakit bahşiş kondu: 500 + 3.200 + 300 − 150 = 3.850
+  const c = computeCash({ ...day, cashIn: 300, countedCash: 3_850 });
+  assert.equal(c.expectedCash, 3_850);
+  assert.equal(c.cashDiff, 0);
+  assert.equal(c.kind, "even");
+  assert.equal(c.carryOver, 850, "devir sayılan − teslim (giren devri ayrıca değiştirmez)");
+  assert.equal(computeCash({ ...day, cashIn: 300 }).cashDiff, -420, "giren yazılıp sayılmadıysa eksik");
+  // İncelemenin örneği: 1.500 açılış, 12.000 nakit, 300 nakit bahşiş + 1.000 nakit tahsilat = 1.300 giren, 450 harcama
+  const lafposDay = { ...day, openingCash: 1_500, cash: 12_000, cashIn: 1_300, handedOver: 0 };
+  // Gün ortasında 5.000 teslim (gün içinde çıkan 5.450): LafPOS 9.350 bekler, 9.350 sayıldı
+  const withHandover = computeCash({ ...lafposDay, cashOut: 5_450, countedCash: 9_350 });
+  assert.deepEqual([withHandover.expectedCash, withHandover.cashDiff, withHandover.carryOver], [9_350, 0, 9_350]);
+  // Teslim yok (gün içinde çıkan 450, giren çıkandan 850 fazla): LafPOS 14.350 bekler, 14.350 sayıldı
+  const noHandover = computeCash({ ...lafposDay, cashOut: 450, countedCash: 14_350 });
+  assert.deepEqual([noHandover.expectedCash, noHandover.cashDiff, noHandover.carryOver], [14_350, 0, 14_350]);
+  // Kuruşlarda kayan nokta hatası yok
+  assert.equal(computeCash({ ...day, openingCash: 0.1, cash: 0.2, cashIn: 0.1, cashOut: 0, countedCash: 0.4 }).cashDiff, 0);
+  // Alan gelmeden önceki jsonb kopyası (önceki sürüm, istek yükü): giren yok, 0 sayılır
+  const legacy: Partial<CashReportFields> = { ...day };
+  delete legacy.cashIn;
+  assert.equal(computeCash(legacy as CashReportFields).expectedCash, 3_550);
+});
+
+test("gün içinde giren: WhatsApp'ta ve e-postada nakit satışın altında, yalnız varsa", () => {
+  const t = plain(whatsappText({ ...day, cashIn: 300, countedCash: 3_850 }, { by: "Zeynep" }));
+  assert.match(t, /\+ Nakit satış: 3\.200 ₺\n\+ Gün içinde giren: 300 ₺\n− Gün içinde çıkan: 150 ₺ \(süt, buz\)\n= Olması gereken: 3\.850 ₺\nSayılan: 3\.850 ₺\n✅ \*Kasa tutuyor\*/);
+  assert.doesNotMatch(plain(whatsappText(day, { by: "Zeynep" })), /Gün içinde giren/, "giren yoksa satır yok");
+  const m = renderCashReport({ ...day, cashIn: 300, countedCash: 3_850 }, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z") });
+  const html = plain(m.html);
+  assert.ok(html.indexOf("+ Nakit satış") < html.indexOf("+ Gün içinde giren") && html.indexOf("+ Gün içinde giren") < html.indexOf("− Gün içinde çıkan"));
+  assert.match(html, /Olması gereken 3\.850 ₺ · sayılan 3\.850 ₺/);
+  assert.match(plain(m.text), /\+ Gün içinde giren: 300 ₺/);
+  assert.doesNotMatch(renderCashReport(day, { by: "Zeynep", revision: 1, submittedAt: new Date() }).html, /Gün içinde giren/);
 });
 
 test("fark: 1 ₺ altı tutuyor, eksik ve fazla metni", () => {
@@ -285,6 +322,14 @@ test("düzeltmeler: değişen alanlar, tutar biçimi, boş, metin alanı içerik
   const old: Partial<CashRevisionData> = { ...rev() };
   delete old.discounts;
   assert.deepEqual(revisionChanges(old, rev()), []);
+  // Gün içinde giren kasa alanıdır (ertesi gün değişirse onaya gider); gelmeden önceki kopyada yok, 0 sayılır
+  const cashIn = revisionChanges(rev(), rev({ cashIn: 250 }));
+  assert.deepEqual(cashIn.map((c) => [c.key, c.label, plain(c.from), plain(c.to), c.sensitive]), [["cashIn", "Gün içinde giren", "0 ₺", "250 ₺", true]]);
+  const legacy: Partial<CashRevisionData> = { ...rev() };
+  delete legacy.cashIn;
+  assert.deepEqual(revisionChanges(legacy, rev()), [], "eski kopya ile 0: değişiklik yok (— → 0 ₺ görünmez)");
+  assert.deepEqual(revisionChanges(legacy, rev({ cashIn: 250 })).map((c) => plain(changeLine(c))), ["Gün içinde giren: 0 ₺ → 250 ₺"]);
+  assert.equal(revisionDataOf({ ...rev(), cashIn: 250 }).cashIn, 250, "sürüm kopyası gireni de saklar");
 });
 
 test("geç düzeltme: iş günü ertesi gün 05:00'te kapanır", () => {

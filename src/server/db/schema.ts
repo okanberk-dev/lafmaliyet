@@ -21,6 +21,7 @@ import type { CashRevisionData } from "../../lib/cash-report";
 import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checklists";
 import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
+import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
 import type { DeliveryCheck, ReorderLine } from "../../lib/reorder/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -1151,9 +1152,9 @@ export const pushSubscriptions = pgTable(
 // ---------------------------------------------------------------- Gün sonu kasa raporu
 /**
  * Personelin her akşam ModPOS'un Z raporuna ve kasaya bakıp girdiği gün sonu raporu (iş günü başına bir satır; yeniden
- * gönderilince güncellenir, revision artar). Tutarlar TL. Olması gereken nakit = açılış + nakit satış − gün içinde
- * çıkan; kasa farkı = sayılan − olması gereken (eksi: eksik, artı: fazla). Hesap src/lib/cash-report.ts'te; farkı
- * liste ve özet için ayrıca saklanır. Ayrıntı: docs/KASA-RAPORU.md.
+ * gönderilince güncellenir, revision artar). Tutarlar TL. Olması gereken nakit = açılış + nakit satış + gün içinde
+ * giren − gün içinde çıkan; kasa farkı = sayılan − olması gereken (eksi: eksik, artı: fazla). Hesap
+ * src/lib/cash-report.ts'te; farkı liste ve özet için ayrıca saklanır. Ayrıntı: docs/KASA-RAPORU.md.
  */
 export const cashReports = pgTable(
   "cash_reports",
@@ -1172,6 +1173,11 @@ export const cashReports = pgTable(
     other: doublePrecision("other").notNull().default(0),
     /** Kasa: açılış (dünden devir), gün içinde çıkan (harcama, teslim), akşam sayılan, sayımdan sonra teslim edilen */
     openingCash: doublePrecision("opening_cash").notNull().default(0),
+    /**
+     * Gün içinde kasaya giren: nakit satış dışında çekmeceye konan (bozuk para, nakit tahsilat, nakit bahşiş; LafPOS'un
+     * `cashIn`'i). Sonradan geldi: önceki raporlarda 0
+     */
+    cashIn: doublePrecision("cash_in").notNull().default(0),
     cashOut: doublePrecision("cash_out").notNull().default(0),
     cashOutNote: text("cash_out_note"),
     countedCash: doublePrecision("counted_cash").notNull().default(0),
@@ -1957,3 +1963,44 @@ export const staffRequests = pgTable(
     uniqueIndex("staff_requests_client_key_uq").on(t.clientKey),
   ],
 );
+
+// ---------------------------------------------------------------- LafPOS (kafenin kasası)
+/**
+ * LafPOS'un günlük ürün satışı (docs/LAFPOS.md): gün sonunda gelen satış listesi, sales_lines'ın günlük karşılığı;
+ * loadDailyProductSales okur (src/server/data/daily-sales.ts). Aynı gün yeniden gelirse (düzeltme) günün satırları tek
+ * işlemde silinip yenisi yazılır. Ürün önce sitenin kalemi ve boyuyla (products.site_menu_id + site_menu_slot), yoksa
+ * POS eşleştirmesiyle (pos_mappings, posMatchKey) bulunur; bulunmazsa boş.
+ */
+export const posDailySales = pgTable(
+  "pos_daily_sales",
+  {
+    id: serial("id").primaryKey(),
+    /** İş günü (YYYY-MM-DD; 05:00 kuralı, Kasa raporuyla aynı) */
+    date: text("date").notNull(),
+    /** LafPOS'taki POS adı (posName ya da "AD BOY") */
+    posName: text("pos_name").notNull(),
+    productId: integer("product_id").references(() => products.id, { onDelete: "set null" }),
+    qty: doublePrecision("qty").notNull(),
+    /** TL, KDV dahil */
+    revenue: doublePrecision("revenue").notNull(),
+    /** Hizmet satırı (karaoke): ürün değil, reçetesi yok */
+    isService: boolean("is_service").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("pos_daily_sales_date_pos_name_uq").on(t.date, t.posName)],
+);
+
+/**
+ * LafPOS'un gün sonu özeti, gün başına bir satır (docs/LAFPOS.md): Z ve kasa alanları (Kasa raporunun "LafPOS'tan
+ * doldur"u), ödeme kanalları (komisyon anahtarlarıyla) ve ikramlar (menü değeri ve nedeni). Personele yalnız `z` gider.
+ */
+export const posDayReports = pgTable("pos_day_reports", {
+  date: text("date").primaryKey(),
+  z: jsonb("z").$type<PosDayZ>().notNull(),
+  payments: jsonb("payments").$type<PosPayment[]>().notNull(),
+  ikram: jsonb("ikram").$type<PosIkram[]>().notNull(),
+  /** Gönderen sistem ("lafpos") */
+  source: text("source").notNull(),
+  /** Son gönderimin geldiği an (düzeltme yeniden gönderince değişir) */
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -21,8 +21,13 @@ export interface CashReportFields {
   mealCard: number;
   online: number;
   other: number;
-  /** Kasa: açılış (dünden devir), gün içinde çıkan, akşam sayılan, sayımdan sonra teslim edilen */
+  /** Kasa: açılış (dünden devir), gün içinde giren ve çıkan, akşam sayılan, sayımdan sonra teslim edilen */
   openingCash: number;
+  /**
+   * Gün içinde kasaya giren: nakit satış dışında çekmeceye konan (bozuk para, nakit tahsilat, nakit bahşiş). Alan
+   * sonradan geldi: eski jsonb kopyalarında (önceki sürümler, istek yükleri) yoktur, 0 sayılır
+   */
+  cashIn: number;
   cashOut: number;
   cashOutNote: string | null;
   countedCash: number;
@@ -67,7 +72,7 @@ export interface CashResult {
   /** Ödeme türlerinin toplamı ve Z toplamından farkı (tutmuyorsa yanlış yazılmış bir tutar var) */
   paymentsTotal: number;
   paymentsDiff: number;
-  /** Açılış + nakit satış − gün içinde çıkan */
+  /** Açılış + nakit satış + gün içinde giren − gün içinde çıkan */
   expectedCash: number;
   /** Sayılan − olması gereken: eksi eksik, artı fazla */
   cashDiff: number;
@@ -78,9 +83,15 @@ export interface CashResult {
   cardDiff: number | null;
 }
 
-export function computeCash(f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver" | "bankPos">): CashResult {
+/**
+ * Raporun hesabı; olması gereken nakit her yerde buradan (form, döküm, e-posta, WhatsApp, istekler, LafPOS'tan doldur).
+ * Gün içinde giren eski jsonb kopyasında yoksa 0 (CashReportFields.cashIn).
+ */
+export function computeCash(
+  f: Pick<CashReportFields, "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver" | "bankPos">,
+): CashResult {
   const paymentsTotal = r2(f.cash + f.card + f.mealCard + f.online + f.other);
-  const expectedCash = r2(f.openingCash + f.cash - f.cashOut);
+  const expectedCash = r2(f.openingCash + f.cash + (f.cashIn ?? 0) - f.cashOut);
   const cashDiff = r2(f.countedCash - expectedCash);
   return {
     paymentsTotal,
@@ -211,6 +222,7 @@ type ChangeKey = Exclude<keyof CashRevisionData, "date" | "cashDiff">;
 export const CHANGE_LABELS: Record<ChangeKey, string> = {
   openingCash: "Açılış",
   cash: "Nakit satış",
+  cashIn: "Gün içinde giren",
   cashOut: "Gün içinde çıkan",
   countedCash: "Sayılan nakit",
   handedOver: "Teslim edilen",
@@ -233,7 +245,7 @@ export const CHANGE_LABELS: Record<ChangeKey, string> = {
  * Kasadaki nakdi değiştiren alanlar ve kasayı sayan: bunlar iş günü kapandıktan sonra değişirse yönetici uyarılır,
  * personel ertesi gün yalnız yönetici onayıyla değiştirir (staffCashGate)
  */
-export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashOut", "countedCash", "handedOver", "countedByName"];
+export const SENSITIVE: readonly ChangeKey[] = ["openingCash", "cash", "cashIn", "cashOut", "countedCash", "handedOver", "countedByName"];
 
 const TEXT_FIELDS: readonly ChangeKey[] = ["cashOutNote", "note"];
 const PLAIN_FIELDS: readonly ChangeKey[] = ["zNo", "receipts", "countedByName"];
@@ -247,8 +259,11 @@ export interface FieldChange {
   sensitive: boolean;
 }
 
-/** Eksik alan (eski bir kopyada olmayan) boş sayılır */
-const valueOf = (d: Partial<CashRevisionData>, k: ChangeKey) => d[k] ?? null;
+/**
+ * Eksik alan (eski bir kopyada olmayan) boş sayılır; gün içinde giren 0 (alan gelmeden önce giren yazılmazdı: eski
+ * kopyayla ilk düzeltmede "Gün içinde giren — → 0 ₺" görünmez)
+ */
+const valueOf = (d: Partial<CashRevisionData>, k: ChangeKey) => (k === "cashIn" ? (d.cashIn ?? 0) : (d[k] ?? null));
 
 /**
  * İki sürüm arasındaki değişiklikler. Tutarlar 0,005 hassasiyetle, boş "—"; metin alanı (not, neye çıktı) içeriği
@@ -397,6 +412,7 @@ export function revisionDataOf(r: CashReportFields & { cashDiff: number; counted
     online: r.online,
     other: r.other,
     openingCash: r.openingCash,
+    cashIn: r.cashIn ?? 0,
     cashOut: r.cashOut,
     cashOutNote: r.cashOutNote,
     countedCash: r.countedCash,
@@ -649,6 +665,7 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
     `Açılış (devir): ${money(f.openingCash)}`,
     ...(meta.carry ? [`⚠️ ${carryWarning(meta.carry)}`] : []),
     `+ Nakit satış: ${money(f.cash)}`,
+    ...(f.cashIn ? [`+ Gün içinde giren: ${money(f.cashIn)}`] : []),
     ...(f.cashOut || outs.length ? [`− Gün içinde çıkan: ${money(f.cashOut)}${f.cashOutNote ? ` (${f.cashOutNote})` : ""}`, ...outs.map((l) => `  · ${l}`)] : []),
     `= Olması gereken: ${money(c.expectedCash)}`,
     `Sayılan: ${money(f.countedCash)}`,
