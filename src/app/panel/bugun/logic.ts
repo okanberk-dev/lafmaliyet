@@ -17,7 +17,7 @@ import { addDays, dayMonthTR, longDateTR, shiftMonth, todayTR, type UpcomingItem
 import { KIND_COUNT_LABEL, RETIRED_REQUEST_KINDS, waitedText, type StaffRequestKind } from "@/lib/staff-requests";
 
 import type { TaskStatus } from "../dashboard-tasks";
-import { COUNT_GRACE_DAYS } from "../sayim/logic";
+import { COUNT_GRACE_DAYS, staffLateEditNotice, unpricedExtrasNotice, type StaffLateEdit, type UnpricedExtras } from "../sayim/logic";
 
 import { checklistYesterday, posRow } from "./rows-ops";
 import type { OpsDayFacts } from "./rows-ops";
@@ -43,6 +43,8 @@ export type DayTaskKey =
   | "zam"
   | "modpos"
   | "sayim-gecen"
+  | "sayim-personel"
+  | "sayim-ek-fiyat"
   | "zayi"
   | "kasa"
   | "sayim-son";
@@ -117,6 +119,11 @@ export interface DayFacts {
   holds?: { count: number; items: { name: string; pct: number | null }[] } | null;
   /** Hammadde zammı uyarısı (priceAlert; Genel bakış ve zille aynı metin) ve fiyatına bakılacak ürün sayısı */
   prices?: { detail: string; href: string; count: number } | null;
+  /**
+   * Sayımın yöneticiye uyarıları (src/server/data/count-alerts.ts; zil ile aynı metin): bu ayın ve geçen ayın fiyatı
+   * girilmemiş ek kalemleri ve personelin ay bittikten sonra geçen ayın sayımına yaptığı kayıtlar
+   */
+  countAlerts?: { extras: UnpricedExtras[]; late: { month: string; edits: StaffLateEdit[] } | null } | null;
   /** Kasada (ModPOS) değişecek fiyatlar ve en eskisinin anı (operasyonun yükleyicisi, src/server/data/today-ops.ts) */
   pos?: { count: number; oldest: string | null } | null;
   // ---- İkisi (kontrol listeleri)
@@ -384,6 +391,36 @@ const countPrevious: Row = (f, c) => {
         ? `${month} sayımı yarım kaldı: ${progress} kalem sayıldı, kalanların stoğu 0 sayılır.`
         : `${month} ay sonu sayımı yarım kaldı: ${progress} kalem sayıldı; kalanları da girin.`,
     action: "Sayıma devam",
+  };
+};
+
+/**
+ * Personel geçen ayın sayımını ay bittikten sonra değiştirdi (yalnız yönetici; zil ile aynı metin). Son kayıt son üç iş
+ * gününde olduğu sürece satır; sonrası yalnız zilde kalır.
+ */
+const countStaffEdit: Row = (f, c) => {
+  const late = f.countAlerts?.late;
+  const n = late ? staffLateEditNotice(late.month, late.edits) : null;
+  if (!n || businessDate(new Date(n.lastAt)) < addDays(c.day, -2)) return null;
+  return { key: "sayim-personel", title: n.title, status: "todo", badge: "Kontrol et", detail: n.body, href: n.href, action: "Sayıma bak" };
+};
+
+/** Sayımda fiyatı girilmemiş ek kalemler, bu ay ve geçen ay (yalnız yönetici; zil ile aynı metin, denetim E-22) */
+const countExtrasPrice: Row = (f) => {
+  const notices = (f.countAlerts?.extras ?? []).flatMap((u) => {
+    const n = unpricedExtrasNotice(u);
+    return n ? [{ u, n }] : [];
+  });
+  if (!notices.length) return null;
+  const total = notices.reduce((a, x) => a + x.u.count, 0);
+  return {
+    key: "sayim-ek-fiyat",
+    title: "Sayımda fiyatı olmayan ek kalemler",
+    status: "todo",
+    badge: `${num(total)} kalem`,
+    detail: notices.length === 1 ? `${notices[0].n.title}: ${notices[0].n.body}` : `${notices.map((x) => x.n.title).join(" · ")}. Birim fiyatı girilmezse kapanış stoğuna 0 ₺ girer.`,
+    href: notices[0].n.href,
+    action: "Fiyatı gir",
   };
 };
 
@@ -659,6 +696,8 @@ const ADMIN_ROWS: Row[] = [
   pricesRow, // zam
   posRow, // modpos
   countPrevious, // sayim-gecen
+  countStaffEdit, // sayim-personel
+  countExtrasPrice, // sayim-ek-fiyat
   checklistRows, // liste-{templateId} (açılış saatine göre)
   cashToday, // kasa
   countMonthEnd, // sayim-son

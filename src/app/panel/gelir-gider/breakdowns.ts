@@ -35,18 +35,19 @@ const monthRevenue = (c: Pick<PnlMonthCalc, "revenueNet"> & Partial<Pick<PnlMont
 
 /**
  * Yıl cirosu kartının dökümü: ay ay ciro (KDV hariç; ModPOS + laffogato.net online satışı), takvim sırasıyla; aya
- * dokununca Satışlar'da o ay açılır. Kalemler kartın rakamını (ayların KDV hariç cirosu toplamı) tutar. Gideri ya da
- * açık günü olup POS cirosu girilmemiş aylar ("aktif ay" sayılır) toplama girmeyen ayrı bölümde: kartın "N aktif ay"
- * yazısı dökümde de görünsün.
+ * dokununca Satışlar'da o ay açılır. Kalemler kartın rakamını (cirosu girilmiş ayların KDV hariç cirosu toplamı,
+ * yearTotals) tutar. Gideri, açık günü ya da online satışı olup POS cirosu girilmemiş aylar toplama girmeyen ayrı
+ * bölümde. `calcs` bu aya kadarki aylar (sonrakiler sayfada kesilir).
  */
 export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string[]): BreakdownGroup[] {
   const days = (c: RevenueMonthCalc) => (c.info?.openDays ? `${num(c.info.openDays)} açık gün` : null);
-  const missing = calcs.filter((c) => c.revenueNet === null && activeMonths.includes(c.month));
+  // POS cirosu girilmemiş ay yıl toplamına girmez (yearTotals): online satışı olsa da bu bölümde, kâra girmeden
+  const missing = calcs.filter((c) => c.revenueNet === null && (activeMonths.includes(c.month) || c.site));
   return [
     {
       key: "ciro",
       rows: calcs
-        .filter((c) => c.revenueNet !== null || c.site)
+        .filter((c) => c.revenueNet !== null)
         .map((c) => ({
           key: c.month,
           label: monthLabel(c.month),
@@ -66,13 +67,13 @@ export function revenueBreakdown(calcs: RevenueMonthCalc[], activeMonths: string
     {
       key: "girilmedi",
       label: "Cirosu girilmemiş aylar",
-      note: "Gideri ya da açık günü var, POS cirosu yok. Aya dokununca Satışlar'da ciro girilir.",
+      note: "Gideri, açık günü ya da online satışı var, POS cirosu yok: yıl toplamına ve kâra girmez. Aya dokununca Satışlar'da ciro girilir.",
       apart: true,
       noSubtotal: true,
       rows: missing.map((c) => ({
         key: c.month,
         label: monthLabel(c.month),
-        sub: days(c) ?? undefined,
+        sub: [c.site ? `online ${tl(c.site.total)} (KDV hariç; kâra girmedi)` : null, days(c)].filter(Boolean).join(" · ") || undefined,
         amount: 0,
         display: "Girilmedi",
         tone: "warn" as const,

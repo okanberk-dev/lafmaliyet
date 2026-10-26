@@ -9,14 +9,17 @@ export interface IngredientDeps {
   counts: number;
   purchases: number;
   links: number;
+  /** Zayi / ikram kayıtları (silinirse geçmiş ayların zayi maliyeti ve kayıtlı tüketimi 0'a düşerdi) */
+  waste: number;
 }
 
-/** Silmeyi engelleyen geçmiş: "2 sayım, 1 alım miktarı" (boşsa null) */
+/** Silmeyi engelleyen geçmiş: "2 sayım, 1 alım miktarı, 3 zayi / ikram" (boşsa null) */
 export function historyText(d: IngredientDeps): string | null {
   const parts = [
     d.counts ? `${num(d.counts)} sayım` : "",
     d.purchases ? `${num(d.purchases)} alım miktarı` : "",
     d.links ? `${num(d.links)} Paraşüt eşleştirmesi` : "",
+    d.waste ? `${num(d.waste)} zayi / ikram` : "",
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
 }

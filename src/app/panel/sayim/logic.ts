@@ -6,7 +6,7 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
-export { layerText } from "@/lib/calc/fifo";
+export { invoiceLayer, layerText } from "@/lib/calc/fifo";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num } from "@/lib/format";
@@ -723,5 +723,78 @@ export function pastCountReminder(day: string, prev: { counted: number; total: n
     title: prev.counted ? `${label} sayımı yarım: ${num(prev.counted)} / ${num(prev.total)}` : `${label} sayımı girilmedi`,
     body: `Kalanların stoğu 0 sayılır; ${label} mal maliyeti yüksek çıkar. Ayın 10'una kadar personel de girebilir.`,
     href: `/panel/sayim?ay=${month}`,
+  };
+}
+
+// ---------------------------------------------------------------- Yöneticiye sayım uyarıları (denetim B02)
+
+/** Bir ayın fiyatı girilmemiş ek kalemleri ("Listede olmayanlar"; miktarı > 0, birim fiyatı 0) */
+export interface UnpricedExtras {
+  month: string;
+  count: number;
+  /** İlk birkaç ad, eklenme sırasıyla */
+  names: string[];
+  /** En yeni kalemin kimliği: yeni kalem gelince zil satırı yeniden okunmamış olur */
+  newestId: number;
+}
+
+/** Ek kalemlerin bölümü sayım formunda (stock-form.tsx "Listede olmayanlar" kartı) */
+export const EXTRAS_ANCHOR = "listede-olmayanlar";
+
+/**
+ * Yöneticinin zil ve Bugün satırı (E-22): personelin eklediği ek kalemin fiyatı yoksa kapanış stoğuna 0 ₺ girer, mal
+ * maliyeti o kadar yüksek çıkar. "Ekim 2026: 2 ek kalemin fiyatı yok" → o ayın sayımının ek kalemler bölümü. Kimlik
+ * sayı ve en yeni kalemden; fiyat girilince satır kalkar. Personele gösterilmez (tutar konusu).
+ */
+export function unpricedExtrasNotice(u: UnpricedExtras): { id: string; title: string; body: string; href: string } | null {
+  if (u.count <= 0) return null;
+  const shown = u.names.slice(0, 3);
+  const rest = u.count - shown.length;
+  const list = rest > 0 ? `${shown.join(", ")} ve ${num(rest)} kalem daha` : shown.join(", ");
+  return {
+    id: `sayim-ek-fiyatsiz-${u.month}-${u.count}-${u.newestId}`,
+    title: `${monthLabel(u.month)}: ${num(u.count)} ek kalemin fiyatı yok`,
+    body: `${list} · Birim fiyatı girilmezse kapanış stoğuna 0 ₺ girer, ayın mal maliyeti o kadar yüksek çıkar.`,
+    href: `/panel/sayim?ay=${u.month}#${EXTRAS_ANCHOR}`,
+  };
+}
+
+/** Personelin, ay bittikten sonra (kasanın iş günüyle) geçen ayın sayımına yaptığı kayıtlar, kişi başına */
+export interface StaffLateEdit {
+  name: string;
+  /** Kayıt sayısı (her Kaydet bir kayıt) */
+  saves: number;
+  /** Kayıtlardaki kalem sayılarının toplamı ("3 kalem"; aynı kalem iki kez kaydedildiyse iki kez sayılır) */
+  items: number;
+  /** En son kaydın anı (ISO) ve işlem geçmişi kimliği */
+  lastAt: string;
+  lastId: number;
+}
+
+/** İşlem geçmişinin ayrıntısından kalem sayısı: "Ekim 2026: 3 kalem, 1 sayım silindi" → 4 */
+export function loggedItems(detail: string | null): number {
+  if (!detail) return 0;
+  const n = (re: RegExp) => Number(detail.match(re)?.[1] ?? 0);
+  return n(/(\d+) kalem/) + n(/(\d+) sayım silindi/);
+}
+
+/**
+ * Yöneticinin zil ve Bugün satırı: personel geçen ayın sayımını ay bittikten sonra (ayın ilk 10 gününde, E-19'un
+ * penceresi) değiştirdi. Geçen ayın kapanışı mal maliyetini, kârı, bu ayın açılışını ve FIFO'yu belirler; yönetici
+ * bakmalı. "Ayşe, Ekim 2026 sayımını değiştirdi" · "Ay bittikten sonra 2 kayıt, 5 kalem". Kimlik en son kayıttan.
+ */
+export function staffLateEditNotice(month: string, edits: StaffLateEdit[]): { id: string; title: string; body: string; href: string; lastAt: string } | null {
+  if (!edits.length) return null;
+  const sorted = [...edits].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+  const names = sorted.map((e) => e.name);
+  const who = names.length > 2 ? `${names.slice(0, 2).join(", ")} ve ${num(names.length - 2)} kişi` : names.join(" ve ");
+  const saves = edits.reduce((a, e) => a + e.saves, 0);
+  const items = edits.reduce((a, e) => a + e.items, 0);
+  return {
+    id: `sayim-personel-${month}-${Math.max(...edits.map((e) => e.lastId))}`,
+    title: `${who}, ${monthLabel(month)} sayımını değiştirdi`,
+    body: `Ay bittikten sonra ${num(saves)} kayıt${items ? `, ${num(items)} kalem` : ""}. Geçen ayın kapanışı mal maliyetini, kârı ve bu ayın açılışını değiştirir: kontrol edin.`,
+    href: `/panel/sayim?ay=${month}`,
+    lastAt: sorted[0].lastAt,
   };
 }

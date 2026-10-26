@@ -6,10 +6,11 @@ import {
   PACKAGING_CATEGORY,
   SEPARATE_CATEGORIES,
 } from "../constants";
+import { isCountable } from "../ingredient-usage";
 import { buildSiteLinkIndex, mapSiteLines, OPTION_KINDS, optionProductId, optionTotals, siteRevenue, type OptionKind, type SiteRevenue } from "../site-sales/calc";
 import type { SiteSalesLine, SiteSalesMonth } from "../site-sales/schema";
 import { evaluateExpression } from "./expr";
-import { closingLayers, FIFO_LOOKBACK_MONTHS, layersValue, monthPool, lotPool, valuationFor, type PurchaseLot, type StockLayer } from "./fifo";
+import { closingLayers, FIFO_LOOKBACK_MONTHS, invoiceLayer, layersValue, monthPool, lotPool, openingLayer, valuationFor, type PurchaseLot, type StockLayer } from "./fifo";
 import type {
   Category,
   CountUnit,
@@ -624,6 +625,8 @@ export interface StockLine {
    * Satır geçmiş ayın değerini korumak için gösterilir; formda salt okunur olmalı.
    */
   archived: boolean;
+  /** Malzeme pasif ama aktif bir ürünün reçetesinde: tüketildiği için listede kalır, sayılır */
+  passiveInUse: boolean;
   /** Kayıtlı sayımın birimi bugünkü sayım biriminden farklı (değer eski birimle hesaplanır) */
   unitChanged: boolean;
   /**
@@ -1046,12 +1049,22 @@ export function createModel(ds: Dataset) {
     .map(computeProduct);
   const activeProducts = products.filter((p) => p.product.active);
 
-  /** Her hammaddenin kaç ürün kartında kullanıldığı */
+  /** Her hammaddenin kaç ürün kartında kullanıldığı (pasif ürünler dahil: silme engeli) */
   const usedIn = new Map<number, number[]>();
+  /**
+   * Yalnız aktif ürünlerin reçeteleri: satışla tüketilen malzeme. "Hiçbir reçetede yok" uyarısı ve çipi bunu kullanır
+   * (yalnız emekli ürünlerin kullandığı malzeme "reçetede yok" sayılır); pasif malzeme burada geçiyorsa sayım listesinde
+   * kalır (denetim E-04, E-58)
+   */
+  const usedInActive = new Map<number, number[]>();
   for (const it of ds.recipeItems) {
     const list = usedIn.get(it.ingredientId) ?? [];
     if (!list.includes(it.productId)) list.push(it.productId);
     usedIn.set(it.ingredientId, list);
+    if (!productById.get(it.productId)?.active) continue;
+    const act = usedInActive.get(it.ingredientId) ?? [];
+    if (!act.includes(it.productId)) act.push(it.productId);
+    usedInActive.set(it.ingredientId, act);
   }
 
   /**
@@ -1275,8 +1288,12 @@ export function createModel(ds: Dataset) {
     extrasByMonth.set(e.month, list);
   }
   const bySortOrder = (a: Ingredient, b: Ingredient) => a.sortOrder - b.sortOrder || a.id - b.id;
-  /** Bugünkü sayım listesi: aktif ve sayım birimi olan malzemeler */
-  const countable = ds.ingredients.filter((i) => i.countUnit && i.active).sort(bySortOrder);
+  /**
+   * Bugünkü sayım listesi: sayım birimi olan aktif malzemeler ve aktif bir ürünün reçetesinde geçen pasif malzemeler
+   * (satışla tüketilmeye devam eder: listeden düşerse kalan stoğu 0 sayılır, mal maliyeti şişer; denetim E-04).
+   * Kural tek yerde: src/lib/ingredient-usage.ts isCountable (sayım kaydı da onu kullanır)
+   */
+  const countable = ds.ingredients.filter((i) => isCountable(i, usedInActive.has(i.id))).sort(bySortOrder);
   const countableIds = new Set(countable.map((i) => i.id));
 
   /**
@@ -1302,13 +1319,18 @@ export function createModel(ds: Dataset) {
   type FifoCalc = { pool: StockLayer[]; layers: StockLayer[]; uncovered: number; fallbackUnit: number };
   const fifoCache = new Map<string, FifoCalc | null>();
   /**
-   * Malzemenin ay sonu katmanları (başlangıç ayından bağımsız: önceki ayların katmanları taşınmak için de hesaplanır).
+   * Malzemenin ay sonu katmanları, `from` başlangıç ayıyla (Ayarlar önizlemesi başka bir başlangıcı da sorar).
    * Havuz: bu ayın faturaları en yeniden eskiye + son 12 ayda en son sayıldığı aydan sonraki (boş bırakılmış) ayların
    * faturaları + o sayımın katmanları (tükenmiş parti yeniden sayılmaz); hiç sayılmadıysa son 12 ayın faturaları.
-   * Havuz boşsa (faturası yok, su) null: ay sonu fiyatı.
+   * O sayım başlangıçtan önceki bir aydaysa (ay sonu fiyatıyla değerlendi) katmanları yerine sayılan miktarın tamamı tek
+   * parça, o ayın ay sonu fiyatıyla taşınır: başlangıç ayının açılışı (önceki ayın kapanışı) aynı fiyatta olduğu için
+   * hiç tüketilmemiş malın eski fatura fiyatıyla yeniden değerlenmesi mal maliyetine yazılmaz (denetim E-05). `from`
+   * null: zincir hiç kesilmez (her ay FIFO). Havuz boşsa (faturası yok, su) ya da yalnız taşınan parçadan oluşuyorsa
+   * (bu ayda ve aradaki aylarda fatura yok) null: ay sonu fiyatı. Karar yalnız pencerenin içindeki veriden: pencere
+   * dışındaki bir fatura kapanmış ayın değerini değiştirmez.
    */
-  function fifoLayers(month: string, ingredientId: number): FifoCalc | null {
-    const key = `${month}|${ingredientId}`;
+  function fifoLayersFrom(month: string, ingredientId: number, from: string | null): FifoCalc | null {
+    const key = `${from ?? "-"}|${month}|${ingredientId}`;
     if (fifoCache.has(key)) return fifoCache.get(key)!;
     let out: FifoCalc | null = null;
     const byMonth = lotsByIng.get(ingredientId);
@@ -1325,9 +1347,19 @@ export function createModel(ds: Dataset) {
         }
         raw.push(...(byMonth.get(m) ?? []));
       }
-      const carried = [...lotPool(raw), ...(counted ? (fifoLayers(counted, ingredientId)?.layers ?? []) : [])];
+      const opening = !!counted && !!from && counted < from;
+      const countedLayers = !counted
+        ? []
+        : opening
+          ? [openingLayer(countInBaseUnit(counted, ingredientId) ?? 0, unitCostAtMonthEnd(ingredientId, counted), counted)]
+          : (fifoLayersFrom(counted, ingredientId, from)?.layers ?? []);
+      const carried = [...lotPool(raw), ...countedLayers];
       const pool = monthPool(byMonth.get(month) ?? [], carried);
-      if (pool.length) {
+      // Taşınan açılış tek başına havuz kurmaz: bu ayda ve aradaki boş aylarda faturası yoksa malzeme faturasız
+      // malzeme gibi ay sonu fiyatıyla değerlenir. Yoksa kapanmış bir ayın değeri, malzemenin pencere dışındaki (ör.
+      // sonraki bir aydaki) ilk faturası ya da Paraşüt bağlantısı gelince değişirdi (inceleme B02-D2)
+      const invoiceInWindow = raw.length > 0 || (byMonth.get(month)?.length ?? 0) > 0;
+      if (pool.length && (!opening || invoiceInWindow)) {
         const fallbackUnit = unitCostAtMonthEnd(ingredientId, month);
         const { layers, uncovered } = closingLayers(countInBaseUnit(month, ingredientId) ?? 0, pool, fallbackUnit);
         out = { pool, layers, uncovered, fallbackUnit };
@@ -1336,6 +1368,8 @@ export function createModel(ds: Dataset) {
     fifoCache.set(key, out);
     return out;
   }
+  /** Malzemenin ay sonu katmanları, Ayarlar'daki başlangıç ayıyla (stockSheet'in kullandığı) */
+  const fifoLayers = (month: string, ingredientId: number) => fifoLayersFrom(month, ingredientId, fifoStart);
 
   const stockCache = new Map<string, StockSheet>();
   function stockSheet(month: string): StockSheet {
@@ -1377,6 +1411,7 @@ export function createModel(ds: Dataset) {
         amount,
         amountVatIncl: amount * (1 + ing.vatRate),
         archived,
+        passiveInUse: !archived && !ing.active,
         unitChanged: !!c && !archived && factor !== currentFactor,
         valuation: f ? "fifo" : "son-fiyat",
         layers: f?.layers ?? [],
@@ -1401,7 +1436,7 @@ export function createModel(ds: Dataset) {
       amount: e.qty * e.unitPrice,
     }));
     const extrasTotal = sum(extras.map((e) => e.amount));
-    const fifoCovered = sum(groups.flatMap((g) => g.lines.flatMap((l) => l.layers.filter((x) => !x.fallback).map((x) => x.qty * x.unitCost))));
+    const fifoCovered = sum(groups.flatMap((g) => g.lines.flatMap((l) => l.layers.filter(invoiceLayer).map((x) => x.qty * x.unitCost))));
     s = {
       month,
       valuation: useFifo ? "fifo" : "son-fiyat",
@@ -1418,10 +1453,11 @@ export function createModel(ds: Dataset) {
   }
 
   /**
-   * Ayarlar önizlemesi: ayın sayımı iki yöntemle (ay sonu fiyatı ve FIFO), ayardan bağımsız. Ek kalemler ikisinde
-   * aynı. `covered` FIFO tutarının faturalardan gelen kısmı.
+   * Ayarlar önizlemesi: ayın sayımı iki yöntemle (ay sonu fiyatı ve `from` başlangıç ayıyla FIFO; varsayılan kayıtlı
+   * başlangıç). FIFO tutarı başlangıca bağlıdır: başlangıçtan önceki sayım ay sonu fiyatıyla taşınır (fifoLayersFrom).
+   * Ek kalemler ikisinde aynı. `covered` FIFO tutarının faturalardan gelen kısmı.
    */
-  function valuationPreview(month: string): { old: number; fifo: number; covered: number } {
+  function valuationPreview(month: string, from: string | null = fifoStart): { old: number; fifo: number; covered: number } {
     let old = 0;
     let fifo = 0;
     let covered = 0;
@@ -1430,13 +1466,13 @@ export function createModel(ds: Dataset) {
       if (!ing) continue;
       const last = c.qty * (unitCostAtMonthEnd(id, month) * (c.factor ?? countFactor(ing.countUnit)));
       old += last;
-      const f = fifoLayers(month, id);
+      const f = fifoLayersFrom(month, id, from);
       if (!f) {
         fifo += last;
         continue;
       }
       fifo += layersValue(f.layers);
-      covered += layersValue(f.layers.filter((x) => !x.fallback));
+      covered += layersValue(f.layers.filter(invoiceLayer));
     }
     const extras = sum((extrasByMonth.get(month) ?? []).map((e) => e.qty * e.unitPrice));
     return { old: old + extras, fifo: fifo + extras, covered };
@@ -1872,6 +1908,8 @@ export function createModel(ds: Dataset) {
     computeProduct,
     evalQty,
     usedIn,
+    /** Yalnız aktif ürünlerin reçeteleri: "hiçbir (aktif) reçetede yok" ve sayım listesi */
+    usedInActive,
     monthInfo,
     /** Ayın kartlı satış oranı ve kaynağı (elle, kasa raporlarından ya da Ayarlar) */
     cardShareOf,
@@ -1917,8 +1955,10 @@ export function createModel(ds: Dataset) {
     fixedStandardTotal,
     fixedStandardTotalFor,
     stockSheet,
-    /** Malzemenin ay sonu FIFO katmanları ve havuzu (başlangıç ayından bağımsız; Ayarlar önizlemesi) */
+    /** Malzemenin ay sonu FIFO katmanları ve havuzu, Ayarlar'daki başlangıç ayıyla */
     fifoLayers,
+    /** Aynısı başka bir başlangıç ayıyla (null: zincir kesilmez) */
+    fifoLayersFrom,
     /** Stok değerleme başlangıcı (Ayarlar; null = her ay ay sonu fiyatı) */
     fifoStart,
     valuationPreview,

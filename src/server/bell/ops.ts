@@ -1,6 +1,6 @@
 import "server-only";
 
-import { pastCountReminder } from "@/app/panel/sayim/logic";
+import { pastCountReminder, staffLateEditNotice, unpricedExtrasNotice } from "@/app/panel/sayim/logic";
 import { businessDate } from "@/lib/cash-report";
 import { shiftMonth } from "@/lib/calc/engine";
 import { dateTR, num } from "@/lib/format";
@@ -14,6 +14,7 @@ import type { CurrentUser } from "@/server/auth/dal";
 import { soldOutFacts } from "@/server/data/menu-status";
 import { staffPosSummary } from "@/server/data/pos-staff";
 import { posPendingSummary } from "@/server/data/prices";
+import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { countProgress } from "@/server/data/count-progress";
 import { deletedForOwner, myWasteRequests, pendingWasteSummary } from "@/server/data/waste-requests";
 import type { DigestBox } from "@/server/notify/digest-template";
@@ -117,16 +118,42 @@ async function pastCountNotifications(user: CurrentUser, now: Date): Promise<Pan
   return prev ? [{ ...prev, kind: "warning", timeLabel: "", unread: true, group: "uyari" }] : [];
 }
 
+/**
+ * Sayımın yöneticiye uyarıları (yalnız yönetici, grup Uyarılar; denetim B02): bu ayın ve geçen ayın fiyatı girilmemiş
+ * ek kalemleri (kapanış stoğuna 0 ₺ girer; fiyat girilince kalkar) ve personelin ay bittikten sonra geçen ayın sayımına
+ * yaptığı kayıtlar (kimlik en son kayıttan). Ay kasanın iş gününden (05:00'te döner). Personelde hiç okunmaz.
+ */
+async function countAlertNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {
+  if (user.role !== "admin") return [];
+  const month = businessDate(now).slice(0, 7);
+  const prev = shiftMonth(month, -1);
+  const [extras, late] = await Promise.all([loadUnpricedExtras([month, prev]), loadStaffLateEdits(prev)]);
+  const out: PanelNotification[] = [];
+  const edit = staffLateEditNotice(prev, late);
+  if (edit) {
+    const day = todayTR(new Date(edit.lastAt));
+    const today = todayTR(now);
+    const timeLabel = day === today ? "Bugün" : day === addDays(today, -1) ? "Dün" : dateTR(day);
+    out.push({ id: edit.id, kind: "info", title: edit.title, body: edit.body, href: edit.href, timeLabel, unread: true, group: "uyari" });
+  }
+  for (const u of extras) {
+    const n = unpricedExtrasNotice(u);
+    if (n) out.push({ ...n, kind: "warning", timeLabel: "", unread: true, group: "uyari" });
+  }
+  return out;
+}
+
 /** Zilin operasyon satırları, iki rolde (loadPanelNotifications iki dalda çağırır); bir kaynak düşerse ötekiler kalır */
 export async function opsBell(user: CurrentUser): Promise<PanelNotification[]> {
   const now = new Date();
-  const [pos, waste, soldOut, count] = await Promise.all([
+  const [pos, waste, soldOut, count, countAlerts] = await Promise.all([
     posNotifications(user, now).catch(() => []),
     wasteRequestNotifications(user, now).catch(() => []),
     soldOutNotifications(user, now).catch(() => []),
     pastCountNotifications(user, now).catch(() => []),
+    countAlertNotifications(user, now).catch(() => []),
   ]);
-  return [...waste, ...soldOut, ...count, ...pos];
+  return [...waste, ...soldOut, ...count, ...countAlerts, ...pos];
 }
 
 /**

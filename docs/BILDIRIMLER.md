@@ -58,9 +58,15 @@ kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış y
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
 **Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
-onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zilin
+onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Yine **Uyarılar**'da
+yöneticiye iki sayım satırı (Bugün'de de; `src/server/data/count-alerts.ts`, metin `sayim/logic.ts`): bu ayın ya da geçen
+ayın sayımında birim fiyatı girilmemiş ek kalem varsa "Ekim 2026: 2 ek kalemin fiyatı yok" (adlar; kapanış stoğuna 0 ₺
+girer), o ayın ek kalemlerine götürür, fiyat girilince kalkar (kimlik sayı ve en yeni kalemden); personel geçen ayın
+sayımını ay bittikten sonra (ilk 10 günde) değiştirdiyse "Ayşe, Ekim 2026 sayımını değiştirdi" (kayıt ve kalem sayısı;
+kimlik en son kayıttan, yeni kayıt yeniden okunmamış yapar). İkisi personele hiç gösterilmez. Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, zayi istekleri, Tükendi, geçen ayın sayımı) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri, Tükendi, geçen ayın sayımı, fiyatsız ek kalem, personelin geç sayım kaydı)
+`src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur

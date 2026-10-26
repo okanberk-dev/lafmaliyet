@@ -75,7 +75,10 @@ export function buildLots(rows: LotSourceRow[]): PurchaseLot[] {
   return lots.filter((l) => l.qty > 1e-9 && l.cost >= -1e-9).map((l) => (l.cost < 0 ? { ...l, cost: 0 } : l));
 }
 
-/** Değerlenmiş bir parça: faturadan (invoiceId, tarih) ya da faturası bulunamayan kalan (fallback, ay sonu fiyatı) */
+/**
+ * Değerlenmiş bir parça: faturadan (invoiceId, tarih), faturası bulunamayan kalan (fallback, ay sonu fiyatı) ya da
+ * FIFO başlangıcından önceki ayın sayımından taşınan açılış (`countMonth`; o ayın ay sonu fiyatıyla, faturasız)
+ */
 export interface StockLayer {
   qty: number;
   /** Hammaddenin kendi birimindeki fiyat (₺/gr, ₺/ml, ₺/adet), KDV hariç */
@@ -83,6 +86,23 @@ export interface StockLayer {
   invoiceId: number | null;
   date: string | null;
   fallback: boolean;
+  /**
+   * Başlangıçtan önceki sayım ayı (YYYY-MM): o ayın kapanışı ay sonu fiyatıyla değerlendi, FIFO'nun ilk ayına aynı
+   * fiyatla tek parça taşınır (yoksa başlangıç ayı eski faturaların fiyatıyla yeniden değerlenir ve fark mal maliyetine
+   * yazılırdı). Havuzda fatura gibi tüketilir, "faturalardan" payına girmez.
+   */
+  countMonth?: string | null;
+}
+
+/** Katman bir faturadan mı (kapsam satırındaki "faturalardan" payı): fallback ve sayımdan taşınan açılış değil */
+export const invoiceLayer = (l: StockLayer) => !l.fallback && l.invoiceId !== null;
+
+/**
+ * FIFO başlangıcından önceki ayın sayımı: başlangıç ayının havuzuna tek parça, o ayın ay sonu fiyatıyla (açılış stoğu
+ * aynı fiyatla değerlendiği için başlangıç ayının mal maliyetine yeniden değerleme farkı yazılmaz).
+ */
+export function openingLayer(qty: number, unitCost: number, countMonth: string): StockLayer {
+  return { qty, unitCost, invoiceId: null, date: null, fallback: false, countMonth };
 }
 
 /** Havuzu en yeniden eskiye sıralar: tarih, aynı günde fatura kimliği (sonra girilen daha yeni) */
@@ -154,11 +174,18 @@ const dayShort = (date: string) => `${Number(date.slice(8, 10))} ${monthShort(da
 
 /**
  * Satır ipucu: "2 KG · 18 Eki faturası 412,00 ₺/KG + 0,5 KG · 29 Eyl faturası 380,00 ₺/KG · 0,3 KG faturası
- * bulunamadı: ay sonu fiyatıyla." Katmanlar hammaddenin biriminde; `factor` sayım biriminin çarpanı.
+ * bulunamadı: ay sonu fiyatıyla." Başlangıçtan önceki sayımdan taşınan parça "1 KG · Eyl sayımından …". Katmanlar
+ * hammaddenin biriminde; `factor` sayım biriminin çarpanı.
  */
 export function layerText(layers: StockLayer[], factor: number, unit: string): string {
   const f = factor || 1;
-  const parts = layers.filter((l) => !l.fallback).map((l) => `${num(l.qty / f, 3)} ${unit} · ${dayShort(l.date!)} faturası ${tl(l.unitCost * f, 2)}/${unit}`);
+  const parts = layers
+    .filter((l) => !l.fallback)
+    .map((l) =>
+      l.countMonth
+        ? `${num(l.qty / f, 3)} ${unit} · ${monthShort(l.countMonth)} sayımından ${tl(l.unitCost * f, 2)}/${unit} (FIFO başlangıcından önce: ay sonu fiyatı)`
+        : `${num(l.qty / f, 3)} ${unit} · ${dayShort(l.date!)} faturası ${tl(l.unitCost * f, 2)}/${unit}`,
+    );
   const rest = layers.filter((l) => l.fallback).reduce((a, l) => a + l.qty, 0);
   const tail = rest > 0 ? `${num(rest / f, 3)} ${unit} faturası bulunamadı: ay sonu fiyatıyla (${tl((layers.find((l) => l.fallback)?.unitCost ?? 0) * f, 2)}/${unit}).` : "";
   if (!parts.length) return tail;
