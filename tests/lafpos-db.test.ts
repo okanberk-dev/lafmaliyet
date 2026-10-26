@@ -1,7 +1,8 @@
 // LafPOS bağlantısı, gerçek Postgres'te (docs/LAFPOS.md): imzalı gün sonu yazılır (ürün önce sitenin kalemi ve boyuyla,
-// yoksa POS eşleştirmesiyle), aynı gün yeniden gelince öncekinin yerine geçer (idempotent; aynı anda iki gönderim
-// sırayla), reddedilen istek hiçbir şey yazmaz; loadDailyProductSales satır varken satırları, yokken null döner; Kasa
-// raporunun okuyucusu yalnız Z'yi verir; maliyet ucu yalnız siteye bağlı ürünleri, yalnız altı alanla verir.
+// yoksa POS eşleştirmesiyle), aynı gün aynı Z no ile yeniden gelince öncekinin yerine geçer (idempotent; aynı anda iki
+// gönderim sırayla), başka Z no ile gelen gün 409 alır ve hiçbir şey yazmaz, reddedilen istek hiçbir şey yazmaz;
+// loadDailyProductSales satır varken satırları, yokken null döner; Kasa raporunun okuyucusu yalnız Z'yi verir (kasa
+// eşlemesi saklanan özetten); maliyet ucu yalnız siteye bağlı ürünleri, yalnız altı alanla verir.
 //
 // Kendi kategorisini, ürünlerini, hammaddesini ve eşleştirmelerini açar, sonunda siler. Günler 2029 Mart'ta: öteki
 // veritabanı testlerinin günleriyle karışmaz.
@@ -30,6 +31,8 @@ const NOW = new Date("2029-03-20T12:00:00+03:00");
 const D1 = "2029-03-01";
 const D2 = "2029-03-02";
 const D3 = "2029-03-03";
+const D4 = "2029-03-04";
+const D5 = "2029-03-05";
 
 describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_DATABASE_URL yok" }, () => {
   let db: DB;
@@ -122,8 +125,8 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
 
   after(async () => {
     if (!db) return;
-    await db.delete(s.posDailySales).where(inArray(s.posDailySales.date, [D1, D2, D3]));
-    await db.delete(s.posDayReports).where(inArray(s.posDayReports.date, [D1, D2, D3]));
+    await db.delete(s.posDailySales).where(inArray(s.posDailySales.date, [D1, D2, D3, D4, D5]));
+    await db.delete(s.posDayReports).where(inArray(s.posDayReports.date, [D1, D2, D3, D4, D5]));
     await db.delete(s.posMappings).where(inArray(s.posMappings.posName, Object.values(posNames)));
     await db.delete(s.recipeItems).where(eq(s.recipeItems.ingredientId, ids.ingredient));
     await db.delete(s.products).where(eq(s.products.categoryId, ids.category));
@@ -208,6 +211,43 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     assert.deepEqual(await rowsOf(D1), before);
     const [rep] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, D1));
     assert.equal(rep.z.zTotal, 45210.5, "özet değişmedi");
+  });
+
+  test("başka Z no ile gelen gün 409 z_conflict alır, hiçbir şey yazmaz; aynı Z no düzeltmedir; kasa eşlemesi saklanan özetten", async () => {
+    // LafPOS'un yeni alanlarıyla: gün ortasında 5.000 teslim, 700 giren; LafPOS 1.500 + 12.000 + 700 − 450 − 5.000 = 8.750 bekler
+    const first = push(D4, [line(`Z300 ${tag}`)], { zNo: 300, handedOver: 5000, cashIn: 700, expectedCash: 8750, countedCash: 8750, cashDiff: 0 });
+    assert.deepEqual(await send(first), { status: 200, body: { ok: true, date: D4, lines: 1 } });
+    const later = new Date(NOW.getTime() + 60_000);
+    const other = push(D4, [line(`Z301 ${tag}`)], { zNo: 301, zTotal: 1 });
+    assert.deepEqual(await send(other, { now: later }), { status: 409, body: { error: "z_conflict", date: D4, zNo: 300 } });
+    // Hiçbir şey yazılmadı: satırlar, Z ve geliş anı öncekinin
+    assert.deepEqual((await rowsOf(D4)).map((x) => x.posName), [`Z300 ${tag}`]);
+    const [kept] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
+    assert.deepEqual([kept.z.zNo, kept.z.zTotal, kept.z.cashIn, kept.z.expectedCash], [300, 45210.5, 700, 8750]);
+    assert.equal(kept.receivedAt.getTime(), NOW.getTime());
+    // Kasa raporu saklanan özetten: teslim gün içinde çıkana, giren düşülür (450 + 5.000 − 700), Teslim edilen 0
+    const day = await kasa.loadLafposDay(D4, db);
+    assert.ok(day);
+    assert.equal(day.prefill.values.cashOut?.value, 4750);
+    assert.equal(day.prefill.values.handedOver?.value, 0);
+    assert.deepEqual(day.prefill.checks, []);
+    // Aynı Z no düzeltmedir: yerine geçer (yeni alanları olmayan eski biçimli gövde de)
+    const fixed = push(D4, [line(`Z300 DÜZELTME ${tag}`)], { zNo: 300 });
+    assert.deepEqual(await send(fixed, { now: later }), { status: 200, body: { ok: true, date: D4, lines: 1 } });
+    assert.deepEqual((await rowsOf(D4)).map((x) => x.posName), [`Z300 DÜZELTME ${tag}`]);
+    const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
+    assert.equal(rep.receivedAt.getTime(), later.getTime());
+    assert.ok(!("cashIn" in rep.z), "eski biçimli gövde: alan yok");
+    assert.equal((await kasa.loadLafposDay(D4, db))?.prefill.values.cashOut?.value, 450);
+    // Aynı anda iki ayrı Z aynı güne: danışma kilidi sıraya koyar, biri yazılır, öteki kayıtlı Z'yi görüp hiçbir şey yazmaz
+    const a = parsePosDay(JSON.stringify(push(D5, [line(`A ${tag}`)], { zNo: 400 })), NOW);
+    const b = parsePosDay(JSON.stringify(push(D5, [line(`B1 ${tag}`), line(`B2 ${tag}`)], { zNo: 401 })), NOW);
+    assert.ok(a.ok && b.ok);
+    const results = await Promise.all([ingest.storePosDay(db, a.data, NOW), ingest.storePosDay(db, b.data, NOW)]);
+    const [winner] = await db.select({ z: s.posDayReports.z }).from(s.posDayReports).where(eq(s.posDayReports.date, D5));
+    assert.ok(winner.z.zNo === 400 || winner.z.zNo === 401, String(winner.z.zNo));
+    assert.deepEqual(results.filter((r) => !r.ok), [{ ok: false, zNo: winner.z.zNo }]);
+    assert.deepEqual((await rowsOf(D5)).map((x) => x.posName), winner.z.zNo === 400 ? [`A ${tag}`] : [`B1 ${tag}`, `B2 ${tag}`]);
   });
 
   test("loadDailyProductSales: aralıkta satır varsa satırlar (güne ve ada göre), yoksa null (okuyanlar aylık veriye düşer)", async () => {

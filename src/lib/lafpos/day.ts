@@ -36,7 +36,10 @@ const posName = z
 const siteMenuId = z.string().regex(SITE_MENU_ID).nullable();
 const slot = z.enum(["M", "L"]).nullable();
 
-/** Z özeti: Kasa raporunun ModPOS Z ve kasa alanları (docs/03-ENTEGRASYON.md §3.2) */
+/**
+ * Z özeti: Kasa raporunun ModPOS Z ve kasa alanları (docs/03-ENTEGRASYON.md §3.2). `cashIn` ve `expectedCash` sonradan
+ * geldi: eski LafPOS'un gövdesinde (ve saklanmış eski özetlerde) yoktur, yazılmayabilir; `cashIn` yoksa 0 sayılır.
+ */
 export const posZSchema = z.object({
   zNo: z.number().int().min(0).max(999_999_999),
   receipts: count,
@@ -49,12 +52,18 @@ export const posZSchema = z.object({
   offRevenue: tl,
   discounts: tl,
   openingCash: tl,
+  /** LafPOS'un harcama türü kasa hareketleri */
   cashOut: tl,
   /** Gün sonu sayımı; sayılmadan kapanan günde null */
   countedCash: tl.nullable(),
+  /** LafPOS'un teslim türü kasa hareketleri: gün açıkken, sayımdan önce çekmeceden çıkar */
   handedOver: tl,
   /** Sayılan − beklenen nakit (LafPOS'un hesabı); sayım yoksa null */
   cashDiff: signedTl.nullable(),
+  /** Nakit satış dışında çekmeceye giren nakit: giriş türü kasa hareketleri ve nakit müşteri tahsilatı (isteğe bağlı) */
+  cashIn: tl.nullable().optional(),
+  /** LafPOS'un olması gereken nakdi: açılış + nakit satış + nakit tahsilat + giriş − harcama − teslim (isteğe bağlı) */
+  expectedCash: signedTl.nullable().optional(),
 });
 
 const lineSchema = z.object({

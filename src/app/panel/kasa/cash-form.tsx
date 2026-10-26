@@ -942,16 +942,20 @@ export function CashForm({
           </div>
         ) : null}
         {lafpos && !review ? (
-          <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
-            <MonitorCheck size={16} className="shrink-0" aria-hidden="true" />
-            <p className="min-w-0 flex-1 basis-56">
-              <span className="font-semibold">LafPOS gün sonu</span>
-              {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
-              <span className="block text-[13px] text-info/80">{lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}</span>
-            </p>
-            <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
-              LafPOS&apos;tan doldur
-            </Button>
+          <div className="space-y-1.5">
+            <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+              <MonitorCheck size={16} className="shrink-0" aria-hidden="true" />
+              <p className="min-w-0 flex-1 basis-56">
+                <span className="font-semibold">LafPOS gün sonu</span>
+                {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
+                <span className="block text-[13px] text-info/80">{lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}</span>
+              </p>
+              <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
+                LafPOS&apos;tan doldur
+              </Button>
+            </div>
+            {/* Doldurduktan sonra kasa eşlemesinin bilgi satırları (giren çıkandan fazla, LafPOS'un olması gerekeni farklı) */}
+            {lafposNote !== null ? <ReadChecks checks={lafpos.prefill.checks} /> : null}
           </div>
         ) : null}
         <Card>

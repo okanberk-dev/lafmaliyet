@@ -9,14 +9,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { parseNumberTR } from "../src/lib/calc/expr";
 import { createPosMappingIndex } from "../src/lib/calc/pos-paste";
 import type { Product } from "../src/lib/calc/types";
+import { computeCash } from "../src/lib/cash-report";
+import { money } from "../src/lib/format";
 import { sign, signedHeaders } from "../src/lib/karaoke/signature";
 import { posCostItems } from "../src/lib/lafpos/costs";
 import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDayZ } from "../src/lib/lafpos/day";
 import { LAFPOS_NO_COUNT_TEXT, lafposPrefill, lafposSummary } from "../src/lib/lafpos/prefill";
 import { checkLafposRequest, lafposSecretFrom } from "../src/lib/lafpos/request";
-import { prefillPlan } from "../src/lib/photo-read/kasa";
+import { prefillPlan, type CashPrefill } from "../src/lib/photo-read/kasa";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -247,6 +250,126 @@ test("Kasa raporu: LafPOS'un Z'si formun alanlarına (CashPrefill, lafpos); yaln
   assert.deepEqual(plan.missing, ["countedCash"]);
   assert.ok(!plan.fill.some((f) => f.field === "countedCash"));
   assert.equal(lafposSummary(prefillPlan(noCount, { ...empty, ...filled, countedCash: "" })), LAFPOS_NO_COUNT_TEXT);
+  // Sayım panelde değil LafPOS'un kasa föyünde (form Z'nin rakamlarını gösterir, sayım kör olmazdı)
+  assert.match(LAFPOS_NO_COUNT_TEXT, /LafPOS'ta Kasa › Geçmiş günler › Kasa föyü'nden sayın; LafPOS günü yeniden gönderir\.$/);
+  assert.doesNotMatch(LAFPOS_NO_COUNT_TEXT, /sayıp yazın/);
+});
+
+const FORM_FIELDS = ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashOut", "countedCash", "handedOver", "bankPos"] as const;
+
+/** "LafPOS'tan doldur" boş forma: formun hesabına (computeCash) giden rakamlar, formdaki gibi yazılan metinden okunur */
+function filledForm(p: CashPrefill) {
+  const plan = prefillPlan(p, Object.fromEntries(FORM_FIELDS.map((f) => [f, ""])));
+  const text: Record<string, string> = Object.fromEntries(plan.fill.map((f) => [f.field, f.text]));
+  const n = (k: string) => (text[k] ? (parseNumberTR(text[k]) ?? Number.NaN) : 0);
+  return { zTotal: n("zTotal"), cash: n("cash"), card: n("card"), mealCard: n("mealCard"), online: n("online"), other: n("other"), openingCash: n("openingCash"), cashOut: n("cashOut"), countedCash: n("countedCash"), handedOver: n("handedOver"), bankPos: null };
+}
+
+test("Kasa raporu: LafPOS'ta gün içinde yapılan teslim gün içinde çıkana yazılır; olması gereken LafPOS'unkiyle aynı, fark 0, devir sayılan", () => {
+  // 1.500 açılış, 12.000 nakit satış, 450 harcama, gün ortasında patrona 5.000 teslim; akşam 8.050 sayıldı.
+  // LafPOS'un olması gerekeni: açılış + nakit + giren − harcama − teslim = 1.500 + 12.000 + 0 − 450 − 5.000 = 8.050
+  const z = Z({ openingCash: 1500, cash: 12000, cashOut: 450, handedOver: 5000, countedCash: 8050, cashDiff: 0 });
+  const lafposExpected = 1500 + 12000 + 0 - 450 - 5000;
+  const p = lafposPrefill(z);
+  assert.equal(p.values.cashOut?.value, 5450, "teslim sayımdan önce çekmeceden çıktı: gün içinde çıkan");
+  assert.equal(p.values.handedOver?.value, 0, "panelin Teslim edilen'i sayımdan sonra verilendir");
+  const c = computeCash(filledForm(p));
+  assert.equal(c.expectedCash, lafposExpected);
+  assert.equal(c.cashDiff, 0);
+  assert.equal(c.kind, "even");
+  assert.equal(c.carryOver, 8050, "ertesi güne devir sayılan nakit");
+  assert.deepEqual(p.checks, []);
+});
+
+test("Kasa raporu: çekmeceye giren nakit (cashIn) gün içinde çıkandan düşülür; olması gereken LafPOS'unkiyle aynı", () => {
+  // 450 harcama, 5.000 teslim, 700 giren (giriş ve nakit tahsilat): LafPOS 1.500 + 12.000 + 700 − 450 − 5.000 = 8.750 bekler
+  const p = lafposPrefill(Z({ openingCash: 1500, cash: 12000, cashOut: 450, handedOver: 5000, cashIn: 700, expectedCash: 8750, countedCash: 8750, cashDiff: 0 }));
+  assert.equal(p.values.cashOut?.value, 4750);
+  assert.equal(p.values.handedOver?.value, 0);
+  const c = computeCash(filledForm(p));
+  assert.equal(c.expectedCash, 8750);
+  assert.equal(c.cashDiff, 0);
+  assert.equal(c.carryOver, 8750);
+  assert.deepEqual(p.checks, [], "LafPOS'un olması gerekeni panelinkiyle aynı: bilgi satırı yok");
+  // Giren çıkana eşit: gün içinde çıkan 0, bilgi satırı yok
+  const even = lafposPrefill(Z({ cashOut: 450, handedOver: 250, cashIn: 700 }));
+  assert.equal(even.values.cashOut?.value, 0);
+  assert.deepEqual(even.checks, []);
+});
+
+test("Kasa raporu: giren çıkandan fazlaysa gün içinde çıkan 0 ve bilgi satırı (fark ₺ ile); LafPOS'un olması gerekeni de gelirse o da görünür", () => {
+  // 450 harcama, teslim yok, 1.650 giren: harcama + teslim − giren = −1.200; form eksi tutar almaz
+  const p = lafposPrefill(Z({ openingCash: 1500, cash: 12000, cashOut: 450, handedOver: 0, cashIn: 1650 }));
+  assert.equal(p.values.cashOut?.value, 0);
+  assert.equal(p.values.handedOver?.value, 0);
+  assert.deepEqual(p.checks, [
+    {
+      fields: [],
+      level: "info",
+      text: `LafPOS'ta çekmeceye giren nakit (giriş ve nakit tahsilat) çıkandan ${money(1200)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(1200)} az.`,
+    },
+  ]);
+  assert.equal(computeCash(filledForm(p)).expectedCash, 13500, "LafPOS'un 14.700'ünden 1.200 az");
+  // LafPOS'un olması gerekeni de geldiyse (1.500 + 12.000 + 1.650 − 450 = 14.700) ikinci satır rakamı gösterir
+  const withExpected = lafposPrefill(Z({ openingCash: 1500, cash: 12000, cashOut: 450, handedOver: 0, cashIn: 1650, expectedCash: 14700 }));
+  assert.equal(withExpected.checks.length, 2);
+  assert.equal(withExpected.checks[0].text, p.checks[0].text);
+  assert.deepEqual(withExpected.checks[1], {
+    fields: [],
+    level: "info",
+    text: `LafPOS'ta olması gereken nakit ${money(14700)}; panel aynı rakamlarla ${money(13500)} hesaplıyor (${money(1200)} az).`,
+  });
+  // Bilgi satırı alanı turuncu yapmaz: alanlar temiz "LafPOS'tan" dolar
+  const plan = prefillPlan(withExpected, Object.fromEntries(FORM_FIELDS.map((f) => [f, ""])));
+  assert.ok(plan.fill.length === 14 && plan.fill.every((f) => f.warn === null));
+});
+
+test("Kasa raporu: LafPOS'un olması gerekeni (expectedCash) panelin hesabından 0,01 TL'den fazla ayrılırsa bilgi satırı; yoksa ya da tutuyorsa yok", () => {
+  // Panel aynı rakamlarla: 1.500 + 12.000 − 450 = 13.050
+  const checks = (expectedCash: number | null | undefined) => lafposPrefill(Z({ expectedCash })).checks;
+  assert.deepEqual(checks(undefined), []);
+  assert.deepEqual(checks(null), []);
+  assert.deepEqual(checks(13050), []);
+  assert.deepEqual(checks(13050.01), [], "1 kuruş 0,01 TL'den fazla değil");
+  assert.deepEqual(checks(13049.99), []);
+  assert.deepEqual(checks(13050.02), [
+    { fields: [], level: "info", text: `LafPOS'ta olması gereken nakit ${money(13050.02)}; panel aynı rakamlarla ${money(13050)} hesaplıyor (${money(0.02)} az).` },
+  ]);
+  assert.deepEqual(checks(12900), [
+    { fields: [], level: "info", text: `LafPOS'ta olması gereken nakit ${money(12900)}; panel aynı rakamlarla ${money(13050)} hesaplıyor (${money(150)} fazla).` },
+  ]);
+  // Bilgi satırı rakamları değiştirmez
+  assert.equal(lafposPrefill(Z({ expectedCash: 12900 })).values.cashOut?.value, 450);
+});
+
+test("gövde: z.cashIn ve z.expectedCash isteğe bağlı (eski LafPOS göndermez, giren 0 sayılır); gelince iki ondalık, giren eksi olamaz", () => {
+  // Eski gövde: alanlar yok, geçer, anahtar eklenmez
+  const old = parsePosDay(JSON.stringify(sample()), NOW);
+  assert.ok(old.ok);
+  assert.ok(!("cashIn" in old.data.z) && !("expectedCash" in old.data.z));
+  assert.equal(lafposPrefill(old.data.z).values.cashOut?.value, 450);
+  assert.deepEqual(lafposPrefill(old.data.z).checks, []);
+  // Eski gövdede teslim de gün içinde çıkana gider (giren 0)
+  const oldHandover = parsePosDay(JSON.stringify({ ...sample(), z: { ...sample().z, handedOver: 5000 } }), NOW);
+  assert.ok(oldHandover.ok);
+  assert.equal(lafposPrefill(oldHandover.data.z).values.cashOut?.value, 5450);
+  // null da geçer
+  const nul = parsePosDay(JSON.stringify({ ...sample(), z: { ...sample().z, cashIn: null, expectedCash: null } }), NOW);
+  assert.ok(nul.ok);
+  assert.deepEqual(lafposPrefill(nul.data.z).checks, []);
+  // Yeni gövde: iki ondalığa yuvarlanır, saklanır; olması gereken eksi olabilir (LafPOS'un hesabı, gün reddedilmez)
+  const fresh = parsePosDay(JSON.stringify({ ...sample(), z: { ...sample().z, cashIn: 700.004, expectedCash: 13049.996 } }), NOW);
+  assert.ok(fresh.ok);
+  assert.equal(fresh.data.z.cashIn, 700);
+  assert.equal(fresh.data.z.expectedCash, 13050);
+  assert.ok(parsePosDay(JSON.stringify({ ...sample(), z: { ...sample().z, expectedCash: -50 } }), NOW).ok);
+  const bad = (z: Record<string, unknown>) => {
+    const r = parsePosDay(JSON.stringify({ ...sample(), z: { ...sample().z, ...z } }), NOW);
+    return r.ok ? null : r.field;
+  };
+  assert.equal(bad({ cashIn: -1 }), "z.cashIn");
+  assert.equal(bad({ cashIn: "700" }), "z.cashIn");
+  assert.equal(bad({ expectedCash: "8750" }), "z.expectedCash");
 });
 
 test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geçer, kaydetmez; işaret kaynağıyla", () => {
@@ -257,6 +380,8 @@ test("Kasa formu: LafPOS düğmesi aynı uygulama kuralından (prefillPlan) geç
   assert.doesNotMatch(fill, /submitCashReport|start\(/, "düğme kaydetmez");
   assert.match(form, /LafPOS&apos;tan doldur/);
   assert.match(form, /lafpos: \{ badge: "LafPOS'tan", at: "LafPOS'ta", take: "LafPOS'takini yaz" \}/);
+  // Kasa eşlemesinin bilgi satırları doldurunca bandın altında
+  assert.match(form, /\{lafposNote !== null \? <ReadChecks checks=\{lafpos\.prefill\.checks\} \/> : null\}/);
   // Sayfa: yalnız formun günü için, okunamazsa form yine açılır
   const page = read("src/app/panel/kasa/page.tsx");
   assert.match(page, /showForm \? loadLafposDay\(date\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/);
@@ -310,6 +435,10 @@ test("uçlar: önce bağlantı, sonra imza, sonra gövde; önbelleğe alınmaz; 
   const store = ingest.slice(ingest.indexOf("export async function storePosDay"), ingest.indexOf("export async function receivePosDay"));
   assert.match(store, /db\.transaction\(async \(tx\) => \{\s*await tx\.execute\(sql`select pg_advisory_xact_lock\(hashtext\(\$\{`lafpos-gun:\$\{day\.date\}`\}\)\)`\);/);
   assert.ok(store.indexOf("insert(s.posDayReports)") < store.indexOf("delete(s.posDailySales)") && store.indexOf("delete(s.posDailySales)") < store.indexOf("insert(s.posDailySales)"));
+  // Z çakışması: kilidin altında kayıtlı Z no'ya bakılır, farklıysa hiçbir şey yazılmadan döner (uç 409)
+  const conflict = store.indexOf("stored.z.zNo !== day.z.zNo");
+  assert.ok(store.indexOf("pg_advisory_xact_lock") < conflict && conflict < store.indexOf("insert(s.posDayReports)"));
+  assert.match(receive, /if \(!r\.ok\) return \{ status: 409, body: \{ error: "z_conflict", date: parsed\.data\.date, zNo: r\.zNo \} \};/);
   const urunler = read("src/app/api/panel/pos/urunler/route.ts");
   assert.match(urunler, /export async function GET\(request: NextRequest\) \{\s*await connection\(\);/);
   assert.match(urunler, /"Cache-Control": "no-store"/);

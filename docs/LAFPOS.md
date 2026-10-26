@@ -16,7 +16,8 @@ sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark v
 
 LafPOS, ModPOS'un yerine geçen kafe kasasıdır. Kafenin içindeki bir makinede çalışır ve internetten erişilemez; bu
 yüzden panelin öteki bağlantılarındaki "imzalı ping, sonra imzalı çekme" burada yoktur. LafPOS her iş gününü
-kapanışta bir kez **iter**; gün sonradan düzeltilirse aynı günü yeniden gönderir (aynı gün öncekinin yerine geçer).
+kapanışta bir kez **iter**; gün sonradan düzeltilirse aynı günü yeniden gönderir (aynı gün, aynı Z no ile öncekinin
+yerine geçer).
 İnternet yoksa gönderim LafPOS'un giden kutusunda bekler, sonra gider.
 
 - Günün ürün satışı panelin günlük satış ağzını doldurur (`loadDailyProductSales`; ModPOS'un günlük dökümü hiç
@@ -33,9 +34,10 @@ LafPOS (kafede)                                  ladmin.laffogato.net (bu panel)
 gün sonu (ve düzeltme)
   └─ giden kutusu: POST /api/pos/gun  ────────▶  anahtar → boyut → imza → gövde
      {version, source, date, z, lines,             └─ tek işlem, günün danışma kilidi:
-      ikram, payments} (imzalı)                        ├─ pos_day_reports: günün özeti (yenisi eskisinin yerine)
+      ikram, payments} (imzalı)                        ├─ kayıtlı Z no başkaysa: 409, hiçbir şey yazılmaz
+                                                       ├─ pos_day_reports: günün özeti (yenisi eskisinin yerine)
                                                        └─ pos_daily_sales: günün satırları silinir, yenisi yazılır
-     ◀── 200 {ok, date, lines} · 400 {error, field} · 401 · 413 · 503
+     ◀── 200 {ok, date, lines} · 400 {error, field} · 409 {error, date, zNo} · 401 · 413 · 503
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
      ◀── {version: 1, now, items: [{siteMenuId, slot, name, size, costMinor, active}]}
@@ -50,21 +52,27 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | `version` | `1`; başka sürüm reddedilir |
 | `source` | `"lafpos"` |
 | `date` | İş günü `YYYY-MM-DD` (gün 05:00'te döner, Kasa raporuyla aynı kural); bugünün iş gününden sonrası reddedilir |
-| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut`, `countedCash` (sayılmadıysa `null`), `handedOver`, `cashDiff` (`null` olabilir) |
+| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş ve nakit müşteri tahsilatı; yoksa 0 sayılır), `expectedCash` (LafPOS'un olması gereken nakdi) |
 | `lines[]` | `posName`, `siteMenuId` (`null` olabilir), `slot` (`"M"`, `"L"` ya da `null`), `qty`, `revenue`, `isService`; bir POS adı günde bir kez |
 | `ikram[]` | `posName`, `siteMenuId`, `slot`, `qty`, `menuValue`, `reason` (en çok 200 karakteri saklanır) |
 | `payments[]` | `name`, `zField` (`cash`, `card`, `meal_card`, `online`, `other`), `channel` (komisyon anahtarı: `pluxee`, `multinet`, `edenred`, `setcard`, `metropol`, `yemeksepeti`…; `null` olabilir), `count`, `amount` |
 
 - **Beyaz liste.** Yalnız tablodaki alanlar okunur ve saklanır; bilinmeyen alan atılır (müşteri ya da personel adı
-  gelse de yazılmaz). Her alan yazılmalıdır; boş olabilenler `null` gelir.
+  gelse de yazılmaz). Her alan yazılmalıdır (sonradan gelen `z.cashIn` ve `z.expectedCash` dışında: eski LafPOS
+  göndermez, gövdesi yine geçer); boş olabilenler `null` gelir.
 - **Denetim sırası:** anahtar yoksa `503 {"error":"not_configured"}`; gövde 256 KB'tan büyükse
   `413 {"error":"too_large"}`; imza yok, yanlış ya da 5 dakikadan eski / ileriyse `401 {"error":"unauthorized"}`
   (ayrıntı verilmez); gövde sözleşmeye uymazsa `400 {"error":"invalid","field":"lines.3.qty"}` (ilk sorunlu alanın
-  yolu; gövde okunamazsa `body`). Yazılınca `200 {"ok":true,"date":"2026-10-26","lines":42}`. Veritabanı yazamazsa
-  `500 {"error":"server_error"}` (LafPOS yeniden dener). Reddedilen istek hiçbir şey yazmaz.
-- **Aynı gün yeniden gelince** (düzeltme ya da yeniden deneme) tek işlemde günün özeti yenisiyle değişir, satırları
-  silinip yenisi yazılır; öteki günlere dokunulmaz. Aynı anda iki gönderim günün danışma kilidinde
+  yolu; gövde okunamazsa `body`); o güne panelde başka bir Z no ile yazılmış gün sonu varsa
+  `409 {"error":"z_conflict","date":"2026-10-26","zNo":127}` (`zNo` paneldeki Z'nin numarası). Yazılınca
+  `200 {"ok":true,"date":"2026-10-26","lines":42}`. Veritabanı yazamazsa `500 {"error":"server_error"}` (LafPOS
+  yeniden dener). Reddedilen istek hiçbir şey yazmaz.
+- **Aynı gün aynı Z no ile yeniden gelince** (düzeltme ya da yeniden deneme) tek işlemde günün özeti yenisiyle
+  değişir, satırları silinip yenisi yazılır; öteki günlere dokunulmaz. Aynı anda iki gönderim günün danışma kilidinde
   (`pg_advisory_xact_lock(hashtext('lafpos-gun:<gün>'))`) sırayla yazılır, biri bütünüyle kalır.
+- **Aynı gün başka bir Z no ile gelirse** öncekinin yerine geçmez (önceki Z'yi ve günün satırlarını sessizce silerdi):
+  kilidin altında kayıtlı Z no'ya bakılır, farklıysa `409 z_conflict`, hiçbir şey yazılmaz. LafPOS da aynı tarihle iki
+  gün açmaz; bu ikinci kilittir.
 - **Ürün** satır satır bulunur (`src/lib/lafpos/day.ts` › `resolvePosLine`): LafPOS'un hizmet satırı (karaoke) ürüne
   bağlanmaz; sonra sitenin kalemi ve boyu (`products.site_menu_id` + `site_menu_slot`, [SITE-MENU.md](SITE-MENU.md));
   bulunmazsa POS adı eşleştirmesi (`pos_mappings`, `posMatchKey`: büyük / küçük harf ve I / İ farkı yok; ModPOS'tan
@@ -88,19 +96,38 @@ Raporun günü için `pos_day_reports` satırı varsa formun başında mavi bant
 03:12" ve **LafPOS'tan doldur**. Dokununca:
 
 - ModPOS Z bölümünün alanları (Z no, fiş sayısı, toplam satış, nakit, kart, yemek kartı, online, diğer, ödenmez /
-  ikram, indirim) ve kasa alanları (açılış, gün içinde çıkan, sayılan nakit, teslim edilen) fotoğraf okumasıyla aynı
-  kuralla dolar (`CashPrefill { source: "lafpos" }`, `src/lib/lafpos/prefill.ts`): yalnız **boş** alanlar, yanında
-  mavi **LafPOS'tan**.
+  ikram, indirim) ve kasa alanları (açılış, gün içinde çıkan, sayılan nakit, teslim edilen; eşlemesi aşağıda)
+  fotoğraf okumasıyla aynı kuralla dolar (`CashPrefill { source: "lafpos" }`, `src/lib/lafpos/prefill.ts`): yalnız
+  **boş** alanlar, yanında mavi **LafPOS'tan**.
 - Yazılmış alan değişmez (açılış önceki devirden, gün içinde çıkan fişlerden kendiliğinden dolar). LafPOS'taki
   farklıysa altında "LafPOS'ta 1.500 ₺" ve **LafPOS'takini yaz** çıkar.
-- Gün sayılmadan kapandıysa sayılan nakit boş kalır ve turuncudur: "LafPOS'ta gün sonu sayımı yok; çekmeceyi sayıp
-  yazın."
+- Gün sayılmadan kapandıysa sayılan nakit boş kalır ve turuncudur: "LafPOS'ta gün sonu sayımı yok: çekmeceyi LafPOS'ta
+  Kasa › Geçmiş günler › Kasa föyü'nden sayın; LafPOS günü yeniden gönderir." Sayım panelde yapılmaz: form o anda Z'nin
+  rakamlarını gösterir, sayım kör olmazdı. Kasa föyü girilince LafPOS günü sayımla yeniden gönderir.
 - Bant sonucu söyler: "LafPOS'tan 14 alan dolduruldu. Kontrol edip gönderin." ya da "… 1 alan yazdığınızdan farklı,
-  turuncu olanlara bakın."
+  turuncu olanlara bakın." Kasa eşlemesinin bilgi satırları (aşağıda) bandın altında mavi çıkar.
 - **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gönder**'e basar. Kasa farkını form kendisi
   hesaplar (LafPOS'un `cashDiff`'i kullanılmaz); Banka POS LafPOS'tan gelmez.
 - Personele yalnız Z ve geliş anı gider (`src/server/data/lafpos-day.ts`, sabit sütunlar); ödeme kanalları ve
   ikramlar okunmaz. Özet okunamazsa bant görünmez, form her zamanki gibi elle doldurulur.
+
+#### Kasa alanlarının eşlemesi (26 Ekim 2026)
+
+LafPOS'ta **teslim** gün açıkken, sayımdan önce çekmeceden çıkar; panelde **Teslim edilen** sayımdan sonra verilen
+paradır (olması gerekenden değil, ertesi güne devirden düşer). Bu yüzden LafPOS'un teslimi panelde **gün içinde
+çıkan**dır, Teslim edilen 0 yazılır; nakit satış dışında çekmeceye giren (`cashIn`: giriş ve nakit müşteri tahsilatı)
+düşülür:
+
+    Gün içinde çıkan = harcama (cashOut) + teslim (handedOver) − giren (cashIn; gelmediyse 0)
+
+Böylece panelin olması gerekeni (açılış + nakit − gün içinde çıkan) LafPOS'unkine eşittir, devir sayılan nakittir.
+Örnek: açılış 1.500, nakit 12.000, harcama 450, gün ortasında patrona 5.000 teslim, sayılan 8.050. Gün içinde çıkan
+5.450, olması gereken 8.050, kasa tutuyor, devir 8.050 (teslim, Teslim edilen'e yazılsaydı 5.000 eksik görünürdü).
+
+- Giren çıkandan fazlaysa gün içinde çıkan 0 gelir (form eksi tutar almaz) ve bilgi satırı söyler: LafPOS'ta giren
+  nakit çıkandan o kadar fazla, olması gereken LafPOS'takinden o kadar az.
+- LafPOS kendi olması gerekenini (`expectedCash`) gönderdiyse ve panelin aynı rakamlarla hesabından 0,01 TL'den fazla
+  ayrılıyorsa bilgi satırı LafPOS'un rakamını gösterir; aradaki fark gizli kalmaz.
 
 ### Ürün maliyetleri: `GET /api/panel/pos/urunler`
 
@@ -150,6 +177,7 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `401 unauthorized` | İki taraftaki anahtar aynı mı (LafPOS'ta `LAFMALIYET_SYNC_SECRET`), kafedeki makinenin saati doğru mu (±5 dakika)? |
 | `413 too_large` | Gövde 256 KB'ı aştı; LafPOS'un gönderdiğine bakın |
 | `400 invalid` + `field` | Gövde sözleşmeye uymuyor; `field` ilk sorunlu alanın yolu (`date`: ileri ya da bozuk gün, `lines.5.posName`: aynı ad iki kez). LafPOS düzeltip yeniden gönderir |
+| `409 z_conflict` + `date`, `zNo` | O güne panelde başka bir Z no ile (`zNo`) yazılmış gün sonu var; hiçbir şey yazılmadı, yeniden deneme de 409 alır. Bir tarihte bir Z olur: paneldeki doğruysa LafPOS'taki fazla günü düzeltin; LafPOS'taki doğruysa paneldeki özeti ve o günün satırlarını (`pos_day_reports`, `pos_daily_sales`) yönetici silsin, LafPOS yeniden gönderir |
 | `500 server_error` | Panel yazamadı (veritabanı); LafPOS yeniden dener. Sürüyorsa Vercel günlüğünde `[lafpos]` |
 | Kasa raporunda bant yok | O günün gönderimi gelmedi (LafPOS'un giden kutusu) ya da gün başka (05:00 kuralı) |
 
@@ -167,4 +195,4 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z) |
 | `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts` | Uçlar |
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx` | "LafPOS'tan doldur" bandı |
-| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form; veritabanında yazım, idempotent değişim, ağız ve uçlar |
+| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi; veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
