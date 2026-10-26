@@ -57,6 +57,7 @@ import {
   previousCarryOver,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
+import { loadLafposDay } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
@@ -135,7 +136,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters] = await Promise.all([
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, lafposDay] = await Promise.all([
     showForm ? getCashReport(date) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
@@ -146,6 +147,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     showForm ? cashCounters() : Promise.resolve([]),
+    // LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): okunamazsa form yine açılır, düğme görünmez
+    showForm ? loadLafposDay(date).catch(() => null) : Promise.resolve(null),
   ]);
   const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
@@ -255,6 +258,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       requests={dayRequests}
       proposedBy={proposedBy}
       photoRemoval={removal}
+      lafpos={lafposDay}
     />
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)

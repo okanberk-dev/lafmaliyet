@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertNoCostKeys } from "./helpers/leak-scan";
+import { assertNoCostKeys, stripComments } from "./helpers/leak-scan";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -43,6 +43,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
   "src/app/panel/ozel-gunler/staff-special-days.tsx",
+  // LafPOS'tan doldur (docs/LAFPOS.md): okuyucu ve formun alanlarına eşleme
+  "src/server/data/lafpos-day.ts",
+  "src/lib/lafpos/prefill.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -139,4 +142,16 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   const page = read("src/app/panel/kasa/page.tsx");
   const bar = page.slice(page.indexOf("async function closedBarFor"));
   assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
+});
+
+test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit sütun); ödeme kanalları ve ikram okunmaz", () => {
+  const loader = stripComments(read("src/server/data/lafpos-day.ts"));
+  assert.match(loader, /^import "server-only";/);
+  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, receivedAt: s\.posDayReports\.receivedAt \}\)/);
+  assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
+  // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
+  const prefill = read("src/lib/lafpos/prefill.ts");
+  const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
+  const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashOut", "countedCash", "handedOver"]);
 });

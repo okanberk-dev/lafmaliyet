@@ -167,9 +167,10 @@ yönlendirir).
   ml / gr malzeme (dondurma) sayılmaz; böyle malzemesi olmayan tatlı kendi adıyla adet. Oran: birim ÷ ayın cirosu (POS,
   yoksa satış satırlarının toplamı); günün tatlısı = tahmin × oran. Satışı olmayan yeni tatlı hesapta yok. Satış
   yüklü ama tatlı kategorilerinde hiç satış yoksa kart Satışlar'a değil Tahmin ayarları'na götürür (`loadDessertMix`).
-- **ModPOS günlük döküm** (`docs/planlar/CRITIQUE2.md` R18): tahmin `loadDailyProductSales` ağzını okur; bugün hep
-  boş döner, günlük toplamlar kasa raporlarından, tatlı payı aylık satıştan gelir. Döküm gelince içe aktarma görevi
-  raporu olmayan günleri ve hafta gününe göre tatlı oranlarını buraya bağlar (ağız dolu dönerse günlüğe uyarı yazılır).
+- **Günlük döküm** (`docs/planlar/CRITIQUE2.md` R18): tahmin `loadDailyProductSales` ağzını okur. ModPOS'un dökümü
+  hiç gelmedi; ağzı LafPOS'un gün sonu doldurur ([LAFPOS.md](LAFPOS.md)), ama tahmin onu henüz kullanmaz: günlük
+  toplamlar kasa raporlarından, tatlı payı aylık satıştan gelir. Ayrı bir görev raporu olmayan günleri ve hafta gününe
+  göre tatlı oranlarını buraya bağlar (ağız dolu dönerse günlüğe uyarı yazılır).
 
 ## 7. Kayıtlı tahmin ve tutturma
 

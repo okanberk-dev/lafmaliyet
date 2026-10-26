@@ -77,6 +77,9 @@ dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gö
 
 Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md).
 
+**LafPOS'tan doldurma:** LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa
+rakamları fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
+
 ## Gün içinde kasadan çıkanlar
 
 Formun üstündeki kart: gün içinde kasadan çıkan her para bir satır (market, buz, tamirci, gün ortası teslim).

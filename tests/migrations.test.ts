@@ -100,3 +100,21 @@ test("dalga 10 (personel yetkileri): tek migration; ortak onay kuyruğu, kasaya 
   // Elle yazılmış SQL yok: yalnız drizzle-kit'in ürettiği ifadeler
   assert.doesNotMatch(sql, /(^|--> statement-breakpoint\n?)\s*(UPDATE|INSERT INTO|DELETE FROM) /m);
 });
+
+test("LafPOS bağlantısı: tek migration; günlük satış ve gün sonu özeti tabloları, yalnız ekleme (geri dönüşe uygun)", () => {
+  const entry = readJournal().find((e) => e.tag.endsWith("_lafpos_baglantisi"));
+  assert.ok(entry, "lafpos_baglantisi migration'ı yok");
+  const sql = readFileSync(join(process.cwd(), "drizzle", `${entry.tag}.sql`), "utf8");
+  for (const re of [
+    /CREATE TABLE "pos_daily_sales"/,
+    /"product_id" integer,/,
+    /"is_service" boolean DEFAULT false NOT NULL/,
+    /CREATE TABLE "pos_day_reports" \(\s*"date" text PRIMARY KEY NOT NULL,\s*"z" jsonb NOT NULL,\s*"payments" jsonb NOT NULL,\s*"ikram" jsonb NOT NULL,\s*"source" text NOT NULL,\s*"received_at" timestamp with time zone DEFAULT now\(\) NOT NULL\s*\);/,
+    /FOREIGN KEY \("product_id"\) REFERENCES "public"\."products"\("id"\) ON DELETE set null/,
+    /CREATE UNIQUE INDEX "pos_daily_sales_date_pos_name_uq" ON "pos_daily_sales" USING btree \("date","pos_name"\)/,
+  ]) {
+    assert.match(sql, re);
+  }
+  // Var olan tabloya dokunmaz; elle yazılmış SQL yok
+  assert.doesNotMatch(sql, /ALTER TABLE "(?!pos_daily_sales")|DROP |(^|--> statement-breakpoint\n?)\s*(UPDATE|INSERT INTO|DELETE FROM) /m);
+});
