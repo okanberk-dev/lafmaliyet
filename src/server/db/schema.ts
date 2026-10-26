@@ -22,6 +22,7 @@ import type { ChecklistAnswerVersion, ChecklistItemSnap } from "../../lib/checkl
 import type { SnapshotDetail } from "../../lib/forecast/model";
 import type { InvoiceReading } from "../../lib/invoice-reading";
 import type { PosDayZ, PosIkram, PosPayment } from "../../lib/lafpos/day";
+import type { OkcVatLine } from "../../lib/okc-z";
 import type { DeliveryCheck, ReorderLine } from "../../lib/reorder/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -1182,8 +1183,37 @@ export const cashReports = pgTable(
     cashOutNote: text("cash_out_note"),
     countedCash: doublePrecision("counted_cash").notNull().default(0),
     handedOver: doublePrecision("handed_over").notNull().default(0),
-    /** Banka POS cihazının gün sonu toplamı (ModPOS'taki kartla karşılaştırılır) */
+    /**
+     * Banka gün sonu fişinin net toplamı (yazarkasa Z'sinin kart satırı değil); yazarkasa kartı yoksa ModPOS'taki kartla
+     * karşılaştırılır. Yazarkasa bölümünden (dalga 13) önceki raporlarda tek kart kanıtı: o günlerde Z'nin kart satırını
+     * da tutabilir, anlam iddia edilmez
+     */
     bankPos: doublePrecision("bank_pos"),
+    /**
+     * Yazarkasanın (banka POS, yeni nesil ÖKC) mali Z raporu (docs/planlar/okc-z.md §6.1); bölüm isteğe bağlı, eski
+     * raporlarda hepsi boş. Z no metindir (baştaki sıfırlar korunur); tutarlar KDV dahil
+     */
+    okcZNo: text("okc_z_no"),
+    okcReceipts: integer("okc_receipts"),
+    okcTotal: doublePrecision("okc_total"),
+    okcVatTotal: doublePrecision("okc_vat_total"),
+    /** Oran oran KDV dökümü {rate, total, vat}[]: sıfır gruplar yazılmaz, orana göre sıralı (src/lib/okc-z.ts normalizeVat) */
+    okcVat: jsonb("okc_vat").$type<OkcVatLine[]>(),
+    okcCash: doublePrecision("okc_cash"),
+    /** K.KARTI / KREDİ satırı (altındaki banka satırları hariç) */
+    okcCard: doublePrecision("okc_card"),
+    okcMealCard: doublePrecision("okc_meal_card"),
+    /** Diğer ve tanınmayan ödeme satırları */
+    okcOther: doublePrecision("okc_other"),
+    /**
+     * Sunucu sütunları (formdan gelmez, personel yazmaz; yalnız yöneticinin DTO'sunda): rapora bağlı yazarkasa Z
+     * fotoğrafının okumasından writeCashReport'ta yazılır. Kümülatif (KÜM. TOPLAM / KÜM. KDV) yalnız inandırıcıysa
+     * saklanır; zincir son saklanan kümülatife bağlanır, yönetici temizleyebilir (src/lib/okc-z.ts okcCumulativeToStore)
+     */
+    okcCumTotal: doublePrecision("okc_cum_total"),
+    okcCumVat: doublePrecision("okc_cum_vat"),
+    /** Yazarkasa toplamı dışındaki tahsilatlar (faturalı satış, bilgi fişi…); 1 ₺'yi geçerse */
+    okcOutside: doublePrecision("okc_outside"),
     /** Z raporundaki ödenmez / ikram tutarı (ciroya girmez; panelde kayıtlı ikramla karşılaştırılır) */
     offRevenue: doublePrecision("off_revenue"),
     /** Z raporundaki indirim toplamı (isteğe bağlı; girilmediyse null: ayın indirimine yalnız girilen günler gider) */
@@ -1250,7 +1280,7 @@ export const cashReportPhotos = pgTable(
     photoId: integer("photo_id")
       .notNull()
       .references(() => photos.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["kasa-z", "kasa-pos"] }).notNull(),
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "kasa-okc"] }).notNull(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("cash_report_photos_photo_uq").on(t.photoId), index("cash_report_photos_report_idx").on(t.reportId)],
@@ -1437,8 +1467,8 @@ export const photos = pgTable(
   "photos",
   {
     id: serial("id").primaryKey(),
-    /** "kasa-z" | "kasa-pos" | "fis" | "kontrol" (src/lib/photo-rules.ts; yeni tür migration istemez) */
-    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "fis", "kontrol"] }).notNull(),
+    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "kontrol" (src/lib/photo-rules.ts; yeni tür migration istemez) */
+    kind: text("kind", { enum: ["kasa-z", "kasa-pos", "kasa-okc", "fis", "kontrol"] }).notNull(),
     /** Depodaki yol, ör. "fis/2026/10/<uuid>.jpg" (rastgele, üzerine yazılmaz) */
     storageKey: text("storage_key").notNull(),
     contentType: text("content_type").notNull(),
@@ -1471,7 +1501,7 @@ export const aiCalls = pgTable(
   {
     id: serial("id").primaryKey(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-    /** "kasa-z" | "kasa-pos" | "fis" | "fatura" */
+    /** "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura" */
     feature: text("feature").notNull(),
     /** İstenen model */
     model: text("model").notNull(),
@@ -1489,6 +1519,8 @@ export const aiCalls = pgTable(
     costUsd: doublePrecision("cost_usd").notNull().default(0),
     /** Yedek model (server-side fallback) çalıştı */
     fallback: boolean("fallback").notNull().default(false),
+    /** İstenen efor ("low" | "medium"); yalnız eforu açıkça seçilen okumalarda (yazarkasa Z'si), ötekilerde boş */
+    effort: text("effort"),
     ms: integer("ms"),
     stopReason: text("stop_reason"),
     requestId: text("request_id"),

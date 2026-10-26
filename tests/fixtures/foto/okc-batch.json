@@ -1,0 +1,105 @@
+{
+  "feature": "kasa-okc",
+  "synthetic": true,
+  "note": "Sentetik (canlı istek yapılmadı; anahtar yok): pos.json'daki canlı okumanın rakamları KasaOkcRaw biçiminde. Gerçek yanıt adım b2'de",
+  "imagePath": "img/pos-gun-sonu.jpg (yazarkasa bölümüne okutulan banka gün sonu fişi)",
+  "ms": 7000,
+  "model": "claude-opus-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 9000,
+    "output_tokens": 900,
+    "iterations": [
+      {
+        "type": "message",
+        "model": null,
+        "input_tokens": 9000,
+        "output_tokens": 900
+      }
+    ]
+  },
+  "json": {
+    "documentType": "batch_slip",
+    "fiscalMarks": {
+      "mfLogo": false,
+      "ekuNo": false,
+      "cumulativeLines": false,
+      "vatBlock": false
+    },
+    "readable": true,
+    "title": "GÜN SONU",
+    "date": "2026-10-21",
+    "time": "23:51",
+    "dateConfidence": "high",
+    "zNo": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "receiptCount": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "dailyTotal": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "dailyTotalLabel": null,
+    "kdvGroups": [],
+    "totalVat": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "payments": [],
+    "outside": [],
+    "voids": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "discounts": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "cumulativeTotal": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "cumulativeVat": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "batches": [
+      {
+        "bank": "GARANTİ BBVA",
+        "batchNo": "0234",
+        "date": "2026-10-21",
+        "salesTotal": {
+          "text": "8.915,00",
+          "value": 8915,
+          "confidence": "high"
+        },
+        "refundTotal": {
+          "text": "0,00",
+          "value": 0,
+          "confidence": "high"
+        },
+        "netTotal": {
+          "text": "8.915,00 TL",
+          "value": 8915,
+          "confidence": "high"
+        },
+        "transactionCount": 93
+      }
+    ],
+    "issues": []
+  },
+  "requestId": "sentetik-okc-batch"
+}

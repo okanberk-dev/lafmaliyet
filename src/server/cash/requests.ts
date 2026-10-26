@@ -34,6 +34,7 @@ import {
   type CashActor,
   type CashReportRow,
   type CashTx,
+  withOkcOf,
 } from "./report-store";
 
 /*
@@ -80,7 +81,10 @@ export async function proposeCashCorrection(db: DB, me: CashActor, input: Correc
     // Açılış devirle tutmuyor ve not boşsa önerinin nedeni nota da yazılır (iki kez yazılmaz)
     const check = carryCheck(date, data.openingCash, await carryBefore(tx, date));
     const note = check && openingNeedsNote({ check, openingCash: data.openingCash, prevOpening: report.openingCash, note: data.note }) ? input.message.trim() : data.note;
-    const proposed: ProposedFields = { ...input.fields, note, discounts: input.fields.discounts ?? null, countedBy: counter.id, countedByName: counter.name };
+    // Gönderilmeyen yazarkasa alanı (yazarkasa bölümü olmayan sayfa) raporun kayıtlı değeridir: önerilmemiş sayılır
+    const { date: _date, ...sent } = withOkcOf(data, report);
+    void _date;
+    const proposed: ProposedFields = { ...sent, note, discounts: input.fields.discounts ?? null, countedBy: counter.id, countedByName: counter.name };
     const changes = proposalChanges(base, proposed);
     if (!changes.length) throw new UserError(CASH_REQUEST_TEXT.noChange);
     const gate = staffCashGate({ date, now, hasReport: true, laterReport, changes });

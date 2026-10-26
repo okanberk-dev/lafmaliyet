@@ -1,7 +1,8 @@
 # Gün sonu kasa raporu
 
-Ekran: **Kasa raporu** (`/panel/kasa`). Personel her akşam kapanışta ModPOS'tan Z raporunu alır, kasadaki nakdi sayar
-ve buraya girer. Telefonda iki rolün de alt menüsünde **Kasa**; günün kasa işi **Bugün** ekranında da satır olarak
+Ekran: **Kasa raporu** (`/panel/kasa`). Personel her akşam kapanışta ModPOS'tan Z raporunu alır, banka POS'tan
+(yazarkasa) mali Z raporunu alır, kasadaki nakdi sayar ve buraya girer. İki Z ayrı bölümdür: **ModPOS Z raporu** ve
+**Banka POS Z raporu (yazarkasa)**. Telefonda iki rolün de alt menüsünde **Kasa**; günün kasa işi **Bugün** ekranında da satır olarak
 görünür ([BUGUN.md](BUGUN.md)).
 
 ## Personel ne girer
@@ -10,7 +11,7 @@ görünür ([BUGUN.md](BUGUN.md)).
 |-------|---------|
 | ModPOS Z raporu | Toplam satış, nakit, kredi / banka kartı; varsa yemek kartı, online, diğer; ödenmez / ikram (ciro dışı); indirim, Z no ve fiş sayısı (isteğe bağlı). Ya da ModPOS Z raporunun fotoğrafını çekin: rakamlar dolar |
 | Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, **gün içinde kasaya giren** (nakit satış dışında çekmeceye konan: bozuk para, nakit tahsilat, nakit bahşiş), sayımdan sonra teslim edilen, **kasayı sayan** (gönderen değilse listeden seçilir) |
-| Banka POS Z raporu (yazarkasa) | **Banka POS** (isteğe bağlı): yazarkasanın (banka POS) Z raporundaki K.KARTI (kredi kartı) satırı ya da bankanın gün sonu fişinin neti; Z'nin toplamı ya da K.KARTI'nın altındaki banka satırları değil. Banka gün sonu fişinin fotoğrafından dolar; yazarkasanın Z'sinin fotoğrafı kanıt olarak eklenir ama alanı doldurmaz (kart satırı elle yazılır) |
+| Banka POS Z raporu (yazarkasa) | Banka POS'tan (yazarkasa) alınan mali Z: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. Fotoğraf ve dört alan: **Günlük toplam** (NET SATIŞ ya da TOPLAM satırı), **Z no** (Z NO / Z SAYAÇ, fiş no değil), **Nakit**, **Kredi kartı** (K.KARTI satırı; altındaki banka satırları değil). **Ayrıntılar** kutusunda: yemek kartı, diğer, toplam KDV, KDV dökümü (%10 ve %20'nin KDV dahil toplamı ve KDV'si; %1 yalnız okunduysa ya da yazılıysa), fiş sayısı ve **Banka gün sonu** (bankanın ayrı gün sonu fişi varsa neti; yedek). Bölüm isteğe bağlı (aşağıda [Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa)) |
 | Not | Fark varsa nedeni (bozuk para, iade, yanlış fiş…) |
 
 Yazarken hesaplananlar:
@@ -19,8 +20,13 @@ Yazarken hesaplananlar:
   e-posta, WhatsApp, düzeltme ve geç rapor istekleri, LafPOS'tan doldur ve Claude bağlantısı aynı hesabı kullanır)
 - **Kasa farkı** = sayılan − olması gereken. 1 ₺'nin altı "tutuyor", eksi **eksik** (kırmızı), artı **fazla** (turuncu).
 - **Ertesi güne devir** = sayılan − teslim edilen. Ertesi günün açılışı buradan dolar.
-- **Kart farkı** = banka POS − ModPOS kart.
+- **Kart farkı** = yazarkasanın kredi kartı (yoksa banka gün sonu) − ModPOS kart. Yazarkasa bölümünden önceki
+  raporlarda bugünkü gibi banka POS − ModPOS kart.
 - **Z kontrolü**: ödeme türlerinin toplamı Z toplamından farklıysa uyarı çıkar (yanlış yazılmış tutar).
+- **Yazarkasa Z'si**: kendi içinde tutuyor mu (oranlar ve ödemeler günlük toplamı, oranların KDV'si toplam KDV'yi
+  tutuyor mu; Z no önceki yazarkasa Z'sinden büyük mü) ve kartı ModPOS'la aynı mı. Personel yalnız bu ikisini görür;
+  ModPOS ile yazarkasanın toplam, nakit, yemek kartı ve banka gün sonu karşılaştırması yalnız yöneticide
+  ([Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa)).
 
 **Gün içinde kasaya giren** çoğu gün yoktur: alan tutarı varken (kayıtlı raporda da), LafPOS'tan dolunca ya da
 **Kasaya giren ekle**'ye basınca görünür (ipucu: "Satış dışı: bozuk para, tahsilat, nakit bahşiş").
@@ -57,7 +63,15 @@ daha çok farklıysa:
 
 ModPOS Z raporu ve Banka POS Z raporu (yazarkasa) bölümlerinde **Fotoğraf çek** (telefonda arka kamera) ya da
 **Galeriden seç**. Fotoğraf telefonda küçültülür, yüklenir ve Claude ile okunur (genelde 5–10 saniye); okunanlar forma
-dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gönder**'e basar.
+dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gönder**'e basar. Yükleme bölüm başınadır:
+yazarkasa Z'si okunurken ModPOS Z'sinin fotoğrafı çekilebilir; **Raporu gönder** süren yüklemeyi bekler.
+
+> **Yazarkasa Z'si şimdilik yalnız öneridir.** Banka POS Z raporunun fotoğrafı okunur ama hiçbir rakamı forma
+> **yazılmaz**: her alanın altında "Fotoğraftan okundu; fişle karşılaştırıp yazın. Fotoğrafta 9.350 ₺." ve
+> **Fotoğraftakini yaz** çıkar, özet satırı "Banka POS Z raporu okundu; turuncu alanları fişten yazın." Bu, gerçek
+> fotoğraflarla canlı değerlendirme geçene kadar sahibin kararıdır (`OKC_PREFILL_ENABLED`, `src/lib/okc-z.ts`;
+> [planlar/okc-z.md](planlar/okc-z.md) §10, §17 b2). Değerlendirme için gerekenler ve kapı açılınca ne değişir:
+> [Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa). ModPOS Z'si ve kasadan çıkan fişler bugünkü gibi dolar.
 
 - Dolan alanın yanında mavi **Fotoğraftan** yazar. Net okunamayan ya da bir denetime takılan alan turuncudur, altında
   nedeni yazar; fişle karşılaştırın.
@@ -67,18 +81,31 @@ dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gö
 - Denetimler: fişin tarihi raporun günü değilse, Z no önceki rapordakinden büyük değilse ya da arada atlama varsa,
   ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları, soluk ya da
   kesik fotoğraf.
-- ModPOS bölümüne yazarkasanın (banka POS) Z raporu çekilirse hiçbir alan dolmaz: "Bu yazarkasanın (banka POS) Z
-  raporu gibi görünüyor, ModPOS'unki değil." ve **Banka POS bölümüne okut**. Banka gün sonu fişi de aynı düğmeyle
-  ("Bu bir banka POS gün sonu fişi gibi görünüyor"). Banka POS bölümüne ModPOS'un Z'si çekilirse **ModPOS bölümüne
-  okut**.
-- Banka POS bölümüne yazarkasanın Z raporu çekilirse Banka POS dolmaz ve düğme çıkmaz; turuncu satır: "Bu
-  yazarkasanın Z raporu. Banka POS'a Z'deki K.KARTI (kredi kartı) satırını yazın; toplamı ya da altındaki banka
-  satırlarını değil." Fotoğraf raporla saklanır. Yazarkasa Z'sinin kendi alanları (Z no, oran oran KDV, nakit, kart)
-  ve denetimleri sonraki adımda gelir ([planlar/okc-z.md](planlar/okc-z.md) PR-b).
-- İki POS cihazı varsa ikinci fişte **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net değilse
-  soruda söylenir; seçilen tutar turuncu kalır, fişle karşılaştırın.
+- **Yanlış bölüm** hiçbir alanı doldurmaz; aynı fotoğraf düğmeyle öteki bölüme okutulur:
+  - ModPOS bölümüne yazarkasanın Z'si: "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil." ve
+    **Banka POS Z bölümüne okut**. Banka gün sonu fişi de aynı düğmeyle ("Bu bir banka gün sonu fişi gibi görünüyor,
+    Z raporu değil.").
+  - Banka POS Z bölümüne ModPOS'un Z'si: "Bu ModPOS'un Z raporu gibi görünüyor." ve **ModPOS bölümüne okut**.
+  - Banka POS Z bölümüne X raporu ("Bu bir X raporu (gün içi) gibi görünüyor; yazarkasadan Z raporunu alıp çekin."),
+    mali hafıza / dönem raporu ("… günün Z raporunu çekin.") ya da başka bir kâğıt: düğme yok.
+- **Banka POS Z bölümü** ([YAZARKASA-Z.md](YAZARKASA-Z.md)): Z no, günlük toplam, oran oran KDV, ödemeler ve fiş sayısı
+  okunur; kümülatif (KÜM.) satırlar günün rakamı olarak hiçbir alana gitmez. Rakamlar birbirini tutmuyorsa tutmayan
+  alanın altında tek bir sade neden yazar ("Nakit, kart ve öteki ödemeler toplanınca günlük toplam çıkmıyor (120 ₺
+  az)."; ödemeler fazla çıkarsa tutar yazılmaz, fazlası yazarkasa dışı tahsilat olabilir ve tutarı yalnız yöneticiye
+  gider. Okuma ya da kayıtlı rapor Z'de yazarkasa dışı tahsilat gördüyse fazlası turuncu olmaz) ve o rakam hiçbir
+  zaman kendiliğinden yazılmaz. Z no önceki yazarkasa Z'siyle aynıysa okumanın bütünü durur:
+  "Bu Z no (0187) 21 Ekim raporunda da var; dünkü Z raporu olabilir." Aynı şeritte banka gün sonu da basılıysa **Banka
+  gün sonu** da okunur ("Aynı fişte banka gün sonu da var: …"); yalnız banka gün sonu fişi çekilirse yalnız o alan:
+  "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." Doldurma kapısı kapalıyken
+  alan dolmaz, öneri olur; özet satırı "Banka gün sonu fişi okundu; turuncu alanı fişle karşılaştırıp yazın." (Z raporu
+  demez).
+- İki banka gün sonu fişi varsa ikincisinde **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net
+  değilse soruda söylenir; seçilen tutar turuncu kalır, fişle karşılaştırın.
 - Uzun bir Z raporu tek fotoğrafta okunmuyorsa üst ve alt yarısını ayrı çekin: ikinci fotoğraf yalnız boş alanları
-  doldurur.
+  doldurur. Banka POS Z bölümünde seçicinin altında "Fişi düz koyun, ekranı fişle doldurun; uzunsa önce üstünü, sonra
+  altını çekin."; tek fotoğrafta temel bir rakam tutmazsa ya da net okunmazsa "Fişin üst ve alt yarısını ayrı
+  çekerseniz rakamlar daha net okunur." Bölüme en çok 3 fotoğraf (raporun toplamı en çok 6); kesik fişte "Fişin bir
+  kısmı fotoğrafta yok; kalan kısmını ayrıca çekin."
 - **Kaldır** fotoğrafı formdan çıkarır (ondan dolan ve değiştirilmemiş alanlar boşalır). Gönderilmeyen fotoğraf 2
   günde silinir.
 - Okuma kapalıysa ya da bu ortamda kurulu değilse fotoğraf yine kanıt olarak eklenir, rakamlar elle yazılır.
@@ -87,6 +114,89 @@ Ayrıntı (depo, kim görür, saklama, maliyet, KVKK): [FOTOGRAF.md](FOTOGRAF.md
 
 **LafPOS'tan doldurma:** LafPOS günün sonunu gönderdiyse formun başında **LafPOS'tan doldur** çıkar; Z ve kasa
 rakamları fotoğrafınkiyle aynı kuralla yalnız boş alanlara yazılır, kaydetmez ([LAFPOS.md](LAFPOS.md) › Kasa raporu).
+
+## Banka POS Z raporu (yazarkasa)
+
+Banka POS'tan (yazarkasa) alınan mali Z raporu ModPOS'un Z'sinden ayrı bir sayaçtır ve formda kendi kartındadır
+(`okc-card.tsx`). Kâğıdın düzeni, etiketleri, rakamların birbirini nasıl tutması gerektiği ve okuma tuzakları:
+[YAZARKASA-Z.md](YAZARKASA-Z.md). Karar ve gerekçeler: [planlar/okc-z.md](planlar/okc-z.md).
+
+- **İsteğe bağlı.** Bölüm bütünüyle boş kalabilir. Bir tutar yazıldıysa üçü gerekli: "Yazarkasa günlük toplamı gerekli
+  (bölümü boş da bırakabilirsiniz)", "Nakit gerekli (yoksa 0 yazın)", "Kredi kartı gerekli (yoksa 0 yazın)". Bir oranın
+  toplamı ile KDV'si birlikte yazılır ("%10 için toplam ve KDV birlikte yazılır"), KDV toplamdan büyük olamaz. Kural
+  formda ve sunucuda aynı metinle. İlk yazarkasa Z'li rapordan sonra girilmeyen gün yöneticide **Yazarkasa Z yok** rozeti
+  alır.
+- **Fotoğraf yoksa** dört alan yazılır (Günlük toplam, Z no, Nakit, Kredi kartı; varsa yemek kartı ve diğer). KDV dökümü
+  isteğe bağlıdır; boş kalanı yönetici sonradan kâğıttan yazabilir (ay satırı o günü "KDV dökümü eksik" sayar).
+- **Ayrıntılar** fotoğraftan dolunca açılmaz; içinde turuncu alan ya da hata varsa, ikinci banka gün sonu fişinin
+  sorusu (**Toplama ekle** / **Yerine yaz**) bekliyorsa, yönetici düzenliyorsa ya da yalnız banka POS'u yazılı eski
+  raporda açık gelir. Kendiliğinden açılan kutu, turuncu yazarken kaybolsa da açık kalır (yalnız düğmeyle kapanır).
+  Kapalıyken başlığı "Ayrıntılar · 1 rakamı fişle karşılaştırın" olur. Ayrıntılar'daki alanlar (fiş sayısı, KDV, döküm,
+  yemek kartı, diğer) boş bırakılırsa "Fotoğraftan farklı" sayılmaz; yalnız yazılan karşılaştırılır.
+- **Canlı denetim** (elle yazılana da; gönderimi engellemez): alan başına tek turuncu neden ve kartın altında tek özet
+  satırı ("2 rakam birbirini tutmuyor; turuncu olanları fişle karşılaştırın."). Z no önceki yazarkasa Z'siyle
+  karşılaştırılır: personelin formuna önceki Z'nin yalnız günü ve numarası gelir.
+- **Karşılaştırmalar** (1 ₺ tolerans; satır yalnız iki tarafın da değeri varsa çıkar):
+
+| Satır | Kim görür | Metin |
+|---|---|---|
+| Kart | personel ve yönetici | "Kart: yazarkasa ile ModPOS aynı." / "Yazarkasa kartı, ModPOS'taki karttan 120 ₺ fazla. Kartla alınan bir ödeme ModPOS'ta başka ödeme türüyle girilmiş olabilir." Yazarkasa kartı yazılmadıysa banka gün sonuyla: "Banka gün sonu, ModPOS'taki karttan 120 ₺ fazla." |
+| Kendi içinde | personel tek satır, yönetici ayrıntılı | Formda "1 rakam fişteki ötekileri tutmuyor; turuncu olanı fişle karşılaştırın.", kayıtlı raporda "Yazarkasa rakamları birbirini tutmuyor; fişle karşılaştırın, yanlışsa raporu düzeltin." / "Yazarkasa Z'si kendi içinde tutmuyor: Ödemelerin toplamı (11.420 ₺) günlük toplamı (11.540 ₺) tutmuyor; fişe bakın." Yöneticide (kayıtlı rapor, e-posta, rozet) sunucunun sakladığı yazarkasa dışı tahsilat da sayılır (okumayla aynı); personelin formunda o tutar yoktur |
+| Nakit | yönetici | "Nakit: yazarkasa ile ModPOS aynı." / "Yazarkasa nakdi, ModPOS'taki nakitten 60 ₺ az." |
+| Toplam | yönetici | "Toplam: iki Z aynı." / "ModPOS toplamı 1.435,50 ₺ fazla; online ve diğer satışlar kadar (yazarkasadan geçmez)." / "ModPOS toplamı yazarkasadan 2.100 ₺ fazla." |
+| Yemek kartı | yönetici | "Yazarkasa yemek kartı, ModPOS'takinden 50 ₺ az." (ikisi de doluysa) |
+| Banka | yönetici | "Banka gün sonu yazarkasa kartıyla aynı." / "Banka gün sonu, yazarkasa kartından 40 ₺ fazla (bir gün gün sonu alınmadıysa iki günü kapsar)." |
+
+  ModPOS ile yazarkasa arasındaki toplam ve nakit farkı kendiliğinden hata değildir (online satış, faturalı satış, Z'nin
+  alındığı saat) ve işletmenin satış dağılımıdır: personelin ekranına, personelin sayfa verisine ve WhatsApp metnine
+  girmez; yöneticinin ekranında ve e-postasında eksiksiz durur (plan İlke 8, S2'nin varsayılanı). Personel yalnız kart
+  satırını (düzeltebileceği tek fark) ve yazarkasanın kendi içinde tutmadığını görür. Toplam ve nakit farkı rozet de
+  almaz.
+- **Kümülatif (yalnız yönetici).** Fotoğraftaki KÜM. satırları sunucuda okunur ve yalnız inandırıcıysa saklanır (önceki
+  saklanan kümülatifle zincir tutuyor, ilk kümülatif ya da arada girilmemiş Z'ler; elle düzeltilmiş raporda hiç). Kayıtlı
+  raporda "Kümülatif (cihaz açılışından beri): 1.259.350 ₺ · KDV 118.943,94 ₺" ve **Kümülatifi temizle** (onay penceresi:
+  yanlış okunmuş kümülatif sonraki günlerin denetimini bozar; rapor değişmez, işlem geçmişine "Yazarkasa kümülatifi
+  temizlendi" düşer, yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır). Saklanmadıysa "Kümülatif okundu ama önceki Z'yle tutmadığı için saklanmadı
+  (1.259.530 ₺)." ya da "Kümülatif saklı değil (okunan …). Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır."
+  (temizlenmiş ya da yazıldığında önceki bir kümülatifle tutmamış). Z no ve kümülatif son saklanandan küçükse (cihaz
+  değişti ya da EKÜ / mali hafıza yenilendi, Z sayacı sıfırlandı) okunan kümülatif yeni zincirin ilki olarak saklanır;
+  okumada Z no "tutmadı" sayılmaz, yöneticiye bilgi satırı çıkar. Personelin formu kümülatifi bilmediği için o ilk gün
+  Z no'yu turuncu gösterir. Z'de toplam dışı tahsilat varsa "Z'de toplam
+  dışında 1.250 ₺ tahsilat var (faturalı satış, bilgi fişi…); toplama eklenmedi." Bunlar personelin okuma yanıtına ve
+  sayfa verisine girmez (`toStaffReading`, `tests/personel-sizinti-kasa.test.ts`).
+- **Düzeltme ve geç rapor.** Yazarkasa alanları hassas değildir (Z ve kart gibi): ertesi gün düzeltmesi doğrudan,
+  kilitli günde onaya ([Sonradan düzeltme](#sonradan-düzeltme-ve-silme-isteği)). Geç raporda yazarkasa kartı görünür,
+  fotoğrafı kabul edilir ama zorunlu değildir; yöneticinin onay kartında iki yanlı satır: "Banka POS Z no 0188: önceki
+  0187 (21 Ekim) ✓ · sonraki 0189 (23 Ekim) ✓ · kümülatif iki yanda da tutuyor" (tutmayan halka kırmızı). Onaylanan geç
+  raporda kümülatif öteki raporlardaki gibi yazılır.
+- **Fotoğraf kaldırma.** Yazarkasa rakamı yazılmış raporun tek Banka POS Z fotoğrafı kaldırılamaz ("Raporun tek Banka
+  POS Z fotoğrafı kaldırılamaz: yazarkasa rakamlarının kanıtı"). Onaylanan kaldırmada kümülatif kalan fotoğrafların
+  okumasından yeniden hesaplanır.
+- **Eski raporlar** (bu bölümden önce): kayıtlı raporda bugünkü "Kart" bölümü, etiket "Banka POS" (o günlerde alan banka
+  gün sonunu da yazarkasa Z'sinin kart satırını da tutabilir; anlam iddia edilmez). Eski banka POS fotoğrafları
+  (`kasa-pos`) Banka POS Z bölümünde görünür; yeniden okunursa yazarkasa Z'si olarak okunur. Yayın sırasında açık kalan
+  eski sayfa fotoğraf yükleyebilir: sunucu onu yazarkasa Z'si olarak okur, eski sayfaya yalnız banka gün sonu fişinden
+  okunan tutarı (öneri olarak) döner; yazarkasa Z'sinin toplamı ya da kartı hiçbir zaman Banka POS'a yazılmaz. ModPOS
+  bölümünün yanlış belge düğmesi bu süre boyunca `kasa-pos` der: eski sayfa onu kendi "Banka POS bölümüne okut"
+  düğmesiyle gösterir ve aynı eski yoldan okutur; yeni sayfa onu Banka POS Z bölümüne çevirir (`kasa-pos`un
+  kaldırıldığı PR'da `kasa-okc` olur).
+
+**Fotoğraftan doldurma kapısı ve sahipten beklenenler.** Yazarkasa Z'sinin okuması bugün hiçbir alanı doldurmaz
+(`OKC_PREFILL_ENABLED = false`, yukarıda [Fotoğraftan doldurma](#fotoğraftan-doldurma)). Kapı, gerçek fişlerle yapılan
+canlı değerlendirmede ([planlar/okc-z.md](planlar/okc-z.md) §10, §17 b2 ve b8) **yanlış dolan alan 0** ve **"doğrulandı
+ama yanlış" 0** çıkınca açılır. Bunun için:
+
+1. **Sahip:** 5–8 günün banka POS Z fotoğrafı; 2–3'ü ardışık günler (kümülatif satırları ancak böyle sınanır), biri uzun
+   ve soluk, en az biri ayrıca üst ve alt yarı olarak. Fotoğraflar **asıl çözünürlükte** (telefonun kendi fotoğrafı;
+   WhatsApp'ın sıkıştırdığı resim değil: WhatsApp'tan "belge" olarak, Drive ya da e-postayla) ve aynı günlerin
+   kâğıttan doğru rakamları (Z no, günlük toplam, %10 ve %20 toplam ve KDV, toplam KDV, nakit, kart, yemek kartı, fiş
+   sayısı, KÜM. TOPLAM ve KÜM. KDV). Ayrıca cihazın markası ve modeli, Z'yi kimin saat kaçta aldığı, ModPOS raporunun
+   hangi yazıcıdan çıktığı ([YAZARKASA-Z.md](YAZARKASA-Z.md) §6).
+2. **Geliştirici:** fotoğrafları `tests/fixtures/okc-z/`'ye koyar, değerlendirme betiğini (`scripts/okc-eval`, plan
+   §10.2; henüz yazılmadı) `ANTHROPIC_API_KEY` ile canlıda üçer kez çalıştırır (para harcar: okuma başına tahmini
+   0,05–0,10 $, bütün değerlendirme birkaç dolar), istemi ve eforu sonuca göre düzeltir, tabloyu `docs/planlar/ekler/okc-z/eval.md`'ye yazar.
+3. Geçerse `OKC_PREFILL_ENABLED` `true` olur; ekran değişmez: doğrulanan alan mavi dolar, net okunup denetlenemeyen alan
+   mavi, orta güvenli alan turuncu dolar; tutmayan ve net okunmayan alan yine yazılmaz, öneri olur.
 
 ## Gün içinde kasadan çıkanlar
 
@@ -158,7 +268,7 @@ kategorisindeki satır (maaş, avans) kârı değiştirir. Bunlar yöneticinin o
 | Dünden eski 6 güne (D−2 … D−7) eklemek | **Eski bir güne ekle**: önce gün çipi, sonra kamera ya da form; o günün satırları gösterilmez, yalnız ekleme |
 | Açık günde yöneticinin kategorisindeki satırın tutarını, metnini ya da türünü değiştirmek, silmek | Onaya gönder; kategori değiştirme isteği açılmaz, fişli satırın türü salt okunur |
 | Fotoğrafsız alışveriş satırına fiş eklemek (bugün ve dün, kilitli dün dahil) | **Fiş fotoğrafı ekle**, onaysız: tutar, tür ve kategori değişmez; işlem geçmişinde "Kasadan çıkan: fiş eklendi" |
-| Kayıtlı raporun yanlış Z ya da POS fotoğrafını kaldırtmak (açık günde) | Fotoğrafın yanındaki **Kaldırılmasını iste**; okuma farkı olan fotoğrafta ve raporun tek Z fotoğrafında düğme yok |
+| Kayıtlı raporun yanlış ModPOS Z ya da banka POS Z fotoğrafını kaldırtmak (açık günde) | Fotoğrafın yanındaki **Kaldırılmasını iste**; okuma farkı olan fotoğrafta, raporun tek ModPOS Z fotoğrafında ve yazarkasa rakamı yazılmış raporun tek banka POS Z fotoğrafında düğme yok |
 
 - İstek penceresi bugün ile 7 gün öncesidir (`src/lib/cash-out-requests.ts` › `requestDayAllowed`); istek 14 gün sonra
   kendiliğinden kapanır ("Süresi doldu", personelin zilinde görünür). Fiş istek beklerken tutulur, başka bir isteğe ya
@@ -250,7 +360,7 @@ Rapor yeniden gönderilince önceki hâli aynı işlemde saklanır (`cash_report
 - İş günü kapandıktan sonra (ertesi gün 05:00'ten sonra) kasadaki nakdi değiştiren bir alan (açılış, nakit satış, gün
   içinde giren, gün içinde çıkan, sayılan nakit, teslim edilen) ya da kasayı sayan değiştiyse düzeltme **Ertesi gün** rozetini alır; günden güne satırında
   **Ertesi gün düzeltildi** rozeti, yöneticinin zilinde "Kasa raporu ertesi gün değişti" (son 7 gün; kim ve ne
-  değişti). Yalnız Z, kart ya da not düzeltmesi uyarı vermez; ardından yapılan bir not düzeltmesi uyarıyı da kapatmaz.
+  değişti). Yalnız Z, kart, banka POS Z ya da not düzeltmesi uyarı vermez; ardından yapılan bir not düzeltmesi uyarıyı da kapatmaz.
   Yöneticinin kendi düzeltmesi kendi zilinde görünmez.
 - Güncellenen raporun e-postasında ve WhatsApp metninde "Değişen: Sayılan nakit 2.880 ₺ → 2.980 ₺; Not değişti".
 - Günden güne satırında "· 2 kez düzeltildi". İşlem geçmişine düzeltmede değişenler, silmede raporun değerleri (Z,
@@ -268,7 +378,7 @@ olur (devir, açılış notu, teslim ve sayan denetimleri yeniden). Karar: dalga
 
 **Kapı kuralı** (`staffCashGate`, personelin kayıtlı rapordaki değişikliği):
 
-| Durum | Metin, Z, kart | Kasa alanı ya da sayan |
+| Durum | Metin, Z, kart, banka POS Z | Kasa alanı ya da sayan |
 |---|---|---|
 | Rapor yok (unutulan dünü girmek) | doğrudan | doğrudan |
 | Aynı gece (iş günü kapanmadan, 05:00'ten önce) | doğrudan | doğrudan |
@@ -349,7 +459,8 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 - **Girilmemiş günler** kartı: "Kafe açıktıysa Z raporunun fotoğrafıyla girin; yöneticinin onayıyla kayda geçer." Gün
   çipleri ("14 Eki Sal", "· onay bekliyor", "· reddedildi"); telefonda 4'ten fazla gün tek çipte ("5 gün") toplanır.
   Fotoğraf deposu yoksa çip yerine "Fotoğraf eklenemiyor; bu günleri yöneticiye yazın".
-- **`/panel/kasa?gun=D`** geç rapor kipinde açılır: Z no ve en az bir Z fotoğrafı zorunlu, zorunlu **Neden geç
+- **`/panel/kasa?gun=D`** geç rapor kipinde açılır: ModPOS Z no'su ve en az bir ModPOS Z fotoğrafı zorunlu (Banka POS Z
+  raporu kartı da görünür; fotoğrafı ve rakamları isteğe bağlı), zorunlu **Neden geç
   giriliyor?** (3–300), kasayı sayan isteyendir (seçici yok; başka biri saydıysa nedene yazılır), teslim varsa
   **Teslim alan** (etkin kullanıcı ya da Banka). Kasadan çıkanlar kartı çizilmez ve "Gün içinde kasadan çıkan" elle
   yazılır (satırlar personele gitmez); e-posta, WhatsApp ve karaoke yok; zayi / ikram için Zayi sayfasının istek yolu.
@@ -370,7 +481,8 @@ değişmez. Karar: dalga 10 ([planlar/personel-yetki.md](planlar/personel-yetki.
 - **Onaylar › Kasa**, en eski gün önce, kart `#istek-<id>`: "14 Ekim Salı kasa raporu" ve **Geç rapor**, "Ayşe
   gönderdi · 21 Ekim 10:05 · 7 gün sonra", "Neden geç: …"; fotoğraflar ve okumaları (gün = D ile yeniden kurulur;
   okuma yoksa "Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin"); **Z no sırası** önceki ve sonraki
-  halkayla (`zNoOrder`; bekleyen halka "onay bekliyor"); döküm ve teslim alan; devir zinciri iki yönde; ay satırı
+  halkayla (`zNoOrder`; bekleyen halka "onay bekliyor"); yazarkasa Z'si yazıldıysa banka POS Z no'su ve kümülatif iki
+  yanlı (`okcLateChain`; [Banka POS Z raporu](#banka-pos-z-raporu-yazarkasa)); döküm ve teslim alan; devir zinciri iki yönde; ay satırı
   ("Ekim'in açık gün ve POS cirosuna girer" / "… elle yazılmış; bu rapor değiştirmez" / "Kapanmış ay: …"); o güne
   kayıtlı kasadan çıkanlarla fark ("… (fişsiz)"); "Devir zincirinin tutması kanıt değildir: teslim ve çıkan bellekten
   yazılabilir."
@@ -444,16 +556,37 @@ silinen rapor ayın rakamını hemen değiştirir.
 ## Gönderince
 
 - **E-posta:** yöneticinin seçtiği adreslere gider. Hiç kaydedilmediyse Vercel'deki `CASH_REPORT_RECIPIENTS` (virgülle ayrılmış adresler; adresler kodda durmaz, yerel kurulum gerçek kişilere rapor göndermez); o da yoksa rapor e-postasız kaydedilir.
-  Konu örneği: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik". İçinde kasa sonucu, Z raporu, kasa, kart, günün zayi ve
-  ikramı ve (site o an yanıt verdiyse) "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve
-  (başkaysa) sayan: "Mehmet · sayan Ayşe"; güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa
-  bölümünde uyarı ([Açılış ve devir](#açılış-ve-devir)). Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
+  Konu örneği: "Kasa raporu · 21 Ekim Salı · 120 ₺ eksik". İçinde kasa sonucu, ModPOS Z raporu, kasa, Banka POS Z
+  raporu (yazarkasa; yazarkasa alanı olmayan eski raporda "Kart"), günün zayi ve ikramı ve (site o an yanıt verdiyse)
+  "laffogato.net (kasadan geçmez)" bölümü yer alır. Başlıkta gönderen ve (başkaysa) sayan: "Mehmet · sayan Ayşe";
+  güncellenen raporda "Değişen: …"; açılış ya da devir tutmuyorsa kasa bölümünde uyarı ([Açılış ve
+  devir](#açılış-ve-devir)). Panelde kayıtlı ikramın menü fiyatıyla değeri ModPOS'un ödenmez tutarıyla karşılaştırılır.
   E-posta gitmezse rapor yine kaydedilir; ekranda "Yeniden dene" çıkar.
-- **Fotoğraflar** raporla saklanır (kasa 6 ay). E-postada ve WhatsApp'ta fotoğraf ya da adresi yoktur: "📷 Z ve POS
-  fotoğrafı panelde" satırı, net okunmuş bir rakamdan farklı yazılan alan ("⚠️ Fotoğraftan farklı yazılan: Kart
-  (fotoğrafta 8.915 ₺)") ve "Gün içinde çıkan"ın altında kasadan çıkan satırlar (en çok 6) yer alır.
+- **Banka POS Z bloğu: kim neyi görür.** Kart satırının kaynağı formdakiyle aynı (yazarkasa kartı, yoksa banka gün
+  sonu).
+
+| | WhatsApp (personel de gönderir; grup güvenli kanal değildir) | E-posta (alıcıları yönetici seçer) |
+|---|---|---|
+| Başlık | `*Banka POS Z raporu*` | "Banka POS Z raporu (yazarkasa) · Z no 0188 · 143 fiş" |
+| Rakamlar | Z no, Nakit, Kredi kartı, Banka gün sonu (varsa) | Günlük toplam ve KDV, oran oran KDV dökümü, Nakit, Kredi kartı, Yemek kartı, Diğer, Banka gün sonu |
+| Kart satırı | "✅ Kart ModPOS ile aynı" / "⚠️ Yazarkasa kartı ModPOS'tan 120 ₺ fazla" | aynı |
+| Öteki satırlar | yok (günlük toplam, KDV, fiş sayısı, kendi içinde ve ModPOS'la toplam, nakit, yemek kartı, banka karşılaştırmaları girmez) | hepsi, renkli kutular (✅ / ℹ️ / ⚠️) |
+| "Değişen" ve "Fotoğraftan farklı" | yazarkasanın Z no'su, nakdi, kartı ve banka gün sonu değeriyle; günlük toplam, KDV, döküm, fiş sayısı, yemek kartı ve diğer yalnız adıyla ("Yazarkasa toplam değişti", "Yazarkasa fiş sayısı") | değerleriyle |
+
+  Yönetici "WhatsApp ile gönder"e bassa da metin personelinkidir (`whatsappText` → `cashReportText(…, "staff")`).
+  WhatsApp'ta banka gün sonu satırı yalnız tutardır: banka ↔ yazarkasa kartı karşılaştırması yöneticinin satırıdır
+  (planın §8 örneğindeki ✅ bilerek yazılmadı; sahip isterse açılır). Yazarkasa alanı olmayan eski raporda iki kanalda da bugünkü
+  "*Kart*" bloğu, etiket "Banka POS".
+- **Fotoğraflar** raporla saklanır (ModPOS Z 6 ay, banka POS Z 400 gün; [FOTOGRAF.md](FOTOGRAF.md) § 4). E-postada ve
+  WhatsApp'ta fotoğraf ya da adresi yoktur: "📷 ModPOS Z ve banka POS Z fotoğrafı panelde" satırı (eski banka POS
+  fotoğrafı "banka fişi"; e-postada "Fotoğraflar panelde: ModPOS Z, banka POS Z"), net okunmuş bir rakamdan farklı
+  yazılan alan ("⚠️ Fotoğraftan farklı yazılan: Kart (fotoğrafta 8.915 ₺)") ve "Gün içinde çıkan"ın altında kasadan
+  çıkan satırlar (en çok 6) yer alır. WhatsApp'ta bloğa girmeyen yazarkasa rakamı farklı yazıldıysa yalnız adı geçer
+  ("Günlük toplam (banka POS Z)"); e-postada değeriyle ve Banka POS Z bölümünün altında.
 - **WhatsApp:** "WhatsApp ile gönder" ayrıntılı metni hazır açar. Ayarlarda numara girildiyse o sohbet açılır,
   girilmediyse kişi ya da grup seçilir. "Metni kopyala" ile başka yere de yapıştırılır.
+- **Deneme e-postası** (yönetici, Rapor alıcıları): son kayıtlı raporla gider; kayıtlı rapor yoksa yazarkasa alanları
+  da dolu bir örnek raporla.
 - **Zil:**
   - Personele: akşam 20:00'den sonra bugünün raporu girilmediyse hatırlatma.
   - Yöneticiye: dünün raporu girilmediyse, son raporda fark varsa, bugünün ya da dünün açılışı devirle tutmuyorsa
@@ -470,11 +603,19 @@ silinen rapor ayın rakamını hemen değiştirir.
   farkı rozeti, kart farkı ve "Z tutmuyor" işaretleri var. Fotoğraflı raporda fotoğraf simgesi; net okunmuş bir
   rakamdan farklı yazılan alan varsa **Fotoğraftan farklı** rozeti (turuncu bir alanın ya da başka güne ait fişin
   düzeltilmesi sayılmaz), yanında **Açılış ≠ devir** ve **Ertesi gün düzeltildi**. Satırda gönderen, başkaysa sayan
-  ve "· 2 kez düzeltildi". Satıra dokununca ayrıntı açılır: fotoğraflar (büyütülür, yönetici siler; rapor kalır),
-  fotoğraftan farklı yazılanlar, açılış ve devir uyarıları, kasadan çıkan satırlar, değişiklikler, WhatsApp, düzenle,
-  e-postayı yeniden gönder, sil. Silinen raporun fotoğrafları 30 gün saklanır.
+  ve "· 2 kez düzeltildi". Yazarkasa rozetleri: **Yazarkasa tutmuyor** (amber; kayıtlı yazarkasa rakamları kendi
+  içinde tutmuyor) ve **Yazarkasa Z yok** (gri; Z toplamı olan ama yazarkasa Z'si girilmemiş gün, ilk yazarkasa Z'li
+  rapordan sonra). ModPOS ile yazarkasa arasındaki toplam ve nakit farkı rozet almaz. Satıra dokununca ayrıntı açılır:
+  fotoğraflar (büyütülür, yönetici siler; rapor kalır), fotoğraftan farklı yazılanlar, açılış ve devir uyarıları,
+  "Banka POS Z (yazarkasa)" bölümü (Z no ve fiş sayısı, günlük toplam, KDV ve oran oran döküm, ödemeler, banka gün
+  sonu, bütün karşılaştırma satırları, kümülatif ve **Kümülatifi temizle**; [Banka POS Z
+  raporu](#banka-pos-z-raporu-yazarkasa)), kasadan çıkan satırlar, değişiklikler, WhatsApp, düzenle, e-postayı yeniden
+  gönder, sil. Silinen raporun fotoğrafları 30 gün saklanır.
 - **Ay özeti:** Z toplamı, net kasa farkı, eksik ve fazlaların toplamı, rapor girilen gün sayısı; altında ayın açık
-  gün ve cirosunun nereden geldiği ve Satışlar'a bağlantı.
+  gün ve cirosunun nereden geldiği ve Satışlar'a bağlantı. Yazarkasa Z'si girilen ayda iki bilgi satırı: "Yazarkasa
+  (mali) toplamı: 381.809 ₺ · 28 / 30 gün · ModPOS toplamından %11 az" ve "KDV: %10 34.710 ₺ · %20 0 ₺" (KDV dökümü
+  eksik günler "Yazarkasa KDV dökümü eksik: 2 gün"). Yalnız bilgidir; ay bilgisine, KDV tahminine ve hiçbir hesaba
+  girmez (`okcMonth`; KDV tahmininin yazarkasa tabanına geçişi ayrı bir iş, plan §9 "13b").
 - **Rapor alıcıları:** e-posta adresleri (en çok 10), e-posta açık / kapalı, WhatsApp numarası ve "Deneme e-postası".
   E-posta için Vercel'de `RESEND_API_KEY` gerekir (`docs/BILDIRIMLER.md`).
 
@@ -482,4 +623,9 @@ Dosyalar: `src/lib/cash-report.ts` (hesap, açılış ↔ devir, düzeltme geçm
 `src/server/actions/cash-report.ts` (uçlar), `src/server/cash/report-store.ts` (yazım yolu ve silme; onay yolları da
 buradan), `src/server/cash/report-email.ts` ve `src/server/notify/cash-report-template.ts` (e-posta), `src/app/panel/kasa/`; ay
 bilgisine aktarım `src/lib/cash-month.ts` (`tests/kasa-ay-bilgisi.test.ts`); fotoğraftan okuma `src/lib/photo-read/`
-(`tests/fotograf-okuma.test.ts`), kasadan çıkanlar `src/lib/cash-outs.ts` ve `src/server/actions/cash-outs.ts`.
+(`tests/fotograf-okuma.test.ts`), kasadan çıkanlar `src/lib/cash-outs.ts` ve `src/server/actions/cash-outs.ts`; banka POS
+Z raporu `src/lib/okc-z.ts` (kimlikler, karşılaştırmalar, ay), `src/lib/photo-read/okc.ts` (okuma),
+`src/app/panel/kasa/okc-card.tsx` ve `okc-form.ts` (form). Testler: `tests/okc-z.test.ts`,
+`tests/personel-sizinti-kasa.test.ts` (personelin yükünde kümülatif ve yöneticinin satırları yok),
+`tests/kasa-okc-db.test.ts` (`KASA_OKC_TEST_DATABASE_URL`, yoksa `KASA_GEC_TEST_DATABASE_URL`: sunucu sütunları,
+kümülatifin temizlenmesi, geç rapor onayı, fotoğraf kaldırma).

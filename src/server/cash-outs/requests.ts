@@ -3,6 +3,7 @@ import "server-only";
 import { and, count, eq } from "drizzle-orm";
 
 import { staffCanReport } from "@/lib/cash-report";
+import { okcHasFigures } from "@/lib/okc-z";
 import {
   CASH_OUT_REQUEST_DAYS,
   CASH_OUT_REQUEST_TEXT,
@@ -10,6 +11,7 @@ import {
   CashOutRequestPayload,
   cashOutRequestTitle,
   lineChanges,
+  photoKindRefusal,
   PhotoRemovalPayload,
   photoRemovalTitle,
   type CashOutBeforeT,
@@ -17,12 +19,14 @@ import {
   type CashOutOp,
   type CashOutRequestPayloadT,
   type PhotoRemovalPayloadT,
+  type RemovablePhotoKind,
 } from "@/lib/cash-out-requests";
 import { staffCategory, staffToExpenses, type CashOutSnapshot } from "@/lib/cash-outs";
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
+import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -193,10 +197,11 @@ async function lockReport(tx: CashOutTx, reportId: number) {
 }
 
 /**
- * Fotoğrafı rapordan çıkarmak olur mu (null: evet): raporun tek Z fotoğrafı ve fotoğraftan farklı yazılan (net okunmuş)
- * alanı olan fotoğraf kaldırılmaz. İstek ve onay aynı denetimi yapar. Okuma farkları da döner (işlem geçmişine).
+ * Fotoğrafı rapordan çıkarmak olur mu (null: evet): raporun tek Z fotoğrafı, yazarkasa bölümü yazılmışken tek Banka POS
+ * Z (yazarkasa) fotoğrafı (photoKindRefusal) ve fotoğraftan farklı yazılan (net okunmuş) alanı olan fotoğraf
+ * kaldırılmaz. İstek ve onay aynı denetimi yapar. Okuma farkları da döner (işlem geçmişine).
  */
-async function removalCheck(tx: CashOutTx, photoId: number, kind: "kasa-z" | "kasa-pos", reportId: number) {
+async function removalCheck(tx: CashOutTx, photoId: number, kind: RemovablePhotoKind, reportId: number) {
   const report = await lockReport(tx, reportId);
   if (!report) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report: null };
   // Bağ kilit altında yeniden: önceki okuma kilitsizdi, arada onaylanan kaldırma bağı silmiş olabilir (istek açan yol)
@@ -206,12 +211,13 @@ async function removalCheck(tx: CashOutTx, photoId: number, kind: "kasa-z" | "ka
     .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.photoId, photoId), eq(s.cashReportPhotos.kind, kind)))
     .limit(1);
   if (!linked) return { refusal: CASH_OUT_REQUEST_TEXT.photoNotLinked, diffs: [] as string[], report };
-  if (kind === "kasa-z") {
+  if (kind === "kasa-z" || kind === "kasa-okc") {
     const [{ n }] = await tx
       .select({ n: count() })
       .from(s.cashReportPhotos)
-      .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.kind, "kasa-z")));
-    if (n <= 1) return { refusal: CASH_OUT_REQUEST_TEXT.photoOnlyZ, diffs: [], report };
+      .where(and(eq(s.cashReportPhotos.reportId, reportId), eq(s.cashReportPhotos.kind, kind)));
+    const refusal = photoKindRefusal(kind, { zCount: n, okcCount: n, okcFigures: okcHasFigures(report) });
+    if (refusal) return { refusal, diffs: [], report };
   }
   const reading = await photoReadingOf(tx, photoId, kind, report.date);
   const saved = savedFields(report);
@@ -233,7 +239,7 @@ export async function proposePhotoRemoval(
   if (me.role === "admin") throw new UserError(CASH_OUT_REQUEST_TEXT.adminDirect);
   return db.transaction(async (tx) => {
     const link = await linkOf(tx, input.photoId);
-    if (!link || (link.kind !== "kasa-z" && link.kind !== "kasa-pos")) throw new UserError(CASH_OUT_REQUEST_TEXT.photoNotLinked);
+    if (!link || (link.kind !== "kasa-z" && link.kind !== "kasa-pos" && link.kind !== "kasa-okc")) throw new UserError(CASH_OUT_REQUEST_TEXT.photoNotLinked);
     if (!staffCanReport(link.date, now)) throw new UserError(CASH_OUT_REQUEST_TEXT.photoDay);
     const check = await removalCheck(tx, input.photoId, link.kind, link.reportId);
     if (check.refusal) throw new UserError(check.refusal);
@@ -361,6 +367,11 @@ export async function reviewPhotoRemovalCore(
     if (check.refusal) throw new UserError(check.refusal);
     await tx.delete(s.cashReportPhotos).where(and(eq(s.cashReportPhotos.reportId, payload.reportId), eq(s.cashReportPhotos.photoId, payload.photoId)));
     await releasePhoto(payload.photoId, DELETED_REPORT_DAYS, tx);
+    // Yazarkasa Z fotoğrafı çıkınca sunucu sütunları kalan fotoğrafların okumasından yeniden (docs/planlar/okc-z.md §6.1)
+    if (payload.photoKind === "kasa-okc" && check.report) {
+      const server = await okcServerColumns(tx, check.report);
+      await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, payload.reportId));
+    }
     const request = await decide(tx, row, me, "approved", { note: input.note, resultId: payload.reportId, releaseDays: null }, now);
     return { status: "approved" as const, request, payload, diffs: check.diffs };
   });

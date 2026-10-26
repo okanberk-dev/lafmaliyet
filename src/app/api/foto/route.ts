@@ -2,7 +2,7 @@ import { connection, type NextRequest } from "next/server";
 
 import { sniffMime } from "@/lib/documents";
 import { validDay } from "@/lib/photo-read/common";
-import { isPhotoKind, MAX_PHOTO_BYTES, PHOTO_MIMES, photoUrl, UPLOADS_PER_HOUR, type PhotoMime } from "@/lib/photo-rules";
+import { isPhotoKind, MAX_PHOTO_BYTES, PHOTO_MIMES, photoUrl, UPLOADS_PER_HOUR, type PhotoKind, type PhotoMime } from "@/lib/photo-rules";
 import { getCurrentUser } from "@/server/auth/dal";
 import { readPhotoFor, type ReadOutcome } from "@/server/photo-read/read";
 import { canUploadPhoto } from "@/server/photo-read/rules";
@@ -13,7 +13,11 @@ import { PhotoError, recentUploads, savePhoto } from "@/server/storage/photos";
  * Fotoğraf yükleme ve ilk okuma tek istekte (POST /api/foto, form: dosya, tur, gun, oku=1). Okuma başarısız olsa da
  * fotoğraf saklanır (yanıtta readError); personel rakamları elle yazar ya da /api/foto/{id}/oku ile yeniden dener.
  * Fotoğraf telefonda JPEG'e küçültülmüş gelir (photo-compress PHOTO_COMPRESS); boyut, tür ve ölçü savePhoto'da
- * denetlenir. Okuma en çok 45 sn.
+ * denetlenir. Okuma en çok 45 sn (yazarkasa Z'si 50 sn).
+ *
+ * Geçiş (docs/planlar/okc-z.md D2): eski sayfaların `tur=kasa-pos` yüklemesi reddedilmez; fotoğraf `kasa-okc` (yazarkasa
+ * Z'si) olarak saklanır ve okunur, yanıt eski biçimde döner (tür "kasa-pos", değerde yalnız banka gün sonu fişinin
+ * neti). Kaldırılması ayrı bir sonraki PR'da.
  */
 export const maxDuration = 60;
 
@@ -52,7 +56,9 @@ export async function POST(request: NextRequest) {
   if (!mime || !(PHOTO_MIMES as readonly string[]).includes(mime)) return Response.json({ error: "Yalnız JPG, PNG ya da WebP fotoğraf eklenebilir." }, { status: 415 });
   let id: number;
   try {
-    ({ id } = await savePhoto({ kind, bytes, contentType: mime as PhotoMime, userId: me.id }));
+    // Geçiş: eski sayfanın banka POS bölümü artık yazarkasa Z bölümüdür
+    const stored: PhotoKind = kind === "kasa-pos" ? "kasa-okc" : kind;
+    ({ id } = await savePhoto({ kind: stored, bytes, contentType: mime as PhotoMime, userId: me.id }));
   } catch (e) {
     if (e instanceof PhotoError) return Response.json({ error: e.message }, { status: e.status });
     console.error("[foto] kaydedilemedi", e);
@@ -67,5 +73,6 @@ export async function POST(request: NextRequest) {
       out = { reading: null, readError: "Fotoğraf okunamadı; rakamları elle yazın.", readCode: null, canRetry: true };
     }
   }
+  // Eski sayfaya bildiği tür döner (fotoğraf veritabanında kasa-okc)
   return Response.json({ ok: true, photo: { id, kind, url: photoUrl(id) }, ...out });
 }

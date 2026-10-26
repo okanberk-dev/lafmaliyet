@@ -29,6 +29,12 @@ export const COST_KEYS = [
   "invoiceAmount",
 ] as const;
 
+/**
+ * Yazarkasa Z'sinin yalnız yöneticiye giden anahtarları (docs/planlar/okc-z.md İlke 8, D17): kümülatif sayaç ve yazarkasa
+ * dışı tahsilat. Maliyet değildir (COST_KEYS'te yok); kasa sayfasında personelin yüküne girmemeli
+ */
+export const OKC_ADMIN_KEYS = ["okcCumTotal", "okcCumVat", "okcOutside", "cumTotal", "cumVat", "cumulativeTotal", "cumulativeVat", "outside", "okcAdmin"] as const;
+
 const KEY_RE = new RegExp(`(?:^|[^A-Za-z0-9_$])"?(${COST_KEYS.join("|")})"?\\s*:`, "gm");
 
 /** Kaynak koddaki yorumlar (satır ve blok): yorumda geçen sözcük anahtar değildir */

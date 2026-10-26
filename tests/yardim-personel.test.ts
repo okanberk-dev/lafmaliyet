@@ -13,6 +13,7 @@ import { STAFF_FAQ_GROUPS, STAFF_ROUTINE, staffPathText } from "../src/app/panel
 import { BOTTOM_NAV, NAV_FOOTER, NAV_GROUPS, NAV_TREE, SECTION_TABS, mobileTitleFor } from "../src/components/panel/nav";
 import { canOpen, STAFF_PATHS } from "../src/lib/roles";
 import { CHANGE_LABELS, SENSITIVE } from "../src/lib/cash-report";
+import { OKC_PREFILL_ENABLED } from "../src/lib/okc-z";
 import { STAFF_APPROVAL_KINDS } from "../src/lib/staff-requests";
 
 const DIR = join(process.cwd(), "src/app/panel/yardim");
@@ -181,4 +182,27 @@ test("kasa düzeltmesi: ertesi gün onaya giden her alan (SENSITIVE) yanıtta; s
   assert.ok(flat.includes("20:00'den sonra"));
   assert.doesNotMatch(flat, /\d\d:\d\d'dan sonra/);
   assert.doesNotMatch(CONTENT, /\}&apos;(?:te|ten|da|dan|de|den|ta|tan)\b/);
+});
+
+test("banka POS Z (yazarkasa): ayırt edici cümle, doldurma kapısı; yöneticinin rakamları ve jargon yok (docs/planlar/okc-z.md §14, İlke 8)", () => {
+  const okc = FAQ_TEXTS.find((t) => t.id === "kasa-yazarkasa")?.text ?? "";
+  assert.ok(okc, "kasa-yazarkasa sorusu yok");
+  assert.match(okc, /Banka POS Z raporu \(yazarkasa\)/);
+  assert.match(okc, /Z RAPORU ve KDV dökümü yazar, banka gün sonu fişi değil/);
+  // Kapı kapalıyken okunan rakam yalnız öneri: personel "rakamlar dolar" sanmasın
+  if (OKC_PREFILL_ENABLED) assert.match(okc, /tutmayan rakam turuncu kalır/);
+  else {
+    assert.match(okc, /forma kendiliğinden yazılmaz/);
+    assert.match(okc, /Fotoğraftakini yaz/);
+  }
+  assert.match(CONTENT, /OKC_PREFILL_ENABLED \?/, "metin kapıya bağlı (sabit değişince yardım da değişir)");
+  // Personele yalnız kart satırı: toplam / nakit farkı, kümülatif ve yazarkasa dışı tahsilat anlatılmaz; jargon yok
+  for (const t of [okc, ALL_TEXT]) {
+    assert.doesNotMatch(fold(t), /kümülatif|zincir|küm\.|matrah|cihaz açılışından|toplam farkı|nakit farkı|toplam dışı|yazarkasa dışı/);
+  }
+  assert.match(okc, /yazarkasanın kartı ModPOS'taki kartla karşılaştırılır/);
+  // Akşamın ilk sorusu yazarkasa Z'sini ayrı bölüm olarak anar, eski PR-a yönergesi ("Banka POS'a K.KARTI yazın") kalktı
+  const aksam = FAQ_TEXTS.find((t) => t.id === "kasa-aksam")?.text ?? "";
+  assert.match(aksam, /banka POS Z raporunun \(yazarkasa\)/);
+  assert.doesNotMatch(aksam, /gün sonu fişinin fotoğrafını|Banka POS'a yazarkasanın/);
 });
