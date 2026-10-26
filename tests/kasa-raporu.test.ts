@@ -29,6 +29,7 @@ import {
   nextWarning,
   openingNeedsNote,
   parseEmails,
+  photosLine,
   reportSubject,
   revisionChanges,
   revisionDataOf,
@@ -42,6 +43,7 @@ import {
   type CashReportFields,
   type CashRevisionData,
 } from "../src/lib/cash-report";
+import { okcReconcile } from "../src/lib/okc-z";
 import { renderCashReport } from "../src/server/notify/cash-report-template";
 
 /** Boşlukları (₺ önündeki bölünmez boşluk dahil) düz boşluğa çevirir */
@@ -99,9 +101,10 @@ test("kart farkı (dalga 13 D5): yazarkasa kartı varsa o, yoksa banka gün sonu
   const none = computeCash({ ...day, bankPos: null, okcCard: null });
   assert.equal(none.cardDiff, null);
   assert.equal(none.cardSource, null);
-  // WhatsApp'taki banka gün sonu bloğu yazarkasa kartından etkilenmez (yazarkasanın bloğu b6'da)
-  assert.equal(whatsappText({ ...day, okcCard: 9_000 }, { by: "Ayşe" }), whatsappText(day, { by: "Ayşe" }));
-  assert.doesNotMatch(whatsappText({ ...day, bankPos: null, okcCard: 9_000 }, { by: "Ayşe" }), /Banka POS gün sonu/);
+  // WhatsApp'ın kart satırı da aynı kaynaktan: yazarkasa kartı yazılınca eski "Kart" bloğu yerine banka POS Z bloğu
+  const w = plain(whatsappText({ ...day, bankPos: null, okcCard: 9_000 }, { by: "Ayşe" }));
+  assert.match(w, /\*Banka POS Z raporu\*\n• Kredi kartı: 9\.000 ₺\n⚠️ Yazarkasa kartı ModPOS'tan 850 ₺ fazla$/m);
+  assert.doesNotMatch(w, /\*Kart\*|Banka POS:|Banka gün sonu/);
 });
 
 test("düzeltmeler: yazarkasa alanları ve KDV dökümü (sıralı, kuruşa yuvarlı; aynı uzunlukta farklı döküm değişti)", () => {
@@ -180,7 +183,10 @@ test("WhatsApp metni: ayrıntılı, farklar öne çıkar", () => {
   assert.doesNotMatch(t, /Diğer/, "sıfır olan ödeme türü yazılmaz");
   assert.match(t, /− Gün içinde çıkan: 150 ₺ \(süt, buz\)\n= Olması gereken: 3\.550 ₺\nSayılan: 3\.430 ₺\n🔴 \*120 ₺ EKSİK\*/);
   assert.match(t, /Teslim edilen: 3\.000 ₺ · Ertesi güne devir: 430 ₺/);
-  assert.match(t, /Banka POS gün sonu: 8\.150 ₺ ✅ ModPOS ile aynı/);
+  assert.match(t, /\*ModPOS Z raporu\*\nToplam satış/);
+  // Yazarkasa bölümünden önceki rapor: bugünkü "Kart" bloğu, etiket "Banka POS" (anlam iddia edilmez, okc-z.md §3.7)
+  assert.match(t, /\*Kart\*\nBanka POS: 8\.150 ₺ ✅ ModPOS ile aynı/);
+  assert.doesNotMatch(t, /Banka POS Z raporu|Banka gün sonu/);
   assert.match(t, /Not: Bir müşteri bozuk para eksik verdi$/);
   const off = plain(whatsappText({ ...day, mealCard: 650, countedCash: 3_550, bankPos: 8_050 }, { by: "Ali", revision: 2 }));
   assert.match(off, /\(güncellendi\)/);
@@ -202,9 +208,117 @@ test("e-posta: konu, sonuç, döküm; not kaçışlı, metin sürümü yıldızs
   assert.match(plain(m.text), /120 ₺ EKSİK/);
 });
 
+/**
+ * Yazarkasa Z'li gün (docs/planlar/okc-z.md §8): ModPOS nakdi yazarkasadan 120 ₺ fazla, ModPOS toplamı online satış ve
+ * nakit farkı kadar fazla; kart ve banka gün sonu aynı; tek oranlı (%10) gün
+ */
+const okcDay: CashReportFields = {
+  ...day,
+  zNo: "1235",
+  receipts: 151,
+  zTotal: 13_095.5,
+  cash: 2_745,
+  card: 8_915,
+  mealCard: 0,
+  online: 1_435.5,
+  other: 0,
+  openingCash: 500,
+  cashOut: 0,
+  cashOutNote: null,
+  countedCash: 3_245,
+  handedOver: 0,
+  bankPos: 8_915,
+  note: null,
+  okcZNo: "0188",
+  okcReceipts: 143,
+  okcTotal: 11_540,
+  okcVatTotal: 1_049.09,
+  okcVat: [{ rate: 10, total: 11_540, vat: 1_049.09 }],
+  okcCash: 2_625,
+  okcCard: 8_915,
+  okcMealCard: 0,
+  okcOther: 0,
+};
+
+test("WhatsApp: banka POS Z bloğu yalnız Z no, nakit, kart, kart satırı ve banka gün sonu; toplam / nakit farkı yok", () => {
+  const t = plain(whatsappText(okcDay, { by: "Ayşe" }));
+  assert.match(t, /\n\n\*Banka POS Z raporu\*\nZ no: 0188\n• Nakit: 2\.625 ₺\n• Kredi kartı: 8\.915 ₺\n✅ Kart ModPOS ile aynı\nBanka gün sonu: 8\.915 ₺(\n\n|$)/);
+  assert.doesNotMatch(t, /\*Kart\*|Banka POS:/, "eski blok yok");
+  // Yazarkasanın toplamı, KDV'si, fiş sayısı ve yöneticinin karşılaştırma satırları personelin metnine girmez (İlke 8, D13)
+  assert.doesNotMatch(t, /Günlük toplam|11\.540|KDV|1\.049|143 fiş|ℹ️/);
+  for (const l of okcReconcile(okcDay, "admin").filter((x) => x.key !== "okc-card")) assert.ok(!t.includes(plain(l.text)), `WhatsApp: ${l.key}`);
+  assert.doesNotMatch(t, /ModPOS toplamı|yazarkasa nakdi|nakitten|iki Z/i);
+  // Kart tutmuyor: kısa uyarı satırı; yazarkasa kartı yoksa banka gün sonu kart kaynağıdır (D5)
+  assert.match(plain(whatsappText({ ...okcDay, okcCard: 9_035, okcCash: 2_505 }, { by: "Ayşe" })), /• Kredi kartı: 9\.035 ₺\n⚠️ Yazarkasa kartı ModPOS'tan 120 ₺ fazla\nBanka gün sonu: 8\.915 ₺/);
+  assert.match(plain(whatsappText({ ...okcDay, okcCard: null, bankPos: 8_795 }, { by: "Ayşe" })), /⚠️ Banka gün sonu ModPOS'tan 120 ₺ az\nBanka gün sonu: 8\.795 ₺/);
+  // Yazarkasa kendi içinde tutmuyor: WhatsApp'a yazılmaz (yalnız kart satırı, D13); formda ve e-postada görünür
+  const self = plain(whatsappText({ ...okcDay, okcCash: 2_000 }, { by: "Ayşe" }));
+  assert.ok(okcReconcile({ ...okcDay, okcCash: 2_000 }, "staff").some((l) => l.key === "okc-self"));
+  assert.doesNotMatch(self, /tutmuyor|turuncu/);
+  // Banka gün sonu yazılmadıysa satırı yok; ModPOS bloğu ve kasa aynen
+  assert.doesNotMatch(plain(whatsappText({ ...okcDay, bankPos: null }, { by: "Ayşe" })), /Banka gün sonu/);
+  assert.match(t, /\*ModPOS Z raporu\*\nToplam satış: 13\.095,50 ₺\n• Nakit: 2\.745 ₺/);
+  assert.match(t, /✅ \*Kasa tutuyor\*/);
+  // Fotoğraftan farklı yazılan yazarkasa rakamı: bloğa girmeyen (günlük toplam, KDV) yalnız adıyla, kart değeriyle
+  const diffs = [
+    { field: "okcTotal" as const, label: "Günlük toplam", photo: 11_450, saved: 11_540, confidence: "high" as const, excused: false },
+    { field: "okcV10" as const, label: "%10 KDV", photo: 1_040.91, saved: 1_049.09, confidence: "high" as const, excused: false },
+    { field: "okcCard" as const, label: "Yazarkasa kredi kartı", photo: 8_951, saved: 8_915, confidence: "high" as const, excused: false },
+  ];
+  const wd = plain(whatsappText(okcDay, { by: "Ayşe", photoDiffs: diffs }));
+  assert.match(wd, /⚠️ Fotoğraftan farklı yazılan: Günlük toplam \(banka POS Z\); %10 KDV \(banka POS Z\); Yazarkasa kredi kartı \(fotoğrafta 8\.951 ₺\)\n/);
+  assert.doesNotMatch(wd, /11\.450|1\.040/);
+  // E-posta (yönetici) değerleriyle
+  const md = renderCashReport(okcDay, { by: "Ayşe", revision: 1, submittedAt: new Date(), photoDiffs: diffs });
+  assert.match(plain(md.text), /Günlük toplam \(fotoğrafta 11\.450 ₺\); %10 KDV \(fotoğrafta 1\.040,91 ₺\)/);
+  // HTML'de yazarkasa rakamının farkı banka POS Z bölümünün altında, ModPOS'unki kasanın altında
+  const mh = plain(renderCashReport(okcDay, { by: "Ayşe", revision: 1, submittedAt: new Date(), photoDiffs: [...diffs, { field: "cash" as const, label: "Nakit", photo: 2_754, saved: 2_745, confidence: "high" as const, excused: false }] }).html);
+  assert.match(mh, /Fotoğraftan farklı yazılan: Nakit \(fotoğrafta 2\.754 ₺\)</);
+  assert.match(mh, /Fotoğraftan farklı yazılan: Günlük toplam \(fotoğrafta 11\.450 ₺\); %10 KDV \(fotoğrafta 1\.040,91 ₺\); Yazarkasa kredi kartı \(fotoğrafta 8\.951 ₺\)</);
+  assert.ok(mh.indexOf("Günlük toplam (fotoğrafta") > mh.indexOf("Banka POS Z raporu (yazarkasa)"));
+  assert.ok(mh.indexOf("Nakit (fotoğrafta") < mh.indexOf("Banka POS Z raporu (yazarkasa)"));
+});
+
+test("e-posta: banka POS Z bölümü yöneticinin bütün satırlarıyla; metin sürümünde günlük toplam, KDV ve karşılaştırmalar", () => {
+  const m = renderCashReport(okcDay, { by: "Ayşe", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z"), photos: { z: true, okc: true, pos: false } });
+  const html = plain(m.html);
+  assert.match(html, /ModPOS Z raporu<\/td>/);
+  assert.match(html, /Banka POS Z raporu \(yazarkasa\) · Z no 0188 · 143 fiş<\/td>/);
+  assert.match(html, />Günlük toplam<div[^>]*>KDV 1\.049,09 ₺<\/div><\/td>\s*<td[^>]*>11\.540 ₺</);
+  assert.match(html, />%10<div[^>]*>KDV 1\.049,09 ₺<\/div><\/td>\s*<td[^>]*>11\.540 ₺</);
+  assert.match(html, />Kredi kartı<\/td>\s*<td[^>]*>8\.915 ₺</);
+  assert.match(html, />Banka gün sonu<\/td>\s*<td[^>]*>8\.915 ₺</);
+  // Yöneticinin satırları (okcReconcile "admin") e-postada; eski "Kart" bölümü yok
+  for (const l of okcReconcile(okcDay, "admin")) assert.ok(html.includes(plain(l.text).replace(/'/g, "&#39;")), `e-posta: ${l.key}`);
+  assert.deepEqual(
+    okcReconcile(okcDay, "admin").map((l) => l.key),
+    ["okc-card", "okc-cash", "okc-total", "okc-bank"],
+  );
+  assert.doesNotMatch(html, /ModPOS kart/);
+  const text = plain(m.text);
+  assert.match(text, /Banka POS Z raporu\nZ no: 0188\nGünlük toplam: 11\.540 ₺ \(KDV 1\.049,09 ₺\) · 143 fiş\nKDV dökümü: %10 11\.540 ₺ \(KDV 1\.049,09 ₺\)\n• Nakit: 2\.625 ₺\n• Kredi kartı: 8\.915 ₺\n✅ Kart ModPOS ile aynı\nBanka gün sonu: 8\.915 ₺\n/);
+  assert.match(text, /ℹ️ Yazarkasa nakdi, ModPOS'taki nakitten 120 ₺ az\.\nℹ️ ModPOS toplamı yazarkasadan 1\.555,50 ₺ fazla\.\n✅ Banka gün sonu yazarkasa kartıyla aynı\./);
+  assert.match(text, /📷 ModPOS Z ve banka POS Z fotoğrafı panelde/);
+  assert.doesNotMatch(m.text, /\*/);
+  // Online ve diğer satış kadar fark: açıklamalı; yemek kartı ve diğer (sıfır değilse) e-postada; kendi içinde ayrıntılı
+  const off = renderCashReport({ ...okcDay, cash: 2_625, zTotal: 12_975.5, countedCash: 3_125, okcMealCard: 50, okcCash: 2_575, mealCard: 0 }, { by: "Ayşe", revision: 1, submittedAt: new Date() });
+  assert.match(plain(off.text), /ℹ️ ModPOS toplamı 1\.435,50 ₺ fazla; online ve diğer satışlar kadar \(yazarkasadan geçmez\)\./);
+  assert.match(plain(off.text), /• Yemek kartı: 50 ₺/);
+  const selfOff = renderCashReport({ ...okcDay, okcCash: 2_000 }, { by: "Ayşe", revision: 1, submittedAt: new Date() });
+  assert.match(plain(selfOff.text), /⚠️ Yazarkasa Z'si kendi içinde tutmuyor: /);
+  assert.match(plain(selfOff.html), /Yazarkasa Z&#39;si kendi içinde tutmuyor: /);
+  // Eski rapor (yazarkasa alanı yok): bugünkü "Kart" bölümü, etiket "Banka POS"; banka POS Z bölümü yok
+  const old = renderCashReport({ ...day, bankPos: 8_050 }, { by: "Zeynep", revision: 1, submittedAt: new Date() });
+  assert.match(plain(old.html), />Kart<\/td>/);
+  assert.match(plain(old.html), />Banka POS<\/td>\s*<td[^>]*>8\.050 ₺</);
+  assert.match(plain(old.html), /Banka POS ModPOS&#39;taki karttan 100 ₺ az\./);
+  assert.doesNotMatch(old.html, /Banka POS Z raporu|Günlük toplam|Banka gün sonu/);
+  assert.match(plain(old.text), /Kart\nBanka POS: 8\.050 ₺ ⚠️ ModPOS'tan 100 ₺ az/);
+});
+
 test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı yazılan; kasadan çıkanlar altında; adres yok", () => {
   const extras = {
-    photos: { z: true, pos: true },
+    photos: { z: true, okc: true, pos: false },
     photoDiffs: [{ field: "card" as const, label: "Kart", photo: 8_915, saved: 8_150, confidence: "high" as const, excused: false }],
     cashOuts: [
       { kind: "harcama" as const, amount: 112.5, store: "Migros", description: "süt, beyaz peynir", photo: true },
@@ -213,12 +327,19 @@ test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı 
     ],
   };
   const t = plain(whatsappText(day, { by: "Zeynep", ...extras }));
-  assert.match(t, /Z no: 1234 · 87 fiş\n📷 Z ve POS fotoğrafı panelde\n⚠️ Fotoğraftan farklı yazılan: Kart \(fotoğrafta 8\.915 ₺\)\n/);
+  assert.match(t, /Z no: 1234 · 87 fiş\n📷 ModPOS Z ve banka POS Z fotoğrafı panelde\n⚠️ Fotoğraftan farklı yazılan: Kart \(fotoğrafta 8\.915 ₺\)\n/);
   assert.match(t, /− Gün içinde çıkan: 150 ₺ \(süt, buz\)\n  · Migros \(süt, beyaz peynir\) 112,50 ₺ 📷\n  · buz 37,50 ₺\n  · Teslim \(patrona\) 0 ₺\n= Olması gereken/);
-  assert.match(plain(whatsappText(day, { by: "Zeynep", photos: { z: true, pos: false } })), /📷 Z fotoğrafı panelde/);
-  assert.match(plain(whatsappText(day, { by: "Zeynep", photos: { z: false, pos: true } })), /📷 POS fotoğrafı panelde/);
+  // photosLine({ z, okc, pos }): ModPOS Z, banka POS Z (yazarkasa) ve eski banka POS fotoğrafı ("banka fişi") ayrı adlarla
+  assert.equal(photosLine({ z: true, okc: false, pos: false }), "📷 ModPOS Z fotoğrafı panelde");
+  assert.equal(photosLine({ z: false, okc: true, pos: false }), "📷 banka POS Z fotoğrafı panelde");
+  assert.equal(photosLine({ z: false, okc: false, pos: true }), "📷 banka fişi fotoğrafı panelde");
+  assert.equal(photosLine({ z: true, okc: false, pos: true }), "📷 ModPOS Z ve banka fişi fotoğrafı panelde");
+  assert.equal(photosLine({ z: true, okc: true, pos: true }), "📷 ModPOS Z, banka POS Z ve banka fişi fotoğrafı panelde");
+  assert.equal(photosLine({ z: false, okc: false, pos: false }), null);
+  assert.equal(photosLine(null), null);
+  assert.match(plain(whatsappText(day, { by: "Zeynep", photos: { z: true, okc: false, pos: false } })), /📷 ModPOS Z fotoğrafı panelde/);
   // Fotoğrafsız rapor eskisiyle aynı
-  assert.equal(whatsappText(day, { by: "Zeynep", photos: { z: false, pos: false }, photoDiffs: [], cashOuts: [] }), whatsappText(day, { by: "Zeynep" }));
+  assert.equal(whatsappText(day, { by: "Zeynep", photos: { z: false, okc: false, pos: false }, photoDiffs: [], cashOuts: [] }), whatsappText(day, { by: "Zeynep" }));
   // Altıdan fazla satır: kalanı tek satırda
   const many = Array.from({ length: 8 }, (_, i) => ({ kind: "harcama" as const, amount: 10, store: `Dükkân ${i + 1}`, description: null, photo: false }));
   const tm = plain(whatsappText({ ...day, cashOut: 80 }, { by: "Zeynep", cashOuts: many }));
@@ -226,10 +347,11 @@ test("fotoğraflı rapor: WhatsApp başta 📷 satırı ve fotoğraftan farklı 
   assert.doesNotMatch(tm, /Dükkân 7/);
 
   const m = renderCashReport(day, { by: "Zeynep", revision: 1, submittedAt: new Date("2026-10-21T20:15:00Z"), ...extras });
-  assert.match(m.html, /Fotoğraflar panelde: Z raporu, banka POS/);
+  assert.match(m.html, /Fotoğraflar panelde: ModPOS Z, banka POS Z</);
+  assert.match(renderCashReport(day, { by: "Z", revision: 1, submittedAt: new Date(), photos: { z: true, okc: false, pos: true } }).html, /Fotoğraflar panelde: ModPOS Z, banka fişi</);
   assert.match(plain(m.html), /Fotoğraftan farklı yazılan: Kart \(fotoğrafta 8\.915 ₺\)/);
   assert.match(plain(m.html), /· Migros \(süt, beyaz peynir\) 112,50 ₺ 📷/);
-  assert.match(plain(m.text), /📷 Z ve POS fotoğrafı panelde/);
+  assert.match(plain(m.text), /📷 ModPOS Z ve banka POS Z fotoğrafı panelde/);
   for (const out of [m.html, m.text, t]) {
     assert.doesNotMatch(out, /\/api\/foto/, "fotoğrafın adresi metne girmez");
     assert.doesNotMatch(out, /blob\.vercel-storage/);

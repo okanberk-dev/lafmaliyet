@@ -173,6 +173,16 @@ export async function sendCashTestEmail() {
       offRevenue: null,
       discounts: null,
       note: "Örnek rapor",
+      // Banka POS Z (yazarkasa) bölümü de görünsün (docs/planlar/okc-z.md §8): tek oranlı gün, kart ModPOS'la aynı
+      okcZNo: "0001",
+      okcReceipts: 42,
+      okcTotal: 10_000,
+      okcVatTotal: 909.09,
+      okcVat: [{ rate: 10, total: 10_000, vat: 909.09 }],
+      okcCash: 2_500,
+      okcCard: 7_000,
+      okcMealCard: 500,
+      okcOther: 0,
     };
     const msg = renderCashReport(sample, { by: last?.submittedByName ?? "Örnek", revision: 1, submittedAt: new Date() });
     const notify = await loadNotifySettings();

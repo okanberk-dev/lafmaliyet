@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { whatsappText } from "../src/lib/cash-report";
 import { okcReconcile } from "../src/lib/okc-z";
 import { normalizeOkc, toStaffReading } from "../src/lib/photo-read/okc";
 import { KasaOkcRaw } from "../src/lib/photo-read/schemas";
@@ -199,4 +200,47 @@ test("yazarkasa Z'si: personelin okuma yanıtında kümülatif ve yöneticinin s
     ["okc-card", "okc-self"],
   );
   assert.ok(okcReconcile(fields, "admin").some((l) => (OKC_ADMIN_LINES as readonly string[]).includes(l.key)));
+});
+
+test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satırlarını taşımaz; e-postanın yönetici metni yalnız şablonda", () => {
+  const f = {
+    date: "2026-10-21",
+    zNo: "1235",
+    receipts: 151,
+    zTotal: 13095.5,
+    cash: 2745,
+    card: 8915,
+    mealCard: 0,
+    online: 1435.5,
+    other: 0,
+    openingCash: 500,
+    cashOut: 0,
+    cashOutNote: null,
+    countedCash: 3245,
+    handedOver: 0,
+    bankPos: 8900,
+    offRevenue: null,
+    note: null,
+    okcZNo: "0188",
+    okcReceipts: 143,
+    okcTotal: 11540,
+    okcVatTotal: 1049.09,
+    okcVat: [{ rate: 10, total: 11540, vat: 1049.09 }],
+    okcCash: 2000,
+    okcCard: 8915,
+    okcMealCard: 0,
+    okcOther: 0,
+  };
+  const t = whatsappText(f, { by: "Ayşe" });
+  const admin = okcReconcile(f, "admin").filter((l) => l.key !== "okc-card");
+  assert.ok(admin.length >= 3, "yöneticinin satırları var (nakit, toplam, banka, kendi içinde)");
+  for (const l of admin) assert.ok(!t.includes(l.text), `WhatsApp: ${l.key}`);
+  // Yazarkasanın günlük toplamı ve KDV'si WhatsApp'ta yok (ModPOS toplamıyla farkı çıkarılamasın)
+  assert.ok(!/11\.540|1\.049|Günlük toplam|KDV/.test(t.replace(/ /g, " ")));
+  // Yöneticinin metni (cashReportText "admin") yalnız e-posta şablonunda; personelin yolları whatsappText'i çağırır
+  for (const file of ["src/server/actions/cash-report.ts", "src/app/panel/kasa/page.tsx", "src/app/panel/kasa/cash-history.tsx"]) {
+    assert.doesNotMatch(read(file), /cashReportText/, file);
+  }
+  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, meta, "admin"\)/);
+  assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
 });

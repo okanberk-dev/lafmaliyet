@@ -1,6 +1,6 @@
 import { CASH_OUT_LINES_SHOWN, cashOutShortLine, type CashOutLine } from "./cash-outs";
 import { money } from "./format";
-import { sameVat, type OkcVatLine } from "./okc-z";
+import { okcHasFigures, okcReconcile, sameVat, type OkcReconcileLine, type OkcVatLine } from "./okc-z";
 import { photoDiffText, type PhotoDiff } from "./photo-read/kasa";
 import { addDays, dayMonthTR, daysBetween, longDateTR, todayTR } from "./reminders";
 
@@ -637,18 +637,29 @@ export function paymentLines(f: CashReportFields): { label: string; amount: numb
  * adresi hiçbir zaman metne girmez: "Panelde aç" yeterli.
  */
 export interface CashReportExtras {
-  /** Rapora bağlı fotoğraflar */
-  photos?: { z: boolean; pos: boolean } | null;
+  /**
+   * Rapora bağlı fotoğraflar: `z` ModPOS Z'si (`kasa-z`), `okc` banka POS Z'si (yazarkasa, `kasa-okc`; bölümünde
+   * çekilen banka gün sonu fişi de), `pos` yazarkasa bölümünden önceki eski banka POS fotoğrafı (`kasa-pos`, banka fişi)
+   */
+  photos?: { z: boolean; okc: boolean; pos: boolean } | null;
   /** Net okunmuş ama farklı yazılan alanlar (src/lib/photo-read/kasa.ts suspiciousDiffs) */
   photoDiffs?: PhotoDiff[] | null;
   /** Günün kasadan çıkan satırları */
   cashOuts?: (CashOutLine & { photo: boolean })[] | null;
 }
 
-/** "📷 Z ve POS fotoğrafı panelde" */
+/** Fotoğrafların adları, formdaki sırayla: "ModPOS Z", "banka POS Z", eski "banka fişi" (e-postanın satırı da bunlar) */
+export function photoNames(p: CashReportExtras["photos"]): string[] {
+  if (!p) return [];
+  return [p.z ? "ModPOS Z" : null, p.okc ? "banka POS Z" : null, p.pos ? "banka fişi" : null].filter((n): n is string => n !== null);
+}
+
+/** "📷 ModPOS Z ve banka POS Z fotoğrafı panelde" (docs/planlar/okc-z.md §8) */
 export function photosLine(p: CashReportExtras["photos"]): string | null {
-  if (!p || (!p.z && !p.pos)) return null;
-  return `📷 ${p.z && p.pos ? "Z ve POS" : p.z ? "Z" : "POS"} fotoğrafı panelde`;
+  const names = photoNames(p);
+  if (!names.length) return null;
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} ve ${names[names.length - 1]}`;
+  return `📷 ${list} fotoğrafı panelde`;
 }
 
 /** Kasadan çıkan satırları: en çok altısı, kalanı "ve 2 kalem daha" */
@@ -689,20 +700,85 @@ export function byLine(by: string, countedBy?: string | null): string {
 }
 
 /**
+ * Rapor metninin okuru: `"staff"` WhatsApp metni (personel de gönderir; grup güvenli bir kanal değildir), `"admin"`
+ * yöneticinin seçtiği adreslere giden e-postanın metin sürümü. Yazarkasanın toplamı, KDV'si ve ModPOS'la öteki
+ * karşılaştırmaları yalnız `"admin"`de (docs/planlar/okc-z.md İlke 8, D13, §8)
+ */
+export type CashTextAudience = "staff" | "admin";
+
+/** WhatsApp metninde değeriyle yazılan yazarkasa alanları (bloğun kendi rakamları); ötekiler yalnız adıyla (İlke 8) */
+const OKC_STAFF_DIFF_VALUES: readonly PhotoDiff["field"][] = ["okcZNo", "okcReceipts", "okcCash", "okcCard"];
+
+/**
+ * Fotoğraftan farklı yazılan alan: "Kart (fotoğrafta 8.915 ₺)". Personelin metninde bloğa girmeyen yazarkasa rakamı
+ * (günlük toplam, KDV, oranlar…) yalnız adıyla: "Günlük toplam (banka POS Z)"
+ */
+function diffLine(d: PhotoDiff, audience: CashTextAudience): string {
+  if (audience === "admin" || !d.field.startsWith("okc") || OKC_STAFF_DIFF_VALUES.includes(d.field)) return photoDiffText(d, false);
+  return d.label.startsWith("Yazarkasa") ? d.label : `${d.label} (banka POS Z)`;
+}
+
+const TONE_MARK: Record<OkcReconcileLine["tone"], string> = { good: "✅", info: "ℹ️", warn: "⚠️" };
+const moreLess = (d: number) => `${money(Math.abs(d))} ${d > 0 ? "fazla" : "az"}`;
+
+/**
+ * Banka POS Z bloğu (docs/planlar/okc-z.md §8). WhatsApp (`"staff"`): Z no, nakit, kredi kartı, kart satırı ve banka
+ * gün sonu; yazarkasanın günlük toplamı, KDV'si, fiş sayısı ve ModPOS'la öteki karşılaştırmalar (toplam, nakit, yemek
+ * kartı, banka, kendi içinde) yalnız e-postada (`"admin"`). Kart satırı `computeCash`'in kaynağıyla (D5). Yazarkasa
+ * alanları boş raporda (eski ya da yalnız banka gün sonu yazılmış) bugünkü "Kart" bloğu, etiket "Banka POS" (§3.7:
+ * eski günlerde alan banka gün sonunu da yazarkasanın kart satırını da tutabilir, anlam iddia edilmez)
+ */
+export function okcTextBlock(f: CashReportFields, audience: CashTextAudience): string[] {
+  const c = computeCash(f);
+  const same = (d: number) => Math.abs(d) < CASH_TOLERANCE;
+  if (!okcHasFigures(f)) {
+    if (c.cardDiff === null) return [];
+    return ["*Kart*", `Banka POS: ${money(f.bankPos)} ${same(c.cardDiff) ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${moreLess(c.cardDiff)}`}`];
+  }
+  const admin = audience === "admin";
+  const out = ["*Banka POS Z raporu*"];
+  if (f.okcZNo) out.push(`Z no: ${f.okcZNo}`);
+  if (admin && f.okcTotal != null) {
+    out.push(`Günlük toplam: ${money(f.okcTotal)}${f.okcVatTotal != null ? ` (KDV ${money(f.okcVatTotal)})` : ""}${f.okcReceipts ? ` · ${f.okcReceipts} fiş` : ""}`);
+  }
+  if (admin && f.okcVat?.length) out.push(`KDV dökümü: ${f.okcVat.map((l) => `%${l.rate} ${money(l.total)} (KDV ${money(l.vat)})`).join(" · ")}`);
+  if (f.okcCash != null) out.push(`• Nakit: ${money(f.okcCash)}`);
+  if (f.okcCard != null) out.push(`• Kredi kartı: ${money(f.okcCard)}`);
+  if (admin && f.okcMealCard) out.push(`• Yemek kartı: ${money(f.okcMealCard)}`);
+  if (admin && f.okcOther) out.push(`• Diğer: ${money(f.okcOther)}`);
+  if (c.cardDiff !== null) {
+    out.push(same(c.cardDiff) ? "✅ Kart ModPOS ile aynı" : `⚠️ ${c.cardSource === "okc" ? "Yazarkasa kartı" : "Banka gün sonu"} ModPOS'tan ${moreLess(c.cardDiff)}`);
+  }
+  if (f.bankPos !== null) out.push(`Banka gün sonu: ${money(f.bankPos)}`);
+  // Yöneticinin satırları (kart satırı yukarıda kısa hâliyle)
+  if (admin) for (const l of okcReconcile(f, "admin")) if (l.key !== "okc-card") out.push(`${TONE_MARK[l.tone]} ${l.text}`);
+  return out;
+}
+
+/**
  * WhatsApp'a yapıştırılacak ayrıntılı rapor (WhatsApp *kalın* yazar). Kasa farkı, kart farkı ve Z toplamının ödeme
- * türleriyle tutmaması öne çıkarılır.
+ * türleriyle tutmaması öne çıkarılır. Her zaman personelin metni (yönetici gönderse de gruba gider)
  */
 export function whatsappText(f: CashReportFields, meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity): string {
+  return cashReportText(f, meta, "staff");
+}
+
+/** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
+export function cashReportText(
+  f: CashReportFields,
+  meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity,
+  audience: CashTextAudience,
+): string {
   const c = computeCash(f);
   const head = [`*L'Affogato · Gün sonu kasa raporu*${meta.revision && meta.revision > 1 ? " (güncellendi)" : ""}`, `${longDateTR(f.date)} · ${byLine(meta.by, meta.countedBy)}`];
   const zMeta = [f.zNo ? `Z no: ${f.zNo}` : null, f.receipts ? `${f.receipts} fiş` : null].filter(Boolean).join(" · ");
   if (zMeta) head.push(zMeta);
   const photos = photosLine(meta.photos);
   if (photos) head.push(photos);
-  if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => photoDiffText(d, false)).join("; ")}`);
+  if (meta.photoDiffs?.length) head.push(`⚠️ Fotoğraftan farklı yazılan: ${meta.photoDiffs.map((d) => diffLine(d, audience)).join("; ")}`);
   if (meta.revision && meta.revision > 1 && meta.changes?.length) head.push(`*Değişen:* ${changesText(meta.changes)}`);
   const outs = cashOutLines(meta.cashOuts);
-  const z = ["*Z raporu (ModPOS)*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
+  const z = ["*ModPOS Z raporu*", `Toplam satış: ${money(f.zTotal)}`, ...paymentLines(f).map((p) => `• ${p.label}: ${money(p.amount)}`)];
   if (f.discounts) z.push(`• İndirim: ${money(f.discounts)}`);
   if (f.offRevenue) z.push(`• Ödenmez / ikram (ciro dışı): ${money(f.offRevenue)}`);
   if (Math.abs(c.paymentsDiff) >= CASH_TOLERANCE) z.push(`⚠️ Ödeme türleri toplamı (${money(c.paymentsTotal)}) Z toplamından ${money(Math.abs(c.paymentsDiff))} ${c.paymentsDiff > 0 ? "fazla" : "az"}`);
@@ -719,16 +795,7 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
     ...(f.handedOver ? [`Teslim edilen: ${money(f.handedOver)} · Ertesi güne devir: ${money(c.carryOver)}`] : [`Ertesi güne devir: ${money(c.carryOver)}`]),
     ...(meta.next ? [`⚠️ ${nextWarning(meta.next)}`] : []),
   ];
-  // Banka gün sonu bloğu bugünkü gibi (yazarkasa kartının bloğu WhatsApp'a dalga 13 b6'da gelir; kart farkı o zaman
-  // computeCash'in kaynağıyla)
-  const bankDiff = f.bankPos === null ? null : r2(f.bankPos - f.card);
-  const kart =
-    bankDiff === null
-      ? []
-      : [
-          "*Kart*",
-          `Banka POS gün sonu: ${money(f.bankPos)} ${Math.abs(bankDiff) < CASH_TOLERANCE ? "✅ ModPOS ile aynı" : `⚠️ ModPOS'tan ${money(Math.abs(bankDiff))} ${bankDiff > 0 ? "fazla" : "az"}`}`,
-        ];
+  const kart = okcTextBlock(f, audience);
   const waste = meta.waste?.ikram || meta.waste?.zayi ? ["*Zayi & ikram*", ...(meta.waste.ikram ? [`İkram: ${meta.waste.ikram}`] : []), ...(meta.waste.zayi ? [`Zayi: ${meta.waste.zayi}`] : [])] : [];
   const blocks = [head, z, kasa, kart, waste, f.note ? [`Not: ${f.note}`] : []].filter((b) => b.length);
   return blocks.map((b) => b.join("\n")).join("\n\n");
