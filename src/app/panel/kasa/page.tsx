@@ -264,7 +264,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       proposedBy={proposedBy}
       photoRemoval={removal}
       prevOkcZ={prevOkc.z}
-      okcAdmin={admin && report ? okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) : null}
+      // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
+      {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)

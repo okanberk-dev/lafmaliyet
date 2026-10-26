@@ -9,7 +9,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertNoCostKeys } from "./helpers/leak-scan";
+import { okcReconcile } from "../src/lib/okc-z";
+import { normalizeOkc, toStaffReading } from "../src/lib/photo-read/okc";
+import { KasaOkcRaw } from "../src/lib/photo-read/schemas";
+
+import { assertNoCostKeys, OKC_ADMIN_KEYS, stripComments } from "./helpers/leak-scan";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -34,6 +38,8 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/cash-outs.tsx",
   "src/app/panel/kasa/cash-out-dialog.tsx",
   "src/app/panel/kasa/cash-photos.tsx",
+  "src/app/panel/kasa/okc-card.tsx",
+  "src/app/panel/kasa/cash-summary.tsx",
   "src/server/closed-days.ts",
   "src/server/closed-day-requests.ts",
   "src/server/actions/closed-days.ts",
@@ -139,4 +145,57 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   const page = read("src/app/panel/kasa/page.tsx");
   const bar = page.slice(page.indexOf("async function closedBarFor"));
   assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
+});
+
+/**
+ * Yazarkasanın (banka POS) mali Z'si (docs/planlar/okc-z.md İlke 8, D13, D17, §11): kümülatif sayaç, yazarkasa dışı
+ * tahsilat ve yöneticinin karşılaştırma satırları (toplam, nakit, yemek kartı, banka) personele gitmez. COST_KEYS
+ * bunları kapsamaz; liste helpers/leak-scan.ts'te (OKC_ADMIN_KEYS). Çalışan sunucunun RSC yükünü scripts/personel-sizinti.ts
+ * aynı listeyle tarar
+ */
+const OKC_ADMIN_LINES = ["okc-total", "okc-cash", "okc-meal", "okc-bank"] as const;
+const keyRe = (k: string) => new RegExp(`(?:^|[^A-Za-z0-9_$])"?${k}"?\\s*:`, "m");
+
+test("yazarkasa Z'si: personelin kartında kümülatif, toplam dışı tahsilat ve yöneticinin karşılaştırma satırı yok", () => {
+  const card = stripComments(read("src/app/panel/kasa/okc-card.tsx"));
+  for (const k of OKC_ADMIN_KEYS) assert.doesNotMatch(card, keyRe(k), `okc-card.tsx: ${k}`);
+  for (const k of OKC_ADMIN_LINES) assert.ok(!card.includes(k), `okc-card.tsx: ${k}`);
+  // Karşılaştırma satırları kime göre: kart personelde "staff" ile çağırır (yönetici formu düzenlerken "admin")
+  assert.match(card, /okcReconcile\(\{[^\n]*\}, audience\)/);
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  assert.match(form, /audience=\{photoUi\.admin \? "admin" : "staff"\}/);
+  // Kayıtlı raporun kümülatif satırı yalnız yönetici dalında
+  const summary = read("src/app/panel/kasa/cash-summary.tsx");
+  assert.match(summary, /\{audience === "admin" && okcAdmin \? <OkcCumulative view=\{okcAdmin\} \/> : null\}/);
+});
+
+test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numarayı, DTO'yu kime göre verir", () => {
+  const page = read("src/app/panel/kasa/page.tsx");
+  // Önceki yazarkasa Z'si forma yalnız `.z` ({ date, zNo }) olarak; kümülatif (`.cum`) yalnız yöneticinin satırında
+  assert.match(page, /prevOkcZ=\{prevOkc\.z\}/g);
+  assert.equal([...page.matchAll(/prevOkcZ=\{([^}]*)\}/g)].filter((m) => m[1] !== "prevOkc.z").length, 0);
+  assert.match(page, /\{\.\.\.\(admin && report \? \{ okcAdmin: okcAdminView\(/);
+  assert.match(page, /getCashReport\(date, user\.role\)/);
+  // DTO: sunucu sütunları yalnız "admin" ile
+  const dto = read("src/server/data/cash-reports.ts");
+  assert.match(dto, /return audience === "admin" \? \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \} : dto;/);
+});
+
+test("yazarkasa Z'si: personelin okuma yanıtında kümülatif ve yöneticinin satırları yok; karşılaştırmada yalnız kart ve kendi içinde", () => {
+  const rec = JSON.parse(read("tests/fixtures/foto/okc.json")) as { json: unknown };
+  const reading = normalizeOkc(KasaOkcRaw.parse(rec.json), { day: "2026-10-21", prev: { z: { date: "2026-10-20", zNo: "0187" }, cum: { date: "2026-10-20", zNo: "0187", cumTotal: 1247050, cumVat: 117731.82 } } });
+  assert.ok(reading.okcAdmin?.cumTotal, "yöneticinin okumasında kümülatif var");
+  const staff = JSON.stringify(toStaffReading(reading));
+  for (const k of OKC_ADMIN_KEYS) assert.doesNotMatch(staff, new RegExp(`"${k}":`), `okuma: ${k}`);
+  assert.ok(!staff.includes("1.259.350") && !staff.includes("1259350"), "kümülatif rakamı metinde de yok");
+  const fields = { zTotal: 12975.5, cash: 3420.5, card: 8915, mealCard: 640, online: 500, other: 0, bankPos: 8900, okcZNo: "0188", okcTotal: 12300, okcCash: 3180, okcCard: 8480, okcMealCard: 640, okcOther: 0 };
+  assert.deepEqual(
+    okcReconcile(fields, "staff").map((l) => l.key),
+    ["okc-card"],
+  );
+  assert.deepEqual(
+    okcReconcile({ ...fields, okcCash: 3000 }, "staff").map((l) => l.key),
+    ["okc-card", "okc-self"],
+  );
+  assert.ok(okcReconcile(fields, "admin").some((l) => (OKC_ADMIN_LINES as readonly string[]).includes(l.key)));
 });
