@@ -198,11 +198,11 @@ test("Z raporu: soluk fiş, okunamayan toplam ve ödeme bölümü, metin ile say
   assert.deepEqual(x.values, {});
 });
 
-test("Z bölümüne POS fişi: belge türü yanlışsa hiçbir alan dolmaz, Kart bölümüne okutulabilir", () => {
+test("Z bölümüne POS fişi: belge türü yanlışsa hiçbir alan dolmaz, Banka POS Z bölümüne okutulabilir", () => {
   const r = normalizeZ(WRONG, { day: "2026-10-21", prevZNo: null });
   assert.equal(r.ok, false);
-  assert.equal(r.switchTo, "kasa-pos");
-  assert.equal(r.error, "Bu bir banka POS gün sonu fişi gibi görünüyor, Z raporu değil.");
+  assert.equal(r.switchTo, "kasa-okc");
+  assert.equal(r.error, "Bu bir banka gün sonu fişi gibi görünüyor, Z raporu değil.");
   assert.deepEqual(r.values, {});
   assert.deepEqual(prefillPlan(r, { card: "" }), { fill: [], differs: [], unsure: [], missing: [] });
   const receipt = clone(Z);
@@ -240,12 +240,12 @@ function fiscalPos(): KasaPos {
   return r;
 }
 
-test("yazarkasa Z'si ModPOS bölümüne: hiçbir alan dolmaz, Banka POS bölümüne okutulur (banka gün sonu fişi de)", () => {
+test("yazarkasa Z'si ModPOS bölümüne: hiçbir alan dolmaz, Banka POS Z bölümüne okutulur (banka gün sonu fişi de)", () => {
   const empty = { zTotal: "", cash: "", card: "", mealCard: "", online: "", other: "", offRevenue: "", discounts: "", zNo: "", receipts: "", bankPos: "" };
   const r = normalizeZ(fiscalZ(), { day: "2026-10-21", prevZNo: "0187" });
   assert.equal(r.ok, false);
   assert.equal(r.error, "Bu yazarkasanın (banka POS) Z raporu gibi görünüyor, ModPOS'unki değil.");
-  assert.equal(r.switchTo, "kasa-pos");
+  assert.equal(r.switchTo, "kasa-okc");
   assert.ok(!r.advice, "kırmızı hata ve düğme");
   assert.deepEqual([r.values, r.missing, r.checks, r.printedDay], [{}, [], [], null]);
   assert.deepEqual(prefillPlan(r, empty), { fill: [], differs: [], unsure: [], missing: [] });
@@ -253,7 +253,7 @@ test("yazarkasa Z'si ModPOS bölümüne: hiçbir alan dolmaz, Banka POS bölüm�
   assert.deepEqual(photoDiffs([r], savedFields({ zTotal: 12975.5, cash: 3420.5, card: 8915, mealCard: 640, online: 0, other: 0, offRevenue: 245, zNo: "0187", receipts: 143, bankPos: null })), []);
   // Banka gün sonu fişi de aynı bölüme gider, kendi metniyle
   const bank = normalizeZ(WRONG, { day: "2026-10-21", prevZNo: null });
-  assert.deepEqual([bank.ok, bank.switchTo, bank.values], [false, "kasa-pos", {}]);
+  assert.deepEqual([bank.ok, bank.switchTo, bank.values], [false, "kasa-okc", {}]);
   assert.equal(DOC_NAMES.fiscal_z_report, "yazarkasa (banka POS) Z raporu");
 });
 
@@ -285,10 +285,10 @@ test("eski okumalar: kayıtlı yanıtlar ve eski belge türleri aynen ayrışır
     assert.ok(KasaZRaw.safeParse({ ...fixture("z"), documentType: t }).success, `Z ${t}`);
     assert.ok(KasaPosRaw.safeParse({ ...fixture("pos"), documentType: t }).success, `POS ${t}`);
   }
-  // Eski yanıtın sonucu değişmedi (Z raporu ve banka POS fişi dolar, yanlış belge yine Banka POS bölümüne)
+  // Eski yanıtın sonucu değişmedi (Z raporu ve banka POS fişi dolar, yanlış belge Banka POS Z bölümüne)
   assert.equal(normalizeZ(Z, { day: "2026-10-21", prevZNo: "0186" }).values.zTotal!.value, 12975.5);
   assert.equal(normalizePos(POS, { day: "2026-10-21" }).values.bankPos!.value, 8915);
-  assert.equal(normalizeZ(WRONG, { day: "2026-10-21", prevZNo: null }).switchTo, "kasa-pos");
+  assert.equal(normalizeZ(WRONG, { day: "2026-10-21", prevZNo: null }).switchTo, "kasa-okc");
   // Bilinmeyen tür (silinmiş ya da uydurma) reddedilir
   assert.equal(KasaZRaw.safeParse({ ...fixture("z"), documentType: "okc_z" }).success, false);
 });

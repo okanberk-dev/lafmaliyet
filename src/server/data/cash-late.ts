@@ -202,6 +202,8 @@ export interface LateCard {
    * kümülatif iki yanda. Yazarkasa Z no'su yazılmamışsa null
    */
   okcChain: OkcLateChain | null;
+  /** Önceki yazarkasa Z'si (yalnız gün ve numara): "Düzeltip onayla" formunun Z no denetimi */
+  okcPrevZ: { date: string; zNo: string } | null;
   /** Ay satırı ("Ekim'in açık gün ve POS cirosuna girer" …) */
   monthLine: string;
   /** O güne kayıtlı kasadan çıkanlar ve rapordaki tutarla farkı */
@@ -290,6 +292,7 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
       readings: photos.readings,
       chain: { prev: chain.prev, next: chain.next, prevCheck, nextCheck },
       okcChain,
+      okcPrevZ: okcPrev.z,
       monthLine: monthLineOf(date, today, first?.date ?? null, entry),
       outs: {
         count: outs.length,

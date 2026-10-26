@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, like, lt, lte, ne, or } from "drizzle-orm";
 
 import type { MonthEntry, TillRow } from "@/lib/cash-month";
 import {
@@ -214,6 +214,17 @@ export async function okcRows(from: string, to: string, db: Db | Tx = getDb()): 
     .from(s.cashReports)
     .where(and(gte(s.cashReports.date, from), lte(s.cashReports.date, to)))
     .orderBy(asc(s.cashReports.date));
+}
+
+/** İlk yazarkasa Z'li rapor (yöneticinin "Yazarkasa Z yok" rozeti bu günden sonra; plan §3.7, D15) */
+export async function firstOkcReportDate(): Promise<string | null> {
+  const [row] = await getDb()
+    .select({ date: s.cashReports.date })
+    .from(s.cashReports)
+    .where(or(isNotNull(s.cashReports.okcTotal), isNotNull(s.cashReports.okcCard)))
+    .orderBy(asc(s.cashReports.date))
+    .limit(1);
+  return row?.date ?? null;
 }
 
 /** Raporu girilmiş günler (yalnız tarih; personelin zili kapalı gün bildiriminin sonucunda bakar) */

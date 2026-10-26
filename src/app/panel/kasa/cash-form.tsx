@@ -1,6 +1,6 @@
 "use client";
 
-import { Calculator, Copy, CreditCard, MessageCircle, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
+import { Calculator, Copy, MessageCircle, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +24,7 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import {
   fieldText,
@@ -37,7 +38,7 @@ import {
   type CashReading,
   type ReadField,
 } from "@/lib/photo-read/kasa";
-import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/photo-rules";
+import { MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
@@ -52,7 +53,8 @@ import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
 import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
+import { OKC_KEYS, OkcCard, okcFieldsOf, okcValuesOf, type OkcFieldOptions, type OkcKey, type OkcMoneyKey } from "./okc-card";
 
 type MoneyKey =
   | "zTotal"
@@ -68,7 +70,7 @@ type MoneyKey =
   | "bankPos"
   | "offRevenue"
   | "discounts";
-type Key = MoneyKey | "zNo" | "receipts" | "cashOutNote" | "note";
+type Key = MoneyKey | OkcKey | "zNo" | "receipts" | "cashOutNote" | "note";
 type Values = Record<Key, string>;
 
 /** Boş bırakılamayan tutarlar (ötekiler boşsa 0; banka POS boşsa karşılaştırılmaz) */
@@ -84,13 +86,16 @@ const LABELS: Record<MoneyKey, string> = {
   cashOut: "Gün içinde çıkan",
   countedCash: "Sayılan nakit",
   handedOver: "Teslim edilen",
-  bankPos: "Banka POS",
+  bankPos: "Banka gün sonu",
   offRevenue: "Ödenmez / ikram",
   discounts: "İndirim",
 };
 
-/** Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez) */
-const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos"] as const satisfies readonly (ReadField & Key)[];
+/**
+ * Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez). Yazarkasa
+ * alanları ModPOS'unkilerden ayrı anahtarlardır (çapraz karşılaştırma olmaz)
+ */
+const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos", ...OKC_KEYS] as const satisfies readonly (ReadField & Key)[];
 type FormReadField = (typeof READ_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
@@ -115,6 +120,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
       offRevenue: input(report.offRevenue),
       discounts: input(report.discounts ?? null),
       note: report.note ?? "",
+      ...okcValuesOf(report),
     };
   }
   // Yeni rapor: gün içinde kasadan çıkan satırların toplamı ve adları kendiliğinden gelir
@@ -136,6 +142,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
     offRevenue: "",
     discounts: "",
     note: "",
+    ...okcValuesOf(null),
   };
 }
 
@@ -158,7 +165,10 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
   const a = Object.fromEntries((Object.keys(LABELS) as MoneyKey[]).map((k) => [k, amount(k)])) as Record<MoneyKey, number | null>;
   const receiptsRaw = v.receipts.trim();
   const receipts = receiptsRaw ? Number(receiptsRaw.replace(/\D/g, "")) : null;
-  if (Object.keys(errors).length) return { fields: null, errors };
+  // Yazarkasa bölümü (isteğe bağlı; kuralları sunucuyla aynı metinle, okcFieldsOf)
+  const okc = okcFieldsOf(v);
+  Object.assign(errors, okc.errors);
+  if (Object.keys(errors).length || !okc.fields) return { fields: null, errors };
   const fields: CashReportFields = {
     date,
     zNo: v.zNo.trim() || null,
@@ -178,6 +188,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     offRevenue: a.offRevenue,
     discounts: a.discounts,
     note: v.note.trim() || null,
+    ...okc.fields,
   };
   if (fields.handedOver > fields.countedCash) errors.handedOver = "Teslim edilen, sayılan nakitten fazla olamaz";
   return Object.keys(errors).length ? { fields: null, errors } : { fields, errors };
@@ -223,7 +234,7 @@ interface Mark {
 type Marks = Partial<Record<FormReadField, Mark>>;
 
 /** Fotoğraftaki değerin ekrandaki hâli */
-const shownValue = (field: FormReadField, v: number | string) => (field === "zNo" || field === "receipts" ? String(v) : money(Number(v)));
+const shownValue = (field: FormReadField, v: number | string) => (field === "zNo" || field === "receipts" || field === "okcZNo" || field === "okcReceipts" ? String(v) : money(Number(v)));
 
 /**
  * İki banka POS fişi (iki cihaz): ikinci okumada toplama ekle ya da yerine yaz. İkinci fişin rakamı net değilse ya da
@@ -308,6 +319,8 @@ export function CashForm({
   reviewPending = false,
   onCancel,
   onSent,
+  prevOkcZ = null,
+  okcAdmin = null,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -352,6 +365,13 @@ export function CashForm({
   onCancel?: () => void;
   /** Geç rapor onaya gitti */
   onSent?: () => void;
+  /**
+   * Önceki yazarkasa Z'si (yalnız gün ve numara): formun Z no denetimi (docs/planlar/okc-z.md §3.6). Kümülatif
+   * personele gitmez (D17)
+   */
+  prevOkcZ?: { date: string; zNo: string } | null;
+  /** Yönetici: kayıtlı raporun yazarkasa kümülatifi ve "Kümülatifi temizle" (personelde hep boş) */
+  okcAdmin?: OkcAdminView | null;
 }) {
   // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
   // öteki karta gitmesin
@@ -383,8 +403,9 @@ export function CashForm({
   const [handedError, setHandedError] = useState<string | null>(null);
   const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
   const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
+  // Yükleme bölüm başına: yazarkasa Z'si okunurken ModPOS Z'si çekilebilir (docs/planlar/okc-z.md §3.3)
   const zUp = usePhotoUpload();
-  const posUp = usePhotoUpload();
+  const okcUp = usePhotoUpload();
   const live = preview(values);
   const reading = photoUi.reading === "on";
 
@@ -456,30 +477,33 @@ export function CashForm({
     if (!r.ok) return null;
     const current = valuesRef.current;
     // İkinci POS fişi: Banka POS önceki bir POS fotoğrafından geldiyse toplamı mı, yerine mi sorulur
+    // (yazarkasa Z'sinin şeridindeki banka gün sonu da; öteki alanları yine uygulanır)
     const prevMark = marksRef.current.bankPos;
     const posValue = r.values.bankPos ? Number(r.values.bankPos.value) : null;
-    if (r.kind === "kasa-pos" && posValue !== null && prevMark && prevMark.photoId !== photoId && prevMark.filled !== null && current.bankPos === prevMark.filled) {
-      setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue, ...posPromptMarks(r) });
-      return "Banka POS fişi okundu.";
-    }
-    const plan = prefillPlan(r, Object.fromEntries(READ_FIELDS.map((f) => [f, current[f]])));
+    const askPos = (r.kind === "kasa-pos" || r.kind === "kasa-okc") && posValue !== null && prevMark && prevMark.photoId !== photoId && prevMark.filled !== null && current.bankPos === prevMark.filled;
+    if (askPos) setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue, ...posPromptMarks(r) });
+    if (askPos && r.kind === "kasa-pos") return "Banka POS fişi okundu.";
+    const plan = prefillPlan(r, Object.fromEntries(READ_FIELDS.filter((f) => !(askPos && f === "bankPos")).map((f) => [f, current[f]])));
     if (plan.fill.length) setValues((v) => ({ ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) }));
     setMarks((m) => {
       const next: Marks = { ...m };
       for (const f of plan.fill) next[f.field as FormReadField] = { photoId, filled: f.text, warn: f.warn, suggest: null };
       for (const d of plan.differs) next[d.field as FormReadField] = { photoId, filled: m[d.field as FormReadField]?.filled ?? null, warn: null, suggest: { text: d.text, photo: d.photo, kind: "differs" } };
       for (const u of plan.unsure) {
+        // Yazarkasa: tutmayan rakamın tek nedeni ya da (doldurma kapalıyken) öneri, ardından fotoğraftaki değer
+        const shown = shownValue(u.field as FormReadField, u.photo);
         next[u.field as FormReadField] = {
           photoId,
           filled: null,
-          warn: `Fotoğrafta net okunamadı (${shownValue(u.field as FormReadField, u.photo)}); fişten yazın.`,
+          warn: u.reason ? `${u.reason} Fotoğrafta ${shown}.` : `Fotoğrafta net okunamadı (${shown}); fişten yazın.`,
           suggest: { text: u.text, photo: u.photo, kind: "unsure" },
         };
       }
       for (const f of plan.missing) next[f as FormReadField] = { photoId, filled: null, warn: MISSING_TEXT, suggest: null };
       return next;
     });
-    return prefillSummary(r.kind, plan);
+    const summary = prefillSummary(r.kind, plan);
+    return askPos ? `${summary} Banka gün sonu için aşağıda seçin.` : summary;
   }
 
   /** Yükleme ya da yeniden okumanın sonucu: fotoğraf listeye (ya da yerine), okuma forma */
@@ -508,15 +532,20 @@ export function CashForm({
   }
 
   const savedCount = saved?.photos.length ?? 0;
+  const photosOf = (k: CashPhotoKind) => photos.filter((p) => p.kind === k);
+  // Yazarkasa bölümünde eski banka POS fotoğrafları da görünür (geçiş, docs/planlar/okc-z.md D2: yeniden okunursa kasa-okc olur)
+  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k || (k === "kasa-okc" && p.kind === "kasa-pos")) ?? [];
   async function pick(kind: CashPhotoKind, file: File) {
     if (savedCount + photos.length >= MAX_REPORT_PHOTOS) return void toast.error(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
-    const up = kind === "kasa-z" ? zUp : posUp;
+    if (kind === "kasa-okc" && savedOf("kasa-okc").length + photosOf("kasa-okc").length >= MAX_OKC_PHOTOS) return void toast.error(OKC_PHOTOS_TEXT);
+    const up = kind === "kasa-z" ? zUp : okcUp;
     const res = await up.upload(file, { kind, day: date, read: reading });
     if (res) took(res, kind);
   }
 
   async function reread(p: FormPhoto, kind: CashPhotoKind) {
-    const up = kind === "kasa-z" ? zUp : posUp;
+    // Yazarkasa ve eski banka POS (geçiş, D2) aynı bölümün yükleyicisinde
+    const up = kind === "kasa-z" ? zUp : okcUp;
     const res = await up.reread(p.id, kind, date);
     if (res) took(res, kind);
   }
@@ -764,7 +793,7 @@ export function CashForm({
             </div>
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
-          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} />
+          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} audience={photoUi.admin ? "admin" : "staff"} okcAdmin={okcAdmin} />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
@@ -778,7 +807,6 @@ export function CashForm({
   const noteRequired = openingNum !== null && openingNeedsNote({ check: liveCarry, openingCash: openingNum, prevOpening: report?.openingCash ?? null, note: values.note });
   const gap = carry ? Math.max(0, daysBetween(carry.date, date) - 1) : 0;
   const paymentsOff = live && values.zTotal.trim() && Math.abs(live.paymentsDiff) >= CASH_TOLERANCE;
-  const cardOff = live && live.cardDiff !== null && Math.abs(live.cardDiff) >= CASH_TOLERANCE;
   const offLine = photoUi.storage ? readingOffText(photoUi.reading, photoUi.admin) : null;
   const cashOutValue = values.cashOut.trim() ? parseNumberTR(values.cashOut) : 0;
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
@@ -814,46 +842,64 @@ export function CashForm({
   };
   const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
 
-  const field = (k: MoneyKey, label: string, opts: { hint?: ReactNode; placeholder?: string; autoFocus?: boolean } = {}) => (
+  const field = (k: MoneyKey | OkcMoneyKey, label: string, opts: OkcFieldOptions & { autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
       <NumberInput
         id={fid(k)}
         inputMode="decimal"
         value={values[k]}
         onChange={set(k)}
-        placeholder={opts.placeholder ?? (REQUIRED.includes(k) ? "0" : "isteğe bağlı")}
+        placeholder={opts.placeholder ?? (REQUIRED.includes(k as MoneyKey) ? "0" : "isteğe bağlı")}
         enterKeyHint="next"
         autoFocus={opts.autoFocus}
         aria-invalid={Boolean(errors[k])}
-        data-warn={warnOf(k) || undefined}
+        data-warn={warnOf(k) || opts.warn || undefined}
+      />
+    </Field>
+  );
+  /** Yazarkasa Z no ve fiş sayısı (sayısal metin) */
+  const textField = (k: "okcZNo" | "okcReceipts", label: string, opts: OkcFieldOptions = {}) => (
+    <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
+      <Input
+        id={fid(k)}
+        inputMode="numeric"
+        value={values[k]}
+        onChange={set(k)}
+        maxLength={k === "okcZNo" ? 30 : 6}
+        autoComplete="off"
+        placeholder={opts.placeholder}
+        aria-invalid={Boolean(errors[k])}
+        data-warn={warnOf(k) || opts.warn || undefined}
       />
     </Field>
   );
 
-  const photosOf = (k: CashPhotoKind) => photos.filter((p) => p.kind === k);
-  // Geçiş (docs/planlar/okc-z.md D2): banka POS bölümüne çekilen fotoğraf sunucuda kasa-okc olur; yazarkasa kartı
-  // (adım b5) gelene kadar bu bölümde görünür
-  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k || (k === "kasa-pos" && p.kind === "kasa-okc")) ?? [];
-  const busy = zUp.busy || posUp.busy;
-  const photoBlock = (k: CashPhotoKind) => {
-    const up = k === "kasa-z" ? zUp : posUp;
+  // Gönderim yüklemesi süren bir fotoğraf varken bekler (fotoğrafın kimliği yanıtla gelir); seçiciler bölüm başına
+  const busy = zUp.busy || okcUp.busy;
+  const latestOkc = [...photos].reverse().find((p) => p.kind === "kasa-okc" && p.reading?.ok)?.reading ?? null;
+  const photoBlock = (k: "kasa-z" | "kasa-okc") => {
+    const up = k === "kasa-z" ? zUp : okcUp;
     return photoUi.storage && !proposal && !review ? (
-      <div id={k === "kasa-z" ? fid("z-photos") : undefined} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
-        <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={busy} />
+      <div id={fid(k === "kasa-z" ? "z-photos" : "okc-photos")} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
+        <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={up.busy} />
+        {k === "kasa-okc" ? <p className="text-[13px] leading-5 text-ink-mute">Fişi düz koyun, ekranı fişle doldurun; uzunsa önce üstünü, sonra altını çekin.</p> : null}
         <PhotoStatus phase={up.phase} />
         {offLine ? <p className="text-[13px] leading-5 text-ink-mute">{offLine}</p> : null}
         <CardPhotos
           saved={savedOf(k)}
           photos={photosOf(k)}
-          busy={busy}
+          busy={up.busy}
           onRemove={removePhoto}
           onRetry={(p) => void reread(p, p.kind)}
           onSwitch={(p) => p.switchTo && void reread(p, p.switchTo)}
         />
         <ReadChecks checks={latestChecks(k)} />
+        {k === "kasa-okc" && latestOkc && okcNeedsHalves(latestOkc) ? <p className="text-[13px] leading-5 text-ink-mute">{OKC_HALVES_TEXT}</p> : null}
       </div>
     ) : null;
   };
+  const okcMarked = (k: FormReadField) => Boolean(marks[k]?.warn || marks[k]?.suggest);
+  const num = (k: MoneyKey) => (values[k].trim() ? (parseNumberTR(values[k]) ?? 0) : 0);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -994,21 +1040,17 @@ export function CashForm({
             {outsWarning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">{outsWarning}</p> : null}
           </div>
         </Card>
-        <Card>
-          <CardHeader
-            icon={<CreditCard />}
-            title="Banka POS Z raporu (yazarkasa)"
-            description={
-              photoUi.storage
-                ? "Banka POS'un kart toplamı; fişin fotoğrafını çekin ya da yazın. ModPOS'taki kartla karşılaştırılır."
-                : "Banka POS'un kart toplamı; ModPOS'taki kartla karşılaştırılır."
-            }
-          />
-          <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-            {photoBlock("kasa-pos")}
-            {posPrompt ? (
-              <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info sm:col-span-2">
-                <p>Bu günün bir POS fişi daha okundu ({money(posPrompt.next)}).</p>
+        <OkcCard
+          values={values}
+          field={field}
+          textField={textField}
+          marked={(k) => okcMarked(k)}
+          failed={(k) => Boolean(errors[k])}
+          photoBlock={photoBlock("kasa-okc")}
+          posPrompt={
+            posPrompt ? (
+              <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info">
+                <p>Bu günün bir banka gün sonu fişi daha okundu ({money(posPrompt.next)}).</p>
                 {posPrompt.unsure ? <p className="text-warn">{posPrompt.unsure}</p> : null}
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => posChoice(true)}>
@@ -1019,15 +1061,19 @@ export function CashForm({
                   </Button>
                 </div>
               </div>
-            ) : null}
-            {field("bankPos", "Banka POS", { hint: "Z'deki K.KARTI satırı ya da banka gün sonu fişinin neti; Z'nin toplamı değil" })}
-            {cardOff && live?.cardDiff != null ? (
-              <p className="self-end rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-                Banka POS, ModPOS&apos;taki karttan {money(Math.abs(live.cardDiff))} {live.cardDiff > 0 ? "fazla" : "az"}.
-              </p>
-            ) : null}
-          </div>
-        </Card>
+            ) : null
+          }
+          description={
+            photoUi.storage && reading && !proposal && !review
+              ? "Banka POS'tan (yazarkasa) aldığınız Z raporu: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. Fotoğrafını çekin, rakamlar dolar. Fotoğraf yoksa aşağıdakileri yazın."
+              : "Banka POS'tan (yazarkasa) aldığınız Z raporundaki rakamları yazın (üstünde Z RAPORU ve KDV dökümü yazar)."
+          }
+          prevZ={prevOkcZ}
+          day={date}
+          audience={photoUi.admin ? "admin" : "staff"}
+          forceDetails={photoUi.admin}
+          modpos={values.card.trim() ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other") } : null}
+        />
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         <Card>

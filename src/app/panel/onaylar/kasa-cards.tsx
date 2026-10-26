@@ -317,7 +317,9 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
       {card.photos.length ? <SavedPhotos photos={card.photos} diffs={card.diffs} admin={false} /> : null}
       {card.unread ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-warn">Fotoğraf okunmadı: tarihi ve rakamları fotoğraftan kontrol edin.</p> : null}
       <p className={cn("text-sm break-words tabular", z.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{z.text}</p>
-      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} />
+      {/* Yazarkasa Z'si iki komşusuyla: Z no sırası ve kümülatif zinciri (docs/planlar/okc-z.md §3.8) */}
+      {card.okcChain ? <p className={cn("text-sm break-words tabular", card.okcChain.ok === false ? "font-medium text-bad" : "text-ink-soft")}>{card.okcChain.text}</p> : null}
+      <CashBreakdown report={f} carry={prevCheck} next={nextCheck} audience="admin" />
       {handover ? (
         <p className="text-sm text-ink">
           Teslim edilen {money(f.handedOver)}
@@ -366,6 +368,7 @@ function LateItem({ card, counters }: { card: LateCard; counters: { id: number; 
           counters={counters}
           mode="review"
           initial={f}
+          prevOkcZ={card.okcPrevZ}
           reviewPending={pending}
           onCancel={() => {
             setCorrecting(false);
