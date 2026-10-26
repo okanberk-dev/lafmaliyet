@@ -183,12 +183,13 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
   const failedUnlessConfirmed = new Set<OkcField>();
   const reasons: Partial<Record<OkcField, string>> = {};
   const checks: OkcCheck[] = [];
-  const reason = (fields: OkcField[], text: string) => {
-    for (const f of fields) reasons[f] ??= text;
+  const reason = (fields: OkcField[], text: string, override = false) => {
+    for (const f of fields) if (override || !reasons[f]) reasons[f] = text;
   };
-  const fail = (fields: OkcField[], staff: string) => {
+  /** `override`: bu neden alanın öteki nedenlerinden daha açıklayıcı (büyüklük, kümülatif eşitliği) */
+  const fail = (fields: OkcField[], staff: string, override = false) => {
     for (const f of fields) failed.add(f);
-    reason(fields, staff);
+    reason(fields, staff, override);
   };
   const failSoft = (fields: OkcField[], staff: string) => {
     for (const f of fields) failedUnlessConfirmed.add(f);
@@ -230,11 +231,12 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
   }
 
   // K4: Σ ödemeler = günlük toplam (ya da + yazarkasa dışı tahsilat); yalnız sıfır olmayan ≥ 2 ödeme türüyle doğrular
+  // Nakit ve kart her zaman; yemek kartı ve diğer yalnız tutarı varsa (boş isteğe bağlı alan turuncu olmaz)
   const payFields: OkcField[] = [];
   if (isNum(fig.cash)) payFields.push("okcCash");
   if (isNum(fig.card)) payFields.push("okcCard");
-  if (isNum(fig.mealCard)) payFields.push("okcMealCard");
-  if (isNum(fig.other)) payFields.push("okcOther");
+  if (nz(fig.mealCard)) payFields.push("okcMealCard");
+  if (nz(fig.other)) payFields.push("okcOther");
   if (isNum(fig.total) && isNum(fig.cash) && isNum(fig.card)) {
     const pays = [fig.cash, fig.card, fig.mealCard ?? 0, fig.other ?? 0];
     const sum = r2(pays.reduce((a, v) => a + v, 0));
@@ -309,14 +311,14 @@ export function okcChecks(fig: OkcFigures, ctx: Omit<OkcContext, "day"> & { day?
   }
   // Günlük toplam kümülatife eşit ve önceki kümülatif biliniyor: KÜM. satırı okunmuş olabilir (§5.1)
   if (cum && isNum(fig.cumTotal) && isNum(fig.total) && Math.abs(fig.cumTotal - fig.total) <= 0.01) {
-    fail(["okcTotal"], "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.");
+    fail(["okcTotal"], "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.", true);
     checks.push({ key: "cum-same", level: "warn", fields: ["okcTotal"], text: "Günlük toplam kümülatif satırla aynı; KÜM. satırı okunmuş olabilir." });
   }
 
   // Büyüklük (§5.1): ortancanın 5 katından ve 50.000 ₺'den büyük
   const med = median(ctx.recentTotals ?? []);
   if (isNum(fig.total) && med !== null && fig.total > 5 * med && fig.total > 50_000) {
-    fail(["okcTotal"], "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.");
+    fail(["okcTotal"], "Günlük toplam bir gün için çok büyük; fişin altındaki cihaz toplamı okunmuş olabilir.", true);
     checks.push({ key: "size", level: "warn", fields: ["okcTotal"], text: `Günlük toplam için çok büyük (${money(fig.total)}); KÜM. (kümülatif) satırı okunmuş olabilir.` });
   }
 
@@ -452,9 +454,9 @@ export function okcFiguresOfForm(v: OkcFormValues): OkcFigures {
  */
 export function okcFormChecks(v: OkcFormValues, ctx: { prevZ: { date: string; zNo: string } | null; day?: string; recentTotals?: number[] }): OkcFormCheck {
   const res = okcChecks(okcFiguresOfForm(v), { prev: { z: ctx.prevZ }, day: ctx.day, recentTotals: ctx.recentTotals });
-  const fields: Partial<Record<OkcField, string>> = {};
-  for (const [f, s] of Object.entries(res.status) as [OkcField, OkcStatus][]) if (s === "failed") fields[f] = res.reasons[f] ?? "Fişle karşılaştırın.";
-  for (const c of res.checks) if (c.level === "warn") for (const f of c.fields) fields[f] ??= res.reasons[f] ?? c.staff ?? "Fişle karşılaştırın.";
+  // Nedeni olan alanlar: tutmayanlar ve uyarı alanlar (doğrulananın nedeni yok)
+  const fields: Partial<Record<OkcField, string>> = { ...res.reasons };
+  for (const [f, s] of Object.entries(res.status) as [OkcField, OkcStatus][]) if (s === "failed") fields[f] ??= "Fişle karşılaştırın.";
   const n = Object.keys(fields).length;
   const summary = res.stopped
     ? (res.checks.find((c) => c.whole)?.staff ?? null)
