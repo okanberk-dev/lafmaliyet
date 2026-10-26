@@ -374,7 +374,8 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     nextReportAfter(monthEnd),
     firstCashReportDate(),
     loadMonthEntry(month),
-    // Yazarkasa (mali) Z'leri: ay kartının satırı, "Yazarkasa Z yok" rozetinin başlangıcı ve kümülatif zinciri
+    // Yazarkasa (mali) Z'leri: ay kartının satırı, "Yazarkasa Z yok" rozetinin başlangıcı ve kümülatif zinciri (ayın
+    // satırları; zincirin başı, önceki ayın son saklanan kümülatifi, previousOkc'tan okcMonthLine'a satır olarak eklenir)
     okcRows(`${month}-01`, monthEnd),
     firstOkcReportDate(),
     previousOkc(`${month}-01`),
@@ -455,7 +456,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             latePending={latePending}
             okcAdmin={okcAdmin}
             okcFirst={okcFirst}
-            okcLine={okcMonthLine(monthOkc, month)}
+            okcLine={okcMonthLine(okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc, month)}
             monthLine={
               monthLine ? (
                 <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
@@ -607,7 +608,8 @@ function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPre
       prevCum,
     });
     if (res.rejected !== null) note = cumulativeRejectedText(res.rejected);
-    else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}; temizlenmiş). Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır.`;
+    // Temizlenmiş de olabilir, yazıldığı an önceki bir kümülatifle tutmamış da: hangisi olduğu kayıtlı değil
+    else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}). Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır.`;
   }
   return { reportId: r.id, cumTotal: r.okcCumTotal ?? null, cumVat: r.okcCumVat ?? null, outside: r.okcOutside ?? null, note };
 }
