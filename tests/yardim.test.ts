@@ -73,3 +73,17 @@ test("adımlardaki ve sık sorulanlardaki bağlantılar var olan ekranlara gider
     assert.ok(existsSync(join(process.cwd(), "src/app", href, "page.tsx")), href);
   }
 });
+
+test("yöneticinin yardımı: ModPOS Z ve banka POS Z (yazarkasa) karşılaştırmaları, kümülatif ve doldurma kapısı (docs/planlar/okc-z.md §14)", () => {
+  const start = PAGE.indexOf('id: "yazarkasa-z"');
+  assert.ok(start > 0, "yazarkasa-z sorusu yok");
+  const item = PAGE.slice(start, PAGE.indexOf("icon: ScanText", start));
+  for (const s of ["Z RAPORU ve KDV dökümü", "banka gün sonu fişi değil", "kart, nakit, toplam", "Kümülatifi temizle", "Yazarkasa tutmuyor", "Yazarkasa Z yok"]) {
+    assert.ok(item.includes(s), s);
+  }
+  // Kapı kapalıyken sahibe ne gerektiği yazılı; metin sabite bağlı
+  assert.match(item, /OKC_PREFILL_ENABLED\s*\?/);
+  assert.match(item, /5–8 günün banka POS Z fotoğrafını/);
+  assert.match(PAGE, /import \{ OKC_PREFILL_ENABLED \} from "@\/lib\/okc-z"/);
+});
+

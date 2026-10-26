@@ -24,6 +24,7 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import {
@@ -1068,7 +1069,10 @@ export function CashForm({
           }
           description={
             photoUi.storage && reading && !proposal && !review
-              ? "Banka POS'tan (yazarkasa) aldığınız Z raporu: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. Fotoğrafını çekin, rakamlar dolar. Fotoğraf yoksa aşağıdakileri yazın."
+              ? `Banka POS'tan (yazarkasa) aldığınız Z raporu: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. ${
+                  // Doldurma kapısı kapalıyken okunan rakam yalnız öneridir (docs/KASA-RAPORU.md › Fotoğraftan doldurma)
+                  OKC_PREFILL_ENABLED ? "Fotoğrafını çekin, rakamlar dolar." : "Fotoğrafını çekin; okunan rakamlar alanların altında öneri olarak çıkar, fişle karşılaştırıp yazın."
+                } Fotoğraf yoksa aşağıdakileri yazın.`
               : "Banka POS'tan (yazarkasa) aldığınız Z raporundaki rakamları yazın (üstünde Z RAPORU ve KDV dökümü yazar)."
           }
           prevZ={prevOkcZ}
