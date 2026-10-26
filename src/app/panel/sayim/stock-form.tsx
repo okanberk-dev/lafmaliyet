@@ -59,6 +59,7 @@ import {
   countStatus,
   countText,
   coverageSplit,
+  draftConflicts,
   extraKey,
   extrasBase,
   groupProgress,
@@ -73,6 +74,7 @@ import {
   nextEmptyIndex,
   parseCount,
   parseCountDraft,
+  restoreDraftExtras,
   restoredPrefilled,
   unusualCount,
   type CountLineValue,
@@ -122,6 +124,8 @@ const isBlankExtra = (e: Extra) => !e.name.trim() && !e.qty.trim() && !e.unitPri
 const badNumber = (v: string) => v.trim() !== "" && (parseNumberTR(v) === null || (parseNumberTR(v) ?? 0) < 0);
 /** Kayıtlı hâliyle karşılaştırma imzası (fiyat bilgisi `priced` hariç) */
 const extraSig = (list: Extra[]) => JSON.stringify(list.map((e) => [e.name, e.unit, e.qty, e.unitPrice]));
+/** Taslağa yazılan biçim (fiyat yalnız yöneticide) */
+const draftRow = (e: Extra, isAdmin: boolean) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : "" });
 /** İki ek satır aynı mı (ad + birim, miktar ve fiyat sayı olarak) */
 const sameExtra = (a: Extra, b: Extra) =>
   extraKey(a.name, a.unit) === extraKey(b.name, b.unit) &&
@@ -517,6 +521,8 @@ function Money({ value }: { value: number }) {
 
 /** Ay seçicinin geçiş isteği (detail: gidilecek adres); kaydedilmemiş sayımı olan form iptal edip önce sorar */
 const MONTH_LEAVE = "sayim:ay";
+/** Ay değişince adresten düşen parametreler: ?izinsiz= yalnız yönlendirilen ilk aya ait (kişi başka ay seçti) */
+const MONTH_OMIT = ["izinsiz"];
 
 /**
  * Başlıktaki ay seçici: istemci içi geçiş yapar (beforeunload çalışmaz) ve form ay değişince baştan kurulur. Geçişten
@@ -525,11 +531,12 @@ const MONTH_LEAVE = "sayim:ay";
 export function CountMonthPicker({ months, value }: { months: string[]; value: string }) {
   const list = months.includes(value) ? months : [...months, value].sort();
   const idx = list.indexOf(value);
-  /** Form geçişi durdurduysa true (adres MonthPicker'ınki gibi: diğer parametreler korunur) */
+  /** Form geçişi durdurduysa true (adres MonthPicker'ınki gibi: diğer parametreler korunur, ?izinsiz= notu düşer) */
   const stopped = (to: string | undefined) => {
     if (!to || to === value) return false;
     const sp = new URLSearchParams(window.location.search);
     sp.set("ay", to);
+    for (const k of MONTH_OMIT) sp.delete(k);
     return !window.dispatchEvent(new CustomEvent(MONTH_LEAVE, { cancelable: true, detail: `${window.location.pathname}?${sp.toString()}` }));
   };
   return (
@@ -549,7 +556,7 @@ export function CountMonthPicker({ months, value }: { months: string[]; value: s
         e.target.value = value; // seçici açık ayda kalsın
       }}
     >
-      <MonthPicker months={months} value={value} />
+      <MonthPicker months={months} value={value} omit={MONTH_OMIT} />
     </div>
   );
 }
@@ -726,14 +733,18 @@ export function StockCountForm({
   // Kaydedilmemiş sayım bu cihazda taslak olarak durur: sekme kapanır, ağ gider ya da telefon arka plandaki sekmeyi
   // atarsa yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklenmesi önerilir. Taslak "Geçen aydan doldur"un
   // işaretini (geri yüklenince kayıt öncesi denetim yine sorar), değişen ek kalemleri ve yazanın adını da tutar. Kayıt,
-  // "Vazgeç" ya da formun temizlenmesi (yazılanı silmek) bu açılışta yazılan taslağı siler.
+  // "Vazgeç" ya da formun temizlenmesi (yazılanı silmek) bu açılışta yazılan taslağı siler. Taslak neye dayandığını da
+  // yazar (satırların ve ek kalem listesinin o anki kayıtlı hâli): geri yükleme arada başkasının kaydettiğini silmez,
+  // ezeceği satırı işaretler.
   const draftKey = `laf:sayim-taslak:${month}`;
   const draftJson = dirty
     ? countDraftJson({
         values: Object.fromEntries(changedLines.map((l) => [String(l.id), values[l.id] ?? ""])),
         prefilled: changedLines.filter((l) => prefilled.has(l.id)).map((l) => l.id),
-        extras: extrasDirty ? filledExtras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : "" })) : null,
+        extras: extrasDirty ? filledExtras.map((e) => draftRow(e, isAdmin)) : null,
         by: me,
+        base: Object.fromEntries(changedLines.map((l) => [String(l.id), l.qty])),
+        extrasBase: extrasDirty ? savedExtras.map((e) => draftRow(e, isAdmin)) : null,
       })
     : "";
   const wroteDraft = useRef(false);
@@ -766,8 +777,13 @@ export function StockCountForm({
     const l = byId.get(Number(id));
     return l && !l.archived && (values[l.id] ?? "") !== raw;
   });
-  const draftExtras = draft.extras && extraSig(draft.extras.map((e) => ({ ...e, priced: false }))) !== extraSig(filledExtras.map((e) => ({ ...e, priced: false }))) ? draft.extras : null;
-  const draftSize = draftEntries.length + (draftExtras?.length ?? 0);
+  // Taslağın ek kalemleri kayıtlı listeyle birleşir (bant yalnız form temizken çıkar: form = kayıtlı liste)
+  const draftExtras = restoreDraftExtras(
+    draft,
+    savedExtras.map((e) => draftRow(e, isAdmin)),
+    isAdmin,
+  );
+  const draftSize = draftEntries.length + (draftExtras?.changed ?? 0);
   const forgetDraft = () => {
     try {
       window.localStorage.removeItem(draftKey);
@@ -788,9 +804,26 @@ export function StockCountForm({
     });
     const filled = restoredPrefilled(draft, restored);
     if (filled.length) setPrefilled((x) => new Set([...x, ...filled]));
-    if (draftExtras) setExtras(draftExtras.map((e) => ({ ...e, priced: savedExtras.find((x) => extraKey(x.name, x.unit) === extraKey(e.name, e.unit))?.priced ?? false })));
+    // Taslak yazıldıktan sonra başkasının kaydettiği satırlar: geri yüklenir ama işaretlenir (kaydederse onunkini ezer)
+    const stale = draftConflicts(
+      draft,
+      draftEntries.map(([id]) => Number(id)),
+      (id) => byId.get(id)?.qty ?? null,
+    );
+    if (stale.length) setConflicts((x) => new Set([...x, ...stale]));
+    if (draftExtras) {
+      setExtras(draftExtras.extras.map((e) => ({ ...e, priced: savedExtras.find((x) => extraKey(x.name, x.unit) === extraKey(e.name, e.unit))?.priced ?? false })));
+      setExtraConflicts(draftExtras.conflicts);
+    }
+    const busyOthers = stale.length + (draftExtras?.conflicts.length ?? 0);
     toast.success("Taslak geri yüklendi", {
-      description: filled.length ? `${num(filled.length)} satır geçen aydan doldurulmuştu: kontrol edip kaydedin.` : "Kontrol edip kaydedin.",
+      description: [
+        filled.length ? `${num(filled.length)} satır geçen aydan doldurulmuştu.` : null,
+        busyOthers ? `${num(busyOthers)} kalemi taslaktan sonra başkası da kaydetti; işaretli yerlere bakın.` : null,
+        "Kontrol edip kaydedin.",
+      ]
+        .filter(Boolean)
+        .join(" "),
     });
   }
 
@@ -1152,7 +1185,7 @@ export function StockCountForm({
     <div className="space-y-4 pb-32">
       {denied ? (
         <p role="status" className="no-print rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          {denied} sayımını yalnız yönetici açabilir; {monthLabel} sayımı açıldı. Eski bir ayda düzeltme gerekiyorsa yöneticine haber ver.
+          {denied} sayımını yalnız yönetici açabilir; {monthLabel} sayımı açıldı. Eski bir ayda düzeltme gerekiyorsa yöneticiye haber verin.
         </p>
       ) : null}
       {draftSize ? (

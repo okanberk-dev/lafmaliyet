@@ -3,6 +3,7 @@
  * Burada veritabanı ya da tarayıcı yok.
  */
 import { shiftMonth } from "@/lib/calc/engine";
+import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
 export { layerText } from "@/lib/calc/fifo";
@@ -411,10 +412,20 @@ export interface CountDraft {
   prefilled: number[] | null;
   extras: DraftExtra[] | null;
   by: string | null;
+  /**
+   * Taslak yazılırken satırların kayıtlı değeri (taban): geri yüklerken arada başkasının kaydettiği satır bulunur
+   * (draftConflicts). Eski taslakta null.
+   */
+  base?: Record<string, number | null> | null;
+  /**
+   * Taslaktaki ek kalemlerin dayandığı kayıtlı liste: geri yükleme listeyi topluca değiştirmez, bununla birleştirir
+   * (restoreDraftExtras). Eski taslakta null (boş listeye dayanmış sayılır: yalnız ekler).
+   */
+  extrasBase?: DraftExtra[] | null;
 }
 
 export function countDraftJson(d: CountDraft): string {
-  return JSON.stringify({ v: d.values, p: d.prefilled ?? [], e: d.extras, by: d.by });
+  return JSON.stringify({ v: d.values, p: d.prefilled ?? [], e: d.extras, eb: d.extrasBase ?? null, b: d.base ?? null, by: d.by });
 }
 
 /** Taslağı okur; eski düz biçimi ({ "12": "3,5" }) de. Okunamazsa boş */
@@ -429,15 +440,27 @@ export function parseCountDraft(json: string | null): CountDraft {
       Object.fromEntries(Object.entries((v ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && /^\d+$/.test(e[0])));
     if (!("v" in o)) return { ...empty, values: pickValues(o) };
     const str = (v: unknown) => (typeof v === "string" ? v : "");
+    const pickExtras = (v: unknown) =>
+      Array.isArray(v)
+        ? v
+            .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+            .map((x) => ({ name: str(x.name), unit: str(x.unit), qty: str(x.qty), unitPrice: str(x.unitPrice) }))
+        : null;
+    const base =
+      o.b && typeof o.b === "object" && !Array.isArray(o.b)
+        ? Object.fromEntries(
+            Object.entries(o.b as Record<string, unknown>).filter(
+              (e): e is [string, number | null] => /^\d+$/.test(e[0]) && (e[1] === null || (typeof e[1] === "number" && Number.isFinite(e[1]))),
+            ),
+          )
+        : null;
     return {
       values: o.v && typeof o.v === "object" ? pickValues(o.v) : {},
       prefilled: Array.isArray(o.p) ? o.p.filter((x): x is number => Number.isInteger(x)) : [],
-      extras: Array.isArray(o.e)
-        ? o.e
-            .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
-            .map((x) => ({ name: str(x.name), unit: str(x.unit), qty: str(x.qty), unitPrice: str(x.unitPrice) }))
-        : null,
+      extras: pickExtras(o.e),
       by: typeof o.by === "string" && o.by.trim() ? o.by.trim() : null,
+      base,
+      extrasBase: pickExtras(o.eb),
     };
   } catch {
     return empty;
@@ -456,6 +479,59 @@ export function restoredPrefilled(
   const ids = new Set(restored.map((r) => r.id));
   if (draft.prefilled) return draft.prefilled.filter((id) => ids.has(id));
   return restored.filter((r) => r.sameUnit && r.prevQty !== null && r.qty !== null && r.qty === r.prevQty).map((r) => r.id);
+}
+
+/**
+ * Geri yüklenen taslak satırlarından, taslak yazıldıktan sonra başkasının kaydettikleri: kayıtlı değer taslağın
+ * tabanından farklı. Bunlar da geri yüklenir ama "çakışma" diye işaretlenir (kaydedilirse onunkinin yerine geçeceği
+ * satırda söylenir); sessizce ezilmez. Tabanı olmayan eski taslakta kayıtlı değeri olan her satır çakışma sayılır
+ * (bilinmiyor; bir kez fazla sormak sessizce ezmekten iyidir).
+ */
+export function draftConflicts(draft: CountDraft, ids: number[], saved: (id: number) => number | null): number[] {
+  return ids.filter((id) => {
+    const now = saved(id);
+    const base = draft.base?.[String(id)];
+    return base === undefined ? now !== null : base !== now;
+  });
+}
+
+/**
+ * Taslağın ek kalemi ile kayıtlı kalem aynı mı: ad + birim, miktar sayı olarak; fiyat yalnız iki tarafta da yazılıysa
+ * (personelin taslağında ve formunda fiyat yok, yöneticinin taslağını personel açarsa fiyat düşer).
+ */
+export function sameDraftExtra(a: DraftExtra, b: DraftExtra): boolean {
+  if (extraKey(a.name, a.unit) !== extraKey(b.name, b.unit) || parseNumberTR(a.qty) !== parseNumberTR(b.qty)) return false;
+  return !a.unitPrice.trim() || !b.unitPrice.trim() || (parseNumberTR(a.unitPrice) ?? 0) === (parseNumberTR(b.unitPrice) ?? 0);
+}
+
+/**
+ * Taslaktaki ek kalemleri geri yükler: listeyi topluca değiştirmez, taslağın tabanına (yazıldığı andaki kayıtlı liste)
+ * göre bugünkü kayıtlı listeyle birleştirir (mergeExtras). Taslak yazıldıktan sonra başkasının kaydettiği kalem kalır,
+ * taslakta değişen kalem taslaktaki gibi gelir, iki tarafın da değiştirdiği kalem "çakışma" olur. Tabanı olmayan eski
+ * taslak boş listeye dayanmış sayılır: yalnız ekler, kayıtlı bir kalemi asla kaldırmaz. `withPrices` false (personel):
+ * fiyatlar düşer. Fiyatı boş kalan satır kayıtlı fiyatını alır. `changed`: kayıtlı listeden farklı kalem sayısı;
+ * taslak kayıtlı listeye bir şey katmıyorsa null.
+ */
+export function restoreDraftExtras(
+  draft: CountDraft,
+  saved: DraftExtra[],
+  withPrices: boolean,
+): { extras: DraftExtra[]; conflicts: string[]; changed: number } | null {
+  if (!draft.extras) return null;
+  const strip = (rows: DraftExtra[]) => (withPrices ? rows : rows.map((e) => ({ ...e, unitPrice: "" })));
+  const key = (e: DraftExtra) => extraKey(e.name, e.unit);
+  const savedByKey = new Map(saved.map((e) => [key(e), e]));
+  const merged = mergeExtras(strip(draft.extras), strip(draft.extrasBase ?? []), strip(saved), sameDraftExtra);
+  const extras = merged.extras.map((e) => (e.unitPrice.trim() || !withPrices ? e : { ...e, unitPrice: savedByKey.get(key(e))?.unitPrice ?? "" }));
+  const exact = (a: DraftExtra, b: DraftExtra) => sameDraftExtra(a, b) && (parseNumberTR(a.unitPrice) ?? 0) === (parseNumberTR(b.unitPrice) ?? 0);
+  const mine = new Map(extras.map((e) => [key(e), e]));
+  const keys = new Set([...mine.keys(), ...savedByKey.keys()]);
+  const changed = [...keys].filter((k) => {
+    const a = mine.get(k);
+    const b = savedByKey.get(k);
+    return !a || !b || !exact(a, withPrices ? b : { ...b, unitPrice: "" });
+  }).length;
+  return changed || merged.conflicts.length ? { extras, conflicts: merged.conflicts, changed } : null;
 }
 
 // ---------------------------------------------------------------- Telefonda sayım: grup çipleri, sıradaki boş satır
@@ -601,7 +677,7 @@ export function staffCountMonths(now: Date = new Date()): string[] {
 }
 
 /** Personel geçen ayın sayımını pencere dışında değiştirmek isteyince */
-export const STAFF_LATE_FIX_MESSAGE = "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticine haber ver.";
+export const STAFF_LATE_FIX_MESSAGE = "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticiye haber verin.";
 /** Personel daha eski (ya da ileri) bir ayın sayımını değiştirmek isteyince */
 export const STAFF_OLD_MONTH_MESSAGE = "Personel yalnız bu ayın sayımını (ayın ilk 10 gününde geçen ayınkini de) değiştirebilir; başka bir ay için yöneticiye yazın.";
 
@@ -634,9 +710,9 @@ export function monthEndCountPush(day: string, progress: { counted: number; tota
 }
 
 /**
- * Yöneticinin zil satırı ve sabah e-postası satırı (src/server/bell/ops.ts): ayın ilk 10 gününde (iş günü) geçen ayın
- * sayımı tamamlanmadıysa. Sayılmayan kalem ay sonu stoğunda 0 sayılır, mal maliyeti şişer. Tamamsa ya da pencere
- * geçtiyse null. Tutar yok.
+ * Yöneticinin zil satırı ve sabah e-postası satırı (src/server/bell/ops.ts): ayın ilk 10 gününde (kasanın iş günü,
+ * 05:00'te döner) geçen ayın sayımı tamamlanmadıysa. Sayılmayan kalem ay sonu stoğunda 0 sayılır, mal maliyeti şişer.
+ * Tamamsa ya da pencere geçtiyse null. Tutar yok.
  */
 export function pastCountReminder(day: string, prev: { counted: number; total: number }): { id: string; title: string; body: string; href: string } | null {
   if (Number(day.slice(8, 10)) > COUNT_GRACE_DAYS || prev.total <= 0 || prev.counted >= prev.total) return null;

@@ -56,7 +56,7 @@ ad), gövdesi "Personel kapattı: Selin 21:40 · Ali 22:05. Sitede, uygulamada v
 ekranının Tükenenler kartına götürür; bir kayıt 24 saatten eskiyse ya da son bir saatte personel 3 ya da daha çok ürün
 kapattıysa uyarı, yoksa bilgi. Yeni bir kapatma satırı yeniden okunmamış yapar, ürün satışa açılınca satır kalkar;
 push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Personel: Tükendi / Satışa aç). Yine
-**Uyarılar**'da, ayın ilk 10 iş gününde geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
+**Uyarılar**'da, ayın ilk 10 gününde (gün kasanın iş günü: 05:00'te döner) geçen ayın stok sayımı tamamlanmadıysa "Ekim 2026 sayımı yarım: 30 / 72" (ya da
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
 onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon

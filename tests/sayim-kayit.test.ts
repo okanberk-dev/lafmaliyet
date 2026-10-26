@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 import {
   countDraftJson,
+  draftConflicts,
   extrasBase,
   mergeExtras,
   monthEndCountPush,
@@ -17,6 +18,7 @@ import {
   pastCountReminder,
   planAdminExtras,
   planStaffExtras,
+  restoreDraftExtras,
   restoredPrefilled,
   type SavedExtra,
 } from "../src/app/panel/sayim/logic";
@@ -98,7 +100,14 @@ test("formdaki ek kalemler tazelenir: başkasının eklediği gelir, dokunulmaya
 test("taslak: doldurulmuş işaret, ek kalemler ve yazar; eski düz biçim okunur", () => {
   const json = countDraftJson({ values: { "12": "3,5", "13": "2" }, prefilled: [13], extras: [{ name: "Peçete", unit: "PAKET", qty: "3", unitPrice: "" }], by: "Ayşe" });
   const d = parseCountDraft(json);
-  assert.deepEqual(d, { values: { "12": "3,5", "13": "2" }, prefilled: [13], extras: [{ name: "Peçete", unit: "PAKET", qty: "3", unitPrice: "" }], by: "Ayşe" });
+  assert.deepEqual(d, {
+    values: { "12": "3,5", "13": "2" },
+    prefilled: [13],
+    extras: [{ name: "Peçete", unit: "PAKET", qty: "3", unitPrice: "" }],
+    by: "Ayşe",
+    base: null,
+    extrasBase: null,
+  });
   assert.deepEqual(parseCountDraft('{"12":"3,5","x":"1","14":5}'), { values: { "12": "3,5" }, prefilled: null, extras: null, by: null });
   assert.deepEqual(parseCountDraft("bozuk"), { values: {}, prefilled: null, extras: null, by: null });
   assert.deepEqual(parseCountDraft(null).values, {});
@@ -183,4 +192,80 @@ test("geçen ayın sayımı yarım: yöneticinin zil ve sabah e-postası satır�
   assert.match(ops, /const count = prev \? pastCountReminder\(day, prev\) : null;/);
   // Bugün, zil ve bildirim aynı sayım ilerlemesini okur
   assert.match(read("src/server/data/today.ts"), /import \{ countProgress \} from "@\/server\/data\/count-progress";/);
+});
+
+// İnceleme (B01-D1, D4): geri yüklenen taslak, taslaktan sonra başkasının kaydettiğini silmez ya da sessizce ezmez
+const de = (name: string, unit: string, qty: string, unitPrice = "") => ({ name, unit, qty, unitPrice });
+
+test("taslağın ek kalemleri listeyi değiştirmez, tabanına göre birleşir: arada kaydedilen kalem kalır", () => {
+  // 31 Eki: Ayşe tablette Yulaf sütü yazdı (liste boşken), kaydetmeden sekme düştü; Mehmet telefondan Peçete kaydetti
+  const draft = parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: [de("Yulaf sütü", "LT", "2")], by: "Ayşe", extrasBase: [] }));
+  assert.deepEqual(draft.extrasBase, []);
+  const r = restoreDraftExtras(draft, [de("Peçete", "ADET", "3")], false);
+  assert.deepEqual(r, { extras: [de("Yulaf sütü", "LT", "2"), de("Peçete", "ADET", "3")], conflicts: [], changed: 1 });
+  // Tabanı olmayan eski taslak boş listeye dayanmış sayılır: yalnız ekler, kayıtlı kalemi kaldırmaz
+  const old = parseCountDraft(JSON.stringify({ v: {}, p: [], e: [de("Yulaf sütü", "LT", "2")], by: "Ayşe" }));
+  assert.equal(old.extrasBase, null);
+  assert.deepEqual(restoreDraftExtras(old, [de("Peçete", "ADET", "3")], false)?.extras, [de("Yulaf sütü", "LT", "2"), de("Peçete", "ADET", "3")]);
+  // Taslağın kendi sildiği kalem silinmiş kalır (başkası değiştirmediyse)
+  const removed = parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: [], by: null, extrasBase: [de("Peçete", "ADET", "3")] }));
+  assert.deepEqual(restoreDraftExtras(removed, [de("Peçete", "ADET", "3")], false), { extras: [], conflicts: [], changed: 1 });
+  // İki tarafın değiştirdiği kalem: taslaktaki kalır, çakışma olarak söylenir
+  const both = parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: [de("Peçete", "ADET", "5")], by: null, extrasBase: [de("Peçete", "ADET", "3")] }));
+  assert.deepEqual(restoreDraftExtras(both, [de("Peçete", "ADET", "4")], false), { extras: [de("Peçete", "ADET", "5")], conflicts: ["Peçete"], changed: 1 });
+  // Taslak kayıtlı listeye bir şey katmıyorsa geri yüklenecek ek kalem yok
+  assert.equal(restoreDraftExtras(both, [de("Peçete", "ADET", "5")], false), null);
+  assert.equal(restoreDraftExtras(parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: null, by: null })), [de("Peçete", "ADET", "3")], false), null);
+});
+
+test("taslağın ek kalem fiyatı: personelde düşer; yöneticide boş fiyat kayıtlı fiyatı alır, yazılan fiyat kalır", () => {
+  // Yöneticinin ortak tabletteki taslağını personel açarsa fiyat forma gelmez
+  const adminDraft = parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: [de("Peçete", "ADET", "3", "14,00"), de("Sünger", "ADET", "2", "9,00")], by: "Yönetici", extrasBase: [de("Peçete", "ADET", "3", "12,50")] }));
+  const staff = restoreDraftExtras(adminDraft, [de("Peçete", "ADET", "3")], false);
+  assert.ok(staff);
+  assert.ok(staff.extras.every((e) => e.unitPrice === ""));
+  assert.deepEqual(staff.extras.map((e) => e.name), ["Peçete", "Sünger"]);
+  // Yönetici: taslakta değişen fiyat kalır
+  const admin = restoreDraftExtras(adminDraft, [de("Peçete", "ADET", "3", "12,50")], true);
+  assert.deepEqual(admin?.extras, [de("Peçete", "ADET", "3", "14,00"), de("Sünger", "ADET", "2", "9,00")]);
+  assert.deepEqual(admin?.conflicts, []);
+  // Personelin taslağını (fiyatsız) yönetici açarsa kayıtlı fiyat silinmez, çakışma da sayılmaz
+  const staffDraft = parseCountDraft(countDraftJson({ values: {}, prefilled: [], extras: [de("Peçete", "ADET", "4")], by: "Ayşe", extrasBase: [de("Peçete", "ADET", "3")] }));
+  assert.deepEqual(restoreDraftExtras(staffDraft, [de("Peçete", "ADET", "3", "12,50")], true), { extras: [de("Peçete", "ADET", "4", "12,50")], conflicts: [], changed: 1 });
+});
+
+test("taslağın satırları: taslaktan sonra başkasının kaydettiği satır çakışma olarak işaretlenir", () => {
+  const draft = parseCountDraft(countDraftJson({ values: { "7": "6", "8": "2", "9": "1" }, prefilled: [], extras: null, by: "Ayşe", base: { "7": null, "8": 3, "9": 5 } }));
+  assert.deepEqual(draft.base, { "7": null, "8": 3, "9": 5 });
+  // 7: arada Mehmet 4 kaydetti; 8: kimse dokunmadı; 9: arada silindi
+  const saved = new Map<number, number | null>([
+    [7, 4],
+    [8, 3],
+    [9, null],
+  ]);
+  assert.deepEqual(draftConflicts(draft, [7, 8, 9], (id) => saved.get(id) ?? null), [7, 9]);
+  // Tabanı olmayan eski taslak: kayıtlı değeri olan satır çakışma sayılır
+  assert.deepEqual(draftConflicts(parseCountDraft('{"7":"6","8":"2"}'), [7, 8], (id) => (id === 7 ? 4 : null)), [7]);
+  assert.deepEqual(parseCountDraft('{"v":{},"b":{"1":"x","2":2,"a":1,"3":null}}').base, { "2": 2, "3": null });
+});
+
+test("formlar taslağın tabanını yazar ve geri yüklerken birleştirir (Stok sayımı ve Hızlı sayım)", () => {
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /base: Object\.fromEntries\(changedLines\.map\(\(l\) => \[String\(l\.id\), l\.qty\]\)\),/);
+  assert.match(form, /extrasBase: extrasDirty \? savedExtras\.map\(\(e\) => draftRow\(e, isAdmin\)\) : null,/);
+  assert.match(form, /const draftExtras = restoreDraftExtras\(/);
+  assert.match(form, /if \(stale\.length\) setConflicts\(\(x\) => new Set\(\[\.\.\.x, \.\.\.stale\]\)\);/);
+  assert.match(form, /setExtraConflicts\(draftExtras\.conflicts\);/);
+  assert.doesNotMatch(form, /setExtras\(draftExtras\.map/, "taslak listeyi topluca değiştirmez");
+  const qc = read("src/app/panel/hizli-sayim/quick-count-form.tsx");
+  assert.match(qc, /base: Object\.fromEntries\(draftItems\.map\(\(i\) => \[String\(i\.id\), savedQty\(i\)\]\)\),/);
+  assert.match(qc, /if \(stale\.length\) setConflicts\(\(c\) => new Set\(\[\.\.\.c, \.\.\.stale\]\)\);/);
+});
+
+test("ay değişince ?izinsiz= notu düşer (B01-K3)", () => {
+  const form = read("src/app/panel/sayim/stock-form.tsx");
+  assert.match(form, /const MONTH_OMIT = \["izinsiz"\];/);
+  assert.match(form, /sp\.set\("ay", to\);\s+for \(const k of MONTH_OMIT\) sp\.delete\(k\);/);
+  assert.match(form, /<MonthPicker months=\{months\} value=\{value\} omit=\{MONTH_OMIT\} \/>/);
+  assert.match(read("src/components/panel/month-picker.tsx"), /sp\.set\(param, m\);\s+for \(const k of omit \?\? \[\]\) sp\.delete\(k\);/);
 });

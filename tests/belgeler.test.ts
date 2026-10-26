@@ -253,7 +253,7 @@ test("KALAN-ISLER: denetimin partileri raporla aynı, sahibe 11 soru ve varsayı
   // Yanıt gelene kadarki varsayılanlar (E-19, E-29)
   assert.ok(
     qMine[2].includes(
-      "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticine haber ver.",
+      "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticiye haber verin.",
     ),
   );
   assert.match(qMine[3], /hiçbir reçete değişmez/);

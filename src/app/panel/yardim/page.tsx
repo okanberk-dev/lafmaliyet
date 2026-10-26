@@ -94,8 +94,8 @@ const ROUTINE: { title: string; body: ReactNode; href: string; icon: LucideIcon 
       <>
         Ayın son günü kapanıştan sonra <Path href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Personel hesabıyla telefondan da yapılabilir;
         personel listede olmayan kalemleri de yazabilir ya da her ay sayılacaksa Listeye ekle ile listeye ekler (paket fiyatını biliyorsa yazar, yoksa yönetici girer). &quot;Geçen aydan doldur&quot; ek
-        kalemleri de taşır. Ayın ilk 10 gününde ekran, sayımı
-        girilmemişse geçen ayı açar. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
+        kalemleri de taşır. Ayın ilk 10 gününde ekran, geçen ayın sayımı tamamlanmamışsa (yarım sayım da) geçen ayı açar; açılan ay adreste
+        durur. Personel geçen ayın sayımını ayın 10&apos;una kadar düzeltebilir, sonrasında yalnız siz. Tutarlılık&apos;ta sayım sapması için o ayın alım miktarı da gerekir: hiç alınmadıysa 0 yazın.
       </>
     ),
     href: "/panel/sayim",
@@ -350,7 +350,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Yeni malzeme eklemek",
         a: (
           <>
-            <Path href="/panel/hammaddeler" /> › Yeni hammadde. Eklediğiniz malzeme reçete kartlarındaki listede çıkar; sayım birimini seçerseniz sayım listesine de girer.
+            <Path href="/panel/hammaddeler" /> › Yeni hammadde. Eklediğiniz malzeme reçete kartlarındaki listede çıkar; sayım birimini seçerseniz bu aydan itibaren sayım listesine de girer (geçen ayın sayımına da girecekse o ayın sayımında Listeye ekle).
           </>
         ),
         icon: Package,

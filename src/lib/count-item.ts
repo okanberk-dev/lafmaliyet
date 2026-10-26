@@ -169,6 +169,17 @@ export function countFromMonth(month: string, current: string): string {
   return month < current ? month : current;
 }
 
+/**
+ * Hammaddeler'de sayım listesine giren kalemin count_from'u: yeni hammadde sayım birimiyle açıldı, "Sayılmaz" kaleme
+ * sayım birimi verildi ya da pasif kalem yeniden aktif oldu. Bu aydan (daha ileri bir aydan itibaren çıkıyorsa o ay):
+ * boş kalsaydı sayımı bitmiş her geçmiş ay "yarım" görünür, sayım ekranı ve hatırlatmalar kapanmış aya giderdi. O ay
+ * sayılmış geçmiş aylarda kalem yine çıkar (engine.stockSheet). Geçen ayın sayımına da girecekse "Listeye ekle" o aydan
+ * itibaren listeye alır.
+ */
+export function listedFromMonth(before: string | null, current: string): string {
+  return before && before > current ? before : current;
+}
+
 // ---------------------------------------------------------------- Yazılan tutar
 
 /** Okunan tutar: boşsa `value` null ve hata yok; okunamayan ya da sınır dışı tutarda `error` */

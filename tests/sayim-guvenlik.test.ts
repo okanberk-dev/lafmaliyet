@@ -80,7 +80,7 @@ test("personel bu ayı, geçen ayı yalnız ilk 10 günde sayar; sunucu çakış
   assert.deepEqual(staffCountMonths(new Date("2026-11-11T06:00:00Z")), ["2026-11"]);
   // Ret metni: geçen ay pencere dışında yöneticiye yönlendirir; yönetici her ayı yazar
   const late = new Date("2026-11-25T09:00:00Z");
-  assert.equal(staffCountIssue("staff", "2026-10", late), "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticine haber ver.");
+  assert.equal(staffCountIssue("staff", "2026-10", late), "Geçen ayın sayımı ayın 10'undan sonra yalnız yönetici tarafından düzeltilebilir; yöneticiye haber verin.");
   assert.equal(staffCountIssue("staff", "2026-11", late), null);
   assert.match(staffCountIssue("staff", "2026-07", late) ?? "", /yöneticiye yazın/);
   assert.equal(staffCountIssue("admin", "2026-10", late), null);

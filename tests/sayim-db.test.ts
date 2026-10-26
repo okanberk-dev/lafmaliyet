@@ -25,6 +25,8 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
   let db: import("../src/server/db").DB;
   let stock: typeof import("../src/server/actions/stock");
   let extras: typeof import("../src/app/panel/sayim/actions");
+  let ingredients: typeof import("../src/server/actions/ingredients");
+  let countProgress: typeof import("../src/server/data/count-progress").countProgress;
   let EXTRAS_CHANGED_MESSAGE = "";
   const who: { role: "admin" | "staff" } = { role: "admin" };
   let users: { admin: typeof s.users.$inferSelect; staff: typeof s.users.$inferSelect };
@@ -61,6 +63,8 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     });
     stock = await import("../src/server/actions/stock");
     extras = await import("../src/app/panel/sayim/actions");
+    ingredients = await import("../src/server/actions/ingredients");
+    countProgress = (await import("../src/server/data/count-progress")).countProgress;
     EXTRAS_CHANGED_MESSAGE = (await import("../src/server/data/stock-extras")).EXTRAS_CHANGED_MESSAGE;
   });
 
@@ -162,6 +166,41 @@ describe("stok sayımı eylemleri: veritabanında", { skip: !SERVER_URL && "SAYI
     assert.deepEqual(res.data.extraTwin, { name: "Klips kapak", qty: 2, unit: "KOLİ" });
     const other = await extras.addCountItem({ month: "2026-10", name: "Pipet", group: "SÜT", countUnit: "ADET", packageSize: 1 });
     assert.ok(other.ok && other.data.extraTwin === null);
+  });
+
+  test("Hammaddeler'den sayım listesine giren kalem bitmiş geçmiş ayı yarım yapmaz (B01-D2)", async () => {
+    // 4 Kasım: Ekim sayımı tamam (Süt sayıldı); yönetici Hammaddeler'de sayım birimli yeni hammadde açar
+    at("2026-11-04T09:00:00Z");
+    assert.deepEqual(await countProgress("2026-10"), { counted: 1, total: 1 });
+    const base = { category: "Toz", supplier: null, packageDesc: null, packagePrice: 500, packageSize: 1000, unit: "gr" as const, vatRate: 0.01, note: null, isEstimate: false, priceSource: "manual" as const, countGroup: "SÜT" };
+    const created = await ingredients.saveIngredient({ ...base, id: null, name: "Matcha tozu", countUnit: "KG", active: true });
+    assert.ok(created.ok, created.ok ? "" : created.error);
+    assert.deepEqual(await countProgress("2026-10"), { counted: 1, total: 1 }, "Ekim tamam kalır");
+    assert.deepEqual(await countProgress("2026-11"), { counted: 0, total: 2 }, "Kasım listesinde");
+    const row = async (id: number) => (await db.select().from(s.ingredients).where(eq(s.ingredients.id, id)))[0];
+    assert.equal((await row(created.data.id)).countFrom, "2026-11");
+    // "Sayılmaz" hammaddeye sayım birimi verilir
+    const plain = await ingredients.saveIngredient({ ...base, id: null, name: "Kakao", countUnit: null, active: true });
+    assert.ok(plain.ok);
+    assert.equal((await row(plain.data.id)).countFrom, null);
+    assert.ok((await ingredients.saveIngredient({ ...base, id: plain.data.id, name: "Kakao", countUnit: "KG", active: true })).ok);
+    assert.equal((await row(plain.data.id)).countFrom, "2026-11");
+    assert.deepEqual(await countProgress("2026-10"), { counted: 1, total: 1 });
+    // Sayım birimi zaten olan kalemin düzenlenmesi count_from'a dokunmaz
+    await db.update(s.ingredients).set({ countFrom: "2026-09" }).where(eq(s.ingredients.id, plain.data.id));
+    assert.ok((await ingredients.saveIngredient({ ...base, id: plain.data.id, name: "Kakao", countUnit: "KG", active: true, note: "not" })).ok);
+    assert.equal((await row(plain.data.id)).countFrom, "2026-09");
+    await db.update(s.ingredients).set({ countFrom: "2026-11" }).where(eq(s.ingredients.id, plain.data.id));
+    // Pasif kalem yeniden aktif olunca bu aydan; o ay sayılmış eski ayda yine çıkar
+    await db.update(s.ingredients).set({ active: false, countFrom: null }).where(eq(s.ingredients.id, milk));
+    assert.deepEqual(await countProgress("2026-10"), { counted: 0, total: 0 });
+    assert.ok((await ingredients.setIngredientActive(milk, true)).ok);
+    assert.equal((await row(milk)).countFrom, "2026-11");
+    assert.deepEqual(await countProgress("2026-10"), { counted: 1, total: 1 }, "Ekim'de sayılan Süt yine listede ve sayılmış");
+    // Düzenleme penceresinden yeniden aktif etmek de aynı
+    assert.ok((await ingredients.setIngredientActive(plain.data.id, false)).ok);
+    assert.ok((await ingredients.saveIngredient({ ...base, id: plain.data.id, name: "Kakao", countUnit: "KG", active: true })).ok);
+    assert.equal((await row(plain.data.id)).countFrom, "2026-11");
   });
 
   test("3 Kasım: personel Ekim sayımını düzeltebilir (ilk 10 gün)", async () => {

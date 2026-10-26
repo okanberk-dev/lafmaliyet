@@ -13,8 +13,11 @@ const CHEVRON =
 const arrow =
   "flex h-full w-8 cursor-pointer items-center justify-center rounded-xl text-ink-mute hover:text-ink disabled:cursor-default disabled:opacity-30 pointer-coarse:w-11";
 
-/** ?ay=YYYY-MM parametresini değiştiren ay seçici (dokunmatikte 44px yüksekliğinde, oklar 44px) */
-export function MonthPicker({ months, value, param = "ay" }: { months: string[]; value: string; param?: string }) {
+/**
+ * ?ay=YYYY-MM parametresini değiştiren ay seçici (dokunmatikte 44px yüksekliğinde, oklar 44px). Diğer parametreler
+ * korunur; `omit` ay değişince düşecek olanlar (ör. Stok sayımı'nın yalnız açılan aya ait ?izinsiz= notu).
+ */
+export function MonthPicker({ months, value, param = "ay", omit }: { months: string[]; value: string; param?: string; omit?: string[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
@@ -25,6 +28,7 @@ export function MonthPicker({ months, value, param = "ay" }: { months: string[];
   const go = (m: string) => {
     const sp = new URLSearchParams(search.toString());
     sp.set(param, m);
+    for (const k of omit ?? []) sp.delete(k);
     start(() => router.push(`${pathname}?${sp.toString()}`));
   };
 

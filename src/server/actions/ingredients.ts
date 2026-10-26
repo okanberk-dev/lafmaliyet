@@ -4,7 +4,8 @@ import { and, count, eq, max, ne } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { countFactor, countUnitsFor } from "@/lib/calc/engine";
+import { countFactor, countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
+import { listedFromMonth } from "@/lib/count-item";
 import { tl } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { recordIngredientPrice } from "@/server/data/ingredient-prices";
@@ -84,7 +85,13 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
             );
           }
         }
-        await tx.update(s.ingredients).set({ ...rest, updatedAt: new Date() }).where(eq(s.ingredients.id, data.id));
+        // Sayım listesine şimdi giriyorsa (sayım birimi verildi ya da yeniden aktif) bu aydan: geçmiş aylar "yarım" olmasın
+        const listedNow = !(before.active && before.countUnit) && data.active && !!data.countUnit;
+        const countFrom = listedNow ? { countFrom: listedFromMonth(before.countFrom, currentMonthTR()) } : {};
+        await tx
+          .update(s.ingredients)
+          .set({ ...rest, ...countFrom, updatedAt: new Date() })
+          .where(eq(s.ingredients.id, data.id));
         if (before.packagePrice !== rest.packagePrice || before.packageSize !== rest.packageSize) {
           const written = await recordIngredientPrice(tx, { id: data.id, isEstimate: before.isEstimate }, { packagePrice: rest.packagePrice, packageSize: rest.packageSize, changedBy: me.name });
           fixedStart = written === "start";
@@ -95,9 +102,10 @@ export async function saveIngredient(input: z.input<typeof ingredientSchema>) {
       const { id: _omit, base: _base, ...rest } = data;
       void _omit;
       void _base;
+      // Sayım birimiyle açılan hammadde bu aydan sayım listesinde (geçmiş, sayımı bitmiş aylar "yarım" olmasın)
       const [created] = await tx
         .insert(s.ingredients)
-        .values({ ...rest, sortOrder: (m ?? 0) + 1 })
+        .values({ ...rest, sortOrder: (m ?? 0) + 1, countFrom: rest.countUnit ? currentMonthTR() : null })
         .returning({ id: s.ingredients.id });
       await tx.insert(s.ingredientPrices).values({
         ingredientId: created.id,
@@ -172,7 +180,12 @@ export async function setIngredientActive(id: number, active: boolean) {
     const [before] = await db.select().from(s.ingredients).where(eq(s.ingredients.id, id));
     if (!before) throw new UserError("Malzeme bulunamadı");
     if (before.active === active) return null;
-    await db.update(s.ingredients).set({ active, updatedAt: new Date() }).where(eq(s.ingredients.id, id));
+    // Yeniden aktif olan sayım kalemi bu aydan listede: geçmiş aylar "yarım" görünmesin (o ay sayıldıysa yine çıkar)
+    const countFrom = active && before.countUnit ? { countFrom: listedFromMonth(before.countFrom, currentMonthTR()) } : {};
+    await db
+      .update(s.ingredients)
+      .set({ active, ...countFrom, updatedAt: new Date() })
+      .where(eq(s.ingredients.id, id));
     await logActivity(me, active ? "Hammadde aktif" : "Hammadde pasif", before.name);
     refresh();
     return null;

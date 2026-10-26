@@ -177,7 +177,7 @@ async function draftNotifications(user: CurrentUser, now: Date): Promise<PanelNo
 }
 
 /**
- * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 iş günü): "Ekim 2026 sayımı yarım:
+ * Geçen ayın stok sayımı yarım ya da yok (yalnız yönetici, grup Uyarılar; ayın ilk 10 günü, gün 05:00'te döner): "Ekim 2026 sayımı yarım:
  * 30 / 72". Kural sayim/logic.ts pastCountReminder (tamam = countStatus); sayım tamamlanınca satır kalkar.
  */
 async function pastCountNotifications(user: CurrentUser, now: Date): Promise<PanelNotification[]> {

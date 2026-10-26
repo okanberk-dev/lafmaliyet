@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { markOrderReceived, saveQuickCounts } from "@/server/actions/reorder";
 import type { QuickCountItem, QuickCountSheet } from "@/server/data/reorder";
 
-import { countDraftJson, countText, mergeCounts, parseCount, parseCountDraft, unusualCount } from "../sayim/logic";
+import { countDraftJson, countText, draftConflicts, mergeCounts, parseCount, parseCountDraft, unusualCount } from "../sayim/logic";
 
 /** "09:42" (Türkiye) */
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
@@ -92,10 +92,18 @@ export function QuickCountForm({ sheet, admin, me = null }: { sheet: QuickCountS
 
   // Kaydedilmemiş sayım bu cihazda taslak olarak durur (Stok sayımı gibi): başka sayfaya geçilir, sekme düşer ya da
   // telefon görüşmesi araya girerse yazılanlar kaybolmaz; sayfa yeniden açılınca geri yüklemesi önerilir. Kayıt ya da
-  // formun temizlenmesi bu açılışta yazılan taslağı siler. Kirliyken çıkış önce sorulur.
+  // formun temizlenmesi bu açılışta yazılan taslağı siler. Kirliyken çıkış önce sorulur. Taslak her kalemin o anki
+  // kayıtlı miktarını da yazar: geri yüklerken arada başkasının kaydettiği kalem işaretlenir, sessizce ezilmez.
   const draftKey = `laf:hizli-sayim:${sheet.day}`;
+  const draftItems = changed.concat(invalid);
   const draftJson = dirty
-    ? countDraftJson({ values: Object.fromEntries(changed.concat(invalid).map((i) => [String(i.id), values[i.id] ?? ""])), prefilled: [], extras: null, by: me })
+    ? countDraftJson({
+        values: Object.fromEntries(draftItems.map((i) => [String(i.id), values[i.id] ?? ""])),
+        prefilled: [],
+        extras: null,
+        by: me,
+        base: Object.fromEntries(draftItems.map((i) => [String(i.id), savedQty(i)])),
+      })
     : "";
   const wroteDraft = useRef(false);
   useEffect(() => {
@@ -132,6 +140,19 @@ export function QuickCountForm({ sheet, admin, me = null }: { sheet: QuickCountS
     wroteDraft.current = false;
     setDraftGone(true);
   };
+  function restoreDraft() {
+    setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
+    // Taslaktan sonra başkasının kaydettiği kalemler işaretlenir (kaydederse onunkinin yerine geçer)
+    const stale = draftConflicts(
+      draft,
+      draftEntries.map(([id]) => Number(id)),
+      (id) => all.find((i) => i.id === id)?.today?.qty ?? null,
+    );
+    if (stale.length) setConflicts((c) => new Set([...c, ...stale]));
+    toast.success("Taslak geri yüklendi", {
+      description: stale.length ? `${num(stale.length)} kalemi taslaktan sonra başkası da kaydetti; işaretli kalemlere bakıp kaydedin.` : "Kontrol edip kaydedin.",
+    });
+  }
   const [leaveHref, setLeaveHref] = useLeaveGuard(dirty);
 
   async function save() {
@@ -224,13 +245,7 @@ export function QuickCountForm({ sheet, admin, me = null }: { sheet: QuickCountS
             {draft.by && draft.by !== me ? `${draft.by} bu cihazda` : "Bu cihazda"} kaydedilmemiş {num(draftEntries.length)} kalemlik hızlı sayım var (sayfadan
             çıkılmış ya da bağlantı gitmiş olabilir).
           </span>
-          <Button
-            size="sm"
-            onClick={() => {
-              setValues((v) => ({ ...v, ...Object.fromEntries(draftEntries.map(([id, raw]) => [Number(id), raw])) }));
-              toast.success("Taslak geri yüklendi", { description: "Kontrol edip kaydedin." });
-            }}
-          >
+          <Button size="sm" onClick={restoreDraft}>
             Geri yükle
           </Button>
           <Button size="sm" variant="ghost" onClick={forgetDraft}>
