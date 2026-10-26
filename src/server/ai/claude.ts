@@ -164,9 +164,12 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
     const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
     if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
   }
-  // TODO(dalga 13 b4): ai_calls.effort sütunu migration'la gelince `effort: req.effort ?? null` burada yazılır
-  // (docs/planlar/okc-z.md §6.2); o zamana kadar efor yalnız koddadır ve hata günlüğüne düşer
-  const [call] = await db.insert(s.aiCalls).values({ feature: req.feature, model: req.model, status: "running", userId: req.userId, photoId: req.photoId }).returning({ id: s.aiCalls.id });
+  // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın hangi
+  // eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
+  const [call] = await db
+    .insert(s.aiCalls)
+    .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
+    .returning({ id: s.aiCalls.id });
   const t0 = Date.now();
   const client = replayEnabled() ? replayClient(req.feature) : liveClient();
   const res = await runExtraction(client, req);
