@@ -11,6 +11,7 @@
 
 import { parseNumberTR } from "@/lib/calc/expr";
 import { money } from "@/lib/format";
+import { OKC_FIELD_LABELS, type OkcField, type OkcVatLine } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 
 import { businessDayOf, clean, DOC_NAMES, IMAGE_ISSUES, ISSUE_TEXT, lowest, printedAmount, round2, UNREADABLE_TEXT, type Confidence } from "./common";
@@ -18,11 +19,47 @@ import type { AmountRaw, IssueRaw, KasaPos, KasaZ } from "./schemas";
 
 export type { Confidence } from "./common";
 
-export type ReadField = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "discounts" | "offRevenue" | "zNo" | "receipts" | "bankPos";
+/**
+ * ModPOS alanları, banka gün sonu (`bankPos`) ve yazarkasanın (banka POS) mali Z alanları (`okc*`, dalga 13 PR-b,
+ * src/lib/okc-z.ts). Yazarkasa anahtarları ModPOS'unkilerden ayrıdır: iki sayaç birbiriyle karşılaştırılmaz.
+ */
+export type ReadField = "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "discounts" | "offRevenue" | "zNo" | "receipts" | "bankPos" | OkcField;
 export type CashPhotoKind = "kasa-z" | "kasa-pos";
+/**
+ * Okumanın türü: `kasa-okc` yazarkasanın mali Z'si (src/lib/photo-read/okc.ts). Fotoğraf türü olarak (photo-rules
+ * `PhotoKind`, yollar, saklama) adım b3–b4'te gelir; o zaman `CashPhotoKind`'a katılır ve `kasa-pos` yalnız eski
+ * okumalar için kalır (plan D2, §6.3, §6.6)
+ */
+export type CashReadKind = CashPhotoKind | "kasa-okc";
 
-/** Tutar alanları (öteki ikisi Z no ve fiş sayısı) */
-export const MONEY_FIELDS: readonly ReadField[] = ["zTotal", "cash", "card", "mealCard", "online", "other", "discounts", "offRevenue", "bankPos"];
+/** Tutar alanları (ötekiler Z no'lar ve fiş sayıları) */
+export const MONEY_FIELDS: readonly ReadField[] = [
+  "zTotal",
+  "cash",
+  "card",
+  "mealCard",
+  "online",
+  "other",
+  "discounts",
+  "offRevenue",
+  "bankPos",
+  "okcTotal",
+  "okcVatTotal",
+  "okcCash",
+  "okcCard",
+  "okcMealCard",
+  "okcOther",
+  "okcT1",
+  "okcV1",
+  "okcT10",
+  "okcV10",
+  "okcT20",
+  "okcV20",
+];
+
+/** Z no gibi metin olarak karşılaştırılan ve fiş sayısı gibi tam sayı olan alanlar */
+const ZNO_FIELDS: readonly ReadField[] = ["zNo", "okcZNo"];
+const COUNT_FIELDS: readonly ReadField[] = ["receipts", "okcReceipts"];
 
 /** Alanların adı (uyarı ve "fotoğraftan farklı" metinlerinde; kasa formundaki etiketlerle aynı sözcükler) */
 export const FIELD_LABELS: Record<ReadField, string> = {
@@ -37,11 +74,19 @@ export const FIELD_LABELS: Record<ReadField, string> = {
   zNo: "Z no",
   receipts: "Fiş sayısı",
   bankPos: "Banka POS",
+  ...OKC_FIELD_LABELS,
 };
 
 export interface ReadValue {
   value: number | string;
   confidence: Confidence;
+  /**
+   * Yazarkasa okumasında kimliklerin sonucu (src/lib/okc-z.ts): "confirmed" iki ayrı basılı rakam birbirini tutuyor
+   * (orta güvende de mavi dolar), "failed" bir kimlik tutmadı (forma yazılmaz, öneri olur). Yoksa denetlenemedi
+   */
+  status?: "confirmed" | "failed";
+  /** "failed" alanın tek, sade nedeni (personel metni) */
+  reason?: string;
 }
 
 export interface ReadCheck {
@@ -51,10 +96,22 @@ export interface ReadCheck {
   text: string;
   /** Okumanın bütününe dair (fiş başka bir günün, fotoğrafta birden çok fiş): kayıttaki farklar alarm sayılmaz */
   whole?: boolean;
+  /** Yalnız yöneticiye (yazarkasa okumasının ayrıntılı metinleri; personelin yanıtından çıkar, plan D17) */
+  admin?: true;
+}
+
+/** Yazarkasa okumasının yalnız yöneticiye ve sunucuya giden kısmı (personelin yanıtından çıkar, plan D17) */
+export interface OkcAdminInfo {
+  documentZNo: string | null;
+  cumTotal: number | null;
+  cumVat: number | null;
+  /** Yazarkasa toplamı dışındaki tahsilatlar (faturalı satış, bilgi fişi…) */
+  outside: number | null;
+  voids: number | null;
 }
 
 export interface CashReading {
-  kind: CashPhotoKind;
+  kind: CashReadKind;
   ok: boolean;
   /** Okunamadı ya da yanlış belge: kırmızı satır, hiçbir alan dolmaz */
   error: string | null;
@@ -71,6 +128,10 @@ export interface CashReading {
   /** Fişte olması gerekirken okunamayanlar: personel fişten yazar */
   missing: ReadField[];
   checks: ReadCheck[];
+  /** Yazarkasa okumasında okunan KDV dökümü (sıfır gruplar yok, orana göre sıralı) */
+  okcVat?: OkcVatLine[];
+  /** Yazarkasa okumasında yalnız yöneticiye ve sunucuya (kümülatif, toplam dışı tahsilat) */
+  okcAdmin?: OkcAdminInfo;
 }
 
 /**
@@ -86,7 +147,7 @@ export interface CashPrefill {
 const PAYMENT_FIELD = { cash: "cash", card: "card", meal_card: "mealCard", online: "online", other: "other" } as const;
 const PAYMENT_FIELDS: readonly ReadField[] = ["cash", "card", "mealCard", "online", "other"];
 
-const failed = (kind: CashPhotoKind, error: string, switchTo: CashPhotoKind | null = null): CashReading => ({
+export const failed = (kind: CashReadKind, error: string, switchTo: CashPhotoKind | null = null): CashReading => ({
   kind,
   ok: false,
   error,
@@ -98,7 +159,7 @@ const failed = (kind: CashPhotoKind, error: string, switchTo: CashPhotoKind | nu
 });
 
 /** "Bu bir alışveriş fişi gibi görünüyor." (tanınmayan belge: "Bu başka bir belge gibi görünüyor.") */
-function looksLike(documentType: string): string {
+export function looksLike(documentType: string): string {
   const name = documentType === "other" ? undefined : DOC_NAMES[documentType];
   return name ? `Bu bir ${name} gibi görünüyor.` : `Bu ${DOC_NAMES.other} gibi görünüyor.`;
 }
@@ -124,7 +185,7 @@ function wrongDocument(expected: CashPhotoKind, documentType: string): CashReadi
 }
 
 /** Tutar okunurken fişteki metinle modelin sayısı tutmadıysa uyarı */
-function mismatchCheck(field: ReadField, a: AmountRaw): ReadCheck {
+export function mismatchCheck(field: ReadField, a: AmountRaw): ReadCheck {
   return { fields: [field], level: "warn", text: `Okuma tutarsız (fişte “${clean(a.text, 30) ?? ""}”); fişle karşılaştırın.` };
 }
 
@@ -132,7 +193,7 @@ function mismatchCheck(field: ReadField, a: AmountRaw): ReadCheck {
  * Fotoğrafın sorunları: görüntü sorunları güveni "high" olmayan alanları turuncu yapar. Birden çok fiş okumanın
  * bütününü şüpheli yapar (rakam öteki fişten okunmuş olabilir)
  */
-function issueChecks(issues: IssueRaw[], values: Partial<Record<ReadField, ReadValue>>, skip: IssueRaw[] = []): ReadCheck[] {
+export function issueChecks(issues: IssueRaw[], values: Partial<Record<ReadField, ReadValue>>, skip: IssueRaw[] = []): ReadCheck[] {
   const unsure = (Object.keys(values) as ReadField[]).filter((f) => values[f]!.confidence !== "high");
   const out: ReadCheck[] = [];
   for (const issue of [...new Set(issues)]) {
@@ -145,13 +206,13 @@ function issueChecks(issues: IssueRaw[], values: Partial<Record<ReadField, ReadV
 }
 
 /** Fişteki gün raporun günü değilse uyarı (okumanın bütünü başka bir günün olabilir). `question`: "Z raporu mu" */
-function dayCheck(printedDay: string | null, day: string, question: string): ReadCheck | null {
+export function dayCheck(printedDay: string | null, day: string, question: string): ReadCheck | null {
   if (!printedDay || printedDay === day) return null;
   return { fields: [], level: "warn", text: `Fişteki tarih ${longDateTR(printedDay)}; bu rapor ${longDateTR(day)} için. Doğru günün ${question}?`, whole: true };
 }
 
 /** Sıra: önce uyarılar, sonra bilgiler (ekranda en çok dördü) */
-const ordered = (checks: (ReadCheck | null)[]) => {
+export const ordered = (checks: (ReadCheck | null)[]) => {
   const list = checks.filter((c): c is ReadCheck => c !== null);
   return [...list.filter((c) => c.level === "warn"), ...list.filter((c) => c.level === "info")];
 };
@@ -300,14 +361,14 @@ export function normalizePos(raw: KasaPos, ctx: { day: string }): CashReading {
 
 /** Formdaki metin: tutar "12975,5" (form böyle gösterir), Z no olduğu gibi, fiş sayısı tam sayı */
 export function fieldText(field: ReadField, value: number | string): string {
-  if (field === "zNo") return String(value);
-  if (field === "receipts") return String(Math.round(Number(value)));
+  if (ZNO_FIELDS.includes(field)) return String(value);
+  if (COUNT_FIELDS.includes(field)) return String(Math.round(Number(value)));
   return String(round2(Number(value))).replace(".", ",");
 }
 
 /** Formdaki değer okunanla aynı mı (tutarlar 0,005 hassasiyetle; Z no baştaki sıfırlar sayılmadan) */
 export function sameValue(field: ReadField, typed: string, value: number | string): boolean {
-  if (field === "zNo") return normalizeZNo(typed) === normalizeZNo(String(value));
+  if (ZNO_FIELDS.includes(field)) return normalizeZNo(typed) === normalizeZNo(String(value));
   const n = parseNumberTR(typed);
   return n !== null && Math.abs(n - Number(value)) < 0.005;
 }
@@ -329,8 +390,11 @@ export interface PrefillPlan {
   fill: { field: ReadField; text: string; warn: string | null }[];
   /** Yazılanla farklı olanlar: değer kalır, "Fotoğrafta …" ve "Fotoğraftakini yaz" görünür */
   differs: { field: ReadField; photo: number | string; text: string }[];
-  /** Güveni düşük (tahmin): doldurulmaz, turuncu "fişten yazın" ve "Fotoğraftakini yaz" görünür */
-  unsure: { field: ReadField; photo: number | string; text: string }[];
+  /**
+   * Güveni düşük (tahmin) ya da bir kimliği tutmayan (yazarkasa, `reason` ile): doldurulmaz, turuncu "fişten yazın" ve
+   * "Fotoğraftakini yaz" görünür
+   */
+  unsure: { field: ReadField; photo: number | string; text: string; reason?: string }[];
   /** Fişte olması gerekirken okunamayanlar (boşsa turuncu) */
   missing: ReadField[];
 }
@@ -352,7 +416,10 @@ export function prefillPlan(reading: CashReading, current: Partial<Record<ReadFi
       if (!sameValue(field, typed, v.value)) plan.differs.push({ field, photo: v.value, text });
       continue;
     }
-    if (v.confidence === "low") plan.unsure.push({ field, photo: v.value, text });
+    // Yazarkasa (D7): tutmayan alan yazılmaz; doğrulanan alan orta güvende de mavi dolar; güveni düşük hiç dolmaz
+    if (v.status === "failed") plan.unsure.push({ field, photo: v.value, text, reason: v.reason ?? warns[field] ?? UNSURE_TEXT });
+    else if (v.confidence === "low") plan.unsure.push({ field, photo: v.value, text });
+    else if (v.status === "confirmed") plan.fill.push({ field, text, warn: null });
     else plan.fill.push({ field, text, warn: warns[field] ?? (v.confidence === "medium" ? UNSURE_TEXT : null) });
   }
   plan.missing = reading.missing.filter((f) => f in current && !(current[f] ?? "").trim());
@@ -372,11 +439,13 @@ export function posPromptMarks(reading: CashReading): { warn: string | null; uns
 }
 
 /** Okumadan sonraki yeşil satır */
-export function prefillSummary(kind: CashPhotoKind, plan: PrefillPlan): string {
-  const doc = kind === "kasa-z" ? "Z raporu" : "Banka POS fişi";
+export function prefillSummary(kind: CashReadKind, plan: PrefillPlan): string {
+  const doc = kind === "kasa-z" ? "Z raporu" : kind === "kasa-okc" ? "Banka POS Z raporu" : "Banka POS fişi";
   const orange = plan.fill.some((f) => f.warn) || plan.unsure.length > 0 || plan.missing.length > 0 || plan.differs.length > 0;
+  if (kind === "kasa-okc" && plan.fill.length && plan.fill.every((f) => f.field === "bankPos")) return "Banka gün sonu fişinden dolduruldu: Banka gün sonu.";
   if (plan.fill.length) {
-    return `${kind === "kasa-z" ? "Z raporundan" : "Banka POS fişinden"} dolduruldu: ${plan.fill.length} alan. ${orange ? "Turuncu olanları fişle karşılaştırıp gönderin." : "Kontrol edip gönderin."}`;
+    const from = kind === "kasa-z" ? "Z raporundan" : kind === "kasa-okc" ? "Banka POS Z raporundan" : "Banka POS fişinden";
+    return `${from} dolduruldu: ${plan.fill.length} alan. ${orange ? "Turuncu olanları fişle karşılaştırıp gönderin." : "Kontrol edip gönderin."}`;
   }
   if (plan.differs.length) return `${doc} okundu; ${plan.differs.length} alan yazdığınızdan farklı.`;
   if (orange) return `${doc} okundu; turuncu alanları fişten yazın.`;
@@ -415,9 +484,37 @@ export function savedFields(f: {
   zNo: string | null;
   receipts: number | null;
   bankPos: number | null;
+  okcZNo?: string | null;
+  okcReceipts?: number | null;
+  okcTotal?: number | null;
+  okcVatTotal?: number | null;
+  okcCash?: number | null;
+  okcCard?: number | null;
+  okcMealCard?: number | null;
+  okcOther?: number | null;
+  okcVat?: OkcVatLine[] | null;
 }): SavedFields {
   const out: SavedFields = { zTotal: f.zTotal, cash: f.cash, card: f.card, mealCard: f.mealCard, online: f.online, other: f.other, offRevenue: f.offRevenue, zNo: f.zNo, receipts: f.receipts, bankPos: f.bankPos };
   if (f.discounts != null) out.discounts = f.discounts;
+  // Yazarkasa alanları yalnız bölüm yazıldıysa karşılaştırılır (eski raporlarda hiç yok; bölüm isteğe bağlı, D15)
+  if (f.okcTotal != null) {
+    Object.assign(out, {
+      okcZNo: f.okcZNo ?? null,
+      okcReceipts: f.okcReceipts ?? null,
+      okcTotal: f.okcTotal,
+      okcVatTotal: f.okcVatTotal ?? null,
+      okcCash: f.okcCash ?? null,
+      okcCard: f.okcCard ?? null,
+      okcMealCard: f.okcMealCard ?? null,
+      okcOther: f.okcOther ?? null,
+    });
+    // KDV dökümü: oranın satırı yoksa o oran boş (yazılmamış) sayılır
+    for (const rate of [1, 10, 20] as const) {
+      const line = (f.okcVat ?? []).find((l) => l.rate === rate);
+      out[`okcT${rate}`] = line?.total ?? null;
+      out[`okcV${rate}`] = line?.vat ?? null;
+    }
+  }
   return out;
 }
 
@@ -436,8 +533,8 @@ export function photoDiffs(readings: CashReading[], saved: SavedFields): PhotoDi
     const read = source.values[field]!;
     const s = saved[field] ?? null;
     let differs: boolean;
-    if (field === "zNo") differs = s === null || normalizeZNo(String(s)) !== normalizeZNo(String(read.value));
-    else if (field === "receipts") differs = s === null || Math.round(Number(s)) !== Math.round(Number(read.value));
+    if (ZNO_FIELDS.includes(field)) differs = s === null || normalizeZNo(String(s)) !== normalizeZNo(String(read.value));
+    else if (COUNT_FIELDS.includes(field)) differs = s === null || Math.round(Number(s)) !== Math.round(Number(read.value));
     else {
       const same = (v: number) => s !== null && Math.abs(Number(s) - v) < 1;
       differs = !same(Number(read.value));
@@ -447,7 +544,8 @@ export function photoDiffs(readings: CashReading[], saved: SavedFields): PhotoDi
       }
     }
     if (differs) {
-      const excused = source.checks.some((c) => c.level === "warn" && (c.whole === true || c.fields.includes(field)));
+      // Tutmayan alan (yazarkasa kimliği) da özürlüdür: forma yazılmamıştı, personel fişten yazdı
+      const excused = read.status === "failed" || source.checks.some((c) => c.level === "warn" && (c.whole === true || c.fields.includes(field)));
       out.push({ field, label: FIELD_LABELS[field], photo: read.value, saved: s, confidence: read.confidence, excused });
     }
   }
@@ -463,7 +561,7 @@ export function suspiciousDiffs(readings: CashReading[], saved: SavedFields): Ph
   return photoDiffs(readings, saved).filter((d) => d.confidence === "high" && !d.excused);
 }
 
-const shown = (d: PhotoDiff, v: number | string | null) => (v === null ? "boş" : d.field === "zNo" || d.field === "receipts" ? String(v) : money(Number(v)));
+const shown = (d: PhotoDiff, v: number | string | null) => (v === null ? "boş" : ZNO_FIELDS.includes(d.field) || COUNT_FIELDS.includes(d.field) ? String(v) : money(Number(v)));
 
 /** "Kart (fotoğrafta 8.915 ₺, raporda 8.951 ₺)" */
 export function photoDiffText(d: PhotoDiff, withSaved = true): string {
