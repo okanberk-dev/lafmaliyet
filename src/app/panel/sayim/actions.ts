@@ -59,7 +59,7 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
-    const saved = await db.transaction(async (tx) => {
+    const { saved, changed } = await db.transaction(async (tx) => {
       // Aynı anda tek kayıt; formun gördüğü liste değiştiyse yazılmaz (yöneticinin kaydıyla aynı kapı)
       const existing = await lockExtras(tx, m, b);
       const history = await tx.select().from(s.stockExtras).where(lt(s.stockExtras.month, m));
@@ -72,9 +72,12 @@ export async function saveStaffStockExtras(month: string, extras: { name: string
         await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
         await tx.insert(s.stockExtras).values(inserts.map((x) => ({ ...x, month: m })));
       }
-      return tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, m)).orderBy(asc(s.stockExtras.id));
+      const rows = await tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, m)).orderBy(asc(s.stockExtras.id));
+      return { saved: rows, changed: updates.length + deletes.length + inserts.length };
     });
-    await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${saved.length} kalem`);
+    // "N kalem" değişen satır sayısıdır (yöneticinin geç kayıt uyarısı bunu toplar; listenin tamamı değil). Değişiklik
+    // yoksa kayıt yazılmaz
+    if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
     refresh();
     return saved.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, priced: e.unitPrice > 0 }));
   });

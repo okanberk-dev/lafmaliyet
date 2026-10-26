@@ -175,7 +175,7 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       .parse(extras);
     const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
-    await db.transaction(async (tx) => {
+    const changed = await db.transaction(async (tx) => {
       const existing = await lockExtras(tx, m, b);
       const res = planAdminExtras(existing, data);
       if (!res.ok) throw new UserError(res.error);
@@ -189,8 +189,10 @@ export async function saveStockExtras(month: string, extras: { name: string; uni
       if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
       if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((d) => ({ ...d, month: m })));
       if (!data.length) await dropEmptyStockMonth(tx, m);
+      return updates.length + deletes.length + inserts.length;
     });
-    await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${data.length} kalem`);
+    // "N kalem" değişen satır sayısı (personelin kaydıyla aynı anlam); değişiklik yoksa kayıt yazılmaz
+    if (changed) await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${changed} kalem`);
     refresh();
     return null;
   });

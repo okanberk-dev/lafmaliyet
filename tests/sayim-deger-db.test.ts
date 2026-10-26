@@ -344,9 +344,22 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     at("2026-11-03T07:10:00Z");
     assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: syrup, qty: 2, base: 2.5 }])).ok, true);
     await stamp("2026-11-03T07:10:00Z");
+    // Ek kalemlerde "N kalem" değişen satırdır, listenin tamamı değil: iki kayıtlı satırdan biri değişir, biri eklenir → 2
     const { extrasBase } = await import("../src/app/panel/sayim/logic");
-    assert.equal((await extrasActions.saveStaffStockExtras("2026-10", [{ name: "Kağıt havlu", unit: "ADET", qty: 12 }], extrasBase([]))).ok, true);
+    await db.insert(s.stockExtras).values([
+      { month: "2026-10", name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 12.5 },
+      { month: "2026-10", name: "Eldiven", unit: "KUTU", qty: 2, unitPrice: 40 },
+    ]);
+    const extrasNow = async () => (await db.select().from(s.stockExtras).where(eq(s.stockExtras.month, "2026-10"))).sort((a, b) => a.id - b.id);
+    const staffList = [
+      { name: "Peçete", unit: "PAKET", qty: 3 },
+      { name: "Eldiven", unit: "KUTU", qty: 5 },
+      { name: "Kağıt havlu", unit: "ADET", qty: 12 },
+    ];
+    assert.equal((await extrasActions.saveStaffStockExtras("2026-10", staffList, extrasBase(await extrasNow()))).ok, true);
     await stamp("2026-11-03T07:12:00Z");
+    // Değişikliksiz ikinci kayıt işlem geçmişine yazılmaz (kayıt sayısı artmaz)
+    assert.equal((await extrasActions.saveStaffStockExtras("2026-10", staffList, extrasBase(await extrasNow()))).ok, true);
     // Yöneticinin kendi düzeltmesi sayılmaz
     who.role = "admin";
     assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: syrup, qty: 2.2, base: 2 }])).ok, true);
@@ -354,12 +367,12 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     const edits = await alerts.loadStaffLateEdits("2026-10");
     assert.deepEqual(
       edits.map((e) => [e.name, e.saves, e.items]),
-      [["Ayşe", 2, 2]],
+      [["Ayşe", 2, 3]],
     );
     const line = (await bellOf("admin")).find((n) => n.id.startsWith("sayim-personel-2026-10-"));
     assert.ok(line, "yöneticinin zilinde");
     assert.equal(line!.title, "Ayşe, Ekim 2026 sayımını değiştirdi");
-    assert.match(line!.body, /^Ay bittikten sonra 2 kayıt, 2 kalem\./);
+    assert.match(line!.body, /^Ay bittikten sonra 2 kayıt, 3 kalem\./);
     assert.ok(!(await bellOf("staff")).some((n) => n.id.startsWith("sayim-personel-")), "personelde yok");
   });
 });
