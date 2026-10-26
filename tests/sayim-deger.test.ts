@@ -143,19 +143,50 @@ test("NEW-02: Gelir-gider kartı, Genel bakış ve Claude'un yıl toplamı aynı
   assert.ok(readFileSync(join(root, "src/app/panel/page.tsx"), "utf8").includes("<YearTotals totals={yearSum} />"));
 });
 
-test("E-16: Excel'in yıl sütunu bu aya kadar; kâr hücresinin notu panelin yıl kartını söyler", () => {
+/** Excel'in Gelir-Gider sayfasında bir satırın YILI hücresi (15. sütun) */
+function yearCell(ws: import("exceljs").Worksheet, label: string): number {
+  let row: import("exceljs").Row | undefined;
+  ws.eachRow((r) => {
+    if (r.getCell(2).value === label) row = r;
+  });
+  assert.ok(row, label);
+  return row!.getCell(15).value as number;
+}
+
+test("E-16: Excel'in yıl sütunu bu aya kadar; başlık notu toplanan ayları söyler", () => {
   const m = createModel({ ...octCounted, settings: { ...octCounted.settings, kdvHizmet: octCounted.settings.kdv } });
   const wb = buildWorkbook(m, "2026-10", { investments: [], findings: [], now: new Date("2026-10-26T10:00:00Z") });
   const ws = wb.getWorksheet("Gelir-Gider 2026")!;
-  let profitRow: import("exceljs").Row | undefined;
-  ws.eachRow((r) => {
-    if (r.getCell(2).value === "KÂR / ZARAR") profitRow = r;
-  });
-  assert.ok(profitRow);
   const through = ["2026-07", "2026-08", "2026-09", "2026-10"].map((x) => m.pnlMonth(x).profit).reduce((a, b) => a + b, 0);
-  close(profitRow!.getCell(15).value as number, through, "YILI = Temmuz–Ekim (Kasım'ın açılış stoğu yok)");
-  assert.match(String(ws.getCell("O1").note ?? ""), /Ekim 2026 ve öncesi/);
-  assert.match(String(profitRow!.getCell(15).note ?? ""), /Panelin yıl kâr \/ zarar kartı \(yalnız POS cirosu girilmiş 4 ay\)/);
+  close(yearCell(ws, "KÂR / ZARAR"), through, "YILI = Temmuz–Ekim (Kasım'ın açılış stoğu yok)");
+  assert.match(String(ws.getCell("O1").note ?? ""), /^Ekim 2026 ve öncesi, POS cirosu girilmiş 4 ay \(panelin yıl kartları, Genel bakış ve Claude ile aynı\)\.\nSonraki aylar henüz başlamadı\./);
+});
+
+test("İnceleme B02-D4: Excel'in yıl sütunu, Gelir-gider tablosunun yıl sütunu ve yıl kartı aynı: cirosuz ay toplanmaz", () => {
+  // Kasım başladı (bu ay), ciro girilmedi; Haziran'da mal faturası var, ciro yok
+  const ds: Dataset = {
+    ...octCounted,
+    currentMonth: "2026-11",
+    settings: { ...octCounted.settings, kdvHizmet: octCounted.settings.kdv },
+    invoices: [...octCounted.invoices, { ...octCounted.invoices.find((i) => i.category === "Hammadde & İçecek")!, id: 990_002, date: "2026-06-15", amount: 12_000, discount: 0 }],
+  };
+  const m = createModel(ds);
+  const yt = yearTotals(m, 2026);
+  assert.deepEqual(
+    yt.missingRevenue.map((x) => x.month),
+    ["2026-06", "2026-11"],
+  );
+  assert.ok(m.pnlMonth("2026-11").expenses > 0, "Kasım'ın açılış stoğu gider gibi duruyor (tablonun ay sütunu)");
+  const ws = buildWorkbook(m, "2026-11", { investments: [], findings: [], now: new Date("2026-11-01T10:00:00Z") }).getWorksheet("Gelir-Gider 2026")!;
+  close(yearCell(ws, "KÂR / ZARAR"), yt.profit, "Excel YILI kâr = yıl kartı");
+  close(yearCell(ws, "GİDERLER GENEL TOPLAMI"), yt.expenses, "Excel YILI gider = yıl kartı");
+  const note = String(ws.getCell("O1").note ?? "");
+  assert.match(note, /Haziran 2026: ciro girilmedi; [\d.]+\s₺ gider kâra girmedi\./);
+  assert.match(note, /Kasım 2026: ciro girilmedi;/);
+  // Gelir-gider tablosu: yıl sütunu (totalOf) varsayılan olarak yıl kartlarının aylarından
+  const gg = readFileSync(join(root, "src/app/panel/gelir-gider/page.tsx"), "utf8");
+  assert.ok(gg.includes("const totalOf = (key: string, idx: number[] = countedIdx): number | null => {"), "tablo yıl sütunu = yıl kartları");
+  assert.ok(/yearNote=\{\s+yt\.counted\.length < activeMonths\.length/.test(gg), "toplanmayan ay varsa başlıkta söylenir");
 });
 
 // ---------------------------------------------------------------- Yöneticiye sayım uyarıları (E-22, E-19'un bildirimi)

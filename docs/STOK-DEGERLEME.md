@@ -90,8 +90,10 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   kartları (ciro, giderler, kâr / zarar, mal maliyeti oranı) bu aya kadar, POS cirosu girilmiş ayların toplamıdır
   (`yearTotals`, src/lib/calc/insights.ts; Genel bakış'ın yıl toplamı ve Claude'un yıl özeti aynı): bu ay sayılınca
   sonraki ayın açılış stoğu, ay başlamadan onun gideri gibi yıla girmez (denetim E-16). Cirosu girilmemiş ayın gideri
-  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini, kapanış 0) kartların altında not olarak yazılır; tablonun Toplam
-  sütunu ve Excel'in yıl sütunu bu aya kadarki ayları toplar.
+  ve ay sonu sayımı olmayan ay (mal maliyeti tahmini, kapanış 0) kartların altında not olarak yazılır. Tablonun yıl
+  sütunu ve Excel'in yıl sütunu aynı ayları toplar (inceleme B02-D4): cirosu girilmemiş ay tabloda kendi sütununda
+  görünür ama yıla girmez; öyle bir ay varsa yıl sütununun başlığı "cirosu girilmiş N ay" der, Excel'de başlık notu
+  toplanmayan ayları sayar.
 - **Sayım listesi**: sayım birimi olan aktif malzemeler ve pasif olup aktif bir ürünün reçetesinde geçenler ("Pasif ·
   reçetede"; satıldıkça tüketilir, listeden düşse kalan stoğu 0 sayılırdı). Aktif ürünün reçetesindeki malzeme pasif
   yapılamaz (Hammaddeler önce reçetelerden çıkarılmasını ister, ürünleri listeler); kural `isCountable`

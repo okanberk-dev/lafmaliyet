@@ -615,6 +615,7 @@ export function PnlGrid({
   strip,
   latestMonth,
   expectedDebts = NO_EXPECTED,
+  yearNote = null,
 }: {
   year: number;
   months: string[];
@@ -635,6 +636,11 @@ export function PnlGrid({
   latestMonth?: string;
   /** Ay → faturası beklenen cari alımlar (bilgi satırı, toplamlara katılmaz; §5.6) */
   expectedDebts?: ExpectedDebts;
+  /**
+   * Yıl sütunu bazı aktif ayları toplamaz (yıl kartlarıyla aynı kural: bu aya kadar, POS cirosu girilmiş aylar):
+   * başlığın altındaki kısa yazı ve açıklaması. Hepsi toplanıyorsa null
+   */
+  yearNote?: { short: string; long: string } | null;
 }) {
   const reduce = useCalmMotion();
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
@@ -996,6 +1002,12 @@ export function PnlGrid({
                 ))}
                 <TH numeric className={cn(YEAR_COL, HEAD_YEAR, "min-w-28 text-ink sm:min-w-32")}>
                   {year} yılı
+                  {yearNote ? (
+                    <span className="flex items-center justify-end gap-1 text-[11px] font-normal text-ink-mute">
+                      {yearNote.short}
+                      <InfoTip text={yearNote.long} />
+                    </span>
+                  ) : null}
                 </TH>
               </tr>
             </thead>

@@ -711,11 +711,18 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
     const note = calcs[i].info?.note;
     if (note) head.getCell(m).note = note;
   });
-  // Yıl sütunu bu aya kadarki aylardan (Gelir-gider tablosunun Toplam sütunu gibi): bu ay sayılınca sonraki ayın açılış
-  // stoğu, ay başlamadan onun gideri olmasın (denetim E-16). Kâr satırının notu panelin yıl kartını söyler (yearTotals)
-  const through = calcs.filter((c) => c.month <= model.currentMonth);
+  // Yıl sütunu panelin yıl kartlarıyla, Gelir-gider tablosunun yıl sütunuyla, Genel bakış ve Claude ile aynı aylardan
+  // (yearTotals): bu aya kadar, POS cirosu girilmiş aylar. Sonraki ay sayılmaz (bu ay sayılınca açılış stoğu, ay
+  // başlamadan onun gideri olurdu; denetim E-16); cirosu girilmemiş ayın gideri de kâra girmez (NEW-02). Toplama
+  // girmeyen aylar başlık notunda
   const yt = yearTotals(model, year);
-  if (through.length < calcs.length) head.getCell(yearKey).note = `${monthLabel(model.currentMonth)} ve öncesi; sonraki aylar henüz başlamadı.`;
+  const counted = calcs.filter((c) => yt.counted.includes(c.month));
+  head.getCell(yearKey).note = [
+    `${monthLabel(model.currentMonth)} ve öncesi, POS cirosu girilmiş ${yt.counted.length} ay (panelin yıl kartları, Genel bakış ve Claude ile aynı).`,
+    ...(calcs.some((c) => c.month > model.currentMonth) ? ["Sonraki aylar henüz başlamadı."] : []),
+    ...yt.missingRevenue.map((m) => `${missingRevenueText(m)}.`),
+    ...(yt.uncounted.length ? [`Ay sonu sayımı yok, mal maliyeti tahmini: ${yt.uncounted.map((m) => monthLabel(m)).join(", ")}.`] : []),
+  ].join("\n");
 
   const fixedById = new Map(model.fixedList.map((f) => [f.id, f]));
   const od = ws.addRow({ l: "AÇIK GÜN SAYISI", ...Object.fromEntries(months.map((m, i) => [m, calcs[i].info?.openDays ?? null])) });
@@ -729,7 +736,7 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
     if (first && lastSection) ws.addRow({});
     lastSection = def.section;
     const cells = calcs.map((c) => model.pnlValue(c, def.key));
-    const total = pnlYearTotal(model, through, def.key);
+    const total = pnlYearTotal(model, counted, def.key);
     const r = ws.addRow({
       sec: first ? (PNL_SECTION_LABELS[def.section] ?? def.section.toLocaleUpperCase("tr-TR")) : null,
       l: def.sub ? `${def.label} (${def.sub})` : def.label,
@@ -742,13 +749,6 @@ function addPnl(wb: ExcelJS.Workbook, model: Model, month: string) {
       for (const k of [...months, yearKey]) r.getCell(k).font = { bold: true };
     }
     if (def.format === "percent") setFmt(r, [...months, yearKey], PCTZ);
-    if (def.key === "profit" && (yt.missingRevenue.length || yt.uncounted.length)) {
-      r.getCell(yearKey).note = [
-        `Panelin yıl kâr / zarar kartı (yalnız POS cirosu girilmiş ${yt.counted.length} ay): ${tl(yt.profit)}.`,
-        ...yt.missingRevenue.map(missingRevenueText),
-        ...(yt.uncounted.length ? [`Ay sonu sayımı yok, mal maliyeti tahmini: ${yt.uncounted.map((m) => monthLabel(m)).join(", ")}.`] : []),
-      ].join("\n");
-    }
     // Yıl içinde başlayan ya da biten sabit gider: hangi aylarda sayıldığı (ekrandaki alt yazı gibi)
     const range = def.fixedId !== undefined ? fixedRangeInYear(fixedById.get(def.fixedId), months, model.firstDataMonth) : null;
     const labelNote = [range, def.hint].filter(Boolean).join("\n");

@@ -72,9 +72,10 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const months = yearMonths(year);
   const calcs = months.map((m) => model.pnlMonth(m));
   const current = model.currentMonth;
-  // Toplamlar bu aya kadar: bu ay sayılınca sonraki ayın açılış stoğu, ay başlamadan onun gideri görünürdü (denetim
-  // E-16). Tablonun Toplam sütunu bu aylardan; yıl kartları cirosu girilmiş aylardan (yearTotals, Genel bakış ve Claude
-  // ile aynı kural)
+  // Yıl toplamları (kartlar ve tablonun yıl sütunu) tek kuraldan: bu aya kadar, POS cirosu girilmiş aylar (yearTotals;
+  // Genel bakış, Claude ve Excel'in yıl sütunu da aynı). Bu ay sayılınca sonraki ayın açılış stoğu ay başlamadan onun
+  // gideri görünürdü (denetim E-16); cirosu girilmemiş ayın gideri de kâra girmez (NEW-02, inceleme B02-D4). Tablo o
+  // ayların sütunlarını yine gösterir
   const indexes = (keep: (m: string) => boolean) => months.flatMap((m, i) => (keep(m) ? [i] : []));
   const throughIdx = indexes((m) => m <= current);
   const yt = yearTotals(model, year);
@@ -87,7 +88,7 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   const defs = model.pnlRowDefs(months);
   const years = [...new Set([...known.map((k) => Number(k.slice(0, 4))), year])].sort();
 
-  const totalOf = (key: string, idx: number[] = throughIdx): number | null => {
+  const totalOf = (key: string, idx: number[] = countedIdx): number | null => {
     const picked = idx.map((i) => calcs[i]);
     if (key.startsWith("ratio:")) {
       // Oranlar bütün cironun (ModPOS + laffogato.net online) payı
@@ -199,11 +200,10 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
   });
   const cogs = yt.cogs;
   const cogsRatio = revenueNet ? cogs / revenueNet : null;
-  // Kartların dökümü (karta dokununca): yıl kartlarıyla aynı aylardan (cirosu girilmiş, bu ay ya da öncesi), sunucuda
-  const countedSections: GridSection[] = sections.map((sec) => ({ ...sec, rows: sec.rows.map((r) => ({ ...r, total: totalOf(r.def.key, countedIdx) })) }));
+  // Kartların dökümü (karta dokununca): tablonun yıl sütunuyla aynı aylardan (cirosu girilmiş, bu ay ya da öncesi), sunucuda
   const breakdown = {
     ...yearBreakdowns(
-      countedSections,
+      sections,
       countedIdx.map((i) => calcs[i]),
     ),
     revenue: revenueBreakdown(
@@ -329,6 +329,11 @@ async function PnlContent({ searchParams }: { searchParams: PageProps<"/panel/ge
         strip={strip}
         latestMonth={latestMonth}
         expectedDebts={expected}
+        yearNote={
+          yt.counted.length < activeMonths.length
+            ? { short: `cirosu girilmiş ${yt.counted.length} ay`, long: [`${year} yılı: bu aya kadar, POS cirosu girilmiş ${yt.counted.length} ay (yıl kartları gibi)`, ...yearNotes].join(". ") }
+            : null
+        }
       />
     </>
   );
