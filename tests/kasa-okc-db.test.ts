@@ -145,7 +145,7 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
   /** Yöneticinin doğrudan raporu (yeni ya da yeni sürüm) */
   async function save(f: CashReportFields, photos: number[] = [], revision = 0) {
     if (!dates.includes(f.date)) dates.push(f.date);
-    const r = await store.saveCashReport(db, users.ali, { ...f, countedBy: null, revision, photos }, tr(`${f.date}T22:00`));
+    const r = await store.saveCashReport(db, users.ali, { ...f, discounts: f.discounts ?? null, countedBy: null, revision, photos }, tr(`${f.date}T22:00`));
     assert.equal(r.kind, "saved");
     return r.kind === "saved" ? r.row : (null as never);
   }
