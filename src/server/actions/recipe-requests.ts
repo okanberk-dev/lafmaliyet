@@ -24,6 +24,7 @@ import {
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { CountItemExists, countItemSchema, createCountItem } from "@/server/data/count-item";
 import { loadSettings } from "@/server/data/dataset";
+import { withPassiveRelist } from "@/server/data/ingredient-usage";
 import { insertProduct } from "@/server/data/product-create";
 import { currentSnapshot } from "@/server/data/recipe-snapshot";
 import { getDb, schema as s } from "@/server/db";
@@ -227,12 +228,15 @@ export async function reviewRecipeChange(input: z.input<typeof reviewSchema>) {
         }
         return { ...line, qty };
       });
-      await tx.delete(s.recipeItems).where(eq(s.recipeItems.productId, product.id));
-      if (items.length) {
-        await tx.insert(s.recipeItems).values(
-          items.map((line, i) => ({ productId: product.id, ingredientId: line.ingredientId, qty: line.qty, qtyExpr: line.qtyExpr, note: line.note, sortOrder: i + 1 })),
-        );
-      }
+      // Onaylanan reçeteye pasif malzeme yazıldıysa (ürün aktifse) o malzeme sayım listesine bu aydan girer
+      await withPassiveRelist(tx, [product.id], ids, async () => {
+        await tx.delete(s.recipeItems).where(eq(s.recipeItems.productId, product.id));
+        if (items.length) {
+          await tx.insert(s.recipeItems).values(
+            items.map((line, i) => ({ productId: product.id, ingredientId: line.ingredientId, qty: line.qty, qtyExpr: line.qtyExpr, note: line.note, sortOrder: i + 1 })),
+          );
+        }
+      });
       await tx.update(s.products).set({ note: req.after.note, updatedAt: new Date() }).where(eq(s.products.id, product.id));
       await tx.update(s.recipeChangeRequests).set({ ...decided, status: "approved" }).where(eq(s.recipeChangeRequests.id, req.id));
       return { kind: "approved" as const, product, req, summary: summarizeDiff(diffRecipe(current, { note: req.after.note, items })) };

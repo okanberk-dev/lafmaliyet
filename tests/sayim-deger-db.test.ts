@@ -28,6 +28,8 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
   let alerts: typeof import("../src/server/data/count-alerts");
   let opsBell: typeof import("../src/server/bell/ops").opsBell;
   let extrasActions: typeof import("../src/app/panel/sayim/actions");
+  let products: typeof import("../src/server/actions/products");
+  let countProgress: typeof import("../src/server/data/count-progress").countProgress;
   const who: { role: "admin" | "staff" } = { role: "admin" };
   let users: { admin: typeof s.users.$inferSelect; staff: typeof s.users.$inferSelect };
   let syrup = 0;
@@ -69,6 +71,8 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     alerts = await import("../src/server/data/count-alerts");
     opsBell = (await import("../src/server/bell/ops")).opsBell;
     extrasActions = await import("../src/app/panel/sayim/actions");
+    products = await import("../src/server/actions/products");
+    countProgress = (await import("../src/server/data/count-progress")).countProgress;
   });
 
   after(async () => {
@@ -168,6 +172,104 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     assert.match(!refused.ok ? refused.error : "", /sayım listesinde değil/);
   });
 
+  const bellOf = async (role: "admin" | "staff") => opsBell({ ...users[role], role } as Parameters<typeof opsBell>[0]);
+
+  test("Sayım ilerlemesi (Bugün, zil, ay sonu bildirimi) Stok sayımı listesiyle aynı: pasif ama aktif reçetede geçen kalem de sayılır", async () => {
+    at("2026-11-03T09:00:00Z");
+    const { countStatus } = await import("../src/app/panel/sayim/logic");
+    const [milk] = await db
+      .insert(s.ingredients)
+      .values({ name: "Süt", category: "Süt", unit: "ml", packagePrice: 40, packageSize: 1000, priceSource: "manual", countUnit: "LT", countGroup: "SÜT" })
+      .returning({ id: s.ingredients.id });
+    // Lime şurubu eski veride pasif ama Lemon Tea'nin reçetesinde; Ekim'de yalnız süt sayıldı
+    await db.update(s.ingredients).set({ active: false }).where(eq(s.ingredients.id, syrup));
+    await db.insert(s.stockCounts).values({ month: "2026-10", ingredientId: milk.id, qty: 4, factor: 1000, countedBy: "Ayşe" });
+    const status = countStatus((await loadModel()).stockSheet("2026-10"));
+    assert.deepEqual(status, { counted: 1, total: 2, complete: false });
+    assert.deepEqual(await countProgress("2026-10"), { counted: status.counted, total: status.total });
+    // Zil de yarım der (ayın ilk 10 günü, yönetici)
+    const bell = await bellOf("admin");
+    assert.ok(
+      bell.some((n) => /Ekim 2026/.test(n.title) && /1 \/ 2/.test(`${n.title} ${n.body}`)),
+      JSON.stringify(bell.map((n) => [n.id, n.title, n.body])),
+    );
+    // Şurup da sayılınca ikisi de tamam
+    await db.insert(s.stockCounts).values({ month: "2026-10", ingredientId: syrup, qty: 1.5, factor: 1000, countedBy: "Ayşe" });
+    assert.deepEqual(countStatus((await loadModel()).stockSheet("2026-10")), { counted: 2, total: 2, complete: true });
+    assert.deepEqual(await countProgress("2026-10"), { counted: 2, total: 2 });
+    // Ürün de pasif olunca şurup listeden düşer: Kasım'da ikisi de yalnız sütü sayar (Ekim'in kaydı arşivde kalır)
+    await db.update(s.products).set({ active: false }).where(eq(s.products.id, lemonTea));
+    const nov = countStatus((await loadModel()).stockSheet("2026-11"));
+    assert.deepEqual(nov, { counted: 0, total: 1, complete: false });
+    assert.deepEqual(await countProgress("2026-11"), { counted: 0, total: 1 });
+  });
+
+  test("Pasif malzeme yazımla aktif bir reçeteye girince sayım listesine bu aydan girer; zaten listedeyse dokunulmaz", async () => {
+    at("2026-11-03T09:00:00Z");
+    // Ürün emekli, şurup pasif (yalnız pasif ürünün reçetesinde: listede değil)
+    await db.update(s.products).set({ active: false }).where(eq(s.products.id, lemonTea));
+    await db.update(s.ingredients).set({ active: false, countFrom: null }).where(eq(s.ingredients.id, syrup));
+    const listedIn = async (m: string) => (await loadModel()).stockSheet(m).groups.flatMap((g) => g.lines).some((l) => l.ingredient.id === syrup);
+    assert.equal(await listedIn("2026-11"), false);
+    // Ürün reçete kartından yeniden aktif olur: şurup Kasım'dan listede, geçmiş aylar "yarım" olmaz
+    const recipe = {
+      productId: lemonTea,
+      name: "Lemon Tea",
+      size: "M" as const,
+      categoryId: category,
+      price: 180,
+      fireOverride: null,
+      note: null,
+      active: true,
+      showOnMenu: true,
+      items: [{ ingredientId: syrup, qty: 30, qtyExpr: null, note: null }],
+    };
+    const saved = await products.saveRecipe(recipe);
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    assert.equal((await syrupRow()).countFrom, "2026-11");
+    assert.equal(await listedIn("2026-11"), true);
+    assert.equal(await listedIn("2026-10"), false, "Ekim'in listesine girmez (o ay ürün emekliydi)");
+    // Aynı reçete yeniden kaydedilir (şurup zaten listede): count_from değişmez
+    at("2026-12-02T09:00:00Z");
+    assert.equal((await products.saveRecipe(recipe)).ok, true);
+    assert.equal((await syrupRow()).countFrom, "2026-11");
+    // Kopyalanan ürün: şurup zaten listede, dokunulmaz; yeni pasif malzemeli kopya listeye bu aydan alır
+    const [vanilla] = await db
+      .insert(s.ingredients)
+      .values({ name: "Vanilya şurubu", category: "Sos & Şurup", unit: "ml", packagePrice: 300, packageSize: 1000, priceSource: "manual", countUnit: "LT", countGroup: "ŞURUP", active: false, countFrom: "2026-03" })
+      .returning({ id: s.ingredients.id });
+    const [retired] = await db.insert(s.products).values({ categoryId: category, name: "Vanilla Latte", size: "M", price: 190, active: false }).returning({ id: s.products.id });
+    await db.insert(s.recipeItems).values([
+      { productId: retired.id, ingredientId: vanilla.id, qty: 20 },
+      { productId: retired.id, ingredientId: syrup, qty: 5 },
+    ]);
+    const copy = await products.createProduct({ name: "Vanilla Latte", size: "L", categoryId: category, price: 210, copyFromId: retired.id });
+    assert.equal(copy.ok, true, JSON.stringify(copy));
+    const vanillaRow = (await db.select().from(s.ingredients).where(eq(s.ingredients.id, vanilla.id)))[0];
+    assert.equal(vanillaRow.countFrom, "2026-12");
+    assert.equal((await syrupRow()).countFrom, "2026-11", "zaten listedeydi");
+  });
+
+  test("Migration 0043: eski veride pasif ama aktif reçetede geçen kalem bu aydan listede; ötekilere dokunmaz", async () => {
+    const { readFileSync } = await import("node:fs");
+    const [other] = await db
+      .insert(s.ingredients)
+      .values({ name: "Eski şurup", category: "Sos & Şurup", unit: "ml", packagePrice: 300, packageSize: 1000, priceSource: "manual", countUnit: "LT", active: false })
+      .returning({ id: s.ingredients.id });
+    const [later] = await db
+      .insert(s.ingredients)
+      .values({ name: "İleri şurup", category: "Sos & Şurup", unit: "ml", packagePrice: 300, packageSize: 1000, priceSource: "manual", countUnit: "LT", active: false, countFrom: "2099-01" })
+      .returning({ id: s.ingredients.id });
+    await db.insert(s.recipeItems).values({ productId: lemonTea, ingredientId: later.id, qty: 1 });
+    await db.update(s.ingredients).set({ active: false, countFrom: "2026-01" }).where(eq(s.ingredients.id, syrup));
+    await db.execute(sql.raw(readFileSync("drizzle/0043_pasif_recetede_sayim.sql", "utf8")));
+    const [{ month }] = (await db.execute(sql`SELECT to_char(now() AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') AS month`)) as unknown as { month: string }[];
+    const fromOf = async (id: number) => (await db.select({ f: s.ingredients.countFrom }).from(s.ingredients).where(eq(s.ingredients.id, id)))[0].f;
+    assert.equal(await fromOf(syrup), month, "reçetede: bu aydan");
+    assert.equal(await fromOf(other.id), null, "hiçbir aktif reçetede yok: dokunulmaz");
+    assert.equal(await fromOf(later.id), "2099-01", "ileri bir aydan çıkan kalem: dokunulmaz");
+  });
+
   test("E-28: zayi / ikram kaydı olan malzeme silinmez, kayıt malzemesini korur", async () => {
     // Reçetede olmayan, sayımı ve alımı olmayan Limon; Eylül'de iki zayi
     const [limon] = await db
@@ -192,8 +294,6 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
       .returning({ id: s.ingredients.id });
     assert.deepEqual(await ingredients.deleteIngredient(bos.id), { ok: true, data: null });
   });
-
-  const bellOf = async (role: "admin" | "staff") => opsBell({ ...users[role], role } as Parameters<typeof opsBell>[0]);
 
   test("E-22: fiyatsız ek kalem yöneticinin zilinde; fiyat girilince kalkar; personelde yok", async () => {
     at("2026-11-03T09:00:00Z");

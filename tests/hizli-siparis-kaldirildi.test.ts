@@ -149,9 +149,14 @@ test("veritabanı: üç tablo şemada geçmiş için kalır, migration yok; json
   const src = read("src/server/db/schema.ts");
   assert.match(src, /Hızlı sayım ve mal siparişi 26 Eki 2026'da panelden kaldırıldı/);
   assert.match(src, /Üç tablo geçmiş için duruyor: migration yok, veri silinmez/);
-  // Bu partide migration eklenmedi: son migration hâlâ 0042 ve hiçbir migration tabloları silmez
+  // Bu partide migration eklenmedi (son migration 0042 idi); sonrakiler de üç tabloya dokunmaz ve hiçbir migration
+  // tabloları silmez
   const journal = JSON.parse(read("drizzle/meta/_journal.json")) as { entries: { tag: string }[] };
-  assert.equal(journal.entries.at(-1)?.tag, "0042_okc_z");
+  const tags = journal.entries.map((e) => e.tag);
+  assert.ok(tags.includes("0042_okc_z"));
+  for (const tag of tags.slice(tags.indexOf("0042_okc_z") + 1)) {
+    assert.doesNotMatch(read(`drizzle/${tag}.sql`), /"(quick_counts|reorder_items|supplier_orders)"/, tag);
+  }
   for (const f of readdirSync(join(root, "drizzle")).filter((x) => x.endsWith(".sql"))) {
     assert.doesNotMatch(read(`drizzle/${f}`), /DROP TABLE[^;]*"(quick_counts|reorder_items|supplier_orders)"/i, f);
   }
