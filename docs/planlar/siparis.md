@@ -1,5 +1,10 @@
 # Plan: Mal siparişi: sipariş önerisi, WhatsApp ile sipariş ve teslim kontrolü (group `siparis`)
 
+> **Kaldırıldı (26 Ekim 2026, denetimin B21 partisi).** Sahibin isteği: "Hızlı sayım ile mal siparişi kısmını kaldır,
+> gereksiz çünkü normal sayım olsun". Bu plan Dalga 8'de (#24) uygulanmıştı; ekranlar, eylemler ve işler panelden
+> kalktı, tablolar geçmiş için duruyor. Ne kalktı, ne kaldı: `docs/MAL-SIPARISI.md`. Bu dosya tarihçedir; yeni iş bu
+> plana dayanmaz.
+
 Base: `claude/oneriler` (= origin/main 71ac11f). Read `AGENTS.md` first. This Next.js (16.4, cacheComponents) differs from
 training data. The docs this plan relies on:
 

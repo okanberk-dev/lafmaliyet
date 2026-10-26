@@ -264,7 +264,7 @@ doğrulama turunda düzeltilen değerlerdir.
 | menu-uygulama-tazelik | Site → app | /menu SWR 3600 → 300 (veritabanı okuma sayısı değişmez, site:src/app/api/mobile/v1/menu/route.ts:7, :26). App menü ve customization staleTime 1 sa → 5 dk, mağaza 30 → 10 dk. Satır reddi menüyü / mağazayı geçersiz kılar. If-None-Match yok (304 bugün hata, app:src/data/api.ts:284-306) | Sunucu reddi değişmez | Menü ≤ 15 dk | S1, M2 |
 | menu-alerjen | Site, elle | Panelde bağlı ürünün malzeme kümesi değişince hatırlatma; alerjen panele gitmez | - | Kayıt anında | P4 |
 | menu-kasa-fiyati, menu-yeni-kalem | Kasa elle, tek adım Kasaya işle | Bağsız kalem Kasaya işle'ye girmez (personelin listesi ürün satırıdır, d10 plan §2.2). Yalnız yönetici: /panel/urunler/site "Yalnız sitede" sekmesinde ve zilde "Sitede fiyatı değişti, panele bağlı değil: X · Bağla". Bağlanınca var olan `pos_stale` yolu çalışır. İlk çekmede karşılaştırma yok | - | Çekme anı | P4 |
-| menu-tukenen-hammadde | Panel uyarır, insan karar verir | Hızlı sayım sonucunda eldeki 0 olan takipteki hammaddeyi kullanan bağlı ve Satışta kalemler listelenir; düğme dalga 10'un `setSoldOut({siteMenuId, soldOut:true})` eylemini çağırır (iki rol, yükte fiyat yok). Otomatik düşürme yok | `expect` (P1) | Kayıt anında | P4 |
+| menu-tukenen-hammadde | **Düştü (26 Ekim 2026, B21: hızlı sayım kaldırıldı).** Eskiden: panel uyarır, insan karar verir | Hızlı sayım sonucunda eldeki 0 olan takipteki hammaddeyi kullanan bağlı ve Satışta kalemler listelenir; düğme dalga 10'un `setSoldOut({siteMenuId, soldOut:true})` eylemini çağırır (iki rol, yükte fiyat yok). Otomatik düşürme yok | `expect` (P1) | Kayıt anında | P4 |
 | menu-kalem-silme | Site | Bağ silme yüzünden kalkınca aynı yazımda `showOnMenu=false` | - | Çekme anı | P4 |
 | menu-fiyat-listesi-tarihi | Site; gün operatörün | İşaret yalnız fiyat değişince (bugünkü kural: site:src/app/api/panel/menu/route.ts:152, site:src/app/admin/menu/actions.ts:308-311). Satış durumu tarihi değiştirmez. Faz 3: GET menüye isteğe bağlı `pricesEffectiveDate`/`pricesChangedAt`, panel Kasaya işle'de (yönetici) uyarı | - | Menü pingi | S9, P8 |
 | baglanti-mobil-ozellestirme-fiyati | Menü kalemi (Soru 5 kararı) | Ek ücret mnu-0081 / 0080 / 0082'nin `priceMinor`'ından, `isActive`'e bakmadan; sabite yalnız kalem yoksa, iki boyluysa ya da fiyat geçersizse dönülür. Laktozsuz 0 | Sabit yedek | /menu tazeliği | S8 |
@@ -650,19 +650,18 @@ Sıra: S3 → S4 → S5 → S6 → F1 → S7 → F2 → S8 → M3; panelde (dalg
 
 **P4 · Menü yan uyarıları**
 - **Repo / dal:** lafmaliyet · `claude/senkron-p4-menu-uyari` (dalga 10 sonrası).
-- **Ne:** (a) Hızlı sayım: eldeki 0 olan takipteki hammaddeyi kullanan bağlı ve Satışta kalemler sonuç ekranında ve
-  Bugün'de; düğme `setSoldOut({siteMenuId, soldOut:true})`; personel yükünde fiyat yok. (b) Bağsız kalem:
+- **Ne:** (a) ~~Hızlı sayım: eldeki 0 olan takipteki hammaddeyi kullanan bağlı ve Satışta kalemler sonuç ekranında ve
+  Bugün'de~~ **düştü:** hızlı sayım 26 Ekim 2026'da kaldırıldı (B21, `docs/MAL-SIPARISI.md`); bu parça yapılmaz,
+  aylık Stok sayımı'na da taşınmaz (sahibin kararı: başka parti bu özelliği genişletmez). (b) Bağsız kalem:
   `applySiteList` önceki kopyayla karşılaştırır; yalnız yöneticiye /panel/urunler/site satırı ve zil "Sitede fiyatı
   değişti, panele bağlı değil: X · Bağla". (c) Silinen kalem: aynı yazımda `showOnMenu=false`. (d) Alerjen
   hatırlatması: `saveRecipe`, öneri onayı, ürün açma.
-- **Dosyalar:** src/server/actions/reorder.ts, src/app/panel/hizli-sayim/quick-count-form.tsx, src/lib/site-menu/plan.ts,
+- **Dosyalar:** src/lib/site-menu/plan.ts,
   src/server/site-menu/sync.ts, src/app/panel/urunler/site/*, dalga 10'un bell/ops.ts ve rows-ops.ts,
   src/server/actions/products.ts, recipe-requests.ts, src/server/data/product-create.ts.
-- **Testler:** tests/site-menusu.test.ts (bağsız fark, ilk çekmede yok, silinen kalem); hızlı sayım listesi (personel
-  yükünde fiyat yok); alerjen hatırlatması.
+- **Testler:** tests/site-menusu.test.ts (bağsız fark, ilk çekmede yok, silinen kalem); alerjen hatırlatması.
 - **Migration:** yok.
-- **Uçtan uca:** hızlı sayımda 0 → liste → Tükendi → `/api/mobile/v1/menu`'den kalkar; bağsız kalemin fiyatı sitede
-  değişir → yönetici zili.
+- **Uçtan uca:** bağsız kalemin fiyatı sitede değişir → yönetici zili.
 - **Bağımlı:** dalga 10, P1.
 
 **P5 · Karaoke: KVKK boşaltma ve ters çakışma**

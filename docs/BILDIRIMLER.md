@@ -60,16 +60,14 @@ push yok, personele zil yok (dalga 10 §2.1, [SITE-MENU.md](SITE-MENU.md) › Pe
 "… sayımı girilmedi"), gövdesi "Kalanların stoğu 0 sayılır…", o ayın sayımına götürür; aynı satır sabah e-postasının
 onay kutusunda da (tamam = listedeki her kalem sayıldı, `sayim/logic.ts pastCountReminder`). Zilin
 satırlarını alanların modülleri üretir ve iki rol dalında da çağrılır: kasa `src/server/bell/kasa.ts`, operasyon
-(kasadaki fiyatlar, zayi istekleri, Tükendi, mal siparişi taslağı, geçen ayın sayımı) `src/server/bell/ops.ts`; toplayıcı
+(kasadaki fiyatlar, zayi istekleri, Tükendi, geçen ayın sayımı) `src/server/bell/ops.ts`; toplayıcı
 `src/server/actions/notifications.ts`. **Kontrol listeleri** başlığında (kasanın ardından, iki rolde) yöneticiye bugün son saati geçen
 liste, dün tamamlanmayan liste ve bugünün ve dünün açık sorunları (aralık dışı ölçüm kırmızı, "Sorun var" turuncu; en
 yeni 5), personele aralığı açık ("bekliyor", bilgi) ve son saati geçen ("gecikti") liste durur
 ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md) § 6). **Faturalar** başlığında yöneticiye komisyon ve hakediş uyarıları da
 durur: geciken hakediş, yemek kartında kesin %6 aşımı, komisyon dışı ücret olabilecek kalem (en çok 5; Komisyon &
-hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8).
-Başlığın sonunda mal siparişlerinin teslim kontrolü durur: faturayla tutmayan sipariş ("Teslim kontrolü: Sütaş", fark
-değişince yeniden okunmamış olur) ve beklenen günden 2 gün sonra hâlâ gelmeyen ("Mal siparişi gelmedi mi: Kaldi"); en
-çok 5, Gönderilenler'deki siparişe götürür ([MAL-SIPARISI.md](MAL-SIPARISI.md) § 8).
+hakediş'te kanalın kartına götürür, [KOMISYON.md](KOMISYON.md) § 8). Mal siparişinin teslim kontrolü satırları ve
+taslak onayı 26 Ekim 2026'da mal siparişiyle birlikte kalktı ([MAL-SIPARISI.md](MAL-SIPARISI.md)).
 Yöneticinin zilinde (ödemeler başlığında) kasadan tedarikçiye çıkan ama hesaba işlenmemiş satırlar da durur:
 "Kasadan tedarikçiye 2 ödeme hesaba işlenmedi (3.800,00 ₺)" (son 60 gün; Tedarikçiler'de işlenmemiş kasa ödemeleri
 penceresine götürür, `?kasa=1`). Personelin zili ve Bugün'ü ödeme göstermez, değişmedi.
@@ -307,17 +305,17 @@ görür ve değiştirir (yönetici de başkasınınkini görmez); ödemeler ve s
 - **Saatli** hatırlatma, panel hangi ekranda açık olursa olsun saatinde ses ve kartla çalar; bildirim izni verilmiş
   cihazda sekme arka plandayken sistem bildirimi olarak gelir. Zil, bugünkü ve gecikmiş hatırlatıcıları gösterir.
 - **Sabah özeti:** günlük iş (`/api/cron/gunluk`, 08:00–09:00), bugün ya da önceden kalmış açık hatırlatıcısı olan
-  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Hızlı sayım günü
-  aynı iş, takipte kalem varsa ve hepsi sayılmadıysa sabah özeti açık bütün cihazlara bir de "Bugün hızlı sayım günü"
-  gönderir (Hızlı sayım'ı açar; ayın son günü gitmez; [MAL-SIPARISI.md](MAL-SIPARISI.md) § 3).
+  her kişinin bildirim açık cihazlarına tek bir Web Push gönderir ("Bugün 3 hatırlatıcınız var"). Ayın son günü aynı
+  iş, sayım listesi doluysa ve ayın sayımı tamamlanmadıysa sabah özeti açık bütün cihazlara bir de "Bugün ay sonu stok
+  sayımı" gönderir (o ayın Stok sayımı'nı açar; `src/server/notify/count-push.ts`, Günlük işler'de adımı "Sayım
+  bildirimi"). Haftalık "Bugün hızlı sayım günü" bildirimi 26 Ekim 2026'da hızlı sayımla birlikte kalktı.
 
 Her cihaz kendi tercihini tutar (**Bu cihazda uyarılar** kartı, Hatırlatıcılarım ve Karaoke ekranlarında): bildirim
 izni ve aboneliği, karaoke bildirimleri, sipariş bildirimleri ve sipariş zili (laffogato.net'ten yeni uygulama
 siparişi; [SITE-SIPARIS.md](SITE-SIPARIS.md)), sabah özeti, sesli uyarı, saatli hatırlatmalar. Web Push'un ayrıntısı ve
-güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık; iki
-rolde anahtarı var): yöneticiye personelin onay bekleyen mal siparişi taslağı (taslak güncellenirse en çok 15 dakikada
-bir) ve geri alınan gönderim, personele kendi taslağının sonucu ("Kaldi siparişi onaylandı", "… reddedildi"); etiket
-`istek-<id>`, metinde tutar yok ([ONAYLAR.md](ONAYLAR.md), [MAL-SIPARISI.md](MAL-SIPARISI.md) § 11).
+güvenliği [KARAOKE.md](KARAOKE.md)'de. **Onay bildirimleri** (`approvals`, varsayılan açık): konu ve cihaz tercihi
+duruyor ama şu an gönderen yok (tek gönderen mal siparişi taslağıydı, 26 Ekim 2026'da kalktı; [MAL-SIPARISI.md](MAL-SIPARISI.md)),
+bu yüzden anahtar cihaz kartında görünmez; yeniden bir gönderen olunca döner ([ONAYLAR.md](ONAYLAR.md)).
 
 ## Resend kurulumu
 
