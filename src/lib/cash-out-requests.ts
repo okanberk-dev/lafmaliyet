@@ -117,14 +117,26 @@ export const CashOutRequestPayload = z
   .refine((p) => (p.op === "ekle" ? p.line !== null && p.cashOutId === null : p.cashOutId !== null && p.before !== null && (p.op === "sil" || p.line !== null)), "İsteğin yükü eksik");
 export type CashOutRequestPayloadT = z.output<typeof CashOutRequestPayload>;
 
-/** `foto-kaldir` isteğinin yükü: rapora bağlı Z ya da POS fotoğrafı */
+/** `foto-kaldir` isteğinin yükü: rapora bağlı ModPOS Z, yazarkasa (banka POS) Z'si ya da eski banka POS fotoğrafı */
 export const PhotoRemovalPayload = z.object({
   photoId: z.number().int().positive(),
-  photoKind: z.enum(["kasa-z", "kasa-pos"]),
+  photoKind: z.enum(["kasa-z", "kasa-pos", "kasa-okc"]),
   reportId: z.number().int().positive(),
   day,
 });
 export type PhotoRemovalPayloadT = z.output<typeof PhotoRemovalPayload>;
+export type RemovablePhotoKind = PhotoRemovalPayloadT["photoKind"];
+
+/**
+ * Fotoğrafın türü yüzünden kaldırılamaması (null: tür engel değil; okuma farkı ayrıca denetlenir): raporun tek ModPOS Z
+ * fotoğrafı ve, yazarkasa bölümü yazılmışken, tek Banka POS Z (yazarkasa) fotoğrafı kanıttır (docs/planlar/okc-z.md
+ * §16 S4: ModPOS Z'siyle aynı kural). Yazarkasa bölümü boşken o fotoğraf hiçbir rakamın kanıtı değildir, kaldırılabilir
+ */
+export function photoKindRefusal(kind: RemovablePhotoKind, o: { zCount: number; okcCount: number; okcFigures: boolean }): string | null {
+  if (kind === "kasa-z" && o.zCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyZ;
+  if (kind === "kasa-okc" && o.okcFigures && o.okcCount <= 1) return CASH_OUT_REQUEST_TEXT.photoOnlyOkc;
+  return null;
+}
 
 /** Personelin kendi isteğinin görünümü: işlem, gün ve satırın kendisi (kategori, önceki hâl ve gider kaydı yok) */
 export interface StaffCashOutView {
@@ -161,6 +173,7 @@ export const CASH_OUT_REQUEST_TEXT = {
   receiptDay: "Bu günün satırına fiş eklenemez",
   photoNotLinked: "Fotoğraf artık rapora bağlı değil; sayfayı yenileyin",
   photoOnlyZ: "Raporun tek Z fotoğrafı kaldırılamaz",
+  photoOnlyOkc: "Raporun tek Banka POS Z fotoğrafı kaldırılamaz: yazarkasa rakamlarının kanıtı",
   photoDiffs: "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır, kaldırılamaz. Yöneticiye yazın",
   photoDay: "Bu günün fotoğrafına artık yalnız yönetici dokunur",
   changed: "Satır istekten sonra değişti; yeniden bakın ya da yine de uygulayın",
@@ -174,11 +187,11 @@ export const CASH_OUT_OP_LABEL: Record<CashOutOp, string> = { ekle: "ekleme", du
 /** İsteğin başlığı (tutarsız, kişisel veri yok): "21 Ekim kasadan çıkan ekleme" */
 export const cashOutRequestTitle = (op: CashOutOp, date: string) => `${dayMonthTR(date)} kasadan çıkan ${CASH_OUT_OP_LABEL[op]}`;
 /** "21 Ekim Z raporu fotoğrafı kaldırma" */
-export const photoRemovalTitle = (kind: "kasa-z" | "kasa-pos", date: string) => `${dayMonthTR(date)} ${PHOTO_KIND_LABEL[kind]} fotoğrafı kaldırma`;
+export const photoRemovalTitle = (kind: RemovablePhotoKind, date: string) => `${dayMonthTR(date)} ${PHOTO_KIND_LABEL[kind]} fotoğrafı kaldırma`;
 /** Yöneticinin kartı: "Kasadan çıkan ekleme · 21 Ekim Salı" */
 export const cashOutCardTitle = (op: CashOutOp, date: string) => `Kasadan çıkan ${CASH_OUT_OP_LABEL[op]} · ${longDateTR(date)}`;
 /** "Fotoğraf kaldırma · Z raporu · 21 Ekim Salı" */
-export const photoCardTitle = (kind: "kasa-z" | "kasa-pos", date: string) => `Fotoğraf kaldırma · ${PHOTO_KIND_LABEL[kind]} · ${longDateTR(date)}`;
+export const photoCardTitle = (kind: RemovablePhotoKind, date: string) => `Fotoğraf kaldırma · ${PHOTO_KIND_LABEL[kind]} · ${longDateTR(date)}`;
 
 /** Satırın kısa adı ve tutarı: "Migros · 412,50 ₺" (bildirim, işlem geçmişi) */
 export function lineText(l: Pick<CashOutLineT, "kind" | "amount" | "store" | "description">): string {

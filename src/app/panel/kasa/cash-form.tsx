@@ -1,6 +1,6 @@
 "use client";
 
-import { Calculator, Copy, CreditCard, MessageCircle, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
+import { Calculator, Copy, MessageCircle, MonitorCheck, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +24,9 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { LAFPOS_NO_COUNT_TEXT, lafposSummary, type LafposDay } from "@/lib/lafpos/prefill";
+import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
+import { OKC_HALVES_TEXT, okcNeedsHalves } from "@/lib/photo-read/okc";
 import type { PhotoUploadResponse } from "@/lib/photo-read/reading";
 import {
   fieldText,
@@ -35,9 +38,11 @@ import {
   savedFields,
   type CashPhotoKind,
   type CashReading,
+  type PrefillPlan,
   type ReadField,
+  type TillField,
 } from "@/lib/photo-read/kasa";
-import { MAX_REPORT_PHOTOS, readingOffText, type ReadingState } from "@/lib/photo-rules";
+import { MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, readingOffText, type ReadingState } from "@/lib/photo-rules";
 import { dayMonthTR, daysBetween, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { resendCashReportEmail, submitCashReport } from "@/server/actions/cash-report";
@@ -52,7 +57,9 @@ import { copyText } from "../kullanicilar/password-field";
 import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-photos";
 import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
+import { OkcCard, type OkcFieldOptions } from "./okc-card";
+import { OKC_KEYS, okcFieldsOf, okcValuesOf, type OkcKey, type OkcMoneyKey } from "./okc-form";
 
 type MoneyKey =
   | "zTotal"
@@ -62,13 +69,14 @@ type MoneyKey =
   | "online"
   | "other"
   | "openingCash"
+  | "cashIn"
   | "cashOut"
   | "countedCash"
   | "handedOver"
   | "bankPos"
   | "offRevenue"
   | "discounts";
-type Key = MoneyKey | "zNo" | "receipts" | "cashOutNote" | "note";
+type Key = MoneyKey | OkcKey | "zNo" | "receipts" | "cashOutNote" | "note";
 type Values = Record<Key, string>;
 
 /** Boş bırakılamayan tutarlar (ötekiler boşsa 0; banka POS boşsa karşılaştırılmaz) */
@@ -81,17 +89,24 @@ const LABELS: Record<MoneyKey, string> = {
   online: "Online",
   other: "Diğer",
   openingCash: "Açılış",
+  cashIn: "Gün içinde kasaya giren",
   cashOut: "Gün içinde çıkan",
   countedCash: "Sayılan nakit",
   handedOver: "Teslim edilen",
-  bankPos: "Banka POS",
+  bankPos: "Banka gün sonu",
   offRevenue: "Ödenmez / ikram",
   discounts: "İndirim",
 };
 
-/** Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez) */
-const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos"] as const satisfies readonly (ReadField & Key)[];
+/**
+ * Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez). Yazarkasa
+ * alanları ModPOS'unkilerden ayrı anahtarlardır (çapraz karşılaştırma olmaz)
+ */
+const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos", ...OKC_KEYS] as const satisfies readonly (ReadField & Key)[];
 type FormReadField = (typeof READ_FIELDS)[number];
+/** Ön doldurmanın işaretlediği alanlar: fotoğrafınkiler ve LafPOS'un gün sonunun kasa alanları (docs/LAFPOS.md) */
+const MARK_FIELDS = [...READ_FIELDS, ...(["openingCash", "cashIn", "cashOut", "countedCash", "handedOver"] as const satisfies readonly (TillField & Key)[])];
+type MarkField = (typeof MARK_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
 
@@ -107,6 +122,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
       online: report.online ? input(report.online) : "",
       other: report.other ? input(report.other) : "",
       openingCash: input(report.openingCash),
+      cashIn: report.cashIn ? input(report.cashIn) : "",
       cashOut: report.cashOut ? input(report.cashOut) : "",
       cashOutNote: report.cashOutNote ?? "",
       countedCash: input(report.countedCash),
@@ -115,6 +131,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
       offRevenue: input(report.offRevenue),
       discounts: input(report.discounts ?? null),
       note: report.note ?? "",
+      ...okcValuesOf(report),
     };
   }
   // Yeni rapor: gün içinde kasadan çıkan satırların toplamı ve adları kendiliğinden gelir
@@ -128,6 +145,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
     online: "",
     other: "",
     openingCash: carry ? input(carry.amount) : "",
+    cashIn: "",
     cashOut: outs.length ? input(cashOutsTotal(outs)) : "",
     cashOutNote: cashOutNoteOf(outs) ?? "",
     countedCash: "",
@@ -136,6 +154,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
     offRevenue: "",
     discounts: "",
     note: "",
+    ...okcValuesOf(null),
   };
 }
 
@@ -158,7 +177,10 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
   const a = Object.fromEntries((Object.keys(LABELS) as MoneyKey[]).map((k) => [k, amount(k)])) as Record<MoneyKey, number | null>;
   const receiptsRaw = v.receipts.trim();
   const receipts = receiptsRaw ? Number(receiptsRaw.replace(/\D/g, "")) : null;
-  if (Object.keys(errors).length) return { fields: null, errors };
+  // Yazarkasa bölümü (isteğe bağlı; kuralları sunucuyla aynı metinle, okcFieldsOf)
+  const okc = okcFieldsOf(v);
+  Object.assign(errors, okc.errors);
+  if (Object.keys(errors).length || !okc.fields) return { fields: null, errors };
   const fields: CashReportFields = {
     date,
     zNo: v.zNo.trim() || null,
@@ -170,6 +192,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     online: a.online ?? 0,
     other: a.other ?? 0,
     openingCash: a.openingCash ?? 0,
+    cashIn: a.cashIn ?? 0,
     cashOut: a.cashOut ?? 0,
     cashOutNote: v.cashOutNote.trim() || null,
     countedCash: a.countedCash ?? 0,
@@ -178,6 +201,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     offRevenue: a.offRevenue,
     discounts: a.discounts,
     note: v.note.trim() || null,
+    ...okc.fields,
   };
   if (fields.handedOver > fields.countedCash) errors.handedOver = "Teslim edilen, sayılan nakitten fazla olamaz";
   return Object.keys(errors).length ? { fields: null, errors } : { fields, errors };
@@ -196,6 +220,7 @@ function preview(v: Values): ReturnType<typeof computeCash> | null {
     online: n("online") ?? 0,
     other: n("other") ?? 0,
     openingCash: n("openingCash") ?? 0,
+    cashIn: n("cashIn") ?? 0,
     cashOut: n("cashOut") ?? 0,
     countedCash: n("countedCash") ?? 0,
     handedOver: n("handedOver") ?? 0,
@@ -210,20 +235,61 @@ function emailLine(status: CashReportDTO["emailStatus"], error: string | null, r
   return null;
 }
 
+/** Ön doldurmanın kaynağı: fotoğrafın kimliği ya da LafPOS'un gün sonu */
+type MarkSource = number | "lafpos";
+
 /**
- * Fotoğraftan gelen alanın durumu: `filled` forma yazılan metin (değer hâlâ buysa "Fotoğraftan" rozeti), `warn` turuncu
- * nedeni, `suggest` yazılandan farklı ya da net okunamayan değer ("Fotoğraftakini yaz"). Alana yazınca turuncu kalkar.
+ * Fotoğraftan (ya da LafPOS'tan) gelen alanın durumu: `from` alana yazanı, `filled` forma yazılan metin (değer hâlâ
+ * buysa "Fotoğraftan" / "LafPOS'tan" rozeti), `warn` turuncu nedeni, `suggest` yazılandan farklı ya da net okunamayan
+ * değer ve onu getiren ("Fotoğraftakini yaz", "LafPOS'takini yaz"). Alana yazınca turuncu kalkar.
  */
 interface Mark {
-  photoId: number;
+  from: MarkSource;
   filled: string | null;
   warn: string | null;
-  suggest: { text: string; photo: number | string; kind: "differs" | "unsure" } | null;
+  suggest: { text: string; photo: number | string; kind: "differs" | "unsure"; from: MarkSource } | null;
 }
-type Marks = Partial<Record<FormReadField, Mark>>;
+type Marks = Partial<Record<MarkField, Mark>>;
 
-/** Fotoğraftaki değerin ekrandaki hâli */
-const shownValue = (field: FormReadField, v: number | string) => (field === "zNo" || field === "receipts" ? String(v) : money(Number(v)));
+/** Fotoğraftaki (LafPOS'taki) değerin ekrandaki hâli */
+const shownValue = (field: MarkField, v: number | string) => (field === "zNo" || field === "receipts" || field === "okcZNo" || field === "okcReceipts" ? String(v) : money(Number(v)));
+
+const SOURCE_TEXT = {
+  photo: { badge: "Fotoğraftan", at: "Fotoğrafta", take: "Fotoğraftakini yaz" },
+  lafpos: { badge: "LafPOS'tan", at: "LafPOS'ta", take: "LafPOS'takini yaz" },
+} as const;
+const sourceText = (from: MarkSource) => SOURCE_TEXT[from === "lafpos" ? "lafpos" : "photo"];
+
+/**
+ * Bir ön doldurmanın (fotoğraf okuması ya da LafPOS) işaretleri: dolan alan kaynağıyla işaretlenir. Yazılmış ve farklı
+ * olanda değer de değeri yazanın işareti de kalır, öneri kendi kaynağıyla eklenir. Net olmayan ve eksik olan turuncu.
+ */
+function planMarks(m: Marks, plan: PrefillPlan, from: MarkSource): Marks {
+  const next: Marks = { ...m };
+  for (const f of plan.fill) next[f.field as MarkField] = { from, filled: f.text, warn: f.warn, suggest: null };
+  for (const d of plan.differs) {
+    const prev = m[d.field as MarkField];
+    next[d.field as MarkField] = {
+      from: prev && prev.filled !== null ? prev.from : from,
+      filled: prev?.filled ?? null,
+      warn: null,
+      suggest: { text: d.text, photo: d.photo, kind: "differs", from },
+    };
+  }
+  for (const u of plan.unsure) {
+    // Yazarkasa: tutmayan rakamın tek nedeni ya da (doldurma kapalıyken) öneri, ardından fotoğraftaki değer
+    const at = sourceText(from).at;
+    const shown = shownValue(u.field as MarkField, u.photo);
+    next[u.field as MarkField] = {
+      from,
+      filled: null,
+      warn: u.reason ? `${u.reason} ${at} ${shown}.` : `${at} net okunamadı (${shown}); fişten yazın.`,
+      suggest: { text: u.text, photo: u.photo, kind: "unsure", from },
+    };
+  }
+  for (const f of plan.missing) next[f as MarkField] = { from, filled: null, warn: from === "lafpos" ? LAFPOS_NO_COUNT_TEXT : MISSING_TEXT, suggest: null };
+  return next;
+}
 
 /**
  * İki banka POS fişi (iki cihaz): ikinci okumada toplama ekle ya da yerine yaz. İkinci fişin rakamı net değilse ya da
@@ -268,11 +334,20 @@ export interface LateFormState {
  * Açılış önceki raporun devriyle karşılaştırılır (docs/KASA-RAPORU.md › Açılış ve devir): tutmuyorsa turuncu kutu ve
  * "Devri yaz"; nedeni nota yazılmadan gönderilmez (sunucu da aynı kuralı uygular). Kasayı sayan kişi seçilir.
  *
- * ModPOS Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar
- * dolar ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar,
- * okunamayan alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla
- * saklanır. Yazarkasanın (banka POS) Z'si iki bölümde de alan doldurmaz: ModPOS bölümünde "Banka POS bölümüne okut",
- * Banka POS bölümünde K.KARTI satırını elle yazdıran turuncu yönerge (docs/planlar/okc-z.md PR-a).
+ * ModPOS Z raporunun ve yazarkasanın (banka POS) Z raporunun fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md):
+ * yalnız boş alanlar dolar ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni
+ * altında yazar, okunamayan alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar
+ * raporla saklanır. Yazarkasa Z'sinin kartı okc-card.tsx'tedir (docs/planlar/okc-z.md §3.2, D18): değerler ve fotoğraf
+ * işaretleri burada, köprüyle (`field` / `textField`); doldurma kapısı kapalıyken (OKC_PREFILL_ENABLED) okunan her rakam
+ * öneridir. Yanlış bölüme okutulan fiş öteki bölüme okutulur ("Banka POS Z bölümüne okut" / "ModPOS bölümüne okut");
+ * yükleme bölüm başınadır, yazarkasa Z'si okunurken ModPOS Z'si çekilebilir.
+ *
+ * LafPOS günün sonunu gönderdiyse (`lafpos`; docs/LAFPOS.md › Kasa raporu) formun başında "LafPOS'tan doldur": Z ve
+ * kasa rakamları fotoğrafınkiyle aynı kuralla boş alanlara yazılır ("LafPOS'tan" rozeti), yazılmış ve farklı olanın
+ * altında "LafPOS'ta …" ve "LafPOS'takini yaz". Kaydetmez; personel bakıp gönderir.
+ *
+ * "Gün içinde kasaya giren" (nakit satış dışında konan: bozuk para, tahsilat, nakit bahşiş) olması gereken nakde eklenir
+ * (computeCash). Çoğu gün yoktur: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür.
  *
  * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
@@ -308,6 +383,9 @@ export function CashForm({
   reviewPending = false,
   onCancel,
   onSent,
+  prevOkcZ = null,
+  okcAdmin = null,
+  lafpos = null,
 }: {
   date: string;
   report: CashReportDTO | null;
@@ -352,6 +430,15 @@ export function CashForm({
   onCancel?: () => void;
   /** Geç rapor onaya gitti */
   onSent?: () => void;
+  /**
+   * Önceki yazarkasa Z'si (yalnız gün ve numara): formun Z no denetimi (docs/planlar/okc-z.md §3.6). Kümülatif
+   * personele gitmez (D17)
+   */
+  prevOkcZ?: { date: string; zNo: string } | null;
+  /** Yönetici: kayıtlı raporun yazarkasa kümülatifi ve "Kümülatifi temizle" (personelde hep boş) */
+  okcAdmin?: OkcAdminView | null;
+  /** LafPOS'un bu günün sonu (Z ve kasa rakamları); yoksa "LafPOS'tan doldur" görünmez */
+  lafpos?: LafposDay | null;
 }) {
   // Öğe kimlikleri form başına: Onaylar'da iki "Düzeltip onayla" formu aynı anda açıkken etiket, odak ve kaydırma
   // öteki karta gitmesin
@@ -367,6 +454,10 @@ export function CashForm({
   const [photos, setPhotos] = useState<FormPhoto[]>(() => late?.kept ?? []);
   const [marks, setMarks] = useState<Marks>({});
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
+  // "LafPOS'tan doldur"dan sonraki satır (kaç alan doldu, kaçı farklı)
+  const [lafposNote, setLafposNote] = useState<string | null>(null);
+  // "Gün içinde kasaya giren" çoğu gün yok: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür
+  const [cashInOpen, setCashInOpen] = useState(false);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
   // gönderim (`fromSubmit`: yazılanlar korunur, şerit nedenini söyler)
   // `dropped`: düzenlemede eklenen ve öneriye gitmeyen fotoğraf sayısı (şerit ve bildirim söyler)
@@ -383,8 +474,9 @@ export function CashForm({
   const [handedError, setHandedError] = useState<string | null>(null);
   const ownCorrection = requests?.own.find((r): r is OwnCorrection => r.kind === "kasa-duzeltme") ?? null;
   const ownDelete = requests?.own.find((r): r is OwnDelete => r.kind === "kasa-silme") ?? null;
+  // Yükleme bölüm başına: yazarkasa Z'si okunurken ModPOS Z'si çekilebilir (docs/planlar/okc-z.md §3.3)
   const zUp = usePhotoUpload();
-  const posUp = usePhotoUpload();
+  const okcUp = usePhotoUpload();
   const live = preview(values);
   const reading = photoUi.reading === "on";
 
@@ -413,7 +505,7 @@ export function CashForm({
   const set = (k: Key) => (e: { target: { value: string } }) => {
     setValues((v) => ({ ...v, [k]: e.target.value }));
     if (errors[k]) setErrors((x) => ({ ...x, [k]: undefined }));
-    if (k in marks) setMarks((m) => ({ ...m, [k]: { ...m[k as FormReadField]!, warn: null, suggest: null } }));
+    if (k in marks) setMarks((m) => ({ ...m, [k]: { ...m[k as MarkField]!, warn: null, suggest: null } }));
     if (k === "bankPos") setPosPrompt(null);
   };
 
@@ -424,6 +516,8 @@ export function CashForm({
     setPhotos([]);
     setMarks({});
     setPosPrompt(null);
+    setLafposNote(null);
+    setCashInOpen(false);
     setProposal(null);
     setReason("");
     setReasonError(null);
@@ -456,30 +550,29 @@ export function CashForm({
     if (!r.ok) return null;
     const current = valuesRef.current;
     // İkinci POS fişi: Banka POS önceki bir POS fotoğrafından geldiyse toplamı mı, yerine mi sorulur
+    // (yazarkasa Z'sinin şeridindeki banka gün sonu da; öteki alanları yine uygulanır)
     const prevMark = marksRef.current.bankPos;
     const posValue = r.values.bankPos ? Number(r.values.bankPos.value) : null;
-    if (r.kind === "kasa-pos" && posValue !== null && prevMark && prevMark.photoId !== photoId && prevMark.filled !== null && current.bankPos === prevMark.filled) {
-      setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue, ...posPromptMarks(r) });
-      return "Banka POS fişi okundu.";
-    }
-    const plan = prefillPlan(r, Object.fromEntries(READ_FIELDS.map((f) => [f, current[f]])));
+    const askPos = (r.kind === "kasa-pos" || r.kind === "kasa-okc") && posValue !== null && prevMark && prevMark.from !== photoId && prevMark.filled !== null && current.bankPos === prevMark.filled;
+    if (askPos) setPosPrompt({ photoId, prev: parseNumberTR(current.bankPos) ?? 0, next: posValue, ...posPromptMarks(r) });
+    if (askPos && r.kind === "kasa-pos") return "Banka POS fişi okundu.";
+    const plan = prefillPlan(r, Object.fromEntries(READ_FIELDS.filter((f) => !(askPos && f === "bankPos")).map((f) => [f, current[f]])));
     if (plan.fill.length) setValues((v) => ({ ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) }));
-    setMarks((m) => {
-      const next: Marks = { ...m };
-      for (const f of plan.fill) next[f.field as FormReadField] = { photoId, filled: f.text, warn: f.warn, suggest: null };
-      for (const d of plan.differs) next[d.field as FormReadField] = { photoId, filled: m[d.field as FormReadField]?.filled ?? null, warn: null, suggest: { text: d.text, photo: d.photo, kind: "differs" } };
-      for (const u of plan.unsure) {
-        next[u.field as FormReadField] = {
-          photoId,
-          filled: null,
-          warn: `Fotoğrafta net okunamadı (${shownValue(u.field as FormReadField, u.photo)}); fişten yazın.`,
-          suggest: { text: u.text, photo: u.photo, kind: "unsure" },
-        };
-      }
-      for (const f of plan.missing) next[f as FormReadField] = { photoId, filled: null, warn: MISSING_TEXT, suggest: null };
-      return next;
-    });
-    return prefillSummary(r.kind, plan);
+    setMarks((m) => planMarks(m, plan, photoId));
+    const summary = prefillSummary(r.kind, plan);
+    return askPos ? `${summary} Banka gün sonu için aşağıda seçin.` : summary;
+  }
+
+  /** LafPOS'un gün sonunu forma uygular: fotoğrafınkiyle aynı kural (yalnız boş alanlar dolar); bandın satırını yazar */
+  function fillFromLafpos() {
+    if (!lafpos) return;
+    const plan = prefillPlan(lafpos.prefill, Object.fromEntries(MARK_FIELDS.map((f) => [f, values[f]])));
+    if (plan.fill.length) {
+      setValues((v) => ({ ...v, ...Object.fromEntries(plan.fill.map((f) => [f.field, f.text])) }));
+      setErrors((x) => ({ ...x, ...Object.fromEntries(plan.fill.map((f) => [f.field, undefined])) }));
+    }
+    setMarks((m) => planMarks(m, plan, "lafpos"));
+    setLafposNote(lafposSummary(plan));
   }
 
   /** Yükleme ya da yeniden okumanın sonucu: fotoğraf listeye (ya da yerine), okuma forma */
@@ -508,45 +601,57 @@ export function CashForm({
   }
 
   const savedCount = saved?.photos.length ?? 0;
+  const photosOf = (k: CashPhotoKind) => photos.filter((p) => p.kind === k);
+  // Yazarkasa bölümünde eski banka POS fotoğrafları da görünür (geçiş, docs/planlar/okc-z.md D2: yeniden okunursa kasa-okc olur)
+  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k || (k === "kasa-okc" && p.kind === "kasa-pos")) ?? [];
   async function pick(kind: CashPhotoKind, file: File) {
     if (savedCount + photos.length >= MAX_REPORT_PHOTOS) return void toast.error(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
-    const up = kind === "kasa-z" ? zUp : posUp;
+    if (kind === "kasa-okc" && savedOf("kasa-okc").length + photosOf("kasa-okc").length >= MAX_OKC_PHOTOS) return void toast.error(OKC_PHOTOS_TEXT);
+    const up = kind === "kasa-z" ? zUp : okcUp;
     const res = await up.upload(file, { kind, day: date, read: reading });
     if (res) took(res, kind);
   }
 
   async function reread(p: FormPhoto, kind: CashPhotoKind) {
-    const up = kind === "kasa-z" ? zUp : posUp;
+    // Öteki bölümden Banka POS Z bölümüne geçen fotoğraf da bölümün sınırına sayılır (gönderimde reddedilmesin)
+    if (kind === "kasa-okc" && p.kind !== "kasa-okc" && savedOf("kasa-okc").length + photosOf("kasa-okc").length >= MAX_OKC_PHOTOS) return void toast.error(OKC_PHOTOS_TEXT);
+    // Yazarkasa ve eski banka POS (geçiş, D2) aynı bölümün yükleyicisinde
+    const up = kind === "kasa-z" ? zUp : okcUp;
     const res = await up.reread(p.id, kind, date);
     if (res) took(res, kind);
   }
 
-  /** Fotoğrafı formdan çıkarır; onun doldurduğu (sonra değiştirilmemiş) alanlar da boşalır */
+  /** Fotoğrafı formdan çıkarır; onun doldurduğu (sonra değiştirilmemiş) alanlar boşalır, getirdiği öneriler kalkar */
   function removePhoto(id: number) {
     setPhotos((ps) => ps.filter((p) => p.id !== id));
     const cleared: Partial<Values> = {};
     const next: Marks = {};
-    for (const [k, m] of Object.entries(marks) as [FormReadField, Mark][]) {
-      if (m.photoId !== id) next[k] = m;
-      else if (m.filled !== null && values[k] === m.filled) cleared[k] = "";
+    for (const [k, m] of Object.entries(marks) as [MarkField, Mark][]) {
+      if (m.from !== id) {
+        next[k] = m.suggest?.from === id ? { ...m, suggest: null } : m;
+        continue;
+      }
+      if (m.filled !== null && values[k] === m.filled) cleared[k] = "";
+      // Başka bir fotoğrafın (ya da LafPOS'un) önerisi alanda kalır
+      if (m.suggest && m.suggest.from !== id) next[k] = { from: m.suggest.from, filled: null, warn: null, suggest: m.suggest };
     }
     setMarks(next);
     if (Object.keys(cleared).length) setValues((v) => ({ ...v, ...cleared }));
     if (posPrompt?.photoId === id) setPosPrompt(null);
   }
 
-  function takeSuggestion(k: FormReadField) {
+  function takeSuggestion(k: MarkField) {
     const s = marks[k]?.suggest;
     if (!s) return;
     setValues((v) => ({ ...v, [k]: s.text }));
-    setMarks((m) => ({ ...m, [k]: { ...m[k]!, filled: s.text, warn: null, suggest: null } }));
+    setMarks((m) => ({ ...m, [k]: { ...m[k]!, from: s.from, filled: s.text, warn: null, suggest: null } }));
   }
 
   function posChoice(sum: boolean) {
     if (!posPrompt) return;
     const text = fieldText("bankPos", sum ? posPrompt.prev + posPrompt.next : posPrompt.next);
     setValues((v) => ({ ...v, bankPos: text }));
-    setMarks((m) => ({ ...m, bankPos: { photoId: posPrompt.photoId, filled: text, warn: posPrompt.warn, suggest: null } }));
+    setMarks((m) => ({ ...m, bankPos: { from: posPrompt.photoId, filled: text, warn: posPrompt.warn, suggest: null } }));
     setPosPrompt(null);
   }
 
@@ -764,7 +869,7 @@ export function CashForm({
             </div>
           ) : null}
           {requests ? <PendingRequests own={requests.own} others={requests.others} onEdit={(c) => propose(c)} /> : null}
-          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} />
+          <CashBreakdown report={report} cashOuts={cashOuts} carry={savedCarry} next={savedNext} audience={photoUi.admin ? "admin" : "staff"} okcAdmin={okcAdmin} />
           <CashRevisions report={report} revisions={revisions} proposedBy={proposedBy} />
         </div>
       </Card>
@@ -778,20 +883,20 @@ export function CashForm({
   const noteRequired = openingNum !== null && openingNeedsNote({ check: liveCarry, openingCash: openingNum, prevOpening: report?.openingCash ?? null, note: values.note });
   const gap = carry ? Math.max(0, daysBetween(carry.date, date) - 1) : 0;
   const paymentsOff = live && values.zTotal.trim() && Math.abs(live.paymentsDiff) >= CASH_TOLERANCE;
-  const cardOff = live && live.cardDiff !== null && Math.abs(live.cardDiff) >= CASH_TOLERANCE;
   const offLine = photoUi.storage ? readingOffText(photoUi.reading, photoUi.admin) : null;
   const cashOutValue = values.cashOut.trim() ? parseNumberTR(values.cashOut) : 0;
+  const showCashIn = cashInOpen || Boolean(values.cashIn.trim()) || Boolean(marks.cashIn);
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
   const latestChecks = (k: CashPhotoKind) => [...photos].reverse().find((p) => p.kind === k && p.reading?.ok)?.reading?.checks ?? [];
 
-  /** Fotoğraftan gelen alanın etiketi, turuncusu ve altındaki satır */
-  const markOf = (k: Key) => (READ_FIELDS as readonly string[]).includes(k) ? marks[k as FormReadField] : undefined;
+  /** Fotoğraftan (LafPOS'tan) gelen alanın etiketi, turuncusu ve altındaki satır */
+  const markOf = (k: Key) => ((MARK_FIELDS as readonly string[]).includes(k) ? marks[k as MarkField] : undefined);
   const labelOf = (k: Key, label: string) => {
     const m = markOf(k);
     return m?.filled !== null && m?.filled !== undefined && values[k] === m.filled ? (
       <span className="inline-flex flex-wrap items-center gap-1.5">
         {label}
-        <Badge tone="blue">Fotoğraftan</Badge>
+        <Badge tone="blue">{sourceText(m.from).badge}</Badge>
       </span>
     ) : (
       label
@@ -803,55 +908,87 @@ export function CashForm({
     return (
       <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         {m.warn ? <span className="text-warn">{m.warn}</span> : null}
-        {m.suggest?.kind === "differs" ? <span className="text-warn">Fotoğrafta {shownValue(k as FormReadField, m.suggest.photo)}</span> : null}
+        {m.suggest?.kind === "differs" ? (
+          <span className="text-warn">
+            {sourceText(m.suggest.from).at} {shownValue(k as MarkField, m.suggest.photo)}
+          </span>
+        ) : null}
         {m.suggest ? (
-          <button type="button" onClick={() => takeSuggestion(k as FormReadField)} className="cursor-pointer font-medium text-ink underline underline-offset-2 pointer-coarse:min-h-11">
-            Fotoğraftakini yaz
+          <button type="button" onClick={() => takeSuggestion(k as MarkField)} className="cursor-pointer font-medium text-ink underline underline-offset-2 pointer-coarse:min-h-11">
+            {sourceText(m.suggest.from).take}
           </button>
         ) : null}
       </span>
     );
   };
+  // LafPOS'un gün sonu: Z no ve geliş anı (İstanbul saatiyle, sunucuda ve tarayıcıda aynı)
+  const lafposZNo = lafpos?.prefill.values.zNo?.value ?? null;
+  const lafposAt = lafpos
+    ? new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(lafpos.receivedAt))
+    : null;
   const warnOf = (k: Key) => Boolean(markOf(k)?.warn || markOf(k)?.suggest || (k === "openingCash" && liveCarry));
 
-  const field = (k: MoneyKey, label: string, opts: { hint?: ReactNode; placeholder?: string; autoFocus?: boolean } = {}) => (
+  const field = (k: MoneyKey | OkcMoneyKey, label: string, opts: OkcFieldOptions & { autoFocus?: boolean } = {}) => (
     <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
       <NumberInput
         id={fid(k)}
         inputMode="decimal"
         value={values[k]}
         onChange={set(k)}
-        placeholder={opts.placeholder ?? (REQUIRED.includes(k) ? "0" : "isteğe bağlı")}
+        placeholder={opts.placeholder ?? (REQUIRED.includes(k as MoneyKey) ? "0" : "isteğe bağlı")}
         enterKeyHint="next"
         autoFocus={opts.autoFocus}
         aria-invalid={Boolean(errors[k])}
-        data-warn={warnOf(k) || undefined}
+        data-warn={warnOf(k) || opts.warn || undefined}
+      />
+    </Field>
+  );
+  /** Yazarkasa Z no ve fiş sayısı (sayısal metin) */
+  const textField = (k: "okcZNo" | "okcReceipts", label: string, opts: OkcFieldOptions = {}) => (
+    <Field label={labelOf(k, label)} htmlFor={fid(k)} hint={hintOf(k, opts.hint)} error={errors[k]}>
+      <Input
+        id={fid(k)}
+        inputMode="numeric"
+        value={values[k]}
+        onChange={set(k)}
+        maxLength={k === "okcZNo" ? 30 : 6}
+        autoComplete="off"
+        placeholder={opts.placeholder}
+        aria-invalid={Boolean(errors[k])}
+        data-warn={warnOf(k) || opts.warn || undefined}
       />
     </Field>
   );
 
-  const photosOf = (k: CashPhotoKind) => photos.filter((p) => p.kind === k);
-  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k) ?? [];
-  const busy = zUp.busy || posUp.busy;
-  const photoBlock = (k: CashPhotoKind) => {
-    const up = k === "kasa-z" ? zUp : posUp;
+  // Gönderim yüklemesi süren bir fotoğraf varken bekler (fotoğrafın kimliği yanıtla gelir); seçiciler bölüm başına
+  const busy = zUp.busy || okcUp.busy;
+  const latestOkc = [...photos].reverse().find((p) => p.kind === "kasa-okc" && p.reading?.ok)?.reading ?? null;
+  // Z'de toplam dışı tahsilat (tutarı personele gelmez): kayıtlı raporun sunucu sütunundan ya da bu formun okumasından
+  const extraTakings = report?.okcExtraTakings === true || (report?.okcOutside ?? 0) > 1 || photos.some((p) => p.kind === "kasa-okc" && p.reading?.extraTakings === true);
+  const photoBlock = (k: "kasa-z" | "kasa-okc") => {
+    const up = k === "kasa-z" ? zUp : okcUp;
     return photoUi.storage && !proposal && !review ? (
-      <div id={k === "kasa-z" ? fid("z-photos") : undefined} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
-        <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={busy} />
+      <div id={fid(k === "kasa-z" ? "z-photos" : "okc-photos")} className="scroll-mt-24 space-y-2.5 sm:col-span-2">
+        <PhotoPicker onPick={(f) => void pick(k, f)} read={reading} disabled={up.busy} />
+        {k === "kasa-okc" ? <p className="text-[13px] leading-5 text-ink-mute">Fişi düz koyun, ekranı fişle doldurun; uzunsa önce üstünü, sonra altını çekin.</p> : null}
         <PhotoStatus phase={up.phase} />
         {offLine ? <p className="text-[13px] leading-5 text-ink-mute">{offLine}</p> : null}
         <CardPhotos
           saved={savedOf(k)}
           photos={photosOf(k)}
-          busy={busy}
+          busy={up.busy}
           onRemove={removePhoto}
           onRetry={(p) => void reread(p, p.kind)}
-          onSwitch={(p) => p.switchTo && void reread(p, p.switchTo)}
+          // ModPOS bölümünün düğmesi "kasa-pos" der (eski açık sayfa için, kasa.ts wrongDocument): bu formda Banka POS Z bölümü
+          onSwitch={(p) => p.switchTo && void reread(p, p.switchTo === "kasa-pos" ? "kasa-okc" : p.switchTo)}
         />
         <ReadChecks checks={latestChecks(k)} />
+        {k === "kasa-okc" && latestOkc && okcNeedsHalves(latestOkc) ? <p className="text-[13px] leading-5 text-ink-mute">{OKC_HALVES_TEXT}</p> : null}
       </div>
     ) : null;
   };
+  const okcMarked = (k: FormReadField) => Boolean(marks[k]?.warn || marks[k]?.suggest);
+  const num = (k: MoneyKey) => (values[k].trim() ? (parseNumberTR(values[k]) ?? 0) : 0);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -874,6 +1011,23 @@ export function CashForm({
             ) : null}
             <p className="mt-0.5">Yönetici onaylayınca rapora işlenir; o zamana kadar rapor değişmez.</p>
             {proposal.dropped ? <p className="mt-0.5 font-medium">{droppedPhotoText(proposal.gate)}</p> : null}
+          </div>
+        ) : null}
+        {lafpos && !review ? (
+          <div className="space-y-1.5">
+            <div role="note" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-info-soft px-4 py-3 text-sm leading-5 text-info">
+              <MonitorCheck size={16} className="shrink-0" aria-hidden="true" />
+              <p className="min-w-0 flex-1 basis-56">
+                <span className="font-semibold">LafPOS gün sonu</span>
+                {lafposZNo !== null ? ` · Z ${lafposZNo}` : null} · {lafposAt}
+                <span className="block text-[13px] text-info/80">{lafposNote ?? "Z ve kasa rakamları boş alanlara yazılır, yazdıklarınız değişmez; bakıp gönderin."}</span>
+              </p>
+              <Button size="sm" variant="secondary" onClick={fillFromLafpos} disabled={pending}>
+                LafPOS&apos;tan doldur
+              </Button>
+            </div>
+            {/* Doldurduktan sonra kasa eşlemesinin bilgi satırları (giren çıkandan fazla, LafPOS'un olması gerekeni farklı) */}
+            {lafposNote !== null ? <ReadChecks checks={lafpos.prefill.checks} /> : null}
           </div>
         ) : null}
         <Card>
@@ -955,6 +1109,20 @@ export function CashForm({
             <Field label="Neye çıktı" htmlFor={fid("cashOutNote")} hint="isteğe bağlı">
               <Input id={fid("cashOutNote")} value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
             </Field>
+            {showCashIn ? (
+              field("cashIn", "Gün içinde kasaya giren", { hint: "Satış dışı: bozuk para, tahsilat, nakit bahşiş", autoFocus: cashInOpen })
+            ) : (
+              <p className="flex flex-wrap items-center gap-x-2 text-[13px] leading-5 sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setCashInOpen(true)}
+                  className="inline-flex cursor-pointer items-center gap-1 font-medium text-ink underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                >
+                  <Plus size={14} aria-hidden="true" /> Kasaya giren ekle
+                </button>
+                <span className="text-ink-mute">bozuk para, tahsilat, nakit bahşiş</span>
+              </p>
+            )}
             {field("handedOver", "Teslim edilen", { hint: "Sayımdan sonra kasadan alınan (patrona, bankaya)" })}
             {isLate && !review && (parseNumberTR(values.handedOver) ?? 0) > 0 ? (
               <Field label="Teslim alan" htmlFor={fid("handedTo")} hint="Teslim edileni kim aldı ya da bankaya mı yatırıldı?" error={handedError ?? undefined}>
@@ -992,21 +1160,17 @@ export function CashForm({
             {outsWarning ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn sm:col-span-2">{outsWarning}</p> : null}
           </div>
         </Card>
-        <Card>
-          <CardHeader
-            icon={<CreditCard />}
-            title="Banka POS Z raporu (yazarkasa)"
-            description={
-              photoUi.storage
-                ? "Banka POS'un kart toplamı; fişin fotoğrafını çekin ya da yazın. ModPOS'taki kartla karşılaştırılır."
-                : "Banka POS'un kart toplamı; ModPOS'taki kartla karşılaştırılır."
-            }
-          />
-          <div className="grid gap-3 px-5 pb-5 sm:grid-cols-2">
-            {photoBlock("kasa-pos")}
-            {posPrompt ? (
-              <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info sm:col-span-2">
-                <p>Bu günün bir POS fişi daha okundu ({money(posPrompt.next)}).</p>
+        <OkcCard
+          values={values}
+          field={field}
+          textField={textField}
+          marked={(k) => okcMarked(k)}
+          failed={(k) => Boolean(errors[k])}
+          photoBlock={photoBlock("kasa-okc")}
+          posPrompt={
+            posPrompt ? (
+              <div className="space-y-2 rounded-xl bg-info-soft px-3 py-2.5 text-[13px] text-info">
+                <p>Bu günün bir banka gün sonu fişi daha okundu ({money(posPrompt.next)}).</p>
                 {posPrompt.unsure ? <p className="text-warn">{posPrompt.unsure}</p> : null}
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => posChoice(true)}>
@@ -1017,15 +1181,23 @@ export function CashForm({
                   </Button>
                 </div>
               </div>
-            ) : null}
-            {field("bankPos", "Banka POS", { hint: "Z'deki K.KARTI satırı ya da banka gün sonu fişinin neti; Z'nin toplamı değil" })}
-            {cardOff && live?.cardDiff != null ? (
-              <p className="self-end rounded-xl bg-warn-soft px-3 py-2 text-[13px] text-warn">
-                Banka POS, ModPOS&apos;taki karttan {money(Math.abs(live.cardDiff))} {live.cardDiff > 0 ? "fazla" : "az"}.
-              </p>
-            ) : null}
-          </div>
-        </Card>
+            ) : null
+          }
+          description={
+            photoUi.storage && reading && !proposal && !review
+              ? `Banka POS'tan (yazarkasa) aldığınız Z raporu: üstünde Z RAPORU ve KDV dökümü yazar; banka gün sonu fişi değil. ${
+                  // Doldurma kapısı kapalıyken okunan rakam yalnız öneridir (docs/KASA-RAPORU.md › Fotoğraftan doldurma)
+                  OKC_PREFILL_ENABLED ? "Fotoğrafını çekin, rakamlar dolar." : "Fotoğrafını çekin; okunan rakamlar alanların altında öneri olarak çıkar, fişle karşılaştırıp yazın."
+                } Fotoğraf yoksa aşağıdakileri yazın.`
+              : "Banka POS'tan (yazarkasa) aldığınız Z raporundaki rakamları yazın (üstünde Z RAPORU ve KDV dökümü yazar)."
+          }
+          prevZ={prevOkcZ}
+          extraTakings={extraTakings}
+          day={date}
+          audience={photoUi.admin ? "admin" : "staff"}
+          forceDetails={photoUi.admin}
+          modpos={values.card.trim() ? { zTotal: num("zTotal"), cash: num("cash"), card: num("card"), mealCard: num("mealCard"), online: num("online"), other: num("other") } : null}
+        />
       </div>
       <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         <Card>

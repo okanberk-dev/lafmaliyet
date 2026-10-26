@@ -1,0 +1,165 @@
+{
+  "feature": "kasa-okc",
+  "synthetic": true,
+  "note": "Sentetik (canlı istek yapılmadı; anahtar yok): scripts/foto-eval/make-images.py yazarkasa-z.jpg'nin rakamları. Gerçek yanıt adım b2'de",
+  "imagePath": "img/yazarkasa-z.jpg",
+  "ms": 12000,
+  "model": "claude-opus-5-5",
+  "stop_reason": "end_turn",
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 9000,
+    "output_tokens": 900,
+    "iterations": [
+      {
+        "type": "message",
+        "model": null,
+        "input_tokens": 9000,
+        "output_tokens": 900
+      }
+    ]
+  },
+  "json": {
+    "documentType": "z_report",
+    "fiscalMarks": {
+      "mfLogo": true,
+      "ekuNo": true,
+      "cumulativeLines": true,
+      "vatBlock": true
+    },
+    "readable": true,
+    "title": "Z RAPORU",
+    "date": "2026-10-21",
+    "time": "23:56",
+    "dateConfidence": "high",
+    "zNo": {
+      "text": "0188",
+      "value": 188,
+      "confidence": "high"
+    },
+    "receiptCount": {
+      "text": "134",
+      "value": 134,
+      "confidence": "high"
+    },
+    "dailyTotal": {
+      "text": "*12.300,00",
+      "value": 12300,
+      "confidence": "high"
+    },
+    "dailyTotalLabel": "NET SATIŞ",
+    "kdvGroups": [
+      {
+        "rate": 10,
+        "total": {
+          "text": "*11.060,00",
+          "value": 11060,
+          "confidence": "high"
+        },
+        "vat": {
+          "text": "*1.005,45",
+          "value": 1005.45,
+          "confidence": "high"
+        },
+        "base": null
+      },
+      {
+        "rate": 20,
+        "total": {
+          "text": "*1.240,00",
+          "value": 1240,
+          "confidence": "high"
+        },
+        "vat": {
+          "text": "*206,67",
+          "value": 206.67,
+          "confidence": "high"
+        },
+        "base": null
+      }
+    ],
+    "totalVat": {
+      "text": "*1.212,12",
+      "value": 1212.12,
+      "confidence": "high"
+    },
+    "payments": [
+      {
+        "label": "NAKİT",
+        "count": 41,
+        "amount": {
+          "text": "*3.180,00",
+          "value": 3180,
+          "confidence": "high"
+        },
+        "kind": "cash"
+      },
+      {
+        "label": "KASA NAKİT",
+        "count": null,
+        "amount": {
+          "text": "*3.180,00",
+          "value": 3180,
+          "confidence": "high"
+        },
+        "kind": "drawer"
+      },
+      {
+        "label": "K.KARTI",
+        "count": 87,
+        "amount": {
+          "text": "*8.480,00",
+          "value": 8480,
+          "confidence": "high"
+        },
+        "kind": "card"
+      },
+      {
+        "label": "GARANTİ BBVA",
+        "count": null,
+        "amount": {
+          "text": "*8.480,00",
+          "value": 8480,
+          "confidence": "high"
+        },
+        "kind": "bank_subline"
+      },
+      {
+        "label": "YEMEK KARTI",
+        "count": 6,
+        "amount": {
+          "text": "*640,00",
+          "value": 640,
+          "confidence": "high"
+        },
+        "kind": "meal_card"
+      }
+    ],
+    "outside": [],
+    "voids": {
+      "text": "*85,00",
+      "value": 85,
+      "confidence": "high"
+    },
+    "discounts": {
+      "text": null,
+      "value": null,
+      "confidence": "low"
+    },
+    "cumulativeTotal": {
+      "text": "*1.259.350,00",
+      "value": 1259350,
+      "confidence": "high"
+    },
+    "cumulativeVat": {
+      "text": "*118.943,94",
+      "value": 118943.94,
+      "confidence": "high"
+    },
+    "batches": [],
+    "issues": [
+      "faded"
+    ]
+  },
+  "requestId": "sentetik-okc"
+}

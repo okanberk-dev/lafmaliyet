@@ -6,14 +6,16 @@ import { businessDate, carryCheck, LATE_REPORT_DAYS, lateMissingDays, type Carry
 import { cashOutsTotal } from "@/lib/cash-outs";
 import { handedToText, lateBell, lateByText, LatePayload, lateFields, type LatePayloadT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
+import { okcLateChain, zNoNumber, type OkcLateChain } from "@/lib/okc-z";
 import { photoDiffs, savedFields, type CashReading, type PhotoDiff } from "@/lib/photo-read/kasa";
+import { okcReadFigures } from "@/lib/photo-read/okc";
 import { addDays, dayLocativeTR, monthGenitiveTR, todayTR } from "@/lib/reminders";
 import { waitedText, type StaffRequestStatus } from "@/lib/staff-requests";
 import { chainNeighbours, type ChainLink } from "@/server/cash/late-chain";
 import { closedDaysBetween } from "@/server/closed-days";
 import { cashOutsOn } from "@/server/data/cash-outs";
 import { heldPhotoInfo, type CashPhotoDTO } from "@/server/data/cash-photos";
-import { loadMonthEntry } from "@/server/data/cash-reports";
+import { loadMonthEntry, nextOkc, previousOkc } from "@/server/data/cash-reports";
 import { getDb, schema as s } from "@/server/db";
 
 /*
@@ -195,6 +197,13 @@ export interface LateCard {
   unread: boolean;
   readings: CashReading[];
   chain: { prev: ChainLink | null; next: ChainLink | null; prevCheck: CarryCheck | null; nextCheck: CarryCheck | null };
+  /**
+   * Yazarkasa Z'sinin iki yanlı zinciri (docs/planlar/okc-z.md §3.8): Z no önceki ve sonraki kayıtlı yazarkasa Z'siyle,
+   * kümülatif iki yanda. Yazarkasa Z no'su yazılmamışsa null
+   */
+  okcChain: OkcLateChain | null;
+  /** Önceki yazarkasa Z'si (yalnız gün ve numara): "Düzeltip onayla" formunun Z no denetimi */
+  okcPrevZ: { date: string; zNo: string } | null;
   /** Ay satırı ("Ekim'in açık gün ve POS cirosuna girer" …) */
   monthLine: string;
   /** O güne kayıtlı kasadan çıkanlar ve rapordaki tutarla farkı */
@@ -238,7 +247,23 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
     const p = parsed.data;
     const date = x.day;
     const fields = lateFields(p);
-    const [photos, chain, outs, entry] = await Promise.all([heldPhotoInfo(p.photos.map((ph) => ph.id), date), chainNeighbours(db, date, { exceptRequestId: x.id }), cashOutsOn(date), loadMonthEntry(date.slice(0, 7))]);
+    const [photos, chain, outs, entry, okcPrev, okcNext] = await Promise.all([
+      heldPhotoInfo(
+        p.photos.map((ph) => ph.id),
+        date,
+        "admin",
+      ),
+      chainNeighbours(db, date, { exceptRequestId: x.id }),
+      cashOutsOn(date),
+      loadMonthEntry(date.slice(0, 7)),
+      previousOkc(date, db),
+      nextOkc(date, db),
+    ]);
+    // Yazarkasa Z'sinin kümülatifi, fotoğrafın okumasından: okunan Z no ve günlük toplam yazılanla aynıysa (sunucu
+    // sütunlarının kuralı, plan §6.1); değilse zincir önceki ve sonraki saklanan kümülatifle denetlenir
+    const read = okcReadFigures(photos.readings);
+    const sameRead = read !== null && zNoNumber(read.zNo) !== null && zNoNumber(read.zNo) === zNoNumber(fields.okcZNo) && read.total !== null && fields.okcTotal != null && Math.abs(read.total - fields.okcTotal) <= 0.01;
+    const okcChain = okcLateChain({ zNo: fields.okcZNo, total: fields.okcTotal, cumTotal: sameRead ? read.cumTotal : null }, okcPrev, okcNext);
     const carry = Math.round((fields.countedCash - fields.handedOver) * 100) / 100;
     const prevCheck = chain.prev ? carryCheck(date, fields.openingCash, { date: chain.prev.date, amount: chain.prev.carry }) : null;
     const nextCheck = chain.next ? carryCheck(chain.next.date, chain.next.openingCash, { date, amount: carry }) : null;
@@ -266,6 +291,8 @@ export async function lateCards(now = new Date()): Promise<LateCard[]> {
       unread: !photos.readings.length,
       readings: photos.readings,
       chain: { prev: chain.prev, next: chain.next, prevCheck, nextCheck },
+      okcChain,
+      okcPrevZ: okcPrev.z,
       monthLine: monthLineOf(date, today, first?.date ?? null, entry),
       outs: {
         count: outs.length,

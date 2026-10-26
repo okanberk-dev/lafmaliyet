@@ -3,7 +3,7 @@ import "server-only";
 import { photoViewDecision, type PhotoKind } from "@/lib/photo-rules";
 import type { CurrentUser } from "@/server/auth/dal";
 import { kontrolPhotoRules } from "@/server/data/checklists";
-import { cashPhotoRules, receiptPhotoRules } from "@/server/photo-read/rules";
+import { cashPhotoRules, okcPhotoRules, receiptPhotoRules } from "@/server/photo-read/rules";
 
 import type { PhotoRow } from "./photos";
 
@@ -23,6 +23,7 @@ export interface PhotoKindRules {
 export const PHOTO_RULES: Record<PhotoKind, PhotoKindRules> = {
   "kasa-z": cashPhotoRules,
   "kasa-pos": cashPhotoRules,
+  "kasa-okc": okcPhotoRules,
   fis: receiptPhotoRules,
   // Kontrol listeleri: personel yalnız kendi doldurabildiği listenin son 7 günkü fotoğraflarını (src/lib/checklists.ts photoAccess)
   kontrol: kontrolPhotoRules,

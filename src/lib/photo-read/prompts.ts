@@ -41,3 +41,35 @@ export const RECEIPT_TASK = (day: string, categories: { id: number; name: string
 - categoryId: the id of the best fitting category below, or null if none fits.
 Categories (id · name · group):
 ${categories.map((c) => `${c.id} · ${c.name} · ${c.section}`).join("\n")}`;
+
+/**
+ * Yazarkasanın (banka POS, YN ÖKC) mali Z raporu (dalga 13 PR-b, docs/planlar/okc-z.md §4.2). TASLAKTIR: adım 0'ın
+ * gerçek fotoğrafları ve cihaz gerçekleri (KÜM. satırları basılıyor mu ve bu Z'yi içeriyor mu; Z'yi kim, saat kaçta
+ * alıyor; ModPOS raporu hangi yazıcıdan çıkıyor) henüz gelmedi. Metin plandan ve araştırma notlarından
+ * (docs/planlar/okc-z-notlar.md §2–§5) yazıldı; adım b2'de gerçek fotoğraflarla yeniden denetlenir: gün cümlesi (05:00
+ * kuralı), `software_z` tanımı ve etiket listeleri ona göre değişebilir. Canlıda henüz denenmedi.
+ */
+export const OKC_TASK = (day: string) => `This should be the fiscal Z report (Z RAPORU) of the café's cash register POS (yeni nesil ÖKC, yazarkasa POS). Expected business day: ${day} (a Z printed after midnight but before 05:00 belongs to the day before). The same paper strip may also carry the bank end-of-day slip printed right after the Z.
+
+documentType:
+- z_report: title Z RAPORU / Z GÜNLÜK RAPORU / Z-GÜN SONU RAPORU with fiscal marks: the MF logo with a registry number, EKÜ NO, a VERGİ DÖKÜMÜ with TOPKDV, usually KÜM. lines.
+- x_report: X RAPORU or another intraday report (no new Z number; may print SON Z-SAYISI).
+- period_report: MALİ HAFIZA / MALİ BELLEK RAPORU, İKİ Z ARASI, İKİ TARİH ARASI, EKÜ RAPORU, GÜNLÜK / AYLIK SATIŞ RAPORU.
+- batch_slip: only a bank end-of-day slip (GÜN SONU, BATCH / GRUP KAPAMA, MUTABAKAT; no KDV, no Z NO, no MF logo).
+- software_z: the restaurant software's (ModPOS) end-of-day report: tables, products, garson, İKRAM / ÖDENMEZ; no Z NO / Z SAYAÇ, no EKÜ NO, no KÜM. lines. It may still print a KDV summary, and when it is printed on the cash register it may carry the company header, VKN and even the MF logo, but then it says BİLGİ FİŞİ or MALİ DEĞERİ YOKTUR: that is software_z, not z_report.
+- other: anything else.
+Fill fiscalMarks with what is printed.
+
+Reading the Z:
+- The amount of a label is often on the line below the label, and a count can sit on the label line ("K.KARTI 31", then "*6.900,00"). A count is never an amount; pair each amount with its own label.
+- dailyTotal: this Z's own total, KDV dahil: NET SATIŞ, MALİ VERİ TOPLAM, TOPSAT or TOPLAM. Never a line with KÜM., KÜMSAT or KÜMÜLATİF, never a GENEL TOPLAM printed among the cumulative lines, never TOPKDV, never a card line. Put the printed label in dailyTotalLabel.
+- kdvGroups: the VERGİ DÖKÜMÜ / KDV block, one entry per rate: total (TOPLAM / TOP, KDV dahil), vat (TOPKDV / KDV), base (MATRAH, KDV hariç) only if printed, else null. Skip a group whose total is 0,00 (old rates %8 and %18 often print that way); a group with an amount is always copied.
+- totalVat: the day's TOPKDV / MALİ VERİ TOPKDV.
+- cumulativeTotal, cumulativeVat: KÜM. TOPLAM / KÜMSAT and KÜM. TOPKDV / KÜMKDV, totals since the device started. Copy them; they are not today's figures.
+- payments: every payment line in printed order: NAKİT → cash; K.KARTI, KREDİ KARTI, KREDİ, BANKA KARTI → card; YEMEK KARTI, YEMEK ÇEKİ, MULTINET, SODEXO, PLUXEE, EDENRED, SETCARD, TICKET, METROPOL → meal_card; HAVALE, EFT, AÇIK HESAP, KUPON, DİĞER → other; a bank or app name printed under the card line → bank_subline; KASA NAKİT, PARA GİRİŞ, PARA ÇIKIŞ → drawer; anything else → unknown. Some devices print no card line at all and list card payments only by bank or app name: then those lines are the card payments; still mark them bank_subline and copy each one.
+- outside: FATURALI SATIŞ, e-FATURA, e-ARŞİV, BİLGİ FİŞİ, AVANS, FATURA / CARİ TAHSİLAT, OTOPARK lines.
+- voids: FİŞ İPTAL amount. discounts: İNDİRİM total. They are already netted out of the total: copy, never subtract.
+- zNo: Z NO / Z SAYAÇ / Z SAYACI. Not FİŞ NO (the Z's own document number), not EKÜ NO, not the registry number, not BATCH NO.
+- receiptCount: MÜŞTERİ FİŞ ADEDİ, MALİ FİŞ ADEDİ or FİŞ SAYISI. Not TOPLAM FİŞ ADEDİ when slip or bilgi fişi counts are listed.
+- batches: one entry per bank end-of-day slip in the photo (alone, or printed after the Z). A slip printed after the Z is not a reason for "multiple_documents".
+- Two Z reports, or Z reports of two devices, in one photo: add "multiple_documents" and read the one dated ${day}.`;

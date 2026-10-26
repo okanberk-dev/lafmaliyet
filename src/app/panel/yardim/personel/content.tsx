@@ -19,6 +19,7 @@ import {
   PackageX,
   Pencil,
   Receipt,
+  ScrollText,
   ShoppingBasket,
   Sun,
   Tags,
@@ -30,6 +31,8 @@ import {
 import type { ReactNode } from "react";
 
 import { CASH_EVENING_HOUR, DAY_TURN_HOUR, LATE_REPORT_DAYS } from "@/lib/cash-report";
+import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
+import { MAX_OKC_PHOTOS } from "@/lib/photo-rules";
 import { REQUEST_DAYS } from "@/lib/cash-out-requests";
 import { CASH_OUT_UNDO_TOAST_MS } from "@/lib/cash-outs";
 import { ANSWER_GRACE_MIN, STAFF_HISTORY_DAYS } from "@/lib/checklists";
@@ -124,7 +127,8 @@ export const STAFF_ROUTINE: { title: string; body: ReactNode; href: string; icon
     title: "Akşam kasa raporu",
     body: (
       <>
-        Kapanışta ModPOS&apos;tan Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin. {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
+        Kapanışta ModPOS&apos;tan ve banka POS&apos;tan (yazarkasa) Z raporunu alın, kasadaki nakdi sayın ve <StaffPath href="/panel/kasa" /> ekranına girin.{" "}
+        {clockSuffixTR(hour(CASH_EVENING_HOUR), "abl")} sonra
         Bugün ekranı hatırlatır.
       </>
     ),
@@ -165,14 +169,42 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Akşam kasa raporunu nasıl girerim?",
         a: (
           <>
-            <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Banka POS&apos;a
-            yazarkasanın Z raporundaki K.KARTI (kredi kartı) satırını yazın, Z&apos;nin toplamını değil. Turuncu alanları fişle karşılaştırın; hiçbir şey
-            kendiliğinden kaydedilmez, <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
-            yazın. Kasa farkı yazarken hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki
-            güne yazılır.
+            <StaffPath href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin. ModPOS&apos;un rakamları forma
+            dolar; banka POS Z&apos;si için aşağıdaki soruya bakın. Turuncu alanları fişle karşılaştırın; hiçbir şey kendiliğinden kaydedilmez,{" "}
+            <B>Raporu gönder</B>&apos;e siz basarsınız. Kasada sayılan nakdi, sayımdan sonra teslim edileni ve kasayı kimin saydığını
+            yazın. Satış dışında kasaya para konduysa (bozuk para, tahsilat, nakit bahşiş) <B>Kasaya giren ekle</B> ile yazın. Kasa farkı yazarken
+            hesaplanır; fark varsa nedenini nota yazın. Gece {hour(DAY_TURN_HOUR)}&apos;e kadar kapanan gün bir önceki güne yazılır.
           </>
         ),
         icon: Banknote,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
+      },
+      {
+        id: "kasa-yazarkasa",
+        q: "Banka POS Z raporu (yazarkasa)",
+        a: (
+          <>
+            Banka POS&apos;tan (yazarkasa) aldığınız Z raporudur: üstünde Z RAPORU ve KDV dökümü yazar, banka gün sonu fişi değil. <StaffPath href="/panel/kasa" />{" "}
+            ekranındaki Banka POS Z raporu (yazarkasa) kartında fotoğrafını çekin: fişi düz koyun, ekranı fişle doldurun; uzunsa önce üst yarısını, sonra alt
+            yarısını çekin (en çok {MAX_OKC_PHOTOS} fotoğraf).{" "}
+            {OKC_PREFILL_ENABLED ? (
+              <>Birbirini tutan rakamlar forma dolar; tutmayan rakam turuncu kalır, altında nedeni yazar: fişe bakıp yazın.</>
+            ) : (
+              <>
+                Okunan rakamlar şimdilik forma kendiliğinden yazılmaz: her alanın altında fotoğrafta okunan rakam ve <B>Fotoğraftakini yaz</B> çıkar. Fişle
+                karşılaştırıp aynıysa düğmeye basın, değilse fişteki rakamı yazın.
+              </>
+            )}{" "}
+            Fotoğraf çekemediyseniz dört alanı fişten yazın: <B>Günlük toplam</B> (NET SATIŞ ya da TOPLAM satırı, en büyük rakam değil), <B>Z no</B> (Z NO
+            ya da Z SAYAÇ, fiş no değil), <B>Nakit</B> ve <B>Kredi kartı</B> (K.KARTI satırı, altındaki banka satırları değil). KDV dökümü, fiş sayısı, yemek
+            kartı ve banka gün sonu <B>Ayrıntılar</B>&apos;dadır ve isteğe bağlıdır. Bölümü bütünüyle boş bırakabilirsiniz; bir rakam yazdıysanız günlük
+            toplam, nakit ve kredi kartı da gerekir (yoksa 0 yazın). Rakamlar birbirini tutmazsa tutmayan alan turuncu olur ve altında nedeni yazar: fişe bakıp
+            düzeltin. Kartın altında yazarkasanın kartı ModPOS&apos;taki kartla karşılaştırılır; farklıysa kartla alınan bir ödeme ModPOS&apos;ta başka ödeme
+            türüyle girilmiş olabilir. Yanlış bölüme çekilen fotoğraf hiçbir alanı doldurmaz: altındaki <B>ModPOS bölümüne okut</B> ya da{" "}
+            <B>Banka POS Z bölümüne okut</B> ile doğru bölüme okutun.
+          </>
+        ),
+        icon: ScrollText,
         links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
       },
       {
@@ -207,7 +239,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Aynı gece ({clockSuffixTR(hour(DAY_TURN_HOUR), "abl")} önce) raporu <B>Düzenle</B> ile doğrudan düzeltirsiniz. Ertesi gün toplam satış, kart ve
-            Z&apos;nin öteki tutarları, fiş sayısı ve not yine doğrudan düzelir; açılış, nakit satış, gün içinde çıkan, sayılan nakit, teslim edilen ya da
+            Z&apos;nin öteki tutarları, fiş sayısı ve not yine doğrudan düzelir; açılış, nakit satış, gün içinde giren, gün içinde çıkan, sayılan nakit, teslim edilen ya da
             kasayı sayan değişirse rapor kaydedilmez, yazdıklarınız yerinde kalır ve nedenini yazıp{" "}
             <B>Onaya gönder</B>&apos;e basarsınız. Düzeltme yöneticiye eski hâliyle görünür; onaylanınca rapor yeni sürüm olur. Rapor kilitliyse (ertesi günün
             raporu girildi) <B>Düzeltme öner</B>; yönetici yoksa ertesi günün raporunun notuna yazın. Bekleyen önerinizi <B>Öneriyi düzenle</B> ile değiştirir,{" "}
@@ -246,8 +278,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Rapora yanlış fotoğraf eklendi",
         a: (
           <>
-            Kayıtlı raporda yanlış Z ya da POS fotoğrafının yanındaki <B>Kaldırılmasını iste</B> ile nedenini yazıp gönderin; yönetici onaylayınca fotoğraf rapordan
-            çıkar. Fotoğrafın okumasıyla rapordaki rakam farklıysa ya da raporun tek Z fotoğrafıysa bu düğme yoktur.
+            Kayıtlı raporda yanlış ModPOS Z ya da banka POS Z fotoğrafının yanındaki <B>Kaldırılmasını iste</B> ile nedenini yazıp gönderin; yönetici onaylayınca
+            fotoğraf rapordan çıkar. Fotoğrafın okumasıyla rapordaki rakam farklıysa, raporun tek ModPOS Z fotoğrafıysa ya da banka POS Z rakamları yazılmış
+            raporun tek banka POS Z fotoğrafıysa bu düğme yoktur.
           </>
         ),
         icon: Camera,

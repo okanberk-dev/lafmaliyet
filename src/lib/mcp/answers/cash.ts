@@ -11,7 +11,7 @@ import { cleanName, money, num, panelUrl, r2 } from "./common";
 /** Raporun bu araca gereken alanları (kişi adları ve notlar burada yok) */
 export type CashReportLike = Pick<
   CashReportFields,
-  "date" | "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashOut" | "countedCash" | "handedOver"
+  "date" | "zTotal" | "cash" | "card" | "mealCard" | "online" | "other" | "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver"
 > & { cashDiff: number; revision: number };
 
 export interface CashAnswer {
@@ -27,6 +27,7 @@ export interface CashAnswer {
     yemekKarti: number;
     online: number;
     diger: number;
+    gunIcindeGiren: number;
     gunIcindeCikan: number;
     teslimEdilen: number;
     kasaFarkiToplam: number;
@@ -82,6 +83,7 @@ export function cashReportSummary(
     yemekKarti: sum((r) => r.mealCard),
     online: sum((r) => r.online),
     diger: sum((r) => r.other),
+    gunIcindeGiren: sum((r) => r.cashIn),
     gunIcindeCikan: sum((r) => r.cashOut),
     teslimEdilen: sum((r) => r.handedOver),
     kasaFarkiToplam: sum((r) => r.cashDiff),
@@ -119,7 +121,7 @@ export function cashReportSummary(
     gunluk,
     uyarilar,
     hesap: [
-      "Kasa farkı = sayılan nakit − (açılış + nakit satış − gün içinde çıkan); 1 ₺'den küçük fark tutuyor sayılır",
+      "Kasa farkı = sayılan nakit − (açılış + nakit satış + gün içinde giren − gün içinde çıkan); 1 ₺'den küçük fark tutuyor sayılır",
       `Dönemde ${num(days.length)} rapor: Z toplamı ${money(toplam.zToplam)} (nakit ${money(toplam.nakit)}, kart ${money(toplam.kart)}, yemek kartı ${money(toplam.yemekKarti)}, online ${money(toplam.online)}, diğer ${money(toplam.diger)})`,
       `Kasa farkı toplamı ${money(toplam.kasaFarkiToplam)}: ${num(toplam.eksikGun)} gün eksik, ${num(toplam.fazlaGun)} gün fazla, ${num(toplam.tutanGun)} gün tuttu`,
     ],

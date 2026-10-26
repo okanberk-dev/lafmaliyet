@@ -30,7 +30,9 @@ import { staffCashOutRow } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
 import { shortDayTR } from "@/lib/cash-requests";
 import { genitive } from "@/lib/recipe-change";
-import { photoDiffs, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
+import { cumulativeRejectedText, okcCumulativeToStore, okcHasFigures, okcMonth, type OkcPrev } from "@/lib/okc-z";
+import { photoDiffs, savedFields, suspiciousDiffs, type CashReading } from "@/lib/photo-read/kasa";
+import { okcReadFigures } from "@/lib/photo-read/okc";
 import { addDays, dayLocativeTR, longDateTR, monthTitleTR, shiftMonth, todayTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { closedEvidenceText } from "@/lib/closed-days";
@@ -50,13 +52,17 @@ import {
   cashReportsBetween,
   cashRevisionsFor,
   firstCashReportDate,
+  firstOkcReportDate,
   getCashReport,
   loadCashSettings,
   loadMonthEntry,
   nextReportAfter,
+  okcRows,
   previousCarryOver,
+  previousOkc,
   type CashReportDTO,
 } from "@/server/data/cash-reports";
+import { loadLafposDay } from "@/server/data/lafpos-day";
 import { dayWaste } from "@/server/data/waste";
 import { getDb } from "@/server/db";
 import { isEmailConfigured } from "@/server/notify/resend";
@@ -71,7 +77,7 @@ import { CashOutsCard } from "./cash-outs";
 import { MyCashRequests } from "./cash-requests";
 import { LateDaysCard, LateReport } from "./late-report";
 import { CashSettingsCard } from "./cash-settings";
-import { DIFF_TONE } from "./cash-summary";
+import { DIFF_TONE, type OkcAdminView } from "./cash-summary";
 
 export const metadata: Metadata = { title: "Kasa raporu" };
 
@@ -135,8 +141,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // E-postanın gittiği adres sayısı: personel hesabına ait adres gönderimde düşer (report-email.ts)
   const mailTo = settings.emailEnabled && showForm ? (await cashEmailRecipients(getDb(), settings.recipients)).length : 0;
   const storage = photoStorage();
-  const [report, carry, recent, waste, ai, outs, categories, next, counters] = await Promise.all([
-    showForm ? getCashReport(date) : Promise.resolve(null),
+  const [report, carry, recent, waste, ai, outs, categories, next, counters, prevOkc, lafposDay] = await Promise.all([
+    // Sunucu sütunları (yazarkasa kümülatifi, yazarkasa dışı tahsilat) yalnız yöneticinin DTO'sunda
+    showForm ? getCashReport(date, user.role) : Promise.resolve(null),
     showForm ? previousCarryOver(date) : Promise.resolve(null),
     admin ? Promise.resolve([]) : cashReportsBetween(addDays(today, -6), today),
     showForm ? dayWaste(date) : Promise.resolve(null),
@@ -146,6 +153,10 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
     // Sonraki günün raporu: açılışı bu raporun devriyle karşılaştırılır; varsa personel bu raporu düzeltemez
     showForm ? nextReportAfter(date) : Promise.resolve(null),
     showForm ? cashCounters() : Promise.resolve([]),
+    // Önceki yazarkasa Z'si: forma yalnız gün ve numara gider (Z no denetimi); kümülatif yalnız yöneticinin satırında
+    showForm ? previousOkc(date) : Promise.resolve<OkcPrev>({ z: null, cum: null }),
+    // LafPOS'un bu günün sonu ("LafPOS'tan doldur", docs/LAFPOS.md): okunamazsa form yine açılır, düğme görünmez
+    showForm ? loadLafposDay(date).catch(() => null) : Promise.resolve(null),
   ]);
   const [revisions, proposedMap, dayRequests, adminRequests, myRequests, lateDays, outRequests, oldDays] = await Promise.all([
     report && report.revision > 1 ? cashRevisionsFor([report.id]) : Promise.resolve([]),
@@ -179,7 +190,7 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   // e-postadakiyle aynı olsun diye personelin girebildiği her günde (cashReportWhatsapp'ın kuralı). Fotoğrafların
   // kendisini (küçük resim, büyütme) yalnız görebilen görür: yönetici ya da personelin hâlâ düzenleyebildiği gün
   // (/api/foto'nun kuralı, staffDayOpen); kapanan günde personel küçük resim yerine fiş simgesini görür (403 olmasın)
-  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report])).get(report.id) : undefined;
+  const photoInfo = report && (admin || staffCanReport(date)) ? (await cashReportPhotoInfo([report], user.role)).get(report.id) : undefined;
   const showPhotos = canEdit;
   // Personel: rapora bağlı Z / POS fotoğrafının kaldırılmasını isteyebilir mi (fotoğraf başına; tek Z ya da okuma farkı varsa hayır)
   const removal = !admin && report && showPhotos && photoInfo?.photos.length ? await photoRemovalStates(report, photoInfo.photos) : undefined;
@@ -255,6 +266,10 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
       requests={dayRequests}
       proposedBy={proposedBy}
       photoRemoval={removal}
+      prevOkcZ={prevOkc.z}
+      lafpos={lafposDay}
+      // Kümülatif ve yazarkasa dışı tahsilat yalnız yöneticiye: personelin yükünde anahtarı da yok
+      {...(admin && report ? { okcAdmin: okcAdminView(report, photoInfo?.readings ?? [], prevOkc.cum ?? null) } : {})}
     />
   ) : null;
   // Yönetici: bu gün için personelin bekleyen istekleri (Onaylar'daki karta götürür; yöneticinin düzeltmesi isteği kapatmaz)
@@ -355,14 +370,19 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   const ay = pick(sp.ay);
   const month = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) && ay <= today.slice(0, 7) ? ay : today.slice(0, 7);
   const monthEnd = addDays(`${shiftMonth(month, 1)}-01`, -1);
-  const [monthReports, monthOuts, before, after, firstEver, entry] = await Promise.all([
-    cashReportsBetween(`${month}-01`, monthEnd),
+  const [monthReports, monthOuts, before, after, firstEver, entry, monthOkc, okcFirst, okcBefore] = await Promise.all([
+    cashReportsBetween(`${month}-01`, monthEnd, "admin"),
     cashOutsBetween(`${month}-01`, monthEnd),
     // Açılış ↔ devir zinciri: ayın ilk raporu önceki ayın son raporuyla, son raporu sonraki ayın ilkiyle karşılaştırılır
     previousCarryOver(`${month}-01`),
     nextReportAfter(monthEnd),
     firstCashReportDate(),
     loadMonthEntry(month),
+    // Yazarkasa (mali) Z'leri: ay kartının satırı, "Yazarkasa Z yok" rozetinin başlangıcı ve kümülatif zinciri (ayın
+    // satırları; zincirin başı, önceki ayın son saklanan kümülatifi, previousOkc'tan okcMonthLine'a satır olarak eklenir)
+    okcRows(`${month}-01`, monthEnd),
+    firstOkcReportDate(),
+    previousOkc(`${month}-01`),
   ]);
   const days = monthDays(month, today, monthReports);
   const revised = monthReports.filter((r) => r.revision > 1).map((r) => r.id);
@@ -381,11 +401,19 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
   for (const r of monthRevisions) (revisionsById[r.reportId] ??= []).push(r);
   // Ayın açık günü ve cirosu nereden (Satışlar'daki ay bilgisi): tek satır, Satışlar'a bağlantı
   const monthLine = kasaMonthLine(resolveMonth(month, entry ?? undefined, tillMonths(monthReports, addDays(today, -1), firstEver)[0]));
-  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today));
+  const todays = monthReports.find((r) => r.date === today) ?? (month === today.slice(0, 7) ? null : await getCashReport(today, "admin"));
   // Günden güne: fotoğraflı raporlar, fotoğraftan farklı yazılanlar ve günlerin kasadan çıkanları
-  const infos = await cashReportPhotoInfo(monthReports);
+  const infos = await cashReportPhotoInfo(monthReports, "admin");
   const outsByDate: Record<string, typeof monthOuts> = {};
   for (const o of monthOuts) (outsByDate[o.date] ??= []).push(o);
+  // Yöneticinin kayıtlı rapordaki kümülatif satırı: zincir ayın içinde eskiden yeniye son saklanan kümülatife bağlanır
+  const okcAdmin: Record<number, OkcAdminView> = {};
+  let lastCum = okcBefore.cum ?? null;
+  for (const r of [...monthReports].reverse()) {
+    const view = okcAdminView(r, infos.get(r.id)?.readings ?? [], lastCum);
+    if (view) okcAdmin[r.id] = view;
+    if (r.okcCumTotal != null && r.okcZNo) lastCum = { date: r.date, zNo: r.okcZNo, cumTotal: r.okcCumTotal, cumVat: r.okcCumVat ?? null };
+  }
   const historyPhotos: CashHistoryPhotos = Object.fromEntries(
     monthReports.map((r) => {
       const info = infos.get(r.id);
@@ -430,6 +458,9 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
             proposedBy={Object.fromEntries([...monthProposed].map(([id, m]) => [id, Object.fromEntries(m)]))}
             lateApproved={Object.fromEntries(lateApproved)}
             latePending={latePending}
+            okcAdmin={okcAdmin}
+            okcFirst={okcFirst}
+            okcLine={okcMonthLine(okcBefore.cum ? [{ date: okcBefore.cum.date, zTotal: 0, okcZNo: okcBefore.cum.zNo, okcCumTotal: okcBefore.cum.cumTotal, okcCumVat: okcBefore.cum.cumVat }, ...monthOkc] : monthOkc, month)}
             monthLine={
               monthLine ? (
                 <Link href={`/panel/satislar?ay=${month}#m-days`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink pointer-coarse:inline-block pointer-coarse:py-2.5">
@@ -474,7 +505,14 @@ async function CashContent({ searchParams }: { searchParams: PageProps<"/panel/k
  */
 async function StaffLateDay({ date, user }: { date: string; user: { id: number; name: string } }) {
   const today = businessDate();
-  const [request, chain, counters, ai, myRequests] = await Promise.all([lateRequestFor(date, user), chainNeighbours(getDb(), date, { prefer: user.id }), cashCounters(), aiStatus(), myCashRequests(user.id)]);
+  const [request, chain, counters, ai, myRequests, prevOkc] = await Promise.all([
+    lateRequestFor(date, user),
+    chainNeighbours(getDb(), date, { prefer: user.id }),
+    cashCounters(),
+    aiStatus(),
+    myCashRequests(user.id),
+    previousOkc(date),
+  ]);
   const storage = photoStorage();
   const yesterday = addDays(today, -1);
   return (
@@ -497,6 +535,7 @@ async function StaffLateDay({ date, user }: { date: string; user: { id: number; 
         carry={chain.prev ? { date: chain.prev.date, amount: chain.prev.carry } : null}
         counters={counters}
         photoUi={{ storage: storage.available, reading: ai.state, admin: false, me: user.name }}
+        prevOkcZ={prevOkc.z}
       />
       <Card>
         <CardHeader icon={<Gift />} title="Günün zayi & ikramı" description="Geç rapora eklenmez" />
@@ -549,4 +588,48 @@ async function closedBarFor(date: string, admin: boolean, user: { id: number }, 
   }
   const state = await staffClosedState(date, user);
   return <ClosedDayBar role="staff" date={date} marked={marked} pending={state.pending} rejected={state.rejected} canAsk={state.canAsk} />;
+}
+
+/**
+ * Yöneticinin kayıtlı rapordaki yazarkasa satırı (docs/planlar/okc-z.md §3.7): saklanan kümülatif ve yazarkasa dışı
+ * tahsilat; kümülatif saklı değilse ama okunduysa nedeni (önceki saklanan kümülatifle tutmadı ya da yönetici temizledi).
+ * Yalnız yönetici dalında çağrılır (personelin DTO'sunda sunucu sütunları yok)
+ */
+function okcAdminView(r: CashReportDTO, readings: CashReading[], prevCum: OkcPrev["cum"]): OkcAdminView | null {
+  if (!okcHasFigures(r)) return null;
+  let note: string | null = null;
+  const read = r.okcCumTotal == null ? okcReadFigures(readings) : null;
+  if (read && read.cumTotal !== null) {
+    const res = okcCumulativeToStore({
+      savedZNo: r.okcZNo,
+      savedTotal: r.okcTotal,
+      readZNo: read.zNo,
+      readTotal: read.total,
+      readVatTotal: read.vatTotal,
+      cumTotal: read.cumTotal,
+      cumVat: read.cumVat,
+      outside: read.outside,
+      prevCum,
+    });
+    if (res.rejected !== null) note = cumulativeRejectedText(res.rejected);
+    // Temizlenmiş de olabilir, yazıldığı an önceki bir kümülatifle tutmamış da: hangisi olduğu kayıtlı değil
+    else if (res.cumTotal !== null) note = `Kümülatif saklı değil (okunan ${money(res.cumTotal)}). Yeni bir Banka POS Z fotoğrafı okununca yeniden yazılır.`;
+  }
+  return { reportId: r.id, cumTotal: r.okcCumTotal ?? null, cumVat: r.okcCumVat ?? null, outside: r.okcOutside ?? null, note };
+}
+
+/**
+ * Yönetici ay kartının yazarkasa satırı (plan §8, §9): ayın mali toplamı, kapsamı, ModPOS'la oranı ve KDV dökümü.
+ * Yalnız bilgi; hiçbir hesaba girmez. Yazarkasa Z'si girilmemiş ayda yok
+ */
+function okcMonthLine(rows: Awaited<ReturnType<typeof okcRows>>, month: string): string[] | null {
+  const m = okcMonth(rows, month);
+  if (!m.days) return null;
+  const modpos = rows.filter((r) => r.date.slice(0, 7) === month && r.okcTotal != null).reduce((a, r) => a + r.zTotal, 0);
+  const share = modpos > 0 ? Math.round(((modpos - m.total) / modpos) * 100) : null;
+  const vs = share === null ? "" : share === 0 ? " · ModPOS toplamıyla aynı" : ` · ModPOS toplamından %${Math.abs(share)} ${share > 0 ? "az" : "fazla"}`;
+  const out = [`Yazarkasa (mali) toplamı: ${money(m.total)} · ${m.days} / ${m.reportDays} gün${vs}`];
+  if (m.byRate.length) out.push(`KDV: ${m.byRate.map((g) => `%${g.rate} ${money(g.vat)}`).join(" · ")}${m.vatMissing.length ? ` · Yazarkasa KDV dökümü eksik: ${m.vatMissing.length} gün` : ""}`);
+  else if (m.vatMissing.length) out.push(`Yazarkasa KDV dökümü eksik: ${m.vatMissing.length} gün`);
+  return out;
 }

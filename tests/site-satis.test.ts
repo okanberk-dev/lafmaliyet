@@ -287,6 +287,7 @@ test("kasa e-postası: online satır bilgi bölümü; kasa farkı ve Z rakamlar�
     online: 0,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 2900,

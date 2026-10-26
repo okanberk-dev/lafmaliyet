@@ -74,6 +74,7 @@ describe("Geç zayi / ikram ve silme isteği: veritabanında istek, karar ve do�
     online: 0,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3_500,

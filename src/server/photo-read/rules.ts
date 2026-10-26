@@ -42,6 +42,9 @@ export const cashPhotoRules: PhotoKindRules = {
   },
 };
 
+/** Yazarkasa Z'si: personel kuralı kasanınki, saklama kendi süresi (400 gün, docs/planlar/okc-z.md D12) */
+export const okcPhotoRules: PhotoKindRules = { ...cashPhotoRules, keepDays: KEEP_DAYS["kasa-okc"] };
+
 /** Fiş fotoğrafı: kasadan çıkan satırının günü açıksa; yalnız harcamaya bağlı fiş yöneticinin */
 export const receiptPhotoRules: PhotoKindRules = {
   keepDays: KEEP_DAYS.fis,

@@ -11,7 +11,7 @@ import { longDateTR } from "@/lib/reminders";
 import { requireAdmin, requireUser } from "@/server/auth/dal";
 import { proposeLateReport } from "@/server/cash/late";
 import { emailReport, type CashEmailOutcome } from "@/server/cash/report-email";
-import { reportSchema } from "@/server/cash/report-store";
+import { okcFieldsIn, reportSchema } from "@/server/cash/report-store";
 import { proposeCashCorrection, proposeCashDelete, reviewCashRequestCore } from "@/server/cash/requests";
 import { cashReportIntegrity, nextReportAfter, toCashDTO } from "@/server/data/cash-reports";
 import { getDb } from "@/server/db";
@@ -53,7 +53,9 @@ export async function requestCashCorrection(input: z.input<typeof correctionSche
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
-    const data = correctionSchema.parse(input);
+    const parsed = correctionSchema.parse(input);
+    // Yazarkasa alanları kayıtlı biçime (kural formla aynı metinle; dalga 13)
+    const data = { ...parsed, fields: okcFieldsIn(parsed.fields) };
     const { row, changes } = await proposeCashCorrection(getDb(), me, data);
     await logActivity(me, "Kasa düzeltmesi önerildi", correctionLog({ date: data.date, changes, reason: data.message }));
     refresh();
@@ -99,7 +101,8 @@ export async function requestLateCashReport(input: z.input<typeof lateSchema>) {
   return attempt(async () => {
     const me = await requireUser();
     if (me.role === "admin") throw new UserError(CASH_REQUEST_TEXT.adminDirect);
-    const { reason, requestVersion, photoIds, handedTo, clientKey: key, ...fields } = lateSchema.parse(input);
+    const { reason, requestVersion, photoIds, handedTo, clientKey: key, ...form } = lateSchema.parse(input);
+    const fields = okcFieldsIn(form);
     const out = await proposeLateReport(getDb(), me, { fields, reason, requestVersion, photoIds, handedTo, clientKey: key });
     if (out.created || out.row.version > 1) {
       await logActivity(me, "Geç kasa raporu onaya gönderildi", lateLog({ date: fields.date, zTotal: fields.zTotal, cashDiff: out.cashDiff, reason }));
@@ -129,7 +132,8 @@ const reviewSchema = z.object({
 export async function reviewCashRequest(input: z.input<typeof reviewSchema>) {
   return attempt(async () => {
     const me = await requireAdmin();
-    const data = reviewSchema.parse(input);
+    const parsed = reviewSchema.parse(input);
+    const data = { ...parsed, fields: parsed.fields ? okcFieldsIn(parsed.fields) : parsed.fields };
     const out = await reviewCashRequestCore(getDb(), me, data);
     const who = out.request.requestedByName;
     const note = out.request.reviewNote ? ` · not: ${out.request.reviewNote}` : "";

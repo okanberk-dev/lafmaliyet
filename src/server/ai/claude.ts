@@ -17,11 +17,13 @@ import {
   runExtraction,
   type AiClient,
   type AiDocumentType,
+  type AiEffort,
   type AiErrorCode,
   type AiFeature,
   type AiImageType,
   type AiInput,
   type AiModel,
+  type AiTimeouts,
 } from "./run";
 
 /*
@@ -119,6 +121,9 @@ interface ExtractCall<T> {
   task: string;
   schema: z.ZodType<T>;
   maxTokens?: number;
+  /** Yalnız yazarkasa Z'si (run.ts OKC_EFFORT, OKC_TIMEOUTS); ötekilerde modelin varsayılanı */
+  effort?: AiEffort;
+  timeouts?: AiTimeouts;
   stored?: (data: T) => T;
 }
 
@@ -159,7 +164,12 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
     const [row] = await db.select({ n: count() }).from(s.aiCalls).where(eq(s.aiCalls.photoId, req.photoId));
     if ((row?.n ?? 0) >= MAX_READS_PER_PHOTO) return gate("photo-limit");
   }
-  const [call] = await db.insert(s.aiCalls).values({ feature: req.feature, model: req.model, status: "running", userId: req.userId, photoId: req.photoId }).returning({ id: s.aiCalls.id });
+  // Efor yalnız açıkça seçilen okumada yazılır (yazarkasa Z'si; docs/planlar/okc-z.md §6.2): canlıda hangi okumanın hangi
+  // eforla yapıldığı ve tutarı görülsün. Ötekilerde boş (modelin varsayılanı)
+  const [call] = await db
+    .insert(s.aiCalls)
+    .values({ feature: req.feature, model: req.model, effort: req.effort ?? null, status: "running", userId: req.userId, photoId: req.photoId })
+    .returning({ id: s.aiCalls.id });
   const t0 = Date.now();
   const client = replayEnabled() ? replayClient(req.feature) : liveClient();
   const res = await runExtraction(client, req);
@@ -185,6 +195,7 @@ async function extract<T>(req: ExtractCall<T> & AiInput & { model: AiModel; tota
       .where(eq(s.aiCalls.id, call.id));
     // Yöneticinin bakması gerekenler günlüğe (anahtar, görsel, belge, istem asla)
     if (res.code === "auth" || res.code === "billing" || res.code === "badrequest") console.error(tag, res.code, res.status, res.requestId);
+    else if (req.effort && res.code === "timeout") console.warn(tag, req.feature, `efor ${req.effort}`, res.code, ms);
     return { ok: false, code: res.code, message: subject === "fatura" ? aiErrorText(res.code, undefined, subject) : res.message, callId: call.id };
   }
   await db

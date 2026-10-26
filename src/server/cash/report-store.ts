@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -8,6 +8,7 @@ import {
   carryCheck,
   carryDiffText,
   computeCash,
+  OKC_FORM_KEYS,
   openingNeedsNote,
   revisionChanges,
   revisionDataOf,
@@ -18,10 +19,14 @@ import {
   type FieldChange,
 } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
-import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
-import { todayTR } from "@/lib/reminders";
+import { money } from "@/lib/format";
+import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
+import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
+import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
+import { okcReadOfReport } from "@/server/data/cash-photos";
+import { previousOkc } from "@/server/data/cash-reports";
 import { schema as s, type DB } from "@/server/db";
 import { assertNotHeld, supersede } from "@/server/staff-requests/core";
 import { getPhoto, keepPhoto, linkable, releasePhoto } from "@/server/storage/photos";
@@ -47,6 +52,12 @@ export interface CashActor {
 
 export type CashReportRow = typeof s.cashReports.$inferSelect;
 
+/** Eksik yazarkasa anahtarı "gönderilmedi"dir (eski sayfa): `optional`, boş metin null */
+const okcAmount = zAmount.nullable().optional();
+
+/** Formdan gelen yazarkasa tutarları ve dökümü (oranın toplamı ya da KDV'si boş olabilir) */
+type OkcInput = Parameters<typeof okcFormError>[0] & { okcVat?: readonly OkcVatInput[] | null };
+
 export const reportSchema = z.object({
   date: zDate,
   zNo: zOptText(30),
@@ -58,6 +69,8 @@ export const reportSchema = z.object({
   online: zAmount,
   other: zAmount,
   openingCash: zAmount,
+  /** Gün içinde kasaya giren (cashOut'la aynı tutar kuralı; eski bir sekme göndermezse 0) */
+  cashIn: zAmount.default(0),
   cashOut: zAmount,
   cashOutNote: zOptText(200),
   countedCash: zAmount,
@@ -73,9 +86,57 @@ export const reportSchema = z.object({
   revision: z.number().int().min(0),
   /** Bu gönderimle eklenen Z ve banka POS fotoğrafları (henüz bağlanmamış; eskileri bağlı kalır) */
   photos: z.array(z.number().int().positive()).max(MAX_REPORT_PHOTOS).default([]),
+  /**
+   * Yazarkasanın (banka POS) mali Z'si (dalga 13; docs/planlar/okc-z.md §3.2, §7): isteğe bağlı. Anahtarı hiç olmayan
+   * gönderim (eski sayfa) kayıtlı değerlere dokunmaz. Zorunluluk ve döküm kuralları okcFieldsIn'de (formla aynı metin)
+   */
+  okcZNo: z
+    .string()
+    .trim()
+    .max(30)
+    .nullable()
+    .transform((v) => v || null)
+    .optional(),
+  okcReceipts: z.number().int().min(0).max(100_000).nullable().optional(),
+  okcTotal: okcAmount,
+  okcVatTotal: okcAmount,
+  /** Oran oran döküm: oranın toplamı ya da KDV'si boş gelebilir (kural ikisini birlikte ister) */
+  okcVat: z
+    .array(z.object({ rate: z.number().finite(), total: zAmount.nullable(), vat: zAmount.nullable() }))
+    .max(OKC_KNOWN_RATES.length)
+    .nullable()
+    .optional(),
+  okcCash: okcAmount,
+  okcCard: okcAmount,
+  okcMealCard: okcAmount,
+  okcOther: okcAmount,
 });
 
 export type ReportInput = z.output<typeof reportSchema>;
+
+/**
+ * Formun yazarkasa alanları kayıtlı biçime (plan §3.2, §6.1; form aynı kuralı okcFormError ile söyler): bölüm boş
+ * kalabilir; herhangi bir tutar yazıldıysa günlük toplam, nakit ve kredi kartı gerekli; bir oranın toplamı ile KDV'si
+ * birlikte, KDV toplamdan büyük değil, oran %0 / %1 / %8 / %10 / %18 / %20 ve tekrarsız. Döküm sıfır gruplar atılmış,
+ * orana göre sıralı (boşsa null). Gönderilmeyen anahtar eksik kalır (yazımda kayıtlı değer korunur, withOkcOf)
+ */
+export function okcFieldsIn<T extends OkcInput>(data: T): Omit<T, "okcVat"> & { okcVat?: OkcVatLine[] | null } {
+  const err = okcFormError(data);
+  if (err) throw new UserError(err);
+  if (data.okcVat === undefined) return data as Omit<T, "okcVat">;
+  const lines = data.okcVat ?? [];
+  for (const l of lines) if (!OKC_KNOWN_RATES.includes(l.rate)) throw new UserError(`KDV oranı %${l.rate} olamaz: %1, %10 ya da %20 yazın`);
+  if (new Set(lines.map((l) => l.rate)).size !== lines.length) throw new UserError("Aynı KDV oranı iki kez yazılmış");
+  const vat = normalizeVat(lines.filter((l): l is OkcVatLine => l.total !== null && l.vat !== null));
+  return { ...data, okcVat: vat.length ? vat : null };
+}
+
+/** Yazarkasa alanlarının kayıtlı hâli: gönderilmeyen anahtar (eski sayfa, eski istek) kayıtlı değeri korur; yeni raporda boş */
+export function withOkcOf(data: CashReportFields, prev: Pick<CashReportRow, (typeof OKC_FORM_KEYS)[number]> | null): CashReportFields {
+  const out: CashReportFields = { ...data };
+  for (const k of OKC_FORM_KEYS) if (out[k] === undefined) (out as unknown as Record<string, unknown>)[k] = prev ? prev[k] : null;
+  return out;
+}
 
 /**
  * Günün kilidi (danışma kilidi, işlemin sonuna kadar): aynı günün geç rapor isteği (late.ts), onayı ve yöneticinin
@@ -181,6 +242,11 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   if (data.handedOver > data.countedCash) throw new UserError("Teslim edilen, sayılan nakitten fazla olamaz");
   const prev = o.prev === undefined ? await lockCashReport(tx, data.date) : o.prev;
   assertRevision(prev, o.revision);
+  // Yazarkasa alanları: gönderilmeyen anahtar kayıtlı değeri korur; kural formla aynı (okcFormError), döküm normal biçimde
+  const okc = withOkcOf(data, prev);
+  const okcError = okcFormError(okc);
+  if (okcError) throw new UserError(okcError);
+  const okcVat = normalizeVat(okc.okcVat);
   const submitter = o.submittedBy ?? { id: actor.id, name: actor.name };
   // Kasayı sayan: etkin bir kullanıcı ya da raporda zaten kayıtlı olan (sonradan pasif olsa da)
   const counterId = o.countedBy ?? submitter.id ?? actor.id;
@@ -203,9 +269,10 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     });
   }
   const values = {
-    ...data,
+    ...okc,
     discounts: data.discounts ?? null,
-    cashDiff: computeCash(data).cashDiff,
+    okcVat: okcVat.length ? okcVat : null,
+    cashDiff: computeCash(okc).cashDiff,
     submittedBy: submitter.id,
     submittedByName: submitter.name,
     countedBy: counter.id,
@@ -214,13 +281,14 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     emailError: null,
     updatedAt: new Date(),
   };
-  const [row] = prev
+  const [written] = prev
     ? await tx
         .update(s.cashReports)
         .set({ ...values, revision: prev.revision + 1 })
         .where(eq(s.cashReports.id, prev.id))
         .returning()
     : await tx.insert(s.cashReports).values(values).returning();
+  let row = written;
   // Yeni rapor: gün açık demektir (kapalı işareti ve bildirimi kalkar); önceki gün kapalı işaretliyse Z no ve açılış
   // sürekliliği denetlenir (src/server/closed-days.ts)
   if (!prev) {
@@ -230,18 +298,33 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   // Fotoğraflar kanıttır: yalnız eklenir (yeniden gönderimde eskileri bağlı kalır), rapor gününden 180 gün saklanır
   // (geçmiş bir güne sonradan eklenen bugünden)
   const ids = [...new Set(o.photos ?? [])];
+  let okcLinked = false;
   if (ids.length) {
-    const [{ n }] = await tx.select({ n: count() }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
-    if (n + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+    const linked = await tx.select({ kind: s.cashReportPhotos.kind }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
+    if (linked.length + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+    let okcCount = linked.filter((l) => l.kind === "kasa-okc").length;
     for (const id of ids) {
       const p = await getPhoto(id, tx);
-      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
+      // kasa-okc: yazarkasa Z'si; geçişte eski sayfanın banka POS fotoğrafı da sunucuda kasa-okc olur (okc-z.md D2)
+      if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
         throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
       }
+      // Yazarkasa Z bölümüne en çok 3 fotoğraf (uzun fişin parçaları)
+      if (p.kind === "kasa-okc" && ++okcCount > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
       // Onay bekleyen bir isteğin (geç rapor) fotoğrafı başka bir kayda bağlanmaz
       await assertNotHeld(tx, id, o.heldBy);
       await tx.insert(s.cashReportPhotos).values({ reportId: row.id, photoId: id, kind: p.kind });
       await keepPhoto(id, linkedUntil(p.kind, data.date, todayTR()), tx);
+      if (p.kind === "kasa-okc") okcLinked = true;
+    }
+  }
+  // Sunucu sütunları (kümülatif, yazarkasa dışı tahsilat; plan §6.1, D10): yeni raporda, yazarkasa fotoğrafı bağlanınca ya
+  // da yazarkasa Z no'su veya günlük toplamı değişince yeniden hesaplanır. Başka bir düzeltme onlara dokunmaz: yöneticinin
+  // temizlediği kümülatif, rapor yeni bir yazarkasa okumasıyla ya da değişen Z no / toplamla yeniden yazılana kadar boş kalır
+  if (!prev || okcLinked || (prev.okcZNo ?? null) !== (row.okcZNo ?? null) || (prev.okcTotal ?? null) !== (row.okcTotal ?? null)) {
+    const server = await okcServerColumns(tx, row);
+    if (server.okcCumTotal !== row.okcCumTotal || server.okcCumVat !== row.okcCumVat || server.okcOutside !== row.okcOutside) {
+      [row] = await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, row.id)).returning();
     }
   }
   return {
@@ -250,6 +333,58 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
     changes: prev ? revisionChanges(revisionDataOf(prev), revisionDataOf(row)) : [],
     prevCarry: prev ? Math.round((prev.countedCash - prev.handedOver) * 100) / 100 : null,
   };
+}
+
+/**
+ * Raporun sunucu sütunları (plan §6.1, D10; src/lib/okc-z.ts okcCumulativeToStore): rapora bağlı yazarkasa Z
+ * fotoğraflarının okumalarından. Okunan Z no kaydedilen Z no'ya ve okunan günlük toplam kaydedilen toplama (±0,01) eşit
+ * değilse (elle düzeltilmiş ya da elle girilmiş rapor) üçü de boş; kümülatif yalnız inandırıcıysa (zincir tutuyor, ilk
+ * kümülatif ya da aradaki girilmemiş Z'lerle büyümüş), zincir son saklanan kümülatife bağlanır (previousOkc). Yazarkasa
+ * dışı tahsilat 1 ₺'yi geçerse
+ */
+export async function okcServerColumns(tx: CashTx, row: CashReportRow): Promise<{ okcCumTotal: number | null; okcCumVat: number | null; okcOutside: number | null }> {
+  const none = { okcCumTotal: null, okcCumVat: null, okcOutside: null };
+  if (!row.okcZNo || row.okcTotal === null) return none;
+  const read = await okcReadOfReport(tx, row.id, row.date);
+  if (!read) return none;
+  const { cum } = await previousOkc(row.date, tx);
+  const out = okcCumulativeToStore({
+    savedZNo: row.okcZNo,
+    savedTotal: row.okcTotal,
+    readZNo: read.zNo,
+    readTotal: read.total,
+    readVatTotal: read.vatTotal,
+    cumTotal: read.cumTotal,
+    cumVat: read.cumVat,
+    outside: read.outside,
+    prevCum: cum,
+  });
+  return { okcCumTotal: out.cumTotal, okcCumVat: out.cumVat, okcOutside: out.outside };
+}
+
+/**
+ * Yöneticinin "Kümülatifi temizle"si (plan §3.7, §6.1): yanlış okunup saklanmış kümülatifin iki sütununu boşaltır; zincir
+ * bir önceki saklanan kümülatife bağlanır. Raporun sürümü ve gönderim anı değişmez (personelin yazdığı alan değil),
+ * işlem geçmişine düşer (aynı işlemde). Yalnız yönetici
+ */
+export async function clearOkcCumulativeCore(db: DB, me: CashActor, reportId: number): Promise<{ date: string; cumTotal: number | null; cumVat: number | null }> {
+  if (me.role !== "admin") throw new UserError("Kümülatifi yalnız yönetici temizler");
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(s.cashReports).where(eq(s.cashReports.id, reportId)).for("update").limit(1);
+    if (!row) throw new UserError("Rapor bulunamadı");
+    if (row.okcCumTotal === null && row.okcCumVat === null) throw new UserError("Bu raporda saklanmış kümülatif yok");
+    await tx.update(s.cashReports).set({ okcCumTotal: null, okcCumVat: null }).where(eq(s.cashReports.id, row.id));
+    const detail = [
+      longDateTR(row.date),
+      row.okcZNo ? `Banka POS Z no ${row.okcZNo}` : null,
+      row.okcCumTotal !== null ? `kümülatif ${money(row.okcCumTotal)}` : null,
+      row.okcCumVat !== null ? `KDV ${money(row.okcCumVat)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    await tx.insert(s.activityLog).values({ userName: me.name, userId: me.id, action: "Yazarkasa kümülatifi temizlendi", detail });
+    return { date: row.date, cumTotal: row.okcCumTotal, cumVat: row.okcCumVat };
+  });
 }
 
 export type SaveResult =
@@ -267,7 +402,8 @@ export type SaveResult =
  * Yeni rapor aynı günün bekleyen geç rapor isteklerini kapatır ("Yönetici günü kendisi girdi"; fotoğrafları 30 gün).
  */
 export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, now = new Date()): Promise<SaveResult> {
-  const { revision, photos, countedBy, ...data } = input;
+  const { revision, photos, countedBy, ...form } = input;
+  const data = okcFieldsIn(form);
   if (data.date > businessDate(now)) throw new UserError("İleri bir günün raporu girilemez");
   if (me.role !== "admin" && !staffCanReport(data.date, now)) {
     // 05:00 dönüşü: dünün formu artık geç rapor (yöneticinin onayıyla); yazılanlar formda kalır
@@ -287,7 +423,9 @@ export async function saveCashReport(db: DB, me: CashActor, input: ReportInput, 
       // kasa alanı ya da sayan değiştiyse personel doğrudan kaydetmez: yöneticinin onayına gider
       const laterReport = await hasLaterReport(tx, data.date);
       const counter = await resolveCounter(tx, countedBy ?? me.id, prev.countedBy ?? prev.submittedBy);
-      const changes = revisionChanges(revisionDataOf(prev), { ...data, discounts: data.discounts ?? null, cashDiff: computeCash(data).cashDiff, countedByName: counter.name });
+      // Gönderilmeyen yazarkasa alanı (eski sayfa) kayıtlı değerdir, değişiklik sayılmaz
+      const sent = withOkcOf(data, prev);
+      const changes = revisionChanges(revisionDataOf(prev), { ...sent, discounts: sent.discounts ?? null, cashDiff: computeCash(sent).cashDiff, countedByName: counter.name });
       const gate = staffCashGate({ date: data.date, now, hasReport: true, laterReport, changes });
       if (gate === "closed") throw new UserError(CASH_REQUEST_TEXT.closed);
       if (gate === "request") return { kind: "needsApproval" as const, request: "kasa-duzeltme" as const, gate: laterReport ? ("kilitli" as const) : ("gec" as const) };
