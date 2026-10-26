@@ -831,7 +831,9 @@ export function CashForm({
   );
 
   const photosOf = (k: CashPhotoKind) => photos.filter((p) => p.kind === k);
-  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k) ?? [];
+  // Geçiş (docs/planlar/okc-z.md D2): banka POS bölümüne çekilen fotoğraf sunucuda kasa-okc olur; yazarkasa kartı
+  // (adım b5) gelene kadar bu bölümde görünür
+  const savedOf = (k: CashPhotoKind) => saved?.photos.filter((p) => p.kind === k || (k === "kasa-pos" && p.kind === "kasa-okc")) ?? [];
   const busy = zUp.busy || posUp.busy;
   const photoBlock = (k: CashPhotoKind) => {
     const up = k === "kasa-z" ? zUp : posUp;

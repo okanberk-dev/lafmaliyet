@@ -122,7 +122,8 @@ function readingOf(kind: CashPhotoKind, result: unknown, day: string): CashReadi
 /** Yüklenmiş bilgiden WhatsApp ve e-posta ekleri: fotoğraflar, net okunmuş ama farklı yazılan alanlar, kasadan çıkanlar */
 export function extrasFrom(info: CashPhotoInfo | undefined, outs: CashOutDTO[], report: CashReportFields): CashReportExtras {
   return {
-    photos: info?.photos.length ? { z: info.photos.some((p) => p.kind === "kasa-z"), pos: info.photos.some((p) => p.kind === "kasa-pos") } : null,
+    // TODO(dalga 13 b6): yazarkasa Z'si ayrı (`okc`); o zamana kadar banka POS fotoğrafı sayılır (geçişte kasa-pos → kasa-okc)
+    photos: info?.photos.length ? { z: info.photos.some((p) => p.kind === "kasa-z"), pos: info.photos.some((p) => p.kind === "kasa-pos" || p.kind === "kasa-okc") } : null,
     photoDiffs: info ? suspiciousDiffs(info.readings, savedFields(report)) : null,
     cashOuts: outs.map((o) => ({ kind: o.kind, amount: o.amount, store: o.store, description: o.description, photo: o.photoId !== null })),
   };
