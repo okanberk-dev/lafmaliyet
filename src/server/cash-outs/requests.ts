@@ -26,6 +26,7 @@ import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/p
 import { DELETED_REPORT_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { cashOutPayment } from "@/server/cari/kasa";
+import { okcServerColumns } from "@/server/cash/report-store";
 import { photoReadingOf } from "@/server/data/cash-photos";
 import { schema as s, type DB } from "@/server/db";
 import { createOrUpdateRequest, decide, lockForReview, peekForReview, supersede, type StaffRequestRow } from "@/server/staff-requests/core";
@@ -366,6 +367,11 @@ export async function reviewPhotoRemovalCore(
     if (check.refusal) throw new UserError(check.refusal);
     await tx.delete(s.cashReportPhotos).where(and(eq(s.cashReportPhotos.reportId, payload.reportId), eq(s.cashReportPhotos.photoId, payload.photoId)));
     await releasePhoto(payload.photoId, DELETED_REPORT_DAYS, tx);
+    // Yazarkasa Z fotoğrafı çıkınca sunucu sütunları kalan fotoğrafların okumasından yeniden (docs/planlar/okc-z.md §6.1)
+    if (payload.photoKind === "kasa-okc" && check.report) {
+      const server = await okcServerColumns(tx, check.report);
+      await tx.update(s.cashReports).set(server).where(eq(s.cashReports.id, payload.reportId));
+    }
     const request = await decide(tx, row, me, "approved", { note: input.note, resultId: payload.reportId, releaseDays: null }, now);
     return { status: "approved" as const, request, payload, diffs: check.diffs };
   });

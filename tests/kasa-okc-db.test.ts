@@ -252,6 +252,23 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
     assert.equal(prev9.cum?.zNo, "0106");
     assert.deepEqual(await reports.nextOkc("2025-10-05", db), { date: "2025-10-06", zNo: "0105", total: 5_000, cumTotal: null, cumVat: null });
     assert.equal((await reports.okcRows("2025-10-01", "2025-10-31")).filter((r) => r.okcTotal !== null).length, 7);
+    // Personelin yazarkasa bölümü olmayan sayfadan düzeltme önerisi: yazarkasa alanları değişmiş sayılmaz, öneride kayıtlı hâli
+    const d1 = await reportOf("2025-10-02");
+    const { date: _d, ...legacyFields } = fields("2025-10-02", undefined, { handedOver: 2_300 });
+    void _d;
+    const proposal = await requests.proposeCashCorrection(
+      db,
+      users.ayse,
+      { date: "2025-10-02", baseRevision: d1.revision, fields: legacyFields, countedBy: null, message: "Teslim yanlış yazıldı", clientKey: null },
+      tr("2025-10-02T23:30"),
+    );
+    assert.deepEqual(
+      proposal.changes.map((c) => c.key),
+      ["handedOver"],
+    );
+    const payload = (await db.select().from(s.staffRequests).where(eq(s.staffRequests.id, proposal.row.id)))[0].payload as { proposed: CashReportFields };
+    assert.equal(payload.proposed.okcTotal, 9_350);
+    assert.deepEqual(payload.proposed.okcVat, [{ rate: 10, total: 9_350, vat: 850 }]);
   });
 
   test("Kümülatifi temizle: yalnız yönetici; işlem geçmişine düşer; sürüm ve gönderim anı değişmez; başka düzeltme geri getirmez, yeni okuma getirir", async () => {
@@ -358,6 +375,17 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
     await save(fields(R2), [lone]);
     const ok2 = await outReqs.proposePhotoRemoval(db, users.ayse, { photoId: lone, message: null, clientKey: null }, tr(`${R2}T22:30`));
     assert.equal(ok2.row.status, "pending");
+    // Onaylanan kaldırma sunucu sütunlarını kalan fotoğrafların okumasından yeniden yazar: KÜM. satırını okuyan alt parça
+    // çıkınca kümülatif boşalır (son saklanan 0108'den bu yana aralık kuralıyla saklanmıştı)
+    const R3 = "2025-11-22";
+    const AT3 = tr(`${R3}T22:30`);
+    const top = await photo(users.ayse, "kasa-okc", okcRaw({ zNo: "0111", total: 6_000 }));
+    const bottom = await photo(users.ayse, "kasa-okc", okcRaw({ zNo: "0111", total: 6_000, cum: 1_330_000 }));
+    const r3 = await save(fields(R3, { zNo: "0111", total: 6_000 }), [top, bottom]);
+    assert.equal(r3.okcCumTotal, 1_330_000);
+    const req = await outReqs.proposePhotoRemoval(db, users.ayse, { photoId: bottom, message: "yanlış kâğıt", clientKey: null }, AT3);
+    await outReqs.reviewPhotoRemovalCore(db, users.ali, { id: req.row.id, seenVersion: req.row.version, decision: "approve", note: null }, AT3);
+    assert.deepEqual(server(await reportOf(R3)), [null, null, null]);
   });
 
   test("personelin DTO'su ve okuması sunucu sütunlarını ve yöneticinin satırlarını taşımaz; yöneticininki taşır", async () => {
