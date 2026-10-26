@@ -1,8 +1,14 @@
 # LafPOS bağlantısı (kafenin kasası)
 
-Uçlar: `POST /api/pos/gun` (gün sonu) ve `GET /api/panel/pos/urunler` (ürün maliyetleri). Ekran: **Kasa raporu**
-(`/panel/kasa`) › **LafPOS'tan doldur**. Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
+Uçlar: `POST /api/pos/gun` (gün sonu) ve `GET /api/panel/pos/urunler` (ürün maliyetleri). Ekranlar: **Ayarlar ›
+LafPOS (kasa)** (bağlantının durumu, son ret ve onarımı, **LafPOS'a geçiş günü**) ve geçiş gününden itibaren **Kasa
+raporu** (`/panel/kasa`) › **LafPOS'tan doldur**. Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
 `docs/03-ENTEGRASYON.md` §3, §4 ve §4.1; bu belge panelin tarafıdır.
+
+**Varsayılan kapalı (sahibin 26 Ekim kararı).** Kafede bugün ModPOS var. "LafPOS'a geçiş günü" boşken LafPOS'un
+gönderdiği günler saklanır ama hiçbir hesaba, ekrana, göreve, hatırlatmaya, e-postaya ya da ön doldurmaya girmez;
+yalnız Ayarlar'daki LafPOS kartında "deneme" olarak görünür. Anahtar (`LAFPOS_SYNC_SECRET`) yokken iki uç 503 döner ve
+hiçbir şey yazılmaz. Açma sırası aşağıda, "Açılış sırası".
 
 ## İş bölümü (26 Ekim 2026)
 
@@ -22,8 +28,8 @@ yerine geçer).
 
 - Günün ürün satışı panelin günlük satış ağzını doldurur (`loadDailyProductSales`; ModPOS'un günlük dökümü hiç
   gelmedi, yerini bu aldı).
-- Günün Z özeti Kasa raporunda tek dokunuşla forma yazılır; personel yine bakıp gönderir, ModPOS'un Z'sini elle
-  yazmaz.
+- Geçiş gününden itibaren günün Z özeti Kasa raporunda tek dokunuşla forma yazılır; personel yine bakıp gönderir,
+  ModPOS'un Z'sini elle yazmaz.
 - Panel LafPOS'a ürünlerin reçete maliyetini verir (patronun kârlılık ekranı için; personel görmez).
 
 ## Nasıl çalışır
@@ -37,7 +43,8 @@ gün sonu (ve düzeltme)
       ikram, payments} (imzalı)                        ├─ kayıtlı Z no başkaysa: 409, hiçbir şey yazılmaz
                                                        ├─ pos_day_reports: günün özeti (yenisi eskisinin yerine)
                                                        └─ pos_daily_sales: günün satırları silinir, yenisi yazılır
-     ◀── 200 {ok, date, lines} · 400 {error, field} · 409 {error, date, zNo} · 401 · 413 · 503
+     ◀── 200 {ok, date, lines, counted, switchDay} · 400 {error, field} · 409 {error, date, zNo} · 401 · 413 · 503
+                                                    └─ sonuç integration_state › lafpos'a (Ayarlar › LafPOS kartı)
 
 GET /api/panel/pos/urunler (imzalı)  ─────────▶  maliyet modelinden siteye bağlı ürünler
      ◀── {version: 1, now, items: [{siteMenuId, slot, name, size, costMinor, active}]}
@@ -65,8 +72,11 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   (ayrıntı verilmez); gövde sözleşmeye uymazsa `400 {"error":"invalid","field":"lines.3.qty"}` (ilk sorunlu alanın
   yolu; gövde okunamazsa `body`); o güne panelde başka bir Z no ile yazılmış gün sonu varsa
   `409 {"error":"z_conflict","date":"2026-10-26","zNo":127}` (`zNo` paneldeki Z'nin numarası). Yazılınca
-  `200 {"ok":true,"date":"2026-10-26","lines":42}`. Veritabanı yazamazsa `500 {"error":"server_error"}` (LafPOS
-  yeniden dener). Reddedilen istek hiçbir şey yazmaz.
+  `200 {"ok":true,"date":"2026-10-26","lines":42,"counted":false,"switchDay":null}`: `counted` günün hesaplara girip
+  girmediği (gün geçiş gününden önce değilse `true`), `switchDay` paneldeki geçiş günü (`null`: seçilmedi, kasa
+  ModPOS). LafPOS 200'ün gövdesini okumak zorunda değildir; eski LafPOS iki ek alanı görmez. Veritabanı yazamazsa
+  `500 {"error":"server_error"}` (LafPOS yeniden dener). Reddedilen istek gün sonundan hiçbir şey yazmaz; sonucu
+  yalnız durum satırına düşer (aşağıda, "Durum ve onarım").
 - **Aynı gün aynı Z no ile yeniden gelince** (düzeltme ya da yeniden deneme) tek işlemde günün özeti yenisiyle
   değişir, satırları silinip yenisi yazılır; öteki günlere dokunulmaz. Aynı anda iki gönderim günün danışma kilidinde
   (`pg_advisory_xact_lock(hashtext('lafpos-gun:<gün>'))`) sırayla yazılır, biri bütünüyle kalır.
@@ -96,8 +106,11 @@ okuyanlar günlüğe bir uyarı yazar.
 
 ### Kasa raporu: LafPOS'tan doldur
 
-Raporun günü için `pos_day_reports` satırı varsa formun başında mavi bant çıkar: "LafPOS gün sonu · Z 128 · 26 Ekim
-03:12" ve **LafPOS'tan doldur**. Dokununca:
+Yalnız LafPOS günlerinde: geçiş günü seçili ve raporun günü ondan önce değilse (`loadKasaLafposDay`,
+`src/server/data/lafpos-day.ts`; kural `isLafposDay`, `src/lib/lafpos/switch.ts`). Geçiş günü boşken ya da önceki bir
+günde bant hiçbir role görünmez, form bugünkü gibi ModPOS'a göre elle doldurulur. LafPOS günüyse ve raporun günü için
+`pos_day_reports` satırı varsa formun başında mavi bant çıkar: "LafPOS gün sonu · Z 128 · 26 Ekim 03:12" ve **LafPOS'tan
+doldur**. Dokununca:
 
 - ModPOS Z bölümünün alanları (Z no, fiş sayısı, toplam satış, nakit, kart, yemek kartı, online, diğer, ödenmez /
   ikram, indirim) ve kasa alanları (açılış, gün içinde çıkan, gün içinde kasaya giren, sayılan nakit, teslim edilen;
@@ -163,15 +176,83 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
 - Başka alan gitmez: fiyat, kâr, marj, reçete ve hammadde yok (`src/lib/lafpos/costs.ts`). Makine ucudur: oturumla
   açılmaz, panel ekranlarında yoktur; LafPOS bu rakamı yalnız `rapor.maliyet` yetkisi olanlara gösterir.
 
-## Kurulum
+## Geçiş günü
 
-1. Bir anahtar üretin: `openssl rand -base64 48` (en az 32 karakter). Sitenin `KARAOKE_SYNC_SECRET`'ından **ayrı**
-   olsun: kafedeki makinede sitenin anahtarı durmaz, ikisi ayrı döndürülür.
-2. Vercel'de bu projeye (yalnız Production) `LAFPOS_SYNC_SECRET`; LafPOS'un `.env`'ine aynı değerle
-   `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`.
-3. Panel yayınlanınca migration'lar (`0040_lafpos_baglantisi`, `0041_kasaya_giren`) build öncesinde kendiliğinden
-   uygulanır.
-4. LafPOS'ta bir günü kapatın: giden kutusu gönderir; Kasa raporunda o günün formunda bant görünür.
+**Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü** (`settings.lafposGecisGunu`; `Settings` tipinde ve
+`DEFAULT_SETTINGS`'te `null`): kasada LafPOS'un kullanılmaya başlandığı ilk iş günü (YYYY-MM-DD, 05:00 kuralı).
+
+- **Boş (varsayılan):** kasa ModPOS. Her şey bugünkü gibi çalışır; LafPOS'un gönderdiği günler deneme sayılır.
+- **Dolu:** o günden itibaren kaynak LafPOS. Bugün (B07) değişen: Kasa raporunun "LafPOS'tan doldur" bandı o günden
+  itibaren açılır, 200 yanıtı `counted: true` der. Sonraki partiler (B08-B11: günlük satış, kasa uzlaşması, komisyon ve
+  ikram, ModPOS metinleri) okuyucularını aynı kurala bağlar; onay penceresinin listesi (`LAFPOS_SWITCH_EFFECTS`) kodun
+  yaptığından fazlasını söylemez.
+- **Kural tek yerde:** `src/lib/lafpos/switch.ts` (`isLafposDay`, `kasaName`, `monthSource`, `switchAffectedMonths`);
+  okuma kuralı `src/lib/constants.ts` › `readLafposSwitchDay` (takvimde olan gün, 1 Ekim 2026'dan önce değil; bozuk değer
+  `null`). Geçiş gününü okuyan her yer bu yardımcılardan geçer.
+- **Kim, nasıl:** yalnız yönetici (`saveLafposSwitchDay`, `src/server/actions/lafpos.ts`; rol çekirdekte de denetlenir,
+  `src/server/lafpos/admin.ts`). Kaydetmeden önce onay penceresi: neyin değiştiği ve kaynağı değişen günlerin ayları.
+  En erken 1 Ekim 2026, en çok 90 gün ileride. FIFO başlangıcı gibi parola istemez; işlem geçmişine "LafPOS'a geçiş
+  günü: yok (kasa ModPOS) → 10 Kasım 2026" düşer. Boşaltmak satırı siler.
+- **Hiçbir veri yazılmaz ya da silinmez:** ayar yalnız okuyanları değiştirir; geri almak günü değiştirmek ya da
+  boşaltmaktır. Tercihen ayın 1'i (ModPOS'un o ayki ürün listesi bölünmez).
+- **LafPOS kendi tarihini tutmaz:** bütün gerçek günleri gönderir; neyin sayıldığına panel karar verir ve yanıtta söyler
+  (`counted`, `switchDay`).
+
+## Durum ve onarım
+
+`POST /api/pos/gun`'un her sonucu `integration_state`'in `lafpos` satırına yazılır (`handlePosDay`,
+`src/server/lafpos/status.ts`; denetim ve yazım yine `receivePosDay`'de):
+
+| Sonuç | Yazılan |
+|-------|---------|
+| 200 | `lastOk`: an, gün, Z no, satır sayısı, `counted` |
+| 400, 409, 500 (imza doğrulanmış) | `lastError`: an, durum, hata, alan (400), gün, paneldeki Z (409), gönderilen Z (409) |
+| 401, 413 (imza doğrulanamadı) | yalnız `unverified`: sayaç, son an, son durum. Gövde okunmaz; yazım örnek başına dakikada bir (imzasız istek yağmuru yazım yağmuru olmasın), aradakiler bellekte birikip sonraki yazıma eklenir: sayaç "en az" |
+| 503 (anahtar yok) | hiçbir şey |
+
+Retler gövdesiz günlüğe de düşer: `[lafpos] reddedildi 409 z_conflict 2026-10-26 127`. Durum yazımı yanıtı hiçbir
+zaman bozmaz. Durum satırı aynı anda gelen iki sonucun alanını ezmez (üst düzey birleştirme).
+
+**Ayarlar › LafPOS (kasa)** kartı (yalnız yönetici; saf özet `lafposCardSummary`, `src/lib/lafpos/status.ts`):
+
+- Durum, sakin dille: "Henüz kurulmadı · kasada ModPOS kullanılıyor." (gri, hata değil) · "Bağlı · geçiş günü
+  seçilmedi: LafPOS günleri saklanıyor, hesaplara girmiyor." · "Geçiş günü 10 Kasım 2026 (4 gün sonra). O güne kadar
+  kasa ModPOS." · "Kasa LafPOS (10 Kasım'dan beri)." ve son gün sonu. Kırmızı yalnız geçiş günü seçili ama anahtar
+  yokken ("LafPOS günleri gelemez"). Anahtar 32 karakterden kısa ya da sitenin anahtarıyla aynıysa nedeni yazılır.
+- Son ret (son başarılı gönderimden sonraysa kırmızı kutuda) ve metni; 409'da **Bu günün LafPOS kaydını sil**.
+- İmzası tutmayan istekler (son 14 gün): son an ve sayaç, ipucuyla (anahtar aynı mı, kafedeki saat ±5 dakika mı).
+- Geçiş günü alanı ve onay penceresi.
+- Gelen günler (en yeni 14): Z, fiş, ciro, satır, geliş anı, **Sayılıyor** ya da **Deneme**, satır sonunda sil.
+- Geçiş gününden düne gün sonu gelmeyen günler (onaylı kapalı günler hariç, en çok son 60 gün).
+- Ürüne bağlanamayan POS adları (hizmet satırları hariç): ad, adet, gün.
+
+**Bu günün LafPOS kaydını sil** (`deleteLafposDay`; çekirdek `removeLafposDay`, `src/server/lafpos/admin.ts`): yalnız
+yönetici, kendi parolasıyla (`requireStepUp`, yanlışı işlem geçmişine "Hatalı parola onayı (LafPOS)"). Gün sonunun
+yazımıyla aynı danışma kilidi (`lafpos-gun:<gün>`) altında, tek işlemde `pos_day_reports` ve `pos_daily_sales`
+satırlarını siler; yalnız yöneticinin gördüğü Z'ye koşullu (bu arada başka Z ile yeniden yazılan gün silinmez). Durum
+satırındaki o günün reddi "silindi" olur; LafPOS günü yeniden gönderince yazılır, kart "LafPOS yeniden gönderdi (Z …)"
+der. İşlem geçmişi: "LafPOS günü silindi · 26 Ekim 2026 · Z 127 · 42 satır". Deneme günlerini temizlemek için de
+kullanılır.
+
+## Açılış sırası
+
+Sahibin istediği tek liste; LafPOS deposunda `docs/03-ENTEGRASYON.md` › "Açılış sırası" aynı adımlardır. Partiler
+birleşip yayına çıkmak hiçbir şeyi açmaz: anahtar ve geçiş günü yokken üç sistem bugünkü gibi çalışır.
+
+1. **Anahtarlar** (bu parti yayındayken, en erken): bir anahtar üretin, `openssl rand -base64 48` (en az 32 karakter).
+   Vercel'de bu projeye (yalnız Production) `LAFPOS_SYNC_SECRET`; LafPOS'un `.env`'ine aynı değerle
+   `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`. Sitenin `KARAOKE_SYNC_SECRET`'ından
+   **ayrı** olsun: kafedeki makinede sitenin anahtarı durmaz, ikisi ayrı döndürülür; aynıysa panel bağlantıyı açmaz
+   (kart nedenini yazar). Sitenin (laffogato) kendi `LAFPOS_SYNC_SECRET`'ı **başka bir değerdir**: adları aynı,
+   değerleri ayrı. Paneli yeniden yayınlayın. Migration'lar (`0040_lafpos_baglantisi`, `0041_kasaya_giren`) zaten
+   canlıda.
+2. **Deneme gönderimi:** LafPOS kurulum modundan çıkmışken gerçek bir günü kapatın (ModPOS'la paralel olabilir).
+   Ayarlar › LafPOS (kasa)'da gün **Deneme** olarak görünür, yanıt `counted: false`; başka hiçbir ekranda görünmez.
+   Retler aynı kartta. Kartın "Ürüne bağlanamayan POS adları" listesi boşalana kadar ürünler bağlanır (Ürünler › Site
+   eşleştirmesi ya da Satışlar'daki POS eşleştirmesi; gün yeniden gelince geçer). Eğitim / kurulum günleri geldiyse
+   kartta silin.
+3. **Geçiş günü:** Ayarlar › LafPOS (kasa) › LafPOS'a geçiş günü (tercihen ayın 1'i). O günden itibaren Kasa raporunda
+   bant çıkar ve sonraki partilerin okuyucuları LafPOS'a geçer.
 
 Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.
 
@@ -191,13 +272,13 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 
 | Yanıt | Ne yapılır |
 |-------|------------|
-| `503 not_configured` | Panelde `LAFPOS_SYNC_SECRET` yok ya da 32 karakterden kısa: ekleyip yeniden yayınlayın |
-| `401 unauthorized` | İki taraftaki anahtar aynı mı (LafPOS'ta `LAFMALIYET_SYNC_SECRET`), kafedeki makinenin saati doğru mu (±5 dakika)? |
+| `503 not_configured` | Panelde `LAFPOS_SYNC_SECRET` yok, 32 karakterden kısa ya da sitenin `KARAOKE_SYNC_SECRET`'ıyla aynı: ayrı bir değer ekleyip yeniden yayınlayın (kart nedenini yazar) |
+| `401 unauthorized` | İki taraftaki anahtar aynı mı (LafPOS'ta `LAFMALIYET_SYNC_SECRET`), kafedeki makinenin saati doğru mu (±5 dakika)? Kart son anı ve sayacı gösterir |
 | `413 too_large` | Gövde 256 KB'ı aştı; LafPOS'un gönderdiğine bakın |
 | `400 invalid` + `field` | Gövde sözleşmeye uymuyor; `field` ilk sorunlu alanın yolu (`date`: ileri ya da bozuk gün, `lines.5.posName`: aynı ad iki kez). LafPOS düzeltip yeniden gönderir |
-| `409 z_conflict` + `date`, `zNo` | O güne panelde başka bir Z no ile (`zNo`) yazılmış gün sonu var; hiçbir şey yazılmadı, yeniden deneme de 409 alır. Bir tarihte bir Z olur: paneldeki doğruysa LafPOS'taki fazla günü düzeltin; LafPOS'taki doğruysa paneldeki özeti ve o günün satırlarını (`pos_day_reports`, `pos_daily_sales`) yönetici silsin, LafPOS yeniden gönderir |
+| `409 z_conflict` + `date`, `zNo` | O güne panelde başka bir Z no ile (`zNo`) yazılmış gün sonu var; hiçbir şey yazılmadı, yeniden deneme de 409 alır. Bir tarihte bir Z olur: paneldeki doğruysa LafPOS'taki fazla günü düzeltin; LafPOS'taki doğruysa yönetici Ayarlar › LafPOS (kasa)'da **Bu günün LafPOS kaydını sil**'e basar (parolayla; o günün özeti ve satırları tek işlemde silinir), LafPOS yeniden gönderince yazılır. Kart son reddi iki Z'siyle gösterir |
 | `500 server_error` | Panel yazamadı (veritabanı); LafPOS yeniden dener. Sürüyorsa Vercel günlüğünde `[lafpos]` |
-| Kasa raporunda bant yok | O günün gönderimi gelmedi (LafPOS'un giden kutusu) ya da gün başka (05:00 kuralı) |
+| Kasa raporunda bant yok | Geçiş günü seçilmedi ya da gün ondan önce (bilerek: deneme günü Kasa'ya girmez); o günün gönderimi gelmedi (LafPOS'un giden kutusu; kart gelmeyen günleri listeler) ya da gün başka (05:00 kuralı) |
 
 ## Dosyalar
 
@@ -207,10 +288,17 @@ Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi 
 | `src/lib/lafpos/request.ts` | Anahtar ve imzalı isteğin denetimi (saf) |
 | `src/lib/lafpos/prefill.ts` | Z → Kasa formunun alanları (`CashPrefill`), bandın metni (saf) |
 | `src/lib/lafpos/costs.ts` | Maliyet listesinin beyaz listesi (saf) |
+| `src/lib/lafpos/switch.ts` | Geçiş gününün kuralları (saf): LafPOS günü mü, ayın kaynağı, değişen aylar, onay penceresinin listesi |
+| `src/lib/lafpos/status.ts` | Durum satırının biçimi, retlerin metni, Ayarlar kartının özeti, gelmeyen günler (saf) |
+| `src/server/lafpos/status.ts` | Ucun sonucu durum satırına (`handlePosDay`, imzasız sayaç), geçiş günü okuyucusu, kartın verisi |
+| `src/server/lafpos/admin.ts` | Geçiş gününün yazımı ve günün silinmesi (çekirdekler, rol denetimi) |
+| `src/server/actions/lafpos.ts` | Ayarlar'ın iki eylemi (yönetici; silme parolayla) |
+| `src/app/panel/ayarlar/lafpos-card.tsx`, `lafpos-client.tsx` | Ayarlar › LafPOS (kasa) |
 | `src/server/lafpos/ingest.ts` | Gün sonunun denetimi ve tek işlemde yazımı |
 | `src/server/lafpos/products.ts` | Maliyet ucunun çekirdeği (maliyet modeli) |
 | `src/server/data/daily-sales.ts` | `loadDailyProductSales` |
-| `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z) |
+| `src/server/data/lafpos-day.ts` | Kasa raporunun okuyucusu (yalnız Z; `loadKasaLafposDay` yalnız geçiş gününden sonra) |
 | `src/app/api/pos/gun/route.ts`, `src/app/api/panel/pos/urunler/route.ts` | Uçlar |
 | `src/app/panel/kasa/cash-form.tsx`, `page.tsx` | "LafPOS'tan doldur" bandı |
-| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi; veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
+| `tests/lafpos.test.ts`, `tests/lafpos-db.test.ts` | İmza, gövde, ürün sırası, form ve kasa eşlemesi, geçiş günü, kartın özeti, altın gövde (`tests/fixtures/lafpos-gun.golden.json`); veritabanında yazım, idempotent değişim, Z çakışması (409), ağız ve uçlar |
+| `tests/lafpos-durum-db.test.ts` | Kendi geçici veritabanında: durum satırı (200 / 400 / 409 / 401 / 413 / 500 / 503), `counted`, günün silinmesi, geçiş günü, Kasa okuyucusunun kapısı, eylemlerin parolası ve işlem geçmişi |

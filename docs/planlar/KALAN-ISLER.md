@@ -17,8 +17,9 @@ B01-B20 ve sahibe 11 soru. Partilerin durumu, sahibin yanıtları ve yanıt gele
   denetim listesi), #30 (Dalga 10a), #31 (panel Google'da görünmez), #32 (Dalga 10b), #33 (Dalga 13 PR-a), #34 (LafPOS
   bağlantısı), #36 (LafPOS migration düzeltmesi; aynı iş için açılan #37 birleşmeden kapandı), #35 (Dalga 13 PR-b),
   #38 (Dalga 14: stok değerleme FIFO), #39 (Dalga 15: kenar çubuğu). Her birinin ayrıntısı §2'de kendi başlığında.
-- **LafPOS (#34, #36) canlıda ama bağlantı kapalı:** `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503
-  döner (denetim E-31). Sahibe adım §2 › "LafPOS bağlantısı"nda.
+- **LafPOS (#34, #36) canlıda, bilerek kapalı:** kafede bugün ModPOS var (sahip, 26 Ekim); `LAFPOS_SYNC_SECRET`
+  Vercel Production'da yok, iki uç 503 döner (denetim E-31: hata değil, "henüz kurulmadı"). Açma sırası
+  `docs/LAFPOS.md` › "Açılış sırası" (anahtarlar → deneme gönderimi → geçiş günü); durum Ayarlar › LafPOS (kasa) (B07).
 - **Stok değerleme Dalga 14'ten (#38) beri FIFO** (başlangıç ayından itibaren, varsayılan Ekim 2026;
   `docs/STOK-DEGERLEME.md`); reçete ve menü maliyeti son alış fiyatında kalır.
 - Dalga 1–6 (23 Ekim; sahip birleştirmeyi oturuma bıraktı, squash): #8 (ops-backup, vkn),
@@ -62,7 +63,7 @@ bekleyen parti beklemez: varsayılanı uygular ve soruyu PR gövdesine açık so
 | B04 | Stok sayımı 4: yazım hızı ve Stok sekmeleri | E-21, E-56 | yok |  | bekliyor |
 | B05 | Canlı güvence: dal derlemesi, Neon yeniden deneme, plan notu | E-10, E-50, E-67 | yok | 10 | bekliyor |
 | B06 | Belgeler: KALAN-ISLER ve bu denetimin planı | E-54 | yok |  | PR (dal `claude/denetim-b06-belgeler`) |
-| B07 | LafPOS 1: bağlantı görünür ve onarılabilir | E-31, E-32 | yok | 1 | bekliyor |
+| B07 | LafPOS 1: bağlantı görünür ve onarılabilir; geçiş günü ayarı | E-31, E-32 | yok | 1 (yanıtlandı) | PR (dal `claude/denetim-b07-lafpos-durum`) |
 | B08 | LafPOS 2: günlük satış aylık modele; eşleşmeyenler; silme engeli | E-08, E-33, E-34, E-66 | **evet** | 2 | bekliyor |
 | B09 | LafPOS 3: kasa raporu ve gün kayıtları LafPOS'la uzlaşsın | E-09, E-35, E-36, E-40 | yok | 5 | bekliyor |
 | B10 | LafPOS 4: ödeme kanalları komisyona, ikram tüketime | E-37, E-38, E-68 | yok | 6 | bekliyor |
@@ -107,9 +108,12 @@ sayfasının kendisi (yalnız rakamları, E-13 / E-46) ve site ping alıcıları
 **Sahibe sorular (26 Ekim; yanıt yok).** Yanıt gelene kadar partisi aşağıdaki varsayılanı uygular; varsayılanı
 yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine yazar.
 1. **LafPOS anahtarı** (E-31, B07): kafede LafPOS kullanılıyor mu; `LAFPOS_SYNC_SECRET` Vercel'e eklenebilir mi?
-   Adımlar yukarıda, "LafPOS bağlantısı".
+   **Yanıt (26 Ekim):** henüz değil, kafede ModPOS var; LafPOS bütün sistemlerde açılınca kullanılacak, o güne kadar
+   hiçbir şey değişmesin. B07 bunu "henüz kurulmadı" diye sakin gösterir; anahtar sahibin açılış sırasının ilk adımı.
 2. **ModPOS'tan LafPOS'a geçiş günü** (E-08, E-39; B08, B11): hangi gün; ModPOS'un aylık ürün satış listesi gelmeye
    devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
+   **Yanıt (26 Ekim):** belli değil; panelde bir ayar olsun. B07: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü",
+   varsayılan boş (kasa ModPOS, LafPOS'un günleri hiçbir hesaba girmez); B08-B11 okuyucularını bu güne bağlar.
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
    yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
@@ -350,18 +354,24 @@ raporuna "Gün içinde kasaya giren" (`cash_in`) eklendi. Migration'lar `0040_la
 (#36: 0040 bir dal yayınıyla canlıya önceden uygulanmıştı, canlıdaki hâline döndü; dal yayınının canlıya çıkması
 denetimde E-10, B05). Belge `docs/LAFPOS.md`.
 
-**Durum (26 Ekim denetimi):** canlıda kapalı (E-31): `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503
-`not_configured`, `pos_day_reports` ve `pos_daily_sales` boş. Anahtar gelse de: panel bağlantının durumunu ve
-reddedilen gün sonunu göstermez (E-32, B07); günlük satış satırlarını hiçbir hesap okumaz, aylık model hâlâ ModPOS
-listesine bağlı (E-08, B08); kart kart ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler
-B07-B11; sahibe sorular 1, 2, 5, 6.
+**Durum (26 Ekim denetimi):** canlıda bilerek kapalı (E-31; sahip: kafede bugün ModPOS var, LafPOS bütün sistemlerde
+açılınca kullanılacak): `LAFPOS_SYNC_SECRET` Vercel Production'da yok, iki uç 503 `not_configured`, `pos_day_reports`
+ve `pos_daily_sales` boş. B07 (E-32): uç her sonucu `integration_state › lafpos`'a yazar, 200 yanıtı `counted` ve
+`switchDay` taşır; Ayarlar › LafPOS (kasa) kartı durumu sakin dille, son reddi ve çözümünü ("Bu günün LafPOS kaydını
+sil", parolayla), gelen ve gelmeyen günleri gösterir; "LafPOS'a geçiş günü" ayarı (varsayılan boş) geldi ve Kasa
+raporunun LafPOS bandı yalnız o günden sonra açılır; sitenin anahtarıyla aynı `LAFPOS_SYNC_SECRET` bağlantıyı açmaz.
+Kalan: günlük satış satırlarını hiçbir hesap okumaz, aylık model ModPOS listesine bağlı (E-08, B08); kart kart
+ödemeler komisyona, ikramlar tüketime girmez (E-37, E-38, B10). Partiler B08-B11; sahibe sorular 5, 6.
 
-**Sahibe adım (LafPOS anahtarı, E-31):**
-1. Bir anahtar üretin: `openssl rand -base64 48` (en az 32 karakter; sitenin `KARAOKE_SYNC_SECRET`'ından **ayrı**).
-2. Vercel › lafmaliyet › Settings › Environment Variables: `LAFPOS_SYNC_SECRET`, **yalnız Production**.
-3. LafPOS'un `.env`'ine aynı değerle `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`.
-4. Paneli yeniden yayınlayın. LafPOS'ta bir günü kapatınca Kasa raporunda o günün formunda bant görünür
-   (`docs/LAFPOS.md` › Kurulum; hata kodlarının anlamı aynı belgede).
+**Açılış sırası (sahibin adımları, `docs/LAFPOS.md` › "Açılış sırası"):** B07-B11 yayına girmeden geçiş günü seçilmez;
+anahtarlar en erken B07 yayındayken girilir.
+1. Anahtarlar: `openssl rand -base64 48` (en az 32 karakter; sitenin `KARAOKE_SYNC_SECRET`'ından **ayrı**); Vercel ›
+   lafmaliyet › Settings › Environment Variables: `LAFPOS_SYNC_SECRET`, **yalnız Production**; LafPOS'un `.env`'ine
+   aynı değerle `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`; paneli yeniden yayınlayın.
+   Sitenin kendi `LAFPOS_SYNC_SECRET`'ı başka bir değerdir.
+2. Deneme gönderimi: LafPOS'ta gerçek bir gün kapatılır; Ayarlar › LafPOS (kasa)'da "Deneme" görünür, başka hiçbir
+   yerde görünmez.
+3. Geçiş günü: Ayarlar › LafPOS (kasa) › "LafPOS'a geçiş günü" (tercihen ayın 1'i).
 
 ### Dalga 14: stok değerleme FIFO (#38)
 
@@ -493,7 +503,9 @@ paleti aynı başlıkları kullanır. Migration yok. Stok sekmelerinin kenar çu
 
 ## 4. Altyapı
 
-- `LAFPOS_SYNC_SECRET`: canlıda **yok** (26 Ekim); LafPOS'un iki ucu 503 döner. Sahibe adım §2 › "LafPOS bağlantısı".
+- `LAFPOS_SYNC_SECRET`: canlıda **yok** (26 Ekim, bilerek: kafede ModPOS var); LafPOS'un iki ucu 503 döner. Açma
+  sırası §2 › "LafPOS bağlantısı" ve `docs/LAFPOS.md` › "Açılış sırası". `KARAOKE_SYNC_SECRET`'la aynı değer
+  bağlantıyı açmaz.
   Vercel Preview'da yalnız `DATABASE_*` ile `ADMIN_EMAIL` / `ADMIN_NAME` var; gizli değerler yalnız Production'da
   (`docs/DEPLOY.md` §4).
 
