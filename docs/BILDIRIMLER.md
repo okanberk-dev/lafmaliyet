@@ -1,6 +1,6 @@
 # Ödemeler, hatırlatıcılar ve e-posta bildirimleri
 
-Ekran: **Satış & gider › Ödemeler & hatırlatıcılar** (`/panel/hatirlaticilar`).
+Ekran: **Finans › Ödemeler & hatırlatıcılar** (`/panel/hatirlaticilar`).
 
 ## Ne listelenir
 

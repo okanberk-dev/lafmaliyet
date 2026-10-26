@@ -724,7 +724,7 @@ test("kaynak: sayfa ve her eylem yalnız yönetici; menüde Kafe altında, perso
   assert.equal(canOpen("admin", "/panel/tahmin"), true);
   assert.equal(mobileTitleFor("/panel/tahmin"), "Satış tahmini");
   const kafe = NAV_TREE.find((n) => n.id === "kafe")!.children!.map((c) => c.id);
-  assert.equal(kafe[kafe.indexOf("kasa-raporlari") + 2], "tahmin");
+  assert.equal(kafe[kafe.indexOf("kontrol-listeleri") + 1], "tahmin");
   const item = NAV_GROUPS.find((g) => g.title === "Kafe")!.items.find((i) => i.href === "/panel/tahmin")!;
   assert.deepEqual(item.roles, ["admin"]);
 });

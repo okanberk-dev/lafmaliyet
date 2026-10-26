@@ -20,11 +20,13 @@ test("menü öğesi ve alt sayfa yolları kenar çubuğundaki adlarla", () => {
   assert.deepEqual(pathOf("/panel/tutarlilik"), ["Stok", "Tutarlılık"]);
   assert.deepEqual(pathOf("/panel/parasut"), ["Ayarlar", "Paraşüt entegrasyonu"]);
   assert.deepEqual(pathOf("/panel/komisyonlar"), ["Satış", "Komisyon & hakediş"]);
-  // Personelde üst düzeyde de duran ekranlar yöneticinin başlığıyla
-  assert.deepEqual(pathOf("/panel/kasa"), ["Kafe", "Kasa raporları"]);
+  // Personelde üst düzeyde de duran ekranlar yöneticinin başlığıyla; en sık açılanlar iki rolde de üst düzeyde
   assert.deepEqual(pathOf("/panel/karaoke"), ["Kafe", "Karaoke"]);
-  assert.deepEqual(pathOf("/panel/kontrol"), ["Günlük", "Kontrol listeleri"]);
-  assert.deepEqual(pathOf("/panel/hatirlaticilarim"), ["Günlük", "Hatırlatıcılarım"]);
+  assert.deepEqual(pathOf("/panel/kontrol"), ["Kafe", "Kontrol listeleri"]);
+  assert.deepEqual(pathOf("/panel/hatirlaticilarim"), ["Kafe", "Hatırlatıcılarım"]);
+  assert.deepEqual(pathOf("/panel/tahmin"), ["Kafe", "Satış tahmini"]);
+  assert.deepEqual(pathOf("/panel/kasa"), ["Kasa raporu"]);
+  assert.deepEqual(pathOf("/panel/onaylar"), ["Onaylar"]);
   assert.deepEqual(pathOf("/panel/bugun"), ["Bugün"]);
   assert.deepEqual(pathOf("/panel/gelir-gider"), ["Finans", "Gelir-gider"]);
   assert.deepEqual(pathOf("/panel/yok"), []);

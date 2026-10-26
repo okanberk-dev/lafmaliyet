@@ -80,10 +80,11 @@ dosyasında. Vercel kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 | Açık sekmenin canlı verisi (ETag / 304), laffogato.net'in karaoke, menü ve sipariş pingleri, bar ekranının sipariş isteği | `/api/canli`, `/api/karaoke/ping`, `/api/menu/ping`, `/api/orders/ping`, `/api/siparisler` | — |
 | LafPOS bağlantısı (kafenin kasası): gün sonunda günün ürün satışı ve Z özeti imzalı gelir (aynı gün yeniden gelirse öncekinin yerine geçer), Kasa raporunda "LafPOS'tan doldur"; LafPOS'a siteye bağlı ürünlerin reçete maliyeti (yalnız imzayla) ([docs/LAFPOS.md](docs/LAFPOS.md)) | `/api/pos/gun`, `/api/panel/pos/urunler` | — (yeni) |
 
-Menü kenar çubuğunda on bir öğeye toplandı: Genel bakış · Bugün · Karaoke · Kontrol listeleri · Menü (Ürünler, Hammaddeler, Reçete defteri,
-Reçete onayları) · Satış & gider (Kasa raporları, Satış tahmini, Satışlar, Faturalar, Tedarikçiler, Komisyon & hakediş, Gelir-gider, Giderler & personel,
-Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Hızlı sayım, Mal siparişi, Zayi & ikram, Tutarlılık) · Hatırlatıcılarım · Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller,
-Paraşüt entegrasyonu) · Yardım. Telefonda altta Genel bakış · Bugün · Kasa · Ödemeler · Menü çubuğu var (Satışlar ve
+Kenar çubuğunda en sık açılan dört ekran tek tıkla üst düzeyde, gerisi konu başlıkları altında (yöneticide; [docs/TASARIM.md](docs/TASARIM.md) "Menü ağacı"):
+Genel bakış · Bugün · Onaylar · Kasa raporu · Kafe (Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım) · Menü (Ürünler, Hammaddeler, Reçete defteri)
+· Stok (Stok sayımı, Hızlı sayım, Mal siparişi, Zayi & ikram, Tutarlılık) · Satış (Satışlar, Komisyon & hakediş, Analiz & senaryo) · Alış & gider (Faturalar,
+Tedarikçiler, Giderler & personel) · Finans (Gelir-gider, Ödemeler & hatırlatıcılar) · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu)
+· Yardım. Başlığa dokununca altı açılır; açık olan sayfanın başlığı kendiliğinden açık durur. Telefonda altta Genel bakış · Bugün · Kasa · Ödemeler · Menü çubuğu var (Satışlar ve
 Faturalar Menü'de). ⌘K
 (Ctrl+K) ile ekran, ürün, hammadde ve tedarikçi aranır; zil ödemeleri (gecikmiş, bugün, yakında), fatura bildirimlerini (Paraşüt
 eşitlemesi, yeni ve kontrol bekleyen faturalar, bağlanmayı bekleyen ürünler, geciken hakedişler, komisyon uyarıları, teslim kontrolü farkları ve gelmeyen mal siparişleri), onay bekleyen reçete önerilerini ve fiyat onaylarını, geciken ve eksik kontrol listelerini ve aralık dışı değerleri, kişisel

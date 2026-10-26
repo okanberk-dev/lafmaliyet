@@ -62,11 +62,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Genel",
     items: [
       { href: "/panel", label: "Genel bakış", icon: LayoutDashboard, excel: "Panel", roles: ["admin"], keywords: "panel özet dashboard kâr zarar başabaş" },
-    ],
-  },
-  {
-    title: "Günlük",
-    items: [
       {
         href: "/panel/bugun",
         label: "Bugün",
@@ -74,13 +69,28 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin", "staff"],
         keywords: "bugün yapılacaklar günün işleri liste kontrol kasa zayi sayım",
       },
-      // Personelin onaya giden istekleri ve reçete önerileri (docs/ONAYLAR.md); kenar çubuğunda Bugün'ün altında
+      // Personelin onaya giden istekleri ve reçete önerileri (docs/ONAYLAR.md); kenar çubuğunda Bugün'ün hemen altında, tek tıkla
       {
         href: "/panel/onaylar",
         label: "Onaylar",
         icon: ClipboardCheck,
         roles: ["admin"],
         keywords: "onay bekleyen reçete değişikliği personel önerisi istek kasa düzeltme geç rapor zayi mal siparişi kapalı gün",
+      },
+      { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
+    ],
+  },
+  {
+    title: "Kafe",
+    items: [
+      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
+      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
+      {
+        href: "/panel/karaoke/doluluk",
+        label: "Karaoke doluluğu",
+        icon: Grid3x3,
+        roles: ["admin"],
+        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
       },
       {
         href: "/panel/kontrol",
@@ -91,22 +101,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       // Personelin özel günleri (maç, AVM etkinliği, kampanya; docs/SATIS-TAHMINI.md); yönetici Satış tahmini'nde görür
       { href: "/panel/ozel-gunler", label: "Özel günler", icon: CalendarHeart, roles: ["staff"], keywords: "özel gün derbi maç avm etkinlik kampanya kafe kapalı yoğun gün" },
-      { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
-    ],
-  },
-  {
-    title: "Kafe",
-    items: [
-      { href: "/panel/kasa", label: "Kasa raporu", icon: Banknote, roles: ["admin", "staff"], keywords: "kasa z raporu gün sonu modpos nakit sayım eksik fazla kapanış whatsapp" },
-      { href: "/panel/karaoke", label: "Karaoke", icon: MicVocal, roles: ["admin", "staff"], keywords: "karaoke rezervasyon sayaç süre alarm oda bar ekranı uygulama sipariş masa gel-al kurye laffogato.net" },
-      // Karaoke'nin alt ekranı, yalnız yönetici (kenar çubuğunda ayrı öğesi yok, ⌘K'da bulunur; docs/KARAOKE.md)
-      {
-        href: "/panel/karaoke/doluluk",
-        label: "Karaoke doluluğu",
-        icon: Grid3x3,
-        roles: ["admin"],
-        keywords: "karaoke doluluk ısı haritası boş saat dolu saat oda gelir saat başı uzatma iptal son dakika rezervasyon kaç gün önceden ay karşılaştırma",
-      },
       // Önümüzdeki 7 günün satışı, kaç kişi, kaç tatlı (docs/SATIS-TAHMINI.md); kenar çubuğunda Kafe altında
       {
         href: "/panel/tahmin",
@@ -115,6 +109,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
         roles: ["admin"],
         keywords: "tahmin yoğunluk ciro kaç kişi personel vardiya tatlı pasta hazırlık bayram ramazan tatil okul hava durumu derbi maç kampanya özel gün",
       },
+      { href: "/panel/hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, roles: ["admin", "staff"], keywords: "hatırlatma not yapılacak kişisel alarm" },
     ],
   },
   {
@@ -139,6 +134,36 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       { href: "/panel/hammaddeler", label: "Hammaddeler", icon: Package, excel: "Hammaddeler", roles: ["admin"], keywords: "birim fiyat tedarikçi" },
       { href: "/panel/receteler", label: "Reçete defteri", icon: BookOpen, roles: ["admin", "staff"], keywords: "barista tarif öneri değişiklik" },
+    ],
+  },
+  {
+    title: "Stok",
+    items: [
+      {
+        href: "/panel/sayim",
+        label: "Stok sayımı",
+        icon: ClipboardList,
+        excel: "Sayım + Tutarlılık Kontrolü",
+        roles: ["admin", "staff"],
+        match: ["/panel/tutarlilik"],
+        keywords: "envanter tutarlılık fark",
+      },
+      // Haftalık kısa sayım ve mal siparişi (docs/MAL-SIPARISI.md); "Sipariş" tek başına uygulama siparişi demek
+      {
+        href: "/panel/hizli-sayim",
+        label: "Hızlı sayım",
+        icon: ClipboardPen,
+        roles: ["admin", "staff"],
+        keywords: "haftalık sayım kritik kalem eldeki stok sipariş öncesi gelen mal geldi",
+      },
+      {
+        href: "/panel/mal-siparisi",
+        label: "Mal siparişi",
+        icon: ShoppingBasket,
+        roles: ["admin"],
+        keywords: "sipariş öneri tedarikçi whatsapp hedef stok en az teslim kontrolü eksik fazla fiyat farkı gönderilenler kalemler",
+      },
+      { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
     ],
   },
   {
@@ -193,36 +218,6 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
     ],
   },
-  {
-    title: "Stok",
-    items: [
-      {
-        href: "/panel/sayim",
-        label: "Stok sayımı",
-        icon: ClipboardList,
-        excel: "Sayım + Tutarlılık Kontrolü",
-        roles: ["admin", "staff"],
-        match: ["/panel/tutarlilik"],
-        keywords: "envanter tutarlılık fark",
-      },
-      // Haftalık kısa sayım ve mal siparişi (docs/MAL-SIPARISI.md); "Sipariş" tek başına uygulama siparişi demek
-      {
-        href: "/panel/hizli-sayim",
-        label: "Hızlı sayım",
-        icon: ClipboardPen,
-        roles: ["admin", "staff"],
-        keywords: "haftalık sayım kritik kalem eldeki stok sipariş öncesi gelen mal geldi",
-      },
-      {
-        href: "/panel/mal-siparisi",
-        label: "Mal siparişi",
-        icon: ShoppingBasket,
-        roles: ["admin"],
-        keywords: "sipariş öneri tedarikçi whatsapp hedef stok en az teslim kontrolü eksik fazla fiyat farkı gönderilenler kalemler",
-      },
-      { href: "/panel/zayi", label: "Zayi & ikram", icon: Gift, roles: ["admin", "staff"], keywords: "zayi fire atılan bozulan ikram ödenmez personel tadım" },
-    ],
-  },
 ];
 
 /** Kenar çubuğunun altındaki sistem bağlantıları (kenar çubuğunda Ayarlar başlığı ve profil menüsü) */
@@ -270,45 +265,38 @@ export interface NavNode {
 }
 
 /**
- * Ağaç (26 Eki 2026, docs/TASARIM.md "Kenar çubuğu"): yöneticide konu başlıkları altında alt sayfalar; personelin
- * ağacı aynı kalır. Personelin üst düzey öğeleri (Karaoke, Kasa raporu, Kontrol listeleri, Hatırlatıcılarım) yalnız
- * personelde; yönetici aynı ekranları başlıkların altında görür. Personelin görebildiği düğümlerin sırası değişmez
+ * Ağaç (26 Eki 2026, docs/TASARIM.md "Menü ağacı"): yöneticide en sık açılan dört ekran (Genel bakış, Bugün, Onaylar,
+ * Kasa raporu) tek tıkla üst düzeyde, gerisi konu başlıkları altında: işletme (Kafe, Menü, Stok), para (Satış, Alış &
+ * gider, Finans), Ayarlar. Başlık satırı yalnız grubu açıp kapatır; etkin sayfanın grubu kendiliğinden açık
+ * (sidebar-nav.tsx). Personelin ağacı aynı kalır: üst düzey öğeleri (Karaoke, Kontrol listeleri, Hatırlatıcılarım)
+ * yalnız personelde, yönetici aynı ekranları Kafe altında görür. Personelin görebildiği düğümlerin sırası değişmez
  * (tests/kenar-cubugu.test.ts personelin ağacını olduğu gibi sabitler). Adresler değişmedi, yalnız gruplama.
  */
 export const NAV_TREE: NavNode[] = [
   { id: "genel", label: "Genel bakış", icon: LayoutDashboard, href: "/panel", roles: ["admin"] },
-  // Günün işleri (docs/BUGUN.md); iki rolde de tek tıkla, personelde ağacın ilk öğesi ve girişte açılan ekran.
-  // Grubun başlığına konmadı: başlık satırı grubu açıp kapatan düğmedir, aynı satıra ikinci bir iş yüklenmez.
+  // Günün işleri (docs/BUGUN.md); personelde ağacın ilk öğesi ve girişte açılan ekran
   { id: "bugun", label: "Bugün", icon: ListTodo, href: "/panel/bugun", roles: ["admin", "staff"] },
-  {
-    id: "gunluk",
-    label: "Günlük",
-    icon: ClipboardCheck,
-    roles: ["admin"],
-    children: [
-      // Personelin istekleri ve reçete önerileri (docs/ONAYLAR.md)
-      { id: "onaylar", label: "Onaylar", href: "/panel/onaylar", roles: ["admin"] },
-      // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md)
-      { id: "kontrol-listeleri", label: "Kontrol listeleri", href: "/panel/kontrol", roles: ["admin", "staff"] },
-      { id: "hatirlaticilarim-yonetici", label: "Hatırlatıcılarım", href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
-    ],
-  },
-  // Personelin üst düzey öğeleri; yönetici aynı ekranları Kafe ve Günlük altında görür
+  // Personelin istekleri ve reçete önerileri (docs/ONAYLAR.md); yalnız yönetici, Bugün'ün hemen altında
+  { id: "onaylar", label: "Onaylar", icon: ClipboardCheck, href: "/panel/onaylar", roles: ["admin"] },
+  // Personelin üst düzey öğesi; yönetici Kafe altında görür
   { id: "karaoke", label: "Karaoke", icon: MicVocal, href: "/panel/karaoke", roles: ["staff"] },
-  { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["staff"] },
+  // Gün sonu kasa raporu: iki rolde de üst düzeyde, tek tıkla
+  { id: "kasa", label: "Kasa raporu", icon: Banknote, href: "/panel/kasa", roles: ["admin", "staff"] },
+  // Açılış ve kapanış listeleri (docs/KONTROL-LISTELERI.md); personelde üst düzeyde, yönetici Kafe altında görür
   { id: "kontrol", label: "Kontrol listeleri", icon: ListChecks, href: "/panel/kontrol", roles: ["staff"] },
   // Personelin özel günleri; yönetici aynı listeyi Satış tahmini'nde düzenler
   { id: "ozel-gunler", label: "Özel günler", icon: CalendarHeart, href: "/panel/ozel-gunler", roles: ["staff"] },
   {
+    // Kafenin günlük işleyişi: karaoke odası, açılış / kapanış, önümüzdeki günlerin tahmini, kişisel hatırlatıcılar
     id: "kafe",
     label: "Kafe",
     icon: Store,
     roles: ["admin"],
     children: [
-      // Ekran personele de açık; personel bu grubu görmez, kendi üst düzey "Kasa raporu" öğesinden girer
-      { id: "kasa-raporlari", label: "Kasa raporları", href: "/panel/kasa", roles: ["admin", "staff"] },
       { id: "karaoke-yonetici", label: "Karaoke", href: "/panel/karaoke", roles: ["admin", "staff"] },
+      { id: "kontrol-listeleri", label: "Kontrol listeleri", href: "/panel/kontrol", roles: ["admin", "staff"] },
       { id: "tahmin", label: "Satış tahmini", href: "/panel/tahmin", roles: ["admin"] },
+      { id: "hatirlaticilarim-yonetici", label: "Hatırlatıcılarım", href: "/panel/hatirlaticilarim", roles: ["admin", "staff"] },
     ],
   },
   {
@@ -323,6 +311,20 @@ export const NAV_TREE: NavNode[] = [
     ],
   },
   {
+    id: "stok",
+    label: "Stok",
+    icon: Boxes,
+    roles: ["admin", "staff"],
+    children: [
+      { id: "sayim", label: "Stok sayımı", href: "/panel/sayim", roles: ["admin", "staff"] },
+      { id: "hizli-sayim", label: "Hızlı sayım", href: "/panel/hizli-sayim", roles: ["admin", "staff"] },
+      { id: "mal-siparisi", label: "Mal siparişi", href: "/panel/mal-siparisi", roles: ["admin"] },
+      { id: "zayi", label: "Zayi & ikram", href: "/panel/zayi", roles: ["admin", "staff"] },
+      { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
+    ],
+  },
+  {
+    // Gelen para: satış listesi, yemek kartı / platform kesintisi, menü mühendisliği
     id: "satis",
     label: "Satış",
     icon: Receipt,
@@ -334,6 +336,7 @@ export const NAV_TREE: NavNode[] = [
     ],
   },
   {
+    // Giden para: alış faturaları, cari hesaplar, sabit giderler ve maaşlar
     id: "alis",
     label: "Alış & gider",
     icon: Truck,
@@ -355,20 +358,7 @@ export const NAV_TREE: NavNode[] = [
       { id: "hatirlaticilar", label: "Ödemeler & hatırlatıcılar", href: "/panel/hatirlaticilar", roles: ["admin"] },
     ],
   },
-  {
-    id: "stok",
-    label: "Stok",
-    icon: Boxes,
-    roles: ["admin", "staff"],
-    children: [
-      { id: "sayim", label: "Stok sayımı", href: "/panel/sayim", roles: ["admin", "staff"] },
-      { id: "hizli-sayim", label: "Hızlı sayım", href: "/panel/hizli-sayim", roles: ["admin", "staff"] },
-      { id: "mal-siparisi", label: "Mal siparişi", href: "/panel/mal-siparisi", roles: ["admin"] },
-      { id: "zayi", label: "Zayi & ikram", href: "/panel/zayi", roles: ["admin", "staff"] },
-      { id: "tutarlilik", label: "Tutarlılık", href: "/panel/tutarlilik", roles: ["admin"] },
-    ],
-  },
-  // Personelde üst düzeyde; yönetici Günlük altında görür
+  // Personelde üst düzeyde; yönetici Kafe altında görür
   { id: "hatirlaticilarim", label: "Hatırlatıcılarım", icon: AlarmClock, href: "/panel/hatirlaticilarim", roles: ["staff"] },
   {
     id: "ayarlar",
@@ -397,6 +387,11 @@ export function navTreeFor(role: "admin" | "staff"): NavNode[] {
 export function pathMatches(pathname: string, href: string, match: string[] = []) {
   if (href === "/panel") return pathname === "/panel";
   return [href, ...match].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Etkin sayfanın grubu: kenar çubuğunda kendiliğinden açık durur. Sayfa üst düzeyde ya da menüde değilse undefined */
+export function activeGroupOf(items: NavNode[], pathname: string): string | undefined {
+  return items.find((i) => i.children?.some((c) => pathMatches(pathname, c.href, c.match)))?.id;
 }
 
 /**

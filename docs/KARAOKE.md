@@ -1,6 +1,7 @@
 # Karaoke sayacı ve laffogato.net bağlantısı
 
-Ekran: **Karaoke** (`/panel/karaoke`, "Barın ekranı"), personel ve yönetici. Kasadaki tablette ya da bilgisayarda
+Ekran: **Karaoke** (`/panel/karaoke`, "Barın ekranı"; yöneticinin menüsünde **Kafe** altında), personel ve yönetici.
+Kasadaki tablette ya da bilgisayarda
 Chrome'da açık bırakılır: laffogato.net'te karaoke rezervasyonu açılınca zil çalar (Yemeksepeti / Getir paneli gibi),
 oturum başlayınca kısa ses, bitime az kala uyarı, süre dolunca personel **Haber verdim**'e basana kadar alarm çalar.
 Ekranın en üstünde sitenin ödenmiş, açık kafe siparişleri durur (**Uygulama siparişleri**, yeni siparişte zil;

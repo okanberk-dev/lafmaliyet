@@ -148,11 +148,9 @@ test("üst çubuk başlığı: kısa adlar, alt sayfalar, bilinmeyen ekran", () 
   assert.equal(mobileTitleFor("/panel/bilinmeyen"), "L'Affogato");
 });
 
-test("Onaylar yöneticide Günlük'ün ilk alt sayfası, Günlük Bugün'ün hemen altında; personelin Özel günler ve Yardım'ı çekmecede, Yardım en altta", () => {
-  const adminTree = navTreeFor("admin");
-  const adminIds = adminTree.map((n) => n.id);
-  assert.equal(adminIds.indexOf("gunluk"), adminIds.indexOf("bugun") + 1);
-  assert.equal(adminTree.find((n) => n.id === "gunluk")?.children?.[0]?.href, "/panel/onaylar");
+test("Onaylar yöneticide üst düzeyde, Bugün'ün hemen altında; personelin Özel günler ve Yardım'ı çekmecede, Yardım en altta", () => {
+  const adminIds = navTreeFor("admin").map((n) => n.id);
+  assert.equal(adminIds.indexOf("onaylar"), adminIds.indexOf("bugun") + 1);
   // Menü grubunda artık yok (tek yerde)
   assert.ok(!NAV_TREE.find((n) => n.id === "menu")?.children?.some((c) => c.href === "/panel/onaylar"));
   const staffTree = navTreeFor("staff");

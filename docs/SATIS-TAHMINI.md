@@ -1,6 +1,6 @@
 # Satış tahmini
 
-Ekran: **Satış & gider › Satış tahmini** (`/panel/tahmin`, yalnız yönetici). Her sabah önümüzdeki 7 iş gününde kafenin
+Ekran: **Kafe › Satış tahmini** (`/panel/tahmin`, yalnız yönetici). Her sabah önümüzdeki 7 iş gününde kafenin
 ne kadar satacağını (kasanın **Z toplamı**), kaç kişinin çalışması ve kaç tatlı hazırlanması gerektiğini hesaplar.
 Bugün ekranında yöneticiye kart, personele yalnız yoğunluk ve tatlı sayısı; sabah e-postasında bir kutu.
 

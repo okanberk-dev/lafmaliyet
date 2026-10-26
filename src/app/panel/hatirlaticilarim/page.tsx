@@ -15,7 +15,7 @@ export default function MyRemindersPage() {
     <>
       <PageHeader
         title="Hatırlatıcılarım"
-        eyebrow="Günlük"
+        eyebrow="Kafe"
         description="Kendinize not ve hatırlatma: sipariş verilecekler, temizlik, aranacaklar. Yalnızca siz görürsünüz. Saat verirseniz panel açıkken saatinde sesli uyarır; bildirim açıksa sabah özeti gelir."
       />
       <Suspense fallback={<PageSkeleton rows={6} />}>

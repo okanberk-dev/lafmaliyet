@@ -86,7 +86,7 @@ export default function CashPage({ searchParams }: PageProps<"/panel/kasa">) {
     <>
       <PageHeader
         title="Kasa raporu"
-        eyebrow="Kafe"
+        eyebrow="Günlük"
         description="Her akşam kapanışta ModPOS'tan Z raporunu alın, kasadaki nakdi sayın ve buraya girin. Eksik / fazla kendiliğinden hesaplanır; gönderince yöneticiye e-posta gider, WhatsApp ile de paylaşılır."
       />
       <Suspense fallback={<PageSkeleton rows={8} />}>

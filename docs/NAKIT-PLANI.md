@@ -1,6 +1,6 @@
 # Nakit planı (önümüzdeki 6 hafta) ve KDV tahmini
 
-Ekran: **Satış & gider › Ödemeler & hatırlatıcılar › Nakit planı** (`/panel/hatirlaticilar/nakit`, yalnız yönetici;
+Ekran: **Finans › Ödemeler & hatırlatıcılar › Nakit planı** (`/panel/hatirlaticilar/nakit`, yalnız yönetici;
 Ödemeler'in başlığındaki **Nakit planı** düğmesi ve ⌘K). Soru: “önümüzdeki haftalarda param yeter mi?” Plan bugünden
 başlayan **42 gündür** (6 dilim × 7 gün, kayan hafta: hafta 1 = bugün … bugün+6). Her dilimde gelen, ödenecek (kesin ve
 tahmini) ve hafta sonunda elde kalacak para görünür. Hesap saf modüldedir: `src/lib/cash-plan.ts` (testleri

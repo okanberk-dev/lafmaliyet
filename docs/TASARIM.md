@@ -65,14 +65,26 @@ tipi, yaylı (spring) küçük hareketler. Renk yalnızca anlam taşırken kulla
   başlığını örtmez, dokunulabilir); tablette üst çubuğun altında.
 - Ana ekrana eklenebilir (`src/app/manifest.ts`, `public/icons/`); QR menü (`/menu`) bu bildirimi ve uygulama
   etiketlerini kapatır.
-- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`): Genel bakış · Bugün · Karaoke · Kontrol listeleri · Menü (Ürünler, Hammaddeler,
-  Reçete defteri, Reçete onayları) · Satış & gider (Kasa raporları, Satışlar, Faturalar, Tedarikçiler, Gelir-gider,
-  Giderler & personel, Ödemeler & hatırlatıcılar) · Stok (Stok sayımı, Hızlı sayım, Mal siparişi, Zayi & ikram,
-  Tutarlılık) · Hatırlatıcılarım ·
-  Analiz & senaryo · Ayarlar (Genel ayarlar, Kullanıcılar & roller, Paraşüt entegrasyonu) · Yardım.
+- Menü ağacı `src/components/panel/nav.ts` (`NAV_TREE`; konu başlıkları 26 Eki 2026). Yönetici: en sık açılan dört
+  ekran tek tıkla üst düzeyde, **Genel bakış · Bugün · Onaylar · Kasa raporu**; gerisi konu başlıkları altında:
+  **Kafe** (Karaoke, Kontrol listeleri, Satış tahmini, Hatırlatıcılarım) · **Menü** (Ürünler, Hammaddeler, Reçete
+  defteri) · **Stok** (Stok sayımı, Hızlı sayım, Mal siparişi, Zayi & ikram, Tutarlılık) · **Satış** (Satışlar, Komisyon
+  & hakediş, Analiz & senaryo) · **Alış & gider** (Faturalar, Tedarikçiler, Giderler & personel) · **Finans**
+  (Gelir-gider, Ödemeler & hatırlatıcılar; Vergi de buraya gelecek) · **Ayarlar** (Genel ayarlar, Kullanıcılar &
+  roller, Paraşüt entegrasyonu) · Yardım. Önce işletme (Kafe, Menü, Stok), sonra para (gelen, giden, ay ve ödemeler).
+  Başlık satırı yalnız grubu açıp kapatır, kendisi bir ekran açmaz; etkin sayfanın grubu kendiliğinden açık
+  (`activeGroupOf`; alt ekran ve sekme de: Nakit planı Finans'ı, Aylık harcamalar Alış & gider'i açar), başka bölüme
+  gidince önceki grup açık kalır (`keepGroupOpen`). Bir grup iki ile beş alt sayfa tutar; yeni ekran uygun başlığın
+  altına girer, sık açılmıyorsa yeni üst düzey öğe açılmaz. Personelin ağacı değişmedi: Bugün · Karaoke · Kasa raporu ·
+  Kontrol listeleri · Özel günler · Reçete defteri · Stok (Stok sayımı, Hızlı sayım, Zayi & ikram) · Hatırlatıcılarım
+  · Yardım; tek alt sayfası kalan grup o sayfanın bağlantısına döner (`navTreeFor`: personelde Menü → Reçete defteri),
+  alt sayfası kalmayan başlık hiç çizilmez. Komut paleti (`NAV_GROUPS`) aynı başlıklarla aynı sırada; sayfanın bağlam
+  satırı (`PageHeader` `eyebrow`) ekranın başlığını yazar, üst düzeydeki günlük ekranlarda "Günlük".
+  `tests/kenar-cubugu.test.ts` iki ağacı, tek tıkla açılan ekranları, `src/app/panel` altındaki her ekranın menüden
+  açıldığını ve paletin her ekranının rolünün ağacında da olduğunu sabitler.
   Bölüm sekmeleri (`SECTION_TABS`, sayfa başında): Giderler & personel → Sabit giderler, Aylık harcamalar, Personel
   (son ikisinin menüde ayrı öğesi yok); Stok → Sayım, Tutarlılık; Mal siparişi → Sipariş listesi, Hızlı sayım,
-  Gönderilenler, Kalemler (son ikisinin menüde ayrı öğesi yok; sekmeler yalnız yöneticide). Kontrol listeleri üst düzeyde olduğu için bölüm
+  Gönderilenler, Kalemler (son ikisinin menüde ayrı öğesi yok; sekmeler yalnız yöneticide). Kontrol listeleri bölüm
   sekmesi yerine kendi sekmelerini taşır (`SegmentedLinks`: Bugün · Geçmiş · Listeler, yalnız yönetici). Personel
   yalnız kendi ekranlarını görür
   (`src/lib/roles.ts` STAFF_PATHS); ağacının ilk öğesi Bugün, girişte o açılır.

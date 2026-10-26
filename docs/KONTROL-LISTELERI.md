@@ -1,6 +1,7 @@
 # Kontrol listeleri (açılış ve kapanış)
 
-Ekran: **Kontrol listeleri** (`/panel/kontrol`; menüde üst düzeyde, personelin telefonunda üst çubuktaki menüde).
+Ekran: **Kontrol listeleri** (`/panel/kontrol`; yöneticinin menüsünde **Kafe** altında, personelin menüsünde üst
+düzeyde ve telefonunda üst çubuktaki menüde).
 Personel kafeyi açarken ve kapatırken maddeleri telefondan tek tek işaretler: buzdolabı sıcaklığını yazar, istenen
 yerde fotoğraf çeker. Her madde dokunulduğu an kaydedilir. Amaç denetimde gösterilecek düzenli bir kayıttır: hangi gün,
 kim, saat kaçta, hangi sıcaklık, hangi fotoğraf. Yönetici yapılmayan listeyi ve aralık dışı değeri Bugün'de, zilde ve

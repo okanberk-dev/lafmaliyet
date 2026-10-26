@@ -1,6 +1,6 @@
 # Komisyon ve hakediş (yemek kartları ve sipariş platformları)
 
-Ekran: **Satış & gider › Komisyon & hakediş** (`/panel/komisyonlar`, yalnız yönetici; ⌘K'da "komisyon", "hakediş",
+Ekran: **Satış › Komisyon & hakediş** (`/panel/komisyonlar`, yalnız yönetici; ⌘K'da "komisyon", "hakediş",
 "pluxee" …). Soru: yemek kartı şirketleri (Pluxee, Multinet, Edenred, Setcard, Metropol) ve sipariş platformları
 (Yemeksepeti, Trendyol Go, Getir, Migros Yemek) her ay gerçekte ne kadar kesiyor, kestikleri yasaya uygun mu,
 hakediş geldi mi? Hesap saf modüllerdedir: `src/lib/commission/channels.ts` (kanallar, kalemin sınıfı) ve
