@@ -11,8 +11,8 @@ import { test } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 
-import { POS_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
-import { KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas";
+import { OKC_TASK, POS_TASK, SYSTEM, Z_TASK } from "../src/lib/photo-read/prompts";
+import { KasaOkcRaw, KasaPosRaw, KasaZRaw, ReceiptRaw } from "../src/lib/photo-read/schemas";
 import { costUsd, priceOf } from "../src/server/ai/pricing";
 import {
   AI_FALLBACK_BETA,
@@ -21,6 +21,9 @@ import {
   aiErrorText,
   buildRequest,
   mapAiError,
+  OKC_EFFORT,
+  OKC_MAX_TOKENS,
+  OKC_TIMEOUTS,
   RETRYABLE,
   runExtraction,
   type AiClient,
@@ -330,4 +333,38 @@ test("costUsd: Haiku 5.5 (0,10 / 0,50 $; 100 bin token üstü istem 0,50 / 2,50 
   assert.deepEqual(priceOf("claude-haiku-5-5")?.input, 0.1);
   // Opus 5.5 tek fiyat kartı (uzun istemde değişmez)
   assert.equal(costUsd({ input_tokens: 200_000, output_tokens: 0 }, AI_MODEL).usd, 0.8);
+});
+
+test("yazarkasa Z isteği (dalga 13 PR-b): efor low, 8000 token, tek 50 sn'lik deneme; biçim öteki okumalarla aynı", async () => {
+  assert.equal(OKC_EFFORT, "low");
+  assert.equal(OKC_MAX_TOKENS, 8000);
+  assert.deepEqual(OKC_TIMEOUTS, { timeout: 50_000, maxRetries: 1, totalMs: 50_000 });
+  const okcReq = { image: IMAGE, system: SYSTEM, task: OKC_TASK("2026-10-24"), schema: KasaOkcRaw, effort: OKC_EFFORT, maxTokens: OKC_MAX_TOKENS, timeouts: OKC_TIMEOUTS };
+  const { params, options } = buildRequest(okcReq);
+  assert.deepEqual(Object.keys(params), ["model", "max_tokens", "betas", "fallbacks", "output_config", "system", "messages"]);
+  assert.equal(params.model, "claude-opus-5-5");
+  assert.equal(params.max_tokens, 8000);
+  assert.deepEqual(params.betas, [AI_FALLBACK_BETA]);
+  assert.deepEqual(params.output_config, { effort: "low", format: params.output_config!.format });
+  for (const key of ["temperature", "top_p", "top_k", "thinking"]) assert.equal(key in params, false, key);
+  assert.deepEqual([options.timeout, options.maxRetries], [50_000, 1]);
+  assert.match((params.messages[0].content as { type: string; text?: string }[])[1].text!, /^This should be the fiscal Z report/);
+  const docTypes = ((params.output_config?.format as { schema: Record<string, unknown> }).schema.properties as Record<string, { enum: string[] }>).documentType.enum;
+  assert.deepEqual(docTypes, ["z_report", "x_report", "period_report", "batch_slip", "software_z", "other"]);
+
+  // "medium" yalnız değerlendirmenin kararıyla; istek onu aynen taşır
+  assert.equal(buildRequest({ ...okcReq, effort: "medium" }).params.output_config?.effort, "medium");
+  // İstemciye giden seçenekler (runExtraction aynı isteği kurar)
+  const { calls, client } = fake({ content: [text("{}")] });
+  await runExtraction(client, okcReq);
+  assert.equal(calls[0].options.timeout, 50_000);
+  assert.equal(calls[0].params.max_tokens, 8000);
+
+  // Öteki okumalar değişmedi: efor ve süre verilmezse modelin varsayılanı
+  const plain = buildRequest({ image: IMAGE, system: SYSTEM, task: Z_TASK("2026-10-24"), schema: KasaZRaw });
+  assert.equal(plain.params.output_config?.effort, "low");
+  assert.equal(plain.params.max_tokens, 6000);
+  assert.deepEqual([plain.options.timeout, plain.options.maxRetries], [20_000, 1]);
+  const invoice = buildRequest({ model: AI_INVOICE_MODEL, image: IMAGE, system: "S", task: "T", schema: Small });
+  assert.equal(invoice.params.output_config?.effort, "medium");
 });

@@ -37,7 +37,26 @@ export const AI_MAX_TOKENS = 6000;
 /** Deneme başına 20 sn, bir yeniden deneme; ikisi birlikte en çok 45 sn (fotoğraf yolu 60 sn'de kesilir) */
 export const AI_TIMEOUTS = { timeout: 20_000, maxRetries: 1, totalMs: 45_000 } as const;
 
-export type AiFeature = "kasa-z" | "kasa-pos" | "fis" | "fatura";
+export type AiEffort = "low" | "medium";
+export interface AiTimeouts {
+  /** Deneme başına (ms) */
+  timeout: number;
+  maxRetries: number;
+  /** Bütün denemeler birlikte (ms): bu sinyal kesince yeniden deneme kalmaz */
+  totalMs: number;
+}
+
+/**
+ * Yazarkasanın mali Z'si (dalga 13 PR-b, docs/planlar/okc-z.md §4.4): efor "low" (öteki okumalarla aynı; "medium" yalnız
+ * değerlendirme yanlış dolumu ve "doğrulandı ama yanlış"ı düşürür ve ilk okuma p90 ≤ 20 sn tutarsa), JSON daha uzun
+ * olduğu için 8000 token ve tek 50 sn'lik deneme: SDK zaman aşımını da yeniden dener ama toplam sinyal 50 sn'de kestiği
+ * için ona yer kalmaz; hızlı dönen hata (529, bağlantı) kalan süre içinde bir kez yeniden denenir. Yol 60 sn'de kesilir
+ */
+export const OKC_EFFORT: AiEffort = "low";
+export const OKC_MAX_TOKENS = 8000;
+export const OKC_TIMEOUTS: AiTimeouts = { timeout: 50_000, maxRetries: 1, totalMs: 50_000 };
+
+export type AiFeature = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "fatura";
 export type AiErrorCode =
   | "nokey"
   | "off"
@@ -123,7 +142,11 @@ export type ExtractRequest<T> = AiInput & {
   task: string;
   schema: z.ZodType<T>;
   maxTokens?: number;
-  /** Toplam süre (varsayılan 45 sn): faturada belge indirmesi de aynı sayfa süresine sığmalı */
+  /** Varsayılan modelinki (MODEL_REQUEST); yalnız yazarkasa Z'si değiştirir (OKC_EFFORT) */
+  effort?: AiEffort;
+  /** Deneme süresi ve yeniden deneme (varsayılan AI_TIMEOUTS; yazarkasa Z'si OKC_TIMEOUTS) */
+  timeouts?: AiTimeouts;
+  /** Toplam süre (varsayılan `timeouts.totalMs`): faturada belge indirmesi de aynı sayfa süresine sığmalı */
   totalMs?: number;
 };
 
@@ -165,11 +188,12 @@ export function buildRequest<T>(req: ExtractRequest<T>): { params: CreateParams;
     model,
     max_tokens: req.maxTokens ?? AI_MAX_TOKENS,
     ...(m.fallback ? { betas: [AI_FALLBACK_BETA], fallbacks: "default" as const } : {}),
-    output_config: { effort: m.effort, format: { type: "json_schema", schema: claudeSchema(req.schema) } },
+    output_config: { effort: req.effort ?? m.effort, format: { type: "json_schema", schema: claudeSchema(req.schema) } },
     system: req.system,
     messages: [{ role: "user", content: [input, { type: "text", text: req.task }] }],
   };
-  return { params, options: { timeout: AI_TIMEOUTS.timeout, maxRetries: AI_TIMEOUTS.maxRetries, signal: AbortSignal.timeout(req.totalMs ?? AI_TIMEOUTS.totalMs) } };
+  const t = req.timeouts ?? AI_TIMEOUTS;
+  return { params, options: { timeout: t.timeout, maxRetries: t.maxRetries, signal: AbortSignal.timeout(req.totalMs ?? t.totalMs) } };
 }
 
 export interface RunMeta {
@@ -186,7 +210,7 @@ export type RunResult<T> =
 const NO_META: RunMeta = { usage: null, servedModel: null, stopReason: null, requestId: null };
 
 /**
- * SDK hatası → kod, en özelden genele. Bizim 45 sn sinyalimiz kesince SDK APIUserAbortError atar (zaman aşımı);
+ * SDK hatası → kod, en özelden genele. Bizim toplam süre sinyalimiz (45 sn; yazarkasa Z'sinde 50 sn) kesince SDK APIUserAbortError atar (zaman aşımı);
  * bağlantı zaman aşımı bağlantı hatasının alt türüdür, önce bakılır.
  */
 export function mapAiError(e: unknown): { code: AiErrorCode; status: number | null; requestId: string | null; detail: string } {
