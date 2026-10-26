@@ -1152,9 +1152,9 @@ export const pushSubscriptions = pgTable(
 // ---------------------------------------------------------------- Gün sonu kasa raporu
 /**
  * Personelin her akşam ModPOS'un Z raporuna ve kasaya bakıp girdiği gün sonu raporu (iş günü başına bir satır; yeniden
- * gönderilince güncellenir, revision artar). Tutarlar TL. Olması gereken nakit = açılış + nakit satış − gün içinde
- * çıkan; kasa farkı = sayılan − olması gereken (eksi: eksik, artı: fazla). Hesap src/lib/cash-report.ts'te; farkı
- * liste ve özet için ayrıca saklanır. Ayrıntı: docs/KASA-RAPORU.md.
+ * gönderilince güncellenir, revision artar). Tutarlar TL. Olması gereken nakit = açılış + nakit satış + gün içinde
+ * giren − gün içinde çıkan; kasa farkı = sayılan − olması gereken (eksi: eksik, artı: fazla). Hesap
+ * src/lib/cash-report.ts'te; farkı liste ve özet için ayrıca saklanır. Ayrıntı: docs/KASA-RAPORU.md.
  */
 export const cashReports = pgTable(
   "cash_reports",
@@ -1173,6 +1173,11 @@ export const cashReports = pgTable(
     other: doublePrecision("other").notNull().default(0),
     /** Kasa: açılış (dünden devir), gün içinde çıkan (harcama, teslim), akşam sayılan, sayımdan sonra teslim edilen */
     openingCash: doublePrecision("opening_cash").notNull().default(0),
+    /**
+     * Gün içinde kasaya giren: nakit satış dışında çekmeceye konan (bozuk para, nakit tahsilat, nakit bahşiş; LafPOS'un
+     * `cashIn`'i). Sonradan geldi: önceki raporlarda 0
+     */
+    cashIn: doublePrecision("cash_in").notNull().default(0),
     cashOut: doublePrecision("cash_out").notNull().default(0),
     cashOutNote: text("cash_out_note"),
     countedCash: doublePrecision("counted_cash").notNull().default(0),

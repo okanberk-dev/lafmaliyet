@@ -153,5 +153,5 @@ test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit s�
   const prefill = read("src/lib/lafpos/prefill.ts");
   const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
   const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
-  assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashOut", "countedCash", "handedOver"]);
+  assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
 });

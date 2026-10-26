@@ -74,7 +74,7 @@ export interface CashReading {
 }
 
 /** Kasa bölümünün alanları: fotoğrafta yok, yalnız LafPOS'un gün sonu doldurur */
-export type TillField = "openingCash" | "cashOut" | "countedCash" | "handedOver";
+export type TillField = "openingCash" | "cashIn" | "cashOut" | "countedCash" | "handedOver";
 /** Ön doldurmanın yazabildiği alanlar: Z alanları (fotoğraf, LafPOS) ve kasa alanları (LafPOS) */
 export type PrefillField = ReadField | TillField;
 

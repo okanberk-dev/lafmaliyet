@@ -107,6 +107,7 @@ export function LateReport({
                 ["Toplam satış (Z)", `${money(f.zTotal)}${f.zNo ? ` · Z no ${f.zNo}` : ""}`],
                 ["Nakit · kart", `${money(f.cash)} · ${money(f.card)}`],
                 ["Açılış", money(f.openingCash)],
+                ...(f.cashIn ? [["Gün içinde giren", money(f.cashIn)]] : []),
                 ["Gün içinde çıkan", money(f.cashOut)],
                 ["Akşam sayılan", money(f.countedCash)],
                 ["Teslim edilen", money(f.handedOver)],

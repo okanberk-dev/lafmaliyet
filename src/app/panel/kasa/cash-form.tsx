@@ -1,6 +1,6 @@
 "use client";
 
-import { Calculator, Copy, CreditCard, MessageCircle, MonitorCheck, Pencil, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
+import { Calculator, Copy, CreditCard, MessageCircle, MonitorCheck, Pencil, Plus, ReceiptText, RotateCw, Send, Wallet } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -65,6 +65,7 @@ type MoneyKey =
   | "online"
   | "other"
   | "openingCash"
+  | "cashIn"
   | "cashOut"
   | "countedCash"
   | "handedOver"
@@ -84,6 +85,7 @@ const LABELS: Record<MoneyKey, string> = {
   online: "Online",
   other: "Diğer",
   openingCash: "Açılış",
+  cashIn: "Gün içinde kasaya giren",
   cashOut: "Gün içinde çıkan",
   countedCash: "Sayılan nakit",
   handedOver: "Teslim edilen",
@@ -95,7 +97,7 @@ const LABELS: Record<MoneyKey, string> = {
 /** Formda fotoğraftan dolabilen alanlar (Z okuması İndirim'i de doldurur; yazılan değer hiçbir zaman değişmez) */
 const READ_FIELDS = ["zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "zNo", "receipts", "bankPos"] as const satisfies readonly (ReadField & Key)[];
 /** Ön doldurmanın işaretlediği alanlar: fotoğrafınkiler ve LafPOS'un gün sonunun kasa alanları (docs/LAFPOS.md) */
-const MARK_FIELDS = [...READ_FIELDS, ...(["openingCash", "cashOut", "countedCash", "handedOver"] as const satisfies readonly (TillField & Key)[])];
+const MARK_FIELDS = [...READ_FIELDS, ...(["openingCash", "cashIn", "cashOut", "countedCash", "handedOver"] as const satisfies readonly (TillField & Key)[])];
 type MarkField = (typeof MARK_FIELDS)[number];
 
 const input = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(Math.round(v * 100) / 100).replace(".", ","));
@@ -112,6 +114,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
       online: report.online ? input(report.online) : "",
       other: report.other ? input(report.other) : "",
       openingCash: input(report.openingCash),
+      cashIn: report.cashIn ? input(report.cashIn) : "",
       cashOut: report.cashOut ? input(report.cashOut) : "",
       cashOutNote: report.cashOutNote ?? "",
       countedCash: input(report.countedCash),
@@ -133,6 +136,7 @@ function initialValues(report: CashReportFields | null, carry: { amount: number 
     online: "",
     other: "",
     openingCash: carry ? input(carry.amount) : "",
+    cashIn: "",
     cashOut: outs.length ? input(cashOutsTotal(outs)) : "",
     cashOutNote: cashOutNoteOf(outs) ?? "",
     countedCash: "",
@@ -175,6 +179,7 @@ function readValues(v: Values, date: string): { fields: CashReportFields | null;
     online: a.online ?? 0,
     other: a.other ?? 0,
     openingCash: a.openingCash ?? 0,
+    cashIn: a.cashIn ?? 0,
     cashOut: a.cashOut ?? 0,
     cashOutNote: v.cashOutNote.trim() || null,
     countedCash: a.countedCash ?? 0,
@@ -201,6 +206,7 @@ function preview(v: Values): ReturnType<typeof computeCash> | null {
     online: n("online") ?? 0,
     other: n("other") ?? 0,
     openingCash: n("openingCash") ?? 0,
+    cashIn: n("cashIn") ?? 0,
     cashOut: n("cashOut") ?? 0,
     countedCash: n("countedCash") ?? 0,
     handedOver: n("handedOver") ?? 0,
@@ -321,6 +327,9 @@ export interface LateFormState {
  * kasa rakamları fotoğrafınkiyle aynı kuralla boş alanlara yazılır ("LafPOS'tan" rozeti), yazılmış ve farklı olanın
  * altında "LafPOS'ta …" ve "LafPOS'takini yaz". Kaydetmez; personel bakıp gönderir.
  *
+ * "Gün içinde kasaya giren" (nakit satış dışında konan: bozuk para, tahsilat, nakit bahşiş) olması gereken nakde eklenir
+ * (computeCash). Çoğu gün yoktur: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür.
+ *
  * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme
  * önerisine geçer (fotoğraf yok, "Neden düzeltiyorsunuz?" zorunlu, "Onaya gönder"). Rapor onaya kadar değişmez.
@@ -419,6 +428,8 @@ export function CashForm({
   const [posPrompt, setPosPrompt] = useState<PosPrompt | null>(null);
   // "LafPOS'tan doldur"dan sonraki satır (kaç alan doldu, kaçı farklı)
   const [lafposNote, setLafposNote] = useState<string | null>(null);
+  // "Gün içinde kasaya giren" çoğu gün yok: alan tutarı varken, LafPOS'tan dolunca ya da "Kasaya giren ekle"yle görünür
+  const [cashInOpen, setCashInOpen] = useState(false);
   // Düzeltme önerisi: kilitli günde "Düzeltme öner", bekleyen öneriyi "Öneriyi düzenle" ya da sunucunun onaya çevirdiği
   // gönderim (`fromSubmit`: yazılanlar korunur, şerit nedenini söyler)
   // `dropped`: düzenlemede eklenen ve öneriye gitmeyen fotoğraf sayısı (şerit ve bildirim söyler)
@@ -477,6 +488,7 @@ export function CashForm({
     setMarks({});
     setPosPrompt(null);
     setLafposNote(null);
+    setCashInOpen(false);
     setProposal(null);
     setReason("");
     setReasonError(null);
@@ -837,6 +849,7 @@ export function CashForm({
   const cardOff = live && live.cardDiff !== null && Math.abs(live.cardDiff) >= CASH_TOLERANCE;
   const offLine = photoUi.storage ? readingOffText(photoUi.reading, photoUi.admin) : null;
   const cashOutValue = values.cashOut.trim() ? parseNumberTR(values.cashOut) : 0;
+  const showCashIn = cashInOpen || Boolean(values.cashIn.trim()) || Boolean(marks.cashIn);
   const outsWarning = cashOutValue !== null ? cashOutCheck(cashOutValue, cashOuts.map((o) => o.amount)) : null;
   const latestChecks = (k: CashPhotoKind) => [...photos].reverse().find((p) => p.kind === k && p.reading?.ok)?.reading?.checks ?? [];
 
@@ -1037,6 +1050,20 @@ export function CashForm({
             <Field label="Neye çıktı" htmlFor={fid("cashOutNote")} hint="isteğe bağlı">
               <Input id={fid("cashOutNote")} value={values.cashOutNote} onChange={set("cashOutNote")} maxLength={200} placeholder="ör. süt, buz" autoComplete="off" />
             </Field>
+            {showCashIn ? (
+              field("cashIn", "Gün içinde kasaya giren", { hint: "Satış dışı: bozuk para, tahsilat, nakit bahşiş", autoFocus: cashInOpen })
+            ) : (
+              <p className="flex flex-wrap items-center gap-x-2 text-[13px] leading-5 sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setCashInOpen(true)}
+                  className="inline-flex cursor-pointer items-center gap-1 font-medium text-ink underline-offset-2 hover:underline pointer-coarse:min-h-11"
+                >
+                  <Plus size={14} aria-hidden="true" /> Kasaya giren ekle
+                </button>
+                <span className="text-ink-mute">bozuk para, tahsilat, nakit bahşiş</span>
+              </p>
+            )}
             {field("handedOver", "Teslim edilen", { hint: "Sayımdan sonra kasadan alınan (patrona, bankaya)" })}
             {isLate && !review && (parseNumberTR(values.handedOver) ?? 0) > 0 ? (
               <Field label="Teslim alan" htmlFor={fid("handedTo")} hint="Teslim edileni kim aldı ya da bankaya mı yatırıldı?" error={handedError ?? undefined}>

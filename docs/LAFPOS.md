@@ -52,7 +52,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | `version` | `1`; başka sürüm reddedilir |
 | `source` | `"lafpos"` |
 | `date` | İş günü `YYYY-MM-DD` (gün 05:00'te döner, Kasa raporuyla aynı kural); bugünün iş gününden sonrası reddedilir |
-| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş, nakit müşteri tahsilatı ve nakit bahşiş; yoksa 0 sayılır), `expectedCash` (LafPOS'un olması gereken nakdi) |
+| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş, nakit müşteri tahsilatı ve nakit bahşiş; yoksa 0 sayılır; Kasa raporunda "Gün içinde kasaya giren"), `expectedCash` (LafPOS'un olması gereken nakdi) |
 | `lines[]` | `posName`, `siteMenuId` (`null` olabilir), `slot` (`"M"`, `"L"` ya da `null`), `qty`, `revenue`, `isService`; bir POS adı günde bir kez |
 | `ikram[]` | `posName`, `siteMenuId`, `slot`, `qty`, `menuValue`, `reason` (en çok 200 karakteri saklanır) |
 | `payments[]` | `name`, `zField` (`cash`, `card`, `meal_card`, `online`, `other`), `channel` (komisyon anahtarı: `pluxee`, `multinet`, `edenred`, `setcard`, `metropol`, `yemeksepeti`…; `null` olabilir), `count`, `amount` |
@@ -80,7 +80,10 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   yazım anında uygulanır: Satışlar'da sonradan eklenen eşleştirme, o gün yeniden gönderilince geçerli olur.
 - **Saklanan:** `pos_daily_sales` (gün, POS adı, ürün, adet, ciro, hizmet; `(date, pos_name)` benzersiz) ve
   `pos_day_reports` (gün başına bir satır: `z`, `payments`, `ikram`, `source`, `received_at`). Migration
-  `drizzle/0040_lafpos_baglantisi.sql`: yalnız iki yeni tablo, var olan tabloya dokunmaz (Instant Rollback'e uygun).
+  `drizzle/0040_lafpos_baglantisi.sql`: iki yeni tablo ve Kasa raporunun "Gün içinde kasaya giren"i
+  (`cash_reports.cash_in double precision NOT NULL DEFAULT 0`; var olan raporlar 0). Yalnız ekleme: Instant Rollback'te
+  eski kod sütunu okumaz, yazdığı raporda 0 kalır; yalnız girenli bir raporun olması gerekenini eski kod girensiz
+  hesaplar (giren kadar fazla görünür), düzeltme ileri yayınlanır.
 
 ### Günlük satış ağzı
 
@@ -96,7 +99,8 @@ Raporun günü için `pos_day_reports` satırı varsa formun başında mavi bant
 03:12" ve **LafPOS'tan doldur**. Dokununca:
 
 - ModPOS Z bölümünün alanları (Z no, fiş sayısı, toplam satış, nakit, kart, yemek kartı, online, diğer, ödenmez /
-  ikram, indirim) ve kasa alanları (açılış, gün içinde çıkan, sayılan nakit, teslim edilen; eşlemesi aşağıda)
+  ikram, indirim) ve kasa alanları (açılış, gün içinde çıkan, gün içinde kasaya giren, sayılan nakit, teslim edilen;
+  eşlemesi aşağıda)
   fotoğraf okumasıyla aynı kuralla dolar (`CashPrefill { source: "lafpos" }`, `src/lib/lafpos/prefill.ts`): yalnız
   **boş** alanlar, yanında mavi **LafPOS'tan**.
 - Yazılmış alan değişmez (açılış önceki devirden, gün içinde çıkan fişlerden kendiliğinden dolar). LafPOS'taki
@@ -115,19 +119,31 @@ Raporun günü için `pos_day_reports` satırı varsa formun başında mavi bant
 
 LafPOS'ta **teslim** gün açıkken, sayımdan önce çekmeceden çıkar; panelde **Teslim edilen** sayımdan sonra verilen
 paradır (olması gerekenden değil, ertesi güne devirden düşer). Bu yüzden LafPOS'un teslimi panelde **gün içinde
-çıkan**dır, Teslim edilen 0 yazılır; nakit satış dışında çekmeceye giren (`cashIn`: giriş, nakit müşteri tahsilatı ve nakit bahşiş)
-düşülür:
+çıkan**dır, Teslim edilen 0 yazılır. Nakit satış dışında çekmeceye giren (`cashIn`: giriş, nakit müşteri tahsilatı ve
+nakit bahşiş) panelin **Gün içinde kasaya giren**idir:
 
-    Gün içinde çıkan = harcama (cashOut) + teslim (handedOver) − giren (cashIn; gelmediyse 0)
+| Panelin alanı | LafPOS'tan |
+|---|---|
+| Açılış | `openingCash` |
+| Gün içinde kasadan çıkan | `cashOut` (harcama) + `handedOver` (teslim) |
+| Gün içinde kasaya giren | `cashIn` (gelmediyse ya da `null`sa 0) |
+| Sayılan nakit | `countedCash` (sayılmadıysa boş ve turuncu) |
+| Teslim edilen | 0 |
 
-Böylece panelin olması gerekeni (açılış + nakit − gün içinde çıkan) LafPOS'unkine eşittir, devir sayılan nakittir.
-Örnek: açılış 1.500, nakit 12.000, harcama 450, gün ortasında patrona 5.000 teslim, sayılan 8.050. Gün içinde çıkan
-5.450, olması gereken 8.050, kasa tutuyor, devir 8.050 (teslim, Teslim edilen'e yazılsaydı 5.000 eksik görünürdü).
+Böylece panelin olması gerekeni (açılış + nakit + giren − çıkan, `computeCash`) LafPOS'unkine eşittir
+(`expectedCash` = açılış + nakit + `cashIn` − harcama − teslim), devir sayılan nakittir. Giren çıkandan fazla olsa da
+(bahşiş, tahsilat günü) bir şey kırpılmaz. Örnek (TL): açılış 1.500, nakit satış 12.000, nakit bahşiş 300, nakit
+tahsilat 1.000 (`cashIn` 1.300), harcama 450.
 
-- Giren çıkandan fazlaysa gün içinde çıkan 0 gelir (form eksi tutar almaz) ve bilgi satırı söyler: LafPOS'ta giren
-  nakit çıkandan o kadar fazla, olması gereken LafPOS'takinden o kadar az.
-- LafPOS kendi olması gerekenini (`expectedCash`) gönderdiyse ve panelin aynı rakamlarla hesabından 0,01 TL'den fazla
-  ayrılıyorsa bilgi satırı LafPOS'un rakamını gösterir; aradaki fark gizli kalmaz.
+- Gün ortasında 5.000 teslim: gün içinde çıkan 5.450, giren 1.300; LafPOS da panel de 9.350 bekler, 9.350 sayıldıysa
+  kasa tutuyor, devir 9.350.
+- Teslim yok: gün içinde çıkan 450, giren 1.300; ikisi de 14.350 bekler, 14.350 sayıldıysa kasa tutuyor, devir 14.350.
+  (Önceki eşleme gireni çıkandan düşüp 0'da kırpıyordu: panel 13.500 bekleyip "850 ₺ fazla" kaydederdi.)
+
+LafPOS kendi olması gerekenini (`expectedCash`) gönderdiyse ve panelin aynı rakamlarla hesabından 0,01 TL'den fazla
+ayrılıyorsa bandın altındaki bilgi satırı LafPOS'un rakamını gösterir ("LafPOS'ta olması gereken nakit 14.000 ₺; panel
+aynı rakamlarla 14.700 ₺ hesaplıyor (700 ₺ fazla)."); aradaki fark gizli kalmaz. Eski LafPOS `cashIn` göndermez: giren
+0 yazılır, gün içinde çıkan yine harcama + teslimdir.
 
 ### Ürün maliyetleri: `GET /api/panel/pos/urunler`
 

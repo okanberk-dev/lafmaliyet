@@ -465,6 +465,7 @@ const report = (date: string, o: Partial<CashReportLike> = {}): CashReportLike &
   online: 500,
   other: 0,
   openingCash: 1_000,
+  cashIn: 0,
   cashOut: 200,
   countedCash: 3_800,
   handedOver: 2_800,
@@ -481,7 +482,7 @@ const report = (date: string, o: Partial<CashReportLike> = {}): CashReportLike &
 test("kasa raporları: toplamlar, fark türleri, eksik günler (ilk rapordan düne), devir ve düzeltme işaretleri; ad ve not yok", () => {
   const reports = [
     report("2026-10-18"),
-    report("2026-10-19", { cashDiff: -150, countedCash: 3_650 }),
+    report("2026-10-19", { cashDiff: -150, countedCash: 3_650, cashIn: 250 }),
     // açılış önceki devirle (3.650 − 2.800 = 850) tutmuyor; sonradan düzeltilmiş
     report("2026-10-21", { openingCash: 1_000, cashDiff: 40, revision: 2 }),
   ];
@@ -497,6 +498,9 @@ test("kasa raporları: toplamlar, fark türleri, eksik günler (ilk rapordan dü
   assert.deepEqual(r.eksikGunler, ["2026-10-17", "2026-10-20"], "ilk rapordan önce ve bugün eksik sayılmaz");
   assert.equal(r.toplam.zToplam, 30_000);
   assert.equal(r.toplam.kasaFarkiToplam, -110);
+  assert.equal(r.toplam.gunIcindeGiren, 250);
+  assert.equal(r.toplam.gunIcindeCikan, 600);
+  assert.match(r.hesap[0], /^Kasa farkı = sayılan nakit − \(açılış \+ nakit satış \+ gün içinde giren − gün içinde çıkan\)/);
   assert.deepEqual([r.toplam.eksikGun, r.toplam.fazlaGun, r.toplam.tutanGun], [1, 1, 1]);
   assert.deepEqual(
     r.gunluk.map((g) => [g.tarih, g.fark, g.acilisDevirleTutmuyor, g.sonradanDuzeltildi]),

@@ -9,8 +9,9 @@ import type { PosDayZ } from "./day";
  * ve kasa alanlarına, fotoğraf okumasının biçimiyle (CashPrefill, `source: "lafpos"`). Form aynı kuralla uygular: yalnız
  * boş alanlar dolar, yazılmış ve farklı olanın altında "LafPOS'ta …" ve "LafPOS'takini yaz" çıkar; hiçbir şey
  * kendiliğinden kaydedilmez, personel bakıp gönderir. Rakamlar LafPOS'un kendi hesabıdır (tahmin yok): güveni hep "high".
- * Kasa alanlarında LafPOS'un teslimi ve çekmeceye giren nakit gün içinde çıkana katılır (lafposCashOut).
- * Personele de gider: yalnız formun zaten yazdırdığı rakamlar (maliyet, kâr, komisyon, ödeme kanalı yok).
+ * Kasa alanlarında LafPOS'un teslimi gün içinde çıkana katılır, çekmeceye giren nakit "Gün içinde kasaya giren"e
+ * yazılır (lafposTill). Personele de gider: yalnız formun zaten yazdırdığı rakamlar (maliyet, kâr, komisyon, ödeme
+ * kanalı yok).
  */
 
 /** Günün LafPOS özeti: formun "LafPOS'tan doldur" bandı */
@@ -30,31 +31,25 @@ const round2 = (v: number) => Math.round(v * 100) / 100;
 const kurus = (v: number) => Math.round(v * 100);
 
 /**
- * LafPOS'un kasa hareketleri → panelin "Gün içinde çıkan"ı (docs/LAFPOS.md › Kasa raporu). LafPOS'ta teslim gün
- * açıkken, sayımdan önce çekmeceden çıkar; panelin "Teslim edilen"i ise sayımdan sonra verilen paradır (olması
- * gerekenden değil devirden düşer). Bu yüzden teslim gün içinde çıkana katılır, Teslim edilen 0 olur; nakit satış
- * dışında çekmeceye giren (`cashIn`: giriş, nakit tahsilat ve nakit bahşiş; eski gövdede yoksa 0) düşülür:
+ * LafPOS'un kasa hareketleri → panelin kasa alanları (docs/LAFPOS.md › Kasa raporu). LafPOS'ta teslim gün açıkken,
+ * sayımdan önce çekmeceden çıkar; panelin "Teslim edilen"i ise sayımdan sonra verilen paradır (olması gerekenden değil
+ * devirden düşer). Bu yüzden teslim gün içinde çıkana katılır, Teslim edilen 0 olur; nakit satış dışında çekmeceye
+ * giren (`cashIn`: giriş, nakit tahsilat ve nakit bahşiş; eski gövdede yoksa 0) panelin "Gün içinde kasaya giren"idir:
  *
- *   gün içinde çıkan = harcama + teslim − giren
+ *   gün içinde çıkan = harcama + teslim
+ *   gün içinde giren = giren
  *
- * Böylece panelin olması gerekeni (açılış + nakit − gün içinde çıkan, computeCash) LafPOS'unkine eşit olur, devir
- * sayılan nakittir. Giren çıkandan fazlaysa gün içinde çıkan 0 olur (form eksi tutar almaz) ve bilgi satırı farkı
- * söyler. LafPOS kendi olması gerekenini (`expectedCash`) gönderdiyse ve panelin aynı rakamlarla hesabından 0,01 TL'den
- * fazla ayrılıyorsa o da bilgi satırında görünür.
+ * Böylece panelin olması gerekeni (açılış + nakit + giren − çıkan, computeCash) LafPOS'unkine eşit olur, devir sayılan
+ * nakittir; giren çıkandan fazla da olsa (bahşiş, tahsilat günü) eksi tutar ya da kesinti gerekmez. LafPOS kendi
+ * olması gerekenini (`expectedCash`) gönderdiyse ve panelin aynı rakamlarla hesabından 0,01 TL'den fazla ayrılıyorsa
+ * bilgi satırı LafPOS'un rakamını gösterir.
  */
-function lafposCashOut(z: PosDayZ): { cashOut: number; checks: ReadCheck[] } {
-  const net = round2(z.cashOut + z.handedOver - (z.cashIn ?? 0));
-  const cashOut = Math.max(net, 0);
+function lafposTill(z: PosDayZ): { cashOut: number; cashIn: number; checks: ReadCheck[] } {
+  const cashOut = round2(z.cashOut + z.handedOver);
+  const cashIn = z.cashIn ?? 0;
   const checks: ReadCheck[] = [];
-  if (net < 0) {
-    checks.push({
-      fields: [],
-      level: "info",
-      text: `LafPOS'ta çekmeceye giren nakit (giriş, nakit tahsilat, nakit bahşiş) çıkandan ${money(-net)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(-net)} az.`,
-    });
-  }
   if (z.expectedCash !== null && z.expectedCash !== undefined) {
-    const panel = computeCash({ ...z, cashOut, countedCash: z.countedCash ?? 0, handedOver: 0, bankPos: null }).expectedCash;
+    const panel = computeCash({ ...z, cashIn, cashOut, countedCash: z.countedCash ?? 0, handedOver: 0, bankPos: null }).expectedCash;
     const gap = kurus(panel) - kurus(z.expectedCash);
     if (Math.abs(gap) > 1) {
       checks.push({
@@ -64,7 +59,7 @@ function lafposCashOut(z: PosDayZ): { cashOut: number; checks: ReadCheck[] } {
       });
     }
   }
-  return { cashOut, checks };
+  return { cashOut, cashIn, checks };
 }
 
 /** LafPOS'un Z özeti → formun alanları (zNo metin: formdaki Z no metindir) */
@@ -73,7 +68,7 @@ export function lafposPrefill(z: PosDayZ): CashPrefill {
   const put = (field: PrefillField, value: number | string | null) => {
     if (value !== null) values[field] = { value, confidence: "high" };
   };
-  const till = lafposCashOut(z);
+  const till = lafposTill(z);
   put("zNo", String(z.zNo));
   put("receipts", z.receipts);
   put("zTotal", z.zTotal);
@@ -85,6 +80,7 @@ export function lafposPrefill(z: PosDayZ): CashPrefill {
   put("offRevenue", z.offRevenue);
   put("discounts", z.discounts);
   put("openingCash", z.openingCash);
+  put("cashIn", till.cashIn);
   put("cashOut", till.cashOut);
   put("countedCash", z.countedCash);
   // LafPOS'un teslimi sayımdan önce çıktı (gün içinde çıkanda); sayımdan sonra teslim LafPOS'ta yok

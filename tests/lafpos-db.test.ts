@@ -225,10 +225,12 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     const [kept] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
     assert.deepEqual([kept.z.zNo, kept.z.zTotal, kept.z.cashIn, kept.z.expectedCash], [300, 45210.5, 700, 8750]);
     assert.equal(kept.receivedAt.getTime(), NOW.getTime());
-    // Kasa raporu saklanan özetten: teslim gün içinde çıkana, giren düşülür (450 + 5.000 − 700), Teslim edilen 0
+    // Kasa raporu saklanan özetten: teslim gün içinde çıkana (450 + 5.000), giren Gün içinde kasaya giren'e (700),
+    // Teslim edilen 0
     const day = await kasa.loadLafposDay(D4, db);
     assert.ok(day);
-    assert.equal(day.prefill.values.cashOut?.value, 4750);
+    assert.equal(day.prefill.values.cashOut?.value, 5450);
+    assert.equal(day.prefill.values.cashIn?.value, 700);
     assert.equal(day.prefill.values.handedOver?.value, 0);
     assert.deepEqual(day.prefill.checks, []);
     // Aynı Z no düzeltmedir: yerine geçer (yeni alanları olmayan eski biçimli gövde de)
@@ -238,7 +240,9 @@ describe("LafPOS bağlantısı: veritabanında", { skip: !URL_ && "LAFPOS_TEST_D
     const [rep] = await db.select().from(s.posDayReports).where(eq(s.posDayReports.date, D4));
     assert.equal(rep.receivedAt.getTime(), later.getTime());
     assert.ok(!("cashIn" in rep.z), "eski biçimli gövde: alan yok");
-    assert.equal((await kasa.loadLafposDay(D4, db))?.prefill.values.cashOut?.value, 450);
+    const oldBody = await kasa.loadLafposDay(D4, db);
+    assert.equal(oldBody?.prefill.values.cashOut?.value, 450);
+    assert.equal(oldBody?.prefill.values.cashIn?.value, 0, "eski biçimli gövdede giren 0");
     // Aynı anda iki ayrı Z aynı güne: danışma kilidi sıraya koyar, biri yazılır, öteki kayıtlı Z'yi görüp hiçbir şey yazmaz
     const a = parsePosDay(JSON.stringify(push(D5, [line(`A ${tag}`)], { zNo: 400 })), NOW);
     const b = parsePosDay(JSON.stringify(push(D5, [line(`B1 ${tag}`), line(`B2 ${tag}`)], { zNo: 401 })), NOW);

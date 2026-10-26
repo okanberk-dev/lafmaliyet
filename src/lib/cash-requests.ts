@@ -39,6 +39,8 @@ const CashFieldsSchema = z.object({
   online: amount,
   other: amount,
   openingCash: amount,
+  /** Sonradan geldi: önceki yüklerde yok, 0 sayılır */
+  cashIn: amount.default(0),
   cashOut: amount,
   cashOutNote: z.string().max(200).nullable(),
   countedCash: amount,
@@ -150,6 +152,7 @@ const FIELD_KEYS = [
   "online",
   "other",
   "openingCash",
+  "cashIn",
   "cashOut",
   "cashOutNote",
   "countedCash",
