@@ -277,6 +277,14 @@ kaybı").
 Onay bekleyen fiyat (5b) fiyat geçmişine yazılmaz: onaylanana kadar zam uyarısı ve fiyat önerisi çıkmaz; onaylanınca
 zam onay anıyla sayılır.
 
+**Stok değerlemesi (FIFO, 26 Ekim 2026).** Fiyat geçmişi reçete maliyetini (son alış fiyatı) ve FIFO öncesi ayların
+sayımını değerler. Ayarlar › Stok değerleme'deki başlangıç ayından itibaren ay sonu stoğu doğrudan fatura kalemlerinden
+değerlenir: hammaddeye bağlı her kalem (miktar × çarpan, net tutar) fatura tarihiyle bir partidir, sayılan miktar en
+yeni partiden geriye dağıtılır (`src/server/data/purchase-lots.ts`). "Fiyatı güncelle" kapalı bağlantı ile onay bekleyen
+ya da reddedilen fiyatın (5b) kalemi partiye girmez; kalemler her eşitlemede yeniden yazıldığı için partiler her
+okumada türetilir. Bağlantının çarpanı sonradan düzeltilirse FIFO'lu ayların stok değeri de düzelir. Ayrıntı:
+[STOK-DEGERLEME.md](STOK-DEGERLEME.md).
+
 ### 5b. Fiyat onayı (büyük fiyat sıçraması)
 
 Bağlı ürünün en yeni faturasındaki birim fiyat hammaddenin **şimdiki** birim fiyatından **%40'tan fazla** farklıysa
