@@ -23,7 +23,12 @@ export const DEFAULT_SETTINGS: Settings = {
   fireExcludesPackaging: false,
   suBirimLTOverride: null,
   publicMenu: false,
+  // FIFO Ekim 2026'dan: önceki kapanmış ayların stok değeri ve kârı değişmez (docs/STOK-DEGERLEME.md)
+  stokFifoBaslangic: "2026-10",
 };
+
+/** Stok değerleme ayarının veritabanındaki "kapalı" değeri (satır silinirse varsayılan ay geri gelir) */
+export const FIFO_OFF = "kapali";
 
 /**
  * Veritabanındaki ayar satırlarından hesap ayarları (loadSettings). Satırı olmayan anahtar varsayılanı okur: sonradan
@@ -32,6 +37,8 @@ export const DEFAULT_SETTINGS: Settings = {
 export function settingsFromRows(rows: Iterable<{ key: string; value: unknown }>): Settings {
   const out: Record<string, unknown> = { ...DEFAULT_SETTINGS };
   for (const r of rows) if (Object.hasOwn(DEFAULT_SETTINGS, r.key)) out[r.key] = r.value;
+  // FIFO başlangıcı: geçerli bir ay ya da "kapali" (eski yöntem); bozuk değer de eski yöntem sayılır
+  if (out.stokFifoBaslangic !== null && !(typeof out.stokFifoBaslangic === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(out.stokFifoBaslangic))) out.stokFifoBaslangic = null;
   return out as unknown as Settings;
 }
 

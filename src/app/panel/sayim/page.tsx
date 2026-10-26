@@ -91,6 +91,13 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         // Yeni ya da değişen miktar bugünkü sayım birimiyle, ayın sonunda geçerli fiyatla (kayıttan sonraki değeriyle aynı)
         unitPriceNow: isAdmin ? model.unitCostAtMonthEnd(l.ingredient.id, month) * countFactor(l.ingredient.countUnit) : 0,
         vatRate: isAdmin ? l.ingredient.vatRate : 0,
+        // FIFO (yalnız yönetici): kayıtlı tutar, havuz ve ay sonu fiyatı; formda değişen miktar sunucunun kuralıyla
+        // değerlenir (logic.ts lineAmount). Personele fiyat, katman ve tutar gitmez
+        amount: isAdmin ? l.amount : 0,
+        pool: isAdmin ? l.pool : [],
+        fallbackUnit: isAdmin ? l.fallbackUnit : 0,
+        factor: l.factor,
+        factorNow: countFactor(l.ingredient.countUnit),
       };
     }),
   }));
@@ -115,6 +122,7 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevMonthLabel={monthLabel(prevMonth)}
         isAdmin={isAdmin}
         groups={groups}
+        valuation={isAdmin ? { fifo: sheet.valuation === "fifo", covered: sheet.fifoCovered, total: sheet.total, start: model.fifoStart } : null}
         extras={sheet.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         prevExtras={prev.extras.map((e) => ({ name: e.name, unit: e.unit, qty: e.qty, unitPrice: isAdmin ? e.unitPrice : 0, priced: e.unitPrice > 0 }))}
         hasPrev={prev.hasData}

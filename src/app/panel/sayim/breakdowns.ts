@@ -1,6 +1,6 @@
 /**
  * Sayım sayfasındaki "Toplam stok" kartının dökümü (karta dokununca açılan pencere). Saf fonksiyon: form yazılan
- * miktarlarla her an yeniden kurar. Kural `liveTotals` ile aynı (miktar × birim fiyat, KDV hariç; ek kalemler
+ * miktarlarla her an yeniden kurar. Kural `liveTotals` ile aynı (lineAmount: FIFO ya da miktar × birim fiyat, KDV hariç; ek kalemler
  * miktar × fiyat), döküm kartın rakamını kuruşu kuruşuna tutar.
  */
 import type { BreakdownGroup, BreakdownRow } from "@/lib/breakdown";
@@ -8,7 +8,7 @@ import { num, tl } from "@/lib/format";
 
 import { listHref as hammaddeHref } from "../hammaddeler/breakdowns";
 
-import { linePrice, type CountLineValue } from "./logic";
+import { isFifoLine, lineAmount, type CountLineValue } from "./logic";
 
 export interface StockBreakdownLine extends CountLineValue {
   name: string;
@@ -51,7 +51,9 @@ export function stockBreakdown(
       // liveTotals gibi: arşiv satırı kayıtlı miktarıyla, diğerleri formdaki değerle
       const v = l.archived ? l.qty : valueOf(l);
       if (v === null || !Number.isFinite(v) || v === 0) continue;
-      const price = linePrice(l, v);
+      // Tutar kartla aynı kuralla (FIFO satırında katmanların toplamı); gösterilen birim fiyat tutar ÷ miktar
+      const amount = lineAmount(l, v);
+      const price = amount / v;
       const unit = lineUnit(l, v);
       if (!price) {
         unpriced.push({
@@ -66,7 +68,7 @@ export function stockBreakdown(
         });
         continue;
       }
-      rows.push({ key: `l${l.id}`, label: l.name, sub: `${qtyPrice(v, unit, price)}${l.archived ? " · arşiv kalemi" : ""}`, amount: v * price });
+      rows.push({ key: `l${l.id}`, label: l.name, sub: `${qtyPrice(v, unit, price)}${isFifoLine(l) ? " · FIFO" : ""}${l.archived ? " · arşiv kalemi" : ""}`, amount });
     }
     return { key: `g:${g.name}`, label: g.name, rows };
   });

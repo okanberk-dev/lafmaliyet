@@ -15,6 +15,7 @@ import { getDb, schema as s } from "@/server/db";
 import { loadSiteSales } from "@/server/site-sales/sync";
 
 import { tillRows } from "./cash-reports";
+import { loadPurchaseLots } from "./purchase-lots";
 
 /** Kaydı olmayan ayar varsayılanı okur (settingsFromRows): yeni bir ayar için veri taşıması gerekmez */
 export async function loadSettings(): Promise<Settings> {
@@ -50,6 +51,7 @@ export async function loadDataset(): Promise<Dataset> {
     till,
     lateWaiting,
     closedRows,
+    purchaseLots,
   ] = await Promise.all([
     loadSettings(),
     db.select().from(s.ingredients).orderBy(asc(s.ingredients.sortOrder), asc(s.ingredients.id)),
@@ -102,6 +104,8 @@ export async function loadDataset(): Promise<Dataset> {
       .where(and(eq(s.staffRequests.kind, "kasa-gec"), eq(s.staffRequests.status, "pending"))),
     // Kapalı işaretli günler (özel günlerin `kapali` satırı): ay bilgisinde eksik sayılmaz, ayrı yazılır
     db.select({ kind: s.specialDays.kind, dateFrom: s.specialDays.dateFrom, dateTo: s.specialDays.dateTo }).from(s.specialDays).where(eq(s.specialDays.kind, "kapali")),
+    // Stok değerleme (FIFO) partileri: Paraşüt faturalarının hammaddeye bağlı kalemleri
+    loadPurchaseLots(),
   ]);
 
   // Okumalardan sonra: "bu ay" Türkiye saatine göre (aktiflik ve listelerdeki güncel tutar buna bakar)
@@ -245,6 +249,7 @@ export async function loadDataset(): Promise<Dataset> {
     pnlEntries: pnlEntries.map((e) => ({ month: e.month, rowKey: e.rowKey, amount: e.amount, note: e.note })),
     stockCounts: stockCounts.map((c) => ({ month: c.month, ingredientId: c.ingredientId, qty: c.qty, factor: c.factor })),
     ingredientPrices: ingredientPrices.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
+    purchaseLots,
     stockExtras: stockExtras.map((e) => ({
       id: e.id,
       month: e.month,
