@@ -119,7 +119,7 @@ export function unverifiedText(u: LafposUnverified): string {
     u.lastStatus === 413
       ? "Gövdesi 256 KB'ı aşan istek"
       : "İmzası tutmayan istek (anahtar iki tarafta aynı mı, kafedeki makinenin saati doğru mu, ±5 dakika?)";
-  return `${what}: son ${dateTimeTR(u.lastAt)}, toplam ${u.count.toLocaleString("tr-TR")}.`;
+  return `${what}: son ${dateTimeTR(u.lastAt)}, şimdiye dek en az ${u.count.toLocaleString("tr-TR")} kez.`;
 }
 
 /** Ayarlar kartının okuduğu her şey (src/server/lafpos/status.ts › loadLafposCard) */
@@ -143,13 +143,18 @@ export interface LafposCardInput {
 export type CardTone = "gray" | "green" | "blue" | "amber" | "red";
 
 export interface LafposCardSummary {
+  /** Bağlantının durumu (rozet rengi) */
   tone: CardTone;
   /** Rozet */
   badge: string;
-  /** Kartın başlık satırı (telefonda kapalı bölümün özeti de bu) */
+  /** Kartın başlık satırı */
   headline: string;
   /** Ek satırlar */
   lines: string[];
+  /** Son gönderim, son başarılı gönderimden sonra reddedildi ve çözülmedi (kart kırmızı kutuda gösterir) */
+  rejected: boolean;
+  /** Telefonda kapalı bölümün özeti */
+  short: string;
 }
 
 const SECRET_TEXT: Record<"missing" | "short" | "same_as_site", string> = {
@@ -161,17 +166,26 @@ const SECRET_TEXT: Record<"missing" | "short" | "same_as_site", string> = {
 /** Geçiş gününden bu yana: "10 Kasım'dan beri" */
 const sinceText = (d: string) => `${dayLocativeTR(d)}n beri`;
 
+/** Son gönderim, son başarılı gönderimden sonra reddedildi ve o günün kaydı silinerek çözülmedi */
+export function isFreshRejection(state: LafposState): boolean {
+  const { lastOk: ok, lastError: err } = state;
+  return err !== null && err.clearedAt === null && (!ok || Date.parse(err.at) > Date.parse(ok.at));
+}
+
 /**
  * Kartın özeti. Sakin dil (sahibin 26 Ekim kararı): kurulmamış bağlantı ve seçilmemiş geçiş günü hata değildir, kasa
- * ModPOS'tur. Kırmızı yalnız iki durumda: geçiş günü seçili ama bağlantı kapalı (LafPOS günleri gelemez) ya da son
- * gönderim başarılı olandan sonra reddedildi.
+ * ModPOS'tur. Rozet bağlantının durumudur; kırmızı yalnız geçiş günü seçili ama bağlantı kapalıyken (LafPOS günleri
+ * gelemez). Reddedilen gönderim (`rejected`) kartta ayrı kırmızı kutudadır, telefonda kapalı özetin başına yazılır.
  */
 export function lafposCardSummary(c: LafposCardInput): LafposCardSummary {
+  const s = summaryOf(c);
+  const rejected = c.secretProblem === null && isFreshRejection(c.state);
+  return { ...s, rejected, short: rejected ? `Son gönderim reddedildi · ${s.headline}` : s.headline };
+}
+
+function summaryOf(c: LafposCardInput): Omit<LafposCardSummary, "rejected" | "short"> {
   const lines: string[] = [];
   const last = c.lastDay ? `Son gün sonu ${dayText(c.lastDay.date, c.today)} (Z ${c.lastDay.zNo}), alındı ${dateTimeTR(c.lastDay.receivedAt)}.` : null;
-  const ok = c.state.lastOk;
-  const err = c.state.lastError;
-  const freshError = err !== null && err.clearedAt === null && (!ok || Date.parse(err.at) > Date.parse(ok.at));
 
   if (c.secretProblem) {
     if (c.switchDay) {
@@ -220,10 +234,6 @@ export function lafposCardSummary(c: LafposCardInput): LafposCardSummary {
     const shown = c.missing.slice(-6).map((d) => dayText(d, c.today));
     const more = c.missing.length - shown.length;
     lines.push(`Gün sonu gelmeyen ${c.missing.length} gün: ${shown.join(", ")}${more > 0 ? ` ve ${more} gün daha` : ""}. LafPOS'ta giden kutusuna bakın.`);
-  }
-  if (freshError) {
-    tone = "red";
-    badge = "Ret";
   }
   return { tone, badge, headline, lines };
 }

@@ -157,6 +157,8 @@ export interface LafposCardData extends LafposCardInput {
   /** Ürüne bağlanamayan POS adları (hizmet satırları hariç): en çok satılan 10 ad ve toplam sayı */
   unmatched: { posName: string; qty: number; days: number }[];
   unmatchedCount: number;
+  /** Son retin gününün paneldeki kaydı (409'da silinecek olan; silindiyse yeniden gelen); yoksa null */
+  errorDay: { zNo: number; lines: number; receivedAt: string } | null;
 }
 
 const DAYS_SHOWN = 14;
@@ -186,13 +188,17 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today))) : Promise.resolve([]),
     missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db) : Promise.resolve([]),
   ]);
-  const lineCounts = recent.length
-    ? await db
-        .select({ date: d.date, n: count() })
-        .from(d)
-        .where(inArray(d.date, recent.map((x) => x.date)))
-        .groupBy(d.date)
-    : [];
+  const errDate = state.lastError?.date ?? null;
+  const [lineCounts, [errRow]] = await Promise.all([
+    recent.length || errDate
+      ? db
+          .select({ date: d.date, n: count() })
+          .from(d)
+          .where(inArray(d.date, [...recent.map((x) => x.date), ...(errDate ? [errDate] : [])]))
+          .groupBy(d.date)
+      : Promise.resolve([]),
+    errDate ? db.select({ z: r.z, receivedAt: r.receivedAt }).from(r).where(eq(r.date, errDate)).limit(1) : Promise.resolve([]),
+  ]);
   const linesOf = new Map(lineCounts.map((x) => [x.date, x.n]));
   const days = recent.map((x) => ({
     date: x.date,
@@ -220,5 +226,6 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     days,
     unmatched,
     unmatchedCount,
+    errorDay: errRow && errDate ? { zNo: errRow.z.zNo, lines: linesOf.get(errDate) ?? 0, receivedAt: errRow.receivedAt.toISOString() } : null,
   };
 }
