@@ -45,7 +45,7 @@ import { formatPercentInput, parseNumberTR, parsePercentInput } from "@/lib/calc
 import type { CountUnit, Ingredient, Unit } from "@/lib/calc/types";
 import { COUNT_GROUPS, INGREDIENT_CATEGORIES, UNITS } from "@/lib/constants";
 import { isUnpriced } from "@/lib/count-item";
-import { activeUses, productListText } from "@/lib/ingredient-usage";
+import { activeUses, productListText, usageText } from "@/lib/ingredient-usage";
 import { dateTR, num, pct, tl, tlUnit } from "@/lib/format";
 import { bulkPrice } from "@/lib/supplier-prices";
 import { cn } from "@/lib/utils";
@@ -1009,7 +1009,9 @@ function DeleteDialog({ row, onClose }: { row: IngredientRow; onClose: () => voi
           <>
             <span className="mb-3 block rounded-2xl bg-warn-soft px-3.5 py-2.5 text-warn">
               {inActive
-                ? `Bu malzeme ${num(activeProducts.length)} aktif ürünün reçetesinde kullanılıyor. Silmek ya da pasif yapmak için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın; yoksa ürünler onu tüketmeye devam eder.`
+                ? row.active
+                  ? `Bu malzeme ${num(activeProducts.length)} aktif ürünün reçetesinde kullanılıyor. Silmek ya da pasif yapmak için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın; yoksa ürünler onu tüketmeye devam eder.`
+                  : `Malzeme pasif ama ${num(activeProducts.length)} aktif ürünün reçetesinde: satıldıkça tüketiliyor ve sayım listesinde duruyor. Silmek için önce bu reçetelerden çıkarın veya yerine başka malzeme yazın.`
                 : passiveProducts.length
                   ? `Bu malzeme yalnız ${num(passiveProducts.length)} pasif ürünün reçetesinde kullanılıyor; silmek için önce o reçetelerden çıkarın.`
                   : null}
@@ -1236,7 +1238,11 @@ function IngredientDialog({
       onClose={onClose}
       size={row ? "xl" : "lg"}
       title={row ? row.name : "Yeni hammadde"}
-      description={row ? `${row.category} · ${row.usedIn.length} üründe kullanılıyor` : "Eklediğiniz malzeme reçete kartlarındaki listede ve sayım listesinde çıkar."}
+      description={
+        row
+          ? `${row.category} · ${usageText(row)}`
+          : "Eklediğiniz malzeme reçete kartlarındaki listede ve sayım listesinde çıkar."
+      }
       footerStart={
         row && onDelete ? (
           <Button variant="ghost" className="text-bad hover:bg-bad-soft hover:text-bad" onClick={onDelete}>

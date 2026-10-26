@@ -1633,19 +1633,23 @@ export function StockCountForm({
                   >
                     <LineStatus status={invalid ? "invalid" : v !== null && !isPrefilled ? "counted" : "empty"} />
                     <div className="min-w-0 flex-1">
-                      <label htmlFor={inputId} className="flex items-center gap-1.5 text-sm leading-5 font-medium text-ink">
-                        <span className="min-w-0 break-words">{l.name}</span>
-                        {l.passiveInUse ? (
-                          <Badge tone="gray" title="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayılır">
-                            Pasif · reçetede
-                          </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <label htmlFor={inputId} className="flex min-w-0 items-center gap-1.5 text-sm leading-5 font-medium text-ink">
+                          <span className="min-w-0 break-words">{l.name}</span>
+                          {/* Pasif ama aktif bir ürünün reçetesinde: yöneticiye rozet ve açıklaması; personel "pasif"i
+                              "kullanılmıyor" okuyup atlamasın diye ona yalnız "sayın" der (aşağıda) */}
+                          {l.passiveInUse && isAdmin ? <Badge tone="gray">Pasif · reçetede</Badge> : null}
+                          {changed && !invalid ? (
+                            <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
+                              <span className="sr-only">(kaydedilmedi)</span>
+                            </span>
+                          ) : null}
+                        </label>
+                        {l.passiveInUse && isAdmin ? (
+                          <InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde: satıldıkça tüketildiği için sayım listesinde kalır ve sayılır. Listeden çıkması için önce o reçetelerden çıkarın." />
                         ) : null}
-                        {changed && !invalid ? (
-                          <span className="size-1.5 shrink-0 rounded-full bg-info" title="Kaydedilmedi">
-                            <span className="sr-only">(kaydedilmedi)</span>
-                          </span>
-                        ) : null}
-                      </label>
+                      </div>
+                      {l.passiveInUse && !isAdmin ? <p className="mt-0.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın</p> : null}
                       {l.packageDesc ? (
                         <p className="mt-0.5 truncate text-xs text-ink-mute" title={l.packageDesc}>
                           {l.packageDesc}

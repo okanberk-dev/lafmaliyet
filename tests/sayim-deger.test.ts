@@ -15,7 +15,7 @@ import { loggedItems, staffLateEditNotice, unpricedExtrasNotice, type StaffLateE
 import { createModel } from "../src/lib/calc/engine";
 import { missingRevenueText, yearTotals, yearTrend } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
-import { activeUses, isCountable, passiveRefusal, productListText } from "../src/lib/ingredient-usage";
+import { activeUses, isCountable, passiveRefusal, productListText, usageText } from "../src/lib/ingredient-usage";
 import { yearSummary } from "../src/lib/mcp/answers/month";
 import { excelToDataset, type ExcelData } from "../src/server/db/seed/excel";
 
@@ -52,6 +52,15 @@ test("E-04: aktif ürünün reçetesindeki pasif malzeme sayım listesinde kalı
   assert.equal(linesOf(notCounted, "2026-11").find((l) => l.ingredient.id === used.id), undefined);
 });
 
+test("Sayım formu (inceleme B02-U4): personel 'Pasif' görmez, 'sayın' der; yöneticiye rozet ve açıklaması görünür", () => {
+  const form = readFileSync(join(root, "src/app/panel/sayim/stock-form.tsx"), "utf8");
+  assert.match(form, /\{l\.passiveInUse && !isAdmin \? <p className="mt-0\.5 text-xs font-medium text-ink-soft">Satışta kullanılıyor, sayın<\/p> : null\}/);
+  assert.match(form, /\{l\.passiveInUse && isAdmin \? <Badge tone="gray">Pasif · reçetede<\/Badge> : null\}/);
+  // Açıklama yalnız title'da değil (dokunmatikte görünmez): InfoTip, etiketin dışında
+  assert.match(form, /\{l\.passiveInUse && isAdmin \? \(\s+<InfoTip text="Hammaddeler'de pasif ama aktif bir ürünün reçetesinde/);
+  assert.ok(!/title="Hammaddeler'de pasif/.test(form));
+});
+
 test("E-04: isCountable tek kural; pasif yapma engelinin metni ürünleri sayar", () => {
   assert.equal(isCountable({ active: true, countUnit: "KG" }, false), true);
   assert.equal(isCountable({ active: false, countUnit: "KG" }, true), true);
@@ -75,6 +84,16 @@ test("E-58: usedInActive yalnız aktif ürünlerin reçeteleri; usedIn (silme en
   assert.equal(createModel(base).usedInActive.get(used.id)!.length, createModel(base).usedIn.get(used.id)!.length);
   assert.equal(activeUses({ usedIn: [] }), 0);
   assert.equal(activeUses({ usedIn: [{ active: true }, { active: false }, { active: true }] }), 2);
+  // Düzenleme penceresinin alt başlığı çiple aynı kuralla (inceleme B02-U6)
+  assert.equal(usageText({ usedIn: [{ active: true }, { active: false }, { active: true }] }), "2 aktif üründe kullanılıyor · 1 pasif ürün");
+  assert.equal(usageText({ usedIn: [{ active: true }] }), "1 aktif üründe kullanılıyor");
+  assert.equal(usageText({ usedIn: [{ active: false }, { active: false }, { active: false }] }), "Aktif reçetede yok · 3 pasif ürün");
+  assert.equal(usageText({ usedIn: [] }), "Reçetede yok");
+  const client = readFileSync(join(root, "src/app/panel/hammaddeler/ingredients-client.tsx"), "utf8");
+  assert.ok(client.includes("`${row.category} · ${usageText(row)}`"), "alt başlık usageText");
+  assert.ok(!client.includes("üründe kullanılıyor` :"), "eski alt başlık (pasif ürünleri de sayan) yok");
+  // Pasif ama aktif reçetede: silme penceresi "pasif yapmak için" demez, tüketildiğini ve listede durduğunu söyler (U5)
+  assert.match(client, /Malzeme pasif ama \$\{num\(activeProducts\.length\)\} aktif ürünün reçetesinde: satıldıkça tüketiliyor ve sayım listesinde duruyor\./);
 });
 
 test("E-04 ekran: Hammaddeler'in sil penceresi ve 'Aktif' kutusu aktif ürünü olan malzemeyi pasif yaptırmaz", () => {
