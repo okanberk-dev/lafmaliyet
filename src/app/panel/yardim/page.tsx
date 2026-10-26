@@ -457,7 +457,7 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             dolar;{" "}
             {OKC_PREFILL_ENABLED
               ? "banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar, tutmayan rakam altında nedeniyle öneri olur."
-              : "banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar (aşağıda, ModPOS Z ve banka POS Z)."}{" "}
+              : "banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar (aşağıdaki iki soru)."}{" "}
             Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin
             fotoğrafını çekin: tutar, KDV ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf
             başına yaklaşık 0,03 $; banka POS Z&apos;si için tahmini 0,05–0,10 $, henüz ölçülmedi); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
@@ -483,13 +483,35 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
             (online satış, faturalı satış, Z&apos;nin alındığı saat): personelin ekranına ve WhatsApp metnine girmez, yalnız sizde ve seçtiğiniz e-posta
             adreslerinde. Personel yalnız kart satırını ve yazarkasanın kendi içinde tutmadığını görür. Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok
             rozetleri; ayın satırında yazarkasa (mali) toplamı ve KDV&apos;si (yalnız bilgi, hiçbir hesaba girmez). Kümülatif (cihaz açılışından beri) fotoğraftan
-            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısındaki Kümülatifi temizle.{" "}
-            {OKC_PREFILL_ENABLED
-              ? "Fotoğraftan okunan banka POS Z rakamları gerçek fişlerle yapılan denemeden geçti: birbirini tutan ve net okunan rakamlar forma dolar."
-              : "Fotoğraftan okunan banka POS Z rakamları şimdilik forma yazılmaz, öneri olarak çıkar: okuma kafenin gerçek fişleriyle henüz denenmedi. Denemek için 5–8 günün banka POS Z fotoğrafını (2–3'ü ardışık günler, biri uzun ve soluk; asıl çözünürlükte: WhatsApp'tan belge olarak ya da Drive / e-postayla) ve aynı günlerin kâğıttan doğru rakamlarını geliştiriciye verin; deneme Claude anahtarıyla bir kez canlı çalıştırılır, yanlış dolan rakam çıkmazsa doldurma açılır."}
+            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın.
           </>
         ),
         icon: ScanText,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
+      },
+      {
+        id: "yazarkasa-oneri",
+        q: "Banka POS Z'sinin fotoğraftan doldurulması",
+        a: (
+          <>
+            {OKC_PREFILL_ENABLED ? (
+              <>
+                Banka POS Z&apos;sinin okuması kafenin gerçek fişleriyle denendi: birbirini tutan ve net okunan rakamlar forma dolar, tutmayan rakam altında
+                nedeniyle öneri olur.
+              </>
+            ) : (
+              <>
+                Banka POS Z&apos;sinin fotoğrafı okunur ama rakamları şimdilik forma yazılmaz: her alanın altında okunan rakam ve Fotoğraftakini yaz çıkar,
+                personel fişle karşılaştırıp yazar. Okuma kafenin gerçek fişleriyle henüz denenmedi; yanlış okunan bir rakamın sessizce forma yazılmaması için
+                deneme geçene kadar böyle kalır. Denemek için geliştiriciye 5–8 günün banka POS Z fotoğrafını (2–3&apos;ü ardışık günler, biri uzun ve soluk, en
+                az biri üst ve alt yarı olarak da; asıl çözünürlükte: WhatsApp&apos;tan belge olarak ya da Drive / e-postayla) ve aynı günlerin kâğıttan doğru
+                rakamlarını verin; cihazın markasını, Z&apos;yi kimin saat kaçta aldığını ve ModPOS raporunun hangi yazıcıdan çıktığını da yazın. Deneme Claude
+                anahtarıyla canlı çalıştırılır (birkaç dolar); yanlış dolan rakam çıkmazsa doldurma açılır.
+              </>
+            )}
+          </>
+        ),
+        icon: Lightbulb,
         links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
       },
       {

@@ -81,9 +81,13 @@ test("yöneticinin yardımı: ModPOS Z ve banka POS Z (yazarkasa) karşılaştı
   for (const s of ["Z RAPORU ve KDV dökümü", "banka gün sonu fişi değil", "kart, nakit, toplam", "Kümülatifi temizle", "Yazarkasa tutmuyor", "Yazarkasa Z yok"]) {
     assert.ok(item.includes(s), s);
   }
-  // Kapı kapalıyken sahibe ne gerektiği yazılı; metin sabite bağlı
-  assert.match(item, /OKC_PREFILL_ENABLED\s*\?/);
-  assert.match(item, /5–8 günün banka POS Z fotoğrafını/);
+  // Doldurma kapısı ayrı soruda: kapalıyken sahibe ne gerektiği yazılı; metin sabite bağlı
+  const gateAt = PAGE.indexOf('id: "yazarkasa-oneri"');
+  assert.ok(gateAt > start, "yazarkasa-oneri sorusu yok");
+  const gate = PAGE.slice(gateAt, PAGE.indexOf("icon: Lightbulb", gateAt));
+  assert.match(gate, /OKC_PREFILL_ENABLED \?/);
+  assert.match(gate, /5–8 günün banka POS Z fotoğrafını/);
+  assert.match(gate, /asıl çözünürlükte/);
   assert.match(PAGE, /import \{ OKC_PREFILL_ENABLED \} from "@\/lib\/okc-z"/);
 });
 
