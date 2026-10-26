@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { buildWorkbook } from "../src/app/api/export/workbook";
+import { dayTasks, type DayFacts, type DayTask } from "../src/app/panel/bugun/logic";
+import { loggedItems, staffLateEditNotice, unpricedExtrasNotice, type StaffLateEdit, type UnpricedExtras } from "../src/app/panel/sayim/logic";
 import { createModel } from "../src/lib/calc/engine";
 import { missingRevenueText, yearTotals, yearTrend } from "../src/lib/calc/insights";
 import type { Dataset } from "../src/lib/calc/types";
@@ -154,4 +156,62 @@ test("E-16: Excel'in yıl sütunu bu aya kadar; kâr hücresinin notu panelin y�
   close(profitRow!.getCell(15).value as number, through, "YILI = Temmuz–Ekim (Kasım'ın açılış stoğu yok)");
   assert.match(String(ws.getCell("O1").note ?? ""), /Ekim 2026 ve öncesi/);
   assert.match(String(profitRow!.getCell(15).note ?? ""), /Panelin yıl kâr \/ zarar kartı \(yalnız POS cirosu girilmiş 4 ay\)/);
+});
+
+// ---------------------------------------------------------------- Yöneticiye sayım uyarıları (E-22, E-19'un bildirimi)
+
+const at = (local: string) => new Date(`${local}:00+03:00`);
+const STOCK = { month: "2026-11", counted: 0, total: 72, prevMonth: "2026-10", prevHasData: true, prevCounted: 72, prevTotal: 72 };
+const facts = (role: "admin" | "staff", now: Date, o: Partial<DayFacts> = {}): DayFacts => ({
+  role,
+  now,
+  cash: { today: null, yesterday: null, firstDate: null },
+  stock: STOCK,
+  ...(role === "admin" ? { system: [], payments: [], invoices: { review: 0 } } : { waste: { count: 0, zayi: null, ikram: null } }),
+  ...o,
+});
+const rowOf = (tasks: DayTask[], key: string) => tasks.find((t) => t.key === key);
+
+test("E-22: fiyatsız ek kalem yöneticinin zil satırı ve Bugün'ü; fiyat girilince kalkar; personelde yok", () => {
+  const oct: UnpricedExtras = { month: "2026-10", count: 2, names: ["Bulaşık deterjanı", "Kağıt havlu"], newestId: 41 };
+  const n = unpricedExtrasNotice(oct)!;
+  assert.deepEqual(n, {
+    id: "sayim-ek-fiyatsiz-2026-10-2-41",
+    title: "Ekim 2026: 2 ek kalemin fiyatı yok",
+    body: "Bulaşık deterjanı, Kağıt havlu · Birim fiyatı girilmezse kapanış stoğuna 0 ₺ girer, ayın mal maliyeti o kadar yüksek çıkar.",
+    href: "/panel/sayim?ay=2026-10#listede-olmayanlar",
+  });
+  assert.equal(unpricedExtrasNotice({ ...oct, count: 0, names: [] }), null, "fiyat girilince satır yok");
+  assert.match(unpricedExtrasNotice({ ...oct, count: 5, names: ["A", "B", "C"] })!.body, /^A, B, C ve 2 kalem daha · /);
+  // Bugün: yalnız yönetici
+  const now = at("2026-11-03T10:00");
+  const row = rowOf(dayTasks(facts("admin", now, { countAlerts: { extras: [oct], late: null } })), "sayim-ek-fiyat")!;
+  assert.deepEqual([row.title, row.status, row.badge, row.href, row.action], ["Sayımda fiyatı olmayan ek kalemler", "todo", "2 kalem", n.href, "Fiyatı gir"]);
+  assert.equal(row.detail, `${n.title}: ${n.body}`);
+  const two = rowOf(dayTasks(facts("admin", now, { countAlerts: { extras: [{ ...oct, month: "2026-11", newestId: 50 }, oct], late: null } })), "sayim-ek-fiyat")!;
+  assert.equal(two.badge, "4 kalem");
+  assert.match(two.detail, /^Kasım 2026: 2 ek kalemin fiyatı yok · Ekim 2026: 2 ek kalemin fiyatı yok\. Birim fiyatı/);
+  assert.equal(rowOf(dayTasks(facts("staff", now, { countAlerts: { extras: [oct], late: null } })), "sayim-ek-fiyat"), undefined, "personelde yok");
+  assert.equal(rowOf(dayTasks(facts("admin", now, { countAlerts: { extras: [], late: null } })), "sayim-ek-fiyat"), undefined);
+});
+
+test("Personelin geçen aya geç kaydı: yöneticinin zil satırı, son üç gün Bugün'de; personelde yok", () => {
+  assert.equal(loggedItems("Ekim 2026: 3 kalem, 1 sayım silindi"), 4);
+  assert.equal(loggedItems("Ekim 2026: 2 sayım silindi"), 2);
+  assert.equal(loggedItems(null), 0);
+  const edits: StaffLateEdit[] = [
+    { name: "Ayşe", saves: 2, items: 5, lastAt: "2026-11-03T07:10:00.000Z", lastId: 912 },
+    { name: "Mehmet", saves: 1, items: 1, lastAt: "2026-11-02T08:00:00.000Z", lastId: 900 },
+  ];
+  const n = staffLateEditNotice("2026-10", edits)!;
+  assert.equal(n.id, "sayim-personel-2026-10-912");
+  assert.equal(n.title, "Ayşe ve Mehmet, Ekim 2026 sayımını değiştirdi");
+  assert.equal(n.body, "Ay bittikten sonra 3 kayıt, 6 kalem. Geçen ayın kapanışı mal maliyetini, kârı ve bu ayın açılışını değiştirir: kontrol edin.");
+  assert.equal(n.href, "/panel/sayim?ay=2026-10");
+  assert.equal(staffLateEditNotice("2026-10", []), null);
+  const late = { month: "2026-10", edits };
+  const row = rowOf(dayTasks(facts("admin", at("2026-11-04T10:00"), { countAlerts: { extras: [], late } })), "sayim-personel")!;
+  assert.deepEqual([row.title, row.badge, row.action], [n.title, "Kontrol et", "Sayıma bak"]);
+  assert.equal(rowOf(dayTasks(facts("admin", at("2026-11-07T10:00"), { countAlerts: { extras: [], late } })), "sayim-personel"), undefined, "3 günden eski: yalnız zilde");
+  assert.equal(rowOf(dayTasks(facts("staff", at("2026-11-04T10:00"), { countAlerts: { extras: [], late } })), "sayim-personel"), undefined);
 });

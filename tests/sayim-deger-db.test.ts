@@ -25,6 +25,9 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
   let stock: typeof import("../src/server/actions/stock");
   let ingredients: typeof import("../src/server/actions/ingredients");
   let loadModel: typeof import("../src/server/data/dataset").loadModel;
+  let alerts: typeof import("../src/server/data/count-alerts");
+  let opsBell: typeof import("../src/server/bell/ops").opsBell;
+  let extrasActions: typeof import("../src/app/panel/sayim/actions");
   const who: { role: "admin" | "staff" } = { role: "admin" };
   let users: { admin: typeof s.users.$inferSelect; staff: typeof s.users.$inferSelect };
   let syrup = 0;
@@ -63,6 +66,9 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     stock = await import("../src/server/actions/stock");
     ingredients = await import("../src/server/actions/ingredients");
     loadModel = (await import("../src/server/data/dataset")).loadModel;
+    alerts = await import("../src/server/data/count-alerts");
+    opsBell = (await import("../src/server/bell/ops")).opsBell;
+    extrasActions = await import("../src/app/panel/sayim/actions");
   });
 
   after(async () => {
@@ -94,7 +100,10 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     who.role = "admin";
   });
 
-  const at = (iso: string) => mock.timers.enable({ apis: ["Date"], now: new Date(iso) });
+  const at = (iso: string) => {
+    mock.timers.reset();
+    mock.timers.enable({ apis: ["Date"], now: new Date(iso) });
+  };
   const syrupRow = async () => (await db.select().from(s.ingredients).where(eq(s.ingredients.id, syrup)))[0];
 
   test("E-04: aktif ürünün reçetesindeki malzeme pasif yapılamaz (iki yoldan); ürün pasifken yapılır", async () => {
@@ -182,5 +191,75 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
       .values({ name: "Deneme", category: "Meyve", unit: "gr", packagePrice: 1, packageSize: 1, priceSource: "manual" })
       .returning({ id: s.ingredients.id });
     assert.deepEqual(await ingredients.deleteIngredient(bos.id), { ok: true, data: null });
+  });
+
+  const bellOf = async (role: "admin" | "staff") => opsBell({ ...users[role], role } as Parameters<typeof opsBell>[0]);
+
+  test("E-22: fiyatsız ek kalem yöneticinin zilinde; fiyat girilince kalkar; personelde yok", async () => {
+    at("2026-11-03T09:00:00Z");
+    await db.insert(s.stockExtras).values([
+      { month: "2026-10", name: "Bulaşık deterjanı", unit: "BİDON", qty: 4, unitPrice: 0 },
+      { month: "2026-10", name: "Kağıt havlu", unit: "ADET", qty: 12, unitPrice: 0 },
+      { month: "2026-10", name: "Peçete", unit: "PAKET", qty: 3, unitPrice: 12.5 },
+      // Miktarı 0 olan fiyatsız kalem stok değerine girmez: uyarı yok
+      { month: "2026-10", name: "Eldiven", unit: "KUTU", qty: 0, unitPrice: 0 },
+      // İki ay önce: uyarı penceresinin dışında
+      { month: "2026-09", name: "Eski kalem", unit: "ADET", qty: 2, unitPrice: 0 },
+    ]);
+    const u = await alerts.loadUnpricedExtras(["2026-11", "2026-10"]);
+    assert.deepEqual(
+      u.map((x) => [x.month, x.count, x.names]),
+      [["2026-10", 2, ["Bulaşık deterjanı", "Kağıt havlu"]]],
+    );
+    const line = (await bellOf("admin")).find((n) => n.id.startsWith("sayim-ek-fiyatsiz-"));
+    assert.ok(line, "yöneticinin zilinde");
+    assert.equal(line!.title, "Ekim 2026: 2 ek kalemin fiyatı yok");
+    assert.equal(line!.href, "/panel/sayim?ay=2026-10#listede-olmayanlar");
+    assert.equal(line!.group, "uyari");
+    assert.ok(!(await bellOf("staff")).some((n) => n.id.startsWith("sayim-ek-fiyatsiz-")), "personelde yok");
+    // Yönetici fiyatları girer (ek kalemler formu): satır kalkar
+    const rows = (await db.select().from(s.stockExtras).where(eq(s.stockExtras.month, "2026-10"))).sort((a, b) => a.id - b.id);
+    const { extrasBase } = await import("../src/app/panel/sayim/logic");
+    const saved = await stock.saveStockExtras(
+      "2026-10",
+      rows.map((r) => ({ id: r.id, name: r.name, unit: r.unit, qty: r.qty, unitPrice: r.unitPrice || 40 })),
+      extrasBase(rows),
+    );
+    assert.equal(saved.ok, true, JSON.stringify(saved));
+    assert.deepEqual(await alerts.loadUnpricedExtras(["2026-11", "2026-10"]), []);
+    assert.ok(!(await bellOf("admin")).some((n) => n.id.startsWith("sayim-ek-fiyatsiz-")), "fiyat girilince kalkar");
+  });
+
+  test("Personel geçen ayın sayımını ay bittikten sonra değiştirince yöneticiye zil satırı (yöneticinin kendi kaydı sayılmaz)", async () => {
+    await db.insert(s.stockCounts).values({ month: "2026-10", ingredientId: syrup, qty: 3, factor: 1000, countedBy: "Ayşe" });
+    // İşlem geçmişinin anı veritabanının saatiyle yazılır (taklit edilen saat değil): her kaydın anı elle verilir
+    const stamp = (iso: string) => db.execute(sql`UPDATE activity_log SET at = ${iso}::timestamptz WHERE id = (SELECT max(id) FROM activity_log)`);
+    // Ekim 31 gece yarısından sonra (iş günü hâlâ Ekim): ay sonu sayımının parçası, uyarı yok
+    at("2026-10-31T22:30:00Z");
+    who.role = "staff";
+    assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: syrup, qty: 2.5, base: 3 }])).ok, true);
+    await stamp("2026-10-31T22:30:00Z");
+    assert.deepEqual(await alerts.loadStaffLateEdits("2026-10"), []);
+    // 3 Kasım: personel Ekim'i düzeltir (pencere içinde: kaydedilir) ve ek kalem ekler
+    at("2026-11-03T07:10:00Z");
+    assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: syrup, qty: 2, base: 2.5 }])).ok, true);
+    await stamp("2026-11-03T07:10:00Z");
+    const { extrasBase } = await import("../src/app/panel/sayim/logic");
+    assert.equal((await extrasActions.saveStaffStockExtras("2026-10", [{ name: "Kağıt havlu", unit: "ADET", qty: 12 }], extrasBase([]))).ok, true);
+    await stamp("2026-11-03T07:12:00Z");
+    // Yöneticinin kendi düzeltmesi sayılmaz
+    who.role = "admin";
+    assert.equal((await stock.saveStockCounts("2026-10", [{ ingredientId: syrup, qty: 2.2, base: 2 }])).ok, true);
+    await stamp("2026-11-03T08:00:00Z");
+    const edits = await alerts.loadStaffLateEdits("2026-10");
+    assert.deepEqual(
+      edits.map((e) => [e.name, e.saves, e.items]),
+      [["Ayşe", 2, 2]],
+    );
+    const line = (await bellOf("admin")).find((n) => n.id.startsWith("sayim-personel-2026-10-"));
+    assert.ok(line, "yöneticinin zilinde");
+    assert.equal(line!.title, "Ayşe, Ekim 2026 sayımını değiştirdi");
+    assert.match(line!.body, /^Ay bittikten sonra 2 kayıt, 2 kalem\./);
+    assert.ok(!(await bellOf("staff")).some((n) => n.id.startsWith("sayim-personel-")), "personelde yok");
   });
 });

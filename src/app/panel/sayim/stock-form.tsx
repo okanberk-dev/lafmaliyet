@@ -60,6 +60,7 @@ import {
   countText,
   coverageSplit,
   draftConflicts,
+  EXTRAS_ANCHOR,
   extraKey,
   extrasBase,
   groupProgress,
@@ -1777,7 +1778,7 @@ export function StockCountForm({
         </Card>
       ) : null}
 
-      <Card className="break-inside-avoid">
+      <Card id={EXTRAS_ANCHOR} className="break-inside-avoid scroll-mt-24">
         <CardHeader
           icon={<PackagePlus />}
           title="Listede olmayanlar"

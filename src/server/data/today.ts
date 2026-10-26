@@ -3,7 +3,9 @@ import "server-only";
 import { count, eq } from "drizzle-orm";
 
 import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
+import { shiftMonth } from "@/lib/calc/engine";
 import { priceAlert } from "@/lib/calc/price-impact";
+import { businessDate } from "@/lib/cash-report";
 import type { StaffForecastView } from "@/lib/forecast/text";
 import { groupNewProposals } from "@/lib/recipe-change";
 import type { UpcomingItem } from "@/lib/reminders";
@@ -11,6 +13,7 @@ import { dueGroup } from "@/lib/user-reminders";
 import type { CurrentUser } from "@/server/auth/dal";
 import { cashReportsBetween, cashRevisionsFor, firstCashReportDate, previousCarryOver, type CashReportDTO } from "@/server/data/cash-reports";
 import { closedYesterday } from "@/server/closed-days";
+import { loadStaffLateEdits, loadUnpricedExtras } from "@/server/data/count-alerts";
 import { loadChecklistDays } from "@/server/data/checklists";
 import { loadOverduePayouts } from "@/server/data/commission";
 import { loadModel } from "@/server/data/dataset";
@@ -124,7 +127,9 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
   const db = getDb();
   // Maliyet modeli yalnız zam uyarısı için (personelde hiç kurulmaz)
   const modelP = loadModel();
-  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, forecast] = await Promise.all([
+  const month = businessDate(now).slice(0, 7);
+  const prevMonth = shiftMonth(month, -1);
+  const [system, upcoming, review, unlinked, unpriced, approvals, holds, prices, flags, overdue, forecast, countAlerts] = await Promise.all([
     // Günlük işlerin ciddi sorunları (yalnız canlıda; Genel bakış şeridinin "danger" kümesi). Paraşüt işinin hatası,
     // sonradan başarılı bir eşitleme olana kadar (bugun/logic.ts systemIssues; fatura satırı eşitlemeyi sormaz,
     // docs/planlar/CRITIQUE.md §3 today)
@@ -190,9 +195,13 @@ async function adminFacts(now: Date, viewer: number, cash: Promise<CashReportDTO
     safe(loadOverduePayouts()),
     // Satış tahmini kartı: bugünün tahmini, aralık, kişi, tatlı ve 7 günün şeridi (docs/SATIS-TAHMINI.md)
     safe(loadForecastCard(now)),
+    // Sayımın uyarıları (zil ile aynı; src/server/data/count-alerts.ts): fiyatsız ek kalemler, personelin geç kaydı
+    safe(
+      Promise.all([loadUnpricedExtras([month, prevMonth]), loadStaffLateEdits(prevMonth)]).then(([extras, edits]) => ({ extras, late: { month: prevMonth, edits } })),
+    ),
   ]);
   return {
-    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices },
+    facts: { system, payments: upcoming?.items ?? null, commission: overdue ? { overdue } : null, invoices: review, unlinked, unpriced, approvals, holds, prices, countAlerts },
     cashFlags: flags,
     forecast: { admin: forecast, staff: null },
   };
