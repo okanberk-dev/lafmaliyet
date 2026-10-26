@@ -263,3 +263,66 @@ describe("sayım listesi, pasif malzeme ve silme: veritabanında", { skip: !SERV
     assert.ok(!(await bellOf("staff")).some((n) => n.id.startsWith("sayim-personel-")), "personelde yok");
   });
 });
+
+// Taze ortam (E-29): db:seed Excel'i yükledikten sonra sayıma sonradan eklenen sekiz kalemi de ekler (migration boş
+// veritabanında atlar); reçeteler değişmez. Kendi geçici veritabanını açar, sonunda siler.
+describe("taze db:seed: sayım listesinin sekiz kalemi", { skip: !SERVER_URL && "SAYIM_TEST_DATABASE_URL yok" }, () => {
+  const NAME = `laffogato_seed_deger_${process.pid}`;
+  let admin: postgres.Sql;
+  let target: postgres.Sql;
+
+  before(async () => {
+    admin = postgres(SERVER_URL!, { max: 1, onnotice: () => {} });
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${NAME} WITH (FORCE)`);
+    await admin.unsafe(`CREATE DATABASE ${NAME}`);
+  });
+
+  after(async () => {
+    await target?.end();
+    await admin?.unsafe(`DROP DATABASE IF EXISTS ${NAME} WITH (FORCE)`);
+    await admin?.end();
+  });
+
+  test("sekiz kalem tahmini fiyatla, Ekim 2026'dan sayım listesinde; hiçbir reçetede yok; ikinci seed eklemez", async () => {
+    const url = new URL(SERVER_URL!);
+    url.pathname = `/${NAME}`;
+    const { createDb } = await import("../src/server/db");
+    const mdb = createDb(url.href, 1);
+    await migrate(mdb, { migrationsFolder: "drizzle" });
+    await mdb.$client.end();
+    const { runSeed } = await import("../scripts/seed");
+    const env = { url: process.env.DATABASE_URL_UNPOOLED, email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD };
+    process.env.DATABASE_URL_UNPOOLED = url.href;
+    delete process.env.ADMIN_EMAIL;
+    delete process.env.ADMIN_PASSWORD;
+    const log = console.log;
+    const lines: string[] = [];
+    console.log = (...a: unknown[]) => void lines.push(a.join(" "));
+    try {
+      await runSeed();
+      await runSeed();
+    } finally {
+      console.log = log;
+      if (env.url === undefined) delete process.env.DATABASE_URL_UNPOOLED;
+      else process.env.DATABASE_URL_UNPOOLED = env.url;
+      if (env.email !== undefined) process.env.ADMIN_EMAIL = env.email;
+      if (env.password !== undefined) process.env.ADMIN_PASSWORD = env.password;
+    }
+    assert.ok(lines.some((l) => /✓ Excel verisi yüklendi: 74 hammadde \(\+8 sayım kalemi\)/.test(l)), lines.join("\n"));
+    target = postgres(url.href, { max: 1, onnotice: () => {} });
+    const eight = ["Çilek şurubu", "Cookie şurubu", "Lemon tea şurubu", "Hazelnut şurubu", "Vanilya sos", "Yaban mersini püre", "Böğürtlen püre", "Klips kapak"];
+    const rows = await target<{ id: number; name: string; count_from: string; is_estimate: boolean; active: boolean; count_unit: string }[]>`
+      SELECT id, name, count_from, is_estimate, active, count_unit FROM ingredients WHERE name IN ${target(eight)} ORDER BY sort_order`;
+    assert.deepEqual(
+      rows.map((r) => r.name),
+      eight,
+    );
+    assert.ok(rows.every((r) => r.count_from === "2026-10" && r.is_estimate && r.active && r.count_unit), "Ekim'den listede, tahmini");
+    const [{ n }] = await target<{ n: number }[]>`SELECT count(*)::int AS n FROM ingredients`;
+    assert.equal(n, 82, "ikinci seed eklemez");
+    const [{ used }] = await target<{ used: number }[]>`SELECT count(*)::int AS used FROM recipe_items WHERE ingredient_id IN ${target(rows.map((r) => r.id))}`;
+    assert.equal(used, 0, "reçeteler değişmedi (sahibin cevabı bekleniyor)");
+    const [{ prices }] = await target<{ prices: number }[]>`SELECT count(*)::int AS prices FROM ingredient_prices WHERE ingredient_id IN ${target(rows.map((r) => r.id))}`;
+    assert.equal(prices, 8, "fiyat geçmişi tahminle başlar");
+  });
+});
