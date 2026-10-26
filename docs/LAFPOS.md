@@ -52,7 +52,7 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
 | `version` | `1`; başka sürüm reddedilir |
 | `source` | `"lafpos"` |
 | `date` | İş günü `YYYY-MM-DD` (gün 05:00'te döner, Kasa raporuyla aynı kural); bugünün iş gününden sonrası reddedilir |
-| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş ve nakit müşteri tahsilatı; yoksa 0 sayılır), `expectedCash` (LafPOS'un olması gereken nakdi) |
+| `z` | `zNo`, `receipts`, `zTotal`, `cash`, `card`, `mealCard`, `online`, `other`, `offRevenue`, `discounts`, `openingCash`, `cashOut` (harcama), `countedCash` (sayılmadıysa `null`), `handedOver` (gün içindeki teslim), `cashDiff` (`null` olabilir); isteğe bağlı (yazılmayabilir ya da `null`): `cashIn` (≥ 0; nakit satış dışında çekmeceye giren: giriş, nakit müşteri tahsilatı ve nakit bahşiş; yoksa 0 sayılır), `expectedCash` (LafPOS'un olması gereken nakdi) |
 | `lines[]` | `posName`, `siteMenuId` (`null` olabilir), `slot` (`"M"`, `"L"` ya da `null`), `qty`, `revenue`, `isService`; bir POS adı günde bir kez |
 | `ikram[]` | `posName`, `siteMenuId`, `slot`, `qty`, `menuValue`, `reason` (en çok 200 karakteri saklanır) |
 | `payments[]` | `name`, `zField` (`cash`, `card`, `meal_card`, `online`, `other`), `channel` (komisyon anahtarı: `pluxee`, `multinet`, `edenred`, `setcard`, `metropol`, `yemeksepeti`…; `null` olabilir), `count`, `amount` |
@@ -115,7 +115,7 @@ Raporun günü için `pos_day_reports` satırı varsa formun başında mavi bant
 
 LafPOS'ta **teslim** gün açıkken, sayımdan önce çekmeceden çıkar; panelde **Teslim edilen** sayımdan sonra verilen
 paradır (olması gerekenden değil, ertesi güne devirden düşer). Bu yüzden LafPOS'un teslimi panelde **gün içinde
-çıkan**dır, Teslim edilen 0 yazılır; nakit satış dışında çekmeceye giren (`cashIn`: giriş ve nakit müşteri tahsilatı)
+çıkan**dır, Teslim edilen 0 yazılır; nakit satış dışında çekmeceye giren (`cashIn`: giriş, nakit müşteri tahsilatı ve nakit bahşiş)
 düşülür:
 
     Gün içinde çıkan = harcama (cashOut) + teslim (handedOver) − giren (cashIn; gelmediyse 0)

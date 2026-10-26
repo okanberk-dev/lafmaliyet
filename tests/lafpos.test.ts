@@ -282,7 +282,7 @@ test("Kasa raporu: LafPOS'ta gün içinde yapılan teslim gün içinde çıkana 
 });
 
 test("Kasa raporu: çekmeceye giren nakit (cashIn) gün içinde çıkandan düşülür; olması gereken LafPOS'unkiyle aynı", () => {
-  // 450 harcama, 5.000 teslim, 700 giren (giriş ve nakit tahsilat): LafPOS 1.500 + 12.000 + 700 − 450 − 5.000 = 8.750 bekler
+  // 450 harcama, 5.000 teslim, 700 giren (giriş, nakit tahsilat, nakit bahşiş): LafPOS 1.500 + 12.000 + 700 − 450 − 5.000 = 8.750 bekler
   const p = lafposPrefill(Z({ openingCash: 1500, cash: 12000, cashOut: 450, handedOver: 5000, cashIn: 700, expectedCash: 8750, countedCash: 8750, cashDiff: 0 }));
   assert.equal(p.values.cashOut?.value, 4750);
   assert.equal(p.values.handedOver?.value, 0);
@@ -306,7 +306,7 @@ test("Kasa raporu: giren çıkandan fazlaysa gün içinde çıkan 0 ve bilgi sat
     {
       fields: [],
       level: "info",
-      text: `LafPOS'ta çekmeceye giren nakit (giriş ve nakit tahsilat) çıkandan ${money(1200)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(1200)} az.`,
+      text: `LafPOS'ta çekmeceye giren nakit (giriş, nakit tahsilat, nakit bahşiş) çıkandan ${money(1200)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(1200)} az.`,
     },
   ]);
   assert.equal(computeCash(filledForm(p)).expectedCash, 13500, "LafPOS'un 14.700'ünden 1.200 az");

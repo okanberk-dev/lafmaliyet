@@ -33,7 +33,7 @@ const kurus = (v: number) => Math.round(v * 100);
  * LafPOS'un kasa hareketleri → panelin "Gün içinde çıkan"ı (docs/LAFPOS.md › Kasa raporu). LafPOS'ta teslim gün
  * açıkken, sayımdan önce çekmeceden çıkar; panelin "Teslim edilen"i ise sayımdan sonra verilen paradır (olması
  * gerekenden değil devirden düşer). Bu yüzden teslim gün içinde çıkana katılır, Teslim edilen 0 olur; nakit satış
- * dışında çekmeceye giren (`cashIn`: giriş ve nakit tahsilat; eski gövdede yoksa 0) düşülür:
+ * dışında çekmeceye giren (`cashIn`: giriş, nakit tahsilat ve nakit bahşiş; eski gövdede yoksa 0) düşülür:
  *
  *   gün içinde çıkan = harcama + teslim − giren
  *
@@ -50,7 +50,7 @@ function lafposCashOut(z: PosDayZ): { cashOut: number; checks: ReadCheck[] } {
     checks.push({
       fields: [],
       level: "info",
-      text: `LafPOS'ta çekmeceye giren nakit (giriş ve nakit tahsilat) çıkandan ${money(-net)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(-net)} az.`,
+      text: `LafPOS'ta çekmeceye giren nakit (giriş, nakit tahsilat, nakit bahşiş) çıkandan ${money(-net)} fazla; gün içinde çıkan eksi olamayacağı için LafPOS'tan 0 gelir. Bu yüzden olması gereken nakit LafPOS'takinden ${money(-net)} az.`,
     });
   }
   if (z.expectedCash !== null && z.expectedCash !== undefined) {

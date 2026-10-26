@@ -60,9 +60,9 @@ export const posZSchema = z.object({
   handedOver: tl,
   /** Sayılan − beklenen nakit (LafPOS'un hesabı); sayım yoksa null */
   cashDiff: signedTl.nullable(),
-  /** Nakit satış dışında çekmeceye giren nakit: giriş türü kasa hareketleri ve nakit müşteri tahsilatı (isteğe bağlı) */
+  /** Nakit satış dışında çekmeceye giren nakit: giriş türü kasa hareketleri, nakit müşteri tahsilatı ve nakit bahşiş (isteğe bağlı) */
   cashIn: tl.nullable().optional(),
-  /** LafPOS'un olması gereken nakdi: açılış + nakit satış + nakit tahsilat + giriş − harcama − teslim (isteğe bağlı) */
+  /** LafPOS'un olması gereken nakdi: açılış + nakit satış + cashIn − harcama − teslim (isteğe bağlı) */
   expectedCash: signedTl.nullable().optional(),
 });
 
