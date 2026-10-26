@@ -54,7 +54,8 @@ import { CardPhotos, ReadChecks, SavedPhotos, type FormPhoto } from "./cash-phot
 import { DeleteRequestButton, newClientKey, PendingRequests } from "./cash-requests";
 import { CashRevisions } from "./cash-revisions";
 import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
-import { OKC_KEYS, OkcCard, okcFieldsOf, okcValuesOf, type OkcFieldOptions, type OkcKey, type OkcMoneyKey } from "./okc-card";
+import { OkcCard, type OkcFieldOptions } from "./okc-card";
+import { OKC_KEYS, okcFieldsOf, okcValuesOf, type OkcKey, type OkcMoneyKey } from "./okc-form";
 
 type MoneyKey =
   | "zTotal"
@@ -279,11 +280,13 @@ export interface LateFormState {
  * Açılış önceki raporun devriyle karşılaştırılır (docs/KASA-RAPORU.md › Açılış ve devir): tutmuyorsa turuncu kutu ve
  * "Devri yaz"; nedeni nota yazılmadan gönderilmez (sunucu da aynı kuralı uygular). Kasayı sayan kişi seçilir.
  *
- * ModPOS Z raporunun ve banka POS fişinin fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md): yalnız boş alanlar
- * dolar ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni altında yazar,
- * okunamayan alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar raporla
- * saklanır. Yazarkasanın (banka POS) Z'si iki bölümde de alan doldurmaz: ModPOS bölümünde "Banka POS bölümüne okut",
- * Banka POS bölümünde K.KARTI satırını elle yazdıran turuncu yönerge (docs/planlar/okc-z.md PR-a).
+ * ModPOS Z raporunun ve yazarkasanın (banka POS) Z raporunun fotoğrafı çekilirse rakamlar okunur (docs/FOTOGRAF.md):
+ * yalnız boş alanlar dolar ("Fotoğraftan" rozeti), net okunmayan ya da bir denetime takılan alan turuncu olur ve nedeni
+ * altında yazar, okunamayan alan boş kalır. Hiçbir şey kendiliğinden kaydedilmez: personel bakıp gönderir; fotoğraflar
+ * raporla saklanır. Yazarkasa Z'sinin kartı okc-card.tsx'tedir (docs/planlar/okc-z.md §3.2, D18): değerler ve fotoğraf
+ * işaretleri burada, köprüyle (`field` / `textField`); doldurma kapısı kapalıyken (OKC_PREFILL_ENABLED) okunan her rakam
+ * öneridir. Yanlış bölüme okutulan fiş öteki bölüme okutulur ("Banka POS Z bölümüne okut" / "ModPOS bölümüne okut");
+ * yükleme bölüm başınadır, yazarkasa Z'si okunurken ModPOS Z'si çekilebilir.
  *
  * Personelin sonradan düzeltmesi (docs/KASA-RAPORU.md › Sonradan düzeltme ve silme isteği): kilitli günde "Düzeltme
  * öner", ertesi gün kasa alanı ya da sayan değişince sunucu gönderimi onaya çevirir; form yazılanları koruyarak düzeltme

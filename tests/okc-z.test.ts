@@ -753,3 +753,33 @@ test("okcLateChain: Z no iki yanda, kümülatif iki yanda tutuyor ya da tutmayan
   assert.deepEqual(okcLateChain({ zNo: "0188", total: 1 }, { z: null }, null), { ok: null, text: "Banka POS Z no 0188" });
   assert.equal(okcLateChain({ zNo: null, total: null }, prev, next), null);
 });
+
+// ---------------------------------------------------------------- Form (yazarkasa kartı, src/app/panel/kasa/okc-form.ts)
+
+test("form: boş bölüm gönderimde boş; kayıtlı değerler metne ve geri aynı", async () => {
+  const { okcFieldsOf, okcValuesOf } = await import("../src/app/panel/kasa/okc-form");
+  const empty = okcFieldsOf(okcValuesOf(null));
+  assert.deepEqual(empty.errors, {});
+  assert.deepEqual(empty.fields, { okcZNo: null, okcReceipts: null, okcTotal: null, okcVatTotal: null, okcVat: null, okcCash: null, okcCard: null, okcMealCard: null, okcOther: null });
+  const saved = { okcZNo: "0188", okcReceipts: 134, okcTotal: 12300, okcVatTotal: 1212.12, okcVat: [{ rate: 10, total: 11060, vat: 1005.45 }, { rate: 20, total: 1240, vat: 206.67 }], okcCash: 3180, okcCard: 8480, okcMealCard: 640, okcOther: null };
+  const v = okcValuesOf(saved);
+  assert.equal(v.okcT10, "11060");
+  assert.equal(v.okcV10, "1005,45");
+  assert.equal(v.okcT1, "");
+  assert.deepEqual(okcFieldsOf(v).fields, saved);
+});
+
+test("form: zorunluluk kuralı sunucuyla aynı metinle ve doğru alanda", async () => {
+  const { okcFieldsOf, okcValuesOf } = await import("../src/app/panel/kasa/okc-form");
+  const base = okcValuesOf(null);
+  assert.deepEqual(okcFieldsOf({ ...base, okcCash: "100" }).errors, { okcTotal: "Yazarkasa günlük toplamı gerekli (bölümü boş da bırakabilirsiniz)" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcTotal: "100" }).errors, { okcCash: "Nakit gerekli (yoksa 0 yazın)" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcTotal: "100", okcCash: "0" }).errors, { okcCard: "Kredi kartı gerekli (yoksa 0 yazın)" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcTotal: "100", okcCash: "0", okcCard: "100", okcT10: "100" }).errors, { okcV10: "%10 için toplam ve KDV birlikte yazılır" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcTotal: "100", okcCash: "0", okcCard: "100", okcV20: "5" }).errors, { okcT20: "%20 için toplam ve KDV birlikte yazılır" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcTotal: "100", okcCash: "0", okcCard: "100", okcT10: "10", okcV10: "20" }).errors, { okcV10: "%10 KDV'si toplamından büyük olamaz" });
+  assert.deepEqual(okcFieldsOf({ ...base, okcCard: "1,2,3" }).errors, { okcCard: "Geçerli bir tutar yazın (ör. 1.250,50)" });
+  // Döküm yalnız toplamı ve KDV'si yazılan oranlarla, sıfır gruplar atılır
+  const ok = okcFieldsOf({ ...base, okcTotal: "1.100", okcCash: "0", okcCard: "1100", okcT10: "1.100", okcV10: "100", okcT20: "0", okcV20: "0" });
+  assert.deepEqual(ok.fields?.okcVat, [{ rate: 10, total: 1100, vat: 100 }]);
+});

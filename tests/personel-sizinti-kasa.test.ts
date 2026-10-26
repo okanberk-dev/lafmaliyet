@@ -39,6 +39,7 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/cash-out-dialog.tsx",
   "src/app/panel/kasa/cash-photos.tsx",
   "src/app/panel/kasa/okc-card.tsx",
+  "src/app/panel/kasa/okc-form.ts",
   "src/app/panel/kasa/cash-summary.tsx",
   "src/server/closed-days.ts",
   "src/server/closed-day-requests.ts",
