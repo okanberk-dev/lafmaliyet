@@ -92,18 +92,22 @@ export function OkcCard({
     return { hint: reason ? <span className="text-warn">{reason}</span> : hint, warn: reason !== null, placeholder };
   };
 
-  // Ayrıntılar: fotoğraftan dolunca açılmaz; içinde turuncu alan, hata ya da yönetici düzenliyorsa açık gelir
+  // Ayrıntılar: fotoğraftan dolunca açılmaz; içinde turuncu alan, hata, ikinci banka fişinin sorusu ya da yönetici
+  // düzenliyorsa açık gelir. Kendiliğinden açılan kutu açık kalır: turuncu yazarken kaybolunca kapanmaz (odak ve
+  // tuşlar kaybolurdu); yalnız kişi düğmeye basınca kapanır
   const orange = DETAIL_KEYS.filter((k) => marked(k) || reasonOf(k) !== null || failed(k)).length;
-  const [chosen, setChosen] = useState<boolean | null>(null);
-  const [seenOrange, setSeenOrange] = useState(orange);
-  if (orange !== seenOrange) {
-    setSeenOrange(orange);
-    // Yeni bir turuncu gelince kişinin kapattığı kutu yeniden açılır
-    if (orange > seenOrange) setChosen(null);
+  const attention = orange + (posPrompt ? 1 : 0);
+  const [chosen, setChosen] = useState<boolean | null>(() => (attention > 0 ? true : null));
+  const [seenAttention, setSeenAttention] = useState(attention);
+  if (attention !== seenAttention) {
+    setSeenAttention(attention);
+    // Yeni bir turuncu ya da soru gelince kutu açılır (kişinin kapattığı da)
+    if (attention > seenAttention) setChosen(true);
   }
   // Yazarkasa bölümünden önceki rapor (yalnız banka POS yazılı): değer Ayrıntılar'da gizli kalmasın
   const [legacy] = useState(() => Boolean(values.bankPos.trim()) && !any);
-  const open = chosen ?? (orange > 0 || forceDetails || legacy);
+  // Banka fişinin sorusu bekliyorsa kutu kapatılamaz (soru içinde)
+  const open = Boolean(posPrompt) || (chosen ?? (orange > 0 || forceDetails || legacy));
   const showRate1 = Boolean(values.okcT1.trim() || values.okcV1.trim() || marked("okcT1") || marked("okcV1"));
 
   // Kart satırı ve (yöneticide) öteki karşılaştırmalar; kendi içindeki denetim özet satırında
