@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -21,7 +21,7 @@ import {
 import { CASH_REQUEST_TEXT } from "@/lib/cash-requests";
 import { money } from "@/lib/format";
 import { normalizeVat, OKC_KNOWN_RATES, okcCumulativeToStore, okcFormError, type OkcVatInput, type OkcVatLine } from "@/lib/okc-z";
-import { DELETED_REPORT_DAYS, linkedUntil, MAX_REPORT_PHOTOS } from "@/lib/photo-rules";
+import { DELETED_REPORT_DAYS, linkedUntil, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT } from "@/lib/photo-rules";
 import { longDateTR, todayTR } from "@/lib/reminders";
 import { zAmount, zDate, zOptText } from "@/server/actions/util";
 import { onNextReport, onReportSaved } from "@/server/closed-days";
@@ -298,14 +298,17 @@ export async function writeCashReport(tx: CashTx, actor: CashActor, data: CashRe
   const ids = [...new Set(o.photos ?? [])];
   let okcLinked = false;
   if (ids.length) {
-    const [{ n }] = await tx.select({ n: count() }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
-    if (n + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+    const linked = await tx.select({ kind: s.cashReportPhotos.kind }).from(s.cashReportPhotos).where(eq(s.cashReportPhotos.reportId, row.id));
+    if (linked.length + ids.length > MAX_REPORT_PHOTOS) throw new UserError(`Bir rapora en çok ${MAX_REPORT_PHOTOS} fotoğraf eklenir`);
+    let okcCount = linked.filter((l) => l.kind === "kasa-okc").length;
     for (const id of ids) {
       const p = await getPhoto(id, tx);
       // kasa-okc: yazarkasa Z'si; geçişte eski sayfanın banka POS fotoğrafı da sunucuda kasa-okc olur (okc-z.md D2)
       if (!p || (p.kind !== "kasa-z" && p.kind !== "kasa-pos" && p.kind !== "kasa-okc") || !linkable(p) || (actor.role !== "admin" && p.createdBy !== actor.id)) {
         throw new UserError("Fotoğraf bulunamadı ya da süresi doldu; yeniden çekin");
       }
+      // Yazarkasa Z bölümüne en çok 3 fotoğraf (uzun fişin parçaları)
+      if (p.kind === "kasa-okc" && ++okcCount > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
       // Onay bekleyen bir isteğin (geç rapor) fotoğrafı başka bir kayda bağlanmaz
       await assertNotHeld(tx, id, o.heldBy);
       await tx.insert(s.cashReportPhotos).values({ reportId: row.id, photoId: id, kind: p.kind });

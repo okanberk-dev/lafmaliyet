@@ -42,6 +42,9 @@ export const UPLOADS_PER_HOUR = 30;
 export const MAX_READS_PER_PHOTO = 3;
 /** Bir kasa raporuna en çok bu kadar fotoğraf bağlanır */
 export const MAX_REPORT_PHOTOS = 6;
+/** Yazarkasa (banka POS) Z bölümüne en çok bu kadar fotoğraf: uzun fiş üst ve alt parça olarak çekilir (docs/planlar/okc-z.md §3.4) */
+export const MAX_OKC_PHOTOS = 3;
+export const OKC_PHOTOS_TEXT = `Banka POS Z bölümüne en çok ${MAX_OKC_PHOTOS} fotoğraf eklenir`;
 
 /** Fotoğraftan okumanın durumu (src/server/ai/claude.ts aiStatus): açık, kapalı, anahtar yok, bugünkü sınır doldu */
 export type ReadingState = "on" | "off" | "nokey" | "cap";

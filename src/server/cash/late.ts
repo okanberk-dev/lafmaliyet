@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 
 import { carryCheck, carryDiffText, computeCash, openingNeedsNote, staffLateDay, type CashReportFields } from "@/lib/cash-report";
 import { CASH_REQUEST_TEXT, LatePayload, lateFields, lateTitle, olderFirstText, type LatePayloadT } from "@/lib/cash-requests";
-import { DELETED_REPORT_DAYS, MAX_REPORT_PHOTOS, RELEASED_DAYS } from "@/lib/photo-rules";
+import { DELETED_REPORT_DAYS, MAX_OKC_PHOTOS, MAX_REPORT_PHOTOS, OKC_PHOTOS_TEXT, RELEASED_DAYS } from "@/lib/photo-rules";
 import { REQUEST_TEXT } from "@/lib/staff-requests";
 import { schema as s, type DB } from "@/server/db";
 import { isClosedDay } from "@/server/closed-days";
@@ -104,6 +104,7 @@ export async function proposeLateReport(db: DB, me: CashActor, input: LateInput,
       photos.push({ id, kind: p.kind as "kasa-z" | "kasa-pos" | "kasa-okc" });
     }
     if (!photos.some((p) => p.kind === "kasa-z")) throw new UserError(CASH_REQUEST_TEXT.lateZPhoto);
+    if (photos.filter((p) => p.kind === "kasa-okc").length > MAX_OKC_PHOTOS) throw new UserError(OKC_PHOTOS_TEXT);
     // Teslim alan: etkin bir kullanıcı (adı sunucudan) ya da banka
     let handedTo: LatePayloadT["handedTo"] = null;
     if (fields.handedOver > 0 && input.handedTo?.kind === "user") {

@@ -22,7 +22,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type { CashReportFields } from "../src/lib/cash-report";
 import { CASH_OUT_REQUEST_TEXT } from "../src/lib/cash-out-requests";
-import { linkedUntil } from "../src/lib/photo-rules";
+import { linkedUntil, OKC_PHOTOS_TEXT } from "../src/lib/photo-rules";
 import { KasaOkcRaw, type AmountRaw } from "../src/lib/photo-read/schemas";
 import { todayTR } from "../src/lib/reminders";
 import type { DB } from "../src/server/db";
@@ -346,7 +346,9 @@ describe("Yazarkasa Z'si: veritabanında sunucu sütunları, kümülatif, geç r
     await refused(outReqs.proposePhotoRemoval(db, users.ayse, { photoId: only, message: null, clientKey: null }, AT1), CASH_OUT_REQUEST_TEXT.photoOnlyOkc);
     // İkinci yazarkasa fotoğrafı: biri kaldırılabilir (okuması yok, fark yok)
     const second = await photo(users.ayse, "kasa-okc");
-    await save(fields(R1, { zNo: "0110", total: 5_000 }), [second], r1.revision);
+    const r1b = await save(fields(R1, { zNo: "0110", total: 5_000 }), [second], r1.revision);
+    // Bölüme en çok 3 fotoğraf (uzun fişin parçaları)
+    await refused(save(fields(R1, { zNo: "0110", total: 5_000 }), [await photo(users.ayse, "kasa-okc"), await photo(users.ayse, "kasa-okc")], r1b.revision), OKC_PHOTOS_TEXT);
     const ok = await outReqs.proposePhotoRemoval(db, users.ayse, { photoId: second, message: null, clientKey: null }, AT1);
     assert.equal(ok.payload.photoKind, "kasa-okc");
     assert.equal(ok.row.status, "pending");
