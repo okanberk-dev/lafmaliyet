@@ -11,6 +11,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
 import { monthLabel } from "@/lib/format";
+import { LAFPOS_RESEND_HINT } from "@/lib/lafpos/status";
 import { dayMonthYearTR, LAFPOS_SWITCH_EFFECTS, switchAffectedMonths, switchDayProblem } from "@/lib/lafpos/switch";
 import { isStepUpError } from "@/lib/step-up";
 import { deleteLafposDay, saveLafposSwitchDay } from "@/server/actions/lafpos";
@@ -124,7 +125,8 @@ export function LafposSwitchDayForm({ value, today, min, max, linked }: { value:
 
 /**
  * Bir günün LafPOS kaydını sil (409 z_conflict'in çözümü ya da deneme gününün temizliği): yöneticinin parolasıyla.
- * LafPOS günü yeniden gönderince yenisi yazılır. `label` verilirse metinli düğme, yoksa satır sonunda çöp kutusu.
+ * LafPOS reddedilen ya da silinen günü kendisi yeniden göndermez: yenisi LafPOS'ta Kasa › Geçmiş günler › o günün Z
+ * raporu › Gönder ile gelir (LAFPOS_RESEND_HINT). `label` verilirse metinli düğme, yoksa satır sonunda çöp kutusu.
  */
 export function LafposDayDelete({ date, zNo, lines, label }: { date: string; zNo: number; lines: number; label?: string }) {
   const router = useRouter();
@@ -144,7 +146,7 @@ export function LafposDayDelete({ date, zNo, lines, label }: { date: string; zNo
       {open ? (
         <ConfirmPasswordDialog
           title={title}
-          description={`Günün özeti (Z ${zNo}) ve ${lines} satış satırı silinir. LafPOS günü yeniden gönderince yenisi yazılır; geri alınamaz.`}
+          description={`Günün özeti (Z ${zNo}) ve ${lines} satış satırı silinir; geri alınamaz. ${LAFPOS_RESEND_HINT}`}
           confirmLabel="Sil"
           danger
           onClose={() => setOpen(false)}

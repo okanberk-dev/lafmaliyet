@@ -20,6 +20,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { signedHeaders } from "../src/lib/karaoke/signature";
+import { lafposCardSummary } from "../src/lib/lafpos/status";
 import { STEP_UP_REQUIRED, WRONG_PASSWORD } from "../src/lib/step-up";
 import type { DB } from "../src/server/db";
 import * as s from "../src/server/db/schema";
@@ -80,7 +81,9 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     await admin.unsafe(`CREATE DATABASE ${DB_NAME}`);
     const url = new URL(SERVER_URL!);
     url.pathname = `/${DB_NAME}`;
-    Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: "lafpos-testi-icin-en-az-otuz-iki-karakterlik-anahtar" });
+    // Kartın bağlantı durumu ortamdan okunur: bağlı (retler kırmızı sayılır)
+    Object.assign(process.env, { DATABASE_URL: url.href, AUTH_SECRET: "lafpos-testi-icin-en-az-otuz-iki-karakterlik-anahtar", LAFPOS_SYNC_SECRET: SECRET });
+    delete process.env.KARAOKE_SYNC_SECRET;
     const require = createRequire(import.meta.url);
     const stub = (id: string, exports: unknown) => {
       const p = require.resolve(id);
@@ -140,6 +143,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.deepEqual((await linesOf("2026-11-07")).map((l) => l.posName), ["LATTE 2026-11-07"]);
     const st = await status.readLafposState(db);
     assert.deepEqual(st.lastError, { at: later(5).toISOString(), status: 409, error: "z_conflict", field: null, date: "2026-11-07", zNo: 127, sentZNo: 128, clearedAt: null });
+    assert.deepEqual(st.rejections, { "2026-11-07": st.lastError }, "günlü ret güne göre de saklanır");
     assert.equal(st.lastOk?.date, "2026-11-07", "son başarılı gün kalır");
     assert.deepEqual(warnings, [["[lafpos] reddedildi", 409, "z_conflict", "2026-11-07", 127]]);
     assert.doesNotMatch(JSON.stringify(warnings), /LATTE|BAŞKA|zTotal/, "günlüğe gövde yazılmaz");
@@ -150,9 +154,11 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.deepEqual(await send(bad), { status: 400, body: { error: "invalid", field: "lines.0.qty" } });
     let st = await status.readLafposState(db);
     assert.deepEqual([st.lastError?.status, st.lastError?.field, st.lastError?.date, st.lastError?.sentZNo], [400, "lines.0.qty", "2026-11-08", null]);
+    assert.equal(st.rejections["2026-11-08"]?.field, "lines.0.qty");
     assert.equal(await send("{bozuk").then((x) => x.status), 400);
     st = await status.readLafposState(db);
     assert.deepEqual([st.lastError?.field, st.lastError?.date], ["body", null]);
+    assert.deepEqual(Object.keys(st.rejections), ["2026-11-08"], "günsüz ret güne göre yazılmaz, günlüyü silmez");
     assert.equal(await reportOf("2026-11-08"), undefined);
   });
 
@@ -195,15 +201,100 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
     assert.deepEqual(await linesOf("2026-11-07"), []);
     assert.ok(await reportOf("2026-11-08"), "öteki gün kalır");
     assert.equal((await linesOf("2026-11-08")).length, 1);
-    assert.equal((await status.readLafposState(db)).lastError?.clearedAt, later(2).toISOString());
-    // LafPOS yeniden gönderir: yeni Z ile yazılır
+    assert.equal((await status.readLafposState(db)).rejections["2026-11-07"]?.clearedAt, later(2).toISOString());
+    // LafPOS'ta Gönder'e basılır: yeni Z ile yazılır, o günün reddi kapanır
     assert.deepEqual((await send(push("2026-11-07", 3), { now: later(3) })).body, { ok: true, date: "2026-11-07", lines: 1, counted: false, switchDay: null });
     assert.equal((await reportOf("2026-11-07")).z.zNo, 3);
+    assert.deepEqual((await status.readLafposState(db)).rejections, {});
     // Aynı anda gelen gün sonu ile silme aynı kilitte sırayla: sonuç ya silinmiş ya da yeni gün (yarım değil)
     await Promise.allSettled([core.removeLafposDay(db, users.admin, "2026-11-07", 3), send(push("2026-11-07", 3, [line("C")]), { now: later(4) })]);
     const rep = await reportOf("2026-11-07");
     const names = (await linesOf("2026-11-07")).map((l) => l.posName);
     assert.ok((rep === undefined && names.length === 0) || (rep?.z.zNo === 3 && names.length === 1), `${rep?.z.zNo} ${names}`);
+  });
+
+  test("açık 409 güne göre kalır: sonraki günün 200'ü ve başka günün 400'ü / 500'ü onu örtmez; silme düğmesi gününde", async () => {
+    const summary = async (now: Date) => lafposCardSummary(await status.loadLafposCard(db, now));
+    await send(push("2026-11-07", 127));
+    assert.equal((await send(push("2026-11-07", 128), { now: later(1) })).status, 409);
+    assert.equal((await send(push("2026-11-08", 129), { now: later(2) })).status, 200);
+    assert.equal((await send({ ...push("2026-11-09", 130), lines: [line("X", { qty: -1 })] }, { now: later(3) })).status, 400);
+    const broken = Object.create(db) as DB;
+    broken.transaction = (() => Promise.reject(new Error("bağlantı koptu"))) as DB["transaction"];
+    await assert.rejects(send(push("2026-11-10", 131), { db: broken, now: later(4) }), /bağlantı koptu/);
+    let sum = await summary(later(5));
+    assert.deepEqual(
+      sum.dayRejections.map((x) => [x.rejection.date, x.rejection.status, x.status, x.day?.zNo ?? null]),
+      [
+        ["2026-11-09", 400, "open", null],
+        ["2026-11-07", 409, "open", 127],
+      ],
+      "7 Kasım'ın çakışması ve silinecek Z 127 duruyor",
+    );
+    assert.deepEqual([sum.undated?.rejection.status, sum.undated?.fresh, sum.alerts], [500, true, 3]);
+    assert.match(sum.short, /^3 gönderim reddedildi · /);
+    // LafPOS 500'ü kendisi yeniden dener: başarılı olunca 500 sakinleşir, 409 ve 400 açık kalır
+    assert.equal((await send(push("2026-11-10", 131), { now: later(6) })).status, 200);
+    sum = await summary(later(7));
+    assert.deepEqual([sum.undated?.fresh, sum.alerts, sum.dayRejections.length], [false, 2, 2]);
+    assert.equal(await reportOf("2026-11-09"), undefined, "400'ün günü yazılmadı");
+    assert.equal((await reportOf("2026-11-07")).z.zNo, 127);
+  });
+
+  test("LafPOS panelin Z'sini yeniden gönderince (200) o günün 409'u kapanır: kart doğru kaydı silmeyi önermez", async () => {
+    await send(push("2026-11-07", 12));
+    assert.equal((await send(push("2026-11-07", 13), { now: later(1) })).status, 409);
+    let sum = lafposCardSummary(await status.loadLafposCard(db, later(2)));
+    assert.deepEqual(
+      sum.dayRejections.map((x) => [x.rejection.date, x.status, x.day?.zNo]),
+      [["2026-11-07", "open", 12]],
+    );
+    assert.equal((await send(push("2026-11-07", 12), { now: later(3) })).status, 200);
+    assert.deepEqual((await status.readLafposState(db)).rejections, {});
+    sum = lafposCardSummary(await status.loadLafposCard(db, later(4)));
+    assert.deepEqual([sum.dayRejections, sum.undated, sum.alerts, sum.short], [[], null, 0, sum.headline]);
+    // Durum yazımı kaybolsa bile (eski satır) gün retten sonra yazıldığı için ret çözülmüş sayılır
+    await db.execute(sql`update integration_state set value = jsonb_set(value, '{rejections}', jsonb_build_object('2026-11-07', value->'lastError')) where key = 'lafpos'`);
+    sum = lafposCardSummary(await status.loadLafposCard(db, later(5)));
+    assert.deepEqual(sum.dayRejections, []);
+  });
+
+  test("günü silmek yalnız çözdüğü 409'u 'silindi' yapar: aynı günün 400'ü ve başka Z'nin çakışması olduğu gibi kalır", async () => {
+    await send(push("2026-11-07", 127, [line("A"), line("B")]));
+    assert.equal((await send({ ...push("2026-11-07", 127), lines: [line("A"), line("A")] }, { now: later(1) })).status, 400);
+    assert.equal((await status.readLafposState(db)).rejections["2026-11-07"]?.field, "lines.1.posName");
+    assert.deepEqual(await core.removeLafposDay(db, users.admin, "2026-11-07", 127, later(2)), { zNo: 127, lines: 2 });
+    let st = await status.readLafposState(db);
+    assert.equal(st.rejections["2026-11-07"]?.clearedAt, null, "400 silmeyle çözülmez: alanı ve nedeni görünmeye devam eder");
+    let sum = lafposCardSummary(await status.loadLafposCard(db, later(3)));
+    assert.deepEqual(
+      sum.dayRejections.map((x) => [x.rejection.date, x.rejection.status, x.status]),
+      [["2026-11-07", 400, "open"]],
+    );
+    // Başka Z'nin çakışması: paneldeki Z 5 silinir ama ret Z 4 içindi (eski), "silindi" olmaz
+    await send(push("2026-11-08", 4));
+    assert.equal((await send(push("2026-11-08", 9), { now: later(4) })).status, 409);
+    await db.execute(sql`update pos_day_reports set z = jsonb_set(z, '{zNo}', '5') where date = '2026-11-08'`);
+    await core.removeLafposDay(db, users.admin, "2026-11-08", 5, later(5));
+    st = await status.readLafposState(db);
+    assert.equal(st.rejections["2026-11-08"]?.clearedAt, null);
+    // Doğru çakışma: silinince "Gönder bekleniyor" (kırmızı değil)
+    await send(push("2026-11-09", 21));
+    assert.equal((await send(push("2026-11-09", 22), { now: later(6) })).status, 409);
+    await core.removeLafposDay(db, users.admin, "2026-11-09", 21, later(7));
+    st = await status.readLafposState(db);
+    assert.equal(st.rejections["2026-11-09"]?.clearedAt, later(7).toISOString());
+    sum = lafposCardSummary(await status.loadLafposCard(db, later(8)));
+    assert.deepEqual(
+      sum.dayRejections.map((x) => [x.rejection.date, x.status, x.rejection.clearedAt]),
+      [
+        ["2026-11-09", "cleared", later(7).toISOString()],
+        ["2026-11-08", "cleared", null],
+        ["2026-11-07", "open", null],
+      ],
+      "8 Kasım'ın kaydı panelde yok: LafPOS gönderince yazılır (silindi denmez)",
+    );
+    assert.match(sum.short, /^7\u00a0Kasım gönderimi reddedildi · 2 gün için LafPOS'tan Gönder bekleniyor · /);
   });
 
   test("geçiş günü: yalnız yönetici, geçerli gün; aynı değer kayıt değildir; boşaltınca satır silinir", async () => {
@@ -240,7 +331,7 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
 
   test("Ayarlar kartının verisi: deneme ve sayılan günler, gelmeyen günler (kapalı gün hariç), eşleşmeyen adlar, ret günü", async () => {
     let card = await status.loadLafposCard(db, NOW);
-    assert.deepEqual([card.switchDay, card.totalDays, card.trialDays, card.days, card.missing, card.unmatchedCount, card.errorDay], [null, 0, 0, [], [], 0, null]);
+    assert.deepEqual([card.switchDay, card.totalDays, card.trialDays, card.days, card.missing, card.unmatchedCount, card.rejectionDays], [null, 0, 0, [], [], 0, {}]);
     await send(push("2026-11-05", 31, [line("YENİ ÜRÜN", { qty: 3 }), line("ODA", { isService: true })]));
     await send(push("2026-11-09", 35, [line("YENİ ÜRÜN", { qty: 2 })]));
     await send(push("2026-11-10", 36));
@@ -266,8 +357,8 @@ describe("LafPOS durumu ve onarımı: veritabanında", { skip: !SERVER_URL && "L
       { posName: "LATTE 2026-11-10", qty: 2, days: 1 },
     ]);
     assert.equal(card.unmatchedCount, 2, "hizmet satırı sayılmaz");
-    assert.deepEqual(card.errorDay, { zNo: 36, lines: 1, receivedAt: NOW.toISOString() }, "409'un günü: silinecek kayıt");
-    assert.equal(card.secretProblem === null || ["missing", "short", "same_as_site"].includes(card.secretProblem), true);
+    assert.deepEqual(card.rejectionDays, { "2026-11-10": { zNo: 36, lines: 1, receivedAt: NOW.toISOString() } }, "409'un günü: silinecek kayıt");
+    assert.equal(card.secretProblem, null);
   });
 
   test("eylemler: geçiş günü işlem geçmişine; günü silme parolasız STEP_UP_REQUIRED, yanlışı 'Hatalı parola onayı (LafPOS)', doğrusu siler", async () => {

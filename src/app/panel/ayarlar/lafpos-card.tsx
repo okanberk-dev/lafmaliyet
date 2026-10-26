@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { CardContent } from "@/components/ui/card";
 import { InfoTip } from "@/components/ui/misc";
 import { dateTimeTR, money, num } from "@/lib/format";
-import { lafposCardSummary, rejectionText, unverifiedText } from "@/lib/lafpos/status";
-import { dayMonthYearTR, LAFPOS_SWITCH_MAX_AHEAD, LAFPOS_SWITCH_MIN } from "@/lib/lafpos/switch";
+import { clearedText, isUnverifiedAfterOk, lafposCardSummary, rejectionText, unverifiedText } from "@/lib/lafpos/status";
+import { LAFPOS_SWITCH_MAX_AHEAD, LAFPOS_SWITCH_MIN } from "@/lib/lafpos/switch";
 import { addDays, longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { loadLafposCard } from "@/server/lafpos/status";
@@ -18,7 +18,8 @@ const UNVERIFIED_DAYS = 14;
 
 /**
  * Ayarlar › LafPOS (kasa) (docs/LAFPOS.md › Durum ve onarım, Geçiş günü): bağlantının durumu (kurulmadı, bağlı, geçiş
- * bekliyor, kasa LafPOS), son ret ve çözümü ("Bu günün LafPOS kaydını sil", 409), imzası tutmayan istekler, LafPOS'a
+ * bekliyor, kasa LafPOS), güne göre açık retler ve çözümü ("Bu günün LafPOS kaydını sil", 409; sonra LafPOS'tan elle
+ * Gönder), güne bağlanamayan son ret, imzası doğrulanamayan istekler, LafPOS'a
  * geçiş günü, gelen ve gelmeyen günler, ürüne bağlanamayan POS adları. Geçiş günü boşken LafPOS'un gönderdiği günler
  * yalnız burada görünür (deneme), başka hiçbir ekrana ya da hesaba girmez (sahibin 26 Ekim kararı). Yalnız yönetici
  * (Ayarlar sayfası requireAdmin).
@@ -40,15 +41,14 @@ export async function LafposCard() {
   }
   const sum = lafposCardSummary(data);
   const { state, today } = data;
-  const err = state.lastError;
-  const errFresh = sum.rejected;
-  // 409'un çözümü: o gün hâlâ reddeden Z ile kayıtlıysa silinebilir
-  const errDay = data.errorDay;
-  const conflictDay = err && err.error === "z_conflict" && err.clearedAt === null && err.date && errDay && errDay.zNo === err.zNo ? { date: err.date, ...errDay } : null;
-  // Silinen gün yeniden geldi mi (409'un çözümü tamamlandı)
-  const resent = err?.clearedAt && errDay && Date.parse(errDay.receivedAt) > Date.parse(err.clearedAt) ? errDay : null;
-  const unverified = state.unverified && now.getTime() - Date.parse(state.unverified.lastAt) < UNVERIFIED_DAYS * 86_400_000 ? state.unverified : null;
   const linked = data.secretProblem === null;
+  const box = "space-y-2 rounded-2xl px-4 py-3 text-[13px] leading-5 text-pretty";
+  // Bağlantı kapalıyken retler kırmızı değil (özet de saymaz)
+  const redBox = linked ? "bg-bad-soft text-bad" : "bg-surface text-ink-mute ring-1 ring-line";
+  const undated = sum.undated;
+  const unverified = state.unverified && now.getTime() - Date.parse(state.unverified.lastAt) < UNVERIFIED_DAYS * 86_400_000 ? state.unverified : null;
+  // Sonradan başarılı gönderim geldiyse bağlantı çalışıyor: uyarı değil, soluk bilgi
+  const unverifiedLoud = unverified !== null && isUnverifiedAfterOk(state);
   return (
     <SectionCard
       id="lafpos"
@@ -78,23 +78,39 @@ export async function LafposCard() {
           ))}
         </div>
 
-        {err ? (
-          err.clearedAt ? (
-            <p className="text-[13px] leading-5 text-pretty text-ink-mute">
-              {err.date ? `${dayMonthYearTR(err.date)} kaydı ${dateTimeTR(err.clearedAt)} silindi` : "Kayıt silindi"}
-              {resent ? `, LafPOS yeniden gönderdi (Z ${resent.zNo}, ${dateTimeTR(resent.receivedAt)}).` : "; LafPOS günü yeniden gönderince yazılır."}
-            </p>
-          ) : (
-            <div className={cn("space-y-2 rounded-2xl px-4 py-3 text-[13px] leading-5 text-pretty", errFresh ? "bg-bad-soft text-bad" : "bg-surface text-ink-mute ring-1 ring-line")}>
+        {sum.dayRejections.map(({ rejection: e, day, status }) =>
+          status === "cleared" ? (
+            <div key={e.date} className={cn(box, linked ? "bg-warn-soft text-warn" : "bg-surface text-ink-mute ring-1 ring-line")}>
               <p>
-                <span className="font-medium">{errFresh ? "Son gönderim reddedildi" : "Önceki ret"}</span> · {dateTimeTR(err.at)} · {err.status}
+                <span className="font-medium">LafPOS&apos;tan Gönder bekleniyor</span> · {longDateTR(e.date)}
               </p>
-              <p>{rejectionText(err, today)}</p>
-              {conflictDay ? <LafposDayDelete date={conflictDay.date} zNo={conflictDay.zNo} lines={conflictDay.lines} label="Bu günün LafPOS kaydını sil" /> : null}
+              <p>{clearedText(e, today)}</p>
             </div>
-          )
+          ) : (
+            <div key={e.date} className={cn(box, redBox)}>
+              <p>
+                <span className="font-medium">{longDateTR(e.date)} reddedildi</span> · {dateTimeTR(e.at)} · {e.status}
+              </p>
+              <p>{rejectionText(e, today)}</p>
+              {/* 409'un çözümü: gün hâlâ reddeden Z ile kayıtlıysa silinebilir */}
+              {e.error === "z_conflict" && day && day.zNo === e.zNo ? <LafposDayDelete date={e.date} zNo={day.zNo} lines={day.lines} label="Bu günün LafPOS kaydını sil" /> : null}
+            </div>
+          ),
+        )}
+        {undated ? (
+          <div className={cn(box, undated.fresh ? redBox : "bg-surface text-ink-mute ring-1 ring-line")}>
+            <p>
+              <span className="font-medium">{undated.fresh ? "Son gönderim reddedildi" : "Önceki ret"}</span> · {dateTimeTR(undated.rejection.at)} · {undated.rejection.status}
+            </p>
+            <p>{rejectionText(undated.rejection, today)}</p>
+          </div>
         ) : null}
-        {unverified ? <p className="rounded-xl bg-warn-soft px-3 py-2 text-[13px] leading-5 text-pretty text-warn">{unverifiedText(unverified)}</p> : null}
+        {unverified ? (
+          <p className={cn("rounded-xl px-3 py-2 text-[13px] leading-5 text-pretty", unverifiedLoud ? "bg-warn-soft text-warn" : "text-ink-mute ring-1 ring-line")}>
+            {unverifiedText(unverified)}
+            {unverifiedLoud ? null : " O günden beri gün sonları geliyor."}
+          </p>
+        ) : null}
 
         <LafposSwitchDayForm value={data.switchDay} today={today} min={LAFPOS_SWITCH_MIN} max={addDays(today, LAFPOS_SWITCH_MAX_AHEAD)} linked={linked} />
 
@@ -132,7 +148,7 @@ export async function LafposCard() {
           <div className="space-y-1.5">
             <p className="text-[13px] font-medium text-ink-soft">
               Ürüne bağlanamayan POS adları: {num(data.unmatchedCount)}{" "}
-              <InfoTip text="Bu satırlar maliyete ve stoğa girmez. Ürünler › Site eşleştirmesinde ürünü sitenin kalemine bağlayın ya da Satışlar'daki POS eşleştirmesiyle adı ürüne bağlayın; gün LafPOS'tan yeniden gelince geçer." />
+              <InfoTip text="Bu satırlar maliyete ve stoğa girmez. Ürünler › Site menüsü'nde ürünü sitenin kalemine bağlayın ya da Satışlar'daki POS eşleştirmesiyle adı ürüne bağlayın (yalnız LafPOS'ta geçen bir ad Satışlar'da henüz eşleştirilemez). Eski günler LafPOS'tan Gönder ile yeniden gelince (ya da deneme günü silinip yeniden gönderilince) geçer." />
             </p>
             <p className="text-[13px] leading-5 text-pretty text-ink-mute">
               {data.unmatched.map((u) => `${u.posName} (${num(u.qty)} adet, ${num(u.days)} gün)`).join(" · ")}

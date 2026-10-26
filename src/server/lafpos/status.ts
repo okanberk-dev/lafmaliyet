@@ -6,11 +6,14 @@ import { businessDate } from "@/lib/cash-report";
 import { readLafposSwitchDay } from "@/lib/constants";
 import { lafposSecretProblem } from "@/lib/lafpos/request";
 import {
+  isDayRejection,
   LAFPOS_STATE_KEY,
   missingLafposDays,
   parseLafposState,
   peekPosDay,
+  withDayRejection,
   type LafposCardInput,
+  type LafposOk,
   type LafposRejection,
   type LafposState,
 } from "@/lib/lafpos/status";
@@ -23,7 +26,8 @@ import { receivePosDay, type EndpointResult } from "./ingest";
 
 /**
  * LafPOS bağlantısının durumu ve onarımı (docs/LAFPOS.md › Durum ve onarım): `POST /api/pos/gun`'un her sonucu burada
- * `integration_state › lafpos`'a yazılır (son başarılı gün, son ret, imzası doğrulanamayan isteklerin sayacı), 200
+ * `integration_state › lafpos`'a yazılır (son başarılı gün, son ret, güne göre açık retler, imzası doğrulanamayan
+ * isteklerin sayacı), 200
  * yanıtına geçiş gününe göre `counted` ve `switchDay` eklenir; Ayarlar'daki "LafPOS (kasa)" kartının verisi de buradan
  * okunur. Gün sonunun denetimi ve yazımı ingest.ts'te (değişmedi). Durum yazımı hiçbir zaman yanıtı bozmaz.
  */
@@ -47,6 +51,44 @@ async function patchState(db: DB, patch: Partial<Record<keyof LafposState, unkno
       on conflict (key) do update set value = integration_state.value || ${JSON.stringify(patch)}::jsonb, updated_at = now()`);
   } catch (e) {
     console.error("[lafpos] durum yazılamadı:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** 200: son başarılı gün; o günün açık reddi (409 / 400) kapanır, gün yeniden yazıldı. Hata yanıtı bozmaz */
+async function noteOk(db: DB, ok: LafposOk): Promise<void> {
+  try {
+    await db.execute(sql`
+      insert into integration_state (key, value) values (${LAFPOS_STATE_KEY}, jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb))
+      on conflict (key) do update set value = (integration_state.value #- array['rejections', ${ok.date}::text]) || jsonb_build_object('lastOk', ${JSON.stringify(ok)}::jsonb),
+        updated_at = now()`);
+  } catch (e) {
+    console.error("[lafpos] durum yazılamadı:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * Günlü 400 / 409: son ret olarak ve güne göre (`rejections`, aynı günün eskisinin yerine, en çok MAX_DAY_REJECTIONS)
+ * yazılır. LafPOS bunları yeniden denemez; sonraki günün başarılı gönderimi ya da başka bir günün reddi bu günün
+ * reddini örtmesin. Satır kilitlenir (aynı anda iki ret birbirinin gününü düşürmez); öteki alanlar üst düzey birleştirmeyle
+ * korunur. Hata yanıtı bozmaz.
+ */
+async function noteDayRejection(db: DB, e: LafposRejection & { date: string }): Promise<void> {
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`insert into integration_state (key, value) values (${LAFPOS_STATE_KEY}, '{}'::jsonb) on conflict (key) do nothing`);
+      const [row] = await tx
+        .select({ value: s.integrationState.value })
+        .from(s.integrationState)
+        .where(eq(s.integrationState.key, LAFPOS_STATE_KEY))
+        .for("update")
+        .limit(1);
+      const rejections = withDayRejection(parseLafposState(row?.value).rejections, e);
+      await tx.execute(sql`
+        update integration_state set value = value || ${JSON.stringify({ lastError: e, rejections })}::jsonb, updated_at = now()
+         where key = ${LAFPOS_STATE_KEY}`);
+    });
+  } catch (err) {
+    console.error("[lafpos] durum yazılamadı:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -89,9 +131,10 @@ type PosDayInput = Parameters<typeof receivePosDay>[1];
 /**
  * `POST /api/pos/gun`'un sonucu (uç bunu çağırır): gün sonunu receivePosDay'e verir, sonucu durum satırına yazar.
  * 200'e `counted` (gün geçiş gününden önce değil: hesaplara giriyor) ve `switchDay` eklenir; LafPOS yanıtın gövdesini
- * okumaz, eklenen alanlar eski LafPOS'u etkilemez. 400 ve 409 son ret olarak (alan, gün, iki Z no) yazılır ve gövdesiz
- * günlüğe düşer; 401 ve 413 yalnız sayaçtır; 503'te (anahtar yok) hiçbir şey yazılmaz. Veritabanı hatası son ret
- * olarak yazılmaya çalışılır ve yeniden fırlar (uç 500 döner, LafPOS yeniden dener).
+ * okumaz, eklenen alanlar eski LafPOS'u etkilemez; o günün açık reddi kapanır. 400 ve 409 son ret olarak (alan, gün, iki Z
+ * no) ve günü okunduysa güne göre yazılır, gövdesiz günlüğe düşer; 401 ve 413 yalnız sayaçtır; 503'te (anahtar yok)
+ * hiçbir şey yazılmaz. Veritabanı hatası son ret olarak yazılmaya çalışılır ve yeniden fırlar (uç 500 döner, LafPOS
+ * yeniden dener).
  */
 export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new Date(), opts: { unverifiedWindowMs?: number } = {}): Promise<EndpointResult> {
   const at = now.toISOString();
@@ -121,16 +164,16 @@ export async function handlePosDay(db: DB, input: PosDayInput, now: Date = new D
       return r;
     }
     const counted = isLafposDay(date, switchDay);
-    await patchState(db, { lastOk: { at, date, zNo: sent.zNo, lines: Number(r.body.lines ?? 0), counted } });
+    await noteOk(db, { at, date, zNo: sent.zNo, lines: Number(r.body.lines ?? 0), counted });
     return { status: 200, body: { ...r.body, counted, switchDay } };
   }
   const error = String(r.body.error ?? "unknown");
   const date = typeof r.body.date === "string" ? r.body.date : sent.date;
   const zNo = typeof r.body.zNo === "number" ? r.body.zNo : null;
   console.warn("[lafpos] reddedildi", r.status, error, date ?? "-", zNo ?? "-");
-  await patchState(db, {
-    lastError: rejection(at, r.status, error, { field: typeof r.body.field === "string" ? r.body.field : null, date, zNo, sentZNo: error === "z_conflict" ? sent.zNo : null }),
-  });
+  const e = rejection(at, r.status, error, { field: typeof r.body.field === "string" ? r.body.field : null, date, zNo, sentZNo: error === "z_conflict" ? sent.zNo : null });
+  if (isDayRejection(e)) await noteDayRejection(db, e);
+  else await patchState(db, { lastError: e });
   return r;
 }
 
@@ -157,8 +200,6 @@ export interface LafposCardData extends LafposCardInput {
   /** Ürüne bağlanamayan POS adları (hizmet satırları hariç): en çok satılan 10 ad ve toplam sayı */
   unmatched: { posName: string; qty: number; days: number }[];
   unmatchedCount: number;
-  /** Son retin gününün paneldeki kaydı (409'da silinecek olan; silindiyse yeniden gelen); yoksa null */
-  errorDay: { zNo: number; lines: number; receivedAt: string } | null;
 }
 
 const DAYS_SHOWN = 14;
@@ -188,16 +229,17 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
     missingFrom ? db.select({ date: r.date }).from(r).where(and(gte(r.date, missingFrom), lt(r.date, today))) : Promise.resolve([]),
     missingFrom ? closedDaysBetween(missingFrom, addDays(today, -1), db) : Promise.resolve([]),
   ]);
-  const errDate = state.lastError?.date ?? null;
-  const [lineCounts, [errRow]] = await Promise.all([
-    recent.length || errDate
+  // Günlü retlerin günlerinin paneldeki kaydı (409'da silinecek olan; retten sonra yeniden yazıldıysa ret çözüldü)
+  const errDates = Object.keys(state.rejections);
+  const [lineCounts, errRows] = await Promise.all([
+    recent.length || errDates.length
       ? db
           .select({ date: d.date, n: count() })
           .from(d)
-          .where(inArray(d.date, [...recent.map((x) => x.date), ...(errDate ? [errDate] : [])]))
+          .where(inArray(d.date, [...new Set([...recent.map((x) => x.date), ...errDates])]))
           .groupBy(d.date)
       : Promise.resolve([]),
-    errDate ? db.select({ z: r.z, receivedAt: r.receivedAt }).from(r).where(eq(r.date, errDate)).limit(1) : Promise.resolve([]),
+    errDates.length ? db.select({ date: r.date, z: r.z, receivedAt: r.receivedAt }).from(r).where(inArray(r.date, errDates)) : Promise.resolve([]),
   ]);
   const linesOf = new Map(lineCounts.map((x) => [x.date, x.n]));
   const days = recent.map((x) => ({
@@ -224,8 +266,8 @@ export async function loadLafposCard(db: DB = getDb(), now: Date = new Date()): 
       closed,
     ),
     days,
+    rejectionDays: Object.fromEntries(errRows.map((x) => [x.date, { zNo: x.z.zNo, lines: linesOf.get(x.date) ?? 0, receivedAt: x.receivedAt.toISOString() }])),
     unmatched,
     unmatchedCount,
-    errorDay: errRow && errDate ? { zNo: errRow.z.zNo, lines: linesOf.get(errDate) ?? 0, receivedAt: errRow.receivedAt.toISOString() } : null,
   };
 }

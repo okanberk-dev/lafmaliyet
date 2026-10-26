@@ -45,10 +45,13 @@ export async function writeLafposSwitchDay(db: DB, me: Actor, day: string | null
 }
 
 /**
- * Bir günün LafPOS kaydını siler (409 z_conflict'in çözümü: LafPOS'taki Z doğruysa paneldeki eski kayıt silinir, LafPOS
- * günü yeniden gönderince yenisi yazılır). Gün sonunun yazımıyla aynı danışma kilidi altında, tek işlemde: günün özeti
- * (pos_day_reports) ve satırları (pos_daily_sales). `zNo`: yöneticinin gördüğü Z; bu arada gün başka bir Z ile yeniden
- * yazıldıysa silinmez. Durum satırındaki o günün reddi "silindi" olarak işaretlenir (kart kırmızıyı bırakır).
+ * Bir günün LafPOS kaydını siler (409 z_conflict'in çözümü: LafPOS'taki Z doğruysa paneldeki eski kayıt silinir; ya da
+ * deneme gününün temizliği). LafPOS reddedilen ya da silinen günü kendisi yeniden göndermez: yenisi LafPOS'ta Kasa ›
+ * Geçmiş günler › o günün Z raporu › Gönder ile gelir (LAFPOS_RESEND_PATH). Gün sonunun yazımıyla aynı danışma kilidi
+ * altında, tek işlemde: günün özeti (pos_day_reports) ve satırları (pos_daily_sales). `zNo`: yöneticinin gördüğü Z; bu
+ * arada gün başka bir Z ile yeniden yazıldıysa silinmez. Durum satırındaki o günün reddi yalnız bu silmenin çözdüğü
+ * çakışmaysa (409, aynı Z) "silindi" olur (kart kırmızı yerine "Gönder bekleniyor" der); aynı günün 400'ü olduğu gibi
+ * kalır (alanı ve nedeni görünmeye devam eder).
  */
 export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: number, now: Date = new Date()): Promise<{ zNo: number; lines: number }> {
   if (me.role !== "admin") throw new UserError(ADMIN_ONLY);
@@ -61,8 +64,10 @@ export async function removeLafposDay(db: DB, me: Actor, date: string, zNo: numb
     await tx.delete(s.posDayReports).where(eq(s.posDayReports.date, date));
     await tx.execute(sql`
       update integration_state
-         set value = jsonb_set(value, '{lastError,clearedAt}', to_jsonb(${now.toISOString()}::text)), updated_at = now()
-       where key = ${LAFPOS_STATE_KEY} and value->'lastError'->>'date' = ${date}`);
+         set value = jsonb_set(value, array['rejections', ${date}::text, 'clearedAt'], to_jsonb(${now.toISOString()}::text)), updated_at = now()
+       where key = ${LAFPOS_STATE_KEY}
+         and value->'rejections'->${date}::text->>'error' = 'z_conflict'
+         and (value->'rejections'->${date}::text->>'zNo')::int = ${rep.z.zNo}::int`);
     return { zNo: rep.z.zNo, lines: lines.length };
   });
 }

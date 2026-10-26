@@ -8,8 +8,12 @@ import { dayMonthYearTR, daysUntilText, isLafposDay } from "./switch";
 /**
  * LafPOS bağlantısının durumu (docs/LAFPOS.md › Durum ve onarım; saf, testleri tests/lafpos.test.ts): `POST /api/pos/gun`
  * her sonucu `integration_state`'in "lafpos" satırına yazar (src/server/lafpos/status.ts), Ayarlar'daki "LafPOS (kasa)"
- * kartı buradaki özetle okur. Reddedilen gün sonu iz bırakır: son başarılı gün, son ret (durum, hata, alan, gün, Z) ve
- * imzası doğrulanamayan isteklerin sayacı.
+ * kartı buradaki özetle okur. Reddedilen gün sonu iz bırakır: son başarılı gün, son ret (durum, hata, alan, gün, Z),
+ * güne göre açık retler ve imzası doğrulanamayan isteklerin sayacı.
+ *
+ * LafPOS 400 ve 409'u kalıcı sayar, kendisi yeniden denemez (giden kutusunda bir yıl bekletir): gün ancak LafPOS'ta
+ * elle yeniden gönderilince gelir (LAFPOS_RESEND_PATH). Bu yüzden günlü 400 ve 409 güne göre saklanır (`rejections`):
+ * sonraki günün başarılı gönderimi ya da başka bir günün reddi onu örtmez; yalnız o günün yeniden yazılması kapatır.
  */
 
 /** integration_state anahtarı */
@@ -37,9 +41,18 @@ export interface LafposRejection {
   zNo: number | null;
   /** 409: LafPOS'un gönderdiği Z no */
   sentZNo: number | null;
-  /** Yönetici o günün kaydını sildi (409'un çözümü); LafPOS yeniden gönderince yazılır */
+  /** Yönetici o günün kaydını sildi (409'un çözümü); gün LafPOS'tan elle yeniden gönderilince yazılır */
   clearedAt: string | null;
 }
+
+/** LafPOS'ta reddedilen ya da silinen günü yeniden gönderen yol (LafPOS kendisi yeniden denemez) */
+export const LAFPOS_RESEND_PATH = "LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder";
+
+/** LafPOS'un reddi yeniden denemediğinin ve elle gönderimin cümlesi (kart, silme penceresi) */
+export const LAFPOS_RESEND_HINT = `LafPOS reddedilen ya da silinen günü kendisi yeniden göndermez: ${LAFPOS_RESEND_PATH}'e basın.`;
+
+/** Güne göre saklanan açık retlerin üst sınırı (en eskisi düşer) */
+export const MAX_DAY_REJECTIONS = 10;
 
 /** İmzası doğrulanamayan istekler (401, 413): yalnız sayaç ve zaman; gövde okunmaz, ayrıntı saklanmaz */
 export interface LafposUnverified {
@@ -50,7 +63,10 @@ export interface LafposUnverified {
 
 export interface LafposState {
   lastOk: LafposOk | null;
+  /** Son ret, her türü (kart bundan yalnız güne bağlanamayanı gösterir: 500 ve gövdesi okunamayan 400) */
   lastError: LafposRejection | null;
+  /** Günlü 400 ve 409, güne göre: o gün yeniden yazılınca (200) ya da en çok MAX_DAY_REJECTIONS'ı aşınca düşer */
+  rejections: Record<string, LafposRejection>;
   unverified: LafposUnverified | null;
 }
 
@@ -80,7 +96,40 @@ export function parseLafposState(v: unknown): LafposState {
     const r = schema.safeParse(x);
     return r.success ? r.data : null;
   };
-  return { lastOk: part(okSchema, o.lastOk), lastError: part(rejectionSchema, o.lastError), unverified: part(unverifiedSchema, o.unverified) };
+  const rejections: Record<string, LafposRejection> = {};
+  if (o.rejections && typeof o.rejections === "object") {
+    for (const [date, x] of Object.entries(o.rejections as Record<string, unknown>)) {
+      const r = part(rejectionSchema, x);
+      if (r && /^\d{4}-\d{2}-\d{2}$/.test(date)) rejections[date] = { ...r, date };
+    }
+  }
+  return { lastOk: part(okSchema, o.lastOk), lastError: part(rejectionSchema, o.lastError), rejections, unverified: part(unverifiedSchema, o.unverified) };
+}
+
+/** Günlü ret mi (400 ya da 409, günü okunmuş): güne göre izlenir */
+export function isDayRejection(e: LafposRejection): e is LafposRejection & { date: string } {
+  return e.date !== null && e.error !== "server_error";
+}
+
+/** Günün retini ekler (aynı günün eskisinin yerine); MAX_DAY_REJECTIONS'ı aşarsa en eski anlı düşer */
+export function withDayRejection(cur: Record<string, LafposRejection>, e: LafposRejection & { date: string }, max = MAX_DAY_REJECTIONS): Record<string, LafposRejection> {
+  const all = Object.values({ ...cur, [e.date]: e }).sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (b.date ?? "").localeCompare(a.date ?? ""));
+  return Object.fromEntries(all.slice(0, max).map((x) => [x.date, x]));
+}
+
+/** Retin gününün paneldeki kaydı (pos_day_reports; yoksa null) */
+export type RejectionDay = { zNo: number; lines: number; receivedAt: string } | null;
+
+/**
+ * Günlü retin durumu, o günün paneldeki kaydına göre (son başarılı gönderimin gününe değil):
+ * - "resolved": gün retten sonra yeniden yazıldı (LafPOS düzeltip gönderdi);
+ * - "cleared": yönetici kaydı sildi ya da 409'un günü panelde yok; gün LafPOS'tan elle gönderilmeyi bekliyor;
+ * - "open": ret duruyor (409'da panelde eski Z, 400'de eski kayıt ya da hiçbir şey).
+ */
+export function dayRejectionStatus(e: LafposRejection, day: RejectionDay): "open" | "cleared" | "resolved" {
+  if (day && Date.parse(day.receivedAt) > Date.parse(e.at) && (e.clearedAt === null || Date.parse(day.receivedAt) > Date.parse(e.clearedAt))) return "resolved";
+  if (e.clearedAt !== null || (e.error === "z_conflict" && !day)) return "cleared";
+  return "open";
 }
 
 /** Gövdeden günü ve Z no'yu okur (yalnız durum kaydı için; sözleşme denetimi day.ts'te). Okunamazsa null */
@@ -103,9 +152,9 @@ export function rejectionText(e: LafposRejection, today: string): string {
   const day = e.date ? dayText(e.date, today) : null;
   switch (e.error) {
     case "z_conflict":
-      return `${day ?? "O gün"} için panelde Z ${e.zNo ?? "?"} kayıtlı; LafPOS ${e.sentZNo !== null ? `Z ${e.sentZNo}` : "başka bir Z"} gönderdi, hiçbir şey yazılmadı. Paneldeki yanlışsa bu günün kaydını silin, LafPOS yeniden gönderince yazılır; LafPOS'taki fazlaysa orada düzeltin.`;
+      return `${day ?? "O gün"} için panelde Z ${e.zNo ?? "?"} kayıtlı; LafPOS ${e.sentZNo !== null ? `Z ${e.sentZNo}` : "başka bir Z"} gönderdi, hiçbir şey yazılmadı. LafPOS'taki doğruysa bu günün kaydını silin, sonra ${LAFPOS_RESEND_PATH}'e basın (LafPOS reddedilen günü kendisi yeniden denemez); LafPOS'taki fazlaysa orada düzeltin.`;
     case "invalid":
-      return `Gün sonu sözleşmeye uymadı${day ? ` (${day})` : ""}: ilk sorunlu alan ${e.field ?? "bilinmiyor"}. Hiçbir şey yazılmadı; LafPOS'un sürümü panelle uyumlu mu?`;
+      return `Gün sonu sözleşmeye uymadı${day ? ` (${day})` : ""}: ilk sorunlu alan ${e.field ?? "bilinmiyor"}. Hiçbir şey yazılmadı; LafPOS'un sürümü panelle uyumlu mu? Düzeltilince ${LAFPOS_RESEND_PATH}'e basın (LafPOS kendisi yeniden denemez).`;
     case "server_error":
       return `Panel gün sonunu yazamadı${day ? ` (${day})` : ""}: veritabanı hatası. LafPOS kendisi yeniden dener; sürerse Vercel günlüğünde [lafpos].`;
     default:
@@ -113,13 +162,26 @@ export function rejectionText(e: LafposRejection, today: string): string {
   }
 }
 
-/** İmzası tutmayan isteklerin metni */
+/** Silinen (ya da panelde olmayan) 409 gününün satırı: LafPOS'tan elle gönderim bekleniyor */
+export function clearedText(e: LafposRejection, today: string): string {
+  const day = e.date ? dayText(e.date, today) : "O gün";
+  const what = e.clearedAt ? `${day} kaydı ${dateTimeTR(e.clearedAt)} silindi` : `${day} kaydı panelde yok`;
+  return `${what}. ${LAFPOS_RESEND_HINT}`;
+}
+
+/** İmzası doğrulanamayan isteklerin metni (yabancı bir istek de olabilir: suçlamadan) */
 export function unverifiedText(u: LafposUnverified): string {
   const what =
     u.lastStatus === 413
-      ? "Gövdesi 256 KB'ı aşan istek"
-      : "İmzası tutmayan istek (anahtar iki tarafta aynı mı, kafedeki makinenin saati doğru mu, ±5 dakika?)";
-  return `${what}: son ${dateTimeTR(u.lastAt)}, şimdiye dek en az ${u.count.toLocaleString("tr-TR")} kez.`;
+      ? "Gövdesi 256 KB'ı aşan istek geldi; LafPOS'tansa gönderdiğine bakın"
+      : "İmzası doğrulanamayan istek geldi; LafPOS'tansa anahtarı ve kafedeki saati (±5 dk) denetleyin";
+  return `${what}. Son ${dateTimeTR(u.lastAt)}, şimdiye dek en az ${u.count.toLocaleString("tr-TR")} kez.`;
+}
+
+/** İmzasız istek son başarılı gönderimden sonra mı geldi (önceyse bağlantı o günden beri çalışıyor: uyarı değil) */
+export function isUnverifiedAfterOk(state: LafposState): boolean {
+  const u = state.unverified;
+  return u !== null && (!state.lastOk || Date.parse(u.lastAt) > Date.parse(state.lastOk.at));
 }
 
 /** Ayarlar kartının okuduğu her şey (src/server/lafpos/status.ts › loadLafposCard) */
@@ -138,6 +200,15 @@ export interface LafposCardInput {
   trialDays: number;
   /** Geçiş gününden düne LafPOS günü gelmeyen günler (onaylı kapalı günler hariç) */
   missing: string[];
+  /** Günlü retlerin günlerinin paneldeki kaydı (state.rejections'ın anahtarları; kaydı olmayan gün yok) */
+  rejectionDays: Record<string, NonNullable<RejectionDay>>;
+}
+
+/** Kartta gösterilen günlü ret */
+export interface CardDayRejection {
+  rejection: LafposRejection & { date: string };
+  day: RejectionDay;
+  status: "open" | "cleared";
 }
 
 export type CardTone = "gray" | "green" | "blue" | "amber" | "red";
@@ -151,8 +222,12 @@ export interface LafposCardSummary {
   headline: string;
   /** Ek satırlar */
   lines: string[];
-  /** Son gönderim, son başarılı gönderimden sonra reddedildi ve çözülmedi (kart kırmızı kutuda gösterir) */
-  rejected: boolean;
+  /** Günlü açık ve elle gönderim bekleyen retler, en yeni gün önce (çözülenler yok) */
+  dayRejections: CardDayRejection[];
+  /** Güne bağlanamayan son ret (500, gövdesi okunamayan 400); `fresh`: son başarılı gönderimden sonra */
+  undated: { rejection: LafposRejection; fresh: boolean } | null;
+  /** Kırmızı gösterilen ret sayısı (açık günlü retler ve taze güne bağlanamayan ret); anahtar yokken 0 */
+  alerts: number;
   /** Telefonda kapalı bölümün özeti */
   short: string;
 }
@@ -166,24 +241,46 @@ const SECRET_TEXT: Record<"missing" | "short" | "same_as_site", string> = {
 /** Geçiş gününden bu yana: "10 Kasım'dan beri" */
 const sinceText = (d: string) => `${dayLocativeTR(d)}n beri`;
 
-/** Son gönderim, son başarılı gönderimden sonra reddedildi ve o günün kaydı silinerek çözülmedi */
-export function isFreshRejection(state: LafposState): boolean {
-  const { lastOk: ok, lastError: err } = state;
-  return err !== null && err.clearedAt === null && (!ok || Date.parse(err.at) > Date.parse(ok.at));
+/**
+ * Güne bağlanamayan ret (500 ya da gövdesi okunamayan 400) taze mi: gününe göre izlenemez, son başarılı gönderimden
+ * sonraysa açık sayılır (500'ü LafPOS kendisi yeniden dener; sonraki başarılı gönderim bağlantının döndüğünü gösterir)
+ */
+export function isFreshRejection(e: LafposRejection, ok: LafposOk | null): boolean {
+  return e.clearedAt === null && (!ok || Date.parse(e.at) > Date.parse(ok.at));
 }
 
 /**
  * Kartın özeti. Sakin dil (sahibin 26 Ekim kararı): kurulmamış bağlantı ve seçilmemiş geçiş günü hata değildir, kasa
  * ModPOS'tur. Rozet bağlantının durumudur; kırmızı yalnız geçiş günü seçili ama bağlantı kapalıyken (LafPOS günleri
- * gelemez). Reddedilen gönderim (`rejected`) kartta ayrı kırmızı kutudadır, telefonda kapalı özetin başına yazılır.
+ * gelemez). Retler kartta ayrı kutulardadır (açık günlü ret ve taze güne bağlanamayan ret kırmızı, elle gönderim
+ * bekleyen turuncu); telefonda kapalı özetin başına yazılır.
  */
 export function lafposCardSummary(c: LafposCardInput): LafposCardSummary {
   const s = summaryOf(c);
-  const rejected = c.secretProblem === null && isFreshRejection(c.state);
-  return { ...s, rejected, short: rejected ? `Son gönderim reddedildi · ${s.headline}` : s.headline };
+  const linked = c.secretProblem === null;
+  const dayRejections: CardDayRejection[] = [];
+  for (const e of Object.values(c.state.rejections)) {
+    if (!isDayRejection(e)) continue;
+    const day = c.rejectionDays[e.date] ?? null;
+    const status = dayRejectionStatus(e, day);
+    if (status !== "resolved") dayRejections.push({ rejection: e, day, status });
+  }
+  dayRejections.sort((a, b) => b.rejection.date.localeCompare(a.rejection.date));
+  const last = c.state.lastError;
+  const undated = last && !isDayRejection(last) ? { rejection: last, fresh: isFreshRejection(last, c.state.lastOk) } : null;
+  const open = dayRejections.filter((x) => x.status === "open");
+  const waiting = dayRejections.filter((x) => x.status === "cleared");
+  const alerts = linked ? open.length + (undated?.fresh ? 1 : 0) : 0;
+  const prefix: string[] = [];
+  if (alerts === 1) prefix.push(open.length ? `${dayText(open[0].rejection.date, c.today)} gönderimi reddedildi` : "Son gönderim reddedildi");
+  else if (alerts > 1) prefix.push(`${alerts} gönderim reddedildi`);
+  if (linked && waiting.length) {
+    prefix.push(`${waiting.length === 1 ? dayText(waiting[0].rejection.date, c.today) : `${waiting.length} gün`} için LafPOS'tan Gönder bekleniyor`);
+  }
+  return { ...s, dayRejections, undated, alerts, short: [...prefix, s.headline].join(" · ") };
 }
 
-function summaryOf(c: LafposCardInput): Omit<LafposCardSummary, "rejected" | "short"> {
+function summaryOf(c: LafposCardInput): Omit<LafposCardSummary, "dayRejections" | "undated" | "alerts" | "short"> {
   const lines: string[] = [];
   const last = c.lastDay ? `Son gün sonu ${dayText(c.lastDay.date, c.today)} (Z ${c.lastDay.zNo}), alındı ${dateTimeTR(c.lastDay.receivedAt)}.` : null;
 
@@ -233,7 +330,9 @@ function summaryOf(c: LafposCardInput): Omit<LafposCardSummary, "rejected" | "sh
     if (tone === "green") tone = "amber";
     const shown = c.missing.slice(-6).map((d) => dayText(d, c.today));
     const more = c.missing.length - shown.length;
-    lines.push(`Gün sonu gelmeyen ${c.missing.length} gün: ${shown.join(", ")}${more > 0 ? ` ve ${more} gün daha` : ""}. LafPOS'ta giden kutusuna bakın.`);
+    lines.push(
+      `Gün sonu gelmeyen ${c.missing.length} gün: ${shown.join(", ")}${more > 0 ? ` ve ${more} gün daha` : ""}. LafPOS'ta Yönetim › Entegrasyon'daki giden kutusuna bakın; reddedilen gün Kasa › Geçmiş günler › Z raporu › Gönder ile yeniden gider.`,
+    );
   }
   return { tone, badge, headline, lines };
 }

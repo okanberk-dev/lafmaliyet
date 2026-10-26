@@ -21,14 +21,22 @@ import { parsePosDay, POS_DAY_MAX_BYTES, resolvePosLine, siteSlotKey, type PosDa
 import { LAFPOS_NO_COUNT_TEXT, lafposPrefill, lafposSummary } from "../src/lib/lafpos/prefill";
 import { checkLafposRequest, lafposSecretFrom, lafposSecretProblem } from "../src/lib/lafpos/request";
 import {
+  clearedText,
+  dayRejectionStatus,
+  isDayRejection,
   isFreshRejection,
+  isUnverifiedAfterOk,
+  LAFPOS_RESEND_HINT,
   lafposCardSummary,
+  MAX_DAY_REJECTIONS,
   missingLafposDays,
   parseLafposState,
   peekPosDay,
   rejectionText,
   unverifiedText,
+  withDayRejection,
   type LafposCardInput,
+  type LafposRejection,
 } from "../src/lib/lafpos/status";
 import {
   dayMonthYearTR,
@@ -628,15 +636,19 @@ test("altın gövde: LafPOS'un buildDayPayload biçimi (iki boy, ekler, hizmet, 
 });
 
 test("durum: kayıtlı değer parça parça okunur (bozuk parça yok sayılır); gövdeden gün ve Z", () => {
-  assert.deepEqual(parseLafposState(undefined), { lastOk: null, lastError: null, unverified: null });
-  assert.deepEqual(parseLafposState("bozuk"), { lastOk: null, lastError: null, unverified: null });
+  assert.deepEqual(parseLafposState(undefined), { lastOk: null, lastError: null, rejections: {}, unverified: null });
+  assert.deepEqual(parseLafposState("bozuk"), { lastOk: null, lastError: null, rejections: {}, unverified: null });
+  const conflict = { at: "2026-10-26T00:20:00.000Z", status: 409, error: "z_conflict", date: "2026-10-25", zNo: 14 };
   const s = parseLafposState({
     lastOk: { at: "2026-10-26T00:10:00.000Z", date: "2026-10-25", zNo: 14, lines: 42, counted: false },
-    lastError: { at: "2026-10-26T00:20:00.000Z", status: 409, error: "z_conflict", date: "2026-10-25", zNo: 14 },
+    lastError: conflict,
+    rejections: { "2026-10-25": conflict, "25.10.2026": conflict, "2026-10-24": { status: "?" } },
     unverified: { count: "çok" },
   });
   assert.equal(s.lastOk?.zNo, 14);
   assert.deepEqual(s.lastError, { at: "2026-10-26T00:20:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-10-25", zNo: 14, sentZNo: null, clearedAt: null });
+  assert.deepEqual(Object.keys(s.rejections), ["2026-10-25"], "bozuk anahtar ve bozuk kayıt düşer");
+  assert.deepEqual(s.rejections["2026-10-25"], s.lastError);
   assert.equal(s.unverified, null);
   assert.deepEqual(peekPosDay(JSON.stringify(sample())), { date: "2026-10-26", zNo: 128 });
   assert.deepEqual(peekPosDay("{bozuk"), { date: null, zNo: null });
@@ -647,23 +659,63 @@ test("durum: son retin metni (409'da iki Z ve çözüm, 400'de alan, 500'de yeni
   const base = { at: "2026-10-26T00:20:00.000Z", field: null, date: "2026-10-25", zNo: null, sentZNo: null, clearedAt: null };
   const conflict = rejectionText({ ...base, status: 409, error: "z_conflict", zNo: 127, sentZNo: 128 }, "2026-10-26");
   assert.match(conflict, /25\u00a0Ekim için panelde Z 127 kayıtlı; LafPOS Z 128 gönderdi, hiçbir şey yazılmadı/);
-  assert.match(conflict, /bu günün kaydını silin/);
-  assert.match(rejectionText({ ...base, status: 400, error: "invalid", field: "lines.3.qty" }, "2026-10-26"), /ilk sorunlu alan lines\.3\.qty/);
+  // LafPOS 409 ve 400'ü kendisi yeniden denemez: metin elle gönderimin yolunu söyler, "yeniden gönderince yazılır" demez
+  assert.match(conflict, /bu günün kaydını silin, sonra LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın \(LafPOS reddedilen günü kendisi yeniden denemez\)/);
+  assert.doesNotMatch(conflict, /yeniden gönderince yazılır/);
+  const invalid = rejectionText({ ...base, status: 400, error: "invalid", field: "lines.3.qty" }, "2026-10-26");
+  assert.match(invalid, /ilk sorunlu alan lines\.3\.qty/);
+  assert.match(invalid, /Düzeltilince LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın/);
   assert.match(rejectionText({ ...base, status: 500, error: "server_error" }, "2026-10-26"), /LafPOS kendisi yeniden dener/);
   assert.match(rejectionText({ ...base, date: "2025-12-31", status: 409, error: "z_conflict", zNo: 1 }, "2026-10-26"), /31 Aralık 2025/, "başka yılın günü yılıyla");
-  assert.match(unverifiedText({ count: 3, lastAt: "2026-10-26T00:20:00.000Z", lastStatus: 401 }), /İmzası tutmayan istek .*±5 dakika.*en az 3 kez/);
+  assert.match(LAFPOS_RESEND_HINT, /kendisi yeniden göndermez: LafPOS'ta Kasa › Geçmiş günler › o günün Z raporu › Gönder'e basın\.$/);
+  const cleared = clearedText({ ...base, status: 409, error: "z_conflict", zNo: 127, clearedAt: "2026-10-26T09:00:00.000Z" }, "2026-10-26");
+  assert.match(cleared, /^25\u00a0Ekim kaydı 26\.10\.2026 12:00 silindi\. LafPOS reddedilen ya da silinen günü kendisi yeniden göndermez/);
+  assert.match(clearedText({ ...base, status: 409, error: "z_conflict", zNo: 127 }, "2026-10-26"), /^25\u00a0Ekim kaydı panelde yok\./);
+  // İmzası doğrulanamayan istek suçlamaz (yabancı bir istek de olabilir)
+  const unsigned = unverifiedText({ count: 3, lastAt: "2026-10-26T00:20:00.000Z", lastStatus: 401 });
+  assert.match(unsigned, /^İmzası doğrulanamayan istek geldi; LafPOS'tansa anahtarı ve kafedeki saati \(±5 dk\) denetleyin\. Son .*en az 3 kez\.$/);
   assert.match(unverifiedText({ count: 1, lastAt: "2026-10-26T00:20:00.000Z", lastStatus: 413 }), /256 KB/);
+});
+
+test("durum: günlü retler güne göre (en çok MAX_DAY_REJECTIONS, en eskisi düşer); günün kaydına göre açık / silindi / çözüldü", () => {
+  const rej = (date: string, at: string, o: Partial<LafposRejection> = {}) =>
+    ({ at, status: 409, error: "z_conflict", field: null, date, zNo: 127, sentZNo: 128, clearedAt: null, ...o }) as LafposRejection & { date: string };
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z")), true);
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z", { status: 400, error: "invalid" })), true);
+  assert.equal(isDayRejection({ ...rej("2026-11-07", "2026-11-07T22:00:00.000Z"), date: null }), false, "gövdesi okunamayan 400");
+  assert.equal(isDayRejection(rej("2026-11-07", "2026-11-07T22:00:00.000Z", { status: 500, error: "server_error" })), false, "500 LafPOS'un kendi yeniden denemesi");
+
+  // Aynı günün yenisi eskisinin yerine; tavanı aşınca en eski anlı düşer
+  let map = withDayRejection({}, rej("2026-11-07", "2026-11-07T22:00:00.000Z"));
+  map = withDayRejection(map, rej("2026-11-07", "2026-11-07T23:00:00.000Z", { status: 400, error: "invalid", field: "lines.0.qty" }));
+  assert.deepEqual(Object.keys(map), ["2026-11-07"]);
+  assert.equal(map["2026-11-07"].field, "lines.0.qty");
+  for (let i = 1; i <= MAX_DAY_REJECTIONS; i++) map = withDayRejection(map, rej(`2026-10-${String(i).padStart(2, "0")}`, `2026-11-08T00:${String(i).padStart(2, "0")}:00.000Z`));
+  assert.equal(Object.keys(map).length, MAX_DAY_REJECTIONS);
+  assert.equal(map["2026-11-07"], undefined, "en eski anlı ret düştü");
+  assert.ok(map["2026-10-10"]);
+
+  // Günün paneldeki kaydına göre
+  const e = rej("2026-11-07", "2026-11-07T22:00:00.000Z");
+  const old = { zNo: 127, lines: 40, receivedAt: "2026-11-07T21:00:00.000Z" };
+  assert.equal(dayRejectionStatus(e, old), "open", "panelde eski Z duruyor");
+  assert.equal(dayRejectionStatus(e, { ...old, receivedAt: "2026-11-08T09:00:00.000Z" }), "resolved", "gün retten sonra yeniden yazıldı");
+  assert.equal(dayRejectionStatus({ ...e, clearedAt: "2026-11-08T10:00:00.000Z" }, null), "cleared", "silindi, Gönder bekleniyor");
+  assert.equal(dayRejectionStatus(e, null), "cleared", "409'un günü panelde yok: gönderilince yazılır");
+  assert.equal(dayRejectionStatus({ ...e, clearedAt: "2026-11-08T10:00:00.000Z" }, { ...old, receivedAt: "2026-11-08T11:00:00.000Z" }), "resolved", "silindikten sonra geldi");
+  const bad = rej("2026-11-09", "2026-11-09T22:00:00.000Z", { status: 400, error: "invalid", zNo: null, sentZNo: null });
+  assert.equal(dayRejectionStatus(bad, null), "open", "400'ün günü hiç gelmedi: açık");
 });
 
 test("Ayarlar kartı: sakin durumlar (kurulmadı / bağlı, deneme / geçiş bekliyor / kasa LafPOS); kırmızı yalnız iki durumda", () => {
   const today = "2026-11-12";
-  const none = { lastOk: null, lastError: null, unverified: null };
-  const base: LafposCardInput = { secretProblem: null, switchDay: null, today, state: none, lastDay: null, totalDays: 0, trialDays: 0, missing: [] };
+  const none = { lastOk: null, lastError: null, rejections: {}, unverified: null };
+  const base: LafposCardInput = { secretProblem: null, switchDay: null, today, state: none, lastDay: null, totalDays: 0, trialDays: 0, missing: [], rejectionDays: {} };
   const lastDay = { date: "2026-11-11", zNo: 22, receivedAt: "2026-11-11T22:40:00.000Z" };
 
   // Bugünkü canlı: anahtar yok, geçiş günü yok → hata değil
   const off = lafposCardSummary({ ...base, secretProblem: "missing" });
-  assert.deepEqual([off.tone, off.badge, off.headline, off.rejected], ["gray", "Kurulmadı", "Henüz kurulmadı · kasada ModPOS kullanılıyor.", false]);
+  assert.deepEqual([off.tone, off.badge, off.headline, off.alerts], ["gray", "Kurulmadı", "Henüz kurulmadı · kasada ModPOS kullanılıyor.", 0]);
   assert.deepEqual(off.lines, []);
   assert.equal(off.short, off.headline);
   const same = lafposCardSummary({ ...base, secretProblem: "same_as_site", totalDays: 2 });
@@ -702,20 +754,73 @@ test("Ayarlar kartı: sakin durumlar (kurulmadı / bağlı, deneme / geçiş bek
   // Gelmeyen günler: turuncu, en çok altısı yazılır
   const gaps = lafposCardSummary({ ...base, switchDay: "2026-11-01", lastDay, missing: ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"] });
   assert.equal(gaps.tone, "amber");
-  assert.match(gaps.lines.join(" "), /Gün sonu gelmeyen 7 gün: 3 Kasım, .* 8 Kasım ve 1 gün daha\. LafPOS'ta giden kutusuna bakın\./);
+  assert.match(
+    gaps.lines.join(" "),
+    /Gün sonu gelmeyen 7 gün: 3 Kasım, .* 8 Kasım ve 1 gün daha\. LafPOS'ta Yönetim › Entegrasyon'daki giden kutusuna bakın; reddedilen gün Kasa › Geçmiş günler › Z raporu › Gönder ile yeniden gider\./,
+  );
 
-  // Son gönderim, son başarılı gönderimden sonra reddedildi: rozet bağlantıyı söylemeye devam eder, kart ret kutusunu
-  // açar, telefonda kapalı özetin başına yazılır; gün silinince (clearedAt) ret kapanır
+  // Güne bağlanamayan ret (500): son başarılı gönderimden sonraysa kırmızı; rozet bağlantıyı söylemeye devam eder,
+  // telefonda kapalı özetin başına yazılır
   const ok = { at: "2026-11-11T22:40:00.000Z", date: "2026-11-11", zNo: 22, lines: 40, counted: true };
-  const err = { at: "2026-11-11T23:00:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-11-11", zNo: 22, sentZNo: 1, clearedAt: null };
-  const rejected = lafposCardSummary({ ...base, switchDay: "2026-11-10", lastDay, state: { ...none, lastOk: ok, lastError: err } });
-  assert.deepEqual([rejected.badge, rejected.rejected], ["LafPOS", true]);
-  assert.match(rejected.short, /^Son gönderim reddedildi · Kasa LafPOS/);
-  assert.equal(isFreshRejection({ ...none, lastOk: { ...ok, at: "2026-11-11T23:30:00.000Z" }, lastError: err }), false, "sonra başarılı gönderim geldi");
-  assert.equal(isFreshRejection({ ...none, lastOk: ok, lastError: { ...err, clearedAt: "2026-11-11T23:10:00.000Z" } }), false, "gün silindi");
-  assert.equal(isFreshRejection({ ...none, lastError: err }), true);
-  // Anahtar yokken eski ret kırmızı yapmaz
-  assert.equal(lafposCardSummary({ ...base, secretProblem: "missing", state: { ...none, lastError: err } }).rejected, false);
+  const server = { at: "2026-11-11T23:00:00.000Z", status: 500, error: "server_error", field: null, date: "2026-11-11", zNo: null, sentZNo: 22, clearedAt: null };
+  const failed = lafposCardSummary({ ...base, switchDay: "2026-11-10", lastDay, state: { ...none, lastOk: ok, lastError: server } });
+  assert.deepEqual([failed.badge, failed.alerts, failed.undated?.fresh, failed.dayRejections], ["LafPOS", 1, true, []]);
+  assert.match(failed.short, /^Son gönderim reddedildi · Kasa LafPOS/);
+  assert.equal(isFreshRejection(server, { ...ok, at: "2026-11-11T23:30:00.000Z" }), false, "sonra başarılı gönderim geldi (LafPOS 500'ü kendisi yeniden dener)");
+  assert.equal(isFreshRejection(server, null), true);
+  const recovered = lafposCardSummary({ ...base, state: { ...none, lastOk: { ...ok, at: "2026-11-11T23:30:00.000Z" }, lastError: server } });
+  assert.deepEqual([recovered.alerts, recovered.undated?.fresh, recovered.short], [0, false, recovered.headline], "önceki ret gri, özet sakin");
+
+  // Günlü 409: sonraki günün başarılı gönderimi ve başka bir günün reddi onu örtmez; açık kalır, silme düğmesinin günü
+  // (paneldeki eski Z) kartta; en yeni gün önce
+  const c409 = { at: "2026-11-07T23:00:00.000Z", status: 409, error: "z_conflict", field: null, date: "2026-11-07", zNo: 127, sentZNo: 128, clearedAt: null };
+  const e400 = { at: "2026-11-09T23:00:00.000Z", status: 400, error: "invalid", field: "lines.0.qty", date: "2026-11-09", zNo: null, sentZNo: 129, clearedAt: null };
+  const panel7 = { zNo: 127, lines: 40, receivedAt: "2026-11-07T22:00:00.000Z" };
+  const later200 = { ...ok, at: "2026-11-08T23:00:00.000Z", date: "2026-11-08" };
+  const one = lafposCardSummary({ ...base, lastDay, state: { ...none, lastOk: later200, lastError: c409, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": panel7 } });
+  assert.deepEqual(
+    one.dayRejections.map((x) => [x.rejection.date, x.status, x.day?.zNo]),
+    [["2026-11-07", "open", 127]],
+  );
+  assert.equal(one.undated, null, "günlü ret güne bağlanamayan ret kutusunda tekrar edilmez");
+  assert.equal(one.alerts, 1);
+  assert.match(one.short, /^7\u00a0Kasım gönderimi reddedildi · Bağlı/);
+  const two = lafposCardSummary({
+    ...base,
+    state: { ...none, lastOk: later200, lastError: e400, rejections: { "2026-11-07": c409, "2026-11-09": e400 } },
+    rejectionDays: { "2026-11-07": panel7 },
+  });
+  assert.deepEqual(
+    two.dayRejections.map((x) => [x.rejection.date, x.status]),
+    [
+      ["2026-11-09", "open"],
+      ["2026-11-07", "open"],
+    ],
+  );
+  assert.match(two.short, /^2 gönderim reddedildi · /);
+  // LafPOS panelin Z'sini yeniden gönderdi (200, gün retten sonra yazıldı): çözüldü, kartta yok
+  const fixed = lafposCardSummary({ ...base, state: { ...none, lastOk: later200, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": { ...panel7, receivedAt: "2026-11-08T08:00:00.000Z" } } });
+  assert.deepEqual([fixed.dayRejections, fixed.alerts, fixed.short], [[], 0, fixed.headline]);
+  // Yönetici sildi: kırmızı değil, LafPOS'tan Gönder bekleniyor (turuncu, özette)
+  const waiting = lafposCardSummary({ ...base, state: { ...none, rejections: { "2026-11-07": { ...c409, clearedAt: "2026-11-08T09:00:00.000Z" } } } });
+  assert.deepEqual(
+    waiting.dayRejections.map((x) => [x.rejection.date, x.status]),
+    [["2026-11-07", "cleared"]],
+  );
+  assert.equal(waiting.alerts, 0);
+  assert.match(waiting.short, /^7\u00a0Kasım için LafPOS'tan Gönder bekleniyor · Bağlı/);
+  // Anahtar yokken retler kırmızı yapmaz, özete girmez
+  const closed = lafposCardSummary({ ...base, secretProblem: "missing", state: { ...none, lastError: server, rejections: { "2026-11-07": c409 } }, rejectionDays: { "2026-11-07": panel7 } });
+  assert.deepEqual([closed.alerts, closed.short], [0, closed.headline]);
+});
+
+test("Ayarlar kartı: imzası doğrulanamayan istek, sonra başarılı gönderim geldiyse uyarı değil", () => {
+  const ok = { at: "2026-11-11T22:40:00.000Z", date: "2026-11-11", zNo: 22, lines: 40, counted: true };
+  const u = { count: 1, lastAt: "2026-11-11T22:30:00.000Z", lastStatus: 401 };
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: u }), false);
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: { ...u, lastAt: "2026-11-11T22:50:00.000Z" } }), true);
+  assert.equal(isUnverifiedAfterOk({ lastOk: null, lastError: null, rejections: {}, unverified: u }), true, "hiç başarılı gönderim yok");
+  assert.equal(isUnverifiedAfterOk({ lastOk: ok, lastError: null, rejections: {}, unverified: null }), false);
 });
 
 test("Ayarlar kartı: gelmeyen günler geçiş gününden düne, onaylı kapalı günler hariç, en çok son 60 gün", () => {
