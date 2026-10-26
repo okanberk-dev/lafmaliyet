@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, exists, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 
 import { businessDayRange, cashFlags, dayContext, karaokeToday, systemIssues, type CashLite, type DayContext, type DayFacts, type KaraokeToday, type OrdersLite } from "@/app/panel/bugun/logic";
 import { priceAlert } from "@/lib/calc/price-impact";
@@ -21,6 +21,7 @@ import { loadReorderDay } from "@/server/data/reorder";
 import { loadUnpricedIngredients } from "@/server/data/unpriced";
 import { loadDueReminders, type UserReminderDTO } from "@/server/data/user-reminders";
 import { dayWaste } from "@/server/data/waste";
+import { countProgress } from "@/server/data/count-progress";
 import { getDb, schema as s } from "@/server/db";
 import { loadForecastCard, loadStaffForecast, type ForecastCardData } from "@/server/forecast/load";
 import { isProductionRuntime, loadJobsOverview } from "@/server/jobs/alerts";
@@ -82,36 +83,6 @@ const toLite = (r: CashReportDTO): CashLite => ({
   revision: r.revision,
   note: r.note,
 });
-
-/**
- * Bir ayın sayım ilerlemesi: o ay sayılan kalem ve sayılacak kalem (Stok sayımı ekranının listesi: etkin, sayım birimi
- * olan, listeye girdiği ay gelmiş ya da o ay sayılmış; engine.ts stockSheet). Arşivlenen (pasif ya da "Sayılmaz") kalem
- * sayılmaz.
- */
-async function countProgress(month: string): Promise<{ counted: number; total: number }> {
-  const db = getDb();
-  const i = s.ingredients;
-  const sc = s.stockCounts;
-  const listed = and(eq(i.active, true), isNotNull(i.countUnit));
-  const countedThatMonth = exists(
-    db
-      .select({ id: sc.id })
-      .from(sc)
-      .where(and(eq(sc.month, month), eq(sc.ingredientId, i.id))),
-  );
-  const [[counted], [total]] = await Promise.all([
-    db
-      .select({ n: count() })
-      .from(sc)
-      .innerJoin(i, eq(i.id, sc.ingredientId))
-      .where(and(eq(sc.month, month), listed)),
-    db
-      .select({ n: count() })
-      .from(i)
-      .where(and(listed, or(isNull(i.countFrom), lte(i.countFrom, month), countedThatMonth))),
-  ]);
-  return { counted: counted?.n ?? 0, total: total?.n ?? 0 };
-}
 
 /**
  * Ay sonu sayımının ilerlemesi: bu ayın ve geçen ayın sayılan / sayılacak kalemi (countProgress) ve geçen ayın sayımı

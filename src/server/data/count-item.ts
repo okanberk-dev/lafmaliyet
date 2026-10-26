@@ -3,7 +3,7 @@ import "server-only";
 import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { staffCountMonths, todayTR } from "@/app/panel/sayim/logic";
+import { staffCountIssue, todayTR } from "@/app/panel/sayim/logic";
 import { countUnitsFor, currentMonthTR } from "@/lib/calc/engine";
 import {
   BASE_UNIT,
@@ -12,13 +12,13 @@ import {
   COUNT_ITEM_NAME_MIN,
   COUNT_ITEM_PRICE_MAX,
   countFromMonth,
-  countItemMonthIssue,
   countItemNote,
   countItemPriceRow,
   duplicateMessage,
   findDuplicate,
   formulaStartMessage,
   laterCountItem,
+  nameKey,
   newCountItemValues,
   startsLikeFormula,
   type CountItemDuplicate,
@@ -97,6 +97,11 @@ export interface CreatedCountItem extends CountItemRef {
   from: string;
   /** Yazılan paket fiyatı (kalem yeni açıldıysa); yoksa null */
   packagePrice: number | null;
+  /**
+   * O ayın "Listede olmayanlar"ında aynı adlı ek kalem (sayım listesine de girince stok iki kez sayılır): form uyarır,
+   * kişi miktarı listedeki satıra yazıp ek kalemi kaldırır. Yoksa null
+   */
+  extraTwin?: { name: string; qty: number; unit: string } | null;
 }
 
 /**
@@ -113,12 +118,12 @@ export interface CreatedCountItem extends CountItemRef {
  */
 export async function createCountItem(me: CurrentUser, data: CountItemInput, source: CountItemSource = "sayim"): Promise<CreatedCountItem> {
   const m = data.month;
-  const monthIssue = countItemMonthIssue(me.role, m, staffCountMonths());
+  const monthIssue = staffCountIssue(me.role, m);
   if (monthIssue) throw new UserError(monthIssue);
   const unit = BASE_UNIT[data.countUnit];
   if (!countUnitsFor(unit).includes(data.countUnit)) throw new UserError("Sayım birimini seçin");
   const from = countFromMonth(m, currentMonthTR());
-  return getDb().transaction(async (tx) => {
+  const created = await getDb().transaction(async (tx): Promise<CreatedCountItem> => {
     // Aynı adı iki kişi aynı anda eklemesin (büyük/küçük harf farkı ad sütununun benzersiz dizininden kaçar)
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sayim-listeye-ekle'))`);
     const rows = await tx
@@ -167,4 +172,8 @@ export async function createCountItem(me: CurrentUser, data: CountItemInput, sou
     if (start) await tx.insert(s.ingredientPrices).values(start);
     return { ...row, group: data.group, existed: false, from, packagePrice: data.packagePrice !== null ? values.packagePrice : null };
   });
+  // Aynı ayda aynı adlı ek kalem var mı (yalnız ad: birim farklı yazılmış olabilir)
+  const extras = await getDb().select({ name: s.stockExtras.name, qty: s.stockExtras.qty, unit: s.stockExtras.unit }).from(s.stockExtras).where(eq(s.stockExtras.month, m));
+  const twin = extras.find((e) => nameKey(e.name) === nameKey(created.name)) ?? null;
+  return { ...created, extraTwin: twin };
 }

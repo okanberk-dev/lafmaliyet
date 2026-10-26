@@ -10,9 +10,10 @@ import { logActivity } from "@/server/actions/log";
 import { attempt, UserError, zMonth, zText } from "@/server/actions/util";
 import { requireUser } from "@/server/auth/dal";
 import { countItemSchema, createCountItem } from "@/server/data/count-item";
+import { lockExtras } from "@/server/data/stock-extras";
 import { getDb, schema as s } from "@/server/db";
 
-import { planStaffExtras, staffCountMonths } from "./logic";
+import { planStaffExtras, staffCountIssue } from "./logic";
 
 /**
  * Stok sayımı › "Listeye ekle" (yönetici ve personel): kalemi hemen hammadde olarak açar, onay beklemez. Kurallar ortak
@@ -28,7 +29,14 @@ export async function addCountItem(input: z.input<typeof countItemSchema>) {
     const created = await createCountItem(me, data, "sayim");
     await logActivity(me, "Sayım listesine eklendi", countItemLogDetail({ ...created, countUnit: data.countUnit }));
     refresh();
-    return { id: created.id, name: created.name, group: created.group, existed: created.existed, priced: created.packagePrice !== null };
+    return {
+      id: created.id,
+      name: created.name,
+      group: created.group,
+      existed: created.existed,
+      priced: created.packagePrice !== null,
+      extraTwin: created.extraTwin ?? null,
+    };
   });
 }
 
@@ -38,27 +46,32 @@ export async function addCountItem(input: z.input<typeof countItemSchema>) {
  * kayıtlı satırın yalnızca miktarı değişir, yeni satırın fiyatı aynı kalemin son fiyatından gelir (yoksa 0),
  * fiyatlı satır personelce silinemez.
  */
-export async function saveStaffStockExtras(month: string, extras: { name: string; unit: string; qty: number }[]) {
+export async function saveStaffStockExtras(month: string, extras: { name: string; unit: string; qty: number }[], base?: string) {
   return attempt(async () => {
     const me = await requireUser();
     const m = zMonth.parse(month);
-    if (me.role !== "admin" && !staffCountMonths().includes(m)) {
-      throw new UserError("Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir; daha eski bir ay için yöneticiye yazın");
-    }
+    // Personel bu ayı, geçen ayı yalnız ayın ilk 10 gününde değiştirir (sayim/logic.ts staffCountIssue)
+    const monthIssue = staffCountIssue(me.role, m);
+    if (monthIssue) throw new UserError(monthIssue);
     const data = z
       .array(z.object({ name: zText("Kalem adı", 120), unit: zText("Birim", 20), qty: z.number().finite().min(0, "Miktar negatif olamaz") }))
       .max(100)
       .parse(extras);
+    const b = z.string().max(20_000).optional().parse(base);
     const db = getDb();
     const saved = await db.transaction(async (tx) => {
-      const existing = await tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, m)).orderBy(asc(s.stockExtras.id));
+      // Aynı anda tek kayıt; formun gördüğü liste değiştiyse yazılmaz (yöneticinin kaydıyla aynı kapı)
+      const existing = await lockExtras(tx, m, b);
       const history = await tx.select().from(s.stockExtras).where(lt(s.stockExtras.month, m));
       const res = planStaffExtras(existing, data, history);
       if (!res.ok) throw new UserError(res.error);
       const { updates, deletes, inserts } = res.plan;
       for (const u of updates) await tx.update(s.stockExtras).set({ qty: u.qty }).where(and(eq(s.stockExtras.id, u.id), eq(s.stockExtras.month, m)));
       if (deletes.length) await tx.delete(s.stockExtras).where(and(eq(s.stockExtras.month, m), inArray(s.stockExtras.id, deletes)));
-      if (inserts.length) await tx.insert(s.stockExtras).values(inserts.map((x) => ({ ...x, month: m })));
+      if (inserts.length) {
+        await tx.insert(s.months).values({ month: m }).onConflictDoNothing();
+        await tx.insert(s.stockExtras).values(inserts.map((x) => ({ ...x, month: m })));
+      }
       return tx.select().from(s.stockExtras).where(eq(s.stockExtras.month, m)).orderBy(asc(s.stockExtras.id));
     });
     await logActivity(me, "Sayım ek kalemleri", `${monthLabel(m)}: ${saved.length} kalem`);

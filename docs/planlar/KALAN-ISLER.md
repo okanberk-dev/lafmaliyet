@@ -102,7 +102,7 @@ yazılmamış soruda parti en dar, geri alınabilir yolu seçer ve PR gövdesine
    devam edecek mi; Ekim listesi hangi güne kadar? (Aynı gün iki kez sayılmasın; ModPOS metinleri ne zaman kalksın.)
 3. **Geçen ayın sayımı ayın 10'undan sonra** (E-19, B01): personelin düzeltmesi reddedilsin mi, Onaylar'a "sayım
    düzeltme" isteği mi düşsün? **Varsayılan:** reddedilir, personel "Geçen ayın sayımı ayın 10'undan sonra yalnız
-   yönetici tarafından düzeltilebilir; yöneticine haber ver." görür; yönetici düzeltebilir.
+   yönetici tarafından düzeltilebilir; yöneticiye haber verin." görür; yönetici düzeltebilir.
 4. **Yeni sayım kalemlerinin reçeteleri** (E-29, D-14; B02): Lemon Tea'de Lime şurubu yerine Lemon tea şurubu mu,
    Blueberry ürünlerinde Karışık berry püre yerine yaban mersini püre mi; çilek, cookie, hazelnut şurubu, vanilya sosu
    ve böğürtlen püreyi hangi ürünler kullanıyor? **Varsayılan:** sekiz kalem yalnız başlangıç verisine (seed) eklenir,

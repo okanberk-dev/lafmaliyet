@@ -12,7 +12,7 @@ import { requireUser } from "@/server/auth/dal";
 import { loadModel } from "@/server/data/dataset";
 import { countPendingByKind, loadMyRequests, pendingByProduct, pendingNewProposals } from "@/server/data/recipe-requests";
 
-import { defaultCountMonth } from "../sayim/logic";
+import { countComplete, defaultCountMonth } from "../sayim/logic";
 
 import { ProposeProductButton, type NewProductKit } from "./new-product-sheet";
 import { PrintButton } from "./print-button";
@@ -134,8 +134,8 @@ async function RecipeBookContent() {
   if (!isAdmin) {
     const used = new Set(model.activeProducts.flatMap((p) => p.lines.map((l) => l.item.ingredientId)));
     // "Yeni malzeme" (listede olmayan malzeme, Stok sayımı › Listeye ekle'nin kuralı): kalem sayım sayfasının açtığı
-    // aydan itibaren listeye girer (ay başında geçen ayın sayımı girilmediyse geçen ay); gruplar sayım listesinin sırasıyla
-    const countMonth = defaultCountMonth(new Date(), (m) => model.stockSheet(m).hasData);
+    // aydan itibaren listeye girer (ay başında geçen ayın sayımı tamamlanmadıysa geçen ay); gruplar sayım listesinin sırasıyla
+    const countMonth = defaultCountMonth(new Date(), (m) => countComplete(model.stockSheet(m)));
     const groupOptions = countGroupOptions(
       model.stockSheet(countMonth).groups.map((g) => g.name),
       [...model.ds.ingredients].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id),

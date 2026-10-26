@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader } from "@/components/panel/page-header";
@@ -13,7 +14,7 @@ import { requireUser } from "@/server/auth/dal";
 import { availableMonths, loadModel } from "@/server/data/dataset";
 import { getDb, schema as s } from "@/server/db";
 
-import { counterLine, defaultCountMonth, staffCountMonths } from "./logic";
+import { counterLine, countComplete, countStatus, defaultCountMonth, staffCountMonths } from "./logic";
 import { CountMonthPicker, StockCountForm, type FormGroup } from "./stock-form";
 
 export const metadata: Metadata = { title: "Stok sayımı" };
@@ -39,12 +40,25 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const sp = await searchParams;
   const model = await loadModel();
   const ay = Array.isArray(sp.ay) ? sp.ay[0] : sp.ay;
-  // Adreste ay yoksa: ayın ilk günlerinde geçen ayın sayımı eksikse geçen ay, değilse bu ay (Türkiye saati)
   const isAdmin = user.role === "admin";
   const requested = ay && /^\d{4}-(0[1-9]|1[0-2])$/.test(ay) ? ay : null;
-  // Personel yalnız bu ayın ve geçen ayın sayımını değiştirebilir (sunucu da reddeder): başka ay açılıp boşuna sayılmasın
+  // Personel bu ayın sayımını, ayın ilk 10 gününde geçen ayınkini de değiştirebilir (sunucu da reddeder): başka ay
+  // açılıp boşuna sayılmasın
   const staffMonths = staffCountMonths();
-  const month = requested && (isAdmin || staffMonths.includes(requested)) ? requested : defaultCountMonth(new Date(), (m) => model.stockSheet(m).hasData);
+  const allowed = (m: string) => isAdmin || staffMonths.includes(m);
+  if (!requested || !allowed(requested)) {
+    // Adreste ay yoksa: ayın ilk 10 gününde geçen ayın sayımı tamamlanmamışsa geçen ay, değilse bu ay (iş günü, 05:00).
+    // Ay adrese yazılır: kayıttan sonraki yenileme (gece yarısı geçse de) ayı değiştiremez. Personelin açamadığı ay
+    // istendiyse sayfa bunu söyler (?izinsiz=)
+    const month = defaultCountMonth(new Date(), (m) => countComplete(model.stockSheet(m)));
+    const q = new URLSearchParams({ ay: month });
+    if (requested) q.set("izinsiz", requested);
+    // Süzgeçler (?ara, ?durum, ?grup) kalır
+    for (const [k, v] of Object.entries(sp)) if (k !== "ay" && k !== "izinsiz" && typeof v === "string") q.set(k, v);
+    redirect(`/panel/sayim?${q}`);
+  }
+  const month = requested;
+  const denied = typeof sp.izinsiz === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.izinsiz) && !allowed(sp.izinsiz) ? sp.izinsiz : null;
   const prevMonth = shiftMonth(month, -1);
 
   const counters = await getDb()
@@ -58,13 +72,13 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
   const vat = stockVatSummary(sheet);
   const prevById = new Map(prev.groups.flatMap((g) => g.lines.filter((l) => l.qty !== null).map((l) => [l.ingredient.id, { qty: l.qty as number, unit: l.countUnit }])));
   const ml = monthLabel(month);
-  // Sayım düzeni: seçili ay dahil son 6 ayın hangilerinde sayım girilmiş
-  const history = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((m) => ({
-    month: m,
-    short: monthShort(m),
-    label: monthLabel(m),
-    counted: model.stockSheet(m).hasData,
-  }));
+  // Sayım düzeni: seçili ay dahil son 6 ayın sayımı tamam mı, yarım mı (countStatus: tek kural); personelin açamadığı
+  // ay bağlantı olmaz
+  const history = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((m) => {
+    const sh = model.stockSheet(m);
+    const st = countStatus(sh);
+    return { month: m, short: monthShort(m), label: monthLabel(m), counted: st.counted, total: st.total, hasData: sh.hasData, open: allowed(m) };
+  });
   // Gelir-giderde elle girilen stok bu sayımın yerine geçer: sayım ekranı bunu söylemeli
   const closing = model.closingStock(month);
   const opening = model.closingStock(prevMonth);
@@ -130,9 +144,11 @@ async function StockContent({ searchParams }: { searchParams: PageProps<"/panel/
         prevTotal={isAdmin && (prev.hasData || opening.overridden) ? { value: opening.value, overridden: opening.overridden } : null}
         closingOverride={isAdmin && closing.overridden ? closing.value : null}
         counter={counterLine(counters)}
-        // "Listeye ekle": personel yalnız sayımını değiştirebildiği ayda (bu ay ve geçen ay; sunucu da denetler)
+        me={user.name}
+        denied={denied ? monthLabel(denied) : null}
+        // "Listeye ekle": personel yalnız sayımını değiştirebildiği ayda (bu ay, ilk 10 günde geçen ay; sunucu da denetler)
         addItem={
-          isAdmin || staffCountMonths().includes(month)
+          allowed(month)
             ? {
                 groups: countGroupOptions(
                   sheet.groups.map((g) => g.name),

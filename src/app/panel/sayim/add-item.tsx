@@ -1,8 +1,10 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import { unstable_isUnrecognizedActionError, unstable_rethrow } from "next/navigation";
 import { useId, useState, type ReactNode } from "react";
 
+import { STALE_TEXT } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, NumberInput, Select } from "@/components/ui/form";
@@ -272,7 +274,7 @@ export function AddCountItemDialog({
   listNames: string[];
   onClose: () => void;
   /** `existed`: kalem zaten vardı, daha sonraki bir aydan itibaren listedeydi; artık bu aydan itibaren de. `priced`: paket fiyatı yazıldı */
-  onAdded: (item: { id: number; name: string; group: string; existed: boolean; priced: boolean }) => void;
+  onAdded: (item: { id: number; name: string; group: string; existed: boolean; priced: boolean; extraTwin?: { name: string; qty: number; unit: string } | null }) => void;
 }) {
   const form = useCountItemForm({ groups, defaultGroup, initialName });
   const [busy, setBusy] = useState(false);
@@ -290,8 +292,10 @@ export function AddCountItemDialog({
       const res = await addCountItem({ month, ...values });
       if (!res.ok) return form.setError(res.error);
       onAdded(res.data);
-    } catch {
-      form.setError("Eklenemedi: bağlantı yok gibi. Bağlantı gelince yeniden deneyin.");
+    } catch (e) {
+      unstable_rethrow(e);
+      // Panel yeniden yayınlandıysa yeniden denemek hep düşer: sayfayı yenilemek gerekir
+      form.setError(unstable_isUnrecognizedActionError(e) ? STALE_TEXT : "Eklenemedi: bağlantı yok gibi. Bağlantı gelince yeniden deneyin.");
     } finally {
       setBusy(false);
     }

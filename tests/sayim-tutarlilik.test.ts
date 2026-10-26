@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { counterLine, defaultCountMonth, extraKey, linePrice, liveTotals, planStaffExtras, todayTR, type CountLineValue, type SavedExtra } from "../src/app/panel/sayim/logic";
+import { counterLine, countComplete, countStatus, defaultCountMonth, extraKey, linePrice, liveTotals, planStaffExtras, todayTR, type CountLineValue, type SavedExtra } from "../src/app/panel/sayim/logic";
 import { RATIO_GUIDE, scopeTotals, severityOf, tableScope } from "../src/app/panel/tutarlilik/severity";
 import { countFactor, createModel, type Model } from "../src/lib/calc/engine";
 import { consistency, stockVatSummary } from "../src/lib/calc/insights";
@@ -172,6 +172,30 @@ test("Sayım sayfası adreste ay yokken: ayın ilk 10 gününde geçen ay sayıl
   assert.equal(todayTR(new Date("2026-09-30T22:30:00Z")), "2026-10-01");
   assert.equal(defaultCountMonth(new Date("2026-09-30T22:30:00Z"), (m) => m !== "2026-09"), "2026-09");
   assert.equal(defaultCountMonth(new Date("2027-01-03T08:00:00Z"), none), "2026-12", "yıl dönümü");
+  // Gün kasanın iş günü (05:00'te döner): 31 Ekim 23:50'de başlayan sayım 1 Kasım 00:10'da da Ekim
+  const octPartial = (m: string) => m !== "2026-10";
+  assert.equal(defaultCountMonth(new Date("2026-10-31T21:10:00Z"), (m) => m === "2026-10"), "2026-10", "1 Kasım 00:10 TR");
+  assert.equal(defaultCountMonth(new Date("2026-10-31T21:10:00Z"), octPartial), "2026-10");
+  // 3 Kasım: Ekim yarım (tamam değil) → Ekim açılır; 11 Kasım 09:00'da Kasım
+  assert.equal(defaultCountMonth(new Date("2026-11-03T06:00:00Z"), octPartial), "2026-10");
+  assert.equal(defaultCountMonth(new Date("2026-11-11T06:00:00Z"), octPartial), "2026-11");
+  // 11 Kasım 03:00 TR hâlâ 10 Kasım iş günü
+  assert.equal(defaultCountMonth(new Date("2026-11-11T00:00:00Z"), octPartial), "2026-10");
+});
+
+test("Sayım tamam mı: listelenen, arşivsiz her kalem sayıldı (countStatus tek kural)", () => {
+  const line = (qty: number | null, archived = false) => ({ qty, archived });
+  assert.deepEqual(countStatus({ groups: [{ lines: [line(1), line(null)] }, { lines: [line(2)] }] }), { counted: 2, total: 3, complete: false });
+  assert.deepEqual(countStatus({ groups: [{ lines: [line(1), line(0)] }, { lines: [line(2), line(null, true)] }] }), { counted: 3, total: 3, complete: true }, "arşiv satırı sayılmaz, 0 sayılmıştır");
+  assert.deepEqual(countStatus({ groups: [] }), { counted: 0, total: 0, complete: false }, "boş liste tamam değil");
+  assert.equal(countComplete({ groups: [{ lines: [line(5)] }] }), true);
+  // Gerçek sayım listesinde: tek satır kaydedilmiş ay tamam değil (hasData true olsa da)
+  const sep = createModel({ ...ds, stockCounts: [{ month: "2026-09", ingredientId: ingId("Espresso çekirdeği"), qty: 5, factor: 1000 }] }).stockSheet("2026-09");
+  assert.equal(sep.hasData, true);
+  const st = countStatus(sep);
+  assert.equal(st.counted, 1);
+  assert.ok(st.total > 1);
+  assert.equal(st.complete, false);
 });
 
 // ---------------------------------------------------------------- Listede olmayanlar (personel)

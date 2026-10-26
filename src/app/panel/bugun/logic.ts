@@ -365,10 +365,10 @@ const wasteRow: Row = (f, c) => {
 // ---------------------------------------------------------------- Sayım (ikisi)
 
 /**
- * Ayın ilk 10 gününde geçen ayın sayımı yoksa (Stok sayımı ekranının açılış ayı kuralıyla aynı) ya da yarım kaldıysa.
- * Ay sonu sayımı kapanıştan sonra yapılır, çoğu zaman ertesi sabah biter: gece yarısı "Ay sonu stok sayımı" satırı
- * kalkınca yarım sayım burada sürer ve geçen aya götürür. Stok sayımı ekranı, sayılmaya başlanmış geçen ayı değil bu
- * ayı açar; kalan kalemler yanlış aya yazılmasın.
+ * Ayın ilk 10 gününde geçen ayın sayımı yoksa ya da yarım kaldıysa (Stok sayımı ekranının açılış ayı kuralıyla aynı:
+ * sayim/logic.ts defaultCountMonth, tamam = countStatus). Ay sonu sayımı kapanıştan sonra yapılır, çoğu zaman ertesi
+ * sabah biter: gece yarısı "Ay sonu stok sayımı" satırı kalkınca yarım sayım burada sürer ve geçen aya götürür. Ay
+ * adreste sabittir (ekran ay vermeyen açılışı çözülen aya yönlendirir); kalan kalemler yanlış aya yazılmaz.
  */
 const countPrevious: Row = (f, c) => {
   const s = f.stock;

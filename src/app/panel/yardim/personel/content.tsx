@@ -431,7 +431,9 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Ayın son günü kapanıştan sonra <StaffPath href="/panel/sayim" /> ekranında miktarları sayım biriminde (KG, LT, ADET, DİLİM) girin. Listede olmayan ama her
-            ay sayılacak bir kalem için <B>Listeye ekle</B>; paket fiyatını biliyorsanız fişteki gibi yazın, bilmiyorsanız boş bırakın.
+            ay sayılacak bir kalem için <B>Listeye ekle</B>; paket fiyatını biliyorsanız fişteki gibi yazın, bilmiyorsanız boş bırakın. Geçen ayın sayımını
+            ayın 10&apos;una kadar düzeltebilirsiniz; sonrası için yöneticiye haber verin. Kaydetmeden çıkarsanız yazdıklarınız bu cihazda durur, sayfayı
+            yeniden açınca <B>Geri yükle</B>&apos;ye basın.
           </>
         ),
         icon: ClipboardList,
@@ -442,7 +444,7 @@ export const STAFF_FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         a: (
           <>
             Sayım gününde <StaffPath href="/panel/hizli-sayim" /> ekranında yalnız kritik kalemleri sayarsınız. Sipariş edilen mal gelince aynı ekranda <B>Geldi</B>
-            &apos;ye dokunun.
+            &apos;ye dokunun. Kaydetmeden çıkarsanız ekran önce sorar; yazdıklarınız bu cihazda durur, sayfayı yeniden açınca <B>Geri yükle</B>&apos;ye basın.
           </>
         ),
         icon: ClipboardPen,
