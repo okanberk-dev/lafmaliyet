@@ -94,13 +94,13 @@ export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
   const issues = (fieldValues: Partial<Record<ReadField, ReadValue>>) =>
     issueChecks(raw.issues, fieldValues).map((c) => (c.text === ISSUE_TEXT.cut_off ? { ...c, text: OKC_CUT_OFF_TEXT } : c));
 
-  // Yalnız banka gün sonu fişi: Banka gün sonu dolar, yazarkasa alanları boş kalır (plan §5.5)
+  // Yalnız banka gün sonu fişi: yalnız Banka gün sonu okunur (doldurma kapısı açıksa dolar), yazarkasa alanları boş kalır (plan §5.5)
   if (raw.documentType === "batch_slip") {
     const b = batchesOf(raw, ctx.day);
     if (b) values.bankPos = { value: b.value, confidence: b.confidence };
     checks.push(...(b?.checks ?? []));
     if (b && b.count > 1) checks.push({ fields: [], level: "info", text: `${b.count} banka gün sonu toplandı: ${money(b.value)}.` });
-    checks.push({ fields: [], level: "info", text: "Bu banka gün sonu fişi; yalnız Banka gün sonu doldu. Yazarkasanın Z raporunu da çekin." });
+    checks.push({ fields: [], level: "info", text: "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin." });
     const printedDay = businessDayOf(raw.date, raw.time);
     if (raw.dateConfidence !== "low") checks.push(dayCheck(printedDay, ctx.day, "banka gün sonu fişi mi"));
     checks.push(...issues(values));
@@ -236,12 +236,12 @@ export function normalizeOkc(raw: KasaOkc, ctx: OkcReadContext): CashReading {
     for (const f of Object.keys(values) as ReadField[]) values[f] = { ...values[f]!, status: "failed", reason: why };
   }
 
-  // Aynı şeritte banka gün sonu: Banka gün sonu da dolar (iki fiş toplanır)
+  // Aynı şeritte banka gün sonu: Banka gün sonu da okunur (iki fiş toplanır); metin kapıdan bağımsız (dolmayabilir)
   const b = batchesOf(raw, ctx.day);
   if (b) {
     values.bankPos = { value: b.value, confidence: b.confidence };
     checks.push(...b.checks);
-    checks.push({ fields: [], level: "info", text: b.count > 1 ? `${b.count} banka gün sonu toplandı: ${money(b.value)}.` : `Aynı fişte banka gün sonu da var: Banka gün sonu ${money(b.value)} dolduruldu.` });
+    checks.push({ fields: [], level: "info", text: b.count > 1 ? `${b.count} banka gün sonu toplandı: ${money(b.value)}.` : `Aynı fişte banka gün sonu da var: Banka gün sonu ${money(b.value)}.` });
   }
 
   // Tarih (plan §5.4): düşük güvenli tarih denetlenmez; ertesi sabah alınan Z yalnız istisna açıkken bu güne sayılır

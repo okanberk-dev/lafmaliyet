@@ -503,15 +503,20 @@ test("banka gün sonu: yalnız fişse yalnız Banka gün sonu; Z ile aynı şeri
   assert.equal(only.ok, true);
   assert.deepEqual(Object.keys(only.values), ["bankPos"]);
   assert.equal(only.values.bankPos?.value, 6900);
-  assert.ok(only.checks.some((c) => c.text === "Bu banka gün sonu fişi; yalnız Banka gün sonu doldu. Yazarkasanın Z raporunu da çekin."));
+  assert.ok(only.checks.some((c) => c.text === "Bu banka gün sonu fişi; yalnız Banka gün sonu okundu. Yazarkasanın Z raporunu da çekin."));
   assert.equal(prefillSummary("kasa-okc", prefillPlan(only, emptyForm(), ON)), "Banka gün sonu fişinden dolduruldu: Banka gün sonu.");
+  // Doldurma kapısı kapalı (bugün): alan dolmaz, metin "dolduruldu" ya da "Z raporu" demez
+  const offPlan = prefillPlan(only, emptyForm());
+  assert.deepEqual([offPlan.fill, offPlan.unsure.map((u) => u.field)], [[], ["bankPos"]]);
+  assert.equal(prefillSummary("kasa-okc", offPlan), "Banka gün sonu fişi okundu; turuncu alanı fişle karşılaştırıp yazın.");
+  assert.equal(prefillSummary("kasa-okc", prefillPlan(only, { ...emptyForm(), bankPos: "6800" })), "Banka gün sonu fişi okundu; Banka gün sonu yazdığınızdan farklı.");
 
   const both = normalizeOkc(z({ batches: [slip(4000, "GARANTİ"), slip(2900, "YAPI KREDİ")] }), { day: DAY, prev: PREV });
   assert.equal(both.values.bankPos?.value, 6900);
   assert.equal(both.values.okcTotal?.status, "confirmed");
   assert.ok(both.checks.some((c) => c.text === "2 banka gün sonu toplandı: 6.900\u00a0₺."));
   const one = normalizeOkc(z({ batches: [slip(6900, "ÖRNEKBANK")] }), { day: DAY, prev: PREV });
-  assert.ok(toStaffReading(one).checks.some((c) => c.text === "Aynı fişte banka gün sonu da var: Banka gün sonu 6.900\u00a0₺ dolduruldu."));
+  assert.ok(toStaffReading(one).checks.some((c) => c.text === "Aynı fişte banka gün sonu da var: Banka gün sonu 6.900\u00a0₺."));
 });
 
 test("kesik fişin metni bu türde: kalan kısmını ayrıca çekin", () => {

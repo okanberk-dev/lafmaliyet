@@ -447,7 +447,13 @@ export function posPromptMarks(reading: CashReading): { warn: string | null; uns
 export function prefillSummary(kind: CashReadKind, plan: PrefillPlan): string {
   const doc = kind === "kasa-z" ? "Z raporu" : kind === "kasa-okc" ? "Banka POS Z raporu" : "Banka POS fişi";
   const orange = plan.fill.some((f) => f.warn) || plan.unsure.length > 0 || plan.missing.length > 0 || plan.differs.length > 0;
-  if (kind === "kasa-okc" && plan.fill.length && plan.fill.every((f) => f.field === "bankPos")) return "Banka gün sonu fişinden dolduruldu: Banka gün sonu.";
+  // Yalnız banka gün sonu (fişi): Z raporu denmez; doldurma kapısı kapalıyken alan dolmaz, öneri olur
+  const planned = [...plan.fill, ...plan.differs, ...plan.unsure];
+  if (kind === "kasa-okc" && planned.length && planned.every((f) => f.field === "bankPos")) {
+    if (plan.fill.length) return "Banka gün sonu fişinden dolduruldu: Banka gün sonu.";
+    if (plan.differs.length) return "Banka gün sonu fişi okundu; Banka gün sonu yazdığınızdan farklı.";
+    return "Banka gün sonu fişi okundu; turuncu alanı fişle karşılaştırıp yazın.";
+  }
   if (plan.fill.length) {
     const from = kind === "kasa-z" ? "Z raporundan" : kind === "kasa-okc" ? "Banka POS Z raporundan" : "Banka POS fişinden";
     return `${from} dolduruldu: ${plan.fill.length} alan. ${orange ? "Turuncu olanları fişle karşılaştırıp gönderin." : "Kontrol edip gönderin."}`;
