@@ -24,7 +24,8 @@ sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
      katmanları (o ay tükenmiş eski parti yeniden sayılmaz; arada bir ayın boş bırakılması bunu bozmaz);
    - 12 ayda hiç sayılmadıysa son 12 ayın faturaları (en yeniden eskiye).
    - O sayım FIFO başlangıcından önceki bir aydaysa katmanları yerine sayılan miktarın tamamı **tek parça, o ayın ay
-     sonu fiyatıyla** taşınır (§5 "Başlangıç ayı").
+     sonu fiyatıyla** taşınır (§5 "Başlangıç ayı"). Bu ayda ve aradaki boş aylarda fatura yoksa havuz kurulmaz:
+     malzeme faturasız malzeme gibi bu ayın ay sonu fiyatıyla değerlenir.
 2. Sayılan miktar (malzemenin kendi biriminde: gr, ml, adet) havuzun başından alınır; her parça kendi faturasının
    birim fiyatıyla (KDV hariç, iskonto düşülmüş) değerlenir.
 3. Havuz yetmezse kalan miktar **ay sonunda geçerli fiyatla** (eski yöntemin fiyatı; "fallback").
@@ -110,6 +111,10 @@ Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapan�
   ve kullanımı olmayan kalemde başlangıç ayının stok değişimi 0'dır. Bu parça "faturalardan" payına girmez (kapsam
   satırında ay sonu fiyatıyla kalan payda), ipucunda "Eyl sayımından … (FIFO başlangıcından önce: ay sonu fiyatı)"
   yazar. Ayarlar önizlemesi her başlangıç seçeneği için bu kuralla hesaplar (`valuationPreview(ay, başlangıç)`).
+  Taşınan parça tek başına havuz kurmaz: başlangıç ayında ve aradaki boş aylarda faturası olmayan malzeme ay sonu
+  fiyatıyla değerlenir. Karar yalnız pencerenin içindeki veriden verilir; malzemenin sonraki bir aydaki ilk faturası
+  ya da 12 aydan eski bir fatura (sonradan kurulan Paraşüt bağlantısıyla gelenler de) kapanmış ayın değerini
+  değiştirmez (inceleme B02-D2).
 - **Kapanmış aylar**: başlangıç ayını geriye almak o aylardan itibaren stok değerini ve kârı değiştirir (önizleme
   gösterir). Başlangıçtan sonra gelen geç bir fatura, sonradan düzeltilen bağlantı çarpanı ya da onaylanan fiyat da
   FIFO'lu bir ayın değerini değiştirebilir: partiler her açılışta faturalardan yeniden türetilir.

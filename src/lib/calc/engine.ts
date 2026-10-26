@@ -1325,7 +1325,9 @@ export function createModel(ds: Dataset) {
    * O sayım başlangıçtan önceki bir aydaysa (ay sonu fiyatıyla değerlendi) katmanları yerine sayılan miktarın tamamı tek
    * parça, o ayın ay sonu fiyatıyla taşınır: başlangıç ayının açılışı (önceki ayın kapanışı) aynı fiyatta olduğu için
    * hiç tüketilmemiş malın eski fatura fiyatıyla yeniden değerlenmesi mal maliyetine yazılmaz (denetim E-05). `from`
-   * null: zincir hiç kesilmez (her ay FIFO). Havuz boşsa (faturası ve taşınan sayımı yok, su) null: ay sonu fiyatı.
+   * null: zincir hiç kesilmez (her ay FIFO). Havuz boşsa (faturası yok, su) ya da yalnız taşınan parçadan oluşuyorsa
+   * (bu ayda ve aradaki aylarda fatura yok) null: ay sonu fiyatı. Karar yalnız pencerenin içindeki veriden: pencere
+   * dışındaki bir fatura kapanmış ayın değerini değiştirmez.
    */
   function fifoLayersFrom(month: string, ingredientId: number, from: string | null): FifoCalc | null {
     const key = `${from ?? "-"}|${month}|${ingredientId}`;
@@ -1345,14 +1347,19 @@ export function createModel(ds: Dataset) {
         }
         raw.push(...(byMonth.get(m) ?? []));
       }
+      const opening = !!counted && !!from && counted < from;
       const countedLayers = !counted
         ? []
-        : from && counted < from
+        : opening
           ? [openingLayer(countInBaseUnit(counted, ingredientId) ?? 0, unitCostAtMonthEnd(ingredientId, counted), counted)]
           : (fifoLayersFrom(counted, ingredientId, from)?.layers ?? []);
       const carried = [...lotPool(raw), ...countedLayers];
       const pool = monthPool(byMonth.get(month) ?? [], carried);
-      if (pool.length) {
+      // Taşınan açılış tek başına havuz kurmaz: bu ayda ve aradaki boş aylarda faturası yoksa malzeme faturasız
+      // malzeme gibi ay sonu fiyatıyla değerlenir. Yoksa kapanmış bir ayın değeri, malzemenin pencere dışındaki (ör.
+      // sonraki bir aydaki) ilk faturası ya da Paraşüt bağlantısı gelince değişirdi (inceleme B02-D2)
+      const invoiceInWindow = raw.length > 0 || (byMonth.get(month)?.length ?? 0) > 0;
+      if (pool.length && (!opening || invoiceInWindow)) {
         const fallbackUnit = unitCostAtMonthEnd(ingredientId, month);
         const { layers, uncovered } = closingLayers(countInBaseUnit(month, ingredientId) ?? 0, pool, fallbackUnit);
         out = { pool, layers, uncovered, fallbackUnit };
