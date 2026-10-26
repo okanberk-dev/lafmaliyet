@@ -4,6 +4,14 @@ Uçlar: `POST /api/pos/gun` (gün sonu) ve `GET /api/panel/pos/urunler` (ürün 
 (`/panel/kasa`) › **LafPOS'tan doldur**. Sözleşmenin asıl hâli LafPOS deposunda (`RiosenBeq/lafpos`)
 `docs/03-ENTEGRASYON.md` §3, §4 ve §4.1; bu belge panelin tarafıdır.
 
+## İş bölümü (26 Ekim 2026)
+
+LafPOS, site (laffogato) ve bu panel tek işletme sisteminin üç parçasıdır (karar: lafpos
+`docs/06-TEK-SISTEM.md`): ürünlerin tek kaynağı sitenin yönetim paneli, satışın ve kasanın kaynağı LafPOS,
+**maliyet, reçete, stok ve muhasebenin kaynağı bu panel**. LafPOS maliyeti buradan okur
+(`GET /api/panel/pos/urunler`), gün sonunu buraya iter (`POST /api/pos/gun`). Kasiyer LafPOS'ta kör kasa
+sayar (`kasa.rakam` yetkisi kapalı): beklenen tutarı ve farkı görmez; fark ve Z bu panelin Kasa raporuna gelir.
+
 ## Neden
 
 LafPOS, ModPOS'un yerine geçen kafe kasasıdır. Kafenin içindeki bir makinede çalışır ve internetten erişilemez; bu
