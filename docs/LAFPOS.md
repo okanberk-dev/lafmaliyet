@@ -79,9 +79,10 @@ Gövde katı JSON, en çok 256 KB. Tutarlar TL (iki ondalık; fazlası yuvarlan�
   öğrenilmiş eşleştirmeler ve HİZMET işareti çalışmaya devam eder). Hiçbiri yoksa satır ürünsüz kalır. Eşleştirme
   yazım anında uygulanır: Satışlar'da sonradan eklenen eşleştirme, o gün yeniden gönderilince geçerli olur.
 - **Saklanan:** `pos_daily_sales` (gün, POS adı, ürün, adet, ciro, hizmet; `(date, pos_name)` benzersiz) ve
-  `pos_day_reports` (gün başına bir satır: `z`, `payments`, `ikram`, `source`, `received_at`). Migration
-  `drizzle/0040_lafpos_baglantisi.sql`: iki yeni tablo ve Kasa raporunun "Gün içinde kasaya giren"i
-  (`cash_reports.cash_in double precision NOT NULL DEFAULT 0`; var olan raporlar 0). Yalnız ekleme: Instant Rollback'te
+  `pos_day_reports` (gün başına bir satır: `z`, `payments`, `ikram`, `source`, `received_at`). Migration'lar
+  `drizzle/0040_lafpos_baglantisi.sql` (iki yeni tablo) ve `drizzle/0041_kasaya_giren.sql` (Kasa raporunun "Gün içinde
+  kasaya giren"i: `cash_reports.cash_in double precision NOT NULL DEFAULT 0`; var olan raporlar 0). 0040 26 Eki 2026'da
+  canlıya uygulandı; yeniden üretilmez (`tests/migrations.test.ts` günlükteki zamanını kilitler). Yalnız ekleme: Instant Rollback'te
   eski kod sütunu okumaz, yazdığı raporda 0 kalır; yalnız girenli bir raporun olması gerekenini eski kod girensiz
   hesaplar (giren kadar fazla görünür), düzeltme ileri yayınlanır.
 
@@ -168,7 +169,8 @@ Aynı anahtar ve imza (gövdesiz GET); yanıt `Cache-Control: no-store`:
    olsun: kafedeki makinede sitenin anahtarı durmaz, ikisi ayrı döndürülür.
 2. Vercel'de bu projeye (yalnız Production) `LAFPOS_SYNC_SECRET`; LafPOS'un `.env`'ine aynı değerle
    `LAFMALIYET_SYNC_SECRET` ve `LAFMALIYET_URL=https://ladmin.laffogato.net`.
-3. Panel yayınlanınca migration (`0040_lafpos_baglantisi`) build öncesinde kendiliğinden uygulanır.
+3. Panel yayınlanınca migration'lar (`0040_lafpos_baglantisi`, `0041_kasaya_giren`) build öncesinde kendiliğinden
+   uygulanır.
 4. LafPOS'ta bir günü kapatın: giden kutusu gönderir; Kasa raporunda o günün formunda bant görünür.
 
 Anahtar yokken iki uç `503` döner; panelin geri kalanı ve Kasa raporu eskisi gibi çalışır.

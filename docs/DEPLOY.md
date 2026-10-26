@@ -216,7 +216,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     yeniden üretin. Migration'lı dallar birer birer birleştirilir. `tests/migrations.test.ts` günlükteki zamanlar
     sırayla artmıyorsa düşer.
   - Uygulanmış bir migration elle değiştirilmez (tek istisna: 0018'deki gibi `IF NOT EXISTS` onarımı, inceleyen
-    isterse).
+    isterse) ve **yeniden üretilmez**: canlıya hangi yoldan gittiği önemli değildir (main, önizleme ya da Production'a
+    alınmış bir dal yayını). 26 Eki 2026: `0040_lafpos_baglantisi` 12:19'da bir dal yayınıyla canlıya uygulanmıştı; PR
+    birleşmeden önce yeni sütunla yeniden üretilince drizzle onu yeni migration saydı, `pos_daily_sales`'ı yeniden
+    kurmaya çalıştı ve canlı derleme durdu (yayındaki sürüm değişmedi). Düzeltme: 0040 canlıdaki hâline döndü, sütun
+    `0041_kasaya_giren` ile eklendi. Birleşmemiş bir dalın migration'ını yeniden üretmeden önce canlıda kaydı var mı
+    bakın (`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 3`).
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.
