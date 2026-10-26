@@ -64,6 +64,7 @@ export function businessDayOf(date: string | null, time: string | null): string 
 export const DOC_NAMES: Record<string, string> = {
   bank_pos_end_of_day: "banka POS gün sonu fişi",
   z_report: "Z raporu",
+  fiscal_z_report: "yazarkasa (banka POS) Z raporu",
   purchase_receipt: "alışveriş fişi",
   invoice: "fatura",
   e_archive_invoice: "e-Arşiv fatura",

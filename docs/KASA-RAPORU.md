@@ -8,9 +8,9 @@ görünür ([BUGUN.md](BUGUN.md)).
 
 | Bölüm | Alanlar |
 |-------|---------|
-| Z raporu (ModPOS) | Toplam satış, nakit, kredi / banka kartı; varsa yemek kartı, online, diğer; ödenmez / ikram (ciro dışı); indirim, Z no ve fiş sayısı (isteğe bağlı). Ya da Z raporunun fotoğrafını çekin: rakamlar dolar |
+| ModPOS Z raporu | Toplam satış, nakit, kredi / banka kartı; varsa yemek kartı, online, diğer; ödenmez / ikram (ciro dışı); indirim, Z no ve fiş sayısı (isteğe bağlı). Ya da ModPOS Z raporunun fotoğrafını çekin: rakamlar dolar |
 | Kasa (nakit) | Açılış (önceki raporun ertesi güne devrinden kendiliğinden dolar), akşam sayılan nakit, gün içinde kasadan çıkan (harcama, teslim; gün içinde girilen satırlardan dolar) ve neye çıktığı, sayımdan sonra teslim edilen, **kasayı sayan** (gönderen değilse listeden seçilir) |
-| Kart | Banka POS cihazının gün sonu toplamı (isteğe bağlı; fişin fotoğrafından da dolar) |
+| Banka POS Z raporu (yazarkasa) | **Banka POS** (isteğe bağlı): yazarkasanın (banka POS) Z raporundaki K.KARTI (kredi kartı) satırı ya da bankanın gün sonu fişinin neti; Z'nin toplamı ya da K.KARTI'nın altındaki banka satırları değil. Banka gün sonu fişinin fotoğrafından dolar; yazarkasanın Z'sinin fotoğrafı kanıt olarak eklenir ama alanı doldurmaz (kart satırı elle yazılır) |
 | Not | Fark varsa nedeni (bozuk para, iade, yanlış fiş…) |
 
 Yazarken hesaplananlar:
@@ -47,9 +47,9 @@ daha çok farklıysa:
 
 ## Fotoğraftan doldurma
 
-Z raporu ve Kart bölümlerinde **Fotoğraf çek** (telefonda arka kamera) ya da **Galeriden seç**. Fotoğraf telefonda
-küçültülür, yüklenir ve Claude ile okunur (genelde 5–10 saniye); okunanlar forma dolar. **Hiçbir şey kendiliğinden
-kaydedilmez:** personel bakıp **Raporu gönder**'e basar.
+ModPOS Z raporu ve Banka POS Z raporu (yazarkasa) bölümlerinde **Fotoğraf çek** (telefonda arka kamera) ya da
+**Galeriden seç**. Fotoğraf telefonda küçültülür, yüklenir ve Claude ile okunur (genelde 5–10 saniye); okunanlar forma
+dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakıp **Raporu gönder**'e basar.
 
 - Dolan alanın yanında mavi **Fotoğraftan** yazar. Net okunamayan ya da bir denetime takılan alan turuncudur, altında
   nedeni yazar; fişle karşılaştırın.
@@ -59,8 +59,14 @@ kaydedilmez:** personel bakıp **Raporu gönder**'e basar.
 - Denetimler: fişin tarihi raporun günü değilse, Z no önceki rapordakinden büyük değilse ya da arada atlama varsa,
   ödeme türleri toplamı Z toplamını tutmuyorsa, tanınmayan bir ödeme satırı, ikram ve iade satırları, soluk ya da
   kesik fotoğraf.
-- Z bölümüne POS fişi çekilirse hiçbir alan dolmaz: "Bu bir banka POS gün sonu fişi gibi görünüyor" ve
-  **Kart bölümüne okut**. Tersi için **Z bölümüne okut**.
+- ModPOS bölümüne yazarkasanın (banka POS) Z raporu çekilirse hiçbir alan dolmaz: "Bu yazarkasanın (banka POS) Z
+  raporu gibi görünüyor, ModPOS'unki değil." ve **Banka POS bölümüne okut**. Banka gün sonu fişi de aynı düğmeyle
+  ("Bu bir banka POS gün sonu fişi gibi görünüyor"). Banka POS bölümüne ModPOS'un Z'si çekilirse **ModPOS bölümüne
+  okut**.
+- Banka POS bölümüne yazarkasanın Z raporu çekilirse Banka POS dolmaz ve düğme çıkmaz; turuncu satır: "Bu
+  yazarkasanın Z raporu. Banka POS'a Z'deki K.KARTI (kredi kartı) satırını yazın; toplamı ya da altındaki banka
+  satırlarını değil." Fotoğraf raporla saklanır. Yazarkasa Z'sinin kendi alanları (Z no, oran oran KDV, nakit, kart)
+  ve denetimleri sonraki adımda gelir ([planlar/okc-z.md](planlar/okc-z.md) PR-b).
 - İki POS cihazı varsa ikinci fişte **Toplama ekle** ya da **Yerine yaz** sorulur. İkinci fişin rakamı net değilse
   soruda söylenir; seçilen tutar turuncu kalır, fişle karşılaştırın.
 - Uzun bir Z raporu tek fotoğrafta okunmuyorsa üst ve alt yarısını ayrı çekin: ikinci fotoğraf yalnız boş alanları

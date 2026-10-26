@@ -107,5 +107,20 @@
       "documentType": "z_report",
       "values": { "zTotal": 12975.5, "cash": 3420.5, "card": 8915, "mealCard": 640, "zNo": "0187", "receipts": 143 }
     }
+  },
+  {
+    "name": "yazarkasa-z-modpos-bolumune",
+    "image": "yazarkasa-z.jpg",
+    "feature": "kasa-z",
+    "day": "2026-10-21",
+    "prevZNo": "0187",
+    "expect": { "documentType": "fiscal_z_report", "ok": false, "switchTo": "kasa-pos", "errorIncludes": "yazarkasanın (banka POS) Z raporu" }
+  },
+  {
+    "name": "yazarkasa-z-kart-bolumune",
+    "image": "yazarkasa-z.jpg",
+    "feature": "kasa-pos",
+    "day": "2026-10-21",
+    "expect": { "documentType": "fiscal_z_report", "ok": false, "switchTo": null, "errorIncludes": "K.KARTI" }
   }
 ]

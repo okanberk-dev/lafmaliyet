@@ -12,6 +12,7 @@ import { join, relative } from "node:path";
 import { test } from "node:test";
 
 import { fitWithin, PHOTO_COMPRESS } from "../src/lib/photo-compress";
+import { KasaPosRaw, KasaZRaw } from "../src/lib/photo-read/schemas";
 import {
   imageSize,
   keepUntil,
@@ -311,6 +312,13 @@ test("kayıtlı yanıtlar yalnız geliştirmede ve AI_REPLAY=1 iken; türe ve de
   assert.equal(doc(replayAnswer("fis", MARKET)), "purchase_receipt");
   assert.deepEqual((replayAnswer("fis", TALIMAT).json as { issues: string[] }).issues.includes("contains_instructions"), true);
   assert.equal(doc(replayAnswer("fis", Z)), "z_report");
+  // Yazarkasanın mali Z'si (make-images.py › yazarkasa-z.jpg): iki kasa bölümünde de belge türü, alan yok
+  const OKC = { width: 731, height: 1600 };
+  assert.equal(doc(replayAnswer("kasa-z", OKC)), "fiscal_z_report");
+  assert.equal(doc(replayAnswer("kasa-pos", OKC)), "fiscal_z_report");
+  assert.equal(KasaZRaw.safeParse(replayAnswer("kasa-z", OKC).json).success, true);
+  assert.equal(KasaPosRaw.safeParse(replayAnswer("kasa-pos", OKC).json).success, true);
+  assert.equal(doc(replayAnswer("fis", OKC)), "z_report");
   // Başka bir fotoğraf: türün olağan yanıtı
   assert.equal(doc(replayAnswer("kasa-z", { width: 1200, height: 1600 })), "z_report");
   assert.equal(doc(replayAnswer("fis", null)), "purchase_receipt");
