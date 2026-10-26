@@ -202,6 +202,7 @@ function fullReport(id: number, date: string, o: Partial<CashFlagReport> = {}): 
     online: 0,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3600,

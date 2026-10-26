@@ -15,9 +15,15 @@ import { fitWithin, PHOTO_COMPRESS } from "../src/lib/photo-compress";
 import { KasaPosRaw, KasaZRaw } from "../src/lib/photo-read/schemas";
 import {
   imageSize,
+  isPhotoKind,
   keepUntil,
+  KEEP_DAYS,
   linkedUntil,
+  MAX_OKC_PHOTOS,
   MAX_PHOTO_BYTES,
+  MAX_REPORT_PHOTOS,
+  PHOTO_KIND_LABEL,
+  PHOTO_KINDS,
   photoCaption,
   photoUrl,
   photoViewDecision,
@@ -388,7 +394,7 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
   assert.equal(uploadRule("staff", "kontrol", today, today), "no");
   // Personel: Z ve POS fotoğrafı açık güne ya da geç rapor gününe (staffDayOpen || staffLateDayOpen); fiş kasadan çıkan
   // isteğinin penceresine (iş günü ile 7 gün öncesi; kapanmış ve eski güne istekle)
-  for (const kind of ["kasa-z", "kasa-pos"] as const) {
+  for (const kind of ["kasa-z", "kasa-pos", "kasa-okc"] as const) {
     assert.equal(uploadRule("staff", kind, today, today), "open-or-late");
     assert.equal(uploadRule("staff", kind, "2026-10-14", today), "open-or-late");
   }
@@ -403,4 +409,18 @@ test("uploadRule: yönetici her güne; personel Z / POS'u açık güne ya da ge�
   const rules = readFileSync(join(process.cwd(), "src/server/photo-read/rules.ts"), "utf8");
   assert.match(rules, /return rule === "open-or-late" && staffLateDayOpen\(day\);/);
   assert.match(rules, /export async function staffLateDayOpen[\s\S]*?if \(!staffLateDay\(day\)\) return false;[\s\S]*?first\.date >= day \|\| same[\s\S]*?isClosedDay\(day, db\)/);
+});
+
+test("yazarkasa Z'si (kasa-okc, dalga 13): tür listesinde, 400 gün saklanır, etiketi, bölüme en çok 3 fotoğraf; erişimi kasanın kuralı", () => {
+  assert.ok(PHOTO_KINDS.includes("kasa-okc") && isPhotoKind("kasa-okc"));
+  assert.equal(KEEP_DAYS["kasa-okc"], 400);
+  assert.equal(PHOTO_KIND_LABEL["kasa-okc"], "Banka POS Z");
+  assert.equal(keepUntil("kasa-okc", "2026-10-22").toISOString(), new Date("2027-11-26T00:00:00+03:00").toISOString());
+  assert.equal(linkedUntil("kasa-okc", "2026-01-05", "2026-10-22").toISOString(), keepUntil("kasa-okc", "2026-10-22").toISOString());
+  assert.equal(MAX_OKC_PHOTOS, 3);
+  assert.ok(MAX_OKC_PHOTOS < MAX_REPORT_PHOTOS);
+  // Erişim: personel kuralı kasanınki (aynı canView), saklama türün kendi süresi (src/server/photo-read/rules.ts)
+  const rules = readFileSync(join(ROOT, "src/server/photo-read/rules.ts"), "utf8");
+  assert.match(rules, /export const okcPhotoRules: PhotoKindRules = \{ \.\.\.cashPhotoRules, keepDays: KEEP_DAYS\["kasa-okc"\] \}/);
+  assert.match(readFileSync(join(ROOT, "src/server/storage/photo-access.ts"), "utf8"), /"kasa-okc": okcPhotoRules/);
 });

@@ -42,9 +42,9 @@ Preview ortamına `MIGRATE_ON_PREVIEW=1` eklenir; o zaman her önizleme kendi da
 ## 4. Ortam değişkenleri
 
 Proje → **Settings → Environment Variables**. Önizlemeler canlının veritabanını kullandığı sürece (§ 3) gizli değerler
-**yalnız Production**'a eklenir: `AUTH_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET`, `KARAOKE_SYNC_SECRET`, `PARASUT_*`,
-`RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`, `CASH_REPORT_RECIPIENTS`. Önizlemeye giriş
-yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
+**yalnız Production**'a eklenir: `AUTH_SECRET`, `ADMIN_PASSWORD`, `CRON_SECRET`, `KARAOKE_SYNC_SECRET`,
+`LAFPOS_SYNC_SECRET`, `PARASUT_*`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `APP_URL`,
+`CASH_REPORT_RECIPIENTS`. Önizlemeye giriş yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
 
 - Aynı `AUTH_SECRET` önizlemede olsaydı incelenmemiş dal kodu canlının verisiyle gerçek oturum açardı.
 - Farklı bir `AUTH_SECRET`'la önizleme ortak veritabanındaki şifreli değerleri okuyamaz: bildirim anahtarını (VAPID)
@@ -65,6 +65,7 @@ yapılamaz (`AUTH_SECRET` yok); bu bilerek böyle:
 | `APP_URL` | (isteğe bağlı) E-posta ve davet bağlantılarındaki adres; yoksa `https://ladmin.laffogato.net` |
 | `KARAOKE_SYNC_SECRET` | (isteğe bağlı) laffogato.net ile karaoke **ve menü** bağlantısı: `openssl rand -base64 48`; **sitedeki değerle aynı** olmalı. Yoksa bağlantı kapalı: hızlı sayaç çalışır, ürünler yalnız panelde. Ayrıntı [KARAOKE.md](KARAOKE.md), [SITE-MENU.md](SITE-MENU.md) (bağlı ürünün fiyatı ve Satışta / Tükendi durumu iki yerde aynı) |
 | `LAFFOGATO_URL` | (isteğe bağlı) Sitenin adresi (karaoke ve menü); yoksa `https://laffogato.net` |
+| `LAFPOS_SYNC_SECRET` | (isteğe bağlı) LafPOS (kafenin kasası) bağlantısı: gün sonunu iter, ürün maliyetlerini okur. `openssl rand -base64 48`; **LafPOS'taki `LAFMALIYET_SYNC_SECRET` ile aynı**, sitenin anahtarından ayrı. Yoksa iki uç 503 döner. Ayrıntı [LAFPOS.md](LAFPOS.md) |
 | `CASH_REPORT_RECIPIENTS` | (isteğe bağlı, yalnız Production) Kasa raporunun alıcıları, yönetici panelden hiç kaydetmediyse: virgülle ayrılmış e-postalar. Panelde kaydedilen liste her zaman önce gelir ([KASA-RAPORU.md](KASA-RAPORU.md)) |
 | `MIGRATE_ON_PREVIEW` | (yalnız Preview, isteğe bağlı) `1`: önizlemelerin **kendi** veritabanı varsa (Neon önizleme dalları) önizleme derlemesi de migration uygular. Önizleme canlının veritabanını kullanıyorsa tanımlamayın (§ 3) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | (isteğe bağlı) Web Push anahtarları; yoksa ilk kullanımda üretilip veritabanında şifreli saklanır |
@@ -215,7 +216,12 @@ yayındayken de alerjen bilgisi için oraya bağlantı verir. Sitenin adresi `LA
     yeniden üretin. Migration'lı dallar birer birer birleştirilir. `tests/migrations.test.ts` günlükteki zamanlar
     sırayla artmıyorsa düşer.
   - Uygulanmış bir migration elle değiştirilmez (tek istisna: 0018'deki gibi `IF NOT EXISTS` onarımı, inceleyen
-    isterse).
+    isterse) ve **yeniden üretilmez**: canlıya hangi yoldan gittiği önemli değildir (main, önizleme ya da Production'a
+    alınmış bir dal yayını). 26 Eki 2026: `0040_lafpos_baglantisi` 12:19'da bir dal yayınıyla canlıya uygulanmıştı; PR
+    birleşmeden önce yeni sütunla yeniden üretilince drizzle onu yeni migration saydı, `pos_daily_sales`'ı yeniden
+    kurmaya çalıştı ve canlı derleme durdu (yayındaki sürüm değişmedi). Düzeltme: 0040 canlıdaki hâline döndü, sütun
+    `0041_kasaya_giren` ile eklendi. Birleşmemiş bir dalın migration'ını yeniden üretmeden önce canlıda kaydı var mı
+    bakın (`select created_at from drizzle.__drizzle_migrations order by created_at desc limit 3`).
   - Migration'lar eklemeli ya da geriye uyumlu olsun: Vercel'in Instant Rollback'i yeniden derlemez, eski kod yeni
     şemada çalışır (sütun silmek, adını değiştirmek, NOT NULL varsayılansız sütun eklemek eski kodu bozar). Geriye
     uyumsuz bir migration'dan sonra Instant Rollback yapmayın; düzeltmeyi ileri yayınlayın.

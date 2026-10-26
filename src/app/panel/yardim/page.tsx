@@ -53,6 +53,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, Well } from "@/components/ui/card";
 import { IconTile, toneFor } from "@/components/ui/icon-tile";
 import { PageSkeleton } from "@/components/ui/misc";
+import { OKC_PREFILL_ENABLED } from "@/lib/okc-z";
 import { requireAdmin } from "@/server/auth/dal";
 
 import { buildFaq, type FaqItem, type PathText } from "./faq-build";
@@ -473,11 +474,15 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
         q: "Fiş ve Z raporunu fotoğraftan doldurmak",
         a: (
           <>
-            <Path href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS gün sonu fişinin fotoğrafını çekin; rakamlar forma dolar. Yazarkasanın (banka
-            POS) Z raporu alan doldurmaz: Banka POS&apos;a Z&apos;deki K.KARTI satırı elle yazılır. Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey
-            kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin fotoğrafını çekin: tutar, KDV ve ne alındığı okunur,
-            kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf başına yaklaşık 0,03 $); aç / kapat ve bu ayın tutarı
-            Ayarlar › Fotoğraftan okuma&apos;da. Fotoğraflar kasa için 6 ay, fiş için 13 ay saklanır.
+            <Path href="/panel/kasa" /> ekranında ModPOS Z raporunun ve banka POS Z raporunun (yazarkasa) fotoğrafını çekin. ModPOS&apos;un rakamları forma
+            dolar;{" "}
+            {OKC_PREFILL_ENABLED
+              ? "banka POS Z'sinde yalnız birbirini tutan ve net okunan rakamlar dolar, tutmayan rakam altında nedeniyle öneri olur."
+              : "banka POS Z'sinin rakamları şimdilik forma yazılmaz, her alanın altında öneri olarak çıkar (aşağıdaki iki soru)."}{" "}
+            Turuncu alanları fişle karşılaştırıp gönderin; hiçbir şey kendiliğinden kaydedilmez. Gün içinde kasadan para çıkınca aynı ekranda Fiş ekle ile fişin
+            fotoğrafını çekin: tutar, KDV ve ne alındığı okunur, kaydedince <Path href="/panel/harcamalar" />&apos;a da yazılır. Okuma Claude ile yapılır (fotoğraf
+            başına yaklaşık 0,03 $; banka POS Z&apos;si için tahmini 0,05–0,10 $, henüz ölçülmedi); aç / kapat ve bu ayın tutarı Ayarlar › Fotoğraftan
+            okuma&apos;da. Fotoğraflar kasa için 6 ay (banka POS Z 400 gün), fiş için 13 ay saklanır.
           </>
         ),
         icon: Receipt,
@@ -485,6 +490,50 @@ const FAQ_GROUPS: { title: string; items: FaqItem[] }[] = [
           { href: "/panel/kasa", label: "Kasa raporu" },
           { href: "/panel/ayarlar#foto", label: "Fotoğraftan okuma" },
         ],
+      },
+      {
+        id: "yazarkasa-z",
+        q: "ModPOS Z ve banka POS Z raporu (yazarkasa)",
+        a: (
+          <>
+            İki ayrı sayaçtır: ModPOS Z raporu adisyon programınındır, banka POS Z raporu yazarkasanın mali Z&apos;sidir (üstünde Z RAPORU ve KDV dökümü yazar;
+            banka gün sonu fişi değil). <Path href="/panel/kasa" /> ekranında ikisi ayrı bölümdür; banka POS Z&apos;si isteğe bağlıdır, girilince Z no, günlük
+            toplam, oran oran KDV, nakit, kart ve fiş sayısı saklanır. Kayıtlı raporda ve e-postada yazarkasa ModPOS&apos;la karşılaştırılır: kart, nakit, toplam
+            (fark online ve diğer satışlar kadarsa açıklanır), yemek kartı, banka gün sonu ve yazarkasanın kendi içindeki denetimleri (oranlar ve ödemeler günlük
+            toplamı, oranların KDV&apos;si toplam KDV&apos;yi tutuyor mu; Z no önceki Z&apos;den bir fazla mı). Toplam ve nakit farkı kendiliğinden hata değildir
+            (online satış, faturalı satış, Z&apos;nin alındığı saat): personelin ekranına ve WhatsApp metnine girmez, yalnız sizde ve seçtiğiniz e-posta
+            adreslerinde. Personel yalnız kart satırını ve yazarkasanın kendi içinde tutmadığını görür. Günden güne&apos;de Yazarkasa tutmuyor ve Yazarkasa Z yok
+            rozetleri; ayın satırında yazarkasa (mali) toplamı ve KDV&apos;si (yalnız bilgi, hiçbir hesaba girmez). Kümülatif (cihaz açılışından beri) fotoğraftan
+            okunur ve yalnız önceki Z&apos;yle tutuyorsa saklanır; yanlış saklandıysa gün ayrıntısında Kümülatifi temizle&apos;ye basın.
+          </>
+        ),
+        icon: ScanText,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
+      },
+      {
+        id: "yazarkasa-oneri",
+        q: "Banka POS Z'sinin fotoğraftan doldurulması",
+        a: (
+          <>
+            {OKC_PREFILL_ENABLED ? (
+              <>
+                Banka POS Z&apos;sinin okuması kafenin gerçek fişleriyle denendi: birbirini tutan ve net okunan rakamlar forma dolar, tutmayan rakam altında
+                nedeniyle öneri olur.
+              </>
+            ) : (
+              <>
+                Banka POS Z&apos;sinin fotoğrafı okunur ama rakamları şimdilik forma yazılmaz: her alanın altında okunan rakam ve Fotoğraftakini yaz çıkar,
+                personel fişle karşılaştırıp yazar. Okuma kafenin gerçek fişleriyle henüz denenmedi; yanlış okunan bir rakamın sessizce forma yazılmaması için
+                deneme geçene kadar böyle kalır. Denemek için geliştiriciye 5–8 günün banka POS Z fotoğrafını (2–3&apos;ü ardışık günler, biri uzun ve soluk, en
+                az biri üst ve alt yarı olarak da; asıl çözünürlükte: WhatsApp&apos;tan belge olarak ya da Drive / e-postayla) ve aynı günlerin kâğıttan doğru
+                rakamlarını verin; cihazın markasını, Z&apos;yi kimin saat kaçta aldığını ve ModPOS raporunun hangi yazıcıdan çıktığını da yazın. Deneme Claude
+                anahtarıyla canlı çalıştırılır (birkaç dolar); yanlış dolan rakam çıkmazsa doldurma açılır.
+              </>
+            )}
+          </>
+        ),
+        icon: Lightbulb,
+        links: [{ href: "/panel/kasa", label: "Kasa raporu" }],
       },
       {
         id: "kontrol",

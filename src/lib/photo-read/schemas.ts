@@ -58,6 +58,74 @@ export const KasaPosRaw = z.object({
   issues: z.array(Issue),
 });
 
+export const Count = z
+  .object({
+    text: z.string().nullable().describe('Exactly as printed, e.g. "0188"; null if not on the paper'),
+    value: z.number().int().nullable(),
+    confidence: Confidence,
+  })
+  .describe("A counter as printed");
+
+const BatchSlip = z.object({
+  bank: z.string().nullable().describe('Bank or app as printed, e.g. "GARANTİ BBVA"'),
+  batchNo: z.string().nullable(),
+  date: z.string().nullable().describe("YYYY-MM-DD"),
+  salesTotal: Amount,
+  refundTotal: Amount.describe("İADE; text null if not printed. İPTAL lines are not refunds"),
+  netTotal: Amount.describe("NET / TOPLAM: sales minus refunds"),
+  transactionCount: z.number().int().nullable(),
+});
+
+/**
+ * Yazarkasanın (banka POS, YN ÖKC) mali Z raporu (dalga 13 PR-b, docs/planlar/okc-z.md §4.1). Model yalnız aktarır;
+ * kimlikler (Σ oranlar = toplam, KDV formülü, Σ ödemeler, kümülatif zinciri) src/lib/okc-z.ts'te. Şema küçük tutulur
+ * (çıktı token'ı süreyi belirler): sıfır KDV grupları istenmez, `base` yalnız MATRAH basılıysa. `title`,
+ * `dailyTotalLabel` ve `fiscalMarks`'ın karara katkısı adım b2'de ölçülür; katkısı yoksa çıkar.
+ */
+export const KasaOkcRaw = z.object({
+  documentType: z.enum(["z_report", "x_report", "period_report", "batch_slip", "software_z", "other"]),
+  fiscalMarks: z
+    .object({ mfLogo: z.boolean(), ekuNo: z.boolean(), cumulativeLines: z.boolean(), vatBlock: z.boolean() })
+    .describe("Which fiscal marks are printed: MF logo with registry number, EKÜ NO, KÜM./cumulative lines, VERGİ DÖKÜMÜ"),
+  readable: z.boolean(),
+  title: z.string().nullable().describe('Printed title, e.g. "Z RAPORU"'),
+  date: z.string().nullable().describe("YYYY-MM-DD"),
+  time: z.string().nullable().describe("HH:MM"),
+  dateConfidence: Confidence,
+  zNo: Count.describe("Z NO / Z SAYAÇ. Not FİŞ NO, not EKÜ NO, not the registry number, not BATCH NO"),
+  receiptCount: Count.describe("Sales receipts: MÜŞTERİ FİŞ ADEDİ / MALİ FİŞ ADEDİ / FİŞ SAYISI; not TOPLAM FİŞ ADEDİ when slip counts are listed"),
+  dailyTotal: Amount.describe("This Z's total incl. KDV: NET SATIŞ / MALİ VERİ TOPLAM / TOPSAT / TOPLAM. Never cumulative, never TOPKDV"),
+  dailyTotalLabel: z.string().nullable().describe("The label printed next to dailyTotal"),
+  kdvGroups: z
+    .array(
+      z.object({
+        rate: z.number().describe("percent, e.g. 10"),
+        total: Amount.describe("incl. KDV"),
+        vat: Amount,
+        base: Amount.nullable().describe("MATRAH; null if not printed"),
+      }),
+    )
+    .describe("VERGİ DÖKÜMÜ, one entry per rate whose total is not 0,00, in printed order"),
+  totalVat: Amount.describe("Daily TOPKDV / MALİ VERİ TOPKDV; not cumulative"),
+  payments: z
+    .array(
+      z.object({
+        label: z.string(),
+        count: z.number().int().nullable().describe("count printed with the label, if any; never an amount"),
+        amount: Amount,
+        kind: z.enum(["cash", "card", "meal_card", "other", "bank_subline", "drawer", "unknown"]),
+      }),
+    )
+    .describe("Every payment line in printed order"),
+  outside: z.array(z.object({ label: z.string(), amount: Amount })).describe("Collections outside the fiscal total: FATURALI SATIŞ, e-FATURA, e-ARŞİV, BİLGİ FİŞİ, AVANS, TAHSİLAT"),
+  voids: Amount.describe("FİŞ İPTAL amount; text null if not printed"),
+  discounts: Amount.describe("İNDİRİM total; text null if not printed"),
+  cumulativeTotal: Amount.describe("KÜM. TOPLAM / KÜMSAT (since the device started)"),
+  cumulativeVat: Amount.describe("KÜM. TOPKDV / KÜMKDV"),
+  batches: z.array(BatchSlip).describe("Bank end-of-day slips in the photo (alone or printed after the Z); empty if none"),
+  issues: z.array(Issue),
+});
+
 export const ReceiptRaw = z.object({
   documentType: z.enum(["purchase_receipt", "e_archive_invoice", "invoice", "z_report", "bank_pos_end_of_day", "other"]),
   readable: z.boolean(),
@@ -80,4 +148,6 @@ export type AmountRaw = z.infer<typeof Amount>;
 export type IssueRaw = z.infer<typeof Issue>;
 export type KasaZ = z.infer<typeof KasaZRaw>;
 export type KasaPos = z.infer<typeof KasaPosRaw>;
+export type KasaOkc = z.infer<typeof KasaOkcRaw>;
+export type CountRaw = z.infer<typeof Count>;
 export type Receipt = z.infer<typeof ReceiptRaw>;

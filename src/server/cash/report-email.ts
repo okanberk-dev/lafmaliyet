@@ -48,7 +48,8 @@ export async function emailReport(
     const online = await (o.site ?? fetchTillOnlineRow(row.date));
     // Yeniden gönderimde de değişenler aynı: son kopya yeniden okunur (anahtar cash-{gün}-r{sürüm} değişmez)
     const [extras, integrity] = await Promise.all([cashReportExtras(dto), cashReportIntegrity(dto)]);
-    const msg = renderCashReport(dto, {
+    // Yazarkasa dışı tahsilat (sunucu sütunu) yalnız bu yönetici metnine: K4 onu da sayar, "tutmuyor" yanlış alarmı olmaz
+    const msg = renderCashReport({ ...dto, okcOutside: row.okcOutside }, {
       by: dto.submittedByName,
       revision: dto.revision,
       submittedAt: row.updatedAt,

@@ -9,7 +9,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertNoCostKeys } from "./helpers/leak-scan";
+import { cashReportText, revisionChanges, whatsappText } from "../src/lib/cash-report";
+import { okcReconcile } from "../src/lib/okc-z";
+import { normalizeOkc, toStaffReading } from "../src/lib/photo-read/okc";
+import { KasaOkcRaw } from "../src/lib/photo-read/schemas";
+
+import { assertNoCostKeys, OKC_ADMIN_KEYS, stripComments } from "./helpers/leak-scan";
 
 const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
 
@@ -34,6 +39,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/cash-outs.tsx",
   "src/app/panel/kasa/cash-out-dialog.tsx",
   "src/app/panel/kasa/cash-photos.tsx",
+  "src/app/panel/kasa/okc-card.tsx",
+  "src/app/panel/kasa/okc-form.ts",
+  "src/app/panel/kasa/cash-summary.tsx",
   "src/server/closed-days.ts",
   "src/server/closed-day-requests.ts",
   "src/server/actions/closed-days.ts",
@@ -43,6 +51,9 @@ const STAFF_SOURCES = [
   "src/app/panel/kasa/closed-day.tsx",
   "src/app/panel/ozel-gunler/page.tsx",
   "src/app/panel/ozel-gunler/staff-special-days.tsx",
+  // LafPOS'tan doldur (docs/LAFPOS.md): okuyucu ve formun alanlarına eşleme
+  "src/server/data/lafpos-day.ts",
+  "src/lib/lafpos/prefill.ts",
 ];
 
 test("kasa: personele giden kaynaklarda maliyet / tutar anahtarı yok", () => {
@@ -139,4 +150,130 @@ test("kapalı gün ve özel günler: personelin okuyucuları sabit sütunla, yal
   const page = read("src/app/panel/kasa/page.tsx");
   const bar = page.slice(page.indexOf("async function closedBarFor"));
   assert.match(bar, /if \(admin\) \{\s*const evidence = marked \? null : await closedDayEvidence\(getDb\(\), date\);/);
+});
+
+/**
+ * Yazarkasanın (banka POS) mali Z'si (docs/planlar/okc-z.md İlke 8, D13, D17, §11): kümülatif sayaç, yazarkasa dışı
+ * tahsilat ve yöneticinin karşılaştırma satırları (toplam, nakit, yemek kartı, banka) personele gitmez. COST_KEYS
+ * bunları kapsamaz; liste helpers/leak-scan.ts'te (OKC_ADMIN_KEYS). Çalışan sunucunun RSC yükünü scripts/personel-sizinti.ts
+ * aynı listeyle tarar
+ */
+const OKC_ADMIN_LINES = ["okc-total", "okc-cash", "okc-meal", "okc-bank"] as const;
+const keyRe = (k: string) => new RegExp(`(?:^|[^A-Za-z0-9_$])"?${k}"?\\s*:`, "m");
+
+test("yazarkasa Z'si: personelin kartında kümülatif, toplam dışı tahsilat ve yöneticinin karşılaştırma satırı yok", () => {
+  const card = stripComments(read("src/app/panel/kasa/okc-card.tsx"));
+  for (const k of OKC_ADMIN_KEYS) assert.doesNotMatch(card, keyRe(k), `okc-card.tsx: ${k}`);
+  for (const k of OKC_ADMIN_LINES) assert.ok(!card.includes(k), `okc-card.tsx: ${k}`);
+  // Karşılaştırma satırları kime göre: kart personelde "staff" ile çağırır (yönetici formu düzenlerken "admin")
+  assert.match(card, /okcReconcile\(\{[^\n]*\}, audience\)/);
+  const form = read("src/app/panel/kasa/cash-form.tsx");
+  assert.match(form, /audience=\{photoUi\.admin \? "admin" : "staff"\}/);
+  // Kayıtlı raporun kümülatif satırı yalnız yönetici dalında
+  const summary = read("src/app/panel/kasa/cash-summary.tsx");
+  assert.match(summary, /\{audience === "admin" && okcAdmin \? <OkcCumulative view=\{okcAdmin\} \/> : null\}/);
+});
+
+test("yazarkasa Z'si: kasa sayfası personele önceki Z'den yalnız gün ve numarayı, DTO'yu kime göre verir", () => {
+  const page = read("src/app/panel/kasa/page.tsx");
+  // Önceki yazarkasa Z'si forma yalnız `.z` ({ date, zNo }) olarak; kümülatif (`.cum`) yalnız yöneticinin satırında
+  assert.match(page, /prevOkcZ=\{prevOkc\.z\}/g);
+  assert.equal([...page.matchAll(/prevOkcZ=\{([^}]*)\}/g)].filter((m) => m[1] !== "prevOkc.z").length, 0);
+  assert.match(page, /\{\.\.\.\(admin && report \? \{ okcAdmin: okcAdminView\(/);
+  assert.match(page, /getCashReport\(date, user\.role\)/);
+  // DTO: sunucu sütunları yalnız "admin" ile
+  const dto = read("src/server/data/cash-reports.ts");
+  assert.match(dto, /if \(audience === "admin"\) return \{ \.\.\.dto, okcCumTotal: r\.okcCumTotal, okcCumVat: r\.okcCumVat, okcOutside: r\.okcOutside \};/);
+  // Personele toplam dışı tahsilatın yalnız var olduğu (tutarsız işaret; okc-z.ts K4 fazlayı tutmadı saymaz)
+  assert.match(dto, /return r\.okcOutside !== null && r\.okcOutside > 1 \? \{ \.\.\.dto, okcExtraTakings: true \} : dto;/);
+});
+
+test("yazarkasa Z'si: personelin okuma yanıtında kümülatif ve yöneticinin satırları yok; karşılaştırmada yalnız kart ve kendi içinde", () => {
+  const rec = JSON.parse(read("tests/fixtures/foto/okc.json")) as { json: unknown };
+  const reading = normalizeOkc(KasaOkcRaw.parse(rec.json), { day: "2026-10-21", prev: { z: { date: "2026-10-20", zNo: "0187" }, cum: { date: "2026-10-20", zNo: "0187", cumTotal: 1247050, cumVat: 117731.82 } } });
+  assert.ok(reading.okcAdmin?.cumTotal, "yöneticinin okumasında kümülatif var");
+  const staff = JSON.stringify(toStaffReading(reading));
+  for (const k of OKC_ADMIN_KEYS) assert.doesNotMatch(staff, new RegExp(`"${k}":`), `okuma: ${k}`);
+  assert.ok(!staff.includes("1.259.350") && !staff.includes("1259350"), "kümülatif rakamı metinde de yok");
+  const fields = { zTotal: 12975.5, cash: 3420.5, card: 8915, mealCard: 640, online: 500, other: 0, bankPos: 8900, okcZNo: "0188", okcTotal: 12300, okcCash: 3180, okcCard: 8480, okcMealCard: 640, okcOther: 0 };
+  assert.deepEqual(
+    okcReconcile(fields, "staff").map((l) => l.key),
+    ["okc-card"],
+  );
+  assert.deepEqual(
+    okcReconcile({ ...fields, okcCash: 3000 }, "staff").map((l) => l.key),
+    ["okc-card", "okc-self"],
+  );
+  assert.ok(okcReconcile(fields, "admin").some((l) => (OKC_ADMIN_LINES as readonly string[]).includes(l.key)));
+});
+
+test("yazarkasa Z'si: WhatsApp metni (personel de gönderir) yöneticinin satırlarını taşımaz; e-postanın yönetici metni yalnız şablonda", () => {
+  const f = {
+    date: "2026-10-21",
+    zNo: "1235",
+    receipts: 151,
+    zTotal: 13095.5,
+    cash: 2745,
+    card: 8915,
+    mealCard: 0,
+    online: 1435.5,
+    other: 0,
+    openingCash: 500,
+    cashIn: 0,
+    cashOut: 0,
+    cashOutNote: null,
+    countedCash: 3245,
+    handedOver: 0,
+    bankPos: 8900,
+    offRevenue: null,
+    note: null,
+    okcZNo: "0188",
+    okcReceipts: 143,
+    okcTotal: 11540,
+    okcVatTotal: 1049.09,
+    okcVat: [{ rate: 10, total: 11540, vat: 1049.09 }],
+    okcCash: 2000,
+    okcCard: 8915,
+    okcMealCard: 0,
+    okcOther: 0,
+  };
+  const t = whatsappText(f, { by: "Ayşe" });
+  const admin = okcReconcile(f, "admin").filter((l) => l.key !== "okc-card");
+  assert.ok(admin.length >= 3, "yöneticinin satırları var (nakit, toplam, banka, kendi içinde)");
+  for (const l of admin) assert.ok(!t.includes(l.text), `WhatsApp: ${l.key}`);
+  // Yazarkasanın günlük toplamı ve KDV'si WhatsApp'ta yok (ModPOS toplamıyla farkı çıkarılamasın)
+  assert.ok(!/11\.540|1\.049|Günlük toplam|KDV/.test(t.replace(/ /g, " ")));
+  // Yöneticinin metni (cashReportText "admin") yalnız e-posta şablonunda; personelin yolları whatsappText'i çağırır
+  for (const file of ["src/server/actions/cash-report.ts", "src/app/panel/kasa/page.tsx", "src/app/panel/kasa/cash-history.tsx"]) {
+    assert.doesNotMatch(read(file), /cashReportText/, file);
+  }
+  assert.match(read("src/server/notify/cash-report-template.ts"), /cashReportText\(f, meta, "admin"\)/);
+  assert.match(read("src/lib/cash-report.ts"), /return cashReportText\(f, meta, "staff"\);/);
+
+  // Düzeltilen rapor (sürüm 2): "Değişen" satırında yazarkasanın toplamı, KDV'si, fiş sayısı, yemek kartı ve diğeri
+  // yalnız adıyla; Z no, nakit ve kart bloktaki gibi değeriyle. "Fotoğraftan farklı"da fiş sayısı da yalnız adıyla
+  const after = { ...f, okcTotal: 11_640.5, okcVatTotal: 1058.23, okcReceipts: 147, okcMealCard: 100, okcOther: 0.5, okcCard: 8915.5, okcVat: [{ rate: 10, total: 11_640.5, vat: 1058.23 }] };
+  const changes = revisionChanges({ ...f, cashDiff: 0, countedByName: null }, { ...after, cashDiff: 0, countedByName: null });
+  assert.ok(["okcTotal", "okcVatTotal", "okcReceipts", "okcMealCard", "okcOther", "okcVat", "okcCard"].every((k) => changes.some((c) => c.key === k)));
+  const photoDiffs = [{ field: "okcReceipts" as const, label: "Yazarkasa fiş sayısı", photo: 149, saved: 147, confidence: "high" as const, excused: false }];
+  const t2 = whatsappText(after, { by: "Ayşe", revision: 2, changes, photoDiffs }).replace(/\u00a0/g, " ");
+  for (const v of ["11.540", "11.640,50", "1.049,09", "1.058,23", "143", "147", "149", "100 ₺", "0,50 ₺"]) assert.ok(!t2.includes(v), `WhatsApp (sürüm 2): ${v}\n${t2}`);
+  for (const l of ["Yazarkasa toplam değişti", "Yazarkasa KDV değişti", "Yazarkasa fiş sayısı değişti", "Yazarkasa yemek kartı değişti", "Yazarkasa diğer değişti", "KDV dökümü değişti"]) assert.ok(t2.includes(l), l);
+  assert.ok(t2.includes("Yazarkasa kart 8.915 ₺ → 8.915,50 ₺"), t2);
+  assert.match(t2, /Fotoğraftan farklı yazılan: Yazarkasa fiş sayısı(;|\n|$)/);
+  // Yöneticinin metninde (e-posta) değerleriyle
+  const a2 = cashReportText(after, { by: "Ayşe", revision: 2, changes, photoDiffs }, "admin").replace(/\u00a0/g, " ");
+  assert.ok(a2.includes("Yazarkasa toplam 11.540 ₺ → 11.640,50 ₺") && a2.includes("Yazarkasa fiş sayısı (fotoğrafta 149)"), a2);
+});
+
+test("LafPOS'tan doldur: personelin okuyucusu yalnız Z ve geliş anı (sabit sütun); ödeme kanalları ve ikram okunmaz", () => {
+  const loader = stripComments(read("src/server/data/lafpos-day.ts"));
+  assert.match(loader, /^import "server-only";/);
+  assert.match(loader, /\.select\(\{ z: s\.posDayReports\.z, receivedAt: s\.posDayReports\.receivedAt \}\)/);
+  assert.doesNotMatch(loader, /\.select\(\)|payments|ikram|posDailySales/);
+  // Forma giden yalnız formun alanları: kasa farkı (LafPOS'un hesabı) da gitmez, form kendisi hesaplar
+  const prefill = read("src/lib/lafpos/prefill.ts");
+  const map = prefill.slice(prefill.indexOf("export function lafposPrefill"), prefill.indexOf("export function lafposSummary"));
+  const keys = [...map.matchAll(/put\("(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(keys, ["zNo", "receipts", "zTotal", "cash", "card", "mealCard", "online", "other", "offRevenue", "discounts", "openingCash", "cashIn", "cashOut", "countedCash", "handedOver"]);
 });

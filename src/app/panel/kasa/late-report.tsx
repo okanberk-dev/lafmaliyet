@@ -38,6 +38,7 @@ export function LateReport({
   carry,
   counters,
   photoUi,
+  prevOkcZ = null,
 }: {
   date: string;
   own: OwnLate | null;
@@ -47,6 +48,8 @@ export function LateReport({
   carry: { date: string; amount: number } | null;
   counters: { id: number; name: string }[];
   photoUi: { storage: boolean; reading: ReadingState; admin: boolean; me: string };
+  /** Önceki yazarkasa Z'si (yalnız gün ve numara; formun Z no denetimi) */
+  prevOkcZ?: { date: string; zNo: string } | null;
 }) {
   const pendingOwn = own?.status === "pending" ? own : null;
   const [editing, setEditing] = useState(!pendingOwn);
@@ -107,6 +110,7 @@ export function LateReport({
                 ["Toplam satış (Z)", `${money(f.zTotal)}${f.zNo ? ` · Z no ${f.zNo}` : ""}`],
                 ["Nakit · kart", `${money(f.cash)} · ${money(f.card)}`],
                 ["Açılış", money(f.openingCash)],
+                ...(f.cashIn ? [["Gün içinde giren", money(f.cashIn)]] : []),
                 ["Gün içinde çıkan", money(f.cashOut)],
                 ["Akşam sayılan", money(f.countedCash)],
                 ["Teslim edilen", money(f.handedOver)],
@@ -172,6 +176,7 @@ export function LateReport({
         late={late}
         onCancel={pendingOwn ? () => setEditing(false) : undefined}
         onSent={() => setEditing(false)}
+        prevOkcZ={prevOkcZ}
       />
     </div>
   );

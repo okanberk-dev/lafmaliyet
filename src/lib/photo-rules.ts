@@ -7,8 +7,12 @@
 
 import { addDays } from "./reminders";
 
-export type PhotoKind = "kasa-z" | "kasa-pos" | "fis" | "kontrol";
-export const PHOTO_KINDS: readonly PhotoKind[] = ["kasa-z", "kasa-pos", "fis", "kontrol"];
+/**
+ * `kasa-okc`: yazarkasanın (banka POS) mali Z'si (dalga 13 PR-b). `kasa-pos` (banka gün sonu fişi) eski fotoğraflar ve
+ * geçiş içindir: yeni yükleme ve yeniden okuma onu `kasa-okc` yapar (docs/planlar/okc-z.md D2)
+ */
+export type PhotoKind = "kasa-z" | "kasa-pos" | "kasa-okc" | "fis" | "kontrol";
+export const PHOTO_KINDS: readonly PhotoKind[] = ["kasa-z", "kasa-pos", "kasa-okc", "fis", "kontrol"];
 
 export type PhotoMime = "image/jpeg" | "image/png" | "image/webp";
 export const PHOTO_MIMES: readonly PhotoMime[] = ["image/jpeg", "image/png", "image/webp"];
@@ -26,8 +30,11 @@ export const UNLINKED_DAYS = 2;
 export const RELEASED_DAYS = 7;
 /** Silinen kasa raporunun fotoğrafları: yanlışlıkla silinen rapor için kanıt */
 export const DELETED_REPORT_DAYS = 30;
-/** Bağlandıktan sonra saklama: kasa raporundan, fişin tarihinden ya da kontrol cevabından itibaren gün */
-export const KEEP_DAYS: Record<PhotoKind, number> = { "kasa-z": 180, "kasa-pos": 180, fis: 400, kontrol: 60 };
+/**
+ * Bağlandıktan sonra saklama: kasa raporundan, fişin tarihinden ya da kontrol cevabından itibaren gün. Yazarkasa Z'si
+ * 400 gün: yıllık vergi mutabakatı bir takvim yılını kapsar (docs/planlar/okc-z.md D12)
+ */
+export const KEEP_DAYS: Record<PhotoKind, number> = { "kasa-z": 180, "kasa-pos": 180, "kasa-okc": 400, fis: 400, kontrol: 60 };
 
 /** Kişi başına saatte en çok bu kadar yükleme (yanlışlıkla döngüye giren telefon depoyu doldurmasın) */
 export const UPLOADS_PER_HOUR = 30;
@@ -35,6 +42,9 @@ export const UPLOADS_PER_HOUR = 30;
 export const MAX_READS_PER_PHOTO = 3;
 /** Bir kasa raporuna en çok bu kadar fotoğraf bağlanır */
 export const MAX_REPORT_PHOTOS = 6;
+/** Yazarkasa (banka POS) Z bölümüne en çok bu kadar fotoğraf: uzun fiş üst ve alt parça olarak çekilir (docs/planlar/okc-z.md §3.4) */
+export const MAX_OKC_PHOTOS = 3;
+export const OKC_PHOTOS_TEXT = `Banka POS Z bölümüne en çok ${MAX_OKC_PHOTOS} fotoğraf eklenir`;
 
 /** Fotoğraftan okumanın durumu (src/server/ai/claude.ts aiStatus): açık, kapalı, anahtar yok, bugünkü sınır doldu */
 export type ReadingState = "on" | "off" | "nokey" | "cap";
@@ -70,6 +80,7 @@ export function uploadRule(role: "admin" | "staff", kind: PhotoKind, day: string
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = {
   "kasa-z": "Z raporu",
   "kasa-pos": "Banka POS",
+  "kasa-okc": "Banka POS Z",
   fis: "Fiş",
   kontrol: "Kontrol listesi",
 };

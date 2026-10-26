@@ -62,6 +62,7 @@ describe("Kapalı gün ve personelin özel günleri: veritabanında", { skip: !U
     online: 0,
     other: 0,
     openingCash: 500,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3_500,

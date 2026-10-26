@@ -72,6 +72,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     other: 0,
     // Açılış önceki günün devriyle (3.500 − 2.400) tutar: not gerekmez
     openingCash: 1_100,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 3_500,
@@ -183,7 +184,7 @@ describe("Geç kasa raporu: veritabanında istek, zincir ve karar", { skip: !URL
     // Personel yükünde yalnız raporun alanları, teslim alan, fotoğraflar ve kasa farkı
     assert.deepEqual(
       Object.keys(out.row.payload).sort(),
-      ["bankPos", "card", "cash", "cashDiff", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
+      ["bankPos", "card", "cash", "cashDiff", "cashIn", "cashOut", "cashOutNote", "countedCash", "date", "discounts", "handedOver", "handedTo", "mealCard", "note", "offRevenue", "online", "openingCash", "other", "photos", "receipts", "zNo", "zTotal"].sort(),
     );
   });
 

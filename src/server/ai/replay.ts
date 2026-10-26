@@ -3,7 +3,9 @@
  * beş yanıt, docs/planlar/fotograf.md §10). Yalnız `next dev`te ve AI_REPLAY=1 iken açılır; canlıda (NODE_ENV
  * production) hiçbir koşulda devreye girmez. Hangi yanıtın döneceği türe ve deneme görsellerinin ölçüsüne göre seçilir
  * (docs/planlar/ekler/fotograf-eval/img: telefonda küçültülünce ölçüleri değişmez; yazarkasanın mali Z'si
- * scripts/foto-eval/make-images.py'nin `yazarkasa-z.jpg`'sidir); başka bir fotoğrafa türün olağan yanıtı döner. Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
+ * scripts/foto-eval/make-images.py'nin `yazarkasa-z.jpg`'sidir); başka bir fotoğrafa türün olağan yanıtı döner.
+ * Yazarkasa Z bölümünün (`kasa-okc`; geçişte eski sayfanın `kasa-pos`'u da buraya okunur) yanıtları
+ * tests/fixtures/foto/okc*.json'dur ve sentetiktir (adım b2'de gerçek yanıtlarla değişir). Fatura okuması (tests/fixtures/fatura/*.json) istemdeki kalem adına göre seçilir; bunlar sentetiktir
  * (yerelde anahtar yok, canlı istek yapılmadı). Görsel ve belge hiçbir yere gönderilmez.
  */
 
@@ -44,7 +46,37 @@ const SYNTHETIC: Record<string, unknown> = {
   "kasa-z:okc": synthZ("fiscal_z_report"),
   "kasa-pos:okc": synthPos("fiscal_z_report"),
   "fis:okc": synthReceipt("z_report"),
+  "kasa-okc:z": synthOkc("software_z"),
+  "kasa-okc:market": synthOkc("other"),
+  "kasa-okc:talimat": synthOkc("other"),
 };
+
+function synthOkc(documentType: string) {
+  const count = { text: null, value: null, confidence: "low" };
+  return {
+    documentType,
+    fiscalMarks: { mfLogo: false, ekuNo: false, cumulativeLines: false, vatBlock: false },
+    readable: true,
+    title: null,
+    date: "2026-10-21",
+    time: null,
+    dateConfidence: "medium",
+    zNo: count,
+    receiptCount: count,
+    dailyTotal: NONE,
+    dailyTotalLabel: null,
+    kdvGroups: [],
+    totalVat: NONE,
+    payments: [],
+    outside: [],
+    voids: NONE,
+    discounts: NONE,
+    cumulativeTotal: NONE,
+    cumulativeVat: NONE,
+    batches: [],
+    issues: [],
+  };
+}
 
 function synthZ(documentType: string) {
   return { documentType, readable: true, date: "2026-10-21", time: null, zNo: null, receiptCount: null, total: NONE, paymentLines: [], discounts: NONE, comps: NONE, refunds: NONE, issues: [] };
@@ -60,6 +92,9 @@ function synthReceipt(documentType: string) {
 
 const FILES: Record<string, string> = {
   "kasa-z:pos": "yanlis-belge",
+  // Yazarkasa Z bölümü (dalga 13 PR-b; sentetik): banka gün sonu fişi yedek alanı doldurur, öteki her görsele örnek Z
+  "kasa-okc:pos": "okc-batch",
+  "kasa-okc": "okc",
   "kasa-z": "z",
   "kasa-pos": "pos",
   "fis:talimat": "fis-talimat",

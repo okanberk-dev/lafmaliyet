@@ -118,6 +118,7 @@ test("kasa raporu: ödenmez tutarı ve günün zayi / ikramı WhatsApp metninde"
     online: 0,
     other: 0,
     openingCash: 0,
+    cashIn: 0,
     cashOut: 0,
     cashOutNote: null,
     countedCash: 400,

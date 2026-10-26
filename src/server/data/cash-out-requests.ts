@@ -9,15 +9,18 @@ import {
   CashOutRequestPayload,
   lineChanges,
   oldRequestDays,
+  photoKindRefusal,
   PhotoRemovalPayload,
   staffCashOutView,
   type CashOutBeforeT,
   type CashOutLineT,
   type CashOutOp,
+  type RemovablePhotoKind,
   type StaffCashOutView,
 } from "@/lib/cash-out-requests";
 import { cashOutLabel, cashOutsTotal, staffExpenseLocked, staffToExpenses } from "@/lib/cash-outs";
 import { money } from "@/lib/format";
+import { okcHasFigures } from "@/lib/okc-z";
 import { photoDiffs, photoDiffText, savedFields, suspiciousDiffs } from "@/lib/photo-read/kasa";
 import { expenseDateFor } from "@/lib/photo-read/receipt";
 import { addDays, dayMonthTR, monthGenitiveTR } from "@/lib/reminders";
@@ -93,12 +96,12 @@ export async function photoRemovalStates(report: { id: number; date: string } & 
     .from(r)
     .where(and(eq(r.kind, "foto-kaldir"), eq(r.status, "pending"), inArray(r.subject, photos.map((p) => `foto:${p.id}`))));
   const waiting = new Set(pending.map((p) => Number(p.subject.slice(5))));
-  const zCount = photos.filter((p) => p.kind === "kasa-z").length;
+  const counts = { zCount: photos.filter((p) => p.kind === "kasa-z").length, okcCount: photos.filter((p) => p.kind === "kasa-okc").length, okcFigures: okcHasFigures(report) };
   const saved = savedFields(report);
   const out: Record<number, "ok" | "pending" | "blocked"> = {};
   for (const p of photos) {
     if (waiting.has(p.id)) out[p.id] = "pending";
-    else if (p.kind === "kasa-z" && zCount <= 1) out[p.id] = "blocked";
+    else if (photoKindRefusal(p.kind, counts)) out[p.id] = "blocked";
     else {
       const reading = await photoReadingOf(db, p.id, p.kind, report.date);
       out[p.id] = reading && suspiciousDiffs([reading], saved).length ? "blocked" : "ok";
@@ -177,7 +180,7 @@ export interface CashOutCard extends CardBase {
 export interface PhotoRemovalCard extends CardBase {
   kind: "foto-kaldir";
   photo: CashPhotoDTO | null;
-  photoKind: "kasa-z" | "kasa-pos";
+  photoKind: RemovablePhotoKind;
   /** Okuma farkları (rapordaki değerlerle) */
   diffs: string[];
   /** Onay bu hâliyle reddedilir: tek Z, okuma farkı ya da fotoğraf artık bağlı değil */
@@ -220,9 +223,9 @@ export async function cashOutCards(now = new Date()): Promise<(CashOutCard | Pho
   return out;
 }
 
-async function photoCard(base: CardBase, p: { photoId: number; photoKind: "kasa-z" | "kasa-pos"; reportId: number; day: string }): Promise<PhotoRemovalCard> {
+async function photoCard(base: CardBase, p: { photoId: number; photoKind: RemovablePhotoKind; reportId: number; day: string }): Promise<PhotoRemovalCard> {
   const db = getDb();
-  const [[photo], [report], [{ n: zCount }]] = await Promise.all([
+  const [[photo], [report], [{ n: sameKind }]] = await Promise.all([
     db
       .select({ id: s.photos.id, kind: s.photos.kind, createdAt: s.photos.createdAt, byName: s.photos.createdByName })
       .from(s.cashReportPhotos)
@@ -233,18 +236,20 @@ async function photoCard(base: CardBase, p: { photoId: number; photoKind: "kasa-
     db
       .select({ n: count() })
       .from(s.cashReportPhotos)
-      .where(and(eq(s.cashReportPhotos.reportId, p.reportId), eq(s.cashReportPhotos.kind, "kasa-z"))),
+      .where(and(eq(s.cashReportPhotos.reportId, p.reportId), eq(s.cashReportPhotos.kind, p.photoKind))),
   ]);
   const reading = report ? await photoReadingOf(db, p.photoId, p.photoKind, report.date) : null;
   const saved = report ? savedFields(report) : null;
   const diffs = reading && saved ? photoDiffs([reading], saved) : [];
   const suspicious = reading && saved ? suspiciousDiffs([reading], saved) : [];
-  const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : p.photoKind === "kasa-z" && zCount <= 1 ? "Raporun tek Z fotoğrafı; kaldırılamaz" : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
+  // Tek ModPOS Z ve (yazarkasa bölümü yazılmışken) tek Banka POS Z fotoğrafı kanıttır (removalCheck ile aynı kural)
+  const kindRefusal = report ? photoKindRefusal(p.photoKind, { zCount: sameKind, okcCount: sameKind, okcFigures: okcHasFigures(report) }) : null;
+  const refusal = !photo || !report ? "Fotoğraf artık rapora bağlı değil; isteği reddedin" : kindRefusal ? kindRefusal : suspicious.length ? "Fotoğraftan farklı yazılan alan var; fotoğraf kanıttır" : null;
   return {
     ...base,
     kind: "foto-kaldir",
     photoKind: p.photoKind,
-    photo: photo && (photo.kind === "kasa-z" || photo.kind === "kasa-pos") ? { id: photo.id, kind: photo.kind, createdAt: photo.createdAt.toISOString(), byName: photo.byName } : null,
+    photo: photo && (photo.kind === "kasa-z" || photo.kind === "kasa-pos" || photo.kind === "kasa-okc") ? { id: photo.id, kind: photo.kind, createdAt: photo.createdAt.toISOString(), byName: photo.byName } : null,
     diffs: diffs.map((d) => photoDiffText(d)),
     refusal,
   };

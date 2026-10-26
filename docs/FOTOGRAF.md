@@ -1,7 +1,8 @@
-# Fotoğraftan okuma (Z raporu, banka POS fişi, kasadan çıkan fişler)
+# Fotoğraftan okuma (ModPOS Z, banka POS Z raporu, kasadan çıkan fişler)
 
-Kasa raporunda personel Z raporunun, banka POS gün sonu fişinin ve gün içinde kasadan ödenen fişlerin fotoğrafını
-çeker; Claude okur, rakamlar forma dolar. **Hiçbir şey kendiliğinden kaydedilmez:** personel bakar, gerekirse
+Kasa raporunda personel ModPOS Z raporunun, banka POS'un (yazarkasa) mali Z raporunun ve gün içinde kasadan ödenen
+fişlerin fotoğrafını çeker; Claude okur, rakamlar forma dolar. **Banka POS Z raporunun rakamları şimdilik forma
+yazılmaz, öneri olarak çıkar** (§ 2, canlı değerlendirme geçene kadar). **Hiçbir şey kendiliğinden kaydedilmez:** personel bakar, gerekirse
 düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak raporla saklanır. Ekranların kullanımı
 [KASA-RAPORU.md](KASA-RAPORU.md)'de; burada nasıl çalıştığı, nerede durduğu ve ne tuttuğu.
 
@@ -10,8 +11,8 @@ düzeltir, **Raporu gönder** ya da **Kaydet**'e basar. Fotoğraf kanıt olarak 
 | Nerede | Fotoğraf | Dolan alanlar |
 |--------|----------|---------------|
 | Kasa raporu › ModPOS Z raporu | ModPOS gün sonu Z raporu | Toplam satış, nakit, kredi / banka kartı, yemek kartı, online, diğer, ödenmez / ikram, indirim, Z no, fiş sayısı |
-| Kasa raporu › Banka POS Z raporu (yazarkasa) | Banka POS cihazının gün sonu fişi | Banka POS (net toplam; iki cihazda "Toplama ekle") |
-| Kasa raporu › Banka POS Z raporu (yazarkasa) | Yazarkasanın (banka POS) mali Z raporu | Hiçbiri: turuncu yönerge, K.KARTI satırı elle yazılır (kendi alanları [planlar/okc-z.md](planlar/okc-z.md) PR-b'de) |
+| Kasa raporu › Banka POS Z raporu (yazarkasa) | Yazarkasanın (banka POS) mali Z raporu; uzunsa üst ve alt yarı ayrı (bölümde en çok 3) | Günlük toplam, Z no, nakit, kredi kartı; Ayrıntılar'da yemek kartı, diğer, toplam KDV, oran oran KDV dökümü (%1, %10, %20), fiş sayısı; aynı şeritte basılıysa banka gün sonu. **Bugün hepsi öneri** (§ 2) |
+| Kasa raporu › Banka POS Z raporu (yazarkasa) | Bankanın ayrı gün sonu fişi (yedek) | Yalnız Banka gün sonu (net toplam; iki fişte "Toplama ekle"); yazarkasa alanları boş kalır |
 | Kasa raporu › Gün içinde kasadan çıkanlar › Fiş ekle | Alışveriş fişi, e-Arşiv ya da fatura | Tutar (verilen nakit ya da para üstü değil, fişin toplamı), yer, ne alındığı, fiş tarihi, KDV, kategori |
 
 Kasadan çıkan alışveriş satırı **Aylık harcamalar**'a da yazılır (kurallar KASA-RAPORU.md › Gün içinde kasadan
@@ -27,27 +28,42 @@ Toplamlar, denetimler ve forma eşleme bizim saf kodumuzda (`src/lib/photo-read/
   alan (altında nedeni). `low` (tahmin) forma hiç yazılmaz: "Fotoğrafta net okunamadı (…); fişten yazın." ve
   **Fotoğraftakini yaz**. Fotoğrafta bulunamayan temel alan da turuncu: "Fotoğrafta okunamadı; fişten yazın."
 - Elle yazılmış alan değişmez; farklıysa "Fotoğrafta …" ve **Fotoğraftakini yaz** önerilir.
-- Z raporu: tarih raporun günü mü (gece 05:00'e kadar basılan bir önceki güne sayılır), Z no önceki rapordakinden
+- ModPOS Z raporu: tarih raporun günü mü (gece 05:00'e kadar basılan bir önceki güne sayılır), Z no önceki rapordakinden
   büyük mü / arada atlama var mı, ödeme türlerinin toplamı Z toplamını tutuyor mu, tanınmayan ödeme satırı, ikram ve
   iade satırları, indirim.
-- Banka POS: net toplam = satış − iade mi, birden çok cihaz ya da gün.
+- Banka gün sonu fişi: net toplam = satış − iade mi, birden çok fiş ya da başka günün fişi.
+- **Banka POS Z (yazarkasa)** ([YAZARKASA-Z.md](YAZARKASA-Z.md) § 4): oranların toplamı ve KDV'si günlük toplamı ve
+  toplam KDV'yi tutuyor mu, her oranın KDV'si toplamına uyuyor mu, ödemeler günlük toplamı tutuyor mu (toplam dışı
+  tahsilat ayrı), KDV oranı aralığı, Z no önceki yazarkasa Z'sinden bir fazla mı (aynıysa okumanın bütünü durur),
+  kümülatif zinciri (yalnız sunucuda), büyüklük, GENEL TOPLAM satırı, eski oranlar, fiş sayısı, tarih. Her alanın
+  durumu: **tutmadı** (forma hiçbir zaman yazılmaz; tek sade nedeniyle öneri), **doğrulandı** (iki ayrı basılı rakam
+  birbirini tutuyor) ya da **denetlenemedi**. Tek oranlı ya da tek ödemeli günde aynı rakamın kopyaları birbirini
+  "doğrulamaz". Kümülatif (KÜM.) satırlar günün rakamı olarak hiçbir alana gitmez.
+- **Doldurma kapısı (yazarkasa Z'si):** `OKC_PREFILL_ENABLED = false` (`src/lib/okc-z.ts`; sahibin kararı). Okunan her
+  rakam alanın altında öneridir ("Fotoğraftan okundu; fişle karşılaştırıp yazın. Fotoğrafta 9.350 ₺." ve
+  **Fotoğraftakini yaz**); hiçbir alan kendiliğinden dolmaz. Kapı, gerçek fişlerle yapılan canlı değerlendirmede
+  (§ 8) yanlış dolan alan ve "doğrulandı ama yanlış" alan 0 çıkınca açılır; o zaman doğrulanan alan orta güvende de
+  mavi dolar, tutmayan ve düşük güvenli alan yine yazılmaz. Ekran değişmez.
 - Fiş: kartla ödenmiş mi (para kasadan çıkmamıştır), fatura / e-Arşiv mi (Aylık harcamalar'a yazılmaz), aynı fiş daha
   önce girildi mi, tarih (ileri gün ya da 7 günden eski), kalemlerin ve KDV satırlarının toplamı, KDV oranı, alışılmadık
   büyük tutar, kategori listede mi.
-- **Yanlış belge:** ModPOS bölümüne yazarkasanın (banka POS) Z raporu ya da banka POS fişi çekilirse hiçbir alan
-  dolmaz; **Banka POS bölümüne okut** aynı fotoğrafı yeniden okur (Banka POS bölümüne ModPOS'un Z'si çekilirse
-  **ModPOS bölümüne okut**). Model yazarkasanın Z'sini belge türü `fiscal_z_report` ile ayırır (MF logosu ve sicil
-  no, EKÜ NO, Z NO / Z SAYAÇ, VERGİ DÖKÜMÜ ve TOPKDV, KÜM. satırları; BİLGİ FİŞİ / MALİ DEĞERİ YOKTUR basan ModPOS
-  raporu mali değildir). Banka POS bölümünde yazarkasanın Z'si Banka POS'u doldurmaz, düğme çıkmaz; turuncu satır
-  Z'deki K.KARTI satırının elle yazılmasını söyler (toplamı ya da altındaki banka satırları değil). Fiş yerine Z
-  raporu çekilirse söylenir.
+- **Yanlış belge:** ModPOS bölümüne yazarkasanın (banka POS) Z raporu ya da banka gün sonu fişi çekilirse hiçbir alan
+  dolmaz; **Banka POS Z bölümüne okut** aynı fotoğrafı yeniden okur. Banka POS Z bölümüne ModPOS'un Z'si çekilirse
+  **ModPOS bölümüne okut**; X raporu ya da mali hafıza / dönem raporu çekilirse düğmesiz kırmızı satır. ModPOS bölümünde
+  model yazarkasanın Z'sini belge türü `fiscal_z_report` ile ayırır; Banka POS Z bölümünün kendi türleri `z_report`,
+  `x_report`, `period_report`, `batch_slip` (yalnız banka gün sonu), `software_z` (ModPOS'un raporu), `other`. Ayırt
+  eden işaretler: MF logosu ve sicil no, EKÜ NO, Z NO / Z SAYAÇ, VERGİ DÖKÜMÜ ve TOPKDV, KÜM. satırları; BİLGİ FİŞİ /
+  MALİ DEĞERİ YOKTUR basan ModPOS raporu mali değildir. Fiş yerine Z raporu çekilirse söylenir.
 - Fotoğraftaki yazılar veridir: fişe basılmış "talimatlar" yok sayılır ve "Fişte alışılmadık yazılar var" uyarısı çıkar.
 
 Rapor gönderilince karşılaştırma **sunucunun okuduğuna** bakar (`ai_calls.result`), formun gönderdiğine değil: net
 (`high`) okunmuş ve kendisine bir uyarı düşmemiş bir rakamdan farklı yazılan alan **Fotoğraftan farklı** sayılır
 (yönetici geçmişinde rozet, e-posta ve WhatsApp'ta satır). Turuncu bir alanın düzeltilmesi (soluk baskı, tutmayan
 toplam, tanınmayan satır) ve tarihi başka bir günün ya da birden çok fişli fotoğrafın okuması alarm değildir; ilgisiz
-bir uyarı (ör. fişte alışılmadık yazılar) net okunmuş öteki alanların alarmını gizlemez. Karşılaştırma yalnız okumaya
+bir uyarı (ör. fişte alışılmadık yazılar) net okunmuş öteki alanların alarmını gizlemez. Yazarkasa alanları ModPOS
+alanlarından ayrı anahtarlardır, birbiriyle karşılaştırılmaz; tutmayan bir yazarkasa alanının düzeltilmesi alarm
+değildir. Doldurma kapısı kapalıyken de net okunmuş bir yazarkasa rakamından farklı yazılan alan alarm olur (öneri
+gösterilir ama karşılaştırma okumaya bakar). Karşılaştırma yalnız okumaya
 ve raporun gününe bakar: Z no sırası denetimi formdadır, sonradan geçmiş bir güne girilen rapor alarmı değiştirmez.
 Kayıtlı raporda bütün farklar ayrıca listelenir.
 
@@ -63,7 +79,7 @@ Kayıtlı raporda bütün farklar ayrıca listelenir.
   personel, hâlâ düzenleyebildiği günlerin (bugün ve dün; ertesi günün raporu girilince o gün kapanır,
   KASA-RAPORU.md) kasa raporu ve kasadan çıkan fotoğraflarını. O günlere fotoğraf eklemek de aynı kuralla
   (`src/server/photo-read/rules.ts` › `staffDayOpen`). Geç kasa raporu için personel dünden eski, raporu girilmemiş
-  son 14 günden birine de Z ve POS fotoğrafı ekler (`staffLateDayOpen`; ilk rapordan sonra, kapalı işaretli olmayan
+  son 14 günden birine de ModPOS Z ve banka POS Z fotoğrafı ekler (`staffLateDayOpen`; ilk rapordan sonra, kapalı işaretli olmayan
   gün; [KASA-RAPORU.md](KASA-RAPORU.md) › Geç rapor). Fişi personel bugün ile 7 gün öncesi arasına yükler (açık günde
 satıra, kapanmış ya da eski günde kasadan çıkan isteğine; [KASA-RAPORU.md](KASA-RAPORU.md) › Kasadan çıkan: kapanmış
 gün, yöneticinin satırı). Kural saf olarak
@@ -73,7 +89,8 @@ gün, yöneticinin satırı). Kural saf olarak
   dünkü (iş günü) kayıtlarında görür (`src/lib/checklists.ts` › `photoAccess`, [KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)
   § 4). Kalanı 403 "Bu fotoğrafı görme yetkiniz yok."
 - **Sınırlar:** en çok 2 MB; JPG, PNG ya da WebP (tür içerikten denetlenir; PDF ve HEIC değil); kenarlar 200–4096 px;
-  kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur; bir rapora en çok 6 fotoğraf; bir kontrol listesinde
+  kişi başına saatte 30 yükleme; bir fotoğraf en çok 3 kez okunur (hatalı ve zaman aşımına düşen okuma da sayılır); bir
+  rapora en çok 6 fotoğraf, Banka POS Z bölümüne en çok 3 ("Banka POS Z bölümüne en çok 3 fotoğraf eklenir"); bir kontrol listesinde
   en çok 10 fotoğraflı madde (kontrol fotoğrafı okunmaz, yalnız saklanır; yüklemesi `POST /api/kontrol/foto`).
 - Telefonda fotoğraf JPEG'e (kalite 0,7) küçültülür; EXIF (konum dahil) düşer. Ölçü Claude'un ayrıntısını
   kaybetmeden okuduğu en büyük ölçüdür: en uzun kenar en çok 2576 px, alan en çok ~3,7 megapiksel
@@ -81,19 +98,22 @@ gün, yöneticinin satırı). Kural saf olarak
   0,4–1,2 MB; 1,8 MB'ı aşan görsel önce daha düşük kaliteyle, gerekirse daha küçük yeniden kodlanır (sunucu 2 MB'ta
   keser). Uzun bir Z raporu tek fotoğrafta yine dar kalır (rulo ~375 px eninde; 1600 px'te ~270 px kalıyordu); canlı
   değerlendirmenin `z-uzun-tek-fotograf` durumu bunu dener (§ 8). Okunmuyorsa personel raporu iki parça çeker (ikinci
-  fotoğraf yalnız boş alanları doldurur).
+  fotoğraf yalnız boş alanları doldurur). Banka POS Z'si de bugün aynı ayarla küçültülür; plandaki daha yüksek kalite
+  (0,8, `OKC_COMPRESS`) ve "önce üst, sonra alt yarı"nın varsayılan çekim olması canlı değerlendirmenin ölçümüne bağlı
+  ([planlar/okc-z.md](planlar/okc-z.md) §4.3, D11).
 
 ## 4. Saklama ve temizlik
 
 | Fotoğraf | Silinir |
 |----------|---------|
 | Yüklenip bir kayda bağlanmayan (form bırakıldı, Kaldır) | 2 gün sonra |
-| Kasa raporunun (Z, POS) | raporun gününden 180 gün (6 ay) sonra |
+| Kasa raporunun ModPOS Z'si (ve eski banka POS fişi) | raporun gününden 180 gün (6 ay) sonra |
+| Kasa raporunun banka POS Z'si (yazarkasa) | raporun gününden 400 gün (13 ay) sonra: yıllık vergi mutabakatı bir takvim yılını kapsar. Kâğıt Z'lerin yasal saklama yükümlülüğü ayrıdır |
 | Kasadan çıkan fişin | satırın gününden 400 gün (13 ay) sonra |
 | Kontrol listesinin (açılış, kapanış) | kaydın gününden 60 gün sonra; yeniden çekilenin eskisi hemen |
 | Bağı kalkan (satır silindi, fotoğraf değişti) | 7 gün sonra (Geri al payı) |
 | Silinen kasa raporunun | 30 gün sonra |
-| Onay bekleyen bir istekte tutulan (geç kasa raporu) | istek beklerken silinmez, hiçbir kayda bağlanamaz; onayda raporla bağlanır (180 gün); ret ya da yöneticinin günü kendisi girmesiyle 30 gün, geri çekme ya da istekten çıkarma ile 7 gün sonra |
+| Onay bekleyen bir istekte tutulan (geç kasa raporu) | istek beklerken silinmez, hiçbir kayda bağlanamaz; onayda raporla bağlanır (180 gün; banka POS Z 400 gün); ret ya da yöneticinin günü kendisi girmesiyle 30 gün, geri çekme ya da istekten çıkarma ile 7 gün sonra |
 | Onay bekleyen kasadan çıkan isteğinin fişi | istek beklerken silinmez; onayda satıra bağlanır (400 gün); ret, geri çekme ya da süre dolması (14 gün) ile 7 gün sonra |
 | Yöneticinin onayıyla rapordan kaldırılan Z / POS fotoğrafı | 30 gün sonra (okuması kalır) |
 
@@ -117,6 +137,13 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 - Model `claude-opus-5-5`, efor `low`, JSON şemalı çıktı (`output_config.format`), base64 görsel. Reddedilen okuma
   Anthropic'in önerdiği yedek modelle sunucuda yeniden denenir (`server-side-fallback-2026-07-01`,
   `fallbacks: "default"`). Deneme başına 20 sn, bir yeniden deneme, toplam en çok 45 sn; `max_tokens` 6000.
+- **Banka POS Z (yazarkasa) okuması ayrı ayarla** (`src/server/ai/run.ts` › `OKC_EFFORT`, `OKC_MAX_TOKENS`,
+  `OKC_TIMEOUTS`): aynı model, efor `low` (açıkça gönderilir ve `ai_calls.effort`'a yazılır; ötekilerde boş), `max_tokens`
+  8000, **tek 50 sn'lik deneme**: toplam süre 50 sn'de kesildiği için zaman aşımından sonra yeniden deneme kalmaz; 529
+  ya da bağlantı hatası birkaç saniyede döndüğünden ona kalan süre içinde bir yeniden deneme düşer. Yolun süresi 60 sn
+  (`maxDuration`). Efor `medium` ancak canlı değerlendirmede yanlış dolumu ve "doğrulandı ama yanlış"ı düşürür ve ilk
+  okumanın p90'ı 20 sn'yi aşmazsa seçilir (§ 8; plan §4.4). Zaman aşımına düşen yazarkasa okumasının sunucu günlüğünde
+  eforu da yazar. Öteki okumaların isteği birebir aynı kalır (`tests/ai-istemci.test.ts`).
 - İstemler `src/lib/photo-read/prompts.ts`, şemalar `schemas.ts` (açıklamalar modele gider, İngilizce). Yanıt zod ile
   doğrulanır; tutmazsa "Fotoğraftaki rakamlar güvenilir okunamadı. Elle yazın."
 - **Kapılar:** anahtar (`ANTHROPIC_API_KEY`), Ayarlar › Fotoğraftan okuma'daki anahtar, günlük sınır (varsayılan 40;
@@ -129,6 +156,12 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
   olduğundan bir okuma ~0,01 $ daha pahalı olur (görsel ~4.800 token); ayda ~60 kasa + ~60 fiş okuması ≈ 4–5 $.
   Ayarlar kartı bu ayın okumasını ve tutarını, bugünkü okuma / sınırı gösterir. Anthropic Console'da aylık harcama
   sınırı koymak önerilir.
+- **Banka POS Z'sinin tutarı henüz ölçülmedi.** Tahmin: istem ve şema daha büyük (görselle ~9–11 bin girdi token'ı),
+  okuma başına ~0,05–0,10 $, ayda ~2–4 $ ek; gerçek rakam canlı değerlendirmede `usage` ile ölçülüp buraya yazılır.
+  **Zaman aşımına düşen deneme `ai_calls`'ta 0 $ görünür:** Anthropic yanıtı ve token sayılarını döndürmediği için tutar
+  yazılamaz, oysa istek sunucuda tamamlanıp ücretlendirilmiş olabilir. Ayarlar kartının tutarı bu yüzden biraz eksik
+  sayar. Günlük okuma sınırına (40) daha erken yaklaşılır: Banka POS Z bölümüne en çok 3 fotoğraf, her biri en çok 3
+  kez okunur.
 - Hata metinleri (`src/server/ai/run.ts` › `aiErrorText`): zaman aşımı, bağlantı, yoğunluk ve yarım kalan okumada
   **Yeniden dene**; anahtar ve kredi hatası "yöneticiye haber verin".
 
@@ -141,6 +174,7 @@ Tam yedek fotoğraf **dosyalarını** içermez, yalnız kayıtlarını ([YEDEK.m
 | Okunan sonuç (rakamlar, mağaza adı, tarih, kalemler; satıcının vergi no'su saklanmaz) | Panelin veritabanı (Neon), `ai_calls.result` | fotoğrafla birlikte silinir (§ 4) |
 | Okumanın maliyet satırı (zaman, tür, kişi, token, tutar) | Panelin veritabanı (Neon), `ai_calls` | silinmez (maliyet kaydı; fotoğraftan ya da fişten bilgi taşımaz) |
 | E-posta ve WhatsApp | yalnız "📷 … fotoğrafı panelde" satırı ve farklı yazılan rakam | fotoğraf ya da adresi hiç gitmez |
+| Banka POS Z'si (yazarkasa) | Fotoğraf ve okuma yukarıdaki gibi (Anthropic'e de gider). Z'de kişisel veri yoktur; başlıkta şirketin unvanı, adresi, VKN'si ve cihazın sicil no'su basılıdır (her fişte basılı şirket bilgisi). Okuma şirket adını ve VKN'yi almaz (şemada alanı yok) | fotoğraf 400 gün (§ 4) |
 | Kontrol listesinin fotoğrafı (tezgâh, salon, oda) | Vercel Blob (özel depo, Frankfurt); okunmaz, Anthropic'e gitmez | 60 gün (§ 4). Maddenin açıklaması "Fotoğrafta müşteri ya da çalışan görünmesin." der |
 | Faturadan okuma için faturanın PDF'i ya da görseli | Anthropic API (ABD), yalnız o okuma için ([FATURA-OKUMA.md](FATURA-OKUMA.md) § 5) | Anthropic'in politikasına göre. Panelde okunan sonuç (`invoice_readings`) ve PDF'in kendisi: "Faturayı aç"taki gibi faturanın belgesi olarak (`invoice_documents`, okumada ilk kez indirildiyse de; [PARASUT.md](PARASUT.md) 6a) |
 
@@ -166,14 +200,20 @@ değil); indirilen yedek dosyası sizde, sizin sakladığınız kadar kalır ([Y
 - **Kayıtlı yanıtlarla:** `AI_REPLAY=1 npx next dev`. Okuma, canlıda alınmış beş yanıttan birini döner
   (`tests/fixtures/foto/`): tür ve fotoğrafın ölçüsüne göre seçilir; `docs/planlar/ekler/fotograf-eval/img/`'deki
   deneme görselleri (Z raporu, POS fişi, soluk market fişi, talimatlı fiş) gerçek bir okuma gibi davranır (POS fişini
-  Z bölümüne çekmek yanlış belgeyi gösterir). `make-images.py`'nin yazarkasa Z'si (`yazarkasa-z.jpg`) sentetik bir
-  yanıtla iki kasa bölümünde de `fiscal_z_report` döner: ModPOS bölümünde **Banka POS bölümüne okut**, Banka POS
-  bölümünde K.KARTI yönergesi. Başka bir fotoğrafa türün olağan yanıtı döner.
+  Z bölümüne çekmek yanlış belgeyi gösterir). `make-images.py`'nin yazarkasa Z'si (`yazarkasa-z.jpg`) ModPOS
+  bölümünde sentetik bir yanıtla `fiscal_z_report` döner (**Banka POS Z bölümüne okut**). Banka POS Z bölümünün
+  yanıtları sentetiktir (`tests/fixtures/foto/okc.json`, `okc-batch.json`, `okc-tek-oran.json`,
+  `okc-yanlis-toplam.json`; son ikisi testlerde kullanılır; canlı değerlendirmede gerçekleriyle değişir): POS fişi
+  görseli yalnız banka gün sonunu, ModPOS Z görseli **ModPOS bölümüne okut**'u, market ve talimatlı fiş görselleri
+  yanlış belgeyi, öteki her görsel örnek yazarkasa Z'sini (`okc.json`) döner. Başka bir fotoğrafa türün olağan yanıtı
+  döner.
 - Gerçek okuma için anahtarı yalnız kabukta verin: `export ANTHROPIC_API_KEY=$(cat <anahtar dosyanız>)`. Depoya ya
   da `.env` dosyasına yazmayın, ekrana basmayın.
 - **Testler** (`npm test`, ağ ve anahtar gerekmez): `tests/fotograf-okuma.test.ts` (okumaların forma gidecek hâli ve
   denetimleri, kayıtlı yanıtlarla), `tests/foto-altyapi.test.ts` (ölçü, depo sürücüleri, erişim, saklama, kaynak
-  denetimleri), `tests/ai-istemci.test.ts` (isteğin biçimi, yanıt denetimi, hata kodları, tutar).
+  denetimleri), `tests/ai-istemci.test.ts` (isteğin biçimi, yanıt denetimi, hata kodları, tutar; yazarkasa Z'sinin
+  efor, süre ve `max_tokens`'ı, ötekilerin değişmediği), `tests/okc-z.test.ts` (yazarkasa kimlikleri, okuma, doldurma
+  kapısı).
 - **Canlı değerlendirme** (para harcar, isteğe bağlı): istem, şema, küçültme ayarı ya da model değişince.
 
 ```bash
@@ -195,6 +235,24 @@ yalnız betiği sınar: kayıtlı beş yanıt sonradan eklenen görselleri tanı
 (dördü bu yüzden geçmez); yazarkasa Z'si sentetik yanıtla tanınır. Yazarkasa Z'si cümleleri (dalga 13 PR-a) canlıda
 henüz denenmedi.
 
+**Banka POS Z'sinin değerlendirmesi (yapılmadı; doldurma kapısı buna bağlı).** Yazarkasa Z'sinin istemi (`OKC_TASK`)
+ve kimlikleri plandan ve araştırma notlarından yazıldı, kafenin gerçek fişleriyle hiç denenmedi. Plan
+([planlar/okc-z.md](planlar/okc-z.md) §10, §17 b2 ve b8):
+
+1. Sahipten 5–8 günün banka POS Z fotoğrafı (2–3'ü ardışık; biri uzun ve soluk; en az biri üst ve alt yarı olarak da),
+   **asıl çözünürlükte** (WhatsApp'ın sıkıştırdığı resim değil: "belge" olarak, Drive ya da e-postayla) ve aynı
+   günlerin kâğıttan doğru rakamları; cihazın markası ve modeli, Z'nin kim tarafından saat kaçta alındığı, ModPOS
+   raporunun yazıcısı ([YAZARKASA-Z.md](YAZARKASA-Z.md) § 6). Fotoğraflar `tests/fixtures/okc-z/`'ye (kişisel veri
+   yok; kasiyer adı ya da yüz varsa kırpılır, kırpılamıyorsa `.data/okc-z/`'de kalır), beklenen değerler kâğıttan
+   `cases.json`'a.
+2. Betik `scripts/okc-eval/run.ts` (henüz yazılmadı): canlıyla aynı yol (`runExtraction` → `normalizeOkc` →
+   `prefillPlan`), `FOTO_EVAL=1 ANTHROPIC_API_KEY=… npx tsx scripts/okc-eval/run.ts --effort low --girdi tek --tekrar 3`;
+   `--effort medium`, `--girdi yarilar` (üst + alt yarı), `--say-token` (ücretsiz `count_tokens`), `--kayitli` (ağsız).
+   Her alan için doğru dolar / yanlış dolar / **doğrulandı ama yanlış** / öneri / boş; süre p50 / p90, token, tutar.
+3. Kapı: gerçek fotoğraflarda `--tekrar 3` ile **yanlış dolum 0**, **"doğrulandı ama yanlış" 0**, alan doğruluğu ≥ %95,
+   ilk okuma p90 ≤ 20 sn. Sonuç `docs/planlar/ekler/okc-z/eval.md`'ye; geçerse `OKC_PREFILL_ENABLED = true`, okuma
+   süresi metni ölçülen p50'yle, kalite ve çekim kararı (§ 3) ölçümle.
+
 ## 9. Yeni bir fotoğraf türü
 
 1. `src/lib/photo-rules.ts`: `PhotoKind`, `PHOTO_KINDS`, `KEEP_DAYS`, `PHOTO_KIND_LABEL`.
@@ -203,20 +261,36 @@ henüz denenmedi.
 4. Fotoğrafı kullanan kayıt kendi işleminde `keepPhoto(id, keepUntil(kind, gün), tx)` ile bağlar; kayıt silinince
    `releasePhoto`. Bağlanmayan fotoğraf 2 günde kendiliğinden silinir.
 
+Örnek: `kasa-okc` (banka POS Z'si, dalga 13). `KEEP_DAYS["kasa-okc"] = 400`, `PHOTO_KIND_LABEL` "Banka POS Z";
+`PHOTO_RULES["kasa-okc"]` = `okcPhotoRules` (görme kuralı kasa raporununki, saklama kendi `KEEP_DAYS`'i);
+`src/app/api/foto/` ve `[id]/oku/` türü kabul eder, okuma `readPhotoFor("kasa-okc")` (`OKC_TASK`, `KasaOkcRaw`,
+`normalizeOkc`); kasa raporu, geç rapor ve fotoğraf kaldırma isteği türü tanır; `ai_calls.feature` `kasa-okc`. Okumanın
+kendi şeması olduğu için eski türün (`kasa-pos`) şeması değişmedi: eski `ai_calls.result`'lar `KasaPosRaw` ile
+ayrıştırılmaya devam eder (aynı türe yeni şema verilseydi eski okumalar sessizce kaybolurdu).
+
+**`kasa-pos` geçişi** (plan D2): yeni sayfa `kasa-pos` göndermez. Yayın günü açık kalan eski sayfaların `tur=kasa-pos`
+yüklemesi ve yeniden okuması reddedilmez: fotoğraf `kasa-okc` olur, `OKC_TASK` ile okunur, `ai_calls`'a `kasa-okc`
+yazılır ve eski sayfaya **eski biçimde** yanıt döner (`kind: "kasa-pos"`, değerlerde yalnız banka gün sonu fişinden
+okunan `bankPos`, doldurma kapısı kapalıyken düşük güvenle öneri; fişte banka gün sonu yoksa PR-a'nın K.KARTI yönergesi;
+yazarkasa Z'sinin toplamı ya da kartı asla; `okcToLegacyPos`). Eski `kasa-pos` fotoğrafları ve okumaları gösterilmeye
+devam eder. Yüklemenin ve yeniden okumanın kaldırılması ayrı küçük bir PR'dır (en erken iki hafta sonra; bekleyen geç
+raporlarda `kasa-pos` kalmadığı denetlenerek).
+
 ## 10. Dosyalar
 
 | Dosya | İçerik |
 |-------|--------|
 | `src/lib/photo-rules.ts` | türler, sınırlar, ölçü (yalnız başlıktan), saklama, kim görür (ilk adımlar), yükleme hata metinleri |
 | `src/lib/photo-compress.ts` | telefonda küçültme |
-| `src/lib/photo-read/` | şemalar, istemler, API şeması, Z / POS / fiş okumasının kontrolü ve forma planı, "fotoğraftan farklı" |
+| `src/lib/photo-read/` | şemalar, istemler, API şeması, ModPOS Z / banka POS Z (`okc.ts`) / fiş okumasının kontrolü ve forma planı, "fotoğraftan farklı" |
+| `src/lib/okc-z.ts` | banka POS Z'sinin kimlikleri, doldurma kapısı (`OKC_PREFILL_ENABLED`), karşılaştırmalar ([YAZARKASA-Z.md](YAZARKASA-Z.md)) |
 | `src/lib/cash-outs.ts` | kasadan çıkanların adları, raporun notu, uyarı, personelin kuralları |
 | `src/server/storage/` | depo sürücüleri (Blob, dosya, bellek), kayıtlar, erişim kayıt defteri |
 | `src/server/ai/` | Claude: istek ve hata kodları (`run.ts`), kapılar ve günlük (`claude.ts`), tutar (`pricing.ts`), kayıtlı yanıtlar (`replay.ts`) |
 | `src/server/photo-read/` | fotoğrafı okuyup forma hazırlama, ekleme kuralları |
 | `src/app/api/foto/` | yükleme + okuma (`POST /api/foto`), fotoğraf (`GET /api/foto/{id}`), yeniden okuma (`POST /api/foto/{id}/oku`) |
 | `src/components/panel/photo-picker.tsx`, `photo-viewer.tsx` | fotoğraf düğmeleri, durum satırı, küçük resim, büyütme |
-| `src/app/panel/kasa/cash-form.tsx`, `cash-photos.tsx`, `cash-outs.tsx`, `cash-out-dialog.tsx` | ekranlar |
+| `src/app/panel/kasa/cash-form.tsx`, `okc-card.tsx`, `cash-photos.tsx`, `cash-outs.tsx`, `cash-out-dialog.tsx` | ekranlar |
 | `src/app/panel/ayarlar/photo-card.tsx` | Ayarlar › Fotoğraftan okuma |
 | `src/app/api/kontrol/foto/`, `src/app/panel/kontrol/[id]/photo-item.tsx`, `src/server/data/checklists.ts` (`kontrolPhotoRules`) | kontrol listesinin fotoğraflı maddesi: yükleme ve yanıt tek istekte, kim görür ([KONTROL-LISTELERI.md](KONTROL-LISTELERI.md)) |
-| `scripts/foto-eval/` | canlı değerlendirme |
+| `scripts/foto-eval/` | canlı değerlendirme (`scripts/okc-eval/` banka POS Z'si için, henüz yazılmadı; § 8) |

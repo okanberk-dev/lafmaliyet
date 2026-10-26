@@ -26,6 +26,7 @@ import {
   type CashRevisionRow,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
+import { okcHasFigures, okcReconcile } from "@/lib/okc-z";
 import { longDateTR } from "@/lib/reminders";
 import { cn } from "@/lib/utils";
 import { deleteCashReport, resendCashReportEmail } from "@/server/actions/cash-report";
@@ -36,7 +37,7 @@ import type { CashReportDTO } from "@/server/data/cash-reports";
 
 import { SavedPhotos } from "./cash-photos";
 import { CashRevisions } from "./cash-revisions";
-import { CashBreakdown, DIFF_TONE, DiffHeadline } from "./cash-summary";
+import { CashBreakdown, DIFF_TONE, DiffHeadline, type OkcAdminView } from "./cash-summary";
 
 /** Raporların fotoğrafları (rapor kimliğine göre): fotoğraftan farklı yazılanlar, alarm sayılanlar, WhatsApp ekleri */
 export type CashHistoryPhotos = Record<number, { photos: CashPhotoDTO[]; diffs: PhotoDiff[]; suspicious: PhotoDiff[]; extras: CashReportExtras }>;
@@ -76,6 +77,9 @@ export function CashHistory({
   lateApproved = {},
   latePending = {},
   monthLine = null,
+  okcAdmin = {},
+  okcFirst = null,
+  okcLine = null,
 }: {
   monthLabel: string;
   prevHref: string | null;
@@ -98,6 +102,12 @@ export function CashHistory({
   latePending?: Record<string, { id: number; requestedByName: string }[]>;
   /** Ayın açık gün ve cirosunun nereden geldiği (Satışlar'a bağlantı) */
   monthLine?: ReactNode;
+  /** Raporların yazarkasa kümülatifi ve "Kümülatifi temizle" (rapor kimliğine göre; docs/planlar/okc-z.md §3.7) */
+  okcAdmin?: Record<number, OkcAdminView>;
+  /** İlk yazarkasa Z'li rapor: "Yazarkasa Z yok" rozeti bu günden sonra (D15) */
+  okcFirst?: string | null;
+  /** Ayın yazarkasa (mali) toplamı ve KDV dökümü (yalnız bilgi, §8) */
+  okcLine?: string[] | null;
 }) {
   const [open, setOpen] = useState<CashReportDTO | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -192,6 +202,13 @@ export function CashHistory({
         />
       </div>
       {monthLine ? <p className="-mt-1 px-5 pb-4 text-[13px] leading-5 text-ink-mute">{monthLine}</p> : null}
+      {okcLine?.length ? (
+        <div className="-mt-2 px-5 pb-4 text-[13px] leading-5 text-ink-mute">
+          {okcLine.map((t) => (
+            <p key={t}>{t}</p>
+          ))}
+        </div>
+      ) : null}
       {days.length ? (
         <ul className="divide-y divide-line border-t border-line">
           {days.map(({ date, report }) => {
@@ -220,6 +237,9 @@ export function CashHistory({
             }
             const c = computeCash(report);
             const cardOff = c.cardDiff !== null && Math.abs(c.cardDiff) >= CASH_TOLERANCE;
+            // Yazarkasa Z'si: kayıtlı değerlerde kendi içinde tutmuyor ya da (ilk girildiği günden sonra) hiç girilmemiş
+            const okcOff = okcHasFigures(report) && okcReconcile(report, "admin").some((l) => l.key === "okc-self");
+            const okcMissing = !okcHasFigures(report) && report.zTotal > 0 && okcFirst !== null && date > okcFirst;
             const paymentsOff = Math.abs(c.paymentsDiff) >= CASH_TOLERANCE;
             return (
               <li key={date}>
@@ -248,6 +268,8 @@ export function CashHistory({
                     {lateEdited(report) ? <Badge tone="amber">Ertesi gün düzeltildi</Badge> : null}
                     {paymentsOff ? <Badge tone="amber">Z tutmuyor</Badge> : null}
                     {cardOff ? <Badge tone="amber">Kart {c.cardDiff! > 0 ? "+" : "−"}{money(Math.abs(c.cardDiff!))}</Badge> : null}
+                    {okcOff ? <Badge tone="amber">Yazarkasa tutmuyor</Badge> : null}
+                    {okcMissing ? <Badge tone="gray">Yazarkasa Z yok</Badge> : null}
                     <Badge tone={DIFF_TONE[diffKind(report.cashDiff)]} dot>
                       {diffText(report.cashDiff)}
                     </Badge>
@@ -297,7 +319,7 @@ export function CashHistory({
             <DiffHeadline diff={open.cashDiff} />
             {open.emailStatus === "failed" ? <p className={cn("rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad")}>E-posta gitmedi: {open.emailError}</p> : null}
             {openPhotos ? <SavedPhotos photos={openPhotos.photos} diffs={openPhotos.diffs} admin /> : null}
-            <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} carry={openCarry} next={openNext} />
+            <CashBreakdown report={open} cashOuts={cashOuts[open.date] ?? []} carry={openCarry} next={openNext} audience="admin" okcAdmin={okcAdmin[open.id] ?? null} />
             <CashRevisions report={open} revisions={revisions[open.id] ?? []} proposedBy={proposedBy[open.id]} />
           </div>
         ) : null}
