@@ -619,6 +619,17 @@ const report = (o: Partial<OkcReportFields> = {}): OkcReportFields => ({
   ...o,
 });
 
+test("okcReconcile: yöneticide yazarkasa dışı tahsilat K4'te sayılır (okumayla aynı); kayıtlı rapor 'tutmuyor' demez", () => {
+  // Fatura ile kartla alınan 500 ₺: ödemeler toplamdan 500 fazla, okuma doğruladı
+  const f = report({ okcVat: null, okcVatTotal: null, okcCash: 2450, okcCard: 7400 });
+  const read = okcChecks(fig({ vatTotal: null, groups: [], card: 7400, outside: 500 }), NO_PREV);
+  assert.deepEqual([read.status.okcTotal, read.status.okcCash, read.status.okcCard], ["confirmed", "confirmed", "confirmed"]);
+  assert.ok(!okcReconcile({ ...f, okcOutside: 500 }, "admin").some((l) => l.key === "okc-self"));
+  // Tutar tutmuyorsa yine uyarır; sunucu sütunu olmayan (personel) görünüm bugünkü gibi
+  assert.ok(okcReconcile({ ...f, okcOutside: 300 }, "admin").some((l) => l.key === "okc-self"));
+  assert.ok(okcReconcile(f, "staff").some((l) => l.key === "okc-self"));
+});
+
 test("okcReconcile: tolerans sınırı, online + diğer açıklaması, banka satırı, eski rapor, personelin satırları", () => {
   assert.equal(okcReconcile(report({ okcCard: 6900.99 }), "admin").find((l) => l.key === "okc-card")?.tone, "good");
   const over = okcReconcile(report({ okcCard: 6901 }), "admin").find((l) => l.key === "okc-card");
@@ -636,7 +647,8 @@ test("okcReconcile: tolerans sınırı, online + diğer açıklaması, banka sat
   assert.ok(staff.length > 0);
   assert.ok(staff.every((l) => l.key === "okc-card" || l.key === "okc-self"), JSON.stringify(staff));
   const self = staff.find((l) => l.key === "okc-self");
-  assert.equal(self?.text, "2 rakam birbirini tutmuyor; turuncu olanları fişle karşılaştırın.");
+  // Kayıtlı raporda turuncu alan yok: formun cümlesi değil
+  assert.equal(self?.text, "Yazarkasa rakamları birbirini tutmuyor; fişle karşılaştırın, yanlışsa raporu düzeltin.");
   assert.ok(okcReconcile(report({ okcCard: 6780 }), "admin").find((l) => l.key === "okc-self")?.text.startsWith("Yazarkasa Z'si kendi içinde tutmuyor: Ödemelerin toplamı (9.230\u00a0₺)"));
 
   // Eski rapor (yazarkasa yok, Banka POS dolu): bugünkü metin

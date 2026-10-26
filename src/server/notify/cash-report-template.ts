@@ -19,8 +19,8 @@ import {
   photoNames,
   reportSubject,
   type CashReportExtras,
-  type CashReportFields,
   type CashReportIntegrity,
+  type CashTextFields,
   type DayWaste,
 } from "@/lib/cash-report";
 import { money } from "@/lib/format";
@@ -84,7 +84,7 @@ function section(title: string, rows: string, warning?: string | null | (string 
 }
 
 export function renderCashReport(
-  f: CashReportFields,
+  f: CashTextFields,
   meta: {
     by: string;
     revision: number;

@@ -472,8 +472,12 @@ export function okcFiguresOfForm(v: OkcFormValues): OkcFigures {
  * Formun yazarkasa değerleri üstünde canlı denetim (elle yazılana da; plan §3.6). Kümülatif formda yoktur (D17);
  * Z no yalnız önceki Z'nin numarasıyla karşılaştırılır. Gönderimi engellemez.
  */
-export function okcFormChecks(v: OkcFormValues, ctx: { prevZ: { date: string; zNo: string } | null; day?: string; recentTotals?: number[] }): OkcFormCheck {
-  const res = okcChecks(okcFiguresOfForm(v), { prev: { z: ctx.prevZ }, day: ctx.day, recentTotals: ctx.recentTotals });
+export function okcFormChecks(
+  v: OkcFormValues,
+  ctx: { prevZ: { date: string; zNo: string } | null; day?: string; recentTotals?: number[]; outside?: number | null },
+): OkcFormCheck {
+  // `outside`: sunucunun sakladığı yazarkasa dışı tahsilat (yalnız yöneticinin kayıtlı raporu; personelin formunda yok)
+  const res = okcChecks({ ...okcFiguresOfForm(v), outside: ctx.outside ?? null }, { prev: { z: ctx.prevZ }, day: ctx.day, recentTotals: ctx.recentTotals });
   // Nedeni olan alanlar: tutmayanlar ve uyarı alanlar (doğrulananın nedeni yok)
   const fields: Partial<Record<OkcField, string>> = { ...res.reasons };
   for (const [f, s] of Object.entries(res.status) as [OkcField, OkcStatus][]) if (s === "failed") fields[f] ??= "Fişle karşılaştırın.";
@@ -728,6 +732,8 @@ export interface OkcReportFields {
   okcCard?: number | null;
   okcMealCard?: number | null;
   okcOther?: number | null;
+  /** Sunucu sütunu (yalnız yöneticinin DTO'su): yazarkasa dışı tahsilat; K4 onu da sayar (okumayla aynı) */
+  okcOutside?: number | null;
 }
 
 export interface OkcReconcileLine {
@@ -743,7 +749,10 @@ const TOL = 1;
 const same = (d: number) => Math.abs(d) < TOL;
 const moreLess = (d: number) => `${money(Math.abs(d))} ${d > 0 ? "fazla" : "az"}`;
 
-/** Kayıtlı değerlerden yazarkasanın kendi içindeki denetimleri (önceki Z'siz) */
+/** Kayıtlı raporun personel satırı: yazarkasa rakamları kendi içinde tutmuyor */
+export const OKC_SELF_STAFF_TEXT = "Yazarkasa rakamları birbirini tutmuyor; fişle karşılaştırın, yanlışsa raporu düzeltin.";
+
+/** Kayıtlı değerlerden yazarkasanın kendi içindeki denetimleri (önceki Z'siz; yöneticide yazarkasa dışı tahsilatla) */
 function selfCheck(f: OkcReportFields): OkcFormCheck | null {
   if (!isNum(f.okcTotal)) return null;
   return okcFormChecks(
@@ -758,7 +767,7 @@ function selfCheck(f: OkcReportFields): OkcFormCheck | null {
       okcOther: f.okcOther ?? null,
       okcVat: f.okcVat ?? null,
     },
-    { prevZ: null },
+    { prevZ: null, outside: f.okcOutside ?? null },
   );
 }
 
@@ -786,7 +795,8 @@ export function okcReconcile(f: OkcReportFields, audience: "staff" | "admin"): O
   }
   // Kendi içinde: personele tek satır, yöneticiye ayrıntılı
   const self = selfCheck(f);
-  if (self?.summary) out.push({ key: "okc-self", tone: "warn", text: audience === "staff" ? self.summary : `Yazarkasa Z'si kendi içinde tutmuyor: ${self.admin[0] ?? self.summary}`, diff: null });
+  // Kayıtlı raporda turuncu alan yok: personele formun "turuncu olanları" cümlesi değil, kendi metni
+  if (self?.summary) out.push({ key: "okc-self", tone: "warn", text: audience === "staff" ? OKC_SELF_STAFF_TEXT : `Yazarkasa Z'si kendi içinde tutmuyor: ${self.admin[0] ?? self.summary}`, diff: null });
   if (audience === "staff") return out;
 
   if (isNum(f.okcCash)) {

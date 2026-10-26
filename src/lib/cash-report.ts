@@ -742,7 +742,7 @@ const moreLess = (d: number) => `${money(Math.abs(d))} ${d > 0 ? "fazla" : "az"}
  * alanları boş raporda (eski ya da yalnız banka gün sonu yazılmış) bugünkü "Kart" bloğu, etiket "Banka POS" (§3.7:
  * eski günlerde alan banka gün sonunu da yazarkasanın kart satırını da tutabilir, anlam iddia edilmez)
  */
-export function okcTextBlock(f: CashReportFields, audience: CashTextAudience): string[] {
+export function okcTextBlock(f: CashTextFields, audience: CashTextAudience): string[] {
   const c = computeCash(f);
   const same = (d: number) => Math.abs(d) < CASH_TOLERANCE;
   if (!okcHasFigures(f)) {
@@ -779,7 +779,7 @@ export function whatsappText(f: CashReportFields, meta: { by: string; revision?:
 
 /** Rapor metni: WhatsApp (`"staff"`) ya da e-postanın metin sürümü (`"admin"`; yıldızları şablon siler) */
 export function cashReportText(
-  f: CashReportFields,
+  f: CashTextFields,
   meta: { by: string; revision?: number; waste?: DayWaste | null } & CashReportExtras & CashReportIntegrity,
   audience: CashTextAudience,
 ): string {
