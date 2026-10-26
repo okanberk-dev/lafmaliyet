@@ -9,6 +9,7 @@
 import ExcelJS from "exceljs";
 
 import { fixedMonthly, inRange, monthOfDate, shiftMonth, yearMonths, type Model, type PnlMonthCalc } from "../../../lib/calc/engine";
+import { layerText } from "../../../lib/calc/fifo";
 import { consistency, dashboard, forecastMonthOf, openBalance, soldWithOnline, stockVatSummary } from "../../../lib/calc/insights";
 import type { FixedPeriod, MonthField, MonthRange } from "../../../lib/calc/types";
 import { MONTH_FIELDS } from "../../../lib/cash-month";
@@ -470,7 +471,7 @@ function sheetPurpose(name: string, label: string): string {
   const year = name.match(/^Gelir-Gider (\d{4})$/)?.[1];
   if (name === "Özet") return `Excel'deki Panel: ${label} para nereye gitti, net kâr / zarar, başabaş cirosu, süren ayın tahmini, en kârlı ürün, kategori ortalamaları (sağda).`;
   if (year) return `Excel'deki Genel Maliyet: Ocak–Aralık gelir-gider tablosu ve ${year} YILI toplamı. Elle düzeltilen hücrelerde not var.`;
-  if (name.startsWith("Sayım ") && name !== "Sayım Kayıtları") return `${label} ay sonu stok sayımı: sayım biriminde miktar, grup toplamları ve KDV dahil değer. Boşsa sayım formu olarak yazdırılabilir.`;
+  if (name.startsWith("Sayım ") && name !== "Sayım Kayıtları") return `${label} ay sonu stok sayımı: sayım biriminde miktar, grup toplamları ve KDV dahil değer. Değer Ayarlar'daki başlangıç ayından itibaren ilk giren ilk çıkar (FIFO; katmanlar Not sütununda), öncesinde ay sonu fiyatıyla. Boşsa sayım formu olarak yazdırılabilir.`;
   if (name.startsWith("Tutarlılık ")) return `${label}: POS ↔ satış listesi, reçete ↔ fatura ↔ sayım karşılaştırması ve bulgular.`;
   if (name.startsWith("Satış ") && name !== "Satış Kayıtları") return `${label} POS ürün satışları: eşleşen ürün, maliyet, kâr, durum ve not; üstte POS ciro, ödenmez, indirim ve ortalama maliyet oranı.`;
   const fixed: Record<string, string> = {
@@ -793,6 +794,7 @@ function addStock(wb: ExcelJS.Workbook, model: Model, month: string) {
       const notes = [
         l.archived ? "Pasif ya da Sayılmaz yapılmış; bu ayın kayıtlı sayımı korunuyor." : "",
         l.unitChanged ? `Sayım birimi sonradan değişti; bu ay ${l.countUnit} ile sayılmıştı.` : "",
+        l.valuation === "fifo" && l.qty ? `FIFO: ${layerText(l.layers, l.factor, l.countUnit)}` : "",
       ].filter(Boolean);
       ws.addRow({ n: l.ingredient.name, u: l.countUnit, q: l.qty, p: l.unitPrice, a: l.qty === null ? null : l.amount, v: l.ingredient.vatRate, av: l.qty === null ? null : l.amountVatIncl, x: notes.join(" ") || null });
     }
@@ -1430,6 +1432,7 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
       { key: "bu", header: "Birim", width: 8 },
       { key: "p", header: "Birim fiyatı (sayım birimi)", width: 14, fmt: MONEY },
       { key: "a", header: "Tutar (KDV hariç)", width: 14, fmt: MONEY },
+      { key: "x", header: "Değerleme", width: 48 },
     ],
     { y: 1, landscape: true, raw: true },
   );
@@ -1440,7 +1443,7 @@ function addRawStock(wb: ExcelJS.Workbook, model: Model) {
     for (const g of sheet.groups) {
       for (const l of g.lines) {
         if (l.qty === null) continue;
-        sk.addRow({ m: excelDate(`${m}-01`), t: "Sayım", n: l.ingredient.name, g: g.name, q: l.qty, u: l.countUnit, b: model.countInBaseUnit(m, l.ingredient.id), bu: l.ingredient.unit, p: l.unitPrice, a: l.amount });
+        sk.addRow({ m: excelDate(`${m}-01`), t: "Sayım", n: l.ingredient.name, g: g.name, q: l.qty, u: l.countUnit, b: model.countInBaseUnit(m, l.ingredient.id), bu: l.ingredient.unit, p: l.unitPrice, a: l.amount, x: l.valuation === "fifo" && l.qty ? `FIFO: ${layerText(l.layers, l.factor, l.countUnit)}` : "Ay sonu fiyatı" });
       }
     }
     for (const e of sheet.extras) sk.addRow({ m: excelDate(`${m}-01`), t: "Listede olmayan", n: e.name, q: e.qty, u: e.unit, p: e.unitPrice, a: e.amount });

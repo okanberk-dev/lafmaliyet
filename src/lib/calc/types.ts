@@ -4,6 +4,8 @@
 
 import type { SiteSalesMonth } from "../site-sales/schema";
 
+import type { PurchaseLot } from "./fifo";
+
 export type Unit = "gr" | "ml" | "adet" | "dilim";
 export type CountUnit = "KG" | "LT" | "ADET" | "DİLİM";
 export type Size = "M" | "L" | "Tek";
@@ -46,6 +48,12 @@ export interface Settings {
   suBirimLTOverride: number | null;
   /** Herkese açık QR menü yayında mı */
   publicMenu: boolean;
+  /**
+   * Stok değerlemede ilk giren ilk çıkar (FIFO) başlangıç ayı (YYYY-MM). Bu aydan itibaren ay sonu stoğu ve kâr-zararın
+   * mal maliyeti faturaların sırasıyla değerlenir; önceki aylar ay sonu fiyatıyla kalır. null = eski yöntem (her ay ay
+   * sonu fiyatı). docs/STOK-DEGERLEME.md
+   */
+  stokFifoBaslangic: string | null;
 }
 
 export interface Ingredient {
@@ -387,6 +395,11 @@ export interface Dataset {
    * bir zam kapanmış ayın devreden malını ve kârını değiştirmez (engine.ts stockSheet)
    */
   ingredientPrices?: IngredientPriceRow[];
+  /**
+   * Paraşüt faturalarından hammaddeye düşen alışlar (src/server/data/purchase-lots.ts; yoksa boş: sayım ay sonu
+   * fiyatıyla). Ayarlar'daki FIFO başlangıcından itibaren ay sonu stoğu bunlarla değerlenir (engine.ts stockSheet)
+   */
+  purchaseLots?: PurchaseLot[];
   stockExtras: StockExtra[];
   purchaseQuantities: PurchaseQty[];
   /** Aylık harcama kategorileri ve kayıtları (yoksa boş) */
