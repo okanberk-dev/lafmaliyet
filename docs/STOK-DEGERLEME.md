@@ -23,6 +23,8 @@ sonunda rafta kalan miktar sayılır, değeri faturaların sırasından bulunur.
    - son 12 ay içinde bu malzemenin en son sayıldığı aydan sonraki (boş bırakılmış) ayların faturaları ve o sayımın
      katmanları (o ay tükenmiş eski parti yeniden sayılmaz; arada bir ayın boş bırakılması bunu bozmaz);
    - 12 ayda hiç sayılmadıysa son 12 ayın faturaları (en yeniden eskiye).
+   - O sayım FIFO başlangıcından önceki bir aydaysa katmanları yerine sayılan miktarın tamamı **tek parça, o ayın ay
+     sonu fiyatıyla** taşınır (§5 "Başlangıç ayı").
 2. Sayılan miktar (malzemenin kendi biriminde: gr, ml, adet) havuzun başından alınır; her parça kendi faturasının
    birim fiyatıyla (KDV hariç, iskonto düşülmüş) değerlenir.
 3. Havuz yetmezse kalan miktar **ay sonunda geçerli fiyatla** (eski yöntemin fiyatı; "fallback").
@@ -50,7 +52,7 @@ edilen mal havuzda kalır.
 
 ## 3. Örnek
 
-Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG.
+Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG; FIFO başlangıcı Eylül (ya da daha önce).
 
 | Fatura | Miktar | Birim fiyat |
 | --- | --- | --- |
@@ -65,6 +67,9 @@ Espresso çekirdeği, ay sonu fiyatı 450 ₺/KG.
 - Eski yöntemle Ekim: 9 × 450 = 4.050 ₺.
 
 Ekim'in mal maliyeti = açılış (Eylül kapanışı) + Ekim alışları − 3.150 ₺; Kasım'ın açılışı 3.150 ₺.
+
+Başlangıç **Ekim** olsaydı Eylül eski yöntemle 5 × 450 = 2.250 ₺ kapanır ve Ekim'in havuzuna "5 KG · Eyl sayımından
+450,00 ₺/KG" tek parça olarak girer: Ekim 9 KG = 3 × 400 + 5 × 450 + 1 × 450 = 3.900 ₺.
 
 ## 4. Ekranlar
 
@@ -87,6 +92,13 @@ Ekim'in mal maliyeti = açılış (Eylül kapanışı) + Ekim alışları − 3.
 
 ## 5. Dikkat
 
+- **Başlangıç ayı** (denetim E-05): başlangıçtan önceki ayın kapanışı ay sonu fiyatıyla değerlenir ve başlangıç ayının
+  açılışı odur. O sayım başlangıç ayının havuzuna eski fatura fiyatlarıyla (katmanlarıyla) girseydi, hiç tüketilmemiş
+  malın son fiyat ile eski fatura fiyatı arasındaki farkı başlangıç ayının mal maliyetine bir kez yazılırdı (Ayarlar'da
+  başlangıç her değiştiğinde yeniden). Bu yüzden önceki ayın sayımı tek parça, kendi ay sonu fiyatıyla taşınır: alımı
+  ve kullanımı olmayan kalemde başlangıç ayının stok değişimi 0'dır. Bu parça "faturalardan" payına girmez (kapsam
+  satırında ay sonu fiyatıyla kalan payda), ipucunda "Eyl sayımından … (FIFO başlangıcından önce: ay sonu fiyatı)"
+  yazar. Ayarlar önizlemesi her başlangıç seçeneği için bu kuralla hesaplar (`valuationPreview(ay, başlangıç)`).
 - **Kapanmış aylar**: başlangıç ayını geriye almak o aylardan itibaren stok değerini ve kârı değiştirir (önizleme
   gösterir). Başlangıçtan sonra gelen geç bir fatura, sonradan düzeltilen bağlantı çarpanı ya da onaylanan fiyat da
   FIFO'lu bir ayın değerini değiştirebilir: partiler her açılışta faturalardan yeniden türetilir.
@@ -104,10 +116,12 @@ uygulanmalıdır; değiştirmeden önce muhasebeciye danışın.
 
 ## 7. Kod
 
-- Saf çekirdek: `src/lib/calc/fifo.ts` (`buildLots`, `takeNewestFirst`, `closingLayers`, `layersValue`, `valuationFor`)
+- Saf çekirdek: `src/lib/calc/fifo.ts` (`buildLots`, `takeNewestFirst`, `closingLayers`, `layersValue`, `valuationFor`,
+  `openingLayer` ve `invoiceLayer`: başlangıçtan önceki sayımdan taşınan parça)
 - Yükleyici: `src/server/data/purchase-lots.ts` → `loadDataset` (`Dataset.purchaseLots`, isteğe bağlı: Excel tohumu ve
   golden testler partisiz, eski yöntemle)
-- Motor: `src/lib/calc/engine.ts` `fifoLayers` (ay + malzeme başına bellekli), `stockSheet` (`StockLine.valuation`,
+- Motor: `src/lib/calc/engine.ts` `fifoLayersFrom` (başlangıç + ay + malzeme başına bellekli; `fifoLayers` Ayarlar'daki
+  başlangıçla), `stockSheet` (`StockLine.valuation`,
   `layers`, `uncoveredQty`, `pool`, `fallbackUnit`), `valuationPreview`; `closingStock`, `pnlMonth`, Genel bakış, MCP
   ve dışa aktarım kendiliğinden izler
 - Ayar: `Settings.stokFifoBaslangic` (`DEFAULT_SETTINGS` "2026-10"; veritabanında kapalı = "kapali"),

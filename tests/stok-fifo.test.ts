@@ -101,13 +101,14 @@ test("3: parti yetmezse kalan ay sonu fiyatıyla (fallback)", () => {
 });
 
 test("4: geçen ayın katmanları taşınır, tükenmiş parti (250) yeniden sayılmaz", () => {
+  // İki ay da FIFO (başlangıç Eylül): Eylül'ün katmanları Ekim'in havuzuna taşınır
   const m = model({
     lots: [lot("2026-09-02", 10, 250), lot("2026-09-20", 5, 300), lot("2026-10-15", 3, 400)],
     counts: [count("2026-09", 5), count("2026-10", 9)],
     perKg: 450,
+    start: "2026-09",
   });
-  // Eylül FIFO başlangıcından önce: tutarı ay sonu fiyatıyla, katmanları taşınmak için yine hesaplanır
-  assert.equal(lineOf(m, "2026-09").valuation, "son-fiyat");
+  assert.equal(lineOf(m, "2026-09").valuation, "fifo");
   const sept = m.fifoLayers("2026-09", ID)!;
   assert.deepEqual(
     sept.layers.map((x) => [x.qty / 1000, Math.round(x.unitCost * 1000)]),
@@ -264,7 +265,7 @@ function formGroups(m: Model, month: string) {
 test("12: değişiklik yokken canlı toplam = stockSheet; değişen miktar eski katmanlara taşar, kayıttan sonra aynı", () => {
   const lots = [lot("2026-09-20", 5, 300), lot("2026-10-03", 8, 350), lot("2026-10-20", 6, 400)];
   const counts = [count("2026-09", 5), count("2026-10", 10)];
-  const m = model({ lots, counts, perKg: 450 });
+  const m = model({ lots, counts, perKg: 450, start: "2026-09" });
   const sheet = m.stockSheet("2026-10");
   const groups = formGroups(m, "2026-10");
   const live = liveTotals(groups, (l) => l.qty, []);
@@ -276,7 +277,7 @@ test("12: değişiklik yokken canlı toplam = stockSheet; değişen miktar eski 
   // 21 KG: havuz 19 KG, 2 KG ay sonu fiyatıyla
   close(lineAmount(line, 21), 6 * 400 + 8 * 350 + 5 * 300 + 2 * 450, "21 KG");
   const live17 = liveTotals(groups, (l) => (l.id === ID ? 17 : l.qty), []);
-  const saved = model({ lots, counts: [count("2026-09", 5), count("2026-10", 17)], perKg: 450 });
+  const saved = model({ lots, counts: [count("2026-09", 5), count("2026-10", 17)], perKg: 450, start: "2026-09" });
   close(live17.total, saved.stockSheet("2026-10").total, "kaydedilince sunucu aynı tutarı hesaplar");
   // İpucu metni
   const tip = layerText(closingLayers(21000, line.pool!, 0.45).layers, 1000, "KG");
@@ -330,4 +331,53 @@ test("16: kapsama satırı 100'e tamamlanır (%13 + %87)", () => {
   assert.deepEqual(coverageSplit(1), { covered: "%100'ü", rest: "%0'ı" });
   const src = readFileSync(join(root, "src/app/panel/sayim/stock-form.tsx"), "utf8");
   assert.ok(!src.includes("coverageText(1 - coveredShare)"), "kalan ayrı yuvarlanmaz");
+});
+
+test("17 (E-05): başlangıç ayı yeniden değerleme yazmaz: önceki ayın sayımı ay sonu fiyatıyla taşınır", () => {
+  // Eylül 5 KG (Eylül faturası 300), Ekim 5 KG, Ekim'de alım ve kullanım yok; bugünkü fiyat 450
+  const lots = [lot("2026-09-02", 10, 250), lot("2026-09-20", 5, 300)];
+  const counts = [count("2026-09", 5), count("2026-10", 5)];
+  const stockDelta = (m: Model) => m.closingStock("2026-09").value - m.closingStock("2026-10").value;
+  // Başlangıç Ekim: Eylül kapanışı 5 × 450 = 2.250, Ekim'e aynı fiyatla tek parça taşınır → Ekim kapanışı 2.250
+  const oct = model({ lots, counts, perKg: 450, start: "2026-10" });
+  close(oct.closingStock("2026-09").value, 2250, "Eylül ay sonu fiyatıyla");
+  close(oct.closingStock("2026-10").value, 2250, "Ekim: taşınan parça Eylül'ün ay sonu fiyatıyla");
+  close(stockDelta(oct), 0, "Ekim stok değişimi (mal maliyetine giren) 0");
+  const l = lineOf(oct, "2026-10");
+  assert.equal(l.valuation, "fifo");
+  assert.deepEqual(
+    l.layers.map((x) => [x.countMonth ?? x.date, x.qty / 1000, Math.round(x.unitCost * 1000)]),
+    [["2026-09", 5, 450]],
+  );
+  // Taşınan açılış "faturalardan" payına girmez (ay sonu fiyatıyla)
+  close(oct.stockSheet("2026-10").fifoCovered, 0, "faturadan gelen yok");
+  assert.match(layerText(l.layers, 1000, "KG"), /^5 KG · Eyl sayımından 450,00\s₺\/KG \(FIFO başlangıcından önce: ay sonu fiyatı\)\.$/);
+  // Kapalı ve Eylül başlangıcı da 0 (ikisinde de iki ay aynı yöntemle)
+  close(stockDelta(model({ lots, counts, perKg: 450, start: null })), 0, "kapalı");
+  close(stockDelta(model({ lots, counts, perKg: 450, start: "2026-09" })), 0, "Eylül'den FIFO");
+  // Ekim'de alım varsa önce o tüketilir: 3 KG @400 + Eylül'den 2 KG @450
+  const withBuy = model({ lots: [...lots, lot("2026-10-15", 3, 400)], counts, perKg: 450, start: "2026-10" });
+  close(withBuy.closingStock("2026-10").value, 3 * 400 + 2 * 450, "Ekim alımı önce");
+  close(withBuy.stockSheet("2026-10").fifoCovered, 1200, "faturadan gelen yalnız Ekim alımı");
+  // Kâr-zarar: Ekim'in açılışı Eylül kapanışı, taşınan parçayla aynı fiyat
+  close(oct.pnlMonth("2026-10").cells.get("stock:opening")!.value as number, 2250, "Ekim açılışı");
+});
+
+test("18 (E-05): Ayarlar önizlemesi başlangıca göre: aynı sayım, başlangıcı Ekim seçmek kâr değiştirmez", () => {
+  const lots = [lot("2026-09-02", 10, 250), lot("2026-09-20", 5, 300)];
+  const counts = [count("2026-09", 5), count("2026-10", 5)];
+  const m = model({ lots, counts, perKg: 450, start: null });
+  const sep = m.valuationPreview("2026-09", "2026-09");
+  const octFromOct = m.valuationPreview("2026-10", "2026-10");
+  const octFromSep = m.valuationPreview("2026-10", "2026-09");
+  close(sep.old, 2250, "Eylül eski");
+  close(sep.fifo, 1500, "Eylül FIFO (Eylül'den): 5 × 300");
+  close(octFromOct.fifo, 2250, "Ekim FIFO, başlangıç Ekim: Eylül ay sonu fiyatıyla taşındı");
+  close(octFromOct.covered, 0, "faturadan yok");
+  close(octFromSep.fifo, 1500, "Ekim FIFO, başlangıç Eylül: Eylül'ün katmanları");
+  // Kayıtlı başlangıç (kapalı) varsayılan: zincir kesilmez
+  close(m.valuationPreview("2026-10").fifo, 1500, "from = null");
+  // fifoLayersFrom önbelleği başlangıçlar arasında karışmaz
+  close(layersValue(m.fifoLayersFrom("2026-10", ID, "2026-10")!.layers), 2250, "önbellek Ekim");
+  close(layersValue(m.fifoLayersFrom("2026-10", ID, "2026-09")!.layers), 1500, "önbellek Eylül");
 });

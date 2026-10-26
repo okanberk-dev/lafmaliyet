@@ -6,7 +6,7 @@ import { shiftMonth } from "@/lib/calc/engine";
 import { parseNumberTR } from "@/lib/calc/expr";
 import { closingLayers, layersValue, type StockLayer } from "@/lib/calc/fifo";
 
-export { layerText } from "@/lib/calc/fifo";
+export { invoiceLayer, layerText } from "@/lib/calc/fifo";
 import { businessDate } from "@/lib/cash-report";
 import { COUNT_GROUP_VAT_DEFAULT } from "@/lib/constants";
 import { dateTimeTR, monthLabel, num } from "@/lib/format";

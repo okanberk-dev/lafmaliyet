@@ -64,6 +64,7 @@ import {
   extrasBase,
   groupProgress,
   listTopScroll,
+  invoiceLayer,
   isFifoLine,
   layerText,
   lineAmount,
@@ -705,11 +706,12 @@ export function StockCountForm({
     extras.map((e) => ({ qty: parseNumberTR(e.qty), unitPrice: parseNumberTR(e.unitPrice) })),
   );
   const groupLive = new Map(live.groups.map((g) => [g.name, g]));
-  // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla
+  // Stok değerinin faturalardan (FIFO katmanları) gelen kısmı, formdaki miktarlarla; kalan ay sonu fiyatıyla (başlangıçtan
+  // önceki sayımdan taşınan açılış da)
   const fifoCovered = valuation?.fifo
     ? all.reduce((a, l) => {
         const v = l.archived ? l.qty : qtyOf(l);
-        return a + lineLayers(l, v).reduce((b, x) => b + (x.fallback ? 0 : x.qty * x.unitCost), 0);
+        return a + lineLayers(l, v).reduce((b, x) => b + (invoiceLayer(x) ? x.qty * x.unitCost : 0), 0);
       }, 0)
     : 0;
   const coveredShare = live.total > 0 ? Math.min(1, fifoCovered / live.total) : 0;

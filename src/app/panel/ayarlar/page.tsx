@@ -12,7 +12,7 @@ import { CardContent } from "@/components/ui/card";
 import { InfoTip, Skeleton } from "@/components/ui/misc";
 import { logPerson } from "@/lib/activity-person";
 import { backupCardSummary, backupDue, lastBackupText, sizeText } from "@/lib/backup/format";
-import { currentMonthTR, shiftMonth } from "@/lib/calc/engine";
+import { currentMonthTR, shiftMonth, type Model } from "@/lib/calc/engine";
 import { dateTimeTR } from "@/lib/format";
 import { requireAdmin } from "@/server/auth/dal";
 import { appUrl } from "@/server/auth/tokens";
@@ -34,7 +34,7 @@ import { SettingsNav } from "./section-nav";
 import { SiteLinksTest } from "./site-links-test";
 import { SETTINGS_SECTIONS } from "./sections";
 import { ActivityLog, CategoriesEditor, SettingsForm } from "./settings-client";
-import { StockValuationCard } from "./stock-valuation";
+import { StockValuationCard, type ValuationRow } from "./stock-valuation";
 
 export const metadata: Metadata = { title: "Ayarlar" };
 
@@ -344,6 +344,21 @@ function dayLabeler(now: Date) {
   };
 }
 
+/**
+ * Değerleme önizlemesinin satırları: sayımı olan her ay için ay sonu fiyatıyla tutar ve o aya kadarki her başlangıç
+ * seçeneğiyle FIFO tutarı (başlangıçtan önceki sayım ay sonu fiyatıyla taşındığı için FIFO tutarı başlangıca bağlı)
+ */
+function valuationRows(model: Model, options: string[]): ValuationRow[] {
+  return model.countedMonths.map((m) => {
+    const fifo: ValuationRow["fifo"] = {};
+    for (const from of options.filter((o) => o <= m)) {
+      const p = model.valuationPreview(m, from);
+      fifo[from] = { value: p.fifo, covered: p.covered };
+    }
+    return { month: m, old: model.valuationPreview(m).old, fifo, overridden: model.closingStock(m).overridden };
+  });
+}
+
 /** FIFO başlangıç ayı seçenekleri: ilk sayımdan (yoksa bu aydan) bu aya, kayıtlı başlangıç dahil */
 function fifoMonthOptions(counted: string[], start: string | null, current: string): string[] {
   const out: string[] = [];
@@ -369,6 +384,7 @@ async function SettingsContent() {
   const productCount = new Map<number, number>();
   for (const p of model.ds.products) productCount.set(p.categoryId, (productCount.get(p.categoryId) ?? 0) + 1);
   const dayLabel = dayLabeler(new Date());
+  const fifoOptions = fifoMonthOptions(model.countedMonths, model.fifoStart, model.ds.currentMonth ?? currentMonthTR());
 
   return (
     <SettingsLayout nav={<SettingsNav />}>
@@ -376,8 +392,8 @@ async function SettingsContent() {
       <SettingsForm settings={model.settings} water={model.water} data={impactData(model)} menuUrls={{ panel: `${appUrl()}/menu`, site: `${siteUrl()}/menu` }} />
       <StockValuationCard
         start={model.fifoStart}
-        rows={model.countedMonths.map((m) => ({ month: m, ...model.valuationPreview(m), overridden: model.closingStock(m).overridden }))}
-        months={fifoMonthOptions(model.countedMonths, model.fifoStart, model.ds.currentMonth ?? currentMonthTR())}
+        rows={valuationRows(model, fifoOptions)}
+        months={fifoOptions}
         openingOverrides={model.ds.pnlEntries.filter((e) => e.rowKey === "stock:opening").map((e) => e.month)}
       />
       <div className="grid gap-4 @5xl:grid-cols-2">
